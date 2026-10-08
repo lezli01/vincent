@@ -299,8 +299,19 @@ func (d *detail) updateMsg(msg tea.Msg) tea.Cmd {
 	case taskCreatedMsg:
 		// The 201's advisory findings — a catalog-unknown model, say. The
 		// task exists and will run, so this is a status line, not an error.
+		var notes []string
 		if len(msg.task.Warnings) > 0 {
-			d.actions.setStatus("created with warnings: "+strings.Join(msg.task.Warnings, "; "), false)
+			notes = append(notes, "created with warnings: "+strings.Join(msg.task.Warnings, "; "))
+		}
+		// A main task the issue's main worktree is busy for (task 134
+		// decision 10): the issue was free when the form opened and taken by
+		// submit, so say what the CLI says.
+		if id := msg.task.MainWorktreeOccupantTaskID; id != nil {
+			notes = append(notes, "queued behind #"+strconv.FormatInt(*id, 10)+
+				" (main worktree busy); a separate worktree would run now")
+		}
+		if len(notes) > 0 {
+			d.actions.setStatus(strings.Join(notes, " · "), false)
 		}
 		return nil
 	case clipboardResultMsg:

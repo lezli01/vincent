@@ -18,6 +18,8 @@ var ntLabels = [ntRowCount]string{
 	ntTitle:       "title",
 	ntDescription: "description",
 	ntFields:      "fields",
+	ntWorktree:    "worktree",
+	ntMergeBack:   "merge back",
 	ntBranch:      "base branch",
 	ntBranchName:  "branch",
 	ntPriority:    "priority",
@@ -71,7 +73,7 @@ func ntStageForRow(row ntRow) ntStage {
 		// from what it filled would put the guess and its review on
 		// different screens (task 035).
 		return ntStageDetails
-	case ntBranch, ntBranchName, ntPriority, ntPaused:
+	case ntWorktree, ntMergeBack, ntBranch, ntBranchName, ntPriority, ntPaused:
 		return ntStageGit
 	case ntAgent, ntModel, ntEffort:
 		return ntStageExecution
@@ -93,7 +95,7 @@ func ntRowsForStage(stage ntStage) []ntRow {
 	case ntStageDetails:
 		return []ntRow{ntSource, ntTitle, ntDescription, ntFields}
 	case ntStageGit:
-		return []ntRow{ntBranch, ntBranchName, ntPriority, ntPaused}
+		return []ntRow{ntWorktree, ntMergeBack, ntBranch, ntBranchName, ntPriority, ntPaused}
 	case ntStageExecution:
 		return []ntRow{ntAgent, ntModel, ntEffort}
 	case ntStageReview:
@@ -250,9 +252,13 @@ func (n *newTask) renderReview(lines []string) ([]string, int) {
 		n.reviewLine("description", n.rowValue(ntDescription)),
 		n.reviewLine("fields", n.rowValue(ntFields)),
 		section("Git & execution"),
-		n.reviewLine("base branch", n.rowValue(ntBranch)),
-		n.reviewLine("branch", n.rowValue(ntBranchName)),
 	)
+	for _, row := range []ntRow{ntWorktree, ntMergeBack, ntBranch, ntBranchName} {
+		if n.rowVisible(row) {
+			first, _, _ := strings.Cut(n.rowValue(row), "\n")
+			lines = append(lines, n.reviewLine(ntLabels[row], first))
+		}
+	}
 	if note := n.mainCheckoutConsequence(); note != "" {
 		lines = append(lines, n.reviewLine("", styleWarn.Render(note)))
 	}
@@ -376,6 +382,10 @@ func (n *newTask) rowValue(row ntRow) string {
 			parts = append(parts, f.key+"="+value)
 		}
 		return strings.Join(parts, "  ")
+	case ntWorktree:
+		return n.worktreeValue()
+	case ntMergeBack:
+		return n.mergeBackValue()
 	case ntBranch:
 		return firstNonEmpty(strings.TrimSpace(n.branch.Value()), styleDim.Render("(project default)"))
 	case ntBranchName:
@@ -594,7 +604,7 @@ func (n *newTask) renderPicker() []string {
 	case ntBranchName:
 		out = append(out, styleDim.Render(
 			"    a listed branch is run on as it stands; the free-text row cuts a new one under that name"))
-	case ntProject, ntWorkflow, ntTitle, ntDescription, ntFields, ntBranch, ntPriority, ntPaused, ntCreate, ntRowCount:
+	case ntProject, ntWorkflow, ntTitle, ntDescription, ntFields, ntWorktree, ntMergeBack, ntBranch, ntPriority, ntPaused, ntCreate, ntRowCount:
 	}
 	hint := "    enter select · esc cancel"
 	if len(p.options) > pickerWindow {

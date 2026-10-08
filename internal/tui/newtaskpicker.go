@@ -350,7 +350,7 @@ func (n *newTask) openPicker(row ntRow) {
 		n.pick = newPicker(int(row), "branch", n.branchNameOptions(),
 			true, strings.TrimSpace(n.branchName.Value()))
 		n.pick.err = n.branchesErr
-	case ntProject, ntSource, ntTitle, ntDescription, ntFields, ntPriority, ntPaused, ntCreate, ntRowCount:
+	case ntProject, ntSource, ntTitle, ntDescription, ntFields, ntWorktree, ntMergeBack, ntPriority, ntPaused, ntCreate, ntRowCount:
 		return
 	}
 	n.mode = ntPicking
@@ -558,7 +558,7 @@ func (n *newTask) applyPick(row ntRow, value string, free bool) tea.Cmd {
 		// cuts one under that name as it always did, and an empty row hands
 		// the name back to the §5.3 chain.
 		n.branchAdopt = !free && value != ""
-	case ntProject, ntSource, ntTitle, ntDescription, ntFields, ntPriority, ntPaused, ntCreate, ntRowCount:
+	case ntProject, ntSource, ntTitle, ntDescription, ntFields, ntWorktree, ntMergeBack, ntPriority, ntPaused, ntCreate, ntRowCount:
 		return nil
 	}
 	// Every row that falls through here is a §8.6 input, so what the draft

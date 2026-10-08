@@ -121,18 +121,41 @@ func TestIssuesBrowserOnlyForImported(t *testing.T) {
 	}
 }
 
+// TestIssueRowTaskSummary is task 134.16 decision 3: the card's right cell
+// per lane, from the row DTO alone.
 func TestIssueRowTaskSummary(t *testing.T) {
+	occ, running := int64(12), "running"
+	busy := &apiclient.IssueMainWorktree{Branch: "b", OccupantTaskID: &occ, OccupantState: &running}
+	free := &apiclient.IssueMainWorktree{Branch: "b"}
 	for _, c := range []struct {
-		count  int
-		active bool
-		want   string
+		name string
+		iss  apiclient.Issue
+		want string
 	}{
-		{0, false, "no tasks"},
-		{1, false, "1 task"},
-		{2, true, "● 2 tasks"},
+		{"open, no tasks", apiclient.Issue{Lane: "open"}, "no tasks"},
+		{"open, aborted only", apiclient.Issue{Lane: "open", TaskCount: 2}, "2 tasks · cancelled"},
+		{
+			"in progress, occupant",
+			apiclient.Issue{Lane: "in_progress", TaskCount: 1, Active: true, MainWorktree: busy},
+			"● #12 running",
+		},
+		{"in progress, side and merging", apiclient.Issue{
+			Lane: "in_progress", TaskCount: 4, Active: true, MainWorktree: busy, SideActive: 2, MergeBacksPending: 1,
+		}, "● #12 running · +2 side · 1 merging"},
+		{
+			"in progress, no occupant",
+			apiclient.Issue{Lane: "in_progress", TaskCount: 2, Active: true, MainWorktree: free},
+			"● 2 tasks",
+		},
+		{"in progress, no main branch", apiclient.Issue{Lane: "in_progress", TaskCount: 1, Active: true}, "● 1 task"},
+		{"hand-off", apiclient.Issue{Lane: "hand_off", TaskCount: 3}, "✓ 3 done"},
+		{"done", apiclient.Issue{Lane: "done", State: "closed", TaskCount: 2}, "2 tasks"},
+		{"done, live", apiclient.Issue{Lane: "done", State: "closed", TaskCount: 1, Active: true}, "1 task · ● live"},
+		{"done, no tasks", apiclient.Issue{Lane: "done", State: "closed"}, "no tasks"},
+		{"no lane", apiclient.Issue{TaskCount: 2, Active: true}, "● 2 tasks"},
 	} {
-		if got := issueTaskSummary(apiclient.Issue{TaskCount: c.count, Active: c.active}); got != c.want {
-			t.Errorf("summary(%d, %v) = %q, want %q", c.count, c.active, got, c.want)
+		if got := issueTaskSummary(c.iss); got != c.want {
+			t.Errorf("%s: summary = %q, want %q", c.name, got, c.want)
 		}
 	}
 }

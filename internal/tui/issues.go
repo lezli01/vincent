@@ -719,18 +719,56 @@ func issueSourceBadge(iss apiclient.Issue) string {
 	return badge
 }
 
-// issueTaskSummary is the row's linked-task column: the count, and a marker
-// when one of them is still unsettled (decision 4). Both come from the list
-// DTO; a row makes no task fetch of its own.
+// issueTaskSummary is the row's linked-task column, worded for the issue's
+// lane (task 134.16 decision 3). Every value comes from the list DTO; a row
+// makes no task fetch of its own (task 130 decision 16.4). The close reason
+// is never repeated here: the state badge carries it.
 func issueTaskSummary(iss apiclient.Issue) string {
+	tasks := plural(iss.TaskCount, "task", "tasks")
+	switch iss.Lane {
+	case "open":
+		// Any task an open-lane issue has is aborted (task 134 decision 2).
+		if iss.TaskCount == 0 {
+			return "no tasks"
+		}
+		return tasks + " · cancelled"
+	case "in_progress":
+		mw := iss.MainWorktree
+		if mw == nil || mw.OccupantTaskID == nil {
+			// Queued, side-only, or from before roles: no occupant to name.
+			return "● " + tasks
+		}
+		s := "● #" + strconv.FormatInt(*mw.OccupantTaskID, 10)
+		if mw.OccupantState != nil {
+			s += " " + *mw.OccupantState
+		}
+		if iss.SideActive > 0 {
+			s += " · +" + strconv.Itoa(iss.SideActive) + " side"
+		}
+		if iss.MergeBacksPending > 0 {
+			s += " · " + strconv.Itoa(iss.MergeBacksPending) + " merging"
+		}
+		return s
+	case "hand_off":
+		// Nothing waits here: the lane has no unsettled root task.
+		return "✓ " + strconv.Itoa(iss.TaskCount) + " done"
+	case issueLaneDone:
+		if iss.TaskCount == 0 {
+			return "no tasks"
+		}
+		if iss.Active {
+			return tasks + " · ● live"
+		}
+		return tasks
+	}
+	// A daemon too old to send a lane: the count and the activity marker.
 	if iss.TaskCount == 0 {
 		return "no tasks"
 	}
-	s := plural(iss.TaskCount, "task", "tasks")
 	if iss.Active {
-		s = "● " + s
+		return "● " + tasks
 	}
-	return s
+	return tasks
 }
 
 func issueTaskStyle(iss apiclient.Issue) lipgloss.Style {

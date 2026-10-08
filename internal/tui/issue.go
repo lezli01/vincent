@@ -29,6 +29,13 @@ import (
 // decision 16.3, widened by 130.13 from 130.9's active ids). `a` starts
 // another from here (decision 19.1).
 //
+// Task 134.16 adds the issue's worktree roles: a `lane` fact, a Main
+// worktree section naming the branch and its occupant (which `enter` opens),
+// each linked task's role, and a merge-back folded under the side task it
+// merges. All of it is read from the issue DTO and the task rows already
+// fetched — merge_source_task_id names a merge-back's side task, never the
+// workflow name or the title.
+//
 // The thread sits under the description, oldest first, each comment's body
 // through the same renderer the description uses (task 130 decision 24,
 // 130.16). `W` writes a local comment in $EDITOR; an issue whose GitHub remote
@@ -84,7 +91,9 @@ type issueView struct {
 	commentsErr error
 	posting     bool
 
-	// cursor is the selected linked task; scroll is the page's first line.
+	// cursor is the selected row of selectRows — the Main worktree section,
+	// when the issue has a main branch, then the linked tasks in display
+	// order; scroll is the page's first line.
 	cursor int
 	scroll int
 	// follow asks the next render to scroll the selected task into view;
@@ -269,7 +278,7 @@ func (v *issueView) applyLoaded(msg issueLoadedMsg) {
 	}
 	v.issue, v.tasks, v.loaded, v.loadErr = msg.issue, msg.tasks, true, nil
 	v.comments, v.commentsErr = msg.comments, msg.commentsErr
-	v.cursor = min(v.cursor, max(len(v.tasks)-1, 0))
+	v.cursor = min(v.cursor, max(len(v.selectRows())-1, 0))
 }
 
 func (v *issueView) scheduleRefresh() tea.Cmd {
@@ -281,8 +290,8 @@ func (v *issueView) scheduleRefresh() tea.Cmd {
 	return tea.Tick(refreshDebounce, func(time.Time) tea.Msg { return issueRefreshMsg{id: id} })
 }
 
-// updateNote re-reads on this issue's own events and on events of the tasks
-// it lists. Another issue's events leave it alone. The thread's events,
+// updateNote re-reads on this issue's own events, on events of the tasks
+// it lists, and on task events naming this issue. Another issue's events leave it alone. The thread's events,
 // issue.comment_added and issue.comment_updated, name the issue in `id` like
 // every issue.* event, so they re-read the thread with the rest.
 func (v *issueView) updateNote(n apiclient.Note) tea.Cmd {
@@ -295,8 +304,11 @@ func (v *issueView) updateNote(n apiclient.Note) tea.Cmd {
 		if issueEventID(ev.Event) == v.id {
 			return v.scheduleRefresh()
 		}
-	case isTaskEvent(ev.Event.Type) && ev.Event.TaskID != nil:
-		if v.linksTask(*ev.Event.TaskID) {
+	case isTaskEvent(ev.Event.Type):
+		// A task of this issue's that the screen does not list yet — a new
+		// side task, or a merge-back a side task's `→ done` inserted — names
+		// the issue in its payload (task 134.6), not in the tasks shown.
+		if ev.Event.TaskID != nil && v.linksTask(*ev.Event.TaskID) || taskEventIssueID(ev.Event) == v.id {
 			return v.scheduleRefresh()
 		}
 	}
@@ -322,7 +334,7 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.follow = true
 		return v, nil
 	case "down", "j":
-		v.cursor = min(v.cursor+1, max(len(v.tasks)-1, 0))
+		v.cursor = min(v.cursor+1, max(len(v.selectRows())-1, 0))
 		v.follow = true
 		return v, nil
 	case "pgup":
@@ -465,16 +477,108 @@ func newTaskFromIssueCmd(iss apiclient.Issue) tea.Cmd {
 // pageStep is how far pgup/pgdown move the page.
 const pageStep = 10
 
-// openTask opens the selected linked task's workspace, which returns here on
-// esc rather than to the board.
+// issueDetailRow is one selectable row of the detail: the Main worktree section
+// (mainWorktree), or a linked task — child when it is a merge-back folded
+// under its side task.
+type issueDetailRow struct {
+	mainWorktree bool
+	task         apiclient.Task
+	child        bool
+}
+
+// selectRows is what the cursor walks, in display order: the Main worktree
+// section when the issue has a main branch, then the linked tasks newest
+// first with each merge-back folded under the side task it merges. A
+// merge-back whose source is not listed stays a top-level row.
+func (v *issueView) selectRows() []issueDetailRow {
+	var rows []issueDetailRow
+	if v.issue.MainWorktree != nil {
+		rows = append(rows, issueDetailRow{mainWorktree: true})
+	}
+	listed := make(map[int64]bool, len(v.tasks))
+	for _, t := range v.tasks {
+		listed[t.ID] = true
+	}
+	folded := func(t apiclient.Task) bool {
+		return t.MergeSourceTaskID != nil && listed[*t.MergeSourceTaskID]
+	}
+	for _, t := range v.tasks {
+		if folded(t) {
+			continue
+		}
+		rows = append(rows, issueDetailRow{task: t})
+		for _, c := range v.tasks {
+			if folded(c) && *c.MergeSourceTaskID == t.ID {
+				rows = append(rows, issueDetailRow{task: c, child: true})
+			}
+		}
+	}
+	return rows
+}
+
+// openTask opens the selected row's task — a linked task, or the Main
+// worktree section's occupant — in its workspace, which returns here on esc
+// rather than to the board.
 func (v *issueView) openTask() tea.Cmd {
-	if v.cursor < 0 || v.cursor >= len(v.tasks) {
+	rows := v.selectRows()
+	if v.cursor < 0 || v.cursor >= len(rows) {
 		return nil
 	}
-	t := v.tasks[v.cursor]
-	return func() tea.Msg {
-		return selectTaskMsg{id: t.ID, state: t.State, back: viewIssue, projectID: t.ProjectID}
+	row := rows[v.cursor]
+	id, state, pid := row.task.ID, row.task.State, row.task.ProjectID
+	if row.mainWorktree {
+		mw := v.issue.MainWorktree
+		if mw == nil || mw.OccupantTaskID == nil {
+			v.setNote("the main worktree is free — no task to open", false)
+			return nil
+		}
+		id, state, pid = *mw.OccupantTaskID, "", v.issue.ProjectID
+		if mw.OccupantState != nil {
+			state = *mw.OccupantState
+		}
 	}
+	return func() tea.Msg {
+		return selectTaskMsg{id: id, state: state, back: viewIssue, projectID: pid}
+	}
+}
+
+// issueTaskRole is a linked task's role annotation (task 134.16): `main`,
+// `side · merge manual|agent`, or `merge-back of #S`. A task with no role —
+// one from before roles existed — has none.
+func issueTaskRole(t apiclient.Task) string {
+	switch {
+	case t.MergeSourceTaskID != nil:
+		return "merge-back of #" + strconv.FormatInt(*t.MergeSourceTaskID, 10)
+	case t.IssueWorktree == nil:
+		return ""
+	case *t.IssueWorktree == "side":
+		mode := "manual"
+		if t.MergeBack != nil && t.MergeBack.OnConflict == "agent" {
+			mode = "agent"
+		}
+		return "side · merge " + mode
+	}
+	return *t.IssueWorktree
+}
+
+// issueLaneLabel is the lane fact: the section label, `done` for a closed
+// issue whatever the daemon sent, and the attention mark when a root task
+// waits on a person.
+func issueLaneLabel(iss apiclient.Issue) string {
+	lane := iss.Lane
+	if iss.State == "closed" {
+		lane = issueLaneDone
+	}
+	label := strings.ReplaceAll(lane, "_", " ")
+	for _, sec := range issueSections {
+		if sec.lane == lane {
+			label = sec.label
+		}
+	}
+	if iss.Attention {
+		label += "  " + styleWarn.Render(attentionBadge)
+	}
+	return label
 }
 
 func (v *issueView) openSource() tea.Cmd {
@@ -565,6 +669,7 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 		kind = "none"
 	}
 	for _, f := range [][2]string{
+		{"lane", issueLaneLabel(iss)},
 		{"labels", labels},
 		{"kind", kind},
 		{"priority", issuePriorityLabel(iss.Priority)},
@@ -586,17 +691,51 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 	lines = append(lines, v.threadLines(width)...)
 	v.md.sweep()
 
+	rows := v.selectRows()
+	if mw := iss.MainWorktree; mw != nil {
+		lines = append(lines, "", " "+styleTitle.Render("Main worktree"))
+		lines = append(lines, "  "+styleDim.Render(padRight("branch", 10))+mw.Branch)
+		marker := "  "
+		if v.cursor == 0 {
+			marker = styleFocus.Render("› ")
+			cursorRow = len(lines)
+		}
+		occupant := styleDim.Render("free")
+		if mw.OccupantTaskID != nil {
+			state := ""
+			if mw.OccupantState != nil {
+				state = *mw.OccupantState
+			}
+			occupant = stateStyles[state].Render(taskStateGlyph(state)) + " " +
+				styleKey.Render("#"+strconv.FormatInt(*mw.OccupantTaskID, 10)) + "  "
+			for _, t := range v.tasks {
+				if t.ID == *mw.OccupantTaskID {
+					occupant += t.Title + "  "
+				}
+			}
+			occupant += styleDim.Render(state)
+		}
+		lines = append(lines, marker+styleDim.Render(padRight("occupant", 10))+occupant)
+	}
+
 	lines = append(lines, "", " "+styleTitle.Render("Tasks")+
 		styleDim.Render("  "+plural(iss.Tasks.Count, "task", "tasks")+", "+
 			strconv.Itoa(len(iss.Tasks.ActiveIDs))+" active"))
 	if len(v.tasks) == 0 {
 		lines = append(lines, styleDim.Render("  no task yet · "+opKey(keymap.Add)+" starts one"))
 	}
-	for i, t := range v.tasks {
+	for i, row := range rows {
+		if row.mainWorktree {
+			continue
+		}
+		t := row.task
 		marker := "  "
 		if i == v.cursor {
 			marker = styleFocus.Render("› ")
 			cursorRow = len(lines)
+		}
+		if row.child {
+			marker += "  └ "
 		}
 		glyph := taskStateGlyph(t.State)
 		if glyph == "" {
@@ -605,6 +744,9 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 		state := t.State
 		if t.ArchivedAt != nil {
 			state += " · archived"
+		}
+		if role := issueTaskRole(t); role != "" {
+			state = role + " · " + state
 		}
 		lines = append(lines, marker+stateStyles[t.State].Render(glyph)+" "+
 			styleKey.Render("#"+strconv.FormatInt(t.ID, 10))+"  "+t.Title+"  "+styleDim.Render(state))
