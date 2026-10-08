@@ -660,6 +660,28 @@ func issueLine(iss apiclient.Issue, width int, selected bool) string {
 	source := issueSourceBadge(iss)
 	tasks := issueTaskSummary(iss)
 
+	// The right-hand parts share what the title's 12-column floor leaves
+	// (review F2 on #773): at the 80-column floor an in-progress cell, tags
+	// and a source badge can outgrow it, and render's cut would take the
+	// cell's counts. They give way in a fixed order — the occupant's state
+	// word, then the tags, then the source badge, then the cell itself.
+	room := width - (2 + len(id) + ansi.StringWidth(state) + 2 + 6) - 12
+	over := func() int {
+		return ansi.StringWidth(tags) + ansi.StringWidth(source) + ansi.StringWidth(tasks) - room
+	}
+	if over() > 0 {
+		tasks = issueTaskSummaryShort(iss)
+	}
+	if n := over(); n > 0 {
+		tags = fitWidth(tags, ansi.StringWidth(tags)-n)
+	}
+	if n := over(); n > 0 {
+		source = fitWidth(source, ansi.StringWidth(source)-n)
+	}
+	if n := over(); n > 0 {
+		tasks = fitWidth(tasks, ansi.StringWidth(tasks)-n)
+	}
+
 	fixed := 2 + len(id) + ansi.StringWidth(state) + 2 + ansi.StringWidth(tags) +
 		ansi.StringWidth(source) + ansi.StringWidth(tasks) + 6
 	titleW := max(width-fixed, 12)
@@ -724,6 +746,26 @@ func issueSourceBadge(iss apiclient.Issue) string {
 // makes no task fetch of its own (task 130 decision 16.4). The close reason
 // is never repeated here: the state badge carries it.
 func issueTaskSummary(iss apiclient.Issue) string {
+	return issueTaskCell(iss, true)
+}
+
+// issueTaskSummaryShort is issueTaskSummary without the occupant's state
+// word, the first thing a row too narrow for its parts gives up: the
+// side and merging counts the cell exists to show stay.
+func issueTaskSummaryShort(iss apiclient.Issue) string {
+	return issueTaskCell(iss, false)
+}
+
+// fitWidth cuts s to at most w columns with an ellipsis, or to nothing when
+// there is no room for more than the ellipsis.
+func fitWidth(s string, w int) string {
+	if w <= 1 {
+		return ""
+	}
+	return ansi.Truncate(s, w, "…")
+}
+
+func issueTaskCell(iss apiclient.Issue, withState bool) string {
 	tasks := plural(iss.TaskCount, "task", "tasks")
 	switch iss.Lane {
 	case "open":
@@ -739,7 +781,7 @@ func issueTaskSummary(iss apiclient.Issue) string {
 			return "● " + tasks
 		}
 		s := "● #" + strconv.FormatInt(*mw.OccupantTaskID, 10)
-		if mw.OccupantState != nil {
+		if withState && mw.OccupantState != nil {
 			s += " " + *mw.OccupantState
 		}
 		if iss.SideActive > 0 {

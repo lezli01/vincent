@@ -13780,6 +13780,11 @@ stream for the live tail.
    are pending, falling back to `● N tasks` with no occupant; `hand-off`
    reads `✓ N done`; `done` reads `N tasks`, with `· ● live` while one is
    unsettled. The close reason stays in the state badge only.
+   *Amended 2026-10-08 (task 134.16, review F2 on #773):* the right-hand
+   parts share what the title's 12-column floor leaves; a row too narrow for
+   them drops the occupant's state word, then shortens the tags, then the
+   source badge, and only then the cell, so the counts survive at the
+   80-column floor.
 
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,

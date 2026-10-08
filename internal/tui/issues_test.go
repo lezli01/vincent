@@ -160,6 +160,45 @@ func TestIssueRowTaskSummary(t *testing.T) {
 	}
 }
 
+// TestIssueRowFitsAtTheFloor is review F2 on #773: an in-progress card with
+// labels, a kind and a source badge stays within the 80-column floor, and
+// what it gives up first is the occupant's state word, never the side and
+// merging counts.
+func TestIssueRowFitsAtTheFloor(t *testing.T) {
+	occ, state := int64(123), "awaiting_input"
+	iss := apiclient.Issue{
+		ID: 12, State: "open", Title: "Crash on cold start", Labels: []string{"bug"}, Kind: "bug",
+		Lane: "in_progress", TaskCount: 4, Active: true,
+		MainWorktree:      &apiclient.IssueMainWorktree{Branch: "b", OccupantTaskID: &occ, OccupantState: &state},
+		SideActive:        1,
+		MergeBacksPending: 1,
+	}
+	for _, c := range []struct {
+		name   string
+		source *apiclient.IssueSource
+	}{
+		{"local", nil},
+		{"imported", &apiclient.IssueSource{Repo: "octo-org/web-frontend", Number: 4127}},
+	} {
+		iss.Source = c.source
+		for _, width := range []int{80, 76} {
+			line := ansi.Strip(issueLine(iss, width, true))
+			if got := ansi.StringWidth(line); got > width {
+				t.Errorf("%s at %d columns: the row is %d wide:\n%s", c.name, width, got, line)
+			}
+			if !strings.Contains(line, "● #123 · +1 side · 1 merging") {
+				t.Errorf("%s at %d columns: the row lost its counts:\n%s", c.name, width, line)
+			}
+		}
+	}
+	// With room, nothing is given up.
+	iss.Source = nil
+	if line := ansi.Strip(issueLine(iss, 160, false)); !strings.Contains(line, "● #123 awaiting_input · +1 side · 1 merging") ||
+		!strings.Contains(line, "[bug] bug") {
+		t.Errorf("a wide row dropped a part:\n%s", line)
+	}
+}
+
 func TestIssueRowShowsBadges(t *testing.T) {
 	v := issuesFixture()
 	out := ansi.Strip(v.render(160, 30))

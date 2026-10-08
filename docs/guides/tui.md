@@ -1887,6 +1887,10 @@ closed, such as `closed · not planned`), the title, its labels and kind,
 - **hand-off** — `✓ N done`;
 - **done** — `N tasks`, with `· ● live` while one is still unsettled.
 
+A row too narrow for all of it gives up the occupant's state first, then
+shortens the labels and kind, then the `owner/repo#N` badge, so the counts
+stay.
+
 Any change to an issue, or to a task
 of an issue on the screen, re-lists it with no keypress, and the selection
 follows the issue into whatever lane it moved to.
