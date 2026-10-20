@@ -201,16 +201,7 @@ func hangingWrap(lead, pad, text string, width int, style lipgloss.Style) []stri
 	if width <= 0 {
 		return []string{style.Render(lead + text)}
 	}
-	wrapped := wrapPlain(text, width-cols(lead))
-	out := make([]string, len(wrapped))
-	for i, line := range wrapped {
-		if i == 0 {
-			out[i] = style.Render(lead + line)
-			continue
-		}
-		out[i] = style.Render(pad + line)
-	}
-	return out
+	return styled(wrapText(text, width, wrapOpts{prefix: lead, indent: cols(pad)}), style)
 }
 
 // renderList draws the registry through a viewport. The status lines are
