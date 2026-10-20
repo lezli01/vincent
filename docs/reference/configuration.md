@@ -368,11 +368,6 @@ container:
 # startup only; a project that is not registered falls through to the one you
 # used last, and the TUI says so. Unset, the TUI opens on the project you used
 # last.
-#
-# tabs lists the TUI's main tabs, in order: issues | tasks | chats. The first
-# is where the TUI opens and "tab" cycles through them in this order; a single
-# entry turns the tab strip off. Unset, the tabs are [issues, tasks]. Accepted
-# and validated now; the TUI starts acting on it in a later version.
 tui:
   board:
     group_by: [workflow]
