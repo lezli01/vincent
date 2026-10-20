@@ -61,6 +61,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: tea.KeyLeft}
 	case "space":
 		msg = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
+	case "end":
+		msg = tea.KeyPressMsg{Code: tea.KeyEnd}
 	case "ctrl+s":
 		msg = tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
 	case "ctrl+o":
@@ -1246,11 +1248,20 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("R did not re-read")
 			}
 		},
+		// Scroll-first (#792): with every row on screen ↓ moves the
+		// selection; on the 80×24 first screen, where none is, it scrolls.
 		"down": func(t *testing.T) {
 			v := issueFixture()
+			v.render(100, 120)
 			v.updateKey(registryKey(t, "down"))
 			if v.cursor != 1 {
 				t.Fatalf("down left the cursor at %d, want 1", v.cursor)
+			}
+			v = issueFixture()
+			v.render(80, 24)
+			v.updateKey(registryKey(t, "down"))
+			if v.cursor != 0 || v.scroll != 1 {
+				t.Fatalf("down on the first screen: cursor %d scroll %d, want 0 and 1", v.cursor, v.scroll)
 			}
 		},
 		"pgdown": func(t *testing.T) {
@@ -1258,6 +1269,23 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.updateKey(registryKey(t, "pgdown"))
 			if v.scroll == 0 {
 				t.Fatal("pgdown did not scroll the page")
+			}
+		},
+		"ctrl+d": func(t *testing.T) {
+			v := issueFixture()
+			v.render(80, 24)
+			v.updateKey(registryKey(t, "ctrl+d"))
+			if v.scroll < 5 {
+				t.Fatalf("ctrl+d scrolled to %d, want about half a page", v.scroll)
+			}
+		},
+		"end": func(t *testing.T) {
+			v := issueFixture()
+			v.render(80, 24)
+			v.updateKey(registryKey(t, "end"))
+			v.render(80, 24)
+			if v.scroll == 0 || v.scroll+v.view < len(v.pageLines(80)) {
+				t.Fatalf("end left the page at %d (view %d)", v.scroll, v.view)
 			}
 		},
 		"a": func(t *testing.T) {

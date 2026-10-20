@@ -538,6 +538,16 @@ list with the user-facing context a commit subject cannot carry.
   or that never reaches it, stays in the composer; `enter` on a chat that is
   running, waiting on an answer or finished says why instead of sending.
   ([#790](https://github.com/lezli01/vincent/issues/790))
+- **The issue detail scrolls with the keys and the wheel you reach for.**
+  `↑`/`↓` used to move a hidden selection — the first press with linked tasks
+  jumped the page past the whole description — and only `pgup`/`pgdown`
+  scrolled, by ten lines. The arrows now scroll a line, moving the selection
+  only among task rows already on screen; `space`, `ctrl+u`/`ctrl+d`,
+  `home`/`end` and `g`/`G` page and jump; `▲ n more` / `▼ n more` say the
+  page continues; and the footer stops offering `enter` with no task to open
+  and `o` on a local issue. The mouse wheel now scrolls the detail and moves
+  the issues list's selection, and a click selects a row on either screen.
+  ([#792](https://github.com/lezli01/vincent/issues/792))
 - **Two tasks on one existing branch no longer start together.** When both
   were queued at the same moment, the scheduler admitted both: on a branch
   checked out in your project's own checkout, two agents then worked in your

@@ -1916,6 +1916,9 @@ completed](../assets/tui-issues.png)
 | `X` | Close or reopen the selected issue — only what vincent offers for it |
 | `D` | Delete the selected issue permanently (asks first) |
 
+The mouse wheel moves the selection one row per tick, and a click selects the
+row under it.
+
 `R` only re-reads what vincent already holds. It never asks GitHub for
 anything: imported issues are refreshed on the daemon's reconciler tick.
 
@@ -1944,14 +1947,22 @@ section](../assets/tui-issue.png)
 | `ctrl+o` | Show the description's original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description — open one in a browser or copy it |
 | `R` | Re-read the issue |
-| `↑`/`↓` | Move the selection between the Main worktree section and the linked tasks |
-| `pgup`/`pgdown` | Scroll the page |
+| `↑`/`↓` | Scroll a line — while a Main worktree or task row is on screen, move the selection among the rows on screen first |
+| `pgup`/`pgdown`, `space` | Scroll a page |
+| `ctrl+u`/`ctrl+d` | Scroll half a page |
+| `home`/`end`, `g`/`G` | Jump to the start or the end of the page |
 | `n` | File a new issue in this issue's project |
 | `a` | Create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the issue in the issue form |
 | `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from GitHub, whose thread is GitHub's |
 | `X` | Close or reopen the issue — only what vincent offers for it |
 | `D` | Delete the issue permanently (asks first) |
+
+The page scrolls first: selecting a task never jumps it away from the
+description, and `▲ n more` / `▼ n more` say when it continues above or below.
+The mouse wheel scrolls it a line per tick, and a click on a task or the Main
+worktree section selects it. `enter` is offered only when there is a row to
+open, and `o` only on an imported issue.
 
 `ctrl+o` is the same rendered/raw switch the Output tab and the chat use, so
 flipping it here flips it there too. `esc` goes back to the list, on the issue

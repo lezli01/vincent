@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -96,9 +98,15 @@ type issueView struct {
 	// order; scroll is the page's first line.
 	cursor int
 	scroll int
-	// follow asks the next render to scroll the selected task into view;
-	// pgup/pgdown leave it unset so the page scrolls past the selection.
-	follow bool
+	// The page is scroll-first (#792): the arrows scroll it, and move the
+	// selection only among rows on screen, so selecting never jumps the page
+	// away from the description. rowLines is each selectRows row's page
+	// line, view the page lines last shown and viewTop the screen line the
+	// first of them is on (1 under a ▲ cue) — what the last render drew,
+	// which is what a key or a click acts on.
+	rowLines []int
+	view     int
+	viewTop  int
 
 	raw   *rawHolder
 	links *hyperlinkHolder
@@ -241,6 +249,12 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.updateNote(msg.note)
 	case tea.KeyPressMsg:
 		return v.updateKey(msg)
+	case tea.MouseWheelMsg:
+		v.updateWheel(msg)
+		return v, nil
+	case tea.MouseClickMsg:
+		v.updateClick(msg)
+		return v, nil
 	}
 	return v, nil
 }
@@ -330,18 +344,22 @@ func (v *issueView) linksTask(id int64) bool {
 func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
-		v.cursor = max(v.cursor-1, 0)
-		v.follow = true
+		v.step(-1)
 		return v, nil
 	case "down", "j":
-		v.cursor = min(v.cursor+1, max(len(v.selectRows())-1, 0))
-		v.follow = true
+		v.step(1)
 		return v, nil
 	case "pgup":
-		v.scroll = max(v.scroll-pageStep, 0)
+		v.scrollBy(-v.page())
 		return v, nil
-	case "pgdown":
-		v.scroll += pageStep
+	case "pgdown", "space":
+		v.scrollBy(v.page())
+		return v, nil
+	case "ctrl+u":
+		v.scrollBy(-max(v.page()/2, 1))
+		return v, nil
+	case "ctrl+d":
+		v.scrollBy(max(v.page()/2, 1))
 		return v, nil
 	case "esc":
 		if v.note != "" {
@@ -369,6 +387,13 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, func() tea.Msg { return openLinkPickerMsg{items: items} }
 	case opKey(keymap.New):
 		return v, v.w.openForm(v.client, nil, v.issue.ProjectID)
+	// Last, so an operation rebound to g or G keeps it (task 118).
+	case "home", "g":
+		v.scroll = 0
+		return v, nil
+	case "end", "G":
+		v.scroll = math.MaxInt // render clamps it to the last page
+		return v, nil
 	}
 	if !v.loaded {
 		return v, nil
@@ -394,6 +419,81 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	return v, nil
 }
 
+// visible reports whether row i of selectRows was on screen at the last
+// render.
+func (v *issueView) visible(i int) bool {
+	if i < 0 || i >= len(v.rowLines) {
+		return false
+	}
+	at := v.rowLines[i]
+	return at >= v.scroll && at < v.scroll+v.view
+}
+
+// step is ↑/↓ (#792): the selection moves to the next row on screen, onto
+// the first one shown once the selected row has scrolled away, and the page
+// scrolls a line when no row on screen is left to move to.
+func (v *issueView) step(delta int) {
+	if v.visible(v.cursor) {
+		if v.visible(v.cursor + delta) {
+			v.cursor += delta
+			return
+		}
+	} else {
+		shown := -1
+		for i := range v.rowLines {
+			if v.visible(i) && (shown < 0 || delta < 0) {
+				shown = i // the topmost going down, the bottom one going up
+			}
+		}
+		if shown >= 0 {
+			v.cursor = shown
+			return
+		}
+	}
+	v.scrollBy(delta)
+}
+
+// scrollBy moves the page; render clamps it to the content.
+func (v *issueView) scrollBy(n int) {
+	v.scroll = max(min(v.scroll, math.MaxInt-max(n, 0))+n, 0)
+}
+
+// page is a page's worth of lines: the pane as last rendered.
+func (v *issueView) page() int { return max(v.view, 1) }
+
+// updateWheel is one line per notch (#300's convention for a page that
+// scrolls). The form and the prompt own the wheel as they own the keyboard
+// (task 078 decision 3): the prompt names this issue.
+func (v *issueView) updateWheel(msg tea.MouseWheelMsg) {
+	if v.w.open() {
+		return
+	}
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		v.scrollBy(-1)
+	case tea.MouseWheelDown:
+		v.scrollBy(1)
+	}
+}
+
+// updateClick selects the Main worktree or linked-task row under the
+// pointer (§15 Mouse); a click anywhere else does nothing.
+func (v *issueView) updateClick(msg tea.MouseClickMsg) {
+	if v.w.open() || msg.Button != tea.MouseLeft {
+		return
+	}
+	at := v.scroll + msg.Y - v.viewTop
+	if at < v.scroll || at >= v.scroll+v.view {
+		return
+	}
+	for i, line := range v.rowLines {
+		if line == at {
+			v.cursor = i
+			return
+		}
+	}
+}
+
 // commentable reports whether the issue takes a local comment, as the daemon
 // says (task 130 decision 24.3): a live GitHub remote refuses one, a local
 // issue or a moved or missing remote takes one. It is not whether the body
@@ -402,14 +502,17 @@ func (v *issueView) commentable() bool {
 	return v.loaded && v.issue.Commentable
 }
 
-// liveBindings withholds `W` where the daemon would refuse the comment.
+// liveBindings withholds `W` where the daemon would refuse the comment,
+// `enter` where there is no row to open and `o` where there is no page.
 func (v *issueView) liveBindings(rows []binding) []binding {
-	if v.commentable() {
-		return rows
+	withheld := map[keymap.Op]bool{
+		keymap.Comment: !v.commentable(),
+		keymap.OpenRow: len(v.selectRows()) == 0,
+		keymap.Browser: issueURL(v.issue) == "",
 	}
 	out := make([]binding, 0, len(rows))
 	for _, b := range rows {
-		if b.context != ctxIssue || b.op != keymap.Comment {
+		if b.context != ctxIssue || b.op == "" || !withheld[b.op] {
 			out = append(out, b)
 		}
 	}
@@ -473,9 +576,6 @@ func newTaskFromIssueCmd(iss apiclient.Issue) tea.Cmd {
 	msg := newTaskFromIssueMsg{projectID: iss.ProjectID, issueID: iss.ID}
 	return func() tea.Msg { return msg }
 }
-
-// pageStep is how far pgup/pgdown move the page.
-const pageStep = 10
 
 // issueDetailRow is one selectable row of the detail: the Main worktree section
 // (mainWorktree), or a linked task — child when it is a merge-back folded
@@ -602,7 +702,7 @@ func (v *issueView) render(width, height int) string {
 	if v.w.form != nil {
 		return v.w.form.render(width, height)
 	}
-	body, cursorRow := v.pageLines(width)
+	body := v.pageLines(width)
 	var footer []string
 	if v.note != "" {
 		style := styleDim
@@ -615,18 +715,30 @@ func (v *issueView) render(width, height int) string {
 		footer = v.w.act.lines(width)
 	}
 	room := max(height-len(footer), 1)
-	// The page scrolls freely; moving the task selection brings its row
-	// back into view.
-	if v.follow && cursorRow >= 0 {
-		if cursorRow < v.scroll {
-			v.scroll = cursorRow
-		} else if cursorRow >= v.scroll+room {
-			v.scroll = cursorRow - room + 1
-		}
-		v.follow = false
+	// The page scrolls freely, and the selection never pulls it (#792). A
+	// page taller than the pane gives a line to a ▲ cue while it continues
+	// above and to a ▼ cue while it continues below — the picker's idiom.
+	cues := len(body) > room && room >= 3
+	limit := len(body) - room
+	if cues {
+		limit = len(body) - (room - 1) // the last page has only the ▲ cue
 	}
-	v.scroll = min(max(v.scroll, 0), max(len(body)-room, 0))
-	lines := append([]string(nil), body[v.scroll:min(v.scroll+room, len(body))]...)
+	v.scroll = min(max(v.scroll, 0), max(limit, 0))
+	v.view, v.viewTop = room, 0
+	var lines []string
+	if cues && v.scroll > 0 {
+		lines = append(lines, styleDim.Render(fmt.Sprintf("  ▲ %d more", v.scroll)))
+		v.view, v.viewTop = room-1, 1
+	}
+	below := 0
+	if cues && v.scroll+v.view < len(body) {
+		v.view--
+		below = len(body) - (v.scroll + v.view)
+	}
+	lines = append(lines, body[v.scroll:min(v.scroll+v.view, len(body))]...)
+	if below > 0 {
+		lines = append(lines, styleDim.Render(fmt.Sprintf("  ▼ %d more", below)))
+	}
 	lines = append(lines, footer...)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
@@ -634,18 +746,18 @@ func (v *issueView) render(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// pageLines is the whole page, and the line the selected linked task is on
-// (-1 when there is none).
-func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
-	cursorRow = -1
+// pageLines is the whole page. It records each selectRows row's line in
+// rowLines, for the arrows and the click.
+func (v *issueView) pageLines(width int) (lines []string) {
+	v.rowLines = v.rowLines[:0]
 	switch {
 	case v.loadErr != nil && !v.loaded:
 		return []string{
 			" " + styleTitle.Render(v.title()), "",
 			styleBad.Render("  ⚠ could not read the issue: " + errString(v.loadErr)),
-		}, cursorRow
+		}
 	case !v.loaded:
-		return []string{" " + styleTitle.Render(v.title()), "", styleDim.Render("  reading…")}, cursorRow
+		return []string{" " + styleTitle.Render(v.title()), "", styleDim.Render("  reading…")}
 	}
 	iss := v.issue
 
@@ -698,8 +810,8 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 		marker := "  "
 		if v.cursor == 0 {
 			marker = styleFocus.Render("› ")
-			cursorRow = len(lines)
 		}
+		v.rowLines = append(v.rowLines, len(lines))
 		occupant := styleDim.Render("free")
 		if mw.OccupantTaskID != nil {
 			state := ""
@@ -732,8 +844,8 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 		marker := "  "
 		if i == v.cursor {
 			marker = styleFocus.Render("› ")
-			cursorRow = len(lines)
 		}
+		v.rowLines = append(v.rowLines, len(lines))
 		if row.child {
 			marker += "  └ "
 		}
@@ -766,7 +878,7 @@ func (v *issueView) pageLines(width int) (lines []string, cursorRow int) {
 			}
 		}
 	}
-	return lines, cursorRow
+	return lines
 }
 
 // threadLines is the Comments section: oldest first, each headed by its

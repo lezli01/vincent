@@ -13796,6 +13796,10 @@ stream for the live tail.
    them drops the occupant's state word, then shortens the tags, then the
    source badge, and only then the cell, so the counts survive at the
    80-column floor.
+   *Amended 2026-10-20 (issue #792):* §15 Mouse applies here as on the
+   boards (task 114): the wheel moves the selection one row per tick and a
+   click selects the row under it; both are ignored under the issue form and
+   the close/delete prompt.
 
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,
@@ -13889,6 +13893,18 @@ stream for the live tail.
    side task, indented as a child, unless its source is not listed. The
    screen also re-reads on a task event whose `issue_id` names this issue,
    so a new side task or merge-back appears.
+
+   *Amended 2026-10-20 (issue #792):* the page is **scroll-first**. `↑`/`↓`
+   (`k`/`j`) scroll a line, and move the selection among the Main worktree
+   and task rows only while one is on screen, scrolling once it reaches the
+   viewport's edge — selecting never jumps the page away from the
+   description. `pgup`/`pgdown`/`space` scroll a page and `ctrl+u`/`ctrl+d`
+   half of one, both sized to the pane; `home`/`end` and `g`/`G` jump to
+   either end. A page taller than the pane shows `▲ n more` / `▼ n more`
+   while it continues. The wheel scrolls a line per tick (#300's convention)
+   and a click selects a task or the Main worktree row, per §15 Mouse; both
+   are ignored under the issue form and the close/delete prompt. The footer
+   withholds `enter` with no row to open and `o` on a local issue.
 
 ### Layout
 

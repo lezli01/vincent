@@ -119,6 +119,10 @@ type issuesView struct {
 	cursor       int
 	selected     int64
 	selectedLane string
+	// What the last render drew, for a click (§15 Mouse): the screen line
+	// the list's window starts on, the body line it starts at, how many it
+	// shows, and the body line of lines()[0] (-1 when no list is drawn).
+	clickTop, clickFrom, clickShown, listAt int
 	// folded is the set of collapsed sections, by lane. Session-only, and
 	// kept across a project switch, as the filter is.
 	folded map[string]bool
@@ -256,8 +260,48 @@ func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.updateNote(msg.note)
 	case tea.KeyPressMsg:
 		return v.updateKey(msg)
+	case tea.MouseWheelMsg:
+		v.updateWheel(msg)
+		return v, nil
+	case tea.MouseClickMsg:
+		v.updateClick(msg)
+		return v, nil
 	}
 	return v, nil
+}
+
+// updateWheel is one wheel notch on the list (task 114 decision 5, #792):
+// the selection moves one row, as a notch moves one task on the home board.
+// The form and the prompt own the wheel as they own the keyboard (task 078
+// decision 3) — the prompt names the issue under the cursor.
+func (v *issuesView) updateWheel(msg tea.MouseWheelMsg) {
+	if v.w.open() {
+		return
+	}
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		v.moveCursor(-1)
+	case tea.MouseWheelDown:
+		v.moveCursor(1)
+	}
+}
+
+// updateClick selects the row under the pointer — an issue or a section
+// header (§15 Mouse: "click a row to select it").
+func (v *issuesView) updateClick(msg tea.MouseClickMsg) {
+	if v.w.open() || msg.Button != tea.MouseLeft || v.listAt < 0 {
+		return
+	}
+	if msg.Y < v.clickTop || msg.Y >= v.clickTop+v.clickShown {
+		return
+	}
+	i := v.clickFrom + msg.Y - v.clickTop - v.listAt
+	lines := v.lines()
+	if i < 0 || i >= len(lines) || !lines[i].selectable() {
+		return
+	}
+	v.cursor = i
+	v.remember(lines)
 }
 
 // loadCmd lists the selected project's issues in one call. With no project
@@ -523,7 +567,9 @@ func (v *issuesView) render(width, height int) string {
 		footer = v.w.act.lines(width)
 	}
 	room := max(height-len(lines)-len(footer), 1)
-	lines = append(lines, window(body, cursorRow, room)...)
+	shown := window(body, cursorRow, room)
+	v.clickTop, v.clickFrom, v.clickShown = len(lines), windowStart(len(body), cursorRow, room), len(shown)
+	lines = append(lines, shown...)
 	lines = append(lines, footer...)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
@@ -567,6 +613,7 @@ func (v *issuesView) totalsLine() string {
 }
 
 func (v *issuesView) bodyLines(width int) (lines []string, cursorRow int) {
+	v.listAt = -1
 	if v.project.id == 0 {
 		// Never an unfiltered list in its place (task 132.11). No selection
 		// means no project is registered only once a listing has said so;
@@ -585,6 +632,7 @@ func (v *issuesView) bodyLines(width int) (lines []string, cursorRow int) {
 			return out, 0
 		}
 		rest, row := v.listLines(width)
+		v.listAt += len(out)
 		return append(out, rest...), row + len(out)
 	}
 	if !v.loaded {
@@ -605,6 +653,7 @@ func (v *issuesView) listLines(width int) (lines []string, cursorRow int) {
 	rows := v.lines()
 	lines = make([]string, 0, len(rows)+2)
 	lines = append(lines, v.totalsLine(), "")
+	v.listAt = len(lines)
 	inner := max(width-len(groupIndent), 12)
 	for i, row := range rows {
 		selected := i == v.cursor
