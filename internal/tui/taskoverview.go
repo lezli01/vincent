@@ -247,7 +247,7 @@ func (t *taskView) overviewLines(width, height int) []string {
 		// The issue line goes with it.
 		out = append([]string{out[0], ""}, t.failureCardLines(width, height, true)...)
 	case t.showsFailureCard():
-		out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
+		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		out = append(out, "")
 		out = append(out, t.failureCardLines(width, height-len(out), false)...)
 		if t.showsOutcomeCard() {
@@ -257,11 +257,11 @@ func (t *taskView) overviewLines(width, height int) []string {
 			out = append(out, t.outcomeCardLines(width, height-len(out)-2)...)
 		}
 	case overviewFrameFor(task.State) == frameOutcome:
-		out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
+		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		out = append(out, "")
 		out = append(out, t.outcomeCardLines(width, height-len(out)-2)...)
 	default:
-		out = appendWrapped(out, overviewSentence(task, len(t.lanes)), width)
+		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		out = append(out, "")
 		var body []taskDetailFact
 		switch overviewFrameFor(task.State) {

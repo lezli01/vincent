@@ -295,7 +295,7 @@ func TestViewRoutingAndHelp(t *testing.T) {
 	// The sheet is taller than the body now (task 129.17): the global keys
 	// are further down it, and end scrolls them into view.
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
-	if m.helpScroll == 0 || !strings.Contains(m.helpSheet(), "GLOBAL KEYS") {
+	if m.helpPane.Offset() == 0 || !strings.Contains(m.helpSheet(), "GLOBAL KEYS") {
 		t.Errorf("the help sheet did not scroll, or lacks the global keys: %q", content(m))
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyHome})

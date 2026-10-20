@@ -14166,6 +14166,23 @@ holds for the multi-line chat composer of view 9 as much as for the single-value
 rows: a view is given a width and a height and draws inside both of them, so a
 composer that grew is a body that shrank, not a frame that overflowed.
 
+**Wrap or truncate, never clip (added 2026-10-20, task 135.1, issue #786).**
+The rule above is now the TUI's for every surface, not only for fields, and it
+has one implementation: `wrapText` lays plain text out by display width, wide
+runes and emoji included, and hands back lines the view styles afterwards; it
+honours any width down to one cell. Prose — descriptions, errors, labels,
+bodies — is wrapped by the view that draws it and never left to the frame's
+right-edge cut. Rows of a list or a table stay one line each, truncated with
+`…`; the focused row's full text is shown wrapped somewhere else on the
+screen. Exact identifiers — a branch, a path, a URL — hard-wrap where they are
+the screen's subject. Content taller than its pane lives in a `scrollPane`
+with a position cue (" ↓ more · lines a–b of n"); showing the first rows of it
+and dropping the rest is a bug. The frame's truncation stays, as the
+last-resort guard that keeps one panel out of its neighbour, and a test
+reaching it (`assertNoFrameClip`) is a failure. The help sheet is the first
+surface held to it: its labels wrap at their own column, its key row sheds its
+description before a close key, and the mouse wheel scrolls it.
+
 **Opening a URL (task 052.6, added 2026-08-29).** The two screens above hand a
 URL to the platform's own opener — `open` on macOS, `xdg-open` on the other
 unixes, the shell's protocol handler on Windows — and to nothing else. Only

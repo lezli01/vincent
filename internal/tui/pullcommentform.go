@@ -173,7 +173,7 @@ func (f *pullCommentForm) lines(width int) []string {
 	case f.body == "":
 		out = append(out, styleDim.Render(indent+"(empty)"))
 	default:
-		for _, line := range wrapPlain(f.body, max(width-editorIndent, 20)) {
+		for _, line := range wrapText(f.body, max(width-editorIndent, 20), wrapOpts{}) {
 			out = append(out, indent+styleOK.Render(line))
 		}
 	}

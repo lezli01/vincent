@@ -184,7 +184,8 @@ func TestHelpScrolls(t *testing.T) {
 	if !m.help {
 		t.Fatal("? did not open help")
 	}
-	lines, visible := m.helpWindow()
+	m.syncHelpPane()
+	lines, visible := m.helpPane.lines, m.helpPane.vp.Height()
 	if len(lines) <= visible {
 		t.Fatalf("the sheet (%d lines) fits the body (%d); the test needs it not to", len(lines), visible)
 	}
@@ -197,29 +198,29 @@ func TestHelpScrolls(t *testing.T) {
 	}
 
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	if m.helpScroll != 1 {
-		t.Errorf("down scrolled to %d, want 1", m.helpScroll)
+	if m.helpPane.Offset() != 1 {
+		t.Errorf("down scrolled to %d, want 1", m.helpPane.Offset())
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
-	if m.helpScroll <= 1 {
-		t.Errorf("pgdown scrolled to %d", m.helpScroll)
+	if m.helpPane.Offset() <= 1 {
+		t.Errorf("pgdown scrolled to %d", m.helpPane.Offset())
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	if !strings.Contains(ansi.Strip(content(m)), lastLine) {
 		t.Errorf("end did not bring the last row %q on screen:\n%s", lastLine, ansi.Strip(content(m)))
 	}
-	end := m.helpScroll
+	end := m.helpPane.Offset()
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	if m.helpScroll != end {
-		t.Errorf("down past the end moved the window to %d, want it clamped at %d", m.helpScroll, end)
+	if m.helpPane.Offset() != end {
+		t.Errorf("down past the end moved the window to %d, want it clamped at %d", m.helpPane.Offset(), end)
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
-	if m.helpScroll >= end {
+	if m.helpPane.Offset() >= end {
 		t.Errorf("pgup did not scroll back")
 	}
 	m.Update(tea.KeyPressMsg{Code: tea.KeyHome})
-	if m.helpScroll != 0 || !strings.Contains(ansi.Strip(content(m)), "THIS SCREEN") {
-		t.Errorf("home did not return to the top (scroll %d)", m.helpScroll)
+	if m.helpPane.Offset() != 0 || !strings.Contains(ansi.Strip(content(m)), "THIS SCREEN") {
+		t.Errorf("home did not return to the top (scroll %d)", m.helpPane.Offset())
 	}
 
 	// Anything else is swallowed: no palette, no action, sheet still open.
@@ -239,8 +240,8 @@ func TestHelpScrolls(t *testing.T) {
 			t.Fatalf("%q did not close help", k.String())
 		}
 		m.Update(key("?"))
-		if !m.help || m.helpScroll != 0 {
-			t.Fatalf("reopening help: open %v, scroll %d", m.help, m.helpScroll)
+		if !m.help || m.helpPane.Offset() != 0 {
+			t.Fatalf("reopening help: open %v, scroll %d", m.help, m.helpPane.Offset())
 		}
 	}
 }

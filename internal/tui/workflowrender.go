@@ -642,7 +642,7 @@ func modalRow(label, value string, inherited bool, width int) []string {
 			wrapped = append(wrapped, "")
 			continue
 		}
-		wrapped = append(wrapped, wrapPlain(para, valueWidth)...)
+		wrapped = append(wrapped, wrapText(para, valueWidth, wrapOpts{})...)
 	}
 	if inherited {
 		// The marker rides the last line so a long inherited value keeps its

@@ -422,7 +422,7 @@ const headerPrefix = "  ? "
 // wrapped option still reads as one option.
 func (f *answerForm) renderRow(i int, row formRow, width int) []string {
 	if row.kind == rowHeader {
-		out := wrapPlain(row.text, width-cols(headerPrefix))
+		out := wrapText(row.text, width-cols(headerPrefix), wrapOpts{})
 		for j := range out {
 			prefix := headerPrefix
 			if j > 0 {
@@ -440,7 +440,7 @@ func (f *answerForm) renderRow(i int, row formRow, width int) []string {
 	// The prefix is already styled, so its width is measured, not counted.
 	indent := ansi.StringWidth(prefix)
 	text, style := f.rowBody(row)
-	out := wrapPlain(text, width-indent)
+	out := wrapText(text, width-indent, wrapOpts{})
 	for j := range out {
 		if j == 0 {
 			out[j] = prefix + style.Render(out[j])
@@ -466,51 +466,6 @@ func (f *answerForm) rowBody(row formRow) (string, lipgloss.Style) {
 
 // stylePlain leaves a line exactly as it was wrapped.
 var stylePlain = lipgloss.NewStyle()
-
-// wrapPlain lays plain text out in lines of at most width columns, splitting
-// words the way the §15 output pane does so an over-long one is hard-split
-// rather than left to overflow. The text is plain and the caller styles the
-// lines it gets back: a break can then never land inside an escape sequence.
-func wrapPlain(text string, width int) []string {
-	if width < 8 {
-		// Too narrow to lay anything out; frame's truncation is what is left
-		// at this width, and it is still a better line than one column.
-		width = 8
-	}
-	var out []string
-	var cur strings.Builder
-	col := 0
-	pendingSpace := false
-	for _, tok := range splitWords(text, width) {
-		if tok == " " {
-			// Held rather than written: a separator emitted before a word that
-			// turns out not to fit leaves the line ending in whitespace.
-			pendingSpace = col > 0
-			continue
-		}
-		need := cols(tok)
-		if pendingSpace {
-			need++
-		}
-		if col+need > width && col > 0 {
-			out = append(out, cur.String())
-			cur.Reset()
-			col = 0
-			pendingSpace = false
-			need = cols(tok)
-		}
-		if pendingSpace {
-			cur.WriteString(" ")
-			pendingSpace = false
-		}
-		cur.WriteString(tok)
-		col += need
-	}
-	if col > 0 || len(out) == 0 {
-		out = append(out, cur.String())
-	}
-	return out
-}
 
 // marker shows what is selected: a checkbox for multi-select, a radio for
 // single-select and for the permission decision.

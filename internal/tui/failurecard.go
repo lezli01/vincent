@@ -378,7 +378,7 @@ func (t *taskView) cardBody(c failureCard, actions []cardAction, width, n int) [
 	out := []string{c.renderHeadline()}
 	if c.reason != "" {
 		if m := reasons.Explain(c.reason).Meaning; m != "" {
-			out = appendWrappedIndented(out, m, width, "    ")
+			out = append(out, wrapText(m, width, hanging("    "))...)
 		}
 	}
 	// A fan-out's evidence is the lane it blames, drawn below.
@@ -417,7 +417,7 @@ func (t *taskView) evidenceBody(c failureCard, width, n int) []string {
 	}
 	fallback := func() []string {
 		if c.detail != "" {
-			return appendWrappedIndented(nil, c.detail, width, "    ")
+			return wrapText(c.detail, width, hanging("    "))
 		}
 		return []string{styleDim.Render("    " + daemonLogLine())}
 	}

@@ -3121,10 +3121,11 @@ keeps the raw identifiers, undimmed, for copying into a command.
 `?` toggles a help overlay listing every binding for the surface you are on —
 or `f1`, which also works while a text field has the keyboard. While the
 overlay is open it owns the keyboard: `?`, `esc` and `f1` close it, `↑`/`↓`,
-`pgup`/`pgdown`, `home` and `end` scroll it, `ctrl+c` still quits, and every
-other key is ignored rather than acting on the screen behind it. When the
-sheet is taller than the screen its last row says where you are and which way
-there is more. The overlay, the palette and the footer all render from **one
+`pgup`/`pgdown`, `home` and `end` scroll it, as does the mouse wheel,
+`ctrl+c` still quits, and every other key is ignored rather than acting on the
+screen behind it. When the sheet is taller than the screen its last row says
+where you are and which way there is more. A description too long for the
+width wraps under its own column rather than being cut off. The overlay, the palette and the footer all render from **one
 registry** in the source, so a key that exists is a key that is documented.
 
 On the board and in a task's workspace the sheet opens with **This screen**,

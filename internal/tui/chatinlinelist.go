@@ -271,7 +271,7 @@ func (l *chatInlineList) render(width, paneHeight int) []string {
 		if r.disabled && r.reason != "" {
 			text = strings.TrimSpace(r.reason + " · " + text)
 		}
-		wrapped := wrapPlain(text, max(width-5, 8))
+		wrapped := wrapText(text, max(width-5, 8), wrapOpts{})
 		for i := range min(len(wrapped), l.reserve) {
 			body[i] = styleDim.Render("    " + wrapped[i])
 		}

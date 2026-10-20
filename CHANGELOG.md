@@ -516,6 +516,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The help sheet fits a narrow terminal.** A key description too long for
+  the width now wraps under its own column instead of being cut off with `…`,
+  the sheet's key row drops its description before it would push the close
+  keys off the edge, and the mouse wheel scrolls the sheet. The wheel also
+  scrolls the right rows on every screen while a status line is showing,
+  where it used to land one row off.
+
 - **Two tasks on one existing branch no longer start together.** When both
   were queued at the same moment, the scheduler admitted both: on a branch
   checked out in your project's own checkout, two agents then worked in your

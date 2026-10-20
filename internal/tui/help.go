@@ -20,12 +20,24 @@ func helpTitle(ctx bindingContext) string {
 // stops advertising the surface underneath: those keys do nothing until the
 // sheet is closed, and offering them is what made two contradictory rows
 // (T3.8 finding).
+//
+// It fits its width (task 135.1): the description is shed first, then the
+// scroll keys' names, and the close keys are never cut.
 func helpFooter(width int) string {
-	pinned := styleKey.Render("↑↓ pgup pgdn home end") + styleDim.Render(" scroll  ") +
-		styleKey.Render(opKey(keymap.Help)) + styleDim.Render(" close  ") +
+	closeKeys := styleKey.Render(opKey(keymap.Help)) + styleDim.Render(" close  ") +
 		styleKey.Render("esc") + styleDim.Render(" close")
-	line := " " + styleDim.Render("the keys of the surface you were on, plus the global ones")
-	return padBetween(line, pinned, width)
+	scroll := styleKey.Render("↑↓ pgup pgdn home end") + styleDim.Render(" scroll  ")
+	desc := " " + styleDim.Render("the keys of the surface you were on, plus the global ones")
+	for _, c := range [][2]string{
+		{desc, scroll + closeKeys},
+		{"", scroll + closeKeys},
+		{"", styleKey.Render("↑↓") + styleDim.Render(" scroll  ") + closeKeys},
+	} {
+		if width <= 0 || cols(c[0])+2+cols(c[1]) <= width {
+			return padBetween(c[0], c[1], width)
+		}
+	}
+	return padBetween("", closeKeys, width)
 }
 
 // helpState is what the sheet knows about the thing under it, beyond its
@@ -56,12 +68,35 @@ type helpState struct {
 // splits it — what the target offers now, then the rest dimmed under "not
 // available now" (task 129.17 decision 2).
 func helpText(ctx bindingContext, github bool, st helpState) string {
-	var b strings.Builder
-	writeRows := func(title string, rows []binding, dim bool) {
+	return strings.Join(helpLines(ctx, github, st, unwrapped), "\n") + "\n"
+}
+
+// unwrapped is a width no help row reaches: helpText lays the sheet out as
+// if the terminal were endless, for readers that want its words, not its
+// layout.
+const unwrapped = 1 << 16
+
+// helpRow is one key and what it does, dimmed when it is not available now.
+type helpRow struct {
+	key, label string
+	dim        bool
+}
+
+// helpSection is a titled block of rows.
+type helpSection struct {
+	title string
+	rows  []helpRow
+}
+
+// helpLines is the sheet laid out for a body width cells wide (task 135.1):
+// every label wraps under its own column rather than running off the frame.
+func helpLines(ctx bindingContext, github bool, st helpState, width int) []string {
+	var sections []helpSection
+	addRows := func(title string, rows []binding, dim bool) {
 		if len(rows) == 0 {
 			return
 		}
-		b.WriteString("\n " + styleTitle.Render(strings.ToUpper(title)) + "\n\n")
+		sec := helpSection{title: strings.ToUpper(title)}
 		for _, r := range rows {
 			key := r.key
 			switch {
@@ -72,16 +107,15 @@ func helpText(ctx bindingContext, github bool, st helpState) string {
 				// Palette-only navigation: the palette is its key.
 				key = opKey(keymap.Palette)
 			}
-			line := padRight(key, 8) + r.label
-			if dim {
-				line = styleDim.Render(line)
-			}
-			b.WriteString("  " + line + "\n")
+			sec.rows = append(sec.rows, helpRow{key: key, label: r.label, dim: dim})
 		}
+		sections = append(sections, sec)
 	}
-	writeSection := func(title string, rows []binding) { writeRows(title, rows, false) }
+	addSection := func(title string, rows []binding) { addRows(title, rows, false) }
 
-	writeOrientation(&b, ctx, st.tabs)
+	if orient := orientation(ctx, st.tabs); len(orient) > 0 {
+		sections = append(sections, helpSection{title: "THIS SCREEN", rows: orient})
+	}
 
 	var global, nav, now, later []binding
 	for _, r := range withoutGitHub(registry(), github) {
@@ -100,13 +134,13 @@ func helpText(ctx bindingContext, github bool, st helpState) string {
 	}
 	// This surface first: it is the answer to "what can I do here".
 	if ctx != "" {
-		writeSection(string(ctx), withoutGitHub(bindingsFor(ctx), github))
+		addSection(string(ctx), withoutGitHub(bindingsFor(ctx), github))
 	}
 	if isHomeContext(ctx) {
-		writeSection("actions now (on "+st.targetNoun()+")", now)
-		writeRows("not available now", later, true)
+		addSection("actions now (on "+st.targetNoun()+")", now)
+		addRows("not available now", later, true)
 	}
-	writeSection("global keys", global)
+	addSection("global keys", global)
 	// The three popups' keys ride along with the panels they pop up over, and
 	// they come after the keys that work *now* rather than before them. Each
 	// popup prints its own keys inside itself while it owns the keyboard, and
@@ -115,12 +149,61 @@ func helpText(ctx bindingContext, github bool, st helpState) string {
 	// terminal shows first should be what works, not the hypothetical (task
 	// 025 — a second popup section is what made the difference visible).
 	if isHomeContext(ctx) {
-		writeSection("answer form (while a task is waiting on you)", bindingsFor(ctxForm))
-		writeSection("repair form ("+opKey(keymap.Repair)+" on a blocked task)", bindingsFor(ctxRepairForm))
-		writeSection("follow-up form ("+opKey(keymap.FollowUp)+" on a finished task)", bindingsFor(ctxFollowUpForm))
+		addSection("answer form (while a task is waiting on you)", bindingsFor(ctxForm))
+		addSection("repair form ("+opKey(keymap.Repair)+" on a blocked task)", bindingsFor(ctxRepairForm))
+		addSection("follow-up form ("+opKey(keymap.FollowUp)+" on a finished task)", bindingsFor(ctxFollowUpForm))
 	}
-	writeSection("go to (from the "+opKey(keymap.Palette)+" palette)", nav)
-	return b.String()
+	addSection("go to (from the "+opKey(keymap.Palette)+" palette)", nav)
+	return layoutHelp(sections, width)
+}
+
+// helpKeyColMin and helpKeyColMax bound the key column. It is as wide as the
+// sheet's widest key needs and no wider than the cap, so one long chord
+// cannot push every label across the screen: a key that does not fit puts its
+// label on the next line instead.
+const (
+	helpKeyColMin = 8
+	helpKeyColMax = 12
+)
+
+// helpIndent is the cells before a row's key.
+const helpIndent = 2
+
+// layoutHelp renders the sections at width: titles, then each row's key in
+// a column measured in display cells and its label wrapped with a hanging
+// indent at the label column. Rows are styled after wrapping.
+func layoutHelp(sections []helpSection, width int) []string {
+	widest := 0
+	for _, sec := range sections {
+		for _, r := range sec.rows {
+			widest = max(widest, cols(r.key))
+		}
+	}
+	keyCol := min(max(widest+1, helpKeyColMin), helpKeyColMax)
+	labelCol := helpIndent + keyCol
+	var out []string
+	for _, sec := range sections {
+		out = append(out, "", " "+styleTitle.Render(sec.title), "")
+		for _, r := range sec.rows {
+			lead := strings.Repeat(" ", helpIndent) + r.key
+			var lines []string
+			if cols(r.key) < keyCol {
+				lines = wrapText(r.label, width, wrapOpts{prefix: padRight(lead, labelCol), indent: labelCol})
+			} else {
+				lines = append([]string{lead}, wrapText(r.label, width,
+					wrapOpts{prefix: strings.Repeat(" ", labelCol), indent: labelCol})...)
+			}
+			for _, l := range lines {
+				if r.dim {
+					// The indent stays outside the style, as it always has.
+					text := strings.TrimLeft(l, " ")
+					l = l[:len(l)-len(text)] + styleDim.Render(text)
+				}
+				out = append(out, l)
+			}
+		}
+	}
+	return out
 }
 
 // offersNow reports whether a task-action row is valid on the target — the
@@ -148,51 +231,33 @@ func (st helpState) targetNoun() string {
 	}
 }
 
-// writeOrientation is the sheet's "this screen" header (task 129.17): what
-// the surface is made of, before any key list. The workspace gets its strip,
-// tab by tab, in drawn order; the board gets the three moves that get a
-// newcomer anywhere. Every other surface is small enough that its own
-// section already leads.
-func writeOrientation(b *strings.Builder, ctx bindingContext, tabs []taskViewTab) {
-	var rows [][2]string
+// orientation is the sheet's "this screen" header (task 129.17): what the
+// surface is made of, before any key list. The workspace gets its strip, tab
+// by tab, in drawn order; the board gets the three moves that get a newcomer
+// anywhere. Every other surface is small enough that its own section already
+// leads.
+func orientation(ctx bindingContext, tabs []taskViewTab) []helpRow {
+	var rows []helpRow
 	switch {
 	case tabs != nil:
 		for _, tab := range tabs {
-			rows = append(rows, [2]string{taskTabDigits[tab], taskTabNames[tab] + " — " + taskTabPurpose[tab]})
+			rows = append(rows, helpRow{key: taskTabDigits[tab], label: taskTabNames[tab] + " — " + taskTabPurpose[tab]})
 		}
 	case ctx == ctxTasks:
-		rows = [][2]string{
-			{opKey(keymap.OpenRow), "open the task — its workspace, tab by tab"},
-			{opKey(keymap.NextAttention), "jump to the next task that needs you"},
-			{opKey(keymap.Palette), "find everything — every command, beside its key"},
+		rows = []helpRow{
+			{key: opKey(keymap.OpenRow), label: "open the task — its workspace, tab by tab"},
+			{key: opKey(keymap.NextAttention), label: "jump to the next task that needs you"},
+			{key: opKey(keymap.Palette), label: "find everything — every command, beside its key"},
 		}
 	}
-	if len(rows) == 0 {
-		return
-	}
-	b.WriteString("\n " + styleTitle.Render("THIS SCREEN") + "\n\n")
-	for _, r := range rows {
-		b.WriteString("  " + padRight(r[0], 8) + r[1] + "\n")
-	}
+	return rows
 }
 
-// helpScrollCue is the sheet's last line when it does not fit: where the
-// window is, and which way there is more.
-func helpScrollCue(from, visible, total int) string {
-	to := min(from+visible, total)
-	arrows := ""
-	if from > 0 {
-		arrows += "↑"
-	}
-	if to < total {
-		arrows += "↓"
-	}
-	return styleDim.Render(fmt.Sprintf(" %s more · lines %d–%d of %d", arrows, from+1, to, total))
-}
-
+// padRight pads s to width display cells, or follows it with one space when
+// it is already that wide: a key and its label never touch.
 func padRight(s string, width int) string {
-	if len(s) >= width {
-		return s + " "
+	if w := cols(s); w < width {
+		return s + strings.Repeat(" ", width-w)
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + " "
 }

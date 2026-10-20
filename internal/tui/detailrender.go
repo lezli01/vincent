@@ -327,15 +327,11 @@ func (d *detail) headerLines() []string {
 		lines = append(lines, wrapHeaderOverview(overview, d.width)...)
 	}
 	if t.BranchName != "" {
-		lines = append(lines, wrappedHeaderValue(
-			"  branch  ", t.BranchName, d.width, styleDim,
-		)...)
+		lines = append(lines, styled(wrapText(t.BranchName, d.width, hanging("  branch  ")), styleDim)...)
 	}
 	if t.Workflow != "" {
 		workflow := t.Workflow + " (" + t.WorkflowOrigin.Source() + ")"
-		lines = append(lines, wrappedHeaderValue(
-			"  workflow  ", workflow, d.width, styleDim,
-		)...)
+		lines = append(lines, styled(wrapText(workflow, d.width, hanging("  workflow  ")), styleDim)...)
 	}
 	return append(lines, d.laneBlameLines()...)
 }
@@ -344,10 +340,7 @@ func (d *detail) headerLines() []string {
 // workspace draws them once above its tabs (task 129.9); the timeline's own
 // header leads with them wherever the timeline is drawn outside it.
 func (d *detail) titleLines() []string {
-	return wrappedHeaderValue(
-		fmt.Sprintf(" #%d ", d.task.ID),
-		valueOr(d.task.Title, "untitled task"), max(d.width, 1), styleTitle,
-	)
+	return styled(wrapText(valueOr(d.task.Title, "untitled task"), max(d.width, 1), hanging(fmt.Sprintf(" #%d ", d.task.ID))), styleTitle)
 }
 
 func (d *detail) headerOverviewParts() []string {
@@ -397,23 +390,6 @@ func wrapHeaderOverview(fields []string, width int) []string {
 	return append(lines, ansi.Truncate(line, width, "…"))
 }
 
-func wrappedHeaderValue(prefix, value string, width int, style lipgloss.Style) []string {
-	prefixWidth := ansi.StringWidth(prefix)
-	wrapped := wrapTaskDetailText(value, max(width-prefixWidth, 1))
-	if len(wrapped) == 0 {
-		wrapped = []string{""}
-	}
-	lines := make([]string, len(wrapped))
-	for i, line := range wrapped {
-		linePrefix := prefix
-		if i > 0 {
-			linePrefix = strings.Repeat(" ", prefixWidth)
-		}
-		lines[i] = ansi.Truncate(style.Render(linePrefix+line), width, "…")
-	}
-	return lines
-}
-
 // errorLine surfaces a stale view without tearing it down: a failed refresh
 // keeps the last good timeline on screen and says so.
 func (d *detail) errorLine() string {
@@ -436,7 +412,7 @@ func (d *detail) errorLines() []string {
 		return []string{line}
 	}
 	plain := ansi.Strip(line)
-	wrapped := wrapTaskDetailText(plain, d.width)
+	wrapped := wrapText(plain, d.width, wrapOpts{})
 	lines := make([]string, len(wrapped))
 	for i, part := range wrapped {
 		lines[i] = styleBad.Render(part)
@@ -1108,7 +1084,7 @@ func timelineContinuationLines(
 	prefix := glyph + " "
 	prefixWidth := ansi.StringWidth(prefix)
 	bodyWidth := max(width-ansi.StringWidth(indent)-prefixWidth, 1)
-	wrapped := wrapTaskDetailText(text, bodyWidth)
+	wrapped := wrapText(text, bodyWidth, wrapOpts{})
 	truncated := limit > 0 && len(wrapped) > limit
 	if truncated {
 		wrapped = wrapped[:limit]
