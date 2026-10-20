@@ -363,6 +363,7 @@ tui:
   output:
     level: normal
   # default_project: web
+  # tabs: [issues, tasks]
 `
 
 // EnsureDefaultFile writes the commented default config.yaml into dir when

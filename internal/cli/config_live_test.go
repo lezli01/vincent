@@ -116,4 +116,25 @@ func TestConfigSetTUIKeysAgainstTheRealHandler(t *testing.T) {
 	if out, code := run("set", "tui.board.group_by", "workflow"); code != 0 {
 		t.Errorf("set tui.board.group_by workflow: code %d, out %q", code, out)
 	}
+
+	// tui.tabs (task 135): the default reads back, a list round-trips in
+	// order, and a refused one names the key and leaves the file alone.
+	if out, code := run("get", "tui.tabs"); code != 0 || strings.TrimSpace(out) != "issues tasks" {
+		t.Errorf("get tui.tabs by default: code %d, out %q; want issues tasks", code, out)
+	}
+	if out, code := run("set", "tui.tabs", "tasks issues"); code != 0 {
+		t.Fatalf("set tui.tabs: code %d, out %q", code, out)
+	}
+	if out, code := run("get", "tui.tabs"); code != 0 || strings.TrimSpace(out) != "tasks issues" {
+		t.Errorf("get tui.tabs after set: code %d, out %q", code, out)
+	}
+	before = read()
+	for _, v := range []string{"", "tasks tasks", "tasks board"} {
+		if out, code := run("set", "tui.tabs", v); code != 1 || !strings.Contains(out, "tui.tabs") {
+			t.Errorf("set tui.tabs %q: code %d, out %q; want 1 naming the key", v, code, out)
+		}
+	}
+	if !bytes.Equal(before, read()) {
+		t.Error("a refused tui.tabs changed config.yaml")
+	}
 }

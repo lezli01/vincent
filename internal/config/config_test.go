@@ -138,6 +138,7 @@ agents:
 		TUI: TUI{
 			Board:  BoardView{GroupBy: []BoardGroup{BoardGroupWorkflow}},
 			Output: OutputView{Level: "normal"},
+			Tabs:   []string{"issues", "tasks"},
 		},
 	}
 	if !reflect.DeepEqual(cfg, want) {
@@ -464,6 +465,62 @@ func TestTUIOutputLevel(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not say %q", err, want)
 		}
+	}
+}
+
+// TestTUITabs: tui.tabs defaults to [issues, tasks], loads any ordered list
+// of TabViews as written, and refuses an empty, null, repeated, unknown or
+// non-list value on Load and on Decode alike, with a message naming the key
+// (task 135 decision 4).
+func TestTUITabs(t *testing.T) {
+	if got, want := Default().TUI.Tabs, []string{"issues", "tasks"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("default tui.tabs = %v, want %v", got, want)
+	}
+	cfg, err := Load(writeConfig(t, "tui:\n  hyperlinks: false\n"))
+	if err != nil {
+		t.Fatalf("Load without tui.tabs: %v", err)
+	}
+	if got, want := cfg.TUI.Tabs, []string{"issues", "tasks"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("absent tui.tabs = %v, want the default %v", got, want)
+	}
+	for _, want := range [][]string{
+		{"tasks", "issues"},
+		{"tasks"},
+		{"issues", "tasks", "chats"},
+	} {
+		cfg, err := Load(writeConfig(t, "tui:\n  tabs: ["+strings.Join(want, ", ")+"]\n"))
+		if err != nil {
+			t.Fatalf("Load tui.tabs %v: %v", want, err)
+		}
+		if !reflect.DeepEqual(cfg.TUI.Tabs, want) {
+			t.Errorf("tui.tabs = %v, want %v as written", cfg.TUI.Tabs, want)
+		}
+	}
+	refused := map[string]struct{ value, says string }{
+		"empty":     {"[]", "tui.tabs: list at least one view; want issues, tasks or chats"},
+		"null":      {"null", "tui.tabs: list at least one view; want issues, tasks or chats"},
+		"bare key":  {"", "tui.tabs: list at least one view; want issues, tasks or chats"},
+		"duplicate": {"[issues, tasks, issues]", `tui.tabs: "issues" listed twice`},
+		"unknown":   {"[issues, board]", `tui.tabs: unknown view "board"; want issues, tasks or chats`},
+		"scalar":    {"tasks", "tui.tabs: must be a list of views"},
+		"mapping":   {"{tasks: true}", "tui.tabs: must be a list of views"},
+	}
+	for name, tc := range refused {
+		t.Run(name, func(t *testing.T) {
+			raw := "tui:\n  tabs: " + tc.value + "\n"
+			if _, err := Load(writeConfig(t, raw)); err == nil || !strings.Contains(err.Error(), tc.says) {
+				t.Errorf("Load error = %v, want one saying %q", err, tc.says)
+			}
+			if _, err := Decode([]byte(raw)); err == nil || !strings.Contains(err.Error(), tc.says) {
+				t.Errorf("Decode error = %v, want one saying %q", err, tc.says)
+			}
+		})
+	}
+	// A refusal holds through Validate too, which the API runs on a struct.
+	c := Default()
+	c.TUI.Tabs = nil
+	if err := c.Validate(); err == nil {
+		t.Error("Validate accepted an empty tui.tabs")
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -659,6 +660,74 @@ type TUI struct {
 	// says so. The TUI adopts it at startup only: a hot reload never moves
 	// a session's selection.
 	DefaultProject *string `yaml:"default_project"`
+	// Tabs lists the TUI's main tabs, in order (task 135, §12.3, §15): each
+	// one of TabViews, at least one, none twice. The order is the strip's,
+	// the order `tab` cycles in, and the landing order — the first entry is
+	// where the TUI opens, so there is no separate landing key (task 135
+	// decision 1). One entry is valid and is the opt-out of the strip.
+	// Default [issues, tasks]. The daemon never reads it; it validates it.
+	Tabs []string `yaml:"tabs"`
+}
+
+// TabViews is tui.tabs' vocabulary (task 135 decision 2): the project-scoped
+// boards that each pair with a record view. It starts narrow on purpose —
+// strict decoding makes removing a name a breaking change, adding one is not.
+var TabViews = []string{"issues", "tasks", "chats"}
+
+// tabViewsWant renders TabViews for an error message: "issues, tasks or
+// chats", generated so the message cannot drift from the vocabulary.
+func tabViewsWant() string {
+	n := len(TabViews)
+	if n == 1 {
+		return TabViews[0]
+	}
+	return strings.Join(TabViews[:n-1], ", ") + " or " + TabViews[n-1]
+}
+
+// checkTabsShape refuses the two tui.tabs values decoding over Default()
+// cannot: `tabs: null` (or a bare `tabs:`), which go-yaml treats as absent and
+// so would keep the default where task 135 refuses it like `[]`, and a value
+// that is not a list, whose parse error points at the line without naming
+// the key. It reads only the shape; everything else — including a `tui` that
+// is not a mapping — is left to the strict decode that follows.
+func checkTabsShape(raw []byte) error {
+	var probe struct {
+		TUI map[string]any `yaml:"tui"`
+	}
+	if yaml.Unmarshal(raw, &probe) != nil {
+		return nil
+	}
+	v, ok := probe.TUI["tabs"]
+	if !ok {
+		return nil
+	}
+	switch v.(type) {
+	case nil:
+		return validateTabs(nil)
+	case []any:
+		return nil
+	default:
+		return fmt.Errorf("tui.tabs: must be a list of views, such as [issues, tasks]; want %s", tabViewsWant())
+	}
+}
+
+func validateTabs(tabs []string) error {
+	if len(tabs) == 0 {
+		return fmt.Errorf("tui.tabs: list at least one view; want %s", tabViewsWant())
+	}
+	seen := make(map[string]bool, len(tabs))
+	for _, t := range tabs {
+		if seen[t] {
+			return fmt.Errorf("tui.tabs: %q listed twice", t)
+		}
+		seen[t] = true
+	}
+	for _, t := range tabs {
+		if !slices.Contains(TabViews, t) {
+			return fmt.Errorf("tui.tabs: unknown view %q; want %s", t, tabViewsWant())
+		}
+	}
+	return nil
 }
 
 // MaxProjectNameBytes is the project-name bound the API holds a name to
@@ -716,6 +785,9 @@ func (t TUI) validate(lenient bool) error {
 		return err
 	}
 	if err := validateDefaultProject(t.DefaultProject); err != nil {
+		return err
+	}
+	if err := validateTabs(t.Tabs); err != nil {
 		return err
 	}
 	var err error
@@ -1026,6 +1098,7 @@ func Default() Config {
 			// normal is the level every version before task 129.11 opened
 			// at, so an absent key changes nothing.
 			Output: OutputView{Level: "normal"},
+			Tabs:   []string{"issues", "tasks"},
 		},
 	}
 }
@@ -1062,6 +1135,9 @@ func Load(path string) (Config, error) {
 func Decode(raw []byte) (Config, error) { return decode(raw, false) }
 
 func decode(raw []byte, lenient bool) (Config, error) {
+	if err := checkTabsShape(raw); err != nil {
+		return Config{}, fmt.Errorf("invalid config: %w", err)
+	}
 	cfg := Default()
 	if err := yaml.UnmarshalWithOptions(raw, &cfg, yaml.DisallowUnknownField()); err != nil {
 		return Config{}, fmt.Errorf("parse: %w", err)

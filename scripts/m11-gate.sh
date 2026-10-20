@@ -23,6 +23,9 @@
 #   9. `tui.default_project` (task 132.3): an empty or over-long name is
 #      refused with the file byte-identical, and a valid one round-trips
 #      through GET and `vincent config get`
+#  10. `tui.tabs` (task 135): an empty, repeated or unknown list is refused
+#      with the file byte-identical, and an accepted one round-trips in
+#      order through GET, the file and `vincent config get`
 #
 # No workflow and no agent CLI: what is under test is an endpoint and a file,
 # so the gate needs neither, which also keeps it fast on all three platforms.
@@ -282,7 +285,29 @@ DP="$(api GET /config | jq -r .tui.default_project | tr -d '\r')" || fail "GET a
 OUT="$("$VINCENT" config get tui.default_project | tr -d '\r')"
 [[ "$OUT" == "web" ]] || fail "vincent config get tui.default_project = $OUT, want web"
 
-echo "== 10. the daemon is still up"
+echo "== 10. tui.tabs: a bad list refused, a good one round-trips"
+# Served as an array even when the file never mentions the key.
+TABS="$(api GET /config | jq -c .tui.tabs | tr -d '\r')" || fail "GET /v1/config (tui.tabs) failed"
+[[ "$TABS" == '["issues","tasks"]' ]] || fail "tui.tabs is served as $TABS by default, want [\"issues\",\"tasks\"]"
+cp "$CONFIG_FILE" "$TMP/before.yaml"
+for body in '{"tui":{"tabs":[]}}' '{"tui":{"tabs":["tasks","tasks"]}}' '{"tui":{"tabs":["tasks","board"]}}'; do
+  STATUS="$(api_status PATCH /config -d "$body")" || fail "curl PATCH ($body) failed"
+  [[ "$STATUS" == "400" ]] || fail "$body answered $STATUS, want 400"
+  jq -e '.error.code == "validation_failed" and (.error.message | contains("tui.tabs: "))' \
+    "$TMP/body.json" >/dev/null \
+    || fail "the refusal of $body does not name tui.tabs: $(cat "$TMP/body.json")"
+  cmp -s "$TMP/before.yaml" "$CONFIG_FILE" || fail "a refused $body changed config.yaml"
+done
+api PATCH /config -d '{"tui":{"tabs":["tasks","chats","issues"]}}' >/dev/null \
+  || fail "PATCH tui.tabs failed"
+TABS="$(api GET /config | jq -c .tui.tabs | tr -d '\r')" || fail "GET after PATCH tui.tabs failed"
+[[ "$TABS" == '["tasks","chats","issues"]' ]] || fail "GET right after the 200 serves tui.tabs as $TABS"
+TABS_LINE="$(grep '^  tabs: ' "$CONFIG_FILE" | tr -d '\r')"
+[[ "$TABS_LINE" == "  tabs: [tasks, chats, issues]" ]] || fail "config.yaml carries $TABS_LINE"
+OUT="$("$VINCENT" config get tui.tabs | tr -d '\r')"
+[[ "$OUT" == "tasks chats issues" ]] || fail "vincent config get tui.tabs = $OUT, want tasks chats issues"
+
+echo "== 11. the daemon is still up"
 api GET /health | jq -e '.status == "ok"' >/dev/null \
   || fail "the daemon did not survive the gate"
 
