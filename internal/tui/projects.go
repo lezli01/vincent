@@ -159,14 +159,27 @@ func (p *projectsView) setClient(c *apiclient.Client) tea.Cmd {
 	return p.loadCmd()
 }
 
-// capturesInput is true only while a text field owns the keyboard: the
-// filter, a form row being typed into, or a picker's free-text entry. The
-// confirmations are single-key, so they leave the global bindings alone.
-func (p *projectsView) capturesInput() bool {
-	if p.filtering {
-		return true
+func (p *projectsView) promptKeys() string {
+	if p.form == nil && p.confirm != nil {
+		return promptHint("y", "delete", "n", "no")
 	}
-	return p.form != nil && p.form.capturesInput()
+	return ""
+}
+
+// capturesInput is true while the filter is open, while the delete
+// confirmation is up, and for every row of an open form — a recorded
+// exception to PR M's rule (after PR L's) that a form captures input "only
+// while a text row is in edit mode", the same one task 067 decision 8 made for
+// the new-chat form (§15 amended 2026-10-20, #790).
+//
+// The rule is not changed anywhere else: `newTask.capturesInput` still
+// answers false while navigating. It is widened here because both layers sit
+// over something a stray global key loses or destroys: with the form open on
+// a non-text row, `n` opened New task with the draft still open behind it,
+// and with the confirmation up, `n` left the view with the prompt armed, so a
+// later `y` deleted the project. `esc` stays the way out, one layer per press.
+func (p *projectsView) capturesInput() bool {
+	return p.filtering || p.confirm != nil || p.form != nil
 }
 
 // paste hands pasted text to the field that owns the keyboard: a form row

@@ -190,7 +190,26 @@ func (v *chatsView) setProject(p projectSel) tea.Cmd {
 	return v.projectScope.setProject(p)
 }
 
+func (v *chatsView) promptKeys() string {
+	switch {
+	case v.create != nil:
+		return ""
+	case v.delPrompt != nil:
+		return deletePromptKeys()
+	case v.confirm != nil:
+		return promptHint("y", "archive", "n", "no")
+	}
+	return ""
+}
+
+// capturesInput is true while a text field or a confirmation owns the
+// keyboard. The archive confirmation and the permanent-delete question are
+// answered here or not at all (task 078 decision 3, §15 view 10): the root's
+// `q`, `:` and `n` must not run under them (#790).
 func (v *chatsView) capturesInput() bool {
+	if v.delPrompt != nil || v.confirm != nil {
+		return true
+	}
 	if v.create != nil {
 		return v.create.capturesInput()
 	}
@@ -271,6 +290,10 @@ func (v *chatsView) addressed(msg tea.Msg) bool {
 		return m.archived == v.archived
 	case chatsTickMsg:
 		return m.archived == v.archived
+	case deleteResultMsg:
+		// Only the archived board deletes, and only a chat sweep is its own;
+		// a task sweep's outcome is the archived tasks board's (#790).
+		return m.chats && v.archived
 	default:
 		return true
 	}
@@ -325,6 +348,9 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case chatArchivedMsg:
 		return v, v.applyArchived(msg)
+	case deleteResultMsg:
+		v.note, v.noteBad = msg.summary(), msg.bad()
+		return v, v.loadCmd()
 	case chatCreatedMsg:
 		return v, v.applyCreated(msg)
 	case noteMsg:

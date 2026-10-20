@@ -2121,6 +2121,13 @@ func (m *root) footerLine() string {
 		// underneath do nothing until it closes.
 		return helpFooter(m.width)
 	}
+	if p, ok := m.views[m.active].(prompter); ok {
+		if keys := p.promptKeys(); keys != "" {
+			line, hits := buildPromptFooter(m.width, keys, m.activeCapturesInput())
+			m.footerHits = hits
+			return line
+		}
+	}
 	ctx := m.activeContext()
 	var (
 		bar       *actionBar

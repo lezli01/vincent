@@ -192,6 +192,7 @@ func TestChatSkillsEnterWithNoHighlightSends(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("enter with nothing highlighted did not send the message")
 	}
+	acceptSend(v)
 	if got := v.composer.Value(); got != "" {
 		t.Fatalf("the composer still holds %q after the send", got)
 	}
@@ -879,6 +880,7 @@ func TestChatSkillsInlineEnter(t *testing.T) {
 		if cmd == nil {
 			t.Fatal("enter with nothing highlighted did not send")
 		}
+		acceptSend(v)
 		if got := v.composer.Value(); got != "" {
 			t.Fatalf("the composer still holds %q after the send", got)
 		}

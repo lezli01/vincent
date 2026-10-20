@@ -310,8 +310,8 @@ func TestProjectFormListsInvalidWorkflowsAndRefusesThem(t *testing.T) {
 	}
 }
 
-// The filter owns the keyboard; a bare confirmation does not, so the global
-// single-key bindings keep working while one is up.
+// The filter, the delete confirmation and an open form own the keyboard;
+// merely listing does not, so the global single-key bindings work there.
 func TestProjectsCaptureFollowsTheTextFields(t *testing.T) {
 	p := newProjectsView()
 	loadedProjects(p, []apiclient.Project{testProject(1, "vincent")}, nil)
@@ -324,15 +324,20 @@ func TestProjectsCaptureFollowsTheTextFields(t *testing.T) {
 	}
 	pressView(p, "esc")
 
-	pressView(p, "d")
-	if p.capturesInput() {
-		t.Error("a single-key confirmation should not capture")
+	// The confirmation and the whole open form hold the keyboard: a
+	// recorded exception to PR M's text-row rule (#790).
+	pressView(p, "D")
+	if !p.capturesInput() {
+		t.Error("the delete confirmation does not capture")
 	}
 	pressView(p, "n")
+	if p.capturesInput() {
+		t.Error("still captures after the confirmation was answered")
+	}
 
 	pressView(p, "a")
-	if p.capturesInput() {
-		t.Error("the form captures before a row is being typed into")
+	if !p.capturesInput() {
+		t.Error("the open form does not capture before a row is typed into")
 	}
 	pressView(p, "enter")
 	if !p.capturesInput() {

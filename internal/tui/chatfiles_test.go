@@ -192,6 +192,7 @@ func TestChatFilesEnter(t *testing.T) {
 		if cmd == nil {
 			t.Fatal("enter with nothing highlighted did not send")
 		}
+		acceptSend(v)
 		if got := v.composer.Value(); got != "" {
 			t.Fatalf("the composer still holds %q after the send", got)
 		}

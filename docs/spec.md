@@ -12941,6 +12941,17 @@ stream for the live tail.
    `chat.*`, `project.*` and `workflow.registry_changed` while visible, and
    fetches nothing while hidden. The palette row reads "project overview",
    and the project picker's last row, "overview & manage…", opens it.*
+   *Amended 2026-10-20 (issue #790): the delete confirmation and an open
+   add/edit form **hold the keyboard** — the root's global single-key
+   bindings (`n`, `q`, `:` …) do not run under either. This is a recorded
+   exception to PR M's rule that a form captures input only while a text row
+   is in edit mode, the same one task 067 decision 8 made for the new-chat
+   form, and it is scoped to this view: the new-task form keeps PR M's rule.
+   Before it, `n` on the confirmation opened New task with the prompt still
+   armed, so a later `y` deleted the project, and `n` on a form's non-text row
+   left the view with the form open behind it. Any key but `y` answers the
+   confirmation "no"; `esc` closes the form. While the confirmation is up the
+   footer shows its answers.*
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately.
    *Amended 2026-08-30 (task 065, issue #261).* **The view authors the registry

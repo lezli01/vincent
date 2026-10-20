@@ -8,6 +8,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -131,6 +133,48 @@ func (p *rowDeletePrompt) question() string {
 	return fmt.Sprintf(
 		"delete %s permanently? [y] row and transcripts · [b] and its branch (one with commits is kept) · [n] no",
 		what)
+}
+
+// wrapStatus lays a prompt or a sweep's report out as indented lines no wider
+// than width, styling each line on its own so a wrap never splits a style's
+// escape sequence. Both boards' delete questions and reports go through it:
+// cut to one line, they lose their answer keys and their failed: clause at 80
+// columns (#790). Lines break between the " · " clauses first, so an answer
+// key or an error stays in one piece; only a clause wider than the line is
+// wrapped inside. A width the board has not learnt yet leaves the text whole.
+func wrapStatus(text string, width int, style lipgloss.Style) []string {
+	lines := []string{text}
+	if room := width - 1; width > 2 && ansi.StringWidth(text) > room {
+		lines = lines[:0]
+		line := ""
+		for _, clause := range strings.Split(text, " · ") {
+			switch {
+			case line == "":
+				line = clause
+			case ansi.StringWidth(line+" · "+clause) <= room-2:
+				line += " · " + clause
+			default:
+				lines = append(lines, line+" ·")
+				line = clause
+			}
+			if ansi.StringWidth(line) > room {
+				parts := strings.Split(ansi.Wrap(line, room, "-"), "\n")
+				lines = append(lines, parts[:len(parts)-1]...)
+				line = parts[len(parts)-1]
+			}
+		}
+		lines = append(lines, line)
+	}
+	for i, line := range lines {
+		lines[i] = " " + style.Render(line)
+	}
+	return lines
+}
+
+// deletePromptKeys are the footer's answers to a rowDeletePrompt; esc is
+// an alias of `n`.
+func deletePromptKeys() string {
+	return promptHint("y", "delete", "b", "and its branch", "n", "no")
 }
 
 // deleteResultMsg is the outcome of one sweep: one thing a human asked for and

@@ -634,6 +634,11 @@ func (b *board) addressed(msg tea.Msg) bool {
 		return m.archived == b.archived
 	case boardLanesMsg:
 		return m.archived == b.archived
+	case deleteResultMsg:
+		// A chat sweep's outcome is the archived chats board's (#790): taken
+		// here it reported on the wrong board and dropped task marks whose
+		// ids happened to match the chats'.
+		return !m.chats
 	default:
 		return true
 	}
@@ -1846,26 +1851,27 @@ func (b *board) answerDelete(key string) tea.Cmd {
 
 func (b *board) statusLines() []string {
 	if b.archived {
-		if line := b.archivedStatus(); line != "" {
-			return append([]string{line}, b.liveStatusLines()...)
-		}
+		return append(b.archivedStatus(), b.liveStatusLines()...)
 	}
 	return b.liveStatusLines()
 }
 
-// archivedStatus is the archived board's own line: the confirmation while one
-// is up, then the sweep's report, then the window and page it is showing.
-func (b *board) archivedStatus() string {
+// archivedStatus is the archived board's own lines: the confirmation while one
+// is up, then the sweep's report, then the window and page it is showing. The
+// question and the report are wrapped to the board's width rather than cut:
+// both run past 80 columns, and what a cut loses is the answer keys and the
+// failed: clause (#790).
+func (b *board) archivedStatus() []string {
 	switch {
 	case b.delPrompt != nil:
-		return styleAsk.Render(" " + b.delPrompt.question())
+		return wrapStatus(b.delPrompt.question(), b.width, styleAsk)
 	case b.delNote != "":
 		if b.delNoteBad {
-			return styleBad.Render(" " + b.delNote)
+			return wrapStatus(b.delNote, b.width, styleBad)
 		}
-		return " " + b.delNote
+		return wrapStatus(b.delNote, b.width, lipgloss.NewStyle())
 	default:
-		return styleDim.Render(" archived · " + b.label())
+		return []string{styleDim.Render(" archived · " + b.label())}
 	}
 }
 
@@ -1949,6 +1955,18 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 	}
 }
 
+func (b *board) promptKeys() string {
+	if b.delPrompt != nil {
+		return deletePromptKeys()
+	}
+	return ""
+}
+
 // capturesInput reports that the filter field or a pending confirmation has
 // the keyboard — typing into either must not reach the shell's global keys.
-func (b *board) capturesInput() bool { return b.filtering || b.actions.capturing() }
+// The archived board's delete question is one of them: it owns the keyboard
+// until answered (task 078 decision 3, §15 view 10), so `n` is its "no" and
+// never the root's New task (#790).
+func (b *board) capturesInput() bool {
+	return b.filtering || b.actions.capturing() || b.delPrompt != nil
+}

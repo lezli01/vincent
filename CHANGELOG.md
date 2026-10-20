@@ -523,6 +523,21 @@ list with the user-facing context a commit subject cannot carry.
   scrolls the right rows on every screen while a status line is showing,
   where it used to land one row off.
 
+- **Delete and archive questions in the TUI hold the keyboard, and a refused
+  chat message is kept.** With a permanent-delete question up on an archived
+  board, the projects delete question, or the chats board's archive question,
+  `n` opened New task with the question still armed behind it, `q` quit and
+  `:` opened the palette; now `n` answers "no", every other global key waits,
+  and the footer shows the answers. The project add/edit form holds the
+  keyboard the same way while it is open. The archived chats board now draws
+  its delete question (it was invisible while `y` still deleted), reports the
+  result on its own note instead of the archived tasks board — which also
+  dropped task selections sharing the chat's id — and reloads. The archived
+  tasks board's question and report wrap at 80 columns instead of losing
+  `[n] no` and the `failed:` reason. In a chat, a message the daemon refuses,
+  or that never reaches it, stays in the composer; `enter` on a chat that is
+  running, waiting on an answer or finished says why instead of sending.
+  ([#790](https://github.com/lezli01/vincent/issues/790))
 - **Two tasks on one existing branch no longer start together.** When both
   were queued at the same moment, the scheduler admitted both: on a branch
   checked out in your project's own checkout, two agents then worked in your

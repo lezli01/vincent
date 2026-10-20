@@ -875,6 +875,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			if _, cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
 				t.Fatal("enter did not send the message")
 			}
+			acceptSend(v)
 			if v.composer.Value() != "" {
 				t.Fatalf("the composer still holds %q after a send", v.composer.Value())
 			}

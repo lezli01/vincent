@@ -163,6 +163,49 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 	return line + strings.Repeat(" ", pad) + pinned.String(), hits
 }
 
+// prompter is a view that can hold a single-key question — a delete or an
+// archive confirmation — which owns the keyboard until it is answered. While
+// one is up, promptKeys names its answers and the footer shows those and
+// nothing else, the way the action bar's own y/n does (#790).
+type prompter interface {
+	promptKeys() string
+}
+
+// promptHint renders key/label pairs the way the footer renders a binding.
+func promptHint(pairs ...string) string {
+	parts := make([]string, 0, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		parts = append(parts, styleKey.Render(pairs[i])+" "+pairs[i+1])
+	}
+	return strings.Join(parts, styleDim.Render(" · "))
+}
+
+// buildPromptFooter is buildFooter for a view's pending question: its answer
+// keys on the left, the pinned globals on the right, and nothing else — no
+// panel hints and no `+N`, because nothing else is actionable.
+func buildPromptFooter(width int, keys string, textField bool) (string, []footerHit) {
+	pinnedSegs := footerPinnedSegs(textField)
+	var pinned strings.Builder
+	for _, s := range pinnedSegs {
+		pinned.WriteString(s.text)
+	}
+	pw := ansi.StringWidth(pinned.String())
+	segs := []footerSeg{{text: keys}}
+	if width <= 0 {
+		line, _ := composeFooter(segs)
+		return line + "  " + pinned.String(), nil
+	}
+	avail := width - pw - 2
+	if avail <= 0 {
+		return " " + pinned.String(), pinnedHits(1, pinnedSegs)
+	}
+	line, hits, _ := footerFit(segs, 0, avail)
+	lw := ansi.StringWidth(line)
+	pad := max(width-lw-pw, 2)
+	hits = append(hits, pinnedHits(lw+pad, pinnedSegs)...)
+	return line + strings.Repeat(" ", pad) + pinned.String(), hits
+}
+
 // footerSep joins two segments. Its width is the per-gap cost every budget
 // here has to pay for.
 func footerSep() (string, int) {
