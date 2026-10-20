@@ -13,6 +13,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A `tui.tabs` setting for the TUI's main tabs.** `config.yaml` accepts
+  `tui.tabs`, an ordered list drawn from `issues`, `tasks` and `chats`,
+  default `[issues, tasks]`; the first entry will be where the TUI opens. It
+  is validated on load, hot reload and `PATCH /v1/config` (an empty, `null`,
+  repeated or unknown list is refused, naming the key), served on
+  `GET /v1/config`, and editable with `vincent config get|set tui.tabs` and in
+  the TUI's config editor. The TUI does not act on it yet: tab switching, the
+  strip and landing on the first tab follow in a later release. A daemon
+  older than this one refuses a file that sets it.
+
 - **See who holds an issue's main worktree, and ask for a side task, in the
   TUI.** An issues-board card is now worded for its lane: in progress it names
   the task in the main worktree and its state, with `+k side` and `n merging`

@@ -7413,6 +7413,7 @@ tui:                           # view preference; the daemon validates and relay
   output:
     level: normal              # quiet | compact | normal | verbose: the output pane's opening level (task 129.11)
   # default_project: web       # the project the TUI opens on, by name; read at startup only (task 132.3)
+  tabs: [issues, tasks]        # the main tabs, in order, from issues | tasks | chats; the first is where the TUI opens (task 135)
 ```
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
@@ -8268,6 +8269,21 @@ registered falls through at the TUI, which says so. The TUI adopts it from the
 first config answer **at startup only**: unlike `tui.output.level`, a hot
 reload or an edit never moves a running session's selection. The key is
 removed by editing the file, since `PATCH /v1/config` refuses `""`.
+
+*Amended 2026-10-20 (task 135, issue #785):* `tui.tabs` is a flat, ordered
+list of the TUI's main tabs, each drawn from `issues`, `tasks` and `chats`
+(`config.TabViews`), default `[issues, tasks]`. Order is the strip's, the
+cycle's and the landing order — the first entry is where the TUI opens, so
+there is no separate landing key — and a single entry is valid and opts out
+of the strip. An empty list, `null`, a repeated name, an unknown name or a
+value that is not a list fails the load, a hot reload and `PATCH /v1/config`
+alike, each with a message naming `tui.tabs`; there is no lenient load path,
+because a fixed vocabulary cannot collide with a default an upgrade adds the
+way `tui.keys` can. It is served as an array, never `null`. A client treats a
+missing field as an older daemon and uses the default, drops a name it does
+not know, and falls back to the default if nothing is left. The key is
+accepted and served before the TUI acts on it: switching, the strip and
+landing arrive with issues #787–#789, which amend this note.
 
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
 steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's

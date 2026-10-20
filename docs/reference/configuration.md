@@ -368,6 +368,11 @@ container:
 # startup only; a project that is not registered falls through to the one you
 # used last, and the TUI says so. Unset, the TUI opens on the project you used
 # last.
+#
+# tabs lists the TUI's main tabs, in order: issues | tasks | chats. The first
+# is where the TUI opens and "tab" cycles through them in this order; a single
+# entry turns the tab strip off. Unset, the tabs are [issues, tasks]. Accepted
+# and validated now; the TUI starts acting on it in a later version.
 tui:
   board:
     group_by: [workflow]
@@ -377,6 +382,7 @@ tui:
   output:
     level: normal
   # default_project: web
+  # tabs: [issues, tasks]
 ```
 
 ## Keys
@@ -1613,6 +1619,7 @@ tui:
   output:
     level: normal
   # default_project: web
+  tabs: [issues, tasks]
 ```
 
 The one section the daemon does not act on. It validates it, hot-reloads it with
@@ -1825,6 +1832,42 @@ the TUI's config editor moves it at once, any other edit at the next reconnect.
 
 The key is new in this version. A daemon older than it refuses a `config.yaml`
 that sets it.
+
+#### `tui.tabs`
+
+The TUI's main tabs, in order. Each entry is one of `issues`, `tasks` or
+`chats`, and the default is `[issues, tasks]`. The order is the order of the
+tab strip and the order `tab` cycles through, and the first entry is where the
+TUI opens — there is no separate setting for that. A single entry, such as
+`[tasks]`, is valid and turns the strip off.
+
+```yaml
+tui:
+  tabs: [tasks, issues, chats]
+```
+
+**The TUI does not act on it yet.** This version accepts, validates, serves
+and edits the key — in the TUI's config editor, with `vincent config set
+tui.tabs`, and over `PATCH /v1/config` — so a file written now keeps working;
+switching tabs, the strip and opening on the first tab arrive in a later
+version.
+
+These are refused, on load, on hot reload and on `PATCH /v1/config` alike, and
+a refused `PATCH` writes nothing:
+
+| Value | Refusal |
+|---|---|
+| `[]`, `null` or a bare `tabs:` | `tui.tabs: list at least one view; want issues, tasks or chats` |
+| a name listed twice | `tui.tabs: "issues" listed twice` |
+| any other name | `tui.tabs: unknown view "board"; want issues, tasks or chats` |
+| a single name or a mapping, not a list | `tui.tabs: must be a list of views, such as [issues, tasks]; …` |
+
+Reordering in the config editor means retyping the list, as for
+`tui.board.group_by`.
+
+The key is new in this version. A daemon older than it refuses a `config.yaml`
+that sets it — unknown keys are an error — so leave it out if you run an older
+daemon against the same config directory.
 
 ## Per-project settings
 
