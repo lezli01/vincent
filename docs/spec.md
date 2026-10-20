@@ -7413,7 +7413,7 @@ tui:                           # view preference; the daemon validates and relay
   output:
     level: normal              # quiet | compact | normal | verbose: the output pane's opening level (task 129.11)
   # default_project: web       # the project the TUI opens on, by name; read at startup only (task 132.3)
-  tabs: [issues, tasks]        # the main tabs, in order, from issues | tasks | chats; the first is where the TUI opens (task 135)
+  tabs: [issues, tasks]        # the main tabs, in order, from issues | tasks | chats; the first is where the TUI opens (task 136)
 ```
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
@@ -8270,7 +8270,7 @@ first config answer **at startup only**: unlike `tui.output.level`, a hot
 reload or an edit never moves a running session's selection. The key is
 removed by editing the file, since `PATCH /v1/config` refuses `""`.
 
-*Amended 2026-10-20 (task 135, issue #785):* `tui.tabs` is a flat, ordered
+*Amended 2026-10-20 (task 136, issue #785):* `tui.tabs` is a flat, ordered
 list of the TUI's main tabs, each drawn from `issues`, `tasks` and `chats`
 (`config.TabViews`), default `[issues, tasks]`. Order is the strip's, the
 cycle's and the landing order — the first entry is where the TUI opens, so

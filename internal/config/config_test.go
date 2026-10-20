@@ -471,7 +471,7 @@ func TestTUIOutputLevel(t *testing.T) {
 // TestTUITabs: tui.tabs defaults to [issues, tasks], loads any ordered list
 // of TabViews as written, and refuses an empty, null, repeated, unknown or
 // non-list value on Load and on Decode alike, with a message naming the key
-// (task 135 decision 4).
+// (task 136 decision 4).
 func TestTUITabs(t *testing.T) {
 	if got, want := Default().TUI.Tabs, []string{"issues", "tasks"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("default tui.tabs = %v, want %v", got, want)

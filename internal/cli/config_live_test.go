@@ -117,7 +117,7 @@ func TestConfigSetTUIKeysAgainstTheRealHandler(t *testing.T) {
 		t.Errorf("set tui.board.group_by workflow: code %d, out %q", code, out)
 	}
 
-	// tui.tabs (task 135): the default reads back, a list round-trips in
+	// tui.tabs (task 136): the default reads back, a list round-trips in
 	// order, and a refused one names the key and leaves the file alone.
 	if out, code := run("get", "tui.tabs"); code != 0 || strings.TrimSpace(out) != "issues tasks" {
 		t.Errorf("get tui.tabs by default: code %d, out %q; want issues tasks", code, out)

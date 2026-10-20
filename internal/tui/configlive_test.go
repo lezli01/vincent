@@ -549,7 +549,7 @@ func TestConfigEditorSetsTheOutputLevel(t *testing.T) {
 	}
 }
 
-// tui.tabs (task 135) against the real handlers: the row opens on the
+// tui.tabs (task 136) against the real handlers: the row opens on the
 // default with the accepted vocabulary printed under the field, a save
 // round-trips in order, and a daemon refusal renders against the field and
 // leaves the file alone.
@@ -589,7 +589,7 @@ func TestConfigEditorSetsTheTabs(t *testing.T) {
 }
 
 // Every name tui.tabs accepts routes somewhere, and nothing routes a name the
-// daemon would refuse (task 135 decision 10).
+// daemon would refuse (task 136 decision 10).
 func TestTabViewIDsCoverTheVocabulary(t *testing.T) {
 	if len(tabViewIDs) != len(config.TabViews) {
 		t.Errorf("tabViewIDs has %d names, config.TabViews %d", len(tabViewIDs), len(config.TabViews))

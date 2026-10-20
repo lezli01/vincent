@@ -111,7 +111,7 @@ type configTUI struct {
 	Output configOutput      `json:"output"`
 	// DefaultProject is `tui.default_project` (task 132.3), "" when unset.
 	DefaultProject string `json:"default_project"`
-	// Tabs is `tui.tabs` (task 135), in order. Always an array: validation
+	// Tabs is `tui.tabs` (task 136), in order. Always an array: validation
 	// keeps it non-empty, and stringList keeps a stray nil from reading as
 	// a daemon that predates the key.
 	Tabs []string `json:"tabs"`
@@ -529,7 +529,7 @@ type tuiPatch struct {
 	// is written and then refused by validation: the key is removed by
 	// editing the file, not by patching it to "".
 	DefaultProject *string `json:"default_project"`
-	// Tabs replaces the whole `tui.tabs` list (task 135). `[]` is written
+	// Tabs replaces the whole `tui.tabs` list (task 136). `[]` is written
 	// to the candidate and refused by validation, like any invalid value.
 	Tabs *[]string `json:"tabs"`
 }

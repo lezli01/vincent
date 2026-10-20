@@ -660,16 +660,16 @@ type TUI struct {
 	// says so. The TUI adopts it at startup only: a hot reload never moves
 	// a session's selection.
 	DefaultProject *string `yaml:"default_project"`
-	// Tabs lists the TUI's main tabs, in order (task 135, §12.3, §15): each
+	// Tabs lists the TUI's main tabs, in order (task 136, §12.3, §15): each
 	// one of TabViews, at least one, none twice. The order is the strip's,
 	// the order `tab` cycles in, and the landing order — the first entry is
-	// where the TUI opens, so there is no separate landing key (task 135
+	// where the TUI opens, so there is no separate landing key (task 136
 	// decision 1). One entry is valid and is the opt-out of the strip.
 	// Default [issues, tasks]. The daemon never reads it; it validates it.
 	Tabs []string `yaml:"tabs"`
 }
 
-// TabViews is tui.tabs' vocabulary (task 135 decision 2): the project-scoped
+// TabViews is tui.tabs' vocabulary (task 136 decision 2): the project-scoped
 // boards that each pair with a record view. It starts narrow on purpose —
 // strict decoding makes removing a name a breaking change, adding one is not.
 var TabViews = []string{"issues", "tasks", "chats"}
@@ -686,7 +686,7 @@ func tabViewsWant() string {
 
 // checkTabsShape refuses the two tui.tabs values decoding over Default()
 // cannot: `tabs: null` (or a bare `tabs:`), which go-yaml treats as absent and
-// so would keep the default where task 135 refuses it like `[]`, and a value
+// so would keep the default where task 136 refuses it like `[]`, and a value
 // that is not a list, whose parse error points at the line without naming
 // the key. It reads only the shape; everything else — including a `tui` that
 // is not a mapping — is left to the strict decode that follows.

@@ -210,7 +210,7 @@ type ConfigTUI struct {
 	// the TUI opens on when neither --project nor the working directory picks
 	// one. Empty when unset, or from a daemon that predates the key.
 	DefaultProject string `json:"default_project"`
-	// Tabs is `tui.tabs` (task 135): the TUI's main tabs, in order — the
+	// Tabs is `tui.tabs` (task 136): the TUI's main tabs, in order — the
 	// first is where the TUI opens. A client applies three rules, because it
 	// may be talking to a daemon of another version: a missing field (nil)
 	// is an older daemon, so the default [issues, tasks] applies; a name the
@@ -524,7 +524,7 @@ type ConfigTUIPatch struct {
 	Output *ConfigOutputPatch `json:"output,omitempty"`
 	// DefaultProject sets `tui.default_project` (task 132.3).
 	DefaultProject *string `json:"default_project,omitempty"`
-	// Tabs replaces the whole `tui.tabs` list (task 135); the daemon refuses
+	// Tabs replaces the whole `tui.tabs` list (task 136); the daemon refuses
 	// an empty, repeated or unknown one.
 	Tabs *[]string `json:"tabs,omitempty"`
 }

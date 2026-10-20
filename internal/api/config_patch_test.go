@@ -426,7 +426,7 @@ func TestConfigPatchRoundTripsTUIOutputLevel(t *testing.T) {
 	}
 }
 
-// tui.tabs (task 135) is served as an array, round-trips through PATCH in
+// tui.tabs (task 136) is served as an array, round-trips through PATCH in
 // order, and a refused value — empty, repeated or unknown — names the key and
 // leaves config.yaml byte-identical. The coverage tests walk top-level keys
 // only, so the nested key gets its own.

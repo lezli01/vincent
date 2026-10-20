@@ -112,7 +112,7 @@ var (
 )
 
 // tabViewIDs maps each tui.tabs name (config.TabViews) to the view it opens
-// (task 135 decision 10). A test holds its keys equal to config.TabViews, so
+// (task 136 decision 10). A test holds its keys equal to config.TabViews, so
 // a name added to the vocabulary cannot reach a TUI with nowhere to route it.
 // Nothing routes by it yet: tab switching (#787) is what consumes it.
 var tabViewIDs = map[string]viewID{
@@ -478,7 +478,7 @@ func configKeys() []configKey {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Board: &apiclient.ConfigBoardPatch{GroupBy: &v}}}, nil
 			},
 		},
-		// Task 135. Reordering means retyping the list, as for group_by.
+		// Task 136. Reordering means retyping the list, as for group_by.
 		{
 			path: "tui.tabs", label: "tabs", kind: kindList, choices: config.TabViews,
 			help: "views tab cycles through, in order; the first is where the TUI opens",

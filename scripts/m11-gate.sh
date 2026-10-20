@@ -23,7 +23,7 @@
 #   9. `tui.default_project` (task 132.3): an empty or over-long name is
 #      refused with the file byte-identical, and a valid one round-trips
 #      through GET and `vincent config get`
-#  10. `tui.tabs` (task 135): an empty, repeated or unknown list is refused
+#  10. `tui.tabs` (task 136): an empty, repeated or unknown list is refused
 #      with the file byte-identical, and an accepted one round-trips in
 #      order through GET, the file and `vincent config get`
 #

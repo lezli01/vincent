@@ -1,4 +1,4 @@
-# 135 — Main tabs in the TUI: Issues, Tasks and Chats behind one `tab` key
+# 136 — Main tabs in the TUI: Issues, Tasks and Chats behind one `tab` key
 
 **Status:** 🔄 in progress (1/4)
 **Opened:** 2026-10-20
@@ -58,11 +58,11 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
 
 ## Tasks
 
-- [x] **135.1** The `tui.tabs` key (#785): config field, vocabulary, default,
+- [x] **136.1** The `tui.tabs` key (#785): config field, vocabulary, default,
   validation (null included), bootstrap line, API GET/PATCH, apiclient fields,
   `vincent config get|set tui.tabs`, the TUI config editor row, the
   name→view table, tests at each layer, m11 gate scenario 10, the
   configuration reference and the spec §12.3 amendment. ✓ 2026-10-20
-- [ ] **135.2** Tab switching with `tab` (#787).
-- [ ] **135.3** The tab strip (#788).
-- [ ] **135.4** Landing on the first tab (#789).
+- [ ] **136.2** Tab switching with `tab` (#787).
+- [ ] **136.3** The tab strip (#788).
+- [ ] **136.4** Landing on the first tab (#789).
