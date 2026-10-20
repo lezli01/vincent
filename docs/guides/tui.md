@@ -2039,6 +2039,12 @@ global and project entries in one list sorted by name, each with its scope
 badge and validation status. Nothing from any other project is shown; switch
 projects to see another's.
 
+The selected entry's description, validation error or platform note wraps
+under its name, so the whole text is readable at any width; every other row
+stays one line and ends in `…` when it is cut. An entry that cannot run says so
+ahead of its name — `invalid`, or `not on this platform` — so a long name never
+pushes the mark off the edge.
+
 When the project has a workflow with the same name as a global or built-in
 one, its own copy wins (shadowing). Both rows stay in the list: the project's
 says `shadows global X` (or `shadows builtin X`), and the global one beside it

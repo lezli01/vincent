@@ -279,6 +279,10 @@ type newTask struct {
 	touched    bool
 
 	width, height int
+	// detailWidth is the width the last render laid the workflow detail out
+	// in: the whole screen in the compact form, the main pane inside its
+	// border in the guided one (#791). Zero until the first render.
+	detailWidth int
 }
 
 func newNewTask() *newTask {

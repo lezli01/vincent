@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
@@ -49,7 +50,8 @@ func (w *workflowsView) renderGuidedList() string {
 	var main string
 	if line, ok := w.currentLine(); ok {
 		title = "Overview · " + line.entry.Name
-		main = w.renderWorkflowOverview(line, w.height-2)
+		_, mainWidth := guidedPaneWidths(w.width)
+		main = w.renderWorkflowOverview(line, mainWidth-2, w.height-2)
 	} else if body, ok := w.emptyBody(lines); ok {
 		main = strings.Join(append(w.statusLines(), body), "\n")
 	}
@@ -93,8 +95,8 @@ func (w *workflowsView) renderRegistryRail(lines []wfLine, height int) string {
 		case line.shadowedBy != "":
 			name = styleDim.Render(name)
 		}
-		badge := workflowRailBadge(*line.entry)
-		rows = append(rows, marker+name+badge)
+		lead, badge := workflowRailBadge(*line.entry)
+		rows = append(rows, marker+lead+name+badge)
 		if note := shadowNote(line); note != "" {
 			rows = append(rows, styleWarn.Render("      "+note))
 		}
@@ -105,27 +107,31 @@ func (w *workflowsView) renderRegistryRail(lines []wfLine, height int) string {
 	return strings.Join(windowRange(rows, from, to, height), "\n")
 }
 
-func workflowRailBadge(entry apiclient.WorkflowEntry) string {
+// workflowRailBadge returns what goes before a rail entry's name and what
+// goes after it. The two that say the entry cannot run lead, so a long name
+// the rail cuts never takes them with it (#791): under NO_COLOR they are the
+// only mark an entry is broken.
+func workflowRailBadge(entry apiclient.WorkflowEntry) (lead, trail string) {
 	switch {
 	case !entry.Valid():
-		return "  " + styleBad.Render("✗ invalid")
+		return styleBad.Render("✗ invalid") + " ", ""
 	case !entry.RunsHere():
-		return "  " + styleWarn.Render("! platform")
+		return styleWarn.Render("! platform") + " ", ""
 	case len(entry.Warnings) > 0:
-		return "  " + styleWarn.Render("⚠")
+		return "", "  " + styleWarn.Render("⚠")
 	case entry.File == "":
-		return "  " + styleDim.Render("built-in")
+		return "", "  " + styleDim.Render("built-in")
 	default:
-		return ""
+		return "", ""
 	}
 }
 
-func (w *workflowsView) renderWorkflowOverview(line wfLine, height int) string {
+func (w *workflowsView) renderWorkflowOverview(line wfLine, width, height int) string {
 	e := line.entry
 	rows := append([]string{}, w.statusLines()...)
 	rows = append(rows, "  "+styleTitle.Render(e.Name))
 	if e.Description != "" {
-		rows = append(rows, "  "+styleDim.Render(e.Description))
+		rows = append(rows, hangingWrap("  ", "  ", e.Description, width, styleDim)...)
 	}
 	rows = append(rows, "",
 		section("Registry"),
@@ -139,7 +145,7 @@ func (w *workflowsView) renderWorkflowOverview(line wfLine, height int) string {
 		rows = append(rows, workflowFact("editing", styleWarn.Render(warn)))
 	}
 	rows = append(rows, "", section("Availability"))
-	rows = append(rows, workflowAvailability(e)...)
+	rows = append(rows, workflowAvailability(e, width)...)
 	rows = append(rows, "", section("Steps"))
 	if w.expanded {
 		steps := w.renderStepRows(line, "  ")
@@ -165,7 +171,7 @@ func workflowFact(label, value string) string {
 	return "  " + styleDim.Render(fmt.Sprintf("%-12s", label)) + " " + value
 }
 
-func workflowAvailability(e *apiclient.WorkflowEntry) []string {
+func workflowAvailability(e *apiclient.WorkflowEntry, width int) []string {
 	var rows []string
 	switch {
 	case !e.Valid():
@@ -179,12 +185,32 @@ func workflowAvailability(e *apiclient.WorkflowEntry) []string {
 		rows = append(rows, workflowFact("platforms", strings.TrimPrefix(note, "needs ")))
 	}
 	for _, finding := range e.Errors {
-		rows = append(rows, styleBad.Render("  ⚠ "+findingText(finding)))
+		rows = append(rows, hangingWrap("  ⚠ ", "    ", findingText(finding), width, styleBad)...)
 	}
 	for _, finding := range e.Warnings {
-		rows = append(rows, styleWarn.Render("  ⚠ "+findingText(finding)))
+		rows = append(rows, hangingWrap("  ⚠ ", "    ", findingText(finding), width, styleWarn)...)
 	}
 	return rows
+}
+
+// hangingWrap wraps plain text into width columns behind lead, continuing
+// under pad — modalRow's hanging indent — and styles each line whole, so a
+// break never lands inside an escape sequence (#791). A width not yet known
+// leaves the text on one line, the way a view that has not been sized draws.
+func hangingWrap(lead, pad, text string, width int, style lipgloss.Style) []string {
+	if width <= 0 {
+		return []string{style.Render(lead + text)}
+	}
+	wrapped := wrapPlain(text, width-cols(lead))
+	out := make([]string, len(wrapped))
+	for i, line := range wrapped {
+		if i == 0 {
+			out[i] = style.Render(lead + line)
+			continue
+		}
+		out[i] = style.Render(pad + line)
+	}
+	return out
 }
 
 // renderList draws the registry through a viewport. The status lines are
@@ -203,7 +229,7 @@ func (w *workflowsView) renderList(width, height int) string {
 		if i == w.cursor {
 			cursorRow = len(rows)
 		}
-		rows = append(rows, w.renderLine(i, line))
+		rows = append(rows, w.renderLine(i, line, width)...)
 		if i == w.cursor && w.expanded && line.entry != nil {
 			rows = append(rows, w.renderSteps(line)...)
 		}
@@ -363,9 +389,14 @@ func (w *workflowsView) emptyBody(lines []wfLine) (string, bool) {
 		"\n  no workflows registered — every project can still run the built-in adhoc\n"), true
 }
 
-func (w *workflowsView) renderLine(i int, line wfLine) string {
+// renderLine draws one registry entry. The selected entry wraps its detail
+// under its name so the whole description or error is readable; every other
+// entry stays one row, ended with an ellipsis when it is cut, so the list
+// keeps its density at 80×24 (#791). A width not yet known draws one row
+// uncut.
+func (w *workflowsView) renderLine(i int, line wfLine, width int) []string {
 	if line.entry == nil {
-		return w.renderHeader(line)
+		return []string{w.renderHeader(line)}
 	}
 	marker := "   "
 	if i == w.cursor {
@@ -381,28 +412,58 @@ func (w *workflowsView) renderLine(i int, line wfLine) string {
 		// but dimmed, because it is not what this project runs (decision 40).
 		name = styleDim.Render(name)
 	}
-	parts := []string{marker + name}
-	parts = append(parts, styleDim.Render("["+e.Scope+"]"))
+	// The badges that say an entry cannot run lead the name, so a long name
+	// never pushes them off the edge (#791).
+	lead := ""
 	switch {
 	case !e.Valid():
-		parts = append(parts, styleBad.Render("invalid: "+e.FirstError()))
+		lead = styleBad.Render("invalid") + " "
+	case !e.RunsHere():
+		lead = styleWarn.Render("not on this platform") + " "
+	}
+	head := marker + lead + name + "  " + styleDim.Render("["+e.Scope+"]")
+	detail, style := "", styleDim
+	switch {
+	case !e.Valid():
+		detail, style = e.FirstError(), styleBad
 	case !e.RunsHere():
 		// A platform-restricted workflow stays listed where the registry is
 		// browsed — "where did it go?" is a worse answer than "not here, and
 		// here is what it needs" (task 010).
-		parts = append(parts, styleWarn.Render("not on this platform · "+e.PlatformNote()))
+		detail, style = e.PlatformNote(), styleWarn
 	case e.File == "":
-		parts = append(parts, styleDim.Render("built-in"))
+		detail = "built-in"
 	case len(e.Warnings) > 0:
-		parts = append(parts, styleWarn.Render("⚠ "+e.Warnings[0].Message))
+		detail, style = "⚠ "+e.Warnings[0].Message, styleWarn
 	case e.Description != "":
-		parts = append(parts, styleDim.Render(e.Description))
+		detail = e.Description
 	}
-	if note := shadowNote(line); note != "" {
-		parts = append(parts, styleWarn.Render(note))
+	note := shadowNote(line)
+	if i == w.cursor && width > 0 {
+		out := []string{ansi.Truncate(head, width, "…")}
+		if detail != "" {
+			out = append(out, hangingWrap(entryDetailIndent, entryDetailIndent, detail, width, style)...)
+		}
+		if note != "" {
+			out = append(out, hangingWrap(entryDetailIndent, entryDetailIndent, note, width, styleWarn)...)
+		}
+		return out
 	}
-	return strings.Join(parts, "  ")
+	row := head
+	if detail != "" {
+		row += "  " + style.Render(detail)
+	}
+	if note != "" {
+		row += "  " + styleWarn.Render(note)
+	}
+	if width > 0 {
+		row = ansi.Truncate(row, width, "…")
+	}
+	return []string{row}
 }
+
+// entryDetailIndent hangs a selected entry's wrapped detail under its name.
+const entryDetailIndent = "     "
 
 // renderHeader draws the one non-entry line, the project fetch failing.
 func (w *workflowsView) renderHeader(line wfLine) string {

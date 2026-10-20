@@ -123,6 +123,7 @@ func (n *newTask) render(width, height int) string {
 		return n.renderGuided(width, height)
 	}
 	n.desc.SetWidth(max(20, width-8))
+	n.detailWidth = width
 	return n.renderCompact(height)
 }
 
@@ -144,6 +145,7 @@ func (n *newTask) renderCompact(height int) string {
 func (n *newTask) renderGuided(width, height int) string {
 	_, mainWidth := guidedPaneWidths(width)
 	n.desc.SetWidth(max(20, mainWidth-8))
+	n.detailWidth = mainWidth - 2
 	stage := ntStageForRow(n.cursor)
 	rail := n.renderStageRail(stage, height-2)
 	main, cursorLine := n.renderStage(stage)
@@ -623,7 +625,7 @@ func (n *newTask) renderWorkflowDetail(name string) []string {
 	}
 	out := []string{}
 	if e.Description != "" {
-		out = append(out, styleDim.Render("    "+e.Description))
+		out = append(out, hangingWrap("    ", "    ", e.Description, n.detailWidth, styleDim)...)
 	}
 	// The resolution describes the *committed* workflow; the picker previews
 	// other entries, and those keep the registry's own text rather than a
@@ -645,14 +647,18 @@ func (n *newTask) renderWorkflowDetail(name string) []string {
 		case n.agents.Unavailable(agent):
 			suffix = "  " + styleWarn.Render("⚠ unavailable")
 		}
-		line := fmt.Sprintf("    %d. %-24s %s", i+1, firstNonEmpty(s.Name, s.ID), styleDim.Render(s.Type))
+		// The name column is 24 wide; a longer name keeps two spaces before
+		// its type rather than running into it (#791).
+		stepName := firstNonEmpty(s.Name, s.ID)
+		gap := strings.Repeat(" ", max(24-cols(stepName), 1)+1)
+		line := fmt.Sprintf("    %d. %s%s%s", i+1, stepName, gap, styleDim.Render(s.Type))
 		if agent != "" {
 			line += "  " + styleDim.Render(agent)
 		}
 		out = append(out, line+suffix)
 	}
 	for _, f := range e.Errors {
-		out = append(out, styleBad.Render("    ✗ "+f.Message))
+		out = append(out, hangingWrap("    ✗ ", "      ", f.Message, n.detailWidth, styleBad)...)
 	}
 	return out
 }

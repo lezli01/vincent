@@ -558,6 +558,16 @@ list with the user-facing context a commit subject cannot carry.
   and `o` on a local issue. The mouse wheel now scrolls the detail and moves
   the issues list's selection, and a click selects a row on either screen.
   ([#792](https://github.com/lezli01/vincent/issues/792))
+- **Workflow descriptions and validation errors are no longer cut to one
+  row.** The workflows screen and the new-task form's workflow detail and
+  picker preview drew a description and each validation finding as a single
+  line the pane clipped, so most of a long one never reached the screen. The
+  selected workflow's text now wraps under it; other rows in the compact
+  workflow list stay one line and end in `…` when cut. The `invalid` and
+  platform marks now come before the workflow's name, so a long name no
+  longer pushes them off the edge, and a new-task step name longer than its
+  column keeps two spaces before its type.
+
 - **Two tasks on one existing branch no longer start together.** When both
   were queued at the same moment, the scheduler admitted both: on a branch
   checked out in your project's own checkout, two agents then worked in your
