@@ -790,6 +790,15 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 	},
+	ctxConnection: {
+		"r": func(t *testing.T) {
+			m := phaseRoot(t, phaseFailed, 80, 24)
+			m.Update(registryKey(t, "r"))
+			if m.phase != phaseProbing {
+				t.Fatalf("r left the phase at %d, want probing (a retry)", m.phase)
+			}
+		},
+	},
 	ctxArchivedChats: {
 		"enter": func(t *testing.T) {
 			v := archivedChatsFixture()

@@ -229,6 +229,40 @@ func TestConnectionScreenHidesPasteAndClicks(t *testing.T) {
 	}
 }
 
+// Review F4: `?` and `:` on the connection screen describe the connection
+// screen — retry and the root's keys — never the hidden board's rows, which
+// the screen's key gate drops.
+func TestConnectionScreenHelpAndPaletteAreItsOwn(t *testing.T) {
+	m := phaseRoot(t, phaseFailed, 80, 40)
+	m.Update(key("?"))
+	sheet := ansi.Strip(m.View().Content)
+	if !strings.Contains(sheet, "Help — connection") || !strings.Contains(sheet, "retry the connection now") {
+		t.Errorf("help over the connection screen is not about it:\n%s", sheet)
+	}
+	for _, hidden := range []string{"TASK TABLE", "│  /  ", "│  space"} {
+		if strings.Contains(sheet, hidden) {
+			t.Errorf("help over the connection screen lists the hidden board's %q:\n%s", hidden, sheet)
+		}
+	}
+	m.Update(key("?"))
+	m.Update(key(":"))
+	if m.palette == nil {
+		t.Fatal("`:` did not open the palette")
+	}
+	retry := false
+	for _, e := range m.palette.entries {
+		if e.group == string(ctxTasks) {
+			t.Errorf("the palette offers the hidden board's %q", e.label)
+		}
+		if e.group == string(ctxConnection) && e.key == "r" {
+			retry = true
+		}
+	}
+	if !retry {
+		t.Error("the palette over the connection screen offers no retry")
+	}
+}
+
 // C5: the status line fits the width, and the pending switch's key survives.
 func TestStatusLineFitsWithLongProjectNames(t *testing.T) {
 	name := strings.Repeat("p", 40)

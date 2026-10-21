@@ -866,6 +866,11 @@ func (m *root) surfaceTarget() surface {
 	if m.phase != phaseConnected {
 		s.target = taskActions{}
 	}
+	if m.connScreen() {
+		// The view is hidden and takes no keys: none of its rows, tabs or
+		// extras are on offer (review F4).
+		return surface{}
+	}
 	return s
 }
 
@@ -932,6 +937,9 @@ func (m *root) panelOwnsLocalKey(key string) bool {
 
 // activeContext names the active surface for the binding registry.
 func (m *root) activeContext() bindingContext {
+	if m.connScreen() {
+		return ctxConnection
+	}
 	switch m.active {
 	case viewTask:
 		return m.views[viewTask].(*taskView).bindingContext()

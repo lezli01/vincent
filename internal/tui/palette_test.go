@@ -34,6 +34,7 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 		ctxArchived, ctxArchivedChats,
 		ctxTriggers, ctxTriggerLedger,
 		ctxIssues, ctxIssue,
+		ctxConnection,
 	}
 	for _, b := range bindings {
 		if b.noPalette {

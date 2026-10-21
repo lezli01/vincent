@@ -313,6 +313,7 @@ var fixed = []Fixed{
 	{"chats", "shift+tab", "switch to the previous main tab"},
 	{"issues", "shift+tab", "switch to the previous main tab"},
 	{"global", "r", "retry the connection while disconnected"},
+	{"connection", "r", "retry the connection now"},
 	{"lists and panes", "j", "move down (vim)"},
 	{"lists and panes", "k", "move up (vim)"},
 	{"lists and panes", "h", "move left (vim)"},

@@ -16038,8 +16038,9 @@ active surface is not one that stays on screen stale, the body is a
 connection screen — connecting, starting, reconnecting or unreachable — and
 that screen owns the keyboard and the footer: `r` retries where there is
 something to retry, `tab`/`shift+tab` still switch the main tab, and only the
-root's own keys (`:`, `?`, quit) act; the view behind it receives nothing and
-offers no footer rows. When the view behind it is capturing text — a
+root's own keys (`:`, `?`, quit) act; the view behind it receives nothing —
+no key, paste or click — and offers no footer rows, and `?` and `:` describe
+the connection screen (retry and the root's keys), not the hidden view. When the view behind it is capturing text — a
 reconnect can land mid-sentence in a chat or a form — a printable key other
 than `r` is the human still typing and is swallowed, so `q` cannot quit past
 a draft; the footer and the screen then name the text-field keys (`ctrl+p`,

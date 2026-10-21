@@ -156,6 +156,11 @@ const (
 	// action keys, which an archived row offers none of anyway.
 	ctxArchived      bindingContext = "archived tasks"
 	ctxArchivedChats bindingContext = "archived chats"
+	// ctxConnection is the connection screen (#793): while it hides the
+	// view behind it, that view's keys do nothing, so `?` and `:` describe
+	// this screen — retry and the root's own keys — rather than the hidden
+	// surface (review F4).
+	ctxConnection bindingContext = "connection"
 	ctxChats         bindingContext = "chats"
 	ctxChat          bindingContext = "chat"
 	// ctxChatSkills is the chat workspace's skill list (task 124.13). Its
@@ -594,6 +599,11 @@ var bindings = []binding{
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchived, hint: "</> page", priority: 4},
 	{op: keymap.Filter, key: "/", label: "filter by id, title or state", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
 	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
+
+	// The connection screen. `r` is retry-connecting, a fixed key (task 118
+	// decision 8); the footer draws it from its retry segment, so the row is
+	// for `?` and `:`.
+	{key: "r", label: "retry the connection now (while reconnecting, restart the daemon if it stays down)", scope: scopePanel, context: ctxConnection, priority: 1},
 
 	// Archived chats. The same three keys, on the same reasoning: a chat that
 	// ended is history, and this is the only place it can be discarded.
