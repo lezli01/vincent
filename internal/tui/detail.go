@@ -225,6 +225,12 @@ type detail struct {
 	// kept so a click can name the attempt on the line it landed on.
 	timelineTop int
 	visibleRuns []int64
+	// timelineOffset is the first drawn line of the windowed timeline, kept
+	// across renders so the window moves only when the selection leaves it
+	// (#799 W11). timelinePage is how many cursor stops that window showed —
+	// the distance pgup/pgdown move the selection.
+	timelineOffset int
+	timelinePage   int
 	// timelineFolds records the iteration and round tiers a reader has opened
 	// or closed in the Steps & Attempts timeline. It holds *decisions only*:
 	// a tier that is absent renders at the arrival default, latest-open (task
@@ -897,6 +903,16 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			return d.moveTimelineSelection(-1)
 		case "down", "j":
 			return d.moveTimelineSelection(1)
+		case "pgup":
+			return d.moveTimelineSelection(-max(d.timelinePage, 1))
+		case "pgdown":
+			return d.moveTimelineSelection(max(d.timelinePage, 1))
+		// moveTimelineSelection clamps, so a move past either end is the
+		// first or last stop with every side effect of a plain ↑/↓.
+		case "g", "home":
+			return d.moveTimelineSelection(-len(d.attempts()))
+		case "G", "end":
+			return d.moveTimelineSelection(len(d.attempts()))
 		// The fold keys live here rather than in the workspace so the popup's
 		// timeline and the full-screen one are the same pane in the same
 		// state. ←/→ keep no alias: h/l are the Output tab's attempt walk.
@@ -920,6 +936,9 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "G", "end":
 		d.setFollowing(true)
 		return nil
+	case "g", "home":
+		// The top is as far from the tail as the pane goes, so follow drops.
+		d.vp.GotoTop()
 	case "j", "down":
 		d.vp.ScrollDown(1)
 	case "k", "up":

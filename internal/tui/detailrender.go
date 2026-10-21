@@ -455,7 +455,10 @@ func (d *detail) renderTimeline(height int) string {
 	selTier, selFolded := d.foldedSelection(loops, latest)
 	lines := make([]string, 0, len(runs)*2)
 	ids := make([]int64, 0, len(runs)*2)
-	cursorLine := 0
+	cursorLine, cursorEnd := 0, 1
+	// foldedHeaders are the folded tiers' header lines: each is one cursor
+	// stop, which is what a page counts.
+	var foldedHeaders []int
 	lastStep := -1
 	// -1 rather than 0, because a `fan_out`'s rounds are 0-based (task 080
 	// decision 3) and round 0 deserves a header like every other tier. A
@@ -490,8 +493,11 @@ func (d *detail) renderTimeline(height int) string {
 			lastIteration = r.Iteration
 			lastSub = ""
 			header := "    " + iterationHeader(r, open, d.tierNoun(r.StepIndex))
+			if !open {
+				foldedHeaders = append(foldedHeaders, len(lines))
+			}
 			if selFolded && selTier == (tierKey{r.StepIndex, r.Iteration}) {
-				cursorLine = len(lines)
+				cursorLine, cursorEnd = len(lines), len(lines)+1
 				header = styleSelected.Render(header)
 			} else {
 				header = styleDim.Render(header)
@@ -548,15 +554,145 @@ func (d *detail) renderTimeline(height int) string {
 			lines = append(lines, summary)
 			ids = append(ids, r.ID)
 		}
+		if r.ID == d.selectedRun {
+			cursorEnd = len(lines)
+		}
 	}
-	// The windowed ids are kept for hit-testing clicks on the same lines.
-	start := windowStart(len(lines), cursorLine, height)
-	end := len(lines)
-	if height > 0 && len(lines) > height {
-		end = start + height
+	return d.windowTimeline(lines, ids, foldedHeaders, cursorLine, cursorEnd, height)
+}
+
+// windowTimeline cuts the drawn timeline down to height rows and records the
+// geometry a click and a page move need (#799 W11).
+//
+// The window is not re-centred on every move: it stays where the last render
+// left it (d.timelineOffset) and moves only when the selection would leave it,
+// so ↑/↓ inside the window move the highlight and nothing else. Its top edge
+// snaps to a whole entry — an attempt and its continuation rows are never cut
+// in half there — and rows it hides are said, never silent (task 070
+// decision 2): a `↑ N more` row above, a `↓ N more` row below.
+func (d *detail) windowTimeline(
+	lines []string, ids []int64, foldedHeaders []int, selFrom, selTo, height int,
+) string {
+	// An entry begins on every structural line and on an attempt's first
+	// line; an attempt's later lines and summaries share its run id.
+	entryStart := func(i int) bool { return i == 0 || ids[i] == 0 || ids[i] != ids[i-1] }
+	// A heading is a structural line with words on it — a step, iteration
+	// or sub-step header — which a selection scrolled into from below
+	// brings with it.
+	heading := func(i int) bool { return ids[i] == 0 && nonBlank(lines[i:i+1]) > 0 }
+	start, end := timelineWindow(len(lines), entryStart, heading, selFrom, selTo, d.timelineOffset, height)
+	d.timelineOffset = start
+
+	stops := 0
+	for i := start; i < end; i++ {
+		if ids[i] != 0 && entryStart(i) {
+			stops++
+		}
 	}
-	d.visibleRuns = ids[start:end]
-	return strings.Join(lines[start:end], "\n")
+	for _, h := range foldedHeaders {
+		if h >= start && h < end {
+			stops++
+		}
+	}
+	d.timelinePage = max(stops, 1)
+
+	out := make([]string, 0, end-start+2)
+	visible := make([]int64, 0, end-start+2)
+	if start > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ↑ %d more", nonBlank(lines[:start]))))
+		visible = append(visible, 0)
+	}
+	out = append(out, lines[start:end]...)
+	// The windowed ids are kept for hit-testing clicks on the same lines; a
+	// cue row is not an attempt, so it carries none.
+	visible = append(visible, ids[start:end]...)
+	if end < len(lines) {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ↓ %d more", nonBlank(lines[end:]))))
+		visible = append(visible, 0)
+	}
+	d.visibleRuns = visible
+	return strings.Join(out, "\n")
+}
+
+// nonBlank counts the lines a cue stands for: the spacer between two steps is
+// not a row anyone would miss.
+func nonBlank(lines []string) int {
+	n := 0
+	for _, l := range lines {
+		if strings.TrimSpace(ansi.Strip(l)) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// timelineWindow is the visible range [start,end) of an n-line timeline in a
+// height-row pane, given the previous top (offset) and the selection's lines
+// [selFrom,selTo). A top cue takes a row whenever start > 0 and a bottom cue
+// whenever end < n; below three rows there is no room for both and a line of
+// content, so the cues are dropped there rather than the selection.
+//
+// The result starts at the previous offset (snapped back to an entry) when
+// the selection is still wholly inside it, at the selection when it ran off
+// the top, and at the earliest entry that shows the selection's last line
+// when it ran off the bottom — a selection taller than the window is anchored
+// at its first line. Reached from below, the selection brings the headings
+// directly above it while they fit, so an attempt arrives under the
+// iteration and sub-step that name it rather than as a bare row. A window with spare rows at the bottom is pulled back up
+// so a fold that shrank the list never leaves the pane half empty.
+func timelineWindow(
+	n int, entryStart, heading func(int) bool, selFrom, selTo, offset, height int,
+) (start, end int) {
+	if height <= 0 || n <= height {
+		return 0, n
+	}
+	cues := height >= 3
+	endAt := func(off int) int {
+		avail := height
+		if cues && off > 0 {
+			avail--
+		}
+		if cues && off+avail < n {
+			avail--
+		}
+		return min(off+avail, n)
+	}
+	snap := func(i int) int {
+		i = min(max(i, 0), n-1)
+		for i > 0 && !entryStart(i) {
+			i--
+		}
+		return i
+	}
+	selFrom = min(max(selFrom, 0), n-1)
+	selTo = min(max(selTo, selFrom+1), n)
+	anchor := snap(selFrom)
+
+	start = snap(offset)
+	switch {
+	case selFrom < start:
+		start = anchor
+		for start > 0 && heading(start-1) && selTo <= endAt(start-1) {
+			start--
+		}
+	case selTo > endAt(start):
+		next := anchor
+		for b := start + 1; b < anchor; b++ {
+			if entryStart(b) && selTo <= endAt(b) {
+				next = b
+				break
+			}
+		}
+		start = next
+	}
+	for start > 0 && endAt(start) == n {
+		prev := snap(start - 1)
+		if endAt(prev) != n {
+			break
+		}
+		start = prev
+	}
+	return start, endAt(start)
 }
 
 // loopStripLine is the dim summary line under a `loop` step's header, where
