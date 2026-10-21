@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -821,9 +822,12 @@ func unsentRest(value, sent string) string {
 
 func (v *chatView) applyAnswered(msg chatAnsweredMsg) tea.Cmd {
 	if msg.err != nil {
-		if v.form != nil {
-			v.form.err = errString(msg.err)
-			v.form.submitting = false
+		// esc may have put the form away while the answer was in flight
+		// (review F5): the failure lands on it all the same, so alt+a brings
+		// back a form that can be sent again and says why it was not.
+		if f := cmp.Or(v.form, v.formAway); f != nil {
+			f.err = errString(msg.err)
+			f.submitting = false
 		}
 		return nil
 	}

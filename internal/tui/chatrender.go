@@ -406,6 +406,9 @@ func (v *chatView) noteLines(width int) []string {
 		// Persistent while the question is away (issue #801 F7): it is the
 		// only thing on screen saying the agent is waiting, and how to answer.
 		text, style = chatFormAwayNote, styleWarn
+		if v.formAway.err != "" {
+			text, style = v.formAway.err+" — "+chatFormAwayNote, styleBad
+		}
 	case v.skills.inlineNote != "":
 		// The inline skill list's own line (task 124.14): a sigil token the
 		// agent did not report, or what the skill just accepted takes. Dim,

@@ -199,6 +199,10 @@ func (f *answerForm) updateWith(msg tea.KeyPressMsg, submit func(apiclient.Input
 // checks the same rules — but a form that can say "answer the second
 // question" without a round trip should.
 func (f *answerForm) submitTo(post func(apiclient.InputResponse) tea.Cmd) tea.Cmd {
+	if f.submitting {
+		// One answer in flight at a time: its reply clears this either way.
+		return nil
+	}
 	resp := f.response()
 	if err := f.req.Validate(resp); err != nil {
 		f.err = errString(err)

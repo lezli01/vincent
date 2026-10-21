@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -109,6 +110,45 @@ func TestChatAnswerPopupEscAndReopen(t *testing.T) {
 		if b.key == "alt+a" {
 			t.Error("alt+a is offered with no question put away")
 		}
+	}
+}
+
+// TestChatAnswerFailedWhileAway: esc while the answer is in flight, then a
+// refusal — the put-away form takes the error and stops submitting, the note
+// says so, and alt+a brings back a form that can be sent again (review F5).
+func TestChatAnswerFailedWhileAway(t *testing.T) {
+	v := awaitingChat(t)
+	v.updateKey(registryKey(t, "down"))
+	v.updateKey(registryKey(t, "space"))
+	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
+		t.Fatal("enter sent nothing")
+	}
+	if v.form == nil || !v.form.submitting {
+		t.Fatal("enter did not start submitting")
+	}
+	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd != nil {
+		t.Error("a second enter sent the answer again while the first was in flight")
+	}
+	v.updateKey(registryKey(t, "esc"))
+	if v.formAway == nil {
+		t.Fatal("esc did not put the popup away")
+	}
+	v.applyAnswered(chatAnsweredMsg{chatID: v.chat.ID, err: errors.New("refusedmarker")})
+	if out := ansi.Strip(v.render(80, 24)); !strings.Contains(out, "refusedmarker") {
+		t.Errorf("the refusal is not on screen while the question is away:\n%s", out)
+	}
+	v.updateKey(synthKey("alt+a"))
+	if v.form == nil {
+		t.Fatal("alt+a did not reopen the question")
+	}
+	if v.form.submitting || v.form.err == "" {
+		t.Errorf("reopened form submitting=%v err=%q, want an error and ready to send", v.form.submitting, v.form.err)
+	}
+	if out := ansi.Strip(v.render(80, 24)); strings.Contains(out, "submitting…") {
+		t.Errorf("the reopened form is stuck submitting:\n%s", out)
+	}
+	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
+		t.Error("enter on the reopened form sent nothing")
 	}
 }
 
