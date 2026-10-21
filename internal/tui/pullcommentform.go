@@ -55,6 +55,7 @@ func newPullCommentForm(taskID int64, subject string) *pullCommentForm {
 	ed.DynamicHeight = true
 	ed.MinHeight = 3
 	ed.MaxHeight = editorLines
+	ed.MaxContentHeight = editorContentCap
 	ed.SetHeight(3)
 	ed.SetWidth(40)
 	f := &pullCommentForm{taskID: taskID, subject: subject, editor: ed}

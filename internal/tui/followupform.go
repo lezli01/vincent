@@ -103,6 +103,7 @@ func newFollowUpForm(taskID, projectID int64, origin string) *followUpForm {
 	ed.DynamicHeight = true
 	ed.MinHeight = 1
 	ed.MaxHeight = editorLines
+	ed.MaxContentHeight = editorContentCap
 	ed.SetHeight(3)
 	ed.SetWidth(40)
 	return &followUpForm{
@@ -476,7 +477,7 @@ func (f *followUpForm) render(width, height int) string {
 // whatever entry is open, and the status line.
 func (f *followUpForm) lines(width int) []string {
 	out := make([]string, 0, 18)
-	out = append(out, styleDim.Render("  "+f.subject()))
+	out = append(out, proseLines(styleDim, f.subject(), width)...)
 	out = append(out, "")
 	for _, row := range fuRows() {
 		out = append(out, f.rowLines(row, width)...)
@@ -486,32 +487,34 @@ func (f *followUpForm) lines(width int) []string {
 	}
 	switch {
 	case f.err != "":
-		out = append(out, styleBad.Render("  ⚠ "+f.err))
+		out = append(out, proseLines(styleBad, "⚠ "+f.err, width)...)
 	case f.editing:
-		out = append(out, styleDim.Render("  ctrl+s keeps this text · esc discards it"))
+		out = append(out, proseLines(styleDim, "ctrl+s keeps this text · esc discards it", width)...)
 	case f.picker != nil:
-		out = append(out, styleDim.Render("  ↑/↓ choose · / filter · enter pick · esc close the list"))
+		out = append(out, proseLines(styleDim, "↑/↓ choose · / filter · enter pick · esc close the list", width)...)
 	case f.submitting:
-		out = append(out, styleDim.Render("  queueing the follow-up…"))
+		out = append(out, proseLines(styleDim, "queueing the follow-up…", width)...)
 	default:
-		out = append(out, styleDim.Render(
-			"  enter edit · "+opKey(keymap.Editor)+" $EDITOR · ctrl+s start the follow-up · ctrl+t task details · esc leave the form"))
+		out = append(out, proseLines(styleDim,
+			"enter edit · "+opKey(keymap.Editor)+" $EDITOR · ctrl+s start the follow-up · ctrl+t task details · esc leave the form", width)...)
 	}
 	return out
 }
 
 func fuRows() []fuRow { return []fuRow{fuForm, fuBody, fuAgent, fuModel, fuEffort, fuPaused} }
 
-// subject is the one line saying what this follow-up is about, so the popup
+// subject is the sentence saying what this follow-up is about, so the popup
 // does not rely on the panels behind it to explain itself. It names the state
 // the task returns to, because that is the property people get wrong: a
-// follow-up decides nothing about a task's verdict.
+// follow-up decides nothing about a task's verdict. That consequence is its
+// own line, so a narrow popup wraps the clause before it and never splits
+// the one people misread (issue #800 W7).
 func (f *followUpForm) subject() string {
 	out := fmt.Sprintf("#%d", f.taskID)
 	if f.origin != "" {
 		out += " · " + f.origin
 	}
-	return out + " — runs in this task's existing worktree and branch; the task returns to " +
+	return out + " — runs in this task's existing worktree and branch;\nthe task returns to " +
 		firstNonEmpty(f.origin, "where it was") + " afterwards"
 }
 
@@ -617,7 +620,8 @@ func (f *followUpForm) editorView(width int) []string {
 // keeps the whole of it on screen. An open picker is the focus; otherwise the
 // cursor's row is.
 func (f *followUpForm) focusRange(width int) (from, to int) {
-	from = 2 // past the subject line and its blank
+	// Past the subject, which wraps (issue #800 W7), and its blank.
+	from = len(proseLines(styleDim, f.subject(), width)) + 1
 	for _, row := range fuRows() {
 		n := len(f.rowLines(row, width))
 		if row == f.cursor {

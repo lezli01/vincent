@@ -84,6 +84,7 @@ func newAnswerEditor() textarea.Model {
 	ed.DynamicHeight = true
 	ed.MinHeight = 1
 	ed.MaxHeight = editorLines
+	ed.MaxContentHeight = editorContentCap
 	ed.SetHeight(1)
 	// A width until the first render sizes it; keys can arrive before then.
 	ed.SetWidth(40)
@@ -345,41 +346,151 @@ func (f *answerForm) submitTask(resp apiclient.InputResponse, client *apiclient.
 // capped by the caller. Rows wrap and the free-text field grows with what is
 // typed, so this cannot be counted from the number of rows alone.
 func (f *answerForm) height(width int) int {
-	lines, _, _ := f.lines(width)
-	return len(lines)
+	body, _, _ := f.layout(width)
+	return len(body) + len(f.statusLines(width))
 }
 
 // render draws the form, windowed around the cursor when it does not fit —
 // a question that scrolls out of reach is worse than one that scrolls.
+//
+// The status line is pinned under the window rather than windowed with the
+// rows (issue #800 W6): it is the line that says how to submit or leave, and
+// as the last content line it was only reachable by scrolling to the bottom
+// of a long question. The chat composer pins it the same way (#801 F7).
 func (f *answerForm) render(width, height int) string {
-	lines, from, to := f.lines(width)
-	return strings.Join(windowRange(lines, from, to, height), "\n")
+	body, from, to := f.layout(width)
+	status := f.statusLines(width)
+	if height <= 0 || len(body)+len(status) <= height {
+		return strings.Join(append(body, status...), "\n")
+	}
+	room := height - len(status)
+	if room < 1 {
+		// Too short for both: the focused row is the one that cannot go.
+		return strings.Join(windowRange(body, from, to, height), "\n")
+	}
+	from = f.anchorFrom(width, from, to, room)
+	return strings.Join(append(windowWithCues(body, from, to, room), status...), "\n")
+}
+
+// anchorFrom widens the focused range up to the first line of the focused
+// row's question while the whole of that still fits in room (issue #800 W6).
+// A long option list otherwise scrolled the question itself off the top,
+// leaving a column of radios with nothing saying what they answer.
+func (f *answerForm) anchorFrom(width, from, to, room int) int {
+	row, ok := f.currentRow()
+	if !ok || f.req.Kind == apiclient.InputKindPermission {
+		return from
+	}
+	line := 0
+	for i, r := range f.rows {
+		if r.kind == rowHeader && r.question == row.question {
+			if to-line <= room {
+				return min(line, from)
+			}
+			return from
+		}
+		line += len(f.renderRow(i, r, width))
+	}
+	return from
+}
+
+// windowWithCues is windowRange giving up a row at each cut edge to a dim
+// "↑ more" / "↓ more", so a window over a longer form says there is more of
+// it rather than reading as the whole question.
+func windowWithCues(lines []string, from, to, height int) []string {
+	n := len(lines)
+	if height <= 0 || n <= height {
+		return lines
+	}
+	for h := height - 1; h >= 1; h-- {
+		start := windowStart(n, from, h)
+		if to > start+h {
+			start = min(to-h, from)
+		}
+		start = max(min(start, n-h), 0)
+		up, down := start > 0, start+h < n
+		cues := 0
+		if up {
+			cues++
+		}
+		if down {
+			cues++
+		}
+		if h+cues > height {
+			continue
+		}
+		out := make([]string, 0, height)
+		if up {
+			out = append(out, styleDim.Render("  ↑ more"))
+		}
+		out = append(out, lines[start:start+h]...)
+		if down {
+			out = append(out, styleDim.Render("  ↓ more"))
+		}
+		return out
+	}
+	return windowRange(lines, from, to, height)
 }
 
 // lines is the whole form at width — the rows, the open free-text field, and
-// the status line — with the range the focused element occupies. height and
-// render share it so the popup is sized at exactly what it then draws.
+// the status line — with the range the focused element occupies. The status
+// is the last element and exactly one line: the chat composer pins that line
+// under its own window (#801 F7) and truncates rather than wraps it.
 func (f *answerForm) lines(width int) (lines []string, from, to int) {
 	lines, from, to = f.layout(width)
+	style, text := f.status()
+	return append(lines, style.Render("  "+text)), from, to
+}
+
+// statusLines is the status line wrapped to width, for the task popup, which
+// has the room to say all of it (issue #800 W7).
+func (f *answerForm) statusLines(width int) []string {
+	style, text := f.status()
+	return proseLines(style, text, width)
+}
+
+// status is the form's one status sentence and its style: an error, what the
+// keys mean while the field is open, or the form's keys.
+func (f *answerForm) status() (lipgloss.Style, string) {
 	switch {
 	case f.err != "":
-		lines = append(lines, styleBad.Render("  ⚠ "+f.err))
+		return styleBad, "⚠ " + f.err
 	case f.editing:
 		// enter and esc mean something else while the field is open, and a
 		// hint that says "enter submit" over an open field is a lost answer.
-		lines = append(lines, styleDim.Render("  enter keeps this answer · esc discards it"))
+		return styleDim, "enter keeps this answer · esc discards it"
 	case f.submitting:
-		lines = append(lines, styleDim.Render("  submitting…"))
-	default:
-		details := " · ctrl+t task details"
-		if f.noDetails {
-			details = ""
-		}
-		lines = append(lines, styleDim.Render(
-			"  space select · "+opKey(keymap.FreeText)+" type an answer · enter submit"+details+" · esc leave the form"))
+		return styleDim, "submitting…"
 	}
-	return lines, from, to
+	details := " · ctrl+t task details"
+	if f.noDetails {
+		details = ""
+	}
+	return styleDim, "space select · " + opKey(keymap.FreeText) + " type an answer · enter submit" + details + " · esc leave the form"
 }
+
+// proseLines wraps one sentence of popup chrome — a subject, a hint, an error
+// — at width under the forms' two-column indent, instead of handing frame a
+// line it truncates (issue #800 W7). The sentences these popups carry end in
+// the clause that matters ("the task returns to done afterwards"), which is
+// exactly the part a cut loses.
+func proseLines(style lipgloss.Style, text string, width int) []string {
+	out := wrapText(text, width, wrapOpts{prefix: "  ", indent: 2})
+	for i := range out {
+		out[i] = style.Render(out[i])
+	}
+	return out
+}
+
+// editorContentCap is every popup editor's MaxContentHeight, so that its
+// MaxHeight is only a display cap. bubbles' textarea refuses to insert a
+// newline once the value has MaxHeight logical lines unless MaxContentHeight
+// is set, which then is the limit instead (see [textPane]'s doc); the seventh
+// enter in a six-row field, which these forms document as a newline, was
+// silently dropped (issue #800 W3). A limit nobody types to is no limit,
+// while MaxHeight still keeps the popup at editorLines rows — the field
+// scrolls inside them.
+const editorContentCap = 1 << 20
 
 // editorView sizes the free-text field to the space the popup actually has
 // and returns its lines, indented clear of the cursor gutter. Sizing it here

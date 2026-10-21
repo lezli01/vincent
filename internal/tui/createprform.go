@@ -95,6 +95,7 @@ func newCreatePRForm(taskID int64, compareURL, branch string) (*createPRForm, er
 	ed.DynamicHeight = true
 	ed.MinHeight = 1
 	ed.MaxHeight = editorLines
+	ed.MaxContentHeight = editorContentCap
 	ed.SetHeight(3)
 	ed.SetWidth(40)
 	q := u.Query()

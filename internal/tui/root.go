@@ -837,7 +837,7 @@ func (m *root) surfaceTarget() surface {
 		s.editable = sh.detail.stepEditable()
 		s.live = sh.liveBindings
 	} else if t, ok := m.views[m.active].(*taskView); ok {
-		s.target = t.target()
+		s.target = popupFreeTarget(t)
 		s.editable = t.detail.stepEditable()
 		s.live = t.liveBindings
 		s.tabs = t.tabs()
@@ -849,6 +849,19 @@ func (m *root) surfaceTarget() surface {
 		s.target = taskActions{}
 	}
 	return s
+}
+
+// popupFreeTarget is the task workspace's target for the footer, the palette
+// and the help sheet: empty while a popup is open (issue #800 W5). The popup
+// holds the keyboard and its form ignores the task's action keys, so a footer
+// reading "p pause · r retry · c cancel" over an answer popup advertised keys
+// that do nothing, and a palette row would act on a task the reader is in
+// the middle of answering.
+func popupFreeTarget(t *taskView) taskActions {
+	if t.popup {
+		return taskActions{}
+	}
+	return t.target()
 }
 
 // openPalette builds the palette for the active surface.
@@ -2440,7 +2453,7 @@ func (m *root) footerLine() string {
 	} else if t, ok := m.views[m.active].(*taskView); ok {
 		bar = t.detail.actions
 		if m.phase == phaseConnected {
-			target = t.target()
+			target = popupFreeTarget(t)
 		}
 	}
 	rows := withoutGitHub(bindingsFor(ctx), m.githubAvailable())
