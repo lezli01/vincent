@@ -166,7 +166,10 @@ func (p *scrollPane) View() []string {
 	shown := p.lines[min(off, len(p.lines)):min(off+h, len(p.lines))]
 	out := make([]string, len(shown), len(shown)+1)
 	copy(out, shown)
-	if p.cue && p.clipped() {
+	// fit reserved the cue's row only when the pane has one to spare: a
+	// one-row pane shows its line and no cue, or it would be two rows tall
+	// (review F11).
+	if p.cue && p.clipped() && p.h > 1 {
 		out = append(out, scrollCue(off, h, len(p.lines)))
 	}
 	return out

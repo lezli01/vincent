@@ -85,6 +85,16 @@ func TestScrollPaneCueOnlyWhenClipped(t *testing.T) {
 	}
 }
 
+// A one-row pane has no row to spare for the cue, so it shows its line and
+// nothing else: the pane is width×height cells, cue included (review F11).
+func TestScrollPaneOneRowHasNoCue(t *testing.T) {
+	p := newScrollPane(20, 1, true)
+	p.SetContentLines(numbered(3))
+	if view := p.View(); len(view) != 1 {
+		t.Errorf("a one-row pane drew %d lines:\n%s", len(view), strings.Join(view, "\n"))
+	}
+}
+
 // A refresh that inserts lines above the reader keeps the window on the line
 // they were reading; one that drops the anchor keeps the offset instead.
 func TestScrollPaneHoldsTheAnchor(t *testing.T) {
