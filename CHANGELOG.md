@@ -603,6 +603,17 @@ list with the user-facing context a commit subject cannot carry.
   comments and the source page too, and `ctrl+y` copies the title,
   description, a comment or the URL. The issue form keeps the highlighted
   label and its key line on screen when the labels picker is long.
+- **The task board's cursor stays on screen and on its task.** When a refresh
+  re-sorted the board — a selected task finishing and sorting to the bottom,
+  `!` or `g` — the cursor could land on a row scrolled off screen, where every
+  action key still acted on it. It now scrolls into view, here and on the
+  projects view. The task selected when the board opens is kept through a
+  live re-sort even before a key is pressed, and when the selected task is
+  archived the cursor lands on its neighbour instead of jumping to the top. A
+  failed first load says it could not load tasks rather than "no tasks yet",
+  an empty archived board names its date window and `s` rather than offering
+  `n`, and a wrapped title cut short no longer gains a space before its `…`.
+
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,
   the sheet's key row drops its description before it would push the close

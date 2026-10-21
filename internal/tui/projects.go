@@ -610,11 +610,11 @@ func (p *projectsView) restoreSelection(rows []apiclient.Project) {
 	}
 	for i := range rows {
 		if rows[i].ID == p.selectedID {
-			p.tbl.SetCursor(i)
+			moveCursorTo(&p.tbl, i)
 			return
 		}
 	}
-	p.tbl.SetCursor(0)
+	moveCursorTo(&p.tbl, 0)
 }
 
 // capCell renders the cap the way the scheduler actually applies it. A

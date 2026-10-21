@@ -126,7 +126,7 @@ func (p *projectsView) syncTable(rows []apiclient.Project, width, height int) {
 	// screen it belongs on one, or nothing is selected and every key that
 	// acts on a row goes nowhere.
 	if p.tbl.Cursor() < 0 && len(rows) > 0 {
-		p.tbl.SetCursor(0)
+		moveCursorTo(&p.tbl, 0)
 	}
 	p.overviewCols, p.overviewName = cols, name
 }

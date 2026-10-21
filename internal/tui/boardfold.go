@@ -555,7 +555,7 @@ func (b *board) focusPath(p foldPath) {
 	b.selectedPath = slices.Clone(p)
 	rows := b.rows()
 	if i := headerIndex(rows, p); i >= 0 {
-		b.tbl.SetCursor(i)
+		moveCursorTo(&b.tbl, i)
 	}
 }
 
@@ -571,7 +571,7 @@ func (b *board) focusRow(rows []boardRow, i int) {
 	}
 	b.selectedPath = nil
 	b.selectedID = rows[i].task.ID
-	b.tbl.SetCursor(i)
+	moveCursorTo(&b.tbl, i)
 }
 
 // saveFolds persists the set off the update loop. A failed write is not

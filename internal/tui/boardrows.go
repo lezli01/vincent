@@ -421,10 +421,27 @@ func wrapCellLines(text string, width, height int) []string {
 	if len(lines) <= height {
 		return lines
 	}
-	// Everything past the last line is rejoined and cut there, so the
+	// Everything past the last line is cut from the original text, so the
 	// ellipsis says "there is more" rather than the row simply stopping.
-	rest := strings.Join(lines[height-1:], " ")
+	// Rejoining the wrapped pieces instead put a space at every point the
+	// wrap had hard-broken a long word (#798 B10).
+	rest := restAfter(text, lines[:height-1])
 	return append(lines[:height-1:height-1], ansi.Truncate(rest, width, "…"))
+}
+
+// restAfter is what remains of text once the wrapped lines are consumed,
+// from the first character the next line would have started with. Each line
+// is a run of text in order, less the spaces the wrap broke at; a line that
+// cannot be found leaves the rest where the search stopped.
+func restAfter(text string, lines []string) string {
+	pos := 0
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if i := strings.Index(text[pos:], l); i >= 0 {
+			pos += i + len(l)
+		}
+	}
+	return strings.TrimLeft(text[pos:], " ")
 }
 
 // formatStep renders k/n plus the step name when there is room. A snapshot
