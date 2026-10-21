@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -59,7 +60,7 @@ func (w *workflowsView) renderEditor(width, height int) string {
 	}
 	foot = truncateRows(foot, max(width, 1))
 	var body []string
-	from, to := 0, 0
+	from, to, focus := 0, 0, 0
 	switch {
 	case e.overlay != nil && e.overlay.FullPane():
 		// A full-pane overlay is the body: the multi-line pane a `prompt:`
@@ -73,9 +74,9 @@ func (w *workflowsView) renderEditor(width, height int) string {
 	case e.def == nil:
 		body = []string{styleDim.Render("  nothing to edit")}
 	default:
-		body, from, to = layoutFormRows(e.rows, e.cursor, e.editing, e.input, e.overlay, width, nil)
+		body, from, to, focus = layoutFormRows(e.rows, e.cursor, e.editing, e.input, e.overlay, width, nil)
 	}
-	return formBody(head, body, from, to, foot, height)
+	return formBody(head, body, from, to, focus, foot, height)
 }
 
 // renderFormRows draws a schema-driven form's rows: the label column, the
@@ -88,7 +89,7 @@ func (w *workflowsView) renderEditor(width, height int) string {
 func renderFormRows(formRows []wfEditRow, cursor, editing int, input *textField,
 	overlay wfEditorOverlay, width int, note func(i int) string,
 ) []string {
-	lines, _, _ := layoutFormRows(formRows, cursor, editing, input, overlay, width, note)
+	lines, _, _, _ := layoutFormRows(formRows, cursor, editing, input, overlay, width, note)
 	return lines
 }
 
@@ -100,9 +101,12 @@ const formLabelMax = 24
 // [from,to), which is what a host windows the rows around (spec §15 "Wrap or
 // truncate, never clip", issue #802). The cursor row's value and help wrap
 // under the value column; every other row stays one line ending in "…".
+// focus is the line inside the span that must stay on screen when the span is
+// taller than the room (review F8): the caret's row while a field is typed
+// into, else the span's last line, so the end of the value and its help show.
 func layoutFormRows(formRows []wfEditRow, cursor, editing int, input *textField,
 	overlay wfEditorOverlay, width int, note func(i int) string,
-) (lines []string, from, to int) {
+) (lines []string, from, to, focus int) {
 	labelW := 1
 	for _, row := range formRows {
 		labelW = max(labelW, cols(formLabel(row)))
@@ -122,6 +126,7 @@ func layoutFormRows(formRows []wfEditRow, cursor, editing int, input *textField,
 		return l
 	}
 	lines = make([]string, 0, len(formRows))
+	caret := -1
 	for i, row := range formRows {
 		mark := "  "
 		style := styleDim
@@ -146,6 +151,7 @@ func layoutFormRows(formRows []wfEditRow, cursor, editing int, input *textField,
 		switch {
 		case i == editing && input != nil:
 			input.SetWidth(valueW)
+			caret = len(lines) + input.cursorRow()
 			lines = append(lines, indentRows(prefix, input.rows())...)
 		case i == editing && overlay != nil:
 			lines = append(lines, truncateRows(indentRows(prefix,
@@ -187,7 +193,11 @@ func layoutFormRows(formRows []wfEditRow, cursor, editing int, input *textField,
 			to = len(lines)
 		}
 	}
-	return lines, from, to
+	focus = max(to-1, from)
+	if caret >= 0 {
+		focus = caret
+	}
+	return lines, from, to, focus
 }
 
 // formLabel is the text of a form row's label column.
@@ -210,11 +220,22 @@ func paneRoom(height, used int) int {
 // formBody lays a form's sections into height lines: the head and the foot
 // pinned, and the body between them windowed around the cursor's [from,to)
 // span (issue #802 WF-6), so a long form never pushes its error, its key hint
-// or the row being edited off the bottom. A head and foot that leave the body
-// no room keep the foot, which says what the keys do.
-func formBody(head, body []string, from, to int, foot []string, height int) string {
+// or the row being edited off the bottom. A span taller than the room is
+// windowed around its focus line instead — the caret, or the span's end with
+// the help — so neither is drawn off screen (review F8). A head and foot that
+// leave the body no room keep the foot, which says what the keys do; a foot
+// taller than the pane cuts its error, never its last line, the keys
+// (review F9), and leaves one line for the cursor's row.
+func formBody(head, body []string, from, to, focus int, foot []string, height int) string {
 	if height <= 0 {
 		return strings.Join(append(append(head, body...), foot...), "\n")
+	}
+	if keep := max(height-1, 1); len(foot) > keep && len(foot) > 1 {
+		cut := append(slices.Clone(foot[:keep-1]), foot[len(foot)-1])
+		if keep > 1 {
+			cut[keep-2] = styleDim.Render("  …")
+		}
+		foot = cut
 	}
 	room := height - len(head) - len(foot)
 	if room < 1 {
@@ -224,10 +245,21 @@ func formBody(head, body []string, from, to int, foot []string, height int) stri
 	out := make([]string, 0, height)
 	out = append(out, head...)
 	if room > 0 {
-		out = append(out, windowRange(body, from, to, room)...)
+		out = append(out, windowSpan(body, from, to, focus, room)...)
 	}
 	out = append(out, foot...)
 	return clampLines(out, height)
+}
+
+// windowSpan is windowRange, except that a [from,to) span taller than height
+// is windowed around its focus line, kept inside the span, rather than
+// anchored at its first line.
+func windowSpan(lines []string, from, to, focus, height int) []string {
+	if height <= 0 || len(lines) <= height || to-from <= height {
+		return windowRange(lines, from, to, height)
+	}
+	start := min(max(focus-height/2, from), to-height)
+	return lines[start : start+height]
 }
 
 // renderCreate draws the create/fork prompt: a scope row and a file-name row.

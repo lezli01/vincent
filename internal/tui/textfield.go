@@ -86,6 +86,11 @@ func (f *textField) applyWidth() {
 // Width is the field's current column budget, prompt included.
 func (f textField) Width() int { return f.width }
 
+// cursorRow is the wrapped row the caret is on, counted from the field's
+// first row: a host windowing a field taller than its room keeps this row on
+// screen (review F8).
+func (f textField) cursorRow() int { return f.ta.LineInfo().RowOffset }
+
 // CursorEnd puts the cursor after the last character.
 func (f *textField) CursorEnd() { f.ta.CursorEnd() }
 

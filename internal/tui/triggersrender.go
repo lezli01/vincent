@@ -399,7 +399,7 @@ func (v *triggersView) renderForm(width, height int) string {
 	head = truncateRows(head, max(width, 1))
 	foot = truncateRows(foot, max(width, 1))
 	var body []string
-	from, to := 0, 0
+	from, to, focus := 0, 0, 0
 	switch {
 	case f.overlay != nil && f.overlay.FullPane():
 		// Every line of the full-pane editor, in the height the head and
@@ -408,9 +408,9 @@ func (v *triggersView) renderForm(width, height int) string {
 	case f.loading && f.def == nil:
 		body = []string{styleDim.Render("  loading the schema and the file…")}
 	case f.def != nil:
-		body, from, to = layoutFormRows(f.plainRows(), f.cursor, f.editing, f.input, f.overlay, width, v.rowNote(f))
+		body, from, to, focus = layoutFormRows(f.plainRows(), f.cursor, f.editing, f.input, f.overlay, width, v.rowNote(f))
 	}
-	return formBody(head, body, from, to, foot, height)
+	return formBody(head, body, from, to, focus, foot, height)
 }
 
 func (v *triggersView) renderCreate(width, height int) string {
