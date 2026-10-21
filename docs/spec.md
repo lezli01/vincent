@@ -12747,6 +12747,10 @@ stream for the live tail.
    does not fit, crumbs are dropped from the **left** behind a `…` crumb; the
    task on screen and its tab are always kept. Every other view keeps its
    bracketed tag, and the connection badge rule above (129.15) is unchanged.
+   *Amended 2026-10-21 (task 136.3, issue #788):* the first crumb is
+   `Tasks`, not `Board` — the board's main-tab name — so the breadcrumb
+   reads `Tasks › #12 › lane #14 api › Output` and names the tab `esc`
+   returns to, as the strip and the board's tag do.
    (2) The workspace's frame is drawn **untitled**, and its first line on
    every tab is the task's one `#id title` line (wrapped as the header wraps
    a long title, at most three rows). The per-tab title rows go: the
@@ -14158,6 +14162,19 @@ board's global listing; it never counts lanes, `awaiting_children` parents
 or chats, and so deliberately differs from `stats.tasks.attention`, which
 counts lanes. It is shed after the version and before the project name
 truncates, and the `◆` click span never covers it.
+*Amended 2026-10-21 (task 136.3, issue #788):* on a main tab the header
+draws the **tab strip** in place of the view tag: the configured `tui.tabs`
+in order, `vincent 0.x  ◆ api  Issues │ Tasks` (`│ Chats` when configured),
+the active label in the title style and the others dim, each label the
+view's own title. It is drawn only where `tab` switches — on a main tab,
+with more than one configured, on a surface with no `tab` of its own (the
+new-chat form keeps the tag) — and typing in a filter does not hide it.
+Sub-screens, takeovers and a single configured tab keep the tag or
+breadcrumb. The strip is navigation, so it outlives decoration: the version
+goes first, then the elsewhere badge, then the labels shorten to initials
+(`I │ T`), and last the project name truncates. The strip is never dropped,
+and the eight-cell tag floor applies only to a tag. The chrome is still one
+line.
 
 **The project picker (task 132.4, issue #698, added 2026-10-05).** The global
 operation `project`, on `@` by default, opens a root-owned popup listing every
@@ -14429,7 +14446,7 @@ daemon state and no capability that exists only at one size.
 └────────────────────────────────────────────────────────────┘
  enter open · / filter                    : commands  ? help  q quit
 
- vincent  Board › #12 › Overview
+ vincent  Tasks › #12 › Overview
  » writing the rate-limit middleware
 ┌────────────────────────────────────────────────────────────┐
 │ #12 add rate limiting                                      │
@@ -16011,6 +16028,11 @@ hint to fire it, click a tab to switch it. No drag, no right-click.
 *Amended 2026-10-05 (task 132.4, decision 23):* a left click on the app
 header's `◆` project segment opens the project picker. The header is otherwise
 not a click target, and the popups themselves stay keyboard-only.
+*Amended 2026-10-21 (task 136.3, issue #788):* a left click on a main-tab
+strip label switches to that tab by `tab`'s rule exactly — not while a
+filter is typing, not on a surface that owns `tab`, and a click on the
+active label does nothing — in every connection phase. Apart from `◆` and
+the strip's labels the header is still not a click target.
 
 Capturing the mouse costs native click-drag text selection. Every terminal has a
 modifier override for it (shift-drag; option-drag on Terminal.app and iTerm) and
@@ -16054,7 +16076,10 @@ the connection screen (retry and the root's keys), not the hidden view. When the
 reconnect can land mid-sentence in a chat or a form — a printable key other
 than `r` is the human still typing and is swallowed, so `q` cannot quit past
 a draft; the footer and the screen then name the text-field keys (`ctrl+p`,
-`f1`, `ctrl+c`) instead (review F1). Its text wraps to the terminal and the frame fills
+`f1`, `ctrl+c`) instead (review F1). *Amended 2026-10-21 (task 136.3,
+issue #788):* the header is drawn before the body, so the main-tab strip
+stays on screen and live in every connection phase: a click on a label
+switches tabs there exactly as `tab` does. Its text wraps to the terminal and the frame fills
 it. The TUI runs in the terminal's alternate screen, which the quit
 reminder's "printed after teardown" already assumed. The status line is
 budgeted to the width: a pending switch's project names give way before its

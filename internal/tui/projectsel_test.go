@@ -281,6 +281,9 @@ func TestHeaderProjectSegment(t *testing.T) {
 	m := newRoot(testCtx(t), connector{}, ackedDir(t))
 	m.phase = phaseConnected
 	m.version = "0.9.0"
+	// One tab: no strip, so the header carries the tag this order sheds
+	// (the strip's own order is TestStripShedding).
+	m.tabs = []viewID{viewHome}
 	header := func(w int) string {
 		m.width = w
 		return ansi.Strip(m.headerLine())

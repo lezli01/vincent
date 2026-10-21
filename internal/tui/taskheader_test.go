@@ -18,14 +18,14 @@ import (
 func TestBreadcrumbIsTheBoardTheStackTheTaskAndTheTab(t *testing.T) {
 	v := newTaskView(taskDetailFixture(t)) // task 7
 	v.tab = taskTabOutput
-	if got, want := strings.Join(v.crumbs(), crumbSep), "Board › #7 › Output"; got != want {
+	if got, want := strings.Join(v.crumbs(), crumbSep), "Tasks › #7 › Output"; got != want {
 		t.Errorf("breadcrumb opened from the board = %q, want %q", got, want)
 	}
 
 	v.stack = []int64{3, 5}
 	v.crumb = map[int64]string{3: "#3", 5: "lane #5 api"}
 	v.tab = taskTabDiff
-	if got, want := strings.Join(v.crumbs(), crumbSep), "Board › #3 › lane #5 api › #7 › Diff"; got != want {
+	if got, want := strings.Join(v.crumbs(), crumbSep), "Tasks › #3 › lane #5 api › #7 › Diff"; got != want {
 		t.Errorf("breadcrumb two jumps deep = %q, want %q", got, want)
 	}
 }
@@ -55,7 +55,7 @@ func TestPushRecordsTheLaneCrumbLabel(t *testing.T) {
 
 func TestBreadcrumbTruncatesFromTheLeft(t *testing.T) {
 	crumbs := []string{
-		"Board", "#101", "lane #102 a-rather-long-lane-name", "#103",
+		"Tasks", "#101", "lane #102 a-rather-long-lane-name", "#103",
 		"lane #104 another-long-lane-name", "lane #105 api", "Step Details",
 	}
 	for _, width := range []int{80, 40} {
@@ -110,7 +110,7 @@ func runningWorkspace(t *testing.T, status string) (*root, *taskView) {
 func TestWorkspaceFrameIsUntitledAndTheHeaderIsTheBreadcrumb(t *testing.T) {
 	m, _ := runningWorkspace(t, "")
 	lines := strings.Split(ansi.Strip(content(m)), "\n")
-	if !strings.Contains(lines[0], "Board › #4 › Overview") {
+	if !strings.Contains(lines[0], "Tasks › #4 › Overview") {
 		t.Errorf("app header = %q, want the breadcrumb", lines[0])
 	}
 	if strings.Contains(lines[0], "[Task") {
@@ -216,7 +216,7 @@ func TestHeaderAndNowLineReadWithoutColour(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(ansi.Strip(buf.String()), "\n")
-	if !strings.Contains(lines[0], "Board"+crumbSep+"#4"+crumbSep+"Overview") {
+	if !strings.Contains(lines[0], "Tasks"+crumbSep+"#4"+crumbSep+"Overview") {
 		t.Errorf("breadcrumb without colour = %q", lines[0])
 	}
 	if !strings.Contains(lines[1], statusGlyph+" halfway there") {

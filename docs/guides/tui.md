@@ -71,6 +71,16 @@ filter, the first `tab` commits the filter and the second switches; an open
 issue form or new-chat form keeps `tab` for its fields. It works while the
 daemon is unreachable too, over what the screens last showed.
 
+The app header shows the tabs in place of the screen's name —
+`vincent 0.x  ◆ api  Issues │ Tasks`, with `│ Chats` when you add it — the one
+you are on highlighted. Click a label to switch to it; a click follows the same
+rule as `tab`, so it does nothing while you are typing in a filter. On a narrow
+terminal the labels shorten to initials (`I │ T`) before the project name
+does; they are never dropped. The strip only appears where `tab` switches: the
+task workspace, an issue, the archives and the management screens keep their
+own name or breadcrumb, as does the new-chat form, which uses `tab` for its
+fields. With a single tab in `tui.tabs` there is no strip.
+
 Everywhere else `tab` means what it always did — the task workspace's tabs, a
 form's fields, a screen's panes. `esc` never leaves a main tab: once the
 screen's own filter or form is closed, it stays put, as it always has on the
@@ -196,9 +206,11 @@ header reads `no adapters`. The app header above the board drops
 reconnecting or disconnected. After it, `◆ api` names the project the TUI has
 selected, or `◆ no project` while none is registered. It selects the first
 project by name; `@`, or a click on the segment, [switches it](#switching-project).
-On a narrow terminal the header drops the view's tag first,
-then the version, then the `elsewhere` badge, and shortens the project name
-last. The action keys for the
+On a main tab the header ends in the [tab strip](#main-tabs); on a narrow
+terminal it drops the version first, then the `elsewhere` badge, then shortens
+the strip's labels to initials, and shortens the project name last. On other
+screens it drops the view's tag first, then the version, then the `elsewhere`
+badge, and shortens the project name last. The action keys for the
 selected task are in the footer, once — there is no second copy of them inside
 the board.
 
@@ -563,7 +575,7 @@ moved the board's cursor to a task that needs you. `esc` back out of a lane
 returns you to the tab you left its parent on instead, and the takeover's
 "open a pull request" route opens on the Pull Request tab, where its form is.
 
-The app header says where you are as a breadcrumb — `Board › #12 › lane #14
+The app header says where you are as a breadcrumb — `Tasks › #12 › lane #14
 api › Output` — naming each task you drilled through, the task on screen and
 the tab, so it also says where `esc` goes. On a narrow terminal the leftmost
 crumbs give way to `…` first. The task's `#id` and title are the first line

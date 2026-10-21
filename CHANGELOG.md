@@ -13,6 +13,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI's main tabs are drawn in the app header, and a click switches.**
+  On a main tab the header shows `Issues │ Tasks` (and `│ Chats` when
+  configured) in place of the screen's name, the current one highlighted; a
+  left click on a label switches to it by the same rule as `tab`, in every
+  connection phase. On a narrow terminal the version and the `elsewhere` badge
+  go first, then the labels shorten to initials, and the project name
+  truncates last. The task board is now titled **Tasks**, and the task
+  workspace's breadcrumb starts `Tasks ›` instead of `Board ›`.
+
 - **Switch between the TUI's main tabs with `tab` and `shift+tab`.** On the
   task board, the issues list and the chats board — whichever `tui.tabs`
   lists, by default issues and tasks — `tab` moves to the next one in that
@@ -29,8 +38,8 @@ list with the user-facing context a commit subject cannot carry.
   is validated on load, hot reload and `PATCH /v1/config` (an empty, `null`,
   repeated or unknown list is refused, naming the key), served on
   `GET /v1/config`, and editable with `vincent config get|set tui.tabs` and in
-  the TUI's config editor. The strip and landing on the first tab follow in a
-  later release. A daemon
+  the TUI's config editor. Landing on the first tab follows in a later
+  release. A daemon
   older than this one refuses a file that sets it.
 
 - **See who holds an issue's main worktree, and ask for a side task, in the

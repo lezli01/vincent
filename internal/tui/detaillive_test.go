@@ -464,20 +464,20 @@ func TestBreadcrumbWalksIntoALaneAndBack(t *testing.T) {
 	header := func() string {
 		return strings.SplitN(ansi.Strip(content(h.m)), "\n", 2)[0]
 	}
-	if want := fmt.Sprintf("Board › #%d › Overview", parent.ID); !strings.Contains(header(), want) {
+	if want := fmt.Sprintf("Tasks › #%d › Overview", parent.ID); !strings.Contains(header(), want) {
 		t.Fatalf("header = %q, want %q", header(), want)
 	}
 
 	_, cmd = h.m.Update(synthKey("l"))
 	h.p.push(cmd)
-	want := fmt.Sprintf("Board › #%d › lane #%d api › Overview", parent.ID, lane.ID)
+	want := fmt.Sprintf("Tasks › #%d › lane #%d api › Overview", parent.ID, lane.ID)
 	h.p.until(20*time.Second, "the lane's breadcrumb", func() bool {
 		return strings.Contains(header(), want)
 	})
 
 	_, cmd = h.m.Update(synthKey("esc"))
 	h.p.push(cmd)
-	back := fmt.Sprintf("Board › #%d › Overview", parent.ID)
+	back := fmt.Sprintf("Tasks › #%d › Overview", parent.ID)
 	h.p.until(20*time.Second, "the breadcrumb to drop the lane", func() bool {
 		return strings.Contains(header(), back) && !strings.Contains(header(), "lane #")
 	})

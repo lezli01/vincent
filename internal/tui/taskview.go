@@ -1887,15 +1887,15 @@ func (t *taskView) currentCrumb() string {
 }
 
 // crumbs is the workspace's breadcrumb (task 129.9): the board, every task
-// on the back stack in push order, the task on screen, and the tab. Board is
-// always first because `esc` falls through to it however the task was
+// on the back stack in push order, the task on screen, and the tab. Tasks —
+// the board's main-tab name (task 136.3) — is always first because `esc` falls through to it however the task was
 // opened; the breadcrumb's job is to name what `esc` goes back to.
 func (t *taskView) crumbs() []string {
 	if t.detail.taskID == 0 {
-		return []string{"Board", "Task"}
+		return []string{"Tasks", "Task"}
 	}
 	out := make([]string, 0, len(t.stack)+3)
-	out = append(out, "Board")
+	out = append(out, "Tasks")
 	for _, id := range t.stack {
 		label, ok := t.crumb[id]
 		if !ok {
