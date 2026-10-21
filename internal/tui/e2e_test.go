@@ -367,3 +367,51 @@ func TestZeroProjectsThenAddE2E(t *testing.T) {
 		t.Errorf("the empty state outlived the first project:\n%s", ansi.Strip(content(m)))
 	}
 }
+
+// TestLandsOnTheFirstTabE2E is #789 against a real daemon: Run's landing
+// opens the TUI on Issues, the default config's first tab, and the startup
+// chain — the config answer and the project selection — leaves it there
+// rather than flashing the board.
+func TestLandsOnTheFirstTabE2E(t *testing.T) {
+	dataDir, cfgDir := t.TempDir(), t.TempDir()
+	env := append(os.Environ(),
+		config.EnvDataDir+"="+dataDir,
+		config.EnvConfigDir+"="+cfgDir,
+	)
+	t.Cleanup(func() {
+		cmd := exec.Command(vincentBin, "daemon", "stop", "--force")
+		cmd.Env = env
+		_, _ = cmd.CombinedOutput()
+	})
+	vincent := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(vincentBin, args...)
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("vincent %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	vincent("daemon", "start")
+	vincent("project", "add", "--name", "alpha", testrepo.Init(t, "main"))
+
+	cn := defaultConnector()
+	cn.resolveDataDir = func() (string, error) { return dataDir, nil }
+	m := newRoot(testCtx(t), cn, ackedDir(t))
+	m.land()
+	if m.active != viewIssues {
+		t.Fatalf("landed on %v before connecting, want issues", m.active)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	msg := runCmd(t, m.Init(), 10*time.Second)
+	if _, ok := msg.(connectedMsg); !ok {
+		t.Fatalf("probe against a running daemon = %T, want connectedMsg", msg)
+	}
+	_, cmd := m.Update(msg)
+	pmp := newPump(t, m, cmd)
+	pmp.until(30*time.Second, "the startup project to be selected", func() bool {
+		return m.startup.done && m.sel.name == "alpha" && !m.landing
+	})
+	if m.active != viewIssues {
+		t.Fatalf("after the first config answer the TUI is on %v, want issues", m.active)
+	}
+}

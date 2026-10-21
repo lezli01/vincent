@@ -35,8 +35,9 @@ func tabsRoot(t *testing.T, names ...string) *root {
 func pressEsc(m *root) {
 	_, cmd := m.Update(escKey())
 	for _, msg := range tabFlatten(cmd) {
-		if sv, ok := msg.(selectViewMsg); ok {
-			m.Update(sv)
+		switch msg.(type) {
+		case selectViewMsg, backToTabMsg:
+			m.Update(msg)
 		}
 	}
 }
@@ -210,7 +211,8 @@ func TestEscStaysOnATabRoot(t *testing.T) {
 	}
 }
 
-// A view that is not a configured tab has no reason to trap the human.
+// A view that is not a configured tab has no reason to trap the human: it
+// leaves to the tab they came from (#789).
 func TestEscLeavesAListThatIsNotATab(t *testing.T) {
 	m := tabsRoot(t, "tasks")
 	for _, id := range []viewID{viewIssues, viewChats} {
@@ -219,6 +221,13 @@ func TestEscLeavesAListThatIsNotATab(t *testing.T) {
 		if m.active != viewHome {
 			t.Errorf("esc on %v (not a tab) went to %v, want the board", id, m.active)
 		}
+	}
+	m = tabsRoot(t, "issues")
+	m.Update(selectViewMsg{id: viewIssues})
+	m.Update(selectViewMsg{id: viewChats})
+	pressEsc(m)
+	if m.active != viewIssues {
+		t.Errorf("esc on chats (not a tab) went to %v, want issues", m.active)
 	}
 }
 
@@ -278,6 +287,140 @@ func TestDroppingTheActiveTabLeavesTheHumanThere(t *testing.T) {
 	m.Update(tabKey())
 	if m.active != viewIssues {
 		t.Fatalf("tab on a dropped tab moved to %v", m.active)
+	}
+}
+
+// A reload that drops the active tab still never moves the human (task 136
+// decision 13, kept by #789); esc on the screen it left behind then goes to
+// the first configured tab, since the last one is not a tab any more.
+func TestDroppedTabEscGoesToTheFirstTab(t *testing.T) {
+	m := tabsRoot(t, "issues", "tasks")
+	m.Update(selectViewMsg{id: viewIssues})
+	m.Update(boardConfigMsg{tabs: []string{"chats", "tasks"}})
+	if m.active != viewIssues {
+		t.Fatalf("the reload moved the human to %v", m.active)
+	}
+	pressEsc(m)
+	if m.active != viewChats {
+		t.Fatalf("esc on the dropped tab went to %v, want chats, the first tab", m.active)
+	}
+}
+
+// landedRoot is a connected root after Run's landing, before any config
+// answer.
+func landedRoot(t *testing.T) *root {
+	t.Helper()
+	m := connectedRoot(t)
+	m.land()
+	return m
+}
+
+// Run lands on the first default tab before the daemon answers (#789); the
+// default config answer then leaves the human where they are.
+func TestLandingOnTheDefaultFirstTab(t *testing.T) {
+	m := landedRoot(t)
+	if m.active != viewIssues || m.lastTab != viewIssues {
+		t.Fatalf("landed on %v (lastTab %v), want issues", m.active, m.lastTab)
+	}
+	m.Update(boardConfigMsg{tabs: []string{"issues", "tasks"}})
+	if m.active != viewIssues {
+		t.Fatalf("the default config moved the landing to %v", m.active)
+	}
+}
+
+// The first config answer moves an unmoved human to the configured first
+// tab, once; a second answer never moves anyone (task 136 decision 13).
+func TestLandingFollowsTheFirstConfigAnswer(t *testing.T) {
+	for _, first := range []tea.Msg{
+		boardConfigMsg{tabs: []string{"tasks", "issues"}},
+		func() tea.Msg {
+			var cfg apiclient.Config
+			cfg.TUI.Tabs = []string{"tasks", "issues"}
+			return daemonConfigMsg{config: cfg}
+		}(),
+	} {
+		m := landedRoot(t)
+		m.Update(boardConfigMsg{err: errors.New("boom")})
+		if m.active != viewIssues {
+			t.Fatalf("a failed answer moved the landing to %v", m.active)
+		}
+		m.Update(first)
+		if m.active != viewHome || m.lastTab != viewHome {
+			t.Fatalf("after %T the landing is %v (lastTab %v), want the board", first, m.active, m.lastTab)
+		}
+		m.Update(boardConfigMsg{tabs: []string{"chats", "issues"}})
+		if m.active != viewHome {
+			t.Fatalf("a second answer moved the human to %v", m.active)
+		}
+	}
+}
+
+// A human who navigated before the first answer stays where they went.
+func TestLandingNeverOverridesTheHuman(t *testing.T) {
+	m := landedRoot(t)
+	m.Update(tabKey())
+	if m.active != viewHome {
+		t.Fatalf("tab from the landing went to %v, want the board", m.active)
+	}
+	m.Update(boardConfigMsg{tabs: []string{"chats", "issues"}})
+	if m.active != viewHome {
+		t.Fatalf("the first answer moved a human who had navigated to %v", m.active)
+	}
+}
+
+// Every takeover's esc goes back to the tab it was opened from (#789): the
+// issues tab or the tasks tab alike.
+func TestTakeoversEscBackToTheirTab(t *testing.T) {
+	for _, tab := range []viewID{viewIssues, viewHome} {
+		for _, id := range []viewID{
+			viewProjects, viewWorkflows, viewDaemon, viewPullRequests,
+			viewTriggers, viewArchived, viewArchivedChats, viewNewTask, viewChats,
+		} {
+			m := tabsRoot(t, "issues", "tasks")
+			m.Update(selectViewMsg{id: tab})
+			m.Update(selectViewMsg{id: id})
+			pressEsc(m)
+			if m.active != tab {
+				t.Errorf("esc on %v opened from %v went to %v", id, tab, m.active)
+			}
+		}
+	}
+}
+
+// With the board left out of tui.tabs, it is a takeover too: reached by a
+// switch, esc leaves it for the human's tab.
+func TestBoardOffTheTabsLeavesByEsc(t *testing.T) {
+	m := tabsRoot(t, "issues")
+	m.Update(selectViewMsg{id: viewIssues})
+	m.Update(selectViewMsg{id: viewHome})
+	pressEsc(m)
+	if m.active != viewIssues {
+		t.Fatalf("esc on the board (not a tab) went to %v, want issues", m.active)
+	}
+	m = tabsRoot(t, "issues", "tasks")
+	m.Update(selectViewMsg{id: viewHome})
+	pressEsc(m)
+	if m.active != viewHome {
+		t.Fatalf("esc on the board as a tab went to %v", m.active)
+	}
+}
+
+// A task's esc still goes back to the screen it was opened from; after a
+// project switch emptied that, to the human's tab.
+func TestTaskEscBackTargets(t *testing.T) {
+	tv := newTaskView(newDetail(testCtx(t), newLevelHolder(), newRawHolder(), newHyperlinkHolder()))
+	for back, want := range map[viewID]tea.Msg{
+		viewHome:  selectViewMsg{id: viewHome},
+		viewIssue: selectViewMsg{id: viewIssue},
+	} {
+		tv.back = back
+		if got := tv.popCmd()(); got != want {
+			t.Errorf("esc with back %v sent %#v, want %#v", back, got, want)
+		}
+	}
+	tv.leaveForSwitch()
+	if got := tv.popCmd()(); got != (backToTabMsg{}) {
+		t.Errorf("esc after a switch sent %#v, want back to the tab", got)
 	}
 }
 

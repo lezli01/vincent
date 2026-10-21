@@ -984,8 +984,8 @@ func TestNewTaskEscOnAnUntouchedDraftJustLeaves(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("esc on a clean form did nothing")
 	}
-	if msg, ok := cmd().(selectViewMsg); !ok || msg.id != viewHome {
-		t.Errorf("esc = %#v, want a switch back to the board", cmd())
+	if _, ok := cmd().(backToTabMsg); !ok {
+		t.Errorf("esc = %#v, want a switch back to the tab", cmd())
 	}
 	if n.mode == ntConfirming {
 		t.Error("an untouched draft asked for confirmation")

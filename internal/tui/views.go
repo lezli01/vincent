@@ -44,6 +44,11 @@ const (
 	viewCount
 )
 
+// viewLastTab is not a screen: it is a back target meaning "the tab the
+// human was last on" (#789), resolved by the root through backToTabMsg and
+// never routed as an index.
+const viewLastTab viewID = -1
+
 // panel is one routed screen (T3.10: renamed from view). Screens are
 // sub-models: the root delegates non-global messages to the active one only.
 type panel interface {

@@ -420,7 +420,7 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			w.err = ""
 			return w, nil
 		}
-		return w, func() tea.Msg { return selectViewMsg{id: viewHome} }
+		return w, backToTab
 	}
 	return w, nil
 }

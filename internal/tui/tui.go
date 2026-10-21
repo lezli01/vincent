@@ -55,6 +55,7 @@ func Run(ctx context.Context, opts ...Option) error {
 	}
 
 	m := newRoot(ctx, cn, dataDir)
+	m.land()
 	m.startup.flag = o.project
 	// The working directory is the client's, which is why rule 2 matches
 	// here and not in the daemon. An unreadable one only skips the rule.

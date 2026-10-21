@@ -1122,7 +1122,7 @@ func (n *newTask) nudgePriority(delta int) {
 // nothing to lose.
 func (n *newTask) abandon() (panel, tea.Cmd) {
 	if !n.touched {
-		return n, func() tea.Msg { return selectViewMsg{id: viewHome} }
+		return n, backToTab
 	}
 	n.mode = ntConfirming
 	return n, nil
@@ -1132,7 +1132,7 @@ func (n *newTask) updateConfirm(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
 		n.reset()
-		return n, func() tea.Msg { return selectViewMsg{id: viewHome} }
+		return n, backToTab
 	default:
 		n.mode = ntNavigating
 		return n, nil

@@ -497,7 +497,7 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			v.clampCursor()
 			return v, nil
 		}
-		return v, func() tea.Msg { return selectViewMsg{id: viewHome} }
+		return v, backToTab
 	case opKey(keymap.Refresh):
 		return v, v.loadCmd()
 	case opKey(keymap.Browser):

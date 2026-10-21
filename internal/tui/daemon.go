@@ -496,8 +496,8 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "esc":
-		// The takeover layer of the §15 esc stack: back to the home screen.
-		return d, func() tea.Msg { return selectViewMsg{id: viewHome} }
+		// The takeover layer of the §15 esc stack: back to the human's tab.
+		return d, backToTab
 	case opKey(keymap.Refresh):
 		return d, d.refreshCmd()
 	case "tab":

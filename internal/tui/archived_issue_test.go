@@ -110,14 +110,14 @@ func TestArchivedBoardsEscLeavesAfterTheFilter(t *testing.T) {
 		t.Fatalf("esc with a row marked did not just clear the selection (marks %v, cmd %v)", b.marks, cmd != nil)
 	}
 	_, cmd := b.updateKey(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if msg := msgOf(cmd); msg != (selectViewMsg{id: viewHome}) {
-		t.Errorf("esc on the archived task board sent %#v, want the home board", msg)
+	if msg := msgOf(cmd); msg != (backToTabMsg{}) {
+		t.Errorf("esc on the archived task board sent %#v, want back to the tab", msg)
 	}
 
 	v := archivedChats804()
 	_, cmd = v.update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if msg := msgOf(cmd); msg != (selectViewMsg{id: viewHome}) {
-		t.Errorf("esc on the archived chats board sent %#v, want the home board", msg)
+	if msg := msgOf(cmd); msg != (backToTabMsg{}) {
+		t.Errorf("esc on the archived chats board sent %#v, want back to the tab", msg)
 	}
 
 	// The live board stays the bottom of the esc stack.

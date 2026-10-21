@@ -144,6 +144,11 @@ type board struct {
 	// switch re-derives and fetches nothing; the archived board asks the
 	// daemon for the one project and refetches (task 132.8, decision 17).
 	projectScope
+	// offTab is the live board while `tui.tabs` does not name it (#789):
+	// esc at the bottom of its stack then leaves to the human's tab. The
+	// zero value is a tab, which is what the board was before tabs could
+	// leave it out.
+	offTab bool
 	// noProjects is a project listing that came back empty, so a selection
 	// of 0 is "no project registered" rather than "not resolved yet" (task
 	// 132.7): the shared empty state is drawn only then.
@@ -899,13 +904,15 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			b.clearMarks()
 			return b, nil
 		}
-		if b.archived {
+		if b.archived || b.offTab {
 			// The archived board is a takeover, and the bottom of a
-			// takeover's esc stack leaves to the home board — what esc does
-			// on the archived chats board, which this one had not matched
-			// (#804 AR-11). The live board is the bottom of the whole stack,
-			// where esc does nothing.
-			return b, func() tea.Msg { return selectViewMsg{id: viewHome} }
+			// takeover's esc stack leaves to the human's tab — what esc
+			// does on the archived chats board, which this one had not
+			// matched (#804 AR-11). The live board leaves the same way when
+			// `tui.tabs` does not name it (#789): reached by `!` or the
+			// palette, it is a takeover too. As a main tab it is the bottom
+			// of the whole stack, where esc does nothing.
+			return b, backToTab
 		}
 		return b, nil
 	case "space":
