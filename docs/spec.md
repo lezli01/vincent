@@ -14306,7 +14306,7 @@ changes (decision 31), applies it to the active view:
 | Active view | On a switch |
 |---|---|
 | Board, chats, issues, pull requests, both archived boards, workflows, triggers | Stays; re-scoped through `setProject` |
-| Task workspace | Falls back to the board; its back stack is emptied and its streams stop |
+| Task workspace | Falls back to the board; its back stack is emptied and its streams stop. |
 | Chat | Falls back to the chats board; its stream stops. A typed, unsent message in the composer is a draft (review F7) |
 | Issue | Falls back to the issues list |
 | New-task form; the chats board's new-chat form; the issues list's issue form | Re-targeted when pristine: reopened empty on the new project, catalogs refetched. An edit form on the issues list closes |
@@ -15812,9 +15812,10 @@ boards, and a list that is not a configured tab — goes back to the tab the
 human came from: the last main tab they were on while it is still in
 `tui.tabs`, else the first configured tab. The live task board joins them
 when `tui.tabs` leaves it out: reached by `!` or the palette, `esc` at the
-bottom of its stack leaves it the same way. A task opened from the board
-still returns to the board and one opened from an issue to the issue; after
-a project switch empties the workspace's back stack, it returns to the tab.
+bottom of its stack leaves it the same way. A task opened from the board's
+own rows still returns to the board and one opened
+from an issue to the issue; a task opened any other way — the palette, a
+takeover, `!`, a new task — returns to the tab.
 
 A filter is view state, not a mode: `tab` **commits** it and moves focus, leaving
 it applied and named in the panel title; only `esc` clears it. Losing a filter

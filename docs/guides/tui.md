@@ -54,7 +54,9 @@ Overview, `1` Steps, `2` Task Details, `3` Output, `4` Diff, `5` Workflow,
 `6` Step Details and `7` Pull Request (only when that tab is there). On a
 narrow terminal the second group's labels shorten first, then shrink to their
 digits; the first group is never shortened. `esc` returns to where you
-opened the task from: the board, or the issue it was started from.
+opened the task from: the board, or the issue it was started from. A task
+opened any other way — the command palette, pull requests, triggers, `!`, a
+new task — returns to your [main tab](#main-tabs).
 
 New task, projects, workflows, chats, the two archived boards, issues,
 triggers, daemon, and — for GitHub projects — pull requests are full-screen

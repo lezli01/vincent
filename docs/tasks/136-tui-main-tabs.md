@@ -127,10 +127,12 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
     takeover's last `esc` — projects, workflows, daemon, pull requests,
     triggers, new task, both archived boards, a list that is not a tab —
     sends `backToTabMsg`, resolved by the root to `lastTab` while it is
-    still configured, else `tabs[0]`. A task's explicit `back` (the board,
-    an issue, the overview) is untouched; after a project switch empties
-    the workspace's stack its back is `viewLastTab`, the same message. The
-    overview's return with no project-scoped history is the tab too.
+    still configured, else `tabs[0]`. A task's explicit `back` (an issue,
+    the overview) is untouched, and the board's own open (`fromBoard`)
+    still returns to the board; every other open with no `back` — the
+    palette, pull requests, triggers, `!`, a new task — gets `viewLastTab`,
+    the same message (review F1). The overview's return with no project-scoped history is
+    the tab too.
 22. **A board that is not a tab is left by `esc`** (2026-10-21, #789): the
     shell is `tabAware`, and with `tui.tabs` leaving `tasks` out, `esc` at
     the bottom of the board's stack sends `backToTabMsg`. This refines

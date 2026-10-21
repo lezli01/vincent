@@ -122,10 +122,14 @@ type (
 		// decision 3).
 		attention bool
 		// back is the screen `esc` returns to once the workspace's own back
-		// stack is empty. Zero is the board; the issue detail sets itself,
-		// so a linked task opened from an issue returns to that issue
-		// (task 130.9).
+		// stack is empty. The issue detail sets itself, so a linked task
+		// opened from an issue returns to that issue (task 130.9). Zero is
+		// the board for the board's own open (fromBoard) and the human's tab
+		// for every other — the palette, a takeover, `!`, a new task (#789).
 		back viewID
+		// fromBoard marks the board's own open: zero back then means the
+		// board, which is where the human was.
+		fromBoard bool
 		// projectID is the project the task belongs to, filled from the row the
 		// sender holds: an open of another project's task moves the selection
 		// first (task 132.6). Zero makes the root fetch the task to learn it.

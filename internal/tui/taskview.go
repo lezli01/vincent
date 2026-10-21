@@ -160,9 +160,9 @@ type taskView struct {
 	// board's, shared with every other way of opening a task.
 	stackPush int64
 	stackKeep bool
-	// back is where esc lands once the stack is empty: the board, unless a
-	// fresh open named another screen (selectTaskMsg.back), or the human's
-	// tab after a project switch emptied the stack (viewLastTab, #789).
+	// back is where esc lands once the stack is empty: the screen a fresh
+	// open named (selectTaskMsg.back), the board for the board's own open,
+	// and otherwise the human's tab (viewLastTab, #789).
 	// Pushes and pops keep it, so drilling into a lane and back out still
 	// ends there.
 	back viewID
@@ -364,6 +364,9 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		default:
 			t.stack, t.leftTab, t.crumb = nil, nil, nil
 			t.back = msg.back
+			if t.back == viewHome && !msg.fromBoard {
+				t.back = viewLastTab
+			}
 		}
 		if msg.id != t.pendingFailure {
 			t.pendingFailure = 0

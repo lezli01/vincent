@@ -232,7 +232,7 @@ func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 				if t, ok := s.board.taskByID(id); ok {
 					pid = t.ProjectID
 				}
-				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid} }
+				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid, fromBoard: true} }
 			}
 		}
 		if msg.String() == "esc" && s.board.hasMarks() {

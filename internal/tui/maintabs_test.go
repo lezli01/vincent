@@ -495,3 +495,33 @@ func init() {
 		}
 	}
 }
+
+// Every open that names no back and is not the board's own returns to the
+// human's tab (review F1): the palette, the pull requests takeover, a new
+// task. The board's own open still returns to the board.
+func TestTaskOpenedOffTheBoardEscsToTheTab(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tabs []string
+		from viewID
+		open tea.Msg
+		want viewID
+	}{
+		{"palette, board off the tabs", []string{"issues"}, viewIssues, openTaskMsg{id: 7}, viewIssues},
+		{"pull requests from issues", []string{"issues", "tasks"}, viewIssues, selectTaskMsg{id: 7}, viewIssues},
+		{"new task from issues", nil, viewIssues, taskCreatedMsg{task: apiclient.TaskDetail{Task: apiclient.Task{ID: 7}}}, viewIssues},
+		{"the board's own row", []string{"issues"}, viewHome, selectTaskMsg{id: 7, fromBoard: true}, viewHome},
+	} {
+		m := tabsRoot(t, tc.tabs...)
+		m.Update(selectViewMsg{id: viewIssues})
+		m.Update(selectViewMsg{id: tc.from})
+		m.Update(tc.open)
+		if m.active != viewTask {
+			t.Fatalf("%s: the open landed on %v, want the workspace", tc.name, m.active)
+		}
+		pressEsc(m)
+		if m.active != tc.want {
+			t.Errorf("%s: esc went to %v, want %v", tc.name, m.active, tc.want)
+		}
+	}
+}
