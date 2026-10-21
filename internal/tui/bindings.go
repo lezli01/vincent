@@ -606,8 +606,11 @@ var bindings = []binding{
 	{key: "ctrl+x", label: "stop the running turn (its process tree is killed)", scope: scopePanel, context: ctxChat, hint: "ctrl+x stop", priority: 2},
 	// ctrl+r rather than `v` (task 071 decision 4): the composer owns every
 	// printable key, so a letter would be typed into the message.
-	{key: "ctrl+r", label: "how much of the conversation to show (quiet → compact → normal → verbose)", scope: scopePanel, context: ctxChat, hint: "ctrl+r detail", priority: 3},
-	{key: "pgup", label: "scroll the conversation back (pgdown goes forward)", scope: scopePanel, context: ctxChat, hint: "pgup/pgdown scroll", priority: 4},
+	{key: "ctrl+r", label: "how much of the conversation to show (quiet → compact → normal → verbose)", scope: scopePanel, context: ctxChat, hint: "ctrl+r detail", priority: 4},
+	// Ahead of ctrl+r (issue #801 F5): with enter or ctrl+x it is what an
+	// 80-column footer still has room for, and a reader who cannot find the
+	// way back through the conversation cannot read it.
+	{key: "pgup", label: "scroll the conversation back (pgdown goes forward)", scope: scopePanel, context: ctxChat, hint: "pgup/pgdown scroll", priority: 3},
 	{key: "ctrl+g", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChat, hint: "ctrl+g live", priority: 5},
 	// ctrl+t rather than `h`, for the reason ctrl+r is a combination: the
 	// composer owns every printable key (task 074).
@@ -629,6 +632,15 @@ var bindings = []binding{
 	// label as the alias for a terminal that swallows tab, the way ctrl+j's
 	// row already names shift+enter and alt+enter; keymap.fixed records it.
 	{key: "tab", label: "the skills this chat's agent can run — type to filter, enter or tab inserts one (f2 too, where the terminal swallows tab)", scope: scopePanel, context: ctxChat, hint: "tab skills", priority: 12},
+	// The line step and the jump to the start (issue #801 F8). alt rather
+	// than shift or ctrl: the composer owns ↑/↓, shift+↑/↓ select in it,
+	// ctrl+home/ctrl+end move to its ends, and ctrl+↑ is a desktop shortcut
+	// on macOS — alt+↑/↓ and alt+g are the ones the textarea leaves free.
+	{key: "alt+up", label: "scroll the conversation back one line (alt+down goes forward)", scope: scopePanel, context: ctxChat, hint: "alt+↑/↓ line", priority: 13},
+	{key: "alt+g", label: "jump to the start of the conversation (ctrl+g goes back to the live end)", scope: scopePanel, context: ctxChat, hint: "alt+g top", priority: 14},
+	// The way back to a question esc put away (issue #801 F7). Offered only
+	// while one is put away: chatView.liveBindings drops it otherwise.
+	{key: "alt+a", label: "reopen the agent's question after esc closed it (what you picked is kept)", scope: scopePanel, context: ctxChat, hint: "alt+a answer", priority: 1},
 
 	// The chat workspace's skill list, while it is open. noPalette for the
 	// reason the daemon view's skill offer's rows are: a key that only

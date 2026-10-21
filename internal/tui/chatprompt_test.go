@@ -189,7 +189,9 @@ func TestChatAgentOutputStaysFlushLeftAndFullWidth(t *testing.T) {
 // prompt keeps the anchor it had and a growing prompt above the reader does
 // not slide the pane out from under them (#291).
 func TestChatPromptBubbleKeepsAPausedReadersPlace(t *testing.T) {
-	const width, height = 60, 20
+	// 19 rows: the workspace's own hint line is gone (issue #801 F5), and
+	// at 20 the whole conversation fits with nothing to page back to.
+	const width, height = 60, 19
 	v := finishedChat(t, 3)
 	for seq := 1; seq <= 3; seq++ {
 		recs := make([]apiclient.TranscriptRecord, 6)

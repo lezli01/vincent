@@ -6,6 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 // wheelTick builds one wheel event. Its coordinates are arbitrary on purpose:
@@ -196,18 +198,26 @@ func TestChatRenderFillsExactlyItsHeight(t *testing.T) {
 }
 
 // TestChatFooterHintIsOnScreen is the other half of it: the hint naming the
-// scroll keys is what the clip cost, and it is drawn inside the frame.
+// scroll keys is what the clip cost. Since issue #801 F5 the workspace draws
+// no hint line of its own — the root's registry footer is the one — so it is
+// that footer, at 80 columns, that must keep the scroll keys.
 func TestChatFooterHintIsOnScreen(t *testing.T) {
 	v := finishedChat(t, 9)
-	v.bodyDirty = true
-	// Framed the way root.framedView does it, because that is where the clip
-	// happened: render was asked for h-2 lines, returned h, and frame kept
-	// h-2 — dropping the hint off the bottom of the screen.
-	const w, h = 200, 24
-	got := ansi.Strip(frame(v.title(), v.render(w-2, h-2), w, h, true))
-	for _, want := range []string{"enter send", "pgup/pgdown scroll", "ctrl+g live"} {
+	line, _ := buildFooter(80, v.liveBindings(bindingsFor(ctxChat)), nil, taskActions{}, attentionTally{}, false, true)
+	got := ansi.Strip(line)
+	for _, want := range []string{"enter send", "pgup/pgdown scroll"} {
 		if !strings.Contains(got, want) {
-			t.Errorf("the footer hint lost %q on screen:\n%s", want, got)
+			t.Errorf("the 80-column footer lost %q: %q", want, got)
+		}
+	}
+	// And while a turn runs, beside the key that stops it.
+	v.chat.State = "running"
+	v.turns = append(v.turns, apiclient.ChatTurn{ID: 99, ChatID: 1, Seq: 10, Prompt: "go", State: "running", StartedAt: v.now()})
+	line, _ = buildFooter(80, v.liveBindings(bindingsFor(ctxChat)), nil, taskActions{}, attentionTally{}, false, true)
+	got = ansi.Strip(line)
+	for _, want := range []string{"ctrl+x stop", "pgup/pgdown scroll"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the 80-column footer of a running chat lost %q: %q", want, got)
 		}
 	}
 }

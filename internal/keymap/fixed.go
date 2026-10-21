@@ -99,10 +99,16 @@ var fixed = []Fixed{
 	{"chat", "ctrl+y", "copy an assistant message, its plain text, or one of its code blocks"},
 	{"chat", "ctrl+l", "list the links in the assistant's messages"},
 	{"chat", "tab", "the skills this chat's agent can run"},
+	{"chat", "alt+up", "scroll the conversation back one line"},
+	{"chat", "alt+g", "jump to the start of the conversation"},
+	{"chat", "alt+a", "reopen the agent's question after esc closed it"},
 	// The alias, recorded the way ctrl+j's shift+enter and alt+enter are: a
 	// row of its own, so internal/tui's tests see both literals a handler
 	// matches (task 124 decision 69).
 	{"chat", "f2", "the skills this chat's agent can run, where the terminal swallows tab"},
+	// alt+down is alt+up's other half, matched by the same handler and named
+	// in alt+up's label the way pgdown is in pgup's (issue #801 F8).
+	{"chat", "alt+down", "scroll the conversation forward one line"},
 	{"chat skills", "up", "move the highlight"},
 	{"chat skills", "down", "move the highlight"},
 	{"chat skills", "tab", "insert the highlighted skill, or the top match"},

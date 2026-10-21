@@ -245,6 +245,15 @@ func (l *chatSkillList) core() *chatInlineList {
 	l.loadingText = fmt.Sprintf("asking %s which skills it has…", l.agentName())
 	l.emptyText = fmt.Sprintf("%s reported no skills for this chat", l.agentName())
 	l.noMatchText = "nothing matches — backspace clears the filter, esc closes the list"
+	// The keys go on their own line under the rows (issue #801 F14).
+	l.keys = ""
+	if len(l.rows) > 0 {
+		if l.mode == skillModeInline {
+			l.keys = "tab complete · ↑/↓ pick · esc back to the draft"
+		} else {
+			l.keys = "tab insert · ↑/↓ pick · esc close"
+		}
+	}
 	return &l.chatInlineList
 }
 
@@ -268,13 +277,6 @@ func (l *chatSkillList) titledCore(now time.Time) *chatInlineList {
 	}
 	if l.data != nil && l.data.ProbedAt != nil {
 		tail = append(tail, "probed "+formatElapsed(max(now.Sub(*l.data.ProbedAt), 0).Truncate(time.Second))+" ago")
-	}
-	if len(l.rows) > 0 {
-		if l.mode == skillModeInline {
-			tail = append(tail, "tab complete · ↑/↓ pick · esc back to the draft")
-		} else {
-			tail = append(tail, "tab insert · ↑/↓ pick · esc close")
-		}
 	}
 	c.tail = tail
 	return c

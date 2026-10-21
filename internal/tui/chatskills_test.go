@@ -1312,7 +1312,8 @@ func TestChatSkillsZeroValueStillReservesItsLines(t *testing.T) {
 	}
 
 	got := l.render(width, paneHeight, now)
-	if want := 1 + l.window(paneHeight) + 3; len(got) != want {
+	// The title, the rows, the three reserved lines and the key line.
+	if want := 1 + l.window(paneHeight) + 3 + 1; len(got) != want {
 		t.Fatalf("a zero-valued list rendered %d lines, want %d", len(got), want)
 	}
 	if h := l.height(paneHeight); h != len(got) {

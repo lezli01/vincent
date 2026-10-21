@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -83,6 +84,10 @@ type chatInlineList struct {
 	// (issue #554 decision 2).
 	title string
 	tail  []string
+	// keys is the owner's key hint, drawn on a line of its own under the
+	// rows (issue #801 F14): riding at the end of the title's tail, it was
+	// the first thing an 80-column pane cut.
+	keys string
 	// loadingText, emptyText and noMatchText are what stands in for the rows
 	// while a request is in flight, when the answer held none, and when the
 	// filter matched none. The core indents each one; the sentence is the
@@ -228,21 +233,50 @@ func (l *chatInlineList) height(paneHeight int) int {
 	if !l.open {
 		return 0
 	}
-	return 1 + l.window(paneHeight) + l.reserve
+	return 1 + l.window(paneHeight) + l.reserveAt(paneHeight) + l.keysLines()
+}
+
+// keysLines is the key hint's line, when the owner has one to draw.
+func (l *chatInlineList) keysLines() int {
+	if l.keys == "" {
+		return 0
+	}
+	return 1
+}
+
+// chatInlineSmallPane is the pane height under which the description reserve
+// shrinks to one line (issue #801 F14): three reserved lines in a 20-line
+// pane left the rows themselves one or two lines, and the rows are what the
+// list is for.
+const chatInlineSmallPane = 24
+
+// reserveAt is the description reserve at this pane height: the owner's at a
+// comfortable size, at most one line in a small pane.
+func (l *chatInlineList) reserveAt(paneHeight int) int {
+	if paneHeight < chatInlineSmallPane {
+		return min(l.reserve, 1)
+	}
+	return l.reserve
 }
 
 // window is how many row lines are drawn: the picker's fixed window, what the
 // pane has room for, and at most a third of the pane — below the §7.4
 // popup's half, because this list is an aid to typing and that popup is the
-// turn itself.
+// turn itself. It never drops below three rows where three exist and the
+// pane is not tiny (issue #801 F14): a window of one row is a list nobody can
+// scan, and the body gives up the difference.
 func (l *chatInlineList) window(paneHeight int) int {
 	rows := max(len(l.rows), 1)
-	return max(min(rows, pickerWindow, paneHeight/3-1-l.reserve), 1)
+	floor := 1
+	if paneHeight >= 12 {
+		floor = min(rows, 3)
+	}
+	return max(min(rows, pickerWindow, paneHeight/3-1-l.reserveAt(paneHeight)-l.keysLines()), floor)
 }
 
-// render draws the list: a title line, the windowed rows, and the highlighted
-// row's description wrapped into the fixed reserve. One slice element per
-// rendered line (#299).
+// render draws the list: a title line, the windowed rows, the highlighted
+// row's description wrapped into the reserve, and the key hint. One slice
+// element per rendered line (#299).
 //
 // Everything it says in words — the title, its tail and the three lines that
 // stand in for rows — the owner has already put in the fields it reads.
@@ -251,8 +285,10 @@ func (l *chatInlineList) render(width, paneHeight int) []string {
 		return nil
 	}
 	win := l.window(paneHeight)
-	out := make([]string, 0, 1+win+l.reserve)
-	out = append(out, " "+l.titleLine())
+	reserve := l.reserveAt(paneHeight)
+	total := 1 + win + reserve + l.keysLines()
+	out := make([]string, 0, total)
+	out = append(out, " "+l.titleLineAt(l.position(win)))
 
 	switch {
 	case l.loading:
@@ -264,25 +300,59 @@ func (l *chatInlineList) render(width, paneHeight int) []string {
 	default:
 		out = append(out, l.visibleRows(width, win)...)
 	}
+	// Pad the rows to the window, so the reserve and the key line sit at the
+	// same place whatever the filter matched.
+	for len(out) < 1+win {
+		out = append(out, "")
+	}
 	// The reserve, whether or not a row is highlighted.
-	body := make([]string, l.reserve)
+	body := make([]string, reserve)
 	if r, ok := l.pick(); ok && l.cursor >= 0 {
 		text := r.description
 		if r.disabled && r.reason != "" {
 			text = strings.TrimSpace(r.reason + " · " + text)
 		}
-		wrapped := wrapText(text, max(width-5, 8), wrapOpts{})
-		for i := range min(len(wrapped), l.reserve) {
+		wrapped := wrapText(text, max(width-5, 8), wrapOpts{maxLines: reserve})
+		for i := range min(len(wrapped), reserve) {
 			body[i] = styleDim.Render("    " + wrapped[i])
 		}
 	}
 	out = append(out, body...)
+	if l.keys != "" {
+		out = append(out, styleDim.Render("   "+ansi.Truncate(l.keys, max(width-4, 1), "…")))
+	}
 	// Pad to the promised height: a window narrower than the rows still owes
 	// render exactly what height() said it would draw.
-	for len(out) < 1+win+l.reserve {
+	for len(out) < total {
 		out = append(out, "")
 	}
-	return out[:1+win+l.reserve]
+	return out[:total]
+}
+
+// position is the `n/N` cell and its scroll cue (issue #801 F14): where the
+// highlight is among the rows, `–` before the first press, and an arrow for
+// each side the window hides rows on. It is drawn whether or not the list is
+// capped — "is my row below the window" is a question every list raises.
+func (l *chatInlineList) position(win int) string {
+	if len(l.rows) == 0 || l.loading {
+		return ""
+	}
+	at := "–"
+	if l.cursor >= 0 {
+		at = strconv.Itoa(l.cursor + 1)
+	}
+	cell := at + "/" + strconv.Itoa(len(l.rows))
+	start := windowStart(len(l.rows), max(l.cursor, 0), win)
+	above, below := start > 0, start+win < len(l.rows)
+	switch {
+	case above && below:
+		cell += " ↕"
+	case above:
+		cell += " ↑"
+	case below:
+		cell += " ↓"
+	}
+	return cell
 }
 
 // visibleRows styles the rows the window shows, and only those.
@@ -314,10 +384,17 @@ func (l *chatInlineList) visibleRows(width, win int) []string {
 
 // titleLine draws the shape of the title line: the owner's title, then the
 // owner's cells dot-joined and dimmed after it.
-func (l *chatInlineList) titleLine() string {
+func (l *chatInlineList) titleLine() string { return l.titleLineAt("") }
+
+// titleLineAt is titleLine with the position cell leading the tail.
+func (l *chatInlineList) titleLineAt(pos string) string {
 	title := styleTitle.Render(l.title)
-	if len(l.tail) > 0 {
-		title += styleDim.Render("  ·  " + strings.Join(l.tail, "  ·  "))
+	tail := l.tail
+	if pos != "" {
+		tail = append([]string{pos}, tail...)
+	}
+	if len(tail) > 0 {
+		title += styleDim.Render("  ·  " + strings.Join(tail, "  ·  "))
 	}
 	return title
 }

@@ -48,6 +48,10 @@ type answerForm struct {
 	submitting bool
 	// dirty is any answer chosen or typed since the form opened (task 132.6).
 	dirty bool
+	// noDetails drops `ctrl+t task details` from the key line: only the
+	// task workspace answers it, and in a chat there is no task to read
+	// (issue #801 F7).
+	noDetails bool
 }
 
 func newAnswerForm(req apiclient.InputRequest) *answerForm {
@@ -363,8 +367,12 @@ func (f *answerForm) lines(width int) (lines []string, from, to int) {
 	case f.submitting:
 		lines = append(lines, styleDim.Render("  submitting…"))
 	default:
+		details := " · ctrl+t task details"
+		if f.noDetails {
+			details = ""
+		}
 		lines = append(lines, styleDim.Render(
-			"  space select · "+opKey(keymap.FreeText)+" type an answer · enter submit · ctrl+t task details · esc leave the form"))
+			"  space select · "+opKey(keymap.FreeText)+" type an answer · enter submit"+details+" · esc leave the form"))
 	}
 	return lines, from, to
 }

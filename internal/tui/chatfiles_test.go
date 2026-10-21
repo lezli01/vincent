@@ -862,7 +862,8 @@ func TestChatFilesZeroValueStillReservesItsLine(t *testing.T) {
 		t.Fatalf("build left the cap at %d, want %d", l.cap, chatFileMentionMax)
 	}
 	got := l.render(width, paneHeight)
-	if want := 1 + l.titledCore().window(paneHeight) + 1; len(got) != want {
+	// The title, the rows, the one reserved line and the key line.
+	if want := 1 + l.titledCore().window(paneHeight) + 1 + 1; len(got) != want {
 		t.Fatalf("a zero-valued list rendered %d lines, want %d", len(got), want)
 	}
 	l.cursor = 0
