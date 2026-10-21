@@ -1197,6 +1197,14 @@ EOF
 # those cells, and closes it before the Screenshot — the repaint that follows
 # clears the ghost. Reopening the palette does not: its own close leaves it.
 #
+# The TUI lands on its first tab, the issues list with the seed's default
+# `tui.tabs` (#789). A tape that photographs the task board, or drives it
+# with a board key (`/`, `V`, `n`), therefore presses a visible `Tab` to
+# reach Tasks first — outside the Hide block, for the trap above — and
+# TestBoardTapesSwitchToTasksFirst holds every tape to it. Tapes that start
+# with `:` or `@` reach their screen from anywhere, and the issue tapes
+# start where they land.
+#
 # PROJECT is the project the TUI opens on, passed as `--project` (task 132).
 # Every screen but the project picker and overview shows one project, and
 # without the flag the startup choice falls to the last-used project — that
@@ -1310,6 +1318,8 @@ do_capture() {
   # The board-only home screen, filtered to one running task.
   owns api task 'harden' tui-board
   tape tui-board 1250 api '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "harden"
@@ -1323,6 +1333,8 @@ Screenshot "'"$OUT"'/tui-board.png"
   # is no project level, since the board shows one project (task 132). api
   # runs the most workflows, so its board has the most groups.
   tape tui-grouping 1400 api '
+Tab
+Sleep 2s
 Sleep 3s
 Screenshot "'"$OUT"'/tui-grouping.png"
 '
@@ -1330,6 +1342,8 @@ Screenshot "'"$OUT"'/tui-grouping.png"
   # Bulk selection — `V` takes every row the filter is showing, and the
   # footer reports what the action keys would act on.
   tape tui-multi-select 1400 api '
+Tab
+Sleep 2s
 Sleep 2s
 Type "V"
 Sleep 3s
@@ -1339,6 +1353,8 @@ Screenshot "'"$OUT"'/tui-multi-select.png"
   # The Diff tab: grouped by file, collapsed, with one file expanded.
   owns web task 'design tokens' tui-diff
   tape tui-diff 1250 web '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "design tokens"
@@ -1361,6 +1377,8 @@ Screenshot "'"$OUT"'/tui-diff.png"
   # project row above it is the selection, drawn and never focused (task
   # 132.13), so the project is the one the tape launches on.
   tape tui-new-task 1050 api '
+Tab
+Sleep 2s
 Type "n"
 Sleep 3s
 Down 1
@@ -1623,6 +1641,8 @@ Sleep 2s
   # each with vincent'"'"'s failure reason and the step'"'"'s result summary.
   owns release-tooling task 'signed checksums' tui-task-steps
   tape tui-task-steps 1250 release-tooling '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "signed checksums"
@@ -1645,6 +1665,8 @@ Sleep 2s
   # chat, which is why the seed opens them on this task and no other.
   owns api task 'public API' tui-task-details
   tape tui-task-details 1400 api '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "public API"
@@ -1664,6 +1686,8 @@ Sleep 2s
   # Output, on the soak: a real `go test -v` run arriving live.
   owns api task 'harden' tui-task-output
   tape tui-task-output 1250 api '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "harden"
@@ -1682,6 +1706,8 @@ Sleep 2s
   # steps done, the gate it is parked at, and the step it never reached.
   owns api task 'public API' tui-task-workflow
   tape tui-task-workflow 1400 api '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "public API"
@@ -1701,6 +1727,8 @@ Sleep 2s
   # on the gate'"'"'s attempt, the newest; the agent step is two above it.
   owns api task 'public API' tui-task-step-details
   tape tui-task-step-details 1400 api '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "public API"
@@ -1722,6 +1750,8 @@ Sleep 2s
   # the failed Actions check, the one row `ctrl+r` is offered on.
   owns web task 'design tokens' tui-task-pull
   tape tui-task-pull 1250 web '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "design tokens"
@@ -1746,6 +1776,8 @@ Sleep 2s
   # the repair.
   owns release-tooling task 'signed checksums' tui-repair
   tape tui-repair 1250 release-tooling '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "signed checksums"
@@ -1769,6 +1801,8 @@ Sleep 2s
   # Follow-up (`F`), on the finished task, with a prompt written and kept.
   owns web task 'design tokens' tui-follow-up
   tape tui-follow-up 1250 web '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "design tokens"
@@ -1797,6 +1831,8 @@ Sleep 2s
   # row every question ends with. Nothing is submitted.
   owns platform-infra task 'read replica' tui-answer
   tape tui-answer 1250 platform-infra '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "read replica"
@@ -1821,6 +1857,8 @@ Sleep 2s
   # has none: the title and body vincent guessed, and the draft toggle.
   owns web task 'focus ring' tui-create-pr
   tape tui-create-pr 1250 web '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "focus ring"
@@ -1849,6 +1887,8 @@ Sleep 2s
   # workflow row, so the first enter opens the workflow picker; the project
   # is platform-infra, the one the tape launches on.
   tape tui-new-task-fields 1250 platform-infra '
+Tab
+Sleep 2s
 Type "n"
 Sleep 3s
 Enter
@@ -1899,6 +1939,8 @@ Sleep 2s
   # too, so the picture has a pass that succeeded beside the one that did not.
   owns platform-infra task 'tenant_id' tui-loop
   tape tui-loop 1400 platform-infra '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "tenant_id"
@@ -1921,6 +1963,8 @@ Sleep 2s
   # hangs its three lanes under it.
   owns api task 'v2 storage' tui-lanes
   tape tui-lanes 1250 api '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "v2 storage"
@@ -1936,6 +1980,8 @@ Sleep 2s
   # The Output tab, with `>` moved off the task and onto its first lane.
   owns api task 'v2 storage' tui-lane-output
   tape tui-lane-output 1250 api '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "v2 storage"
@@ -1956,6 +2002,8 @@ Sleep 2s
   # the first lane again so the frame holds all three sections.
   owns api task 'v2 storage' tui-lane-diff
   tape tui-lane-diff 1250 api '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "v2 storage"
@@ -2150,6 +2198,8 @@ Sleep 2s
   # reindex runs for most of an hour.
   owns docs-portal task 'reindex' tui-task-overview-running
   tape tui-task-overview-running 1250 docs-portal '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "reindex"
@@ -2164,6 +2214,8 @@ Sleep 2s
 
   owns release-tooling task 'signed checksums' tui-task-overview-blocked
   tape tui-task-overview-blocked 1250 release-tooling '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "signed checksums"
@@ -2178,6 +2230,8 @@ Sleep 2s
 
   owns web task 'design tokens' tui-task-overview-done
   tape tui-task-overview-done 1250 web '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "design tokens"
@@ -2203,23 +2257,12 @@ Sleep 2s
   # leaves a "showing the done lane…" note under the rows that outlives
   # the listing; `esc` clears the note first and keeps the lane shown
   # (§15's one layer per press), so it is pressed once rather than
-  # photographed.
+  # photographed. The list is the screen the TUI lands on (#789), so the
+  # tape opens no palette and has no ghost to repaint.
   tape tui-issues 1250 platform-infra '
-Type ":"
-Sleep 1s
-Type "issues"
-Sleep 1s
-Enter
 Sleep 3s
 Type "s"
 Sleep 3s
-Escape
-Sleep 2s
-Type "?"
-Sleep 2s
-# the palette ghost (#743), repainted away: see tape()
-Down 6
-Sleep 2s
 Escape
 Sleep 2s
 Screenshot "'"$OUT"'/tui-issues.png"
@@ -2231,11 +2274,6 @@ Sleep 2s
   # filter commits on its own enter, so the second enter opens the row.
   owns web issue 'flickers' tui-issue
   tape tui-issue 1600 web '
-Type ":"
-Sleep 1s
-Type "issues"
-Sleep 1s
-Enter
 Sleep 3s
 Type "/"
 Sleep 500ms
@@ -2253,11 +2291,6 @@ Sleep 2s
   # Nothing is typed into it and it is never saved.
   owns api issue 'per-token' tui-issue-form
   tape tui-issue-form 1250 api '
-Type ":"
-Sleep 1s
-Type "issues"
-Sleep 1s
-Enter
 Sleep 3s
 Type "/"
 Sleep 500ms
@@ -2276,6 +2309,8 @@ Sleep 2s
   # description, overview, execution, fields, lifecycle, issue.
   owns web task 'header flicker' tui-task-issue
   tape tui-task-issue 1250 web '
+Tab
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "header flicker"

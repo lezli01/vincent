@@ -539,6 +539,44 @@ func TestIssuesTapeShowsTheDoneLane(t *testing.T) {
 	}
 }
 
+// TestBoardTapesSwitchToTasksFirst holds scripts/screenshots.sh to the
+// landing (#789): the TUI opens on the issues list, so a tape whose first
+// key is not one that works from anywhere — the palette's `:`, the
+// picker's `@` — must press a visible Tab to reach the task board before
+// it sends a board key or photographs the board. Only the issue tapes,
+// which start where the TUI lands, are exempt.
+func TestBoardTapesSwitchToTasksFirst(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "scripts", "screenshots.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	onLanding := map[string]bool{"tui-issues": true, "tui-issue": true, "tui-issue-form": true}
+	calls := tapeCall.FindAllStringSubmatchIndex(script, -1)
+	if len(calls) == 0 {
+		t.Fatal("no tape call found in scripts/screenshots.sh; the pattern is stale")
+	}
+	for _, c := range calls {
+		name := script[c[2]:c[3]]
+		body := script[c[1]:]
+		_, body, _ = strings.Cut(body, "\n")
+		first := ""
+		for line := range strings.SplitSeq(body, "\n") {
+			if line == "" || strings.HasPrefix(line, "Sleep ") || strings.HasPrefix(line, "#") {
+				continue
+			}
+			first = line
+			break
+		}
+		switch {
+		case first == "Tab", first == `Type ":"`, first == `Type "@"`:
+		case onLanding[name]:
+		default:
+			t.Errorf("tape %s starts with %q on the issues list it lands on; press a visible Tab to reach the board first", name, first)
+		}
+	}
+}
+
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
