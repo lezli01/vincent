@@ -103,8 +103,9 @@ func popupPageKey(key string, cursor, n int, pg popupPage) int {
 // popupWindow is a popup list's rows windowed around the cursor row with the
 // issues list's overflow cues (#796): `▲ n more` while the list continues
 // above and `▼ n more` while it continues below. entryRow is the row each
-// entry sits on, in order, and the returned page is what pgup and pgdown
-// move through.
+// entry sits on, in order; the cues count those entries, never a section
+// header or the blank line before one (review F2). The returned page is
+// what pgup and pgdown move through.
 func popupWindow(rows []string, entryRow []int, cursorRow, height int) (out []string, page popupPage) {
 	page = popupPage{entryRow: entryRow, height: height}
 	start, h, _ := cuedSpan(len(rows), cursorRow, height)
@@ -112,13 +113,22 @@ func popupWindow(rows []string, entryRow []int, cursorRow, height int) (out []st
 	if height <= 0 {
 		return nil, page
 	}
+	before, after := 0, 0
+	for _, r := range entryRow {
+		switch {
+		case r < start:
+			before++
+		case r >= end:
+			after++
+		}
+	}
 	cued := len(rows) > height && height >= 3
 	if cued && start > 0 {
-		out = append(out, styleDim.Render(fmt.Sprintf("  ▲ %d more", nonBlank(rows[:start]))))
+		out = append(out, styleDim.Render(fmt.Sprintf("  ▲ %d more", before)))
 	}
 	out = append(out, rows[start:end]...)
 	if cued && end < len(rows) {
-		out = append(out, styleDim.Render(fmt.Sprintf("  ▼ %d more", nonBlank(rows[end:]))))
+		out = append(out, styleDim.Render(fmt.Sprintf("  ▼ %d more", after)))
 	}
 	return out, page
 }

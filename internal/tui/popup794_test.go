@@ -432,3 +432,26 @@ func TestGroupedPopupsPageThroughEveryEntry(t *testing.T) {
 		})
 	}
 }
+
+// Review F2: the ▼ cue of a grouped list counts the entries below the
+// window, not the section headers and blank lines between them.
+func TestGroupedPopupsCueCountsEntries(t *testing.T) {
+	const groups, per = 8, 3
+	label := func(g, i int) string { return fmt.Sprintf("g%d-%d", g, i) }
+	for _, c := range groupedPopups(groups, per, label) {
+		t.Run(c.name, func(t *testing.T) {
+			got := ansi.Strip(c.render(64, 18))
+			hidden := 0
+			for g := range groups {
+				for i := range per {
+					if !strings.Contains(got, label(g, i)) {
+						hidden++
+					}
+				}
+			}
+			if want := fmt.Sprintf("▼ %d more", hidden); !strings.Contains(got, want) {
+				t.Errorf("want %q with %d entries off screen:\n%s", want, hidden, got)
+			}
+		})
+	}
+}
