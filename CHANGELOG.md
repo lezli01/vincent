@@ -551,7 +551,18 @@ list with the user-facing context a commit subject cannot carry.
   `vincent doctor` pointer. The first-run full-auto notice is rewrapped to
   fit 60×15 with `enter continue` on screen.
   ([#793](https://github.com/lezli01/vincent/issues/793))
-
+- **Task workspace popups take more than six lines and read in full.** The
+  follow-up, repair, create-pull-request and pull-request-comment editors
+  silently dropped the seventh `enter`; they now take any number of lines and
+  scroll within six visible rows. The follow-up and repair popups wrap their
+  sentences instead of cutting them, so "the task returns to done afterwards"
+  survives at 80 columns. The answer popup keeps the question's first line
+  and its hint in view with many options, and the footer and palette no
+  longer offer pause, retry or cancel while a popup holds the keyboard. The
+  attempt strip, step-details sidebar, outcome and failure cards, lane
+  selector and diff file rows now shorten the name and keep what tells rows
+  apart — the attempt number, `⏸ paused · N new`, `+N -M` — and the Overview's
+  fact labels line up. ([#800](https://github.com/lezli01/vincent/issues/800))
 - **The new-task form wraps to its pane, and `ctrl+s` creates from anywhere
   in it.** The title, branch and priority rows, the open lists and the Fields
   editor's input wrapped at the terminal's width rather than the pane's, so at
