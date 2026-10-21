@@ -13904,6 +13904,31 @@ stream for the live tail.
    boards (task 114): the wheel moves the selection one row per tick and a
    click selects the row under it; both are ignored under the issue form and
    the close/delete prompt.
+   *Amended 2026-10-21 (issue #796; supersedes the title floor of the F2
+   amendment of 2026-10-08 above, whose text stays as the record).* **The
+   title keeps `max(30, 40%` of the row's inner width`)`** — 31 columns at
+   80, about 47 at 120 — while the parts right of it give way, in this
+   order: the occupant's state word; the tags become a `+N` count (labels
+   plus one for a kind), never a label cut in half; the source badge
+   shortens to `gh#N`; the count goes; the badge goes. Only then may the
+   task cell take the title below its minimum, down to F2's 12-column
+   floor, and the cell's counts survive whole — the one part of F2 kept.
+   Below that floor the row is cut at the pane's edge, as before. `gh#N` is
+   used only while every imported row on the list shares one
+   `source.repo`, read from the list itself (a remote's repo can change);
+   otherwise the badge keeps `owner/repo#N` and is cut. `pgup`/`pgdown`
+   move the selection by the rows on screen and `home`/`g`, `end`/`G` to
+   the first and last row the cursor may rest on (a collapsed header
+   included), all ignored while the filter types or the form or prompt is
+   up. A list taller than its pane shows a dim `▲ n more` line above and
+   `▼ n more` below, the issue detail's idiom, counting the hidden lines
+   that are not blank; a click on a cue selects nothing. The empty-state
+   hint, the list error and its "showing what was listed at" line, the
+   no-project and resolving lines, and the footer note wrap under their
+   margin rather than being cut. The footer orders `tab`, `enter open`,
+   `↑↓ move`, `/ filter`, `n new`, `o browser`, then the rest, and
+   withholds `o browser` from the footer — never from `?` or the palette —
+   while the selected row has no source page.
 
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,

@@ -386,6 +386,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **Issue titles keep room on the issues list, and the list pages.** A row's
+  title keeps at least 40% of the row (never under 30 columns) while its
+  labels and kind collapse to a `+N` count and its GitHub badge to `gh#N`
+  when every imported issue on the list shares a repository; only the tasks
+  column may take the title lower, never under 12 columns. `pgup`/`pgdown`
+  move the selection a screenful and `home`/`g`, `end`/`G` to either end; a
+  list taller than the screen shows `▲ n more`/`▼ n more`; the empty-list
+  hint, a list error and a long note wrap instead of being cut; and the
+  footer puts moving, filtering and filing ahead of `o browser`, which it
+  offers only on an imported issue.
+  ([#796](https://github.com/lezli01/vincent/issues/796))
 - **The task board groups by workflow out of the box.** The default
   `tui.board.group_by` is now `[workflow]`, and `g` cycles workflow → flat.
   The board shows one project at a time, so the project level drew nothing.

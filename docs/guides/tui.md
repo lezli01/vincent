@@ -1946,9 +1946,16 @@ closed, such as `closed · not planned`), the title, its labels and kind,
 - **hand-off** — `✓ N done`;
 - **done** — `N tasks`, with `· ● live` while one is still unsettled.
 
-A row too narrow for all of it gives up the occupant's state first, then
-shortens the labels and kind, then the `owner/repo#N` badge, so the counts
-stay.
+The title is what a row is read by, so it keeps at least 40% of the row, and
+never less than 30 columns — 31 at 80 columns. A row too narrow for the rest
+gives up, in turn, the occupant's state; the labels and kind, which become a
+count such as `+4` rather than a label cut in half; the `owner/repo#N` badge,
+which becomes `gh#N` when every imported issue on the list comes from the same
+repository; the count; and the badge. Only then does the tasks column take the
+title below its minimum, never under 12 columns, so its counts stay.
+
+A list taller than the screen shows `▲ n more` above and `▼ n more` below,
+counting the rows out of sight.
 
 Any change to an issue, or to a task
 of an issue on the screen, re-lists it with no keypress, and the selection
@@ -1963,10 +1970,12 @@ completed](../assets/tui-issues.png)
 |---|---|
 | `tab` / `shift+tab` | Next / previous [main tab](#main-tabs), when issues is one |
 | `enter` | Open the selected issue |
-| `o` | Open an imported issue's page in a browser — a local issue has none, and says so |
+| `o` | Open an imported issue's page in a browser — a local issue has none, and says so; the footer offers `o` only on an imported issue |
 | `s` | Show or hide the done lane |
 | `R` | Re-read the issues |
 | `↑`/`↓` | Move the selection |
+| `pgup`/`pgdown` | Move the selection a screenful |
+| `home`/`g`, `end`/`G` | Select the first or the last row |
 | `←`/`→` | Fold or unfold the lane section you are in |
 | `C`/`O` | Fold or unfold every lane section |
 | `/` | Filter by id, title, label or kind |
