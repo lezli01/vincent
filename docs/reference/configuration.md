@@ -1841,11 +1841,10 @@ tui:
   tabs: [tasks, issues, chats]
 ```
 
-**The TUI does not act on it yet.** This version accepts, validates, serves
-and edits the key — in the TUI's config editor, with `vincent config set
-tui.tabs`, and over `PATCH /v1/config` — so a file written now keeps working;
-switching tabs, the strip and opening on the first tab arrive in a later
-version.
+`tab` and `shift+tab` switch between them on any of the listed screens — see
+[Main tabs](../guides/tui.md#main-tabs) — and a change saved from the config
+editor applies on the next press. The strip and opening on the first tab
+arrive in a later version; until then the TUI still opens on the board.
 
 These are refused, on load, on hot reload and on `PATCH /v1/config` alike, and
 a refused `PATCH` writes nothing:

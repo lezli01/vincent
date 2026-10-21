@@ -53,6 +53,9 @@ type helpState struct {
 	editable bool
 	// tabs is the workspace's strip as drawn, nil off the workspace.
 	tabs []taskViewTab
+	// nextTab names the main tab tab switches to from here (task 136.2), ""
+	// where it does not switch — and then the main-tab rows are left out.
+	nextTab string
 }
 
 // helpText is the §15 cheat sheet for one surface, rendered from the binding
@@ -134,7 +137,7 @@ func helpLines(ctx bindingContext, github bool, st helpState, width int) []strin
 	}
 	// This surface first: it is the answer to "what can I do here".
 	if ctx != "" {
-		addSection(string(ctx), withoutGitHub(bindingsFor(ctx), github))
+		addSection(string(ctx), mainTabRows(withoutGitHub(bindingsFor(ctx), github), st.nextTab))
 	}
 	if isHomeContext(ctx) {
 		addSection("actions now (on "+st.targetNoun()+")", now)

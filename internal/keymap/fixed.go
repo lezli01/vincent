@@ -7,10 +7,10 @@ package keymap
 // so a new fixed key that is not recorded here fails a test rather than
 // leaving an override free to shadow it.
 var fixed = []Fixed{
-	{"global", "tab", "move to the next task tab"},
 	{"global", "ctrl+v", "paste into the focused field"},
 	{"global", "esc", "close one layer"},
 	{"global", "ctrl+c", "quit the TUI"},
+	{"task table", "tab", "switch to the next main tab"},
 	{"task table", "down", "move the selection"},
 	{"task table", "g", "group the tasks"},
 	{"task table", "space", "select this task for a bulk action"},
@@ -82,6 +82,7 @@ var fixed = []Fixed{
 	{"archived tasks", ">", "next page of the archive"},
 	{"archived tasks", "space", "select this task for the bulk delete"},
 	{"archived chats", ">", "next page of the archive"},
+	{"chats", "tab", "switch to the next main tab"},
 	{"chats", "left", "collapse the project group"},
 	{"chats", "right", "expand the project group"},
 	{"chat", "enter", "send the message"},
@@ -191,6 +192,7 @@ var fixed = []Fixed{
 	{"pull requests", "P", "open a pull request for a task that has none"},
 	{"pull requests", "u", "unlink it"},
 	{"pull requests", "down", "move the selection"},
+	{"issues", "tab", "switch to the next main tab"},
 	{"issues", "down", "move the selection"},
 	{"issue", "ctrl+o", "show the description's original Markdown instead of the rendered view"},
 	{"issue", "ctrl+l", "list the links in the description"},
@@ -276,7 +278,9 @@ var fixed = []Fixed{
 	// Keys the handlers answer that the registry names only in a label, or
 	// not at all: the vim aliases, the rest of a pair, the confirmations'
 	// letters. None may become an operation's key.
-	{"global", "shift+tab", "move to the previous task tab"},
+	{"task table", "shift+tab", "switch to the previous main tab"},
+	{"chats", "shift+tab", "switch to the previous main tab"},
+	{"issues", "shift+tab", "switch to the previous main tab"},
 	{"global", "r", "retry the connection while disconnected"},
 	{"lists and panes", "j", "move down (vim)"},
 	{"lists and panes", "k", "move up (vim)"},

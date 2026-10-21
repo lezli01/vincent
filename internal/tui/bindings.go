@@ -309,6 +309,12 @@ type binding struct {
 	// these and the footer never names a press that does nothing (task 054
 	// decision 5).
 	fold bool
+	// mainTab marks a row whose key switches the main tab (task 136.2). It
+	// is only live on a screen that is one of tui.tabs while there are two
+	// or more, and its hint names the tab it goes to — mainTabRows applies
+	// both. panelOwnsLocalKey ignores it: the row describes the root's
+	// switch, not a meaning the surface has of its own.
+	mainTab bool
 	// nav marks a navigation entry; navTarget is where it goes.
 	nav       bool
 	navTarget viewID
@@ -317,6 +323,9 @@ type binding struct {
 	// owns the keyboard and are printed inside the popup itself.
 	noPalette bool
 }
+
+// mainTabLabel is the label every main-tab row carries.
+const mainTabLabel = "switch to the next main tab, in tui.tabs order (shift+tab goes back)"
 
 // bindings is the registry. Order within a scope+context is display order.
 var bindings = []binding{
@@ -332,7 +341,6 @@ var bindings = []binding{
 	// field takes `?` as a character. noPalette for the reason the ctrl+p row
 	// is — `?`'s own row already runs help from the palette.
 	{op: keymap.HelpAlt, key: helpAltKey, label: "toggle this help (works while a text field has the keyboard)", scope: scopeGlobal, noPalette: true},
-	{key: "tab", label: "move to the next task tab (shift+tab goes back)", scope: scopeGlobal},
 	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's", scope: scopeGlobal},
 	{op: keymap.Mouse, key: "M", label: "toggle the mouse (native text selection needs it off — or shift-drag)", scope: scopeGlobal},
 	// The project switch (task 132 decision 3). A global row, so the palette
@@ -354,6 +362,9 @@ var bindings = []binding{
 	// keeps a direct key; the rest live here, in the palette — retiring
 	// 1..6 without substituting new memorized keys is the point.
 	{op: keymap.New, key: "n", label: "new task — for the project you are looking at", scope: scopeGlobal, nav: true, navTarget: viewNewTask},
+	// The board gets a screen row now that it is one main tab among others
+	// (task 136.2): with issues first, the board is a place you go to.
+	{label: "tasks — the task board", scope: scopeGlobal, nav: true, navTarget: viewHome},
 	{label: "project overview — every project's figures, what needs you, add, edit, remove", scope: scopeGlobal, nav: true, navTarget: viewProjects},
 	{label: "workflows — registry with scopes and validity", scope: scopeGlobal, nav: true, navTarget: viewWorkflows},
 	{label: "daemon — identity, config, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
@@ -402,6 +413,11 @@ var bindings = []binding{
 	{op: keymap.Chat, key: "T", label: "chat with an agent in this task's worktree — the task stays locked until the chat is closed; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 10},
 
 	// Task table.
+	// tab switches the main tab (task 136.2). The hint names the tab it goes
+	// to, and the root rewrites it from tui.tabs (mainTabRows); noPalette
+	// because replaying tab from the palette would switch from a screen the
+	// palette already covered, and the screen rows are the palette's way.
+	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxTasks, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
 	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Filter, key: "/", label: "filter by id, title or state", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
@@ -562,7 +578,9 @@ var bindings = []binding{
 	{op: keymap.Filter, key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxArchivedChats, priority: 5, term: termFilter},
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxArchivedChats, priority: 6, term: termRefresh},
 
-	// Chats board.
+	// Chats board. Its tab row exists only while chats is one of tui.tabs:
+	// mainTabRows drops it otherwise.
+	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxChats, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the chat's workspace", scope: scopePanel, context: ctxChats, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.New, key: "n", label: "start a chat in the project you are looking at", scope: scopePanel, context: ctxChats, hint: "n new", priority: 2},
 	// `A` rather than `a` (task 093): archiving is archiving, and the tasks
@@ -848,6 +866,7 @@ var bindings = []binding{
 	// dry runs, which fire nothing; `B` opens the global switch in the daemon
 	// view's editor rather than flipping it from here.
 	// The issues list (§15 view 12, task 130.9).
+	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxIssues, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected issue", scope: scopePanel, context: ctxIssues, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssues, hint: "o browser", priority: 2, term: termBrowser},
 	{op: keymap.Scope, key: "s", label: "show or hide the done lane", scope: scopePanel, context: ctxIssues, hint: "s done", priority: 3, term: termScope},

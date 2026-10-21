@@ -1,6 +1,6 @@
 # 136 — Main tabs in the TUI: Issues, Tasks and Chats behind one `tab` key
 
-**Status:** 🔄 in progress (1/4)
+**Status:** 🔄 in progress (2/4)
 **Opened:** 2026-10-20
 **Spec:** §12.3 (`tui.tabs`), §15
 **Issues:** #784 (parent), #785, #787, #788, #789
@@ -57,6 +57,36 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
 8. **Landing comes from the first config answer** (#789), and **`tab`
    switches between the main tabs** (#787) — recorded here as the parent's
    design; the detail is those issues' to add.
+9. **The root owns the tab list** (2026-10-21, #787): `root.tabs` as views,
+   `defaultTabs()` until a config answer lands, and `lastTab` recorded by
+   `switchTo` for #789. No wrapper panel and no renumbering of `viewID` —
+   `activeContext`, `surfaceTarget` and the switch fallbacks address panels
+   by `viewID`. *Beat:* a tabs panel holding the three views.
+10. **`tab`/`shift+tab` switch only when four things hold** (2026-10-21,
+    #787): the active view is one of the tabs, there are two or more, it is
+    not capturing input, and its context has no `tab` row of its own
+    (main-tab rows aside — `panelOwnsLocalKey`). The check sits after the
+    input-capture gate and before `globalKey`, in every connection phase, so
+    a filter being typed takes the first `tab` (the screenshot tapes'
+    `/ … Tab` idiom keeps working) and the new-chat form keeps its field key.
+    Everywhere else the local meaning is unchanged. *Beat:* `ctrl+tab`,
+    digits (retired by task 049), a leader key.
+11. **The keys stay fixed** (2026-10-21, #787): spec row 35 lists `tab`
+    among them, so no operation is added. The dead global `tab` row is gone;
+    `ctxTasks`, `ctxIssues` and `ctxChats` carry a `mainTab` row instead,
+    left out of the footer and `?` where `tab` does not switch and hinting
+    the next tab's name where it does; `keymap.fixed` moves with it. The
+    palette gains a keyless "tasks — the task board" screen row.
+12. **`esc` on a main tab is a no-op below the view's own layers, and only
+    while the view is a configured tab** (2026-10-21, #787): with
+    `tui.tabs: [tasks]` the issues list and the chats board still leave to
+    the board. A view that is not a tab has no reason to trap the human.
+    `esc` from a takeover back to its owning tab is #789's.
+13. **A reload never moves the human** (2026-10-21, #787): `applyTabs` reads
+    the same three config answers `applyKeymap` does, ignores a failed one,
+    maps names through `tabViewIDs` (dropping unknown ones) and falls back to
+    the default on an empty result; a list that drops the active view leaves
+    it on screen, where `tab` then stops switching.
 
 ## Tasks
 
@@ -65,6 +95,9 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
   `vincent config get|set tui.tabs`, the TUI config editor row, the
   name→view table, tests at each layer, m11 gate scenario 10, the
   configuration reference and the spec §12.3 amendment. ✓ 2026-10-20
-- [ ] **136.2** Tab switching with `tab` (#787).
+- [x] **136.2** Tab switching with `tab` (#787): `root.tabs`, `applyTabs`,
+  the four-clause rule, the main-tab registry rows and fixed keys, the
+  palette's tasks row, `esc` on a tab root, tests, the TUI guide, the
+  configuration reference and the spec §15 amendments. ✓ 2026-10-21
 - [ ] **136.3** The tab strip (#788).
 - [ ] **136.4** Landing on the first tab (#789).

@@ -59,6 +59,25 @@ takeovers too. `esc`
 closes one layer at a time (popup → task/screen → selection → filter) and
 **never quits**.
 
+### Main tabs
+
+The board, the issues list and the chats board can be **main tabs**: the
+screens [`tui.tabs`](../reference/configuration.md#tuitabs) lists, by default
+`[issues, tasks]`. On one of them, `tab` switches to the next in that order and
+`shift+tab` to the previous, wrapping round; the footer's `tab issues` or
+`tab tasks` names where it goes. It only switches when there are two or more,
+and never while something on the screen has the keyboard: typing in the board's
+filter, the first `tab` commits the filter and the second switches; an open
+issue form or new-chat form keeps `tab` for its fields. It works while the
+daemon is unreachable too, over what the screens last showed.
+
+Everywhere else `tab` means what it always did — the task workspace's tabs, a
+form's fields, a screen's panes. `esc` never leaves a main tab: once the
+screen's own filter or form is closed, it stays put, as it always has on the
+board. The issues list or the chats board that is *not* in `tui.tabs` still goes
+back to the board on `esc`. The palette's **tasks** row reaches the board from
+anywhere.
+
 At **128×24 and above**, New task, Projects, and Workflows use that room as a
 guided two-pane surface: progress or resources stay in a narrow rail, and the
 current decision gets the rest of the screen. Below that size they fall back to
@@ -228,6 +247,7 @@ Three behaviors matter:
 
 | Key | Does |
 |---|---|
+| `tab` / `shift+tab` | Next / previous [main tab](#main-tabs), when the board is one |
 | `/` | Filter by id, title or state; `tab` commits the filter, `esc` clears it |
 | `H` | Show only the tasks that need you — awaiting input, awaiting approval, blocked, or a fan-out one of whose lanes is. `H` again shows every task |
 | `enter` | Open the selected task |
@@ -1902,6 +1922,7 @@ completed](../assets/tui-issues.png)
 
 | Key | Does |
 |---|---|
+| `tab` / `shift+tab` | Next / previous [main tab](#main-tabs), when issues is one |
 | `enter` | Open the selected issue |
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so |
 | `s` | Show or hide the done lane |
@@ -2353,6 +2374,7 @@ task-only.
 
 | Key | Does |
 |---|---|
+| `tab` / `shift+tab` | Next / previous [main tab](#main-tabs), when chats is one |
 | `enter` | Open the chat's workspace |
 | `n` | Start a chat in the selected project |
 | `A` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty; declines on a chat opened on a task |
@@ -3194,7 +3216,6 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `ctrl+p` | Command palette, also while a text field has the keyboard |
 | `?` | Toggle help |
 | `f1` | Toggle help, also while a text field has the keyboard |
-| `tab` / `shift+tab` | Move between task tabs; on the board filter, commit it |
 | `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's |
 | `n` | New task |
 | `@` | [Switch project](#switching-project) |
@@ -3305,7 +3326,8 @@ to anything else:
   (`<`/`>`), moving (`↑`/`↓`, `K`/`J`) and the task tabs (`[`/`]`).
 - **`esc`**, because it closes one layer at a time on every screen; **`ctrl+c`**,
   because it must always be able to quit; **`ctrl+v`**, the paste fallback; and
-  **`tab`/`shift+tab`**, which move focus everywhere — and, in the chat
+  **`tab`/`shift+tab`**, which switch the [main tabs](#main-tabs) and move
+  focus or complete on every other screen — and, in the chat
   workspace only, `tab` also opens the skill list, which is a fixed surface
   key like the rest of that screen's and is not nameable in `tui.keys`
   either.

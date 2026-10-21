@@ -91,6 +91,9 @@ type (
 
 // issuesView is §15's view 12.
 type issuesView struct {
+	// tabRoot is set by the root while this view is one of tui.tabs (task
+	// 136.2): esc then stops at the view's own layers instead of leaving.
+	tabRoot bool
 	// projectScope is the root's selected project (task 132.2). A switch
 	// reloads, and stamps drops a load issued for the previous project or
 	// overtaken by a newer one (task 132.5).
@@ -434,6 +437,11 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			v.filter.SetValue("")
 			v.note = ""
 			v.clampCursor()
+			return v, nil
+		}
+		if v.tabRoot {
+			// A main tab is not left by esc (task 136.2): there is nowhere
+			// it came from, and tab is the way to the next one.
 			return v, nil
 		}
 		return v, func() tea.Msg { return selectViewMsg{id: viewHome} }
@@ -887,3 +895,5 @@ func issuePriorityLabel(p int) string {
 	}
 	return strconv.Itoa(p)
 }
+
+func (v *issuesView) setTabRoot(on bool) { v.tabRoot = on }

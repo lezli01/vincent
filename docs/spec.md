@@ -15309,10 +15309,28 @@ and the digit jumps on every workspace tab, since every tab answers them.
 ### Keys
 
 Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help (`f1` where a text field has the keyboard; *added 2026-09-17, task 114*) · `n` new task · `q` quit (the daemon keeps running;
-a status line reminds of the running task count on exit) · `tab`/`shift+tab` move
-focus between panels · `M` toggle mouse · `@` switch project (*added 2026-10-05,
+a status line reminds of the running task count on exit) · `M` toggle mouse · `@` switch project (*added 2026-10-05,
 task 132.4*: opens the project picker, §15 Layout; the operation is `project`,
 rebindable like every global).
+
+*Amended 2026-10-21 (task 136.2, issue #787):* `tab`/`shift+tab` are no
+longer a global "move focus between panels" — that row had stopped being true
+once every screen took the whole body. On a **main tab** — a screen
+`tui.tabs` names (§12.3): the task board, the issues list, the chats board —
+`tab` switches to the next main tab in the configured order and `shift+tab` to
+the previous, wrapping, when all four hold: the screen is one of `tui.tabs`,
+there are two or more, nothing on it is capturing text (a filter being typed,
+an open form or prompt), and the surface has no `tab` row of its own (the
+new-chat form keeps `tab` for its fields). It works in every connection
+phase, over the stale board, because reaching a screen is not an action on
+the daemon. Everywhere else `tab` keeps its local meaning unchanged — the task
+workspace's tabs, the chat's skill list, a form's fields, a takeover's panes.
+The footer's hint names the tab it goes to (`tab issues`, `tab tasks`), and
+the row is not offered on a screen that is not a main tab or with a single
+one. The root owns the list: a config answer that changes `tui.tabs` applies
+on the next press, and one that drops the screen on view leaves the human
+there. The palette gains a "tasks — the task board" screen row, keyless like
+the others.
 
 Task actions act on the selected task — or on the whole bulk selection when there
 is one (task 011) — and are offered only when the daemon reports them in
@@ -15565,6 +15583,12 @@ only a second press carries the popup's own `esc` meaning. It is a
 no-op at the bottom and it **never quits** — `esc`-to-exit surprises anyone who
 pressed it meaning "back". "Back to the board" is not among its meanings any more,
 because the board is always on screen.
+*Amended 2026-10-21 (task 136.2, issue #787):* on a main tab (Keys, below) the
+bottom of the stack is the screen itself: once the view's own layers are
+closed — filter, form, prompt — `esc` on the issues list or the chats board is
+a no-op while that screen is one of `tui.tabs`, as it always was on the board.
+A list that is not a configured tab still leaves to the board, because it has
+no reason to trap the human.
 
 A filter is view state, not a mode: `tab` **commits** it and moves focus, leaving
 it applied and named in the panel title; only `esc` clears it. Losing a filter
@@ -15741,8 +15765,9 @@ and a vocabulary that named them would be a list of every key; the multi-key
 sets — fold, page, `↑`/`↓`, `K`/`J`, `[`/`]` — because a set is not a shape one
 key can describe (task 093 decision 6); `esc`, because it is the layer stack
 above and every layer is closed by it; `ctrl+c`, because it must always kill
-the TUI; `ctrl+v`, the terminal's paste fallback; `tab`/`shift+tab`, which move
-focus everywhere; the popups' `y`/`n`, which answer the question the popup
+the TUI; `ctrl+v`, the terminal's paste fallback; `tab`/`shift+tab`, which
+switch the main tabs and move focus or complete on every other surface
+*(amended 2026-10-21, task 136.2: they had read "move focus everywhere")*; the popups' `y`/`n`, which answer the question the popup
 prints; and the keys the handlers answer beside the registry — the vim aliases
 `h j k l f b u G`, the output tab's `d` and `r` as retry-connecting. The daemon
 publishes no config event, so a keymap edited outside the TUI's own
@@ -15756,8 +15781,8 @@ its own row in `keymap.fixed` the way `ctrl+j`'s `shift+enter` and
 `alt+enter` are, so both literals a handler matches are held against the
 catalog. The open list is a fixed surface of its own — `chat skills`, not the
 daemon view's `agent skills` — carrying `↑`/`↓`, `tab`, `enter`, `backspace`
-and `esc`. None of them is nameable in `tui.keys`: `tab` and `shift+tab` move
-focus everywhere, and a surface-local row is fixed (task 118 decision 1).
+and `esc`. None of them is nameable in `tui.keys`: `tab` and `shift+tab` are
+fixed (above), and a surface-local row is fixed (task 118 decision 1).
 `/` is never matched as a key here — it is the `filter` operation's default,
 and the sigil is read from the response.
 
