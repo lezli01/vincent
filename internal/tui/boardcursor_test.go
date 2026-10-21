@@ -106,6 +106,40 @@ func TestArchivingTheSelectedTaskLandsOnANeighbour(t *testing.T) {
 	}
 }
 
+// TestTheNeighbourBecomesTheSelection: once the selected task has left the
+// board, its neighbour is the selection, so a later re-sort above it keeps
+// the cursor on that neighbour rather than on whatever lands at its index
+// (review F16).
+func TestTheNeighbourBecomesTheSelection(t *testing.T) {
+	b := testBoard()
+	tasks := runningTasks(40)
+	b.updateLoaded(boardLoadedMsg{tasks: tasks})
+	b.render(120, 60)
+	for range 30 {
+		b.updateKey(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	}
+	b.render(120, 60)
+	gone, _ := b.selected()
+	var left []apiclient.Task
+	for _, tk := range tasks {
+		if tk.ID != gone {
+			left = append(left, tk)
+		}
+	}
+	b.updateLoaded(boardLoadedMsg{tasks: left})
+	b.render(120, 60)
+	neighbour, ok := b.selected()
+	if !ok || neighbour == gone {
+		t.Fatalf("selected = %d (%v) after task %d left", neighbour, ok, gone)
+	}
+	left[2].State = stateDone // sorts below the running band, above nothing
+	b.updateLoaded(boardLoadedMsg{tasks: left})
+	b.render(120, 60)
+	if id, _ := b.selected(); id != neighbour {
+		t.Errorf("selected = %d after a re-sort above it, want the neighbour %d", id, neighbour)
+	}
+}
+
 // TestFailedFirstLoadDoesNotSayNoTasksYet is #798 B8: emptyBody handles
 // only !loaded && loadErr == nil, so a first load that failed falls through
 // to the first-run "no tasks yet".

@@ -1287,6 +1287,16 @@ func (b *board) restoreSelection(rows []boardRow) {
 	// out of the stretch they were working through (#798 B7). The table has
 	// already clamped the cursor into the new row set.
 	moveCursorTo(&b.tbl, nearestSelectable(rows, b.tbl.Cursor()))
+	// Really gone, not hidden by a filter: the neighbour is the selection
+	// now (review F16). Keeping the old id made every later refresh miss
+	// and fall back to "the row at this index", so a re-sort above it
+	// moved the cursor, and the action keys, onto another task. A task a
+	// filter hides keeps its id, so clearing the filter brings it back.
+	if _, known := b.taskByID(b.selectedID); !known {
+		if id, ok := b.selected(); ok {
+			b.selectedID = id
+		}
+	}
 }
 
 // nearestSelectable is the first row the cursor may rest on at or after i,
