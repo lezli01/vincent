@@ -15401,7 +15401,9 @@ entry's whole label is wrapped into a fixed **two-line reserve** under the
 list, so a label cut on its row is still read in full and moving the cursor
 never changes the list's height. All four list popups show `▲ n more` /
 `▼ n more` while their list is clipped and page with `pgup`/`pgdown`/`home`/
-`end`; `↑`/`↓` still do not wrap.
+`end`; `↑`/`↓` still do not wrap. `n` counts entries, never a section
+header, and a page is measured in what the window shows, so paging from one
+end to the other puts every entry on screen.
 
 *Amended 2026-09-01 (task 076).* **`ctrl+p` opens the same palette**, and it is
 hoisted above the input-capture gate the way `ctrl+v` is. `:` is a printable

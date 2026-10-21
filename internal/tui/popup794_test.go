@@ -373,3 +373,62 @@ func TestPopupsIgnoreClicks(t *testing.T) {
 		t.Error("an open popup turned the mouse on")
 	}
 }
+
+// groupedPopups are the popups that group their rows under section headers,
+// each with groups×per entries whose labels are given by label(g, i).
+func groupedPopups(groups, per int, label func(g, i int) string) []popupCase {
+	var (
+		entries []paletteEntry
+		copies  []copyItem
+		links   []linkItem
+	)
+	for g := range groups {
+		group := fmt.Sprintf("group %d", g)
+		for i := range per {
+			entries = append(entries, paletteEntry{group: group, label: label(g, i), key: "x"})
+			copies = append(copies, copyItem{group: group, label: label(g, i), snippet: "text"})
+			links = append(links, linkItem{group: group, link: mdLink{n: g*per + i + 1, label: label(g, i), dest: "https://example.com"}})
+		}
+	}
+	pal := newPalette(entries)
+	rp := newReaderPicker(copies)
+	lp := newLinkPicker(links)
+	return []popupCase{
+		{"palette", pal.render, func(k tea.KeyPressMsg) { pal.update(k) }, func() int { return pal.cursor }},
+		{"reader picker", rp.render, func(k tea.KeyPressMsg) { rp.update(k) }, func() int { return rp.cursor }},
+		{"link picker", lp.render, func(k tea.KeyPressMsg) { lp.update(k) }, func() int { return lp.cursor }},
+	}
+}
+
+// Review F1: a page of a grouped list holds fewer entries than rows, so
+// paging by rows jumped past entries that never reached the screen. Every
+// entry is on screen at some point of a pgdown walk to the end and of a
+// pgup walk back.
+func TestGroupedPopupsPageThroughEveryEntry(t *testing.T) {
+	const groups, per = 8, 3
+	label := func(g, i int) string { return fmt.Sprintf("g%d-%d", g, i) }
+	for _, c := range groupedPopups(groups, per, label) {
+		t.Run(c.name, func(t *testing.T) {
+			for _, walk := range []struct {
+				key  tea.KeyPressMsg
+				goal int
+			}{{specialKey(tea.KeyPgDown), groups*per - 1}, {specialKey(tea.KeyPgUp), 0}} {
+				seen := ansi.Strip(c.render(64, 18))
+				for step := 0; c.cursor() != walk.goal; step++ {
+					if step > groups*per {
+						t.Fatalf("paging never reached entry %d: stuck on %d", walk.goal, c.cursor())
+					}
+					c.key(walk.key)
+					seen += ansi.Strip(c.render(64, 18))
+				}
+				for g := range groups {
+					for i := range per {
+						if !strings.Contains(seen, label(g, i)) {
+							t.Errorf("%s never showed %s", walk.key, label(g, i))
+						}
+					}
+				}
+			}
+		})
+	}
+}

@@ -155,9 +155,9 @@ type linkPicker struct {
 	input  textField
 	items  []linkItem
 	cursor int
-	// page is how many list rows the last render showed, which pgup and
-	// pgdown move by (task 135.10 decision 5).
-	page int
+	// page is the last render's layout, which pgup and pgdown move
+	// through (task 135.10 decision 5).
+	page popupPage
 }
 
 func newLinkPicker(items []linkItem) *linkPicker {
@@ -268,6 +268,7 @@ func (p *linkPicker) render(w, h int) string {
 	cursor := min(p.cursor, len(m)-1)
 
 	rows := make([]string, 0, len(m)*2)
+	entryRow := make([]int, 0, len(m))
 	cursorRow := 0
 	group := ""
 	for i, e := range m {
@@ -281,6 +282,7 @@ func (p *linkPicker) render(w, h int) string {
 			rows = append(rows, styleTitle.Render(label)+
 				styleDim.Render(strings.Repeat("─", fill)))
 		}
+		entryRow = append(entryRow, len(rows))
 		mark, style := "  ", styleDim
 		if i == cursor {
 			mark, style = styleFocus.Render("› "), styleTitle
@@ -308,7 +310,7 @@ func (p *linkPicker) render(w, h int) string {
 		dest = dest[:room]
 		dest[room-1] = ansi.Truncate(dest[room-1], max(inner-1, 1), "") + "…"
 	}
-	shown, page := popupWindow(rows, cursorRow, max(body-len(lines)-len(dest)-2, 1))
+	shown, page := popupWindow(rows, entryRow, cursorRow, max(body-len(lines)-len(dest)-2, 1))
 	p.page = page
 	lines = append(lines, shown...)
 	// A rule, so the whole destination does not read as one more row.

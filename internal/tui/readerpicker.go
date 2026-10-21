@@ -240,9 +240,9 @@ type readerPicker struct {
 	input  textField
 	items  []copyItem
 	cursor int
-	// page is how many list rows the last render showed, which pgup and
-	// pgdown move by (task 135.10 decision 5).
-	page int
+	// page is the last render's layout, which pgup and pgdown move
+	// through (task 135.10 decision 5).
+	page popupPage
 }
 
 func newReaderPicker(items []copyItem) *readerPicker {
@@ -332,6 +332,7 @@ func (p *readerPicker) render(w, h int) string {
 	cursor := min(p.cursor, len(m)-1)
 
 	rows := make([]string, 0, len(m)*2)
+	entryRow := make([]int, 0, len(m))
 	cursorRow := 0
 	group := ""
 	for i, e := range m {
@@ -345,6 +346,7 @@ func (p *readerPicker) render(w, h int) string {
 			rows = append(rows, styleTitle.Render(label)+
 				styleDim.Render(strings.Repeat("─", fill)))
 		}
+		entryRow = append(entryRow, len(rows))
 		mark, style := "  ", styleDim
 		if i == cursor {
 			mark, style = styleFocus.Render("› "), styleTitle
@@ -359,7 +361,7 @@ func (p *readerPicker) render(w, h int) string {
 		rows = append(rows, mark+style.Render(label)+
 			strings.Repeat(" ", max(pad-ansi.StringWidth(snippet), 1))+styleDim.Render(snippet))
 	}
-	shown, page := popupWindow(rows, cursorRow, h-2-len(lines))
+	shown, page := popupWindow(rows, entryRow, cursorRow, h-2-len(lines))
 	p.page = page
 	lines = append(lines, shown...)
 	return frame("copy", strings.Join(lines, "\n"), w, h, true)

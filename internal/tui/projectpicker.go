@@ -47,9 +47,9 @@ type projectPicker struct {
 	// offline is set by the root while the daemon is unreachable: the rows
 	// are the cached list, which may be stale (task 132.7).
 	offline bool
-	// page is how many rows the last render showed, which pgup and pgdown
-	// move by (task 135.10 decision 5).
-	page int
+	// page is the last render's layout, which pgup and pgdown move
+	// through (task 135.10 decision 5).
+	page popupPage
 }
 
 // projectPickerGlyph marks the selected project's row: the header segment's
@@ -258,7 +258,12 @@ func (pp *projectPicker) render(w, h int) string {
 		overview = styleFocus.Render("› ") + styleTitle.Render(projectPickerOverview)
 	}
 	rows = append(rows, overview)
-	shown, page := popupWindow(rows, max(cursor, 0), h-2-len(lines))
+	// Every row is an entry here: the picker has no section headers.
+	entryRow := make([]int, len(rows))
+	for i := range entryRow {
+		entryRow[i] = i
+	}
+	shown, page := popupWindow(rows, entryRow, max(cursor, 0), h-2-len(lines))
 	pp.page = page
 	lines = append(lines, shown...)
 	return frame("projects", strings.Join(lines, "\n"), w, h, true)

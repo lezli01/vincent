@@ -23,9 +23,9 @@ type palette struct {
 	input   textField
 	entries []paletteEntry
 	cursor  int
-	// page is how many list rows the last render showed, which pgup and
-	// pgdown move by (task 135.10 decision 5).
-	page int
+	// page is the last render's layout, which pgup and pgdown move
+	// through (task 135.10 decision 5).
+	page popupPage
 }
 
 // paletteEntry is one runnable line. key is empty for the palette-only
@@ -219,6 +219,7 @@ func (p *palette) render(w, h int) string {
 	cursor := min(p.cursor, len(m)-1)
 
 	rows := make([]string, 0, len(m)*2)
+	entryRow := make([]int, 0, len(m))
 	cursorRow := 0
 	group := ""
 	for i, e := range m {
@@ -235,6 +236,7 @@ func (p *palette) render(w, h int) string {
 			rows = append(rows, styleTitle.Render(label)+
 				styleDim.Render(strings.Repeat("─", fill)))
 		}
+		entryRow = append(entryRow, len(rows))
 		mark, style := "  ", styleDim
 		if i == cursor {
 			mark, style = styleFocus.Render("› "), styleTitle
@@ -249,7 +251,7 @@ func (p *palette) render(w, h int) string {
 	if reserve {
 		list -= paletteReserve + 1
 	}
-	shown, page := popupWindow(rows, cursorRow, list)
+	shown, page := popupWindow(rows, entryRow, cursorRow, list)
 	p.page = page
 	lines = append(lines, shown...)
 	if reserve {

@@ -1,5 +1,7 @@
 package tui
 
+import "fmt"
+
 // The root's popups — the palette and the project, reader and link pickers —
 // share one box and one way of moving through a list that does not fit it
 // (task 135.10).
@@ -22,32 +24,101 @@ func popupBox(width, height, top int) (w, h int) {
 	return w, h
 }
 
+// popupPage is what the last render of a popup list laid out, which pgup
+// and pgdown page through: the row each entry sits on and the rows the
+// list had. A grouped list's section headers and the blank lines between
+// groups are rows but not entries, so a page is measured in what the
+// window shows rather than in a fixed count (review F1).
+type popupPage struct {
+	entryRow []int
+	height   int
+}
+
+// span is the entries [first,last] a render with the cursor on entry c
+// would show.
+func (pg popupPage) span(c int) (first, last int) {
+	n := len(pg.entryRow)
+	rows := pg.entryRow[n-1] + 1
+	start, h, _ := cuedSpan(rows, pg.entryRow[c], pg.height)
+	first, last = c, c
+	for first > 0 && pg.entryRow[first-1] >= start {
+		first--
+	}
+	for last < n-1 && pg.entryRow[last+1] < start+h {
+		last++
+	}
+	return first, last
+}
+
 // popupPageKey moves a popup list's cursor for the paging keys (task 135.10
 // decision 5): pgup and pgdown by a page, home and end to either end. n is
-// the number of rows the cursor can reach and page the rows the last render
-// showed. The list never wraps, as ↑ and ↓ do not; any other key leaves
-// the cursor where it is.
-func popupPageKey(key string, cursor, n, page int) int {
-	page = max(page, 1)
+// the number of entries the cursor can reach and pg the last render's
+// layout. A page moves as far as it can while the window it lands on still
+// meets the one it leaves, so every entry is on screen at some point of a
+// walk from one end to the other (review F1). The list never wraps, as ↑
+// and ↓ do not; any other key leaves the cursor where it is.
+func popupPageKey(key string, cursor, n int, pg popupPage) int {
 	last := max(n-1, 0)
+	cursor = min(max(cursor, 0), last)
 	switch key {
-	case "pgup":
-		return max(cursor-page, 0)
-	case "pgdown":
-		return min(cursor+page, last)
 	case "home":
 		return 0
 	case "end":
 		return last
+	case "pgup", "pgdown":
+	default:
+		return cursor
 	}
-	return cursor
+	if len(pg.entryRow) != n || n == 0 || pg.height <= 0 {
+		// The list changed since the render that laid it out: one entry per
+		// row is the best guess until the next one.
+		pg = popupPage{entryRow: make([]int, n), height: max(pg.height, 1)}
+		for i := range n {
+			pg.entryRow[i] = i
+		}
+		if n == 0 {
+			return 0
+		}
+	}
+	first, shownLast := pg.span(cursor)
+	at := cursor
+	if key == "pgdown" {
+		for c := cursor + 1; c <= last; c++ {
+			if f, _ := pg.span(c); f > shownLast+1 {
+				break
+			}
+			at = c
+		}
+		return at
+	}
+	for c := cursor - 1; c >= 0; c-- {
+		if _, l := pg.span(c); l < first-1 {
+			break
+		}
+		at = c
+	}
+	return at
 }
 
 // popupWindow is a popup list's rows windowed around the cursor row with the
 // issues list's overflow cues (#796): `▲ n more` while the list continues
-// above and `▼ n more` while it continues below. page is how many rows were
-// shown, which is what pgup and pgdown move by.
-func popupWindow(rows []string, cursorRow, height int) (out []string, page int) {
-	out, _, page, _ = cuedWindow(rows, cursorRow, height)
+// above and `▼ n more` while it continues below. entryRow is the row each
+// entry sits on, in order, and the returned page is what pgup and pgdown
+// move through.
+func popupWindow(rows []string, entryRow []int, cursorRow, height int) (out []string, page popupPage) {
+	page = popupPage{entryRow: entryRow, height: height}
+	start, h, _ := cuedSpan(len(rows), cursorRow, height)
+	end := min(start+h, len(rows))
+	if height <= 0 {
+		return nil, page
+	}
+	cued := len(rows) > height && height >= 3
+	if cued && start > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ▲ %d more", nonBlank(rows[:start]))))
+	}
+	out = append(out, rows[start:end]...)
+	if cued && end < len(rows) {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ▼ %d more", nonBlank(rows[end:]))))
+	}
 	return out, page
 }
