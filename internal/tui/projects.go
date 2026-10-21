@@ -159,11 +159,11 @@ func (p *projectsView) setClient(c *apiclient.Client) tea.Cmd {
 	return p.loadCmd()
 }
 
-func (p *projectsView) promptKeys() string {
+func (p *projectsView) promptKeys() promptAnswers {
 	if p.form == nil && p.confirm != nil {
 		return promptHint("y", "delete", "n", "no")
 	}
-	return ""
+	return nil
 }
 
 // capturesInput is true while the filter is open, while the delete

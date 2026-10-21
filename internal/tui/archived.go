@@ -173,7 +173,7 @@ func wrapStatus(text string, width int, style lipgloss.Style) []string {
 
 // deletePromptKeys are the footer's answers to a rowDeletePrompt; esc is
 // an alias of `n`.
-func deletePromptKeys() string {
+func deletePromptKeys() promptAnswers {
 	return promptHint("y", "delete", "b", "and its branch", "n", "no")
 }
 

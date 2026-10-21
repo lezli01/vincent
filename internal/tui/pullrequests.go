@@ -254,11 +254,11 @@ func (v *pullRequestsView) usable() bool {
 // promptKeys names the unlink question's answers while it is up: the
 // question owns the keyboard until answered, and the footer shows only those
 // (#790, review F2).
-func (v *pullRequestsView) promptKeys() string {
+func (v *pullRequestsView) promptKeys() promptAnswers {
 	if v.picker == nil && v.confirm != nil {
 		return promptHint("y", "unlink", "n", "no")
 	}
-	return ""
+	return nil
 }
 
 // capturesInput is true while the filter is typed into, while the unlink

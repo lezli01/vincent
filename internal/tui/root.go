@@ -1811,7 +1811,7 @@ func (m *root) broadcast(msg tea.Msg) tea.Cmd {
 // that owns the keyboard until it is answered (#790).
 func (m *root) activePrompt() bool {
 	p, ok := m.views[m.active].(prompter)
-	return ok && p.promptKeys() != ""
+	return ok && len(p.promptKeys()) > 0
 }
 
 func (m *root) activeCapturesInput() bool {
@@ -2135,7 +2135,7 @@ func (m *root) footerLine() string {
 		return helpFooter(m.width)
 	}
 	if p, ok := m.views[m.active].(prompter); ok {
-		if keys := p.promptKeys(); keys != "" {
+		if keys := p.promptKeys(); len(keys) > 0 {
 			line, hits := buildPromptFooter(m.width, keys, m.activeCapturesInput())
 			m.footerHits = hits
 			return line

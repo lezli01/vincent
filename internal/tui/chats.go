@@ -190,16 +190,16 @@ func (v *chatsView) setProject(p projectSel) tea.Cmd {
 	return v.projectScope.setProject(p)
 }
 
-func (v *chatsView) promptKeys() string {
+func (v *chatsView) promptKeys() promptAnswers {
 	switch {
 	case v.create != nil:
-		return ""
+		return nil
 	case v.delPrompt != nil:
 		return deletePromptKeys()
 	case v.confirm != nil:
 		return promptHint("y", "archive", "n", "no")
 	}
-	return ""
+	return nil
 }
 
 // capturesInput is true while a text field or a confirmation owns the

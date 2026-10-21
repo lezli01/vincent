@@ -1955,11 +1955,11 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 	}
 }
 
-func (b *board) promptKeys() string {
+func (b *board) promptKeys() promptAnswers {
 	if b.delPrompt != nil {
 		return deletePromptKeys()
 	}
-	return ""
+	return nil
 }
 
 // capturesInput reports that the filter field or a pending confirmation has

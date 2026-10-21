@@ -444,3 +444,36 @@ func TestChatViewRefusedSendReopensTheAnswerPopup(t *testing.T) {
 		t.Fatalf("the refusal changed the draft to %q", got)
 	}
 }
+
+// TestPromptFooterAnswersAreClickable: the prompt footer draws its answers
+// as bindings, so each is a hint that fires its key when clicked, the way
+// every other footer hint does (§15; review F13).
+func TestPromptFooterAnswersAreClickable(t *testing.T) {
+	b := testArchivedBoard()
+	m := promptRoot(t, viewArchived, b)
+	m.Update(key("D"))
+	if b.delPrompt == nil {
+		t.Fatal("D did not raise the delete prompt")
+	}
+	m.footerLine()
+	keys := map[string]footerHit{}
+	for _, h := range m.footerHits {
+		keys[h.key] = h
+	}
+	for _, k := range []string{"y", "b", "n"} {
+		if _, ok := keys[k]; !ok {
+			t.Errorf("the prompt footer's %q answer is not clickable; hits %+v", k, m.footerHits)
+		}
+	}
+	n, ok := keys["n"]
+	if !ok {
+		return
+	}
+	m.Update(tea.MouseClickMsg{X: n.x0, Y: m.height - 1, Button: tea.MouseLeft})
+	if b.delPrompt != nil {
+		t.Error("clicking the n answer did not answer the prompt")
+	}
+	if m.active != viewArchived {
+		t.Errorf("clicking the n answer left the archived board for %v", m.active)
+	}
+}

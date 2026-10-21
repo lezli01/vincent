@@ -168,16 +168,25 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 // one is up, promptKeys names its answers and the footer shows those and
 // nothing else, the way the action bar's own y/n does (#790).
 type prompter interface {
-	promptKeys() string
+	promptKeys() promptAnswers
 }
 
-// promptHint renders key/label pairs the way the footer renders a binding.
-func promptHint(pairs ...string) string {
-	parts := make([]string, 0, len(pairs)/2)
-	for i := 0; i+1 < len(pairs); i += 2 {
-		parts = append(parts, styleKey.Render(pairs[i])+" "+pairs[i+1])
+// promptAnswers is a question's answers as key/label pairs; empty means no
+// question is up.
+type promptAnswers []string
+
+// promptHint is the answers to a question, given as key/label pairs.
+func promptHint(pairs ...string) promptAnswers { return pairs }
+
+// segs renders each answer the way the footer renders a binding, as a
+// segment of its own carrying its key, so clicking one answers the question
+// the way pressing it does (§15: a footer hint fires its key; review F13).
+func (a promptAnswers) segs() []footerSeg {
+	out := make([]footerSeg, 0, len(a)/2)
+	for i := 0; i+1 < len(a); i += 2 {
+		out = append(out, footerSeg{text: styleKey.Render(a[i]) + " " + a[i+1], key: a[i]})
 	}
-	return strings.Join(parts, styleDim.Render(" · "))
+	return out
 }
 
 // buildPromptFooter is buildFooter for a view's pending question: its answer
@@ -187,7 +196,7 @@ func promptHint(pairs ...string) string {
 // The palette is not pinned: it is the one global that navigates, and it
 // stands down while a question is up (review F3) — offering it, clickable,
 // beside the answers would leave the question armed behind another view.
-func buildPromptFooter(width int, keys string, textField bool) (string, []footerHit) {
+func buildPromptFooter(width int, keys promptAnswers, textField bool) (string, []footerHit) {
 	pinnedSegs := footerPinnedSegs(textField)[:0:0]
 	for _, s := range footerPinnedSegs(textField) {
 		if s.key != opKey(keymap.Palette) && s.key != opKey(keymap.PaletteAlt) {
@@ -199,7 +208,7 @@ func buildPromptFooter(width int, keys string, textField bool) (string, []footer
 		pinned.WriteString(s.text)
 	}
 	pw := ansi.StringWidth(pinned.String())
-	segs := []footerSeg{{text: keys}}
+	segs := keys.segs()
 	if width <= 0 {
 		line, _ := composeFooter(segs)
 		return line + "  " + pinned.String(), nil
