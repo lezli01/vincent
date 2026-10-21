@@ -3,9 +3,11 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/textarea"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -233,6 +235,53 @@ func TestChatComposerMarksTheHiddenDraft(t *testing.T) {
 	}
 	if out := strings.Join(lines, "\n"); !strings.Contains(out, "+6 lines") {
 		t.Errorf("a 14-line draft in an 8-row composer does not say +6 lines:\n%s", out)
+	}
+}
+
+// TestChatComposerCountsWordWrappedRows: a draft of long words wraps at word
+// boundaries and is taller than its width alone says. The composer must count
+// those rows, so either the whole draft shows or the title says what is out of
+// sight (review F6).
+func TestChatComposerCountsWordWrappedRows(t *testing.T) {
+	v := chatViewFixture()
+	urls := make([]string, 8)
+	for i := range urls {
+		urls[i] = fmt.Sprintf("https://example.com/%d/", i) + strings.Repeat("x", 41-len(fmt.Sprintf("https://example.com/%d/", i)))
+	}
+	v.composer.SetValue(strings.Join(urls, " "))
+	out := strings.Join(stripLines(v.render(80, 60)), "\n")
+	if !strings.Contains(out, "lines") {
+		for _, u := range urls {
+			if !strings.Contains(out, u) {
+				t.Errorf("%s is out of sight and the title does not say so:\n%s", u, out)
+			}
+		}
+	}
+}
+
+// TestTextareaRowsMatchesTheTextarea: textareaRows is a port of the
+// textarea's word wrap; hold it to the textarea's own count, read from a
+// DynamicHeight textarea's height.
+func TestTextareaRowsMatchesTheTextarea(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	words := []string{"a", "to", "the", "word", "longer", "https://example.com/a/very/long/path/x", "世界", strings.Repeat("y", 30)}
+	for range 500 {
+		var b strings.Builder
+		for n := rng.IntN(20); n > 0; n-- {
+			b.WriteString(words[rng.IntN(len(words))])
+			b.WriteString(strings.Repeat(" ", rng.IntN(3)))
+		}
+		line := b.String()
+		width := 5 + rng.IntN(40)
+		ta := textarea.New()
+		ta.ShowLineNumbers = false
+		ta.Prompt = ""
+		ta.DynamicHeight, ta.MinHeight, ta.MaxHeight = true, 1, 1000
+		ta.SetWidth(width)
+		ta.SetValue(line)
+		if got, want := textareaRows(line, ta.Width()), ta.Height(); got != want {
+			t.Fatalf("textareaRows(%q, %d) = %d, the textarea draws %d", line, ta.Width(), got, want)
+		}
 	}
 }
 

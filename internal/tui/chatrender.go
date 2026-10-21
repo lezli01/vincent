@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -465,10 +466,7 @@ func (v *chatView) sizeComposer(height int) (hidden int) {
 	inner := max(v.composer.Width(), 1)
 	rows := 0
 	for _, line := range strings.Split(v.composer.Value(), "\n") {
-		// The textarea gives a line that fills its last row exactly one more,
-		// empty row for the cursor, so this is a floor plus one rather than a
-		// ceiling.
-		rows += ansi.StringWidth(line)/inner + 1
+		rows += textareaRows(line, inner)
 	}
 	limit := max(min(chatComposerMax, height/3), chatComposerMin)
 	// Only on a change: SetHeight re-scrolls the textarea to its cursor, and
@@ -477,6 +475,43 @@ func (v *chatView) sizeComposer(height int) (hidden int) {
 		v.composer.SetHeight(h)
 	}
 	return max(rows-limit, 0)
+}
+
+// textareaRows is how many rows the textarea draws one hard line in at the
+// given width. It follows bubbles' own word wrap (textarea.wrap, which is
+// unexported) rather than dividing the width out: a line of long words breaks
+// at word boundaries and takes more rows than its width alone says, and an
+// estimate that undercounts hid part of the draft with no "+N lines" cue
+// (review F6). A line that fills its last row exactly gets one more, empty
+// row for the cursor, as the textarea gives it.
+func textareaRows(line string, width int) int {
+	rows, cur, word, spaces := 1, 0, 0, 0
+	for _, r := range line {
+		if unicode.IsSpace(r) {
+			spaces++
+		} else {
+			w := ansi.StringWidth(string(r))
+			word += w
+			if spaces == 0 && word+w > width {
+				// A word as wide as the row: it takes a row of its own.
+				if cur > 0 {
+					rows++
+				}
+				cur, word = word, 0
+			}
+		}
+		if spaces > 0 {
+			if cur+word+spaces > width {
+				rows, cur = rows+1, 0
+			}
+			cur += word + spaces
+			word, spaces = 0, 0
+		}
+	}
+	if cur+word+spaces >= width {
+		rows++
+	}
+	return rows
 }
 
 func (v *chatView) footerLines(width, height int) []string {
