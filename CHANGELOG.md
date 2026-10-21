@@ -613,6 +613,7 @@ list with the user-facing context a commit subject cannot carry.
   failed first load says it could not load tasks rather than "no tasks yet",
   an empty archived board names its date window and `s` rather than offering
   `n`, and a wrapped title cut short no longer gains a space before its `…`.
+  ([#798](https://github.com/lezli01/vincent/issues/798))
 
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,
