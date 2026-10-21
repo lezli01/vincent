@@ -12604,6 +12604,14 @@ stream for the live tail.
    `paused` is true (T3.3). A narrow strip truncates with `…`, losing the hint
    before the state. The Diff tab is unchanged.
 
+   *Amended 2026-10-21 (issue #800, review F16).* The narrow-width order,
+   which "truncates with `…`" left open: the hint goes first; then, once the
+   identity and the whole live state would leave the step name fewer than
+   twelve cells, the level, `raw` and the in-progress indicator are shed and
+   only the follow marker stays (it is the one the reader acts on); the step
+   name then gives way with `…` before the attempt's number, its attempt and
+   its state, which are what tell attempts apart.
+
    *Amended 2026-09-17 (task 119, issue #472).* **A stopped task can be talked
    to from here.** A task-action binding, `T` ("talk"; Keys, below) — the
    `chat` operation's default, which `tui.keys` may move (§12.3) — is offered when the
