@@ -47,8 +47,11 @@ type (
 	// chatSentMsg reports POST /v1/chats/{id}/send.
 	chatSentMsg struct {
 		chatID int64
-		turn   *apiclient.ChatTurn
-		err    error
+		// sent is the trimmed draft the request carried, so acceptance
+		// takes that out of the composer and nothing typed since (review F8).
+		sent string
+		turn *apiclient.ChatTurn
+		err  error
 	}
 	// chatAnsweredMsg reports POST /v1/chats/{id}/answer.
 	chatAnsweredMsg struct {
@@ -769,13 +772,30 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	}
 	// The draft leaves the composer only once the daemon has taken the turn:
 	// a refusal or a send that never arrived keeps what was typed, so "send
-	// again" is a keypress rather than a retype (#790).
-	v.composer.SetValue("")
+	// again" is a keypress rather than a retype (#790). The draft stays
+	// editable while the send is in flight, so what leaves is what was
+	// sent: text added after it stays (review F8).
+	v.composer.SetValue(unsentRest(v.composer.Value(), msg.sent))
 	// The draft the inline hints were about is gone with it (task 124.14).
 	v.skills.inlineNote, v.skills.noteFor = "", ""
 	v.note = ""
 	v.resetRecords()
 	return v.loadCmd()
+}
+
+// unsentRest is what is left of the composer once sent has gone: nothing
+// when it still holds just that draft, what follows it when the human kept
+// typing after it, and all of it when the draft was edited rather than
+// extended: that edit is the human's to keep or discard.
+func unsentRest(value, sent string) string {
+	trimmed := strings.TrimLeft(value, " \t\r\n")
+	switch {
+	case strings.TrimSpace(value) == sent:
+		return ""
+	case sent != "" && strings.HasPrefix(trimmed, sent):
+		return strings.TrimLeft(trimmed[len(sent):], " \t\r\n")
+	}
+	return value
 }
 
 func (v *chatView) applyAnswered(msg chatAnsweredMsg) tea.Cmd {
@@ -1663,7 +1683,7 @@ func (v *chatView) sendCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
 		turn, err := client.SendChat(ctx, id, message)
-		return chatSentMsg{chatID: id, turn: turn, err: err}
+		return chatSentMsg{chatID: id, sent: message, turn: turn, err: err}
 	}
 }
 

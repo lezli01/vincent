@@ -327,9 +327,10 @@ func TestChatViewRefusesEnterLocallyWhenNotIdle(t *testing.T) {
 }
 
 // acceptSend lands the daemon's acceptance of the send in flight: the draft
-// leaves the composer then, and not before (#790).
+// leaves the composer then, and not before (#790). Like sendCmd's message
+// it carries the trimmed draft it sent.
 func acceptSend(v *chatView) {
-	v.applySent(chatSentMsg{chatID: v.chatID})
+	v.applySent(chatSentMsg{chatID: v.chatID, sent: strings.TrimSpace(v.composer.Value())})
 }
 
 // TestChatViewSendsADraftOnce: the draft stays in the composer while its send
@@ -382,6 +383,31 @@ func TestChatViewIgnoresASendResultForAChatItLeft(t *testing.T) {
 			}
 			if got := v.composer.Value(); got != "for chat two" {
 				t.Errorf("chat 1's send result changed chat 2's draft to %q", got)
+			}
+		})
+	}
+}
+
+// TestChatViewKeepsTextTypedWhileASendIsInFlight: the composer stays
+// editable while a send is pending, so the daemon's acceptance takes out
+// what was sent and nothing typed after it (review F8).
+func TestChatViewKeepsTextTypedWhileASendIsInFlight(t *testing.T) {
+	for _, tc := range []struct{ name, typed, want string }{
+		{"untouched", "  first  ", ""},
+		{"extended", "first\nsecond thought", "second thought"},
+		{"edited", "fist", "fist"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = &apiclient.Client{}
+			v.composer.SetValue("first")
+			if cmd := v.sendCmd(); cmd == nil {
+				t.Fatal("an idle chat with a draft sent nothing")
+			}
+			v.composer.SetValue(tc.typed)
+			v.applySent(chatSentMsg{chatID: 1, sent: "first"})
+			if got := v.composer.Value(); got != tc.want {
+				t.Fatalf("after acceptance the composer holds %q, want %q", got, tc.want)
 			}
 		})
 	}
