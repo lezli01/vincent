@@ -71,6 +71,16 @@ filter, the first `tab` commits the filter and the second switches; an open
 issue form or new-chat form keeps `tab` for its fields. It works while the
 daemon is unreachable too, over what the screens last showed.
 
+The app header shows the tabs in place of the screen's name —
+`vincent 0.x  ◆ api  Issues │ Tasks`, with `│ Chats` when you add it — the one
+you are on highlighted. Click a label to switch to it; a click follows the same
+rule as `tab`, so it does nothing while you are typing in a filter. On a narrow
+terminal the labels shorten to initials (`I │ T`) before the project name
+does; they are never dropped. The strip only appears where `tab` switches: the
+task workspace, an issue, the archives and the management screens keep their
+own name or breadcrumb, as does the new-chat form, which uses `tab` for its
+fields. With a single tab in `tui.tabs` there is no strip.
+
 Everywhere else `tab` means what it always did — the task workspace's tabs, a
 form's fields, a screen's panes. `esc` never leaves a main tab: once the
 screen's own filter or form is closed, it stays put, as it always has on the
@@ -196,9 +206,11 @@ header reads `no adapters`. The app header above the board drops
 reconnecting or disconnected. After it, `◆ api` names the project the TUI has
 selected, or `◆ no project` while none is registered. It selects the first
 project by name; `@`, or a click on the segment, [switches it](#switching-project).
-On a narrow terminal the header drops the view's tag first,
-then the version, then the `elsewhere` badge, and shortens the project name
-last. The action keys for the
+On a main tab the header ends in the [tab strip](#main-tabs); on a narrow
+terminal it drops the version first, then the `elsewhere` badge, then shortens
+the strip's labels to initials, and shortens the project name last. On other
+screens it drops the view's tag first, then the version, then the `elsewhere`
+badge, and shortens the project name last. The action keys for the
 selected task are in the footer, once — there is no second copy of them inside
 the board.
 
@@ -377,6 +389,7 @@ it, and choosing it changes no selection.
 |---|---|
 | typing | Filter the projects by name; `ctrl+v` pastes into the filter |
 | `↑` / `↓` | Move the highlight |
+| `pgup` / `pgdown`, `home` / `end` | Page the list, or jump to its first or last row |
 | `enter` | Switch to the highlighted project — or, on the last row, open the project overview |
 | `esc` | Close without switching |
 
@@ -563,7 +576,7 @@ moved the board's cursor to a task that needs you. `esc` back out of a lane
 returns you to the tab you left its parent on instead, and the takeover's
 "open a pull request" route opens on the Pull Request tab, where its form is.
 
-The app header says where you are as a breadcrumb — `Board › #12 › lane #14
+The app header says where you are as a breadcrumb — `Tasks › #12 › lane #14
 api › Output` — naming each task you drilled through, the task on screen and
 the tab, so it also says where `esc` goes. On a narrow terminal the leftmost
 crumbs give way to `…` first. The task's `#id` and title are the first line
@@ -1063,6 +1076,7 @@ pane gives it one number.
 |---|---|
 | `enter` | Open the row's destination in your browser |
 | `ctrl+y` | Copy the row's destination |
+| `pgup` / `pgdown`, `home` / `end` | Page the list, or jump to either end (the copy picker too) |
 | `esc` | Close the picker |
 
 Under the rows the picker prints the selected row's **whole** destination, so
@@ -1071,7 +1085,8 @@ and `https` links open; anything else — `mailto:`, `file:`, `javascript:`, a
 relative path — is marked `copy only`, and `enter` on it opens nothing and says
 why. The result is a notice where you pressed the key — the pane's status
 line, or the chat's note: `opened <url>`, the reason it could not be opened, or
-the copy notice above. Raw mode (`ctrl+o`)
+the copy notice above. A screen with no notice of its own, such as an issue,
+shows a copy's outcome on the line under the header until your next key. Raw mode (`ctrl+o`)
 does not change the list.
 
 ### What `v` adds
@@ -3201,7 +3216,11 @@ answer it first, so it is never left armed behind another screen.
 
 Everything reachable in the TUI is in there by name — navigation to every
 screen, and every task action the daemon currently offers. Type to filter,
-`enter` to run, `esc` to close. Every row carries its key beside it — the key
+`enter` to run, `esc` to close; `pgup`/`pgdown` page the list and `home`/`end`
+jump to either end, and `▲ n more`/`▼ n more` say how much is off screen. A
+long name is cut on its row, and the highlighted command's whole name is
+printed under the list. The palette and the pickers grow with the terminal,
+from 64×18 at 80×24 to 100×30. Every row carries its key beside it — the key
 in force, so a `tui.keys` override shows as the key you set — and a row whose
 key a lenient load took reads `unbound`. Actions the task does not offer are
 left out rather than greyed: the palette runs things, and it never lists
@@ -3483,7 +3502,9 @@ The mouse is on by default: click to select, scroll to scroll, and click the
 header's `◆` segment to [switch project](#switching-project). That takes mouse
 events away from your terminal, so **native text selection needs the mouse
 off** — press `M`, or hold shift while dragging, which most terminals treat as
-"bypass the application".
+"bypass the application". `M` says which way it went under the header —
+`mouse off — native selection works; M turns it back on` — until your next
+key.
 
 Paste normally arrives as a bracketed paste from your terminal's own binding
 (`Cmd+V`, `Ctrl+Shift+V`, middle click) and lands in the focused field with no

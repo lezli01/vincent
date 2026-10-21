@@ -12747,6 +12747,10 @@ stream for the live tail.
    does not fit, crumbs are dropped from the **left** behind a `…` crumb; the
    task on screen and its tab are always kept. Every other view keeps its
    bracketed tag, and the connection badge rule above (129.15) is unchanged.
+   *Amended 2026-10-21 (task 136.3, issue #788):* the first crumb is
+   `Tasks`, not `Board` — the board's main-tab name — so the breadcrumb
+   reads `Tasks › #12 › lane #14 api › Output` and names the tab `esc`
+   returns to, as the strip and the board's tag do.
    (2) The workspace's frame is drawn **untitled**, and its first line on
    every tab is the task's one `#id title` line (wrapped as the header wraps
    a long title, at most three rows). The per-tab title rows go: the
@@ -14158,6 +14162,19 @@ board's global listing; it never counts lanes, `awaiting_children` parents
 or chats, and so deliberately differs from `stats.tasks.attention`, which
 counts lanes. It is shed after the version and before the project name
 truncates, and the `◆` click span never covers it.
+*Amended 2026-10-21 (task 136.3, issue #788):* on a main tab the header
+draws the **tab strip** in place of the view tag: the configured `tui.tabs`
+in order, `vincent 0.x  ◆ api  Issues │ Tasks` (`│ Chats` when configured),
+the active label in the title style and the others dim, each label the
+view's own title. It is drawn only where `tab` switches — on a main tab,
+with more than one configured, on a surface with no `tab` of its own (the
+new-chat form keeps the tag) — and typing in a filter does not hide it.
+Sub-screens, takeovers and a single configured tab keep the tag or
+breadcrumb. The strip is navigation, so it outlives decoration: the version
+goes first, then the elsewhere badge, then the labels shorten to initials
+(`I │ T`), and last the project name truncates. The strip is never dropped,
+and the eight-cell tag floor applies only to a tag. The chrome is still one
+line.
 
 **The project picker (task 132.4, issue #698, added 2026-10-05).** The global
 operation `project`, on `@` by default, opens a root-owned popup listing every
@@ -14429,7 +14446,7 @@ daemon state and no capability that exists only at one size.
 └────────────────────────────────────────────────────────────┘
  enter open · / filter                    : commands  ? help  q quit
 
- vincent  Board › #12 › Overview
+ vincent  Tasks › #12 › Overview
  » writing the rate-limit middleware
 ┌────────────────────────────────────────────────────────────┐
 │ #12 add rate limiting                                      │
@@ -15371,6 +15388,22 @@ retired without substituting a different set to memorise.
 *Amended 2026-10-05 (task 132.4):* its global group carries "switch project",
 which opens the project picker — the way to it from a surface whose text field
 types `@`.
+*Amended 2026-10-21 (task 135.10, issue #794):* **the root's popup box is
+sized to the terminal.** The palette and the project, copy and link pickers
+share one box: `clamp(width-16, 64, 100)` wide and `clamp(height-6, 18, 30)`
+tall — 64×18 at 80×24, 100×30 at 200×60 — never wider than `width-8`, never
+taller than `height-4` nor than the rows between the chrome and the footer,
+and `width-2` wide under 24 columns. It is anchored on the first body row
+(`chromeTop()`), not a fixed row 2, so a status line or now-line moves it down
+rather than being covered. A palette row measures its key in cells and never
+cuts it — the label gives way, to `…` alone if it must — and the focused
+entry's whole label is wrapped into a fixed **two-line reserve** under the
+list, so a label cut on its row is still read in full and moving the cursor
+never changes the list's height. All four list popups show `▲ n more` /
+`▼ n more` while their list is clipped and page with `pgup`/`pgdown`/`home`/
+`end`; `↑`/`↓` still do not wrap. `n` counts entries, never a section
+header, and a page is measured in what the window shows, so paging from one
+end to the other puts every entry on screen.
 
 *Amended 2026-09-01 (task 076).* **`ctrl+p` opens the same palette**, and it is
 hoisted above the input-capture gate the way `ctrl+v` is. `:` is a printable
@@ -15431,6 +15464,14 @@ keyboard, `:`, `?` and `q` would be typed, so it reads `ctrl+p commands`,
 `f1 help`, `ctrl+c quit` instead; each span still fires its key when clicked.
 It is still measured first and never truncated, and its extra width comes out
 of the hints' budget.
+*Amended 2026-10-21 (task 135.10, issue #794):* **a status or a confirmation
+leads, cut from the right.** The left cut above is for hints. When the action
+bar holds a confirmation (`cancel #42? a running step is killed (y/n)`) or a
+status (an action's error), that text is the line's first segment and is cut
+from the right with `…` to the room the pinned segment leaves; the hints follow
+it while there is room and are counted into `+N` when there is not. Its start
+is what it says, and the left cut removed exactly that. The footer is still one
+row.
 
 *Amended 2026-09-10 (task 094, issue #352).* **The width decides how many keys
 reach the line, and the line says how many it is not showing.** "At most five"
@@ -16011,6 +16052,17 @@ hint to fire it, click a tab to switch it. No drag, no right-click.
 *Amended 2026-10-05 (task 132.4, decision 23):* a left click on the app
 header's `◆` project segment opens the project picker. The header is otherwise
 not a click target, and the popups themselves stay keyboard-only.
+*Amended 2026-10-21 (task 136.3, issue #788):* a left click on a main-tab
+strip label switches to that tab by `tab`'s rule exactly — not while a
+filter is typing, not on a surface that owns `tab`, and a click on the
+active label does nothing — in every connection phase. Apart from `◆` and
+the strip's labels the header is still not a click target.
+*Amended 2026-10-21 (task 135.10, issue #794):* the toggle says what it did
+on the status line — "mouse off — native selection works; M turns it back on"
+or "mouse on — M turns it off for native selection", naming the key as bound —
+until the next key. The same line carries a copy's outcome on a surface with no
+note of its own (the issue screen's link and copy pickers); the task workspace
+and a chat keep saying it themselves, and the root stays quiet there.
 
 Capturing the mouse costs native click-drag text selection. Every terminal has a
 modifier override for it (shift-drag; option-drag on Terminal.app and iTerm) and
@@ -16054,12 +16106,15 @@ the connection screen (retry and the root's keys), not the hidden view. When the
 reconnect can land mid-sentence in a chat or a form — a printable key other
 than `r` is the human still typing and is swallowed, so `q` cannot quit past
 a draft; the footer and the screen then name the text-field keys (`ctrl+p`,
-`f1`, `ctrl+c`) instead (review F1). Its text wraps to the terminal and the frame fills
-it. The TUI runs in the terminal's alternate screen, which the quit
-reminder's "printed after teardown" already assumed. The status line is
+`f1`, `ctrl+c`) instead (review F1). Its text wraps to the terminal and the
+frame fills it. The TUI runs in the terminal's alternate screen, which the
+quit reminder's "printed after teardown" already assumed. The status line is
 budgeted to the width: a pending switch's project names give way before its
 answer key, which moves to the front when even shortened names do not fit —
 followed by what it does (`discard the …`), with why it is asking cut first.
+*Amended 2026-10-21 (task 136.3, issue #788):* the header is drawn before the
+body, so the main-tab strip stays on screen and live in every connection
+phase: a click on a label switches tabs there exactly as `tab` does.
 
 ## 16. Security considerations
 

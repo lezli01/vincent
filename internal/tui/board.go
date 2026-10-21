@@ -351,7 +351,7 @@ func (b *board) title() string {
 	if b.archived {
 		return "Archived"
 	}
-	return "Board"
+	return "Tasks"
 }
 
 // bindingContext names the surface for the registry. The archived board is its

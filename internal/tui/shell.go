@@ -90,7 +90,7 @@ func newShell(ctx context.Context, level *levelHolder, raw *rawHolder, links *hy
 	return s
 }
 
-func (s *shell) title() string { return "Board" }
+func (s *shell) title() string { return "Tasks" }
 
 // setClient wires both sub-models to a connected daemon; called again on
 // reconnect.

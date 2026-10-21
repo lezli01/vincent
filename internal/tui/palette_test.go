@@ -120,7 +120,9 @@ func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
 // screens is why the digits could be retired.
 func TestPaletteSectionsAreVisiblySeparate(t *testing.T) {
 	p := newPalette(paletteEntries(ctxTasks, everyAction, true, true, true, nil, nil))
-	out := p.render(60, 18)
+	// Tall enough for the screens section under every action and the
+	// focused entry's two-line reserve (task 135.10 decision 3).
+	out := p.render(60, 24)
 	plain := ansi.Strip(out)
 
 	if !strings.Contains(plain, "SCREENS") {

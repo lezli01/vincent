@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -104,6 +105,10 @@ type root struct {
 	// row 0: a left click there opens the project picker (task 132
 	// decision 23).
 	headerHit [2]int
+	// headerTabs are the main-tab strip's labels as last rendered (task
+	// 136.3), [x0, x1) on row 0 with the tab each names. Empty whenever no
+	// strip is drawn, so a stale span can never fire.
+	headerTabs []headerTabHit
 	// mouseOn drives tea.View's mouse mode: on by default, M toggles (§15
 	// Mouse). Off restores native click-drag text selection.
 	mouseOn bool
@@ -421,8 +426,9 @@ func (m *root) updatePaste(text string) tea.Cmd {
 }
 
 // updateMouseClick is §15's click scope: a footer hint fires its key, the
-// header's `◆` segment opens the project picker (task 132.4), and everything
-// else lands in the active screen's body. Popups stay keyboard; right-clicks
+// header's `◆` segment opens the project picker (task 132.4), a main-tab
+// strip label switches to its tab (task 136.3), the rest of the header is
+// inert, and everything else lands in the active screen's body. Popups stay keyboard; right-clicks
 // and the rest are out of scope.
 func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	if msg.Button != tea.MouseLeft || m.notice.active || m.popupOpen() || m.help {
@@ -430,6 +436,17 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.Y == 0 && msg.X >= m.headerHit[0] && msg.X < m.headerHit[1] {
 		return m, m.openProjectPicker()
+	}
+	if msg.Y == 0 {
+		// A strip label switches by the tab key's rule exactly (task 136.3):
+		// not while a filter is typing, not on a surface that owns tab, and
+		// the active label is already where the click would go.
+		for _, h := range m.headerTabs {
+			if msg.X >= h.x0 && msg.X < h.x1 && h.id != m.active && m.tabSwitches() {
+				return m, m.switchTo(h.id)
+			}
+		}
+		return m, nil
 	}
 	if m.height > 0 && msg.Y == m.height-1 {
 		for _, h := range m.footerHits {
@@ -638,6 +655,14 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 	case opKey(keymap.Mouse):
 		m.mouseOn = !m.mouseOn
+		// Said on the status line (task 135.10 decision 6): the toggle
+		// changes nothing visible, and native selection is the reason to
+		// press it.
+		k := opKey(keymap.Mouse)
+		m.selNotice, m.selNoticeWarn = "mouse on — "+k+" turns it off for native selection", false
+		if !m.mouseOn {
+			m.selNotice = "mouse off — native selection works; " + k + " turns it back on"
+		}
 		return nil, true
 	case opKey(keymap.Project):
 		// While reconnecting too: the picker opens on the cached list.
@@ -2129,12 +2154,12 @@ func (m *root) View() tea.View {
 	b.WriteString(m.footerLine())
 	frame := b.String()
 	if popup, ok := m.popupRender(); ok {
-		pw := min(m.width-8, 64)
-		if pw < 24 {
-			pw = max(m.width-2, 10)
-		}
-		ph := min(18, max(m.height-4, 6))
-		frame = overlay(frame, popup(pw, ph), max((m.width-pw)/2, 0), 2)
+		// Sized to the terminal and anchored under the chrome (task 135.10
+		// decision 1): a status line or now-line moves the box down rather
+		// than being covered by it.
+		top := m.chromeTop()
+		pw, ph := popupBox(m.width, m.height, top)
+		frame = overlay(frame, popup(pw, ph), max((m.width-pw)/2, 0), top)
 	}
 	v := tea.NewView(frame)
 	// The alternate screen, which the teardown path (tui.go's quit reminder)
@@ -2184,16 +2209,22 @@ func (m *root) headerLine() string {
 	segment := func(name string) string { return styleTitle.Render(headerProjectGlyph + " " + name) }
 	elsewhere := m.elsewhereBadge()
 
-	// Shedding order (task 132.2, extended by 132.14): the view tag
-	// truncates down to a floor and is then dropped; then the version goes;
-	// then the elsewhere badge; last, the project name truncates behind an
-	// ellipsis.
+	m.headerTabs = nil
 	// hit records where the segment landed, for the header click. It never
 	// covers the badge: a click there is not a click on the project.
 	hit := func(l, seg string) {
 		x0 := ansi.StringWidth(l)
 		m.headerHit = [2]int{x0, x0 + ansi.StringWidth(seg)}
 	}
+
+	if m.stripShown() {
+		return m.headerWithStrip(width, lead, full, project, segment, elsewhere, hit)
+	}
+
+	// Shedding order (task 132.2, extended by 132.14): the view tag
+	// truncates down to a floor and is then dropped; then the version goes;
+	// then the elsewhere badge; last, the project name truncates behind an
+	// ellipsis.
 	head := lead(full) + segment(project) + elsewhere
 	if room := width - ansi.StringWidth(head) - 2; room >= headerTagFloor || room >= ansi.StringWidth(m.headerTagFull()) {
 		hit(lead(full), segment(project))
@@ -2215,6 +2246,92 @@ func (m *root) headerLine() string {
 	seg := segment(ansi.Truncate(project, max(room, 1), "…"))
 	hit(l, seg)
 	return l + seg
+}
+
+// headerTabHit is one main-tab strip label's clickable span.
+type headerTabHit struct {
+	x0, x1 int
+	id     viewID
+}
+
+// stripShown is where the header draws the main-tab strip instead of the
+// view tag (task 136.3): only where tab switches, so the strip never
+// advertises a key that means something else on the screen. Input capture
+// does not hide it — a filter being typed is transient, and the strip
+// should not flicker — so this is tabSwitches without that clause.
+func (m *root) stripShown() bool {
+	return m.isTabRoot(m.active) && len(m.tabs) > 1 && !m.panelOwnsLocalKey("tab")
+}
+
+// tabStrip renders the configured tabs in order, the active one titled and
+// the rest dim, with each label's span relative to the strip's first cell.
+// Labels are the views' own titles, so the strip, the tag and the frame
+// cannot disagree; initials shortens each to its first letter.
+func (m *root) tabStrip(initials bool) (string, []headerTabHit) {
+	var b strings.Builder
+	hits := make([]headerTabHit, 0, len(m.tabs))
+	sep := styleDim.Render(" │ ")
+	x := 0
+	for i, id := range m.tabs {
+		if i > 0 {
+			b.WriteString(sep)
+			x += ansi.StringWidth(sep)
+		}
+		label := m.views[id].title()
+		if initials {
+			r, _ := utf8.DecodeRuneInString(label)
+			label = string(r)
+		}
+		style := styleDim
+		if id == m.active {
+			style = styleTitle
+		}
+		b.WriteString(style.Render(label))
+		w := ansi.StringWidth(label)
+		hits = append(hits, headerTabHit{x0: x, x1: x + w, id: id})
+		x += w
+	}
+	return b.String(), hits
+}
+
+// headerWithStrip is the header on a main tab (task 136.3). The strip is
+// navigation, so it outlives decoration: the version goes first, then the
+// elsewhere badge, then the labels shorten to initials, and last the
+// project name truncates behind an ellipsis. The strip never vanishes, and
+// the connection badge, inside lead, is never shed.
+func (m *root) headerWithStrip(width int, lead func(string) string, full, project string,
+	segment func(string) string, elsewhere string, hit func(l, seg string),
+) string {
+	place := func(head, strip string, spans []headerTabHit) string {
+		x0 := ansi.StringWidth(head) + 2
+		m.headerTabs = make([]headerTabHit, len(spans))
+		for i, h := range spans {
+			m.headerTabs[i] = headerTabHit{x0: x0 + h.x0, x1: x0 + h.x1, id: h.id}
+		}
+		return head + "  " + strip
+	}
+	long, longHits := m.tabStrip(false)
+	short, shortHits := m.tabStrip(true)
+	for _, c := range []struct {
+		name, badge, strip string
+		hits               []headerTabHit
+	}{
+		{full, elsewhere, long, longHits},
+		{"vincent", elsewhere, long, longHits},
+		{"vincent", "", long, longHits},
+		{"vincent", "", short, shortHits},
+	} {
+		head := lead(c.name) + segment(project) + c.badge
+		if ansi.StringWidth(head)+2+ansi.StringWidth(c.strip) <= width {
+			hit(lead(c.name), segment(project))
+			return place(head, c.strip, c.hits)
+		}
+	}
+	l := lead("vincent")
+	room := width - ansi.StringWidth(l+segment("")) - 2 - ansi.StringWidth(short)
+	seg := segment(ansi.Truncate(project, max(room, 1), "…"))
+	hit(l, seg)
+	return place(l+seg, short, shortHits)
 }
 
 // elsewhereBadge is the app header's `(! N elsewhere)` (task 132.14,
@@ -2574,10 +2691,26 @@ func (m *root) popupRender() (func(w, h int) string, bool) {
 	}
 }
 
+// clipboardNoter is a view that says a copy's outcome itself: the task
+// workspace on its action bar, a chat on its note line. The root's status
+// line stands down for it, so a copy is reported once.
+type clipboardNoter interface {
+	notesClipboard()
+}
+
 // updateClipboardResult turns a copy's outcome into the active surface's own
 // notice (§15). It goes to the active view rather than being broadcast: the
 // human pressed the key on one screen and is looking at it.
+//
+// A view with no notice of its own — the issue screen, whose link picker
+// copies too — gets the root's status line instead (task 135.10 decision 6),
+// decided by clipboardNoter rather than a list of view ids, so a view that
+// learns to say it takes over without the root changing. Before it, such a
+// copy succeeded or failed with nothing on screen.
 func (m *root) updateClipboardResult(msg clipboardResultMsg) tea.Cmd {
+	if _, ok := m.views[m.active].(clipboardNoter); !ok {
+		m.selNotice, m.selNoticeWarn = msg.notice()
+	}
 	cmds := []tea.Cmd{m.deliver(m.active, msg)}
 	if msg.osc != "" {
 		// The system clipboard refused; ask the terminal itself (OSC 52).

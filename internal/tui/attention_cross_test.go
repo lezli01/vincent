@@ -67,6 +67,7 @@ func TestElsewhereBadgeCountsOtherProjectsRoots(t *testing.T) {
 func TestElsewhereBadgeShedsBeforeTheName(t *testing.T) {
 	m := attentionRoot(t, task(2, stateBlocked, inProjectID(otherProjectID, "other")))
 	m.version = "0.9.0"
+	m.tabs = []viewID{viewHome} // the tag's order; the strip's is TestStripShedding
 	m.sel.name = "a-rather-long-project-name-here"
 	m.views[viewHome].(*shell).setProject(m.sel)
 

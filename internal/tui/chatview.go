@@ -1845,3 +1845,7 @@ func (v *chatView) resolveDoc(seq int64) (string, bool) {
 	}
 	return "", false
 }
+
+// notesClipboard marks the chat as saying a copy's outcome itself, on its
+// note line, so the root's status line stands down.
+func (v *chatView) notesClipboard() {}

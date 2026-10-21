@@ -634,14 +634,31 @@ func (v *issuesView) render(width, height int) string {
 // many cue lines precede them. A height under three keeps the plain window:
 // a cue there would leave no room for the row it is about.
 func cuedWindow(body []string, focus, height int) (out []string, start, rows, above int) {
-	n := len(body)
 	if height <= 0 {
 		return nil, 0, 0, 0
 	}
+	start, rows, above = cuedSpan(len(body), focus, height)
+	end := start + rows
+	if above > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ▲ %d more", nonBlank(body[:start]))))
+	}
+	out = append(out, body[start:end]...)
+	if end < len(body) && len(body) > height && height >= 3 {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ▼ %d more", nonBlank(body[end:]))))
+	}
+	return out, start, rows, above
+}
+
+// cuedSpan is cuedWindow's arithmetic without the lines: for an n-line body
+// in height rows focused on line focus, the body line the shown rows start
+// at, how many are shown, and how many cue lines precede them.
+func cuedSpan(n, focus, height int) (start, rows, above int) {
+	if height <= 0 {
+		return 0, 0, 0
+	}
 	if n <= height || height < 3 {
 		start = windowStart(n, focus, height)
-		shown := window(body, focus, height)
-		return shown, start, len(shown), 0
+		return start, min(n, height), 0
 	}
 	// One cue first; both only when the window sits away from either end.
 	h := height - 1
@@ -650,16 +667,10 @@ func cuedWindow(body []string, focus, height int) (out []string, start, rows, ab
 		h = height - 2
 		start = windowStart(n, focus, h)
 	}
-	end := start + h
 	if start > 0 {
-		out = append(out, styleDim.Render(fmt.Sprintf("  ▲ %d more", nonBlank(body[:start]))))
 		above = 1
 	}
-	out = append(out, body[start:end]...)
-	if end < n {
-		out = append(out, styleDim.Render(fmt.Sprintf("  ▼ %d more", nonBlank(body[end:]))))
-	}
-	return out, start, h, above
+	return start, h, above
 }
 
 func (v *issuesView) headerLine(width int) string {

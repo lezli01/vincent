@@ -13,6 +13,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI's main tabs are drawn in the app header, and a click switches.**
+  On a main tab the header shows `Issues │ Tasks` (and `│ Chats` when
+  configured) in place of the screen's name, the current one highlighted; a
+  left click on a label switches to it by the same rule as `tab`, in every
+  connection phase. On a narrow terminal the version and the `elsewhere` badge
+  go first, then the labels shorten to initials, and the project name
+  truncates last. The task board is now titled **Tasks**, and the task
+  workspace's breadcrumb starts `Tasks ›` instead of `Board ›`.
+
 - **Switch between the TUI's main tabs with `tab` and `shift+tab`.** On the
   task board, the issues list and the chats board — whichever `tui.tabs`
   lists, by default issues and tasks — `tab` moves to the next one in that
@@ -29,8 +38,8 @@ list with the user-facing context a commit subject cannot carry.
   is validated on load, hot reload and `PATCH /v1/config` (an empty, `null`,
   repeated or unknown list is refused, naming the key), served on
   `GET /v1/config`, and editable with `vincent config get|set tui.tabs` and in
-  the TUI's config editor. The strip and landing on the first tab follow in a
-  later release. A daemon
+  the TUI's config editor. Landing on the first tab follows in a later
+  release. A daemon
   older than this one refuses a file that sets it.
 
 - **See who holds an issue's main worktree, and ask for a side task, in the
@@ -386,6 +395,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **The command palette and the pickers grow with the terminal, and page.**
+  The palette and the project, copy and link pickers are still 64×18 at 80×24
+  and grow to 100×30 on a large terminal, opening under the status line
+  rather than over it. A palette row never cuts its key, and the highlighted
+  command's whole label is shown under the list. Each list shows
+  `▲ n more`/`▼ n more` when it does not fit and pages with `pgup`, `pgdown`,
+  `home` and `end` (#794).
 - **Issue titles keep room on the issues list, and the list pages.** A row's
   title keeps at least 40% of the row (never under 30 columns) while its
   labels and kind collapse to a `+N` count and its GitHub badge to `gh#N`
@@ -547,6 +563,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Footer questions and errors keep their start, and copy and mouse toggles
+  say what they did.** A confirmation such as `cancel #42? a running step is
+  killed (y/n)` or a failed action's message now leads the footer and is cut
+  from its end, instead of losing its first words to the hints. A copy from
+  the issue screen's pickers, which used to report nothing, says `copied` or
+  why it failed on the status line, and `M` says whether the mouse is now on
+  or off and what that does to text selection (#794).
 - **The TUI fits the terminal before it connects, and in its status line and
   first-run notice.** The TUI now runs in the terminal's alternate screen, so
   quitting no longer leaves the last frame in scrollback. The connecting,

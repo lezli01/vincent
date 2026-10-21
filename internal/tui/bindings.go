@@ -704,10 +704,11 @@ var bindings = []binding{
 	{key: "esc", label: "close the file list, and give ↑/↓ back to editing the draft", scope: scopePanel, context: ctxChatFiles, noPalette: true},
 
 	// The project picker (task 132.4): every printable key types into its
-	// filter, so its own keys are the four a filter does not type.
+	// filter, so its own keys are the ones a filter does not type.
 	{key: "down", label: "move the highlight (↑/↓)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 	{key: "enter", label: "switch to the highlighted project — or, on the last row, open the project overview", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 	{key: "esc", label: "close the picker without switching", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
+	{key: "pgdown", label: "page the list (pgup/pgdown, home/end)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},

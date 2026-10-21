@@ -1,6 +1,6 @@
 # 136 — Main tabs in the TUI: Issues, Tasks and Chats behind one `tab` key
 
-**Status:** 🔄 in progress (2/4)
+**Status:** 🔄 in progress (3/4)
 **Opened:** 2026-10-20
 **Spec:** §12.3 (`tui.tabs`), §15
 **Issues:** #784 (parent), #785, #787, #788, #789
@@ -87,6 +87,29 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
     maps names through `tabViewIDs` (dropping unknown ones) and falls back to
     the default on an empty result; a list that drops the active view leaves
     it on screen, where `tab` then stops switching.
+14. **The strip replaces the view tag in the header, on the one chrome row**
+    (2026-10-21, #788): `Issues │ Tasks` in `root.tabs` order, the active
+    label titled and the rest dim, labels from the views' `title()` so the
+    strip, the tag and the frame cannot disagree. `chromeTop` and
+    `bodyHeight` do not move. *Beat:* a second chrome row — #784 kept the
+    chrome one line.
+15. **The strip is drawn exactly where `tab` switches, minus the input
+    clause** (2026-10-21, #788): a tab root, two or more tabs, no local `tab`
+    row. A filter being typed does not hide it — that would flicker — while
+    the new-chat form, sub-screens, takeovers and a single tab keep their tag
+    or breadcrumb.
+16. **Shedding: version, then the elsewhere badge, then initials, then the
+    project name** (2026-10-21, #788). The strip is navigation and outlives
+    decoration; it never vanishes, and the eight-cell tag floor applies only
+    to a tag.
+17. **A label click follows `tabSwitches()` exactly** (2026-10-21, #788):
+    per-label `[x0, x1)` spans are recorded on every header render beside
+    `headerHit` and cleared when no strip is drawn; the active label, the
+    separators and a click while typing do nothing; every connection phase
+    switches, as `tab` does.
+18. **The board is called "Tasks"** (2026-10-21, #788): its `title()` and
+    the task workspace's breadcrumb root, so the breadcrumb, the tag and the
+    strip all name the tab `esc` returns to. Prose keeps "task board".
 
 ## Tasks
 
@@ -99,5 +122,7 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
   the four-clause rule, the main-tab registry rows and fixed keys, the
   palette's tasks row, `esc` on a tab root, tests, the TUI guide, the
   configuration reference and the spec §15 amendments. ✓ 2026-10-21
-- [ ] **136.3** The tab strip (#788).
+- [x] **136.3** The tab strip (#788): the header strip and its shedding
+  order, label clicks, the "Tasks" rename of the board and the breadcrumb
+  root, tests, the TUI guide and the spec §15 amendments. ✓ 2026-10-21
 - [ ] **136.4** Landing on the first tab (#789).

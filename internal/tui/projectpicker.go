@@ -47,6 +47,9 @@ type projectPicker struct {
 	// offline is set by the root while the daemon is unreachable: the rows
 	// are the cached list, which may be stale (task 132.7).
 	offline bool
+	// page is the last render's layout, which pgup and pgdown move
+	// through (task 135.10 decision 5).
+	page popupPage
 }
 
 // projectPickerGlyph marks the selected project's row: the header segment's
@@ -162,6 +165,20 @@ func (pp *projectPicker) update(msg tea.KeyPressMsg) (pick *apiclient.Project, d
 			pp.cursor++
 		}
 		return nil, false, nil
+	case "pgup", "pgdown", "home", "end":
+		// The overview row is one more row to page onto: it is the last,
+		// so end lands on it, as ↓ past the last project does.
+		n := len(pp.matches())
+		at := pp.cursor
+		if pp.overview {
+			at = n
+		}
+		at = popupPageKey(msg.String(), at, n+1, pp.page)
+		pp.overview = at == n
+		if !pp.overview {
+			pp.cursor = at
+		}
+		return nil, false, nil
 	case "enter":
 		if pp.overview {
 			// The overview row, never a project: it switches screens and
@@ -241,7 +258,14 @@ func (pp *projectPicker) render(w, h int) string {
 		overview = styleFocus.Render("› ") + styleTitle.Render(projectPickerOverview)
 	}
 	rows = append(rows, overview)
-	lines = append(lines, window(rows, max(cursor, 0), h-2-len(lines))...)
+	// Every row is an entry here: the picker has no section headers.
+	entryRow := make([]int, len(rows))
+	for i := range entryRow {
+		entryRow[i] = i
+	}
+	shown, page := popupWindow(rows, entryRow, max(cursor, 0), h-2-len(lines))
+	pp.page = page
+	lines = append(lines, shown...)
 	return frame("projects", strings.Join(lines, "\n"), w, h, true)
 }
 
