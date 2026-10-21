@@ -140,6 +140,31 @@ func TestTheNeighbourBecomesTheSelection(t *testing.T) {
 	}
 }
 
+// TestShrinkingTheBoardKeepsTheCursorOnScreen: bubbles' SetHeight does not
+// move the table's scroll, so a pane that shrank by a line (a resize, a
+// status line appearing) left the cursor's row below the window (review
+// F21).
+func TestShrinkingTheBoardKeepsTheCursorOnScreen(t *testing.T) {
+	for from := 18; from <= 22; from++ {
+		for _, to := range []int{from - 1, from - 3, 12} {
+			b := testBoard()
+			b.updateLoaded(boardLoadedMsg{tasks: runningTasks(40)})
+			b.render(80, 24)
+			for b.tbl.Cursor() < from {
+				b.updateKey(tea.KeyPressMsg{Code: 'j', Text: "j"})
+				b.render(80, 24)
+			}
+			if !selectedRowVisible(t, b, b.render(80, 24)) {
+				t.Fatalf("row %d is off screen before the shrink", from)
+			}
+			if rendered := b.render(80, to); !selectedRowVisible(t, b, rendered) {
+				id, _ := b.selected()
+				t.Errorf("cursor on row %d: shrinking 80×24 to 80×%d hid task %d:\n%s", from, to, id, ansi.Strip(rendered))
+			}
+		}
+	}
+}
+
 // TestFailedFirstLoadDoesNotSayNoTasksYet is #798 B8: emptyBody handles
 // only !loaded && loadErr == nil, so a first load that failed falls through
 // to the first-run "no tasks yet".

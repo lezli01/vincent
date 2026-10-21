@@ -135,6 +135,10 @@ type (
 
 // board is the §15 home view: every task, live.
 type board struct {
+	// tblHeight is the height last handed the table, so render re-seats the
+	// cursor only when it changes (review F21).
+	tblHeight int
+
 	// projectScope is the root's selected project (task 132.2). The live
 	// board keeps its listing global and filters the rows in memory, so a
 	// switch re-derives and fetches nothing; the archived board asks the
@@ -1362,7 +1366,18 @@ func (b *board) render(width, height int) string {
 	b.tbl.SetRows(b.rowsFor(rows, cols, set))
 	b.tbl.SetWidth(b.width)
 	// Two lines of chrome above, plus the filter line when it is showing.
-	b.tbl.SetHeight(max(3, b.height-b.chromeLines()))
+	if h := max(3, b.height-b.chromeLines()); h != b.tblHeight {
+		b.tblHeight = h
+		b.tbl.SetHeight(h)
+		// bubbles' SetHeight keeps the table's scroll where it was, so a
+		// shrink could leave the cursor's row below the window (review F21).
+		// Walking the cursor down from the top again re-derives a window
+		// that shows it; the index, and so the selection, is unchanged.
+		if c := b.tbl.Cursor(); c > 0 {
+			b.tbl.GotoTop()
+			b.tbl.MoveDown(c)
+		}
+	}
 	b.restoreSelection(rows)
 	// Passing through an empty row set (the breakpoint clear above, or a
 	// board that emptied and refilled) parks the cursor at -1; with rows on
