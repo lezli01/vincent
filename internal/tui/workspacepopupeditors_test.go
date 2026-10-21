@@ -109,6 +109,33 @@ func TestAnswerPopupKeepsTheQuestionInViewAt80x24(t *testing.T) {
 	}
 }
 
+// TestAnswerPopupFocusedOptionAlwaysVisible is review F2: anchoring the
+// window on the question header counted the room before the "more" cues
+// took their rows, so the last option that would have fit under the header
+// was focused and off screen. Every option is walked at every size.
+func TestAnswerPopupFocusedOptionAlwaysVisible(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {80, 16}, {60, 15}, {120, 40}, {80, 20}} {
+		for _, n := range []int{4, 8, 15, 30} {
+			v := popupTaskView(t, func(d *detail) { d.form = newAnswerForm(manyOptions(n)) })
+			for i := range n {
+				if i > 0 {
+					v.updateKey(keyPress("j"))
+				}
+				screen := ansi.Strip(v.render(size[0], size[1]))
+				focused := false
+				for _, l := range strings.Split(screen, "\n") {
+					if strings.Contains(l, "›") && strings.Contains(l, fmt.Sprintf("option %02d", i+1)) {
+						focused = true
+					}
+				}
+				if !focused {
+					t.Fatalf("%dx%d, %d options: option %02d is focused and not on screen:\n%s", size[0], size[1], n, i+1, screen)
+				}
+			}
+		}
+	}
+}
+
 // TestAnswerPopupHintIsPinnedAt120x40 is W6's other half: the status line was
 // the form's last content line, visible only after scrolling to the bottom.
 func TestAnswerPopupHintIsPinnedAt120x40(t *testing.T) {

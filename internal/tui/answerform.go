@@ -384,7 +384,15 @@ func (f *answerForm) anchorFrom(width, from, to, room int) int {
 	line := 0
 	for i, r := range f.rows {
 		if r.kind == rowHeader && r.question == row.question {
-			if to-line <= room {
+			// The window gives a row to "↓ more" — it is being windowed, so
+			// something is cut — and another to "↑ more" when the header is
+			// not the form's first line (review F2). Anchoring on the room
+			// before those cues pushed the focused row off the bottom.
+			cues := 1
+			if line > 0 {
+				cues++
+			}
+			if to-line <= room-cues {
 				return min(line, from)
 			}
 			return from
