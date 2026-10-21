@@ -2520,7 +2520,10 @@ periodic repaint.
 | `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
 | `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
 | `pgup` / `pgdown` | Scroll the conversation (the mouse wheel scrolls it a line at a time) |
+| `alt+↑` / `alt+↓` | Scroll the conversation one line |
+| `alt+g` | Jump to the start of the conversation |
 | `ctrl+g` | Jump to the live end and follow it again |
+| `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to the chats board |

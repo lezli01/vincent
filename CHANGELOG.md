@@ -544,6 +544,29 @@ list with the user-facing context a commit subject cannot carry.
   rows; while typing in a field, inside an open list or in the Fields editor
   it did nothing. It now keeps whatever is open and creates the task.
   ([#797](https://github.com/lezli01/vincent/issues/797))
+- **Chats read in full at any terminal size.** In a chat, the close
+  confirmation, notes and a failed turn's error now wrap instead of being cut
+  off — the `(y/n)` that answers the close prompt was lost at 80 and 120
+  columns — and a failure's reason is spelled out in plain words. The header
+  keeps the chat's state, `⏸`, turn count, `on task #N` and branch ahead of a
+  long title, which now truncates into what is left. The chat's own hint line
+  is gone: the footer is the only key line, and it no longer offers keys that
+  would do nothing (stop with no running turn, skills on an ended chat, send
+  while a prompt or the answer form has the keyboard). The composer grows with
+  the draft, up to a third of the screen. A load failure is shown in the
+  conversation instead of "Nothing said yet", and nothing is sent until the
+  chat has loaded. Sending a message no longer redraws earlier turns from
+  their bare text while they are refetched. The answer form hides the
+  composer while it is open, drops the `ctrl+t task details` hint a chat
+  cannot answer, and `esc` puts the question away rather than dropping it:
+  `alt+a` brings it back with what you picked. New keys: `alt+↑`/`alt+↓`
+  scroll a line at a time and `alt+g` jumps to the start of the
+  conversation. The skill and file lists always show where you are in them.
+- **The chats board lines up.** Titles start in the same column whatever a
+  chat's state, there is a heading row, the header keeps its `updated` time at
+  80 columns, and the archive prompt keeps its `(y/n)` behind a long title.
+  The new-chat form keeps the focused field and an open picker on screen at
+  small sizes, and its error wraps instead of running off the edge.
 
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,

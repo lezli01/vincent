@@ -13316,6 +13316,17 @@ stream for the live tail.
    wants to see rather than where. Task 054 decision 1 — folds live in
    `tui.json` — is kept for the boards that still fold.
 
+   *Amended 2026-10-21 (issue #801).* The board draws a dim **column heading**
+   row above its chats — a heading of columns, not the project heading the
+   paragraph above retires — and pads every cell by display width, so a
+   title starts in the same column whatever its row's state cell holds (a
+   styled state or the in-progress frame used to count its escape bytes as
+   width). The header's scope label is short enough that `updated hh:mm:ss`
+   survives at 80 columns, and the archive confirmation shortens the title
+   it quotes and keeps its `(y/n)` on screen, wrapping rather than
+   truncating. The create form windows on the **focused element's lines**,
+   an open picker's options and its key hint included, and wraps its error.
+
 9. **Chat workspace.** *Added 2026-08-31 (task 067, closing 063.2 and 063.3).*
    One conversation: the finished turns above, the running turn's live tail
    below them, and a composer at the bottom. `enter` sends, `ctrl+x` stops the
@@ -13618,6 +13629,35 @@ stream for the live tail.
    opening the new-task form or the "remove its worktree?" prompt. The task's
    context is prepended by the daemon to the first turn's prompt; the turn row
    keeps the human's message as typed.
+
+   *Amended 2026-10-21 (issue #801).* **The workspace draws no key line of
+   its own**: §15's footer-is-the-registry rule applies here as everywhere,
+   so the root footer is the one key line, and `chatView.liveBindings` drops
+   every row a press would do nothing for — send while the chat is not idle
+   or a prompt or the answer form owns the keyboard, `ctrl+x` with no running
+   turn, `tab`/`f2` on an ended chat. `pgup/pgdown` ranks ahead of `ctrl+r`
+   so it still fits at 80 columns. **Nothing in the workspace is cut to one
+   line**: the close confirmation, notes and a failed turn's error wrap, the
+   prompt's answer keys (`(y/n)`) kept apart from the question so a wrap
+   never drops them, and the failure reason is given its `internal/reasons`
+   title (§18). **The header is ranked**: state, `⏸`, the level, the turn
+   count, `on task #N` and the branch are laid out first and the title
+   truncates into what is left. **The composer grows** with the draft from 3
+   rows up to `min(10, height/3)`, its frame titled `+N lines` when the draft
+   is taller still — the #299 amendment below holds: the body shrinks to
+   pay for it. **The §7.4 popup takes the composer's place** rather than
+   stacking under it, its key line pinned and without `ctrl+t task details`,
+   which only the task workspace answers; `esc` **puts the question away**
+   rather than dropping it — a note under the conversation says the agent is
+   waiting, and **`alt+a`** reopens it with the picks kept. **`alt+↑`/`alt+↓`**
+   scroll a line and **`alt+g`** jumps to the start, alt because the composer
+   owns `↑`/`↓`, `shift+↑`/`↓` and `ctrl+home`/`ctrl+end`, and `ctrl+↑` is a
+   macOS desktop shortcut. A failed load is said **in the body** rather than
+   as an empty chat, and a send is refused until the chat has loaded. A send
+   keeps the finished turns' records and resets only the live seam. The
+   skill and file lists always show their `n/N` position and a scroll cue,
+   carry their key hint on a line of its own, and keep at least three rows in
+   a small pane.
 
 10. **Archived boards.** *Added 2026-09-09 (task 092, issue #350).* Two
    screens — archived tasks and archived chats — reached from the command
