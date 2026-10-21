@@ -267,6 +267,38 @@ func TestIssueFormWindowsAroundThePicker(t *testing.T) {
 	}
 }
 
+// While the description is typed into, the window keeps the row its cursor
+// is on, even where the heading and eight textarea rows are taller than the
+// room (review F12).
+func TestIssueFormKeepsTheDescriptionCursorOnScreen(t *testing.T) {
+	for _, h := range []int{24, 14, 10, 8} {
+		t.Run(fmt.Sprintf("80x%d", h), func(t *testing.T) {
+			_, f := issueFormFixture(t)
+			rows := make([]string, 30)
+			for i := range rows {
+				rows[i] = fmt.Sprintf("row%02d", i)
+			}
+			f.body.SetValue(strings.Join(rows, "\n"))
+			f.cursor = ifBody
+			f.activate()
+			if !f.editing {
+				t.Fatal("enter on the description did not start editing it")
+			}
+			f.body.ta.MoveToEnd()
+			// A key through the textarea scrolls its view to the cursor,
+			// the way typing does.
+			f.body, _ = f.body.Update(keyPress("down"))
+			lines := strings.Split(ansi.Strip(f.render(80, h)), "\n")
+			if len(lines) > h {
+				t.Errorf("the form drew %d lines in a %d-line pane", len(lines), h)
+			}
+			if !shows(lines, "row29") {
+				t.Errorf("the cursor's row, row29, is off screen:\n%s", strings.Join(lines, "\n"))
+			}
+		})
+	}
+}
+
 // Typing a label the catalog lacks, or filtering it, keeps the input on
 // screen: the window follows the field the keys go to, not the picker's
 // heading (review F2).

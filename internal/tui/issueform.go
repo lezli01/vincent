@@ -676,6 +676,15 @@ func (f *issueForm) render(width, height int) string {
 		lines = append(lines, f.rowLines(r, width)...)
 		if r == f.cursor {
 			from, to = start, len(lines)
+			// The description being typed into is a heading and eight
+			// textarea rows, taller than a short pane's room: keep the row
+			// its cursor is on instead (review F12).
+			if r == ifBody && f.editing {
+				if y, ok := f.body.cursorRow(); ok {
+					from = start + 1 + y
+					to = from + 1
+				}
+			}
 		}
 		if f.pick != nil && ifRow(f.pick.row) == r {
 			f.pick.setWidth(width - 4)
