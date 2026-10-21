@@ -224,7 +224,7 @@ func TestWorkflowsRevealTheWholeSelectedEntry(t *testing.T) {
 	loadedWorkflows(w, entries...)
 	words := strings.Fields(longDescription)
 	last := words[len(words)-1]
-	for i := range len(entries) {
+	for i := range entries {
 		out := ansi.Strip(w.render(80, 24))
 		name := fmt.Sprintf("wf%02d", i)
 		if !strings.Contains(out, "▸ "+name) {
