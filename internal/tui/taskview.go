@@ -846,7 +846,7 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 		t.detail.diff.clickRow(msg.Y - t.bodyY)
 	case taskTabWorkflow:
 		if t.workflow != nil {
-			t.workflow.graph.ClickAt(msg.X-1, msg.Y-t.bodyY)
+			t.workflow.graph.ClickAt(msg.X-1-tabBodyIndent, msg.Y-t.bodyY)
 		}
 	}
 	return nil
@@ -904,9 +904,11 @@ func (t *taskView) render(width, height int) string {
 	t.bodyY = t.tabY + 2 // tab strip + blank separator
 	bodyH := max(t.height-len(lines), 1)
 	if !t.connected {
-		lines = append(lines, styleWarn.Render(" ⚠ daemon unreachable — task data is stale"))
-		t.bodyY++
-		bodyH--
+		// Indented and set off by a blank line like every other banner in the
+		// workspace (#800 W15).
+		lines = append(lines, styleWarn.Render("  ⚠ daemon unreachable — task data is stale"), "")
+		t.bodyY += 2
+		bodyH -= 2
 	}
 	body := t.renderTabBody(t.width, max(bodyH, 1))
 	lines = append(lines, body)
@@ -985,12 +987,15 @@ var taskTabDigits = [taskTabCount]string{
 }
 
 // taskTabShort are the secondary group's labels when the full strip does not
-// fit. The primary group is never abbreviated.
+// fit. The primary group is never abbreviated. Each is its tab's own name cut
+// short, never a second name: the breadcrumb and the help sheet say "Step
+// Details", and a strip that said "Inputs" read as a different tab (#800
+// W14).
 var taskTabShort = [taskTabCount]string{
 	taskTabSteps:       "Steps",
 	taskTabDetails:     "Details",
 	taskTabWorkflow:    "Flow",
-	taskTabStepDetails: "Inputs",
+	taskTabStepDetails: "Step Det.",
 	taskTabPull:        "PR",
 }
 
@@ -1010,31 +1015,42 @@ const (
 	tabSepGroups    = " ‖ "
 )
 
-// renderTabs draws the grouped strip at the widest label set that fits: full
-// labels, then the secondary group abbreviated, then the secondary group as
-// bare digits. The hint goes first of all.
+// renderTabs draws the grouped strip at the widest label set that fits:
+// full labels with the tab hint, full labels alone, then the secondary group
+// abbreviated, then as bare digits with the current tab still named. The
+// hint is the strip's one statement of how to move, and an 80-column
+// workspace keeps it (#800 W14): an abbreviation is given up for it, but the
+// tabs' full names are not, and only a strip too narrow for even the digits
+// and the hint loses it.
 func (t *taskView) renderTabs() string {
 	tabs := t.tabs()
 	width := t.width
 	if width <= 0 {
 		width = 1 << 16
 	}
+	hint := styleDim.Render("  " + taskTabHint)
+	steps := []struct {
+		level int
+		hint  bool
+	}{{0, true}, {0, false}, {1, true}, {2, true}, {1, false}, {2, false}}
 	var line string
 	var hits []taskTabHit
-	for level := range 3 {
-		line, hits = t.tabStrip(tabs, level)
-		hint := styleDim.Render("   tab/⇧tab or digits")
-		if ansi.StringWidth(line+hint) <= width {
+	for _, step := range steps {
+		line, hits = t.tabStrip(tabs, step.level)
+		if step.hint && ansi.StringWidth(line+hint) <= width {
 			line += hint
 			break
 		}
-		if ansi.StringWidth(line) <= width {
+		if !step.hint && ansi.StringWidth(line) <= width {
 			break
 		}
 	}
 	t.tabHits = hits
 	return line
 }
+
+// taskTabHint is the strip's movement hint.
+const taskTabHint = "tab/⇧tab or digits"
 
 // tabStrip draws the strip at one abbreviation level and records where each
 // tab landed, in screen columns, for the mouse.
@@ -1079,13 +1095,22 @@ func (t *taskView) tabName(tab taskViewTab, level int) string {
 	if taskTabPrimary(tab) || level == 0 {
 		return tab.String()
 	}
-	if level == 1 {
+	// The bare-digit strip still names the tab on screen, so the strip never
+	// leaves the reader without the name of where they are.
+	if level == 1 || tab == t.tab {
 		return taskTabShort[tab]
 	}
 	return ""
 }
 
 func (t *taskView) renderTabBody(width, height int) string {
+	// A task that never loaded is the same failure on every tab, so every tab
+	// says it the same way rather than as its own empty state — `no
+	// attempts`, `press d`, or `loading task…` beside `⚠ refresh failed`
+	// (#800 W15).
+	if line, ok := taskLoadFailure(t.detail); ok {
+		return line
+	}
 	switch t.tab {
 	case taskTabOverview:
 		return t.renderOverview(width, height)
@@ -1098,9 +1123,17 @@ func (t *taskView) renderTabBody(width, height int) string {
 	case taskTabDiff:
 		t.detail.focus = focusOutput
 		t.detail.tab = tabDiff
-		return t.detail.diff.render(width, height)
+		return indentBody(t.detail.diff.render(max(width-tabBodyIndent, 1), height))
 	case taskTabWorkflow:
-		return t.renderWorkflow(width, height)
+		body := t.renderWorkflow(max(width-tabBodyIndent, 1), height)
+		// The tab's notes indent their own lines, and the inspector's rule
+		// spans the pane above its indented fields; only the graph canvas
+		// draws from column 0, so it alone is shifted.
+		if w := t.workflow; w != nil && w.err == "" && len(w.findings) == 0 && w.loaded && !w.graph.TooNarrow() {
+			graph := w.graph.View()
+			body = indentBody(graph) + "\n" + w.renderInspector(width)
+		}
+		return body
 	case taskTabStepDetails:
 		return t.renderStepDetails(width, height)
 	case taskTabPull:
@@ -1110,6 +1143,32 @@ func (t *taskView) renderTabBody(width, height int) string {
 		t.detail.width = width
 		return t.detail.timelineBody(height)
 	}
+}
+
+// taskLoadFailure is the one message for a task whose first load failed: it
+// has nothing on screen to be stale against, so the error is the whole body.
+func taskLoadFailure(d *detail) (string, bool) {
+	if d.taskID == 0 || d.loaded || d.loadErr == nil {
+		return "", false
+	}
+	return styleBad.Render("  task unavailable: " + errString(d.loadErr)), true
+}
+
+// tabBodyIndent is the left margin every tab's body starts at. Diff and
+// Workflow draw from column 0 of what they are handed — a viewport and a
+// graph canvas — so they are handed a narrower body and shifted, which is
+// what puts them in line with the tabs that indent their own lines (#800
+// W19).
+const tabBodyIndent = 2
+
+func indentBody(body string) string {
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = "  " + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (t *taskView) renderOutput(width, height int) string {
@@ -1135,18 +1194,23 @@ func (t *taskView) renderOutput(width, height int) string {
 // lane whose output is on screen, which is the task's own until `>` moves
 // off it, and it is drawn only for a task that has lanes at all.
 func (t *taskView) renderLaneSelector(width int) string {
-	label := "this task's own output"
-	if lane, ok := t.selectedLane(); ok {
-		label = fmt.Sprintf("%d/%d · %s (task %d) · %s",
-			t.laneSel+1, len(t.lanes), laneName(lane), lane.ID, stateWords(lane.State))
+	hint := styleDim.Render("   </> select lane · l open it")
+	lane, ok := t.selectedLane()
+	if !ok {
+		return ansi.Truncate("  Lane  "+styleSelected.Render("this task's own output")+hint, max(width, 1), "…")
 	}
-	label = styleSelected.Render(label)
-	if lane, ok := t.selectedLane(); ok && lane.BlockReason != nil && *lane.BlockReason != "" {
-		label += styleSelected.Render(" · ") + renderReason(*lane.BlockReason, styleSelected)
+	// The lane's name is the long part; its number, task and state are what
+	// tell the lanes apart, so the hint goes first and the name next (#800 W4).
+	prefix := "  Lane  " + styleSelected.Render(fmt.Sprintf("%d/%d · ", t.laneSel+1, len(t.lanes)))
+	name := styleSelected.Render(laneName(lane))
+	suffix := styleSelected.Render(fmt.Sprintf(" (task %d) · %s", lane.ID, stateWords(lane.State)))
+	if lane.BlockReason != nil && *lane.BlockReason != "" {
+		suffix += styleSelected.Render(" · ") + renderReason(*lane.BlockReason, styleSelected)
 	}
-	line := "  Lane  " + label +
-		styleDim.Render("   </> select lane · l open it")
-	return ansi.Truncate(line, max(width, 1), "…")
+	if line := prefix + name + suffix + hint; cols(line) <= max(width, 1) {
+		return line
+	}
+	return truncateKeep(prefix, name, suffix, width)
 }
 
 // renderAttemptSelector is the Output pane's attempt strip. It takes the
@@ -1163,21 +1227,25 @@ func renderAttemptSelector(d *detail, width int) string {
 		return ansi.Truncate("  Attempt  —  no attempt selected", max(width, 1), "…")
 	}
 	run := runs[i]
-	identity := fmt.Sprintf(
-		"%d/%d · step %d %s · attempt %d · %s",
-		i+1, len(runs), run.StepIndex+1, stepLabel(run), run.Attempt, run.State,
-	)
+	// The attempt is told apart by its number, its attempt and its state,
+	// never by the step name, so the name is what gives way (#800 W4).
+	head := fmt.Sprintf("%d/%d · step %d ", i+1, len(runs), run.StepIndex+1)
+	tail := fmt.Sprintf(" · attempt %d · %s", run.Attempt, run.State)
 	if run.Iteration > 0 {
-		identity = fmt.Sprintf(
-			"%d/%d · step %d %s · iteration %d · attempt %d · %s",
-			i+1, len(runs), run.StepIndex+1, stepLabel(run), run.Iteration, run.Attempt, run.State,
-		)
+		tail = fmt.Sprintf(" · iteration %d · attempt %d · %s", run.Iteration, run.Attempt, run.State)
 	}
+	prefix := "  Attempt  " + styleSelected.Render(head)
+	name := styleSelected.Render(stepLabel(run))
 	// The pane's live state rides between the identity and the hint, so a
-	// narrow width loses the hint before it loses the state (#597).
-	line := "  Attempt  " + styleSelected.Render(identity) + d.outputStatus() +
-		styleDim.Render("   ←/→ select")
-	return ansi.Truncate(line, max(width, 1), "…")
+	// narrow width loses the hint before it loses the state (#597), and the
+	// state before the attempt's number.
+	suffix := styleSelected.Render(tail) + d.outputStatus()
+	hint := styleDim.Render("   ←/→ select")
+	whole := "  Attempt  " + styleSelected.Render(head+stepLabel(run)+tail) + d.outputStatus()
+	if cols(whole+hint) <= max(width, 1) {
+		return whole + hint
+	}
+	return truncateKeep(prefix, name, suffix, width)
 }
 
 // renderDetails is the workspace's Task Details tab. Both it and the popup's
@@ -1256,8 +1324,8 @@ func (t *taskView) detailLines(width int) []string {
 		return []string{styleDim.Render("  no task selected")}
 	}
 	if !d.loaded {
-		if d.loadErr != nil {
-			return []string{styleBad.Render("  task unavailable: " + errString(d.loadErr))}
+		if line, ok := taskLoadFailure(d); ok {
+			return []string{line}
 		}
 		return []string{styleDim.Render("  loading task…")}
 	}
@@ -1503,12 +1571,13 @@ func renderTaskDetailFacts(width int, facts []taskDetailFact) []string {
 
 	const gutter = 4
 	columnWidth := max((width-4-gutter)/2, 12)
+	labelCol := factLabelColumn(facts)
 	out := make([]string, 0, len(facts))
 	for i := 0; i < len(facts); i += 2 {
-		left := taskDetailFactLines(facts[i], columnWidth)
+		left := taskFactLines(facts[i], columnWidth, labelCol, dimReasonCode)
 		var right []string
 		if i+1 < len(facts) {
-			right = taskDetailFactLines(facts[i+1], columnWidth)
+			right = taskFactLines(facts[i+1], columnWidth, labelCol, dimReasonCode)
 		}
 		rows := max(len(left), len(right))
 		for row := range rows {
@@ -1532,8 +1601,9 @@ func renderTaskDetailFacts(width int, facts []taskDetailFact) []string {
 
 func renderTaskDetailFactList(width int, facts []taskDetailFact) []string {
 	out := make([]string, 0, len(facts))
+	labelCol := factLabelColumn(facts)
 	for _, fact := range facts {
-		for _, line := range taskDetailFactLines(fact, max(width-4, 12)) {
+		for _, line := range taskFactLines(fact, max(width-4, 12), labelCol, dimReasonCode) {
 			out = append(out, "  "+line)
 		}
 	}
@@ -1562,11 +1632,33 @@ func dimReasonCode(line string) string {
 	return line[:i] + styleDim.Render(line[i:])
 }
 
+// factLabelWidth is the fact table's narrowest label column, which every
+// list whose labels fit it keeps.
+const factLabelWidth = 18
+
+// factLabelColumn is the label column one list of facts lays out at: wide
+// enough for its longest label and a two-cell gap, so every value in the list
+// starts at the same column. A fixed eighteen let `waiting on a human` butt
+// against its value and wrapped the nineteen-cell `edited before retry` off
+// its own (#800 W18).
+func factLabelColumn(facts []taskDetailFact) int {
+	col := factLabelWidth
+	for _, f := range facts {
+		col = max(col, ansi.StringWidth(f.label)+1)
+	}
+	return col
+}
+
 // styledTaskDetailFactLines is taskDetailFactLines with every wrapped value
 // line passed through style, which is how a warning row keeps its colour
 // across a wrap without the label taking it too.
 func styledTaskDetailFactLines(fact taskDetailFact, width int, style func(string) string) []string {
-	labelWidth := min(18, max(width-9, 8))
+	return taskFactLines(fact, width, factLabelWidth, style)
+}
+
+// taskFactLines lays one fact out with its label in a column of labelCol cells.
+func taskFactLines(fact taskDetailFact, width, labelCol int, style func(string) string) []string {
+	labelWidth := min(labelCol, max(width-9, 8))
 	valueWidth := max(width-labelWidth-1, 8)
 	value := valueOr(fact.value, "none")
 	if ansi.StringWidth(fact.label) > labelWidth {

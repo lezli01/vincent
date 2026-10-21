@@ -127,10 +127,20 @@ func (c failureCard) glyph() string {
 // loop iteration or lane, the attempt and the reason's title, with the raw
 // code returned apart so it can be dimmed beside it.
 func (c failureCard) headline() (line, code string) {
+	head, name, tail, code := c.headlineParts()
+	return head + name + tail, code
+}
+
+// headlineParts splits the headline for truncateKeep: the step name is the
+// long part, and the attempt and the reason after it are what the card is
+// about, so they survive a narrow card and the name gives way (#800 W4).
+func (c failureCard) headlineParts() (head, name, tail, code string) {
 	var parts []string
+	head = c.glyph() + " "
 	switch {
 	case c.hasRun && !c.stepless:
-		parts = append(parts, fmt.Sprintf("Step %d %s", c.run.StepIndex+1, stepLabel(c.run)))
+		head += fmt.Sprintf("Step %d ", c.run.StepIndex+1)
+		name = stepLabel(c.run)
 		if c.run.Iteration > 0 {
 			it := fmt.Sprintf("iteration %d", c.run.Iteration)
 			if c.run.LoopTotal > 0 {
@@ -146,8 +156,11 @@ func (c failureCard) headline() (line, code string) {
 		}
 		// The snapshot carries no retry budget, so "of n" is never claimed.
 		parts = append(parts, fmt.Sprintf("attempt %d", c.run.Attempt))
+	case c.stepNum > 0 && c.stepName != "":
+		head += fmt.Sprintf("Step %d ", c.stepNum)
+		name = c.stepName
 	case c.stepNum > 0:
-		parts = append(parts, strings.TrimSpace(fmt.Sprintf("Step %d %s", c.stepNum, c.stepName)))
+		parts = append(parts, fmt.Sprintf("Step %d", c.stepNum))
 	}
 	title := "stopped"
 	if c.reason != "" {
@@ -157,7 +170,11 @@ func (c failureCard) headline() (line, code string) {
 	if c.reason != "" && c.reason != title {
 		code = c.reason
 	}
-	return c.glyph() + " " + strings.Join(parts, " · "), code
+	tail = strings.Join(parts, " · ")
+	if name != "" {
+		tail = " · " + tail
+	}
+	return head, name, tail, code
 }
 
 // wantsEvidence reports whether the card fetches a transcript: a blocked
@@ -367,7 +384,7 @@ func (p cardParts) lines(meaning, evidence, status bool) []string {
 func (t *taskView) collapsedCard() []string {
 	c := t.failureCard()
 	actions := cardActions(c.reason, t.detail.task.AvailableActions)
-	return []string{c.renderHeadline(), c.renderActionKeys(actions)}
+	return []string{c.renderHeadline(0), c.renderActionKeys(actions)}
 }
 
 // failureCardLines renders the full card within the given height budget,
@@ -409,8 +426,10 @@ func (t *taskView) minCardRows(width int) int {
 	return t.cardParts(c, cardActions(c.reason, t.detail.task.AvailableActions), width, 1).essential()
 }
 
-func (c failureCard) renderHeadline() string {
-	line, code := c.headline()
+// renderHeadline draws the headline in width cells, the step name giving
+// way first; a width of zero or less draws it whole.
+func (c failureCard) renderHeadline(width int) string {
+	head, name, tail, code := c.headlineParts()
 	style := styleBad
 	switch {
 	case c.aborted:
@@ -418,11 +437,14 @@ func (c failureCard) renderHeadline() string {
 	case c.blamed:
 		style = styleWarn
 	}
-	out := "  " + style.Render(line)
+	dim := ""
 	if code != "" {
-		out += "  " + styleDim.Render(code)
+		dim = "  " + styleDim.Render(code)
 	}
-	return out
+	if whole := "  " + style.Render(head+name+tail) + dim; width <= 0 || cols(whole) <= width {
+		return whole
+	}
+	return truncateKeep("  "+style.Render(head), style.Render(name), style.Render(tail)+dim, width)
 }
 
 func (c failureCard) renderActionKeys(actions []cardAction) string {
@@ -438,7 +460,7 @@ func (c failureCard) renderActionKeys(actions []cardAction) string {
 
 // cardParts renders the card's sections with at most n lines of evidence.
 func (t *taskView) cardParts(c failureCard, actions []cardAction, width, n int) cardParts {
-	p := cardParts{headline: c.renderHeadline()}
+	p := cardParts{headline: c.renderHeadline(width)}
 	if c.reason != "" {
 		if m := reasons.Explain(c.reason).Meaning; m != "" {
 			p.meaning = wrapText(m, width, hanging("    "))
