@@ -2254,9 +2254,10 @@ the workflow and says it becomes a child task, while an `include` says its
 steps are spliced into this one; a `parallel`, `fan_out` or `loop` header shows
 its bounds; `END` says the workflow ends there.
 
-While it is open the popup has the keyboard: `↑`/`↓` and the pager keys scroll
-it, `e` and `R` still work, and `esc` closes it back to the graph with the same
-node selected. A second `esc` closes the graph, as it always did.
+While it is open the popup has the keyboard and the mouse: `↑`/`↓`, the pager
+keys and the wheel scroll it, a click never reaches the graph behind it, `e`
+and `R` still work, and `esc` closes it back to the graph with the same node
+selected. A second `esc` closes the graph, as it always did.
 
 ![The step-detail popup over the graph: the selected agent step in full — the
 workflow it belongs to, its id and type, its whole prompt, and its agent and
@@ -2801,8 +2802,8 @@ before turning one on.
 delivery ledger listing two seeded events](../assets/tui-triggers.png)
 
 The list has one row per trigger, broken ones included. Each row shows the id,
-whether the file is enabled, whether it is **armed**, the source and action
-types, `on_fire`, poll health, and when it last polled and last
+whether the file is enabled, whether it is **armed**, poll health, the source
+and action types, `on_fire`, and when it last polled and last
 fired. The armed column reads `● armed`, or says why not: `disabled`, `✗ invalid`,
 `global off`, or the daemon's own reason. Poll health is `ok`, `failing` or
 `not yet`, and reports what the source has instead where it has no poll:
