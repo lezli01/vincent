@@ -180,7 +180,9 @@ func TestAcknowledgeNoticeCreatesTheDataDir(t *testing.T) {
 // The notice has to name the risk, not gesture at it.
 func TestNoticeNamesTheRisk(t *testing.T) {
 	body := firstRunNotice{}.render()
-	for _, want := range []string{"as your user", "restricted", "transcripted", "README"} {
+	// "restricted" is per workflow or per step (v0 ledger, §16): the notice
+	// names both mitigations (review F15).
+	for _, want := range []string{"as your user", `"restricted" workflow or step`, "transcripted", "README"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the notice does not mention %q", want)
 		}

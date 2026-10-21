@@ -134,10 +134,10 @@ const noticeBody = `Agents run here unattended. In full-auto an agent can run
 any command as your user; a worktree isolates tasks from
 each other, not your machine from the agent.
 
-What holds it back: steps marked "restricted", every run
-fully transcripted, and nothing merged or pushed unless
-a workflow step does it. Command and check steps run
-workflow content you wrote, at your own shell's trust.
+What holds it back: a "restricted" workflow or step, every
+run fully transcripted, and nothing merged or pushed
+unless a workflow step does it. Command and check steps
+run workflow content you wrote, at your own shell's trust.
 Read the README's full-auto section before pointing
 vincent at anything you cannot afford to lose.`
 
