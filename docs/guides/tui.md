@@ -3158,6 +3158,7 @@ keeps the raw identifiers, undimmed, for copying into a command.
 | round | One wave of a fan-out's lanes | `iteration` on a `fan_out` step |
 | lane | One child task of a fan-out | a child task with a `lane_id` |
 | tab | A pane of a task's workspace — Overview, Steps, Output, Diff… | |
+| main tab | One of the screens `tab` switches between — the board, the issues list, the chats board — as `tui.tabs` lists them | `tui.tabs` |
 | screen | A takeover routed over the board — New task, Projects, Workflows… | |
 
 ## Every key
