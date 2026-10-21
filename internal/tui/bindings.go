@@ -599,6 +599,7 @@ var bindings = []binding{
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchived, hint: "</> page", priority: 4},
 	{op: keymap.Filter, key: "/", label: "filter by id, title or state", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
 	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
+	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxArchived, priority: 7, term: termRefresh},
 
 	// The connection screen. `r` is retry-connecting, a fixed key (task 118
 	// decision 8); the footer draws it from its retry segment, so the row is

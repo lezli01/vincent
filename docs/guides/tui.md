@@ -2800,7 +2800,7 @@ selected project's chats; switching project returns it to the first page and
 keeps its window and filter. There is no key of
 its own for either — the palette is how you get there, which is the pattern
 every takeover but new task follows. `esc` with no filter leaves either one
-for the home board, and the archived chats board re-lists each time it opens.
+for the home board, and both re-list each time they open.
 
 Each header names the date window and, past the first, the page — the tasks
 board also how many rows the page holds — rather than the live board's slot
@@ -2829,6 +2829,7 @@ there is nothing to withhold and no flag saying so.
 | `<` / `>` | Turn the page (a hundred rows at a time) — offered only where there is a page that way |
 | `enter` | Open the row's workspace, read-only |
 | `/` | Filter, exactly as on the live board |
+| `R` | Reload the board |
 | `home`/`end`, `pgup`/`pgdown` | Jump to the first or last row, or move a page |
 | `space` / `V` | Select rows for the delete — archived tasks only; an archived chat is deleted one row at a time |
 

@@ -13749,10 +13749,11 @@ stream for the live tail.
    stamp, `01-02 15:04`), then COST and PR while a row has one — no STEP,
    ELAPSED or STATUS, which describe a run that is over, and TITLE takes the
    rest. The two boards' keys match: `esc` with no filter leaves to the home
-   board from both, `home`/`end`/`pgup`/`pgdown` move on both (and on the
-   live chats board), and `<`/`>` are offered only where a page lies that
-   way — `>` after a full page, `<` past the first. The archived chats board
-   re-lists on activation, as the live one already did.
+   board from both (after clearing the filter and, on the tasks board, the
+   selection), `R` reloads both, `home`/`end`/`pgup`/`pgdown` move on both
+   (and on the live chats board), and `<`/`>` are offered only where a page
+   lies that way — `>` after a full page, `<` past the first. Both archived
+   boards re-list on activation, as the live chats board already did.
 
 11. **Triggers.** *Added 2026-09-13 (task 096.6, issue #362).* A takeover
    reached from the command palette, like Workflows and Projects, with no key

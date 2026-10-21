@@ -536,6 +536,14 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		b.width, b.height = msg.Width, msg.Height
 		return b, nil
+	case viewActivatedMsg:
+		// The archived board re-lists each time it opens, as the archived
+		// chats board does (#804 AR-11/AR-12, review F12). The live board
+		// is the shell's, which never forwards this message.
+		if b.archived && msg.id == viewArchived {
+			return b, b.loadCmd()
+		}
+		return b, nil
 	case boardLoadedMsg:
 		b.updateLoaded(msg)
 		return b, nil
@@ -850,6 +858,9 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		case opKey(keymap.Delete):
 			b.askDelete()
 			return b, nil
+		case opKey(keymap.Refresh):
+			// What the archived chats board's R does (#804 AR-11 parity).
+			return b, b.loadCmd()
 		case opKey(keymap.Scope):
 			// The date window (task 093). `s` cycles what a list is showing
 			// everywhere it appears, and on an archived board that is the

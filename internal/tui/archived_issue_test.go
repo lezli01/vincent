@@ -219,3 +219,20 @@ func TestChatsPageKeysMoveAPage(t *testing.T) {
 		t.Fatalf("pgup past the start left the cursor on %d", v.cursor)
 	}
 }
+
+// Review F12: the archived tasks board matches the archived chats board's
+// `R` and re-lists on activation, which #804 AR-11 asked for and §15 view 10
+// claims.
+func TestArchivedTasksBoardReloads(t *testing.T) {
+	b := testArchivedBoard()
+	b.client = offlineClient()
+	if _, cmd := b.updateKey(registryKey(t, "R")); cmd == nil {
+		t.Error("R on the archived tasks board reloaded nothing")
+	}
+	if _, cmd := b.update(viewActivatedMsg{id: viewArchived}); cmd == nil {
+		t.Error("the archived tasks board did not re-list on activation")
+	}
+	if _, cmd := b.update(viewActivatedMsg{id: viewHome}); cmd != nil {
+		t.Error("another view's activation re-listed the archived tasks board")
+	}
+}

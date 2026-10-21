@@ -738,6 +738,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	// models the live boards are, in archived mode — which is the point of
 	// decision 5: one model, so a probe here is a probe of the real screen.
 	ctxArchived: {
+		"R": func(t *testing.T) {
+			b := testArchivedBoard()
+			b.client = offlineClient()
+			if _, cmd := b.updateKey(registryKey(t, "R")); cmd == nil {
+				t.Fatal("R did not reload the board")
+			}
+		},
 		"enter": func(t *testing.T) {
 			b := testArchivedBoard()
 			b.updateKey(registryKey(t, "enter"))
