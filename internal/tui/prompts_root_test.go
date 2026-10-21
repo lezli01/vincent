@@ -96,6 +96,17 @@ func TestDestructivePromptsHoldTheKeyboardThroughRoot(t *testing.T) {
 				return m.views[viewChats].(*chatsView).confirm != nil
 			},
 		},
+		{
+			name: "pull requests unlink",
+			id:   viewPullRequests,
+			build: func() panel {
+				return pullRequestsFixture(testPull(11, "claimed", claimedBy(7, "auto")))
+			},
+			arm: func(_ *testing.T, m *root) { m.Update(key("u")) },
+			pending: func(m *root) bool {
+				return m.views[viewPullRequests].(*pullRequestsView).confirm != nil
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

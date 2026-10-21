@@ -13179,7 +13179,13 @@ stream for the live tail.
    longer only here. The task workspace's Pull Request tab (view 2) carries its
    own `u`, with the same effect and the same sticky suppression. This view
    keeps its copy because the case task 052 decision 6 put it here for — a pull
-   request no task claims — has no task workspace to be reached from at all.* `R` re-lists, `/` filters, `↑`/`↓` move.
+   request no task claims — has no task workspace to be reached from at all.*
+   *Amended 2026-10-21 (issue #790, review F2 of PR #805): the unlink
+   confirmation **holds the keyboard** like view 4's delete question — the
+   root's global single-key bindings (`n`, `q`, `:` …) do not run under it,
+   any key but `y` answers "no", and the footer shows its answers. Before it,
+   `n` opened New task with the question still armed, so a later `y` on return
+   unlinked.* `R` re-lists, `/` filters, `↑`/`↓` move.
    The view subscribes to nothing of its own: the root broadcasts every event to
    every view, so a `task.github_pull_changed` tick re-renders it with no
    keypress.

@@ -251,8 +251,22 @@ func (v *pullRequestsView) usable() bool {
 	return ok && st.Available
 }
 
+// promptKeys names the unlink question's answers while it is up: the
+// question owns the keyboard until answered, and the footer shows only those
+// (#790, review F2).
+func (v *pullRequestsView) promptKeys() string {
+	if v.picker == nil && v.confirm != nil {
+		return promptHint("y", "unlink", "n", "no")
+	}
+	return ""
+}
+
+// capturesInput is true while the filter is typed into, while the unlink
+// question is up — every other key cancels it, so `n` and `q` must answer it
+// rather than reach the root's New task and quit with it still armed (review
+// F2) — and while the picker's filter or free text is being typed into.
 func (v *pullRequestsView) capturesInput() bool {
-	if v.filtering {
+	if v.filtering || v.confirm != nil {
 		return true
 	}
 	// The picker owns the keyboard only while its filter or free-text entry
