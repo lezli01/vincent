@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -103,6 +104,46 @@ func TestAbortedOverviewKeepsItsLinks(t *testing.T) {
 		if got := ansi.Strip(v.render(100, h)); !strings.Contains(got, "3 output of attempt") {
 			t.Errorf("100×%d hides the jump links:\n%s", h, got)
 		}
+	}
+}
+
+// TestPullTabWindowsItsLanes: a fan-out parent with more lanes than rows
+// windows its lanes block with a cue rather than losing the last lanes to the
+// final cut, and the checks keep rows of their own (review F15).
+func TestPullTabWindowsItsLanes(t *testing.T) {
+	v := pullTabFixture(t)
+	checks := checkRollupFixture()
+	checks.Runs = nil
+	for i := range 30 {
+		checks.Runs = append(checks.Runs, apiclient.GitHubCheckRun{Name: fmt.Sprintf("check-%02d", i), State: "success"})
+	}
+	v.applyChecks(taskChecksMsg{taskID: v.detail.taskID, checks: checks})
+	for i := range 32 {
+		v.lanes = append(v.lanes, apiclient.Task{ID: int64(100 + i), State: stateDone, Title: fmt.Sprintf("lane-%02d", i)})
+	}
+	frame := ansi.Strip(v.render(120, 40))
+	lines := strings.Split(frame, "\n")
+	if len(lines) > 40 {
+		t.Fatalf("the tab drew %d lines in 40", len(lines))
+	}
+	at := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "lanes — 32") })
+	if at < 0 {
+		t.Fatalf("the lanes block is gone:\n%s", frame)
+	}
+	if !strings.Contains(strings.Join(lines[at:], "\n"), "↓") {
+		t.Errorf("the lanes block lost lanes with no cue:\n%s", frame)
+	}
+	shown := 0
+	for _, l := range lines[:at] {
+		if strings.Contains(l, "check-") {
+			shown++
+		}
+	}
+	if shown < 3 {
+		t.Errorf("the checks were squeezed to %d rows:\n%s", shown, frame)
+	}
+	if !strings.Contains(frame, strings.TrimSpace(ansi.Strip(v.pullHintLine()))) {
+		t.Errorf("the hint line is gone:\n%s", frame)
 	}
 }
 

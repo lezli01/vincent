@@ -272,10 +272,6 @@ func (t *taskView) renderPullTab(width, height int) string {
 	top := t.pullHeaderLines(width)
 	top = append(top, "")
 	var bottom []string
-	if lanes := t.laneRowLines(width); len(lanes) > 0 {
-		bottom = append(bottom, "")
-		bottom = append(bottom, lanes...)
-	}
 	if note := t.pullTab.note; note != "" {
 		style := styleDim
 		if t.pullTab.noteBad {
@@ -291,8 +287,19 @@ func (t *taskView) renderPullTab(width, height int) string {
 	}
 	bottom = append(bottom, "", hint)
 
+	// The lanes are pinned under the checks but windowed too (review F15):
+	// a fan-out with many lanes used to squeeze the checks to one row and
+	// lose its own last lanes to the final cut, with no cue. The checks keep
+	// a share of the rows — their heading and a few rows — and the lanes get
+	// what is left, with ↑/↓ cues for what they cannot show.
+	room := height - len(top) - len(bottom)
+	var lanes []string
+	if len(t.lanes) > 0 {
+		lanes = append([]string{""}, t.laneRowLines(width, room-1-pullCheckShare)...)
+	}
 	lines := top
-	lines = append(lines, t.checkLines(width, height-len(top)-len(bottom))...)
+	lines = append(lines, t.checkLines(width, room-len(lanes))...)
+	lines = append(lines, lanes...)
 	lines = append(lines, bottom...)
 	if len(lines) > height && height > 0 {
 		// Too short even for the pinned rows: the hint line is what says
@@ -527,13 +534,29 @@ func (t *taskView) applyLanePulls(msg taskLanePullsMsg) {
 // marks the lane `l` opens from this tab — laneJump's answer, not the Output
 // tab's selection, which this tab cannot move and `l` does not read here
 // (#799 W17).
-func (t *taskView) laneRowLines(width int) []string {
+func (t *taskView) laneRowLines(width, rows int) []string {
 	if len(t.lanes) == 0 {
 		return nil
 	}
 	jump, jumps := t.laneJump()
 	out := []string{styleTitle.Render(fmt.Sprintf("  lanes — %d", len(t.lanes)))}
-	for _, lane := range t.lanes {
+	// More lanes than rows: a window, both cue rows reserved as the checks'
+	// window reserves them, around the lane the jump key opens.
+	first, last, focus := 0, len(t.lanes), 0
+	for i, lane := range t.lanes {
+		if jumps && lane.ID == jump {
+			focus = i
+		}
+	}
+	if len(t.lanes)+1 > rows {
+		shown := max(rows-3, 1)
+		first = windowStart(len(t.lanes), focus, shown)
+		last = first + shown
+	}
+	if first > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("    ↑ %d more", first)))
+	}
+	for _, lane := range t.lanes[first:last] {
 		marker := "  "
 		if jumps && lane.ID == jump {
 			marker = "▸ "
@@ -548,8 +571,15 @@ func (t *taskView) laneRowLines(width int) []string {
 			styleDim.Render("  "+laneName(lane)+" · task "+strconv.FormatInt(lane.ID, 10))
 		out = append(out, ansi.Truncate(line, max(width, 1), "…"))
 	}
+	if rest := len(t.lanes) - last; rest > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("    ↓ %d more", rest)))
+	}
 	return out
 }
+
+// pullCheckShare is the rows the checks keep on the Pull Request tab however
+// many lanes there are: their heading, both cues and three rows.
+const pullCheckShare = 6
 
 // laneRowStyle colours a lane row by whether it is news: a lane that stopped
 // short of `done` is what a reader on this tab is looking for.
