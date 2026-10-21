@@ -746,9 +746,14 @@ func (v *chatView) syncFollowToViewport() {
 }
 
 func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
-	if msg.chatID == v.chatID {
-		v.sending = false
+	// A result for a chat this view has since left is not this view's: its
+	// refusal would tell the chat now open to resend a draft it never had,
+	// and its acceptance would wipe and reload that chat (review F4). The
+	// chat it was for reloads on its own when it is opened again.
+	if msg.chatID != v.chatID {
+		return nil
 	}
+	v.sending = false
 	if msg.err != nil {
 		// A 409 chat_cap_reached is a refusal, never a queued turn and never
 		// a spinner: the daemon will not run this turn, and a client that
@@ -764,13 +769,10 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	}
 	// The draft leaves the composer only once the daemon has taken the turn:
 	// a refusal or a send that never arrived keeps what was typed, so "send
-	// again" is a keypress rather than a retype (#790). A result for a chat
-	// this view has since left is not this composer's.
-	if msg.chatID == v.chatID {
-		v.composer.SetValue("")
-		// The draft the inline hints were about is gone with it (task 124.14).
-		v.skills.inlineNote, v.skills.noteFor = "", ""
-	}
+	// again" is a keypress rather than a retype (#790).
+	v.composer.SetValue("")
+	// The draft the inline hints were about is gone with it (task 124.14).
+	v.skills.inlineNote, v.skills.noteFor = "", ""
 	v.note = ""
 	v.resetRecords()
 	return v.loadCmd()

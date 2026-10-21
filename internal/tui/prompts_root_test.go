@@ -349,3 +349,40 @@ func TestChatViewSendsADraftOnce(t *testing.T) {
 		t.Fatalf("the composer still holds %q after the daemon took the turn", got)
 	}
 }
+
+// TestChatViewIgnoresASendResultForAChatItLeft: a send's result that lands
+// after the view moved to another chat is not that chat's — neither its
+// refusal note nor its acceptance's reload and cleared composer (review F4).
+func TestChatViewIgnoresASendResultForAChatItLeft(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"refused", &apiclient.Error{Status: 409, Code: "chat_cap_reached"}},
+		{"accepted", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = &apiclient.Client{}
+			v.composer.SetValue("for chat one")
+			if cmd := v.sendCmd(); cmd == nil {
+				t.Fatal("an idle chat with a draft sent nothing")
+			}
+			client := v.client
+			v.client = nil // open would subscribe to a stream nobody serves
+			v.open(2)
+			v.client = client
+			v.chat = &apiclient.Chat{ID: 2, ProjectID: 7, Title: "another", State: "idle", Agent: "claude"}
+			v.composer.SetValue("for chat two")
+			if cmd := v.applySent(chatSentMsg{chatID: 1, err: tc.err}); cmd != nil {
+				t.Error("chat 1's send result reloaded chat 2")
+			}
+			if v.note != "" {
+				t.Errorf("chat 1's send result set chat 2's note: %q", v.note)
+			}
+			if got := v.composer.Value(); got != "for chat two" {
+				t.Errorf("chat 1's send result changed chat 2's draft to %q", got)
+			}
+		})
+	}
+}
