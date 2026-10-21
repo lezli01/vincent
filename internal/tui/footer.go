@@ -184,6 +184,11 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		n = pool - shown + lost
 	}
 
+	if lead != "" && strings.TrimSpace(ansi.Strip(line)) == "" {
+		// Nothing was admitted after the status: a separator there would
+		// lead to nothing (review F3).
+		return footerLead(lead, avail+leadW, width, pinned.String(), pinnedSegs)
+	}
 	if lead != "" {
 		sep, _ := footerSep()
 		line = " " + lead + sep + strings.TrimPrefix(line, " ")

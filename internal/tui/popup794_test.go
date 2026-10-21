@@ -455,3 +455,18 @@ func TestGroupedPopupsCueCountsEntries(t *testing.T) {
 		})
 	}
 }
+
+// Review F3: a status with no hint or action after it is the left of the
+// line alone, not the status and a separator leading to nothing.
+func TestFooterLoneStatusHasNoTrailingSeparator(t *testing.T) {
+	bar := &actionBar{}
+	bar.setStatus("retry failed", true)
+	line, _ := buildFooter(60, nil, bar, taskActions{}, attentionTally{}, false, false)
+	got := ansi.Strip(line)
+	if !strings.HasPrefix(got, " retry failed ") {
+		t.Errorf("the status does not lead: %q", got)
+	}
+	if strings.Contains(got, "retry failed ·") {
+		t.Errorf("a separator follows a status with nothing after it: %q", got)
+	}
+}
