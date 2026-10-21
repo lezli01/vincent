@@ -130,6 +130,16 @@ Written into `internal/tui/doc.go` and spec §15:
   archived chats board re-lists on activation, and both chats boards take
   the paging keys. Spec §15 view 10 narrows `space`/`V` to archived tasks.
   ✓ 2026-10-21
+- [x] **135.9** The issues list (#796). A row's title keeps
+  `max(30, 40%` of the row`)` while the state word, the tags (as a `+N`
+  count), the source badge (as `gh#N` when every imported row shares a
+  repo) give way; only the task cell takes it lower, to 12, superseding the
+  F2 title floor (spec §15 view 12, amended 2026-10-21). `pgup`/`pgdown`,
+  `home`/`g` and `end`/`G` page and jump, a list taller than its pane shows
+  `▲ n more`/`▼ n more` cues that clicks skip, and the empty-state hint, the
+  list error, the no-project and resolving lines and the footer note wrap
+  with `wrapText`. The footer puts move, filter and new ahead of
+  `o browser`, which it withholds on a row with no source page. ✓ 2026-10-21
 
 ## Decisions
 
