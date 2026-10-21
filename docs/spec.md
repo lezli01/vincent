@@ -13763,7 +13763,9 @@ stream for the live tail.
    ELAPSED or STATUS, which describe a run that is over, and TITLE takes the
    rest. The two boards' keys match: `esc` with no filter leaves to the home
    board from both (after clearing the filter and, on the tasks board, the
-   selection), `R` reloads both, `home`/`end`/`pgup`/`pgdown` move on both
+   selection) — *amended 2026-10-21 (task 136.4, issue #789):* to the
+   human's tab, the last main tab they were on while it is still in
+   `tui.tabs`, else the first, per the §15 Layout amendment — `R` reloads both, `home`/`end`/`pgup`/`pgdown` move on both
    (and on the live chats board), and `<`/`>` are offered only where a page
    lies that way — `>` after a full page, `<` past the first. Both archived
    boards re-list on activation, as the live chats board already did.
