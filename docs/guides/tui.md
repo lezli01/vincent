@@ -1847,8 +1847,9 @@ and the empty note name the listing you are on. Each row carries the number,
 its state (`open`, `draft`, `closed` or `merged`), the title, the head branch,
 and the task that claims it — with `auto` when the daemon's reconciler matched
 it by head branch and `human` when somebody linked it by hand. The columns are
-aligned, and on a narrow screen the head branch is what gives way, never the
-title or the claim; the selected row adds a line below it with the full title
+aligned, and on a narrow screen the head branch is what gives way first, then
+the title, and never the claiming `task #n` and how it was claimed; the
+selected row adds a line below it with the full title
 and `branch → base`.
 
 ![The pull requests screen: one GitHub project's three open pull requests —

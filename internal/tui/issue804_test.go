@@ -42,6 +42,31 @@ func TestPullRowKeepsTitleAndClaimAt80Columns(t *testing.T) {
 	}
 }
 
+// Review F10: the claim's column is never narrower than its widest
+// "task #n (how)", so at the 60-column floor a five-digit task id keeps the
+// way it was claimed; the title is what gives way.
+func TestPullRowKeepsALongClaimAt60Columns(t *testing.T) {
+	v := pullRequestsFixture(
+		testPull(42, "Refactor the session cache for the slow path", claimedBy(12345, "human")),
+		testPull(43, "Bump a dependency", claimedBy(7, "auto"), func(p *apiclient.GitHubPullRequest) {
+			p.HeadBranch = "dependabot/go_modules/github.com/charmbracelet/x/ansi-0.11.4"
+		}),
+	)
+	rows := map[string]string{}
+	for _, line := range issue804Lines(v.render(60, 24)) {
+		for _, n := range []string{"#42", "#43"} {
+			if strings.Contains(line, n+" ") && rows[n] == "" {
+				rows[n] = line
+			}
+		}
+	}
+	for n, want := range map[string]string{"#42": "task #12345 (human)", "#43": "task #7"} {
+		if row := rows[n]; !strings.Contains(row, want) || ansi.StringWidth(row) > 60 {
+			t.Errorf("the 60-column row %s does not keep %q within 60 cells:\n%q", n, want, row)
+		}
+	}
+}
+
 // After `s` moves the listing to closed, the header and the empty state name
 // that state instead of still saying "open" (PL-4).
 func TestPullHeaderAndEmptyStateNameTheState(t *testing.T) {

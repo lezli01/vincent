@@ -179,10 +179,13 @@ const pullFixedW = 2 + 7 + 7
 // title does not, and is on the detail line in full — never the title or
 // the claim, which are what a human scans this list for.
 func (v *pullRequestsView) pullColumns(pulls []apiclient.GitHubPullRequest, width int) pullCols {
-	var maxTitle, maxClaim, maxBranch int
+	var maxTitle, maxClaim, minClaim, maxBranch int
 	for _, p := range pulls {
 		maxTitle = max(maxTitle, cols(p.Title))
 		maxClaim = max(maxClaim, cols(v.claimText(p, 0)))
+		// The narrowest a claim can be drawn: claimText drops the task's
+		// title before it gives up "task #n (how)".
+		minClaim = max(minClaim, cols(v.claimText(p, 1)))
 		if p.HeadBranch != "" {
 			maxBranch = max(maxBranch, cols("⎇ "+p.HeadBranch))
 		}
@@ -190,7 +193,10 @@ func (v *pullRequestsView) pullColumns(pulls []apiclient.GitHubPullRequest, widt
 	avail := max(width-pullFixedW, 0)
 	// The claim keeps "task #n (how)" whole and lends its task title to the
 	// row's title when the row is short of room.
-	c := pullCols{claim: min(maxClaim, max(avail*2/5, 16))}
+	// Its floor is the widest "task #n (how)" in the list, never a fixed
+	// count a five-digit task id outgrows (review F10); the title falls to
+	// its own floor first.
+	c := pullCols{claim: max(min(maxClaim, max(avail*2/5, 16)), minClaim)}
 	c.title = max(min(maxTitle, avail-c.claim-2), 12)
 	// A short title hands its spare cells back to the claim.
 	c.claim = min(maxClaim, max(c.claim, avail-c.title-2))

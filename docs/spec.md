@@ -13219,7 +13219,8 @@ stream for the live tail.
 
    *Amended 2026-10-21 (issue #804).* **Rows are aligned columns** — `#n`,
    status word, title, claiming task — and the head branch is the part that
-   gives way, never the title or the claim; the selected row adds a detail
+   gives way first, then the title down to a floor, never the claim's
+   `task #n (how)`, however long the task id (review F10); the selected row adds a detail
    line with the full title and `branch → base`. The header and the empty
    note name the listing `s` selected (open, closed or all) instead of always
    saying "open". The unavailable reason, a listing's error, the unlink
