@@ -135,3 +135,20 @@ func TestKeymapNoticeIsShownOnce(t *testing.T) {
 		t.Errorf("a refused keymap replaced the one in force: refresh = %q", got)
 	}
 }
+
+// Review F13: the issues list's `g` is a fixed key on its own surface, so a
+// lenient tui.keys binding of `g` warns there like on every other surface
+// that pages with it, and the binding wins: `s`'s done-lane toggle moved to
+// `g` toggles the lane rather than jumping to the first row.
+func TestIssuesListGYieldsToARebinding(t *testing.T) {
+	warnings := withLenientKeymap(t, map[string]string{"scope": "g"})
+	if !strings.Contains(strings.Join(warnings, "\n"), "issues") {
+		t.Errorf("binding scope to g warned nothing about the issues list: %q", warnings)
+	}
+	v := issuesFixture()
+	before := v.showDone
+	v.updateKey(key("g"))
+	if v.showDone == before {
+		t.Error("g bound to scope did not toggle the done lane on the issues list")
+	}
+}

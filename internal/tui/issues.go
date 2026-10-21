@@ -437,12 +437,6 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "pgup":
 		v.pageCursor(-v.page)
 		return v, nil
-	case "home", "g":
-		v.edgeCursor(false)
-		return v, nil
-	case "end", "G":
-		v.edgeCursor(true)
-		return v, nil
 	case opKey(keymap.Filter):
 		v.filtering = true
 		v.filter.Focus()
@@ -507,6 +501,13 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if row, ok := v.current(); ok {
 			v.w.act = newIssueDelete(v.client, row.issue)
 		}
+	// The jumps come after every operation's case: `g` and `G` are fixed
+	// letters a tui.keys binding can take on a lenient load (task 128), and
+	// the user's binding is the one that wins (review F13).
+	case "home", "g":
+		v.edgeCursor(false)
+	case "end", "G":
+		v.edgeCursor(true)
 	}
 	return v, nil
 }
