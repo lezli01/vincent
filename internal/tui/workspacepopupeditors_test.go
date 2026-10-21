@@ -136,6 +136,33 @@ func TestAnswerPopupFocusedOptionAlwaysVisible(t *testing.T) {
 	}
 }
 
+// TestPopupOverTheWorkflowTabKeepsTheViewWidth is review F7: the Workflow
+// tab's renderer stored the tab body's narrower width into the view, so a
+// popup drawn over that tab — and every later render — used it.
+func TestPopupOverTheWorkflowTabKeepsTheViewWidth(t *testing.T) {
+	popupRows := func(screen string) []string {
+		var rows []string
+		for _, l := range strings.Split(ansi.Strip(screen), "\n") {
+			if strings.ContainsAny(l, "╭╰┌└") {
+				rows = append(rows, strings.TrimRight(l, " "))
+			}
+		}
+		return rows
+	}
+	v := popupTaskView(t, func(d *detail) { d.form = newAnswerForm(manyOptions(3)) })
+	over := popupRows(v.render(80, 24))
+	v.setTab(taskTabWorkflow)
+	v.render(80, 24)
+	if v.width != 80 {
+		t.Fatalf("after the Workflow tab rendered, the view is %d wide, want 80", v.width)
+	}
+	again := popupRows(v.render(80, 24))
+	if len(over) == 0 || strings.Join(over, "\n") != strings.Join(again, "\n") {
+		t.Errorf("the popup over the Workflow tab differs from the one over Overview:\n%s\n---\n%s",
+			strings.Join(over, "\n"), strings.Join(again, "\n"))
+	}
+}
+
 // TestAnswerPopupHintIsPinnedAt120x40 is W6's other half: the status line was
 // the form's last content line, visible only after scrolling to the bottom.
 func TestAnswerPopupHintIsPinnedAt120x40(t *testing.T) {
