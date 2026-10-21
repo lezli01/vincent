@@ -215,12 +215,15 @@ func (w *workflowsView) renderList(width, height int) string {
 	}
 
 	var rows []string
-	cursorRow := 0
+	cursorRow, cursorEnd := 0, 0
 	for i, line := range lines {
 		if i == w.cursor {
 			cursorRow = len(rows)
 		}
 		rows = append(rows, w.renderLine(i, line, width)...)
+		if i == w.cursor {
+			cursorEnd = len(rows) - 1
+		}
 		if i == w.cursor && w.expanded && line.entry != nil {
 			rows = append(rows, w.renderSteps(line)...)
 		}
@@ -236,9 +239,18 @@ func (w *workflowsView) renderList(width, height int) string {
 	w.vp.SetWidth(max(width, 1))
 	w.vp.SetHeight(body)
 	w.vp.SetContent(strings.Join(rows, "\n"))
-	// Reveal the cursor rather than the expansion below it: the row you are
-	// on is the one that has to stay on screen.
-	w.vp.EnsureVisible(cursorRow, 0, 0)
+	// Reveal the selected entry rather than the expansion below it: the
+	// entry you are on is what has to stay on screen — all of it, since its
+	// description or error wraps under the name (#791, review F1). When it
+	// is taller than the pane its name row wins.
+	off := w.vp.YOffset()
+	if cursorEnd >= off+body {
+		off = cursorEnd - body + 1
+	}
+	if cursorRow < off {
+		off = cursorRow
+	}
+	w.vp.SetYOffset(off)
 	return strings.Join(append(head, w.vp.View()), "\n")
 }
 

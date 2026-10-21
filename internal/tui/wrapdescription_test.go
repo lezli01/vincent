@@ -209,3 +209,30 @@ func TestNewTaskSeparatesALongStepNameFromItsType(t *testing.T) {
 		t.Errorf("step name runs into its type column:\n%s", out)
 	}
 }
+
+// The selected entry is several rows tall in the compact list, and moving
+// the cursor down a long registry must reveal all of it, not only its name
+// row (review F1): the last word of its description has to reach the screen.
+func TestWorkflowsRevealTheWholeSelectedEntry(t *testing.T) {
+	w := newWorkflowsView()
+	var entries []apiclient.WorkflowEntry
+	for i := range 40 {
+		e := globalEntry(fmt.Sprintf("wf%02d", i))
+		e.Description = longDescription
+		entries = append(entries, e)
+	}
+	loadedWorkflows(w, entries...)
+	words := strings.Fields(longDescription)
+	last := words[len(words)-1]
+	for i := range len(entries) {
+		out := ansi.Strip(w.render(80, 24))
+		name := fmt.Sprintf("wf%02d", i)
+		if !strings.Contains(out, "▸ "+name) {
+			t.Fatalf("cursor %d: the selected name row is not on screen:\n%s", i, out)
+		}
+		if !strings.Contains(out, last) {
+			t.Fatalf("cursor %d: the selected description's last line is cut:\n%s", i, out)
+		}
+		pressView(w, "j")
+	}
+}
