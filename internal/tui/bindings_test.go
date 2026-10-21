@@ -2880,6 +2880,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	// Every probe types the mention in rather than opening the list by hand:
 	// there is no key that opens it.
 	ctxProjectPicker: {
+		"pgdown": func(t *testing.T) {
+			m := pickerProbeRoot(t)
+			m.Update(registryKey(t, "pgdown"))
+			if m.projPick.cursor != 1 && !m.projPick.overview {
+				t.Fatalf("pgdown left the highlight on %d", m.projPick.cursor)
+			}
+		},
 		"down": func(t *testing.T) {
 			m := pickerProbeRoot(t)
 			m.Update(registryKey(t, "down"))

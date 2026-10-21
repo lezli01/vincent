@@ -155,6 +155,9 @@ type linkPicker struct {
 	input  textField
 	items  []linkItem
 	cursor int
+	// page is how many list rows the last render showed, which pgup and
+	// pgdown move by (task 135.10 decision 5).
+	page int
 }
 
 func newLinkPicker(items []linkItem) *linkPicker {
@@ -202,6 +205,9 @@ func (p *linkPicker) update(msg tea.KeyPressMsg) (run *linkItem, act linkAction,
 		return nil, linkNone, false, nil
 	case "down":
 		p.cursor = min(p.cursor+1, max(len(p.matches())-1, 0))
+		return nil, linkNone, false, nil
+	case "pgup", "pgdown", "home", "end":
+		p.cursor = popupPageKey(msg.String(), p.cursor, len(p.matches()), p.page)
 		return nil, linkNone, false, nil
 	case "enter", copyPickKey:
 		// ctrl+y means copy in here exactly as it does outside (decision 1).
@@ -302,7 +308,9 @@ func (p *linkPicker) render(w, h int) string {
 		dest = dest[:room]
 		dest[room-1] = ansi.Truncate(dest[room-1], max(inner-1, 1), "") + "…"
 	}
-	lines = append(lines, window(rows, cursorRow, max(body-len(lines)-len(dest)-2, 1))...)
+	shown, page := popupWindow(rows, cursorRow, max(body-len(lines)-len(dest)-2, 1))
+	p.page = page
+	lines = append(lines, shown...)
 	// A rule, so the whole destination does not read as one more row.
 	lines = append(lines, styleDim.Render(strings.Repeat("─", inner)))
 	lines = append(lines, dest...)

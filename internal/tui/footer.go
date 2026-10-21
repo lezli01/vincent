@@ -18,10 +18,15 @@ import (
 // surface's palette-reachable keys the line is not showing. Pinned right and
 // never truncated: `: commands  ? help  q quit`, or `ctrl+p commands  f1 help
 // ctrl+c quit` while a text field has the keyboard and the other three would
-// be typed into it (task 114 decision 4). Overflow truncates from the
+// be typed into it (task 114 decision 4). Hint overflow truncates from the
 // left with `…`: the pinned segment is the escape hatch that makes every
 // other key optional, so a narrow terminal dropping it would fail exactly
 // when the human is most lost.
+//
+// A confirmation or a status — `cancel #42? … (y/n)`, a failed retry — is
+// the exception (task 135.10 decision 2): it leads the line and is cut from
+// the right, since its start is what it says, and the hints follow it while
+// there is room, dropped into `+N` when there is not. The line stays one row.
 //
 // The five-key cap the phase 3 refactor and the PR R / T3.12 decisions fixed
 // here is superseded by task 094 (spec §15, amended 2026-09-10; decision
@@ -112,6 +117,28 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		return " " + pinned.String(), pinnedHits(1, pinnedSegs)
 	}
 
+	// A confirmation or a status leads the line and is cut from the right
+	// (task 135.10 decision 2): its start is the question or the error, and
+	// the left cut hints take would remove exactly that.
+	if capturing {
+		return footerLead(rest[0].text, avail, width, pinned.String(), pinnedSegs)
+	}
+	lead := ""
+	if n := len(rest); n > 0 && bar != nil && bar.status != "" && rest[n-1].key == "" && !rest[n-1].counts {
+		lead, rest = rest[n-1].text, rest[:n-1]
+	}
+	leadW := 0
+	if lead != "" {
+		_, sepW := footerSep()
+		lead = ansi.Truncate(lead, avail-1, "…")
+		leadW = ansi.StringWidth(lead) + sepW
+		if avail-leadW < footerLeadFloor {
+			// No room left for a hint worth reading: the status alone.
+			return footerLead(lead, avail, width, pinned.String(), pinnedSegs)
+		}
+		avail -= leadW
+	}
+
 	// What `+N` counts against: this surface's palette-reachable rows, plus
 	// the task actions on the line — each of those is one more thing the
 	// palette can reach that the `…` may take away. A confirmation counts
@@ -157,10 +184,31 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		n = pool - shown + lost
 	}
 
+	if lead != "" {
+		sep, _ := footerSep()
+		line = " " + lead + sep + strings.TrimPrefix(line, " ")
+		for i := range hits {
+			hits[i].x0 += leadW
+			hits[i].x1 += leadW
+		}
+	}
 	lw := ansi.StringWidth(line)
 	pad := max(width-lw-pw, 2)
 	hits = append(hits, pinnedHits(lw+pad, pinnedSegs)...)
 	return line + strings.Repeat(" ", pad) + pinned.String(), hits
+}
+
+// footerLeadFloor is the fewest cells left beside a leading status that are
+// worth giving to hints; under it the status has the left of the line alone.
+const footerLeadFloor = 8
+
+// footerLead is a footer whose left side is lead alone, cut from the right
+// with "…" to avail, beside the pinned segment.
+func footerLead(lead string, avail, width int, pinned string, pinnedSegs []footerSeg) (string, []footerHit) {
+	line := " " + ansi.Truncate(lead, avail-1, "…")
+	lw := ansi.StringWidth(line)
+	pad := max(width-lw-ansi.StringWidth(pinned), 2)
+	return line + strings.Repeat(" ", pad) + pinned, pinnedHits(lw+pad, pinnedSegs)
 }
 
 // prompter is a view that can hold a single-key question — a delete or an

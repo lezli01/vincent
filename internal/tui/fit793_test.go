@@ -95,6 +95,16 @@ func TestRootFrameFitsTheTerminal(t *testing.T) {
 		{"bare", func(*root) {}},
 		{"help", func(m *root) { m.Update(key("?")) }},
 		{"palette", func(m *root) { m.Update(key(":")) }},
+		// The pickers share the palette's box (task 135.10).
+		{"project picker", func(m *root) {
+			m.projPick = newProjectPicker([]apiclient.Project{testProject(1, "api"), testProject(2, "web")}, 1, "")
+		}},
+		{"reader picker", func(m *root) {
+			m.reader = newReaderPicker([]copyItem{{group: "message 1", label: "markdown", snippet: "the whole answer"}})
+		}},
+		{"link picker", func(m *root) {
+			m.linkPick = newLinkPicker([]linkItem{{group: "message 1", link: mdLink{n: 1, label: "docs", dest: longLogPath}}})
+		}},
 	}
 	for _, sz := range fitSizes {
 		w, h := sz[0], sz[1]

@@ -152,6 +152,12 @@ var fixed = []Fixed{
 	{"project picker", "down", "move the highlight"},
 	{"project picker", "enter", "switch to the highlighted project, or open the project overview from its row"},
 	{"project picker", "esc", "close the picker without switching"},
+	// Paging (task 135.10 decision 5), as the palette and the copy and link
+	// pickers page too.
+	{"project picker", "pgup", "page the list"},
+	{"project picker", "pgdown", "page the list"},
+	{"project picker", "home", "go to the first row"},
+	{"project picker", "end", "go to the last row"},
 	{"new chat", "ctrl+s", "create the chat and open it"},
 	{"new chat", "enter", "open the focused field's list, or move on from a text field"},
 	{"new chat", "tab", "next field"},

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/keymap"
@@ -22,6 +23,9 @@ type palette struct {
 	input   textField
 	entries []paletteEntry
 	cursor  int
+	// page is how many list rows the last render showed, which pgup and
+	// pgdown move by (task 135.10 decision 5).
+	page int
 }
 
 // paletteEntry is one runnable line. key is empty for the palette-only
@@ -160,6 +164,9 @@ func (p *palette) update(msg tea.KeyPressMsg) (run *paletteEntry, done bool, cmd
 	case "down":
 		p.cursor = min(p.cursor+1, max(len(p.matches())-1, 0))
 		return nil, false, nil
+	case "pgup", "pgdown", "home", "end":
+		p.cursor = popupPageKey(msg.String(), p.cursor, len(p.matches()), p.page)
+		return nil, false, nil
 	case "enter":
 		m := p.matches()
 		if len(m) == 0 {
@@ -189,8 +196,15 @@ func (p *palette) paste(text string) tea.Cmd {
 	return cmd
 }
 
+// paletteReserve is the lines under the list that carry the focused entry's
+// whole label (task 135.10 decision 3). Fixed, so the list keeps its height
+// whichever entry the cursor is on.
+const paletteReserve = 2
+
 // render draws the palette box for overlaying: the search line, then the
-// matches windowed around the cursor, grouped by section.
+// matches windowed around the cursor, grouped by section, and under them the
+// focused entry's whole label — a row cuts a long label with "…", and the
+// reserve is where it is read in full.
 func (p *palette) render(w, h int) string {
 	inner := max(w-2, 10)
 	lines := make([]string, 0, h)
@@ -226,17 +240,47 @@ func (p *palette) render(w, h int) string {
 			mark, style = styleFocus.Render("› "), styleTitle
 			cursorRow = len(rows)
 		}
-		key := e.key
-		switch {
-		case e.unbound:
-			key = "unbound"
-		case key == "":
-			key = "—"
-		}
-		label := ansi.Truncate(e.label, inner-8, "…")
-		pad := max(inner-2-ansi.StringWidth(label)-len(key)-1, 1)
-		rows = append(rows, mark+style.Render(label)+strings.Repeat(" ", pad)+styleKey.Render(key))
+		rows = append(rows, mark+paletteRow(e, style, inner-2))
 	}
-	lines = append(lines, window(rows, cursorRow, h-3)...)
+	list := h - 2 - len(lines)
+	// The reserve and the rule above it, while the list keeps a few rows
+	// of its own; a box too short for both keeps the list.
+	reserve := list-paletteReserve-1 >= 3
+	if reserve {
+		list -= paletteReserve + 1
+	}
+	shown, page := popupWindow(rows, cursorRow, list)
+	p.page = page
+	lines = append(lines, shown...)
+	if reserve {
+		full := wrapText(m[cursor].label, inner-1, wrapOpts{prefix: " ", indent: 1, maxLines: paletteReserve})
+		lines = append(lines, styleDim.Render(strings.Repeat("─", inner)))
+		for i := range paletteReserve {
+			line := ""
+			if i < len(full) {
+				line = full[i]
+			}
+			lines = append(lines, styleTitle.Render(line))
+		}
+	}
 	return frame("commands", strings.Join(lines, "\n"), w, h, true)
+}
+
+// paletteRow is one entry after the cursor mark: the label, then its key at
+// the right edge. The budget is measured in cells (task 135.10 decision 4):
+// the key is never cut, and when it leaves the label no room the label
+// shrinks to "…" first.
+func paletteRow(e paletteEntry, style lipgloss.Style, width int) string {
+	key := e.key
+	switch {
+	case e.unbound:
+		key = "unbound"
+	case key == "":
+		key = "—"
+	}
+	kw := ansi.StringWidth(key)
+	// One cell between label and key, and one kept clear at the edge.
+	label := ansi.Truncate(e.label, max(width-kw-2, 1), "…")
+	pad := max(width-ansi.StringWidth(label)-kw-1, 1)
+	return style.Render(label) + strings.Repeat(" ", pad) + styleKey.Render(key)
 }

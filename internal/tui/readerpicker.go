@@ -240,6 +240,9 @@ type readerPicker struct {
 	input  textField
 	items  []copyItem
 	cursor int
+	// page is how many list rows the last render showed, which pgup and
+	// pgdown move by (task 135.10 decision 5).
+	page int
 }
 
 func newReaderPicker(items []copyItem) *readerPicker {
@@ -278,6 +281,9 @@ func (p *readerPicker) update(msg tea.KeyPressMsg) (run *copyItem, done bool, cm
 		return nil, false, nil
 	case "down":
 		p.cursor = min(p.cursor+1, max(len(p.matches())-1, 0))
+		return nil, false, nil
+	case "pgup", "pgdown", "home", "end":
+		p.cursor = popupPageKey(msg.String(), p.cursor, len(p.matches()), p.page)
 		return nil, false, nil
 	case "enter":
 		m := p.matches()
@@ -353,6 +359,8 @@ func (p *readerPicker) render(w, h int) string {
 		rows = append(rows, mark+style.Render(label)+
 			strings.Repeat(" ", max(pad-ansi.StringWidth(snippet), 1))+styleDim.Render(snippet))
 	}
-	lines = append(lines, window(rows, cursorRow, h-3)...)
+	shown, page := popupWindow(rows, cursorRow, h-2-len(lines))
+	p.page = page
+	lines = append(lines, shown...)
 	return frame("copy", strings.Join(lines, "\n"), w, h, true)
 }

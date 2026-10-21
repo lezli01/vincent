@@ -2371,3 +2371,7 @@ func treeCost(own, children *float64) *float64 {
 	}
 	return &sum
 }
+
+// notesClipboard marks the workspace as saying a copy's outcome itself, on
+// its action bar (detail.update), so the root's status line stands down.
+func (t *taskView) notesClipboard() {}

@@ -655,6 +655,14 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 	case opKey(keymap.Mouse):
 		m.mouseOn = !m.mouseOn
+		// Said on the status line (task 135.10 decision 6): the toggle
+		// changes nothing visible, and native selection is the reason to
+		// press it.
+		k := opKey(keymap.Mouse)
+		m.selNotice, m.selNoticeWarn = "mouse on — "+k+" turns it off for native selection", false
+		if !m.mouseOn {
+			m.selNotice = "mouse off — native selection works; " + k + " turns it back on"
+		}
 		return nil, true
 	case opKey(keymap.Project):
 		// While reconnecting too: the picker opens on the cached list.
@@ -2146,12 +2154,12 @@ func (m *root) View() tea.View {
 	b.WriteString(m.footerLine())
 	frame := b.String()
 	if popup, ok := m.popupRender(); ok {
-		pw := min(m.width-8, 64)
-		if pw < 24 {
-			pw = max(m.width-2, 10)
-		}
-		ph := min(18, max(m.height-4, 6))
-		frame = overlay(frame, popup(pw, ph), max((m.width-pw)/2, 0), 2)
+		// Sized to the terminal and anchored under the chrome (task 135.10
+		// decision 1): a status line or now-line moves the box down rather
+		// than being covered by it.
+		top := m.chromeTop()
+		pw, ph := popupBox(m.width, m.height, top)
+		frame = overlay(frame, popup(pw, ph), max((m.width-pw)/2, 0), top)
 	}
 	v := tea.NewView(frame)
 	// The alternate screen, which the teardown path (tui.go's quit reminder)
@@ -2683,10 +2691,26 @@ func (m *root) popupRender() (func(w, h int) string, bool) {
 	}
 }
 
+// clipboardNoter is a view that says a copy's outcome itself: the task
+// workspace on its action bar, a chat on its note line. The root's status
+// line stands down for it, so a copy is reported once.
+type clipboardNoter interface {
+	notesClipboard()
+}
+
 // updateClipboardResult turns a copy's outcome into the active surface's own
 // notice (§15). It goes to the active view rather than being broadcast: the
 // human pressed the key on one screen and is looking at it.
+//
+// A view with no notice of its own — the issue screen, whose link picker
+// copies too — gets the root's status line instead (task 135.10 decision 6),
+// decided by clipboardNoter rather than a list of view ids, so a view that
+// learns to say it takes over without the root changing. Before it, such a
+// copy succeeded or failed with nothing on screen.
 func (m *root) updateClipboardResult(msg clipboardResultMsg) tea.Cmd {
+	if _, ok := m.views[m.active].(clipboardNoter); !ok {
+		m.selNotice, m.selNoticeWarn = msg.notice()
+	}
 	cmds := []tea.Cmd{m.deliver(m.active, msg)}
 	if msg.osc != "" {
 		// The system clipboard refused; ask the terminal itself (OSC 52).
