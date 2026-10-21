@@ -129,7 +129,7 @@ Written into `internal/tui/doc.go` and spec §15:
    makes a line, and a label with no value is still drawn. This is what the
    replaced helpers did between them — `appendWrappedIndented` drew blank
    paragraphs empty, `wrappedHeaderValue` drew an empty value's label.
-5. **The diff pans; it does not soft-wrap** (2026-10-21, 135.2, #799). A
+5. **The diff pans; it does not soft-wrap** (2026-10-21, 135.6, #799). A
    diff's columns are its meaning, and a wrapped `+` line reads as two lines
    of the change. So a line wider than the pane is reached by `shift+←`/`→`,
    moved onto the viewport's own sideways keys because the plain arrows and
