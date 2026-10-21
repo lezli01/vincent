@@ -210,3 +210,23 @@ func TestOutputTabJumpsToTheTop(t *testing.T) {
 		}
 	}
 }
+
+// TestStepsTabScrollBelongsToTheTask: where the reader scrolled one task's
+// timeline is not where the next task's opens (review F20).
+func TestStepsTabScrollBelongsToTheTask(t *testing.T) {
+	d := retriedDetail(t, 39)
+	d.renderTimeline(20)
+	if d.timelineOffset == 0 {
+		t.Fatal("the fixture's timeline is not scrolled")
+	}
+	d.open(d.taskID+1, "")
+	if d.timelineOffset != 0 || d.timelinePage != 0 {
+		t.Errorf("open kept the last task's scroll: offset %d, page %d", d.timelineOffset, d.timelinePage)
+	}
+	d = retriedDetail(t, 39)
+	d.renderTimeline(20)
+	d.deselect()
+	if d.timelineOffset != 0 || d.timelinePage != 0 {
+		t.Errorf("deselect kept the last task's scroll: offset %d, page %d", d.timelineOffset, d.timelinePage)
+	}
+}

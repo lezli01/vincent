@@ -453,6 +453,8 @@ func (d *detail) open(id int64, stateHint string) tea.Cmd {
 	d.loaded, d.loadErr = false, nil
 	d.selectedRun, d.displayRun = 0, 0
 	d.timelineFolds = nil // the folds a reader opened belong to that task
+	// So is where they scrolled the timeline to (review F20).
+	d.timelineOffset, d.timelinePage = 0, 0
 	d.resetOutput()
 	d.buffer = nil // held output belongs to the task being left
 	d.focus = focusTimeline
@@ -474,6 +476,7 @@ func (d *detail) deselect() {
 	d.loaded, d.loadErr = false, nil
 	d.selectedRun, d.displayRun = 0, 0
 	d.timelineFolds = nil
+	d.timelineOffset, d.timelinePage = 0, 0
 	d.resetOutput()
 	d.buffer = nil
 	d.liveRun, d.liveTail = 0, nil
