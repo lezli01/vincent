@@ -1951,9 +1951,12 @@ row under it.
 `R` only re-reads what vincent already holds. It never asks GitHub for
 anything: imported issues are refreshed on the daemon's reconciler tick.
 
-`enter` opens the **issue detail**: the state, id, title and source badge; the
-description, rendered as Markdown; the labels, kind, priority (`urgent`,
-`high`, `medium`, `low`, or `none`) and author, and its lane (with `!` when a task waits on you); a **Main
+`enter` opens the **issue detail**: the state, id and title, wrapped onto as
+many lines as it needs; the description, rendered as Markdown; the labels,
+kind, priority (`urgent`, `high`, `medium`, `low`, or `none`) and author, and
+its lane (with `!` when a task waits on you); for an imported issue, a
+`source` fact naming `owner/repo#N` and a `sync` fact giving the sync state,
+when it last synced and the reason it stands there; a **Main
 worktree** section, once the issue has a main branch, naming the branch and
 the task holding it (`enter` on the section opens that task) or `free`; every
 task the issue started, newest first and finished or archived ones included,
@@ -1973,8 +1976,9 @@ section](../assets/tui-issue.png)
 |---|---|
 | `enter` | Open the selected linked task's workspace, or on the Main worktree section the task holding it — `esc` there comes back to the issue |
 | `o` | Open an imported issue's page in a browser |
-| `ctrl+o` | Show the description's original Markdown instead of the rendered view |
-| `ctrl+l` | List the links in the description — open one in a browser or copy it |
+| `ctrl+o` | Show the description's and comments' original Markdown instead of the rendered view |
+| `ctrl+l` | List the links in the description and comments, and the source page — open one in a browser or copy it |
+| `ctrl+y` | Copy the title, the description, a comment or the source URL |
 | `R` | Re-read the issue |
 | `↑`/`↓` | Scroll a line — while a Main worktree or task row is on screen, move the selection among the rows on screen first |
 | `pgup`/`pgdown`, `space` | Scroll a page |
@@ -1991,7 +1995,9 @@ The page scrolls first: selecting a task never jumps it away from the
 description, and `▲ n more` / `▼ n more` say when it continues above or below.
 The mouse wheel scrolls it a line per tick, and a click on a task or the Main
 worktree section selects it. `enter` is offered only when there is a row to
-open, and `o` only on an imported issue.
+open, and `o` only on an imported issue. Long facts — the labels, the URL — and
+notes wrap rather than being cut, and a close, reopen or delete prompt always
+fits the pane: the page above it gives up its lines first.
 
 `ctrl+o` is the same rendered/raw switch the Output tab and the chat use, so
 flipping it here flips it there too. `esc` goes back to the list, on the issue

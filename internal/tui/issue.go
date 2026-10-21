@@ -14,6 +14,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/keymap"
+	"github.com/lezli01/vincent/internal/reasons"
 )
 
 // The issue detail (§15 view 13, task 130.9): one issue in full — its
@@ -383,8 +384,29 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.raw.toggle()
 		return v, nil
 	case linkPickKey:
-		items := linkItemsFrom("description", copyDoc{text: v.issue.Body})
+		var items []linkItem
+		for _, d := range v.threadDocs() {
+			items = append(items, linkItemsFrom(d.group, copyDoc{text: d.text})...)
+		}
+		if url := issueURL(v.issue); url != "" {
+			items = append(items, linkItem{
+				group: "source", link: mdLink{n: 1, label: issueSourceBadge(v.issue), dest: url},
+				refused: openableURL(url),
+			})
+		}
 		return v, func() tea.Msg { return openLinkPickerMsg{items: items} }
+	case copyPickKey:
+		var items []copyItem
+		if t := strings.TrimSpace(v.issue.Title); t != "" {
+			items = append(items, copyItem{group: "title", label: "title", snippet: t, text: t})
+		}
+		for _, d := range v.threadDocs() {
+			items = append(items, copyItemsFrom(d.group, copyDoc{text: d.text})...)
+		}
+		if url := issueURL(v.issue); url != "" {
+			items = append(items, copyItem{group: "source", label: "url", snippet: url, text: url})
+		}
+		return v, func() tea.Msg { return openCopyPickerMsg{items: items} }
 	case "home", "g":
 		v.scroll = 0
 		return v, nil
@@ -719,6 +741,24 @@ func (v *issueView) openSource() tea.Cmd {
 
 func (v *issueView) setNote(text string, bad bool) { v.note, v.noteBad = text, bad }
 
+// issueDoc is one document of the issue the link and copy pickers read: the
+// description, then each comment, named by its author and time (#795).
+type issueDoc struct {
+	group string
+	text  string
+}
+
+func (v *issueView) threadDocs() []issueDoc {
+	docs := []issueDoc{{group: "description", text: v.issue.Body}}
+	for _, c := range v.comments {
+		docs = append(docs, issueDoc{
+			group: "comment · " + c.Author + " · " + c.CreatedAt.Local().Format("2006-01-02 15:04"),
+			text:  c.Body,
+		})
+	}
+	return docs
+}
+
 // --- rendering ---
 
 func (v *issueView) render(width, height int) string {
@@ -735,12 +775,15 @@ func (v *issueView) render(width, height int) string {
 		if v.noteBad {
 			style = styleBad
 		}
-		footer = []string{"", style.Render("  " + v.note)}
+		footer = append([]string{""}, styled(wrapText(v.note, width, hanging("  ")), style)...)
 	}
 	if v.w.act != nil {
 		footer = v.w.act.lines(width)
 	}
-	room := max(height-len(footer), 1)
+	// Body plus footer never exceed the pane (#795): the prompt wins, and
+	// the page shrinks to nothing before the prompt loses a line.
+	footer = fitFooter(footer, height)
+	room := height - len(footer)
 	// The page scrolls freely, and the selection never pulls it (#792). A
 	// page taller than the pane gives a line to a ▲ cue while it continues
 	// above and to a ▼ cue while it continues below — the picker's idiom.
@@ -752,6 +795,9 @@ func (v *issueView) render(width, height int) string {
 	v.scroll = min(max(v.scroll, 0), max(limit, 0))
 	v.view, v.viewTop = room, 0
 	var lines []string
+	if room == 0 {
+		return strings.Join(footer, "\n")
+	}
 	if cues && v.scroll > 0 {
 		lines = append(lines, styleDim.Render(fmt.Sprintf("  ▲ %d more", v.scroll)))
 		v.view, v.viewTop = room-1, 1
@@ -772,29 +818,96 @@ func (v *issueView) render(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
+// fitFooter cuts a prompt or note to height lines: its leading blank goes
+// first, then the lines above its last (the key line), windowed around a
+// picker's highlighted option when there is one, otherwise from the top.
+func fitFooter(footer []string, height int) []string {
+	if len(footer) <= height {
+		return footer
+	}
+	if len(footer) > 0 && footer[0] == "" {
+		footer = footer[1:]
+	}
+	if len(footer) <= height || height < 1 {
+		return footer[:min(len(footer), max(height, 0))]
+	}
+	last := footer[len(footer)-1]
+	rest := footer[:len(footer)-1]
+	out := rest[:height-1]
+	for i, l := range rest {
+		if strings.Contains(ansi.Strip(l), "▸ ") {
+			out = windowRange(rest, i, i+1, height-1)
+		}
+	}
+	return append(slices.Clone(out), last)
+}
+
+// factLines is one `label  value` fact, the value wrapped under its column
+// (#795) so a long labels list or URL is read whole rather than cut.
+func factLines(label, value string, width int) []string {
+	lead := "  " + padRight(label, 10)
+	styledLead := "  " + styleDim.Render(padRight(label, 10))
+	if value != ansi.Strip(value) {
+		return []string{styledLead + value} // already styled: one line
+	}
+	out := wrapText(value, width, hanging(lead))
+	if rest, ok := strings.CutPrefix(out[0], lead); ok {
+		out[0] = styledLead + rest
+	}
+	return out
+}
+
+// issueSyncFact is the sync fact: the state, when it last synced, and why
+// it stands where it does, worded by internal/reasons where it knows the
+// reason and as the reason token otherwise — never raw stderr.
+func issueSyncFact(s *apiclient.IssueSync) string {
+	out := strings.ReplaceAll(firstNonEmpty(s.State, "unknown"), "_", " ")
+	if s.LastSyncedAt != nil {
+		out += " · last synced " + s.LastSyncedAt.Local().Format("2006-01-02 15:04")
+	}
+	if s.Reason != "" {
+		out += " · " + reasons.Explain(s.Reason).Title
+	}
+	return out
+}
+
+// fitTitle shortens a row's title so the role and state after it are never
+// the part that is cut: a task row stays one line.
+func fitTitle(title string, room int) string {
+	if cols(title) <= room {
+		return title
+	}
+	return ansi.Truncate(title, max(room, 1), "…")
+}
+
 // pageLines is the whole page. It records each selectRows row's line in
 // rowLines, for the arrows and the click.
 func (v *issueView) pageLines(width int) (lines []string) {
 	v.rowLines = v.rowLines[:0]
 	switch {
 	case v.loadErr != nil && !v.loaded:
-		return []string{
-			" " + styleTitle.Render(v.title()), "",
-			styleBad.Render("  ⚠ could not read the issue: " + errString(v.loadErr)),
-		}
+		return append([]string{" " + styleTitle.Render(v.title()), ""},
+			styled(wrapText("⚠ could not read the issue: "+errString(v.loadErr), width, hanging("  ")), styleBad)...)
 	case !v.loaded:
 		return []string{" " + styleTitle.Render(v.title()), "", styleDim.Render("  reading…")}
 	}
 	iss := v.issue
 
+	// The title wraps under itself (#795); the source badge is a fact of
+	// its own below rather than a tail the title pushes off the line.
 	head := " " + issueStateStyle(iss).Render(issueStateBadge(iss)) + "  " +
-		styleKey.Render("#"+strconv.FormatInt(iss.ID, 10)) + "  " + styleTitle.Render(iss.Title)
-	if badge := issueSourceBadge(iss); badge != "" {
-		head += "  " + styleDim.Render(badge)
+		styleKey.Render("#"+strconv.FormatInt(iss.ID, 10)) + "  "
+	indent := strings.Repeat(" ", cols(head))
+	for i, l := range wrapText(iss.Title, width, hanging(indent)) {
+		l = strings.TrimLeft(l, " ")
+		if i == 0 {
+			lines = append(lines, head+styleTitle.Render(l))
+			continue
+		}
+		lines = append(lines, indent+styleTitle.Render(l))
 	}
-	lines = append(lines, head)
 	if v.loadErr != nil {
-		lines = append(lines, styleBad.Render("  ⚠ could not re-read the issue: "+errString(v.loadErr)))
+		lines = append(lines, styled(wrapText("⚠ could not re-read the issue: "+errString(v.loadErr), width, hanging("  ")), styleBad)...)
 	}
 	lines = append(lines, "")
 
@@ -806,14 +919,21 @@ func (v *issueView) pageLines(width int) (lines []string) {
 	if kind == "" {
 		kind = "none"
 	}
-	for _, f := range [][2]string{
+	facts := [][2]string{
 		{"lane", issueLaneLabel(iss)},
 		{"labels", labels},
 		{"kind", kind},
 		{"priority", issuePriorityLabel(iss.Priority)},
 		{"author", iss.Author},
-	} {
-		lines = append(lines, "  "+styleDim.Render(padRight(f[0], 10))+f[1])
+	}
+	if badge := issueSourceBadge(iss); badge != "" {
+		facts = append(facts, [2]string{"source", badge})
+	}
+	if iss.Sync != nil {
+		facts = append(facts, [2]string{"sync", issueSyncFact(iss.Sync)})
+	}
+	for _, f := range facts {
+		lines = append(lines, factLines(f[0], f[1], width)...)
 	}
 
 	lines = append(lines, "", " "+styleTitle.Render("Description"))
@@ -823,7 +943,7 @@ func (v *issueView) pageLines(width int) (lines []string) {
 	} else {
 		md, _ := v.md.lines(iss.Body, max(width-4, 10), levelNormal, v.raw.get(), v.links.get())
 		for _, l := range md {
-			lines = append(lines, "  "+l)
+			lines = append(lines, indentLine("  ", l))
 		}
 	}
 	lines = append(lines, v.threadLines(width)...)
@@ -848,7 +968,8 @@ func (v *issueView) pageLines(width int) (lines []string) {
 				styleKey.Render("#"+strconv.FormatInt(*mw.OccupantTaskID, 10)) + "  "
 			for _, t := range v.tasks {
 				if t.ID == *mw.OccupantTaskID {
-					occupant += t.Title + "  "
+					room := width - 2 - 11 - cols(occupant) - 2 - cols(state)
+					occupant += fitTitle(t.Title, room) + "  "
 				}
 			}
 			occupant += styleDim.Render(state)
@@ -886,8 +1007,10 @@ func (v *issueView) pageLines(width int) (lines []string) {
 		if role := issueTaskRole(t); role != "" {
 			state = role + " · " + state
 		}
-		lines = append(lines, marker+stateStyles[t.State].Render(glyph)+" "+
-			styleKey.Render("#"+strconv.FormatInt(t.ID, 10))+"  "+t.Title+"  "+styleDim.Render(state))
+		lead := marker + stateStyles[t.State].Render(glyph) + " " +
+			styleKey.Render("#"+strconv.FormatInt(t.ID, 10)) + "  "
+		title := fitTitle(t.Title, width-cols(lead)-2-cols(state))
+		lines = append(lines, lead+title+"  "+styleDim.Render(state))
 	}
 
 	if iss.Source != nil {
@@ -900,7 +1023,7 @@ func (v *issueView) pageLines(width int) (lines []string) {
 			{"remote", src.RemoteState},
 		} {
 			if f[1] != "" {
-				lines = append(lines, "  "+styleDim.Render(padRight(f[0], 10))+f[1])
+				lines = append(lines, factLines(f[0], f[1], width)...)
 			}
 		}
 	}
@@ -913,7 +1036,7 @@ func (v *issueView) pageLines(width int) (lines []string) {
 func (v *issueView) threadLines(width int) []string {
 	lines := []string{"", " " + styleTitle.Render("Comments") + styleDim.Render("  "+plural(len(v.comments), "comment", "comments"))}
 	if v.commentsErr != nil {
-		return append(lines, styleBad.Render("  ⚠ could not read the comments: "+errString(v.commentsErr)))
+		return append(lines, styled(wrapText("⚠ could not read the comments: "+errString(v.commentsErr), width, hanging("  ")), styleBad)...)
 	}
 	if len(v.comments) == 0 {
 		if v.commentable() {
@@ -935,8 +1058,17 @@ func (v *issueView) threadLines(width int) []string {
 		lines = append(lines, head)
 		md, _ := v.md.lines(c.Body, max(width-6, 10), levelNormal, v.raw.get(), v.links.get())
 		for _, l := range md {
-			lines = append(lines, "    "+l)
+			lines = append(lines, indentLine("    ", l))
 		}
 	}
 	return lines
+}
+
+// indentLine indents a rendered Markdown line, leaving a blank one blank so
+// no line ends in the indent's spaces.
+func indentLine(indent, l string) string {
+	if ansi.Strip(l) == "" {
+		return l
+	}
+	return indent + l
 }

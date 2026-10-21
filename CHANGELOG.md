@@ -594,6 +594,15 @@ list with the user-facing context a commit subject cannot carry.
   underneath. A long project name no longer pushes the task number, state
   and title off a needs-you row.
 
+- **The issue detail and issue form no longer cut text off.** A long issue
+  title, its labels and its GitHub URL now wrap instead of ending in `…`, the
+  source badge is a `source` fact rather than a tail the title pushed off the
+  line, and an imported issue shows a `sync` fact with its sync state, when it
+  last synced and why. Notes and the close, reopen and delete prompts wrap,
+  and a prompt always fits the pane. `ctrl+l` now lists the links in the
+  comments and the source page too, and `ctrl+y` copies the title,
+  description, a comment or the URL. The issue form keeps the highlighted
+  label and its key line on screen when the labels picker is long.
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,
   the sheet's key row drops its description before it would push the close

@@ -665,35 +665,61 @@ func (f *issueForm) projectName() string {
 
 func (f *issueForm) render(width, height int) string {
 	lines := []string{" " + styleTitle.Render(f.heading()), ""}
+	// from and to are the focused element's lines (#795): the cursor's row,
+	// the textarea while editing it, or the picker's highlighted option.
+	from, to := 0, 1
 	for r := ifProject; r < ifRowCount; r++ {
 		if r == ifProject && !f.creating() {
 			continue
 		}
+		start := len(lines)
 		lines = append(lines, f.rowLines(r, width)...)
+		if r == f.cursor {
+			from, to = start, len(lines)
+		}
 		if f.pick != nil && ifRow(f.pick.row) == r {
 			f.pick.setWidth(width - 4)
-			lines = append(lines, f.pick.renderBody()...)
+			body := f.pick.renderBody()
+			for i, l := range body {
+				if strings.Contains(ansi.Strip(l), "▸ ") || (f.pick.editing || f.pick.filtering) && i == 0 {
+					from, to = len(lines)+i, len(lines)+i+1
+				}
+			}
+			lines = append(lines, body...)
 		}
 	}
-	lines = append(lines, "")
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, width, "…")
+	}
+	// The error and the key line are pinned under the scrolled region, so
+	// a long picker never pushes them off the pane.
+	tail := []string{""}
 	switch {
 	case f.confirming:
-		lines = append(lines, styleWarn.Render("  discard your changes? y discards · any other key keeps editing"))
+		tail = append(tail, styled(wrapText("discard your changes? y discards · any other key keeps editing", width, hanging("  ")), styleWarn)...)
 	case f.saving:
-		lines = append(lines, styleDim.Render("  saving…"))
+		tail = append(tail, styleDim.Render("  saving…"))
 	case f.err != "":
 		style := styleBad
 		if !f.stale && strings.HasPrefix(f.err, "re-read at") {
 			style = styleWarn
 		}
-		lines = append(lines, style.Render("  "+f.err))
+		tail = append(tail, styled(wrapText(f.err, width, hanging("  ")), style)...)
 	}
-	lines = append(lines, styleDim.Render("  ↑↓ move · enter edit · "+opKey(keymap.Editor)+
-		" $EDITOR (description) · ctrl+s save · esc close"))
-	for i, l := range lines {
-		lines[i] = ansi.Truncate(l, width, "…")
+	tail = append(tail, ansi.Truncate(styleDim.Render("  ↑↓ move · enter edit · "+opKey(keymap.Editor)+
+		" $EDITOR (description) · ctrl+s save · esc close"), width, "…"))
+	height = max(height, 1)
+	if len(tail) >= height && tail[0] == "" {
+		tail = tail[1:]
 	}
-	return strings.Join(window(lines, 0, max(height, 1)), "\n")
+	if len(tail) > height {
+		tail = tail[len(tail)-height:]
+	}
+	room := height - len(tail)
+	if room <= 0 {
+		return strings.Join(tail, "\n")
+	}
+	return strings.Join(append(slices.Clone(windowRange(lines, from, to, room)), tail...), "\n")
 }
 
 func (f *issueForm) rowLines(r ifRow, width int) []string {
@@ -712,7 +738,16 @@ func (f *issueForm) rowLines(r ifRow, width int) []string {
 			f.title.SetWidth(max(width-17, 10))
 			return indentRows(head, f.title.rows())
 		}
-		value = firstNonEmpty(strings.TrimSpace(f.title.Value()), styleDim.Render("(required)"))
+		if t := strings.TrimSpace(f.title.Value()); t != "" {
+			indent := strings.Repeat(" ", 15)
+			out := wrapText(t, width, hanging(indent))
+			out[0] = head + strings.TrimLeft(out[0], " ")
+			if !f.editable(r) {
+				out[len(out)-1] += "  " + styleDim.Render("· mirrored from GitHub")
+			}
+			return out
+		}
+		value = styleDim.Render("(required)")
 	case ifBody:
 		if f.editing && r == f.cursor {
 			f.body.SetSize(max(width-6, 10), 8)

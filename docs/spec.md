@@ -13972,6 +13972,25 @@ stream for the live tail.
    withholds it with no row to open or with the selection scrolled away
    (review F6 of PR #805), and `o` on a local issue.
 
+   *Amended 2026-10-21 (issue #795, task 135):* the detail wraps instead of
+   clipping, per "Wrap or truncate, never clip". The title wraps under
+   itself, and the source badge leaves the header for a **`source`** fact
+   (`owner/repo#N`) in the facts block. A **`sync`** fact gives an imported
+   issue's sync state, its last-synced time and its reason, worded by the
+   reason catalogue where it has an entry and as the reason token otherwise.
+   The labels wrap under the value column and the URL hard-wraps; a task row
+   and the Main worktree occupant stay one line, their title shortened ahead
+   of the role and state. Notes, load errors and the close/reopen/delete
+   prompt wrap, and page plus prompt never exceed the pane: the prompt wins,
+   the page shrinks to nothing first, and a prompt picker taller than the
+   pane windows around its highlighted option. `ctrl+l` lists the links of
+   the description, of each comment (grouped by author and time) and the
+   source URL; **`ctrl+y`** opens the copy picker over the title, the
+   description, each comment and the URL; `ctrl+o` switches the comments
+   with the description. The issue form windows its rows around the focused
+   element — the picker's highlighted option, or the field being edited —
+   with its error and key line pinned under the scrolled region.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home

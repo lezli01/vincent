@@ -923,8 +923,9 @@ var bindings = []binding{
 	// The issue detail (§15 view 13).
 	{op: keymap.OpenRow, key: "enter", label: "open the selected linked task's workspace (esc comes back here)", scope: scopePanel, context: ctxIssue, hint: "enter task", priority: 1, term: termOpenRow},
 	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},
-	{key: rawToggleKey, label: "show the description's original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 3},
-	{key: linkPickKey, label: "list the links in the description — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 4},
+	{key: rawToggleKey, label: "show the description's and comments' original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 3},
+	{key: linkPickKey, label: "list the links in the description and comments, and the source page — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 4},
+	{key: copyPickKey, label: "copy the title, the description, a comment or the source URL", scope: scopePanel, context: ctxIssue, hint: "ctrl+y copy", priority: 4},
 	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a GitHub sync", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 5, term: termRefresh},
 	// The page is scroll-first (#792): the arrows scroll it, moving the
 	// selection only among the Main worktree and task rows on screen.

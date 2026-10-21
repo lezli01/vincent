@@ -1277,8 +1277,18 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			if cmd == nil {
 				t.Fatal("ctrl+l did not raise the link picker")
 			}
-			if msg, ok := cmd().(openLinkPickerMsg); !ok || len(msg.items) != 1 {
-				t.Fatalf("ctrl+l produced %#v, want the description's one link", cmd())
+			if msg, ok := cmd().(openLinkPickerMsg); !ok || len(msg.items) != 2 {
+				t.Fatalf("ctrl+l produced %#v, want the description's one link and the source page", cmd())
+			}
+		},
+		"ctrl+y": func(t *testing.T) {
+			v := issueFixture()
+			_, cmd := v.updateKey(registryKey(t, "ctrl+y"))
+			if cmd == nil {
+				t.Fatal("ctrl+y did not raise the copy picker")
+			}
+			if _, ok := cmd().(openCopyPickerMsg); !ok {
+				t.Fatalf("ctrl+y produced %#v, want the copy picker", cmd())
 			}
 		},
 		"R": func(t *testing.T) {
