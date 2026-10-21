@@ -468,6 +468,22 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "down", "j":
 		v.cursor = min(v.cursor+1, max(len(v.rows())-1, 0))
 		return v, nil
+	// The fixed list keys (#804 PL-9): a long listing's ends are one key
+	// away, and a page is the rows the screen shows.
+	case "home":
+		v.cursor = 0
+		return v, nil
+	case "end":
+		v.cursor = max(len(v.rows())-1, 0)
+		return v, nil
+	case "pgup":
+		v.cursor -= v.pageRows()
+		v.clampCursor()
+		return v, nil
+	case "pgdown":
+		v.cursor += v.pageRows()
+		v.clampCursor()
+		return v, nil
 	case opKey(keymap.Filter):
 		v.filtering = true
 		v.filter.Focus()
@@ -825,6 +841,12 @@ func (v *pullRequestsView) current() (prRow, bool) {
 		return prRow{}, false
 	}
 	return rows[v.cursor], true
+}
+
+// pageRows is how far pgup/pgdown move: the rows the last size leaves
+// under the header and above a footer, never less than one.
+func (v *pullRequestsView) pageRows() int {
+	return max(v.height-4, 1)
 }
 
 func (v *pullRequestsView) clampCursor() {

@@ -35,10 +35,13 @@ func (v *pullRequestsView) render(width, height int) string {
 	}
 	lines = append(lines, "")
 
-	body, cursorRow := v.bodyLines(width)
-	footer := v.footerLines()
+	// The footer is measured first: a wrapped question or note takes lines
+	// the rows give back, and the window then keeps the cursor's row and its
+	// detail on screen in what is left (#804 PL-5, PL-6).
+	body, from, to := v.bodyLines(width)
+	footer := v.footerLines(width)
 	room := max(height-len(lines)-len(footer), 1)
-	lines = append(lines, window(body, cursorRow, room)...)
+	lines = append(lines, windowRange(body, from, to, room)...)
 	lines = append(lines, footer...)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
@@ -48,7 +51,7 @@ func (v *pullRequestsView) render(width, height int) string {
 
 // headerLine says what the screen is showing and how fresh it is.
 func (v *pullRequestsView) headerLine(width int) string {
-	left := " " + styleTitle.Render("open pull requests")
+	left := " " + styleTitle.Render(pullsNoun(v.state))
 	st, probed := v.github()
 	switch {
 	case v.project.id == 0:
@@ -84,92 +87,183 @@ func (v *pullRequestsView) githubWhere(st apiclient.GitHubStatus) string {
 	return v.project.name
 }
 
-// bodyLines is the list, and the index of the line the cursor is on so the
-// window can follow it.
-func (v *pullRequestsView) bodyLines(width int) (lines []string, cursorRow int) {
+// pullsNoun names what the listing holds in the state `s` has it on (#804
+// PL-4): a closed listing that still says "open" describes the wrong list.
+func pullsNoun(state string) string {
+	if state == "" || state == "all" {
+		return "pull requests"
+	}
+	return state + " pull requests"
+}
+
+// bodyLines is the list, and the [from,to) range of lines the cursor's row
+// and its detail occupy so the window can keep the whole of it in view.
+func (v *pullRequestsView) bodyLines(width int) (lines []string, from, to int) {
 	if v.project.id == 0 {
 		// Never an unfiltered list in its place (task 132.11). No selection
 		// means no project is registered only once a listing has said so;
 		// until then it is still resolving.
 		if v.noProjects {
-			return []string{styleDim.Render("  " + noProjectsEmpty())}, 0
+			return []string{styleDim.Render("  " + noProjectsEmpty())}, 0, 1
 		}
-		return []string{styleDim.Render("  Resolving the project…")}, 0
+		return []string{styleDim.Render("  Resolving the project…")}, 0, 1
 	}
 	st, probed := v.github()
 	if !probed {
-		return []string{styleDim.Render("  asking whether " + v.project.name + " has a usable GitHub integration…")}, 0
+		return []string{styleDim.Render("  asking whether " + v.project.name + " has a usable GitHub integration…")}, 0, 1
 	}
 	if !st.Available {
 		// The view stays on a switch to such a project (task 132.11): its
 		// probe's reason stands in for the rows, and no listing is issued.
-		return []string{
-			styleWarn.Render("  This project has no usable GitHub integration: " + st.Unavailable()),
-			"",
+		// Wrapped, not cut: the reason carries its remedy (#804 PL-5).
+		lines = pullStyleLines(styleWarn, wrapText("This project has no usable GitHub integration: "+st.Unavailable(),
+			width, wrapOpts{prefix: "  ", indent: 2}))
+		lines = append(lines, "",
 			styleDim.Render("  A project qualifies when its origin remote is a github.com"),
-			styleDim.Render("  repository and vincent can authenticate to it."),
-		}, 0
+			styleDim.Render("  repository and vincent can authenticate to it."))
+		return lines, 0, 1
 	}
 	if v.loadErr != "" {
-		return []string{styleBad.Render("  ⚠ " + v.loadErr)}, 0
+		return pullStyleLines(styleBad, wrapText(v.loadErr, width, wrapOpts{prefix: "  ⚠ ", indent: 4})), 0, 1
 	}
 	if !v.loaded {
-		return []string{styleDim.Render("  listing " + v.project.name + "'s pull requests…")}, 0
+		return []string{styleDim.Render("  listing " + v.project.name + "'s pull requests…")}, 0, 1
 	}
 
 	q := strings.TrimSpace(v.filter.Value())
 	rows := v.rows()
 	if len(rows) == 0 {
-		return []string{styleDim.Render("  " + emptyPullsNote(len(v.pulls), q))}, 0
+		return []string{styleDim.Render("  " + emptyPullsNote(v.state, len(v.pulls), q))}, 0, 1
 	}
-	lines = make([]string, 0, len(rows))
+	pulls := make([]apiclient.GitHubPullRequest, len(rows))
 	for i, r := range rows {
-		if i == v.cursor {
-			cursorRow = len(lines)
-		}
-		lines = append(lines, v.pullLine(r.pull, width, i == v.cursor))
+		pulls[i] = r.pull
 	}
-	return lines, cursorRow
+	layout := v.pullColumns(pulls, width)
+	lines = make([]string, 0, len(rows)+2)
+	for i, p := range pulls {
+		if i != v.cursor {
+			lines = append(lines, v.pullLine(p, layout, false))
+			continue
+		}
+		from = len(lines)
+		lines = append(lines, v.pullLine(p, layout, true))
+		lines = append(lines, pullDetailLines(p, layout, width)...)
+		to = len(lines)
+	}
+	return lines, from, to
 }
 
-func emptyPullsNote(total int, query string) string {
+func emptyPullsNote(state string, total int, query string) string {
 	if total == 0 {
-		return "no open pull requests"
+		return "no " + pullsNoun(state)
 	}
 	return fmt.Sprintf("none of %s match %q",
 		plural(total, "pull request", "pull requests"), query)
 }
 
+// pullCols is the row layout every row of one render shares, so the
+// columns line up down the list (#804 PL-3). A zero branch width drops the
+// branch from the rows; the selected row's detail line still carries it.
+type pullCols struct {
+	title, claim, branch int
+}
+
+// pullFixedW is the marker, the number and the status word: the columns
+// that never give way.
+const pullFixedW = 2 + 7 + 7
+
+// pullColumns lays the rows out in the width: the title first, then the
+// claim, and the head branch in whatever is left (#804 PL-3). The branch is
+// the column that gives way — a dependabot branch is long, says little the
+// title does not, and is on the detail line in full — never the title or
+// the claim, which are what a human scans this list for.
+func (v *pullRequestsView) pullColumns(pulls []apiclient.GitHubPullRequest, width int) pullCols {
+	var maxTitle, maxClaim, maxBranch int
+	for _, p := range pulls {
+		maxTitle = max(maxTitle, cols(p.Title))
+		maxClaim = max(maxClaim, cols(v.claimText(p, 0)))
+		if p.HeadBranch != "" {
+			maxBranch = max(maxBranch, cols("⎇ "+p.HeadBranch))
+		}
+	}
+	avail := max(width-pullFixedW, 0)
+	// The claim keeps "task #n (how)" whole and lends its task title to the
+	// row's title when the row is short of room.
+	c := pullCols{claim: min(maxClaim, max(avail*2/5, 16))}
+	c.title = max(min(maxTitle, avail-c.claim-2), 12)
+	// A short title hands its spare cells back to the claim.
+	c.claim = min(maxClaim, max(c.claim, avail-c.title-2))
+	if rest := avail - c.title - 2 - c.claim - 2; rest >= 10 && maxBranch > 0 {
+		c.branch = min(rest, maxBranch)
+	}
+	return c
+}
+
 // pullLine is one row: the number, the folded status word, the title, the
-// head branch and the task that claims it, with how the claim was made —
-// `auto` is the reconciler's head-branch match and `human` is a link
-// somebody made by hand, and a screen that offers to unlink should say which
-// it is about to override.
-func (v *pullRequestsView) pullLine(p apiclient.GitHubPullRequest, width int, selected bool) string {
+// task that claims it, with how the claim was made — `auto` is the
+// reconciler's head-branch match and `human` is a link somebody made by
+// hand, and a screen that offers to unlink should say which it is about to
+// override — and the head branch when the width has room for it.
+func (v *pullRequestsView) pullLine(p apiclient.GitHubPullRequest, c pullCols, selected bool) string {
 	marker := "  "
 	if selected {
 		marker = styleFocus.Render("› ")
 	}
 	number := padRight("#"+strconv.Itoa(p.Number), 7)
 	status := padRight(p.Status(), 7)
-	claim := v.claimText(p)
-	branch := p.HeadBranch
-	if branch != "" {
-		branch = "⎇ " + branch
-	}
+	title := padDisplayWidth(ansi.Truncate(p.Title, c.title, "…"), c.title)
+	claim := styleDim.Render(v.claimText(p, c.claim))
 
-	// The title takes what the fixed columns leave; nothing else is
-	// truncatable without becoming a lie.
-	fixed := 2 + len(number) + len(status) + ansi.StringWidth(branch) + ansi.StringWidth(ansi.Strip(claim)) + 6
-	titleW := max(width-fixed, 12)
-	title := ansi.Truncate(p.Title, titleW, "…")
-
-	line := marker + styleKey.Render(number) + pullStatusStyle(p).Render(status) +
-		padDisplayWidth(title, titleW) + "  " + styleDim.Render(branch)
-	if claim != "" {
-		line += "  " + claim
+	line := marker + styleKey.Render(number) + pullStatusStyle(p).Render(status) + title + "  "
+	if c.branch == 0 || p.HeadBranch == "" {
+		return line + claim
 	}
-	return line
+	claim = padDisplayWidth(claim, c.claim)
+	return line + claim + "  " + styleDim.Render(pullMiddleTruncate("⎇ "+p.HeadBranch, c.branch))
+}
+
+// pullDetailLines sit under the selected row (#804 PL-10): its whole title,
+// wrapped, when the row had to cut it, and `head → base` in full, which the
+// row gives way on first.
+func pullDetailLines(p apiclient.GitHubPullRequest, c pullCols, width int) []string {
+	indent := strings.Repeat(" ", pullFixedW)
+	var out []string
+	if cols(p.Title) > c.title {
+		out = wrapText(p.Title, width, wrapOpts{prefix: indent, indent: pullFixedW})
+	}
+	branches := p.HeadBranch
+	if branches != "" && p.BaseBranch != "" {
+		branches += " → " + p.BaseBranch
+	}
+	if branches != "" {
+		out = append(out, wrapText("⎇ "+branches, width, wrapOpts{prefix: indent, indent: pullFixedW + 2})...)
+	}
+	return pullStyleLines(styleDim, out)
+}
+
+// pullMiddleTruncate cuts s to width cells from the middle, keeping both ends:
+// a branch's prefix says who made it and its tail which change it is.
+func pullMiddleTruncate(s string, width int) string {
+	n := cols(s)
+	if n <= width {
+		return s
+	}
+	if width <= 1 {
+		return ansi.Truncate(s, width, "")
+	}
+	head := (width - 1) / 2
+	tail := width - 1 - head
+	return ansi.Truncate(s, head, "") + "…" + ansi.TruncateLeft(s, n-tail, "")
+}
+
+// pullStyleLines styles each wrapped line on its own — wrap plain text, then
+// style (task 050 decision 8).
+func pullStyleLines(style lipgloss.Style, lines []string) []string {
+	for i, l := range lines {
+		lines[i] = style.Render(l)
+	}
+	return lines
 }
 
 func pullStatusStyle(p apiclient.GitHubPullRequest) lipgloss.Style {
@@ -186,41 +280,55 @@ func pullStatusStyle(p apiclient.GitHubPullRequest) lipgloss.Style {
 }
 
 // claimText names the task that claims a row, or says nothing claims it —
-// those are the rows a human is here to link.
-func (v *pullRequestsView) claimText(p apiclient.GitHubPullRequest) string {
+// those are the rows a human is here to link. It is plain text in at most
+// width cells, zero meaning its natural width: the task's title is what
+// gives way, so "task #n" and how the claim was made always survive
+// (#804 PL-3).
+func (v *pullRequestsView) claimText(p apiclient.GitHubPullRequest, width int) string {
 	if p.TaskID == nil {
-		return styleDim.Render("unclaimed")
+		return "unclaimed"
 	}
-	label := "task #" + strconv.FormatInt(*p.TaskID, 10)
-	if t, ok := v.taskByID(*p.TaskID); ok && t.Title != "" {
-		label += " " + ansi.Truncate(t.Title, 24, "…")
-	}
+	core := "task #" + strconv.FormatInt(*p.TaskID, 10)
+	source := ""
 	if p.LinkSource != "" {
-		label += " (" + p.LinkSource + ")"
+		source = " (" + p.LinkSource + ")"
 	}
-	return styleDim.Render(label)
+	title := ""
+	if t, ok := v.taskByID(*p.TaskID); ok && t.Title != "" {
+		title = ansi.Truncate(t.Title, 24, "…")
+	}
+	if width > 0 {
+		if room := width - cols(core) - cols(source) - 1; room < 4 {
+			title = ""
+		} else {
+			title = ansi.Truncate(title, room, "…")
+		}
+	}
+	if title != "" {
+		core += " " + title
+	}
+	return core + source
 }
 
 // footerLines are the popup-ish rows that own the keyboard while they are up,
 // plus whatever the last action had to say.
-func (v *pullRequestsView) footerLines() []string {
+func (v *pullRequestsView) footerLines(width int) []string {
 	switch {
 	case v.picker != nil:
 		out := append([]string{""}, v.picker.renderBody()...)
 		return append(out, styleDim.Render(
 			"  ↑/↓ choose · / filter · enter link · esc close the list"))
 	case v.confirm != nil:
-		return []string{
-			"",
-			styleWarn.Render("  " + v.confirm.text),
-			styleDim.Render("  y unlink · any other key cancels"),
-		}
+		// Wrapped, so a long consequence never pushes its keys off the
+		// line (#804 PL-6).
+		out := append([]string{""}, pullStyleLines(styleWarn, wrapText(v.confirm.text, width, wrapOpts{prefix: "  ", indent: 2}))...)
+		return append(out, styleDim.Render("  y unlink · any other key cancels"))
 	case v.note != "":
 		style := styleDim
 		if v.noteBad {
 			style = styleBad
 		}
-		return []string{"", style.Render("  " + v.note)}
+		return append([]string{""}, pullStyleLines(style, wrapText(v.note, width, wrapOpts{prefix: "  ", indent: 2}))...)
 	}
 	return nil
 }
