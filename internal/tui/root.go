@@ -489,12 +489,23 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// mean anything there, since the view behind it is not on screen — those
 	// and the main-tab switch, which works in every connection phase (task
 	// 136.2).
+	//
+	// A reconnect starts on its own when the stream drops, so it can land
+	// mid-sentence in a chat or a form. While the hidden view is capturing
+	// text, a printable key is the user still typing, not a command: it is
+	// swallowed rather than read as `q` quitting past the draft (review F1).
+	// The screen's own `r` and the non-printable root keys — ctrl+c, ctrl+p,
+	// f1, the ones the footer pins for a text field — still work.
 	if m.connScreen() {
-		if k := msg.String(); (k == "tab" || k == "shift+tab") && m.tabSwitches() {
+		k := msg.String()
+		if (k == "tab" || k == "shift+tab") && m.tabSwitches() {
 			if k == "tab" {
 				return m, m.cycleMainTab(1)
 			}
 			return m, m.cycleMainTab(-1)
+		}
+		if k != "r" && m.activeCapturesInput() && typedText(msg) {
+			return m, nil
 		}
 		cmd, _ := m.globalKey(msg)
 		return m, cmd
@@ -2056,6 +2067,12 @@ func (m *root) activePrompt() bool {
 	return ok && len(p.promptKeys()) > 0
 }
 
+// typedText reports whether a key press is text being typed — a printable
+// character with no ctrl or alt — rather than a command chord.
+func typedText(msg tea.KeyPressMsg) bool {
+	return msg.Text != "" && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0
+}
+
 func (m *root) activeCapturesInput() bool {
 	c, ok := m.views[m.active].(inputCapturing)
 	return ok && c.capturesInput()
@@ -2338,8 +2355,14 @@ func (m *root) connBody() string {
 		lines = append(lines, "")
 		// r is retry-connecting, fixed; the palette and quit are rebindable
 		// (task 118 decision 8).
+		// Over a hidden text field the printable keys are swallowed, so the
+		// text names the ones that still work, as the footer does.
+		palette, quit := opKey(keymap.Palette), opKey(keymap.Quit)
+		if m.activeCapturesInput() {
+			palette, quit = opKey(keymap.PaletteAlt), "ctrl+c"
+		}
 		para(fmt.Sprintf("press r to retry, %s for the daemon view and its log, %s to quit",
-			opKey(keymap.Palette), opKey(keymap.Quit)), plain)
+			palette, quit), plain)
 	case phaseReconnecting:
 		para("connection lost: "+errString(m.connErr), styleWarn.Render)
 		lines = append(lines, "")
@@ -2429,7 +2452,7 @@ func (m *root) footerLine() string {
 		// to retry, and the pinned palette, help and quit — never the rows of
 		// the view hidden behind it (#793).
 		retry := m.phase == phaseFailed || m.phase == phaseReconnecting
-		line, hits := buildFooter(m.width, nil, nil, taskActions{}, attentionTally{}, retry, false)
+		line, hits := buildFooter(m.width, nil, nil, taskActions{}, attentionTally{}, retry, m.activeCapturesInput())
 		m.footerHits = hits
 		return line
 	}

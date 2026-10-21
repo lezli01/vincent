@@ -16039,7 +16039,11 @@ connection screen — connecting, starting, reconnecting or unreachable — and
 that screen owns the keyboard and the footer: `r` retries where there is
 something to retry, `tab`/`shift+tab` still switch the main tab, and only the
 root's own keys (`:`, `?`, quit) act; the view behind it receives nothing and
-offers no footer rows. Its text wraps to the terminal and the frame fills
+offers no footer rows. When the view behind it is capturing text — a
+reconnect can land mid-sentence in a chat or a form — a printable key other
+than `r` is the human still typing and is swallowed, so `q` cannot quit past
+a draft; the footer and the screen then name the text-field keys (`ctrl+p`,
+`f1`, `ctrl+c`) instead (review F1). Its text wraps to the terminal and the frame fills
 it. The TUI runs in the terminal's alternate screen, which the quit
 reminder's "printed after teardown" already assumed. The status line is
 budgeted to the width: a pending switch's project names give way before its

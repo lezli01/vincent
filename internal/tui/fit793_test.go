@@ -159,6 +159,41 @@ func TestFailureScreenOwnsItsKeys(t *testing.T) {
 	}
 }
 
+// Review F1: a reconnect that lands while a chat draft is being typed must
+// not read the next keystrokes as commands — `q` quitting past the draft
+// most of all. The screen's own `r` still retries, and the footer and the
+// screen name the keys that work over a hidden text field.
+func TestReconnectOverADraftSwallowsTyping(t *testing.T) {
+	m, v := chatWithDraft(t)
+	m.phase = phaseReconnecting
+	m.connErr = errLongDial
+	m.setConnected(false)
+	if !m.connScreen() {
+		t.Fatal("fixture: the chat is not behind a connection screen")
+	}
+	for _, k := range []string{"q", ":", "?", "n"} {
+		if _, cmd := m.Update(key(k)); isQuit(cmd) {
+			t.Fatalf("%q quit the TUI over a hidden chat draft", k)
+		}
+		if m.palette != nil || m.help {
+			t.Fatalf("%q opened an overlay over a hidden chat draft", k)
+		}
+	}
+	if got := v.composer.Value(); got != "hello" {
+		t.Errorf("the hidden composer changed to %q", got)
+	}
+	if footer := ansi.Strip(m.footerLine()); !strings.Contains(footer, "ctrl+c") {
+		t.Errorf("the footer does not pin ctrl+c over a hidden text field: %q", footer)
+	}
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); !isQuit(cmd) {
+		t.Error("ctrl+c did not quit from the connection screen")
+	}
+	m.Update(key("r"))
+	if m.phase == phaseReconnecting {
+		t.Error("`r` did not restart the connection over a hidden chat draft")
+	}
+}
+
 // C5: the status line fits the width, and the pending switch's key survives.
 func TestStatusLineFitsWithLongProjectNames(t *testing.T) {
 	name := strings.Repeat("p", 40)
