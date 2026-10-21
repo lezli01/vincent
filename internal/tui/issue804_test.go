@@ -67,6 +67,25 @@ func TestPullRowKeepsALongClaimAt60Columns(t *testing.T) {
 	}
 }
 
+// Review F18: the detail line's `⎇` glyph never stands alone on a line —
+// the long-branch case the detail line exists for.
+func TestPullDetailBranchStaysBesideItsGlyph(t *testing.T) {
+	for _, w := range []int{60, 40, 30} {
+		v := pullRequestsFixture(testPull(42, "Bump ansi", func(p *apiclient.GitHubPullRequest) {
+			p.HeadBranch = "dependabot/go_modules/github.com/charmbracelet/x/ansi-0.11.4"
+			p.BaseBranch = "master"
+		}))
+		for _, line := range issue804Lines(v.render(w, 24)) {
+			if strings.TrimSpace(line) == "⎇" {
+				t.Errorf("at %d columns the ⎇ glyph is alone on a line:\n%s", w, strings.Join(issue804Lines(v.render(w, 24)), "\n"))
+			}
+			if ansi.StringWidth(line) > w {
+				t.Errorf("at %d columns a line is %d cells: %q", w, ansi.StringWidth(line), line)
+			}
+		}
+	}
+}
+
 // After `s` moves the listing to closed, the header and the empty state name
 // that state instead of still saying "open" (PL-4).
 func TestPullHeaderAndEmptyStateNameTheState(t *testing.T) {

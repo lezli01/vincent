@@ -243,7 +243,14 @@ func pullDetailLines(p apiclient.GitHubPullRequest, c pullCols, width int) []str
 		branches += " → " + p.BaseBranch
 	}
 	if branches != "" {
-		out = append(out, wrapText("⎇ "+branches, width, wrapOpts{prefix: indent, indent: pullFixedW + 2})...)
+		// The branches are wrapped on their own, two cells in, and the glyph
+		// is put on the first line after: wrapped together, the break after
+		// "⎇" left the glyph alone on a line (review F18).
+		lines := wrapText(branches, width, wrapOpts{prefix: indent + "  ", indent: pullFixedW + 2})
+		if len(lines) > 0 {
+			lines[0] = indent + "⎇ " + strings.TrimPrefix(lines[0], indent+"  ")
+		}
+		out = append(out, lines...)
 	}
 	return pullStyleLines(styleDim, out)
 }
