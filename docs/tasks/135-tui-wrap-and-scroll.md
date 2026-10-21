@@ -1,6 +1,6 @@
 # 135 — TUI wrap and scroll: one wrap helper, one scrolling pane, screen by screen
 
-**Status:** 🔄 in progress (2/4)
+**Status:** 🔄 in progress (3/5)
 
 The umbrella record for [#784](https://github.com/lezli01/vincent/issues/784):
 text that "can not be read" across the TUI, and an opened issue that cannot be
@@ -83,6 +83,12 @@ Written into `internal/tui/doc.go` and spec §15:
   Left for a follow-up: DM-2, DM-9, DM-10, DM-11, PR-5, PR-6, PR-8 to PR-12,
   and an `e edit` hint on the overview, which needs a vocabulary exception of
   its own. ✓ 2026-10-21
+- [x] **135.5** The issue detail and the issue form (#795). The detail's
+  title, facts, notes and prompt wrap instead of clipping; the source badge
+  becomes a `source` fact and a `sync` fact is added; page plus prompt never
+  exceed the pane; `ctrl+l` and the new `ctrl+y` cover the comments and the
+  source URL. The form windows its rows around the focused element with its
+  error and key line pinned. ✓ 2026-10-21
 
 ## Decisions
 
