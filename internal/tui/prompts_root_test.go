@@ -138,6 +138,22 @@ func TestDestructivePromptsHoldTheKeyboardThroughRoot(t *testing.T) {
 				t.Fatalf(": left %v for %v with the prompt up", tc.id, m.active)
 			}
 
+			// ctrl+p is `:` for a surface capturing text, and is hoisted
+			// above the capture gate — but not over a question: the palette
+			// navigates, and the question would wait armed behind it (review
+			// F3). Nor does the footer offer it beside the answers.
+			tc.arm(t, m)
+			if foot := ansi.Strip(m.footerLine()); strings.Contains(foot, "commands") {
+				t.Errorf("the prompt footer offers the palette: %q", foot)
+			}
+			m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
+			if m.palette != nil {
+				t.Fatal("ctrl+p opened the palette over the prompt")
+			}
+			if m.active != tc.id {
+				t.Fatalf("ctrl+p left %v for %v with the prompt up", tc.id, m.active)
+			}
+
 			tc.arm(t, m)
 			if !tc.pending(m) {
 				t.Fatal("the prompt is not up before n")

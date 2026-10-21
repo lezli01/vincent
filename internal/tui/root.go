@@ -485,7 +485,13 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// decision 1): help had been unreachable from a chat, a filter or a form
 	// by its key, and a text field that took `?` as a key would lose it as a
 	// character.
-	if k := msg.String(); k == opKey(keymap.PaletteAlt) || k == opKey(keymap.HelpAlt) {
+	//
+	// A pending destructive question is the exception for ctrl+p (review F3):
+	// the palette navigates, and a view left with its question armed deletes
+	// on the next `y` back there — the question owns the keyboard until it is
+	// answered (task 078 decision 3, §15 view 10). Help only reads, so f1
+	// stays.
+	if k := msg.String(); (k == opKey(keymap.PaletteAlt) && !m.activePrompt()) || k == opKey(keymap.HelpAlt) {
 		cmd, _ := m.globalKey(msg)
 		return m, cmd
 	}
@@ -1801,6 +1807,13 @@ func (m *root) broadcast(msg tea.Msg) tea.Cmd {
 
 // activeCapturesInput reports whether the visible view is consuming raw
 // keystrokes, in which case the global single-key bindings stand down.
+// activePrompt reports whether the active view holds a single-key question
+// that owns the keyboard until it is answered (#790).
+func (m *root) activePrompt() bool {
+	p, ok := m.views[m.active].(prompter)
+	return ok && p.promptKeys() != ""
+}
+
 func (m *root) activeCapturesInput() bool {
 	c, ok := m.views[m.active].(inputCapturing)
 	return ok && c.capturesInput()

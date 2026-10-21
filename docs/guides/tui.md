@@ -3088,7 +3088,9 @@ reading.
 field has the keyboard. In a chat the composer takes every printable key, so
 there `:` types a colon into your draft and `ctrl+p` is the way in. Help has
 the same pair: `?` everywhere it is not a character, and `f1` everywhere,
-including a chat's composer, a filter and every form.
+including a chat's composer, a filter and every form. The one place
+`ctrl+p` waits is a question that deletes, archives or unlinks something:
+answer it first, so it is never left armed behind another screen.
 
 Everything reachable in the TUI is in there by name — navigation to every
 screen, and every task action the daemon currently offers. Type to filter,

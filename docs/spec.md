@@ -15204,7 +15204,13 @@ hoisted above the input-capture gate the way `ctrl+v` is. `:` is a printable
 key, so on a surface that owns the keyboard — the chat composer, a filter — it
 types a colon into the draft and opens nothing; the palette is this section's
 "what can be done right now" surface, and it must be reachable from everywhere,
-not only from a resting list.
+not only from a resting list. *Amended 2026-10-21 (issue #790, review F3 of
+PR #805):* everywhere but under a pending destructive question — a delete,
+archive or unlink confirmation (views 4, 7 and 10, the chats boards). The
+palette navigates, and a view left with its question armed acts on the next
+`y` back there, so the question keeps `ctrl+p` the way it keeps `:`, and the
+footer, which shows only its answers, pins `f1 help` and `ctrl+c quit` but
+not the palette. `f1` stays hoisted: help reads and never navigates.
 
 *Amended 2026-09-17 (task 114, issue #405).* **`f1` opens help on the same
 terms.** `?` is printable too, so on a surface that owns the keyboard it types

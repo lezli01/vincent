@@ -183,8 +183,17 @@ func promptHint(pairs ...string) string {
 // buildPromptFooter is buildFooter for a view's pending question: its answer
 // keys on the left, the pinned globals on the right, and nothing else — no
 // panel hints and no `+N`, because nothing else is actionable.
+//
+// The palette is not pinned: it is the one global that navigates, and it
+// stands down while a question is up (review F3) — offering it, clickable,
+// beside the answers would leave the question armed behind another view.
 func buildPromptFooter(width int, keys string, textField bool) (string, []footerHit) {
-	pinnedSegs := footerPinnedSegs(textField)
+	pinnedSegs := footerPinnedSegs(textField)[:0:0]
+	for _, s := range footerPinnedSegs(textField) {
+		if s.key != opKey(keymap.Palette) && s.key != opKey(keymap.PaletteAlt) {
+			pinnedSegs = append(pinnedSegs, s)
+		}
+	}
 	var pinned strings.Builder
 	for _, s := range pinnedSegs {
 		pinned.WriteString(s.text)
