@@ -680,11 +680,7 @@ func (f *issueForm) render(width, height int) string {
 		if f.pick != nil && ifRow(f.pick.row) == r {
 			f.pick.setWidth(width - 4)
 			body := f.pick.renderBody()
-			for i, l := range body {
-				if strings.Contains(ansi.Strip(l), "▸ ") || (f.pick.editing || f.pick.filtering) && i == 0 {
-					from, to = len(lines)+i, len(lines)+i+1
-				}
-			}
+			from, to = len(lines)+f.pick.focusFrom, len(lines)+f.pick.focusTo
 			lines = append(lines, body...)
 		}
 	}

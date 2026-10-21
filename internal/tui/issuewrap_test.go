@@ -231,6 +231,41 @@ func TestIssueFormWindowsAroundThePicker(t *testing.T) {
 	}
 }
 
+// Typing a label the catalog lacks, or filtering it, keeps the input on
+// screen: the window follows the field the keys go to, not the picker's
+// heading (review F2).
+func TestIssueFormWindowsAroundThePickersInputs(t *testing.T) {
+	for _, h := range []int{24, 18, 14} {
+		for _, mode := range []string{"free", "filter"} {
+			t.Run(fmt.Sprintf("%s 80x%d", mode, h), func(t *testing.T) {
+				_, f := issueFormFixture(t)
+				for i := 1; i <= 15; i++ {
+					f.catalog = append(f.catalog, apiclient.IssueLabel{Name: fmt.Sprintf("label-%02d", i)})
+				}
+				f.cursor = ifLabels
+				f.activate()
+				if f.pick == nil {
+					t.Fatal("enter on labels did not open the picker")
+				}
+				if mode == "free" {
+					f.pick.startFree()
+					f.pick.input.SetValue("typedmarker")
+				} else {
+					f.pick.filtering = true
+					f.pick.filter.SetValue("typedmarker")
+				}
+				lines := strings.Split(ansi.Strip(f.render(80, h)), "\n")
+				if len(lines) > h {
+					t.Errorf("the form drew %d lines in a %d-line pane", len(lines), h)
+				}
+				if !shows(lines, "typedmarker") {
+					t.Errorf("the %s input is off screen:\n%s", mode, strings.Join(lines, "\n"))
+				}
+			})
+		}
+	}
+}
+
 // Through the root model at 80×24, the detail of the long imported issue
 // leaves nothing for frame() to cut, at every scroll position.
 func TestIssueDetailNeverClipsAt80x24(t *testing.T) {

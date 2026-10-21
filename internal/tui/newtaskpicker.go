@@ -73,6 +73,11 @@ type picker struct {
 	// two fields wrap at it rather than running off it (issue #299). Forms set
 	// it before renderBody.
 	width int
+	// focusFrom and focusTo are the lines of renderBody's last output the
+	// user is looking at: the filter while filtering, the free-text input
+	// while editing, else the highlighted row. A form that windows the
+	// body keeps them on screen (review F2).
+	focusFrom, focusTo int
 }
 
 // setWidth hands the picker the pane width its rows share.
@@ -263,9 +268,11 @@ func (p *picker) renderBody() []string {
 		heading += fmt.Sprintf("  (%d of %d match %q)", len(p.matches), len(p.options), q)
 	}
 	out := []string{styleDim.Render(heading)}
+	p.focusFrom, p.focusTo = 0, 1
 	if p.filtering {
 		p.filter.SetWidth(max(p.width-6, 10))
 		out = append(out, fieldRows("      ", p.filter)...)
+		p.focusFrom, p.focusTo = 1, len(out)
 	}
 	end := min(p.top+pickerWindow, len(p.matches))
 	if p.top > 0 {
@@ -276,6 +283,7 @@ func (p *picker) renderBody() []string {
 		marker := "  "
 		if i == p.cursor && !p.editing && !p.filtering {
 			marker = styleFocus.Render("▸ ")
+			p.focusFrom, p.focusTo = len(out), len(out)+1
 		}
 		label := opt.label
 		if label == "" {
@@ -309,15 +317,23 @@ func (p *picker) renderBody() []string {
 		marker := "  "
 		if p.onFreeRow() && !p.editing {
 			marker = styleFocus.Render("▸ ")
+			if !p.filtering {
+				p.focusFrom, p.focusTo = len(out), len(out)+1
+			}
 		}
 		out = append(out, "    "+marker+styleDim.Render("type a value not listed…"))
 	}
 	if p.editing {
 		p.input.SetWidth(max(p.width-6, 10))
+		p.focusFrom = len(out)
 		out = append(out, fieldRows("      ", p.input)...)
+		p.focusTo = len(out)
 	}
 	if p.err != "" {
 		out = append(out, styleBad.Render("    ⚠ "+p.err))
+		if p.editing {
+			p.focusTo = len(out)
+		}
 	}
 	return out
 }
