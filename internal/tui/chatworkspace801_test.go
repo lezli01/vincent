@@ -285,6 +285,37 @@ func TestTextareaRowsMatchesTheTextarea(t *testing.T) {
 	}
 }
 
+// TestChatFooterFitsShortPanes: a wrapped note or an open skill list in a
+// short pane shrinks the conversation, then gives way itself, and the frame
+// never cuts the composer's bottom border (review F22).
+func TestChatFooterFitsShortPanes(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		setup func(v *chatView)
+	}{
+		{"note", func(v *chatView) {
+			v.note, v.noteBad = strings.Repeat("the daemon refused the message for a long reason ", 4), true
+		}},
+		{"skills", func(v *chatView) {
+			v.skills.open, v.skills.data = true, manySkills(20)
+			v.skills.build()
+		}},
+	} {
+		for h := 8; h <= 16; h++ {
+			v := chatViewFixture()
+			c.setup(v)
+			lines := stripLines(v.render(80, h))
+			if len(lines) != h {
+				t.Errorf("%s 80×%d: render drew %d lines", c.name, h, len(lines))
+				continue
+			}
+			if last := lines[len(lines)-1]; !strings.Contains(last, "┘") {
+				t.Errorf("%s 80×%d: the composer's bottom border is cut:\n%s", c.name, h, strings.Join(lines, "\n"))
+			}
+		}
+	}
+}
+
 // TestChatInlineListPositionAndKeys: the list says `n/N` uncapped, arrows
 // the side it hides rows on, and draws its keys on their own line (F14).
 func TestChatInlineListPositionAndKeys(t *testing.T) {

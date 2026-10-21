@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -572,15 +573,40 @@ func (v *chatView) footerLines(width, height int) []string {
 	rows := strings.Split(v.composer.View(), "\n")
 	// focused=false on purpose: the composer holds the keyboard nearly always
 	// here, so a permanently lit focus glyph would say nothing.
-	box := frame(title, v.composer.View(), width, len(rows)+2, false)
-	if box == "" {
-		// Narrower or shorter than a box can be drawn in; the rows still are.
-		out = append(out, rows...)
-	} else {
-		out = append(out, strings.Split(box, "\n")...)
+	box := rows
+	if framed := frame(title, v.composer.View(), width, len(rows)+2, false); framed != "" {
+		box = strings.Split(framed, "\n")
 	}
 	// No key line of its own (issue #801 F5): the root draws the registry's
 	// footer under the workspace, and a second, literal one disagreed with
 	// it about which keys were live.
-	return out
+	return capChatFooter(out, box, height-chatHeadLines-1)
+}
+
+// chatHeadLines is the header and the blank under it that render pins above
+// the conversation.
+const chatHeadLines = 2
+
+// capChatFooter fits the lines above the composer and the composer itself
+// into room lines (review F22), so the frame never cuts the composer's
+// bottom border: #299 holds — the body shrinks to pay for the footer, down to
+// one row, and past that the footer gives way. The note and the inline lists
+// go first, from their end (the leading blank before them), and the box
+// itself is cut only when it alone is taller than the room, losing its
+// border before a row of the draft.
+func capChatFooter(above, box []string, room int) []string {
+	room = max(room, 1)
+	if len(box) > room {
+		if inner := box[1 : len(box)-1]; len(box) > 2 {
+			box = inner
+		}
+		box = box[:min(len(box), room)]
+	}
+	if spare := room - len(box); len(above) > spare {
+		if len(above) > 0 && above[0] == "" {
+			above = above[1:]
+		}
+		above = above[:min(len(above), max(spare, 0))]
+	}
+	return append(slices.Clone(above), box...)
 }
