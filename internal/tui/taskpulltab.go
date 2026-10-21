@@ -44,10 +44,13 @@ const checksPollInterval = 15 * time.Second
 // taskView's existing pull row, so the tab and the Task Details section cannot
 // disagree about what is linked.
 type taskPullTab struct {
-	checks   apiclient.GitHubTaskChecks
-	loaded   bool
-	err      string
-	cursor   int
+	checks apiclient.GitHubTaskChecks
+	loaded bool
+	err    string
+	cursor int
+	// top is the first check row the window shows. It moves only when the
+	// cursor leaves the window, so a press inside it never scrolls (#799 W2).
+	top      int
 	note     string
 	noteBad  bool
 	fetching bool
@@ -259,31 +262,70 @@ func (t *taskView) unlinkPullCmd() tea.Cmd {
 	}
 }
 
+// renderPullTab pins the pull request's header above and the lanes, note and
+// hint line below, and windows the check rows between them around the cursor
+// (#799 W2). It used to cut the whole column at the pane height, so a pull
+// request with more checks than rows lost its tail, `▸` walked off the bottom
+// onto rows nobody could see, and the hint was never drawn — the static
+// first-N clip doc.go calls a bug.
 func (t *taskView) renderPullTab(width, height int) string {
-	var lines []string
-	lines = append(lines, t.pullHeaderLines(width)...)
-	lines = append(lines, "")
-	lines = append(lines, t.checkLines(width)...)
+	top := t.pullHeaderLines(width)
+	top = append(top, "")
+	var bottom []string
 	if lanes := t.laneRowLines(width); len(lanes) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, lanes...)
+		bottom = append(bottom, "")
+		bottom = append(bottom, lanes...)
 	}
 	if note := t.pullTab.note; note != "" {
 		style := styleDim
 		if t.pullTab.noteBad {
 			style = styleWarn
 		}
-		lines = append(lines, "", style.Render("  "+note))
+		bottom = append(bottom, "", style.Render("  "+note))
 	}
+	var hint string
 	if c := t.pullTab.confirm; c != nil {
-		lines = append(lines, "", ansi.Truncate(styleWarn.Render("  "+c.text), max(width, 1), "…"))
+		hint = ansi.Truncate(styleWarn.Render("  "+c.text), max(width, 1), "…")
 	} else {
-		lines = append(lines, "", styleDim.Render("  "+t.pullHintLine()))
+		hint = styleDim.Render("  " + t.pullHintLine())
+	}
+	bottom = append(bottom, "", hint)
+
+	lines := top
+	lines = append(lines, t.checkLines(width, height-len(top)-len(bottom))...)
+	lines = append(lines, bottom...)
+	if len(lines) > height && height > 0 {
+		// Too short even for the pinned rows: the hint line is what says
+		// which keys work here, so it is the one row that never goes.
+		lines = append(lines[:height-1], hint)
 	}
 	for len(lines) < height {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines[:max(height, 1)], "\n")
+}
+
+// checkWindow is the slice of check rows that fits in rows lines, cue rows
+// included, and moves the window only as far as keeps the cursor in it.
+func (t *taskView) checkWindow(rows int) (first, last int) {
+	n := len(t.pullTab.checks.Runs)
+	if n <= rows {
+		t.pullTab.top = 0
+		return 0, n
+	}
+	// Both cue rows are reserved whenever the list overflows, so the window's
+	// size does not change as the cursor crosses an end and a cue appears.
+	shown := max(rows-2, 1)
+	top := t.pullTab.top
+	if t.pullTab.cursor < top {
+		top = t.pullTab.cursor
+	}
+	if t.pullTab.cursor >= top+shown {
+		top = t.pullTab.cursor - shown + 1
+	}
+	top = min(max(top, 0), n-shown)
+	t.pullTab.top = top
+	return top, top + shown
 }
 
 // pullHeaderLines are the facts the Task Details section renders, on their own
@@ -310,7 +352,9 @@ func (t *taskView) pullHeaderLines(width int) []string {
 			continue
 		}
 		out = append(out, ansi.Truncate(
-			fmt.Sprintf("    %-10s %s", styleDim.Render(row[0]), row[1]), max(width, 1), "…"))
+			// Pad, then style: %-10s over the styled string counts its
+			// escape codes as width, so no label was padded at all (#799 W16).
+			"    "+styleDim.Render(fmt.Sprintf("%-10s", row[0]))+" "+row[1], max(width, 1), "…"))
 	}
 	return out
 }
@@ -331,7 +375,9 @@ func pullStateWord(p apiclient.GitHubPullRequest) string {
 	}
 }
 
-func (t *taskView) checkLines(width int) []string {
+// checkLines is the checks block in at most rows lines: its title, then the
+// rows the window shows, with a cue for each run of rows out of sight.
+func (t *taskView) checkLines(width, rows int) []string {
 	if !t.pullTab.loaded && t.pullTab.fetching {
 		return []string{styleDim.Render("  checks — loading…")}
 	}
@@ -347,7 +393,12 @@ func (t *taskView) checkLines(width int) []string {
 	}
 	head := fmt.Sprintf("  checks — %s on %s", checks.State, shortRef(checks.Ref))
 	out := []string{styleTitle.Render(head)}
-	for i, run := range checks.Runs {
+	first, last := t.checkWindow(rows - 1)
+	if first > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("    ↑ %d more", first)))
+	}
+	for i := first; i < last; i++ {
+		run := checks.Runs[i]
 		marker := "  "
 		if i == t.pullTab.cursor {
 			marker = "▸ "
@@ -357,6 +408,9 @@ func (t *taskView) checkLines(width int) []string {
 			line += styleDim.Render("  actions run " + strconv.FormatInt(run.RunID, 10))
 		}
 		out = append(out, ansi.Truncate(checkStyle(run).Render(line), max(width, 1), "…"))
+	}
+	if rest := len(checks.Runs) - last; rest > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("    ↓ %d more", rest)))
 	}
 	return out
 }
@@ -469,15 +523,19 @@ func (t *taskView) applyLanePulls(msg taskLanePullsMsg) {
 	t.lanePulls = pulls
 }
 
-// laneRowLines is the lane block under the parent's own pull request.
+// laneRowLines is the lane block under the parent's own pull request. `▸`
+// marks the lane `l` opens from this tab — laneJump's answer, not the Output
+// tab's selection, which this tab cannot move and `l` does not read here
+// (#799 W17).
 func (t *taskView) laneRowLines(width int) []string {
 	if len(t.lanes) == 0 {
 		return nil
 	}
+	jump, jumps := t.laneJump()
 	out := []string{styleTitle.Render(fmt.Sprintf("  lanes — %d", len(t.lanes)))}
-	for i, lane := range t.lanes {
+	for _, lane := range t.lanes {
 		marker := "  "
-		if i == t.laneSel {
+		if jumps && lane.ID == jump {
 			marker = "▸ "
 		}
 		pull := "no pull request"
