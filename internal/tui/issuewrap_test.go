@@ -149,6 +149,42 @@ func TestIssueDeletePromptFitsAndWraps(t *testing.T) {
 	}
 }
 
+// A prompt whose note comes after its key line keeps the keys when the
+// footer is cut: the note is the tail, not the key line (review F10).
+func TestIssuePromptKeepsItsKeysUnderANote(t *testing.T) {
+	v := longFixtureIssue()
+	v.w.act = newIssueDelete(v.client, v.issue)
+	v.w.act.stage = iaConfirm
+	v.w.act.note = "the daemon refused the delete because the remote is live and it says so at length"
+	for _, h := range []int{2, 4, 6} {
+		lines := renderedLines(v, 40, h)
+		if len(lines) > h {
+			t.Errorf("40x%d: the prompt drew %d lines", h, len(lines))
+		}
+		if !shows(lines, "y confirms") {
+			t.Errorf("40x%d: the answer keys are gone:\n%s", h, strings.Join(lines, "\n"))
+		}
+	}
+}
+
+// The issues list shares the detail's prompts, and fits them the same way:
+// the list draws no more lines than its pane and keeps the keys (review F11).
+func TestIssuesListFitsAWrappedPrompt(t *testing.T) {
+	v := issuesFixture()
+	v.cursor = 1
+	v.w.act = newIssueDelete(v.client, v.issues[1])
+	v.w.act.stage = iaConfirm
+	for _, h := range []int{4, 6, 8, 12} {
+		lines := renderedLines(v, 60, h)
+		if len(lines) > h {
+			t.Errorf("60x%d: the list drew %d lines:\n%s", h, len(lines), strings.Join(lines, "\n"))
+		}
+		if !shows(lines, "y confirms") {
+			t.Errorf("60x%d: the answer keys are gone:\n%s", h, strings.Join(lines, "\n"))
+		}
+	}
+}
+
 // F6: a long note wraps rather than losing its end.
 func TestIssueDetailNoteWraps(t *testing.T) {
 	v := longFixtureIssue()

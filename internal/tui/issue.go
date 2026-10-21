@@ -770,6 +770,7 @@ func (v *issueView) render(width, height int) string {
 	}
 	body := v.pageLines(width)
 	var footer []string
+	tail := 0
 	if v.note != "" {
 		style := styleDim
 		if v.noteBad {
@@ -778,11 +779,11 @@ func (v *issueView) render(width, height int) string {
 		footer = append([]string{""}, styled(wrapText(v.note, width, hanging("  ")), style)...)
 	}
 	if v.w.act != nil {
-		footer = v.w.act.lines(width)
+		footer, tail = v.w.act.lines(width)
 	}
 	// Body plus footer never exceed the pane (#795): the prompt wins, and
 	// the page shrinks to nothing before the prompt loses a line.
-	footer = fitFooter(footer, height)
+	footer = fitFooter(footer, height, tail)
 	room := height - len(footer)
 	// The page scrolls freely, and the selection never pulls it (#792). A
 	// page taller than the pane gives a line to a ▲ cue while it continues
@@ -819,9 +820,11 @@ func (v *issueView) render(width, height int) string {
 }
 
 // fitFooter cuts a prompt or note to height lines: its leading blank goes
-// first, then the lines above its last (the key line), windowed around a
-// picker's highlighted option when there is one, otherwise from the top.
-func fitFooter(footer []string, height int) []string {
+// first, then the lines above its last tail lines — the key line and the note
+// after it, which survive whole when they can and keys first when they cannot
+// (review F10) — windowed around a picker's highlighted option when there is
+// one, otherwise from the top.
+func fitFooter(footer []string, height, tail int) []string {
 	if len(footer) <= height {
 		return footer
 	}
@@ -831,15 +834,20 @@ func fitFooter(footer []string, height int) []string {
 	if len(footer) <= height || height < 1 {
 		return footer[:min(len(footer), max(height, 0))]
 	}
-	last := footer[len(footer)-1]
-	rest := footer[:len(footer)-1]
-	out := rest[:height-1]
+	tail = min(max(tail, 0), len(footer))
+	keep := footer[len(footer)-tail:]
+	if len(keep) >= height {
+		return keep[:height]
+	}
+	rest := footer[:len(footer)-tail]
+	room := height - len(keep)
+	out := rest[:room]
 	for i, l := range rest {
 		if strings.Contains(ansi.Strip(l), "▸ ") {
-			out = windowRange(rest, i, i+1, height-1)
+			out = windowRange(rest, i, i+1, room)
 		}
 	}
-	return append(slices.Clone(out), last)
+	return append(slices.Clone(out), keep...)
 }
 
 // factLines is one `label  value` fact, the value wrapped under its column

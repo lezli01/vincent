@@ -571,12 +571,19 @@ func (v *issuesView) render(width, height int) string {
 		}
 		footer = []string{"", style.Render("  " + v.note)}
 	}
+	tail := 0
 	if v.w.act != nil {
-		footer = v.w.act.lines(width)
+		footer, tail = v.w.act.lines(width)
 	}
-	room := max(height-len(lines)-len(footer), 1)
-	shown := window(body, cursorRow, room)
-	v.clickTop, v.clickFrom, v.clickShown = len(lines), windowStart(len(body), cursorRow, room), len(shown)
+	// The prompt wins over the list, as it does on the detail (#795,
+	// review F11): the rows shrink to nothing before the prompt loses a line.
+	footer = fitFooter(footer, max(height-len(lines), 0), tail)
+	room := height - len(lines) - len(footer)
+	var shown []string
+	if room > 0 {
+		shown = window(body, cursorRow, room)
+	}
+	v.clickTop, v.clickFrom, v.clickShown = len(lines), windowStart(len(body), cursorRow, max(room, 0)), len(shown)
 	lines = append(lines, shown...)
 	lines = append(lines, footer...)
 	for i, line := range lines {
