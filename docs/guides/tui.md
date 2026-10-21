@@ -1798,7 +1798,15 @@ them](../assets/tui-project-overview.png)
 | `a` | Register a repository |
 | `D` | Remove it (asks first; its task rows go with it) |
 | `/` | Filter by name or path |
-| `ctrl+s` | Save, in the form |
+
+And inside the add or edit form, whose keys the footer shows while it is open:
+
+| Key | Does |
+|---|---|
+| `↑` / `↓` | Move between the fields (`tab` too) |
+| `enter` | Edit the field, or open its list |
+| `ctrl+s` | Save the project |
+| `esc` | Close the form without saving |
 
 With no project registered, the overview says how to add one: `a`, or
 `vincent project add <path>` from a shell.
@@ -3008,7 +3016,7 @@ the editor says so before you apply it.
 |---|---|
 | `tab` | Move `↑`/`↓` between the config list and the log pane |
 | `↑` / `↓` | Select a configuration key, once the list has the arrows |
-| `enter` / `e` | Open the editor on the selected key |
+| `enter` / `e` | Open the editor on the selected key, once the list has the arrows; from the log pane they move the arrows to the list first, so the editor never opens on a key you cannot see |
 | `R` | Re-read the daemon info, the config and the log |
 | `f` / `G` | Follow the end of the log again |
 | `i` | Make vincent claude's status line, or remove it — the exact JSON is shown first |

@@ -7,18 +7,21 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
 )
 
-// logPaneMinHeight keeps the pane usable on a short terminal: the three
-// fixed blocks above it are short and constant, and the log is the part
-// worth scrolling, so it takes whatever is left but never less than this.
+// logPaneMinHeight is the fewest log lines the pane ever shows, its header
+// not counted. The blocks above it are taller than an 80x24 body on their own
+// (#803), so it is the blocks that give way: they scroll in a pane of their
+// own sized to leave the log at least this much.
 const logPaneMinHeight = 3
 
-// configRowsShown is how many config keys the block lists at once. Ten fits
-// beside the other three blocks and the log pane on an 80x24 terminal, which
-// is the size the rest of this view is laid out for.
+// configRowsShown is how many config keys the list shows at once with the
+// config focused. It is a cap, not a promise that ten fit: on a short
+// terminal the blocks pane is smaller still and follows the cursor.
 const configRowsShown = 10
 
 func (d *daemonView) render(width, height int) string {
@@ -45,19 +48,46 @@ func (d *daemonView) render(width, height int) string {
 		// leaves vincent's own directories, so it goes on screen alone.
 		return strings.Join(d.skills.render(d.width), "\n")
 	}
-	var out []string
-	out = append(out, d.identityLines()...)
-	out = append(out, "")
-	out = append(out, d.configLines()...)
-	out = append(out, "")
-	out = append(out, d.databaseLines()...)
-	out = append(out, "")
-	out = append(out, d.adapterLines()...)
-	out = append(out, "")
+	head := d.identityLines()
+	var blocks []string
+	blocks = append(blocks, "")
+	configAt := len(blocks)
+	blocks = append(blocks, d.configLines()...)
+	blocks = append(blocks, "")
+	blocks = append(blocks, d.databaseLines()...)
+	blocks = append(blocks, "")
+	blocks = append(blocks, d.adapterLines()...)
+	blocks = append(blocks, "")
 
-	head := strings.Join(out, "\n")
-	paneHeight := max(d.height-len(out)-1, logPaneMinHeight)
-	return head + "\n" + d.renderLog(paneHeight)
+	// The height is budgeted (#803): identity stays pinned, the log keeps at
+	// least logPaneMinHeight lines under its header, and whatever the blocks
+	// in between cannot have of the rest they scroll for.
+	logH := logPaneMinHeight + 1
+	room := max(d.height-len(head)-logH, 1)
+	if len(blocks) > room {
+		// The cue line separates the pane from the log; the blank would only
+		// cost it a row.
+		blocks = blocks[:len(blocks)-1]
+		pane := newScrollPane(d.width, room, true)
+		pane.SetContentLines(blocks)
+		if d.focusConfig {
+			// Follow the cursor, the block's heading in view when it fits.
+			row := configAt + 1 + d.cursor
+			if first, _ := d.configWindow(); first > 0 {
+				row += 1 - first
+			}
+			pane.EnsureVisible(configAt, row)
+			pane.EnsureVisible(row, row)
+		} else {
+			// The adapters and the database sit nearest the log: the end of
+			// the blocks is what a reader watching the log is checking.
+			pane.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
+		}
+		blocks = pane.View()
+	}
+	logH = max(d.height-len(head)-len(blocks), logH)
+	head = append(head, blocks...)
+	return strings.Join(head, "\n") + "\n" + d.renderLog(logH)
 }
 
 // identityLines is what the daemon is: version, process, and the three paths
@@ -75,10 +105,11 @@ func (d *daemonView) identityLines() []string {
 	if i.Built != "" {
 		version += styleDim.Render(" built " + i.Built)
 	}
+	// Uptime and pid share the heading: identity is pinned above the
+	// scrolling blocks (#803), so every row it spends is the log's.
+	out[0] += styleDim.Render("   up " + formatUptime(i.Uptime(d.now())) + "   pid " + strconv.Itoa(i.PID))
 	out = append(out,
 		field("version", version),
-		field("uptime", formatUptime(i.Uptime(d.now())))+
-			styleDim.Render("   pid "+strconv.Itoa(i.PID)),
 		field("listening", i.Listen),
 		field("data dir", d.dataDirOrUnknown()),
 		field("log", d.logPathOrUnknown()),
@@ -717,9 +748,12 @@ func (d *daemonView) renderLog(height int) string {
 	if d.logDirty {
 		d.vp.SetContent(strings.Join(d.logLines, "\n"))
 		d.logDirty = false
-		if d.following {
-			d.vp.GotoBottom()
-		}
+	}
+	// Re-anchored on every render, not only on new content: tab changes the
+	// blocks' height and with it the pane's, and a following pane must still
+	// end on the last line (#803).
+	if d.following {
+		d.vp.GotoBottom()
 	}
 	return header + "\n" + d.vp.View()
 }

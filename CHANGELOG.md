@@ -580,6 +580,19 @@ list with the user-facing context a commit subject cannot carry.
   hints name a rebound `editor` or `refresh` key. The triggers list shows the
   POLL column at 80 columns (it now follows ARMED), and the global-off banner
   wraps to the screen.
+- **The daemon and projects views fit an 80×24 terminal, and their footers
+  follow their forms.** The daemon view's identity, config, database and
+  adapter blocks now scroll in a pane of their own above the log, so the log
+  always keeps at least three lines on screen and the adapters stay visible,
+  where before the blocks alone filled the screen and the log was cut off.
+  `enter` or `e` with the log focused moves to the config list instead of
+  opening the editor on a key you could not see (by default `listen`). The
+  config editor wraps its help, default, errors and confirmation, so a long
+  `notify.command` shows in full with `y confirm` still on screen. While the
+  config editor, the status-line flow, the skills offer or the project form
+  is open, the footer and `?` show that layer's keys, not the screen's
+  underneath. A long project name no longer pushes the task number, state
+  and title off a needs-you row.
 
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,

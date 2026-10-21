@@ -89,7 +89,11 @@ const (
 	// the registry had never heard of them.
 	ctxNewTaskFields bindingContext = "new task fields"
 	ctxProjects      bindingContext = "projects"
-	ctxWorkflows     bindingContext = "workflows"
+	// ctxProjectForm is the projects overview's add/edit form (#803). Its
+	// own context because while it is open it owns the keyboard, and none
+	// of the table's add/remove/filter rows does anything inside it.
+	ctxProjectForm bindingContext = "project form"
+	ctxWorkflows   bindingContext = "workflows"
 	// ctxPullRequests is the pull-requests takeover (§15 view 7, task 052.6).
 	ctxPullRequests bindingContext = "pull requests"
 	// ctxWorkflowEditor is the structured editor sub-layer of the workflows
@@ -202,6 +206,9 @@ const (
 	// context because while it is open it owns the keyboard, and its keys are
 	// nothing like the log pane's underneath it.
 	ctxConfigEdit bindingContext = "config editor"
+	// ctxStatusLine is the daemon view's status-line flow (task 082), its
+	// own context for the reason ctxSkills has one (#803).
+	ctxStatusLine bindingContext = "status line"
 	// The triggers takeover (§15 view 11, task 096.6). Five contexts for one
 	// view, for the reason the workflows takeover has four: the list, its
 	// ledger pane, the form, the create prompt and a dry run each own the
@@ -696,7 +703,12 @@ var bindings = []binding{
 	// left meaning "drop a row from an unsaved draft" and nothing else.
 	{op: keymap.Delete, key: "D", label: "remove the project (asks first; its task rows go with it)", scope: scopePanel, context: ctxProjects, hint: "D remove", priority: 4, term: termDelete},
 	{op: keymap.Filter, key: "/", label: "filter by name or path", scope: scopePanel, context: ctxProjects, hint: "/ filter", priority: 5, term: termFilter},
-	{key: "ctrl+s", label: "in the form: save", scope: scopePanel, context: ctxProjects, hint: "ctrl+s save", priority: 6},
+
+	// The project form (#803): it owns the keyboard while it is open.
+	{key: "down", label: "move between the fields (↑/↓ or tab)", scope: scopePanel, context: ctxProjectForm, hint: "↑/↓ fields", priority: 1},
+	{key: "enter", label: "edit the field, or open its list", scope: scopePanel, context: ctxProjectForm, hint: "enter edit", priority: 2},
+	{key: "ctrl+s", label: "save the project", scope: scopePanel, context: ctxProjectForm, hint: "ctrl+s save", priority: 3},
+	{key: "esc", label: "close the form without saving", scope: scopePanel, context: ctxProjectForm, hint: "esc cancel", priority: 4},
 
 	// Workflows.
 	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows, hint: "enter steps", priority: 1},
@@ -868,6 +880,11 @@ var bindings = []binding{
 	{key: "enter", label: "run the install (one npx per skill; the first needs network)", scope: scopePanel, context: ctxSkills, noPalette: true},
 	{key: "n", label: "not now — remembered, and S brings it back", scope: scopePanel, context: ctxSkills, noPalette: true},
 	{key: "esc", label: "close without installing anything", scope: scopePanel, context: ctxSkills, noPalette: true},
+
+	// The status-line flow (task 082): the same, for `i`.
+	{key: "enter", label: "write the change shown (y also confirms)", scope: scopePanel, context: ctxStatusLine, noPalette: true},
+	{key: "n", label: "not now — remembered, and i brings it back", scope: scopePanel, context: ctxStatusLine, noPalette: true},
+	{key: "esc", label: "close without writing anything", scope: scopePanel, context: ctxStatusLine, noPalette: true},
 
 	// The config editor: it owns the keyboard while it is open and prints its
 	// own key line, so these are here to keep ? complete.

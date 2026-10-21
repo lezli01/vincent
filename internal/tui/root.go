@@ -885,6 +885,9 @@ func (m *root) activeContext() bindingContext {
 		}
 		return ctxNewTask
 	case viewProjects:
+		if c, ok := m.views[viewProjects].(contextual); ok {
+			return c.bindingContext()
+		}
 		return ctxProjects
 	case viewWorkflows:
 		if c, ok := m.views[viewWorkflows].(contextual); ok {
@@ -892,6 +895,9 @@ func (m *root) activeContext() bindingContext {
 		}
 		return ctxWorkflows
 	case viewDaemon:
+		if c, ok := m.views[viewDaemon].(contextual); ok {
+			return c.bindingContext()
+		}
 		return ctxDaemon
 	case viewPullRequests:
 		return ctxPullRequests

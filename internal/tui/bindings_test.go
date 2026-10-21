@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1771,16 +1772,39 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("/ did not open the project filter")
 			}
 		},
-		"ctrl+s": func(t *testing.T) {
-			p := newProjectsView()
-			loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
-			p.updateKey(registryKey(t, "a"))
-			if p.form == nil {
-				t.Fatal("a did not open the form this row is about")
+	},
+
+	ctxProjectForm: {
+		"down": func(t *testing.T) {
+			p := openProjectForm(t)
+			before := p.form.cursor
+			p.updateKey(registryKey(t, "down"))
+			if p.form.cursor == before {
+				t.Fatal("down did not move between the form's fields")
 			}
+		},
+		"enter": func(t *testing.T) {
+			p := openProjectForm(t)
+			p.updateKey(registryKey(t, "enter"))
+			if !p.form.editing && p.form.pick == nil {
+				t.Fatal("enter did not edit the field under the cursor")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			p := openProjectForm(t)
 			_, cmd := p.updateKey(registryKey(t, "ctrl+s"))
 			if cmd == nil && p.form.err == "" && !p.form.saving {
 				t.Fatal("ctrl+s neither saved nor reported why it would not")
+			}
+		},
+		"esc": func(t *testing.T) {
+			p := openProjectForm(t)
+			_, cmd := p.updateKey(registryKey(t, "esc"))
+			if cmd == nil {
+				t.Fatal("esc did not close the form")
+			}
+			if _, ok := cmd().(projectFormClosedMsg); !ok {
+				t.Fatal("esc did not close the form")
 			}
 		},
 	},
@@ -2380,6 +2404,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"enter": func(t *testing.T) {
 			d := newTestDaemonView([]string{"a log line"}, nil)
 			d.update(daemonConfigMsg{config: testConfig()})
+			// The row is live only with the config list focused (#803).
+			d.focusConfig = true
 			d.updateKey(registryKey(t, "enter"))
 			if d.form == nil {
 				t.Fatal("enter did not open the config editor")
@@ -2433,6 +2459,39 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			d.updateKey(registryKey(t, "esc"))
 			if d.skills != nil {
 				t.Fatal("esc did not close the skills flow")
+			}
+		},
+	},
+
+	ctxStatusLine: {
+		"enter": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.statusLine = newStatusLineFlow(d.statusLinePlan, errors.New("no settings file"))
+			d.updateKey(registryKey(t, "enter"))
+			// With no plan to apply, enter closes rather than writing — a
+			// probe must not touch Claude Code's settings.
+			if d.statusLine != nil {
+				t.Fatal("enter did not act on the status-line flow")
+			}
+		},
+		"n": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.dataDir = t.TempDir()
+			d.statusLine = newStatusLineFlow(d.statusLinePlan, nil)
+			d.updateKey(registryKey(t, "n"))
+			if d.statusLine != nil {
+				t.Fatal("n did not close the status-line flow")
+			}
+			if !readStatusLineDecline(d.dataDir) {
+				t.Fatal("n did not remember the decline")
+			}
+		},
+		"esc": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.statusLine = newStatusLineFlow(d.statusLinePlan, nil)
+			d.updateKey(registryKey(t, "esc"))
+			if d.statusLine != nil {
+				t.Fatal("esc did not close the status-line flow")
 			}
 		},
 	},
@@ -3221,4 +3280,17 @@ func pickerProbeRoot(t *testing.T) *root {
 	m.sel = projectSel{id: 1, name: "api"}
 	m.projPick = newProjectPicker([]apiclient.Project{testProject(1, "api"), testProject(2, "web")}, 1, "")
 	return m
+}
+
+// openProjectForm is a projects view with its add form open, the state
+// ctxProjectForm names.
+func openProjectForm(t *testing.T) *projectsView {
+	t.Helper()
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
+	p.updateKey(registryKey(t, "a"))
+	if p.form == nil {
+		t.Fatal("a did not open the project form")
+	}
+	return p
 }

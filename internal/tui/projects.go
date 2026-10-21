@@ -178,6 +178,15 @@ func (p *projectsView) promptKeys() promptAnswers {
 // a non-text row, `n` opened New task with the draft still open behind it,
 // and with the confirmation up, `n` left the view with the prompt armed, so a
 // later `y` deleted the project. `esc` stays the way out, one layer per press.
+// bindingContext puts the form's own rows in the footer and ? while it is
+// open (#803): the table's add/remove/filter keys do nothing inside it.
+func (p *projectsView) bindingContext() bindingContext {
+	if p.form != nil {
+		return ctxProjectForm
+	}
+	return ctxProjects
+}
+
 func (p *projectsView) capturesInput() bool {
 	return p.filtering || p.confirm != nil || p.form != nil
 }
