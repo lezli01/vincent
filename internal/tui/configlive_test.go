@@ -548,3 +548,58 @@ func TestConfigEditorSetsTheOutputLevel(t *testing.T) {
 		t.Error("the save did not reach both workspaces")
 	}
 }
+
+// tui.tabs (task 136) against the real handlers: the row opens on the
+// default with the accepted vocabulary printed under the field, a save
+// round-trips in order, and a daemon refusal renders against the field and
+// leaves the file alone.
+func TestConfigEditorSetsTheTabs(t *testing.T) {
+	h := newConfigLive(t)
+	h.open(t, "tui.tabs")
+	if h.view.form == nil {
+		t.Fatal("enter did not open the editor")
+	}
+	out := ansi.Strip(strings.Join(h.view.form.render(120), "\n"))
+	for _, want := range []string{"default issues tasks", "accepted: issues tasks chats", "the first is where the TUI opens"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the tabs editor does not say %q:\n%s", want, out)
+		}
+	}
+
+	h.view.form.input.SetValue("tasks board")
+	h.press(t, "enter")
+	if h.view.form == nil || !strings.Contains(h.view.form.err, `unknown view "board"`) {
+		t.Fatalf("the daemon's refusal is not rendered against the field: %+v", h.view.form)
+	}
+	if strings.Contains(h.file(t), "board]") {
+		t.Errorf("a refused tui.tabs reached config.yaml:\n%s", h.file(t))
+	}
+
+	h.view.form.input.SetValue("chats tasks")
+	h.press(t, "enter")
+	if h.view.form != nil {
+		t.Fatalf("the editor stayed open after a save: %+v", h.view.form)
+	}
+	if got := strings.Join(h.view.config.TUI.Tabs, " "); got != "chats tasks" {
+		t.Errorf("the block did not adopt the tabs: %q", got)
+	}
+	if !strings.Contains(h.file(t), "tabs: [chats, tasks]") {
+		t.Errorf("config.yaml was not written:\n%s", h.file(t))
+	}
+}
+
+// Every name tui.tabs accepts routes somewhere, and nothing routes a name the
+// daemon would refuse (task 136 decision 10).
+func TestTabViewIDsCoverTheVocabulary(t *testing.T) {
+	if len(tabViewIDs) != len(config.TabViews) {
+		t.Errorf("tabViewIDs has %d names, config.TabViews %d", len(tabViewIDs), len(config.TabViews))
+	}
+	for _, name := range config.TabViews {
+		if _, ok := tabViewIDs[name]; !ok {
+			t.Errorf("tab %q has no view", name)
+		}
+	}
+	if tabViewIDs["issues"] != viewIssues || tabViewIDs["tasks"] != viewHome || tabViewIDs["chats"] != viewChats {
+		t.Errorf("tabViewIDs = %v", tabViewIDs)
+	}
+}

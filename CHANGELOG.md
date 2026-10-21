@@ -13,6 +13,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A `tui.tabs` setting for the TUI's main tabs.** `config.yaml` accepts
+  `tui.tabs`, an ordered list drawn from `issues`, `tasks` and `chats`,
+  default `[issues, tasks]`; the first entry will be where the TUI opens. It
+  is validated on load, hot reload and `PATCH /v1/config` (an empty, `null`,
+  repeated or unknown list is refused, naming the key), served on
+  `GET /v1/config`, and editable with `vincent config get|set tui.tabs` and in
+  the TUI's config editor. The TUI does not act on it yet: tab switching, the
+  strip and landing on the first tab follow in a later release. A daemon
+  older than this one refuses a file that sets it.
+
 - **See who holds an issue's main worktree, and ask for a side task, in the
   TUI.** An issues-board card is now worded for its lane: in progress it names
   the task in the main worktree and its state, with `+k side` and `n merging`
@@ -515,6 +525,48 @@ list with the user-facing context a commit subject cannot carry.
   ([#670](https://github.com/lezli01/vincent/issues/670))
 
 ### Fixed
+
+- **The help sheet fits a narrow terminal.** A key description too long for
+  the width now wraps under its own column instead of being cut off with `…`,
+  the sheet's key row drops its description before it would push the close
+  keys off the edge, and the mouse wheel scrolls the sheet. The wheel also
+  scrolls the right rows on every screen while a status line is showing,
+  where it used to land one row off.
+
+- **Delete and archive questions in the TUI hold the keyboard, and a refused
+  chat message is kept.** With a permanent-delete question up on an archived
+  board, the projects delete question, or the chats board's archive question,
+  `n` opened New task with the question still armed behind it, `q` quit and
+  `:` opened the palette; now `n` answers "no", every other global key waits,
+  and the footer shows the answers. The project add/edit form holds the
+  keyboard the same way while it is open. The archived chats board now draws
+  its delete question (it was invisible while `y` still deleted), reports the
+  result on its own note instead of the archived tasks board — which also
+  dropped task selections sharing the chat's id — and reloads. The archived
+  tasks board's question and report wrap at 80 columns instead of losing
+  `[n] no` and the `failed:` reason. In a chat, a message the daemon refuses,
+  or that never reaches it, stays in the composer; `enter` on a chat that is
+  running, waiting on an answer or finished says why instead of sending.
+  ([#790](https://github.com/lezli01/vincent/issues/790))
+- **The issue detail scrolls with the keys and the wheel you reach for.**
+  `↑`/`↓` used to move a hidden selection — the first press with linked tasks
+  jumped the page past the whole description — and only `pgup`/`pgdown`
+  scrolled, by ten lines. The arrows now scroll a line, moving the selection
+  only among task rows already on screen; `space`, `ctrl+u`/`ctrl+d`,
+  `home`/`end` and `g`/`G` page and jump; `▲ n more` / `▼ n more` say the
+  page continues; and the footer stops offering `enter` with no task to open
+  and `o` on a local issue. The mouse wheel now scrolls the detail and moves
+  the issues list's selection, and a click selects a row on either screen.
+  ([#792](https://github.com/lezli01/vincent/issues/792))
+- **Workflow descriptions and validation errors are no longer cut to one
+  row.** The workflows screen and the new-task form's workflow detail and
+  picker preview drew a description and each validation finding as a single
+  line the pane clipped, so most of a long one never reached the screen. The
+  selected workflow's text now wraps under it; other rows in the compact
+  workflow list stay one line and end in `…` when cut. The `invalid` and
+  platform marks now come before the workflow's name, so a long name no
+  longer pushes them off the edge, and a new-task step name longer than its
+  column keeps two spaces before its type.
 
 - **Two tasks on one existing branch no longer start together.** When both
   were queued at the same moment, the scheduler admitted both: on a branch

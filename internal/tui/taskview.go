@@ -1264,7 +1264,7 @@ func (t *taskView) detailLines(width int) []string {
 	}
 	out = append(out, "  "+strings.Join(meta, styleDim.Render("  ·  ")))
 
-	description := appendWrapped(nil, task.Description, width)
+	description := wrappedOrNone(task.Description, width)
 	out = appendTaskDetailSection(out, "Description", description)
 
 	overview := []taskDetailFact{
@@ -1388,7 +1388,7 @@ func (t *taskView) detailLines(width int) []string {
 		out = appendTaskDetailSection(out, "Warnings", warnings)
 	}
 	if len(task.PendingInput) > 0 && string(task.PendingInput) != "null" {
-		out = appendTaskDetailSection(out, "Pending input", appendWrapped(nil, prettyJSON(task.PendingInput), width))
+		out = appendTaskDetailSection(out, "Pending input", wrappedOrNone(prettyJSON(task.PendingInput), width))
 	}
 	if task.Issue != nil {
 		out = appendTaskDetailSection(out, "Issue", taskIssueLines(width, task))
@@ -1407,7 +1407,7 @@ func (t *taskView) detailLines(width int) []string {
 		})
 		if issue.Body != "" {
 			issueLines = append(issueLines, "", styleDim.Render("  Body"), "")
-			issueLines = appendWrapped(issueLines, issue.Body, width)
+			issueLines = append(issueLines, wrappedOrNone(issue.Body, width)...)
 		}
 		out = appendTaskDetailSection(out, "Issue", issueLines)
 	}
@@ -1437,7 +1437,7 @@ func (t *taskView) detailLines(width int) []string {
 					continue
 				}
 				workflow = append(workflow, "", styleDim.Render("      "+body.label))
-				workflow = appendWrappedIndented(workflow, body.value, width, "        ")
+				workflow = append(workflow, wrapText(body.value, width, hanging("        "))...)
 			}
 		}
 	}
@@ -1560,7 +1560,7 @@ func styledTaskDetailFactLines(fact taskDetailFact, width int, style func(string
 	value := valueOr(fact.value, "none")
 	if ansi.StringWidth(fact.label) > labelWidth {
 		out := make([]string, 0, 3)
-		for _, labelLine := range wrapTaskDetailText(fact.label, width) {
+		for _, labelLine := range wrapText(fact.label, width, wrapOpts{}) {
 			out = append(out, styleDim.Render(labelLine))
 		}
 		for _, paragraph := range strings.Split(value, "\n") {
@@ -1568,7 +1568,7 @@ func styledTaskDetailFactLines(fact taskDetailFact, width int, style func(string
 				out = append(out, "")
 				continue
 			}
-			for _, valueLine := range wrapTaskDetailText(paragraph, max(width-2, 8)) {
+			for _, valueLine := range wrapText(paragraph, width-2, wrapOpts{}) {
 				out = append(out, "  "+style(valueLine))
 			}
 		}
@@ -1580,7 +1580,7 @@ func styledTaskDetailFactLines(fact taskDetailFact, width int, style func(string
 			values = append(values, "")
 			continue
 		}
-		values = append(values, wrapTaskDetailText(paragraph, valueWidth)...)
+		values = append(values, wrapText(paragraph, valueWidth, wrapOpts{})...)
 	}
 	if len(values) == 0 {
 		values = []string{"none"}
@@ -1604,32 +1604,13 @@ func padDisplayWidth(line string, width int) string {
 	return line + strings.Repeat(" ", max(width-ansi.StringWidth(line), 0))
 }
 
-func wrapTaskDetailText(text string, width int) []string {
-	width = max(width, 1)
-	soft := wrapPlain(text, width)
-	out := make([]string, 0, len(soft))
-	for _, line := range soft {
-		if ansi.StringWidth(line) <= width {
-			out = append(out, line)
-			continue
-		}
-		var chunk strings.Builder
-		chunkWidth := 0
-		for _, r := range line {
-			runeWidth := ansi.StringWidth(string(r))
-			if chunkWidth > 0 && chunkWidth+runeWidth > width {
-				out = append(out, chunk.String())
-				chunk.Reset()
-				chunkWidth = 0
-			}
-			chunk.WriteRune(r)
-			chunkWidth += runeWidth
-		}
-		if chunk.Len() > 0 {
-			out = append(out, chunk.String())
-		}
+// wrappedOrNone is a task detail's free text, wrapped two cells in, or a dim
+// "none" when there is no text to wrap.
+func wrappedOrNone(text string, width int) []string {
+	if strings.TrimSpace(text) == "" {
+		return []string{styleDim.Render("  none")}
 	}
-	return out
+	return wrapText(text, width, hanging("  "))
 }
 
 func taskStep(task apiclient.Task) string {
@@ -1641,26 +1622,6 @@ func taskStep(task apiclient.Task) string {
 		return fmt.Sprintf("%d/%d%s", k, n, name)
 	}
 	return "none"
-}
-
-func appendWrapped(lines []string, text string, width int) []string {
-	if strings.TrimSpace(text) == "" {
-		return append(lines, styleDim.Render("  none"))
-	}
-	return appendWrappedIndented(lines, text, width, "  ")
-}
-
-func appendWrappedIndented(lines []string, text string, width int, indent string) []string {
-	for _, paragraph := range strings.Split(text, "\n") {
-		if paragraph == "" {
-			lines = append(lines, "")
-			continue
-		}
-		for _, line := range wrapPlain(paragraph, max(width-len(indent), 8)) {
-			lines = append(lines, indent+line)
-		}
-	}
-	return lines
 }
 
 func sortedStringKeys[V any](values map[string]V) []string {

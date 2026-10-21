@@ -426,6 +426,75 @@ func TestConfigPatchRoundTripsTUIOutputLevel(t *testing.T) {
 	}
 }
 
+// tui.tabs (task 136) is served as an array, round-trips through PATCH in
+// order, and a refused value — empty, repeated or unknown — names the key and
+// leaves config.yaml byte-identical. The coverage tests walk top-level keys
+// only, so the nested key gets its own.
+func TestConfigPatchRoundTripsTUITabs(t *testing.T) {
+	h := newConfigHarness(t)
+	_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	if !strings.Contains(string(getBody), `"tabs":["issues","tasks"]`) {
+		t.Fatalf("GET /v1/config does not serve tui.tabs [issues, tasks] by default: %s", getBody)
+	}
+	resp, out := h.patch(t, `{"tui":{"tabs":["tasks","chats","issues"]}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	want := []string{"tasks", "chats", "issues"}
+	var answered configResponse
+	if err := json.Unmarshal(out, &answered); err != nil {
+		t.Fatalf("parse patch response: %v", err)
+	}
+	if !reflect.DeepEqual(answered.TUI.Tabs, want) {
+		t.Errorf("the patch response says %v, want %v", answered.TUI.Tabs, want)
+	}
+	if got := h.cur.Load().TUI.Tabs; !reflect.DeepEqual(got, want) {
+		t.Errorf("the applied config says %v, want %v", got, want)
+	}
+	if !strings.Contains(string(h.bytes(t)), "tabs: [tasks, chats, issues]") {
+		t.Errorf("config.yaml does not carry the tabs:\n%s", h.bytes(t))
+	}
+
+	for body, says := range map[string]string{
+		`{"tui":{"tabs":[]}}`:                "tui.tabs: list at least one view",
+		`{"tui":{"tabs":["tasks","tasks"]}}`: `tui.tabs: "tasks" listed twice`,
+		`{"tui":{"tabs":["tasks","board"]}}`: `tui.tabs: unknown view "board"; want issues, tasks or chats`,
+	} {
+		before := h.bytes(t)
+		resp, out := h.patch(t, body)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400 (body %s)", body, resp.StatusCode, out)
+		}
+		var env errorBody
+		if err := json.Unmarshal(out, &env); err != nil || env.Error.Code != CodeValidationFailed {
+			t.Fatalf("%s: want the snake_case validation envelope, got %s", body, out)
+		}
+		if !strings.Contains(env.Error.Message, says) {
+			t.Errorf("%s: message %q does not say %q", body, env.Error.Message, says)
+		}
+		if !bytes.Equal(before, h.bytes(t)) {
+			t.Errorf("%s: a refused tui.tabs changed config.yaml", body)
+		}
+		if got := h.cur.Load().TUI.Tabs; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: the tabs in force are %v, want the last good %v", body, got, want)
+		}
+	}
+
+	// A JSON null is PATCH's "leave unchanged", as for every other field —
+	// not a refused value, which only YAML's `tabs: null` is (review F7).
+	before := h.bytes(t)
+	resp, out = h.patch(t, `{"tui":{"tabs":null}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("tabs null: status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	if !bytes.Equal(before, h.bytes(t)) {
+		t.Error("tabs null changed config.yaml")
+	}
+	if got := h.cur.Load().TUI.Tabs; !reflect.DeepEqual(got, want) {
+		t.Errorf("tabs null: the tabs in force are %v, want %v unchanged", got, want)
+	}
+}
+
 // The backup block is served, written into its documented place and put into
 // force (task 115). Setting the interval alone is the whole switch, and the
 // file keeps one `backup:` block rather than growing a second at the end.

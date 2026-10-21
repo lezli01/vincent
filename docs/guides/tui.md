@@ -1916,6 +1916,9 @@ completed](../assets/tui-issues.png)
 | `X` | Close or reopen the selected issue — only what vincent offers for it |
 | `D` | Delete the selected issue permanently (asks first) |
 
+The mouse wheel moves the selection one row per tick, and a click selects the
+row under it.
+
 `R` only re-reads what vincent already holds. It never asks GitHub for
 anything: imported issues are refreshed on the daemon's reconciler tick.
 
@@ -1944,14 +1947,22 @@ section](../assets/tui-issue.png)
 | `ctrl+o` | Show the description's original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description — open one in a browser or copy it |
 | `R` | Re-read the issue |
-| `↑`/`↓` | Move the selection between the Main worktree section and the linked tasks |
-| `pgup`/`pgdown` | Scroll the page |
+| `↑`/`↓` | Scroll a line — while a Main worktree or task row is on screen, move the selection among the rows on screen first |
+| `pgup`/`pgdown`, `space` | Scroll a page |
+| `ctrl+u`/`ctrl+d` | Scroll half a page |
+| `home`/`end`, `g`/`G` | Jump to the start or the end of the page |
 | `n` | File a new issue in this issue's project |
 | `a` | Create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the issue in the issue form |
 | `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from GitHub, whose thread is GitHub's |
 | `X` | Close or reopen the issue — only what vincent offers for it |
 | `D` | Delete the issue permanently (asks first) |
+
+The page scrolls first: selecting a task never jumps it away from the
+description, and `▲ n more` / `▼ n more` say when it continues above or below.
+The mouse wheel scrolls it a line per tick, and a click on a task or the Main
+worktree section selects it. `enter` is offered only when there is a row to
+open, and `o` only on an imported issue.
 
 `ctrl+o` is the same rendered/raw switch the Output tab and the chat use, so
 flipping it here flips it there too. `esc` goes back to the list, on the issue
@@ -2027,6 +2038,12 @@ The selected project's workflows as that project resolves them: the built-in,
 global and project entries in one list sorted by name, each with its scope
 badge and validation status. Nothing from any other project is shown; switch
 projects to see another's.
+
+The selected entry's description, validation error or platform note wraps
+under its name, so the whole text is readable at any width; every other row
+stays one line and ends in `…` when it is cut. An entry that cannot run says so
+ahead of its name — `invalid`, or `not on this platform` — so a long name never
+pushes the mark off the edge.
 
 When the project has a workflow with the same name as a global or built-in
 one, its own copy wins (shadowing). Both rows stay in the list: the project's
@@ -2668,7 +2685,10 @@ chat's state rather than its own.
 
 A send refused because `max_parallel_chats` chats are already running says so
 and creates nothing. It is a refusal, not a queue: finish or stop another
-conversation and send again.
+conversation and send again — the message stays in the composer until the
+daemon takes it, so a refused or failed send loses nothing you typed. Only an
+idle chat takes a message: `enter` while a turn runs, while the agent waits on
+an answer, or on a finished chat sends nothing and says why.
 
 A turn that runs past `agent_timeout`, or sits unanswered past `input_timeout`,
 fails and returns the chat to `idle` — the slot comes back rather than being
@@ -3068,7 +3088,9 @@ reading.
 field has the keyboard. In a chat the composer takes every printable key, so
 there `:` types a colon into your draft and `ctrl+p` is the way in. Help has
 the same pair: `?` everywhere it is not a character, and `f1` everywhere,
-including a chat's composer, a filter and every form.
+including a chat's composer, a filter and every form. The one place
+`ctrl+p` waits is a question that deletes, archives or unlinks something:
+answer it first, so it is never left armed behind another screen.
 
 Everything reachable in the TUI is in there by name — navigation to every
 screen, and every task action the daemon currently offers. Type to filter,
@@ -3121,10 +3143,11 @@ keeps the raw identifiers, undimmed, for copying into a command.
 `?` toggles a help overlay listing every binding for the surface you are on —
 or `f1`, which also works while a text field has the keyboard. While the
 overlay is open it owns the keyboard: `?`, `esc` and `f1` close it, `↑`/`↓`,
-`pgup`/`pgdown`, `home` and `end` scroll it, `ctrl+c` still quits, and every
-other key is ignored rather than acting on the screen behind it. When the
-sheet is taller than the screen its last row says where you are and which way
-there is more. The overlay, the palette and the footer all render from **one
+`pgup`/`pgdown`, `home` and `end` scroll it, as does the mouse wheel,
+`ctrl+c` still quits, and every other key is ignored rather than acting on the
+screen behind it. When the sheet is taller than the screen its last row says
+where you are and which way there is more. A description too long for the
+width wraps under its own column rather than being cut off. The overlay, the palette and the footer all render from **one
 registry** in the source, so a key that exists is a key that is documented.
 
 On the board and in a task's workspace the sheet opens with **This screen**,

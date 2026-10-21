@@ -28,7 +28,7 @@ func (v *chatsView) render(width, height int) string {
 	lines = append(lines, "")
 
 	body, cursorRow := v.bodyLines(width)
-	footer := v.footerLines()
+	footer := v.footerLines(width)
 	room := max(height-len(lines)-len(footer), 1)
 	lines = append(lines, window(body, cursorRow, room)...)
 	lines = append(lines, footer...)
@@ -165,7 +165,13 @@ func chatStateLabel(state string) string {
 	}
 }
 
-func (v *chatsView) footerLines() []string {
+func (v *chatsView) footerLines(width int) []string {
+	// The delete question swallows every key but its answers, so it is
+	// drawn first and wrapped whole: a board that hides it looks frozen
+	// while `y` still deletes (#790).
+	if v.delPrompt != nil {
+		return append([]string{""}, wrapStatus(v.delPrompt.question(), width, styleAsk)...)
+	}
 	if v.confirm != nil {
 		return []string{"", " " + styleWarn.Render(v.confirm.text)}
 	}

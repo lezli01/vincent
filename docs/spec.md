@@ -7413,6 +7413,7 @@ tui:                           # view preference; the daemon validates and relay
   output:
     level: normal              # quiet | compact | normal | verbose: the output pane's opening level (task 129.11)
   # default_project: web       # the project the TUI opens on, by name; read at startup only (task 132.3)
+  tabs: [issues, tasks]        # the main tabs, in order, from issues | tasks | chats; the first is where the TUI opens (task 136)
 ```
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
@@ -8268,6 +8269,23 @@ registered falls through at the TUI, which says so. The TUI adopts it from the
 first config answer **at startup only**: unlike `tui.output.level`, a hot
 reload or an edit never moves a running session's selection. The key is
 removed by editing the file, since `PATCH /v1/config` refuses `""`.
+
+*Amended 2026-10-20 (task 136, issue #785):* `tui.tabs` is a flat, ordered
+list of the TUI's main tabs, each drawn from `issues`, `tasks` and `chats`
+(`config.TabViews`), default `[issues, tasks]`. Order is the strip's, the
+cycle's and the landing order — the first entry is where the TUI opens, so
+there is no separate landing key — and a single entry is valid and opts out
+of the strip. An empty list, a repeated name, an unknown name or a value
+that is not a list fails the load, a hot reload and `PATCH /v1/config`
+alike, each with a message naming `tui.tabs`, and so does `null` (or a bare
+`tabs:`) in `config.yaml` — over PATCH a JSON `null` means "leave unchanged",
+as it does for every other field there (review F7 of PR #805); there is no lenient load path,
+because a fixed vocabulary cannot collide with a default an upgrade adds the
+way `tui.keys` can. It is served as an array, never `null`. A client treats a
+missing field as an older daemon and uses the default, drops a name it does
+not know, and falls back to the default if nothing is left. The key is
+accepted and served before the TUI acts on it: switching, the strip and
+landing arrive with issues #787–#789, which amend this note.
 
 **`environment` (T4.23).** Governs every process the daemon spawns — agent
 steps via `RunSpec.Env` (§9.1), command steps and their checks via §8.5's
@@ -12941,6 +12959,17 @@ stream for the live tail.
    `chat.*`, `project.*` and `workflow.registry_changed` while visible, and
    fetches nothing while hidden. The palette row reads "project overview",
    and the project picker's last row, "overview & manage…", opens it.*
+   *Amended 2026-10-20 (issue #790): the delete confirmation and an open
+   add/edit form **hold the keyboard** — the root's global single-key
+   bindings (`n`, `q`, `:` …) do not run under either. This is a recorded
+   exception to PR M's rule that a form captures input only while a text row
+   is in edit mode, the same one task 067 decision 8 made for the new-chat
+   form, and it is scoped to this view: the new-task form keeps PR M's rule.
+   Before it, `n` on the confirmation opened New task with the prompt still
+   armed, so a later `y` deleted the project, and `n` on a form's non-text row
+   left the view with the form open behind it. Any key but `y` answers the
+   confirmation "no"; `esc` closes the form. While the confirmation is up the
+   footer shows its answers.*
 5. **Workflows.** Merged registry with scope badges and validation status; `e` opens
    the file in `$EDITOR`; live reload reflects saves immediately.
    *Amended 2026-08-30 (task 065, issue #261).* **The view authors the registry
@@ -13152,7 +13181,13 @@ stream for the live tail.
    longer only here. The task workspace's Pull Request tab (view 2) carries its
    own `u`, with the same effect and the same sticky suppression. This view
    keeps its copy because the case task 052 decision 6 put it here for — a pull
-   request no task claims — has no task workspace to be reached from at all.* `R` re-lists, `/` filters, `↑`/`↓` move.
+   request no task claims — has no task workspace to be reached from at all.*
+   *Amended 2026-10-21 (issue #790, review F2 of PR #805): the unlink
+   confirmation **holds the keyboard** like view 4's delete question — the
+   root's global single-key bindings (`n`, `q`, `:` …) do not run under it,
+   any key but `y` answers "no", and the footer shows its answers. Before it,
+   `n` opened New task with the question still armed, so a later `y` on return
+   unlinked.* `R` re-lists, `/` filters, `↑`/`↓` move.
    The view subscribes to nothing of its own: the root broadcasts every event to
    every view, so a `task.github_pull_changed` tick re-renders it with no
    keypress.
@@ -13785,6 +13820,10 @@ stream for the live tail.
    them drops the occupant's state word, then shortens the tags, then the
    source badge, and only then the cell, so the counts survive at the
    80-column floor.
+   *Amended 2026-10-20 (issue #792):* §15 Mouse applies here as on the
+   boards (task 114): the wheel moves the selection one row per tick and a
+   click selects the row under it; both are ignored under the issue form and
+   the close/delete prompt.
 
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,
@@ -13878,6 +13917,20 @@ stream for the live tail.
    side task, indented as a child, unless its source is not listed. The
    screen also re-reads on a task event whose `issue_id` names this issue,
    so a new side task or merge-back appears.
+
+   *Amended 2026-10-20 (issue #792):* the page is **scroll-first**. `↑`/`↓`
+   (`k`/`j`) scroll a line, and move the selection among the Main worktree
+   and task rows only while one is on screen, scrolling once it reaches the
+   viewport's edge — selecting never jumps the page away from the
+   description. `pgup`/`pgdown`/`space` scroll a page and `ctrl+u`/`ctrl+d`
+   half of one, both sized to the pane; `home`/`end` and `g`/`G` jump to
+   either end. A page taller than the pane shows `▲ n more` / `▼ n more`
+   while it continues. The wheel scrolls a line per tick (#300's convention)
+   and a click selects a task or the Main worktree row, per §15 Mouse; both
+   are ignored under the issue form and the close/delete prompt. `enter`
+   acts on the selected row only while it is on screen, and the footer
+   withholds it with no row to open or with the selection scrolled away
+   (review F6 of PR #805), and `o` on a local issue.
 
 ### Layout
 
@@ -14165,6 +14218,26 @@ budget from the rows the field actually drew rather than assuming one. That
 holds for the multi-line chat composer of view 9 as much as for the single-value
 rows: a view is given a width and a height and draws inside both of them, so a
 composer that grew is a body that shrank, not a frame that overflowed.
+
+**Wrap or truncate, never clip (added 2026-10-20, task 135.1, issue #786).**
+The rule above is now the TUI's for every surface, not only for fields, and it
+has one implementation: `wrapText` lays plain text out by display width, wide
+runes and emoji included, and hands back lines the view styles afterwards; it
+honours any width down to one cell. Prose — descriptions, errors, labels,
+bodies — is wrapped by the view that draws it and never left to the frame's
+right-edge cut. Rows of a list or a table stay one line each, truncated with
+`…`; the focused row's full text is shown wrapped somewhere else on the
+screen, or under the focused row itself, which then grows by those lines
+while every other row stays one — the compact workflow list does this (issue
+#791), and a list that does must scroll the whole focused entry into view,
+not only its first line (review F12 and F1 of PR #805). Exact identifiers — a branch, a path, a URL — hard-wrap where they are
+the screen's subject. Content taller than its pane lives in a `scrollPane`
+with a position cue (" ↓ more · lines a–b of n"); showing the first rows of it
+and dropping the rest is a bug. The frame's truncation stays, as the
+last-resort guard that keeps one panel out of its neighbour, and a test
+reaching it (`assertNoFrameClip`) is a failure. The help sheet is the first
+surface held to it: its labels wrap at their own column, its key row sheds its
+description before a close key, and the mouse wheel scrolls it.
 
 **Opening a URL (task 052.6, added 2026-08-29).** The two screens above hand a
 URL to the platform's own opener — `open` on macOS, `xdg-open` on the other
@@ -15138,7 +15211,13 @@ hoisted above the input-capture gate the way `ctrl+v` is. `:` is a printable
 key, so on a surface that owns the keyboard — the chat composer, a filter — it
 types a colon into the draft and opens nothing; the palette is this section's
 "what can be done right now" surface, and it must be reachable from everywhere,
-not only from a resting list.
+not only from a resting list. *Amended 2026-10-21 (issue #790, review F3 of
+PR #805):* everywhere but under a pending destructive question — a delete,
+archive or unlink confirmation (views 4, 7 and 10, the chats boards). The
+palette navigates, and a view left with its question armed acts on the next
+`y` back there, so the question keeps `ctrl+p` the way it keeps `:`, and the
+footer, which shows only its answers, pins `f1 help` and `ctrl+c quit` but
+not the palette. `f1` stays hoisted: help reads and never navigates.
 
 *Amended 2026-09-17 (task 114, issue #405).* **`f1` opens help on the same
 terms.** `?` is printable too, so on a surface that owns the keyboard it types

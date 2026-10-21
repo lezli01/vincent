@@ -372,6 +372,10 @@ func configFields() map[string]configField {
 			func(v *[]string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Board: &apiclient.ConfigBoardPatch{GroupBy: v}}}
 			}),
+		"tui.tabs": listField(func(c apiclient.Config) []string { return c.TUI.Tabs },
+			func(v *[]string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Tabs: v}}
+			}),
 		"tui.hyperlinks": boolField(
 			func(c apiclient.Config) bool { return c.TUI.Hyperlinks },
 			func(b *bool) apiclient.ConfigPatch {

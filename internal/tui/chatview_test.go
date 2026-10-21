@@ -92,6 +92,7 @@ func TestChatViewTypedDraftEditsAndSends(t *testing.T) {
 	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
 		t.Fatal("enter did not send the multi-line draft")
 	}
+	acceptSend(v)
 	if got := v.composer.Value(); got != "" {
 		t.Fatalf("the composer still holds %q after a send", got)
 	}

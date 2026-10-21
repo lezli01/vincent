@@ -15,4 +15,16 @@
 // selection in the app header, and hands it to every project-bearing view
 // through the optional projectScoped interface — directly, never by
 // broadcast, and again after each setClient walk.
+//
+// Wrap or truncate, never clip (§15, task 135). A view wraps its prose with
+// wrapText — plain text in, lines out, styled afterwards — and never leaves
+// it to frame(), whose right-edge "…" is the last-resort guard that keeps a
+// panel out of its neighbour, not a layout. List and table rows stay one
+// line truncated with "…", the focused row's full text shown wrapped
+// elsewhere, as linkpicker.go does, or under the row itself, as the compact
+// workflow list does — the list then reveals the whole focused entry, not
+// just its first line; exact identifiers hard-wrap where they
+// are the screen's subject. Content taller than its pane lives in a
+// scrollPane with a cue: a static first-N clip is a bug. Tests hold a
+// screen to it with assertNoFrameClip.
 package tui

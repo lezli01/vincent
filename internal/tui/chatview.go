@@ -47,8 +47,11 @@ type (
 	// chatSentMsg reports POST /v1/chats/{id}/send.
 	chatSentMsg struct {
 		chatID int64
-		turn   *apiclient.ChatTurn
-		err    error
+		// sent is the trimmed draft the request carried, so acceptance
+		// takes that out of the composer and nothing typed since (review F8).
+		sent string
+		turn *apiclient.ChatTurn
+		err  error
 	}
 	// chatAnsweredMsg reports POST /v1/chats/{id}/answer.
 	chatAnsweredMsg struct {
@@ -162,6 +165,10 @@ type chatView struct {
 
 	composer textarea.Model
 	form     *answerForm
+	// sending is a send in flight. The draft stays in the composer until the
+	// daemon takes the turn (#790), so this is what stops a second enter
+	// sending it twice meanwhile.
+	sending bool
 
 	// stream is the per-chat SSE subscription's cancel, held so opening a
 	// second chat does not leave the first one's stream running.
@@ -288,7 +295,7 @@ func (v *chatView) open(id int64) tea.Cmd {
 	v.chat, v.turns = nil, nil
 	v.resetRecords()
 	v.note, v.loadErr = "", ""
-	v.closing = false
+	v.closing, v.sending = false, false
 	v.skills = chatSkillList{}
 	v.files = chatFileList{}
 	v.composer.SetValue("")
@@ -742,6 +749,14 @@ func (v *chatView) syncFollowToViewport() {
 }
 
 func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
+	// A result for a chat this view has since left is not this view's: its
+	// refusal would tell the chat now open to resend a draft it never had,
+	// and its acceptance would wipe and reload that chat (review F4). The
+	// chat it was for reloads on its own when it is opened again.
+	if msg.chatID != v.chatID {
+		return nil
+	}
+	v.sending = false
 	if msg.err != nil {
 		// A 409 chat_cap_reached is a refusal, never a queued turn and never
 		// a spinner: the daemon will not run this turn, and a client that
@@ -755,9 +770,32 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 		v.note, v.noteBad = errString(msg.err), true
 		return nil
 	}
+	// The draft leaves the composer only once the daemon has taken the turn:
+	// a refusal or a send that never arrived keeps what was typed, so "send
+	// again" is a keypress rather than a retype (#790). The draft stays
+	// editable while the send is in flight, so what leaves is what was
+	// sent: text added after it stays (review F8).
+	v.composer.SetValue(unsentRest(v.composer.Value(), msg.sent))
+	// The draft the inline hints were about is gone with it (task 124.14).
+	v.skills.inlineNote, v.skills.noteFor = "", ""
 	v.note = ""
 	v.resetRecords()
 	return v.loadCmd()
+}
+
+// unsentRest is what is left of the composer once sent has gone: nothing
+// when it still holds just that draft, what follows it when the human kept
+// typing after it, and all of it when the draft was edited rather than
+// extended: that edit is the human's to keep or discard.
+func unsentRest(value, sent string) string {
+	trimmed := strings.TrimLeft(value, " \t\r\n")
+	switch {
+	case strings.TrimSpace(value) == sent:
+		return ""
+	case sent != "" && strings.HasPrefix(trimmed, sent):
+		return strings.TrimLeft(trimmed[len(sent):], " \t\r\n")
+	}
+	return value
 }
 
 func (v *chatView) applyAnswered(msg chatAnsweredMsg) tea.Cmd {
@@ -1606,6 +1644,20 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 	return out
 }
 
+// sendRefusal says why a chat in state s takes no turn now, and what does.
+func sendRefusal(s chatstate.State) string {
+	switch {
+	case s == chatstate.Running:
+		return "a turn is running — wait for it, or ctrl+x to cancel it"
+	case s == chatstate.AwaitingInput:
+		return "the agent is waiting on an answer — answer it in the popup first"
+	case chatstate.Terminal(s):
+		return "this chat is " + chatStateLabel(string(s)) + " and takes no more turns"
+	default:
+		return "only an idle chat takes a turn"
+	}
+}
+
 func (v *chatView) sendCmd() tea.Cmd {
 	message := strings.TrimSpace(v.composer.Value())
 	if message == "" {
@@ -1616,14 +1668,28 @@ func (v *chatView) sendCmd() tea.Cmd {
 		v.note, v.noteBad = "not connected", true
 		return nil
 	}
-	v.composer.SetValue("")
-	// The draft the inline hints were about is gone with it (task 124.14).
-	v.skills.inlineNote, v.skills.noteFor = "", ""
+	// `send` is legal only from idle (chatstate), and a turn is refused,
+	// never queued (§11): the daemon would answer 409 invalid_state, so it
+	// is refused here, with the draft kept, the way close and hand-off are.
+	if v.chat != nil && v.chat.State != string(chatstate.Idle) {
+		v.note, v.noteBad = sendRefusal(chatstate.State(v.chat.State)), true
+		// The refusal points at the answer popup, and esc may have closed
+		// it: bring it back, or the note names something no key reopens
+		// (review F9).
+		if v.chat.State == string(chatstate.AwaitingInput) {
+			v.syncForm()
+		}
+		return nil
+	}
+	if v.sending {
+		return nil
+	}
+	v.sending = true
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
 		turn, err := client.SendChat(ctx, id, message)
-		return chatSentMsg{chatID: id, turn: turn, err: err}
+		return chatSentMsg{chatID: id, sent: message, turn: turn, err: err}
 	}
 }
 

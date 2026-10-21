@@ -302,7 +302,7 @@ func stepInputLines(run apiclient.StepRun, width int) []string {
 	if strings.TrimSpace(run.ResultSummary) == "" {
 		out = append(out, styleDim.Render("    none"))
 	} else {
-		out = appendWrappedIndented(out, run.ResultSummary, width, "    ")
+		out = append(out, wrapText(run.ResultSummary, width, hanging("    "))...)
 	}
 	return out
 }
@@ -319,15 +319,15 @@ func stepRenderedBlock(value *string, width int, markTrailer bool) []string {
 		return []string{styleDim.Render("    " + stepInputRenderedEmpty)}
 	}
 	if !markTrailer {
-		return appendWrappedIndented(nil, *value, width, "    ")
+		return wrapText(*value, width, hanging("    "))
 	}
 	body, trailer := apiclient.SplitFailureTrailer(*value)
-	out := appendWrappedIndented(nil, body, width, "    ")
+	out := wrapText(body, width, hanging("    "))
 	if trailer == "" {
 		return out
 	}
 	out = append(out, "", styleDim.Render("    ── appended by vincent: the previous attempt's failure ──"), "")
-	return appendWrappedIndented(out, trailer, width, "    ")
+	return append(out, wrapText(trailer, width, hanging("    "))...)
 }
 
 // stepResolutionLines is the §8.6 resolution the row journaled. These are the

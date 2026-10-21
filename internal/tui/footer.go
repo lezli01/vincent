@@ -163,6 +163,67 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 	return line + strings.Repeat(" ", pad) + pinned.String(), hits
 }
 
+// prompter is a view that can hold a single-key question — a delete or an
+// archive confirmation — which owns the keyboard until it is answered. While
+// one is up, promptKeys names its answers and the footer shows those and
+// nothing else, the way the action bar's own y/n does (#790).
+type prompter interface {
+	promptKeys() promptAnswers
+}
+
+// promptAnswers is a question's answers as key/label pairs; empty means no
+// question is up.
+type promptAnswers []string
+
+// promptHint is the answers to a question, given as key/label pairs.
+func promptHint(pairs ...string) promptAnswers { return pairs }
+
+// segs renders each answer the way the footer renders a binding, as a
+// segment of its own carrying its key, so clicking one answers the question
+// the way pressing it does (§15: a footer hint fires its key; review F13).
+func (a promptAnswers) segs() []footerSeg {
+	out := make([]footerSeg, 0, len(a)/2)
+	for i := 0; i+1 < len(a); i += 2 {
+		out = append(out, footerSeg{text: styleKey.Render(a[i]) + " " + a[i+1], key: a[i]})
+	}
+	return out
+}
+
+// buildPromptFooter is buildFooter for a view's pending question: its answer
+// keys on the left, the pinned globals on the right, and nothing else — no
+// panel hints and no `+N`, because nothing else is actionable.
+//
+// The palette is not pinned: it is the one global that navigates, and it
+// stands down while a question is up (review F3) — offering it, clickable,
+// beside the answers would leave the question armed behind another view.
+func buildPromptFooter(width int, keys promptAnswers, textField bool) (string, []footerHit) {
+	pinnedSegs := footerPinnedSegs(textField)[:0:0]
+	for _, s := range footerPinnedSegs(textField) {
+		if s.key != opKey(keymap.Palette) && s.key != opKey(keymap.PaletteAlt) {
+			pinnedSegs = append(pinnedSegs, s)
+		}
+	}
+	var pinned strings.Builder
+	for _, s := range pinnedSegs {
+		pinned.WriteString(s.text)
+	}
+	pw := ansi.StringWidth(pinned.String())
+	segs := keys.segs()
+	if width <= 0 {
+		line, _ := composeFooter(segs)
+		return line + "  " + pinned.String(), nil
+	}
+	avail := width - pw - 2
+	if avail <= 0 {
+		return " " + pinned.String(), pinnedHits(1, pinnedSegs)
+	}
+	line, hits, _ := footerFit(segs, 0, avail)
+	lw := ansi.StringWidth(line)
+	pad := max(width-lw-pw, 2)
+	hits = append(hits, pinnedHits(lw+pad, pinnedSegs)...)
+	return line + strings.Repeat(" ", pad) + pinned.String(), hits
+}
+
 // footerSep joins two segments. Its width is the per-gap cost every budget
 // here has to pay for.
 func footerSep() (string, int) {

@@ -71,9 +71,10 @@ type root struct {
 	active viewID
 	views  [viewCount]panel
 	help   bool
-	// helpScroll is the help sheet's first visible line (task 129.17),
-	// zeroed each time the sheet opens and clamped to the text on every use.
-	helpScroll int
+	// helpPane scrolls the help sheet (task 129.17, task 135.1): back at
+	// the top each time the sheet opens, refilled from the sheet on every
+	// key, wheel notch and render, so it is clamped to the text as it is.
+	helpPane scrollPane
 	// palette is the §15 command palette, open when non-nil. It lives on
 	// the root because it must overlay every screen, takeovers included —
 	// while disconnected it is how the daemon view stays reachable.
@@ -317,10 +318,15 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		return m.updateMouseClick(msg)
 	case tea.MouseWheelMsg:
-		if m.notice.active || m.popupOpen() || m.help {
+		if m.notice.active || m.popupOpen() {
 			return m, nil
 		}
-		msg.Y-- // the body starts under the header line
+		if m.help {
+			m.syncHelpPane()
+			m.helpPane.Update(msg)
+			return m, nil
+		}
+		msg.Y -= m.chromeTop() // the body starts under the header lines, as a click's does
 		return m, m.deliver(m.active, msg)
 	case openCopyPickerMsg:
 		m.reader = newReaderPicker(msg.items)
@@ -479,7 +485,13 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// decision 1): help had been unreachable from a chat, a filter or a form
 	// by its key, and a text field that took `?` as a key would lose it as a
 	// character.
-	if k := msg.String(); k == opKey(keymap.PaletteAlt) || k == opKey(keymap.HelpAlt) {
+	//
+	// A pending destructive question is the exception for ctrl+p (review F3):
+	// the palette navigates, and a view left with its question armed deletes
+	// on the next `y` back there — the question owns the keyboard until it is
+	// answered (task 078 decision 3, §15 view 10). Help only reads, so f1
+	// stays.
+	if k := msg.String(); (k == opKey(keymap.PaletteAlt) && !m.activePrompt()) || k == opKey(keymap.HelpAlt) {
 		cmd, _ := m.globalKey(msg)
 		return m, cmd
 	}
@@ -520,41 +532,33 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // The scroll keys are the overlay's own, like a popup's, rather than registry
 // rows: they mean the same on every surface's sheet.
 func (m *root) updateHelpKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	lines, visible := m.helpWindow()
-	last := max(len(lines)-visible, 0)
-	scroll := min(m.helpScroll, last)
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
 	case opKey(keymap.Help), "esc", opKey(keymap.HelpAlt):
 		m.help = false
-	case "up":
-		scroll--
-	case "down":
-		scroll++
-	case "pgup":
-		scroll -= max(visible-1, 1)
-	case "pgdown":
-		scroll += max(visible-1, 1)
-	case "home":
-		scroll = 0
-	case "end":
-		scroll = last
+		return m, nil
 	}
-	m.helpScroll = max(min(scroll, last), 0)
+	m.syncHelpPane()
+	m.helpPane.Update(msg)
 	return m, nil
 }
 
-// helpWindow is the help sheet as lines, and how many of them the frame
-// shows at once — one fewer than it holds when they overflow, since the last
-// row is then the position cue.
-func (m *root) helpWindow() (lines []string, visible int) {
-	lines = strings.Split(strings.TrimRight(m.helpSheet(), "\n"), "\n")
-	visible = max(m.bodyHeight()-2, 1)
-	if len(lines) > visible {
-		visible = max(visible-1, 1)
-	}
-	return lines, visible
+// syncHelpPane lays the sheet out for the frame it is drawn in and hands it
+// to the pane: the sheet's width and the body's height can both have
+// changed since the last use.
+func (m *root) syncHelpPane() {
+	w, h := m.width-2, max(m.bodyHeight()-2, 1)
+	m.helpPane.SetSize(w, h)
+	m.helpPane.SetContentLines(m.helpLines(w))
+}
+
+// helpLines is the sheet for the surface under it at a body width, against
+// the same target the palette would be built from.
+func (m *root) helpLines(width int) []string {
+	st := m.surfaceTarget()
+	return helpLines(m.activeContext(), m.githubAvailable(),
+		helpState{target: st.target, editable: st.editable, tabs: st.tabs}, width)
 }
 
 // helpSheet renders the sheet for the surface under it, against the same
@@ -577,7 +581,7 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 	case opKey(keymap.Help), opKey(keymap.HelpAlt):
 		m.help = !m.help
-		m.helpScroll = 0
+		m.helpPane = newScrollPane(1, 1, true)
 		return nil, true
 	case opKey(keymap.Mouse):
 		m.mouseOn = !m.mouseOn
@@ -1803,6 +1807,13 @@ func (m *root) broadcast(msg tea.Msg) tea.Cmd {
 
 // activeCapturesInput reports whether the visible view is consuming raw
 // keystrokes, in which case the global single-key bindings stand down.
+// activePrompt reports whether the active view holds a single-key question
+// that owns the keyboard until it is answered (#790).
+func (m *root) activePrompt() bool {
+	p, ok := m.views[m.active].(prompter)
+	return ok && len(p.promptKeys()) > 0
+}
+
 func (m *root) activeCapturesInput() bool {
 	c, ok := m.views[m.active].(inputCapturing)
 	return ok && c.capturesInput()
@@ -1995,19 +2006,15 @@ func (m *root) body() string {
 	if m.help {
 		// The sheet describes the surface it was opened over, framed like
 		// every other surface (T3.8 findings).
-		// It scrolls (task 129.17): the frame shows a window of it from
-		// helpScroll, with a cue on the last row when there is more.
+		// It scrolls (task 129.17) in a scrollPane (task 135.1), with a cue
+		// on the last row when there is more.
 		ctx := m.activeContext()
 		h := m.bodyHeight()
 		if m.width < 4 || h < 3 {
 			return m.helpSheet()
 		}
-		lines, visible := m.helpWindow()
-		from := min(m.helpScroll, max(len(lines)-visible, 0))
-		shown := lines[from:min(from+visible, len(lines))]
-		if len(lines) > visible {
-			shown = append(shown[:len(shown):len(shown)], helpScrollCue(from, visible, len(lines)))
-		}
+		m.syncHelpPane()
+		shown := m.helpPane.View()
 		return frame(helpTitle(ctx), strings.Join(shown, "\n"), m.width, h, true)
 	}
 	// The daemon view is the exception to the connection gate (§15): its log
@@ -2126,6 +2133,13 @@ func (m *root) footerLine() string {
 		// The overlay owns the keyboard, so it owns the key row: the keys
 		// underneath do nothing until it closes.
 		return helpFooter(m.width)
+	}
+	if p, ok := m.views[m.active].(prompter); ok {
+		if keys := p.promptKeys(); len(keys) > 0 {
+			line, hits := buildPromptFooter(m.width, keys, m.activeCapturesInput())
+			m.footerHits = hits
+			return line
+		}
 	}
 	ctx := m.activeContext()
 	var (

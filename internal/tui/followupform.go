@@ -528,7 +528,7 @@ func (f *followUpForm) rowLines(row fuRow, width int) []string {
 		if f.editing {
 			out = append(out, f.editorView(width)...)
 		} else if f.body() != "" {
-			for _, l := range wrapPlain(f.body(), width-editorIndent) {
+			for _, l := range wrapText(f.body(), width-editorIndent, wrapOpts{}) {
 				out = append(out, strings.Repeat(" ", editorIndent)+styleOK.Render(l))
 			}
 		}

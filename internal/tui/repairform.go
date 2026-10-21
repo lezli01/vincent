@@ -398,7 +398,7 @@ func (f *repairForm) rowLines(row rfRow, width int) []string {
 		if f.editing {
 			out = append(out, f.editorView(width)...)
 		} else if f.prompt != "" {
-			for _, l := range wrapPlain(f.prompt, width-editorIndent) {
+			for _, l := range wrapText(f.prompt, width-editorIndent, wrapOpts{}) {
 				out = append(out, strings.Repeat(" ", editorIndent)+styleOK.Render(l))
 			}
 		}

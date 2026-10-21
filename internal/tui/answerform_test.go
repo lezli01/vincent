@@ -355,10 +355,15 @@ func TestSameRequestSurvivesARefresh(t *testing.T) {
 }
 
 // TestAnswerFormWrapsInCells is the answer form's share of task 073
-// decision 2. It wraps through the output pane's splitWords and measures with
-// the same cols, so correcting the measurement corrected this too — and a
-// question in CJK or an option carrying an emoji is exactly the case a rune
-// count got wrong, by up to a factor of two.
+// decision 2. It wraps through wrapText and measures with the output pane's
+// cols, so correcting the measurement corrected this too — and a question in
+// CJK or an option carrying an emoji is exactly the case a rune count got
+// wrong, by up to a factor of two.
+//
+// The narrow widths are new with task 135.1 decision 1, and deliberate: the
+// form's old wrapPlain floored the width at 8 and left the overflow to
+// frame(), so below 8 its lines were 8 wide by design. wrapText honours the
+// width all the way down; 2 is the narrowest a wide rune can honour.
 func TestAnswerFormWrapsInCells(t *testing.T) {
 	for _, text := range []string{
 		strings.Repeat("日本語のテキスト ", 10),
@@ -367,8 +372,8 @@ func TestAnswerFormWrapsInCells(t *testing.T) {
 		strings.Repeat("éẍ ", 40),
 		strings.Repeat("日", 50),
 	} {
-		for _, width := range []int{20, 40, 60} {
-			for i, line := range wrapPlain(text, width) {
+		for _, width := range []int{2, 5, 20, 40, 60} {
+			for i, line := range wrapText(text, width, wrapOpts{}) {
 				if w := ansi.StringWidth(line); w > width {
 					t.Errorf("width %d: line %d is %d columns: %q", width, i, w, line)
 				}

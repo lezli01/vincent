@@ -316,7 +316,7 @@ func (f *createPRForm) lines(width int) []string {
 	// fallback sends a client to, and because a prefill nobody can see the
 	// effect of is the thing decision 4 exists to prevent.
 	out = append(out, styleDim.Render("  ctrl+o opens"))
-	for _, line := range wrapPlain(f.url(), max(width-4, 20)) {
+	for _, line := range wrapText(f.url(), max(width-4, 20), wrapOpts{}) {
 		out = append(out, styleDim.Render("    "+line))
 	}
 	switch {
@@ -365,7 +365,7 @@ func (f *createPRForm) rowLines(row cprRow, width int) []string {
 	if value == "" {
 		return append(out, styleDim.Render(strings.Repeat(" ", editorIndent)+"(empty)"))
 	}
-	for _, line := range wrapPlain(value, max(width-editorIndent, 20)) {
+	for _, line := range wrapText(value, max(width-editorIndent, 20), wrapOpts{}) {
 		out = append(out, strings.Repeat(" ", editorIndent)+styleOK.Render(line))
 	}
 	return out

@@ -111,6 +111,10 @@ type configTUI struct {
 	Output configOutput      `json:"output"`
 	// DefaultProject is `tui.default_project` (task 132.3), "" when unset.
 	DefaultProject string `json:"default_project"`
+	// Tabs is `tui.tabs` (task 136), in order. Always an array: validation
+	// keeps it non-empty, and stringList keeps a stray nil from reading as
+	// a daemon that predates the key.
+	Tabs []string `json:"tabs"`
 }
 
 type configOutput struct {
@@ -339,6 +343,7 @@ func configBody(cfg config.Config) configResponse {
 				}
 				return *cfg.TUI.DefaultProject
 			}(),
+			Tabs: stringList(cfg.TUI.Tabs),
 		},
 	}
 }
@@ -524,6 +529,9 @@ type tuiPatch struct {
 	// is written and then refused by validation: the key is removed by
 	// editing the file, not by patching it to "".
 	DefaultProject *string `json:"default_project"`
+	// Tabs replaces the whole `tui.tabs` list (task 136). `[]` is written
+	// to the candidate and refused by validation, like any invalid value.
+	Tabs *[]string `json:"tabs"`
 }
 
 type outputPatch struct {
@@ -662,6 +670,9 @@ func (p configPatch) sets() []config.Set {
 			addIfString(add, "tui.output.level", v.Output.Level)
 		}
 		addIfString(add, "tui.default_project", v.DefaultProject)
+		if v.Tabs != nil {
+			add("tui.tabs", config.RenderList(*v.Tabs))
+		}
 	}
 	// Order is the struct's, which is config.yaml's, so two clients sending
 	// the same patch produce the same bytes.

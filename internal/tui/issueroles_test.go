@@ -70,6 +70,7 @@ func TestIssueDetailShowsLaneAndMainWorktree(t *testing.T) {
 
 func TestIssueDetailEnterOpensTheOccupant(t *testing.T) {
 	v := rolesIssueFixture()
+	v.render(120, 200) // enter acts on a row that is on screen (review F6)
 	_, cmd := v.updateKey(registryKey(t, "enter"))
 	if cmd == nil {
 		t.Fatal("enter on the Main worktree section opened nothing")

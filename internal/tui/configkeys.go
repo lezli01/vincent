@@ -111,6 +111,16 @@ var (
 	inheritChoices = []string{"all", "none"}
 )
 
+// tabViewIDs maps each tui.tabs name (config.TabViews) to the view it opens
+// (task 136 decision 10). A test holds its keys equal to config.TabViews, so
+// a name added to the vocabulary cannot reach a TUI with nowhere to route it.
+// Nothing routes by it yet: tab switching (#787) is what consumes it.
+var tabViewIDs = map[string]viewID{
+	"issues": viewIssues,
+	"tasks":  viewHome,
+	"chats":  viewChats,
+}
+
 // configKeys is the editable table, in the order config.yaml carries the keys
 // so the block reads like the file.
 func configKeys() []configKey {
@@ -468,6 +478,16 @@ func configKeys() []configKey {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Board: &apiclient.ConfigBoardPatch{GroupBy: &v}}}, nil
 			},
 		},
+		// Task 136. Reordering means retyping the list, as for group_by.
+		{
+			path: "tui.tabs", label: "tabs", kind: kindList, choices: config.TabViews,
+			help: "views tab cycles through, in order; the first is where the TUI opens",
+			read: func(c apiclient.Config) string { return strings.Join(c.TUI.Tabs, " ") },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				v := strings.Fields(s)
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Tabs: &v}}, nil
+			},
+		},
 		// Task 111. The help names the §16 consequence rather than the
 		// feature: what turning it on changes is that agent-supplied URLs
 		// reach the terminal inside an escape sequence, sanitized.
@@ -693,6 +713,7 @@ func defaultClientConfig() apiclient.Config {
 		TUI: apiclient.ConfigTUI{
 			Board:  apiclient.ConfigBoard{GroupBy: boardGroupNames(d)},
 			Output: apiclient.ConfigOutput{Level: d.TUI.Output.Level},
+			Tabs:   d.TUI.Tabs,
 		},
 	}
 }
