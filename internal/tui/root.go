@@ -879,6 +879,14 @@ type liveBinder interface {
 	liveBindings(rows []binding) []binding
 }
 
+// footerBinder is a surface that keeps some rows out of the footer alone:
+// keys that answer with a note rather than nothing, so `?` and the palette
+// still list them, but which the narrow footer should not spend room on
+// where they cannot act (#796).
+type footerBinder interface {
+	footerBindings(rows []binding) []binding
+}
+
 // panelOwnsKey reports whether the active surface declares key as one of its
 // own panel rows. It is what a global single-key binding consults before
 // consuming a key the view underneath it also claims, so the registry answers
@@ -2459,6 +2467,9 @@ func (m *root) footerLine() string {
 	rows := withoutGitHub(bindingsFor(ctx), m.githubAvailable())
 	if lb, ok := m.views[m.active].(liveBinder); ok {
 		rows = lb.liveBindings(rows)
+	}
+	if fb, ok := m.views[m.active].(footerBinder); ok {
+		rows = fb.footerBindings(rows)
 	}
 	rows = mainTabRows(rows, m.nextTabName())
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting

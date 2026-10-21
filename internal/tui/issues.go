@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -126,6 +127,9 @@ type issuesView struct {
 	// the list's window starts on, the body line it starts at, how many it
 	// shows, and the body line of lines()[0] (-1 when no list is drawn).
 	clickTop, clickFrom, clickShown, listAt int
+	// page is how many body rows the last render showed, at least one: the
+	// step pgup and pgdown move the selection by (#796).
+	page int
 	// folded is the set of collapsed sections, by lane. Session-only, and
 	// kept across a project switch, as the filter is.
 	folded map[string]bool
@@ -427,6 +431,18 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "down", "j":
 		v.moveCursor(1)
 		return v, nil
+	case "pgdown":
+		v.pageCursor(v.page)
+		return v, nil
+	case "pgup":
+		v.pageCursor(-v.page)
+		return v, nil
+	case "home", "g":
+		v.edgeCursor(false)
+		return v, nil
+	case "end", "G":
+		v.edgeCursor(true)
+		return v, nil
 	case opKey(keymap.Filter):
 		v.filtering = true
 		v.filter.Focus()
@@ -525,6 +541,23 @@ func (v *issuesView) openSelected() tea.Cmd {
 	return openURLCmd(url)
 }
 
+// footerBindings withholds the remoteOnly rows — `o browser` — from the
+// footer while the selected row has no page to open (#796): a local issue,
+// a header, or an empty section. The row is dropped before the footer counts
+// its `+N`, so the count never stands for it.
+func (v *issuesView) footerBindings(rows []binding) []binding {
+	if row, ok := v.current(); ok && issueURL(row.issue) != "" {
+		return rows
+	}
+	out := make([]binding, 0, len(rows))
+	for _, b := range rows {
+		if !b.remoteOnly {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 // issueURL is an imported issue's page, "" for a local one.
 func issueURL(iss apiclient.Issue) string {
 	if iss.Source == nil {
@@ -569,7 +602,8 @@ func (v *issuesView) render(width, height int) string {
 		if v.noteBad {
 			style = styleBad
 		}
-		footer = []string{"", style.Render("  " + v.note)}
+		// The note wraps (#796), and fitFooter counts the lines it takes.
+		footer = append([]string{""}, styled(wrapText(v.note, width, hanging("  ")), style)...)
 	}
 	tail := 0
 	if v.w.act != nil {
@@ -579,17 +613,52 @@ func (v *issuesView) render(width, height int) string {
 	// review F11): the rows shrink to nothing before the prompt loses a line.
 	footer = fitFooter(footer, max(height-len(lines), 0), tail)
 	room := height - len(lines) - len(footer)
-	var shown []string
-	if room > 0 {
-		shown = window(body, cursorRow, room)
-	}
-	v.clickTop, v.clickFrom, v.clickShown = len(lines), windowStart(len(body), cursorRow, max(room, 0)), len(shown)
+	shown, start, rows, above := cuedWindow(body, cursorRow, max(room, 0))
+	// A click hit-tests the body rows only: a cue line selects nothing.
+	v.clickTop, v.clickFrom, v.clickShown = len(lines)+above, start, rows
+	v.page = max(rows, 1)
 	lines = append(lines, shown...)
 	lines = append(lines, footer...)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// cuedWindow is window with the issue detail's overflow cues (#796): a dim
+// `▲ n more` line while the body continues above and `▼ n more` while it
+// continues below, each counting the hidden lines that are not blank and
+// each taking one line of the height. It returns the lines to draw, the
+// body line the shown rows start at, how many body rows are shown, and how
+// many cue lines precede them. A height under three keeps the plain window:
+// a cue there would leave no room for the row it is about.
+func cuedWindow(body []string, focus, height int) (out []string, start, rows, above int) {
+	n := len(body)
+	if height <= 0 {
+		return nil, 0, 0, 0
+	}
+	if n <= height || height < 3 {
+		start = windowStart(n, focus, height)
+		shown := window(body, focus, height)
+		return shown, start, len(shown), 0
+	}
+	// One cue first; both only when the window sits away from either end.
+	h := height - 1
+	start = windowStart(n, focus, h)
+	if start > 0 && start+h < n {
+		h = height - 2
+		start = windowStart(n, focus, h)
+	}
+	end := start + h
+	if start > 0 {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ▲ %d more", nonBlank(body[:start]))))
+		above = 1
+	}
+	out = append(out, body[start:end]...)
+	if end < n {
+		out = append(out, styleDim.Render(fmt.Sprintf("  ▼ %d more", nonBlank(body[end:]))))
+	}
+	return out, start, h, above
 }
 
 func (v *issuesView) headerLine(width int) string {
@@ -629,34 +698,39 @@ func (v *issuesView) totalsLine() string {
 
 func (v *issuesView) bodyLines(width int) (lines []string, cursorRow int) {
 	v.listAt = -1
+	// The prose here wraps to the pane under its 2-column margin (#796)
+	// rather than meeting render's cut: an error or a hint is read whole.
+	prose := func(text string, style lipgloss.Style) []string {
+		return styled(wrapText(text, width, hanging("  ")), style)
+	}
 	if v.project.id == 0 {
 		// Never an unfiltered list in its place (task 132.11). No selection
 		// means no project is registered only once a listing has said so;
 		// until then it is still resolving.
 		if v.noProjects {
-			return []string{styleDim.Render("  " + noProjectsEmpty())}, 0
+			return prose(noProjectsEmpty(), styleDim), 0
 		}
-		return []string{styleDim.Render("  Resolving the project…")}, 0
+		return prose("Resolving the project…", styleDim), 0
 	}
 	if v.loadErr != nil {
 		// Screen-wide, because the list is one request.
-		out := []string{styleBad.Render("  ⚠ could not list issues: " + errString(v.loadErr))}
-		if v.loaded {
-			out = append(out, styleDim.Render("  showing what was listed at "+v.lastLoad.Format("15:04:05")), "")
-		} else {
+		out := prose("⚠ could not list issues: "+errString(v.loadErr), styleBad)
+		if !v.loaded {
 			return out, 0
 		}
+		out = append(out, prose("showing what was listed at "+v.lastLoad.Format("15:04:05"), styleDim)...)
+		out = append(out, "")
 		rest, row := v.listLines(width)
 		v.listAt += len(out)
 		return append(out, rest...), row + len(out)
 	}
 	if !v.loaded {
-		return []string{styleDim.Render("  listing " + v.project.name + "'s issues…")}, 0
+		return prose("listing "+v.project.name+"'s issues…", styleDim), 0
 	}
 	lines, cursorRow = v.listLines(width)
 	if len(v.issues) == 0 {
-		lines = append(lines, "",
-			styleDim.Render("  `vincent issue add` files one; a GitHub project's issues arrive on the reconciler tick."))
+		lines = append(lines, "")
+		lines = append(lines, prose("`vincent issue add` files one; a GitHub project's issues arrive on the reconciler tick.", styleDim)...)
 	}
 	return lines, cursorRow
 }
@@ -670,6 +744,7 @@ func (v *issuesView) listLines(width int) (lines []string, cursorRow int) {
 	lines = append(lines, v.totalsLine(), "")
 	v.listAt = len(lines)
 	inner := max(width-len(groupIndent), 12)
+	shared := issuesShareRepo(v.issues)
 	for i, row := range rows {
 		selected := i == v.cursor
 		if selected {
@@ -685,7 +760,7 @@ func (v *issuesView) listLines(width int) (lines []string, cursorRow int) {
 			}
 			lines = append(lines, groupIndent+"  "+styleDim.Render(none))
 		default:
-			lines = append(lines, groupIndent+issueLine(row.issue, inner, selected))
+			lines = append(lines, groupIndent+issueLine(row.issue, inner, selected, shared))
 		}
 	}
 	return lines, cursorRow
@@ -711,9 +786,21 @@ func issueSectionHeader(row issueRow, selected bool) string {
 	return out
 }
 
+// issueTitleFloor is the narrowest a row's title is ever drawn before
+// render's own cut: the one part of review F2 on #773 that #796 kept, and
+// only the task cell may take the title down to it.
+const issueTitleFloor = 12
+
+// issueTitleMin is the room a row's title keeps while the tags and the
+// source badge give way (#796): 40% of the row, and never under 30 columns —
+// 31 at 80 columns, 47 at 120. The title is what a row is read by.
+func issueTitleMin(width int) int { return max(30, width*40/100) }
+
 // issueLine is one row: id, state badge, title, labels and kind, the source
-// badge of an imported issue, and the linked-task summary.
-func issueLine(iss apiclient.Issue, width int, selected bool) string {
+// badge of an imported issue, and the linked-task summary. sharedRepo says
+// every imported row on the list comes from one repository, so the source
+// badge may shorten to `gh#N` without becoming ambiguous.
+func issueLine(iss apiclient.Issue, width int, selected, sharedRepo bool) string {
 	marker := "  "
 	if selected {
 		marker = styleFocus.Render("› ")
@@ -724,31 +811,43 @@ func issueLine(iss apiclient.Issue, width int, selected bool) string {
 	source := issueSourceBadge(iss)
 	tasks := issueTaskSummary(iss)
 
-	// The right-hand parts share what the title's 12-column floor leaves
-	// (review F2 on #773): at the 80-column floor an in-progress cell, tags
-	// and a source badge can outgrow it, and render's cut would take the
-	// cell's counts. They give way in a fixed order — the occupant's state
-	// word, then the tags, then the source badge, then the cell itself.
-	room := width - (2 + len(id) + ansi.StringWidth(state) + 2 + 6) - 12
-	over := func() int {
-		return ansi.StringWidth(tags) + ansi.StringWidth(source) + ansi.StringWidth(tasks) - room
+	// The title keeps issueTitleMin while the parts right of it give way
+	// (#796, superseding review F2 on #773's 12-column floor for the title),
+	// in a fixed order: the occupant's state word, then the tags become a
+	// `+N` count — never a label cut in half — then the source badge
+	// shortens to `gh#N`, then the count goes, then the badge. Only then may
+	// the task cell take the title below its minimum, down to
+	// issueTitleFloor, and the cell's counts survive whole: render's cut
+	// applies below that, as before.
+	part := func(s string) int {
+		if s == "" {
+			return 0
+		}
+		return 2 + ansi.StringWidth(s)
 	}
-	if over() > 0 {
+	lead := 2 + len(id) + ansi.StringWidth(state) + 2
+	titleRoom := func() int { return width - lead - part(tags) - part(source) - 2 - ansi.StringWidth(tasks) }
+	short := func() bool { return titleRoom() < issueTitleMin(width) }
+	if short() {
 		tasks = issueTaskSummaryShort(iss)
 	}
-	if n := over(); n > 0 {
-		tags = fitWidth(tags, ansi.StringWidth(tags)-n)
+	if short() && tags != "" {
+		tags = "+" + strconv.Itoa(issueTagCount(iss))
 	}
-	if n := over(); n > 0 {
-		source = fitWidth(source, ansi.StringWidth(source)-n)
+	if short() && source != "" && sharedRepo && iss.Source.Number > 0 {
+		source = "gh#" + strconv.Itoa(iss.Source.Number)
 	}
-	if n := over(); n > 0 {
-		tasks = fitWidth(tasks, ansi.StringWidth(tasks)-n)
+	if short() {
+		tags = ""
 	}
-
-	fixed := 2 + len(id) + ansi.StringWidth(state) + 2 + ansi.StringWidth(tags) +
-		ansi.StringWidth(source) + ansi.StringWidth(tasks) + 6
-	titleW := max(width-fixed, 12)
+	if short() && source != "" && !sharedRepo {
+		// Rows from several repositories keep `owner/repo#N`, cut as before.
+		source = fitWidth(source, ansi.StringWidth(source)-(issueTitleMin(width)-titleRoom()))
+	}
+	if short() {
+		source = ""
+	}
+	titleW := max(titleRoom(), issueTitleFloor)
 	title := ansi.Truncate(iss.Title, titleW, "…")
 
 	line := marker + styleKey.Render(id) + issueStateStyle(iss).Render(state) + "  " +
@@ -791,6 +890,34 @@ func issueTags(iss apiclient.Issue) string {
 		parts = append(parts, iss.Kind)
 	}
 	return strings.Join(parts, " ")
+}
+
+// issueTagCount is how many tags issueTags draws: the labels, and the kind.
+func issueTagCount(iss apiclient.Issue) int {
+	n := len(iss.Labels)
+	if iss.Kind != "" {
+		n++
+	}
+	return n
+}
+
+// issuesShareRepo reports whether every imported issue in the list comes
+// from one repository, so a row may name its source `gh#N` (#796): the row
+// starts with vincent's own `#ID`, and a bare `#N` beside it would be a
+// second, unrelated number. A remote's repository can change, so this is
+// read from the list rather than assumed of a project.
+func issuesShareRepo(issues []apiclient.Issue) bool {
+	repo := ""
+	for _, iss := range issues {
+		if iss.Source == nil || iss.Source.Repo == "" {
+			continue
+		}
+		if repo != "" && iss.Source.Repo != repo {
+			return false
+		}
+		repo = iss.Source.Repo
+	}
+	return true
 }
 
 // issueSourceBadge is `owner/repo#N` for an imported issue, "" for a local one.

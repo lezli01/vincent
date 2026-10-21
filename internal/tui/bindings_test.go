@@ -1170,6 +1170,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxIssues: {
+		"pgdown": func(t *testing.T) {
+			v := issuesFixture()
+			v.page = 1
+			v.updateKey(registryKey(t, "pgdown"))
+			if row, ok := v.current(); !ok || row.issue.ID != 5 {
+				t.Fatalf("pgdown left the cursor on %+v, want #5", row)
+			}
+		},
 		"left": func(t *testing.T) {
 			v := issuesFixture()
 			v.updateKey(registryKey(t, "left"))

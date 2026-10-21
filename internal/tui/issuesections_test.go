@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -300,5 +302,132 @@ func TestIssuesLegibleAtTheFloors(t *testing.T) {
 		if !strings.Contains(out, "▾ done") {
 			t.Errorf("%dx%d: the cursor's section header is off screen:\n%s", size[0], size[1], out)
 		}
+	}
+}
+
+// longIssuesFixture is forty issues, far taller than an 80×20 pane: #1-#30
+// open and #31-#40 in progress, with hand-off empty.
+func longIssuesFixture() *issuesView {
+	v := newIssuesView()
+	v.client = offlineClient()
+	v.project = projectSel{id: 1, name: "api"}
+	for i := 1; i <= 40; i++ {
+		lane := "open"
+		if i > 30 {
+			lane = "in_progress"
+		}
+		v.issues = append(v.issues, apiclient.Issue{ID: int64(i), Title: "issue " + strconv.Itoa(i), State: "open", Lane: lane})
+	}
+	v.loaded = true
+	v.clampCursor()
+	return v
+}
+
+func selectedID(v *issuesView) int64 {
+	row, _ := v.current()
+	return row.issue.ID
+}
+
+// #796: pgdown and pgup move by the rows on screen, home/g and end/G reach
+// the ends, and none of them rests on a line the cursor may not.
+func TestIssuesPagingKeys(t *testing.T) {
+	v := longIssuesFixture()
+	v.render(80, 20)
+	page := v.page
+	if page < 10 {
+		t.Fatalf("an 80x20 pane pages by %d rows", page)
+	}
+	v.updateKey(keyPress("pgdown"))
+	if got := selectedID(v); got != int64(1+page) {
+		t.Errorf("pgdown from #1 landed on #%d, want #%d", got, 1+page)
+	}
+	v.updateKey(keyPress("pgup"))
+	if got := selectedID(v); got != 1 {
+		t.Errorf("pgup came back to #%d, want #1", got)
+	}
+	v.updateKey(keyPress("pgup"))
+	if got := selectedID(v); got != 1 {
+		t.Errorf("pgup at the top moved to #%d", got)
+	}
+	for _, k := range []string{"end", "G"} {
+		v.updateKey(keyPress("home"))
+		v.updateKey(keyPress(k))
+		if got := selectedID(v); got != 40 {
+			t.Errorf("%s selected #%d, want #40", k, got)
+		}
+	}
+	for _, k := range []string{"home", "g"} {
+		v.updateKey(keyPress("end"))
+		v.updateKey(keyPress(k))
+		if got := selectedID(v); got != 1 {
+			t.Errorf("%s selected #%d, want #1", k, got)
+		}
+	}
+	// A page landing on the in-progress header steps past it.
+	v.selectIssue(30)
+	v.page = 1
+	v.updateKey(keyPress("pgdown"))
+	if got := selectedID(v); got != 31 {
+		t.Errorf("pgdown onto an expanded header landed on #%d, want #31", got)
+	}
+	if v.selected != 31 {
+		t.Errorf("paging did not remember the selection: %d", v.selected)
+	}
+	// A collapsed header holds the cursor, and is the last thing end reaches.
+	v.folded["in_progress"] = true
+	v.updateKey(keyPress("end"))
+	if row := v.lines()[v.cursor]; !row.header || v.selectedLane != "in_progress" {
+		t.Errorf("end did not rest on the collapsed header: %+v", row)
+	}
+	// The filter owns the keys while it types.
+	v.updateKey(keyPress("/"))
+	v.updateKey(keyPress("home"))
+	if v.selectedLane != "in_progress" {
+		t.Error("home moved the selection while the filter was typing")
+	}
+}
+
+// #796: a list taller than its pane says how much it hides, above and
+// below, and a click on a cue selects nothing while a click on a row still
+// selects it.
+func TestIssuesOverflowCuesAndClicks(t *testing.T) {
+	v := longIssuesFixture()
+	lines := renderedLines(v, 80, 20)
+	if shows(lines, "▲") || !shows(lines, "▼") {
+		t.Fatalf("at the top, want only a ▼ cue:\n%s", strings.Join(lines, "\n"))
+	}
+	// 46 body lines, the one blank among them shown; every hidden one counts.
+	want := fmt.Sprintf("▼ %d more", 46-v.page)
+	if !shows(lines, want) {
+		t.Errorf("want %q:\n%s", want, strings.Join(lines, "\n"))
+	}
+	if len(lines) != 20 {
+		t.Errorf("the list drew %d lines in a 20-line pane", len(lines))
+	}
+
+	v.selectIssue(20)
+	lines = renderedLines(v, 80, 20)
+	up, down := lineOf(lines, "▲"), lineOf(lines, "▼")
+	if up < 0 || down < 0 {
+		t.Fatalf("in the middle, want both cues:\n%s", strings.Join(lines, "\n"))
+	}
+	v.update(tea.MouseClickMsg{X: 10, Y: up, Button: tea.MouseLeft})
+	v.update(tea.MouseClickMsg{X: 10, Y: down, Button: tea.MouseLeft})
+	if got := selectedID(v); got != 20 {
+		t.Errorf("a click on a cue moved the selection to #%d", got)
+	}
+	y := lineOf(lines, "issue 17 ")
+	v.update(tea.MouseClickMsg{X: 10, Y: y, Button: tea.MouseLeft})
+	if got := selectedID(v); got != 17 {
+		t.Errorf("a click on the row for #17 selected #%d", got)
+	}
+
+	v.updateKey(keyPress("end"))
+	if lines = renderedLines(v, 80, 20); !shows(lines, "▲") || shows(lines, "▼") {
+		t.Errorf("at the end, want only a ▲ cue:\n%s", strings.Join(lines, "\n"))
+	}
+	short := issuesFixture()
+	if lines = renderedLines(short, 80, 20); shows(lines, "▲") || shows(lines, "▼") {
+		t.Errorf("a list that fits drew a cue:\n%s", strings.Join(lines, "\n"))
 	}
 }

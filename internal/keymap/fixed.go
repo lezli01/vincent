@@ -268,6 +268,7 @@ var fixed = []Fixed{
 	{"issues", "right", "expand the collapsed lane section under the cursor"},
 	{"issues", "C", "collapse every lane section"},
 	{"issues", "O", "expand every lane section"},
+	{"issues", "pgdown", "page the list"},
 	{"issue", "i", "edit the issue in a form"},
 	{"issue", "X", "close or reopen the issue"},
 	{"issue form", "down", "move between the issue's fields"},
