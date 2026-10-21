@@ -23,6 +23,14 @@ const (
 	// vendored tree; the endpoint still served the whole diff and T4.3 owns
 	// real limits, so this bounds the terminal, not the truth.
 	maxDiffLines = 5000
+	// diffPanStep is how far one shift+←/→ pans the pane sideways. Eight
+	// columns keeps the end of a 300-column line a few dozen presses away
+	// without skipping past a short identifier in one step.
+	diffPanStep = 8
+	// diffAsOfLayout is the freshness cue's clock: the time of day is what a
+	// reader compares against, and a date would only matter to a session left
+	// open overnight, which the "reopen the tab" half of the cue covers.
+	diffAsOfLayout = "15:04:05"
 )
 
 var (
@@ -107,6 +115,12 @@ type diffPane struct {
 	// line), so a click's y can be turned back into a row index.
 	headLines int
 	built     bool
+
+	// asOf is when the content on screen was fetched (#799 W9). The pane
+	// follows no events — the endpoint runs git per call — so a diff read
+	// minutes after the tab opened may no longer be the worktree's, and the
+	// pane says how old it is instead of passing it off as live.
+	asOf time.Time
 }
 
 // diffSection is one lane's share of the change, or the remainder — the
@@ -173,8 +187,10 @@ func (p *diffPane) reset() {
 	// not these files.
 	p.open = map[string]bool{}
 	p.cursor, p.cursorPath = 0, ""
+	p.asOf = time.Time{}
 	p.vp.SetContent("")
 	p.vp.SetYOffset(0)
+	p.vp.SetXOffset(0)
 }
 
 // fetch reloads the diff. stale=false means "only if we have nothing", which
@@ -212,6 +228,7 @@ func (p *diffPane) apply(msg diffLoadedMsg) {
 	}
 	p.err = nil
 	p.loaded = true
+	p.asOf = time.Now()
 	sections := msg.sections
 	if sections == nil {
 		sections = []apiclient.DiffSection{{Remainder: true, Diff: msg.text}}
@@ -350,6 +367,7 @@ func splitDiff(text string) []string {
 // it is on. Line-level scrolling stays on the viewport's pager keys (pgup/pgdn,
 // u/f, b) and the wheel — with everything collapsed there is usually nothing to
 // scroll, and a reader who has opened a long file wants a page at a time anyway.
+// shift+←/→ pan sideways to the end of a line wider than the pane (pan).
 func (p *diffPane) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "down", "j":
@@ -366,6 +384,12 @@ func (p *diffPane) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "left", "h":
 		p.setFold(false)
+		return nil
+	case "shift+right":
+		p.pan(diffPanStep)
+		return nil
+	case "shift+left":
+		p.pan(-diffPanStep)
 		return nil
 	case "O":
 		p.foldAll(true)
@@ -483,6 +507,19 @@ func (p *diffPane) foldAll(want bool) {
 	p.pinCursor(key)
 }
 
+// pan moves the pane sideways (#799 W9). Lines are never wrapped: a diff's
+// columns are its meaning, and a wrapped `+` line reads as two. So the end of a
+// long line is reached by panning, which has to live on shift+←/→ because the
+// plain arrows (and h/l) are the fold keys here. The viewport clamps the offset
+// to the longest line, so panning past the end is a no-op rather than a blank.
+func (p *diffPane) pan(delta int) {
+	if delta > 0 {
+		p.vp.ScrollRight(delta)
+		return
+	}
+	p.vp.ScrollLeft(-delta)
+}
+
 // scroll moves the pane by lines — the mouse wheel's path.
 func (p *diffPane) scroll(delta int) {
 	if delta > 0 {
@@ -520,6 +557,11 @@ func (p *diffPane) clickRow(row int) {
 // and only the first is worth waiting on.
 func (p *diffPane) render(width, height int) string {
 	if body, ok := p.emptyState(); ok {
+		if cue := p.freshness(); cue != "" && p.err == nil && p.loaded && height > 1 {
+			// "No changes" is as perishable as a diff: the agent may have
+			// written its first file since.
+			return styleDim.Render("  "+body) + "\n" + styleDim.Render("  "+cue)
+		}
 		return styleDim.Render("  " + body)
 	}
 	head, rest := "", max(height, 1)
@@ -528,7 +570,7 @@ func (p *diffPane) render(width, height int) string {
 	// worth a line only while they are still on screen. A pane too short to
 	// hold both keeps the diff.
 	if len(p.nodes) > 0 && rest > 2 {
-		head = p.summary() + "\n"
+		head = p.headLine(width) + "\n"
 		rest--
 	}
 	p.headLines = len(strings.Split(head, "\n")) - 1
@@ -567,7 +609,9 @@ func (p *diffPane) emptyState() (string, bool) {
 	case p.fetching && len(p.lines) == 0:
 		return "loading diff…", true
 	case !p.loaded:
-		return "press d to load the diff", true
+		// The diff loads on entering the tab (taskview.go), and `d` here
+		// would leave for Output (#799 W9) — so name what actually loads it.
+		return "the diff is not loaded — reopen the tab to load it", true
 	case len(p.lines) == 0:
 		return "no changes against the base branch yet", true
 	default:
@@ -633,6 +677,32 @@ func (p *diffPane) summary() string {
 		return out
 	}
 	return out + "  " + diffCounts(added, removed)
+}
+
+// headLine is the summary with the freshness cue after it: in full while it
+// fits the width, as the bare time when only that fits, and not at all on a
+// pane too narrow for either — the totals are what the line is for.
+func (p *diffPane) headLine(width int) string {
+	head := p.summary()
+	cue := p.freshness()
+	if cue == "" {
+		return head
+	}
+	for _, c := range []string{cue, "as of " + p.asOf.Format(diffAsOfLayout)} {
+		if line := head + "  " + styleDim.Render(c); lipgloss.Width(line) <= width {
+			return line
+		}
+	}
+	return head
+}
+
+// freshness is the dim "how old is this" cue, empty until a fetch has landed.
+// Reopening the tab is the refresh: entering it always refetches.
+func (p *diffPane) freshness() string {
+	if p.asOf.IsZero() {
+		return ""
+	}
+	return "as of " + p.asOf.Format(diffAsOfLayout) + " — reopen the tab to refresh"
 }
 
 func countNoun(n int, noun string) string {
