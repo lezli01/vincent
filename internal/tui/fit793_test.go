@@ -1,0 +1,209 @@
+package tui
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/lezli01/vincent/internal/apiclient"
+)
+
+// The #793 reproductions: the root's chrome — the connection screens, the
+// status line and the first-run notice — fitted to the terminal, and the
+// alternate screen the code comments assume.
+
+// errLongDial is a dial error the length of a real one (131 columns).
+var errLongDial = errors.New("dial tcp 127.0.0.1:53917: connect: connection refused (is the daemon running? check the log below and `vincent doctor`)  ")
+
+const longLogPath = "/Users/someone/Library/Application Support/vincent/data/logs/daemon-2026-10-20.log"
+
+// phaseRoot is an acknowledged root sized w×h in the given connection phase,
+// with no board ever loaded.
+func phaseRoot(t *testing.T, phase connPhase, w, h int) *root {
+	t.Helper()
+	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
+	m.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	switch phase {
+	case phaseFailed:
+		m.Update(connectFailedMsg{err: errLongDial, logPath: longLogPath})
+	case phaseReconnecting:
+		m.phase = phaseReconnecting
+		m.connErr = errLongDial
+	default:
+		m.phase = phase
+	}
+	return m
+}
+
+var fitPhases = []struct {
+	name  string
+	phase connPhase
+}{
+	{"probing", phaseProbing},
+	{"starting", phaseStarting},
+	{"connected", phaseConnected},
+	{"reconnecting", phaseReconnecting},
+	{"failed", phaseFailed},
+}
+
+var fitSizes = [][2]int{{60, 15}, {80, 24}, {200, 60}}
+
+// assertFits is the invariant: no line wider than the terminal, and the
+// frame exactly the terminal's height.
+func assertFits(t *testing.T, frame string, w, h int) {
+	t.Helper()
+	lines := strings.Split(frame, "\n")
+	if len(lines) != h {
+		t.Errorf("frame is %d lines, want exactly %d", len(lines), h)
+	}
+	for i, l := range lines {
+		if lw := ansi.StringWidth(l); lw > w {
+			t.Errorf("line %d is %d cells wide, terminal is %d: %q", i, lw, w, ansi.Strip(l))
+		}
+	}
+}
+
+// C1: bubbletea v2 runs inline unless the view asks for the alt screen.
+func TestRootViewAsksForTheAltScreen(t *testing.T) {
+	for _, p := range fitPhases {
+		m := phaseRoot(t, p.phase, 80, 24)
+		if !m.View().AltScreen {
+			t.Errorf("%s: View().AltScreen is false", p.name)
+		}
+	}
+	n := newRoot(testCtx(t), fakeConnector(), t.TempDir())
+	n.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if !n.notice.active {
+		t.Fatal("a fresh data dir did not raise the first-run notice")
+	}
+	if !n.View().AltScreen {
+		t.Error("first-run notice: View().AltScreen is false")
+	}
+}
+
+// C2, C3 and the invariant test of the issue's step 7: every phase, bare and
+// with each root popup open, at the 60×15 floor and two larger sizes.
+func TestRootFrameFitsTheTerminal(t *testing.T) {
+	overlays := []struct {
+		name string
+		open func(m *root)
+	}{
+		{"bare", func(*root) {}},
+		{"help", func(m *root) { m.Update(key("?")) }},
+		{"palette", func(m *root) { m.Update(key(":")) }},
+	}
+	for _, sz := range fitSizes {
+		w, h := sz[0], sz[1]
+		for _, p := range fitPhases {
+			for _, o := range overlays {
+				t.Run(fmt.Sprintf("%dx%d/%s/%s", w, h, p.name, o.name), func(t *testing.T) {
+					m := phaseRoot(t, p.phase, w, h)
+					o.open(m)
+					assertFits(t, m.View().Content, w, h)
+				})
+			}
+		}
+	}
+}
+
+// C2: the palette over the failure screen must not be clipped by the short
+// frame — the failure text sends the human to it for the daemon view.
+func TestPaletteReachesTheDaemonViewWhileFailed(t *testing.T) {
+	for _, phase := range []connPhase{phaseProbing, phaseFailed} {
+		m := phaseRoot(t, phase, 80, 24)
+		m.Update(key(":"))
+		if m.palette == nil {
+			t.Fatalf("phase %d: `:` did not open the palette", phase)
+		}
+		if got := ansi.Strip(m.View().Content); !strings.Contains(strings.ToLower(got), "daemon") {
+			t.Errorf("phase %d: the palette on screen names no daemon entry:\n%s", phase, got)
+		}
+	}
+}
+
+// C3: at the 60-column floor the error and the log path are readable in full.
+func TestFailureScreenWrapsTheErrorAndLogPath(t *testing.T) {
+	m := phaseRoot(t, phaseFailed, 60, 15)
+	// The renderer truncates an overflowing line (#793 renderer clip), so
+	// what is readable is each line's first 60 cells.
+	var kept []string
+	for _, l := range strings.Split(m.View().Content, "\n") {
+		kept = append(kept, ansi.Strip(ansi.Truncate(l, 60, "")))
+	}
+	flat := strings.Join(strings.Fields(strings.Join(kept, "\n")), "")
+	for _, want := range []string{longLogPath, strings.TrimSpace(errLongDial.Error())} {
+		if !strings.Contains(flat, strings.Join(strings.Fields(want), "")) {
+			t.Errorf("at 60×15 the failure screen does not show %q in full", want)
+		}
+	}
+}
+
+// C4: the hidden board must not take keys behind the failure screen; `/`
+// then `r` still retries, and the footer offers no board rows.
+func TestFailureScreenOwnsItsKeys(t *testing.T) {
+	m := phaseRoot(t, phaseFailed, 80, 24)
+	footer := ansi.Strip(m.footerLine())
+	for _, row := range []string{"filter", "select", "open"} {
+		if strings.Contains(footer, row) {
+			t.Errorf("the failure screen's footer offers the hidden board's %q: %q", row, footer)
+		}
+	}
+	m.Update(key("/"))
+	m.Update(key("r"))
+	if m.phase != phaseProbing {
+		t.Errorf("after `/` then `r` the phase is %d, want probing (a retry)", m.phase)
+	}
+}
+
+// C5: the status line fits the width, and the pending switch's key survives.
+func TestStatusLineFitsWithLongProjectNames(t *testing.T) {
+	name := strings.Repeat("p", 40)
+	gone := strings.Repeat("g", 40)
+	for _, w := range []int{60, 80} {
+		m := phaseRoot(t, phaseConnected, w, 24)
+		m.pending = &pendingSwitch{
+			project: apiclient.Project{ID: 2, Name: name},
+			draft:   "task draft",
+			deleted: gone,
+		}
+		line, ok := m.statusLine()
+		if !ok {
+			t.Fatal("no status line with a switch pending")
+		}
+		if lw := ansi.StringWidth(line); lw > w {
+			t.Errorf("at %d columns the pending-switch line is %d cells", w, lw)
+		}
+		// What the renderer keeps is the first w cells; the answer key must
+		// be among them.
+		if vis := ansi.Strip(ansi.Truncate(line, w, "")); !strings.Contains(vis, "? y") && !strings.HasPrefix(strings.TrimSpace(vis), "y") {
+			t.Errorf("at %d columns the visible prompt loses its key: %q", w, vis)
+		}
+
+		m.pending = nil
+		m.selNotice = strings.Repeat("startup project notice ", 7)
+		line, _ = m.statusLine()
+		if lw := ansi.StringWidth(line); lw > w {
+			t.Errorf("at %d columns the startup notice is %d cells", w, lw)
+		}
+	}
+}
+
+// C8: the first-run notice fits the 60×15 floor with its dismiss key shown.
+func TestFirstRunNoticeFitsTheFloor(t *testing.T) {
+	for i, l := range strings.Split(noticeBody, "\n") {
+		if lw := ansi.StringWidth(l); lw > 58 {
+			t.Errorf("noticeBody line %d is %d cells, want ≤ 58: %q", i, lw, l)
+		}
+	}
+	m := newRoot(testCtx(t), fakeConnector(), t.TempDir())
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 15})
+	frame := m.View().Content
+	assertFits(t, frame, 60, 15)
+	if !strings.Contains(ansi.Strip(frame), "enter continue") {
+		t.Error("`enter continue` is not on the 60×15 first-run frame")
+	}
+}
