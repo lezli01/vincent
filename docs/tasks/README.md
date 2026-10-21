@@ -148,7 +148,7 @@ the living engineering specification records implementation contracts.
 | [132](132-project-as-root.md) | Project as root: the TUI scoped to one selected project, with a project overview as the only multi-project view | 🔄 in progress (17/18) |
 | [133](133-background-work-across-a-result.md) | Background work across a result: keep the claude run open until the work it started finishes | ✅ done (2/2) |
 | [134](134-issues-ux.md) | Issues UX: a four-lane issues board and one main worktree per issue, with manual or agentic merge-back | ✅ done (19/19) |
-| [135](135-tui-wrap-and-scroll.md) | TUI wrap and scroll: one wrap helper, one scrolling pane, and the wrap-or-truncate convention, screen by screen | 🔄 in progress (4/6) |
+| [135](135-tui-wrap-and-scroll.md) | TUI wrap and scroll: one wrap helper, one scrolling pane, and the wrap-or-truncate convention, screen by screen | 🔄 in progress (5/7) |
 | [136](136-tui-main-tabs.md) | Main tabs in the TUI: Issues, Tasks and Chats behind one `tab` key, set by `tui.tabs` | 🔄 in progress (2/4) |
 
 ## How to add and update a task document
