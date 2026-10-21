@@ -104,6 +104,11 @@ func TestArchivedBoardsEscLeavesAfterTheFilter(t *testing.T) {
 	if _, cmd := b.updateKey(tea.KeyPressMsg{Code: tea.KeyEscape}); cmd != nil || b.filter.Value() != "" {
 		t.Fatalf("the first esc did not just clear the filter (%q)", b.filter.Value())
 	}
+	// Then the selection (review F11), the live board's order.
+	b.marks = b.marks.add(1)
+	if _, cmd := b.updateKey(tea.KeyPressMsg{Code: tea.KeyEscape}); cmd != nil || b.hasMarks() {
+		t.Fatalf("esc with a row marked did not just clear the selection (marks %v, cmd %v)", b.marks, cmd != nil)
+	}
 	_, cmd := b.updateKey(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if msg := msgOf(cmd); msg != (selectViewMsg{id: viewHome}) {
 		t.Errorf("esc on the archived task board sent %#v, want the home board", msg)

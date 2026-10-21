@@ -880,6 +880,14 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			b.filter.SetValue("")
 			return b, nil
 		}
+		if b.archived && b.hasMarks() {
+			// The live board's order — filter, then selection, then leave
+			// — which the shell gives it and this takeover does not have
+			// (review F11): a selection left behind would be what `D`
+			// deletes on the way back.
+			b.clearMarks()
+			return b, nil
+		}
 		if b.archived {
 			// The archived board is a takeover, and the bottom of a
 			// takeover's esc stack leaves to the home board — what esc does
