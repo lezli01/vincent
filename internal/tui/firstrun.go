@@ -124,22 +124,22 @@ func acknowledgeNotice(dataDir string) error {
 	return mergeTUIState(dataDir, "full_auto_notice_ack", true)
 }
 
-// noticeBody is §16's full-auto risk, compressed. It is a constant and not a
+// noticeBody is §16's full-auto risk, compressed. It is hand-wrapped to 58
+// cells and ten lines so the whole notice, its dismiss key included, fits
+// the 60×15 floor (#793): this screen swallows every key but enter, so an
+// `enter continue` below the fold is a trap. It is a constant and not a
 // file read on purpose: noticeAcknowledged already treats every I/O failure
 // as "show the warning", so the warning itself must have no I/O to fail at.
-const noticeBody = `Coding agents run here unattended. In full-auto an agent can execute
-arbitrary commands as your user. It is not confined to the worktree —
-a worktree isolates collisions between tasks, not privileges.
+const noticeBody = `Agents run here unattended. In full-auto an agent can run
+any command as your user; a worktree isolates tasks from
+each other, not your machine from the agent.
 
-What holds it back:
-
-  · a workflow or step marked "restricted", which limits what the agent may do
-  · every run fully transcripted, so you can read back what it did
-  · nothing merged and nothing pushed unless a workflow step does it
-
-Command and check steps run workflow content you wrote, at the same trust
-level as your own shell. Read the full-auto section of the README before
-pointing vincent at anything you cannot afford to lose.`
+What holds it back: steps marked "restricted", every run
+fully transcripted, and nothing merged or pushed unless
+a workflow step does it. Command and check steps run
+workflow content you wrote, at your own shell's trust.
+Read the README's full-auto section before pointing
+vincent at anything you cannot afford to lose.`
 
 // firstRunNotice is the §16 warning as a blocking overlay. It owns the whole
 // screen until it is dismissed: this is the one thing in the TUI that is
@@ -180,7 +180,6 @@ func (f firstRunNotice) render() string {
 	b.WriteString(styleKey.Render("ctrl+c"))
 	b.WriteString(" quit")
 	b.WriteString(styleDim.Render("  (shown once)"))
-	b.WriteString("\n")
 	return b.String()
 }
 

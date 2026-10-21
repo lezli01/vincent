@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -68,13 +69,61 @@ type pendingSwitch struct {
 
 // prompt is the one line the root draws for it.
 func (p *pendingSwitch) prompt() string {
+	q, key := p.question(p.deleted, p.project.Name)
+	return q + " " + key
+}
+
+// question is the prompt's question, with the project names given, and its
+// answer key apart from it.
+func (p *pendingSwitch) question(deleted, name string) (q, key string) {
 	if p.deleted != "" {
 		if p.project.ID == 0 {
-			return fmt.Sprintf("project `%s` was deleted and no projects remain — discard the %s? y", p.deleted, p.draft)
+			return fmt.Sprintf("project `%s` was deleted and no projects remain — discard the %s?", deleted, p.draft), "y"
 		}
-		return fmt.Sprintf("project `%s` was deleted — discard the %s and switch to `%s`? y", p.deleted, p.draft, p.project.Name)
+		return fmt.Sprintf("project `%s` was deleted — discard the %s and switch to `%s`?", deleted, p.draft, name), "y"
 	}
-	return fmt.Sprintf("discard the %s and switch to `%s`? y/n", p.draft, p.project.Name)
+	return fmt.Sprintf("discard the %s and switch to `%s`?", p.draft, name), "y/n"
+}
+
+// promptFit is prompt within width cells (#793). The answer key ends the
+// line, so a cut from the end would take the one part the human must read.
+// The project names give way first, the longer first, each cut with "…";
+// when even one-cell names leave the line too long, the key moves to the
+// front and the question is what gets cut. A width not yet known leaves the
+// prompt whole.
+func (p *pendingSwitch) promptFit(width int) string {
+	full := p.prompt()
+	if width <= 0 || cols(full) <= width {
+		return full
+	}
+	cut := func(s string, w int) string {
+		if w >= cols(s) {
+			return s
+		}
+		return ansi.Truncate(s, w, "…")
+	}
+	// A name the line does not carry has nothing to give.
+	dw, nw := cols(p.deleted), cols(p.project.Name)
+	if p.deleted == "" {
+		dw = 0
+	} else if p.project.ID == 0 {
+		nw = 0
+	}
+	if q, key := p.question(cut(p.deleted, min(dw, 1)), cut(p.project.Name, min(nw, 1))); cols(q+" "+key) > width {
+		q, _ = p.question(p.deleted, p.project.Name)
+		return ansi.Truncate(key+" — "+q, width, "…")
+	}
+	line := full
+	for cols(line) > width && max(dw, nw) > 1 {
+		if dw >= nw {
+			dw--
+		} else {
+			nw--
+		}
+		q, key := p.question(cut(p.deleted, dw), cut(p.project.Name, nw))
+		line = q + " " + key
+	}
+	return line
 }
 
 // followedNotice is the line a follow raises (task 132.6): the selection moved

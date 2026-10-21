@@ -15974,6 +15974,18 @@ relist and the GitHub re-probe (task 132 decision 48). The `@` picker opens
 while reconnecting, on the cached list, with a dim `offline — list may be
 stale` line.
 
+*Amended 2026-10-21 (issue #793).* Before a board has loaded, or while the
+active surface is not one that stays on screen stale, the body is a
+connection screen — connecting, starting, reconnecting or unreachable — and
+that screen owns the keyboard and the footer: `r` retries where there is
+something to retry, `tab`/`shift+tab` still switch the main tab, and only the
+root's own keys (`:`, `?`, quit) act; the view behind it receives nothing and
+offers no footer rows. Its text wraps to the terminal and the frame fills
+it. The TUI runs in the terminal's alternate screen, which the quit
+reminder's "printed after teardown" already assumed. The status line is
+budgeted to the width: a pending switch's project names give way before its
+answer key, which moves to the front when even shortened names do not fit.
+
 ## 16. Security considerations
 
 - **Trust boundary = the OS user.** API on loopback only + bearer token file (0600)

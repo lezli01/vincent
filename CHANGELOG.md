@@ -536,6 +536,22 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The TUI fits the terminal before it connects, and in its status line and
+  first-run notice.** The TUI now runs in the terminal's alternate screen, so
+  quitting no longer leaves the last frame in scrollback. The connecting,
+  starting, reconnecting and daemon-unreachable screens fill the terminal with
+  the footer on the last row, so `:` shows the whole palette and its daemon
+  entry; the dial error and log path wrap instead of being cut. The
+  unreachable screen owns its keys: its footer offers `r retry` and the
+  palette, help and quit keys instead of the hidden board's `enter open` and
+  `/ filter`, and `/` then `r` retries rather than typing into an invisible
+  filter. The status line fits the width: a pending project switch shortens
+  the project names (or moves its `y`/`y/n` key to the front) rather than
+  losing the key, and long notices end in `…`, the keymap warning keeping its
+  `vincent doctor` pointer. The first-run full-auto notice is rewrapped to
+  fit 60×15 with `enter continue` on screen.
+  ([#793](https://github.com/lezli01/vincent/issues/793))
+
 - **The new-task form wraps to its pane, and `ctrl+s` creates from anywhere
   in it.** The title, branch and priority rows, the open lists and the Fields
   editor's input wrapped at the terminal's width rather than the pane's, so at
