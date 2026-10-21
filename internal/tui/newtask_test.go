@@ -788,6 +788,31 @@ func TestNewTaskFieldsEditorInputFitsThePane(t *testing.T) {
 	}
 }
 
+// ctrl+s from the Fields editor closes it the way esc does, re-asking the
+// resolution with the new fields, so a submit refused for a missing title
+// still leaves an up-to-date preview (review F17).
+func TestNewTaskFieldsEditorCtrlSReresolves(t *testing.T) {
+	for _, k := range []string{"esc", "ctrl+s"} {
+		t.Run(k, func(t *testing.T) {
+			n := loadedForm(t)
+			n.client = offlineClient()
+			moveTo(n, ntFields)
+			press(n, "enter")
+			addField(n, "ticket", "OPS-1")
+			if n.mode != ntFieldsOpen {
+				t.Fatalf("mode = %v, want the fields editor", n.mode)
+			}
+			_, cmd := n.updateKey(registryKey(t, k))
+			if n.mode == ntFieldsOpen {
+				t.Fatalf("%s left the fields editor open", k)
+			}
+			if cmd == nil {
+				t.Errorf("%s closed the editor without re-asking the resolution", k)
+			}
+		})
+	}
+}
+
 func TestNewTaskFieldsEditorDropsAnAbandonedRow(t *testing.T) {
 	n := loadedForm(t)
 	moveTo(n, ntFields)

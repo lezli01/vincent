@@ -1065,6 +1065,10 @@ func (n *newTask) commitOpen() tea.Cmd {
 			f.dedupe()
 		}
 		n.commitFields()
+		// What esc does on closing the editor (review F17): the fields are
+		// part of the resolution, so a submit refused for another reason
+		// leaves a preview that already knows them.
+		cmd = tea.Batch(cmd, n.resolveCmd())
 	case ntNavigating, ntConfirming:
 	}
 	return cmd
