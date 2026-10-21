@@ -63,6 +63,12 @@ func clipLines(s string, height int) string {
 // needs-attention count is untouched by a chat (task 067 decision 4).
 func (v *chatsView) headerLine(width int) string {
 	left := " " + styleTitle.Render("chats")
+	if v.archived {
+		// The window and the page are what this board is showing (#804
+		// AR-5), named the way the archived task board names them; the scope
+		// label would only repeat the title.
+		left = " " + styleTitle.Render("archived chats") + styleDim.Render("  ·  "+v.label())
+	}
 	switch {
 	case v.loadErr != "":
 		left += styleDim.Render("  ·  " + v.loadErr)
@@ -77,7 +83,7 @@ func (v *chatsView) headerLine(width int) string {
 		// Which listing is on, named only when it is not the default: a
 		// board hiding terminal chats must say so once `s` has been pressed,
 		// or an empty board reads as no chats at all (issue #298).
-		if v.scope != apiclient.ArchivedExclude {
+		if v.scope != apiclient.ArchivedExclude && !v.archived {
 			left += styleDim.Render(" · " + chatScopeLabel(v.scope))
 		}
 		if n := countChatsAwaiting(v.chats); n > 0 {

@@ -120,6 +120,9 @@ type diffPane struct {
 	// line), so a click's y can be turned back into a row index.
 	headLines int
 	built     bool
+	// rowsWidth is the width the rows were built for: a file row fits its
+	// path to it (#800 W4), so a resize rebuilds them.
+	rowsWidth int
 
 	// asOf is when the content on screen was fetched (#799 W9). The pane
 	// follows no events — the endpoint runs git per call — so a diff read
@@ -575,6 +578,9 @@ func (p *diffPane) render(width, height int) string {
 	p.headLines = len(strings.Split(head, "\n")) - 1
 	p.vp.SetWidth(max(width, 1))
 	p.vp.SetHeight(rest)
+	if p.rowsWidth != width {
+		p.rowsWidth, p.built = width, false
+	}
 	if !p.built {
 		p.rows = p.buildRows()
 		lines := make([]string, len(p.rows))
@@ -744,7 +750,7 @@ func (p *diffPane) buildRows() []diffRow {
 			}
 			continue
 		}
-		rows = append(rows, diffRow{header: true, node: i, text: p.fileRow(i)})
+		rows = append(rows, diffRow{header: true, node: i, text: p.fileRow(i, p.rowsWidth)})
 		if !p.open[n.key] {
 			continue
 		}
@@ -798,7 +804,11 @@ func (p *diffPane) sectionRow(i int) string {
 // fileRow is one file's line in the list: the fold glyph, the path, and what
 // it did to the file. The counts live here because "which file was rewritten"
 // is the question a folded list has to answer without being opened.
-func (p *diffPane) fileRow(i int) string {
+// fileRow is one file's header row in width cells. The path is the long
+// part and its middle gives way, so the directory and the filename both stay
+// readable and the counts after them are never cut (#800 W4); a width of
+// zero or less draws it whole.
+func (p *diffPane) fileRow(i, width int) string {
 	n := p.nodes[i]
 	f := p.sections[n.section].files[n.file]
 	glyph := diffFoldClosed
@@ -813,13 +823,17 @@ func (p *diffPane) fileRow(i int) string {
 	if p.grouped {
 		indent = "  "
 	}
-	out := style.Render(indent + glyph + " " + f.path)
-	if f.binary {
-		// A binary file has no ± lines at all, and `+0 -0` would read as
-		// "nothing changed here".
-		return out + "  " + styleDim.Render("binary")
+	prefix := style.Render(indent + glyph + " ")
+	// A binary file has no ± lines at all, and `+0 -0` would read as
+	// "nothing changed here".
+	suffix := "  " + styleDim.Render("binary")
+	if !f.binary {
+		suffix = "  " + diffCounts(f.added, f.removed)
 	}
-	return out + "  " + diffCounts(f.added, f.removed)
+	if width <= 0 {
+		return prefix + style.Render(f.path) + suffix
+	}
+	return truncateKeepPath(prefix, style.Render(f.path), suffix, width)
 }
 
 func diffCounts(added, removed int) string {

@@ -107,7 +107,7 @@ type Info struct {
 // catalog is the operation set, in the order the docs list it.
 var catalog = []Info{
 	{Op: Refresh, Default: "R", Meaning: "refresh / re-read", Kind: KindTerm, Surfaces: []Surface{
-		"new task", "archived chats", "chats", "workflows", "workflow editor", "workflow graph",
+		"new task", "archived tasks", "archived chats", "chats", "workflows", "workflow editor", "workflow graph",
 		"step detail", "pull requests", "daemon", "triggers", "trigger ledger", "trigger form",
 		"issues", "issue", "issue form",
 	}},

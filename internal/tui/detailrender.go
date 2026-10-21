@@ -1013,20 +1013,30 @@ func (d *detail) attemptFields(r apiclient.StepRun, indented bool) []string {
 	if r.CostUSD != nil {
 		fields = append(fields, formatCost(r.CostUSD))
 	}
+	reasoned := false
 	if r.FailureReason != nil && *r.FailureReason != "" {
 		fields = append(fields, renderReason(*r.FailureReason, styleBad))
+		reasoned = true
 	}
 	// A `skipped` row is either a human pressing skip (§6) or a false `if:`
 	// guard (§7.7). The state cannot tell them apart, so the reason is shown
 	// whenever there is one — a bare "skipped" means the human.
 	if r.SkipReason != nil && *r.SkipReason != "" {
 		fields = append(fields, renderReason(*r.SkipReason, styleDim))
+		reasoned = true
 	}
 	if r.State == stepStateStopped {
 		fields = append(fields, styleDim.Render("workflow ended here"))
+		reasoned = false
 	}
 	if r.Agent != nil && *r.Agent != "" {
-		fields = append(fields, styleDim.Render(agentTriple(r)))
+		// A reason ends on its raw code, and a bare space after it read the
+		// agent as part of the code (`check_failed claude`, #800 W19).
+		agent := agentTriple(r)
+		if reasoned {
+			agent = "· " + agent
+		}
+		fields = append(fields, styleDim.Render(agent))
 	}
 	return fields
 }

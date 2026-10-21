@@ -95,6 +95,7 @@ func newCreatePRForm(taskID int64, compareURL, branch string) (*createPRForm, er
 	ed.DynamicHeight = true
 	ed.MinHeight = 1
 	ed.MaxHeight = editorLines
+	ed.MaxContentHeight = editorContentCap
 	ed.SetHeight(3)
 	ed.SetWidth(40)
 	q := u.Query()
@@ -296,44 +297,86 @@ func (f *createPRForm) setRow(row cprRow, value string) {
 	f.title = strings.TrimSpace(strings.ReplaceAll(value, "\n", " "))
 }
 
-func (f *createPRForm) height(width int) int { return len(f.lines(width)) }
-
-func (f *createPRForm) render(width, height int) string {
-	lines := f.lines(width)
-	return strings.Join(windowRange(lines, 0, len(lines), height), "\n")
+func (f *createPRForm) height(width int) int {
+	head, _, _ := f.rows(width)
+	return len(head) + len(f.footer(width))
 }
 
-// lines is the whole form: what it is about, the two rows, and the key line.
-func (f *createPRForm) lines(width int) []string {
-	out := make([]string, 0, 16)
-	out = append(out, styleDim.Render("  "+f.subject()))
+// render pins the footer — the URL ctrl+o opens, the error, the status and
+// the key line — under the rows, and scrolls the rows instead (#804 PL-1).
+// Windowing the whole form from its top had a long body push exactly those
+// lines off the bottom of the popup, the error a failed ctrl+s left included.
+func (f *createPRForm) render(width, height int) string {
+	rows, from, to := f.rows(width)
+	// Follow the focused row, its label first when the row is taller than
+	// the pane.
+	return pinFooter(rows, f.footer(width), from, to, width, height)
+}
+
+// rows is the scrolling part of the form: what it is about and the three
+// rows, with the line range of the focused one.
+func (f *createPRForm) rows(width int) (out []string, from, to int) {
+	out = make([]string, 0, 16)
+	// The subject wraps rather than truncating (#804 PL-8): its second half
+	// is the consequence of ctrl+s, the part a cut would lose. It is capped
+	// so the rows keep the popup's budget.
+	for _, line := range wrapText(f.subject(), max(width-2, 1), wrapOpts{maxLines: 3}) {
+		out = append(out, styleDim.Render("  "+line))
+	}
 	out = append(out, "")
 	for _, row := range []cprRow{cprTitle, cprBody, cprDraft} {
-		out = append(out, f.rowLines(row, width)...)
+		lines := f.rowLines(row, width)
+		if row == f.cursor {
+			from, to = len(out), len(out)+len(lines)-1
+		}
+		out = append(out, lines...)
 	}
-	out = append(out, "")
+	return out, from, to
+}
+
+// footer is what stays on screen however long the body is (#804 PL-1).
+func (f *createPRForm) footer(width int) []string {
+	out := []string{""}
 	// The URL is shown because it is what ctrl+o opens and what the daemon's
 	// fallback sends a client to, and because a prefill nobody can see the
-	// effect of is the thing decision 4 exists to prevent.
+	// effect of is the thing decision 4 exists to prevent. The body is the
+	// one part left out of it: encoded, it is the body again at three times
+	// the length, and it is on screen right above (#804 PL-1).
 	out = append(out, styleDim.Render("  ctrl+o opens"))
-	for _, line := range wrapText(f.url(), max(width-4, 20), wrapOpts{}) {
+	for _, line := range wrapText(f.shownURL(), max(width-4, 1), wrapOpts{maxLines: 3}) {
 		out = append(out, styleDim.Render("    "+line))
 	}
+	var status string
+	style := styleDim
 	switch {
 	case f.err != "":
-		out = append(out, styleBad.Render("  ⚠ "+f.err))
+		status, style = "⚠ "+f.err, styleBad
 	case f.sending:
-		out = append(out, styleDim.Render("  pushing the branch and opening the pull request…"))
+		status = "pushing the branch and opening the pull request…"
 	case f.editing:
-		out = append(out, styleDim.Render("  ctrl+s keeps this text · esc discards it"))
+		status = "ctrl+s keeps this text · esc discards it"
 	default:
-		out = append(out, styleDim.Render(
-			"  enter edit · "+opKey(keymap.Editor)+" $EDITOR · space toggle draft · ctrl+s push and create · ctrl+o browser · esc leave"))
+		status = "enter edit · " + opKey(keymap.Editor) + " $EDITOR · space toggle draft · ctrl+s push and create · ctrl+o browser · esc leave"
+	}
+	for _, line := range wrapText(status, max(width-2, 1), wrapOpts{maxLines: 3}) {
+		out = append(out, style.Render("  "+line))
 	}
 	return out
 }
 
-// subject is the one line above the rows, and it states the consequence a
+// shownURL is the compare URL as the form displays it: f.url() without its
+// `body` parameter (#804 PL-1). ctrl+o and the daemon's fallback still open
+// f.url(), body and all.
+func (f *createPRForm) shownURL() string {
+	out := *f.base
+	q := out.Query()
+	setOrDelete(q, "title", f.title)
+	q.Del("body")
+	out.RawQuery = q.Encode()
+	return out.String()
+}
+
+// subject is the text above the rows, and it states the consequence a
 // human cannot otherwise see: a push sends commits, so uncommitted work in
 // the task's worktree is not in the pull request (task 069 decision 4). It is
 // said here, before the confirmation, rather than discovered afterwards.

@@ -55,6 +55,7 @@ func newPullCommentForm(taskID int64, subject string) *pullCommentForm {
 	ed.DynamicHeight = true
 	ed.MinHeight = 3
 	ed.MaxHeight = editorLines
+	ed.MaxContentHeight = editorContentCap
 	ed.SetHeight(3)
 	ed.SetWidth(40)
 	f := &pullCommentForm{taskID: taskID, subject: subject, editor: ed}
@@ -161,8 +162,19 @@ func (f *pullCommentForm) failed(msg string) {
 	f.err = msg
 }
 
-func (f *pullCommentForm) lines(width int) []string {
-	out := []string{styleDim.Render("  posted on " + f.subject + " as the daemon's GitHub credential — ctrl+s is the confirmation"), ""}
+// lines is what the popup shows above its pinned footer: what is about to be
+// posted where, and the body.
+func (f *pullCommentForm) lines(width int) (out []string, bodyAt int) {
+	// The subject wraps rather than truncating (#804 PL-8): what follows the
+	// pull request's name is whose credential posts it, and a cut lost that.
+	// It is capped so the body keeps the popup's budget.
+	subject := "posted on " + f.subject + " as the daemon's GitHub credential — ctrl+s is the confirmation"
+	out = make([]string, 0, 8)
+	for _, line := range wrapText(subject, max(width-2, 1), wrapOpts{maxLines: 3}) {
+		out = append(out, styleDim.Render("  "+line))
+	}
+	out = append(out, "")
+	bodyAt = len(out)
 	indent := strings.Repeat(" ", editorIndent)
 	switch {
 	case f.editing:
@@ -177,23 +189,55 @@ func (f *pullCommentForm) lines(width int) []string {
 			out = append(out, indent+styleOK.Render(line))
 		}
 	}
-	out = append(out, "")
+	return out, bodyAt
+}
+
+// footer is the error, the status and the keys, pinned under the body so a
+// long comment cannot push them out of the popup (#804 PL-1).
+func (f *pullCommentForm) footer(width int) []string {
+	var status string
+	style := styleDim
 	switch {
 	case f.err != "":
-		out = append(out, styleBad.Render("  ⚠ "+f.err))
+		status, style = "⚠ "+f.err, styleBad
 	case f.sending:
-		out = append(out, styleDim.Render("  posting…"))
+		status = "posting…"
 	case f.editing:
-		out = append(out, styleDim.Render("  ctrl+s post · esc stop typing"))
+		status = "ctrl+s post · esc stop typing"
 	default:
-		out = append(out, styleDim.Render("  enter type · "+opKey(keymap.Editor)+" $EDITOR · ctrl+s post · esc discard"))
+		status = "enter type · " + opKey(keymap.Editor) + " $EDITOR · ctrl+s post · esc discard"
+	}
+	out := []string{""}
+	for _, line := range wrapText(status, max(width-2, 1), wrapOpts{maxLines: 3}) {
+		out = append(out, style.Render("  "+line))
 	}
 	return out
 }
 
-func (f *pullCommentForm) height(width int) int { return len(f.lines(width)) }
+func (f *pullCommentForm) height(width int) int {
+	body, _ := f.lines(width)
+	return len(body) + len(f.footer(width))
+}
 
 func (f *pullCommentForm) render(width, height int) string {
-	lines := f.lines(width)
-	return strings.Join(windowRange(lines, 0, len(lines), height), "\n")
+	body, at := f.lines(width)
+	return pinFooter(body, f.footer(width), at, len(body)-1, width, height)
+}
+
+// pinFooter lays a popup out in height rows: foot whole at the bottom, and
+// body above it in a scrollPane that keeps lines from..to in view, from first,
+// when the two do not fit (#804 PL-1). When not even one body row fits, the
+// footer's last lines win — the status and the keys are what a human acts on.
+func pinFooter(body, foot []string, from, to, width, height int) string {
+	if height <= 0 || len(body)+len(foot) <= height {
+		return strings.Join(append(body, foot...), "\n")
+	}
+	room := height - len(foot)
+	if room < 1 {
+		return strings.Join(foot[len(foot)-height:], "\n")
+	}
+	pane := newScrollPane(width, room, true)
+	pane.SetContentLines(body)
+	pane.EnsureVisible(from, to)
+	return strings.Join(append(pane.View(), foot...), "\n")
 }

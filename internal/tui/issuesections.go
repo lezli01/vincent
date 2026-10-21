@@ -213,6 +213,52 @@ func (v *issuesView) moveCursor(delta int) {
 	v.clampCursor()
 }
 
+// pageCursor moves the selection by delta lines — a page, the body rows
+// the last render showed (#796) — onto the first row there the cursor may
+// rest on, looking on past it and then back towards where the cursor was,
+// and clamped to the list. Nowhere to rest leaves it put.
+func (v *issuesView) pageCursor(delta int) {
+	lines := v.lines()
+	if len(lines) == 0 || delta == 0 {
+		return
+	}
+	step := 1
+	if delta < 0 {
+		step = -1
+	}
+	target := min(max(v.cursor+delta, 0), len(lines)-1)
+	for i := target; i >= 0 && i < len(lines); i += step {
+		if lines[i].selectable() {
+			v.cursor = i
+			v.remember(lines)
+			return
+		}
+	}
+	for i := target - step; i != v.cursor && i >= 0 && i < len(lines); i -= step {
+		if lines[i].selectable() {
+			v.cursor = i
+			v.remember(lines)
+			return
+		}
+	}
+}
+
+// edgeCursor selects the first row the cursor may rest on, or the last.
+func (v *issuesView) edgeCursor(last bool) {
+	lines := v.lines()
+	for k := range lines {
+		i := k
+		if last {
+			i = len(lines) - 1 - k
+		}
+		if lines[i].selectable() {
+			v.cursor = i
+			v.remember(lines)
+			return
+		}
+	}
+}
+
 // clampCursor puts the cursor on the selectable row nearest its index —
 // below first, then above — and records what it is on.
 func (v *issuesView) clampCursor() {

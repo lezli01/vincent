@@ -156,8 +156,13 @@ const (
 	// action keys, which an archived row offers none of anyway.
 	ctxArchived      bindingContext = "archived tasks"
 	ctxArchivedChats bindingContext = "archived chats"
-	ctxChats         bindingContext = "chats"
-	ctxChat          bindingContext = "chat"
+	// ctxConnection is the connection screen (#793): while it hides the
+	// view behind it, that view's keys do nothing, so `?` and `:` describe
+	// this screen — retry and the root's own keys — rather than the hidden
+	// surface (review F4).
+	ctxConnection bindingContext = "connection"
+	ctxChats      bindingContext = "chats"
+	ctxChat       bindingContext = "chat"
 	// ctxChatSkills is the chat workspace's skill list (task 124.13). Its
 	// own context because while it is open it owns the keyboard, and `tab`,
 	// `enter` and `esc` all mean something else the moment it closes. Not
@@ -304,6 +309,11 @@ type binding struct {
 	// while the probes are still in flight. Mechanically this is `fold`'s precedent (task 054
 	// decision 5) applied to a nav row and to two workspace keys.
 	github bool
+	// remoteOnly marks a row whose key only does something on an imported
+	// issue (#796): the issues list's `o browser`. footerBindings drops it
+	// from the footer while the selected row has no source page; `?` and
+	// the palette keep it, and the key still says there is none.
+	remoteOnly bool
 	// aliased marks a row another row's hint already advertises: `right`
 	// behind ctxTasks' `←/→ fold`, `O` behind its `C/O fold all`, `C` behind
 	// the timeline's and the diff's `O/C fold all`. The footer's `+N` counts
@@ -589,6 +599,12 @@ var bindings = []binding{
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchived, hint: "</> page", priority: 4},
 	{op: keymap.Filter, key: "/", label: "filter by id, title or state", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
 	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
+	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxArchived, priority: 7, term: termRefresh},
+
+	// The connection screen. `r` is retry-connecting, a fixed key (task 118
+	// decision 8); the footer draws it from its retry segment, so the row is
+	// for `?` and `:`.
+	{key: "r", label: "retry the connection now (while reconnecting, restart the daemon if it stays down)", scope: scopePanel, context: ctxConnection, priority: 1},
 
 	// Archived chats. The same three keys, on the same reasoning: a chat that
 	// ended is history, and this is the only place it can be discarded.
@@ -911,29 +927,34 @@ var bindings = []binding{
 	// and asks before it turns one on (decision 19); `T` and `X` are the two
 	// dry runs, which fire nothing; `B` opens the global switch in the daemon
 	// view's editor rather than flipping it from here.
-	// The issues list (§15 view 12, task 130.9).
+	// The issues list (§15 view 12, task 130.9). The footer's order is what
+	// a narrow pane keeps (#796): moving, filtering and filing come before
+	// the browser, which only an imported row can use — remoteOnly keeps it
+	// out of the footer elsewhere, and `?` and the palette still list it.
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxIssues, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected issue", scope: scopePanel, context: ctxIssues, hint: "enter open", priority: 1, term: termOpenRow},
-	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssues, hint: "o browser", priority: 2, term: termBrowser},
-	{op: keymap.Scope, key: "s", label: "show or hide the done lane", scope: scopePanel, context: ctxIssues, hint: "s done", priority: 3, term: termScope},
-	{op: keymap.Refresh, key: "R", label: "re-read the issues — never a GitHub sync", scope: scopePanel, context: ctxIssues, hint: "R refresh", priority: 4, term: termRefresh},
-	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ move", priority: 5},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, label or kind", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 6, term: termFilter},
+	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ move", priority: 2},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, label or kind", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 3, term: termFilter},
 	// The writes (task 130.12). `n` is §15's "make a new one here", the
 	// chats board's precedent; `i` is the trigger list's "edit in a form";
 	// `X` offers what the daemon's available_actions allow and nothing else.
-	{op: keymap.New, key: "n", label: "file a new issue in this project", scope: scopePanel, context: ctxIssues, hint: "n new", priority: 7},
-	{op: keymap.Add, key: "a", label: "create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssues, hint: "a new task", priority: 7, term: termAdd},
-	{key: issueEditKey, label: "edit the selected issue in a form", scope: scopePanel, context: ctxIssues, hint: "i edit", priority: 8},
-	{key: issueStateKey, label: "close or reopen the selected issue — only what the daemon offers", scope: scopePanel, context: ctxIssues, hint: "X close/reopen", priority: 9},
-	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssues, priority: 10, term: termDelete},
+	{op: keymap.New, key: "n", label: "file a new issue in this project", scope: scopePanel, context: ctxIssues, hint: "n new", priority: 4},
+	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssues, hint: "o browser", priority: 5, term: termBrowser, remoteOnly: true},
+	{op: keymap.Scope, key: "s", label: "show or hide the done lane", scope: scopePanel, context: ctxIssues, hint: "s done", priority: 6, term: termScope},
+	{op: keymap.Refresh, key: "R", label: "re-read the issues — never a GitHub sync", scope: scopePanel, context: ctxIssues, hint: "R refresh", priority: 7, term: termRefresh},
+	{op: keymap.Add, key: "a", label: "create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssues, hint: "a new task", priority: 8, term: termAdd},
+	{key: issueEditKey, label: "edit the selected issue in a form", scope: scopePanel, context: ctxIssues, hint: "i edit", priority: 9},
+	{key: issueStateKey, label: "close or reopen the selected issue — only what the daemon offers", scope: scopePanel, context: ctxIssues, hint: "X close/reopen", priority: 10},
+	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssues, priority: 11, term: termDelete},
 	// Folding the lane sections (task 134.8), the task board's four keys in
 	// the same meaning. Not `fold:` rows: that marker drops a row while the
 	// board is ungrouped, and the issues list always has its sections.
-	{key: "left", label: "collapse the lane section you are in (the header keeps the count and the ! badge)", scope: scopePanel, context: ctxIssues, hint: "←/→ fold", priority: 11},
-	{key: "right", label: "expand the collapsed lane section under the cursor", scope: scopePanel, context: ctxIssues, priority: 12, aliased: true},
-	{key: "C", label: "collapse every lane section", scope: scopePanel, context: ctxIssues, hint: "C/O fold all", priority: 13},
-	{key: "O", label: "expand every lane section", scope: scopePanel, context: ctxIssues, priority: 14, aliased: true},
+	{key: "left", label: "collapse the lane section you are in (the header keeps the count and the ! badge)", scope: scopePanel, context: ctxIssues, hint: "←/→ fold", priority: 12},
+	{key: "right", label: "expand the collapsed lane section under the cursor", scope: scopePanel, context: ctxIssues, priority: 13, aliased: true},
+	{key: "C", label: "collapse every lane section", scope: scopePanel, context: ctxIssues, hint: "C/O fold all", priority: 14},
+	{key: "O", label: "expand every lane section", scope: scopePanel, context: ctxIssues, priority: 15, aliased: true},
+	// Paging (#796), the issue detail's and the timeline's keys.
+	{key: "pgdown", label: "page the list (pgup/pgdown, home/g, end/G)", scope: scopePanel, context: ctxIssues, priority: 16},
 	// The issue detail (§15 view 13).
 	{op: keymap.OpenRow, key: "enter", label: "open the selected linked task's workspace (esc comes back here)", scope: scopePanel, context: ctxIssue, hint: "enter task", priority: 1, term: termOpenRow},
 	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},

@@ -160,10 +160,10 @@ func TestIssueRowTaskSummary(t *testing.T) {
 	}
 }
 
-// TestIssueRowFitsAtTheFloor is review F2 on #773: an in-progress card with
-// labels, a kind and a source badge stays within the 80-column floor, and
-// what it gives up first is the occupant's state word, never the side and
-// merging counts.
+// TestIssueRowFitsAtTheFloor is review F2 on #773, as #796 left it: an
+// in-progress card with labels, a kind and a source badge stays within the
+// 80-column floor, and what it gives up first is the occupant's state word,
+// never the side and merging counts.
 func TestIssueRowFitsAtTheFloor(t *testing.T) {
 	occ, state := int64(123), "awaiting_input"
 	iss := apiclient.Issue{
@@ -182,7 +182,7 @@ func TestIssueRowFitsAtTheFloor(t *testing.T) {
 	} {
 		iss.Source = c.source
 		for _, width := range []int{80, 76} {
-			line := ansi.Strip(issueLine(iss, width, true))
+			line := ansi.Strip(issueLine(iss, width, true, true))
 			if got := ansi.StringWidth(line); got > width {
 				t.Errorf("%s at %d columns: the row is %d wide:\n%s", c.name, width, got, line)
 			}
@@ -193,9 +193,149 @@ func TestIssueRowFitsAtTheFloor(t *testing.T) {
 	}
 	// With room, nothing is given up.
 	iss.Source = nil
-	if line := ansi.Strip(issueLine(iss, 160, false)); !strings.Contains(line, "● #123 awaiting_input · +1 side · 1 merging") ||
+	if line := ansi.Strip(issueLine(iss, 160, false, true)); !strings.Contains(line, "● #123 awaiting_input · +1 side · 1 merging") ||
 		!strings.Contains(line, "[bug] bug") {
 		t.Errorf("a wide row dropped a part:\n%s", line)
+	}
+}
+
+// rowTitleWidth is how many columns of a row the title takes: the run of
+// title text from its start, its ellipsis included.
+func rowTitleWidth(line, title string) int {
+	i := strings.Index(line, title[:10])
+	if i < 0 {
+		return 0
+	}
+	n := 0
+	for _, r := range line[i:] {
+		if r != '…' && !strings.ContainsRune(title, r) {
+			break
+		}
+		n++
+		if r == '…' {
+			break
+		}
+	}
+	return n
+}
+
+// #796: the title keeps max(30, 40% of the row) while the tags become a
+// `+N` count — never a label cut in half — and a source shared by the whole
+// list shortens to `gh#N`.
+func TestIssueRowTitleKeepsItsMinimum(t *testing.T) {
+	occ := int64(123)
+	title := strings.Repeat("abcdefghij", 10)
+	iss := apiclient.Issue{
+		ID: 12, State: "open", Title: title, Labels: []string{"frontend", "accessibility", "regression"}, Kind: "bug",
+		Lane: "in_progress", TaskCount: 2, Active: true,
+		MainWorktree: &apiclient.IssueMainWorktree{Branch: "b", OccupantTaskID: &occ},
+		Source:       &apiclient.IssueSource{Repo: "octo-org/web-frontend", Number: 4127},
+	}
+	for _, width := range []int{80, 120} {
+		inner := width - len(groupIndent)
+		line := ansi.Strip(issueLine(iss, inner, false, true))
+		if got := ansi.StringWidth(line); got > inner {
+			t.Errorf("%d columns: the row is %d wide, over %d:\n%s", width, got, inner, line)
+		}
+		if got, want := rowTitleWidth(line, title), issueTitleMin(inner); got < want {
+			t.Errorf("%d columns: the title has %d columns, want at least %d:\n%s", width, got, want, line)
+		}
+		if !strings.Contains(line, "+4") || strings.Contains(line, "[") {
+			t.Errorf("%d columns: the tags are not a +4 count:\n%s", width, line)
+		}
+		if !strings.Contains(line, "● #123") {
+			t.Errorf("%d columns: the row lost its cell:\n%s", width, line)
+		}
+	}
+	if line := ansi.Strip(issueLine(iss, 78, false, true)); !strings.Contains(line, "gh#4127") {
+		t.Errorf("a shared repo did not shorten to gh#N at 80 columns:\n%s", line)
+	}
+	// Rows from several repositories keep owner/repo, never gh#N.
+	if line := ansi.Strip(issueLine(iss, 78, false, false)); strings.Contains(line, "gh#") || !strings.Contains(line, "octo-org/") {
+		t.Errorf("mixed repos lost the full source badge:\n%s", line)
+	}
+	if got := issueTitleMin(78); got != 31 {
+		t.Errorf("the title minimum at 80 columns is %d, want 31", got)
+	}
+}
+
+// issuesShareRepo reads the list, local rows aside.
+func TestIssuesShareRepo(t *testing.T) {
+	src := func(repo string) *apiclient.IssueSource { return &apiclient.IssueSource{Repo: repo, Number: 1} }
+	shared := []apiclient.Issue{{ID: 1}, {ID: 2, Source: src("o/a")}, {ID: 3, Source: src("o/a")}}
+	if !issuesShareRepo(shared) {
+		t.Error("one repo and a local row read as mixed")
+	}
+	if issuesShareRepo(append(shared, apiclient.Issue{ID: 4, Source: src("o/old")})) {
+		t.Error("two repos read as shared")
+	}
+	v := issuesFixture()
+	v.issues = append(v.issues, apiclient.Issue{ID: 8, Title: "moved", State: "open", Lane: "open", Source: src("o/old")})
+	out := ansi.Strip(v.render(160, 30))
+	if !strings.Contains(out, "octo/web#41") || !strings.Contains(out, "o/old#1") {
+		t.Errorf("a mixed list did not keep owner/repo#N:\n%s", out)
+	}
+}
+
+// F2's remaining guarantee: a cell too long for what is left takes the title
+// below its minimum, never below 12, and its counts survive whole.
+func TestIssueRowCellTakesTheTitleToTheFloor(t *testing.T) {
+	occ, state := int64(123), "awaiting_input"
+	title := strings.Repeat("abcdefghij", 10)
+	iss := apiclient.Issue{
+		ID: 12, State: "open", Title: title, Labels: []string{"bug"}, Kind: "bug",
+		Lane: "in_progress", TaskCount: 4, Active: true,
+		MainWorktree:      &apiclient.IssueMainWorktree{Branch: "b", OccupantTaskID: &occ, OccupantState: &state},
+		SideActive:        1,
+		MergeBacksPending: 1,
+		Source:            &apiclient.IssueSource{Repo: "o/r", Number: 3},
+	}
+	for _, width := range []int{58, 50} {
+		line := ansi.Strip(issueLine(iss, width, false, true))
+		got := rowTitleWidth(line, title)
+		if got < issueTitleFloor || got >= issueTitleMin(width) {
+			t.Errorf("%d columns: the title has %d columns, want [%d, %d):\n%s", width, got, issueTitleFloor, issueTitleMin(width), line)
+		}
+		if !strings.Contains(line, "● #123 · +1 side · 1 merging") {
+			t.Errorf("%d columns: the cell lost its counts:\n%s", width, line)
+		}
+	}
+}
+
+// #796 decision 7: moving and filtering are what an 80-column footer keeps
+// — the pinned segment leaves no room past them — ahead of anything later,
+// filing comes before the browser, and `o browser` is in the footer only on
+// an imported row, never counted in `+N` where it is withheld.
+func TestIssuesFooterOrderAndBrowserWithholding(t *testing.T) {
+	v := issuesFixture() // the cursor starts on #3, a local issue
+	footer := func(width int) string {
+		rows := mainTabRows(v.footerBindings(bindingsFor(ctxIssues)), "tasks")
+		line, _ := buildFooter(width, rows, nil, taskActions{}, attentionTally{}, false, false)
+		return ansi.Strip(line)
+	}
+	narrow := footer(80)
+	for _, want := range []string{"↑↓ move", "/ filter"} {
+		if !strings.Contains(narrow, want) {
+			t.Errorf("the 80-column footer lost %q: %q", want, narrow)
+		}
+	}
+	for _, later := range []string{"o browser", "s done", "R refresh"} {
+		if strings.Contains(narrow, later) {
+			t.Errorf("the 80-column footer spent room on %q: %q", later, narrow)
+		}
+	}
+	for _, b := range v.footerBindings(bindingsFor(ctxIssues)) {
+		if b.remoteOnly {
+			t.Errorf("%q reached the footer's rows, and its +N, on a local row", b.hint)
+		}
+	}
+	if local := footer(200); strings.Contains(local, "o browser") || !strings.Contains(local, "n new") {
+		t.Errorf("a local row's footer offers o browser, or lost n new: %q", local)
+	}
+	v.selectIssue(5)
+	imported := footer(200)
+	if i, j := strings.Index(imported, "n new"), strings.Index(imported, "o browser"); i < 0 || j < 0 || i > j {
+		t.Errorf("an imported row's footer lacks o browser after n new: %q", imported)
 	}
 }
 

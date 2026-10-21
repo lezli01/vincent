@@ -345,7 +345,7 @@ const overviewLinkRows = 2
 // collapses before the failure card does, so it is gone there too.
 func (t *taskView) failureFrame(head []string, width, height int) []string {
 	if len(head)+t.minCardRows(width)+overviewLinkRows > height {
-		return append([]string{head[0], ""}, t.collapsedCard()...)
+		return append([]string{head[0], ""}, t.collapsedCard(width)...)
 	}
 	budget := height - len(head) - overviewLinkRows
 	card := t.failureCardLines(width, budget)

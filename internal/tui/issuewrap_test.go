@@ -185,6 +185,37 @@ func TestIssuesListFitsAWrappedPrompt(t *testing.T) {
 	}
 }
 
+// #796: the issues list's prose wraps under its margin at 80 columns rather
+// than meeting render's cut — the empty-state hint, a long list error, and a
+// long note, whose wrapped height the footer counts.
+func TestIssuesListProseWraps(t *testing.T) {
+	const w, h = 80, 24
+	empty := issuesFixture()
+	empty.issues = nil
+	lines := renderedLines(empty, w, h)
+	if !shows(lines, "reconciler tick.") {
+		t.Errorf("the empty-state hint lost its end:\n%s", strings.Join(lines, "\n"))
+	}
+	assertNoEllipsis(t, lines)
+
+	failed := issuesFixture()
+	failed.loadErr = fmt.Errorf("dial tcp 127.0.0.1:7777: connect: connection refused %s", strings.Repeat("and then some more words ", 4))
+	failed.lastLoad = time.Date(2026, 10, 21, 9, 30, 0, 0, time.UTC)
+	lines = renderedLines(failed, w, h)
+	if !shows(lines, "some more words") || !shows(lines, "showing what was listed at 09:30:00") {
+		t.Errorf("the list error lost its end:\n%s", strings.Join(lines, "\n"))
+	}
+	assertNoEllipsis(t, lines)
+
+	noted := issuesFixture()
+	noted.setNote("issue #3 is local — there is no page to open, and this note goes on long enough to need a second line", true)
+	lines = renderedLines(noted, w, h)
+	if !shows(lines, "second line") || len(lines) > h {
+		t.Errorf("the note lost its end or overflowed (%d lines):\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	assertNoEllipsis(t, lines)
+}
+
 // F6: a long note wraps rather than losing its end.
 func TestIssueDetailNoteWraps(t *testing.T) {
 	v := longFixtureIssue()

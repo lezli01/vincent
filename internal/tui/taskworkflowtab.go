@@ -353,7 +353,7 @@ func (t *taskView) sizeWorkflow() {
 	if w == nil {
 		return
 	}
-	w.width, w.height = t.width, max(t.height-workflowTabChrome, 1)
+	w.width, w.height = max(t.width-tabBodyIndent, 1), max(t.height-workflowTabChrome, 1)
 	w.graph.SetSize(max(w.width, 1), max(w.height, 1))
 }
 
@@ -392,7 +392,9 @@ func (t *taskView) renderWorkflow(width, height int) string {
 	if w == nil {
 		return ""
 	}
-	t.width = width
+	// width is the tab body's, narrower than the view by the indent; the
+	// view's own width is the caller's and stays as it is — popups drawn
+	// over this tab are centered on it (review F7).
 	w.width, w.height = width, max(height-workflowInspectorRows, 1)
 	w.graph.SetSize(max(width, 1), max(w.height, 1))
 

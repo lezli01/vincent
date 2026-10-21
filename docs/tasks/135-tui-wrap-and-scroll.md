@@ -1,6 +1,6 @@
 # 135 — TUI wrap and scroll: one wrap helper, one scrolling pane, screen by screen
 
-**Status:** 🔄 in progress (4/6)
+**Status:** 🔄 in progress (7/9)
 
 The umbrella record for [#784](https://github.com/lezli01/vincent/issues/784):
 text that "can not be read" across the TUI, and an opened issue that cannot be
@@ -103,6 +103,43 @@ Written into `internal/tui/doc.go` and spec §15:
   `shift+←`/`→`, shows its age, and its empty state no longer names `d`. The
   Workflow inspector is one field per row. Every new key is a registry row.
   ✓ 2026-10-21
+- [x] **135.7** The task workspace's popups and identity lines (#800). The
+  follow-up, repair, create-pull-request and pull-request-comment editors take
+  any number of lines and scroll within six visible rows (`MaxHeight` was also
+  an insertion cap). The follow-up and repair subjects, hints and errors and
+  the answer popup's hint wrap with `wrapText` instead of reaching `frame()`;
+  the answer popup keeps its question's first line in view and pins its hint
+  under the option window with `↑/↓ more` cues. The footer and palette offer
+  no task action while a popup holds the keyboard. Identity lines — the
+  attempt strip, step-details sidebar, outcome and failure cards, lane
+  selector and diff file rows — shrink the name with `truncateKeep` and keep
+  the part that tells rows apart, which makes the attempt strip match §15's
+  issue-#597 amendment. The Overview's fact labels align, Diff and Workflow
+  are indented like the other tabs, and a failed first load reads the same on
+  every tab. ✓ 2026-10-21
+- [x] **135.8** The pull request list, its two popups and the archived
+  boards (#804). Pull request rows are aligned columns where the head branch
+  gives way, with a detail line for the selected row (full title, `branch →
+  base`); the header and empty note follow `s`; the reason, load error,
+  unlink question and note wrap; `home`/`end`/`pgup`/`pgdown` move. The
+  create-PR, merge and comment popups pin their footer under scrolling rows,
+  the shown URL omits `body=`, and subjects, the merge title and checks wrap
+  to three lines. The archived boards get their own header (window, page,
+  rows) and, for tasks, their own columns (ARCHIVED instead of STEP and
+  ELAPSED); `esc` matches, `<`/`>` are offered only toward a page, the
+  archived chats board re-lists on activation, and both chats boards take
+  the paging keys. Spec §15 view 10 narrows `space`/`V` to archived tasks.
+  ✓ 2026-10-21
+- [x] **135.9** The issues list (#796). A row's title keeps
+  `max(30, 40%` of the row`)` while the state word, the tags (as a `+N`
+  count), the source badge (as `gh#N` when every imported row shares a
+  repo) give way; only the task cell takes it lower, to 12, superseding the
+  F2 title floor (spec §15 view 12, amended 2026-10-21). `pgup`/`pgdown`,
+  `home`/`g` and `end`/`G` page and jump, a list taller than its pane shows
+  `▲ n more`/`▼ n more` cues that clicks skip, and the empty-state hint, the
+  list error, the no-project and resolving lines and the footer note wrap
+  with `wrapText`. The footer puts move, filter and new ahead of
+  `o browser`, which it withholds on a row with no source page. ✓ 2026-10-21
 
 ## Decisions
 

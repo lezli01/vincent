@@ -386,6 +386,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **Issue titles keep room on the issues list, and the list pages.** A row's
+  title keeps at least 40% of the row (never under 30 columns) while its
+  labels and kind collapse to a `+N` count and its GitHub badge to `gh#N`
+  when every imported issue on the list shares a repository; only the tasks
+  column may take the title lower, never under 12 columns. `pgup`/`pgdown`
+  move the selection a screenful and `home`/`g`, `end`/`G` to either end; a
+  list taller than the screen shows `▲ n more`/`▼ n more`; the empty-list
+  hint, a list error and a long note wrap instead of being cut; and the
+  footer puts moving, filtering and filing ahead of `o browser`, which it
+  offers only on an imported issue.
+  ([#796](https://github.com/lezli01/vincent/issues/796))
 - **The task board groups by workflow out of the box.** The default
   `tui.board.group_by` is now `[workflow]`, and `g` cycles workflow → flat.
   The board shows one project at a time, so the project level drew nothing.
@@ -536,6 +547,54 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The TUI fits the terminal before it connects, and in its status line and
+  first-run notice.** The TUI now runs in the terminal's alternate screen, so
+  quitting no longer leaves the last frame in scrollback. The connecting,
+  starting, reconnecting and daemon-unreachable screens fill the terminal with
+  the footer on the last row, so `:` shows the whole palette and its daemon
+  entry; the dial error and log path wrap instead of being cut. The
+  unreachable screen owns its keys: its footer offers `r retry` and the
+  palette, help and quit keys instead of the hidden board's `enter open` and
+  `/ filter`, and `/` then `r` retries rather than typing into an invisible
+  filter. The status line fits the width: a pending project switch shortens
+  the project names (or moves its `y`/`y/n` key to the front) rather than
+  losing the key, and long notices end in `…`, the keymap warning keeping its
+  `vincent doctor` pointer. The first-run full-auto notice is rewrapped to
+  fit 60×15 with `enter continue` on screen.
+  ([#793](https://github.com/lezli01/vincent/issues/793))
+- **Task workspace popups take more than six lines and read in full.** The
+  follow-up, repair, create-pull-request and pull-request-comment editors
+  silently dropped the seventh `enter`; they now take any number of lines and
+  scroll within six visible rows. The follow-up and repair popups wrap their
+  sentences instead of cutting them, so "the task returns to done afterwards"
+  survives at 80 columns. The answer popup keeps the question's first line
+  and its hint in view with many options, and the footer and palette no
+  longer offer pause, retry or cancel while a popup holds the keyboard. The
+  attempt strip, step-details sidebar, outcome and failure cards, lane
+  selector and diff file rows now shorten the name and keep what tells rows
+  apart — the attempt number, `⏸ paused · N new`, `+N -M` — and the Overview's
+  fact labels line up. ([#800](https://github.com/lezli01/vincent/issues/800))
+- **Pull request rows keep their title and claim, and the popups keep their
+  keys.** At 80 columns a long head branch (a dependabot one, say) cut a
+  pull request's title to a few characters and pushed the claiming task off
+  the row. Rows are now aligned columns where the branch gives way, and the
+  selected row shows the full title and `branch → base` below it. After `s`
+  the header and empty note say closed or all instead of always "open"; the
+  unavailable reason, load errors and the unlink question wrap instead of
+  being cut; `home`/`end`/`pgup`/`pgdown` move. In the create-PR popup a long
+  body no longer hides the key line or a failed push's error — the footer is
+  pinned and the rows scroll — and the shown URL leaves out the encoded body
+  (`ctrl+o` still opens it all). The merge popup wraps its title and checks.
+  ([#804](https://github.com/lezli01/vincent/issues/804))
+- **The archived boards say what they show.** The archived tasks board's
+  header names the date window and page instead of the live slot tally, and
+  its columns are its own — an ARCHIVED date instead of STEP and ELAPSED, so
+  the title has room. The archived chats header names the window and page,
+  both boards re-list when opened and reload on `R`, and both (and the live
+  chats board) take `home`/`end`/`pgup`/`pgdown`. `esc` leaves both archived
+  boards the same way — after clearing the filter and the tasks board's
+  selection — and `<`/`>` are offered only when there is a page that way.
+  ([#804](https://github.com/lezli01/vincent/issues/804))
 - **The new-task form wraps to its pane, and `ctrl+s` creates from anywhere
   in it.** The title, branch and priority rows, the open lists and the Fields
   editor's input wrapped at the terminal's width rather than the pane's, so at

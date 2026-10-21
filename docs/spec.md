@@ -12604,6 +12604,14 @@ stream for the live tail.
    `paused` is true (T3.3). A narrow strip truncates with `…`, losing the hint
    before the state. The Diff tab is unchanged.
 
+   *Amended 2026-10-21 (issue #800, review F16).* The narrow-width order,
+   which "truncates with `…`" left open: the hint goes first; then, once the
+   identity and the whole live state would leave the step name fewer than
+   twelve cells, the level, `raw` and the in-progress indicator are shed and
+   only the follow marker stays (it is the one the reader acts on); the step
+   name then gives way with `…` before the attempt's number, its attempt and
+   its state, which are what tell attempts apart.
+
    *Amended 2026-09-17 (task 119, issue #472).* **A stopped task can be talked
    to from here.** A task-action binding, `T` ("talk"; Keys, below) — the
    `chat` operation's default, which `tui.keys` may move (§12.3) — is offered when the
@@ -13217,6 +13225,24 @@ stream for the live tail.
    open in this project"; the cross-project question is the project
    overview's to answer.
 
+   *Amended 2026-10-21 (issue #804).* **Rows are aligned columns** — `#n`,
+   status word, title, claiming task — and the head branch is the part that
+   gives way first, then the title down to a floor, never the claim's
+   `task #n (how)`, however long the task id (review F10); the selected row adds a detail
+   line with the full title and `branch → base`. The header and the empty
+   note name the listing `s` selected (open, closed or all) instead of always
+   saying "open". The unavailable reason, a listing's error, the unlink
+   confirmation and the footer note wrap to the width rather than being cut.
+   `home`/`end` and `pgup`/`pgdown` move the cursor, as on every list. The
+   two popups opened from this listing and from view 2 — the pull-request
+   form and the merge confirmation — keep their footer (the URL `ctrl+o`
+   opens, an error, the status and the key line) pinned below rows that
+   scroll, so a long body no longer pushes the keys or a failed `ctrl+s`'s
+   error off the popup. The form's displayed URL omits the encoded `body`
+   parameter, which is the body again and on screen above; `ctrl+o` still
+   opens the full URL. Subjects, the merge popup's title and its checks wrap
+   to at most three lines.
+
 8. **Chats board.** *Added 2026-08-31 (task 067, issue #269, closing 063.2).* A
    second board, not a filter on the first: every chat from `GET /v1/chats`,
    grouped by project, one row per conversation carrying id, state, agent, last
@@ -13719,6 +13745,24 @@ stream for the live tail.
    page offset belongs to the old project's listing, and keeps the date window
    and the `/` filter text.
 
+   *Amended 2026-10-21 (issue #804).* **Archived chats have no selection.**
+   "`space`/`V` selection" above describes the archived *tasks* board alone:
+   the chats board has no bulk selection (view 8), so an archived chat is
+   deleted one row at a time, and building selection into chats for this one
+   key was rejected. **Each board's header names its window and page** — the
+   date window, the page once past the first, and on the tasks board how
+   many rows the page holds — instead of the live board's slot tally or the
+   chats scope label; an archive holds no slot. The archived tasks board has
+   **its own columns**: ID, WORKFLOW, TITLE, STATE, ARCHIVED (the archived-at
+   stamp, `01-02 15:04`), then COST and PR while a row has one — no STEP,
+   ELAPSED or STATUS, which describe a run that is over, and TITLE takes the
+   rest. The two boards' keys match: `esc` with no filter leaves to the home
+   board from both (after clearing the filter and, on the tasks board, the
+   selection), `R` reloads both, `home`/`end`/`pgup`/`pgdown` move on both
+   (and on the live chats board), and `<`/`>` are offered only where a page
+   lies that way — `>` after a full page, `<` past the first. Both archived
+   boards re-list on activation, as the live chats board already did.
+
 11. **Triggers.** *Added 2026-09-13 (task 096.6, issue #362).* A takeover
    reached from the command palette, like Workflows and Projects, with no key
    of its own (task 049). It shows `{config_dir}/triggers/` and what the daemon
@@ -13870,6 +13914,31 @@ stream for the live tail.
    boards (task 114): the wheel moves the selection one row per tick and a
    click selects the row under it; both are ignored under the issue form and
    the close/delete prompt.
+   *Amended 2026-10-21 (issue #796; supersedes the title floor of the F2
+   amendment of 2026-10-08 above, whose text stays as the record).* **The
+   title keeps `max(30, 40%` of the row's inner width`)`** — 31 columns at
+   80, about 47 at 120 — while the parts right of it give way, in this
+   order: the occupant's state word; the tags become a `+N` count (labels
+   plus one for a kind), never a label cut in half; the source badge
+   shortens to `gh#N`; the count goes; the badge goes. Only then may the
+   task cell take the title below its minimum, down to F2's 12-column
+   floor, and the cell's counts survive whole — the one part of F2 kept.
+   Below that floor the row is cut at the pane's edge, as before. `gh#N` is
+   used only while every imported row on the list shares one
+   `source.repo`, read from the list itself (a remote's repo can change);
+   otherwise the badge keeps `owner/repo#N` and is cut. `pgup`/`pgdown`
+   move the selection by the rows on screen and `home`/`g`, `end`/`G` to
+   the first and last row the cursor may rest on (a collapsed header
+   included), all ignored while the filter types or the form or prompt is
+   up. A list taller than its pane shows a dim `▲ n more` line above and
+   `▼ n more` below, the issue detail's idiom, counting the hidden lines
+   that are not blank; a click on a cue selects nothing. The empty-state
+   hint, the list error and its "showing what was listed at" line, the
+   no-project and resolving lines, and the footer note wrap under their
+   margin rather than being cut. The footer orders `tab`, `enter open`,
+   `↑↓ move`, `/ filter`, `n new`, `o browser`, then the rest, and
+   withholds `o browser` from the footer — never from `?` or the palette —
+   while the selected row has no source page.
 
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,
@@ -15973,6 +16042,24 @@ switch's loads failed; a clean reconnect fetches nothing beyond the projects
 relist and the GitHub re-probe (task 132 decision 48). The `@` picker opens
 while reconnecting, on the cached list, with a dim `offline — list may be
 stale` line.
+
+*Amended 2026-10-21 (issue #793).* Before a board has loaded, or while the
+active surface is not one that stays on screen stale, the body is a
+connection screen — connecting, starting, reconnecting or unreachable — and
+that screen owns the keyboard and the footer: `r` retries where there is
+something to retry, `tab`/`shift+tab` still switch the main tab, and only the
+root's own keys (`:`, `?`, quit) act; the view behind it receives nothing —
+no key, paste or click — and offers no footer rows, and `?` and `:` describe
+the connection screen (retry and the root's keys), not the hidden view. When the view behind it is capturing text — a
+reconnect can land mid-sentence in a chat or a form — a printable key other
+than `r` is the human still typing and is swallowed, so `q` cannot quit past
+a draft; the footer and the screen then name the text-field keys (`ctrl+p`,
+`f1`, `ctrl+c`) instead (review F1). Its text wraps to the terminal and the frame fills
+it. The TUI runs in the terminal's alternate screen, which the quit
+reminder's "printed after teardown" already assumed. The status line is
+budgeted to the width: a pending switch's project names give way before its
+answer key, which moves to the front when even shortened names do not fit —
+followed by what it does (`discard the …`), with why it is asking cut first.
 
 ## 16. Security considerations
 

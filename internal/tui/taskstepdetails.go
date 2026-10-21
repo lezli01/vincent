@@ -108,7 +108,8 @@ func (p *stepDetailsPane) renderSidebar(runs []apiclient.StepRun, selected int64
 	p.sidebarTop = windowStart(len(runs), cursor, height)
 	end := min(p.sidebarTop+height, len(runs))
 	for _, r := range runs[p.sidebarTop:end] {
-		label := "  " + ansi.Truncate(stepDetailsAttemptLabel(r), max(p.sidebarW-4, 1), "…")
+		head, name, tail := stepDetailsAttemptParts(r)
+		label := "  " + truncateKeep(head, name, tail, max(p.sidebarW-4, 1))
 		label = padDisplayWidth(label, p.sidebarW)
 		if r.ID == selected {
 			label = styleSelected.Render("› " + strings.TrimPrefix(label, "  "))
@@ -123,15 +124,18 @@ func (p *stepDetailsPane) renderSidebar(runs []apiclient.StepRun, selected int64
 	return lines
 }
 
-// stepDetailsAttemptLabel is one sidebar row: the step, the iteration when
+// stepDetailsAttemptParts is one sidebar row: the step, the iteration when
 // there is one, and the attempt number. Short by design — the sidebar is
 // narrow, and the content pane repeats the identity in full.
-func stepDetailsAttemptLabel(r apiclient.StepRun) string {
-	label := strconv.Itoa(r.StepIndex+1) + " " + stepLabel(r)
+//
+// It comes in three parts for truncateKeep: the iteration and attempt are
+// what tell one row of a step from the next, so they survive a narrow
+// sidebar and the step name gives way (#800 W4).
+func stepDetailsAttemptParts(r apiclient.StepRun) (head, name, tail string) {
 	if r.Iteration > 0 {
-		label += fmt.Sprintf(" ▸%d", r.Iteration)
+		tail = fmt.Sprintf(" ▸%d", r.Iteration)
 	}
-	return label + fmt.Sprintf(" #%d", r.Attempt)
+	return strconv.Itoa(r.StepIndex+1) + " ", stepLabel(r), tail + fmt.Sprintf(" #%d", r.Attempt)
 }
 
 // renderStepDetails is the workspace's Step Details tab.
@@ -151,7 +155,8 @@ func stepDetailsPlaceholder(d *detail) []string {
 	case d.taskID == 0:
 		return []string{styleDim.Render("  no task selected")}
 	case !d.loaded && d.loadErr != nil:
-		return []string{styleBad.Render("  task unavailable: " + errString(d.loadErr))}
+		line, _ := taskLoadFailure(d)
+		return []string{line}
 	case !d.loaded:
 		return []string{styleDim.Render("  loading task…")}
 	case len(d.attempts()) == 0:

@@ -118,7 +118,10 @@ type root struct {
 	// decision 4): a tui.keys binding displaced a default or a fixed key, or
 	// named a retired operation. Cleared by the next key; keysNoticed is the
 	// warning set it was raised for, so the same set is not raised twice.
+	// keysMore is the line's `+N more` tail, kept apart so a narrow status
+	// line cuts the warning and not the `vincent doctor` pointer (#793).
 	keysNotice  string
+	keysMore    string
 	keysNoticed string
 	// selectedTask is the task the board last opened; PR J's detail view
 	// reads it from the same message that sets it.
@@ -405,7 +408,9 @@ func (m *root) updatePaste(text string) tea.Cmd {
 	if m.palette != nil {
 		return m.palette.paste(text)
 	}
-	if !m.activeCapturesInput() {
+	// A connection screen hides the view, which receives nothing (#793,
+	// review F3): a paste is input the way a key is.
+	if m.connScreen() || !m.activeCapturesInput() {
 		return nil
 	}
 	p, ok := m.views[m.active].(pasteReceiving)
@@ -432,6 +437,11 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 				return m.replayKey(h.key, h.global)
 			}
 		}
+		return m, nil
+	}
+	if m.connScreen() {
+		// The body is the connection screen, not the view behind it (#793,
+		// review F3).
 		return m, nil
 	}
 	msg.Y -= m.chromeTop() // the body starts under the header lines
@@ -465,7 +475,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// tea.PasteMsg and takes the same route bracketed paste does. Nothing
 	// capturing text means nothing to paste into — don't shell out to read a
 	// clipboard whose contents would be dropped.
-	if msg.String() == "ctrl+v" && (m.popupOpen() || m.activeCapturesInput()) {
+	if msg.String() == "ctrl+v" && (m.popupOpen() || (m.activeCapturesInput() && !m.connScreen())) {
 		return m, readClipboardCmd()
 	}
 	// An open popup owns every key but ctrl+c — it is the top of the §15 esc
@@ -481,6 +491,31 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.palette != nil && msg.String() != "ctrl+c" {
 		return m.updatePaletteKey(msg)
+	}
+	// A connection screen owns the keyboard (#793): only the root's own keys
+	// mean anything there, since the view behind it is not on screen — those
+	// and the main-tab switch, which works in every connection phase (task
+	// 136.2).
+	//
+	// A reconnect starts on its own when the stream drops, so it can land
+	// mid-sentence in a chat or a form. While the hidden view is capturing
+	// text, a printable key is the user still typing, not a command: it is
+	// swallowed rather than read as `q` quitting past the draft (review F1).
+	// The screen's own `r` and the non-printable root keys — ctrl+c, ctrl+p,
+	// f1, the ones the footer pins for a text field — still work.
+	if m.connScreen() {
+		k := msg.String()
+		if (k == "tab" || k == "shift+tab") && m.tabSwitches() {
+			if k == "tab" {
+				return m, m.cycleMainTab(1)
+			}
+			return m, m.cycleMainTab(-1)
+		}
+		if k != "r" && m.activeCapturesInput() && typedText(msg) {
+			return m, nil
+		}
+		cmd, _ := m.globalKey(msg)
+		return m, cmd
 	}
 	// ctrl+p is `:` for a surface that is capturing text. It is hoisted above
 	// the input-capture gate the way ctrl+v is, and for the same reason: a
@@ -820,7 +855,7 @@ func (m *root) surfaceTarget() surface {
 		s.editable = sh.detail.stepEditable()
 		s.live = sh.liveBindings
 	} else if t, ok := m.views[m.active].(*taskView); ok {
-		s.target = t.target()
+		s.target = popupFreeTarget(t)
 		s.editable = t.detail.stepEditable()
 		s.live = t.liveBindings
 		s.tabs = t.tabs()
@@ -831,7 +866,25 @@ func (m *root) surfaceTarget() surface {
 	if m.phase != phaseConnected {
 		s.target = taskActions{}
 	}
+	if m.connScreen() {
+		// The view is hidden and takes no keys: none of its rows, tabs or
+		// extras are on offer (review F4).
+		return surface{}
+	}
 	return s
+}
+
+// popupFreeTarget is the task workspace's target for the footer, the palette
+// and the help sheet: empty while a popup is open (issue #800 W5). The popup
+// holds the keyboard and its form ignores the task's action keys, so a footer
+// reading "p pause · r retry · c cancel" over an answer popup advertised keys
+// that do nothing, and a palette row would act on a task the reader is in
+// the middle of answering.
+func popupFreeTarget(t *taskView) taskActions {
+	if t.popup {
+		return taskActions{}
+	}
+	return t.target()
 }
 
 // openPalette builds the palette for the active surface.
@@ -847,6 +900,14 @@ func (m *root) openPalette() {
 // palette offers them (issue #372).
 type liveBinder interface {
 	liveBindings(rows []binding) []binding
+}
+
+// footerBinder is a surface that keeps some rows out of the footer alone:
+// keys that answer with a note rather than nothing, so `?` and the palette
+// still list them, but which the narrow footer should not spend room on
+// where they cannot act (#796).
+type footerBinder interface {
+	footerBindings(rows []binding) []binding
 }
 
 // panelOwnsKey reports whether the active surface declares key as one of its
@@ -876,6 +937,9 @@ func (m *root) panelOwnsLocalKey(key string) bool {
 
 // activeContext names the active surface for the binding registry.
 func (m *root) activeContext() bindingContext {
+	if m.connScreen() {
+		return ctxConnection
+	}
 	switch m.active {
 	case viewTask:
 		return m.views[viewTask].(*taskView).bindingContext()
@@ -1929,30 +1993,67 @@ func (m *root) noticeKeys(warnings []string) {
 	if len(warnings) > 1 {
 		more = fmt.Sprintf(" (+%d more — `vincent doctor` lists them)", len(warnings)-1)
 	}
-	m.keysNotice = " ⚠ tui.keys: " + warnings[0] + more
+	m.keysNotice = " ⚠ tui.keys: " + warnings[0]
+	m.keysMore = more
 }
 
 // statusLine is the line under the header, when there is one: the full-auto
 // notice's failed acknowledgment, else a pending switch's confirmation, else
 // the one-time keymap notice, else the startup-project notice — which a
 // follow's `switched to` line reuses.
+//
+// The line is budgeted to the terminal's width (#793): one that overflows is
+// cut with "…" rather than left for the renderer to clip unmarked. Two cuts
+// are chosen rather than taken from the end: the pending switch's project
+// names give way before its answer key does, and the keymap notice's
+// `vincent doctor` tail outlives the warning in front of it.
 func (m *root) statusLine() (string, bool) {
 	if line, ok := m.notice.statusLine(); ok {
-		return line, true
+		return fitStatus(line, m.width), true
 	}
 	if m.pending != nil {
-		return styleWarn.Render(" " + m.pending.prompt()), true
+		return styleWarn.Render(" " + m.pending.promptFit(m.width-1)), true
 	}
 	if m.keysNotice != "" {
-		return styleWarn.Render(m.keysNotice), true
+		head := m.keysNotice
+		if m.width > 0 && cols(head+m.keysMore) > m.width {
+			head = ansi.Truncate(head, max(m.width-cols(m.keysMore), 0), "…")
+		}
+		return styleWarn.Render(fitStatus(head+m.keysMore, m.width)), true
 	}
 	if m.selNotice != "" {
 		if m.selNoticeWarn {
-			return styleWarn.Render(" ⚠ " + m.selNotice), true
+			return styleWarn.Render(fitStatus(" ⚠ "+m.selNotice, m.width)), true
 		}
-		return styleDim.Render(" " + m.selNotice), true
+		return styleDim.Render(fitStatus(" "+m.selNotice, m.width)), true
 	}
 	return "", false
+}
+
+// fitStatus cuts a line to width cells with "…"; a width not yet known (no
+// WindowSizeMsg) leaves it whole.
+func fitStatus(line string, width int) string {
+	if width <= 0 {
+		return line
+	}
+	return ansi.Truncate(line, width, "…")
+}
+
+// fitHeight clips or pads a block to exactly height lines, so the frame it
+// is part of fills the terminal and puts the footer on the last row (#793).
+// A height not yet known leaves it as it is.
+func fitHeight(block string, height int) string {
+	if height <= 0 {
+		return block
+	}
+	lines := strings.Split(block, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // broadcast routes a message to every view, not just the visible one.
@@ -1981,6 +2082,12 @@ func (m *root) activePrompt() bool {
 	return ok && len(p.promptKeys()) > 0
 }
 
+// typedText reports whether a key press is text being typed — a printable
+// character with no ctrl or alt — rather than a command chord.
+func typedText(msg tea.KeyPressMsg) bool {
+	return msg.Text != "" && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0
+}
+
 func (m *root) activeCapturesInput() bool {
 	c, ok := m.views[m.active].(inputCapturing)
 	return ok && c.capturesInput()
@@ -2002,7 +2109,9 @@ func (m *root) View() tea.View {
 	if m.notice.active {
 		// The overlay takes the whole screen, chrome included: a warning
 		// framed by a working app reads as decoration.
-		return tea.NewView(m.notice.render())
+		v := tea.NewView(fitHeight(m.notice.render(), m.height))
+		v.AltScreen = true
+		return v
 	}
 	var b strings.Builder
 	b.WriteString(m.headerLine())
@@ -2028,6 +2137,10 @@ func (m *root) View() tea.View {
 		frame = overlay(frame, popup(pw, ph), max((m.width-pw)/2, 0), 2)
 	}
 	v := tea.NewView(frame)
+	// The alternate screen, which the teardown path (tui.go's quit reminder)
+	// and the board's mouse handling were written against: without it
+	// bubbletea v2 draws inline, leaving the last frame in scrollback (#793).
+	v.AltScreen = true
 	if m.mouseOn && !m.notice.active {
 		v.MouseMode = tea.MouseModeCellMotion
 	}
@@ -2195,34 +2308,82 @@ func (m *root) body() string {
 	// ever anything to show; before the first connection a stale empty board
 	// would be a lie, not information (PR P decision). The takeovers are
 	// forms against a live daemon and stay behind the screens below.
-	if (m.active == viewHome && m.homeLoaded() || m.active == viewTask && m.taskLoaded()) &&
-		(m.phase == phaseReconnecting || m.phase == phaseFailed) {
+	if m.staleShown() {
 		if m.active == viewHome {
 			return m.views[viewHome].render(m.width, m.bodyHeight())
 		}
 		return m.framedView(viewTask)
 	}
+	if m.connScreen() {
+		return fitHeight(m.connBody(), m.bodyHeight())
+	}
+	if m.active == viewHome {
+		return m.views[viewHome].render(m.width, m.bodyHeight())
+	}
+	return m.framedView(m.active)
+}
+
+// staleShown reports whether a loaded board or task stays on screen, marked
+// stale, while the daemon is unreachable (§15 Disconnected).
+func (m *root) staleShown() bool {
+	return (m.active == viewHome && m.homeLoaded() || m.active == viewTask && m.taskLoaded()) &&
+		(m.phase == phaseReconnecting || m.phase == phaseFailed)
+}
+
+// connScreen reports whether the body is a connection screen — connecting,
+// starting, failed or reconnecting with nothing loaded to keep on screen —
+// rather than a view. Such a screen owns the keyboard and the footer (#793):
+// the view behind it is not drawn, so its keys would act on something the
+// human cannot see, and a hidden filter would swallow the `r` the screen
+// asks for.
+func (m *root) connScreen() bool {
+	return m.phase != phaseConnected && m.active != viewDaemon && !m.staleShown()
+}
+
+// connBody is the connection screen's text, wrapped to the terminal (#793):
+// a dial error runs past any width, and the renderer would cut it unmarked.
+// The log path is hard-wrapped by cell rather than at its spaces, so a path
+// with a space in it reads as one path.
+func (m *root) connBody() string {
+	width := m.width
+	if width <= 0 {
+		width = 1 << 16
+	}
+	lines := []string{""}
+	para := func(text string, style func(...string) string) {
+		for _, l := range wrapText(text, width, wrapOpts{prefix: "  ", indent: 2}) {
+			lines = append(lines, "  "+style(strings.TrimPrefix(l, "  ")))
+		}
+	}
+	plain := func(s ...string) string { return strings.Join(s, " ") }
 	switch m.phase {
 	case phaseProbing:
-		return "\n  connecting to daemon…\n"
+		para("connecting to daemon…", plain)
 	case phaseStarting:
-		return "\n  starting daemon…\n"
+		para("starting daemon…", plain)
 	case phaseFailed:
+		para("daemon unreachable: "+errString(m.connErr), styleBad.Render)
+		lines = append(lines, "")
+		for _, l := range strings.Split(ansi.Hardwrap("log: "+m.logPath, max(width-2, 1), true), "\n") {
+			lines = append(lines, "  "+l)
+		}
+		lines = append(lines, "")
 		// r is retry-connecting, fixed; the palette and quit are rebindable
 		// (task 118 decision 8).
-		return fmt.Sprintf(
-			"\n  %s\n\n  log: %s\n\n  press r to retry, %s for the daemon view and its log, %s to quit\n",
-			styleBad.Render("daemon unreachable: "+errString(m.connErr)), m.logPath,
-			opKey(keymap.Palette), opKey(keymap.Quit))
-	case phaseReconnecting:
-		return fmt.Sprintf("\n  %s\n\n  retrying in %s — press r to restart the daemon if it stays down\n",
-			styleWarn.Render("connection lost: "+errString(m.connErr)), m.retryIn)
-	default:
-		if m.active == viewHome {
-			return m.views[viewHome].render(m.width, m.bodyHeight())
+		// Over a hidden text field the printable keys are swallowed, so the
+		// text names the ones that still work, as the footer does.
+		palette, quit := opKey(keymap.Palette), opKey(keymap.Quit)
+		if m.activeCapturesInput() {
+			palette, quit = opKey(keymap.PaletteAlt), "ctrl+c"
 		}
-		return m.framedView(m.active)
+		para(fmt.Sprintf("press r to retry, %s for the daemon view and its log, %s to quit",
+			palette, quit), plain)
+	case phaseReconnecting:
+		para("connection lost: "+errString(m.connErr), styleWarn.Render)
+		lines = append(lines, "")
+		para(fmt.Sprintf("retrying in %s — press r to restart the daemon if it stays down", m.retryIn), plain)
 	}
+	return strings.Join(lines, "\n")
 }
 
 // framedView wraps a takeover screen in the same bordered chrome the home
@@ -2301,6 +2462,15 @@ func (m *root) footerLine() string {
 		// underneath do nothing until it closes.
 		return helpFooter(m.width)
 	}
+	if m.connScreen() {
+		// The connection screen's own keys: retry where there is something
+		// to retry, and the pinned palette, help and quit — never the rows of
+		// the view hidden behind it (#793).
+		retry := m.phase == phaseFailed || m.phase == phaseReconnecting
+		line, hits := buildFooter(m.width, nil, nil, taskActions{}, attentionTally{}, retry, m.activeCapturesInput())
+		m.footerHits = hits
+		return line
+	}
 	if p, ok := m.views[m.active].(prompter); ok {
 		if keys := p.promptKeys(); len(keys) > 0 {
 			line, hits := buildPromptFooter(m.width, keys, m.activeCapturesInput())
@@ -2329,12 +2499,15 @@ func (m *root) footerLine() string {
 	} else if t, ok := m.views[m.active].(*taskView); ok {
 		bar = t.detail.actions
 		if m.phase == phaseConnected {
-			target = t.target()
+			target = popupFreeTarget(t)
 		}
 	}
 	rows := withoutGitHub(bindingsFor(ctx), m.githubAvailable())
 	if lb, ok := m.views[m.active].(liveBinder); ok {
 		rows = lb.liveBindings(rows)
+	}
+	if fb, ok := m.views[m.active].(footerBinder); ok {
+		rows = fb.footerBindings(rows)
 	}
 	rows = mainTabRows(rows, m.nextTabName())
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting

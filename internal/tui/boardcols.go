@@ -114,6 +114,9 @@ const maxBoardColumns = 10
 
 // columnSet records which optional columns survived the current width.
 type columnSet struct {
+	// archived is the archived board's set (#804 AR-10): STATE is narrower,
+	// STEP, ELAPSED and STATUS are absent, and ARCHIVED follows STATE.
+	archived bool
 	// mark is the bulk-selection marker (task 011). Unlike the others it is
 	// not a width decision and is never shed: it is on exactly while something
 	// is marked, because a selection you cannot see is worse than a narrow
@@ -179,6 +182,9 @@ func contentOf(rows []boardRow) boardContent {
 
 // fixedWidth is everything a set costs except the title, padding included.
 func (s columnSet) fixedWidth() int {
+	if s.archived {
+		return s.archivedFixedWidth()
+	}
 	total := widthID + widthState + widthElapsed
 	count := 4 // id, title, state, elapsed
 	if s.mark {
@@ -206,6 +212,22 @@ func (s columnSet) fixedWidth() int {
 	if s.status {
 		total += widthStatus
 		count++
+	}
+	return total + count*colPadding
+}
+
+// archivedFixedWidth is fixedWidth for the archived set (#804 AR-10).
+func (s columnSet) archivedFixedWidth() int {
+	total := widthID + widthArchivedState + widthArchivedAt
+	count := 4 // id, title, state, archived
+	for _, c := range []struct {
+		on    bool
+		width int
+	}{{s.mark, widthMark}, {s.workflow, widthWorkflow}, {s.cost, widthCost}, {s.pr, widthPR}} {
+		if c.on {
+			total += c.width
+			count++
+		}
 	}
 	return total + count*colPadding
 }
@@ -360,6 +382,73 @@ func boardColumns(width int, g grouping, marking bool, content boardContent) ([]
 	}
 	if set.status {
 		cols = append(cols, table.Column{Title: "STATUS", Width: statusWidth})
+	}
+	return cols, set
+}
+
+// The archived board's own column widths (#804 AR-10). Every row on it is
+// `archived`, so STATE needs room for that word and a fan-out parent's lane
+// clauses wrap under it; ARCHIVED is the archived-at stamp in the chats
+// board's terminal form, `01-02 15:04`.
+const (
+	widthArchivedState = 10
+	widthArchivedAt    = 11
+)
+
+// archivedColumnsFor is columnsFor for the archived board (#804 AR-10). An
+// archive has no running step and no clock, so STEP and ELAPSED — the two
+// columns that crowded TITLE there — are not candidates at all, and neither
+// is STATUS: a status message is what a step was saying while it ran, and on
+// an archive it is a stale one. ARCHIVED takes their place, never shed: it is
+// the date the window and the newest-first order are both about. The rest
+// sheds in the live ladder's order, PR, then COST, then the workflow.
+func archivedColumnsFor(width int, g grouping, marking bool, content boardContent) columnSet {
+	set := columnSet{
+		archived: true,
+		mark:     marking,
+		workflow: !g.has(groupWorkflow),
+		cost:     content.cost,
+		pr:       content.pr,
+	}
+	for set.titleWidth(width) < minTitle {
+		switch {
+		case set.pr:
+			set.pr = false
+		case set.cost:
+			set.cost = false
+		case set.workflow:
+			set.workflow = false
+		default:
+			return set
+		}
+	}
+	return set
+}
+
+// archivedBoardColumns builds the archived board's table columns (#804
+// AR-10): ID, WORKFLOW, TITLE, STATE, ARCHIVED, then COST and PR while some
+// row has one. TITLE takes every cell the others leave, with no ceiling —
+// there is no STEP or STATUS on an archive for a surplus to go to instead.
+func archivedBoardColumns(width int, g grouping, marking bool, content boardContent) ([]table.Column, columnSet) {
+	set := archivedColumnsFor(width, g, marking, content)
+	cols := make([]table.Column, 0, maxBoardColumns)
+	if set.mark {
+		cols = append(cols, table.Column{Title: "", Width: widthMark})
+	}
+	cols = append(cols, table.Column{Title: "ID", Width: widthID})
+	if set.workflow {
+		cols = append(cols, table.Column{Title: "WORKFLOW", Width: widthWorkflow})
+	}
+	cols = append(cols,
+		table.Column{Title: "TITLE", Width: max(set.titleWidth(width), minTitle)},
+		table.Column{Title: "STATE", Width: widthArchivedState},
+		table.Column{Title: "ARCHIVED", Width: widthArchivedAt},
+	)
+	if set.cost {
+		cols = append(cols, table.Column{Title: "COST", Width: widthCost})
+	}
+	if set.pr {
+		cols = append(cols, table.Column{Title: "PR", Width: widthPR})
 	}
 	return cols, set
 }

@@ -311,3 +311,45 @@ func TestFailureEvidenceFetchedOncePerRun(t *testing.T) {
 		t.Fatal("the card fetched while another tab was open")
 	}
 }
+
+// cardLongStepName is a step name longer than an 80-column headline has room for.
+const cardLongStepName = "verify-the-entire-integration-suite-against-every-platform-and-db"
+
+// Review F8: at 80 columns a long step name gives way in every headline
+// that names an attempt — the full failure card, the collapsed one, the
+// outcome card's result label and the lane strip — and what identifies the
+// row (the attempt, the reason, the lane's task and state) stays.
+func TestHeadlinesKeepTheirIdentityAt80(t *testing.T) {
+	run := failedRun(5, 3, "nonzero_exit")
+	run.StepName = cardLongStepName
+	for _, h := range []int{40, cardCollapseRows - 1} {
+		v := cardView(t, cardTask("nonzero_exit", run))
+		got := ansi.Strip(v.render(80, h))
+		if !strings.Contains(got, "· attempt 3 · command exited non-zero") {
+			t.Errorf("at 80×%d the failure card's headline loses its attempt or reason:\n%s", h, got)
+		}
+	}
+
+	done := apiclient.TaskDetail{
+		Task: apiclient.Task{ID: 4, Title: "done task", State: stateDone, CurrentStep: 1, StepTotal: 1},
+		Steps: []apiclient.StepRun{{
+			ID: 1, StepIndex: 0, StepName: cardLongStepName, Attempt: 2, State: stepSucceeded,
+			ResultSummary: "all green",
+		}},
+	}
+	v := cardView(t, done)
+	label := ansi.Strip(v.resultLines(80, 3)[0])
+	if ansi.StringWidth(label) > 80 || !strings.Contains(label, "· attempt 2") {
+		t.Errorf("the outcome card's result label loses its attempt at 80 columns: %q", label)
+	}
+
+	lanes := fanOutFixture(t, "lane_failed", "a lane is blocked")
+	lanes.update(taskLaneListMsg{taskID: 7, children: []apiclient.Task{
+		laneRow(42, cardLongStepName, 0, stateBlocked, "worktree_dirty", "vincent/42-api"),
+	}})
+	lanes.laneSel = 0
+	strip := ansi.Strip(lanes.renderLaneSelector(80))
+	if ansi.StringWidth(strip) > 80 || !strings.Contains(strip, "(task 42) · ") || !strings.Contains(strip, "1/1 · ") {
+		t.Errorf("the lane strip loses the lane's identity at 80 columns: %q", strip)
+	}
+}

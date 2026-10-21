@@ -165,6 +165,14 @@ func newArchivedChatsView() *chatsView {
 	return v
 }
 
+// viewID is the view this instance is routed as.
+func (v *chatsView) viewID() viewID {
+	if v.archived {
+		return viewArchivedChats
+	}
+	return viewChats
+}
+
 func (v *chatsView) title() string {
 	if v.archived {
 		return "Archived Chats"
@@ -317,7 +325,9 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		v.width, v.height = msg.Width, msg.Height
 		return v, nil
 	case viewActivatedMsg:
-		if msg.id == viewChats {
+		// The instance's own id: the archived board is this model too, and
+		// it had never reloaded on its activation (#804 AR-12).
+		if msg.id == v.viewID() {
 			// A board that was off-screen through a burst of events opens on
 			// what it last fetched; refetching on activation is what keeps
 			// "off-screen" from meaning "stale".
@@ -557,6 +567,12 @@ func (v *chatsView) moveCursor(delta int) {
 	v.rememberSelection()
 }
 
+// pageRows is how far pgup/pgdown move: the rows the board has room for
+// under its header, heading and footer, and at least one.
+func (v *chatsView) pageRows() int {
+	return max(v.height-6, 1)
+}
+
 func (v *chatsView) rememberSelection() {
 	if c, ok := v.current(); ok {
 		v.selectedID = c.ID
@@ -640,6 +656,17 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.moveCursor(-1)
 	case "down", "j":
 		v.moveCursor(1)
+	// The fixed list-and-pane keys (#804 AR-7), on the live board and the
+	// archived one alike: moveCursor clamps, so a whole board's travel is
+	// enough to reach either end.
+	case "home":
+		v.moveCursor(-len(v.chats))
+	case "end":
+		v.moveCursor(len(v.chats))
+	case "pgup":
+		v.moveCursor(-v.pageRows())
+	case "pgdown":
+		v.moveCursor(v.pageRows())
 	case opKey(keymap.Filter):
 		v.filtering = true
 		v.filter.Focus()
@@ -786,8 +813,12 @@ func chatArchiveDecline(state string) string {
 }
 
 // liveBindings drops `A` while the cursor is on a chat opened on a task (task
-// 119): the key only declines there, and the footer should not offer it.
+// 119): the key only declines there, and the footer should not offer it. The
+// archived board offers `<`/`>` only where a page lies that way (#804 AR-11).
 func (v *chatsView) liveBindings(rows []binding) []binding {
+	if v.archived {
+		return v.pageBindings(rows, ctxArchivedChats, len(v.chats))
+	}
 	c, ok := v.current()
 	if !ok || c.LinkedTaskID == nil {
 		return rows

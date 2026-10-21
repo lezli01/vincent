@@ -66,11 +66,15 @@ func summaryRun(task apiclient.TaskDetail) (run apiclient.StepRun, fallback stri
 	return apiclient.StepRun{}, fallback, false
 }
 
-// resultSource names where a result came from, the way the failure card's
+// resultSourceParts names where a result came from, the way the failure card's
 // headline names an attempt: the step, the loop iteration and item when
 // there is one, and the attempt.
-func resultSource(run apiclient.StepRun) string {
-	parts := []string{fmt.Sprintf("from step %d %s", run.StepIndex+1, stepLabel(run))}
+//
+// It comes in three parts for truncateKeep: the step name is the long one,
+// and the iteration and attempt after it are what say which run the result
+// is (#800 W4).
+func resultSourceParts(run apiclient.StepRun) (head, name, tail string) {
+	var parts []string
 	if run.Iteration > 0 {
 		parts = append(parts, fmt.Sprintf("iteration %d", run.Iteration))
 		if run.LoopItem != nil {
@@ -78,7 +82,7 @@ func resultSource(run apiclient.StepRun) string {
 		}
 	}
 	parts = append(parts, fmt.Sprintf("attempt %d", run.Attempt))
-	return strings.Join(parts, " · ")
+	return fmt.Sprintf("from step %d ", run.StepIndex+1), stepLabel(run), " · " + strings.Join(parts, " · ")
 }
 
 // outcomeFetch is the card's two fetches, keyed by the task they are for.
@@ -268,10 +272,12 @@ func (t *taskView) resultLines(width, n int) []string {
 	var label, text string
 	switch {
 	case ok:
-		label = styleTitle.Render("Result") + "  " + resultSource(run)
+		head, name, tail := resultSourceParts(run)
+		head = "  " + styleTitle.Render("Result") + "  " + head
 		if key := opKey(keymap.Result); key != "" {
-			label += "   " + styleKey.Render(key) + " output"
+			tail += "   " + styleKey.Render(key) + " output"
 		}
+		label = strings.TrimPrefix(truncateKeep(head, name, tail, width), "  ")
 		text = run.ResultSummary
 	case fallback != "":
 		label = styleTitle.Render("Result") + "  " + styleDim.Render("from the task's status message")

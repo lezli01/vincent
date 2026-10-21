@@ -738,6 +738,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	// models the live boards are, in archived mode — which is the point of
 	// decision 5: one model, so a probe here is a probe of the real screen.
 	ctxArchived: {
+		"R": func(t *testing.T) {
+			b := testArchivedBoard()
+			b.client = offlineClient()
+			if _, cmd := b.updateKey(registryKey(t, "R")); cmd == nil {
+				t.Fatal("R did not reload the board")
+			}
+		},
 		"enter": func(t *testing.T) {
 			b := testArchivedBoard()
 			b.updateKey(registryKey(t, "enter"))
@@ -787,6 +794,15 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			b.updateKey(registryKey(t, "space"))
 			if len(b.marks) != 1 {
 				t.Fatalf("space marked %d rows, want 1", len(b.marks))
+			}
+		},
+	},
+	ctxConnection: {
+		"r": func(t *testing.T) {
+			m := phaseRoot(t, phaseFailed, 80, 24)
+			m.Update(registryKey(t, "r"))
+			if m.phase != phaseProbing {
+				t.Fatalf("r left the phase at %d, want probing (a retry)", m.phase)
 			}
 		},
 	},
@@ -1170,6 +1186,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxIssues: {
+		"pgdown": func(t *testing.T) {
+			v := issuesFixture()
+			v.page = 1
+			v.updateKey(registryKey(t, "pgdown"))
+			if row, ok := v.current(); !ok || row.issue.ID != 5 {
+				t.Fatalf("pgdown left the cursor on %+v, want #5", row)
+			}
+		},
 		"left": func(t *testing.T) {
 			v := issuesFixture()
 			v.updateKey(registryKey(t, "left"))
