@@ -270,7 +270,7 @@ func TestWorkspaceEscapePopsOneTaskPerPress(t *testing.T) {
 	v := newTaskView(taskDetailFixture(t))
 	v.alive = func(int64) (string, bool) { return stateRunning, true }
 
-	v.update(selectTaskMsg{id: 7, state: stateRunning})
+	v.update(selectTaskMsg{id: 7, state: stateRunning, fromBoard: true})
 	if len(v.stack) != 0 {
 		t.Fatalf("a task opened from the board has stack %v, want empty", v.stack)
 	}
@@ -305,7 +305,7 @@ func TestWorkspaceEscapeDropsAnArchivedTaskFromTheStack(t *testing.T) {
 		}
 		return stateBlocked, true
 	}
-	v.update(selectTaskMsg{id: 7, state: stateRunning})
+	v.update(selectTaskMsg{id: 7, state: stateRunning, fromBoard: true})
 	openThroughJump(v, 7, 42, stateRunning)
 	openThroughJump(v, 42, 43, stateRunning)
 
@@ -322,7 +322,7 @@ func TestWorkspaceEscapeFromABoardOpenedLaneReachesTheBoard(t *testing.T) {
 	v := newTaskView(taskDetailFixture(t))
 	v.alive = func(int64) (string, bool) { return stateRunning, true }
 	// A lane opened straight from the board has nothing behind it.
-	v.update(selectTaskMsg{id: 42, state: stateBlocked})
+	v.update(selectTaskMsg{id: 42, state: stateBlocked, fromBoard: true})
 	if _, ok := escapeTo(t, v); ok {
 		t.Fatalf("esc from a board-opened lane did not reach the board")
 	}
