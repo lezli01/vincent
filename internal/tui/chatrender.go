@@ -343,7 +343,12 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 			// one account of what went wrong, and its tail — "retrying
 			// later is safe" — is usually the part worth reading. The
 			// reason is humanised through the one catalogue of them.
-			text := reasons.Explain(t.FailReason).Title
+			// The code stays beside its title: it is what the logs, the
+			// API and the troubleshooting guide's headings are keyed by.
+			text := t.FailReason
+			if title := reasons.Explain(t.FailReason).Title; title != t.FailReason {
+				text = title + " (" + t.FailReason + ")"
+			}
 			if t.ErrorMessage != "" {
 				text += ": " + t.ErrorMessage
 			}
@@ -457,10 +462,17 @@ func (v *chatView) sizeComposer(height int) (hidden int) {
 	inner := max(v.composer.Width(), 1)
 	rows := 0
 	for _, line := range strings.Split(v.composer.Value(), "\n") {
-		rows += max((ansi.StringWidth(line)+inner-1)/inner, 1)
+		// The textarea gives a line that fills its last row exactly one more,
+		// empty row for the cursor, so this is a floor plus one rather than a
+		// ceiling.
+		rows += ansi.StringWidth(line)/inner + 1
 	}
 	limit := max(min(chatComposerMax, height/3), chatComposerMin)
-	v.composer.SetHeight(min(max(rows, chatComposerMin), limit))
+	// Only on a change: SetHeight re-scrolls the textarea to its cursor, and
+	// doing that on every frame moved a draft the reader had scrolled.
+	if h := min(max(rows, chatComposerMin), limit); h != v.composer.Height() {
+		v.composer.SetHeight(h)
+	}
 	return max(rows-limit, 0)
 }
 

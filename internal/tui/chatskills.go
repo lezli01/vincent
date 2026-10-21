@@ -300,8 +300,6 @@ func (l *chatSkillList) height(paneHeight int) int { return l.core().height(pane
 
 // window is how many row lines are drawn. Test-facing for the same reason
 // height is: the core's own window is what render consults.
-//
-//nolint:unparam // the remaining callers are the #299 tests; see height
 func (l *chatSkillList) window(paneHeight int) int { return l.core().window(paneHeight) }
 
 // titleLine names the list, the filter being typed and how old the answer is.

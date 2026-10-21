@@ -1632,16 +1632,12 @@ func (v *chatView) askClose() {
 	}
 }
 
-// closePrompt is the confirmation's text: what closing does, and to whom.
-func (v *chatView) closePrompt() string {
-	return v.closeQuestion() + " " + chatCloseAnswers
-}
-
 // chatCloseAnswers is the close confirmation's answer keys, kept apart from
 // the question so a wrap can never cut them (issue #801 F2).
 const chatCloseAnswers = "(y/n)"
 
-// closeQuestion is closePrompt without its answer keys.
+// closeQuestion is the confirmation's text: what closing does, and to whom.
+// noteLines ends it with chatCloseAnswers.
 func (v *chatView) closeQuestion() string {
 	prompt := fmt.Sprintf("close this chat? task #%d unlocks, and its worktree and branch stay as they are", derefID(v.chat.LinkedTaskID))
 	if v.runningTurn() != nil {

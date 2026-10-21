@@ -91,7 +91,15 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
 	case "pgdown":
 		msg = tea.KeyPressMsg{Code: tea.KeyPgDown}
+	case "alt+up":
+		msg = tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt}
+	case "alt+down":
+		msg = tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModAlt}
 	default:
+		if rest, ok := strings.CutPrefix(key, "alt+"); ok && len([]rune(rest)) == 1 {
+			msg = tea.KeyPressMsg{Code: []rune(rest)[0], Mod: tea.ModAlt}
+			break
+		}
 		if rest, ok := strings.CutPrefix(key, "ctrl+"); ok && len([]rune(rest)) == 1 {
 			msg = tea.KeyPressMsg{Code: []rune(rest)[0], Mod: tea.ModCtrl}
 			break
@@ -1018,6 +1026,35 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.updateKey(registryKey(t, "ctrl+g"))
 			if !v.following {
 				t.Fatal("ctrl+g did not re-arm follow")
+			}
+		},
+		"alt+up": func(t *testing.T) {
+			v := finishedChat(t, 9)
+			v.bodyDirty = true
+			v.render(60, 20)
+			v.updateKey(registryKey(t, "alt+up"))
+			if v.following {
+				t.Fatal("alt+up left the body following the live end")
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("alt+up reached the composer: %q", v.composer.Value())
+			}
+		},
+		"alt+g": func(t *testing.T) {
+			v := finishedChat(t, 9)
+			v.bodyDirty = true
+			v.render(60, 20)
+			v.updateKey(registryKey(t, "alt+g"))
+			if v.vp.YOffset() != 0 || v.following {
+				t.Fatalf("alt+g left the window at line %d", v.vp.YOffset())
+			}
+		},
+		"alt+a": func(t *testing.T) {
+			v := awaitingChat(t)
+			v.updateKey(registryKey(t, "esc"))
+			v.updateKey(registryKey(t, "alt+a"))
+			if v.form == nil {
+				t.Fatal("alt+a did not reopen the question esc put away")
 			}
 		},
 		"esc": func(t *testing.T) {
