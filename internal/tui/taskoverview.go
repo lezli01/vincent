@@ -356,9 +356,13 @@ func (t *taskView) failureFrame(head []string, width, height int) []string {
 	out = append(out, card...)
 	if t.showsOutcomeCard() {
 		// Under the failure card, in what is left once the jump links
-		// have their two rows (task 129.14 decision 2).
-		out = append(out, "")
-		out = append(out, t.outcomeCardLines(width, height-len(out)-overviewLinkRows)...)
+		// have their two rows (task 129.14 decision 2). Its blank separator
+		// comes only with a card: a separator over nothing pushed the frame
+		// a row over, and the scroll cue then took the links' row
+		// (review F14).
+		if outcome := t.outcomeCardLines(width, height-len(out)-1-overviewLinkRows); len(outcome) > 0 {
+			out = append(append(out, ""), outcome...)
+		}
 	}
 	return out
 }

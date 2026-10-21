@@ -93,6 +93,19 @@ func TestOverviewTallerNeverShowsLess(t *testing.T) {
 	}
 }
 
+// TestAbortedOverviewKeepsItsLinks: an aborted task stacks the outcome card
+// under the failure card, and the jump links outrank both cards' lower lines
+// at every height, so a taller screen never loses them (review F14).
+func TestAbortedOverviewKeepsItsLinks(t *testing.T) {
+	for h := cardCollapseRows + 1; h <= 40; h++ {
+		v := outcomeView(t, outcomeTask(stateAborted))
+		v.width, v.height = 100, h
+		if got := ansi.Strip(v.render(100, h)); !strings.Contains(got, "3 output of attempt") {
+			t.Errorf("100×%d hides the jump links:\n%s", h, got)
+		}
+	}
+}
+
 // TestPullTabWindowsChecksAroundCursor (#799 W2): with 30 checks at 120×40,
 // moving the cursor down through every check keeps the cursor's row and the
 // hint line on screen. renderPullTab cuts its lines at the pane height
