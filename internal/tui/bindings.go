@@ -98,7 +98,7 @@ const (
 	// list, so the form's own ↑/↓ and enter mean nothing there, and the
 	// footer must not offer them.
 	ctxProjectFormField bindingContext = "project form field"
-	ctxWorkflows   bindingContext = "workflows"
+	ctxWorkflows        bindingContext = "workflows"
 	// ctxPullRequests is the pull-requests takeover (§15 view 7, task 052.6).
 	ctxPullRequests bindingContext = "pull requests"
 	// ctxWorkflowEditor is the structured editor sub-layer of the workflows

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
 )

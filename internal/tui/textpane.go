@@ -143,7 +143,7 @@ func (p textPane) cursorRow() (int, bool) {
 	if c == nil {
 		return 0, false
 	}
-	return c.Position.Y, true
+	return c.Y, true
 }
 
 // Dirty reports whether a key has changed the value since SetValue.
