@@ -13,6 +13,12 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
+// cardCollapseRows is a screen height at which no card with an action fits
+// whole, so the card is collapsed to its first line and its keys there
+// (brief decision 8). The collapse itself is decided by what fits
+// (taskView.failureFrame), not by this number.
+const cardCollapseRows = 12
+
 // cardTask is a blocked task at its second step, with an earlier step that
 // succeeded and a failing attempt at the current one.
 func cardTask(reason string, failing apiclient.StepRun) apiclient.TaskDetail {

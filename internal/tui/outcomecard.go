@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,9 +31,10 @@ import (
 // decision 2); the daemon computes no outcome (#589 decision 4).
 
 const (
-	// resultLines is how many rendered lines of the result summary the card
-	// shows at most.
-	resultLines = 6
+	// resultMinLines is the fewest rendered lines of the result summary the
+	// card keeps before it collapses; above it the result grows into every
+	// row the Overview has free (#799 W13).
+	resultMinLines = 2
 	// outcomeCommits is how many commit subjects the card lists.
 	outcomeCommits = 3
 )
@@ -212,18 +214,22 @@ func (t *taskView) jumpToResult() tea.Cmd {
 	return tea.Batch(append(cmds, t.setTab(taskTabOutput))...)
 }
 
-// outcomeCardLines renders the card within the given height budget. A card
-// that does not fit gives up its result text first, then collapses to its
+// outcomeCardLines renders the card within the given height budget, the
+// result growing into whatever rows the rest of the card leaves free (#799
+// W13). A card that does not fit gives up its result text first, down to
+// resultMinLines, then collapses to its
 // heading and its changes line; on an aborted task it is the card that
 // collapses, never the failure card above it (brief decision 2).
 func (t *taskView) outcomeCardLines(width, height int) []string {
 	if height <= 0 {
 		return nil
 	}
-	for _, n := range []int{resultLines, 2} {
-		if out := t.outcomeBody(width, n); len(out) <= height {
-			return out
-		}
+	if out := t.outcomeBody(width, math.MaxInt); len(out) <= height {
+		return out
+	}
+	// The result cut to n lines is the card without it, plus its n lines.
+	if n := height - len(t.outcomeBody(width, 0)); n >= resultMinLines {
+		return t.outcomeBody(width, n)
 	}
 	out := []string{t.outcomeHeading(), t.changesLine()}
 	return out[:min(len(out), height)]

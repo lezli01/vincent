@@ -79,8 +79,42 @@ func (t *taskView) overviewLinks() []overviewLink {
 	case frameOutcome:
 		return t.deliveredLinks()
 	default:
-		return []overviewLink{{taskTabOutput, "full output"}}
+		// No link may open an empty transcript (#799 W12): a parent waiting
+		// on its lanes, or a task that has not run anything yet, has no
+		// output of its own to show, and its steps are where it stands.
+		if run, ok := t.overviewAnchor(); ok && (run.Live() || run.TranscriptPath != nil) &&
+			t.detail.task.State != stateAwaitingChildren {
+			return []overviewLink{{taskTabOutput, "full output"}}
+		}
+		return []overviewLink{{taskTabSteps, "steps"}}
 	}
+}
+
+// lanesNeedingYouLines name, on a parent waiting on its lanes, every lane
+// that is waiting on a human, and offer `l` to the first (#799 W12): "20 of
+// 30 lanes to settle" alone hides that one of them never will by itself.
+func (t *taskView) lanesNeedingYouLines(width int) []string {
+	lanes := t.lanesNeedingYou()
+	if len(lanes) == 0 {
+		return nil
+	}
+	out := []string{"", section("Lanes that need you"), ""}
+	for _, lane := range lanes {
+		glyph, style := "⏸", styleWarn
+		what := stateWords(lane.State)
+		if lane.State == stateBlocked {
+			glyph, style = "✗", styleBad
+			if lane.BlockReason != nil && *lane.BlockReason != "" {
+				what += reasonSeparator + reasonTitle(*lane.BlockReason)
+			}
+		}
+		line := "  " + style.Render(glyph+" "+laneName(lane)) + "  " + styleDim.Render(fmt.Sprintf("#%d · %s", lane.ID, what))
+		out = append(out, ansi.Truncate(line, max(width, 1), "…"))
+	}
+	if key := opKey(keymap.Lane); key != "" {
+		out = append(out, "", "  "+styleKey.Render(key)+" open "+laneName(lanes[0]))
+	}
+	return out
 }
 
 // deliveredLinks are the outcome card's links: the diff and, when one is
@@ -158,6 +192,15 @@ func (t *taskView) jumpTab(tab taskViewTab) tea.Cmd {
 // behind a screen that does not draw it.
 func (t *taskView) updateOverviewKey(msg tea.KeyPressMsg) tea.Cmd {
 	d := t.detail
+	if !d.actions.capturing() {
+		switch msg.String() {
+		case "pgup", "pgdown", "home", "end":
+			// The pane's paging keys only: ↑/↓ stay free, as they always
+			// were on this tab.
+			t.overview.Update(msg)
+			return nil
+		}
+	}
 	if !d.actions.capturing() && msg.String() == opKey(keymap.Result) {
 		return t.jumpToResult()
 	}
@@ -173,9 +216,10 @@ func (t *taskView) updateOverviewKey(msg tea.KeyPressMsg) tea.Cmd {
 // the palette list exactly the links the body draws.
 func (t *taskView) overviewLiveBindings(b binding) (binding, bool) {
 	if b.op == keymap.Lane {
-		// `l` is on the Overview for the failure card's blamed lane only.
+		// `l` is on the Overview for the failure card's blamed lane, and on
+		// a parent waiting on its lanes for the first that needs a human.
 		if !t.showsFailureCard() {
-			return b, false
+			return b, t.detail.task.State == stateAwaitingChildren && len(t.lanesNeedingYou()) > 0
 		}
 		c := t.failureCard()
 		return b, c.blamed && c.blame.taskID != 0
@@ -187,6 +231,13 @@ func (t *taskView) overviewLiveBindings(b binding) (binding, bool) {
 	}
 	var tab taskViewTab
 	switch b.key {
+	case "1":
+		// `1` is every frame's digit row; it takes the link's wording only
+		// where the frame links the steps.
+		if l, ok := t.overviewLinkFor(taskTabSteps); ok {
+			b.hint = b.key + " " + l.label
+		}
+		return b, true
 	case "3":
 		tab = taskTabOutput
 	case "4":
@@ -206,15 +257,21 @@ func (t *taskView) overviewLiveBindings(b binding) (binding, bool) {
 	return b, true
 }
 
+// renderOverview draws the frame into the Overview's scroll pane (#799 W1):
+// a frame taller than the screen scrolls — pgup/pgdown, home/end and the
+// wheel — with the cue on its last row, rather than losing its last rows.
 func (t *taskView) renderOverview(width, height int) string {
+	if t.overviewTask != t.detail.taskID {
+		t.overviewTask = t.detail.taskID
+		t.overview.GotoTop()
+	}
 	lines := t.overviewLines(width, height)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, max(width, 1), "…")
 	}
-	if len(lines) > height {
-		lines = lines[:max(height, 1)]
-	}
-	return strings.Join(lines, "\n")
+	t.overview.SetSize(width, height)
+	t.overview.SetContentLines(lines)
+	return strings.Join(t.overview.View(), "\n")
 }
 
 func (t *taskView) overviewLines(width, height int) []string {
@@ -240,26 +297,12 @@ func (t *taskView) overviewLines(width, height int) []string {
 	}
 	out = append(out, "")
 	switch {
-	case t.showsFailureCard() && height < cardCollapseRows:
-		// A short terminal keeps the card's first line and its keys; the
-		// sentence goes with the rest (brief decision 8). An aborted task's
-		// outcome card collapses before it does, so it is gone here.
-		// The issue line goes with it.
-		out = append([]string{out[0], ""}, t.failureCardLines(width, height, true)...)
 	case t.showsFailureCard():
-		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
-		out = append(out, "")
-		out = append(out, t.failureCardLines(width, height-len(out), false)...)
-		if t.showsOutcomeCard() {
-			// Under the failure card, in what is left once the jump links
-			// have their two rows (task 129.14 decision 2).
-			out = append(out, "")
-			out = append(out, t.outcomeCardLines(width, height-len(out)-2)...)
-		}
+		out = t.failureFrame(out, width, height)
 	case overviewFrameFor(task.State) == frameOutcome:
 		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		out = append(out, "")
-		out = append(out, t.outcomeCardLines(width, height-len(out)-2)...)
+		out = append(out, t.outcomeCardLines(width, height-len(out)-overviewLinkRows)...)
 	default:
 		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		out = append(out, "")
@@ -274,6 +317,9 @@ func (t *taskView) overviewLines(width, height int) []string {
 		if t.overviewFrame() == frameAttention {
 			out = append(out, t.overviewActionLines(width)...)
 		}
+		if task.State == stateAwaitingChildren {
+			out = append(out, t.lanesNeedingYouLines(width)...)
+		}
 	}
 	if links := t.overviewLinks(); len(links) > 0 {
 		parts := make([]string, len(links))
@@ -281,6 +327,38 @@ func (t *taskView) overviewLines(width, height int) []string {
 			parts[i] = styleKey.Render(taskTabDigits[l.tab]) + " " + l.label
 		}
 		out = append(out, "", "  "+strings.Join(parts, styleDim.Render("   ·   ")))
+	}
+	return out
+}
+
+// overviewLinkRows are the rows the jump links take under every frame: a
+// blank and the links' line.
+const overviewLinkRows = 2
+
+// failureFrame is the attention frame of a blocked or aborted task, under
+// head. The rows are spent in priority order (#799 W1) — the card's headline
+// and actions, the jump links, then the card's meaning, evidence and status,
+// then the sentence — so a taller screen never shows fewer of the card's
+// keys than a shorter one. When even the card's headline and actions will
+// not fit, the card collapses to its first line and its keys (brief decision
+// 8), and the issue line goes with it; an aborted task's outcome card
+// collapses before the failure card does, so it is gone there too.
+func (t *taskView) failureFrame(head []string, width, height int) []string {
+	if len(head)+t.minCardRows(width)+overviewLinkRows > height {
+		return append([]string{head[0], ""}, t.collapsedCard()...)
+	}
+	budget := height - len(head) - overviewLinkRows
+	card := t.failureCardLines(width, budget)
+	out := head
+	if sentence := wrappedOrNone(overviewSentence(t.detail.task, len(t.lanes)), width); len(card)+len(sentence)+1 <= budget {
+		out = append(append(out, sentence...), "")
+	}
+	out = append(out, card...)
+	if t.showsOutcomeCard() {
+		// Under the failure card, in what is left once the jump links
+		// have their two rows (task 129.14 decision 2).
+		out = append(out, "")
+		out = append(out, t.outcomeCardLines(width, height-len(out)-overviewLinkRows)...)
 	}
 	return out
 }

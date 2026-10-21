@@ -311,7 +311,8 @@ func TestOutcomeCardFitsAndSurvivesBadSummaries(t *testing.T) {
 		strings.Repeat("a very long line that has to wrap at eighty columns without spilling ", 4) +
 		"\n1\n2\n3\n4\n5\n6\n7\n8"
 	v := outcomeView(t, task)
-	frame := v.render(80, 40)
+	// Short enough that the result cannot grow into all of it (#799 W13).
+	frame := v.render(80, 24)
 	for _, line := range strings.Split(frame, "\n") {
 		if w := ansi.StringWidth(line); w > 80 {
 			t.Errorf("line is %d wide at 80 columns: %q", w, ansi.Strip(line))

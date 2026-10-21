@@ -203,6 +203,12 @@ type taskView struct {
 	// is one project listing rather than one call per lane — the same rule
 	// the check rollup follows, one call for one screen.
 	lanePulls map[int64]apiclient.GitHubPullRequest
+	// overview is the Overview tab's scroll pane (#799 W1): a frame taller
+	// than the screen scrolls, with the cue, rather than losing its last
+	// rows. overviewTask is the task its offset belongs to, so another
+	// task's Overview opens at its top.
+	overview     scrollPane
+	overviewTask int64
 }
 
 // popupTab names the two tabs the three §6/§7.4 form popups carry (task 059).
@@ -217,7 +223,10 @@ const (
 )
 
 func newTaskView(detail *detail) *taskView {
-	return &taskView{detail: detail, connected: true, workflow: newWorkflowTab(), laneSel: -1}
+	return &taskView{
+		detail: detail, connected: true, workflow: newWorkflowTab(), laneSel: -1,
+		overview: newScrollPane(1, 1, true),
+	}
 }
 
 func (t *taskView) title() string {
@@ -855,6 +864,8 @@ func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 		delta = -1
 	}
 	switch t.tab {
+	case taskTabOverview:
+		t.overview.Update(msg)
 	case taskTabSteps:
 		return t.detail.moveTimelineSelection(delta)
 	case taskTabDetails:
@@ -1987,8 +1998,34 @@ func (t *taskView) laneJump() (int64, bool) {
 		if !t.selectedFanOutRun() {
 			return 0, false
 		}
+	case taskTabOverview:
+		// A parent waiting on its lanes names the ones that need a human
+		// (#799 W12); `l` opens the first of them, the one the frame offers
+		// it for. The failure card's blamed lane still wins on a stopped
+		// parent.
+		if blame, ok := t.detail.laneBlame(); !ok || blame.taskID == 0 {
+			if lanes := t.lanesNeedingYou(); len(lanes) > 0 {
+				return lanes[0].ID, true
+			}
+		}
 	}
 	return t.blamedLane()
+}
+
+// lanesNeedingYou are the lanes that wait on a human — the blocked ones
+// first, then those at a gate or asking a question, each in merge order —
+// which is what a parent waiting on its lanes is really waiting for.
+func (t *taskView) lanesNeedingYou() []apiclient.Task {
+	var blocked, waiting []apiclient.Task
+	for _, lane := range t.lanes {
+		switch lane.State {
+		case stateBlocked:
+			blocked = append(blocked, lane)
+		case stateAwaitingGate, stateAwaitingInput:
+			waiting = append(waiting, lane)
+		}
+	}
+	return append(blocked, waiting...)
 }
 
 // parentJump is the task `U` opens: this lane's parent, or nothing at all for

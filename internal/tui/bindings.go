@@ -452,7 +452,7 @@ var bindings = []binding{
 	{key: "6", label: "what the attempt it stopped on was given", scope: scopePanel, context: ctxTaskOverview, hint: "6 what it was given", priority: 5},
 	{key: "4", label: "the diff of the finished task", scope: scopePanel, context: ctxTaskOverview, hint: "4 diff", priority: 4},
 	{key: "7", label: "the finished task's pull request", scope: scopePanel, context: ctxTaskOverview, hint: "7 PR", priority: 5, github: true},
-	{op: keymap.Lane, key: "l", label: "open the fan-out lane the failure card blames", scope: scopePanel, context: ctxTaskOverview, hint: "l open the lane", priority: 6, term: termLane},
+	{op: keymap.Lane, key: "l", label: "open the fan-out lane the failure card blames, or the first lane that needs you on a parent waiting on its lanes", scope: scopePanel, context: ctxTaskOverview, hint: "l open the lane", priority: 6, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskOverview, hint: "N next failure", priority: 6, term: termNextFail},
 	{op: keymap.Result, key: "w", label: "open the output of the attempt the outcome card's result came from, at its end", scope: scopePanel, context: ctxTaskOverview, hint: "w result output", priority: 6, term: termResult},
 	{key: "1", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskOverview, priority: 7},
