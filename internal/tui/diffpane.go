@@ -78,6 +78,11 @@ type diffLoadedMsg struct {
 // both, because two lanes really did change it and a single row would have to
 // pick one of them to lie about.
 type diffPane struct {
+	// pan is the column the reader panned to with shift+←/→. The viewport
+	// clamps its own offset to the content, so a fold that leaves nothing
+	// wide puts it at 0; this is what a rebuild restores (review F19).
+	pan int
+
 	taskID    int64
 	lines     []string
 	sections  []diffSection
@@ -201,6 +206,7 @@ func (p *diffPane) reset() {
 	p.vp.SetContent("")
 	p.vp.SetYOffset(0)
 	p.vp.SetXOffset(0)
+	p.pan = 0
 }
 
 // fetch reloads the diff. stale=false means "only if we have nothing", which
@@ -405,6 +411,7 @@ func (p *diffPane) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	var cmd tea.Cmd
 	p.vp, cmd = p.vp.Update(msg)
+	p.pan = p.vp.XOffset()
 	return cmd
 }
 
@@ -585,7 +592,13 @@ func (p *diffPane) render(width, height int) string {
 // rebuild, which is also every cursor move and every fold: expanding a file
 // near the bottom of a long list is pointless if what you opened is off
 // screen.
+//
+// Only vertically: EnsureVisible also resets the sideways pan whenever the
+// column range it is handed fits, and a header is always asked for at column
+// 0, so the reader's pan is put back (review F19) — moving between files or
+// folding keeps the columns they panned to.
 func (p *diffPane) revealCursor() {
+	defer p.vp.SetXOffset(p.pan)
 	for i, r := range p.rows {
 		if r.header && r.node == p.cursor {
 			p.vp.EnsureVisible(i, 0, 0)

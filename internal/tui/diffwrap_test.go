@@ -51,6 +51,35 @@ func TestDiffPanReachesTheEndOfALongLine(t *testing.T) {
 	}
 }
 
+// TestDiffPanSurvivesCursorMovesAndFolds: the pane rebuilds on every cursor
+// move and fold, and that rebuild used to snap the pan back to column 0
+// (review F19). With every file folded there is nothing wide to pan, so the
+// viewport sits at 0 — and opening one again brings the pan back.
+func TestDiffPanSurvivesCursorMovesAndFolds(t *testing.T) {
+	p := loadedDiff(t, longLineDiff()+strings.ReplaceAll(longLineDiff(), "wide.go", "other.go"))
+	diffPress(p, "right") // open the first file
+	diffView(p, 20)
+	right := tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
+	for range 3 {
+		p.updateKey(right)
+	}
+	panned := p.vp.XOffset()
+	if panned == 0 {
+		t.Fatal("shift+right did not pan")
+	}
+	for _, k := range []string{"j", "k", "left", "right", "O", "C", "O"} {
+		diffPress(p, k)
+		diffView(p, 20)
+		want := panned
+		if len(p.open) == 0 {
+			want = 0
+		}
+		if got := p.vp.XOffset(); got != want {
+			t.Errorf("after %s the pan is at column %d, want %d", k, got, want)
+		}
+	}
+}
+
 // TestDiffNeverFetchedSaysHowToLoad (#799 W9): the never-fetched state names
 // the action that loads the diff, and that action is not `d`.
 func TestDiffNeverFetchedSaysHowToLoad(t *testing.T) {
