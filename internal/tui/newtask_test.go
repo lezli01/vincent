@@ -759,6 +759,35 @@ func TestNewTaskFieldsEditorOverwritesADuplicateKey(t *testing.T) {
 	}
 }
 
+// The Fields editor's input wraps under its own column: with a long value
+// being typed, no row is wider than the pane, so frame() cuts nothing, and
+// the value's end is on screen (review F13).
+func TestNewTaskFieldsEditorInputFitsThePane(t *testing.T) {
+	n := loadedForm(t)
+	n.update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	moveTo(n, ntFields)
+	press(n, "enter")
+	press(n, "a")
+	typeText(n, "k")
+	press(n, "enter")
+	typeText(n, strings.Repeat("v", 119)+"Z")
+	if n.fieldsEd.editing != 2 {
+		t.Fatalf("editing = %d, want the value editor", n.fieldsEd.editing)
+	}
+	pane := n.paneWidth()
+	lines := n.renderFields()
+	end := false
+	for _, l := range lines {
+		if w := ansi.StringWidth(l); w > pane {
+			t.Errorf("a %d-cell row in a %d-cell pane: %q", w, pane, ansi.Strip(l))
+		}
+		end = end || strings.Contains(ansi.Strip(l), "Z")
+	}
+	if !end {
+		t.Errorf("the value's end is not drawn:\n%s", ansi.Strip(strings.Join(lines, "\n")))
+	}
+}
+
 func TestNewTaskFieldsEditorDropsAnAbandonedRow(t *testing.T) {
 	n := loadedForm(t)
 	moveTo(n, ntFields)

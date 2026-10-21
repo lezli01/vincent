@@ -676,10 +676,8 @@ func (n *newTask) renderWorkflowDetail(name string) []string {
 
 func (n *newTask) renderFields() []string {
 	f := n.fieldsEd
-	// 6 is the row's own indent and marker; the label in front of the value is
-	// the definition's, and the pane truncates a row whose label runs long the
-	// way it always has.
-	f.input.SetWidth(max(n.paneWidth()-6, 10))
+	// The field being typed into is sized per row below, to what its row's
+	// own prefix leaves of the pane (review F13).
 	out := []string{styleDim.Render("    task fields — available to templates as .Task.Fields:")}
 	for i, r := range f.rows {
 		marker := "  "
@@ -687,12 +685,8 @@ func (n *newTask) renderFields() []string {
 			marker = styleFocus.Render("▸ ")
 		}
 		key, value := r.key, r.value
-		if i == f.cursor && f.editing == 1 {
-			key = f.input.View()
-		}
-		if i == f.cursor && f.editing == 2 {
-			value = f.input.View()
-		}
+		editingKey := i == f.cursor && f.editing == 1
+		editingValue := i == f.cursor && f.editing == 2
 		name := firstNonEmpty(key, styleDim.Render("(key)"))
 		meta := ""
 		if r.declared {
@@ -721,10 +715,24 @@ func (n *newTask) renderFields() []string {
 				}
 			}
 		}
-		// Split: the key/value field wraps, and a row carrying newlines would
-		// otherwise be one element of a slice the caller counts in lines.
-		out = append(out, strings.Split(
-			"    "+marker+name+meta+" = "+firstNonEmpty(value, placeholder), "\n")...)
+		// The field being typed into wraps under its own column, its first
+		// row after everything drawn in front of it, so no row of it is wider
+		// than the pane (review F13).
+		switch {
+		case editingKey:
+			lead := "    " + marker
+			rest := meta + " = " + firstNonEmpty(value, placeholder)
+			f.input.SetWidth(max(n.paneWidth()-cols(lead), 10))
+			rows := indentRows(lead, f.input.rows())
+			rows[len(rows)-1] = truncateRows([]string{rows[len(rows)-1] + rest}, n.paneWidth())[0]
+			out = append(out, rows...)
+		case editingValue:
+			lead := "    " + marker + name + meta + " = "
+			f.input.SetWidth(max(n.paneWidth()-cols(lead), 10))
+			out = append(out, indentRows(lead, f.input.rows())...)
+		default:
+			out = append(out, strings.Split("    "+marker+name+meta+" = "+firstNonEmpty(value, placeholder), "\n")...)
+		}
 		if i == f.cursor && r.declared {
 			if r.definition.Description != "" {
 				out = append(out, styleDim.Render("        "+r.definition.Description))
