@@ -1,6 +1,6 @@
 # 135 — TUI wrap and scroll: one wrap helper, one scrolling pane, screen by screen
 
-**Status:** 🔄 in progress (1/2)
+**Status:** 🔄 in progress (2/4)
 
 The umbrella record for [#784](https://github.com/lezli01/vincent/issues/784):
 text that "can not be read" across the TUI, and an opened issue that cannot be
@@ -71,6 +71,18 @@ Written into `internal/tui/doc.go` and spec §15:
   (TR-4); the ledger's wrapped delivery error and stated 50-row cap (TR-5,
   TR-6); facts and findings past `trigDetailLines` (TR-9); and
   pgup/pgdn/home/end in the triggers list and ledger (PL-9).
+- [x] **135.4** The projects overview and the daemon view at 80×24, and the
+  footer in their sub-modes (#803). Both views answer `contextual`: the
+  project form, the config editor, the skills offer and the status-line flow
+  each show their own keys, the first and last as new contexts. `enter`/`e`
+  with the daemon log focused moves to the config list and never edits. The
+  daemon view budgets its height: identity stays pinned, config, database and
+  adapters scroll in a `scrollPane`, and the log keeps at least three lines.
+  The config editor wraps its help, default, error and confirmation with
+  `wrapText`. A needs-you row caps the project name so the task survives.
+  Left for a follow-up: DM-2, DM-9, DM-10, DM-11, PR-5, PR-6, PR-8 to PR-12,
+  and an `e edit` hint on the overview, which needs a vocabulary exception of
+  its own. ✓ 2026-10-21
 
 ## Decisions
 

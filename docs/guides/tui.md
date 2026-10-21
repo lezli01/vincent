@@ -3028,7 +3028,7 @@ And inside the editor:
 |---|---|
 | `←` / `→` | Choose a value, for a key with a fixed vocabulary |
 | `enter` | Apply the change — the daemon validates and writes `config.yaml` |
-| `y` | Confirm one of the five keys that decide what the daemon executes or exposes |
+| `y` | Confirm one of the six keys that decide what the daemon executes or exposes |
 | `esc` | Close without saving; on the confirmation it returns to the field |
 
 Everything here is also
@@ -3054,7 +3054,9 @@ nothing about it changes. `i` writes `statusLine.command` in
 touches besides cursor's model setting — and it never does so without showing
 you the exact JSON first. Whatever status line you had is run by vincent and
 printed unchanged, pressing `i` again puts the file back the way it was, and
-declining is remembered so the offer does not come back. See
+declining is remembered so the offer does not come back. In the offer, `enter`
+(or `y`) writes the change shown, `n` declines, and `esc` closes without
+writing anything. See
 [`vincent statusline`](../reference/cli.md#vincent-statusline).
 
 A line under the adapters says how many of the
