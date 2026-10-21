@@ -131,7 +131,9 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
     the overview) is untouched, and the board's own open (`fromBoard`)
     still returns to the board; every other open with no `back` — the
     palette, pull requests, triggers, `!`, a new task — gets `viewLastTab`,
-    the same message (review F1). The overview's return with no project-scoped history is
+    the same message (review F1). A project switch on the workspace falls
+    back to the board only while the board is a tab, else to `tabTarget()`
+    (review F2). The overview's return with no project-scoped history is
     the tab too.
 22. **A board that is not a tab is left by `esc`** (2026-10-21, #789): the
     shell is `tabAware`, and with `tui.tabs` leaving `tasks` out, `esc` at

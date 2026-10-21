@@ -1655,12 +1655,17 @@ func (m *root) applySwitch(p apiclient.Project, why string) tea.Cmd {
 // §15): a detail screen falls back to its list, a form is re-aimed at the new
 // selection, and every other view stays — the lists have re-scoped through
 // setProject already, and the daemon view and the projects overview are not
-// project-bearing.
+// project-bearing. The task workspace falls back to the board only while the
+// board is a tab; otherwise to the human's tab (#789), which is where its
+// esc would have gone.
 func (m *root) keepViewAcrossSwitch() tea.Cmd {
 	v := m.views[m.active]
 	if to, ok := switchFallback[m.active]; ok {
 		if l, ok := v.(switchLeaving); ok {
 			l.leaveForSwitch()
+		}
+		if m.active == viewTask && !m.isTabRoot(to) {
+			to = m.tabTarget()
 		}
 		return m.switchTo(to)
 	}

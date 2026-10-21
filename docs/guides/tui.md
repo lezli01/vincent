@@ -56,7 +56,8 @@ narrow terminal the second group's labels shorten first, then shrink to their
 digits; the first group is never shortened. `esc` returns to where you
 opened the task from: the board, or the issue it was started from. A task
 opened any other way — the command palette, pull requests, triggers, `!`, a
-new task — returns to your [main tab](#main-tabs).
+new task — returns to your [main tab](#main-tabs), and so does a project
+switch while the task board is not one of your tabs.
 
 New task, projects, workflows, chats, the two archived boards, issues,
 triggers, daemon, and — for GitHub projects — pull requests are full-screen

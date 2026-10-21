@@ -525,3 +525,27 @@ func TestTaskOpenedOffTheBoardEscsToTheTab(t *testing.T) {
 		}
 	}
 }
+
+// A project switch on the workspace falls back to the board while it is a
+// tab, and to the human's tab when it is not (review F2).
+func TestSwitchOnTheWorkspaceLandsOnATab(t *testing.T) {
+	for _, tc := range []struct {
+		tabs []string
+		want viewID
+	}{
+		{[]string{"issues", "chats"}, viewIssues},
+		{[]string{"issues", "tasks"}, viewHome},
+	} {
+		m := tabsRoot(t, tc.tabs...)
+		m.Update(selectViewMsg{id: viewIssues})
+		m.Update(selectTaskMsg{id: 7, back: viewIssue})
+		if m.active != viewTask {
+			t.Fatalf("tabs %v: the open landed on %v", tc.tabs, m.active)
+		}
+		m.sel = projectSel{id: 1, name: "one"}
+		m.applySwitch(apiclient.Project{ID: 2, Name: "two"}, "test")
+		if m.active != tc.want {
+			t.Errorf("tabs %v: a switch on the workspace landed on %v, want %v", tc.tabs, m.active, tc.want)
+		}
+	}
+}
