@@ -159,8 +159,18 @@ type diffRow struct {
 	text string
 }
 
+// newDiffPane builds the pane with its viewport's sideways keys moved to
+// shift+←/→ (#799 W9). Lines are never wrapped: a diff's columns are its
+// meaning, and a wrapped `+` line reads as two. So the end of a long line is
+// reached by panning, and panning cannot keep the viewport's own ←/→ and h/l
+// because those are the fold keys here. The viewport clamps the offset to the
+// longest line, so panning past the end is a no-op rather than a blank.
 func newDiffPane() diffPane {
-	return diffPane{vp: viewport.New(), open: map[string]bool{}}
+	vp := viewport.New()
+	vp.KeyMap.Left.SetKeys("shift+left")
+	vp.KeyMap.Right.SetKeys("shift+right")
+	vp.SetHorizontalStep(diffPanStep)
+	return diffPane{vp: vp, open: map[string]bool{}}
 }
 
 // open points the pane at a task, discarding another task's diff.
@@ -367,7 +377,8 @@ func splitDiff(text string) []string {
 // it is on. Line-level scrolling stays on the viewport's pager keys (pgup/pgdn,
 // u/f, b) and the wheel — with everything collapsed there is usually nothing to
 // scroll, and a reader who has opened a long file wants a page at a time anyway.
-// shift+←/→ pan sideways to the end of a line wider than the pane (pan).
+// shift+←/→ fall through to the viewport, which pans sideways to the end of a
+// line wider than the pane (newDiffPane).
 func (p *diffPane) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "down", "j":
@@ -384,12 +395,6 @@ func (p *diffPane) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "left", "h":
 		p.setFold(false)
-		return nil
-	case "shift+right":
-		p.pan(diffPanStep)
-		return nil
-	case "shift+left":
-		p.pan(-diffPanStep)
 		return nil
 	case "O":
 		p.foldAll(true)
@@ -505,19 +510,6 @@ func (p *diffPane) foldAll(want bool) {
 	}
 	p.rebuildNodes()
 	p.pinCursor(key)
-}
-
-// pan moves the pane sideways (#799 W9). Lines are never wrapped: a diff's
-// columns are its meaning, and a wrapped `+` line reads as two. So the end of a
-// long line is reached by panning, which has to live on shift+←/→ because the
-// plain arrows (and h/l) are the fold keys here. The viewport clamps the offset
-// to the longest line, so panning past the end is a no-op rather than a blank.
-func (p *diffPane) pan(delta int) {
-	if delta > 0 {
-		p.vp.ScrollRight(delta)
-		return
-	}
-	p.vp.ScrollLeft(-delta)
 }
 
 // scroll moves the pane by lines — the mouse wheel's path.
