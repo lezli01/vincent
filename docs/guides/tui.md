@@ -1825,6 +1825,11 @@ And inside the add or edit form, whose keys the footer shows while it is open:
 | `ctrl+s` | Save the project |
 | `esc` | Close the form without saving |
 
+While a field is being typed into, or the workflow list is open, the keys go
+to it and the footer says so: `enter` finishes the field (or picks the
+highlighted workflow), `esc` finishes it (or closes the list without picking),
+and `ctrl+s` finishes it and saves the project.
+
 With no project registered, the overview says how to add one: `a`, or
 `vincent project add <path>` from a shell.
 

@@ -93,6 +93,11 @@ const (
 	// own context because while it is open it owns the keyboard, and none
 	// of the table's add/remove/filter rows does anything inside it.
 	ctxProjectForm bindingContext = "project form"
+	// ctxProjectFormField is that form with a text field being typed into or
+	// the workflow list open (review F7): the keys go to the field or the
+	// list, so the form's own ↑/↓ and enter mean nothing there, and the
+	// footer must not offer them.
+	ctxProjectFormField bindingContext = "project form field"
 	ctxWorkflows   bindingContext = "workflows"
 	// ctxPullRequests is the pull-requests takeover (§15 view 7, task 052.6).
 	ctxPullRequests bindingContext = "pull requests"
@@ -715,6 +720,9 @@ var bindings = []binding{
 	{key: "enter", label: "edit the field, or open its list", scope: scopePanel, context: ctxProjectForm, hint: "enter edit", priority: 2},
 	{key: "ctrl+s", label: "save the project", scope: scopePanel, context: ctxProjectForm, hint: "ctrl+s save", priority: 3},
 	{key: "esc", label: "close the form without saving", scope: scopePanel, context: ctxProjectForm, hint: "esc cancel", priority: 4},
+	{key: "enter", label: "finish the field, or pick the highlighted workflow", scope: scopePanel, context: ctxProjectFormField, hint: "enter done", priority: 1},
+	{key: "ctrl+s", label: "finish the field, or close the list, and save the project", scope: scopePanel, context: ctxProjectFormField, hint: "ctrl+s save", priority: 2},
+	{key: "esc", label: "finish the field, or close the list without picking", scope: scopePanel, context: ctxProjectFormField, hint: "esc done", priority: 3},
 
 	// Workflows.
 	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows, hint: "enter steps", priority: 1},

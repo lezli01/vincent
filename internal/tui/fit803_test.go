@@ -134,6 +134,23 @@ func TestProjectFormFooterShowsNoListRows(t *testing.T) {
 			t.Errorf("the project form's footer offers the list row %q: %q", row, foot)
 		}
 	}
+	// a then enter leaves the path field being typed into (review F7): the
+	// form's ↑/↓ and "enter edit" do nothing there, and ctrl+s saves.
+	for _, row := range []string{"↑/↓ fields", "enter edit"} {
+		if strings.Contains(foot, row) {
+			t.Errorf("the footer offers %q while a field is being typed into: %q", row, foot)
+		}
+	}
+	for _, row := range []string{"enter done", "ctrl+s save", "esc done"} {
+		if !strings.Contains(foot, row) {
+			t.Errorf("the footer is missing %q while a field is being typed into: %q", row, foot)
+		}
+	}
+	p := m.views[viewProjects].(*projectsView)
+	_, cmd := p.updateKey(registryKey(t, "ctrl+s"))
+	if p.form.editing || cmd == nil && p.form.err == "" && !p.form.saving {
+		t.Errorf("ctrl+s in the path field did nothing: editing=%v err=%q", p.form.editing, p.form.err)
+	}
 }
 
 // PR-4: a 110-character project name must not push #id, state and title off

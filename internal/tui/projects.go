@@ -181,7 +181,10 @@ func (p *projectsView) promptKeys() promptAnswers {
 // bindingContext puts the form's own rows in the footer and ? while it is
 // open (#803): the table's add/remove/filter keys do nothing inside it.
 func (p *projectsView) bindingContext() bindingContext {
-	if p.form != nil {
+	switch {
+	case p.form != nil && (p.form.editing || p.form.pick != nil):
+		return ctxProjectFormField
+	case p.form != nil:
 		return ctxProjectForm
 	}
 	return ctxProjects

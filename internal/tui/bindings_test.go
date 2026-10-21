@@ -1874,6 +1874,33 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
+	ctxProjectFormField: {
+		"enter": func(t *testing.T) {
+			p := editingProjectForm(t)
+			p.updateKey(registryKey(t, "enter"))
+			if p.form.editing {
+				t.Fatal("enter did not finish the field")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			p := editingProjectForm(t)
+			_, cmd := p.updateKey(registryKey(t, "ctrl+s"))
+			if p.form.editing {
+				t.Fatal("ctrl+s did not finish the field")
+			}
+			if cmd == nil && p.form.err == "" && !p.form.saving {
+				t.Fatal("ctrl+s neither saved nor reported why it would not")
+			}
+		},
+		"esc": func(t *testing.T) {
+			p := editingProjectForm(t)
+			p.updateKey(registryKey(t, "esc"))
+			if p.form == nil || p.form.editing {
+				t.Fatal("esc did not finish the field, keeping the form")
+			}
+		},
+	},
+
 	ctxWorkflows: {
 		"enter": func(t *testing.T) {
 			w := newWorkflowsView()
@@ -3353,6 +3380,18 @@ func pickerProbeRoot(t *testing.T) *root {
 	m.sel = projectSel{id: 1, name: "api"}
 	m.projPick = newProjectPicker([]apiclient.Project{testProject(1, "api"), testProject(2, "web")}, 1, "")
 	return m
+}
+
+// editingProjectForm is that form with its path field being typed into, the
+// state ctxProjectFormField names.
+func editingProjectForm(t *testing.T) *projectsView {
+	t.Helper()
+	p := openProjectForm(t)
+	p.updateKey(registryKey(t, "enter"))
+	if !p.form.editing || p.bindingContext() != ctxProjectFormField {
+		t.Fatal("enter did not start editing the path field")
+	}
+	return p
 }
 
 // openProjectForm is a projects view with its add form open, the state
