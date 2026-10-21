@@ -1,6 +1,6 @@
 # 136 — Main tabs in the TUI: Issues, Tasks and Chats behind one `tab` key
 
-**Status:** 🔄 in progress (3/4)
+**Status:** ✅ done (4/4)
 **Opened:** 2026-10-20
 **Spec:** §12.3 (`tui.tabs`), §15
 **Issues:** #784 (parent), #785, #787, #788, #789
@@ -160,7 +160,7 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
 - [x] **136.3** The tab strip (#788): the header strip and its shedding
   order, label clicks, the "Tasks" rename of the board and the breadcrumb
   root, tests, the TUI guide and the spec §15 amendments. ✓ 2026-10-21
-- [~] **136.4** Landing on the first tab (#789): the landing, `backToTabMsg`,
+- [x] **136.4** Landing on the first tab (#789): the landing, `backToTabMsg`,
   the board's `esc` off the tabs, tests (unit and e2e), the tape changes and
-  their test, the TUI guide and the spec §15 amendments are in; the
-  `docs/assets/tui-*.png` re-capture with VHS 0.11.0 remains.
+  their test, the `docs/assets/tui-*.png` re-capture with VHS 0.11.0, the
+  TUI guide and the spec §15 amendments. ✓ 2026-10-21
