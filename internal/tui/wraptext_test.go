@@ -71,7 +71,7 @@ func TestWrapTextNeverExceedsTheWidth(t *testing.T) {
 	}
 	wide := []string{strings.Repeat("日本語 ", 10), strings.Repeat("🎉 done ", 8)}
 	for w := 1; w <= 12; w++ {
-		for _, opts := range []wrapOpts{{}, hanging(" "), {maxLines: 3}} {
+		for _, opts := range []wrapOpts{{}, hanging(" "), {maxLines: 3}, hanging("  workflow  ")} {
 			check := func(text string) {
 				for i, line := range wrapText(text, w, opts) {
 					if c := ansi.StringWidth(line); c > w {
@@ -82,9 +82,8 @@ func TestWrapTextNeverExceedsTheWidth(t *testing.T) {
 					}
 				}
 			}
-			if w <= cols(opts.prefix) {
-				continue // a prefix as wide as the line is the caller's overflow
-			}
+			// A prefix or indent as wide as the line is cut to leave the
+			// text a cell, never handed on as overflow (review F10).
 			for _, text := range texts {
 				check(text)
 			}

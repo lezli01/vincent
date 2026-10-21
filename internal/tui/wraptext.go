@@ -35,13 +35,18 @@ type wrapOpts struct {
 // The width is honoured all the way down (decision 1): it is clamped to 1,
 // never floored at a comfortable minimum, because a floor only handed the
 // overflow to frame(). The one line that can exceed it is a single grapheme
-// wider than the width itself — a wide rune in a one-cell column.
+// wider than the width itself — a wide rune in a one-cell column. A prefix
+// or indent that would leave no room for the text is cut to width-1 cells,
+// so every line keeps at least one cell of text (review F10).
 //
 // No line ends in whitespace: a blank paragraph is the lead it would have had
 // with its trailing spaces trimmed, so an indent alone never makes a line.
 func wrapText(text string, width int, opts wrapOpts) []string {
 	width = max(width, 1)
-	hang := strings.Repeat(" ", max(opts.indent, 0))
+	if cols(opts.prefix) > width-1 {
+		opts.prefix = ansi.Truncate(opts.prefix, width-1, "")
+	}
+	hang := strings.Repeat(" ", min(max(opts.indent, 0), width-1))
 	var out []string
 	for _, para := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		if strings.TrimSpace(para) == "" {
