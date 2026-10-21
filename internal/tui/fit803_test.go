@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -106,7 +107,9 @@ func TestDaemonPinnedBlocksStartAtAHeading(t *testing.T) {
 			_, d := daemonRoot(t, sz[0], sz[1], []string{"level=INFO msg=ready"})
 			d.focusConfig = false
 			lines := strings.Split(ansi.Strip(d.render(sz[0]-2, sz[1]-3)), "\n")
-			at := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "/data/logs/daemon.log") })
+			// The log path renders OS-native: backslashes on Windows.
+			logPath := filepath.FromSlash("/data/logs/daemon.log")
+			at := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, logPath) })
 			if at < 0 || at+2 >= len(lines) {
 				t.Fatalf("no identity block:\n%s", strings.Join(lines, "\n"))
 			}
