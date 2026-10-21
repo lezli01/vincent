@@ -1673,6 +1673,12 @@ func (v *chatView) sendCmd() tea.Cmd {
 	// is refused here, with the draft kept, the way close and hand-off are.
 	if v.chat != nil && v.chat.State != string(chatstate.Idle) {
 		v.note, v.noteBad = sendRefusal(chatstate.State(v.chat.State)), true
+		// The refusal points at the answer popup, and esc may have closed
+		// it: bring it back, or the note names something no key reopens
+		// (review F9).
+		if v.chat.State == string(chatstate.AwaitingInput) {
+			v.syncForm()
+		}
 		return nil
 	}
 	if v.sending {

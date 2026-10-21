@@ -412,3 +412,35 @@ func TestChatViewKeepsTextTypedWhileASendIsInFlight(t *testing.T) {
 		})
 	}
 }
+
+// TestChatViewRefusedSendReopensTheAnswerPopup: esc closes the answer popup,
+// and the awaiting_input refusal tells the human to answer in it — so enter
+// brings it back rather than naming a popup no key reopens (review F9).
+func TestChatViewRefusedSendReopensTheAnswerPopup(t *testing.T) {
+	v := chatViewFixture()
+	v.client = &apiclient.Client{}
+	v.applyLoaded(chatLoadedMsg{id: 1, chat: &apiclient.Chat{
+		ID: 1, State: "awaiting_input",
+		PendingInput: []byte(`{"kind":"question","questions":[{"text":"Which?","options":["a","b"]}]}`),
+	}})
+	if v.form == nil {
+		t.Fatal("fixture: the answer popup did not open")
+	}
+	v.updateKey(registryKey(t, "esc"))
+	if v.form != nil {
+		t.Fatal("fixture: esc did not close the answer popup")
+	}
+	v.composer.SetValue("hello")
+	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd != nil {
+		t.Fatal("enter on an awaiting_input chat issued a command")
+	}
+	if !strings.Contains(v.note, "popup") {
+		t.Fatalf("the refusal reads %q", v.note)
+	}
+	if v.form == nil {
+		t.Fatal("the refusal names the answer popup but did not reopen it")
+	}
+	if got := v.composer.Value(); got != "hello" {
+		t.Fatalf("the refusal changed the draft to %q", got)
+	}
+}
