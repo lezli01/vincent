@@ -1,6 +1,6 @@
 # 135 — TUI wrap and scroll: one wrap helper, one scrolling pane, screen by screen
 
-**Status:** 🔄 in progress (5/7)
+**Status:** 🔄 in progress (7/9)
 
 The umbrella record for [#784](https://github.com/lezli01/vincent/issues/784):
 text that "can not be read" across the TUI, and an opened issue that cannot be
