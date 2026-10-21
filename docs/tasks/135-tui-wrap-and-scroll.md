@@ -117,6 +117,19 @@ Written into `internal/tui/doc.go` and spec §15:
   issue-#597 amendment. The Overview's fact labels align, Diff and Workflow
   are indented like the other tabs, and a failed first load reads the same on
   every tab. ✓ 2026-10-21
+- [x] **135.8** The pull request list, its two popups and the archived
+  boards (#804). Pull request rows are aligned columns where the head branch
+  gives way, with a detail line for the selected row (full title, `branch →
+  base`); the header and empty note follow `s`; the reason, load error,
+  unlink question and note wrap; `home`/`end`/`pgup`/`pgdown` move. The
+  create-PR, merge and comment popups pin their footer under scrolling rows,
+  the shown URL omits `body=`, and subjects, the merge title and checks wrap
+  to three lines. The archived boards get their own header (window, page,
+  rows) and, for tasks, their own columns (ARCHIVED instead of STEP and
+  ELAPSED); `esc` matches, `<`/`>` are offered only toward a page, the
+  archived chats board re-lists on activation, and both chats boards take
+  the paging keys. Spec §15 view 10 narrows `space`/`V` to archived tasks.
+  ✓ 2026-10-21
 
 ## Decisions
 

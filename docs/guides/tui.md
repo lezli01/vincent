@@ -724,6 +724,11 @@ Inside a field `enter` is a newline (a pull-request body usually wants more than
 one line), `ctrl+s` keeps the text, and `esc` discards it. A title is required:
 `ctrl+s` without one says so rather than sending something GitHub cannot use.
 
+The popup's footer — the compare URL, an error, the status and the key line —
+stays pinned under the rows, which scroll, so a long body never hides the keys
+or a failed `ctrl+s`'s reason. The URL shown leaves out the encoded body, which
+is already on screen above it; `ctrl+o` still opens the full one.
+
 `ctrl+s` **writes to GitHub.** It pushes committed work
 only — anything uncommitted in the task's worktree is not in the pull request,
 which the popup says above the rows — and it never force-pushes: a diverged,
@@ -1837,11 +1842,14 @@ With no project registered, the overview says how to add one: `a`, or
 
 The selected project's pull requests, when its `origin` is a github.com
 repository vincent can authenticate to. The
-listing starts open-only and `s` cycles it through closed and all. Each row
-carries the number, its state (`open`, `draft`, `closed` or `merged`), the
-title, the head branch, and the task that claims it — with `auto` when the
-daemon's reconciler matched it by head branch and `human` when somebody linked
-it by hand.
+listing starts open-only and `s` cycles it through closed and all; the header
+and the empty note name the listing you are on. Each row carries the number,
+its state (`open`, `draft`, `closed` or `merged`), the title, the head branch,
+and the task that claims it — with `auto` when the daemon's reconciler matched
+it by head branch and `human` when somebody linked it by hand. The columns are
+aligned, and on a narrow screen the head branch is what gives way, never the
+title or the claim; the selected row adds a line below it with the full title
+and `branch → base`.
 
 ![The pull requests screen: one GitHub project's three open pull requests —
 #412 claimed by task 2, which the reconciler matched by its head branch, an
@@ -1852,8 +1860,8 @@ The entry appears in the palette, the `?` overlay and the workspace's
 pull-request keys only when the selected project qualifies. Switching to a
 project that does not while the screen is open keeps the screen, which then
 says "this project has no usable GitHub integration" and why, and lists
-nothing until you switch back. A listing that fails shows the daemon's reason
-on one line. A reconciler tick that links or unlinks a pull request re-renders
+nothing until you switch back. A listing that fails shows the daemon's reason,
+wrapped to the screen. A reconciler tick that links or unlinks a pull request re-renders
 the screen with no keypress.
 
 | Key | Does |
@@ -1867,6 +1875,7 @@ the screen with no keypress.
 | `s` | Cycle the listing between open, closed and all |
 | `R` | Re-list this project |
 | `↑`/`↓` | Move the selection |
+| `home`/`end`, `pgup`/`pgdown` | Jump to the first or last row, or move a page |
 | `/` | Filter by number, title or branch |
 
 `P` is the one key here that is not about the selected row. This screen has no
@@ -2418,6 +2427,7 @@ task-only.
 | `/` | Filter by title, agent or branch |
 | `s` | Cycle the listing between live, ended (archived, handed-off or closed), and all |
 | `R` | Reload the board |
+| `home`/`end`, `pgup`/`pgdown` | Jump to the first or last chat, or move a page |
 
 The mouse wheel moves the cursor one chat per tick, as it does on the task
 board. It stands still while the new-chat form
@@ -2770,8 +2780,8 @@ held by a conversation nobody came back to.
 
 Two screens, one for tasks and one for chats, reached from the command palette
 (`:`). They are the boards you already know, in a second mode: the same
-`/` filter and the same `space`/`V` selection — and, for tasks, the same
-grouping and folding — listing what is archived instead of what is live. The
+`/` filter — and, for tasks, the same grouping, folding and `space`/`V`
+selection — listing what is archived instead of what is live. The
 archived tasks board lists the selected project only, and asks the daemon for
 just that project: switching project goes back to the first page and reads
 `loading <project>…` until the new page arrives. Like
@@ -2779,7 +2789,16 @@ the live chats board, the archived chats board is a flat list of the
 selected project's chats; switching project returns it to the first page and
 keeps its window and filter. There is no key of
 its own for either — the palette is how you get there, which is the pattern
-every takeover but new task follows.
+every takeover but new task follows. `esc` with no filter leaves either one
+for the home board, and the archived chats board re-lists each time it opens.
+
+Each header names the date window and, past the first, the page — the tasks
+board also how many rows the page holds — rather than the live board's slot
+tally, since an archive holds no slot. The archived tasks board has its own
+columns: ID, WORKFLOW, TITLE, STATE, ARCHIVED (when it was archived, as
+`01-02 15:04`), then COST and PR while a row has one. STEP and ELAPSED
+describe a run that is over, so they are left off and the title takes the
+room.
 
 ![platform-infra's archived tasks board over its default window of the last 7
 days: three archived tasks, grouped by workflow like the live
@@ -2797,10 +2816,11 @@ there is nothing to withhold and no flag saying so.
 |---|---|
 | `D` | Delete permanently — asks first |
 | `s` | Cycle the window: last 7 days → last 30 days → all time |
-| `<` / `>` | Turn the page (a hundred rows at a time) |
+| `<` / `>` | Turn the page (a hundred rows at a time) — offered only where there is a page that way |
 | `enter` | Open the row's workspace, read-only |
 | `/` | Filter, exactly as on the live board |
-| `space` / `V` | Select rows for the delete |
+| `home`/`end`, `pgup`/`pgdown` | Jump to the first or last row, or move a page |
+| `space` / `V` | Select rows for the delete — archived tasks only; an archived chat is deleted one row at a time |
 
 The mouse wheel moves the cursor one row per tick on both lists. It never turns
 the page — that is a fetch, and stays on `<` and `>` — and it stands still while
