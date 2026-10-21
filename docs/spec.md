@@ -13656,7 +13656,9 @@ stream for the live tail.
    waiting, and **`alt+a`** reopens it with the picks kept. **`alt+↑`/`alt+↓`**
    scroll a line and **`alt+g`** jumps to the start, alt because the composer
    owns `↑`/`↓`, `shift+↑`/`↓` and `ctrl+home`/`ctrl+end`, and `ctrl+↑` is a
-   macOS desktop shortcut. A failed load is said **in the body** rather than
+   macOS desktop shortcut. While the reader has scrolled away from the live
+   end, the header says **`turn i/n`** — the turn at the top of the window —
+   and drops it again once the view follows the end. A failed load is said **in the body** rather than
    as an empty chat, and a send is refused until the chat has loaded. A send
    keeps the finished turns' records and resets only the live seam. The
    skill and file lists always show their `n/N` position and a scroll cue,

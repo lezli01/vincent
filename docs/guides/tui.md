@@ -2569,6 +2569,9 @@ periodic repaint.
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to the chats board |
 
+Scrolled away from the live end, the header says which turn is at the top of
+the window — `turn 2/5` — until `ctrl+g` follows the end again.
+
 **`tab` lists the skills this chat's agent can run.** The list is drawn just
 above the composer — one line per skill: how to invoke it, its argument hint,
 its description, and its scope and plugin where the CLI named them. The

@@ -561,7 +561,8 @@ list with the user-facing context a commit subject cannot carry.
   cannot answer, and `esc` puts the question away rather than dropping it:
   `alt+a` brings it back with what you picked. New keys: `alt+↑`/`alt+↓`
   scroll a line at a time and `alt+g` jumps to the start of the
-  conversation. The skill and file lists always show where you are in them.
+  conversation, and while you are scrolled back the header says which turn
+  you are reading (`turn 2/5`). The skill and file lists always show where you are in them.
 - **The chats board lines up.** Titles start in the same column whatever a
   chat's state, there is a heading row, the header keeps its `updated` time at
   80 columns, and the archive prompt keeps its `(y/n)` behind a long title.
