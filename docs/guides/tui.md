@@ -580,7 +580,11 @@ workspace has already loaded:
   sentence for the state (how many lanes are still out, for a fan-out parent),
   the current step and attempt, and — except while it runs, when the line
   under the header says it — the attempt's latest status message.
-  `3 full output` jumps to that attempt's output.
+  `3 full output` jumps to that attempt's output; a task with no output yet
+  links `1 steps` instead. A fan-out parent waiting on its lanes lists the
+  ones that are blocked or waiting on you under *Lanes that need you*, `l`
+  opens the first, and its link is `1 steps` — the parent's own transcript is
+  empty.
 - **Blocked, waiting for an answer or at a gate, or aborted** — what it needs:
   the reason, in words and as its code, the question or the gate's
   instructions, and every action the daemon offers with its key and a line on
@@ -611,8 +615,14 @@ card reads without colour. Below it:
   else on offer, each with a line on what it does.
 
 An aborted task's card is muted and shows no evidence; it offers what the
-daemon offers, which never includes retry. On a short terminal the card keeps
-its first line and a row of action keys.
+daemon offers, which never includes retry. The card spends the rows it has
+in order: its first line and its actions, the jump links, the reason's
+meaning, the evidence (shrunk before it is dropped), then the status — so a
+taller terminal never shows fewer of its keys than a shorter one. Only when
+even the first line and the actions will not fit does it collapse to its first
+line and a row of action keys. An Overview taller than the screen scrolls with
+`pgup`/`pgdn`, `home`/`end` and the wheel, and its last row says what is above
+and below.
 
 A **done** or **archived** task's Overview is an **outcome card** — what the
 task delivered. An **aborted** task shows one too, under its failure card,
@@ -621,7 +631,8 @@ shrinks first, and on an aborted task it goes before the failure card does.
 The card shows:
 
 - **Result** — the summary the task's last successful agent attempt reported
-  (a follow-up round counts), rendered as Markdown and cut to about six lines.
+  (a follow-up round counts), rendered as Markdown and given every row the
+  Overview has free.
   With no successful agent attempt it is the newest attempt that reported
   anything, and with none of those the task's own status message, labelled
   dim as such. The label always says where it came from — `from step 2
@@ -1267,7 +1278,8 @@ popup is open — a popup takes the mouse as well as the keyboard, so a tick
 behind it moves nothing.
 
 The counts beside each path are the added and removed lines inside that file's
-hunks, and the line above the list totals them. A **binary** file says so
+hunks, and the line above the list totals them and says when the diff was
+read — `as of 14:02:31`; reopening the tab reads it again. A **binary** file says so
 instead of showing `+0 -0`, and a rename reads `old → new`.
 
 Folds are remembered **per file path**, so leaving and re-entering the tab — a
