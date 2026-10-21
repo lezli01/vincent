@@ -76,20 +76,31 @@ func (p *pendingSwitch) prompt() string {
 // question is the prompt's question, with the project names given, and its
 // answer key apart from it.
 func (p *pendingSwitch) question(deleted, name string) (q, key string) {
+	lead, ask, key := p.parts(deleted, name)
+	if lead == "" {
+		return ask, key
+	}
+	return lead + " — " + ask, key
+}
+
+// parts splits the question into what happened (lead, empty for a plain
+// switch) and what the key does (ask).
+func (p *pendingSwitch) parts(deleted, name string) (lead, ask, key string) {
 	if p.deleted != "" {
 		if p.project.ID == 0 {
-			return fmt.Sprintf("project `%s` was deleted and no projects remain — discard the %s?", deleted, p.draft), "y"
+			return fmt.Sprintf("project `%s` was deleted and no projects remain", deleted), fmt.Sprintf("discard the %s?", p.draft), "y"
 		}
-		return fmt.Sprintf("project `%s` was deleted — discard the %s and switch to `%s`?", deleted, p.draft, name), "y"
+		return fmt.Sprintf("project `%s` was deleted", deleted), fmt.Sprintf("discard the %s and switch to `%s`?", p.draft, name), "y"
 	}
-	return fmt.Sprintf("discard the %s and switch to `%s`?", p.draft, name), "y/n"
+	return "", fmt.Sprintf("discard the %s and switch to `%s`?", p.draft, name), "y/n"
 }
 
 // promptFit is prompt within width cells (#793). The answer key ends the
 // line, so a cut from the end would take the one part the human must read.
 // The project names give way first, the longer first, each cut with "…";
 // when even one-cell names leave the line too long, the key moves to the
-// front and the question is what gets cut. A width not yet known leaves the
+// front, followed by what it does, and the explanation of why is what gets
+// cut. A width not yet known leaves the
 // prompt whole.
 func (p *pendingSwitch) promptFit(width int) string {
 	full := p.prompt()
@@ -109,21 +120,33 @@ func (p *pendingSwitch) promptFit(width int) string {
 	} else if p.project.ID == 0 {
 		nw = 0
 	}
-	if q, key := p.question(cut(p.deleted, min(dw, 1)), cut(p.project.Name, min(nw, 1))); cols(q+" "+key) > width {
-		q, _ = p.question(p.deleted, p.project.Name)
-		return ansi.Truncate(key+" — "+q, width, "…")
+	compose := func(deleted, name string) string {
+		q, key := p.question(deleted, name)
+		return q + " " + key
 	}
-	line := full
+	if q, key := p.question(cut(p.deleted, min(dw, 1)), cut(p.project.Name, min(nw, 1))); cols(q+" "+key) > width {
+		// The key-first line puts what the key does right after it and
+		// what happened last, and is built from shortened names too, so the
+		// final cut takes the explanation rather than "discard the …"
+		// (review F5).
+		compose = func(deleted, name string) string {
+			lead, ask, key := p.parts(deleted, name)
+			if lead == "" {
+				return key + " — " + ask
+			}
+			return key + " — " + ask + " (" + lead + ")"
+		}
+	}
+	line := compose(p.deleted, p.project.Name)
 	for cols(line) > width && max(dw, nw) > 1 {
 		if dw >= nw {
 			dw--
 		} else {
 			nw--
 		}
-		q, key := p.question(cut(p.deleted, dw), cut(p.project.Name, nw))
-		line = q + " " + key
+		line = compose(cut(p.deleted, dw), cut(p.project.Name, nw))
 	}
-	return line
+	return ansi.Truncate(line, width, "…")
 }
 
 // followedNotice is the line a follow raises (task 132.6): the selection moved

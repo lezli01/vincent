@@ -296,6 +296,37 @@ func TestStatusLineFitsWithLongProjectNames(t *testing.T) {
 	}
 }
 
+// Review F5/F6: every variant of the pending-switch question keeps its key
+// and the words that say what the key does — "discard" — at the floor and
+// at 80 columns, however long the project names.
+func TestPendingSwitchPromptKeepsItsMeaning(t *testing.T) {
+	long := strings.Repeat("p", 40)
+	gone := strings.Repeat("g", 40)
+	variants := []struct {
+		name string
+		p    pendingSwitch
+		key  string
+	}{
+		{"plain switch", pendingSwitch{project: apiclient.Project{ID: 2, Name: long}, draft: "task draft"}, "y/n"},
+		{"deleted, switch elsewhere", pendingSwitch{project: apiclient.Project{ID: 2, Name: long}, draft: "task draft", deleted: gone}, "y"},
+		{"deleted, none remain", pendingSwitch{project: apiclient.Project{ID: 0}, draft: "task draft", deleted: gone}, "y"},
+	}
+	for _, v := range variants {
+		for _, w := range []int{60, 80} {
+			line := ansi.Strip(v.p.promptFit(w))
+			if lw := ansi.StringWidth(line); lw > w {
+				t.Errorf("%s at %d: %d cells: %q", v.name, w, lw, line)
+			}
+			if !strings.Contains(line, "discard") {
+				t.Errorf("%s at %d: the line loses what the key does: %q", v.name, w, line)
+			}
+			if !strings.HasSuffix(line, " "+v.key) && !strings.HasPrefix(line, v.key+" — ") {
+				t.Errorf("%s at %d: the answer key %q is not at either end: %q", v.name, w, v.key, line)
+			}
+		}
+	}
+}
+
 // C8: the first-run notice fits the 60×15 floor with its dismiss key shown.
 func TestFirstRunNoticeFitsTheFloor(t *testing.T) {
 	for i, l := range strings.Split(noticeBody, "\n") {

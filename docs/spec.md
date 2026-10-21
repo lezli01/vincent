@@ -16048,7 +16048,8 @@ a draft; the footer and the screen then name the text-field keys (`ctrl+p`,
 it. The TUI runs in the terminal's alternate screen, which the quit
 reminder's "printed after teardown" already assumed. The status line is
 budgeted to the width: a pending switch's project names give way before its
-answer key, which moves to the front when even shortened names do not fit.
+answer key, which moves to the front when even shortened names do not fit —
+followed by what it does (`discard the …`), with why it is asking cut first.
 
 ## 16. Security considerations
 
