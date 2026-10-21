@@ -205,9 +205,11 @@ func (s *inputSpy) update(msg tea.Msg) (panel, tea.Cmd) {
 	return s, nil
 }
 
+// paste answers with a command, so a paste that reached it shows in the
+// root's result as well as in got.
 func (s *inputSpy) paste(text string) tea.Cmd {
 	s.got = append(s.got, tea.PasteMsg{Content: text})
-	return nil
+	return func() tea.Msg { return nil }
 }
 
 // Review F3: the view behind a connection screen receives nothing — not a
@@ -219,7 +221,9 @@ func TestConnectionScreenHidesPasteAndClicks(t *testing.T) {
 	if !m.connScreen() {
 		t.Fatal("fixture: no connection screen")
 	}
-	m.Update(tea.PasteMsg{Content: "XYZ"})
+	if _, cmd := m.Update(tea.PasteMsg{Content: "XYZ"}); cmd != nil {
+		t.Error("a paste reached the view the connection screen hides")
+	}
 	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl}); cmd != nil {
 		t.Error("ctrl+v read the clipboard for a view the connection screen hides")
 	}
