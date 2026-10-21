@@ -408,7 +408,9 @@ func (m *root) updatePaste(text string) tea.Cmd {
 	if m.palette != nil {
 		return m.palette.paste(text)
 	}
-	if !m.activeCapturesInput() {
+	// A connection screen hides the view, which receives nothing (#793,
+	// review F3): a paste is input the way a key is.
+	if m.connScreen() || !m.activeCapturesInput() {
 		return nil
 	}
 	p, ok := m.views[m.active].(pasteReceiving)
@@ -435,6 +437,11 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 				return m.replayKey(h.key, h.global)
 			}
 		}
+		return m, nil
+	}
+	if m.connScreen() {
+		// The body is the connection screen, not the view behind it (#793,
+		// review F3).
 		return m, nil
 	}
 	msg.Y -= m.chromeTop() // the body starts under the header lines
@@ -468,7 +475,7 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// tea.PasteMsg and takes the same route bracketed paste does. Nothing
 	// capturing text means nothing to paste into — don't shell out to read a
 	// clipboard whose contents would be dropped.
-	if msg.String() == "ctrl+v" && (m.popupOpen() || m.activeCapturesInput()) {
+	if msg.String() == "ctrl+v" && (m.popupOpen() || (m.activeCapturesInput() && !m.connScreen())) {
 		return m, readClipboardCmd()
 	}
 	// An open popup owns every key but ctrl+c — it is the top of the §15 esc

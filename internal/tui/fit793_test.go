@@ -194,6 +194,41 @@ func TestReconnectOverADraftSwallowsTyping(t *testing.T) {
 	}
 }
 
+// inputSpy is a text-capturing panel that records what reaches it.
+type inputSpy struct{ got []tea.Msg }
+
+func (s *inputSpy) title() string          { return "spy" }
+func (s *inputSpy) render(_, _ int) string { return "" }
+func (s *inputSpy) capturesInput() bool    { return true }
+func (s *inputSpy) update(msg tea.Msg) (panel, tea.Cmd) {
+	s.got = append(s.got, msg)
+	return s, nil
+}
+
+func (s *inputSpy) paste(text string) tea.Cmd {
+	s.got = append(s.got, tea.PasteMsg{Content: text})
+	return nil
+}
+
+// Review F3: the view behind a connection screen receives nothing — not a
+// bracketed paste, not ctrl+v's clipboard read, not a click in the body.
+func TestConnectionScreenHidesPasteAndClicks(t *testing.T) {
+	m := phaseRoot(t, phaseReconnecting, 80, 24)
+	spy := &inputSpy{}
+	m.views[m.active] = spy
+	if !m.connScreen() {
+		t.Fatal("fixture: no connection screen")
+	}
+	m.Update(tea.PasteMsg{Content: "XYZ"})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl}); cmd != nil {
+		t.Error("ctrl+v read the clipboard for a view the connection screen hides")
+	}
+	m.Update(tea.MouseClickMsg{X: 10, Y: 5, Button: tea.MouseLeft})
+	if len(spy.got) != 0 {
+		t.Errorf("the hidden view received %#v", spy.got)
+	}
+}
+
 // C5: the status line fits the width, and the pending switch's key survives.
 func TestStatusLineFitsWithLongProjectNames(t *testing.T) {
 	name := strings.Repeat("p", 40)
