@@ -79,6 +79,7 @@ var fixed = []Fixed{
 	{"new task fields", "enter", "edit the row under the cursor, toggle a declared boolean, or open a declared enum's list"},
 	{"new task fields", "left", "step a declared enum or boolean through its values in place"},
 	{"new task fields", "esc", "close the editor and keep the fields"},
+	{"new task fields", "ctrl+s", "keep the fields and create the task"},
 	{"archived tasks", ">", "next page of the archive"},
 	{"archived tasks", "space", "select this task for the bulk delete"},
 	{"archived chats", ">", "next page of the archive"},

@@ -1677,6 +1677,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("esc did not close the fields editor")
 			}
 		},
+		"ctrl+s": func(t *testing.T) {
+			n := fieldsEditorFixture(t)
+			n.update(registryKey(t, "ctrl+s"))
+			if n.fieldsEd != nil {
+				t.Fatal("ctrl+s did not keep the fields and leave the editor")
+			}
+			if !n.submitting && n.err == "" && len(n.rowErr) == 0 {
+				t.Fatal("ctrl+s neither submitted nor said why it would not")
+			}
+		},
 	},
 
 	ctxProjects: {

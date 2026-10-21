@@ -1734,7 +1734,7 @@ over the agent/model/effort rows](../assets/tui-new-task.png)
 | `e` | Edit the description in `$EDITOR` |
 | `+` / `-` | Nudge the priority (higher runs first) |
 | `R` | Re-probe the adapters (the list is otherwise cache-served) |
-| `ctrl+s` | Create the task |
+| `ctrl+s` | Create the task — from anywhere, including a field being typed in, an open list or the Fields editor; whatever is open is kept first |
 
 The agent row warns when the adapter the task would run on is out of quota —
 `· usage limit until 14:20`, from the same quota the board header badges.

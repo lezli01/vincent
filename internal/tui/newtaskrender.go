@@ -285,9 +285,20 @@ func (n *newTask) reviewLine(label, value string) string {
 // what a text row has left of the pane (issue #299).
 const ntRowIndent = 2 + 12 + 1
 
+// paneWidth is the width the form is drawn in: the one the last render was
+// handed, not the terminal's, which is two columns wider than the compact
+// pane inside the root's frame and far wider than the guided main pane
+// (#797 N2). The terminal width stands in only before the first render.
+func (n *newTask) paneWidth() int {
+	if n.detailWidth > 0 {
+		return n.detailWidth
+	}
+	return n.width
+}
+
 // sizeFields hands the four text rows the width they wrap at.
 func (n *newTask) sizeFields() {
-	w := max(n.width-ntRowIndent, 10)
+	w := max(n.paneWidth()-ntRowIndent, 10)
 	n.titleIn.SetWidth(w)
 	n.branch.SetWidth(w)
 	n.branchName.SetWidth(w)
@@ -577,7 +588,7 @@ func (n *newTask) renderExpansion(row ntRow) []string {
 	}
 	switch {
 	case n.mode == ntPicking && n.pick != nil && ntRow(n.pick.row) == row:
-		n.pick.setWidth(n.width)
+		n.pick.setWidth(n.paneWidth())
 		return n.renderPicker()
 	case (n.mode == ntFieldsOpen || n.mode == ntFieldPicking) && row == ntFields:
 		return n.renderFields()
@@ -668,7 +679,7 @@ func (n *newTask) renderFields() []string {
 	// 6 is the row's own indent and marker; the label in front of the value is
 	// the definition's, and the pane truncates a row whose label runs long the
 	// way it always has.
-	f.input.SetWidth(max(n.width-6, 10))
+	f.input.SetWidth(max(n.paneWidth()-6, 10))
 	out := []string{styleDim.Render("    task fields — available to templates as .Task.Fields:")}
 	for i, r := range f.rows {
 		marker := "  "
@@ -730,7 +741,7 @@ func (n *newTask) renderFields() []string {
 			}
 		}
 		if i == f.cursor && n.mode == ntFieldPicking && n.pick != nil {
-			n.pick.setWidth(n.width)
+			n.pick.setWidth(n.paneWidth())
 			out = append(out, n.pick.renderBody()...)
 			hint := "    enter select · esc cancel"
 			if r.definition.Multiple {

@@ -536,6 +536,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **The new-task form wraps to its pane, and `ctrl+s` creates from anywhere
+  in it.** The title, branch and priority rows, the open lists and the Fields
+  editor's input wrapped at the terminal's width rather than the pane's, so at
+  80×24 every wrapped line was cut with `…` and in the wide two-pane layout
+  the cursor could sit off screen. `ctrl+s` worked only while moving between
+  rows; while typing in a field, inside an open list or in the Fields editor
+  it did nothing. It now keeps whatever is open and creates the task.
+  ([#797](https://github.com/lezli01/vincent/issues/797))
+
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,
   the sheet's key row drops its description before it would push the close

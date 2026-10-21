@@ -533,7 +533,7 @@ var bindings = []binding{
 	{op: keymap.Editor, key: "e", label: "edit the description in $EDITOR", scope: scopePanel, context: ctxNewTask, hint: "e $EDITOR", priority: 3, term: termEditor},
 	{key: "+", label: "nudge the priority (+/-; higher runs first)", scope: scopePanel, context: ctxNewTask, hint: "+/- priority", priority: 4},
 	{op: keymap.Refresh, key: "R", label: "re-probe the adapters (the list is otherwise cache-served)", scope: scopePanel, context: ctxNewTask, hint: "R re-probe", priority: 5, term: termRefresh},
-	{key: "ctrl+s", label: "create the task", scope: scopePanel, context: ctxNewTask, hint: "ctrl+s create", priority: 1},
+	{key: "ctrl+s", label: "create the task — from any field or open list, which is kept first", scope: scopePanel, context: ctxNewTask, hint: "ctrl+s create", priority: 1},
 	// The free-text row of an open picker (task 093). Registered on each of
 	// the four contexts a picker that offers one can be open in: a model or an
 	// effort newer than the catalog is the case it exists for (§9.6), and the
@@ -550,6 +550,9 @@ var bindings = []binding{
 	{op: keymap.Add, key: "a", label: "add a custom field", scope: scopePanel, context: ctxNewTaskFields, hint: "a add", priority: 4, term: termAdd},
 	{op: keymap.DraftRemove, key: "d", label: "remove the custom field under the cursor (a workflow-declared one cannot be removed)", scope: scopePanel, context: ctxNewTaskFields, hint: "d remove", priority: 5, term: termDraftDrop},
 	{key: "esc", label: "close the editor and keep the fields", scope: scopePanel, context: ctxNewTaskFields, hint: "esc done", priority: 6},
+	// ctrl+s submits from in here too (§15, task 020; #797): the editor's
+	// rows are kept first, exactly as esc keeps them.
+	{key: "ctrl+s", label: "keep the fields and create the task", scope: scopePanel, context: ctxNewTaskFields, hint: "ctrl+s create", priority: 7},
 
 	// Archived tasks (§15 view 10, task 092). The board's own keys — ↑/↓,
 	// enter, /, g, space, V and the fold keys — work here unchanged and are
