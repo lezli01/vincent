@@ -8275,9 +8275,11 @@ list of the TUI's main tabs, each drawn from `issues`, `tasks` and `chats`
 (`config.TabViews`), default `[issues, tasks]`. Order is the strip's, the
 cycle's and the landing order — the first entry is where the TUI opens, so
 there is no separate landing key — and a single entry is valid and opts out
-of the strip. An empty list, `null`, a repeated name, an unknown name or a
-value that is not a list fails the load, a hot reload and `PATCH /v1/config`
-alike, each with a message naming `tui.tabs`; there is no lenient load path,
+of the strip. An empty list, a repeated name, an unknown name or a value
+that is not a list fails the load, a hot reload and `PATCH /v1/config`
+alike, each with a message naming `tui.tabs`, and so does `null` (or a bare
+`tabs:`) in `config.yaml` — over PATCH a JSON `null` means "leave unchanged",
+as it does for every other field there (review F7 of PR #805); there is no lenient load path,
 because a fixed vocabulary cannot collide with a default an upgrade adds the
 way `tui.keys` can. It is served as an array, never `null`. A client treats a
 missing field as an older daemon and uses the default, drops a name it does

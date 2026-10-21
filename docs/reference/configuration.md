@@ -1852,10 +1852,14 @@ a refused `PATCH` writes nothing:
 
 | Value | Refusal |
 |---|---|
-| `[]`, `null` or a bare `tabs:` | `tui.tabs: list at least one view; want issues, tasks or chats` |
+| `[]`, or in `config.yaml` `null` or a bare `tabs:` | `tui.tabs: list at least one view; want issues, tasks or chats` |
 | a name listed twice | `tui.tabs: "issues" listed twice` |
 | any other name | `tui.tabs: unknown view "board"; want issues, tasks or chats` |
 | a single name or a mapping, not a list | `tui.tabs: must be a list of views, such as [issues, tasks]; …` |
+
+Over `PATCH /v1/config` a JSON `null` for `tabs` is not a value: like `null`
+for every other field there, it leaves the setting unchanged. Send `[]` to be
+refused.
 
 Reordering in the config editor means retyping the list, as for
 `tui.board.group_by`.

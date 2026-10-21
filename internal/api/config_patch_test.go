@@ -479,6 +479,20 @@ func TestConfigPatchRoundTripsTUITabs(t *testing.T) {
 			t.Errorf("%s: the tabs in force are %v, want the last good %v", body, got, want)
 		}
 	}
+
+	// A JSON null is PATCH's "leave unchanged", as for every other field —
+	// not a refused value, which only YAML's `tabs: null` is (review F7).
+	before := h.bytes(t)
+	resp, out = h.patch(t, `{"tui":{"tabs":null}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("tabs null: status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	if !bytes.Equal(before, h.bytes(t)) {
+		t.Error("tabs null changed config.yaml")
+	}
+	if got := h.cur.Load().TUI.Tabs; !reflect.DeepEqual(got, want) {
+		t.Errorf("tabs null: the tabs in force are %v, want %v unchanged", got, want)
+	}
 }
 
 // The backup block is served, written into its documented place and put into

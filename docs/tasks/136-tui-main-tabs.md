@@ -37,7 +37,9 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
    empty list or `null` (`list at least one view`), then a repeat, then an
    unknown name; a non-list is refused naming the key. go-yaml leaves the
    default in place on `tabs: null`, so `decode` probes the raw shape first
-   and refuses it like `[]`. A single entry is valid and is the opt-out of the
+   and refuses it like `[]`. Over PATCH a JSON `null` is the API's "leave
+   unchanged", as for every other field, not a refused value (review F7 of
+   PR #805, 2026-10-21). A single entry is valid and is the opt-out of the
    strip. The "want …" list is generated from `TabViews`. *Beat:* a lenient
    load path like `tui.keys`' (task 128) — a fixed vocabulary cannot collide
    with a default an upgrade adds, so there is nothing to be lenient about.
