@@ -161,8 +161,8 @@ const (
 	// this screen — retry and the root's own keys — rather than the hidden
 	// surface (review F4).
 	ctxConnection bindingContext = "connection"
-	ctxChats         bindingContext = "chats"
-	ctxChat          bindingContext = "chat"
+	ctxChats      bindingContext = "chats"
+	ctxChat       bindingContext = "chat"
 	// ctxChatSkills is the chat workspace's skill list (task 124.13). Its
 	// own context because while it is open it owns the keyboard, and `tab`,
 	// `enter` and `esc` all mean something else the moment it closes. Not
