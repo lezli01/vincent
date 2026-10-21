@@ -458,6 +458,7 @@ var bindings = []binding{
 	{key: "1", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskOverview, priority: 7},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskOverview, priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskOverview, priority: 9},
+	{key: "pgdown", label: "scroll the overview a page (pgup/pgdown, home/end, wheel)", scope: scopePanel, context: ctxTaskOverview, priority: 10},
 
 	// Timeline.
 	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab tabs", priority: 1},
@@ -478,6 +479,8 @@ var bindings = []binding{
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTimeline, priority: 10},
 	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTimeline, priority: 11},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTimeline, priority: 12},
+	{key: "pgdown", label: "page the attempts (pgup/pgdown)", scope: scopePanel, context: ctxTimeline, priority: 13},
+	{key: "g", label: "jump to the first attempt (g/home; G/end to the last)", scope: scopePanel, context: ctxTimeline, priority: 14},
 
 	// Task details.
 	{key: "tab", label: "move between the task's tabs (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab tabs", priority: 1},
@@ -518,6 +521,7 @@ var bindings = []binding{
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxOutput, priority: 12},
 	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxOutput, priority: 13},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxOutput, priority: 14},
+	{key: "g", label: "jump to the top of the output (g/home; G/end follows)", scope: scopePanel, context: ctxOutput, priority: 15},
 
 	// Diff tab. Its own context rather than more ctxOutput rows: the diff is a
 	// list of files and the output is a stream of lines, so ↑/↓ mean different
@@ -534,6 +538,8 @@ var bindings = []binding{
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxDiff, priority: 7},
 	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxDiff, priority: 8},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxDiff, priority: 9},
+	{key: "pgdown", label: "page the diff (pgup/pgdown, ctrl+d/ctrl+u)", scope: scopePanel, context: ctxDiff, priority: 10},
+	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxDiff, priority: 11},
 
 	// New task.
 	{key: "enter", label: "open the focused field's editor or picker", scope: scopePanel, context: ctxNewTask, hint: "enter edit field", priority: 2},

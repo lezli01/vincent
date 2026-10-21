@@ -96,6 +96,8 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt}
 	case "alt+down":
 		msg = tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModAlt}
+	case "shift+right":
+		msg = tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
 	default:
 		if rest, ok := strings.CutPrefix(key, "alt+"); ok && len([]rune(rest)) == 1 {
 			msg = tea.KeyPressMsg{Code: []rune(rest)[0], Mod: tea.ModAlt}
@@ -576,6 +578,23 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTimeline: {
+		// #799 W11: a page is what the window showed, g the first attempt.
+		"pgdown": func(t *testing.T) {
+			d := retriedDetail(t, 39)
+			d.selectedRun = 1
+			d.renderTimeline(20)
+			d.updateKey(registryKey(t, "pgdown"))
+			if d.selectedRun <= 2 {
+				t.Fatalf("pgdown moved the selection to %d, want a page past the first attempt", d.selectedRun)
+			}
+		},
+		"g": func(t *testing.T) {
+			d := retriedDetail(t, 12)
+			d.updateKey(registryKey(t, "g"))
+			if d.selectedRun != 1 {
+				t.Fatalf("g selected attempt %d, want the first", d.selectedRun)
+			}
+		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabSteps) },
 		"0": workspaceKeyProbe(onTab(taskTabSteps), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabSteps), "d", taskTabDiff),
@@ -1431,6 +1450,19 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxOutput: {
+		"g": func(t *testing.T) {
+			d := newTestDetail(t)
+			d.focus = focusOutput
+			d.vp.SetWidth(40)
+			d.vp.SetHeight(5)
+			d.vp.SetContent(strings.Repeat("line\n", 50))
+			d.vp.GotoBottom()
+			d.following = true
+			d.updateKey(registryKey(t, "g"))
+			if d.vp.YOffset() != 0 || d.following {
+				t.Fatalf("g left the output at offset %d, following %v; want the top, not following", d.vp.YOffset(), d.following)
+			}
+		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOutput) },
 		"0": workspaceKeyProbe(onTab(taskTabOutput), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabOutput), "d", taskTabDiff),
@@ -1566,6 +1598,29 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxDiff: {
+		"pgdown": func(t *testing.T) {
+			var b strings.Builder
+			b.WriteString("diff --git a/long.go b/long.go\n--- a/long.go\n+++ b/long.go\n@@ -0,0 +1,60 @@\n")
+			for i := range 60 {
+				fmt.Fprintf(&b, "+line %d\n", i)
+			}
+			p := loadedDiff(t, b.String())
+			diffPress(p, "right") // open the file
+			diffView(p, 10)
+			p.updateKey(registryKey(t, "pgdown"))
+			if p.vp.YOffset() == 0 {
+				t.Fatal("pgdown did not page the diff")
+			}
+		},
+		"shift+right": func(t *testing.T) {
+			p := loadedDiff(t, longLineDiff())
+			diffPress(p, "right") // open the file
+			diffView(p, 20)
+			p.updateKey(registryKey(t, "shift+right"))
+			if p.vp.XOffset() == 0 {
+				t.Fatal("shift+right did not pan the diff")
+			}
+		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabDiff) },
 		"0": workspaceKeyProbe(onTab(taskTabDiff), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabDiff), "d", taskTabOutput),
@@ -2114,6 +2169,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskOverview: {
+		"pgdown": func(t *testing.T) {
+			v := awaitingLanesView(t, 10)
+			v.render(80, 20)
+			v.updateKey(registryKey(t, "pgdown"))
+			if v.overview.Offset() == 0 {
+				t.Fatal("pgdown did not scroll the Overview")
+			}
+		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOverview) },
 		"1": workspaceKeyProbe(onTab(taskTabOverview), "1", taskTabSteps),
 		"d": workspaceKeyProbe(onTab(taskTabOverview), "d", taskTabDiff),
