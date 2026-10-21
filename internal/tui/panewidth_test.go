@@ -88,7 +88,9 @@ func TestPaneWidthChatComposerKeepsEveryWrappedRow(t *testing.T) {
 			}
 		}
 		// The composer is a field, not more conversation: a titled box around
-		// it, and the hint still below the box and last on the pane.
+		// it, last on the pane. The key hint is no longer the pane's to draw —
+		// the root footer renders it from the registry (#801, §15) — so the
+		// box's bottom edge is the pane's last line.
 		plain := ansi.Strip(frame)
 		if !strings.Contains(plain, "─ message ") {
 			t.Errorf("%dx%d: the composer is not framed:\n%s", tc.width, tc.height, plain)
@@ -96,8 +98,8 @@ func TestPaneWidthChatComposerKeepsEveryWrappedRow(t *testing.T) {
 		if !strings.Contains(plain, "└") || !strings.Contains(plain, "┐") {
 			t.Errorf("%dx%d: the frame lost a corner, so it collapsed to an edge:\n%s", tc.width, tc.height, plain)
 		}
-		if last := ansi.Strip(lines[len(lines)-1]); !strings.Contains(last, "enter send") {
-			t.Errorf("%dx%d: the last line of the pane is %q, want the hint below the frame", tc.width, tc.height, last)
+		if last := ansi.Strip(lines[len(lines)-1]); !strings.HasPrefix(last, "└") {
+			t.Errorf("%dx%d: the last line of the pane is %q, want the composer's bottom edge", tc.width, tc.height, last)
 		}
 	}
 }

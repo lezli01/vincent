@@ -313,7 +313,7 @@ func TestDiffEmptyStatesAreDistinct(t *testing.T) {
 		set  func(*diffPane)
 		want string
 	}{
-		{"never fetched", func(*diffPane) {}, "press d"},
+		{"never fetched", func(*diffPane) {}, "reopen the tab"},
 		{"fetching", func(p *diffPane) { p.fetching = true }, "loading"},
 		{"no changes", func(p *diffPane) {
 			p.apply(diffLoadedMsg{taskID: 1, text: ""})

@@ -93,7 +93,10 @@ type (
 		// defaultProject is `tui.default_project` (task 132.3), read by the
 		// root's startup chain from the first answer only.
 		defaultProject string
-		err            error
+		// tabs is `tui.tabs` (task 136.2), read by the root for the same
+		// reason hyperlinks is.
+		tabs []string
+		err  error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg struct {
@@ -132,6 +135,10 @@ type (
 
 // board is the §15 home view: every task, live.
 type board struct {
+	// tblHeight is the height last handed the table, so render re-seats the
+	// cursor only when it changes (review F21).
+	tblHeight int
+
 	// projectScope is the root's selected project (task 132.2). The live
 	// board keeps its listing global and filters the rows in memory, so a
 	// switch re-derives and fetches nothing; the archived board asks the
@@ -490,7 +497,7 @@ func (b *board) configCmd() tea.Cmd {
 		return boardConfigMsg{
 			archived: archived, board: cfg.TUI.Board,
 			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, keys: cfg.TUI.Keys,
-			outputLevel: cfg.TUI.Output.Level, defaultProject: cfg.TUI.DefaultProject, err: err,
+			outputLevel: cfg.TUI.Output.Level, defaultProject: cfg.TUI.DefaultProject, tabs: cfg.TUI.Tabs, err: err,
 		}
 	}
 }
@@ -1256,29 +1263,74 @@ func (b *board) rememberSelection() {
 func (b *board) restoreSelection(rows []boardRow) {
 	if len(b.selectedPath) > 0 {
 		if i := headerIndex(rows, b.selectedPath); i >= 0 && rows[i].collapsed {
-			b.tbl.SetCursor(i)
+			moveCursorTo(&b.tbl, i)
 			return
 		}
 	}
-	if b.selectedID != 0 {
-		for i := range rows {
-			if rows[i].selectable() && rows[i].task.ID == b.selectedID {
-				b.tbl.SetCursor(i)
-				return
-			}
-		}
-		// The row is gone because a fold swallowed it: the header standing in
-		// for the task is where the cursor belongs, not the top of the board.
-		if i := b.foldedHome(rows); i >= 0 {
-			b.tbl.SetCursor(i)
+	if b.selectedID == 0 {
+		// Nothing has been selected yet: the first task rather than the first
+		// *row*, which under a grouping is a header — a cursor parked on one
+		// shows empty panels and no actions.
+		moveCursorTo(&b.tbl, firstTaskRow(rows))
+		return
+	}
+	for i := range rows {
+		if rows[i].selectable() && rows[i].task.ID == b.selectedID {
+			moveCursorTo(&b.tbl, i)
 			return
 		}
 	}
-	// The task is gone (archived, or filtered out), or nothing has been
-	// selected yet: the first task rather than the first *row*, which under a
-	// grouping is a header — a cursor parked on one shows empty panels and no
-	// actions.
-	b.tbl.SetCursor(firstTaskRow(rows))
+	// The row is gone because a fold swallowed it: the header standing in
+	// for the task is where the cursor belongs, not the top of the board.
+	if i := b.foldedHome(rows); i >= 0 {
+		moveCursorTo(&b.tbl, i)
+		return
+	}
+	// The task is gone (archived, or filtered out): its neighbour at the
+	// index it left, not the top of the board, which would throw the user
+	// out of the stretch they were working through (#798 B7). The table has
+	// already clamped the cursor into the new row set.
+	moveCursorTo(&b.tbl, nearestSelectable(rows, b.tbl.Cursor()))
+	// Really gone, not hidden by a filter: the neighbour is the selection
+	// now (review F16). Keeping the old id made every later refresh miss
+	// and fall back to "the row at this index", so a re-sort above it
+	// moved the cursor, and the action keys, onto another task. A task a
+	// filter hides keeps its id, so clearing the filter brings it back.
+	if _, known := b.taskByID(b.selectedID); !known {
+		if id, ok := b.selected(); ok {
+			b.selectedID = id
+		}
+	}
+}
+
+// nearestSelectable is the first row the cursor may rest on at or after i,
+// or failing that the last one before it.
+func nearestSelectable(rows []boardRow, i int) int {
+	i = max(i, 0)
+	if j := landingRow(rows, i); j >= 0 {
+		return j
+	}
+	for j := min(i, len(rows)) - 1; j >= 0; j-- {
+		if rows[j].selectable() {
+			return j
+		}
+	}
+	return firstTaskRow(rows)
+}
+
+// moveCursorTo puts the table's cursor on row i through MoveUp/MoveDown, for
+// the reason clickRow and skipHeaders use them: bubbles' SetCursor re-renders
+// the row range around the new cursor but never adjusts the viewport's
+// scroll offset, which is private, so a long jump left the cursor on a row
+// that was not on screen while every action key acted on it (#798 B1).
+func moveCursorTo(t *table.Model, i int) {
+	i = min(i, len(t.Rows())-1)
+	switch d := i - t.Cursor(); {
+	case d > 0:
+		t.MoveDown(d)
+	case d < 0:
+		t.MoveUp(-d)
+	}
 }
 
 func (b *board) render(width, height int) string {
@@ -1314,13 +1366,30 @@ func (b *board) render(width, height int) string {
 	b.tbl.SetRows(b.rowsFor(rows, cols, set))
 	b.tbl.SetWidth(b.width)
 	// Two lines of chrome above, plus the filter line when it is showing.
-	b.tbl.SetHeight(max(3, b.height-b.chromeLines()))
+	if h := max(3, b.height-b.chromeLines()); h != b.tblHeight {
+		b.tblHeight = h
+		b.tbl.SetHeight(h)
+		// bubbles' SetHeight keeps the table's scroll where it was, so a
+		// shrink could leave the cursor's row below the window (review F21).
+		// Walking the cursor down from the top again re-derives a window
+		// that shows it; the index, and so the selection, is unchanged.
+		if c := b.tbl.Cursor(); c > 0 {
+			b.tbl.GotoTop()
+			b.tbl.MoveDown(c)
+		}
+	}
 	b.restoreSelection(rows)
 	// Passing through an empty row set (the breakpoint clear above, or a
 	// board that emptied and refilled) parks the cursor at -1; with rows on
 	// screen the cursor belongs on one.
 	if b.tbl.Cursor() < 0 && len(rows) > 0 {
-		b.tbl.SetCursor(firstTaskRow(rows))
+		moveCursorTo(&b.tbl, firstTaskRow(rows))
+	}
+	// The first render anchors the selection: until a key recorded one, a
+	// live re-sort would leave the cursor index where it was and silently
+	// select whichever task moved under it (#798 B15).
+	if b.selectedID == 0 && len(b.selectedPath) == 0 {
+		b.rememberSelection()
 	}
 	sb.WriteString(b.tbl.View())
 	return sb.String()
@@ -1937,6 +2006,10 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 			return styleDim.Render("\n  loading " + b.project.name + "…\n"), true
 		}
 		return styleDim.Render("\n  loading tasks…\n"), true
+	case !b.loaded:
+		// The first load failed: nothing is known about the board yet, so
+		// the first-run "no tasks yet" below would be a claim (#798 B8).
+		return styleDim.Render("\n  could not load tasks — " + b.loadErr.Error() + "\n"), true
 	case b.attentionOnly && len(scoped) > 0:
 		// The way out is named by its effective key (118 decision 8).
 		line := "nothing needs you"
@@ -1950,6 +2023,18 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 	case len(scoped) > 0:
 		return styleDim.Render(fmt.Sprintf(
 			"\n  no tasks match %q — esc to clear the filter\n", b.filter.Value())), true
+	case b.archived:
+		// An archive is not created from, so the way out is a wider window,
+		// not the live board's `n` (#798 B9).
+		w := b.activeWindow()
+		if w.days == 0 {
+			return styleDim.Render("\n  no archived tasks\n"), true
+		}
+		line := "no tasks archived in the " + w.label
+		if key := opKey(keymap.Scope); key != "" {
+			line += " — " + key + " widens the window"
+		}
+		return styleDim.Render("\n  " + line + "\n"), true
 	default:
 		return styleDim.Render("\n  no tasks yet — press " + opKey(keymap.New) + " to create one\n"), true
 	}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -91,7 +92,17 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
 	case "pgdown":
 		msg = tea.KeyPressMsg{Code: tea.KeyPgDown}
+	case "alt+up":
+		msg = tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt}
+	case "alt+down":
+		msg = tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModAlt}
+	case "shift+right":
+		msg = tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
 	default:
+		if rest, ok := strings.CutPrefix(key, "alt+"); ok && len([]rune(rest)) == 1 {
+			msg = tea.KeyPressMsg{Code: []rune(rest)[0], Mod: tea.ModAlt}
+			break
+		}
 		if rest, ok := strings.CutPrefix(key, "ctrl+"); ok && len([]rune(rest)) == 1 {
 			msg = tea.KeyPressMsg{Code: []rune(rest)[0], Mod: tea.ModCtrl}
 			break
@@ -567,6 +578,23 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTimeline: {
+		// #799 W11: a page is what the window showed, g the first attempt.
+		"pgdown": func(t *testing.T) {
+			d := retriedDetail(t, 39)
+			d.selectedRun = 1
+			d.renderTimeline(20)
+			d.updateKey(registryKey(t, "pgdown"))
+			if d.selectedRun <= 2 {
+				t.Fatalf("pgdown moved the selection to %d, want a page past the first attempt", d.selectedRun)
+			}
+		},
+		"g": func(t *testing.T) {
+			d := retriedDetail(t, 12)
+			d.updateKey(registryKey(t, "g"))
+			if d.selectedRun != 1 {
+				t.Fatalf("g selected attempt %d, want the first", d.selectedRun)
+			}
+		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabSteps) },
 		"0": workspaceKeyProbe(onTab(taskTabSteps), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabSteps), "d", taskTabDiff),
@@ -1020,6 +1048,35 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("ctrl+g did not re-arm follow")
 			}
 		},
+		"alt+up": func(t *testing.T) {
+			v := finishedChat(t, 9)
+			v.bodyDirty = true
+			v.render(60, 20)
+			v.updateKey(registryKey(t, "alt+up"))
+			if v.following {
+				t.Fatal("alt+up left the body following the live end")
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("alt+up reached the composer: %q", v.composer.Value())
+			}
+		},
+		"alt+g": func(t *testing.T) {
+			v := finishedChat(t, 9)
+			v.bodyDirty = true
+			v.render(60, 20)
+			v.updateKey(registryKey(t, "alt+g"))
+			if v.vp.YOffset() != 0 || v.following {
+				t.Fatalf("alt+g left the window at line %d", v.vp.YOffset())
+			}
+		},
+		"alt+a": func(t *testing.T) {
+			v := awaitingChat(t)
+			v.updateKey(registryKey(t, "esc"))
+			v.updateKey(registryKey(t, "alt+a"))
+			if v.form == nil {
+				t.Fatal("alt+a did not reopen the question esc put away")
+			}
+		},
 		"esc": func(t *testing.T) {
 			v := chatViewFixture()
 			_, cmd := v.updateKey(registryKey(t, "esc"))
@@ -1239,8 +1296,18 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			if cmd == nil {
 				t.Fatal("ctrl+l did not raise the link picker")
 			}
-			if msg, ok := cmd().(openLinkPickerMsg); !ok || len(msg.items) != 1 {
-				t.Fatalf("ctrl+l produced %#v, want the description's one link", cmd())
+			if msg, ok := cmd().(openLinkPickerMsg); !ok || len(msg.items) != 2 {
+				t.Fatalf("ctrl+l produced %#v, want the description's one link and the source page", cmd())
+			}
+		},
+		"ctrl+y": func(t *testing.T) {
+			v := issueFixture()
+			_, cmd := v.updateKey(registryKey(t, "ctrl+y"))
+			if cmd == nil {
+				t.Fatal("ctrl+y did not raise the copy picker")
+			}
+			if _, ok := cmd().(openCopyPickerMsg); !ok {
+				t.Fatalf("ctrl+y produced %#v, want the copy picker", cmd())
 			}
 		},
 		"R": func(t *testing.T) {
@@ -1383,6 +1450,19 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxOutput: {
+		"g": func(t *testing.T) {
+			d := newTestDetail(t)
+			d.focus = focusOutput
+			d.vp.SetWidth(40)
+			d.vp.SetHeight(5)
+			d.vp.SetContent(strings.Repeat("line\n", 50))
+			d.vp.GotoBottom()
+			d.following = true
+			d.updateKey(registryKey(t, "g"))
+			if d.vp.YOffset() != 0 || d.following {
+				t.Fatalf("g left the output at offset %d, following %v; want the top, not following", d.vp.YOffset(), d.following)
+			}
+		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOutput) },
 		"0": workspaceKeyProbe(onTab(taskTabOutput), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabOutput), "d", taskTabDiff),
@@ -1518,6 +1598,29 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxDiff: {
+		"pgdown": func(t *testing.T) {
+			var b strings.Builder
+			b.WriteString("diff --git a/long.go b/long.go\n--- a/long.go\n+++ b/long.go\n@@ -0,0 +1,60 @@\n")
+			for i := range 60 {
+				fmt.Fprintf(&b, "+line %d\n", i)
+			}
+			p := loadedDiff(t, b.String())
+			diffPress(p, "right") // open the file
+			diffView(p, 10)
+			p.updateKey(registryKey(t, "pgdown"))
+			if p.vp.YOffset() == 0 {
+				t.Fatal("pgdown did not page the diff")
+			}
+		},
+		"shift+right": func(t *testing.T) {
+			p := loadedDiff(t, longLineDiff())
+			diffPress(p, "right") // open the file
+			diffView(p, 20)
+			p.updateKey(registryKey(t, "shift+right"))
+			if p.vp.XOffset() == 0 {
+				t.Fatal("shift+right did not pan the diff")
+			}
+		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabDiff) },
 		"0": workspaceKeyProbe(onTab(taskTabDiff), "0", taskTabOverview),
 		"d": workspaceKeyProbe(onTab(taskTabDiff), "d", taskTabOutput),
@@ -1677,6 +1780,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("esc did not close the fields editor")
 			}
 		},
+		"ctrl+s": func(t *testing.T) {
+			n := fieldsEditorFixture(t)
+			n.update(registryKey(t, "ctrl+s"))
+			if n.fieldsEd != nil {
+				t.Fatal("ctrl+s did not keep the fields and leave the editor")
+			}
+			if !n.submitting && n.err == "" && len(n.rowErr) == 0 {
+				t.Fatal("ctrl+s neither submitted nor said why it would not")
+			}
+		},
 	},
 
 	ctxProjects: {
@@ -1724,16 +1837,66 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("/ did not open the project filter")
 			}
 		},
-		"ctrl+s": func(t *testing.T) {
-			p := newProjectsView()
-			loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
-			p.updateKey(registryKey(t, "a"))
-			if p.form == nil {
-				t.Fatal("a did not open the form this row is about")
+	},
+
+	ctxProjectForm: {
+		"down": func(t *testing.T) {
+			p := openProjectForm(t)
+			before := p.form.cursor
+			p.updateKey(registryKey(t, "down"))
+			if p.form.cursor == before {
+				t.Fatal("down did not move between the form's fields")
 			}
+		},
+		"enter": func(t *testing.T) {
+			p := openProjectForm(t)
+			p.updateKey(registryKey(t, "enter"))
+			if !p.form.editing && p.form.pick == nil {
+				t.Fatal("enter did not edit the field under the cursor")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			p := openProjectForm(t)
 			_, cmd := p.updateKey(registryKey(t, "ctrl+s"))
 			if cmd == nil && p.form.err == "" && !p.form.saving {
 				t.Fatal("ctrl+s neither saved nor reported why it would not")
+			}
+		},
+		"esc": func(t *testing.T) {
+			p := openProjectForm(t)
+			_, cmd := p.updateKey(registryKey(t, "esc"))
+			if cmd == nil {
+				t.Fatal("esc did not close the form")
+			}
+			if _, ok := cmd().(projectFormClosedMsg); !ok {
+				t.Fatal("esc did not close the form")
+			}
+		},
+	},
+
+	ctxProjectFormField: {
+		"enter": func(t *testing.T) {
+			p := editingProjectForm(t)
+			p.updateKey(registryKey(t, "enter"))
+			if p.form.editing {
+				t.Fatal("enter did not finish the field")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			p := editingProjectForm(t)
+			_, cmd := p.updateKey(registryKey(t, "ctrl+s"))
+			if p.form.editing {
+				t.Fatal("ctrl+s did not finish the field")
+			}
+			if cmd == nil && p.form.err == "" && !p.form.saving {
+				t.Fatal("ctrl+s neither saved nor reported why it would not")
+			}
+		},
+		"esc": func(t *testing.T) {
+			p := editingProjectForm(t)
+			p.updateKey(registryKey(t, "esc"))
+			if p.form == nil || p.form.editing {
+				t.Fatal("esc did not finish the field, keeping the form")
 			}
 		},
 	},
@@ -2033,6 +2196,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxTaskOverview: {
+		"pgdown": func(t *testing.T) {
+			v := awaitingLanesView(t, 10)
+			v.render(80, 20)
+			v.updateKey(registryKey(t, "pgdown"))
+			if v.overview.Offset() == 0 {
+				t.Fatal("pgdown did not scroll the Overview")
+			}
+		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOverview) },
 		"1": workspaceKeyProbe(onTab(taskTabOverview), "1", taskTabSteps),
 		"d": workspaceKeyProbe(onTab(taskTabOverview), "d", taskTabDiff),
@@ -2333,6 +2504,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"enter": func(t *testing.T) {
 			d := newTestDaemonView([]string{"a log line"}, nil)
 			d.update(daemonConfigMsg{config: testConfig()})
+			// The row is live only with the config list focused (#803).
+			d.focusConfig = true
 			d.updateKey(registryKey(t, "enter"))
 			if d.form == nil {
 				t.Fatal("enter did not open the config editor")
@@ -2386,6 +2559,39 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			d.updateKey(registryKey(t, "esc"))
 			if d.skills != nil {
 				t.Fatal("esc did not close the skills flow")
+			}
+		},
+	},
+
+	ctxStatusLine: {
+		"enter": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.statusLine = newStatusLineFlow(d.statusLinePlan, errors.New("no settings file"))
+			d.updateKey(registryKey(t, "enter"))
+			// With no plan to apply, enter closes rather than writing — a
+			// probe must not touch Claude Code's settings.
+			if d.statusLine != nil {
+				t.Fatal("enter did not act on the status-line flow")
+			}
+		},
+		"n": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.dataDir = t.TempDir()
+			d.statusLine = newStatusLineFlow(d.statusLinePlan, nil)
+			d.updateKey(registryKey(t, "n"))
+			if d.statusLine != nil {
+				t.Fatal("n did not close the status-line flow")
+			}
+			if !readStatusLineDecline(d.dataDir) {
+				t.Fatal("n did not remember the decline")
+			}
+		},
+		"esc": func(t *testing.T) {
+			d := newTestDaemonView([]string{"a log line"}, nil)
+			d.statusLine = newStatusLineFlow(d.statusLinePlan, nil)
+			d.updateKey(registryKey(t, "esc"))
+			if d.statusLine != nil {
+				t.Fatal("esc did not close the status-line flow")
 			}
 		},
 	},
@@ -3174,4 +3380,29 @@ func pickerProbeRoot(t *testing.T) *root {
 	m.sel = projectSel{id: 1, name: "api"}
 	m.projPick = newProjectPicker([]apiclient.Project{testProject(1, "api"), testProject(2, "web")}, 1, "")
 	return m
+}
+
+// editingProjectForm is that form with its path field being typed into, the
+// state ctxProjectFormField names.
+func editingProjectForm(t *testing.T) *projectsView {
+	t.Helper()
+	p := openProjectForm(t)
+	p.updateKey(registryKey(t, "enter"))
+	if !p.form.editing || p.bindingContext() != ctxProjectFormField {
+		t.Fatal("enter did not start editing the path field")
+	}
+	return p
+}
+
+// openProjectForm is a projects view with its add form open, the state
+// ctxProjectForm names.
+func openProjectForm(t *testing.T) *projectsView {
+	t.Helper()
+	p := newProjectsView()
+	loadedProjects(p, []apiclient.Project{testProject(1, "api")}, nil)
+	p.updateKey(registryKey(t, "a"))
+	if p.form == nil {
+		t.Fatal("a did not open the project form")
+	}
+	return p
 }

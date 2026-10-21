@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
 )
 
@@ -163,7 +164,7 @@ func (w *workflowsView) renderWorkflowOverview(line wfLine, width, height int) s
 		rows = append(rows, styleDim.Render(fmt.Sprintf(
 			"  %d top-level steps · enter to show the resolved list", len(e.Steps))))
 	}
-	rows = append(rows, styleDim.Render("  enter steps · g graph · e edit · R reload"))
+	rows = append(rows, styleDim.Render("  enter steps · g graph · "+opKey(keymap.Editor)+" edit · "+opKey(keymap.Refresh)+" reload"))
 	return strings.Join(window(rows, 0, height), "\n")
 }
 
@@ -626,7 +627,7 @@ func (w *workflowsView) overlayStepModal(bg string) string {
 	pw := w.modalWidth()
 	ph := m.vp.Height() + 3
 	body := m.vp.View() + "\n" +
-		styleDim.Render("  esc close · ↑/↓ scroll · pgup/pgdn page · e edit · R reload")
+		styleDim.Render("  esc close · ↑/↓ scroll · pgup/pgdn page · "+opKey(keymap.Editor)+" edit · "+opKey(keymap.Refresh)+" reload")
 	popup := frame("Step · "+m.title, body, pw, ph, true)
 	x := max((w.width-pw)/2, 0)
 	y := max((w.height-ph)/3, 1)

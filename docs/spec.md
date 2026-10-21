@@ -12684,7 +12684,9 @@ stream for the live tail.
    variant is muted, fetches nothing and offers what the daemon offers,
    which is never `retry`. On a body shorter than 12 rows the card keeps its
    first line and its actions' keys, then the links; the rest is dropped
-   whole.
+   whole. *Superseded 2026-10-21 (issue #799): the card now collapses only
+   when its headline and actions will not fit, and spends rows in priority
+   order — see "Wrap or truncate, never clip" in §15.*
 
    *Amended 2026-09-29 (task 129.14, issue #602).* **A finished task's
    ended frame is an outcome card.** It renders on `done` and `archived` in
@@ -12698,7 +12700,9 @@ stream for the live tail.
    `status_message`, labelled dim as that fallback. Only the task's own
    attempts count (task 088 decision 9). It is rendered through the
    assistant Markdown renderer after invalid UTF-8 is replaced, cut to 6
-   rendered lines, and always labelled with its source — step, loop
+   rendered lines (*since 2026-10-21, issue #799: grown into every row the
+   Overview has free, and cut to no fewer than 2 before the card
+   collapses*), and always labelled with its source — step, loop
    iteration and item, attempt. The `result` operation (default `w`,
    registered on the Overview only while a result attempt exists) moves the
    shared attempt cursor to that attempt and opens Output at its end; on
@@ -13316,6 +13320,17 @@ stream for the live tail.
    wants to see rather than where. Task 054 decision 1 — folds live in
    `tui.json` — is kept for the boards that still fold.
 
+   *Amended 2026-10-21 (issue #801).* The board draws a dim **column heading**
+   row above its chats — a heading of columns, not the project heading the
+   paragraph above retires — and pads every cell by display width, so a
+   title starts in the same column whatever its row's state cell holds (a
+   styled state or the in-progress frame used to count its escape bytes as
+   width). The header's scope label is short enough that `updated hh:mm:ss`
+   survives at 80 columns, and the archive confirmation shortens the title
+   it quotes and keeps its `(y/n)` on screen, wrapping rather than
+   truncating. The create form windows on the **focused element's lines**,
+   an open picker's options and its key hint included, and wraps its error.
+
 9. **Chat workspace.** *Added 2026-08-31 (task 067, closing 063.2 and 063.3).*
    One conversation: the finished turns above, the running turn's live tail
    below them, and a composer at the bottom. `enter` sends, `ctrl+x` stops the
@@ -13618,6 +13633,37 @@ stream for the live tail.
    opening the new-task form or the "remove its worktree?" prompt. The task's
    context is prepended by the daemon to the first turn's prompt; the turn row
    keeps the human's message as typed.
+
+   *Amended 2026-10-21 (issue #801).* **The workspace draws no key line of
+   its own**: §15's footer-is-the-registry rule applies here as everywhere,
+   so the root footer is the one key line, and `chatView.liveBindings` drops
+   every row a press would do nothing for — send while the chat is not idle
+   or a prompt or the answer form owns the keyboard, `ctrl+x` with no running
+   turn, `tab`/`f2` on an ended chat. `pgup/pgdown` ranks ahead of `ctrl+r`
+   so it still fits at 80 columns. **Nothing in the workspace is cut to one
+   line**: the close confirmation, notes and a failed turn's error wrap, the
+   prompt's answer keys (`(y/n)`) kept apart from the question so a wrap
+   never drops them, and the failure reason is given its `internal/reasons`
+   title (§18). **The header is ranked**: state, `⏸`, the level, the turn
+   count, `on task #N` and the branch are laid out first and the title
+   truncates into what is left. **The composer grows** with the draft from 3
+   rows up to `min(10, height/3)`, its frame titled `+N lines` when the draft
+   is taller still — the #299 amendment below holds: the body shrinks to
+   pay for it. **The §7.4 popup takes the composer's place** rather than
+   stacking under it, its key line pinned and without `ctrl+t task details`,
+   which only the task workspace answers; `esc` **puts the question away**
+   rather than dropping it — a note under the conversation says the agent is
+   waiting, and **`alt+a`** reopens it with the picks kept. **`alt+↑`/`alt+↓`**
+   scroll a line and **`alt+g`** jumps to the start, alt because the composer
+   owns `↑`/`↓`, `shift+↑`/`↓` and `ctrl+home`/`ctrl+end`, and `ctrl+↑` is a
+   macOS desktop shortcut. While the reader has scrolled away from the live
+   end, the header says **`turn i/n`** — the turn at the top of the window —
+   and drops it again once the view follows the end. A failed load is said **in the body** rather than
+   as an empty chat, and a send is refused until the chat has loaded. A send
+   keeps the finished turns' records and resets only the live seam. The
+   skill and file lists always show their `n/N` position and a scroll cue,
+   carry their key hint on a line of its own, and keep at least three rows in
+   a small pane.
 
 10. **Archived boards.** *Added 2026-09-09 (task 092, issue #350).* Two
    screens — archived tasks and archived chats — reached from the command
@@ -13932,6 +13978,25 @@ stream for the live tail.
    withholds it with no row to open or with the selection scrolled away
    (review F6 of PR #805), and `o` on a local issue.
 
+   *Amended 2026-10-21 (issue #795, task 135):* the detail wraps instead of
+   clipping, per "Wrap or truncate, never clip". The title wraps under
+   itself, and the source badge leaves the header for a **`source`** fact
+   (`owner/repo#N`) in the facts block. A **`sync`** fact gives an imported
+   issue's sync state, its last-synced time and its reason, worded by the
+   reason catalogue where it has an entry and as the reason token otherwise.
+   The labels wrap under the value column and the URL hard-wraps; a task row
+   and the Main worktree occupant stay one line, their title shortened ahead
+   of the role and state. Notes, load errors and the close/reopen/delete
+   prompt wrap, and page plus prompt never exceed the pane: the prompt wins,
+   the page shrinks to nothing first, and a prompt picker taller than the
+   pane windows around its highlighted option. `ctrl+l` lists the links of
+   the description, of each comment (grouped by author and time) and the
+   source URL; **`ctrl+y`** opens the copy picker over the title, the
+   description, each comment and the URL; `ctrl+o` switches the comments
+   with the description. The issue form windows its rows around the focused
+   element — the picker's highlighted option, or the field being edited —
+   with its error and key line pinned under the scrolled region.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home
@@ -14238,6 +14303,38 @@ last-resort guard that keeps one panel out of its neighbour, and a test
 reaching it (`assertNoFrameClip`) is a failure. The help sheet is the first
 surface held to it: its labels wrap at their own column, its key row sheds its
 description before a close key, and the mouse wheel scrolls it.
+
+*Amended 2026-10-21 (issue #799).* **The task workspace's panes are held to it
+too.** The **Overview** draws its frame into a `scrollPane` — `pgup`/`pgdn`,
+`home`/`end` and the wheel scroll it, with the cue on its last row — instead
+of keeping its first rows. The failure card spends the rows it has in
+priority order: its headline and actions, the jump links, the reason's
+meaning, the evidence (shrunk before it is dropped, and a `block_detail`
+fallback capped at the same budget, its cut stated), then the status, and
+the state sentence above it last; it collapses to its first line and its
+keys only when even the headline and actions will not fit. So a taller
+screen never shows fewer of the card's keys than a shorter one, where the
+fixed 12-row threshold cut a full card before its actions just above it. The
+outcome card's result grows into the rows the Overview has free rather than
+stopping at six lines. A fan-out parent in `awaiting_children` lists the
+lanes that need a human — blocked first, then those at a gate or a question
+— under *Lanes that need you*, and offers `l` for the first; its jump link is
+`1 steps`, because no link may open an empty transcript, which `3 full
+output` did for a parent that never ran a step of its own. The **Pull
+Request** tab windows its checks around the cursor with the header and the
+hint line pinned and `↑ N more` / `↓ N more` cues, its labels are padded
+before they are styled, and its `▸` marks the lane `l` opens. The **Steps**
+timeline pages (`pgup`/`pgdn`), jumps to either end (`g`/`home`,
+`G`/`end`), and holds its window still until the selection leaves it,
+snapped to whole entries with `↑ N more` / `↓ N more` cue rows; **Output**
+gains `g`/`home` to the top, which drops follow. The **Diff** tab never
+wraps a line — its columns are its meaning — so `shift+←`/`shift+→` pan to
+the end of a line wider than the pane; its summary line carries an `as of
+HH:MM:SS` freshness cue (entering the tab is the refresh), and its
+never-fetched state no longer names `d`, which on that tab switches to
+Output. The **Workflow** tab's inspector gives each field — name, run
+state, prompt or command — its own row, using the rows its budget used to
+leave blank.
 
 **Opening a URL (task 052.6, added 2026-08-29).** The two screens above hand a
 URL to the platform's own opener — `open` on macOS, `xdg-open` on the other
@@ -15309,10 +15406,28 @@ and the digit jumps on every workspace tab, since every tab answers them.
 ### Keys
 
 Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help (`f1` where a text field has the keyboard; *added 2026-09-17, task 114*) · `n` new task · `q` quit (the daemon keeps running;
-a status line reminds of the running task count on exit) · `tab`/`shift+tab` move
-focus between panels · `M` toggle mouse · `@` switch project (*added 2026-10-05,
+a status line reminds of the running task count on exit) · `M` toggle mouse · `@` switch project (*added 2026-10-05,
 task 132.4*: opens the project picker, §15 Layout; the operation is `project`,
 rebindable like every global).
+
+*Amended 2026-10-21 (task 136.2, issue #787):* `tab`/`shift+tab` are no
+longer a global "move focus between panels" — that row had stopped being true
+once every screen took the whole body. On a **main tab** — a screen
+`tui.tabs` names (§12.3): the task board, the issues list, the chats board —
+`tab` switches to the next main tab in the configured order and `shift+tab` to
+the previous, wrapping, when all four hold: the screen is one of `tui.tabs`,
+there are two or more, nothing on it is capturing text (a filter being typed,
+an open form or prompt), and the surface has no `tab` row of its own (the
+new-chat form keeps `tab` for its fields). It works in every connection
+phase, over the stale board, because reaching a screen is not an action on
+the daemon. Everywhere else `tab` keeps its local meaning unchanged — the task
+workspace's tabs, the chat's skill list, a form's fields, a takeover's panes.
+The footer's hint names the tab it goes to (`tab issues`, `tab tasks`), and
+the row is not offered on a screen that is not a main tab or with a single
+one. The root owns the list: a config answer that changes `tui.tabs` applies
+on the next press, and one that drops the screen on view leaves the human
+there. The palette gains a "tasks — the task board" screen row, keyless like
+the others.
 
 Task actions act on the selected task — or on the whole bulk selection when there
 is one (task 011) — and are offered only when the daemon reports them in
@@ -15565,6 +15680,12 @@ only a second press carries the popup's own `esc` meaning. It is a
 no-op at the bottom and it **never quits** — `esc`-to-exit surprises anyone who
 pressed it meaning "back". "Back to the board" is not among its meanings any more,
 because the board is always on screen.
+*Amended 2026-10-21 (task 136.2, issue #787):* on a main tab (Keys, below) the
+bottom of the stack is the screen itself: once the view's own layers are
+closed — filter, form, prompt — `esc` on the issues list or the chats board is
+a no-op while that screen is one of `tui.tabs`, as it always was on the board.
+A list that is not a configured tab still leaves to the board, because it has
+no reason to trap the human.
 
 A filter is view state, not a mode: `tab` **commits** it and moves focus, leaving
 it applied and named in the panel title; only `esc` clears it. Losing a filter
@@ -15741,8 +15862,9 @@ and a vocabulary that named them would be a list of every key; the multi-key
 sets — fold, page, `↑`/`↓`, `K`/`J`, `[`/`]` — because a set is not a shape one
 key can describe (task 093 decision 6); `esc`, because it is the layer stack
 above and every layer is closed by it; `ctrl+c`, because it must always kill
-the TUI; `ctrl+v`, the terminal's paste fallback; `tab`/`shift+tab`, which move
-focus everywhere; the popups' `y`/`n`, which answer the question the popup
+the TUI; `ctrl+v`, the terminal's paste fallback; `tab`/`shift+tab`, which
+switch the main tabs and move focus or complete on every other surface
+*(amended 2026-10-21, task 136.2: they had read "move focus everywhere")*; the popups' `y`/`n`, which answer the question the popup
 prints; and the keys the handlers answer beside the registry — the vim aliases
 `h j k l f b u G`, the output tab's `d` and `r` as retry-connecting. The daemon
 publishes no config event, so a keymap edited outside the TUI's own
@@ -15756,8 +15878,8 @@ its own row in `keymap.fixed` the way `ctrl+j`'s `shift+enter` and
 `alt+enter` are, so both literals a handler matches are held against the
 catalog. The open list is a fixed surface of its own — `chat skills`, not the
 daemon view's `agent skills` — carrying `↑`/`↓`, `tab`, `enter`, `backspace`
-and `esc`. None of them is nameable in `tui.keys`: `tab` and `shift+tab` move
-focus everywhere, and a surface-local row is fixed (task 118 decision 1).
+and `esc`. None of them is nameable in `tui.keys`: `tab` and `shift+tab` are
+fixed (above), and a surface-local row is fixed (task 118 decision 1).
 `/` is never matched as a key here — it is the `filter` operation's default,
 and the sigil is read from the response.
 

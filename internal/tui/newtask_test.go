@@ -759,6 +759,60 @@ func TestNewTaskFieldsEditorOverwritesADuplicateKey(t *testing.T) {
 	}
 }
 
+// The Fields editor's input wraps under its own column: with a long value
+// being typed, no row is wider than the pane, so frame() cuts nothing, and
+// the value's end is on screen (review F13).
+func TestNewTaskFieldsEditorInputFitsThePane(t *testing.T) {
+	n := loadedForm(t)
+	n.update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	moveTo(n, ntFields)
+	press(n, "enter")
+	press(n, "a")
+	typeText(n, "k")
+	press(n, "enter")
+	typeText(n, strings.Repeat("v", 119)+"Z")
+	if n.fieldsEd.editing != 2 {
+		t.Fatalf("editing = %d, want the value editor", n.fieldsEd.editing)
+	}
+	pane := n.paneWidth()
+	lines := n.renderFields()
+	end := false
+	for _, l := range lines {
+		if w := ansi.StringWidth(l); w > pane {
+			t.Errorf("a %d-cell row in a %d-cell pane: %q", w, pane, ansi.Strip(l))
+		}
+		end = end || strings.Contains(ansi.Strip(l), "Z")
+	}
+	if !end {
+		t.Errorf("the value's end is not drawn:\n%s", ansi.Strip(strings.Join(lines, "\n")))
+	}
+}
+
+// ctrl+s from the Fields editor closes it the way esc does, re-asking the
+// resolution with the new fields, so a submit refused for a missing title
+// still leaves an up-to-date preview (review F17).
+func TestNewTaskFieldsEditorCtrlSReresolves(t *testing.T) {
+	for _, k := range []string{"esc", "ctrl+s"} {
+		t.Run(k, func(t *testing.T) {
+			n := loadedForm(t)
+			n.client = offlineClient()
+			moveTo(n, ntFields)
+			press(n, "enter")
+			addField(n, "ticket", "OPS-1")
+			if n.mode != ntFieldsOpen {
+				t.Fatalf("mode = %v, want the fields editor", n.mode)
+			}
+			_, cmd := n.updateKey(registryKey(t, k))
+			if n.mode == ntFieldsOpen {
+				t.Fatalf("%s left the fields editor open", k)
+			}
+			if cmd == nil {
+				t.Errorf("%s closed the editor without re-asking the resolution", k)
+			}
+		})
+	}
+}
+
 func TestNewTaskFieldsEditorDropsAnAbandonedRow(t *testing.T) {
 	n := loadedForm(t)
 	moveTo(n, ntFields)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -63,6 +64,11 @@ type (
 	}
 )
 
+// archivePromptTitleWidth is how much of a chat's title the archive question
+// quotes. Enough to recognise the chat; the row under the cursor carries the
+// rest.
+const archivePromptTitleWidth = 40
+
 // archivePrompt is the inline confirmation an archive takes. force is set on
 // the second pass, after the daemon refused a dirty worktree.
 type archivePrompt struct {
@@ -74,6 +80,9 @@ type archivePrompt struct {
 
 // chatsView is the chats board.
 type chatsView struct {
+	// tabRoot is set by the root while this view is one of tui.tabs (task
+	// 136.2): esc then stops at the view's own layers instead of leaving.
+	tabRoot bool
 	// projectScope is the root's selected project (task 132.2). A switch
 	// reloads, and stamps drops a load issued for the previous project or
 	// overtaken by a newer one (task 132.5).
@@ -621,6 +630,11 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			v.restoreSelection()
 			return v, nil
 		}
+		if v.tabRoot {
+			// A main tab is not left by esc (task 136.2), the issues
+			// list's rule.
+			return v, nil
+		}
 		return v, func() tea.Msg { return selectViewMsg{id: viewHome} }
 	case "up", "k":
 		v.moveCursor(-1)
@@ -672,7 +686,10 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			}
 			v.confirm = &archivePrompt{
 				id: c.ID, title: c.Title,
-				text: fmt.Sprintf("archive %q and remove its worktree? (y/n)", c.Title),
+				// The title is cut: a long one pushed `(y/n)` off the line,
+				// and the answer keys are the part a reader needs (#801 F2).
+				text: fmt.Sprintf("archive %q and remove its worktree? (y/n)",
+					ansi.Truncate(c.Title, archivePromptTitleWidth, "…")),
 			}
 		}
 	case opKey(keymap.Scope):
@@ -737,7 +754,10 @@ func chatScopeLabel(s apiclient.ArchivedScope) string {
 	case apiclient.ArchivedOnly:
 		return "archived, handed-off and closed chats"
 	case apiclient.ArchivedAll:
-		return "every chat, terminal ones included"
+		// Short, because the header carries it beside the count, the
+		// waiting badge and `updated hh:mm:ss`, and a longer label pushed
+		// the stamp off an 80-column header (#801 F11).
+		return "all chats"
 	default:
 		return "live chats"
 	}
@@ -826,3 +846,5 @@ func (v *chatsView) archiveCmd(id int64, force bool) tea.Cmd {
 		return chatArchivedMsg{id: id, err: err}
 	}
 }
+
+func (v *chatsView) setTabRoot(on bool) { v.tabRoot = on }

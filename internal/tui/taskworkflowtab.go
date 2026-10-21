@@ -357,10 +357,21 @@ func (t *taskView) sizeWorkflow() {
 	w.graph.SetSize(max(w.width, 1), max(w.height, 1))
 }
 
-// workflowTabChrome is the tab strip, its blank line, the inspector rule and
-// the two inspector rows. It is fixed so the viewport's arithmetic does not
-// change when a node with more detail is selected.
-const workflowTabChrome = 7
+// workflowInspectorRows is the strip under the graph: its rule and one row
+// per field — the node's name, its run state, and its prompt or command
+// (#799 W9/W10). One field per row, because joining them on one line put a
+// long step name and its run state in competition for the same 80 columns and
+// the clip took whichever came second. It is fixed so the viewport's
+// arithmetic does not change when a node with more detail is selected, and
+// the graph gets exactly the rest of the tab body, so nothing is left blank
+// under the inspector.
+const workflowInspectorRows = 4
+
+// workflowTabChrome is what sizeWorkflow subtracts from the whole view's
+// height before the first render measures the body: the title row, the tab
+// strip and its blank line, and the inspector. renderWorkflow re-sizes from
+// the body height it is actually given.
+const workflowTabChrome = 3 + workflowInspectorRows
 
 // updateWorkflowKey is the tab's keyboard. It is deliberately short: `tab`,
 // `[`/`]` and `1`–`5` are the workspace's and never reach here, and `e`/`R`
@@ -382,7 +393,7 @@ func (t *taskView) renderWorkflow(width, height int) string {
 		return ""
 	}
 	t.width = width
-	w.width, w.height = width, max(height-workflowTabChrome+2, 1)
+	w.width, w.height = width, max(height-workflowInspectorRows, 1)
 	w.graph.SetSize(max(width, 1), max(w.height, 1))
 
 	switch {
@@ -418,26 +429,105 @@ func (w *workflowTab) renderFindings(width int) string {
 	return strings.Join(rows, "\n")
 }
 
-// renderInspector is the strip under the graph: the selected node's identity
-// and what its step did. Run state comes first — this surface exists to
-// answer "where is it", and the authored fields are the same ones the
-// workflows screen shows.
+// renderInspector is the strip under the graph: the selected node's name,
+// what its step did, and what it was asked to do — one field per row, each
+// clipped to the width with an ellipsis that says it was. It is always
+// workflowInspectorRows lines, so the graph above it keeps one height.
+//
+// The rows are claimed in order of what the tab is for: the name, so the
+// reader knows which box is selected; the run state, because this surface
+// exists to answer "where is it"; then the prompt or command. A node that
+// lacks one of those (a lane header has no run of its own, a frame no prompt)
+// gives its row to the remaining authored fields rather than leaving it empty.
 func (w *workflowTab) renderInspector(width int) string {
-	rule := styleDim.Render(strings.Repeat("─", max(width, 1)))
+	rows := []string{styleDim.Render(strings.Repeat("─", max(width, 1)))}
 	node, ok := w.graph.SelectedNode()
+	var fields []string
 	if !ok {
-		return rule + "\n" + styleDim.Render("  no node selected")
+		fields = []string{styleDim.Render("no node selected")}
+	} else {
+		fields = w.inspectorFields(node)
 	}
-	var parts []string
-	if rs, reached := w.graph.Overlay().Reached(node.ID); reached {
-		parts = append(parts, "run: "+describeRun(rs))
-	} else if node.StepID != "" {
-		parts = append(parts, "run: not reached")
+	for i := range workflowInspectorRows - 1 {
+		line := ""
+		if i < len(fields) {
+			line = "  " + ansi.Truncate(fields[i], max(width-2, 1), "…")
+		}
+		rows = append(rows, line)
 	}
+	return strings.Join(rows, "\n")
+}
+
+// inspectorFields is the selected node's rows before clipping. The last row a
+// node has room for carries every field left over, joined, because "id",
+// "type", "agent" and the rest are short and a glance is what the strip is.
+func (w *workflowTab) inspectorFields(node workflowgraph.Node) []string {
+	var name string
+	var rest []string
 	for _, f := range w.graph.Detail() {
-		parts = append(parts, f.Label+": "+f.Value)
+		if f.Label == "name" {
+			// The node's label leads Detail as "name", and a step's authored
+			// name follows it as another; the label already is that name, or
+			// the id when there is none, so one row says it.
+			if name == "" {
+				name = "name: " + f.Value
+			}
+			continue
+		}
+		rest = append(rest, f.Label+": "+f.Value)
 	}
-	return rule + "\n  " + ansi.Truncate(strings.Join(parts, "   "), max(width-2, 1), "…")
+	var out []string
+	if name != "" {
+		out = append(out, name)
+	}
+	if rs, reached := w.graph.Overlay().Reached(node.ID); reached {
+		out = append(out, "run: "+describeRun(rs))
+	} else if node.StepID != "" {
+		out = append(out, "run: not reached")
+	}
+	if body := w.inspectorBody(); body != "" {
+		out = append(out, body)
+	}
+	room := workflowInspectorRows - 1 - len(out)
+	switch {
+	case len(rest) == 0:
+	case room > 0:
+		out = append(out, strings.Join(rest, "   "))
+	case len(out) > 0:
+		// Every row is taken: the extra fields trail the last one, where the
+		// clip treats them as the least important thing on the strip.
+		out[len(out)-1] += "   " + strings.Join(rest, "   ")
+	}
+	return out
+}
+
+// inspectorBody is the selected step's prompt or command, as its first line
+// — a step body runs to pages, and the strip is a glance at which one this
+// is, not a reading of it. A body longer than
+// that line says so with the ellipsis rather than passing for the whole.
+func (w *workflowTab) inspectorBody() string {
+	for _, sec := range w.graph.FullDetail() {
+		for _, f := range sec.Fields {
+			label := ""
+			switch f.Label {
+			case "prompt":
+				label = "prompt"
+			case "run":
+				// "run:" is already the run state's label on the row above.
+				label = "command"
+			default:
+				continue
+			}
+			body := strings.TrimSpace(f.Value)
+			first, more, _ := strings.Cut(body, "\n")
+			first = strings.TrimSpace(first)
+			if strings.TrimSpace(more) != "" {
+				first += " …"
+			}
+			return label + ": " + first
+		}
+	}
+	return ""
 }
 
 // describeRun spells one node's run state in words. The glyph on the node is

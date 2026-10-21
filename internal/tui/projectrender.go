@@ -94,8 +94,13 @@ func (p *projectsView) attentionLines(attn []apiclient.Task, width int) []string
 		if p.inAttention && i == p.attnCursor {
 			marker = styleFocus.Render("› ")
 		}
+		// The name is capped, not the row's tail (#803): a long name cut at
+		// the end of the line took #id, state and title with it, and those
+		// are what the row is for. The table's own cap, or a third of the
+		// width when that is less.
+		name := ansi.Truncate(t.ProjectName, max(min(pcolMaxName, width/3), 1), "…")
 		line := fmt.Sprintf("%s%s  #%-4d %s  %s", marker,
-			styleTitle.Render(t.ProjectName), t.ID, renderBoardState(t), t.Title)
+			styleTitle.Render(name), t.ID, renderBoardState(t), t.Title)
 		out = append(out, ansi.Truncate(line, max(width, 1), "…"))
 	}
 	cursor := 0
@@ -121,7 +126,7 @@ func (p *projectsView) syncTable(rows []apiclient.Project, width, height int) {
 	// screen it belongs on one, or nothing is selected and every key that
 	// acts on a row goes nowhere.
 	if p.tbl.Cursor() < 0 && len(rows) > 0 {
-		p.tbl.SetCursor(0)
+		moveCursorTo(&p.tbl, 0)
 	}
 	p.overviewCols, p.overviewName = cols, name
 }

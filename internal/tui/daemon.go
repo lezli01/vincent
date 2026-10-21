@@ -505,8 +505,15 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		d.focusConfig = !d.focusConfig
 		return d, nil
 	case "enter", "e":
-		if k, ok := d.selectedKey(); ok && d.configOK {
+		// Only the config list's own cursor is a choice the user can see.
+		// With the log focused that cursor is wherever it was left — listen
+		// by default, a key that decides what the daemon exposes — so the key
+		// moves focus to the list rather than opening an editor on it (#803).
+		if !d.focusConfig {
 			d.focusConfig = true
+			return d, nil
+		}
+		if k, ok := d.selectedKey(); ok && d.configOK {
 			d.form = newConfigForm(k, d.config)
 		}
 		return d, nil
@@ -585,6 +592,38 @@ func (d *daemonView) syncFollowToViewport() {
 // first keystroke.
 func (d *daemonView) capturesInput() bool {
 	return d.form != nil || d.statusLine != nil || d.skills != nil
+}
+
+// bindingContext names the layer that owns the keyboard (#803): each of the
+// three takeovers answers its own keys, so the footer and ? must show those
+// rather than the log pane's underneath.
+func (d *daemonView) bindingContext() bindingContext {
+	switch {
+	case d.form != nil:
+		return ctxConfigEdit
+	case d.statusLine != nil:
+		return ctxStatusLine
+	case d.skills != nil:
+		return ctxSkills
+	default:
+		return ctxDaemon
+	}
+}
+
+// liveBindings drops `enter edit` while the log has focus: there enter only
+// moves focus to the config list (#803).
+func (d *daemonView) liveBindings(rows []binding) []binding {
+	if d.focusConfig {
+		return rows
+	}
+	out := rows[:0:0]
+	for _, b := range rows {
+		if b.context == ctxDaemon && b.key == "enter" {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 // reportedSkills is the §9.8 group off the doctor report, empty when none has

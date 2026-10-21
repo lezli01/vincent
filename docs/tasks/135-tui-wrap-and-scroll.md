@@ -1,6 +1,6 @@
 # 135 — TUI wrap and scroll: one wrap helper, one scrolling pane, screen by screen
 
-**Status:** 🔄 in progress (1/1)
+**Status:** 🔄 in progress (4/6)
 
 The umbrella record for [#784](https://github.com/lezli01/vincent/issues/784):
 text that "can not be read" across the TUI, and an opened issue that cannot be
@@ -44,6 +44,65 @@ Written into `internal/tui/doc.go` and spec §15:
   fits its width with the close keys never cut, and it scrolls in a
   `scrollPane`, the wheel included. The root's wheel path subtracts
   `chromeTop()`, as clicks do. ✓ 2026-10-20
+- [~] **135.2** ([#797](https://github.com/lezli01/vincent/issues/797)) The
+  new-task form. Done (2026-10-21): its title, branch and priority rows, open
+  pickers and Fields editor input are sized from the pane the form is drawn
+  in, not the terminal (N2), so no wrapped row reaches `frame()`; and
+  `ctrl+s` creates from every mode but the discard prompt, keeping what is
+  open first (N6). Open: N3–N5 and N7–N11 of the issue — row errors wrapped
+  under their row, two-line Fields rows, windowing on the expansion's focus
+  line, the Review stage's hints, marking every failed stage, the
+  description's line numbers, wrapped collapsed rows, the empty-picker
+  explanation — and per-mode footer contexts.
+- [~] **135.3** The workflow editor, the workflow overview and the trigger
+  screens (#802). Done (2026-10-21): the schema form (`layoutFormRows`,
+  shared by the workflow editor and the triggers form) windows its rows
+  around the cursor with the error and key hint pinned below (WF-6, TR-2);
+  the cursor row's value and help wrap under the value column and other
+  rows truncate with `…` (WF-7, WF-8); in-place input is indented under the
+  value column and the label column is sized to the widest label, capped at
+  24 (WF-9, WF-10); refusal notes go on their own line (TR-3); the full-pane
+  editor draws every line in the height left to it (TR-1); the step modal
+  owns the mouse (WF-12); the overview and modal hints use `opKey` (WF-13);
+  the triggers list puts POLL after ARMED so it shows at 80 columns, and its
+  banner wraps and its head lines are cut to the width (TR-7, TR-8). Still
+  open: the overview, expanded entry and graph errors in a `scrollPane`
+  (WF-2, WF-4, WF-11, WF-14); the dry run scrolling with its footer pinned
+  (TR-4); the ledger's wrapped delivery error and stated 50-row cap (TR-5,
+  TR-6); facts and findings past `trigDetailLines` (TR-9); and
+  pgup/pgdn/home/end in the triggers list and ledger (PL-9).
+- [x] **135.4** The projects overview and the daemon view at 80×24, and the
+  footer in their sub-modes (#803). Both views answer `contextual`: the
+  project form, the config editor, the skills offer and the status-line flow
+  each show their own keys, the first and last as new contexts. `enter`/`e`
+  with the daemon log focused moves to the config list and never edits. The
+  daemon view budgets its height: identity stays pinned, config, database and
+  adapters scroll in a `scrollPane`, and the log keeps at least three lines.
+  The config editor wraps its help, default, error and confirmation with
+  `wrapText`. A needs-you row caps the project name so the task survives.
+  Left for a follow-up: DM-2, DM-9, DM-10, DM-11, PR-5, PR-6, PR-8 to PR-12,
+  and an `e edit` hint on the overview, which needs a vocabulary exception of
+  its own. ✓ 2026-10-21
+- [x] **135.5** The issue detail and the issue form (#795). The detail's
+  title, facts, notes and prompt wrap instead of clipping; the source badge
+  becomes a `source` fact and a `sync` fact is added; page plus prompt never
+  exceed the pane; `ctrl+l` and the new `ctrl+y` cover the comments and the
+  source URL. The form windows its rows around the focused element with its
+  error and key line pinned. ✓ 2026-10-21
+- [x] **135.6** The task workspace's panes scroll to their end (#799). The
+  Overview is a `scrollPane` (`pgup`/`pgdn`, `home`/`end`, the wheel) and its
+  failure card budgets by priority — headline, actions, links, meaning,
+  evidence — so a taller screen never shows fewer keys; the outcome card's
+  result grows into the free rows; a fan-out parent names the lanes that need
+  a human and offers `l`, and links `1 steps` rather than an empty
+  transcript. The Pull Request tab windows its checks around the cursor with
+  the header and hint pinned, pads labels before styling, and puts `▸` on the
+  lane `l` opens. The Steps timeline pages and jumps (`pgup`/`pgdn`,
+  `g`/`home`, `G`/`end`) with a still, whole-entry window and `↑/↓ N more`
+  cues; Output gains `g`/`home`. The Diff tab pans long lines on
+  `shift+←`/`→`, shows its age, and its empty state no longer names `d`. The
+  Workflow inspector is one field per row. Every new key is a registry row.
+  ✓ 2026-10-21
 
 ## Decisions
 
@@ -70,3 +129,10 @@ Written into `internal/tui/doc.go` and spec §15:
    makes a line, and a label with no value is still drawn. This is what the
    replaced helpers did between them — `appendWrappedIndented` drew blank
    paragraphs empty, `wrappedHeaderValue` drew an empty value's label.
+5. **The diff pans; it does not soft-wrap** (2026-10-21, 135.6, #799). A
+   diff's columns are its meaning, and a wrapped `+` line reads as two lines
+   of the change. So a line wider than the pane is reached by `shift+←`/`→`,
+   moved onto the viewport's own sideways keys because the plain arrows and
+   `h`/`l` are the fold keys on that tab, and the viewport clamps the pan to
+   the longest line. *Beat:* soft-wrapping the diff, which keeps every byte
+   on screen but loses the one-change-per-row reading.

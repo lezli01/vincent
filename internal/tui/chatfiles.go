@@ -354,6 +354,11 @@ func (l *chatFileList) core() *chatInlineList {
 	// filled because the core reads it, and a blank line would be the one
 	// thing worse than the sentence.
 	l.noMatchText = "nothing matches"
+	// The keys go on their own line under the rows (issue #801 F14).
+	l.keys = ""
+	if len(l.rows) > 0 {
+		l.keys = "tab complete · ↑/↓ pick · esc back to the draft"
+	}
 	return &l.chatInlineList
 }
 
@@ -372,9 +377,6 @@ func (l *chatFileList) titledCore() *chatInlineList {
 	}
 	if note := c.capNote(); note != "" {
 		tail = append(tail, note)
-	}
-	if len(l.rows) > 0 {
-		tail = append(tail, "tab complete · ↑/↓ pick · esc back to the draft")
 	}
 	c.tail = tail
 	return c

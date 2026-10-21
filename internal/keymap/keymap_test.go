@@ -203,6 +203,19 @@ func TestLenientStillRefusesTheUsersOwnClash(t *testing.T) {
 	}
 }
 
+// TestLenientRefusesTheRootsTabKeys: tab and shift+tab switch the main tabs
+// on three surfaces and move focus on the rest, but they are the root's own
+// fixed keys, and those never yield on load (review F1).
+func TestLenientRefusesTheRootsTabKeys(t *testing.T) {
+	for _, key := range []string{"tab", "shift+tab", "esc", "ctrl+c", "ctrl+v"} {
+		t.Run(key, func(t *testing.T) {
+			if _, warnings, err := BuildLenient(map[string]string{"mouse": key}); err == nil {
+				t.Fatalf("mouse on %s was accepted on load, with %d warnings", key, len(warnings))
+			}
+		})
+	}
+}
+
 // TestLenientTakesATodayClash: retry on o is refused on write because o is
 // browser's; on load the user's binding wins and browser is unbound.
 func TestLenientTakesATodayClash(t *testing.T) {

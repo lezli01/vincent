@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,12 +27,9 @@ import (
 // attempt, never refetched on an event (T3.2, task 129 decision 7).
 
 const (
-	// evidenceLines is how many lines of evidence the card shows at most,
-	// fewer when the height budget will not hold them.
+	// evidenceLines is how many lines of a transcript's evidence the card
+	// shows at most, fewer when the height budget will not hold them.
 	evidenceLines = 5
-	// cardCollapseRows is the body height below which the card keeps only
-	// its first line and the keys of its actions (brief decision 8).
-	cardCollapseRows = 12
 	// actionEditRetry is the card's name for `E`: not a §6 action of its own
 	// but retry with an edited step, so it sits directly after retry.
 	actionEditRetry = "edit_retry"
@@ -332,19 +330,83 @@ func daemonLogLine() string {
 	return "details are in the daemon log"
 }
 
-// failureCardLines renders the card within the given height budget. A
-// collapsed card — the body is under cardCollapseRows — is its first line
-// and its actions' keys and nothing else: a section is dropped whole, never
-// cut in half.
-func (t *taskView) failureCardLines(width, height int, collapse bool) []string {
+// cardParts are the full card's sections, each a run of lines that is kept
+// or dropped whole, never cut in half.
+type cardParts struct {
+	headline string
+	meaning  []string
+	evidence []string
+	status   []string
+	blame    []string
+	actions  []string
+}
+
+// essential is the card that must fit whole before anything else is added:
+// the headline, the lane it blames and what can be done.
+func (p cardParts) essential() int { return 1 + len(p.blame) + len(p.actions) }
+
+// lines assembles the card in reading order from the sections the budget
+// kept.
+func (p cardParts) lines(meaning, evidence, status bool) []string {
+	out := []string{p.headline}
+	if meaning {
+		out = append(out, p.meaning...)
+	}
+	if evidence {
+		out = append(out, p.evidence...)
+	}
+	if status {
+		out = append(out, p.status...)
+	}
+	out = append(append(out, p.blame...), p.actions...)
+	return out
+}
+
+// collapsedCard is the card at its smallest: its first line and its
+// actions' keys on one line.
+func (t *taskView) collapsedCard() []string {
 	c := t.failureCard()
 	actions := cardActions(c.reason, t.detail.task.AvailableActions)
-	if collapse {
-		return []string{c.renderHeadline(), c.renderActionKeys(actions)}
+	return []string{c.renderHeadline(), c.renderActionKeys(actions)}
+}
+
+// failureCardLines renders the full card within the given height budget,
+// spending rows in priority order (#799 W1): the headline and the actions
+// are the card's floor — the caller collapses it when even they will not
+// fit — then the reason's meaning, then the evidence, shrunk to what is left
+// before it is dropped, then the status. budget < 0 means unbounded.
+func (t *taskView) failureCardLines(width, budget int) []string {
+	c := t.failureCard()
+	actions := cardActions(c.reason, t.detail.task.AvailableActions)
+	if budget < 0 {
+		return t.cardParts(c, actions, width, math.MaxInt).lines(true, true, true)
 	}
-	full := t.cardBody(c, actions, width, 0)
-	n := min(evidenceLines, max(height-len(full)-2, 1)) // 2: the jump links under the card
-	return t.cardBody(c, actions, width, n)
+	p := t.cardParts(c, actions, width, 1)
+	left := budget - p.essential()
+	meaning := len(p.meaning) <= left
+	if meaning {
+		left -= len(p.meaning)
+	}
+	// The evidence section's own three rows (blank, heading, blank) and at
+	// least one line of it, or none of it.
+	evidence := false
+	if len(p.evidence) > 0 {
+		if n := left - 3; n >= 1 {
+			p = t.cardParts(c, actions, width, n)
+			evidence = len(p.evidence) <= left
+		}
+	}
+	if evidence {
+		left -= len(p.evidence)
+	}
+	status := len(p.status) <= left
+	return p.lines(meaning, evidence, status)
+}
+
+// minCardRows is how many rows the full card needs at its floor.
+func (t *taskView) minCardRows(width int) int {
+	c := t.failureCard()
+	return t.cardParts(c, cardActions(c.reason, t.detail.task.AvailableActions), width, 1).essential()
 }
 
 func (c failureCard) renderHeadline() string {
@@ -374,40 +436,43 @@ func (c failureCard) renderActionKeys(actions []cardAction) string {
 	return "  " + strings.Join(parts, styleDim.Render(" · "))
 }
 
-func (t *taskView) cardBody(c failureCard, actions []cardAction, width, n int) []string {
-	out := []string{c.renderHeadline()}
+// cardParts renders the card's sections with at most n lines of evidence.
+func (t *taskView) cardParts(c failureCard, actions []cardAction, width, n int) cardParts {
+	p := cardParts{headline: c.renderHeadline()}
 	if c.reason != "" {
 		if m := reasons.Explain(c.reason).Meaning; m != "" {
-			out = append(out, wrapText(m, width, hanging("    "))...)
+			p.meaning = wrapText(m, width, hanging("    "))
 		}
 	}
 	// A fan-out's evidence is the lane it blames, drawn below.
 	if !c.aborted && !c.blamed {
-		out = append(out, "", section("Evidence"), "")
-		out = append(out, t.evidenceBody(c, width, n)...)
+		p.evidence = append([]string{"", section("Evidence"), ""}, t.evidenceBody(c, width, n)...)
 	}
 	if c.status != "" {
-		out = append(out, "", styleDim.Render(ansi.Truncate("  status  “"+c.status+"”", max(width, 1), "…")))
+		p.status = []string{"", styleDim.Render(ansi.Truncate("  status  “"+c.status+"”", max(width, 1), "…"))}
 	}
 	if c.blamed {
-		out = append(out, "")
-		out = append(out, c.laneBlameLines(width)...)
+		p.blame = append([]string{""}, c.laneBlameLines(width)...)
 	}
-	out = append(out, "", section("What you can do"), "")
+	p.actions = []string{"", section("What you can do"), ""}
 	if len(actions) == 0 {
-		out = append(out, styleDim.Render("  no action available"))
+		p.actions = append(p.actions, styleDim.Render("  no action available"))
 	}
 	for _, a := range actions {
 		line := "  " + styleKey.Render(fmt.Sprintf("%-6s", a.key)) + " " +
 			strings.ReplaceAll(a.action, "_", " ") + styleDim.Render(" — "+a.does)
-		out = append(out, ansi.Truncate(line, max(width, 1), "…"))
+		p.actions = append(p.actions, ansi.Truncate(line, max(width, 1), "…"))
 	}
-	return out
+	return p
 }
 
-// evidenceBody is the evidence section's lines. n is 0 while the height is
-// still being measured.
+// evidenceBody is the evidence section's lines, at most n of them. A
+// transcript gives its last evidenceLines at most; the daemon's block_detail
+// is the whole of what a step-less block left, so it takes every row of the
+// budget and says how much it left out when even that is short (task 070
+// decision 2).
 func (t *taskView) evidenceBody(c failureCard, width, n int) []string {
+	n = max(n, 1)
 	quote := func(lines []string) []string {
 		out := make([]string, len(lines))
 		for i, l := range lines {
@@ -417,7 +482,13 @@ func (t *taskView) evidenceBody(c failureCard, width, n int) []string {
 	}
 	fallback := func() []string {
 		if c.detail != "" {
-			return wrapText(c.detail, width, hanging("    "))
+			lines := wrapText(c.detail, width, hanging("    "))
+			if len(lines) <= n {
+				return lines
+			}
+			kept := lines[:max(n-1, 0)]
+			return append(kept, styleDim.Render("    … "+
+				plural(len(lines)-len(kept), "more line", "more lines")))
 		}
 		return []string{styleDim.Render("    " + daemonLogLine())}
 	}
@@ -431,7 +502,7 @@ func (t *taskView) evidenceBody(c failureCard, width, n int) []string {
 	if ev.err != nil {
 		return fallback()
 	}
-	lines := selectEvidence(c.reason, ev.records, max(n, 1))
+	lines := selectEvidence(c.reason, ev.records, min(n, evidenceLines))
 	if len(lines) == 0 {
 		return fallback()
 	}

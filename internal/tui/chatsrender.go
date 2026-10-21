@@ -19,6 +19,12 @@ func (v *chatsView) render(width, height int) string {
 	if width < 4 || height < 2 {
 		return ""
 	}
+	if v.create != nil {
+		// The form is the whole screen while it is open, held to the board's
+		// height like anything else the board returns: a form taller than
+		// the pane would push the frame's own footer off it (#801 F13).
+		return clipLines(v.create.render(width, height), height)
+	}
 	lines := make([]string, 0, height)
 	lines = append(lines, v.headerLine(width))
 	if v.filtering || v.filter.Value() != "" {
@@ -28,6 +34,11 @@ func (v *chatsView) render(width, height int) string {
 	lines = append(lines, "")
 
 	body, cursorRow := v.bodyLines(width)
+	if v.hasRows() {
+		// The heading sits above the window rather than in it, so scrolling
+		// a long board never takes the column names with it.
+		lines = append(lines, v.columnHeading())
+	}
 	footer := v.footerLines(width)
 	room := max(height-len(lines)-len(footer), 1)
 	lines = append(lines, window(body, cursorRow, room)...)
@@ -35,11 +46,16 @@ func (v *chatsView) render(width, height int) string {
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
 	}
-	out := strings.Join(lines, "\n")
-	if v.create != nil {
-		return v.create.render(width, height)
+	return strings.Join(lines, "\n")
+}
+
+// clipLines keeps at most height lines of a rendered block.
+func clipLines(s string, height int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
 	}
-	return out
+	return strings.Join(lines, "\n")
 }
 
 // headerLine says what the board is showing and how many chats are waiting on
@@ -105,13 +121,51 @@ func (v *chatsView) bodyLines(width int) (lines []string, cursorRow int) {
 	return lines, cursorRow
 }
 
+// hasRows reports whether the body is a list of chats rather than one of its
+// empty or resolving messages, which is when the column heading is drawn.
+func (v *chatsView) hasRows() bool {
+	return v.project.id != 0 && len(v.rows()) > 0
+}
+
+// Column widths of a chat row, shared by rowLine and columnHeading so the
+// heading cannot drift from the cells it names. The state cell fits the
+// widest label, "waiting on you", with a cell to spare.
+const (
+	chatColID       = 5
+	chatColState    = 15
+	chatColAgent    = 8
+	chatColActivity = 11
+)
+
+// chatRowCursorWidth is the display width of the cursor gutter, "▸ " or two
+// spaces. Display width, not len: the glyph is three bytes and one column,
+// and counting bytes left every title two columns short of the edge (AR-8).
+var chatRowCursorWidth = ansi.StringWidth("▸ ")
+
+// chatRowFixed lays out the cells ahead of the title. Every cell is padded
+// by display width: the state cell arrives styled, and a running one carries
+// a multi-byte spinner frame, so a byte-counting %-15s shifted every later
+// column by its escape bytes (#801 F11).
+func chatRowFixed(id, state, agent, activity string) string {
+	return padRight(id, chatColID+1) +
+		padRight(state, chatColState+1) +
+		padRight(agent, chatColAgent+1) +
+		strings.Repeat(" ", max(chatColActivity-ansi.StringWidth(activity), 0)) + activity + "  "
+}
+
+// columnHeading names the board's columns, dim, aligned with chatRowFixed.
+func (v *chatsView) columnHeading() string {
+	return styleDim.Render(strings.Repeat(" ", chatRowCursorWidth) +
+		chatRowFixed("id", "state", "agent", "last active") + "title")
+}
+
 func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	cursor := "  "
 	if selected {
 		cursor = "▸ "
 	}
 	c := r.chat
-	// Columns: id, state, agent, turns, last activity, then the title with
+	// Columns: id, state, agent, last activity, then the title with
 	// whatever width is left. The title is last because it is the only cell
 	// that can usefully be truncated.
 	// The activity cell is wide enough for the absolute stamp a terminal chat
@@ -124,11 +178,10 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	if c.State == "running" {
 		state += " " + spinnerFrame(v.frame)
 	}
-	fixed := fmt.Sprintf("%-5s %-15s %-8s %5s %11s  ",
+	fixed := chatRowFixed(
 		"#"+strconv.FormatInt(c.ID, 10),
 		applyStateStyle(c.State, state),
 		c.Agent,
-		"", // the turn count is not on the list DTO; see chatTurnsCell
 		chatActivity(*c, v.now()))
 	title := c.Title
 	// A chat opened on a task says which one ahead of its title (task 119):
@@ -138,7 +191,7 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	if c.LinkedTaskID != nil {
 		title = styleDim.Render(fmt.Sprintf("task #%d · ", *c.LinkedTaskID)) + title
 	}
-	if room := width - len(cursor) - ansi.StringWidth(fixed); room > 0 {
+	if room := width - chatRowCursorWidth - ansi.StringWidth(fixed); room > 0 {
 		title = ansi.Truncate(title, room, "…")
 	}
 	return cursor + fixed + title
@@ -173,7 +226,9 @@ func (v *chatsView) footerLines(width int) []string {
 		return append([]string{""}, wrapStatus(v.delPrompt.question(), width, styleAsk)...)
 	}
 	if v.confirm != nil {
-		return []string{"", " " + styleWarn.Render(v.confirm.text)}
+		// Wrapped for the reason the delete question is: cut to one line,
+		// a long question loses its `(y/n)` (#801 F2).
+		return append([]string{""}, wrapStatus(v.confirm.text, width, styleWarn)...)
 	}
 	if v.note != "" {
 		style := styleDim

@@ -1474,6 +1474,13 @@ Type "triggers"
 Sleep 1s
 Enter
 Sleep 4s
+Type "?"
+Sleep 2s
+# the palette ghost (#743), repainted away: see tape()
+Down 6
+Sleep 2s
+Escape
+Sleep 2s
 Screenshot "'"$OUT"'/tui-triggers.png"
 Sleep 2s
 '
@@ -1488,6 +1495,19 @@ Type "chats"
 Sleep 1s
 Enter
 Sleep 4s
+# the palette ghost (#743). The help repaint tape() describes does not
+# work here: three chats leave the rows under them empty, and the help
+# overlay leaves a corner of its own in them too when it closes. Opening the idle chat at
+# the bottom — conversation and composer over every row, no popup box — and
+# leaving it does; the cursor then goes back to the top row.
+Down 2
+Sleep 1s
+Enter
+Sleep 4s
+Escape
+Sleep 3s
+Up 2
+Sleep 2s
 Screenshot "'"$OUT"'/tui-chats.png"
 Sleep 2s
 '
@@ -1505,6 +1525,13 @@ Type "chats"
 Sleep 1s
 Enter
 Sleep 4s
+Type "?"
+Sleep 2s
+# the palette ghost (#743), repainted away: see tape()
+Down 6
+Sleep 2s
+Escape
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "rate limit"
@@ -1560,6 +1587,13 @@ Type "chats"
 Sleep 1s
 Enter
 Sleep 4s
+Type "?"
+Sleep 2s
+# the palette ghost (#743), repainted away: see tape()
+Down 6
+Sleep 2s
+Escape
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "rate limit"
@@ -2032,6 +2066,13 @@ Type "chats"
 Sleep 1s
 Enter
 Sleep 4s
+Type "?"
+Sleep 2s
+# the palette ghost (#743), repainted away: see tape()
+Down 6
+Sleep 2s
+Escape
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "rate limit"
@@ -2075,6 +2116,13 @@ Type "chats"
 Sleep 1s
 Enter
 Sleep 4s
+Type "?"
+Sleep 2s
+# the palette ghost (#743), repainted away: see tape()
+Down 6
+Sleep 2s
+Escape
+Sleep 2s
 Type "/"
 Sleep 500ms
 Type "rate limit"

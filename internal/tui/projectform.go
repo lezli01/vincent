@@ -195,6 +195,14 @@ func (f *projectForm) refreshFrom(projects []apiclient.Project) {
 }
 
 func (f *projectForm) updateKey(msg tea.KeyPressMsg) tea.Cmd {
+	// ctrl+s saves from anywhere in the form (review F7), as it does in the
+	// new-task form (#797): it ends the edit, or closes the list unpicked —
+	// the workflow list has no free-text row to commit — and submits.
+	if msg.String() == "ctrl+s" && (f.editing || f.pick != nil) {
+		f.editing, f.pick = false, nil
+		f.blurAll()
+		return f.submit()
+	}
 	if f.pick != nil {
 		return f.updatePicking(msg)
 	}

@@ -7,10 +7,16 @@ package keymap
 // so a new fixed key that is not recorded here fails a test rather than
 // leaving an override free to shadow it.
 var fixed = []Fixed{
-	{"global", "tab", "move to the next task tab"},
+	// tab and shift+tab switch the main tabs on the board, the chats board and
+	// the issues list, and move focus or complete on every other surface. They
+	// stay global so no override can claim them on any surface (task 136
+	// decision 11): yield refuses a clash with a global fixed key, never a
+	// per-surface one.
+	{"global", "tab", "switch the main tabs, or move focus or complete"},
 	{"global", "ctrl+v", "paste into the focused field"},
 	{"global", "esc", "close one layer"},
 	{"global", "ctrl+c", "quit the TUI"},
+	{"task table", "tab", "switch to the next main tab"},
 	{"task table", "down", "move the selection"},
 	{"task table", "g", "group the tasks"},
 	{"task table", "space", "select this task for a bulk action"},
@@ -30,6 +36,7 @@ var fixed = []Fixed{
 	{"task overview", "1", "jump to a tab by its digit"},
 	{"task overview", "d", "switch between the Output and Diff tabs"},
 	{"task overview", "U", "open this lane's parent task"},
+	{"task overview", "pgdown", "scroll the overview a page"},
 	{"timeline", "tab", "move between the task's tabs"},
 	{"timeline", "]", "move to the next tab"},
 	{"timeline", "down", "select an attempt"},
@@ -42,6 +49,8 @@ var fixed = []Fixed{
 	{"timeline", "U", "open this lane's parent task"},
 	{"timeline", "0", "jump to a tab by its digit"},
 	{"timeline", "d", "switch between the Output and Diff tabs"},
+	{"timeline", "pgdown", "page the attempts"},
+	{"timeline", "g", "jump to the first attempt"},
 	{"task details", "tab", "move between the task's tabs"},
 	{"task details", "]", "move to the next tab"},
 	{"task details", "down", "select a task-detail section"},
@@ -63,6 +72,7 @@ var fixed = []Fixed{
 	{"output", "U", "open this lane's parent task"},
 	{"output", "0", "jump to a tab by its digit"},
 	{"output", "d", "switch between the Output and Diff tabs"},
+	{"output", "g", "jump to the top of the output"},
 	{"diff", "tab", "move between the task's tabs"},
 	{"diff", "]", "move to the next tab"},
 	{"diff", "down", "move between the files"},
@@ -72,6 +82,8 @@ var fixed = []Fixed{
 	{"diff", "U", "open this lane's parent task"},
 	{"diff", "0", "jump to a tab by its digit"},
 	{"diff", "d", "switch between the Output and Diff tabs"},
+	{"diff", "pgdown", "page the diff"},
+	{"diff", "shift+right", "pan long lines"},
 	{"new task", "enter", "open the focused field's editor or picker"},
 	{"new task", "+", "nudge the priority"},
 	{"new task", "ctrl+s", "create the task"},
@@ -79,9 +91,11 @@ var fixed = []Fixed{
 	{"new task fields", "enter", "edit the row under the cursor, toggle a declared boolean, or open a declared enum's list"},
 	{"new task fields", "left", "step a declared enum or boolean through its values in place"},
 	{"new task fields", "esc", "close the editor and keep the fields"},
+	{"new task fields", "ctrl+s", "keep the fields and create the task"},
 	{"archived tasks", ">", "next page of the archive"},
 	{"archived tasks", "space", "select this task for the bulk delete"},
 	{"archived chats", ">", "next page of the archive"},
+	{"chats", "tab", "switch to the next main tab"},
 	{"chats", "left", "collapse the project group"},
 	{"chats", "right", "expand the project group"},
 	{"chat", "enter", "send the message"},
@@ -97,10 +111,16 @@ var fixed = []Fixed{
 	{"chat", "ctrl+y", "copy an assistant message, its plain text, or one of its code blocks"},
 	{"chat", "ctrl+l", "list the links in the assistant's messages"},
 	{"chat", "tab", "the skills this chat's agent can run"},
+	{"chat", "alt+up", "scroll the conversation back one line"},
+	{"chat", "alt+g", "jump to the start of the conversation"},
+	{"chat", "alt+a", "reopen the agent's question after esc closed it"},
 	// The alias, recorded the way ctrl+j's shift+enter and alt+enter are: a
 	// row of its own, so internal/tui's tests see both literals a handler
 	// matches (task 124 decision 69).
 	{"chat", "f2", "the skills this chat's agent can run, where the terminal swallows tab"},
+	// alt+down is alt+up's other half, matched by the same handler and named
+	// in alt+up's label the way pgdown is in pgup's (issue #801 F8).
+	{"chat", "alt+down", "scroll the conversation forward one line"},
 	{"chat skills", "up", "move the highlight"},
 	{"chat skills", "down", "move the highlight"},
 	{"chat skills", "tab", "insert the highlighted skill, or the top match"},
@@ -139,7 +159,13 @@ var fixed = []Fixed{
 	{"new chat", "esc", "close an open list, else discard the draft"},
 	{"projects", "enter", "select the highlighted project, or open the highlighted task that needs you"},
 	{"projects", "tab", "move between the project table and the needs-you list"},
-	{"projects", "ctrl+s", "in the form"},
+	{"project form", "down", "move between the fields"},
+	{"project form", "enter", "edit the field, or open its list"},
+	{"project form", "ctrl+s", "save the project"},
+	{"project form", "esc", "close the form without saving"},
+	{"project form field", "enter", "finish the field, or pick the highlighted workflow"},
+	{"project form field", "ctrl+s", "finish the field, or close the list, and save the project"},
+	{"project form field", "esc", "finish the field, or close the list without picking"},
 	{"workflows", "enter", "show the entry's steps"},
 	{"workflows", "g", "draw the workflow as a control-flow graph"},
 	{"workflows", "i", "edit the entry in a structured form"},
@@ -191,9 +217,11 @@ var fixed = []Fixed{
 	{"pull requests", "P", "open a pull request for a task that has none"},
 	{"pull requests", "u", "unlink it"},
 	{"pull requests", "down", "move the selection"},
+	{"issues", "tab", "switch to the next main tab"},
 	{"issues", "down", "move the selection"},
-	{"issue", "ctrl+o", "show the description's original Markdown instead of the rendered view"},
-	{"issue", "ctrl+l", "list the links in the description"},
+	{"issue", "ctrl+o", "show the description's and comments' original Markdown instead of the rendered view"},
+	{"issue", "ctrl+l", "list the links in the description and comments, and the source page"},
+	{"issue", "ctrl+y", "copy the title, the description, a comment or the source URL"},
 	{"issue", "down", "scroll a line, moving the selection among the rows on screen first"},
 	{"issue", "pgdown", "scroll a page"},
 	{"issue", "space", "scroll a page"},
@@ -209,6 +237,9 @@ var fixed = []Fixed{
 	{"agent skills", "enter", "run the install"},
 	{"agent skills", "n", "not now"},
 	{"agent skills", "esc", "close without installing anything"},
+	{"status line", "enter", "write the change shown"},
+	{"status line", "n", "not now"},
+	{"status line", "esc", "close without writing anything"},
 	{"config editor", "left", "choose a value, for a key with a fixed vocabulary"},
 	{"config editor", "enter", "apply the change"},
 	{"config editor", "y", "confirm a key that decides what the daemon executes or exposes"},
@@ -276,7 +307,10 @@ var fixed = []Fixed{
 	// Keys the handlers answer that the registry names only in a label, or
 	// not at all: the vim aliases, the rest of a pair, the confirmations'
 	// letters. None may become an operation's key.
-	{"global", "shift+tab", "move to the previous task tab"},
+	{"global", "shift+tab", "switch to the previous main tab, or move focus back"},
+	{"task table", "shift+tab", "switch to the previous main tab"},
+	{"chats", "shift+tab", "switch to the previous main tab"},
+	{"issues", "shift+tab", "switch to the previous main tab"},
 	{"global", "r", "retry the connection while disconnected"},
 	{"lists and panes", "j", "move down (vim)"},
 	{"lists and panes", "k", "move up (vim)"},

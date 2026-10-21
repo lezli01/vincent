@@ -255,7 +255,8 @@ func TestIssueClosePromptOnImportedSaysWhereItGoes(t *testing.T) {
 		v.issue.Sync = tc.sync
 		v.update(registryKey(t, "X"))
 		v.update(registryKey(t, "enter"))
-		if out := strings.Join(v.w.act.lines(400), "\n"); !strings.Contains(out, tc.want) {
+		lines, _ := v.w.act.lines(400)
+		if out := strings.Join(lines, "\n"); !strings.Contains(out, tc.want) {
 			t.Errorf("sync %+v: the confirmation is missing %q:\n%s", tc.sync, tc.want, out)
 		}
 	}

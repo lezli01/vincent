@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -153,18 +154,27 @@ func (f *configForm) save(client *apiclient.Client) tea.Cmd {
 }
 
 // render draws the editor. It is deliberately plain: one key, one field, the
-// default beside it, and the line that says what happens when it applies. The
-// width is the caller's business: every line here is short by construction, so
-// nothing wraps and nothing has to be elided.
+// default beside it, and the line that says what happens when it applies.
+// Every line of prose wraps at the three-column indent (#803): a help text, a
+// default, an error or a value under confirmation can be any length — a
+// notify.command is routinely wider than the screen — and a line frame() cuts
+// hides the very keys that answer the question.
 func (f *configForm) render(width int) []string {
 	out := []string{
 		" " + styleTitle.Render("edit "+f.key.path),
 		"",
 	}
-	if f.key.help != "" {
-		out = append(out, "   "+styleDim.Render(f.key.help))
+	wrapped := func(style lipgloss.Style, text string) []string {
+		lines := wrapText(text, width, wrapOpts{prefix: "   ", indent: 3})
+		for i, l := range lines {
+			lines[i] = "   " + style.Render(strings.TrimPrefix(l, "   "))
+		}
+		return lines
 	}
-	out = append(out, "   "+styleDim.Render("default ")+f.key.def())
+	if f.key.help != "" {
+		out = append(out, wrapped(styleDim, f.key.help)...)
+	}
+	out = append(out, wrapped(lipgloss.NewStyle(), "default "+defaultOrEmpty(f.key.def()))...)
 	out = append(out, "")
 	switch f.key.kind {
 	case kindBool, kindEnum:
@@ -173,7 +183,7 @@ func (f *configForm) render(width int) []string {
 		f.input.SetWidth(max(width-3, 10))
 		out = append(out, fieldRows("   ", f.input)...)
 		if len(f.key.choices) > 0 {
-			out = append(out, "   "+styleDim.Render("accepted: "+strings.Join(f.key.choices, " ")))
+			out = append(out, wrapped(styleDim, "accepted: "+strings.Join(f.key.choices, " "))...)
 		}
 	}
 	out = append(out, "")
@@ -181,18 +191,20 @@ func (f *configForm) render(width int) []string {
 		// Said before it is applied, not after: `listen` is written to the
 		// file and the running daemon keeps the address it bound, so GET
 		// /v1/config will go on reporting the old one until a restart.
-		out = append(out, "   "+styleWarn.Render(
-			"takes effect on the next daemon restart; the running daemon keeps its address"))
+		out = append(out, wrapped(styleWarn,
+			"takes effect on the next daemon restart; the running daemon keeps its address")...)
 	}
 	if f.err != "" {
-		out = append(out, "   "+styleBad.Render("⚠ "+f.err))
+		out = append(out, wrapped(styleBad, "⚠ "+f.err)...)
 	}
 	out = append(out, "")
 	switch {
 	case f.confirming:
-		out = append(out, "   "+styleWarn.Render("this changes what the daemon executes or exposes."),
-			"   "+styleWarn.Render("set "+f.key.path+" to ")+f.displayValue()+
-				styleWarn.Render("?  y confirm   esc back"))
+		// The value in full, then the keys on a line of their own, so a long
+		// value can never push them off the screen.
+		out = append(out, wrapped(styleWarn, "this changes what the daemon executes or exposes.")...)
+		out = append(out, wrapped(styleWarn, "set "+f.key.path+" to "+f.displayValue()+"?")...)
+		out = append(out, "   "+styleWarn.Render("y confirm   esc back"))
 	case f.saving:
 		out = append(out, "   "+styleDim.Render("saving…"))
 	default:
@@ -206,7 +218,7 @@ func (f *configForm) render(width int) []string {
 func (f *configForm) displayValue() string {
 	v := f.value()
 	if strings.TrimSpace(v) == "" {
-		return styleDim.Render("(empty)")
+		return "(empty)"
 	}
 	return v
 }

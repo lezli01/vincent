@@ -2,9 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+	"unicode"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/lezli01/vincent/internal/reasons"
 )
 
 // The chat workspace's rendering: history, live tail, composer.
@@ -56,24 +61,40 @@ func (v *chatView) render(width, height int) string {
 	}
 	v.height = height
 	head := []string{v.headerLine(width), ""}
-	foot := v.footerLines(width, height)
-	// The form is part of the budget, not something added after it (issue
-	// #299): appended past the join it pushed the same number of lines off the
-	// bottom of the terminal that the unsplit composer did.
-	var form []string
+	// The §7.4 popup takes the composer's place rather than stacking under
+	// it (issue #801 F7): it owns the keyboard, so a composer drawn beside
+	// it is a field nobody can type into, and the two together left the
+	// conversation two lines at 80×24. The form is still part of the budget,
+	// not something added after it (issue #299).
+	var foot []string
 	if v.form != nil {
-		form = strings.Split(v.form.render(width, min(v.form.height(width), height/2)), "\n")
+		foot = v.formLines(width, height)
+	} else {
+		foot = v.footerLines(width, height)
 	}
-	room := max(height-len(head)-len(foot)-len(form), 1)
-	lines := make([]string, 0, len(head)+room+len(foot)+len(form))
+	room := max(height-len(head)-len(foot), 1)
+	lines := make([]string, 0, len(head)+room+len(foot))
 	lines = append(lines, head...)
 	lines = append(lines, strings.Split(v.bodyView(width, room), "\n")...)
 	lines = append(lines, foot...)
-	lines = append(lines, form...)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// formLines is the §7.4 popup in the composer's place, capped at half the
+// pane, with its key line pinned under the window (issue #801 F7): windowing
+// the whole form around the cursor cut the line that says how to submit or
+// leave it, which is the one line every question needs.
+func (v *chatView) formLines(width, height int) []string {
+	lines, from, to := v.form.lines(width)
+	keys := lines[len(lines)-1]
+	rows := windowRange(lines[:len(lines)-1], from, to, max(height/2-1, 1))
+	out := make([]string, 0, len(rows)+2)
+	out = append(out, "")
+	out = append(out, rows...)
+	return append(out, keys)
 }
 
 // bodyView lays the conversation into the viewport. The window is bottom-
@@ -107,6 +128,18 @@ func (v *chatView) bodyView(width, height int) string {
 	return v.vp.View()
 }
 
+// chatHeaderSeg is one cell of the header and the rank it is dropped at
+// when the line is short of room: the highest rank goes first.
+type chatHeaderSeg struct {
+	text string
+	rank int
+}
+
+// chatHeaderTitleMin is how many cells the title keeps before a lower-ranked
+// cell is dropped for it: enough to tell two chats apart, and no more —
+// every ranked cell outranks the rest of the title.
+const chatHeaderTitleMin = 8
+
 func (v *chatView) headerLine(width int) string {
 	if v.chat == nil {
 		left := " " + styleTitle.Render("chat")
@@ -117,35 +150,122 @@ func (v *chatView) headerLine(width int) string {
 		}
 		return padBetween(left, "", width)
 	}
-	left := " " + styleTitle.Render(v.chat.Title) +
-		styleDim.Render("  ·  ") + applyStateStyle(v.chat.State, chatStateLabel(v.chat.State)) +
-		styleDim.Render(fmt.Sprintf("  ·  %s  ·  %s", v.chat.Agent, v.chat.Branch))
+	// The cells after the title, in display order, ranked by what a reader
+	// most needs (issue #801 F4): the title came first and padBetween never
+	// shrinks the left side, so a long one pushed the state, the branch and
+	// the link off the line. Now the title truncates into what is left.
+	mid := []chatHeaderSeg{
+		{applyStateStyle(v.chat.State, chatStateLabel(v.chat.State)), 0},
+		{styleDim.Render(v.chat.Agent), 7},
+	}
+	if v.chat.Branch != "" {
+		mid = append(mid, chatHeaderSeg{styleDim.Render(v.chat.Branch), 6})
+	}
 	// The link is permanent and lives in the header rather than in the note
 	// line, which is transient: a handed-off chat is history, and the one
 	// thing a reader of it wants is where the work went (task 074).
 	if v.chat.HandoffTaskID != nil {
-		left += styleDim.Render(fmt.Sprintf("  ·  handed off to task %d", *v.chat.HandoffTaskID))
+		mid = append(mid, chatHeaderSeg{styleDim.Render(fmt.Sprintf("handed off to task %d", *v.chat.HandoffTaskID)), 5})
 	}
 	// The same permanence for a chat opened on a task (task 119): the task
 	// is whose worktree this is, and whose lock this chat holds while open.
 	if v.chat.LinkedTaskID != nil {
-		left += styleDim.Render(fmt.Sprintf("  ·  on task #%d", *v.chat.LinkedTaskID))
+		mid = append(mid, chatHeaderSeg{styleDim.Render(fmt.Sprintf("on task #%d", *v.chat.LinkedTaskID)), 5})
 	}
-	right := plural(len(v.turns), "turn", "turns")
+	pause := styleDim.Render("⏸")
+	var right []chatHeaderSeg
+	if !v.following {
+		right = append(right, chatHeaderSeg{pause, 1})
+	}
+	if v.raw.get() {
+		right = append(right, chatHeaderSeg{styleDim.Render("raw"), 2})
+	}
 	// The level rides in the header for the reason the output pane's title
 	// carries it: ctrl+r on a conversation with no reasoning and no
 	// unrecognized lines changes nothing on screen, and a reader needs to
 	// see that the key did something.
 	if l := v.level.get(); l != levelNormal {
-		right = l.String() + "  ·  " + right
+		right = append(right, chatHeaderSeg{styleDim.Render(l.String()), 2})
 	}
-	if v.raw.get() {
-		right = "raw  ·  " + right
+	// Where the window is, while it is not at the live end (issue #801 F8):
+	// `⏸` says the body stopped following, and this says how far back it is.
+	if pos := v.turnPosition(); pos != "" {
+		right = append(right, chatHeaderSeg{styleDim.Render(pos), 4})
 	}
-	if !v.following {
-		right = "⏸ " + right
+	right = append(right, chatHeaderSeg{styleDim.Render(plural(len(v.turns), "turn", "turns")), 3})
+
+	sep := styleDim.Render("  ·  ")
+	join := func(segs []chatHeaderSeg, sepw string) string {
+		var b strings.Builder
+		for i, sg := range segs {
+			switch {
+			case i == 0:
+			case segs[i-1].text == pause:
+				// `⏸` leads what follows it, as it always has.
+				b.WriteString(" ")
+			default:
+				b.WriteString(sepw)
+			}
+			b.WriteString(sg.text)
+		}
+		return b.String()
 	}
-	return padBetween(left, styleDim.Render(right+" "), width)
+	title := v.chat.Title
+	for {
+		midText, rightText := join(mid, sep), join(right, styleDim.Render("  ·  "))
+		used := 1 + ansi.StringWidth(sep) + ansi.StringWidth(midText) + 2 + ansi.StringWidth(rightText) + 1
+		room := width - used
+		if width <= 0 || room >= min(ansi.StringWidth(title), chatHeaderTitleMin) || !dropHighest(&mid, &right) {
+			t := title
+			if width > 0 {
+				t = ansi.Truncate(title, max(room, 1), "…")
+			}
+			return padBetween(" "+styleTitle.Render(t)+sep+midText, rightText+" ", width)
+		}
+	}
+}
+
+// dropHighest removes the highest-ranked cell of either side, and reports
+// whether there was one to remove. Rank 0 — the state — is never dropped.
+func dropHighest(mid, right *[]chatHeaderSeg) bool {
+	best, side, at := 0, 0, -1
+	for i, sg := range *mid {
+		if sg.rank > best {
+			best, side, at = sg.rank, 0, i
+		}
+	}
+	for i, sg := range *right {
+		if sg.rank > best {
+			best, side, at = sg.rank, 1, i
+		}
+	}
+	if at < 0 {
+		return false
+	}
+	if side == 0 {
+		*mid = append((*mid)[:at:at], (*mid)[at+1:]...)
+	} else {
+		*right = append((*right)[:at:at], (*right)[at+1:]...)
+	}
+	return true
+}
+
+// turnPosition is the `turn i/n` cue (issue #801 F8): the turn whose lines
+// are at the top of the window, while the reader has scrolled away from the
+// live end. Following, the newest turn is the one on screen and the cue
+// would say nothing the turn count does not.
+func (v *chatView) turnPosition() string {
+	if v.following || len(v.turns) == 0 || len(v.turnAt) == 0 {
+		return ""
+	}
+	top := v.vp.YOffset()
+	at := 0
+	for i := range v.turns {
+		if start, ok := v.turnAt[v.turns[i].Seq]; ok && start <= top {
+			at = i + 1
+		}
+	}
+	return fmt.Sprintf("turn %d/%d", max(at, 1), len(v.turns))
 }
 
 // bodyLines is the whole conversation: every turn's prompt followed by its
@@ -221,14 +341,41 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 			pad(len(body))
 		}
 		if t.FailReason != "" {
-			lines = append(lines, " "+styleBad.Render(
-				strings.TrimSpace(t.FailReason+" "+t.ErrorMessage)))
-			pad(1)
+			// Wrapped, never clipped (issue #801 F3): the message is the
+			// one account of what went wrong, and its tail — "retrying
+			// later is safe" — is usually the part worth reading. The
+			// reason is humanised through the one catalogue of them.
+			// The code stays beside its title: it is what the logs, the
+			// API and the troubleshooting guide's headings are keyed by.
+			text := t.FailReason
+			if title := reasons.Explain(t.FailReason).Title; title != t.FailReason {
+				text = title + " (" + t.FailReason + ")"
+			}
+			if t.ErrorMessage != "" {
+				text += ": " + t.ErrorMessage
+			}
+			for _, l := range wrapText(text, max(width-1, 1), wrapOpts{indent: 2}) {
+				lines = append(lines, " "+styleBad.Render(l))
+				pad(1)
+			}
 		}
 	}
 	if len(lines) == 0 {
-		lines = append(lines, styleDim.Render("  Nothing said yet. Type below and press enter."))
-		pad(1)
+		switch {
+		case v.chat == nil && v.loadErr != "":
+			// A failed load is not an empty chat (issue #801 F9): the body
+			// says why there is nothing to show, not that nothing was said.
+			for _, l := range wrapText("could not load this chat: "+v.loadErr, max(width-2, 1), wrapOpts{indent: 2}) {
+				lines = append(lines, "  "+styleBad.Render(l))
+				pad(1)
+			}
+		case v.chat == nil:
+			lines = append(lines, styleDim.Render("  loading…"))
+			pad(1)
+		default:
+			lines = append(lines, styleDim.Render("  Nothing said yet. Type below and press enter."))
+			pad(1)
+		}
 	}
 	return lines, anchors
 }
@@ -239,23 +386,37 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 // handler in chatview.go — and two copies of the arithmetic drift.
 func chatComposerWidth(pane int) int { return max(pane-2, 10) }
 
-func (v *chatView) footerLines(width, height int) []string {
-	out := []string{""}
+// chatNoteRows is how many rows the note line may wrap to (issue #801 F2),
+// taken out of the body's budget like everything else under it.
+const chatNoteRows = 3
+
+// noteLines is the one note under the conversation, wrapped: the close
+// confirmation, the workspace's own note, the reminder that a question is
+// put away, the inline skill hint or the mention note — the first that has
+// something to say. A question keeps its answer keys whatever the width.
+func (v *chatView) noteLines(width int) []string {
+	text, style, keys := "", styleDim, ""
 	switch {
 	case v.closing && v.chat != nil:
-		out = append(out, " "+styleWarn.Render(v.closePrompt()))
+		text, style, keys = v.closeQuestion(), styleWarn, chatCloseAnswers
 	case v.note != "":
-		style := styleDim
+		text = v.note
 		if v.noteBad {
 			style = styleBad
 		}
-		out = append(out, " "+style.Render(v.note))
+	case v.formAway != nil:
+		// Persistent while the question is away (issue #801 F7): it is the
+		// only thing on screen saying the agent is waiting, and how to answer.
+		text, style = chatFormAwayNote, styleWarn
+		if v.formAway.err != "" {
+			text, style = v.formAway.err+" — "+chatFormAwayNote, styleBad
+		}
 	case v.skills.inlineNote != "":
 		// The inline skill list's own line (task 124.14): a sigil token the
 		// agent did not report, or what the skill just accepted takes. Dim,
 		// and below the workspace's own note rather than over it — this one
 		// is a hint about a draft, never a refusal.
-		out = append(out, " "+styleDim.Render(v.skills.inlineNote))
+		text = v.skills.inlineNote
 	case v.files.mentionNote() != "":
 		// The file picker's own line (task 126.11): the mention verdict, and
 		// only in the negative — this chat's CLI does not expand an `@`
@@ -263,8 +424,100 @@ func (v *chatView) footerLines(width, height int) []string {
 		// (task 126 decision 47, after task 124 decision 19's bad-news-only
 		// rule). Dim, and below the workspace's own note for the reason the
 		// skills hint is: it is a fact about a draft, never a refusal.
-		out = append(out, " "+styleDim.Render(v.files.mentionNote()))
+		text = v.files.mentionNote()
+	default:
+		return nil
 	}
+	return wrapNote(text, keys, width, style)
+}
+
+// wrapNote wraps text into at most chatNoteRows rows of width, each led by
+// one space and styled on its own. keys, when there are any, end the last
+// row whole: the question is what gives way to them.
+func wrapNote(text, keys string, width int, style lipgloss.Style) []string {
+	room := max(width-1, 1)
+	full := text
+	if keys != "" {
+		full += " " + keys
+	}
+	lines := wrapText(full, room, wrapOpts{maxLines: chatNoteRows})
+	if keys != "" && !strings.HasSuffix(lines[len(lines)-1], keys) {
+		// Capped mid-question: wrap the question into what the keys leave.
+		lines = wrapText(text, max(room-ansi.StringWidth(keys)-1, 1), wrapOpts{maxLines: chatNoteRows})
+		lines[len(lines)-1] += " " + keys
+	}
+	for i, l := range lines {
+		lines[i] = " " + style.Render(l)
+	}
+	return lines
+}
+
+// chatComposerMin and chatComposerMax bound the composer's rows (issue #801
+// F6): three for an empty or short draft, growing with the draft to ten or a
+// third of the pane, whichever is less.
+const (
+	chatComposerMin = 3
+	chatComposerMax = 10
+)
+
+// sizeComposer grows the composer to the draft and reports how many of the
+// draft's rows it still cannot show. The count is of wrapped rows at the
+// composer's width — a long paragraph is as tall as a list of short lines.
+func (v *chatView) sizeComposer(height int) (hidden int) {
+	inner := max(v.composer.Width(), 1)
+	rows := 0
+	for _, line := range strings.Split(v.composer.Value(), "\n") {
+		rows += textareaRows(line, inner)
+	}
+	limit := max(min(chatComposerMax, height/3), chatComposerMin)
+	// Only on a change: SetHeight re-scrolls the textarea to its cursor, and
+	// doing that on every frame moved a draft the reader had scrolled.
+	if h := min(max(rows, chatComposerMin), limit); h != v.composer.Height() {
+		v.composer.SetHeight(h)
+	}
+	return max(rows-limit, 0)
+}
+
+// textareaRows is how many rows the textarea draws one hard line in at the
+// given width. It follows bubbles' own word wrap (textarea.wrap, which is
+// unexported) rather than dividing the width out: a line of long words breaks
+// at word boundaries and takes more rows than its width alone says, and an
+// estimate that undercounts hid part of the draft with no "+N lines" cue
+// (review F6). A line that fills its last row exactly gets one more, empty
+// row for the cursor, as the textarea gives it.
+func textareaRows(line string, width int) int {
+	rows, cur, word, spaces := 1, 0, 0, 0
+	for _, r := range line {
+		if unicode.IsSpace(r) {
+			spaces++
+		} else {
+			w := ansi.StringWidth(string(r))
+			word += w
+			if spaces == 0 && word+w > width {
+				// A word as wide as the row: it takes a row of its own.
+				if cur > 0 {
+					rows++
+				}
+				cur, word = word, 0
+			}
+		}
+		if spaces > 0 {
+			if cur+word+spaces > width {
+				rows, cur = rows+1, 0
+			}
+			cur += word + spaces
+			word, spaces = 0, 0
+		}
+	}
+	if cur+word+spaces >= width {
+		rows++
+	}
+	return rows
+}
+
+func (v *chatView) footerLines(width, height int) []string {
+	out := []string{""}
+	out = append(out, v.noteLines(width)...)
 	// The in-progress indicator (task 089), here and not inline at the end of
 	// the running turn's body: the body scrolls, and a reader who has scrolled
 	// up — follow off, `⏸` in the header — is exactly the reader who needs to
@@ -292,44 +545,68 @@ func (v *chatView) footerLines(width, height int) []string {
 	// each requires its own first rune of the one token under the cursor, and
 	// syncInlineFiles stands this one down for an adapter that claimed `@`.
 	out = append(out, v.files.render(width, height)...)
-	// One element per rendered line, not one per widget (issue #299): the
-	// composer is SetHeight(3) and bubbles' viewport pads its View to that
-	// height, and the border around it adds two more, so a joined string would
-	// report a height of 1 and render 5. render's
-	// `room := height - len(head) - len(foot)` would then overrun the frame by
-	// four lines — the frame keeps the first h-4 — and the hint line below
-	// would never be drawn. It would also feed a multi-line string to render's
-	// per-line ansi.Truncate pass, which measures the whole thing as the *sum*
-	// of its rows — ansi.StringWidth treats the `\n`s as zero-width and never
-	// resets — so once that sum passes the pane width the tail is cut and the
-	// box collapses to its top edge. That is why the frame is split here the
-	// same way the composer's own View is, and why the border is spent out of
-	// the budget rather than added after the join: §15's #299 amendment, "a
-	// composer that grew is a body that shrank, not a frame that overflowed".
+	// One element per rendered line, not one per widget (issue #299): bubbles'
+	// viewport pads the composer's View to its height, and the border around
+	// it adds two more, so a joined string would report a height of 1 and
+	// render several. render's `room := height - len(head) - len(foot)` would
+	// then overrun the frame. It would also feed a multi-line string to
+	// render's per-line ansi.Truncate pass, which measures the whole thing as
+	// the *sum* of its rows — ansi.StringWidth treats the `\n`s as zero-width
+	// and never resets — so once that sum passes the pane width the tail is
+	// cut and the box collapses to its top edge. That is why the frame is
+	// split here the same way the composer's own View is, and why the border
+	// is spent out of the budget rather than added after the join: §15's #299
+	// amendment, "a composer that grew is a body that shrank, not a frame
+	// that overflowed" — which since issue #801 F6 it does, with the draft.
 	//
 	// The width is the pane's, not the terminal's: render is what knows how
 	// many columns the composer actually has, and a composer sized from the
 	// whole terminal has its rows cut by the Truncate pass above. Two of them
 	// go to the border, which is what shell.go's frame draws in.
 	v.composer.SetWidth(chatComposerWidth(width))
+	title := "message"
+	if hidden := v.sizeComposer(height); hidden > 0 {
+		// The draft is taller than the composer may grow: say how much of
+		// it is out of sight rather than let half a draft read as all of it.
+		title += " · +" + plural(hidden, "line", "lines")
+	}
 	rows := strings.Split(v.composer.View(), "\n")
 	// focused=false on purpose: the composer holds the keyboard nearly always
 	// here, so a permanently lit focus glyph would say nothing.
-	box := frame("message", v.composer.View(), width, len(rows)+2, false)
-	if box == "" {
-		// Narrower or shorter than a box can be drawn in; the rows still are.
-		out = append(out, rows...)
-	} else {
-		out = append(out, strings.Split(box, "\n")...)
+	box := rows
+	if framed := frame(title, v.composer.View(), width, len(rows)+2, false); framed != "" {
+		box = strings.Split(framed, "\n")
 	}
-	hint := " enter send · ctrl+j newline · tab skills · ctrl+x stop the turn · ctrl+r detail · "
-	if v.chat != nil && v.chat.LinkedTaskID != nil {
-		// Ahead of the reader keys: it is the only way this chat's task
-		// unlocks, and the line truncates from the right.
-		hint += chatCloseKey + " close · "
+	// No key line of its own (issue #801 F5): the root draws the registry's
+	// footer under the workspace, and a second, literal one disagreed with
+	// it about which keys were live.
+	return capChatFooter(out, box, height-chatHeadLines-1)
+}
+
+// chatHeadLines is the header and the blank under it that render pins above
+// the conversation.
+const chatHeadLines = 2
+
+// capChatFooter fits the lines above the composer and the composer itself
+// into room lines (review F22), so the frame never cuts the composer's
+// bottom border: #299 holds — the body shrinks to pay for the footer, down to
+// one row, and past that the footer gives way. The note and the inline lists
+// go first, from their end (the leading blank before them), and the box
+// itself is cut only when it alone is taller than the room, losing its
+// border before a row of the draft.
+func capChatFooter(above, box []string, room int) []string {
+	room = max(room, 1)
+	if len(box) > room {
+		if inner := box[1 : len(box)-1]; len(box) > 2 {
+			box = inner
+		}
+		box = box[:min(len(box), room)]
 	}
-	hint += rawToggleKey + " raw · " + copyPickKey + " copy · " + linkPickKey + " links · " +
-		"pgup/pgdown scroll · ctrl+g live · esc back to the chats board"
-	out = append(out, styleDim.Render(ansi.Truncate(hint, width, "…")))
-	return out
+	if spare := room - len(box); len(above) > spare {
+		if len(above) > 0 && above[0] == "" {
+			above = above[1:]
+		}
+		above = above[:min(len(above), max(spare, 0))]
+	}
+	return append(slices.Clone(above), box...)
 }

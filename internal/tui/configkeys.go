@@ -114,7 +114,7 @@ var (
 // tabViewIDs maps each tui.tabs name (config.TabViews) to the view it opens
 // (task 136 decision 10). A test holds its keys equal to config.TabViews, so
 // a name added to the vocabulary cannot reach a TUI with nowhere to route it.
-// Nothing routes by it yet: tab switching (#787) is what consumes it.
+// tabsFromConfig routes tab switching (task 136.2) by it.
 var tabViewIDs = map[string]viewID{
 	"issues": viewIssues,
 	"tasks":  viewHome,

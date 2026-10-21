@@ -178,6 +178,18 @@ func (p *projectsView) promptKeys() promptAnswers {
 // a non-text row, `n` opened New task with the draft still open behind it,
 // and with the confirmation up, `n` left the view with the prompt armed, so a
 // later `y` deleted the project. `esc` stays the way out, one layer per press.
+// bindingContext puts the form's own rows in the footer and ? while it is
+// open (#803): the table's add/remove/filter keys do nothing inside it.
+func (p *projectsView) bindingContext() bindingContext {
+	switch {
+	case p.form != nil && (p.form.editing || p.form.pick != nil):
+		return ctxProjectFormField
+	case p.form != nil:
+		return ctxProjectForm
+	}
+	return ctxProjects
+}
+
 func (p *projectsView) capturesInput() bool {
 	return p.filtering || p.confirm != nil || p.form != nil
 }
@@ -601,11 +613,11 @@ func (p *projectsView) restoreSelection(rows []apiclient.Project) {
 	}
 	for i := range rows {
 		if rows[i].ID == p.selectedID {
-			p.tbl.SetCursor(i)
+			moveCursorTo(&p.tbl, i)
 			return
 		}
 	}
-	p.tbl.SetCursor(0)
+	moveCursorTo(&p.tbl, 0)
 }
 
 // capCell renders the cap the way the scheduler actually applies it. A

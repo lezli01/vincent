@@ -13,14 +13,24 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Switch between the TUI's main tabs with `tab` and `shift+tab`.** On the
+  task board, the issues list and the chats board — whichever `tui.tabs`
+  lists, by default issues and tasks — `tab` moves to the next one in that
+  order and `shift+tab` to the previous, and the footer names where it goes
+  (`tab issues`). It never switches while a filter is being typed or a form is
+  open there, and everywhere else `tab` keeps its meaning. `esc` on a main tab
+  no longer leaves it for the board, and the palette gains a **tasks** screen
+  row. A `tui.tabs` change saved from the config editor applies on the next
+  press.
+
 - **A `tui.tabs` setting for the TUI's main tabs.** `config.yaml` accepts
   `tui.tabs`, an ordered list drawn from `issues`, `tasks` and `chats`,
   default `[issues, tasks]`; the first entry will be where the TUI opens. It
   is validated on load, hot reload and `PATCH /v1/config` (an empty, `null`,
   repeated or unknown list is refused, naming the key), served on
   `GET /v1/config`, and editable with `vincent config get|set tui.tabs` and in
-  the TUI's config editor. The TUI does not act on it yet: tab switching, the
-  strip and landing on the first tab follow in a later release. A daemon
+  the TUI's config editor. The strip and landing on the first tab follow in a
+  later release. A daemon
   older than this one refuses a file that sets it.
 
 - **See who holds an issue's main worktree, and ask for a side task, in the
@@ -525,6 +535,106 @@ list with the user-facing context a commit subject cannot carry.
   ([#670](https://github.com/lezli01/vincent/issues/670))
 
 ### Fixed
+
+- **The new-task form wraps to its pane, and `ctrl+s` creates from anywhere
+  in it.** The title, branch and priority rows, the open lists and the Fields
+  editor's input wrapped at the terminal's width rather than the pane's, so at
+  80×24 every wrapped line was cut with `…` and in the wide two-pane layout
+  the cursor could sit off screen. `ctrl+s` worked only while moving between
+  rows; while typing in a field, inside an open list or in the Fields editor
+  it did nothing. It now keeps whatever is open and creates the task.
+  ([#797](https://github.com/lezli01/vincent/issues/797))
+- **Chats read in full at any terminal size.** In a chat, the close
+  confirmation, notes and a failed turn's error now wrap instead of being cut
+  off — the `(y/n)` that answers the close prompt was lost at 80 and 120
+  columns — and a failure's reason is spelled out in plain words. The header
+  keeps the chat's state, `⏸`, turn count, `on task #N` and branch ahead of a
+  long title, which now truncates into what is left. The chat's own hint line
+  is gone: the footer is the only key line, and it no longer offers keys that
+  would do nothing (stop with no running turn, skills on an ended chat, send
+  while a prompt or the answer form has the keyboard). The composer grows with
+  the draft, up to a third of the screen. A load failure is shown in the
+  conversation instead of "Nothing said yet", and nothing is sent until the
+  chat has loaded. Sending a message no longer redraws earlier turns from
+  their bare text while they are refetched. The answer form hides the
+  composer while it is open, drops the `ctrl+t task details` hint a chat
+  cannot answer, and `esc` puts the question away rather than dropping it:
+  `alt+a` brings it back with what you picked. New keys: `alt+↑`/`alt+↓`
+  scroll a line at a time and `alt+g` jumps to the start of the
+  conversation, and while you are scrolled back the header says which turn
+  you are reading (`turn 2/5`). The skill and file lists always show where you are in them.
+- **The chats board lines up.** Titles start in the same column whatever a
+  chat's state, there is a heading row, the header keeps its `updated` time at
+  80 columns, and the archive prompt keeps its `(y/n)` behind a long title.
+  The new-chat form keeps the focused field and an open picker on screen at
+  small sizes, and its error wraps instead of running off the edge.
+- **The workflow editor and the trigger form keep what matters on screen.**
+  A form longer than its pane now scrolls with the cursor instead of dropping
+  its last rows, and the error and key hint stay pinned at the bottom. The
+  row under the cursor shows its whole value and help, wrapped under the
+  value column; other rows stay one line ending in `…`. A trigger field's
+  refusal note sits on its own line instead of being cut off with a long
+  value, the label column fits the longest label, and the trigger form's
+  full-pane editor shows every line of a multi-line value instead of only the
+  first. Clicks and the wheel go to an open step detail in the workflow graph
+  rather than the graph behind it, and the workflow overview and step detail
+  hints name a rebound `editor` or `refresh` key. The triggers list shows the
+  POLL column at 80 columns (it now follows ARMED), and the global-off banner
+  wraps to the screen.
+- **The daemon and projects views fit an 80×24 terminal, and their footers
+  follow their forms.** The daemon view keeps its identity block pinned, and
+  the config, database and adapter blocks scroll beneath it in a pane of their
+  own above the log, so the log always keeps at least three lines on screen,
+  where before the blocks alone filled the screen and the log was cut off.
+  With the log focused the pane shows its last blocks, the adapters
+  included, from a block heading, and `tab` moves to the config list.
+  `enter` or `e` with the log focused moves to the config list instead of
+  opening the editor on a key you could not see (by default `listen`). The
+  config editor wraps its help, default, errors and confirmation, so a long
+  `notify.command` shows in full with `y confirm` still on screen. While the
+  config editor, the status-line flow, the skills offer or the project form
+  is open, the footer and `?` show that layer's keys, not the screen's
+  underneath. A long project name no longer pushes the task number, state
+  and title off a needs-you row.
+- **The issue detail and issue form no longer cut text off.** A long issue
+  title, its labels and its GitHub URL now wrap instead of ending in `…`, the
+  source badge is a `source` fact rather than a tail the title pushed off the
+  line, and an imported issue shows a `sync` fact with its sync state, when it
+  last synced and why. Notes and the close, reopen and delete prompts wrap,
+  and a prompt always fits the pane. `ctrl+l` now lists the links in the
+  comments and the source page too, and `ctrl+y` copies the title,
+  description, a comment or the URL. The issue form keeps the highlighted
+  label and its key line on screen when the labels picker is long.
+  ([#795](https://github.com/lezli01/vincent/issues/795))
+- **The task board's cursor stays on screen and on its task.** When a refresh
+  re-sorted the board — a selected task finishing and sorting to the bottom,
+  `!` or `g` — the cursor could land on a row scrolled off screen, where every
+  action key still acted on it. It now scrolls into view, here and on the
+  projects view. The task selected when the board opens is kept through a
+  live re-sort even before a key is pressed, and when the selected task is
+  archived the cursor lands on its neighbour instead of jumping to the top. A
+  failed first load says it could not load tasks rather than "no tasks yet",
+  an empty archived board names its date window and `s` rather than offering
+  `n`, and a wrapped title cut short no longer gains a space before its `…`.
+  ([#798](https://github.com/lezli01/vincent/issues/798))
+- **The task workspace's panes scroll to their end.** The Overview cut its
+  frame at the screen's height and could not be scrolled, so on a blocked task
+  between about 15 and 23 rows tall the failure card lost its action keys and
+  links — a taller terminal showed fewer of them than a shorter one. The
+  Overview now scrolls (`pgup`/`pgdn`, `home`/`end`, the mouse wheel) with a
+  cue saying what is above and below, and the failure card keeps its headline,
+  actions and links before its meaning and evidence. A finished task's result
+  uses the rows that are free instead of stopping at six lines. A fan-out
+  parent waiting on its lanes lists the ones that are blocked or waiting on
+  you, and `l` opens the first; its `3 full output` link, which opened an
+  empty transcript, is now `1 steps`. The Pull Request tab keeps the selected
+  check and its hint line on screen with many checks, aligns its labels, and
+  marks the lane `l` actually opens. The Steps tab pages with `pgup`/`pgdn`
+  and jumps to the first or last attempt with `g`/`home` and `G`/`end`
+  without its window jumping on every move, and Output jumps to the top with
+  `g`/`home`. The Diff tab pans long lines with `shift+←`/`shift+→`, says when
+  it was loaded, and no longer tells you to press `d` (which switches to
+  Output there). The Workflow tab's inspector shows each field on its own row.
 
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,

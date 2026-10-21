@@ -567,13 +567,17 @@ func TestReaderHintsNameTheCtrlKeys(t *testing.T) {
 			}
 		}
 	}
-	// The chat's own footer line is hand-written rather than derived, so it
-	// has to be checked against the registry by hand.
+	// The chat draws no hint line of its own any more (#801): its footer is
+	// the registry's rows after chatView.liveBindings, so the reader keys
+	// have to survive that filter on an ordinary chat.
 	v := chatViewFixture()
-	foot := ansi.Strip(strings.Join(v.footerLines(200, 40), "\n"))
+	offered := map[string]bool{}
+	for _, b := range v.liveBindings(bindingsFor(ctxChat)) {
+		offered[b.key] = true
+	}
 	for _, k := range []string{rawToggleKey, copyPickKey, linkPickKey} {
-		if !strings.Contains(foot, k) {
-			t.Fatalf("the chat footer does not name %s:\n%s", k, foot)
+		if !offered[k] {
+			t.Fatalf("the chat footer does not offer %s", k)
 		}
 	}
 }

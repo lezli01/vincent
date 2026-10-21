@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -302,37 +303,48 @@ func (a *issueAction) forgeNote() string {
 	return issueWritesBack
 }
 
-// lines draws the prompt for the bottom of the owning screen.
-func (a *issueAction) lines(width int) []string {
-	out := []string{""}
+// lines draws the prompt for the bottom of the owning screen. Its prose
+// wraps rather than losing its end (#795); a picker's rows stay one line
+// each and are cut to the width. tail is how many of its last lines are the
+// key line and the note after it, which a footer cut keeps (review F10).
+func (a *issueAction) lines(width int) (out []string, tail int) {
+	prose := func(text string, style lipgloss.Style) []string {
+		return styled(wrapText(text, width, hanging("  ")), style)
+	}
+	out = []string{""}
+	keys := -1
 	switch a.stage {
 	case iaConfirm:
 		for _, l := range a.confirmText() {
-			out = append(out, styleWarn.Render("  "+l))
+			out = append(out, prose(l, styleWarn)...)
 		}
-		out = append(out, styleDim.Render("  y confirms · any other key cancels"))
+		keys = len(out)
+		out = append(out, prose("y confirms · any other key cancels", styleDim)...)
 	case iaBusy:
-		out = append(out, styleDim.Render("  "+a.action+"…"))
+		out = append(out, prose(a.action+"…", styleDim)...)
 	case iaDuplicate:
 		if a.pick == nil {
-			out = append(out, styleDim.Render("  listing this project's issues…"))
+			out = append(out, prose("listing this project's issues…", styleDim)...)
 			break
 		}
 		fallthrough
 	case iaChoose, iaReason:
-		out = append(out, " "+styleTitle.Render(a.pick.heading)+
-			styleDim.Render("  issue #"+strconv.FormatInt(a.issue.ID, 10)))
 		a.pick.setWidth(width - 4)
-		out = append(out, a.pick.renderBody()...)
-		out = append(out, styleDim.Render("  enter picks · esc cancels"))
+		rows := append([]string{" " + styleTitle.Render(a.pick.heading) +
+			styleDim.Render("  issue #"+strconv.FormatInt(a.issue.ID, 10))}, a.pick.renderBody()...)
+		for _, l := range rows {
+			out = append(out, ansi.Truncate(l, width, "…"))
+		}
+		keys = len(out)
+		out = append(out, prose("enter picks · esc cancels", styleDim)...)
+	}
+	if keys < 0 {
+		keys = len(out)
 	}
 	if a.note != "" {
-		out = append(out, styleBad.Render("  "+a.note))
+		out = append(out, prose(a.note, styleBad)...)
 	}
-	for i, l := range out {
-		out[i] = ansi.Truncate(l, width, "…")
-	}
-	return out
+	return out, len(out) - keys
 }
 
 // issueEditTargetMsg is the full issue `i` on the list read: a list row

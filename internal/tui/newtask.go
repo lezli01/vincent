@@ -279,9 +279,11 @@ type newTask struct {
 	touched    bool
 
 	width, height int
-	// detailWidth is the width the last render laid the workflow detail out
-	// in: the whole screen in the compact form, the main pane inside its
-	// border in the guided one (#791). Zero until the first render.
+	// detailWidth is the width the last render laid the form out in: the
+	// pane render was handed in the compact form, the main pane inside its
+	// border in the guided one (#791). The workflow detail wraps at it, and
+	// so do the text rows, pickers and Fields input (paneWidth, #797). Zero
+	// until the first render.
 	detailWidth int
 }
 
@@ -830,6 +832,14 @@ func (n *newTask) workflowEntry(name string) *apiclient.WorkflowEntry {
 }
 
 func (n *newTask) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	// ctrl+s submits from anywhere (§15, task 020) — the create button says
+	// so — not only from the row list: a field, a picker or the Fields editor
+	// open underneath it is committed first, so what is posted is what the
+	// human sees. Only the y/n discard prompt keeps it, as it keeps every key.
+	if msg.String() == "ctrl+s" && n.mode != ntNavigating && n.mode != ntConfirming {
+		cmd := n.commitOpen()
+		return n, tea.Batch(cmd, n.submit())
+	}
 	switch n.mode {
 	case ntEditing:
 		return n, n.updateEditing(msg)
@@ -1020,6 +1030,48 @@ func (n *newTask) startEditing() {
 	case ntProject, ntWorkflow, ntSource, ntFields, ntWorktree, ntMergeBack, ntBranch, ntBranchName, ntPaused,
 		ntAgent, ntModel, ntEffort, ntCreate, ntRowCount:
 	}
+}
+
+// commitOpen closes whatever owns the keyboard the way its own commit key
+// would, and returns the form to the row list. A picker's free-text row is
+// committed as enter commits it; a highlight moved in a list chose nothing,
+// so that list closes leaving its row as it was.
+func (n *newTask) commitOpen() tea.Cmd {
+	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+	var cmd tea.Cmd
+	switch n.mode {
+	case ntEditing:
+		n.stopEditing()
+	case ntPicking:
+		if n.pick != nil && n.pick.editing {
+			cmd = n.updatePicking(enter)
+		}
+		n.pick = nil
+		n.mode = ntNavigating
+	case ntFieldPicking, ntFieldsOpen:
+		if n.mode == ntFieldPicking && n.pick != nil && n.pick.editing {
+			cmd = n.updateFieldPicking(enter)
+		}
+		n.pick = nil
+		if f := n.fieldsEd; f != nil && f.editing != 0 && f.cursor < len(f.rows) {
+			v := strings.TrimSpace(f.input.Value())
+			if f.editing == 1 {
+				f.rows[f.cursor].key = v
+			} else {
+				f.rows[f.cursor].value = v
+			}
+			f.editing = 0
+			f.input.Blur()
+			f.dedupe()
+		}
+		n.commitFields()
+		// What esc does on closing the editor (review F17): the fields are
+		// part of the resolution, so a submit refused for another reason
+		// leaves a preview that already knows them.
+		cmd = tea.Batch(cmd, n.resolveCmd())
+	case ntNavigating, ntConfirming:
+	}
+	return cmd
 }
 
 func (n *newTask) stopEditing() {

@@ -131,6 +131,21 @@ func (p textPane) Update(msg tea.KeyPressMsg) (textPane, tea.Cmd) {
 // follow the cursor.
 func (p textPane) View() string { return p.ta.View() }
 
+// cursorRow is the row of the focused pane's View its cursor is drawn on, so
+// a host windowing the pane keeps that row on screen (review F12). The
+// textarea reports it only through its real-cursor position, so this asks a
+// copy with the virtual cursor off; reading the position never moves the
+// viewport the copy shares.
+func (p textPane) cursorRow() (int, bool) {
+	ta := p.ta
+	ta.SetVirtualCursor(false)
+	c := ta.Cursor()
+	if c == nil {
+		return 0, false
+	}
+	return c.Y, true
+}
+
 // Dirty reports whether a key has changed the value since SetValue.
 func (p textPane) Dirty() bool { return p.dirty }
 

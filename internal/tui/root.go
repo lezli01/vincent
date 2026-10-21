@@ -128,6 +128,12 @@ type root struct {
 	// to (task 132 decision 42). Zero is the board, the answer with no
 	// history.
 	lastScoped viewID
+	// tabs is `tui.tabs` as views, in order (task 136.2): the screens tab
+	// and shift+tab switch between. applyTabs installs it from every config
+	// answer; until one arrives it is defaultTabs. lastTab is the last tab
+	// switchTo made active, for #789's landing.
+	tabs    []viewID
+	lastTab viewID
 
 	// github is the §13.2 capability probe for every registered project,
 	// yes and no alike, refreshed as the connection comes up and again on
@@ -207,6 +213,7 @@ func newRoot(ctx context.Context, cn connector, dataDir string) *root {
 		mouseOn: true,
 		notice:  firstRunNotice{active: !noticeAcknowledged(dataDir)},
 	}
+	m.setTabs(defaultTabs())
 	m.setDataDir(dataDir)
 	return m
 }
@@ -289,6 +296,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyHyperlinks(msg)
 		m.applyOutputLevel(msg)
 		m.applyKeymap(msg)
+		m.applyTabs(msg)
 		m.noteDefaultProject(msg)
 		return m, tea.Batch(m.noteStartupConfig(msg), m.broadcast(msg))
 	case startupWorktreesMsg:
@@ -502,6 +510,16 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.views[m.active] = v
 		return m, cmd
 	}
+	// tab and shift+tab switch the main tab on a screen that is one (task
+	// 136.2), below the input-capture gate so a filter being typed or an open
+	// form keeps them, and in every connection phase. Anywhere else, and on
+	// a surface whose own rows answer tab, the local meaning wins unchanged.
+	if k := msg.String(); (k == "tab" || k == "shift+tab") && m.tabSwitches() {
+		if k == "tab" {
+			return m, m.cycleMainTab(1)
+		}
+		return m, m.cycleMainTab(-1)
+	}
 	if m.shadowedHere(msg.String()) {
 		// A fixed key a user binding took on a lenient load (task 128
 		// decision 3). The root's own operations were matched by opKey above
@@ -558,7 +576,7 @@ func (m *root) syncHelpPane() {
 func (m *root) helpLines(width int) []string {
 	st := m.surfaceTarget()
 	return helpLines(m.activeContext(), m.githubAvailable(),
-		helpState{target: st.target, editable: st.editable, tabs: st.tabs}, width)
+		helpState{target: st.target, editable: st.editable, tabs: st.tabs, nextTab: m.nextTabName()}, width)
 }
 
 // helpSheet renders the sheet for the surface under it, against the same
@@ -566,7 +584,7 @@ func (m *root) helpLines(width int) []string {
 func (m *root) helpSheet() string {
 	st := m.surfaceTarget()
 	return helpText(m.activeContext(), m.githubAvailable(),
-		helpState{target: st.target, editable: st.editable, tabs: st.tabs})
+		helpState{target: st.target, editable: st.editable, tabs: st.tabs, nextTab: m.nextTabName()})
 }
 
 // globalKey runs the root's own single-key bindings, and reports whether key
@@ -844,6 +862,18 @@ func (m *root) panelOwnsKey(key string) bool {
 	return false
 }
 
+// panelOwnsLocalKey is panelOwnsKey without the main-tab rows: a surface
+// such as the new-chat form, whose own rows answer tab, keeps it, while the
+// rows that only describe the root's switch do not count as the surface's.
+func (m *root) panelOwnsLocalKey(key string) bool {
+	for _, b := range bindingsFor(m.activeContext()) {
+		if b.key == key && !b.mainTab {
+			return true
+		}
+	}
+	return false
+}
+
 // activeContext names the active surface for the binding registry.
 func (m *root) activeContext() bindingContext {
 	switch m.active {
@@ -855,6 +885,9 @@ func (m *root) activeContext() bindingContext {
 		}
 		return ctxNewTask
 	case viewProjects:
+		if c, ok := m.views[viewProjects].(contextual); ok {
+			return c.bindingContext()
+		}
 		return ctxProjects
 	case viewWorkflows:
 		if c, ok := m.views[viewWorkflows].(contextual); ok {
@@ -862,6 +895,9 @@ func (m *root) activeContext() bindingContext {
 		}
 		return ctxWorkflows
 	case viewDaemon:
+		if c, ok := m.views[viewDaemon].(contextual); ok {
+			return c.bindingContext()
+		}
 		return ctxDaemon
 	case viewPullRequests:
 		return ctxPullRequests
@@ -1637,6 +1673,9 @@ func (m *root) switchTo(id viewID) tea.Cmd {
 	if _, ok := m.views[prev].(projectScoped); ok {
 		m.lastScoped = prev
 	}
+	if m.isTabRoot(id) {
+		m.lastTab = id
+	}
 	return tea.Batch(
 		m.deliver(prev, viewDeactivatedMsg{id: prev}),
 		m.deliver(id, viewActivatedMsg{id: id}),
@@ -1743,6 +1782,134 @@ func (m *root) applyKeymap(msg tea.Msg) {
 			m.noticeKeys(applyKeys(msg.cfg.TUI.Keys))
 		}
 	}
+}
+
+// applyTabs installs `tui.tabs` from whichever config answer arrived (task
+// 136.2), the same three applyKeymap reads, so a list saved from the config
+// editor applies on the next press. A failed fetch or a refused save changes
+// nothing, for applyHyperlinks' reason.
+func (m *root) applyTabs(msg tea.Msg) {
+	switch msg := msg.(type) {
+	case boardConfigMsg:
+		if msg.err == nil {
+			m.setTabs(tabsFromConfig(msg.tabs))
+		}
+	case daemonConfigMsg:
+		if msg.err == nil {
+			m.setTabs(tabsFromConfig(msg.config.TUI.Tabs))
+		}
+	case configSavedMsg:
+		if msg.err == nil {
+			m.setTabs(tabsFromConfig(msg.cfg.TUI.Tabs))
+		}
+	}
+}
+
+// setTabs installs a tab list and tells the views whose esc depends on it.
+// It never moves the human: a view the new list dropped stays on screen
+// until they leave it.
+func (m *root) setTabs(tabs []viewID) {
+	m.tabs = tabs
+	for i := range m.views {
+		if ta, ok := m.views[i].(tabAware); ok {
+			ta.setTabRoot(m.isTabRoot(viewID(i)))
+		}
+	}
+}
+
+// tabAware is a view whose esc depends on whether it is a main tab (task
+// 136.2): on one, esc below the view's own layers stays put, because there
+// is nowhere it came from; off one, it leaves to the board as it always did.
+type tabAware interface {
+	setTabRoot(bool)
+}
+
+// defaultTabs is config.Default()'s `tui.tabs`, for the TUI before a config
+// answer arrives and for a list that names nothing it can route.
+func defaultTabs() []viewID { return []viewID{viewIssues, viewHome} }
+
+// tabsFromConfig maps the configured names to views (task 136 decision 6):
+// a name this build does not know is dropped, a repeat kept once, and a list
+// left with nothing — or a daemon that sent no field — is the default.
+func tabsFromConfig(names []string) []viewID {
+	var out []viewID
+	for _, name := range names {
+		if id, ok := tabViewIDs[name]; ok && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	if len(out) == 0 {
+		return defaultTabs()
+	}
+	return out
+}
+
+// isTabRoot reports whether id is one of the configured main tabs.
+func (m *root) isTabRoot(id viewID) bool { return slices.Contains(m.tabs, id) }
+
+// owningTab is the main tab a view belongs to: itself when it is one, else
+// the list a detail screen is opened from when that is one (#789's esc).
+func (m *root) owningTab(id viewID) (viewID, bool) {
+	if m.isTabRoot(id) {
+		return id, true
+	}
+	if back, ok := switchFallback[id]; ok && m.isTabRoot(back) {
+		return back, true
+	}
+	return 0, false
+}
+
+// tabSwitches is task 136.2's rule for tab and shift+tab: they switch only
+// on a main tab, with somewhere to switch to, while nothing is typing and
+// the surface has no tab of its own.
+func (m *root) tabSwitches() bool {
+	return m.isTabRoot(m.active) && len(m.tabs) > 1 &&
+		!m.activeCapturesInput() && !m.panelOwnsLocalKey("tab")
+}
+
+// cycleMainTab moves delta tabs along the configured list, wrapping. Named
+// apart from the task workspace's cycleTab, which walks that screen's own
+// strip. It goes through switchTo, as every route does.
+func (m *root) cycleMainTab(delta int) tea.Cmd {
+	i := slices.Index(m.tabs, m.active)
+	if i < 0 || len(m.tabs) < 2 {
+		return nil
+	}
+	n := len(m.tabs)
+	return m.switchTo(m.tabs[((i+delta)%n+n)%n])
+}
+
+// nextTabName is the configured name of the tab tab would switch to from
+// here, or "" when tab does not switch here.
+func (m *root) nextTabName() string {
+	i := slices.Index(m.tabs, m.active)
+	if i < 0 || len(m.tabs) < 2 {
+		return ""
+	}
+	next := m.tabs[(i+1)%len(m.tabs)]
+	for name, id := range tabViewIDs {
+		if id == next {
+			return name
+		}
+	}
+	return ""
+}
+
+// mainTabRows makes the main-tab rows say what they do here: dropped where
+// tab does not switch (next is ""), and hinting the tab it goes to where it
+// does. Every other row passes through.
+func mainTabRows(rows []binding, next string) []binding {
+	out := make([]binding, 0, len(rows))
+	for _, b := range rows {
+		if b.mainTab {
+			if next == "" {
+				continue
+			}
+			b.hint = "tab " + next
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 // noticeKeys raises the one-time keymap line for a warning set it has not
@@ -2169,6 +2336,7 @@ func (m *root) footerLine() string {
 	if lb, ok := m.views[m.active].(liveBinder); ok {
 		rows = lb.liveBindings(rows)
 	}
+	rows = mainTabRows(rows, m.nextTabName())
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
 	line, hits := buildFooter(m.width, rows, bar, target, attention, retry, m.activeCapturesInput())
 	m.footerHits = hits

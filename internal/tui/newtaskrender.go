@@ -285,9 +285,20 @@ func (n *newTask) reviewLine(label, value string) string {
 // what a text row has left of the pane (issue #299).
 const ntRowIndent = 2 + 12 + 1
 
+// paneWidth is the width the form is drawn in: the one the last render was
+// handed, not the terminal's, which is two columns wider than the compact
+// pane inside the root's frame and far wider than the guided main pane
+// (#797 N2). The terminal width stands in only before the first render.
+func (n *newTask) paneWidth() int {
+	if n.detailWidth > 0 {
+		return n.detailWidth
+	}
+	return n.width
+}
+
 // sizeFields hands the four text rows the width they wrap at.
 func (n *newTask) sizeFields() {
-	w := max(n.width-ntRowIndent, 10)
+	w := max(n.paneWidth()-ntRowIndent, 10)
 	n.titleIn.SetWidth(w)
 	n.branch.SetWidth(w)
 	n.branchName.SetWidth(w)
@@ -577,7 +588,7 @@ func (n *newTask) renderExpansion(row ntRow) []string {
 	}
 	switch {
 	case n.mode == ntPicking && n.pick != nil && ntRow(n.pick.row) == row:
-		n.pick.setWidth(n.width)
+		n.pick.setWidth(n.paneWidth())
 		return n.renderPicker()
 	case (n.mode == ntFieldsOpen || n.mode == ntFieldPicking) && row == ntFields:
 		return n.renderFields()
@@ -665,10 +676,8 @@ func (n *newTask) renderWorkflowDetail(name string) []string {
 
 func (n *newTask) renderFields() []string {
 	f := n.fieldsEd
-	// 6 is the row's own indent and marker; the label in front of the value is
-	// the definition's, and the pane truncates a row whose label runs long the
-	// way it always has.
-	f.input.SetWidth(max(n.width-6, 10))
+	// The field being typed into is sized per row below, to what its row's
+	// own prefix leaves of the pane (review F13).
 	out := []string{styleDim.Render("    task fields — available to templates as .Task.Fields:")}
 	for i, r := range f.rows {
 		marker := "  "
@@ -676,12 +685,8 @@ func (n *newTask) renderFields() []string {
 			marker = styleFocus.Render("▸ ")
 		}
 		key, value := r.key, r.value
-		if i == f.cursor && f.editing == 1 {
-			key = f.input.View()
-		}
-		if i == f.cursor && f.editing == 2 {
-			value = f.input.View()
-		}
+		editingKey := i == f.cursor && f.editing == 1
+		editingValue := i == f.cursor && f.editing == 2
 		name := firstNonEmpty(key, styleDim.Render("(key)"))
 		meta := ""
 		if r.declared {
@@ -710,10 +715,24 @@ func (n *newTask) renderFields() []string {
 				}
 			}
 		}
-		// Split: the key/value field wraps, and a row carrying newlines would
-		// otherwise be one element of a slice the caller counts in lines.
-		out = append(out, strings.Split(
-			"    "+marker+name+meta+" = "+firstNonEmpty(value, placeholder), "\n")...)
+		// The field being typed into wraps under its own column, its first
+		// row after everything drawn in front of it, so no row of it is wider
+		// than the pane (review F13).
+		switch {
+		case editingKey:
+			lead := "    " + marker
+			rest := meta + " = " + firstNonEmpty(value, placeholder)
+			f.input.SetWidth(max(n.paneWidth()-cols(lead), 10))
+			rows := indentRows(lead, f.input.rows())
+			rows[len(rows)-1] = truncateRows([]string{rows[len(rows)-1] + rest}, n.paneWidth())[0]
+			out = append(out, rows...)
+		case editingValue:
+			lead := "    " + marker + name + meta + " = "
+			f.input.SetWidth(max(n.paneWidth()-cols(lead), 10))
+			out = append(out, indentRows(lead, f.input.rows())...)
+		default:
+			out = append(out, strings.Split("    "+marker+name+meta+" = "+firstNonEmpty(value, placeholder), "\n")...)
+		}
 		if i == f.cursor && r.declared {
 			if r.definition.Description != "" {
 				out = append(out, styleDim.Render("        "+r.definition.Description))
@@ -730,7 +749,7 @@ func (n *newTask) renderFields() []string {
 			}
 		}
 		if i == f.cursor && n.mode == ntFieldPicking && n.pick != nil {
-			n.pick.setWidth(n.width)
+			n.pick.setWidth(n.paneWidth())
 			out = append(out, n.pick.renderBody()...)
 			hint := "    enter select · esc cancel"
 			if r.definition.Multiple {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -165,6 +166,10 @@ type chatView struct {
 
 	composer textarea.Model
 	form     *answerForm
+	// formAway is the §7.4 popup esc put away (issue #801 F7): the question
+	// is still the chat's, and alt+a brings it back with what was picked.
+	// A note under the conversation says so for as long as it is away.
+	formAway *answerForm
 	// sending is a send in flight. The draft stays in the composer until the
 	// daemon takes the turn (#790), so this is what stops a second enter
 	// sending it twice meanwhile.
@@ -293,6 +298,7 @@ func (v *chatView) open(id int64) tea.Cmd {
 	}
 	v.chatID = id
 	v.chat, v.turns = nil, nil
+	v.form, v.formAway = nil, nil
 	v.resetRecords()
 	v.note, v.loadErr = "", ""
 	v.closing, v.sending = false, false
@@ -488,18 +494,27 @@ func (v *chatView) applyLoaded(msg chatLoadedMsg) {
 // syncForm opens, keeps or closes the §7.4 popup to match the chat's state.
 func (v *chatView) syncForm() {
 	if v.chat == nil || v.chat.State != "awaiting_input" {
-		v.form = nil
+		v.form, v.formAway = nil, nil
 		return
 	}
 	req, ok, err := v.chat.PendingRequest()
 	if err != nil || !ok {
-		v.form = nil
+		v.form, v.formAway = nil, nil
 		return
 	}
 	if v.form != nil && v.form.sameRequest(req) {
 		return
 	}
+	// A question esc put away stays away across reloads (issue #801 F7):
+	// bringing it back on the next chat.* event undid the esc at a moment
+	// the reader did not choose. A new question opens over it.
+	if v.formAway != nil && v.formAway.sameRequest(req) {
+		return
+	}
+	v.formAway = nil
 	v.form = newAnswerForm(req)
+	// No task details here: only the task workspace answers ctrl+t.
+	v.form.noDetails = true
 	// The popup owns the keyboard and the screen; an inline list drawn under
 	// it would be an aid to typing on a surface nobody can type into.
 	v.hideInline("")
@@ -522,8 +537,10 @@ func (v *chatView) runningTurn() *apiclient.ChatTurn {
 // so opening a hundred-turn chat is still one small burst of requests.
 const eagerTurns = 5
 
-// resetRecords clears everything derived from a chat's turns. It runs on open
-// and on send: the next load rebuilds it.
+// resetRecords clears everything derived from a chat's turns. It runs on open:
+// the next load rebuilds it. A send does not run it (issue #801 F10) — the
+// finished turns' records are still the conversation, and blanking them
+// redrew every turn from its bare ResultText until the refetches landed.
 func (v *chatView) resetRecords() {
 	v.turnRecords = map[int][]apiclient.TranscriptRecord{}
 	v.turnSeqs = map[int][]int64{}
@@ -779,7 +796,12 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	// The draft the inline hints were about is gone with it (task 124.14).
 	v.skills.inlineNote, v.skills.noteFor = "", ""
 	v.note = ""
-	v.resetRecords()
+	// Only the live seam is the new turn's to reset: the records of every
+	// finished turn stay (issue #801 F10), and the new turn's tail is fetched
+	// once the reload shows it running.
+	v.liveFrom, v.liveTurn = 0, 0
+	v.setFollowing(true)
+	v.bodyDirty = true
 	return v.loadCmd()
 }
 
@@ -800,13 +822,16 @@ func unsentRest(value, sent string) string {
 
 func (v *chatView) applyAnswered(msg chatAnsweredMsg) tea.Cmd {
 	if msg.err != nil {
-		if v.form != nil {
-			v.form.err = errString(msg.err)
-			v.form.submitting = false
+		// esc may have put the form away while the answer was in flight
+		// (review F5): the failure lands on it all the same, so alt+a brings
+		// back a form that can be sent again and says why it was not.
+		if f := cmp.Or(v.form, v.formAway); f != nil {
+			f.err = errString(msg.err)
+			f.submitting = false
 		}
 		return nil
 	}
-	v.form = nil
+	v.form, v.formAway = nil, nil
 	return v.loadCmd()
 }
 
@@ -827,7 +852,9 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.closing = false
 		cmd, exit := v.form.updateWith(msg, v.answerCmd)
 		if exit {
-			v.form = nil
+			// Put away, not dropped (issue #801 F7): alt+a brings it back
+			// with the picks kept, and the note line says so meanwhile.
+			v.form, v.formAway = nil, v.form
 		}
 		return v, cmd
 	}
@@ -907,8 +934,26 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.vp.PageDown()
 		v.syncFollowToViewport()
 		return v, v.fetchVisibleTranscripts()
+	// The line step and the jump to the start (issue #801 F8): pgup/pgdown
+	// alone moved a page at a time, and the only way to the first turn was
+	// to page there.
+	case "alt+up":
+		v.vp.ScrollUp(1)
+		v.syncFollowToViewport()
+		return v, v.fetchVisibleTranscripts()
+	case "alt+down":
+		v.vp.ScrollDown(1)
+		v.syncFollowToViewport()
+		return v, v.fetchVisibleTranscripts()
+	case "alt+g":
+		v.vp.GotoTop()
+		v.syncFollowToViewport()
+		return v, v.fetchVisibleTranscripts()
 	case "ctrl+g":
 		v.setFollowing(true)
+		return v, nil
+	case "alt+a":
+		v.reopenForm()
 		return v, nil
 	}
 	var cmd tea.Cmd
@@ -1591,14 +1636,45 @@ func (v *chatView) askClose() {
 	}
 }
 
-// closePrompt is the confirmation's text: what closing does, and to whom.
-func (v *chatView) closePrompt() string {
+// chatCloseAnswers is the close confirmation's answer keys, kept apart from
+// the question so a wrap can never cut them (issue #801 F2).
+const chatCloseAnswers = "(y/n)"
+
+// closeQuestion is the confirmation's text: what closing does, and to whom.
+// noteLines ends it with chatCloseAnswers.
+func (v *chatView) closeQuestion() string {
 	prompt := fmt.Sprintf("close this chat? task #%d unlocks, and its worktree and branch stay as they are", derefID(v.chat.LinkedTaskID))
 	if v.runningTurn() != nil {
 		prompt += " — the running turn is stopped first"
 	}
-	return prompt + " (y/n)"
+	return prompt
 }
+
+// promptKeys names the close confirmation's answers while it is up, so the
+// root footer shows those and nothing else (#790): every other key is spent
+// on declining.
+func (v *chatView) promptKeys() promptAnswers {
+	if v.closing && v.chat != nil && v.form == nil {
+		return promptHint("y", "close", "n", "keep it open")
+	}
+	return nil
+}
+
+// reopenForm brings back the question esc put away (issue #801 F7), with
+// whatever was picked in it.
+func (v *chatView) reopenForm() {
+	if v.formAway == nil {
+		return
+	}
+	v.form, v.formAway = v.formAway, nil
+	v.hideInline("")
+	v.hideFiles()
+}
+
+// chatFormAwayNote is the persistent line under the conversation while a
+// question is put away: the agent is still waiting, and nothing else on
+// screen says so or says how to answer.
+const chatFormAwayNote = "the agent is waiting on an answer — alt+a reopens the question"
 
 func (v *chatView) closeCmd() tea.Cmd {
 	client, id := v.client, v.chatID
@@ -1631,12 +1707,35 @@ func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
 // a chat opened on a task, hand-off for a free one. The other is refused by
 // the daemon, and a footer offering it would describe a press that can only
 // fail. Before the chat has loaded neither is known, and neither is offered.
+//
+// It drops every other key that would do nothing right now too (issue #801
+// F5): send on a chat that is not idle — sendCmd refuses it there — stop
+// with no running turn, skills on a chat that has ended or not
+// loaded, the reopen key with no question put away, ctrl+t task details in
+// a chat's answer popup — only the task workspace answers it — and the
+// composer's own keys while the close confirmation owns the keyboard.
 func (v *chatView) liveBindings(rows []binding) []binding {
 	linked := v.chat != nil && v.chat.LinkedTaskID != nil
 	free := v.chat != nil && v.chat.LinkedTaskID == nil
+	ended := v.chat == nil || chatstate.Terminal(chatstate.State(v.chat.State))
+	owned := v.closing || v.form != nil
 	out := make([]binding, 0, len(rows))
 	for _, b := range rows {
-		if b.context == ctxChat && ((b.key == chatCloseKey && !linked) || (b.key == chatHandoffKey && !free)) {
+		if b.context == ctxForm && b.key == "ctrl+t" {
+			continue
+		}
+		if b.context != ctxChat {
+			out = append(out, b)
+			continue
+		}
+		switch {
+		case b.key == chatCloseKey && !linked,
+			b.key == chatHandoffKey && !free,
+			b.key == "ctrl+x" && v.runningTurn() == nil,
+			b.key == "tab" && ended,
+			b.key == "alt+a" && v.formAway == nil,
+			b.key == "enter" && (v.chat == nil || v.chat.State != string(chatstate.Idle)),
+			owned && (b.key == "enter" || b.key == "ctrl+j" || b.key == "tab"):
 			continue
 		}
 		out = append(out, b)
@@ -1668,6 +1767,13 @@ func (v *chatView) sendCmd() tea.Cmd {
 		v.note, v.noteBad = "not connected", true
 		return nil
 	}
+	// A chat that has not loaded has no state to check the send against,
+	// and a failed load is not an empty chat (issue #801 F9): the draft is
+	// kept and nothing is sent until the daemon has answered.
+	if v.chat == nil {
+		v.note, v.noteBad = "this chat has not loaded — nothing was sent", true
+		return nil
+	}
 	// `send` is legal only from idle (chatstate), and a turn is refused,
 	// never queued (§11): the daemon would answer 409 invalid_state, so it
 	// is refused here, with the draft kept, the way close and hand-off are.
@@ -1677,6 +1783,7 @@ func (v *chatView) sendCmd() tea.Cmd {
 		// it: bring it back, or the note names something no key reopens
 		// (review F9).
 		if v.chat.State == string(chatstate.AwaitingInput) {
+			v.reopenForm()
 			v.syncForm()
 		}
 		return nil
