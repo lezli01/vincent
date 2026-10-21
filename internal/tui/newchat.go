@@ -617,38 +617,59 @@ func (f *newChatForm) render(width, height int) string {
 		{ncBranch, "branch", []string{f.branchValue()}},
 	}
 	lines := []string{" " + styleTitle.Render("new chat"), ""}
+	// from and to bound the focused element: its row and, under it, its open
+	// list. The list is drawn beneath the row it belongs to rather than after
+	// every row, so the two are one range to keep in view (#801 F13).
+	from, to := 0, 0
 	for _, r := range rows {
 		marker := "  "
 		if r.row == f.focus && f.pick == nil {
 			marker = "▸ "
 		}
+		if r.row == f.focus {
+			from = len(lines)
+		}
 		lines = append(lines, indentRows(marker+padRight(r.label, 9), r.value)...)
+		if r.row == f.focus && f.pick != nil {
+			f.pick.setWidth(width)
+			lines = append(lines, f.pick.renderBody()...)
+		}
+		if r.row == f.focus {
+			to = len(lines)
+		}
 		if r.row == ncBranch && f.branchErr != "" {
-			lines = append(lines, "  "+styleBad.Render("⚠ "+f.branchErr))
+			for _, l := range wrapText("⚠ "+f.branchErr, width-2, wrapOpts{indent: 2}) {
+				lines = append(lines, "  "+styleBad.Render(l))
+			}
 		}
 	}
-	if f.pick != nil {
-		f.pick.setWidth(width)
-		lines = append(lines, f.pick.renderBody()...)
-	}
 	lines = append(lines, "")
+	// The footer is pinned: it carries the keys that work right now, or the
+	// reason the create failed, and neither may scroll away under a tall
+	// form. Both are wrapped to the pane, an error being as long as the
+	// daemon made it (#801 F13).
+	var footer []string
 	switch {
 	case f.submitting:
-		lines = append(lines, " "+styleDim.Render("creating…"))
+		footer = wrapStatus("creating…", width, styleDim)
 	case f.err != "":
-		lines = append(lines, " "+styleBad.Render(f.err))
+		footer = wrapStatus(f.err, width, styleBad)
 	case f.pick != nil:
-		lines = append(lines, " "+styleDim.Render(
-			"↑/↓ choose · / filter · enter pick · esc close the list"))
+		footer = wrapStatus("↑/↓ choose · / filter · enter pick · esc close the list", width, styleDim)
 	default:
-		lines = append(lines, " "+styleDim.Render("enter choose · ctrl+s create · esc cancel"))
+		footer = wrapStatus("enter choose · ctrl+s create · esc cancel", width, styleDim)
 	}
-	// A form that grew past its pane keeps its cursor row on screen rather
-	// than drawing off the bottom.
-	if height > 0 && len(lines) > height {
-		lines = window(lines, int(f.focus)+2, height)
+	if height <= 0 {
+		return strings.Join(append(lines, footer...), "\n")
 	}
-	return strings.Join(lines, "\n")
+	if len(footer) >= height {
+		return strings.Join(footer[:height], "\n")
+	}
+	// A form that grew past its pane keeps the whole focused element on
+	// screen rather than drawing off the bottom: never more lines than the
+	// height it was given.
+	lines = windowRange(lines, from, to, height-len(footer))
+	return strings.Join(append(lines, footer...), "\n")
 }
 
 // branchValue is the branch row's summary. Empty is the ordinary chat: vincent
