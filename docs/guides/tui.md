@@ -899,7 +899,8 @@ output. It is the sentence that decides whether to open the transcript.
 | `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
 | `N` | Jump to the task's next failure, from any tab — see [Jumping between failures](#jumping-between-failures) |
 | `3` / `6` / `4` / `7` | On Overview, the frame's jump links — the output of, or what was given to, the attempt it is about; the diff; the pull request |
-| `l` | On Overview, open the fan-out lane the failure card blames |
+| `l` | On Overview, open the fan-out lane the failure card blames — or, on a parent waiting on its lanes, the first lane listed under *Lanes that need you* |
+| `pgup`/`pgdn`, `home`/`end` | On Overview, scroll a frame taller than the screen (the wheel does too; the last row says what is above and below) |
 | `w` | On Overview, open the output of the attempt the outcome card's result came from, at its end |
 | `6` | Step Details — what the selected attempt was handed, and the resolution behind it |
 | `7` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
@@ -913,8 +914,11 @@ output. It is the sentence that decides whether to open the transcript.
 | `space` | On Steps, open or close the iteration or round the cursor is in |
 | `←`/`→` | On Steps, close / open that iteration or round |
 | `O` / `C` | On Steps, open / close every iteration and round of this task |
+| `pgup`/`pgdn` | On Steps, move the selection a page |
+| `g`/`home`, `G`/`end` | On Steps, select the first / last attempt; `↑ N more` / `↓ N more` rows say what the window hides |
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
+| `g` or `home` | On Output, jump to the top (follow stops) |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
@@ -1254,6 +1258,7 @@ and one expanded to its hunk](../assets/tui-diff.png)
 | `O` | Expand every file |
 | `C` | Collapse every file — which is how the tab opens |
 | `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
+| `shift+←`/`shift+→` | Pan sideways to the end of a line wider than the pane — diff lines are never wrapped |
 | `[` | Back to the Output tab (`]` advances to Workflow) |
 
 Clicking a file's row folds it; clicking a line of code selects its file and

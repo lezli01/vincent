@@ -614,6 +614,24 @@ list with the user-facing context a commit subject cannot carry.
   an empty archived board names its date window and `s` rather than offering
   `n`, and a wrapped title cut short no longer gains a space before its `…`.
   ([#798](https://github.com/lezli01/vincent/issues/798))
+- **The task workspace's panes scroll to their end.** The Overview cut its
+  frame at the screen's height and could not be scrolled, so on a blocked task
+  between about 15 and 23 rows tall the failure card lost its action keys and
+  links — a taller terminal showed fewer of them than a shorter one. The
+  Overview now scrolls (`pgup`/`pgdn`, `home`/`end`, the mouse wheel) with a
+  cue saying what is above and below, and the failure card keeps its headline,
+  actions and links before its meaning and evidence. A finished task's result
+  uses the rows that are free instead of stopping at six lines. A fan-out
+  parent waiting on its lanes lists the ones that are blocked or waiting on
+  you, and `l` opens the first; its `3 full output` link, which opened an
+  empty transcript, is now `1 steps`. The Pull Request tab keeps the selected
+  check and its hint line on screen with many checks, aligns its labels, and
+  marks the lane `l` actually opens. The Steps tab pages with `pgup`/`pgdn`
+  and jumps to the first or last attempt with `g`/`home` and `G`/`end`
+  without its window jumping on every move, and Output jumps to the top with
+  `g`/`home`. The Diff tab pans long lines with `shift+←`/`shift+→`, says when
+  it was loaded, and no longer tells you to press `d` (which switches to
+  Output there). The Workflow tab's inspector shows each field on its own row.
 
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,

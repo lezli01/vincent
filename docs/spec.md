@@ -12684,7 +12684,9 @@ stream for the live tail.
    variant is muted, fetches nothing and offers what the daemon offers,
    which is never `retry`. On a body shorter than 12 rows the card keeps its
    first line and its actions' keys, then the links; the rest is dropped
-   whole.
+   whole. *Superseded 2026-10-21 (issue #799): the card now collapses only
+   when its headline and actions will not fit, and spends rows in priority
+   order — see "Wrap or truncate, never clip" in §15.*
 
    *Amended 2026-09-29 (task 129.14, issue #602).* **A finished task's
    ended frame is an outcome card.** It renders on `done` and `archived` in
@@ -12698,7 +12700,9 @@ stream for the live tail.
    `status_message`, labelled dim as that fallback. Only the task's own
    attempts count (task 088 decision 9). It is rendered through the
    assistant Markdown renderer after invalid UTF-8 is replaced, cut to 6
-   rendered lines, and always labelled with its source — step, loop
+   rendered lines (*since 2026-10-21, issue #799: grown into every row the
+   Overview has free, and cut to no fewer than 2 before the card
+   collapses*), and always labelled with its source — step, loop
    iteration and item, attempt. The `result` operation (default `w`,
    registered on the Overview only while a result attempt exists) moves the
    shared attempt cursor to that attempt and opens Output at its end; on
@@ -14297,6 +14301,38 @@ last-resort guard that keeps one panel out of its neighbour, and a test
 reaching it (`assertNoFrameClip`) is a failure. The help sheet is the first
 surface held to it: its labels wrap at their own column, its key row sheds its
 description before a close key, and the mouse wheel scrolls it.
+
+*Amended 2026-10-21 (issue #799).* **The task workspace's panes are held to it
+too.** The **Overview** draws its frame into a `scrollPane` — `pgup`/`pgdn`,
+`home`/`end` and the wheel scroll it, with the cue on its last row — instead
+of keeping its first rows. The failure card spends the rows it has in
+priority order: its headline and actions, the jump links, the reason's
+meaning, the evidence (shrunk before it is dropped, and a `block_detail`
+fallback capped at the same budget, its cut stated), then the status, and
+the state sentence above it last; it collapses to its first line and its
+keys only when even the headline and actions will not fit. So a taller
+screen never shows fewer of the card's keys than a shorter one, where the
+fixed 12-row threshold cut a full card before its actions just above it. The
+outcome card's result grows into the rows the Overview has free rather than
+stopping at six lines. A fan-out parent in `awaiting_children` lists the
+lanes that need a human — blocked first, then those at a gate or a question
+— under *Lanes that need you*, and offers `l` for the first; its jump link is
+`1 steps`, because no link may open an empty transcript, which `3 full
+output` did for a parent that never ran a step of its own. The **Pull
+Request** tab windows its checks around the cursor with the header and the
+hint line pinned and `↑ N more` / `↓ N more` cues, its labels are padded
+before they are styled, and its `▸` marks the lane `l` opens. The **Steps**
+timeline pages (`pgup`/`pgdn`), jumps to either end (`g`/`home`,
+`G`/`end`), and holds its window still until the selection leaves it,
+snapped to whole entries with `↑ N more` / `↓ N more` cue rows; **Output**
+gains `g`/`home` to the top, which drops follow. The **Diff** tab never
+wraps a line — its columns are its meaning — so `shift+←`/`shift+→` pan to
+the end of a line wider than the pane; its summary line carries an `as of
+HH:MM:SS` freshness cue (entering the tab is the refresh), and its
+never-fetched state no longer names `d`, which on that tab switches to
+Output. The **Workflow** tab's inspector gives each field — name, run
+state, prompt or command — its own row, using the rows its budget used to
+leave blank.
 
 **Opening a URL (task 052.6, added 2026-08-29).** The two screens above hand a
 URL to the platform's own opener — `open` on macOS, `xdg-open` on the other

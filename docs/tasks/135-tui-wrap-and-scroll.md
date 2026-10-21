@@ -1,6 +1,6 @@
 # 135 — TUI wrap and scroll: one wrap helper, one scrolling pane, screen by screen
 
-**Status:** 🔄 in progress (3/5)
+**Status:** 🔄 in progress (4/6)
 
 The umbrella record for [#784](https://github.com/lezli01/vincent/issues/784):
 text that "can not be read" across the TUI, and an opened issue that cannot be
@@ -89,6 +89,20 @@ Written into `internal/tui/doc.go` and spec §15:
   exceed the pane; `ctrl+l` and the new `ctrl+y` cover the comments and the
   source URL. The form windows its rows around the focused element with its
   error and key line pinned. ✓ 2026-10-21
+- [x] **135.6** The task workspace's panes scroll to their end (#799). The
+  Overview is a `scrollPane` (`pgup`/`pgdn`, `home`/`end`, the wheel) and its
+  failure card budgets by priority — headline, actions, links, meaning,
+  evidence — so a taller screen never shows fewer keys; the outcome card's
+  result grows into the free rows; a fan-out parent names the lanes that need
+  a human and offers `l`, and links `1 steps` rather than an empty
+  transcript. The Pull Request tab windows its checks around the cursor with
+  the header and hint pinned, pads labels before styling, and puts `▸` on the
+  lane `l` opens. The Steps timeline pages and jumps (`pgup`/`pgdn`,
+  `g`/`home`, `G`/`end`) with a still, whole-entry window and `↑/↓ N more`
+  cues; Output gains `g`/`home`. The Diff tab pans long lines on
+  `shift+←`/`→`, shows its age, and its empty state no longer names `d`. The
+  Workflow inspector is one field per row. Every new key is a registry row.
+  ✓ 2026-10-21
 
 ## Decisions
 
@@ -115,3 +129,10 @@ Written into `internal/tui/doc.go` and spec §15:
    makes a line, and a label with no value is still drawn. This is what the
    replaced helpers did between them — `appendWrappedIndented` drew blank
    paragraphs empty, `wrappedHeaderValue` drew an empty value's label.
+5. **The diff pans; it does not soft-wrap** (2026-10-21, 135.2, #799). A
+   diff's columns are its meaning, and a wrapped `+` line reads as two lines
+   of the change. So a line wider than the pane is reached by `shift+←`/`→`,
+   moved onto the viewport's own sideways keys because the plain arrows and
+   `h`/`l` are the fold keys on that tab, and the viewport clamps the pan to
+   the longest line. *Beat:* soft-wrapping the diff, which keeps every byte
+   on screen but loses the one-change-per-row reading.
