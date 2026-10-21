@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +92,42 @@ func TestDaemonViewShowsTheLogAt80x24(t *testing.T) {
 				}
 			}
 			assertNoFrameClip(t, screen)
+		})
+	}
+}
+
+// With the log focused the blocks pane is pinned to its end, and it starts at
+// a block's heading under a cue naming the key that reaches what it hides:
+// no config row runs on under identity, and no "↑ more" offers a scroll no
+// key performs (review F24).
+func TestDaemonPinnedBlocksStartAtAHeading(t *testing.T) {
+	for _, sz := range [][2]int{{80, 24}, {78, 20}, {80, 30}} {
+		t.Run(fmt.Sprintf("%dx%d", sz[0], sz[1]), func(t *testing.T) {
+			_, d := daemonRoot(t, sz[0], sz[1], []string{"level=INFO msg=ready"})
+			d.focusConfig = false
+			lines := strings.Split(ansi.Strip(d.render(sz[0]-2, sz[1]-3)), "\n")
+			at := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "/data/logs/daemon.log") })
+			if at < 0 || at+2 >= len(lines) {
+				t.Fatalf("no identity block:\n%s", strings.Join(lines, "\n"))
+			}
+			next := strings.TrimSpace(lines[at+1])
+			if strings.Contains(next, "↑") {
+				if !strings.Contains(next, "tab") {
+					t.Errorf("the cue names no key: %q", next)
+				}
+				next = strings.TrimSpace(lines[at+2])
+			}
+			heading := slices.ContainsFunc([]string{"config in effect", "database", "adapters"}, func(h string) bool {
+				return strings.HasPrefix(next, h)
+			})
+			if next != "" && !heading {
+				t.Errorf("the pane starts mid-block, under identity: %q\n%s", next, strings.Join(lines, "\n"))
+			}
+			for _, l := range lines {
+				if strings.Contains(l, "↑ more") {
+					t.Errorf("a scroll cue no key answers: %q", l)
+				}
+			}
 		})
 	}
 }

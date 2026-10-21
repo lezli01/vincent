@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
@@ -54,8 +53,10 @@ func (d *daemonView) render(width, height int) string {
 	configAt := len(blocks)
 	blocks = append(blocks, d.configLines()...)
 	blocks = append(blocks, "")
+	databaseAt := len(blocks)
 	blocks = append(blocks, d.databaseLines()...)
 	blocks = append(blocks, "")
+	adaptersAt := len(blocks)
 	blocks = append(blocks, d.adapterLines()...)
 	blocks = append(blocks, "")
 
@@ -68,9 +69,9 @@ func (d *daemonView) render(width, height int) string {
 		// The cue line separates the pane from the log; the blank would only
 		// cost it a row.
 		blocks = blocks[:len(blocks)-1]
-		pane := newScrollPane(d.width, room, true)
-		pane.SetContentLines(blocks)
 		if d.focusConfig {
+			pane := newScrollPane(d.width, room, true)
+			pane.SetContentLines(blocks)
 			// Follow the cursor, the block's heading in view when it fits.
 			row := configAt + 1 + d.cursor
 			if first, _ := d.configWindow(); first > 0 {
@@ -78,16 +79,34 @@ func (d *daemonView) render(width, height int) string {
 			}
 			pane.EnsureVisible(configAt, row)
 			pane.EnsureVisible(row, row)
+			blocks = pane.View()
 		} else {
-			// The adapters and the database sit nearest the log: the end of
-			// the blocks is what a reader watching the log is checking.
-			pane.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
+			blocks = d.pinnedBlocks(blocks, []int{configAt, databaseAt, adaptersAt}, room)
 		}
-		blocks = pane.View()
 	}
 	logH = max(d.height-len(head)-len(blocks), logH)
 	head = append(head, blocks...)
 	return strings.Join(head, "\n") + "\n" + d.renderLog(logH)
+}
+
+// pinnedBlocks is the blocks pane while the log has the keys: the end of the
+// blocks — the adapters and the database sit nearest the log, and they are
+// what a reader watching the log is checking — starting at a block's own
+// heading, so no block's rows run on under identity as if they were its own
+// (review F24). ↑/↓ drive the log here, so the line above says what is
+// hidden and the key that reaches it instead of a scroll cue no key answers.
+func (d *daemonView) pinnedBlocks(blocks []string, starts []int, room int) []string {
+	hidden := starts[len(starts)-1]
+	for _, at := range starts {
+		if len(blocks)-at <= room-1 {
+			hidden = at
+			break
+		}
+	}
+	shown := blocks[hidden:]
+	shown = shown[:min(len(shown), max(room-1, 0))]
+	cue := styleDim.Render("  ↑ " + plural(hidden, "line", "lines") + " above — tab moves to the config list")
+	return append([]string{cue}, shown...)
 }
 
 // identityLines is what the daemon is: version, process, and the three paths
