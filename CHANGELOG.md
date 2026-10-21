@@ -585,13 +585,15 @@ list with the user-facing context a commit subject cannot carry.
   body no longer hides the key line or a failed push's error — the footer is
   pinned and the rows scroll — and the shown URL leaves out the encoded body
   (`ctrl+o` still opens it all). The merge popup wraps its title and checks.
+  ([#804](https://github.com/lezli01/vincent/issues/804))
 - **The archived boards say what they show.** The archived tasks board's
   header names the date window and page instead of the live slot tally, and
   its columns are its own — an ARCHIVED date instead of STEP and ELAPSED, so
   the title has room. The archived chats header names the window and page,
-  the board re-lists when opened, and both boards (and the live chats board)
-  take `home`/`end`/`pgup`/`pgdown`. `esc` leaves both archived boards the
-  same way, and `<`/`>` are offered only when there is a page that way.
+  both boards re-list when opened and reload on `R`, and both (and the live
+  chats board) take `home`/`end`/`pgup`/`pgdown`. `esc` leaves both archived
+  boards the same way — after clearing the filter and the tasks board's
+  selection — and `<`/`>` are offered only when there is a page that way.
   ([#804](https://github.com/lezli01/vincent/issues/804))
 - **The new-task form wraps to its pane, and `ctrl+s` creates from anywhere
   in it.** The title, branch and priority rows, the open lists and the Fields
