@@ -16106,15 +16106,15 @@ the connection screen (retry and the root's keys), not the hidden view. When the
 reconnect can land mid-sentence in a chat or a form — a printable key other
 than `r` is the human still typing and is swallowed, so `q` cannot quit past
 a draft; the footer and the screen then name the text-field keys (`ctrl+p`,
-`f1`, `ctrl+c`) instead (review F1). *Amended 2026-10-21 (task 136.3,
-issue #788):* the header is drawn before the body, so the main-tab strip
-stays on screen and live in every connection phase: a click on a label
-switches tabs there exactly as `tab` does. Its text wraps to the terminal and the frame fills
-it. The TUI runs in the terminal's alternate screen, which the quit
-reminder's "printed after teardown" already assumed. The status line is
+`f1`, `ctrl+c`) instead (review F1). Its text wraps to the terminal and the
+frame fills it. The TUI runs in the terminal's alternate screen, which the
+quit reminder's "printed after teardown" already assumed. The status line is
 budgeted to the width: a pending switch's project names give way before its
 answer key, which moves to the front when even shortened names do not fit —
 followed by what it does (`discard the …`), with why it is asking cut first.
+*Amended 2026-10-21 (task 136.3, issue #788):* the header is drawn before the
+body, so the main-tab strip stays on screen and live in every connection
+phase: a click on a label switches tabs there exactly as `tab` does.
 
 ## 16. Security considerations
 
