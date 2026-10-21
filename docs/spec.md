@@ -13925,8 +13925,10 @@ stream for the live tail.
    either end. A page taller than the pane shows `▲ n more` / `▼ n more`
    while it continues. The wheel scrolls a line per tick (#300's convention)
    and a click selects a task or the Main worktree row, per §15 Mouse; both
-   are ignored under the issue form and the close/delete prompt. The footer
-   withholds `enter` with no row to open and `o` on a local issue.
+   are ignored under the issue form and the close/delete prompt. `enter`
+   acts on the selected row only while it is on screen, and the footer
+   withholds it with no row to open or with the selection scrolled away
+   (review F6 of PR #805), and `o` on a local issue.
 
 ### Layout
 

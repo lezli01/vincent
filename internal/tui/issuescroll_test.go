@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // Issue #792: the issue detail could not be scrolled by the keys a reader
@@ -224,5 +225,36 @@ func TestIssueDetailRebindingAScrollKeyWins(t *testing.T) {
 	}
 	if v.scroll != 3 {
 		t.Errorf("G bound to comment still scrolled, to %d", v.scroll)
+	}
+}
+
+// The selection acts only while it is on screen (#792): on the first page
+// of a long issue the linked-task rows are below it, so enter opens nothing
+// and the footer does not offer it until a row has scrolled in (review F6).
+func TestIssueDetailEnterNeedsTheSelectionOnScreen(t *testing.T) {
+	v := issueFixture()
+	v.render(80, 24)
+	if v.visible(v.cursor) {
+		t.Fatal("fixture: the selected row is on the first page of an 80×24 pane")
+	}
+	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd != nil {
+		t.Fatalf("enter opened %#v with the selected row off screen", cmd())
+	}
+	for _, b := range v.liveBindings(bindings) {
+		if b.context == ctxIssue && b.op == keymap.OpenRow {
+			t.Fatal("the footer offers enter with the selected row off screen")
+		}
+	}
+	v.updateKey(key("G"))
+	v.render(80, 24)
+	if !v.visible(v.cursor) {
+		t.Fatal("the selected row is still off screen at the end of the page")
+	}
+	_, cmd := v.updateKey(registryKey(t, "enter"))
+	if cmd == nil {
+		t.Fatal("enter on an on-screen row opened nothing")
+	}
+	if msg, ok := cmd().(selectTaskMsg); !ok || msg.id != 21 {
+		t.Fatalf("enter produced %#v, want task #21", cmd())
 	}
 }

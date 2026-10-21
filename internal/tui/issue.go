@@ -530,7 +530,7 @@ func (v *issueView) commentable() bool {
 func (v *issueView) liveBindings(rows []binding) []binding {
 	withheld := map[keymap.Op]bool{
 		keymap.Comment: !v.commentable(),
-		keymap.OpenRow: len(v.selectRows()) == 0,
+		keymap.OpenRow: len(v.selectRows()) == 0 || !v.visible(v.cursor),
 		keymap.Browser: issueURL(v.issue) == "",
 	}
 	out := make([]binding, 0, len(rows))
@@ -644,7 +644,10 @@ func (v *issueView) selectRows() []issueDetailRow {
 // rather than to the board.
 func (v *issueView) openTask() tea.Cmd {
 	rows := v.selectRows()
-	if v.cursor < 0 || v.cursor >= len(rows) {
+	// The selection acts only while it is on screen (#792): on the first
+	// page of a long issue the rows are below it, and enter must not jump to
+	// a task the reader cannot see (review F6).
+	if v.cursor < 0 || v.cursor >= len(rows) || !v.visible(v.cursor) {
 		return nil
 	}
 	row := rows[v.cursor]

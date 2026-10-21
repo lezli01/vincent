@@ -1207,6 +1207,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxIssue: {
 		"enter": func(t *testing.T) {
 			v := issueFixture()
+			v.render(120, 200) // enter acts on a row that is on screen (review F6)
 			_, cmd := v.updateKey(registryKey(t, "enter"))
 			if cmd == nil {
 				t.Fatal("enter did not open the linked task")
