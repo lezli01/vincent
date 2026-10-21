@@ -14227,7 +14227,10 @@ honours any width down to one cell. Prose — descriptions, errors, labels,
 bodies — is wrapped by the view that draws it and never left to the frame's
 right-edge cut. Rows of a list or a table stay one line each, truncated with
 `…`; the focused row's full text is shown wrapped somewhere else on the
-screen. Exact identifiers — a branch, a path, a URL — hard-wrap where they are
+screen, or under the focused row itself, which then grows by those lines
+while every other row stays one — the compact workflow list does this (issue
+#791), and a list that does must scroll the whole focused entry into view,
+not only its first line (review F12 and F1 of PR #805). Exact identifiers — a branch, a path, a URL — hard-wrap where they are
 the screen's subject. Content taller than its pane lives in a `scrollPane`
 with a position cue (" ↓ more · lines a–b of n"); showing the first rows of it
 and dropping the rest is a bug. The frame's truncation stays, as the
