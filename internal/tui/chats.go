@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -62,6 +63,11 @@ type (
 		at       time.Time
 	}
 )
+
+// archivePromptTitleWidth is how much of a chat's title the archive question
+// quotes. Enough to recognise the chat; the row under the cursor carries the
+// rest.
+const archivePromptTitleWidth = 40
 
 // archivePrompt is the inline confirmation an archive takes. force is set on
 // the second pass, after the daemon refused a dirty worktree.
@@ -680,7 +686,10 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			}
 			v.confirm = &archivePrompt{
 				id: c.ID, title: c.Title,
-				text: fmt.Sprintf("archive %q and remove its worktree? (y/n)", c.Title),
+				// The title is cut: a long one pushed `(y/n)` off the line,
+				// and the answer keys are the part a reader needs (#801 F2).
+				text: fmt.Sprintf("archive %q and remove its worktree? (y/n)",
+					ansi.Truncate(c.Title, archivePromptTitleWidth, "…")),
 			}
 		}
 	case opKey(keymap.Scope):
@@ -745,7 +754,10 @@ func chatScopeLabel(s apiclient.ArchivedScope) string {
 	case apiclient.ArchivedOnly:
 		return "archived, handed-off and closed chats"
 	case apiclient.ArchivedAll:
-		return "every chat, terminal ones included"
+		// Short, because the header carries it beside the count, the
+		// waiting badge and `updated hh:mm:ss`, and a longer label pushed
+		// the stamp off an 80-column header (#801 F11).
+		return "all chats"
 	default:
 		return "live chats"
 	}
