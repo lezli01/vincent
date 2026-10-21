@@ -33,12 +33,12 @@ func TestCreatePREditorTakesAThirteenthLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.startEdit(cprBody)
-	before := len(f.lines(80))
+	before := f.height(80)
 	typeLinesWith(func(k tea.KeyPressMsg) { f.update(k) }, thirteenLines)
 	if got := f.editor.LineCount(); got != thirteenLines {
 		t.Fatalf("pull-request body holds %d lines after typing %d", got, thirteenLines)
 	}
-	if grown := len(f.lines(80)) - before; grown > editorLines {
+	if grown := f.height(80) - before; grown > editorLines {
 		t.Errorf("the form grew %d lines for a %d-line body; the field should scroll past %d", grown, thirteenLines, editorLines)
 	}
 }
