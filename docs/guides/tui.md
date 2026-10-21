@@ -2488,7 +2488,11 @@ short — the tail of what you asked stays readable.
 The composer sits inside a titled `message` box, so the field you type into does
 not read as one more row of the conversation. The border comes out of the pane's
 height rather than being added on top of it: the screen is the same height it
-always was, and the hint line is still the last row of it.
+always was. The chat draws no key line of its own — the footer is the only one,
+and it leaves out keys that would do nothing right now. The box starts three rows
+tall and grows with the draft, up to a third of the screen and at most ten rows;
+a draft taller still scrolls inside it, and the box's title says how many lines
+are out of view (`+N lines`). The conversation shrinks to pay for the rows.
 
 ![The chat workspace at `quiet`: the second turn's prompt as a right-aligned
 bubble, the answer rendered below it with its fenced block, and the titled
@@ -2704,9 +2708,12 @@ still shows its answer.
 
 When the agent asks something mid-turn, the chat enters `awaiting_input` and
 **the same popup a task's question opens** appears here — same options, same
-multi-select, same allow/deny for a permission request. Answering it from
-`vincent chat answer` or over the API closes it here too: the popup follows the
-chat's state rather than its own.
+multi-select, same allow/deny for a permission request. It takes the composer's
+place while it is open, and it has no `ctrl+t` task details: a chat has none.
+`esc` puts the question away rather than dropping it — a note under the
+conversation says the agent is waiting, and `alt+a` brings the question back
+with what you picked. Answering it from `vincent chat answer` or over the API
+closes it here too: the popup follows the chat's state rather than its own.
 
 A send refused because `max_parallel_chats` chats are already running says so
 and creates nothing. It is a refusal, not a queue: finish or stop another
