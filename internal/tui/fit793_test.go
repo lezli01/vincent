@@ -327,6 +327,30 @@ func TestPendingSwitchPromptKeepsItsMeaning(t *testing.T) {
 	}
 }
 
+// Review F6: a cut keymap warning keeps its `+N more` tail and the
+// `vincent doctor` pointer, which is how the rest of the warnings are
+// found (#793 brief, fix step 5). A plain cut from the end would take it.
+func TestKeymapWarningKeepsTheDoctorPointer(t *testing.T) {
+	warning := "binding " + strings.Repeat("x", 50) + " is unknown and was ignored"
+	for _, w := range []int{60, 80} {
+		m := phaseRoot(t, phaseConnected, w, 24)
+		m.noticeKeys([]string{warning, warning + " 2", warning + " 3"})
+		line, ok := m.statusLine()
+		if !ok {
+			t.Fatal("no status line for a keymap warning")
+		}
+		plain := ansi.Strip(line)
+		if lw := ansi.StringWidth(plain); lw > w {
+			t.Errorf("at %d columns the keymap warning is %d cells: %q", w, lw, plain)
+		}
+		for _, want := range []string{"+2 more", "`vincent doctor` lists them", "⚠ tui.keys:"} {
+			if !strings.Contains(plain, want) {
+				t.Errorf("at %d columns the keymap warning loses %q: %q", w, want, plain)
+			}
+		}
+	}
+}
+
 // C8: the first-run notice fits the 60×15 floor with its dismiss key shown.
 func TestFirstRunNoticeFitsTheFloor(t *testing.T) {
 	for i, l := range strings.Split(noticeBody, "\n") {
