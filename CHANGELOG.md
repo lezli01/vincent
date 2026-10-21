@@ -582,10 +582,12 @@ list with the user-facing context a commit subject cannot carry.
   POLL column at 80 columns (it now follows ARMED), and the global-off banner
   wraps to the screen.
 - **The daemon and projects views fit an 80×24 terminal, and their footers
-  follow their forms.** The daemon view's identity, config, database and
-  adapter blocks now scroll in a pane of their own above the log, so the log
-  always keeps at least three lines on screen and the adapters stay visible,
+  follow their forms.** The daemon view keeps its identity block pinned, and
+  the config, database and adapter blocks scroll beneath it in a pane of their
+  own above the log, so the log always keeps at least three lines on screen,
   where before the blocks alone filled the screen and the log was cut off.
+  With the log focused the pane shows its last blocks, the adapters
+  included, from a block heading, and `tab` moves to the config list.
   `enter` or `e` with the log focused moves to the config list instead of
   opening the editor on a key you could not see (by default `listen`). The
   config editor wraps its help, default, errors and confirmation, so a long
@@ -594,7 +596,6 @@ list with the user-facing context a commit subject cannot carry.
   is open, the footer and `?` show that layer's keys, not the screen's
   underneath. A long project name no longer pushes the task number, state
   and title off a needs-you row.
-
 - **The issue detail and issue form no longer cut text off.** A long issue
   title, its labels and its GitHub URL now wrap instead of ending in `…`, the
   source badge is a `source` fact rather than a tail the title pushed off the
@@ -604,6 +605,7 @@ list with the user-facing context a commit subject cannot carry.
   comments and the source page too, and `ctrl+y` copies the title,
   description, a comment or the URL. The issue form keeps the highlighted
   label and its key line on screen when the labels picker is long.
+  ([#795](https://github.com/lezli01/vincent/issues/795))
 - **The task board's cursor stays on screen and on its task.** When a refresh
   re-sorted the board — a selected task finishing and sorting to the bottom,
   `!` or `g` — the cursor could land on a row scrolled off screen, where every
