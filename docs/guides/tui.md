@@ -1956,7 +1956,9 @@ repository; the count; and the badge. Only then does the tasks column take the
 title below its minimum, never under 12 columns, so its counts stay.
 
 A list taller than the screen shows `▲ n more` above and `▼ n more` below,
-counting the rows out of sight.
+counting the lines out of sight that are not blank — the totals line, lane
+headers and `none` placeholders as well as issues, the way the issue detail
+counts its page.
 
 Any change to an issue, or to a task
 of an issue on the screen, re-lists it with no keypress, and the selection
