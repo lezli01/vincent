@@ -56,7 +56,7 @@ steps:
 
 | # | Do | Expect |
 |---|---|---|
-| 1 | Read the board | Each row's state cell and `STATUS` say what the task is doing; the fan-out parent reads `waiting on lanes (…)` with its lanes counted by glyph |
+| 1 | `tab` to the board, then read it | Each row's state cell and `STATUS` say what the task is doing; the fan-out parent reads `waiting on lanes (…)` with its lanes counted by glyph |
 | 2 | `/harden`, `tab`, `enter` | The soak opens on **Overview**: its current step and attempt. The header's breadcrumb reads `Tasks › #id › Overview`, and the dim line under it follows what the attempt prints |
 | 3 | `3`, then scroll up, then `f` | Output's attempt strip shows the spinner, elapsed time and `▼ following`; scrolling away turns it to `⏸ paused · N new`, and `f` follows again. `v` changes the level and the strip names it when it is not `normal`; `ctrl+o` shows `raw` |
 | 4 | `esc`, then `!` | The board's cursor moves to the next task that needs you, and again on each press |
