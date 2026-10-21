@@ -380,11 +380,13 @@ func (p cardParts) lines(meaning, evidence, status bool) []string {
 }
 
 // collapsedCard is the card at its smallest: its first line and its
-// actions' keys on one line.
-func (t *taskView) collapsedCard() []string {
+// actions' keys on one line. The headline is fitted to width like the full
+// card's, so the step name gives way before the attempt and the reason
+// (review F8) — a short screen is where the card collapses.
+func (t *taskView) collapsedCard(width int) []string {
 	c := t.failureCard()
 	actions := cardActions(c.reason, t.detail.task.AvailableActions)
-	return []string{c.renderHeadline(0), c.renderActionKeys(actions)}
+	return []string{c.renderHeadline(width), c.renderActionKeys(actions)}
 }
 
 // failureCardLines renders the full card within the given height budget,
