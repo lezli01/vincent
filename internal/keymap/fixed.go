@@ -7,6 +7,12 @@ package keymap
 // so a new fixed key that is not recorded here fails a test rather than
 // leaving an override free to shadow it.
 var fixed = []Fixed{
+	// tab and shift+tab switch the main tabs on the board, the chats board and
+	// the issues list, and move focus or complete on every other surface. They
+	// stay global so no override can claim them on any surface (task 136
+	// decision 11): yield refuses a clash with a global fixed key, never a
+	// per-surface one.
+	{"global", "tab", "switch the main tabs, or move focus or complete"},
 	{"global", "ctrl+v", "paste into the focused field"},
 	{"global", "esc", "close one layer"},
 	{"global", "ctrl+c", "quit the TUI"},
@@ -298,6 +304,7 @@ var fixed = []Fixed{
 	// Keys the handlers answer that the registry names only in a label, or
 	// not at all: the vim aliases, the rest of a pair, the confirmations'
 	// letters. None may become an operation's key.
+	{"global", "shift+tab", "switch to the previous main tab, or move focus back"},
 	{"task table", "shift+tab", "switch to the previous main tab"},
 	{"chats", "shift+tab", "switch to the previous main tab"},
 	{"issues", "shift+tab", "switch to the previous main tab"},
