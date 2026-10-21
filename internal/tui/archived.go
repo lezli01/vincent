@@ -94,6 +94,31 @@ func (p *archivedPager) prevPage() bool {
 	return true
 }
 
+// pageBindings is the `<`/`>` registry row as this page can answer it (#804
+// AR-11): `>` only after a full page, the one sign there is a next one; `<`
+// only past the first; both under one "</> page" hint when both work, and no
+// row at all when neither does. Shared by the two archived boards, whose rows
+// differ only in their context. shown is how many rows the page holds.
+func (p *archivedPager) pageBindings(rows []binding, ctx bindingContext, shown int) []binding {
+	next, prev := shown >= archivedPageSize, p.page > 0
+	out := make([]binding, 0, len(rows))
+	for _, b := range rows {
+		if b.context == ctx && b.key == ">" {
+			switch {
+			case next && prev:
+			case next:
+				b.label, b.hint = "next page of the archive", "> next page"
+			case prev:
+				b.key, b.label, b.hint = "<", "previous page of the archive", "< previous page"
+			default:
+				continue
+			}
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
 // label is the one line the board writes above the rows: which window it is
 // showing and, once past the first, which page.
 func (p *archivedPager) label() string {
@@ -126,7 +151,7 @@ func (p *rowDeletePrompt) question() string {
 	if p.chats {
 		noun = "chat"
 	}
-	what := fmt.Sprintf("%d %s", len(p.ids), plural(len(p.ids), noun, noun+"s"))
+	what := plural(len(p.ids), noun, noun+"s") // the count is plural's
 	if len(p.ids) == 1 {
 		what = fmt.Sprintf("%s %d", noun, p.ids[0])
 	}

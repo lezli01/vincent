@@ -878,6 +878,15 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "esc":
 		if b.filter.Value() != "" {
 			b.filter.SetValue("")
+			return b, nil
+		}
+		if b.archived {
+			// The archived board is a takeover, and the bottom of a
+			// takeover's esc stack leaves to the home board — what esc does
+			// on the archived chats board, which this one had not matched
+			// (#804 AR-11). The live board is the bottom of the whole stack,
+			// where esc does nothing.
+			return b, func() tea.Msg { return selectViewMsg{id: viewHome} }
 		}
 		return b, nil
 	case "space":
@@ -1422,6 +1431,11 @@ func (b *board) firstRowLine() int {
 // filter and the archive view, folded or scrolled away included — never off
 // the viewport, so scrolling cannot make a column appear or vanish.
 func (b *board) columns() ([]table.Column, columnSet) {
+	if b.archived {
+		// The archive's own set (#804 AR-10): no STEP or ELAPSED, an
+		// ARCHIVED date instead.
+		return archivedBoardColumns(b.width, b.group, b.hasMarks(), contentOf(b.allRows()))
+	}
 	return boardColumns(b.width, b.group, b.hasMarks(), contentOf(b.allRows()))
 }
 
@@ -1486,10 +1500,6 @@ func (b *board) cellsFor(r boardRow, now time.Time, set columnSet, cols []table.
 	if set.workflow {
 		cells = append(cells, plain(t.Workflow))
 	}
-	elapsed := "—"
-	if d, ok := t.Elapsed(now); ok {
-		elapsed = formatElapsed(d)
-	}
 	// The disclosure marker leads the title on a row with lanes, the way it
 	// leads a group header's label. It goes in the text rather than the
 	// indent so it lands on the row's first line only: a glyph repeated down
@@ -1498,12 +1508,30 @@ func (b *board) cellsFor(r boardRow, now time.Time, set columnSet, cols []table.
 	if glyph := b.laneGlyph(t); glyph != "" {
 		title = glyph + " " + title
 	}
-	cells = append(cells,
-		boardCell{text: title, wrap: true, indent: indent},
-		stateCell(t, columnWidth(cols, "STATE")),
-		boardCell{text: formatStep(t, set.stepName, columnWidth(cols, "STEP")), wrap: true},
-		plain(elapsed),
-	)
+	if set.archived {
+		// An archived row has no step and no clock (#804 AR-10); its date is
+		// when it was archived, in the archived chats board's terminal form.
+		archivedAt := "—"
+		if t.ArchivedAt != nil {
+			archivedAt = t.ArchivedAt.Local().Format("01-02 15:04")
+		}
+		cells = append(cells,
+			boardCell{text: title, wrap: true, indent: indent},
+			stateCell(t, columnWidth(cols, "STATE")),
+			plain(archivedAt),
+		)
+	} else {
+		elapsed := "—"
+		if d, ok := t.Elapsed(now); ok {
+			elapsed = formatElapsed(d)
+		}
+		cells = append(cells,
+			boardCell{text: title, wrap: true, indent: indent},
+			stateCell(t, columnWidth(cols, "STATE")),
+			boardCell{text: formatStep(t, set.stepName, columnWidth(cols, "STEP")), wrap: true},
+			plain(elapsed),
+		)
+	}
 	if set.cost {
 		cells = append(cells, plain(formatCost(t.CostUSD)))
 	}
@@ -1659,7 +1687,12 @@ func groupHeaderRow(r boardRow, set columnSet) table.Row {
 	if set.workflow {
 		row = append(row, "")
 	}
-	row = append(row, r.headerCell(), "", "", "")
+	// Then STATE and ARCHIVED on the archive (#804 AR-10), STATE, STEP and
+	// ELAPSED on the live board.
+	row = append(row, r.headerCell(), "", "")
+	if !set.archived {
+		row = append(row, "")
+	}
 	if set.cost {
 		row = append(row, "")
 	}
@@ -1739,6 +1772,9 @@ func (b *board) slotBreakdown() []string {
 // silently disagree with it; an unsized board (b.width <= 0) has no budget
 // to fail, so it keeps them.
 func (b *board) headerLine() string {
+	if b.archived {
+		return b.archivedHeaderLine()
+	}
 	attention := b.attentionTally().here
 
 	sep := styleDim.Render(" · ")
@@ -1765,6 +1801,19 @@ func (b *board) headerLine() string {
 		}
 		breakdown = breakdown[:len(breakdown)-1]
 	}
+}
+
+// archivedHeaderLine is the archived board's header (#804 AR-9): the date
+// window and the page, the way the archived chats board names them, then how
+// many rows the page holds. Not the slot tally: an archive holds no slot, and
+// the live count on top of it read as though these rows were running.
+func (b *board) archivedHeaderLine() string {
+	sep := styleDim.Render(" · ")
+	line := " " + styleTitle.Render("archived tasks") + sep + styleDim.Render(b.label())
+	if b.loaded {
+		line += sep + styleDim.Render(plural(len(b.tasks), "task", "tasks"))
+	}
+	return line
 }
 
 // slotHead is the header's slot clause (task 132 decisions 11 and 54): the
@@ -1878,13 +1927,16 @@ func (b *board) agentsSummary() string {
 	return strings.Join(append(parts, named...), " ")
 }
 
-// statusLine surfaces a stale board and the filter prompt while it is being
-// typed — a committed filter moves to the panel title (§15). A refresh that
-// failed says so and says how old the rows are, rather than the board
-// quietly showing yesterday's truth.
-// It is lines rather than a line because the filter is a wrapping field
-// (issue #299): a long filter grows the row it is typed on, and the two line
-// budgets below have to count what it actually drew.
+// liveBindings offers the archived board's `<`/`>` only where a page lies
+// that way (#804 AR-11). The live board has none of its own: the home
+// shell's liveBindings is the one consulted there.
+func (b *board) liveBindings(rows []binding) []binding {
+	if !b.archived {
+		return rows
+	}
+	return b.pageBindings(rows, ctxArchived, len(b.tasks))
+}
+
 // askDelete opens the confirmation over the marked rows, or the row under the
 // cursor when nothing is marked — the same target rule every §6 key on this
 // board follows.
@@ -1918,6 +1970,13 @@ func (b *board) answerDelete(key string) tea.Cmd {
 	return nil
 }
 
+// statusLines surfaces a stale board and the filter prompt while it is being
+// typed — a committed filter moves to the panel title (§15). A refresh that
+// failed says so and says how old the rows are, rather than the board
+// quietly showing yesterday's truth.
+// It is lines rather than a line because the filter is a wrapping field
+// (issue #299): a long filter grows the row it is typed on, and the two line
+// budgets below have to count what it actually drew.
 func (b *board) statusLines() []string {
 	if b.archived {
 		return append(b.archivedStatus(), b.liveStatusLines()...)
@@ -1926,7 +1985,8 @@ func (b *board) statusLines() []string {
 }
 
 // archivedStatus is the archived board's own lines: the confirmation while one
-// is up, then the sweep's report, then the window and page it is showing. The
+// is up, then the sweep's report. The window and page it is showing are the
+// header's (#804 AR-9), so with neither there is no line. The
 // question and the report are wrapped to the board's width rather than cut:
 // both run past 80 columns, and what a cut loses is the answer keys and the
 // failed: clause (#790).
@@ -1940,7 +2000,7 @@ func (b *board) archivedStatus() []string {
 		}
 		return wrapStatus(b.delNote, b.width, lipgloss.NewStyle())
 	default:
-		return []string{styleDim.Render(" archived · " + b.label())}
+		return nil
 	}
 }
 
