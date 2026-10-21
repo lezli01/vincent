@@ -42,19 +42,30 @@ func (v *triggersView) render(width, height int) string {
 
 // bannerLines is the global-off banner: every trigger is inert while
 // `triggers.enabled` is off, whatever its own enabled says.
-func (v *triggersView) bannerLines() []string {
+// It wraps to the width rather than running past the screen (issue #802
+// TR-8).
+func (v *triggersView) bannerLines(width int) []string {
 	if !v.loaded || v.list.Enabled {
 		return nil
 	}
-	return []string{
-		" " + styleWarn.Render("⚠ triggers.enabled is off in config.yaml — no trigger polls, accepts a push or fires, whatever its own enabled says"),
-		"   " + styleDim.Render("B opens the switch in the daemon view's config editor, which asks before turning it on"),
+	if width <= 0 {
+		width = 1 << 16
 	}
+	var out []string
+	for _, l := range wrapText("triggers.enabled is off in config.yaml — no trigger polls, accepts a push or fires, whatever its own enabled says",
+		max(width-3, 1), wrapOpts{prefix: "⚠ ", indent: 2}) {
+		out = append(out, " "+styleWarn.Render(l))
+	}
+	for _, l := range wrapText("B opens the switch in the daemon view's config editor, which asks before turning it on",
+		max(width-3, 1), wrapOpts{}) {
+		out = append(out, "   "+styleDim.Render(l))
+	}
+	return out
 }
 
 func (v *triggersView) renderList(width, height int) string {
 	head := []string{" " + styleTitle.Render("triggers") + styleDim.Render("   "+v.list.Dir)}
-	head = append(head, v.bannerLines()...)
+	head = append(head, v.bannerLines(width)...)
 	// With no project registered the list still has content, the triggers of
 	// projects since removed, so the shared empty state is a line above it
 	// rather than the whole view (review F1): what the keys act on stays drawn.
@@ -75,6 +86,11 @@ func (v *triggersView) renderList(width, height int) string {
 		head = append(head, " "+styleBad.Render("⚠ "+v.err))
 	}
 	head = append(head, "")
+	if width > 0 {
+		// The directory, the load error and the notes are one line each, cut
+		// to the screen rather than past it (issue #802 TR-8).
+		head = truncateRows(head, width)
+	}
 	if !v.loaded {
 		return clampLines(append(head, styleDim.Render("  reading the triggers…")), height)
 	}
@@ -123,10 +139,14 @@ func (v *triggersView) tableLines(rows []apiclient.TriggerSummary, width, height
 		enW, armW, kindW, fireW, pollW, agoW = 7, 12, 26, 7, 7, 10
 	)
 	gap := "  "
+	// POLL sits with the other health columns, ahead of the wide SOURCE →
+	// ACTION, so it is on screen at 80 columns whatever the ID's width
+	// (issue #802 TR-7).
 	header := "  " + trigCell("ID", idW, styleDim) + gap + trigCell("ENABLED", enW, styleDim) + gap +
-		trigCell("ARMED", armW, styleDim) + gap + trigCell("SOURCE → ACTION", kindW, styleDim) + gap +
+		trigCell("ARMED", armW, styleDim) + gap + trigCell("POLL", pollW, styleDim) + gap +
+		trigCell("SOURCE → ACTION", kindW, styleDim) + gap +
 		trigCell("ON FIRE", fireW, styleDim) + gap +
-		trigCell("POLL", pollW, styleDim) + gap + trigCell("LAST POLL", agoW, styleDim) + gap +
+		trigCell("LAST POLL", agoW, styleDim) + gap +
 		styleDim.Render("LAST FIRE")
 	lines := make([]string, 0, len(rows)+1)
 	// focus is the cursor's line, one further on past the band's heading.
@@ -157,9 +177,9 @@ func (v *triggersView) tableLines(rows []apiclient.TriggerSummary, width, height
 		}
 		poll, pollStyle := trigPollCell(s)
 		line := mark + trigCell(s.ID, idW, idStyle) + gap + trigCell(enabled, enW, enStyle) + gap +
-			trigCell(armed, armW, armStyle) + gap + trigCell(kind, kindW, lipgloss.NewStyle()) + gap +
+			trigCell(armed, armW, armStyle) + gap + trigCell(poll, pollW, pollStyle) + gap +
+			trigCell(kind, kindW, lipgloss.NewStyle()) + gap +
 			trigCell(firstNonEmpty(s.OnFire, "—"), fireW, trigOnFireStyle(s.OnFire)) + gap +
-			trigCell(poll, pollW, pollStyle) + gap +
 			trigCell(v.ago(s.Poll.LastPollAt), agoW, styleDim) + gap +
 			styleDim.Render(v.ago(s.Poll.LastFireAt))
 		lines = append(lines, line)
@@ -339,48 +359,58 @@ func trigOutcomeStyle(outcome string) lipgloss.Style {
 
 func (v *triggersView) renderForm(width, height int) string {
 	f := v.form
-	out := []string{
+	head := []string{
 		styleTitle.Render("  trigger " + f.id),
 		"  " + styleDim.Render(f.file),
 	}
 	if f.path != "" {
-		out = append(out, "  "+styleDim.Render("in "+f.path+" — esc goes back up"))
+		head = append(head, "  "+styleDim.Render("in "+f.path+" — esc goes back up"))
 	}
 	if v.loaded && !v.list.Enabled {
-		out = append(out, "  "+styleWarn.Render("triggers.enabled is off — nothing here polls or fires until it is on"))
+		head = append(head, "  "+styleWarn.Render("triggers.enabled is off — nothing here polls or fires until it is on"))
 	}
-	out = append(out, "")
-	switch {
-	case f.overlay != nil && f.overlay.FullPane():
-		out = append(out, f.overlay.View(width, height))
-	case f.loading && f.def == nil:
-		out = append(out, styleDim.Render("  loading the schema and the file…"))
-	case f.def != nil:
-		out = append(out, renderFormRows(f.plainRows(), f.cursor, f.editing, f.input, f.overlay, width, v.rowNote(f))...)
-	}
+	head = append(head, "")
+	var foot []string
 	if f.saving {
-		out = append(out, "", styleDim.Render("  saving…"))
+		foot = append(foot, "", styleDim.Render("  saving…"))
 	}
 	if f.note != "" {
-		out = append(out, "", "  "+styleOK.Render(f.note))
+		foot = append(foot, "", "  "+styleOK.Render(f.note))
 	}
 	if f.err != "" {
-		out = append(out, "", "  "+styleBad.Render(f.err))
+		foot = append(foot, "")
+		for _, l := range wrapText(f.err, max(width-2, 1), wrapOpts{}) {
+			foot = append(foot, "  "+styleBad.Render(l))
+		}
 	}
 	switch {
 	case f.confirm != nil:
-		out = append(out, "", "  "+styleWarn.Render("? set "+f.confirm.row.path+" to "+f.confirm.value+"?"))
+		foot = append(foot, "", "  "+styleWarn.Render("? set "+f.confirm.row.path+" to "+f.confirm.value+"?"))
 		for _, w := range f.confirm.warning {
-			out = append(out, "    "+styleWarn.Render("⚠ "+w))
+			foot = append(foot, "    "+styleWarn.Render("⚠ "+w))
 		}
-		out = append(out, "    "+styleDim.Render("y write it · n/esc keep the file as it is"))
+		foot = append(foot, "    "+styleDim.Render("y write it · n/esc keep the file as it is"))
 	case f.overlay != nil:
 	case f.input != nil:
-		out = append(out, "", styleDim.Render("  enter commit · esc cancel"))
+		foot = append(foot, "", styleDim.Render("  enter commit · esc cancel"))
 	default:
-		out = append(out, "", styleDim.Render("  enter edit · "+opKey(keymap.Refresh)+" reload · esc back · "+opKey(keymap.Editor)+" $EDITOR from the list"))
+		foot = append(foot, "", styleDim.Render("  enter edit · "+opKey(keymap.Refresh)+" reload · esc back · "+opKey(keymap.Editor)+" $EDITOR from the list"))
 	}
-	return clampLines(truncateRows(out, width), height)
+	head = truncateRows(head, max(width, 1))
+	foot = truncateRows(foot, max(width, 1))
+	var body []string
+	from, to := 0, 0
+	switch {
+	case f.overlay != nil && f.overlay.FullPane():
+		// Every line of the full-pane editor, in the height the head and
+		// foot leave it (issue #802 TR-1).
+		body = truncateRows(strings.Split(f.overlay.View(width, paneRoom(height, len(head)+len(foot))), "\n"), max(width, 1))
+	case f.loading && f.def == nil:
+		body = []string{styleDim.Render("  loading the schema and the file…")}
+	case f.def != nil:
+		body, from, to = layoutFormRows(f.plainRows(), f.cursor, f.editing, f.input, f.overlay, width, v.rowNote(f))
+	}
+	return formBody(head, body, from, to, foot, height)
 }
 
 func (v *triggersView) renderCreate(width, height int) string {

@@ -315,6 +315,20 @@ func (w *workflowsView) updateGraphMouse(msg tea.Msg) {
 	if w.graph == nil || !w.graph.loaded {
 		return
 	}
+	// While the step modal is open it owns the mouse as it owns the keys: the
+	// wheel scrolls it, and a click never reaches the graph behind it, where
+	// it would move the selection the modal is a detail of (issue #802 WF-12).
+	if m := w.graph.modal; m != nil {
+		if wheel, ok := msg.(tea.MouseWheelMsg); ok {
+			switch wheel.Button {
+			case tea.MouseWheelDown:
+				m.vp.ScrollDown(1)
+			case tea.MouseWheelUp:
+				m.vp.ScrollUp(1)
+			}
+		}
+		return
+	}
 	switch msg := msg.(type) {
 	case tea.MouseClickMsg:
 		if msg.Button != tea.MouseLeft {

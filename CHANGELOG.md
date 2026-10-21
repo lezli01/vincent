@@ -567,6 +567,19 @@ list with the user-facing context a commit subject cannot carry.
   80 columns, and the archive prompt keeps its `(y/n)` behind a long title.
   The new-chat form keeps the focused field and an open picker on screen at
   small sizes, and its error wraps instead of running off the edge.
+- **The workflow editor and the trigger form keep what matters on screen.**
+  A form longer than its pane now scrolls with the cursor instead of dropping
+  its last rows, and the error and key hint stay pinned at the bottom. The
+  row under the cursor shows its whole value and help, wrapped under the
+  value column; other rows stay one line ending in `…`. A trigger field's
+  refusal note sits on its own line instead of being cut off with a long
+  value, the label column fits the longest label, and the trigger form's
+  full-pane editor shows every line of a multi-line value instead of only the
+  first. Clicks and the wheel go to an open step detail in the workflow graph
+  rather than the graph behind it, and the workflow overview and step detail
+  hints name a rebound `editor` or `refresh` key. The triggers list shows the
+  POLL column at 80 columns (it now follows ARMED), and the global-off banner
+  wraps to the screen.
 
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,

@@ -54,6 +54,23 @@ Written into `internal/tui/doc.go` and spec §15:
   line, the Review stage's hints, marking every failed stage, the
   description's line numbers, wrapped collapsed rows, the empty-picker
   explanation — and per-mode footer contexts.
+- [~] **135.3** The workflow editor, the workflow overview and the trigger
+  screens (#802). Done (2026-10-21): the schema form (`layoutFormRows`,
+  shared by the workflow editor and the triggers form) windows its rows
+  around the cursor with the error and key hint pinned below (WF-6, TR-2);
+  the cursor row's value and help wrap under the value column and other
+  rows truncate with `…` (WF-7, WF-8); in-place input is indented under the
+  value column and the label column is sized to the widest label, capped at
+  24 (WF-9, WF-10); refusal notes go on their own line (TR-3); the full-pane
+  editor draws every line in the height left to it (TR-1); the step modal
+  owns the mouse (WF-12); the overview and modal hints use `opKey` (WF-13);
+  the triggers list puts POLL after ARMED so it shows at 80 columns, and its
+  banner wraps and its head lines are cut to the width (TR-7, TR-8). Still
+  open: the overview, expanded entry and graph errors in a `scrollPane`
+  (WF-2, WF-4, WF-11, WF-14); the dry run scrolling with its footer pinned
+  (TR-4); the ledger's wrapped delivery error and stated 50-row cap (TR-5,
+  TR-6); facts and findings past `trigDetailLines` (TR-9); and
+  pgup/pgdn/home/end in the triggers list and ledger (PL-9).
 
 ## Decisions
 
