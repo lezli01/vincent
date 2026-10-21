@@ -563,6 +563,25 @@ list with the user-facing context a commit subject cannot carry.
   selector and diff file rows now shorten the name and keep what tells rows
   apart — the attempt number, `⏸ paused · N new`, `+N -M` — and the Overview's
   fact labels line up. ([#800](https://github.com/lezli01/vincent/issues/800))
+- **Pull request rows keep their title and claim, and the popups keep their
+  keys.** At 80 columns a long head branch (a dependabot one, say) cut a
+  pull request's title to a few characters and pushed the claiming task off
+  the row. Rows are now aligned columns where the branch gives way, and the
+  selected row shows the full title and `branch → base` below it. After `s`
+  the header and empty note say closed or all instead of always "open"; the
+  unavailable reason, load errors and the unlink question wrap instead of
+  being cut; `home`/`end`/`pgup`/`pgdown` move. In the create-PR popup a long
+  body no longer hides the key line or a failed push's error — the footer is
+  pinned and the rows scroll — and the shown URL leaves out the encoded body
+  (`ctrl+o` still opens it all). The merge popup wraps its title and checks.
+- **The archived boards say what they show.** The archived tasks board's
+  header names the date window and page instead of the live slot tally, and
+  its columns are its own — an ARCHIVED date instead of STEP and ELAPSED, so
+  the title has room. The archived chats header names the window and page,
+  the board re-lists when opened, and both boards (and the live chats board)
+  take `home`/`end`/`pgup`/`pgdown`. `esc` leaves both archived boards the
+  same way, and `<`/`>` are offered only when there is a page that way.
+  ([#804](https://github.com/lezli01/vincent/issues/804))
 - **The new-task form wraps to its pane, and `ctrl+s` creates from anywhere
   in it.** The title, branch and priority rows, the open lists and the Fields
   editor's input wrapped at the terminal's width rather than the pane's, so at

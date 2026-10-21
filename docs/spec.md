@@ -13217,6 +13217,23 @@ stream for the live tail.
    open in this project"; the cross-project question is the project
    overview's to answer.
 
+   *Amended 2026-10-21 (issue #804).* **Rows are aligned columns** — `#n`,
+   status word, title, claiming task — and the head branch is the part that
+   gives way, never the title or the claim; the selected row adds a detail
+   line with the full title and `branch → base`. The header and the empty
+   note name the listing `s` selected (open, closed or all) instead of always
+   saying "open". The unavailable reason, a listing's error, the unlink
+   confirmation and the footer note wrap to the width rather than being cut.
+   `home`/`end` and `pgup`/`pgdown` move the cursor, as on every list. The
+   two popups opened from this listing and from view 2 — the pull-request
+   form and the merge confirmation — keep their footer (the URL `ctrl+o`
+   opens, an error, the status and the key line) pinned below rows that
+   scroll, so a long body no longer pushes the keys or a failed `ctrl+s`'s
+   error off the popup. The form's displayed URL omits the encoded `body`
+   parameter, which is the body again and on screen above; `ctrl+o` still
+   opens the full URL. Subjects, the merge popup's title and its checks wrap
+   to at most three lines.
+
 8. **Chats board.** *Added 2026-08-31 (task 067, issue #269, closing 063.2).* A
    second board, not a filter on the first: every chat from `GET /v1/chats`,
    grouped by project, one row per conversation carrying id, state, agent, last
@@ -13718,6 +13735,23 @@ stream for the live tail.
    selected nothing is fetched. A switch returns to the first page, because a
    page offset belongs to the old project's listing, and keeps the date window
    and the `/` filter text.
+
+   *Amended 2026-10-21 (issue #804).* **Archived chats have no selection.**
+   "`space`/`V` selection" above describes the archived *tasks* board alone:
+   the chats board has no bulk selection (view 8), so an archived chat is
+   deleted one row at a time, and building selection into chats for this one
+   key was rejected. **Each board's header names its window and page** — the
+   date window, the page once past the first, and on the tasks board how
+   many rows the page holds — instead of the live board's slot tally or the
+   chats scope label; an archive holds no slot. The archived tasks board has
+   **its own columns**: ID, WORKFLOW, TITLE, STATE, ARCHIVED (the archived-at
+   stamp, `01-02 15:04`), then COST and PR while a row has one — no STEP,
+   ELAPSED or STATUS, which describe a run that is over, and TITLE takes the
+   rest. The two boards' keys match: `esc` with no filter leaves to the home
+   board from both, `home`/`end`/`pgup`/`pgdown` move on both (and on the
+   live chats board), and `<`/`>` are offered only where a page lies that
+   way — `>` after a full page, `<` past the first. The archived chats board
+   re-lists on activation, as the live one already did.
 
 11. **Triggers.** *Added 2026-09-13 (task 096.6, issue #362).* A takeover
    reached from the command palette, like Workflows and Projects, with no key
