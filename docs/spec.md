@@ -15388,6 +15388,20 @@ retired without substituting a different set to memorise.
 *Amended 2026-10-05 (task 132.4):* its global group carries "switch project",
 which opens the project picker — the way to it from a surface whose text field
 types `@`.
+*Amended 2026-10-21 (task 135.10, issue #794):* **the root's popup box is
+sized to the terminal.** The palette and the project, copy and link pickers
+share one box: `clamp(width-16, 64, 100)` wide and `clamp(height-6, 18, 30)`
+tall — 64×18 at 80×24, 100×30 at 200×60 — never wider than `width-8`, never
+taller than `height-4` nor than the rows between the chrome and the footer,
+and `width-2` wide under 24 columns. It is anchored on the first body row
+(`chromeTop()`), not a fixed row 2, so a status line or now-line moves it down
+rather than being covered. A palette row measures its key in cells and never
+cuts it — the label gives way, to `…` alone if it must — and the focused
+entry's whole label is wrapped into a fixed **two-line reserve** under the
+list, so a label cut on its row is still read in full and moving the cursor
+never changes the list's height. All four list popups show `▲ n more` /
+`▼ n more` while their list is clipped and page with `pgup`/`pgdown`/`home`/
+`end`; `↑`/`↓` still do not wrap.
 
 *Amended 2026-09-01 (task 076).* **`ctrl+p` opens the same palette**, and it is
 hoisted above the input-capture gate the way `ctrl+v` is. `:` is a printable
@@ -15448,6 +15462,14 @@ keyboard, `:`, `?` and `q` would be typed, so it reads `ctrl+p commands`,
 `f1 help`, `ctrl+c quit` instead; each span still fires its key when clicked.
 It is still measured first and never truncated, and its extra width comes out
 of the hints' budget.
+*Amended 2026-10-21 (task 135.10, issue #794):* **a status or a confirmation
+leads, cut from the right.** The left cut above is for hints. When the action
+bar holds a confirmation (`cancel #42? a running step is killed (y/n)`) or a
+status (an action's error), that text is the line's first segment and is cut
+from the right with `…` to the room the pinned segment leaves; the hints follow
+it while there is room and are counted into `+N` when there is not. Its start
+is what it says, and the left cut removed exactly that. The footer is still one
+row.
 
 *Amended 2026-09-10 (task 094, issue #352).* **The width decides how many keys
 reach the line, and the line says how many it is not showing.** "At most five"
@@ -16033,6 +16055,12 @@ strip label switches to that tab by `tab`'s rule exactly — not while a
 filter is typing, not on a surface that owns `tab`, and a click on the
 active label does nothing — in every connection phase. Apart from `◆` and
 the strip's labels the header is still not a click target.
+*Amended 2026-10-21 (task 135.10, issue #794):* the toggle says what it did
+on the status line — "mouse off — native selection works; M turns it back on"
+or "mouse on — M turns it off for native selection", naming the key as bound —
+until the next key. The same line carries a copy's outcome on a surface with no
+note of its own (the issue screen's link and copy pickers); the task workspace
+and a chat keep saying it themselves, and the root stays quiet there.
 
 Capturing the mouse costs native click-drag text selection. Every terminal has a
 modifier override for it (shift-drag; option-drag on Terminal.app and iTerm) and

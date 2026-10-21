@@ -1,6 +1,6 @@
 # 135 — TUI wrap and scroll: one wrap helper, one scrolling pane, screen by screen
 
-**Status:** 🔄 in progress (7/9)
+**Status:** 🔄 in progress (8/10)
 
 The umbrella record for [#784](https://github.com/lezli01/vincent/issues/784):
 text that "can not be read" across the TUI, and an opened issue that cannot be
@@ -140,6 +140,15 @@ Written into `internal/tui/doc.go` and spec §15:
   list error, the no-project and resolving lines and the footer note wrap
   with `wrapText`. The footer puts move, filter and new ahead of
   `o browser`, which it withholds on a row with no source page. ✓ 2026-10-21
+- [x] **135.10** The palette and the pickers sized to the terminal, footer
+  prompts kept readable, copy and mouse-toggle feedback (#794). The root's
+  popup box grows from 64×18 at 80×24 to at most 100×30 and sits under the
+  chrome; the palette's rows measure the key in cells and the focused
+  entry's whole label wraps into a fixed two-line reserve; the palette and
+  the project, copy and link pickers show `▲ n more`/`▼ n more` and page
+  with `pgup`/`pgdown`/`home`/`end`; a footer status or confirmation leads
+  the line and is cut from the right; a copy on a view with no note of its
+  own, and `M`, say what happened on the status line. ✓ 2026-10-21
 
 ## Decisions
 
@@ -173,3 +182,22 @@ Written into `internal/tui/doc.go` and spec §15:
    `h`/`l` are the fold keys on that tab, and the viewport clamps the pan to
    the longest line. *Beat:* soft-wrapping the diff, which keeps every byte
    on screen but loses the one-change-per-row reading.
+6. **The popup box clamps and keeps its floor** (2026-10-21, 135.10, #794).
+   `w = clamp(width-16, 64, 100)` and `h = clamp(height-6, 18, 30)`, never
+   wider than `width-8` nor taller than `height-4` or the rows under the
+   chrome above the footer; under 24 columns it still takes `width-2`. It is
+   anchored at `chromeTop()`, so a status line moves it down. 80×24 stays
+   exactly 64×18. *Beat:* the issue's `min(width-8, 100)`, which would have
+   grown 80×24 to 72×20.
+7. **A footer status leads and is cut from the right** (2026-10-21, 135.10,
+   #794). A confirmation or an action status is the line's first segment,
+   cut with `…` before the pinned escape hatch, and hints follow it while
+   there is room, counted into `+N` when there is not. Hint-only lines keep
+   task 114 decision 4's left cut. *Beat:* a second footer row, which would
+   take a body row while a question is up and shift the board.
+8. **No short palette label** (2026-10-21, 135.10, #794). Registry rows get
+   no new field: a palette row cuts its label with `…`, and the focused
+   entry's whole label wraps into a fixed two-line reserve under the list,
+   the link picker's decision-4 pattern. Fixed, so moving the cursor never
+   changes the list's height. *Beat:* a `short` field on every registry row,
+   which `bindings_test.go` and `docs_claims_test.go` would have to police.

@@ -389,6 +389,7 @@ it, and choosing it changes no selection.
 |---|---|
 | typing | Filter the projects by name; `ctrl+v` pastes into the filter |
 | `↑` / `↓` | Move the highlight |
+| `pgup` / `pgdown`, `home` / `end` | Page the list, or jump to its first or last row |
 | `enter` | Switch to the highlighted project — or, on the last row, open the project overview |
 | `esc` | Close without switching |
 
@@ -1075,6 +1076,7 @@ pane gives it one number.
 |---|---|
 | `enter` | Open the row's destination in your browser |
 | `ctrl+y` | Copy the row's destination |
+| `pgup` / `pgdown`, `home` / `end` | Page the list, or jump to either end (the copy picker too) |
 | `esc` | Close the picker |
 
 Under the rows the picker prints the selected row's **whole** destination, so
@@ -1083,7 +1085,8 @@ and `https` links open; anything else — `mailto:`, `file:`, `javascript:`, a
 relative path — is marked `copy only`, and `enter` on it opens nothing and says
 why. The result is a notice where you pressed the key — the pane's status
 line, or the chat's note: `opened <url>`, the reason it could not be opened, or
-the copy notice above. Raw mode (`ctrl+o`)
+the copy notice above. A screen with no notice of its own, such as an issue,
+shows a copy's outcome on the line under the header until your next key. Raw mode (`ctrl+o`)
 does not change the list.
 
 ### What `v` adds
@@ -3213,7 +3216,11 @@ answer it first, so it is never left armed behind another screen.
 
 Everything reachable in the TUI is in there by name — navigation to every
 screen, and every task action the daemon currently offers. Type to filter,
-`enter` to run, `esc` to close. Every row carries its key beside it — the key
+`enter` to run, `esc` to close; `pgup`/`pgdown` page the list and `home`/`end`
+jump to either end, and `▲ n more`/`▼ n more` say how much is off screen. A
+long name is cut on its row, and the highlighted command's whole name is
+printed under the list. The palette and the pickers grow with the terminal,
+from 64×18 at 80×24 to 100×30. Every row carries its key beside it — the key
 in force, so a `tui.keys` override shows as the key you set — and a row whose
 key a lenient load took reads `unbound`. Actions the task does not offer are
 left out rather than greyed: the palette runs things, and it never lists
@@ -3495,7 +3502,9 @@ The mouse is on by default: click to select, scroll to scroll, and click the
 header's `◆` segment to [switch project](#switching-project). That takes mouse
 events away from your terminal, so **native text selection needs the mouse
 off** — press `M`, or hold shift while dragging, which most terminals treat as
-"bypass the application".
+"bypass the application". `M` says which way it went under the header —
+`mouse off — native selection works; M turns it back on` — until your next
+key.
 
 Paste normally arrives as a bracketed paste from your terminal's own binding
 (`Cmd+V`, `Ctrl+Shift+V`, middle click) and lands in the focused field with no
