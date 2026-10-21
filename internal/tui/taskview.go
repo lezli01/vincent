@@ -1213,6 +1213,10 @@ func (t *taskView) renderLaneSelector(width int) string {
 	return truncateKeep(prefix, name, suffix, width)
 }
 
+// attemptNameFloor is the fewest cells of step name the attempt strip keeps
+// before it sheds the pane's mode clauses to make room.
+const attemptNameFloor = 12
+
 // renderAttemptSelector is the Output pane's attempt strip. It takes the
 // sub-model rather than reading t.detail because the pane below it is the
 // selected lane's when one is selected, and a strip describing a different
@@ -1240,6 +1244,14 @@ func renderAttemptSelector(d *detail, width int) string {
 	// narrow width loses the hint before it loses the state (#597), and the
 	// state before the attempt's number.
 	suffix := styleSelected.Render(tail) + d.outputStatus()
+	if cols(prefix)+cols(suffix)+attemptNameFloor > max(width, 1) {
+		// Too narrow for the level, raw and in-progress clauses as well: the
+		// follow marker is the one the reader acts on, so it alone stays.
+		suffix = styleSelected.Render(tail)
+		if run.Live() {
+			suffix += d.followIndicator()
+		}
+	}
 	hint := styleDim.Render("   ←/→ select")
 	whole := "  Attempt  " + styleSelected.Render(head+stepLabel(run)+tail) + d.outputStatus()
 	if cols(whole+hint) <= max(width, 1) {
@@ -1610,10 +1622,6 @@ func renderTaskDetailFactList(width int, facts []taskDetailFact) []string {
 	return out
 }
 
-func taskDetailFactLines(fact taskDetailFact, width int) []string {
-	return styledTaskDetailFactLines(fact, width, dimReasonCode)
-}
-
 // dimReasonCode dims the raw code a reasonText value ends with, so a fact
 // reads `check failed · check_failed` with the code faint (task 129.7
 // decision 3) even though the fact table wraps plain text before it styles.
@@ -1649,9 +1657,9 @@ func factLabelColumn(facts []taskDetailFact) int {
 	return col
 }
 
-// styledTaskDetailFactLines is taskDetailFactLines with every wrapped value
-// line passed through style, which is how a warning row keeps its colour
-// across a wrap without the label taking it too.
+// styledTaskDetailFactLines is one fact at the default label column, with
+// every wrapped value line passed through style, which is how a warning row
+// keeps its colour across a wrap without the label taking it too.
 func styledTaskDetailFactLines(fact taskDetailFact, width int, style func(string) string) []string {
 	return taskFactLines(fact, width, factLabelWidth, style)
 }

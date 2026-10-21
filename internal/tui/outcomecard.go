@@ -66,17 +66,13 @@ func summaryRun(task apiclient.TaskDetail) (run apiclient.StepRun, fallback stri
 	return apiclient.StepRun{}, fallback, false
 }
 
-// resultSource names where a result came from, the way the failure card's
+// resultSourceParts names where a result came from, the way the failure card's
 // headline names an attempt: the step, the loop iteration and item when
 // there is one, and the attempt.
-func resultSource(run apiclient.StepRun) string {
-	head, name, tail := resultSourceParts(run)
-	return head + name + tail
-}
-
-// resultSourceParts splits resultSource for truncateKeep: the step name is
-// the long part, and the iteration and attempt after it are what say which
-// run the result is (#800 W4).
+//
+// It comes in three parts for truncateKeep: the step name is the long one,
+// and the iteration and attempt after it are what say which run the result
+// is (#800 W4).
 func resultSourceParts(run apiclient.StepRun) (head, name, tail string) {
 	var parts []string
 	if run.Iteration > 0 {

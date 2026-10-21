@@ -124,17 +124,13 @@ func (p *stepDetailsPane) renderSidebar(runs []apiclient.StepRun, selected int64
 	return lines
 }
 
-// stepDetailsAttemptLabel is one sidebar row: the step, the iteration when
+// stepDetailsAttemptParts is one sidebar row: the step, the iteration when
 // there is one, and the attempt number. Short by design — the sidebar is
 // narrow, and the content pane repeats the identity in full.
-func stepDetailsAttemptLabel(r apiclient.StepRun) string {
-	head, name, tail := stepDetailsAttemptParts(r)
-	return head + name + tail
-}
-
-// stepDetailsAttemptParts splits a sidebar row for truncateKeep: the
-// iteration and attempt are what tell one row of a step from the next, so
-// they survive a narrow sidebar and the step name gives way (#800 W4).
+//
+// It comes in three parts for truncateKeep: the iteration and attempt are
+// what tell one row of a step from the next, so they survive a narrow
+// sidebar and the step name gives way (#800 W4).
 func stepDetailsAttemptParts(r apiclient.StepRun) (head, name, tail string) {
 	if r.Iteration > 0 {
 		tail = fmt.Sprintf(" ▸%d", r.Iteration)
