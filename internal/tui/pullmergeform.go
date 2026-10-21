@@ -78,17 +78,39 @@ func (f *pullMergeForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 	return nil, false
 }
 
+// lines is the facts above the pinned footer. The subject and the checks
+// wrap to at most three lines each rather than being cut to one (#804 PL-1):
+// the title is what says which pull request this is, and a failing check's
+// name sat past the cut.
 func (f *pullMergeForm) lines(width int) []string {
 	fit := func(s string) string { return ansi.Truncate(s, max(width, 1), "…") }
 	facts := f.facts
-	out := []string{
-		fit(styleTitle.Render("  " + facts.subject + "  " + facts.title)),
-		"",
-		fit("  " + styleDim.Render("branches ") + valueOr(facts.headBranch, "?") + " → " + valueOr(facts.baseBranch, "?")),
-		fit("  " + styleDim.Render("head     ") + shortRef(facts.head)),
-		fit("  " + styleDim.Render("checks   ") + valueOr(facts.checks, "none reported")),
-		"",
+	out := make([]string, 0, 12)
+	for _, line := range wrapText(facts.subject+"  "+facts.title, max(width-2, 1), wrapOpts{maxLines: 3}) {
+		out = append(out, styleTitle.Render("  "+line))
 	}
+	out = append(out,
+		"",
+		fit("  "+styleDim.Render("branches ")+valueOr(facts.headBranch, "?")+" → "+valueOr(facts.baseBranch, "?")),
+		fit("  "+styleDim.Render("head     ")+shortRef(facts.head)),
+	)
+	const label = "  checks   "
+	checks := wrapText(valueOr(facts.checks, "none reported"), max(width-cols(label), 1), wrapOpts{maxLines: 3})
+	for i, line := range checks {
+		lead := strings.Repeat(" ", cols(label))
+		if i == 0 {
+			lead = "  " + styleDim.Render("checks   ")
+		}
+		out = append(out, lead+line)
+	}
+	return append(out, "")
+}
+
+// footer is the method row and the status line, pinned under the facts so a
+// short popup keeps the keys that confirm or cancel (#804 PL-1).
+func (f *pullMergeForm) footer(width int) []string {
+	fit := func(s string) string { return ansi.Truncate(s, max(width, 1), "…") }
+	facts := f.facts
 	methods := make([]string, 0, len(pullMergeMethods))
 	for i, m := range pullMergeMethods {
 		if i == f.method {
@@ -97,28 +119,29 @@ func (f *pullMergeForm) lines(width int) []string {
 		}
 		methods = append(methods, styleDim.Render(" "+m+" "))
 	}
-	out = append(out, fit("  "+styleDim.Render("method   ")+strings.Join(methods, " ")))
-	out = append(out, "")
+	out := []string{fit("  " + styleDim.Render("method   ") + strings.Join(methods, " ")), ""}
+	var status string
+	style := styleDim
 	switch {
 	case f.sending:
-		out = append(out, styleDim.Render("  merging…"))
+		status = "merging…"
 	case facts.moved:
-		out = append(out, fit(styleWarn.Render(
-			"  ⚠ the head moved since these checks were fetched — y waits for the refetch")))
+		status, style = "⚠ the head moved since these checks were fetched — y waits for the refetch", styleWarn
 	case !facts.mergeable:
-		out = append(out, fit(styleWarn.Render("  ⚠ this pull request can no longer be merged from here")))
+		status, style = "⚠ this pull request can no longer be merged from here", styleWarn
 	case f.method < 0:
-		out = append(out, fit(styleDim.Render("  ←/→ choose a method — y does nothing until you do · n/esc cancel")))
+		status = "←/→ choose a method — y does nothing until you do · n/esc cancel"
 	default:
-		out = append(out, fit(styleDim.Render(
-			"  y "+pullMergeMethods[f.method]+" at "+shortRef(facts.head)+" · ←/→ method · n/esc cancel")))
+		status = "y " + pullMergeMethods[f.method] + " at " + shortRef(facts.head) + " · ←/→ method · n/esc cancel"
+	}
+	for _, line := range wrapText(status, max(width-2, 1), wrapOpts{maxLines: 3}) {
+		out = append(out, style.Render("  "+line))
 	}
 	return out
 }
 
-func (f *pullMergeForm) height(width int) int { return len(f.lines(width)) }
+func (f *pullMergeForm) height(width int) int { return len(f.lines(width)) + len(f.footer(width)) }
 
 func (f *pullMergeForm) render(width, height int) string {
-	lines := f.lines(width)
-	return strings.Join(windowRange(lines, 0, len(lines), height), "\n")
+	return pinFooter(f.lines(width), f.footer(width), 0, 0, width, height)
 }
