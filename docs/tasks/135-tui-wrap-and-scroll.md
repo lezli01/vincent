@@ -1,6 +1,6 @@
 # 135 — TUI wrap and scroll: one wrap helper, one scrolling pane, screen by screen
 
-**Status:** 🔄 in progress (1/1)
+**Status:** 🔄 in progress (1/2)
 
 The umbrella record for [#784](https://github.com/lezli01/vincent/issues/784):
 text that "can not be read" across the TUI, and an opened issue that cannot be
@@ -44,6 +44,16 @@ Written into `internal/tui/doc.go` and spec §15:
   fits its width with the close keys never cut, and it scrolls in a
   `scrollPane`, the wheel included. The root's wheel path subtracts
   `chromeTop()`, as clicks do. ✓ 2026-10-20
+- [~] **135.2** ([#797](https://github.com/lezli01/vincent/issues/797)) The
+  new-task form. Done (2026-10-21): its title, branch and priority rows, open
+  pickers and Fields editor input are sized from the pane the form is drawn
+  in, not the terminal (N2), so no wrapped row reaches `frame()`; and
+  `ctrl+s` creates from every mode but the discard prompt, keeping what is
+  open first (N6). Open: N3–N5 and N7–N11 of the issue — row errors wrapped
+  under their row, two-line Fields rows, windowing on the expansion's focus
+  line, the Review stage's hints, marking every failed stage, the
+  description's line numbers, wrapped collapsed rows, the empty-picker
+  explanation — and per-mode footer contexts.
 
 ## Decisions
 
