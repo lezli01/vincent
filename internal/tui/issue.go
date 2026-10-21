@@ -342,6 +342,12 @@ func (v *issueView) linksTask(id int64) bool {
 }
 
 func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	// The rebindable operations are matched ahead of every fixed key below,
+	// so one a lenient load rebound to g, G, j, space or ctrl+d keeps the
+	// key its warning said it took (task 118, task 128 decision 3; review F5).
+	if cmd, ok := v.issueOp(msg.String()); ok {
+		return v, cmd
+	}
 	switch msg.String() {
 	case "up", "k":
 		v.step(-1)
@@ -373,21 +379,12 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			back = viewIssues
 		}
 		return v, func() tea.Msg { return selectViewMsg{id: back} }
-	case opKey(keymap.Refresh):
-		return v, v.loadCmd()
-	case opKey(keymap.OpenRow):
-		return v, v.openTask()
-	case opKey(keymap.Browser):
-		return v, v.openSource()
 	case rawToggleKey:
 		v.raw.toggle()
 		return v, nil
 	case linkPickKey:
 		items := linkItemsFrom("description", copyDoc{text: v.issue.Body})
 		return v, func() tea.Msg { return openLinkPickerMsg{items: items} }
-	case opKey(keymap.New):
-		return v, v.w.openForm(v.client, nil, v.issue.ProjectID)
-	// Last, so an operation rebound to g or G keeps it (task 118).
 	case "home", "g":
 		v.scroll = 0
 		return v, nil
@@ -399,8 +396,6 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, nil
 	}
 	switch msg.String() {
-	case opKey(keymap.Add):
-		return v, newTaskFromIssueCmd(v.issue)
 	case issueEditKey:
 		iss := v.issue
 		return v, v.w.openForm(v.client, &iss, iss.ProjectID)
@@ -411,12 +406,40 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		v.w.act = act
 		return v, cmd
-	case opKey(keymap.Delete):
-		v.w.act = newIssueDelete(v.client, v.issue)
-	case opKey(keymap.Comment):
-		return v, v.openComment()
 	}
 	return v, nil
+}
+
+// issueOp runs the rebindable operation bound to key, if any. Add, delete
+// and comment act only on a loaded issue, and are swallowed until then.
+func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
+	switch key {
+	case opKey(keymap.Refresh):
+		return v.loadCmd(), true
+	case opKey(keymap.OpenRow):
+		return v.openTask(), true
+	case opKey(keymap.Browser):
+		return v.openSource(), true
+	case opKey(keymap.New):
+		return v.w.openForm(v.client, nil, v.issue.ProjectID), true
+	}
+	if !v.loaded {
+		switch key {
+		case opKey(keymap.Add), opKey(keymap.Delete), opKey(keymap.Comment):
+			return nil, true
+		}
+		return nil, false
+	}
+	switch key {
+	case opKey(keymap.Add):
+		return newTaskFromIssueCmd(v.issue), true
+	case opKey(keymap.Delete):
+		v.w.act = newIssueDelete(v.client, v.issue)
+		return nil, true
+	case opKey(keymap.Comment):
+		return v.openComment(), true
+	}
+	return nil, false
 }
 
 // visible reports whether row i of selectRows was on screen at the last

@@ -201,3 +201,28 @@ func TestIssuesListWheelAndClick(t *testing.T) {
 		t.Error("wheel under the delete prompt moved the list cursor")
 	}
 }
+
+// An operation a lenient load rebound to one of the detail's fixed scroll
+// keys fires on it, as the load's warning says it now does, rather than the
+// key still scrolling (task 128 decision 3, review F5).
+func TestIssueDetailRebindingAScrollKeyWins(t *testing.T) {
+	withLenientKeymap(t, map[string]string{"delete": "g", "comment": "G"})
+	v := issueFixture()
+	v.render(80, 24)
+	v.scroll = 3
+	v.updateKey(key("g"))
+	if v.w.act == nil {
+		t.Error("g bound to delete did not raise the delete question")
+	}
+	if v.scroll != 3 {
+		t.Errorf("g bound to delete still scrolled, to %d", v.scroll)
+	}
+	v.w.act = nil
+	v.updateKey(key("G"))
+	if !strings.Contains(v.note, "comment there") {
+		t.Errorf("G bound to comment did not reach the comment action; note %q", v.note)
+	}
+	if v.scroll != 3 {
+		t.Errorf("G bound to comment still scrolled, to %d", v.scroll)
+	}
+}
