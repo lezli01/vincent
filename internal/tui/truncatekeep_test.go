@@ -61,3 +61,15 @@ func TestTruncateKeepPathKeepsBothEnds(t *testing.T) {
 		t.Errorf("a path that fits is changed: %q", got)
 	}
 }
+
+// Review F9: a cut that lands inside a double-width rune must not widen the
+// row past its budget, at any width.
+func TestTruncateKeepPathWideRunesStayInWidth(t *testing.T) {
+	path := "日本語/日本語/日本語/ファイル.go"
+	for w := 1; w <= 40; w++ {
+		got := truncateKeepPath("", path, " +1 -1", w)
+		if gw := ansi.StringWidth(got); gw > w {
+			t.Errorf("width %d: %q is %d cells", w, got, gw)
+		}
+	}
+}

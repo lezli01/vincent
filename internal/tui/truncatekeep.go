@@ -58,5 +58,14 @@ func elideMiddle(s string, width int) string {
 	keep := width - 1
 	head := keep / 2
 	tail := keep - head
-	return ansi.Truncate(s, head, "") + "…" + ansi.TruncateLeft(s, cols(s)-tail, "")
+	// A cut inside a wide rune keeps the whole rune on the left side, which
+	// would make the tail a cell too wide (review F9): cut one cell further
+	// in until it fits its share.
+	cut := cols(s) - tail
+	end := ansi.TruncateLeft(s, cut, "")
+	for cols(end) > tail {
+		cut++
+		end = ansi.TruncateLeft(s, cut, "")
+	}
+	return ansi.Truncate(s, head, "") + "…" + end
 }
