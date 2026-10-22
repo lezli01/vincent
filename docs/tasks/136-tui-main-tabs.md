@@ -1,6 +1,6 @@
 # 136 — Main tabs in the TUI: Issues, Tasks and Chats behind one `tab` key
 
-**Status:** 🔄 in progress (3/4)
+**Status:** ✅ done (4/4)
 **Opened:** 2026-10-20
 **Spec:** §12.3 (`tui.tabs`), §15
 **Issues:** #784 (parent), #785, #787, #788, #789
@@ -111,6 +111,41 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
     the task workspace's breadcrumb root, so the breadcrumb, the tag and the
     strip all name the tab `esc` returns to. Prose keeps "task board".
 
+19. **Landing: at `Run`, adjusted once by the first config answer**
+    (2026-10-21, #789). `tui.Run` sets the active view and `lastTab` to
+    `defaultTabs()[0]` before the program starts, so the TUI is navigable
+    in every connection phase; the first *successful* config answer moves
+    a human who has not navigated yet to the configured `tabs[0]`. A
+    `landing` flag on the root is armed by `land()` and disarmed by that
+    answer or by any switch, whichever comes first. The default list never
+    jumps; another jumps at most once, beside the startup project switch.
+    `newRoot` does not land, so tests that build a root keep the board.
+20. **Decision 13 holds** (2026-10-21, #789): the issue proposed moving a
+    human whose active tab a reload removed; the author kept decision 13.
+    The dropped screen stays up, and its `esc` now leaves to the first tab.
+21. **One "back to your tab" message** (2026-10-21, #789): every
+    takeover's last `esc` — projects, workflows, daemon, pull requests,
+    triggers, new task, both archived boards, a list that is not a tab —
+    sends `backToTabMsg`, resolved by the root to `lastTab` while it is
+    still configured, else `tabs[0]`. A task's explicit `back` (an issue,
+    the overview) is untouched, and the board's own open (`fromBoard`)
+    still returns to the board; every other open with no `back` — the
+    palette, pull requests, triggers, `!`, a new task — gets `viewLastTab`,
+    the same message (review F1). A project switch on the workspace falls
+    back to the board only while the board is a tab, else to `tabTarget()`
+    (review F2). The overview's return with no project-scoped history is
+    the tab too.
+22. **A board that is not a tab is left by `esc`** (2026-10-21, #789): the
+    shell is `tabAware`, and with `tui.tabs` leaving `tasks` out, `esc` at
+    the bottom of the board's stack sends `backToTabMsg`. This refines
+    decision 12: the issues list and the chats board, when not tabs, leave
+    to the human's tab rather than to the board.
+23. **Tapes press a visible `Tab`** (2026-10-21, #789): the seed keeps the
+    default `[issues, tasks]`; every tape whose first key is a board key
+    presses `Tab` outside the `Hide` block, the issue tapes start on the
+    landing instead of through `:`, and `TestBoardTapesSwitchToTasksFirst`
+    holds the script to it.
+
 ## Tasks
 
 - [x] **136.1** The `tui.tabs` key (#785): config field, vocabulary, default,
@@ -125,4 +160,7 @@ end with no routing behaviour; #787–#789 consume it and extend this record.
 - [x] **136.3** The tab strip (#788): the header strip and its shedding
   order, label clicks, the "Tasks" rename of the board and the breadcrumb
   root, tests, the TUI guide and the spec §15 amendments. ✓ 2026-10-21
-- [ ] **136.4** Landing on the first tab (#789).
+- [x] **136.4** Landing on the first tab (#789): the landing, `backToTabMsg`,
+  the board's `esc` off the tabs, tests (unit and e2e), the tape changes and
+  their test, the `docs/assets/tui-*.png` re-capture with VHS 0.11.0, the
+  TUI guide and the spec §15 amendments. ✓ 2026-10-21

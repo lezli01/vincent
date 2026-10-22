@@ -121,6 +121,10 @@ func (s *shell) setProjects(projects []apiclient.Project) { s.board.setProjects(
 // banner and stale marks come from this flag.
 func (s *shell) setConnected(ok bool) { s.connected = ok }
 
+// setTabRoot makes the shell tabAware (#789): the board it carries is a
+// takeover, left by esc, while `tui.tabs` does not name it.
+func (s *shell) setTabRoot(on bool) { s.board.offTab = !on }
+
 // capturesInput reports whether a text surface owns the keyboard: the focused
 // panel's own capture (§15: the shell consults the focused panel only).
 func (s *shell) capturesInput() bool {
@@ -228,7 +232,7 @@ func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 				if t, ok := s.board.taskByID(id); ok {
 					pid = t.ProjectID
 				}
-				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid} }
+				return s, func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid, fromBoard: true} }
 			}
 		}
 		if msg.String() == "esc" && s.board.hasMarks() {

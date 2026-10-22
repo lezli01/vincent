@@ -36,7 +36,9 @@ is the longer version.
 
 ## Layout
 
-The home screen is the task board and nothing else:
+vincent opens on the first of your [main tabs](#main-tabs) — by default the
+issues list — and `tab` reaches the task board, which is the board and
+nothing else:
 
 ![The board filtered to one running task](../assets/tui-board.png)
 
@@ -51,13 +53,19 @@ goes back, and each tab's digit, drawn beside its label, jumps directly: `0`
 Overview, `1` Steps, `2` Task Details, `3` Output, `4` Diff, `5` Workflow,
 `6` Step Details and `7` Pull Request (only when that tab is there). On a
 narrow terminal the second group's labels shorten first, then shrink to their
-digits; the first group is never shortened. `esc` returns to the board.
+digits; the first group is never shortened. `esc` returns to where you
+opened the task from: the board, or the issue it was started from. A task
+opened any other way — the command palette, pull requests, triggers, `!`, a
+new task — returns to your [main tab](#main-tabs), and so does a project
+switch while the task board is not one of your tabs.
 
 New task, projects, workflows, chats, the two archived boards, issues,
 triggers, daemon, and — for GitHub projects — pull requests are full-screen
 takeovers too. `esc`
 closes one layer at a time (popup → task/screen → selection → filter) and
-**never quits**.
+**never quits**; closing a takeover takes you back to the main tab you came
+from — or to the first one, if that tab has since been removed from
+`tui.tabs`.
 
 ### Main tabs
 
@@ -84,9 +92,15 @@ fields. With a single tab in `tui.tabs` there is no strip.
 Everywhere else `tab` means what it always did — the task workspace's tabs, a
 form's fields, a screen's panes. `esc` never leaves a main tab: once the
 screen's own filter or form is closed, it stays put, as it always has on the
-board. The issues list or the chats board that is *not* in `tui.tabs` still goes
-back to the board on `esc`. The palette's **tasks** row reaches the board from
-anywhere.
+board. The issues list, the chats board or the task board that is *not* in
+`tui.tabs` is a takeover like any other: `esc` goes back to your tab. The
+palette's **tasks** row and `!` reach the board from anywhere.
+
+vincent starts on the first tab before it has reached the daemon, so it is
+usable from the first frame. If your `tui.tabs` starts with something other
+than `issues`, the first answer from the daemon moves you there once — unless
+you have already moved. Editing `tui.tabs` later never moves you: a screen you
+removed stays up until you leave it.
 
 At **128×24 and above**, New task, Projects, and Workflows use that room as a
 guided two-pane surface: progress or resources stay in a narrow rail, and the

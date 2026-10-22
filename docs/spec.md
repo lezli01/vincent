@@ -11970,7 +11970,8 @@ stream for the live tail.
 
 ### Views
 
-1. **Board (home).** Table of tasks: id, project, title, state (color-coded), current
+1. **Board (home).** *(Amended 2026-10-21, issue #789: the
+   board is home only when it is the first configured tab, §15 Layout.)* Table of tasks: id, project, title, state (color-coded), current
    step `k/n` + step name, elapsed, cost-so-far. *Elapsed here is wall clock from
    `started_at`* — §17's active-time rule (which excludes time spent `awaiting_input`)
    governs the per-step figures in the detail view, not this column: a task idle on a
@@ -13762,7 +13763,9 @@ stream for the live tail.
    ELAPSED or STATUS, which describe a run that is over, and TITLE takes the
    rest. The two boards' keys match: `esc` with no filter leaves to the home
    board from both (after clearing the filter and, on the tasks board, the
-   selection), `R` reloads both, `home`/`end`/`pgup`/`pgdown` move on both
+   selection) — *amended 2026-10-21 (task 136.4, issue #789):* to the
+   human's tab, the last main tab they were on while it is still in
+   `tui.tabs`, else the first, per the §15 Layout amendment — `R` reloads both, `home`/`end`/`pgup`/`pgdown` move on both
    (and on the live chats board), and `<`/`>` are offered only where a page
    lies that way — `>` after a full page, `<` past the first. Both archived
    boards re-list on activation, as the live chats board already did.
@@ -14074,7 +14077,15 @@ stream for the live tail.
 
 The list above is also the screen contract. View 1 is the board-only home
 screen. `enter` on its selected row opens view 2, the full-screen task workspace;
-`esc` returns. The workspace's five tabs each take its whole body (four until
+`esc` returns.
+*Amended 2026-10-21 (task 136.4, issue #789):* "home" now means the first
+configured tab. The TUI opens on the first default tab — the issues list —
+before any daemon answers, so it is navigable in every connection phase; the
+first successful config answer moves a human who has not navigated yet to
+the configured `tui.tabs[0]`, once. With the default list that is where they
+already are; with another it is at most one jump, beside the startup project
+switch. A later config answer never moves the human (task 136 decision 13),
+even one that drops the screen on view. The workspace's five tabs each take its whole body (four until
 task 051, 2026-08-29, added the Workflow tab). *Amended 2026-08-31 (task
 068.3): six on a task whose pull request is linked, five on one whose is not.
 The Pull Request tab is conditional, so the strip's length is a property of the
@@ -14297,7 +14308,7 @@ changes (decision 31), applies it to the active view:
 | Active view | On a switch |
 |---|---|
 | Board, chats, issues, pull requests, both archived boards, workflows, triggers | Stays; re-scoped through `setProject` |
-| Task workspace | Falls back to the board; its back stack is emptied and its streams stop |
+| Task workspace | Falls back to the board; its back stack is emptied and its streams stop. *Amended 2026-10-21 (task 136.4, #789):* to the human's tab instead while the board is not one of `tui.tabs` |
 | Chat | Falls back to the chats board; its stream stops. A typed, unsent message in the composer is a draft (review F7) |
 | Issue | Falls back to the issues list |
 | New-task form; the chats board's new-chat form; the issues list's issue form | Re-targeted when pristine: reopened empty on the new project, catalogs refetched. An edit form on the issues list closes |
@@ -15796,6 +15807,19 @@ closed — filter, form, prompt — `esc` on the issues list or the chats board 
 a no-op while that screen is one of `tui.tabs`, as it always was on the board.
 A list that is not a configured tab still leaves to the board, because it has
 no reason to trap the human.
+*Amended 2026-10-21 (task 136.4, issue #789):* a takeover no longer leaves
+to the board. The bottom of every takeover's stack — projects, workflows,
+the daemon view, pull requests, triggers, the new-task form, both archived
+boards, and a list that is not a configured tab — goes back to the tab the
+human came from: the last main tab they were on while it is still in
+`tui.tabs`, else the first configured tab. The live task board joins them
+when `tui.tabs` leaves it out: reached by `!` or the palette, `esc` at the
+bottom of its stack leaves it the same way. A task opened from the board's
+own rows still returns to the board and one opened
+from an issue to the issue; a task opened any other way — the palette, a
+takeover, `!`, a new task — returns to the tab. A project switch on the
+workspace falls back to the board while it is a tab, and to the tab when it
+is not.
 
 A filter is view state, not a mode: `tab` **commits** it and moves focus, leaving
 it applied and named in the panel title; only `esc` clears it. Losing a filter

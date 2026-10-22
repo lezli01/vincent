@@ -375,7 +375,7 @@ vincent workflow validate .vincent/workflows/tidy.yaml
 vincent task add --project 1 --workflow tidy --title "Clear the lint backlog"
 ```
 
-or press `n` in the TUI and pick it from the workflow list. Follow it with
+or press `n` on the TUI's task board and pick it from the workflow list. Follow it with
 `vincent task show <id>`, or open the TUI's detail view for live output.
 
 ---

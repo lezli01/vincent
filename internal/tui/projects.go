@@ -380,7 +380,7 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			p.err = ""
 			return p, nil
 		}
-		return p, func() tea.Msg { return selectViewMsg{id: viewHome} }
+		return p, backToTab
 	case opKey(keymap.Add):
 		p.err = ""
 		p.form = newProjectForm(p.client, nil)

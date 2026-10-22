@@ -320,14 +320,13 @@ func (t *taskView) switchDraft() (string, bool) {
 	return "", false
 }
 
-// leaveForSwitch empties the back stack — esc after a switch goes to the new
-// project's board, never to a task of the old one — and drops every form the
-// workspace held. The stream is stopped by the deactivation the root's
+// leaveForSwitch empties the back stack — nothing of the old project is
+// left to esc to — and drops every form the workspace held. The stream is stopped by the deactivation the root's
 // switchTo delivers next.
 func (t *taskView) leaveForSwitch() {
 	t.stack, t.leftTab, t.crumb = nil, nil, nil
 	t.stackPush, t.stackKeep = 0, false
-	t.back = viewHome
+	t.back = viewLastTab
 	t.pendingFailure = 0
 	t.popup = false
 	t.createPR, t.pullComment, t.pullMerge = nil, nil, nil

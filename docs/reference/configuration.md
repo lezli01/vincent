@@ -1843,8 +1843,10 @@ tui:
 
 `tab` and `shift+tab` switch between them on any of the listed screens — see
 [Main tabs](../guides/tui.md#main-tabs) — and a change saved from the config
-editor applies on the next press. The strip and opening on the first tab
-arrive in a later version; until then the TUI still opens on the board.
+editor applies on the next press. The TUI opens on the first entry; one
+that is not `issues` is reached on the daemon's first answer, unless you have
+already moved, and a later edit never moves you — see
+[Main tabs](../guides/tui.md#main-tabs).
 
 These are refused, on load, on hot reload and on `PATCH /v1/config` alike, and
 a refused `PATCH` writes nothing:

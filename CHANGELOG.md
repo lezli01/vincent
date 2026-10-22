@@ -13,6 +13,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI opens on your first main tab, and closing a screen takes you back
+  to your tab.** vincent now starts on the first entry of `tui.tabs` — the
+  issues list by default — instead of the task board, usable before it has
+  reached the daemon; a `tui.tabs` starting with something else moves you there
+  once, on the daemon's first answer, unless you have already moved. `esc` at
+  the bottom of a takeover (projects, workflows, the daemon view, pull
+  requests, triggers, the new-task form, the archives, a list that is not a
+  tab) returns to the main tab you came from rather than always to the board,
+  and the task board itself is left by `esc` when `tui.tabs` does not list it.
+
 - **The TUI's main tabs are drawn in the app header, and a click switches.**
   On a main tab the header shows `Issues │ Tasks` (and `│ Chats` when
   configured) in place of the screen's name, the current one highlighted; a

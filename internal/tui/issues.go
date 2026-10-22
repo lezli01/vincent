@@ -454,7 +454,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			// it came from, and tab is the way to the next one.
 			return v, nil
 		}
-		return v, func() tea.Msg { return selectViewMsg{id: viewHome} }
+		return v, backToTab
 	case opKey(keymap.Refresh):
 		return v, v.loadCmd()
 	case opKey(keymap.Scope):

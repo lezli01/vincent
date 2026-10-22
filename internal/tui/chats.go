@@ -651,7 +651,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			// list's rule.
 			return v, nil
 		}
-		return v, func() tea.Msg { return selectViewMsg{id: viewHome} }
+		return v, backToTab
 	case "up", "k":
 		v.moveCursor(-1)
 	case "down", "j":

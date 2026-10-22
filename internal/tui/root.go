@@ -133,15 +133,22 @@ type root struct {
 	selectedTask int64
 	// lastScoped is the last projectScoped view that was active, recorded by
 	// switchTo as it is left: where enter on a project overview row returns
-	// to (task 132 decision 42). Zero is the board, the answer with no
-	// history.
+	// to (task 132 decision 42). scopedSeen says one has been recorded;
+	// until then the answer is the tab the human is on (#789).
 	lastScoped viewID
+	scopedSeen bool
 	// tabs is `tui.tabs` as views, in order (task 136.2): the screens tab
 	// and shift+tab switch between. applyTabs installs it from every config
 	// answer; until one arrives it is defaultTabs. lastTab is the last tab
-	// switchTo made active, for #789's landing.
+	// switchTo made active: where a takeover's esc goes back to (#789).
 	tabs    []viewID
 	lastTab viewID
+	// landing is armed by land, for Run (task 136 decision 8, #789): the
+	// TUI opens on defaultTabs()[0] before any daemon answers, and the
+	// first successful config answer moves it once to the configured
+	// tabs[0] — unless the human navigated first, which disarms it. A
+	// later answer never moves anyone (task 136 decision 13).
+	landing bool
 
 	// github is the §13.2 capability probe for every registered project,
 	// yes and no alike, refreshed as the connection comes up and again on
@@ -264,6 +271,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.updateFollowFetched(msg)
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
+	case backToTabMsg:
+		return m, m.switchTo(m.tabTarget())
 	case overviewPickMsg:
 		return m, m.openFromOverview(msg)
 	case taskChatOpenedMsg:
@@ -304,9 +313,9 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyHyperlinks(msg)
 		m.applyOutputLevel(msg)
 		m.applyKeymap(msg)
-		m.applyTabs(msg)
+		land := m.applyTabs(msg)
 		m.noteDefaultProject(msg)
-		return m, tea.Batch(m.noteStartupConfig(msg), m.broadcast(msg))
+		return m, tea.Batch(land, m.noteStartupConfig(msg), m.broadcast(msg))
 	case startupWorktreesMsg:
 		return m, m.resolveStartup(msg)
 	case newTaskFromPullMsg:
@@ -1646,12 +1655,17 @@ func (m *root) applySwitch(p apiclient.Project, why string) tea.Cmd {
 // §15): a detail screen falls back to its list, a form is re-aimed at the new
 // selection, and every other view stays — the lists have re-scoped through
 // setProject already, and the daemon view and the projects overview are not
-// project-bearing.
+// project-bearing. The task workspace falls back to the board only while the
+// board is a tab; otherwise to the human's tab (#789), which is where its
+// esc would have gone.
 func (m *root) keepViewAcrossSwitch() tea.Cmd {
 	v := m.views[m.active]
 	if to, ok := switchFallback[m.active]; ok {
 		if l, ok := v.(switchLeaving); ok {
 			l.leaveForSwitch()
+		}
+		if m.active == viewTask && !m.isTabRoot(to) {
+			to = m.tabTarget()
 		}
 		return m.switchTo(to)
 	}
@@ -1759,8 +1773,9 @@ func (m *root) switchTo(id viewID) tea.Cmd {
 	}
 	prev := m.active
 	m.active = id
+	m.landing = false
 	if _, ok := m.views[prev].(projectScoped); ok {
-		m.lastScoped = prev
+		m.lastScoped, m.scopedSeen = prev, true
 	}
 	if m.isTabRoot(id) {
 		m.lastTab = id
@@ -1793,7 +1808,11 @@ func (m *root) openFromOverview(msg overviewPickMsg) tea.Cmd {
 	// applies task 132.6's rules to it rather than to the overview: a record
 	// gives way to its list, a form is re-aimed, and a draft asks first
 	// (decisions 36 and 37).
-	back := m.switchTo(m.lastScoped)
+	to := m.lastScoped
+	if !m.scopedSeen {
+		to = m.tabTarget()
+	}
+	back := m.switchTo(to)
 	if same {
 		return back
 	}
@@ -1876,22 +1895,66 @@ func (m *root) applyKeymap(msg tea.Msg) {
 // applyTabs installs `tui.tabs` from whichever config answer arrived (task
 // 136.2), the same three applyKeymap reads, so a list saved from the config
 // editor applies on the next press. A failed fetch or a refused save changes
-// nothing, for applyHyperlinks' reason.
-func (m *root) applyTabs(msg tea.Msg) {
+// nothing, for applyHyperlinks' reason. The first answer that succeeds
+// also completes Run's landing; what it returns is that one switch.
+func (m *root) applyTabs(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case boardConfigMsg:
 		if msg.err == nil {
 			m.setTabs(tabsFromConfig(msg.tabs))
+			return m.finishLanding()
 		}
 	case daemonConfigMsg:
 		if msg.err == nil {
 			m.setTabs(tabsFromConfig(msg.config.TUI.Tabs))
+			return m.finishLanding()
 		}
 	case configSavedMsg:
 		if msg.err == nil {
 			m.setTabs(tabsFromConfig(msg.cfg.TUI.Tabs))
 		}
 	}
+	return nil
+}
+
+// land opens the TUI on the first default tab (#789, task 136 decision 8),
+// before the program starts: the screen is renderable and navigable in
+// every connection phase, without waiting for a daemon to say what the
+// configured first tab is. newRoot does not call it, so a test that builds
+// a root starts on the board unless it asks for the landing.
+func (m *root) land() {
+	m.active = defaultTabs()[0]
+	m.lastTab = m.active
+	m.landing = true
+}
+
+// finishLanding is the landing's one adjustment: on the first config
+// answer, a human who has not navigated yet is moved to the configured
+// first tab. With the default list that is where they already are, so the
+// board never flashes; with another it is at most one jump.
+func (m *root) finishLanding() tea.Cmd {
+	if !m.landing {
+		return nil
+	}
+	m.landing = false
+	return m.switchTo(m.tabs[0])
+}
+
+// backToTabMsg is a takeover's esc at the bottom of its stack (#789): back
+// to the tab the human came from, which only the root knows.
+type backToTabMsg struct{}
+
+// backToTab is the command every takeover's last esc returns.
+func backToTab() tea.Msg { return backToTabMsg{} }
+
+// tabTarget is where backToTabMsg goes: the last tab the human was on while
+// it is still a configured tab, else the first one — a reload that dropped
+// it leaves its screen up (task 136 decision 13) but not as a destination.
+func (m *root) tabTarget() viewID {
+	if m.isTabRoot(m.lastTab) {
+		return m.lastTab
+	}
+	return m.tabs[0]
 }
 
 // setTabs installs a tab list and tells the views whose esc depends on it.
@@ -1908,7 +1971,7 @@ func (m *root) setTabs(tabs []viewID) {
 
 // tabAware is a view whose esc depends on whether it is a main tab (task
 // 136.2): on one, esc below the view's own layers stays put, because there
-// is nowhere it came from; off one, it leaves to the board as it always did.
+// is nowhere it came from; off one, it leaves to the human's tab (#789).
 type tabAware interface {
 	setTabRoot(bool)
 }

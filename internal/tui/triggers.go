@@ -471,7 +471,7 @@ func (v *triggersView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			v.restoreSelection()
 			return v, nil
 		}
-		return v, func() tea.Msg { return selectViewMsg{id: viewHome} }
+		return v, backToTab
 	}
 	return v, nil
 }

@@ -160,9 +160,11 @@ type taskView struct {
 	// board's, shared with every other way of opening a task.
 	stackPush int64
 	stackKeep bool
-	// back is where esc lands once the stack is empty: the board, unless a
-	// fresh open named another screen (selectTaskMsg.back). Pushes and pops
-	// keep it, so drilling into a lane and back out still ends there.
+	// back is where esc lands once the stack is empty: the screen a fresh
+	// open named (selectTaskMsg.back), the board for the board's own open,
+	// and otherwise the human's tab (viewLastTab, #789).
+	// Pushes and pops keep it, so drilling into a lane and back out still
+	// ends there.
 	back viewID
 	// pendingFailure is the lane `N` opened, still loading: when it has, the
 	// workspace lands on its first failure (landPendingFailure). Set by the
@@ -362,6 +364,9 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		default:
 			t.stack, t.leftTab, t.crumb = nil, nil, nil
 			t.back = msg.back
+			if t.back == viewHome && !msg.fromBoard {
+				t.back = viewLastTab
+			}
 		}
 		if msg.id != t.pendingFailure {
 			t.pendingFailure = 0
@@ -1993,8 +1998,7 @@ func (t *taskView) nowLine(width int) (string, bool) {
 // strands a reader on a blank workspace.
 func (t *taskView) popCmd() tea.Cmd {
 	if len(t.stack) == 0 {
-		back := t.back
-		return func() tea.Msg { return selectViewMsg{id: back} }
+		return t.backCmd()
 	}
 	stack := append([]int64(nil), t.stack...)
 	alive := t.aliveFunc()
@@ -2008,11 +2012,20 @@ func (t *taskView) popCmd() tea.Cmd {
 	}
 }
 
+// backCmd leaves the workspace for back: the screen the task was opened
+// from, or the human's tab when that screen is gone (#789).
+func (t *taskView) backCmd() tea.Cmd {
+	if t.back == viewLastTab {
+		return backToTab
+	}
+	back := t.back
+	return func() tea.Msg { return selectViewMsg{id: back} }
+}
+
 func (t *taskView) applyPop(msg navPopMsg) tea.Cmd {
 	if !msg.ok {
 		t.stack = nil
-		back := t.back
-		return func() tea.Msg { return selectViewMsg{id: back} }
+		return t.backCmd()
 	}
 	t.stack = msg.rest
 	// The selectTaskMsg below is a pop, not a fresh open: the stack it lands
