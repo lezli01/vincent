@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -233,5 +234,37 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 	h.p.until(5*time.Second, "esc back to the list", func() bool { return h.m.active == viewIssues })
 	if row, ok := list.current(); !ok || row.issue.ID != local.ID {
 		t.Fatalf("the list lost its selection: %+v", row)
+	}
+}
+
+// `S` is the list's sync now: one POST to the selected project's sync route,
+// recorded on the daemon's side, and the answer worded in the list's note.
+// `R` beside it never makes that request (task 130 decision 2).
+func TestIssueSyncKeyAgainstTheRealAPI(t *testing.T) {
+	rec := &requestRecorder{}
+	h := newNewTaskLiveHarnessWith(t, liveOptions{wrap: rec.wrap})
+	ctx := context.Background()
+
+	list := issuesListView(t, h)
+	h.send(selectViewMsg{id: viewIssues})
+	h.p.until(10*time.Second, "the issues list", func() bool { return list.loaded })
+
+	h.sendKey(keyPress("R"))
+	h.p.until(10*time.Second, "the re-read", func() bool { return !list.loading })
+	if got := rec.matching("POST /v1/projects/"); len(got) != 0 {
+		t.Fatalf("R asked for a sync: %v", got)
+	}
+
+	h.sendKey(keyPress("S"))
+	h.p.until(10*time.Second, "the sync answer", func() bool {
+		return strings.HasPrefix(list.note, "sync requested")
+	})
+	want := "POST /v1/projects/" + strconv.FormatInt(h.projectID, 10) + "/issues/sync"
+	if got := rec.matching("POST /v1/projects/"); len(got) != 1 || !strings.HasPrefix(got[0], want) {
+		t.Fatalf("S sent %v, want one %s", got, want)
+	}
+	st, err := h.st.GetIssueSyncState(ctx, h.projectID)
+	if err != nil || st.RequestedAt == nil {
+		t.Fatalf("the daemon recorded no sync request: %+v, %v", st, err)
 	}
 }

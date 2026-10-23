@@ -66,10 +66,23 @@ func taskEventIssueID(ev apiclient.Event) int64 {
 	return body.IssueID
 }
 
+// issueSyncKey is the list's "sync now": what `vincent issue sync` asks for.
+// `R` stays a re-read (task 130 decision 2); this is the separate, explicit
+// request for GitHub, so neither key does the other's work by surprise.
+const issueSyncKey = "S"
+
 // Issues-list messages.
 type (
 	issuesRefreshMsg struct{}
-	issuesLoadedMsg  struct {
+	// issuesSyncedMsg is the daemon's answer to `S`: the status as it stood
+	// when the request was recorded, never the sync's outcome. What the sync
+	// changes arrives as issue events, which re-list on their own.
+	issuesSyncedMsg struct {
+		projectID int64
+		status    apiclient.IssueSyncStatus
+		err       error
+	}
+	issuesLoadedMsg struct {
 		// showDone is the scope the listing was asked for. `s` pressed
 		// twice in quick succession has two listings in flight, and only
 		// the one for the scope on screen may land.
@@ -255,6 +268,11 @@ func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.loadCmd()
 	case issuesLoadedMsg:
 		v.applyLoaded(msg)
+		return v, nil
+	case issuesSyncedMsg:
+		if msg.projectID == v.project.id {
+			v.setNote(syncedNote(msg), msg.err != nil || !msg.status.Enabled)
+		}
 		return v, nil
 	case openedURLMsg:
 		if msg.err != nil {
@@ -457,6 +475,8 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, backToTab
 	case opKey(keymap.Refresh):
 		return v, v.loadCmd()
+	case issueSyncKey:
+		return v, v.syncCmd()
 	case opKey(keymap.Scope):
 		v.toggleDone()
 		return v, v.loadCmd()
@@ -510,6 +530,39 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.edgeCursor(true)
 	}
 	return v, nil
+}
+
+// syncCmd asks the daemon to sync the selected project's issues now
+// (POST /v1/projects/{id}/issues/sync). The daemon answers at once and runs
+// the sync — the sweep included, so issues deleted on GitHub go — on its
+// importer's goroutine.
+func (v *issuesView) syncCmd() tea.Cmd {
+	client, pid := v.client, v.project.id
+	if client == nil || pid == 0 {
+		return nil
+	}
+	v.setNote("asking for a GitHub sync…", false)
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		status, err := client.SyncIssues(ctx, pid)
+		return issuesSyncedMsg{projectID: pid, status: status, err: err}
+	}
+}
+
+// syncedNote words `S`'s answer the way `vincent issue sync` does: a sync
+// requested, or requested but held back by a switch that is off.
+func syncedNote(msg issuesSyncedMsg) string {
+	switch s := msg.status; {
+	case msg.err != nil:
+		return "could not ask for a sync: " + errString(msg.err)
+	case !s.Enabled:
+		return "sync requested, but import is off (" + s.Reason + ")"
+	case s.Repo != "":
+		return "sync requested from " + s.Repo + " — the list updates as it lands"
+	default:
+		return "sync requested — the list updates as it lands"
+	}
 }
 
 // toggleDone shows or hides the `done` section (task 134 decision 5). It

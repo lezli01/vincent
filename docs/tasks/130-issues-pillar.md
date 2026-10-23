@@ -494,6 +494,16 @@ foldable lane sections (`open → in progress → hand-off → done`). 16.4 is
 **superseded in part**: a row also sits in its lane section and carries
 `attention`; the exact card is task 134.8's and 134.16's. 16.2 and 16.3 stand.
 
+*Amended 2026-10-23 (settled with the author; widens 16.2):* 16.2 **stands**
+for `R`, which still re-reads only. The list gains `S`, a separate key that
+asks for the sync 16.2 kept off `R`: one `POST /v1/projects/{id}/issues/sync`
+for the selected project, exactly `vincent issue sync`, so a human waiting on
+an issue just deleted on GitHub need not wait out the daily sweep (decision 6,
+amended) or leave for the CLI. The note says the sync was requested, or that a
+switch holds it back; what the sync changes re-lists through the usual issue
+events. The footer, `?` and the palette offer it only on a project the GitHub
+probe says yes for, as they do the pull-request keys.
+
 ### 17. 130.10: marker headers for step and chat callers, and the outbox's defaults (2026-10-03)
 
 Settled with the author on #669; closes open question 6.
