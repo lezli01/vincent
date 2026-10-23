@@ -136,11 +136,14 @@ homebrew_casks:
     # again and the hook is load-bearing again. Delete it in the same change that
     # ever installs the certificates: with a notarized binary it goes straight
     # back to bypassing a real check.
+    # `install_steps`, not `install`: Homebrew deprecated arbitrary-Ruby
+    # `postflight` for the declarative `postflight_steps` DSL, and goreleaser
+    # v2.19 fails `goreleaser check` on the old key.
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/vincent"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/vincent"]
           end
     # `vincent service install` writes a LaunchAgent (internal/service:
     # LaunchdName). Without this, `brew uninstall` would delete the binary out
