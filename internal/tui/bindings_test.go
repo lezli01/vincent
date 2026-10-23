@@ -1260,6 +1260,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("R did not re-list")
 			}
 		},
+		"S": func(t *testing.T) {
+			v := issuesFixture()
+			if _, cmd := v.updateKey(registryKey(t, "S")); cmd == nil {
+				t.Fatal("S did not ask for a sync")
+			}
+		},
 		"down": func(t *testing.T) {
 			v := issuesFixture()
 			v.updateKey(registryKey(t, "down"))

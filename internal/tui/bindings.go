@@ -947,6 +947,9 @@ var bindings = []binding{
 	{key: issueEditKey, label: "edit the selected issue in a form", scope: scopePanel, context: ctxIssues, hint: "i edit", priority: 9},
 	{key: issueStateKey, label: "close or reopen the selected issue — only what the daemon offers", scope: scopePanel, context: ctxIssues, hint: "X close/reopen", priority: 10},
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssues, priority: 11, term: termDelete},
+	// `R` above only re-reads (task 130 decision 2); `S` is the explicit
+	// request to GitHub, `vincent issue sync` from the list.
+	{key: issueSyncKey, label: "sync this project's issues from GitHub now — sweeping out the ones deleted there", scope: scopePanel, context: ctxIssues, hint: "S sync", priority: 11, github: true},
 	// Folding the lane sections (task 134.8), the task board's four keys in
 	// the same meaning. Not `fold:` rows: that marker drops a row while the
 	// board is ungrouped, and the issues list always has its sections.
