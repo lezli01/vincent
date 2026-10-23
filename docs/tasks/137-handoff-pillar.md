@@ -134,6 +134,10 @@ recovery story and another board.
 
 ### 4. Delivery membership never moves a lane; it is shown beside it (2026-10-23)
 
+**Only a `hand_off` issue may be a car**, on every surface and with no
+override (author, 2026-10-23): an `open`, `in_progress` or `done` issue is
+refused with `issue_not_handed_off`, even when named by id.
+
 The lane SQL (`store/issuelane.go`) reads root tasks linked by
 `tasks.issue_id` only, so a car stays `hand_off` while its train runs. The
 issue DTO gains `delivery: {task_id, status}` for the unsettled train that
@@ -366,9 +370,10 @@ false` keeps everything.
 
 ## Open questions
 
-1. Should a train be allowed to carry an issue still `in_progress` when an
-   administrator selects it explicitly by id? The default answer is no
-   (`issue_not_handed_off`).
+1. **In-progress issues in a train.** *Settled 2026-10-23 by the author:*
+   never, not even by explicit id. Only an open issue in the `hand_off` lane
+   may be a car; anything else is refused with `issue_not_handed_off`
+   (decision 4).
 2. Should the attention view be a fourth main TUI tab (`tui.tabs`) or a
    takeover? 137.15 decides with screenshots.
 
