@@ -2005,6 +2005,7 @@ completed](../assets/tui-issues.png)
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so; the footer offers `o` only on an imported issue |
 | `s` | Show or hide the done lane |
 | `R` | Re-read the issues |
+| `S` | Sync this project's issues from GitHub now — what `vincent issue sync` does; offered only on a project with a GitHub integration |
 | `↑`/`↓` | Move the selection |
 | `pgup`/`pgdown` | Move the selection a screenful |
 | `home`/`g`, `end`/`G` | Select the first or the last row |
@@ -2021,7 +2022,13 @@ The mouse wheel moves the selection one row per tick, and a click selects the
 row under it.
 
 `R` only re-reads what vincent already holds. It never asks GitHub for
-anything: imported issues are refreshed on the daemon's reconciler tick.
+anything: imported issues are refreshed on the daemon's reconciler tick. `S`
+is the request to GitHub: it asks the daemon to sync the project now, and that
+sync also sweeps the open issues GitHub no longer lists — closing the ones
+closed there and deleting the ones deleted there, which the reconciler tick
+otherwise does only once a day. The note under the list says the sync was
+requested, or that the import is switched off; the issues it changes re-list
+on their own as it lands.
 
 `enter` opens the **issue detail**: the state, id and title, wrapped onto as
 many lines as it needs; the description, rendered as Markdown; the labels,

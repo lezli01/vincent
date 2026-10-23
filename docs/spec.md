@@ -13956,6 +13956,13 @@ stream for the live tail.
    `↑↓ move`, `/ filter`, `n new`, `o browser`, then the rest, and
    withholds `o browser` from the footer — never from `?` or the palette —
    while the selected row has no source page.
+   *Amended 2026-10-23 (task 130 decision 16, amended).* `R` still re-reads
+   only; **`S` requests a GitHub sync** for the selected project — one
+   `POST /v1/projects/{id}/issues/sync`, as `vincent issue sync` — so the
+   sweep that deletes an issue deleted on GitHub (§5.6) runs now rather
+   than on its day. The note words the 202's status: requested, or held back
+   by a switch that is off. The footer, `?` and the palette offer it only on
+   a project §13.2's probe answers yes for, as they do the pull-request keys.
 
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,
