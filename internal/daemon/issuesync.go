@@ -27,8 +27,10 @@ import (
 // list that silently lies; issue.sync_changed announces only the
 // transitions, so a failing project is one event, not one per tick.
 //
-// Nothing here deletes a local row on a remote signal: a closed issue is
-// closed, a transferred one is marked moved, a deleted one missing.
+// One remote signal deletes a local row: an issue GitHub answers 410 for
+// was deleted there, and is deleted here, leaving a tombstone (task 130
+// decision 6, amended). Every other one keeps it: a closed issue is closed,
+// a transferred one is marked moved, an unreadable one missing.
 //
 // The comment pass (task 130 decision 24, 130.16) follows the issue pass on
 // the same tick: one conditional listing of the repository's issue comments
@@ -108,7 +110,7 @@ func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, 
 		// decides what it means.
 		next.OK, next.Reason = false, syncReasonOriginChanged
 	default:
-		err = r.importIssues(ctx, project, repo, &next, now)
+		err = r.importIssues(ctx, project, repo, &next, now, st.RequestedAt != nil)
 		if err == nil {
 			// Only after the issue pass: a comment is filed under an
 			// imported issue, so the issues it may belong to come first. Its
@@ -144,9 +146,11 @@ func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, 
 }
 
 // importIssues is one pass: the initial import until it completes, an
-// incremental poll after, and the daily open-set sweep. It advances st as
-// it goes, so progress made before a failure is kept.
-func (r *PullReconciler) importIssues(ctx context.Context, project store.Project, repo github.Repo, st *store.IssueSyncState, now time.Time) error {
+// incremental poll after, and the daily open-set sweep — at once when a
+// human asked for the sync, who is likelier than the clock to know an
+// issue just went. It advances st as it goes, so progress made before a
+// failure is kept.
+func (r *PullReconciler) importIssues(ctx context.Context, project store.Project, repo github.Repo, st *store.IssueSyncState, now time.Time, requested bool) error {
 	if !st.ImportComplete {
 		if err := r.initialImport(ctx, project, repo, st); err != nil {
 			return err
@@ -158,7 +162,7 @@ func (r *PullReconciler) importIssues(ctx context.Context, project store.Project
 		// The sweep needs the import's open set to compare against.
 		return nil
 	}
-	if st.LastFullScanAt != nil && now.Sub(*st.LastFullScanAt) < fullScanEvery {
+	if !requested && st.LastFullScanAt != nil && now.Sub(*st.LastFullScanAt) < fullScanEvery {
 		return nil
 	}
 	if err := r.sweepOpenSet(ctx, project, repo, st); err != nil {
@@ -354,7 +358,7 @@ func needsBackfill(st *store.IssueSyncState) bool {
 
 // sweepOpenSet finds the open issues here GitHub no longer lists as open,
 // and asks after each one: closed is written, transferred is moved,
-// deleted or unreadable is missing. Nothing is deleted.
+// deleted is deleted, unreadable is missing.
 func (r *PullReconciler) sweepOpenSet(ctx context.Context, project store.Project, repo github.Repo, st *store.IssueSyncState) error {
 	open := map[string]bool{}
 	var since time.Time
@@ -431,7 +435,25 @@ func (r *PullReconciler) probeIssue(ctx context.Context, projectID int64, repo g
 			// Converted to a discussion: it is no longer an issue anywhere.
 			status, location = store.RemoteStatusMissing, ""
 		}
-	case reason == github.ReasonGone || reason == github.ReasonNotFound:
+	case reason == github.ReasonGone:
+		// Deleted on GitHub: the issue goes here too, leaving the remote row
+		// as a tombstone so no later import brings it back. A 404 is not
+		// this — it is also what a lost grant answers — and an issue a live
+		// task works in keeps its row, marked missing, until that task
+		// settles and a human deletes it.
+		if rem.IssueID != nil {
+			err := r.store.DeleteIssue(ctx, *rem.IssueID, issuestate.Sync)
+			if err == nil {
+				r.logger.Info("issue deleted on GitHub, deleted here", "project", projectID,
+					"repo", repo.String(), "issue", rem.Number)
+				return nil
+			}
+			if _, live := store.AsIssueHasLiveMainTask(err); !live {
+				return err
+			}
+		}
+		status = store.RemoteStatusMissing
+	case reason == github.ReasonNotFound:
 		status = store.RemoteStatusMissing
 	default:
 		return err

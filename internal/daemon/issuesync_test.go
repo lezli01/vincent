@@ -340,7 +340,7 @@ func TestIssueSyncSkipsUnknownClosedAndDeletedIssues(t *testing.T) {
 	}
 }
 
-func TestIssueSyncSweepMarksMovedAndMissing(t *testing.T) {
+func TestIssueSyncSweepMarksMovedAndDeletesGone(t *testing.T) {
 	f := newFixture(t, "https://github.com/octo/repo.git")
 	c := newCorpus(t, issueRow(1, "open"), issueRow(2, "open"), issueRow(3, "open"))
 	r := f.reconciler()
@@ -354,23 +354,87 @@ func TestIssueSyncSweepMarksMovedAndMissing(t *testing.T) {
 	})
 	// Not yet a day: no sweep, nothing marked.
 	r.Tick(t.Context())
-	if got := f.issues(t); got[1].Remote.Status != "" || got[2].Remote.Status != "" {
-		t.Fatalf("swept before a day passed: %q %q", got[1].Remote.Status, got[2].Remote.Status)
+	if got := f.issues(t); len(got) != 3 || got[1].Remote.Status != "" || got[2].Remote.Status != "" {
+		t.Fatalf("swept before a day passed: %d issues, %+v", len(got), got[1].Remote)
 	}
+	events := f.lastEventID(t)
 	r.now = func() time.Time { return time.Now().Add(fullScanEvery + time.Hour) }
 	r.Tick(t.Context())
 	got := f.issues(t)
-	if len(got) != 3 {
-		t.Fatalf("the sweep removed issues: %d left", len(got))
+	if len(got) != 2 || got[2] != nil {
+		t.Fatalf("the issue deleted on GitHub is still here: %d issues", len(got))
+	}
+	if evs := f.eventsAfter(t, events, store.EventIssueDeleted); len(evs) != 1 {
+		t.Errorf("the sweep announced %d deletes, want 1", len(evs))
 	}
 	if got[1].Remote.Status != store.RemoteStatusMoved || !strings.Contains(got[1].Remote.RemoteJSON, "octo/other/issues/12") {
 		t.Errorf("transferred issue: status %q json %s", got[1].Remote.Status, got[1].Remote.RemoteJSON)
 	}
-	if got[2].Remote.Status != store.RemoteStatusMissing {
-		t.Errorf("deleted issue: status %q, want missing", got[2].Remote.Status)
-	}
 	if got[3].Remote.Status != "" || got[1].State != issuestate.Open {
 		t.Errorf("the sweep touched what it should not: %+v %+v", got[3].Remote, got[1])
+	}
+
+	// The tombstone holds: the issue coming back into the listing does not
+	// bring it back here.
+	c.edit(2, issueBase.Add(2*time.Hour), func(row map[string]any) { delete(row, "_fake") })
+	r.Tick(t.Context())
+	if got := f.issues(t); got[2] != nil {
+		t.Error("a deleted issue was imported again")
+	}
+}
+
+// TestIssueSyncSweepKeepsAGoneIssueALiveTaskHolds: the delete a live main
+// task refuses a human, it refuses the sweep too, which marks the issue
+// missing instead.
+func TestIssueSyncSweepKeepsAGoneIssueALiveTaskHolds(t *testing.T) {
+	f := newFixture(t, "https://github.com/octo/repo.git")
+	c := newCorpus(t, issueRow(1, "open"))
+	r := f.reconciler()
+	r.Tick(t.Context())
+	is := f.issues(t)[1]
+	task := &store.Task{
+		ProjectID: f.project.ID, Title: "works the issue", WorkflowName: "adhoc",
+		BaseBranch: "master", BranchName: "vincent/main-of-1", State: store.TaskQueued,
+		IssueID: &is.ID, IssueWorktree: store.IssueWorktreeMain,
+	}
+	if err := f.store.CreateTask(t.Context(), task, nil); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	c.edit(1, issueBase.Add(time.Hour), func(row map[string]any) {
+		row["_fake"] = map[string]any{"deleted": true}
+	})
+	r.now = func() time.Time { return time.Now().Add(fullScanEvery + time.Hour) }
+	r.Tick(t.Context())
+	got := f.issues(t)[1]
+	if got == nil || got.Remote.Status != store.RemoteStatusMissing {
+		t.Fatalf("issue a live task holds: %+v, want it kept and missing", got)
+	}
+	if !f.syncState(t).OK {
+		t.Errorf("a refused delete failed the sync: %+v", f.syncState(t))
+	}
+}
+
+// TestIssueSyncNowSweeps: a human's "sync now" does not wait out the day.
+func TestIssueSyncNowSweeps(t *testing.T) {
+	f := newFixture(t, "https://github.com/octo/repo.git")
+	c := newCorpus(t, issueRow(1, "open"), issueRow(2, "open"))
+	r := f.reconciler()
+	r.Tick(t.Context())
+
+	c.edit(2, issueBase.Add(time.Hour), func(row map[string]any) {
+		row["_fake"] = map[string]any{"deleted": true}
+	})
+	r.Tick(t.Context())
+	if len(f.issues(t)) != 2 {
+		t.Fatal("a tick swept before a day passed")
+	}
+	if err := f.store.RequestIssueSync(t.Context(), f.project.ID); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	r.SyncRequested(t.Context())
+	if got := f.issues(t); len(got) != 1 || got[2] != nil {
+		t.Errorf("a requested sync left the deleted issue: %d issues", len(got))
 	}
 }
 

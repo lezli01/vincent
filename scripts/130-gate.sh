@@ -21,8 +21,8 @@
 #    8. a read-only token: the write fails no_write_scope and the local
 #       state is kept
 #    9. a conflict: GitHub changed the state first, and GitHub's value wins
-#   10. moved and gone: a transferred and a deleted issue are marked, never
-#       deleted
+#   10. moved and gone: a transferred issue is marked, a deleted one is
+#       deleted here too
 #   11. the MCP guard: an agent may not close an imported issue, and may
 #       close a local one
 #   12. the thread (task 130.16): a comment on GitHub is mirrored onto the
@@ -291,6 +291,7 @@ patches_for() { # patches_for N -> how many PATCHes the fake was asked for on #N
 
 imported() { api GET "/issues?project_id=$1&source=github"; }
 imported_count_is() { [[ "$(imported "$1" | jq length)" == "$2" ]]; }
+issue_is_gone() { local out; out="$(api_raw GET "/issues/$1")"; [[ "$(status_of "$out")" == "404" ]]; }
 issue_by_number() { # issue_by_number PROJECT_ID N -> the vincent issue id
   imported "$1" | jq -r --argjson n "$2" '.[] | select(.source.number == $n) | .id'
 }
@@ -653,7 +654,7 @@ fi
 
 # --------------------------------------------------------------- scenario 10
 if run_scenario 10; then
-  echo "== scenario 10: moved and gone are marked, never deleted"
+  echo "== scenario 10: moved is marked, gone is deleted"
   # The sweep that finds a transferred or deleted issue runs once a day, and
   # first on the tick the initial import completes — which, for a corpus the
   # gate seeds whole, is the tick that imported the issues to be marked. So
@@ -686,13 +687,11 @@ if run_scenario 10; then
   corpus_edit 8 '._fake = {deleted: true}'
   api POST "/projects/$pid/issues/sync" > /dev/null
   wait_for 60 "#7 to be marked moved" field_is "$seven" .source.status moved
-  wait_for 30 "#8 to be marked missing" field_is "$eight" .source.status missing
+  wait_for 30 "#8 to be deleted" issue_is_gone "$eight"
   [[ "$(sync_of "$seven")" == "failed/moved" ]] || fail "#7's sync is $(sync_of "$seven"), want failed/moved"
-  [[ "$(sync_of "$eight")" == "failed/gone" ]] || fail "#8's sync is $(sync_of "$eight"), want failed/gone"
-  imported_count_is "$pid" 520 || fail "the import lists $(imported "$pid" | jq length) issues, want all 520"
-  listed="$(imported "$pid" | jq -r --argjson a "$seven" --argjson b "$eight" \
-    '[.[] | select(.id == $a or .id == $b)] | length')"
-  [[ "$listed" == "2" ]] || fail "a moved or gone issue left GET /v1/issues"
+  imported_count_is "$pid" 519 || fail "the import lists $(imported "$pid" | jq length) issues, want 519"
+  listed="$(imported "$pid" | jq -r --argjson a "$seven" '[.[] | select(.id == $a)] | length')"
+  [[ "$listed" == "1" ]] || fail "a moved issue left GET /v1/issues"
 
   daemon_down
 fi
