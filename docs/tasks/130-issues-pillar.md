@@ -443,6 +443,14 @@ Settled with the author while scoping #667.
    `remote_status: moved` (transferred) or `missing` (gone, 404/410, or
    converted to a discussion, pending #664's experiment); neither removes the
    local row.
+   *Amended 2026-10-23, at the maintainer's request:* a **410** removes it.
+   Issues filed and then deleted on GitHub stayed open here forever — the
+   sweep only labelled them — and the backlog listed work that no longer
+   exists. The sweep now deletes such an issue as actor `sync` through the
+   store's delete, leaving the tombstone, unless a live task holds it, which
+   keeps the old `missing` mark. 404 and discussion conversion still only
+   mark, since a lost grant answers 404 too. A "sync now" also runs the
+   sweep at once instead of waiting out its day.
 7. **Sync failures are never quiet**, unlike the pull-request half of the
    same tick: each is recorded on the project's sync row with a reason, and a
    rate limit backs off until GitHub's reset.

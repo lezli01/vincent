@@ -784,7 +784,8 @@ false the body carries a `reason` and a human-readable `message`:
 
 Those reasons are the whole client-facing vocabulary. `gone` and `moved` come
 from the issue sync's per-issue reads, which record them on the issue as
-`source.status` `missing` and `moved` rather than on any route;
+`source.status` `missing` and `moved` rather than on any route — though a
+`gone` issue is [deleted](#issue-sync) unless a live task holds it;
 everything else from `pull_exists` down comes only from a write —
 `POST /v1/tasks/{id}/github/pull/create` or one of the routes that
 [act on a linked pull request](#acting-on-a-linked-pull-request). `gh`'s stderr and the
@@ -863,12 +864,22 @@ backfilled issue whose repository is not the one the project is bound to —
 `origin` was re-pointed since the task was created — is never matched by a
 sync, and stays as it was backfilled.
 
+Once a day, and on every sync now, the importer also sweeps: each issue
+open here that GitHub no longer lists as open is read on its own. Closed
+there is closed here; transferred is marked `moved`; 404 is marked
+`missing`, since a lost grant answers it too. 410 — **deleted on GitHub** —
+deletes the issue here as `DELETE /v1/issues/{id}` would, as actor `sync`,
+leaving the same tombstone so no later sync imports it again. An issue a
+live main or side task holds is refused that delete, as a human's is, and is
+marked `missing` instead.
+
 The two config switches take precedence over whatever the importer last
 recorded. None of these is a task's `block_reason`: a sync is not a task, and
 nothing about it blocks one.
 
 `POST /v1/projects/{id}/issues/sync` is sync now. It records the request, wakes
-the importer and answers **`202`** at once with the status as it stands, not
+the importer — whose sync then includes the sweep, without waiting out the
+day — and answers **`202`** at once with the status as it stands, not
 the outcome of this sync, which lands on the importer's goroutine and announces
 itself with [`issue.sync_changed`](#state-events--durable) when it flips the
 verdict. With a switch off the request is recorded, `reason` names the switch,
@@ -2554,8 +2565,9 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   last_synced_at, status }` for an imported issue, `null` for a local one.
   `last_synced_at` is when the importer last wrote the issue from the remote.
   `status` is absent while the remote issue is live, `moved` when it was
-  transferred, and `missing` when it was deleted or is no longer found;
-  nothing is deleted locally either way. `remote_state`, `last_synced_at` and
+  transferred, and `missing` when it is no longer found. An issue deleted on
+  GitHub is deleted here by the next [sweep](#issue-sync), and is `missing`
+  only while a live task holds it. `remote_state`, `last_synced_at` and
   `status` are omitted when empty, and list rows carry the same `source`.
   An imported issue also carries `sync` — `{ state, reason?, last_synced_at? }`
   — its [state write-back](#state-write-back); a local issue has none.

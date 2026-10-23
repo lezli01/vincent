@@ -1270,6 +1270,16 @@ tick, as actor `sync`. Three rules it settled:
   converted to a discussion. Neither deletes anything: the local issue stays,
   and a later refresh that matches the `node_id` again resets the status. The
   DTO's `source` block shows it as `status`, beside `last_synced_at`.
+  *Amended 2026-10-23 (task 130 decision 6, amended).* A **410** deletes:
+  an issue GitHub answers 410 for was deleted there, and the scan deletes it
+  here as actor `sync`, through the same store delete a human's
+  `DELETE /v1/issues/{id}` takes, so its remote row becomes the same
+  tombstone and no later import brings it back. A 404 still only marks
+  `missing` — a lost grant answers 404 too — and so does a conversion to a
+  discussion. An issue a live main or side task holds (task 134.12) is
+  refused the delete as a human is, and is marked `missing` instead; the
+  scan does not retry it. A "sync now" (`POST /v1/projects/{id}/issues/sync`)
+  runs the scan on that pass rather than waiting out its day.
 - **The repo binding is sticky.** The first successful sync records the repo
   the project is bound to (task 130 decision 2). A later tick whose `origin`
   names a different repo stops that project's sync with reason
