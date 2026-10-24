@@ -1094,7 +1094,6 @@ func writeIssueWorktreeError(w http.ResponseWriter, err error) bool {
 	var mismatch *store.MainBranchMismatchError
 	var noMain *store.NoMainBranchError
 	switch {
-	case writeIssueInHandoff(w, err):
 	case errors.As(err, &mismatch):
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			fmt.Sprintf("issue %d's main branch is %q; a main task cannot run on %q",
@@ -1262,6 +1261,8 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if err := s.deps.Store.CreateTaskWithKey(ctx, &t, resolveBranch, key); err != nil {
 		var claimed *store.BranchClaimedError
 		switch {
+		// The issue is claimed by a handoff (task 137.4).
+		case writeIssueInHandoff(w, err):
 		case writeIssueWorktreeError(w, err):
 		case errors.As(err, &claimed):
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
