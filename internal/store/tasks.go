@@ -176,8 +176,13 @@ func insertTaskTx(
 	}
 	// Decision 14 of task 137: no new work on an issue a handoff claims,
 	// except from the handoff's own task. A fan-out lane carries no lane of
-	// its issue's and is not new work on it.
-	if t.IssueID != nil && t.ParentTaskID == nil {
+	// its issue's and is not new work on it. Neither is a merge-back: its
+	// source passed this check when it was created or re-admitted, and the
+	// merge-back is inserted inside that source's `→ done`, so a refusal
+	// here would roll the completion back and strand the source in
+	// `running` with no actor behind it (review F1 of #850) — the same
+	// reason a merge-back is outside the branch claim.
+	if t.IssueID != nil && t.ParentTaskID == nil && t.MergeSourceTaskID == nil {
 		if err := refuseClaimedIssueTx(ctx, tx, *t.IssueID, t.ActingTaskID); err != nil {
 			return nil, err
 		}
@@ -285,7 +290,7 @@ func insertTaskTx(
 	// inside its side task's `→ done`, so a claim refused here would roll
 	// that completion back and leave the side task running with no actor.
 	// Admission is the authority instead, and blocks it with a reason.
-	if !t.AdoptedBranch && t.MergeSourceTaskID == nil {
+	if !t.AdoptedBranch {
 		if err := claimBranchTx(ctx, tx, t.ProjectID, t.BranchName, id); err != nil {
 			return nil, err
 		}

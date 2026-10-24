@@ -690,7 +690,10 @@ own task is recognised by the MCP creator id or by the `X-Vincent-Task-Id`
 marker's value, best-effort like every marker (spec §16). The check runs
 **inside the store's insert or transition transaction**, so it cannot race a
 handoff create, and an engine merge-back of a side task the handoff's task
-created is exempt. 137.4 also carries the store primitives for item outcomes
+created is exempt. *Amended 2026-10-24 (review F1 of #850): every engine
+merge-back is exempt — it is inserted inside its side task's `→ done`, so a
+refusal there stranded the side task in `running`, and its source already
+passed the check when it was created or re-admitted.* 137.4 also carries the store primitives for item outcomes
 and `handoff.settled`, so the derived state and the events are testable;
 release-on-settle, the item verbs and their routes stay in 137.6, and `POST
 /v1/handoffs` in 137.5.

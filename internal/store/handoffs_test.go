@@ -391,7 +391,7 @@ func TestHandoffEvents(t *testing.T) {
 
 // TestIssueInHandoffRefusal: new work on a claimed issue — a task, a chat
 // handoff, a follow-up — is refused naming the handoff, except from the
-// handoff's own task and a merge-back of a side task it created; a
+// handoff's own task and any merge-back; a
 // returned or released item lets it through.
 func TestIssueInHandoffRefusal(t *testing.T) {
 	s := openTest(t)
@@ -451,6 +451,64 @@ func TestIssueInHandoffRefusal(t *testing.T) {
 	again.IssueID = &iss.ID
 	if err := s.CreateTask(ctx, again, nil); err != nil {
 		t.Fatalf("create after the item returned: %v", err)
+	}
+}
+
+// TestMergeBackOfAClaimedIssueIsNeverRefused: a side task the handoff's
+// task did not create — one a human made before the claim, or one another
+// task created — may still be followed up by the handoff's task, and its
+// finish inserts its merge-back rather than rolling the `→ done` back and
+// stranding it in `running` (review F1 of #850).
+func TestMergeBackOfAClaimedIssueIsNeverRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		createdBy bool
+	}{{"created before the claim", false}, {"created by another task", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := openTest(t)
+			ctx := t.Context()
+			p := testProject(t, s, "p1")
+			iss, main := handedOffIssue(t, s, p.ID, "guarded", "g1")
+			side := newTask(p.ID, "fix", TaskQueued)
+			side.IssueID, side.IssueWorktree, side.MergeOnConflict = &iss.ID, IssueWorktreeSide, MergeOnConflictBlock
+			if tc.createdBy {
+				side.CreatedByTaskID = &main.ID
+			}
+			mustCreate(t, s, side)
+			moveTask(t, s, side, TaskRunning)
+			first := &Task{Title: "Merge", WorkflowName: "__merge_back", WorkflowSnapshot: "name: x"}
+			done, _, err := s.TransitionTask(ctx, side.ID, TaskRunning, TaskDone, TaskChange{MergeBack: first})
+			if err != nil {
+				t.Fatalf("finish the side task: %v", err)
+			}
+			*side = *done
+			moveTask(t, s, first, TaskRunning, TaskDone)
+
+			_, ht := mustHandoff(t, s, p.ID, "h", iss.ID)
+			req := &FollowUpRequest{
+				Form: FollowUpAgent, Prompt: "x", Workflow: "steps: []", Origin: TaskDone, Round: 1,
+				ActingTaskID: &ht.ID,
+			}
+			if _, _, err := s.TransitionTask(ctx, side.ID, TaskDone, TaskQueued, TaskChange{PendingFollowUp: req}); err != nil {
+				t.Fatalf("the handoff's follow-up of the side task: %v", err)
+			}
+			side.State = TaskQueued
+			moveTask(t, s, side, TaskRunning)
+			mb := &Task{Title: "Merge", WorkflowName: "__merge_back", WorkflowSnapshot: "name: x"}
+			if _, _, err := s.TransitionTask(ctx, side.ID, TaskRunning, TaskDone, TaskChange{MergeBack: mb}); err != nil {
+				t.Fatalf("finish the followed-up side task: %v", err)
+			}
+			if mb.ID == 0 {
+				t.Fatal("no merge-back was inserted")
+			}
+			got, err := s.GetTask(ctx, side.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.State != TaskDone {
+				t.Errorf("side task state = %s, want done", got.State)
+			}
+		})
 	}
 }
 

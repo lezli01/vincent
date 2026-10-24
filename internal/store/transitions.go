@@ -253,11 +253,6 @@ func insertMergeBackTx(ctx context.Context, tx *sql.Tx, source, mb *Task) (*Even
 	mb.BaseBranch = source.BaseBranch
 	mb.BranchName = source.BaseBranch
 	mb.AdoptedBranch = false
-	acting, err := mergeBackActingTx(ctx, tx, source)
-	if err != nil {
-		return nil, err
-	}
-	mb.ActingTaskID = acting
 	return insertTaskTx(ctx, tx, mb, time.Now(), nil)
 }
 

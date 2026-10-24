@@ -1475,7 +1475,13 @@ issue_in_handoff` and `details.handoff_id`. The check runs **inside the
 store's insert or transition transaction**, so it cannot race a handoff create.
 The claiming handoff's own task is let through — recognised by the MCP creator
 or by the `X-Vincent-Task-Id` marker, best-effort like every marker (§16) — and
-so is an engine merge-back whose side task that task created. Fan-out lanes
+so is every engine merge-back. *Amended 2026-10-24 (review F1 of #850):*
+originally only a merge-back whose side task the handoff's task created was let
+through; but a merge-back is inserted inside its side task's `→ done`, so a
+refusal rolled that completion back and left the side task `running` with no
+actor. A merge-back is bookkeeping for work the check already let onto the
+issue when its side task was created or re-admitted — the same reason it is
+outside the branch claim (§5.3, `merge_source_task_id`) — so none is refused. Fan-out lanes
 are not new work on the issue and are not affected.
 
 The `handoff` actor (§5.6) writes an issue it claims; the store's

@@ -252,33 +252,6 @@ func refuseClaimedIssueTx(ctx context.Context, tx *sql.Tx, issueID int64, acting
 	return &IssueInHandoffError{IssueID: issueID, HandoffID: handoffID}
 }
 
-// mergeBackActingTx is who a merge-back acts for. A merge-back is inserted
-// by the engine inside its side task's `→ done`, so no request carries a
-// marker; it acts for whatever task created its source, which is how a
-// handoff's own fix side task merges back into a claimed issue's main
-// worktree. A source created over the CLI from a command step carries no
-// created_by_task_id, so a source created after the claim counts too: while
-// the claim is live only the claiming handoff's task can have created one.
-func mergeBackActingTx(ctx context.Context, tx *sql.Tx, source *Task) (*int64, error) {
-	if source.CreatedByTaskID != nil {
-		return source.CreatedByTaskID, nil
-	}
-	if source.IssueID == nil {
-		return nil, nil
-	}
-	var taskID int64
-	err := tx.QueryRowContext(ctx, `SELECT h.task_id FROM handoff_items hi JOIN handoffs h ON h.id = hi.handoff_id
-		WHERE hi.issue_id = ? AND `+claimCond+` AND h.created_at <= ?`,
-		*source.IssueID, formatTime(source.CreatedAt)).Scan(&taskID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read issue %d claim: %w", *source.IssueID, err)
-	}
-	return &taskID, nil
-}
-
 // CreateHandoff creates a handoff, its task and one item per issue in one
 // transaction (decision 2), and records handoff.created with it. task is
 // inserted through insertTaskTx and must carry no issue: a handoff task
