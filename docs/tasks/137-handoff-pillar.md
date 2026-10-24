@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (1/15)
+**Status:** 🔄 in progress (2/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -781,12 +781,12 @@ pull request.
   068 decision 1, task 069 decision 3 and task 134's risks and non-goals; spec
   §3 row 38, ahead of its code (open question 5), with dated notes on rows 11,
   33 and 36. ✓ 2026-10-24
-- [ ] **137.2** ([#835](https://github.com/lezli01/vincent/issues/835)) The delivery: a `tasks.delivery_json` migration, `POST
+- [x] **137.2** ([#835](https://github.com/lezli01/vincent/issues/835)) The delivery: a `tasks.delivery_json` migration, `POST
   /v1/tasks/{id}/delivery`, `vincent task deliver`, its MCP tool, the implicit
   delivery materialized at `→ done`, clearing on follow-up, a merge-back
   copying its source, the startup reconcile for existing issue tasks,
   `task.delivery_changed`, and `delivery` on the task and issue DTOs
-  (decision 3). Spec §5.3, §5.6, §6, §12.1, §13.2–§13.4, §14.
+  (decision 3). Spec §5.3, §5.6, §6, §12.1, §13.2–§13.4, §14. ✓ 2026-10-24
 - [ ] **137.3** ([#836](https://github.com/lezli01/vincent/issues/836)) The repository's resolve workflows move off
   `vincent-delivered/` onto `vincent task deliver`, and `github-iterate-work`
   reads deliveries over the API. Depends: 137.2.

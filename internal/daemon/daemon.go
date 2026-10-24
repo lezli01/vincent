@@ -426,6 +426,20 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// nobody tails is not the whole report.
 	reclaimer := taskrun.NewReclaimer(runnerDeps)
 	reportOrphans(ctx, reclaimer, logger)
+	// Deliveries for issue tasks that finished before migration 0045 (task
+	// 137 decision 3), so every issue in hand_off has one to show. In the
+	// background: it asks git a question or two per task, nothing waits on
+	// it, and its write is guarded on the column still being NULL, so a
+	// delivery recorded meanwhile is never overwritten.
+	go func() {
+		n, err := taskrun.BackfillDeliveries(ctx, runnerDeps, logger)
+		switch {
+		case err != nil && ctx.Err() == nil:
+			logger.Warn("delivery backfill stopped", "filled", n, "error", err)
+		case n > 0:
+			logger.Info("filled deliveries for finished issue tasks", "count", n)
+		}
+	}()
 	sched := scheduler.New(scheduler.Deps{
 		Store:    st,
 		Config:   currentConfig,

@@ -101,12 +101,16 @@ type Issue struct {
 	// SideActive counts the unsettled, unarchived side tasks;
 	// MergeBacksPending the unsettled, unarchived merge-back tasks (task
 	// 134.16 decision 1).
-	SideActive        int        `json:"side_active"`
-	MergeBacksPending int        `json:"merge_backs_pending"`
-	Version           int64      `json:"version"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-	ClosedAt          *time.Time `json:"closed_at,omitempty"`
+	SideActive        int `json:"side_active"`
+	MergeBacksPending int `json:"merge_backs_pending"`
+	// Delivery is what the issue's latest finished main-line root task
+	// delivered (task 137.2): a summary on a list row, in full from
+	// GetIssue. Nil while no finished task has one.
+	Delivery  *Delivery  `json:"delivery"`
+	Version   int64      `json:"version"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	ClosedAt  *time.Time `json:"closed_at,omitempty"`
 
 	Body             string     `json:"body,omitempty"`
 	AvailableActions []string   `json:"available_actions,omitempty"`

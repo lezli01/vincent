@@ -154,6 +154,12 @@ type TaskChange struct {
 	// is still pending: that one merges the side branch's tip as it is when
 	// it runs.
 	MergeBack *Task
+	// Delivery is the delivery a `→ done` writes (§5.3, task 137 decision
+	// 3): the run's own, with what it left empty filled in, or an implicit
+	// one. The engine builds it, having asked git what the branch holds
+	// before the transition, so no subprocess runs under the write lock. nil
+	// leaves the column as it is.
+	Delivery *Delivery
 }
 
 // TransitionTask moves a task from one state to another, writing the state
@@ -357,6 +363,14 @@ func transitionTaskTx(
 		// staling it.
 		t.SettledChildrenWatermark = nil
 	}
+	if taskstate.Settled(from) && !taskstate.Settled(to) {
+		// A delivery describes the run that finished, so a follow-up that
+		// re-admits the task drops it (task 137 decision 3): the next `→ done`
+		// writes the new run's, and a delivery the earlier run recorded can
+		// never pass for this one's. Settled-to-settled moves — archive,
+		// restore, a chat's self-loop — keep it.
+		t.Delivery = nil
+	}
 	if from == TaskQueued {
 		// The §11 admission-hold invariant, same construction: a hold
 		// describes *this* queued period, so leaving queued always drops
@@ -403,13 +417,18 @@ func transitionTaskTx(
 	if err != nil {
 		return nil, nil, err
 	}
+	delivery, err := marshalDelivery(t.Delivery)
+	if err != nil {
+		return nil, nil, err
+	}
 	res, err := tx.ExecContext(ctx, `
 		UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, block_detail = ?, worktree_path = ?,
 			end_sha = ?, workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
 			pending_override_json = ?, pending_repair_json = ?,
 			pending_follow_up_json = ?, pending_input_json = ?,
 			admit_not_before = ?, queued_reason = ?, settled_children_watermark = ?,
-			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?, archived_from = ?
+			updated_at = ?, started_at = ?, finished_at = ?, archived_at = ?, archived_from = ?,
+			delivery_json = ?
 		WHERE id = ? AND state = ?`,
 		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.BlockDetail), nullString(t.WorktreePath),
 		nullString(t.EndSHA), t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
@@ -419,7 +438,7 @@ func transitionTaskTx(
 		nullInt(t.SettledChildrenWatermark),
 		formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
-		nullString(string(t.ArchivedFrom)), id, string(from))
+		nullString(string(t.ArchivedFrom)), delivery, id, string(from))
 	if err != nil {
 		return nil, nil, fmt.Errorf("transition task %d: %w", id, err)
 	}
@@ -593,6 +612,9 @@ func applyChange(t *Task, ch TaskChange) {
 	}
 	if ch.EndSHA != nil {
 		t.EndSHA = *ch.EndSHA
+	}
+	if ch.Delivery != nil {
+		t.Delivery = ch.Delivery.Clone()
 	}
 	if ch.Snapshot != nil {
 		t.WorkflowSnapshot = *ch.Snapshot

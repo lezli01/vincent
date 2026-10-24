@@ -1,0 +1,14 @@
+-- 0045_task_delivery: what a task's run delivered (task 137.2, issue #835,
+-- spec §5.3, §14; task 137 decision 3).
+--
+-- `delivery_json` is the workshop's result: a kind (`change`, `reply` or
+-- `none`), a title, a Markdown body, a summary, the commit the run verified,
+-- and the branch and base it sits on. A step records one with
+-- `vincent task deliver`; a run that never does gets an implicit one written
+-- in the transition that moves the task to `done`, because the issue lane is
+-- SQL and cannot ask git anything at read time. A follow-up that re-admits a
+-- finished task clears it, so the column always describes the run that last
+-- finished. NULL until then, and on every task that finished before this
+-- migration: the daemon fills those of issue tasks once, at startup, with the
+-- same git questions the engine asks (taskrun.BackfillDeliveries).
+ALTER TABLE tasks ADD COLUMN delivery_json TEXT;

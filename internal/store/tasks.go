@@ -22,7 +22,7 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	github_issue_json, github_pull_json,
 	workflow_origin_json, created_by_task_id, issue_id, issue_json,
 	created_at, updated_at, started_at, finished_at, archived_at, archived_from,
-	issue_worktree, end_sha, merge_on_conflict, merge_source_task_id`
+	issue_worktree, end_sha, merge_on_conflict, merge_source_task_id, delivery_json`
 
 // slotStates is the set of states that occupy a concurrency slot (spec §11),
 // rendered as SQL placeholders. It is derived from taskstate rather than
@@ -1378,6 +1378,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		issueWorktree, endSHA          sql.NullString
 		mergeOnConflict                sql.NullString
 		mergeSource                    sql.NullInt64
+		delivery                       sql.NullString
 	)
 	if err := r.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &fields, &t.WorkflowName,
 		&t.WorkflowSnapshot, &t.BaseBranch, &t.BranchName, &t.AdoptedBranch, &worktree, &baseSHA, &baseRefresh, &t.Priority,
@@ -1390,7 +1391,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		&githubIssue, &githubPull, &workflowOrigin,
 		&createdBy, &issueID, &issueSnap,
 		&created, &updated, &started, &finished, &archived, &archivedFrom,
-		&issueWorktree, &endSHA, &mergeOnConflict, &mergeSource); err != nil {
+		&issueWorktree, &endSHA, &mergeOnConflict, &mergeSource, &delivery); err != nil {
 		return nil, err
 	}
 	if parentID.Valid {
@@ -1466,6 +1467,9 @@ func scanTask(r rowScanner) (*Task, error) {
 		return nil, err
 	}
 	t.Issue = snap
+	if t.Delivery, err = unmarshalDelivery(delivery); err != nil {
+		return nil, err
+	}
 	if githubPull.Valid && githubPull.String != "" {
 		var link github.PullLink
 		if err := json.Unmarshal([]byte(githubPull.String), &link); err != nil {

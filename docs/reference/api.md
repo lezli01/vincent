@@ -1733,6 +1733,8 @@ time.
 | `POST` | `/v1/tasks/import` | `{ path, task_id, project_id? }` — one archived task back out of a backup archive. See [Importing a task](#importing-a-task) |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body. A `fan_out` row appears when its round's lanes are **spawned**, not when they merge: the park opens the row `running` and that round's merge admission finalizes the same one (§7.6), so a parent whose lanes are working is on the timeline rather than missing from it. Each row also carries **what the attempt was given**: `rendered_prompt`, `rendered_run`, `rendered_check` and `rendered_if` are the substituted text the adapter, the shell and the guard actually saw — the full bytes, unlike `prompt_override`/`run_override`, which are booleans here — with `rendered_for_each` the resolved list an iteration drew its `loop_item` from, carried as a **string holding a JSON array** rather than as an array field, and `input_truncated` saying a field was cut at its 64 KiB ceiling. Beside them the resolution the attempt ran under: `agent_source`, `model_source` and `effort_source` name which level supplied each part (`step`, `task`, `workflow`, `adapter`), and `permission_mode`, `timeout_ms`, `check_timeout_ms`, `shell` and `work_dir` are the values that were in force, recorded rather than re-resolved, so they still describe the attempt after a config reload or a task patch. `null` (or `0`, or `""`) means nothing was recorded — an attempt from before the daemon recorded any of this, and every field the step type has no input for — while an empty string on a rendered field is a render that produced nothing. `rendered_if` is evidence, not a decision: a guard is re-evaluated every time it is reached |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
+| `GET` | `/v1/tasks/{id}/delivery` | `{ task_id, delivery }` — what the task's last finished run delivered, in full, or `delivery: null`. See [Deliveries](#deliveries) |
+| `POST` | `/v1/tasks/{id}/delivery` | `{ kind?, title?, body?, summary?, head_sha?, close_reason?, proof? }` → `{ task_id, delivery }` as stored. Records what the run delivered, replacing any earlier one; **running** or **done** tasks only. See [Deliveries](#deliveries) |
 | `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
 
 ### Running on an existing branch
@@ -2682,6 +2684,13 @@ counts the issue's side tasks that are neither finished nor archived, and
 `merge_backs_pending` its merge-back tasks likewise; every row of `GET
 /v1/issues` carries all three, read in the list's own query.
 
+An issue also carries `delivery`: the [delivery](#deliveries) of its latest
+finished main-line root task — the newest `done` one, or one archived from
+`done`, by when it finished — or `null`. Side tasks never supply it, because
+their work reaches the main branch through a merge-back, which delivers what
+its side task delivered. A row carries the summary and `GET /v1/issues/{id}`
+carries it in full.
+
 Creating a main task while the main worktree is occupied names the occupant
 in the `201` as `main_worktree_occupant_task_id`. The new task stays `queued`
 while the occupant holds the worktree — no error, no reason — and is admitted
@@ -3251,6 +3260,48 @@ daemon-authored constants and is vincent's own verdict; `status_message` is free
 text the step chose, possibly long before it died. Render it as the step's last
 status, not as the cause of anything.
 
+## Deliveries
+
+A task's **delivery** is what its run produced: the workshop's result, which a
+handoff reads. A step records one while the task runs, the way it sets its
+[status](#step-status):
+
+```
+POST /v1/tasks/{id}/delivery
+{ "title": "Retry the upload on a 503", "body": "## What\n…", "summary": "…" }
+```
+
+| Field | Meaning |
+|---|---|
+| `kind` | `change` (the default: commits on the task's branch to integrate), `reply` (an answer, a refusal or questions to post where the work came from) or `none` |
+| `title`, `body` | A plain-language title and a Markdown body — what a pull request or a comment would say. Body ≤ 64 KiB |
+| `summary` | What the change is for. ≤ 64 KiB |
+| `head_sha` | The commit the run verified. It must be a commit on the task's branch; absent, it is the branch tip. The answer always carries the full SHA |
+| `branch`, `base` | Filled by the daemon from the task; not request fields |
+| `close_reason` | An optional suggestion for the issue's close: `completed`, `not_planned` or `duplicate` |
+| `proof` | What proved the change. ≤ 16 KiB |
+| `implicit` | `true` on a delivery the daemon wrote because the run recorded none |
+| `recorded_at` | When it was recorded |
+
+- **Running or done only.** Any other state is `409 invalid_state` with
+  `details.state`: there is no run to describe before one starts, and an aborted
+  run delivered nothing. On a `done` task the route is a correction.
+- **A later call replaces it**, and a follow-up that re-admits a finished task
+  clears it, so the delivery always describes the run that last finished.
+- **Every finished run has one.** A task that reaches `done` without recording a
+  delivery gets an **implicit** one in the same transition: `change` when its
+  branch holds commits its base does not, `none` otherwise, titled and described
+  by the task. A merge-back task (§5.6) delivers its side task's delivery, on the
+  issue's main branch at the merge commit. Issue tasks that finished before
+  deliveries existed are given theirs once, when the daemon starts.
+- **Where it shows.** `GET /v1/tasks/{id}` carries it in full. `GET /v1/tasks`
+  carries a summary: everything but `body`, `summary` and `proof`. An issue
+  carries the delivery of its latest finished main-line root task in the same
+  two forms, on the [issue](#issues) detail and on each list row.
+- **Not from a container.** A step [in a container](configuration.md#container)
+  has no route to the daemon's API, and records its delivery with the
+  `task_deliver` [MCP tool](#mcp) instead.
+
 ## Transcripts and diffs
 
 ```
@@ -3459,7 +3510,7 @@ a client reconnecting with `Last-Event-ID` misses nothing.
 ```
 task.created            task.state_changed      task.priority_changed
 task.step_advanced      task.status_changed     task.children_changed
-task.github_pull_changed
+task.github_pull_changed task.delivery_changed
 chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off         chat.closed
 task.deleted            chat.deleted
@@ -3575,6 +3626,11 @@ they need.
   untouched, because the link is a fact about GitHub rather than about the
   task's own progress. Re-fetch
   [`/v1/tasks/{id}/github/pull`](#github-pull-requests) when you see one.
+- `task.delivery_changed` carries `{ kind, implicit }` and says a step or a
+  human recorded a task's [delivery](#deliveries). Like
+  `task.github_pull_changed` it is not a transition. The implicit delivery a
+  task's `→ done` writes rides that transition's own `task.state_changed`
+  instead. Re-fetch [`/v1/tasks/{id}/delivery`](#deliveries) for the text.
 - `trigger.fired` carries `{ trigger_id, delivery_id, action }`, where `action`
   is the action type. The event's `project_id` is the trigger's project and its
   `task_id` is the task created or acted on, so `?project_id=` filters it and
