@@ -85,25 +85,42 @@ func activeExpr() sqlFrag { return rootTaskExists(unsettledCond()) }
 // computed for a closed issue too, whose lane is `done` regardless.
 func attentionExpr() sqlFrag { return rootTaskExists(attentionCond()) }
 
-// laneExpr is issuestate.LaneOf in SQL: closed is `done` whatever the tasks
-// do (decision 4); otherwise an unsettled root task is `in_progress`, a
-// handed-off one `hand_off`, and anything else — no task, or only aborted
-// ones (decision 19) — `open`.
+// laneExpr is issuestate.LaneOf in SQL (task 137 decision 13): closed is
+// `done` whatever the tasks do (decision 4); otherwise an unsettled root
+// task is `in_progress`; a ready latest main-line delivery is `hand_off`;
+// finished work that is not — a delivery marked not ready, or only a side
+// task's — is `in_progress` too, idle until someone marks it ready; and
+// anything else — no task, or only aborted ones (decision 19) — `open`.
 func laneExpr() sqlFrag {
-	unsettled, handedOff := activeExpr(), rootTaskExists(handedOffCond())
+	unsettled, ready, finished := activeExpr(), latestReadyExpr(), rootTaskExists(handedOffCond())
 	args := []any{string(issuestate.Closed), string(issuestate.LaneDone)}
 	args = append(args, unsettled.args...)
 	args = append(args, string(issuestate.LaneInProgress))
-	args = append(args, handedOff.args...)
-	args = append(args, string(issuestate.LaneHandOff), string(issuestate.LaneOpen))
+	args = append(args, ready.args...)
+	args = append(args, string(issuestate.LaneHandOff))
+	args = append(args, finished.args...)
+	args = append(args, string(issuestate.LaneInProgress), string(issuestate.LaneOpen))
 	return sqlFrag{
 		sql: `(CASE WHEN i.state = ? THEN ?
 			WHEN ` + unsettled.sql + ` THEN ?
-			WHEN ` + handedOff.sql + ` THEN ?
+			WHEN ` + ready.sql + ` = 1 THEN ?
+			WHEN ` + finished.sql + ` THEN ?
 			ELSE ? END)`,
 		args: args,
 	}
 }
+
+// readySQL is the one spelling of a delivery's readiness over alias t (task
+// 137 decision 13): its `ready` key, and 1 when the key is absent or the
+// delivery is NULL. That legacy reading is what keeps every lane unchanged
+// on upgrade without a migration — a delivery written before readiness
+// existed reads ready, which was the automatic rule — so it is written
+// here and nowhere else.
+const readySQL = `COALESCE(json_extract(t.delivery_json, '$.ready'), 1)`
+
+// latestReadyExpr is readySQL over the task latestDeliveryExpr picks: 1 or
+// 0, or NULL when the issue has no finished main-line task.
+func latestReadyExpr() sqlFrag { return latestDeliveryColumn(readySQL) }
 
 // latestDeliveryExpr is the delivery of the issue's latest finished main-line
 // root task (task 137 decision 3): the `done` one, or one archived from
@@ -113,18 +130,18 @@ func laneExpr() sqlFrag {
 // its delivery would describe a branch the issue never takes. finished_at is
 // restamped on every `→ done` and a follow-up clears the delivery, so the
 // latest one is always the last run that finished.
-func latestDeliveryExpr() sqlFrag { return latestDeliveryColumn("delivery_json") }
+func latestDeliveryExpr() sqlFrag { return latestDeliveryColumn("t.delivery_json") }
 
 // latestDeliveryTaskExpr is the id of the task latestDeliveryExpr reads —
 // the pair a handoff item snapshots and eligibility compares (task 137.4).
-func latestDeliveryTaskExpr() sqlFrag { return latestDeliveryColumn("id") }
+func latestDeliveryTaskExpr() sqlFrag { return latestDeliveryColumn("t.id") }
 
 // latestDeliveryColumn is one column of the task latestDeliveryExpr picks.
-// col is a constant column name, never input.
+// col is a constant column name or expression over alias t, never input.
 func latestDeliveryColumn(col string) sqlFrag {
 	h := handedOffCond()
 	return sqlFrag{
-		sql: `(SELECT t.` + col + ` FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL
+		sql: `(SELECT ` + col + ` FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL
 			AND (t.issue_worktree IS NULL OR t.issue_worktree <> 'side') AND ` + h.sql + `
 			ORDER BY t.finished_at DESC, t.id DESC LIMIT 1)`,
 		args: h.args,

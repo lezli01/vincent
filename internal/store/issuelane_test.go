@@ -44,7 +44,9 @@ func issueWithRoots(t *testing.T, s *Store, projectID int64, title string, roots
 }
 
 // wantLaneOf is the Go rule over the same roots the SQL reads, so a row's
-// stored-and-derived lane can be checked against issuestate.LaneOf.
+// stored-and-derived lane can be checked against issuestate.LaneOf. These
+// roots are main-line and carry no delivery, which reads ready (task 137
+// decision 13), so any finished one makes the latest delivery ready.
 func wantLaneOf(st issuestate.State, roots []rootSpec) (lane issuestate.Lane, attention bool) {
 	var unsettled, done bool
 	for _, r := range roots {
@@ -52,7 +54,7 @@ func wantLaneOf(st issuestate.State, roots []rootSpec) (lane issuestate.Lane, at
 		done = done || r.state == TaskDone || (r.state == taskstate.Archived && r.archivedFrom == TaskDone)
 		attention = attention || taskstate.NeedsHuman(r.state)
 	}
-	return issuestate.LaneOf(st, unsettled, done), attention
+	return issuestate.LaneOf(st, unsettled, done, done), attention
 }
 
 // TestIssueLaneAndAttention: one issue per case, its lane and attention read
