@@ -1738,7 +1738,7 @@ time.
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body. A `fan_out` row appears when its round's lanes are **spawned**, not when they merge: the park opens the row `running` and that round's merge admission finalizes the same one (§7.6), so a parent whose lanes are working is on the timeline rather than missing from it. Each row also carries **what the attempt was given**: `rendered_prompt`, `rendered_run`, `rendered_check` and `rendered_if` are the substituted text the adapter, the shell and the guard actually saw — the full bytes, unlike `prompt_override`/`run_override`, which are booleans here — with `rendered_for_each` the resolved list an iteration drew its `loop_item` from, carried as a **string holding a JSON array** rather than as an array field, and `input_truncated` saying a field was cut at its 64 KiB ceiling. Beside them the resolution the attempt ran under: `agent_source`, `model_source` and `effort_source` name which level supplied each part (`step`, `task`, `workflow`, `adapter`), and `permission_mode`, `timeout_ms`, `check_timeout_ms`, `shell` and `work_dir` are the values that were in force, recorded rather than re-resolved, so they still describe the attempt after a config reload or a task patch. `null` (or `0`, or `""`) means nothing was recorded — an attempt from before the daemon recorded any of this, and every field the step type has no input for — while an empty string on a rendered field is a render that produced nothing. `rendered_if` is evidence, not a decision: a guard is re-evaluated every time it is reached |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
 | `GET` | `/v1/tasks/{id}/delivery` | `{ task_id, delivery }` — what the task's last finished run delivered, in full, or `delivery: null`. See [Deliveries](#deliveries) |
-| `POST` | `/v1/tasks/{id}/delivery` | `{ kind?, title?, body?, summary?, head_sha?, close_reason?, proof? }` → `{ task_id, delivery }` as stored. Records what the run delivered, replacing any earlier one; **running** or **done** tasks only. See [Deliveries](#deliveries) |
+| `POST` | `/v1/tasks/{id}/delivery` | `{ kind?, title?, body?, summary?, head_sha?, close_reason?, proof?, ready? }` → `{ task_id, delivery }` as stored. Records what the run delivered, replacing any earlier one; **running** or **done** tasks only. See [Deliveries](#deliveries) |
 | `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
 
 ### Running on an existing branch
@@ -2498,6 +2498,8 @@ task created from it.
 | `PATCH` | `/v1/issues/{id}` | Edit fields and labels at the version you read |
 | `POST` | `/v1/issues/{id}/close` | Close, with a reason |
 | `POST` | `/v1/issues/{id}/reopen` | Reopen |
+| `POST` | `/v1/issues/{id}/ready` | Mark its finished work ready to hand off. See [Ready to hand off](#ready-to-hand-off) |
+| `POST` | `/v1/issues/{id}/unready` | Withdraw it from the `hand_off` lane. See [Ready to hand off](#ready-to-hand-off) |
 | `GET` | `/v1/issues/{id}/comments` | The discussion thread, oldest first |
 | `POST` | `/v1/issues/{id}/comments` | Add a local comment |
 | `DELETE` | `/v1/issues/{id}` | Delete permanently, from any state |
@@ -3286,6 +3288,7 @@ POST /v1/tasks/{id}/delivery
 | `close_reason` | An optional suggestion for the issue's close: `completed`, `not_planned` or `duplicate` |
 | `proof` | What proved the change. ≤ 16 KiB |
 | `implicit` | `true` on a delivery the daemon wrote because the run recorded none |
+| `ready`, `ready_by` | Whether the delivery is ready to hand off, and who said so: `workflow`, `task`, `human` or `agent`. A request sends `ready: true`; absent on a delivery recorded before readiness existed, which reads ready. See [Ready to hand off](#ready-to-hand-off) |
 | `recorded_at` | When it was recorded |
 
 - **Running or done only.** Any other state is `409 invalid_state` with
@@ -3306,6 +3309,32 @@ POST /v1/tasks/{id}/delivery
 - **Not from a container.** A step [in a container](configuration.md#container)
   has no route to the daemon's API, and records its delivery with the
   `task_deliver` [MCP tool](#mcp) instead.
+
+### Ready to hand off
+
+An issue reaches the `hand_off` lane when nothing of it is running and its
+latest finished main-line delivery is **ready**. The task's workflow sets that
+at `→ done` from its [`hand_off`](workflow-schema.md#hand_off) key: `auto`, the
+default, marks it ready (`ready_by: workflow`); `explicit` marks it not ready.
+Three things change it:
+
+- **`ready: true` on `POST /v1/tasks/{id}/delivery`.** On a running task it is
+  stored as `ready_by: task`, and the last call wins: a later call without it
+  clears it. On a `done` task it is the caller's mark (`human`, or `agent` over
+  MCP), and a correction without it keeps the readiness already stored.
+- **`POST /v1/issues/{id}/ready`**, body `{}` or none, answers the issue. It
+  marks the latest delivery ready, attributed to the caller; an issue already
+  ready is a `200` that writes nothing.
+- **`POST /v1/issues/{id}/unready`** marks it not ready, so the issue waits in
+  `in_progress` until it is marked again or new work finishes.
+
+Both issue routes are local writes, never forge writes, and are refused with
+`409 invalid_state` and a `details.reason`: `issue_work_running` while a root
+task of the issue is unsettled, `issue_in_handoff` (with `details.handoff_id`)
+while a handoff claims it, `issue_no_finished_work` when no main-line task has
+finished, and, for `unready` only, `issue_not_hand_off` (with `details.lane`).
+A closed issue is refused as every issue action on one is. A mark that moves
+the lane emits `issue.lane_changed` with `by`.
 
 ## Handoffs
 
@@ -3690,7 +3719,7 @@ they need.
   untouched, because the link is a fact about GitHub rather than about the
   task's own progress. Re-fetch
   [`/v1/tasks/{id}/github/pull`](#github-pull-requests) when you see one.
-- `task.delivery_changed` carries `{ kind, implicit }` and says a step or a
+- `task.delivery_changed` carries `{ kind, implicit, ready? }` and says a step or a
   human recorded a task's [delivery](#deliveries). Like
   `task.github_pull_changed` it is not a transition. The implicit delivery a
   task's `→ done` writes rides that transition's own `task.state_changed`

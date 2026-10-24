@@ -18,6 +18,7 @@ becoming a setting that silently never applied.
 - [File structure](#file-structure)
 - [Top level](#top-level)
   - [`platforms`](#platforms)
+  - [`hand_off`](#hand_off)
   - [`fields`](#fields)
   - [`defaults`](#defaults)
 
@@ -94,6 +95,7 @@ to its existing ones, and never arm a trigger.
 | `name` | string | ✅ | How tasks refer to it. Unique per scope |
 | `description` | string | | Shown in the TUI's workflow picker |
 | `platforms` | list | | Where this workflow may run. Empty means anywhere — see [`platforms`](#platforms) |
+| `hand_off` | string | | `auto` (the default) or `explicit`: when an issue's finished work is ready to hand off — see [`hand_off`](#hand_off) |
 | `fields` | list | | Ordered task-input declarations — see [`fields`](#fields) |
 | `defaults` | map | | Inherited by every step |
 | `steps` | list | ✅ | Runs in order, top to bottom. Must be non-empty |
@@ -135,6 +137,28 @@ POSIX-only workflow validates the same on a Windows CI runner as it does on
 Linux.
 
 The restriction covers the whole workflow; there is no per-step `platforms`.
+
+## `hand_off`
+
+```yaml
+hand_off: explicit           # or: auto, the default
+```
+
+Says when the work of an issue task this workflow runs is ready to move the
+issue to the `hand_off` lane:
+
+- **`auto`** — the default. The task's delivery is marked ready when the task
+  ends `done`, so the issue reaches `hand_off` as soon as nothing else of it is
+  running. This is how every workflow behaved before the key existed.
+- **`explicit`** — the delivery is marked not ready when the task ends `done`,
+  unless a step ran `vincent task deliver --ready`. The issue waits in
+  `in_progress` until then, or until a person runs `vincent issue ready`. Use
+  it for research or spike workflows whose result a person judges first, or
+  for a workflow that decides in a step.
+
+The value is fixed when a task is created: editing the workflow later does not
+change how that task hands off. An included workflow's `hand_off` is ignored —
+the including workflow's applies.
 
 ## `fields`
 
@@ -1338,6 +1362,7 @@ other half of the same pre-commit check.
 - Every template parses.
 - `platforms` entries are known tokens, with no duplicates. The list is checked
   for shape, never against the validating host.
+- `hand_off` is `auto` or `explicit`, spelled exactly.
 - Durations parse as Go durations; `on_input` is `wait`, `deny` or `require`.
 - Unknown keys are errors.
 - `agent` names a known adapter.

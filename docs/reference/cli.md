@@ -1179,7 +1179,7 @@ before the upgrade that added the command says so, and to restart it.
 vincent task deliver [--task ID] [--kind change|reply|none] [--title TEXT]
                      [--body TEXT | --body-file PATH] [--summary TEXT | --summary-file PATH]
                      [--head SHA] [--close-reason completed|not_planned|duplicate]
-                     [--proof TEXT | --proof-file PATH] [--json]
+                     [--proof TEXT | --proof-file PATH] [--ready] [--json]
 ```
 
 Records the task's **delivery**: what its run produced, in the run's own words.
@@ -1204,6 +1204,13 @@ vincent task deliver --title "Retry the upload on a 503" --body-file pr.md --sum
 - **A run that never calls it still has one.** When the task reaches `done`,
   the daemon writes an implicit delivery: `change` when the branch holds
   commits its base does not, `none` otherwise, titled and described by the task.
+- **`--ready` marks the delivery ready to hand off.** A workflow with
+  `hand_off: explicit` leaves its issue in `in_progress` when the task finishes
+  until something marks it ready; a step does that with `--ready`. On a running
+  task the last call wins, so a later `deliver` without `--ready` clears it. On
+  a `done` task `--ready` is your mark, as
+  [`vincent issue ready`](#vincent-issue-ready) is, and a correction without it
+  keeps the readiness already stored.
 - **It is accepted while the task runs or once it is done.** Otherwise the
   daemon answers `409` and the command exits 1.
 - **It is silent inside a step**, whose stdout is the transcript. With `--task`
@@ -3131,6 +3138,32 @@ vincent issue close <id> [--reason completed|not_planned|duplicate] [--duplicate
 Closes an open issue. `--reason` defaults to `completed`. `--duplicate-of`
 names the issue this one duplicates; the daemon requires `--reason duplicate`
 with it and an issue in the same project.
+
+### `vincent issue ready`
+
+```sh
+vincent issue ready <id> [--json]
+```
+
+Marks the issue's finished work ready to hand off: the delivery of its latest
+finished main-line task is marked ready, and the issue moves to the `hand_off`
+lane. This is how a person releases work a `hand_off: explicit` workflow left
+waiting in `in_progress`. An issue already ready is left as it is. The daemon
+refuses, and the command exits 1 with a line saying what to do, while a task of
+the issue is still running (`issue_work_running`), when no main-line task has
+finished (`issue_no_finished_work`), and while a handoff claims the issue
+(`issue_in_handoff`).
+
+### `vincent issue unready`
+
+```sh
+vincent issue unready <id> [--json]
+```
+
+Withdraws an issue from the `hand_off` lane: its latest delivery is marked not
+ready, and the issue waits in `in_progress` until it is marked ready again or
+new work finishes. It is refused as `vincent issue ready` is, and also on an
+issue that is not in `hand_off` (`issue_not_hand_off`).
 
 ### `vincent issue reopen`
 
