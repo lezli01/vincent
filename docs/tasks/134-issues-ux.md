@@ -124,6 +124,17 @@ whose create, transition, delete or restore moved the lane and is omitted on a
 close or reopen; `by` is the close or reopen actor and is omitted on a
 task-caused move.
 
+*Amended 2026-10-24 ([task 137](137-handoff-pillar.md) decision 13, settled
+by the author; in effect once task 137.15 lands):* `hand_off` becomes "no
+unsettled root task, and the latest `done` root task's delivery is
+**ready**". Readiness is automatic for a `hand_off: auto` workflow, the
+default, so a task under one moves its issue exactly as this decision says;
+under `hand_off: explicit` it comes only from `vincent task deliver --ready`,
+and a human may mark or withdraw it either way. An open issue with finished
+work that is not ready stays `in_progress`, marked `idle`. The lane is still
+computed once in SQL from task rows: the mark is stored on the delivery, not
+on the issue.
+
 ### 3. `attention`, and `paused` carries none (2026-10-07)
 
 `attention` is true when some root task of the issue is in a
@@ -431,6 +442,10 @@ on an open issue, an issue whose only tasks were cancelled is `open`
 (decision 2), the board is stacked sections, and the order is
 open → in progress → hand-off (decision 6).
 
+*Narrowed 2026-10-24 ([task 137](137-handoff-pillar.md) decision 13):*
+hand-off is finished work on an open issue **that the workflow or a human
+declared ready**. Finished work nobody declared ready is in progress.
+
 ### 134.14-a. A missing main branch is revived, not replaced (2026-10-07, 134.14)
 
 Settled by the author while scoping #761. If a side task reaches `done` after
@@ -536,6 +551,8 @@ deleted.
 
 - GitHub write-back beyond task 130: posting comments, auto-closing on `done`,
   opening pull requests. These belong to the handoff pillar.
+  *Planned 2026-10-24 by [task 137](137-handoff-pillar.md):* handoffs and
+  their grants.
 - Sub-issues, issue templates and new issue fields.
 - Changes to the task board, or to task 130's sync and outbox.
 - A web UI.
@@ -563,7 +580,9 @@ deleted.
   keeps the branch while another unarchived main task carries it (decision
   17's "the branch goes with the last main-role task's archive").
 - The `hand_off` lane only grows until someone closes the issue; nothing
-  auto-closes a local issue.
+  auto-closes a local issue. *Addressed by [task 137](137-handoff-pillar.md)
+  (planned 2026-10-24):* a handoff claims `hand_off` issues and delivers,
+  returns or holds each one; until it lands the risk stands.
 - A live task on a closed issue sits in the hidden `done` lane. The task board
   still shows it, and its card's `attention` flags it once `done` is shown.
 
