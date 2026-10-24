@@ -200,6 +200,12 @@ report per workflow which items applied:
     comments from GitHub, or a prompt that says the issue body is the
     whole brief because the thread was unavailable, reads the thread
     from the snapshot instead.
+17. Hand-off readiness. A workflow whose finished work a person judges
+    before the issue moves on — research, a spike, a plan — or whose
+    prompt tells an agent to leave the issue for review declares
+    hand_off: explicit, and a step that decides the work is ready runs
+    vincent task deliver --ready. Everywhere else hand_off stays absent:
+    auto is the default and already marks the work ready at done.
 
 ## What you may not change
 
