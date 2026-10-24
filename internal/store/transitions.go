@@ -363,6 +363,18 @@ func transitionTaskTx(
 		// staling it.
 		t.SettledChildrenWatermark = nil
 	}
+	if taskstate.Settled(from) && !taskstate.Settled(to) && t.IssueID != nil && t.ParentTaskID == nil {
+		// A follow-up re-admitting a root task of a claimed issue clears its
+		// delivery and moves the lane under the handoff that claimed it — the
+		// stale-delivery hazard task 137 decision 14 refuses.
+		var acting *int64
+		if ch.PendingFollowUp != nil {
+			acting = ch.PendingFollowUp.ActingTaskID
+		}
+		if err := refuseClaimedIssueTx(ctx, tx, *t.IssueID, acting); err != nil {
+			return nil, nil, err
+		}
+	}
 	if taskstate.Settled(from) && !taskstate.Settled(to) {
 		// A delivery describes the run that finished, so a follow-up that
 		// re-admits the task drops it (task 137 decision 3): the next `→ done`
@@ -464,6 +476,9 @@ func transitionTaskTx(
 		return nil, nil, err
 	}
 	if err := watch.followTx(ctx, tx, e, taskID); err != nil {
+		return nil, nil, err
+	}
+	if err := handoffTaskSettleTx(ctx, tx, e, taskID, from, to); err != nil {
 		return nil, nil, err
 	}
 	return t, e, nil

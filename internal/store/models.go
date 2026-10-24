@@ -282,6 +282,12 @@ type Task struct {
 	// to its issue's main branch from one that named a different branch
 	// (task 134 decision 3).
 	BranchExplicit bool
+	// ActingTaskID is create-time input, never stored or read back: the task
+	// making this create, read by the API off the MCP creator or the
+	// `X-Vincent-Task-Id` marker (task 137.4). insertTaskTx lets the claiming
+	// handoff's own task add work to an issue a handoff item claims, and
+	// refuses everyone else with *IssueInHandoffError (task 137 decision 14).
+	ActingTaskID *int64
 }
 
 // The issue-worktree roles (task 134 decision 7).
@@ -592,6 +598,10 @@ type FollowUpRequest struct {
 	// own step cursor (decision 4). `current_step` is left where the finished
 	// run put it and is never walked by a follow-up.
 	Cursor int `json:"cursor"`
+	// ActingTaskID is the task asking for the follow-up, never persisted: the
+	// claiming handoff's own task may re-admit a task of an issue it claims,
+	// and anyone else is refused with *IssueInHandoffError (task 137.4).
+	ActingTaskID *int64 `json:"-"`
 	// Abandoned marks a follow-up a human ended with `skip` from the block a
 	// failed step produced (decision 6). The record is kept rather than
 	// dropped because Origin is still needed: the next admission restores

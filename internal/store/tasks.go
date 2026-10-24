@@ -174,6 +174,19 @@ func insertTaskTx(
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
+	// Decision 14 of task 137: no new work on an issue a handoff claims,
+	// except from the handoff's own task. A fan-out lane carries no lane of
+	// its issue's and is not new work on it. Neither is a merge-back: its
+	// source passed this check when it was created or re-admitted, and the
+	// merge-back is inserted inside that source's `→ done`, so a refusal
+	// here would roll the completion back and strand the source in
+	// `running` with no actor behind it (review F1 of #850) — the same
+	// reason a merge-back is outside the branch claim.
+	if t.IssueID != nil && t.ParentTaskID == nil && t.MergeSourceTaskID == nil {
+		if err := refuseClaimedIssueTx(ctx, tx, *t.IssueID, t.ActingTaskID); err != nil {
+			return nil, err
+		}
+	}
 	fields, err := marshalFields(t.Fields)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)

@@ -135,9 +135,14 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 	// refresh is inherited with the base_sha it produced (§10, task 099).
 	t.BaseRefresh = chat.BaseRefresh
 	t.WorktreePath = chat.WorktreePath
+	t.ActingTaskID = actingTaskID(r)
 	updated, err := s.deps.Store.HandoffChat(ctx, chat.ID, &t)
 	var claimed *store.BranchClaimedError
 	switch {
+	case writeIssueInHandoff(w, err):
+		// The issue is claimed by a handoff (task 137.4); the transaction
+		// rolled back and the chat is untouched.
+		return
 	case writeIssueWorktreeError(w, err):
 		// The issue's main branch changed between the read and the commit;
 		// the transaction rolled back and the chat is untouched.

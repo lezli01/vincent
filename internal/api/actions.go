@@ -415,6 +415,7 @@ func (s *Server) handleTaskFollowUp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "follow-up: "+mismatch)
 		return
 	}
+	sel.ActingTaskID = actingTaskID(r)
 	followUp := s.deps.Runner.FollowUp
 	if ptrValue(req.Paused) {
 		followUp = s.deps.Runner.FollowUpHeld
@@ -811,6 +812,9 @@ func (s *Server) writeActionError(w http.ResponseWriter, err error) {
 	case isTaskLocked(err):
 		e, _ := store.AsTaskLocked(err)
 		writeTaskLocked(w, e, "")
+
+	// A follow-up on a task of an issue a handoff claims (task 137.4).
+	case writeIssueInHandoff(w, err):
 
 	case isInvalidAction(err):
 		e, _ := taskrun.AsInvalidAction(err)

@@ -79,6 +79,7 @@ each:
 | `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
 | `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
 | `issue_has_live_main_task` | An issue delete was refused because one of the issue's main or side tasks has not finished. Finish or cancel it, then delete again | `task_id` |
+| `issue_in_handoff` | A task create, a chat hand-off or a `follow_up` would add work to an issue a handoff has claimed. Only the handoff's own task may add work to it until the handoff returns or releases the issue | `handoff_id` |
 
 ## Request bodies
 
@@ -3518,6 +3519,7 @@ task.restored
 issue.created           issue.updated           issue.state_changed
 issue.labels_changed    issue.comment_added     issue.comment_updated
 issue.deleted           issue.sync_changed      issue.lane_changed
+handoff.created         handoff.item_changed    handoff.settled
 project.*               workflow.registry_changed
 trigger.fired           trigger.poll_changed
 agent.quota_changed     daemon.shutting_down
@@ -3631,6 +3633,13 @@ they need.
   `task.github_pull_changed` it is not a transition. The implicit delivery a
   task's `→ done` writes rides that transition's own `task.state_changed`
   instead. Re-fetch [`/v1/tasks/{id}/delivery`](#deliveries) for the text.
+- `handoff.created` carries `{ id, task_id, issue_ids, created_by, trigger_id? }`,
+  `handoff.item_changed` carries `{ handoff_id, issue_id, from, to, by }` (an
+  empty `from` or `to` is an item not yet resolved), and `handoff.settled`
+  carries `{ id, task_id }`. Each event's `task_id` is the handoff's own task,
+  so that task's stream receives them. An `issue.*` event a handoff caused
+  carries `handoff_id` and `by: handoff`. Nothing creates a handoff over the
+  API yet; the routes arrive with the rest of the handoff pillar.
 - `trigger.fired` carries `{ trigger_id, delivery_id, action }`, where `action`
   is the action type. The event's `project_id` is the trigger's project and its
   `task_id` is the task created or acted on, so `?project_id=` filters it and

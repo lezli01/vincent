@@ -405,6 +405,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **This repository's resolve workflows record their delivery on the task.**
+  `github-resolve-issue` and `github-resolve-issue-dag` end by calling
+  `vincent task deliver` — the title, pull request body, brief, verified head,
+  any missing-proof line and, on `closes: yes`, a `completed` close reason —
+  instead of writing a `vincent-delivered/<task id>/` directory under the
+  common git directory, so `vincent task show` prints what a finished resolve
+  task delivered. `github-iterate-work` builds its merge train from those
+  deliveries, admitting only an explicitly recorded `change` against its base,
+  and snapshots each into its run's scratch so the pull request and its agents
+  describe exactly what was stacked. Landing a train no longer clears
+  anything: a delivery is task history.
+
 - **The command palette and the pickers grow with the terminal, and page.**
   The palette and the project, copy and link pickers are still 64×18 at 80×24
   and grow to 100×30 on a large terminal, opening under the status line

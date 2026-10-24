@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (2/15)
+**Status:** 🔄 in progress (4/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -681,6 +681,23 @@ while the claim stands, under which a merge train can stack a delivery that is
 already stale; and letting a new task release the claim implicitly, which
 pulls an issue out of a handoff mid-run with nobody deciding to.
 
+*Amended 2026-10-24 (137.4 evaluation, settled by the author):* the refusal
+covers **every route that adds work to a claimed issue**, not only `POST
+/v1/tasks`: a chat handed off with that `issue_id`, and `POST
+/v1/tasks/{id}/follow_up` on a root task of the issue, which clears its
+delivery and moves its lane — the same stale-delivery hazard. The handoff's
+own task is recognised by the MCP creator id or by the `X-Vincent-Task-Id`
+marker's value, best-effort like every marker (spec §16). The check runs
+**inside the store's insert or transition transaction**, so it cannot race a
+handoff create, and an engine merge-back of a side task the handoff's task
+created is exempt. *Amended 2026-10-24 (review F1 of #850): every engine
+merge-back is exempt — it is inserted inside its side task's `→ done`, so a
+refusal there stranded the side task in `running`, and its source already
+passed the check when it was created or re-admitted.* 137.4 also carries the store primitives for item outcomes
+and `handoff.settled`, so the derived state and the events are testable;
+release-on-settle, the item verbs and their routes stay in 137.6, and `POST
+/v1/handoffs` in 137.5.
+
 ## The rest of the frame
 
 What else stands between vincent and "a frame an admin builds their own
@@ -787,13 +804,25 @@ pull request.
   copying its source, the startup reconcile for existing issue tasks,
   `task.delivery_changed`, and `delivery` on the task and issue DTOs
   (decision 3). Spec §5.3, §5.6, §6, §12.1, §13.2–§13.4, §14. ✓ 2026-10-24
-- [ ] **137.3** ([#836](https://github.com/lezli01/vincent/issues/836)) The repository's resolve workflows move off
+- [x] **137.3** ([#836](https://github.com/lezli01/vincent/issues/836)) The repository's resolve workflows move off
   `vincent-delivered/` onto `vincent task deliver`, and `github-iterate-work`
-  reads deliveries over the API. Depends: 137.2.
-- [ ] **137.4** ([#837](https://github.com/lezli01/vincent/issues/837)) `handoffs` and `handoff_items`, the claim index, eligibility
+  reads deliveries over the API. Depends: 137.2. `collect` admits only an
+  explicit `change` delivery and snapshots it into the run's scratch; the
+  landing step no longer clears anything, and there is no transition shim.
+  ✓ 2026-10-24 *Amended 2026-10-24 (review F2 of #850):* unlike the file,
+  a delivery does not survive a follow-up (decision 3), so the train is no
+  longer identical to the file-built one there — `collect` leaves a task
+  followed up after delivering out under a reason of its own, naming
+  `vincent task deliver` as the way back in, and "has moved on" now covers
+  hand edits only. Settled by the author: no shim keeps the cleared record.
+  *Amended 2026-10-24 (review F3 of #850):* the workflows now need a vincent
+  built from 137.2 or later, CLI and daemon; the resolve workflows' `fetch`
+  and `github-iterate-work`'s `headroom` refuse an older one up front.
+- [x] **137.4** ([#837](https://github.com/lezli01/vincent/issues/837)) `handoffs` and `handoff_items`, the claim index, eligibility
   SQL shared with the lane fragments (`internal/store/issuelane.go`), the
   `handoff` actor, `handoff.*` events, and `POST /v1/tasks` refusing a claimed
   issue with `issue_in_handoff` (decisions 1, 2, 12, 14). Depends: 137.2.
+  Spec §5.6, §5.7, §13.2, §13.3. ✓ 2026-10-24
 - [ ] **137.5** ([#838](https://github.com/lezli01/vincent/issues/838)) `POST /v1/handoffs` with `issue_ids` and `select`, the read
   routes, apiclient, `vincent handoff start|ls|show`, and grant-less MCP
   (decision 8). Depends: 137.4.
