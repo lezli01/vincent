@@ -29,6 +29,18 @@ const (
 	// to a forge. A client whose environment marks it as a step or a chat
 	// agent gets it too.
 	IssueReasonForgeWrite = "forge_write_needs_human"
+	// IssueReasonWorkRunning is a ready or unready while one of the issue's
+	// root tasks has not settled (task 137 decision 13).
+	IssueReasonWorkRunning = "issue_work_running"
+	// IssueReasonNoFinishedWork is a ready or unready on an issue with no
+	// finished main-line root task: there is no delivery to mark.
+	IssueReasonNoFinishedWork = "issue_no_finished_work"
+	// IssueReasonNotHandOff is an unready on an issue outside the hand_off
+	// lane; details.lane carries the lane it is in.
+	IssueReasonNotHandOff = "issue_not_hand_off"
+	// IssueReasonInHandoff is a ready or unready on an issue a live handoff
+	// item claims (task 137 decision 14); details.handoff_id names it.
+	IssueReasonInHandoff = "issue_in_handoff"
 )
 
 // IssueSync is an imported issue's state write-back (task 130.10). State
@@ -342,6 +354,29 @@ func (c *Client) ReopenIssue(ctx context.Context, id int64) (Issue, error) {
 		return Issue{}, err
 	}
 	return out, nil
+}
+
+// MarkIssueReady marks the issue's latest finished work ready to hand off
+// (task 137 decision 13), moving it to the hand_off lane. A 409 carries
+// details.reason issue_work_running, issue_no_finished_work or
+// issue_in_handoff, whose details.handoff_id names the claiming handoff.
+func (c *Client) MarkIssueReady(ctx context.Context, id int64) (*Issue, error) {
+	var out Issue
+	if err := c.post(ctx, fmt.Sprintf("/v1/issues/%d/ready", id), struct{}{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// MarkIssueUnready withdraws an issue from the hand_off lane until it is
+// marked ready again or new work finishes. Besides MarkIssueReady's 409s it
+// can answer issue_not_hand_off, with details.lane the issue's lane.
+func (c *Client) MarkIssueUnready(ctx context.Context, id int64) (*Issue, error) {
+	var out Issue
+	if err := c.post(ctx, fmt.Sprintf("/v1/issues/%d/unready", id), struct{}{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // DeleteIssue permanently deletes an issue, in any state. An imported one
