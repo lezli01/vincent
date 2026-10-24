@@ -411,6 +411,11 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/issues/{id}/reopen", s.handleIssueReopen)
 	rt.handle(http.MethodGet, "/v1/issues/{id}/comments", s.handleIssueComments)
 	rt.handle(http.MethodPost, "/v1/issues/{id}/comments", s.handleIssueCommentCreate)
+	// Handoffs (§5.7, §13.2, task 137.5): start one over hand-off issues,
+	// list them, read one with its items.
+	rt.handle(http.MethodPost, "/v1/handoffs", s.handleHandoffCreate)
+	rt.handle(http.MethodGet, "/v1/handoffs", s.handleHandoffList)
+	rt.handle(http.MethodGet, "/v1/handoffs/{id}", s.handleHandoffGet)
 	// Chats (§5.5, §13.2). They are their own family: nothing here touches
 	// the tasks table, and no chat route is an MCP tool (§13.4, decision 2).
 	rt.handle(http.MethodGet, "/v1/chats", s.handleChatList)

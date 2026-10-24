@@ -248,6 +248,9 @@ var routes = []Route{
 	{http.MethodPost, "/v1/issues/{id}/reopen", "issue_reopen", "Reopen a closed issue. Body: {}. An issue imported from GitHub is refused (409 forge_write_needs_human), as issue_close is."},
 	{http.MethodGet, "/v1/issues/{id}/comments", "issue_comments", "An issue's discussion thread, oldest first: {comments: [{id, author, body, remote, remote_key?, created_at, updated_at}]}. remote marks a comment mirrored from GitHub, read-only."},
 	{http.MethodPost, "/v1/issues/{id}/comments", "issue_comment", "Add a comment to a local issue. Body: {body}. The author is recorded as your task. Nothing is posted to GitHub: an issue imported from GitHub has a mirrored thread and is refused (409 issue_mirrored), as an edit of its title is."},
+	{http.MethodPost, "/v1/handoffs", "handoff_start", "Start a handoff: claim hand_off issues for one integration task, created with them. Body: {project_id, workflow, issue_ids|select, title?, paused?, description?, fields?, priority?, agent?, model?, effort?, restricted?, max_task_cost_usd?}. select takes lane (hand_off), delivery (change, reply or none, one or a list), kind (one or a list), labels (all must match), max and order (priority); it takes the eligible issues by priority, urgent first and none last, then oldest delivery. Grant-less only: a grant is refused 409 grant_needs_human — only a human gives one. An ineligible issue id is a 409 issue_not_eligible naming it; a selection that finds nothing, 409 nothing_to_hand_off. Pass idempotency_key so a retry cannot start it twice."},
+	{http.MethodGet, "/v1/handoffs", "handoff_list", "List handoffs, newest first, without items: id, project_id, task_id, state (live|waiting|settled), grant, created_by, created_at. Query: project_id, state (repeatable), issue_id (handoffs with an item for that issue)."},
+	{http.MethodGet, "/v1/handoffs/{id}", "handoff_show", "One handoff with its items: each item's issue_id, delivery_task_id and delivery as claimed, outcome, outcome_at, outcome_by and note. state is live while its task runs, waiting when a settled handoff still has a waiting item, else settled."},
 }
 
 // Routes returns the tool surface: one entry per `/v1` route that is a tool,
@@ -336,11 +339,11 @@ func inputSchema(r Route) json.RawMessage {
 }
 
 // takesIdempotencyKey reports whether a route honours §13.1's
-// `Idempotency-Key`. `POST /v1/tasks` and `POST /v1/issues` do, and the
-// schema says so on those tools alone rather than everywhere — an argument a
-// route ignores is a worse lie than a missing one.
+// `Idempotency-Key`. `POST /v1/tasks`, `POST /v1/issues` and `POST
+// /v1/handoffs` do, and the schema says so on those tools alone rather than
+// everywhere — an argument a route ignores is a worse lie than a missing one.
 func takesIdempotencyKey(r Route) bool {
-	return r.Method == http.MethodPost && (r.Path == "/v1/tasks" || r.Path == "/v1/issues")
+	return r.Method == http.MethodPost && (r.Path == "/v1/tasks" || r.Path == "/v1/issues" || r.Path == "/v1/handoffs")
 }
 
 // hasBody reports whether a method carries a request body on this API.
