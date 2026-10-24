@@ -134,7 +134,6 @@ func latestDeliveryTx(ctx context.Context, tx *sql.Tx, issueID int64) (int64, *D
 		taskID   sql.NullInt64
 		delivery sql.NullString
 	)
-	//nolint:gosec // G202: both fragments are constant SQL; every value binds
 	err := tx.QueryRowContext(ctx, `SELECT `+id.sql+`, `+raw.sql+` FROM issues i WHERE i.id = ?`, args...).
 		Scan(&taskID, &delivery)
 	if err != nil {
