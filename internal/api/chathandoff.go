@@ -135,6 +135,7 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 	// refresh is inherited with the base_sha it produced (§10, task 099).
 	t.BaseRefresh = chat.BaseRefresh
 	t.WorktreePath = chat.WorktreePath
+	t.ActingTaskID = actingTaskID(r)
 	updated, err := s.deps.Store.HandoffChat(ctx, chat.ID, &t)
 	var claimed *store.BranchClaimedError
 	switch {

@@ -839,7 +839,7 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 		if duplicateOf != nil {
 			extra["duplicate_of"] = *duplicateOf
 		}
-		ev, err := issueEvent(EventIssueStateChanged, cur.ProjectID, id, by, extra)
+		ev, err := issueEvent(EventIssueStateChanged, cur.ProjectID, id, by, issueHandoffExtra(ctx, extra))
 		if err != nil {
 			return nil, err
 		}
@@ -973,7 +973,8 @@ func (s *Store) AddIssueComment(ctx context.Context, issueID int64, author, body
 		if c.ID, err = res.LastInsertId(); err != nil {
 			return nil, fmt.Errorf("insert issue comment: %w", err)
 		}
-		return issueEvent(EventIssueCommentAdded, projectID, issueID, by, map[string]any{"comment_id": c.ID})
+		return issueEvent(EventIssueCommentAdded, projectID, issueID, by,
+			issueHandoffExtra(ctx, map[string]any{"comment_id": c.ID}))
 	})
 	if err != nil {
 		return nil, err

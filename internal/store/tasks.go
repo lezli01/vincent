@@ -174,6 +174,14 @@ func insertTaskTx(
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
+	// Decision 14 of task 137: no new work on an issue a handoff claims,
+	// except from the handoff's own task. A fan-out lane carries no lane of
+	// its issue's and is not new work on it.
+	if t.IssueID != nil && t.ParentTaskID == nil {
+		if err := refuseClaimedIssueTx(ctx, tx, *t.IssueID, t.ActingTaskID); err != nil {
+			return nil, err
+		}
+	}
 	fields, err := marshalFields(t.Fields)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)

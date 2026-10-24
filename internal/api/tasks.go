@@ -1050,6 +1050,43 @@ func (s *Server) checkMergeBack(
 	return mainWT, onConflict, true
 }
 
+// reasonIssueInHandoff is the 409 for new work on an issue a live handoff
+// item claims (task 137 decision 14): a root task created on it, a chat
+// handed off onto it, or a follow-up re-admitting one of its tasks.
+// details.handoff_id names the claiming handoff.
+const reasonIssueInHandoff = "issue_in_handoff"
+
+// actingTaskID is the task a request is made by, when it says: the MCP
+// creator of a step's endpoint, or the `X-Vincent-Task-Id` marker every
+// workflow step's CLI sends (task 137.4). It is best-effort, like every
+// marker (spec §16) — it only lets a handoff's own task past the
+// issue_in_handoff guard, which is a consistency check, not a privilege.
+func actingTaskID(r *http.Request) *int64 {
+	if creator, ok := mcp.CreatorTaskID(r.Context()); ok {
+		return &creator
+	}
+	if v := strings.TrimSpace(r.Header.Get(headerTaskMarker)); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil && id > 0 {
+			return &id
+		}
+	}
+	return nil
+}
+
+// writeIssueInHandoff writes the issue_in_handoff 409 and reports whether
+// err was one.
+func writeIssueInHandoff(w http.ResponseWriter, err error) bool {
+	var claimed *store.IssueInHandoffError
+	if !errors.As(err, &claimed) {
+		return false
+	}
+	writeConflict(w, claimed.Error(), map[string]string{
+		"reason":     reasonIssueInHandoff,
+		"handoff_id": strconv.FormatInt(claimed.HandoffID, 10),
+	})
+	return true
+}
+
 // writeIssueWorktreeError writes the 400 for the store's two in-transaction
 // issue-worktree refusals (task 134 decisions 5, 6) and reports whether err
 // was one of them.
@@ -1057,6 +1094,7 @@ func writeIssueWorktreeError(w http.ResponseWriter, err error) bool {
 	var mismatch *store.MainBranchMismatchError
 	var noMain *store.NoMainBranchError
 	switch {
+	case writeIssueInHandoff(w, err):
 	case errors.As(err, &mismatch):
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
 			fmt.Sprintf("issue %d's main branch is %q; a main task cannot run on %q",
@@ -1214,6 +1252,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		t.BranchName = preview.Name
 	}
+	t.ActingTaskID = actingTaskID(r)
 	var key *store.IdempotencyKey
 	if idemKey != "" {
 		key = &store.IdempotencyKey{

@@ -82,10 +82,14 @@ const (
 	Human Actor = "human"
 	Agent Actor = "agent"
 	Sync  Actor = "sync"
+	// Handoff is an integration step writing an issue it claimed (task 137
+	// decision 12): it closes, reopens and comments the way a human or an
+	// agent does, and the issue event names the handoff beside it.
+	Handoff Actor = "handoff"
 )
 
 // Actors lists every actor.
-var Actors = []Actor{Human, Agent, Sync}
+var Actors = []Actor{Human, Agent, Sync, Handoff}
 
 // ValidActor reports whether a is a known actor.
 func ValidActor(a Actor) bool {

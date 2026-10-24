@@ -1197,7 +1197,12 @@ states. For **sync** the same request is a **no-op**, never an error: the remote
 is the authority for an imported issue and a poll that re-reads an unchanged
 one must change nothing. Closing stamps `closed_at` and the reason; reopening
 clears both and `duplicate_of_issue_id`. Every write names its actor —
-`human`, `agent` or `sync` — and §13.3's `issue.*` events carry it as `by`.
+`human`, `agent`, `sync` or `handoff` — and §13.3's `issue.*` events carry it as `by`.
+*Amended 2026-10-24 (task 137.4, issue #837):* `handoff` is the fourth actor
+(task 137 decision 12), an integration step writing an issue its handoff
+claims (§5.7). It is treated as `human` and `agent` are: it may `close` and
+`reopen`, never the `remote_*` actions, and asking for the state an issue is
+already in is an error, not a no-op.
 
 There is no archive. An issue is **deleted** from any state (decision 6): its
 labels and comments go with it, its tasks keep running with `issue_id` NULL and
@@ -1414,6 +1419,68 @@ deleted source or side branch blocks `merge_source_missing`. Delete is also
 refused while a **side** task of the issue is unsettled (134.14-c, amending
 decision 17.1), with the same `409 issue_has_live_main_task`, so a side task
 always has its issue when it reaches `done`.
+
+### 5.7 Handoff and HandoffItem (added 2026-10-24, task 137.4, issue #837)
+
+A **Handoff** is the integration step's own record (task 137 decisions 1, 2,
+12 and 14; migration 0046): one ordinary root task that does the integrating,
+and the issues it claimed. A task is a handoff task **because a `handoffs` row
+points at it** — there is no `tasks` column — and it carries no `issue_id`, so
+it never moves an issue's lane (task 134 decision 2). This item is the store;
+the create route (`POST /v1/handoffs`) is 137.5, and the item verbs and
+release-on-settle are 137.6.
+
+| `handoffs` | Notes |
+|---|---|
+| `id`, `project_id` | |
+| `task_id` | unique, never NULL; deleting the task deletes the handoff and its items |
+| `trigger_id` | the trigger that created it, or NULL |
+| `grant_json` | `[]` until task 137.7 gives it meaning |
+| `created_by` | the origin: `human`, `agent` or `trigger` |
+
+| `handoff_items` | Notes |
+|---|---|
+| `(handoff_id, issue_id)` | the primary key: one item per claimed issue |
+| `delivery_task_id`, `delivery_json` | the issue's latest delivery (§5.3) **snapshotted at claim time**; a later follow-up on the delivering task does not change it |
+| `outcome` | NULL while unresolved, else `delivered`, `returned`, `waiting` or `released`; no CHECK, for the reason 0032 and 0036 give |
+| `outcome_at`, `outcome_by`, `note` | written with the outcome |
+
+**The claim.** An issue is in at most one live item — unresolved or
+`waiting` — and a partial unique index over `handoff_items(issue_id)` is what
+enforces it. **Eligibility** is one SQL fragment (`handoffEligibleExpr`) that
+137.5's `select:` and 137.10's marker both read: the issue is in the
+`hand_off` lane (so it is open), no live item claims it, and no `delivered`
+item names its **current delivery** — the task §5.3's latest delivery is read
+from, at that delivery's `head_sha`. A follow-up that produces a new head
+makes the issue eligible again; one that adds no commits does not. Because
+the lane is §5.6's derivation, eligibility follows when 137.15 makes
+`hand_off` mean readiness. The create re-checks every issue inside its
+transaction; the first ineligible one fails the whole create.
+
+**Derived state.** A handoff is never stored with a state: it is `live` while
+its task is unsettled, `waiting` while the task is settled and some item is
+`waiting`, and `settled` otherwise — one SQL fragment with a Go mirror
+(`store.HandoffStateOf`), the way `issuestate.LaneOf` mirrors the lane.
+`handoff.settled` (§13.3) is written by the write that makes the handoff
+settled: its task's settling transition when nothing waits, or the item write
+that ends the last wait. Until 137.6, items still unresolved when the task
+settles keep their claim.
+
+**`issue_in_handoff`** (decision 14, scope settled 2026-10-24). While an item
+claims an issue, no route adds work to it: a root task created with its
+`issue_id` (`POST /v1/tasks`, so the CLI, the TUI, MCP `task_create` and
+trigger replay), a chat handed off onto it, and a follow-up re-admitting one of
+its root tasks are refused `409 invalid_state` with `details.reason:
+issue_in_handoff` and `details.handoff_id`. The check runs **inside the
+store's insert or transition transaction**, so it cannot race a handoff create.
+The claiming handoff's own task is let through — recognised by the MCP creator
+or by the `X-Vincent-Task-Id` marker, best-effort like every marker (§16) — and
+so is an engine merge-back whose side task that task created. Fan-out lanes
+are not new work on the issue and are not affected.
+
+The `handoff` actor (§5.6) writes an issue it claims; the store's
+state-change and comment writes accept an optional handoff id, and the
+`issue.*` event they record then carries `handoff_id`.
 
 ## 6. Task lifecycle
 
@@ -10514,6 +10581,15 @@ GET    /v1/events                       SSE stream (§13.3)
 GET    /v1/tasks/{id}/events            SSE, single task incl. live output
 ```
 
+*Amended 2026-10-24 (task 137.4, issue #837):* `POST /v1/tasks` with an
+`issue_id`, `POST /v1/chats/{id}/handoff` with an `issue_id`, and
+`POST /v1/tasks/{id}/follow_up` on a root task of an issue a live handoff item
+claims are refused **409** `invalid_state` with `details.reason:
+issue_in_handoff` and `details.handoff_id` (§5.7), unless the request is made
+by the claiming handoff's own task — its per-step MCP endpoint, or its
+`X-Vincent-Task-Id` marker. A trigger whose replay meets it records its
+delivery `refused`, as for any 409.
+
 *Added 2026-09-29 (issue #601).* `GET /v1/tasks/{id}/commits` lists the commits
 a task made on its branch, oldest first. It reads the **project repository**'s
 `refs/heads/<branch_name>`, not the worktree, so it still answers after archive
@@ -10637,6 +10713,14 @@ Two kinds of streams:
    is **not** a transition and `scheduler.WakeOn` is false for it. The
    implicit delivery a task's `→ done` writes rides that transition's own
    `task.state_changed`.*
+   *Added 2026-10-24 (task 137.4, issue #837): three handoff events (§5.7),
+   each carrying the handoff's `project_id` and its task as `task_id`:
+   `handoff.created` `{id, task_id, issue_ids, created_by, trigger_id?}`;
+   `handoff.item_changed` `{handoff_id, issue_id, from, to, by}`, where `""`
+   is an unresolved item; and `handoff.settled` `{id, task_id}`, after the
+   task's `task.state_changed` when its settle settles the handoff, or after
+   the `handoff.item_changed` that ends the last wait. An `issue.*` event
+   written on a handoff's behalf carries `handoff_id`, and `by: handoff`.*
    *Amended 2026-08-28 (task 046, issue #90): the `notify:` hook (§12.3)
    introduces **no new event type**. Its selector reads the `to` field of
    `task.state_changed`, the way the TUI bell does; `task.blocked` and

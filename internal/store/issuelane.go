@@ -113,10 +113,18 @@ func laneExpr() sqlFrag {
 // its delivery would describe a branch the issue never takes. finished_at is
 // restamped on every `→ done` and a follow-up clears the delivery, so the
 // latest one is always the last run that finished.
-func latestDeliveryExpr() sqlFrag {
+func latestDeliveryExpr() sqlFrag { return latestDeliveryColumn("delivery_json") }
+
+// latestDeliveryTaskExpr is the id of the task latestDeliveryExpr reads —
+// the pair a handoff item snapshots and eligibility compares (task 137.4).
+func latestDeliveryTaskExpr() sqlFrag { return latestDeliveryColumn("id") }
+
+// latestDeliveryColumn is one column of the task latestDeliveryExpr picks.
+// col is a constant column name, never input.
+func latestDeliveryColumn(col string) sqlFrag {
 	h := handedOffCond()
 	return sqlFrag{
-		sql: `(SELECT t.delivery_json FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL
+		sql: `(SELECT t.` + col + ` FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL
 			AND (t.issue_worktree IS NULL OR t.issue_worktree <> 'side') AND ` + h.sql + `
 			ORDER BY t.finished_at DESC, t.id DESC LIMIT 1)`,
 		args: h.args,

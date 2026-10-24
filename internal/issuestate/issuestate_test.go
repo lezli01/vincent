@@ -48,6 +48,7 @@ func TestTransitionTable(t *testing.T) {
 	want := map[Actor]map[State]map[Action]outcome{
 		Human:     humanOrAgent,
 		Agent:     humanOrAgent,
+		Handoff:   humanOrAgent,
 		Sync:      sync,
 		"robot":   {},
 		Actor(""): {},
