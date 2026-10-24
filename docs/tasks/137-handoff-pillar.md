@@ -38,10 +38,9 @@ missing. It is the plan and the decision record; it changes no code. The
 author settled the questions that shaped it on 2026-10-24 — the grant, the
 lanes, the pull-request guard, the spec's timing, MCP writes, agent-started
 handoffs, where returned work runs, the name and the order of the frame gaps —
-and each is written in as a decision below. The remaining decisions are the
-plan's own and stand as proposed defaults unless the author answers otherwise
-before the item that needs one starts, the convention task 130's open
-questions used.
+and each is written in as a decision below. The plan's own proposals —
+decisions 1, 2, 3, 7, 9, 10 and 12 — were accepted as written the same day, so
+every decision is settled.
 
 ### What handoff looks like today
 
@@ -225,12 +224,13 @@ governing the code until the named item's pull request merges.
 
 ## Decisions
 
-Recorded 2026-10-24. Decisions 4, 5, 6, 11, 13 and 14 were settled by the
-author, as were open questions 1, 2, 3, 5, 7 and 8; each says so where it is
-settled. Decisions 1, 2, 3, 7, 9, 10 and 12 are the plan's own and stand as
-proposed defaults. Each decision is
-**taken now; its effect lands with its item**, and the older record keeps
-governing the code until that item's pull request merges.
+Recorded 2026-10-24. Every decision is settled by the author: 4, 5, 6, 11,
+13 and 14 by their answers to the questions that shaped them, as were open
+questions 1, 2, 3, 5, 7 and 8, and 1, 2, 3, 7, 9, 10 and 12 — the plan's own
+proposals — accepted as written the same day. Each says so where it is
+settled. Each decision is **taken now; its effect lands with its item**, and
+the older record keeps governing the code until that item's pull request
+merges.
 
 ### 1. A handoff is a record, executed by an ordinary task (2026-10-24)
 
@@ -260,6 +260,8 @@ and **settled** otherwise.
   handoff spans many issues' branches and outlives any one task's slot (the
   `waiting` outcome).
 
+*Settled by the author 2026-10-24:* accepted as written.
+
 ### 2. An item is an issue; an issue is in at most one live handoff (2026-10-24)
 
 A handoff's items are **issues**, each carrying the delivery it is handed off
@@ -284,6 +286,8 @@ A claim is held from creation, so an `on_fire: propose` handoff — created
 `paused` — holds its issues until a human resumes or cancels it. That is task
 122's "an unreviewed proposal holds its group", applied to issues, and the card
 says so.
+
+*Settled by the author 2026-10-24:* accepted as written.
 
 ### 3. A delivery is the workshop's result, and every done task has one (2026-10-24)
 
@@ -338,6 +342,8 @@ board can say what is waiting to be handed off.
 in the git common directory, which a containerized handoff cannot assume is
 mounted, it cannot be listed or rendered by any client, and its schema is
 whatever the last workflow to write it decided.
+
+*Settled by the author 2026-10-24:* accepted as written.
 
 ### 4. Outcomes, per item (2026-10-24)
 
@@ -507,6 +513,8 @@ new-task form. It sees:
 The skills and the five built-ins are re-read in the same piece of work, per
 `CLAUDE.md`'s rule, and `update-workflows`' checklist gains the line.
 
+*Settled by the author 2026-10-24:* accepted as written.
+
 ### 8. Starting a handoff, and `select:` (2026-10-24)
 
 `POST /v1/handoffs {project_id, workflow, issue_ids | select, grant, title,
@@ -560,6 +568,8 @@ such as `vincent handoff stack` is considered only once two shipped workflows
 carry the same bash for it — the blog's "extract first, let the second adapter
 prove the boundary".
 
+*Settled by the author 2026-10-24:* accepted as written.
+
 ### 10. No in-tree target adapters (2026-10-24)
 
 GitHub is the only target vincent writes natively, because it is the only
@@ -569,6 +579,8 @@ credentials from the daemon's inherited environment (§2's secret-management
 non-goal, kept). This is task 096 decision 2's line for sources, applied to
 targets. When a second intake provider lands (frame gap F5), its write-back
 arrives with it.
+
+*Settled by the author 2026-10-24:* accepted as written.
 
 ### 11. The name (2026-10-24)
 
@@ -600,6 +612,8 @@ renaming the chat feature, which breaks a shipped CLI verb for a word.
 - **MCP:** the item verbs and `handoff_show` on the step endpoint, the
   pull-request write tools on a granted handoff's step endpoint, and
   `handoff_start` grant-less (decision 6).
+
+*Settled by the author 2026-10-24:* accepted as written.
 
 ### 13. Ready for hand-off is declared, by the workflow or by a human (2026-10-24)
 
