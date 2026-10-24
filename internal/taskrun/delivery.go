@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -21,14 +22,64 @@ func (r *Runner) deliveryAtDone(ctx context.Context, task *store.Task, log *slog
 	} else {
 		log.Warn("delivery: re-read task", "error", err)
 	}
-	project, err := r.deps.Store.GetProject(ctx, task.ProjectID)
-	if err != nil {
+	var d *store.Delivery
+	if project, err := r.deps.Store.GetProject(ctx, task.ProjectID); err != nil {
 		// Without the repository nothing can be read from git, but the run
 		// still finished: record what the task itself says, and say so.
 		log.Error("delivery: load project", "error", err)
-		return finishDelivery(task.Delivery.Clone(), task, "", time.Now())
+		d = finishDelivery(task.Delivery.Clone(), task, "", time.Now())
+	} else {
+		d = buildDelivery(ctx, r.deps.Store, r.deps.Worktrees, project, task, time.Now(), log)
 	}
-	return buildDelivery(ctx, r.deps.Store, r.deps.Worktrees, project, task, time.Now(), log)
+	stampReadiness(ctx, r.deps.Store, task, d, log)
+	return d
+}
+
+// stampReadiness writes the readiness a task's `→ done` decides (task 137
+// decision 13), so every delivery written from here on stores `ready`; only
+// a legacy one, which BackfillDeliveries fills and never stamps, reads ready
+// by its absence.
+//
+// The answer is the task's own workflow's hand_off, read from its snapshot —
+// the workflow it ran, not whatever the live file says now. A step's
+// `vincent task deliver --ready` (stored as ready by task) stands under
+// either mode; without one `auto` is ready by the workflow and `explicit` is
+// not ready, waiting for a human's `vincent issue ready`. An `auto` workflow
+// has no way to say not ready.
+//
+// A merge-back runs __merge_back, which has no hand_off of its own: it
+// delivers its source side task's work, so it carries the source's
+// readiness with the rest of the source's delivery, and is ready by the
+// workflow when the source has none to give.
+func stampReadiness(ctx context.Context, st *store.Store, task *store.Task, d *store.Delivery, log *slog.Logger) {
+	ready := func(r bool, by store.ReadyBy) { d.Ready, d.ReadyBy = &r, by }
+	if task.MergeSourceTaskID != nil {
+		src, err := st.GetTask(ctx, *task.MergeSourceTaskID)
+		if err != nil {
+			log.Warn("delivery: merge-back source unreadable; ready by the workflow", "error", err)
+		}
+		if err == nil && src.Delivery != nil && src.Delivery.Ready != nil {
+			ready(*src.Delivery.Ready, src.Delivery.ReadyBy)
+			return
+		}
+		ready(true, store.ReadyByWorkflow)
+		return
+	}
+	if task.Delivery != nil && task.Delivery.Ready != nil && *task.Delivery.Ready {
+		ready(true, store.ReadyByTask)
+		return
+	}
+	mode := workflow.HandOffAuto
+	if wf, _, err := workflow.Parse([]byte(task.WorkflowSnapshot), workflow.Options{}); err != nil || wf == nil {
+		log.Warn("delivery: workflow snapshot unparseable; handing off as auto", "error", err)
+	} else {
+		mode = wf.HandOffMode()
+	}
+	if mode == workflow.HandOffExplicit {
+		ready(false, "")
+		return
+	}
+	ready(true, store.ReadyByWorkflow)
 }
 
 // buildDelivery is the delivery task finished with: the one its run recorded,
@@ -46,8 +97,15 @@ func buildDelivery(
 ) *store.Delivery {
 	d := task.Delivery.Clone()
 	if task.MergeSourceTaskID != nil {
-		if d == nil {
+		switch {
+		case d == nil:
 			d = sourceDelivery(ctx, st, task, log)
+		case readinessOnly(d):
+			// A human's mark on a legacy merge-back holds no work to deliver:
+			// the source's text, with the human's decision kept.
+			ready, by := d.Ready, d.ReadyBy
+			d = sourceDelivery(ctx, st, task, log)
+			d.Ready, d.ReadyBy = ready, by
 		}
 		// The source's branch and base are the side branch and the issue's
 		// main branch. What the issue delivers is the main branch, onto the
@@ -85,12 +143,23 @@ func sourceDelivery(ctx context.Context, st *store.Store, task *store.Task, log 
 	}
 }
 
+// readinessOnly reports whether d is the delivery a human's `vincent issue
+// ready`/`unready` writes on a legacy task that had none (task 137 decision
+// 13): implicit, with a ready mark and no kind or text. The backfill gives it
+// the text its `→ done` would have, and keeps the mark.
+func readinessOnly(d *store.Delivery) bool {
+	return d != nil && d.Implicit && d.Kind == "" && d.Title == ""
+}
+
 // finishDelivery fills what d leaves empty from the task — the title and
 // description for an implicit one, the branch, the base and the head — and
 // stamps it. A nil d becomes an implicit delivery.
 func finishDelivery(d *store.Delivery, task *store.Task, tip string, now time.Time) *store.Delivery {
 	if d == nil {
 		d = &store.Delivery{Implicit: true, Title: task.Title, Body: task.Description}
+	}
+	if readinessOnly(d) {
+		d.Title, d.Body = task.Title, task.Description
 	}
 	if d.Branch == "" {
 		d.Branch = task.BranchName
