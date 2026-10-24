@@ -80,6 +80,9 @@ each:
 | `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
 | `issue_has_live_main_task` | An issue delete was refused because one of the issue's main or side tasks has not finished. Finish or cancel it, then delete again | `task_id` |
 | `issue_in_handoff` | A task create, a chat hand-off or a `follow_up` would add work to an issue a handoff has claimed. Only the handoff's own task may add work to it until the handoff returns or releases the issue | `handoff_id` |
+| `issue_not_eligible` | [`POST /v1/handoffs`](#handoffs) named an issue it may not claim: missing, in another project, closed, not in `hand_off`, already claimed, or already delivered. Nothing was created | `issue_id`, and `handoff_id` when a handoff in the same project claims it |
+| `nothing_to_hand_off` | A handoff's `select` found no eligible issue. Nothing was created | |
+| `grant_needs_human` | An agent — an MCP call, or a request from a workflow step or chat agent — asked for a handoff with a grant. Only a human gives one; the same request without `grant` succeeds | |
 
 ## Request bodies
 
@@ -1970,7 +1973,8 @@ A snapshot that does not parse is a **200** with `errors[]` and
 `POST /v1/tasks` is a route where re-sending a request does something twice: it
 inserts a task, claims a branch and wakes the scheduler. Send an
 `Idempotency-Key` header to make the retry safe. [`POST /v1/issues`](#issues)
-honours the same header under the same rules.
+and [`POST /v1/handoffs`](#handoffs) honour the same header under the same
+rules; a key is scoped to its route, so the same key on two routes is two keys.
 
 ```sh
 KEY=$(uuidgen)
@@ -3303,6 +3307,64 @@ POST /v1/tasks/{id}/delivery
   has no route to the daemon's API, and records its delivery with the
   `task_deliver` [MCP tool](#mcp) instead.
 
+## Handoffs
+
+A **handoff** claims finished issues — those in the `hand_off` lane — for one
+integration task, which runs the workflow you name over them. One request
+creates the handoff, its task and every claim, or nothing:
+
+```
+POST /v1/handoffs
+{ "project_id": 1, "workflow": "ship-train",
+  "select": { "delivery": "change", "labels": ["ready-to-ship"], "max": 8 } }
+```
+
+| Field | Meaning |
+|---|---|
+| `project_id`, `workflow` | Both required. There is no default handoff workflow |
+| `issue_ids` | Exactly these issues. Each must be eligible, or nothing is created |
+| `select` | Or choose them. `lane` may only be `hand_off`, and `order` only `priority`; `delivery` (`change`, `reply` or `none`) and `kind` take one value or a list, any of which matches; every one of `labels` must be carried, in any case; `max` (at least 1) caps the count, otherwise every eligible issue is taken |
+| `grant` | Capabilities for forge writes: `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`. Only a human may give one; nothing acts on it yet |
+| `title` | The task's title. Default: one naming how many issues it claims |
+| `paused`, `description`, `fields`, `priority`, `agent`, `model`, `effort`, `restricted`, `max_task_cost_usd` | The task options, as on [`POST /v1/tasks`](#tasks) |
+
+Exactly one of `issue_ids` and `select` is required. The task is always a root
+task with no issue, cut from the project's base branch, so `issue_id`,
+`github_pull`, `base_branch`, `branch_name`, `existing_branch` and `merge_back`
+are refused as unknown fields. It is validated exactly as `POST /v1/tasks`
+validates a task.
+
+**What is eligible.** An open issue in the `hand_off` lane that no live handoff
+claims and whose current delivery has not already been delivered. A selection
+takes the most urgent first — priority 1 through 4, then issues with no
+priority — then the oldest delivery, then the lowest id.
+
+**The answer** is `201` with the handoff:
+
+```json
+{ "id": 3, "project_id": 1, "task_id": 41, "state": "live", "grant": [],
+  "created_by": "human", "created_at": "…",
+  "items": [ { "issue_id": 12, "delivery_task_id": 37,
+               "delivery": { "kind": "change", "title": "…", "head_sha": "…" },
+               "outcome": "", "outcome_at": null, "outcome_by": "", "note": "" } ],
+  "task": { "id": 41, "title": "Hand off 1 issue", … } }
+```
+
+`state` is `live` while the task runs, `waiting` once it has settled with an
+item still waiting, and `settled` otherwise. `created_by` is `agent` for an MCP
+call or a request carrying a workflow step's or chat agent's marker, `human`
+otherwise. Refusals are `409 invalid_state` with `issue_not_eligible`,
+`nothing_to_hand_off` or `grant_needs_human` (see [Errors](#errors)). Send
+`Idempotency-Key` to make a retry safe ([Replaying a create](#replaying-a-create)).
+
+```
+GET /v1/handoffs                ?project_id=  ?state=live|waiting|settled (repeatable)  ?issue_id=
+GET /v1/handoffs/{id}           one handoff with its items; 404 if unknown
+```
+
+The list is newest first and carries no `items`; `issue_id` finds every handoff
+that claimed that issue.
+
 ## Transcripts and diffs
 
 ```
@@ -3638,8 +3700,8 @@ they need.
   empty `from` or `to` is an item not yet resolved), and `handoff.settled`
   carries `{ id, task_id }`. Each event's `task_id` is the handoff's own task,
   so that task's stream receives them. An `issue.*` event a handoff caused
-  carries `handoff_id` and `by: handoff`. Nothing creates a handoff over the
-  API yet; the routes arrive with the rest of the handoff pillar.
+  carries `handoff_id` and `by: handoff`. [`POST /v1/handoffs`](#handoffs)
+  creates one.
 - `trigger.fired` carries `{ trigger_id, delivery_id, action }`, where `action`
   is the action type. The event's `project_id` is the trigger's project and its
   `task_id` is the task created or acted on, so `?project_id=` filters it and
@@ -3731,7 +3793,7 @@ Every route on this page is a tool, with these exceptions:
 | every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |
 | `POST /v1/tasks/{id}/chat` | It opens a chat, so the `/v1/chats` reasons apply although the path is under `/v1/tasks`. The lock it places does reach the tools: a `task_*` action on a locked task gets `409 task_locked_by_chat` like any other client |
 
-`task_create` and `issue_create` additionally take an optional
+`task_create`, `issue_create` and `handoff_start` additionally take an optional
 `idempotency_key` string, which becomes the `Idempotency-Key` header — a tool
 call has no header surface, and replay protection exists for exactly the client
 an agent is.

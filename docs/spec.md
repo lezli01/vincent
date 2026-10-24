@@ -1457,6 +1457,23 @@ the lane is §5.6's derivation, eligibility follows when 137.15 makes
 `hand_off` mean readiness. The create re-checks every issue inside its
 transaction; the first ineligible one fails the whole create.
 
+*Amended 2026-10-24 (task 137.5, issue #838):* **the selection.** `POST
+/v1/handoffs` (§13.2) names its issues explicitly or with `select:`, which is
+evaluated inside the create transaction over the same fragment: the project's
+eligible issues, narrowed by `delivery` (the latest delivery's kind, any of
+those listed), `kind` (any of those listed) and `labels` (all of them,
+case-insensitively, as the issue list's `label` filter), ordered by issue
+priority — urgent (1) first through low (4), then **0 ("none") last** — then
+by the oldest delivery (the delivering task's `finished_at`), then by issue
+id, so the order is total; and capped by `max`, every eligible issue when it
+is omitted. A selection that finds nothing rolls the create back, so no task
+is left behind (`nothing_to_hand_off`). An issue another handoff claims
+between two selections is never taken twice: the second selection reads it as
+claimed. **The grant's vocabulary** is closed — `issue.comment`,
+`issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`,
+`checks.rerun` (task 137 decision 6) — and the create stores it in
+`grant_json` deduplicated and in that order; nothing reads it until 137.7.
+
 **Derived state.** A handoff is never stored with a state: it is `live` while
 its task is unsettled, `waiting` while the task is settled and some item is
 `waiting`, and `settled` otherwise — one SQL fragment with a Go mirror
@@ -8832,6 +8849,16 @@ decision 11). Deleting an issue deletes its key, so a re-send inside the window
 files a fresh one. MCP's `issue_create` carries `idempotency_key` as
 `task_create` does (§13.4).
 
+*Amended 2026-10-24 (task 137.5, issue #838).* **A third route acts on the
+header: `POST /v1/handoffs`.** Starting a handoff creates a task and claims
+issues, which a re-send would do again — or, worse, refuse as already claimed
+by the first. The rules above apply unchanged. The key is recorded in 0016's
+`idempotency_keys` under the path `/v1/handoffs` against the handoff's **task
+id**, inside the create transaction, so it cascades with the task and needed
+no migration; the replay finds the handoff by its task and renders it as it is
+now, under a `201`. The table's primary key is `(method, path, key)`, so a key
+used on `/v1/tasks` and the same key on `/v1/handoffs` are two keys.
+
 `PATCH /v1/issues/{id}` is the one route with a **precondition**: the body
 must carry the `version` the client read, and a stale one is refused with the
 current issue in the `409`'s details. It departs from §12.3's "no
@@ -9404,6 +9431,52 @@ POST   /v1/issues/{id}/comments         *Added 2026-10-03 (task 130.16).* {body}
                                         before any I/O. No `Idempotency-Key`, like the pull
                                         request comment route: a duplicate local comment is
                                         visible and harmless
+POST   /v1/handoffs                     *Added 2026-10-24 (task 137.5, issue #838).* Start a
+                                        handoff (§5.7): { project_id, workflow, issue_ids |
+                                        select, grant?, title?, paused?, description?, fields?,
+                                        priority?, agent?, model?, effort?, restricted?,
+                                        max_task_cost_usd? } → **201** with the handoff, its
+                                        `items` and the created `task` as `POST /v1/tasks`
+                                        renders it. One transaction creates the handoff, its
+                                        task and every claim. The task is a root task with no
+                                        issue, cut from the project's base, built and
+                                        validated by `POST /v1/tasks`' own code, so the
+                                        catalog, input, restricted and container gates, MCP's
+                                        bounds and `paused` behave as they do there; so
+                                        `issue_id`, `github_pull`, `base_branch`,
+                                        `branch_name`, `existing_branch` and `merge_back` are
+                                        unknown fields and **400**. `workflow` is required —
+                                        there is no default handoff workflow — and any valid
+                                        workflow is accepted until task 137.8's `role:
+                                        handoff`. `title` defaults to one naming the issue
+                                        count. Exactly one of `issue_ids` (no duplicates) and
+                                        `select` { lane?: hand_off, delivery?: change | reply |
+                                        none or a list, kind?: a string or a list, labels?,
+                                        max? ≥ 1, order?: priority } (§5.7), else **400**; an
+                                        unknown `grant` entry is **400**. Refusals, all **409**
+                                        `invalid_state`: an explicit id the handoff may not
+                                        claim — missing, in another project, closed, not in
+                                        `hand_off`, claimed, or already delivered, one reason
+                                        so another project's rows do not leak — is
+                                        `issue_not_eligible` with `details.issue_id`, the
+                                        first such id, and `details.handoff_id` when a handoff
+                                        in this project claims it; a selection that finds
+                                        nothing is `nothing_to_hand_off`; a non-empty grant
+                                        from an agent caller (an MCP call, or a request
+                                        carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`)
+                                        is `grant_needs_human`, best-effort like every marker
+                                        (§16). `created_by` is `agent` for those callers and
+                                        `human` otherwise. Honours `Idempotency-Key` (§13.1)
+GET    /v1/handoffs                     *Added 2026-10-24 (task 137.5).* Rows without items,
+                                        newest first: [{ id, project_id, task_id, state,
+                                        grant, created_by, trigger_id?, created_at }].
+                                        `?project_id=`, `?state=live|waiting|settled`
+                                        (repeatable), `?issue_id=` (a handoff with an item for
+                                        that issue, live or not); a bad value is **400**
+GET    /v1/handoffs/{id}                *Added 2026-10-24 (task 137.5).* One handoff with its
+                                        `items`: [{ issue_id, delivery_task_id, delivery (the
+                                        summary form, as claimed), outcome, outcome_at,
+                                        outcome_by, note }]. **404** for an unknown id
 DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permanent, from any
                                         state (§5.6) → **204**. An imported issue leaves its
                                         tombstone; upstream is never touched; its tasks keep
@@ -11257,6 +11330,17 @@ tools, and no exclusion: `issue_comments` reads it and `issue_comment` adds a
 local comment, recording the calling step's task (`task N`) or `agent` as its
 author (§5.6). Neither writes to a forge — a comment on an issue with a live
 GitHub remote is refused `409 issue_mirrored` — so no forge guard is needed.
+
+*Amended 2026-10-24 (task 137.5, issue #838).* Starting and reading handoffs
+are three tools, and no exclusion: `handoff_start` replays `POST
+/v1/handoffs`, `handoff_list` its list and `handoff_show` one handoff. They are
+served on `/mcp` and on every step endpoint, like `task_create`.
+`handoff_start` is **grant-less**: a non-empty grant from any MCP caller is
+refused `409 grant_needs_human` (task 137 decision 6, "never an agent"), so an
+agent may claim issues and start an integration task but never authorize a
+forge write. It takes `idempotency_key` as `task_create` does, and its task is
+bounded by `mcp.max_depth` and `mcp.max_tasks` because it is built by the same
+code. The item verbs come with task 137.6.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -17006,6 +17090,9 @@ carries the rest.
 | `follow_up` or a linked chat on a main task whose worktree moved on | *Added 2026-10-07 (task 134.12, issue #759).* `409 issue_worktree_moved`, `details.holder_task_id` naming the main task that holds the issue's worktree now (task 134 decision 14). The work continues there, or in a new main task |
 | Deleting an issue while one of its main tasks is not settled | *Added 2026-10-07 (task 134.12, issue #759).* `409 issue_has_live_main_task`, `details.task_id` the lowest such task. Settled and archived main tasks do not hold the delete (task 134 decision 17.1). *Amended 2026-10-07 (task 134.14, issue #761):* an unsettled side task holds it too, named once no main task is live, so a side task always has its issue at `→ done` |
 | A task create, chat hand-off or `follow_up` on an issue a live handoff item claims | *Added 2026-10-24 (task 137.4, review F4 of #850).* `409 invalid_state` with `details.reason: issue_in_handoff` and `details.handoff_id` naming the claiming handoff (§5.7, task 137 decision 14). The handoff's own task is exempt, recognised by the MCP creator or the `X-Vincent-Task-Id` marker; so are fan-out lanes and engine merge-backs. The check runs inside the insert or transition transaction, so it cannot race a handoff create |
+| `POST /v1/handoffs` names an issue it may not claim | *Added 2026-10-24 (task 137.5, issue #838).* `409 invalid_state`, `details.reason: issue_not_eligible`, `details.issue_id` the first such id, and `details.handoff_id` when a handoff in the same project claims it. Missing, in another project, closed, not in `hand_off`, claimed and already delivered are one reason, so another project's rows cannot be probed. Nothing is created (§5.7) |
+| A handoff `select:` finds no eligible issue | *Added 2026-10-24 (task 137.5).* `409 invalid_state`, `details.reason: nothing_to_hand_off`, and nothing is created. A trigger's ledger records it `refused`, so its dedupe key is not spent (task 137.9) |
+| An agent caller gives a handoff a grant | *Added 2026-10-24 (task 137.5).* `409 invalid_state`, `details.reason: grant_needs_human` (task 137 decision 6). An agent caller is an MCP call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id` — best-effort, like every marker (§16). The same request with no grant succeeds, recorded `created_by: agent` |
 | A merge-back's side task or side branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked with `merge_source_missing`: there is nothing to merge. Skip or cancel |
 | A merge-back's main branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked at admission with `merge_target_missing`: every main task of the issue was archived and the branch the side task forked from was deleted, so there is nothing to revive. Skip or cancel |
 | `branch_override` on a task created from a pull request | *Added 2026-08-30 (task 064).* `409`. Renaming the branch would detach the task from the pull request it was created for, so every later commit would go somewhere that pull request never sees. Such a task cannot have a `branch_exists` block in the first place — its creation mode does not refuse a pre-existing branch (§10) |

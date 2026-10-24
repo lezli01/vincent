@@ -24,6 +24,7 @@ localhost API.
 - [`vincent trigger`](#vincent-trigger)
 - [`vincent github`](#vincent-github)
 - [`vincent issue`](#vincent-issue)
+- [`vincent handoff`](#vincent-handoff)
 - [`vincent gc`](#vincent-gc)
 
 ---
@@ -3211,6 +3212,64 @@ sync that finds each one on GitHub adopts it and takes GitHub's state, writing
 nothing back. One whose repository is not the project's bound `repo` —
 `origin` was re-pointed since — is never matched, and stays as it was
 backfilled.
+
+## `vincent handoff`
+
+A **handoff** claims finished issues — those in the `hand_off` lane — for one
+integration task that runs the workflow you name over them. It is not
+[`vincent chat handoff`](#vincent-chat-handoff), which turns a chat into a
+task. A thin client of the [handoff routes](api.md#handoffs).
+
+### `vincent handoff start`
+
+```sh
+vincent handoff start --project ID --workflow NAME [ISSUE-ID...]
+                      [--delivery change|reply|none]... [--kind KIND]... [--label NAME]... [--max N]
+                      [--grant CAPABILITY[,...]]... [--title TEXT] [--paused]
+                      [--description TEXT] [--priority N] [--agent A] [--model M] [--effort E]
+                      [--field name=value]... [--fields-file PATH] [--restricted]
+                      [--max-task-cost-usd USD] [--json]
+```
+
+Creates the handoff, its task and every claim in one step, and prints the
+handoff and the issues it claimed.
+
+- **Issue ids** claim exactly those issues. If any is not eligible — not in
+  `hand_off`, already claimed by a handoff, or already delivered — nothing is
+  created and the command exits 1, naming it.
+- **Without ids, it selects.** `--delivery`, `--kind` and `--label` narrow the
+  eligible issues (each repeats; any `--delivery` or `--kind` matches, every
+  `--label` must) and `--max` caps them. The most urgent come first — priority
+  1, then 4, then issues with none — then the oldest delivery. A selection that
+  finds nothing exits 1. Ids and the selection flags cannot be combined.
+- **`--grant`** gives the handoff capabilities for forge writes —
+  `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`,
+  `pull.close`, `checks.rerun` — repeated or comma-separated. Only a human may
+  give one: run from a workflow step it is refused. Nothing acts on a grant yet.
+- **The task options** are `vincent task add`'s. The task is a root task with
+  no issue, cut from the project's base branch; `--title` defaults to one
+  naming how many issues it claims.
+
+### `vincent handoff ls`
+
+```sh
+vincent handoff ls [--project ID] [--state live|waiting|settled]... [--issue ID] [--json]
+```
+
+Lists handoffs, newest first: ID, STATE, TASK, ITEMS, CREATED_BY and
+CREATED_AT. STATE is `live` while the task runs, `waiting` once it has settled
+with an item still waiting, and `settled` otherwise. `--issue` lists every
+handoff that claimed that issue.
+
+### `vincent handoff show`
+
+```sh
+vincent handoff show ID [--json]
+```
+
+Prints the handoff — its state, task, grant and who started it — and one row
+per item: the issue, its delivery's kind and task as claimed, and the outcome
+once one is recorded.
 
 ## `vincent gc`
 

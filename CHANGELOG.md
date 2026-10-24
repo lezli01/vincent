@@ -13,6 +13,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Start a handoff over finished issues.** `POST /v1/handoffs` claims issues
+  in the `hand_off` lane for one integration task running the workflow you
+  name — by id, or with `select` (by delivery kind, issue kind and labels,
+  capped by `max`, most urgent first) — creating the handoff, its task and
+  every claim together. `GET /v1/handoffs` and `GET /v1/handoffs/{id}` read
+  them back. The CLI gains `vincent handoff start`, `ls` and `show`, and MCP
+  the `handoff_start`, `handoff_list` and `handoff_show` tools. A grant can be
+  recorded, and only a human may give one: an agent's handoff is grant-less,
+  and a grant from one is refused `grant_needs_human`. Nothing acts on a grant
+  yet.
+
 - **The TUI opens on your first main tab, and closing a screen takes you back
   to your tab.** vincent now starts on the first entry of `tui.tabs` — the
   issues list by default — instead of the task board, usable before it has

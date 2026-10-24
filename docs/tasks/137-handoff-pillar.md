@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (4/15)
+**Status:** 🔄 in progress (5/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -557,6 +557,24 @@ The first issue to reach `hand_off` starts a handoff; while it runs, later
 arrivals coalesce into one held event, which fires when the handoff's task
 settles and selects everything that accumulated.
 
+*Amended 2026-10-24 (task 137.5, issue #838), settled with the author:*
+
+- **The body takes the task options** of `POST /v1/tasks`, flat at the top
+  level — `description`, `fields`, `priority`, `agent`, `model`, `effort`,
+  `restricted` and `max_task_cost_usd` — and the task is built by that route's
+  own code. `restricted` is there now because 137.9 maps a trigger's
+  `permission` onto it. The fields that would make the task anything but a
+  root task with no issue, cut from the project's base, are refused.
+- **A grant is refused from every agent caller**, not only MCP: an MCP call
+  or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`, which is
+  `issueActor`'s definition and decision 6's. Best-effort, like every marker
+  (spec §16).
+- **The three reasons** are `issue_not_eligible` (with `issue_id`, and
+  `handoff_id` when a handoff in the project claims it), `nothing_to_hand_off`
+  and `grant_needs_human`, all `409 invalid_state`.
+- **`order: priority` puts priority 0 last**: urgent (1) through low (4),
+  then "none", then the oldest delivery, then issue id.
+
 ### 9. Trains, reviews and pull requests stay in workflows (2026-10-24)
 
 Vincent ships no merge-train step, no review step and no `merge` step type
@@ -823,9 +841,12 @@ pull request.
   `handoff` actor, `handoff.*` events, and `POST /v1/tasks` refusing a claimed
   issue with `issue_in_handoff` (decisions 1, 2, 12, 14). Depends: 137.2.
   Spec §5.6, §5.7, §13.2, §13.3. ✓ 2026-10-24
-- [ ] **137.5** ([#838](https://github.com/lezli01/vincent/issues/838)) `POST /v1/handoffs` with `issue_ids` and `select`, the read
+- [x] **137.5** ([#838](https://github.com/lezli01/vincent/issues/838)) `POST /v1/handoffs` with `issue_ids` and `select`, the read
   routes, apiclient, `vincent handoff start|ls|show`, and grant-less MCP
-  (decision 8). Depends: 137.4.
+  (decision 8). Depends: 137.4. Spec §5.7, §13.1, §13.2, §13.4, §18.
+  ✓ 2026-10-24 The list route is a third tool, `handoff_list`, because
+  §13.4's surface is the route table minus its exclusions and a read is no
+  exclusion.
 - [ ] **137.6** ([#839](https://github.com/lezli01/vincent/issues/839)) The item verbs, release on settle, resolve-on-close for
   `waiting`, and `return` as a follow-up (decision 4). Depends: 137.5.
 - [ ] **137.7** ([#840](https://github.com/lezli01/vincent/issues/840)) The grant and the one forge-write guard over issue and
