@@ -252,6 +252,96 @@ func refuseClaimedIssueTx(ctx context.Context, tx *sql.Tx, issueID int64, acting
 	return &IssueInHandoffError{IssueID: issueID, HandoffID: handoffID}
 }
 
+// HandoffSelect is a create's `select:` (task 137 decision 8): the eligible
+// issues of the handoff's project, filtered and ordered in SQL inside the
+// create transaction, so the board, the CLI and a trigger cannot disagree
+// about what was taken. An empty list matches everything.
+type HandoffSelect struct {
+	// Delivery is the latest delivery's kind, any of them.
+	Delivery []string
+	// Kinds is the issue's kind, any of them.
+	Kinds []string
+	// Labels must all be carried, case-insensitively, as IssueFilter.Labels.
+	Labels []string
+	// Max is a LIMIT; 0 takes every eligible issue.
+	Max int
+}
+
+// ErrNothingToHandOff is a selection that found no eligible issue. The
+// create rolls back, so no task is left behind; the API answers it 409
+// `nothing_to_hand_off`.
+var ErrNothingToHandOff = errors.New("no eligible issue to hand off")
+
+// Capability is one entry of a handoff's grant (task 137 decision 6): a
+// closed vocabulary over existing forge-write routes. 137.5 validates and
+// stores it; 137.7's guard is the first reader.
+type Capability string
+
+// Grant capabilities.
+const (
+	CapIssueComment Capability = "issue.comment"
+	CapIssueClose   Capability = "issue.close"
+	CapPullCreate   Capability = "pull.create"
+	CapPullComment  Capability = "pull.comment"
+	CapPullMerge    Capability = "pull.merge"
+	CapPullClose    Capability = "pull.close"
+	CapChecksRerun  Capability = "checks.rerun"
+)
+
+// Capabilities lists the grant vocabulary in its documented order.
+var Capabilities = []Capability{
+	CapIssueComment, CapIssueClose, CapPullCreate, CapPullComment, CapPullMerge, CapPullClose, CapChecksRerun,
+}
+
+// GrantJSON validates a grant and encodes it for `grant_json`: every entry
+// must be in Capabilities, and the result is deduplicated and in the
+// vocabulary's order, so two spellings of one grant store the same text.
+func GrantJSON(grant []string) (string, error) {
+	out := make([]Capability, 0, len(grant))
+	for _, g := range grant {
+		c := Capability(strings.TrimSpace(g))
+		if !slices.Contains(Capabilities, c) {
+			return "", fmt.Errorf("unknown grant capability %q", g)
+		}
+		if !slices.Contains(out, c) {
+			out = append(out, c)
+		}
+	}
+	slices.SortFunc(out, func(a, b Capability) int {
+		return slices.Index(Capabilities, a) - slices.Index(Capabilities, b)
+	})
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "", fmt.Errorf("encode grant: %w", err)
+	}
+	return string(b), nil
+}
+
+// Grant decodes h's grant_json; a malformed column reads as empty.
+func (h *Handoff) Grant() []Capability {
+	var out []Capability
+	_ = json.Unmarshal([]byte(h.GrantJSON), &out)
+	return out
+}
+
+// NewHandoff is one handoff create: the row to fill in, its task, and the
+// issues to claim — IssueIDs or Select, exactly one.
+type NewHandoff struct {
+	Handoff  *Handoff
+	Task     *Task
+	IssueIDs []int64
+	Select   *HandoffSelect
+	// ResolveBranch is insertTaskTx's, for a name that needs the task id.
+	ResolveBranch func(id int64) (string, error)
+	// Key, when non-nil, is an Idempotency-Key recorded against the
+	// handoff's task id in the create transaction (task 040's table, path
+	// `/v1/handoffs`).
+	Key *IdempotencyKey
+	// TitleFor, when non-nil and the task has no title, names the task from
+	// the number of issues claimed — known only once a selection has run.
+	TitleFor func(n int) string
+}
+
 // CreateHandoff creates a handoff, its task and one item per issue in one
 // transaction (decision 2), and records handoff.created with it. task is
 // inserted through insertTaskTx and must carry no issue: a handoff task
@@ -266,21 +356,52 @@ func (s *Store) CreateHandoff(
 	ctx context.Context, h *Handoff, issueIDs []int64, task *Task,
 	resolveBranch func(id int64) (string, error),
 ) error {
+	_, err := s.StartHandoff(ctx, NewHandoff{Handoff: h, Task: task, IssueIDs: issueIDs, ResolveBranch: resolveBranch})
+	return err
+}
+
+// StartHandoff is CreateHandoff over either explicit ids or a selection,
+// with an optional idempotency key, and returns the claimed issue ids in
+// claim order. A selection is evaluated inside the transaction, so an issue
+// another handoff claims between two creates is never taken twice; one that
+// finds nothing is ErrNothingToHandOff with everything rolled back.
+func (s *Store) StartHandoff(ctx context.Context, in NewHandoff) ([]int64, error) {
+	h, task := in.Handoff, in.Task
 	if task == nil || task.IssueID != nil || task.ParentTaskID != nil {
-		return errors.New("create handoff: the handoff task must be a root task with no issue")
+		return nil, errors.New("create handoff: the handoff task must be a root task with no issue")
 	}
-	if len(issueIDs) == 0 {
-		return errors.New("create handoff: no issues")
+	if (in.Select == nil) == (len(in.IssueIDs) == 0) {
+		return nil, errors.New("create handoff: exactly one of issue ids and a selection is required")
 	}
 	if h.GrantJSON == "" {
 		h.GrantJSON = "[]"
 	}
 	now := time.Now()
-	var taskEv, ev *Event
+	var (
+		taskEv, ev *Event
+		issueIDs   []int64
+	)
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		var err error
-		if taskEv, err = insertTaskTx(ctx, tx, task, now, resolveBranch); err != nil {
+		issueIDs = in.IssueIDs
+		if in.Select != nil {
+			if issueIDs, err = selectHandoffIssuesTx(ctx, tx, task.ProjectID, in.Select); err != nil {
+				return err
+			}
+			if len(issueIDs) == 0 {
+				return ErrNothingToHandOff
+			}
+		}
+		if task.Title == "" && in.TitleFor != nil {
+			task.Title = in.TitleFor(len(issueIDs))
+		}
+		if taskEv, err = insertTaskTx(ctx, tx, task, now, in.ResolveBranch); err != nil {
 			return err
+		}
+		if in.Key != nil {
+			if err := insertIdempotencyKeyTx(ctx, tx, in.Key, task.ID, now); err != nil {
+				return err
+			}
 		}
 		h.ProjectID, h.TaskID, h.CreatedAt = task.ProjectID, task.ID, now
 		res, err := tx.ExecContext(ctx, `
@@ -310,11 +431,71 @@ func (s *Store) CreateHandoff(
 		return appendEventTx(ctx, tx, ev)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	s.notify(taskEv)
 	s.notify(ev)
-	return nil
+	return issueIDs, nil
+}
+
+// selectHandoffIssuesTx is a selection's query: the project's eligible
+// issues, filtered by sel, ordered by issue priority — urgent (1) first, 4
+// last of the set ones, then 0 ("none") after them — then by the oldest
+// delivery, the delivering task's finished_at, then by id, so the order is
+// total; and limited by sel.Max.
+func selectHandoffIssuesTx(ctx context.Context, tx *sql.Tx, projectID int64, sel *HandoffSelect) ([]int64, error) {
+	eligible, delivery, finished := handoffEligibleExpr(), latestDeliveryExpr(), latestDeliveryColumn("finished_at")
+	//nolint:gosec // G202: the fragments are constant SQL with bind markers; every value binds
+	q := `SELECT i.id FROM issues i WHERE i.project_id = ? AND ` + eligible.sql + ` = 1`
+	args := []any{projectID}
+	args = append(args, eligible.args...)
+	if len(sel.Delivery) > 0 {
+		q += ` AND json_extract(` + delivery.sql + `, '$.kind') IN ` + placeholders(len(sel.Delivery))
+		args = append(args, delivery.args...)
+		for _, d := range sel.Delivery {
+			args = append(args, d)
+		}
+	}
+	if len(sel.Kinds) > 0 {
+		q += ` AND i.kind IN ` + placeholders(len(sel.Kinds))
+		for _, k := range sel.Kinds {
+			args = append(args, k)
+		}
+	}
+	for _, name := range sel.Labels {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		// labels.name is COLLATE NOCASE; one EXISTS per name is the AND, as
+		// in ListIssues.
+		q += ` AND EXISTS (SELECT 1 FROM issue_labels il JOIN labels l ON l.id = il.label_id
+			WHERE il.issue_id = i.id AND l.name = ?)`
+		args = append(args, name)
+	}
+	q += ` ORDER BY CASE WHEN i.priority = 0 THEN 1 ELSE 0 END, i.priority, ` + finished.sql + `, i.id`
+	args = append(args, finished.args...)
+	if sel.Max > 0 {
+		q += ` LIMIT ?`
+		args = append(args, sel.Max)
+	}
+	rows, err := tx.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("select handoff issues: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan handoff issue: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("select handoff issues: %w", err)
+	}
+	return ids, nil
 }
 
 // insertHandoffItemTx claims one issue for h, snapshotting its delivery.
@@ -381,20 +562,79 @@ func getHandoff(ctx context.Context, q issueQuerier, where string, arg int64) (*
 	state := handoffStateExpr()
 	row := q.QueryRowContext(ctx, `SELECT `+handoffColumns+`, `+state.sql+` FROM handoffs h WHERE `+where,
 		append(slices.Clone(state.args), arg)...)
-	var (
-		h              Handoff
-		trigger        sql.NullString
-		createdAt, st  string
-		createdByValue string
-	)
-	err := row.Scan(&h.ID, &h.ProjectID, &h.TaskID, &trigger, &h.GrantJSON, &createdByValue, &createdAt, &st)
+	h, err := scanHandoff(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w (%s %d)", ErrHandoffNotFound, where, arg)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get handoff: %w", err)
 	}
+	return h, nil
+}
+
+// HandoffFilter narrows ListHandoffs; zero values match everything.
+type HandoffFilter struct {
+	ProjectID int64
+	// States is any of the derived states.
+	States []HandoffState
+	// IssueID is a handoff with an item for this issue, live or not.
+	IssueID int64
+}
+
+// ListHandoffs returns the handoffs f matches, newest first, without items.
+func (s *Store) ListHandoffs(ctx context.Context, f HandoffFilter) ([]*Handoff, error) {
+	state := handoffStateExpr()
+	//nolint:gosec // G202: handoffColumns and the state fragment are constant SQL; every value binds
+	q := `SELECT ` + handoffColumns + `, ` + state.sql + ` FROM handoffs h WHERE 1 = 1`
+	args := slices.Clone(state.args)
+	if f.ProjectID != 0 {
+		q += ` AND h.project_id = ?`
+		args = append(args, f.ProjectID)
+	}
+	if len(f.States) > 0 {
+		q += ` AND ` + state.sql + ` IN ` + placeholders(len(f.States))
+		args = append(args, state.args...)
+		for _, st := range f.States {
+			args = append(args, string(st))
+		}
+	}
+	if f.IssueID != 0 {
+		q += ` AND EXISTS (SELECT 1 FROM handoff_items hf WHERE hf.handoff_id = h.id AND hf.issue_id = ?)`
+		args = append(args, f.IssueID)
+	}
+	q += ` ORDER BY h.created_at DESC, h.id DESC`
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list handoffs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*Handoff
+	for rows.Next() {
+		h, err := scanHandoff(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list handoffs: %w", err)
+	}
+	return out, nil
+}
+
+// scanHandoff reads one handoffColumns row followed by its derived state.
+func scanHandoff(row interface{ Scan(...any) error }) (*Handoff, error) {
+	var (
+		h              Handoff
+		trigger        sql.NullString
+		createdAt, st  string
+		createdByValue string
+	)
+	if err := row.Scan(&h.ID, &h.ProjectID, &h.TaskID, &trigger, &h.GrantJSON, &createdByValue, &createdAt, &st); err != nil {
+		return nil, err
+	}
 	h.TriggerID, h.CreatedBy, h.State = trigger.String, HandoffOrigin(createdByValue), HandoffState(st)
+	var err error
 	if h.CreatedAt, err = parseTime(createdAt); err != nil {
 		return nil, fmt.Errorf("handoff %d created_at: %w", h.ID, err)
 	}
@@ -596,4 +836,19 @@ func issueHandoffExtra(ctx context.Context, extra map[string]any) map[string]any
 	}
 	extra["handoff_id"] = id
 	return extra
+}
+
+// IssueClaim returns the live handoff in projectID claiming issueID, or ok
+// false when none does. It is scoped to the project so a refusal naming the
+// claim cannot reveal another project's handoff.
+func (s *Store) IssueClaim(ctx context.Context, projectID, issueID int64) (handoffID int64, ok bool, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT h.id FROM handoff_items hi JOIN handoffs h ON h.id = hi.handoff_id
+		WHERE hi.issue_id = ? AND h.project_id = ? AND `+claimCond, issueID, projectID).Scan(&handoffID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("read issue %d claim: %w", issueID, err)
+	}
+	return handoffID, true, nil
 }
