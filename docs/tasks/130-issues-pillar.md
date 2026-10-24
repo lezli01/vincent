@@ -346,6 +346,14 @@ from a human's is open question 6, for 130.10.
 - **Amends spec §3 row 26** ("nothing here writes to GitHub"), by a dated note
   pointing at row 36.
 
+*Narrowed 2026-10-24 ([task 137](137-handoff-pillar.md) decision 6, in effect
+once task 137.7 lands):* "only a human writes back" and "nothing closes an
+issue automatically" hold for every caller without a grant. A step of a live
+handoff task whose grant names `issue.close` or `issue.comment`, on an item of
+that handoff, is a third writer: its change is written back through the same
+outbox and attributed to a new actor, `handoff`. Ungranted MCP- and
+step-originated writes are still refused `forge_write_needs_human`.
+
 ### 11. Issue `PATCH` requires `version` — departs from spec §12.3 (2026-10-02)
 
 `PATCH /v1/issues/{id}` carries the `version` the client read; a stale one is

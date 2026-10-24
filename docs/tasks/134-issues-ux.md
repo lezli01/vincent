@@ -536,6 +536,8 @@ deleted.
 
 - GitHub write-back beyond task 130: posting comments, auto-closing on `done`,
   opening pull requests. These belong to the handoff pillar.
+  *Planned 2026-10-24 by [task 137](137-handoff-pillar.md):* handoffs and
+  their grants.
 - Sub-issues, issue templates and new issue fields.
 - Changes to the task board, or to task 130's sync and outbox.
 - A web UI.
@@ -563,7 +565,9 @@ deleted.
   keeps the branch while another unarchived main task carries it (decision
   17's "the branch goes with the last main-role task's archive").
 - The `hand_off` lane only grows until someone closes the issue; nothing
-  auto-closes a local issue.
+  auto-closes a local issue. *Addressed by [task 137](137-handoff-pillar.md)
+  (planned 2026-10-24):* a handoff claims `hand_off` issues and delivers,
+  returns or holds each one; until it lands the risk stands.
 - A live task on a closed issue sits in the hidden `done` lane. The task board
   still shows it, and its card's `attention` flags it once `done` is shown.
 

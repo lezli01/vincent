@@ -1,0 +1,698 @@
+# 137 — The handoff pillar: what becomes of an issue once its work is done
+
+**Status:** 🔄 in progress (1/14)
+
+No issue yet. Spec §3 (a new row 38, and dated notes on rows 11, 33 and 36)
+in this document's pull request, by the same exception task 130 decision 13
+and task 132 decision 14 took (open question 5, settled); §5, §8, §12, §13,
+§15 and §16 in the pull request of each item whose code makes them true.
+
+## What this is
+
+Vincent is meant to be a frame an admin builds their own AI-assisted
+development lifecycle in, not one lifecycle hard-coded. The three-pillar
+architecture (<https://blog.lezli01.is-a.dev/blog/vincent-three-pillars/>,
+2026-09-30) names the parts: **intake**, where work enters; the **workshop**,
+where it is done; and the **handoff**, where the result passes back to
+someone else — "a pull request waiting for review and a ticket comment waiting
+for its reporter equally well".
+
+Two of the three exist:
+
+| Pillar | Built by | What vincent owns |
+|---|---|---|
+| Intake | task 130, task 134 | vincent-owned issues, GitHub import and state sync, the four derived lanes, `type: issues` triggers, `issue:` on `create_task` |
+| Workshop | v0 through task 133 | tasks, workflows, worktrees, agents, checks, gates, fan-out, merge-back |
+| Handoff | **nothing** | — |
+
+The gap is recorded in three places. Task 130 decision 10: "Nothing closes an
+issue automatically — closing on task `done` belongs to the handoff pillar."
+Task 134's non-goals: "posting comments, auto-closing on `done`, opening pull
+requests. These belong to the handoff pillar." And task 134's risks: "The
+`hand_off` lane only grows until someone closes the issue."
+
+This document plans the handoff pillar and lists what else the frame is
+missing. It is the plan and the decision record; it changes no code. The
+author settled the questions that shaped it on 2026-10-24 — the grant, the
+lanes, the pull-request guard, the spec's timing, MCP writes, agent-started
+handoffs, where returned work runs, the name and the order of the frame gaps —
+and each is written in as a decision below. The remaining decisions are the
+plan's own and stand as proposed defaults unless the author answers otherwise
+before the item that needs one starts, the convention task 130's open
+questions used.
+
+### What handoff looks like today
+
+The only automated handoff in the repository is a workflow tail.
+`github-resolve-issue.yaml` ends at a **delivered branch**: its `deliver` step
+writes a file convention, `<git common dir>/vincent-delivered/<task id>/`
+(`branch`, `head.sha`, `pr-title.txt`, `pr.md`, `brief.md`, …), and the task is
+`done`. `github-iterate-work.yaml` then reads those files, stacks the branches
+into one merge train, verifies it, opens one pull request, reviews it, resolves
+the findings and merges it — all in bash, all through `gh` called from steps
+(spec §3 row 11's "agent's own path"). The issues close because the pull
+request body carries `Closes #N` and the importer later reads GitHub's close.
+
+That works, and it is the requirement's own example. What vincent cannot do
+with it:
+
+- **See it.** A handoff in flight is invisible: the issue sits in `hand_off`
+  whether nobody is handing it off or a train is mid-merge.
+- **Stop two handoffs taking one issue.** Nothing claims an issue.
+- **Record the outcome.** "Delivered", "sent back for rework" and "waiting on
+  the reporter" all look the same until GitHub's close arrives — and a
+  needs-info answer, the blog's dashed path, ends as nothing at all.
+- **Write through its own path.** A step's `vincent issue close` on an
+  imported issue is refused `forge_write_needs_human` (task 130 decision 10),
+  so automation goes round vincent with `gh`: no outbox, no crash safety, no
+  attribution, and the close comes back as an untrusted `sync` event.
+- **Offer it to anyone else.** The delivery record is a private contract
+  between two workflow files; a third workflow has to re-read 2,000 lines of
+  YAML to learn it.
+
+### What the pillar adds, in one paragraph
+
+A **delivery** becomes a first-class record a workshop task leaves behind. A
+**handoff** becomes a first-class record that claims a set of `hand_off`
+issues and is executed by an ordinary task running a handoff workflow. The
+workflow records, per issue, what became of it — **delivered**, **returned**
+to the workshop, **waiting** on someone outside, or **released** — and those
+outcomes drive the issue's close, its comment and its lane. Automated writes
+to GitHub are allowed through vincent's own routes only under a **grant** a
+human gave, by a keypress or by arming a trigger. Everything a handoff
+actually *does* — stacking, reviewing, opening pull requests, sending mail,
+deploying — stays in the admin's workflow. Vincent owns the state; the admin
+owns the behaviour.
+
+## The requirement's example, end to end
+
+The author's example, mapped onto what exists and what this plan adds. The
+YAML is proposed syntax.
+
+1. **Intake.** vincent syncs GitHub issues (exists, task 130.8).
+2. **Start.** A trigger decides which issues may start (exists, task 130.15):
+
+   ```yaml
+   # {config_dir}/triggers/start-ready.yaml
+   id: start-ready
+   enabled: true
+   source: {type: issues, project: 1}
+   match: {action: labeled, labels: ready, by: [human, sync]}
+   action:
+     type: create_task
+     workflow: github-resolve-issue
+     title: '{{ .Event.Issue.Title }}'
+     issue: '{{ .Event.issue_id }}'
+   on_fire: create
+   dedupe_key: 'issue:{{ .Event.issue_id }}:ready'
+   ```
+
+   The issue moves to `in_progress` (exists, task 134).
+3. **Workshop.** The resolve workflow's last step runs `vincent task deliver`
+   instead of writing `vincent-delivered/` (new, 137.2). The task ends `done`
+   and the issue moves to `hand_off`, its card showing the delivery (new).
+4. **Handoff trigger.** A trigger grabs a batch (new, 137.9):
+
+   ```yaml
+   # {config_dir}/triggers/nightly-train.yaml
+   id: nightly-train
+   enabled: true
+   source: {type: schedule, project: 1, cron: "0 2 * * 1-5"}
+   action:
+     type: start_handoff
+     workflow: github-handoff-train
+     select: {lane: hand_off, delivery: change, max: 8}
+     grant: [pull.create, pull.comment, pull.merge, issue.comment, issue.close]
+   on_fire: create
+   overrun: skip
+   ```
+
+   The eight issues are claimed by handoff H7; their cards read "handing off
+   (H7)".
+5. **Handoff run.** `github-handoff-train` reads `$VINCENT_HANDOFF_FILE`,
+   stacks each item's `head_sha` onto a train cut from the fresh base, builds
+   and tests it, has an agent review it, fixes what it can on the train and
+   sends back what it cannot (`vincent handoff return 7 42 --follow-up …`,
+   which queues a follow-up on issue 42's main task and moves it back to
+   `in_progress`), opens one pull request and merges it through vincent's own
+   routes under the grant.
+6. **Outcome.** `vincent handoff deliver 7 --all --close completed
+   --comment-file merged.md` closes every remaining item through the outbox,
+   attributed to H7, and the issues reach `done`.
+
+The same frame, configured differently:
+
+- **Questions answered, no code.** A workshop task on a `kind: question`
+  issue delivers `kind: reply` with an answer. A handoff with grant
+  `[issue.comment, issue.close]` posts it and closes the issue — zero agent
+  sessions.
+- **Needs info.** A workshop task that cannot proceed delivers `kind: reply`
+  with its questions. The handoff posts them and marks the item `waiting`.
+  When the reporter answers (needs gap F4 below), a trigger returns the item
+  to the workshop.
+- **Mail, chat, a deploy.** A command step in the handoff workflow runs
+  `sendmail`, `curl` to a webhook, or the deploy script, then `vincent handoff
+  deliver`. Vincent needs no adapter for any of them.
+- **A pull request per issue, reviewed by people.** A handoff fans out over
+  `.Handoff.Items`, opens one pull request per item, and marks each `waiting`.
+  The item resolves itself when GitHub's `Closes #N` closes the issue.
+
+## What this reverses
+
+Every binding record this plan overturns, narrows or keeps. Each keeps
+governing the code until the named item's pull request merges.
+
+- **Spec §3 row 11** — "Nothing on the step path reaches GitHub … every write
+  route is excluded from the MCP tool surface" — **narrowed** (decision 6) to
+  "nothing on the step path reaches GitHub through vincent **without a grant a
+  human gave**". "A `merge` step type is **not licensed**" is **kept**: no step
+  type is added; a granted step calls an existing route.
+- **Task 068 decision 1**, "no step type, default workflow or automatic
+  behaviour calls a write", and its restatement in `internal/github/doc.go` —
+  **narrowed** the same way.
+- **Task 130 decision 10**, only a human writes back and an agent's write to
+  an imported issue is refused `forge_write_needs_human` — **narrowed**
+  (decision 6): a granted handoff is a third path, with its own actor.
+- **Task 069 decision 3** (the pull-request write routes are excluded from
+  MCP) — **narrowed** (decision 6, open question 2): they appear as tools on
+  the per-step MCP endpoint of a granted handoff task, and nowhere else. The
+  shared `/mcp` endpoint keeps excluding them.
+- **Task 096 decision 1**'s replay exclusion list (pull-request create
+  excluded from trigger replay) — **kept**. A trigger still never calls a
+  pull-request route; it starts a handoff, and the handoff's task calls the
+  route under the grant the trigger file carries.
+- **Task 096 decision 1**, "a trigger is a robot pressing a key a human could
+  have pressed" — **kept**: `start_handoff` replays `POST /v1/handoffs`, which
+  a human reaches from the TUI and the CLI with the same grant.
+- **Task 130 decision 3** and **task 134 decision 1**, lanes "derived, never
+  stored" — **kept**. The handoff sub-status (decision 5) is derived from
+  handoff rows, as the lane is derived from task rows. No issue state is added;
+  decision 3's anticipated "handoff pillar's `waiting`" is a derived marker,
+  not a state GitHub would have to preserve.
+- **Task 134 decision 2**, the lane rules — **kept unchanged**. A handoff task
+  carries no `issue_id` (decision 2), so it never counts as an issue's work.
+  The trigger guide's warning that "a `lane: hand_off` trigger that creates a
+  task for the same issue loops through the lanes" stops applying to
+  `start_handoff`, and keeps applying to `create_task`.
+- **Task 130 decision 5**, one `tasks.issue_id` per task — **kept**. A handoff
+  links many issues through its items, not through the task row.
+- **Task 130 decision 20.3**, "edits, comments, deletes … fire nothing" —
+  **departed from** by frame gap F4, not by this pillar's core.
+- **The repository's `vincent-delivered/` convention** — **superseded** by the
+  delivery record (decision 3), the way task 130.14 superseded `gh issue view`
+  with `$VINCENT_ISSUE_FILE`.
+
+## Decisions
+
+Recorded 2026-10-24. Decisions 4, 5, 6 and 11 were settled by the author, as
+were open questions 1, 2, 3, 5, 7 and 8; each says so where it is settled. Decisions 1, 2, 3, 7, 9, 10 and
+12 are the plan's own and stand as proposed defaults. Each decision is
+**taken now; its effect lands with its item**, and the older record keeps
+governing the code until that item's pull request merges.
+
+### 1. A handoff is a record, executed by an ordinary task (2026-10-24)
+
+Two new tables. `handoffs(id, project_id, task_id, trigger_id, grant_json,
+created_by, created_at)` and `handoff_items(handoff_id, issue_id,
+delivery_task_id, delivery_json, outcome, outcome_at, outcome_by, note)`. The
+run is the task `handoffs.task_id` names: a root task on its own
+`vincent/{id}-{slug}` branch, cut from the project's base with task 099's
+fresh-base fast-forward, running a handoff workflow (decision 7). It has steps,
+retries, gates, cost caps, transcripts and recovery because it is a task. A
+task is a handoff task because a `handoffs` row points at it; no `tasks`
+column is added.
+
+The handoff has no state machine of its own. It is **live** while its task is
+unsettled, **waiting** while its task is settled and some item is `waiting`,
+and **settled** otherwise.
+
+*Alternatives beaten:*
+
+- **Convention only** — workflows and `gh`, as today. Every limitation in
+  "What handoff looks like today" stays, and each admin re-solves claiming and
+  outcomes in bash.
+- **A handoff executor beside tasks.** A second engine, a second state
+  vocabulary beside `internal/taskstate`, and a second admission path beside
+  the scheduler — each one an ownership invariant in `CLAUDE.md`.
+- **A handoff as a step type.** A step acts inside one task's worktree; a
+  handoff spans many issues' branches and outlives any one task's slot (the
+  `waiting` outcome).
+
+### 2. An item is an issue; an issue is in at most one live handoff (2026-10-24)
+
+A handoff's items are **issues**, each carrying the delivery it is handed off
+with (decision 3), snapshotted onto the item at claim time. An issue — not a
+task — is the unit because task 134 gives an issue one main branch across
+successive main tasks: what is handed off is that branch at its latest
+delivery.
+
+**Claiming** happens in the create transaction, so the single writer makes it
+race-free, and a partial unique index on `handoff_items(issue_id)` over
+unresolved and `waiting` items makes a second live claim impossible. An issue
+is **eligible** when it is open, in the `hand_off` lane, unclaimed, and its
+current delivery (identified by `delivery_task_id` and `head_sha`) has not
+already been `delivered` by an earlier handoff. That last clause is what lets
+a handoff deliver without closing — a staging deploy, an email — without the
+next selection picking the issue up again, while a follow-up that produces a
+new delivery makes it eligible once more.
+
+A handoff spans **one project**: one repository, one base.
+
+A claim is held from creation, so an `on_fire: propose` handoff — created
+`paused` — holds its issues until a human resumes or cancels it. That is task
+122's "an unreviewed proposal holds its group", applied to issues, and the card
+says so.
+
+### 3. A delivery is the workshop's result, and every done task has one (2026-10-24)
+
+`vincent task deliver` (`POST /v1/tasks/{id}/delivery`, an MCP tool on the
+step endpoint) records, on the running task:
+
+| Field | Meaning |
+|---|---|
+| `kind` | `change` (commits to integrate), `reply` (an answer, a refusal or questions, to be posted), or `none` |
+| `title`, `body` | Plain-language title and Markdown body — what a pull request or a comment would say |
+| `summary` | What the change is for: the brief, a conflict resolver's best input |
+| `head_sha` | The commit the workshop verified; HEAD at the call by default |
+| `branch`, `base` | Filled by the daemon from the task |
+| `close_reason` | Optional suggestion: `completed`, `not_planned`, `duplicate` |
+| `proof` | Optional: what proved it — tests run, or "none" with why |
+
+It is one JSON column on `tasks`; a later call replaces it, and a follow-up
+run's call replaces the previous run's. A `done` task that never called it has
+an **implicit delivery**: `change` when its branch has commits past its base,
+`none` otherwise, titled and described by the task. Every `hand_off` issue
+therefore has a delivery, and task 134's lane meaning is unchanged.
+
+The issue DTO gains `delivery`, read from its latest `done` root task, so the
+board can say what is waiting to be handed off.
+
+*Alternative beaten:* keeping the file convention and documenting it. It lives
+in the git common directory, which a containerized handoff cannot assume is
+mounted, it cannot be listed or rendered by any client, and its schema is
+whatever the last workflow to write it decided.
+
+### 4. Outcomes, per item (2026-10-24)
+
+`vincent handoff deliver|return|wait|release <handoff> <issue>...` (`--all`
+for every unresolved item), over `POST /v1/handoffs/{id}/items/{issue_id}/…`
+and MCP tools on the step endpoint. Each records `outcome`, `outcome_at`,
+`outcome_by` and an optional `note`, and may post `--comment-file` on the
+issue.
+
+- **`deliver [--close completed|not_planned|duplicate|none]`** — the work left.
+  The issue is closed with the reason unless `none`; `none` leaves it open and
+  out of later selections (decision 2).
+- **`return --follow-up PROMPT`** — the work comes back. A follow-up run (task
+  027) is queued on the issue's latest main-role task — the one task 134
+  decision 14 allows, since a predecessor that handed its worktree on answers
+  `409` — carrying the prompt. The claim is released and the follow-up moves
+  the issue back to `in_progress` through the lane rules that already exist.
+  `--paused` holds the follow-up for a human.
+- **`wait`** — the result is with someone outside: a pull request in review, a
+  question with the reporter. The item **outlives the handoff's task**, holds
+  its claim, and resolves itself as `delivered` when the issue closes, by any
+  actor — which is how a pull request's `Closes #N`, imported by sync, ends a
+  waiting item with no extra wiring. A human or a reaction may resolve it
+  earlier with any other verb.
+- **`release`** — the handoff gives the issue back untouched: claim dropped,
+  still eligible.
+
+When a handoff's task settles, every item still unresolved is **released**
+automatically, recorded `outcome_by: settle`. An aborted handoff therefore
+frees its issues; a `done` one that forgot an item does too, visibly.
+
+*Settled by the author 2026-10-24 (open question 7):* `return` is a follow-up
+on the issue's latest main-role task; `--side` opts into a side task with
+task 134's `merge_back` instead. *Alternatives beaten:* always a new main task,
+which loses the earlier run's context, and a per-handoff `return:` policy with
+no default.
+
+### 5. The lane gains a handoff marker, not a fifth lane (2026-10-24)
+
+The issue DTO, the list row and `vincent issue ls` gain a derived `handoff`
+block on `hand_off` issues: `{state, handoff_id, task_id}`, with `state` one of
+`pending` (eligible, unclaimed), `claimed` (in a live handoff), `waiting` and
+`delivered` (delivered without a close). The TUI card renders it the way it
+renders `attention`. `?handoff=pending` filters on it, and `select:`
+(decision 8) reads the same SQL fragment, so the board, the CLI and a trigger
+can never disagree about what is eligible.
+
+A `waiting` or `claimed` issue whose work restarts — the handoff itself filed
+a fix task for it — is `in_progress`, as task 134 decision 2 already says; the
+marker stays on the card until the handoff resolves the item.
+
+*Alternative beaten:* a fifth stored or derived lane (`handing_off`,
+`in_review`). The lane is "where the work is"; the marker is "what the handoff
+is doing with it". A fifth lane would split one column of finished work into
+two by a fact a sub-status already carries, and every board, filter and
+trigger's `lane:` vocabulary would grow with it. Configurable lanes, the
+other alternative, would have to be stored, reversing task 130 decision 3 and
+task 134 decision 1.
+
+*Settled by the author 2026-10-24 (open question 1):* four lanes and the
+marker. An admin's stages beyond the four are labels and `kind`.
+
+### 6. Automated forge writes need a grant a human gave (2026-10-24)
+
+A handoff carries a **grant**: a closed set of capabilities over existing
+routes.
+
+| Capability | Route |
+|---|---|
+| `issue.comment` | `POST /v1/issues/{id}/comments` on an imported issue |
+| `issue.close` | `POST /v1/issues/{id}/close` (and the close in `deliver`) on an imported issue |
+| `pull.create` | `POST /v1/tasks/{id}/github/pull/create` |
+| `pull.comment` | `…/github/pull/comment` |
+| `pull.merge` | `…/github/pull/merge` |
+| `pull.close` | `…/github/pull/close`, `/reopen` |
+| `checks.rerun` | `…/github/pull/checks/rerun` |
+
+**One forge-write guard** covers issue and pull-request writes. A write from an
+`agent` caller (an MCP call, or a request carrying `X-Vincent-Task-Id`,
+`internal/api/issues.go:296`) is allowed when the caller's task is a live
+handoff task whose grant names the capability **and** whose scope covers the
+target: an item's issue, the handoff task's own pull request, or an item's
+delivering task's pull request. Otherwise it is refused
+`forge_write_needs_human`, as today. Local issues need no grant, as today.
+
+Granted writes are attributed to a new actor, **`handoff`**, beside `human`,
+`agent` and `sync` in `internal/issuestate`, and the issue events carry
+`handoff_id`. An imported issue's granted state change enqueues on task
+130.10's outbox exactly as a human's does. A `type: issues` trigger sees
+`by: handoff` and treats it as trusted, like every local actor, and
+`match.by` can exclude it to break an echo loop.
+
+**Who grants:**
+
+- **A human**, starting a handoff from the TUI or the CLI. The keypress is the
+  consent (task 069 decision 2), and the TUI form shows each capability as a
+  checkbox, off by default.
+- **A trigger file**, through `action.grant`. Triggers are global, off twice,
+  and armed only by a human (task 098 decision 3's never-arm rule, enforced by
+  `vincent trigger apply`). The TUI asks before writing a non-empty grant, as
+  it asks before `permission: workflow`. `create-trigger` and
+  `update-triggers` may stage a grant and never arm it.
+- **Never an agent.** An MCP `handoff_start` may only create a grant-less
+  handoff (open question 3), the way an MCP caller may stage a trigger and
+  never arm it.
+
+The default grant is empty. A grant-less handoff can still claim, record every
+outcome, and close and comment on local issues.
+
+**Over MCP**, the pull-request write routes become tools on the per-step
+endpoint (`/mcp/step/{run_id}`) of a granted handoff task only, checked by the
+same guard, because a `restricted` agent step has no shell and MCP is its only
+way to act. The shared `/mcp` endpoint keeps excluding them, so task 069
+decision 3 holds for every other caller.
+
+**This also closes an inconsistency.** Today only the issue routes consult the
+step marker: `issueActor` is called from `internal/api/issues.go` and
+`issuecomments.go` alone, so a step's `vincent github pr merge` is accepted as
+a human's while its `vincent issue close` is refused. Under the one guard a
+step's ungranted pull-request write is refused too. No workflow in this
+repository calls `vincent github pr` writes — they use `gh` — but a user's
+might, so the release notes carry it as a breaking change (open question 8).
+
+The marker header stays what task 130 decision 17 says it is: best-effort,
+not a privilege boundary (spec §16). A full-auto step can unset its
+environment, or call `gh` directly, and the grant does not pretend otherwise.
+What it decides is what **vincent itself** will do for automation, and it moves
+automated handoff from the `gh` path vincent cannot see onto the outbox path it
+can.
+
+*Alternative beaten:* keeping forge writes human-only and leaving automation on
+`gh`. The refusal prevents nothing — row 11 keeps the agent's own path open —
+and costs crash safety, attribution, echo suppression and trust: a close made
+by the admin's own automation comes back as an untrusted `sync` event that an
+`issues` trigger must allow-list against the issue's author. *Also beaten:*
+grants for issue writes only, with pull-request create and merge left on `gh`
+— the requirement's own example merges, and would stay invisible.
+
+*Settled by the author 2026-10-24:* the grant model as written; the one guard
+over issue and pull-request writes, accepting the break for ungranted step
+calls with release notes rather than a deprecation release (open question 8);
+pull-request tools on a granted handoff's per-step MCP endpoint only (open
+question 2); and agents may start grant-less handoffs only (open question 3),
+not child handoffs within their own grant.
+
+### 7. A handoff workflow declares itself and gets its items (2026-10-24)
+
+A workflow declares `role: handoff` to be offered when a handoff starts; one
+that does not is refused there, and one that does is not offered by the
+new-task form. It sees:
+
+- **`.Handoff`** in every §8.4 template: `ID`, `Grant`, and `Items`, each with
+  `.Issue` (the shape a task's `.Issue` has), `.Delivery`, `TaskID`, `Branch`
+  and `HeadSHA`. Zero-valued outside a handoff task, like `.Issue`.
+- **`$VINCENT_HANDOFF_FILE`**, the same content as JSON, written into the
+  worktree's git dir before every attempt (task 130 decision 23.3's
+  placement). Each item embeds the `$VINCENT_ISSUE_FILE` shape, so a
+  workflow's `jq` for one issue works on each item.
+- **`fan_out` over the items**, with task 080's lanes-from-a-list, so "one pull
+  request per issue" is a lane per item.
+- **`vincent workflow render --handoff-file F`**, previewing a handoff
+  workflow against a sample (task 044).
+
+The skills and the five built-ins are re-read in the same piece of work, per
+`CLAUDE.md`'s rule, and `update-workflows`' checklist gains the line.
+
+### 8. Starting a handoff, and `select:` (2026-10-24)
+
+`POST /v1/handoffs {project_id, workflow, issue_ids | select, grant, title,
+paused}` creates the handoff, claims its items and creates its task in one
+transaction. `select` is evaluated inside that transaction:
+
+```yaml
+select:
+  lane: hand_off            # the only lane a handoff selects from, in v1
+  delivery: change          # change | reply | none, or a list
+  kind: [bug, feature]
+  labels: [ready-to-ship]
+  max: 8
+  order: priority           # issue priority, then oldest delivery first
+```
+
+Explicit `issue_ids` must each be eligible, or the create is a `409` naming the
+first that is not. A selection that finds nothing is `409 invalid_state`,
+`details.reason: nothing_to_hand_off`, which a trigger's ledger records
+`refused` — not delivered, so the dedupe key is not spent.
+
+Surfaces: `vincent handoff start`; the TUI issues board, where the bulk
+selection of task 011 picks `hand_off` cards and one key opens the handoff
+form; a trigger's `action.type: start_handoff`; and MCP, grant-less.
+
+**Batching needs no new trigger primitive.** A schedule plus `select` is the
+nightly train. An event-driven batch is task 122's overrun:
+
+```yaml
+source: {type: issues, project: 1}
+match: {action: lane_changed, lane: hand_off, by: task}
+action:
+  type: start_handoff
+  workflow: github-handoff-train
+  select: {lane: hand_off, max: 8}
+overrun: queue_coalesce
+```
+
+The first issue to reach `hand_off` starts a handoff; while it runs, later
+arrivals coalesce into one held event, which fires when the handoff's task
+settles and selects everything that accumulated.
+
+### 9. Trains, reviews and pull requests stay in workflows (2026-10-24)
+
+Vincent ships no merge-train step, no review step and no `merge` step type
+(row 11 kept). It ships **example handoff workflows** — one pull request per
+issue, a merge train, comment-and-close, and a notify-only handoff — and splits
+the repository's own `github-iterate-work` into the workshop dispatcher it
+already includes and a `github-handoff-train` driven by a trigger. A helper
+such as `vincent handoff stack` is considered only once two shipped workflows
+carry the same bash for it — the blog's "extract first, let the second adapter
+prove the boundary".
+
+### 10. No in-tree target adapters (2026-10-24)
+
+GitHub is the only target vincent writes natively, because it is the only
+source vincent syncs and its outbox exists. Every other target — GitLab, Jira,
+mail, chat, a deploy — is a command step in the admin's handoff workflow, with
+credentials from the daemon's inherited environment (§2's secret-management
+non-goal, kept). This is task 096 decision 2's line for sources, applied to
+targets. When a second intake provider lands (frame gap F5), its write-back
+arrives with it.
+
+### 11. The name (2026-10-24)
+
+The entity is **handoff**: `/v1/handoffs`, `vincent handoff`, `.Handoff`. It
+collides with task 074's **chat handoff** (`vincent chat handoff`, the
+`handed_off` chat state, `Store.HandoffChat`), which hands a chat's worktree to
+a task. The chat verb keeps its name under its own namespace, and every
+document says "chat handoff" in full where both could be meant.
+
+*Alternatives beaten:* "delivery", which decision 3 needs for the workshop's
+result and the resolve workflows already use for it; "closure", which reads as
+"the issue closed" when `wait` and `return` are outcomes that do not close; and
+renaming the chat feature, which breaks a shipped CLI verb for a word.
+
+*Settled by the author 2026-10-24:* keep `handoff`.
+
+### 12. Events and surfaces (2026-10-24)
+
+- **Events:** `handoff.created`, `handoff.item_changed {handoff_id, issue_id,
+  from, to, by}`, `handoff.settled`. `issue.lane_changed` is unchanged; the
+  marker change rides `handoff.item_changed`.
+- **Triggers:** a `type: issues` source gains an opt-in `handoff_changed`
+  action, as task 134.7 made `lane_changed` opt-in.
+- **TUI:** the `hand_off` card's marker and delivery kind; an issue detail
+  Handoff section listing every handoff that took the issue and its outcome; a
+  handoff task's workspace Overview listing its items. Handoff tasks are tasks,
+  so they sit on the task board with no new view.
+- **CLI:** `vincent handoff start|ls|show|deliver|return|wait|release`.
+- **MCP:** the item verbs and `handoff_show` on the step endpoint, the
+  pull-request write tools on a granted handoff's step endpoint, and
+  `handoff_start` grant-less (decision 6).
+
+## The rest of the frame
+
+What else stands between vincent and "a frame an admin builds their own
+lifecycle in". Each is its own task document when it starts. *Order settled by
+the author 2026-10-24:* F1 and F4 first, then F2 and F3; the rest follow.
+
+| # | Gap | Why the frame needs it | Proposed shape | Touches |
+|---|---|---|---|---|
+| F1 | **Selecting work to start** | "A trigger listens which issues can be started" — today a trigger fires per event, and picking *N ready issues* takes a dispatcher workflow (`github-resolve-issue-multiple`) | decision 8's `select:` on `create_task` too: `lane: open`, `kind`, `labels`, `max`, `order` | task 096 decision 1 (kept) |
+| F2 | **Dependencies and readiness** | `github-resolve-issue-multiple`'s survey derives "ready" from GitHub's blocked-by relation in bash | `issue_links` (`blocks`, `parent`), mirrored from GitHub and local, and a derived `ready` that `select` reads | task 134 non-goal "sub-issues" (departed from) |
+| F3 | **WIP limits** | A kanban frame caps work per stage; the §11 caps count tasks, not issues | `issues.wip` per project and lane, honoured by `select` and queued, never refused, at the cap | task 134 decision 10's queue-not-409 (kept) |
+| F4 | **Comments as events** | The needs-info loop: a `waiting` item must wake when the reporter answers | `commented` on `type: issues`, `by`-attributed; `sync` comments untrusted, so `allowed_actors` applies | task 130 decision 20.3 (departed from) |
+| F5 | **A generic intake provider** | Jira, Linear, a markdown backlog, a mailbox — and handoff write-back to them | a `command`-backed issue source: a script prints issues as NDJSON into the issue set under provider `command:<id>`, and a write-back command receives state changes and comments from the outbox | task 130 decision 15.1, "the first provider does not design for the second" (superseded once a second exists) |
+| F6 | **Flow metrics** | An admin tuning a lifecycle needs lead time, time per lane, throughput, rework and cost per issue | derived from `issue.lane_changed`, handoff outcomes and task costs: `GET /v1/projects/{id}/flow`, `vincent issue flow`, a project-overview panel | §17 |
+| F7 | **The pipeline, visible** | The lifecycle is spread over trigger files; nobody can see that `hand_off` has no trigger draining it | a flow panel listing, per lane, the armed triggers that watch or select from it, and a `vincent doctor` row for a lane nothing drains | task 132's project overview |
+| F8 | **A starter kit** | An empty frame is a hard start | `vincent sdlc init`, staging a coherent set — intake trigger, resolve workflow, handoff trigger, handoff workflow — as a proposal the human arms; the skills gain a handoff chapter | task 098 decision 3 (kept) |
+| F9 | **Approval before an external effect** | Some teams want a person on every merge | a grant capability may be `approve`-qualified (`pull.merge: approve`), parking the route call as a gate; this is task 134 decision 18's `merge_back.approve`, generalized | task 134 decision 18 |
+| F10 | **Outward signals on outcomes** | Stakeholders hear about results, not task states | `notify.on` accepts handoff outcomes, with the item in the envelope | task 046 decision 4 (`notify.on` is §6's state vocabulary) and decision 5 (the envelope) |
+
+F1 and F4 are what the requirement's example and the needs-info path need
+first; F2 and F3 make selection trustworthy at scale; F5 is what makes the
+frame vendor-independent at both ends, which is the blog's thesis.
+
+## Non-goals
+
+- A merge-train, review or deploy engine in Go (decision 9).
+- Target adapters beyond GitHub (decision 10).
+- Configurable lanes. The four lanes are derived from facts vincent can prove;
+  an admin's own stages are labels and `kind`, which triggers and `select`
+  already branch on (open question 1).
+- A handoff across projects (decision 2).
+- Writing issue title, body or labels back to GitHub (task 130 decision 9,
+  kept).
+- Webhooks from GitHub.com (task 096's transport line, kept).
+
+## Risks
+
+- **A grant is a standing authorization.** An armed trigger with
+  `pull.merge` merges at 2 a.m. with no keypress. The mitigations are task
+  096's: off twice, `on_fire: propose` by default, the TUI's confirmation, and
+  F9 for teams that want a person on each merge.
+- **A forgotten proposal holds issues** (decision 2). The card names the
+  handoff and its `paused` state, and `vincent handoff ls` lists claims.
+- **`waiting` items accumulate.** A pull request nobody reviews keeps its
+  issue claimed indefinitely. The issue detail shows the age; F6's metrics
+  surface it.
+- **Breaking: ungranted pull-request writes from steps are refused**
+  (decision 6). No in-repository workflow is affected.
+- **Prompt injection reaches a granted agent.** An issue body flows into a
+  handoff agent that can merge. The answer is task 096's: `restricted` agent
+  steps by default under a trigger, containers advisory, and grants as narrow
+  as the workflow needs.
+
+## Open questions
+
+Each has a proposed default, which stands unless the author answers otherwise
+before the item that needs it starts.
+
+1. **A fifth lane, or configurable lanes?** *Proposed:* neither — a derived
+   marker (decision 5), and stages beyond the four are labels and `kind`.
+   *Settled 2026-10-24 by the author:* the default stands (decision 5).
+2. **May a granted handoff's agent reach pull-request writes over MCP?** A
+   `restricted` agent has no shell, so MCP is its only path. *Proposed:* yes,
+   on the per-step endpoint of a granted handoff task only, through the same
+   guard; the shared `/mcp` endpoint keeps excluding them. *Settled
+   2026-10-24 by the author:* the default stands (decision 6).
+3. **May an agent start a handoff?** *Proposed:* yes, grant-less only.
+   *Settled 2026-10-24 by the author:* the default stands; a granted agent
+   may not start child handoffs within its own grant (decision 6).
+4. **Does a `waiting` item survive its handoff task's archive?** *Proposed:*
+   yes. The rows belong to the handoff, not the worktree.
+5. **Does spec §3 record this ahead of its code?** Task 130 decision 13 and
+   task 132 decision 14 did, by the author's explicit exception. *Proposed:*
+   yes, row 38, saying in its own note that it is ahead of its code.
+   *Settled 2026-10-24 by the author:* yes, in 137.1's pull request — an
+   explicit exception to `README.md`'s same-pull-request rule, covering §3
+   only, as task 130 decision 13's did.
+6. **Must an issue have an explicit delivery to reach `hand_off`?**
+   *Proposed:* no — the implicit delivery (decision 3) keeps task 134's lane
+   meaning.
+7. **Where does `return` send the work?** *Proposed:* a follow-up on the
+   issue's latest main-role task; a side task (task 134's `merge_back`) only
+   when the handoff asks for one with `--side`. *Settled 2026-10-24 by the
+   author:* the default stands (decision 4).
+8. **Is refusing ungranted pull-request writes from steps worth the break?**
+   *Proposed:* yes; the alternative is a guard on issues and none on pull
+   requests, which is the inconsistency decision 6 names. *Settled 2026-10-24
+   by the author:* yes, as a breaking change in the release notes, with no
+   deprecation release (decision 6).
+
+## Tasks
+
+In delivery order. Items without a `Depends:` can proceed in parallel. Each
+item amends the spec sections and public pages its code makes true, in its own
+pull request.
+
+- [x] **137.1** This document; the dated notes on task 130 decision 10, task
+  068 decision 1, task 069 decision 3 and task 134's risks and non-goals; spec
+  §3 row 38, ahead of its code (open question 5), with dated notes on rows 11,
+  33 and 36. ✓ 2026-10-24
+- [ ] **137.2** The delivery: a `tasks.delivery_json` migration, `POST
+  /v1/tasks/{id}/delivery`, `vincent task deliver`, its MCP tool, the implicit
+  delivery, and `delivery` on the task and issue DTOs (decision 3). Spec §5.3,
+  §5.6, §13.2.
+- [ ] **137.3** The repository's resolve workflows move off
+  `vincent-delivered/` onto `vincent task deliver`, and `github-iterate-work`
+  reads deliveries over the API. Depends: 137.2.
+- [ ] **137.4** `handoffs` and `handoff_items`, the claim index, eligibility
+  SQL shared with the lane fragments (`internal/store/issuelane.go`), the
+  `handoff` actor, and `handoff.*` events (decisions 1, 2, 12). Depends: 137.2.
+- [ ] **137.5** `POST /v1/handoffs` with `issue_ids` and `select`, the read
+  routes, apiclient, `vincent handoff start|ls|show`, and grant-less MCP
+  (decision 8). Depends: 137.4.
+- [ ] **137.6** The item verbs, release on settle, resolve-on-close for
+  `waiting`, and `return` as a follow-up (decision 4). Depends: 137.5.
+- [ ] **137.7** The grant and the one forge-write guard over issue and
+  pull-request writes; the outbox under the `handoff` actor; the pull-request
+  tools on a granted handoff's per-step MCP endpoint; the restatement in
+  `internal/github/doc.go`; spec §13.4, §16 and the security model
+  (decision 6). Depends: 137.4.
+- [ ] **137.8** `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
+  over items and `vincent workflow render --handoff-file`; the
+  `vincent-workflows` skill, the five built-ins re-read and the
+  `update-workflows` checklist line (decision 7). Depends: 137.5.
+- [ ] **137.9** `action.type: start_handoff` with `select` and `grant`, the
+  TUI's grant confirmation, the `handoff_changed` action on `type: issues`;
+  the `vincent-triggers` skill and `update-triggers`' checklist line
+  (decisions 6, 8, 12). Depends: 137.5, 137.7.
+- [ ] **137.10** The derived `handoff` marker on the issue DTO, `?handoff=`,
+  and the CLI's lane column (decision 5). Depends: 137.4.
+- [ ] **137.11** The TUI: the `hand_off` card's marker and delivery, bulk
+  selection and the handoff form with its grant checkboxes, the issue detail's
+  Handoff section, and the handoff task's Overview. Depends: 137.6, 137.10.
+- [ ] **137.12** Example handoff workflows under `examples/`, and
+  `github-iterate-work` split into its dispatcher and `github-handoff-train`
+  with a trigger (decision 9). Depends: 137.8, 137.9.
+- [ ] **137.13** `scripts/137-gate.sh` on all three platforms, against
+  `cmd/fakegh` and `cmd/fakeagent`: claim exclusivity, an ungranted write
+  refused and a granted one written back through the outbox, `wait` resolved by
+  a sync close, `return` moving the issue to `in_progress`, an aborted handoff
+  releasing its items. Wired into `gate-group`'s lightest group. Depends: 137.6,
+  137.7.
+- [ ] **137.14** `docs/guides/handoff.md`, the features page, the API, CLI,
+  configuration and template references, and the screenshot seed with new
+  tapes appended at the end of `do_capture`. Depends: 137.11, 137.12.

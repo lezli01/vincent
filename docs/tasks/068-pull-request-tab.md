@@ -56,6 +56,14 @@ to GitHub, and they are what makes this task large.
 > nothing on the step path reaches GitHub, as this decision holds. In effect
 > once task 130.10 lands.
 
+> **Narrowed 2026-10-24 — [task 137](137-handoff-pillar.md) decision 6.**
+> "Nothing on the step path reaches GitHub" now holds for every step without
+> a grant a human gave. A step of a live handoff task whose grant names the
+> capability, and whose scope covers the target, may call this decision's
+> write routes; every other step's call is refused `forge_write_needs_human`,
+> the pull-request routes included. A `merge` step type is still not
+> licensed. In effect once task 137.7 lands.
+
 Row 11 reads "Delivery: owned entirely by workflow steps; no hardcoded
 push/PR/merge behavior", and it has been reaffirmed verbatim three times since
 — task 052 decision 4 ("vincent still pushes nothing, opens nothing and merges

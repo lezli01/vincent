@@ -71,6 +71,13 @@ record rows say so in place.
    in its own worktree and can push and run `gh pr create` there, which is row
    11's original path and stays open.
 
+   *Narrowed 2026-10-24 ([task 137](137-handoff-pillar.md) decision 6, in
+   effect once task 137.7 lands):* the pull-request write routes become tools
+   on the per-step MCP endpoint of a **granted handoff task**, checked by the
+   grant's guard, because a `restricted` agent step has no shell and MCP is its
+   only way to act. The shared `/mcp` endpoint keeps excluding them, so this
+   decision holds for every other caller.
+
 4. **No eligibility guardrails beyond branch-and-no-live-link.** Everything
    else is reported by the push or the create failing, with a named reason.
    Three consequences, stated rather than discovered:
