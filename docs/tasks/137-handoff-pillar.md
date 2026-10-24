@@ -679,6 +679,37 @@ which makes every existing workflow add `--ready` to keep its flow; and
 keeping it automatic, under which a handoff trigger grabs an issue the moment
 its first task finishes, before a human can decide it needs a second.
 
+*Amended 2026-10-24 (task 137.15, issue #848), settled by the author when the
+item was evaluated.* Three gaps in the decision as written:
+
+1. **An absent `ready` reads as ready, and there is no migration.** The last
+   bullet above is replaced. The lane SQL reads a finished root task whose
+   delivery is NULL, or has no `ready` key, as ready — the old automatic rule —
+   spelled once (`COALESCE(json_extract(t.delivery_json, '$.ready'), 1)`).
+   Every write from this change on stores `ready` explicitly. A migration
+   cannot compute a delivery's `kind`, so it would either leave the 137.2
+   backfill skipping rows for ever or leave issues not ready until the
+   backfill finished; `ready_by: migration` is never written.
+2. **A correction keeps readiness.** `vincent task deliver` on a `done` task
+   replaces the delivery's text and keeps its stored `ready`/`ready_by`;
+   `--ready` there is a mark attributed like `vincent issue ready` (`human`,
+   or `agent` over MCP). Only `vincent issue unready` withdraws readiness. On
+   a running task the last call wins: `--ready` stores `ready_by: task`, and a
+   later call without it clears it.
+3. **A side-only issue is `in_progress`, idle.** The latest delivery stays the
+   main-line one. An issue whose only finished work is a side task whose
+   merge-back never ran has finished work but no ready main-line delivery, so
+   it waits in `in_progress`; this keeps decision 3's "every `hand_off` issue
+   has a delivery". It is the one lane that moves on upgrade (it was
+   `hand_off`), and `vincent issue ready` on it is refused with
+   `issue_no_finished_work`.
+
+`ready_by` is `workflow`, `task`, `human` or `agent`. An `auto` workflow
+stamps `ready_by: workflow` at `→ done` unless a step already said `--ready`;
+it cannot say "not ready". The refusals are `409 invalid_state` with
+`issue_work_running`, `issue_no_finished_work`, `issue_in_handoff` and, for
+`unready` outside `hand_off`, `issue_not_hand_off`.
+
 ### 14. A claimed issue takes no new workshop tasks (2026-10-24)
 
 While a live handoff claims an issue — `claimed` or `waiting` — `POST
@@ -884,7 +915,7 @@ pull request.
 - [ ] **137.14** ([#847](https://github.com/lezli01/vincent/issues/847)) `docs/guides/handoff.md`, the features page, the API, CLI,
   configuration and template references, and the screenshot seed with new
   tapes appended at the end of `do_capture`. Depends: 137.11, 137.12.
-- [ ] **137.15** ([#848](https://github.com/lezli01/vincent/issues/848)) Readiness: the workflow's `hand_off: auto|explicit`, `vincent
+- [x] **137.15** ([#848](https://github.com/lezli01/vincent/issues/848)) Readiness: the workflow's `hand_off: auto|explicit`, `vincent
   task deliver --ready`, `vincent issue ready|unready` with their routes and
   MCP tools, the mark on the latest delivery stamped at `→ done` from the
   snapshot, a merge-back carrying its source's readiness, the lane SQL's and
@@ -892,4 +923,5 @@ pull request.
   issue's lane on upgrade, and the workflow editor's row for the key (task
   086's coverage test); spec §5.2, §5.6, §13.2 and §13.3, the workflow-schema
   reference, the `vincent-workflows` skill and `update-workflows`' checklist
-  line (decision 13). Depends: 137.2. Added 2026-10-24.
+  line (decision 13). Depends: 137.2. Added 2026-10-24. ✓ 2026-10-24 — with
+  no migration (decision 13's amendment).
