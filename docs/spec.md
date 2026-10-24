@@ -1186,8 +1186,8 @@ whether it means issues too. `internal/issuestate` is its one definition.
 
 | Action | From → to | Who |
 |---|---|---|
-| `close` (reason) | `open` → `closed` | human, agent, sync |
-| `reopen` | `closed` → `open` | human, agent, sync |
+| `close` (reason) | `open` → `closed` | human, agent, handoff, sync |
+| `reopen` | `closed` → `open` | human, agent, handoff, sync |
 | `remote_closed` (reason) | → `closed` | sync only |
 | `remote_reopened` | → `open` | sync only |
 
@@ -10926,7 +10926,8 @@ the issue is already in — appends nothing. Six kinds:
 | `issue.comment_updated` | `{ id, comment_id, by }` — *added 2026-10-03 (task 130.16)*: a mirrored comment edited on GitHub, updated in place; `by` is always `sync`, and an unchanged re-list emits nothing |
 | `issue.deleted` | `{ id, by }` |
 
-`by` is `human`, `agent` or `sync` (§5.6). No payload carries a title, a body
+`by` is `human`, `agent`, `sync` or `handoff` (§5.6; `handoff` *added
+2026-10-24, task 137.4*). No payload carries a title, a body
 or comment text: a client re-fetches what it renders. None of them wakes the
 scheduler — admission depends on nothing about an issue. `task.created`'s
 payload gains `issue_id` for a task created from an issue, omitted (not null)
@@ -11830,6 +11831,31 @@ CREATE TABLE issue_sync_outbox (       -- an imported issue's state write-back (
 );
 CREATE INDEX issue_sync_outbox_due_idx ON issue_sync_outbox (status, next_attempt_at);
 CREATE INDEX issue_sync_outbox_issue_idx ON issue_sync_outbox (issue_id, id);
+
+CREATE TABLE handoffs (                -- §5.7 (task 137.4, migration 0046)
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  task_id     INTEGER NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE, -- the handoff's own task
+  trigger_id  TEXT,                            -- the trigger that created it, or NULL
+  grant_json  TEXT NOT NULL DEFAULT '[]',      -- meaningless until task 137.7
+  created_by  TEXT NOT NULL,                   -- human|agent|trigger
+  created_at  TEXT NOT NULL
+);
+
+CREATE TABLE handoff_items (           -- one per claimed issue
+  handoff_id        INTEGER NOT NULL REFERENCES handoffs(id) ON DELETE CASCADE,
+  issue_id          INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  delivery_task_id  INTEGER REFERENCES tasks(id) ON DELETE SET NULL, -- the delivery snapshotted at claim time
+  delivery_json     TEXT,
+  outcome           TEXT,                      -- NULL unresolved | delivered | returned | waiting | released
+  outcome_at        TEXT,
+  outcome_by        TEXT,
+  note              TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (handoff_id, issue_id)
+);
+CREATE UNIQUE INDEX idx_handoff_items_claim ON handoff_items (issue_id) -- the claim
+  WHERE outcome IS NULL OR outcome = 'waiting';
+CREATE INDEX idx_handoff_items_issue_outcome ON handoff_items (issue_id, outcome);
 
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
