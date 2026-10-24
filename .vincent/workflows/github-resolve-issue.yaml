@@ -420,6 +420,19 @@ steps:
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
+      # `deliver` records the run's result with `vincent task deliver`
+      # (task 137.2), which v0.11.0 and older lack: there `task deliver`
+      # only prints `task`'s help. Find that out now rather than at the end
+      # of the verify loop (review F3 of #850). The daemon is normally this
+      # same binary, auto-started by it.
+      case "$(vincent task deliver --help 2>&1)" in
+        *"vincent task deliver ["*) ;;
+        *)
+          say "vincent is too old for this workflow"
+          echo "this workflow needs vincent with 'vincent task deliver' (task 137.2, after v0.11.0); reinstall vincent and restart its daemon" >&2
+          exit 1 ;;
+      esac
+
       # The declared `github_issue` field, rendered in — never `issue`, which
       # holds the vincent issue id (task 130 decision 8). It is `required: true` and
       # `type: integer`, so §8.1.2 validated it at creation and this is a bare
@@ -2100,10 +2113,14 @@ steps:
     #     close_reason   `completed` when brief.md's second line is `closes: yes`
     #
     # The daemon fills `branch` and `base` from the task, and `recorded_at`.
+    # It needs a vincent built from task 137.2 or later (after v0.11.0) for
+    # both CLI and daemon; `fetch` refuses an older one up front.
     #
-    # `head_sha` pins the delivery to what was verified. A follow-up that moves
-    # the branch afterwards is not silently swept into a merge train; the
-    # reader takes this commit and says so when the branch has moved on.
+    # `head_sha` pins the delivery to what was verified. A hand edit that
+    # moves the branch afterwards is not silently swept into a merge train;
+    # the reader takes this commit and says so when the branch has moved on.
+    # A follow-up clears the delivery instead (task 137 decision 3), and the
+    # reader names the task as followed up rather than stacking it.
     #
     # `.vincent-issue/` is removed last, after the delivery is recorded, so the
     # finished task leaves a clean worktree and archiving it does not warn.

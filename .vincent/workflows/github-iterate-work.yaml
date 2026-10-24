@@ -363,6 +363,18 @@ steps:
         say "gh is not authenticated"
         echo "gh is not authenticated; this workflow pushes and merges a pull request at the end" >&2
         exit 1; }
+      # The resolve tasks record their result with `vincent task deliver`
+      # and `collect` reads it back from `task show --json` (task 137.2),
+      # which v0.11.0 and older lack: there `task deliver` only prints
+      # `task`'s help, and every task would fail its last step hours from now
+      # (review F3 of #850).
+      case "$(vincent task deliver --help 2>&1)" in
+        *"vincent task deliver ["*) ;;
+        *)
+          say "vincent is too old for this workflow"
+          echo "this workflow needs vincent with 'vincent task deliver' (task 137.2, after v0.11.0); reinstall vincent and restart its daemon" >&2
+          exit 1 ;;
+      esac
 
       scratch=$(git rev-parse --git-path vincent-iterate)
       rm -rf "$scratch"

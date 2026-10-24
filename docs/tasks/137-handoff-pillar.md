@@ -815,6 +815,9 @@ pull request.
   followed up after delivering out under a reason of its own, naming
   `vincent task deliver` as the way back in, and "has moved on" now covers
   hand edits only. Settled by the author: no shim keeps the cleared record.
+  *Amended 2026-10-24 (review F3 of #850):* the workflows now need a vincent
+  built from 137.2 or later, CLI and daemon; the resolve workflows' `fetch`
+  and `github-iterate-work`'s `headroom` refuse an older one up front.
 - [x] **137.4** ([#837](https://github.com/lezli01/vincent/issues/837)) `handoffs` and `handoff_items`, the claim index, eligibility
   SQL shared with the lane fragments (`internal/store/issuelane.go`), the
   `handoff` actor, `handoff.*` events, and `POST /v1/tasks` refusing a claimed
