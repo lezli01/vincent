@@ -310,6 +310,30 @@ workflow is `hand_off: auto`. Every `hand_off` issue therefore has a delivery.
 The issue DTO gains `delivery`, read from its latest `done` root task, so the
 board can say what is waiting to be handed off.
 
+*Amended 2026-10-24, after a research pass for 137.2 (#835):*
+
+- **Stored at `→ done`, never derived at read time.** The lane is pure SQL
+  (`internal/store/issuelane.go`, mirrored by `issuestate.LaneOf`) and cannot
+  run git, so the implicit delivery is materialized in `Runner.transition`
+  (`internal/taskrun/engine.go`), the one path to `done`, beside the merge-back
+  pre-check that already reads git there (task 134.14-b). It is passed into the
+  same write as the transition. `kind` is `none` when the branch tip is the
+  task's `base_sha` or the branch is already in its base branch, and `change`
+  otherwise.
+- **A follow-up clears it.** Re-admitting a `done` task clears its delivery in
+  the same transition, so each `→ done` describes the run that reached it, and
+  "the latest done root task" is the one with the greatest `finished_at`.
+- **A merge-back's delivery is its source side task's**, with the merge commit
+  as `head_sha`, so the issue's latest delivery describes the work rather than
+  "Merge task N".
+- **Existing rows.** A one-time, idempotent reconcile at daemon start fills an
+  implicit delivery for every finished root task with an `issue_id` that has
+  none. A missing branch reads `none`.
+- **The daemon resolves `head_sha`**, because clients never touch git. A
+  containerized step records its delivery through the `task_deliver` MCP tool,
+  because `vincent` is not in the image (task 062.2 decision 4, as for
+  `vincent status`).
+
 *Alternative beaten:* keeping the file convention and documenting it. It lives
 in the git common directory, which a containerized handoff cannot assume is
 mounted, it cannot be listed or rendered by any client, and its schema is
@@ -607,6 +631,13 @@ being ready**:
   when finished work exists but the latest delivery is not ready (`idle`,
   decision 5); `hand_off` when nothing is running and the latest delivery is
   ready. A human's mark moves the lane with `issue.lane_changed` `by: human`.
+- **Readiness is stamped at `→ done` from the workflow snapshot**, never the
+  live registry, so editing a workflow never re-labels finished work.
+  `issuestate.LaneOf` and the lane SQL change together.
+- **Upgrading keeps every lane.** The migration sets `ready: true, ready_by:
+  migration` on every task that finished `done` and has no `ready` key. Those
+  tasks reached `done` under the old automatic rule, so no issue changes lane
+  when the daemon upgrades.
 
 Unclaimed issues in either lane take new tasks exactly as today; a new task on
 a `hand_off` issue moves it back to `in_progress` while it runs.
@@ -738,8 +769,10 @@ pull request.
   33 and 36. ✓ 2026-10-24
 - [ ] **137.2** ([#835](https://github.com/lezli01/vincent/issues/835)) The delivery: a `tasks.delivery_json` migration, `POST
   /v1/tasks/{id}/delivery`, `vincent task deliver`, its MCP tool, the implicit
-  delivery, and `delivery` on the task and issue DTOs (decision 3). Spec §5.3,
-  §5.6, §13.2.
+  delivery materialized at `→ done`, clearing on follow-up, a merge-back
+  copying its source, the startup reconcile for existing issue tasks,
+  `task.delivery_changed`, and `delivery` on the task and issue DTOs
+  (decision 3). Spec §5.3, §5.6, §6, §12.1, §13.2–§13.4, §14.
 - [ ] **137.3** ([#836](https://github.com/lezli01/vincent/issues/836)) The repository's resolve workflows move off
   `vincent-delivered/` onto `vincent task deliver`, and `github-iterate-work`
   reads deliveries over the API. Depends: 137.2.
@@ -789,8 +822,10 @@ pull request.
   tapes appended at the end of `do_capture`. Depends: 137.11, 137.12.
 - [ ] **137.15** ([#848](https://github.com/lezli01/vincent/issues/848)) Readiness: the workflow's `hand_off: auto|explicit`, `vincent
   task deliver --ready`, `vincent issue ready|unready` with their routes and
-  MCP tools, the mark on the latest delivery, a merge-back carrying its
-  source's readiness, and the lane SQL's new `hand_off` rule; spec §5.2, §5.6
-  and §13.2, the workflow-schema reference, the `vincent-workflows` skill and
-  `update-workflows`' checklist line (decision 13). Depends: 137.2. Added
-  2026-10-24.
+  MCP tools, the mark on the latest delivery stamped at `→ done` from the
+  snapshot, a merge-back carrying its source's readiness, the lane SQL's and
+  `issuestate.LaneOf`'s new `hand_off` rule, the migration that keeps every
+  issue's lane on upgrade, and the workflow editor's row for the key (task
+  086's coverage test); spec §5.2, §5.6, §13.2 and §13.3, the workflow-schema
+  reference, the `vincent-workflows` skill and `update-workflows`' checklist
+  line (decision 13). Depends: 137.2. Added 2026-10-24.
