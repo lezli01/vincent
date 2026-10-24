@@ -2,10 +2,12 @@
 
 **Status:** 🔄 in progress (1/14)
 
-No issue yet. Spec §3 (a new row 38, and dated notes on rows 11, 33 and 36)
-in this document's pull request, by the same exception task 130 decision 13
-and task 132 decision 14 took (open question 5, settled); §5, §8, §12, §13,
-§15 and §16 in the pull request of each item whose code makes them true.
+Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
+[#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
+new row 38, and dated notes on rows 11, 33 and 36) in this document's pull
+request, by the same exception task 130 decision 13 and task 132 decision 14
+took (open question 5, settled); §5, §8, §12, §13, §15 and §16 in the pull
+request of each item whose code makes them true.
 
 ## What this is
 
@@ -647,52 +649,52 @@ In delivery order. Items without a `Depends:` can proceed in parallel. Each
 item amends the spec sections and public pages its code makes true, in its own
 pull request.
 
-- [x] **137.1** This document; the dated notes on task 130 decision 10, task
+- [x] **137.1** ([#834](https://github.com/lezli01/vincent/issues/834)) This document; the dated notes on task 130 decision 10, task
   068 decision 1, task 069 decision 3 and task 134's risks and non-goals; spec
   §3 row 38, ahead of its code (open question 5), with dated notes on rows 11,
   33 and 36. ✓ 2026-10-24
-- [ ] **137.2** The delivery: a `tasks.delivery_json` migration, `POST
+- [ ] **137.2** ([#835](https://github.com/lezli01/vincent/issues/835)) The delivery: a `tasks.delivery_json` migration, `POST
   /v1/tasks/{id}/delivery`, `vincent task deliver`, its MCP tool, the implicit
   delivery, and `delivery` on the task and issue DTOs (decision 3). Spec §5.3,
   §5.6, §13.2.
-- [ ] **137.3** The repository's resolve workflows move off
+- [ ] **137.3** ([#836](https://github.com/lezli01/vincent/issues/836)) The repository's resolve workflows move off
   `vincent-delivered/` onto `vincent task deliver`, and `github-iterate-work`
   reads deliveries over the API. Depends: 137.2.
-- [ ] **137.4** `handoffs` and `handoff_items`, the claim index, eligibility
+- [ ] **137.4** ([#837](https://github.com/lezli01/vincent/issues/837)) `handoffs` and `handoff_items`, the claim index, eligibility
   SQL shared with the lane fragments (`internal/store/issuelane.go`), the
   `handoff` actor, and `handoff.*` events (decisions 1, 2, 12). Depends: 137.2.
-- [ ] **137.5** `POST /v1/handoffs` with `issue_ids` and `select`, the read
+- [ ] **137.5** ([#838](https://github.com/lezli01/vincent/issues/838)) `POST /v1/handoffs` with `issue_ids` and `select`, the read
   routes, apiclient, `vincent handoff start|ls|show`, and grant-less MCP
   (decision 8). Depends: 137.4.
-- [ ] **137.6** The item verbs, release on settle, resolve-on-close for
+- [ ] **137.6** ([#839](https://github.com/lezli01/vincent/issues/839)) The item verbs, release on settle, resolve-on-close for
   `waiting`, and `return` as a follow-up (decision 4). Depends: 137.5.
-- [ ] **137.7** The grant and the one forge-write guard over issue and
+- [ ] **137.7** ([#840](https://github.com/lezli01/vincent/issues/840)) The grant and the one forge-write guard over issue and
   pull-request writes; the outbox under the `handoff` actor; the pull-request
   tools on a granted handoff's per-step MCP endpoint; the restatement in
   `internal/github/doc.go`; spec §13.4, §16 and the security model
   (decision 6). Depends: 137.4.
-- [ ] **137.8** `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
+- [ ] **137.8** ([#841](https://github.com/lezli01/vincent/issues/841)) `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
   over items and `vincent workflow render --handoff-file`; the
   `vincent-workflows` skill, the five built-ins re-read and the
   `update-workflows` checklist line (decision 7). Depends: 137.5.
-- [ ] **137.9** `action.type: start_handoff` with `select` and `grant`, the
+- [ ] **137.9** ([#842](https://github.com/lezli01/vincent/issues/842)) `action.type: start_handoff` with `select` and `grant`, the
   TUI's grant confirmation, the `handoff_changed` action on `type: issues`;
   the `vincent-triggers` skill and `update-triggers`' checklist line
   (decisions 6, 8, 12). Depends: 137.5, 137.7.
-- [ ] **137.10** The derived `handoff` marker on the issue DTO, `?handoff=`,
+- [ ] **137.10** ([#843](https://github.com/lezli01/vincent/issues/843)) The derived `handoff` marker on the issue DTO, `?handoff=`,
   and the CLI's lane column (decision 5). Depends: 137.4.
-- [ ] **137.11** The TUI: the `hand_off` card's marker and delivery, bulk
+- [ ] **137.11** ([#844](https://github.com/lezli01/vincent/issues/844)) The TUI: the `hand_off` card's marker and delivery, bulk
   selection and the handoff form with its grant checkboxes, the issue detail's
   Handoff section, and the handoff task's Overview. Depends: 137.6, 137.10.
-- [ ] **137.12** Example handoff workflows under `examples/`, and
+- [ ] **137.12** ([#845](https://github.com/lezli01/vincent/issues/845)) Example handoff workflows under `examples/`, and
   `github-iterate-work` split into its dispatcher and `github-handoff-train`
   with a trigger (decision 9). Depends: 137.8, 137.9.
-- [ ] **137.13** `scripts/137-gate.sh` on all three platforms, against
+- [ ] **137.13** ([#846](https://github.com/lezli01/vincent/issues/846)) `scripts/137-gate.sh` on all three platforms, against
   `cmd/fakegh` and `cmd/fakeagent`: claim exclusivity, an ungranted write
   refused and a granted one written back through the outbox, `wait` resolved by
   a sync close, `return` moving the issue to `in_progress`, an aborted handoff
   releasing its items. Wired into `gate-group`'s lightest group. Depends: 137.6,
   137.7.
-- [ ] **137.14** `docs/guides/handoff.md`, the features page, the API, CLI,
+- [ ] **137.14** ([#847](https://github.com/lezli01/vincent/issues/847)) `docs/guides/handoff.md`, the features page, the API, CLI,
   configuration and template references, and the screenshot seed with new
   tapes appended at the end of `do_capture`. Depends: 137.11, 137.12.
