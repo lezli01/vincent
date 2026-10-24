@@ -131,6 +131,19 @@ const (
 	ShellCmd  = "cmd"
 )
 
+// Hand-off modes for a workflow's root tasks (task 137 decision 13). They
+// say when an issue whose work this workflow does is ready to hand off.
+const (
+	// HandOffAuto makes a root task's issue ready the moment the task ends
+	// `done` — the rule every issue followed before the key existed, which is
+	// why it is the default and why a file that names none keeps it.
+	HandOffAuto = "auto"
+	// HandOffExplicit leaves a finished task's issue not ready until
+	// something says it is: the task itself (`vincent task deliver --ready`)
+	// or a human (`vincent issue ready`).
+	HandOffExplicit = "explicit"
+)
+
 // Workflow is a parsed workflow definition (spec §8.1).
 type Workflow struct {
 	Name        string `yaml:"name"`
@@ -138,6 +151,11 @@ type Workflow struct {
 	// Platforms restricts where the workflow may run (§8.1.1, task 010).
 	// Empty means every platform; see platform.go for the token set.
 	Platforms []string `yaml:"platforms,omitempty"`
+	// HandOff is when a root task's issue becomes ready to hand off: `auto`
+	// or `explicit` (task 137 decision 13). Empty means `auto`; read it
+	// through HandOffMode. It is the including workflow's alone — an
+	// included callee contributes steps, never top-level keys (§7.9).
+	HandOff string `yaml:"hand_off,omitempty"`
 	// Fields declares the ordered public task inputs this workflow expects
 	// (§8.1.2, task 022). The task still stores one open map[string]string:
 	// declarations guide clients and validate named values without rejecting
@@ -461,6 +479,26 @@ func (m *Merge) Policy() string {
 	return m.OnConflict
 }
 
+// HandOffMode resolves the workflow's hand-off mode, defaulting to `auto`
+// for a file that names none (task 137 decision 13).
+func (w *Workflow) HandOffMode() string {
+	if w == nil || w.HandOff == "" {
+		return HandOffAuto
+	}
+	return w.HandOff
+}
+
+// validateHandOff checks `hand_off:` against its closed set. Like every enum
+// in the schema the match is exact: `Explicit` is a typo that fails at load
+// rather than a mode that silently reads as `auto`.
+func validateHandOff(wf *Workflow, add func(string, string, ...any)) {
+	switch wf.HandOff {
+	case "", HandOffAuto, HandOffExplicit:
+	default:
+		add("hand_off", "hand_off must be %s or %s, got %q", HandOffAuto, HandOffExplicit, wf.HandOff)
+	}
+}
+
 // ScheduleMode resolves a fan_out step's lane scheduling mode, defaulting to
 // `barrier` for a step that names none (task 081 decision 5).
 func (s Step) ScheduleMode() string {
@@ -636,6 +674,7 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 		add("name", "name %q must not contain whitespace or path separators", wf.Name)
 	}
 	validatePlatforms(wf, add)
+	validateHandOff(wf, add)
 	validateFieldDefinitions(wf, add)
 	validateDefaults(wf, opts, add)
 

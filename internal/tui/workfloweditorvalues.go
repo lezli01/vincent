@@ -51,6 +51,11 @@ var wfTopLevelReaders = map[string]func(apiclient.WorkflowBody) string{
 	"name":        func(b apiclient.WorkflowBody) string { return b.Name },
 	"description": func(b apiclient.WorkflowBody) string { return b.Description },
 	"platforms":   func(b apiclient.WorkflowBody) string { return wfList(b.Platforms) },
+	// hand_off (task 137 decision 13) is an enum row, so enter cycles it
+	// through auto, explicit and unset. The definition DTO does not carry
+	// the key yet — apiclient.WorkflowBody is not this unit's to edit — so
+	// the row reads as unset whatever the file says until it does.
+	"hand_off": func(apiclient.WorkflowBody) string { return "" },
 }
 
 // wfStepReaders covers every field any step type publishes, common fields

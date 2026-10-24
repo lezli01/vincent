@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -137,5 +138,54 @@ func TestEditorRefusedDurationStaysOnTheRow(t *testing.T) {
 	}
 	if w.editor.rows[row].value != "2 minutes" {
 		t.Errorf("the refused value left the row: %q", w.editor.rows[row].value)
+	}
+}
+
+// hand_off (task 137 decision 13) is a closed set at the top level, so its
+// row cycles through the members the descriptor publishes and then unset,
+// writing each as a set op and unset as a remove — never a text field to
+// mistype `Explicit` into.
+func TestEditorHandOffRowCyclesTheClosedSet(t *testing.T) {
+	w := editorFixtureWith(t, agentDefinition())
+	row := w.editor.rows[editorRowIndex(t, w, "hand_off")]
+	if row.field.Control != apiclient.WorkflowControlEnum {
+		t.Fatalf("hand_off control = %q, want an enum", row.field.Control)
+	}
+	if got := strings.Join(row.field.Values, ","); got != "auto,explicit" {
+		t.Errorf("hand_off values = %s, want auto,explicit", got)
+	}
+	if row.path != "hand_off" {
+		t.Errorf("hand_off path = %q", row.path)
+	}
+	value := row.value
+	for _, want := range []string{"auto", "explicit", unsetMarker, "auto"} {
+		value = cycleEnum(row.field, value)
+		if value != want {
+			t.Fatalf("cycle reached %q, want %q", value, want)
+		}
+	}
+	for _, tc := range []struct{ value, op string }{
+		{"explicit", apiclient.WorkflowOpSet},
+		{unsetMarker, apiclient.WorkflowOpRemove},
+	} {
+		op, bad := rowOp(row, tc.value)
+		if bad != "" || op.Op != tc.op || op.Path != "hand_off" {
+			t.Errorf("%s: op = %+v (bad %q), want %s at hand_off", tc.value, op, bad, tc.op)
+		}
+		if tc.op == apiclient.WorkflowOpSet && op.Value != tc.value {
+			t.Errorf("%s: wrote %q", tc.value, op.Value)
+		}
+	}
+	// enter on the row commits the next member rather than opening a field.
+	w.editor.cursor = editorRowIndex(t, w, "hand_off")
+	_, cmd := w.updateKey(registryKey(t, "enter"))
+	if cmd == nil {
+		t.Error("enter on hand_off did not commit")
+	}
+	if got := w.editor.rows[w.editor.cursor].value; got != "auto" {
+		t.Errorf("hand_off row after enter = %q, want auto", got)
+	}
+	if w.editor.input != nil || w.editor.overlay != nil {
+		t.Error("an enum row opened a field or an overlay")
 	}
 }
