@@ -1558,6 +1558,13 @@ func (r *Runner) transition(task *store.Task, action taskstate.Action, ch store.
 		// its workflow's end, a follow-up's — comes through here.
 		ch.MergeBack = r.mergeBackFor(r.persistCtx(), task, log)
 	}
+	if tr.To == store.TaskDone {
+		// Every run that finishes leaves a delivery (task 137 decision 3):
+		// the one a step recorded, completed, or an implicit one. Built here,
+		// before the store's transaction, for mergeBackFor's reason — it asks
+		// git — and written by the same transition.
+		ch.Delivery = r.deliveryAtDone(r.persistCtx(), task, log)
+	}
 	updated, _, err := r.deps.Store.TransitionTask(r.persistCtx(), task.ID, task.State, tr.To, ch)
 	if err != nil {
 		if conflict, isConflict := store.AsStateConflict(err); isConflict {

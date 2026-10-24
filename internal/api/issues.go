@@ -143,12 +143,16 @@ type issueRowBody struct {
 	// MergeBacksPending the unsettled, unarchived merge-back tasks (task
 	// 134.16 decision 1). Both come from the list's own query, so a board
 	// never fetches a row's tasks to draw it (task 130 decision 16.4).
-	SideActive        int        `json:"side_active"`
-	MergeBacksPending int        `json:"merge_backs_pending"`
-	Version           int64      `json:"version"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-	ClosedAt          *time.Time `json:"closed_at,omitempty"`
+	SideActive        int `json:"side_active"`
+	MergeBacksPending int `json:"merge_backs_pending"`
+	// Delivery is what the issue's latest finished main-line root task
+	// delivered (task 137.2): its summary on a row, in full on the detail.
+	// Null while no finished task has one.
+	Delivery  *deliveryResponse `json:"delivery"`
+	Version   int64             `json:"version"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+	ClosedAt  *time.Time        `json:"closed_at,omitempty"`
 }
 
 // issueMainWorktreeBody is an issue's main worktree: its branch, and the
@@ -210,6 +214,7 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 		Attention:         iss.Attention,
 		SideActive:        iss.SideActive,
 		MergeBacksPending: iss.MergeBacksPending,
+		Delivery:          toDeliveryResponse(iss.Delivery, false),
 		Version:           iss.Version,
 		CreatedAt:         iss.CreatedAt,
 		UpdatedAt:         iss.UpdatedAt,
@@ -266,8 +271,10 @@ func (s *Server) renderIssue(ctx context.Context, iss *store.Issue) issueBody {
 	if actions == nil {
 		actions = []issuestate.Action{}
 	}
+	row := renderIssueRow(iss)
+	row.Delivery = toDeliveryResponse(iss.Delivery, true)
 	return issueBody{
-		issueRowBody:     renderIssueRow(iss),
+		issueRowBody:     row,
 		Body:             iss.Body,
 		AvailableActions: actions,
 		Tasks:            issueTasksBody{Count: iss.TaskCount, ActiveIDs: ids},

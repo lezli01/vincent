@@ -231,6 +231,8 @@ var routes = []Route{
 	{http.MethodGet, "/v1/tasks/{id}/workflow", "task_workflow", "The workflow snapshot the task is running, as it was at creation."},
 	{http.MethodGet, "/v1/tasks/{id}/steps", "task_steps", "The task's steps and their step runs."},
 	{http.MethodPost, "/v1/tasks/{id}/steps/{step_id}/status", "step_status", "Set the step-authored status line a board renders (task 036). Body: {message} — an empty message clears the line."},
+	{http.MethodGet, "/v1/tasks/{id}/delivery", "task_delivery", "What the task's last finished run delivered (§5.3, task 137.2), or null before it has one."},
+	{http.MethodPost, "/v1/tasks/{id}/delivery", "task_deliver", "Record what this run delivered, replacing any earlier delivery (task 137.2): accepted while the task runs or once it is done. Body: {kind?, title?, body?, summary?, head_sha?, close_reason?, proof?}. kind is change (the default), reply or none; head_sha must be a commit on the task's branch and defaults to its tip; close_reason is completed, not_planned or duplicate. A run that finishes without one gets an implicit delivery."},
 	{http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", "task_transcript", "One step run's transcript. Query: format=raw|normalized, offset, limit."},
 	{http.MethodGet, "/v1/tasks/{id}/diff", "task_diff", "The task branch's diff against its recorded base. Query: by=lane attributes each change to the fan-out lane that produced it (§7.6, task 084)."},
 	{http.MethodGet, "/v1/tasks/{id}/commits", "task_commits", "The commits the task made on its branch past its recorded base, oldest first; lane merges carry lane_id and child_task_id (issue #601). Read from the branch, so it still answers after archive; 409 when the branch was never made or no longer exists."},

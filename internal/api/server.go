@@ -382,6 +382,8 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/workflow", s.handleTaskWorkflow)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps", s.handleTaskSteps)
 	rt.handle(http.MethodPost, "/v1/tasks/{id}/steps/{step_id}/status", s.handleStepStatus)
+	rt.handle(http.MethodGet, "/v1/tasks/{id}/delivery", s.handleTaskDelivery)
+	rt.handle(http.MethodPost, "/v1/tasks/{id}/delivery", s.handleTaskDeliver)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", s.handleTranscript)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/diff", s.handleTaskDiff)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/commits", s.handleTaskCommits)

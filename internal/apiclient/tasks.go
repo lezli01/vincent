@@ -122,6 +122,11 @@ type Task struct {
 	QueuedReason   *string    `json:"queued_reason"`
 	AdmitNotBefore *time.Time `json:"admit_not_before"`
 
+	// Delivery is what the task's last finished run delivered (§5.3, task
+	// 137.2), nil before one exists. A list carries its summary — no Body,
+	// Summary or Proof; GetTask carries it in full.
+	Delivery *Delivery `json:"delivery"`
+
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	StartedAt  *time.Time `json:"started_at"`

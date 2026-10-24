@@ -105,6 +105,24 @@ func laneExpr() sqlFrag {
 	}
 }
 
+// latestDeliveryExpr is the delivery of the issue's latest finished main-line
+// root task (task 137 decision 3): the `done` one, or one archived from
+// `done`, with the greatest finished_at. Side tasks are left out — their work
+// reaches the issue's main branch through a merge-back, which is a main task
+// carrying its source's delivery, and an empty side task merges nothing, so
+// its delivery would describe a branch the issue never takes. finished_at is
+// restamped on every `→ done` and a follow-up clears the delivery, so the
+// latest one is always the last run that finished.
+func latestDeliveryExpr() sqlFrag {
+	h := handedOffCond()
+	return sqlFrag{
+		sql: `(SELECT t.delivery_json FROM tasks t WHERE t.issue_id = i.id AND t.parent_task_id IS NULL
+			AND (t.issue_worktree IS NULL OR t.issue_worktree <> 'side') AND ` + h.sql + `
+			ORDER BY t.finished_at DESC, t.id DESC LIMIT 1)`,
+		args: h.args,
+	}
+}
+
 // sideActiveExpr counts the issue's live side tasks (task 134.16 decision
 // 1): side-role, unsettled and unarchived. A side task is a root task by
 // construction, so no parent clause is needed.

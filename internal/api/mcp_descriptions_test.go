@@ -27,6 +27,7 @@ func TestMCPToolBodyHintsMatchRequestStructs(t *testing.T) {
 		"task_answer":           reflect.TypeOf(answerRequest{}),
 		"task_follow_up":        reflect.TypeOf(followUpRequest{}),
 		"step_status":           reflect.TypeOf(stepStatusRequest{}),
+		"task_deliver":          reflect.TypeOf(deliveryRequest{}),
 		"task_github_pull_link": reflect.TypeOf(githubPullLinkRequest{}),
 		"issue_create":          reflect.TypeOf(issueCreateRequest{}),
 		"issue_patch":           reflect.TypeOf(issuePatchRequest{}),

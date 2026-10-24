@@ -1172,6 +1172,47 @@ A task with no commits past its base prints nothing and exits `0` (`[]` under
 unknown task exits `1` with the daemon's message on stderr. A daemon started
 before the upgrade that added the command says so, and to restart it.
 
+### `vincent task deliver`
+
+```sh
+vincent task deliver [--task ID] [--kind change|reply|none] [--title TEXT]
+                     [--body TEXT | --body-file PATH] [--summary TEXT | --summary-file PATH]
+                     [--head SHA] [--close-reason completed|not_planned|duplicate]
+                     [--proof TEXT | --proof-file PATH] [--json]
+```
+
+Records the task's **delivery**: what its run produced, in the run's own words.
+It is the workshop's result, which a handoff reads. It runs **from inside a
+step**, like [`vincent status`](#vincent-status), and reads the task from
+`VINCENT_TASK_ID`; `--task` names one by hand, to correct the delivery of a
+task that is already `done`. `--body-file -`, `--summary-file -` and
+`--proof-file -` read stdin.
+
+```sh
+vincent task deliver --title "Retry the upload on a 503" --body-file pr.md --summary-file brief.md
+```
+
+- **`--kind`** is `change` (the default: commits on the task's branch to
+  integrate), `reply` (an answer, a refusal or questions to post where the work
+  came from) or `none`.
+- **The daemon fills the rest.** The branch and the base come from the task, and
+  the head is the branch tip unless `--head` names a commit, which must be on
+  the task's branch.
+- **A later call replaces it.** A follow-up that re-runs a finished task clears
+  the delivery, so it always describes the run that last finished.
+- **A run that never calls it still has one.** When the task reaches `done`,
+  the daemon writes an implicit delivery: `change` when the branch holds
+  commits its base does not, `none` otherwise, titled and described by the task.
+- **It is accepted while the task runs or once it is done.** Otherwise the
+  daemon answers `409` and the command exits 1.
+- **It is silent inside a step**, whose stdout is the transcript. With `--task`
+  it prints what was stored; `--json` prints it either way.
+- **It does not work in a container**, for `vincent status`'s reason; a
+  containerized agent uses the `task_deliver`
+  [MCP tool](../guides/mcp.md#steps-in-a-container).
+
+`vincent task show` prints the delivery on its `delivered` row.
+
 ### `vincent task cancel`
 
 ```sh

@@ -201,6 +201,10 @@ type taskResponse struct {
 	// behind until it settles (task 134.11). Absent otherwise, and on every
 	// other response.
 	MainWorktreeOccupantTaskID *int64 `json:"main_worktree_occupant_task_id,omitempty"`
+	// Delivery is what the task's last finished run delivered (§5.3, task
+	// 137.2), null before one is recorded. A list carries its summary; the
+	// detail carries it in full, as it carries the workflow snapshot.
+	Delivery *deliveryResponse `json:"delivery"`
 }
 
 // snapshotStepResponse is one step of the task's snapshot (spec §13.2).
@@ -247,6 +251,7 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		laneID, laneOrder = &id, &order
 	}
 	return taskResponse{
+		Delivery:          toDeliveryResponse(t.Delivery, false),
 		ParentTaskID:      t.ParentTaskID,
 		LaneID:            laneID,
 		LaneOrder:         laneOrder,
@@ -1727,6 +1732,7 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	resp := toTaskResponse(t, summary)
 	resp.Snapshot = t.WorkflowSnapshot
 	resp.WorkflowSteps = workflowSteps(summary)
+	resp.Delivery = toDeliveryResponse(t.Delivery, true)
 	s.overlayLiveIssue(r.Context(), &resp, t)
 	// The list endpoint has always carried project_name; the detail endpoint
 	// never did, so every client's TaskDetail.ProjectName was silently empty

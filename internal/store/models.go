@@ -269,6 +269,12 @@ type Task struct {
 	// merge-back is a main task that also carries its source's
 	// MergeOnConflict.
 	MergeSourceTaskID *int64
+	// Delivery is what the task's last finished run delivered (§5.3, task
+	// 137 decision 3; migration 0045): recorded by a step, or written
+	// implicitly with the `→ done` transition. nil before a run records one,
+	// after a follow-up re-admits the task, and on most tasks that finished
+	// before 0045.
+	Delivery *Delivery
 	// BranchExplicit is create-time input, never stored or read back: the
 	// caller named BranchName itself (`branch_name`, `existing_branch`, or a
 	// chat's verbatim branch on handoff) rather than letting §5.3's chain

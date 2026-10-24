@@ -103,6 +103,10 @@ type Issue struct {
 	// MergeBacksPending its unsettled, unarchived merge-back tasks (task
 	// 134.16 decision 1). Both come from the same query as Lane.
 	SideActive, MergeBacksPending int
+	// Delivery is what the issue's latest finished main-line root task
+	// delivered (task 137 decision 3), from the same query; nil when no
+	// such task has one.
+	Delivery *Delivery
 }
 
 // IssueRemote is an imported issue's link to its source (decision 2). A nil
@@ -214,6 +218,7 @@ func issueSelect() string {
 		(` + issueMainOccupantStateSQL("i.id") + `),
 		` + sideActiveExpr().sql + `,
 		` + mergeBacksPendingExpr().sql + `,
+		` + latestDeliveryExpr().sql + `,
 		r.id, r.issue_id, r.project_id, r.provider, r.remote_key, r.repo, r.number, r.url,
 		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed, r.remote_status
 	FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id`
@@ -221,7 +226,7 @@ func issueSelect() string {
 
 // The derived columns bind in text order: Active, Lane and Attention's
 // fragments, the main worktree occupant's own arguments and its state's,
-// then the side and merge-back counts'.
+// then the side and merge-back counts' and the latest delivery's.
 func issueSelectArgs() []any {
 	var args []any
 	for _, f := range []sqlFrag{activeExpr(), laneExpr(), attentionExpr()} {
@@ -229,7 +234,7 @@ func issueSelectArgs() []any {
 	}
 	args = append(args, issueMainOccupantArgs()...)
 	args = append(args, issueMainOccupantArgs()...)
-	for _, f := range []sqlFrag{sideActiveExpr(), mergeBacksPendingExpr()} {
+	for _, f := range []sqlFrag{sideActiveExpr(), mergeBacksPendingExpr(), latestDeliveryExpr()} {
 		args = append(args, f.args...)
 	}
 	return args
@@ -252,11 +257,12 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		rRemoteUpdated, rSynced             sql.NullString
 		rSuppressed                         sql.NullBool
 		rStatus                             sql.NullString
+		delivery                            sql.NullString
 	)
 	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
 		&iss.Kind, &iss.Priority, &iss.Author, &parent, &createdBy, &iss.Version, &created, &updated, &closedAt,
 		&iss.TaskCount, &active, &lane, &attention, &mainBranch, &mainOccupant,
-		&mainOccupantState, &iss.SideActive, &iss.MergeBacksPending,
+		&mainOccupantState, &iss.SideActive, &iss.MergeBacksPending, &delivery,
 		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
 		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed, &rStatus); err != nil {
 		return nil, err
@@ -282,6 +288,9 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		iss.CreatedByTaskID = &createdBy.Int64
 	}
 	var err error
+	if iss.Delivery, err = unmarshalDelivery(delivery); err != nil {
+		return nil, err
+	}
 	if iss.CreatedAt, err = parseTime(created); err != nil {
 		return nil, err
 	}

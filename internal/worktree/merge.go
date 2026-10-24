@@ -135,6 +135,40 @@ func (m *Manager) BranchMergedInto(ctx context.Context, projectPath, branch, int
 	return true, nil
 }
 
+// CommitOnBranch resolves rev to the full SHA of a commit and reports
+// whether that commit is reachable from local branch — the check a recorded
+// delivery's head_sha must pass (task 137.2): a delivery names the commit its
+// run verified, and one off the task's branch would hand a handoff work the
+// task never did. A rev that names no commit is ("", false, nil), the
+// caller's validation failure rather than a git error.
+func (m *Manager) CommitOnBranch(ctx context.Context, projectPath, rev, branch string) (string, bool, error) {
+	if rev == "" || branch == "" || strings.HasPrefix(rev, "-") {
+		return "", false, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
+	defer cancel()
+	sha, err := m.git.Run(ctx, projectPath, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
+	if err != nil {
+		var ge *gitx.Error
+		if errors.As(err, &ge) && ge.ExitCode == 1 {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("resolve %s: %w", rev, err)
+	}
+	sha = strings.TrimSpace(sha)
+	if !fullHex.MatchString(sha) {
+		return "", false, nil
+	}
+	if _, err := m.git.Run(ctx, projectPath, "merge-base", "--is-ancestor", sha, "refs/heads/"+branch); err != nil {
+		var ge *gitx.Error
+		if errors.As(err, &ge) && ge.ExitCode == 1 {
+			return sha, false, nil
+		}
+		return "", false, fmt.Errorf("check whether %s is on %s: %w", sha, branch, err)
+	}
+	return sha, true, nil
+}
+
 // InMerge reports whether a merge is in progress in the worktree — MERGE_HEAD
 // exists. It is the fact both re-entry paths turn on (decision 9), read from
 // git rather than from a persisted cursor, because git holds it

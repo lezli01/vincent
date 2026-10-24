@@ -28,7 +28,7 @@ func newTaskCmd() *cobra.Command {
 		newTaskFollowUpCmd(), newTaskTranscriptCmd(), newTaskDiffCmd(), newTaskCommitsCmd(), newTaskPauseCmd(), newTaskResumeCmd(),
 		newTaskSkipCmd(), newTaskApproveCmd(), newTaskRejectCmd(), newTaskRetryCmd(),
 		newTaskRepairCmd(), newTaskChatCmd(), newTaskArchiveCmd(), newTaskAnswerCmd(), newTaskDeleteCmd(),
-		newTaskImportCmd())
+		newTaskImportCmd(), newTaskDeliverCmd())
 	return cmd
 }
 
@@ -565,6 +565,11 @@ func newTaskShowCmd() *cobra.Command {
 				fields = append(fields, taskHoldRows(t)...)
 				if t.BlockReason != nil && *t.BlockReason != "" {
 					fields = append(fields, [2]string{"blocked", *t.BlockReason})
+				}
+				// What the last finished run delivered (task 137.2); the
+				// body is on `task deliver --task` and in --json.
+				if t.Delivery != nil {
+					fields = append(fields, [2]string{"delivered", deliveryLine(t.Delivery)})
 				}
 				// What may happen next, from the daemon rather than from a
 				// guess: a script reads this instead of probing for 409s, and
