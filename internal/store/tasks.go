@@ -290,7 +290,7 @@ func insertTaskTx(
 	// inside its side task's `→ done`, so a claim refused here would roll
 	// that completion back and leave the side task running with no actor.
 	// Admission is the authority instead, and blocks it with a reason.
-	if !t.AdoptedBranch {
+	if !t.AdoptedBranch && t.MergeSourceTaskID == nil {
 		if err := claimBranchTx(ctx, tx, t.ProjectID, t.BranchName, id); err != nil {
 			return nil, err
 		}
