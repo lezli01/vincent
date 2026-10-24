@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (1/14)
+**Status:** 🔄 in progress (1/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -112,7 +112,11 @@ YAML is proposed syntax.
    The issue moves to `in_progress` (exists, task 134).
 3. **Workshop.** The resolve workflow's last step runs `vincent task deliver`
    instead of writing `vincent-delivered/` (new, 137.2). The task ends `done`
-   and the issue moves to `hand_off`, its card showing the delivery (new).
+   and, the workflow being `hand_off: auto`, the issue moves to `hand_off`,
+   its card showing the delivery (new). Under `hand_off: explicit` it stays
+   `in_progress` and `idle` until a step or a human says it is ready; until a
+   handoff claims it, more tasks — on the main worktree, or as side tasks
+   merged back into it — can run on it (new, 137.15).
 4. **Handoff trigger.** A trigger grabs a batch (new, 137.9):
 
    ```yaml
@@ -191,11 +195,26 @@ governing the code until the named item's pull request merges.
   handoff rows, as the lane is derived from task rows. No issue state is added;
   decision 3's anticipated "handoff pillar's `waiting`" is a derived marker,
   not a state GitHub would have to preserve.
-- **Task 134 decision 2**, the lane rules — **kept unchanged**. A handoff task
-  carries no `issue_id` (decision 2), so it never counts as an issue's work.
-  The trigger guide's warning that "a `lane: hand_off` trigger that creates a
-  task for the same issue loops through the lanes" stops applying to
-  `start_handoff`, and keeps applying to `create_task`.
+- **Task 134 decision 2**, the lane rules — **amended** (decision 13).
+  `hand_off` is no longer "no unsettled root task and at least one ended
+  `done`"; it is "nothing running, and the latest done root task's delivery
+  is **ready**". Readiness is automatic for a `hand_off: auto` workflow — the
+  default, and today's behaviour — set only by `vincent task deliver --ready`
+  for `hand_off: explicit`, and set or withdrawn by a human. An open issue
+  whose finished work is not ready stays `in_progress`, marked `idle`, so
+  "some root task is unsettled" becomes one of two ways to be in progress. A
+  handoff task carries no `issue_id` (decision 2), so it never counts as an
+  issue's work. The trigger guide's warning that "a `lane: hand_off` trigger
+  that creates a task for the same issue loops through the lanes" stops
+  applying to `start_handoff`, and keeps applying to `create_task`.
+- **Task 134 decision 19** and its open question 1, "hand-off is finished
+  `done` work on an open issue" — **narrowed** (decision 13) to finished work
+  that the workflow or a human declared ready.
+- **Task 130 decision 5**, one issue backs many tasks — **narrowed while a
+  handoff claims the issue** (decision 14): a task created on a claimed issue
+  is refused `issue_in_handoff`. Task 134 decision 10 (a busy main worktree
+  queues, never `409`) is untouched; the refusal is about the claim, not the
+  worktree.
 - **Task 130 decision 5**, one `tasks.issue_id` per task — **kept**. A handoff
   links many issues through its items, not through the task row.
 - **Task 130 decision 20.3**, "edits, comments, deletes … fire nothing" —
@@ -206,9 +225,10 @@ governing the code until the named item's pull request merges.
 
 ## Decisions
 
-Recorded 2026-10-24. Decisions 4, 5, 6 and 11 were settled by the author, as
-were open questions 1, 2, 3, 5, 7 and 8; each says so where it is settled. Decisions 1, 2, 3, 7, 9, 10 and
-12 are the plan's own and stand as proposed defaults. Each decision is
+Recorded 2026-10-24. Decisions 4, 5, 6, 11, 13 and 14 were settled by the
+author, as were open questions 1, 2, 3, 5, 7 and 8; each says so where it is
+settled. Decisions 1, 2, 3, 7, 9, 10 and 12 are the plan's own and stand as
+proposed defaults. Each decision is
 **taken now; its effect lands with its item**, and the older record keeps
 governing the code until that item's pull request merges.
 
@@ -279,12 +299,13 @@ step endpoint) records, on the running task:
 | `branch`, `base` | Filled by the daemon from the task |
 | `close_reason` | Optional suggestion: `completed`, `not_planned`, `duplicate` |
 | `proof` | Optional: what proved it — tests run, or "none" with why |
+| `ready`, `ready_by` | Whether the issue may move to `hand_off` on this delivery, and who said so (decision 13) |
 
 It is one JSON column on `tasks`; a later call replaces it, and a follow-up
 run's call replaces the previous run's. A `done` task that never called it has
 an **implicit delivery**: `change` when its branch has commits past its base,
-`none` otherwise, titled and described by the task. Every `hand_off` issue
-therefore has a delivery, and task 134's lane meaning is unchanged.
+`none` otherwise, titled and described by the task, and ready when its
+workflow is `hand_off: auto`. Every `hand_off` issue therefore has a delivery.
 
 The issue DTO gains `delivery`, read from its latest `done` root task, so the
 board can say what is waiting to be handed off.
@@ -305,12 +326,14 @@ issue.
 - **`deliver [--close completed|not_planned|duplicate|none]`** — the work left.
   The issue is closed with the reason unless `none`; `none` leaves it open and
   out of later selections (decision 2).
-- **`return --follow-up PROMPT`** — the work comes back. A follow-up run (task
-  027) is queued on the issue's latest main-role task — the one task 134
-  decision 14 allows, since a predecessor that handed its worktree on answers
-  `409` — carrying the prompt. The claim is released and the follow-up moves
-  the issue back to `in_progress` through the lane rules that already exist.
-  `--paused` holds the follow-up for a human.
+- **`return [--follow-up PROMPT]`** — the work comes back. The claim is
+  released and the delivery's readiness withdrawn, so the issue is
+  `in_progress` again. With `--follow-up`, a follow-up run (task 027) is
+  queued on the issue's latest main-role task — the one task 134 decision 14
+  allows, since a predecessor that handed its worktree on answers `409` —
+  carrying the prompt; `--paused` holds it for a human. Without it, the issue
+  waits `idle` for a human to add tasks, which is the TUI's "return from
+  handoff" (decision 14).
 - **`wait`** — the result is with someone outside: a pull request in review, a
   question with the reporter. The item **outlives the handoff's task**, holds
   its claim, and resolves itself as `delivered` when the issue closes, by any
@@ -335,8 +358,9 @@ no default.
 The issue DTO, the list row and `vincent issue ls` gain a derived `handoff`
 block on `hand_off` issues: `{state, handoff_id, task_id}`, with `state` one of
 `pending` (eligible, unclaimed), `claimed` (in a live handoff), `waiting` and
-`delivered` (delivered without a close). The TUI card renders it the way it
-renders `attention`. `?handoff=pending` filters on it, and `select:`
+`delivered` (delivered without a close). An `in_progress` issue with nothing
+running — finished work not yet declared ready (decision 13) — carries
+`idle`. The TUI card renders it the way it renders `attention`. `?handoff=pending` filters on it, and `select:`
 (decision 8) reads the same SQL fragment, so the board, the CLI and a trigger
 can never disagree about what is eligible.
 
@@ -553,6 +577,65 @@ renaming the chat feature, which breaks a shipped CLI verb for a word.
   pull-request write tools on a granted handoff's step endpoint, and
   `handoff_start` grant-less (decision 6).
 
+### 13. Ready for hand-off is declared, by the workflow or by a human (2026-10-24)
+
+An issue may carry many tasks while it is in progress. Task 134 already gives
+it one main worktree with one task running there at a time, queues later main
+tasks behind it, and runs side tasks in their own worktrees, merged back when
+the main worktree is free (`merge_back`, manual or agentic). What moves the
+issue on is no longer "a root task ended `done`" but **its latest delivery
+being ready**:
+
+- **The workflow decides.** A workflow declares `hand_off: auto`, the default
+  and today's behaviour — the delivery is ready when the task ends `done` — or
+  `hand_off: explicit`, where it is ready only when a step ran `vincent task
+  deliver --ready`. A research or spike workflow is `explicit`; a resolve
+  workflow can stay `auto`, or decide in a step.
+- **A human overrides.** `vincent issue ready <id>` and the TUI's ready key
+  mark an `in_progress` issue's finished work ready; `vincent issue unready
+  <id>` pulls an unclaimed `hand_off` issue back to `in_progress`. A step's or
+  MCP caller's mark is allowed and attributed `agent`: it is local state, not a
+  forge write.
+- **The mark lives on the delivery** of the latest `done` root task
+  (`ready`, `ready_by`), so the lane is still derived from task rows (task 134
+  decision 1, kept) and nothing is stored on the issue. A later task that
+  finishes produces a new delivery with its own readiness, so a mark never
+  outlives the work it judged. A merge-back carries its source side task's
+  readiness.
+- **The lanes**, for an open issue: `open` with no root task, or only
+  `aborted` ones; `in_progress` while some root work task is unsettled, or
+  when finished work exists but the latest delivery is not ready (`idle`,
+  decision 5); `hand_off` when nothing is running and the latest delivery is
+  ready. A human's mark moves the lane with `issue.lane_changed` `by: human`.
+
+Unclaimed issues in either lane take new tasks exactly as today; a new task on
+a `hand_off` issue moves it back to `in_progress` while it runs.
+
+*Settled by the author 2026-10-24.* *Alternatives beaten:* always explicit,
+which makes every existing workflow add `--ready` to keep its flow; and
+keeping it automatic, under which a handoff trigger grabs an issue the moment
+its first task finishes, before a human can decide it needs a second.
+
+### 14. A claimed issue takes no new workshop tasks (2026-10-24)
+
+While a live handoff claims an issue — `claimed` or `waiting` — `POST
+/v1/tasks` with that `issue_id` is `409 invalid_state`, `details.reason:
+issue_in_handoff`, with the handoff in `details.handoff_id`. It applies to a
+human, a trigger (whose delivery lands `refused`) and MCP alike. Two things
+still add work:
+
+- **The handoff's own task** may create tasks for its items — a fix task, a
+  side task — since it holds the claim.
+- **A human who wants to add work returns the item first:** the TUI's "return
+  from handoff", or `vincent handoff return` without `--follow-up` (decision
+  4), releases the claim and withdraws readiness, so the issue is `in_progress`
+  and `idle` and takes tasks again.
+
+*Settled by the author 2026-10-24.* *Alternatives beaten:* allowing new tasks
+while the claim stands, under which a merge train can stack a delivery that is
+already stale; and letting a new task release the claim implicitly, which
+pulls an issue out of a handoff mid-run with nobody deciding to.
+
 ## The rest of the frame
 
 What else stands between vincent and "a frame an admin builds their own
@@ -662,7 +745,8 @@ pull request.
   reads deliveries over the API. Depends: 137.2.
 - [ ] **137.4** ([#837](https://github.com/lezli01/vincent/issues/837)) `handoffs` and `handoff_items`, the claim index, eligibility
   SQL shared with the lane fragments (`internal/store/issuelane.go`), the
-  `handoff` actor, and `handoff.*` events (decisions 1, 2, 12). Depends: 137.2.
+  `handoff` actor, `handoff.*` events, and `POST /v1/tasks` refusing a claimed
+  issue with `issue_in_handoff` (decisions 1, 2, 12, 14). Depends: 137.2.
 - [ ] **137.5** ([#838](https://github.com/lezli01/vincent/issues/838)) `POST /v1/handoffs` with `issue_ids` and `select`, the read
   routes, apiclient, `vincent handoff start|ls|show`, and grant-less MCP
   (decision 8). Depends: 137.4.
@@ -682,10 +766,13 @@ pull request.
   the `vincent-triggers` skill and `update-triggers`' checklist line
   (decisions 6, 8, 12). Depends: 137.5, 137.7.
 - [ ] **137.10** ([#843](https://github.com/lezli01/vincent/issues/843)) The derived `handoff` marker on the issue DTO, `?handoff=`,
-  and the CLI's lane column (decision 5). Depends: 137.4.
+  and the CLI's lane column, with `idle` on an `in_progress` issue whose
+  finished work is not ready (decisions 5, 13). Depends: 137.4, 137.15.
 - [ ] **137.11** ([#844](https://github.com/lezli01/vincent/issues/844)) The TUI: the `hand_off` card's marker and delivery, bulk
   selection and the handoff form with its grant checkboxes, the issue detail's
-  Handoff section, and the handoff task's Overview. Depends: 137.6, 137.10.
+  Handoff section, the handoff task's Overview, the ready and unready key and
+  `idle` on in-progress cards, and "return from handoff" on a claimed issue
+  (decisions 13, 14). Depends: 137.6, 137.10.
 - [ ] **137.12** ([#845](https://github.com/lezli01/vincent/issues/845)) Example handoff workflows under `examples/`, and
   `github-iterate-work` split into its dispatcher and `github-handoff-train`
   with a trigger (decision 9). Depends: 137.8, 137.9.
@@ -693,8 +780,17 @@ pull request.
   `cmd/fakegh` and `cmd/fakeagent`: claim exclusivity, an ungranted write
   refused and a granted one written back through the outbox, `wait` resolved by
   a sync close, `return` moving the issue to `in_progress`, an aborted handoff
-  releasing its items. Wired into `gate-group`'s lightest group. Depends: 137.6,
-  137.7.
+  releasing its items, an `explicit` workflow's issue staying `idle` until
+  `deliver --ready` or `vincent issue ready`, and a task refused on a claimed
+  issue. Wired into `gate-group`'s lightest group. Depends: 137.6, 137.7,
+  137.15.
 - [ ] **137.14** ([#847](https://github.com/lezli01/vincent/issues/847)) `docs/guides/handoff.md`, the features page, the API, CLI,
   configuration and template references, and the screenshot seed with new
   tapes appended at the end of `do_capture`. Depends: 137.11, 137.12.
+- [ ] **137.15** ([#848](https://github.com/lezli01/vincent/issues/848)) Readiness: the workflow's `hand_off: auto|explicit`, `vincent
+  task deliver --ready`, `vincent issue ready|unready` with their routes and
+  MCP tools, the mark on the latest delivery, a merge-back carrying its
+  source's readiness, and the lane SQL's new `hand_off` rule; spec §5.2, §5.6
+  and §13.2, the workflow-schema reference, the `vincent-workflows` skill and
+  `update-workflows`' checklist line (decision 13). Depends: 137.2. Added
+  2026-10-24.

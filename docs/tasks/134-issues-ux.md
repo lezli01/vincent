@@ -124,6 +124,17 @@ whose create, transition, delete or restore moved the lane and is omitted on a
 close or reopen; `by` is the close or reopen actor and is omitted on a
 task-caused move.
 
+*Amended 2026-10-24 ([task 137](137-handoff-pillar.md) decision 13, settled
+by the author; in effect once task 137.15 lands):* `hand_off` becomes "no
+unsettled root task, and the latest `done` root task's delivery is
+**ready**". Readiness is automatic for a `hand_off: auto` workflow, the
+default, so a task under one moves its issue exactly as this decision says;
+under `hand_off: explicit` it comes only from `vincent task deliver --ready`,
+and a human may mark or withdraw it either way. An open issue with finished
+work that is not ready stays `in_progress`, marked `idle`. The lane is still
+computed once in SQL from task rows: the mark is stored on the delivery, not
+on the issue.
+
 ### 3. `attention`, and `paused` carries none (2026-10-07)
 
 `attention` is true when some root task of the issue is in a
@@ -430,6 +441,10 @@ Settled by the author (#747 questions 1–4): hand-off is finished `done` work
 on an open issue, an issue whose only tasks were cancelled is `open`
 (decision 2), the board is stacked sections, and the order is
 open → in progress → hand-off (decision 6).
+
+*Narrowed 2026-10-24 ([task 137](137-handoff-pillar.md) decision 13):*
+hand-off is finished work on an open issue **that the workflow or a human
+declared ready**. Finished work nobody declared ready is in progress.
 
 ### 134.14-a. A missing main branch is revived, not replaced (2026-10-07, 134.14)
 
