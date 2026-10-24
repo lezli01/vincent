@@ -809,7 +809,12 @@ pull request.
   reads deliveries over the API. Depends: 137.2. `collect` admits only an
   explicit `change` delivery and snapshots it into the run's scratch; the
   landing step no longer clears anything, and there is no transition shim.
-  ✓ 2026-10-24
+  ✓ 2026-10-24 *Amended 2026-10-24 (review F2 of #850):* unlike the file,
+  a delivery does not survive a follow-up (decision 3), so the train is no
+  longer identical to the file-built one there — `collect` leaves a task
+  followed up after delivering out under a reason of its own, naming
+  `vincent task deliver` as the way back in, and "has moved on" now covers
+  hand edits only. Settled by the author: no shim keeps the cleared record.
 - [x] **137.4** ([#837](https://github.com/lezli01/vincent/issues/837)) `handoffs` and `handoff_items`, the claim index, eligibility
   SQL shared with the lane fragments (`internal/store/issuelane.go`), the
   `handoff` actor, `handoff.*` events, and `POST /v1/tasks` refusing a claimed

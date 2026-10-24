@@ -112,9 +112,13 @@
 # it is not the conflict lands in front of `stack-resolve` like any other.
 #
 # The delivery's `head_sha`, not the branch's tip, is what is stacked: it is
-# the commit the child's verification judged. A branch that moved after delivery
-# — a follow-up, a hand edit — is named in `collect`'s output, not silently
-# swept into the train.
+# the commit the child's verification judged. A branch hand-edited after
+# delivery is named in `collect`'s output, not silently swept into the train.
+# A **follow-up** is different: re-admitting a task clears its delivery, and
+# the follow-up's own `→ done` records an implicit one (task 137 decision 3),
+# because what was verified no longer describes the branch. `collect` leaves
+# such a task out under a reason of its own, so a person can record what it
+# now delivers with `vincent task deliver` and run this again.
 #
 # A task that did not deliver — blocked, aborted, still waiting on a person
 # when the watch gave up — is left out of the train and named. The train lands
@@ -677,7 +681,10 @@ steps:
     # `done` (or archived after being done) **and** it recorded its delivery
     # itself — `implicit` is false, because every finished task has a
     # delivery, and one the daemon built at `→ done` means the run ended
-    # without reaching `deliver` — **and** that delivery is a `change`
+    # without reaching `deliver`, or a follow-up re-ran it after `deliver`
+    # and cleared what that recorded (task 137 decision 3; told apart by a
+    # succeeded `deliver` step run, and named so) — **and** that delivery is
+    # a `change`
     # against this run's base **and** the commit it names exists here.
     # Anything else is named and left out.
     #
@@ -718,7 +725,12 @@ steps:
             continue ;;
         esac
         if [ "$(jq -r '.delivery == null or .delivery.implicit' "$s/task.json")" = true ]; then
-          printf '  task %s  #%s  %s, but finished without recording a delivery\n' "$id" "$issue" "$state" >> "$s/left-out.txt"
+          if [ "$(jq -r 'any(.steps[]?; .step_id == "deliver" and .state == "succeeded")' "$s/task.json")" = true ]; then
+            printf '  task %s  #%s  followed up after delivering, which cleared the delivery;\n' "$id" "$issue" >> "$s/left-out.txt"
+            printf '            record what it delivers now with vincent task deliver %s and run this again\n' "$id" >> "$s/left-out.txt"
+          else
+            printf '  task %s  #%s  %s, but finished without recording a delivery\n' "$id" "$issue" "$state" >> "$s/left-out.txt"
+          fi
           continue
         fi
         kind=$(jq -r '.delivery.kind' "$s/task.json")
