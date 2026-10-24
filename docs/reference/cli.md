@@ -3240,7 +3240,7 @@ handoff and the issues it claimed.
 - **Without ids, it selects.** `--delivery`, `--kind` and `--label` narrow the
   eligible issues (each repeats; any `--delivery` or `--kind` matches, every
   `--label` must) and `--max` caps them. The most urgent come first — priority
-  1, then 4, then issues with none — then the oldest delivery. A selection that
+  1 through 4, then issues with none — then the oldest delivery. A selection that
   finds nothing exits 1. Ids and the selection flags cannot be combined.
 - **`--grant`** gives the handoff capabilities for forge writes —
   `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`,
