@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (3/15)
+**Status:** 🔄 in progress (4/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -801,9 +801,12 @@ pull request.
   copying its source, the startup reconcile for existing issue tasks,
   `task.delivery_changed`, and `delivery` on the task and issue DTOs
   (decision 3). Spec §5.3, §5.6, §6, §12.1, §13.2–§13.4, §14. ✓ 2026-10-24
-- [ ] **137.3** ([#836](https://github.com/lezli01/vincent/issues/836)) The repository's resolve workflows move off
+- [x] **137.3** ([#836](https://github.com/lezli01/vincent/issues/836)) The repository's resolve workflows move off
   `vincent-delivered/` onto `vincent task deliver`, and `github-iterate-work`
-  reads deliveries over the API. Depends: 137.2.
+  reads deliveries over the API. Depends: 137.2. `collect` admits only an
+  explicit `change` delivery and snapshots it into the run's scratch; the
+  landing step no longer clears anything, and there is no transition shim.
+  ✓ 2026-10-24
 - [x] **137.4** ([#837](https://github.com/lezli01/vincent/issues/837)) `handoffs` and `handoff_items`, the claim index, eligibility
   SQL shared with the lane fragments (`internal/store/issuelane.go`), the
   `handoff` actor, `handoff.*` events, and `POST /v1/tasks` refusing a claimed

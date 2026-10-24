@@ -33,18 +33,21 @@
 #     include boundary for a condition to stop at, and that is the right
 #     answer here: no task was created, so there is nothing to watch.
 #
-# It reads two files it did not write, and both couplings are deliberate:
+# It reads one file it did not write, and one thing over the API, and both
+# couplings are deliberate:
 #
 #   - `spawn` writes the tasks it created to
 #     `$(git rev-parse --git-path vincent-issues)/created`, one
 #     `id<TAB>issue<TAB>workflow<TAB>title` per line; `track` reads it. The
 #     alternative is scraping `spawn`'s prose stdout.
-#   - each resolve task's `deliver` step writes a **delivery record** to
-#     `<git common dir>/vincent-delivered/<task id>/` — branch, verified head,
-#     plain-language title, pull request body, brief. The common directory is
-#     the one place every worktree of the project can read, and keying it by
-#     task id means `collect` asks for exactly the tasks this run created. The
-#     resolve workflows' headers say what each file holds.
+#   - each resolve task's `deliver` step records the task's **delivery** (§5.3)
+#     with `vincent task deliver` — kind `change`, verified head, plain-language
+#     title, pull request body, brief as summary, missing-proof lines as proof
+#     — and `collect` reads it back from `vincent task show <id> --json`, for
+#     exactly the tasks this run created. The resolve workflows' `deliver`
+#     steps say which draft file fills which field. *Changed 2026-10-24 (task
+#     137.3):* this used to be a directory of files under
+#     the common git directory.
 #
 # ## Shape
 #
@@ -53,7 +56,7 @@
 #   track         read back what was created, refuse a workflow with no `deliver`
 #   autopilot     the one gate: approve landing whatever they deliver
 #   watch         wait, in half-hour passes, until every task has finished
-#   collect       read each delivery record; the train is what was delivered
+#   collect       read each task's delivery; the train is what was delivered
 #   stack         cut the train from the fresh base, rebase each branch onto it
 #   stack-resolve an agent, only if a rebase stopped on a conflict
 #   train-verify  build, test and lint the whole train, repaired in a loop
@@ -108,8 +111,8 @@
 # are planned not to touch the same files, so that is usually clean, and when
 # it is not the conflict lands in front of `stack-resolve` like any other.
 #
-# `head.sha` in the record, not the branch's tip, is what is stacked: it is the
-# commit the child's verification judged. A branch that moved after delivery
+# The delivery's `head_sha`, not the branch's tip, is what is stacked: it is
+# the commit the child's verification judged. A branch that moved after delivery
 # — a follow-up, a hand edit — is named in `collect`'s output, not silently
 # swept into the train.
 #
@@ -182,7 +185,7 @@
 #     repair-checks    an agent, and only if a required check went red and there
 #                      is another pass left to re-run CI against the repair
 #   merged           the postcondition: MERGED at the commit this task pushed,
-#                    or the run blocks; clears the delivery records it landed
+#                    or the run blocks; cleans up its own scratch
 #
 # ### Why the tail loops
 #
@@ -436,14 +439,14 @@ steps:
           say "cannot read task $id"
           echo "vincent task show $id failed:" >&2; cat "$scratch/task.err" >&2; exit 1; }
         # The snapshot is fixed at creation, so this is read once: a task whose
-        # workflow has no `deliver` step writes no delivery record, and the
+        # workflow has no `deliver` step records no delivery, and the
         # train would have nothing to stack for it.
         didx=$(jq -r '.workflow_steps[] | select(.id == "deliver" and .type == "command") | .index' "$scratch/task.json")
         if [ -z "$didx" ]; then
           say "task $id delivers nothing this train can stack"
           echo "task $id runs '$wf', which has no 'deliver' step. this workflow only knows" >&2
           echo "how to land github-resolve-issue and github-resolve-issue-dag, which end by" >&2
-          echo "writing a delivery record. it will not guess at another workflow's output." >&2
+          echo "recording a delivery. it will not guess at another workflow's output." >&2
           exit 1
         fi
         printf '%s\t%s\t%s\t%s\n' "$id" "$issue" "$wf" "$title" >> "$scratch/tasks.tsv"
@@ -671,9 +674,19 @@ steps:
     shell: sh
     timeout: 10m
     # The train is exactly what was delivered: a task is in it when it is
-    # `done` (or archived after being done) **and** its delivery record is
-    # complete — `delivered-at` is written last — **and** the commit the
-    # record names exists here. Anything else is named and left out.
+    # `done` (or archived after being done) **and** it recorded its delivery
+    # itself — `implicit` is false, because every finished task has a
+    # delivery, and one the daemon built at `→ done` means the run ended
+    # without reaching `deliver` — **and** that delivery is a `change`
+    # against this run's base **and** the commit it names exists here.
+    # Anything else is named and left out.
+    #
+    # Each train task's delivery is snapshotted into this run's scratch, as
+    # `deliveries/<id>.json` (the `.delivery` object exactly as read) beside
+    # `deliveries/<id>/summary.md` and `body.md` for agents to read. Every
+    # later step reads the snapshot and never the API again, so the pull
+    # request body and the agents' context describe exactly what was stacked
+    # even if someone corrects a delivery mid-run.
     #
     # Read each task by id rather than listing the board: an archived task is
     # hidden from `task ls` and is exactly the one this has to report.
@@ -682,15 +695,16 @@ steps:
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
       s=$(git rev-parse --git-path vincent-iterate)
-      common=$(git rev-parse --path-format=absolute --git-common-dir)
+      snap="$(git rev-parse --path-format=absolute --git-path vincent-iterate)/deliveries"
       say "reading what each task delivered"
 
+      rm -rf "$snap"
+      mkdir -p "$snap"
       : > "$s/train.tsv"
       : > "$s/train.txt"
       : > "$s/left-out.txt"
       while IFS="$(printf '\t')" read -r id issue wf title; do
         [ -n "$id" ] || continue
-        rec="$common/vincent-delivered/$id"
         if vincent task show "$id" --json </dev/null > "$s/task.json" 2>"$s/task.err"; then
           state=$(jq -r '.state' "$s/task.json")
         else
@@ -703,33 +717,47 @@ steps:
             printf '  task %s  #%s  %s — not delivered\n' "$id" "$issue" "$state" >> "$s/left-out.txt"
             continue ;;
         esac
-        if [ ! -f "$rec/delivered-at" ]; then
-          printf '  task %s  #%s  %s, but no delivery record at %s\n' "$id" "$issue" "$state" "$rec" >> "$s/left-out.txt"
+        if [ "$(jq -r '.delivery == null or .delivery.implicit' "$s/task.json")" = true ]; then
+          printf '  task %s  #%s  %s, but finished without recording a delivery\n' "$id" "$issue" "$state" >> "$s/left-out.txt"
           continue
         fi
-        base=$(cat "$rec/base")
+        kind=$(jq -r '.delivery.kind' "$s/task.json")
+        if [ "$kind" != change ]; then
+          printf '  task %s  #%s  delivered %s, not a change\n' "$id" "$issue" "$kind" >> "$s/left-out.txt"
+          continue
+        fi
+        base=$(jq -r '.delivery.base // ""' "$s/task.json")
         if [ "$base" != "{{.Task.BaseBranch}}" ]; then
           printf '  task %s  #%s  delivered against %s, not {{.Task.BaseBranch}}\n' "$id" "$issue" "$base" >> "$s/left-out.txt"
           continue
         fi
-        branch=$(cat "$rec/branch")
-        head=$(cat "$rec/head.sha")
-        if ! git cat-file -e "$head^{commit}" 2>/dev/null; then
+        branch=$(jq -r '.delivery.branch // ""' "$s/task.json")
+        head=$(jq -r '.delivery.head_sha // ""' "$s/task.json")
+        if [ -z "$head" ] || ! git cat-file -e "$head^{commit}" 2>/dev/null; then
           printf '  task %s  #%s  its delivered commit %s is gone\n' "$id" "$issue" "$head" >> "$s/left-out.txt"
           continue
         fi
 
+        d="$snap/$id"
+        jq '.delivery' "$s/task.json" > "$d.json"
+        mkdir -p "$d"
+        jq -r '.title // ""' "$d.json" > "$d/title.txt"
+        jq -r '.summary // ""' "$d.json" > "$d/summary.md"
+        jq -r '.body // ""' "$d.json" > "$d/body.md"
+        jq -r '.proof // ""' "$d.json" > "$d/proof.txt"
+        [ -n "$(tr -d '[:space:]' < "$d/proof.txt")" ] || rm -f "$d/proof.txt"
+
         printf '%s\t%s\t%s\t%s\n' "$id" "$issue" "$branch" "$head" >> "$s/train.tsv"
         {
-          printf 'task %s  #%s  %s\n' "$id" "$issue" "$(cat "$rec/pr-title.txt")"
-          printf '  branch:  %s at %s\n' "$branch" "$head"
-          printf '  record:  %s\n' "$rec"
+          printf 'task %s  #%s  %s\n' "$id" "$issue" "$(cat "$d/title.txt")"
+          printf '  branch:   %s at %s\n' "$branch" "$head"
+          printf '  delivery: %s/ (summary.md, body.md)\n' "$d"
           tip=$(git rev-parse --verify --quiet "refs/heads/$branch" || true)
           if [ -n "$tip" ] && [ "$tip" != "$head" ]; then
-            printf '  note:    %s has moved on to %s since it was delivered;\n' "$branch" "$tip"
-            printf '           the train stacks the delivered, verified commit\n'
+            printf '  note:     %s has moved on to %s since it was delivered;\n' "$branch" "$tip"
+            printf '            the train stacks the delivered, verified commit\n'
           fi
-          if [ -f "$rec/proof.txt" ]; then sed 's/^/  proof:   /' "$rec/proof.txt"; fi
+          if [ -f "$d/proof.txt" ]; then sed 's/^/  proof:    /' "$d/proof.txt"; fi
         } >> "$s/train.txt"
       done < "$s/tasks.tsv"
 
@@ -911,9 +939,10 @@ steps:
       (quote it — the path has spaces). In it:
 
       - `train.txt` lists every task on the train in order: its issue, its
-        branch, the delivered commit, and its **delivery record** directory.
-        Each record's `brief.md` and `pr.md` say what that task's change is
-        *for*; that is what decides how a conflict resolves.
+        branch, the delivered commit, and the directory holding its
+        **delivery**. Each one's `summary.md` (the task's brief) and `body.md`
+        (its pull request body) say what that task's change is *for*; that is
+        what decides how a conflict resolves.
       - `stacking` names the task whose branch is being rebased right now;
         `stacked` lists the ones already on the train.
       - `stack.sh` is the script that does the stacking. It is resumable.
@@ -1032,8 +1061,8 @@ steps:
           tasks' changes meeting — a renamed function one branch still calls,
           two additions to the same table, a test asserting a count both
           changed. `cat "$(git rev-parse --git-path vincent-iterate)/train.txt"`
-          lists the tasks and their delivery records; each record's
-          `brief.md` says what that change is for.
+          lists the tasks and their deliveries; each delivery's
+          `summary.md` says what that change is for.
 
           Say what you are doing as you go:
 
@@ -1150,12 +1179,12 @@ steps:
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
       s=$(git rev-parse --git-path vincent-iterate)
-      common=$(git rev-parse --path-format=absolute --git-common-dir)
+      snap="$(git rev-parse --path-format=absolute --git-path vincent-iterate)/deliveries"
 
       n=$(cat "$s/delivered")
       if [ "$n" -eq 1 ]; then
         id=$(cut -f1 "$s/train.tsv")
-        cp "$common/vincent-delivered/$id/pr-title.txt" "$s/pr-title.txt"
+        cp "$snap/$id/title.txt" "$s/pr-title.txt"
       else
         awk -F'\t' '
           { nums[NR] = "#" $2 }
@@ -1172,13 +1201,13 @@ steps:
         printf 'onto `{{.Task.BaseBranch}}` in the order below and verified together.\n\n'
         while IFS="$(printf '\t')" read -r id issue branch head; do
           [ -n "$id" ] || continue
-          rec="$common/vincent-delivered/$id"
-          printf '%s\n\n## %s\n\n' '---' "$(cat "$rec/pr-title.txt")"
+          d="$snap/$id"
+          printf '%s\n\n## %s\n\n' '---' "$(cat "$d/title.txt")"
           printf '_vincent task #%s, issue #%s, delivered as `%s` at %s._\n\n' "$id" "$issue" "$branch" "$head"
-          if [ -f "$rec/proof.txt" ]; then
-            printf '> **%s**\n\n' "$(cat "$rec/proof.txt")"
+          if [ -f "$d/proof.txt" ]; then
+            printf '> **%s**\n\n' "$(cat "$d/proof.txt")"
           fi
-          cat "$rec/pr.md"
+          cat "$d/body.md"
           printf '\n\n'
         done < "$s/train.tsv"
       } > "$s/pr.md"
@@ -1250,9 +1279,10 @@ steps:
 
       The scratch directory is `s=$(git rev-parse --git-path vincent-iterate)`
       (quote it — the path has spaces). `cat "$s/train.txt"` lists every task
-      on the train and its **delivery record**: `brief.md` says what that
-      change is *for*, `pr.md` what it claims to do. A change that does not do
-      what its own brief and body say is a finding.
+      on the train and the directory holding its **delivery**: `summary.md`
+      (the task's brief) says what that change is *for*, `body.md` what it
+      claims to do. A change that does not do what its own brief and body say
+      is a finding.
 
       How to review:
 
@@ -1630,7 +1660,7 @@ steps:
       - `resolutions.json` is what has been resolved. **Read it first**: an
         earlier session may already have resolved some, and those are done;
       - `"$(dirname "$r")/train.txt"` lists the tasks on the train and their
-        delivery records — `brief.md` is the scope each change agreed to.
+        deliveries — each one's `summary.md` is the scope that change agreed to.
 
       Take the open findings in order, P0 first, and settle each one as
       exactly one of:
@@ -1667,7 +1697,7 @@ steps:
       - the right fix is a product or design decision — two reasonable
         behaviors, a documented decision that would have to change, a
         binding phase decision (`CLAUDE.md`) the finding runs into;
-      - the fix reaches beyond the scope a task's `brief.md` agreed to.
+      - the fix reaches beyond the scope a task's `summary.md` agreed to.
 
       Do not ask about what reading the code or running it can settle.
 
@@ -1851,8 +1881,8 @@ steps:
 
           - This branch is a merge train: the delivered branches of several
             tasks, stacked in order. `cat "$(git rev-parse --git-path vincent-iterate)/train.txt"`
-            lists them — each task, its issue and its delivery record, whose
-            `brief.md` and `pr.md` say what that part of the train is *for*.
+            lists them — each task, its issue and its delivery, whose
+            `summary.md` and `body.md` say what that part of the train is *for*.
             That is what decides how a conflict resolves; `git log` on the
             conflicted commit tells you which task it belongs to.
           - Keep both sides' intent. Do not resolve a conflict by discarding the
@@ -2590,7 +2620,7 @@ steps:
             no longer runs is not a check that passed, and this repository's
             required contexts are named in branch protection — removing one
             leaves the wait hanging on a context nothing will ever report.
-          - If one of the stacked tasks **is** CI work — its `brief.md` says
+          - If one of the stacked tasks **is** CI work — its `summary.md` says
             so — the red check may be that change itself failing on a platform
             this machine is not: the finding its issue exists to surface, not
             noise. Fix the gate or the workflow: a CRLF left in a multi-line
@@ -2605,9 +2635,9 @@ steps:
             `go run mage.go testrace`, the gate script the job named — rather
             than assuming the host is representative.
           - This branch is a merge train. `cat "$s/train.txt"` lists the
-            tasks stacked on it and their delivery records; find which task's
+            tasks stacked on it and their deliveries; find which task's
             commits the failure belongs to and stay inside the scope that
-            task's `brief.md` agreed. A failure that only appears with two
+            task's `summary.md` agreed. A failure that only appears with two
             tasks' changes together is the train's to fix, and a fix here is
             the right place for it. If the check is red for a reason that
             predates this branch, say so plainly and fix only what this branch
@@ -2651,15 +2681,14 @@ steps:
     # `merge-probe` already waited for the state to settle, so this reads once
     # rather than polling.
     #
-    # Only after that does it remove the delivery records of the tasks it
-    # landed — a record is a claim that a branch is ready to land, and once it
-    # has landed the claim is spent. A run that fails before here leaves every
-    # record, and the scratch directory, in place for a retry or a person.
+    # Only after that does it remove the run's scratch directory, the delivery
+    # snapshots with it. The deliveries themselves are task history and are
+    # never cleared (task 137.3). A run that fails before here leaves the
+    # scratch directory in place for a retry or a person.
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
       s=$(git rev-parse --git-path vincent-iterate)
-      common=$(git rev-parse --path-format=absolute --git-common-dir)
 
       url=$(cat "$s/url.txt")
       head=$(cat "$s/head.sha")
@@ -2683,8 +2712,7 @@ steps:
         say "every merge pass is spent and the PR is ${state:-unreadable}"
         echo "the pull request is ${state:-unreadable}, not MERGED, after every merge pass." >&2
         echo "read the last 'wait-checks', 'merge-ready' and 'merge-probe' runs in this task's" >&2
-        echo "transcript for what stopped it. the train is pushed, the pull request is open," >&2
-        echo "and the delivery records are left in place." >&2
+        echo "transcript for what stopped it. the train is pushed and the pull request is open." >&2
         exit 1
       fi
 
@@ -2692,7 +2720,6 @@ steps:
       if [ "$oid" != "$head" ]; then
         say "merged at $(printf '%s' "$oid" | cut -c1-7), not the verified commit $short"
         echo "the pull request merged at $oid, not at the verified commit $head." >&2
-        echo "the delivery records are left in place." >&2
         exit 1
       fi
       commit=$(jq -r '.mergeCommit.oid // "unknown"' "$s/merged.json" | cut -c1-7)
@@ -2702,7 +2729,6 @@ steps:
       while IFS="$(printf '\t')" read -r id issue branch dhead; do
         [ -n "$id" ] || continue
         echo "  task $id  #$issue  $branch"
-        rm -rf "$common/vincent-delivered/$id"
       done < "$s/train.tsv"
       if [ -s "$s/left-out.txt" ]; then
         echo

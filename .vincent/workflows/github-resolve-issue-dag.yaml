@@ -6,7 +6,7 @@
 # audit, the cross-platform legs and the closing `deliver` step are copied
 # across unchanged, so the two workflows fail the same way and a fix to one is
 # a legible diff against the other. Like the sequential file, it ends at a
-# verified branch and a delivery record: it opens and merges nothing, and
+# verified branch and a delivery recorded on the task: it opens and merges nothing, and
 # `github-iterate-work`'s merge train is what lands it (since 2026-10-02).
 #
 # What differs is the middle. `github-resolve-issue` implements the whole issue
@@ -1224,7 +1224,7 @@ steps:
       case "$cmd" in
         none:*)
           echo "NO AUTOMATED REPRODUCTION -${cmd#none:}"
-          echo "this fix ships without a regression test; the delivery record and the"
+          echo "this fix ships without a regression test; the task's delivery and the"
           echo "pull request that ships it will say so."
           printf 'exit 0\n' > .vincent-issue/green.sh
           # A green step whose status says the proof is missing. This is the
@@ -2037,7 +2037,7 @@ steps:
     # Cheap assertions first, so an obvious failure does not wait out a full
     # test run: scratch stayed untracked, something is on the branch (an empty
     # one would only fail at `deliver`, after the whole verify loop), the PR
-    # artifacts the delivery record carries exist. Then — on the bug path only — the
+    # artifacts the delivery carries exist. Then — on the bug path only — the
     # narrow regression test, which is the fastest signal that the fix works.
     # Then the real bar — and `go build ./...` leads it, because this is the
     # first point at which the whole repository is expected to compile: a lane
@@ -2271,7 +2271,7 @@ steps:
 
       Never stage or commit `.vincent-issue/`.
     # Four assertions. The report exists and is machine-readable, because
-    # `deliver` carries it into the delivery record. The worktree is committed and the scratch directory
+    # a missing or vague verdict is an audit that did not happen. The worktree is committed and the scratch directory
     # is still untracked. The step stayed inside its lane — the offenders
     # clause names the paths on stderr rather than exiting silently, because
     # §8.4 hands the retry this output and "check failed" tells an agent
@@ -2523,42 +2523,40 @@ steps:
     type: command
     shell: sh
     timeout: 5m
-    # Pure bookkeeping on local files, so a second attempt is the same attempt.
+    # One call that replaces the task's delivery, so a second attempt is the
+    # same attempt.
     max_retries: 0
     # The end of the run, and the whole of what this workflow delivers: a
-    # committed, verified branch and a **delivery record** saying it is ready
-    # for a pull request. Nothing here pushes, opens or merges anything — that
-    # is no longer this workflow's job. `github-iterate-work` stacks every
-    # delivered branch of a run into one merge train, opens one pull request
-    # for it and merges it; a person running this workflow on its own opens
-    # the pull request from the task (§13.2 `…/github/pull/create`) with the
-    # title and body the record carries.
+    # committed, verified branch and a **delivery** recorded on the task saying
+    # it is ready for a pull request. Nothing here pushes, opens or merges
+    # anything — that is no longer this workflow's job. `github-iterate-work`
+    # stacks every delivered branch of a run into one merge train, opens one
+    # pull request for it and merges it; a person running this workflow on its
+    # own opens the pull request from the task (§13.2 `…/github/pull/create`)
+    # with the title and body the delivery carries.
     #
-    # The record lives in the repository's **common** git directory, not in
-    # this worktree and not under `--git-path`: `--git-path` resolves inside a
-    # linked worktree's own gitdir, which no other task can find, while every
-    # worktree of the project shares the common one. One directory per task,
-    # named by the task id, so the reader asks for exactly the tasks it
-    # created and never globs for someone else's:
+    # *Changed 2026-10-24 (task 137.3).* The delivery used to be a directory of
+    # files under the common git directory; it is now the task's own §5.3
+    # `delivery`, written with `vincent task deliver` (the task id comes from
+    # VINCENT_TASK_ID) and read back with `vincent task show --json` or
+    # `GET /v1/tasks/{id}/delivery`. The draft files fill its fields:
     #
-    #     <common>/vincent-delivered/<task id>/
-    #       branch         this task's branch name
-    #       head.sha       the commit the verification above judged
-    #       base           the branch it was cut from
-    #       github-issue   the GitHub issue number it resolves
-    #       pr-title.txt   the plain-language title `implement` wrote
-    #       pr.md          the pull request body, with its `Closes #N` / `Part of #N`
-    #       brief.md       what the change is for — a conflict resolver's best input
-    #       docs.md        the documentation audit, when it ran
-    #       proof.txt      present only when the change shipped without automated proof
-    #       delivered-at   written last: the record is complete once it exists
+    #     kind           change — commits to integrate
+    #     title          .vincent-issue/pr-title.txt, the title `implement` wrote
+    #     body           .vincent-issue/pr.md, with its `Closes #N` / `Part of #N`
+    #     summary        .vincent-issue/brief.md — a conflict resolver's best input
+    #     head_sha       the commit the verification above judged
+    #     proof          present only when the change shipped without automated proof
+    #     close_reason   `completed` when brief.md's second line is `closes: yes`
     #
-    # `head.sha` pins the delivery to what was verified. A follow-up that moves
+    # The daemon fills `branch` and `base` from the task, and `recorded_at`.
+    #
+    # `head_sha` pins the delivery to what was verified. A follow-up that moves
     # the branch afterwards is not silently swept into a merge train; the
     # reader takes this commit and says so when the branch has moved on.
     #
-    # `.vincent-issue/` is removed last, after its contents are copied out, so
-    # the finished task leaves a clean worktree and archiving it does not warn.
+    # `.vincent-issue/` is removed last, after the delivery is recorded, so the
+    # finished task leaves a clean worktree and archiving it does not warn.
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
@@ -2584,53 +2582,57 @@ steps:
       for f in pr-title.txt pr.md brief.md; do
         test -s ".vincent-issue/$f" || {
           say ".vincent-issue/$f is missing: nothing was delivered"
-          echo ".vincent-issue/$f is missing or empty; the delivery record needs it." >&2
+          echo ".vincent-issue/$f is missing or empty; the delivery needs it." >&2
           exit 1; }
       done
 
-      common=$(git rev-parse --path-format=absolute --git-common-dir)
-      out="$common/vincent-delivered/{{.Task.ID}}"
       head=$(git rev-parse HEAD)
       say "recording the delivery of $(printf '%s' "$head" | cut -c1-7)"
 
-      rm -rf "$out"
-      mkdir -p "$out"
-      printf '%s\n' "{{.Task.BranchName}}" > "$out/branch"
-      printf '%s\n' "$head" > "$out/head.sha"
-      printf '%s\n' "{{.Task.BaseBranch}}" > "$out/base"
-      printf '%s\n' '{{ index .Task.Fields "github_issue" }}' > "$out/github-issue"
-      cp .vincent-issue/pr-title.txt .vincent-issue/pr.md .vincent-issue/brief.md "$out/"
-      if [ -s .vincent-issue/docs.md ]; then cp .vincent-issue/docs.md "$out/"; fi
-
       # The two escape hatches stay loud past the end of the run: a fix with no
       # observed-red test and a CI change with no local proof are carried into
-      # the record, and from there into the merge train's pull request.
-      : > "$out/proof.txt"
+      # the delivery's proof, and from there into the merge train's pull request.
+      proof=.vincent-issue/delivery-proof.txt
+      : > "$proof"
       if [ -f .vincent-issue/red-test.txt ]; then
         case "$(head -n 1 .vincent-issue/red-test.txt)" in
-          none:*) printf 'NO AUTOMATED REPRODUCTION: %s\n' "$(head -n 1 .vincent-issue/red-test.txt | sed 's/^none:[[:space:]]*//')" >> "$out/proof.txt" ;;
+          none:*) printf 'NO AUTOMATED REPRODUCTION: %s\n' "$(head -n 1 .vincent-issue/red-test.txt | sed 's/^none:[[:space:]]*//')" >> "$proof" ;;
         esac
       fi
       if [ -f .vincent-issue/proof.lines ]; then
         case "$(head -n 1 .vincent-issue/proof.lines)" in
-          none:*) printf 'NO LOCAL PROOF: %s\n' "$(head -n 1 .vincent-issue/proof.lines | sed 's/^none:[[:space:]]*//')" >> "$out/proof.txt" ;;
+          none:*) printf 'NO LOCAL PROOF: %s\n' "$(head -n 1 .vincent-issue/proof.lines | sed 's/^none:[[:space:]]*//')" >> "$proof" ;;
         esac
       fi
-      [ -s "$out/proof.txt" ] || rm -f "$out/proof.txt"
 
-      date -u +%Y-%m-%dT%H:%M:%SZ > "$out/delivered-at"
+      # Optional flags as positional parameters, so each stays one word.
+      set --
+      if [ -s "$proof" ]; then set -- "$@" --proof-file "$proof"; fi
+      case "$(sed -n 2p .vincent-issue/brief.md)" in
+        "closes: yes") set -- "$@" --close-reason completed ;;
+      esac
+
+      title=$(cat .vincent-issue/pr-title.txt)
+      if ! vincent task deliver --kind change --title "$title" \
+          --body-file .vincent-issue/pr.md --summary-file .vincent-issue/brief.md \
+          --head "$head" "$@"; then
+        say "vincent task deliver failed: nothing was delivered"
+        echo "vincent task deliver refused the delivery; its error is above." >&2
+        exit 1
+      fi
+      proofs=$(cat "$proof")
       rm -rf .vincent-issue
 
       echo "delivered: {{.Task.BranchName}} at $head"
       echo "           $ahead commit(s) past origin/{{.Task.BaseBranch}}, verified, not pushed"
-      echo "title:     $(cat "$out/pr-title.txt")"
-      echo "record:    $out"
-      if [ -f "$out/proof.txt" ]; then
+      echo "title:     $title"
+      echo "recorded:  on task {{.Task.ID}}"
+      if [ -n "$proofs" ]; then
         echo
-        cat "$out/proof.txt"
+        printf '%s\n' "$proofs"
       fi
       echo
       echo "ready for a pull request against {{.Task.BaseBranch}}. github-iterate-work"
       echo "picks this up into its merge train; on its own, open the pull request"
-      echo "from this task with the title and body in the record."
+      echo "from this task with the title and body in 'vincent task show {{.Task.ID}}'."
       say "ready for a PR: $(printf '%s' "$head" | cut -c1-7), $ahead commit(s)"
