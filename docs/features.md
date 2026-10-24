@@ -428,7 +428,8 @@ In detail:
   an imported issue's mirrored fields and its thread, which mirrors GitHub's,
   stay read-only. It is offered whether or not any project uses GitHub. From
   a shell, `vincent issue` lists, shows, files, edits, comments on, closes,
-  reopens and deletes them.
+  reopens and deletes them, and marks an issue's finished work ready (or not)
+  to hand off.
 
   ![The issues board on platform-infra with all four lanes shown: open,
   in progress with a `!` for a blocked task, hand-off for finished work, and

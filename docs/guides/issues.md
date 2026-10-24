@@ -20,14 +20,23 @@ this page is the story behind them.
 
 Every issue is on one of four lanes, derived by vincent from the issue and its
 **root** tasks (fan-out lanes never count). A lane is never set by hand:
-starting a task, finishing one, or closing the issue is what moves it.
+starting a task, finishing one, marking its work ready, or closing the issue
+is what moves it.
 
 | Lane | When |
 |---|---|
 | `open` | The issue is open and no root task is unfinished or done: no task yet, or only cancelled ones |
-| `in_progress` | The issue is open and some root task is not `done`, `aborted` or archived — `paused` included |
-| `hand_off` | The issue is open, every root task has finished, and at least one finished `done`. The work is back with you: review it and close the issue. Nothing closes it for you |
+| `in_progress` | The issue is open and some root task is not `done`, `aborted` or archived — `paused` included — or every root task has finished but the latest finished main task's work is not ready to hand off |
+| `hand_off` | The issue is open, every root task has finished, and the latest finished main task's work is ready. The work is back with you: review it and close the issue. Nothing closes it for you |
 | `done` | The issue is closed — completed, not planned or a duplicate, whatever its tasks are doing. Reopening it returns it to the lane its tasks give it |
+
+Whether finished work is ready is the workflow's `hand_off:` key: `auto`, the
+default, makes it ready when the task ends `done`; `explicit` leaves it not
+ready unless a step ran `vincent task deliver --ready` (see the
+[workflow schema](../reference/workflow-schema.md#hand_off)). Either way,
+`vincent issue ready <id>` marks it ready and `vincent issue unready <id>`
+sends a `hand_off` issue back to `in_progress`; both are refused while a root
+task of the issue is still running. A newer finished task decides afresh.
 
 Beside the lane, **attention** — the `!` badge — means one of the issue's root
 tasks is waiting on you: `awaiting_input`, `awaiting_gate` or `blocked`. A
