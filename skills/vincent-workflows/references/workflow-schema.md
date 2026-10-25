@@ -47,7 +47,6 @@ steps:
 | `name` | string | yes | Unique registry name |
 | `description` | string | no | Picker and workflow description |
 | `platforms` | list | no | Whole-workflow host restriction |
-| `hand_off` | `auto` or `explicit` | no | When an issue task's finished work is ready to hand off; default `auto` |
 | `fields` | list | no | Ordered task-input declarations |
 | `defaults` | map | no | Values inherited by steps |
 | `steps` | nonempty list | yes | Ordered workflow body |
@@ -55,13 +54,6 @@ steps:
 `platforms` accepts `linux`, `darwin`, `windows`, and `posix`; `posix` means
 non-Windows. It restricts the whole workflow. For a per-step platform guard,
 use `.Host.OS` in `if:`. Vincent never translates shell syntax.
-
-`hand_off: auto` marks a root task's delivery ready when it ends `done`, so its
-issue reaches the `hand_off` lane once nothing else of it runs. `hand_off:
-explicit` marks it not ready unless a step ran `vincent task deliver --ready`;
-the issue then waits in `in_progress` until that, or a person's `vincent issue
-ready`. The value is fixed at task creation, and an included workflow's is
-ignored.
 
 Each field declaration supports:
 

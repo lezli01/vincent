@@ -4,7 +4,7 @@ description: Create, edit, review, and validate vincent workflow YAML under .vin
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.4.0
+  version: 1.3.0
 ---
 
 # vincent Workflows
@@ -195,12 +195,8 @@ you mean — every key written is one a reviewer must check.
 `description` is the picker text. `platforms:` (`linux`, `darwin`, `windows`,
 `posix`) restricts the whole workflow to the hosts its `run:` bodies are
 written for — declare it rather than let a POSIX-only body fail on Windows,
-and use an `if:` on `.Host.OS` for a single step instead. `hand_off:` says
-when a finished issue task's work is ready to hand off: `auto` (the default)
-marks it ready at `done`; `explicit` leaves the issue in `in_progress` until a
-step runs `vincent task deliver --ready` or a person runs `vincent issue
-ready` — set it for research or spike work a person judges first, or when a
-step decides. `fields:` declares task inputs; `defaults:` sets step fallbacks.
+and use an `if:` on `.Host.OS` for a single step instead. `fields:` declares
+task inputs; `defaults:` sets step fallbacks.
 
 **A declared field.** `name` and `type` are required, then `required`,
 `pattern`, `values`, `multiple`, and `default` as described above.

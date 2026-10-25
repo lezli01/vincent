@@ -91,7 +91,9 @@ var checklistExempt = map[string]string{
 // two tests below the moment the skill or the checklist names its key, so
 // the audit that adds the text is also the edit that deletes the entry, and
 // the set is empty again on master.
-var pendingAudit = map[string]string{}
+var pendingAudit = map[string]string{
+	"hand_off": "task 137.15 (#848): the skills and built-ins are audited after the units land",
+}
 
 // pendingAuditFor reports whether key is still awaiting its audit, and fails
 // the test when text already names it — the entry outlived its reason.
