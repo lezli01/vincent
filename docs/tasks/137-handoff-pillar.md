@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (4/15)
+**Status:** 🔄 in progress (6/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -557,6 +557,24 @@ The first issue to reach `hand_off` starts a handoff; while it runs, later
 arrivals coalesce into one held event, which fires when the handoff's task
 settles and selects everything that accumulated.
 
+*Amended 2026-10-24 (task 137.5, issue #838), settled with the author:*
+
+- **The body takes the task options** of `POST /v1/tasks`, flat at the top
+  level — `description`, `fields`, `priority`, `agent`, `model`, `effort`,
+  `restricted` and `max_task_cost_usd` — and the task is built by that route's
+  own code. `restricted` is there now because 137.9 maps a trigger's
+  `permission` onto it. The fields that would make the task anything but a
+  root task with no issue, cut from the project's base, are refused.
+- **A grant is refused from every agent caller**, not only MCP: an MCP call
+  or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`, which is
+  `issueActor`'s definition and decision 6's. Best-effort, like every marker
+  (spec §16).
+- **The three reasons** are `issue_not_eligible` (with `issue_id`, and
+  `handoff_id` when a handoff in the project claims it), `nothing_to_hand_off`
+  and `grant_needs_human`, all `409 invalid_state`.
+- **`order: priority` puts priority 0 last**: urgent (1) through low (4),
+  then "none", then the oldest delivery, then issue id.
+
 ### 9. Trains, reviews and pull requests stay in workflows (2026-10-24)
 
 Vincent ships no merge-train step, no review step and no `merge` step type
@@ -660,6 +678,37 @@ a `hand_off` issue moves it back to `in_progress` while it runs.
 which makes every existing workflow add `--ready` to keep its flow; and
 keeping it automatic, under which a handoff trigger grabs an issue the moment
 its first task finishes, before a human can decide it needs a second.
+
+*Amended 2026-10-24 (task 137.15, issue #848), settled by the author when the
+item was evaluated.* Three gaps in the decision as written:
+
+1. **An absent `ready` reads as ready, and there is no migration.** The last
+   bullet above is replaced. The lane SQL reads a finished root task whose
+   delivery is NULL, or has no `ready` key, as ready — the old automatic rule —
+   spelled once (`COALESCE(json_extract(t.delivery_json, '$.ready'), 1)`).
+   Every write from this change on stores `ready` explicitly. A migration
+   cannot compute a delivery's `kind`, so it would either leave the 137.2
+   backfill skipping rows for ever or leave issues not ready until the
+   backfill finished; `ready_by: migration` is never written.
+2. **A correction keeps readiness.** `vincent task deliver` on a `done` task
+   replaces the delivery's text and keeps its stored `ready`/`ready_by`;
+   `--ready` there is a mark attributed like `vincent issue ready` (`human`,
+   or `agent` over MCP). Only `vincent issue unready` withdraws readiness. On
+   a running task the last call wins: `--ready` stores `ready_by: task`, and a
+   later call without it clears it.
+3. **A side-only issue is `in_progress`, idle.** The latest delivery stays the
+   main-line one. An issue whose only finished work is a side task whose
+   merge-back never ran has finished work but no ready main-line delivery, so
+   it waits in `in_progress`; this keeps decision 3's "every `hand_off` issue
+   has a delivery". It is the one lane that moves on upgrade (it was
+   `hand_off`), and `vincent issue ready` on it is refused with
+   `issue_no_finished_work`.
+
+`ready_by` is `workflow`, `task`, `human` or `agent`. An `auto` workflow
+stamps `ready_by: workflow` at `→ done` unless a step already said `--ready`;
+it cannot say "not ready". The refusals are `409 invalid_state` with
+`issue_work_running`, `issue_no_finished_work`, `issue_in_handoff` and, for
+`unready` outside `hand_off`, `issue_not_hand_off`.
 
 ### 14. A claimed issue takes no new workshop tasks (2026-10-24)
 
@@ -823,9 +872,12 @@ pull request.
   `handoff` actor, `handoff.*` events, and `POST /v1/tasks` refusing a claimed
   issue with `issue_in_handoff` (decisions 1, 2, 12, 14). Depends: 137.2.
   Spec §5.6, §5.7, §13.2, §13.3. ✓ 2026-10-24
-- [ ] **137.5** ([#838](https://github.com/lezli01/vincent/issues/838)) `POST /v1/handoffs` with `issue_ids` and `select`, the read
+- [x] **137.5** ([#838](https://github.com/lezli01/vincent/issues/838)) `POST /v1/handoffs` with `issue_ids` and `select`, the read
   routes, apiclient, `vincent handoff start|ls|show`, and grant-less MCP
-  (decision 8). Depends: 137.4.
+  (decision 8). Depends: 137.4. Spec §5.7, §13.1, §13.2, §13.4, §18.
+  ✓ 2026-10-24 The list route is a third tool, `handoff_list`, because
+  §13.4's surface is the route table minus its exclusions and a read is no
+  exclusion.
 - [ ] **137.6** ([#839](https://github.com/lezli01/vincent/issues/839)) The item verbs, release on settle, resolve-on-close for
   `waiting`, and `return` as a follow-up (decision 4). Depends: 137.5.
 - [ ] **137.7** ([#840](https://github.com/lezli01/vincent/issues/840)) The grant and the one forge-write guard over issue and
@@ -863,7 +915,7 @@ pull request.
 - [ ] **137.14** ([#847](https://github.com/lezli01/vincent/issues/847)) `docs/guides/handoff.md`, the features page, the API, CLI,
   configuration and template references, and the screenshot seed with new
   tapes appended at the end of `do_capture`. Depends: 137.11, 137.12.
-- [ ] **137.15** ([#848](https://github.com/lezli01/vincent/issues/848)) Readiness: the workflow's `hand_off: auto|explicit`, `vincent
+- [x] **137.15** ([#848](https://github.com/lezli01/vincent/issues/848)) Readiness: the workflow's `hand_off: auto|explicit`, `vincent
   task deliver --ready`, `vincent issue ready|unready` with their routes and
   MCP tools, the mark on the latest delivery stamped at `→ done` from the
   snapshot, a merge-back carrying its source's readiness, the lane SQL's and
@@ -871,4 +923,5 @@ pull request.
   issue's lane on upgrade, and the workflow editor's row for the key (task
   086's coverage test); spec §5.2, §5.6, §13.2 and §13.3, the workflow-schema
   reference, the `vincent-workflows` skill and `update-workflows`' checklist
-  line (decision 13). Depends: 137.2. Added 2026-10-24.
+  line (decision 13). Depends: 137.2. Added 2026-10-24. ✓ 2026-10-24 — with
+  no migration (decision 13's amendment).

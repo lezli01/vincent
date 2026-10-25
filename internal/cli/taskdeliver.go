@@ -29,6 +29,7 @@ func newTaskDeliverCmd() *cobra.Command {
 		kind, title, body, bodyFile                    string
 		summary, summaryFile, head, closeReason, proof string
 		proofFile                                      string
+		ready                                          bool
 	)
 	cmd := &cobra.Command{
 		Use:   "deliver",
@@ -40,14 +41,21 @@ func newTaskDeliverCmd() *cobra.Command {
 			"--kind is change (the default: commits to integrate), reply (an answer or " +
 			"questions to post) or none. --head must be a commit on the task's branch and " +
 			"defaults to its tip. The daemon accepts a delivery while the task runs or once " +
-			"it is done.",
+			"it is done.\n\n" +
+			"--ready marks the delivery ready to hand off (task 137 decision 13), which a " +
+			"workflow with hand_off: explicit waits for before its issue reaches the hand_off " +
+			"lane. On a running task the last call wins: a later deliver without --ready " +
+			"clears it. On a done task it is a human's mark on that task's delivery, and a " +
+			"correction without it keeps the readiness already stored. It moves the issue's " +
+			"lane only when the task holds the issue's latest finished main-line delivery; " +
+			"`vincent issue ready` marks that one for you.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			id, err := deliverTaskID(taskID)
 			if err != nil {
 				return err
 			}
-			in := apiclient.DeliveryInput{Kind: kind, Title: title, HeadSHA: head, CloseReason: closeReason}
+			in := apiclient.DeliveryInput{Kind: kind, Title: title, HeadSHA: head, CloseReason: closeReason, Ready: ready}
 			for _, f := range []struct {
 				dst           *string
 				literal, file string
@@ -85,6 +93,7 @@ func newTaskDeliverCmd() *cobra.Command {
 	cmd.Flags().StringVar(&closeReason, "close-reason", "", "Suggested close reason: completed, not_planned or duplicate")
 	cmd.Flags().StringVar(&proof, "proof", "", "What proved the change")
 	cmd.Flags().StringVar(&proofFile, "proof-file", "", "Read the proof from a file (- for stdin)")
+	cmd.Flags().BoolVar(&ready, "ready", false, "Mark the delivery ready to hand off")
 	cmd.MarkFlagsMutuallyExclusive("body", "body-file")
 	cmd.MarkFlagsMutuallyExclusive("summary", "summary-file")
 	cmd.MarkFlagsMutuallyExclusive("proof", "proof-file")
@@ -118,7 +127,9 @@ func printDelivery(w io.Writer, d *apiclient.Delivery) {
 		return
 	}
 	rows := [][2]string{{"delivery", deliveryLine(d)}}
-	for _, r := range [][2]string{{"branch", d.Branch}, {"base", d.Base}, {"close as", d.CloseReason}} {
+	for _, r := range [][2]string{
+		{"branch", d.Branch}, {"base", d.Base}, {"close as", d.CloseReason}, {"ready", deliveryReady(d)},
+	} {
 		if r[1] != "" {
 			rows = append(rows, r)
 		}
@@ -131,6 +142,22 @@ func printDelivery(w io.Writer, d *apiclient.Delivery) {
 			_, _ = fmt.Fprintf(w, "\n%s:\n%s\n", block[0], text)
 		}
 	}
+}
+
+// deliveryReady is a delivery's readiness and who set it, or "" when it
+// carries none — which reads ready, the rule before readiness existed.
+func deliveryReady(d *apiclient.Delivery) string {
+	if d.Ready == nil {
+		return ""
+	}
+	v := "no"
+	if *d.Ready {
+		v = "yes"
+	}
+	if d.ReadyBy != "" {
+		v += " (by " + d.ReadyBy + ")"
+	}
+	return v
 }
 
 // deliveryLine is a delivery on one line — its kind, whether the daemon

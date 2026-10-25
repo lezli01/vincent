@@ -35,6 +35,10 @@ type Delivery struct {
 	Proof       string    `json:"proof,omitempty"`
 	Implicit    bool      `json:"implicit"`
 	RecordedAt  time.Time `json:"recorded_at"`
+	// Ready is nil when the delivery carries no readiness, which reads ready
+	// (task 137 decision 13); ReadyBy says who set it.
+	Ready   *bool  `json:"ready,omitempty"`
+	ReadyBy string `json:"ready_by,omitempty"`
 }
 
 // DeliveryInput is what a step, or a human correcting a finished task,
@@ -48,6 +52,9 @@ type DeliveryInput struct {
 	HeadSHA     string `json:"head_sha,omitempty"`
 	CloseReason string `json:"close_reason,omitempty"`
 	Proof       string `json:"proof,omitempty"`
+	// Ready marks the delivery ready to hand off: on a running task until a
+	// later call without it, on a done task as the caller's mark.
+	Ready bool `json:"ready,omitempty"`
 }
 
 type taskDelivery struct {

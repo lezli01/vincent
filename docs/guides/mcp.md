@@ -38,7 +38,11 @@ every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
 the GitHub reads, the [trigger](triggers.md) reads, `trigger_validate` and both
 dry runs, the [issue](../reference/api.md#issues) routes (`issue_list`,
 `issue_create`, `issue_get`, `issue_patch`, `issue_close`, `issue_reopen`,
+`issue_ready`, `issue_unready`,
 `issue_comments`, `issue_comment`, `project_issue_labels`), the issue import status `project_issue_sync_status`,
+the [handoff](../reference/api.md#handoffs) routes (`handoff_start`,
+`handoff_list`, `handoff_show` — `handoff_start` is grant-less: a grant from an
+agent is refused `grant_needs_human`),
 and the read-only `health`, `info`, `config_get`, `agent_list`,
 `doctor`, `orphan_list`.
 
@@ -157,9 +161,10 @@ Each tool takes the route's path parameters by name, plus `body` (for `POST` and
   "arguments": { "id": 12, "run_id": "34", "query": { "format": "normalized", "limit": "200" } } }
 ```
 
-`task_create` and `issue_create` also take an optional `idempotency_key`, which
-becomes the `Idempotency-Key` header: re-sending the same arguments with the
-same key returns the original task or issue instead of creating a second one. A
+`task_create`, `issue_create` and `handoff_start` also take an optional
+`idempotency_key`, which becomes the `Idempotency-Key` header: re-sending the
+same arguments with the same key returns the original task, issue or handoff
+instead of creating a second one. A
 tool call has no header surface, so it is an argument. An issue a step files
 records that step's task as its author.
 

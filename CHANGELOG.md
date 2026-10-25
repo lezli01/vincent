@@ -13,6 +13,30 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Start a handoff over finished issues.** `POST /v1/handoffs` claims issues
+  in the `hand_off` lane for one integration task running the workflow you
+  name — by id, or with `select` (by delivery kind, issue kind and labels,
+  capped by `max`, most urgent first) — creating the handoff, its task and
+  every claim together. `GET /v1/handoffs` and `GET /v1/handoffs/{id}` read
+  them back. The CLI gains `vincent handoff start`, `ls` and `show`, and MCP
+  the `handoff_start`, `handoff_list` and `handoff_show` tools. A grant can be
+  recorded, and only a human may give one: an agent's handoff is grant-less,
+  and a grant from one is refused `grant_needs_human`. Nothing acts on a grant
+  yet.
+
+- **You decide when an issue is ready to hand off.** A workflow may declare
+  `hand_off: explicit`: when its task finishes, the issue waits in
+  `in_progress` instead of moving to `hand_off`, until a step runs
+  `vincent task deliver --ready` or a person runs `vincent issue ready <id>`.
+  `vincent issue unready <id>` pulls a `hand_off` issue back to `in_progress`.
+  The same marks are `POST /v1/issues/{id}/ready` and `/unready`, `ready` on
+  `POST /v1/tasks/{id}/delivery`, and the `issue_ready`, `issue_unready` and
+  `task_deliver` MCP tools; the delivery records `ready` and who set it
+  (`ready_by`). `hand_off: auto`, the default, keeps today's behaviour, and
+  upgrading changes no issue's lane — except an issue whose only finished work
+  is a side task that never merged back, which now waits in `in_progress`
+  rather than showing as `hand_off` with no delivery to hand off.
+
 - **The TUI opens on your first main tab, and closing a screen takes you back
   to your tab.** vincent now starts on the first entry of `tui.tabs` — the
   issues list by default — instead of the task board, usable before it has

@@ -24,6 +24,7 @@ localhost API.
 - [`vincent trigger`](#vincent-trigger)
 - [`vincent github`](#vincent-github)
 - [`vincent issue`](#vincent-issue)
+- [`vincent handoff`](#vincent-handoff)
 - [`vincent gc`](#vincent-gc)
 
 ---
@@ -1178,7 +1179,7 @@ before the upgrade that added the command says so, and to restart it.
 vincent task deliver [--task ID] [--kind change|reply|none] [--title TEXT]
                      [--body TEXT | --body-file PATH] [--summary TEXT | --summary-file PATH]
                      [--head SHA] [--close-reason completed|not_planned|duplicate]
-                     [--proof TEXT | --proof-file PATH] [--json]
+                     [--proof TEXT | --proof-file PATH] [--ready] [--json]
 ```
 
 Records the task's **delivery**: what its run produced, in the run's own words.
@@ -1203,6 +1204,15 @@ vincent task deliver --title "Retry the upload on a 503" --body-file pr.md --sum
 - **A run that never calls it still has one.** When the task reaches `done`,
   the daemon writes an implicit delivery: `change` when the branch holds
   commits its base does not, `none` otherwise, titled and described by the task.
+- **`--ready` marks the delivery ready to hand off.** A workflow with
+  `hand_off: explicit` leaves its issue in `in_progress` when the task finishes
+  until something marks it ready; a step does that with `--ready`. On a running
+  task the last call wins, so a later `deliver` without `--ready` clears it. On
+  a `done` task `--ready` is your mark on that task's delivery, and a
+  correction without it keeps the readiness already stored. The issue's lane
+  reads only its latest finished main-line delivery, so a mark on an older or
+  a side task is stored and moves nothing;
+  [`vincent issue ready`](#vincent-issue-ready) marks the right task for you.
 - **It is accepted while the task runs or once it is done.** Otherwise the
   daemon answers `409` and the command exits 1.
 - **It is silent inside a step**, whose stdout is the transcript. With `--task`
@@ -3131,6 +3141,32 @@ Closes an open issue. `--reason` defaults to `completed`. `--duplicate-of`
 names the issue this one duplicates; the daemon requires `--reason duplicate`
 with it and an issue in the same project.
 
+### `vincent issue ready`
+
+```sh
+vincent issue ready <id> [--json]
+```
+
+Marks the issue's finished work ready to hand off: the delivery of its latest
+finished main-line task is marked ready, and the issue moves to the `hand_off`
+lane. This is how a person releases work a `hand_off: explicit` workflow left
+waiting in `in_progress`. An issue already ready is left as it is. The daemon
+refuses, and the command exits 1 with a line saying what to do, while a task of
+the issue is still running (`issue_work_running`), when no main-line task has
+finished (`issue_no_finished_work`), and while a handoff claims the issue
+(`issue_in_handoff`).
+
+### `vincent issue unready`
+
+```sh
+vincent issue unready <id> [--json]
+```
+
+Withdraws an issue from the `hand_off` lane: its latest delivery is marked not
+ready, and the issue waits in `in_progress` until it is marked ready again or
+new work finishes. It is refused as `vincent issue ready` is, and also on an
+issue that is not in `hand_off` (`issue_not_hand_off`).
+
 ### `vincent issue reopen`
 
 ```sh
@@ -3211,6 +3247,64 @@ sync that finds each one on GitHub adopts it and takes GitHub's state, writing
 nothing back. One whose repository is not the project's bound `repo` —
 `origin` was re-pointed since — is never matched, and stays as it was
 backfilled.
+
+## `vincent handoff`
+
+A **handoff** claims finished issues — those in the `hand_off` lane — for one
+integration task that runs the workflow you name over them. It is not
+[`vincent chat handoff`](#vincent-chat-handoff), which turns a chat into a
+task. A thin client of the [handoff routes](api.md#handoffs).
+
+### `vincent handoff start`
+
+```sh
+vincent handoff start --project ID --workflow NAME [ISSUE-ID...]
+                      [--delivery change|reply|none]... [--kind KIND]... [--label NAME]... [--max N]
+                      [--grant CAPABILITY[,...]]... [--title TEXT] [--paused]
+                      [--description TEXT] [--priority N] [--agent A] [--model M] [--effort E]
+                      [--field name=value]... [--fields-file PATH] [--restricted]
+                      [--max-task-cost-usd USD] [--json]
+```
+
+Creates the handoff, its task and every claim in one step, and prints the
+handoff and the issues it claimed.
+
+- **Issue ids** claim exactly those issues. If any is not eligible — not in
+  `hand_off`, already claimed by a handoff, or already delivered — nothing is
+  created and the command exits 1, naming it.
+- **Without ids, it selects.** `--delivery`, `--kind` and `--label` narrow the
+  eligible issues (each repeats; any `--delivery` or `--kind` matches, every
+  `--label` must) and `--max`, at least `1`, caps them. The most urgent come first — priority
+  1 through 4, then issues with none — then the oldest delivery. A selection that
+  finds nothing exits 1. Ids and the selection flags cannot be combined.
+- **`--grant`** gives the handoff capabilities for forge writes —
+  `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`,
+  `pull.close`, `checks.rerun` — repeated or comma-separated. Only a human may
+  give one: run from a workflow step it is refused. Nothing acts on a grant yet.
+- **The task options** are `vincent task add`'s. The task is a root task with
+  no issue, cut from the project's base branch; `--title` defaults to one
+  naming how many issues it claims.
+
+### `vincent handoff ls`
+
+```sh
+vincent handoff ls [--project ID] [--state live|waiting|settled]... [--issue ID] [--json]
+```
+
+Lists handoffs, newest first: ID, STATE, TASK, ITEMS, CREATED_BY and
+CREATED_AT. STATE is `live` while the task runs, `waiting` once it has settled
+with an item still waiting, and `settled` otherwise. `--issue` lists every
+handoff that claimed that issue.
+
+### `vincent handoff show`
+
+```sh
+vincent handoff show ID [--json]
+```
+
+Prints the handoff — its state, task, grant and who started it — and one row
+per item: the issue, its delivery's kind and task as claimed, and the outcome
+once one is recorded.
 
 ## `vincent gc`
 

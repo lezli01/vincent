@@ -26,6 +26,11 @@ type deliveryRequest struct {
 	HeadSHA     string `json:"head_sha"`
 	CloseReason string `json:"close_reason"`
 	Proof       string `json:"proof"`
+	// Ready marks the delivery ready to hand off (task 137 decision 13). On
+	// a running task the last call wins, so a later call without it clears
+	// it; on a done task it is a mark by the caller, and false keeps what
+	// is stored.
+	Ready bool `json:"ready,omitempty"`
 }
 
 // deliveryResponse is the wire shape of a delivery (§5.3). The summary form —
@@ -43,6 +48,10 @@ type deliveryResponse struct {
 	Proof       string    `json:"proof,omitempty"`
 	Implicit    bool      `json:"implicit"`
 	RecordedAt  time.Time `json:"recorded_at"`
+	// Ready is omitted when the delivery carries no readiness, which reads
+	// ready (task 137 decision 13); ReadyBy says who set it.
+	Ready   *bool  `json:"ready,omitempty"`
+	ReadyBy string `json:"ready_by,omitempty"`
 }
 
 // taskDeliveryResponse is what both delivery routes answer: the task and its
@@ -58,7 +67,11 @@ func toDeliveryResponse(d *store.Delivery, full bool) *deliveryResponse {
 	}
 	out := &deliveryResponse{
 		Kind: string(d.Kind), Title: d.Title, HeadSHA: d.HeadSHA, Branch: d.Branch, Base: d.Base,
-		CloseReason: d.CloseReason, Implicit: d.Implicit, RecordedAt: d.RecordedAt,
+		CloseReason: d.CloseReason, Implicit: d.Implicit, ReadyBy: string(d.ReadyBy), RecordedAt: d.RecordedAt,
+	}
+	if d.Ready != nil {
+		ready := *d.Ready
+		out.Ready = &ready
 	}
 	if full {
 		out.Body, out.Summary, out.Proof = d.Body, d.Summary, d.Proof
@@ -158,6 +171,12 @@ func (s *Server) handleTaskDeliver(w http.ResponseWriter, r *http.Request) {
 		Kind: kind, Title: req.Title, Body: req.Body, Summary: req.Summary,
 		HeadSHA: head, Branch: task.BranchName, Base: task.BaseBranch,
 		CloseReason: req.CloseReason, Proof: req.Proof, RecordedAt: time.Now().UTC(),
+	}
+	if req.Ready {
+		// The store decides what the mark means for the state it finds; on a
+		// done task it is the caller's, human or agent.
+		ready := true
+		d.Ready, d.ReadyBy = &ready, store.ReadyByActor(issueActor(r))
 	}
 	updated, err := s.deps.Store.SetTaskDelivery(ctx, id, d)
 	if err != nil {

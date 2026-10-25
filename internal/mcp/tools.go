@@ -232,7 +232,7 @@ var routes = []Route{
 	{http.MethodGet, "/v1/tasks/{id}/steps", "task_steps", "The task's steps and their step runs."},
 	{http.MethodPost, "/v1/tasks/{id}/steps/{step_id}/status", "step_status", "Set the step-authored status line a board renders (task 036). Body: {message} — an empty message clears the line."},
 	{http.MethodGet, "/v1/tasks/{id}/delivery", "task_delivery", "What the task's last finished run delivered (§5.3, task 137.2), or null before it has one."},
-	{http.MethodPost, "/v1/tasks/{id}/delivery", "task_deliver", "Record what this run delivered, replacing any earlier delivery (task 137.2): accepted while the task runs or once it is done. Body: {kind?, title?, body?, summary?, head_sha?, close_reason?, proof?}. kind is change (the default), reply or none; head_sha must be a commit on the task's branch and defaults to its tip; close_reason is completed, not_planned or duplicate. A run that finishes without one gets an implicit delivery."},
+	{http.MethodPost, "/v1/tasks/{id}/delivery", "task_deliver", "Record what this run delivered, replacing any earlier delivery (task 137.2): accepted while the task runs or once it is done. Body: {kind?, title?, body?, summary?, head_sha?, close_reason?, proof?, ready?}. kind is change (the default), reply or none; head_sha must be a commit on the task's branch and defaults to its tip; close_reason is completed, not_planned or duplicate. ready: true marks the delivery ready to hand off (task 137 decision 13) — on a running task until a later call without it, on a done task as your mark on that task, which moves the issue's lane only when it holds the issue's latest finished main-line delivery. A run that finishes without one gets an implicit delivery."},
 	{http.MethodGet, "/v1/tasks/{id}/steps/{run_id}/transcript", "task_transcript", "One step run's transcript. Query: format=raw|normalized, offset, limit."},
 	{http.MethodGet, "/v1/tasks/{id}/diff", "task_diff", "The task branch's diff against its recorded base. Query: by=lane attributes each change to the fan-out lane that produced it (§7.6, task 084)."},
 	{http.MethodGet, "/v1/tasks/{id}/commits", "task_commits", "The commits the task made on its branch past its recorded base, oldest first; lane merges carry lane_id and child_task_id (issue #601). Read from the branch, so it still answers after archive; 409 when the branch was never made or no longer exists."},
@@ -246,8 +246,13 @@ var routes = []Route{
 	{http.MethodPatch, "/v1/issues/{id}", "issue_patch", "Edit an issue. Body: {version, title?, body?, labels?, add_labels?, remove_labels?, kind?, priority?}. version is required and comes from issue_get; labels replaces the set and cannot be combined with add_labels or remove_labels. A stale version is a 409 issue_changed carrying the current issue — re-apply your edit to it. An imported issue's title, body and labels are mirrored and refused (409 issue_mirrored); kind and priority stay editable. State is not a field: use issue_close or issue_reopen."},
 	{http.MethodPost, "/v1/issues/{id}/close", "issue_close", "Close an open issue. Body: {reason?, duplicate_of?}; reason is completed (the default), not_planned or duplicate, and duplicate_of — an issue id in the same project — is only allowed with duplicate. An issue imported from GitHub is refused (409 forge_write_needs_human): its state is written back to GitHub, and only a human may do that — ask them to close it."},
 	{http.MethodPost, "/v1/issues/{id}/reopen", "issue_reopen", "Reopen a closed issue. Body: {}. An issue imported from GitHub is refused (409 forge_write_needs_human), as issue_close is."},
+	{http.MethodPost, "/v1/issues/{id}/ready", "issue_ready", "Mark the issue's finished work ready to hand off, moving it to the hand_off lane (task 137 decision 13). Body: {}. Already ready is a no-op. Refused with 409 issue_work_running while a root task of it runs, issue_no_finished_work when none has finished, and issue_in_handoff (details.handoff_id) while a handoff claims it."},
+	{http.MethodPost, "/v1/issues/{id}/unready", "issue_unready", "Withdraw an issue from the hand_off lane: it waits in in_progress until marked ready again or new work finishes (task 137 decision 13). Body: {}. Refused as issue_ready is, and with 409 issue_not_hand_off (details.lane) when it is not in hand_off."},
 	{http.MethodGet, "/v1/issues/{id}/comments", "issue_comments", "An issue's discussion thread, oldest first: {comments: [{id, author, body, remote, remote_key?, created_at, updated_at}]}. remote marks a comment mirrored from GitHub, read-only."},
 	{http.MethodPost, "/v1/issues/{id}/comments", "issue_comment", "Add a comment to a local issue. Body: {body}. The author is recorded as your task. Nothing is posted to GitHub: an issue imported from GitHub has a mirrored thread and is refused (409 issue_mirrored), as an edit of its title is."},
+	{http.MethodPost, "/v1/handoffs", "handoff_start", "Start a handoff: claim hand_off issues for one integration task, created with them. Body: {project_id, workflow, issue_ids|select, title?, paused?, description?, fields?, priority?, agent?, model?, effort?, restricted?, max_task_cost_usd?}. select takes lane (hand_off), delivery (change, reply or none, one or a list), kind (one or a list), labels (all must match), max and order (priority); it takes the eligible issues by priority, urgent first and none last, then oldest delivery. Grant-less only: a grant is refused 409 grant_needs_human — only a human gives one. An ineligible issue id is a 409 issue_not_eligible naming it; a selection that finds nothing, 409 nothing_to_hand_off. Pass idempotency_key so a retry cannot start it twice."},
+	{http.MethodGet, "/v1/handoffs", "handoff_list", "List handoffs, newest first, without items: id, project_id, task_id, state (live|waiting|settled), grant, created_by, created_at. Query: project_id, state (repeatable), issue_id (handoffs with an item for that issue)."},
+	{http.MethodGet, "/v1/handoffs/{id}", "handoff_show", "One handoff with its items: each item's issue_id, delivery_task_id and delivery as claimed, outcome, outcome_at, outcome_by and note. state is live while its task runs, waiting when a settled handoff still has a waiting item, else settled."},
 }
 
 // Routes returns the tool surface: one entry per `/v1` route that is a tool,
@@ -336,11 +341,11 @@ func inputSchema(r Route) json.RawMessage {
 }
 
 // takesIdempotencyKey reports whether a route honours §13.1's
-// `Idempotency-Key`. `POST /v1/tasks` and `POST /v1/issues` do, and the
-// schema says so on those tools alone rather than everywhere — an argument a
-// route ignores is a worse lie than a missing one.
+// `Idempotency-Key`. `POST /v1/tasks`, `POST /v1/issues` and `POST
+// /v1/handoffs` do, and the schema says so on those tools alone rather than
+// everywhere — an argument a route ignores is a worse lie than a missing one.
 func takesIdempotencyKey(r Route) bool {
-	return r.Method == http.MethodPost && (r.Path == "/v1/tasks" || r.Path == "/v1/issues")
+	return r.Method == http.MethodPost && (r.Path == "/v1/tasks" || r.Path == "/v1/issues" || r.Path == "/v1/handoffs")
 }
 
 // hasBody reports whether a method carries a request body on this API.

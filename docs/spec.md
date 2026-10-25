@@ -406,7 +406,7 @@ A unit of work delivered by running a workflow against a project.
 | `issue_id`, `issue` | *Added 2026-10-02 (task 130.1, issue #660, migration 0036).* The vincent issue (§5.6) this task was created from, as **a pointer and a snapshot** (task 130 decision 5). `issue_id` is the authoritative edge to `issues.id`, read backwards to answer which tasks came from an issue and whether it is being worked on; it is `ON DELETE SET NULL`, so a task outlives its issue. `issue` (`issue_json`) is that issue frozen at creation — id, title, state, kind, priority, labels, url — never re-fetched, and it survives the issue's deletion, for `github_issue`'s reasons. Both are written in the insert transaction, `task.created` carries `issue_id` when it is set (§13.3), and a `fan_out` lane inherits copies of both (§7.6) — though only a root task counts toward its issue's activity. No create surface sets them yet (task 130.3). *Amended 2026-10-02 (task 130.4, issue #663):* the snapshot widens to body, close reason, author, a `remote` reference (provider, repo, number, url, state, assignees, milestone and its number — nil for a local issue and for a tombstoned remote row) and `captured_at`, every new key optional in the same column, so it needs no migration. `store.NewIssueSnapshot` builds it from the stored issue and its `issue_remotes` row with no provider call; it is what `.Issue` renders (§8.4) and what the vincent-issue prefill reads (`internal/issues`, task 130 decision 7). *Amended 2026-10-02 (task 130.7, issue #666):* `POST /v1/tasks` and the chat handoff set both from `issue_id` (§13.2). Every task representation carries `issue: { id, title, state, source? }` — read from the live issue while `issue_id` holds and from this snapshot once the issue is deleted — and derives `github_issue` from the snapshot's `remote` when its provider is `github`, so a consumer reading `.github_issue.number` keeps working; a local issue derives no `github_issue`, and a legacy row keeps serving its own `github_issue_json`. `Closes #N` in a task's compare URL (§13.2) takes the snapshot's GitHub reference first and the legacy snapshot second, under the unchanged same-repository rule. *Amended 2026-10-03 (task 130.14, issue #673):* the snapshot gains an optional `created_at` — the remote record's creation time for an imported issue whose `remote_json` carries one, else `issues.created_at` — `omitempty` like every 130.4 key, so no migration; it is what `$VINCENT_ISSUE_FILE`'s `createdAt` reads (§8.5), `null` for an older snapshot |
 | `issue_worktree`, `end_sha`, `merge_on_conflict` | *Added 2026-10-07 (task 134.10, issue #757, migration 0043).* The task's role in its issue's worktrees (§5.6, task 134 decisions 7, 9). `issue_worktree` is `main` for a root task working on the issue's main branch, `side` for one that asked for its own worktree with `merge_back` (§13.2), and NULL for every task with no issue, every `fan_out` lane, and every row older than the migration — those behave exactly as before. A new root task with an issue is `main` unless it asked for `merge_back`; the role is written in the insert transaction and never changes. A main task's `branch_name` is **bound** there too: when the issue already has a main branch, the row takes it and sets `adopted_branch` (*amended 2026-10-07, review F1 of #768*: the first main task cut it, so a second cut would block `branch_exists` at admission; adopting it puts the task under §10's working-directory claim instead); when it has none, the task's own name, resolved by the usual chain, becomes it. `merge_on_conflict` is a side task's `merge_back.on_conflict` — `block` or `agent` — and NULL on every other task. `end_sha` is the commit a main task's work ended on, NULL until task 134.12 writes it. *Amended 2026-10-07 (task 134.12, issue #759):* a joining main task is still bound to the main branch but is **no longer** `adopted_branch` — it receives its predecessor's directory at admission (§10) instead of waiting under the working-directory claim; a row bound before this that still says `adopted_branch` is routed by its role, which wins everywhere. `end_sha` is now written: by the transfer, as the branch tip the predecessor handed over, and by archive, as the tip at that moment, when the task still held the directory and the transfer never stamped it. A main task that receives a directory again — by transfer, or a fresh worktree after a follow-up — has it cleared, so its range runs to the branch while it works (review F4 of #770). `/commits` and `/diff` end a task's range at it (§13.2). Store-side, `claimBranchTx` lets unarchived main-role tasks of one issue share its main branch; every other collision — a task of another issue, a side task, a task with no issue — is still refused. *Amended 2026-10-07 (task 134.14, issue #761):* a **merge-back** task (§5.6) is the one main task that carries `merge_on_conflict`, copied from its side task at creation so deleting the source cannot lose it |
 | `merge_source_task_id` | *Added 2026-10-07 (task 134.14, issue #761, migration 0044).* The side task a **merge-back** task merges into its issue's main worktree (§5.6), and NULL on every other task. `ON DELETE SET NULL`: a merge-back whose source was deleted keeps its row and blocks `merge_source_missing` when it runs; the side branch's name is in its synthesized snapshot. A unique partial index over unsettled, unarchived rows makes at most one merge-back of a source pending at a time. *Amended 2026-10-07 (review F4 of #771):* a row with it set is **outside the store's branch claim**, as an adopted branch is: a merge-back never cuts a branch, and it is inserted inside its side task's `→ done`, so a claim refused there would roll the side task's completion back. A branch another task holds is found at admission instead, which blocks the merge-back with a reason |
-| `delivery` | *Added 2026-10-24 (task 137.2, issue #835, migration 0045).* What the task's last finished run **delivered** (`delivery_json`; task 137 decision 3): the workshop's result, which a handoff reads. `kind` (`change`, `reply` or `none`), `title`, a Markdown `body`, `summary`, `head_sha` (a commit on the task's branch), `branch` and `base` (the daemon's, from the task), an optional `close_reason` and `proof`, `implicit` and `recorded_at`. A step records it with `vincent task deliver` or the `task_deliver` tool while the task is `running`; a human may correct it once the task is `done`. A run that reaches `done` without one gets an **implicit** delivery written by the same transition — `change` when the branch holds commits its base does not, `none` otherwise, titled and described by the task — because the issue lane is SQL and can ask git nothing at read time. A merge-back delivers its source side task's delivery on the issue's main branch at the merge commit. A follow-up that re-admits a finished task clears it (§6). NULL before a run records one; issue tasks that finished before migration 0045 are given theirs once at daemon start. It replaces the resolve workflows' `vincent-delivered/` file convention |
+| `delivery` | *Added 2026-10-24 (task 137.2, issue #835, migration 0045).* What the task's last finished run **delivered** (`delivery_json`; task 137 decision 3): the workshop's result, which a handoff reads. `kind` (`change`, `reply` or `none`), `title`, a Markdown `body`, `summary`, `head_sha` (a commit on the task's branch), `branch` and `base` (the daemon's, from the task), an optional `close_reason` and `proof`, `implicit` and `recorded_at`. A step records it with `vincent task deliver` or the `task_deliver` tool while the task is `running`; a human may correct it once the task is `done`. A run that reaches `done` without one gets an **implicit** delivery written by the same transition — `change` when the branch holds commits its base does not, `none` otherwise, titled and described by the task — because the issue lane is SQL and can ask git nothing at read time. A merge-back delivers its source side task's delivery on the issue's main branch at the merge commit. A follow-up that re-admits a finished task clears it (§6). NULL before a run records one; issue tasks that finished before migration 0045 are given theirs once at daemon start. It replaces the resolve workflows' `vincent-delivered/` file convention. *Amended 2026-10-24 (task 137.15, issue #848; task 137 decision 13):* the delivery gains `ready` and `ready_by` (`workflow`, `task`, `human` or `agent`), which §5.6's lane reads. **An absent `ready` reads ready** — a NULL delivery too — so a row written before readiness existed keeps the lane it had and **no migration** writes the key; `ready_by: migration`, which the decision as first written proposed, is never written. Every write from now on stores it explicitly: `→ done` from the workflow's `hand_off:` (§8.1.3); a step's `deliver --ready` on a running task as `ready_by: task`, where the last call wins and a later call without it clears it; on a `done` task a correction replaces only the text and **keeps** the stored readiness, and `ready: true` marks it by the caller (`human`, or `agent` for MCP) — on that task only, so it moves §5.6's lane only when the task holds the issue's latest finished main-line delivery, and is stored but moves nothing on an older or a side task (*amended 2026-10-25, review F3 of PR #851*); `vincent issue ready`/`unready` (§13.2) on the issue's latest main-line delivery; and a merge-back's delivery copies its source's. A delivery holding readiness and no `kind` — a mark on a task the backfill has not reached — is still filled by the backfill, which keeps the mark |
 | `github_pull` | *Added 2026-08-29 (task 052).* The pull request this task is linked to (`github_pull_json`, migration 0018); NULL for a task no pull request has ever matched. Unlike `github_issue` it is a **pointer, not a snapshot** — repo, number, `source` (`auto` when the reconciler (§12.3) matched an open pull request's head branch to this task's `branch_name`, `human` when a person said so), `suppressed` (the sticky record of a human unlink, which is why the column needs three states and not two), and `linked_at`. Nothing renderable is stored: title, state, draft and merged status are re-read on every request (§13.2), because they are live by nature and a stored copy of them would read exactly like a current one while being wrong. Deliberately **not** folded into `github_issue_json`, which is defined as "NULL = no linked issue" holding a bare issue. *Amended 2026-08-30 (task 064):* the envelope gains `branch` — this task's `branch_name` **is** the pull request's head branch, because the task was created from it — and `fork`, meaning that head lives in another repository so the branch carries no upstream and nothing can push back. Both are read by admission (§10), by archive (§10, which then touches neither branch leg) and by the retry guard (§18); neither is renderable, so the pointer-not-snapshot rule is untouched. A JSON shape change, not a migration |
 
 
@@ -1175,7 +1175,7 @@ amend §12, §13 and §15 when they land.
 | `remote` | an imported issue's source (`issue_remotes`, §14): provider, `remote_key` (GitHub's `node_id`), repo, number, url, the remote's own timestamp and `synced_at`. Null for an issue created in vincent. Keyed **per project**, so two projects sharing an origin import two issue sets |
 | `parent_issue_id` | a seam for sub-issues, never written yet |
 | `active`, `task_count` | **derived, never stored** (decision 3): `task_count` counts the **root** tasks (`parent_task_id IS NULL`) whose `issue_id` is this issue, and `active` is whether any of them is not settled in §6's sense (not `done`, `aborted` or `archived`). Fan-out lanes carry the link but are not counted, so one task with five lanes is one task |
-| `lane`, `attention` | **derived, never stored** (task 134 decisions 1–3). *Added 2026-10-07 (task 134.4, issue #751).* `lane` is `done` when the issue is `closed`, whatever its tasks do (decision 4); otherwise `in_progress` when some root task is not settled, else `hand_off` when some root task is `done` or `archived` with `archived_from = done` (decision 20), else `open` — no task, or only aborted ones (decision 19). `attention` is whether some root task is in `taskstate.NeedsHuman` (`awaiting_input`, `awaiting_gate`, `blocked`; `paused` is not one), computed for a closed issue too. For an open issue `active` ⇔ `lane = in_progress`. `internal/issuestate.LaneOf` is the rule; the store computes it in SQL from the same fragments that compute `active` |
+| `lane`, `attention` | **derived, never stored** (task 134 decisions 1–3). *Added 2026-10-07 (task 134.4, issue #751).* `lane` is `done` when the issue is `closed`, whatever its tasks do (decision 4); otherwise `in_progress` when some root task is not settled, else `hand_off` when some root task is `done` or `archived` with `archived_from = done` (decision 20), else `open` — no task, or only aborted ones (decision 19). *Amended 2026-10-24 (task 137.15, issue #848; task 137 decision 13):* `hand_off` now means **ready**: with no root task unsettled, the lane is `hand_off` when the latest finished main-line root task's delivery (the one §5.3's `delivery` on an issue names; side tasks excluded) reads ready, `in_progress` when work finished but is not ready — a delivery marked `ready: false`, or finished work that is only a side task's — and `open` otherwise. The not-ready `in_progress` issue is **idle**: it waits for a mark or for more work. Because an absent `ready` reads ready, every lane is unchanged on upgrade except one: an issue whose only finished root task is a side task (its merge-back cancelled or not yet run) moved from `hand_off` to `in_progress`, which keeps decision 3's "every `hand_off` issue has a delivery". `LaneOf` takes three facts — unsettled, finished, latest ready — and a table test holds it to the SQL. `attention` is whether some root task is in `taskstate.NeedsHuman` (`awaiting_input`, `awaiting_gate`, `blocked`; `paused` is not one), computed for a closed issue too. For an open issue `active` ⇔ `lane = in_progress`. `internal/issuestate.LaneOf` is the rule; the store computes it in SQL from the same fragments that compute `active` |
 | comments | author, body and an optional remote key, listed oldest first |
 
 #### Issue lifecycle
@@ -1456,6 +1456,23 @@ makes the issue eligible again; one that adds no commits does not. Because
 the lane is §5.6's derivation, eligibility follows when 137.15 makes
 `hand_off` mean readiness. The create re-checks every issue inside its
 transaction; the first ineligible one fails the whole create.
+
+*Amended 2026-10-24 (task 137.5, issue #838):* **the selection.** `POST
+/v1/handoffs` (§13.2) names its issues explicitly or with `select:`, which is
+evaluated inside the create transaction over the same fragment: the project's
+eligible issues, narrowed by `delivery` (the latest delivery's kind, any of
+those listed), `kind` (any of those listed) and `labels` (all of them,
+case-insensitively, as the issue list's `label` filter), ordered by issue
+priority — urgent (1) first through low (4), then **0 ("none") last** — then
+by the oldest delivery (the delivering task's `finished_at`), then by issue
+id, so the order is total; and capped by `max`, every eligible issue when it
+is omitted. A selection that finds nothing rolls the create back, so no task
+is left behind (`nothing_to_hand_off`). An issue another handoff claims
+between two selections is never taken twice: the second selection reads it as
+claimed. **The grant's vocabulary** is closed — `issue.comment`,
+`issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`,
+`checks.rerun` (task 137 decision 6) — and the create stores it in
+`grant_json` deduplicated and in that order; nothing reads it until 137.7.
 
 **Derived state.** A handoff is never stored with a state: it is `live` while
 its task is unsettled, `waiting` while the task is settled and some item is
@@ -3031,6 +3048,7 @@ validating host.
 name: feature-pr                      # required; unique per scope; project shadows global
 description: Implement, test, review, then push and open a PR.
 platforms: [posix]                    # optional; where this workflow may run (§8.1.1)
+hand_off: auto                        # optional; auto (default) | explicit (§8.1.3)
 
 fields:                               # optional; ordered task-input contract (§8.1.2)
   - name: ticket
@@ -3248,6 +3266,30 @@ after the required-default substitution, so "a key present but empty is never
 defaulted" is unchanged, and a `default:` that is itself blank substitutes
 nothing. It applies to **declared** keys only: the map stays open and an
 undeclared pair whose value is blank is still accepted and recorded.
+
+#### 8.1.3 Hand-off readiness (`hand_off:`)
+
+*Added 2026-10-24 (task 137.15, issue #848; task 137 decision 13).* A
+workflow says when the work of an issue task it runs is **ready to hand off**
+(§5.6's `hand_off` lane). The key is a closed set, matched exactly, and an
+unknown value fails at load:
+
+- `auto` — the default, and what a file that names none gets. The task's
+  `→ done` stamps its delivery (§5.3) `ready: true, ready_by: workflow`,
+  unless a step already ran `vincent task deliver --ready`, which stays
+  `ready_by: task`. This is the rule every issue followed before the key
+  existed. An `auto` workflow cannot say "not ready"; one that must decide in
+  a step is `explicit`.
+- `explicit` — `→ done` stamps `ready: false`, unless a step ran
+  `vincent task deliver --ready`. The issue waits in `in_progress` until a
+  human (or an agent over MCP) marks it with `vincent issue ready`.
+
+The engine reads the key from the task's **workflow snapshot**, never the
+live registry, so editing a workflow does not change how a task already
+created hands off. It is the including workflow's alone: an included callee
+contributes steps, never top-level keys (§7.9). The synthesized `__merge_back`
+workflow has no key of its own; a merge-back's delivery copies its source side
+task's readiness with the rest of the delivery.
 
 ### 8.2 Step types and fields
 
@@ -8832,6 +8874,16 @@ decision 11). Deleting an issue deletes its key, so a re-send inside the window
 files a fresh one. MCP's `issue_create` carries `idempotency_key` as
 `task_create` does (§13.4).
 
+*Amended 2026-10-24 (task 137.5, issue #838).* **A third route acts on the
+header: `POST /v1/handoffs`.** Starting a handoff creates a task and claims
+issues, which a re-send would do again — or, worse, refuse as already claimed
+by the first. The rules above apply unchanged. The key is recorded in 0016's
+`idempotency_keys` under the path `/v1/handoffs` against the handoff's **task
+id**, inside the create transaction, so it cascades with the task and needed
+no migration; the replay finds the handoff by its task and renders it as it is
+now, under a `201`. The table's primary key is `(method, path, key)`, so a key
+used on `/v1/tasks` and the same key on `/v1/handoffs` are two keys.
+
 `PATCH /v1/issues/{id}` is the one route with a **precondition**: the body
 must carry the `version` the client read, and a stale one is refused with the
 current issue in the `409`'s details. It departs from §12.3's "no
@@ -9389,6 +9441,22 @@ POST   /v1/issues/{id}/close            *Added 2026-10-02 (task 130.3).* { reaso
                                         of an issue that writes back to GitHub is **409**
                                         `forge_write_needs_human` (§5.6); a human's enqueues
                                         the write-back, and the issue's `sync` says `pending`
+POST   /v1/issues/{id}/ready            *Added 2026-10-24 (task 137.15, issue #848).* {} →
+                                        the issue. Marks its latest finished main-line
+                                        delivery ready (§5.3, §5.6), `ready_by` the caller
+                                        (`human`, or `agent` over MCP); already ready is a
+                                        200 that writes nothing. A local write, never a
+                                        forge write. **409** `invalid_state` with
+                                        `details.reason`: `issue_work_running` while a root
+                                        task is unsettled, `issue_in_handoff` (with
+                                        `details.handoff_id`) while a live handoff item
+                                        claims it, `issue_no_finished_work` with no
+                                        finished main-line task; a closed issue is **409**
+POST   /v1/issues/{id}/unready          *Added 2026-10-24 (task 137.15).* {} → the issue.
+                                        Marks that delivery `ready: false`, so the issue
+                                        waits in `in_progress`. Refused as `ready` is, and
+                                        with `issue_not_hand_off` (`details.lane`) outside
+                                        the `hand_off` lane
 POST   /v1/issues/{id}/reopen           *Added 2026-10-02 (task 130.3).* {}. Reopening an open
                                         issue is **409** with `details.state`; an agent's
                                         reopen of an issue that writes back is **409**
@@ -9404,6 +9472,52 @@ POST   /v1/issues/{id}/comments         *Added 2026-10-03 (task 130.16).* {body}
                                         before any I/O. No `Idempotency-Key`, like the pull
                                         request comment route: a duplicate local comment is
                                         visible and harmless
+POST   /v1/handoffs                     *Added 2026-10-24 (task 137.5, issue #838).* Start a
+                                        handoff (§5.7): { project_id, workflow, issue_ids |
+                                        select, grant?, title?, paused?, description?, fields?,
+                                        priority?, agent?, model?, effort?, restricted?,
+                                        max_task_cost_usd? } → **201** with the handoff, its
+                                        `items` and the created `task` as `POST /v1/tasks`
+                                        renders it. One transaction creates the handoff, its
+                                        task and every claim. The task is a root task with no
+                                        issue, cut from the project's base, built and
+                                        validated by `POST /v1/tasks`' own code, so the
+                                        catalog, input, restricted and container gates, MCP's
+                                        bounds and `paused` behave as they do there; so
+                                        `issue_id`, `github_pull`, `base_branch`,
+                                        `branch_name`, `existing_branch` and `merge_back` are
+                                        unknown fields and **400**. `workflow` is required —
+                                        there is no default handoff workflow — and any valid
+                                        workflow is accepted until task 137.8's `role:
+                                        handoff`. `title` defaults to one naming the issue
+                                        count. Exactly one of `issue_ids` (no duplicates) and
+                                        `select` { lane?: hand_off, delivery?: change | reply |
+                                        none or a list, kind?: a string or a list, labels?,
+                                        max? ≥ 1, order?: priority } (§5.7), else **400**; an
+                                        unknown `grant` entry is **400**. Refusals, all **409**
+                                        `invalid_state`: an explicit id the handoff may not
+                                        claim — missing, in another project, closed, not in
+                                        `hand_off`, claimed, or already delivered, one reason
+                                        so another project's rows do not leak — is
+                                        `issue_not_eligible` with `details.issue_id`, the
+                                        first such id, and `details.handoff_id` when a handoff
+                                        in this project claims it; a selection that finds
+                                        nothing is `nothing_to_hand_off`; a non-empty grant
+                                        from an agent caller (an MCP call, or a request
+                                        carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`)
+                                        is `grant_needs_human`, best-effort like every marker
+                                        (§16). `created_by` is `agent` for those callers and
+                                        `human` otherwise. Honours `Idempotency-Key` (§13.1)
+GET    /v1/handoffs                     *Added 2026-10-24 (task 137.5).* Rows without items,
+                                        newest first: [{ id, project_id, task_id, state,
+                                        grant, created_by, trigger_id?, created_at }].
+                                        `?project_id=`, `?state=live|waiting|settled`
+                                        (repeatable), `?issue_id=` (a handoff with an item for
+                                        that issue, live or not); a bad value is **400**
+GET    /v1/handoffs/{id}                *Added 2026-10-24 (task 137.5).* One handoff with its
+                                        `items`: [{ issue_id, delivery_task_id, delivery (the
+                                        summary form, as claimed), outcome, outcome_at,
+                                        outcome_by, note }]. **404** for an unknown id
 DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permanent, from any
                                         state (§5.6) → **204**. An imported issue leaves its
                                         tombstone; upstream is never touched; its tasks keep
@@ -10406,7 +10520,12 @@ POST   /v1/tasks/{id}/delivery
                                         Bounds: `title` 1 KiB, `body` and `summary` 64 KiB,
                                         `proof` 16 KiB. Not a forge write: a step's call is
                                         accepted like any step call. Emits
-                                        `task.delivery_changed` (§13.3). Every task
+                                        `task.delivery_changed` (§13.3). *Amended
+                                        2026-10-24 (task 137.15):* the body takes
+                                        `ready?` (bool) and the delivery carries `ready`
+                                        and `ready_by`, by §5.3's rules; a mark that moves
+                                        an issue's lane also emits `issue.lane_changed`
+                                        with `by`. Every task
                                         representation carries `delivery` — its summary
                                         (no `body`, `summary` or `proof`) on `GET /v1/tasks`,
                                         in full on `GET /v1/tasks/{id}` — and every issue
@@ -10718,7 +10837,9 @@ Two kinds of streams:
    human recorded a task's delivery (§5.3). Like `task.github_pull_changed` it
    is **not** a transition and `scheduler.WakeOn` is false for it. The
    implicit delivery a task's `→ done` writes rides that transition's own
-   `task.state_changed`.*
+   `task.state_changed`. *Amended 2026-10-24 (task 137.15):* the payload is
+   `{kind, implicit, ready?}`, `ready` the stored key and absent on a
+   delivery that reads ready only by the legacy rule (§5.3).*
    *Added 2026-10-24 (task 137.4, issue #837): three handoff events (§5.7),
    each carrying the handoff's `project_id` and its task as `task_id`:
    `handoff.created` `{id, task_id, issue_ids, created_by, trigger_id?}`;
@@ -10985,7 +11106,7 @@ And one issue kind joins the table above, making it eight:
 
 | Type | Payload |
 |---|---|
-| `issue.lane_changed` | `{ id, from, to, task_id?, by? }` — `from`/`to` are §5.6's lanes (`open`, `in_progress`, `hand_off`, `done`); `task_id` names the root task whose create, transition, delete or restore moved the lane, `by` the actor of a close or reopen; exactly one is set |
+| `issue.lane_changed` | `{ id, from, to, task_id?, by? }` — `from`/`to` are §5.6's lanes (`open`, `in_progress`, `hand_off`, `done`); `task_id` names the root task whose create, transition, delete or restore moved the lane, `by` the actor of a close or reopen; exactly one is set. *Amended 2026-10-24 (task 137.15):* a readiness mark — `vincent issue ready`/`unready`, or `deliver --ready` on a done task — that moves the lane sets `by` (`human` or `agent`) |
 
 It is appended in the **same transaction** as the write that moved the lane,
 **immediately after** the event recording the cause — `task.created`,
@@ -11257,6 +11378,17 @@ tools, and no exclusion: `issue_comments` reads it and `issue_comment` adds a
 local comment, recording the calling step's task (`task N`) or `agent` as its
 author (§5.6). Neither writes to a forge — a comment on an issue with a live
 GitHub remote is refused `409 issue_mirrored` — so no forge guard is needed.
+
+*Amended 2026-10-24 (task 137.5, issue #838).* Starting and reading handoffs
+are three tools, and no exclusion: `handoff_start` replays `POST
+/v1/handoffs`, `handoff_list` its list and `handoff_show` one handoff. They are
+served on `/mcp` and on every step endpoint, like `task_create`.
+`handoff_start` is **grant-less**: a non-empty grant from any MCP caller is
+refused `409 grant_needs_human` (task 137 decision 6, "never an agent"), so an
+agent may claim issues and start an integration task but never authorize a
+forge write. It takes `idempotency_key` as `task_create` does, and its task is
+bounded by `mcp.max_depth` and `mcp.max_tasks` because it is built by the same
+code. The item verbs come with task 137.6.
 
 The task 057 property that the tool surface **equals** `Routes()` minus the
 exclusions is unchanged, and is still asserted by a test — the exclusion list it
@@ -17006,6 +17138,10 @@ carries the rest.
 | `follow_up` or a linked chat on a main task whose worktree moved on | *Added 2026-10-07 (task 134.12, issue #759).* `409 issue_worktree_moved`, `details.holder_task_id` naming the main task that holds the issue's worktree now (task 134 decision 14). The work continues there, or in a new main task |
 | Deleting an issue while one of its main tasks is not settled | *Added 2026-10-07 (task 134.12, issue #759).* `409 issue_has_live_main_task`, `details.task_id` the lowest such task. Settled and archived main tasks do not hold the delete (task 134 decision 17.1). *Amended 2026-10-07 (task 134.14, issue #761):* an unsettled side task holds it too, named once no main task is live, so a side task always has its issue at `→ done` |
 | A task create, chat hand-off or `follow_up` on an issue a live handoff item claims | *Added 2026-10-24 (task 137.4, review F4 of #850).* `409 invalid_state` with `details.reason: issue_in_handoff` and `details.handoff_id` naming the claiming handoff (§5.7, task 137 decision 14). The handoff's own task is exempt, recognised by the MCP creator or the `X-Vincent-Task-Id` marker; so are fan-out lanes and engine merge-backs. The check runs inside the insert or transition transaction, so it cannot race a handoff create |
+| `POST /v1/handoffs` names an issue it may not claim | *Added 2026-10-24 (task 137.5, issue #838).* `409 invalid_state`, `details.reason: issue_not_eligible`, `details.issue_id` the first such id, and `details.handoff_id` when a handoff in the same project claims it. Missing, in another project, closed, not in `hand_off`, claimed and already delivered are one reason, so another project's rows cannot be probed. Nothing is created (§5.7) |
+| A handoff `select:` finds no eligible issue | *Added 2026-10-24 (task 137.5).* `409 invalid_state`, `details.reason: nothing_to_hand_off`, and nothing is created. A trigger's ledger records it `refused`, so its dedupe key is not spent (task 137.9) |
+| An agent caller gives a handoff a grant | *Added 2026-10-24 (task 137.5).* `409 invalid_state`, `details.reason: grant_needs_human` (task 137 decision 6). An agent caller is an MCP call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id` — best-effort, like every marker (§16). The same request with no grant succeeds, recorded `created_by: agent` |
+| `vincent issue ready`/`unready` on an issue whose work is running, unfinished, claimed or (unready) not in `hand_off` | *Added 2026-10-24 (task 137.15, issue #848; task 137 decision 13).* `409 invalid_state`, checked in this order inside one transaction, with `details.reason`: `issue_work_running` while a root task is unsettled (the run in flight will write the delivery the decision belongs on); `issue_in_handoff` and `details.handoff_id` while a live handoff item claims the issue; `issue_no_finished_work` when no main-line root task finished — including an issue whose only finished work is a side task's, since there is no main-line delivery to mark; and for `unready` only, `issue_not_hand_off` with `details.lane`. A closed issue is refused first, as every issue action on one is. `ready` on an issue already ready writes nothing |
 | A merge-back's side task or side branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked with `merge_source_missing`: there is nothing to merge. Skip or cancel |
 | A merge-back's main branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked at admission with `merge_target_missing`: every main task of the issue was archived and the branch the side task forked from was deleted, so there is nothing to revive. Skip or cancel |
 | `branch_override` on a task created from a pull request | *Added 2026-08-30 (task 064).* `409`. Renaming the branch would detach the task from the pull request it was created for, so every later commit would go somewhere that pull request never sees. Such a task cannot have a `branch_exists` block in the first place — its creation mode does not refuse a pre-existing branch (§10) |

@@ -312,8 +312,19 @@ func reconnectAfterOfflineSwitch(t *testing.T, h *switchHarness, beforeReconnect
 func TestCleanReconnectReloadsNoView(t *testing.T) {
 	h := newSwitchHarness(t)
 	views := listStamps(h.m)
-	h.p.settle(10*time.Second, 300*time.Millisecond, "the opening loads to settle", func() (bool, int) {
-		return true, len(h.paths.snapshot())
+	// The harness's own project.created for the second project opens a
+	// debounced refresh in every view that listens for project.* events,
+	// and on a loaded runner it can arrive well after the opening loads;
+	// a refresh it starts after the count begins reads as a reconnect
+	// reload (the archived board's "view 9 issued 1 loads", the same race
+	// as #734). So the count starts once neither a path nor a view's load
+	// has moved for well past the debounce.
+	h.p.settle(10*time.Second, 4*refreshDebounce, "the opening loads to settle", func() (bool, int) {
+		sum := len(h.paths.snapshot())
+		for _, s := range views {
+			sum += int(s.issued)
+		}
+		return true, sum
 	})
 	before := len(h.paths.snapshot())
 	issued := map[viewID]uint64{}

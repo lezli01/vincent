@@ -268,8 +268,8 @@ func TestDispatchForwardsIdempotencyKey(t *testing.T) {
 	}
 }
 
-// TestIdempotencyKeyIsOnlyOnTheCreates: the argument is advertised on the two
-// routes that honour it. An argument a route ignores is a worse lie than a
+// TestIdempotencyKeyIsOnlyOnTheCreates: the argument is advertised on the
+// three routes that honour it. An argument a route ignores is a worse lie than a
 // missing one.
 func TestIdempotencyKeyIsOnlyOnTheCreates(t *testing.T) {
 	t.Parallel()
@@ -281,7 +281,7 @@ func TestIdempotencyKeyIsOnlyOnTheCreates(t *testing.T) {
 			t.Fatalf("%s: %v", r.Tool, err)
 		}
 		_, has := schema.Properties["idempotency_key"]
-		want := r.Tool == "task_create" || r.Tool == "issue_create"
+		want := r.Tool == "task_create" || r.Tool == "issue_create" || r.Tool == "handoff_start"
 		if has != want {
 			t.Errorf("%s advertises idempotency_key = %v, want %v", r.Tool, has, want)
 		}

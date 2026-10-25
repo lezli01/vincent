@@ -179,6 +179,10 @@ func SchemaDescriptor() Schema {
 				Name: "platforms", Control: ControlList, Values: platformTokens,
 				Help: "hosts this workflow may run on; empty means anywhere (§8.1.1)",
 			},
+			{
+				Name: "hand_off", Control: ControlEnum, Values: []string{HandOffAuto, HandOffExplicit},
+				Help: "when a finished root task's issue is ready to hand off; empty means auto (task 137)",
+			},
 			{Name: "fields", Control: ControlFields, Help: "declared task inputs (§8.1.2)"},
 			{Name: "defaults", Control: ControlMerge, Help: "workflow-level fallbacks for step fields"},
 			{Name: "steps", Control: ControlSteps, Required: true},

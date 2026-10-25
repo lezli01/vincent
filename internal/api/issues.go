@@ -38,6 +38,17 @@ const (
 	// state writes back to GitHub (task 130 decision 10, task 130.10): only a
 	// human's act writes to a forge.
 	issueReasonForgeWrite = "forge_write_needs_human"
+	// issueReasonWorkRunning is a ready or unready while one of the issue's
+	// root tasks has not settled (task 137 decision 13): the lane is
+	// in_progress whatever readiness says, and the run will write the
+	// delivery the decision belongs on.
+	issueReasonWorkRunning = "issue_work_running"
+	// issueReasonNoFinishedWork is a ready or unready on an issue with no
+	// finished main-line root task: there is no delivery to mark.
+	issueReasonNoFinishedWork = "issue_no_finished_work"
+	// issueReasonNotHandOff is an unready on an issue outside the hand_off
+	// lane; details.lane carries the lane it is in.
+	issueReasonNotHandOff = "issue_not_hand_off"
 )
 
 // The sync states an imported issue's `sync` block reports (task 130.10).
@@ -356,6 +367,17 @@ func (s *Server) writeIssueError(w http.ResponseWriter, r *http.Request, id int6
 		}
 		writeConflict(w, fmt.Sprintf("issue %d: action not allowed in state %s", id, state),
 			map[string]string{"state": state})
+	case errors.Is(err, store.ErrIssueWorkRunning):
+		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonWorkRunning})
+	case errors.Is(err, store.ErrIssueNoFinishedWork):
+		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonNoFinishedWork})
+	case errors.Is(err, store.ErrIssueNotHandOff):
+		lane := ""
+		if cur, gerr := s.deps.Store.GetIssue(r.Context(), id); gerr == nil {
+			lane = string(cur.Lane)
+		}
+		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonNotHandOff, "lane": lane})
+	case writeIssueInHandoff(w, err):
 	case errors.Is(err, store.ErrIssueChanged):
 		cur, gerr := s.deps.Store.GetIssue(r.Context(), id)
 		if gerr != nil {
@@ -737,6 +759,42 @@ func (s *Server) handleIssueReopen(w http.ResponseWriter, r *http.Request) {
 	iss, err := issues.New(s.deps.Store).Reopen(ctx, issueActor(r), id)
 	if err != nil {
 		s.writeIssueError(w, r, id, "reopen issue", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.renderIssue(ctx, iss))
+}
+
+// handleIssueReady implements POST /v1/issues/{id}/ready: the issue's
+// latest finished main-line delivery is marked ready to hand off (task 137
+// decision 13), by the request's actor. Its body, if any, is `{}`. It is a
+// local write, never a forge write, so a mirrored issue takes it too.
+func (s *Server) handleIssueReady(w http.ResponseWriter, r *http.Request) {
+	s.markIssueReadiness(w, r, "mark issue ready", s.deps.Store.MarkIssueReady)
+}
+
+// handleIssueUnready implements POST /v1/issues/{id}/unready: an issue in
+// hand_off is withdrawn to in_progress until it is marked ready again or new
+// work finishes (task 137 decision 13).
+func (s *Server) handleIssueUnready(w http.ResponseWriter, r *http.Request) {
+	s.markIssueReadiness(w, r, "mark issue unready", s.deps.Store.MarkIssueUnready)
+}
+
+// markIssueReadiness is ready and unready: the same body, actor and errors.
+func (s *Server) markIssueReadiness(w http.ResponseWriter, r *http.Request, what string,
+	mark func(context.Context, int64, issuestate.Actor) (*store.Issue, error),
+) {
+	id, ok := issueIDFromPath(w, r)
+	if !ok {
+		return
+	}
+	var req struct{}
+	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
+		return
+	}
+	ctx := r.Context()
+	iss, err := mark(ctx, id, issueActor(r))
+	if err != nil {
+		s.writeIssueError(w, r, id, what, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, s.renderIssue(ctx, iss))

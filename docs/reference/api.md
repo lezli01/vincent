@@ -80,6 +80,9 @@ each:
 | `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
 | `issue_has_live_main_task` | An issue delete was refused because one of the issue's main or side tasks has not finished. Finish or cancel it, then delete again | `task_id` |
 | `issue_in_handoff` | A task create, a chat hand-off or a `follow_up` would add work to an issue a handoff has claimed. Only the handoff's own task may add work to it until the handoff returns or releases the issue | `handoff_id` |
+| `issue_not_eligible` | [`POST /v1/handoffs`](#handoffs) named an issue it may not claim: missing, in another project, closed, not in `hand_off`, already claimed, or already delivered. Nothing was created | `issue_id`, and `handoff_id` when a handoff in the same project claims it |
+| `nothing_to_hand_off` | A handoff's `select` found no eligible issue. Nothing was created | |
+| `grant_needs_human` | An agent — an MCP call, or a request from a workflow step or chat agent — asked for a handoff with a grant. Only a human gives one; the same request without `grant` succeeds | |
 
 ## Request bodies
 
@@ -1735,7 +1738,7 @@ time.
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body. A `fan_out` row appears when its round's lanes are **spawned**, not when they merge: the park opens the row `running` and that round's merge admission finalizes the same one (§7.6), so a parent whose lanes are working is on the timeline rather than missing from it. Each row also carries **what the attempt was given**: `rendered_prompt`, `rendered_run`, `rendered_check` and `rendered_if` are the substituted text the adapter, the shell and the guard actually saw — the full bytes, unlike `prompt_override`/`run_override`, which are booleans here — with `rendered_for_each` the resolved list an iteration drew its `loop_item` from, carried as a **string holding a JSON array** rather than as an array field, and `input_truncated` saying a field was cut at its 64 KiB ceiling. Beside them the resolution the attempt ran under: `agent_source`, `model_source` and `effort_source` name which level supplied each part (`step`, `task`, `workflow`, `adapter`), and `permission_mode`, `timeout_ms`, `check_timeout_ms`, `shell` and `work_dir` are the values that were in force, recorded rather than re-resolved, so they still describe the attempt after a config reload or a task patch. `null` (or `0`, or `""`) means nothing was recorded — an attempt from before the daemon recorded any of this, and every field the step type has no input for — while an empty string on a rendered field is a render that produced nothing. `rendered_if` is evidence, not a decision: a guard is re-evaluated every time it is reached |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
 | `GET` | `/v1/tasks/{id}/delivery` | `{ task_id, delivery }` — what the task's last finished run delivered, in full, or `delivery: null`. See [Deliveries](#deliveries) |
-| `POST` | `/v1/tasks/{id}/delivery` | `{ kind?, title?, body?, summary?, head_sha?, close_reason?, proof? }` → `{ task_id, delivery }` as stored. Records what the run delivered, replacing any earlier one; **running** or **done** tasks only. See [Deliveries](#deliveries) |
+| `POST` | `/v1/tasks/{id}/delivery` | `{ kind?, title?, body?, summary?, head_sha?, close_reason?, proof?, ready? }` → `{ task_id, delivery }` as stored. Records what the run delivered, replacing any earlier one; **running** or **done** tasks only. See [Deliveries](#deliveries) |
 | `GET` | `/v1/tasks/{id}/workflow` | This task's own workflow **snapshot** as a full definition — what ran, not what the registry says now. See [The task's workflow](#the-tasks-workflow) |
 
 ### Running on an existing branch
@@ -1970,7 +1973,8 @@ A snapshot that does not parse is a **200** with `errors[]` and
 `POST /v1/tasks` is a route where re-sending a request does something twice: it
 inserts a task, claims a branch and wakes the scheduler. Send an
 `Idempotency-Key` header to make the retry safe. [`POST /v1/issues`](#issues)
-honours the same header under the same rules.
+and [`POST /v1/handoffs`](#handoffs) honour the same header under the same
+rules; a key is scoped to its route, so the same key on two routes is two keys.
 
 ```sh
 KEY=$(uuidgen)
@@ -2494,6 +2498,8 @@ task created from it.
 | `PATCH` | `/v1/issues/{id}` | Edit fields and labels at the version you read |
 | `POST` | `/v1/issues/{id}/close` | Close, with a reason |
 | `POST` | `/v1/issues/{id}/reopen` | Reopen |
+| `POST` | `/v1/issues/{id}/ready` | Mark its finished work ready to hand off. See [Ready to hand off](#ready-to-hand-off) |
+| `POST` | `/v1/issues/{id}/unready` | Withdraw it from the `hand_off` lane. See [Ready to hand off](#ready-to-hand-off) |
 | `GET` | `/v1/issues/{id}/comments` | The discussion thread, oldest first |
 | `POST` | `/v1/issues/{id}/comments` | Add a local comment |
 | `DELETE` | `/v1/issues/{id}` | Delete permanently, from any state |
@@ -3282,6 +3288,7 @@ POST /v1/tasks/{id}/delivery
 | `close_reason` | An optional suggestion for the issue's close: `completed`, `not_planned` or `duplicate` |
 | `proof` | What proved the change. ≤ 16 KiB |
 | `implicit` | `true` on a delivery the daemon wrote because the run recorded none |
+| `ready`, `ready_by` | Whether the delivery is ready to hand off, and who said so: `workflow`, `task`, `human` or `agent`. A request sends `ready: true`; absent on a delivery recorded before readiness existed, which reads ready. See [Ready to hand off](#ready-to-hand-off) |
 | `recorded_at` | When it was recorded |
 
 - **Running or done only.** Any other state is `409 invalid_state` with
@@ -3302,6 +3309,90 @@ POST /v1/tasks/{id}/delivery
 - **Not from a container.** A step [in a container](configuration.md#container)
   has no route to the daemon's API, and records its delivery with the
   `task_deliver` [MCP tool](#mcp) instead.
+
+### Ready to hand off
+
+An issue reaches the `hand_off` lane when nothing of it is running and its
+latest finished main-line delivery is **ready**. The task's workflow sets that
+at `→ done` from its [`hand_off`](workflow-schema.md#hand_off) key: `auto`, the
+default, marks it ready (`ready_by: workflow`); `explicit` marks it not ready.
+Three things change it:
+
+- **`ready: true` on `POST /v1/tasks/{id}/delivery`.** On a running task it is
+  stored as `ready_by: task`, and the last call wins: a later call without it
+  clears it. On a `done` task it is the caller's mark (`human`, or `agent` over
+  MCP), and a correction without it keeps the readiness already stored.
+- **`POST /v1/issues/{id}/ready`**, body `{}` or none, answers the issue. It
+  marks the latest delivery ready, attributed to the caller; an issue already
+  ready is a `200` that writes nothing.
+- **`POST /v1/issues/{id}/unready`** marks it not ready, so the issue waits in
+  `in_progress` until it is marked again or new work finishes.
+
+Both issue routes are local writes, never forge writes, and are refused with
+`409 invalid_state` and a `details.reason`: `issue_work_running` while a root
+task of the issue is unsettled, `issue_in_handoff` (with `details.handoff_id`)
+while a handoff claims it, `issue_no_finished_work` when no main-line task has
+finished, and, for `unready` only, `issue_not_hand_off` (with `details.lane`).
+A closed issue is refused as every issue action on one is. A mark that moves
+the lane emits `issue.lane_changed` with `by`.
+
+## Handoffs
+
+A **handoff** claims finished issues — those in the `hand_off` lane — for one
+integration task, which runs the workflow you name over them. One request
+creates the handoff, its task and every claim, or nothing:
+
+```
+POST /v1/handoffs
+{ "project_id": 1, "workflow": "ship-train",
+  "select": { "delivery": "change", "labels": ["ready-to-ship"], "max": 8 } }
+```
+
+| Field | Meaning |
+|---|---|
+| `project_id`, `workflow` | Both required. There is no default handoff workflow |
+| `issue_ids` | Exactly these issues. Each must be eligible, or nothing is created |
+| `select` | Or choose them. `lane` may only be `hand_off`, and `order` only `priority`; `delivery` (`change`, `reply` or `none`) and `kind` take one value or a list, any of which matches; every one of `labels` must be carried, in any case; `max` (at least 1) caps the count, otherwise every eligible issue is taken |
+| `grant` | Capabilities for forge writes: `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`. Only a human may give one; nothing acts on it yet |
+| `title` | The task's title. Default: one naming how many issues it claims |
+| `paused`, `description`, `fields`, `priority`, `agent`, `model`, `effort`, `restricted`, `max_task_cost_usd` | The task options, as on [`POST /v1/tasks`](#tasks) |
+
+Exactly one of `issue_ids` and `select` is required. The task is always a root
+task with no issue, cut from the project's base branch, so `issue_id`,
+`github_pull`, `base_branch`, `branch_name`, `existing_branch` and `merge_back`
+are refused as unknown fields. It is validated exactly as `POST /v1/tasks`
+validates a task.
+
+**What is eligible.** An open issue in the `hand_off` lane that no live handoff
+claims and whose current delivery has not already been delivered. A selection
+takes the most urgent first — priority 1 through 4, then issues with no
+priority — then the oldest delivery, then the lowest id.
+
+**The answer** is `201` with the handoff:
+
+```json
+{ "id": 3, "project_id": 1, "task_id": 41, "state": "live", "grant": [],
+  "created_by": "human", "created_at": "…",
+  "items": [ { "issue_id": 12, "delivery_task_id": 37,
+               "delivery": { "kind": "change", "title": "…", "head_sha": "…" },
+               "outcome": "", "outcome_at": null, "outcome_by": "", "note": "" } ],
+  "task": { "id": 41, "title": "Hand off 1 issue", … } }
+```
+
+`state` is `live` while the task runs, `waiting` once it has settled with an
+item still waiting, and `settled` otherwise. `created_by` is `agent` for an MCP
+call or a request carrying a workflow step's or chat agent's marker, `human`
+otherwise. Refusals are `409 invalid_state` with `issue_not_eligible`,
+`nothing_to_hand_off` or `grant_needs_human` (see [Errors](#errors)). Send
+`Idempotency-Key` to make a retry safe ([Replaying a create](#replaying-a-create)).
+
+```
+GET /v1/handoffs                ?project_id=  ?state=live|waiting|settled (repeatable)  ?issue_id=
+GET /v1/handoffs/{id}           one handoff with its items; 404 if unknown
+```
+
+The list is newest first and carries no `items`; `issue_id` finds every handoff
+that claimed that issue.
 
 ## Transcripts and diffs
 
@@ -3628,7 +3719,7 @@ they need.
   untouched, because the link is a fact about GitHub rather than about the
   task's own progress. Re-fetch
   [`/v1/tasks/{id}/github/pull`](#github-pull-requests) when you see one.
-- `task.delivery_changed` carries `{ kind, implicit }` and says a step or a
+- `task.delivery_changed` carries `{ kind, implicit, ready? }` and says a step or a
   human recorded a task's [delivery](#deliveries). Like
   `task.github_pull_changed` it is not a transition. The implicit delivery a
   task's `→ done` writes rides that transition's own `task.state_changed`
@@ -3638,8 +3729,8 @@ they need.
   empty `from` or `to` is an item not yet resolved), and `handoff.settled`
   carries `{ id, task_id }`. Each event's `task_id` is the handoff's own task,
   so that task's stream receives them. An `issue.*` event a handoff caused
-  carries `handoff_id` and `by: handoff`. Nothing creates a handoff over the
-  API yet; the routes arrive with the rest of the handoff pillar.
+  carries `handoff_id` and `by: handoff`. [`POST /v1/handoffs`](#handoffs)
+  creates one.
 - `trigger.fired` carries `{ trigger_id, delivery_id, action }`, where `action`
   is the action type. The event's `project_id` is the trigger's project and its
   `task_id` is the task created or acted on, so `?project_id=` filters it and
@@ -3731,7 +3822,7 @@ Every route on this page is a tool, with these exceptions:
 | every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |
 | `POST /v1/tasks/{id}/chat` | It opens a chat, so the `/v1/chats` reasons apply although the path is under `/v1/tasks`. The lock it places does reach the tools: a `task_*` action on a locked task gets `409 task_locked_by_chat` like any other client |
 
-`task_create` and `issue_create` additionally take an optional
+`task_create`, `issue_create` and `handoff_start` additionally take an optional
 `idempotency_key` string, which becomes the `Idempotency-Key` header — a tool
 call has no header surface, and replay protection exists for exactly the client
 an agent is.

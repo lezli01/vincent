@@ -43,6 +43,9 @@ type WorkflowBody struct {
 	Fields      []WorkflowField   `json:"fields"`
 	Defaults    WorkflowDefaults  `json:"defaults"`
 	Steps       []WorkflowStepDef `json:"steps"`
+	// HandOff is the `hand_off` key as the file declares it (task 137
+	// decision 13): empty when it names none, which reads `auto`.
+	HandOff string `json:"hand_off,omitempty"`
 }
 
 // WorkflowDefaults is the §8.1 defaults block. An absent field means the file

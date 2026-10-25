@@ -29,6 +29,8 @@ func newIssueCmd() *cobra.Command {
 		newIssueEditCmd(),
 		newIssueCloseCmd(),
 		newIssueReopenCmd(),
+		newIssueReadyCmd(),
+		newIssueUnreadyCmd(),
 		newIssueCommentCmd(),
 		newIssueDeleteCmd(),
 		newIssueLabelsCmd(),
@@ -561,6 +563,86 @@ func newIssueReopenCmd() *cobra.Command {
 	}
 	jsonFlag(cmd)
 	return cmd
+}
+
+func newIssueReadyCmd() *cobra.Command {
+	return newIssueReadinessCmd("ready", "Mark an issue's finished work ready to hand off",
+		"Marks the delivery of the issue's latest finished task ready, which moves the\n"+
+			"issue to the hand_off lane (task 137 decision 13). A workflow with\n"+
+			"hand_off: explicit leaves its finished work waiting in in_progress until\n"+
+			"this, or until a step delivers with --ready. Marking an issue already ready\n"+
+			"changes nothing.",
+		"marked ready", (*apiclient.Client).MarkIssueReady)
+}
+
+func newIssueUnreadyCmd() *cobra.Command {
+	return newIssueReadinessCmd("unready", "Withdraw an issue from the hand_off lane",
+		"Marks the delivery of the issue's latest finished task not ready, so the issue\n"+
+			"waits in in_progress until it is marked ready again or new work finishes.\n"+
+			"Only an issue in the hand_off lane can be withdrawn.",
+		"marked unready", (*apiclient.Client).MarkIssueUnready)
+}
+
+// newIssueReadinessCmd is `issue ready` and `issue unready`: the same
+// argument, output and refusals, a different route.
+func newIssueReadinessCmd(use, short, long, verb string,
+	mark func(*apiclient.Client, context.Context, int64) (*apiclient.Issue, error),
+) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   use + " <id>",
+		Short: short,
+		Long:  long,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseIssueID(args[0])
+			if err != nil {
+				return err
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				iss, err := mark(c, ctx, id)
+				if err != nil {
+					return issueReadinessFailed(cmd, id, err)
+				}
+				return printIssueLine(cmd, verb, iss)
+			})
+		},
+	}
+	jsonFlag(cmd)
+	return cmd
+}
+
+// issueReadinessFailed reports a refused ready or unready: the daemon's
+// wording, and for each readiness 409 a line saying what to do next.
+func issueReadinessFailed(cmd *cobra.Command, id int64, err error) error {
+	reason, _, ok := apiclient.IssueConflict(err)
+	if !ok {
+		return issueFail(cmd, err)
+	}
+	var hint string
+	switch reason {
+	case apiclient.IssueReasonWorkRunning:
+		hint = fmt.Sprintf("wait for issue %d's running task to settle, or have its step deliver with --ready", id)
+	case apiclient.IssueReasonNoFinishedWork:
+		hint = fmt.Sprintf("issue %d has no finished task whose delivery could be marked", id)
+	case apiclient.IssueReasonNotHandOff:
+		hint = fmt.Sprintf("issue %d is in the %s lane; only a hand_off issue can be withdrawn", id, conflictDetail(err, "lane"))
+	case apiclient.IssueReasonInHandoff:
+		hint = fmt.Sprintf("handoff %s is working on issue %d; wait for it to finish", conflictDetail(err, "handoff_id"), id)
+	}
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+	if hint != "" {
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), hint)
+	}
+	return exitError{code: 1}
+}
+
+// conflictDetail is one details value of an API error, or "?" without one.
+func conflictDetail(err error, key string) string {
+	var e *apiclient.Error
+	if errors.As(err, &e) && e.Details[key] != "" {
+		return e.Details[key]
+	}
+	return "?"
 }
 
 // errIssueDeleteNeedsForce is `issue delete` without --force. An issue can be
