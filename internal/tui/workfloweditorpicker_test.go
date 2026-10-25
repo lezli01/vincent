@@ -189,3 +189,26 @@ func TestEditorHandOffRowCyclesTheClosedSet(t *testing.T) {
 		t.Error("an enum row opened a field or an overlay")
 	}
 }
+
+// A definition that declares hand_off: explicit opens with the row showing
+// explicit, so enter moves on to unset rather than writing auto over it
+// (review F2).
+func TestEditorHandOffRowReadsTheFile(t *testing.T) {
+	def := agentDefinition()
+	def.Definition.HandOff = "explicit"
+	w := editorFixtureWith(t, def)
+	w.editor.cursor = editorRowIndex(t, w, "hand_off")
+	row := w.editor.rows[w.editor.cursor]
+	if row.value != "explicit" {
+		t.Fatalf("hand_off row = %q, want explicit", row.value)
+	}
+	if next := cycleEnum(row.field, row.value); next != unsetMarker {
+		t.Errorf("next after explicit = %q, want unset", next)
+	}
+	if _, cmd := w.updateKey(registryKey(t, "enter")); cmd == nil {
+		t.Error("enter on hand_off did not commit")
+	}
+	if got := w.editor.rows[w.editor.cursor].value; got == "auto" {
+		t.Errorf("enter on explicit wrote auto")
+	}
+}
