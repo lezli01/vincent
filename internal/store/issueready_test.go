@@ -481,6 +481,30 @@ func TestSetTaskDeliveryReadiness(t *testing.T) {
 	wantReady(t, s, it.ID, boolPtr(true), ReadyByAgent)
 }
 
+// TestDoneTaskReadyOffTheLatest: deliver --ready on a done task is a mark on
+// that task's delivery, not vincent issue ready. On an older main-line task
+// it is stored and accepted, and the lane, which reads only the latest
+// finished main-line delivery, does not move (review F3).
+func TestDoneTaskReadyOffTheLatest(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	iss := mustCreateIssue(t, s, NewIssue{ProjectID: p.ID, Title: "i"})
+	first := finishedMain(t, s, p.ID, iss, "first", readyDelivery("first", false, ""))
+	second := finishedMain(t, s, p.ID, iss, "second", readyDelivery("second", false, ""))
+	wantLane(t, s, iss.ID, issuestate.LaneInProgress)
+	w := watchEvents(s)
+	if _, err := s.SetTaskDelivery(ctx, first.ID, readyDelivery("first", true, ReadyByHuman)); err != nil {
+		t.Fatal(err)
+	}
+	wantReady(t, s, first.ID, boolPtr(true), ReadyByHuman)
+	wantReady(t, s, second.ID, boolPtr(false), "")
+	wantLane(t, s, iss.ID, issuestate.LaneInProgress)
+	if evs := w.take(); len(laneChanges(evs)) != 0 {
+		t.Errorf("marking an older task ready moved the lane: %v", eventTypes(evs))
+	}
+}
+
 // TestLegacyDeliveriesReadReady: a NULL delivery and one with no `ready`
 // key read ready, as every lane did before readiness. Withdrawing a NULL
 // one writes a readiness-only delivery, which the backfill still lists and

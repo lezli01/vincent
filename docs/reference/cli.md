@@ -1208,9 +1208,11 @@ vincent task deliver --title "Retry the upload on a 503" --body-file pr.md --sum
   `hand_off: explicit` leaves its issue in `in_progress` when the task finishes
   until something marks it ready; a step does that with `--ready`. On a running
   task the last call wins, so a later `deliver` without `--ready` clears it. On
-  a `done` task `--ready` is your mark, as
-  [`vincent issue ready`](#vincent-issue-ready) is, and a correction without it
-  keeps the readiness already stored.
+  a `done` task `--ready` is your mark on that task's delivery, and a
+  correction without it keeps the readiness already stored. The issue's lane
+  reads only its latest finished main-line delivery, so a mark on an older or
+  a side task is stored and moves nothing;
+  [`vincent issue ready`](#vincent-issue-ready) marks the right task for you.
 - **It is accepted while the task runs or once it is done.** Otherwise the
   daemon answers `409` and the command exits 1.
 - **It is silent inside a step**, whose stdout is the transcript. With `--task`

@@ -196,8 +196,10 @@ func DeliverableState(s TaskState) bool { return s == TaskRunning || s == TaskDo
 // readiness, so a later deliver without --ready clears an earlier one. On a
 // done task a correction replaces only the text: d.Ready nil or false keeps
 // the stored readiness, and d.Ready true stores it with the caller's
-// ReadyBy. That last write can move the issue's lane, and then records
-// issue.lane_changed in the same commit, by the actor ReadyBy names.
+// ReadyBy — on this task only, without vincent issue ready's refusals, so
+// it moves the issue's lane only when this task holds the issue's latest
+// finished main-line delivery (laneExpr reads no other). When it does, it
+// records issue.lane_changed in the same commit, by the actor ReadyBy names.
 func (s *Store) SetTaskDelivery(ctx context.Context, id int64, d *Delivery) (*Task, error) {
 	if d == nil {
 		return nil, fmt.Errorf("set task %d delivery: no delivery", id)

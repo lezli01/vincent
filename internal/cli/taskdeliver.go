@@ -45,8 +45,10 @@ func newTaskDeliverCmd() *cobra.Command {
 			"--ready marks the delivery ready to hand off (task 137 decision 13), which a " +
 			"workflow with hand_off: explicit waits for before its issue reaches the hand_off " +
 			"lane. On a running task the last call wins: a later deliver without --ready " +
-			"clears it. On a done task it is a human's mark, the way `vincent issue ready` is, " +
-			"and a correction without it keeps the readiness already stored.",
+			"clears it. On a done task it is a human's mark on that task's delivery, and a " +
+			"correction without it keeps the readiness already stored. It moves the issue's " +
+			"lane only when the task holds the issue's latest finished main-line delivery; " +
+			"`vincent issue ready` marks that one for you.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			id, err := deliverTaskID(taskID)
