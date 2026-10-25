@@ -444,7 +444,7 @@ func (s *Store) StartHandoff(ctx context.Context, in NewHandoff) ([]int64, error
 // delivery, the delivering task's finished_at, then by id, so the order is
 // total; and limited by sel.Max.
 func selectHandoffIssuesTx(ctx context.Context, tx *sql.Tx, projectID int64, sel *HandoffSelect) ([]int64, error) {
-	eligible, delivery, finished := handoffEligibleExpr(), latestDeliveryExpr(), latestDeliveryColumn("finished_at")
+	eligible, delivery, finished := handoffEligibleExpr(), latestDeliveryExpr(), latestDeliveryColumn("t.finished_at")
 	//nolint:gosec // G202: the fragments are constant SQL with bind markers; every value binds
 	q := `SELECT i.id FROM issues i WHERE i.project_id = ? AND ` + eligible.sql + ` = 1`
 	args := []any{projectID}
