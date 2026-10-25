@@ -53,8 +53,8 @@ func newHandoffStartCmd() *cobra.Command {
 			"is not eligible: not in hand_off, already claimed, or already delivered.\n" +
 			"Without ids, the eligible issues are selected: --delivery, --kind and\n" +
 			"--label narrow them (each repeats; every --label must match) and --max\n" +
-			"caps them. A selection takes the most urgent first — priority 1, then 4,\n" +
-			"then issues with none — then the oldest delivery.\n\n" +
+			"caps them (at least 1). A selection takes the most urgent first —\n" +
+			"priority 1, then 4, then issues with none — then the oldest delivery.\n\n" +
 			"--grant gives the handoff's task capabilities for forge writes (issue.comment,\n" +
 			"issue.close, pull.create, pull.comment, pull.merge, pull.close,\n" +
 			"checks.rerun). Only a human may give one: a workflow step's call is refused.",
@@ -68,6 +68,12 @@ func newHandoffStartCmd() *cobra.Command {
 			}
 			selecting := cmd.Flags().Changed("delivery") || cmd.Flags().Changed("kind") ||
 				cmd.Flags().Changed("label") || cmd.Flags().Changed("max")
+			// sel.Max is omitempty, so a 0 would reach the daemon as no
+			// cap at all: the widest claim, which the API refuses as
+			// select.max below 1.
+			if cmd.Flags().Changed("max") && sel.Max < 1 {
+				return fmt.Errorf("--max must be at least 1")
+			}
 			if len(req.IssueIDs) > 0 && selecting {
 				return fmt.Errorf("issue ids and --delivery, --kind, --label or --max cannot be combined: " +
 					"name the issues, or select them")

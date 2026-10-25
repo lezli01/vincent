@@ -73,6 +73,12 @@ func TestHandoffCommands(t *testing.T) {
 	if code != 1 || !strings.Contains(errOut, "no issue eligible") {
 		t.Errorf("empty selection: exit %d (%s)", code, errOut)
 	}
+	for _, n := range []string{"0", "-1"} {
+		_, errOut, code = runCLI(t, "handoff", "start", "--project", project, "--workflow", "adhoc", "--max", n)
+		if code == 0 || !strings.Contains(errOut, "--max must be at least 1") {
+			t.Errorf("--max %s: exit %d (%s)", n, code, errOut)
+		}
+	}
 	_, errOut, code = runCLI(t, "handoff", "start", "--project", project, "--workflow", "adhoc", feature, "--kind", "bug")
 	if code == 0 || !strings.Contains(errOut, "cannot be combined") {
 		t.Errorf("ids with select flags: exit %d (%s)", code, errOut)
