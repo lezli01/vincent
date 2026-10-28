@@ -104,4 +104,4 @@ CI results, never in advance.
 
 | Date | Platform | Result | By |
 |---|---|---|---|
-| 2026-10-28 | macOS (darwin/arm64) | GATE PASS, all seven scenarios end to end, at 01ac1515 | task 137.13 |
+| 2026-10-28 | macOS (darwin/arm64) | GATE PASS, all seven scenarios end to end, at 9b5bfa21 | task 137.13 |
