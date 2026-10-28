@@ -13,6 +13,19 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Record what became of each handoff item.** `vincent handoff deliver`,
+  `return`, `wait` and `release` (over `POST
+  /v1/handoffs/{id}/items/{issue_id}/…` and the `handoff_deliver`,
+  `handoff_return`, `handoff_wait` and `handoff_release` MCP tools) resolve
+  one item, several, or `--all` unresolved ones, with an optional `--note`
+  and `--comment-file`. `deliver` closes the issue (`--close`, or `none` to
+  leave it open); `return` releases the claim and withdraws readiness, and
+  can queue `--follow-up` on the issue's latest main task or, with `--side`,
+  a merge-back side task; `wait` keeps the claim past the handoff, and
+  closing the issue — an imported `Closes #N` included — records it
+  delivered; `release` drops it. Each call is all or nothing. When a
+  handoff's task settles, every item still unresolved is now released
+  (`outcome_by: settle`) instead of keeping its claim.
 - **Start a handoff over finished issues.** `POST /v1/handoffs` claims issues
   in the `hand_off` lane for one integration task running the workflow you
   name — by id, or with `select` (by delivery kind, issue kind and labels,

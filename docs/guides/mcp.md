@@ -41,8 +41,11 @@ dry runs, the [issue](../reference/api.md#issues) routes (`issue_list`,
 `issue_ready`, `issue_unready`,
 `issue_comments`, `issue_comment`, `project_issue_labels`), the issue import status `project_issue_sync_status`,
 the [handoff](../reference/api.md#handoffs) routes (`handoff_start`,
-`handoff_list`, `handoff_show` — `handoff_start` is grant-less: a grant from an
-agent is refused `grant_needs_human`),
+`handoff_list`, `handoff_show`, and the item verbs `handoff_deliver`,
+`handoff_return`, `handoff_wait`, `handoff_release` — `handoff_start` is
+grant-less: a grant from an agent is refused `grant_needs_human`, and a
+step's verb that would close or comment on an imported issue is refused
+`forge_write_needs_human`),
 and the read-only `health`, `info`, `config_get`, `agent_list`,
 `doctor`, `orphan_list`.
 

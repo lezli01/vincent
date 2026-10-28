@@ -128,7 +128,7 @@ type HandoffItem struct {
 	Delivery       *Delivery
 	Outcome        HandoffOutcome
 	OutcomeAt      *time.Time
-	OutcomeBy      issuestate.Actor
+	OutcomeBy      HandoffOutcomeBy
 	Note           string
 }
 
@@ -678,7 +678,7 @@ func listHandoffItems(ctx context.Context, q issueQuerier, handoffID int64) ([]*
 		if it.Delivery, err = unmarshalDelivery(raw); err != nil {
 			return nil, fmt.Errorf("handoff %d issue %d: %w", it.HandoffID, it.IssueID, err)
 		}
-		it.Outcome, it.OutcomeBy = HandoffOutcome(outcome.String), issuestate.Actor(byAs.String)
+		it.Outcome, it.OutcomeBy = HandoffOutcome(outcome.String), HandoffOutcomeBy(byAs.String)
 		if at.Valid {
 			ts, err := parseTime(at.String)
 			if err != nil {
@@ -702,13 +702,13 @@ func listHandoffItems(ctx context.Context, q issueQuerier, handoffID int64) ([]*
 // issue back to one that does trips the claim index when another handoff
 // has claimed the issue since, and fails with *IssueNotEligibleError.
 func (s *Store) SetHandoffItemOutcome(
-	ctx context.Context, handoffID, issueID int64, outcome HandoffOutcome, by issuestate.Actor, note string,
+	ctx context.Context, handoffID, issueID int64, outcome HandoffOutcome, by HandoffOutcomeBy, note string,
 ) (*HandoffItem, error) {
 	if !ValidHandoffOutcome(outcome) {
 		return nil, fmt.Errorf("unknown handoff outcome %q", outcome)
 	}
-	if err := checkActor(by); err != nil {
-		return nil, err
+	if !ValidHandoffOutcomeBy(by) {
+		return nil, fmt.Errorf("unknown handoff outcome actor %q", by)
 	}
 	var (
 		out      *HandoffItem
@@ -734,24 +734,10 @@ func (s *Store) SetHandoffItemOutcome(
 			out = it
 			return nil
 		}
-		now := time.Now()
-		_, err = tx.ExecContext(ctx, `UPDATE handoff_items SET outcome = ?, outcome_at = ?, outcome_by = ?, note = ?
-			WHERE handoff_id = ? AND issue_id = ?`,
-			string(outcome), formatTime(now), string(by), note, handoffID, issueID)
-		if err != nil {
-			if strings.Contains(err.Error(), "constraint failed") {
-				return &IssueNotEligibleError{IssueID: issueID}
-			}
-			return fmt.Errorf("set handoff %d issue %d outcome: %w", handoffID, issueID, err)
-		}
-		it.Outcome, it.OutcomeAt, it.OutcomeBy, it.Note = outcome, &now, by, note
-		out = it
-		ev, err = handoffEvent(EventHandoffItemChanged, h, map[string]any{
-			"handoff_id": handoffID, "issue_id": issueID, "from": string(from), "to": string(outcome), "by": string(by),
-		})
-		if err != nil {
+		if ev, err = updateItemOutcomeTx(ctx, tx, h, it, outcome, by, note, time.Now()); err != nil {
 			return err
 		}
+		out = it
 		if err := appendEventTx(ctx, tx, ev); err != nil {
 			return err
 		}
@@ -785,10 +771,11 @@ func handoffSettledTx(ctx context.Context, tx *sql.Tx, h *Handoff) (*Event, erro
 }
 
 // handoffTaskSettleTx is the settle hook of a task transition: when the
-// transition settles a handoff's task and leaves the handoff settled — no
-// item waiting — it appends handoff.settled after cause and chains it so the
-// caller's one notify publishes it. Unresolved items keep their claim here;
-// releasing them on settle is 137.6's.
+// transition settles a handoff's task, every item still unresolved is
+// released, `outcome_by: settle` (task 137.6) — one handoff.item_changed
+// each — and, when that leaves the handoff settled (no item waiting),
+// handoff.settled follows. All of them are chained after cause so the
+// caller's one notify publishes them after the commit, in order.
 func handoffTaskSettleTx(ctx context.Context, tx *sql.Tx, cause *Event, taskID int64, from, to TaskState) error {
 	if taskstate.Settled(from) || !taskstate.Settled(to) {
 		return nil
@@ -797,16 +784,38 @@ func handoffTaskSettleTx(ctx context.Context, tx *sql.Tx, cause *Event, taskID i
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}
-	if err != nil || h.State != HandoffSettled {
+	if err != nil {
 		return err
 	}
-	ev, err := handoffSettledTx(ctx, tx, h)
+	items, err := listHandoffItems(ctx, tx, h.ID)
 	if err != nil {
 		return err
 	}
 	tail := cause
 	for tail.follow != nil {
 		tail = tail.follow
+	}
+	now := time.Now()
+	for _, it := range items {
+		if it.Outcome != HandoffUnresolved {
+			continue
+		}
+		ev, err := updateItemOutcomeTx(ctx, tx, h, it, HandoffReleased, HandoffBySettle, "", now)
+		if err != nil {
+			return err
+		}
+		if err := appendEventTx(ctx, tx, ev); err != nil {
+			return err
+		}
+		tail.follow, tail = ev, ev
+	}
+	after, err := getHandoff(ctx, tx, `h.id = ?`, h.ID)
+	if err != nil || after.State != HandoffSettled {
+		return err
+	}
+	ev, err := handoffSettledTx(ctx, tx, after)
+	if err != nil {
+		return err
 	}
 	tail.follow = ev
 	return nil

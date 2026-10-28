@@ -85,43 +85,65 @@ func (s *Store) markIssueReadiness(ctx context.Context, issueID int64, ready boo
 		if !ready && cur.Lane != issuestate.LaneHandOff {
 			return nil, fmt.Errorf("issue %d is %s: %w", issueID, cur.Lane, ErrIssueNotHandOff)
 		}
-		watch, err := watchIssueLaneTx(ctx, tx, issueID, cur.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-		// json_set keeps the delivery's text untouched. A task that finished
-		// before migration 0045 has none at all; it gets a readiness-only
-		// object, marked implicit, which the backfill still fills
-		// (missingDeliveryCond) without losing the decision.
-		readyJSON := "false"
-		if ready {
-			readyJSON = "true"
-		}
-		readyBy := string(ReadyByActor(by))
-		if _, err := tx.ExecContext(ctx, `UPDATE tasks SET delivery_json = CASE
-				WHEN delivery_json IS NULL THEN json_object('implicit', json('true'), 'ready', json(?), 'ready_by', ?)
-				ELSE json_set(delivery_json, '$.ready', json(?), '$.ready_by', ?) END
-			WHERE id = ?`, readyJSON, readyBy, readyJSON, readyBy, taskID); err != nil {
-			return nil, fmt.Errorf("mark task %d delivery ready=%s: %w", taskID, readyJSON, err)
-		}
-		t, err := scanTask(tx.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
-		if err != nil {
-			return nil, fmt.Errorf("get task %d: %w", taskID, err)
-		}
-		ev, err := deliveryChangedEvent(t, t.Delivery)
-		if err != nil {
-			return nil, err
-		}
-		lane, err := watch.changedTx(ctx, tx, nil, by)
-		if err != nil {
-			return nil, err
-		}
-		return []*Event{ev, lane}, nil
+		return setDeliveryReadyTx(ctx, tx, issueID, cur.ProjectID, taskID, ready, by)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return s.GetIssue(ctx, issueID)
+}
+
+// setDeliveryReadyTx writes readiness onto task taskID's delivery — the
+// issue's latest finished main-line one — and returns the delivery and lane
+// events, not yet appended.
+func setDeliveryReadyTx(
+	ctx context.Context, tx *sql.Tx, issueID, projectID, taskID int64, ready bool, by issuestate.Actor,
+) ([]*Event, error) {
+	watch, err := watchIssueLaneTx(ctx, tx, issueID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	// json_set keeps the delivery's text untouched. A task that finished
+	// before migration 0045 has none at all; it gets a readiness-only
+	// object, marked implicit, which the backfill still fills
+	// (missingDeliveryCond) without losing the decision.
+	readyJSON := "false"
+	if ready {
+		readyJSON = "true"
+	}
+	readyBy := string(ReadyByActor(by))
+	if _, err := tx.ExecContext(ctx, `UPDATE tasks SET delivery_json = CASE
+			WHEN delivery_json IS NULL THEN json_object('implicit', json('true'), 'ready', json(?), 'ready_by', ?)
+			ELSE json_set(delivery_json, '$.ready', json(?), '$.ready_by', ?) END
+		WHERE id = ?`, readyJSON, readyBy, readyJSON, readyBy, taskID); err != nil {
+		return nil, fmt.Errorf("mark task %d delivery ready=%s: %w", taskID, readyJSON, err)
+	}
+	t, err := scanTask(tx.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM tasks WHERE id = ?`, taskID))
+	if err != nil {
+		return nil, fmt.Errorf("get task %d: %w", taskID, err)
+	}
+	ev, err := deliveryChangedEvent(t, t.Delivery)
+	if err != nil {
+		return nil, err
+	}
+	lane, err := watch.changedTx(ctx, tx, nil, by)
+	if err != nil {
+		return nil, err
+	}
+	return []*Event{ev, lane}, nil
+}
+
+// withdrawReadinessTx is a handoff return's unready (task 137.6): the
+// issue's latest finished main-line delivery, if it is ready, is marked not
+// ready, so the issue waits in `in_progress`. It skips 137.15's refusals —
+// the caller has just released the claim in this transaction, and an issue
+// with nothing ready has nothing to withdraw.
+func withdrawReadinessTx(ctx context.Context, tx *sql.Tx, issueID, projectID int64, by issuestate.Actor) ([]*Event, error) {
+	taskID, delivery, err := latestDeliveryTx(ctx, tx, issueID)
+	if err != nil || taskID == 0 || !delivery.IsReady() {
+		return nil, err
+	}
+	return setDeliveryReadyTx(ctx, tx, issueID, projectID, taskID, false, by)
 }
 
 // latestDeliveryTx reads the task latestDeliveryExpr picks for an issue and

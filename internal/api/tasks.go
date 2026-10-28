@@ -1163,93 +1163,14 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	project, t, pull, warnings := prep.project, prep.task, prep.pull, prep.warnings
+	t, warnings := prep.task, prep.warnings
 	var branchName string
 	if req.BranchName != nil {
 		branchName = strings.TrimSpace(*req.BranchName)
 	}
-	// A name the caller chose — typed, or an existing branch to adopt — is
-	// one a main task may not silently trade for its issue's main branch
-	// (task 134 decision 5).
-	t.BranchExplicit = branchName != "" || adopt
-	// A main task joining an issue that already has a main branch runs on
-	// that branch (decision 3); the store binds it inside the create
-	// transaction, and this read only lets the request skip the checks that
-	// would refuse a branch that is expected to exist.
-	mainBranch := ""
-	if t.IssueWorktree == store.IssueWorktreeMain {
-		mainBranch = prep.mainWorktree.Branch
-	}
-
-	// Branch naming (§5.3, task 001): `default < config.yaml < project < literal`.
-	// Resolve before the insert so a bad name is a 400 rather than a task that
-	// blocks later, and so the git-side checks run with no transaction open.
-	spec := s.branchSpec(branchName, project)
-	if pull != nil {
-		spec.Pull = pull.HeadBranch
-	}
-	bctx := branchContext(t.Title, t.BaseBranch, t.Fields, project)
-	preview, err := resolveBranchPreview(spec, bctx)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			fmt.Sprintf("branch name could not be resolved: %v", err))
+	resolveBranch, ok := s.newTaskBranch(ctx, w, prep, &t, branchName, adopt)
+	if !ok {
 		return
-	}
-	// Legality is id-independent, so it is checked on both paths. Collision only
-	// on the path whose name is final; see placeholderTaskID.
-	if msg := s.checkBranchLegality(ctx, preview.Name); msg != "" {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
-		return
-	}
-	// Recorded on the row, in the creating transaction: "adopted" is not
-	// derivable afterwards, and archive has to know (decision 6).
-	t.AdoptedBranch = adopt
-	var resolveBranch func(int64) (string, error)
-	switch {
-	case mainBranch != "" && t.BranchExplicit && preview.Name != mainBranch:
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			fmt.Sprintf("issue %d's main branch is %q; a main task cannot run on %q",
-				*t.IssueID, mainBranch, preview.Name))
-		return
-	case mainBranch != "":
-		// Expected to exist, so neither the collision nor the presence check
-		// applies; the store binds the same name again in the transaction.
-		// It is not adopted: the first main task cut the branch, and this one
-		// receives that task's directory at admission (task 134.12) — even
-		// when the request said existing_branch, which only named it.
-		t.BranchName = mainBranch
-		t.AdoptedBranch = false
-	case preview.NeedsID:
-		// The name needs the id, so it is produced inside the insert transaction.
-		resolveBranch = func(id int64) (string, error) {
-			name, _, err := worktree.ResolveBranchName(spec, bctx.WithID(id))
-			return name, err
-		}
-	default:
-		// A pull-request task is exempt from the collision check: its branch
-		// is *expected* to exist, and refusing it would make the feature
-		// unusable for anyone who has already looked at the pull request
-		// (decision 2). The in-transaction claim check below still runs, so
-		// two live vincent tasks on one head branch remain a 400.
-		switch {
-		case pull != nil:
-		case adopt:
-			// The mirror of the collision check: this mode needs the branch to
-			// be there, so its absence is the 400. Like the collision check it
-			// is a courtesy — the branch can be deleted between here and
-			// admission — and `adopt_branch_missing` at admission remains the
-			// authority.
-			if msg := s.checkBranchPresent(ctx, project.Path, preview.Name); msg != "" {
-				writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
-				return
-			}
-		default:
-			if msg := s.checkBranchCollision(ctx, project.Path, preview.Name); msg != "" {
-				writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
-				return
-			}
-		}
-		t.BranchName = preview.Name
 	}
 	t.ActingTaskID = actingTaskID(r)
 	var key *store.IdempotencyKey
@@ -1291,6 +1212,100 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	resp.Warnings = warnings
 	resp.MainWorktreeOccupantTaskID = s.mainWorktreeOccupant(ctx, &t)
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// newTaskBranch names a new task's branch (§5.3, task 001), the half of a
+// create shared by POST /v1/tasks and a handoff return's side task (task
+// 137.6): t.BranchName is set, or the returned func produces the name once
+// the id is known. A refusal is written to w and reported as false.
+func (s *Server) newTaskBranch(
+	ctx context.Context, w http.ResponseWriter, prep *preparedTask, t *store.Task, branchName string, adopt bool,
+) (func(int64) (string, error), bool) {
+	project, pull := prep.project, prep.pull
+	// A name the caller chose — typed, or an existing branch to adopt — is
+	// one a main task may not silently trade for its issue's main branch
+	// (task 134 decision 5).
+	t.BranchExplicit = branchName != "" || adopt
+	// A main task joining an issue that already has a main branch runs on
+	// that branch (decision 3); the store binds it inside the create
+	// transaction, and this read only lets the request skip the checks that
+	// would refuse a branch that is expected to exist.
+	mainBranch := ""
+	if t.IssueWorktree == store.IssueWorktreeMain {
+		mainBranch = prep.mainWorktree.Branch
+	}
+
+	// Branch naming (§5.3, task 001): `default < config.yaml < project < literal`.
+	// Resolve before the insert so a bad name is a 400 rather than a task that
+	// blocks later, and so the git-side checks run with no transaction open.
+	spec := s.branchSpec(branchName, project)
+	if pull != nil {
+		spec.Pull = pull.HeadBranch
+	}
+	bctx := branchContext(t.Title, t.BaseBranch, t.Fields, project)
+	preview, err := resolveBranchPreview(spec, bctx)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("branch name could not be resolved: %v", err))
+		return nil, false
+	}
+	// Legality is id-independent, so it is checked on both paths. Collision only
+	// on the path whose name is final; see placeholderTaskID.
+	if msg := s.checkBranchLegality(ctx, preview.Name); msg != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+		return nil, false
+	}
+	// Recorded on the row, in the creating transaction: "adopted" is not
+	// derivable afterwards, and archive has to know (decision 6).
+	t.AdoptedBranch = adopt
+	var resolveBranch func(int64) (string, error)
+	switch {
+	case mainBranch != "" && t.BranchExplicit && preview.Name != mainBranch:
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("issue %d's main branch is %q; a main task cannot run on %q",
+				*t.IssueID, mainBranch, preview.Name))
+		return nil, false
+	case mainBranch != "":
+		// Expected to exist, so neither the collision nor the presence check
+		// applies; the store binds the same name again in the transaction.
+		// It is not adopted: the first main task cut the branch, and this one
+		// receives that task's directory at admission (task 134.12) — even
+		// when the request said existing_branch, which only named it.
+		t.BranchName = mainBranch
+		t.AdoptedBranch = false
+	case preview.NeedsID:
+		// The name needs the id, so it is produced inside the insert transaction.
+		resolveBranch = func(id int64) (string, error) {
+			name, _, err := worktree.ResolveBranchName(spec, bctx.WithID(id))
+			return name, err
+		}
+	default:
+		// A pull-request task is exempt from the collision check: its branch
+		// is *expected* to exist, and refusing it would make the feature
+		// unusable for anyone who has already looked at the pull request
+		// (decision 2). The in-transaction claim check below still runs, so
+		// two live vincent tasks on one head branch remain a 400.
+		switch {
+		case pull != nil:
+		case adopt:
+			// The mirror of the collision check: this mode needs the branch to
+			// be there, so its absence is the 400. Like the collision check it
+			// is a courtesy — the branch can be deleted between here and
+			// admission — and `adopt_branch_missing` at admission remains the
+			// authority.
+			if msg := s.checkBranchPresent(ctx, project.Path, preview.Name); msg != "" {
+				writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+				return nil, false
+			}
+		default:
+			if msg := s.checkBranchCollision(ctx, project.Path, preview.Name); msg != "" {
+				writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+				return nil, false
+			}
+		}
+		t.BranchName = preview.Name
+	}
+	return resolveBranch, true
 }
 
 // mainWorktreeOccupant is the creation hint of task 134 decision 10: the

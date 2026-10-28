@@ -3306,6 +3306,37 @@ Prints the handoff — its state, task, grant and who started it — and one row
 per item: the issue, its delivery's kind and task as claimed, and the outcome
 once one is recorded.
 
+### `vincent handoff deliver|return|wait|release`
+
+```sh
+vincent handoff deliver HANDOFF ISSUE-ID... | --all [--close completed|not_planned|duplicate|none] [--note TEXT] [--comment-file FILE] [--json]
+vincent handoff return  HANDOFF ISSUE-ID... | --all [--follow-up PROMPT [--paused] [--side [--workflow NAME]]] [--note TEXT] [--comment-file FILE] [--json]
+vincent handoff wait    HANDOFF ISSUE-ID... | --all [--note TEXT] [--comment-file FILE] [--json]
+vincent handoff release HANDOFF ISSUE-ID... | --all [--note TEXT] [--comment-file FILE] [--json]
+```
+
+Records what became of each claimed issue, then prints the handoff as `show`
+does. `--all` takes every unresolved item and leaves waiting ones alone.
+`--note` is kept on the item; `--comment-file` (`-` for stdin) is posted on
+each issue first.
+
+- `deliver` closes the issue with `--close`, by default the delivery's
+  suggested reason, else `completed`; `--close none` leaves it open.
+- `return` releases the claim and withdraws the issue's readiness, so it
+  waits in `in_progress`. `--follow-up` queues the prompt as a follow-up on
+  the issue's latest main task (`--paused` holds it); with `--side` it runs as
+  a new side task merged back into the issue's main branch, on that task's
+  workflow unless `--workflow` names another.
+- `wait` keeps the claim after the handoff's task settles; closing the issue
+  records it delivered.
+- `release` drops the claim; the issue stays eligible for a later handoff.
+
+Each command is all or nothing: one refused item or side effect — an item
+already delivered, returned or released, a workflow step closing or
+commenting on an issue imported from GitHub, a follow-up its task cannot take
+— records nothing for any of them. When the handoff's task settles, every
+item still unresolved is released.
+
 ## `vincent gc`
 
 ```sh

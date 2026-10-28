@@ -26,7 +26,9 @@ func newHandoffCmd() *cobra.Command {
 			"which runs the workflow you name over them. This is not `vincent chat\n" +
 			"handoff`, which turns a chat into a task.",
 	}
-	cmd.AddCommand(newHandoffStartCmd(), newHandoffLsCmd(), newHandoffShowCmd())
+	cmd.AddCommand(newHandoffStartCmd(), newHandoffLsCmd(), newHandoffShowCmd(),
+		newHandoffVerbCmd(apiclient.HandoffDeliver), newHandoffVerbCmd(apiclient.HandoffReturn),
+		newHandoffVerbCmd(apiclient.HandoffWait), newHandoffVerbCmd(apiclient.HandoffRelease))
 	return cmd
 }
 
@@ -269,4 +271,106 @@ func printHandoff(out io.Writer, h *apiclient.Handoff) error {
 		})
 	}
 	return table(out, []string{"ISSUE", "DELIVERY", "FROM_TASK", "OUTCOME", "BY", "NOTE"}, rows)
+}
+
+// handoffVerbHelp is each item verb's short and long help (task 137.6).
+var handoffVerbHelp = map[string][2]string{
+	apiclient.HandoffDeliver: {
+		"Record handoff items delivered, closing their issues",
+		"Records each item delivered: its issue's delivery is integrated. The issue is\n" +
+			"closed with --close — completed, not_planned or duplicate — or, by default,\n" +
+			"with the delivery's suggested close reason, else completed. --close none\n" +
+			"leaves it open; it is still kept out of later handoffs until new work\n" +
+			"replaces the delivery.",
+	},
+	apiclient.HandoffReturn: {
+		"Return handoff items to their workshop",
+		"Records each item returned: the claim is released and the issue's readiness\n" +
+			"withdrawn, so it waits in in_progress. --follow-up queues PROMPT as a\n" +
+			"follow-up on the issue's latest main task (--paused holds it); with --side\n" +
+			"it becomes a new side task merged back into the issue's main branch, running\n" +
+			"that task's workflow unless --workflow names another. A follow-up the task\n" +
+			"cannot take refuses the whole return.",
+	},
+	apiclient.HandoffWait: {
+		"Park handoff items on something outside the handoff",
+		"Records each item waiting: it keeps its claim after the handoff's task\n" +
+			"settles, and closing the issue — by anyone, an import included — records\n" +
+			"it delivered.",
+	},
+	apiclient.HandoffRelease: {
+		"Release handoff items with no verdict",
+		"Records each item released: the claim is dropped and the issue stays\n" +
+			"eligible for a later handoff.",
+	},
+}
+
+// newHandoffVerbCmd is `vincent handoff deliver|return|wait|release`. Every
+// verb is all or nothing: one refused item, or one refused side effect —
+// a close, a comment, a follow-up — records nothing for any of them.
+func newHandoffVerbCmd(verb string) *cobra.Command {
+	var (
+		req         apiclient.HandoffItemRequest
+		all         bool
+		commentFile string
+	)
+	help := handoffVerbHelp[verb]
+	cmd := &cobra.Command{
+		Use:   verb + " <handoff> <issue>... | --all",
+		Short: help[0],
+		Long: help[1] + "\n\n" +
+			"--all takes every unresolved item; waiting items are left alone. An item\n" +
+			"already delivered, returned or released is refused. --note records why on\n" +
+			"the item; --comment-file posts a comment on each issue first.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("handoff id must be a number: %q", args[0])
+			}
+			var issueIDs []int64
+			for _, a := range args[1:] {
+				n, err := parseIssueID(a)
+				if err != nil {
+					return err
+				}
+				issueIDs = append(issueIDs, n)
+			}
+			if all == (len(issueIDs) > 0) {
+				return fmt.Errorf("name the issues, or pass --all: exactly one of them")
+			}
+			if cmd.Flags().Changed("comment-file") {
+				data, err := readInputFile("--comment-file", commentFile, cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+				req.Comment = string(data)
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				h, err := c.ResolveHandoffItems(ctx, id, verb, issueIDs, req)
+				if err != nil {
+					return issueFail(cmd, err)
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), h)
+				}
+				return printHandoff(cmd.OutOrStdout(), &h)
+			})
+		},
+	}
+	f := cmd.Flags()
+	f.BoolVar(&all, "all", false, "Every unresolved item of the handoff")
+	f.StringVar(&req.Note, "note", "", "Why, recorded on the item")
+	f.StringVar(&commentFile, "comment-file", "", "Post a comment read from this file (- for stdin) on each issue")
+	switch verb {
+	case apiclient.HandoffDeliver:
+		f.StringVar(&req.Close, "close", "", "Close reason: completed, not_planned, duplicate, or none to leave the issue open")
+	case apiclient.HandoffReturn:
+		f.StringVar(&req.FollowUp, "follow-up", "", "Queue this prompt as a follow-up on the issue's latest main task")
+		f.BoolVar(&req.Paused, "paused", false, "Hold the follow-up or side task paused")
+		f.BoolVar(&req.Side, "side", false, "Run the follow-up as a new side task merged back into the issue's main branch")
+		f.StringVar(&req.Workflow, "workflow", "", "The side task's workflow (default: the latest main task's)")
+	}
+	jsonFlag(cmd)
+	return cmd
 }

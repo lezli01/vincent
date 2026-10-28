@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (6/15)
+**Status:** 🔄 in progress (7/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -376,6 +376,35 @@ issue.
 When a handoff's task settles, every item still unresolved is **released**
 automatically, recorded `outcome_by: settle`. An aborted handoff therefore
 frees its issues; a `done` one that forgot an item does too, visibly.
+
+*Amended 2026-10-28 (137.6, settled with the author):*
+
+1. **All or nothing.** A verb whose side effect is refused records nothing: no
+   outcome, the claim kept, no comment posted. A step's `deliver --close` or
+   `--comment-file` on an imported issue is refused `forge_write_needs_human`
+   until 137.7's grant, as a step's `vincent issue close` is. The outcome,
+   the claim, readiness, the issue's comment and close (with the outbox
+   enqueue of a human's close of an imported issue) and the follow-up's
+   re-admission are one store transaction. `--all` checks every item before
+   writing any; one refusal refuses the batch, naming the first issue.
+2. **`return --follow-up` lands on the latest main-role task, a merge-back
+   included** — it holds the worktree. One that cannot take a follow-up (a
+   predecessor's `409 issue_worktree_moved`, a running task's 409) refuses
+   the whole return. The claim is released earlier in the same transaction,
+   so the follow-up never trips decision 14's `issue_in_handoff`.
+3. **`--side` reuses the latest main task's workflow** (its source side
+   task's, for a merge-back), by name from the live registry, with the
+   prompt as the description and `merge_back` at task 134's defaults;
+   `--workflow` overrides, and `--side` requires `--follow-up`.
+4. **`--all` is unresolved items only.** `waiting` items end by the issue
+   closing or by being named.
+
+Any verb moves an unresolved or `waiting` item; a `delivered`, `returned` or
+`released` one is final (`409 handoff_item_resolved`), and on a settled
+handoff only `waiting` items move. `outcome_by` is `handoff` for the
+handoff's own task, `agent` for another step or MCP caller, `human`
+otherwise, `settle` for release on settle, and the closing actor for a wait
+resolved by a close.
 
 *Settled by the author 2026-10-24 (open question 7):* `return` is a follow-up
 on the issue's latest main-role task; `--side` opts into a side task with
@@ -878,8 +907,13 @@ pull request.
   ✓ 2026-10-24 The list route is a third tool, `handoff_list`, because
   §13.4's surface is the route table minus its exclusions and a read is no
   exclusion.
-- [ ] **137.6** ([#839](https://github.com/lezli01/vincent/issues/839)) The item verbs, release on settle, resolve-on-close for
+- [x] **137.6** ([#839](https://github.com/lezli01/vincent/issues/839)) The item verbs, release on settle, resolve-on-close for
   `waiting`, and `return` as a follow-up (decision 4). Depends: 137.5.
+  ✓ 2026-10-28 `{issue_id}` in the four routes is one id, a comma-separated
+  list, or `all`, so `--all` and several ids are one all-or-nothing call.
+  There is no `internal/reasons` entry for `handoff_item_resolved`: that
+  catalogue holds task and step reasons, and the issue-side 409 reasons live
+  in the API reference's table, where this one is.
 - [ ] **137.7** ([#840](https://github.com/lezli01/vincent/issues/840)) The grant and the one forge-write guard over issue and
   pull-request writes; the outbox under the `handoff` actor; the pull-request
   tools on a granted handoff's per-step MCP endpoint; the restatement in

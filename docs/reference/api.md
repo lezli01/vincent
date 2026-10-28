@@ -79,6 +79,7 @@ each:
 | `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
 | `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
 | `issue_has_live_main_task` | An issue delete was refused because one of the issue's main or side tasks has not finished. Finish or cancel it, then delete again | `task_id` |
+| `handoff_item_resolved` | A handoff item verb named an item already `delivered`, `returned` or `released`, or — on a settled handoff — one that is not `waiting`. Nothing was recorded for any item of the call | `outcome`, `issue_id` |
 | `issue_in_handoff` | A task create, a chat hand-off or a `follow_up` would add work to an issue a handoff has claimed. Only the handoff's own task may add work to it until the handoff returns or releases the issue | `handoff_id` |
 | `issue_not_eligible` | [`POST /v1/handoffs`](#handoffs) named an issue it may not claim: missing, in another project, closed, not in `hand_off`, already claimed, or already delivered. Nothing was created | `issue_id`, and `handoff_id` when a handoff in the same project claims it |
 | `nothing_to_hand_off` | A handoff's `select` found no eligible issue. Nothing was created | |
@@ -3393,6 +3394,50 @@ GET /v1/handoffs/{id}           one handoff with its items; 404 if unknown
 
 The list is newest first and carries no `items`; `issue_id` finds every handoff
 that claimed that issue.
+
+### Item outcomes
+
+```
+POST /v1/handoffs/{id}/items/{issue_id}/deliver   {note?, comment?, close?}
+POST /v1/handoffs/{id}/items/{issue_id}/return    {note?, comment?, follow_up?, paused?, side?, workflow?}
+POST /v1/handoffs/{id}/items/{issue_id}/wait      {note?, comment?}
+POST /v1/handoffs/{id}/items/{issue_id}/release   {note?, comment?}
+```
+
+Each records what became of a claimed issue and answers `200` with the
+handoff and its items. `{issue_id}` is one issue id, a comma-separated list,
+or `all` — every unresolved item; `waiting` items are left alone. `comment`
+is posted on each issue before anything else is written to it, and `note` is
+kept on the item.
+
+- **deliver** — `outcome: delivered`. The issue is closed with `close`
+  (`completed`, `not_planned` or `duplicate`); left out, the delivery's
+  suggested `close_reason`, else `completed`. `close: none` leaves it open,
+  and it stays out of later handoffs until new work replaces the delivery.
+- **return** — `outcome: returned`. The claim is released and the delivery's
+  readiness withdrawn, so the issue waits in `in_progress`. `follow_up`
+  queues that prompt as a [follow-up](#task-actions) on the issue's latest
+  main task, a merge-back included (`paused` holds it); with `side` it is a
+  new side task with `merge_back`, running that task's workflow unless
+  `workflow` names another. `side` and `paused` need `follow_up`; `workflow`
+  needs `side`.
+- **wait** — `outcome: waiting`. The item keeps its claim after the
+  handoff's task settles. Closing the issue — by anyone, an import from
+  GitHub included — records it `delivered`, by the closing actor.
+- **release** — `outcome: released`. The claim is dropped and the issue stays
+  eligible.
+
+When the handoff's task settles, every item still unresolved is released,
+`outcome_by: settle`. `outcome_by` is otherwise `handoff` for the handoff's
+own task, `agent` for another workflow step or MCP call, and `human`.
+
+A call is **all or nothing**: one refusal records nothing for any item.
+`409 invalid_state` with `handoff_item_resolved` for an item already
+delivered, returned or released (or one that is not waiting, once the
+handoff has settled); `forge_write_needs_human` for a step's `close` or
+`comment` on an issue imported from GitHub; `issue_mirrored` for a human's
+comment on one; and a follow-up's own refusals. `404` for an unknown handoff
+or an issue that is not one of its items.
 
 ## Transcripts and diffs
 

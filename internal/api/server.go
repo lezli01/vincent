@@ -418,6 +418,10 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/handoffs", s.handleHandoffCreate)
 	rt.handle(http.MethodGet, "/v1/handoffs", s.handleHandoffList)
 	rt.handle(http.MethodGet, "/v1/handoffs/{id}", s.handleHandoffGet)
+	rt.handle(http.MethodPost, "/v1/handoffs/{id}/items/{issue_id}/deliver", s.handleHandoffItemVerb(store.HandoffDelivered))
+	rt.handle(http.MethodPost, "/v1/handoffs/{id}/items/{issue_id}/return", s.handleHandoffItemVerb(store.HandoffReturned))
+	rt.handle(http.MethodPost, "/v1/handoffs/{id}/items/{issue_id}/wait", s.handleHandoffItemVerb(store.HandoffWaiting))
+	rt.handle(http.MethodPost, "/v1/handoffs/{id}/items/{issue_id}/release", s.handleHandoffItemVerb(store.HandoffReleased))
 	// Chats (§5.5, §13.2). They are their own family: nothing here touches
 	// the tasks table, and no chat route is an MCP tool (§13.4, decision 2).
 	rt.handle(http.MethodGet, "/v1/chats", s.handleChatList)

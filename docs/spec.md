@@ -1175,7 +1175,7 @@ amend §12, §13 and §15 when they land.
 | `remote` | an imported issue's source (`issue_remotes`, §14): provider, `remote_key` (GitHub's `node_id`), repo, number, url, the remote's own timestamp and `synced_at`. Null for an issue created in vincent. Keyed **per project**, so two projects sharing an origin import two issue sets |
 | `parent_issue_id` | a seam for sub-issues, never written yet |
 | `active`, `task_count` | **derived, never stored** (decision 3): `task_count` counts the **root** tasks (`parent_task_id IS NULL`) whose `issue_id` is this issue, and `active` is whether any of them is not settled in §6's sense (not `done`, `aborted` or `archived`). Fan-out lanes carry the link but are not counted, so one task with five lanes is one task |
-| `lane`, `attention` | **derived, never stored** (task 134 decisions 1–3). *Added 2026-10-07 (task 134.4, issue #751).* `lane` is `done` when the issue is `closed`, whatever its tasks do (decision 4); otherwise `in_progress` when some root task is not settled, else `hand_off` when some root task is `done` or `archived` with `archived_from = done` (decision 20), else `open` — no task, or only aborted ones (decision 19). *Amended 2026-10-24 (task 137.15, issue #848; task 137 decision 13):* `hand_off` now means **ready**: with no root task unsettled, the lane is `hand_off` when the latest finished main-line root task's delivery (the one §5.3's `delivery` on an issue names; side tasks excluded) reads ready, `in_progress` when work finished but is not ready — a delivery marked `ready: false`, or finished work that is only a side task's — and `open` otherwise. The not-ready `in_progress` issue is **idle**: it waits for a mark or for more work. Because an absent `ready` reads ready, every lane is unchanged on upgrade except one: an issue whose only finished root task is a side task (its merge-back cancelled or not yet run) moved from `hand_off` to `in_progress`, which keeps decision 3's "every `hand_off` issue has a delivery". `LaneOf` takes three facts — unsettled, finished, latest ready — and a table test holds it to the SQL. `attention` is whether some root task is in `taskstate.NeedsHuman` (`awaiting_input`, `awaiting_gate`, `blocked`; `paused` is not one), computed for a closed issue too. For an open issue `active` ⇔ `lane = in_progress`. `internal/issuestate.LaneOf` is the rule; the store computes it in SQL from the same fragments that compute `active` |
+| `lane`, `attention` | **derived, never stored** (task 134 decisions 1–3). *Added 2026-10-07 (task 134.4, issue #751).* `lane` is `done` when the issue is `closed`, whatever its tasks do (decision 4); otherwise `in_progress` when some root task is not settled, else `hand_off` when some root task is `done` or `archived` with `archived_from = done` (decision 20), else `open` — no task, or only aborted ones (decision 19). *Amended 2026-10-24 (task 137.15, issue #848; task 137 decision 13):* `hand_off` now means **ready**: with no root task unsettled, the lane is `hand_off` when the latest finished main-line root task's delivery (the one §5.3's `delivery` on an issue names; side tasks excluded) reads ready, `in_progress` when work finished but is not ready — a delivery marked `ready: false`, or finished work that is only a side task's — and `open` otherwise. The not-ready `in_progress` issue is **idle**: it waits for a mark or for more work. Because an absent `ready` reads ready, every lane is unchanged on upgrade except one: an issue whose only finished root task is a side task (its merge-back cancelled or not yet run) moved from `hand_off` to `in_progress`, which keeps decision 3's "every `hand_off` issue has a delivery". `LaneOf` takes three facts — unsettled, finished, latest ready — and a table test holds it to the SQL. *Amended 2026-10-28 (task 137.6, issue #839):* a handoff `return` withdraws the readiness in its own transaction, so a returned issue is idle `in_progress` (or busy, with its follow-up queued); and closing an issue — any actor, `sync` included — resolves its `waiting` handoff item as `delivered` in the close's transaction (§5.7). `attention` is whether some root task is in `taskstate.NeedsHuman` (`awaiting_input`, `awaiting_gate`, `blocked`; `paused` is not one), computed for a closed issue too. For an open issue `active` ⇔ `lane = in_progress`. `internal/issuestate.LaneOf` is the rule; the store computes it in SQL from the same fragments that compute `active` |
 | comments | author, body and an optional remote key, listed oldest first |
 
 #### Issue lifecycle
@@ -1480,8 +1480,40 @@ its task is unsettled, `waiting` while the task is settled and some item is
 (`store.HandoffStateOf`), the way `issuestate.LaneOf` mirrors the lane.
 `handoff.settled` (§13.3) is written by the write that makes the handoff
 settled: its task's settling transition when nothing waits, or the item write
-that ends the last wait. Until 137.6, items still unresolved when the task
-settles keep their claim.
+that ends the last wait. *Amended 2026-10-28 (task 137.6, #839):* the task's
+settling transition — `done` or `aborted` — first **releases every item still
+unresolved**, `outcome_by: settle`, one `handoff.item_changed` each, chained
+after the state change and before `handoff.settled`, all in one commit.
+
+**Item outcomes** (task 137 decision 4, amended 2026-10-28). Four verbs,
+`POST /v1/handoffs/{id}/items/{issue_id}/deliver|return|wait|release`
+(§13.2), resolve items; `{issue_id}` is one id, a comma-separated list, or
+`all` — every **unresolved** item, `waiting` ones left alone. Each records
+`outcome`, `outcome_at`, `outcome_by` and an optional `note`, and may post a
+comment on the issue first. `deliver` closes the issue with the asked reason
+(default: the delivery's suggested `close_reason`, else `completed`) or, with
+`none`, leaves it open — still kept out of later selections by eligibility.
+`return` releases the claim and withdraws the delivery's readiness, so the
+issue is `in_progress`; with a `follow_up` prompt it queues a task 027
+follow-up on the issue's latest main-role task (a merge-back included), or
+with `side` creates a `merge_back` side task running that task's workflow
+(its source side task's, for a merge-back) unless `workflow` names another.
+`wait` keeps the claim past the task's settle; `release` drops it, leaving
+the issue eligible. A verb is **all or nothing**: the outcome, the claim, the
+readiness withdrawal, the comment, the close (and its outbox enqueue) and the
+follow-up or side task are one store transaction, every item is judged before
+any is written, and one refusal — an item already `delivered`, `returned` or
+`released` (`409 handoff_item_resolved`), a step's close or comment on an
+imported issue (`forge_write_needs_human`, until 137.7), a follow-up its task
+cannot take — records nothing for any of them. On a settled handoff only
+`waiting` items move. `outcome_by` has its own vocabulary,
+`store.HandoffOutcomeBy`: `handoff` when the caller is the handoff's own task
+(MCP creator or `X-Vincent-Task-Id`, best-effort per §16), `agent` for any
+other step or MCP caller, `human` otherwise, `settle` for release on settle,
+and the closing actor for a wait resolved by a close. **A close resolves a
+`waiting` item** as `delivered`, by the closing actor — any actor, `sync`
+included, so an imported `Closes #N` ends it — in the close's own
+transaction, with `handoff.settled` when it was the last wait (§5.6).
 
 **`issue_in_handoff`** (decision 14, scope settled 2026-10-24). While an item
 claims an issue, no route adds work to it: a root task created with its
@@ -9518,6 +9550,25 @@ GET    /v1/handoffs/{id}                *Added 2026-10-24 (task 137.5).* One han
                                         `items`: [{ issue_id, delivery_task_id, delivery (the
                                         summary form, as claimed), outcome, outcome_at,
                                         outcome_by, note }]. **404** for an unknown id
+POST   /v1/handoffs/{id}/items/{issue_id}/deliver
+POST   /v1/handoffs/{id}/items/{issue_id}/return
+POST   /v1/handoffs/{id}/items/{issue_id}/wait
+POST   /v1/handoffs/{id}/items/{issue_id}/release
+                                        *Added 2026-10-28 (task 137.6).* Resolve items (§5.7):
+                                        `{issue_id}` is an id, a comma-separated list, or `all`
+                                        (unresolved items only). Body `{note?, comment?}`, plus
+                                        `close?` (`completed|not_planned|duplicate|none`) on
+                                        deliver and `follow_up?, paused?, side?, workflow?` on
+                                        return; a field another verb takes is **400**, as are
+                                        `side`/`paused` without `follow_up` and `workflow`
+                                        without `side`. → **200** with the handoff and its
+                                        items. All or nothing: **409** `handoff_item_resolved`
+                                        (`details.outcome`, `details.issue_id`) for a final item
+                                        or a non-waiting one on a settled handoff,
+                                        `forge_write_needs_human` for a step's close or comment
+                                        on an imported issue, `issue_mirrored` for a human's
+                                        comment on one, and a follow-up's own 409s; **404** for
+                                        an unknown handoff or an issue that is not its item
 DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permanent, from any
                                         state (§5.6) → **204**. An imported issue leaves its
                                         tombstone; upstream is never touched; its tasks keep
@@ -10848,6 +10899,13 @@ Two kinds of streams:
    task's `task.state_changed` when its settle settles the handoff, or after
    the `handoff.item_changed` that ends the last wait. An `issue.*` event
    written on a handoff's behalf carries `handoff_id`, and `by: handoff`.*
+   *Amended 2026-10-28 (task 137.6): a handoff task's settle writes one
+   `handoff.item_changed` `by: settle` per item it releases, between its
+   `task.state_changed` and `handoff.settled`; an issue close — any actor,
+   `sync` included — that resolves a waiting item writes its
+   `handoff.item_changed` (`to: delivered`, `by` the closing actor) after the
+   issue's own events, and `handoff.settled` when it ended the last wait. An
+   item verb's issue writes carry `handoff_id`.*
    *Amended 2026-08-28 (task 046, issue #90): the `notify:` hook (§12.3)
    introduces **no new event type**. Its selector reads the `to` field of
    `task.state_changed`, the way the TUI bell does; `task.blocked` and
@@ -11383,6 +11441,12 @@ GitHub remote is refused `409 issue_mirrored` — so no forge guard is needed.
 are three tools, and no exclusion: `handoff_start` replays `POST
 /v1/handoffs`, `handoff_list` its list and `handoff_show` one handoff. They are
 served on `/mcp` and on every step endpoint, like `task_create`.
+*Amended 2026-10-28 (task 137.6):* four more, `handoff_deliver`,
+`handoff_return`, `handoff_wait` and `handoff_release`, replay the item verbs
+(§13.2) on both surfaces, by the same rule. A step's verb is recorded
+`outcome_by: agent`, or `handoff` from the handoff's own task; its close or
+comment on an imported issue is refused `forge_write_needs_human` until
+137.7's grant, and refuses the whole verb.
 `handoff_start` is **grant-less**: a non-empty grant from any MCP caller is
 refused `409 grant_needs_human` (task 137 decision 6, "never an agent"), so an
 agent may claim issues and start an integration task but never authorize a

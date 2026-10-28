@@ -83,6 +83,37 @@ func TestHandoffsOverTheWire(t *testing.T) {
 	if err != nil || one.ID != first.ID || len(one.Items) != 1 {
 		t.Errorf("GetHandoff = %+v, %v", one, err)
 	}
+
+	// The item verbs (task 137.6): one item, then every unresolved one.
+	moved, err := h.client.ResolveHandoffItems(ctx, sel.ID, apiclient.HandoffWait, []int64{low},
+		apiclient.HandoffItemRequest{Note: "upstream"})
+	if err != nil {
+		t.Fatalf("ResolveHandoffItems wait: %v", err)
+	}
+	for _, it := range moved.Items {
+		if it.IssueID == low && (it.Outcome != "waiting" || it.Note != "upstream") {
+			t.Errorf("waiting item = %+v", it)
+		}
+	}
+	moved, err = h.client.ResolveHandoffItems(ctx, sel.ID, apiclient.HandoffDeliver, nil,
+		apiclient.HandoffItemRequest{Close: apiclient.HandoffCloseNone})
+	if err != nil {
+		t.Fatalf("ResolveHandoffItems deliver --all: %v", err)
+	}
+	for _, it := range moved.Items {
+		want := "delivered"
+		if it.IssueID == low {
+			want = "waiting"
+		}
+		if it.Outcome != want {
+			t.Errorf("issue %d outcome = %s, want %s", it.IssueID, it.Outcome, want)
+		}
+	}
+	_, err = h.client.ResolveHandoffItems(ctx, sel.ID, apiclient.HandoffRelease, []int64{urgent}, apiclient.HandoffItemRequest{})
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict ||
+		apiErr.Details["reason"] != apiclient.HandoffReasonItemResolved {
+		t.Errorf("release of a delivered item = %v, want 409 handoff_item_resolved", err)
+	}
 }
 
 // The client's state names have to be the daemon's.

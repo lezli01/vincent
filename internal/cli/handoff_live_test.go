@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -105,5 +107,39 @@ func TestHandoffCommands(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("show does not carry %q:\n%s", want, out)
 		}
+	}
+
+	// The item verbs (task 137.6).
+	hid := strconv.FormatInt(first.ID, 10)
+	note := filepath.Join(t.TempDir(), "comment.md")
+	if err := os.WriteFile(note, []byte("Merged into main."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, code = runCLI(t, "handoff", "deliver", hid, named, "--note", "landed", "--comment-file", note)
+	if code != 0 {
+		t.Fatalf("deliver: exit %d (%s)", code, errOut)
+	}
+	if !strings.Contains(out, "delivered") || !strings.Contains(out, "landed") {
+		t.Errorf("deliver:\n%s", out)
+	}
+	namedID, _ := strconv.ParseInt(named, 10, 64)
+	if iss, _ := h.st.GetIssue(ctx, namedID); iss.State != issuestate.Closed {
+		t.Errorf("deliver left the issue %s", iss.State)
+	}
+	if comments, _ := h.st.ListIssueComments(ctx, namedID); len(comments) != 1 || comments[0].Body != "Merged into main." {
+		t.Errorf("comments = %+v", comments)
+	}
+	_, errOut, code = runCLI(t, "handoff", "release", hid, named)
+	if code == 0 || !strings.Contains(errOut, "already delivered") {
+		t.Errorf("release of a delivered item: exit %d (%s)", code, errOut)
+	}
+	_, errOut, code = runCLI(t, "handoff", "wait", hid)
+	if code == 0 || !strings.Contains(errOut, "--all") {
+		t.Errorf("wait with neither ids nor --all: exit %d (%s)", code, errOut)
+	}
+	out, errOut, code = runCLI(t, "handoff", "release", strconv.FormatInt(second.ID, 10), "--all", "--json")
+	var released apiclient.Handoff
+	if code != 0 || json.Unmarshal([]byte(out), &released) != nil || released.Items[0].Outcome != "released" {
+		t.Errorf("release --all: exit %d %s (%s)", code, out, errOut)
 	}
 }

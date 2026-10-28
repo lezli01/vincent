@@ -789,66 +789,9 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 	}
 	enqueued := false
 	err := s.writeIssueEvents(ctx, func(tx *sql.Tx) ([]*Event, error) {
-		cur, err := getIssue(ctx, tx, id)
-		if err != nil {
-			return nil, err
-		}
-		from := issuestate.Normalize(cur.State)
-		to, noop, ok := issuestate.Next(from, action, by)
-		if !ok {
-			return nil, fmt.Errorf("issue %d: %s from %s by %s: %w", id, action, from, by, ErrInvalidIssueAction)
-		}
-		resolved, err := issuestate.ResolveReason(action, reason)
-		if err != nil {
-			return nil, fmt.Errorf("issue %d: %w", id, err)
-		}
-		if duplicateOf != nil {
-			if to != issuestate.Closed || resolved != issuestate.Duplicate {
-				return nil, fmt.Errorf("issue %d: duplicate_of without a duplicate close: %w", id, ErrInvalidDuplicateOf)
-			}
-			if err := checkDuplicateOfTx(ctx, tx, cur, *duplicateOf); err != nil {
-				return nil, err
-			}
-		}
-		if noop {
-			return nil, nil
-		}
-		watch, err := watchIssueLaneTx(ctx, tx, id, cur.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-		now := formatTime(time.Now())
-		if to == issuestate.Closed {
-			_, err = tx.ExecContext(ctx, `
-				UPDATE issues SET state = ?, close_reason = ?, closed_at = ?, duplicate_of_issue_id = ?,
-					version = version + 1, updated_at = ?
-				WHERE id = ?`, string(to), string(resolved), now, duplicateOf, now, id)
-		} else {
-			_, err = tx.ExecContext(ctx, `
-				UPDATE issues SET state = ?, close_reason = NULL, closed_at = NULL, duplicate_of_issue_id = NULL,
-					version = version + 1, updated_at = ?
-				WHERE id = ?`, string(to), now, id)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("transition issue %d: %w", id, err)
-		}
-		if enqueued, err = enqueueStateWriteTx(ctx, tx, cur, to, resolved, duplicateOf, by, time.Now()); err != nil {
-			return nil, err
-		}
-		extra := map[string]any{"from": string(from), "to": string(to), "reason": string(resolved)}
-		if duplicateOf != nil {
-			extra["duplicate_of"] = *duplicateOf
-		}
-		ev, err := issueEvent(EventIssueStateChanged, cur.ProjectID, id, by, issueHandoffExtra(ctx, extra))
-		if err != nil {
-			return nil, err
-		}
-		// After the state event, in the same commit (task 134.6 decision 4).
-		lane, err := watch.changedTx(ctx, tx, nil, by)
-		if err != nil {
-			return nil, err
-		}
-		return []*Event{ev, lane}, nil
+		evs, enq, err := transitionIssueTx(ctx, tx, id, action, reason, duplicateOf, by, true)
+		enqueued = enq
+		return evs, err
 	})
 	if err != nil {
 		return nil, err
@@ -857,6 +800,88 @@ func (s *Store) TransitionIssue(ctx context.Context, id int64, action issuestate
 		s.kickOutbox()
 	}
 	return s.GetIssue(ctx, id)
+}
+
+// transitionIssueTx is TransitionIssue's body inside the caller's
+// transaction: the issue events it returns are not yet appended, and
+// enqueued says whether a write-back was queued, so the caller kicks the
+// outbox after its commit. With resolveWaiting, a close also resolves the
+// issue's `waiting` handoff item as delivered by the closing actor (task
+// 137.6) — how an imported `Closes #N` ends a waiting item; a handoff verb
+// that closes the issue itself passes false and writes its own outcome.
+func transitionIssueTx(
+	ctx context.Context, tx *sql.Tx, id int64, action issuestate.Action, reason issuestate.Reason,
+	duplicateOf *int64, by issuestate.Actor, resolveWaiting bool,
+) ([]*Event, bool, error) {
+	cur, err := getIssue(ctx, tx, id)
+	if err != nil {
+		return nil, false, err
+	}
+	from := issuestate.Normalize(cur.State)
+	to, noop, ok := issuestate.Next(from, action, by)
+	if !ok {
+		return nil, false, fmt.Errorf("issue %d: %s from %s by %s: %w", id, action, from, by, ErrInvalidIssueAction)
+	}
+	resolved, err := issuestate.ResolveReason(action, reason)
+	if err != nil {
+		return nil, false, fmt.Errorf("issue %d: %w", id, err)
+	}
+	if duplicateOf != nil {
+		if to != issuestate.Closed || resolved != issuestate.Duplicate {
+			return nil, false, fmt.Errorf("issue %d: duplicate_of without a duplicate close: %w", id, ErrInvalidDuplicateOf)
+		}
+		if err := checkDuplicateOfTx(ctx, tx, cur, *duplicateOf); err != nil {
+			return nil, false, err
+		}
+	}
+	if noop {
+		return nil, false, nil
+	}
+	watch, err := watchIssueLaneTx(ctx, tx, id, cur.ProjectID)
+	if err != nil {
+		return nil, false, err
+	}
+	now := formatTime(time.Now())
+	if to == issuestate.Closed {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE issues SET state = ?, close_reason = ?, closed_at = ?, duplicate_of_issue_id = ?,
+				version = version + 1, updated_at = ?
+			WHERE id = ?`, string(to), string(resolved), now, duplicateOf, now, id)
+	} else {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE issues SET state = ?, close_reason = NULL, closed_at = NULL, duplicate_of_issue_id = NULL,
+				version = version + 1, updated_at = ?
+			WHERE id = ?`, string(to), now, id)
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("transition issue %d: %w", id, err)
+	}
+	enqueued, err := enqueueStateWriteTx(ctx, tx, cur, to, resolved, duplicateOf, by, time.Now())
+	if err != nil {
+		return nil, false, err
+	}
+	extra := map[string]any{"from": string(from), "to": string(to), "reason": string(resolved)}
+	if duplicateOf != nil {
+		extra["duplicate_of"] = *duplicateOf
+	}
+	ev, err := issueEvent(EventIssueStateChanged, cur.ProjectID, id, by, issueHandoffExtra(ctx, extra))
+	if err != nil {
+		return nil, false, err
+	}
+	// After the state event, in the same commit (task 134.6 decision 4).
+	lane, err := watch.changedTx(ctx, tx, nil, by)
+	if err != nil {
+		return nil, false, err
+	}
+	evs := []*Event{ev, lane}
+	if to == issuestate.Closed && resolveWaiting {
+		waited, err := resolveWaitingOnCloseTx(ctx, tx, id, HandoffOutcomeBy(by))
+		if err != nil {
+			return nil, false, err
+		}
+		evs = append(evs, waited...)
+	}
+	return evs, enqueued, nil
 }
 
 // checkDuplicateOfTx refuses a duplicate_of that names the issue itself, no
@@ -955,31 +980,37 @@ func (s *Store) AddIssueComment(ctx context.Context, issueID int64, author, body
 	now := time.Now()
 	c := &IssueComment{IssueID: issueID, Author: author, Body: body, RemoteKey: remoteKey, CreatedAt: now, UpdatedAt: now}
 	err := s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
-		var projectID int64
-		err := tx.QueryRowContext(ctx, `SELECT project_id FROM issues WHERE id = ?`, issueID).Scan(&projectID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("issue %d: %w", issueID, ErrNotFound)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("read issue %d: %w", issueID, err)
-		}
-		res, err := tx.ExecContext(ctx, `
-			INSERT INTO issue_comments (issue_id, author, body, remote_key, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			issueID, author, body, nullString(remoteKey), formatTime(now), formatTime(now))
-		if err != nil {
-			return nil, fmt.Errorf("insert issue comment: %w", err)
-		}
-		if c.ID, err = res.LastInsertId(); err != nil {
-			return nil, fmt.Errorf("insert issue comment: %w", err)
-		}
-		return issueEvent(EventIssueCommentAdded, projectID, issueID, by,
-			issueHandoffExtra(ctx, map[string]any{"comment_id": c.ID}))
+		return addIssueCommentTx(ctx, tx, c, by)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// addIssueCommentTx inserts c inside the caller's transaction, fills its
+// id, and returns its issue.comment_added event, not yet appended.
+func addIssueCommentTx(ctx context.Context, tx *sql.Tx, c *IssueComment, by issuestate.Actor) (*Event, error) {
+	var projectID int64
+	err := tx.QueryRowContext(ctx, `SELECT project_id FROM issues WHERE id = ?`, c.IssueID).Scan(&projectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("issue %d: %w", c.IssueID, ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read issue %d: %w", c.IssueID, err)
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO issue_comments (issue_id, author, body, remote_key, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		c.IssueID, c.Author, c.Body, nullString(c.RemoteKey), formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
+	if err != nil {
+		return nil, fmt.Errorf("insert issue comment: %w", err)
+	}
+	if c.ID, err = res.LastInsertId(); err != nil {
+		return nil, fmt.Errorf("insert issue comment: %w", err)
+	}
+	return issueEvent(EventIssueCommentAdded, projectID, c.IssueID, by,
+		issueHandoffExtra(ctx, map[string]any{"comment_id": c.ID}))
 }
 
 // ListIssueComments returns an issue's comments, oldest first.
