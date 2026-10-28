@@ -124,7 +124,9 @@ func (s *Server) summarize(e *trigger.Entry, c *store.TriggerCursor) triggerSumm
 	if d := e.Def; d != nil {
 		out.Enabled, out.SourceType, out.ActionType = d.Enabled, d.Source.Type, d.Action.Type
 		out.OnFire = d.EffectiveOnFire()
-		if d.Action.Type == trigger.ActionCreateTask {
+		// The two actions that create a task carry the restricted clamp; a
+		// reaction has none to report.
+		if d.Action.Type == trigger.ActionCreateTask || d.Action.Type == trigger.ActionStartHandoff {
 			out.Permission = d.EffectivePermission()
 		}
 	}

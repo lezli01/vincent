@@ -1518,7 +1518,8 @@ the list shows each trigger disarmed, and both dry runs work.
   armed trigger.
 - `on_fire` and `permission` are the values in effect, not the values written:
   a file with no `on_fire:` reads `propose`, and one with no `permission:`
-  reads `restricted`. `permission` is present only on a `create_task` action.
+  reads `restricted`. `permission` is present only on a `create_task` or
+  `start_handoff` action.
 - `poll` is the trigger's poll health. `seeded` says it holds a cursor, so its
   next poll judges events instead of seeding. `ok` and `error` are the last
   poll's result. `last_poll_at` and `last_fire_at` are `null` until each has

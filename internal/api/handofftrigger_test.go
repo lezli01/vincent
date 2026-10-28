@@ -81,3 +81,40 @@ action:
 		t.Errorf("rendered body = %v", b)
 	}
 }
+
+// TestTriggerListShowsHandoffPermission: a start_handoff trigger's row
+// carries the permission in effect, as a create_task's does — permission:
+// workflow runs its handoff task unclamped, and the row is the one place a
+// list says so (review F3). A reaction's row carries none.
+func TestTriggerListShowsHandoffPermission(t *testing.T) {
+	h := newTriggerHarness(t)
+	src := func(id, extra string) string {
+		return `id: ` + id + `
+source:
+  type: command
+  project: ` + strconv.FormatInt(h.projectID, 10) + `
+  poll_interval: 5m
+  command: [never-run]
+` + extra
+	}
+	h.writeTrigger(t, "train", src("train", "on_fire: create\npermission: workflow\naction:\n  type: start_handoff\n  workflow: train\n  select: {}\n"))
+	h.writeTrigger(t, "quiet-train", src("quiet-train", "action:\n  type: start_handoff\n  workflow: train\n  select: {}\n"))
+	h.writeTrigger(t, "again", src("again", "action:\n  type: retry\n  target: branch\n  branch: '{{ .Event.ref }}'\n"))
+
+	resp, body := h.doJSON(t, http.MethodGet, "/v1/triggers", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list: status %d: %s", resp.StatusCode, body)
+	}
+	var list triggerListResponse
+	decodeInto(t, body, &list)
+	got := map[string]string{}
+	for _, row := range list.Triggers {
+		got[row.ID] = row.Permission
+	}
+	want := map[string]string{"train": trigger.PermissionWorkflow, "quiet-train": trigger.PermissionRestricted, "again": ""}
+	for id, w := range want {
+		if p, ok := got[id]; !ok || p != w {
+			t.Errorf("%s: permission = %q (listed %v), want %q", id, p, ok, w)
+		}
+	}
+}
