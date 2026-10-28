@@ -6351,6 +6351,23 @@ which is why `metadata.version` is needed rather than reusable from it.
 row, on the GitHub (task 035), release-check (task 055) and container (task 061)
 precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
 
+### 9.9 Copilot adapter (task 138, stub added 2026-10-28)
+
+A stub. Task 138 adds a fourth adapter, `copilot`, for the standalone GitHub
+Copilot CLI (npm `@github/copilot`); no part of it is built yet, and nothing in
+§9.1–§9.8 or elsewhere has changed for it. The bullets below are added one at a
+time, each in the pull request whose code makes it true, and task 138's later
+items complete the section. Placed after §9.8 for the reason §9.7 gives: no
+section is renumbered.
+
+- **Captured stream is the only spec** (*2026-10-28, task 138.1*). Copilot's
+  `--output-format json` event stream is undocumented, so the adapter's parser
+  and fakeagent's dialect are built against real output of one pinned build,
+  1.0.105, under `internal/agent/copilot/testdata/` — provenance, the event
+  inventory and the version findings are in
+  [task 138](tasks/138-copilot-adapter.md). Fixtures are re-captured only when
+  the adapter's tested versions are bumped.
+
 ## 10. Worktree management
 
 - **Location:** `{data_dir}/worktrees/{task_id}` — outside every repo, so IDE file
