@@ -4443,6 +4443,13 @@ cursor's claude-shaped argv collides with. Both are recorded as M5 tasks
 rather than glossed: "zero core changes" is true of the adapter seam, not of
 every consumer that assumed two adapters.
 
+*Amended 2026-10-28 (#854).* The registry wiring above is now one edit, in
+`internal/agent/builtin`: `builtin.New` lists the shipped adapters in registry
+order, and `builtin.ConfigPaths` maps each name to its `agents.<name>.path`.
+The daemon's registry, `vincent doctor`'s daemonless `DetectAgents` and
+`vincent workflow validate`'s local catalogs are all built from it, where each
+used to list the three adapters by hand.
+
 *Added 2026-08-29 (task 057).* `RunSpec.MCP` carries the §13.4 MCP server a step
 is wired to: `{Name, URL, Token}`, where the URL is the daemon's per-step
 endpoint and the token is a secret minted for that step run. `nil` is a run with
