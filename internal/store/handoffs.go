@@ -195,20 +195,156 @@ func claimedHandoffExpr() sqlFrag {
 func handoffEligibleExpr() sqlFrag {
 	lane := laneExpr()
 	claimed := claimedHandoffExpr()
-	taskID := latestDeliveryTaskExpr()
-	delivery := latestDeliveryExpr()
+	delivered := deliveredCurrentFrom()
 	args := slices.Clone(lane.args)
 	args = append(args, string(issuestate.LaneHandOff))
 	args = append(args, claimed.args...)
-	args = append(args, taskID.args...)
-	args = append(args, delivery.args...)
+	args = append(args, delivered.args...)
 	return sqlFrag{
 		sql: `(` + lane.sql + ` = ? AND ` + claimed.sql + ` IS NULL
-			AND NOT EXISTS (SELECT 1 FROM handoff_items hd WHERE hd.issue_id = i.id AND hd.outcome = 'delivered'
-				AND hd.delivery_task_id = ` + taskID.sql + `
-				AND json_extract(hd.delivery_json, '$.head_sha') IS json_extract(` + delivery.sql + `, '$.head_sha')))`,
+			AND NOT EXISTS (SELECT 1 ` + delivered.sql + `))`,
 		args: args,
 	}
+}
+
+// deliveredCurrentFrom is the FROM and WHERE of the `delivered` items, alias
+// hd, that name issue `i`'s current delivery: the task latestDeliveryExpr
+// picks, at the head_sha that delivery carries. Eligibility is its NOT
+// EXISTS; the marker's `delivered` handoff is its row.
+func deliveredCurrentFrom() sqlFrag {
+	taskID := latestDeliveryTaskExpr()
+	delivery := latestDeliveryExpr()
+	args := slices.Clone(taskID.args)
+	args = append(args, delivery.args...)
+	return sqlFrag{
+		sql: `FROM handoff_items hd WHERE hd.issue_id = i.id AND hd.outcome = 'delivered'
+				AND hd.delivery_task_id = ` + taskID.sql + `
+				AND json_extract(hd.delivery_json, '$.head_sha') IS json_extract(` + delivery.sql + `, '$.head_sha')`,
+		args: args,
+	}
+}
+
+// HandoffMarker is an issue's handoff marker (task 137 decisions 5 and 13,
+// 137.10): where the issue stands toward a handoff, shown beside its lane
+// rather than as a fifth one. It is derived, never stored.
+type HandoffMarker string
+
+// Handoff markers. The empty marker is an issue with none.
+const (
+	// HandoffMarkerPending is an issue a handoff may claim now: in
+	// `hand_off` and eligible (handoffEligibleExpr).
+	HandoffMarkerPending HandoffMarker = "pending"
+	// HandoffMarkerClaimed is an issue an unresolved item claims.
+	HandoffMarkerClaimed HandoffMarker = "claimed"
+	// HandoffMarkerWaiting is an issue a `waiting` item claims.
+	HandoffMarkerWaiting HandoffMarker = "waiting"
+	// HandoffMarkerDelivered is an open `hand_off` issue whose current
+	// delivery a handoff delivered without closing it.
+	HandoffMarkerDelivered HandoffMarker = "delivered"
+	// HandoffMarkerIdle is an open `in_progress` issue with nothing
+	// running: finished work that is not ready.
+	HandoffMarkerIdle HandoffMarker = "idle"
+)
+
+// HandoffMarkers lists every marker in its documented order.
+var HandoffMarkers = []HandoffMarker{
+	HandoffMarkerPending, HandoffMarkerClaimed, HandoffMarkerWaiting, HandoffMarkerDelivered, HandoffMarkerIdle,
+}
+
+// ValidHandoffMarker reports whether m is one of HandoffMarkers.
+func ValidHandoffMarker(m HandoffMarker) bool { return slices.Contains(HandoffMarkers, m) }
+
+// IssueHandoff is an issue's marker and the handoff it names: the claiming
+// handoff for `claimed` and `waiting`, the delivering one for `delivered`,
+// and none for `pending` and `idle`.
+type IssueHandoff struct {
+	State     HandoffMarker
+	HandoffID *int64
+	TaskID    *int64
+}
+
+// HandoffMarkerOf is handoffMarkerExpr in Go, the way HandoffStateOf
+// mirrors handoffStateExpr. claim is the outcome of the live item claiming
+// the issue, nil when none does; deliveredCurrent is whether a `delivered`
+// item names the issue's current delivery. The claim comes first and holds
+// in any lane, so an issue whose handoff task restarts work on it keeps its
+// marker until the item resolves (decision 5); a closed issue has none.
+func HandoffMarkerOf(
+	state issuestate.State, lane issuestate.Lane, active bool, claim *HandoffOutcome, deliveredCurrent bool,
+) HandoffMarker {
+	switch {
+	case state == issuestate.Closed:
+		return ""
+	case claim != nil && *claim == HandoffWaiting:
+		return HandoffMarkerWaiting
+	case claim != nil:
+		return HandoffMarkerClaimed
+	case lane == issuestate.LaneHandOff && !deliveredCurrent:
+		return HandoffMarkerPending
+	case lane == issuestate.LaneHandOff:
+		return HandoffMarkerDelivered
+	case lane == issuestate.LaneInProgress && !active:
+		return HandoffMarkerIdle
+	}
+	return ""
+}
+
+// handoffMarkerExpr is HandoffMarkerOf in SQL over the issue alias `i`: the
+// marker, or NULL. It is built from claimCond, handoffEligibleExpr, laneExpr
+// and activeExpr rather than restating them, so the marker, a `select:` and
+// the board cannot disagree about an issue.
+func handoffMarkerExpr() sqlFrag {
+	eligible, lane, active := handoffEligibleExpr(), laneExpr(), activeExpr()
+	args := []any{string(issuestate.Closed), string(HandoffMarkerClaimed), string(HandoffMarkerWaiting)}
+	args = append(args, eligible.args...)
+	args = append(args, string(HandoffMarkerPending))
+	args = append(args, lane.args...)
+	args = append(args, string(issuestate.LaneHandOff), string(HandoffMarkerDelivered))
+	args = append(args, lane.args...)
+	args = append(args, string(issuestate.LaneInProgress))
+	args = append(args, active.args...)
+	args = append(args, string(HandoffMarkerIdle))
+	return sqlFrag{
+		sql: `(CASE WHEN i.state = ? THEN NULL
+			WHEN EXISTS (SELECT 1 FROM handoff_items hi WHERE hi.issue_id = i.id AND ` + claimCond + `)
+				THEN (SELECT CASE WHEN hi.outcome IS NULL THEN ? ELSE ? END
+					FROM handoff_items hi WHERE hi.issue_id = i.id AND ` + claimCond + `)
+			WHEN ` + eligible.sql + ` = 1 THEN ?
+			WHEN ` + lane.sql + ` = ? THEN ?
+			WHEN ` + lane.sql + ` = ? AND NOT ` + active.sql + ` THEN ?
+			END)`,
+		args: args,
+	}
+}
+
+// markerHandoffColumn is one column of the handoff an issue's marker may
+// name, over alias h: the live claim's, else the one whose `delivered` item
+// names the current delivery. scanIssue keeps it only for the markers that
+// name a handoff. col is a constant column of `handoffs`, never input.
+func markerHandoffColumn(col string) sqlFrag {
+	claimed, delivered := claimedHandoffExpr(), deliveredCurrentFrom()
+	args := slices.Clone(claimed.args)
+	args = append(args, delivered.args...)
+	return sqlFrag{
+		sql: `(SELECT h.` + col + ` FROM handoffs h WHERE h.id = COALESCE(` + claimed.sql + `,
+			(SELECT hd.handoff_id ` + delivered.sql + ` ORDER BY hd.handoff_id DESC LIMIT 1)))`,
+		args: args,
+	}
+}
+
+// issueHandoffOf builds an issue's marker from the scanned columns.
+func issueHandoffOf(marker sql.NullString, handoffID, taskID sql.NullInt64) *IssueHandoff {
+	if !marker.Valid {
+		return nil
+	}
+	out := &IssueHandoff{State: HandoffMarker(marker.String)}
+	switch out.State {
+	case HandoffMarkerClaimed, HandoffMarkerWaiting, HandoffMarkerDelivered:
+		if handoffID.Valid && taskID.Valid {
+			out.HandoffID, out.TaskID = &handoffID.Int64, &taskID.Int64
+		}
+	}
+	return out
 }
 
 // handoffStateExpr is HandoffStateOf in SQL over the handoff alias `h`.

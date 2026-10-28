@@ -107,6 +107,9 @@ type Issue struct {
 	// delivered (task 137 decision 3), from the same query; nil when no
 	// such task has one.
 	Delivery *Delivery
+	// Handoff is the issue's handoff marker (task 137.10), from the same
+	// query; nil when it has none. Derived, never stored.
+	Handoff *IssueHandoff
 }
 
 // IssueRemote is an imported issue's link to its source (decision 2). A nil
@@ -179,6 +182,7 @@ type IssueFilter struct {
 	ProjectID int64              // 0 = every project
 	States    []issuestate.State // empty = any
 	Lanes     []issuestate.Lane  // empty = any; applied in SQL, so Limit/Offset page the filtered set
+	Handoffs  []HandoffMarker    // empty = any; applied in SQL like Lanes, and ANDed with them
 	Label     string             // case-insensitive name, "" = any
 	Labels    []string           // every one must be carried (AND), case-insensitively
 	Kind      string             // "" = any
@@ -219,6 +223,9 @@ func issueSelect() string {
 		` + sideActiveExpr().sql + `,
 		` + mergeBacksPendingExpr().sql + `,
 		` + latestDeliveryExpr().sql + `,
+		` + handoffMarkerExpr().sql + `,
+		` + markerHandoffColumn("id").sql + `,
+		` + markerHandoffColumn("task_id").sql + `,
 		r.id, r.issue_id, r.project_id, r.provider, r.remote_key, r.repo, r.number, r.url,
 		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed, r.remote_status
 	FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id`
@@ -226,7 +233,8 @@ func issueSelect() string {
 
 // The derived columns bind in text order: Active, Lane and Attention's
 // fragments, the main worktree occupant's own arguments and its state's,
-// then the side and merge-back counts' and the latest delivery's.
+// then the side and merge-back counts', the latest delivery's and the
+// handoff marker's.
 func issueSelectArgs() []any {
 	var args []any
 	for _, f := range []sqlFrag{activeExpr(), laneExpr(), attentionExpr()} {
@@ -234,7 +242,10 @@ func issueSelectArgs() []any {
 	}
 	args = append(args, issueMainOccupantArgs()...)
 	args = append(args, issueMainOccupantArgs()...)
-	for _, f := range []sqlFrag{sideActiveExpr(), mergeBacksPendingExpr(), latestDeliveryExpr()} {
+	for _, f := range []sqlFrag{
+		sideActiveExpr(), mergeBacksPendingExpr(), latestDeliveryExpr(),
+		handoffMarkerExpr(), markerHandoffColumn("id"), markerHandoffColumn("task_id"),
+	} {
 		args = append(args, f.args...)
 	}
 	return args
@@ -258,11 +269,14 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		rSuppressed                         sql.NullBool
 		rStatus                             sql.NullString
 		delivery                            sql.NullString
+		marker                              sql.NullString
+		markerHandoff, markerTask           sql.NullInt64
 	)
 	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
 		&iss.Kind, &iss.Priority, &iss.Author, &parent, &createdBy, &iss.Version, &created, &updated, &closedAt,
 		&iss.TaskCount, &active, &lane, &attention, &mainBranch, &mainOccupant,
 		&mainOccupantState, &iss.SideActive, &iss.MergeBacksPending, &delivery,
+		&marker, &markerHandoff, &markerTask,
 		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
 		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed, &rStatus); err != nil {
 		return nil, err
@@ -272,6 +286,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	iss.Active = active
 	iss.Lane = issuestate.Lane(lane)
 	iss.Attention = attention
+	iss.Handoff = issueHandoffOf(marker, markerHandoff, markerTask)
 	iss.MainWorktree.Branch = mainBranch.String
 	if mainOccupant.Valid {
 		id := mainOccupant.Int64
@@ -371,6 +386,14 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) ([]*Issue, error)
 		args = append(args, lane.args...)
 		for _, l := range f.Lanes {
 			args = append(args, string(l))
+		}
+	}
+	if len(f.Handoffs) > 0 {
+		marker := handoffMarkerExpr()
+		q += ` AND ` + marker.sql + ` IN ` + placeholders(len(f.Handoffs))
+		args = append(args, marker.args...)
+		for _, m := range f.Handoffs {
+			args = append(args, string(m))
 		}
 	}
 	for _, name := range append([]string{f.Label}, f.Labels...) {
