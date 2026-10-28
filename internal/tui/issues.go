@@ -161,6 +161,12 @@ type issuesView struct {
 
 	// w is the form and the close/reopen/delete prompt (task 130.12).
 	w issueWrites
+
+	// picked is the handoff selection (task 137.11 decision 1): pending
+	// hand-off cards only, by id. A project switch clears it.
+	picked map[int64]bool
+	// handoff is the open handoff form, nil when none is.
+	handoff *handoffForm
 }
 
 func newIssuesView() *issuesView {
@@ -195,6 +201,7 @@ func (v *issuesView) setProject(p projectSel) tea.Cmd {
 		v.lastLoad = time.Time{}
 		v.cursor, v.selected, v.selectedLane = 0, 0, ""
 		v.w.act = nil
+		v.picked, v.handoff = nil, nil
 	}
 	return v.projectScope.setProject(p)
 }
@@ -202,11 +209,19 @@ func (v *issuesView) setProject(p projectSel) tea.Cmd {
 // capturesInput holds the global keys back while the filter types and while
 // the form or the prompt is up: both own the keyboard, and `n` answers the
 // prompt's question rather than opening the new-task form.
-func (v *issuesView) capturesInput() bool { return v.filtering || v.w.open() }
+func (v *issuesView) capturesInput() bool { return v.filtering || v.w.open() || v.handoff != nil }
 
-func (v *issuesView) bindingContext() bindingContext { return v.w.context(ctxIssues) }
+func (v *issuesView) bindingContext() bindingContext {
+	if v.handoff != nil {
+		return ctxHandoffForm
+	}
+	return v.w.context(ctxIssues)
+}
 
 func (v *issuesView) paste(text string) tea.Cmd {
+	if v.handoff != nil {
+		return v.handoff.paste(text)
+	}
 	if v.w.open() {
 		return v.w.paste(text)
 	}
@@ -219,10 +234,24 @@ func (v *issuesView) paste(text string) tea.Cmd {
 }
 
 func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
+	if v.handoff != nil {
+		if key, ok := msg.(tea.KeyPressMsg); ok {
+			cmd, closed := v.handoff.updateKey(key)
+			if closed {
+				v.handoff = nil
+			}
+			return v, cmd
+		}
+	}
 	if cmd, ok := v.w.update(msg); ok {
 		return v, cmd
 	}
 	switch msg := msg.(type) {
+	case handoffWorkflowsMsg:
+		v.openHandoff(msg)
+		return v, nil
+	case handoffCreatedMsg:
+		return v, v.handoffCreated(msg)
 	case issueFormClosedMsg:
 		v.w.form = nil
 		switch {
@@ -381,6 +410,7 @@ func (v *issuesView) applyLoaded(msg issuesLoadedMsg) {
 	v.loaded, v.loadErr = true, nil
 	v.lastLoad = v.now()
 	v.issues = msg.issues
+	v.prunePicked()
 	v.reselect()
 }
 
@@ -407,7 +437,8 @@ func (v *issuesView) updateNote(n apiclient.Note) tea.Cmd {
 		return nil
 	}
 	switch t := ev.Event.Type; {
-	case isIssueEvent(t), strings.HasPrefix(t, "project."):
+	case isIssueEvent(t), strings.HasPrefix(t, "project."), strings.HasPrefix(t, "handoff."):
+		// A handoff event moves a card's marker (task 137.11).
 		return v.scheduleRefresh()
 	case strings.HasPrefix(t, "task."):
 		if id := taskEventIssueID(ev.Event); id != 0 && v.shows(id) {
@@ -505,8 +536,13 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.w.openForm(v.client, nil, v.project.id)
 	case opKey(keymap.Add):
 		// A task from the selected issue (task 130.13): the form opens
-		// seeded with it, editable before anything is created.
+		// seeded with it, editable before anything is created. A claimed
+		// issue refuses first (task 137.11): its handoff owns it.
 		if row, ok := v.current(); ok {
+			if handoffClaimed(row.issue) {
+				v.setNote(inHandoffNote(row.issue), true)
+				return v, nil
+			}
 			return v, newTaskFromIssueCmd(row.issue)
 		}
 	case issueEditKey:
@@ -521,6 +557,29 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if row, ok := v.current(); ok {
 			v.w.act = newIssueDelete(v.client, row.issue)
 		}
+	case opKey(keymap.Ready):
+		if row, ok := v.current(); ok {
+			act, cmd, note := newIssueReady(v.client, row.issue)
+			if note != "" {
+				v.setNote(note, true)
+			}
+			v.w.act = act
+			return v, cmd
+		}
+	case opKey(keymap.Return):
+		if row, ok := v.current(); ok {
+			act, note := newIssueReturn(v.client, row.issue)
+			if note != "" {
+				v.setNote(note, true)
+			}
+			v.w.act = act
+		}
+	case opKey(keymap.Handoff):
+		return v, v.startHandoff()
+	case issueSelectKey:
+		v.togglePick()
+	case issueSelectAllKey:
+		v.pickAll()
 	// The jumps come after every operation's case: `g` and `G` are fixed
 	// letters a tui.keys binding can take on a lenient load (task 128), and
 	// the user's binding is the one that wins (review F13).
@@ -638,6 +697,9 @@ func (v *issuesView) render(width, height int) string {
 	if width < 4 || height < 2 {
 		return ""
 	}
+	if v.handoff != nil {
+		return v.handoff.render(width, height)
+	}
 	if v.w.form != nil {
 		return v.w.form.render(width, height)
 	}
@@ -738,6 +800,9 @@ func (v *issuesView) headerLine(width int) string {
 	case v.loaded:
 		left += styleDim.Render("  ·  " + plural(len(v.issues), "issue", "issues"))
 	}
+	if n := len(v.picked); n > 0 {
+		left += "  " + styleFocus.Render(strconv.Itoa(n)+" selected")
+	}
 	right := ""
 	if !v.lastLoad.IsZero() {
 		right = styleDim.Render("updated "+v.lastLoad.Format("15:04:05")) + " "
@@ -825,7 +890,7 @@ func (v *issuesView) listLines(width int) (lines []string, cursorRow int) {
 			}
 			lines = append(lines, groupIndent+"  "+styleDim.Render(none))
 		default:
-			lines = append(lines, groupIndent+issueLine(row.issue, inner, selected, shared))
+			lines = append(lines, groupIndent+issueLineMarked(row.issue, inner, selected, shared, v.picked[row.issue.ID]))
 		}
 	}
 	return lines, cursorRow
@@ -866,15 +931,30 @@ func issueTitleMin(width int) int { return max(30, width*40/100) }
 // every imported row on the list comes from one repository, so the source
 // badge may shorten to `gh#N` without becoming ambiguous.
 func issueLine(iss apiclient.Issue, width int, selected, sharedRepo bool) string {
+	return issueLineMarked(iss, width, selected, sharedRepo, false)
+}
+
+// issueLineMarked is issueLine with the handoff selection's glyph (task
+// 137.11) on a picked card.
+func issueLineMarked(iss apiclient.Issue, width int, selected, sharedRepo, picked bool) string {
 	marker := "  "
 	if selected {
 		marker = styleFocus.Render("› ")
+	}
+	if picked {
+		marker = styleFocus.Render("◆ ")
+		if selected {
+			marker = styleFocus.Render("›◆")
+		}
 	}
 	id := padRight("#"+strconv.FormatInt(iss.ID, 10), 6)
 	state := issueStateBadge(iss)
 	tags := issueTags(iss)
 	source := issueSourceBadge(iss)
 	tasks := issueTaskSummary(iss)
+	// The handoff marker (task 137.11) sits right of the tags and the
+	// source badge, and never gives way to them: they shed first.
+	hand := issueHandoffCell(iss)
 
 	// The title keeps issueTitleMin while the parts right of it give way
 	// (#796, superseding review F2 on #773's 12-column floor for the title),
@@ -891,7 +971,9 @@ func issueLine(iss apiclient.Issue, width int, selected, sharedRepo bool) string
 		return 2 + ansi.StringWidth(s)
 	}
 	lead := 2 + len(id) + ansi.StringWidth(state) + 2
-	titleRoom := func() int { return width - lead - part(tags) - part(source) - 2 - ansi.StringWidth(tasks) }
+	titleRoom := func() int {
+		return width - lead - part(tags) - part(source) - part(hand) - 2 - ansi.StringWidth(tasks)
+	}
 	short := func() bool { return titleRoom() < issueTitleMin(width) }
 	if short() {
 		tasks = issueTaskSummaryShort(iss)
@@ -921,6 +1003,9 @@ func issueLine(iss apiclient.Issue, width int, selected, sharedRepo bool) string
 		if part != "" {
 			line += "  " + styleDim.Render(part)
 		}
+	}
+	if hand != "" {
+		line += "  " + styleWarn.Render(hand)
 	}
 	return line + "  " + issueTaskStyle(iss).Render(tasks)
 }

@@ -72,6 +72,8 @@ type taskTabHit struct {
 // sub-model because the attempt cursor owns the transcript and diff state, but
 // gives each way of reading that state the entire viewport.
 type taskView struct {
+	// handoff is the Overview's read of the task's handoff (task 137.11).
+	handoff handoffFetch
 	// projectScope is the root's selected project (task 132.2), stored for
 	// the item that scopes this view to it.
 	projectScope
@@ -335,12 +337,15 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case outcomeCommitsMsg:
 		t.applyOutcomeCommits(m)
 		return t, nil
+	case handoffItemsMsg:
+		t.applyHandoffItems(m)
+		return t, nil
 	}
 	p, cmd := t.route(msg)
 	// After every message: the one that loaded a blocked or finished task,
 	// or moved the reader onto the Overview, is the one that fetches the
 	// failure card's evidence and the outcome card's diff and commits.
-	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome(), t.landPendingFailure())
+	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome(), t.landPendingFailure(), t.syncHandoff())
 }
 
 func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
@@ -494,7 +499,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		// re-reads the section; the detail sub-model still sees the note.
 		cmd := tea.Batch(t.detail.update(msg), t.laneUpdate(msg))
 		if ev, ok := msg.note.(apiclient.EventNote); ok {
-			cmd = tea.Batch(cmd, t.chatNoteCmd(ev.Event))
+			cmd = tea.Batch(cmd, t.chatNoteCmd(ev.Event), t.handoffNoteCmd(ev.Event))
 		}
 		if ev, ok := msg.note.(apiclient.EventNote); ok &&
 			ev.Event.Type == eventTaskGitHubPullChanged {

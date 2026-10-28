@@ -319,6 +319,12 @@ func (v *issueView) updateNote(n apiclient.Note) tea.Cmd {
 		if issueEventID(ev.Event) == v.id {
 			return v.scheduleRefresh()
 		}
+	case strings.HasPrefix(ev.Event.Type, "handoff."):
+		// A handoff naming this issue moves its marker or its Handoff
+		// section (task 137.11).
+		if handoffEventNames(ev.Event, v.id) || v.inHandoffTask(ev.Event) {
+			return v.scheduleRefresh()
+		}
 	case isTaskEvent(ev.Event.Type):
 		// A task of this issue's that the screen does not list yet — a new
 		// side task, or a merge-back a side task's `→ done` inserted — names
@@ -447,13 +453,32 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 	}
 	if !v.loaded {
 		switch key {
-		case opKey(keymap.Add), opKey(keymap.Delete), opKey(keymap.Comment):
+		case opKey(keymap.Add), opKey(keymap.Delete), opKey(keymap.Comment),
+			opKey(keymap.Ready), opKey(keymap.Return):
 			return nil, true
 		}
 		return nil, false
 	}
 	switch key {
+	case opKey(keymap.Ready):
+		act, cmd, note := newIssueReady(v.client, v.issue)
+		if note != "" {
+			v.setNote(note, true)
+		}
+		v.w.act = act
+		return cmd, true
+	case opKey(keymap.Return):
+		act, note := newIssueReturn(v.client, v.issue)
+		if note != "" {
+			v.setNote(note, true)
+		}
+		v.w.act = act
+		return nil, true
 	case opKey(keymap.Add):
+		if handoffClaimed(v.issue) {
+			v.setNote(inHandoffNote(v.issue), true)
+			return nil, true
+		}
 		return newTaskFromIssueCmd(v.issue), true
 	case opKey(keymap.Delete):
 		v.w.act = newIssueDelete(v.client, v.issue)
@@ -554,6 +579,8 @@ func (v *issueView) liveBindings(rows []binding) []binding {
 		keymap.Comment: !v.commentable(),
 		keymap.OpenRow: len(v.selectRows()) == 0 || !v.visible(v.cursor),
 		keymap.Browser: issueURL(v.issue) == "",
+		keymap.Ready:   !v.loaded || !readyApplies(v.issue),
+		keymap.Return:  !v.loaded || !handoffClaimed(v.issue),
 	}
 	out := make([]binding, 0, len(rows))
 	for _, b := range rows {
@@ -629,6 +656,9 @@ type issueDetailRow struct {
 	mainWorktree bool
 	task         apiclient.Task
 	child        bool
+	// handoff is a row of the Handoff section (task 137.11): enter opens
+	// the handoff's task.
+	handoff *apiclient.IssueHandoffEntry
 }
 
 // selectRows is what the cursor walks, in display order: the Main worktree
@@ -658,6 +688,9 @@ func (v *issueView) selectRows() []issueDetailRow {
 			}
 		}
 	}
+	for i := range v.issue.Handoffs {
+		rows = append(rows, issueDetailRow{handoff: &v.issue.Handoffs[i]})
+	}
 	return rows
 }
 
@@ -674,6 +707,9 @@ func (v *issueView) openTask() tea.Cmd {
 	}
 	row := rows[v.cursor]
 	id, state, pid := row.task.ID, row.task.State, row.task.ProjectID
+	if row.handoff != nil {
+		id, state, pid = row.handoff.TaskID, "", v.issue.ProjectID
+	}
 	if row.mainWorktree {
 		mw := v.issue.MainWorktree
 		if mw == nil || mw.OccupantTaskID == nil {
@@ -1020,6 +1056,7 @@ func (v *issueView) pageLines(width int) (lines []string) {
 		title := fitTitle(t.Title, width-cols(lead)-2-cols(state))
 		lines = append(lines, lead+title+"  "+styleDim.Render(state))
 	}
+	lines = append(lines, v.handoffLines(rows, width, len(lines))...)
 
 	if iss.Source != nil {
 		lines = append(lines, "", " "+styleTitle.Render("Source"))

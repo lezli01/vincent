@@ -45,6 +45,15 @@ const (
 	// Comment writes a local comment on an issue in $EDITOR (task 130
 	// decision 24, 130.16). W for "write": c is §6 cancel and C is fold.
 	Comment Op = "comment"
+	// Ready marks an idle in-progress issue ready, or a pending hand-off
+	// issue not ready (task 137.11 decision 4). `.` for "done here".
+	Ready Op = "ready"
+	// Handoff hands the selected pending cards, or the cursor's, to one
+	// handoff (task 137.11 decisions 1, 4). I for "integrate".
+	Handoff Op = "handoff"
+	// Return returns a claimed or waiting issue from its handoff, after a
+	// y/n prompt (task 137.11 decision 4). `,` beside ready's `.`.
+	Return Op = "return"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -159,6 +168,15 @@ var catalog = []Info{
 	}},
 	{Op: Comment, Default: "W", Meaning: "comment on the issue", Kind: KindTerm, Surfaces: []Surface{
 		"issue",
+	}},
+	{Op: Ready, Default: ".", Meaning: "mark the issue ready to hand off, or not ready", Kind: KindTerm, Surfaces: []Surface{
+		"issues", "issue",
+	}},
+	{Op: Handoff, Default: "I", Meaning: "hand the selected issues off", Kind: KindTerm, Surfaces: []Surface{
+		"issues",
+	}},
+	{Op: Return, Default: ",", Meaning: "return the issue from its handoff", Kind: KindTerm, Surfaces: []Surface{
+		"issues", "issue",
 	}},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},

@@ -239,6 +239,7 @@ const (
 	// the prompt where it is "new issue" underneath.
 	ctxIssueForm   bindingContext = "issue form"
 	ctxIssuePrompt bindingContext = "issue prompt"
+	ctxHandoffForm bindingContext = "handoff form"
 )
 
 // vocabularyTerm is the shared operation a row performs — the left column of
@@ -272,6 +273,9 @@ const (
 	termNextFail  vocabularyTerm = "jump to the task's next failure"
 	termAttention vocabularyTerm = "show only the tasks that need a human"
 	termComment   vocabularyTerm = "comment on the issue"
+	termReady     vocabularyTerm = "mark the issue ready to hand off, or not ready"
+	termHandoff   vocabularyTerm = "hand the selected issues off"
+	termReturn    vocabularyTerm = "return the issue from its handoff"
 )
 
 // binding is one registry row.
@@ -959,6 +963,14 @@ var bindings = []binding{
 	{key: "O", label: "expand every lane section", scope: scopePanel, context: ctxIssues, priority: 15, aliased: true},
 	// Paging (#796), the issue detail's and the timeline's keys.
 	{key: "pgdown", label: "page the list (pgup/pgdown, home/g, end/G)", scope: scopePanel, context: ctxIssues, priority: 16},
+	// Handoffs (task 137.11). The selection is the task table's shape (task
+	// 011) over the pending hand-off cards only; liveBindings withholds
+	// ready, handoff and return where they do not apply to the row.
+	{key: issueSelectKey, label: "select this pending hand-off issue for a handoff (any other card is refused, with the reason)", scope: scopePanel, context: ctxIssues, hint: "space select", priority: 17},
+	{key: issueSelectAllKey, label: "select every pending hand-off issue the filter is showing, or clear the selection", scope: scopePanel, context: ctxIssues, priority: 18},
+	{op: keymap.Handoff, key: "I", label: "hand the selected issues off — or the cursor's pending one — in a form: workflow, grant, title, paused", scope: scopePanel, context: ctxIssues, hint: "I hand off", priority: 8, term: termHandoff},
+	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssues, hint: ". ready", priority: 8, term: termReady},
+	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssues, hint: ", return", priority: 8, term: termReturn},
 	// The issue detail (§15 view 13).
 	{op: keymap.OpenRow, key: "enter", label: "open the selected linked task's workspace (esc comes back here)", scope: scopePanel, context: ctxIssue, hint: "enter task", priority: 1, term: termOpenRow},
 	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},
@@ -981,6 +993,8 @@ var bindings = []binding{
 	// no comment here — nothing is ever posted to GitHub.
 	{op: keymap.Comment, key: "W", label: "write a comment in $EDITOR — saved empty, nothing is posted; never on an issue mirrored from GitHub", scope: scopePanel, context: ctxIssue, hint: "W comment", priority: 10, term: termComment},
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssue, priority: 11, term: termDelete},
+	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssue, hint: ". ready", priority: 8, term: termReady},
+	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssue, hint: ", return", priority: 8, term: termReturn},
 
 	// The issue form and prompt own the keyboard and print their own key
 	// lines, so these are here to keep ? complete.
@@ -994,6 +1008,12 @@ var bindings = []binding{
 	{key: "enter", label: "pick the action, close reason or duplicate target", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
 	{key: "y", label: "confirm the close, reopen or delete", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
 	{key: "esc", label: "cancel — nothing is written", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
+	// The handoff form (task 137.11) owns the keyboard and prints its own
+	// key line, like the issue form.
+	{key: "down", label: "move between the handoff's fields (↑/↓, tab)", scope: scopePanel, context: ctxHandoffForm, noPalette: true},
+	{key: "space", label: "toggle a grant or start paused; on the workflow, the next one (←/→ cycle it)", scope: scopePanel, context: ctxHandoffForm, noPalette: true},
+	{key: "ctrl+s", label: "start the handoff — submitting is the consent to the grant", scope: scopePanel, context: ctxHandoffForm, noPalette: true},
+	{key: "esc", label: "close the form (asks first when something is set)", scope: scopePanel, context: ctxHandoffForm, noPalette: true},
 
 	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxTriggers, priority: 1},
 	{key: "enter", label: "open the selected trigger in the form (i also opens it)", scope: scopePanel, context: ctxTriggers, hint: "enter edit", priority: 2},
