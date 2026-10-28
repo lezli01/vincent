@@ -41,6 +41,7 @@ func TestDocsClaimsQuickstartListsEveryExample(t *testing.T) {
 	words := map[string]int{
 		"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
 		"six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+		"eleven": 11, "twelve": 12,
 	}
 	counted := regexp.MustCompile(`(?i)the other (\w+) examples?`)
 	for _, m := range counted.FindAllStringSubmatch(body, -1) {

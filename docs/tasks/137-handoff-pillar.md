@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (12/15)
+**Status:** 🔄 in progress (14/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -988,14 +988,55 @@ pull request.
 - [x] **137.10** ([#843](https://github.com/lezli01/vincent/issues/843)) The derived `handoff` marker on the issue DTO, `?handoff=`,
   and the CLI's lane column, with `idle` on an `in_progress` issue whose
   finished work is not ready (decisions 5, 13). Depends: 137.4, 137.15.
-- [ ] **137.11** ([#844](https://github.com/lezli01/vincent/issues/844)) The TUI: the `hand_off` card's marker and delivery, bulk
+- [x] **137.11** ([#844](https://github.com/lezli01/vincent/issues/844)) The TUI: the `hand_off` card's marker and delivery, bulk
   selection and the handoff form with its grant checkboxes, the issue detail's
   Handoff section, the handoff task's Overview, the ready and unready key and
   `idle` on in-progress cards, and "return from handoff" on a claimed issue
   (decisions 13, 14). Depends: 137.6, 137.10.
-- [ ] **137.12** ([#845](https://github.com/lezli01/vincent/issues/845)) Example handoff workflows under `examples/`, and
+  *Done 2026-10-28.* Four decisions, settled with the author: (1) the issues
+  board gets its own selection — `space` and `V`, fixed keys in task 011's
+  shape, over `pending` `hand_off` cards only — with the cursor's pending
+  card as the fallback, sent as one all-or-nothing `POST /v1/handoffs` with
+  `issue_ids`; no `select:` mode on the board. (2) The daemon serves the data
+  and the TUI derives nothing: `handoff_id` on the task DTO, `handoffs` on the
+  issue detail DTO, and `paused` on the marker (§5.6, §13.2). (3) The form
+  asks for the `role: handoff` workflow, the seven grant capabilities (all
+  off; submitting is the consent), an optional title and start paused;
+  everything else is the daemon's default and the CLI stays the full
+  surface. (4) Three new operations on `issues`/`issue`: `ready` (`.`),
+  `handoff` (`I`, board only) and `return` (`,`, asks first), withheld by
+  the footer, `?` and the palette where they do not apply.
+- [x] **137.12** ([#845](https://github.com/lezli01/vincent/issues/845)) Example handoff workflows under `examples/`, and
   `github-iterate-work` split into its dispatcher and `github-handoff-train`
   with a trigger (decision 9). Depends: 137.8, 137.9.
+  *Done 2026-10-28:* `examples/pr-per-issue`, `merge-train`,
+  `comment-and-close` and `notify-handoff`, each with an unarmed trigger
+  under `docs/examples/triggers/` held by `TestShippedExampleTriggers`;
+  `.vincent/workflows/github-handoff-train.yaml` and its trigger, and
+  `github-iterate-work.yaml` deleted. Decisions recorded with the issue:
+  (1) iterate-work is deleted, not slimmed — its `headroom`, `track`,
+  `watch` and `collect` have no job once landing is trigger-driven, and
+  `github-resolve-issue-multiple` is the dispatcher; the three resolve
+  workflows now name the train. (2) The train has no `autopilot` gate:
+  arming the trigger with its grant is the consent; `review-resolve` still
+  asks, and nothing merges with a finding open. (3) Trigger files are real
+  files validated by a test, not embedded and not in the archive, and all
+  ship `enabled: false`. (4) After `merged` confirms the merge at the pushed
+  commit, the train runs `vincent handoff deliver --all --close completed
+  --comment-file`; the PR body keeps `Closes #N`, and a sync that closes
+  first is harmless. (5) Only `gh pr create` and `gh pr merge` moved to
+  `vincent github pr create|merge --task`; reads, `review-report`'s
+  comment upserts (they edit by id, which vincent has no route for) and the
+  force-push stay where they were, so the train's grant is
+  `[pull.create, pull.merge, issue.comment, issue.close]`; a reused PR is
+  linked with `vincent github pr link`. (6) Items replace `track`/`collect`:
+  the train stacks each item's `head_sha` in the handoff file's order, and
+  releases with a note an item that is not a `change`, has another base or
+  a missing commit. (7) A blocked or failed train stays so; its unresolved
+  items release when the task settles, and it never `return`s one itself.
+  One deviation from the plan: `pr-per-issue` is one command step over
+  `$VINCENT_HANDOFF_FILE`, not a fan-out, because the forge-write guard
+  admits only the handoff's own task and a lane is a task of its own.
 - [x] **137.13** ([#846](https://github.com/lezli01/vincent/issues/846)) `scripts/137-gate.sh` on all three platforms, against
   `cmd/fakegh` and `cmd/fakeagent`: claim exclusivity, an ungranted write
   refused and a granted one written back through the outbox, `wait` resolved by

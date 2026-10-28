@@ -689,6 +689,11 @@ link; the outcome card's result has its own key, `w`. The footer lists the links
 If the task changes state while the Overview is open, the new frame replaces
 the old one and your attempt selection stays where it was.
 
+A handoff's task — one a [handoff](#handing-issues-off--space-v-i) started —
+adds an **Items** block to its Overview: each issue it claimed, by id and
+title, with its delivery kind and its outcome, or `unresolved`. It is read
+again whenever an item's outcome changes or the handoff settles.
+
 **Steps** (`1`) lists every attempt of every step with its duration, tokens and
 cost. Selecting
 an attempt chooses what the separate **Output** tab shows; the selection stays
@@ -2017,9 +2022,37 @@ completed](../assets/tui-issues.png)
 | `i` | Edit the selected issue in the issue form |
 | `X` | Close or reopen the selected issue — only what vincent offers for it |
 | `D` | Delete the selected issue permanently (asks first) |
+| `space` | Select the card for a handoff — only a `pending` hand-off card; any other is refused with the reason |
+| `V` | Select every pending hand-off card the filter is showing, or clear the selection |
+| `I` | Hand the selected issues off — or, with nothing selected, the cursor's pending one — in the [handoff form](#handing-issues-off--space-v-i) |
+| `.` | Mark an idle in-progress issue ready, or a pending hand-off issue not ready |
+| `,` | Return a claimed or waiting issue from its handoff — asks `y`/`n` first |
 
 The mouse wheel moves the selection one row per tick, and a click selects the
 row under it.
+
+#### Handing issues off — `space`, `V`, `I`
+
+A hand-off card shows what its delivery is — `change`, `reply` or `none` — and
+where it stands toward a handoff: nothing more while it is `pending`, then
+`claimed (H7)`, `waiting` or `delivered`, with `· paused` while the claiming
+handoff's task is paused. An in-progress card whose work has finished but is
+not ready says `idle`; `.` marks it ready, which moves it to hand-off, and `.`
+on a pending hand-off card takes that back.
+
+`space` selects a pending card, `V` every pending card the filter shows, and
+the header counts the selection. `I` opens the handoff form for the selection,
+or for the cursor's card when nothing is selected. The form asks for the
+`role: handoff` workflow to run — a project with none says so and opens no
+form — the grant, as seven capabilities that all start off, an optional title,
+and whether to start paused. `ctrl+s` starts it: the keypress is the consent
+to the grant you ticked. Everything else takes the daemon's defaults; `vincent
+handoff create` is the full surface. A refusal — an issue that stopped being
+eligible since the board was drawn — names the issue and leaves the form open.
+
+A claimed or waiting issue belongs to its handoff: `a` refuses to start a task
+on it until `,` returns it, which asks first because a return withdraws the
+issue's readiness.
 
 `R` only re-reads what vincent already holds. It never asks GitHub for
 anything: imported issues are refreshed on the daemon's reconciler tick. `S`
@@ -2069,12 +2102,17 @@ section](../assets/tui-issue.png)
 | `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from GitHub, whose thread is GitHub's |
 | `X` | Close or reopen the issue — only what vincent offers for it |
 | `D` | Delete the issue permanently (asks first) |
+| `.` | Mark the issue ready when it is idle in progress, or not ready when it is pending hand-off |
+| `,` | Return the issue from its handoff — asks `y`/`n` first |
 
 The page scrolls first: selecting a task never jumps it away from the
 description, and `▲ n more` / `▼ n more` say when it continues above or below.
 The mouse wheel scrolls it a line per tick, and a click on a task or the Main
 worktree section selects it. `enter` is offered only when there is a row to
-open, and `o` only on an imported issue. Long facts — the labels, the URL — and
+open, and `o` only on an imported issue. An issue a handoff ever took has a
+**Handoff** section: each handoff's `H` number, its state, its task — `enter`
+opens it — and this issue's outcome, when and by whom. `.` and `,` are offered
+only where they apply. Long facts — the labels, the URL — and
 notes wrap rather than being cut, and a close, reopen or delete prompt always
 fits the pane: the page above it gives up its lines first.
 
@@ -3397,7 +3435,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first sixteen are the operations screens share, the next ten are the
+The first nineteen are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last nine are the global keys.
 
 | Operation | Default | Does |
@@ -3418,6 +3456,9 @@ The first sixteen are the operations screens share, the next ten are the
 | `next_failure` | `N` | Jump to the task's next failure |
 | `attention_filter` | `H` | Show only the tasks that need a human |
 | `comment` | `W` | Write a comment on an issue in `$EDITOR` |
+| `ready` | `.` | Mark an issue ready to hand off, or not ready |
+| `handoff` | `I` | Hand the selected issues off |
+| `return` | `,` | Return an issue from its handoff |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

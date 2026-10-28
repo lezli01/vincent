@@ -226,6 +226,7 @@ func issueSelect() string {
 		` + handoffMarkerExpr().sql + `,
 		` + markerHandoffColumn("id").sql + `,
 		` + markerHandoffColumn("task_id").sql + `,
+		` + markerTaskPausedExpr().sql + `,
 		r.id, r.issue_id, r.project_id, r.provider, r.remote_key, r.repo, r.number, r.url,
 		r.remote_json, r.remote_updated_at, r.synced_at, r.suppressed, r.remote_status
 	FROM issues i LEFT JOIN issue_remotes r ON r.issue_id = i.id`
@@ -244,7 +245,7 @@ func issueSelectArgs() []any {
 	args = append(args, issueMainOccupantArgs()...)
 	for _, f := range []sqlFrag{
 		sideActiveExpr(), mergeBacksPendingExpr(), latestDeliveryExpr(),
-		handoffMarkerExpr(), markerHandoffColumn("id"), markerHandoffColumn("task_id"),
+		handoffMarkerExpr(), markerHandoffColumn("id"), markerHandoffColumn("task_id"), markerTaskPausedExpr(),
 	} {
 		args = append(args, f.args...)
 	}
@@ -271,12 +272,13 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		delivery                            sql.NullString
 		marker                              sql.NullString
 		markerHandoff, markerTask           sql.NullInt64
+		markerPaused                        bool
 	)
 	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
 		&iss.Kind, &iss.Priority, &iss.Author, &parent, &createdBy, &iss.Version, &created, &updated, &closedAt,
 		&iss.TaskCount, &active, &lane, &attention, &mainBranch, &mainOccupant,
 		&mainOccupantState, &iss.SideActive, &iss.MergeBacksPending, &delivery,
-		&marker, &markerHandoff, &markerTask,
+		&marker, &markerHandoff, &markerTask, &markerPaused,
 		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
 		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed, &rStatus); err != nil {
 		return nil, err
@@ -286,7 +288,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	iss.Active = active
 	iss.Lane = issuestate.Lane(lane)
 	iss.Attention = attention
-	iss.Handoff = issueHandoffOf(marker, markerHandoff, markerTask)
+	iss.Handoff = issueHandoffOf(marker, markerHandoff, markerTask, markerPaused)
 	iss.MainWorktree.Branch = mainBranch.String
 	if mainOccupant.Valid {
 		id := mainOccupant.Int64

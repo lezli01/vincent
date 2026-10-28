@@ -11,7 +11,7 @@ schema is shaped the way it is. Keep the
 [Workflow schema](../reference/workflow-schema.md) beside it when you need every
 field and default in table form.
 
-Eight ready-to-copy files live in [`examples/`](../../examples), and the binary
+Twelve ready-to-copy files live in [`examples/`](../../examples), and the binary
 will install one for you:
 
 ```sh
@@ -31,12 +31,25 @@ feature in it is there:
 | [`go-checks`](../../examples/go-checks.yaml) | Run tests and vet together | `parallel`, a fragment written to be included |
 | [`ship`](../../examples/ship.yaml) | Agree on a change, publish it if there is one | `include`, `allow_failure` probe, `condition`, `if:`, `on_input: require`, `manual`, `max_retries: 0` |
 | [`split-work`](../../examples/split-work.yaml) | Plan units, build each in its own lane | Derived `fan_out`: `for_each:`, `lane:`, `needs:`, `max_lanes:`, `schedule:`, `merge: on_conflict: agent`; `include` |
+| [`pr-per-issue`](../../examples/pr-per-issue.yaml) ([trigger](../examples/triggers/pr-per-issue.yaml)) | One pull request per handed-off issue | `role: handoff`, `$VINCENT_HANDOFF_FILE`, `vincent github pr create --task`, `vincent handoff wait` |
+| [`merge-train`](../../examples/merge-train.yaml) ([trigger](../examples/triggers/merge-train.yaml)) | Stack every delivered change into one pull request and merge it | `role: handoff`, `head_sha` stacking, `vincent github pr merge --head-sha`, `vincent handoff deliver --all` |
+| [`comment-and-close`](../../examples/comment-and-close.yaml) ([trigger](../examples/triggers/comment-and-close.yaml)) | Post each delivered reply and close the issue | `role: handoff` with zero agent sessions, `--comment-file`, `vincent handoff release` |
+| [`notify-handoff`](../../examples/notify-handoff.yaml) ([trigger](../examples/triggers/notify-handoff.yaml)) | Tell a webhook what is ready | `role: handoff` with an empty grant, `--close none` |
 
 `ship` and `split-work` include `go-checks` by name, and `--from` installs one
 file under the name you give it — so install the fragment under its own name
 first: `vincent workflow init go-checks --from go-checks`. A missing include
 target is not caught by `vincent workflow validate`; it is a `400` when a task
 is created ([§4.10](#410-include)).
+
+The last four are **handoff workflows** (`role: handoff`): a handoff runs one
+over every issue whose work is ready, never as an ordinary task, and each
+links the unarmed trigger that starts it. Copy the trigger to
+`{config_dir}/triggers/`, set its project, and arm it yourself — its `grant:`
+is the consent to the forge writes the workflow makes. This repository's own
+landing, [`github-handoff-train`](../../.vincent/workflows/github-handoff-train.yaml),
+is `merge-train` with a review and a repair loop, started by
+[its own trigger](../examples/triggers/github-handoff-train.yaml).
 
 If you would rather read one working workflow than a guide, start with
 [`feature-pr.yaml`](../../examples/feature-pr.yaml) and come back here for the
@@ -2208,7 +2221,7 @@ workflow-level problem: see
 
 - [Workflow schema](../reference/workflow-schema.md) — every field and default,
   in tables.
-- [Example workflows](../../examples) — eight working files.
+- [Example workflows](../../examples) — twelve working files.
 - [Agent CLIs](agents.md) — what each adapter can and cannot do.
 - [Task lifecycle](../reference/task-lifecycle.md) — what `blocked` means and
   what you can do from there.

@@ -424,7 +424,9 @@ In detail:
   `done` hidden until `s` shows it. Each row carries the issue's state,
   labels, source and the tasks it started; the screen opens one to its Markdown-rendered description, its discussion thread
   and its active tasks. A form files and edits issues there, `W` writes a
-  comment in `$EDITOR`, and the same screens close, reopen and delete them;
+  comment in `$EDITOR`, and the same screens close, reopen and delete them,
+  mark finished work ready, and hand ready issues off in a form that asks for
+  the workflow and the grant;
   an imported issue's mirrored fields and its thread, which mirrors GitHub's,
   stay read-only. It is offered whether or not any project uses GitHub. From
   a shell, `vincent issue` lists, shows, files, edits, comments on, closes,

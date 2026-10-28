@@ -257,6 +257,7 @@ func (a *issueAction) run() tea.Cmd {
 	}
 	a.stage = iaBusy
 	req := apiclient.CloseIssueRequest{Reason: a.reason, DuplicateOf: a.dupOf}
+	iss := a.issue
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
@@ -268,6 +269,8 @@ func (a *issueAction) run() tea.Cmd {
 			out.issue, out.err = client.ReopenIssue(ctx, id)
 		case issueActDelete:
 			out.err = client.DeleteIssue(ctx, id)
+		case issueActReady, issueActUnready, issueActReturn:
+			out.issue, out.err = runHandoff(ctx, client, iss, action)
 		}
 		return out
 	}
@@ -277,6 +280,8 @@ func (a *issueAction) run() tea.Cmd {
 func (a *issueAction) confirmText() []string {
 	ref := "issue #" + strconv.FormatInt(a.issue.ID, 10)
 	switch a.action {
+	case issueActReturn:
+		return returnConfirmText(a.issue)
 	case issueActDelete:
 		out := []string{"Delete " + ref + " permanently? It cannot be undone."}
 		if a.imported() {
@@ -430,6 +435,10 @@ func (w *issueWrites) update(msg tea.Msg) (cmd tea.Cmd, ok bool) {
 
 // actedNote is what a finished write says on the screen it was made from.
 func actedNote(msg issueActedMsg) string {
+	switch msg.action {
+	case issueActReady, issueActUnready, issueActReturn:
+		return handoffActedNote(msg)
+	}
 	ref := "issue #" + strconv.FormatInt(msg.id, 10)
 	if msg.err != nil {
 		return msg.action + " " + ref + ": " + errString(msg.err)

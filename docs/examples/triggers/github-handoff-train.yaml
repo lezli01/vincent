@@ -1,0 +1,26 @@
+# github-handoff-train — land this repository's delivered issues once every
+# weekday night, as one merge train.
+#
+# Copy to {config_dir}/triggers/github-handoff-train.yaml, set
+# `source.project` to the project's id, and arm it with `enabled: true`.
+# It ships unarmed on purpose: arming it — `on_fire: create` and the `grant:`
+# below — is the consent for the train to push, open one pull request, merge
+# it and close the issues without asking again (task 137 decision 6). The
+# workflow is .vincent/workflows/github-handoff-train.yaml.
+#
+# `permission: workflow` runs the train as written: its agents push, rebase
+# and call `gh` in full-auto, which restricted mode would refuse.
+id: github-handoff-train
+enabled: false
+source:
+  type: schedule
+  project: 1
+  cron: '0 2 * * 1-5'
+action:
+  type: start_handoff
+  workflow: github-handoff-train
+  select: {lane: hand_off, delivery: change, max: 8}
+  grant: [pull.create, pull.merge, issue.comment, issue.close]
+on_fire: create
+overrun: skip
+permission: workflow

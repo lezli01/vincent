@@ -1,0 +1,19 @@
+# notify-handoff — tell your team each weekday morning what is ready.
+#
+# Copy to {config_dir}/triggers/notify-handoff.yaml, set `source.project`,
+# edit the workflow's webhook URL, and arm it with `enabled: true`. It ships
+# unarmed, and grants nothing: the workflow writes nothing to the forge.
+# Install the workflow with
+# `vincent workflow init notify-handoff --from notify-handoff`.
+id: notify-handoff
+enabled: false
+source:
+  type: schedule
+  project: 1
+  cron: '0 8 * * 1-5'
+action:
+  type: start_handoff
+  workflow: notify-handoff
+  select: {lane: hand_off}
+on_fire: create
+overrun: skip

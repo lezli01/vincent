@@ -321,6 +321,7 @@ func (t *taskView) overviewLines(width, height int) []string {
 			out = append(out, t.lanesNeedingYouLines(width)...)
 		}
 	}
+	out = append(out, t.handoffItemLines(width)...)
 	if links := t.overviewLinks(); len(links) > 0 {
 		parts := make([]string, len(links))
 		for i, l := range links {

@@ -1,0 +1,47 @@
+# notify-handoff — tell something outside vincent that work is ready, and
+# record the handoff done.
+#
+# A handoff workflow (`role: handoff`): it never runs as an ordinary task.
+# The smallest one there is. It writes nothing to the forge, so its trigger,
+# docs/examples/triggers/notify-handoff.yaml (shipped unarmed), grants
+# nothing: what it hands the work to is a webhook, a chat channel or a
+# person, not a pull request.
+#
+#   vincent workflow init notify-handoff --from notify-handoff
+#
+# Read the run as two decisions:
+#
+#   notify   one `curl` posting the handoff file to a webhook. The URL is a
+#            placeholder: edit it, or replace the step with whatever your
+#            team listens to. `--fail` makes a refused post fail the step,
+#            so nothing is recorded delivered that nobody was told about.
+#   deliver  every item delivered with `--close none`: each issue stays
+#            open for whoever picks it up, and is kept out of later
+#            handoffs until new work replaces its delivery.
+#
+# Requires `vincent` and `curl`.
+name: notify-handoff
+description: Post the handoff's items to a webhook, then record every item delivered and leave the issues open.
+role: handoff
+platforms: [posix]
+
+defaults:
+  timeout: 5m
+  max_retries: 0
+
+steps:
+  - id: notify
+    name: Post the handoff to a webhook
+    type: command
+    max_retries: 2
+    retry_backoff: 30s
+    run: |
+      curl --fail --silent --show-error \
+        -H 'Content-Type: application/json' \
+        --data-binary "@$VINCENT_HANDOFF_FILE" \
+        https://hooks.example.com/vincent-handoff
+
+  - id: deliver
+    name: Record the handoff delivered
+    type: command
+    run: vincent handoff deliver {{.Handoff.ID}} --all --close none

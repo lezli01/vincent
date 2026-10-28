@@ -1,0 +1,65 @@
+# pr-per-issue — open one pull request per handed-off issue, and let each
+# issue resolve when its pull request merges.
+#
+# A handoff workflow (`role: handoff`): it never runs as an ordinary task.
+# A handoff claims the issues whose work is ready — each one's main task
+# delivered a `change` — and runs this once over all of them. Start it by
+# hand with `vincent handoff start`, or from a trigger;
+# docs/examples/triggers/pr-per-issue.yaml is one, shipped unarmed.
+#
+#   vincent workflow init pr-per-issue --from pr-per-issue
+#
+# Read the run as three decisions:
+#
+#   open   one `vincent github pr create --task <id>` per item, for the
+#          *delivering* task — the item's own branch, pushed without force
+#          and linked to that task. The daemon admits the write only from
+#          this handoff's task, only for an item's delivering task, and only
+#          when the grant names `pull.create`; the trigger's `grant:` is
+#          where a person said yes. That is also why this is one step over
+#          `$VINCENT_HANDOFF_FILE` and not a fan-out: a lane is a task of its
+#          own, outside the grant.
+#   wait   each item is marked `wait`, not `deliver`. It keeps its claim after
+#          this task finishes, and the issue closing — GitHub's own `Closes
+#          #N`, imported by sync — is what records it delivered. Nothing here
+#          merges anything: review and merge stay a person's.
+#   skip   an item whose pull request already exists is waited on rather than
+#          opened twice, so a retried step converges.
+#
+# The pull request body is the delivery's own `body`, which is where the
+# delivering task's `Closes #N` line belongs.
+#
+# Requires `vincent` and `jq`, and a project with a GitHub origin.
+name: pr-per-issue
+description: Open one pull request per handed-off issue from its delivering task's branch, and wait for each issue to close when its pull request merges.
+role: handoff
+platforms: [posix]
+
+defaults:
+  timeout: 15m
+  max_retries: 0
+
+steps:
+  - id: open
+    name: Open a pull request per item
+    type: command
+    run: |
+      set -e
+      h={{.Handoff.ID}}
+      d=$(git rev-parse --git-path vincent-pr-per-issue)
+      mkdir -p "$d"
+      jq -c '.items[]' "$VINCENT_HANDOFF_FILE" > "$d/items.jsonl"
+      while IFS= read -r item; do
+        issue=$(printf '%s' "$item" | jq -r '.issue.id')
+        task=$(printf '%s' "$item" | jq -r '.task_id')
+        title=$(printf '%s' "$item" | jq -r '.delivery.title // .issue.title')
+        printf '%s' "$item" | jq -r '.delivery.body // ""' > "$d/body.md"
+        vincent status -- "issue $issue: opening task $task's pull request" </dev/null >/dev/null 2>&1 || true
+        if vincent github pr show --task "$task" --json </dev/null >/dev/null 2>&1; then
+          echo "issue $issue: task $task already has a pull request"
+        else
+          vincent github pr create --task "$task" --title "$title" --body "$(cat "$d/body.md")" </dev/null
+        fi
+        vincent handoff wait "$h" "$issue" --note "pull request opened from task $task" </dev/null
+      done < "$d/items.jsonl"
+      rm -rf "$d"

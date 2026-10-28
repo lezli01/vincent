@@ -120,7 +120,7 @@ that is *not* true are stated rather than smoothed over.
 - [Security model](security-model.md) — what full-auto means, what the worktree
   does and does not isolate, and how to tighten it.
 - [FAQ](faq.md) — the short answers.
-- [Example workflows](../examples) — eight ready-to-copy files.
+- [Example workflows](../examples) — twelve ready-to-copy files.
 - [Changelog](https://lezli01.is-a.dev/vincent/changelog.html) — user-visible changes in every release.
 
 ## Contributing

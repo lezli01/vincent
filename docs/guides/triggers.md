@@ -840,6 +840,13 @@ concurrency_key: ready-batch
 While the handoff task is unsettled, later events are held. When it settles
 the newest fires once and its selection takes everything that accumulated.
 
+Ready-to-copy triggers for the four example handoff workflows — `pr-per-issue`,
+`merge-train`, `comment-and-close` and `notify-handoff` — and for this
+repository's own `github-handoff-train` live in
+[`docs/examples/triggers/`](../examples/triggers). Each ships with
+`enabled: false`: copy it to `{config_dir}/triggers/`, set `source.project`,
+and arm it yourself.
+
 ### `on_fire` and `permission`
 
 `on_fire: propose` is the default. A task that a trigger creates, retries or

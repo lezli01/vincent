@@ -1183,7 +1183,7 @@ amend §12, §13 and §15 when they land.
 | `parent_issue_id` | a seam for sub-issues, never written yet |
 | `active`, `task_count` | **derived, never stored** (decision 3): `task_count` counts the **root** tasks (`parent_task_id IS NULL`) whose `issue_id` is this issue, and `active` is whether any of them is not settled in §6's sense (not `done`, `aborted` or `archived`). Fan-out lanes carry the link but are not counted, so one task with five lanes is one task |
 | `lane`, `attention` | **derived, never stored** (task 134 decisions 1–3). *Added 2026-10-07 (task 134.4, issue #751).* `lane` is `done` when the issue is `closed`, whatever its tasks do (decision 4); otherwise `in_progress` when some root task is not settled, else `hand_off` when some root task is `done` or `archived` with `archived_from = done` (decision 20), else `open` — no task, or only aborted ones (decision 19). *Amended 2026-10-24 (task 137.15, issue #848; task 137 decision 13):* `hand_off` now means **ready**: with no root task unsettled, the lane is `hand_off` when the latest finished main-line root task's delivery (the one §5.3's `delivery` on an issue names; side tasks excluded) reads ready, `in_progress` when work finished but is not ready — a delivery marked `ready: false`, or finished work that is only a side task's — and `open` otherwise. The not-ready `in_progress` issue is **idle**: it waits for a mark or for more work. Because an absent `ready` reads ready, every lane is unchanged on upgrade except one: an issue whose only finished root task is a side task (its merge-back cancelled or not yet run) moved from `hand_off` to `in_progress`, which keeps decision 3's "every `hand_off` issue has a delivery". `LaneOf` takes three facts — unsettled, finished, latest ready — and a table test holds it to the SQL. *Amended 2026-10-28 (task 137.6, issue #839):* a handoff `return` withdraws the readiness in its own transaction, so a returned issue is idle `in_progress` (or busy, with its follow-up queued); and closing an issue — any actor, `sync` included — resolves its `waiting` handoff item as `delivered` in the close's transaction (§5.7). `attention` is whether some root task is in `taskstate.NeedsHuman` (`awaiting_input`, `awaiting_gate`, `blocked`; `paused` is not one), computed for a closed issue too. For an open issue `active` ⇔ `lane = in_progress`. `internal/issuestate.LaneOf` is the rule; the store computes it in SQL from the same fragments that compute `active` |
-| `handoff` | **derived, never stored.** *Added 2026-10-28 (task 137.10, issue #843; task 137 decisions 5 and 13).* The issue's handoff marker, beside its lane rather than a fifth one: `{ state, handoff_id, task_id }` or none. First match wins: a **closed** issue has none (its close resolved any `waiting` item as `delivered`, so it holds no claim); a **live claim** is `claimed` while the item is unresolved and `waiting` once its outcome is `waiting`, **in any lane** — the claiming handoff's own task may restart work on the issue (§5.7's refusal spares it), which makes it `in_progress`, and the marker stays until the item resolves; an eligible `hand_off` issue is `pending`; a `hand_off` issue that is not eligible is `delivered`, the only reason left being a `delivered` item that names its current delivery at that delivery's `head_sha`, so a follow-up that moves the head makes it `pending` again; an `in_progress` issue with no unsettled root task is `idle` — finished work that is not ready, a returned item's issue and a side-only issue included; anything else has none. `handoff_id` and `task_id` name the claiming handoff and its task for `claimed` and `waiting`, the delivering handoff and its task for `delivered`, and are null for `pending` and `idle`. The store computes it in SQL (`handoffMarkerExpr`) from `handoffEligibleExpr`, the claim predicate, `laneExpr` and `activeExpr`, never restating them, so the marker, a `select:` and the board cannot disagree; `store.HandoffMarkerOf` is the rule in Go and a table test holds it to the SQL |
+| `handoff` | **derived, never stored.** *Added 2026-10-28 (task 137.10, issue #843; task 137 decisions 5 and 13).* The issue's handoff marker, beside its lane rather than a fifth one: `{ state, handoff_id, task_id }` or none. First match wins: a **closed** issue has none (its close resolved any `waiting` item as `delivered`, so it holds no claim); a **live claim** is `claimed` while the item is unresolved and `waiting` once its outcome is `waiting`, **in any lane** — the claiming handoff's own task may restart work on the issue (§5.7's refusal spares it), which makes it `in_progress`, and the marker stays until the item resolves; an eligible `hand_off` issue is `pending`; a `hand_off` issue that is not eligible is `delivered`, the only reason left being a `delivered` item that names its current delivery at that delivery's `head_sha`, so a follow-up that moves the head makes it `pending` again; an `in_progress` issue with no unsettled root task is `idle` — finished work that is not ready, a returned item's issue and a side-only issue included; anything else has none. `handoff_id` and `task_id` name the claiming handoff and its task for `claimed` and `waiting`, the delivering handoff and its task for `delivered`, and are null for `pending` and `idle`. The store computes it in SQL (`handoffMarkerExpr`) from `handoffEligibleExpr`, the claim predicate, `laneExpr` and `activeExpr`, never restating them, so the marker, a `select:` and the board cannot disagree; `store.HandoffMarkerOf` is the rule in Go and a table test holds it to the SQL. *Amended 2026-10-28 (task 137.11, issue #844):* the marker gains `paused`, whether the claiming handoff's task is `paused`, read in the same query so a board can say so without a task read per card; it is false for every marker but `claimed` and `waiting`  |
 | comments | author, body and an optional remote key, listed oldest first |
 
 #### Issue lifecycle
@@ -6351,6 +6351,23 @@ which is why `metadata.version` is needed rather than reusable from it.
 row, on the GitHub (task 035), release-check (task 055) and container (task 061)
 precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
 
+### 9.9 Copilot adapter (task 138, stub added 2026-10-28)
+
+A stub. Task 138 adds a fourth adapter, `copilot`, for the standalone GitHub
+Copilot CLI (npm `@github/copilot`); no part of it is built yet, and nothing in
+§9.1–§9.8 or elsewhere has changed for it. The bullets below are added one at a
+time, each in the pull request whose code makes it true, and task 138's later
+items complete the section. Placed after §9.8 for the reason §9.7 gives: no
+section is renumbered.
+
+- **Captured stream is the only spec** (*2026-10-28, task 138.1*). Copilot's
+  `--output-format json` event stream is undocumented, so the adapter's parser
+  and fakeagent's dialect are built against real output of one pinned build,
+  1.0.105, under `internal/agent/copilot/testdata/` — provenance, the event
+  inventory and the version findings are in
+  [task 138](tasks/138-copilot-adapter.md). Fixtures are re-captured only when
+  the adapter's tested versions are bumped.
+
 ## 10. Worktree management
 
 - **Location:** `{data_dir}/worktrees/{task_id}` — outside every repo, so IDE file
@@ -9565,6 +9582,13 @@ GET    /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* The row
                                         moved or missing remote is commentable though its body
                                         is not editable. A client reads it rather than
                                         inferring it from `editable`
+                                        *Amended 2026-10-28 (task 137.11, issue #844):*
+                                        `handoffs: [{ handoff_id, task_id, state, outcome,
+                                        outcome_at, outcome_by }]`, newest first — every
+                                        handoff that ever claimed the issue, with this
+                                        issue's item outcome (`""` while unresolved), `[]`
+                                        when none did. The `handoff` marker of this and of
+                                        every list row gains `paused` (§5.6)
 PATCH  /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* { version, title?, body?,
                                         labels? | add_labels?, remove_labels?, kind?, priority? }.
                                         `version` is required (§13.1); an empty patch, `labels`
@@ -10411,6 +10435,10 @@ GET    /v1/tasks/{id}                   full task incl. step runs summary and pe
                                         step was spliced through (§7.9, task 019, added
                                         2026-08-19), absent for a step the task's own workflow
                                         wrote
+                                        *Amended 2026-10-28 (task 137.11, issue #844):* this
+                                        representation and every `GET /v1/tasks` row carry
+                                        `handoff_id` when the task is a handoff's task, read
+                                        in one query for a list page; omitted otherwise
 PATCH  /v1/tasks/{id}                   { priority }               (queued/paused only);
                                         emits task.priority_changed and re-runs admission
 DELETE /v1/tasks/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
@@ -13305,6 +13333,12 @@ stream for the live tail.
    the queued, paused and `awaiting_children` frames, where the now-line is
    not drawn, keep it.
 
+   *Amended 2026-10-28 (task 137.11, issue #844):* on a handoff's task —
+   the task DTO's `handoff_id` — the Overview carries an **Items** block:
+   each claimed issue's id and title, its delivery kind and its outcome or
+   `unresolved`, from one `GET /v1/handoffs/{id}`, re-read on
+   `handoff.item_changed` and `handoff.settled` on the task's stream.
+
 3. **New task.** Project picker → workflow picker (shows description + step list;
    flags steps whose agent is unavailable) → *(GitHub issue, conditional)* →
    title → description (inline or
@@ -14488,6 +14522,26 @@ stream for the live tail.
    by a switch that is off. The footer, `?` and the palette offer it only on
    a project §13.2's probe answers yes for, as they do the pull-request keys.
 
+   *Amended 2026-10-28 (task 137.11, issue #844):* a `hand_off` card's
+   right cell shows its delivery kind (`change`, `reply`, `none`) and §5.6's
+   marker — nothing more for `pending`, `claimed (H7)`, `waiting`,
+   `delivered` — with `· paused` while the claiming handoff's task is paused
+   (the marker's `paused`), and an `in_progress` card says `idle`; as the
+   row narrows the tags and the source badge give way before the marker.
+   The board gains a selection in task 011's shape: `space` toggles a card
+   and `V` selects every card the filter shows, or clears, both fixed keys;
+   only a `pending` `hand_off` card is selectable, any other is refused with
+   the reason, and the header counts the selection. `I` (`handoff`) sends
+   the selection as one `POST /v1/handoffs` with `issue_ids` — all or
+   nothing — or, with nothing selected, the cursor's pending card, in a
+   form over the board: a picker over the project's `role: handoff`
+   workflows (with none the form refuses to open and says so), the seven
+   grant capabilities as checkboxes all off, an optional title and start
+   paused, with one `Idempotency-Key` per opened form. `ctrl+s` is the
+   consent (task 069 decision 2); every other option takes the daemon's
+   default, and the CLI stays the full surface. `.` (`ready`) and `,`
+   (`return`) act as on view 13. The board has no `select:` mode.
+
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,
    priority (`0` none, `1` urgent … `4` low — the inverted scale of task 130
@@ -14613,6 +14667,21 @@ stream for the live tail.
    with the description. The issue form windows its rows around the focused
    element — the picker's highlighted option, or the field being edited —
    with its error and key line pinned under the scrolled region.
+
+   *Amended 2026-10-28 (task 137.11, issue #844):* an issue a handoff ever
+   took has a **Handoff** section from the detail DTO's `handoffs` (§13.2):
+   one row per handoff, newest first — `H<id>`, its state, its task, which
+   `enter` opens in the workspace with `esc` coming back here as the linked
+   tasks do, and this issue's outcome with when and by whom, or
+   `unresolved`. It re-reads on a `handoff.*` event naming the issue or its
+   handoff's task. `.` (`ready`) marks an idle `in_progress` issue ready
+   and a `pending` `hand_off` one not ready; `,` (`return`) returns a
+   `claimed` or `waiting` issue from its handoff after a y/n prompt, with no
+   follow-up, because a return withdraws readiness. The footer, `?` and the
+   palette offer each only where it applies, and the 409 reasons are worded.
+   `a` on a claimed or waiting issue refuses before view 3 opens — "issue #N
+   is in handoff H7 — return it first" — and view 3 words a submit's
+   `issue_in_handoff` 409 the same way.
 
 ### Layout
 

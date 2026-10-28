@@ -14,9 +14,12 @@
 #
 # Nor does it merge anything. Since 2026-10-02 the resolve workflows stop at a
 # delivered branch and open no pull request, so the tasks this creates leave
-# branches behind and nothing else. `github-iterate-work` is this file plus the
-# waiting and the landing: it includes this file whole, then stacks what its
-# tasks delivered into one merge train and merges it.
+# branches behind and nothing else, and their issues move to the `hand_off`
+# lane. The landing is `github-handoff-train`, started over that lane by its
+# trigger (docs/examples/triggers/github-handoff-train.yaml): it stacks what
+# the tasks delivered into one merge train and merges it. *Changed
+# 2026-10-28 (task 137.12):* this used to be included whole by a workflow
+# that watched the tasks and landed them itself.
 #
 #     vincent task add --project N --workflow github-resolve-issue-multiple --title "pick up issues"
 #
@@ -571,7 +574,7 @@ steps:
 
       Nothing is pushed or merged by approving this. Every task ends at a
       verified branch, recorded as ready for a pull request, and opens none:
-      landing them is `github-iterate-work`'s job, or yours.
+      landing them is `github-handoff-train`'s job, or yours.
 
       Just before creating each task the step re-reads the board and the
       issue: one that gained a task or closed while this gate waited is left

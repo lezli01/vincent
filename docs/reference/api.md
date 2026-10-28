@@ -2603,7 +2603,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   lane is `done` regardless. For an open issue, `active` is exactly
   `lane == "in_progress"`.
 - <a id="handoff-marker"></a>**Handoff marker.** Every row, and the issue
-  from **Get**, carries `handoff`: `{ "state", "handoff_id", "task_id" }`, or
+  from **Get**, carries `handoff`: `{ "state", "handoff_id", "task_id",
+  "paused" }`, or
   `null` when the issue has none. It is derived in the list's own query and
   never stored, from the same rule a handoff's `select:` uses, so a
   `pending` issue is exactly one a handoff may claim. The first that applies
@@ -2618,6 +2619,14 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   | `delivered` | `hand_off`, but a handoff delivered its current delivery without closing it. A follow-up that moves the delivery's head makes it `pending` again | The delivering handoff and its task |
   | `idle` | `in_progress` with nothing running: finished work that is not ready, a returned issue included | `null` |
   | — (`null`) | Anything else — `open`, or `in_progress` with work running | — |
+
+  `paused` is `true` while the claiming handoff's task is `paused`, so a
+  board can say so without reading the task; it is `false` for every state
+  but `claimed` and `waiting`.
+- **Get** also carries `handoffs`: every handoff that ever claimed the
+  issue, newest first, as `{ "handoff_id", "task_id", "state", "outcome",
+  "outcome_at", "outcome_by" }` — `outcome` is this issue's item outcome,
+  `""` while it is unresolved — and `[]` when no handoff took it.
 - **Get** adds `body`; `available_actions`, what a person may do from this
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
@@ -3393,7 +3402,9 @@ the lane emits `issue.lane_changed` with `by`.
 
 A **handoff** claims finished issues — those in the `hand_off` lane — for one
 integration task, which runs the workflow you name over them. One request
-creates the handoff, its task and every claim, or nothing:
+creates the handoff, its task and every claim, or nothing. The
+handoff's task carries `handoff_id` on `GET /v1/tasks/{id}` and on its
+`GET /v1/tasks` row, so a client finds the handoff from the task:
 
 ```
 POST /v1/handoffs

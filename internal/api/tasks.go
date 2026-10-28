@@ -205,6 +205,9 @@ type taskResponse struct {
 	// 137.2), null before one is recorded. A list carries its summary; the
 	// detail carries it in full, as it carries the workflow snapshot.
 	Delivery *deliveryResponse `json:"delivery"`
+	// HandoffID is the handoff whose task this is (§5.7, task 137.11), set
+	// on GET /v1/tasks/{id} and the list rows; omitted for every other task.
+	HandoffID *int64 `json:"handoff_id,omitempty"`
 }
 
 // snapshotStepResponse is one step of the task's snapshot (spec §13.2).
@@ -1756,6 +1759,11 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 	if err != nil {
 		return nil, err
 	}
+	// Which rows are a handoff's task (task 137.11): one query for the page.
+	handoffs, err := s.deps.Store.HandoffIDsByTask(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]listTaskResponse, 0, len(tasks))
 	for i := range tasks {
@@ -1783,6 +1791,9 @@ func (s *Server) toListResponse(ctx context.Context, tasks []store.Task) ([]list
 		}
 		if rollup, ok := children[t.ID]; ok {
 			row.Children = toChildrenResponse(rollup, childCosts[t.ID])
+		}
+		if hid, ok := handoffs[t.ID]; ok {
+			row.HandoffID = &hid
 		}
 		if t.IssueID != nil {
 			if iss, ok := linked[*t.IssueID]; ok {
@@ -1826,6 +1837,18 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 	if chatID, err := s.deps.Store.OpenLinkedChatID(r.Context(), t.ID); err == nil && chatID != 0 {
 		resp.OpenChatID = &chatID
 		resp.AvailableActions = lockAwareActions(t.State, chatID)
+	}
+	// The handoff this task is the task of (task 137.11), so a client
+	// reads the items with one GET /v1/handoffs/{id}. Only "no handoff" is
+	// an absent field: any other error fails the read, as it fails the list
+	// (HandoffIDsByTask), so a task never carries handoff_id on its row and
+	// silently loses it on its detail (review F6 on #872).
+	switch h, err := s.deps.Store.GetHandoffByTask(r.Context(), t.ID); {
+	case err == nil:
+		resp.HandoffID = &h.ID
+	case !errors.Is(err, store.ErrHandoffNotFound):
+		s.internalError(w, "get handoff by task", err)
+		return
 	}
 	// The children rollup (§13.2, task 014 decisions 13, 27). Present
 	// whenever the task has lanes, in any state — a parent mid-join, or one

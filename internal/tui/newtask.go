@@ -1358,6 +1358,12 @@ func (n *newTask) fieldMap() map[string]string {
 func (n *newTask) applyFailure(err error) {
 	n.submitting = false
 	msg := errString(err)
+	// A claimed issue refuses the create (task 137 decision 14); the race
+	// the issue screens' refusal cannot close says so the same way.
+	if words := handoffReasonWords(err); words != "" && n.issueID != 0 {
+		n.err = "issue #" + strconv.FormatInt(n.issueID, 10) + ": " + words
+		return
+	}
 	for _, m := range []struct {
 		needle string
 		row    ntRow
