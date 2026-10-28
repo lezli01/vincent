@@ -128,7 +128,7 @@ func (f *followUpForm) load(client *apiclient.Client) tea.Cmd {
 			msg.agents = agents
 		}
 		if wfs, err := client.ListWorkflows(ctx, projectID); err == nil {
-			msg.workflows = wfs
+			msg.workflows = apiclient.TaskWorkflows(wfs)
 		}
 		return msg
 	}

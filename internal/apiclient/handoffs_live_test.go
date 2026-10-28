@@ -39,7 +39,7 @@ func TestHandoffsOverTheWire(t *testing.T) {
 	}
 	low, urgent, other := handOff("low", 4), handOff("urgent", 1), handOff("other", 0)
 
-	req := apiclient.CreateHandoffRequest{ProjectID: h.projectID, Workflow: "adhoc", IssueIDs: []int64{other}, Paused: true}
+	req := apiclient.CreateHandoffRequest{ProjectID: h.projectID, Workflow: "integrate", IssueIDs: []int64{other}, Paused: true}
 	first, err := h.client.CreateHandoff(ctx, req, "wire-1")
 	if err != nil {
 		t.Fatalf("CreateHandoff: %v", err)
@@ -54,7 +54,7 @@ func TestHandoffsOverTheWire(t *testing.T) {
 	}
 
 	sel, err := h.client.CreateHandoff(ctx, apiclient.CreateHandoffRequest{
-		ProjectID: h.projectID, Workflow: "adhoc", Select: &apiclient.HandoffSelect{Delivery: []string{apiclient.DeliveryChange}, Max: 2},
+		ProjectID: h.projectID, Workflow: "integrate", Select: &apiclient.HandoffSelect{Delivery: []string{apiclient.DeliveryChange}, Max: 2},
 	}, "")
 	if err != nil {
 		t.Fatalf("CreateHandoff select: %v", err)
@@ -68,7 +68,7 @@ func TestHandoffsOverTheWire(t *testing.T) {
 	}
 
 	_, err = h.client.CreateHandoff(ctx, apiclient.CreateHandoffRequest{
-		ProjectID: h.projectID, Workflow: "adhoc", Select: &apiclient.HandoffSelect{},
+		ProjectID: h.projectID, Workflow: "integrate", Select: &apiclient.HandoffSelect{},
 	}, "")
 	var apiErr *apiclient.Error
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict || apiErr.Details["reason"] != "nothing_to_hand_off" {

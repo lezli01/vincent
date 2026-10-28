@@ -662,6 +662,21 @@ func (req *taskCreateRequest) digestShape() *taskCreateDigest {
 	}
 }
 
+// refuseHandoffRole is POST /v1/tasks' half of task 137.8's decision 3: a
+// `role: handoff` workflow runs only under a handoff, so a task create —
+// the CLI, MCP's task_create, a trigger's create_task, a chat's task
+// handoff — naming one is a 400 pointing at `vincent handoff start`. It
+// reports whether the create may go on.
+func refuseHandoffRole(w http.ResponseWriter, wf *workflow.Workflow) bool {
+	if !wf.IsHandoff() {
+		return true
+	}
+	writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf(
+		"workflow %q has role: handoff and only a handoff runs it; start one with `vincent handoff start` (POST /v1/handoffs)",
+		wf.Name))
+	return false
+}
+
 // prepareTaskCreate is the whole of POST /v1/tasks' validation up to the
 // branch: project, workflow resolution and snapshot, include expansion,
 // fan-out resolution, the issue and pull-request prefills, declared fields, the base branch,
@@ -1160,7 +1175,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	prep, ok := s.prepareTaskCreate(ctx, w, &req, "", false)
-	if !ok {
+	if !ok || !refuseHandoffRole(w, prep.workflow) {
 		return
 	}
 	t, warnings := prep.task, prep.warnings

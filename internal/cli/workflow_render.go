@@ -120,6 +120,7 @@ type renderFlags struct {
 	agent       string
 	model       string
 	effort      string
+	handoffFile string
 }
 
 func newWorkflowRenderCmd() *cobra.Command {
@@ -139,7 +140,11 @@ func newWorkflowRenderCmd() *cobra.Command {
 			"preview and never as the literal prompt an agent will receive.\n\n" +
 			"--task and --project reach the daemon: for a real task's title,\n" +
 			"description, fields, branch and override triple, and to resolve `include`\n" +
-			"steps and named fan-out lanes through the registry.",
+			"steps and named fan-out lanes through the registry. --task on a handoff\n" +
+			"task binds its real .Handoff too.\n\n" +
+			"--handoff-file binds .Handoff from a file in $VINCENT_HANDOFF_FILE's shape,\n" +
+			"over whatever --task bound, so a fan_out over .Handoff.ItemLines previews\n" +
+			"its items.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWorkflowRender(cmd, args[0], f)
@@ -153,6 +158,7 @@ func newWorkflowRenderCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.agent, "agent", "", "Task-level agent override (§8.6 level 2)")
 	cmd.Flags().StringVar(&f.model, "model", "", "Task-level model override (§8.6 level 2)")
 	cmd.Flags().StringVar(&f.effort, "effort", "", "Task-level effort override (§8.6 level 2)")
+	cmd.Flags().StringVar(&f.handoffFile, "handoff-file", "", "Bind .Handoff from a file in $VINCENT_HANDOFF_FILE's shape")
 	jsonFlag(cmd)
 	return cmd
 }
@@ -187,6 +193,14 @@ func runWorkflowRender(cmd *cobra.Command, file string, f renderFlags) error {
 		},
 	}
 	override := agent.Level{Agent: f.agent, Model: f.model, Effort: f.effort}
+	var fileHandoff *workflow.HandoffContext
+	if f.handoffFile != "" {
+		hc, err := readHandoffFile(f.handoffFile)
+		if err != nil {
+			return err
+		}
+		fileHandoff = &hc
+	}
 
 	body := func(ctx context.Context, c *apiclient.Client) error {
 		resolved := wf
@@ -197,7 +211,17 @@ func runWorkflowRender(cmd *cobra.Command, file string, f renderFlags) error {
 				return err
 			}
 		}
-		return emitRender(cmd, renderWorkflow(file, resolved, in, override))
+		if fileHandoff != nil {
+			in.Handoff = *fileHandoff
+		}
+		res := renderWorkflow(file, resolved, in, override)
+		if wf.IsHandoff() && in.Handoff.ID == 0 {
+			// Not an error: a preview with no handoff bound renders the zero
+			// `.Handoff` an ordinary task would, which is legitimate output.
+			res.Warnings = append(res.Warnings, renderIssue{Message: "role: handoff with no handoff bound: " +
+				".Handoff is zero; pass --handoff-file or --task on a handoff task to preview its items"})
+		}
+		return emitRender(cmd, res)
 	}
 	if f.taskID != 0 || f.projectID != 0 {
 		return withClient(cmd, body)
@@ -237,6 +261,14 @@ func bindRemote(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, f 
 		if projectID == 0 {
 			projectID = task.ProjectID
 		}
+		if wf.IsHandoff() {
+			hc, err := taskHandoff(ctx, c, task.ProjectID, f.taskID)
+			if err != nil {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+				return nil, exitError{code: 1}
+			}
+			in.Handoff = hc
+		}
 	}
 	if projectID != 0 {
 		projects, err := c.ListProjects(ctx)
@@ -254,6 +286,39 @@ func bindRemote(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, f 
 		}
 	}
 	return resolveComposition(ctx, cmd, c, projectID, wf, *override)
+}
+
+// readHandoffFile reads --handoff-file: a file in $VINCENT_HANDOFF_FILE's
+// shape, bound as `.Handoff` (task 137.8).
+func readHandoffFile(path string) (workflow.HandoffContext, error) {
+	b, err := os.ReadFile(path) //nolint:gosec // G304: this command's own flag
+	if err != nil {
+		return workflow.HandoffContext{}, err
+	}
+	return workflow.ParseHandoffFile(b)
+}
+
+// taskHandoff binds a handoff task's real `.Handoff` from the daemon's copy
+// of the file its run reads; the zero value for a task no handoff names.
+func taskHandoff(ctx context.Context, c *apiclient.Client, projectID, taskID int64) (workflow.HandoffContext, error) {
+	list, err := c.ListHandoffs(ctx, apiclient.HandoffListOptions{ProjectID: projectID})
+	if err != nil {
+		return workflow.HandoffContext{}, err
+	}
+	for _, h := range list {
+		if h.TaskID != taskID {
+			continue
+		}
+		full, err := c.GetHandoff(ctx, h.ID)
+		if err != nil {
+			return workflow.HandoffContext{}, err
+		}
+		if len(full.File) == 0 {
+			return workflow.HandoffContext{}, nil
+		}
+		return workflow.ParseHandoffFile(full.File)
+	}
+	return workflow.HandoffContext{}, nil
 }
 
 // resolveComposition splices `include` steps and resolves named fan-out lanes
@@ -315,6 +380,8 @@ func workflowFromDefinition(body *apiclient.WorkflowBody) *workflow.Workflow {
 		Name:        body.Name,
 		Description: body.Description,
 		Platforms:   body.Platforms,
+		HandOff:     body.HandOff,
+		Role:        body.Role,
 		Defaults: workflow.Defaults{
 			Agent:          body.Defaults.Agent,
 			Model:          body.Defaults.Model,

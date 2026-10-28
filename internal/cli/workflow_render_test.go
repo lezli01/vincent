@@ -645,3 +645,63 @@ func TestRenderNamedLanesOffline(t *testing.T) {
 func workflowWith(steps string) string {
 	return "name: demo\nsteps:\n" + steps + "\n"
 }
+
+// TestRenderHandoffFile: --handoff-file binds `.Handoff`, so a fan_out over
+// `.Handoff.ItemLines` previews one item per line; without it a role:
+// handoff workflow previews the zero `.Handoff` with a note, not an error
+// (task 137.8).
+func TestRenderHandoffFile(t *testing.T) {
+	file := writeWorkflow(t, `name: integrate-each
+role: handoff
+steps:
+  - id: per-issue
+    type: fan_out
+    for_each: ['{{ .Handoff.ItemLines }}']
+    lane:
+      id: 'issue-{{ .Item.issue.id }}'
+      fields: {source_branch: '{{ .Item.branch }}'}
+      steps:
+        - {id: note, type: command, run: 'git commit --allow-empty -m lane'}
+`)
+	handoff := filepath.Join(t.TempDir(), "handoff.json")
+	if err := os.WriteFile(handoff, []byte(`{"id": 3, "grant": [], "items": [
+  {"issue": {"id": 5, "title": "a"}, "delivery": {"kind": "change"}, "task_id": 9, "branch": "vincent/9-a", "head_sha": "abc"},
+  {"issue": {"id": 6, "title": "b"}, "delivery": {"kind": "change"}, "task_id": 10, "branch": "vincent/10-b", "head_sha": "def"}
+]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, code := runWorkflowCLI(t, "render", file, "--handoff-file", handoff, "--json")
+	if code != 0 {
+		t.Fatalf("render --handoff-file exit %d: %s", code, out)
+	}
+	var got renderResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("--json: %v (%s)", err, out)
+	}
+	var forEach string
+	for _, s := range got.Steps {
+		for _, f := range s.Fields {
+			if f.Field == "for_each[0]" {
+				forEach = f.Output
+			}
+		}
+	}
+	lines := strings.Split(forEach, "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], `"branch":"vincent/9-a"`) || !strings.Contains(lines[1], `"id":6`) {
+		t.Errorf("for_each rendered %q, want one item per line", forEach)
+	}
+	if len(got.Warnings) != 0 {
+		t.Errorf("warnings = %+v, want none with a handoff bound", got.Warnings)
+	}
+
+	out, code = runWorkflowCLI(t, "render", file, "--json")
+	if code != 0 {
+		t.Fatalf("render without a handoff exit %d: %s", code, out)
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0].Message, "no handoff bound") {
+		t.Errorf("warnings = %+v, want the no-handoff note", got.Warnings)
+	}
+}

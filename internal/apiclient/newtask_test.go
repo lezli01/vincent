@@ -66,6 +66,10 @@ type createHarness struct {
 	repo      string
 }
 
+// handoffWorkflow is the `role: handoff` workflow the harness serves, for
+// POST /v1/handoffs (task 137.8). The task-create surfaces leave it out.
+const handoffWorkflow = "name: integrate\nrole: handoff\nsteps:\n  - {id: gate, type: manual, instructions: go}\n"
+
 func newCreateHarness(t *testing.T) *createHarness {
 	t.Helper()
 	fake := agenttest.BuildFakeAgent(t)
@@ -84,6 +88,7 @@ func newCreateHarness(t *testing.T) *createHarness {
 	}
 	writeWorkflow(t, globalDir, "two-step.yaml", validWorkflow)
 	writeWorkflow(t, globalDir, "busted.yaml", brokenWorkflow)
+	writeWorkflow(t, globalDir, "integrate.yaml", handoffWorkflow)
 
 	git := gitx.New()
 	dataDir := t.TempDir()

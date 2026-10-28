@@ -2,6 +2,7 @@ package apiclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -31,6 +32,9 @@ type Handoff struct {
 	CreatedAt time.Time     `json:"created_at"`
 	Items     []HandoffItem `json:"items,omitempty"`
 	Task      *TaskDetail   `json:"task,omitempty"`
+	// File is the handoff's $VINCENT_HANDOFF_FILE content (task 137.8),
+	// present on GetHandoff only.
+	File json.RawMessage `json:"file,omitempty"`
 }
 
 // HandoffItem is one claimed issue: its delivery as it stood at the claim,

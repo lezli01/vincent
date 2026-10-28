@@ -175,6 +175,16 @@ func (r *treeResolver) lane(lane Lane, path string, depth int, stack []string) (
 				Message: fmt.Sprintf("lane workflow %q not found", lane.Workflow),
 			}
 		}
+		// A lane is an ordinary child task, and a `role: handoff` run must
+		// have a non-zero `.Handoff` (task 137.8, decision 3): only
+		// POST /v1/handoffs starts one.
+		if target.IsHandoff() {
+			return lane, &TreeError{
+				Path: path,
+				Message: fmt.Sprintf("lane workflow %q has role: handoff; only vincent handoff start runs it",
+					lane.Workflow),
+			}
+		}
 		body = target.Steps
 		next = append(append([]string{}, stack...), lane.Workflow)
 		lane.ResolvedFrom, lane.Workflow = lane.Workflow, ""

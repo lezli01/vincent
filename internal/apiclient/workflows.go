@@ -42,6 +42,10 @@ type WorkflowEntry struct {
 	// indistinguishable from "unrestricted" and treated as such.
 	Platforms         []string `json:"platforms,omitempty"`
 	PlatformSupported *bool    `json:"platform_supported,omitempty"`
+	// Role is the workflow's `role:` (task 137.8): "handoff" for one only
+	// a handoff may start, which no task-create surface offers; empty for
+	// an ordinary workflow.
+	Role string `json:"role,omitempty"`
 
 	// RequiresInput reports that some step needs an agent able to stop and
 	// ask mid-run, and leaves the choice of agent to the task (§7.4, task
@@ -113,6 +117,23 @@ type WorkflowFinding struct {
 // Valid reports whether this entry can back a task. An invalid entry is
 // listed for display only: POST /v1/tasks rejects it.
 func (e WorkflowEntry) Valid() bool { return len(e.Errors) == 0 }
+
+// IsHandoff reports whether the workflow declares `role: handoff` (task
+// 137.8): POST /v1/tasks refuses it, so no task-create surface offers it.
+func (e WorkflowEntry) IsHandoff() bool { return e.Role == "handoff" }
+
+// TaskWorkflows is entries without the `role: handoff` ones — the list a
+// task-create picker offers. The daemon refuses those on POST /v1/tasks with
+// a 400; leaving them out of the picker is the same rule shown up front.
+func TaskWorkflows(entries []WorkflowEntry) []WorkflowEntry {
+	out := make([]WorkflowEntry, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsHandoff() {
+			out = append(out, e)
+		}
+	}
+	return out
+}
 
 // RunsHere reports whether the daemon's host satisfies this workflow's
 // platform restriction (§8.1.1). A workflow that does not run here is listed

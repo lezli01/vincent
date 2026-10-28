@@ -183,6 +183,10 @@ func SchemaDescriptor() Schema {
 				Name: "hand_off", Control: ControlEnum, Values: []string{HandOffAuto, HandOffExplicit},
 				Help: "when a finished root task's issue is ready to hand off; empty means auto (task 137)",
 			},
+			{
+				Name: "role", Control: ControlEnum, Values: []string{RoleHandoff},
+				Help: "handoff for a workflow only vincent handoff start runs; empty means an ordinary workflow (task 137.8)",
+			},
 			{Name: "fields", Control: ControlFields, Help: "declared task inputs (§8.1.2)"},
 			{Name: "defaults", Control: ControlMerge, Help: "workflow-level fallbacks for step fields"},
 			{Name: "steps", Control: ControlSteps, Required: true},

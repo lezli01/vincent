@@ -26,6 +26,10 @@ type workflowResponse struct {
 	// the process that would run the steps (task 010).
 	Platforms         []string `json:"platforms,omitempty"`
 	PlatformSupported bool     `json:"platform_supported"`
+	// Role is the workflow's `role:` (task 137.8): `handoff` for one only
+	// POST /v1/handoffs may start, absent for an ordinary workflow. A client
+	// listing workflows for a task create leaves the handoff ones out.
+	Role string `json:"role,omitempty"`
 	// RequiresInput reports that some step declares `on_input: require` and
 	// leaves its agent to the task, so the agent picked for a task must be one
 	// that can stop and ask (§7.4, task 013). Derived by the daemon for the
@@ -89,6 +93,7 @@ func toWorkflowResponse(e workflow.Entry) workflowResponse {
 	if e.Workflow != nil {
 		out.Description = e.Workflow.Description
 		out.Platforms = e.Workflow.Platforms
+		out.Role = e.Workflow.Role
 		out.Fields = toWorkflowFieldResponses(e.Workflow.Fields)
 		for _, st := range e.Workflow.Steps {
 			out.Steps = append(out.Steps, workflowStepResponse{

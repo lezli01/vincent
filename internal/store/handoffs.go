@@ -126,10 +126,14 @@ type HandoffItem struct {
 	// was claimed — a snapshot, unchanged by a later follow-up.
 	DeliveryTaskID *int64
 	Delivery       *Delivery
-	Outcome        HandoffOutcome
-	OutcomeAt      *time.Time
-	OutcomeBy      HandoffOutcomeBy
-	Note           string
+	// Issue is the claimed issue frozen at claim time, thread included (task
+	// 137.8, migration 0048), in the shape a task's issue snapshot has. Nil
+	// only on an item claimed before 0048; a render reads the issue row then.
+	Issue     *IssueSnapshot
+	Outcome   HandoffOutcome
+	OutcomeAt *time.Time
+	OutcomeBy HandoffOutcomeBy
+	Note      string
 }
 
 // ErrHandoffNotFound is a handoff id with no row; it wraps ErrNotFound.
@@ -521,9 +525,13 @@ func insertHandoffItemTx(ctx context.Context, tx *sql.Tx, h *Handoff, issueID in
 	if !ok {
 		return &IssueNotEligibleError{IssueID: issueID}
 	}
+	snapJSON, err := handoffIssueSnapshotTx(ctx, tx, issueID)
+	if err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO handoff_items (handoff_id, issue_id, delivery_task_id, delivery_json) VALUES (?, ?, ?, ?)`,
-		h.ID, issueID, deliver, raw)
+		INSERT INTO handoff_items (handoff_id, issue_id, delivery_task_id, delivery_json, issue_json) VALUES (?, ?, ?, ?, ?)`,
+		h.ID, issueID, deliver, raw, snapJSON)
 	if err != nil {
 		// The claim index, or the same issue named twice: either way the
 		// issue is not one this handoff may claim.
@@ -533,6 +541,22 @@ func insertHandoffItemTx(ctx context.Context, tx *sql.Tx, h *Handoff, issueID in
 		return fmt.Errorf("insert handoff item: %w", err)
 	}
 	return nil
+}
+
+// handoffIssueSnapshotTx freezes the issue an item claims (task 137.8,
+// decision 2 of its brief): NewIssueSnapshot with the thread, read in the
+// claim transaction exactly as a task's create reads it, so the item and its
+// snapshot commit together.
+func handoffIssueSnapshotTx(ctx context.Context, tx *sql.Tx, issueID int64) (any, error) {
+	iss, err := getIssue(ctx, tx, issueID)
+	if err != nil {
+		return nil, err
+	}
+	snap := NewIssueSnapshot(iss, time.Now())
+	if snap.Comments, err = issueSnapshotCommentsTx(ctx, tx, issueID); err != nil {
+		return nil, err
+	}
+	return marshalIssueSnapshot(snap)
 }
 
 // handoffEvent builds a handoff event: the project, and the handoff's task
@@ -657,7 +681,7 @@ func (s *Store) ListHandoffItems(ctx context.Context, handoffID int64) ([]*Hando
 
 func listHandoffItems(ctx context.Context, q issueQuerier, handoffID int64) ([]*HandoffItem, error) {
 	rows, err := q.QueryContext(ctx, `SELECT handoff_id, issue_id, delivery_task_id, delivery_json,
-		outcome, outcome_at, outcome_by, note FROM handoff_items WHERE handoff_id = ? ORDER BY issue_id`, handoffID)
+		outcome, outcome_at, outcome_by, note, issue_json FROM handoff_items WHERE handoff_id = ? ORDER BY issue_id`, handoffID)
 	if err != nil {
 		return nil, fmt.Errorf("list handoff %d items: %w", handoffID, err)
 	}
@@ -668,14 +692,18 @@ func listHandoffItems(ctx context.Context, q issueQuerier, handoffID int64) ([]*
 			it                     HandoffItem
 			deliver                sql.NullInt64
 			raw, outcome, at, byAs sql.NullString
+			issueRaw               sql.NullString
 		)
-		if err := rows.Scan(&it.HandoffID, &it.IssueID, &deliver, &raw, &outcome, &at, &byAs, &it.Note); err != nil {
+		if err := rows.Scan(&it.HandoffID, &it.IssueID, &deliver, &raw, &outcome, &at, &byAs, &it.Note, &issueRaw); err != nil {
 			return nil, fmt.Errorf("scan handoff item: %w", err)
 		}
 		if deliver.Valid {
 			it.DeliveryTaskID = &deliver.Int64
 		}
 		if it.Delivery, err = unmarshalDelivery(raw); err != nil {
+			return nil, fmt.Errorf("handoff %d issue %d: %w", it.HandoffID, it.IssueID, err)
+		}
+		if it.Issue, err = unmarshalIssueSnapshot(issueRaw.String, issueRaw.Valid); err != nil {
 			return nil, fmt.Errorf("handoff %d issue %d: %w", it.HandoffID, it.IssueID, err)
 		}
 		it.Outcome, it.OutcomeBy = HandoffOutcome(outcome.String), HandoffOutcomeBy(byAs.String)

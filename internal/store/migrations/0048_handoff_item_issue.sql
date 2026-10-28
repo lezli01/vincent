@@ -1,0 +1,11 @@
+-- 0048_handoff_item_issue: the issue a handoff item claimed, frozen at claim
+-- time (task 137.8, issue #841, spec §5.7, §8.4; task 137 decision 7).
+--
+-- `issue_json` is a store.IssueSnapshot — the same shape tasks.issue_json
+-- holds, thread included — written in the transaction that claims the item
+-- and snapshots its delivery. It is what `.Handoff.Items[].Issue` and
+-- `$VINCENT_HANDOFF_FILE` render, so a render stays a pure function of rows
+-- and a retry sees the issue the handoff was handed, not the issue as it is
+-- now. NULL on the items claimed before this migration, which render from the
+-- issue row instead.
+ALTER TABLE handoff_items ADD COLUMN issue_json TEXT;

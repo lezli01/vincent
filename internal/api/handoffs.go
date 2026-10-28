@@ -16,6 +16,8 @@ import (
 
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -120,6 +122,9 @@ type handoffBody struct {
 	CreatedAt time.Time         `json:"created_at"`
 	Items     []handoffItemBody `json:"items,omitempty"`
 	Task      *taskResponse     `json:"task,omitempty"`
+	// File is $VINCENT_HANDOFF_FILE's content (task 137.8), on GET
+	// /v1/handoffs/{id} only.
+	File json.RawMessage `json:"file,omitempty"`
 }
 
 func renderHandoff(h *store.Handoff, items []*store.HandoffItem) handoffBody {
@@ -246,6 +251,15 @@ func (s *Server) handleHandoffCreate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	prep, ok := s.prepareTaskCreate(ctx, w, &treq, "", false)
 	if !ok {
+		return
+	}
+	// The other half of task 137.8's decision 3: a handoff runs only a
+	// workflow that declares itself one, so `.Handoff` is never zero on a
+	// `role: handoff` run and never set on any other.
+	if !prep.workflow.IsHandoff() {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf(
+			"workflow %q is not a handoff workflow: a handoff runs only a workflow declaring role: %s",
+			prep.workflow.Name, workflow.RoleHandoff))
 		return
 	}
 	t := prep.task
@@ -447,7 +461,16 @@ func (s *Server) handleHandoffGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.State = state
-	writeJSON(w, http.StatusOK, renderHandoff(h, items))
+	body := renderHandoff(h, items)
+	// The one read that carries the file (task 137.8): a list row has no
+	// items, and the create's answer is the task to follow.
+	file, err := taskrun.HandoffFile(ctx, s.deps.Store, h, items)
+	if err != nil {
+		s.internalError(w, "build handoff file", err)
+		return
+	}
+	body.File = file
+	writeJSON(w, http.StatusOK, body)
 }
 
 func capabilityNames() []string {

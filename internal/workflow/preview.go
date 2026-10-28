@@ -69,6 +69,10 @@ func SentinelItem(path string) string { return "<item." + path + ">" }
 type PreviewInput struct {
 	Task    TaskContext
 	Project ProjectContext
+	// Handoff is `.Handoff` as `--handoff-file` or a `--task` bound to a
+	// handoff task supplied it (task 137.8); zero otherwise, which is what
+	// every task outside a handoff renders with.
+	Handoff HandoffContext
 }
 
 // NewPreviewContext builds the shared part of a dry run's render context: the
@@ -101,6 +105,7 @@ func NewPreviewContext(wf *Workflow, in PreviewInput) RenderContext {
 		Project:     project,
 		Steps:       previewSteps(wf),
 		Host:        HostContext{OS: runtime.GOOS, Arch: runtime.GOARCH},
+		Handoff:     in.Handoff,
 		Worktree:    WorktreeContext{Path: SentinelWorktree},
 		LastFailure: Failure{Reason: SentinelFailureReason, Output: SentinelFailureOutput},
 	}
