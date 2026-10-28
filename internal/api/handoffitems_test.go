@@ -177,3 +177,58 @@ func TestHandoffDeliverImportedByAgent(t *testing.T) {
 		t.Errorf("item = %+v", it)
 	}
 }
+
+// TestHandoffDeliverImportedUnderAGrant (review F1): the handoff's own task,
+// granted issue.close and issue.comment, delivers an imported item with a
+// comment and a close; both are made as `handoff` and enqueued for GitHub,
+// as `vincent issue close` and `issue comment` would make them. An agent
+// that is not the handoff's task stays refused.
+func TestHandoffDeliverImportedUnderAGrant(t *testing.T) {
+	h := newActionHarness(t)
+	ctx := t.Context()
+	iss, _, err := h.store.UpsertRemoteIssue(ctx, store.RemoteIssue{
+		ProjectID: h.projectID, Provider: "github", RemoteKey: "gh-1", Repo: "o/r", Number: 1,
+		Title: "imported", State: issuestate.Open,
+	}, issuestate.Sync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := h.createTask(t, map[string]any{"project_id": h.projectID, "issue_id": iss.ID})
+	setState(t, h, task.ID, store.TaskRunning)
+	dl := &store.Delivery{Kind: store.DeliveryChange, Title: "x", HeadSHA: "abc", RecordedAt: time.Now().UTC()}
+	if _, _, err := h.store.TransitionTask(ctx, task.ID, store.TaskRunning, store.TaskDone, store.TaskChange{Delivery: dl}); err != nil {
+		t.Fatal(err)
+	}
+	ho := wantStatus(t, http.StatusCreated)(h.postMarked(t, "/v1/handoffs", map[string]any{
+		"project_id": h.projectID, "workflow": handoffWorkflowName, "issue_ids": []int64{iss.ID}, "paused": true,
+		"grant": []string{"issue.close", "issue.comment"},
+	}))
+	path := itemVerbPath(ho.ID, strconv.FormatInt(iss.ID, 10), "deliver")
+	body := map[string]any{"comment": "shipped"}
+
+	resp, raw := h.postMarked(t, path, body, headerTaskMarker, strconv.FormatInt(task.ID, 10))
+	wantReason(t, "another task's deliver", resp, raw, issueReasonForgeWrite)
+
+	got := wantStatus(t, http.StatusOK)(h.postMarked(t, path, body, headerTaskMarker, strconv.FormatInt(ho.TaskID, 10)))
+	if it := outcomeOf(t, got, iss.ID); it.Outcome != "delivered" || it.OutcomeBy != "handoff" {
+		t.Errorf("item = %+v", it)
+	}
+	closed, err := h.store.GetIssue(ctx, iss.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issuestate.Normalize(closed.State) != issuestate.Closed {
+		t.Errorf("issue state = %s, want closed", closed.State)
+	}
+	writes, err := h.store.IssueWrites(ctx, iss.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := map[string]issuestate.Actor{}
+	for _, w := range writes {
+		ops[w.Op] = w.Origin
+	}
+	if len(writes) != 2 || ops["set_state"] != issuestate.Handoff || ops["add_comment"] != issuestate.Handoff {
+		t.Errorf("outbox = %+v, want set_state and add_comment by handoff", ops)
+	}
+}

@@ -3351,8 +3351,10 @@ each issue first.
 
 Each command is all or nothing: one refused item or side effect — an item
 already delivered, returned or released, a workflow step closing or
-commenting on an issue imported from GitHub, a follow-up its task cannot take
-— records nothing for any of them. When the handoff's task settles, every
+commenting on an issue imported from GitHub without its handoff's grant, a
+follow-up its task cannot take — records nothing for any of them. The
+handoff's own task, granted `issue.close` or `issue.comment`, may close or
+comment on its imported items; those writes are queued for GitHub. When the handoff's task settles, every
 item still unresolved is released.
 
 ## `vincent gc`

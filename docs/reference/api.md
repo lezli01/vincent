@@ -3461,7 +3461,9 @@ A call is **all or nothing**: one refusal records nothing for any item.
 `409 invalid_state` with `handoff_item_resolved` for an item already
 delivered, returned or released (or one that is not waiting, once the
 handoff has settled); `forge_write_needs_human` for a step's `close` or
-`comment` on an issue imported from GitHub; `issue_mirrored` for a human's
+`comment` on an issue imported from GitHub, unless the step is the
+handoff's own task and its grant names `issue.close` or `issue.comment` —
+then the write is made as `handoff` and queued for GitHub; `issue_mirrored` for a human's
 comment on one; and a follow-up's own refusals. `404` for an unknown handoff
 or an issue that is not one of its items.
 

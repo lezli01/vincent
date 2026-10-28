@@ -382,7 +382,9 @@ frees its issues; a `done` one that forgot an item does too, visibly.
 1. **All or nothing.** A verb whose side effect is refused records nothing: no
    outcome, the claim kept, no comment posted. A step's `deliver --close` or
    `--comment-file` on an imported issue is refused `forge_write_needs_human`
-   until 137.7's grant, as a step's `vincent issue close` is. The outcome,
+   unless 137.7's grant names `issue.close` / `issue.comment`, as a step's
+   `vincent issue close` is; a granted one is made as `handoff` (wired in
+   review F1 of the 137.6–137.8 train). The outcome,
    the claim, readiness, the issue's comment and close (with the outbox
    enqueue of a human's close of an imported issue) and the follow-up's
    re-admission are one store transaction. `--all` checks every item before

@@ -134,6 +134,9 @@ func (s *Server) handoffItemVerb(w http.ResponseWriter, r *http.Request, outcome
 	if outcome == store.HandoffDelivered && req.Close != handoffCloseNone {
 		v.Close, v.CloseReason = true, issuestate.Reason(req.Close)
 	}
+	if !s.grantHandoffItemWrites(ctx, w, r, &v) {
+		return
+	}
 	v.Check = handoffItemCheck(v)
 	if req.FollowUp != "" && !s.prepareHandoffReturn(ctx, w, r, &v, &req) {
 		return
@@ -155,19 +158,76 @@ func (s *Server) handoffItemVerb(w http.ResponseWriter, r *http.Request, outcome
 	writeJSON(w, http.StatusOK, renderHandoff(res.Handoff, items))
 }
 
+// grantHandoffItemWrites asks the forge-write guard (task 137.7) about an
+// agent's comment and close on each item the verb will move, as `vincent
+// issue comment` and `issue close` ask it: a write that reaches the forge —
+// a comment on a live-remote thread, a close of an open issue that writes
+// back — needs a grant naming store.CapIssueComment or store.CapIssueClose,
+// and a granted one is made as issuestate.Handoff. It reads before the
+// transaction, which cannot call the guard; handoffItemCheck asks again
+// inside it, so an import landing between the two is refused, never let
+// through. A refusal is written to w and reported as false.
+func (s *Server) grantHandoffItemWrites(ctx context.Context, w http.ResponseWriter, r *http.Request, v *store.HandoffVerb) bool {
+	if v.IssueActor != issuestate.Agent || (v.Comment == "" && !v.Close) {
+		return true
+	}
+	items, err := s.deps.Store.HandoffVerbItems(ctx, *v)
+	if err != nil {
+		s.writeHandoffItemError(w, err)
+		return false
+	}
+	svc := issues.New(s.deps.Store)
+	for _, it := range items {
+		if it.Outcome == v.Outcome {
+			continue
+		}
+		iss, err := s.deps.Store.GetIssue(ctx, it.IssueID)
+		if err != nil {
+			s.writeHandoffItemError(w, err)
+			return false
+		}
+		var caps []store.Capability
+		if v.Comment != "" && issues.ThreadMirrored(iss) {
+			caps = append(caps, store.CapIssueComment)
+		}
+		if v.Close && issues.WritesBack(iss) && issuestate.Normalize(iss.State) != issuestate.Closed {
+			caps = append(caps, store.CapIssueClose)
+		}
+		for _, c := range caps {
+			verdict, err := svc.ForgeWrite(ctx, forgeCaller(r), c, issues.Target{IssueID: iss.ID})
+			if err != nil {
+				s.writeHandoffItemError(w, err)
+				return false
+			}
+			if v.CommentCloseActors == nil {
+				v.CommentCloseActors = map[int64]issuestate.Actor{}
+			}
+			v.CommentCloseActors[iss.ID] = verdict.By
+		}
+	}
+	return true
+}
+
 // handoffItemCheck is the verb's per-issue refusal, asked inside the
 // transaction before anything is written: the forge-write rule of a step's
 // `issue close` and `issue comment` holds for the same writes made through a
-// verb (task 137 decision 1, until 137.7's grant).
+// verb (task 137 decision 1). An agent's write that reaches the forge passes
+// only where grantHandoffItemWrites found a grant; a human's comment on a
+// live-remote thread stays refused, as on the issue route.
 func handoffItemCheck(v store.HandoffVerb) func(*store.Issue) error {
 	return func(iss *store.Issue) error {
-		if v.Comment != "" && issues.ThreadMirrored(iss) {
-			if v.IssueActor == issuestate.Agent {
+		by := v.IssueActor
+		if a, ok := v.CommentCloseActors[iss.ID]; ok {
+			by = a
+		}
+		if v.Comment != "" && issues.ThreadMirrored(iss) &&
+			(by != issuestate.Handoff || !issues.WritesBack(iss)) {
+			if by == issuestate.Agent {
 				return fmt.Errorf("issue %d: %w", iss.ID, issues.ErrForgeWriteNeedsHuman)
 			}
 			return fmt.Errorf("issue %d: %w", iss.ID, issues.ErrMirrored)
 		}
-		if v.Close && v.IssueActor == issuestate.Agent && issues.WritesBack(iss) &&
+		if v.Close && by == issuestate.Agent && issues.WritesBack(iss) &&
 			issuestate.Normalize(iss.State) != issuestate.Closed {
 			return fmt.Errorf("issue %d: %w", iss.ID, issues.ErrForgeWriteNeedsHuman)
 		}

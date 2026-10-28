@@ -1534,8 +1534,13 @@ readiness withdrawal, the comment, the close (and its outbox enqueue) and the
 follow-up or side task are one store transaction, every item is judged before
 any is written, and one refusal — an item already `delivered`, `returned` or
 `released` (`409 handoff_item_resolved`), a step's close or comment on an
-imported issue (`forge_write_needs_human`, until 137.7), a follow-up its task
-cannot take — records nothing for any of them. On a settled handoff only
+imported issue the step's handoff was not granted (`forge_write_needs_human`),
+a follow-up its task cannot take — records nothing for any of them.
+*Amended 2026-10-28 (task 137.7, review F1):* a verb's close and comment ask
+the forge-write guard as `issue close` and `issue comment` do — a close of an
+open issue that writes back needs `issue.close`, a comment on a live-remote
+thread `issue.comment` — and a granted one is made as `handoff` and enqueued
+for GitHub. On a settled handoff only
 `waiting` items move. `outcome_by` has its own vocabulary,
 `store.HandoffOutcomeBy`: `handoff` when the caller is the handoff's own task
 (MCP creator or `X-Vincent-Task-Id`, best-effort per §16), `agent` for any

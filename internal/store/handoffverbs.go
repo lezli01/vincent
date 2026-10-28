@@ -93,7 +93,13 @@ type HandoffVerb struct {
 	By       HandoffOutcomeBy
 	// IssueActor is the actor of the issue writes the verb makes.
 	IssueActor issuestate.Actor
-	Note       string
+	// CommentCloseActors overrides IssueActor for an issue's comment and
+	// close, by issue id: issuestate.Handoff where the forge-write guard
+	// granted an agent's write that reaches the forge (task 137.7), so it is
+	// attributed and enqueued as `vincent issue close` and `issue comment`
+	// would make it.
+	CommentCloseActors map[int64]issuestate.Actor
+	Note               string
 	// Comment, when not empty, is posted on each issue as CommentAuthor
 	// before anything else is written to it.
 	Comment, CommentAuthor string
@@ -187,6 +193,11 @@ func (s *Store) ResolveHandoffItems(ctx context.Context, v HandoffVerb) (*Handof
 	if err := checkActor(v.IssueActor); err != nil {
 		return nil, err
 	}
+	for _, a := range v.CommentCloseActors {
+		if err := checkActor(a); err != nil {
+			return nil, err
+		}
+	}
 	ctx = WithIssueHandoff(ctx, v.HandoffID)
 	res := &HandoffVerbResult{}
 	var evs []*Event
@@ -237,9 +248,13 @@ func (s *Store) ResolveHandoffItems(ctx context.Context, v HandoffVerb) (*Handof
 				res.Items = append(res.Items, it)
 				continue
 			}
+			writeAs := v.IssueActor
+			if a, ok := v.CommentCloseActors[iss.ID]; ok {
+				writeAs = a
+			}
 			if v.Comment != "" {
 				c := &IssueComment{IssueID: iss.ID, Author: v.CommentAuthor, Body: v.Comment, CreatedAt: now, UpdatedAt: now}
-				ev, enq, err := addIssueCommentTx(ctx, tx, c, v.IssueActor)
+				ev, enq, err := addIssueCommentTx(ctx, tx, c, writeAs)
 				if err != nil {
 					return err
 				}
@@ -256,7 +271,7 @@ func (s *Store) ResolveHandoffItems(ctx context.Context, v HandoffVerb) (*Handof
 				if reason == "" {
 					reason = issuestate.Completed
 				}
-				closed, enq, err := transitionIssueTx(ctx, tx, iss.ID, issuestate.Close, reason, nil, v.IssueActor, false)
+				closed, enq, err := transitionIssueTx(ctx, tx, iss.ID, issuestate.Close, reason, nil, writeAs, false)
 				if err != nil {
 					return err
 				}
