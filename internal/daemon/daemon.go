@@ -206,10 +206,11 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	requestStop := func() { stopOnce.Do(func() { close(stopRequested) }) }
 
 	// Agent adapters, from the one shipped list (internal/agent/builtin):
-	// paths ride the live config so hot-reloaded paths reach future runs. Availability and option catalogs are served from the
-	// §9.6 binary-identity cache — primed asynchronously here, stat-checked
-	// per request, so a CLI installed after daemon start is visible without
-	// a restart (T2.11).
+	// paths ride the live config so hot-reloaded paths reach future runs.
+	// Availability and option catalogs are served from the §9.6
+	// binary-identity cache — primed asynchronously here, stat-checked per
+	// request, so a CLI installed after daemon start is visible without a
+	// restart (T2.11).
 	if agents == nil {
 		agents = builtin.New(builtin.ConfigPaths(currentConfig))
 	}
