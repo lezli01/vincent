@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issues"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -26,10 +28,16 @@ import (
 // name.
 //
 // Decision record row 11 as rewritten: every write is a human's act. All five
-// routes are excluded from the MCP tool surface (§13.4), because "the keypress
-// is the consent" only holds while a human presses it and `mcp.wire_steps`
-// would otherwise put these writes on the step path. A step's agent keeps its
-// own path — `gh pr merge` in its full-auto worktree.
+// routes are excluded from the shared MCP tool surface (§13.4), because "the
+// keypress is the consent" only holds while a human presses it. A step's
+// agent keeps its own path — `gh pr merge` in its full-auto worktree.
+// *Narrowed 2026-10-28 (task 137 decision 6, 137.7):* every route first asks
+// the one forge-write guard (issues.ForgeWrite), before any `gh` call. A
+// caller reading as an agent — an MCP call, a step's or a chat's marker — is
+// refused 409 forge_write_needs_human unless it is a live handoff's task
+// whose human-given grant names the route's capability and whose scope
+// covers this task; such a write is simply allowed. Before 137.7 a step's
+// `vincent github pr merge` was accepted as a human's.
 //
 // There is no task-state guard and no idempotency key (task 069 decisions 4
 // and 7 carry over). A running task's pull request may be merged; a double
@@ -67,6 +75,9 @@ type githubPullRerun struct {
 func (s *Server) handleTaskGitHubPullMerge(w http.ResponseWriter, r *http.Request) {
 	task, ok := s.taskFromPath(w, r)
 	if !ok {
+		return
+	}
+	if !s.pullWriteAllowed(w, r, task, store.CapPullMerge) {
 		return
 	}
 	var req githubPullMergeRequest
@@ -116,6 +127,9 @@ func (s *Server) setTaskGitHubPullState(w http.ResponseWriter, r *http.Request, 
 	if !ok {
 		return
 	}
+	if !s.pullWriteAllowed(w, r, task, store.CapPullClose) {
+		return
+	}
 	gate, ok := s.githubPullWriteGate(w, r, task)
 	if !ok {
 		return
@@ -132,6 +146,9 @@ func (s *Server) setTaskGitHubPullState(w http.ResponseWriter, r *http.Request, 
 func (s *Server) handleTaskGitHubPullComment(w http.ResponseWriter, r *http.Request) {
 	task, ok := s.taskFromPath(w, r)
 	if !ok {
+		return
+	}
+	if !s.pullWriteAllowed(w, r, task, store.CapPullComment) {
 		return
 	}
 	var req githubPullCommentRequest
@@ -163,6 +180,9 @@ func (s *Server) handleTaskGitHubPullRerun(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	if !s.pullWriteAllowed(w, r, task, store.CapChecksRerun) {
+		return
+	}
 	var req githubPullRerun
 	if !decodeJSONLimit(w, r, &req, maxRequestBytes) {
 		return
@@ -181,6 +201,24 @@ func (s *Server) handleTaskGitHubPullRerun(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, req)
+}
+
+// pullWriteAllowed asks the forge-write guard whether the caller may make a
+// pull-request write of capability on task, and writes the refusal when it
+// may not (task 137.7). It runs before the gate and the body: a refused
+// caller learns nothing about the integration, and nothing reaches `gh`.
+// reopen shares close's capability, as the grant vocabulary has it.
+func (s *Server) pullWriteAllowed(w http.ResponseWriter, r *http.Request, task *store.Task, capability store.Capability) bool {
+	_, err := issues.New(s.deps.Store).ForgeWrite(r.Context(), forgeCaller(r), capability, issues.Target{TaskID: task.ID})
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, issues.ErrForgeWriteNeedsHuman):
+		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonForgeWrite})
+	default:
+		s.internalError(w, "check forge write", err)
+	}
+	return false
 }
 
 // githubPullWriteGate runs the §13.2 gate and then the link check, and writes

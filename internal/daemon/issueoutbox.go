@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,14 @@ import (
 // the row being settled is harmless: the restarted drain finds GitHub at
 // the desired value and settles it done. Rows survive a restart because
 // they are rows.
+//
+// An add_comment row (task 137.7) is a granted handoff's comment. It has no
+// compare-and-set — a comment is appended, not a value GitHub could already
+// hold — so it is posted, and GitHub's comment id is recorded on the local
+// comment, which the comment sync then updates in place rather than
+// importing a copy. Its failures follow set_state's classes. A crash between
+// the post and the settle posts the comment again on restart: the one write
+// here that is at-least-once, and visible rather than lost.
 //
 // The config gates are the importer's: with `github.enabled: false` or
 // `poll_interval: 0` nothing is called and every pending row stays pending
@@ -188,6 +197,10 @@ func (o *IssueOutbox) send(ctx context.Context, row *store.IssueOutbox) {
 		o.settle(ctx, row, store.OutboxFailed, github.ReasonBadRequest, nil)
 		return
 	}
+	if row.Op == store.OutboxOpAddComment {
+		o.sendComment(ctx, row, repo, rem)
+		return
+	}
 	cur, err := o.client.GetIssue(ctx, repo, rem.Number)
 	if err != nil {
 		o.retry(ctx, row, err)
@@ -213,6 +226,44 @@ func (o *IssueOutbox) send(ctx context.Context, row *store.IssueOutbox) {
 	o.settle(ctx, row, store.OutboxDone, "", &written)
 	o.logger.Info("issue state written to GitHub", "issue", row.IssueID, "repo", rem.Repo,
 		"number", rem.Number, "state", written.State, "state_reason", written.Reason)
+}
+
+// sendComment posts an add_comment row's comment and records its key.
+func (o *IssueOutbox) sendComment(ctx context.Context, row *store.IssueOutbox, repo github.Repo, rem *store.IssueRemote) {
+	if row.CommentID == nil {
+		o.settle(ctx, row, store.OutboxFailed, github.ReasonBadRequest, nil)
+		return
+	}
+	c, err := o.store.GetIssueComment(ctx, *row.CommentID)
+	if errors.Is(err, store.ErrNotFound) {
+		o.settle(ctx, row, store.OutboxFailed, outboxReasonGone, nil)
+		return
+	}
+	if err != nil {
+		o.logger.Warn("issue write-back: comment not read", "comment", *row.CommentID, "error", err)
+		return
+	}
+	if c.RemoteKey != "" {
+		// Already on GitHub: a settle that did not land last time.
+		if _, err := o.store.SettleIssueCommentWrite(ctx, row.ID, c.RemoteKey); err != nil {
+			o.logger.Warn("issue write-back: comment write not settled", "write", row.ID, "error", err)
+		}
+		return
+	}
+	o.pace(ctx)
+	posted, err := o.client.CreateIssueComment(ctx, repo, rem.Number, c.Body)
+	o.lastWrite = o.now()
+	if err != nil {
+		o.retry(ctx, row, err)
+		return
+	}
+	key := strconv.FormatInt(posted.ID, 10)
+	if _, err := o.store.SettleIssueCommentWrite(ctx, row.ID, key); err != nil {
+		o.logger.Warn("issue write-back: comment write not settled", "write", row.ID, "error", err)
+		return
+	}
+	o.logger.Info("issue comment written to GitHub", "issue", row.IssueID, "repo", rem.Repo,
+		"number", rem.Number, "comment", c.ID, "remote_key", key)
 }
 
 // adopt is GitHub winning a true conflict: the row ends conflict, so the

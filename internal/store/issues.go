@@ -979,38 +979,50 @@ func (s *Store) AddIssueComment(ctx context.Context, issueID int64, author, body
 	}
 	now := time.Now()
 	c := &IssueComment{IssueID: issueID, Author: author, Body: body, RemoteKey: remoteKey, CreatedAt: now, UpdatedAt: now}
+	enqueued := false
 	err := s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
-		return addIssueCommentTx(ctx, tx, c, by)
+		ev, enq, err := addIssueCommentTx(ctx, tx, c, by)
+		enqueued = enq
+		return ev, err
 	})
 	if err != nil {
 		return nil, err
+	}
+	if enqueued {
+		s.kickOutbox()
 	}
 	return c, nil
 }
 
 // addIssueCommentTx inserts c inside the caller's transaction, fills its
-// id, and returns its issue.comment_added event, not yet appended.
-func addIssueCommentTx(ctx context.Context, tx *sql.Tx, c *IssueComment, by issuestate.Actor) (*Event, error) {
-	var projectID int64
-	err := tx.QueryRowContext(ctx, `SELECT project_id FROM issues WHERE id = ?`, c.IssueID).Scan(&projectID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("issue %d: %w", c.IssueID, ErrNotFound)
-	}
+// id, and returns its issue.comment_added event, not yet appended, and
+// whether it enqueued an add_comment outbox row the caller must kick.
+func addIssueCommentTx(ctx context.Context, tx *sql.Tx, c *IssueComment, by issuestate.Actor) (*Event, bool, error) {
+	cur, err := getIssue(ctx, tx, c.IssueID)
 	if err != nil {
-		return nil, fmt.Errorf("read issue %d: %w", c.IssueID, err)
+		return nil, false, err
 	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO issue_comments (issue_id, author, body, remote_key, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		c.IssueID, c.Author, c.Body, nullString(c.RemoteKey), formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
 	if err != nil {
-		return nil, fmt.Errorf("insert issue comment: %w", err)
+		return nil, false, fmt.Errorf("insert issue comment: %w", err)
 	}
 	if c.ID, err = res.LastInsertId(); err != nil {
-		return nil, fmt.Errorf("insert issue comment: %w", err)
+		return nil, false, fmt.Errorf("insert issue comment: %w", err)
 	}
-	return issueEvent(EventIssueCommentAdded, projectID, c.IssueID, by,
+	// A granted handoff's comment on a live GitHub thread is promised to
+	// GitHub in the same commit (task 137.7), crash-first like a close.
+	enqueued := false
+	if c.RemoteKey == "" {
+		if enqueued, err = enqueueCommentWriteTx(ctx, tx, cur, c.ID, by, c.CreatedAt); err != nil {
+			return nil, false, err
+		}
+	}
+	ev, err := issueEvent(EventIssueCommentAdded, cur.ProjectID, c.IssueID, by,
 		issueHandoffExtra(ctx, map[string]any{"comment_id": c.ID}))
+	return ev, enqueued, err
 }
 
 // ListIssueComments returns an issue's comments, oldest first.
@@ -1045,4 +1057,31 @@ func (s *Store) ListIssueComments(ctx context.Context, issueID int64) ([]*IssueC
 		return nil, fmt.Errorf("list issue comments: %w", err)
 	}
 	return out, nil
+}
+
+// GetIssueComment returns one comment by id; ErrNotFound when it does not
+// exist. The outbox drain reads an add_comment row's body through it.
+func (s *Store) GetIssueComment(ctx context.Context, id int64) (*IssueComment, error) {
+	var (
+		c                IssueComment
+		remoteKey        sql.NullString
+		created, updated string
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, issue_id, author, body, remote_key, created_at, updated_at
+		FROM issue_comments WHERE id = ?`, id).Scan(&c.ID, &c.IssueID, &c.Author, &c.Body, &remoteKey, &created, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("issue comment %d: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get issue comment %d: %w", id, err)
+	}
+	c.RemoteKey = remoteKey.String
+	if c.CreatedAt, err = parseTime(created); err != nil {
+		return nil, err
+	}
+	if c.UpdatedAt, err = parseTime(updated); err != nil {
+		return nil, err
+	}
+	return &c, nil
 }

@@ -26,10 +26,16 @@ const (
 	OutboxSuperseded = "superseded"
 )
 
-// OutboxOpSetState is the one operation the outbox carries in v1: title,
-// body, labels and comments are a read-only mirror and are never written
-// back (task 130 decision 9).
-const OutboxOpSetState = "set_state"
+// Outbox operations. OutboxOpSetState is a close or reopen; title, body
+// and labels are a read-only mirror and are never written back (task 130
+// decision 9). OutboxOpAddComment is a granted handoff's comment (task 137
+// decision 6, 137.7): the one comment write-back there is — a human's or an
+// ungranted agent's comment on a live-remote thread is still refused
+// (decision 24.3).
+const (
+	OutboxOpSetState   = "set_state"
+	OutboxOpAddComment = "add_comment"
+)
 
 // outboxProvider is the provider whose remotes write back. It is the
 // importer's provider column value.
@@ -78,7 +84,10 @@ type IssueOutbox struct {
 	NextAttemptAt          time.Time
 	LastReason             string
 	Origin                 issuestate.Actor
-	CreatedAt, UpdatedAt   time.Time
+	// CommentID is the local comment an add_comment row posts; nil on a
+	// set_state row, whose Desired and Base are the only payload.
+	CommentID            *int64
+	CreatedAt, UpdatedAt time.Time
 }
 
 // IssueOutboxCounts is a project's write-back health: issues whose newest
@@ -137,8 +146,8 @@ func enqueueStateWriteTx(ctx context.Context, tx *sql.Tx, cur *Issue, to issuest
 	base := GitHubStateOf(cur.State, cur.CloseReason)
 	var baseJSON string
 	err := tx.QueryRowContext(ctx, `
-		SELECT base_json FROM issue_sync_outbox WHERE issue_id = ? AND status = ? ORDER BY id DESC LIMIT 1`,
-		cur.ID, OutboxPending).Scan(&baseJSON)
+		SELECT base_json FROM issue_sync_outbox WHERE issue_id = ? AND op = ? AND status = ? ORDER BY id DESC LIMIT 1`,
+		cur.ID, OutboxOpSetState, OutboxPending).Scan(&baseJSON)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
@@ -148,8 +157,8 @@ func enqueueStateWriteTx(ctx context.Context, tx *sql.Tx, cur *Issue, to issuest
 			return false, fmt.Errorf("decode pending write of issue %d: %w", cur.ID, err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE issue_sync_outbox SET status = ?, updated_at = ? WHERE issue_id = ? AND status = ?`,
-			OutboxSuperseded, formatTime(now), cur.ID, OutboxPending); err != nil {
+			UPDATE issue_sync_outbox SET status = ?, updated_at = ? WHERE issue_id = ? AND op = ? AND status = ?`,
+			OutboxSuperseded, formatTime(now), cur.ID, OutboxOpSetState, OutboxPending); err != nil {
 			return false, fmt.Errorf("supersede pending write of issue %d: %w", cur.ID, err)
 		}
 	}
@@ -186,8 +195,8 @@ func enqueueStateWriteTx(ctx context.Context, tx *sql.Tx, cur *Issue, to issuest
 // it, and GitHub is the authority again.
 func holdsLocalStateTx(ctx context.Context, tx *sql.Tx, issueID int64, remote IssueStateValue) (bool, error) {
 	var status, baseJSON string
-	err := tx.QueryRowContext(ctx, `SELECT status, base_json FROM issue_sync_outbox WHERE issue_id = ? ORDER BY id DESC LIMIT 1`,
-		issueID).Scan(&status, &baseJSON)
+	err := tx.QueryRowContext(ctx, `SELECT status, base_json FROM issue_sync_outbox WHERE issue_id = ? AND op = ?
+		ORDER BY id DESC LIMIT 1`, issueID, OutboxOpSetState).Scan(&status, &baseJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -208,7 +217,7 @@ func holdsLocalStateTx(ctx context.Context, tx *sql.Tx, issueID int64, remote Is
 }
 
 const outboxSelect = `SELECT o.id, o.issue_id, i.project_id, o.op, o.desired_json, o.base_json, o.status,
-	o.attempts, o.next_attempt_at, o.last_reason, o.origin, o.created_at, o.updated_at
+	o.attempts, o.next_attempt_at, o.last_reason, o.origin, o.comment_id, o.created_at, o.updated_at
 	FROM issue_sync_outbox o JOIN issues i ON i.id = o.issue_id`
 
 func scanOutbox(r rowScanner) (*IssueOutbox, error) {
@@ -216,10 +225,14 @@ func scanOutbox(r rowScanner) (*IssueOutbox, error) {
 		o                     IssueOutbox
 		desired, base, origin string
 		next, created, upd    string
+		commentID             sql.NullInt64
 	)
 	if err := r.Scan(&o.ID, &o.IssueID, &o.ProjectID, &o.Op, &desired, &base, &o.Status, &o.Attempts,
-		&next, &o.LastReason, &origin, &created, &upd); err != nil {
+		&next, &o.LastReason, &origin, &commentID, &created, &upd); err != nil {
 		return nil, err
+	}
+	if commentID.Valid {
+		o.CommentID = &commentID.Int64
 	}
 	o.Origin = issuestate.Actor(origin)
 	if err := json.Unmarshal([]byte(desired), &o.Desired); err != nil {
@@ -281,8 +294,10 @@ func (s *Store) IssueWrites(ctx context.Context, issueID int64) ([]*IssueOutbox,
 	return queryOutbox(ctx, s.db, outboxSelect+` WHERE o.issue_id = ? ORDER BY o.id`, issueID)
 }
 
-// loadIssueSync fills each issue's Sync with its newest write that was not
-// superseded. Local issues are not asked about: they never have one.
+// loadIssueSync fills each issue's Sync with its newest state write that
+// was not superseded. Local issues are not asked about: they never have
+// one. A comment write is not the issue's sync state: it is about one
+// comment, and the project's counts carry its failure.
 func loadIssueSync(ctx context.Context, q issueQuerier, issues []*Issue) error {
 	byID := map[int64]*Issue{}
 	var ids []any
@@ -295,8 +310,8 @@ func loadIssueSync(ctx context.Context, q issueQuerier, issues []*Issue) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	rows, err := queryOutbox(ctx, q, outboxSelect+` WHERE o.status != ? AND o.issue_id IN `+placeholders(len(ids))+
-		` ORDER BY o.id`, append([]any{OutboxSuperseded}, ids...)...)
+	rows, err := queryOutbox(ctx, q, outboxSelect+` WHERE o.op = ? AND o.status != ? AND o.issue_id IN `+
+		placeholders(len(ids))+` ORDER BY o.id`, append([]any{OutboxOpSetState, OutboxSuperseded}, ids...)...)
 	if err != nil {
 		return err
 	}
@@ -387,8 +402,8 @@ func rebaseSuccessorTx(ctx context.Context, tx *sql.Tx, o *IssueOutbox, written 
 	}
 	now := time.Now()
 	res, err := tx.ExecContext(ctx, `
-		UPDATE issue_sync_outbox SET base_json = ?, updated_at = ? WHERE issue_id = ? AND status = ? AND id > ?`,
-		string(bj), formatTime(now), o.IssueID, OutboxPending, o.ID)
+		UPDATE issue_sync_outbox SET base_json = ?, updated_at = ? WHERE issue_id = ? AND op = ? AND status = ? AND id > ?`,
+		string(bj), formatTime(now), o.IssueID, OutboxOpSetState, OutboxPending, o.ID)
 	if err != nil {
 		return false, fmt.Errorf("rebase pending write of issue %d: %w", o.IssueID, err)
 	}
@@ -436,13 +451,14 @@ func syncChangedEvent(o *IssueOutbox) (*Event, error) {
 
 // CountIssueWrites reads a project's write-back health: how many issues'
 // newest write is pending, failed, or ended in a conflict. A write followed
-// by a newer one is history, not health.
+// by a newer one of the same operation is history, not health; a state
+// write and a comment write are counted apart.
 func (s *Store) CountIssueWrites(ctx context.Context, projectID int64) (c IssueOutboxCounts, err error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT o.status, COUNT(*) FROM issue_sync_outbox o JOIN issues i ON i.id = o.issue_id
 		WHERE i.project_id = ? AND o.status IN (?, ?, ?)
 			AND NOT EXISTS (SELECT 1 FROM issue_sync_outbox n
-				WHERE n.issue_id = o.issue_id AND n.id > o.id AND n.status != ?)
+				WHERE n.issue_id = o.issue_id AND n.op = o.op AND n.id > o.id AND n.status != ?)
 		GROUP BY o.status`,
 		projectID, OutboxPending, OutboxFailed, OutboxConflict, OutboxSuperseded)
 	if err != nil {
@@ -474,4 +490,62 @@ func (s *Store) CountIssueWrites(ctx context.Context, projectID int64) (c IssueO
 		return c, fmt.Errorf("count issue writes: %w", err)
 	}
 	return c, nil
+}
+
+// enqueueCommentWriteTx records the write-back of a granted handoff's
+// comment commentID on cur, in tx, the transaction inserting it (task
+// 137.7). Only the handoff actor writes a comment back, and only to an
+// issue that writes back; reports whether a row was inserted. The value
+// columns carry an empty object: a comment is appended, never compared.
+func enqueueCommentWriteTx(ctx context.Context, tx *sql.Tx, cur *Issue, commentID int64, by issuestate.Actor, now time.Time) (bool, error) {
+	if by != issuestate.Handoff || !writesBack(cur.Remote) {
+		return false, nil
+	}
+	stamp := formatTime(now)
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO issue_sync_outbox (issue_id, op, desired_json, base_json, status, next_attempt_at,
+			origin, comment_id, created_at, updated_at)
+		VALUES (?, ?, '{}', '{}', ?, ?, ?, ?, ?, ?)`,
+		cur.ID, OutboxOpAddComment, OutboxPending, stamp, string(by), commentID, stamp, stamp); err != nil {
+		return false, fmt.Errorf("enqueue comment write of issue %d: %w", cur.ID, err)
+	}
+	return true, nil
+}
+
+// SettleIssueCommentWrite ends a pending add_comment row done and records
+// remoteKey — GitHub's id of the comment it posted — on the local comment,
+// in one transaction, so the comment sync's next pass finds the row by its
+// key and updates it in place. A copy that pass already imported under the
+// same key, between the post and this settle, is dropped in favour of the
+// local row: the thread shows the comment once either way. A row no longer
+// pending is not re-settled.
+func (s *Store) SettleIssueCommentWrite(ctx context.Context, id int64, remoteKey string) (settled bool, err error) {
+	if remoteKey == "" {
+		return false, fmt.Errorf("settle comment write %d: empty remote key", id)
+	}
+	err = s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		o, err := getOutboxTx(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		if o.Status != OutboxPending || o.Op != OutboxOpAddComment || o.CommentID == nil {
+			return nil, nil
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM issue_comments WHERE issue_id = ? AND remote_key = ? AND id != ?`,
+			o.IssueID, remoteKey, *o.CommentID); err != nil {
+			return nil, fmt.Errorf("drop imported copy of comment %d: %w", *o.CommentID, err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE issue_comments SET remote_key = ? WHERE id = ?`,
+			remoteKey, *o.CommentID); err != nil {
+			return nil, fmt.Errorf("record remote key of comment %d: %w", *o.CommentID, err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE issue_sync_outbox SET status = ?, last_reason = '', attempts = attempts + 1, updated_at = ?
+			WHERE id = ?`, OutboxDone, formatTime(time.Now()), id); err != nil {
+			return nil, fmt.Errorf("settle comment write %d: %w", id, err)
+		}
+		settled = true
+		return syncChangedEvent(o)
+	})
+	return settled, err
 }

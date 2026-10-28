@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/lezli01/vincent/internal/store"
 )
 
 // Route is one HTTP route, as this package needs to know it: a method, a
@@ -72,6 +74,13 @@ var Excluded = []Route{
 	// Nothing is lost. A step's agent already has a full-auto shell in its own
 	// worktree and can run `git push`, `gh pr create` and `gh pr merge` there,
 	// which is decision record row 11's original path and stays open.
+	//
+	// *Narrowed 2026-10-28 (task 137 decision 6, 137.7):* excluded except on
+	// a granted handoff's step endpoint. A human's grant on a handoff is the
+	// second gate the paragraph above found missing, so the step endpoint of
+	// a live handoff task lists the ones its grant names (Granted). The
+	// shared `/mcp` endpoint and every other step's keep excluding them, and
+	// every call is still judged by the API's forge-write guard.
 	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/create"},
 	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/merge"},
 	{Method: http.MethodPost, Path: "/v1/tasks/{id}/github/pull/close"},
@@ -168,6 +177,27 @@ var Excluded = []Route{
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/files"},
 }
 
+// GrantedRoute is an Excluded forge write that becomes a tool on a granted
+// handoff's step endpoint (task 137.7): listed there only when the
+// handoff's grant names Capability.
+type GrantedRoute struct {
+	Route
+	Capability store.Capability
+}
+
+// Granted is the pull-request write surface a grant can open, one row per
+// Excluded `…/github/pull/*` write. The listing is a convenience that shows
+// what the guard will honour; it enforces nothing — the route's own
+// forge-write guard does.
+var Granted = []GrantedRoute{
+	{Route{http.MethodPost, "/v1/tasks/{id}/github/pull/create", "task_github_pull_create", "Push this task's branch to origin and open its pull request. Body: {title, body?, draft?}. Allowed only because a human granted this handoff pull.create; the task must be the handoff's own or an item's delivering task. Answers {created, pushed, pull?, task?, compare_url?, reason?}."}, store.CapPullCreate},
+	{Route{http.MethodPost, "/v1/tasks/{id}/github/pull/merge", "task_github_pull_merge", "Merge this task's linked pull request. Body: {method, head_sha}; method is merge, squash or rebase, and the merge is refused head_changed unless head_sha is the live head. Allowed only under this handoff's pull.merge grant, in its scope."}, store.CapPullMerge},
+	{Route{http.MethodPost, "/v1/tasks/{id}/github/pull/close", "task_github_pull_close", "Close this task's linked pull request without merging. Body: {}. Allowed only under this handoff's pull.close grant, in its scope."}, store.CapPullClose},
+	{Route{http.MethodPost, "/v1/tasks/{id}/github/pull/reopen", "task_github_pull_reopen", "Reopen this task's closed pull request. Body: {}. Allowed only under this handoff's pull.close grant, in its scope."}, store.CapPullClose},
+	{Route{http.MethodPost, "/v1/tasks/{id}/github/pull/comment", "task_github_pull_comment", "Comment on this task's linked pull request. Body: {body}. Allowed only under this handoff's pull.comment grant, in its scope."}, store.CapPullComment},
+	{Route{http.MethodPost, "/v1/tasks/{id}/github/pull/checks/rerun", "task_github_pull_checks_rerun", "Re-run the failed jobs of one GitHub Actions run on this task's pull request head. Body: {run_id}. Allowed only under this handoff's checks.rerun grant, in its scope."}, store.CapChecksRerun},
+}
+
 // Streaming lists the §13.3 SSE routes. They are not tools because a tool call
 // is a request/response and an event stream is not; WaitTool is what replaces
 // them for an MCP client.
@@ -244,12 +274,12 @@ var routes = []Route{
 	{http.MethodPost, "/v1/issues", "issue_create", "File an issue in a project's backlog. Body: {project_id, title, body?, labels?, kind?, priority?}; priority runs 0 none, 1 urgent to 4 low. The author is recorded as your task; pass idempotency_key so a retry cannot file it twice."},
 	{http.MethodGet, "/v1/issues/{id}", "issue_get", "One issue in full: body, labels, state, lane (open|in_progress|hand_off|done), attention (a root task waits on a human), main_worktree with its occupant and occupant_state, side_active, merge_backs_pending, available_actions, the root tasks working on it (tasks.active_ids), its source when imported, and which fields are editable. Read version from here before issue_patch. Query: workflow adds the prefill a task_create with this issue_id would apply."},
 	{http.MethodPatch, "/v1/issues/{id}", "issue_patch", "Edit an issue. Body: {version, title?, body?, labels?, add_labels?, remove_labels?, kind?, priority?}. version is required and comes from issue_get; labels replaces the set and cannot be combined with add_labels or remove_labels. A stale version is a 409 issue_changed carrying the current issue — re-apply your edit to it. An imported issue's title, body and labels are mirrored and refused (409 issue_mirrored); kind and priority stay editable. State is not a field: use issue_close or issue_reopen."},
-	{http.MethodPost, "/v1/issues/{id}/close", "issue_close", "Close an open issue. Body: {reason?, duplicate_of?}; reason is completed (the default), not_planned or duplicate, and duplicate_of — an issue id in the same project — is only allowed with duplicate. An issue imported from GitHub is refused (409 forge_write_needs_human): its state is written back to GitHub, and only a human may do that — ask them to close it."},
-	{http.MethodPost, "/v1/issues/{id}/reopen", "issue_reopen", "Reopen a closed issue. Body: {}. An issue imported from GitHub is refused (409 forge_write_needs_human), as issue_close is."},
+	{http.MethodPost, "/v1/issues/{id}/close", "issue_close", "Close an open issue. Body: {reason?, duplicate_of?}; reason is completed (the default), not_planned or duplicate, and duplicate_of — an issue id in the same project — is only allowed with duplicate. An issue imported from GitHub has its state written back there, so it is refused (409 forge_write_needs_human) unless your task is a live handoff a human granted issue.close and the issue is one of its items."},
+	{http.MethodPost, "/v1/issues/{id}/reopen", "issue_reopen", "Reopen a closed issue. Body: {}. An issue imported from GitHub is refused (409 forge_write_needs_human) unless your handoff was granted issue.close on it, as issue_close is."},
 	{http.MethodPost, "/v1/issues/{id}/ready", "issue_ready", "Mark the issue's finished work ready to hand off, moving it to the hand_off lane (task 137 decision 13). Body: {}. Already ready is a no-op. Refused with 409 issue_work_running while a root task of it runs, issue_no_finished_work when none has finished, and issue_in_handoff (details.handoff_id) while a handoff claims it."},
 	{http.MethodPost, "/v1/issues/{id}/unready", "issue_unready", "Withdraw an issue from the hand_off lane: it waits in in_progress until marked ready again or new work finishes (task 137 decision 13). Body: {}. Refused as issue_ready is, and with 409 issue_not_hand_off (details.lane) when it is not in hand_off."},
 	{http.MethodGet, "/v1/issues/{id}/comments", "issue_comments", "An issue's discussion thread, oldest first: {comments: [{id, author, body, remote, remote_key?, created_at, updated_at}]}. remote marks a comment mirrored from GitHub, read-only."},
-	{http.MethodPost, "/v1/issues/{id}/comments", "issue_comment", "Add a comment to a local issue. Body: {body}. The author is recorded as your task. Nothing is posted to GitHub: an issue imported from GitHub has a mirrored thread and is refused (409 issue_mirrored), as an edit of its title is."},
+	{http.MethodPost, "/v1/issues/{id}/comments", "issue_comment", "Add a comment to an issue. Body: {body}. The author is recorded as your task. An issue imported from GitHub has a mirrored thread: your comment is refused (409 forge_write_needs_human) unless your task is a live handoff a human granted issue.comment and the issue is one of its items, in which case it is stored and posted to GitHub."},
 	{http.MethodPost, "/v1/handoffs", "handoff_start", "Start a handoff: claim hand_off issues for one integration task, created with them. Body: {project_id, workflow, issue_ids|select, title?, paused?, description?, fields?, priority?, agent?, model?, effort?, restricted?, max_task_cost_usd?}. select takes lane (hand_off), delivery (change, reply or none, one or a list), kind (one or a list), labels (all must match), max and order (priority); it takes the eligible issues by priority, urgent first and none last, then oldest delivery. Grant-less only: a grant is refused 409 grant_needs_human — only a human gives one. An ineligible issue id is a 409 issue_not_eligible naming it; a selection that finds nothing, 409 nothing_to_hand_off. Pass idempotency_key so a retry cannot start it twice."},
 	{http.MethodGet, "/v1/handoffs", "handoff_list", "List handoffs, newest first, without items: id, project_id, task_id, state (live|waiting|settled), grant, created_by, created_at. Query: project_id, state (repeatable), issue_id (handoffs with an item for that issue)."},
 	{http.MethodGet, "/v1/handoffs/{id}", "handoff_show", "One handoff with its items: each item's issue_id, delivery_task_id and delivery as claimed, outcome, outcome_at, outcome_by and note. state is live while its task runs, waiting when a settled handoff still has a waiting item, else settled."},

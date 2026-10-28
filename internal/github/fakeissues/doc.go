@@ -30,7 +30,9 @@
 //     `repos/{o}/{r}/issues/comments`, with its own weak ETag over its own
 //     body, so an issue write never invalidates it and a comment edit never
 //     invalidates the issue listing; and `repos/{o}/{r}/issues/{n}/comments`,
-//     one issue's thread oldest first, paged by per_page and page.
+//     one issue's thread oldest first, paged by per_page and page, and POST
+//     to it with {body}, which files the comment by PostAuthor and answers
+//     201 with the row (task 137.7's add_comment write).
 //   - The comment counts: every issue and pull request row's `comments` is
 //     recomputed from the comment rows on every Load, so a count written in
 //     the file is never the answer (task 130 decision 24, 130.16).

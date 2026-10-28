@@ -68,8 +68,11 @@ type issueCommentRequest struct {
 
 // handleIssueCommentCreate implements POST /v1/issues/{id}/comments: a local
 // comment. One on an issue with a live remote is the 409 issue_mirrored a
-// title edit gets, refused before any I/O beyond reading the issue — nothing
-// is ever posted to GitHub (task 130 decision 24, 130.16).
+// title edit gets, refused before any I/O beyond reading the issue (task 130
+// decision 24, 130.16) — unless the caller is a live handoff's task granted
+// issue.comment on it, whose comment is stored as `handoff` and enqueued to
+// be posted to GitHub (task 137.7). An ungranted agent's is refused
+// forge_write_needs_human.
 //
 // It takes no Idempotency-Key, like the pull request comment route: a
 // duplicate local comment is visible and harmless, and the key table
@@ -90,9 +93,14 @@ func (s *Server) handleIssueCommentCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
 		return
 	}
-	ctx := r.Context()
+	svc := issues.New(s.deps.Store)
+	by, ctx, err := svc.IssueWriteAs(r.Context(), forgeCaller(r), store.CapIssueComment, id)
+	if err != nil {
+		s.writeIssueError(w, r, id, "add issue comment", err)
+		return
+	}
 	author, _ := issueAuthor(ctx)
-	c, err := issues.New(s.deps.Store).Comment(ctx, issueActor(r), id, author, req.Body)
+	c, err := svc.Comment(ctx, by, id, author, req.Body)
 	if err != nil {
 		s.writeIssueError(w, r, id, "add issue comment", err)
 		return

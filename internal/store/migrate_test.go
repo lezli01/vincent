@@ -34,7 +34,7 @@ func openFresh(t *testing.T) *Store {
 
 // latestSchemaVersion tracks the newest migration file; bump alongside new
 // migrations.
-const latestSchemaVersion = 46
+const latestSchemaVersion = 47
 
 func schemaVersion(t *testing.T, s *Store) int {
 	t.Helper()

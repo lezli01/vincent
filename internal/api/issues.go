@@ -318,6 +318,12 @@ func issueActor(r *http.Request) issuestate.Actor {
 	return issuestate.Human
 }
 
+// forgeCaller is the caller the forge-write guard judges (task 137.7):
+// issueActor's actor and the task the request says it is made by.
+func forgeCaller(r *http.Request) issues.Caller {
+	return issues.Caller{By: issueActor(r), TaskID: actingTaskID(r)}
+}
+
 // osUsername is the name of the user the daemon runs as, read once. An HTTP
 // create records it as the issue's author (task 130.3 decision 1): every
 // client of this daemon is that user, so it is the honest answer, and it is
@@ -735,8 +741,13 @@ func (s *Server) handleIssueClose(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
 		return
 	}
-	ctx := r.Context()
-	iss, err := issues.New(s.deps.Store).Close(ctx, issueActor(r), id, req.Reason, req.DuplicateOf)
+	svc := issues.New(s.deps.Store)
+	by, ctx, err := svc.IssueWriteAs(r.Context(), forgeCaller(r), store.CapIssueClose, id)
+	if err != nil {
+		s.writeIssueError(w, r, id, "close issue", err)
+		return
+	}
+	iss, err := svc.Close(ctx, by, id, req.Reason, req.DuplicateOf)
 	if err != nil {
 		s.writeIssueError(w, r, id, "close issue", err)
 		return
@@ -755,8 +766,13 @@ func (s *Server) handleIssueReopen(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
 		return
 	}
-	ctx := r.Context()
-	iss, err := issues.New(s.deps.Store).Reopen(ctx, issueActor(r), id)
+	svc := issues.New(s.deps.Store)
+	by, ctx, err := svc.IssueWriteAs(r.Context(), forgeCaller(r), store.CapIssueClose, id)
+	if err != nil {
+		s.writeIssueError(w, r, id, "reopen issue", err)
+		return
+	}
+	iss, err := svc.Reopen(ctx, by, id)
 	if err != nil {
 		s.writeIssueError(w, r, id, "reopen issue", err)
 		return

@@ -52,14 +52,16 @@ func invalid(field, format string, args ...any) error {
 // to a 409 with details.reason issue_mirrored.
 var ErrMirrored = errors.New("title, body and labels of an imported issue are mirrored from its remote")
 
-// ErrForgeWriteNeedsHuman refuses an agent's close or reopen of an issue
-// whose state is written back to a forge (task 130 decision 10, task
-// 130.10): only a human's act writes to GitHub. An agent is an MCP tool
-// call, or a request a step or a chat agent sent (the API reads its marker
-// header). A local issue, and one whose remote moved or is missing, writes
-// nothing back and is not refused. The API maps it to a 409 with
+// ErrForgeWriteNeedsHuman refuses an agent's forge write (task 130 decision
+// 10, task 130.10, narrowed by task 137 decision 6): a close, reopen or
+// comment that would reach an imported issue's forge, or a pull-request
+// write. A human's act writes to GitHub, and so does a live handoff's task
+// under a grant a human gave (ForgeWrite); nothing else does. An agent is an
+// MCP tool call, or a request a step or a chat agent sent (the API reads its
+// marker header). A local issue, and one whose remote moved or is missing,
+// writes nothing back and is not refused. The API maps it to a 409 with
 // details.reason forge_write_needs_human.
-var ErrForgeWriteNeedsHuman = errors.New("only a human may change the state of an issue synced with its forge")
+var ErrForgeWriteNeedsHuman = errors.New("only a human, or a handoff a human granted it, may write to the forge")
 
 // Mirrored reports whether iss carries content a remote owns: it has a live
 // remote row. A tombstone never joins an issue, so a local issue — and one
@@ -203,6 +205,11 @@ func (s *Service) Update(ctx context.Context, by issuestate.Actor, id, version i
 // is created by an import and never re-attached, so the only race is an
 // issue being imported under a caller mid-edit, which sync's next pass
 // overwrites anyway.
+//
+// A granted handoff's comment passes on a thread that writes back to GitHub
+// (task 137.7): the store enqueues it there with the comment. A human's
+// stays refused (task 130 decision 24.3), and the handoff actor is only
+// ever the guard's answer (IssueWriteAs), never a caller's claim.
 func (s *Service) checkMirror(ctx context.Context, by issuestate.Actor, id int64, scope mirrorScope) error {
 	if by == issuestate.Sync {
 		return nil
@@ -213,7 +220,7 @@ func (s *Service) checkMirror(ctx context.Context, by issuestate.Actor, id int64
 	}
 	mirrored := Mirrored(iss)
 	if scope == mirrorThread {
-		mirrored = ThreadMirrored(iss)
+		mirrored = ThreadMirrored(iss) && (by != issuestate.Handoff || !WritesBack(iss))
 	}
 	if mirrored {
 		return fmt.Errorf("issue %d: %w", id, ErrMirrored)
@@ -338,7 +345,9 @@ func (s *Service) SetLabels(ctx context.Context, by issuestate.Actor, id int64, 
 // Comment adds a local comment to the issue. A human's or an agent's
 // comment on an issue with a live remote is refused with ErrMirrored, the
 // way a title edit is (task 130 decision 24, 130.16): its thread is GitHub's,
-// mirrored read-only, and nothing is ever posted there. The refusal comes
+// mirrored read-only. The one exception is issuestate.Handoff — a granted
+// handoff's comment, as IssueWriteAs resolves it — which is stored and
+// enqueued to be posted to GitHub (task 137.7). The refusal comes
 // before any write, and before the body is looked at, so a mirrored issue
 // answers the same whatever was sent.
 func (s *Service) Comment(ctx context.Context, by issuestate.Actor, issueID int64, author, body string) (*store.IssueComment, error) {

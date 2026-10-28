@@ -232,3 +232,43 @@ func sameIssue(raw restIssue, repo Repo, number int) bool {
 func issuePath(repo Repo, number int) string {
 	return fmt.Sprintf("repos/%s/%s/issues/%d", url.PathEscape(repo.Owner), url.PathEscape(repo.Name), number)
 }
+
+// CreateIssueComment posts body as a new comment on issue number, over
+// REST on both legs (`gh api` or the token), and answers the created
+// comment as the comment listing would. It is the outbox's add_comment
+// write (task 137.7): a granted handoff's comment, never a human's or an
+// ungranted agent's.
+func (c *Client) CreateIssueComment(ctx context.Context, repo Repo, number int, body string) (IssueComment, error) {
+	if number < 1 {
+		return IssueComment{}, newError(ReasonBadRequest, "issue number must be positive, got %d", number)
+	}
+	if strings.TrimSpace(body) == "" {
+		return IssueComment{}, newError(ReasonBadRequest, "a comment needs a body")
+	}
+	cred, err := c.credential(ctx)
+	if err != nil {
+		return IssueComment{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, RemoteTimeout)
+	defer cancel()
+	payload, err := json.Marshal(map[string]string{"body": body})
+	if err != nil {
+		return IssueComment{}, newError(ReasonBadRequest, "encode request: %v", err)
+	}
+	resp, err := c.apiCall(ctx, cred, http.MethodPost, issuePath(repo, number)+"/comments", nil, payload)
+	if err != nil {
+		c.logf("github issue comment failed", "repo", repo.String(), "issue", number,
+			"via", cred.via, "reason", ReasonOf(err), "detail", err)
+		return IssueComment{}, err
+	}
+	var raw restComment
+	if err := json.Unmarshal(resp.body, &raw); err != nil || raw.ID == 0 {
+		// The comment may exist; without its id the sync would import it as
+		// a second row, so this is a bad response, not a success.
+		return IssueComment{}, newError(ReasonBadResponse, "the created comment carried no id")
+	}
+	return IssueComment{
+		ID: raw.ID, NodeID: raw.NodeID, IssueNumber: number, Author: raw.User.Login, Body: raw.Body,
+		URL: raw.HTMLURL, CreatedAt: raw.CreatedAt, UpdatedAt: raw.UpdatedAt,
+	}, nil
+}

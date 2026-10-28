@@ -27,9 +27,11 @@ import (
 // previously did in a browser. *Amended 2026-09-15 (task 068.4):* "merging
 // stays out of scope" was true of task 069 and is no longer true of vincent.
 //
-// The route is excluded from the MCP tool surface (§13.4, decision 3): "the
-// keypress is the consent" (decision 2) is only true while a human is the one
-// pressing it. Nothing is lost — a step's agent already has a full-auto shell
+// The route is excluded from the shared MCP tool surface (§13.4, decision 3):
+// "the keypress is the consent" (decision 2) is only true while a human is
+// the one pressing it. *Narrowed 2026-10-28 (task 137.7):* a live handoff's
+// task granted pull.create by a human may call it, over its step's MCP
+// endpoint or its marker, and nothing else that reads as an agent may. Nothing is lost — a step's agent already has a full-auto shell
 // in its own worktree and can push and run `gh pr create` there, which is row
 // 11's original path and stays open.
 
@@ -82,7 +84,7 @@ type githubPullCreateResponse struct {
 // handleTaskGitHubPullCreate implements POST /v1/tasks/{id}/github/pull/create.
 //
 // The order is the order the refusals matter in, and it stops at the first
-// "no": the §13.2 gate, then the already-linked check, then the push, then
+// "no": the forge-write guard (task 137.7), the §13.2 gate, then the already-linked check, then the push, then
 // the create. It is synchronous in the handler — handleTaskDiff already runs
 // git inside a request and internal/worktree's fetch already bounds a network
 // git call at gitx.RemoteTimeout, so a background job would be new machinery
@@ -95,6 +97,9 @@ type githubPullCreateResponse struct {
 func (s *Server) handleTaskGitHubPullCreate(w http.ResponseWriter, r *http.Request) {
 	task, ok := s.taskFromPath(w, r)
 	if !ok {
+		return
+	}
+	if !s.pullWriteAllowed(w, r, task, store.CapPullCreate) {
 		return
 	}
 	var req githubPullCreateRequest

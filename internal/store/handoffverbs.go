@@ -239,10 +239,11 @@ func (s *Store) ResolveHandoffItems(ctx context.Context, v HandoffVerb) (*Handof
 			}
 			if v.Comment != "" {
 				c := &IssueComment{IssueID: iss.ID, Author: v.CommentAuthor, Body: v.Comment, CreatedAt: now, UpdatedAt: now}
-				ev, err := addIssueCommentTx(ctx, tx, c, v.IssueActor)
+				ev, enq, err := addIssueCommentTx(ctx, tx, c, v.IssueActor)
 				if err != nil {
 					return err
 				}
+				res.Kick = res.Kick || enq
 				if err := emit(ev); err != nil {
 					return err
 				}
