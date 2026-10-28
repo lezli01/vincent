@@ -112,3 +112,29 @@ func TestMergeTrainExampleReadsTheMerge(t *testing.T) {
 		}
 	}
 }
+
+// TestMergeTrainExampleStacksOnlyChanges is review F3 on #872: a handoff
+// started by hand can claim a `reply` or `none` delivery, which has no commit
+// to stack; `deliver --all` would close its issue as completed regardless.
+// The example releases every such item and stacks only the changes.
+func TestMergeTrainExampleStacksOnlyChanges(t *testing.T) {
+	jq := lookJQ(t)
+	const file = "examples/merge-train.yaml"
+
+	// $VINCENT_HANDOFF_FILE's shape (internal/taskrun/handoff.go).
+	handoff := map[string]any{"id": 3, "items": []map[string]any{
+		{"issue": map[string]any{"id": 11}, "delivery": map[string]any{"kind": "change"}, "head_sha": "aaa"},
+		{"issue": map[string]any{"id": 12}, "delivery": map[string]any{"kind": "reply"}, "head_sha": ""},
+		{"issue": map[string]any{"id": 13}, "delivery": map[string]any{"kind": "none"}, "head_sha": ""},
+		{"issue": map[string]any{"id": 14}, "delivery": map[string]any{"kind": "change"}, "head_sha": "bbb"},
+	}}
+
+	released := scriptJQ(t, file, `for issue in \$\(jq -r '([^']*)' "\$VINCENT_HANDOFF_FILE"\)`)
+	if got := runJQ(t, jq, handoff, released); got != "12\n13" {
+		t.Errorf("released = %q, want the reply and the none", got)
+	}
+	stacked := scriptJQ(t, file, `for head in \$\(jq -r '([^']*)' "\$VINCENT_HANDOFF_FILE"\)`)
+	if got := runJQ(t, jq, handoff, stacked); got != "aaa\nbbb" {
+		t.Errorf("stacked = %q, want the two changes in order", got)
+	}
+}

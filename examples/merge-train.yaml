@@ -27,8 +27,9 @@
 #   merge    `--head-sha` pins the merge to the commit that was verified; a
 #            push in between makes GitHub refuse it. A merge refused because
 #            a check is still running is not a failure: the loop asks again.
-#   deliver  only once the pull request reads as merged: every item is
-#            delivered and its issue closed as completed, through vincent.
+#   deliver  only once the pull request reads as merged: every item still
+#            claimed is delivered and its issue closed as completed, through
+#            vincent. An item that is not a `change` was released at `stack`.
 #
 # Requires `vincent`, `git` and `jq`, and a project with a GitHub origin.
 name: merge-train
@@ -48,7 +49,13 @@ steps:
       set -e
       git fetch origin {{.Task.BaseBranch}}
       git checkout -q -B {{.Task.BranchName}} origin/{{.Task.BaseBranch}}
-      for head in $(jq -r '.items[].head_sha' "$VINCENT_HANDOFF_FILE"); do
+      # Only a `change` has a commit to stack. A handoff started by hand can
+      # claim a `reply` or `none` delivery too; release it, or `deliver`
+      # below would close its issue as completed with nothing landed.
+      for issue in $(jq -r '.items[] | select(.delivery.kind != "change" or (.head_sha // "") == "") | .issue.id' "$VINCENT_HANDOFF_FILE"); do
+        vincent handoff release {{.Handoff.ID}} "$issue" --note "not a change: nothing to stack"
+      done
+      for head in $(jq -r '.items[] | select(.delivery.kind == "change" and (.head_sha // "") != "") | .head_sha' "$VINCENT_HANDOFF_FILE"); do
         tip=$(git rev-parse HEAD)
         git rebase --onto "$tip" "$(git merge-base "$tip" "$head")" "$head"
         git checkout -q -B {{.Task.BranchName}} HEAD
@@ -66,9 +73,10 @@ steps:
     type: command
     run: |
       set -e
-      jq -r '.items[] | "## \(.delivery.title)\n\n\(.delivery.body)\n"' "$VINCENT_HANDOFF_FILE" > "$(git rev-parse --git-path train-pr.md)"
+      jq -r '.items[] | select(.delivery.kind == "change" and (.head_sha // "") != "") | "## \(.delivery.title)\n\n\(.delivery.body)\n"' "$VINCENT_HANDOFF_FILE" > "$(git rev-parse --git-path train-pr.md)"
+      n=$(jq '[.items[] | select(.delivery.kind == "change" and (.head_sha // "") != "")] | length' "$VINCENT_HANDOFF_FILE")
       vincent github pr create --task {{.Task.ID}} \
-        --title "Merge train of {{len .Handoff.Items}} change(s)" \
+        --title "Merge train of $n change(s)" \
         --body "$(cat "$(git rev-parse --git-path train-pr.md)")"
 
   - id: land
