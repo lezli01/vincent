@@ -1213,7 +1213,7 @@ comment sent twice posts twice. None of the five is an [MCP tool](#mcp).
 | `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 
 Registry entries carry
-`{ name, scope, project_id, file, description, fields[], steps[], platforms[]?, platform_supported, requires_input, includes[]?, version?, errors[]?, warnings[]?, error? }`.
+`{ name, scope, project_id, file, description, fields[], steps[], platforms[]?, platform_supported, requires_input, role?, includes[]?, version?, errors[]?, warnings[]?, error? }`.
 
 `fields[]` is the selected workflow's ordered
 [`fields:` declaration](workflow-schema.md#fields). Each entry is

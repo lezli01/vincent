@@ -3283,6 +3283,9 @@ vincent handoff start --project ID --workflow NAME [ISSUE-ID...]
 Creates the handoff, its task and every claim in one step, and prints the
 handoff and the issues it claimed.
 
+- **`--workflow`** must name a workflow declaring
+  [`role: handoff`](workflow-schema.md#role); any other is refused and nothing
+  is created. That role is also what keeps `vincent task add` from running one.
 - **Issue ids** claim exactly those issues. If any is not eligible — not in
   `hand_off`, already claimed by a handoff, or already delivered — nothing is
   created and the command exits 1, naming it.
