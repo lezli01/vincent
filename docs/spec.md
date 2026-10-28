@@ -1336,6 +1336,13 @@ id as `remote_key`. Four rules it settled:
   `missing`. Its `author` is derived by the create rule above; no request
   field sets it.
 
+*Amended 2026-10-28 (task 137.7, issue #840).* Two of those rules are
+narrowed by the forge-write guard above. "Nothing is ever posted to GitHub"
+now holds except for a granted handoff's comment, which the outbox posts as
+`add_comment`. And an `agent`'s comment on an issue with a live remote is
+refused `forge_write_needs_human`, not `issue_mirrored`, unless it is that
+granted handoff's; a `human`'s is still `issue_mirrored`.
+
 *Amended 2026-10-07 (task 134, issue #748).* The issues UX is decided, and
 this note records its design ahead of the code, which lands with task 134's
 later items. An issue has a **main branch and worktree carried by its
@@ -9525,7 +9532,12 @@ POST   /v1/issues/{id}/comments         *Added 2026-10-03 (task 130.16).* {body}
                                         issue with a live remote is **409** `issue_mirrored`,
                                         before any I/O. No `Idempotency-Key`, like the pull
                                         request comment route: a duplicate local comment is
-                                        visible and harmless
+                                        visible and harmless. *Amended 2026-10-28 (task
+                                        137.7):* an agent's comment there is **409**
+                                        `forge_write_needs_human` instead, unless it is a live
+                                        handoff's task granted `issue.comment` on the issue,
+                                        whose comment is stored as `handoff` and posted to
+                                        GitHub through the outbox's `add_comment` (§5.6)
 POST   /v1/handoffs                     *Added 2026-10-24 (task 137.5, issue #838).* Start a
                                         handoff (§5.7): { project_id, workflow, issue_ids |
                                         select, grant?, title?, paused?, description?, fields?,

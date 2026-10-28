@@ -86,12 +86,15 @@ too: it asks the importer to poll early and flushes vincent's pending state
 writes to GitHub. Its `GET`, `project_issue_sync_status`, is an ordinary tool.
 `issue_close` and `issue_reopen` are tools, but on an issue imported from
 GitHub they are refused with `forge_write_needs_human`: that issue's state is
-written back to GitHub, and only a person does that. The same refusal meets a
-`vincent issue` command a workflow step or a chat agent runs, which the CLI
-marks with a header.
+written back to GitHub, and only a person, or a handoff a person
+[granted](../reference/api.md#handoffs) `issue.close`, does that. The same
+refusal meets a `vincent issue` command a workflow step or a chat agent runs,
+which the CLI marks with a header.
 `issue_comment` adds a comment as your task (`task N`), or `agent` outside a
 step; on an issue whose GitHub remote is live it is refused with
-`issue_mirrored`, because that thread is GitHub's and nothing is posted there.
+`forge_write_needs_human`, because that thread is GitHub's — unless your task is
+a live handoff granted `issue.comment` on that issue, whose comment is posted
+to GitHub.
 The [task import](../reference/api.md#importing-a-task) that undoes one sits
 beside them: it reads a file the caller names and writes rows no agent should
 be able to create.
@@ -129,7 +132,11 @@ confirmation the daemon can check. An agent-callable version would be consent
 nobody gave, and because `mcp.wire_steps` is on by default it would put those
 writes on the step path. Nothing is lost: an agent that wants a pull request has
 a shell in its own worktree and runs `git push`, `gh pr create` or `gh pr merge`
-there.
+there. The one exception is a handoff a person started with a
+[grant](../reference/api.md#handoffs): on its task's step endpoint, the writes
+the grant names are listed as tools (`task_github_pull_merge` and the rest), and
+each call is still checked against the grant and refused
+`forge_write_needs_human` outside the handoff's own pull requests.
 
 `config_get` is the one tool whose body differs from its route's. The HTTP
 response serves `config.yaml` in full; the tool masks `environment.set`'s

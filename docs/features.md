@@ -615,7 +615,9 @@ without creating anything.
 
 Vincent stores no credential: it prefers your existing `gh` CLI and falls back to
 `GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Of an issue, only a
-person's close or reopen of an imported one is written back; otherwise vincent
+person's close or reopen of an imported one is written back, and the close,
+reopen or comment of a handoff you [granted](reference/api.md#handoffs) it;
+otherwise vincent
 writes to GitHub only when you ask it to open a task's pull request or act on
 one, [below](#open-a-pull-request). When GitHub is unavailable, `vincent doctor`
 reports why and everything else is unaffected. Set `github.enabled: false` in
@@ -711,9 +713,11 @@ close, reopen, comment, and re-run failed Actions jobs (see the
 [`vincent github pr merge`](reference/cli.md#vincent-github-pr-merge)). Each
 happens only when you ask for it — on the tab, each asks first — and
 [`github.enabled`](reference/configuration.md#github) turns every one of them
-off along with every read. Agents cannot reach them: none is an MCP tool, and an
-agent that wants a pull request runs `git push` and `gh pr create` in its own
-worktree, as it always could.
+off along with every read. Agents cannot reach them — none is an MCP tool, and a
+workflow step's `vincent github pr` is refused — unless you started a handoff
+with a [grant](reference/api.md#handoffs) naming the write; an agent that wants
+a pull request runs `git push` and `gh pr create` in its own worktree, as it
+always could.
 
 Two things it will not do. It **never force-pushes** — a diverged, protected or
 rejected push creates no pull request and changes nothing on the remote, because

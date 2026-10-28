@@ -2770,7 +2770,10 @@ vincent github pr create --task ID --title TITLE [--body TEXT] [--draft] [--json
 Pushes the task's branch to `origin` and opens its pull request. It and the
 `pr merge`, `close`, `reopen`, `comment` and `rerun` commands below are the only
 commands under `vincent github` that write to GitHub, and each acts only on the
-task you name, only when you run it.
+task you name, only when you run it. Run by a workflow step or a chat agent,
+each is refused `forge_write_needs_human` and sends nothing, unless the step's
+task is a live handoff [granted](#vincent-handoff-start) that capability on
+that task's pull request.
 
 ```
 $ vincent github pr create --task 61 --title "List a project's open pull requests" --draft
@@ -3126,9 +3129,11 @@ vincent issue comment <id> (--body B | --body-file PATH|-) [--json]
 ```
 
 Adds a comment to an issue's thread. The daemon records you as its author;
-no flag sets it. Nothing is ever posted to GitHub: an issue imported from
-GitHub has a read-only mirror of its GitHub thread, so a comment on it is
-refused while its remote is live, as an edit of its title is. `--body-file`
+no flag sets it. An issue imported from GitHub has a read-only mirror of its
+GitHub thread, so a comment on it is refused while its remote is live, as an
+edit of its title is. The one exception is a workflow step of a live handoff
+[granted](#vincent-handoff-start) `issue.comment` on that issue: its comment
+is posted to GitHub. `--body-file`
 reads the comment from a file, or from stdin with `-`.
 
 ### `vincent issue close`
@@ -3230,8 +3235,8 @@ sync             requested
 [state write-back](api.md#state-write-back) is waiting, gave up, or lost to a
 change on GitHub. Run from inside a workflow step or a chat agent — where
 `VINCENT_TASK_ID` or `VINCENT_CHAT_ID` is set — every `vincent` command marks
-its requests as an agent's, so it may not close or reopen an issue imported
-from GitHub.
+its requests as an agent's, so it may not close, reopen or comment on an issue
+imported from GitHub unless its task is a live handoff granted that.
 
 `reason` uses the sync vocabulary of the [API](api.md#issue-sync) —
 `github_disabled`, `poll_disabled`, `pending`, `origin_changed`,
@@ -3280,7 +3285,8 @@ handoff and the issues it claimed.
 - **`--grant`** gives the handoff capabilities for forge writes —
   `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`,
   `pull.close`, `checks.rerun` — repeated or comma-separated. Only a human may
-  give one: run from a workflow step it is refused. Nothing acts on a grant yet.
+  give one: run from a workflow step it is refused. The handoff's task may then
+  make those writes on its own items and pull requests; nothing else may.
 - **The task options** are `vincent task add`'s. The task is a root task with
   no issue, cut from the project's base branch; `--title` defaults to one
   naming how many issues it claims.

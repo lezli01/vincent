@@ -3370,7 +3370,7 @@ POST /v1/handoffs
 | `project_id`, `workflow` | Both required. There is no default handoff workflow |
 | `issue_ids` | Exactly these issues. Each must be eligible, or nothing is created |
 | `select` | Or choose them. `lane` may only be `hand_off`, and `order` only `priority`; `delivery` (`change`, `reply` or `none`) and `kind` take one value or a list, any of which matches; every one of `labels` must be carried, in any case; `max` (at least 1) caps the count, otherwise every eligible issue is taken |
-| `grant` | Capabilities for forge writes: `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`. Only a human may give one; nothing acts on it yet |
+| `grant` | Capabilities for forge writes: `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`. Only a human may give one. It lets the handoff's task make those writes on its own items and pull requests (see [state write-back](#state-write-back) and [GitHub pull requests](#github-pull-requests)) |
 | `title` | The task's title. Default: one naming how many issues it claims |
 | `paused`, `description`, `fields`, `priority`, `agent`, `model`, `effort`, `restricted`, `max_task_cost_usd` | The task options, as on [`POST /v1/tasks`](#tasks) |
 
