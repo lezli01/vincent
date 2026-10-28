@@ -639,11 +639,23 @@ func handoffEventNames(ev apiclient.Event, id int64) bool {
 	return p.IssueID == id || slices.Contains(p.IssueIDs, id)
 }
 
-// inHandoffTask reports whether ev is about a handoff the issue was in: a
-// settle names only the handoff and its task.
+// markerTask is the handoff task iss's marker names, or 0.
+func markerTask(iss apiclient.Issue) int64 {
+	if iss.Handoff == nil || iss.Handoff.TaskID == nil {
+		return 0
+	}
+	return *iss.Handoff.TaskID
+}
+
+// inHandoffTask reports whether ev is about a handoff the issue is or was
+// in: a settle names only the handoff and its task, and a pause or resume of
+// that task — which moves the marker's `· paused` — names only the task.
 func (v *issueView) inHandoffTask(ev apiclient.Event) bool {
 	if ev.TaskID == nil {
 		return false
+	}
+	if markerTask(v.issue) == *ev.TaskID {
+		return true
 	}
 	return slices.ContainsFunc(v.issue.Handoffs, func(h apiclient.IssueHandoffEntry) bool { return h.TaskID == *ev.TaskID })
 }

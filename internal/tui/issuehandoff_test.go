@@ -298,3 +298,50 @@ func init() {
 		}
 	}
 }
+
+// taskEventFor is a task event of type typ for task id in project 1.
+func taskEventFor(typ string, id int64) apiclient.EventNote {
+	return apiclient.EventNote{Event: apiclient.Event{
+		ID: 1, Type: typ, ProjectID: i64(1), TaskID: i64(id), Payload: []byte(`{"to":"paused"}`),
+	}}
+}
+
+// TestIssuesBoardRelistsOnHandoffTaskPause is review F4 on #872: pausing or
+// resuming a handoff's task is a task.state_changed naming only the task, so
+// a card's `· paused` went stale until an unrelated event re-listed.
+func TestIssuesBoardRelistsOnHandoffTaskPause(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		note apiclient.EventNote
+		want bool
+	}{
+		{"the claiming handoff's task changes state", taskEventFor("task.state_changed", 70), true},
+		{"another task changes state", taskEventFor("task.state_changed", 71), false},
+		{"the handoff's task only advances a step", taskEventFor("task.step_advanced", 70), false},
+	} {
+		v := handoffBoardFixture()
+		if got := v.updateNote(tc.note) != nil; got != tc.want {
+			t.Errorf("%s: refresh %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestIssueScreenRefreshesOnHandoffTaskPause is the issue screen's half of
+// review F4: its marker names the handoff's task, which no Handoffs entry
+// carries while the handoff is live.
+func TestIssueScreenRefreshesOnHandoffTaskPause(t *testing.T) {
+	v := issueFixture()
+	v.loaded = true
+	v.issue.Handoff = &apiclient.IssueHandoff{State: markerClaimed, HandoffID: i64(7), TaskID: i64(70)}
+	note := taskEventFor("task.state_changed", 70)
+	note.Event.ProjectID = i64(2)
+	if v.updateNote(note) == nil {
+		t.Error("a pause of the marker's handoff task did not refresh the issue screen")
+	}
+	v = issueFixture()
+	v.loaded = true
+	note = taskEventFor("task.state_changed", 99)
+	if v.updateNote(note) != nil {
+		t.Error("an unrelated task's state change refreshed the issue screen")
+	}
+}

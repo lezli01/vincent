@@ -427,7 +427,9 @@ func (v *issuesView) scheduleRefresh() tea.Cmd {
 // names a row this list shows (task 134.6 decision 6): such an event moves
 // that row's task count or active marker. A step advancing, a status line,
 // or a task with no shown issue changes no row, so it no longer costs a
-// re-list.
+// re-list. A state change of a task a row's handoff marker names re-lists
+// too: pausing or resuming a handoff's task moves its cards' `· paused`
+// (task 137.11), and names no issue in its payload.
 func (v *issuesView) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
 	if !ok {
@@ -444,8 +446,17 @@ func (v *issuesView) updateNote(n apiclient.Note) tea.Cmd {
 		if id := taskEventIssueID(ev.Event); id != 0 && v.shows(id) {
 			return v.scheduleRefresh()
 		}
+		if t == "task.state_changed" && ev.Event.TaskID != nil && v.showsHandoffTask(*ev.Event.TaskID) {
+			return v.scheduleRefresh()
+		}
 	}
 	return nil
+}
+
+// showsHandoffTask reports whether task id is the handoff task a loaded
+// row's marker names.
+func (v *issuesView) showsHandoffTask(id int64) bool {
+	return slices.ContainsFunc(v.issues, func(is apiclient.Issue) bool { return markerTask(is) == id })
 }
 
 // shows reports whether issue id is one of the loaded rows.

@@ -329,7 +329,9 @@ func (v *issueView) updateNote(n apiclient.Note) tea.Cmd {
 		// A task of this issue's that the screen does not list yet — a new
 		// side task, or a merge-back a side task's `→ done` inserted — names
 		// the issue in its payload (task 134.6), not in the tasks shown.
-		if ev.Event.TaskID != nil && v.linksTask(*ev.Event.TaskID) || taskEventIssueID(ev.Event) == v.id {
+		// The handoff task the marker names moves the marker's `· paused`
+		// when it pauses or resumes (task 137.11).
+		if ev.Event.TaskID != nil && v.linksTask(*ev.Event.TaskID) || taskEventIssueID(ev.Event) == v.id || v.inHandoffTask(ev.Event) {
 			return v.scheduleRefresh()
 		}
 	}
