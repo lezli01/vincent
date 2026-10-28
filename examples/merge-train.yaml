@@ -1,0 +1,105 @@
+# merge-train — stack every handed-off change into one branch, verify it,
+# open one pull request for it, merge it, and close the issues.
+#
+# A handoff workflow (`role: handoff`): it never runs as an ordinary task.
+# A handoff claims the issues whose main task delivered a `change` and runs
+# this once over all of them. docs/examples/triggers/merge-train.yaml starts
+# it from a schedule, shipped unarmed: arming it, with `pull.create`,
+# `pull.merge` and `issue.close` in its `grant:`, is the consent to push,
+# open, merge and close without asking again.
+#
+#   vincent workflow init merge-train --from merge-train
+#
+# Read the run as five decisions:
+#
+#   stack    the train is this task's own branch, cut from the fetched base.
+#            Each item's **delivered** commit (`head_sha`, the one its task
+#            verified — not its branch's tip) is replayed onto it with
+#            `git rebase --onto`, in the order the handoff lists the items.
+#            A rebase, not a merge, so the train is linear. A conflict fails
+#            the step and leaves it for a person; the items release when the
+#            task settles, so nothing is lost.
+#   verify   the changes were verified one by one; this is them together.
+#            Replace the `run:` with your project's build and tests.
+#   open     `vincent github pr create --task {{.Task.ID}}` pushes the train
+#            and links the pull request to this task, which is what lets the
+#            merge below name it.
+#   merge    `--head-sha` pins the merge to the commit that was verified; a
+#            push in between makes GitHub refuse it. A merge refused because
+#            a check is still running is not a failure: the loop asks again.
+#   deliver  only once the pull request reads as merged: every item is
+#            delivered and its issue closed as completed, through vincent.
+#
+# Requires `vincent`, `git` and `jq`, and a project with a GitHub origin.
+name: merge-train
+description: Stack every handed-off change onto one branch, verify it, open one pull request, merge it at the verified commit, and close the issues.
+role: handoff
+platforms: [posix]
+
+defaults:
+  timeout: 30m
+  max_retries: 0
+
+steps:
+  - id: stack
+    name: Stack the delivered commits
+    type: command
+    run: |
+      set -e
+      git fetch origin {{.Task.BaseBranch}}
+      git checkout -q -B {{.Task.BranchName}} origin/{{.Task.BaseBranch}}
+      for head in $(jq -r '.items[].head_sha' "$VINCENT_HANDOFF_FILE"); do
+        tip=$(git rev-parse HEAD)
+        git rebase --onto "$tip" "$(git merge-base "$tip" "$head")" "$head"
+        git checkout -q -B {{.Task.BranchName}} HEAD
+      done
+      git log --oneline origin/{{.Task.BaseBranch}}..HEAD
+
+  - id: verify
+    name: Verify the train
+    type: command
+    timeout: 1h
+    run: go test ./...
+
+  - id: open
+    name: Open the pull request
+    type: command
+    run: |
+      set -e
+      jq -r '.items[] | "## \(.delivery.title)\n\n\(.delivery.body)\n"' "$VINCENT_HANDOFF_FILE" > "$(git rev-parse --git-path train-pr.md)"
+      vincent github pr create --task {{.Task.ID}} \
+        --title "Merge train of {{len .Handoff.Items}} change(s)" \
+        --body "$(cat "$(git rev-parse --git-path train-pr.md)")"
+
+  - id: land
+    name: Merge it
+    type: loop
+    # Up to an hour of CI: ten passes, six minutes apart.
+    count: 10
+    timeout: 70m
+    steps:
+      - id: merge
+        type: command
+        allow_failure: true
+        run: vincent github pr merge --task {{.Task.ID}} --method merge --head-sha "$(git rev-parse HEAD)"
+      - id: merged
+        type: break
+        if: '{{ eq (index .Steps "merge").ExitCode 0 }}'
+      - id: pause
+        type: command
+        if: '{{ not .Loop.IsLast }}'
+        run: sleep 360
+
+  - id: deliver
+    name: Close the issues
+    type: command
+    # The postcondition: the merge call returning is not the merge having
+    # happened, so read the pull request back before closing anything.
+    run: |
+      set -e
+      pr=$(vincent github pr show --task {{.Task.ID}} --json)
+      if [ "$(printf '%s' "$pr" | jq -r '.merged and .head_sha == "'"$(git rev-parse HEAD)"'"')" != true ]; then
+        echo "the pull request is not merged at $(git rev-parse HEAD)" >&2
+        exit 1
+      fi
+      vincent handoff deliver {{.Handoff.ID}} --all --close completed

@@ -1,0 +1,21 @@
+# comment-and-close — post every delivered answer on its issue and close it,
+# once an hour.
+#
+# Copy to {config_dir}/triggers/comment-and-close.yaml, set
+# `source.project`, and arm it with `enabled: true`. It ships unarmed:
+# arming it with this `grant:` is the consent to comment on and close issues
+# under vincent's name. Install the workflow with
+# `vincent workflow init comment-and-close --from comment-and-close`.
+id: comment-and-close
+enabled: false
+source:
+  type: schedule
+  project: 1
+  cron: '0 * * * *'
+action:
+  type: start_handoff
+  workflow: comment-and-close
+  select: {lane: hand_off, delivery: reply}
+  grant: [issue.comment, issue.close]
+on_fire: create
+overrun: skip

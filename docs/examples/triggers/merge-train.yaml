@@ -1,0 +1,21 @@
+# merge-train — hand off every delivered change once a night, as one pull
+# request.
+#
+# Copy to {config_dir}/triggers/merge-train.yaml, set `source.project`, and
+# arm it with `enabled: true`. It ships unarmed: arming it with this
+# `grant:` is the consent to push, open, merge and close without asking
+# again. Install the workflow with
+# `vincent workflow init merge-train --from merge-train`.
+id: merge-train
+enabled: false
+source:
+  type: schedule
+  project: 1
+  cron: '0 2 * * 1-5'
+action:
+  type: start_handoff
+  workflow: merge-train
+  select: {lane: hand_off, delivery: change, max: 10}
+  grant: [pull.create, pull.merge, issue.close]
+on_fire: create
+overrun: skip

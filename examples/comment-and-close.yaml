@@ -1,0 +1,56 @@
+# comment-and-close — post each handed-off answer on its issue, and close it.
+#
+# A handoff workflow (`role: handoff`): it never runs as an ordinary task.
+# It is for work that ends in words rather than code: a question whose main
+# task delivered a `reply` — the answer in the delivery's `body`. A handoff
+# claims those issues and this posts each answer and closes the issue,
+# without starting a single agent session.
+#
+# docs/examples/triggers/comment-and-close.yaml selects `delivery: reply`
+# and grants `issue.comment` and `issue.close`, shipped unarmed. Arming it is
+# the consent to post and close under vincent's name, attributed to the
+# handoff.
+#
+#   vincent workflow init comment-and-close --from comment-and-close
+#
+# Read the run as two decisions:
+#
+#   reply    only `kind: reply` items are answered. Anything else the
+#            selection let through is released — the claim dropped, the
+#            issue left for a later handoff — with a note saying why.
+#   deliver  `vincent handoff deliver <handoff> <issue> --comment-file`
+#            posts the comment first, then records the item delivered and
+#            closes the issue as completed. Repeating it changes nothing, so
+#            a retried step converges rather than posting twice.
+#
+# Requires `vincent` and `jq`.
+name: comment-and-close
+description: Post each handed-off reply as a comment on its issue and close the issue, with no agent session.
+role: handoff
+platforms: [posix]
+
+defaults:
+  timeout: 10m
+  max_retries: 0
+
+steps:
+  - id: answer
+    name: Post each reply and close its issue
+    type: command
+    run: |
+      set -e
+      h={{.Handoff.ID}}
+      d=$(git rev-parse --git-path vincent-replies)
+      mkdir -p "$d"
+      jq -c '.items[]' "$VINCENT_HANDOFF_FILE" > "$d/items.jsonl"
+      while IFS= read -r item; do
+        issue=$(printf '%s' "$item" | jq -r '.issue.id')
+        kind=$(printf '%s' "$item" | jq -r '.delivery.kind')
+        if [ "$kind" != reply ]; then
+          vincent handoff release "$h" "$issue" --note "delivered $kind, not a reply" </dev/null
+          continue
+        fi
+        printf '%s' "$item" | jq -r '.delivery.body' > "$d/reply.md"
+        vincent handoff deliver "$h" "$issue" --close completed --comment-file "$d/reply.md" </dev/null
+      done < "$d/items.jsonl"
+      rm -rf "$d"

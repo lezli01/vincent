@@ -1,0 +1,26 @@
+# pr-per-issue — open a pull request for each issue as soon as its work is
+# delivered.
+#
+# Copy to {config_dir}/triggers/pr-per-issue.yaml, set `source.project`,
+# and arm it with `enabled: true`. It ships unarmed: arming it with
+# `pull.create` is the consent to push each delivered branch and open its
+# pull request. Merging stays yours. Install the workflow with
+# `vincent workflow init pr-per-issue --from pr-per-issue`.
+#
+# Work that becomes ready while a handoff runs is folded into the next one.
+id: pr-per-issue
+enabled: false
+source:
+  type: issues
+  project: 1
+match:
+  action: lane_changed
+  lane: hand_off
+  by: task
+action:
+  type: start_handoff
+  workflow: pr-per-issue
+  select: {lane: hand_off, delivery: change}
+  grant: [pull.create]
+overrun: queue_coalesce
+concurrency_key: pr-per-issue
