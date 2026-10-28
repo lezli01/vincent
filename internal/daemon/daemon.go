@@ -19,9 +19,7 @@ import (
 	"github.com/gofrs/flock"
 
 	"github.com/lezli01/vincent/internal/agent"
-	"github.com/lezli01/vincent/internal/agent/claude"
-	"github.com/lezli01/vincent/internal/agent/codex"
-	"github.com/lezli01/vincent/internal/agent/cursor"
+	"github.com/lezli01/vincent/internal/agent/builtin"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/chatrun"
@@ -207,17 +205,13 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	var stopOnce sync.Once
 	requestStop := func() { stopOnce.Do(func() { close(stopRequested) }) }
 
-	// Agent adapters: paths ride the live config so hot-reloaded paths reach
-	// future runs. Availability and option catalogs are served from the
+	// Agent adapters, from the one shipped list (internal/agent/builtin):
+	// paths ride the live config so hot-reloaded paths reach future runs. Availability and option catalogs are served from the
 	// §9.6 binary-identity cache — primed asynchronously here, stat-checked
 	// per request, so a CLI installed after daemon start is visible without
 	// a restart (T2.11).
 	if agents == nil {
-		agents = agent.NewRegistry(
-			claude.New(func() string { return currentConfig().Agents.Claude.Path }),
-			codex.New(func() string { return currentConfig().Agents.Codex.Path }),
-			cursor.New(func() string { return currentConfig().Agents.Cursor.Path }),
-		)
+		agents = builtin.New(builtin.ConfigPaths(currentConfig))
 	}
 	catalog := agent.NewCatalogCache(agents)
 	stopCatalogPrime := startAgentCatalogPrime(ctx, logger, catalog)

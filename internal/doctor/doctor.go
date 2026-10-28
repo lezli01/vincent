@@ -9,9 +9,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
-	"github.com/lezli01/vincent/internal/agent/claude"
-	"github.com/lezli01/vincent/internal/agent/codex"
-	"github.com/lezli01/vincent/internal/agent/cursor"
+	"github.com/lezli01/vincent/internal/agent/builtin"
 	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github"
@@ -578,19 +576,15 @@ func inspectLog(path string, n int, tail func(string, int) ([]string, error)) Lo
 // DetectAgents probes every adapter's §9.5 availability against the
 // configured binary paths.
 //
-// It builds the three adapters here rather than taking a registry, because
-// the caller that needs this — `vincent doctor` with no daemon — has no
-// registry to hand: internal/daemon builds the production one, and this
-// package must not import it (decision 6). The construction is deliberately
-// the same shape as internal/daemon's, with a fixed configuration instead of
-// a hot-reloading accessor: nothing is going to reload underneath a report
+// It builds its own registry rather than taking one, because the caller that
+// needs this — `vincent doctor` with no daemon — has no registry to hand:
+// internal/daemon builds the production one, and this package must not import
+// it (decision 6). Both come from the shared constructor in
+// internal/agent/builtin (#854), this one over a fixed configuration instead
+// of a hot-reloading accessor: nothing is going to reload underneath a report
 // that takes one snapshot.
 func DetectAgents(ctx context.Context, cfg config.Config) []Agent {
-	reg := agent.NewRegistry(
-		claude.New(func() string { return cfg.Agents.Claude.Path }),
-		codex.New(func() string { return cfg.Agents.Codex.Path }),
-		cursor.New(func() string { return cfg.Agents.Cursor.Path }),
-	)
+	reg := builtin.New(builtin.ConfigPaths(func() config.Config { return cfg }))
 	out := make([]Agent, 0, len(reg.Names()))
 	for _, name := range reg.Names() {
 		a, ok := reg.Get(name)

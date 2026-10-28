@@ -10,9 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lezli01/vincent/internal/agent"
-	"github.com/lezli01/vincent/internal/agent/claude"
-	"github.com/lezli01/vincent/internal/agent/codex"
-	"github.com/lezli01/vincent/internal/agent/cursor"
+	"github.com/lezli01/vincent/internal/agent/builtin"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -215,11 +213,7 @@ func locate(f finding) string {
 // installed: a workflow must validate the same way on a CI runner with no
 // agent CLIs as on the developer's laptop.
 func localValidateOptions() workflow.Options {
-	reg := agent.NewRegistry(
-		claude.New(func() string { return "" }),
-		codex.New(func() string { return "" }),
-		cursor.New(func() string { return "" }),
-	)
+	reg := builtin.New(func(string) string { return "" })
 	catalogs := make(agent.Catalogs, len(reg.Names()))
 	for _, a := range reg.All() {
 		catalogs[a.Name()] = a.Curated()
