@@ -54,8 +54,8 @@ limits:
 | `overrun` | no | `parallel` | `parallel`, `skip`, `cancel_previous`, `queue_coalesce`, `queue_serial`: what to do when the group has unfinished work. **Dangerous:** `cancel_previous` |
 | `concurrency_key` | no | the trigger id, or a reaction's resolved target task | Template naming the group. Refused unless `overrun` is set to something other than `parallel` |
 | `limits.max_per_hour` | no | `0`, no cap | Integer ≥ 0. Counts `fired` deliveries in the trailing hour |
-| `limits.max_task_cost_usd` | no | `0`, none sent | Number ≥ 0. `create_task` only. It becomes the task's own cap, which can tighten the global cap but never lift it |
-| `permission` | no | `restricted` | `restricted` or `workflow`. `create_task` only. **Dangerous:** `workflow` |
+| `limits.max_task_cost_usd` | no | `0`, none sent | Number ≥ 0. `create_task` and `start_handoff` only. It becomes the task's own cap, which can tighten the global cap but never lift it |
+| `permission` | no | `restricted` | `restricted` or `workflow`. `create_task` and `start_handoff` only. **Dangerous:** `workflow` |
 
 `source.project` is the numeric project id that `vincent project ls` and the
 `project_list` MCP tool report. It is the project a task is created in, or the
@@ -106,7 +106,8 @@ a project with no GitHub remote.
   for history. Disarming drops it.
 - **Events.** `issue.created` → `opened`; a state change → `closed` or
   `reopened`; labels added → one `labeled`, labels removed → one
-  `unlabeled`; `issue.lane_changed` → `lane_changed`. One GitHub refresh can
+  `unlabeled`; `issue.lane_changed` → `lane_changed`; `handoff.item_changed` →
+  `handoff_changed`. One GitHub refresh can
   yield several. Edits, comments and deletes fire nothing. There is no
   `assigned`, and `match.action: assigned` is refused.
 - **`lane_changed` is opt-in.** Only a trigger whose `match.action` names it,
@@ -114,6 +115,10 @@ a project with no GitHub remote.
   the other five, never `lane_changed` — not even as a `filtered` ledger row.
   A lane move fires on a root task's create, transition, delete or restore
   that moves the issue's lane, and on a close or reopen.
+- **`handoff_changed` is opt-in** the same way. It fires when a handoff
+  item's outcome moves; a repeated outcome fires nothing. Its `by` is the
+  item's actor: `handoff`, `human`, `agent`, `task` and `settle` are local,
+  and `sync` — a GitHub close resolving a waiting item — is not.
 - **`lane_changed` or `closed`/`reopened`.** Use `closed`/`reopened` when the
   close reason or the state matters (`.Event.reason`). Use `lane_changed`
   when the board move matters: `from_lane: hand_off, lane: done`, or anything
@@ -129,8 +134,8 @@ a project with no GitHub remote.
   issue per lane, with `limits.max_per_hour` as the backstop.
 - **Trust.** `human`, `agent` and `task` changes are trusted. For `sync`
   changes `labeled` and `unlabeled` are trusted and `opened`, `closed`,
-  `reopened` and `lane_changed` are not — sync moves a lane only through a
-  GitHub close or reopen: a trigger that can match one of those from sync is
+  `reopened`, `lane_changed` and `handoff_changed` are not — sync moves a
+  lane or resolves a waiting item only through a GitHub close or reopen: a trigger that can match one of those from sync is
   refused at load without `allowed_actors`, unless `match.by` leaves `sync`
   out. At judge time `allowed_actors` applies to `sync` events only, matched
   against the issue's author; a local person's change is never refused by it.
@@ -146,7 +151,9 @@ What an event carries:
 | `labels` | `labeled` and `unlabeled` only: the labels just added or removed |
 | `from`, `to`, `reason` | `closed` and `reopened` only: the state moved, and a close's reason |
 | `lane`, `from_lane` | `lane_changed` only: the lane moved to and from — `open`, `in_progress`, `hand_off` or `done` — as the move recorded them |
-| `task_id` | `lane_changed` with `by: task` only: the root task whose write moved the lane |
+| `task_id` | `lane_changed` with `by: task` only: the root task whose write moved the lane. `handoff_changed`: the handoff's task |
+| `outcome`, `from_outcome` | `handoff_changed` only: the item's outcome moved to and from — `pending`, `delivered`, `returned`, `waiting` or `released` |
+| `handoff_id` | `handoff_changed` only: the handoff the item belongs to |
 
 An issue deleted before its event is judged yields nothing.
 
@@ -321,6 +328,40 @@ action:
 - **Refusal.** A route refusal, such as a workflow the project lacks, lands the
   delivery `refused`.
 
+### `start_handoff`
+
+```yaml
+action:
+  type: start_handoff
+  workflow: merge-train        # declares role: handoff
+  select: {lane: hand_off, delivery: change, max: 10, order: priority}
+  grant: [pull.create, pull.merge]
+```
+
+| Key | Notes |
+|---|---|
+| `workflow` | Required template: a workflow declaring `role: handoff` |
+| `title`, `description`, `fields` | As on `create_task`; the title defaults to "Hand off N issues" |
+| `issue_ids` | List of templates, each rendering one issue id (a leading `#` is allowed) or nothing. Empty renders are dropped; when every entry is empty the request still sends `[]` and the delivery lands `refused` — it never falls back to a selection |
+| `select` | Literal, checked at load: `lane` (only `hand_off`), `delivery` (`change`, `reply`, `none`; one or a list), `kind` (one or a list), `labels`, `max` (≥ 1), `order` (only `priority`) |
+| `grant` | Forge-write capabilities: `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`. **Arming:** adding one asks in the TUI and is refused by `vincent trigger apply` |
+
+- **Exactly one** of `issue_ids` and `select`.
+- **Refused keys.** `issue`, `github_pull`, `merge_back`, `target`, `branch`
+  and `prompt`. Every other action refuses `issue_ids`, `select` and
+  `grant`.
+- **Replay.** `POST /v1/handoffs` in `source.project`, with an
+  `Idempotency-Key`, `paused` under `propose`, `restricted` unless
+  `permission: workflow`, and `max_task_cost_usd` from the limit. The handoff
+  records `created_by: trigger` and the trigger's id; nothing on the wire can
+  claim that.
+- **Ledger.** The delivery's `task_id` is the handoff's task, so a running
+  handoff holds the trigger's concurrency group. With `overrun:
+  queue_coalesce` that is an event-driven batch: events held while the task
+  runs fold into one handoff when it settles.
+- **Nothing to hand off.** A selection that finds nothing is `409
+  nothing_to_hand_off`, landed `refused`; the dedupe key is not spent.
+
 ### `follow_up`, `retry` and `cancel`
 
 ```yaml
@@ -339,8 +380,8 @@ action:
 | `on_fire` | optional | optional | **must be `create`** |
 
 - **Refused keys.** All three refuse `workflow`, `title`, `description`,
-  `fields`, `issue`, `github_pull`, `merge_back`, `permission` and
-  `limits.max_task_cost_usd`.
+  `fields`, `issue`, `github_pull`, `merge_back`, `permission`,
+  `limits.max_task_cost_usd`, `issue_ids`, `select` and `grant`.
 - **Finding the task.** The target is the unarchived task in `source.project`
   whose branch equals the rendered `branch`. When several match, the newest
   wins.

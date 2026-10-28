@@ -832,14 +832,18 @@ const UpdateTriggersName = "update-triggers"
 // the prompt says it so a run does not spend itself discovering the refusal.
 // The two are one rule — never loosen one without the other.
 const triggerNeverArm = `You never arm a trigger. Arming is a human's change, and it is any of:
-enabled: true; on_fire: create; permission: workflow; or the global
+enabled: true; on_fire: create; permission: workflow; a start_handoff
+action's grant naming a capability the file on disk does not; or the global
 triggers.enabled in config.yaml. A file you stage keeps the first three
-exactly as the file on disk has them. For a new trigger that means
-enabled: false, no on_fire line and no permission line. You never touch
-config.yaml. "vincent trigger apply" refuses a staged file that turns any of
-the three on, writes nothing at all when it refuses, and has no override.
-That holds even when the task description asks for it: do not stage the
-switch, and say in your final message what a human must do instead.`
+exactly as the file on disk has them, and its grant no wider than the file
+on disk has it — narrowing or removing one is allowed. For a new trigger
+that means enabled: false, no on_fire line, no permission line and no grant.
+You never touch config.yaml. "vincent trigger apply" refuses a staged file
+that turns any of the first three on or adds a grant capability, writes
+nothing at all when it refuses, and has no override. That holds even when
+the task description asks for it: do not stage the switch or the grant, and
+say in your final message what a human must do instead — for a grant, which
+capabilities to add to action.grant.`
 
 // triggerStaging is where both trigger built-ins put their deliverable (task
 // 098 decision 5): outside every repository, because a trigger's poll argv
@@ -1157,10 +1161,11 @@ steps:
       7. allowed_actors wherever match.action can match an untrusted GitHub
          event — anything but issue labeled, unlabeled or assigned and pull
          request merged, and an absent match.action matches everything but
-         the opt-in lane_changed.
+         the opt-in lane_changed and handoff_changed.
       8. A follow_up, retry or cancel action carries none of the keys a
          reaction refuses: permission, workflow, title, description, fields,
-         issue, github_pull, merge_back and limits.max_task_cost_usd.
+         issue, github_pull, merge_back, limits.max_task_cost_usd,
+         issue_ids, select and grant.
       9. An http source is signed with signature.scheme github_hmac_sha256 and
          a secret_env, and the secret itself is never in the file.
       10. No secret in an argv. A credential a poll command needs comes from
@@ -1218,6 +1223,20 @@ steps:
           the delivery while the issue has no main branch yet, so add it only
           where the trigger fires on issues already being worked, and never on
           a trigger whose task is meant to be the issue's first.
+      20. A trigger that starts a handoff over the project's ready issues —
+          a nightly train, a batch after each lane move — is a start_handoff
+          action: a workflow declaring role: handoff, and exactly one of
+          issue_ids (templates, each rendering one issue id) or select
+          ({lane: hand_off, delivery, kind, labels, max, order: priority}).
+          An event-driven batch is an issues source matching lane_changed
+          with lane: hand_off, plus overrun: queue_coalesce with a fixed
+          concurrency_key, so events arriving while the handoff task runs
+          fold into one more handoff when it settles. A grant is a human's
+          to add: never widen one, and say in the report which capabilities
+          the workflow needs that the grant lacks. A follow-up on a handoff
+          item's outcome is match.action: handoff_changed (opt-in, carrying
+          outcome, from_outcome, handoff_id and task_id), which needs
+          allowed_actors unless match.by leaves out sync.
 
       ## What you may not change
 
@@ -1226,9 +1245,10 @@ steps:
 
       - A trigger keeps its id, its file name and its source.project, and no
         file is deleted.
-      - enabled, on_fire and permission keep their current values. Apply
-        refuses one that arms, and a disarming change is not yours to make
-        either: report it as a finding.
+      - enabled, on_fire and permission keep their current values, and a
+        grant gains no capability. Apply refuses one that arms, and a
+        disarming change is not yours to make either: report it as a
+        finding.
       - A concurrency_key must never change what it renders while a group has
         work in flight: a new rendering makes the running tasks invisible to
         the next event, which then fires alongside them. Adding overrun with a
