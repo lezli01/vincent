@@ -184,10 +184,12 @@ created from one; `issue_get`'s `query` takes `workflow` to preview what
 that create would prefill; and `issue_list`'s `query` takes `project_id` and
 `remote_number` to find the issue a project imported a GitHub issue number as,
 and `lane` — `open`, `in_progress`, `hand_off` or `done`, the last being every
-closed issue — to list one board lane. A parameter the route repeats, such as
-`lane`, `state` or `label`, takes an array of strings:
-`{"query": {"lane": ["open", "hand_off"]}}`. Every issue row, and `issue_get`,
-carries `lane` and `attention`.
+closed issue — to list one board lane, and `handoff` — `pending`, `claimed`,
+`waiting`, `delivered` or `idle` — to list the issues with that
+[handoff marker](../reference/api.md#handoff-marker). A parameter the route
+repeats, such as `lane`, `handoff`, `state` or `label`, takes an array of
+strings: `{"query": {"lane": ["open", "hand_off"]}}`. Every issue row, and
+`issue_get`, carries `lane`, `attention` and `handoff`.
 There is no `github_issue` on `task_create`: a body that carries it is refused
 with `400 invalid_json`.
 
