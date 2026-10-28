@@ -985,7 +985,7 @@ pull request.
   TUI's grant confirmation, the `handoff_changed` action on `type: issues`;
   the `vincent-triggers` skill and `update-triggers`' checklist line
   (decisions 6, 8, 12). Depends: 137.5, 137.7.
-- [ ] **137.10** ([#843](https://github.com/lezli01/vincent/issues/843)) The derived `handoff` marker on the issue DTO, `?handoff=`,
+- [x] **137.10** ([#843](https://github.com/lezli01/vincent/issues/843)) The derived `handoff` marker on the issue DTO, `?handoff=`,
   and the CLI's lane column, with `idle` on an `in_progress` issue whose
   finished work is not ready (decisions 5, 13). Depends: 137.4, 137.15.
 - [ ] **137.11** ([#844](https://github.com/lezli01/vincent/issues/844)) The TUI: the `hand_off` card's marker and delivery, bulk

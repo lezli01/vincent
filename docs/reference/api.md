@@ -2582,6 +2582,11 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   `limit` and `offset`, so a page is a page of that lane. It combines with
   `state` like every other filter, so `state=open&lane=done` is empty. Any
   other value is `400 validation_failed`.
+  `handoff` (repeatable; any of them matches) keeps the issues whose
+  [handoff marker](#handoff-marker) is `pending`, `claimed`, `waiting`,
+  `delivered` or `idle`. It is applied before `limit` and `offset` like
+  `lane`, and combines with `lane` and `state` by AND. Any other value is
+  `400 validation_failed`.
 - **Lanes.** Every row carries `lane` and `attention`, derived from the issue
   and its **root** tasks (fan-out lanes never count) and never stored:
 
@@ -2596,6 +2601,22 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   `awaiting_gate` or `blocked`; it is reported on a closed issue too, whose
   lane is `done` regardless. For an open issue, `active` is exactly
   `lane == "in_progress"`.
+- <a id="handoff-marker"></a>**Handoff marker.** Every row, and the issue
+  from **Get**, carries `handoff`: `{ "state", "handoff_id", "task_id" }`, or
+  `null` when the issue has none. It is derived in the list's own query and
+  never stored, from the same rule a handoff's `select:` uses, so a
+  `pending` issue is exactly one a handoff may claim. The first that applies
+  wins:
+
+  | `handoff.state` | When | `handoff_id`, `task_id` |
+  |---|---|---|
+  | — (`null`) | The issue is closed | — |
+  | `claimed` | A handoff claims it and has not decided it — in any lane: the handoff's own task may restart work on it, which makes it `in_progress` | The claiming handoff and its task |
+  | `waiting` | A handoff claims it and parked it as `waiting` — in any lane | The claiming handoff and its task |
+  | `pending` | `hand_off`, unclaimed, and its current delivery not yet delivered: a handoff may claim it now | `null` |
+  | `delivered` | `hand_off`, but a handoff delivered its current delivery without closing it. A follow-up that moves the delivery's head makes it `pending` again | The delivering handoff and its task |
+  | `idle` | `in_progress` with nothing running: finished work that is not ready, a returned issue included | `null` |
+  | — (`null`) | Anything else — `open`, or `in_progress` with work running | — |
 - **Get** adds `body`; `available_actions`, what a person may do from this
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may

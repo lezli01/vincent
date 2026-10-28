@@ -26,6 +26,15 @@ list with the user-facing context a commit subject cannot carry.
   trigger can also opt in to `handoff_changed`, fired when a handoff item's
   outcome moves, with `outcome`, `from_outcome`, `handoff_id` and `task_id`.
 
+- **See where each issue stands toward a handoff.** Every issue now carries
+  a derived handoff marker — `pending` (a handoff may claim it now),
+  `claimed`, `waiting`, `delivered` (handed off and left open) or `idle`
+  (finished work that is not ready) — as `handoff` on `GET /v1/issues` rows
+  and the issue detail, with the claiming or delivering handoff and its
+  task. `vincent issue ls` shows it inside the `LANE` cell
+  (`hand_off claimed H7`), `vincent issue show` prints a `handoff` line, and
+  `--handoff` / `?handoff=` (repeatable) filter by it.
+
 - **Record what became of each handoff item.** `vincent handoff deliver`,
   `return`, `wait` and `release` (over `POST
   /v1/handoffs/{id}/items/{issue_id}/…` and the `handoff_deliver`,
