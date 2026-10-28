@@ -48,6 +48,7 @@ steps:
 | `description` | string | no | Picker and workflow description |
 | `platforms` | list | no | Whole-workflow host restriction |
 | `hand_off` | `auto` or `explicit` | no | When an issue task's finished work is ready to hand off; default `auto` |
+| `role` | `handoff` | no | Marks a workflow only `vincent handoff start` runs; absent for every other |
 | `fields` | list | no | Ordered task-input declarations |
 | `defaults` | map | no | Values inherited by steps |
 | `steps` | nonempty list | yes | Ordered workflow body |
@@ -62,6 +63,11 @@ explicit` marks it not ready unless a step ran `vincent task deliver --ready`;
 the issue then waits in `in_progress` until that, or a person's `vincent issue
 ready`. The value is fixed at task creation, and an included workflow's is
 ignored.
+
+`role: handoff` is the only value `role` takes. A handoff runs only a
+workflow declaring it, and nothing else may: `vincent task create`, a fan-out
+lane, a trigger and the new-task form all refuse or hide one. An included
+workflow's `role` is ignored.
 
 Each field declaration supports:
 
@@ -347,6 +353,7 @@ command timeout, independently of the main step timeout.
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` |
 | `.Loop` | `Index`, `Item`, `IsFirst`, `IsLast` |
+| `.Handoff` | `ID` (`0` outside a handoff task), `Grant`, `Items` (`Issue` in `.Issue`'s shape, `Delivery`, `TaskID`, `Branch`, `HeadSHA`), and `ItemLines`, one JSON object per item |
 | `.Issue` | `Number`, `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State`), `Comments` (`Author`, `Body`, `CreatedAt`), and the deprecated `Repo`, `URL` |
 | `.Steps` | completed step ids → `Status`, `Result`, `ExitCode` |
 | `.Host` | `OS`, `Arch` |
@@ -394,6 +401,13 @@ in gh's element shape (`author.login`, `body`, `createdAt`). It adds
 `id`, `kind`, `priority`, and `source` (`provider`, `repo`, `number`, `url`;
 `null` for a local issue). Read it instead of `gh issue view`: it needs no
 network, a fan-out lane gets its parent's, and `git add -A` cannot stage it.
+
+A `role: handoff` task, and no other, also gets `VINCENT_HANDOFF_FILE`: `{id,
+grant, items: [{issue, delivery, task_id, branch, head_sha}]}`, each `issue`
+in the issue file's shape and each item one line of `.Handoff.ItemLines`. It
+is written the same way, from the rows the handoff claimed, before every
+attempt. A lane of a handoff's own fan-out gets neither the file nor
+`.Handoff`; pass it what it needs through `fields:` from `.Item`.
 
 Only completed steps are visible in `.Steps`. Parallel siblings are not
 visible to one another. Within a loop, later body steps see earlier steps from
