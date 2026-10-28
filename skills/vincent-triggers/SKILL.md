@@ -30,7 +30,8 @@ Every trigger you write starts disarmed and bounded:
 - No `on_fire` line, so a fired event's task lands `paused` (`propose`).
 - No `permission` line, so a created task's agent steps run `restricted`.
 - An explicit `dedupe_key`.
-- `limits.max_per_hour`, plus `limits.max_task_cost_usd` on a `create_task`.
+- `limits.max_per_hour`, plus `limits.max_task_cost_usd` on a `create_task` or
+  `start_handoff`.
 
 Five switches arm a trigger or widen what it may do:
 
@@ -467,7 +468,8 @@ Report correctness and safety findings first, then check each trigger for:
 - an explicit `dedupe_key`,
 - `overrun:` on any source that can emit twice about one object, with a
   `concurrency_key:` naming that object and not repeating `dedupe_key`,
-- `limits.max_per_hour`, and `max_task_cost_usd` on a `create_task`,
+- `limits.max_per_hour`, and `max_task_cost_usd` on a `create_task` or
+  `start_handoff`,
 - `issue` or `github_pull` prefill,
 - no `poll_interval` on an `issues` or GitHub source,
 - `allowed_actors` wherever an untrusted GitHub event can match, including a
