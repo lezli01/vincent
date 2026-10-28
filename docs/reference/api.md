@@ -1577,11 +1577,13 @@ when given, is the file stem the document's own `id` must match.
 `GET /v1/triggers/schema` is the trigger schema served as data, the way
 [`GET /v1/workflows/schema`](#writing-a-workflow) serves a workflow's:
 `{ top_level[], sources[], actions[], limits[], signature[] }`. A field row is
-`{ name, control, values[]?, required?, default?, help?, dangerous[]? }`, and
+`{ name, control, values[]?, required?, default?, help?, dangerous[]?,
+dangerous_on_add? }`, and
 a variant is `{ type, fields[], help?, events[]?, trusted[]? }`. The source
 types are `command`, `github_issues` (deprecated), `github_prs`, `issues`, `http` and `schedule`. The action types
-are `create_task` and the three reactions, `follow_up`, `retry` and `cancel`;
-`create_task` takes `issue`, a template rendering the `issue_id` it replays.
+are `create_task`, `start_handoff` and the three reactions, `follow_up`,
+`retry` and `cancel`; `create_task` takes `issue`, a template rendering the
+`issue_id` it replays.
 On a GitHub or `issues` source, `events[]` names the events it emits, and `trusted[]` the
 ones a trigger may match without naming `allowed_actors` (on `issues`, the ones
 trusted even when they arrive by `sync`). `control` adds
@@ -1590,10 +1592,12 @@ the workflow schema's vocabulary. `dangerous[]` lists `{ value, warning }`
 pairs a client confirms before committing — `enabled: true`,
 `on_fire: create`, `permission: workflow` and `overrun: cancel_previous` — and
 shows the warning when it asks. The first three take a keypress out of starting
-agents; the fourth destroys work in flight.
+agents; the fourth destroys work in flight. `dangerous_on_add` is the warning a
+client shows before an edit that adds a member to a list — a `start_handoff`'s
+`grant` — and removing one never asks.
 [`vincent trigger apply`](cli.md#vincent-trigger-apply) refuses the first three
-on a file it did not already hold them on, and only those: `cancel_previous`
-arms nothing that was not already armed.
+on a file it did not already hold them on, and a grant that gains a capability,
+and only those: `cancel_previous` arms nothing that was not already armed.
 
 ### Dry runs
 
@@ -1634,7 +1638,9 @@ judgement:
 - `action` is the request the trigger would replay, **unsent**: `type`,
   `method`, `path` and `body`. For `create_task` the body is a
   [`POST /v1/tasks`](#tasks) body, `paused: true` unless `on_fire: create` and
-  `restricted: true` unless `permission: workflow`. A reaction also carries the
+  `restricted: true` unless `permission: workflow`; for `start_handoff` it is a
+  [`POST /v1/handoffs`](#handoffs) body, with the same two defaults and its
+  `issue_ids` rendered. A reaction also carries the
   `branch` it rendered and the `task_id` it resolved, with that id in `path`.
   Its body is a `/follow_up` or `/retry` body, likewise `paused` unless
   `on_fire: create`, and a `cancel` has none. `action` is absent when the
@@ -1701,10 +1707,10 @@ is later [permanently deleted](#permanent-delete). The ledger outlives the
 file: an id with no file still lists its rows, and only an id that could not
 name a file is a `404`.
 
-A `create_task` replay carries an `Idempotency-Key` the daemon derives from the
-dedupe key — `trigger:{id}:` followed by a hash. Two triggers, or a trigger and
-a script sending its own key, therefore never replay each other's tasks. A task
-a trigger creates is otherwise an ordinary task.
+A `create_task` or `start_handoff` replay carries an `Idempotency-Key` the
+daemon derives from the dedupe key — `trigger:{id}:` followed by a hash. Two
+triggers, or a trigger and a script sending its own key, therefore never replay
+each other's tasks. A task a trigger creates is otherwise an ordinary task.
 
 ### Pushing an event
 
@@ -3809,7 +3815,9 @@ they need.
   `handoff.item_changed` carries `{ handoff_id, issue_id, from, to, by }` (an
   empty `from` or `to` is an item not yet resolved), and `handoff.settled`
   carries `{ id, task_id }`. Each event's `task_id` is the handoff's own task,
-  so that task's stream receives them. An `issue.*` event a handoff caused
+  so that task's stream receives them. A `type: issues`
+  [trigger](../guides/triggers.md#issues-watch-the-projects-issues) that names
+  `match.action: handoff_changed` fires on `handoff.item_changed`. An `issue.*` event a handoff caused
   carries `handoff_id` and `by: handoff`. [`POST /v1/handoffs`](#handoffs)
   creates one.
 - `trigger.fired` carries `{ trigger_id, delivery_id, action }`, where `action`

@@ -642,8 +642,9 @@ what happens when the group a `concurrency_key:` names still has unfinished
 work: fire anyway, skip the event, cancel what is running, or hold it until
 the group empties.
 
-A trigger that fires can create a task, follow up a finished one, retry a
-blocked one, or cancel one, finding the task by its branch. By default it only
+A trigger that fires can create a task, start a handoff over the issues ready
+to hand off, follow up a finished one, retry a blocked one, or cancel one,
+finding the task by its branch. By default it only
 **proposes**: the task lands `paused` with its agent steps restricted, and you
 start it with `resume`.
 
@@ -660,8 +661,8 @@ An agent can write triggers for you, and cannot switch one on. The
 `create-trigger` built-in writes a new trigger for a project, and
 `update-triggers` proposes improvements to a project's existing triggers for you
 to approve. Both install through `vincent trigger apply`, which refuses
-`enabled: true`, `on_fire: create` and `permission: workflow` on any file it did
-not already hold them on. The published `vincent-triggers` skill teaches the
+`enabled: true`, `on_fire: create`, `permission: workflow` and a wider handoff
+`grant` on any file it did not already hold them on. The published `vincent-triggers` skill teaches the
 same to an agent you talk to directly, and `vincent trigger validate` checks a
 file with no daemon running.
 

@@ -7087,7 +7087,7 @@ One Go binary, `vincent`:
 | `vincent trigger validate <file> [--json]` | *Added 2026-09-14 (task 098 decision 3).* Validates one trigger file **with no daemon**: `trigger.Parse` with the file's stem as the expected id, so the verdict is `POST /v1/triggers/validate`'s (§13.2) plus the check that `id:` equals the file name and that the name ends in `.yaml`. Text output is `<file>: ok — trigger <id>`, or one `  error: line <line>: <path>: <message>` line per error on stderr followed by `<file>: invalid (<n> error(s))`; `--json` is `{file, id, valid, errors: [{path, line, message}]}`, `id` present only when the file is valid. Exit 0 valid · 1 invalid or unreadable, mirroring `vincent workflow validate` |
 | `vincent trigger ls --project <id> [--json]` | *Added 2026-09-14 (task 098 decision 4).* Reads `{config_dir}/triggers/*.yaml` **with no daemon** and prints, one per line, the path of every file whose `source.project` is `<id>`. A file that does not parse is still listed when its `source.project` can be read leniently, so a broken trigger can be found and repaired; a file whose project cannot be read at all is reported on stderr and left out. `--json` is an array of `{file, id, project, version, valid, enabled, on_fire, permission, errors}`, with `on_fire` and `permission` `""` when the file leaves them out and `version` the token `apply` compares. Exit 0 at least one file matched · 1 none did, with `--json` too — the probe shape of `git ls-files --error-unmatch` |
 | `vincent workflow ls --global [--json]` · `vincent workflow apply --proposal <task_id> [--check]` | *Added 2026-09-19 (task 123 decisions 3 and 5).* Both need no daemon. `ls --global` reads `{config_dir}/workflows/*.y*ml` directly, under §5.2's regular-file and 1 MiB bounds, and prints one absolute path per line; it exits 1 when there is none, including when the directory is missing. `--json` prints each file's `file`, `name`, `version` (the `workflow.Version` token `GET /v1/workflows` reports and PATCH checks), `valid` and `errors`; a file that does not parse is still listed. Without `--global`, `ls` stays daemon-backed; `--global` with `--project` is a usage error. `apply` installs the proposal staged in `{data_dir}/workflow-proposals/<task_id>/` (§12.2) into `{config_dir}/workflows/`. The directory holds whole `*.yaml`/`*.yml` files named by their live base name and `manifest.json`, mapping each to the version `ls --global --json` reported or to `"absent"`. It runs every check before any write and refuses, writing nothing, when a staged file fails `Parse` (the verdict `validate` gives); files and manifest entries do not pair one for one, or anything else is in the directory; a version no longer matches, a file recorded `absent` now exists, or a recorded file is gone; a staged name is not a bare base name, or a new file is not `FileName(name:)`; a staged `name:` differs from the live file's (a rename — skipped when the live file has no readable name); or a staged `name:` is declared by another global file the proposal does not replace, or by two staged files (§5.2's duplicate). Each file is written with the atomic workflow writer, an existing file keeping its mode and a new one `0644`, `wrote <path>` per file, then the staging directory is removed. A failure part-way is reported, not rolled back. An empty manifest installs nothing and succeeds. `--check` runs every check, writes and removes nothing, and prints the staged absolute paths, sorted. Exit 0 installed or checked · 1 refused, nothing staged at that path, or a write failed |
-| `vincent trigger apply --proposal <task_id> --project <id>` | *Added 2026-09-14 (task 098 decisions 3 and 5).* Installs the staged proposal in `{data_dir}/trigger-proposals/<task_id>/` (§12.2) into `{config_dir}/triggers/`, **without arming anything**. The directory holds full proposed `<id>.yaml` files and `manifest.json`, an object mapping each trigger id to the version token `ls --json` reported or to `"absent"` for a new file. It refuses, writes nothing and names every offending file and key when any staged file fails `Parse`; a staged file's `source.project` is not `--project`; a staged file has no manifest entry or an entry has no staged file; an existing file's version no longer matches, a file recorded `absent` now exists, or a recorded file is gone; or any file **arms** relative to the file on disk, a new file comparing against absent: `enabled` from false or absent to `true`, `on_fire` from absent or `propose` to `create`, `permission` from absent or `restricted` to `workflow`. An already-armed value may be kept and disarming is always allowed; there is no override flag (§16). Each file is written `0600` through `internal/trigger`'s version-guarded whole-file replace, `wrote <path>` is printed per file, and the staging directory is removed once every file is written, printing `removed <dir>`. A proposal with an empty manifest and no staged file installs nothing and is removed the same way — `update-triggers` finding every trigger already right. It never touches `triggers.enabled` in `config.yaml`. Exit 0 installed · 1 refused, nothing staged at that path, or a write failed |
+| `vincent trigger apply --proposal <task_id> --project <id>` | *Added 2026-09-14 (task 098 decisions 3 and 5).* Installs the staged proposal in `{data_dir}/trigger-proposals/<task_id>/` (§12.2) into `{config_dir}/triggers/`, **without arming anything**. The directory holds full proposed `<id>.yaml` files and `manifest.json`, an object mapping each trigger id to the version token `ls --json` reported or to `"absent"` for a new file. It refuses, writes nothing and names every offending file and key when any staged file fails `Parse`; a staged file's `source.project` is not `--project`; a staged file has no manifest entry or an entry has no staged file; an existing file's version no longer matches, a file recorded `absent` now exists, or a recorded file is gone; or any file **arms** relative to the file on disk, a new file comparing against absent: `enabled` from false or absent to `true`, `on_fire` from absent or `propose` to `create`, `permission` from absent or `restricted` to `workflow` — *and, amended 2026-10-28 (task 137.9), a `start_handoff`'s `grant` naming a capability the file on disk does not; narrowing is allowed*. An already-armed value may be kept and disarming is always allowed; there is no override flag (§16). Each file is written `0600` through `internal/trigger`'s version-guarded whole-file replace, `wrote <path>` is printed per file, and the staging directory is removed once every file is written, printing `removed <dir>`. A proposal with an empty manifest and no staged file installs nothing and is removed the same way — `update-triggers` finding every trigger already right. It never touches `triggers.enabled` in `config.yaml`. Exit 0 installed · 1 refused, nothing staged at that path, or a write failed |
 | `vincent status <message>` | *Added 2026-08-26 (task 036).* Records what the current step is doing, in its own words (§5.4). Runs **from inside a step**: it addresses itself with §8.5's `VINCENT_TASK_ID` and `VINCENT_STEP_ID`, takes no id argument, and errors naming those variables when they are unset. Silent on success — its stdout is the step's transcript. *Amended 2026-09-17 (task 062.2 decision 4): not from inside a container — the image carries no vincent binary and `127.0.0.1` there is not the daemon; a containerized agent uses the `step_status` MCP tool (§13.4)* |
 | `vincent task deliver [--task ID] [--kind K] [--title T] [--body T \| --body-file F] [--summary T \| --summary-file F] [--head SHA] [--close-reason R] [--proof T \| --proof-file F]` | *Added 2026-10-24 (task 137.2, issue #835).* Records the task's delivery (§5.3) through `POST /v1/tasks/{id}/delivery`. Like `vincent status` it runs **from inside a step** and reads `VINCENT_TASK_ID`; `--task` names a task by hand, to correct a `done` one. `-` reads a file flag from stdin. Silent on success inside a step; with `--task` it prints what was stored. Not from inside a container, for `vincent status`'s reason: a containerized agent uses the `task_deliver` MCP tool (§13.4). `vincent task show` prints the delivery on a `delivered` row |
 | `vincent gc [--dry-run] [--force] [--json]` | Reclaims data-root directories no task claims (§10); a thin API client like the rest |
@@ -8359,7 +8359,8 @@ pipeline, after render and after a reaction's target resolution:
 | `queue_serial` | hold the event; when the group empties, fire the **oldest**, and so on until the backlog drains |
 
 `concurrency_key:` is a `text/template` over `.Event` naming the group. Absent,
-it is the trigger id for a `create_task` — so an author who sets only
+it is the trigger id for a `create_task` (and, since 2026-10-28, a
+`start_handoff`, task 137.9) — so an author who sets only
 `overrun:` gets one at a time per trigger — and the **resolved target task**
 for a `follow_up`, `retry` or `cancel`, whose group is that task's own state,
 read from `tasks.state` and not through this trigger's ledger: on the first
@@ -9032,11 +9033,12 @@ on purpose. `POST /v1/triggers/validate`, `PATCH /v1/triggers/{id}` and
 carries a trigger source or a vendor payload.
 
 A trigger's own dedupe is its ledger (§14), keyed by a template over the event.
-A `create_task` it replays carries an `Idempotency-Key` the daemon derives from
-that key: `trigger:{id}:` followed by a hash. That keeps two triggers, or a
-trigger and a CI job pushing in with its build id, from replaying each other's
-tasks, and keeps the header inside the bound above whatever the rendered key
-says.
+A `create_task` it replays — and, since 2026-10-28, a `start_handoff` (task
+137.9), whose route honours the header too — carries an `Idempotency-Key` the
+daemon derives from that key: `trigger:{id}:` followed by a hash. That keeps
+two triggers, or a trigger and a CI job pushing in with its build id, from
+replaying each other's tasks, and keeps the header inside the bound above
+whatever the rendered key says.
 
 *Added 2026-10-03 (task 130.10, issue #669).* **Agent marker headers.** The
 `vincent` client sends `X-Vincent-Task-Id: N` on every request when
@@ -17097,16 +17099,18 @@ the whole of the posture, not a set of tips.
   through `vincent trigger apply` (§12.1), which refuses every change that
   **arms** a trigger relative to the file on disk, a new file comparing against
   absent: `enabled` to `true`, `on_fire` to `create`, `permission` to
-  `workflow`. An already-armed value may be kept, disarming is always allowed,
-  and there is no override flag. The fourth switch, `triggers.enabled`, is in
-  `config.yaml`, which apply cannot touch. A human arms in the TUI, which asks
-  first, or in `$EDITOR`. Apply also refuses a file for any project but the
-  one it was given and a file that changed since the proposal read it, so a run
-  in one project cannot rewrite another's triggers. `update-triggers` may
-  rewrite a trigger that is already armed, and such a rewrite is live once
-  written, so its proposal waits at a `manual` gate. The trigger write routes
-  stay off MCP (§13.4). A proposal is staged in `{data_dir}` (§12.2), never in
-  a worktree, because a trigger's argv can carry a token.
+  `workflow` — and, amended 2026-10-28 (task 137.9), a `start_handoff`'s
+  `grant` gaining a capability (above). An already-armed value may be kept,
+  disarming is always allowed, and there is no override flag. The global
+  switch, `triggers.enabled`, is in `config.yaml`, which apply cannot touch. A
+  human arms in the TUI, which asks first, or in `$EDITOR`. Apply also refuses
+  a file for any project but the one it was given and a file that changed
+  since the proposal read it, so a run in one project cannot rewrite
+  another's triggers. `update-triggers` may rewrite a trigger that is already
+  armed, and such a rewrite is live once written, so its proposal waits at a
+  `manual` gate. The trigger write routes stay off MCP (§13.4). A proposal is
+  staged in `{data_dir}` (§12.2), never in a worktree, because a trigger's
+  argv can carry a token.
 
 ## 17. Observability
 

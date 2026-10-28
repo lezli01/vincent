@@ -11,10 +11,11 @@ a task is created, followed up, retried or cancelled with nobody pressing a key.
 Each trigger is one YAML file under `{config_dir}/triggers/`. It names a
 **source** of events, a **filter**, an **action**, and a **dedupe key** that
 makes each event fire at most once. Everything a trigger does goes through a
-route the API already has. A created task is a `POST /v1/tasks`, and a reaction
-is the same `follow_up`, `retry` or `cancel` a person would send. The route's
-validation, limits and state checks all apply, so from its first step on, a
-triggered task behaves exactly like one you created by hand.
+route the API already has. A created task is a `POST /v1/tasks`, a handoff a
+`POST /v1/handoffs`, and a reaction is the same `follow_up`, `retry` or
+`cancel` a person would send. The route's validation, limits and state checks
+all apply, so from its first step on, a triggered task behaves exactly like one
+you created by hand.
 
 Triggers are global. There is no project-level `.vincent/triggers/`, so nobody
 who can merge to a repository can start agents on your machine.
@@ -98,12 +99,12 @@ limits:
 | `match` | A cheap prefilter: dotted paths into the event, each with the value it must have. |
 | `if` | A guard over `.Event` that must render `true` or `false`. |
 | `allowed_actors` | GitHub and `issues` sources only: the issue or pull-request **authors** whose events may pass. |
-| `action` | What an event that passes does: `create_task`, `follow_up`, `retry` or `cancel`. |
+| `action` | What an event that passes does: `create_task`, `start_handoff`, `follow_up`, `retry` or `cancel`. |
 | `on_fire` | `propose` (the default) or `create`. |
 | `dedupe_key` | A template over `.Event`. Absent means the event's `id`. |
 | `overrun` | What to do when this event's concurrency group still has unfinished work: `parallel` (the default), `skip`, `cancel_previous`, `queue_coalesce` or `queue_serial`. |
 | `concurrency_key` | A template over `.Event` naming that group. Absent means the trigger id, or a reaction's resolved task. Needs an `overrun`. |
-| `limits` | `max_per_hour`, and `max_task_cost_usd` for a `create_task`. |
+| `limits` | `max_per_hour`, and `max_task_cost_usd` for a `create_task` or `start_handoff`. |
 | `permission` | `create_task` only: `restricted` (the default) or `workflow`. |
 
 `source.project` is the numeric id of a project, the `id` that
@@ -591,7 +592,7 @@ source:
 A `schedule` source is the clock rather than an outside system: it is what to
 use for work no event announces — a nightly dependency sweep, a weekday morning
 report. Everything after the source is the same as every other trigger:
-`match:`, `if:`, `dedupe_key:`, all four actions, the `propose` gate, the
+`match:`, `if:`, `dedupe_key:`, all five actions, the `propose` gate, the
 `restricted` clamp and `limits.max_per_hour`.
 
 Set **exactly one** of `cron:` and `every:`. Both, or neither, is refused when
@@ -1120,8 +1121,9 @@ when a file:
 - names a different `source.project` than `--project`;
 - changed on disk since the proposal recorded its version, or appeared after
   being recorded as absent;
-- **arms** the trigger: `enabled` from off to `true`, `on_fire` to `create`, or
-  `permission` to `workflow`.
+- **arms** the trigger: `enabled` from off to `true`, `on_fire` to `create`,
+  `permission` to `workflow`, or a `start_handoff`'s `grant` gaining a
+  capability.
 
 An already-armed value may be kept, and disarming is allowed. There is no
 override flag. You arm a trigger in the TUI's triggers view, which asks first,

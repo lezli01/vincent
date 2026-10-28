@@ -2648,8 +2648,9 @@ file and key, when:
   now exists, or a recorded file is gone;
 - a file **arms** a trigger compared with the file on disk, where a new file
   compares against no file: `enabled` from `false` or absent to `true`,
-  `on_fire` from absent or `propose` to `create`, or `permission` from absent
-  or `restricted` to `workflow`.
+  `on_fire` from absent or `propose` to `create`, `permission` from absent
+  or `restricted` to `workflow`, or a `start_handoff`'s `grant` gaining a
+  capability it did not have (narrowing one is allowed).
 
 A value that is already armed may stay, and disarming is always allowed. There
 is no flag to override any of this. Arm a trigger yourself, in the TUI's
