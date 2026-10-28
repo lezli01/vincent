@@ -293,7 +293,7 @@ func (f *trigFormLayer) leaf(block string, sf apiclient.TriggerSchemaField) trig
 		path = block + "." + sf.Name
 	}
 	row := trigRow{
-		wfEditRow: wfEditRow{field: trigField(sf), path: path, value: trigValue(f.def, path)},
+		wfEditRow:      wfEditRow{field: trigField(sf), path: path, value: trigValue(f.def, path)},
 		dangerous:      sf.Dangerous,
 		dangerousOnAdd: sf.DangerousOnAdd,
 		fallback:       sf.Default,

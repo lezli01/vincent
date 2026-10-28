@@ -75,8 +75,8 @@ type issuePayload struct {
 // issueChange is one trigger event a store event yields, before the issue
 // is read to fill it in.
 type issueChange struct {
-	action string
-	labels []string
+	action  string
+	labels  []string
 	state   bool
 	lane    bool
 	handoff bool
