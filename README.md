@@ -179,7 +179,7 @@ Three things to know about the Cursor adapter specifically:
   deliberate: a restricted mode that quietly isn't restricted is worse than
   none.
 
-Eight ready-to-copy workflows ship in [`examples/`](examples), and
+Twelve ready-to-copy workflows ship in [`examples/`](examples), and
 `vincent workflow init <name> --from <example>` installs one without a checkout;
 [Writing workflows](docs/guides/workflows.md) is the authoring guide and
 [Agent CLIs](docs/guides/agents.md) covers the adapters in full.

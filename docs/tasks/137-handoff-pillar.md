@@ -1006,9 +1006,37 @@ pull request.
   surface. (4) Three new operations on `issues`/`issue`: `ready` (`.`),
   `handoff` (`I`, board only) and `return` (`,`, asks first), withheld by
   the footer, `?` and the palette where they do not apply.
-- [ ] **137.12** ([#845](https://github.com/lezli01/vincent/issues/845)) Example handoff workflows under `examples/`, and
+- [x] **137.12** ([#845](https://github.com/lezli01/vincent/issues/845)) Example handoff workflows under `examples/`, and
   `github-iterate-work` split into its dispatcher and `github-handoff-train`
   with a trigger (decision 9). Depends: 137.8, 137.9.
+  *Done 2026-10-28:* `examples/pr-per-issue`, `merge-train`,
+  `comment-and-close` and `notify-handoff`, each with an unarmed trigger
+  under `docs/examples/triggers/` held by `TestShippedExampleTriggers`;
+  `.vincent/workflows/github-handoff-train.yaml` and its trigger, and
+  `github-iterate-work.yaml` deleted. Decisions recorded with the issue:
+  (1) iterate-work is deleted, not slimmed — its `headroom`, `track`,
+  `watch` and `collect` have no job once landing is trigger-driven, and
+  `github-resolve-issue-multiple` is the dispatcher; the three resolve
+  workflows now name the train. (2) The train has no `autopilot` gate:
+  arming the trigger with its grant is the consent; `review-resolve` still
+  asks, and nothing merges with a finding open. (3) Trigger files are real
+  files validated by a test, not embedded and not in the archive, and all
+  ship `enabled: false`. (4) After `merged` confirms the merge at the pushed
+  commit, the train runs `vincent handoff deliver --all --close completed
+  --comment-file`; the PR body keeps `Closes #N`, and a sync that closes
+  first is harmless. (5) Only `gh pr create` and `gh pr merge` moved to
+  `vincent github pr create|merge --task`; reads, `review-report`'s
+  comment upserts (they edit by id, which vincent has no route for) and the
+  force-push stay where they were, so the train's grant is
+  `[pull.create, pull.merge, issue.comment, issue.close]`; a reused PR is
+  linked with `vincent github pr link`. (6) Items replace `track`/`collect`:
+  the train stacks each item's `head_sha` in the handoff file's order, and
+  releases with a note an item that is not a `change`, has another base or
+  a missing commit. (7) A blocked or failed train stays so; its unresolved
+  items release when the task settles, and it never `return`s one itself.
+  One deviation from the plan: `pr-per-issue` is one command step over
+  `$VINCENT_HANDOFF_FILE`, not a fan-out, because the forge-write guard
+  admits only the handoff's own task and a lane is a task of its own.
 - [x] **137.13** ([#846](https://github.com/lezli01/vincent/issues/846)) `scripts/137-gate.sh` on all three platforms, against
   `cmd/fakegh` and `cmd/fakeagent`: claim exclusivity, an ungranted write
   refused and a granted one written back through the outbox, `wait` resolved by

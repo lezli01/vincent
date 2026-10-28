@@ -25,6 +25,16 @@ list with the user-facing context a commit subject cannot carry.
   Overview. The API adds `handoff_id` to tasks, `handoffs` to the issue
   detail and `paused` to the handoff marker.
 
+- **Example handoff workflows.** Four new examples run as handoffs
+  (`role: handoff`) over the issues whose work is ready: `pr-per-issue`
+  opens one pull request per issue and waits for each to close,
+  `merge-train` stacks every delivered change into one pull request, merges
+  it at the verified commit and closes the issues, `comment-and-close`
+  posts each delivered reply and closes its issue with no agent session,
+  and `notify-handoff` posts the handoff to a webhook. Each has a
+  ready-to-copy, unarmed trigger under `docs/examples/triggers/`. Install
+  one with `vincent workflow init <name> --from <name>`.
+
 - **Triggers can start handoffs.** A trigger's new `action.type:
   start_handoff` replays `POST /v1/handoffs` with a `workflow`, and either
   `issue_ids` (templates, each one issue id) or a literal `select`

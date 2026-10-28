@@ -1473,7 +1473,7 @@ the task-creation response, and in the daemon log.
 ## See also
 
 - [Writing workflows](../guides/workflows.md) — the guide.
-- [Example workflows](../../examples) — eight working files.
+- [Example workflows](../../examples) — twelve working files.
 - [Agent CLIs](../guides/agents.md) — what each adapter honors.
 
 {% endraw %}

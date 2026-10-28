@@ -120,7 +120,7 @@ succeeded, because an agent reporting success is a claim and a build is a fact;
 a failed check retries the step with the failure appended to the prompt. Then a
 human gate, and only after approval does anything get pushed.
 
-The other seven examples are
+The other eleven examples are
 [`fix-and-test`](../../examples/fix-and-test.yaml) (write a failing test, then
 fix it; macOS and Linux only),
 [`docs-update`](../../examples/docs-update.yaml) (bring the docs back in line
@@ -135,6 +135,17 @@ there is nothing to publish), and
 fans them out into child tasks and merges them back). `ship` and `split-work`
 include `go-checks`, so install it under its own name first:
 `vincent workflow init go-checks --from go-checks`.
+
+Four more are handoff workflows (`role: handoff`), which run once over the
+issues whose work is ready rather than as a task of their own, each with an
+unarmed trigger in [`docs/examples/triggers/`](../examples/triggers):
+[`pr-per-issue`](../../examples/pr-per-issue.yaml) (one pull request per
+issue), [`merge-train`](../../examples/merge-train.yaml) (one pull request for
+all of them, merged and closed),
+[`comment-and-close`](../../examples/comment-and-close.yaml) (post each answer
+and close the issue, with no agent session) and
+[`notify-handoff`](../../examples/notify-handoff.yaml) (tell a webhook what is
+ready).
 
 `feature-pr` is written for a Go repository — its check is
 `go build ./... && go test ./...`. Open the file and change that line to
