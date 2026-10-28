@@ -45,6 +45,8 @@ type (
 type trigRow struct {
 	wfEditRow
 	dangerous []apiclient.TriggerDangerousValue
+	// dangerousOnAdd asks before an edit that adds a list member.
+	dangerousOnAdd string
 	// fallback is the descriptor's Default: what an absent key means.
 	fallback string
 	// readOnly, when set, is why enter does not edit this row.
@@ -292,8 +294,9 @@ func (f *trigFormLayer) leaf(block string, sf apiclient.TriggerSchemaField) trig
 	}
 	row := trigRow{
 		wfEditRow: wfEditRow{field: trigField(sf), path: path, value: trigValue(f.def, path)},
-		dangerous: sf.Dangerous,
-		fallback:  sf.Default,
+		dangerous:      sf.Dangerous,
+		dangerousOnAdd: sf.DangerousOnAdd,
+		fallback:       sf.Default,
 	}
 	if sf.Control == apiclient.TriggerControlMatch {
 		row.field.Help += " — one key=value per entry; a|b means any of"
@@ -536,7 +539,33 @@ func (v *triggersView) formCommit(row trigRow, value string) tea.Cmd {
 		f.confirm = &trigValueConfirm{row: row, value: value, op: op, warning: warning}
 		return nil
 	}
+	// A list whose danger is widening it — a handoff's grant (task 137.9) —
+	// asks whenever the edit adds a member, and never when it only removes.
+	if row.dangerousOnAdd != "" && value != unsetMarker {
+		if added := listAdded(row.value, value); len(added) > 0 {
+			warning := []string{row.dangerousOnAdd, "adds: " + strings.Join(added, ", ")}
+			f.confirm = &trigValueConfirm{row: row, value: value, op: op, warning: warning}
+			return nil
+		}
+	}
 	return v.formSend(row, value, op)
+}
+
+// listAdded is the members of the comma-separated row after that before
+// does not hold.
+func listAdded(before, after string) []string {
+	have := map[string]bool{}
+	for _, p := range strings.Split(before, ",") {
+		have[strings.TrimSpace(p)] = true
+	}
+	var out []string
+	for _, p := range strings.Split(after, ",") {
+		if p = strings.TrimSpace(p); p != "" && !have[p] {
+			have[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // enableConsequence is what enabling means for a trigger with this on_fire.

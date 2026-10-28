@@ -92,6 +92,34 @@ type CreateMergeBack struct {
 	OnConflict string `json:"on_conflict"`
 }
 
+// HandoffBody is the POST /v1/handoffs body a start_handoff replays (task
+// 137.9). IssueIDs is a pointer so an `issue_ids:` whose every entry
+// rendered empty is still sent, as `[]`, and the route's 400 refuses the
+// delivery rather than the body quietly reading as something else.
+type HandoffBody struct {
+	ProjectID      int64              `json:"project_id"`
+	Workflow       string             `json:"workflow"`
+	IssueIDs       *[]int64           `json:"issue_ids,omitempty"`
+	Select         *HandoffSelectBody `json:"select,omitempty"`
+	Grant          []string           `json:"grant,omitempty"`
+	Title          string             `json:"title,omitempty"`
+	Description    string             `json:"description,omitempty"`
+	Fields         map[string]string  `json:"fields,omitempty"`
+	Paused         bool               `json:"paused,omitempty"`
+	Restricted     bool               `json:"restricted,omitempty"`
+	MaxTaskCostUSD *float64           `json:"max_task_cost_usd,omitempty"`
+}
+
+// HandoffSelectBody is POST /v1/handoffs' `select`, copied from the file.
+type HandoffSelectBody struct {
+	Lane     string   `json:"lane,omitempty"`
+	Delivery []string `json:"delivery,omitempty"`
+	Kind     []string `json:"kind,omitempty"`
+	Labels   []string `json:"labels,omitempty"`
+	Max      *int     `json:"max,omitempty"`
+	Order    string   `json:"order,omitempty"`
+}
+
 // FollowUpBody is the POST /v1/tasks/{id}/follow_up body a follow_up
 // replays; Paused is propose (decision 31C).
 type FollowUpBody struct {
@@ -114,7 +142,8 @@ type Replay struct {
 	// Branch is a reaction's rendered branch; TaskID the task it names.
 	Branch string `json:"branch,omitempty"`
 	TaskID *int64 `json:"task_id,omitempty"`
-	// Body is one of CreateBody, FollowUpBody or RetryBody, nil for cancel.
+	// Body is one of CreateBody, HandoffBody, FollowUpBody or RetryBody, nil
+	// for cancel.
 	Body any `json:"body,omitempty"`
 }
 
@@ -420,6 +449,8 @@ func renderAction(d *Definition, data renderData) (*Replay, error) {
 			rp.Path = "/v1/tasks/{id}/cancel"
 		}
 		return rp, nil
+	case ActionStartHandoff:
+		return renderHandoff(d, data, render, propose)
 	}
 	body := &CreateBody{
 		ProjectID:  d.Source.Project,
@@ -472,6 +503,65 @@ func renderAction(d *Definition, data renderData) (*Replay, error) {
 	return &Replay{Type: ActionCreateTask, Method: http.MethodPost, Path: createPath, Body: body}, nil
 }
 
+// renderHandoff renders a start_handoff into its POST /v1/handoffs.
+func renderHandoff(d *Definition, data renderData, render func(field, text string) (string, error), propose bool) (*Replay, error) {
+	a := d.Action
+	body := &HandoffBody{
+		ProjectID:  d.Source.Project,
+		Paused:     propose,
+		Restricted: d.EffectivePermission() != PermissionWorkflow,
+		Grant:      slices.Clone(a.Grant),
+	}
+	var err error
+	if body.Workflow, err = render("workflow", a.Workflow); err != nil {
+		return nil, err
+	}
+	body.Workflow = strings.TrimSpace(body.Workflow)
+	if body.Title, err = render("title", a.Title); err != nil {
+		return nil, err
+	}
+	body.Title = strings.TrimSpace(body.Title)
+	if body.Description, err = render("description", a.Description); err != nil {
+		return nil, err
+	}
+	for k, v := range a.Fields {
+		out, err := render("fields."+k, v)
+		if err != nil {
+			return nil, err
+		}
+		if body.Fields == nil {
+			body.Fields = map[string]string{}
+		}
+		body.Fields[k] = out
+	}
+	if a.Select != nil {
+		body.Select = &HandoffSelectBody{
+			Lane: a.Select.Lane, Delivery: slices.Clone(a.Select.Delivery), Kind: slices.Clone(a.Select.Kind),
+			Labels: slices.Clone(a.Select.Labels), Max: a.Select.Max, Order: a.Select.Order,
+		}
+	} else {
+		// An entry that renders empty is dropped; one that renders every
+		// entry empty still sends `[]`, never a fallback to a selection
+		// (task 137.9, settled 2026-10-28).
+		ids := make([]int64, 0, len(a.IssueIDs))
+		for i, text := range a.IssueIDs {
+			n, err := renderNumber("issue_ids["+strconv.Itoa(i)+"]", text, data)
+			if err != nil {
+				return nil, err
+			}
+			if n != nil && !slices.Contains(ids, int64(*n)) {
+				ids = append(ids, int64(*n))
+			}
+		}
+		body.IssueIDs = &ids
+	}
+	if d.Limits.MaxTaskCostUSD > 0 {
+		c := d.Limits.MaxTaskCostUSD
+		body.MaxTaskCostUSD = &c
+	}
+	return &Replay{Type: ActionStartHandoff, Method: http.MethodPost, Path: handoffPath, Body: body}, nil
+}
+
 // renderNumber renders an issue or pull-request template: a positive number,
 // or nothing at all.
 func renderNumber(field, text string, data renderData) (*int, error) {
@@ -507,6 +597,24 @@ func IdempotencyKey(triggerID, dedupeKey string) string {
 	return "trigger:" + triggerID + ":" + hex.EncodeToString(sum[:16])
 }
 
+type triggerCtxKey struct{}
+
+// ContextWithTrigger marks ctx as a trigger's in-process replay (task 137.9,
+// settled 2026-10-28). It travels in the request context and never on the
+// wire, so no HTTP client can claim it: a real request's context never holds
+// this package's key.
+func ContextWithTrigger(ctx context.Context, triggerID string) context.Context {
+	return context.WithValue(ctx, triggerCtxKey{}, triggerID)
+}
+
+// ViaTrigger is the id of the trigger whose replay ctx is, or "". It is how
+// POST /v1/handoffs attributes a handoff to the trigger that started it
+// without internal/trigger importing internal/api (decision 30).
+func ViaTrigger(ctx context.Context) string {
+	id, _ := ctx.Value(triggerCtxKey{}).(string)
+	return id
+}
+
 // replayResult is what the in-process route answered.
 type replayResult struct {
 	status int
@@ -534,9 +642,9 @@ func replay(ctx context.Context, h http.Handler, key string, rp *Replay) (*repla
 		req.Header.Set("Content-Type", "application/json")
 		req.ContentLength = int64(len(body))
 	}
-	// Only the create route honours §13.1's key; a reaction's dedupe is the
-	// ledger's alone, and a header its route ignores would be a claim.
-	if rp.Type == ActionCreateTask {
+	// Only the two create routes honour §13.1's key; a reaction's dedupe is
+	// the ledger's alone, and a header its route ignores would be a claim.
+	if rp.Type == ActionCreateTask || rp.Type == ActionStartHandoff {
 		req.Header.Set("Idempotency-Key", key)
 	}
 	// The inner mux is reached below the listener's bearer and Host checks,
@@ -676,6 +784,9 @@ func firePlan(ctx context.Context, st Store, h http.Handler, d *Definition, ev E
 	if err != nil {
 		return nil, err
 	}
+	// Every replay this delivery sends carries the trigger in its context,
+	// which is how POST /v1/handoffs records created_by: trigger.
+	ctx = ContextWithTrigger(ctx, d.ID)
 	del := &Delivery{Judgement: *j, Detail: j.Error}
 	if j.Outcome == store.DeliveryQueued {
 		return hold(ctx, st, d, ev, del, now)
@@ -714,12 +825,21 @@ func firePlan(ctx context.Context, st Store, h http.Handler, d *Definition, ev E
 				break
 			}
 			var created struct {
-				ID int64 `json:"id"`
+				ID     int64 `json:"id"`
+				TaskID int64 `json:"task_id"`
 			}
-			if uerr := json.Unmarshal(res.body, &created); uerr != nil || created.ID == 0 {
+			uerr := json.Unmarshal(res.body, &created)
+			// A handoff's ledger task is the handoff's task, not the handoff:
+			// TriggerGroupInFlight joins deliveries to tasks, so this is what
+			// makes a running handoff hold its trigger's concurrency group.
+			id := created.ID
+			if j.Action.Type == ActionStartHandoff {
+				id = created.TaskID
+			}
+			if uerr != nil || id == 0 {
 				del.Outcome, del.Detail = store.DeliveryError, "create answered "+strconv.Itoa(res.status)+" without a task id"
 			} else {
-				del.TaskID = &created.ID
+				del.TaskID = &id
 			}
 		case res.status >= 400 && res.status < 500:
 			// A 409 from an FSM-invalid target lands here too: appendix B

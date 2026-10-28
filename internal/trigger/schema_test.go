@@ -42,6 +42,8 @@ func docFor(source, action string) map[string]any {
 	case ActionCancel:
 		doc["action"] = map[string]any{"type": action, "target": TargetBranch, "branch": "{{ .Event.ref }}"}
 		doc["on_fire"] = OnFireCreate
+	case ActionStartHandoff:
+		doc["action"] = map[string]any{"type": action, "workflow": "train", "issue_ids": []any{"{{ .Event.issue_id }}"}}
 	default:
 		doc["action"] = map[string]any{"type": ActionCreateTask, "title": "{{ .Event.id }}"}
 	}
@@ -139,6 +141,10 @@ func sample(f SchemaField) any {
 		return "*/15 9-17 * * 1-5"
 	case "timezone":
 		return "UTC"
+	}
+	if f.Control == workflow.ControlList && len(f.Values) > 0 {
+		// A list over a closed set, such as grant.
+		return []any{f.Values[0]}
 	}
 	switch f.Control {
 	case workflow.ControlBool:
@@ -277,6 +283,10 @@ func TestTriggerSchemaMatchesValidation(t *testing.T) {
 			if strings.HasPrefix(path, "action.merge_back.") {
 				// merge_back is refused without the issue it merges into.
 				setPath(doc, "action.issue", "{{ .Event.issue }}", false)
+			}
+			if strings.HasPrefix(path, "action.select.") {
+				// A handoff names its issues or selects them, never both.
+				setPath(doc, "action.issue_ids", nil, true)
 			}
 			return doc
 		})

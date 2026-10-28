@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,18 +46,21 @@ func ProposalDir(dataDir string, taskID int64) string {
 	return filepath.Join(dataDir, ProposalsDir, strconv.FormatInt(taskID, 10))
 }
 
-// Switches are the three per-file values that arm a trigger (task 098
-// decision 2). The fourth arming switch, `triggers.enabled`, lives in
-// config.yaml, which nothing in this package writes.
+// Switches are the per-file values that arm a trigger (task 098 decision 2):
+// enabled, on_fire, permission and — since task 137.9 — a start_handoff's
+// grant, since widening it lets the trigger write to GitHub through vincent.
+// The global switch, `triggers.enabled`, lives in config.yaml, which nothing
+// in this package writes.
 type Switches struct {
 	Enabled    bool
 	OnFire     string
 	Permission string
+	Grant      []string
 }
 
 // SwitchesOf reads a valid definition's switches as written, absent as "".
 func SwitchesOf(d *Definition) Switches {
-	return Switches{Enabled: d.Enabled, OnFire: d.OnFire, Permission: d.Permission}
+	return Switches{Enabled: d.Enabled, OnFire: d.OnFire, Permission: d.Permission, Grant: d.Action.Grant}
 }
 
 // ArmingChanges names the keys that go from disarmed to armed between before
@@ -75,7 +79,26 @@ func ArmingChanges(before, after Switches) []string {
 	if before.Permission != PermissionWorkflow && after.Permission == PermissionWorkflow {
 		keys = append(keys, "permission")
 	}
+	// Widening a grant is arming (task 137.9, settled 2026-10-28): any
+	// capability after names that before did not. Narrowing is free.
+	if len(GrantAdded(before.Grant, after.Grant)) > 0 {
+		keys = append(keys, "grant")
+	}
 	return keys
+}
+
+// GrantAdded is the capabilities after grants that before does not, in
+// after's order. The TUI asks before an edit that makes it non-empty, as
+// ApplyProposal refuses one.
+func GrantAdded(before, after []string) []string {
+	var out []string
+	for _, c := range after {
+		c = strings.TrimSpace(c)
+		if !slices.Contains(out, c) && !slices.ContainsFunc(before, func(b string) bool { return strings.TrimSpace(b) == c }) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // loose is what can be read from a trigger file that does not validate. An
@@ -104,6 +127,23 @@ func peek(src []byte) loose {
 	}
 	if s, ok := doc["permission"].(string); ok {
 		l.switches.Permission = s
+	}
+	// A grant reads loosely too: a string entry counts, anything else is
+	// absent. An unreadable before is the empty grant, so every capability
+	// the staged file names is an addition — the conservative direction.
+	var grant any
+	switch a := doc["action"].(type) {
+	case map[string]any:
+		grant = a["grant"]
+	case map[any]any:
+		grant = a["grant"]
+	}
+	if g, ok := grant.([]any); ok {
+		for _, v := range g {
+			if s, ok := v.(string); ok {
+				l.switches.Grant = append(l.switches.Grant, s)
+			}
+		}
 	}
 	var project any
 	switch s := doc["source"].(type) {
@@ -216,6 +256,7 @@ var armingText = map[string]string{
 	"enabled":    "would turn the trigger on (enabled: true)",
 	"on_fire":    "would make it create running tasks (on_fire: create)",
 	"permission": "would run its workflow unrestricted (permission: workflow)",
+	"grant":      "would let it write to GitHub through vincent (grant: …)",
 }
 
 // ApplyProposal installs the staged files in staging through w, for the

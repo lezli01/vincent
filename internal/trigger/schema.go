@@ -1,6 +1,10 @@
 package trigger
 
-import "github.com/lezli01/vincent/internal/workflow"
+import (
+	"github.com/lezli01/vincent/internal/issuestate"
+	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/workflow"
+)
 
 // The trigger schema is the §8.2 descriptor's sibling (task 065 decision 3,
 // applied to triggers by task 096 decision 19): served by
@@ -46,6 +50,11 @@ type SchemaField struct {
 	// Dangerous marks the values a client must confirm before committing
 	// (decision 19), whichever control or key produced them.
 	Dangerous []DangerousValue `json:"dangerous,omitempty"`
+	// DangerousOnAdd, on a list, is the warning a client shows before an
+	// edit that adds any member the list did not have (task 137.9): a
+	// grant's danger is in widening it, never in one value. Removing a
+	// member never asks.
+	DangerousOnAdd string `json:"dangerous_on_add,omitempty"`
 }
 
 // DangerousValue is one value that asks first, with the warning to show.
@@ -85,6 +94,8 @@ const (
 		"propose holds each task for you to admit"
 	warnWorkflow = "permission: workflow lifts the restricted clamp: agent steps run as the workflow wrote " +
 		"them, full-auto included"
+	warnGrant = "grant lets the handoff's agent write to GitHub through vincent — comment, close, open, merge " +
+		"or rerun checks — on every handoff this trigger starts, with no keypress"
 	warnCancelPrevious = "overrun: cancel_previous lets an inbound event destroy in-flight agent work: every " +
 		"unfinished task in the group is cancelled before this event fires; name allowed_actors on a GitHub source"
 )
@@ -125,7 +136,7 @@ func SchemaDescriptor() Schema {
 			{Name: "limits", Control: ControlLimits, Help: "per-trigger bounds"},
 			{
 				Name: "permission", Control: workflow.ControlEnum, Values: []string{PermissionRestricted, PermissionWorkflow},
-				Default: PermissionRestricted, Help: "create_task only: restricted clamps every agent step; workflow runs it as written",
+				Default: PermissionRestricted, Help: "create_task and start_handoff only: restricted clamps every agent step; workflow runs it as written",
 				Dangerous: []DangerousValue{{Value: PermissionWorkflow, Warning: warnWorkflow}},
 			},
 		},
@@ -147,7 +158,7 @@ func SchemaDescriptor() Schema {
 			},
 			{
 				Type:   SourceIssues,
-				Help:   "vincent's own issue events, local or imported, on every project; by says who: human, agent, sync, or task for a lane move a task caused; lane_changed (lane, from_lane, task_id) fires only when match.action names it",
+				Help:   "vincent's own issue events, local or imported, on every project; by says who: human, agent, sync, or task for a lane move a task caused; lane_changed (lane, from_lane, task_id) and handoff_changed (handoff_id, outcome, from_outcome, task_id) fire only when match.action names them",
 				Fields: []SchemaField{sourceType, project},
 				Events: GitHubEvents(SourceIssues), Trusted: trustedList(SourceIssues),
 			},
@@ -205,6 +216,29 @@ func SchemaDescriptor() Schema {
 				},
 			},
 			{
+				Type: ActionStartHandoff,
+				Help: "start a handoff, as POST /v1/handoffs would for a person: one task over the issues named or selected",
+				Fields: []SchemaField{
+					actionType,
+					{Name: "workflow", Control: workflow.ControlWorkflow, Required: true, Help: "a workflow declaring role: handoff"},
+					{Name: "title", Control: workflow.ControlTemplate, Help: "template over .Event; defaults to Hand off N issues"},
+					{Name: "description", Control: workflow.ControlText, Help: "template over .Event"},
+					{Name: "fields", Control: workflow.ControlMap, Help: "workflow field → template over .Event"},
+					{Name: "issue_ids", Control: workflow.ControlList, Help: "instead of select: templates each rendering one issue id, or nothing; all empty refuses the delivery"},
+					{Name: "select.lane", Control: workflow.ControlEnum, Values: []string{string(issuestate.LaneHandOff)}, Help: "instead of issue_ids: the lane selected from"},
+					{Name: "select.delivery", Control: workflow.ControlEnum, Values: deliveryKinds(), Help: "the delivery kinds selected; one, or a list in the file"},
+					{Name: "select.kind", Control: workflow.ControlList, Help: "issue kinds selected; empty is every kind"},
+					{Name: "select.labels", Control: workflow.ControlList, Help: "labels every selected issue carries"},
+					{Name: "select.max", Control: workflow.ControlInt, Help: "at most this many issues, at least 1"},
+					{Name: "select.order", Control: workflow.ControlEnum, Values: []string{"priority"}, Help: "the order issues are selected in"},
+					{
+						Name: "grant", Control: workflow.ControlList, Values: capabilityNames(),
+						Help:           "forge-write capabilities the handoff's agent may use; adding one is arming",
+						DangerousOnAdd: warnGrant,
+					},
+				},
+			},
+			{
 				Type: ActionFollowUp,
 				Help: "run follow-up work on the finished task whose branch the event names",
 				Fields: []SchemaField{
@@ -228,11 +262,20 @@ func SchemaDescriptor() Schema {
 		},
 		Limits: []SchemaField{
 			{Name: "max_per_hour", Control: workflow.ControlInt, Help: "fires in a trailing hour; 0 is no cap"},
-			{Name: "max_task_cost_usd", Control: ControlNumber, Help: "create_task only: each created task's cost cap; 0 sends none"},
+			{Name: "max_task_cost_usd", Control: ControlNumber, Help: "create_task and start_handoff only: each created task's cost cap; 0 sends none"},
 		},
 		Signature: []SchemaField{
 			{Name: "scheme", Control: workflow.ControlEnum, Values: SignatureSchemes(), Required: true, Help: "github_hmac_sha256 is X-Hub-Signature-256"},
 			{Name: "secret_env", Control: workflow.ControlString, Required: true, Help: "the daemon environment variable holding the secret; never the secret itself"},
 		},
 	}
+}
+
+// deliveryKinds are `select.delivery`'s values, store's own vocabulary.
+func deliveryKinds() []string {
+	out := []string{}
+	for _, k := range []store.DeliveryKind{store.DeliveryChange, store.DeliveryReply, store.DeliveryNone} {
+		out = append(out, string(k))
+	}
+	return out
 }
