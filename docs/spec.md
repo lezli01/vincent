@@ -3385,8 +3385,10 @@ any other value fails at load. A `role: handoff` workflow is what a handoff
 workflow without the role, and `POST /v1/tasks` — so the CLI, MCP
 `task_create`, a trigger's `create_task` and a chat's task handoff — refuses
 one with it, both with a 400 (§13.2); a `fan_out` lane naming one is a
-creation-time tree error (§7.6). A `role: handoff` run therefore always has a
-non-zero `.Handoff` (§8.4). Like `hand_off:` it is the including workflow's
+creation-time tree error (§7.6). *Amended 2026-10-28 (review F2):* so do a
+follow-up's workflow form on any task but a handoff's own (task 027) and a
+handoff `return`'s `side` task naming one (§5.7), with the same 400. A
+`role: handoff` run therefore always has a non-zero `.Handoff` (§8.4). Like `hand_off:` it is the including workflow's
 alone: an included callee contributes steps, never top-level keys (§7.9).
 
 ### 8.2 Step types and fields

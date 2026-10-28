@@ -319,6 +319,42 @@ func TestHandoffRoleIsTwoWay(t *testing.T) {
 	}
 }
 
+// TestHandoffRoleOutsideAHandoff (review F2): decision 3 holds on the two
+// other ways a workflow is named — a follow-up's workflow form on an
+// ordinary task, and a return's `--side --workflow` — while a follow-up
+// round on the handoff's own task is still inside the handoff.
+func TestHandoffRoleOutsideAHandoff(t *testing.T) {
+	h := newActionHarness(t)
+	task := finishedTask(t, h, store.TaskDone)
+	resp, body := h.doJSON(t, http.MethodPost, followUpPath(task.ID), map[string]any{"workflow": handoffWorkflowName})
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "vincent handoff start") {
+		t.Errorf("follow-up with a handoff workflow: %d %s, want 400 naming vincent handoff start", resp.StatusCode, body)
+	}
+
+	a := handOffIssue(t, h, store.NewIssue{Title: "a"})
+	main, err := h.store.LatestIssueMainTask(t.Context(), a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, h.repo, "branch", "-q", main.BranchName)
+	ho := startHandoff(t, h, a.ID)
+	resp, body = h.postMarked(t, itemVerbPath(ho.ID, strconv.FormatInt(a.ID, 10), "return"),
+		map[string]any{"follow_up": "again", "side": true, "workflow": handoffWorkflowName})
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "vincent handoff start") {
+		t.Errorf("return --side with a handoff workflow: %d %s, want 400 naming vincent handoff start", resp.StatusCode, body)
+	}
+	one := wantStatus(t, http.StatusOK)(h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/handoffs/%d", ho.ID), nil))
+	if it := outcomeOf(t, one, a.ID); it.Outcome != "" {
+		t.Errorf("a refused return recorded %s", it.Outcome)
+	}
+
+	setState(t, h, ho.TaskID, store.TaskRunning)
+	if _, _, err := h.store.TransitionTask(t.Context(), ho.TaskID, store.TaskRunning, store.TaskDone, store.TaskChange{}); err != nil {
+		t.Fatal(err)
+	}
+	wantStatus(t, http.StatusOK)(h.doJSON(t, http.MethodPost, followUpPath(ho.TaskID), map[string]any{"workflow": handoffWorkflowName}))
+}
+
 func eligibleNow(t *testing.T, h *taskHarness, issueID int64) (bool, error) {
 	t.Helper()
 	_, ok, err := h.store.IssueClaim(t.Context(), h.projectID, issueID)

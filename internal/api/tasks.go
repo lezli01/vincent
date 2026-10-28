@@ -671,10 +671,16 @@ func refuseHandoffRole(w http.ResponseWriter, wf *workflow.Workflow) bool {
 	if !wf.IsHandoff() {
 		return true
 	}
-	writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf(
-		"workflow %q has role: handoff and only a handoff runs it; start one with `vincent handoff start` (POST /v1/handoffs)",
-		wf.Name))
+	writeError(w, http.StatusBadRequest, CodeValidationFailed, handoffRoleRefusal(wf))
 	return false
+}
+
+// handoffRoleRefusal is the 400's message for a `role: handoff` workflow
+// run outside a handoff.
+func handoffRoleRefusal(wf *workflow.Workflow) string {
+	return fmt.Sprintf(
+		"workflow %q has role: handoff and only a handoff runs it; start one with `vincent handoff start` (POST /v1/handoffs)",
+		wf.Name)
 }
 
 // prepareTaskCreate is the whole of POST /v1/tasks' validation up to the

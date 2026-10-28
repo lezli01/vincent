@@ -172,8 +172,10 @@ Marks a workflow that a [handoff](../guides/issues.md) runs: one integration
 task over several issues whose work is ready, started with `vincent handoff
 start`. The rule runs both ways. A handoff runs only a `role: handoff`
 workflow, and nothing else may start one: `vincent task create`, MCP's
-`task_create`, a trigger's `create_task` and a chat's task handoff all get a
-400 naming `vincent handoff start`, and the new-task form does not offer it. A
+`task_create`, a trigger's `create_task`, a chat's task handoff, a
+follow-up's `--workflow` (except on the handoff's own task) and a handoff
+return's `--side --workflow` all get a 400 naming `vincent handoff start`,
+and the new-task and follow-up forms do not offer it. A
 [`fan_out`](#type-fan_out) lane naming one is refused when the task is
 created. So a `role: handoff` step always renders a non-zero
 [`.Handoff`](#handoff), and reads its items from there or from

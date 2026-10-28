@@ -357,7 +357,7 @@ func (s *Server) prepareHandoffSideTask(
 		return nil, false
 	}
 	prep, ok := s.prepareTaskCreate(ctx, w, &create, "", false)
-	if !ok {
+	if !ok || !refuseHandoffRole(w, prep.workflow) {
 		return nil, false
 	}
 	t := prep.task

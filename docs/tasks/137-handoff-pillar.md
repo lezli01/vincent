@@ -565,7 +565,9 @@ The skills and the five built-ins are re-read in the same piece of work, per
    `POST /v1/handoffs` refuses a workflow without the role with a 400 naming
    it; a `fan_out` lane naming one is a creation-time `TreeError`. A `role:
    handoff` run always has a non-zero `.Handoff`, and the new-task form
-   hiding these workflows is the same rule shown in the UI.
+   hiding these workflows is the same rule shown in the UI. *(Review F2 of
+   the 137.6–137.8 train:* a follow-up's workflow form on any task but the
+   handoff's own, and `return --side --workflow`, are refused the same 400.)
 
 ### 8. Starting a handoff, and `select:` (2026-10-24)
 

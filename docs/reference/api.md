@@ -2283,8 +2283,9 @@ you want templating, put it in a workflow and name that.
 
 A `workflow` name is resolved through the registry now, not at admission: an
 unknown name, a workflow that cannot run on this host, one that fails validation
-once its `include`s are expanded, or a fan-out tree past `fan_out.max_depth`
-from this task's own depth are all `400`s. What validates is stored on the task
+once its `include`s are expanded, a [`role: handoff`](workflow-schema.md#role)
+workflow on any task but a handoff's own, or a fan-out tree past
+`fan_out.max_depth` from this task's own depth are all `400`s. What validates is stored on the task
 and is what runs, so editing the file afterwards does not change the run in
 flight.
 
@@ -3446,7 +3447,8 @@ kept on the item.
   main task, a merge-back included (`paused` holds it); with `side` it is a
   new side task with `merge_back`, running that task's workflow unless
   `workflow` names another. `side` and `paused` need `follow_up`; `workflow`
-  needs `side`.
+  needs `side`, and naming a `role: handoff` workflow there is a `400`, as on
+  `POST /v1/tasks`.
 - **wait** — `outcome: waiting`. The item keeps its claim after the
   handoff's task settles. Closing the issue — by anyone, an import from
   GitHub included — records it `delivered`, by the closing actor.

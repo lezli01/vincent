@@ -504,6 +504,18 @@ func (s *Server) compileFollowUp(
 		if mismatch := entry.Workflow.PlatformMismatch(workflow.HostPlatform()); mismatch != "" {
 			return nil, fmt.Sprintf("workflow %q cannot run here: %s", sel.WorkflowName, mismatch)
 		}
+		// Task 137.8 decision 3: a `role: handoff` workflow runs only as a
+		// handoff's task, so its .Handoff is never zero. A follow-up round on
+		// a handoff's own task is still inside that handoff.
+		if entry.Workflow.IsHandoff() {
+			_, err := s.deps.Store.GetHandoffByTask(ctx, task.ID)
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, handoffRoleRefusal(entry.Workflow)
+			}
+			if err != nil {
+				return nil, fmt.Sprintf("workflow %q: %v", sel.WorkflowName, err)
+			}
+		}
 		// §8.1.2's field contract, exactly as task creation applies it: a
 		// required field's default fills an absent key, enums normalize, and
 		// what still fails is a 400 (issue #369). Against the registry entry,
