@@ -377,7 +377,7 @@ func (f *handoffForm) updateKey(msg tea.KeyPressMsg) (cmd tea.Cmd, closed bool) 
 		if f.row == hfWorkflow {
 			f.wf = (f.wf + 1) % len(f.workflows)
 		}
-	case "space", "enter", "x":
+	case "space", "enter":
 		switch {
 		case f.row == hfPaused:
 			f.paused = !f.paused
