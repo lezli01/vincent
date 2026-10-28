@@ -137,7 +137,7 @@ include `go-checks`, so install it under its own name first:
 `vincent workflow init go-checks --from go-checks`.
 
 Four more are handoff workflows (`role: handoff`), which run once over the
-issues whose work is ready rather than as a task of their own, each with an
+issues whose work is ready, never as an ordinary task, each with an
 unarmed trigger in [`docs/examples/triggers/`](../examples/triggers):
 [`pr-per-issue`](../../examples/pr-per-issue.yaml) (one pull request per
 issue), [`merge-train`](../../examples/merge-train.yaml) (one pull request for
