@@ -1502,7 +1502,13 @@ between two selections is never taken twice: the second selection reads it as
 claimed. **The grant's vocabulary** is closed — `issue.comment`,
 `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`,
 `checks.rerun` (task 137 decision 6) — and the create stores it in
-`grant_json` deduplicated and in that order; nothing reads it until 137.7.
+`grant_json` deduplicated and in that order. *Amended 2026-10-28 (tasks
+137.7 and 137.8, review F4):* three things read it — the forge-write guard
+(`issues.ForgeWrite`, row 11), which allows a live handoff task's issue and
+pull-request writes the grant names, item verbs included; the per-step MCP
+endpoint's tool listing (§13.4), which offers a pull-request write tool only
+when the grant names it; and the handoff's step context, `.Handoff.Grant`
+(§8.4) and `$VINCENT_HANDOFF_FILE`'s `grant` (§8.5).
 
 **Derived state.** A handoff is never stored with a state: it is `live` while
 its task is unsettled, `waiting` while the task is settled and some item is
