@@ -51,6 +51,14 @@ a shell, `vincent issue ls --lane hand_off` lists one lane (the flag repeats);
 the API takes `?lane=` on `GET /v1/issues`, and the MCP tool `issue_list` takes
 `lane` in its `query`.
 
+Beside its lane, an issue may carry a **handoff marker** — `pending` (a
+handoff may claim it now), `claimed` or `waiting` (a handoff holds it),
+`delivered` (handed off and left open) or `idle` (finished work that is not
+ready). `vincent issue ls` prints it in the `LANE` cell, and
+`--handoff pending` lists the issues with that marker; the API spells it
+`handoff` on each row and takes `?handoff=`. The
+[API reference](../reference/api.md#handoff-marker) has the full rule.
+
 ## The main worktree
 
 A task created from an issue is the issue's **main** task unless you ask

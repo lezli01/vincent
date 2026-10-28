@@ -13,6 +13,28 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Triggers can start handoffs.** A trigger's new `action.type:
+  start_handoff` replays `POST /v1/handoffs` with a `workflow`, and either
+  `issue_ids` (templates, each one issue id) or a literal `select`
+  (`lane: hand_off`, `delivery`, `kind`, `labels`, `max`, `order`), plus an
+  optional `grant`. `on_fire`, `permission` and `limits.max_task_cost_usd`
+  work as on `create_task`, the handoff records `created_by: trigger` and
+  the trigger's id, and its task holds the trigger's overrun group, so
+  `overrun: queue_coalesce` batches what becomes ready while it runs. Adding
+  a capability to a `grant` is arming: the TUI asks first and `vincent
+  trigger apply` refuses a staged file that does it. A `type: issues`
+  trigger can also opt in to `handoff_changed`, fired when a handoff item's
+  outcome moves, with `outcome`, `from_outcome`, `handoff_id` and `task_id`.
+
+- **See where each issue stands toward a handoff.** Every issue now carries
+  a derived handoff marker — `pending` (a handoff may claim it now),
+  `claimed`, `waiting`, `delivered` (handed off and left open) or `idle`
+  (finished work that is not ready) — as `handoff` on `GET /v1/issues` rows
+  and the issue detail, with the claiming or delivering handoff and its
+  task. `vincent issue ls` shows it inside the `LANE` cell
+  (`hand_off claimed H7`), `vincent issue show` prints a `handoff` line, and
+  `--handoff` / `?handoff=` (repeatable) filter by it.
+
 - **Record what became of each handoff item.** `vincent handoff deliver`,
   `return`, `wait` and `release` (over `POST
   /v1/handoffs/{id}/items/{issue_id}/…` and the `handoff_deliver`,

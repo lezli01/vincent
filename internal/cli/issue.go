@@ -64,15 +64,38 @@ func issueState(iss *apiclient.Issue) string {
 	return iss.State
 }
 
-// issueLane renders an issue's board lane as the API spells it, marked with
-// " !" when a root task is waiting on a human (task 134 decision 3). The
-// marker rides any lane, done included: a closed issue can still have a
-// stray live task that needs one.
+// issueLane renders an issue's board lane as the API spells it, then its
+// handoff marker when it has one (task 137.10) — `hand_off pending`,
+// `hand_off claimed H7`, with the handoff id for a marker that names one —
+// then " !" when a root task is waiting on a human (task 134 decision 3).
+// The attention mark rides any lane, done included: a closed issue can
+// still have a stray live task that needs one.
 func issueLane(iss *apiclient.Issue) string {
-	if iss.Attention {
-		return iss.Lane + " !"
+	out := iss.Lane
+	if h := iss.Handoff; h != nil {
+		out += " " + h.State
+		if h.HandoffID != nil {
+			out += " H" + strconv.FormatInt(*h.HandoffID, 10)
+		}
 	}
-	return iss.Lane
+	if iss.Attention {
+		out += " !"
+	}
+	return out
+}
+
+// issueHandoff renders an issue's handoff marker for `issue show`: the
+// state, then the handoff and its task when the marker names them.
+func issueHandoff(h *apiclient.IssueHandoff) string {
+	out := h.State
+	if h.HandoffID != nil {
+		out += fmt.Sprintf(" (handoff %d", *h.HandoffID)
+		if h.TaskID != nil {
+			out += fmt.Sprintf(", task %d", *h.TaskID)
+		}
+		out += ")"
+	}
+	return out
 }
 
 // issuePriority renders a priority on Linear's scale; 0 is "none".
@@ -89,10 +112,21 @@ func newIssueLsCmd() *cobra.Command {
 		Use:   "ls",
 		Short: "List issues",
 		Long: "Lists issues, most recently updated first. Without --project the list\n" +
-			"spans every project and gains a PROJECT column. --state, --lane and --label\n" +
-			"repeat; every --label given must match, and filters combine by AND.\n\n" +
-			"LANE is the issue's board lane: open, in_progress, hand_off or done. A\n" +
-			"trailing \" !\" marks an issue a root task is waiting on a human for.\n" +
+			"spans every project and gains a PROJECT column. --state, --lane, --handoff\n" +
+			"and --label repeat; every --label given must match, and filters combine by\n" +
+			"AND.\n\n" +
+			"LANE is the issue's board lane: open, in_progress, hand_off or done,\n" +
+			"followed by its handoff marker when it has one, and the handoff's id\n" +
+			"(H7) when the marker names one:\n\n" +
+			"  pending    in hand_off, and a handoff may claim it now\n" +
+			"  claimed    a handoff claims it and has not decided it yet\n" +
+			"  waiting    a handoff claims it and parked it on something outside\n" +
+			"  delivered  in hand_off, its current delivery delivered without a close;\n" +
+			"             a follow-up that moves its head makes it pending again\n" +
+			"  idle       in_progress with nothing running: finished, not yet ready\n\n" +
+			"claimed and waiting show in any lane, so an issue its handoff restarts\n" +
+			"keeps them. A closed issue has no marker. A trailing \" !\" marks an\n" +
+			"issue a root task is waiting on a human for.\n" +
 			"--lane done is every closed issue, whatever its close reason, so\n" +
 			"--state open --lane done lists nothing.\n\n" +
 			"--github N finds the issue imported from GitHub issue #N and needs\n" +
@@ -158,6 +192,8 @@ func newIssueLsCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.States, "state", nil, "Only issues in this state: open or closed (repeatable)")
 	cmd.Flags().StringSliceVar(&opts.Lanes, "lane", nil,
 		"Only issues in this lane: open, in_progress, hand_off or done (repeatable)")
+	cmd.Flags().StringSliceVar(&opts.Handoffs, "handoff", nil,
+		"Only issues with this handoff marker: pending, claimed, waiting, delivered or idle (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.Labels, "label", nil, "Only issues carrying this label (repeatable; all must match)")
 	cmd.Flags().StringVar(&opts.Kind, "kind", "", "Only issues of this kind")
 	cmd.Flags().StringVar(&opts.Query, "search", "", "Only issues whose title or body contains this text")
@@ -233,6 +269,9 @@ func printIssue(out io.Writer, iss *apiclient.Issue) error {
 		{"priority", issuePriority(iss.Priority)},
 		{"labels", dash(strings.Join(iss.Labels, ", "))},
 		{"author", dash(iss.Author)},
+	}
+	if iss.Handoff != nil {
+		fields = append(fields, [2]string{"handoff", issueHandoff(iss.Handoff)})
 	}
 	if src := iss.Source; src != nil {
 		ref := src.Repo

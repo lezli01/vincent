@@ -17,6 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/trigger"
 	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
@@ -226,9 +227,15 @@ func (s *Server) handleHandoffCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Decision 6's "never an agent", with decision 6's own definition of an
-	// agent caller — issueActor's. Best-effort, like every marker (§16).
-	createdBy := store.HandoffByHuman
-	if issueActor(r) == issuestate.Agent {
+	// agent caller — issueActor's. Best-effort, like every marker (§16). A
+	// trigger's in-process replay is neither (task 137.9): it is named by
+	// the request context, which no HTTP client can set, and its grant is
+	// the one a human armed in the file, so it passes the check by design.
+	createdBy, triggerID := store.HandoffByHuman, trigger.ViaTrigger(r.Context())
+	switch {
+	case triggerID != "":
+		createdBy = store.HandoffByTrigger
+	case issueActor(r) == issuestate.Agent:
 		createdBy = store.HandoffByAgent
 		if grantJSON != "[]" {
 			writeConflict(w, "only a human may give a handoff a grant; an agent may start a grant-less handoff",
@@ -270,7 +277,7 @@ func (s *Server) handleHandoffCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	h := &store.Handoff{GrantJSON: grantJSON, CreatedBy: createdBy}
+	h := &store.Handoff{GrantJSON: grantJSON, CreatedBy: createdBy, TriggerID: triggerID}
 	in := store.NewHandoff{Handoff: h, Task: &t, ResolveBranch: resolveBranch, TitleFor: handoffTitle}
 	if req.Select != nil {
 		in.Select = &store.HandoffSelect{

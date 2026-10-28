@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/lezli01/vincent/internal/issuestate"
+	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/workflow"
 )
 
@@ -51,7 +54,14 @@ const (
 	ActionFollowUp = "follow_up"
 	ActionRetry    = "retry"
 	ActionCancel   = "cancel"
+	// ActionStartHandoff replays POST /v1/handoffs (task 137.9): one handoff
+	// task over the issues `issue_ids` names or `select` picks, with the
+	// trigger's `grant`.
+	ActionStartHandoff = "start_handoff"
 )
+
+// handoffPath is the route a start_handoff action replays.
+const handoffPath = "/v1/handoffs"
 
 // TargetBranch is the one reaction target: the unarchived task in
 // source.project whose branch_name equals the rendered `branch:`.
@@ -224,6 +234,59 @@ type Action struct {
 	// main line. It is replayed as POST /v1/tasks' `merge_back`, which keeps
 	// its 400 for an issue with no main branch yet, so such a delivery fails.
 	MergeBack *ActionMergeBack `yaml:"merge_back" json:"merge_back,omitempty"`
+	// IssueIDs, Select and Grant are a start_handoff's (task 137.9). Each
+	// IssueIDs entry is a template rendering one issue id the way `issue:`
+	// does, or nothing; Select is literal and checked at load; Grant is the
+	// handoff's forge-write capabilities, from store.Capabilities.
+	IssueIDs []string      `yaml:"issue_ids" json:"issue_ids,omitempty"`
+	Select   *ActionSelect `yaml:"select" json:"select,omitempty"`
+	Grant    []string      `yaml:"grant" json:"grant,omitempty"`
+}
+
+// ActionSelect is a start_handoff's `select:` (task 137 decision 8): which
+// `hand_off`-lane issues the handoff claims when it is created. Its values
+// are literal, not templates, so a typo is refused when the file loads.
+type ActionSelect struct {
+	Lane     string    `yaml:"lane" json:"lane,omitempty"`
+	Delivery OneOrMany `yaml:"delivery" json:"delivery,omitempty"`
+	Kind     OneOrMany `yaml:"kind" json:"kind,omitempty"`
+	Labels   []string  `yaml:"labels" json:"labels,omitempty"`
+	Max      *int      `yaml:"max" json:"max,omitempty"`
+	Order    string    `yaml:"order" json:"order,omitempty"`
+}
+
+// OneOrMany is a value written either as one string or as a list of them,
+// the way `select.delivery` and `select.kind` are.
+type OneOrMany []string
+
+// UnmarshalYAML accepts "x" as ["x"].
+func (l *OneOrMany) UnmarshalYAML(unmarshal func(any) error) error {
+	var one string
+	if err := unmarshal(&one); err == nil {
+		*l = OneOrMany{one}
+		return nil
+	}
+	var many []string
+	if err := unmarshal(&many); err != nil {
+		return errors.New("must be a string or a list of strings")
+	}
+	*l = many
+	return nil
+}
+
+// UnmarshalJSON accepts "x" as ["x"].
+func (l *OneOrMany) UnmarshalJSON(b []byte) error {
+	var one string
+	if err := json.Unmarshal(b, &one); err == nil {
+		*l = OneOrMany{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return errors.New("must be a string or a list of strings")
+	}
+	*l = many
+	return nil
 }
 
 // ActionMergeBack is a create_task action's `merge_back:` mapping.
@@ -585,7 +648,7 @@ func parseCronOK(expr string, add addFunc) bool {
 var githubEvents = map[string][]string{
 	SourceGitHubIssues: {"opened", "closed", "reopened", "labeled", "unlabeled", "assigned"},
 	SourceGitHubPRs:    {"opened", "ready_for_review", "review_requested", "closed", "merged"},
-	SourceIssues:       {"opened", "closed", "reopened", "labeled", "unlabeled", ActionLaneChanged},
+	SourceIssues:       {"opened", "closed", "reopened", "labeled", "unlabeled", ActionLaneChanged, ActionHandoffChanged},
 }
 
 // ActionLaneChanged is the `type: issues` action for an issue's board lane
@@ -593,6 +656,9 @@ var githubEvents = map[string][]string{
 const (
 	ActionLaneChanged = "lane_changed"
 	ByTask            = "task"
+	// ActionHandoffChanged is the `type: issues` action for a handoff item's
+	// outcome moving (task 137.9), mapped from handoff.item_changed.
+	ActionHandoffChanged = "handoff_changed"
 )
 
 // optInEvents are the events a source synthesizes only for a trigger whose
@@ -600,7 +666,7 @@ const (
 // matches defaultEvents, which leaves them out — so arming no trigger that
 // loaded before lane_changed existed changes what it fires on.
 var optInEvents = map[string]map[string]bool{
-	SourceIssues: {ActionLaneChanged: true},
+	SourceIssues: {ActionLaneChanged: true, ActionHandoffChanged: true},
 }
 
 // defaultEvents are the events a trigger with no match.action can match.
@@ -640,6 +706,8 @@ func (d *Definition) wantsAction(action string) bool {
 // decision 1), as is a `task` lane move. A sync-delivered lane_changed is
 // untrusted: it comes only from a GitHub close or reopen, which an outsider
 // can make exactly as they make closed and reopened (task 134.7 decision 4).
+// A sync-delivered handoff_changed is untrusted for the same reason: only a
+// GitHub close resolves a waiting item by sync (task 137.9).
 var trustedEvents = map[string]map[string]bool{
 	SourceGitHubIssues: {"labeled": true, "unlabeled": true, "assigned": true},
 	SourceGitHubPRs:    {"merged": true},
@@ -778,6 +846,9 @@ func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate
 		refuse("action.target", a.Target != "", why)
 		refuse("action.branch", a.Branch != "", why)
 		refuse("action.prompt", a.Prompt != "", "a created task's work is its workflow and description")
+		refuseHandoffFields(a, refuse)
+	case ActionStartHandoff:
+		validateStartHandoff(a, add, refuse, checkTemplate)
 	case ActionFollowUp, ActionRetry, ActionCancel:
 		switch a.Target {
 		case "":
@@ -817,9 +888,82 @@ func validateAction(d *Definition, add addFunc, refuse refuseFunc, checkTemplate
 		refuse("action.merge_back", a.MergeBack != nil, why)
 		refuse("permission", d.Permission != "", "the restricted clamp is set when a task is created")
 		refuse("limits.max_task_cost_usd", d.Limits.MaxTaskCostUSD != 0, "a task's cost cap is set when it is created")
+		refuseHandoffFields(a, refuse)
 	default:
 		add("action.type", "must be one of %s", strings.Join(ActionTypes(), ", "))
 	}
+}
+
+// refuseHandoffFields refuses a start_handoff's own fields on any other
+// action.
+func refuseHandoffFields(a Action, refuse refuseFunc) {
+	const why = "only a start_handoff claims issues or carries a grant"
+	refuse("action.issue_ids", len(a.IssueIDs) > 0, why)
+	refuse("action.select", a.Select != nil, why)
+	refuse("action.grant", len(a.Grant) > 0, why)
+}
+
+// validateStartHandoff checks a start_handoff against POST /v1/handoffs'
+// own rules, so a trigger that could only ever be refused is caught at load
+// rather than in the ledger.
+func validateStartHandoff(a Action, add addFunc, refuse refuseFunc, checkTemplate func(path, text string)) {
+	if strings.TrimSpace(a.Workflow) == "" {
+		add("action.workflow", "is required: there is no default handoff workflow")
+	}
+	checkTemplate("action.workflow", a.Workflow)
+	checkTemplate("action.title", a.Title)
+	checkTemplate("action.description", a.Description)
+	for k, v := range a.Fields {
+		checkTemplate("action.fields."+k, v)
+	}
+	if (len(a.IssueIDs) > 0) == (a.Select != nil) {
+		add("action.issue_ids", "exactly one of issue_ids and select is required")
+	}
+	for i, text := range a.IssueIDs {
+		path := fmt.Sprintf("action.issue_ids[%d]", i)
+		if strings.TrimSpace(text) == "" {
+			add(path, "must not be empty: a template rendering one issue id")
+			continue
+		}
+		checkTemplate(path, text)
+	}
+	if sel := a.Select; sel != nil {
+		if sel.Lane != "" && sel.Lane != string(issuestate.LaneHandOff) {
+			add("action.select.lane", "must be %q, the only lane a handoff selects from", issuestate.LaneHandOff)
+		}
+		for _, k := range sel.Delivery {
+			if !store.ValidDeliveryKind(store.DeliveryKind(k)) {
+				add("action.select.delivery", "%q must be one of change, reply, none", k)
+			}
+		}
+		if sel.Max != nil && *sel.Max < 1 {
+			add("action.select.max", "must be at least 1")
+		}
+		if sel.Order != "" && sel.Order != "priority" {
+			add("action.select.order", "must be %q", "priority")
+		}
+	}
+	for _, g := range a.Grant {
+		if !slices.Contains(store.Capabilities, store.Capability(strings.TrimSpace(g))) {
+			add("action.grant", "%q is not a grant capability (%s)", g, strings.Join(capabilityNames(), ", "))
+		}
+	}
+	const why = "a handoff task is a root task cut from the project's base, with no issue of its own"
+	refuse("action.issue", a.Issue != "", why)
+	refuse("action.github_pull", a.GitHubPull != "", why)
+	refuse("action.merge_back", a.MergeBack != nil, why)
+	refuse("action.target", a.Target != "", "only a follow_up, retry or cancel names a target")
+	refuse("action.branch", a.Branch != "", "only a follow_up, retry or cancel names a target")
+	refuse("action.prompt", a.Prompt != "", "a handoff task's work is its workflow and description")
+}
+
+// capabilityNames is store.Capabilities spelled out, in its documented order.
+func capabilityNames() []string {
+	out := make([]string, 0, len(store.Capabilities))
+	for _, c := range store.Capabilities {
+		out = append(out, string(c))
+	}
+	return out
 }
 
 // sortErrors orders errors by path so a map-driven check reports the same
@@ -863,7 +1007,7 @@ func SourceTypes() []string {
 
 // ActionTypes are the `action.type` values this build accepts.
 func ActionTypes() []string {
-	return []string{ActionCreateTask, ActionFollowUp, ActionRetry, ActionCancel}
+	return []string{ActionCreateTask, ActionFollowUp, ActionRetry, ActionCancel, ActionStartHandoff}
 }
 
 // SignatureSchemes are the `source.signature.scheme` values this build

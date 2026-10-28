@@ -258,7 +258,7 @@ func TestIssueLsLane(t *testing.T) {
 		"lane open":        "open    open -",
 		"lane running":     "open    in_progress -",
 		"lane blocked":     "open    in_progress ! -",
-		"lane hand off":    "open    hand_off -",
+		"lane hand off":    "open    hand_off pending -",
 		"lane completed":   "closed (completed)    done -",
 		"lane not planned": "closed (not_planned)  done -",
 	} {

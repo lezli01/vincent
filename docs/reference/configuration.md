@@ -1589,7 +1589,9 @@ signed push reports an event, or when a schedule comes due. **Off by default.**
 A trigger is off twice. A file does nothing until its own `enabled: true`
 **and** this key are both on. The second key exists because a trigger has no
 keypress to be the consent: with both on, someone labelling an issue or a CI job
-going red causes agents to run as you.
+going red causes agents to run as you. A file's `start_handoff` action may also
+carry a [`grant`](../guides/triggers.md#start_handoff-start-a-handoff) that lets
+the handoff write to GitHub; adding a capability to it is arming too.
 
 While it is off, no trigger polls or ticks and `POST /v1/triggers/{id}/events`
 answers `409`. The dry runs still work, because they fire nothing. Turning it on

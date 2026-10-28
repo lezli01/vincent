@@ -4,7 +4,7 @@ description: Create, edit, review, arm, and debug vincent event triggers, the YA
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.6.1
+  version: 1.7.1
 ---
 
 # vincent Triggers
@@ -30,13 +30,16 @@ Every trigger you write starts disarmed and bounded:
 - No `on_fire` line, so a fired event's task lands `paused` (`propose`).
 - No `permission` line, so a created task's agent steps run `restricted`.
 - An explicit `dedupe_key`.
-- `limits.max_per_hour`, plus `limits.max_task_cost_usd` on a `create_task`.
+- `limits.max_per_hour`, plus `limits.max_task_cost_usd` on a `create_task` or
+  `start_handoff`.
 
-Four switches arm a trigger or widen what it may do:
+Five switches arm a trigger or widen what it may do:
 
 - `enabled: true`
 - `on_fire: create`
 - `permission: workflow`
+- a `start_handoff` action's `grant` gaining a capability it did not have
+  (narrowing or removing one is not arming)
 - the global `triggers.enabled` in `config.yaml`
 
 Change one only when the user asks for that exact change. Never flip one to
@@ -108,7 +111,7 @@ before changing the design.
   - It takes no `command` and no `poll_interval`; it is woken by each issue
     change the daemon commits, and works on a project with no GitHub remote.
   - Events: `opened`, `closed`, `reopened`, `labeled`, `unlabeled`, and the
-    opt-in `lane_changed`. There is no `assigned` (a vincent issue has no
+    opt-in `lane_changed` and `handoff_changed`. There is no `assigned` (a vincent issue has no
     assignee), and it is refused. Edits, comments and deletes fire nothing.
   - `.Event.by` says who made the change: `human`, `agent` (a task's agent
     over MCP), `sync` (GitHub, through the importer) or, on `lane_changed`
@@ -123,6 +126,16 @@ before changing the design.
     (`.Event.reason`); use `lane_changed` when the board move matters —
     `lane: hand_off`, or `from_lane: hand_off, lane: done`. `match: {by:
     human}` drops task-caused moves; a hand-off trigger writes `by: task`.
+  - **`handoff_changed`** fires when a handoff item's outcome moves
+    (`delivered`, `returned`, `waiting`, `released`, or empty for an
+    unresolved item), and is opt-in the same way. `.Event.outcome` is the
+    outcome moved to, `.Event.from_outcome` the one moved from (empty on
+    an item's first resolution),
+    `.Event.handoff_id` the handoff and `.Event.task_id` its task.
+    `.Event.by` is the item's actor: `handoff`, `human`, `agent` or
+    `settle` are local; `sync` — a GitHub close resolving a waiting item —
+    is not, so a trigger that can match it from sync needs
+    `allowed_actors`, as `closed` does.
   - **Hand-off echo loops.** A `lane: hand_off` trigger whose task is
     created for the same issue moves it back to `in_progress`, and to
     `hand_off` again when that task finishes. Set
@@ -133,8 +146,9 @@ before changing the design.
     changes to fire, and keep `limits.max_per_hour` as the backstop.
   - **Trust.** `human` and `agent` changes are local and trusted. A `sync`
     change follows `github_issues`' rule: `labeled` and `unlabeled` are
-    trusted; `opened`, `closed`, `reopened` and `lane_changed` (which sync
-    delivers only for a GitHub close or reopen) need `allowed_actors`, matched
+    trusted; `opened`, `closed`, `reopened`, `lane_changed` and
+    `handoff_changed` (which sync delivers only for a GitHub close or reopen)
+    need `allowed_actors`, matched
     against the issue's author. A trigger that can match one of those from
     sync is refused without `allowed_actors` — unless its `match.by` leaves
     `sync` out. `allowed_actors` never refuses a local person's change.
@@ -238,13 +252,45 @@ limits:
     `issues` source (`'{{ .Event.issue_id }}'`) or a `github_issues` one
     (`'{{ .Event.IssueID }}'`).
   - `permission` is `restricted` (the default) or `workflow`.
+- **`start_handoff`** starts a handoff, as `vincent handoff start` would:
+  one task, running a workflow that declares `role: handoff`, over issues in
+  the project's `hand_off` lane.
+  - `workflow` is required; `title`, `description` and `fields` are as on
+    `create_task`.
+  - Exactly one of `issue_ids` and `select`. `issue_ids` is a list of
+    templates, each rendering one issue id (a leading `#` is allowed) or
+    nothing; empty ones are dropped, and when all are empty the delivery is
+    refused rather than falling back to a selection. `select` is literal:
+    `lane` (only `hand_off`), `delivery` (`change`, `reply` or `none`, one
+    or a list), `kind`, `labels`, `max` (at least 1) and `order` (only
+    `priority`). A selection that finds nothing is refused
+    (`nothing_to_hand_off`), which does not spend the dedupe key.
+  - `grant` lists the forge-write capabilities the handoff's agent may use:
+    `issue.comment`, `issue.close`, `pull.create`, `pull.comment`,
+    `pull.merge`, `pull.close`, `checks.rerun`. Adding one is arming: the
+    TUI asks first and `vincent trigger apply` refuses a staged file that
+    adds one. Never add or widen a grant yourself; name in your summary the
+    capabilities a human must add.
+  - `on_fire`, `permission` and `limits.max_task_cost_usd` work as on
+    `create_task`. It refuses `issue`, `github_pull`, `merge_back`,
+    `target`, `branch` and `prompt`; every other action refuses `issue_ids`,
+    `select` and `grant`.
+  - The hand-off echo loop above does not apply: a handoff's task is a root
+    task with no issue, so it never moves an issue back to `in_progress`.
+  - **Batching.** A nightly train is a `schedule` source with `select`. An
+    event-driven batch is an `issues` source matching `lane_changed` with
+    `lane: hand_off`, plus `overrun: queue_coalesce` and a fixed
+    `concurrency_key`: while the handoff task runs, later events are held,
+    and when it settles the newest fires once and selects everything that
+    accumulated.
 - **`follow_up`, `retry` and `cancel`** act on an existing task:
   - `target: branch` is required, with a `branch` template naming the task's
     branch.
   - `follow_up` requires `prompt`, `retry` may override the failed step's
     prompt, and `cancel` refuses one.
   - Each refuses `permission`, `workflow`, `title`, `description`, `fields`,
-    `issue`, `github_pull`, `merge_back` and `limits.max_task_cost_usd`.
+    `issue`, `github_pull`, `merge_back`, `limits.max_task_cost_usd`,
+    `issue_ids`, `select` and `grant`.
 
 ## Write the templates
 
@@ -424,7 +470,8 @@ Report correctness and safety findings first, then check each trigger for:
 - an explicit `dedupe_key`,
 - `overrun:` on any source that can emit twice about one object, with a
   `concurrency_key:` naming that object and not repeating `dedupe_key`,
-- `limits.max_per_hour`, and `max_task_cost_usd` on a `create_task`,
+- `limits.max_per_hour`, and `max_task_cost_usd` on a `create_task` or
+  `start_handoff`,
 - `issue` or `github_pull` prefill,
 - no `poll_interval` on an `issues` or GitHub source,
 - `allowed_actors` wherever an untrusted GitHub event can match, including a

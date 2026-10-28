@@ -35,13 +35,21 @@ import (
 // match.action does not name it never sees it (issueEventsFor), so an armed
 // action-less trigger neither starts firing on every task start and finish
 // nor fires twice, closed and lane_changed, on every close.
+//
+// A second is the handoff's (task 137.9): `handoff_changed`, mapped from the
+// handoff.item_changed event the same table carries, with the item's outcome
+// moved to and from as `outcome` and `from_outcome`, its `handoff_id`, and
+// the handoff's task as `task_id`. It is opt-in the same way. Its `by` is the
+// item's actor; only `sync` — a GitHub close resolving a waiting item — is
+// an outsider's, and the load-time trust check holds it to allowed_actors as
+// it holds closed.
 
 // issueEventTypes are the issue.* events the source reads. Edits, comments,
 // deletes and issue.sync_changed fire nothing, so they are not read.
 var issueEventTypes = []string{
 	store.EventIssueCreated, store.EventIssueStateChanged,
 	store.EventIssueLabelsChanged, store.EventIssueUpdated,
-	store.EventIssueLaneChanged,
+	store.EventIssueLaneChanged, store.EventHandoffItemChanged,
 }
 
 // issuesPage bounds one read of the events table.
@@ -58,15 +66,20 @@ type issuePayload struct {
 	LabelsAdded   []string `json:"labels_added"`
 	LabelsRemoved []string `json:"labels_removed"`
 	TaskID        *int64   `json:"task_id"`
+	// IssueID and HandoffID are handoff.item_changed's, whose payload names
+	// the issue as issue_id rather than id.
+	IssueID   int64 `json:"issue_id"`
+	HandoffID int64 `json:"handoff_id"`
 }
 
 // issueChange is one trigger event a store event yields, before the issue
 // is read to fill it in.
 type issueChange struct {
-	action string
-	labels []string
-	state  bool
-	lane   bool
+	action  string
+	labels  []string
+	state   bool
+	lane    bool
+	handoff bool
 }
 
 // mapIssueEvent is the pure half of the source: the trigger events one
@@ -91,6 +104,11 @@ func mapIssueEvent(typ string, p *issuePayload) []issueChange {
 			return nil
 		}
 		return []issueChange{{action: ActionLaneChanged, lane: true}}
+	case store.EventHandoffItemChanged:
+		if p.To == p.From {
+			return nil
+		}
+		return []issueChange{{action: ActionHandoffChanged, handoff: true}}
 	case store.EventIssueLabelsChanged:
 	default:
 		return nil
@@ -112,7 +130,13 @@ func mapIssueEvent(typ string, p *issuePayload) []issueChange {
 // issue deleted since yields nothing — there is nothing left to act on.
 func issueEvents(ctx context.Context, st Store, e *store.Event) ([]Event, error) {
 	var p issuePayload
-	if err := json.Unmarshal(e.Payload, &p); err != nil || p.ID <= 0 {
+	if err := json.Unmarshal(e.Payload, &p); err != nil {
+		return nil, nil
+	}
+	if e.Type == store.EventHandoffItemChanged {
+		p.ID = p.IssueID
+	}
+	if p.ID <= 0 {
 		return nil, nil
 	}
 	changes := mapIssueEvent(e.Type, &p)
@@ -158,6 +182,14 @@ func issueEvents(ctx context.Context, st Store, e *store.Event) ([]Event, error)
 			ev["lane"], ev["from_lane"] = p.To, p.From
 			if p.TaskID != nil {
 				ev["task_id"] = *p.TaskID
+			}
+		}
+		if c.handoff {
+			// outcome/from_outcome mirror lane_changed's lane/from_lane;
+			// from/to already mean the issue state on closed/reopened.
+			ev["handoff_id"], ev["outcome"], ev["from_outcome"] = p.HandoffID, p.To, p.From
+			if e.TaskID != nil {
+				ev["task_id"] = *e.TaskID
 			}
 		}
 		out = append(out, ev)

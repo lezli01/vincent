@@ -1,7 +1,8 @@
 // Package agent defines the adapter interface the daemon runs agents
 // through: headless CLI subprocesses with JSON event streams (spec §9).
 // Implementations live in subpackages (agent/claude, agent/codex,
-// agent/cursor) and depend only on this package's types.
+// agent/cursor) and depend only on this package's types; agent/builtin is the
+// one list of them that every registry is built from.
 //
 // An adapter builds its run's Command — binary, argv, directory, environment
 // — and starts it through a Launcher the caller chose (§9.1, task 062.1). It

@@ -87,6 +87,9 @@ type TriggerSchemaField struct {
 	Default   string                  `json:"default,omitempty"`
 	Help      string                  `json:"help,omitempty"`
 	Dangerous []TriggerDangerousValue `json:"dangerous,omitempty"`
+	// DangerousOnAdd is the warning a list field asks with before an edit
+	// that adds a member (task 137.9's grant).
+	DangerousOnAdd string `json:"dangerous_on_add,omitempty"`
 }
 
 // TriggerDangerousValue is a value a client confirms before committing

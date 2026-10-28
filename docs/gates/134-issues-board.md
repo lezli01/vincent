@@ -43,7 +43,7 @@ export VINCENT_CONFIG_DIR=/tmp/vincent-demo/config VINCENT_DATA_DIR=/tmp/vincent
 
 | # | Do | Expect |
 |---|---|---|
-| 1 | `vincent issue ls --project <platform-infra's id>` in a second shell | `LANE` reads as the table above |
+| 1 | `vincent issue ls --project <platform-infra's id>` in a second shell | `LANE` reads as the table above, #11's followed by its handoff marker: `hand_off pending` (task 137.10) |
 | 2 | In an 80×20 terminal, `:issues` | Three sections, `open`, `in progress` (with `! 1`), `hand-off`, each with its count; the totals line ends `· done hidden (s)`; no closed row; titles truncate before the counts do |
 | 3 | `s` | A fourth `done` section, last, holding #12 as `closed · completed`; the totals line ends `· 1 done` |
 | 4 | `C`, then `O` | Every section folds to its header with its count and badge, the cursor resting on a header; `O` unfolds them |

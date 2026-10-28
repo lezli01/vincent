@@ -1518,7 +1518,8 @@ the list shows each trigger disarmed, and both dry runs work.
   armed trigger.
 - `on_fire` and `permission` are the values in effect, not the values written:
   a file with no `on_fire:` reads `propose`, and one with no `permission:`
-  reads `restricted`. `permission` is present only on a `create_task` action.
+  reads `restricted`. `permission` is present only on a `create_task` or
+  `start_handoff` action.
 - `poll` is the trigger's poll health. `seeded` says it holds a cursor, so its
   next poll judges events instead of seeding. `ok` and `error` are the last
   poll's result. `last_poll_at` and `last_fire_at` are `null` until each has
@@ -1577,11 +1578,13 @@ when given, is the file stem the document's own `id` must match.
 `GET /v1/triggers/schema` is the trigger schema served as data, the way
 [`GET /v1/workflows/schema`](#writing-a-workflow) serves a workflow's:
 `{ top_level[], sources[], actions[], limits[], signature[] }`. A field row is
-`{ name, control, values[]?, required?, default?, help?, dangerous[]? }`, and
+`{ name, control, values[]?, required?, default?, help?, dangerous[]?,
+dangerous_on_add? }`, and
 a variant is `{ type, fields[], help?, events[]?, trusted[]? }`. The source
 types are `command`, `github_issues` (deprecated), `github_prs`, `issues`, `http` and `schedule`. The action types
-are `create_task` and the three reactions, `follow_up`, `retry` and `cancel`;
-`create_task` takes `issue`, a template rendering the `issue_id` it replays.
+are `create_task`, `start_handoff` and the three reactions, `follow_up`,
+`retry` and `cancel`; `create_task` takes `issue`, a template rendering the
+`issue_id` it replays.
 On a GitHub or `issues` source, `events[]` names the events it emits, and `trusted[]` the
 ones a trigger may match without naming `allowed_actors` (on `issues`, the ones
 trusted even when they arrive by `sync`). `control` adds
@@ -1590,10 +1593,12 @@ the workflow schema's vocabulary. `dangerous[]` lists `{ value, warning }`
 pairs a client confirms before committing — `enabled: true`,
 `on_fire: create`, `permission: workflow` and `overrun: cancel_previous` — and
 shows the warning when it asks. The first three take a keypress out of starting
-agents; the fourth destroys work in flight.
+agents; the fourth destroys work in flight. `dangerous_on_add` is the warning a
+client shows before an edit that adds a member to a list — a `start_handoff`'s
+`grant` — and removing one never asks.
 [`vincent trigger apply`](cli.md#vincent-trigger-apply) refuses the first three
-on a file it did not already hold them on, and only those: `cancel_previous`
-arms nothing that was not already armed.
+on a file it did not already hold them on, and a grant that gains a capability,
+and only those: `cancel_previous` arms nothing that was not already armed.
 
 ### Dry runs
 
@@ -1634,7 +1639,9 @@ judgement:
 - `action` is the request the trigger would replay, **unsent**: `type`,
   `method`, `path` and `body`. For `create_task` the body is a
   [`POST /v1/tasks`](#tasks) body, `paused: true` unless `on_fire: create` and
-  `restricted: true` unless `permission: workflow`. A reaction also carries the
+  `restricted: true` unless `permission: workflow`; for `start_handoff` it is a
+  [`POST /v1/handoffs`](#handoffs) body, with the same two defaults and its
+  `issue_ids` rendered. A reaction also carries the
   `branch` it rendered and the `task_id` it resolved, with that id in `path`.
   Its body is a `/follow_up` or `/retry` body, likewise `paused` unless
   `on_fire: create`, and a `cancel` has none. `action` is absent when the
@@ -1701,10 +1708,10 @@ is later [permanently deleted](#permanent-delete). The ledger outlives the
 file: an id with no file still lists its rows, and only an id that could not
 name a file is a `404`.
 
-A `create_task` replay carries an `Idempotency-Key` the daemon derives from the
-dedupe key — `trigger:{id}:` followed by a hash. Two triggers, or a trigger and
-a script sending its own key, therefore never replay each other's tasks. A task
-a trigger creates is otherwise an ordinary task.
+A `create_task` or `start_handoff` replay carries an `Idempotency-Key` the
+daemon derives from the dedupe key — `trigger:{id}:` followed by a hash. Two
+triggers, or a trigger and a script sending its own key, therefore never replay
+each other's tasks. A task a trigger creates is otherwise an ordinary task.
 
 ### Pushing an event
 
@@ -2576,6 +2583,11 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   `limit` and `offset`, so a page is a page of that lane. It combines with
   `state` like every other filter, so `state=open&lane=done` is empty. Any
   other value is `400 validation_failed`.
+  `handoff` (repeatable; any of them matches) keeps the issues whose
+  [handoff marker](#handoff-marker) is `pending`, `claimed`, `waiting`,
+  `delivered` or `idle`. It is applied before `limit` and `offset` like
+  `lane`, and combines with `lane` and `state` by AND. Any other value is
+  `400 validation_failed`.
 - **Lanes.** Every row carries `lane` and `attention`, derived from the issue
   and its **root** tasks (fan-out lanes never count) and never stored:
 
@@ -2590,6 +2602,22 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   `awaiting_gate` or `blocked`; it is reported on a closed issue too, whose
   lane is `done` regardless. For an open issue, `active` is exactly
   `lane == "in_progress"`.
+- <a id="handoff-marker"></a>**Handoff marker.** Every row, and the issue
+  from **Get**, carries `handoff`: `{ "state", "handoff_id", "task_id" }`, or
+  `null` when the issue has none. It is derived in the list's own query and
+  never stored, from the same rule a handoff's `select:` uses, so a
+  `pending` issue is exactly one a handoff may claim. The first that applies
+  wins:
+
+  | `handoff.state` | When | `handoff_id`, `task_id` |
+  |---|---|---|
+  | — (`null`) | The issue is closed | — |
+  | `claimed` | A handoff claims it and has not decided it — in any lane: the handoff's own task may restart work on it, which makes it `in_progress` | The claiming handoff and its task |
+  | `waiting` | A handoff claims it and parked it as `waiting` — in any lane | The claiming handoff and its task |
+  | `pending` | `hand_off`, unclaimed, and its current delivery not yet delivered: a handoff may claim it now | `null` |
+  | `delivered` | `hand_off`, but a handoff delivered its current delivery without closing it. A follow-up that moves the delivery's head makes it `pending` again | The delivering handoff and its task |
+  | `idle` | `in_progress` with nothing running: finished work that is not ready, a returned issue included | `null` |
+  | — (`null`) | Anything else — `open`, or `in_progress` with work running | — |
 - **Get** adds `body`; `available_actions`, what a person may do from this
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
@@ -3406,8 +3434,12 @@ priority — then the oldest delivery, then the lowest id.
 
 `state` is `live` while the task runs, `waiting` once it has settled with an
 item still waiting, and `settled` otherwise. `created_by` is `agent` for an MCP
-call or a request carrying a workflow step's or chat agent's marker, `human`
-otherwise. Refusals are `409 invalid_state` with `issue_not_eligible`,
+call or a request carrying a workflow step's or chat agent's marker, `trigger`
+(with `trigger_id`) for a handoff a trigger's
+[`start_handoff`](../guides/triggers.md#start_handoff-start-a-handoff) action
+started, and `human` otherwise. Only the daemon's in-process trigger replay can
+be `trigger`: nothing in the request says so, and a trigger's grant is not
+refused `grant_needs_human`, because the file you armed is the consent. Refusals are `409 invalid_state` with `issue_not_eligible`,
 `nothing_to_hand_off` or `grant_needs_human` (see [Errors](#errors)). Send
 `Idempotency-Key` to make a retry safe ([Replaying a create](#replaying-a-create)).
 
@@ -3805,7 +3837,9 @@ they need.
   `handoff.item_changed` carries `{ handoff_id, issue_id, from, to, by }` (an
   empty `from` or `to` is an item not yet resolved), and `handoff.settled`
   carries `{ id, task_id }`. Each event's `task_id` is the handoff's own task,
-  so that task's stream receives them. An `issue.*` event a handoff caused
+  so that task's stream receives them. A `type: issues`
+  [trigger](../guides/triggers.md#issues-watch-the-projects-issues) that names
+  `match.action: handoff_changed` fires on `handoff.item_changed`. An `issue.*` event a handoff caused
   carries `handoff_id` and `by: handoff`. [`POST /v1/handoffs`](#handoffs)
   creates one.
 - `trigger.fired` carries `{ trigger_id, delivery_id, action }`, where `action`

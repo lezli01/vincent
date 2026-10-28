@@ -2648,8 +2648,9 @@ file and key, when:
   now exists, or a recorded file is gone;
 - a file **arms** a trigger compared with the file on disk, where a new file
   compares against no file: `enabled` from `false` or absent to `true`,
-  `on_fire` from absent or `propose` to `create`, or `permission` from absent
-  or `restricted` to `workflow`.
+  `on_fire` from absent or `propose` to `create`, `permission` from absent
+  or `restricted` to `workflow`, or a `start_handoff`'s `grant` gaining a
+  capability it did not have (narrowing one is allowed).
 
 A value that is already armed may stay, and disarming is always allowed. There
 is no flag to override any of this. Arm a trigger yourself, in the TUI's
@@ -3018,7 +3019,7 @@ issue is [`vincent task add --issue`](#from-an-issue).
 ### `vincent issue ls`
 
 ```sh
-vincent issue ls [--project ID] [--state S]... [--lane L]... [--label L]... [--kind K] [--search Q] [--source local|github] [--github N] [--limit N] [--json]
+vincent issue ls [--project ID] [--state S]... [--lane L]... [--handoff H]... [--label L]... [--kind K] [--search Q] [--source local|github] [--github N] [--limit N] [--json]
 ```
 
 Lists issues, most recently updated first. Without `--project` the list spans
@@ -3026,10 +3027,11 @@ every project and gains a `PROJECT` column; with it, only that project's
 issues are listed.
 
 ```
-ID  PROJECT  STATE               LANE           KIND  PRIORITY  LABELS  TASKS  TITLE
-14  vincent  open                in_progress !  -     -         -       1      Retry flaky uploads
-12  vincent  open                hand_off       bug   2         bug,ui  1      Crash on cold start
-9   web      closed (completed)  done           -     -         -       0      Rename the settings page
+ID  PROJECT  STATE               LANE                 KIND  PRIORITY  LABELS  TASKS  TITLE
+14  vincent  open                in_progress !        -     -         -       1      Retry flaky uploads
+13  vincent  open                hand_off claimed H3  -     3         -       1      Cache the avatar
+12  vincent  open                hand_off pending     bug   2         bug,ui  1      Crash on cold start
+9   web      closed (completed)  done                 -     -         -       0      Rename the settings page
 ```
 
 | Flag | Meaning |
@@ -3037,6 +3039,7 @@ ID  PROJECT  STATE               LANE           KIND  PRIORITY  LABELS  TASKS  T
 | `--project ID` | Only this project's issues |
 | `--state S` | `open` or `closed`; repeatable, and any one matches |
 | `--lane L` | `open`, `in_progress`, `hand_off` or `done`; repeatable, and any one matches. The daemon checks the values |
+| `--handoff H` | The [handoff marker](api.md#handoff-marker): `pending`, `claimed`, `waiting`, `delivered` or `idle`; repeatable, and any one matches. The daemon checks the values |
 | `--label L` | Repeatable; **every** label given must be on the issue |
 | `--kind K` | Only issues of this kind |
 | `--search Q` | A substring of the title or body |
@@ -3045,7 +3048,11 @@ ID  PROJECT  STATE               LANE           KIND  PRIORITY  LABELS  TASKS  T
 | `--limit N` | Maximum rows |
 
 `STATE` carries the close reason of a closed issue. `LANE` is the issue's
-board [lane](api.md#issues), spelled as the API spells it; a trailing ` !`
+board [lane](api.md#issues), spelled as the API spells it, then its
+[handoff marker](api.md#handoff-marker) when it has one — `pending`,
+`claimed`, `waiting`, `delivered` or `idle` — with the handoff's id (`H3`)
+when the marker names one. `claimed` and `waiting` show in any lane, so an
+issue its handoff restarts reads `in_progress claimed H3`. A trailing ` !`
 marks attention — one of its root tasks is waiting on you — and can appear on
 any lane, `done` included. `--lane done` is every closed issue, whatever its
 close reason. Filters combine by AND, so `--state open --lane done` lists
@@ -3070,8 +3077,10 @@ vincent issue show <id> [--json]
 ```
 
 Prints one issue: title, state (with its close reason, and `duplicate of #N`
-when it has one), lane (with the same ` !` attention marker as
-[`issue ls`](#vincent-issue-ls)), project, kind, priority, labels, author, and — for an
+when it has one), lane (with the same handoff marker and ` !` attention marker as
+[`issue ls`](#vincent-issue-ls)), project, kind, priority, labels, author, a
+`handoff` line — the marker, then the handoff and its task when it names
+them — when the issue has a marker, and — for an
 imported issue — its `owner/repo#N` source, URL and when it last synced, then
 how many tasks it started with the ids still active, the actions it allows,
 its body, and its discussion thread oldest first — each comment under an

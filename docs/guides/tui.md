@@ -3041,8 +3041,9 @@ it read it, re-reads it, and asks you to make the change again.
 
 Four values ask before they are written, because each one takes a keypress out
 of starting agents or destroys work in flight: `enabled: true`, `on_fire:
-create`, `permission: workflow` and `overrun: cancel_previous`. The question
-shows the warning the schema serves. For `enabled`, it also says what enabling
+create`, `permission: workflow` and `overrun: cancel_previous`. So does an edit
+that adds a capability to a `start_handoff`'s `grant`, naming what it adds;
+removing one never asks. The question shows the warning the schema serves. For `enabled`, it also says what enabling
 means given the trigger's `on_fire`, just as `space` does. `y` writes the value, and `n` or `esc` keeps the file as it is.
 
 A file that does not validate cannot be loaded into the form. The form says so

@@ -11,10 +11,11 @@ a task is created, followed up, retried or cancelled with nobody pressing a key.
 Each trigger is one YAML file under `{config_dir}/triggers/`. It names a
 **source** of events, a **filter**, an **action**, and a **dedupe key** that
 makes each event fire at most once. Everything a trigger does goes through a
-route the API already has. A created task is a `POST /v1/tasks`, and a reaction
-is the same `follow_up`, `retry` or `cancel` a person would send. The route's
-validation, limits and state checks all apply, so from its first step on, a
-triggered task behaves exactly like one you created by hand.
+route the API already has. A created task is a `POST /v1/tasks`, a handoff a
+`POST /v1/handoffs`, and a reaction is the same `follow_up`, `retry` or
+`cancel` a person would send. The route's validation, limits and state checks
+all apply, so from its first step on, a triggered task behaves exactly like one
+you created by hand.
 
 Triggers are global. There is no project-level `.vincent/triggers/`, so nobody
 who can merge to a repository can start agents on your machine.
@@ -98,13 +99,13 @@ limits:
 | `match` | A cheap prefilter: dotted paths into the event, each with the value it must have. |
 | `if` | A guard over `.Event` that must render `true` or `false`. |
 | `allowed_actors` | GitHub and `issues` sources only: the issue or pull-request **authors** whose events may pass. |
-| `action` | What an event that passes does: `create_task`, `follow_up`, `retry` or `cancel`. |
+| `action` | What an event that passes does: `create_task`, `start_handoff`, `follow_up`, `retry` or `cancel`. |
 | `on_fire` | `propose` (the default) or `create`. |
 | `dedupe_key` | A template over `.Event`. Absent means the event's `id`. |
 | `overrun` | What to do when this event's concurrency group still has unfinished work: `parallel` (the default), `skip`, `cancel_previous`, `queue_coalesce` or `queue_serial`. |
 | `concurrency_key` | A template over `.Event` naming that group. Absent means the trigger id, or a reaction's resolved task. Needs an `overrun`. |
-| `limits` | `max_per_hour`, and `max_task_cost_usd` for a `create_task`. |
-| `permission` | `create_task` only: `restricted` (the default) or `workflow`. |
+| `limits` | `max_per_hour`, and `max_task_cost_usd` for a `create_task` or `start_handoff`. |
+| `permission` | `create_task` and `start_handoff` only: `restricted` (the default) or `workflow`. |
 
 `source.project` is the numeric id of a project, the `id` that
 `GET /v1/projects` and `vincent project ls --json` report. It is the project a
@@ -321,6 +322,7 @@ wakes it.
 | Labels are added | one `labeled`, with `labels` the ones added |
 | Labels are removed | one `unlabeled`, with `labels` the ones removed |
 | It moves to another [lane](tui.md#issues) | `lane_changed`, only when `match.action` names it |
+| A handoff item's outcome moves | `handoff_changed`, only when `match.action` names it |
 
 One GitHub refresh can produce several events. Edits, comments and deletes fire
 nothing, and there is no `assigned`: a vincent issue has no assignee, so
@@ -344,6 +346,12 @@ Every event carries:
   to and from — `open`, `in_progress`, `hand_off` or `done` — and **`task_id`**
   when `by` is `task`. Guard a template that reads `task_id` with
   `{{ if eq .Event.by "task" }}`: a close or reopen carries none.
+- **`outcome`** and **`from_outcome`** on `handoff_changed`: the item's
+  outcome moved to and from — `delivered`, `returned`, `waiting` or
+  `released`, or empty for an unresolved item, so `from_outcome` is empty on
+  an item's first resolution — with **`handoff_id`** and **`task_id`**, the
+  handoff's task. Its `by` is the item's actor: `handoff`, `human`, `agent`
+  or `settle`, or `sync` when a GitHub close resolved a waiting item.
 
 **`lane_changed` is opt-in.** A trigger sees it only when its `match.action`
 names it; one with no `match.action` matches the other five events and never a
@@ -352,6 +360,7 @@ board move is the signal — an issue's work reaching `hand_off`, or going from
 `hand_off` to `done`. Pick `closed` or `reopened` when the close reason or the
 state is: a close fires both, so name one. `match: {by: human}` drops every
 move a task caused; a hand-off trigger matches `by: task`, or leaves `by` out.
+`handoff_changed` is opt-in the same way.
 
 The trigger's cursor is the id of the last event it handled. Arming moves it to
 the newest event and fires nothing for history; disarming drops it. A restart
@@ -371,8 +380,9 @@ per lane.
 **Trust.** A `human`, `agent` or `task` change was made on this machine and is trusted.
 A `sync` change came from GitHub, and follows the
 [table below](#trusted-events-and-allowed_actors): `labeled` and `unlabeled`
-are trusted, `opened`, `closed`, `reopened` and `lane_changed` are not — sync
-moves a lane only by closing or reopening. An `issues` trigger that
+are trusted, `opened`, `closed`, `reopened`, `lane_changed` and
+`handoff_changed` are not — sync moves a lane, or resolves a waiting handoff
+item, only by closing or reopening. An `issues` trigger that
 can match one of those from sync is refused at load unless it names
 `allowed_actors` — or its `match.by` leaves out `sync`. At judge time the list is
 checked against the author of `sync` events only; a local person's `opened` is
@@ -583,7 +593,7 @@ source:
 A `schedule` source is the clock rather than an outside system: it is what to
 use for work no event announces — a nightly dependency sweep, a weekday morning
 report. Everything after the source is the same as every other trigger:
-`match:`, `if:`, `dedupe_key:`, all four actions, the `propose` gate, the
+`match:`, `if:`, `dedupe_key:`, all five actions, the `propose` gate, the
 `restricted` clamp and `limits.max_per_hour`.
 
 Set **exactly one** of `cron:` and `every:`. Both, or neither, is refused when
@@ -742,8 +752,93 @@ such as a cancel of a task that is already `done`, gets the route's own refusal
 was acted on.
 
 A reaction refuses `workflow`, `title`, `description`, `fields`, `issue`,
-`github_pull`, `merge_back`, `permission` and `limits.max_task_cost_usd`. Each
-of those describes a task being created.
+`github_pull`, `merge_back`, `permission`, `limits.max_task_cost_usd`,
+`issue_ids`, `select` and `grant`. Each of those describes a task or handoff
+being created.
+
+### `start_handoff`: start a handoff
+
+```yaml
+action:
+  type: start_handoff
+  workflow: merge-train
+  select: {lane: hand_off, delivery: change, max: 10, order: priority}
+  grant: [pull.create, pull.merge]
+```
+
+This replays `POST /v1/handoffs` in `source.project`: one handoff task,
+running `workflow` (which must declare `role: handoff`), over issues in the
+project's `hand_off` lane. `workflow` is required; `title`, `description` and
+`fields` are templates as on `create_task`. Name the issues with exactly one
+of:
+
+- **`issue_ids`**, a list of templates, each rendering one issue id (a
+  leading `#` is allowed) or nothing. Empty renders are dropped. When every
+  entry renders empty the delivery is `refused`; it never falls back to a
+  selection.
+- **`select`**, literal and checked when the file loads: `lane` (only
+  `hand_off`), `delivery` (`change`, `reply` or `none`, one or a list),
+  `kind`, `labels`, `max` (at least 1) and `order` (only `priority`). A
+  selection that finds nothing is `409 nothing_to_hand_off`, recorded
+  `refused`; the dedupe key is not spent, so the next event can still fire.
+
+`grant` lists the forge-write capabilities the handoff's agent may use —
+`issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`,
+`pull.close`, `checks.rerun`. **Adding a capability is arming**: the TUI asks
+first, and `vincent trigger apply` refuses an agent-staged file that adds one,
+whether or not the trigger is enabled. Removing one never asks.
+
+`on_fire`, `permission` and `limits.max_task_cost_usd` work as on
+`create_task`. The handoff records `created_by: trigger` and the trigger's
+id. It refuses `issue`, `github_pull`, `merge_back`, `target`, `branch` and
+`prompt`. The ledger's `task_id` is the handoff's task, so a running handoff
+holds the trigger's [overrun](#overrun-what-happens-while-the-last-run-is-still-going)
+group.
+
+The `lane: hand_off` echo loop above does not apply: a handoff's task belongs
+to no issue, so it never moves one back to `in_progress`.
+
+A **nightly train** hands off whatever is ready once a night:
+
+```yaml
+# {config_dir}/triggers/nightly-train.yaml
+id: nightly-train
+enabled: true
+source:
+  type: schedule
+  project: 1
+  cron: '0 2 * * *'
+action:
+  type: start_handoff
+  workflow: merge-train
+  select: {lane: hand_off, delivery: change}
+dedupe_key: '{{ .Event.id }}'
+```
+
+An **event-driven batch** starts a handoff as soon as work is ready, and
+folds whatever becomes ready while it runs into the next one:
+
+```yaml
+# {config_dir}/triggers/ready-batch.yaml
+id: ready-batch
+enabled: true
+source:
+  type: issues
+  project: 1
+match:
+  action: lane_changed
+  lane: hand_off
+  by: task
+action:
+  type: start_handoff
+  workflow: merge-train
+  select: {lane: hand_off}
+overrun: queue_coalesce
+concurrency_key: ready-batch
+```
+
+While the handoff task is unsettled, later events are held. When it settles
+the newest fires once and its selection takes everything that accumulated.
 
 ### `on_fire` and `permission`
 
@@ -755,13 +850,14 @@ explicit line in the file.
 A `cancel` has no paused form, so a `cancel` trigger is refused at load unless
 it writes `on_fire: create`.
 
-`permission: restricted` is the default for `create_task`. Every agent step of
+`permission: restricted` is the default for `create_task` and `start_handoff`. Every agent step of
 the created task runs in [restricted mode](../security-model.md#restricted-mode),
 even a step whose own `permission_mode` says otherwise. `permission: workflow`
 lifts that clamp and runs the workflow as written, full-auto included.
 
 The TUI asks before it writes `enabled: true`, `on_fire: create` or
-`permission: workflow`.
+`permission: workflow`, and before an edit that adds a capability to a
+`start_handoff`'s `grant`.
 
 ## Dry runs
 
@@ -1026,8 +1122,9 @@ when a file:
 - names a different `source.project` than `--project`;
 - changed on disk since the proposal recorded its version, or appeared after
   being recorded as absent;
-- **arms** the trigger: `enabled` from off to `true`, `on_fire` to `create`, or
-  `permission` to `workflow`.
+- **arms** the trigger: `enabled` from off to `true`, `on_fire` to `create`,
+  `permission` to `workflow`, or a `start_handoff`'s `grant` gaining a
+  capability.
 
 An already-armed value may be kept, and disarming is allowed. There is no
 override flag. You arm a trigger in the TUI's triggers view, which asks first,
