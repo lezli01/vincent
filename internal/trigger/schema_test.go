@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -352,5 +353,39 @@ func TestParseRefusals(t *testing.T) {
 	_, errs := Parse([]byte("id: t1\ncontainer:\n  image: x\n"), "t1")
 	if len(errs) != 1 || errs[0].Line == 0 || !strings.Contains(errs[0].Message, "container") {
 		t.Errorf("unknown key: %v, want one located decode error naming it", errs)
+	}
+}
+
+// TestGuidePermissionRowNamesItsActions: the triggers guide's field table
+// says which actions take `permission`, and the validator is what decides
+// it. The row went stale when start_handoff gained the field (review F2), so
+// the actions named in it are held to the ones Parse accepts it on.
+func TestGuidePermissionRowNamesItsActions(t *testing.T) {
+	raw, err := os.ReadFile("../../docs/guides/triggers.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row string
+	for line := range strings.SplitSeq(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n") {
+		if strings.HasPrefix(line, "| `permission` |") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("docs/guides/triggers.md has no `permission` field row")
+	}
+	for _, action := range ActionTypes() {
+		doc := docFor(SourceCommand, action)
+		doc["permission"] = PermissionWorkflow
+		b, err := yaml.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, errs := Parse(b, "t1")
+		accepts, named := !hasPath(errs, "permission"), strings.Contains(row, "`"+action+"`")
+		if accepts != named {
+			t.Errorf("%s: Parse accepts permission = %v, but the guide's row names it = %v:\n%s", action, accepts, named, row)
+		}
 	}
 }

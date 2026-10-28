@@ -105,7 +105,7 @@ limits:
 | `overrun` | What to do when this event's concurrency group still has unfinished work: `parallel` (the default), `skip`, `cancel_previous`, `queue_coalesce` or `queue_serial`. |
 | `concurrency_key` | A template over `.Event` naming that group. Absent means the trigger id, or a reaction's resolved task. Needs an `overrun`. |
 | `limits` | `max_per_hour`, and `max_task_cost_usd` for a `create_task` or `start_handoff`. |
-| `permission` | `create_task` only: `restricted` (the default) or `workflow`. |
+| `permission` | `create_task` and `start_handoff` only: `restricted` (the default) or `workflow`. |
 
 `source.project` is the numeric id of a project, the `id` that
 `GET /v1/projects` and `vincent project ls --json` report. It is the project a
