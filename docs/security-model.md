@@ -498,6 +498,19 @@ keeps an agent's honest `vincent issue close` off GitHub; it is **not** a
 boundary — an agent running as you can unset those variables, or read the token
 and call the API like anything else running as you.
 
+The same check now covers every write vincent makes to GitHub for a caller:
+an imported issue's close, reopen and comment, and the pull-request writes
+(`vincent github pr create`, `merge`, `close`, `reopen`, `comment`, `rerun`).
+A workflow step's or chat agent's call to any of them is refused
+`forge_write_needs_human` — the pull-request ones included, which used to be
+accepted as yours — unless the step belongs to a live handoff that **you**
+granted that capability, and the issue or pull request is one of that
+handoff's. A grant is given only by a person starting the handoff, or by a
+trigger file only a person arms; an agent can start a handoff but never with a
+grant. On a granted handoff's step, the pull-request writes it was granted
+also appear as MCP tools; nowhere else. This is the same best-effort marker,
+not a privilege boundary: it keeps the honest path inside what you granted.
+
 **One of those worktree files carries a token.** To give a cursor step
 [vincent's own tools](guides/mcp.md) — cursor has no per-run MCP flag — the
 adapter writes `.cursor/mcp.json` into the **task worktree** for the duration of

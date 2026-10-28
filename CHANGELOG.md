@@ -26,6 +26,17 @@ list with the user-facing context a commit subject cannot carry.
   delivered; `release` drops it. Each call is all or nothing. When a
   handoff's task settles, every item still unresolved is now released
   (`outcome_by: settle`) instead of keeping its claim.
+
+- **A handoff's grant now lets its step write to GitHub.** A live handoff
+  whose grant you gave names a capability may, from its own task, close,
+  reopen and comment on its imported issues and create, merge, close, reopen
+  and comment on its own and its items' pull requests and re-run their checks.
+  Each write is made as `by: handoff` with `handoff_id` on the issue event; a
+  granted comment on an imported issue is posted to GitHub and mirrored back
+  in place, never twice. On that task's step MCP endpoint the granted
+  pull-request writes are listed as tools (`task_github_pull_merge` and the
+  rest), and nowhere else.
+
 - **Start a handoff over finished issues.** `POST /v1/handoffs` claims issues
   in the `hand_off` lane for one integration task running the workflow you
   name — by id, or with `select` (by delivery kind, issue kind and labels,
@@ -441,6 +452,15 @@ list with the user-facing context a commit subject cannot carry.
   ([#674](https://github.com/lezli01/vincent/issues/674))
 
 ### Changed
+
+- **Breaking: a workflow step's `vincent github pr` write without a grant is
+  refused.** `vincent github pr create`, `merge`, `close`, `reopen`, `comment`
+  and `rerun`, run by a workflow step or a chat agent (or over MCP), now answer
+  `409 forge_write_needs_human` unless the step belongs to a live handoff
+  granted that capability; they used to be accepted as a person's. Nothing is
+  sent to GitHub when refused. A step's own `gh pr …` in its worktree is
+  unaffected. An agent's comment on an imported issue is now refused
+  `forge_write_needs_human` rather than `issue_mirrored`.
 
 - **This repository's resolve workflows record their delivery on the task.**
   `github-resolve-issue` and `github-resolve-issue-dag` end by calling

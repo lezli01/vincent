@@ -316,6 +316,14 @@ task snapshot (decision 5).
 need their own conflict rule and consent, and the requirement asks only for
 state to be synced back.
 
+*Narrowed 2026-10-28 (task 137 decision 6, task 137.7, issue #840):* the
+outbox carries a second operation, `add_comment`, for one writer only: a live
+handoff's task granted `issue.comment` on an item. Its comment on an
+imported issue is stored as `handoff`, enqueued with it, posted to GitHub by
+the drain, and keyed by GitHub's comment id so the comment mirror updates it
+in place. Title, body and labels stay a read-only mirror, and every other
+comment on a live-remote thread is still refused (decision 24.3).
+
 ### 10. Only a human writes back: MCP- and step-originated changes are refused — keeps spec §3 row 11 and task 068 decision 1, supersedes task 035 decision 10 for issue state (2026-10-02)
 
 A state change a **human** makes on an imported issue — through the TUI, the
@@ -353,6 +361,7 @@ handoff task whose grant names `issue.close` or `issue.comment`, on an item of
 that handoff, is a third writer: its change is written back through the same
 outbox and attributed to a new actor, `handoff`. Ungranted MCP- and
 step-originated writes are still refused `forge_write_needs_human`.
+*Now true 2026-10-28 (task 137.7, issue #840).*
 
 ### 11. Issue `PATCH` requires `version` — departs from spec §12.3 (2026-10-02)
 
@@ -787,7 +796,12 @@ defaults, not separately asked. Spec §5.6, §8.4, §8.5, §12.3, §13.2–§13.
    Allowed on a local issue and on one whose remote is a tombstone, `moved` or
    `missing` — unlike a title edit, which stays refused while any remote row
    is attached: nothing mirrors a comment over a local one once the remote is
-   no longer listed.
+   no longer listed. *Narrowed 2026-10-28 (task 137 decision 6, task 137.7,
+   issue #840):* for the `handoff` actor only. A granted handoff's comment
+   on a live GitHub thread passes `checkMirror` and is posted back through
+   the outbox's `add_comment`; an ungranted agent's is refused
+   `forge_write_needs_human` before `checkMirror` runs, and a human's is
+   still `issue_mirrored`.
 4. **Edits update in place and emit `issue.comment_updated`** (`{id,
    comment_id, by}`, no text). An unchanged re-list writes and emits nothing.
    A comment whose issue number matches no imported issue in the project —

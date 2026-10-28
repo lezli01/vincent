@@ -914,11 +914,15 @@ pull request.
   There is no `internal/reasons` entry for `handoff_item_resolved`: that
   catalogue holds task and step reasons, and the issue-side 409 reasons live
   in the API reference's table, where this one is.
-- [ ] **137.7** ([#840](https://github.com/lezli01/vincent/issues/840)) The grant and the one forge-write guard over issue and
+- [x] **137.7** ([#840](https://github.com/lezli01/vincent/issues/840)) The grant and the one forge-write guard over issue and
   pull-request writes; the outbox under the `handoff` actor; the pull-request
   tools on a granted handoff's per-step MCP endpoint; the restatement in
   `internal/github/doc.go`; spec §13.4, §16 and the security model
-  (decision 6). Depends: 137.4.
+  (decision 6). Depends: 137.4. *Done 2026-10-28:* the guard is
+  `issues.ForgeWrite` / `IssueWriteAs`; comment write-back is the outbox's
+  `add_comment` (migration 0047). 137.6 had not landed, so `deliver`'s close
+  and `--comment-file` are wired to the guard by 137.6 (decision 5 of #840's
+  brief), reusing it rather than re-implementing it.
 - [ ] **137.8** ([#841](https://github.com/lezli01/vincent/issues/841)) `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
   over items and `vincent workflow render --handoff-file`; the
   `vincent-workflows` skill, the five built-ins re-read and the

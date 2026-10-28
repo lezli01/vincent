@@ -922,7 +922,12 @@ project's counts are `writes_pending`, `writes_failed` and `writes_conflict`
 above. Only a person's change is written back: an agent's — over MCP, or a
 `vincent` command run by a workflow step or a chat agent, which send
 `X-Vincent-Task-Id` / `X-Vincent-Chat-Id` — is refused with
-`forge_write_needs_human`. That marker is best-effort, not a security
+`forge_write_needs_human`, unless it is a live handoff's task whose grant names
+`issue.close` (close and reopen) or `issue.comment`, on one of its items. Such
+a write is made as `by: handoff`, with `handoff_id` on its event, and is
+written back like a person's; a granted comment is posted to GitHub and keeps
+GitHub's comment id as its `remote_key`. A person's comment on an imported
+issue is still refused `issue_mirrored`. That marker is best-effort, not a security
 boundary: see the [security model](../security-model.md).
 
 ### GitHub pull requests
@@ -1146,6 +1151,17 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{"method":"squash","head_sha":"3f9c2e1d…"}' \
   http://127.0.0.1:8765/v1/tasks/61/github/pull/merge
 ```
+
+**Agents need a grant.** Every pull-request write — these five and
+`…/github/pull/create` — first asks who is calling. A request that reads as
+an agent's (an [MCP](#mcp) tool call, or one carrying `X-Vincent-Task-Id` or
+`X-Vincent-Chat-Id`, which a `vincent github pr` command run by a workflow step
+or a chat agent sends) is refused **409** `forge_write_needs_human` before
+anything reaches `gh`, unless it comes from the task of a live handoff whose
+grant names the route's capability (`pull.create`, `pull.merge`, `pull.close`
+for close and reopen, `pull.comment`, `checks.rerun`) and the task in the path
+is the handoff's own or one of its items' delivering tasks. A person's call is
+unchanged. Like the issue marker, this is best-effort, not a security boundary.
 
 Each is gated like creation — `github.enabled` and the capability probe, with
 the 409 above when the integration is not usable — and then refuses a task with
@@ -2618,7 +2634,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 |---|---|---|
 | `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
 | `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable. Also a comment on an issue whose GitHub remote is live — one whose remote moved, is missing or was deleted takes comments | `reason` |
-| `forge_write_needs_human` | `close` or `reopen` of an issue imported from GitHub by an agent: an [MCP](#mcp) tool call, or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Its state is written back to GitHub, and only a human's act does that. A local issue, or one whose remote moved or is missing, is not refused | `reason` |
+| `forge_write_needs_human` | A forge write by an agent without a grant: `close`, `reopen` or a comment on an issue imported from GitHub, or any `…/github/pull/*` write, from an [MCP](#mcp) tool call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Allowed only for a live handoff's task whose grant names the capability, on its own items and pull requests. A local issue, or one whose remote moved or is missing, is not refused | `reason` |
 | — | `close` on a closed issue, `reopen` on an open one | `state` |
 
 ### Creating a task from an issue
