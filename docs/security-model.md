@@ -660,8 +660,9 @@ below is the whole posture, not a set of tips.
   started, write trigger files. They install only through
   [`vincent trigger apply`](reference/cli.md#vincent-trigger-apply), which
   refuses any change that arms a trigger compared with the file on disk:
-  `enabled` to `true`, `on_fire` to `create` or `permission` to `workflow`. A
-  new file counts as having none of them. A value already armed may stay, and
+  `enabled` to `true`, `on_fire` to `create`, `permission` to `workflow`, or
+  a `start_handoff`'s `grant` gaining a capability it did not have (narrowing
+  one is allowed). A new file counts as having none of them. A value already armed may stay, and
   there is no override flag. `triggers.enabled` is in `config.yaml`, which apply
   cannot touch. Apply also refuses a file for another project and a file that
   changed since the proposal read it. A rewrite of a trigger that is already

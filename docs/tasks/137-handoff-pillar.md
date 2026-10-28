@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (9/15)
+**Status:** 🔄 in progress (10/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -629,6 +629,31 @@ settles and selects everything that accumulated.
 - **`order: priority` puts priority 0 last**: urgent (1) through low (4),
   then "none", then the oldest delivery, then issue id.
 
+*Amended 2026-10-28 (task 137.9, issue #842), settled with the author; amends
+decisions 6 and 8:*
+
+- **Widening a grant counts as arming.** `grant` is a fourth per-file arming
+  switch beside `enabled`, `on_fire` and `permission`: `vincent trigger
+  apply` refuses a staged file whose grant names any capability the file on
+  disk does not (a new file compares against an empty grant), armed or not,
+  and the TUI confirms every edit that adds one — not only empty to
+  non-empty. Narrowing is free. Decision 6's "may stage a grant and never arm
+  it" is read accordingly: the trigger built-ins stage no wider grant and
+  name, in their summary, the capabilities a human must add.
+- **Trigger attribution travels in the request context** of the in-process
+  replay (`trigger.ContextWithTrigger` / `trigger.ViaTrigger`), never as a
+  header or body field, so no client can claim it. `POST /v1/handoffs`
+  records `created_by: trigger` and `trigger_id`, and a trigger's grant
+  passes `grant_needs_human` by design. No import edge points at
+  `internal/api`.
+- **`issue_ids` is a list of templates**, each rendering one id as `issue:`
+  does. Empty renders are dropped; if every entry is empty the request still
+  sends `[]` and the delivery is refused, never a fallback to a selection.
+  `select` is literal and validated at load.
+- The ledger's `task_id` for a `start_handoff` is the handoff's **task**, so
+  a running handoff holds its trigger's concurrency group, and the
+  `queue_coalesce` batch above works unchanged.
+
 ### 9. Trains, reviews and pull requests stay in workflows (2026-10-24)
 
 Vincent ships no merge-train step, no review step and no `merge` step type
@@ -956,7 +981,7 @@ pull request.
   over items and `vincent workflow render --handoff-file`; the
   `vincent-workflows` skill, the five built-ins re-read and the
   `update-workflows` checklist line (decision 7). Depends: 137.5.
-- [ ] **137.9** ([#842](https://github.com/lezli01/vincent/issues/842)) `action.type: start_handoff` with `select` and `grant`, the
+- [x] **137.9** ([#842](https://github.com/lezli01/vincent/issues/842)) `action.type: start_handoff` with `select` and `grant`, the
   TUI's grant confirmation, the `handoff_changed` action on `type: issues`;
   the `vincent-triggers` skill and `update-triggers`' checklist line
   (decisions 6, 8, 12). Depends: 137.5, 137.7.

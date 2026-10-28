@@ -3406,8 +3406,12 @@ priority — then the oldest delivery, then the lowest id.
 
 `state` is `live` while the task runs, `waiting` once it has settled with an
 item still waiting, and `settled` otherwise. `created_by` is `agent` for an MCP
-call or a request carrying a workflow step's or chat agent's marker, `human`
-otherwise. Refusals are `409 invalid_state` with `issue_not_eligible`,
+call or a request carrying a workflow step's or chat agent's marker, `trigger`
+(with `trigger_id`) for a handoff a trigger's
+[`start_handoff`](../guides/triggers.md#start_handoff-start-a-handoff) action
+started, and `human` otherwise. Only the daemon's in-process trigger replay can
+be `trigger`: nothing in the request says so, and a trigger's grant is not
+refused `grant_needs_human`, because the file you armed is the consent. Refusals are `409 invalid_state` with `issue_not_eligible`,
 `nothing_to_hand_off` or `grant_needs_human` (see [Errors](#errors)). Send
 `Idempotency-Key` to make a retry safe ([Replaying a create](#replaying-a-create)).
 
