@@ -340,6 +340,21 @@ func TestIssueListOffersTheLane(t *testing.T) {
 	}
 }
 
+// TestIssueListOffersTheHandoffMarker: the handoff marker (task 137.10) is
+// a filter on issue_list and a field on its rows.
+func TestIssueListOffersTheHandoffMarker(t *testing.T) {
+	t.Parallel()
+	list := routeFor(t, "issue_list").Description
+	for _, want := range []string{
+		"handoff (pending|claimed|waiting|delivered|idle, repeatable)",
+		"handoff (the handoff marker {state, handoff_id, task_id}, or null",
+	} {
+		if !strings.Contains(list, want) {
+			t.Errorf("issue_list does not document %q: %s", want, list)
+		}
+	}
+}
+
 // TestDispatchRepeatsAQueryParameter: a parameter a route repeats (issue_list's
 // lane, state and label) is an array in the tool call and reaches the route
 // once per value; a plain string still means one value, and anything else is

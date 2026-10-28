@@ -159,11 +159,24 @@ type issueRowBody struct {
 	// Delivery is what the issue's latest finished main-line root task
 	// delivered (task 137.2): its summary on a row, in full on the detail.
 	// Null while no finished task has one.
-	Delivery  *deliveryResponse `json:"delivery"`
+	Delivery *deliveryResponse `json:"delivery"`
+	// Handoff is the issue's handoff marker (task 137.10): pending,
+	// claimed, waiting, delivered or idle, with the handoff and task it
+	// names. Derived in the list's own query; null when it has none.
+	Handoff   *issueHandoffBody `json:"handoff"`
 	Version   int64             `json:"version"`
 	CreatedAt time.Time         `json:"created_at"`
 	UpdatedAt time.Time         `json:"updated_at"`
 	ClosedAt  *time.Time        `json:"closed_at,omitempty"`
+}
+
+// issueHandoffBody is an issue's handoff marker. handoff_id and task_id
+// name the claiming handoff for claimed and waiting, the delivering one for
+// delivered, and are null for pending and idle.
+type issueHandoffBody struct {
+	State     store.HandoffMarker `json:"state"`
+	HandoffID *int64              `json:"handoff_id"`
+	TaskID    *int64              `json:"task_id"`
 }
 
 // issueMainWorktreeBody is an issue's main worktree: its branch, and the
@@ -230,6 +243,9 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 		CreatedAt:         iss.CreatedAt,
 		UpdatedAt:         iss.UpdatedAt,
 		ClosedAt:          iss.ClosedAt,
+	}
+	if hm := iss.Handoff; hm != nil {
+		row.Handoff = &issueHandoffBody{State: hm.State, HandoffID: hm.HandoffID, TaskID: hm.TaskID}
 	}
 	if mw := iss.MainWorktree; mw.Branch != "" {
 		row.MainWorktree = &issueMainWorktreeBody{
@@ -444,6 +460,14 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.Lanes = append(f.Lanes, issuestate.Lane(l))
+	}
+	for _, m := range q["handoff"] {
+		if !store.ValidHandoffMarker(store.HandoffMarker(m)) {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("unknown issue handoff %q; must be one of: pending, claimed, waiting, delivered, idle", m))
+			return
+		}
+		f.Handoffs = append(f.Handoffs, store.HandoffMarker(m))
 	}
 	f.Labels = q["label"]
 	f.Kind = q.Get("kind")

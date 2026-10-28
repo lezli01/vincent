@@ -118,11 +118,14 @@ type Issue struct {
 	// Delivery is what the issue's latest finished main-line root task
 	// delivered (task 137.2): a summary on a list row, in full from
 	// GetIssue. Nil while no finished task has one.
-	Delivery  *Delivery  `json:"delivery"`
-	Version   int64      `json:"version"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	ClosedAt  *time.Time `json:"closed_at,omitempty"`
+	Delivery *Delivery `json:"delivery"`
+	// Handoff is the issue's handoff marker (task 137.10); nil when it has
+	// none.
+	Handoff   *IssueHandoff `json:"handoff"`
+	Version   int64         `json:"version"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
+	ClosedAt  *time.Time    `json:"closed_at,omitempty"`
 
 	Body             string     `json:"body,omitempty"`
 	AvailableActions []string   `json:"available_actions,omitempty"`
@@ -139,11 +142,22 @@ type Issue struct {
 	Prefill *GitHubPrefill `json:"prefill,omitempty"`
 }
 
+// IssueHandoff is an issue's handoff marker: State is pending, claimed,
+// waiting, delivered or idle. HandoffID and TaskID name the claiming
+// handoff for claimed and waiting, the delivering one for delivered, and
+// are nil for pending and idle.
+type IssueHandoff struct {
+	State     string `json:"state"`
+	HandoffID *int64 `json:"handoff_id"`
+	TaskID    *int64 `json:"task_id"`
+}
+
 // IssueListOptions filters ListIssues. Zero values mean "no filter".
 type IssueListOptions struct {
 	ProjectID int64
 	States    []string
 	Lanes     []string // open, in_progress, hand_off, done; any of them
+	Handoffs  []string // pending, claimed, waiting, delivered, idle; any of them
 	Labels    []string // every one must match
 	Kind      string
 	Query     string // substring of title or body
@@ -168,6 +182,9 @@ func (o IssueListOptions) query() string {
 	}
 	for _, l := range o.Lanes {
 		v.Add("lane", l)
+	}
+	for _, h := range o.Handoffs {
+		v.Add("handoff", h)
 	}
 	for _, l := range o.Labels {
 		v.Add("label", l)
