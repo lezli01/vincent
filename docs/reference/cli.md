@@ -2439,7 +2439,8 @@ It checks that each template **parses**. It never runs one — see
 ```sh
 vincent workflow render <file> [--task ID] [--project ID]
                                [--title S] [--description S] [--field k=v]...
-                               [--agent A] [--model M] [--effort E] [--json]
+                               [--agent A] [--model M] [--effort E]
+                               [--handoff-file PATH] [--json]
 ```
 
 Executes every template the file declares — `prompt`, `run`, `check`,
@@ -2484,6 +2485,14 @@ and `--project ID` binds that project's facts; both need a daemon, and both
 also resolve `include` steps and named fan-out lanes through the registry.
 Without one, those steps are reported as unresolved and every other step still
 renders.
+
+`--handoff-file PATH` binds [`.Handoff`](workflow-schema.md#handoff) from a
+file in [`$VINCENT_HANDOFF_FILE`](workflow-schema.md#vincent-handoff-file)'s
+shape, `ItemLines` included, so a `for_each` over `.Handoff.ItemLines` renders
+one line per item. `--task` on a handoff task binds that handoff's real items,
+and `--handoff-file` overrides them. With neither, a
+[`role: handoff`](workflow-schema.md#role) workflow renders the zero
+`.Handoff` and a warning says so.
 
 A derived fan-out's `lane:` template renders once, not once per item: its
 steps are marked `<derived lane>` with the `for_each` they expand over

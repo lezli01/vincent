@@ -19,6 +19,7 @@ becoming a setting that silently never applied.
 - [Top level](#top-level)
   - [`platforms`](#platforms)
   - [`hand_off`](#hand_off)
+  - [`role`](#role)
   - [`fields`](#fields)
   - [`defaults`](#defaults)
 
@@ -96,6 +97,7 @@ to its existing ones, and never arm a trigger.
 | `description` | string | | Shown in the TUI's workflow picker |
 | `platforms` | list | | Where this workflow may run. Empty means anywhere — see [`platforms`](#platforms) |
 | `hand_off` | string | | `auto` (the default) or `explicit`: when an issue's finished work is ready to hand off — see [`hand_off`](#hand_off) |
+| `role` | string | | `handoff`, or absent for an ordinary workflow: a workflow only `vincent handoff start` runs — see [`role`](#role) |
 | `fields` | list | | Ordered task-input declarations — see [`fields`](#fields) |
 | `defaults` | map | | Inherited by every step |
 | `steps` | list | ✅ | Runs in order, top to bottom. Must be non-empty |
@@ -159,6 +161,27 @@ issue to the `hand_off` lane:
 The value is fixed when a task is created: editing the workflow later does not
 change how that task hands off. An included workflow's `hand_off` is ignored —
 the including workflow's applies.
+
+## `role`
+
+```yaml
+role: handoff                # the only value; absent means an ordinary workflow
+```
+
+Marks a workflow that a [handoff](../guides/issues.md) runs: one integration
+task over several issues whose work is ready, started with `vincent handoff
+start`. The rule runs both ways. A handoff runs only a `role: handoff`
+workflow, and nothing else may start one: `vincent task create`, MCP's
+`task_create`, a trigger's `create_task` and a chat's task handoff all get a
+400 naming `vincent handoff start`, and the new-task form does not offer it. A
+[`fan_out`](#type-fan_out) lane naming one is refused when the task is
+created. So a `role: handoff` step always renders a non-zero
+[`.Handoff`](#handoff), and reads its items from there or from
+[`$VINCENT_HANDOFF_FILE`](#the-handoffs-items) instead of selecting issues
+itself.
+
+Any other value is a validation error. An included workflow's `role` is
+ignored — the including workflow's applies.
 
 ## `fields`
 
@@ -1054,11 +1077,47 @@ starts.
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Loop` | `Index` (1-based iteration, **0** outside any loop), `Item`, `IsFirst`, `IsLast`. See [`type: loop`](#type-loop) |
 | `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State` of an imported issue; zero for a local one), `Comments` (a list of `Author`, `Body`, `CreatedAt`: the thread, oldest first), and `Repo`/`URL`, deprecated aliases of `Source.Repo`/`Source.URL`. See [`.Issue`](#issue) |
+| `.Handoff` | the handoff a `role: handoff` task integrates: `ID` (**0** on every other task), `Grant` (a list), `Items` (a list of `Issue`, in `.Issue`'s shape, `Delivery`, `TaskID`, `Branch`, `HeadSHA`) and `ItemLines`, one JSON object per item. See [`.Handoff`](#handoff) |
 | `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}`. `Status` is `succeeded`, `approved` (a passed gate), `skipped` (a false guard) or `failed` — the last only once the workflow has moved past it, which happens only under `allow_failure`. `interrupted` never appears |
 | `.Host` | `OS`, `Arch` — the machine the daemon runs on. This is the per-step platform gate: `{{ ne .Host.OS "windows" }}` |
 | `.Worktree` | `Path` |
 | `.LastFailure` | retries only: `{Reason, Output}`; empty otherwise |
 | `.Conflicts` | the conflicted file paths, on an `on_conflict: agent` [merge resolver](#merge-and-conflicts) only. Empty everywhere else, so a prompt may read it defensively anywhere |
+
+### `.Handoff`
+
+A [`role: handoff`](#role) task renders the handoff it integrates; every other
+task, the lanes of a handoff's own fan-out included, renders the zero value,
+so `{{ if .Handoff.ID }}` tells the two apart. Each item is built from what the
+handoff claimed, never from the live issue: `.Issue` is the issue (thread
+included) **as it stood at the claim**, `.Delivery` the delivery it was handed
+with — `Kind`, `Title`, `Body`, `Summary`, `HeadSHA`, `Branch`, `Base`,
+`CloseReason`, `Proof`, `Ready` — and `TaskID`, `Branch` and `HeadSHA` that
+delivery's task, branch and commit. A retry renders exactly what the first
+attempt did.
+
+`Items` is the list a prompt ranges over. `ItemLines` is the same items as
+text, one compact JSON object per line — each one element of the
+[handoff file](#the-handoffs-items)'s `items` — and is what a derived
+[`fan_out`](#type-fan_out) iterates for one lane per item:
+
+```yaml
+role: handoff
+steps:
+  - id: per-issue
+    type: fan_out
+    for_each: ['{{ .Handoff.ItemLines }}']
+    lane:
+      id: 'issue-{{ .Item.issue.id }}'
+      fields: {source_branch: '{{ .Item.branch }}'}
+      steps:
+        - id: open-pr
+          type: agent
+          prompt: 'Open a pull request for {{ index .Task.Fields "source_branch" }}.'
+```
+
+A lane is an ordinary child task with a zero `.Handoff`; what it needs of its
+item reaches it through the lane's `fields:`.
 
 ### `.Issue`
 
@@ -1274,6 +1333,29 @@ and a fan-out lane gets its parent's. Read it instead of `gh issue view`:
 
 Free text — a title, a body — reaches a shell through this file, never through
 a template rendered into `run:`.
+
+### The handoff's items
+
+<a id="vincent-handoff-file"></a>
+
+A [`role: handoff`](#role) task also receives its handoff as a file, and no
+other task does:
+
+| Variable | Value |
+|---|---|
+| `VINCENT_HANDOFF_FILE` | absolute path of the handoff file |
+
+```json
+{"id": 3, "grant": [],
+ "items": [{"issue": {…}, "delivery": {"kind", "title", "body", "summary", "head_sha", "branch", "base", "close_reason", "proof", "ready"},
+            "task_id": 41, "branch": "vincent/41-fix-login", "head_sha": "…"}]}
+```
+
+Each item's `issue` is exactly the [issue file](#vincent-issue-file)'s shape, so
+per-issue `jq` carries over, and each item is one line of
+[`.Handoff.ItemLines`](#handoff). Like the issue file it is written from the
+rows, never fetched, into the worktree's own git directory before every
+attempt.
 
 ## Resolution order
 

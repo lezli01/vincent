@@ -544,6 +544,27 @@ The skills and the five built-ins are re-read in the same piece of work, per
 
 *Settled by the author 2026-10-24:* accepted as written.
 
+*Settled with the author 2026-10-28 (137.8, #841):*
+
+1. **Fan-out uses a precomputed field, not a FuncMap.** `.Handoff.ItemLines`
+   is one compact JSON object per item, newline-separated, each one element
+   of the file's `items`; a workflow writes `for_each: '{{ .Handoff.ItemLines
+   }}'` with a `lane:` template reading `.Item.issue.id` and `.Item.branch`.
+   Task 016 decision 15 (no §8.4 FuncMap) and task 080's derived-lane path
+   stand unchanged; `.Handoff.Items` stays the typed list prompts range over.
+2. **An item's issue is snapshotted at claim time.** Migration 0048 adds
+   `handoff_items.issue_json`, written by the create with `NewIssueSnapshot`
+   (thread included) in the claiming transaction, so rendering stays a pure
+   function of rows and a retry sees the same issue. Older rows (pre-release
+   data) render from the issue row as it is now.
+3. **`role: handoff` is refused everywhere outside a handoff.** `POST
+   /v1/tasks` (so the CLI, MCP `task_create`, a trigger's `create_task` and a
+   chat's task handoff) answers 400 pointing at `vincent handoff start`;
+   `POST /v1/handoffs` refuses a workflow without the role with a 400 naming
+   it; a `fan_out` lane naming one is a creation-time `TreeError`. A `role:
+   handoff` run always has a non-zero `.Handoff`, and the new-task form
+   hiding these workflows is the same rule shown in the UI.
+
 ### 8. Starting a handoff, and `select:` (2026-10-24)
 
 `POST /v1/handoffs {project_id, workflow, issue_ids | select, grant, title,
@@ -923,7 +944,7 @@ pull request.
   `add_comment` (migration 0047). 137.6 had not landed, so `deliver`'s close
   and `--comment-file` are wired to the guard by 137.6 (decision 5 of #840's
   brief), reusing it rather than re-implementing it.
-- [ ] **137.8** ([#841](https://github.com/lezli01/vincent/issues/841)) `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
+- [x] **137.8** ([#841](https://github.com/lezli01/vincent/issues/841)) `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
   over items and `vincent workflow render --handoff-file`; the
   `vincent-workflows` skill, the five built-ins re-read and the
   `update-workflows` checklist line (decision 7). Depends: 137.5.

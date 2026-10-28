@@ -373,6 +373,13 @@ scope won the walk, which file it was, and a digest of that file's bytes, so a
 task created six months ago can still be told apart from one created against
 the built-in of the same name.
 
+*Amended 2026-10-28 (task 137.8, issue #841; task 137 decision 7):* a
+workflow may declare a **role** (§8.1.4). The one role is `handoff`: a
+workflow only a handoff (§5.7) runs. `GET /v1/workflows` and the workflow
+definition carry `role`, so a client listing workflows for a task create — the
+TUI's new-task and follow-up forms — leaves those entries out; the 400 of
+§13.2 is the rule, the hidden row only shows it.
+
 ### 5.3 Task
 
 A unit of work delivered by running a workflow against a project.
@@ -1560,6 +1567,17 @@ The `handoff` actor (§5.6) writes an issue it claims; the store's
 state-change and comment writes accept an optional handoff id, and the
 `issue.*` event they record then carries `handoff_id`.
 
+*Amended 2026-10-28 (task 137.8, issue #841, migration 0048):*
+`handoff_items` gains a nullable **`issue_json`** — the claimed issue frozen
+at claim time, a `store.IssueSnapshot` exactly as `tasks.issue_json` holds
+one, thread included — written by the create in the same transaction that
+claims the item and snapshots its delivery. It is what an item's `.Issue`
+(§8.4) and its `issue` element of `$VINCENT_HANDOFF_FILE` (§8.5) render, so a
+render stays a pure function of rows and a retry sees the issue the handoff
+was handed. Items claimed before the migration (pre-release data only) have
+NULL there and render from the issue row as it is now; nothing else reads the
+issue live.
+
 ## 6. Task lifecycle
 
 > Chats have their own lifecycle and their own vocabulary — `idle`, `running`,
@@ -2346,6 +2364,13 @@ a **real child task** — its own row, worktree, branch, scheduler slot, gates,
 blocks, transcripts and recovery — and merges their branches back into the
 branch this task already owns. One branch is still delivered, because the step
 does not finish until every lane is merged.
+
+*Amended 2026-10-28 (task 137.8, issue #841):* a lane is an ordinary child
+task, so a lane naming a `role: handoff` workflow (§8.1.4) is refused at task
+creation as a tree error (400), beside an unknown name and a cycle. The lanes
+of a handoff task's own fan-out run an ordinary workflow and render a zero
+`.Handoff`; what they need of their item reaches them through the lane's
+`fields:`, rendered from `.Item` (§8.4).
 
 ```yaml
 - id: build
@@ -3346,6 +3371,19 @@ contributes steps, never top-level keys (§7.9). The synthesized `__merge_back`
 workflow has no key of its own; a merge-back's delivery copies its source side
 task's readiness with the rest of the delivery.
 
+#### 8.1.4 Workflow role (`role:`)
+
+*Added 2026-10-28 (task 137.8, issue #841; task 137 decision 7).* `role:` is
+a closed set of one value, `handoff`; absent means an ordinary workflow, and
+any other value fails at load. A `role: handoff` workflow is what a handoff
+(§5.7) runs, and the rule runs both ways: `POST /v1/handoffs` refuses a
+workflow without the role, and `POST /v1/tasks` — so the CLI, MCP
+`task_create`, a trigger's `create_task` and a chat's task handoff — refuses
+one with it, both with a 400 (§13.2); a `fan_out` lane naming one is a
+creation-time tree error (§7.6). A `role: handoff` run therefore always has a
+non-zero `.Handoff` (§8.4). Like `hand_off:` it is the including workflow's
+alone: an included callee contributes steps, never top-level keys (§7.9).
+
 ### 8.2 Step types and fields
 
 Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
@@ -3501,6 +3539,7 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | `.Item` | *Added 2026-09-01 (task 080).* The item a **derived `fan_out`'s** `lane:` template is being rendered for (§7.6), and present in that template only. It is a **parsed JSON object**, not a string: this is the one deliberate widening of the rule that every value here is plain text, made because a DAG node carries both an identity and its edges — `{{ .Item.id }}` and `{{ .Item.needs }}` — and one string cannot say both. `.Issue.Labels` is the precedent for structure in this context. `.Loop.Item` is **unchanged** and still a string; the widening does not reach it |
 | `.Issue` | *Added 2026-08-26 (task 035).* The GitHub issue the task was created from (§5.3): `Number`, `Repo` (`owner/name`), `Title`, `Body`, `URL`, `State`, `Labels` (a **list**, so a prompt can range over it), `Author`, `Assignee`, `Milestone`, `MilestoneNumber`. Its zero value — `Number: 0` — is what every task created without an issue renders with, exactly the way `.Loop`'s `Index: 0` works, so `{{ if .Issue.Number }}` tells the two apart and one template serves both. It is read from the task's snapshot and **never from the network**: rendering stays pure and offline, and an issue edited on GitHub after creation does not change what a later step renders. *Amended 2026-10-02 (task 130.4, issue #663; task 130 decision 8):* `.Issue` describes the **vincent** issue: `Number` (the vincent issue id), `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` — `Provider`, `Repo`, `Number`, `URL`, `State` — the provider reference of an imported issue, zero for a local one. `Repo` and `URL` stay as **deprecated aliases** of `Source.Repo` and `Source.URL`. It is mapped from the task's `issue_json` snapshot (§5.6) when one is present; a task carrying only the legacy `github_issue_json` (created through `github_issue` until 130.11 removes it) maps that snapshot as before — `Number` is the **GitHub** number, `Source` repeats it — so templates written before task 130 render byte-identically; otherwise the zero value. A template that hands a number to `gh` therefore reads `.Issue.Source.Number`, or a declared `github_issue` field, never `.Issue.Number`. Since `run` and `check` are rendered here (§8.3), numbers are safe to template into a command; free text — a title, a body — is not, because it is attacker-controlled shell (§20). *Amended 2026-10-03 (task 130.16, issue #675; task 130 decision 24):* `.Issue.Comments` is the issue's thread as the snapshot captured it at task creation — a list of `{Author, Body, CreatedAt}`, oldest first and untruncated, local and mirrored comments alike. The snapshot reads it from the store in the create transaction, never from the network, so a later comment never changes an existing task's thread; a fan-out lane inherits its parent's. Empty for a task without a snapshot and for a legacy GitHub one. A comment body is free text like the issue's own |
 | `.Host` | *Added 2026-08-18 (task 015).* `OS`, `Arch` — the **daemon's** GOOS/GOARCH, since the daemon is what runs the steps (§8.1.1). This is the per-step platform gate: `{{ ne .Host.OS "windows" }}`. There is deliberately no `.Now`: a guard reading wall-clock makes a run non-reproducible |
+| `.Handoff` | *Added 2026-10-28 (task 137.8, issue #841; task 137 decision 7).* The handoff a `role: handoff` task (§8.1.4) integrates: `ID`, `Grant` (a list), `Items` and `ItemLines`. **Zero** on every other task — the lanes of a handoff's own fan-out included — so `{{ if .Handoff.ID }}` tells them apart, as `.Issue.Number` does. Each item has `Issue` (`.Issue`'s shape), `Delivery` (`Kind`, `Title`, `Body`, `Summary`, `HeadSHA`, `Branch`, `Base`, `CloseReason`, `Proof`, `Ready`), `TaskID` (`delivery_task_id`) and `Branch`/`HeadSHA` (the delivery's). It is built from the handoff's rows — the item's claim-time issue snapshot (§5.7) and delivery snapshot — and never from the network or the live issue. `ItemLines` is §8.4's **second structured value beside `.Item`**: one compact JSON object per item, newline-separated, each one element of `$VINCENT_HANDOFF_FILE`'s `items` (§8.5), so a derived `fan_out` writes `for_each: '{{ .Handoff.ItemLines }}'` and reads `.Item.issue.id` and `.Item.branch` in its `lane:` template — task 080's path unchanged, and still no FuncMap (task 016 decision 15). Each line is already a JSON object, so `fan_out_invalid` cannot fire for it. `Items` remains the typed list a prompt ranges over |
 | `.Worktree` | `Path` |
 | `.LastFailure` | on retry attempts only: `{Reason, Output}` from the previous attempt; empty otherwise |
 | `.Conflicts` | *Documented 2026-08-18: the field has shipped since task 014 but was never listed here.* The conflicted file paths a `fan_out` join hands an `on_conflict: agent` resolver (§7.6). Empty for every other step, so a prompt may read it defensively anywhere |
@@ -3654,6 +3693,16 @@ environment, then this block, then a `command` step's own `env:` (which is a
 command-step field, so an agent step has none). Because the block is layered
 *after* the policy, `environment.unset` cannot reach a `VINCENT_*` variable:
 these are facts about the run, not inherited state.
+
+*Amended 2026-10-28 (task 137.8, issue #841).* A **handoff task** (§5.7) also
+gets `VINCENT_HANDOFF_FILE`, the absolute path of its handoff as JSON — `{id,
+grant, items: [{issue, delivery, task_id, branch, head_sha}]}` — and no other
+task does. Each item's `issue` is exactly the issue file's shape above, so
+per-issue `jq` carries over, and each item compacted is one line of
+`.Handoff.ItemLines` (§8.4). `delivery` carries `kind`, `title`, `body`,
+`summary`, `head_sha`, `branch`, `base`, `close_reason`, `proof` and `ready`.
+It is written the way the issue file is — from the rows, before every attempt,
+atomically, into the worktree's own git directory as `vincent-handoff.json`.
 
 ### 8.6 Agent, model, and effort resolution
 
@@ -9554,8 +9603,10 @@ POST   /v1/handoffs                     *Added 2026-10-24 (task 137.5, issue #83
                                         `branch_name`, `existing_branch` and `merge_back` are
                                         unknown fields and **400**. `workflow` is required —
                                         there is no default handoff workflow — and any valid
-                                        workflow is accepted until task 137.8's `role:
-                                        handoff`. `title` defaults to one naming the issue
+                                        workflow must declare `role: handoff`
+                                        (§8.1.4) — any other is a **400** naming the role
+                                        (*amended 2026-10-28, task 137.8: this accepted any
+                                        valid workflow until the role existed*). `title` defaults to one naming the issue
                                         count. Exactly one of `issue_ids` (no duplicates) and
                                         `select` { lane?: hand_off, delivery?: change | reply |
                                         none or a list, kind?: a string or a list, labels?,

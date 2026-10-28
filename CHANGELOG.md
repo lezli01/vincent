@@ -37,6 +37,22 @@ list with the user-facing context a commit subject cannot carry.
   pull-request writes are listed as tools (`task_github_pull_merge` and the
   rest), and nowhere else.
 
+- **Handoff workflows get their items.** A workflow declaring `role: handoff`
+  is the one a handoff runs: its steps render `.Handoff` — the handoff's id,
+  grant and items, each with the issue as it stood at the claim (thread
+  included), the delivery it was handed with, and that delivery's task, branch
+  and commit — and read the same as JSON from `$VINCENT_HANDOFF_FILE`, whose
+  per-item `issue` is `$VINCENT_ISSUE_FILE`'s shape. A derived `fan_out` over
+  `.Handoff.ItemLines` runs one lane per item. The rule runs both ways:
+  `POST /v1/handoffs` refuses a workflow without the role, and `POST /v1/tasks`
+  (so `vincent task create`, MCP's `task_create`, a trigger's `create_task`
+  and a chat's task handoff) refuses one with it, as does a `fan_out` lane
+  naming one; the new-task form no longer offers them. `vincent workflow
+  render --handoff-file F` previews a handoff workflow against a file, and
+  `--task` on a handoff task binds its real items. `GET /v1/workflows` and
+  the workflow definition carry `role`, and `GET /v1/handoffs/{id}` carries
+  the handoff's `file`.
+
 - **Start a handoff over finished issues.** `POST /v1/handoffs` claims issues
   in the `hand_off` lane for one integration task running the workflow you
   name — by id, or with `select` (by delivery kind, issue kind and labels,

@@ -1236,6 +1236,13 @@ that flag rather than comparing the list to their own OS. An entry with
 `platform_supported: false` is listed like any other, but `POST /v1/tasks`
 rejects a task naming it with a `400`.
 
+`role` is present, and `handoff`, on a workflow declaring
+[`role: handoff`](workflow-schema.md#role). `POST /v1/tasks` rejects a task
+naming one with a `400` pointing at `vincent handoff start` — only
+[`POST /v1/handoffs`](#handoffs) runs it — so a picker offering workflows for
+a new task leaves those entries out. The definition (`GET
+/v1/workflows/{name}`) carries `role` too.
+
 `requires_input` marks an entry with a step declaring
 [`on_input: require`](workflow-schema.md#type-agent) that leaves its agent to
 the task — the agent chosen for a task on it must be one that can stop and ask
@@ -3367,7 +3374,7 @@ POST /v1/handoffs
 
 | Field | Meaning |
 |---|---|
-| `project_id`, `workflow` | Both required. There is no default handoff workflow |
+| `project_id`, `workflow` | Both required. There is no default handoff workflow, and the workflow must declare [`role: handoff`](workflow-schema.md#role): any other is a `400 validation_failed` naming the role |
 | `issue_ids` | Exactly these issues. Each must be eligible, or nothing is created |
 | `select` | Or choose them. `lane` may only be `hand_off`, and `order` only `priority`; `delivery` (`change`, `reply` or `none`) and `kind` take one value or a list, any of which matches; every one of `labels` must be carried, in any case; `max` (at least 1) caps the count, otherwise every eligible issue is taken |
 | `grant` | Capabilities for forge writes: `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`. Only a human may give one. It lets the handoff's task make those writes on its own items and pull requests (see [state write-back](#state-write-back) and [GitHub pull requests](#github-pull-requests)) |
@@ -3409,7 +3416,10 @@ GET /v1/handoffs/{id}           one handoff with its items; 404 if unknown
 ```
 
 The list is newest first and carries no `items`; `issue_id` finds every handoff
-that claimed that issue.
+that claimed that issue. `GET /v1/handoffs/{id}` alone adds `file`: the
+[`$VINCENT_HANDOFF_FILE`](workflow-schema.md#vincent-handoff-file) object the
+handoff task's steps read, which is what `vincent workflow render --task`
+binds.
 
 ### Item outcomes
 
