@@ -689,6 +689,11 @@ link; the outcome card's result has its own key, `w`. The footer lists the links
 If the task changes state while the Overview is open, the new frame replaces
 the old one and your attempt selection stays where it was.
 
+A handoff's task — one a [handoff](#handing-issues-off--space-v-i) started —
+adds an **Items** block to its Overview: each issue it claimed, by id and
+title, with its delivery kind and its outcome, or `unresolved`. It is read
+again whenever an item's outcome changes or the handoff settles.
+
 **Steps** (`1`) lists every attempt of every step with its duration, tokens and
 cost. Selecting
 an attempt chooses what the separate **Output** tab shows; the selection stays
