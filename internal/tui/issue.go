@@ -199,7 +199,9 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 			return v, func() tea.Msg { return selectViewMsg{id: viewIssues} }
 		}
 		v.setNote(actedNote(msg), msg.err != nil)
-		if msg.err == nil && msg.id == v.id {
+		// A return answers with the handoff, not the issue, so msg.issue is
+		// the zero value there; keep the one shown until loadCmd re-reads it.
+		if msg.err == nil && msg.id == v.id && msg.issue.ID == v.id {
 			v.issue = msg.issue
 		}
 		return v, v.loadCmd()

@@ -345,3 +345,22 @@ func TestIssueScreenRefreshesOnHandoffTaskPause(t *testing.T) {
 		t.Error("an unrelated task's state change refreshed the issue screen")
 	}
 }
+
+// TestIssueScreenKeepsIssueAfterReturn is review F5 on #872: a return answers
+// with the handoff, so the acted message carries a zero issue, and the screen
+// showed issue 0 — and acted on it — until the reload landed.
+func TestIssueScreenKeepsIssueAfterReturn(t *testing.T) {
+	v := issueFixture()
+	v.loaded = true
+	v.issue.Handoff = &apiclient.IssueHandoff{State: markerClaimed, HandoffID: i64(7), TaskID: i64(70)}
+	v.update(issueActedMsg{action: issueActReturn, id: v.id})
+	if v.issue.ID != 5 || v.issue.Title != "Dark mode" {
+		t.Fatalf("after a return the screen shows issue #%d %q, want #5 kept until the reload", v.issue.ID, v.issue.Title)
+	}
+	closed := v.issue
+	closed.State = "closed"
+	v.update(issueActedMsg{action: issueActClose, id: v.id, issue: closed})
+	if v.issue.State != "closed" {
+		t.Error("an action that answers with the issue no longer updates the screen")
+	}
+}
