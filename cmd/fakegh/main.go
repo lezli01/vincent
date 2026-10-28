@@ -30,7 +30,8 @@
 //	repos/{o}/{r}/issues/comments  since, sort, direction, per_page, page
 //	repos/{o}/{r}/issues/{n}/comments
 //	                               one issue's thread, oldest first; per_page,
-//	                               page
+//	                               page; POST with body files a comment by
+//	                               fakegh and answers 201 (task 137.7)
 //
 // Every issue row's `comments` is the number of comment rows filed under it,
 // recomputed on every read, whatever the file says.

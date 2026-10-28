@@ -46,7 +46,10 @@
 // included: an issue is snapshotted onto the task at creation and every later
 // render reads the snapshot, so a step render still cannot fail for an
 // external reason (§8.4), and no step type, default workflow or automatic
-// behaviour calls a write (task 068 decision 1). internal/taskrun imports this
+// behaviour calls a write (task 068 decision 1). *Narrowed 2026-10-28 (task
+// 137 decision 6, 137.7):* a step's agent reaches a write only through the
+// daemon's own routes, as a live handoff's task under a grant a human gave —
+// never by importing this package. internal/taskrun imports this
 // package for the Issue type alone; a test holds internal/taskrun and
 // internal/workflow to naming no write method.
 //

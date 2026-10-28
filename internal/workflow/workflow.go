@@ -144,6 +144,11 @@ const (
 	HandOffExplicit = "explicit"
 )
 
+// RoleHandoff is the one workflow role (task 137.8, decision 7): a workflow
+// `vincent handoff start` runs. Only POST /v1/handoffs may start one, and it
+// may start nothing else, so a run of it always has a non-zero `.Handoff`.
+const RoleHandoff = "handoff"
+
 // Workflow is a parsed workflow definition (spec §8.1).
 type Workflow struct {
 	Name        string `yaml:"name"`
@@ -156,6 +161,10 @@ type Workflow struct {
 	// through HandOffMode. It is the including workflow's alone — an
 	// included callee contributes steps, never top-level keys (§7.9).
 	HandOff string `yaml:"hand_off,omitempty"`
+	// Role is what starts the workflow: empty for an ordinary one, or
+	// RoleHandoff for one only a handoff runs (task 137.8). Like HandOff it
+	// is the including workflow's alone (§7.9).
+	Role string `yaml:"role,omitempty"`
 	// Fields declares the ordered public task inputs this workflow expects
 	// (§8.1.2, task 022). The task still stores one open map[string]string:
 	// declarations guide clients and validate named values without rejecting
@@ -488,6 +497,19 @@ func (w *Workflow) HandOffMode() string {
 	return w.HandOff
 }
 
+// IsHandoff reports whether the workflow declares `role: handoff`.
+func (w *Workflow) IsHandoff() bool { return w != nil && w.Role == RoleHandoff }
+
+// validateRole checks `role:` against its closed set of one, exactly as
+// validateHandOff checks its key.
+func validateRole(wf *Workflow, add func(string, string, ...any)) {
+	switch wf.Role {
+	case "", RoleHandoff:
+	default:
+		add("role", "role must be %s or absent, got %q", RoleHandoff, wf.Role)
+	}
+}
+
 // validateHandOff checks `hand_off:` against its closed set. Like every enum
 // in the schema the match is exact: `Explicit` is a typo that fails at load
 // rather than a mode that silently reads as `auto`.
@@ -675,6 +697,7 @@ func validate(wf *Workflow, opts Options, loc *locator) (Errors, Errors) {
 	}
 	validatePlatforms(wf, add)
 	validateHandOff(wf, add)
+	validateRole(wf, add)
 	validateFieldDefinitions(wf, add)
 	validateDefaults(wf, opts, add)
 

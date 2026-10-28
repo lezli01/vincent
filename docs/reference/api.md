@@ -79,6 +79,7 @@ each:
 | `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
 | `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
 | `issue_has_live_main_task` | An issue delete was refused because one of the issue's main or side tasks has not finished. Finish or cancel it, then delete again | `task_id` |
+| `handoff_item_resolved` | A handoff item verb named an item already `delivered`, `returned` or `released` with another outcome, or — on a settled handoff — one that is not `waiting`. Nothing was recorded for any item of the call. Repeating an item's own outcome is not refused: it changes nothing | `outcome`, `issue_id` |
 | `issue_in_handoff` | A task create, a chat hand-off or a `follow_up` would add work to an issue a handoff has claimed. Only the handoff's own task may add work to it until the handoff returns or releases the issue | `handoff_id` |
 | `issue_not_eligible` | [`POST /v1/handoffs`](#handoffs) named an issue it may not claim: missing, in another project, closed, not in `hand_off`, already claimed, or already delivered. Nothing was created | `issue_id`, and `handoff_id` when a handoff in the same project claims it |
 | `nothing_to_hand_off` | A handoff's `select` found no eligible issue. Nothing was created | |
@@ -921,7 +922,12 @@ project's counts are `writes_pending`, `writes_failed` and `writes_conflict`
 above. Only a person's change is written back: an agent's — over MCP, or a
 `vincent` command run by a workflow step or a chat agent, which send
 `X-Vincent-Task-Id` / `X-Vincent-Chat-Id` — is refused with
-`forge_write_needs_human`. That marker is best-effort, not a security
+`forge_write_needs_human`, unless it is a live handoff's task whose grant names
+`issue.close` (close and reopen) or `issue.comment`, on one of its items. Such
+a write is made as `by: handoff`, with `handoff_id` on its event, and is
+written back like a person's; a granted comment is posted to GitHub and keeps
+GitHub's comment id as its `remote_key`. A person's comment on an imported
+issue is still refused `issue_mirrored`. That marker is best-effort, not a security
 boundary: see the [security model](../security-model.md).
 
 ### GitHub pull requests
@@ -1146,6 +1152,17 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
   http://127.0.0.1:8765/v1/tasks/61/github/pull/merge
 ```
 
+**Agents need a grant.** Every pull-request write — these five and
+`…/github/pull/create` — first asks who is calling. A request that reads as
+an agent's (an [MCP](#mcp) tool call, or one carrying `X-Vincent-Task-Id` or
+`X-Vincent-Chat-Id`, which a `vincent github pr` command run by a workflow step
+or a chat agent sends) is refused **409** `forge_write_needs_human` before
+anything reaches `gh`, unless it comes from the task of a live handoff whose
+grant names the route's capability (`pull.create`, `pull.merge`, `pull.close`
+for close and reopen, `pull.comment`, `checks.rerun`) and the task in the path
+is the handoff's own or one of its items' delivering tasks. A person's call is
+unchanged. Like the issue marker, this is best-effort, not a security boundary.
+
 Each is gated like creation — `github.enabled` and the capability probe, with
 the 409 above when the integration is not usable — and then refuses a task with
 no live link, a suppressed one included, with **409** `pull_not_linked`. A body
@@ -1196,7 +1213,7 @@ comment sent twice posts twice. None of the five is an [MCP tool](#mcp).
 | `POST` | `/v1/resolve` | `{ workflow, project_id?, agent?, model?, effort?, title?, fields?, base_branch?, branch_name? }` → resolution per step, plus the previewed branch name |
 
 Registry entries carry
-`{ name, scope, project_id, file, description, fields[], steps[], platforms[]?, platform_supported, requires_input, includes[]?, version?, errors[]?, warnings[]?, error? }`.
+`{ name, scope, project_id, file, description, fields[], steps[], platforms[]?, platform_supported, requires_input, role?, includes[]?, version?, errors[]?, warnings[]?, error? }`.
 
 `fields[]` is the selected workflow's ordered
 [`fields:` declaration](workflow-schema.md#fields). Each entry is
@@ -1218,6 +1235,13 @@ on it — the daemon is the process that would run the steps, so clients report
 that flag rather than comparing the list to their own OS. An entry with
 `platform_supported: false` is listed like any other, but `POST /v1/tasks`
 rejects a task naming it with a `400`.
+
+`role` is present, and `handoff`, on a workflow declaring
+[`role: handoff`](workflow-schema.md#role). `POST /v1/tasks` rejects a task
+naming one with a `400` pointing at `vincent handoff start` — only
+[`POST /v1/handoffs`](#handoffs) runs it — so a picker offering workflows for
+a new task leaves those entries out. The definition (`GET
+/v1/workflows/{name}`) carries `role` too.
 
 `requires_input` marks an entry with a step declaring
 [`on_input: require`](workflow-schema.md#type-agent) that leaves its agent to
@@ -2259,8 +2283,9 @@ you want templating, put it in a workflow and name that.
 
 A `workflow` name is resolved through the registry now, not at admission: an
 unknown name, a workflow that cannot run on this host, one that fails validation
-once its `include`s are expanded, or a fan-out tree past `fan_out.max_depth`
-from this task's own depth are all `400`s. What validates is stored on the task
+once its `include`s are expanded, a [`role: handoff`](workflow-schema.md#role)
+workflow on any task but a handoff's own, or a fan-out tree past
+`fan_out.max_depth` from this task's own depth are all `400`s. What validates is stored on the task
 and is what runs, so editing the file afterwards does not change the run in
 flight.
 
@@ -2617,7 +2642,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 |---|---|---|
 | `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
 | `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable. Also a comment on an issue whose GitHub remote is live — one whose remote moved, is missing or was deleted takes comments | `reason` |
-| `forge_write_needs_human` | `close` or `reopen` of an issue imported from GitHub by an agent: an [MCP](#mcp) tool call, or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Its state is written back to GitHub, and only a human's act does that. A local issue, or one whose remote moved or is missing, is not refused | `reason` |
+| `forge_write_needs_human` | A forge write by an agent without a grant: `close`, `reopen` or a comment on an issue imported from GitHub, or any `…/github/pull/*` write, from an [MCP](#mcp) tool call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Allowed only for a live handoff's task whose grant names the capability, on its own items and pull requests. A local issue, or one whose remote moved or is missing, is not refused | `reason` |
 | — | `close` on a closed issue, `reopen` on an open one | `state` |
 
 ### Creating a task from an issue
@@ -3350,10 +3375,10 @@ POST /v1/handoffs
 
 | Field | Meaning |
 |---|---|
-| `project_id`, `workflow` | Both required. There is no default handoff workflow |
+| `project_id`, `workflow` | Both required. There is no default handoff workflow, and the workflow must declare [`role: handoff`](workflow-schema.md#role): any other is a `400 validation_failed` naming the role |
 | `issue_ids` | Exactly these issues. Each must be eligible, or nothing is created |
 | `select` | Or choose them. `lane` may only be `hand_off`, and `order` only `priority`; `delivery` (`change`, `reply` or `none`) and `kind` take one value or a list, any of which matches; every one of `labels` must be carried, in any case; `max` (at least 1) caps the count, otherwise every eligible issue is taken |
-| `grant` | Capabilities for forge writes: `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`. Only a human may give one; nothing acts on it yet |
+| `grant` | Capabilities for forge writes: `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`. Only a human may give one. It lets the handoff's task make those writes on its own items and pull requests (see [state write-back](#state-write-back) and [GitHub pull requests](#github-pull-requests)) |
 | `title` | The task's title. Default: one naming how many issues it claims |
 | `paused`, `description`, `fields`, `priority`, `agent`, `model`, `effort`, `restricted`, `max_task_cost_usd` | The task options, as on [`POST /v1/tasks`](#tasks) |
 
@@ -3392,7 +3417,59 @@ GET /v1/handoffs/{id}           one handoff with its items; 404 if unknown
 ```
 
 The list is newest first and carries no `items`; `issue_id` finds every handoff
-that claimed that issue.
+that claimed that issue. `GET /v1/handoffs/{id}` alone adds `file`: the
+[`$VINCENT_HANDOFF_FILE`](workflow-schema.md#vincent-handoff-file) object the
+handoff task's steps read, which is what `vincent workflow render --task`
+binds.
+
+### Item outcomes
+
+```
+POST /v1/handoffs/{id}/items/{issue_id}/deliver   {note?, comment?, close?}
+POST /v1/handoffs/{id}/items/{issue_id}/return    {note?, comment?, follow_up?, paused?, side?, workflow?}
+POST /v1/handoffs/{id}/items/{issue_id}/wait      {note?, comment?}
+POST /v1/handoffs/{id}/items/{issue_id}/release   {note?, comment?}
+```
+
+Each records what became of a claimed issue and answers `200` with the
+handoff and its items. `{issue_id}` is one issue id, a comma-separated list,
+or `all` — every unresolved item; `waiting` items are left alone. `comment`
+is posted on each issue before anything else is written to it, and `note` is
+kept on the item.
+
+- **deliver** — `outcome: delivered`. The issue is closed with `close`
+  (`completed`, `not_planned` or `duplicate`); left out, the delivery's
+  suggested `close_reason`, else `completed`. `close: none` leaves it open,
+  and it stays out of later handoffs until new work replaces the delivery.
+- **return** — `outcome: returned`. The claim is released and the delivery's
+  readiness withdrawn, so the issue waits in `in_progress`. `follow_up`
+  queues that prompt as a [follow-up](#task-actions) on the issue's latest
+  main task, a merge-back included (`paused` holds it); with `side` it is a
+  new side task with `merge_back`, running that task's workflow unless
+  `workflow` names another. `side` and `paused` need `follow_up`; `workflow`
+  needs `side`, and naming a `role: handoff` workflow there is a `400`, as on
+  `POST /v1/tasks`.
+- **wait** — `outcome: waiting`. The item keeps its claim after the
+  handoff's task settles. Closing the issue — by anyone, an import from
+  GitHub included — records it `delivered`, by the closing actor.
+- **release** — `outcome: released`. The claim is dropped and the issue stays
+  eligible.
+
+When the handoff's task settles, every item still unresolved is released,
+`outcome_by: settle`. `outcome_by` is otherwise `handoff` for the handoff's
+own task, `agent` for another workflow step or MCP call, and `human`.
+
+A call is **all or nothing**: one refusal records nothing for any item.
+`409 invalid_state` with `handoff_item_resolved` for an item already
+delivered, returned or released with another outcome (or one that is not
+waiting, once the handoff has settled); a verb repeating an item's own
+outcome succeeds and changes nothing for it, its `comment` and `close`
+included; `forge_write_needs_human` for a step's `close` or
+`comment` on an issue imported from GitHub, unless the step is the
+handoff's own task and its grant names `issue.close` or `issue.comment` —
+then the write is made as `handoff` and queued for GitHub; `issue_mirrored` for a human's
+comment on one; and a follow-up's own refusals. `404` for an unknown handoff
+or an issue that is not one of its items.
 
 ## Transcripts and diffs
 

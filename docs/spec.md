@@ -115,7 +115,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 8 | Failure policy | Per-step retries with failure feedback; exhausted → task `blocked`, human decides |
 | 9 | Workflow storage | YAML files: global (config dir) + per-project (`.vincent/workflows/`); runs snapshot content |
 | 10 | Step context | Fresh agent session per step; Go `text/template` context; state persists via worktree |
-| 11 | Delivery | *Rewritten 2026-09-15 (task 068 decision 1, task 068.4, issue #386). It read "owned entirely by workflow steps; no hardcoded push/PR/merge behavior", with a human-initiated exception for pull-request creation added 2026-08-31 (task 069, issue #273); both are in this file's history and in the task 068 and 069 records. The row is obsolete rather than narrowed, so it is replaced rather than qualified.* **vincent delivers, human-triggered.** A human in vincent may push a task's branch to `origin` and open its pull request (§13.2 `POST /v1/tasks/{id}/github/pull/create`, task 069), and may merge, close, reopen and comment on a task's linked pull request and re-run the failed jobs of its GitHub Actions runs (§13.2 `…/github/pull/merge`, `/close`, `/reopen`, `/comment`, `/checks/rerun`, task 068.4). **Nothing on the step path reaches GitHub**: no step type, no default workflow and no automatic behaviour delivers, so §8.4's property that a step render cannot fail for an external reason is untouched, and every write route is excluded from the MCP tool surface (§13.4), so an agent cannot reach one through vincent. An agent's own path — a step running `git push`, `gh pr create` or `gh pr merge` in its full-auto worktree (§16) — was the original one and stays open. A `merge` step type is **not licensed** by this row. The push **never forces** — a diverged, protected or rejected push creates no pull request and changes nothing on the remote (§18) — and a merge is refused before anything is sent when a preflight read says GitHub would refuse it, and is pinned to the head commit the human confirmed. The reasoning is recorded because this is the decision most likely to be re-litigated: the round trip to a browser is the cost this exists to remove, and a checks view that cannot merge the pull request whose checks it just showed you is half a sentence *Amended 2026-10-02 (task 130 decision 10, issue #659):* writing an imported issue's state back to GitHub (row 36) is one more human-triggered write in this row's sense; an MCP- or step-originated change to an imported issue is refused, so this row's step-path and MCP exclusions are unchanged *Narrowed 2026-10-24 (task 137 decision 6), ahead of its code — true once task 137.7 lands; see row 38:* "nothing on the step path reaches GitHub" now holds for every step **without a grant a human gave**. A handoff (row 38) may carry a grant — a closed set of capabilities over this row's routes and the imported-issue writes — given by a human's keypress or by a trigger file only a human arms. A step of a live handoff task whose grant names the capability, and whose scope covers the target, may call the route, attributed to the actor `handoff`, and the pull-request write routes become tools on that task's per-step MCP endpoint and nowhere else. Every other step-originated or MCP write to GitHub is refused `forge_write_needs_human`, the pull-request routes included, which today accept a step's call as a human's. A `merge` step type is still **not licensed**, and the agent's own path stays open |
+| 11 | Delivery | *Rewritten 2026-09-15 (task 068 decision 1, task 068.4, issue #386). It read "owned entirely by workflow steps; no hardcoded push/PR/merge behavior", with a human-initiated exception for pull-request creation added 2026-08-31 (task 069, issue #273); both are in this file's history and in the task 068 and 069 records. The row is obsolete rather than narrowed, so it is replaced rather than qualified.* **vincent delivers, human-triggered.** A human in vincent may push a task's branch to `origin` and open its pull request (§13.2 `POST /v1/tasks/{id}/github/pull/create`, task 069), and may merge, close, reopen and comment on a task's linked pull request and re-run the failed jobs of its GitHub Actions runs (§13.2 `…/github/pull/merge`, `/close`, `/reopen`, `/comment`, `/checks/rerun`, task 068.4). **Nothing on the step path reaches GitHub**: no step type, no default workflow and no automatic behaviour delivers, so §8.4's property that a step render cannot fail for an external reason is untouched, and every write route is excluded from the MCP tool surface (§13.4), so an agent cannot reach one through vincent. An agent's own path — a step running `git push`, `gh pr create` or `gh pr merge` in its full-auto worktree (§16) — was the original one and stays open. A `merge` step type is **not licensed** by this row. The push **never forces** — a diverged, protected or rejected push creates no pull request and changes nothing on the remote (§18) — and a merge is refused before anything is sent when a preflight read says GitHub would refuse it, and is pinned to the head commit the human confirmed. The reasoning is recorded because this is the decision most likely to be re-litigated: the round trip to a browser is the cost this exists to remove, and a checks view that cannot merge the pull request whose checks it just showed you is half a sentence *Amended 2026-10-02 (task 130 decision 10, issue #659):* writing an imported issue's state back to GitHub (row 36) is one more human-triggered write in this row's sense; an MCP- or step-originated change to an imported issue is refused, so this row's step-path and MCP exclusions are unchanged *Narrowed 2026-10-24 (task 137 decision 6), ahead of its code — true once task 137.7 lands; see row 38:* "nothing on the step path reaches GitHub" now holds for every step **without a grant a human gave**. A handoff (row 38) may carry a grant — a closed set of capabilities over this row's routes and the imported-issue writes — given by a human's keypress or by a trigger file only a human arms. A step of a live handoff task whose grant names the capability, and whose scope covers the target, may call the route, attributed to the actor `handoff`, and the pull-request write routes become tools on that task's per-step MCP endpoint and nowhere else. Every other step-originated or MCP write to GitHub is refused `forge_write_needs_human`, the pull-request routes included, which today accept a step's call as a human's. A `merge` step type is still **not licensed**, and the agent's own path stays open *Now true 2026-10-28 (task 137.7, issue #840):* the guard is `internal/issues.ForgeWrite`, called by the issue close, reopen and comment routes and by all six pull-request write routes before any `gh` call; a granted comment on an imported issue is posted to GitHub through the outbox's second operation, `add_comment` (§12.4, §14) |
 | 12 | Step types | `agent`, `command`, `manual` (gate); `parallel` and `fan_out` added by row 23/24, `condition` by row 25 |
 | 13 | Permissions | Agents run full-auto by default; workflow/step can restrict |
 | 14 | Concurrency | Configurable global cap **and** per-project cap on parallel running tasks |
@@ -141,7 +141,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 33 | Event triggers | *Added 2026-09-13 (task 096; issues #356, #362, #365).* **A trigger is a robot pressing a key a human could have pressed.** A YAML file under `{config_dir}/triggers/` names a source (`command`, `github_issues`, `github_prs`, `http` or, since 2026-09-18, `schedule`), a `match:` prefilter and an §8.4 `if:` guard, an action and a dedupe key. Triggers are global scope only, never `.vincent/`, so that anyone who can merge to a repository cannot start agents on a maintainer's machine. An action **replays an existing route** in-process, the way row 28's MCP does: `create_task` is `POST /v1/tasks`, and the reactions `follow_up`, `retry` and `cancel` are the §6 action routes against the task whose `branch_name` the event names. §13.1's bounds, the validation, the FSM's 409 and `Idempotency-Key` therefore hold by construction, and from the step path down a triggered task is indistinguishable from a hand-created one (`.Event` is never snapshotted, §8.4). Where a route lacked an affordance a trigger needed, the route grew it for every client: `paused` on create, follow-up and retry, and `restricted` and `max_task_cost_usd` on create. **It inverts §16's premise that a human pressed the key**, so its defaults differ from every other default in the product. Triggers are off twice, by `triggers.enabled` and by each file's own `enabled:`. `on_fire: propose` holds every task a trigger creates or re-queues in `paused` for a human, agent steps are clamped `restricted`, untrusted GitHub events are refused without an author allowlist, and each trigger has a rate limit. Runtime state lives in SQLite: a cursor per trigger, and a delivery ledger kept 30 days. The first poll after arming seeds and fires nothing, so neither a cold start nor re-arming floods. *Amended 2026-09-18 (task 121, issue #480):* the source list takes a fifth member, `schedule` — a hand-written five-field cron expression or an `every:` interval, evaluated against the wall clock on a one-second tick, with its last handled occurrence in `trigger_cursors.cursor`. It is the same robot pressing the same key: everything downstream of the source is reused, arming anchors the clock and fires nothing, and an overdue schedule fires once however many occurrences it missed. *Amended 2026-09-18 (task 122, issue #483):* a trigger also says what to do when **its own previous work is still running**. `overrun:` — `parallel` (the default and today's behaviour), `skip`, `cancel_previous`, `queue_coalesce`, `queue_serial` — is consulted as the pipeline's last step against the group `concurrency_key:` names, and "in flight" is §6's `!Settled`, so an unreviewed `on_fire: propose` proposal holds its group. The two queue modes hold events in a durable table so a restart loses none, and a disarm discards that backlog the way it drops the cursor. `cancel_previous` is the one mode that destroys work nobody asked to lose, and is `dangerous` to a client for that reason. *Amended 2026-10-03 (task 130.15, issue #674):* a sixth source, `issues`, reads vincent's own durable `issue.*` events instead of diffing a GitHub listing, so it works on every project and sees an imported issue's change as `by: sync`. It is a mapper, not a state diff: the store writes the delta (labels added and removed, the state moved) into each event inside the transaction that makes the change, and the trigger's only state is the id of the last event it handled. Arming seeds that cursor at the newest event and fires nothing, a restart resumes from it, and nothing past the catch-up cap is dropped. `human` and `agent` changes are trusted; a `sync` one follows `github_issues`' trust table, enforced against the issue's author. `create_task` gains `issue:`, replayed as `issue_id`. `github_issues` is deprecated — it keeps firing, `vincent trigger apply` warns — and its events carry the imported issue's id so a trigger can link its task once `github_issue` is removed (§5.3, §6, §8.4, §12.2, §12.3, §13.2, §13.3, §13.4, §14, §15, §16, §17, §20). *Amended 2026-10-07 (task 134.7, issue #754):* the `issues` source maps §13.3's `issue.lane_changed` to a sixth action, `lane_changed`, carrying the lane moved to and from as `lane` and `from_lane` (read from the payload, never at judge time, so a burst reports each move) and `task_id` on a move a root task caused, whose `by` is the new value `task` — local, and so trusted. It is **opt-in**: only a trigger whose `match.action` names it sees it, and the load-time trust check reads an absent `match.action` as the other five, so no armed trigger starts firing on every task start and finish or fires twice on a close. A `sync` lane move comes only from a GitHub close or reopen and is untrusted, as `closed` and `reopened` are. *Amended 2026-10-07 (task 134.15, issue #762):* `create_task` gains `merge_back: {on_conflict: block|agent}` (empty is `block`; not a template), replayed as `merge_back`, which makes the task a side task of the issue — its own worktree cut from the issue's main branch, merged back into it when done (§5.6, §10) — instead of a main task queued behind the issue's main line. It needs `issue:`, and the validator refuses it on an action without one and on every action but `create_task`. The route's 400 stays (task 134 decision 7's amendment applies to the chat handoff only), so the delivery lands `refused` on an issue with no main branch yet, and when `issue:` renders to nothing: `merge_back` is sent regardless, so the author never gets a main or issue-less task they did not ask for. *Amended 2026-10-24 (task 137 decisions 6, 8 and 12), ahead of its code — true once task 137.9 lands; see row 38:* a fifth action, `start_handoff`, replays `POST /v1/handoffs` — a handoff over the project's open `hand_off` issues, named or chosen by `select:` inside the create transaction — and may carry `grant:`, the one place a trigger file authorizes a write to GitHub. The TUI confirms a non-empty grant as it confirms `permission: workflow`, and `create-trigger` and `update-triggers` may stage one and never arm it. A trigger still never replays a pull-request route itself. A selection that finds nothing is refused, so its dedupe key is not spent. The `issues` source gains an opt-in `handoff_changed` action, and `by: handoff` is local and so trusted |
 | 34 | Trigger ingress | *Added 2026-09-13 (task 096 decision 31G).* **A pushed event needs the bearer token and a signature, and no route is exempt from row 4.** `POST /v1/triggers/{id}/events` sits in the same `recover → log → auth` chain as every other route, then verifies the trigger's own `github_hmac_sha256` signature over the raw body, using a secret the daemon reads from its environment (§2). Only a caller on this machine that can read `{data_dir}/token` and holds the secret can deliver, so rows 1 and 4 are untouched. A GitHub.com webhook through a tunnel **cannot** deliver. What works is a sender on the same machine, such as a self-hosted runner, or a relay on the same machine that adds the header. The route is not an MCP tool, because an agent that can inject events can start agents (§13.1, §13.2, §13.4, §16) |
 | 35 | User-configurable TUI keymap | *Added 2026-09-17 (task 118, issue #412).* **An override moves an operation, never a surface's key, and the defaults' own rules hold it.** `tui.keys` in `config.yaml` maps an operation id to one key string in Bubble Tea's key-string form, and `{}` is the shipped keymap. The rebindable set is exactly row 31's vocabulary terms, §6's actions and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` — the last also the chats board's `n`, one gesture); every surface-local row, multi-key set, `esc`, `ctrl+c`, `ctrl+v`, `tab`, popup confirmation and unregistered alias is fixed and refused by name. One override rebinds its operation on every surface that carries it, and it **replaces** the default rather than aliasing it, so the vacated key is free and two operations may swap in one edit. The registry becomes the TUI's **dispatch** source as well as its rendering source — handlers ask it for an operation's key rather than matching literals — because a keymap the help advertises and a handler ignores is the Pull Request tab bug row 31 closed; a translation layer at the root was beaten because it would be a second source of truth for which context is live. The catalog, the fixed keys, the exceptions and the clause checker live in a new leaf, `internal/keymap`; the registry tests run that checker over the defaults and `internal/config` runs it over the effective keymap at load, on hot reload and on `PATCH /v1/config`, so a bad keymap is refused with the file byte-identical, the `tui.board.group_by` precedent. That is config's second internal import beside `taskstate`, an explicit amendment of task 046 decision 4, and `keymap` is a leaf so the direction stays one-way. A key that already means anything else anywhere is refused, and an exception recorded for a default key does not travel with an operation that moves onto it. `palette_alt` and `help_alt`, and any operation answered where a text field owns the printable keys, refuse a printable key. *Amended 2026-09-21 (task 125.9, issue #542): unless the operation is answered there from a list drawn over the form's rows rather than from the rows themselves — `keymap.listLayer`, keyed by operation and surface, whose one entry is `free_text` on the new-chat form (§12.3, §15).* The daemon still publishes no config event: the TUI applies the keymap on connect, reconnect and the daemon view's config fetch, and after its own editor saves it (§12.3, §13.3, §15) |
-| 36 | Issues pillar | *Added 2026-10-02 (task 130, issue #659). This row **records a decision ahead of its code**, by the author's explicit exception to the same-pull-request rule (task 130 decision 13); it is true once task 130.1–130.18 (issues #660–#677) land, and until then the system is as rows 11 and 26 describe it.* **vincent owns issues; GitHub is a source it imports from and syncs state with.** Each project has an issue set in SQLite, served over REST, SSE, the CLI, MCP and the TUI like tasks and chats. An issue has a global integer id (no per-project number), a title, a description, labels from a per-project catalogue, a `kind` and a local `priority`; its state is `open` or `closed` with a `close_reason` (`completed`, `not_planned`, `duplicate`), and whether it is being worked on is derived from its root tasks, never stored. A task is created **from** an issue with `issue_id`, keeping a pointer and a creation-time snapshot, and fan-out lanes inherit both. An imported issue's source is a row in `issue_remotes` keyed by GitHub's `node_id`, and sync stores the repository each project is bound to. On a GitHub-based project open issues are imported on the `github.poll_interval` tick; **state is two-way**, with GitHub winning a true conflict, while title, body, labels, assignees, milestone and comments are a **read-only mirror**, and issues created in vincent are never pushed. Only a **human's** state change on an imported issue is written back, through a crash-safe outbox; an MCP- or step-originated one is refused (`forge_write_needs_human`) and nothing closes an issue automatically, so row 11 is kept. `github_issue` on `POST /v1/tasks`, `vincent task add --github-issue` and a trigger's `action.github_issue` are **removed**, a breaking change for API clients and trigger files. Supersedes or departs from, each by name in task 130: task 035 decision 2 (the `?workflow=` prefill and the `github_issue` create path; the one daemon-side mapping is kept), decision 4 for the new-task form only, decision 5 (repository identity is now stored), decision 6 and §12.3's "no call until a human opens the issue picker" (standing per-project issue traffic), decision 7 (prefill retargeted to a vincent issue), and decision 10 for issue state and for re-reading the issue entity; §12.3's "no `ETag`/`If-Match`" (issue `PATCH` requires `version`); task 073 decision 5 (issue descriptions render as Markdown); migration 0016's "a later route joins the table without a migration". Keeps task 035 decisions 3, 8 and 9, task 068 decision 1 and task 069 decision 3 (§5.3, §8.4, §12.3, §13, §14, §15 are amended by each item in its own pull request). *Narrowed 2026-10-24 (task 137 decision 6), ahead of its code — true once task 137.7 lands; see row 38:* "only a human's state change is written back" and "nothing closes an issue automatically" hold for every caller **without a grant**. A granted handoff's change to an imported issue is written back through the same outbox under the actor `handoff`, and task 068 decision 1 and task 069 decision 3, kept above, are narrowed by task 137 the same way. Lanes stay derived: a handoff's progress is a derived marker on a `hand_off` issue, never an issue state |
+| 36 | Issues pillar | *Added 2026-10-02 (task 130, issue #659). This row **records a decision ahead of its code**, by the author's explicit exception to the same-pull-request rule (task 130 decision 13); it is true once task 130.1–130.18 (issues #660–#677) land, and until then the system is as rows 11 and 26 describe it.* **vincent owns issues; GitHub is a source it imports from and syncs state with.** Each project has an issue set in SQLite, served over REST, SSE, the CLI, MCP and the TUI like tasks and chats. An issue has a global integer id (no per-project number), a title, a description, labels from a per-project catalogue, a `kind` and a local `priority`; its state is `open` or `closed` with a `close_reason` (`completed`, `not_planned`, `duplicate`), and whether it is being worked on is derived from its root tasks, never stored. A task is created **from** an issue with `issue_id`, keeping a pointer and a creation-time snapshot, and fan-out lanes inherit both. An imported issue's source is a row in `issue_remotes` keyed by GitHub's `node_id`, and sync stores the repository each project is bound to. On a GitHub-based project open issues are imported on the `github.poll_interval` tick; **state is two-way**, with GitHub winning a true conflict, while title, body, labels, assignees, milestone and comments are a **read-only mirror**, and issues created in vincent are never pushed. Only a **human's** state change on an imported issue is written back, through a crash-safe outbox; an MCP- or step-originated one is refused (`forge_write_needs_human`) and nothing closes an issue automatically, so row 11 is kept. `github_issue` on `POST /v1/tasks`, `vincent task add --github-issue` and a trigger's `action.github_issue` are **removed**, a breaking change for API clients and trigger files. Supersedes or departs from, each by name in task 130: task 035 decision 2 (the `?workflow=` prefill and the `github_issue` create path; the one daemon-side mapping is kept), decision 4 for the new-task form only, decision 5 (repository identity is now stored), decision 6 and §12.3's "no call until a human opens the issue picker" (standing per-project issue traffic), decision 7 (prefill retargeted to a vincent issue), and decision 10 for issue state and for re-reading the issue entity; §12.3's "no `ETag`/`If-Match`" (issue `PATCH` requires `version`); task 073 decision 5 (issue descriptions render as Markdown); migration 0016's "a later route joins the table without a migration". Keeps task 035 decisions 3, 8 and 9, task 068 decision 1 and task 069 decision 3 (§5.3, §8.4, §12.3, §13, §14, §15 are amended by each item in its own pull request). *Narrowed 2026-10-24 (task 137 decision 6), ahead of its code — true once task 137.7 lands; see row 38:* "only a human's state change is written back" and "nothing closes an issue automatically" hold for every caller **without a grant**. A granted handoff's change to an imported issue is written back through the same outbox under the actor `handoff`, and task 068 decision 1 and task 069 decision 3, kept above, are narrowed by task 137 the same way. Lanes stay derived: a handoff's progress is a derived marker on a `hand_off` issue, never an issue state *Now true 2026-10-28 (task 137.7, issue #840):* and the mirrored thread is narrowed the same way — a granted handoff's comment on an imported issue is stored as `handoff` and posted to GitHub; a human's is still refused `issue_mirrored` |
 | 37 | Project as root | *Added 2026-10-04 (task 132, issue #694). This row **records a decision ahead of its code**, by the author's explicit exception to the same-pull-request rule (task 132 decision 14); it is true once task 132.1–132.17 (issues #695–#711) land, and until then the system is as §15 describes it.* **The TUI holds exactly one selected project; every project-bearing view shows only that project, and the project overview is the only multi-project view.** The selection is client-side TUI view state, never daemon state, so two TUIs may watch different projects; the daemon, the REST/SSE API, the CLI and MCP stay installation-wide, and the daemon changes only to add per-project counts. Attention stays cross-project on purpose: a badge counts attention tasks in other projects, the bell rings for every project, and `!` switches project when the selected one has nothing left. The overview replaces §15 view 4 (Projects) in place, keeping its management keys, so there are still thirteen views. Supersedes or departs from, each by name in task 132: task 130's "the cross-project TUI navigation is kept" and its decision 16.1 (the issues list is cross-project); task 009's `[project, workflow]` default (the `project` level of `tui.board.group_by` is deprecated, the default becomes `[workflow]`); task 067 decision 6 (the chats board groups by project); task 052.6 and §15 view 7 (pull requests across projects); task 096 decision 14 (the triggers takeover is filtered client-side; decision 8, trigger files are global, is kept); §15's attention clause (refined, not dropped); §15 view 4 and task 020 decision 1 (replaced in place by the overview); the 2026-10-02 `NOT_PLANNED` closures of #637, #640, #649, #650 and #657. Keeps task 129 decision 4, task 054 decision 1 and task 009 decision 1 (§12.3, §13.2, §15 are amended by each item in its own pull request) |
 | 38 | Handoff pillar | *Added 2026-10-24 (task 137). This row **records a decision ahead of its code**, by the author's explicit exception to the same-pull-request rule (task 137 open question 5); it is true once task 137.2–137.15 land, and until then the system is as rows 11, 33 and 36 describe it.* **Vincent owns the state of a handoff; the admin's workflow owns what it does.** A workshop task leaves a **delivery** — a `kind` (`change`, `reply` or `none`), a title, a Markdown body, a summary and the verified `head_sha` — recorded by `vincent task deliver`, or implicit from the task when it never calls it, replacing the resolve workflows' `vincent-delivered/` file convention. An issue may carry many tasks while it is in progress (task 134's one main worktree, queued main tasks and merged-back side tasks), and it moves to `hand_off` only when nothing is running and its latest delivery is **ready**: automatically for a `hand_off: auto` workflow (the default, and the old behaviour), only by `vincent task deliver --ready` for `hand_off: explicit`, or by a human's `vincent issue ready` (and back with `unready`). Finished work that is not ready leaves the issue `in_progress`, marked `idle`. A **handoff** is a record that claims a set of open `hand_off` issues in one project, each with its delivery snapshotted, and is executed by an ordinary root task running a `role: handoff` workflow, which sees its items as `.Handoff` and `$VINCENT_HANDOFF_FILE`; an issue is in at most one live handoff, and while claimed it takes no new task except from the handoff's own task (`409 issue_in_handoff`). Each item ends **delivered** (closed with a reason, or left open and out of later selections), **returned** (claim released and readiness withdrawn, optionally with a follow-up on the issue's latest main-role task, so the issue goes back to `in_progress`), **waiting** (it outlives the task and resolves itself as delivered when the issue closes, by any actor) or **released**, and every item still unresolved when the task settles is released. The handoff has no state machine of its own and adds no issue state and no lane: a `hand_off` issue carries a derived marker, `pending`, `claimed`, `waiting` or `delivered`. A handoff is started by a human (TUI, CLI), by a trigger's `start_handoff`, or by an agent over MCP with no grant. **Automated forge writes need a grant a human gave**: a closed set of capabilities (`issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`) given by a human's keypress or by a trigger file only a human arms, checked by one guard over issue and pull-request writes against the caller's handoff task and its items, and written back through task 130.10's outbox under a new actor, `handoff`. Vincent ships no merge-train, review or merge step and no target adapter beyond GitHub; everything else a handoff does is a command step in the admin's workflow. Narrows, each by name in task 137: row 11 and task 068 decision 1 (nothing on the step path reaches GitHub without a grant), task 130 decision 10 (a third, granted writer) and task 069 decision 3 (pull-request tools on a granted handoff's per-step MCP endpoint only); a step's ungranted `vincent github pr` write is refused, a breaking change. Amends task 134 decision 2 and narrows its decision 19 (`hand_off` is ready work, not any done work), and narrows task 130 decision 5 while a handoff claims the issue. Keeps task 096 decision 1, task 130 decision 3 and task 134 decisions 1 and 10 (§5, §8, §12, §13, §15, §16 are amended by each item in its own pull request) |
 
@@ -372,6 +372,13 @@ records a `workflow_origin` beside `workflow_snapshot` (§5.3) saying which
 scope won the walk, which file it was, and a digest of that file's bytes, so a
 task created six months ago can still be told apart from one created against
 the built-in of the same name.
+
+*Amended 2026-10-28 (task 137.8, issue #841; task 137 decision 7):* a
+workflow may declare a **role** (§8.1.4). The one role is `handoff`: a
+workflow only a handoff (§5.7) runs. `GET /v1/workflows` and the workflow
+definition carry `role`, so a client listing workflows for a task create — the
+TUI's new-task and follow-up forms — leaves those entries out; the 400 of
+§13.2 is the rule, the hidden row only shows it.
 
 ### 5.3 Task
 
@@ -1175,7 +1182,7 @@ amend §12, §13 and §15 when they land.
 | `remote` | an imported issue's source (`issue_remotes`, §14): provider, `remote_key` (GitHub's `node_id`), repo, number, url, the remote's own timestamp and `synced_at`. Null for an issue created in vincent. Keyed **per project**, so two projects sharing an origin import two issue sets |
 | `parent_issue_id` | a seam for sub-issues, never written yet |
 | `active`, `task_count` | **derived, never stored** (decision 3): `task_count` counts the **root** tasks (`parent_task_id IS NULL`) whose `issue_id` is this issue, and `active` is whether any of them is not settled in §6's sense (not `done`, `aborted` or `archived`). Fan-out lanes carry the link but are not counted, so one task with five lanes is one task |
-| `lane`, `attention` | **derived, never stored** (task 134 decisions 1–3). *Added 2026-10-07 (task 134.4, issue #751).* `lane` is `done` when the issue is `closed`, whatever its tasks do (decision 4); otherwise `in_progress` when some root task is not settled, else `hand_off` when some root task is `done` or `archived` with `archived_from = done` (decision 20), else `open` — no task, or only aborted ones (decision 19). *Amended 2026-10-24 (task 137.15, issue #848; task 137 decision 13):* `hand_off` now means **ready**: with no root task unsettled, the lane is `hand_off` when the latest finished main-line root task's delivery (the one §5.3's `delivery` on an issue names; side tasks excluded) reads ready, `in_progress` when work finished but is not ready — a delivery marked `ready: false`, or finished work that is only a side task's — and `open` otherwise. The not-ready `in_progress` issue is **idle**: it waits for a mark or for more work. Because an absent `ready` reads ready, every lane is unchanged on upgrade except one: an issue whose only finished root task is a side task (its merge-back cancelled or not yet run) moved from `hand_off` to `in_progress`, which keeps decision 3's "every `hand_off` issue has a delivery". `LaneOf` takes three facts — unsettled, finished, latest ready — and a table test holds it to the SQL. `attention` is whether some root task is in `taskstate.NeedsHuman` (`awaiting_input`, `awaiting_gate`, `blocked`; `paused` is not one), computed for a closed issue too. For an open issue `active` ⇔ `lane = in_progress`. `internal/issuestate.LaneOf` is the rule; the store computes it in SQL from the same fragments that compute `active` |
+| `lane`, `attention` | **derived, never stored** (task 134 decisions 1–3). *Added 2026-10-07 (task 134.4, issue #751).* `lane` is `done` when the issue is `closed`, whatever its tasks do (decision 4); otherwise `in_progress` when some root task is not settled, else `hand_off` when some root task is `done` or `archived` with `archived_from = done` (decision 20), else `open` — no task, or only aborted ones (decision 19). *Amended 2026-10-24 (task 137.15, issue #848; task 137 decision 13):* `hand_off` now means **ready**: with no root task unsettled, the lane is `hand_off` when the latest finished main-line root task's delivery (the one §5.3's `delivery` on an issue names; side tasks excluded) reads ready, `in_progress` when work finished but is not ready — a delivery marked `ready: false`, or finished work that is only a side task's — and `open` otherwise. The not-ready `in_progress` issue is **idle**: it waits for a mark or for more work. Because an absent `ready` reads ready, every lane is unchanged on upgrade except one: an issue whose only finished root task is a side task (its merge-back cancelled or not yet run) moved from `hand_off` to `in_progress`, which keeps decision 3's "every `hand_off` issue has a delivery". `LaneOf` takes three facts — unsettled, finished, latest ready — and a table test holds it to the SQL. *Amended 2026-10-28 (task 137.6, issue #839):* a handoff `return` withdraws the readiness in its own transaction, so a returned issue is idle `in_progress` (or busy, with its follow-up queued); and closing an issue — any actor, `sync` included — resolves its `waiting` handoff item as `delivered` in the close's transaction (§5.7). `attention` is whether some root task is in `taskstate.NeedsHuman` (`awaiting_input`, `awaiting_gate`, `blocked`; `paused` is not one), computed for a closed issue too. For an open issue `active` ⇔ `lane = in_progress`. `internal/issuestate.LaneOf` is the rule; the store computes it in SQL from the same fragments that compute `active` |
 | comments | author, body and an optional remote key, listed oldest first |
 
 #### Issue lifecycle
@@ -1261,6 +1268,22 @@ a request carrying a step's or a chat agent's marker header (§13.1). A local
 issue, and one whose remote is `moved` or `missing`, writes nothing back and
 is not refused: the change stays local, and the issue's `sync` block says why.
 
+*Amended 2026-10-28 (task 137.7, issue #840).* A third writer reaches
+GitHub: a live handoff's task, under a grant a human gave (§3 row 38). An
+`agent` caller's close, reopen or comment that would reach the forge goes
+through one guard: it is allowed only when its acting task (the MCP creator
+task or the `X-Vincent-Task-Id` marker) is a live handoff's, that handoff's
+grant names `issue.close` (close and reopen) or `issue.comment`, and the
+issue is one of its items. The write is then made as actor **`handoff`**, its
+issue event carries `handoff_id`, and it writes back through the outbox as a
+human's does. Anything else is refused `forge_write_needs_human`, a chat
+marker always. A granted **comment** on an issue with a live GitHub remote
+is stored locally and enqueues an `add_comment` write with it; on success
+the comment row takes GitHub's comment id as its `remote_key`, so the
+comment sync updates it in place. A human's comment on that thread is still
+refused `issue_mirrored` (task 130 decision 24.3), and a local issue needs
+no grant: an ungranted agent's write to one stays `agent`.
+
 *Amended 2026-10-02 (task 130.8, issue #667).* Sync exists: the daemon imports
 and refreshes a GitHub-based project's issues on §12.3's `github.poll_interval`
 tick, as actor `sync`. Three rules it settled:
@@ -1319,6 +1342,13 @@ id as `remote_key`. Four rules it settled:
   allowed on a local issue and on one whose remote is a tombstone, `moved` or
   `missing`. Its `author` is derived by the create rule above; no request
   field sets it.
+
+*Amended 2026-10-28 (task 137.7, issue #840).* Two of those rules are
+narrowed by the forge-write guard above. "Nothing is ever posted to GitHub"
+now holds except for a granted handoff's comment, which the outbox posts as
+`add_comment`. And an `agent`'s comment on an issue with a live remote is
+refused `forge_write_needs_human`, not `issue_mirrored`, unless it is that
+granted handoff's; a `human`'s is still `issue_mirrored`.
 
 *Amended 2026-10-07 (task 134, issue #748).* The issues UX is decided, and
 this note records its design ahead of the code, which lands with task 134's
@@ -1472,7 +1502,13 @@ between two selections is never taken twice: the second selection reads it as
 claimed. **The grant's vocabulary** is closed — `issue.comment`,
 `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`,
 `checks.rerun` (task 137 decision 6) — and the create stores it in
-`grant_json` deduplicated and in that order; nothing reads it until 137.7.
+`grant_json` deduplicated and in that order. *Amended 2026-10-28 (tasks
+137.7 and 137.8, review F4):* three things read it — the forge-write guard
+(`issues.ForgeWrite`, row 11), which allows a live handoff task's issue and
+pull-request writes the grant names, item verbs included; the per-step MCP
+endpoint's tool listing (§13.4), which offers a pull-request write tool only
+when the grant names it; and the handoff's step context, `.Handoff.Grant`
+(§8.4) and `$VINCENT_HANDOFF_FILE`'s `grant` (§8.5).
 
 **Derived state.** A handoff is never stored with a state: it is `live` while
 its task is unsettled, `waiting` while the task is settled and some item is
@@ -1480,8 +1516,47 @@ its task is unsettled, `waiting` while the task is settled and some item is
 (`store.HandoffStateOf`), the way `issuestate.LaneOf` mirrors the lane.
 `handoff.settled` (§13.3) is written by the write that makes the handoff
 settled: its task's settling transition when nothing waits, or the item write
-that ends the last wait. Until 137.6, items still unresolved when the task
-settles keep their claim.
+that ends the last wait. *Amended 2026-10-28 (task 137.6, #839):* the task's
+settling transition — `done` or `aborted` — first **releases every item still
+unresolved**, `outcome_by: settle`, one `handoff.item_changed` each, chained
+after the state change and before `handoff.settled`, all in one commit.
+
+**Item outcomes** (task 137 decision 4, amended 2026-10-28). Four verbs,
+`POST /v1/handoffs/{id}/items/{issue_id}/deliver|return|wait|release`
+(§13.2), resolve items; `{issue_id}` is one id, a comma-separated list, or
+`all` — every **unresolved** item, `waiting` ones left alone. Each records
+`outcome`, `outcome_at`, `outcome_by` and an optional `note`, and may post a
+comment on the issue first. `deliver` closes the issue with the asked reason
+(default: the delivery's suggested `close_reason`, else `completed`) or, with
+`none`, leaves it open — still kept out of later selections by eligibility.
+`return` releases the claim and withdraws the delivery's readiness, so the
+issue is `in_progress`; with a `follow_up` prompt it queues a task 027
+follow-up on the issue's latest main-role task (a merge-back included), or
+with `side` creates a `merge_back` side task running that task's workflow
+(its source side task's, for a merge-back) unless `workflow` names another.
+`wait` keeps the claim past the task's settle; `release` drops it, leaving
+the issue eligible. A verb is **all or nothing**: the outcome, the claim, the
+readiness withdrawal, the comment, the close (and its outbox enqueue) and the
+follow-up or side task are one store transaction, every item is judged before
+any is written, and one refusal — an item already `delivered`, `returned` or
+`released` with another outcome (`409 handoff_item_resolved`), a step's close or comment on an
+imported issue the step's handoff was not granted (`forge_write_needs_human`),
+a follow-up its task cannot take — records nothing for any of them. A
+verb that repeats an item's own outcome is a **no-op** for that item: it
+succeeds and changes nothing — no note, comment, close, follow-up or side
+task. *Amended 2026-10-28 (task 137.7, review F1):* a verb's close and comment ask
+the forge-write guard as `issue close` and `issue comment` do — a close of an
+open issue that writes back needs `issue.close`, a comment on a live-remote
+thread `issue.comment` — and a granted one is made as `handoff` and enqueued
+for GitHub. On a settled handoff only
+`waiting` items move. `outcome_by` has its own vocabulary,
+`store.HandoffOutcomeBy`: `handoff` when the caller is the handoff's own task
+(MCP creator or `X-Vincent-Task-Id`, best-effort per §16), `agent` for any
+other step or MCP caller, `human` otherwise, `settle` for release on settle,
+and the closing actor for a wait resolved by a close. **A close resolves a
+`waiting` item** as `delivered`, by the closing actor — any actor, `sync`
+included, so an imported `Closes #N` ends it — in the close's own
+transaction, with `handoff.settled` when it was the last wait (§5.6).
 
 **`issue_in_handoff`** (decision 14, scope settled 2026-10-24). While an item
 claims an issue, no route adds work to it: a root task created with its
@@ -1504,6 +1579,17 @@ are not new work on the issue and are not affected.
 The `handoff` actor (§5.6) writes an issue it claims; the store's
 state-change and comment writes accept an optional handoff id, and the
 `issue.*` event they record then carries `handoff_id`.
+
+*Amended 2026-10-28 (task 137.8, issue #841, migration 0048):*
+`handoff_items` gains a nullable **`issue_json`** — the claimed issue frozen
+at claim time, a `store.IssueSnapshot` exactly as `tasks.issue_json` holds
+one, thread included — written by the create in the same transaction that
+claims the item and snapshots its delivery. It is what an item's `.Issue`
+(§8.4) and its `issue` element of `$VINCENT_HANDOFF_FILE` (§8.5) render, so a
+render stays a pure function of rows and a retry sees the issue the handoff
+was handed. Items claimed before the migration (pre-release data only) have
+NULL there and render from the issue row as it is now; nothing else reads the
+issue live.
 
 ## 6. Task lifecycle
 
@@ -2291,6 +2377,13 @@ a **real child task** — its own row, worktree, branch, scheduler slot, gates,
 blocks, transcripts and recovery — and merges their branches back into the
 branch this task already owns. One branch is still delivered, because the step
 does not finish until every lane is merged.
+
+*Amended 2026-10-28 (task 137.8, issue #841):* a lane is an ordinary child
+task, so a lane naming a `role: handoff` workflow (§8.1.4) is refused at task
+creation as a tree error (400), beside an unknown name and a cycle. The lanes
+of a handoff task's own fan-out run an ordinary workflow and render a zero
+`.Handoff`; what they need of their item reaches them through the lane's
+`fields:`, rendered from `.Item` (§8.4).
 
 ```yaml
 - id: build
@@ -3291,6 +3384,21 @@ contributes steps, never top-level keys (§7.9). The synthesized `__merge_back`
 workflow has no key of its own; a merge-back's delivery copies its source side
 task's readiness with the rest of the delivery.
 
+#### 8.1.4 Workflow role (`role:`)
+
+*Added 2026-10-28 (task 137.8, issue #841; task 137 decision 7).* `role:` is
+a closed set of one value, `handoff`; absent means an ordinary workflow, and
+any other value fails at load. A `role: handoff` workflow is what a handoff
+(§5.7) runs, and the rule runs both ways: `POST /v1/handoffs` refuses a
+workflow without the role, and `POST /v1/tasks` — so the CLI, MCP
+`task_create`, a trigger's `create_task` and a chat's task handoff — refuses
+one with it, both with a 400 (§13.2); a `fan_out` lane naming one is a
+creation-time tree error (§7.6). *Amended 2026-10-28 (review F2):* so do a
+follow-up's workflow form on any task but a handoff's own (task 027) and a
+handoff `return`'s `side` task naming one (§5.7), with the same 400. A
+`role: handoff` run therefore always has a non-zero `.Handoff` (§8.4). Like `hand_off:` it is the including workflow's
+alone: an included callee contributes steps, never top-level keys (§7.9).
+
 ### 8.2 Step types and fields
 
 Common to all steps: `id` (required), `name`, `type` (required), `max_retries`,
@@ -3446,6 +3554,7 @@ defensively: `{{ with index .Task.Fields "ticket" }}…{{ end }}`.
 | `.Item` | *Added 2026-09-01 (task 080).* The item a **derived `fan_out`'s** `lane:` template is being rendered for (§7.6), and present in that template only. It is a **parsed JSON object**, not a string: this is the one deliberate widening of the rule that every value here is plain text, made because a DAG node carries both an identity and its edges — `{{ .Item.id }}` and `{{ .Item.needs }}` — and one string cannot say both. `.Issue.Labels` is the precedent for structure in this context. `.Loop.Item` is **unchanged** and still a string; the widening does not reach it |
 | `.Issue` | *Added 2026-08-26 (task 035).* The GitHub issue the task was created from (§5.3): `Number`, `Repo` (`owner/name`), `Title`, `Body`, `URL`, `State`, `Labels` (a **list**, so a prompt can range over it), `Author`, `Assignee`, `Milestone`, `MilestoneNumber`. Its zero value — `Number: 0` — is what every task created without an issue renders with, exactly the way `.Loop`'s `Index: 0` works, so `{{ if .Issue.Number }}` tells the two apart and one template serves both. It is read from the task's snapshot and **never from the network**: rendering stays pure and offline, and an issue edited on GitHub after creation does not change what a later step renders. *Amended 2026-10-02 (task 130.4, issue #663; task 130 decision 8):* `.Issue` describes the **vincent** issue: `Number` (the vincent issue id), `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` — `Provider`, `Repo`, `Number`, `URL`, `State` — the provider reference of an imported issue, zero for a local one. `Repo` and `URL` stay as **deprecated aliases** of `Source.Repo` and `Source.URL`. It is mapped from the task's `issue_json` snapshot (§5.6) when one is present; a task carrying only the legacy `github_issue_json` (created through `github_issue` until 130.11 removes it) maps that snapshot as before — `Number` is the **GitHub** number, `Source` repeats it — so templates written before task 130 render byte-identically; otherwise the zero value. A template that hands a number to `gh` therefore reads `.Issue.Source.Number`, or a declared `github_issue` field, never `.Issue.Number`. Since `run` and `check` are rendered here (§8.3), numbers are safe to template into a command; free text — a title, a body — is not, because it is attacker-controlled shell (§20). *Amended 2026-10-03 (task 130.16, issue #675; task 130 decision 24):* `.Issue.Comments` is the issue's thread as the snapshot captured it at task creation — a list of `{Author, Body, CreatedAt}`, oldest first and untruncated, local and mirrored comments alike. The snapshot reads it from the store in the create transaction, never from the network, so a later comment never changes an existing task's thread; a fan-out lane inherits its parent's. Empty for a task without a snapshot and for a legacy GitHub one. A comment body is free text like the issue's own |
 | `.Host` | *Added 2026-08-18 (task 015).* `OS`, `Arch` — the **daemon's** GOOS/GOARCH, since the daemon is what runs the steps (§8.1.1). This is the per-step platform gate: `{{ ne .Host.OS "windows" }}`. There is deliberately no `.Now`: a guard reading wall-clock makes a run non-reproducible |
+| `.Handoff` | *Added 2026-10-28 (task 137.8, issue #841; task 137 decision 7).* The handoff a `role: handoff` task (§8.1.4) integrates: `ID`, `Grant` (a list), `Items` and `ItemLines`. **Zero** on every other task — the lanes of a handoff's own fan-out included — so `{{ if .Handoff.ID }}` tells them apart, as `.Issue.Number` does. Each item has `Issue` (`.Issue`'s shape), `Delivery` (`Kind`, `Title`, `Body`, `Summary`, `HeadSHA`, `Branch`, `Base`, `CloseReason`, `Proof`, `Ready`), `TaskID` (`delivery_task_id`) and `Branch`/`HeadSHA` (the delivery's). It is built from the handoff's rows — the item's claim-time issue snapshot (§5.7) and delivery snapshot — and never from the network or the live issue. `ItemLines` is §8.4's **second structured value beside `.Item`**: one compact JSON object per item, newline-separated, each one element of `$VINCENT_HANDOFF_FILE`'s `items` (§8.5), so a derived `fan_out` writes `for_each: '{{ .Handoff.ItemLines }}'` and reads `.Item.issue.id` and `.Item.branch` in its `lane:` template — task 080's path unchanged, and still no FuncMap (task 016 decision 15). Each line is already a JSON object, so `fan_out_invalid` cannot fire for it. `Items` remains the typed list a prompt ranges over |
 | `.Worktree` | `Path` |
 | `.LastFailure` | on retry attempts only: `{Reason, Output}` from the previous attempt; empty otherwise |
 | `.Conflicts` | *Documented 2026-08-18: the field has shipped since task 014 but was never listed here.* The conflicted file paths a `fan_out` join hands an `on_conflict: agent` resolver (§7.6). Empty for every other step, so a prompt may read it defensively anywhere |
@@ -3599,6 +3708,16 @@ environment, then this block, then a `command` step's own `env:` (which is a
 command-step field, so an agent step has none). Because the block is layered
 *after* the policy, `environment.unset` cannot reach a `VINCENT_*` variable:
 these are facts about the run, not inherited state.
+
+*Amended 2026-10-28 (task 137.8, issue #841).* A **handoff task** (§5.7) also
+gets `VINCENT_HANDOFF_FILE`, the absolute path of its handoff as JSON — `{id,
+grant, items: [{issue, delivery, task_id, branch, head_sha}]}` — and no other
+task does. Each item's `issue` is exactly the issue file's shape above, so
+per-issue `jq` carries over, and each item compacted is one line of
+`.Handoff.ItemLines` (§8.4). `delivery` carries `kind`, `title`, `body`,
+`summary`, `head_sha`, `branch`, `base`, `close_reason`, `proof` and `ready`.
+It is written the way the issue file is — from the rows, before every attempt,
+atomically, into the worktree's own git directory as `vincent-handoff.json`.
 
 ### 8.6 Agent, model, and effort resolution
 
@@ -8719,7 +8838,11 @@ durable from the transaction that made the change, and the drain sends what
 is pending when the daemon starts. A crash between GitHub's answer and the
 row being settled is harmless — the PATCH is idempotent, and the restarted
 drain's preflight finds GitHub at the desired value and settles the row
-`done` without a second write.
+`done` without a second write. *Amended 2026-10-28 (task 137.7):* an
+`add_comment` row has no preflight — a comment is appended, not a value —
+so a crash between GitHub's answer and the settle posts the comment again on
+restart. It is the one at-least-once write, visible rather than lost; a copy
+the comment sync imported in between is dropped when the row settles.
 
 *Added 2026-10-07 (task 134.12, issue #759).* Handing an issue's main
 worktree from a settled main task to the next (§10's fourth creation mode)
@@ -9440,7 +9563,9 @@ POST   /v1/issues/{id}/close            *Added 2026-10-02 (task 130.3).* { reaso
                                         *Amended 2026-10-03 (task 130.10):* an agent's close
                                         of an issue that writes back to GitHub is **409**
                                         `forge_write_needs_human` (§5.6); a human's enqueues
-                                        the write-back, and the issue's `sync` says `pending`
+                                        the write-back, and the issue's `sync` says `pending`.
+                                        *Amended 2026-10-28 (task 137.7):* unless the agent is
+                                        a live handoff's task granted `issue.close` on it
 POST   /v1/issues/{id}/ready            *Added 2026-10-24 (task 137.15, issue #848).* {} →
                                         the issue. Marks its latest finished main-line
                                         delivery ready (§5.3, §5.6), `ready_by` the caller
@@ -9471,7 +9596,12 @@ POST   /v1/issues/{id}/comments         *Added 2026-10-03 (task 130.16).* {body}
                                         issue with a live remote is **409** `issue_mirrored`,
                                         before any I/O. No `Idempotency-Key`, like the pull
                                         request comment route: a duplicate local comment is
-                                        visible and harmless
+                                        visible and harmless. *Amended 2026-10-28 (task
+                                        137.7):* an agent's comment there is **409**
+                                        `forge_write_needs_human` instead, unless it is a live
+                                        handoff's task granted `issue.comment` on the issue,
+                                        whose comment is stored as `handoff` and posted to
+                                        GitHub through the outbox's `add_comment` (§5.6)
 POST   /v1/handoffs                     *Added 2026-10-24 (task 137.5, issue #838).* Start a
                                         handoff (§5.7): { project_id, workflow, issue_ids |
                                         select, grant?, title?, paused?, description?, fields?,
@@ -9488,8 +9618,10 @@ POST   /v1/handoffs                     *Added 2026-10-24 (task 137.5, issue #83
                                         `branch_name`, `existing_branch` and `merge_back` are
                                         unknown fields and **400**. `workflow` is required —
                                         there is no default handoff workflow — and any valid
-                                        workflow is accepted until task 137.8's `role:
-                                        handoff`. `title` defaults to one naming the issue
+                                        workflow must declare `role: handoff`
+                                        (§8.1.4) — any other is a **400** naming the role
+                                        (*amended 2026-10-28, task 137.8: this accepted any
+                                        valid workflow until the role existed*). `title` defaults to one naming the issue
                                         count. Exactly one of `issue_ids` (no duplicates) and
                                         `select` { lane?: hand_off, delivery?: change | reply |
                                         none or a list, kind?: a string or a list, labels?,
@@ -9518,6 +9650,26 @@ GET    /v1/handoffs/{id}                *Added 2026-10-24 (task 137.5).* One han
                                         `items`: [{ issue_id, delivery_task_id, delivery (the
                                         summary form, as claimed), outcome, outcome_at,
                                         outcome_by, note }]. **404** for an unknown id
+POST   /v1/handoffs/{id}/items/{issue_id}/deliver
+POST   /v1/handoffs/{id}/items/{issue_id}/return
+POST   /v1/handoffs/{id}/items/{issue_id}/wait
+POST   /v1/handoffs/{id}/items/{issue_id}/release
+                                        *Added 2026-10-28 (task 137.6).* Resolve items (§5.7):
+                                        `{issue_id}` is an id, a comma-separated list, or `all`
+                                        (unresolved items only). Body `{note?, comment?}`, plus
+                                        `close?` (`completed|not_planned|duplicate|none`) on
+                                        deliver and `follow_up?, paused?, side?, workflow?` on
+                                        return; a field another verb takes is **400**, as are
+                                        `side`/`paused` without `follow_up` and `workflow`
+                                        without `side`. → **200** with the handoff and its
+                                        items. All or nothing: **409** `handoff_item_resolved`
+                                        (`details.outcome`, `details.issue_id`) for a final item
+                                        or a non-waiting one on a settled handoff — repeating an
+                                        item's own outcome is a no-op, never a 409 —
+                                        `forge_write_needs_human` for a step's close or comment
+                                        on an imported issue, `issue_mirrored` for a human's
+                                        comment on one, and a follow-up's own 409s; **404** for
+                                        an unknown handoff or an issue that is not its item
 DELETE /v1/issues/{id}                  *Added 2026-10-02 (task 130.3).* Permanent, from any
                                         state (§5.6) → **204**. An imported issue leaves its
                                         tombstone; upstream is never touched; its tasks keep
@@ -10848,6 +11000,13 @@ Two kinds of streams:
    task's `task.state_changed` when its settle settles the handoff, or after
    the `handoff.item_changed` that ends the last wait. An `issue.*` event
    written on a handoff's behalf carries `handoff_id`, and `by: handoff`.*
+   *Amended 2026-10-28 (task 137.6): a handoff task's settle writes one
+   `handoff.item_changed` `by: settle` per item it releases, between its
+   `task.state_changed` and `handoff.settled`; an issue close — any actor,
+   `sync` included — that resolves a waiting item writes its
+   `handoff.item_changed` (`to: delivered`, `by` the closing actor) after the
+   issue's own events, and `handoff.settled` when it ended the last wait. An
+   item verb's issue writes carry `handoff_id`.*
    *Amended 2026-08-28 (task 046, issue #90): the `notify:` hook (§12.3)
    introduces **no new event type**. Its selector reads the `to` field of
    `task.state_changed`, the way the TUI bell does; `task.blocked` and
@@ -11296,6 +11455,19 @@ step path — which task 068 decision 1 says nothing reaches. This supersedes ta
 lost, as with create: a step's agent can run `gh pr merge` in its own worktree,
 which is decision record row 11's original path.
 
+*Narrowed 2026-10-28 (task 137 decision 6, task 137.7, issue #840).* The six
+pull-request writes are excluded **except on a granted handoff's step
+endpoint**. A human's grant is the consent the paragraph above found missing,
+so `/mcp/step/{run_id}` of a live handoff task with a non-empty grant lists,
+as `task_github_pull_create`, `_merge`, `_close`, `_reopen`, `_comment` and
+`_checks_rerun`, each write whose capability the grant names (`reopen` is
+`pull.close`'s), and only those, so `tools/list` shows what will be
+honoured. The listing enforces nothing: every call still reaches the route's
+forge-write guard. The shared `/mcp` endpoint, a non-handoff step's and a
+grant-less handoff's keep excluding them, and every route also refuses an
+ungranted marked caller over plain HTTP `409 forge_write_needs_human` —
+before 137.7 a step's `vincent github pr merge` was accepted as a human's.
+
 *Amended 2026-09-17 (task 117, issue #411).* One more, beside the permanent
 deletes it undoes:
 
@@ -11378,11 +11550,22 @@ tools, and no exclusion: `issue_comments` reads it and `issue_comment` adds a
 local comment, recording the calling step's task (`task N`) or `agent` as its
 author (§5.6). Neither writes to a forge — a comment on an issue with a live
 GitHub remote is refused `409 issue_mirrored` — so no forge guard is needed.
+*Amended 2026-10-28 (task 137.7):* an agent's comment on such an issue is
+judged by the forge guard instead: refused `forge_write_needs_human` unless
+its task is a live handoff granted `issue.comment` on the issue, whose
+comment is posted to GitHub. `issue_close`, `issue_reopen` and
+`issue_comment` describe the grant rather than "only a human may".
 
 *Amended 2026-10-24 (task 137.5, issue #838).* Starting and reading handoffs
 are three tools, and no exclusion: `handoff_start` replays `POST
 /v1/handoffs`, `handoff_list` its list and `handoff_show` one handoff. They are
 served on `/mcp` and on every step endpoint, like `task_create`.
+*Amended 2026-10-28 (task 137.6):* four more, `handoff_deliver`,
+`handoff_return`, `handoff_wait` and `handoff_release`, replay the item verbs
+(§13.2) on both surfaces, by the same rule. A step's verb is recorded
+`outcome_by: agent`, or `handoff` from the handoff's own task; its close or
+comment on an imported issue is refused `forge_write_needs_human` until
+137.7's grant, and refuses the whole verb.
 `handoff_start` is **grant-less**: a non-empty grant from any MCP caller is
 refused `409 grant_needs_human` (task 137 decision 6, "never an agent"), so an
 agent may claim issues and start an integration task but never authorize a
@@ -11963,9 +12146,10 @@ CREATE TABLE issue_sync_outbox (       -- an imported issue's state write-back (
   attempts        INTEGER NOT NULL DEFAULT 0,
   next_attempt_at TEXT NOT NULL,
   last_reason     TEXT NOT NULL DEFAULT '',
-  origin          TEXT NOT NULL,               -- human|agent|sync
+  origin          TEXT NOT NULL,               -- human|agent|sync|handoff
   created_at      TEXT NOT NULL,
-  updated_at      TEXT NOT NULL
+  updated_at      TEXT NOT NULL,
+  comment_id      INTEGER                      -- add_comment's local comment (task 137.7, migration 0047)
 );
 CREATE INDEX issue_sync_outbox_due_idx ON issue_sync_outbox (status, next_attempt_at);
 CREATE INDEX issue_sync_outbox_issue_idx ON issue_sync_outbox (issue_id, id);
@@ -12186,6 +12370,14 @@ sends (§5.6, §12.3), only for an issue with a live GitHub remote and only when
 the GitHub value changes. A newer change supersedes a pending row and keeps
 its base, so close→reopen→close is one write and close→reopen from open is
 none. It cascades with its issue: a deleted issue has nothing left to send.
+
+*Amended 2026-10-28 (task 137.7, issue #840, migration 0047).* A second
+`op`, `add_comment`: a granted handoff's comment on an issue with a live
+GitHub remote, inserted with the comment and naming it in `comment_id`;
+`desired_json` and `base_json` are `{}`. It is never superseded and never
+holds the issue's state: supersession, the import's hold and the issue's
+`sync` block read `set_state` rows only, and the project's counts take each
+operation's newest row apart.
 
 *Added 2026-10-03 (task 130.11, issue #670, migration 0040).* The **issue
 backfill**: pure SQL in the migration transaction, so every `Open` path runs it —
@@ -16854,6 +17046,14 @@ the whole of the posture, not a set of tips.
   environment or read the daemon token, and so can write as a human. It keeps
   the honest path — an agent running `vincent issue close` — off the forge; a
   per-step scoped token was rejected because it would be no stronger.
+  *Amended 2026-10-28 (task 137.7, issue #840):* one guard now covers every
+  forge write vincent makes for a caller — an imported issue's close, reopen
+  and comment, and all six pull-request writes — and lets an agent through
+  only as a live handoff's task under a grant a human gave, on its own
+  items and pull requests, attributed to `handoff`. It is the same
+  best-effort marker, not a privilege boundary: it keeps the honest path
+  inside what a human granted, and a full-auto agent with its own
+  credentials is no more contained than before.
 - **No project scope.** Triggers are global and live in `{config_dir}`, never in
   `.vincent/`, so merge rights on a repository cannot start agents on a
   maintainer's machine (task 096 decision 8). The accepted cost is that a
@@ -17141,6 +17341,7 @@ carries the rest.
 | `POST /v1/handoffs` names an issue it may not claim | *Added 2026-10-24 (task 137.5, issue #838).* `409 invalid_state`, `details.reason: issue_not_eligible`, `details.issue_id` the first such id, and `details.handoff_id` when a handoff in the same project claims it. Missing, in another project, closed, not in `hand_off`, claimed and already delivered are one reason, so another project's rows cannot be probed. Nothing is created (§5.7) |
 | A handoff `select:` finds no eligible issue | *Added 2026-10-24 (task 137.5).* `409 invalid_state`, `details.reason: nothing_to_hand_off`, and nothing is created. A trigger's ledger records it `refused`, so its dedupe key is not spent (task 137.9) |
 | An agent caller gives a handoff a grant | *Added 2026-10-24 (task 137.5).* `409 invalid_state`, `details.reason: grant_needs_human` (task 137 decision 6). An agent caller is an MCP call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id` — best-effort, like every marker (§16). The same request with no grant succeeds, recorded `created_by: agent` |
+| A handoff item verb names an item already resolved | *Added 2026-10-28 (task 137.6, issue #839).* `409 invalid_state`, `details.reason: handoff_item_resolved`, with `details.outcome` and `details.issue_id`. `delivered`, `returned` and `released` are final; on a settled handoff an item that is not `waiting` is refused the same way. A verb repeating an item's own outcome is not refused: it succeeds and changes nothing for that item, its comment and close included. The verb is all or nothing (§5.7), so nothing is recorded for any item of the call |
 | `vincent issue ready`/`unready` on an issue whose work is running, unfinished, claimed or (unready) not in `hand_off` | *Added 2026-10-24 (task 137.15, issue #848; task 137 decision 13).* `409 invalid_state`, checked in this order inside one transaction, with `details.reason`: `issue_work_running` while a root task is unsettled (the run in flight will write the delivery the decision belongs on); `issue_in_handoff` and `details.handoff_id` while a live handoff item claims the issue; `issue_no_finished_work` when no main-line root task finished — including an issue whose only finished work is a side task's, since there is no main-line delivery to mark; and for `unready` only, `issue_not_hand_off` with `details.lane`. A closed issue is refused first, as every issue action on one is. `ready` on an issue already ready writes nothing |
 | A merge-back's side task or side branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked with `merge_source_missing`: there is nothing to merge. Skip or cancel |
 | A merge-back's main branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked at admission with `merge_target_missing`: every main task of the issue was archived and the branch the side task forked from was deleted, so there is nothing to revive. Skip or cancel |

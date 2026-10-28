@@ -54,6 +54,8 @@ var wfTopLevelReaders = map[string]func(apiclient.WorkflowBody) string{
 	// hand_off (task 137 decision 13) is an enum row, so enter cycles it
 	// through auto, explicit and unset from whatever the file declares.
 	"hand_off": func(b apiclient.WorkflowBody) string { return b.HandOff },
+	// role (task 137.8) is the same kind of enum row, of one value.
+	"role": func(b apiclient.WorkflowBody) string { return b.Role },
 }
 
 // wfStepReaders covers every field any step type publishes, common fields

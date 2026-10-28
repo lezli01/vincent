@@ -2,10 +2,12 @@ package apiclient
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,6 +32,9 @@ type Handoff struct {
 	CreatedAt time.Time     `json:"created_at"`
 	Items     []HandoffItem `json:"items,omitempty"`
 	Task      *TaskDetail   `json:"task,omitempty"`
+	// File is the handoff's $VINCENT_HANDOFF_FILE content (task 137.8),
+	// present on GetHandoff only.
+	File json.RawMessage `json:"file,omitempty"`
 }
 
 // HandoffItem is one claimed issue: its delivery as it stood at the claim,
@@ -129,6 +134,59 @@ func (c *Client) ListHandoffs(ctx context.Context, opts HandoffListOptions) ([]H
 func (c *Client) GetHandoff(ctx context.Context, id int64) (Handoff, error) {
 	var out Handoff
 	if err := c.get(ctx, fmt.Sprintf("/v1/handoffs/%d", id), &out); err != nil {
+		return Handoff{}, err
+	}
+	return out, nil
+}
+
+// Handoff item verbs (task 137.6): the last path segment of
+// POST /v1/handoffs/{id}/items/{issue_id}/{verb}.
+const (
+	HandoffDeliver = "deliver"
+	HandoffReturn  = "return"
+	HandoffWait    = "wait"
+	HandoffRelease = "release"
+)
+
+// HandoffReasonItemResolved is the 409 details.reason of a verb on an item
+// that is already delivered, returned or released with another outcome;
+// details.outcome names which. A repeat of the item's own outcome is a
+// no-op, never this.
+const HandoffReasonItemResolved = "handoff_item_resolved"
+
+// HandoffCloseNone is deliver's Close that leaves the issue open.
+const HandoffCloseNone = "none"
+
+// HandoffItemRequest is a verb's body. Close is deliver's; FollowUp,
+// Paused, Side and Workflow are return's; the daemon refuses a field the
+// verb does not take.
+type HandoffItemRequest struct {
+	Note     string `json:"note,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+	Close    string `json:"close,omitempty"`
+	FollowUp string `json:"follow_up,omitempty"`
+	Paused   bool   `json:"paused,omitempty"`
+	Side     bool   `json:"side,omitempty"`
+	Workflow string `json:"workflow,omitempty"`
+}
+
+// ResolveHandoffItems applies verb to the handoff's items — issueIDs, or
+// every unresolved one when issueIDs is empty — all or nothing, and returns
+// the handoff with its items.
+func (c *Client) ResolveHandoffItems(
+	ctx context.Context, handoffID int64, verb string, issueIDs []int64, req HandoffItemRequest,
+) (Handoff, error) {
+	sel := "all"
+	if len(issueIDs) > 0 {
+		parts := make([]string, len(issueIDs))
+		for i, id := range issueIDs {
+			parts[i] = strconv.FormatInt(id, 10)
+		}
+		sel = strings.Join(parts, ",")
+	}
+	var out Handoff
+	path := fmt.Sprintf("/v1/handoffs/%d/items/%s/%s", handoffID, sel, url.PathEscape(verb))
+	if err := c.sendWith(ctx, http.MethodPost, path, nil, req, &out); err != nil {
 		return Handoff{}, err
 	}
 	return out, nil

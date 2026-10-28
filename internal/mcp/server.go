@@ -3,8 +3,12 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
+	"sync"
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -50,6 +54,10 @@ type Server struct {
 	http    http.Handler
 	steps   *stepRegistry
 	stepMCP http.Handler
+	// granted holds the step servers of granted handoffs, one per set of
+	// granted pull tools, keyed by their tool names; built on first use.
+	grantedMu sync.Mutex
+	granted   map[string]*sdk.Server
 }
 
 // New builds the MCP server and registers every tool.
@@ -60,26 +68,8 @@ func New(deps Deps) *Server {
 	if deps.Config == nil {
 		deps.Config = config.Default
 	}
-	s := &Server{deps: deps, steps: newStepRegistry()}
-	s.mcp = sdk.NewServer(&sdk.Implementation{
-		Name:    ServerName,
-		Title:   "vincent",
-		Version: deps.Version,
-		Description: "Drive the vincent daemon: projects, workflows, tasks, " +
-			"transcripts, diffs, and the human actions a task can be waiting on.",
-	}, nil)
-	for _, r := range routes {
-		s.mcp.AddTool(&sdk.Tool{
-			Name:        r.Tool,
-			Description: r.Description,
-			InputSchema: inputSchema(r),
-		}, s.routeHandler(r))
-	}
-	s.mcp.AddTool(&sdk.Tool{
-		Name:        WaitTool,
-		Description: waitDescription,
-		InputSchema: waitSchema(),
-	}, s.handleWait)
+	s := &Server{deps: deps, steps: newStepRegistry(), granted: map[string]*sdk.Server{}}
+	s.mcp = s.newSDKServer(nil)
 
 	getServer := func(*http.Request) *sdk.Server { return s.mcp }
 	s.http = sdk.NewStreamableHTTPHandler(getServer, &sdk.StreamableHTTPOptions{Logger: deps.Logger})
@@ -90,11 +80,90 @@ func New(deps Deps) *Server {
 	// guard answered 403. The guard is redundant here — StepHandler has
 	// already authenticated the run's own secret, which no rebinding page
 	// holds — so it is off for this endpoint and stays on for `/mcp`.
-	s.stepMCP = sdk.NewStreamableHTTPHandler(getServer, &sdk.StreamableHTTPOptions{
+	s.stepMCP = sdk.NewStreamableHTTPHandler(s.stepServer, &sdk.StreamableHTTPOptions{
 		Logger:                     deps.Logger,
 		DisableLocalhostProtection: true,
 	})
 	return s
+}
+
+// newSDKServer builds one MCP server: every tool in routes, the wait tool,
+// and extra — the granted pull writes of a handoff's step endpoint.
+func (s *Server) newSDKServer(extra []Route) *sdk.Server {
+	srv := sdk.NewServer(&sdk.Implementation{
+		Name:    ServerName,
+		Title:   "vincent",
+		Version: s.deps.Version,
+		Description: "Drive the vincent daemon: projects, workflows, tasks, " +
+			"transcripts, diffs, and the human actions a task can be waiting on.",
+	}, nil)
+	for _, r := range append(slices.Clone(routes), extra...) {
+		srv.AddTool(&sdk.Tool{
+			Name:        r.Tool,
+			Description: r.Description,
+			InputSchema: inputSchema(r),
+		}, s.routeHandler(r))
+	}
+	srv.AddTool(&sdk.Tool{
+		Name:        WaitTool,
+		Description: waitDescription,
+		InputSchema: waitSchema(),
+	}, s.handleWait)
+	return srv
+}
+
+// stepServer picks the server a step endpoint's session talks to (task
+// 137.7): the shared tool set, plus — when the step's task is a live
+// handoff with a non-empty grant — each Granted pull write whose capability
+// the grant names, so tools/list shows what the guard will honour. It is
+// read when a session opens; a grant cannot change after its handoff is
+// created, and a handoff that settles mid-session is refused by the guard.
+func (s *Server) stepServer(r *http.Request) *sdk.Server {
+	extra := s.grantedRoutes(r.Context())
+	if len(extra) == 0 {
+		return s.mcp
+	}
+	names := make([]string, len(extra))
+	for i, g := range extra {
+		names[i] = g.Tool
+	}
+	key := strings.Join(names, ",")
+	s.grantedMu.Lock()
+	defer s.grantedMu.Unlock()
+	srv, ok := s.granted[key]
+	if !ok {
+		srv = s.newSDKServer(extra)
+		s.granted[key] = srv
+	}
+	return srv
+}
+
+// grantedRoutes is the Granted pull writes the calling step's handoff was
+// granted: none on a step whose task is no handoff's, or whose handoff is
+// not live or was granted nothing.
+func (s *Server) grantedRoutes(ctx context.Context) []Route {
+	sess, ok := stepFrom(ctx)
+	if !ok || sess.TaskID == 0 || s.deps.Store == nil {
+		return nil
+	}
+	h, err := s.deps.Store.GetHandoffByTask(ctx, sess.TaskID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			s.deps.Logger.Warn("mcp: step handoff not read", "task", sess.TaskID, "error", err)
+		}
+		return nil
+	}
+	if h.State != store.HandoffLive {
+		return nil
+	}
+	grant := h.Grant()
+	var out []Route
+	for _, g := range Granted {
+		if slices.Contains(grant, g.Capability) {
+			out = append(out, g.Route)
+		}
+	}
+	return out
 }
 
 // routeHandler adapts one route to a tool handler.

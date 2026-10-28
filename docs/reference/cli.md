@@ -2439,7 +2439,8 @@ It checks that each template **parses**. It never runs one — see
 ```sh
 vincent workflow render <file> [--task ID] [--project ID]
                                [--title S] [--description S] [--field k=v]...
-                               [--agent A] [--model M] [--effort E] [--json]
+                               [--agent A] [--model M] [--effort E]
+                               [--handoff-file PATH] [--json]
 ```
 
 Executes every template the file declares — `prompt`, `run`, `check`,
@@ -2484,6 +2485,14 @@ and `--project ID` binds that project's facts; both need a daemon, and both
 also resolve `include` steps and named fan-out lanes through the registry.
 Without one, those steps are reported as unresolved and every other step still
 renders.
+
+`--handoff-file PATH` binds [`.Handoff`](workflow-schema.md#handoff) from a
+file in [`$VINCENT_HANDOFF_FILE`](workflow-schema.md#vincent-handoff-file)'s
+shape, `ItemLines` included, so a `for_each` over `.Handoff.ItemLines` renders
+one line per item. `--task` on a handoff task binds that handoff's real items,
+and `--handoff-file` overrides them. With neither, a
+[`role: handoff`](workflow-schema.md#role) workflow renders the zero
+`.Handoff` and a warning says so.
 
 A derived fan-out's `lane:` template renders once, not once per item: its
 steps are marked `<derived lane>` with the `for_each` they expand over
@@ -2770,7 +2779,10 @@ vincent github pr create --task ID --title TITLE [--body TEXT] [--draft] [--json
 Pushes the task's branch to `origin` and opens its pull request. It and the
 `pr merge`, `close`, `reopen`, `comment` and `rerun` commands below are the only
 commands under `vincent github` that write to GitHub, and each acts only on the
-task you name, only when you run it.
+task you name, only when you run it. Run by a workflow step or a chat agent,
+each is refused `forge_write_needs_human` and sends nothing, unless the step's
+task is a live handoff [granted](#vincent-handoff-start) that capability on
+that task's pull request.
 
 ```
 $ vincent github pr create --task 61 --title "List a project's open pull requests" --draft
@@ -3126,9 +3138,11 @@ vincent issue comment <id> (--body B | --body-file PATH|-) [--json]
 ```
 
 Adds a comment to an issue's thread. The daemon records you as its author;
-no flag sets it. Nothing is ever posted to GitHub: an issue imported from
-GitHub has a read-only mirror of its GitHub thread, so a comment on it is
-refused while its remote is live, as an edit of its title is. `--body-file`
+no flag sets it. An issue imported from GitHub has a read-only mirror of its
+GitHub thread, so a comment on it is refused while its remote is live, as an
+edit of its title is. The one exception is a workflow step of a live handoff
+[granted](#vincent-handoff-start) `issue.comment` on that issue: its comment
+is posted to GitHub. `--body-file`
 reads the comment from a file, or from stdin with `-`.
 
 ### `vincent issue close`
@@ -3230,8 +3244,8 @@ sync             requested
 [state write-back](api.md#state-write-back) is waiting, gave up, or lost to a
 change on GitHub. Run from inside a workflow step or a chat agent — where
 `VINCENT_TASK_ID` or `VINCENT_CHAT_ID` is set — every `vincent` command marks
-its requests as an agent's, so it may not close or reopen an issue imported
-from GitHub.
+its requests as an agent's, so it may not close, reopen or comment on an issue
+imported from GitHub unless its task is a live handoff granted that.
 
 `reason` uses the sync vocabulary of the [API](api.md#issue-sync) —
 `github_disabled`, `poll_disabled`, `pending`, `origin_changed`,
@@ -3269,6 +3283,9 @@ vincent handoff start --project ID --workflow NAME [ISSUE-ID...]
 Creates the handoff, its task and every claim in one step, and prints the
 handoff and the issues it claimed.
 
+- **`--workflow`** must name a workflow declaring
+  [`role: handoff`](workflow-schema.md#role); any other is refused and nothing
+  is created. That role is also what keeps `vincent task add` from running one.
 - **Issue ids** claim exactly those issues. If any is not eligible — not in
   `hand_off`, already claimed by a handoff, or already delivered — nothing is
   created and the command exits 1, naming it.
@@ -3280,7 +3297,8 @@ handoff and the issues it claimed.
 - **`--grant`** gives the handoff capabilities for forge writes —
   `issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`,
   `pull.close`, `checks.rerun` — repeated or comma-separated. Only a human may
-  give one: run from a workflow step it is refused. Nothing acts on a grant yet.
+  give one: run from a workflow step it is refused. The handoff's task may then
+  make those writes on its own items and pull requests; nothing else may.
 - **The task options** are `vincent task add`'s. The task is a root task with
   no issue, cut from the project's base branch; `--title` defaults to one
   naming how many issues it claims.
@@ -3305,6 +3323,41 @@ vincent handoff show ID [--json]
 Prints the handoff — its state, task, grant and who started it — and one row
 per item: the issue, its delivery's kind and task as claimed, and the outcome
 once one is recorded.
+
+### `vincent handoff deliver|return|wait|release`
+
+```sh
+vincent handoff deliver HANDOFF ISSUE-ID... | --all [--close completed|not_planned|duplicate|none] [--note TEXT] [--comment-file FILE] [--json]
+vincent handoff return  HANDOFF ISSUE-ID... | --all [--follow-up PROMPT [--paused] [--side [--workflow NAME]]] [--note TEXT] [--comment-file FILE] [--json]
+vincent handoff wait    HANDOFF ISSUE-ID... | --all [--note TEXT] [--comment-file FILE] [--json]
+vincent handoff release HANDOFF ISSUE-ID... | --all [--note TEXT] [--comment-file FILE] [--json]
+```
+
+Records what became of each claimed issue, then prints the handoff as `show`
+does. `--all` takes every unresolved item and leaves waiting ones alone.
+`--note` is kept on the item; `--comment-file` (`-` for stdin) is posted on
+each issue first.
+
+- `deliver` closes the issue with `--close`, by default the delivery's
+  suggested reason, else `completed`; `--close none` leaves it open.
+- `return` releases the claim and withdraws the issue's readiness, so it
+  waits in `in_progress`. `--follow-up` queues the prompt as a follow-up on
+  the issue's latest main task (`--paused` holds it); with `--side` it runs as
+  a new side task merged back into the issue's main branch, on that task's
+  workflow unless `--workflow` names another.
+- `wait` keeps the claim after the handoff's task settles; closing the issue
+  records it delivered.
+- `release` drops the claim; the issue stays eligible for a later handoff.
+
+Each command is all or nothing: one refused item or side effect — an item
+already delivered, returned or released with another outcome, a workflow step closing or
+commenting on an issue imported from GitHub without its handoff's grant, a
+follow-up its task cannot take — records nothing for any of them. The
+handoff's own task, granted `issue.close` or `issue.comment`, may close or
+comment on its imported items; those writes are queued for GitHub.
+Repeating an item's own outcome succeeds and changes nothing for it, its
+`--comment-file` and `--close` included. When the handoff's task settles,
+every item still unresolved is released.
 
 ## `vincent gc`
 

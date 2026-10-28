@@ -100,7 +100,7 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 	// only selects on_conflict, and is inert when the issue has no main
 	// branch yet (task 134 decision 7, item 134.15).
 	prep, ok := s.prepareTaskCreate(ctx, w, &req, chat.BaseBranch, true)
-	if !ok {
+	if !ok || !refuseHandoffRole(w, prep.workflow) {
 		return
 	}
 	t := prep.task

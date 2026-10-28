@@ -225,6 +225,9 @@ const outputTailLines = 200
 // naming and nothing else, because in every other respect a sub-step runs
 // exactly like the step it would have been on its own (task 014).
 type stepEnv struct {
+	// handoff is the task's `.Handoff` and $VINCENT_HANDOFF_FILE, read once
+	// per step by handoffOf (task 137.8); nil until then.
+	handoff *handoffLoad
 	task    *store.Task
 	project *store.Project
 	wf      *workflow.Workflow
@@ -1262,6 +1265,16 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		env.log.Error("write the issue file", "error", err)
 		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError, result: err.Error()}
 	}
+	// $VINCENT_HANDOFF_FILE the same way, on a handoff task only (137.8).
+	if hl, hErr := r.handoffOf(ctx, env); hErr != nil {
+		err = hErr
+	} else {
+		rc.HandoffEnv, err = writeHandoffFile(env.task, hl.data, hl.ok)
+	}
+	if err != nil {
+		env.log.Error("write the handoff file", "error", err)
+		return stepOutcome{state: store.StepFailed, reason: ReasonInternalError, result: err.Error()}
+	}
 
 	run := &store.StepRun{
 		TaskID:    env.task.ID,
@@ -1486,7 +1499,12 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 		}
 		steps[run.StepID] = res
 	}
+	hl, err := r.handoffOf(ctx, env)
+	if err != nil {
+		return workflow.RenderContext{}, err
+	}
 	return workflow.RenderContext{
+		Handoff: hl.data.ctx,
 		Task: workflow.TaskContext{
 			ID: env.task.ID, Title: env.task.Title, Description: env.task.Description,
 			Fields: env.taskFields(), BaseBranch: env.task.BaseBranch, BranchName: env.task.BranchName,
@@ -1507,6 +1525,27 @@ func (r *Runner) renderContext(ctx context.Context, env *stepEnv, attempt int, p
 		LastFailure: workflow.Failure{Reason: previous.reason, Output: previous.output},
 		Conflicts:   env.conflicts,
 	}, nil
+}
+
+// handoffLoad is one read of a task's handoff: ok is false for a task that
+// is not a handoff task.
+type handoffLoad struct {
+	data handoffData
+	ok   bool
+}
+
+// handoffOf reads env's handoff once and keeps it on env, so a step's render
+// context and its file come from the same read.
+func (r *Runner) handoffOf(ctx context.Context, env *stepEnv) (*handoffLoad, error) {
+	if env.handoff != nil {
+		return env.handoff, nil
+	}
+	d, ok, err := loadHandoff(ctx, r.deps.Store, env.task)
+	if err != nil {
+		return nil, err
+	}
+	env.handoff = &handoffLoad{data: d, ok: ok}
+	return env.handoff, nil
 }
 
 // enterGate parks the task at a manual step: the attempt row is written on

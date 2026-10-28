@@ -28,6 +28,14 @@
 // daemon-level fact about the host it runs on. They are
 // listed in Excluded and asserted absent by name.
 //
+// The six pull-request writes are excluded except on a granted handoff's
+// step endpoint (task 137 decision 6, 137.7). A human's grant on a handoff
+// is the consent the exclusion found missing, so `/mcp/step/{run_id}` of a
+// live handoff task lists, from Granted, each write its grant names — and
+// only those, so tools/list shows what will be honoured. The listing
+// enforces nothing: every call still reaches the API's forge-write guard.
+// The shared `/mcp` endpoint, and every other step's, never list them.
+//
 // # Dependency direction
 //
 // This package takes an http.Handler and returns an http.Handler; it knows

@@ -59,7 +59,7 @@ func eligible(t *testing.T, s *Store, issueID int64) bool {
 
 func setOutcome(t *testing.T, s *Store, h *Handoff, issueID int64, o HandoffOutcome) {
 	t.Helper()
-	if _, err := s.SetHandoffItemOutcome(t.Context(), h.ID, issueID, o, issuestate.Human, ""); err != nil {
+	if _, err := s.SetHandoffItemOutcome(t.Context(), h.ID, issueID, o, HandoffByHumanActor, ""); err != nil {
 		t.Fatalf("set handoff %d issue %d %s: %v", h.ID, issueID, o, err)
 	}
 }
@@ -280,8 +280,9 @@ func TestHandoffTaskMovesNoLane(t *testing.T) {
 	if lc := laneChanges(w.take()); len(lc) != 0 {
 		t.Fatalf("the handoff task moved a lane: %v", eventTypes(lc))
 	}
-	if _, _, err := newHandoff(t, s, p.ID, "bad", iss.ID); err == nil {
-		t.Fatal("a claim survived its handoff task settling")
+	// Release on settle (task 137.6): the unresolved item let its claim go.
+	if _, claimed, err := s.IssueClaim(t.Context(), p.ID, iss.ID); err != nil || claimed {
+		t.Fatalf("a claim survived its handoff task settling (err %v)", err)
 	}
 	if err := s.CreateHandoff(t.Context(), &Handoff{CreatedBy: HandoffByHuman}, []int64{iss.ID},
 		&Task{ProjectID: p.ID, IssueID: &iss.ID}, nil); err == nil {
@@ -376,16 +377,21 @@ func TestHandoffEvents(t *testing.T) {
 		t.Errorf("handoff.settled payload = %v", pl)
 	}
 
-	// Nothing waiting: the task's own settle records handoff.settled after
-	// its state change, in the same commit.
+	// Nothing waiting: the task's own settle releases the unresolved item
+	// and records handoff.settled after its state change, in the same
+	// commit (task 137.6).
 	c, _ := handedOffIssue(t, s, p.ID, "c", "c1")
 	_, ht2 := mustHandoff(t, s, p.ID, "h2", c.ID)
 	moveTask(t, s, ht2, TaskRunning)
 	w.take()
 	moveTask(t, s, ht2, TaskAborted)
 	all := w.take()
-	if got := eventTypes(all); len(all) != 2 || all[0].Type != EventTaskStateChanged || all[1].Type != EventHandoffSettled {
+	if got := eventTypes(all); len(all) != 3 || all[0].Type != EventTaskStateChanged ||
+		all[1].Type != EventHandoffItemChanged || all[2].Type != EventHandoffSettled {
 		t.Fatalf("settling the task published %v", got)
+	}
+	if pl := payloadOf(t, *all[1]); pl["issue_id"] != float64(c.ID) || pl["to"] != "released" || pl["by"] != "settle" {
+		t.Errorf("release on settle payload = %v", pl)
 	}
 }
 
@@ -541,5 +547,38 @@ func TestIssueEventsCarryHandoff(t *testing.T) {
 	}
 	if seen != 2 {
 		t.Errorf("saw %d issue events, want 2", seen)
+	}
+}
+
+// TestCreateHandoffSnapshotsTheIssue: each item carries its issue frozen at
+// claim time, thread included (task 137.8, migration 0048), and an edit made
+// after the claim leaves the snapshot as it was.
+func TestCreateHandoffSnapshotsTheIssue(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	iss, _ := handedOffIssue(t, s, p.ID, "before", "s1")
+	if _, err := s.AddIssueComment(ctx, iss.ID, "ann", "first thoughts", "", issuestate.Human); err != nil {
+		t.Fatal(err)
+	}
+	h, _ := mustHandoff(t, s, p.ID, "h", iss.ID)
+	cur, err := s.GetIssue(ctx, iss.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	title := "after"
+	if _, err := s.UpdateIssue(ctx, iss.ID, cur.Version, IssuePatch{Title: &title}, issuestate.Human); err != nil {
+		t.Fatal(err)
+	}
+	items, _, err := s.ListHandoffItems(ctx, h.ID)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items = %v, %v", items, err)
+	}
+	snap := items[0].Issue
+	if snap == nil || snap.ID != iss.ID || snap.Title != "before" {
+		t.Fatalf("snapshot = %+v, want the claim-time issue", snap)
+	}
+	if len(snap.Comments) != 1 || snap.Comments[0].Body != "first thoughts" {
+		t.Errorf("snapshot thread = %+v", snap.Comments)
 	}
 }

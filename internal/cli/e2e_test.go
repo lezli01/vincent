@@ -34,6 +34,13 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "e2e setup: build vincent: %v\n%s", err, out)
 		os.Exit(1)
 	}
+	// The in-process commands build their client from this process's
+	// environment, which inside a vincent step carries the step marker: the
+	// forge-write guard would then judge their writes an agent's (task
+	// 137.7). Tests that want a marked client set the variable themselves.
+	for _, env := range []string{"VINCENT_TASK_ID", "VINCENT_CHAT_ID"} {
+		_ = os.Unsetenv(env)
+	}
 	code := m.Run()
 	_ = os.RemoveAll(tmp)
 	os.Exit(code)

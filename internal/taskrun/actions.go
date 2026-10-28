@@ -393,21 +393,38 @@ func (r *Runner) FollowUpHeld(ctx context.Context, id int64, req store.FollowUpR
 func (r *Runner) followUpTask(
 	ctx context.Context, id int64, req store.FollowUpRequest, held bool,
 ) (*store.Task, error) {
-	if req.Empty() {
-		return nil, &FollowUpRequestError{TaskID: id, Message: "a follow-up needs something to run"}
-	}
-	task, err := r.deps.Store.GetTask(ctx, id)
+	task, ch, err := r.followUpChange(ctx, id, req, held)
 	if err != nil {
 		return nil, err
 	}
-	can, transition := taskstate.Can, r.transitionFrom
+	transition := r.transitionFrom
+	if held {
+		transition = r.transitionHeldFrom
+	}
+	return transition(ctx, task, taskstate.FollowUp, ch)
+}
+
+// followUpChange is a follow-up's judgement and its change, short of the
+// swap: the task as read, refused with a 409 when follow-up is not legal
+// from its state, and the request stamped with its origin and round.
+func (r *Runner) followUpChange(
+	ctx context.Context, id int64, req store.FollowUpRequest, held bool,
+) (*store.Task, store.TaskChange, error) {
+	if req.Empty() {
+		return nil, store.TaskChange{}, &FollowUpRequestError{TaskID: id, Message: "a follow-up needs something to run"}
+	}
+	task, err := r.deps.Store.GetTask(ctx, id)
+	if err != nil {
+		return nil, store.TaskChange{}, err
+	}
+	can := taskstate.Can
 	if held {
 		// The held table has a row for every state follow-up is legal from,
 		// so this refuses exactly what the plain check would: a 409.
-		can, transition = taskstate.CanHold, r.transitionHeldFrom
+		can = taskstate.CanHold
 	}
 	if !can(task.State, taskstate.FollowUp) {
-		return nil, &InvalidActionError{TaskID: id, Action: taskstate.FollowUp, State: task.State}
+		return nil, store.TaskChange{}, &InvalidActionError{TaskID: id, Action: taskstate.FollowUp, State: task.State}
 	}
 	// The origin rides the request because the transition about to happen
 	// leaves `done`/`aborted`, and the ending has to put the same one back: a
@@ -415,11 +432,33 @@ func (r *Runner) followUpTask(
 	req.Origin = task.State
 	round, err := r.followUpRound(ctx, task)
 	if err != nil {
-		return nil, err
+		return nil, store.TaskChange{}, err
 	}
 	req.Round, req.Cursor, req.Abandoned = round, 0, false
-	return transition(ctx, task, taskstate.FollowUp,
-		store.TaskChange{PendingFollowUp: &req})
+	return task, store.TaskChange{PendingFollowUp: &req}, nil
+}
+
+// PrepareFollowUp is FollowUp (or, held, FollowUpHeld) prepared for a
+// caller that applies the swap inside a transaction of its own — a handoff
+// return (task 137.6 decision 1): the task's state now, the state the
+// follow-up moves it to, and the change, with the pending pause cleared as
+// every human action clears it. The swap's compare-and-swap on from is what
+// catches a task that moved in between.
+func (r *Runner) PrepareFollowUp(
+	ctx context.Context, id int64, req store.FollowUpRequest, held bool,
+) (from, to store.TaskState, ch store.TaskChange, err error) {
+	task, ch, err := r.followUpChange(ctx, id, req, held)
+	if err != nil {
+		return "", "", ch, err
+	}
+	rule := taskstate.Next
+	if held {
+		rule = taskstate.NextHeld
+	}
+	tr, _ := rule(task.State, taskstate.FollowUp)
+	noPause := false
+	ch.PauseRequested = &noPause
+	return task.State, tr.To, ch, nil
 }
 
 // Skip marks the current step skipped and advances (§6). From a gate the

@@ -150,7 +150,7 @@ the living engineering specification records implementation contracts.
 | [134](134-issues-ux.md) | Issues UX: a four-lane issues board and one main worktree per issue, with manual or agentic merge-back | ✅ done (19/19) |
 | [135](135-tui-wrap-and-scroll.md) | TUI wrap and scroll: one wrap helper, one scrolling pane, and the wrap-or-truncate convention, screen by screen | 🔄 in progress (8/10) |
 | [136](136-tui-main-tabs.md) | Main tabs in the TUI: Issues, Tasks and Chats behind one `tab` key, set by `tui.tabs` | ✅ done (4/4) |
-| [137](137-handoff-pillar.md) | The handoff pillar: deliveries, handoffs that claim `hand_off` issues and record each outcome, and human-given grants for automated forge writes | 🔄 in progress (6/15) |
+| [137](137-handoff-pillar.md) | The handoff pillar: deliveries, handoffs that claim `hand_off` issues and record each outcome, and human-given grants for automated forge writes | 🔄 in progress (9/15) |
 
 ## How to add and update a task document
 

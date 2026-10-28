@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (6/15)
+**Status:** 🔄 in progress (9/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -377,6 +377,37 @@ When a handoff's task settles, every item still unresolved is **released**
 automatically, recorded `outcome_by: settle`. An aborted handoff therefore
 frees its issues; a `done` one that forgot an item does too, visibly.
 
+*Amended 2026-10-28 (137.6, settled with the author):*
+
+1. **All or nothing.** A verb whose side effect is refused records nothing: no
+   outcome, the claim kept, no comment posted. A step's `deliver --close` or
+   `--comment-file` on an imported issue is refused `forge_write_needs_human`
+   unless 137.7's grant names `issue.close` / `issue.comment`, as a step's
+   `vincent issue close` is; a granted one is made as `handoff` (wired in
+   review F1 of the 137.6–137.8 train). The outcome,
+   the claim, readiness, the issue's comment and close (with the outbox
+   enqueue of a human's close of an imported issue) and the follow-up's
+   re-admission are one store transaction. `--all` checks every item before
+   writing any; one refusal refuses the batch, naming the first issue.
+2. **`return --follow-up` lands on the latest main-role task, a merge-back
+   included** — it holds the worktree. One that cannot take a follow-up (a
+   predecessor's `409 issue_worktree_moved`, a running task's 409) refuses
+   the whole return. The claim is released earlier in the same transaction,
+   so the follow-up never trips decision 14's `issue_in_handoff`.
+3. **`--side` reuses the latest main task's workflow** (its source side
+   task's, for a merge-back), by name from the live registry, with the
+   prompt as the description and `merge_back` at task 134's defaults;
+   `--workflow` overrides, and `--side` requires `--follow-up`.
+4. **`--all` is unresolved items only.** `waiting` items end by the issue
+   closing or by being named.
+
+Any verb moves an unresolved or `waiting` item; a `delivered`, `returned` or
+`released` one is final (`409 handoff_item_resolved`), and on a settled
+handoff only `waiting` items move. `outcome_by` is `handoff` for the
+handoff's own task, `agent` for another step or MCP caller, `human`
+otherwise, `settle` for release on settle, and the closing actor for a wait
+resolved by a close.
+
 *Settled by the author 2026-10-24 (open question 7):* `return` is a follow-up
 on the issue's latest main-role task; `--side` opts into a side task with
 task 134's `merge_back` instead. *Alternatives beaten:* always a new main task,
@@ -514,6 +545,29 @@ The skills and the five built-ins are re-read in the same piece of work, per
 `CLAUDE.md`'s rule, and `update-workflows`' checklist gains the line.
 
 *Settled by the author 2026-10-24:* accepted as written.
+
+*Settled with the author 2026-10-28 (137.8, #841):*
+
+1. **Fan-out uses a precomputed field, not a FuncMap.** `.Handoff.ItemLines`
+   is one compact JSON object per item, newline-separated, each one element
+   of the file's `items`; a workflow writes `for_each: '{{ .Handoff.ItemLines
+   }}'` with a `lane:` template reading `.Item.issue.id` and `.Item.branch`.
+   Task 016 decision 15 (no §8.4 FuncMap) and task 080's derived-lane path
+   stand unchanged; `.Handoff.Items` stays the typed list prompts range over.
+2. **An item's issue is snapshotted at claim time.** Migration 0048 adds
+   `handoff_items.issue_json`, written by the create with `NewIssueSnapshot`
+   (thread included) in the claiming transaction, so rendering stays a pure
+   function of rows and a retry sees the same issue. Older rows (pre-release
+   data) render from the issue row as it is now.
+3. **`role: handoff` is refused everywhere outside a handoff.** `POST
+   /v1/tasks` (so the CLI, MCP `task_create`, a trigger's `create_task` and a
+   chat's task handoff) answers 400 pointing at `vincent handoff start`;
+   `POST /v1/handoffs` refuses a workflow without the role with a 400 naming
+   it; a `fan_out` lane naming one is a creation-time `TreeError`. A `role:
+   handoff` run always has a non-zero `.Handoff`, and the new-task form
+   hiding these workflows is the same rule shown in the UI. *(Review F2 of
+   the 137.6–137.8 train:* a follow-up's workflow form on any task but the
+   handoff's own, and `return --side --workflow`, are refused the same 400.)
 
 ### 8. Starting a handoff, and `select:` (2026-10-24)
 
@@ -878,14 +932,27 @@ pull request.
   ✓ 2026-10-24 The list route is a third tool, `handoff_list`, because
   §13.4's surface is the route table minus its exclusions and a read is no
   exclusion.
-- [ ] **137.6** ([#839](https://github.com/lezli01/vincent/issues/839)) The item verbs, release on settle, resolve-on-close for
+- [x] **137.6** ([#839](https://github.com/lezli01/vincent/issues/839)) The item verbs, release on settle, resolve-on-close for
   `waiting`, and `return` as a follow-up (decision 4). Depends: 137.5.
-- [ ] **137.7** ([#840](https://github.com/lezli01/vincent/issues/840)) The grant and the one forge-write guard over issue and
+  ✓ 2026-10-28 `{issue_id}` in the four routes is one id, a comma-separated
+  list, or `all`, so `--all` and several ids are one all-or-nothing call.
+  There is no `internal/reasons` entry for `handoff_item_resolved`: that
+  catalogue holds task and step reasons, and the issue-side 409 reasons live
+  in the API reference's table, where this one is.
+- [x] **137.7** ([#840](https://github.com/lezli01/vincent/issues/840)) The grant and the one forge-write guard over issue and
   pull-request writes; the outbox under the `handoff` actor; the pull-request
   tools on a granted handoff's per-step MCP endpoint; the restatement in
   `internal/github/doc.go`; spec §13.4, §16 and the security model
-  (decision 6). Depends: 137.4.
-- [ ] **137.8** ([#841](https://github.com/lezli01/vincent/issues/841)) `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
+  (decision 6). Depends: 137.4. *Done 2026-10-28:* the guard is
+  `issues.ForgeWrite` / `IssueWriteAs`; comment write-back is the outbox's
+  `add_comment` (migration 0047). 137.6 had not landed, so `deliver`'s close
+  and `--comment-file` are wired to the guard by 137.6 (decision 5 of #840's
+  brief), reusing it rather than re-implementing it.
+  *Train note 2026-10-28:* 137.6 landed in the same train without that
+  wiring, so the item verbs still refuse an agent's forge-writing close or
+  comment with `forge_write_needs_human`, granted or not; routing them
+  through `IssueWriteAs` remains to do.
+- [x] **137.8** ([#841](https://github.com/lezli01/vincent/issues/841)) `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
   over items and `vincent workflow render --handoff-file`; the
   `vincent-workflows` skill, the five built-ins re-read and the
   `update-workflows` checklist line (decision 7). Depends: 137.5.

@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,12 +13,21 @@ import (
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/workflow"
 )
 
 // The `vincent handoff` tree (task 137.5) against the real API handlers:
 // start with ids and with select flags, ls with its filters, and show.
 func TestHandoffCommands(t *testing.T) {
-	h := newLiveHarness(t, func(o *liveOptions) { o.worktrees = true })
+	// POST /v1/handoffs runs only a `role: handoff` workflow (task 137.8).
+	globalDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(globalDir, "integrate.yaml"), []byte(
+		"name: integrate\nrole: handoff\nsteps:\n  - {id: gate, type: manual, instructions: go}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reg := workflow.NewRegistry(globalDir, workflow.Options{}, nil)
+	reg.Reload()
+	h := newLiveHarness(t, func(o *liveOptions) { o.worktrees, o.workflows = true, reg })
 	ctx := t.Context()
 	repo := testrepo.Init(t, "main")
 	p := &store.Project{Name: "shipping", Path: repo, DefaultBranch: "main"}
@@ -50,7 +61,7 @@ func TestHandoffCommands(t *testing.T) {
 
 	start := func(args ...string) apiclient.Handoff {
 		t.Helper()
-		out, errOut, code := runCLI(t, append(append([]string{"handoff", "start", "--project", project, "--workflow", "adhoc", "--paused"}, args...), "--json")...)
+		out, errOut, code := runCLI(t, append(append([]string{"handoff", "start", "--project", project, "--workflow", "integrate", "--paused"}, args...), "--json")...)
 		if code != 0 {
 			t.Fatalf("handoff start %v: exit %d (%s)", args, code, errOut)
 		}
@@ -69,17 +80,17 @@ func TestHandoffCommands(t *testing.T) {
 		t.Errorf("start with a selection = %+v", second.Items)
 	}
 
-	_, errOut, code := runCLI(t, "handoff", "start", "--project", project, "--workflow", "adhoc", "--kind", "bug")
+	_, errOut, code := runCLI(t, "handoff", "start", "--project", project, "--workflow", "integrate", "--kind", "bug")
 	if code != 1 || !strings.Contains(errOut, "no issue eligible") {
 		t.Errorf("empty selection: exit %d (%s)", code, errOut)
 	}
 	for _, n := range []string{"0", "-1"} {
-		_, errOut, code = runCLI(t, "handoff", "start", "--project", project, "--workflow", "adhoc", "--max", n)
+		_, errOut, code = runCLI(t, "handoff", "start", "--project", project, "--workflow", "integrate", "--max", n)
 		if code == 0 || !strings.Contains(errOut, "--max must be at least 1") {
 			t.Errorf("--max %s: exit %d (%s)", n, code, errOut)
 		}
 	}
-	_, errOut, code = runCLI(t, "handoff", "start", "--project", project, "--workflow", "adhoc", feature, "--kind", "bug")
+	_, errOut, code = runCLI(t, "handoff", "start", "--project", project, "--workflow", "integrate", feature, "--kind", "bug")
 	if code == 0 || !strings.Contains(errOut, "cannot be combined") {
 		t.Errorf("ids with select flags: exit %d (%s)", code, errOut)
 	}
@@ -105,5 +116,39 @@ func TestHandoffCommands(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("show does not carry %q:\n%s", want, out)
 		}
+	}
+
+	// The item verbs (task 137.6).
+	hid := strconv.FormatInt(first.ID, 10)
+	note := filepath.Join(t.TempDir(), "comment.md")
+	if err := os.WriteFile(note, []byte("Merged into main."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, code = runCLI(t, "handoff", "deliver", hid, named, "--note", "landed", "--comment-file", note)
+	if code != 0 {
+		t.Fatalf("deliver: exit %d (%s)", code, errOut)
+	}
+	if !strings.Contains(out, "delivered") || !strings.Contains(out, "landed") {
+		t.Errorf("deliver:\n%s", out)
+	}
+	namedID, _ := strconv.ParseInt(named, 10, 64)
+	if iss, _ := h.st.GetIssue(ctx, namedID); iss.State != issuestate.Closed {
+		t.Errorf("deliver left the issue %s", iss.State)
+	}
+	if comments, _ := h.st.ListIssueComments(ctx, namedID); len(comments) != 1 || comments[0].Body != "Merged into main." {
+		t.Errorf("comments = %+v", comments)
+	}
+	_, errOut, code = runCLI(t, "handoff", "release", hid, named)
+	if code == 0 || !strings.Contains(errOut, "already delivered") {
+		t.Errorf("release of a delivered item: exit %d (%s)", code, errOut)
+	}
+	_, errOut, code = runCLI(t, "handoff", "wait", hid)
+	if code == 0 || !strings.Contains(errOut, "--all") {
+		t.Errorf("wait with neither ids nor --all: exit %d (%s)", code, errOut)
+	}
+	out, errOut, code = runCLI(t, "handoff", "release", strconv.FormatInt(second.ID, 10), "--all", "--json")
+	var released apiclient.Handoff
+	if code != 0 || json.Unmarshal([]byte(out), &released) != nil || released.Items[0].Outcome != "released" {
+		t.Errorf("release --all: exit %d %s (%s)", code, out, errOut)
 	}
 }

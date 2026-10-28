@@ -148,3 +148,39 @@ func (s Store) issueComments(rows []Row, n int, u *url.URL, follow bool) Respons
 	sortRows(matched, "created", true)
 	return s.page(matched, u)
 }
+
+// PostAuthor is the login a comment created through the API is filed
+// under: the fake's authenticated user.
+const PostAuthor = "fakegh"
+
+// postComment answers `POST repos/{o}/{r}/issues/{n}/comments` (task
+// 137.7's add_comment write): the comment is filed through AddComment, so
+// it reaches the corpus file the sync lists, and the answer is the created
+// row with GitHub's 201.
+func (s Store) postComment(rows []Row, n int, payload []byte) (Response, error) {
+	if _, ok := find(rows, n); !ok {
+		return s.errorResponse(http.StatusNotFound, "Not Found", docsComments), nil
+	}
+	var in struct {
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal(payload, &in); err != nil || in.Body == "" {
+		return s.errorResponse(http.StatusUnprocessableEntity, "Validation Failed", docsComments), nil
+	}
+	id, err := s.AddComment(n, PostAuthor, in.Body)
+	if err != nil {
+		return Response{}, err
+	}
+	after, err := s.Load()
+	if err != nil {
+		return Response{}, err
+	}
+	i, ok := findComment(after, id)
+	if !ok {
+		return Response{}, fmt.Errorf("fakeissues: posted comment %d not found", id)
+	}
+	resp := s.ok(after[i])
+	resp.Status = http.StatusCreated
+	resp.Header.Del("Etag")
+	return resp, nil
+}

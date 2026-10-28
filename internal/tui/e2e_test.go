@@ -42,6 +42,12 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "e2e setup: build vincent: %v\n%s", err, out)
 		os.Exit(1)
 	}
+	// The suite runs inside a vincent step too, and the TUI's apiclient
+	// would send that step's marker: the forge-write guard then judges the
+	// live tests' pull-request writes an agent's (task 137.7).
+	for _, env := range []string{"VINCENT_TASK_ID", "VINCENT_CHAT_ID"} {
+		_ = os.Unsetenv(env)
+	}
 	code := m.Run()
 	_ = os.RemoveAll(tmp)
 	os.Exit(code)

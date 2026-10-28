@@ -98,9 +98,10 @@ func TestIssueCommentsOnALocalIssue(t *testing.T) {
 }
 
 // TestIssueCommentOnAMirroredIssueIsRefused: a live remote's thread is
-// GitHub's, so a comment is the 409 a title edit gets, for a human and a
-// marked agent alike, writing nothing and queueing nothing for GitHub. A
-// moved or missing remote gives the thread back (decision 24.3).
+// GitHub's, so a human's comment is the 409 a title edit gets, and a marked
+// agent's that is no granted handoff's is forge_write_needs_human (task
+// 137.7), each writing nothing and queueing nothing for GitHub. A moved or
+// missing remote gives the thread back (decision 24.3).
 func TestIssueCommentOnAMirroredIssueIsRefused(t *testing.T) {
 	t.Parallel()
 	h := newIssueHarness(t)
@@ -110,10 +111,17 @@ func TestIssueCommentOnAMirroredIssueIsRefused(t *testing.T) {
 		t.Error("a live remote's issue says it is commentable")
 	}
 	mark := h.maxEvent(t)
-	for _, hdr := range [][]string{nil, {headerTaskMarker, "12"}} {
-		resp, out := h.do(t, http.MethodPost, path, map[string]any{"body": "hi"}, hdr...)
-		if d := conflict(t, resp, out); detailString(t, d, "reason") != issueReasonMirrored {
-			t.Errorf("comment with %v = %s", hdr, out)
+	for _, tc := range []struct {
+		hdr  []string
+		want string
+	}{
+		{nil, issueReasonMirrored},
+		{[]string{headerTaskMarker, "12"}, issueReasonForgeWrite},
+		{[]string{headerChatMarker, "3"}, issueReasonForgeWrite},
+	} {
+		resp, out := h.do(t, http.MethodPost, path, map[string]any{"body": "hi"}, tc.hdr...)
+		if d := conflict(t, resp, out); detailString(t, d, "reason") != tc.want {
+			t.Errorf("comment with %v = %s, want %s", tc.hdr, out, tc.want)
 		}
 	}
 	if evs := h.issueEvents(t, mark); len(evs) != 0 {

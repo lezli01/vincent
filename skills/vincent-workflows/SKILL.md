@@ -4,7 +4,7 @@ description: Create, edit, review, and validate vincent workflow YAML under .vin
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.4.0
+  version: 1.5.0
 ---
 
 # vincent Workflows
@@ -200,7 +200,9 @@ when a finished issue task's work is ready to hand off: `auto` (the default)
 marks it ready at `done`; `explicit` leaves the issue in `in_progress` until a
 step runs `vincent task deliver --ready` or a person runs `vincent issue
 ready` — set it for research or spike work a person judges first, or when a
-step decides. `fields:` declares task inputs; `defaults:` sets step fallbacks.
+step decides. `role: handoff` marks a workflow only `vincent handoff start`
+runs (see "Handoff workflows" below); leave it out everywhere else. `fields:`
+declares task inputs; `defaults:` sets step fallbacks.
 
 **A declared field.** `name` and `type` are required, then `required`,
 `pattern`, `values`, `multiple`, and `default` as described above.
@@ -278,6 +280,47 @@ instead.
 
 `derived_from` and `resolved_from` appear only in a task's workflow snapshot,
 written by the daemon. Never author them.
+
+## Handoff workflows
+
+A handoff is one integration task over several issues whose work is ready
+(`vincent handoff start`). The workflow it runs declares `role: handoff`, and
+that is a two-way rule: a handoff runs nothing else, and `vincent task create`,
+a trigger's `create_task` and the new-task form refuse or hide it. A `fan_out`
+lane may not name one. When the user asks for a workflow that integrates,
+merges or ships several delivered issues, write `role: handoff` and read the
+items from the handoff rather than selecting issues with `gh issue list` or
+`vincent issue ls`:
+
+- `.Handoff.ID` is non-zero only on a handoff task; `.Handoff.Items` is the
+  typed list a prompt ranges over — each item's `.Issue` (the shape a task's
+  `.Issue` has, frozen at claim time), `.Delivery` (`Kind`, `Title`, `Body`,
+  `Summary`, `HeadSHA`, `Branch`, `Base`, `Ready` …), `TaskID`, `Branch` and
+  `HeadSHA`.
+- `$VINCENT_HANDOFF_FILE` holds the same as JSON: `{"id", "grant", "items":
+  [{"issue", "delivery", "task_id", "branch", "head_sha"}]}`, where each
+  `issue` is exactly `$VINCENT_ISSUE_FILE`'s shape, so per-issue `jq` carries
+  over.
+- One lane per item is a derived fan-out over `.Handoff.ItemLines` — one JSON
+  object per item, one per line — with a `lane:` template reading
+  `.Item.issue.id` and `.Item.branch`. The lanes are ordinary child tasks with
+  a zero `.Handoff`; pass what a lane needs through its `fields:`.
+
+```yaml
+role: handoff
+steps:
+  - id: per-issue
+    type: fan_out
+    for_each: ['{{ .Handoff.ItemLines }}']
+    lane:
+      id: 'issue-{{ .Item.issue.id }}'
+      fields: {source_branch: '{{ .Item.branch }}'}
+      steps:
+        - {id: open-pr, type: agent, prompt: 'Integrate {{ index .Task.Fields "source_branch" }}.'}
+```
+
+Preview it with `vincent workflow render <file> --handoff-file <file.json>`,
+or `--task N` on a handoff task.
 
 ## Author and validate
 

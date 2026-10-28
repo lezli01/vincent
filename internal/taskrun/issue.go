@@ -41,32 +41,7 @@ func issueContext(task *store.Task) workflow.IssueContext {
 		return workflow.IssueContext{}
 	}
 	if snap := task.Issue; snap != nil {
-		ctx := workflow.IssueContext{
-			Number:   int(snap.ID),
-			Title:    snap.Title,
-			Body:     snap.Body,
-			State:    snap.State,
-			Labels:   slices.Clone(snap.Labels),
-			Kind:     snap.Kind,
-			Priority: snap.Priority,
-			Author:   snap.Author,
-			Comments: templateComments(snap.Comments),
-		}
-		if rem := snap.Remote; rem != nil {
-			ctx.Source = workflow.IssueSource{
-				Provider: rem.Provider,
-				Repo:     rem.Repo,
-				Number:   rem.Number,
-				URL:      rem.URL,
-				State:    rem.State,
-			}
-			ctx.Repo, ctx.URL = rem.Repo, rem.URL
-			if len(rem.Assignees) > 0 {
-				ctx.Assignee = rem.Assignees[0]
-			}
-			ctx.Milestone, ctx.MilestoneNumber = rem.Milestone, rem.MilestoneNumber
-		}
-		return ctx
+		return snapshotContext(snap)
 	}
 	if issue := task.GitHubIssue; issue != nil {
 		return workflow.IssueContext{
@@ -91,6 +66,37 @@ func issueContext(task *store.Task) workflow.IssueContext {
 		}
 	}
 	return workflow.IssueContext{}
+}
+
+// snapshotContext maps one vincent issue snapshot onto `.Issue`'s shape —
+// a task's own, or a handoff item's (task 137.8).
+func snapshotContext(snap *store.IssueSnapshot) workflow.IssueContext {
+	ctx := workflow.IssueContext{
+		Number:   int(snap.ID),
+		Title:    snap.Title,
+		Body:     snap.Body,
+		State:    snap.State,
+		Labels:   slices.Clone(snap.Labels),
+		Kind:     snap.Kind,
+		Priority: snap.Priority,
+		Author:   snap.Author,
+		Comments: templateComments(snap.Comments),
+	}
+	if rem := snap.Remote; rem != nil {
+		ctx.Source = workflow.IssueSource{
+			Provider: rem.Provider,
+			Repo:     rem.Repo,
+			Number:   rem.Number,
+			URL:      rem.URL,
+			State:    rem.State,
+		}
+		ctx.Repo, ctx.URL = rem.Repo, rem.URL
+		if len(rem.Assignees) > 0 {
+			ctx.Assignee = rem.Assignees[0]
+		}
+		ctx.Milestone, ctx.MilestoneNumber = rem.Milestone, rem.MilestoneNumber
+	}
+	return ctx
 }
 
 // templateComments maps a snapshot's thread onto `.Issue.Comments` (task 130
@@ -202,35 +208,7 @@ func issueFileOf(task *store.Task) (issueFile, workflow.IssueEnv, bool) {
 		return issueFile{}, workflow.IssueEnv{}, false
 	}
 	if snap := task.Issue; snap != nil {
-		f := issueFile{
-			Title:    snap.Title,
-			Body:     snap.Body,
-			State:    strings.ToUpper(snap.State),
-			Labels:   fileLabels(snap.Labels),
-			Author:   issueFileAuthor{Login: snap.Author},
-			Comments: fileComments(snap.Comments),
-			ID:       &snap.ID,
-			Kind:     snap.Kind,
-			Priority: snap.Priority,
-		}
-		if !snap.CreatedAt.IsZero() {
-			f.CreatedAt = &snap.CreatedAt
-		}
-		if snap.State == string(issuestate.Closed) {
-			reason := snap.CloseReason
-			if reason == "" {
-				reason = string(issuestate.Completed)
-			}
-			reason = strings.ToUpper(reason)
-			f.StateReason = &reason
-		}
-		ie := workflow.IssueEnv{ID: snap.ID}
-		if rem := snap.Remote; rem != nil {
-			n := rem.Number
-			f.Number, f.URL = &n, rem.URL
-			f.Source = &issueFileSource{Provider: rem.Provider, Repo: rem.Repo, Number: rem.Number, URL: rem.URL}
-			ie.Number, ie.URL = rem.Number, rem.URL
-		}
+		f, ie := snapshotFile(snap)
 		return f, ie, true
 	}
 	if issue := task.GitHubIssue; issue != nil {
@@ -253,6 +231,42 @@ func issueFileOf(task *store.Task) (issueFile, workflow.IssueEnv, bool) {
 		return f, workflow.IssueEnv{Number: issue.Number, URL: issue.URL}, true
 	}
 	return issueFile{}, workflow.IssueEnv{}, false
+}
+
+// snapshotFile maps one vincent issue snapshot onto issueFile — a task's
+// own, or a handoff item's `issue` element (task 137.8), which is why the
+// two files' per-issue jq is the same.
+func snapshotFile(snap *store.IssueSnapshot) (issueFile, workflow.IssueEnv) {
+	f := issueFile{
+		Title:    snap.Title,
+		Body:     snap.Body,
+		State:    strings.ToUpper(snap.State),
+		Labels:   fileLabels(snap.Labels),
+		Author:   issueFileAuthor{Login: snap.Author},
+		Comments: fileComments(snap.Comments),
+		ID:       &snap.ID,
+		Kind:     snap.Kind,
+		Priority: snap.Priority,
+	}
+	if !snap.CreatedAt.IsZero() {
+		f.CreatedAt = &snap.CreatedAt
+	}
+	if snap.State == string(issuestate.Closed) {
+		reason := snap.CloseReason
+		if reason == "" {
+			reason = string(issuestate.Completed)
+		}
+		reason = strings.ToUpper(reason)
+		f.StateReason = &reason
+	}
+	ie := workflow.IssueEnv{ID: snap.ID}
+	if rem := snap.Remote; rem != nil {
+		n := rem.Number
+		f.Number, f.URL = &n, rem.URL
+		f.Source = &issueFileSource{Provider: rem.Provider, Repo: rem.Repo, Number: rem.Number, URL: rem.URL}
+		ie.Number, ie.URL = rem.Number, rem.URL
+	}
+	return f, ie
 }
 
 // fileComments maps a snapshot's thread onto gh's `comments` elements. The

@@ -443,7 +443,7 @@ func (n *newTask) loadCmd(refresh bool) tea.Cmd {
 		if err != nil {
 			return ntLoadedMsg{err: err}
 		}
-		return ntLoadedMsg{projects: projects, workflows: workflows, agents: agents}
+		return ntLoadedMsg{projects: projects, workflows: apiclient.TaskWorkflows(workflows), agents: agents}
 	}
 }
 
@@ -558,7 +558,7 @@ func (n *newTask) workflowsCmd(projectID int64) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		entries, err := client.ListWorkflows(ctx, projectID)
-		return ntWorkflowsMsg{projectID: projectID, entries: entries, err: err}
+		return ntWorkflowsMsg{projectID: projectID, entries: apiclient.TaskWorkflows(entries), err: err}
 	}
 }
 

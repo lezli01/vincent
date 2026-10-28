@@ -30,6 +30,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -93,6 +94,7 @@ type liveOptions struct {
 	catalog   bool
 	skills    bool
 	worktrees bool
+	workflows *workflow.Registry
 	wrap      func(http.Handler) http.Handler
 }
 
@@ -200,6 +202,7 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 		// The registry is what lets the endpoint normalize a recorded run
 		// with the parser that read it live.
 		Agents: agents, Catalog: catalog, Skills: skills, Worktrees: worktrees,
+		Workflows: o.workflows,
 		// The chat-turn route derives its file from the data dir rather than
 		// from a stored path (chattranscript_live_test.go).
 		Dirs: config.Dirs{Data: dataDir},

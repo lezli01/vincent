@@ -24,6 +24,7 @@ import (
 	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -89,6 +90,14 @@ func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *
 		t.Cleanup(runner.Stop)
 		t.Cleanup(sched.Stop)
 	}
+	// The one global workflow is handoffWorkflowName: POST /v1/handoffs
+	// runs only a `role: handoff` workflow (task 137.8), and no built-in is
+	// one.
+	globalDir := t.TempDir()
+	writeWorkflowFile(t, globalDir, handoffWorkflowName, handoffWorkflowYAML)
+	writeWorkflowFile(t, globalDir, handoffFanOutName, handoffFanOutYAML)
+	workflows := workflow.NewRegistry(globalDir, workflow.Options{}, nil)
+	workflows.Reload()
 	s := New(Deps{
 		Token:       testToken,
 		Config:      cfg,
@@ -101,6 +110,7 @@ func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *
 		Worktrees:   wt,
 		Agents:      reg,
 		Catalog:     agent.NewCatalogCache(reg),
+		Workflows:   workflows,
 		Runner:      runner,
 		WakeRunner:  sched.Wake,
 	})
@@ -126,6 +136,31 @@ func newTaskHarness(t *testing.T, agentTimeout time.Duration, withRunner bool) *
 	h.projectID = p.ID
 	return h
 }
+
+// handoffWorkflowName is the `role: handoff` workflow every task harness
+// serves from its global scope (task 137.8).
+const handoffWorkflowName = "integrate"
+
+const handoffWorkflowYAML = "name: integrate\nrole: handoff\ndescription: integrate the items\n" +
+	"steps:\n  - {id: gate, type: manual, instructions: '{{ .Handoff.ID }}'}\n"
+
+// handoffFanOutName is the fixture of task 137.8: a `role: handoff`
+// workflow whose derived fan_out runs one lane per item, over
+// `.Handoff.ItemLines`, with the item's branch in the lane's fields.
+const handoffFanOutName = "integrate-each"
+
+const handoffFanOutYAML = `name: integrate-each
+role: handoff
+steps:
+  - id: per-issue
+    type: fan_out
+    for_each: ['{{ .Handoff.ItemLines }}']
+    lane:
+      id: 'issue-{{ .Item.issue.id }}'
+      fields: {source_branch: '{{ .Item.branch }}', title: '{{ .Item.issue.title }}'}
+      steps:
+        - {id: note, type: command, run: 'git commit --allow-empty -m lane'}
+`
 
 func (h *taskHarness) createTask(t *testing.T, req map[string]any) taskResponse {
 	t.Helper()

@@ -124,6 +124,19 @@ func (s Store) serve(req Request) (Response, error) {
 			return s.errorResponse(http.StatusNotFound, "Not Found", docsComments), nil
 		}
 		resp = s.issueComments(rows, n, u, req.FollowRedirects)
+	case len(seg) == 6 && seg[5] == "comments" && method == http.MethodPost:
+		n, err := strconv.Atoi(seg[4])
+		if err != nil {
+			return s.errorResponse(http.StatusNotFound, "Not Found", docsComments), nil
+		}
+		if req.Scenario == "read-only" {
+			return s.errorResponse(http.StatusForbidden,
+				"Resource not accessible by integration", docsComments+"#create-an-issue-comment"), nil
+		}
+		resp, err = s.postComment(rows, n, req.Body)
+		if err != nil {
+			return Response{}, err
+		}
 	case len(seg) == 5 && (method == http.MethodGet || method == http.MethodPatch):
 		n, err := strconv.Atoi(seg[4])
 		if err != nil {

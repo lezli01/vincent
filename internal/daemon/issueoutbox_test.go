@@ -319,3 +319,45 @@ func TestOutboxRetryClasses(t *testing.T) {
 		t.Errorf("no_write_scope: %+v, want failed", got)
 	}
 }
+
+// TestOutboxPostsAGrantedHandoffComment is task 137.7's add_comment: a
+// handoff's comment on a live GitHub thread is posted once, its GitHub id
+// recorded on the local row, and the next comment sync updates that row in
+// place rather than importing a copy.
+func TestOutboxPostsAGrantedHandoffComment(t *testing.T) {
+	f := newOutboxFixture(t, issueRow(1, "open"))
+	ctx := t.Context()
+	issueID := f.issues(t)[1].ID
+	c, err := issues.New(f.store).Comment(store.WithIssueHandoff(ctx, 1), issuestate.Handoff, issueID, "task 9", "landed")
+	if err != nil {
+		t.Fatalf("handoff comment: %v", err)
+	}
+	f.outbox.Drain(ctx)
+	var posts []string
+	for _, line := range f.apiCalls(t) {
+		if strings.Contains(line, "POST") {
+			posts = append(posts, line)
+		}
+	}
+	if len(posts) != 1 || !strings.Contains(posts[0], "issues/1/comments") {
+		t.Fatalf("drain posted %q, want one comment on #1:\n%s", posts, strings.Join(f.apiCalls(t), "\n"))
+	}
+	writes, err := f.store.IssueWrites(ctx, issueID)
+	if err != nil || len(writes) != 1 || writes[0].Op != store.OutboxOpAddComment || writes[0].Status != store.OutboxDone {
+		t.Fatalf("writes = %+v, %v; want one done add_comment", writes, err)
+	}
+	got, err := f.store.GetIssueComment(ctx, c.ID)
+	if err != nil || got.RemoteKey == "" {
+		t.Fatalf("comment after the drain = %+v, %v; want a remote key", got, err)
+	}
+
+	f.outbox.Drain(ctx)
+	f.reconciler().Tick(ctx)
+	thread := f.comments(t, issueID)
+	if len(thread) != 1 || thread[0].ID != c.ID || thread[0].RemoteKey != got.RemoteKey || thread[0].Body != "landed" {
+		t.Errorf("thread after the sync = %+v, want the one local row, keyed", thread)
+	}
+	if n := strings.Count(strings.Join(f.apiCalls(t), "\n"), "POST"); n != 1 {
+		t.Errorf("posted %d times, want once", n)
+	}
+}

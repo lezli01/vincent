@@ -598,6 +598,15 @@ steps:
           hand_off: explicit, and a step that decides the work is ready runs
           vincent task deliver --ready. Everywhere else hand_off stays absent:
           auto is the default and already marks the work ready at done.
+      18. Handoff workflows. A workflow started by vincent handoff start — one
+          that integrates several delivered issues, typically one pull request
+          per issue — declares role: handoff, reads .Handoff or
+          $VINCENT_HANDOFF_FILE instead of selecting issues itself with gh
+          issue list or vincent issue ls, and fans out over
+          for_each: '{{"{{"}} .Handoff.ItemLines {{"}}"}}' with a lane: template reading
+          .Item.issue.id and .Item.branch. role: handoff makes POST /v1/tasks
+          refuse the workflow, so never add it to one a person also starts
+          as an ordinary task, and never to a workflow a fan_out lane names.
 
       ## What you may not change
 

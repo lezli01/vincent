@@ -67,6 +67,8 @@ type workflowDefinition struct {
 	// HandOff is the `hand_off` key as the file declares it (task 137
 	// decision 13): empty when it names none, which reads `auto`.
 	HandOff string `json:"hand_off,omitempty"`
+	// Role is the `role:` key (task 137.8): `handoff` or empty.
+	Role string `json:"role,omitempty"`
 }
 
 // workflowDefaults is the §8.1 defaults block, kept separate from the steps
@@ -293,6 +295,7 @@ func toWorkflowDefinition(wf *workflow.Workflow) *workflowDefinition {
 		Description: wf.Description,
 		Platforms:   wf.Platforms,
 		HandOff:     wf.HandOff,
+		Role:        wf.Role,
 		Fields:      toWorkflowFieldResponses(wf.Fields),
 		Defaults: workflowDefaults{
 			Agent:          wf.Defaults.Agent,

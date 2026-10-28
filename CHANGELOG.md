@@ -13,6 +13,46 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Record what became of each handoff item.** `vincent handoff deliver`,
+  `return`, `wait` and `release` (over `POST
+  /v1/handoffs/{id}/items/{issue_id}/…` and the `handoff_deliver`,
+  `handoff_return`, `handoff_wait` and `handoff_release` MCP tools) resolve
+  one item, several, or `--all` unresolved ones, with an optional `--note`
+  and `--comment-file`. `deliver` closes the issue (`--close`, or `none` to
+  leave it open); `return` releases the claim and withdraws readiness, and
+  can queue `--follow-up` on the issue's latest main task or, with `--side`,
+  a merge-back side task; `wait` keeps the claim past the handoff, and
+  closing the issue — an imported `Closes #N` included — records it
+  delivered; `release` drops it. Each call is all or nothing. When a
+  handoff's task settles, every item still unresolved is now released
+  (`outcome_by: settle`) instead of keeping its claim.
+
+- **A handoff's grant now lets its step write to GitHub.** A live handoff
+  whose grant you gave names a capability may, from its own task, close,
+  reopen and comment on its imported issues and create, merge, close, reopen
+  and comment on its own and its items' pull requests and re-run their checks.
+  Each write is made as `by: handoff` with `handoff_id` on the issue event; a
+  granted comment on an imported issue is posted to GitHub and mirrored back
+  in place, never twice. On that task's step MCP endpoint the granted
+  pull-request writes are listed as tools (`task_github_pull_merge` and the
+  rest), and nowhere else.
+
+- **Handoff workflows get their items.** A workflow declaring `role: handoff`
+  is the one a handoff runs: its steps render `.Handoff` — the handoff's id,
+  grant and items, each with the issue as it stood at the claim (thread
+  included), the delivery it was handed with, and that delivery's task, branch
+  and commit — and read the same as JSON from `$VINCENT_HANDOFF_FILE`, whose
+  per-item `issue` is `$VINCENT_ISSUE_FILE`'s shape. A derived `fan_out` over
+  `.Handoff.ItemLines` runs one lane per item. The rule runs both ways:
+  `POST /v1/handoffs` refuses a workflow without the role, and `POST /v1/tasks`
+  (so `vincent task create`, MCP's `task_create`, a trigger's `create_task`
+  and a chat's task handoff) refuses one with it, as does a `fan_out` lane
+  naming one; the new-task form no longer offers them. `vincent workflow
+  render --handoff-file F` previews a handoff workflow against a file, and
+  `--task` on a handoff task binds its real items. `GET /v1/workflows` and
+  the workflow definition carry `role`, and `GET /v1/handoffs/{id}` carries
+  the handoff's `file`.
+
 - **Start a handoff over finished issues.** `POST /v1/handoffs` claims issues
   in the `hand_off` lane for one integration task running the workflow you
   name — by id, or with `select` (by delivery kind, issue kind and labels,
@@ -428,6 +468,15 @@ list with the user-facing context a commit subject cannot carry.
   ([#674](https://github.com/lezli01/vincent/issues/674))
 
 ### Changed
+
+- **Breaking: a workflow step's `vincent github pr` write without a grant is
+  refused.** `vincent github pr create`, `merge`, `close`, `reopen`, `comment`
+  and `rerun`, run by a workflow step or a chat agent (or over MCP), now answer
+  `409 forge_write_needs_human` unless the step belongs to a live handoff
+  granted that capability; they used to be accepted as a person's. Nothing is
+  sent to GitHub when refused. A step's own `gh pr …` in its worktree is
+  unaffected. An agent's comment on an imported issue is now refused
+  `forge_write_needs_human` rather than `issue_mirrored`.
 
 - **This repository's resolve workflows record their delivery on the task.**
   `github-resolve-issue` and `github-resolve-issue-dag` end by calling

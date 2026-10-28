@@ -35,7 +35,11 @@ type RenderContext struct {
 	// It is read from the task's snapshot, never from the network: rendering
 	// stays pure and offline, and an issue edited after creation is
 	// deliberately not reflected.
-	Issue       IssueContext
+	Issue IssueContext
+	// Handoff is the handoff a `role: handoff` task integrates (§8.4, task
+	// 137.8); its zero value — `ID: 0` — is every other task, lanes of a
+	// handoff's own fan-out included. See HandoffContext.
+	Handoff     HandoffContext
 	Worktree    WorktreeContext
 	LastFailure Failure
 	// Host is the daemon's own platform (§8.4, task 015 decision 12). The
@@ -58,6 +62,9 @@ type RenderContext struct {
 	// carried here so Env stays a pure function of one value, with the
 	// file's write done by internal/taskrun before the context reaches Env.
 	IssueEnv IssueEnv
+	// HandoffEnv is the input to §8.5's VINCENT_HANDOFF_FILE (task 137.8),
+	// carried for the reason IssueEnv is.
+	HandoffEnv HandoffEnv
 }
 
 // IssueEnv is what Env needs to export a linked task's issue (§8.5, 130.14).
@@ -343,6 +350,7 @@ func EscapeTemplate(s string) string {
 // The VINCENT_ISSUE_* variables are present only for a task carrying an
 // issue snapshot, and each only when it has a value: an unlinked task gets
 // none, a local issue no NUMBER or URL, a legacy snapshot no ID.
+// VINCENT_HANDOFF_FILE is present only on a handoff task (task 137.8).
 func Env(rc RenderContext) []string {
 	out := []string{
 		"VINCENT_TASK_ID=" + strconv.FormatInt(rc.Task.ID, 10),
@@ -355,6 +363,9 @@ func Env(rc RenderContext) []string {
 		"VINCENT_STEP_ID=" + rc.Step.ID,
 		"VINCENT_STEP_ATTEMPT=" + strconv.Itoa(rc.Step.Attempt),
 		"VINCENT_WORKFLOW=" + rc.Workflow.Name,
+	}
+	if rc.HandoffEnv.File != "" {
+		out = append(out, "VINCENT_HANDOFF_FILE="+rc.HandoffEnv.File)
 	}
 	ie := rc.IssueEnv
 	if ie.File == "" {

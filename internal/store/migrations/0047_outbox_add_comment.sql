@@ -1,0 +1,12 @@
+-- 0047_outbox_add_comment: the outbox's second operation (task 137.7,
+-- issue #840, task 137 decision 6, spec §12.4, §14).
+--
+-- A granted handoff's comment on an issue with a live GitHub remote is
+-- stored locally and, in the same transaction, enqueues one `add_comment`
+-- row here. `comment_id` names the local issue_comments row it posts; the
+-- drain reads the body from it and, on success, writes GitHub's comment id
+-- into that row's `remote_key`, so the comment sync updates it in place
+-- instead of importing a copy. NULL on every `set_state` row. No foreign
+-- key: ADD COLUMN cannot add one with an action, and the issue's CASCADE
+-- already removes both rows together.
+ALTER TABLE issue_sync_outbox ADD COLUMN comment_id INTEGER;

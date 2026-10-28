@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/mcp"
@@ -115,7 +116,9 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// comment on a pull request and re-run its checks, and "the keypress
 		// is the consent" is only true while a human is the one pressing it.
 		// An agent's path to the same outcome — `git push`, `gh pr create`
-		// and `gh pr merge` in its own worktree — is untouched.
+		// and `gh pr merge` in its own worktree — is untouched. Task 137.7
+		// narrows this to "excluded except on a granted handoff's step
+		// endpoint": each is in mcp.Granted, asserted below.
 		{http.MethodPost, "/v1/tasks/{id}/github/pull/create"},
 		{http.MethodPost, "/v1/tasks/{id}/github/pull/merge"},
 		{http.MethodPost, "/v1/tasks/{id}/github/pull/close"},
@@ -170,6 +173,23 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 	for _, r := range mcp.Excluded {
 		if slices.Contains(mcp.Names(), r.Path) {
 			t.Errorf("%s is exposed as a tool", r.Path)
+		}
+	}
+	// The granted surface (task 137.7) is exactly the six pull-request
+	// writes: each still Excluded from every other endpoint, each named as
+	// a tool nowhere else.
+	if len(mcp.Granted) != 6 {
+		t.Errorf("mcp.Granted has %d entries, want the 6 pull-request writes", len(mcp.Granted))
+	}
+	for _, g := range mcp.Granted {
+		if !strings.HasPrefix(g.Path, "/v1/tasks/{id}/github/pull/") {
+			t.Errorf("granted tool %q is not a pull-request write: %s", g.Tool, g.Path)
+		}
+		if !slices.ContainsFunc(mcp.Excluded, func(r mcp.Route) bool { return r.Method == g.Method && r.Path == g.Path }) {
+			t.Errorf("granted %s %s is not in Excluded, so /mcp would list it", g.Method, g.Path)
+		}
+		if slices.Contains(mcp.Names(), g.Tool) {
+			t.Errorf("granted tool %q is on the shared surface", g.Tool)
 		}
 	}
 }

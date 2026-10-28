@@ -231,7 +231,17 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	if err != nil {
 		return nil, err
 	}
-	return []*Event{ev, lane}, nil
+	evs := []*Event{ev, lane}
+	if state == issuestate.Closed && from != issuestate.Closed {
+		// An imported `Closes #N` ends the issue's waiting handoff item
+		// (task 137.6), as any other close does.
+		waited, err := resolveWaitingOnCloseTx(ctx, tx, id, HandoffOutcomeBy(by))
+		if err != nil {
+			return nil, err
+		}
+		evs = append(evs, waited...)
+	}
+	return evs, nil
 }
 
 // remoteNumber stores a zero number as NULL: a provider without numbers has
