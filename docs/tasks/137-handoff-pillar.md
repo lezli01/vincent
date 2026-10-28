@@ -988,11 +988,24 @@ pull request.
 - [x] **137.10** ([#843](https://github.com/lezli01/vincent/issues/843)) The derived `handoff` marker on the issue DTO, `?handoff=`,
   and the CLI's lane column, with `idle` on an `in_progress` issue whose
   finished work is not ready (decisions 5, 13). Depends: 137.4, 137.15.
-- [ ] **137.11** ([#844](https://github.com/lezli01/vincent/issues/844)) The TUI: the `hand_off` card's marker and delivery, bulk
+- [x] **137.11** ([#844](https://github.com/lezli01/vincent/issues/844)) The TUI: the `hand_off` card's marker and delivery, bulk
   selection and the handoff form with its grant checkboxes, the issue detail's
   Handoff section, the handoff task's Overview, the ready and unready key and
   `idle` on in-progress cards, and "return from handoff" on a claimed issue
   (decisions 13, 14). Depends: 137.6, 137.10.
+  *Done 2026-10-28.* Four decisions, settled with the author: (1) the issues
+  board gets its own selection — `space` and `V`, fixed keys in task 011's
+  shape, over `pending` `hand_off` cards only — with the cursor's pending
+  card as the fallback, sent as one all-or-nothing `POST /v1/handoffs` with
+  `issue_ids`; no `select:` mode on the board. (2) The daemon serves the data
+  and the TUI derives nothing: `handoff_id` on the task DTO, `handoffs` on the
+  issue detail DTO, and `paused` on the marker (§5.6, §13.2). (3) The form
+  asks for the `role: handoff` workflow, the seven grant capabilities (all
+  off; submitting is the consent), an optional title and start paused;
+  everything else is the daemon's default and the CLI stays the full
+  surface. (4) Three new operations on `issues`/`issue`: `ready` (`.`),
+  `handoff` (`I`, board only) and `return` (`,`, asks first), withheld by
+  the footer, `?` and the palette where they do not apply.
 - [ ] **137.12** ([#845](https://github.com/lezli01/vincent/issues/845)) Example handoff workflows under `examples/`, and
   `github-iterate-work` split into its dispatcher and `github-handoff-train`
   with a trigger (decision 9). Depends: 137.8, 137.9.

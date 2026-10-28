@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Handoffs in the TUI.** The issues board shows a hand-off card's delivery
+  kind and its handoff marker (`claimed (H7)`, `waiting`, `delivered`, with
+  `· paused` while the claiming task is paused) and `idle` on finished work
+  that is not ready. `space` and `V` select pending hand-off cards, and `I`
+  hands them off — or the card under the cursor — in a form with the
+  workflow, the grant checkboxes, a title and start paused. `.` marks an
+  issue ready or not ready and `,` returns it from its handoff, on the board
+  and the issue screen; the issue screen lists every handoff that took the
+  issue with its outcome, and a handoff's task shows its items on the
+  Overview. The API adds `handoff_id` to tasks, `handoffs` to the issue
+  detail and `paused` to the handoff marker.
+
 - **Triggers can start handoffs.** A trigger's new `action.type:
   start_handoff` replays `POST /v1/handoffs` with a `workflow`, and either
   `issue_ids` (templates, each one issue id) or a literal `select`
