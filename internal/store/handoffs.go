@@ -261,6 +261,10 @@ type IssueHandoff struct {
 	State     HandoffMarker
 	HandoffID *int64
 	TaskID    *int64
+	// Paused is whether the claiming handoff's task is paused (task
+	// 137.11), so a board can say so without a task read per card. Only
+	// `claimed` and `waiting` name a claiming task; it is false otherwise.
+	Paused bool
 }
 
 // HandoffMarkerOf is handoffMarkerExpr in Go, the way HandoffStateOf
@@ -332,8 +336,19 @@ func markerHandoffColumn(col string) sqlFrag {
 	}
 }
 
+// markerTaskPausedExpr is whether the task of the handoff the marker names
+// is paused, as 1 or 0 (task 137.11). issueHandoffOf keeps it only for the
+// markers that name a claiming handoff.
+func markerTaskPausedExpr() sqlFrag {
+	task := markerHandoffColumn("task_id")
+	return sqlFrag{
+		sql:  `COALESCE((SELECT pt.state = ? FROM tasks pt WHERE pt.id = ` + task.sql + `), 0)`,
+		args: append([]any{string(TaskPaused)}, task.args...),
+	}
+}
+
 // issueHandoffOf builds an issue's marker from the scanned columns.
-func issueHandoffOf(marker sql.NullString, handoffID, taskID sql.NullInt64) *IssueHandoff {
+func issueHandoffOf(marker sql.NullString, handoffID, taskID sql.NullInt64, paused bool) *IssueHandoff {
 	if !marker.Valid {
 		return nil
 	}
@@ -343,6 +358,10 @@ func issueHandoffOf(marker sql.NullString, handoffID, taskID sql.NullInt64) *Iss
 		if handoffID.Valid && taskID.Valid {
 			out.HandoffID, out.TaskID = &handoffID.Int64, &taskID.Int64
 		}
+	}
+	switch out.State {
+	case HandoffMarkerClaimed, HandoffMarkerWaiting:
+		out.Paused = paused && out.TaskID != nil
 	}
 	return out
 }
@@ -1024,4 +1043,85 @@ func (s *Store) IssueClaim(ctx context.Context, projectID, issueID int64) (hando
 		return 0, false, fmt.Errorf("read issue %d claim: %w", issueID, err)
 	}
 	return handoffID, true, nil
+}
+
+// IssueHandoffEntry is one handoff that took an issue, with this issue's
+// item outcome (task 137.11): the issue detail's Handoff section.
+type IssueHandoffEntry struct {
+	HandoffID int64
+	TaskID    int64
+	State     HandoffState
+	Outcome   HandoffOutcome
+	OutcomeAt *time.Time
+	OutcomeBy HandoffOutcomeBy
+}
+
+// ListIssueHandoffs returns every handoff that ever claimed issueID, newest
+// first, each with the issue's own item outcome — one statement, so the
+// detail never reads a handoff's items to find one row.
+func (s *Store) ListIssueHandoffs(ctx context.Context, issueID int64) ([]IssueHandoffEntry, error) {
+	state := handoffStateExpr()
+	//nolint:gosec // G202: the state fragment is constant SQL; every value binds
+	q := `SELECT h.id, h.task_id, ` + state.sql + `, hi.outcome, hi.outcome_at, hi.outcome_by
+		FROM handoff_items hi JOIN handoffs h ON h.id = hi.handoff_id
+		WHERE hi.issue_id = ? ORDER BY h.created_at DESC, h.id DESC`
+	rows, err := s.db.QueryContext(ctx, q, append(slices.Clone(state.args), issueID)...)
+	if err != nil {
+		return nil, fmt.Errorf("list issue %d handoffs: %w", issueID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := []IssueHandoffEntry{}
+	for rows.Next() {
+		var (
+			e                 IssueHandoffEntry
+			st                string
+			outcome, at, byAs sql.NullString
+		)
+		if err := rows.Scan(&e.HandoffID, &e.TaskID, &st, &outcome, &at, &byAs); err != nil {
+			return nil, fmt.Errorf("scan issue handoff: %w", err)
+		}
+		e.State, e.Outcome, e.OutcomeBy = HandoffState(st), HandoffOutcome(outcome.String), HandoffOutcomeBy(byAs.String)
+		if at.Valid {
+			ts, err := parseTime(at.String)
+			if err != nil {
+				return nil, fmt.Errorf("handoff %d issue %d outcome_at: %w", e.HandoffID, issueID, err)
+			}
+			e.OutcomeAt = &ts
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list issue %d handoffs: %w", issueID, err)
+	}
+	return out, nil
+}
+
+// HandoffIDsByTask maps each of taskIDs that is a handoff's task to its
+// handoff (task 137.11): one indexed query for a list page.
+func (s *Store) HandoffIDsByTask(ctx context.Context, taskIDs []int64) (map[int64]int64, error) {
+	out := map[int64]int64{}
+	if len(taskIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(taskIDs))
+	for i, id := range taskIDs {
+		args[i] = id
+	}
+	//nolint:gosec // G202: placeholders is constant SQL; every value binds
+	rows, err := s.db.QueryContext(ctx, `SELECT task_id, id FROM handoffs WHERE task_id IN `+placeholders(len(taskIDs)), args...)
+	if err != nil {
+		return nil, fmt.Errorf("handoffs by task: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var taskID, id int64
+		if err := rows.Scan(&taskID, &id); err != nil {
+			return nil, fmt.Errorf("scan handoff by task: %w", err)
+		}
+		out[taskID] = id
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("handoffs by task: %w", err)
+	}
+	return out, nil
 }

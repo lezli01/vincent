@@ -140,6 +140,21 @@ type Issue struct {
 	// workflow GetIssue named (task 130.7); nil when it named none. The
 	// daemon computes it with the function the create runs.
 	Prefill *GitHubPrefill `json:"prefill,omitempty"`
+	// Handoffs is every handoff that ever claimed the issue, newest first,
+	// with this issue's item outcome (task 137.11). GetIssue and the writes
+	// fill it; a list row leaves it nil.
+	Handoffs []IssueHandoffEntry `json:"handoffs,omitempty"`
+}
+
+// IssueHandoffEntry is one handoff that took an issue: its state, its task,
+// and the issue's item outcome — "" while unresolved.
+type IssueHandoffEntry struct {
+	HandoffID int64      `json:"handoff_id"`
+	TaskID    int64      `json:"task_id"`
+	State     string     `json:"state"`
+	Outcome   string     `json:"outcome"`
+	OutcomeAt *time.Time `json:"outcome_at"`
+	OutcomeBy string     `json:"outcome_by"`
 }
 
 // IssueHandoff is an issue's handoff marker: State is pending, claimed,
@@ -150,6 +165,9 @@ type IssueHandoff struct {
 	State     string `json:"state"`
 	HandoffID *int64 `json:"handoff_id"`
 	TaskID    *int64 `json:"task_id"`
+	// Paused is whether the claiming handoff's task is paused (task
+	// 137.11); false for pending, delivered and idle.
+	Paused bool `json:"paused"`
 }
 
 // IssueListOptions filters ListIssues. Zero values mean "no filter".

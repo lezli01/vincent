@@ -127,6 +127,10 @@ type Task struct {
 	// Summary or Proof; GetTask carries it in full.
 	Delivery *Delivery `json:"delivery"`
 
+	// HandoffID is the handoff whose task this is (task 137.11); nil for
+	// every other task. GetHandoff reads its items.
+	HandoffID *int64 `json:"handoff_id,omitempty"`
+
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	StartedAt  *time.Time `json:"started_at"`

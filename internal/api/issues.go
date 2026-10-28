@@ -177,6 +177,9 @@ type issueHandoffBody struct {
 	State     store.HandoffMarker `json:"state"`
 	HandoffID *int64              `json:"handoff_id"`
 	TaskID    *int64              `json:"task_id"`
+	// Paused is whether the claiming handoff's task is paused (task
+	// 137.11); false for every marker that names no claiming task.
+	Paused bool `json:"paused"`
 }
 
 // issueMainWorktreeBody is an issue's main worktree: its branch, and the
@@ -213,6 +216,20 @@ type issueBody struct {
 	// the same function POST /v1/tasks runs (task 035 decision 2's kept
 	// principle), so the preview is what the create stores.
 	Prefill *githubPrefill `json:"prefill,omitempty"`
+	// Handoffs is every handoff that ever claimed the issue, newest first,
+	// each with this issue's item outcome (task 137.11): "" while the item
+	// is unresolved.
+	Handoffs []issueHandoffEntryBody `json:"handoffs"`
+}
+
+// issueHandoffEntryBody is one handoff that took an issue.
+type issueHandoffEntryBody struct {
+	HandoffID int64                  `json:"handoff_id"`
+	TaskID    int64                  `json:"task_id"`
+	State     store.HandoffState     `json:"state"`
+	Outcome   store.HandoffOutcome   `json:"outcome"`
+	OutcomeAt *time.Time             `json:"outcome_at"`
+	OutcomeBy store.HandoffOutcomeBy `json:"outcome_by"`
 }
 
 func renderIssueRow(iss *store.Issue) issueRowBody {
@@ -245,7 +262,7 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 		ClosedAt:          iss.ClosedAt,
 	}
 	if hm := iss.Handoff; hm != nil {
-		row.Handoff = &issueHandoffBody{State: hm.State, HandoffID: hm.HandoffID, TaskID: hm.TaskID}
+		row.Handoff = &issueHandoffBody{State: hm.State, HandoffID: hm.HandoffID, TaskID: hm.TaskID, Paused: hm.Paused}
 	}
 	if mw := iss.MainWorktree; mw.Branch != "" {
 		row.MainWorktree = &issueMainWorktreeBody{
@@ -298,6 +315,18 @@ func (s *Server) renderIssue(ctx context.Context, iss *store.Issue) issueBody {
 	if actions == nil {
 		actions = []issuestate.Action{}
 	}
+	// The handoffs that took the issue (task 137.11) degrade the same way.
+	entries, err := s.deps.Store.ListIssueHandoffs(ctx, iss.ID)
+	if err != nil {
+		s.deps.Logger.Warn("list issue handoffs", "issue", iss.ID, "error", err)
+	}
+	handoffs := make([]issueHandoffEntryBody, 0, len(entries))
+	for _, e := range entries {
+		handoffs = append(handoffs, issueHandoffEntryBody{
+			HandoffID: e.HandoffID, TaskID: e.TaskID, State: e.State,
+			Outcome: e.Outcome, OutcomeAt: e.OutcomeAt, OutcomeBy: e.OutcomeBy,
+		})
+	}
 	row := renderIssueRow(iss)
 	row.Delivery = toDeliveryResponse(iss.Delivery, true)
 	return issueBody{
@@ -307,6 +336,7 @@ func (s *Server) renderIssue(ctx context.Context, iss *store.Issue) issueBody {
 		Tasks:            issueTasksBody{Count: iss.TaskCount, ActiveIDs: ids},
 		Editable:         issues.Editable(iss),
 		Commentable:      !issues.ThreadMirrored(iss),
+		Handoffs:         handoffs,
 	}
 }
 
