@@ -541,6 +541,22 @@ jobs:
         shell: bash
         run: ./scripts/134-gate.sh
 
+      # 137: handoffs end to end (task 137.13; §5.7, §13.2, §16) — two
+      # handoffs racing for one claim, the grant refusing and then allowing a
+      # handoff task's issue close and pull-request merge, `wait` resolved by
+      # an imported close, `return` with a follow-up, an aborted handoff
+      # releasing its items, `hand_off: explicit`, and a task refused on a
+      # claimed issue. The matrix earns its place because the forge writes
+      # are `vincent ...` calls inside workflow steps, found on the detached
+      # daemon's PATH and run under pwsh on Windows; `gh` is the fake built
+      # as `gh.exe` there; the outbox's write is read back from an argv log a
+      # Go child wrote with the platform's line endings; and the racing claim
+      # is decided by a SQLite unique index under real concurrent HTTP.
+      - name: 137 gate (handoffs)
+        if: matrix.group == 2
+        shell: bash
+        run: ./scripts/137-gate.sh
+
   gates:
     needs: gate-group
     if: always()
