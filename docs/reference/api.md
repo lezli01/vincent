@@ -79,7 +79,7 @@ each:
 | `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
 | `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
 | `issue_has_live_main_task` | An issue delete was refused because one of the issue's main or side tasks has not finished. Finish or cancel it, then delete again | `task_id` |
-| `handoff_item_resolved` | A handoff item verb named an item already `delivered`, `returned` or `released`, or — on a settled handoff — one that is not `waiting`. Nothing was recorded for any item of the call | `outcome`, `issue_id` |
+| `handoff_item_resolved` | A handoff item verb named an item already `delivered`, `returned` or `released` with another outcome, or — on a settled handoff — one that is not `waiting`. Nothing was recorded for any item of the call. Repeating an item's own outcome is not refused: it changes nothing | `outcome`, `issue_id` |
 | `issue_in_handoff` | A task create, a chat hand-off or a `follow_up` would add work to an issue a handoff has claimed. Only the handoff's own task may add work to it until the handoff returns or releases the issue | `handoff_id` |
 | `issue_not_eligible` | [`POST /v1/handoffs`](#handoffs) named an issue it may not claim: missing, in another project, closed, not in `hand_off`, already claimed, or already delivered. Nothing was created | `issue_id`, and `handoff_id` when a handoff in the same project claims it |
 | `nothing_to_hand_off` | A handoff's `select` found no eligible issue. Nothing was created | |
@@ -3461,8 +3461,10 @@ own task, `agent` for another workflow step or MCP call, and `human`.
 
 A call is **all or nothing**: one refusal records nothing for any item.
 `409 invalid_state` with `handoff_item_resolved` for an item already
-delivered, returned or released (or one that is not waiting, once the
-handoff has settled); `forge_write_needs_human` for a step's `close` or
+delivered, returned or released with another outcome (or one that is not
+waiting, once the handoff has settled); a verb repeating an item's own
+outcome succeeds and changes nothing for it, its `comment` and `close`
+included; `forge_write_needs_human` for a step's `close` or
 `comment` on an issue imported from GitHub, unless the step is the
 handoff's own task and its grant names `issue.close` or `issue.comment` —
 then the write is made as `handoff` and queued for GitHub; `issue_mirrored` for a human's

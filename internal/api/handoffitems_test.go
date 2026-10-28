@@ -77,6 +77,20 @@ func TestHandoffItemVerbs(t *testing.T) {
 		t.Errorf("main task after return = %s %+v", task.State, task.PendingFollowUp)
 	}
 
+	// Repeating an item's own outcome is a no-op, not a 409 (review F3): it
+	// answers 200 and writes nothing, its comment and close included.
+	got = wantStatus(t, http.StatusOK)(h.postMarked(t, itemVerbPath(ho.ID, strconv.FormatInt(a.ID, 10), "deliver"),
+		map[string]any{"comment": "again", "close": "completed", "note": "twice"}))
+	if it := outcomeOf(t, got, a.ID); it.Note != "in main" {
+		t.Errorf("a repeated deliver rewrote the item: %+v", it)
+	}
+	if iss, _ := h.store.GetIssue(ctx, a.ID); iss.State == issuestate.Closed {
+		t.Error("a repeated deliver closed the issue")
+	}
+	if cs, _ := h.store.ListIssueComments(ctx, a.ID); len(cs) != 0 {
+		t.Errorf("a repeated deliver posted %d comment(s)", len(cs))
+	}
+
 	// Refusals.
 	resp, body := h.postMarked(t, itemVerbPath(ho.ID, strconv.FormatInt(a.ID, 10), "release"), nil)
 	if det := wantReason(t, "resolved", resp, body, reasonHandoffItemResolved); det["outcome"] != "delivered" {

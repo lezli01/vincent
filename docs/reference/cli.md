@@ -3350,12 +3350,14 @@ each issue first.
 - `release` drops the claim; the issue stays eligible for a later handoff.
 
 Each command is all or nothing: one refused item or side effect — an item
-already delivered, returned or released, a workflow step closing or
+already delivered, returned or released with another outcome, a workflow step closing or
 commenting on an issue imported from GitHub without its handoff's grant, a
 follow-up its task cannot take — records nothing for any of them. The
 handoff's own task, granted `issue.close` or `issue.comment`, may close or
-comment on its imported items; those writes are queued for GitHub. When the handoff's task settles, every
-item still unresolved is released.
+comment on its imported items; those writes are queued for GitHub.
+Repeating an item's own outcome succeeds and changes nothing for it, its
+`--comment-file` and `--close` included. When the handoff's task settles,
+every item still unresolved is released.
 
 ## `vincent gc`
 

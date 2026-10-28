@@ -21,8 +21,9 @@ import (
 )
 
 // reasonHandoffItemResolved is the 409 for a verb on an item that is
-// already delivered, returned or released — or not waiting, on a handoff
-// that is no longer live. details.outcome is the item's outcome.
+// already delivered, returned or released with another outcome — or not
+// waiting, on a handoff that is no longer live. details.outcome is the
+// item's outcome. A repeat of the item's own outcome is a no-op instead.
 const reasonHandoffItemResolved = "handoff_item_resolved"
 
 // handoffCloseNone is deliver's `close: none`: the issue is left open.

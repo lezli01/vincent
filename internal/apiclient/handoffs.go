@@ -149,8 +149,9 @@ const (
 )
 
 // HandoffReasonItemResolved is the 409 details.reason of a verb on an item
-// that is already delivered, returned or released; details.outcome names
-// which.
+// that is already delivered, returned or released with another outcome;
+// details.outcome names which. A repeat of the item's own outcome is a
+// no-op, never this.
 const HandoffReasonItemResolved = "handoff_item_resolved"
 
 // HandoffCloseNone is deliver's Close that leaves the issue open.

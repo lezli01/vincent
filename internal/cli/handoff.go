@@ -320,8 +320,10 @@ func newHandoffVerbCmd(verb string) *cobra.Command {
 		Short: help[0],
 		Long: help[1] + "\n\n" +
 			"--all takes every unresolved item; waiting items are left alone. An item\n" +
-			"already delivered, returned or released is refused. --note records why on\n" +
-			"the item; --comment-file posts a comment on each issue first.",
+			"already delivered, returned or released with another outcome is refused;\n" +
+			"repeating its own outcome succeeds and changes nothing, comment and close\n" +
+			"included. --note records why on the item; --comment-file posts a comment\n" +
+			"on each issue first.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)

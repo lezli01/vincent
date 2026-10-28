@@ -1533,10 +1533,12 @@ the issue eligible. A verb is **all or nothing**: the outcome, the claim, the
 readiness withdrawal, the comment, the close (and its outbox enqueue) and the
 follow-up or side task are one store transaction, every item is judged before
 any is written, and one refusal — an item already `delivered`, `returned` or
-`released` (`409 handoff_item_resolved`), a step's close or comment on an
+`released` with another outcome (`409 handoff_item_resolved`), a step's close or comment on an
 imported issue the step's handoff was not granted (`forge_write_needs_human`),
-a follow-up its task cannot take — records nothing for any of them.
-*Amended 2026-10-28 (task 137.7, review F1):* a verb's close and comment ask
+a follow-up its task cannot take — records nothing for any of them. A
+verb that repeats an item's own outcome is a **no-op** for that item: it
+succeeds and changes nothing — no note, comment, close, follow-up or side
+task. *Amended 2026-10-28 (task 137.7, review F1):* a verb's close and comment ask
 the forge-write guard as `issue close` and `issue comment` do — a close of an
 open issue that writes back needs `issue.close`, a comment on a live-remote
 thread `issue.comment` — and a granted one is made as `handoff` and enqueued
@@ -9656,7 +9658,8 @@ POST   /v1/handoffs/{id}/items/{issue_id}/release
                                         without `side`. → **200** with the handoff and its
                                         items. All or nothing: **409** `handoff_item_resolved`
                                         (`details.outcome`, `details.issue_id`) for a final item
-                                        or a non-waiting one on a settled handoff,
+                                        or a non-waiting one on a settled handoff — repeating an
+                                        item's own outcome is a no-op, never a 409 —
                                         `forge_write_needs_human` for a step's close or comment
                                         on an imported issue, `issue_mirrored` for a human's
                                         comment on one, and a follow-up's own 409s; **404** for
@@ -17332,7 +17335,7 @@ carries the rest.
 | `POST /v1/handoffs` names an issue it may not claim | *Added 2026-10-24 (task 137.5, issue #838).* `409 invalid_state`, `details.reason: issue_not_eligible`, `details.issue_id` the first such id, and `details.handoff_id` when a handoff in the same project claims it. Missing, in another project, closed, not in `hand_off`, claimed and already delivered are one reason, so another project's rows cannot be probed. Nothing is created (§5.7) |
 | A handoff `select:` finds no eligible issue | *Added 2026-10-24 (task 137.5).* `409 invalid_state`, `details.reason: nothing_to_hand_off`, and nothing is created. A trigger's ledger records it `refused`, so its dedupe key is not spent (task 137.9) |
 | An agent caller gives a handoff a grant | *Added 2026-10-24 (task 137.5).* `409 invalid_state`, `details.reason: grant_needs_human` (task 137 decision 6). An agent caller is an MCP call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id` — best-effort, like every marker (§16). The same request with no grant succeeds, recorded `created_by: agent` |
-| A handoff item verb names an item already resolved | *Added 2026-10-28 (task 137.6, issue #839).* `409 invalid_state`, `details.reason: handoff_item_resolved`, with `details.outcome` and `details.issue_id`. `delivered`, `returned` and `released` are final; on a settled handoff an item that is not `waiting` is refused the same way. The verb is all or nothing (§5.7), so nothing is recorded for any item of the call |
+| A handoff item verb names an item already resolved | *Added 2026-10-28 (task 137.6, issue #839).* `409 invalid_state`, `details.reason: handoff_item_resolved`, with `details.outcome` and `details.issue_id`. `delivered`, `returned` and `released` are final; on a settled handoff an item that is not `waiting` is refused the same way. A verb repeating an item's own outcome is not refused: it succeeds and changes nothing for that item, its comment and close included. The verb is all or nothing (§5.7), so nothing is recorded for any item of the call |
 | `vincent issue ready`/`unready` on an issue whose work is running, unfinished, claimed or (unready) not in `hand_off` | *Added 2026-10-24 (task 137.15, issue #848; task 137 decision 13).* `409 invalid_state`, checked in this order inside one transaction, with `details.reason`: `issue_work_running` while a root task is unsettled (the run in flight will write the delivery the decision belongs on); `issue_in_handoff` and `details.handoff_id` while a live handoff item claims the issue; `issue_no_finished_work` when no main-line root task finished — including an issue whose only finished work is a side task's, since there is no main-line delivery to mark; and for `unready` only, `issue_not_hand_off` with `details.lane`. A closed issue is refused first, as every issue action on one is. `ready` on an issue already ready writes nothing |
 | A merge-back's side task or side branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked with `merge_source_missing`: there is nothing to merge. Skip or cancel |
 | A merge-back's main branch is gone | *Added 2026-10-07 (task 134.14, issue #761).* Blocked at admission with `merge_target_missing`: every main task of the issue was archived and the branch the side task forked from was deleted, so there is nothing to revive. Skip or cancel |
