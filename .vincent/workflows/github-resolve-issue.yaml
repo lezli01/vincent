@@ -159,7 +159,7 @@
 #   runs `actionlint` over any workflow file the branch touched.
 # - The other two platforms first run the change in the pull request's own CI
 #   — a same-repository `pull_request` run reads `ci.yml` from the branch. That
-#   pull request is no longer this workflow's: `github-iterate-work`'s merge
+#   pull request is no longer this workflow's: `github-handoff-train`'s merge
 #   train waits for the `gates` job on all three before it merges, and its
 #   `repair-checks` is where a Windows-only fault gets fixed, told a platform is
 #   never skipped to make a gate green.
@@ -254,7 +254,8 @@
 # Nothing on this workflow's step path reaches GitHub any more. Opening the
 # pull request and merging it belong to whoever consumes the delivery:
 #
-# - `github-iterate-work` stacks every branch its run delivered onto the base
+# - `github-handoff-train`, started by its trigger over the issues in the
+#   `hand_off` lane (task 137.12), stacks every delivered branch onto the base
 #   into one **merge train**, resolves the conflicts between them, opens one
 #   pull request for the lot and drives it to merged — the rebase, required
 #   checks, merge and repair loop that used to live here lives there now, and
@@ -359,7 +360,7 @@
 # (verbatim), the project's template, `branch_template` in config.yaml, then the
 # built-in (task 001, internal/worktree/branch.go).
 name: github-resolve-issue
-description: Read a GitHub bug, enhancement, documentation or ci issue, clarify it with the author, and deliver the fix, feature, documentation or CI change as a verified branch ready for a pull request. It opens and merges nothing; github-iterate-work merges what it delivers.
+description: Read a GitHub bug, enhancement, documentation or ci issue, clarify it with the author, and deliver the fix, feature, documentation or CI change as a verified branch ready for a pull request. It opens and merges nothing; github-handoff-train, started by its handoff trigger, merges what it delivers.
 
 platforms: [posix]
 
@@ -2092,8 +2093,8 @@ steps:
     # The end of the run, and the whole of what this workflow delivers: a
     # committed, verified branch and a **delivery** recorded on the task saying
     # it is ready for a pull request. Nothing here pushes, opens or merges
-    # anything — that is no longer this workflow's job. `github-iterate-work`
-    # stacks every delivered branch of a run into one merge train, opens one
+    # anything — that is no longer this workflow's job. `github-handoff-train`
+    # stacks every delivered branch a handoff claims into one merge train, opens one
     # pull request for it and merges it; a person running this workflow on its
     # own opens the pull request from the task (§13.2 `…/github/pull/create`)
     # with the title and body the delivery carries.
@@ -2199,7 +2200,7 @@ steps:
         printf '%s\n' "$proofs"
       fi
       echo
-      echo "ready for a pull request against {{.Task.BaseBranch}}. github-iterate-work"
-      echo "picks this up into its merge train; on its own, open the pull request"
+      echo "ready for a pull request against {{.Task.BaseBranch}}. a handoff running"
+      echo "github-handoff-train picks this up into its merge train; on its own, open the pull request"
       echo "from this task with the title and body in 'vincent task show {{.Task.ID}}'."
       say "ready for a PR: $(printf '%s' "$head" | cut -c1-7), $ahead commit(s)"

@@ -1,63 +1,43 @@
-# github-iterate-work — put at most N ready GitHub issues on the board
-# through `github-resolve-issue-multiple`, wait for every task it created to
-# deliver its branch, then stack the delivered branches into one merge train,
-# open one pull request for it, review it, resolve every finding the review
-# raised, and drive that pull request to merged.
+# github-handoff-train — the landing half of this repository's issue work.
+# A handoff (§5.7) claims the issues whose main tasks delivered a `change`;
+# this stacks their delivered commits into one merge train, verifies it as a
+# whole, opens one pull request for it, reviews it, resolves every finding on
+# the pull request, merges it at the commit it verified, and closes the
+# issues through vincent.
 #
-#     vincent task add --project N --workflow github-iterate-work --title "iterate"
+# It is a handoff workflow (`role: handoff`), so it never runs as an ordinary
+# task. It is started by its trigger, a weekday schedule shipped unarmed as
+# docs/examples/triggers/github-handoff-train.yaml, or by hand:
+#
+#     vincent handoff start --project N --workflow github-handoff-train
 #
 # ## What it is
 #
-# `github-resolve-issue-multiple` finds the work, asks a person to approve the
-# plan, creates the tasks and finishes — it deliberately never waits for them
-# and never reports on their outcome. The two resolve workflows it creates
-# tasks for end at a **delivered branch**: verified, committed, recorded as
-# ready for a pull request, and neither pushed nor opened nor merged (since
-# 2026-10-02). This workflow is that file plus the waiting and the landing: it
-# `include`s it whole, watches the tasks it created until each has finished,
-# and then owns everything that used to be each task's own tail — the rebase,
-# the conflicts, the pull request, the required checks, the merge and the
-# repairs — once, for all of them together.
+# `github-resolve-issue-multiple` is the workshop dispatcher: it finds the
+# work, asks a person to approve the plan and creates one task per issue. The
+# resolve workflows it creates tasks for end at a **delivered branch** —
+# verified, committed, recorded with `vincent task deliver`, and neither
+# pushed nor opened nor merged — and their issues move to the `hand_off`
+# lane. This workflow is everything after that: the rebase, the conflicts,
+# the pull request, the review, the required checks, the merge, the repairs
+# and the close, once, for every item of the handoff together.
 #
-# The include is spliced away when the task is created (§7.9), so this task
-# runs `github-resolve-issue-multiple`'s own steps — `preflight`, `survey`,
-# `has-candidates`, `any-candidates`, `select`, `emit`, `has-plan`, `any-plan`,
-# `gate`, `spawn` — in this task's worktree, under that workflow's own
-# `defaults:`. Two consequences follow, and both are wanted:
+# *Changed 2026-10-28 (task 137.12, issue #845):* this used to be the tail of
+# `github-iterate-work`, which included the dispatcher, waited for the tasks
+# it created and read their deliveries back itself. Landing is now
+# trigger-driven, so that file is gone: its `headroom`, `track`, `watch` and
+# `collect` steps have no job when the handoff's selection is what decides
+# which deliveries land (task 137 decision 9).
 #
-#   - its `max_tasks` field is read from **this** workflow's `fields:`, which is
-#     why `max_tasks` below is spelled exactly as it is. Renaming it breaks the
-#     spliced steps' templates at render time;
-#   - its `any-candidates` and `any-plan` `condition` steps finish the **whole**
-#     task when nothing is ready or the triage planned nothing. There is no
-#     include boundary for a condition to stop at, and that is the right
-#     answer here: no task was created, so there is nothing to watch.
-#
-# It reads one file it did not write, and one thing over the API, and both
-# couplings are deliberate:
-#
-#   - `spawn` writes the tasks it created to
-#     `$(git rev-parse --git-path vincent-issues)/created`, one
-#     `id<TAB>issue<TAB>workflow<TAB>title` per line; `track` reads it. The
-#     alternative is scraping `spawn`'s prose stdout.
-#   - each resolve task's `deliver` step records the task's **delivery** (§5.3)
-#     with `vincent task deliver` — kind `change`, verified head, plain-language
-#     title, pull request body, brief as summary, missing-proof lines as proof
-#     — and `collect` reads it back from `vincent task show <id> --json`, for
-#     exactly the tasks this run created. The resolve workflows' `deliver`
-#     steps say which draft file fills which field. *Changed 2026-10-24 (task
-#     137.3):* this used to be a directory of files under
-#     the common git directory.
+# It reads one file it did not write: `$VINCENT_HANDOFF_FILE`, the handoff's
+# items — each the claimed issue, its delivery (§5.3), the delivering task,
+# its branch and its delivered `head_sha` — in the handoff's select order.
+# `collect` snapshots it; nothing after `collect` reads the API for it again.
 #
 # ## Shape
 #
-#   headroom      refuse a concurrency cap that leaves no room beside the watch
-#   iterate       include: survey, triage, plan gate, create the tasks
-#   track         read back what was created, refuse a workflow with no `deliver`
-#   autopilot     the one gate: approve landing whatever they deliver
-#   watch         wait, in half-hour passes, until every task has finished
-#   collect       read each task's delivery; the train is what was delivered
-#   stack         cut the train from the fresh base, rebase each branch onto it
+#   collect       read the handoff's items; the train is the delivered changes
+#   stack         cut the train from the fresh base, rebase each commit onto it
 #   stack-resolve an agent, only if a rebase stopped on a conflict
 #   train-verify  build, test and lint the whole train, repaired in a loop
 #   train-final   refuse a train whose local legs are still red
@@ -69,38 +49,46 @@
 #                 when it is your call; the PR's comments track every one
 #   review-final  refuse to merge while a finding is open
 #   merge-attempt rebase → resolve? → repush → wait-checks → merge → probe → repair?
-#   merged        MERGED at the commit this task pushed, or block; clean up
+#   merged        MERGED at the commit this task pushed, or block
+#   deliver       record every item delivered and close its issue; clean up
 #
-# ## What it clicks, and what it does not
+# ## What it is allowed to do
 #
-# The resolve workflows no longer stop at a diff gate or a merge gate, so there
-# is nothing on the children to click. `autopilot` is where a person decides,
-# once, that whatever the tasks deliver is pushed as one branch, opened as one
-# public pull request and merged — with an agent's review of the whole train,
-# and its findings resolved, in place of a person reading the diff.
+# There is no approval gate. Arming the trigger that carries the `grant:` is
+# a person's consent, given once, that whatever the handoff selects is pushed
+# as one branch, opened as one public pull request, merged and its issues
+# closed — with an agent's review of the whole train, and its findings
+# resolved, in place of a person reading the diff (task 137 decisions 6 and
+# 9). The trigger's grant must therefore name `pull.create`, `pull.merge`,
+# `issue.comment` and `issue.close`: the daemon refuses every forge write a
+# step makes through vincent that the grant does not name.
 #
-# It still does **not** click:
+# Only the writes go through vincent: `vincent github pr create` and `vincent
+# github pr merge` for the pull request, `vincent handoff deliver` for the
+# issues. Reads stay on `gh` (`gh pr view`, `gh pr checks`, `gh api`, `gh run`)
+# — spec §3 row 11 keeps an agent's own read path open — and so do
+# `review-report`'s comment upserts, which edit the review's own earlier
+# comments by id, a route vincent does not have. The force-push of a rebased
+# train stays `git push`.
 #
-#   - `plan-gate` ("Approve the graph"), a `github-resolve-issue-dag` task's
-#     own gate. It authorizes no external effect, only spend — up to 36 agent
-#     sessions and six worktrees — so a dag task parks there until a person
-#     clicks, and the watch names it;
-#   - a question an agent asks its author (`awaiting_input`), or a task that
-#     blocked. Both are reported, neither is answered.
-#
-# And there is one place after `autopilot` where it stops for you on purpose:
-# `review-resolve` asks when a review finding is yours to decide (below).
+# It does not answer for anyone else, and there is one place it stops for you
+# on purpose: `review-resolve` asks when a review finding is yours to decide.
+# A train that blocks or fails stays blocked or failed, as it always did;
+# when its task settles, the items it did not resolve are released by the
+# daemon (task 137 decision 4) and the issues are eligible for the next
+# handoff. The train never `return`s an item on its own.
 #
 # ## Why one merge train and not N pull requests
 #
 # N independently-merged pull requests each rebase onto a base the previous
 # one just moved, each wait out an hour of CI, and serialize anyway — the old
 # watch held a "merge lane" for exactly that reason. A train pays for that
-# once: the branches are stacked in the order the triage ranked them, the
-# conflicts *between* them are resolved before anything is public, the whole
-# set is built and tested together, and one pull request carries every
-# issue's own title and body, `Closes #N` and `Part of #N` lines included, so
-# merging it closes exactly what the children's briefs said it should.
+# once: the branches are stacked in the order the handoff lists them (its
+# select order), the conflicts *between* them are resolved before anything
+# is public, the whole set is built and tested together, and one pull
+# request carries every issue's own title and body, `Closes #N` and `Part of
+# #N` lines included, so GitHub links it to every issue; `deliver` closes
+# them once the merge is confirmed.
 #
 # **Stacking is a rebase, not a merge.** Each delivered branch's commits are
 # replayed onto the train's tip with `git rebase --onto <tip> <fork> <head>`,
@@ -112,18 +100,18 @@
 # it is not the conflict lands in front of `stack-resolve` like any other.
 #
 # The delivery's `head_sha`, not the branch's tip, is what is stacked: it is
-# the commit the child's verification judged. A branch hand-edited after
-# delivery is named in `collect`'s output, not silently swept into the train.
-# A **follow-up** is different: re-admitting a task clears its delivery, and
-# the follow-up's own `→ done` records an implicit one (task 137 decision 3),
-# because what was verified no longer describes the branch. `collect` leaves
-# such a task out under a reason of its own, so a person can record what it
-# now delivers with `vincent task deliver` and run this again.
+# the commit the delivering task's verification judged. A branch hand-edited
+# after delivery is named in `collect`'s output, not silently swept into the
+# train.
 #
-# A task that did not deliver — blocked, aborted, still waiting on a person
-# when the watch gave up — is left out of the train and named. The train lands
-# what was delivered; it does not wait on what was not, and it fails only when
-# nothing was delivered at all.
+# A follow-up re-admitting a task clears its delivery and moves its issue
+# back to `in_progress` (task 137 decision 3), so such a task is simply not in
+# the handoff's selection: it is the selector's job, no longer this file's.
+#
+# The trigger selects `delivery: change`; an item that is anything else, was
+# delivered against another base, or names a commit that is gone is released
+# with a note saying why, and is left out of the train rather than failing
+# it. The train fails only when nothing is left to stack.
 #
 # ## The review
 #
@@ -180,7 +168,7 @@
 #                      *at that commit*, under `allow_failure` so a red one is
 #                      the repairer's input rather than the end of the run
 #     merge-ready      wait until GitHub itself calls the PR mergeable
-#     merge            `gh pr merge --merge --match-head-commit`
+#     merge            `vincent github pr merge --method merge --head-sha`
 #     merge-probe      read the PR back and ask whether it is MERGED at that
 #                      same commit — the only step entitled to say it landed
 #     merge-elsewhere  stop the run outright if the PR was merged at some other
@@ -207,7 +195,7 @@
 # agent to repair in that case — the next pass's rebase *is* the repair — so it
 # ends the pass without one and the loop starts from the top.
 #
-# Nothing *inside* a pass retries. A `gh pr merge` whose response was lost is
+# Nothing *inside* a pass retries. A merge call whose response was lost is
 # not a call to repeat and neither is a force-push; what repeats is a whole
 # attempt, which begins by asking git and GitHub what is true. That is also why
 # `merge-probe` runs on every pass, including one where `merge` was skipped or
@@ -215,7 +203,7 @@
 # exited non-zero, and force-pushing over that is the one thing a retrying tail
 # must never do.
 #
-# `--merge` is not a preference: this repository has squash and rebase merges
+# `--method merge` is not a preference: this repository has squash and rebase merges
 # disabled and merges everything with a merge commit, because a branch's
 # history becomes master's history (CLAUDE.md).
 #
@@ -251,7 +239,7 @@
 #   the wait rather than being merged.
 # - `merge-ready` waits for GitHub's own verdict, which lags the checks by a
 #   few seconds and is the thing that would otherwise refuse the merge call.
-# - `merge` passes `--match-head-commit`, so the last gap — between the final
+# - `merge` passes `--head-sha`, so the last gap — between the final
 #   poll and the merge itself — is closed by the server rather than by hope.
 #
 # `merged` is what says whether the run landed anything, and it asks GitHub —
@@ -266,504 +254,109 @@
 # ## Scratch
 #
 # Every file this workflow keeps is under
-# `$(git rev-parse --git-path vincent-iterate)`: this worktree's own git
+# `$(git rev-parse --git-path vincent-train)`: this worktree's own git
 # directory, invisible to `git status`, so nothing here can be committed by
 # accident and the worktree stays clean for archive. The path contains spaces
 # on macOS (`Application Support`), so every use is quoted.
 #
-# ## Why it cannot hold every slot
-#
-# A watching task is a *running* task: `taskstate.HoldsSlot` is true of
-# `running`, so this task occupies one concurrency slot for the whole watch.
-# `headroom` refuses to start when the effective cap is 1, because the tasks
-# this run creates would then queue behind their own watcher forever, and it
-# says so on stderr when `max_tasks` exceeds the room left beside it — that
-# case is slower, not broken.
-#
-# Two bounds keep a held slot from being held for nothing:
-#
-#   - **24 hours** in total: 48 iterations of a 30-minute pass. Exceeding it
-#     blocks the task with `loop_limit`;
-#   - **2 hours** with nothing queued or running. If no tracked task can move
-#     without a person, the watch gives the slot back rather than spend the
-#     other 22 hours polling. Retrying the step starts that clock again.
-#
 # ## Cost
 #
-# Upper bound on agent sessions this task starts itself, before any human
-# presses retry (`1 + max_retries` per agent, loops multiplied by their
-# iteration ceiling, `not .Loop.IsLast` counted as impossible on the last pass):
+# Upper bound on agent sessions this task starts, before any human presses
+# retry (`1 + max_retries` per agent, loops multiplied by their iteration
+# ceiling, `not .Loop.IsLast` counted as impossible on the last pass):
 #
-#     select              2   from the included github-resolve-issue-multiple
 #     stack-resolve       2   guarded to a stack that stopped on a conflict
 #     train-verify        2   3 loop passes, `if: not .Loop.IsLast`
 #     review              2   one session and one retry
 #     review-resolve      2   guarded to a review with findings
 #     merge-attempt       5   3 x resolve, plus 2 x repair-checks
 #                        --
-#                        15
-#
-# on top of whatever the tasks it creates spend: `emit` prints that ceiling
-# before the plan gate — 16 agent sessions per `github-resolve-issue` task, 36
-# per `github-resolve-issue-dag` task — and `autopilot` repeats what approving
-# it authorizes.
+#                        13
 #
 # Requires `vincent`, `gh` (authenticated), `jq`, `git` and `go`, and the
 # worktree's `origin` pointing at the repository that owns the issues.
-name: github-iterate-work
+name: github-handoff-train
 description: >-
-  Put at most N ready GitHub issues on the board through
-  github-resolve-issue-multiple, wait for every task to deliver its branch,
-  then rebase the delivered branches into one merge train, resolve their
+  Stack the changes a handoff claimed into one merge train, resolve their
   conflicts, open one pull request for it, review it and resolve every
-  finding on the pull request, and merge it, repairing and retrying when the
-  merge goes red.
+  finding on the pull request, merge it at the verified commit, repairing
+  and retrying when the merge goes red, and close the issues through vincent.
+role: handoff
 platforms: [posix]
-fields:
-  - name: max_tasks
-    label: Most tasks to create
-    description: >-
-      The most tasks this run may create, however many issues are ready — and
-      so the most issues its one merge-train pull request will land with an
-      agent's review in place of yours. Every task created can spend up to 16
-      agent sessions (36 on the dag workflow), and the train itself up to 15
-      more.
-      This task watches them all, holding one concurrency slot of its own, so
-      leave room for it: with a cap of 6, 5 is the most that runs without
-      queueing.
-    type: integer
-    required: true
-    default: 3
 defaults:
   agent: claude
   timeout: 15m
   max_retries: 0
-  # Nobody is expected at an agent's prompt here: `autopilot` is where a
-  # person weighed in, and the train runs unattended after it — except for
+  # Nobody is expected at an agent's prompt here: arming the trigger is where
+  # a person weighed in, and the train runs unattended after it — except for
   # `review-resolve`, which overrides this to ask about the findings that are
   # a person's call.
   on_input: deny
 steps:
-  - id: headroom
-    name: Check there is room to watch and work at once
-    type: command
-    shell: sh
-    timeout: 5m
-    run: |
-      set -e
-      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-
-      say "checking there is room to watch and work at once"
-      for tool in vincent gh jq git go; do
-        command -v "$tool" >/dev/null 2>&1 || {
-          say "$tool is not installed"
-          echo "$tool is required" >&2; exit 1; }
-      done
-      gh auth status >/dev/null 2>&1 || {
-        say "gh is not authenticated"
-        echo "gh is not authenticated; this workflow pushes and merges a pull request at the end" >&2
-        exit 1; }
-      # The resolve tasks record their result with `vincent task deliver`
-      # and `collect` reads it back from `task show --json` (task 137.2),
-      # which v0.11.0 and older lack: there `task deliver` only prints
-      # `task`'s help, and every task would fail its last step hours from now
-      # (review F3 of #850).
-      case "$(vincent task deliver --help 2>&1)" in
-        *"vincent task deliver ["*) ;;
-        *)
-          say "vincent is too old for this workflow"
-          echo "this workflow needs vincent with 'vincent task deliver' (task 137.2, after v0.11.0); reinstall vincent and restart its daemon" >&2
-          exit 1 ;;
-      esac
-
-      scratch=$(git rev-parse --git-path vincent-iterate)
-      rm -rf "$scratch"
-      mkdir -p "$scratch"
-
-      max='{{ index .Task.Fields "max_tasks" }}'
-      [ "$max" -ge 1 ] 2>/dev/null || {
-        say "max_tasks must be at least 1"
-        echo "max_tasks is '$max'; it must be a whole number of at least 1" >&2
-        exit 1; }
-
-      vincent config get --json > "$scratch/config.json" 2>"$scratch/config.err" || {
-        say "cannot reach the daemon"
-        echo "vincent config get failed:" >&2; cat "$scratch/config.err" >&2; exit 1; }
-      vincent project ls --json > "$scratch/projects.json" 2>"$scratch/projects.err" || {
-        say "cannot list the projects"
-        echo "vincent project ls failed:" >&2; cat "$scratch/projects.err" >&2; exit 1; }
-
-      # The effective cap is the smaller of the daemon's and this project's own
-      # (spec §11): every task this run creates lands in this project.
-      global=$(jq -r '.max_parallel_tasks' "$scratch/config.json")
-      own=$(jq -r --argjson p {{ .Project.ID }} \
-        '.[] | select(.id == $p) | .max_parallel_tasks // empty' "$scratch/projects.json")
-      cap=$global
-      if [ -n "$own" ] && [ "$own" -lt "$cap" ]; then cap=$own; fi
-
-      echo "project:         {{ .Project.ID }} ({{ .Project.Name }})"
-      echo "max tasks:       $max"
-      echo "concurrency cap: $cap at once (daemon $global${own:+, project $own})"
-
-      if [ "$cap" -lt 2 ]; then
-        say "the cap is $cap: this watch would be the only task that can run"
-        echo "this task holds one concurrency slot for the whole watch, so a cap of $cap" >&2
-        echo "leaves nothing for the tasks it creates: they would queue behind their own" >&2
-        echo "watcher until it gave up. raise max_parallel_tasks to at least 2 (ideally" >&2
-        echo "$((max + 1))) and run this again." >&2
-        exit 1
-      fi
-
-      if [ "$max" -gt $((cap - 1)) ]; then
-        echo "note: with $max task(s) and a cap of $cap, at most $((cap - 1)) of them run" >&2
-        echo "      at a time while this task watches; the rest queue. slower, not broken." >&2
-      fi
-      say "room for $((cap - 1)) task(s) beside this watch"
-
-  # Splices in github-resolve-issue-multiple whole: survey, triage, the plan
-  # gate, and the step that creates the tasks. See the header — its two
-  # `condition` steps end this task when there is nothing to create.
-  - id: iterate
-    name: Survey, triage and create the tasks
-    type: include
-    workflow: github-resolve-issue-multiple
-
-  - id: track
-    name: Read back what was created
-    type: command
-    shell: sh
-    timeout: 10m
-    run: |
-      set -e
-      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-
-      scratch=$(git rev-parse --git-path vincent-iterate)
-      issues=$(git rev-parse --git-path vincent-issues)
-
-      [ -f "$issues/created" ] || {
-        say "the spawn step left no record of what it created"
-        echo "$issues/created is missing. github-resolve-issue-multiple's 'spawn' step" >&2
-        echo "writes it and this workflow reads it; without it there is nothing to watch." >&2
-        exit 1; }
-
-      say "reading back the tasks that were created"
-      : > "$scratch/tasks.tsv"
-      n=0
-      while IFS="$(printf '\t')" read -r id issue wf title; do
-        [ -n "$id" ] || continue
-        vincent task show "$id" --json </dev/null > "$scratch/task.json" 2>"$scratch/task.err" || {
-          say "cannot read task $id"
-          echo "vincent task show $id failed:" >&2; cat "$scratch/task.err" >&2; exit 1; }
-        # The snapshot is fixed at creation, so this is read once: a task whose
-        # workflow has no `deliver` step records no delivery, and the
-        # train would have nothing to stack for it.
-        didx=$(jq -r '.workflow_steps[] | select(.id == "deliver" and .type == "command") | .index' "$scratch/task.json")
-        if [ -z "$didx" ]; then
-          say "task $id delivers nothing this train can stack"
-          echo "task $id runs '$wf', which has no 'deliver' step. this workflow only knows" >&2
-          echo "how to land github-resolve-issue and github-resolve-issue-dag, which end by" >&2
-          echo "recording a delivery. it will not guess at another workflow's output." >&2
-          exit 1
-        fi
-        printf '%s\t%s\t%s\t%s\n' "$id" "$issue" "$wf" "$title" >> "$scratch/tasks.tsv"
-        n=$((n + 1))
-      done < "$issues/created"
-
-      printf '%s\n' "$n" > "$scratch/tracked"
-      rm -f "$scratch/stall-since" "$scratch/settled"
-
-      if [ "$n" -eq 0 ]; then
-        echo "no task was created, so there is nothing to watch."
-        say "nothing was created"
-        exit 0
-      fi
-
-      echo "watching $n task(s), in the order the merge train will stack them:"
-      awk -F'\t' '{ printf "  task %s  #%s  %s\n        %s\n", $1, $2, $3, $4 }' "$scratch/tasks.tsv"
-      say "watching $n task(s)"
-    check: |
-      s=$(git rev-parse --git-path vincent-iterate)
-      i=$(git rev-parse --git-path vincent-issues)
-      created=$(grep -c . "$i/created" || true)
-      tracked=$(grep -c . "$s/tasks.tsv" || true)
-      [ "$created" = "$tracked" ] || {
-        echo "spawn created $created task(s) but only $tracked reached the watch list" >&2
-        exit 1; }
-    check_timeout: 2m
-
-  - id: has-tracked
-    name: Is there anything to watch
-    type: command
-    shell: sh
-    timeout: 1m
-    allow_failure: true
-    run: |
-      [ "$(cat "$(git rev-parse --git-path vincent-iterate)/tracked")" -gt 0 ]
-
-  - id: any-tracked
-    name: Stop here when nothing was created
-    type: condition
-    if: '{{ eq (index .Steps "has-tracked").ExitCode 0 }}'
-
-  - id: autopilot
-    name: Approve landing what these tasks deliver
-    type: manual
-    instructions: |
-      Land what these task(s) deliver, stopping for you again only to decide
-      a review finding?
-
-      {{ (index .Steps "track").Result }}
-
-      Each task ends at a verified branch of its own and opens nothing. From
-      here this task waits for all of them, then:
-
-      - **stacks** every delivered branch, in the order above, onto a fresh
-        {{ .Project.DefaultBranch }} as one merge train on
-        {{ .Task.BranchName }}, rebasing each onto the one before it. Where
-        two branches conflict, an agent resolves it — keeping both sides'
-        intent — and the whole train is built, tested and linted together,
-        with up to two agent repair passes if it is red;
-      - **pushes** the train to `origin` and opens **one public pull
-        request** against {{ .Project.DefaultBranch }}. Its body is every
-        task's own drafted pull request body, `Closes #N` lines included;
-      - **reviews** the whole train with an agent and posts its findings on
-        the pull request by priority — a summary table and one comment per
-        finding. A second agent then fixes, dismisses or defers each one,
-        and every resolution is tracked on the pull request. It **asks
-        you** when a finding is a product decision, reaches past a task's
-        scope, or is a P0 or P1 it would not fix; nothing merges while a
-        finding is open;
-      - **merges** it once every required check passes on the commit it
-        pushed. If a check goes red, an agent commits a fix and the attempt
-        runs again — rebase, force-push, another round of CI — up to three
-        times. If {{ .Project.DefaultBranch }} moves, the next pass rebases.
-
-      A merged pull request changes {{ .Project.DefaultBranch }} and closes
-      the issues it names. That is the part that does not come back: closing
-      a pull request afterwards does not unsend what it notified, and
-      reverting a merge is a new commit rather than an undo.
-
-      A task that does not deliver — it blocked, was aborted, or still waits
-      on you when the watch gives up — is left out of the train and named;
-      the rest land without it.
-
-      What it will **not** click:
-
-      - **Approve the graph** — a `github-resolve-issue-dag` task's plan gate.
-        That one waits for you, and the watch names it while it does.
-      - a question an agent asks you, and a task that blocked. Both are
-        reported; neither is answered.
-
-      Two bounds on the watch itself: it gives up after 24 hours, and after 2
-      hours in which nothing was queued or running — every task left needing
-      you — rather than hold a concurrency slot for nothing.
-
-      Rejecting blocks this task and lands nothing. The tasks above keep
-      running and end at their own delivered branches, exactly as they would
-      have without this one.
-
-  - id: watch
-    name: Wait for the tasks to deliver
-    type: loop
-    count: 48
-    max_iterations: 48
-    # 48 passes of 30 minutes. The group timeout has to cover the worst case —
-    # 48 attempts of the 35-minute step below — or `defaults.timeout` would
-    # bound the whole loop at 15 minutes.
-    timeout: 30h
-    steps:
-      - id: watch-pass
-        name: Watch the board for half an hour
-        type: command
-        shell: sh
-        timeout: 35m
-        run: |
-          set -e
-          say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-
-          scratch=$(git rev-parse --git-path vincent-iterate)
-          project={{ .Project.ID }}
-          pass_seconds=1800
-          stall_limit=7200
-          nap=20
-
-          total=$(cat "$scratch/tracked")
-          now=$(date +%s)
-          deadline=$((now + pass_seconds))
-          [ -f "$scratch/stall-since" ] || printf '%s\n' "$now" > "$scratch/stall-since"
-          printf '%s\n' 0 > "$scratch/settled"
-
-          while :; do
-            vincent task ls --project "$project" --limit 1000 --json \
-              > "$scratch/board.json" 2>"$scratch/board.err" || {
-                say "cannot read the board"
-                echo "vincent task ls failed:" >&2; cat "$scratch/board.err" >&2; exit 1; }
-
-            settled=0; busy=0; waiting=0
-            : > "$scratch/needs-you"
-
-            while IFS="$(printf '\t')" read -r id issue wf title; do
-              [ -n "$id" ] || continue
-              row=$(jq -c --argjson i "$id" 'map(select(.id == $i)) | .[0] // empty' "$scratch/board.json")
-              if [ -z "$row" ]; then
-                # `task ls` hides archived tasks, and archived is settled.
-                settled=$((settled + 1))
-                continue
-              fi
-              state=$(printf '%s' "$row" | jq -r '.state')
-
-              case "$state" in
-                done|aborted|archived)
-                  settled=$((settled + 1))
-                  continue ;;
-                queued|running)
-                  busy=$((busy + 1))
-                  continue ;;
-                *)
-                  waiting=$((waiting + 1)) ;;
-              esac
-
-              if [ "$state" = awaiting_gate ]; then
-                # The only gate either resolve workflow still has is the dag's
-                # `plan-gate`, and this watch never clicks it — but it names
-                # the gate exactly rather than assuming that.
-                cur=$(printf '%s' "$row" | jq -r '.current_step')
-                pending=$(vincent task show "$id" --json </dev/null \
-                  | jq -r --argjson i "$cur" '.workflow_steps[] | select(.index == $i) | .id')
-                printf '%s\t%s\t%s\n' "$id" "$issue" "gate '${pending:-unknown}'" >> "$scratch/needs-you"
-              else
-                printf '%s\t%s\t%s\n' "$id" "$issue" "$state" >> "$scratch/needs-you"
-              fi
-            done < "$scratch/tasks.tsv"
-
-            if [ "$settled" -ge "$total" ]; then
-              printf '%s\n' 1 > "$scratch/settled"
-              say "all $total task(s) finished"
-              echo "all $total task(s) have finished."
-              exit 0
-            fi
-
-            if [ "$busy" -gt 0 ]; then
-              printf '%s\n' "$(date +%s)" > "$scratch/stall-since"
-            fi
-            stalled=$(( $(date +%s) - $(cat "$scratch/stall-since") ))
-            if [ "$busy" -eq 0 ] && [ "$stalled" -ge "$stall_limit" ]; then
-              # Give the slot back: nothing here moves without a person.
-              rm -f "$scratch/stall-since"
-              say "nothing has run for $((stalled / 60))m; every task left needs you"
-              echo "no tracked task has been queued or running for $((stalled / 60)) minute(s)." >&2
-              echo "the watch cannot clear any of these by itself:" >&2
-              if [ -s "$scratch/needs-you" ]; then
-                awk -F'\t' '{ printf "  task %s  #%s  %s\n", $1, $2, $3 }' "$scratch/needs-you" >&2
-              else
-                echo "  (nothing is waiting either — read the board)" >&2
-              fi
-              echo "resolve them, then retry this step: the two-hour clock starts again." >&2
-              echo "to land what has been delivered without them, cancel them and retry." >&2
-              exit 1
-            fi
-
-            say "$settled/$total done, $busy running, $waiting waiting on you"
-            [ "$(date +%s)" -lt "$deadline" ] || break
-            sleep "$nap"
-          done
-
-          echo "$settled of $total task(s) have finished so far."
-
-      - id: watch-settled
-        name: Have they all finished
-        type: command
-        shell: sh
-        timeout: 2m
-        allow_failure: true
-        run: |
-          [ "$(cat "$(git rev-parse --git-path vincent-iterate)/settled")" = 1 ]
-
-      - id: watch-done
-        name: Stop watching once they have
-        type: break
-        if: '{{ eq (index .Steps "watch-settled").ExitCode 0 }}'
-
   - id: collect
-    name: Read what each task delivered
+    name: Read the handoff's items
     type: command
     shell: sh
     timeout: 10m
-    # The train is exactly what was delivered: a task is in it when it is
-    # `done` (or archived after being done) **and** it recorded its delivery
-    # itself — `implicit` is false, because every finished task has a
-    # delivery, and one the daemon built at `→ done` means the run ended
-    # without reaching `deliver`, or a follow-up re-ran it after `deliver`
-    # and cleared what that recorded (task 137 decision 3; told apart by a
-    # succeeded `deliver` step run, and named so) — **and** that delivery is
-    # a `change`
-    # against this run's base **and** the commit it names exists here.
-    # Anything else is named and left out.
+    # The train is the handoff's items, in the order `$VINCENT_HANDOFF_FILE`
+    # lists them — the handoff's select order — each stacked at its
+    # delivery's `head_sha`. An item is left out, and released with a note
+    # so its issue can go to a later handoff, when its delivery is not a
+    # `change`, was delivered against another base, or names a commit that
+    # is not here. Releasing it is idempotent, so a retry converges.
     #
-    # Each train task's delivery is snapshotted into this run's scratch, as
-    # `deliveries/<id>.json` (the `.delivery` object exactly as read) beside
-    # `deliveries/<id>/summary.md` and `body.md` for agents to read. Every
-    # later step reads the snapshot and never the API again, so the pull
-    # request body and the agents' context describe exactly what was stacked
-    # even if someone corrects a delivery mid-run.
+    # Each item's delivery is snapshotted into this run's scratch, as
+    # `deliveries/<task>.json` beside `deliveries/<task>/summary.md` and
+    # `body.md` for agents to read, so every later step reads the snapshot
+    # and the pull request body describes exactly what was stacked.
     #
-    # Read each task by id rather than listing the board: an archived task is
-    # hidden from `task ls` and is exactly the one this has to report.
+    # `train.tsv` is `task<TAB>number<TAB>branch<TAB>head`, where number is the
+    # GitHub issue number the pull request title names (the vincent issue id
+    # for a local issue).
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
 
-      s=$(git rev-parse --git-path vincent-iterate)
-      snap="$(git rev-parse --path-format=absolute --git-path vincent-iterate)/deliveries"
-      say "reading what each task delivered"
+      s=$(git rev-parse --git-path vincent-train)
+      mkdir -p "$s"
+      snap="$(git rev-parse --path-format=absolute --git-path vincent-train)/deliveries"
+      say "reading handoff {{.Handoff.ID}}'s items"
 
       rm -rf "$snap"
       mkdir -p "$snap"
       : > "$s/train.tsv"
       : > "$s/train.txt"
       : > "$s/left-out.txt"
-      while IFS="$(printf '\t')" read -r id issue wf title; do
-        [ -n "$id" ] || continue
-        if vincent task show "$id" --json </dev/null > "$s/task.json" 2>"$s/task.err"; then
-          state=$(jq -r '.state' "$s/task.json")
-        else
-          state=unreadable
-        fi
+      jq -c '.items[]' "$VINCENT_HANDOFF_FILE" > "$s/items.jsonl"
+      while IFS= read -r item; do
+        printf '%s\n' "$item" > "$s/item.json"
+        issue=$(jq -r '.issue.id' "$s/item.json")
+        num=$(jq -r '.issue.number // .issue.id' "$s/item.json")
+        id=$(jq -r '.task_id' "$s/item.json")
+        leave() {
+          printf '  task %s  #%s  %s\n' "$id" "$num" "$1" >> "$s/left-out.txt"
+          vincent handoff release {{.Handoff.ID}} "$issue" --note "left out of the train: $1" </dev/null
+        }
 
-        case "$state" in
-          done|archived) ;;
-          *)
-            printf '  task %s  #%s  %s — not delivered\n' "$id" "$issue" "$state" >> "$s/left-out.txt"
-            continue ;;
-        esac
-        if [ "$(jq -r '.delivery == null or .delivery.implicit' "$s/task.json")" = true ]; then
-          if [ "$(jq -r 'any(.steps[]?; .step_id == "deliver" and .state == "succeeded")' "$s/task.json")" = true ]; then
-            printf '  task %s  #%s  followed up after delivering, which cleared the delivery;\n' "$id" "$issue" >> "$s/left-out.txt"
-            printf '            record what it delivers now with vincent task deliver %s and run this again\n' "$id" >> "$s/left-out.txt"
-          else
-            printf '  task %s  #%s  %s, but finished without recording a delivery\n' "$id" "$issue" "$state" >> "$s/left-out.txt"
-          fi
-          continue
-        fi
-        kind=$(jq -r '.delivery.kind' "$s/task.json")
+        kind=$(jq -r '.delivery.kind // ""' "$s/item.json")
         if [ "$kind" != change ]; then
-          printf '  task %s  #%s  delivered %s, not a change\n' "$id" "$issue" "$kind" >> "$s/left-out.txt"
+          leave "delivered ${kind:-nothing}, not a change"
           continue
         fi
-        base=$(jq -r '.delivery.base // ""' "$s/task.json")
+        base=$(jq -r '.delivery.base // ""' "$s/item.json")
         if [ "$base" != "{{.Task.BaseBranch}}" ]; then
-          printf '  task %s  #%s  delivered against %s, not {{.Task.BaseBranch}}\n' "$id" "$issue" "$base" >> "$s/left-out.txt"
+          leave "delivered against $base, not {{.Task.BaseBranch}}"
           continue
         fi
-        branch=$(jq -r '.delivery.branch // ""' "$s/task.json")
-        head=$(jq -r '.delivery.head_sha // ""' "$s/task.json")
+        branch=$(jq -r '.delivery.branch // .branch // ""' "$s/item.json")
+        head=$(jq -r '.delivery.head_sha // .head_sha // ""' "$s/item.json")
         if [ -z "$head" ] || ! git cat-file -e "$head^{commit}" 2>/dev/null; then
-          printf '  task %s  #%s  its delivered commit %s is gone\n' "$id" "$issue" "$head" >> "$s/left-out.txt"
+          leave "its delivered commit $head is not in this repository"
           continue
         fi
 
         d="$snap/$id"
-        jq '.delivery' "$s/task.json" > "$d.json"
+        jq '.delivery' "$s/item.json" > "$d.json"
         mkdir -p "$d"
         jq -r '.title // ""' "$d.json" > "$d/title.txt"
         jq -r '.summary // ""' "$d.json" > "$d/summary.md"
@@ -771,9 +364,9 @@ steps:
         jq -r '.proof // ""' "$d.json" > "$d/proof.txt"
         [ -n "$(tr -d '[:space:]' < "$d/proof.txt")" ] || rm -f "$d/proof.txt"
 
-        printf '%s\t%s\t%s\t%s\n' "$id" "$issue" "$branch" "$head" >> "$s/train.tsv"
+        printf '%s\t%s\t%s\t%s\n' "$id" "$num" "$branch" "$head" >> "$s/train.tsv"
         {
-          printf 'task %s  #%s  %s\n' "$id" "$issue" "$(cat "$d/title.txt")"
+          printf 'task %s  #%s  %s\n' "$id" "$num" "$(cat "$d/title.txt")"
           printf '  branch:   %s at %s\n' "$branch" "$head"
           printf '  delivery: %s/ (summary.md, body.md)\n' "$d"
           tip=$(git rev-parse --verify --quiet "refs/heads/$branch" || true)
@@ -783,7 +376,8 @@ steps:
           fi
           if [ -f "$d/proof.txt" ]; then sed 's/^/  proof:    /' "$d/proof.txt"; fi
         } >> "$s/train.txt"
-      done < "$s/tasks.tsv"
+      done < "$s/items.jsonl"
+      rm -f "$s/item.json"
 
       n=$(grep -c . "$s/train.tsv" || true)
       printf '%s\n' "$n" > "$s/delivered"
@@ -795,13 +389,13 @@ steps:
       fi
       if [ -s "$s/left-out.txt" ]; then
         echo
-        echo "left out of the train:"
+        echo "left out of the train, and released:"
         cat "$s/left-out.txt"
       fi
 
       if [ "$n" -eq 0 ]; then
-        say "no task delivered a branch: nothing to land"
-        echo "no task delivered a branch, so there is no train to build." >&2
+        say "no item delivered a change: nothing to land"
+        echo "no item of handoff {{.Handoff.ID}} delivered a change, so there is no train to build." >&2
         exit 1
       fi
       say "$n branch(es) to stack into the train"
@@ -816,10 +410,9 @@ steps:
     # code, and the worktree is left mid-rebase for it on purpose.
     allow_failure: true
     # The train is this task's own branch, cut afresh from the fetched base.
-    # This task commits nothing of its own before here — `github-resolve-
-    # issue-multiple` keeps its files under `--git-path` — so resetting the
-    # branch discards nothing, and the refusal below proves that rather than
-    # assuming it.
+    # This task commits nothing of its own before here — `collect` keeps its
+    # files under `--git-path` — so resetting the branch discards nothing,
+    # and the refusal below proves that rather than assuming it.
     #
     # The stacking itself lives in `stack.sh` under the scratch directory,
     # because it has to be *resumable*: a conflict stops it partway, the
@@ -842,14 +435,14 @@ steps:
       exec 2>&1
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-      s=$(git rev-parse --git-path vincent-iterate)
+      s=$(git rev-parse --git-path vincent-train)
 
       cat > "$s/stack.sh" <<'STACK'
       #!/bin/sh
       # Stack every delivered branch in train.tsv onto the train, in order.
       # Resumable: run it again after finishing a stopped rebase.
       set -e
-      s=$(git rev-parse --git-path vincent-iterate)
+      s=$(git rev-parse --git-path vincent-train)
       own='{{.Task.BranchName}}'
       tab=$(printf '\t')
 
@@ -959,7 +552,7 @@ steps:
       tasks' changes are genuinely incompatible and you are stopping, make
       the status say so.
 
-      The scratch directory is `s=$(git rev-parse --git-path vincent-iterate)`
+      The scratch directory is `s=$(git rev-parse --git-path vincent-train)`
       (quote it — the path has spaces). In it:
 
       - `train.txt` lists every task on the train in order: its issue, its
@@ -996,7 +589,7 @@ steps:
     # worktree is clean, the train branch is checked out and sits on the base,
     # and it still builds. The suite is `train-verify`'s, not this check's.
     check: >
-      s=$(git rev-parse --git-path vincent-iterate) &&
+      s=$(git rev-parse --git-path vincent-train) &&
       test ! -d "$(git rev-parse --git-path rebase-merge)" &&
       test ! -d "$(git rev-parse --git-path rebase-apply)" &&
       test -f "$s/stack-done" &&
@@ -1017,7 +610,7 @@ steps:
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-      s=$(git rev-parse --git-path vincent-iterate)
+      s=$(git rev-parse --git-path vincent-train)
 
       want=$(cat "$s/delivered")
       got=$(grep -c . "$s/stacked" || true)
@@ -1084,7 +677,7 @@ steps:
           train passed on its own, so a failure here is most likely two
           tasks' changes meeting — a renamed function one branch still calls,
           two additions to the same table, a test asserting a count both
-          changed. `cat "$(git rev-parse --git-path vincent-iterate)/train.txt"`
+          changed. `cat "$(git rev-parse --git-path vincent-train)/train.txt"`
           lists the tasks and their deliveries; each delivery's
           `summary.md` says what that change is for.
 
@@ -1135,7 +728,7 @@ steps:
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-      s=$(git rev-parse --git-path vincent-iterate)
+      s=$(git rev-parse --git-path vincent-train)
 
       say "reading the required checks on {{.Task.BaseBranch}}"
       slug=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
@@ -1179,7 +772,7 @@ steps:
     type: command
     shell: sh
     timeout: 5m
-    # Load-bearing. A retried `gh pr create` opens a second pull request, and
+    # Load-bearing. A retried create opens a second pull request, and
     # nothing distinguishes "the call failed" from "the call succeeded and the
     # response was lost" — so a person retrying this step by hand gets the
     # existing pull request back rather than a second one: the step asks
@@ -1193,8 +786,9 @@ steps:
     #
     # The body is every task's own drafted body, in train order, under a
     # heading naming the task. Each carries its own `Closes #N` (or `Part of
-    # #N` where a documentation or ci change left items open), so merging the
-    # train closes exactly the issues the children said it should.
+    # #N` where a documentation or ci change left items open), so GitHub
+    # links the train to exactly the issues the deliveries said it should;
+    # `deliver` closes them once the merge is confirmed.
     #
     # `--force-with-lease`: the branch is this task's own and is new on the
     # first run, and a retry after `stack` re-cut the train must replace what
@@ -1202,8 +796,8 @@ steps:
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-      s=$(git rev-parse --git-path vincent-iterate)
-      snap="$(git rev-parse --path-format=absolute --git-path vincent-iterate)/deliveries"
+      s=$(git rev-parse --git-path vincent-train)
+      snap="$(git rev-parse --path-format=absolute --git-path vincent-train)/deliveries"
 
       n=$(cat "$s/delivered")
       if [ "$n" -eq 1 ]; then
@@ -1221,7 +815,7 @@ steps:
 
       {
         printf 'A merge train of %s delivered branch(es), opened by vincent task #{{.Task.ID}}\n' "$n"
-        printf '(`github-iterate-work`). Each branch was verified on its own, then rebased\n'
+        printf '(`github-handoff-train`, handoff {{.Handoff.ID}}). Each branch was verified on its own, then rebased\n'
         printf 'onto `{{.Task.BaseBranch}}` in the order below and verified together.\n\n'
         while IFS="$(printf '\t')" read -r id issue branch head; do
           [ -n "$id" ] || continue
@@ -1240,19 +834,27 @@ steps:
       git push --force-with-lease -u origin {{.Task.BranchName}}
 
       existing=$(gh pr list --head {{.Task.BranchName}} --base {{.Task.BaseBranch}} --state open \
-        --json url --jq '.[0].url // empty')
+        --json number,url --jq '.[0] // empty | "\\(.number)\\t\\(.url)"')
       if [ -n "$existing" ]; then
-        printf '%s\n' "$existing" > "$s/url.txt"
-        say "reusing the open pull request $existing"
+        printf '%s\n' "$existing" | cut -f2 > "$s/url.txt"
+        say "reusing the open pull request $(cat "$s/url.txt")"
         echo "an open pull request from {{.Task.BranchName}} already exists; reusing it:"
+        # The merge names this task's linked pull request, so a reused one
+        # must be the linked one. Linking writes only vincent's own record.
+        if ! vincent github pr show --task {{.Task.ID}} --json </dev/null >/dev/null 2>&1; then
+          vincent github pr link "$(printf '%s\n' "$existing" | cut -f1)" --task {{.Task.ID}} </dev/null
+        fi
       else
         say "opening the train's pull request against {{.Task.BaseBranch}}"
-        gh pr create \
-          --base {{.Task.BaseBranch}} \
-          --head {{.Task.BranchName}} \
+        # Through vincent, not `gh`: the handoff's grant must name
+        # `pull.create`, and the pull request is linked to this task, which
+        # is what lets `merge` name it. The push it makes is a no-op — the
+        # train was force-pushed above — and it never forces.
+        vincent github pr create --task {{.Task.ID}} \
           --title "$(cat "$s/pr-title.txt")" \
-          --body-file "$s/pr.md" \
-          > "$s/url.txt"
+          --body "$(cat "$s/pr.md")" \
+          --json </dev/null > "$s/pr.json"
+        jq -r '.url' "$s/pr.json" > "$s/url.txt"
       fi
       cat "$s/url.txt"
       say "opened $(cat "$s/url.txt")"
@@ -1262,11 +864,11 @@ steps:
     type: command
     shell: sh
     timeout: 2m
-    # A pure read straight after a push and a `gh pr create`, which is when a
+    # A pure read straight after a push and a pull request create, which is when a
     # secondary rate limit is likeliest, so this one may retry.
     max_retries: 1
     retry_backoff: 20s
-    run: gh pr view "$(cat "$(git rev-parse --git-path vincent-iterate)/url.txt")"
+    run: gh pr view "$(cat "$(git rev-parse --git-path vincent-train)/url.txt")"
 
   - id: review
     name: Review the whole train
@@ -1301,7 +903,7 @@ steps:
       reading, then what you found — "review: 2 P1s in internal/store" beats
       "reviewing".
 
-      The scratch directory is `s=$(git rev-parse --git-path vincent-iterate)`
+      The scratch directory is `s=$(git rev-parse --git-path vincent-train)`
       (quote it — the path has spaces). `cat "$s/train.txt"` lists every task
       on the train and the directory holding its **delivery**: `summary.md`
       (the task's brief) says what that change is *for*, `body.md` what it
@@ -1369,7 +971,7 @@ steps:
     # The file parses as the schema the prompt gave, and the reviewer left the
     # train exactly as `train-pr` pushed it.
     check: >
-      r="$(git rev-parse --git-path vincent-iterate)/review" &&
+      r="$(git rev-parse --git-path vincent-train)/review" &&
       jq -e 'type == "array" and all(.[]; type == "object"
       and (.priority | IN("P0", "P1", "P2", "P3"))
       and ((.title // "") | type == "string" and length > 0)
@@ -1405,7 +1007,7 @@ steps:
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-      s=$(git rev-parse --git-path vincent-iterate)
+      s=$(git rev-parse --git-path vincent-train)
       r="$s/review"
 
       if ! jq -e 'type == "array"' "$r/findings.raw.json" >/dev/null 2>&1; then
@@ -1497,7 +1099,7 @@ steps:
       # create or edit it on the pull request. Idempotent: run it as often as
       # you like; a comment whose body has not changed is not sent again.
       set -e
-      s=$(git rev-parse --git-path vincent-iterate)
+      s=$(git rev-parse --git-path vincent-train)
       r="$s/review"
       slug=$(cat "$s/slug.txt")
       tag='vincent-review:{{.Task.ID}}'
@@ -1559,7 +1161,7 @@ steps:
       # person running the task made the call; a P0 or P1 is only dismissed or
       # deferred that way.
       set -e
-      s=$(git rev-parse --git-path vincent-iterate)
+      s=$(git rev-parse --git-path vincent-train)
       r="$s/review"
       id=$1; status=$2; note=$3; by=${4:-agent}
       usage() {
@@ -1643,7 +1245,7 @@ steps:
     timeout: 1m
     allow_failure: true
     run: |
-      [ "$(cat "$(git rev-parse --git-path vincent-iterate)/review/open")" -gt 0 ]
+      [ "$(cat "$(git rev-parse --git-path vincent-train)/review/open")" -gt 0 ]
 
   - id: review-resolve
     name: Resolve the review findings
@@ -1676,7 +1278,7 @@ steps:
 
           vincent status "F<n>: <one short line>"
 
-      The review directory is `r="$(git rev-parse --git-path vincent-iterate)/review"`
+      The review directory is `r="$(git rev-parse --git-path vincent-train)/review"`
       (quote it — the path has spaces):
 
       - `findings.json` is the canonical list, ids `F1`…, highest priority
@@ -1742,7 +1344,7 @@ steps:
     # the train still contains the commit that was reviewed, and the local
     # legs are green — the merge attempt only pushes what passes here.
     check: >
-      r="$(git rev-parse --git-path vincent-iterate)/review" &&
+      r="$(git rev-parse --git-path vincent-train)/review" &&
       test "$(jq --slurpfile res "$r/resolutions.json"
       '[.[] | select($res[0][.id] == null)] | length' "$r/findings.json")" = 0 &&
       test -z "$(git status --porcelain)" &&
@@ -1767,7 +1369,7 @@ steps:
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-      s=$(git rev-parse --git-path vincent-iterate)
+      s=$(git rev-parse --git-path vincent-train)
       r="$s/review"
 
       say "updating the review on the pull request"
@@ -1857,7 +1459,7 @@ steps:
           exec 2>&1
           set -e
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-          s=$(git rev-parse --git-path vincent-iterate)
+          s=$(git rev-parse --git-path vincent-train)
 
           say "fetching origin/{{.Task.BaseBranch}}"
           git fetch origin {{.Task.BaseBranch}}
@@ -1904,7 +1506,7 @@ steps:
           If it is a conflict, resolve it:
 
           - This branch is a merge train: the delivered branches of several
-            tasks, stacked in order. `cat "$(git rev-parse --git-path vincent-iterate)/train.txt"`
+            tasks, stacked in order. `cat "$(git rev-parse --git-path vincent-train)/train.txt"`
             lists them — each task, its issue and its delivery, whose
             `summary.md` and `body.md` say what that part of the train is *for*.
             That is what decides how a conflict resolves; `git log` on the
@@ -1965,7 +1567,7 @@ steps:
         run: |
           set -e
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-          s=$(git rev-parse --git-path vincent-iterate)
+          s=$(git rev-parse --git-path vincent-train)
 
           if ! git merge-base --is-ancestor origin/{{.Task.BaseBranch}} HEAD; then
             say "branch is not on top of the base: nothing was pushed"
@@ -2027,7 +1629,7 @@ steps:
         run: |
           set -e
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-          s=$(git rev-parse --git-path vincent-iterate)
+          s=$(git rev-parse --git-path vincent-train)
 
           url=$(cat "$s/url.txt")
           head=$(cat "$s/head.sha")
@@ -2155,7 +1757,7 @@ steps:
         run: |
           set -e
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-          s=$(git rev-parse --git-path vincent-iterate)
+          s=$(git rev-parse --git-path vincent-train)
 
           url=$(cat "$s/url.txt")
           slug=$(cat "$s/slug.txt")
@@ -2352,7 +1954,7 @@ steps:
         run: |
           set -e
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-          s=$(git rev-parse --git-path vincent-iterate)
+          s=$(git rev-parse --git-path vincent-train)
 
           url=$(cat "$s/url.txt")
           head=$(cat "$s/head.sha")
@@ -2445,13 +2047,14 @@ steps:
         # this workflow no longer knows; `merged` reads the real answer back
         # instead.
         max_retries: 0
-        # `--merge` is the repository's rule, not a preference: squash and
-        # rebase merges are disabled on this repo because a branch's history
-        # becomes master's history (CLAUDE.md). No `--delete-branch`: the
-        # repository deletes the remote branch itself, and gh's flag would also
-        # delete the local branch this worktree is sitting on.
+        # `--method merge` is the repository's rule, not a preference: squash
+        # and rebase merges are disabled on this repo because a branch's
+        # history becomes master's history (CLAUDE.md). It goes through
+        # vincent, under the handoff's `pull.merge` grant, on the pull request
+        # `train-pr` linked to this task; the repository deletes the remote
+        # branch itself.
         #
-        # `--match-head-commit` closes the last gap in the tail: between the
+        # `--head-sha` closes the last gap in the tail: between the
         # final poll and this call, a push could still land. GitHub refuses the
         # merge if the head is not the commit whose checks were verified, which
         # is a server -side guarantee rather than one this workflow has to win a
@@ -2459,7 +2062,7 @@ steps:
         #
         # The status is set before the call and never after it: this is the
         # irreversible step, and a message claiming success would be a claim
-        # this step is not entitled to make — `gh pr merge` exiting 0 is the API
+        # this step is not entitled to make — the merge call exiting 0 is the API
         # accepting the merge, not GitHub having recorded it. `merged` reads the
         # real answer back and says so. What survives here on a failure —
         # "merging <sha>" — is exactly the sentence a person needs before
@@ -2467,12 +2070,12 @@ steps:
         run: |
           set -e
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-          s=$(git rev-parse --git-path vincent-iterate)
+          s=$(git rev-parse --git-path vincent-train)
 
           say "merging $(cut -c1-7 "$s/head.sha") with a merge commit"
-          gh pr merge "$(cat "$s/url.txt")" \
-            --merge \
-            --match-head-commit "$(cat "$s/head.sha")"
+          vincent github pr merge --task {{.Task.ID}} \
+            --method merge \
+            --head-sha "$(cat "$s/head.sha")" </dev/null
 
       - id: merge-probe
         name: Ask GitHub whether the merge landed
@@ -2481,7 +2084,7 @@ steps:
         timeout: 3m
         max_retries: 0
         # The break condition, and the only step in this loop entitled to say
-        # the merge happened: `gh pr merge` exiting 0 is the API accepting the
+        # the merge happened: the merge call exiting 0 is the API accepting the
         # call, not GitHub having recorded it.
         #
         # It runs on every pass, including one where `merge` was skipped or
@@ -2498,7 +2101,7 @@ steps:
         # repairs and goes round again.
         allow_failure: true
         # It waits wherever the merge call **ran**, and that includes the pass
-        # where it exited non-zero. `gh pr merge` returning is the API accepting
+        # where it exited non-zero. The merge call returning is the API accepting
         # the merge, not GitHub having finished recording it: for a second or
         # two afterwards the pull request can still read OPEN. A merge whose
         # response was lost looks exactly like a failed one, so reading once and
@@ -2509,7 +2112,7 @@ steps:
         run: |
           set -e
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-          s=$(git rev-parse --git-path vincent-iterate)
+          s=$(git rev-parse --git-path vincent-train)
 
           url=$(cat "$s/url.txt")
           head=$(cat "$s/head.sha")
@@ -2575,7 +2178,7 @@ steps:
         # else has already finished with.
         run: |
           say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-          s=$(git rev-parse --git-path vincent-iterate)
+          s=$(git rev-parse --git-path vincent-train)
 
           say "the PR was merged or closed outside this task: stopping"
           echo "the pull request is no longer an open one this task owns; see the 'merge-probe'" >&2
@@ -2631,7 +2234,7 @@ steps:
           Read the actual failure before you change anything. The table above
           names the contexts; the logs are on GitHub, not in this worktree:
 
-              s=$(git rev-parse --git-path vincent-iterate)
+              s=$(git rev-parse --git-path vincent-train)
               gh pr checks "$(cat "$s/url.txt")"
               gh run list --commit "$(cat "$s/head.sha")"
               gh run view <run-id> --log-failed
@@ -2705,14 +2308,13 @@ steps:
     # `merge-probe` already waited for the state to settle, so this reads once
     # rather than polling.
     #
-    # Only after that does it remove the run's scratch directory, the delivery
-    # snapshots with it. The deliveries themselves are task history and are
-    # never cleared (task 137.3). A run that fails before here leaves the
-    # scratch directory in place for a retry or a person.
+    # It leaves the scratch directory for `deliver`, which removes it once the
+    # issues are closed. A run that fails before then leaves it in place for a
+    # retry or a person.
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-      s=$(git rev-parse --git-path vincent-iterate)
+      s=$(git rev-parse --git-path vincent-train)
 
       url=$(cat "$s/url.txt")
       head=$(cat "$s/head.sha")
@@ -2756,11 +2358,47 @@ steps:
       done < "$s/train.tsv"
       if [ -s "$s/left-out.txt" ]; then
         echo
-        echo "not in this train (still on the board, still yours):"
+        echo "not in this train (released for a later handoff):"
         cat "$s/left-out.txt"
       fi
 
+      printf '%s\n' "$commit" > "$s/merge-commit"
+      say "merged $(cat "$s/delivered") issue branch(es) at $short as $commit"
+
+  - id: deliver
+    name: Close the issues
+    type: command
+    shell: sh
+    timeout: 5m
+    # Only after `merged` confirmed the merge at the pushed commit. Every
+    # unresolved item is recorded delivered and its issue closed as
+    # completed, through vincent's outbox and attributed to the handoff —
+    # the trigger's grant must name `issue.comment` and `issue.close`. The
+    # pull request's `Closes #N` lines link it on GitHub; if sync imports
+    # GitHub's own close first, `deliver` skips an issue that is already
+    # closed, so the race is harmless. Repeating it changes nothing, which
+    # is what makes a retry safe. The items `collect` released are resolved
+    # already and `--all` leaves them alone.
+    #
+    # The deliveries themselves are task history and are never cleared (task
+    # 137.3); only this run's scratch is removed, and only once the close
+    # went through.
+    max_retries: 1
+    retry_backoff: 20s
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      s=$(git rev-parse --git-path vincent-train)
+
+      {
+        printf 'Merged in %s as %s by vincent task #{{.Task.ID}}' "$(cat "$s/url.txt")" "$(cat "$s/merge-commit")"
+        printf ' (`github-handoff-train`, handoff {{.Handoff.ID}}).\n'
+      } > "$s/merged.md"
+      say "closing handoff {{.Handoff.ID}}'s issues"
+      vincent handoff deliver {{.Handoff.ID}} --all --close completed --comment-file "$s/merged.md" </dev/null
+
       n=$(cat "$s/delivered")
+      commit=$(cat "$s/merge-commit")
       rm -rf "$s"
       # The last word of the whole run, and the one the board keeps.
-      say "merged $n issue branch(es) at $short as $commit"
+      say "merged $n issue branch(es) as $commit and closed their issues"
