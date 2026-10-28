@@ -834,7 +834,7 @@ steps:
       git push --force-with-lease -u origin {{.Task.BranchName}}
 
       existing=$(gh pr list --head {{.Task.BranchName}} --base {{.Task.BaseBranch}} --state open \
-        --json number,url --jq '.[0] // empty | "\\(.number)\\t\\(.url)"')
+        --json number,url --jq '.[0] // empty | "\(.number)\t\(.url)"')
       if [ -n "$existing" ]; then
         printf '%s\n' "$existing" | cut -f2 > "$s/url.txt"
         say "reusing the open pull request $(cat "$s/url.txt")"
@@ -854,7 +854,14 @@ steps:
           --title "$(cat "$s/pr-title.txt")" \
           --body "$(cat "$s/pr.md")" \
           --json </dev/null > "$s/pr.json"
-        jq -r '.url' "$s/pr.json" > "$s/url.txt"
+        # `--json` exits 0 when GitHub refused the create and the reply is
+        # only a compare URL (`created: false`), so that case is refused here;
+        # the URL of a created one is the pull request's, under `.pull`.
+        if [ "$(jq -r '.created' "$s/pr.json")" != true ]; then
+          jq -r '"pull request not created: \(.reason // "unknown") \(.message // "")\nopen it at \(.compare_url // "")"' "$s/pr.json" >&2
+          exit 1
+        fi
+        jq -r '.pull.url' "$s/pr.json" > "$s/url.txt"
       fi
       cat "$s/url.txt"
       say "opened $(cat "$s/url.txt")"
