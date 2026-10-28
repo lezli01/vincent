@@ -1839,9 +1839,16 @@ func (s *Server) handleTaskGet(w http.ResponseWriter, r *http.Request) {
 		resp.AvailableActions = lockAwareActions(t.State, chatID)
 	}
 	// The handoff this task is the task of (task 137.11), so a client
-	// reads the items with one GET /v1/handoffs/{id}.
-	if h, err := s.deps.Store.GetHandoffByTask(r.Context(), t.ID); err == nil {
+	// reads the items with one GET /v1/handoffs/{id}. Only "no handoff" is
+	// an absent field: any other error fails the read, as it fails the list
+	// (HandoffIDsByTask), so a task never carries handoff_id on its row and
+	// silently loses it on its detail (review F6 on #872).
+	switch h, err := s.deps.Store.GetHandoffByTask(r.Context(), t.ID); {
+	case err == nil:
 		resp.HandoffID = &h.ID
+	case !errors.Is(err, store.ErrHandoffNotFound):
+		s.internalError(w, "get handoff by task", err)
+		return
 	}
 	// The children rollup (§13.2, task 014 decisions 13, 27). Present
 	// whenever the task has lanes, in any state — a parent mid-join, or one

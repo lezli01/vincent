@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -72,5 +73,32 @@ func TestHandoffTUIFields(t *testing.T) {
 	}
 	if b := issue(h.issue(t).ID).Handoffs; b == nil || len(b) != 0 {
 		t.Errorf("an issue no handoff took: handoffs = %#v, want []", b)
+	}
+}
+
+// TestTaskDetailFailsOnHandoffReadError is review F6 on #872: the detail
+// treated every GetHandoffByTask error as "not a handoff's task" and dropped
+// handoff_id, while the list fails on the same error. A read that fails for
+// any reason other than "no handoff" now fails the detail too. The failure
+// is the handoffs table renamed away through a second connection.
+func TestTaskDetailFailsOnHandoffReadError(t *testing.T) {
+	h := newActionHarness(t)
+	task := queuedTask(t, h)
+	path := fmt.Sprintf("/v1/tasks/%d", task.ID)
+	if resp, body := h.doJSON(t, http.MethodGet, path, nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("task detail: %d %s", resp.StatusCode, body)
+	}
+
+	db, err := sql.Open("sqlite", h.store.Path())
+	if err != nil {
+		t.Fatalf("open second connection: %v", err)
+	}
+	_, err = db.ExecContext(t.Context(), `ALTER TABLE handoffs RENAME TO handoffs_gone`)
+	_ = db.Close()
+	if err != nil {
+		t.Fatalf("rename handoffs: %v", err)
+	}
+	if resp, body := h.doJSON(t, http.MethodGet, path, nil); resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("task detail with an unreadable handoffs table: %d %s, want 500", resp.StatusCode, body)
 	}
 }
