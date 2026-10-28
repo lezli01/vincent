@@ -944,6 +944,10 @@ pull request.
   `add_comment` (migration 0047). 137.6 had not landed, so `deliver`'s close
   and `--comment-file` are wired to the guard by 137.6 (decision 5 of #840's
   brief), reusing it rather than re-implementing it.
+  *Train note 2026-10-28:* 137.6 landed in the same train without that
+  wiring, so the item verbs still refuse an agent's forge-writing close or
+  comment with `forge_write_needs_human`, granted or not; routing them
+  through `IssueWriteAs` remains to do.
 - [x] **137.8** ([#841](https://github.com/lezli01/vincent/issues/841)) `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
   over items and `vincent workflow render --handoff-file`; the
   `vincent-workflows` skill, the five built-ins re-read and the

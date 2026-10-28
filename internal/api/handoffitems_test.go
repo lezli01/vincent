@@ -16,7 +16,7 @@ import (
 func startHandoff(t *testing.T, h *taskHarness, ids ...int64) handoffBody {
 	t.Helper()
 	return wantStatus(t, http.StatusCreated)(h.postMarked(t, "/v1/handoffs", map[string]any{
-		"project_id": h.projectID, "workflow": "adhoc", "issue_ids": ids, "paused": true,
+		"project_id": h.projectID, "workflow": handoffWorkflowName, "issue_ids": ids, "paused": true,
 	}))
 }
 
