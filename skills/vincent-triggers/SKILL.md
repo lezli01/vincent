@@ -4,7 +4,7 @@ description: Create, edit, review, arm, and debug vincent event triggers, the YA
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.7.0
+  version: 1.7.1
 ---
 
 # vincent Triggers
@@ -127,13 +127,15 @@ before changing the design.
     `lane: hand_off`, or `from_lane: hand_off, lane: done`. `match: {by:
     human}` drops task-caused moves; a hand-off trigger writes `by: task`.
   - **`handoff_changed`** fires when a handoff item's outcome moves
-    (`pending`, `delivered`, `returned`, `waiting`, `released`), and is
-    opt-in the same way. `.Event.outcome` is the outcome moved to,
-    `.Event.from_outcome` the one moved from, `.Event.handoff_id` the
-    handoff and `.Event.task_id` its task. `.Event.by` is the item's actor:
-    `handoff`, `human`, `agent`, `task` or `settle` are local; `sync` — a
-    GitHub close resolving a waiting item — is not, so a trigger that can
-    match it from sync needs `allowed_actors`, as `closed` does.
+    (`delivered`, `returned`, `waiting`, `released`, or empty for an
+    unresolved item), and is opt-in the same way. `.Event.outcome` is the
+    outcome moved to, `.Event.from_outcome` the one moved from (empty on
+    an item's first resolution),
+    `.Event.handoff_id` the handoff and `.Event.task_id` its task.
+    `.Event.by` is the item's actor: `handoff`, `human`, `agent` or
+    `settle` are local; `sync` — a GitHub close resolving a waiting item —
+    is not, so a trigger that can match it from sync needs
+    `allowed_actors`, as `closed` does.
   - **Hand-off echo loops.** A `lane: hand_off` trigger whose task is
     created for the same issue moves it back to `in_progress`, and to
     `hand_off` again when that task finishes. Set

@@ -152,7 +152,7 @@ What an event carries:
 | `from`, `to`, `reason` | `closed` and `reopened` only: the state moved, and a close's reason |
 | `lane`, `from_lane` | `lane_changed` only: the lane moved to and from — `open`, `in_progress`, `hand_off` or `done` — as the move recorded them |
 | `task_id` | `lane_changed` with `by: task` only: the root task whose write moved the lane. `handoff_changed`: the handoff's task |
-| `outcome`, `from_outcome` | `handoff_changed` only: the item's outcome moved to and from — `pending`, `delivered`, `returned`, `waiting` or `released` |
+| `outcome`, `from_outcome` | `handoff_changed` only: the item's outcome moved to and from — `delivered`, `returned`, `waiting` or `released`, or empty for an unresolved item, so `from_outcome` is empty on an item's first resolution |
 | `handoff_id` | `handoff_changed` only: the handoff the item belongs to |
 
 An issue deleted before its event is judged yields nothing.

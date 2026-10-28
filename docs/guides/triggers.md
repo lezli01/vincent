@@ -347,10 +347,11 @@ Every event carries:
   when `by` is `task`. Guard a template that reads `task_id` with
   `{{ if eq .Event.by "task" }}`: a close or reopen carries none.
 - **`outcome`** and **`from_outcome`** on `handoff_changed`: the item's
-  outcome moved to and from — `pending`, `delivered`, `returned`, `waiting`
-  or `released` — with **`handoff_id`** and **`task_id`**, the handoff's
-  task. Its `by` is the item's actor: `handoff`, `human`, `agent`, `task` or
-  `settle`, or `sync` when a GitHub close resolved a waiting item.
+  outcome moved to and from — `delivered`, `returned`, `waiting` or
+  `released`, or empty for an unresolved item, so `from_outcome` is empty on
+  an item's first resolution — with **`handoff_id`** and **`task_id`**, the
+  handoff's task. Its `by` is the item's actor: `handoff`, `human`, `agent`
+  or `settle`, or `sync` when a GitHub close resolved a waiting item.
 
 **`lane_changed` is opt-in.** A trigger sees it only when its `match.action`
 names it; one with no `match.action` matches the other five events and never a

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -376,9 +378,73 @@ func TestIssuesHandoffChanged(t *testing.T) {
 			t.Errorf("match %q saw %v, %v", match, evs, err)
 		}
 	}
+	// An item's first resolution moves from the unresolved outcome, which is
+	// empty: there is no "pending".
+	first, err := issueEventsFor(t.Context(), st, named, handoffItemEvent(42, iss.ID, 11, string(store.HandoffUnresolved), "delivered", "handoff"))
+	if err != nil || len(first) != 1 || first[0]["from_outcome"] != "" {
+		t.Errorf("first resolution = %v, %v; want from_outcome empty", first, err)
+	}
 	// A repeated outcome is no change.
 	if evs, _ := issueEventsFor(t.Context(), st, named, handoffItemEvent(41, iss.ID, 11, "waiting", "waiting", "human")); len(evs) != 0 {
 		t.Errorf("an unchanged outcome yielded %v", evs)
+	}
+}
+
+// TestHandoffChangedOutcomeDocs: the pages that teach handoff_changed name
+// only outcomes and actors the store writes. An unresolved item's outcome is
+// empty — there is no "pending" — so a trigger matching a value the docs
+// invented would load and never fire (review F1). SKILL.md is runtime text,
+// spliced into create-trigger and update-triggers.
+func TestHandoffChangedOutcomeDocs(t *testing.T) {
+	known := map[string]bool{}
+	for _, o := range store.HandoffOutcomes {
+		known[string(o)] = true
+	}
+	for _, b := range store.HandoffOutcomeBys {
+		known[string(b)] = true
+	}
+	// Everything else a passage may put in backticks: the event's own fields
+	// and the names it is compared with.
+	for _, w := range []string{
+		"handoff_changed", "outcome", "from_outcome", "handoff_id", "task_id", "by",
+		".Event.outcome", ".Event.from_outcome", ".Event.handoff_id", ".Event.task_id", ".Event.by",
+		"allowed_actors", "closed",
+	} {
+		known[w] = true
+	}
+	tick := regexp.MustCompile("`([^`]*)`")
+	for _, c := range []struct{ file, start string }{
+		{"../../skills/vincent-triggers/SKILL.md", "**`handoff_changed`** fires"},
+		{"../../skills/vincent-triggers/references/trigger-schema.md", "| `outcome`, `from_outcome` |"},
+		{"../../docs/guides/triggers.md", "**`outcome`** and **`from_outcome`** on `handoff_changed`"},
+	} {
+		raw, err := os.ReadFile(c.file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc := strings.ReplaceAll(string(raw), "\r\n", "\n")
+		i := strings.Index(doc, c.start)
+		if i < 0 {
+			t.Errorf("%s: no passage starting %q", c.file, c.start)
+			continue
+		}
+		passage := doc[i:]
+		if end := regexp.MustCompile(`\n(\s*- |\| |\n)`).FindStringIndex(passage[len(c.start):]); end != nil {
+			passage = passage[:len(c.start)+end[0]]
+		}
+		for _, m := range tick.FindAllStringSubmatch(passage, -1) {
+			if !known[m[1]] {
+				t.Errorf("%s: handoff_changed passage names %q, which the store never writes", c.file, m[1])
+			}
+		}
+		for _, o := range store.HandoffOutcomes {
+			if !strings.Contains(passage, "`"+string(o)+"`") {
+				t.Errorf("%s: handoff_changed passage omits outcome %q", c.file, o)
+			}
+		}
+		if !strings.Contains(passage, "empty") {
+			t.Errorf("%s: handoff_changed passage does not say an unresolved outcome is empty", c.file)
+		}
 	}
 }
 
