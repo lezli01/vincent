@@ -15,8 +15,9 @@ import (
 // step bodies no validator looks into. These tests pull each such expression
 // out of the file and run it through jq over the wire type the command
 // emits, so a script and the shape it reads cannot drift apart unnoticed
-// (review F1 on #872: `train-pr` read `.url` off a GitHubPullCreated, which
-// nests it under `.pull`).
+// (review F1 and F2 on #872: `train-pr` read `.url` off a GitHubPullCreated
+// and merge-train's `deliver` read `.merged` off a GitHubTaskPull, both of
+// which nest those under `.pull`).
 
 // scriptJQ returns the one capture of pattern in the file at rel, from the
 // repository root. A missing match fails: the pattern is stale.
@@ -86,5 +87,28 @@ func TestHandoffTrainReadsThePullRequestURL(t *testing.T) {
 	}
 	if got := runJQ(t, jq, []any{}, listExpr); got != "" {
 		t.Errorf("no open pull request = %q, want nothing", got)
+	}
+}
+
+func TestMergeTrainExampleReadsTheMerge(t *testing.T) {
+	jq := lookJQ(t)
+	const file = "examples/merge-train.yaml"
+
+	expr := scriptJQ(t, file, `jq -r --arg head "[^"]*" '([^']*)'`)
+	pull := func(merged bool, head string) GitHubTaskPull {
+		return GitHubTaskPull{Linked: true, Repo: "o/r", Number: 7, Pull: &GitHubPullRequest{Number: 7, Merged: merged, HeadSHA: head}}
+	}
+	for _, tc := range []struct {
+		name string
+		pull GitHubTaskPull
+		want string
+	}{
+		{"merged at the verified commit", pull(true, "abc"), "true"},
+		{"not merged", pull(false, "abc"), "false"},
+		{"merged at another commit", pull(true, "def"), "false"},
+	} {
+		if got := runJQ(t, jq, tc.pull, "--arg", "head", "abc", expr); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

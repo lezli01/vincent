@@ -98,7 +98,7 @@ steps:
     run: |
       set -e
       pr=$(vincent github pr show --task {{.Task.ID}} --json)
-      if [ "$(printf '%s' "$pr" | jq -r '.merged and .head_sha == "'"$(git rev-parse HEAD)"'"')" != true ]; then
+      if [ "$(printf '%s' "$pr" | jq -r --arg head "$(git rev-parse HEAD)" '.pull.merged and .pull.head_sha == $head')" != true ]; then
         echo "the pull request is not merged at $(git rev-parse HEAD)" >&2
         exit 1
       fi
