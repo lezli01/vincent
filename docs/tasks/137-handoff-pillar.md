@@ -996,7 +996,7 @@ pull request.
 - [ ] **137.12** ([#845](https://github.com/lezli01/vincent/issues/845)) Example handoff workflows under `examples/`, and
   `github-iterate-work` split into its dispatcher and `github-handoff-train`
   with a trigger (decision 9). Depends: 137.8, 137.9.
-- [ ] **137.13** ([#846](https://github.com/lezli01/vincent/issues/846)) `scripts/137-gate.sh` on all three platforms, against
+- [x] **137.13** ([#846](https://github.com/lezli01/vincent/issues/846)) `scripts/137-gate.sh` on all three platforms, against
   `cmd/fakegh` and `cmd/fakeagent`: claim exclusivity, an ungranted write
   refused and a granted one written back through the outbox, `wait` resolved by
   a sync close, `return` moving the issue to `in_progress`, an aborted handoff
@@ -1004,6 +1004,12 @@ pull request.
   `deliver --ready` or `vincent issue ready`, and a task refused on a claimed
   issue. Wired into `gate-group`'s lightest group. Depends: 137.6, 137.7,
   137.15.
+  *Done 2026-10-28:* `scripts/137-gate.sh`, wired as `137 gate (handoffs)`
+  in `gate-group` group 2; record in `docs/gates/137-handoffs.md`. The
+  `idle` label is 137.10's, so the explicit scenario asserts the lane
+  (`in_progress`) and the refusal instead. The gate unsets the caller's
+  `VINCENT_*` variables, since a step's task marker would make its human
+  calls an agent's.
 - [ ] **137.14** ([#847](https://github.com/lezli01/vincent/issues/847)) `docs/guides/handoff.md`, the features page, the API, CLI,
   configuration and template references, and the screenshot seed with new
   tapes appended at the end of `do_capture`. Depends: 137.11, 137.12.
