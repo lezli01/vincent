@@ -557,6 +557,20 @@ jobs:
         shell: bash
         run: ./scripts/137-gate.sh
 
+      # 138: the copilot adapter registered in a real daemon (task 138.9;
+      # §9.9, §13.4) — a copilot workflow runs to done with the edit on its
+      # branch, a stderr-only model refusal stays diagnosable, `logged_in` is
+      # null on /v1/agents and /v1/info, and a copilot step reaches
+      # `step_status` through its inline `--additional-mcp-config` JSON. The
+      # matrix earns its place on that last scenario: on Windows the adapter
+      # launches copilot's npm `.cmd` shim through `cmd /c`, and task 138.8's
+      # quoting is what keeps the JSON carrier whole there. Group 3 because it
+      # was the lightest on Windows when this was wired (run 40874635332).
+      - name: 138 gate (copilot adapter)
+        if: matrix.group == 3
+        shell: bash
+        run: ./scripts/138-gate.sh
+
   gates:
     needs: gate-group
     if: always()
