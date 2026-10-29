@@ -19,8 +19,10 @@ import (
 // it was handed.
 func TestStartMCPCallbackThroughCmdShim(t *testing.T) {
 	exe := agenttest.BuildFakeAgent(t)
-	// A space in the directory, as under "C:\Program Files\nodejs", so the
-	// shim's own quoting is exercised too.
+	// A space in the directory, as under "C:\Program Files\nodejs". The
+	// quoted shim path plus the quoted JSON put more than two `"` on the
+	// line, and `cmd /c` then drops the last one. Without procx.BatchCmdLine
+	// the path splits at this space (review F1), so the space must stay.
 	dir := filepath.Join(t.TempDir(), "npm prefix")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)

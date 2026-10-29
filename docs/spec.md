@@ -6473,12 +6473,21 @@ section is renumbered.
   rendered by `encoding/json`. `--allow-tool` is redundant under full-auto's
   `--allow-all-tools`, and is passed anyway so the server stays approved once
   restricted mode (138.10) replaces that flag (task 057 decision 9).
-  - *Inline, no file.* Task 138 decision 6's `@file` fallback was not needed:
-    the npm `copilot.cmd` shim makes cmd.exe re-parse the command line on
-    Windows, and `TestStartMCPCallbackThroughCmdShim` proves the JSON survives
-    it — it carries `"` and none of `&|<>^%`, because the URL is loopback and
-    the token is base64url. Nothing is written to the worktree, and recovery
-    has nothing to sweep.
+  - *Inline, no file.* On Windows the npm `copilot.cmd` shim runs as
+    `cmd /c <line>`. The hazard there is mostly not the metacharacters. When
+    a line holds more than two `"`, `cmd /c` drops the first one and the last
+    one. A quoted shim path (an npm prefix with a space) plus the quoted JSON
+    (`Bearer <token>` has a space) therefore split the path at its space.
+    The first Windows run of `TestStartMCPCallbackThroughCmdShim` failed
+    exactly that way (review F1). Task 138 decision 6's `@file` fallback
+    would not have fixed it, because a temp path with a space is quoted the
+    same way. The fix is in the spawn: the host launcher wraps a batch file's
+    command line in one outer pair of quotes (§9.1, amended 2026-10-29). The
+    JSON carries no `&|<>^%`, because the URL is loopback and the token is
+    base64url. With the fix, `TestStartMCPCallbackThroughCmdShim` carries it
+    through a shim under a spaced directory on the Windows leg. The carrier
+    stays inline: nothing is written to the worktree, and recovery has
+    nothing to sweep.
   - *The token is in argv*, as with claude (§9.2): visible to `ps` for the
     step's life, and redacted from the §12.3 debug record by `redactMCPToken`.
   - *No strict switch.* `--additional-mcp-config` augments

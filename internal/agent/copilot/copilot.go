@@ -206,10 +206,16 @@ type mcpServerEntry struct {
 //
 // The token is on the command line, as with claude (§9.2): visible to `ps`
 // for the life of the step and redacted from the §12.3 debug record by
-// redactMCPToken. Inline survives the npm `.cmd` shim on Windows —
-// TestStartMCPCallbackThroughCmdShim proves it — because the JSON carries
-// `"` and nothing else cmd.exe reinterprets: the URL is a loopback address
-// and the token is base64url. So there is no file carrier (decision 6).
+// redactMCPToken. On Windows the npm `.cmd` shim runs the line as
+// `cmd /c`. With more than two `"` on that line, `cmd /c` drops the first
+// and the last one, so a quoted shim path plus this quoted JSON split the
+// path at its space (review F1). An `@file` carrier on a spaced temp path
+// would fail the same way. The host spawn therefore wraps a batch file's
+// line in one outer pair of quotes (procx.BatchCmdLine), and
+// TestStartMCPCallbackThroughCmdShim runs the callback through a shim in a
+// spaced directory. Past that, the JSON carries nothing else cmd.exe
+// reinterprets: the URL is a loopback address and the token is base64url.
+// So there is no file carrier (decision 6).
 //
 // There is no strict switch: the user's own ~/.copilot/mcp-config.json
 // servers augment the run rather than being replaced (§9.9).

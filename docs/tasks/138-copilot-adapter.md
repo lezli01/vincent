@@ -365,10 +365,14 @@ its code makes true, in its own pull request.
   absent events pinned against every fixture. Depends: 138.5.
 - [x] **138.8** ([#860](https://github.com/lezli01/vincent/issues/860)) The per-step vincent MCP server through
   `--additional-mcp-config`. Depends: 138.5. Decision 6 settled on the
-  inline carrier alone: `TestStartMCPCallbackThroughCmdShim` launches the
-  fake through a `copilot.cmd` shim on the Windows leg and the JSON survives
-  cmd.exe's re-parse, so no `@file` fallback, temp directory or sweep was
-  built. `--allow-tool=vincent` rides beside it for 138.10. ✓ 2026-10-29
+  inline carrier alone. `TestStartMCPCallbackThroughCmdShim` launches the
+  fake through a `copilot.cmd` shim in a spaced directory on the Windows leg.
+  Its first run failed (review F1): with more than two `"` on the line,
+  `cmd /c` drops the last one, which split the shim's path. `@file` would
+  have failed the same way on a spaced temp path. So the fix went into the
+  host spawn instead, which wraps a batch file's line in one outer pair of
+  quotes (`procx.BatchCmdLine`, §9.1). No `@file` fallback, temp directory
+  or sweep was built. `--allow-tool=vincent` rides beside it for 138.10. ✓ 2026-10-29
 - [ ] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
   container mount, the engine test and `scripts/138-gate.sh` in CI.
   Depends: 138.5, 138.8.
