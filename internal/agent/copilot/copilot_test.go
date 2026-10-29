@@ -13,6 +13,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
+	"github.com/lezli01/vincent/internal/mcp/mcptest"
 )
 
 var _ agent.Adapter = (*Adapter)(nil)
@@ -94,6 +95,20 @@ func TestBuildArgs(t *testing.T) {
 			spec: agent.RunSpec{Model: "gpt-6-luna", Effort: "low"},
 			want: append(slices.Clone(base), "--model", "gpt-6-luna", "--reasoning-effort", "low"),
 		},
+		{
+			// Task 138.8: inline --additional-mcp-config, and --allow-tool
+			// naming the server so restricted mode (138.10) keeps it.
+			name: "mcp server rides inline with its allow-tool",
+			spec: agent.RunSpec{
+				Model: "gpt-6-luna",
+				MCP:   &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:7777/mcp/step/9", Token: "s3cret-_A9"},
+			},
+			want: append(slices.Clone(base), "--model", "gpt-6-luna",
+				"--additional-mcp-config",
+				`{"mcpServers":{"vincent":{"type":"http","url":"http://127.0.0.1:7777/mcp/step/9",`+
+					`"headers":{"Authorization":"Bearer s3cret-_A9"},"tools":["*"]}}}`,
+				"--allow-tool=vincent"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,7 +139,7 @@ func TestSessionIDIsAFreshUUID(t *testing.T) {
 	}
 }
 
-// TestInterimRefusals pins the three refusals from Start, each with its
+// TestInterimRefusals pins the two refusals from Start, each with its
 // sentinel and no process spawned. Each is replaced by the item named in
 // buildArgs (§9.9).
 func TestInterimRefusals(t *testing.T) {
@@ -137,11 +152,6 @@ func TestInterimRefusals(t *testing.T) {
 			name: "restricted",
 			spec: agent.RunSpec{PermissionMode: agent.Restricted},
 			want: agent.ErrRestrictedUnsupported,
-		},
-		{
-			name: "mcp",
-			spec: agent.RunSpec{MCP: &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:1/mcp", Token: "t"}},
-			want: agent.ErrMCPUnsupported,
 		},
 		{
 			name: "resume",
@@ -167,6 +177,53 @@ func TestInterimRefusals(t *testing.T) {
 				t.Errorf("launcher saw %d commands, want none", n)
 			}
 		})
+	}
+}
+
+// TestStartMCPCallback is per-step wiring proven from a running process
+// (task 138.8, after 057.9): the fake agent reads the endpoint and secret out
+// of the --additional-mcp-config this adapter rendered — refusing it without
+// --allow-tool, type http, a bearer header or a tools filter — and calls
+// step_status over the real per-step endpoint.
+func TestStartMCPCallback(t *testing.T) {
+	srv := mcptest.New(t)
+	h := startMCPCallback(t, fakeAdapter(t), srv, "copilot called back")
+	checkMCPCallback(t, h, srv, "copilot called back")
+}
+
+// startMCPCallback starts the mcp-callback scenario wired to srv.
+func startMCPCallback(t *testing.T, a *Adapter, srv *mcptest.Server, message string) agent.RunHandle {
+	t.Helper()
+	env := append(os.Environ(), "FAKEAGENT_SCENARIO=mcp-callback", "FAKEAGENT_MCP_STATUS="+message)
+	env = append(env, srv.Env()...)
+	h, err := a.Start(t.Context(), agent.RunSpec{
+		Prompt:         "call back",
+		WorkDir:        t.TempDir(),
+		PermissionMode: agent.FullAuto,
+		Env:            env,
+		MCP:            srv.MCP,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	return h
+}
+
+// checkMCPCallback waits for the run and asserts exactly one step_status
+// carrying message reached the server.
+func checkMCPCallback(t *testing.T, h agent.RunHandle, srv *mcptest.Server, message string) {
+	t.Helper()
+	drain(t, h)
+	res, err := h.Wait()
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if res.ExitCode != 0 || res.IsError {
+		t.Fatalf("got exit=%d isError=%v (%s), want clean success", res.ExitCode, res.IsError, res.ErrorMessage)
+	}
+	want := mcptest.StatusCall{TaskID: "42", StepID: mcptest.StepID, Message: message}
+	if got := srv.StatusCalls(); len(got) != 1 || got[0] != want {
+		t.Errorf("status calls = %+v, want exactly %+v", got, want)
 	}
 }
 

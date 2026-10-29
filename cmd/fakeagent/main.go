@@ -100,8 +100,8 @@
 //	                      (default "fakeagent called back over MCP")
 //	FAKEAGENT_MCP_ASK     mcp-callback, claude dialect: "1" then asks one
 //	                      question and, once answered, calls step_status again
-//	                      on the same session. codex and cursor have no
-//	                      mid-run input, so it is ignored there
+//	                      on the same session. codex, cursor and copilot
+//	                      have no mid-run input, so it is ignored there
 //	FAKEAGENT_MCP_STATUS_FINAL
 //	                      mcp-callback: the message of that second call
 //	                      (default "fakeagent called back again after the

@@ -628,6 +628,13 @@ type ToolUse struct {
 	// Position cannot substitute: claude batches parallel tool calls (T4.8),
 	// so the result following a call is routinely not that call's.
 	CallID string
+	// MCPServer and MCPTool split an MCP tool's Name into the server it
+	// came from and the tool's own name on that server, when the dialect
+	// reports the split (copilot names the call `vincent-health` and says
+	// `vincent` and `health` beside it, §9.9). Empty for built-in tools and
+	// for dialects that only give the joined name.
+	MCPServer string
+	MCPTool   string
 }
 
 // ToolResult reports the outcome of one ToolUse (T4.16). It carries an

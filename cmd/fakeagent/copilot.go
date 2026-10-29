@@ -70,10 +70,9 @@ func copilotMain(scenario string) {
 		fmt.Fprintln(os.Stderr, `Error: Model "fake-nonexistent" from --model flag is not available.`)
 		os.Exit(1)
 	case "mcp-callback":
-		// --additional-mcp-config is task 138.8's (#860); until it lands the
-		// copilot dialect has no MCP server to call back over.
-		fmt.Fprintln(os.Stderr, "fakeagent: mcp-callback is not supported by the copilot dialect yet (#860)")
-		os.Exit(1)
+		// Called before any stdout, so a carrier the reader refuses ends the
+		// run on stderr with exit 1, like the real CLI's own refusals.
+		mcpCallback(dialectCopilot, nil)
 	}
 
 	c := copilotStream{}

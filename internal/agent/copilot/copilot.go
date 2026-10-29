@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -134,18 +135,16 @@ func newSessionID() string {
 // a prompt. No `-C` either — the process cwd is the worktree. The built-in
 // GitHub MCP server is left on; --disable-builtin-mcps is not passed (§9.9).
 //
-// The three refusals are interim, each replaced by the item named: a step is
+// The vincent MCP server (§13.4) rides inline in --additional-mcp-config,
+// with --allow-tool naming it (task 138 decision 6, see mcpConfig).
+//
+// The two refusals are interim, each replaced by the item named: a step is
 // failed with a stated reason rather than run as something it did not ask for.
 func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 	if spec.PermissionMode == agent.Restricted {
 		// Task 138.10 (#862) maps restricted onto --available-tools.
 		return nil, fmt.Errorf("copilot restricted mode is not built yet (task 138.10); "+
 			"refusing to run the step full-auto instead (spec §9.9): %w", agent.ErrRestrictedUnsupported)
-	}
-	if spec.MCP != nil {
-		// Task 138.8 (#860) carries the server in --additional-mcp-config,
-		// and lands before registration, so no user reaches this (decision 7).
-		return nil, fmt.Errorf("copilot MCP wiring is not built yet (task 138.8): %w", agent.ErrMCPUnsupported)
 	}
 	if spec.ResumeSessionID != "" {
 		// Task 138.11 (#863) resumes with --resume=<id>.
@@ -165,7 +164,61 @@ func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 	if spec.Effort != "" {
 		args = append(args, "--reasoning-effort", spec.Effort)
 	}
+	if spec.MCP != nil {
+		cfg, err := mcpConfig(spec.MCP)
+		if err != nil {
+			return nil, err
+		}
+		// --allow-tool names the server although --allow-all-tools already
+		// covers it: restricted mode (task 138.10) drops --allow-all-tools,
+		// and the vincent tools stay allowed there (task 057 decision 9).
+		args = append(args, "--additional-mcp-config", cfg, "--allow-tool="+spec.MCP.Name)
+	}
 	return args, nil
+}
+
+// mcpConfigFile is the --additional-mcp-config document: copilot's
+// ~/.copilot/mcp-config.json shape, one HTTP server. Typed rather than a map so
+// the field set is fixed and every value is escaped by encoding/json, never by
+// string formatting.
+type mcpConfigFile struct {
+	Servers map[string]mcpServerEntry `json:"mcpServers"`
+}
+
+type mcpServerEntry struct {
+	Type    string            `json:"type"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers"`
+	// Tools is copilot's per-server filter; "*" admits every tool the
+	// server lists. Without it the CLI loads none of them.
+	Tools []string `json:"tools"`
+}
+
+// mcpConfig renders the per-step server as inline JSON for
+// --additional-mcp-config (spec §9.9).
+//
+// The token is on the command line, as with claude (§9.2): visible to `ps`
+// for the life of the step and redacted from the §12.3 debug record by
+// redactMCPToken. Inline survives the npm `.cmd` shim on Windows —
+// TestStartMCPCallbackThroughCmdShim proves it — because the JSON carries
+// `"` and nothing else cmd.exe reinterprets: the URL is a loopback address
+// and the token is base64url. So there is no file carrier (decision 6).
+//
+// There is no strict switch: the user's own ~/.copilot/mcp-config.json
+// servers augment the run rather than being replaced (§9.9).
+func mcpConfig(srv *agent.MCPServer) (string, error) {
+	b, err := json.Marshal(mcpConfigFile{Servers: map[string]mcpServerEntry{
+		srv.Name: {
+			Type:    "http",
+			URL:     srv.URL,
+			Headers: map[string]string{"Authorization": "Bearer " + srv.Token},
+			Tools:   []string{"*"},
+		},
+	}})
+	if err != nil {
+		return "", fmt.Errorf("render mcp config: %w", err)
+	}
+	return string(b), nil
 }
 
 // Start implements agent.Adapter. The prompt is written via stdin (Windows

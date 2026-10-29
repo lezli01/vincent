@@ -70,7 +70,7 @@ func mcpCallback(d dialect, rd *bufio.Reader) {
 	if err := reportStatus(client, envOr("FAKEAGENT_MCP_STATUS", defaultMCPStatus)); err != nil {
 		mcpFail("report a status", err)
 	}
-	// Only claude has mid-run input (§7.4); codex and cursor never park, so
+	// Only claude has mid-run input (§7.4); codex, cursor and copilot never park, so
 	// there is no awaiting_input to survive and the variable is ignored.
 	if d != dialectClaude || os.Getenv("FAKEAGENT_MCP_ASK") != "1" {
 		return
@@ -126,6 +126,8 @@ func discoverMCP(d dialect, args []string, getenv func(string) string, dir strin
 		return codexMCP(args, getenv)
 	case dialectCursor:
 		return cursorMCP(args, dir)
+	case dialectCopilot:
+		return copilotMCP(args, dir)
 	default:
 		return claudeMCP(args, dir)
 	}
@@ -234,6 +236,57 @@ func cursorMCP(args []string, dir string) (mcpEndpoint, error) {
 	entry, ok := cfg.Servers[mcpServerName]
 	if !ok {
 		return mcpEndpoint{}, fmt.Errorf(".cursor/mcp.json has no %q server", mcpServerName)
+	}
+	return endpointFrom(entry.URL, entry.Headers)
+}
+
+// copilotMCP reads `--additional-mcp-config`, which copilot takes as inline
+// JSON or as `@path` — a relative path resolved against the working directory,
+// as 1.0.105 does. It requires every piece the real CLI needs to load and run
+// the server headlessly: `type: http`, a URL, a bearer header, a `tools`
+// filter that admits the tools, and `--allow-tool=<name>` approving them. The
+// last stands in for claude's `--strict-mcp-config` check: copilot has no
+// strict switch, but a server whose tools are never approved is one the step
+// cannot call once --allow-all-tools is gone (§9.9).
+func copilotMCP(args []string, dir string) (mcpEndpoint, error) {
+	value, ok := flagValue(args, "--additional-mcp-config")
+	if !ok {
+		return mcpEndpoint{}, errors.New("no --additional-mcp-config on argv")
+	}
+	if !slices.Contains(args, "--allow-tool="+mcpServerName) {
+		return mcpEndpoint{}, fmt.Errorf("no --allow-tool=%s on argv; the server's tools would never be approved", mcpServerName)
+	}
+	body := []byte(value)
+	if path, isFile := strings.CutPrefix(value, "@"); isFile {
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(dir, path)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return mcpEndpoint{}, fmt.Errorf("read --additional-mcp-config file: %w", err)
+		}
+		body = b
+	}
+	var cfg struct {
+		Servers map[string]struct {
+			Type    string            `json:"type"`
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+			Tools   []string          `json:"tools"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		return mcpEndpoint{}, fmt.Errorf("--additional-mcp-config is not JSON: %w", err)
+	}
+	entry, ok := cfg.Servers[mcpServerName]
+	if !ok {
+		return mcpEndpoint{}, fmt.Errorf("--additional-mcp-config has no %q server", mcpServerName)
+	}
+	if entry.Type != "http" {
+		return mcpEndpoint{}, fmt.Errorf("server %q has type %q, want http", mcpServerName, entry.Type)
+	}
+	if !slices.Contains(entry.Tools, "*") && !slices.Contains(entry.Tools, "step_status") {
+		return mcpEndpoint{}, fmt.Errorf("server %q has tools %q, which admit no step_status", mcpServerName, entry.Tools)
 	}
 	return endpointFrom(entry.URL, entry.Headers)
 }

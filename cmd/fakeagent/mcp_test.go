@@ -160,6 +160,52 @@ func TestMCPDiscoverCursor(t *testing.T) {
 	}
 }
 
+// TestMCPDiscoverCopilot reads `--additional-mcp-config` in both forms copilot
+// accepts — inline JSON and `@path`, relative to the working directory — and
+// refuses a config the real CLI could not run headlessly.
+func TestMCPDiscoverCopilot(t *testing.T) {
+	t.Parallel()
+	inline := `{"mcpServers":{"vincent":{"type":"http","url":"` + testMCPURL +
+		`","headers":{"Authorization":"Bearer s3cret"},"tools":["*"]}}}`
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mcp.json"), []byte(inline), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	abs := filepath.Join(dir, "mcp.json")
+	allow := "--allow-tool=vincent"
+	cfg := "--additional-mcp-config"
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{"inline config", []string{"--output-format", "json", cfg, inline, allow}, ""},
+		{"inline with equals", []string{cfg + "=" + inline, allow}, ""},
+		{"relative file", []string{cfg, "@mcp.json", allow}, ""},
+		{"absolute file", []string{cfg, "@" + abs, allow}, ""},
+		{"tool named", []string{cfg, strings.Replace(inline, `"*"`, `"step_status"`, 1), allow}, ""},
+		{"missing file", []string{cfg, "@absent.json", allow}, "read --additional-mcp-config file"},
+		{"no config", []string{"--output-format", "json", allow}, "no --additional-mcp-config"},
+		{"without allow", []string{cfg, inline}, allow},
+		{"allows another", []string{cfg, inline, "--allow-tool=other"}, allow},
+		{"not json", []string{cfg, "{nope", allow}, "not JSON"},
+		{"not http", []string{cfg, strings.Replace(inline, `"http"`, `"sse"`, 1), allow}, "want http"},
+		{"no type", []string{cfg, strings.Replace(inline, `"type":"http",`, "", 1), allow}, "want http"},
+		{"another name", []string{cfg, strings.Replace(inline, `"vincent"`, `"other"`, 1), allow}, `no "vincent" server`},
+		{"no url", []string{cfg, strings.Replace(inline, testMCPURL, "", 1), allow}, "no url"},
+		{"no bearer", []string{cfg, strings.Replace(inline, "Bearer ", "Basic ", 1), allow}, "bearer"},
+		{"no tools", []string{cfg, strings.Replace(inline, `,"tools":["*"]`, "", 1), allow}, "admit no step_status"},
+		{"other tools", []string{cfg, strings.Replace(inline, `"*"`, `"health"`, 1), allow}, "admit no step_status"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ep, err := discoverMCP(dialectCopilot, tt.args, noEnv, dir)
+			checkDiscovery(t, ep, err, tt.wantErr)
+		})
+	}
+}
+
 // TestMCPClientFraming drives the client against a server answering in each
 // framing streamable HTTP allows. The SSE leg terminates every line with CRLF
 // and sends an unrelated notification ahead of the response, so both the CR
