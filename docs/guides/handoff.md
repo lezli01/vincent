@@ -180,7 +180,7 @@ unresolved](../assets/tui-handoff-task.png)
 ## Grants: letting a handoff write to GitHub
 
 A workflow step that writes to GitHub through vincent — `vincent github pr
-create`, `merge`, `close`, `reopen`, `comment` or `rerun`, or a close or a
+create`, `merge`, `close`, `reopen`, `comment` or `rerun`, or a close, a reopen or a
 comment on an imported issue — is refused `409 forge_write_needs_human`.
 Nothing is sent. A **grant** is how you say yes in advance, for one handoff.
 It names capabilities from a closed list:
@@ -188,7 +188,7 @@ It names capabilities from a closed list:
 | Capability | Lets the handoff's task |
 |---|---|
 | `issue.comment` | Comment on its imported issues |
-| `issue.close` | Close its imported issues |
+| `issue.close` | Close or reopen its imported issues |
 | `pull.create` | Push an item's branch and open its pull request |
 | `pull.comment` | Comment on its pull requests |
 | `pull.merge` | Merge its pull requests |

@@ -44,7 +44,7 @@ the [handoff](../reference/api.md#handoffs) routes (`handoff_start`,
 `handoff_list`, `handoff_show`, and the item verbs `handoff_deliver`,
 `handoff_return`, `handoff_wait`, `handoff_release` — `handoff_start` is
 grant-less: a grant from an agent is refused `grant_needs_human`, and a
-step's verb that would close or comment on an imported issue is refused
+step's verb that would close, reopen or comment on an imported issue is refused
 `forge_write_needs_human` unless the step is the live handoff's own task and
 its grant names `issue.close` or `issue.comment`; see
 [Handing work off](handoff.md)),
