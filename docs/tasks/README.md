@@ -151,7 +151,7 @@ the living engineering specification records implementation contracts.
 | [135](135-tui-wrap-and-scroll.md) | TUI wrap and scroll: one wrap helper, one scrolling pane, and the wrap-or-truncate convention, screen by screen | 🔄 in progress (8/10) |
 | [136](136-tui-main-tabs.md) | Main tabs in the TUI: Issues, Tasks and Chats behind one `tab` key, set by `tui.tabs` | ✅ done (4/4) |
 | [137](137-handoff-pillar.md) | The handoff pillar: deliveries, handoffs that claim `hand_off` issues and record each outcome, and human-given grants for automated forge writes | ✅ done (15/15) |
-| [138](138-copilot-adapter.md) | GitHub Copilot CLI as a fourth agent adapter, pinned to captured fixtures of one build | 🔄 in progress (9/17) |
+| [138](138-copilot-adapter.md) | GitHub Copilot CLI as a fourth agent adapter, pinned to captured fixtures of one build | 🔄 in progress (10/17) |
 
 ## How to add and update a task document
 

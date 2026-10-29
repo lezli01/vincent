@@ -231,13 +231,14 @@ may be filtered out on either. It rides this route only.
 `supports_skill_listing`, `skill_sigil` and `skill_position` describe the
 adapter's skills. `supports_skill_listing` is whether the adapter can list the
 skills its CLI would load at all — `true` for claude and codex, `false` for
-cursor today. It is a fact about the adapter, not about the installed build: `true`
+cursor and copilot today. It is a fact about the adapter, not about the installed build: `true`
 does not promise that the build you have will list, and a build that cannot is
 found out only when a chat's skills are read. `skill_sigil` (`/` or `$`) and
 `skill_position` (`leading`: only at the start of the message; `anywhere`) are
 how a chat message names a skill — claude `/` `leading`, codex `$` `anywhere`,
 cursor `/` `anywhere` — and both are `""` for an adapter that cannot invoke
-skills. All three are `null` when the daemon has no adapter registry to ask, as
+skills, which copilot cannot: its CLI leaves a `/name` in the message to the
+model. All three are `null` when the daemon has no adapter registry to ask, as
 `supports_resume` is, and ride this route only. The per-directory skill list is
 not here: this answer is cached by binary identity, and a skill list also
 depends on the directory the agent runs in.
@@ -245,12 +246,12 @@ depends on the directory the agent runs in.
 `supports_file_mentions`, `file_mention_sigil`, `file_mention_position` and
 `file_mention_expands` describe how a message names a workspace file.
 `supports_file_mentions` is whether the adapter can do it at all — `true` for
-all three shipped adapters, so it tells them apart from nothing; it is here so
+all four shipped adapters, so it tells them apart from nothing; it is here so
 a client can tell "cannot mention" from "nobody can say". **The one that
 differs is `file_mention_expands`**: `true` means the CLI itself puts the
 mentioned file in front of the model, `false` means the path arrives as prose
 and the model reads it with a tool — a hint rather than guaranteed context.
-claude expands, codex and cursor do not, which is what `vincent agents` notes
+claude expands, codex, cursor and copilot do not, which is what `vincent agents` notes
 as `no @ file expansion`. `file_mention_sigil` (`@`) and
 `file_mention_position` (`leading`: only at the start of the message;
 `anywhere`) are the syntax, and both are `""` for an adapter that cannot
@@ -3082,7 +3083,7 @@ cursor chat lists no skills from it.
   means there are none. A `probe_error` beside it means the latest probe failed
   and this is the last list that succeeded, obtained at `probed_at`.
 - **`unsupported`** — the agent cannot list its skills, with the reason in
-  `unavailable_reason`. Today cursor answers this.
+  `unavailable_reason`. Today cursor and copilot answer this.
 - **`unknown`** — nobody can say: the probe failed with no earlier list
   (`probe_error`), the chat's `agent` names no adapter this daemon has
   (`probe_error`), or the chat's task is configured to run in a
@@ -3093,7 +3094,8 @@ cursor chat lists no skills from it.
 
 Type the `invocation` as it is; never build one from the name and the sigil,
 because codex writes `[$name](path)` for a name two skills share.
-`invoke_verdict` is `unsupported` for an agent that cannot invoke skills, and
+`invoke_verdict` is `unsupported` for an agent that cannot invoke skills —
+copilot, whose CLI leaves a `/name` in the message to the model — and
 `unknown` for an `agent` with no adapter, with
 `invocation`, `invoke_sigil` and `invoke_position` then `""`. `invoke_position`
 is `leading` when the invocation only works at the start of the message

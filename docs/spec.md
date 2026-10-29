@@ -3912,7 +3912,7 @@ type FileMentioner interface {
 }
 
 type FileMentionSyntax struct {
-    Sigil    string          // "@" on all three shipped adapters
+    Sigil    string          // "@" on all four shipped adapters
     Position MentionPosition // "leading" | "anywhere"
     Expands  bool            // the CLI itself puts the file in front of the model
 }
@@ -4098,9 +4098,12 @@ capability today.
   | claude | `/` | `leading` — expanded only at the start of the message (under stream-json input, its last text block) | `/name` | the stream-json `initialize` request, `builtin` rows omitted, on builds in `[2.1.277, 3.0.0)` (§9.2, task 124.7) |
   | codex | `$` | `anywhere` | `$name`; the linked `[$name](path)` when the exact name occurs more than once among the listed skills, or `$name` if the skill has no path | yes, `skills/list` (§9.3) |
   | cursor | `/` | `anywhere`, as a token | `/name` | never in v1 (§9.7) |
+  | copilot | — not a `SkillInvoker`: `/name` on stdin is prose (§9.9) | — | — | no (§9.9) |
 
   Observed on claude 2.1.277, codex-cli 0.154.0 and cursor-agent 2026.09.18.
   The rows state the adapters as shipped; §9.2 and §9.3 add nothing to them.
+  *Amended 2026-10-29 (task 138.13, issue #865):* the copilot row, observed
+  on copilot 1.0.105 (§9.9).
   *Amended 2026-09-19 (task 124.8, issue #504):* §9.2 still adds nothing;
   §9.3 now specifies codex's listing and when its `Invocation` links.
   *Amended 2026-09-19 (task 124.7, issue #503):* §9.2 now specifies
@@ -4145,7 +4148,8 @@ three implement it today.
   so the two vocabularies stay separate, and task 126 decision 8 keys the
   picker's open rule on `@` being positionally anywhere.
 - **`Expands` is the honest capability statement, not the interface.** All
-  three adapters implement `FileMentioner`; what differs is whether the CLI
+  four adapters implement `FileMentioner` (copilot since task 138.13,
+  2026-10-29); what differs is whether the CLI
   itself puts the file in front of the model. §5.5 records that with tools
   allowed `codex exec` and `cursor-agent -p` each read a mentioned path in one
   tool call, so a mention is worth sending on all three — guaranteed context
@@ -4160,9 +4164,11 @@ three implement it today.
   | claude | `@` | `anywhere` | `true` — expanded before the model sees the message, without a tool call | `@path`, or `@"path"` when the path contains a space |
   | codex | `@` | `anywhere` | `false` — prose through `codex exec`; the model reads the path itself | `@path`, never quoted |
   | cursor | `@` | `anywhere` | `false` — prose through `-p`; the model reads the path itself | `@path`, never quoted |
+  | copilot | `@` | `anywhere` | `false` — prose on stdin; the model reads the path itself | `@path`, never quoted |
 
   Observed on claude **2.1.278**, codex-cli **0.154.0** and cursor-agent
-  **2026.09.18**. The claude build is one patch newer than the 2.1.277 the
+  **2026.09.18**; the copilot row on copilot **1.0.105** (*amended 2026-10-29,
+  task 138.13*, §9.9). The claude build is one patch newer than the 2.1.277 the
   skills table above names, and that pin is not widened. The behaviour, the
   path-form table and the failure modes are §5.5's "File mentions in a chat's
   message"; §9.2, §9.3 and §9.7 add their per-adapter paragraphs. They are
@@ -5633,7 +5639,8 @@ defaults:
   `skill_sigil` (`/` or `$`)
   and `skill_position` (`leading` or `anywhere`) are the adapter's
   `SkillSyntax`, verbatim, and both are `""` for a registered adapter that
-  cannot invoke. All three are `null` when there is no adapter registry to
+  cannot invoke — copilot's answer (*amended 2026-10-29, task 138.13*, §9.9).
+  All three are `null` when there is no adapter registry to
   ask, or the registry does not know the name, and come from the same
   registry lookup as `supports_resume`, so the four cannot disagree about the
   adapter they asked. They spawn nothing, so the MCP `agent_list` tool carries
@@ -5724,15 +5731,16 @@ defaults:
   `file_mention_expands`** (*added 2026-09-21, task 126.4, issue #548*) are the
   §9.1 file-mention capability, flat siblings of the skill trio by task 041's
   rule. `supports_file_mentions` is `agent.CanMentionFiles`: whether the
-  adapter implements `FileMentioner` at all. It is `true` for all three
-  shipped adapters and so separates none of them — it is published for the
+  adapter implements `FileMentioner` at all. It is `true` for all four
+  shipped adapters (copilot since task 138.13, 2026-10-29) and so separates
+  none of them — it is published for the
   day a fourth adapter lacks the interface, exactly as `supports_resume`
   carries a fact every adapter agrees on today. **`file_mention_expands` is
   the field that differs per adapter**, because §9.1 states that expansion,
   not the interface, is the honest capability statement: `true` for claude,
   which puts the mentioned file in front of the model itself, `false` for
-  codex and cursor, where the path arrives as prose and the model reads it
-  with a tool (§5.5, §9.2, §9.3, §9.7). `file_mention_sigil` (`@`) and
+  codex, cursor and copilot, where the path arrives as prose and the model
+  reads it with a tool (§5.5, §9.2, §9.3, §9.7, §9.9). `file_mention_sigil` (`@`) and
   `file_mention_position` (`leading` or `anywhere`) are the adapter's
   `FileMentionSyntax`, verbatim, and both are `""` for a registered adapter
   that cannot mention. All four are `null` when there is no adapter registry
@@ -6634,9 +6642,10 @@ section is renumbered.
 - **Pinned absences** (*2026-10, task 138.7*). Over every 1.0.105 capture
   there is no `run_header`, `plan` (no to-do tool), `subagent_progress`,
   `conversation_reset`, `input_request` or `input_canceled` (`InputSupport` is
-  `never`), and no `skill` — skill invocation is 138.13's. A test pins every
-  raw type the captures carry to its normalization, so a type nobody mapped
-  fails it.
+  `never`), and no `skill` — `skill.invoked` never reaches stdout, and a
+  `skill` tool call stays a `tool_use` (amended 2026-10-29, task 138.13). A
+  test pins every raw type the captures carry to its normalization, so a type
+  nobody mapped fails it.
 - **SIGTERM exits 0** (*2026-10, task 138.5*). On 1.0.105 a terminated run ends
   `agent.interrupted`, `abort`, …, `result{exitCode:0}`. The engine records a
   termination it asked for whatever the exit code, as for every adapter, and
@@ -6686,6 +6695,28 @@ section is renumbered.
   The step record carries the usage checkpoint's tokens as session totals
   (above, task 138.7) and never a cost. `scripts/138-gate.sh` proves it end
   to end on all three OSes.
+- **Skills: neither listed nor invoked** (*2026-10-29, task 138.13*).
+  Copilot is not a `SkillInvoker`: on 1.0.105 a `/name` on stdin — leading
+  (`skill_invoke_leading_1.0.105.jsonl`) or mid-message
+  (`skill_invoke_mid_1.0.105.jsonl`) — reaches the model as typed, with no
+  skill content in the `user.message`'s `transformedContent`, and the skill
+  runs only because the model chose to call its `skill` tool. That is the
+  model reading prose, not the CLI recognizing a syntax, so `GET /v1/agents`
+  carries empty `skill_sigil`/`skill_position`, a copilot chat's skill picker
+  has nothing to offer, and `invoke_verdict` is `unsupported`. Nor is it a
+  `SkillLister`: `session.skills_loaded` is not on stdout in JSON mode
+  (138.12), and ACP is out of scope (decision 1), so `list_verdict` is
+  `unsupported` with an `unavailable_reason`, as cursor's is (§9.7). No
+  `agent.skill` is produced; the model's `skill` call stays a `tool_use`.
+- **File mentions: `@`, anywhere, not expanded** (*2026-10-29, task
+  138.13*). Copilot is a `FileMentioner` with sigil `@`, position `anywhere`
+  and `Expands: false`. On 1.0.105 (`mention_1.0.105.jsonl`) a stdin
+  `@README.md` reaches the model as typed with none of the file beside it, and
+  the model, told not to use tools, said it could not read the file — `@`
+  expansion is documented for the interactive session only. With tools
+  allowed the model reads the path itself, so a mention is worth sending
+  (task 126 decision 6). `FileMention` is `@` and the path, never quoted, as
+  cursor's is; no Windows path was observed (#557).
 
 ## 10. Worktree management
 

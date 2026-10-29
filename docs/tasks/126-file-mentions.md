@@ -540,7 +540,7 @@ decision 38 the empty sigil, all unchanged.
     gate is the only place it is proven on Windows — the CLI's exit codes end
     to end (1 on a terminal chat, 1 on an unknown id), `limit=1` returning one
     row with `truncated` true, and CLI/API parity on both the path list and the
-    mention list, which is leg 12h's assertion for this command. The number is
+    mention list, which is leg 12i's assertion for this command. The number is
     **14** because `chat_mention_passthrough` (#546, 126.12) is already in
     master at `f511bef3` holding `VINCENT_GATE_SCENARIO=13`; nothing is
     renumbered. *Beaten:* a leg numbered 13 beside it, and #551's five
