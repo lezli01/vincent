@@ -63,9 +63,14 @@ func (a *Adapter) resolvePathWith(l agent.Launcher) (string, error) {
 // Detect implements agent.Adapter: path resolution and a
 // `copilot --no-auto-update --version` probe.
 //
-// LoggedIn is nil by design (task 138 decision 10): copilot has no status
-// command, and reading its credential store is ruled out by T1.7. `copilot
-// version` is never called — it checks for updates over the network.
+// LoggedIn is nil by design (task 138 decision 10, open question 3 closed by
+// 138.6): copilot has no `auth status` or `whoami` command; reading
+// `~/.copilot` is ruled out by T1.7; probing with an invalid model and reading
+// the refusal was rejected as a text-matching hack; and an env token is not
+// proof — COPILOT_GITHUB_TOKEN, GH_TOKEN and GITHUB_TOKEN may hold a classic
+// `ghp_` PAT, which Copilot rejects, so their presence says nothing. A run
+// that does stop logged out is classified unauthenticated (failure.go).
+// `copilot version` is never called — it checks for updates over the network.
 // SupportsInput is permanently false (§9.9).
 func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	return a.detectWith(ctx, nil)
@@ -160,7 +165,9 @@ func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 	if spec.Model != "" {
 		args = append(args, "--model", spec.Model)
 	}
-	// The effort is passed through as given; its catalog is task 138.6's.
+	// The effort is passed through as given. Effort support is per model and
+	// `auto` refuses any (unsupported_effort_1.0.105.txt); the CLI's fast
+	// exit 1 says so through the no-result path, so no pair is predicted here.
 	if spec.Effort != "" {
 		args = append(args, "--reasoning-effort", spec.Effort)
 	}
@@ -400,6 +407,7 @@ func assemble(exitCode int, sessionID string, terminal *agent.RunResult, streamE
 		res.ResultText = terminal.ResultText
 		// Tokens and CostUSD stay unreported until task 138.7 (§9.9).
 	}
+	res.Failure = classify(res, stderrTail)
 	if streamErr != nil {
 		streamFailure(&res, streamErr)
 	}

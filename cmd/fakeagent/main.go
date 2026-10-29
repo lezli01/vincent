@@ -204,8 +204,8 @@
 //	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style,
 //	                      "cursor" the calver+sha style, "copilot" the
 //	                      two-line `GitHub Copilot CLI <v>.` style (run dialect is
-//	                      argv-driven; this only affects the version probe,
-//	                      which carries no dialect hint)
+//	                      argv-driven; this only affects the version and
+//	                      help probes, which carry no dialect hint)
 //	FAKEAGENT_VERSION     version string --version reports, in every dialect
 //	                      (defaults: 2.1.224 claude, codex-cli 0.142.5,
 //	                      2026.08.04-fake000, 1.0.105 copilot) — lets tests drive the §7.4
@@ -333,6 +333,10 @@ func main() {
 			}
 			return
 		case "--help", "-h":
+			if os.Getenv("FAKEAGENT_DIALECT") == "copilot" {
+				fmt.Print(copilotHelpText)
+				return
+			}
 			fmt.Print(helpText)
 			return
 		}

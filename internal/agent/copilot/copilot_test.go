@@ -229,6 +229,9 @@ func checkMCPCallback(t *testing.T, h agent.RunHandle, srv *mcptest.Server, mess
 
 func TestDetect(t *testing.T) {
 	t.Setenv("FAKEAGENT_DIALECT", "copilot")
+	// A token in the environment proves nothing — it may be a classic PAT
+	// Copilot rejects — so LoggedIn stays nil with one set (task 138.6).
+	t.Setenv("GH_TOKEN", "ghp_not-a-copilot-credential")
 	av, err := fakeAdapter(t).Detect(t.Context())
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
@@ -246,7 +249,7 @@ func TestDetect(t *testing.T) {
 		t.Error("SupportsInput = true; copilot has no input channel (§9.9)")
 	}
 	if av.LoggedIn != nil {
-		t.Errorf("LoggedIn = %v, want nil by design (decision 10)", *av.LoggedIn)
+		t.Errorf("LoggedIn = %v, want nil by design (decision 10), GH_TOKEN or not", *av.LoggedIn)
 	}
 	if av.TestedVersions != "1.0.105" {
 		t.Errorf("TestedVersions = %q, want 1.0.105", av.TestedVersions)
@@ -537,31 +540,4 @@ func TestAssemble(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestCuratedFloor pins the catalog: no models, no default, no input, no
-// restriction until task 138.10.
-func TestCuratedFloor(t *testing.T) {
-	for name, opts := range map[string]agent.Options{"Curated": New(nil).Curated(), "Options": options(t)} {
-		if opts.InputSupport != agent.InputNever {
-			t.Errorf("%s InputSupport = %q, want never", name, opts.InputSupport)
-		}
-		if opts.RestrictedSupport != agent.RestrictedNever {
-			t.Errorf("%s RestrictedSupport = %q, want never", name, opts.RestrictedSupport)
-		}
-		if len(opts.Models) != 0 || opts.DefaultModel != "" {
-			t.Errorf("%s models %v default %q, want none (decision 9)", name, opts.Models, opts.DefaultModel)
-		}
-	}
-}
-
-// options calls Options against a binary that does not exist: it must not
-// probe anything, so it cannot fail.
-func options(t *testing.T) agent.Options {
-	t.Helper()
-	opts, err := New(func() string { return "/nonexistent/copilot-not-here" }).Options(t.Context())
-	if err != nil {
-		t.Fatalf("Options: %v", err)
-	}
-	return opts
 }

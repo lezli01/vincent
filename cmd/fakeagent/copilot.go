@@ -19,6 +19,22 @@ const copilotVersion = "1.0.105"
 // not built here, so this run keeps no memory either way.
 const copilotSessionID = "00000000-0000-4000-8000-00000000f4ce"
 
+// copilotHelpText is the clap-style `--help` excerpt the adapter's effort
+// probe reads (help_1.0.105.txt, trimmed to the model and effort blocks),
+// printed when FAKEAGENT_DIALECT=copilot. The values are reordered and one is
+// invented, so a test can tell the probe's output from the curated floor.
+const copilotHelpText = `Usage: copilot [OPTIONS] [COMMAND]
+
+Options:
+      --model <model>
+          Set the AI model to use (use 'auto' to let Copilot pick
+          automatically)
+      --reasoning-effort <level>
+          Set the reasoning effort level [possible values: max, high, low, fake-ultra]
+  -h, --help
+          Print help
+`
+
 // copilotLoggedOut is logged_out_1.0.105.txt verbatim: the stderr of a
 // `copilot -p` run with no credentials, which exits 1 having written nothing
 // to stdout.
@@ -113,7 +129,8 @@ func copilotMain(scenario string) {
 		c.end(0, 2_500, nil)
 	case "usage-limit":
 		// Task 003's leg for copilot. The wording is unverified; see
-		// copilotQuotaMessage.
+		// copilotQuotaMessage. The adapter deliberately leaves it
+		// unclassified (task 138.6): it recognizes captured texts only.
 		if usageLimitSpent() {
 			c.text("stopping: the premium request quota is spent")
 			c.event("session.error", map[string]any{

@@ -1,10 +1,12 @@
 package workflow
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/agent/copilot"
 )
 
 // testCatalogs mirrors the shipped curated catalogs (§9.3): claude curates
@@ -171,5 +173,45 @@ steps:
 	_, warns, err := Parse([]byte(src), Options{KnownAgents: []string{"claude", "codex"}})
 	if err != nil || len(warns) != 0 {
 		t.Errorf("Parse without catalogs: err=%v warns=%v, want silent acceptance", err, warns)
+	}
+}
+
+// TestCatalogValidationCopilotFreeFormModel runs §8.2 against copilot's
+// shipped Curated() catalog (task 138.6): it lists no models (decision 9),
+// so any id passes — as codex's do, a pass-through warning at most — and the
+// CLI's own refusal is the check, while an effort outside its floor is
+// flagged. The end-to-end `vincent workflow validate` leg
+// waits for registration (138.9).
+func TestCatalogValidationCopilotFreeFormModel(t *testing.T) {
+	opts := Options{
+		KnownAgents: []string{"copilot"},
+		Catalogs:    func() agent.Catalogs { return agent.Catalogs{"copilot": copilot.New(nil).Curated()} },
+	}
+	src := `
+name: ok
+defaults:
+  agent: copilot
+steps:
+  - id: one
+    type: agent
+    model: some-model-nobody-curated
+    effort: xhigh
+    prompt: p
+`
+	_, warns, err := Parse([]byte(src), opts)
+	if err != nil {
+		t.Fatalf("Parse: %v; want a free-form copilot model accepted", err)
+	}
+	for _, w := range warns {
+		if w.Path != "steps[0].model" {
+			t.Errorf("unexpected warning %v; xhigh is in copilot's floor", w)
+		}
+	}
+	_, warns, err = Parse([]byte(strings.Replace(src, "xhigh", "ludicrous", 1)), opts)
+	if err != nil {
+		t.Fatalf("Parse: %v; an uncurated effort passes through with a warning", err)
+	}
+	if !slices.ContainsFunc(warns, func(w Error) bool { return w.Path == "steps[0].effort" }) {
+		t.Errorf("warnings %v, want one on steps[0].effort for an effort outside copilot's floor", warns)
 	}
 }
