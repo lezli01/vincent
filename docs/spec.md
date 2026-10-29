@@ -6254,9 +6254,12 @@ per-agent copy and therefore no per-agent version.
 |---|---|---|
 | claude | `claude-code` | `~/.claude/skills/` |
 | codex | `codex` | `~/.codex/skills/` |
+| copilot | — (reads the store) | `~/.agents/skills/` |
 | cursor | `cursor` | `~/.cursor/skills/` |
 
-The slug is a **table, not an identity**: claude's is `claude-code`.
+The slug is a **table, not an identity**: claude's is `claude-code`, and
+copilot has none at all — it reads the store itself, so there is nothing for
+`skills add` to link (task 138 decision 11, task 138.12).
 
 **Detection is a filesystem read and never runs `npx`.** The store's
 `SKILL.md` answers the installed version; each `~/.<agent>/skills/<name>` that
@@ -6265,7 +6268,16 @@ exists answers who it is linked into. That is what makes the report work in
 The agent list is discovered by scanning the home directory rather than from a
 table of paths, so it names agents vincent does not drive — one store serves
 Cline, Copilot, Zed and the rest, and hiding them would be a report that is not
-about the machine.
+about the machine. *Amended 2026-10-29 (task 138.12, #864):* the scan finds the
+agents that hold a **link**; an agent that reads the store **itself** holds
+none, so it gets a store-read entry instead — a link whose path is the store
+copy, marked `store: true` and displayed as `copilot (reads store)`. Copilot is
+the one such agent: its entry is reported when `~/.copilot` exists and the
+store copy does, and counts towards the row's agent list, so doctor no longer
+says "linked into nothing" for a skill copilot serves. A real
+`~/.copilot/skills/<name>` — the skills CLI run with `github-copilot` — is
+reported as an ordinary link beside it, undeduplicated: the report says what is
+on disk.
 
 This is **not** the v0 T1.7 "no state-file parsing" decision being reopened.
 That decision is about inferring another tool's *authentication* from its
@@ -6340,6 +6352,27 @@ and nothing about what each agent does with it; the skill also ships
 unused by one of them is looking at that agent's own support, not at a vincent
 fault. This is §9's standing rule applied to skills — a capability an adapter
 lacks is documented and ignored, never emulated.
+
+*Amended 2026-10-29 (task 138.12, #864).* **copilot** reads the store,
+`~/.agents/skills/`, directly: copilot 1.0.105 (the pinned build, task 138
+decision 15), with the default `COPILOT_HOME` and one fixture skill in the
+store and nothing under `~/.copilot/skills`, resolved it through its `skill`
+tool with `skillSource: "personal-agents"`. With a `~/.copilot/skills/<name>`
+symlink to the same store copy added, it listed the skill **once** and resolved
+it as `personal-copilot` — it dedupes, and the copilot directory wins. With
+`COPILOT_HOME` set to any other directory the store copy was **not found at
+all**, not even with an `.agents/skills` beside the relocated directory: on
+this build relocating `COPILOT_HOME` drops the store, so such a user gets the
+skill only from `$COPILOT_HOME/skills`. Detection follows neither
+`COPILOT_HOME` nor `COPILOT_SKILLS_DIRS`; it reads `~/.copilot` and the store,
+and is wrong for a user who moved either. That is a known gap, stated here
+rather than worked around with a link. **Install:** copilot adds no slug to the
+argv. `--agent` naming other adapters as well installs for those as before; a
+selection of copilot alone runs nothing — a skill whose store copy exists is
+reported as served, one with none is an error saying to install it for another
+agent first, which populates the store. The CLI and the TUI's offer apply that
+one rule (`skill.PlanInstall`). The capture is recorded in
+`docs/tasks/138-copilot-adapter.md`.
 
 **vincent will disagree with `npx skills list -g`.** That command's agent
 column is the CLI's remembered selection (`lastSelectedAgents` in

@@ -191,6 +191,41 @@ with zero hits; every `.jsonl` parses line by line under `jq -c .`.
   name, model and tool list.
 - `skill` shows a `skill` tool call that loads the skill, then the reply.
 
+### Store captures (138.12, 2026-10-29)
+
+Three more runs of the same pinned 1.0.105 on **darwin/arm64**, same discipline
+(npm package in a throwaway prefix, its native binary invoked directly,
+`--no-auto-update`, `COPILOT_AUTO_UPDATE=false`, stdin prompt, throwaway repo,
+same scrub and grep, zero hits). What differs: `HOME` is a throwaway directory
+too, holding one fixture skill in the store,
+`<HOME>/.agents/skills/fixture-greeting/SKILL.md` (replies `FIXTURE GREETING
+OK`). Because that hides the operator's `gh` login, the operator's token was
+passed as `GH_TOKEN` in the child's environment only and appears in no file.
+Prompt `Give me a fixture greeting using the fixture-greeting skill.`, command
+line `J`, every run exit 0.
+
+| File | `COPILOT_HOME` | `~/.copilot/skills/fixture-greeting` | `skill` tool telemetry |
+|---|---|---|---|
+| `skill_store_1.0.105.jsonl` | unset (so `<HOME>/.copilot`) | — | `found: "true"`, `skillSource: "personal-agents"` |
+| `skill_store_linked_1.0.105.jsonl` | unset | symlink to the store copy | `found: "true"`, `skillSource: "personal-copilot"` |
+| `skill_store_relocated_1.0.105.jsonl` | a fresh directory elsewhere | — | `found: "false"` |
+
+**`session.skills_loaded` is not emitted** in `--output-format json` mode on
+this build — not in these runs and not in 138.1's `skill` fixture — so the
+evidence is the `skill` tool's `toolTelemetry.properties` on
+`tool.execution_complete`. Two unrecorded runs of a listing prompt (`Without
+calling any tool, list the name and source location of every skill available
+to you, …, including any duplicates.`) settled duplication: store plus link
+listed `fixture-greeting` **once**, and so did a relocated `COPILOT_HOME`
+holding the link. copilot **dedupes**, and the copilot directory wins the
+source. A fourth unrecorded run set `COPILOT_HOME=<x>/.copilot` with the store
+copy at `<x>/.agents/skills` and an empty `HOME`: also `found: "false"`, so the
+store is not resolved from `COPILOT_HOME`'s parent either. On 1.0.105,
+relocating `COPILOT_HOME` drops the store entirely — which is also why 138.1's
+isolated-`COPILOT_HOME` discipline could never have observed
+`personal-agents`. §9.8 records it; detection does not follow `COPILOT_HOME`
+(decision 2 of #864), and no link is added to work around it.
+
 **Unreachable or not produced.**
 
 - **Explicit `--model`.** Every explicit model tried — `gpt-5-mini`,
@@ -309,7 +344,10 @@ its code makes true, in its own pull request.
   per-OS refusal; gate scenario 4. Depends: 138.9, 138.3.
 - [ ] **138.11** ([#863](https://github.com/lezli01/vincent/issues/863)) `Resumer`, session-lost classification, m14 leg 2b.
   Depends: 138.9.
-- [ ] **138.12** ([#864](https://github.com/lezli01/vincent/issues/864)) Published-skill reporting for copilot.
+- [x] **138.12** ([#864](https://github.com/lezli01/vincent/issues/864)) Published-skill reporting for copilot: a store-read
+  `Link` shown as `copilot (reads store)`, a slugless copilot row in the
+  install table, `skill.PlanInstall` for `--agent copilot`, and the store
+  captures above. ✓ 2026-10-29
 - [ ] **138.13** ([#865](https://github.com/lezli01/vincent/issues/865)) `SkillInvoker`, `FileMentioner`, m14 legs 12 and 13.
   Depends: 138.11.
 - [ ] **138.14** ([#866](https://github.com/lezli01/vincent/issues/866)) The `skills/vincent-workflows` runtime text and the

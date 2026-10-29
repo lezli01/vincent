@@ -523,6 +523,9 @@ npx skills add lezli01/vincent --skill vincent-workflows -g
 npx skills add lezli01/vincent --skill vincent-triggers -g
 ```
 
+GitHub Copilot CLI needs no link: it reads the store, `~/.agents/skills`,
+itself, and `vincent skills ls` names it as `copilot (reads store)`.
+
 `vincent skills ls` says what is installed and whether it is current, and
 `vincent doctor` carries the same rows. Neither needs a running daemon, and
 only the install needs node.
