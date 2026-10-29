@@ -74,8 +74,9 @@ vincent skills install
 That shells out to `npx skills add lezli01/vincent --skill vincent-workflows
 --agent claude-code codex cursor --yes --global`, which is the published command
 with the interactive agent picker answered. `--agent` narrows the selection to
-some of `claude`, `codex`, `cursor`; the TUI's `S` offer answers it with the
-adapters vincent actually detected instead. Running it by hand works too:
+some of `claude`, `codex`, `copilot`, `cursor` — copilot reads the store
+itself, so it adds nothing to the command; the TUI's `S` offer answers it with
+the adapters vincent actually detected instead. Running it by hand works too:
 
 ```sh
 npx skills add lezli01/vincent --skill vincent-workflows -g

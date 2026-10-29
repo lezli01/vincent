@@ -520,7 +520,9 @@ daemon running.
   `current`, `older`, `newer`,
   `differs` (unequal and at least one side is not semver, so no direction is
   claimed) and `unreadable`. `links[]` is what is on disk and can name agents
-  vincent does not drive. Nothing here ever reaches `problems[]` — see
+  vincent does not drive; an entry with `"store": true` is an agent that reads
+  the store copy itself and holds no link — copilot, when `~/.copilot` exists —
+  and its `path` is the store path. Nothing here ever reaches `problems[]` — see
   [`vincent skills`](cli.md#vincent-skills).
 - **The database group measures growth** and changes nothing about it.
   `total_bytes` is the file plus its WAL and SHM sidecars, which is the honest
