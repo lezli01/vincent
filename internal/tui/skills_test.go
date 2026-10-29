@@ -193,7 +193,9 @@ func TestSkillRowNamesCopilotReadingTheStore(t *testing.T) {
 }
 
 // TestSkillsFlowForCopilotAlone applies skill.PlanInstall: a selection of
-// copilot only runs nothing and says why, store copy or not.
+// copilot only runs nothing and says why. The flow offers what is not
+// current, and neither a stale store copy (review F2) nor an absent one is
+// served, so both are errors and neither says there is nothing to link.
 func TestSkillsFlowForCopilotAlone(t *testing.T) {
 	home := t.TempDir()
 	stored := filepath.Join(home, ".agents", "skills", "vincent-workflows")
@@ -212,8 +214,11 @@ func TestSkillsFlowForCopilotAlone(t *testing.T) {
 		t.Errorf("names = %v; copilot alone has nothing to run", f.names)
 	}
 	body := strings.Join(f.render(200), "\n")
-	if !strings.Contains(body, "nothing to link") || !strings.Contains(body, "none is installed") {
+	if !strings.Contains(body, "which is older") || !strings.Contains(body, "none is installed") {
 		t.Errorf("body does not explain both outcomes:\n%s", body)
+	}
+	if strings.Contains(body, "nothing to link") {
+		t.Errorf("a stale store copy is reported as served:\n%s", body)
 	}
 	if strings.Contains(body, "npx skills add") {
 		t.Errorf("the offer shows a command it would not run:\n%s", body)

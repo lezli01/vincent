@@ -152,7 +152,12 @@ func (p Plan) Run() bool { return len(p.Slugs) > 0 }
 // `skills add` for those slugs; a store-resident adapter adds nothing to the
 // argv. Only when every recognized adapter is store-resident does the store
 // copy decide: present is success with nothing to run, absent is an error
-// naming how to populate it.
+// naming how to populate it. A store copy that is there but not current —
+// older, differs, unreadable — is not served either: copilot would read the
+// stale copy, and calling that installed would make `skills install` exit 0
+// on exactly the skills Missing offered to fix (review F2). It is an error
+// naming the same remedy, since installing for another agent refreshes the
+// store.
 func PlanInstall(name string, adapters []string, statuses []Status) Plan {
 	slugs := Slugs(adapters)
 	if len(slugs) > 0 {
@@ -168,15 +173,20 @@ func PlanInstall(name string, adapters []string, statuses []Status) Plan {
 		}
 	}
 	who := strings.Join(readers, ", ")
-	storePath := ""
+	storePath, state := "", ""
 	for _, s := range statuses {
 		if s.Name == name {
-			storePath = s.StorePath
+			storePath, state = s.StorePath, s.State
 			break
 		}
 	}
 	if storePath != "" {
 		if _, err := os.Lstat(storePath); err == nil {
+			if state != StateCurrent {
+				return Plan{Err: fmt.Errorf("%s reads the store copy at %s, which is %s — "+
+					"update it for another agent, e.g. vincent skills install %s --agent claude, "+
+					"which refreshes the store", who, storePath, state, name)}
+			}
 			return Plan{Note: who + " reads " + storePath + " directly; there is nothing to link"}
 		}
 	} else {

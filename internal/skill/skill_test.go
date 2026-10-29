@@ -492,11 +492,28 @@ func TestPlanInstall(t *testing.T) {
 		t.Errorf("error does not say how to populate the store: %q", msg)
 	}
 
-	installAt(t, home, ".agents", name, "1.0.0")
-	present := Detect(Options{Home: home, FS: shipped})
-	p = PlanInstall(name, []string{"copilot"}, present)
+	installAt(t, home, ".agents", name, "1.2.0")
+	current := Detect(Options{Home: home, FS: shipped})
+	p = PlanInstall(name, []string{"copilot"}, current)
 	if p.Run() || p.Err != nil || !strings.Contains(p.Note, "nothing to link") {
-		t.Errorf("copilot alone with a store copy = %+v", p)
+		t.Errorf("copilot alone with a current store copy = %+v", p)
+	}
+
+	// Review F2: a store copy that is there but not current is what Missing
+	// offers to fix; copilot reading it is not the skill installed.
+	for version, state := range map[string]string{"1.0.0": StateOlder, "next": StateDiffers} {
+		installAt(t, home, ".agents", name, version)
+		stale := Detect(Options{Home: home, FS: shipped})
+		if got := stale[0].State; got != state {
+			t.Fatalf("store at %s: state %s, want %s", version, got, state)
+		}
+		p = PlanInstall(name, []string{"copilot"}, stale)
+		if p.Run() || p.Err == nil || p.Note != "" {
+			t.Fatalf("copilot alone with a store copy at %s = %+v, want an error", version, p)
+		}
+		if msg := p.Err.Error(); !strings.Contains(msg, "which is "+state) || !strings.Contains(msg, "--agent claude") {
+			t.Errorf("error does not say the store is %s and how to refresh it: %q", state, msg)
+		}
 	}
 }
 

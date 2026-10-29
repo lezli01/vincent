@@ -123,10 +123,15 @@ func TestSkillsInstallNothingToDo(t *testing.T) {
 	}
 }
 
-// seedStore writes every published skill's store copy under home at version.
+// seedStore writes every published skill's store copy under home at version,
+// or at the version this binary ships when version is empty.
 func seedStore(t *testing.T, home string, version string) {
 	t.Helper()
 	for _, p := range skill.Publish(nil) {
+		version := version
+		if version == "" {
+			version = p.Version
+		}
 		dir := filepath.Join(home, skill.StoreDir, "skills", p.Path)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -141,11 +146,17 @@ func seedStore(t *testing.T, home string, version string) {
 // TestSkillsInstallForCopilot is task 138.12 decision 4 end to end. PATH holds
 // no npx, so any attempt to run one would fail the store-present case.
 func TestSkillsInstallForCopilot(t *testing.T) {
-	t.Run("store present", func(t *testing.T) {
+	// Named explicitly: a current store leaves nothing Missing, so the
+	// no-argument form would only say everything is already current.
+	names := make([]string, 0, 2)
+	for _, p := range skill.Publish(nil) {
+		names = append(names, p.Name)
+	}
+	t.Run("store current", func(t *testing.T) {
 		home := fakeHome(t)
 		t.Setenv("PATH", t.TempDir())
-		seedStore(t, home, "0.0.1")
-		out, errOut, code := runSkills(t, "install", "--agent", "copilot")
+		seedStore(t, home, "")
+		out, errOut, code := runSkills(t, append([]string{"install", "--agent", "copilot"}, names...)...)
 		if code != 0 {
 			t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 		}
@@ -153,7 +164,7 @@ func TestSkillsInstallForCopilot(t *testing.T) {
 			t.Errorf("stdout = %q", out)
 		}
 
-		out, _, code = runSkills(t, "install", "--agent", "copilot", "--json")
+		out, _, code = runSkills(t, append([]string{"install", "--agent", "copilot", "--json"}, names...)...)
 		if code != 0 {
 			t.Fatalf("--json exit %d: %s", code, out)
 		}
@@ -165,6 +176,24 @@ func TestSkillsInstallForCopilot(t *testing.T) {
 			if !r.OK || r.Command != "" || r.Note == "" {
 				t.Errorf("result = %+v, want ok with a note and no command", r)
 			}
+		}
+	})
+	// Review F2: a stale store copy is what Missing offers to fix, so a
+	// copilot-only install must not call it served and exit 0.
+	t.Run("store older", func(t *testing.T) {
+		home := fakeHome(t)
+		t.Setenv("PATH", t.TempDir())
+		seedStore(t, home, "0.0.1")
+		out, errOut, code := runSkills(t, "install", "--agent", "copilot")
+		if code != 1 {
+			t.Fatalf("exit %d, want 1\nstdout: %s\nstderr: %s", code, out, errOut)
+		}
+		if strings.Contains(out, "nothing to link") ||
+			!strings.Contains(errOut, "which is older") || !strings.Contains(errOut, "--agent claude") {
+			t.Errorf("stdout = %q\nstderr = %q", out, errOut)
+		}
+		if strings.Contains(errOut, "npx is not installed") {
+			t.Errorf("a copilot-only install tried to run npx: %q", errOut)
 		}
 	})
 	t.Run("store absent", func(t *testing.T) {

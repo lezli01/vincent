@@ -6368,9 +6368,14 @@ skill only from `$COPILOT_HOME/skills`. Detection follows neither
 and is wrong for a user who moved either. That is a known gap, stated here
 rather than worked around with a link. **Install:** copilot adds no slug to the
 argv. `--agent` naming other adapters as well installs for those as before; a
-selection of copilot alone runs nothing — a skill whose store copy exists is
-reported as served, one with none is an error saying to install it for another
-agent first, which populates the store. The CLI and the TUI's offer apply that
+selection of copilot alone runs nothing — a skill whose store copy is current
+is reported as served, one with none is an error saying to install it for another
+agent first, which populates the store. *Amended 2026-10-29 (review F2 of the
+#873 train):* a store copy that exists but is not current — `older`, `differs`,
+`unreadable` — is an error too, naming its state and the same remedy, which
+refreshes the store: it is exactly what `Missing` offers to fix, and reporting
+it as served made `skills install --agent copilot` exit 0 with the stale copy
+left in place. The CLI and the TUI's offer apply that
 one rule (`skill.PlanInstall`). The capture is recorded in
 `docs/tasks/138-copilot-adapter.md`.
 

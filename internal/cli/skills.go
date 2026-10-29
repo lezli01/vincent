@@ -89,8 +89,9 @@ func newSkillsInstallCmd() *cobra.Command {
 			"once node is there — detection is unaffected either way.\n\n" +
 			"copilot reads the store, ~/.agents/skills, itself, so it adds nothing to " +
 			"the selection. With --agent copilot alone nothing is run: a skill whose " +
-			"store copy exists is reported as served, and one with none exits 1 — " +
-			"install it for another agent first, which populates the store.\n\n" +
+			"store copy is current is reported as served, and one with none, or with " +
+			"an older or differing copy, exits 1 — install it for another agent " +
+			"first, which populates or refreshes the store.\n\n" +
 			"Exit codes: 0 everything asked for is installed, 1 an install failed.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSkillsInstall(cmd, args, adapters)

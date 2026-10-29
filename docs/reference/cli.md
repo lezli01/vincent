@@ -1842,11 +1842,13 @@ CLI's slug for claude is `claude-code`.
 
 `copilot` adds nothing to the command: it reads `~/.agents/skills` itself, so
 there is nothing to link. Named with other agents, those are installed as
-usual. Named alone, nothing runs — a skill whose store copy exists prints
+usual. Named alone, nothing runs — a skill whose store copy is current prints
 `<skill>: copilot reads <store path> directly; there is nothing to link`
-(`--json`: `ok: true`, an empty `command` and that `note`), and one with no
-store copy fails, saying to install it for another agent first (for example
-`--agent claude`), which populates the store.
+(`--json`: `ok: true`, an empty `command` and that `note`). One with no store
+copy fails, saying to install it for another agent first (for example
+`--agent claude`), which populates the store; one whose store copy is `older`
+or `differs` fails the same way, naming the state, since copilot would read the
+stale copy and installing for another agent refreshes it.
 
 It needs `npx` on `PATH` and, on a first run, network — the package is
 downloaded before anything happens. Without `npx` it exits **1** with a message
