@@ -37,8 +37,8 @@ const (
 	dialectClaude dialect = iota
 	dialectCodex
 	dialectCursor
-	// dialectCopilot never opens the session store: copilot resume is task
-	// 138.11's. It names the dialect for discoverMCP (task 138.8).
+	// dialectCopilot resumes with `--resume=<id>` and starts with
+	// `--session-id <uuid>`, whose id it adopts (task 138.11).
 	dialectCopilot
 )
 
@@ -76,10 +76,15 @@ func sessionPath(id string) string {
 // word: claude and cursor say `--resume <id>`, codex says it with a
 // subcommand — `codex exec --json resume <id>` (task 070) — and in both the
 // id is the argument straight after the word. One walk covers all three
-// rather than each getting its own. Nothing else can be mistaken for it: the
-// prompt is on stdin in every dialect, so no free text reaches argv.
+// rather than each getting its own. Copilot's `--resume=<id>` is the one
+// spelling with the id in the same token (task 138.11). Nothing else can be
+// mistaken for it: the prompt is on stdin in every dialect, so no free text
+// reaches argv.
 func resumeArg() (string, bool) {
 	for i, a := range os.Args[1:] {
+		if id, ok := strings.CutPrefix(a, "--resume="); ok {
+			return id, true
+		}
 		if a != "--resume" && a != "resume" {
 			continue
 		}
@@ -104,6 +109,19 @@ const sessionLostMessage = "No conversation found with session ID: "
 // it was written for.
 const codexSessionLostMessage = "Error: thread/resume: thread/resume failed: no rollout found for thread id "
 
+// copilotSessionLost is copilot's refusal of an id it does not know, and it
+// is fixture-verified too: resume_unknown_1.0.105.txt verbatim, with the id
+// spliced in (internal/agent/copilot/testdata, task 138.11).
+func copilotSessionLost(id string) string {
+	return "Error: No session, task, or name matched '" + id + "'.\n" + `
+To resume by session or task ID:  copilot --resume=<id>
+To resume by name:                copilot --resume=<name>
+To name a new session:            copilot --name=<name>
+To pick from existing sessions:   copilot --resume
+To start a new session with ID:   copilot --session-id=<valid-uuid>
+`
+}
+
 // openSession resolves this run's conversation before any output is emitted.
 //
 // It returns the prior prompts a resumed session carries. A resume of an id
@@ -113,8 +131,19 @@ const codexSessionLostMessage = "Error: thread/resume: thread/resume failed: no 
 // that was never written rather than by a scenario flag, so the test exercises
 // the same code path a genuinely expired id would.
 func openSession(d dialect) []string {
-	stampSessionID = d != dialectCodex
+	// Codex reports its thread id once, copilot once on its result line.
+	stampSessionID = d != dialectCodex && d != dialectCopilot
 	id, resuming := resumeArg()
+	if d == dialectCopilot && !resuming {
+		// A fresh copilot run is told its id: it adopts any --session-id
+		// it has not seen (session_id_unknown_1.0.105.jsonl).
+		id = copilotSessionID
+		if v, ok := flagValue(os.Args[1:], "--session-id"); ok && v != "" {
+			id = v
+		}
+		sessionID = id
+		return nil
+	}
 	dir := sessionDir()
 	if resuming && id == "" {
 		fmt.Fprintln(os.Stderr, "resume requires a session id")
@@ -142,6 +171,9 @@ func openSession(d dialect) []string {
 		switch d {
 		case dialectCodex:
 			fmt.Fprintln(os.Stderr, codexSessionLostMessage+id+" (code -32600)")
+			os.Exit(1)
+		case dialectCopilot:
+			fmt.Fprint(os.Stderr, copilotSessionLost(id))
 			os.Exit(1)
 		case dialectCursor:
 			// No refusal exists to imitate: cursor adopts the id and starts

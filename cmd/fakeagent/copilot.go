@@ -15,8 +15,7 @@ import (
 const copilotVersion = "1.0.105"
 
 // copilotSessionID stands in for the UUID the real CLI mints when the argv
-// carries no --session-id. The resume model is task 138.11's (#863) and is
-// not built here, so this run keeps no memory either way.
+// carries no --session-id.
 const copilotSessionID = "00000000-0000-4000-8000-00000000f4ce"
 
 // copilotHelpText is the clap-style `--help` excerpt the adapter's effort
@@ -67,11 +66,15 @@ func copilotMain(scenario string) {
 	prompt, _ := io.ReadAll(os.Stdin)
 
 	// Copilot stamps no session id on its event lines: it is reported once,
-	// on the terminal result line, as sessionId. stampSessionID stays false.
-	sessionID = copilotSessionID
-	if id, ok := flagValue(os.Args[1:], "--session-id"); ok && id != "" {
-		sessionID = id
-	}
+	// on the terminal result line, as sessionId. The conversation is resolved
+	// before any output (task 138.11): a fresh run adopts its --session-id,
+	// and a `--resume=` of an id the store does not hold ends here with
+	// resume_unknown_1.0.105.txt's refusal, exit 1 and no stream.
+	prior := openSession(dialectCopilot)
+	rememberPrompt(prompt)
+	// The usage checkpoint is the session's running total (§9.9), so each
+	// turn of a resumed session reports more than the last.
+	turns := int64(len(prior) + 1)
 
 	switch scenario {
 	case "unauthenticated":
@@ -99,6 +102,11 @@ func copilotMain(scenario string) {
 		"turnId": "0", "delivery": "idle",
 	}, false)
 	c.event("assistant.turn_start", map[string]any{"turnId": "0", "interactionId": fakeUUID(idInteraction, 0)}, false)
+	if line := recallLine(prior); line != "" {
+		// What a resumed session remembers. A fresh one says nothing here,
+		// so a vincent that dropped --resume= fails by omission.
+		c.text(line)
+	}
 
 	switch scenario {
 	case "error-event":
@@ -140,9 +148,9 @@ func copilotMain(scenario string) {
 			c.end(1, 1, 100, 42, nil)
 			os.Exit(1)
 		}
-		c.success(prompt)
+		c.success(prompt, turns)
 	default: // success, and the dialect-neutral scenarios cursor treats so
-		c.success(prompt)
+		c.success(prompt, turns)
 	}
 }
 
@@ -183,8 +191,10 @@ func (c *copilotStream) text(s string) {
 
 // success is simple_1.0.105.jsonl's turn, stretched by FAKEAGENT_DELAY_MS and
 // carrying edit_1.0.105.jsonl's file change when FAKEAGENT_EDIT_FILE or
-// FAKEAGENT_WRITE_FILE asks for one.
-func (c *copilotStream) success(prompt []byte) {
+// FAKEAGENT_WRITE_FILE asks for one. turns is how many runs the session
+// has had, this one included: the checkpoint reports 100 in and 42 out for
+// each, as the real one's session totals grow.
+func (c *copilotStream) success(prompt []byte, turns int64) {
 	c.text("Working on: " + firstLine(string(prompt)))
 	workFor(c.text)
 	doFileWork()
@@ -195,7 +205,7 @@ func (c *copilotStream) success(prompt []byte) {
 		}
 	}
 	c.text("done: " + flatten(string(prompt), 1000))
-	c.end(0, 1, 100, 42, files)
+	c.end(0, 1, 100*turns, 42*turns, files)
 }
 
 // sigterm is sigterm_1.0.105.jsonl's ending: copilot traps SIGTERM, writes

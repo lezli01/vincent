@@ -140,9 +140,10 @@ func TestSessionIDIsAFreshUUID(t *testing.T) {
 	}
 }
 
-// TestInterimRefusals pins the two refusals from Start, each with its
-// sentinel and no process spawned. Each is replaced by the item named in
-// buildArgs (§9.9).
+// TestInterimRefusals pins the refusal left in Start, with its sentinel and
+// no process spawned. It is replaced by the item named in buildArgs (§9.9);
+// the resume refusal it once held was 138.11's, and resume_test.go proves
+// what replaced it.
 func TestInterimRefusals(t *testing.T) {
 	tests := []struct {
 		name string
@@ -153,11 +154,6 @@ func TestInterimRefusals(t *testing.T) {
 			name: "restricted",
 			spec: agent.RunSpec{PermissionMode: agent.Restricted},
 			want: agent.ErrRestrictedUnsupported,
-		},
-		{
-			name: "resume",
-			spec: agent.RunSpec{ResumeSessionID: "11111111-2222-4333-8444-555555555555"},
-			want: agent.ErrResumeUnsupported,
 		},
 	}
 	for _, tt := range tests {
@@ -516,7 +512,7 @@ func TestAssemble(t *testing.T) {
 			// it was given; a result naming another one contradicts it.
 			name:     "foreign session",
 			terminal: &agent.RunResult{SessionID: "99999999-2222-4333-8444-555555555555"},
-			wantErr:  "not the --session-id " + id,
+			wantErr:  "not the session " + id,
 		},
 		{
 			name:      "stream error outranks a clean result",
@@ -528,7 +524,7 @@ func TestAssemble(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res := assemble(0, id, tt.terminal, tt.streamErr, "boom")
+			res := assemble(0, id, false, tt.terminal, tt.streamErr, "boom")
 			if res.SessionID != id {
 				t.Errorf("SessionID = %q, want the generated %q", res.SessionID, id)
 			}
@@ -554,7 +550,7 @@ func TestAssembleKeepsTheRunsAccount(t *testing.T) {
 		ReasoningOutputTokens: 5, ModelUsage: []agent.ModelUsage{{Model: "m", InputTokens: 1}},
 		Duration: time.Second, APIDuration: time.Millisecond,
 	}
-	res := assemble(0, id, terminal, nil, "")
+	res := assemble(0, id, false, terminal, nil, "")
 	got := agent.RunResult{
 		SessionID: res.SessionID, InputTokens: res.InputTokens, OutputTokens: res.OutputTokens,
 		CacheReadTokens: res.CacheReadTokens, CacheCreationTokens: res.CacheCreationTokens,

@@ -354,3 +354,62 @@ func firstValue(t *testing.T, m map[string]any) map[string]any {
 	}
 	return nil
 }
+
+// TestCopilotResume is the copilot dialect's memory (task 138.11): a fresh
+// run adopts an unknown --session-id, a `--resume=` of it recalls the first
+// prompt and reports a usage checkpoint that grew, and a `--resume=` of an id
+// nobody wrote is resume_unknown_1.0.105.txt's refusal — stderr only, exit 1.
+func TestCopilotResume(t *testing.T) {
+	t.Parallel()
+	bin := agenttest.BuildFakeAgent(t)
+	store := "FAKEAGENT_SESSION_DIR=" + t.TempDir()
+	const id = "6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
+
+	first, _, code := runCopilot(t, bin, "remember the codeword", append(slices.Clone(copilotArgs), "--session-id", id), store)
+	if code != 0 {
+		t.Fatalf("first run exit = %d", code)
+	}
+	if got := copilotResultSession(t, first); got != id {
+		t.Errorf("first run's session = %q, want the adopted --session-id %q", got, id)
+	}
+
+	second, _, code := runCopilot(t, bin, "what was it?", append(slices.Clone(copilotArgs), "--resume="+id), store)
+	if code != 0 {
+		t.Fatalf("resumed run exit = %d", code)
+	}
+	if !strings.Contains(second, "recalled: remember the codeword") {
+		t.Errorf("resumed run does not recall the first prompt:\n%s", second)
+	}
+	if got := copilotResultSession(t, second); got != id {
+		t.Errorf("resumed run's session = %q, want %q", got, id)
+	}
+	details := checkpointLine(t, copilotLines(t, second))["data"].(map[string]any)["accountingSnapshot"].(map[string]any)["tokenDetails"].(map[string]any)
+	if in := details["input"].(map[string]any)["tokenCount"]; in != float64(200) {
+		t.Errorf("resumed checkpoint input = %v, want the session's total 200", in)
+	}
+
+	want, err := os.ReadFile(filepath.Join("..", "..", "internal", "agent", "copilot", "testdata", "resume_unknown_1.0.105.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const unknown = "5fb73928-d652-46ae-b08b-9548a753cfd6"
+	out, stderr, code := runCopilot(t, bin, "hello?", append(slices.Clone(copilotArgs), "--resume="+unknown), store)
+	if code != 1 || out != "" {
+		t.Errorf("unknown resume: exit = %d, stdout = %q; want 1 and nothing", code, out)
+	}
+	if stderr != strings.ReplaceAll(string(want), "\r\n", "\n") {
+		t.Errorf("stderr =\n%q\nwant\n%q", stderr, want)
+	}
+}
+
+// copilotResultSession is the sessionId on a stream's result line.
+func copilotResultSession(t *testing.T, out string) string {
+	t.Helper()
+	lines := copilotLines(t, out)
+	last := lines[len(lines)-1]
+	if last["type"] != "result" {
+		t.Fatalf("last line is %v, not the result", last["type"])
+	}
+	id, _ := last["sessionId"].(string)
+	return id
+}

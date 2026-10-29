@@ -60,7 +60,7 @@ func TestUnrecognizedStopsStayUnclassified(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			res := assemble(1, "id", nil, nil, string(b))
+			res := assemble(1, "id", false, nil, nil, string(b))
 			if res.Failure != nil {
 				t.Errorf("Failure = %+v, want nil", res.Failure)
 			}
@@ -86,7 +86,7 @@ func TestStreamFailureOutranksClassify(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := assemble(1, "id", nil, errors.New("bufio.Scanner: token too long"), string(b))
+	res := assemble(1, "id", false, nil, errors.New("bufio.Scanner: token too long"), string(b))
 	if res.Failure == nil || res.Failure.Kind != agent.FailureStreamError {
 		t.Errorf("Failure = %+v, want stream_error", res.Failure)
 	}
