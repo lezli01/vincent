@@ -238,7 +238,7 @@ change into the handoff task's own branch — each item's verified `head_sha`
 replayed in order with `git rebase --onto` — verifies them together, opens one
 pull request, merges it pinned to the verified commit, and only then runs
 `vincent handoff deliver --all`. Its
-[trigger](../examples/triggers/merge-train.yaml) runs nightly and grants
+[trigger](../examples/triggers/merge-train.yaml) runs at 02:00 on weekdays and grants
 `pull.create`, `pull.merge` and `issue.close`. A conflict fails the step and
 leaves it to a person; the items release when the task settles, so nothing is
 lost.
