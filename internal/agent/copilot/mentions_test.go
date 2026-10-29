@@ -56,6 +56,7 @@ type fixtureLine struct {
 		ToolName           string `json:"toolName"`
 		Arguments          struct {
 			Skill string `json:"skill"`
+			Path  string `json:"path"`
 		} `json:"arguments"`
 	} `json:"data"`
 }
@@ -114,6 +115,34 @@ func TestMentionIsNotExpanded(t *testing.T) {
 	}
 	if out := outputText(t, name); !strings.Contains(out, "without reading the file") {
 		t.Errorf("answer = %q, want copilot saying it could not read the file", out)
+	}
+}
+
+// TestMentionFallbackReadsThePath backs the other half of task 126
+// decision 6 for copilot — that an unexpanded mention is still worth
+// sending — with mention_tools_1.0.105.jsonl: the same mention with tools
+// allowed and no instruction to avoid them. The prompt still reaches the
+// model with `@README.md` as typed, the model reads that path itself in one
+// `view` call, and the answer is the README's first line. Recapture it when
+// testedVersions moves.
+func TestMentionFallbackReadsThePath(t *testing.T) {
+	const name = "mention_tools_1.0.105.jsonl"
+	lines := fixtureLines(t, name)
+	msg := userMessage(t, name, lines)
+	if !strings.Contains(msg.Data.TransformedContent, "@README.md") || strings.Contains(msg.Data.TransformedContent, "Zebra") {
+		t.Errorf("transformedContent = %q, want the mention left as typed and unexpanded", msg.Data.TransformedContent)
+	}
+	var reads []string
+	for _, l := range lines {
+		if l.Type == "tool.execution_start" {
+			reads = append(reads, l.Data.ToolName+" "+l.Data.Arguments.Path)
+		}
+	}
+	if len(reads) != 1 || reads[0] != "view /tmp/copilot-fixture/repo/README.md" {
+		t.Errorf("%s: tool calls %q, want one view of the mentioned README.md", name, reads)
+	}
+	if out := outputText(t, name); !strings.Contains(out, "Zebra marmalade lighthouse 4417") {
+		t.Errorf("answer = %q, want the README's first line", out)
 	}
 }
 

@@ -277,11 +277,19 @@ only. The throwaway repo's `README.md` begins `Zebra marmalade lighthouse
 same grep found zero hits and every `.jsonl` parses under `jq -c .`. One
 premium request each.
 
+A fourth run, `mention_tools_1.0.105.jsonl`, was added after review (PR #878,
+F1) to observe the tools-allowed fallback rather than assume it: the same
+discipline, an empty `COPILOT_HOME`, and the same repo. It is the one run here
+that wrote a local path — the `view` call's argument and its diff — which was
+scrubbed to `/tmp/copilot-fixture/repo`, the 138.1 spelling; the grep then
+found zero hits.
+
 | File | Prompt (stdin) | Exit |
 |---|---|---|
 | `skill_invoke_leading_1.0.105.jsonl` | `/fixture-greeting` | 0 |
 | `skill_invoke_mid_1.0.105.jsonl` | `Please run /fixture-greeting now.` | 0 |
 | `mention_1.0.105.jsonl` | `What is the first line of @README.md? Do not use any tools.` | 0 |
+| `mention_tools_1.0.105.jsonl` | `What is the first line of @README.md?` | 0 |
 
 **Observations.**
 
@@ -300,7 +308,13 @@ premium request each.
   determine the first line of @README.md without reading the file". So
   copilot is a `FileMentioner` with `Expands: false` (decision C), `@`
   anywhere, never quoted.
-- No new event types: all three carry only types the inventory below lists.
+- With tools allowed (`mention_tools_1.0.105.jsonl`), `transformedContent`
+  again carries `@README.md` as typed and none of the file; the model made
+  one `view` call on `/tmp/copilot-fixture/repo/README.md` with `view_range
+  [1, 1]` and answered `Zebra marmalade lighthouse 4417`. That is §5.5's
+  fallback on copilot, observed: an unexpanded mention is still worth
+  sending (task 126 decision 6). `TestMentionFallbackReadsThePath` pins it.
+- No new event types: all four carry only types the inventory below lists.
 
 ## Event inventory
 

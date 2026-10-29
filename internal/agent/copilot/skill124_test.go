@@ -62,6 +62,7 @@ func TestFixtureEventTypesArePinned(t *testing.T) {
 	want := map[string]counts{
 		"denied_1.0.105.jsonl":                base(counts{"output": 1, "thinking": 1, "tool_use": 1, "tool_result": 1}),
 		"mention_1.0.105.jsonl":               base(counts{"output": 1}),
+		"mention_tools_1.0.105.jsonl":         base(counts{"output": 1, "tool_use": 1, "tool_result": 1}),
 		"edit_1.0.105.jsonl":                  base(counts{"output": 1, "tool_use": 2, "tool_result": 2}),
 		"mcp_1.0.105.jsonl":                   base(counts{"output": 1, "tool_use": 1, "tool_result": 1}),
 		"reasoning_1.0.105.jsonl":             base(counts{"output": 1, "thinking": 1}),

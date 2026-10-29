@@ -1014,7 +1014,10 @@ carrying the nonce proves the CLI itself put the file in front of the model.
   them, `codex exec` and `cursor-agent -p` each read the mentioned path
   themselves in one tool call and then answered with the nonce. A mention is
   therefore worth something on all three adapters; what differs is guaranteed
-  context against a hint.
+  context against a hint. *Amended 2026-10-29 (task 138.13):* copilot 1.0.105
+  does the same on stdin — `mention_tools_1.0.105.jsonl` shows `@README.md`
+  left as typed, one `view` of that path, and the file's first line as the
+  answer — so the fallback holds on all four.
 
 Which spellings expand is a per-build fact, and every row below was probed **in
 isolation** — a first pass that put six spellings into one message reported a
@@ -4151,8 +4154,9 @@ three implement it today.
   four adapters implement `FileMentioner` (copilot since task 138.13,
   2026-10-29); what differs is whether the CLI
   itself puts the file in front of the model. §5.5 records that with tools
-  allowed `codex exec` and `cursor-agent -p` each read a mentioned path in one
-  tool call, so a mention is worth sending on all three — guaranteed context
+  allowed `codex exec`, `cursor-agent -p` and copilot on stdin each read a
+  mentioned path in one tool call, so a mention is worth sending on all four
+  — guaranteed context
   against a hint — and task 126 decision 6 gates the note on the verdict and
   never the picker. It is a static per-adapter fact with no `unknown` leg,
   which is why it is a `bool` (task 126 decision 23).
@@ -6714,7 +6718,8 @@ section is renumbered.
   `@README.md` reaches the model as typed with none of the file beside it, and
   the model, told not to use tools, said it could not read the file — `@`
   expansion is documented for the interactive session only. With tools
-  allowed the model reads the path itself, so a mention is worth sending
+  allowed the model reads the path itself in one `view` call
+  (`mention_tools_1.0.105.jsonl`, §5.5), so a mention is worth sending
   (task 126 decision 6). `FileMention` is `@` and the path, never quoted, as
   cursor's is; no Windows path was observed (#557).
 

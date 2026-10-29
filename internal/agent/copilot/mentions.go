@@ -4,7 +4,7 @@ import "github.com/lezli01/vincent/internal/agent"
 
 // copilot recognizes the syntax and does not expand it: on stdin a mention
 // arrives as prose, and with tools allowed the model reads the path itself
-// in one tool call (§5.5, §9.9). That difference is stated, never emulated,
+// in one tool call (§5.5, §9.9, mention_tools_1.0.105.jsonl). That difference is stated, never emulated,
 // and it does not stop the mention being worth sending (task 126 decision 6).
 var _ agent.FileMentioner = (*Adapter)(nil)
 
