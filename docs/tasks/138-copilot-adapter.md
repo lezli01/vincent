@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (4/17)
+**Status:** 🔄 in progress (5/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -329,12 +329,16 @@ its code makes true, in its own pull request.
   the shell tool's name, restriction. Depends: 138.1.
 - [x] **138.4** ([#856](https://github.com/lezli01/vincent/issues/856)) A Copilot dialect in `cmd/fakeagent`, selected by
   `--output-format json`. Depends: 138.1. ✓ 2026-10-29
-- [ ] **138.5** ([#857](https://github.com/lezli01/vincent/issues/857)) `internal/agent/copilot` running a full-auto step over
-  stdin JSONL, unregistered. Depends: 138.1, 138.4.
+- [x] **138.5** ([#857](https://github.com/lezli01/vincent/issues/857)) `internal/agent/copilot` running a full-auto step over
+  stdin JSONL, unregistered. Depends: 138.1, 138.4. Usage normalization
+  (#857's "usage" bullet) moved to 138.7: on 1.0.105 the token counts live
+  only on `session.usage_checkpoint` and `assistant.turn_end`, so 138.5 emits
+  no usage event and leaves tokens and cost unreported. ✓ 2026-10-29
 - [ ] **138.6** ([#858](https://github.com/lezli01/vincent/issues/858)) The effort catalog, the stated model and login gaps,
   failure classification. Depends: 138.5.
 - [ ] **138.7** ([#859](https://github.com/lezli01/vincent/issues/859)) Run header, thinking, patches, subagents and usage
-  normalized; the absent events pinned against every fixture. Depends: 138.5.
+  normalized — usage taken over from 138.5, `RunResult` tokens included; the
+  absent events pinned against every fixture. Depends: 138.5.
 - [ ] **138.8** ([#860](https://github.com/lezli01/vincent/issues/860)) The per-step vincent MCP server through
   `--additional-mcp-config`. Depends: 138.5.
 - [ ] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
@@ -365,7 +369,10 @@ Carried from #852; each is decided in the item named.
 
 1. **Windows if #3188 persists** — a stated refusal, waiting for upstream, or a
    file-redirect workaround. 138.3.
-2. **Minimum version** — proposed 1.0.84 above; the verdict is 138.5's.
+2. **Minimum version** — closed by 138.5 (2026-10-29): exact strings only,
+   tested `{1.0.105}`, incompatible empty, so every other build judges
+   `untested` (task 041's design rules out ranges). 1.0.84 is recorded in §9.9
+   as the *documented* minimum and is not enforced in code.
 3. **Env-token login inference** — recommendation: no, stay `null`. 138.6.
 4. **Folder trust** — `--trust-folder` cannot be combined with `--session-id`
    or `--resume`, so a project's `.mcp.json`, `.github/mcp.json` and repo hooks
