@@ -6440,7 +6440,13 @@ section is renumbered.
   every other build is `untested`, which is advisory (task 041). 1.0.84 is the
   documented minimum — below it `--help` is not clap-shaped and the effort
   flag is spelled differently — but it is not enforced. `logged_in` is `null`
-  by design: copilot has no status command.
+  by design: copilot has no status command. *Amended 2026-10, task 138.6:*
+  nor any `auth status` or `whoami`; reading `~/.copilot` is ruled out by
+  T1.7; probing with an invalid model and reading the refusal was rejected as
+  a text-matching hack; and an environment token is not a login —
+  `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` may hold a classic
+  `ghp_` PAT, which Copilot rejects, so their presence proves nothing. It
+  stays `null` with a token set.
 - **No mid-run input** (*2026-10, task 138.5*). `InputSupport` is `never`;
   `Respond` always errors.
 - **Two interim refusals** (*2026-10, task 138.5; amended 2026-10-29, task
@@ -6501,6 +6507,40 @@ section is renumbered.
   termination it asked for whatever the exit code, as for every adapter, and
   the parser also reads a result after the root agent's `abort` as an error,
   so the run is never reported as a success.
+- **No model enumeration** (*2026-10, task 138.6*). The catalog lists no
+  models and ids are free-form, so §8.2 passes any model through with at most
+  its "not in the catalog" warning. Copilot lists models only through the
+  interactive `/model`; `help config`'s static list is not what the account
+  may use. An unavailable id exits 1 with `Error: Model "…" from --model flag
+  is not available.` before any request is spent, and that stderr reaches
+  `result_summary` through the no-result path.
+- **Effort probed from `--help`** (*2026-10, task 138.6*). `Options` runs
+  `copilot --no-auto-update --help` and reads the clap-style
+  `--reasoning-effort … [possible values: …]` line (source `cli`), merged over
+  the curated floor `none, minimal, low, medium, high, xhigh, max`. A missing
+  binary, a failed probe, or help without that line — a commander-style build
+  below 1.0.84 — returns the floor with an error. Effort support is per model,
+  and the default `auto` refuses any effort (`Model "auto" does not support
+  reasoning effort configuration`), so a copilot step that sets `effort` needs
+  an explicit `model`. Neither the adapter nor §8.2 predicts which pairs work;
+  the CLI's fast exit 1 says so.
+- **`--model` leaves no global state** (*2026-10, task 138.6*). Captured on
+  1.0.105 with an empty isolated `COPILOT_HOME`: neither a refused
+  `--model gpt-5-mini` nor an accepted `--model auto` wrote a model to
+  `config.json` or a `settings.json` (`model_persist_1.0.105.txt`). Every run
+  writes logs, session state and the session store, and the first one a
+  `firstLaunchAt` in `config.json`, whatever its flags.
+- **Not a quota reporter** (*2026-10, task 138.6*). There is no zero-cost
+  plan probe, so the adapter is not a `QuotaReporter`, and premium requests are
+  not dollars, so they never become `CostUSD`.
+- **Failure classification** (*2026-10, task 138.6*). A failed run whose error,
+  result text or stderr carries `No authentication information found`
+  (`logged_out_1.0.105.txt`) is `unauthenticated`; a stream vincent could not
+  read to the end still outranks it as `stream_error`. Rate limit and quota
+  are recognized nowhere: their texts are known only from issue reports, and
+  task 003 decision 2 recognizes nothing neither documented nor captured. Such
+  a run fails the ordinary way, and `usage_limit_auto_continue` does not apply
+  to copilot.
 
 ## 10. Worktree management
 
