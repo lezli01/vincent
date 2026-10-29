@@ -190,7 +190,8 @@ that times out, cannot be spawned or answers something unreadable reports
 `auth status` was introduced) up to, not including, 3.0.0; any other claude
 reports `null`. `true` means the CLI found credentials configured — a login, an
 API key, a cloud-provider switch — not that they were checked, for every
-adapter.
+adapter. **copilot** has no authentication probe, so its `logged_in` is
+always `null`; a logged-out copilot is found by its first run failing.
 
 Adapter health is five separate facets, and each has exactly one field:
 

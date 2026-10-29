@@ -146,7 +146,7 @@ machine's.
   setting together with `mcp.wire_steps: true` for any workflow that has an
   agent step.
 - **Withhold your agent credentials.** `mount_agent_config` is **on** by
-  default, so `~/.claude`, `~/.codex` and `~/.cursor` are bind-mounted
+  default, so `~/.claude`, `~/.codex`, `~/.cursor` and `~/.copilot` are bind-mounted
   **read-write** under the container's `HOME`: the agent needs them, because
   subscription auth takes no key from the environment and cursor writes its
   model choice back to its own config. Anything running inside the container —
@@ -157,7 +157,11 @@ machine's.
   login in the Keychain, which a container cannot reach. A containerized claude
   step on a Mac needs `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` through
   [`environment`](reference/configuration.md#environment), and then that token
-  is in the container's environment, readable by every step there. Codex's
+  is in the container's environment, readable by every step there. Copilot
+  is in the same position wherever it keeps its login in the operating
+  system's credential store: pass `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or
+  `GITHUB_TOKEN` the same way, or keep plain-text credentials in
+  `~/.copilot`. Codex's
   `auth.json` and claude's `.credentials.json` on Linux are files in the mounted
   directories.
 - **Keep the daemon unreachable.** A containerized agent reaches vincent's
@@ -369,9 +373,10 @@ is the boundary that matters.
 flow, no keychain entries. An agent step spawns the CLI you installed, which
 authenticates however it already does. In a
 [container](#what-the-container-does-and-does-not-isolate) that CLI is the
-image's, and it authenticates with your `~/.claude`, `~/.codex` and `~/.cursor`,
-mounted in by default — except claude's macOS Keychain login, which has to be
-passed in as a token variable instead.
+image's, and it authenticates with your `~/.claude`, `~/.codex`, `~/.cursor`
+and `~/.copilot`, mounted in by default — except claude's macOS Keychain login
+and copilot's OS credential-store login, which have to be passed in as a token
+variable instead.
 
 That is a statement about *vincent's* credentials, not about yours. Two files
 vincent owns can hold sensitive data because you put it there:

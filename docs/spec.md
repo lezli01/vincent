@@ -17086,6 +17086,13 @@ phase: a click on a label switches tabs there exactly as `tab` does.
     through `environment`, and that value is then in the container's
     environment. Codex's `auth.json` and Linux claude's `.credentials.json` are
     files in the mounted directories.*
+    *Amended 2026-10-29 (task 138.9, issue #861): `~/.copilot` is mounted
+    beside them, so its contents are within reach the same way. Copilot keeps
+    its login in the OS credential store where one exists, which does not
+    cross the mount, so a containerized copilot step authenticates from
+    plain-text credentials under `~/.copilot` or from `COPILOT_GITHUB_TOKEN`,
+    `GH_TOKEN` or `GITHUB_TOKEN` through `environment` — and that token is
+    then in the container's environment (§12.3).*
   - **The daemon is reachable.** Every container is created with
     `--add-host=host.docker.internal:host-gateway` whenever it has a network at
     all, so a process inside it can call the daemon's MCP surface — with the

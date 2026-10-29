@@ -397,7 +397,7 @@ its code makes true, in its own pull request.
   Depends: the capability items.
 - [ ] **138.16** ([#868](https://github.com/lezli01/vincent/issues/868)) README, guides, references and SEO data. Depends: the
   capability items.
-- [ ] **138.17** ([#869](https://github.com/lezli01/vincent/issues/869)) `docs/gates/138-copilot.md` real runs on three OSes,
+- [ ] **138.17** ([#869](https://github.com/lezli01/vincent/issues/869)) `docs/gates/138-copilot-gate.md` real runs on three OSes,
   the TUI screenshots, the task marked done. Depends: 138.16, 138.15, 138.14.
 
 ## Open questions
