@@ -566,7 +566,11 @@ EOF
 
   # The step behind the layout screenshot. Its output is a real `go test -v`
   # run in the task's worktree, on a loop, so the live tail in the picture is
-  # a program's own output rather than a fixture's idea of one.
+  # a program's own output rather than a fixture's idea of one. The loop is
+  # sized to outlast a full capture run, not to end: at 300 rounds it had
+  # finished before the Output tape reached it, and the picture showed the
+  # `report` step done under a caption about a live test run (review F1).
+  # `running` below fails the tape rather than letting that happen again.
   cat > "$CONFIG_DIR/workflows/verify-build.yaml" <<'EOF'
 name: verify-build
 description: Keep building and testing the branch while it is worked on.
@@ -578,7 +582,7 @@ steps:
     type: command
     run: |
       i=0
-      while [ $i -lt 300 ]; do
+      while [ $i -lt 3000 ]; do
         i=$((i + 1))
         go test -count=1 -v ./... 2>&1
         sleep 3
@@ -1368,6 +1372,19 @@ owns() {
   [[ "$n" == "1" ]] || fail "$4 filters to '$needle', but $project has $n ${kind}s matching it, not 1"
 }
 
+# running PROJECT NEEDLE SHOT fails unless the one task NEEDLE filters to is
+# still `running`: a tape whose caption describes a live run must not
+# photograph a finished one (review F1). Like owns, it is a no-op for a shot
+# VINCENT_SHOTS_ONLY leaves out.
+running() {
+  local project="$1" needle="$2" pid state
+  [[ -n "${VINCENT_SHOTS_ONLY:-}" && "${VINCENT_SHOTS_ONLY}" != "$3" ]] && return 0
+  pid="$(project_id "$project")"
+  state="$(api GET "/tasks?project_id=$pid" | jq -r --arg n "$needle" \
+    '[.[] | select(.title | ascii_downcase | contains($n | ascii_downcase))][0].state')"
+  [[ "$state" == "running" ]] || fail "$3 needs the '$needle' task running, but it is $state"
+}
+
 do_capture() {
   command -v vhs >/dev/null 2>&1 || fail "vhs is not on PATH — brew install vhs"
   daemon_attach
@@ -1391,6 +1408,7 @@ do_capture() {
 
   # The board-only home screen, filtered to one running task.
   owns api task 'harden' tui-board
+  running api 'harden' tui-board
   tape tui-board 1250 api '
 Tab
 Sleep 2s
@@ -1759,6 +1777,7 @@ Sleep 2s
 
   # Output, on the soak: a real `go test -v` run arriving live.
   owns api task 'harden' tui-task-output
+  running api 'harden' tui-task-output
   tape tui-task-output 1250 api '
 Tab
 Sleep 2s
@@ -2267,10 +2286,10 @@ Sleep 2s
   # failed step (where and why did it fail?) and the design-tokens task done
   # with its pull request linked (what did it deliver?). `enter` alone is the
   # journey — the workspace opens on Overview, so no digit is pressed. The
-  # running one is the reindex rather than the soak the Output tape uses: the
-  # soak has finished by the time a full run reaches these tapes, and the
-  # reindex runs for most of an hour.
+  # running one is the reindex rather than the soak the Output tape uses, so
+  # the two pictures show two different running tasks.
   owns docs-portal task 'reindex' tui-task-overview-running
+  running docs-portal 'reindex' tui-task-overview-running
   tape tui-task-overview-running 1250 docs-portal '
 Tab
 Sleep 2s
