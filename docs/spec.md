@@ -6626,8 +6626,9 @@ section is renumbered.
   patched by `/v1/config`, edited in the TUI's daemon view and by `vincent
   config get/set`; empty resolves `copilot` on `PATH`. Under
   `mount_agent_config` `~/.copilot` is the fourth directory mounted (§12.3).
-  Tokens and cost stay unreported on the step record until 138.7.
-  `scripts/138-gate.sh` proves it end to end on all three OSes.
+  The step record carries the usage checkpoint's tokens as session totals
+  (above, task 138.7) and never a cost. `scripts/138-gate.sh` proves it end
+  to end on all three OSes.
 
 ## 10. Worktree management
 

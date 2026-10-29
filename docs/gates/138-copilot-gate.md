@@ -17,7 +17,7 @@ VINCENT_GATE_SCENARIO=2 ./scripts/138-gate.sh      # one scenario, for debugging
 
 | # | Asserts | Real CLI? |
 |---|---|---|
-| 1 | A `agent: copilot` workflow runs to done; `/v1/agents` lists copilot fourth, with no models, no default model and its effort catalog; the step records `agent=copilot` and tokens and cost unreported (§9.9, until task 138.7); the transcript carries copilot-shaped lines; the branch carries the edit | yes |
+| 1 | A `agent: copilot` workflow runs to done; `/v1/agents` lists copilot fourth, with no models, no default model and its effort catalog; the step records `agent=copilot` and non-zero tokens (the fake's 100 in, 42 out) and no cost (§9.9, task 138.7); the transcript carries copilot-shaped lines; the branch carries the edit | yes |
 | 2 | A model the CLI refuses fails the step with the **stderr text** in the step record — copilot writes no `result` line on that path (§9.9, §18) | yes |
 | 3 | `logged_in` is `null` on both `/v1/agents` and `/v1/info`: copilot has no login probe (task 138 decision 10) | no — asserts vincent's own reporting |
 | 4 | *Not yet:* restricted mode is task 138.10 (#862), which adds this scenario | — |

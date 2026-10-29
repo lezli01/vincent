@@ -258,13 +258,19 @@ EOF
   edit_row="$(jq '[.[] | select(.step_id == "edit")][-1]' <<<"$steps")"
   [[ "$(jq -r .state <<<"$edit_row")" == "succeeded" ]] || fail "edit step not succeeded: $edit_row"
   [[ "$(jq -r .agent <<<"$edit_row")" == "copilot" ]] || fail "step did not run as copilot: $edit_row"
-  # Tokens and cost are unreported until task 138.7 normalizes copilot's
-  # usage (§9.9): absent or zero is how the API serializes that. 138.7 flips
-  # the token half; premium requests never become a cost.
+  # Tokens are the root usage checkpoint's session totals (§9.9, task
+  # 138.7) — the fake's checkpoint says 100 in, 42 out, a real run's anything
+  # but zero. Premium requests never become a cost: absent is how the API
+  # serializes that.
   jq -e '(.cost_usd // 0) == 0' <<<"$edit_row" >/dev/null \
     || fail "copilot reported a cost; §9.9 says it reports none: $edit_row"
-  jq -e '(.input_tokens // 0) == 0 and (.output_tokens // 0) == 0' <<<"$edit_row" >/dev/null \
-    || fail "copilot reported tokens; §9.9 says they are unreported until 138.7: $edit_row"
+  if (( REAL_AGENT )); then
+    jq -e '(.input_tokens // 0) > 0 and (.output_tokens // 0) > 0' <<<"$edit_row" >/dev/null \
+      || fail "copilot reported no tokens; §9.9 reads them off the usage checkpoint: $edit_row"
+  else
+    jq -e '.input_tokens == 100 and .output_tokens == 42' <<<"$edit_row" >/dev/null \
+      || fail "the fake checkpoint's 100/42 tokens did not reach the step row: $edit_row"
+  fi
   if (( ! REAL_AGENT )); then
     [[ "$(jq -r '.effort // ""' <<<"$edit_row")" == "high" ]] \
       || fail "the resolved effort was not recorded: $edit_row"
