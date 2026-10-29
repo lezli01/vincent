@@ -3569,10 +3569,12 @@ The transcript is the attempt's JSONL file, ranged:
   `parent_call_id` themselves: they are the main agent's lines about a
   subagent. The call that spawned a background subagent reports an
   `agent.tool_result` entry with `verb: "started in background"` and no
-  `summary`. Every key is omitted when unreported, and only Claude Code produces
-  any of it. The [output pane](../guides/tui.md#when-the-agent-runs-subagents)
-  draws a record carrying `parent_call_id` nested, behind a rail. A claude
-  transcript range fetched with `tail=` or `offset=` that starts after every
+  `summary`. Every key is omitted when unreported. Claude Code produces all of
+  it; GitHub Copilot CLI produces the start and finish records and
+  `parent_call_id`, but no progress record; codex and cursor produce none.
+  The [output pane](../guides/tui.md#when-the-agent-runs-subagents) draws a
+  record carrying `parent_call_id` nested, behind a rail. A claude transcript
+  range fetched with `tail=` or `offset=` that starts after every
   earlier line of a failed subagent can return that subagent's finish as
   `agent.raw`: a failed finish line does not say it is a subagent's, so it is
   recognized from the lines before it.
@@ -3582,15 +3584,18 @@ The transcript is the attempt's JSONL file, ranged:
   carries `output`, `truncated`, `call_id` and `name` — what a command printed,
   which `agent.tool_result` deliberately never carries, capped with the cut
   reported rather than silent. `agent.result` additionally carries
-  `reasoning_tokens`. Only [Codex](../guides/agents.md#codex) fills these today,
-  and the same omitted-when-unreported rule applies.
+  `reasoning_tokens`. Only [Codex](../guides/agents.md#codex) fills
+  `agent.plan`; codex and GitHub Copilot CLI fill `agent.command_output` and
+  `reasoning_tokens`. The same omitted-when-unreported rule applies.
 - `agent.patch` carries `patch`, `truncated`, `call_id` and `name` (and
   `parent_call_id` when set) — what a file edit changed, as unified hunks each
   under its `@@ -a,b +c,d @@` header, capped with the cut reported. It is the
   edit's body; the edit's outcome is its `agent.tool_result` entry, whose
   `summary` is the line delta `+N −M` (and whose `verb` is `updated` for a
-  `Write` that overwrote a file). Only [Claude Code](../guides/agents.md#claude-code)
-  fills it, and not for a subagent's edits, whose results carry no patch.
+  `Write` that overwrote a file). [Claude Code](../guides/agents.md#claude-code)
+  fills it, but not for a subagent's edits, whose results carry no patch;
+  GitHub Copilot CLI fills it for its `edit` and `apply_patch` calls; codex and
+  cursor never do.
 - `agent.skill` reports that a skill's content entered the conversation:
 
   | Field | Meaning |

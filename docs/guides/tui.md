@@ -1205,8 +1205,9 @@ agent overwrote — in place of the tool's sentence about it. `verbose` adds the
 the Diff tab's colors, each `@@` hunk header dim. A long line continues on the
 next row rather than being cut off, and a patch long enough to hit the cap ends
 in **… patch truncated**. [Claude Code](agents.md#claude-code) reports the change
-for its edits and overwrites; cursor reports the counts for its edits and no
-change, and codex reports neither.
+for its edits and overwrites, and copilot reports the change for its `edit` and
+`apply_patch` calls; cursor reports the counts for its edits and no change, and
+codex reports neither.
 
 A tool call that a permission rule **refused** is marked `⊘` rather than `✗`, at
 every level. The distinction is worth a glyph: `✗` is the agent's problem, and
@@ -1219,8 +1220,9 @@ line carries the elapsed time — plus the API split and the cache counts at
 `verbose` — but no turns, stop reasons or refused calls. On codex the header
 does not appear. Whatever an agent does not report is left out; vincent does not
 synthesise it from what it happens to know. The plan and the command
-output run the other way: only [Codex](agents.md#codex) reports those, and on
-claude and cursor they are absent for the same reason rather than invented.
+output run the other way: only [Codex](agents.md#codex) reports a plan, and
+codex and copilot report command output; on the others they are absent for the
+same reason rather than invented.
 
 ### When the agent runs subagents
 

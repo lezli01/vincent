@@ -357,8 +357,9 @@ const (
 	// worth showing, while an output body is unbounded and worth showing
 	// only to a reader who asked for the machine.
 	//
-	// Only codex reports one today, from `command_execution.aggregated_output`
-	// (§9.3). claude and cursor report a tool's output nowhere vincent parses.
+	// codex reports one from `command_execution.aggregated_output` (§9.3), and
+	// copilot from a `bash` completion's `result.content` (§9.9). claude and
+	// cursor report a tool's output nowhere vincent parses.
 	EventCommandOutput EventType = "command_output"
 	// EventSubagentStarted, EventSubagentProgress and EventSubagentFinished
 	// report a subagent the run spawned — its start, a running tally, and
@@ -367,9 +368,10 @@ const (
 	// ordinary events stamped with ParentCallID; these three are the main
 	// loop's own account of the sub-run.
 	//
-	// Only claude reports them today, from its `local_agent` task lines
-	// (§9.2); codex and cursor have no subagents in their dialects and never
-	// produce these events (§9.3, §9.7).
+	// claude reports all three, from its `local_agent` task lines (§9.2);
+	// copilot reports the start and the finish from its `subagent.*` lines,
+	// and no progress (§9.9). codex and cursor have no subagents in their
+	// dialects and never produce these events (§9.3, §9.7).
 	EventSubagentStarted  EventType = "subagent_started"
 	EventSubagentProgress EventType = "subagent_progress"
 	EventSubagentFinished EventType = "subagent_finished"
@@ -600,8 +602,9 @@ type CommandOutput struct {
 // `+N −M` delta as its outcome, and this is the body, carried under its own
 // size discipline and shown only to a reader who asked for the machine.
 //
-// Only claude reports one today, from `tool_use_result.structuredPatch`.
-// codex and cursor produce none (§9.3, §9.7).
+// claude reports one from `tool_use_result.structuredPatch` (§9.2), and
+// copilot from an edit completion's `diff --git` (§9.9). codex and cursor
+// produce none (§9.3, §9.7).
 type Patch struct {
 	// CallID matches the ToolUse whose edit this is, and Name is that tool.
 	// Both are empty when the dialect gave neither.

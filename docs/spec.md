@@ -4318,7 +4318,9 @@ recording and discarding:
   `Patch` carried by the same `EventToolResult`, the way task 070 carried a
   command's output on `Event.Output`. No event type of its own exists, because
   no dialect sends a patch on a line of its own. Only claude fills it (§9.2);
-  codex and cursor never do (§9.3, §9.7).
+  codex and cursor never do (§9.3, §9.7). *Amended 2026-10-29 (task 138.7):*
+  copilot fills it too, from an `edit` or `apply_patch` completion's
+  `diff --git` (§9.9).
 - **`Thinking`** carries the model's reasoning. Adapters emit it only for
   **whole blocks**; a dialect that streams token-level deltas coalesces them
   itself and emits when the block closes. See the §9.7 amendment for why that
@@ -4349,7 +4351,10 @@ and last tool) and `EventSubagentFinished` (`subagent_finished`: status, the
 final tally and a one-line summary). The records the sub-run itself produces
 stay ordinary events stamped with `ParentCallID`; these three are not stamped.
 Only claude produces them. codex and cursor never do, which §9.3 and §9.7 state
-positively, and nothing synthesizes one from tool calls. Nothing keys on the
+positively, and nothing synthesizes one from tool calls. *Amended 2026-10-29
+(task 138.7):* copilot produces `subagent_started` and `subagent_finished`
+from its `subagent.*` lines and stamps the sub-run's records with
+`ParentCallID`, but never `subagent_progress` (§9.9). Nothing keys on the
 spawning tool's name.
 
 *Amended 2026-09-19 (task 124.2, issue #498).* Two more event types join the
