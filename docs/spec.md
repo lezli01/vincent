@@ -6595,7 +6595,12 @@ section is renumbered.
   same session between two vincent turns, by the user's other Copilot
   clients on the same `COPILOT_HOME` or through 1.0.105's account-history
   sync, lands in the next turn's delta. It is not worked around. A task
-  step never resumes, so its figures stay the run's.
+  step never resumes, so its figures stay the run's. Only the turn row is
+  split: the turn's transcript keeps the stream's figures, so its
+  `agent.result` record (`input_tokens`, `output_tokens`, cache tokens,
+  `model_usage`) shows the session's running totals on a resumed copilot
+  turn, while `chat_turns.input_tokens`/`output_tokens` hold the turn's own
+  share.
 - **No run header** (*2026-10, task 138.7*). 1.0.105 writes no cwd and no
   tool list to stdout: `session.start` goes only to the on-disk log,
   `session.skills_loaded` is never emitted in JSON mode, and

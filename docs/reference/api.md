@@ -3219,6 +3219,13 @@ session it actually ran in, and its own transcript at
 `{data_dir}/transcripts/chat-{chat_id}/{seq}.jsonl`. A turn is `running`, then
 `done`, `failed` or `interrupted`, forever.
 
+On `copilot`, whose CLI reports only the session's running totals, a turn's
+`input_tokens` and `output_tokens` are its own share — the totals minus the
+same session's previous turn's (spec §9.9). The turn's transcript is not
+split: its `agent.result` record (tokens, cache tokens and `model_usage`)
+carries the session's totals so far, so on a resumed copilot turn it is
+larger than the turn row.
+
 ```bash
 curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \
   -H "Authorization: Bearer $TOKEN" -D -
