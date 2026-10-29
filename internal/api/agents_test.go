@@ -478,9 +478,9 @@ func TestAgentsReportSkillCapabilities(t *testing.T) {
 // `FileMentionSyntax`.
 //
 // The point of the table is that the boolean does **not** separate the
-// shipped adapters and `expands` does: all three implement `FileMentioner`
-// since task 126.3, and §9.1 states that expansion, not the interface, is
-// the honest capability statement. The sigil and position are pinned
+// shipped adapters and `expands` does: all four implement `FileMentioner`
+// (copilot since task 138.13), and §9.1 states that expansion, not the
+// interface, is the honest capability statement. The sigil and position are pinned
 // literally, since a client inserts the sigil verbatim. The false legs are
 // `agenttest.StubNoMentions`, never a shipped adapter — a refusal pinned to
 // a real CLI inverts itself the day that CLI changes.

@@ -48,7 +48,7 @@ type Agent struct {
 	SkillSigil    *string `json:"skill_sigil"`
 	SkillPosition *string `json:"skill_position"`
 	// SupportsFileMentions is whether this adapter can name a workspace file
-	// in a message at all (§9.1, §9.6, task 126). It is `true` on all three
+	// in a message at all (§9.1, §9.6, task 126). It is `true` on all four
 	// shipped adapters, so it separates none of them — FileMentionExpands is
 	// what differs. It exists so a client can tell "cannot mention" from
 	// "nobody can say"; nil is no judgement, as for SupportsResume.

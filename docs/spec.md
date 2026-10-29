@@ -4144,7 +4144,7 @@ belongs in the adapter, the way a skill row's `invocation` already comes from
 `SkillInvoker.Invocation` rather than from each client. `CanMentionFiles`
 reports interface satisfaction and nothing more; its false leg is proven
 against `agenttest.StubNoMentions`, never against a shipped adapter, since all
-three implement it today.
+four implement it today (copilot since task 138.13).
 
 - **Pass-through only** (task 124 decision 9, carried by task 126 decision 1).
   The returned string is the adapter's own word: no later stage validates that

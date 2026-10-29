@@ -10,7 +10,7 @@ import (
 // stubMentions is the true leg of CanMentionFiles: StubNoMentions' inert body
 // with the capability added, which is the whole difference the two legs turn
 // on. The false leg is agenttest.StubNoMentions itself, and neither leg is
-// proven against a shipped adapter — all three implement the capability
+// proven against a shipped adapter — all four implement the capability
 // today, and a refusal pinned to a real CLI inverts itself the day that CLI
 // changes (the Resumer lesson, §9.1).
 //
