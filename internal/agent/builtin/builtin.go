@@ -10,10 +10,9 @@ import (
 )
 
 // New returns a registry of every shipped adapter: claude, codex, cursor,
-// copilot, the
-// order every caller lists and probes them in. Each adapter's path accessor
-// asks path for its own name on every read, so an accessor over a
-// hot-reloading configuration reaches future runs without a rebuild.
+// copilot — the order every caller lists and probes them in. Each adapter's
+// path accessor asks path for its own name on every read, so an accessor over
+// a hot-reloading configuration reaches future runs without a rebuild.
 func New(path func(name string) string) *agent.Registry {
 	return agent.NewRegistry(
 		claude.New(func() string { return path("claude") }),
