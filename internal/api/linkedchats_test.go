@@ -18,6 +18,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/agent/copilot"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
@@ -48,7 +49,8 @@ func newLinkedHarness(t *testing.T) *linkedHarness {
 	git := gitx.New()
 	dataDir := t.TempDir()
 	wt := worktree.NewManager(git, dataDir)
-	reg := agent.NewRegistry(claude.New(func() string { return fake }), agenttest.StubNonResuming{})
+	reg := agent.NewRegistry(claude.New(func() string { return fake }),
+		copilot.New(func() string { return fake }), agenttest.StubNonResuming{})
 	cfg := config.Default
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	t.Setenv("FAKEAGENT_SESSION_DIR", t.TempDir())
@@ -387,5 +389,48 @@ func TestOpenChatRefusals(t *testing.T) {
 	}
 	if id, err := h.store.OpenLinkedChatID(t.Context(), task.ID); err != nil || id != 0 {
 		t.Errorf("a refused open left chat %d (%v)", id, err)
+	}
+}
+
+// TestOpenChatRefusesCopilotOnARestrictedTask is task 138.11 decision 2:
+// copilot can hold a chat, but cannot yet say a resumed turn stays
+// restricted (that capture is 138.10's), so a chat on a restricted task is
+// refused when it is opened rather than failing every turn at Start. The same
+// task opens a chat on claude, and an unrestricted one opens on copilot.
+func TestOpenChatRefusesCopilotOnARestrictedTask(t *testing.T) {
+	h := newLinkedHarness(t)
+	restricted := h.createTask(t, map[string]any{
+		"project_id": h.projectID, "title": "locked down", "restricted": true,
+	})
+	setState(t, h.taskHarness, restricted.ID, store.TaskRunning)
+	reason := "check_failed"
+	if _, _, err := h.store.TransitionTask(t.Context(), restricted.ID,
+		store.TaskRunning, store.TaskBlocked, store.TaskChange{BlockReason: &reason}); err != nil {
+		t.Fatalf("block: %v", err)
+	}
+	stored, err := h.store.GetTask(t.Context(), restricted.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if _, err := h.wt.CreateAndClaim(t.Context(), h.repo, worktree.TaskOwner(restricted.ID),
+		stored.BranchName, stored.BaseBranch, false, func(c worktree.Created) error {
+			path := c.Path
+			return h.store.SetTaskProgress(t.Context(), restricted.ID, nil, &path, nil)
+		}); err != nil {
+		t.Fatalf("create worktree: %v", err)
+	}
+
+	code, body := h.post(t, fmt.Sprintf("/v1/tasks/%d/chat", restricted.ID), map[string]any{"agent": "copilot"})
+	if code != http.StatusBadRequest || !strings.Contains(string(body), "cannot keep a resumed turn restricted") {
+		t.Errorf("copilot chat on a restricted task = %d %s, want 400 refusing it", code, body)
+	}
+	if id, err := h.store.OpenLinkedChatID(t.Context(), restricted.ID); err != nil || id != 0 {
+		t.Errorf("a refused open left chat %d (%v)", id, err)
+	}
+
+	open := h.blockedWithWorktree(t)
+	code, body = h.post(t, fmt.Sprintf("/v1/tasks/%d/chat", open.ID), map[string]any{"agent": "copilot"})
+	if code != http.StatusCreated {
+		t.Errorf("copilot chat on an unrestricted task = %d %s, want 201", code, body)
 	}
 }
