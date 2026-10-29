@@ -7,8 +7,11 @@
 // The dialect is selected by argv shape: a first argument of "exec" is
 // codex-shaped (T2.9); `--trust` anywhere on argv is cursor-shaped (T5.2 —
 // cursor's run argv is otherwise claude-shaped, and --trust is the one flag
-// only cursor passes, in both permission modes); anything else is
-// claude-shaped. `models` and `status` as argv[1] answer cursor's option and
+// only cursor passes, in both permission modes); `--output-format json` is
+// copilot-shaped (task 138.4 — claude and cursor pass `stream-json`, codex
+// `exec --json`, and copilot passes `json` in both permission modes, as
+// `--output-format json` or `--output-format=json`); anything else is
+// claude-shaped. Copilot reads its prompt from stdin only, never argv. `models` and `status` as argv[1] answer cursor's option and
 // login probes (§9.7), `login status` codex's (task 005), `auth status`
 // claude's (task 107, claude_auth.go), and `app-server` answers codex's quota
 // reader (§9.6) and skill lister (§9.3).
@@ -19,7 +22,7 @@
 //
 //	FAKEAGENT_SCENARIO    success (default) | error-event | nonzero-exit |
 //	                      hang | big-usage | ask-question | ask-permission |
-//	                      bad-input-request | no-result (cursor: stderr
+//	                      bad-input-request | no-result (cursor, copilot: stderr
 //	                      failure with no terminal event) |
 //	                      flood (emits until killed — the transcript cap) |
 //	                      report-env (echoes FAKEAGENT_REPORT_ENV's named
@@ -118,6 +121,12 @@
 //	                      adapters pointed at this binary differently
 //	FAKEAGENT_SCENARIO_CURSOR
 //	                      the same override for cursor-shaped argv
+//	FAKEAGENT_SCENARIO_COPILOT
+//	                      the same override for copilot-shaped argv
+//	                      (copilot.go). Copilot has no status command (task
+//	                      138 decision 10), so it has no logged-out probe
+//	                      knob; its `unauthenticated` run scenario prints
+//	                      the captured logged-out stderr instead
 //	FAKEAGENT_CURSOR_LOGGED_OUT
 //	                      "1" makes `status` report logged out and exit 1,
 //	                      driving the §9.5 logged_in probe's negative leg
@@ -190,12 +199,13 @@
 //	                      list comes from the requested cwd's
 //	                      `.agents/skills/*/SKILL.md` front matter (task 124.8)
 //	FAKEAGENT_DIALECT     "codex" makes --version print codex-cli style,
-//	                      "cursor" the calver+sha style (run dialect is
+//	                      "cursor" the calver+sha style, "copilot" the
+//	                      two-line `GitHub Copilot CLI <v>.` style (run dialect is
 //	                      argv-driven; this only affects the version probe,
 //	                      which carries no dialect hint)
 //	FAKEAGENT_VERSION     version string --version reports, in every dialect
 //	                      (defaults: 2.1.224 claude, codex-cli 0.142.5,
-//	                      2026.08.04-fake000) — lets tests drive the §7.4
+//	                      2026.08.04-fake000, 1.0.105 copilot) — lets tests drive the §7.4
 //	                      supports_input version gate and the task-041
 //	                      version verdict
 //	FAKEAGENT_EDIT_FILE   success, mcp-callback, ask-question (post-answer):
@@ -305,6 +315,13 @@ func main() {
 					v = cursorVersion
 				}
 				fmt.Println(v)
+			case "copilot":
+				// version_1.0.105.txt, trailing period and update hint
+				// included.
+				if v == "" {
+					v = copilotVersion
+				}
+				fmt.Printf("GitHub Copilot CLI %s.\nRun 'copilot update' to check for updates.\n", v)
 			default:
 				if v == "" {
 					v = defaultVersion
@@ -392,6 +409,17 @@ func main() {
 			scenario = s
 		}
 		cursorMain(scenario)
+		return
+	}
+
+	// Copilot's run argv shares --output-format with claude and cursor, but
+	// only copilot passes `json` to it — they pass `stream-json` — and it
+	// passes it in both permission modes (task 138.4). Both spellings count.
+	if f, _ := flagValue(os.Args[1:], "--output-format"); f == "json" {
+		if s := os.Getenv("FAKEAGENT_SCENARIO_COPILOT"); s != "" {
+			scenario = s
+		}
+		copilotMain(scenario)
 		return
 	}
 

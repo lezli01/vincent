@@ -1,0 +1,231 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"time"
+)
+
+// copilotVersion is the build every copilot fixture was captured from
+// (internal/agent/copilot/testdata/*_1.0.105.*, task 138.1).
+const copilotVersion = "1.0.105"
+
+// copilotSessionID stands in for the UUID the real CLI mints when the argv
+// carries no --session-id. The resume model is task 138.11's (#863) and is
+// not built here, so this run keeps no memory either way.
+const copilotSessionID = "00000000-0000-4000-8000-00000000f4ce"
+
+// copilotLoggedOut is logged_out_1.0.105.txt verbatim: the stderr of a
+// `copilot -p` run with no credentials, which exits 1 having written nothing
+// to stdout.
+const copilotLoggedOut = `Error: No authentication information found.
+
+Copilot can be authenticated with GitHub using an OAuth Token or a Fine-Grained Personal Access Token.
+
+To authenticate, you can use any of the following methods:
+  • Start 'copilot' and run the '/login' command
+  • Set the COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN environment variable
+  • Run 'gh auth login' to authenticate with the GitHub CLI
+`
+
+// copilotQuotaMessage is the quota wording, and it is **not
+// fixture-verified**: no throttled account was available to task 138.1, so
+// it comes from issue reports (github/copilot-cli #3431's `402 …
+// "quota_exceeded"`), and whether --output-format json reports it as a
+// session.error was not observed. Same caveat as the claude wordings in
+// session.go and main.go.
+const copilotQuotaMessage = `402 {"error":{"message":"You have exceeded your premium request quota","code":"quota_exceeded"}}`
+
+// copilotMain is the copilot dialect (task 138.4): argv shaped like
+// `copilot -p --no-auto-update --output-format json [--session-id <uuid>] …`,
+// prompt from stdin only, copilot's session-event JSONL on stdout. The
+// shapes mirror the 1.0.105 fixtures in internal/agent/copilot/testdata.
+//
+// The prompt is never looked for on argv (task 138 decision 2), so a prompt
+// that reads like a flag — `resume`, `-v`, `--trust` — is only ever a prompt.
+func copilotMain(scenario string) {
+	prompt, _ := io.ReadAll(os.Stdin)
+
+	// Copilot stamps no session id on its event lines: it is reported once,
+	// on the terminal result line, as sessionId. stampSessionID stays false.
+	sessionID = copilotSessionID
+	if id, ok := flagValue(os.Args[1:], "--session-id"); ok && id != "" {
+		sessionID = id
+	}
+
+	switch scenario {
+	case "unauthenticated":
+		// logged_out_1.0.105.txt: stderr only, before any stdout at all.
+		fmt.Fprint(os.Stderr, copilotLoggedOut)
+		os.Exit(1)
+	case "no-result":
+		// unavailable_model / unsupported_effort: the MCP servers come up,
+		// then the run is refused on stderr with no result line and exit 1.
+		c := copilotStream{}
+		c.mcpStartup()
+		fmt.Fprintln(os.Stderr, `Error: Model "fake-nonexistent" from --model flag is not available.`)
+		os.Exit(1)
+	case "mcp-callback":
+		// --additional-mcp-config is task 138.8's (#860); until it lands the
+		// copilot dialect has no MCP server to call back over.
+		fmt.Fprintln(os.Stderr, "fakeagent: mcp-callback is not supported by the copilot dialect yet (#860)")
+		os.Exit(1)
+	}
+
+	c := copilotStream{}
+	c.mcpStartup()
+	c.event("user.message", map[string]any{
+		"content": string(prompt), "transformedContent": string(prompt),
+		"messageId": fakeUUID(idMessage, 0), "interactionId": fakeUUID(idInteraction, 0),
+		"turnId": "0", "delivery": "idle",
+	}, false)
+	c.event("assistant.turn_start", map[string]any{"turnId": "0", "interactionId": fakeUUID(idInteraction, 0)}, false)
+
+	switch scenario {
+	case "error-event":
+		// The session.error shape is the package schema's (errorType,
+		// statusCode), **not fixture-verified**: no captured run emitted one.
+		c.text("something went wrong, giving up")
+		c.event("session.error", map[string]any{
+			"errorType": "model_error", "statusCode": 500,
+			"message": "fake copilot failed on purpose",
+		}, false)
+		c.end(1, 1, nil)
+		os.Exit(1)
+	case "nonzero-exit":
+		c.text("about to crash")
+		c.end(3, 1, nil)
+		os.Exit(3)
+	case "hang":
+		if os.Getenv("FAKEAGENT_SPAWN_CHILD") == "1" {
+			spawnChild()
+		}
+		c.text("hanging until killed")
+		block()
+	case "big-usage":
+		c.text("burning tokens")
+		c.end(0, 2_500, nil)
+	case "usage-limit":
+		// Task 003's leg for copilot. The wording is unverified; see
+		// copilotQuotaMessage.
+		if usageLimitSpent() {
+			c.text("stopping: the premium request quota is spent")
+			c.event("session.error", map[string]any{
+				"errorType": "quota_exceeded", "statusCode": 402,
+				"message": copilotQuotaMessage,
+			}, false)
+			c.end(1, 1, nil)
+			os.Exit(1)
+		}
+		c.success(prompt)
+	default: // success, and the dialect-neutral scenarios cursor treats so
+		c.success(prompt)
+	}
+}
+
+// copilotStream numbers the envelope every copilot event carries:
+// {type, data, id, timestamp, parentId, ephemeral?}, each line's parentId the
+// previous line's id, as in the fixtures.
+type copilotStream struct {
+	seq    int
+	parent string
+}
+
+func (c *copilotStream) event(typ string, data map[string]any, ephemeral bool) {
+	c.seq++
+	id := fakeUUID(idEvent, c.seq)
+	v := map[string]any{
+		"type": typ, "data": data, "id": id,
+		"timestamp": copilotNow(), "parentId": c.parent,
+	}
+	if c.parent == "" {
+		v["parentId"] = nil
+	}
+	if ephemeral {
+		v["ephemeral"] = true
+	}
+	c.parent = id
+	emit(v)
+}
+
+// text emits a whole assistant.message — simple_1.0.105.jsonl's final
+// answer, without the routing and telemetry fields no parser reads.
+func (c *copilotStream) text(s string) {
+	c.event("assistant.message", map[string]any{
+		"messageId": fakeUUID(idMessage, c.seq), "content": s, "toolRequests": []any{},
+		"turnId": "0", "phase": "final_answer", "model": "fake-model",
+		"providerId": "copilot",
+	}, false)
+}
+
+// success is simple_1.0.105.jsonl's turn, stretched by FAKEAGENT_DELAY_MS and
+// carrying edit_1.0.105.jsonl's file change when FAKEAGENT_EDIT_FILE or
+// FAKEAGENT_WRITE_FILE asks for one.
+func (c *copilotStream) success(prompt []byte) {
+	c.text("Working on: " + firstLine(string(prompt)))
+	workFor(c.text)
+	doFileWork()
+	var files []string
+	for _, name := range []string{"FAKEAGENT_WRITE_FILE", "FAKEAGENT_EDIT_FILE"} {
+		if f := os.Getenv(name); f != "" {
+			files = append(files, f)
+		}
+	}
+	c.text("done: " + flatten(string(prompt), 1000))
+	c.end(0, 1, files)
+}
+
+// end closes the turn and writes the terminal line, which — unlike every
+// event before it — has no data and no id (simple_1.0.105.jsonl's last line).
+func (c *copilotStream) end(exitCode, premium int, files []string) {
+	c.event("assistant.turn_end", map[string]any{"turnId": "0"}, false)
+	c.event("assistant.idle", map[string]any{}, true)
+	if files == nil {
+		files = []string{}
+	}
+	emit(map[string]any{
+		"type": "result", "timestamp": copilotNow(), "sessionId": sessionID,
+		"exitCode": exitCode,
+		"usage": map[string]any{
+			"premiumRequests": premium, "totalApiDurationMs": 1000 * premium,
+			"sessionDurationMs": 2000 * premium,
+			"codeChanges": map[string]any{
+				"linesAdded": len(files), "linesRemoved": 0, "filesModified": files,
+			},
+		},
+	})
+}
+
+// mcpStartup is the built-in GitHub MCP server coming up, the first lines
+// of every captured run — the refused ones included.
+func (c *copilotStream) mcpStartup() {
+	c.event("session.mcp_server_status_changed", map[string]any{
+		"serverName": "github-mcp-server", "status": "pending",
+	}, true)
+	c.event("session.mcp_server_status_changed", map[string]any{
+		"serverName": "github-mcp-server", "status": "connected", "configSource": "builtin",
+	}, true)
+	c.event("session.mcp_server_tools_loaded", map[string]any{
+		"serverName": "github-mcp-server", "toolCount": 5,
+	}, true)
+}
+
+// The kinds of id a fake copilot stream mints, kept in separate ranges so an
+// event id never collides with a message id however long the run.
+const (
+	idEvent = iota
+	idMessage
+	idInteraction
+)
+
+// fakeUUID is a stable, recognizably fake id in the UUID shape the fixtures
+// carry.
+func fakeUUID(kind, n int) string {
+	return fmt.Sprintf("%08x-0000-4000-8000-%012x", kind, n)
+}
+
+// copilotNow is the fixtures' timestamp: UTC, millisecond precision.
+func copilotNow() string {
+	return time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+}

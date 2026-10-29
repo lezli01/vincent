@@ -57,7 +57,8 @@ handoff may claim it now), `claimed` or `waiting` (a handoff holds it),
 ready). `vincent issue ls` prints it in the `LANE` cell, and
 `--handoff pending` lists the issues with that marker; the API spells it
 `handoff` on each row and takes `?handoff=`. The
-[API reference](../reference/api.md#handoff-marker) has the full rule.
+[API reference](../reference/api.md#handoff-marker) has the full rule, and
+[Handing work off](handoff.md) tells what a handoff does with the issue.
 
 ## The main worktree
 

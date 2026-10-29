@@ -401,11 +401,13 @@ daemon, no shared fixtures:
 - `internal/agent/agenttest` — compiles `cmd/fakeagent` once per test process.
 - `cmd/fakeagent` — scenario-driven stand-in for an agent CLI. Dialect comes from
   argv shape (`exec` first arg ⇒ codex-shaped; `--trust` anywhere ⇒ cursor-shaped;
-  otherwise claude-shaped — cursor's run argv is claude's plus flags, and `--trust`
-  is the one flag only cursor passes, in both permission modes); `models` and
+  `--output-format json` ⇒ copilot-shaped; otherwise claude-shaped — cursor's run
+  argv is claude's plus flags, and `--trust` is the one flag only cursor passes, in
+  both permission modes; claude and cursor pass `--output-format stream-json`, so
+  `json` is copilot's alone, whose prompt is read from stdin only); `models` and
   `status` as argv[1] answer cursor's option and login probes. Scenarios come from
   env (`FAKEAGENT_SCENARIO`, `FAKEAGENT_VERSION`, `FAKEAGENT_EDIT_FILE`,
-  `FAKEAGENT_CURSOR_LOGGED_OUT`, …) so argv stays faithful to the real CLIs. Add
+  `FAKEAGENT_CURSOR_LOGGED_OUT`, `FAKEAGENT_SCENARIO_COPILOT`, …) so argv stays faithful to the real CLIs. Add
   scenarios here rather than special-casing adapters for tests.
 - `cmd/fakegh` — the same for `gh`; its mutable issue corpus and `gh api` answers
   live in `internal/github/fakeissues`, so a `net/http` leg can serve the same fake.

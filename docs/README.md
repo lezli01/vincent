@@ -90,6 +90,7 @@ and design choices that made a durable orchestrator feel necessary.
 | [Driving vincent from an agent](guides/mcp.md) | The MCP server: the API as tools, the bounded wait, and wiring vincent's own steps |
 | [Event triggers](guides/triggers.md) | Start or act on tasks from a polled command, GitHub issue and pull-request changes, a signed push, or a cron or interval schedule, with dry runs and a delivery ledger |
 | [Working an issue](guides/issues.md) | Lanes, an issue's main worktree, side tasks and merge-back |
+| [Handing work off](guides/handoff.md) | Deliveries, handoffs over ready issues, outcomes, and grants for GitHub writes |
 | [Running at login](guides/running-at-login.md) | `vincent service install` on launchd, systemd and Task Scheduler |
 | [Troubleshooting](guides/troubleshooting.md) | The failures people actually hit, and what each one means |
 

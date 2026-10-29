@@ -50,6 +50,13 @@ carried no version marker of any kind.
    accumulates — equivalent, and the single variadic flag is the syntax its
    option table documents.
 
+   *Amended 2026-10-29 (task 138.12, #864):* the slug table has a fourth row,
+   copilot, with **no slug**: copilot reads the store itself, so it adds
+   nothing to the argv. `--agent copilot` alone runs nothing — served when the
+   store copy exists, exit 1 when it does not — and `Slugs` gives no slugs for
+   a list naming only copilot, rather than this decision's all-three fallback,
+   which stays for an empty or wholly unrecognized list.
+
    *Settled in the diff (2026-09-10): the two surfaces answer the picker
    differently.* The plan said "defaults to the adapters detected on the box"
    for both; what shipped is the **CLI** defaulting to all three, with `--agent`
@@ -198,6 +205,13 @@ for somebody to notice later and file.
   capability an adapter lacks is documented and ignored, never emulated. The
   skill ships `agents/openai.yaml` for codex-side packaging; beyond that vincent
   reports what is on disk and claims nothing about what reads it.
+
+  *Amended 2026-10-29 (task 138.12, #864):* copilot is the exception that
+  reads something vincent now reports on — copilot 1.0.105 was captured
+  loading `~/.agents/skills` as `personal-agents`, so a skill copilot serves is
+  shown as `copilot (reads store)` when `~/.copilot` exists and the store copy
+  does. §9.8 records the capture, and that relocating `COPILOT_HOME` drops the
+  store on that build.
 
 ## No gate script
 

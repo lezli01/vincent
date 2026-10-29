@@ -13,6 +13,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Published skills report copilot reading the store.** GitHub Copilot CLI
+  loads `~/.agents/skills` itself, so `vincent skills ls`, `vincent doctor`
+  and the TUI's skills offer now list `copilot (reads store)` when
+  `~/.copilot` exists and the store holds the skill, and `--json` carries the
+  entry with `"store": true`. `vincent skills install --agent copilot` links
+  nothing: it reports a skill already in the store as served, and exits 1 for
+  one that is not, saying to install it for another agent first. Copilot
+  with other agents installs for those as before.
+
 - **Handoffs in the TUI.** The issues board shows a hand-off card's delivery
   kind and its handoff marker (`claimed (H7)`, `waiting`, `delivered`, with
   `· paused` while the claiming task is paused) and `idle` on finished work

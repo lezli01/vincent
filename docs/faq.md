@@ -166,6 +166,15 @@ press `E` to edit the prompt and retry. See
 It is waiting for a scheduler slot. Check `max_parallel_tasks` (default 3) and
 the per-project cap, and raise the task's priority to move it up the queue.
 
+### What happens to an issue once its work is done?
+
+When its task finishes, the issue moves to the `hand_off` lane — unless its
+workflow says `hand_off: explicit`, which waits for you to run
+`vincent issue ready`. A handoff then claims it, with other ready issues, for
+one integration task that opens a pull request, merges a train, posts a reply
+or tells someone, and records each issue delivered, returned, waiting or
+released. See [Handing work off](guides/handoff.md).
+
 ### My issue's task is `queued`, but slots are free
 
 A task created from an issue runs in the issue's main worktree, one task at a

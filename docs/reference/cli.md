@@ -1814,6 +1814,14 @@ The agents column is what is on disk. It can name agents vincent does not drive
 `npx skills list -g`, whose agent column is that CLI's remembered *selection*
 rather than the links it left behind.
 
+Copilot reads the store itself and holds no link, so it is listed as
+`copilot (reads store)` when `~/.copilot` exists and the store holds the skill;
+in `--json` that entry carries `"store": true` and the store path. A
+`~/.copilot/skills/<name>` link, if one exists, is listed as plain `copilot`
+beside it. `COPILOT_HOME` and `COPILOT_SKILLS_DIRS` are not followed — and
+copilot 1.0.105 stops reading `~/.agents/skills` once `COPILOT_HOME` is moved,
+so for a user who moved it the entry is wrong.
+
 ### `vincent skills install`
 
 ```sh
@@ -1828,9 +1836,19 @@ npx skills add lezli01/vincent --skill NAME --agent claude-code codex cursor --y
 ```
 
 That is the published command with the interactive agent picker answered.
-`--agent` narrows the selection to some of `claude`, `codex`, `cursor`; the
-default is all of them. Note the `skills` CLI's slug for claude is
-`claude-code`.
+`--agent` narrows the selection to some of `claude`, `codex`, `copilot`,
+`cursor`; the default is `claude`, `codex` and `cursor`. Note the `skills`
+CLI's slug for claude is `claude-code`.
+
+`copilot` adds nothing to the command: it reads `~/.agents/skills` itself, so
+there is nothing to link. Named with other agents, those are installed as
+usual. Named alone, nothing runs — a skill whose store copy is current prints
+`<skill>: copilot reads <store path> directly; there is nothing to link`
+(`--json`: `ok: true`, an empty `command` and that `note`). One with no store
+copy fails, saying to install it for another agent first (for example
+`--agent claude`), which populates the store; one whose store copy is `older`
+or `differs` fails the same way, naming the state, since copilot would read the
+stale copy and installing for another agent refreshes it.
 
 It needs `npx` on `PATH` and, on a first run, network — the package is
 downloaded before anything happens. Without `npx` it exits **1** with a message

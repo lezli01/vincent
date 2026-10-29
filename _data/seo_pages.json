@@ -75,6 +75,11 @@
     "description": "How vincent tracks an issue on four lanes, runs its tasks in one main worktree, and merges side tasks back by hand or with an agent."
   },
   {
+    "path": "docs/guides/handoff.md",
+    "seo_title": "Hand off finished work with vincent: deliveries, handoffs and grants",
+    "description": "How a vincent task records its delivery, how a handoff claims ready issues for one integration task, the four outcomes, and the grants that let it write to GitHub."
+  },
+  {
     "path": "docs/guides/running-at-login.md",
     "seo_title": "Run vincent at login",
     "description": "Start the vincent daemon automatically with launchd, systemd, or Windows Task Scheduler."

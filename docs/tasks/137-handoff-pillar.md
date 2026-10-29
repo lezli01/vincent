@@ -1,6 +1,6 @@
 # 137 — The handoff pillar: what becomes of an issue once its work is done
 
-**Status:** 🔄 in progress (14/15)
+**Status:** ✅ done (15/15)
 
 Issue [#834](https://github.com/lezli01/vincent/issues/834), part of
 [#833](https://github.com/lezli01/vincent/issues/833), the epic. Spec §3 (a
@@ -977,6 +977,9 @@ pull request.
   wiring, so the item verbs still refuse an agent's forge-writing close or
   comment with `forge_write_needs_human`, granted or not; routing them
   through `IssueWriteAs` remains to do.
+  *Amended 2026-10-29:* done in `15c8ecc5` (review F1 of the 137.6–137.8
+  train): a granted handoff task's verb close and comment are made as
+  `handoff`.
 - [x] **137.8** ([#841](https://github.com/lezli01/vincent/issues/841)) `role: handoff`, `.Handoff`, `$VINCENT_HANDOFF_FILE`, fan-out
   over items and `vincent workflow render --handoff-file`; the
   `vincent-workflows` skill, the five built-ins re-read and the
@@ -1051,9 +1054,10 @@ pull request.
   (`in_progress`) and the refusal instead. The gate unsets the caller's
   `VINCENT_*` variables, since a step's task marker would make its human
   calls an agent's.
-- [ ] **137.14** ([#847](https://github.com/lezli01/vincent/issues/847)) `docs/guides/handoff.md`, the features page, the API, CLI,
+- [x] **137.14** ([#847](https://github.com/lezli01/vincent/issues/847)) `docs/guides/handoff.md`, the features page, the API, CLI,
   configuration and template references, and the screenshot seed with new
   tapes appended at the end of `do_capture`. Depends: 137.11, 137.12.
+  ✓ 2026-10-29
 - [x] **137.15** ([#848](https://github.com/lezli01/vincent/issues/848)) Readiness: the workflow's `hand_off: auto|explicit`, `vincent
   task deliver --ready`, `vincent issue ready|unready` with their routes and
   MCP tools, the mark on the latest delivery stamped at `→ done` from the

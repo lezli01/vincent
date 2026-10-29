@@ -38,6 +38,35 @@ func TestDialectDiscrimination(t *testing.T) {
 			marker: `"type":"thinking"`,
 		},
 		{
+			name:   "output-format json is copilot",
+			args:   []string{"-p", "--output-format", "json"},
+			marker: `"type":"assistant.turn_start"`,
+		},
+		{
+			name:   "output-format=json is copilot",
+			args:   []string{"-p", "--output-format=json"},
+			marker: `"type":"assistant.turn_start"`,
+		},
+		{
+			name: "full-auto copilot",
+			args: []string{
+				"-p", "--no-auto-update", "--output-format", "json", "--allow-all-tools",
+				"--allow-all-paths", "--allow-all-urls", "--session-id", "11111111-2222-4333-8444-555555555555",
+			},
+			marker: `"type":"assistant.turn_start"`,
+		},
+		{
+			name:   "restricted copilot",
+			args:   []string{"-p", "--output-format", "json", "--available-tools=view,grep,glob"},
+			marker: `"type":"assistant.turn_start"`,
+		},
+		{
+			// hasFlag matches whole tokens: --trust-folder is not cursor's --trust.
+			name:   "trust-folder stays copilot",
+			args:   []string{"-p", "--output-format", "json", "--trust-folder", "."},
+			marker: `"type":"assistant.turn_start"`,
+		},
+		{
 			name:   "neither is claude",
 			args:   []string{"-p", "--output-format", "stream-json", "--verbose"},
 			marker: `"total_cost_usd"`,

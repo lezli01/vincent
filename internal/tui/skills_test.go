@@ -2,10 +2,13 @@ package tui
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/skill"
 )
 
 // The daemon view's §9.8 offer (task 095). It follows task 082's shape, and
@@ -175,4 +178,49 @@ func openSkillsFlow(t *testing.T) *daemonView {
 	d.doctorOK = true
 	d.skills = newSkillsFlow(d.reportedSkills(), nil)
 	return d
+}
+
+// TestSkillRowNamesCopilotReadingTheStore: the row marks a store-read entry
+// (task 138.12) rather than calling it a link.
+func TestSkillRowNamesCopilotReadingTheStore(t *testing.T) {
+	s := apiclient.DoctorSkill{
+		Name: "vincent-workflows", State: apiclient.SkillCurrent, Shipped: "1.2.0", Installed: "1.2.0",
+		Links: []skill.Link{{Agent: "copilot", Adapter: "copilot", Path: "p", Store: true}},
+	}
+	if row := skillRowLine(s); !strings.Contains(row, "copilot (reads store)") {
+		t.Errorf("row = %q", row)
+	}
+}
+
+// TestSkillsFlowForCopilotAlone applies skill.PlanInstall: a selection of
+// copilot only runs nothing and says why. The flow offers what is not
+// current, and neither a stale store copy (review F2) nor an absent one is
+// served, so both are errors and neither says there is nothing to link.
+func TestSkillsFlowForCopilotAlone(t *testing.T) {
+	home := t.TempDir()
+	stored := filepath.Join(home, ".agents", "skills", "vincent-workflows")
+	if err := os.MkdirAll(stored, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skills := []apiclient.DoctorSkill{
+		{Name: "vincent-workflows", State: apiclient.SkillOlder, Shipped: "1.2.0", Installed: "1.0.0", StorePath: stored},
+		{
+			Name: "vincent-triggers", State: apiclient.SkillAbsent, Shipped: "1.2.0",
+			StorePath: filepath.Join(home, ".agents", "skills", "vincent-triggers"),
+		},
+	}
+	f := newSkillsFlow(skills, []string{"copilot"})
+	if len(f.names) != 0 {
+		t.Errorf("names = %v; copilot alone has nothing to run", f.names)
+	}
+	body := strings.Join(f.render(200), "\n")
+	if !strings.Contains(body, "which is older") || !strings.Contains(body, "none is installed") {
+		t.Errorf("body does not explain both outcomes:\n%s", body)
+	}
+	if strings.Contains(body, "nothing to link") {
+		t.Errorf("a stale store copy is reported as served:\n%s", body)
+	}
+	if strings.Contains(body, "npx skills add") {
+		t.Errorf("the offer shows a command it would not run:\n%s", body)
+	}
 }

@@ -503,7 +503,8 @@ Full documentation lives in **[docs/](docs/README.md)**.
 - [Writing workflows](docs/guides/workflows.md) · [Agent CLIs](docs/guides/agents.md)
 - [Using the TUI](docs/guides/tui.md) · [Scripting vincent](docs/guides/scripting.md)
 - [Driving vincent from an agent](docs/guides/mcp.md) · [Running at login](docs/guides/running-at-login.md)
-- [Working an issue](docs/guides/issues.md) · [Troubleshooting](docs/guides/troubleshooting.md)
+- [Working an issue](docs/guides/issues.md) · [Handing work off](docs/guides/handoff.md)
+- [Troubleshooting](docs/guides/troubleshooting.md)
 
 **Agent skill**
 
@@ -522,6 +523,9 @@ hand, which prompts for the selection instead:
 npx skills add lezli01/vincent --skill vincent-workflows -g
 npx skills add lezli01/vincent --skill vincent-triggers -g
 ```
+
+GitHub Copilot CLI needs no link: it reads the store, `~/.agents/skills`,
+itself, and `vincent skills ls` names it as `copilot (reads store)`.
 
 `vincent skills ls` says what is installed and whether it is current, and
 `vincent doctor` carries the same rows. Neither needs a running daemon, and

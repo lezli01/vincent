@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -33,15 +34,26 @@ type agentSlug struct {
 	Adapter string
 	Slug    string
 	Root    string
+	// Store marks an agent that reads the global store, `~/.agents/skills`,
+	// itself (task 138.12). It has no slug — there is nothing for `skills
+	// add` to link — and detection reports the store copy as read by it
+	// whenever its root exists on this machine.
+	Store bool
 }
 
 // agents is that table, in the order the argv lists them. Only vincent's
-// three adapters are here — this decides what vincent *installs for*, not
-// what it *reports*: detection scans the home directory, so an agent vincent
-// does not drive still appears in a row when it holds a link.
+// adapters are here — this decides what vincent *installs for*, not what it
+// *reports*: detection scans the home directory, so an agent vincent does not
+// drive still appears in a row when it holds a link.
+//
+// copilot is the store-resident row (task 138 decision 11): copilot 1.0.x
+// loads `~/.agents/skills` as its `personal-agents` source, so vincent links
+// nothing for it. Its Root still matters: a real `~/.copilot/skills/<name>`,
+// left by running the skills CLI with `github-copilot`, is copilot's link.
 var agents = []agentSlug{
 	{Adapter: "claude", Slug: "claude-code", Root: ".claude"},
 	{Adapter: "codex", Slug: "codex", Root: ".codex"},
+	{Adapter: "copilot", Root: ".copilot", Store: true},
 	{Adapter: "cursor", Slug: "cursor", Root: ".cursor"},
 }
 
@@ -65,27 +77,123 @@ func adapterForRoot(root string) string {
 	return ""
 }
 
+// storeResidentRoot reports whether a home directory belongs to an agent that
+// reads the store itself.
+func storeResidentRoot(root string) bool {
+	for _, a := range agents {
+		if a.Root == root {
+			return a.Store
+		}
+	}
+	return false
+}
+
+// StoreResident reports whether a vincent adapter reads the global store
+// itself, so installing for it links nothing.
+func StoreResident(adapter string) bool {
+	adapter = strings.ToLower(strings.TrimSpace(adapter))
+	for _, a := range agents {
+		if a.Adapter == adapter {
+			return a.Store
+		}
+	}
+	return false
+}
+
 // Slugs turns vincent adapter names into `--agent` slugs, in table order and
 // deduplicated. An empty or wholly unrecognized list means all three: a user
 // who asks vincent to install a skill and has no adapter detected still means
-// "put it where my agents look".
+// "put it where my agents look". A store-resident adapter contributes no
+// slug, and a list naming only those gives none — it was recognized, and what
+// it asks for is already served by the store (see PlanInstall).
 func Slugs(adapters []string) []string {
 	want := map[string]bool{}
 	for _, a := range adapters {
 		want[strings.ToLower(strings.TrimSpace(a))] = true
 	}
 	out := make([]string, 0, len(agents))
+	recognized := false
 	for _, a := range agents {
-		if want[a.Adapter] {
+		if !want[a.Adapter] {
+			continue
+		}
+		recognized = true
+		if a.Slug != "" {
 			out = append(out, a.Slug)
 		}
 	}
-	if len(out) == 0 {
+	if !recognized {
 		for _, a := range agents {
-			out = append(out, a.Slug)
+			if a.Slug != "" {
+				out = append(out, a.Slug)
+			}
 		}
 	}
 	return out
+}
+
+// Plan is what installing one skill for an adapter selection means. Slugs
+// non-empty is a `skills add` run. Slugs empty is a selection of
+// store-resident agents only, where nothing is linked: Note says the store
+// already serves it, or Err says there is no store copy to serve.
+type Plan struct {
+	Slugs []string
+	Note  string
+	Err   error
+}
+
+// Run reports whether the plan shells out at all.
+func (p Plan) Run() bool { return len(p.Slugs) > 0 }
+
+// PlanInstall decides one skill's install for adapters, against the report
+// statuses — the one rule the CLI and the TUI both apply, so the two cannot
+// drift (task 138.12 decision 4). Any adapter with a slug makes it a plain
+// `skills add` for those slugs; a store-resident adapter adds nothing to the
+// argv. Only when every recognized adapter is store-resident does the store
+// copy decide: present is success with nothing to run, absent is an error
+// naming how to populate it. A store copy that is there but not current —
+// older, differs, unreadable — is not served either: copilot would read the
+// stale copy, and calling that installed would make `skills install` exit 0
+// on exactly the skills Missing offered to fix (review F2). It is an error
+// naming the same remedy, since installing for another agent refreshes the
+// store.
+func PlanInstall(name string, adapters []string, statuses []Status) Plan {
+	slugs := Slugs(adapters)
+	if len(slugs) > 0 {
+		return Plan{Slugs: slugs}
+	}
+	readers := make([]string, 0, 1)
+	for _, a := range agents {
+		for _, want := range adapters {
+			if a.Store && strings.EqualFold(strings.TrimSpace(want), a.Adapter) {
+				readers = append(readers, a.Adapter)
+				break
+			}
+		}
+	}
+	who := strings.Join(readers, ", ")
+	storePath, state := "", ""
+	for _, s := range statuses {
+		if s.Name == name {
+			storePath, state = s.StorePath, s.State
+			break
+		}
+	}
+	if storePath != "" {
+		if storeExists(storePath) {
+			if state != StateCurrent {
+				return Plan{Err: fmt.Errorf("%s reads the store copy at %s, which is %s — "+
+					"update it for another agent, e.g. vincent skills install %s --agent claude, "+
+					"which refreshes the store", who, storePath, state, name)}
+			}
+			return Plan{Note: who + " reads " + storePath + " directly; there is nothing to link"}
+		}
+	} else {
+		storePath = filepath.Join("~", StoreDir, skillsSubdir, name)
+	}
+	return Plan{Err: fmt.Errorf("%s reads the store copy at %s and none is installed — "+
+		"install it for another agent first, e.g. vincent skills install %s --agent claude, "+
+		"which populates the store", who, storePath, name)}
 }
 
 // InstallArgs is the argv vincent hands `npx`, without the program name.

@@ -42,7 +42,7 @@ first: `vincent workflow init go-checks --from go-checks`. A missing include
 target is not caught by `vincent workflow validate`; it is a `400` when a task
 is created ([§4.10](#410-include)).
 
-The last four are **handoff workflows** (`role: handoff`): a handoff runs one
+The last four are **[handoff workflows](handoff.md)** (`role: handoff`): a handoff runs one
 over every issue whose work is ready, never as an ordinary task, and each
 links the unarmed trigger that starts it. Copy the trigger to
 `{config_dir}/triggers/`, set its project, and arm it yourself — its `grant:`
@@ -74,8 +74,9 @@ vincent skills install
 That shells out to `npx skills add lezli01/vincent --skill vincent-workflows
 --agent claude-code codex cursor --yes --global`, which is the published command
 with the interactive agent picker answered. `--agent` narrows the selection to
-some of `claude`, `codex`, `cursor`; the TUI's `S` offer answers it with the
-adapters vincent actually detected instead. Running it by hand works too:
+some of `claude`, `codex`, `copilot`, `cursor` — copilot reads the store
+itself, so it adds nothing to the command; the TUI's `S` offer answers it with
+the adapters vincent actually detected instead. Running it by hand works too:
 
 ```sh
 npx skills add lezli01/vincent --skill vincent-workflows -g

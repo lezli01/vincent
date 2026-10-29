@@ -51,7 +51,9 @@ func newSkillsListCmd() *cobra.Command {
 			"The agent list is what is on disk. It can name agents vincent does not " +
 			"drive — one store serves every agent on the machine — and it can disagree " +
 			"with `npx skills list -g`, which reports the selection the CLI remembers " +
-			"rather than the links it left behind.",
+			"rather than the links it left behind. copilot is listed as " +
+			"\"copilot (reads store)\" when ~/.copilot exists and the store holds the " +
+			"skill: it loads ~/.agents/skills itself, with no link.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			statuses := skill.Detect(skill.Options{})
@@ -61,7 +63,7 @@ func newSkillsListCmd() *cobra.Command {
 			rows := make([][]string, 0, len(statuses))
 			for _, s := range statuses {
 				rows = append(rows, []string{
-					s.Name, dash(s.Shipped), skillStateWord(s), dash(strings.Join(s.Agents(), ", ")),
+					s.Name, dash(s.Shipped), skillStateWord(s), dash(strings.Join(s.AgentLabels(), ", ")),
 				})
 			}
 			return table(cmd.OutOrStdout(), []string{"SKILL", "SHIPPED", "STATE", "AGENTS"}, rows)
@@ -85,6 +87,11 @@ func newSkillsInstallCmd() *cobra.Command {
 			"network: the package is downloaded before it does anything. Without npx " +
 			"the command exits 1 naming the dependency and printing the line to run " +
 			"once node is there — detection is unaffected either way.\n\n" +
+			"copilot reads the store, ~/.agents/skills, itself, so it adds nothing to " +
+			"the selection. With --agent copilot alone nothing is run: a skill whose " +
+			"store copy is current is reported as served, and one with none, or with " +
+			"an older or differing copy, exits 1 — install it for another agent " +
+			"first, which populates or refreshes the store.\n\n" +
 			"Exit codes: 0 everything asked for is installed, 1 an install failed.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSkillsInstall(cmd, args, adapters)
@@ -92,16 +99,19 @@ func newSkillsInstallCmd() *cobra.Command {
 	}
 	cmd.Flags().StringSliceVar(&adapters, "agent", nil,
 		"Adapters to install for (repeatable, comma-separated): "+
-			strings.Join(skill.Adapters(), ", ")+". Default: all of them")
+			strings.Join(skill.Adapters(), ", ")+". Default: all of them but copilot, "+
+			"which reads the store itself")
 	jsonFlag(cmd)
 	return cmd
 }
 
-// skillsInstallResult is one skill's outcome, and the --json shape.
+// skillsInstallResult is one skill's outcome, and the --json shape. Command
+// is empty when nothing was run, and Note then says why.
 type skillsInstallResult struct {
 	Skill   string `json:"skill"`
 	Command string `json:"command"`
 	OK      bool   `json:"ok"`
+	Note    string `json:"note,omitempty"`
 	Error   string `json:"error,omitempty"`
 }
 
@@ -111,7 +121,6 @@ func runSkillsInstall(cmd *cobra.Command, args, adapters []string) error {
 	if len(names) == 0 {
 		names = skill.Missing(statuses)
 	}
-	slugs := skill.Slugs(adapters)
 	out := cmd.OutOrStdout()
 	results := make([]skillsInstallResult, 0, len(names))
 	if len(names) == 0 && !wantJSON(cmd) {
@@ -121,6 +130,18 @@ func runSkillsInstall(cmd *cobra.Command, args, adapters []string) error {
 	}
 	failed := false
 	for _, name := range names {
+		plan := skill.PlanInstall(name, adapters, statuses)
+		if !plan.Run() {
+			// A store-resident selection: nothing to link, so nothing runs.
+			res := skillsInstallResult{Skill: name, OK: plan.Err == nil, Note: plan.Note}
+			if plan.Err != nil {
+				res.Error = plan.Err.Error()
+				failed = true
+			}
+			results = append(results, res)
+			continue
+		}
+		slugs := plan.Slugs
 		res := skillsInstallResult{Skill: name, Command: skill.Command(name, slugs)}
 		// The progress line goes out before the run, not after: a first `npx`
 		// downloads the package, so a command that printed nothing would look
@@ -150,6 +171,12 @@ func runSkillsInstall(cmd *cobra.Command, args, adapters []string) error {
 		}
 	} else {
 		for _, r := range results {
+			if r.OK && r.Note != "" {
+				if _, err := fmt.Fprintf(out, "%s: %s\n", r.Skill, r.Note); err != nil {
+					return err
+				}
+				continue
+			}
 			if r.OK {
 				if _, err := fmt.Fprintf(out, "installed %s\n", r.Skill); err != nil {
 					return err
