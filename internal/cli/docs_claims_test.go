@@ -22,6 +22,8 @@ import (
 	"github.com/spf13/pflag"
 	"golang.org/x/tools/go/packages"
 
+	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/agent/builtin"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -467,6 +469,43 @@ func TestDocsClaimsEveryCommandIsOnTheCLIPage(t *testing.T) {
 	walk(newRootCmd())
 	if len(missing) > 0 {
 		t.Errorf("the CLI reference never mentions %v", missing)
+	}
+}
+
+// TestDocsClaimsChatAdaptersAreCounted: `vincent chat`'s section counts the
+// shipped adapters that can hold a chat and names each one's resume spelling.
+// Task 138.11 made copilot the fourth and the paragraph kept saying "All three"
+// (review F1 on #877), so it is held to the registry: the count word must be
+// the number of adapters agent.CanResume accepts, and each must be named.
+func TestDocsClaimsChatAdaptersAreCounted(t *testing.T) {
+	page, ok := docPages(t)["docs/reference/cli.md"]
+	if !ok {
+		t.Fatal("docs/reference/cli.md is missing")
+	}
+	start := strings.Index(page, "\n## `vincent chat`\n")
+	if start < 0 {
+		t.Fatal("docs/reference/cli.md has no `vincent chat` section")
+	}
+	section := page[start:]
+	claim := regexp.MustCompile(`All (\w+)\s+shipped adapters can — ([^.]*)\.`).FindStringSubmatch(section)
+	if claim == nil {
+		t.Fatal("the `vincent chat` section no longer says which shipped adapters can hold a chat")
+	}
+	var resumable []string
+	for _, a := range builtin.New(func(string) string { return "" }).All() {
+		if agent.CanResume(a) {
+			resumable = append(resumable, a.Name())
+		}
+	}
+	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight"}
+	if len(resumable) >= len(words) || !strings.EqualFold(claim[1], words[len(resumable)]) {
+		t.Errorf("the `vincent chat` section says %q shipped adapters can hold a chat; %d can: %v",
+			claim[1], len(resumable), resumable)
+	}
+	for _, name := range resumable {
+		if !strings.Contains(claim[2], "`"+name+"`") {
+			t.Errorf("the `vincent chat` section never names %q among the adapters that can hold a chat", name)
+		}
 	}
 }
 
