@@ -4071,7 +4071,16 @@ adapter that cannot answer says so by not implementing one, and grows no stub
 saying it cannot. `CanListSkills` is a fact about the adapter, not about the
 installed build (task 124 decision 13); both capabilities' false legs are proven
 against `agenttest` stubs, never against whichever shipped CLI lacks the
-capability today.
+capability today. *Amended 2026-10-29 (task 138.13):* one exception, and only
+one kind. A refusal that a recorded capture **decided** may also be pinned to
+the real adapter, beside the stub leg and never instead of it: copilot is
+neither a `SkillLister` nor a `SkillInvoker` because its 1.0.105 captures show
+`/name` on stdin reaching the model as prose and no skill listing on stdout
+(§9.9), and `TestSkillNotInvokedFromTheMessage`, the chat-skills route test and
+the `GET /v1/agents` tables assert that `false` against `copilot.New`. Such a
+pin cites its captures and inverts only with a recapture — that is the point
+of it, since the Resumer lesson is about refusals nobody observed. A refusal
+that is merely today's state, with no capture behind it, stays stub-only.
 
 - **Nothing is synthesized** (task 124 decisions 8 and 17). Every `Skill` field is the
   CLI's own words and `""` is unreported. There is no normalized scope and no

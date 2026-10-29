@@ -124,7 +124,10 @@ type SkillProblem struct {
 // The false leg is proven against agenttest.StubNoSkills, not against
 // whichever shipped adapter lacks the capability today. The Resumer lesson
 // applies: a refusal proven against a real CLI inverts itself the day that
-// CLI gains the capability.
+// CLI gains the capability. The one exception is a refusal a recorded
+// capture decided, which may also be pinned to the real adapter and inverts
+// only with a recapture (§9.1's 2026-10-29 amendment): copilot's, from its
+// 1.0.105 captures (§9.9, task 138.13).
 func CanListSkills(a Adapter) bool {
 	_, ok := a.(SkillLister)
 	return ok
