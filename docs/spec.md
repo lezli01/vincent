@@ -4487,6 +4487,10 @@ pinned build is far past every known floor (claude `--mcp-config` since 0.2.75,
 codex `mcp_servers.*.url` with `bearer_token_env_var` since 0.46.0; cursor
 records no date for `--approve-mcps`).
 
+*Amended 2026-10-29 (task 138.8).* copilot carries the server too, inline in
+`--additional-mcp-config` (§9.9), so the paragraph above still holds once
+copilot is registered (138.9): no shipped adapter returns `ErrMCPUnsupported`.
+
 ### 9.2 Claude Code adapter
 
 - Invocation (indicative; exact flags pinned per detected CLI version at
@@ -6439,12 +6443,45 @@ section is renumbered.
   by design: copilot has no status command.
 - **No mid-run input** (*2026-10, task 138.5*). `InputSupport` is `never`;
   `Respond` always errors.
-- **Three interim refusals** (*2026-10, task 138.5*), each from `Start` with the
-  shared sentinel and no process spawned: `restricted` →
-  `ErrRestrictedUnsupported` until 138.10 (#862); an MCP server →
-  `ErrMCPUnsupported` until 138.8 (#860), which lands before registration, so
-  no user meets it; a resume → `ErrResumeUnsupported` until 138.11 (#863).
+- **Two interim refusals** (*2026-10, task 138.5; amended 2026-10-29, task
+  138.8, which retired the third*), each from `Start` with the shared sentinel
+  and no process spawned: `restricted` → `ErrRestrictedUnsupported` until
+  138.10 (#862); a resume → `ErrResumeUnsupported` until 138.11 (#863).
   `RestrictedSupport` is `never` until 138.10.
+- **The vincent MCP server** (*2026-10-29, task 138.8*). A step wired to §13.4's
+  per-step server gets `--additional-mcp-config '<json>'` and
+  `--allow-tool=vincent` appended to its argv. The JSON is
+  `{"mcpServers":{"vincent":{"type":"http","url":…,"headers":{"Authorization":"Bearer …"},"tools":["*"]}}}`,
+  rendered by `encoding/json`. `--allow-tool` is redundant under full-auto's
+  `--allow-all-tools`, and is passed anyway so the server stays approved once
+  restricted mode (138.10) replaces that flag (task 057 decision 9).
+  - *Inline, no file.* Task 138 decision 6's `@file` fallback was not needed:
+    the npm `copilot.cmd` shim makes cmd.exe re-parse the command line on
+    Windows, and `TestStartMCPCallbackThroughCmdShim` proves the JSON survives
+    it — it carries `"` and none of `&|<>^%`, because the URL is loopback and
+    the token is base64url. Nothing is written to the worktree, and recovery
+    has nothing to sweep.
+  - *The token is in argv*, as with claude (§9.2): visible to `ps` for the
+    step's life, and redacted from the §12.3 debug record by `redactMCPToken`.
+  - *No strict switch.* `--additional-mcp-config` augments
+    `~/.copilot/mcp-config.json` for the session, so the user's own servers
+    load into the step beside vincent's.
+  - *Built-ins stay on.* `--disable-builtin-mcps` is not passed, so the
+    built-in `github-mcp-server` (and `githubiq` on newer builds) connects on
+    every run.
+  - *A startup failure still exits 0.* A server that fails to connect does not
+    fail the run (github/copilot-cli#3064); a step whose vincent server never
+    came up finishes as whatever the model made of a missing tool.
+  - *Allow-list enforcement fails closed.* Where an organization's MCP
+    allow-list applies, the CLI checks it against the registry at startup, and
+    a registry it cannot reach refuses the servers rather than admitting them.
+  - *Workspace MCP files never load.* `.mcp.json` and `.github/mcp.json` need
+    `--trust-folder`, which cannot combine with `--session-id`/`--resume`, so
+    the only servers in a step are vincent's, the user's and the built-ins.
+  - *Tool naming.* A vincent call streams as `tool.execution_start` named
+    `<server>-<tool>` (`vincent-health` in `mcp_1.0.105.jsonl`) with
+    `mcpServerName` and `mcpToolName` beside it; the parser keeps that split on
+    the normalized tool use rather than re-cutting the joined name.
 - **The stream** (*2026-10, task 138.5*). Message deltas coalesce into the
   closing `assistant.message` (`output`); the answer is the last message, since
   the terminal `result` line carries none. `tool.execution_start` and

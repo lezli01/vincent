@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (5/17)
+**Status:** 🔄 in progress (6/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -339,8 +339,12 @@ its code makes true, in its own pull request.
 - [ ] **138.7** ([#859](https://github.com/lezli01/vincent/issues/859)) Run header, thinking, patches, subagents and usage
   normalized — usage taken over from 138.5, `RunResult` tokens included; the
   absent events pinned against every fixture. Depends: 138.5.
-- [ ] **138.8** ([#860](https://github.com/lezli01/vincent/issues/860)) The per-step vincent MCP server through
-  `--additional-mcp-config`. Depends: 138.5.
+- [x] **138.8** ([#860](https://github.com/lezli01/vincent/issues/860)) The per-step vincent MCP server through
+  `--additional-mcp-config`. Depends: 138.5. Decision 6 settled on the
+  inline carrier alone: `TestStartMCPCallbackThroughCmdShim` launches the
+  fake through a `copilot.cmd` shim on the Windows leg and the JSON survives
+  cmd.exe's re-parse, so no `@file` fallback, temp directory or sweep was
+  built. `--allow-tool=vincent` rides beside it for 138.10. ✓ 2026-10-29
 - [ ] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
   container mount, the engine test and `scripts/138-gate.sh` in CI.
   Depends: 138.5, 138.8.
