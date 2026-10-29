@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (5/17)
+**Status:** 🔄 in progress (7/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -242,6 +242,27 @@ isolated-`COPILOT_HOME` discipline could never have observed
   `statusCode` and `eligibleForAutoSwitch`) was not observed.
 - Nothing was captured on Windows or Linux (138.3).
 
+### `--model` side-effect captures (138.6, 2026-10-29)
+
+Two runs of the pinned 1.0.105 on **darwin/arm64** with 138.12's install
+discipline (npm package in a throwaway prefix, its native binary invoked
+directly) and 138.1's run discipline (a fresh, initially empty `COPILOT_HOME`,
+`--no-auto-update`, `COPILOT_AUTO_UPDATE=false`, stdin prompt `Reply with
+exactly the word: pong`, throwaway repo, the operator's own login found
+outside `COPILOT_HOME`). `COPILOT_HOME`'s file list and its `config.json` /
+`settings.json` were snapshotted before and after each run; the operator's
+`~/.copilot` was never touched. Same scrub and grep, zero hits.
+
+| File | Command line (after the common prefix) | Exit |
+|---|---|---|
+| `model_persist_1.0.105.txt`, run 1 | `J --model gpt-5-mini` (refused, no request spent) | 1 |
+| `model_persist_1.0.105.txt`, run 2 | `J --model auto` (accepted, `premiumRequests: 1`) | 0 |
+
+Neither run wrote a model anywhere outside its own session: `config.json`
+holds only the `firstLaunchAt` the first run of any kind writes, no
+`settings.json` was created, and the rest is logs, session state and the
+session store. §9.9 records it.
+
 ## Event inventory
 
 Every distinct `type` across the `.jsonl` fixtures, with its total count and
@@ -334,13 +355,24 @@ its code makes true, in its own pull request.
   (#857's "usage" bullet) moved to 138.7: on 1.0.105 the token counts live
   only on `session.usage_checkpoint` and `assistant.turn_end`, so 138.5 emits
   no usage event and leaves tokens and cost unreported. ✓ 2026-10-29
-- [ ] **138.6** ([#858](https://github.com/lezli01/vincent/issues/858)) The effort catalog, the stated model and login gaps,
-  failure classification. Depends: 138.5.
+- [x] **138.6** ([#858](https://github.com/lezli01/vincent/issues/858)) The effort catalog, the stated model and login gaps,
+  failure classification. Depends: 138.5. Efforts are probed from clap
+  `--help` over a curated floor; models stay free-form; `logged_in` stays
+  `null` (open question 3); `unauthenticated` is classified, quota and rate
+  limit are not. ✓ 2026-10-29
 - [ ] **138.7** ([#859](https://github.com/lezli01/vincent/issues/859)) Run header, thinking, patches, subagents and usage
   normalized — usage taken over from 138.5, `RunResult` tokens included; the
   absent events pinned against every fixture. Depends: 138.5.
-- [ ] **138.8** ([#860](https://github.com/lezli01/vincent/issues/860)) The per-step vincent MCP server through
-  `--additional-mcp-config`. Depends: 138.5.
+- [x] **138.8** ([#860](https://github.com/lezli01/vincent/issues/860)) The per-step vincent MCP server through
+  `--additional-mcp-config`. Depends: 138.5. Decision 6 settled on the
+  inline carrier alone. `TestStartMCPCallbackThroughCmdShim` launches the
+  fake through a `copilot.cmd` shim in a spaced directory on the Windows leg.
+  Its first run failed (review F1): with more than two `"` on the line,
+  `cmd /c` drops the last one, which split the shim's path. `@file` would
+  have failed the same way on a spaced temp path. So the fix went into the
+  host spawn instead, which wraps a batch file's line in one outer pair of
+  quotes (`procx.BatchCmdLine`, §9.1). No `@file` fallback, temp directory
+  or sweep was built. `--allow-tool=vincent` rides beside it for 138.10. ✓ 2026-10-29
 - [ ] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
   container mount, the engine test and `scripts/138-gate.sh` in CI.
   Depends: 138.5, 138.8.
@@ -373,7 +405,10 @@ Carried from #852; each is decided in the item named.
    tested `{1.0.105}`, incompatible empty, so every other build judges
    `untested` (task 041's design rules out ranges). 1.0.84 is recorded in §9.9
    as the *documented* minimum and is not enforced in code.
-3. **Env-token login inference** — recommendation: no, stay `null`. 138.6.
+3. **Env-token login inference** — closed by 138.6 (2026-10-29): no, stay
+   `null`. A token in `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN` may
+   be a classic `ghp_` PAT, which Copilot rejects, so its presence proves
+   nothing.
 4. **Folder trust** — `--trust-folder` cannot be combined with `--session-id`
    or `--resume`, so a project's `.mcp.json`, `.github/mcp.json` and repo hooks
    never load in vincent runs. Recommendation: accept as stated behaviour.

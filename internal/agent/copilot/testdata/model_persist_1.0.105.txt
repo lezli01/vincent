@@ -1,0 +1,49 @@
+# COPILOT_HOME (isolated, initially empty) before and after each run; task 138.6.
+# copilot 1.0.105 darwin/arm64, --no-auto-update, COPILOT_AUTO_UPDATE=false, stdin prompt.
+# Files listed relative to COPILOT_HOME; config.json/settings.json content follows when present.
+
+## before run 1 (empty)
+
+## after run 1: --model gpt-5-mini (refused, exit 1, no request spent)
+./config.json
+./logs/.copilot-log.lock
+./logs/process-1793272212130-19745.log
+./session-state/.session-operation-locks/1eea99df-17d5-4179-8b8b-f45f19a93d69.lock
+./session-state/1eea99df-17d5-4179-8b8b-f45f19a93d69/.workspace-fork.lock
+./session-state/1eea99df-17d5-4179-8b8b-f45f19a93d69/checkpoints/index.md
+./session-state/1eea99df-17d5-4179-8b8b-f45f19a93d69/workspace.yaml
+./settings.json.lock
+--- config.json
+// User settings belong in settings.json.
+// This file is managed automatically.
+{
+  "firstLaunchAt": "2026-10-29T11:10:12.103Z"
+}
+
+
+## after run 2: --model auto (accepted, exit 0, premiumRequests 1)
+./config.json
+./logs/.copilot-log.lock
+./logs/process-1793272212130-19745.log
+./logs/process-1793272220952-21527.log
+./session-state/.session-operation-locks/1eea99df-17d5-4179-8b8b-f45f19a93d69.lock
+./session-state/.session-operation-locks/67976d3b-2669-46a0-a555-82e632adc04b.lock
+./session-state/1eea99df-17d5-4179-8b8b-f45f19a93d69/.workspace-fork.lock
+./session-state/1eea99df-17d5-4179-8b8b-f45f19a93d69/checkpoints/index.md
+./session-state/1eea99df-17d5-4179-8b8b-f45f19a93d69/workspace.yaml
+./session-state/67976d3b-2669-46a0-a555-82e632adc04b/.workspace-fork.lock
+./session-state/67976d3b-2669-46a0-a555-82e632adc04b/checkpoints/index.md
+./session-state/67976d3b-2669-46a0-a555-82e632adc04b/events.jsonl
+./session-state/67976d3b-2669-46a0-a555-82e632adc04b/rewind-file-snapshots/tracking.json
+./session-state/67976d3b-2669-46a0-a555-82e632adc04b/workspace.yaml
+./session-store.db
+./session-store.db-shm
+./session-store.db-wal
+./settings.json.lock
+--- config.json
+// User settings belong in settings.json.
+// This file is managed automatically.
+{
+  "firstLaunchAt": "2026-10-29T11:10:12.103Z"
+}
+

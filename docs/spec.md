@@ -4210,6 +4210,18 @@ through the seam: the §9.5/§9.6 probes, claude's in-`Start` `--version` probe,
 codex's `app-server` quota exchange and a command step's spawn describe or run
 on the host and do not.
 
+*Amended 2026-10-29 (task 138.8, review F1): a batch-file target gets the
+command line `cmd /c` needs.* When the resolved path ends in `.cmd` or `.bat`,
+as an npm shim's does, the host launcher and the `Probe` beside it set the
+Windows command line themselves (`procx.BatchCmdLine`). It is os/exec's own
+escaping, wrapped in one outer pair of quotes. CreateProcess runs a batch file
+as `cmd /c <line>`. When that line holds more than two `"`, `cmd /c` drops the
+first one and the *last* one. A quoted program path (an npm prefix with a space
+in it) plus any quoted argument then split the path at its space. The outer
+pair is what gets dropped instead. cmd.exe's metacharacters (`&|<>^%`) are
+not escaped. The arguments vincent hands an agent shim carry none of them,
+and the prompt goes over stdin.
+
 *Amended 2026-09-17 (task 062.2, issue #397): a container launcher ships
 beside the host's, and the launcher answers two pre-start questions as well.*
 `Launcher` gains `Resolve` and `Probe`, the hooks 062.1 decision 2 left for
@@ -4486,6 +4498,10 @@ cursor's calver admits no range. And they would guard nothing, since every
 pinned build is far past every known floor (claude `--mcp-config` since 0.2.75,
 codex `mcp_servers.*.url` with `bearer_token_env_var` since 0.46.0; cursor
 records no date for `--approve-mcps`).
+
+*Amended 2026-10-29 (task 138.8).* copilot carries the server too, inline in
+`--additional-mcp-config` (§9.9), so the paragraph above still holds once
+copilot is registered (138.9): no shipped adapter returns `ErrMCPUnsupported`.
 
 ### 9.2 Claude Code adapter
 
@@ -6436,15 +6452,63 @@ section is renumbered.
   every other build is `untested`, which is advisory (task 041). 1.0.84 is the
   documented minimum — below it `--help` is not clap-shaped and the effort
   flag is spelled differently — but it is not enforced. `logged_in` is `null`
-  by design: copilot has no status command.
+  by design: copilot has no status command. *Amended 2026-10, task 138.6:*
+  nor any `auth status` or `whoami`; reading `~/.copilot` is ruled out by
+  T1.7; probing with an invalid model and reading the refusal was rejected as
+  a text-matching hack; and an environment token is not a login —
+  `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` may hold a classic
+  `ghp_` PAT, which Copilot rejects, so their presence proves nothing. It
+  stays `null` with a token set.
 - **No mid-run input** (*2026-10, task 138.5*). `InputSupport` is `never`;
   `Respond` always errors.
-- **Three interim refusals** (*2026-10, task 138.5*), each from `Start` with the
-  shared sentinel and no process spawned: `restricted` →
-  `ErrRestrictedUnsupported` until 138.10 (#862); an MCP server →
-  `ErrMCPUnsupported` until 138.8 (#860), which lands before registration, so
-  no user meets it; a resume → `ErrResumeUnsupported` until 138.11 (#863).
+- **Two interim refusals** (*2026-10, task 138.5; amended 2026-10-29, task
+  138.8, which retired the third*), each from `Start` with the shared sentinel
+  and no process spawned: `restricted` → `ErrRestrictedUnsupported` until
+  138.10 (#862); a resume → `ErrResumeUnsupported` until 138.11 (#863).
   `RestrictedSupport` is `never` until 138.10.
+- **The vincent MCP server** (*2026-10-29, task 138.8*). A step wired to §13.4's
+  per-step server gets `--additional-mcp-config '<json>'` and
+  `--allow-tool=vincent` appended to its argv. The JSON is
+  `{"mcpServers":{"vincent":{"type":"http","url":…,"headers":{"Authorization":"Bearer …"},"tools":["*"]}}}`,
+  rendered by `encoding/json`. `--allow-tool` is redundant under full-auto's
+  `--allow-all-tools`, and is passed anyway so the server stays approved once
+  restricted mode (138.10) replaces that flag (task 057 decision 9).
+  - *Inline, no file.* On Windows the npm `copilot.cmd` shim runs as
+    `cmd /c <line>`. The hazard there is mostly not the metacharacters. When
+    a line holds more than two `"`, `cmd /c` drops the first one and the last
+    one. A quoted shim path (an npm prefix with a space) plus the quoted JSON
+    (`Bearer <token>` has a space) therefore split the path at its space.
+    The first Windows run of `TestStartMCPCallbackThroughCmdShim` failed
+    exactly that way (review F1). Task 138 decision 6's `@file` fallback
+    would not have fixed it, because a temp path with a space is quoted the
+    same way. The fix is in the spawn: the host launcher wraps a batch file's
+    command line in one outer pair of quotes (§9.1, amended 2026-10-29). The
+    JSON carries no `&|<>^%`, because the URL is loopback and the token is
+    base64url. With the fix, `TestStartMCPCallbackThroughCmdShim` carries it
+    through a shim under a spaced directory on the Windows leg. The carrier
+    stays inline: nothing is written to the worktree, and recovery has
+    nothing to sweep.
+  - *The token is in argv*, as with claude (§9.2): visible to `ps` for the
+    step's life, and redacted from the §12.3 debug record by `redactMCPToken`.
+  - *No strict switch.* `--additional-mcp-config` augments
+    `~/.copilot/mcp-config.json` for the session, so the user's own servers
+    load into the step beside vincent's.
+  - *Built-ins stay on.* `--disable-builtin-mcps` is not passed, so the
+    built-in `github-mcp-server` (and `githubiq` on newer builds) connects on
+    every run.
+  - *A startup failure still exits 0.* A server that fails to connect does not
+    fail the run (github/copilot-cli#3064); a step whose vincent server never
+    came up finishes as whatever the model made of a missing tool.
+  - *Allow-list enforcement fails closed.* Where an organization's MCP
+    allow-list applies, the CLI checks it against the registry at startup, and
+    a registry it cannot reach refuses the servers rather than admitting them.
+  - *Workspace MCP files never load.* `.mcp.json` and `.github/mcp.json` need
+    `--trust-folder`, which cannot combine with `--session-id`/`--resume`, so
+    the only servers in a step are vincent's, the user's and the built-ins.
+  - *Tool naming.* A vincent call streams as `tool.execution_start` named
+    `<server>-<tool>` (`vincent-health` in `mcp_1.0.105.jsonl`) with
+    `mcpServerName` and `mcpToolName` beside it; the parser keeps that split on
+    the normalized tool use rather than re-cutting the joined name.
 - **The stream** (*2026-10, task 138.5*). Message deltas coalesce into the
   closing `assistant.message` (`output`); the answer is the last message, since
   the terminal `result` line carries none. `tool.execution_start` and
@@ -6464,6 +6528,40 @@ section is renumbered.
   termination it asked for whatever the exit code, as for every adapter, and
   the parser also reads a result after the root agent's `abort` as an error,
   so the run is never reported as a success.
+- **No model enumeration** (*2026-10, task 138.6*). The catalog lists no
+  models and ids are free-form, so §8.2 passes any model through with at most
+  its "not in the catalog" warning. Copilot lists models only through the
+  interactive `/model`; `help config`'s static list is not what the account
+  may use. An unavailable id exits 1 with `Error: Model "…" from --model flag
+  is not available.` before any request is spent, and that stderr reaches
+  `result_summary` through the no-result path.
+- **Effort probed from `--help`** (*2026-10, task 138.6*). `Options` runs
+  `copilot --no-auto-update --help` and reads the clap-style
+  `--reasoning-effort … [possible values: …]` line (source `cli`), merged over
+  the curated floor `none, minimal, low, medium, high, xhigh, max`. A missing
+  binary, a failed probe, or help without that line — a commander-style build
+  below 1.0.84 — returns the floor with an error. Effort support is per model,
+  and the default `auto` refuses any effort (`Model "auto" does not support
+  reasoning effort configuration`), so a copilot step that sets `effort` needs
+  an explicit `model`. Neither the adapter nor §8.2 predicts which pairs work;
+  the CLI's fast exit 1 says so.
+- **`--model` leaves no global state** (*2026-10, task 138.6*). Captured on
+  1.0.105 with an empty isolated `COPILOT_HOME`: neither a refused
+  `--model gpt-5-mini` nor an accepted `--model auto` wrote a model to
+  `config.json` or a `settings.json` (`model_persist_1.0.105.txt`). Every run
+  writes logs, session state and the session store, and the first one a
+  `firstLaunchAt` in `config.json`, whatever its flags.
+- **Not a quota reporter** (*2026-10, task 138.6*). There is no zero-cost
+  plan probe, so the adapter is not a `QuotaReporter`, and premium requests are
+  not dollars, so they never become `CostUSD`.
+- **Failure classification** (*2026-10, task 138.6*). A failed run whose error,
+  result text or stderr carries `No authentication information found`
+  (`logged_out_1.0.105.txt`) is `unauthenticated`; a stream vincent could not
+  read to the end still outranks it as `stream_error`. Rate limit and quota
+  are recognized nowhere: their texts are known only from issue reports, and
+  task 003 decision 2 recognizes nothing neither documented nor captured. Such
+  a run fails the ordinary way, and `usage_limit_auto_continue` does not apply
+  to copilot.
 
 ## 10. Worktree management
 

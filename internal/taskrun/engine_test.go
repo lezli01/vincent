@@ -17,6 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/copilot"
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
@@ -1093,5 +1094,39 @@ func TestRedactMCPTokenScrubsTheDebugArgv(t *testing.T) {
 	}
 	if same := redactMCPToken(argv, nil); &same[0] != &argv[0] {
 		t.Error("a run with no MCP server must not copy its argv")
+	}
+}
+
+// TestRedactMCPTokenScrubsCopilotArgv runs the redaction over the argv the
+// copilot adapter actually spawned (task 138.8): its token rides inside the
+// inline --additional-mcp-config JSON (§9.9), and the debug record must show
+// the redaction there rather than the token.
+func TestRedactMCPTokenScrubsCopilotArgv(t *testing.T) {
+	t.Parallel()
+	fake := agenttest.BuildFakeAgent(t)
+	srv := &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:1/mcp/step/9", Token: "c0pil0t-s3cret_tok"}
+	h, err := copilot.New(func() string { return fake }).Start(t.Context(), agent.RunSpec{
+		Prompt:         "redact me",
+		WorkDir:        t.TempDir(),
+		PermissionMode: agent.FullAuto,
+		Env:            append(os.Environ(), "FAKEAGENT_SCENARIO=success"),
+		MCP:            srv,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	for range h.Events() { //nolint:revive // draining is the contract
+	}
+	_, _ = h.Wait()
+	argv := h.Argv()
+	if !strings.Contains(strings.Join(argv, " "), srv.Token) {
+		t.Fatalf("argv = %q, want the token in it before redaction", argv)
+	}
+	got := strings.Join(redactMCPToken(argv, srv), " ")
+	if strings.Contains(got, srv.Token) {
+		t.Fatalf("redacted argv = %q, want no token", got)
+	}
+	if !strings.Contains(got, `"Authorization":"Bearer [redacted]"`) {
+		t.Errorf("redacted argv = %q, want the redaction visible inside the JSON", got)
 	}
 }

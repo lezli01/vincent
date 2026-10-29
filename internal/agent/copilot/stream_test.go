@@ -214,6 +214,38 @@ func TestShellFixture(t *testing.T) {
 	}
 }
 
+// TestMCPFixture: copilot names a vincent MCP call `<server>-<tool>` and
+// reports the split beside it; the split survives normalization, because a
+// dash inside either name would make the joined name ambiguous to cut back
+// (task 138.8). Built-in tools carry no split.
+func TestMCPFixture(t *testing.T) {
+	var use agent.ToolUse
+	var res agent.ToolResult
+	for _, ev := range parseFixture(t, "mcp_1.0.105.jsonl") {
+		switch ev.Type {
+		case agent.EventToolUse:
+			use = ev.Tools[0]
+		case agent.EventToolResult:
+			res = ev.Results[0]
+		}
+	}
+	want := agent.ToolUse{
+		Name: "vincent-health", CallID: "call_PlL0Aqs0CwxvIqyowkCvlQ3a",
+		MCPServer: "vincent", MCPTool: "health",
+	}
+	if use != want {
+		t.Errorf("tool_use = %+v, want %+v", use, want)
+	}
+	if res.CallID != use.CallID || res.Name != "vincent-health" || res.IsError {
+		t.Errorf("tool_result = %+v, want vincent-health's success under %q", res, use.CallID)
+	}
+	for _, ev := range parseFixture(t, "shell_1.0.105.jsonl") {
+		if ev.Type == agent.EventToolUse && (ev.Tools[0].MCPServer != "" || ev.Tools[0].MCPTool != "") {
+			t.Errorf("built-in tool_use = %+v, want no MCP split", ev.Tools[0])
+		}
+	}
+}
+
 // TestDeniedFixture: a denied call is a blocked tool result, never a run
 // failure — the model answered around it and the run exited 0.
 func TestDeniedFixture(t *testing.T) {

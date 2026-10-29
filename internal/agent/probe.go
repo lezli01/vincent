@@ -50,6 +50,7 @@ func Probe(ctx context.Context, timeout time.Duration, path string, args ...stri
 	cmd := exec.CommandContext(ctx, path, args...) //nolint:gosec // the resolved agent binary, arguments built by the adapter
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	procx.NoWindow(cmd)
+	procx.BatchCmdLine(cmd)
 	runErr := cmd.Run()
 	stdout, stderr = out.Bytes(), errOut.Bytes()
 	switch {

@@ -44,8 +44,13 @@ type toolData struct {
 	ToolCallID string          `json:"toolCallId"`
 	ToolName   string          `json:"toolName"`  // start
 	Arguments  json.RawMessage `json:"arguments"` // start
-	Success    *bool           `json:"success"`   // complete
-	Result     *struct {
+	// MCPServerName and MCPToolName are on an MCP tool's start line:
+	// toolName is the two joined with a dash (mcp_1.0.105.jsonl), which a
+	// server or tool name containing a dash makes ambiguous to split back.
+	MCPServerName string `json:"mcpServerName"` // start
+	MCPToolName   string `json:"mcpToolName"`   // start
+	Success       *bool  `json:"success"`       // complete
+	Result        *struct {
 		Content string `json:"content"`
 	} `json:"result"` // complete, on success
 	Error *struct {
@@ -136,9 +141,11 @@ func (s *stream) parse(raw []byte) agent.Event {
 			return agent.Event{
 				Type: agent.EventToolUse,
 				Tools: []agent.ToolUse{{
-					Name:    d.ToolName,
-					Summary: agent.ToolSummary(d.Arguments),
-					CallID:  d.ToolCallID,
+					Name:      d.ToolName,
+					Summary:   agent.ToolSummary(d.Arguments),
+					CallID:    d.ToolCallID,
+					MCPServer: d.MCPServerName,
+					MCPTool:   d.MCPToolName,
 				}},
 				Raw: raw,
 			}

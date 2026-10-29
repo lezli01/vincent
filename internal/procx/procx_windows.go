@@ -15,8 +15,12 @@ import (
 // with no console of its own, so without CREATE_NO_WINDOW every agent and
 // command step would flash a new console window at the user (T3.8 finding).
 // Tree containment still comes from the Job object assigned in attach; the
-// flag does not affect the pipes or the job.
-func setSysProcAttr(cmd *exec.Cmd) { NoWindow(cmd) }
+// flag does not affect the pipes or the job. A batch-file target, such as an
+// npm `.cmd` shim, also gets the command line `cmd /c` needs (BatchCmdLine).
+func setSysProcAttr(cmd *exec.Cmd) {
+	NoWindow(cmd)
+	BatchCmdLine(cmd)
+}
 
 // signalProcess has no graceful equivalent on Windows for a console-less
 // child, so the fallback path kills outright.

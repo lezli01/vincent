@@ -37,6 +37,9 @@ const (
 	dialectClaude dialect = iota
 	dialectCodex
 	dialectCursor
+	// dialectCopilot never opens the session store: copilot resume is task
+	// 138.11's. It names the dialect for discoverMCP (task 138.8).
+	dialectCopilot
 )
 
 // stampSessionID is whether emit should add `session_id` to every line. True

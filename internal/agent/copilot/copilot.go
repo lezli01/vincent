@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -62,9 +63,14 @@ func (a *Adapter) resolvePathWith(l agent.Launcher) (string, error) {
 // Detect implements agent.Adapter: path resolution and a
 // `copilot --no-auto-update --version` probe.
 //
-// LoggedIn is nil by design (task 138 decision 10): copilot has no status
-// command, and reading its credential store is ruled out by T1.7. `copilot
-// version` is never called — it checks for updates over the network.
+// LoggedIn is nil by design (task 138 decision 10, open question 3 closed by
+// 138.6): copilot has no `auth status` or `whoami` command; reading
+// `~/.copilot` is ruled out by T1.7; probing with an invalid model and reading
+// the refusal was rejected as a text-matching hack; and an env token is not
+// proof — COPILOT_GITHUB_TOKEN, GH_TOKEN and GITHUB_TOKEN may hold a classic
+// `ghp_` PAT, which Copilot rejects, so their presence says nothing. A run
+// that does stop logged out is classified unauthenticated (failure.go).
+// `copilot version` is never called — it checks for updates over the network.
 // SupportsInput is permanently false (§9.9).
 func (a *Adapter) Detect(ctx context.Context) (agent.Availability, error) {
 	return a.detectWith(ctx, nil)
@@ -134,18 +140,16 @@ func newSessionID() string {
 // a prompt. No `-C` either — the process cwd is the worktree. The built-in
 // GitHub MCP server is left on; --disable-builtin-mcps is not passed (§9.9).
 //
-// The three refusals are interim, each replaced by the item named: a step is
+// The vincent MCP server (§13.4) rides inline in --additional-mcp-config,
+// with --allow-tool naming it (task 138 decision 6, see mcpConfig).
+//
+// The two refusals are interim, each replaced by the item named: a step is
 // failed with a stated reason rather than run as something it did not ask for.
 func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 	if spec.PermissionMode == agent.Restricted {
 		// Task 138.10 (#862) maps restricted onto --available-tools.
 		return nil, fmt.Errorf("copilot restricted mode is not built yet (task 138.10); "+
 			"refusing to run the step full-auto instead (spec §9.9): %w", agent.ErrRestrictedUnsupported)
-	}
-	if spec.MCP != nil {
-		// Task 138.8 (#860) carries the server in --additional-mcp-config,
-		// and lands before registration, so no user reaches this (decision 7).
-		return nil, fmt.Errorf("copilot MCP wiring is not built yet (task 138.8): %w", agent.ErrMCPUnsupported)
 	}
 	if spec.ResumeSessionID != "" {
 		// Task 138.11 (#863) resumes with --resume=<id>.
@@ -161,11 +165,73 @@ func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 	if spec.Model != "" {
 		args = append(args, "--model", spec.Model)
 	}
-	// The effort is passed through as given; its catalog is task 138.6's.
+	// The effort is passed through as given. Effort support is per model and
+	// `auto` refuses any (unsupported_effort_1.0.105.txt); the CLI's fast
+	// exit 1 says so through the no-result path, so no pair is predicted here.
 	if spec.Effort != "" {
 		args = append(args, "--reasoning-effort", spec.Effort)
 	}
+	if spec.MCP != nil {
+		cfg, err := mcpConfig(spec.MCP)
+		if err != nil {
+			return nil, err
+		}
+		// --allow-tool names the server although --allow-all-tools already
+		// covers it: restricted mode (task 138.10) drops --allow-all-tools,
+		// and the vincent tools stay allowed there (task 057 decision 9).
+		args = append(args, "--additional-mcp-config", cfg, "--allow-tool="+spec.MCP.Name)
+	}
 	return args, nil
+}
+
+// mcpConfigFile is the --additional-mcp-config document: copilot's
+// ~/.copilot/mcp-config.json shape, one HTTP server. Typed rather than a map so
+// the field set is fixed and every value is escaped by encoding/json, never by
+// string formatting.
+type mcpConfigFile struct {
+	Servers map[string]mcpServerEntry `json:"mcpServers"`
+}
+
+type mcpServerEntry struct {
+	Type    string            `json:"type"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers"`
+	// Tools is copilot's per-server filter; "*" admits every tool the
+	// server lists. Without it the CLI loads none of them.
+	Tools []string `json:"tools"`
+}
+
+// mcpConfig renders the per-step server as inline JSON for
+// --additional-mcp-config (spec §9.9).
+//
+// The token is on the command line, as with claude (§9.2): visible to `ps`
+// for the life of the step and redacted from the §12.3 debug record by
+// redactMCPToken. On Windows the npm `.cmd` shim runs the line as
+// `cmd /c`. With more than two `"` on that line, `cmd /c` drops the first
+// and the last one, so a quoted shim path plus this quoted JSON split the
+// path at its space (review F1). An `@file` carrier on a spaced temp path
+// would fail the same way. The host spawn therefore wraps a batch file's
+// line in one outer pair of quotes (procx.BatchCmdLine), and
+// TestStartMCPCallbackThroughCmdShim runs the callback through a shim in a
+// spaced directory. Past that, the JSON carries nothing else cmd.exe
+// reinterprets: the URL is a loopback address and the token is base64url.
+// So there is no file carrier (decision 6).
+//
+// There is no strict switch: the user's own ~/.copilot/mcp-config.json
+// servers augment the run rather than being replaced (§9.9).
+func mcpConfig(srv *agent.MCPServer) (string, error) {
+	b, err := json.Marshal(mcpConfigFile{Servers: map[string]mcpServerEntry{
+		srv.Name: {
+			Type:    "http",
+			URL:     srv.URL,
+			Headers: map[string]string{"Authorization": "Bearer " + srv.Token},
+			Tools:   []string{"*"},
+		},
+	}})
+	if err != nil {
+		return "", fmt.Errorf("render mcp config: %w", err)
+	}
+	return string(b), nil
 }
 
 // Start implements agent.Adapter. The prompt is written via stdin (Windows
@@ -347,6 +413,7 @@ func assemble(exitCode int, sessionID string, terminal *agent.RunResult, streamE
 		res.ResultText = terminal.ResultText
 		// Tokens and CostUSD stay unreported until task 138.7 (§9.9).
 	}
+	res.Failure = classify(res, stderrTail)
 	if streamErr != nil {
 		streamFailure(&res, streamErr)
 	}
