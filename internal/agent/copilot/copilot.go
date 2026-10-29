@@ -147,10 +147,11 @@ func newSessionID() string {
 // --session-id and is otherwise the same argv (task 138.11,
 // resume_1.0.105.jsonl). It is always the `=` spelling: --resume takes an
 // optional value, so a separate token could be read as something else. And
-// it is never --session-id with the old id, which would be refused for an id
-// the CLI no longer knows and adopted silently as a fresh session for one it
-// never did (session_id_unknown_1.0.105.jsonl) — a chat that quietly lost its
-// context. --trust-folder is never passed on either path; it cannot combine
+// it is never --session-id with the old id: copilot adopts any UUID it does
+// not know as a fresh session (session_id_unknown_1.0.105.jsonl), so a
+// forgotten session would silently restart — a chat that quietly lost its
+// context — where --resume= refuses it (resume_unknown_1.0.105.txt) and the
+// turn is classified as session_lost. --trust-folder is never passed on either path; it cannot combine
 // with --resume.
 //
 // The restricted refusal is interim, replaced by task 138.10: a step is
