@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -353,9 +354,36 @@ func TestRunKillKeepsTheSessionID(t *testing.T) {
 	}
 }
 
-// TestRunTerminateIsNotSuccess: Terminate goes the same way as cursor's, and
-// whatever the CLI makes of the signal, the run is not reported as a success.
+// TestRunTerminateIsNotSuccess: copilot 1.0.105 traps SIGTERM, ends the
+// stream `abort`, `result{exitCode:0}` and exits 0 (the fake's `sigterm`
+// scenario). The whole path — exit 0, a result line present — must still
+// report an error naming the abort. Windows has no SIGTERM to trap, so the
+// fake ends that way unprompted there and Terminate is not sent.
 func TestRunTerminateIsNotSuccess(t *testing.T) {
+	h := startRun(t, "sigterm")
+	for ev := range h.Events() {
+		if ev.Type == agent.EventOutput {
+			break
+		}
+	}
+	if runtime.GOOS != "windows" {
+		if err := h.Terminate(); err != nil {
+			t.Fatalf("Terminate: %v", err)
+		}
+	}
+	drain(t, h)
+	res, _ := h.Wait()
+	if res.ExitCode != 0 {
+		t.Fatalf("ExitCode = %d; the case under test is a run that exits 0", res.ExitCode)
+	}
+	if !res.IsError || !strings.Contains(res.ErrorMessage, "user_initiated") {
+		t.Errorf("terminated run = %+v, want an error naming the abort", res)
+	}
+}
+
+// TestRunTerminateWithoutResultIsNotSuccess: a CLI that dies of the signal
+// before any result line is not a success either.
+func TestRunTerminateWithoutResultIsNotSuccess(t *testing.T) {
 	h := startRun(t, "hang")
 	for ev := range h.Events() {
 		if ev.Type == agent.EventOutput {

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
 	"time"
 )
 
@@ -103,6 +106,9 @@ func copilotMain(scenario string) {
 		}
 		c.text("hanging until killed")
 		block()
+	case "sigterm":
+		c.sigterm()
+		os.Exit(0)
 	case "big-usage":
 		c.text("burning tokens")
 		c.end(0, 2_500, nil)
@@ -176,11 +182,38 @@ func (c *copilotStream) success(prompt []byte) {
 	c.end(0, 1, files)
 }
 
-// end closes the turn and writes the terminal line, which — unlike every
-// event before it — has no data and no id (simple_1.0.105.jsonl's last line).
+// sigterm is sigterm_1.0.105.jsonl's ending: copilot traps SIGTERM, writes
+// `agent.interrupted` and `abort{reason:user_initiated}`, closes the turn
+// with `assistant.idle{aborted:true}` and a `result{exitCode:0}`, and exits
+// 0 — so the stream, not the exit code, says the run was stopped. The
+// handler is installed before the first line so a SIGTERM sent on seeing
+// output always finds it. Windows has no SIGTERM to trap (procx terminates
+// the job outright), so there the ending is written straight away.
+func (c *copilotStream) sigterm() {
+	term := make(chan os.Signal, 1)
+	signal.Notify(term, syscall.SIGTERM)
+	c.text("working until terminated")
+	if runtime.GOOS != "windows" {
+		<-term
+	}
+	c.event("agent.interrupted", map[string]any{"activity": "idle", "turn": 0}, true)
+	c.event("abort", map[string]any{"reason": "user_initiated"}, false)
+	c.event("assistant.turn_end", map[string]any{"turnId": "0"}, false)
+	c.event("assistant.idle", map[string]any{"aborted": true}, true)
+	c.result(0, 1, nil)
+}
+
+// end closes the turn and writes the terminal line (simple_1.0.105.jsonl's
+// last lines).
 func (c *copilotStream) end(exitCode, premium int, files []string) {
 	c.event("assistant.turn_end", map[string]any{"turnId": "0"}, false)
 	c.event("assistant.idle", map[string]any{}, true)
+	c.result(exitCode, premium, files)
+}
+
+// result writes the terminal line, which — unlike every event before it —
+// has no data and no id.
+func (c *copilotStream) result(exitCode, premium int, files []string) {
 	if files == nil {
 		files = []string{}
 	}
