@@ -17,6 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/agent/copilot"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
@@ -35,8 +36,10 @@ import (
 // `@"…"`-on-a-space rule is written, so proving a client never has to rebuild
 // it means proving it against that adapter. Nothing ever launches it — the
 // route reads two static methods — which is why a path that is not a CLI is
-// enough. StubNoMentions is registered beside it for the refusal, per task 126
-// decision 25.
+// enough. copilot is registered too (task 138.13): the TUI's `@` picker in a
+// copilot chat is fed by this route, and copilot's answer differs from
+// claude's in both expansion and quoting. StubNoMentions is registered beside
+// them for the refusal, per task 126 decision 25.
 type filesHarness struct {
 	*projectHarness
 	projectID int64
@@ -54,7 +57,11 @@ func newFilesHarness(t *testing.T) *filesHarness {
 	if err := st.CreateProject(t.Context(), project); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	reg := agent.NewRegistry(claude.New(func() string { return "claude" }), agenttest.StubNoMentions{})
+	reg := agent.NewRegistry(
+		claude.New(func() string { return "claude" }),
+		copilot.New(func() string { return "copilot" }),
+		agenttest.StubNoMentions{},
+	)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	chats := chatrun.New(chatrun.Deps{
 		Store: st, Config: config.Default, Agents: reg, DataDir: dataDir, Logger: log,
@@ -212,6 +219,37 @@ func TestChatFilesMentionQuotesASpace(t *testing.T) {
 	// unquoted (task 126 decision 21).
 	if p := got.Files[idx].Path; p != "dir with space/q.txt" {
 		t.Errorf("path = %q, want %q", p, "dir with space/q.txt")
+	}
+}
+
+// TestChatFilesCopilotChat is the route as the `@` picker reads it in a
+// copilot chat (task 138.13): `@`, anywhere, not expanded — the model reads
+// the path itself (§9.9) — and the space left unquoted, the row copilot's
+// FileMention writes where claude's quotes.
+func TestChatFilesCopilotChat(t *testing.T) {
+	h := newFilesHarness(t)
+	dir := filesRepo(t)
+	if err := os.Mkdir(filepath.Join(dir, "dir with space"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	testrepo.WriteFile(t, dir, filepath.Join("dir with space", "q.txt"), "x\n")
+	c := h.chat(t, "copilot", chatstate.Idle, dir)
+
+	got := h.list(t, c.ID, "")
+	if got.Agent != "copilot" {
+		t.Errorf("agent = %q, want copilot", got.Agent)
+	}
+	if got.MentionSigil != "@" || got.MentionPosition != "anywhere" || got.MentionExpands {
+		t.Errorf("mention = (%q, %q, %v), want (@, anywhere, false)",
+			got.MentionSigil, got.MentionPosition, got.MentionExpands)
+	}
+	const want = "@dir with space/q.txt"
+	idx := slices.IndexFunc(got.Files, func(f chatFileBody) bool { return f.Path == "dir with space/q.txt" })
+	if idx < 0 {
+		t.Fatalf("no row for dir with space/q.txt; got %+v", got.Files)
+	}
+	if m := got.Files[idx].Mention; m != want {
+		t.Errorf("mention = %q, want %q", m, want)
 	}
 }
 

@@ -397,7 +397,9 @@ func servedAgentsFrom(t *testing.T, catalog, agents *agent.Registry) []agentResp
 // stubs; of the shipped adapters only positive answers are pinned — codex's
 // (task 124.8) and claude's (task 124.7). A refusal is never pinned to
 // cursor: a test asserting that of it would invert itself the day #514
-// lands. A registered adapter that cannot invoke answers "" for both syntax
+// lands. copilot's refusal of both is pinned, because a capture decided it
+// (task 138.13 decisions B and D, copilot's skills_test.go) and inverts only
+// with a recapture. A registered adapter that cannot invoke answers "" for both syntax
 // fields; no registry at all answers null for all three.
 func TestAgentsReportSkillCapabilities(t *testing.T) {
 	fake := agenttest.BuildFakeAgent(t)
@@ -406,6 +408,7 @@ func TestAgentsReportSkillCapabilities(t *testing.T) {
 			claude.New(func() string { return fake }),
 			codex.New(func() string { return "/nonexistent/codex-not-here" }),
 			cursor.New(func() string { return "/nonexistent/cursor-agent-not-here" }),
+			copilot.New(func() string { return "/nonexistent/copilot-not-here" }),
 			agenttest.StubNoSkills{},
 			&agenttest.StubSkills{Syntax: agent.SkillSyntax{Sigil: "$", Position: agent.SkillLeading}},
 		)
@@ -426,6 +429,7 @@ func TestAgentsReportSkillCapabilities(t *testing.T) {
 		"claude":               {"/", "leading"},
 		"codex":                {"$", "anywhere"},
 		"cursor":               {"/", "anywhere"},
+		"copilot":              {"", ""},
 		agenttest.NoSkillsName: {"", ""},
 		agenttest.SkillsName:   {"$", "leading"},
 	} {
@@ -442,6 +446,7 @@ func TestAgentsReportSkillCapabilities(t *testing.T) {
 	for name, want := range map[string]bool{
 		"claude":               true,
 		"codex":                true,
+		"copilot":              false,
 		agenttest.NoSkillsName: false,
 		agenttest.SkillsName:   true,
 	} {
@@ -452,7 +457,7 @@ func TestAgentsReportSkillCapabilities(t *testing.T) {
 			t.Errorf("%s supports_skill_listing = %v, want %v", name, *v, want)
 		}
 	}
-	for _, name := range []string{"claude", "codex", "cursor"} {
+	for _, name := range []string{"claude", "codex", "cursor", "copilot"} {
 		if got[name].SupportsSkillListing == nil {
 			t.Errorf("%s supports_skill_listing = null — the registry was asked", name)
 		}
@@ -473,9 +478,9 @@ func TestAgentsReportSkillCapabilities(t *testing.T) {
 // `FileMentionSyntax`.
 //
 // The point of the table is that the boolean does **not** separate the
-// shipped adapters and `expands` does: all three implement `FileMentioner`
-// since task 126.3, and §9.1 states that expansion, not the interface, is
-// the honest capability statement. The sigil and position are pinned
+// shipped adapters and `expands` does: all four implement `FileMentioner`
+// (copilot since task 138.13), and §9.1 states that expansion, not the
+// interface, is the honest capability statement. The sigil and position are pinned
 // literally, since a client inserts the sigil verbatim. The false legs are
 // `agenttest.StubNoMentions`, never a shipped adapter — a refusal pinned to
 // a real CLI inverts itself the day that CLI changes.
@@ -489,6 +494,7 @@ func TestAgentsReportFileMentionCapabilities(t *testing.T) {
 			claude.New(func() string { return fake }),
 			codex.New(func() string { return "/nonexistent/codex-not-here" }),
 			cursor.New(func() string { return "/nonexistent/cursor-agent-not-here" }),
+			copilot.New(func() string { return "/nonexistent/copilot-not-here" }),
 			agenttest.StubNoMentions{},
 		)
 	}
@@ -515,12 +521,14 @@ func TestAgentsReportFileMentionCapabilities(t *testing.T) {
 		position string
 		expands  bool
 	}
-	// claude expands an `@path` in the argv vincent builds; codex and cursor
-	// leave the model to read the path with a tool (§5.5, §9.2, §9.3, §9.7).
+	// claude expands an `@path` in the argv vincent builds; codex, cursor and
+	// copilot leave the model to read the path with a tool (§5.5, §9.2, §9.3,
+	// §9.7, §9.9).
 	for name, want := range map[string]mention{
 		"claude":                 {true, "@", "anywhere", true},
 		"codex":                  {true, "@", "anywhere", false},
 		"cursor":                 {true, "@", "anywhere", false},
+		"copilot":                {true, "@", "anywhere", false},
 		agenttest.NoMentionsName: {false, "", "", false},
 	} {
 		a, ok := got[name]
@@ -545,8 +553,8 @@ func TestAgentsReportFileMentionCapabilities(t *testing.T) {
 		}
 	}
 
-	// A row the registry cannot answer for: the catalog probes all four
-	// adapters, the registry knows only claude.
+	// A row the registry cannot answer for: the catalog probes every
+	// adapter, the registry knows only claude.
 	known := agent.NewRegistry(claude.New(func() string { return fake }))
 	for _, a := range servedAgentsFrom(t, newReg(), known) {
 		if a.Name == "claude" {

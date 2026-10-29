@@ -40,9 +40,9 @@ type agentResponse struct {
 	SkillPosition *string `json:"skill_position"`
 	// SupportsFileMentions is whether this adapter implements file mentions
 	// at all (§9.1, §9.6, task 126): `agent.CanMentionFiles`. It is `true`
-	// on all three shipped adapters and so separates none of them — it is
+	// on all four shipped adapters and so separates none of them — it is
 	// here so a client can tell "cannot mention" from "nobody can say" the
-	// day a fourth adapter lacks the interface, exactly as supports_resume
+	// day a fifth adapter lacks the interface, exactly as supports_resume
 	// carries a fact every adapter agrees on today. Null for the reason
 	// supports_resume is: no registry.
 	SupportsFileMentions *bool `json:"supports_file_mentions"`

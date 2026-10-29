@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (9/17)
+**Status:** 🔄 in progress (10/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -263,6 +263,59 @@ holds only the `firstLaunchAt` the first run of any kind writes, no
 `settings.json` was created, and the rest is logs, session state and the
 session store. §9.9 records it.
 
+### Invocation and mention captures (138.13, 2026-10-29)
+
+Three more runs of the pinned 1.0.105 on **darwin/arm64**, with 138.12's
+install discipline (npm package in a throwaway prefix, its native binary
+invoked directly) and 138.1's run discipline (`--no-auto-update`,
+`COPILOT_AUTO_UPDATE=false`, stdin prompt, command line `J`). `HOME` and
+`COPILOT_HOME` were both throwaway directories, the latter holding
+`<COPILOT_HOME>/skills/fixture-greeting/SKILL.md` (replies `FIXTURE GREETING
+OK`); the operator's token was passed as `GH_TOKEN` in the child's environment
+only. The throwaway repo's `README.md` begins `Zebra marmalade lighthouse
+4417`. No run wrote a local path to stdout, so nothing needed scrubbing; the
+same grep found zero hits and every `.jsonl` parses under `jq -c .`. One
+premium request each.
+
+A fourth run, `mention_tools_1.0.105.jsonl`, was added after review (PR #878,
+F1) to observe the tools-allowed fallback rather than assume it: the same
+discipline, an empty `COPILOT_HOME`, and the same repo. It is the one run here
+that wrote a local path — the `view` call's argument and its diff — which was
+scrubbed to `/tmp/copilot-fixture/repo`, the 138.1 spelling; the grep then
+found zero hits.
+
+| File | Prompt (stdin) | Exit |
+|---|---|---|
+| `skill_invoke_leading_1.0.105.jsonl` | `/fixture-greeting` | 0 |
+| `skill_invoke_mid_1.0.105.jsonl` | `Please run /fixture-greeting now.` | 0 |
+| `mention_1.0.105.jsonl` | `What is the first line of @README.md? Do not use any tools.` | 0 |
+| `mention_tools_1.0.105.jsonl` | `What is the first line of @README.md?` | 0 |
+
+**Observations.**
+
+- `/name` on stdin is **not** recognized by the CLI, leading or mid-message.
+  `user.message.data.transformedContent` is the prompt as typed behind the
+  `<current_datetime>` preamble, with no skill content. The skill ran in both
+  only because the model called its `skill` tool
+  (`arguments: {skill: "fixture-greeting"}`, telemetry `skillSource:
+  "personal-copilot"`, `found: "true"`) — the same model-chosen call
+  `skill_1.0.105.jsonl` shows for a prompt that names the skill in prose. So
+  copilot is not a `SkillInvoker` (decision B), and §9.9 says why.
+- No `skill.invoked` and no `session.skills_loaded` on stdout, so nothing maps
+  to `EventSkill` (decision E) and copilot is not a `SkillLister` (decision D).
+- `@README.md` is **not** expanded: `transformedContent` carries the mention
+  as typed and none of the file, no tool ran, and the answer was "I can't
+  determine the first line of @README.md without reading the file". So
+  copilot is a `FileMentioner` with `Expands: false` (decision C), `@`
+  anywhere, never quoted.
+- With tools allowed (`mention_tools_1.0.105.jsonl`), `transformedContent`
+  again carries `@README.md` as typed and none of the file; the model made
+  one `view` call on `/tmp/copilot-fixture/repo/README.md` with `view_range
+  [1, 1]` and answered `Zebra marmalade lighthouse 4417`. That is §5.5's
+  fallback on copilot, observed: an unexpanded mention is still worth
+  sending (task 126 decision 6). `TestMentionFallbackReadsThePath` pins it.
+- No new event types: all four carry only types the inventory below lists.
+
 ## Event inventory
 
 Every distinct `type` across the `.jsonl` fixtures, with its total count and
@@ -406,8 +459,12 @@ its code makes true, in its own pull request.
   `Link` shown as `copilot (reads store)`, a slugless copilot row in the
   install table, `skill.PlanInstall` for `--agent copilot`, and the store
   captures above. ✓ 2026-10-29
-- [ ] **138.13** ([#865](https://github.com/lezli01/vincent/issues/865)) `SkillInvoker`, `FileMentioner`, m14 legs 12 and 13.
-  Depends: 138.11.
+- [x] **138.13** ([#865](https://github.com/lezli01/vincent/issues/865)) `SkillInvoker`, `FileMentioner`, m14 legs 12 and 13.
+  Depends: 138.11. The captures above decided both: `/name` on stdin is
+  prose, so copilot is neither a `SkillInvoker` nor a `SkillLister` and
+  produces no `agent.skill`; it is a `FileMentioner` with `@`, `anywhere`,
+  `Expands: false`. m14 leg 12f pins the two `unsupported` verdicts and a
+  verbatim `/gate-skill`; leg 13f the mention payload on copilot's stdin. ✓ 2026-10-29
 - [ ] **138.14** ([#866](https://github.com/lezli01/vincent/issues/866)) The `skills/vincent-workflows` runtime text and the
   built-in re-read. Depends: 138.10, 138.6.
 - [ ] **138.15** ([#867](https://github.com/lezli01/vincent/issues/867)) Complete §9.9 and amend the three-adapter prose.

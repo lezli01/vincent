@@ -332,8 +332,8 @@ chat_skills() {
   echo "== 12. the skills a chat's agent loads, listed and invoked (task 124.15)"
   # One daemon for the whole leg. FAKEAGENT_SCENARIO=skill-human is the claude
   # scenario that replays a `/name` invocation the way claude 2.1.277 does
-  # under --replay-user-messages; the codex and cursor dialects do not know
-  # the name and fall through to their success scenarios, and the claude
+  # under --replay-user-messages; the codex, cursor and copilot dialects do
+  # not know the name and fall through to their success scenarios, and the claude
   # listing probe answers `initialize` ahead of any scenario at all.
   #
   # FAKEAGENT_VERSION is the listing floor: the fake reports 2.1.224 by
@@ -341,7 +341,7 @@ chat_skills() {
   # and below it the adapter answers a positive no. Without it every claude
   # assertion here would be about that refusal rather than about the daemon.
   # No shipped adapter has a version floor of its own, so one value serves all
-  # three dialects.
+  # four dialects.
   #
   # The workflow file is written before the start for m12's reason: a task
   # created in the second the file lands can beat the registry's watcher.
@@ -520,7 +520,43 @@ EOF
       and .invoke_sigil == "/" and .invoke_position == "anywhere"' >/dev/null \
     || fail "cursor's verdicts are wrong: $LISTING"
 
-  echo "== 12f. a linked chat lists its task's worktree, and invokes on its first turn"
+  echo "== 12f. copilot neither lists nor invokes, and takes /name verbatim"
+  # On 1.0.105 a `/name` on stdin reaches the model as prose and the skill
+  # runs only if the model calls its own `skill` tool (§9.9, task 138.13), so
+  # copilot is no SkillInvoker: no syntax to offer, and both verdicts are a
+  # positive no. The message still reaches its stdin byte for byte, and
+  # nothing invents an invocation from the text. The copilot dialect does not
+  # know skill-human and falls through to its success scenario, whose
+  # user.message echoes stdin as the real CLI's does.
+  COPILOT_CHAT="$(api POST /chats \
+    -d "{\"project_id\": $SKILL_PROJECT_ID, \"title\": \"copilot skills\", \"agent\": \"copilot\"}")" \
+    || fail "creating the copilot skills chat failed"
+  COPILOT_CHAT_ID="$(printf '%s' "$COPILOT_CHAT" | jq -r .id)"
+  LISTING="$(api GET "/chats/$COPILOT_CHAT_ID/skills")"
+  printf '%s' "$LISTING" | jq -e '
+    .list_verdict == "unsupported" and (.unavailable_reason | length) > 0
+      and .skills == [] and .invoke_verdict == "unsupported"
+      and .invoke_sigil == "" and .invoke_position == ""' >/dev/null \
+    || fail "copilot's verdicts are wrong: $LISTING"
+  api POST "/chats/$COPILOT_CHAT_ID/send" -d '{"message": "/gate-skill"}' >/dev/null \
+    || fail "the copilot send failed"
+  STATE="$(wait_turn "$COPILOT_CHAT_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the copilot turn is $STATE, want done"
+  curl -sS -o "$TMP/skill-copilot-1.jsonl" -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$COPILOT_CHAT_ID/turns/1/transcript" \
+    || fail "the copilot raw transcript failed"
+  jq -s -e 'any(.[]; .type == "user.message" and .data.content == "/gate-skill")' \
+    < "$TMP/skill-copilot-1.jsonl" >/dev/null \
+    || fail "copilot did not receive /gate-skill unchanged: $(
+      jq -s -r '[.[] | select(.type == "user.message") | .data.content] | join(" | ")' \
+        < "$TMP/skill-copilot-1.jsonl")"
+  curl -sS -o "$TMP/skill-copilot-1.ndjson" -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$COPILOT_CHAT_ID/turns/1/transcript?format=normalized" \
+    || fail "the copilot normalized transcript failed"
+  jq -s -e 'any(.[]; .type == "agent.skill") | not' < "$TMP/skill-copilot-1.ndjson" >/dev/null \
+    || fail "a copilot turn produced an agent.skill record"
+
+  echo "== 12g. a linked chat lists its task's worktree, and invokes on its first turn"
   SKILL_TASK_PROJECT_ID="$(api POST /projects \
     -d "{\"path\": \"$(hostpath "$SKILL_TASK_REPO")\"}" | jq -r .id)"
   [[ -n "$SKILL_TASK_PROJECT_ID" && "$SKILL_TASK_PROJECT_ID" != "null" ]] \
@@ -565,7 +601,7 @@ EOF
     || fail "the linked first turn reported no human invocation of task-skill: $(
       jq -r .type < "$TMP/skill-linked-1.ndjson" | sort | uniq -c)"
 
-  echo "== 12g. a terminal chat has no next turn to list for"
+  echo "== 12h. a terminal chat has no next turn to list for"
   CODE="$(api_status POST "/chats/$LINKED_CHAT_ID/close")"
   [[ "$CODE" == "200" ]] || fail "closing the linked chat answered $CODE: $(cat "$TMP/body.json")"
   CODE="$(api_status GET "/chats/$LINKED_CHAT_ID/skills")"
@@ -579,7 +615,7 @@ EOF
   REASON="$(jq -r .error.code < "$TMP/body.json")"
   [[ "$REASON" == "invalid_state" ]] || fail "the archived refusal is $REASON, want invalid_state"
 
-  echo "== 12h. the CLI: the same names, and a leading / delivered byte for byte"
+  echo "== 12i. the CLI: the same names, and a leading / delivered byte for byte"
   CLI_NAMES="$("$VINCENT" chat skills "$SKILL_CHAT_ID" --json | jq -r '[.skills[].name] | join(",")')" \
     || fail "vincent chat skills failed"
   API_NAMES="$(api GET "/chats/$SKILL_CHAT_ID/skills" | jq -r '[.skills[].name] | join(",")')"
@@ -741,6 +777,30 @@ chat_mention_passthrough() {
       jq -s -r '[.[] | select(.type == "user") | .message.content[0].text] | join(" | ")' \
         < "$TMP/mention-cursor-1.jsonl")"
 
+  echo "== 13f. copilot receives the same payload on its own stdin"
+  # copilot does not expand the mention (§9.9) and vincent does not either:
+  # the copilot dialect echoes stdin back as its user.message, as 1.0.105
+  # does, so this assertion is exact.
+  COPILOT_MENTION_ID="$(api POST /chats \
+    -d "{\"project_id\": $MENTION_PROJECT_ID, \"title\": \"copilot mentions\", \"agent\": \"copilot\"}" \
+    | jq -r .id)"
+  [[ -n "$COPILOT_MENTION_ID" && "$COPILOT_MENTION_ID" != "null" ]] \
+    || fail "creating the copilot mentions chat failed"
+  api POST "/chats/$COPILOT_MENTION_ID/send" \
+    -d "$(jq -n --arg m "$MSG" '{message: $m}')" >/dev/null \
+    || fail "the copilot mention send failed"
+  STATE="$(wait_turn "$COPILOT_MENTION_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the copilot mention turn is $STATE, want done"
+  curl -sS -o "$TMP/mention-copilot-1.jsonl" -H "Authorization: Bearer $TOKEN" \
+    "$BASE/chats/$COPILOT_MENTION_ID/turns/1/transcript" \
+    || fail "the copilot raw transcript failed"
+  jq -s -e --arg want "$MSG" '
+    any(.[]; .type == "user.message" and .data.content == $want)' \
+    < "$TMP/mention-copilot-1.jsonl" >/dev/null \
+    || fail "copilot did not receive the message unchanged: $(
+      jq -s -r '[.[] | select(.type == "user.message") | .data.content] | join(" | ")' \
+        < "$TMP/mention-copilot-1.jsonl")"
+
   unset FAKEAGENT_SCENARIO
   unset FAKEAGENT_PROMPT_FILE
 }
@@ -896,7 +956,7 @@ EOF
   printf '%s' "$LISTING" | jq -e --arg dir "$FILES_TASK_WORKTREE" '
     .work_dir == $dir and any(.files[]; .path == "task-only.txt")' >/dev/null \
     || fail "the linked chat did not list its task's worktree: $LISTING"
-  # The other project's free chat is the control, leg 12f's shape: same
+  # The other project's free chat is the control, leg 12g's shape: same
   # daemon, same adapter, a different directory and so a different listing.
   api GET "/chats/$FILES_CHAT_ID/files" \
     | jq -e 'any(.files[]; .path == "task-only.txt") | not' >/dev/null \

@@ -45,6 +45,16 @@ list with the user-facing context a commit subject cannot carry.
   one that is not, saying to install it for another agent first. Copilot
   with other agents installs for those as before.
 
+- **Copilot chats take `@` file mentions, and say they invoke no skills.**
+  `GET /v1/agents` and `vincent agents` now report copilot's `@path` mention
+  syntax — recognized anywhere in a message, not expanded by the CLI, so the
+  model reads the path itself — and the TUI's `@` picker offers files in a
+  copilot chat. Copilot answers `unsupported` for both listing and invoking
+  skills on a chat's skills route: GitHub Copilot CLI 1.0.105 leaves a
+  `/name` in a headless prompt to the model rather than running the skill
+  itself, so vincent offers no skill picker for it. A `/name` you type still
+  reaches the CLI unchanged.
+
 - **Handoffs in the TUI.** The issues board shows a hand-off card's delivery
   kind and its handoff marker (`claimed (H7)`, `waiting`, `delivered`, with
   `· paused` while the claiming task is paused) and `idle` on finished work

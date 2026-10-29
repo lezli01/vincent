@@ -121,7 +121,7 @@ func agentNotes(a apiclient.Agent) []string {
 		notes = append(notes, "no skill listing")
 	}
 	// The mention capability's bad news is expansion, never the interface
-	// (§9.1, task 126): all three shipped adapters mention, and only some
+	// (§9.1, task 126): all four shipped adapters mention, and only some
 	// put the file in front of the model themselves. supports_file_mentions
 	// gets no note for the reason a resuming adapter gets none.
 	if a.CannotExpandMentions() {

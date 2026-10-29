@@ -281,7 +281,7 @@ func TestChatFilesCommandTruncatedWarnsAtExitZero(t *testing.T) {
 // An adapter that is not a FileMentioner is an empty sigil, not a refusal
 // (task 126 decision 38): --mention prints no rows and one note on stderr,
 // and the command still exits 0. This is the branch the gate cannot reach,
-// since all three shipped adapters mention files.
+// since all four shipped adapters mention files.
 func TestChatFilesCommandWithoutAMentionCapableAdapter(t *testing.T) {
 	h := newChatFilesLive(t)
 	chat := h.addFilesChat(t, agenttest.NoMentionsName, filesRepo(t), chatstate.Idle)
