@@ -259,7 +259,7 @@ func TestDefaultContainerMountsAgentConfigUnderTheVincentHome(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	want := map[string]string{}
-	for _, dir := range []string{".claude", ".codex", ".cursor"} {
+	for _, dir := range []string{".claude", ".codex", ".cursor", ".copilot"} {
 		p := filepath.Join(home, dir)
 		if err := os.Mkdir(p, 0o700); err != nil {
 			t.Fatal(err)

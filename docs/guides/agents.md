@@ -601,12 +601,15 @@ the skill list of a chat opened on such a task, which is read by the image's
 CLI inside the container, as above.
 
 **Logging in.** [`mount_agent_config`](../reference/configuration.md#container),
-on by default, mounts your `~/.claude`, `~/.codex` and `~/.cursor` read-write
-under the container's `HOME`, so a CLI you are logged in to on the host is
-logged in inside the container too. There is one gap: **claude on macOS** keeps
+on by default, mounts your `~/.claude`, `~/.codex`, `~/.cursor` and `~/.copilot`
+read-write under the container's `HOME`, so a CLI you are logged in to on the
+host is logged in inside the container too. There are two gaps. **Claude on macOS** keeps
 its login in the Keychain, not in `~/.claude`, and the container cannot reach
 it. On a Mac, pass `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` to the container through
-[`environment`](../reference/configuration.md#environment). Codex's
+[`environment`](../reference/configuration.md#environment). Copilot has the
+same gap wherever it keeps its login in the operating system's credential
+store: pass `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN`, or keep
+plain-text credentials in `~/.copilot`. Codex's
 `auth.json`, and claude's own credentials file on Linux, carry over as they are.
 
 **`vincent status` does not work inside a container.** The image has no vincent

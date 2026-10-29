@@ -241,11 +241,12 @@ type ConfigDefaults struct {
 	BackgroundWait string `json:"background_wait"`
 }
 
-// ConfigAgents are the three §9 adapters' configured binaries.
+// ConfigAgents are the four §9 adapters' configured binaries.
 type ConfigAgents struct {
-	Claude AgentPath `json:"claude"`
-	Codex  AgentPath `json:"codex"`
-	Cursor AgentPath `json:"cursor"`
+	Claude  AgentPath `json:"claude"`
+	Codex   AgentPath `json:"codex"`
+	Cursor  AgentPath `json:"cursor"`
+	Copilot AgentPath `json:"copilot"`
 }
 
 // AgentPath is a configured adapter binary. An empty Path means the config
@@ -458,9 +459,10 @@ type ConfigEnvironmentPatch struct {
 
 // ConfigAgentsPatch names the adapters whose paths are being changed.
 type ConfigAgentsPatch struct {
-	Claude *AgentPathPatch `json:"claude,omitempty"`
-	Codex  *AgentPathPatch `json:"codex,omitempty"`
-	Cursor *AgentPathPatch `json:"cursor,omitempty"`
+	Claude  *AgentPathPatch `json:"claude,omitempty"`
+	Codex   *AgentPathPatch `json:"codex,omitempty"`
+	Cursor  *AgentPathPatch `json:"cursor,omitempty"`
+	Copilot *AgentPathPatch `json:"copilot,omitempty"`
 }
 
 // AgentPathPatch is one adapter's binary. An empty string clears the pin.

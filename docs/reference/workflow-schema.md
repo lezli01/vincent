@@ -290,7 +290,7 @@ Every key here is also settable per step, where it wins.
 
 | Key | Type | Default | Applies to |
 |---|---|---|---|
-| `agent` | `claude` \| `codex` \| `cursor` | daemon default | agent steps |
+| `agent` | `claude` \| `codex` \| `cursor` \| `copilot` | daemon default | agent steps |
 | `model` | string | adapter default | agent steps |
 | `effort` | string | adapter default | agent steps (**ignored by cursor**) |
 | `permission_mode` | `full-auto` \| `restricted` | `full-auto` | agent steps; `restricted` also gates which agents may run the step |
@@ -370,7 +370,7 @@ Runs an agent CLI headlessly in the worktree.
 | Key | Type | Required | Notes |
 |---|---|---|---|
 | `prompt` | string | ✅ | Go `text/template` |
-| `agent` | string | | `claude`, `codex` or `cursor` |
+| `agent` | string | | `claude`, `codex`, `cursor` or `copilot` |
 | `model` | string | | Adapter-native id or alias |
 | `effort` | string | | Adapter-native. Cursor has none — it lives in the model id |
 | `permission_mode` | string | | `full-auto` (default) or `restricted`. `restricted` needs an adapter that can restrict on this host — cursor cannot on Windows, and a task whose restricted step resolves there is refused at creation |

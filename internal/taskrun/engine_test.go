@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -116,6 +117,7 @@ func newEngineHarnessWith(
 		claude.New(func() string { return fake }),
 		codex.New(func() string { return fake }),
 		cursor.New(func() string { return fake }),
+		copilot.New(func() string { return fake }),
 	)
 	rd := Deps{
 		Store:     st,
@@ -942,6 +944,89 @@ steps:
 	}
 	if run.CostUSD != nil {
 		t.Errorf("cost = %v, want nil (cursor reports no cost)", *run.CostUSD)
+	}
+}
+
+// TestEngineRunsCopilotStep is task 138.9's engine leg: a copilot step runs
+// through the real engine against the fake's copilot dialect, the resolved
+// model and effort reach the spawned argv, the transcript is copilot's own
+// session-event JSONL, and the agent's edit lands on the task branch.
+func TestEngineRunsCopilotStep(t *testing.T) {
+	argvFile := filepath.Join(t.TempDir(), "argv")
+	t.Setenv("FAKEAGENT_SCENARIO", "success")
+	t.Setenv("FAKEAGENT_EDIT_FILE", "README.md")
+	t.Setenv("FAKEAGENT_ARGV_FILE", argvFile)
+	h := newEngineHarness(t)
+	task := h.createTask(t, `name: copilot-run
+steps:
+  - id: build
+    type: agent
+    agent: copilot
+    model: gpt-fake-5
+    effort: high
+    max_retries: 0
+    prompt: |
+      Implement {{.Task.Title}} with copilot
+  - id: commit
+    type: command
+    run: git commit -am "copilot edit"
+`)
+	h.start(t)
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task = %s (%s), want done", done.State, done.BlockReason)
+	}
+	runs := h.stepRuns(t, task.ID)
+	if len(runs) != 2 {
+		t.Fatalf("step runs = %d, want 2: %+v", len(runs), runs)
+	}
+	run := runs[0]
+	if run.State != store.StepSucceeded {
+		t.Fatalf("step = %s (%s), want succeeded", run.State, run.FailureReason)
+	}
+	if run.Agent != "copilot" || run.Model != "gpt-fake-5" || run.Effort != "high" {
+		t.Errorf("resolved triple = %s/%s/%s, want copilot/gpt-fake-5/high",
+			run.Agent, run.Model, run.Effort)
+	}
+	if !strings.Contains(run.ResultSummary, "Implement engine test with copilot") {
+		t.Errorf("result summary %q does not contain the rendered prompt", run.ResultSummary)
+	}
+	// Tokens are the fake's root usage checkpoint's, as task 138.7 reads
+	// them (§9.9); premium requests never become a cost.
+	if run.InputTokens == nil || *run.InputTokens != 100 || run.OutputTokens == nil || *run.OutputTokens != 42 {
+		t.Errorf("tokens = %v/%v, want the checkpoint's 100/42", run.InputTokens, run.OutputTokens)
+	}
+	if run.CostUSD != nil {
+		t.Errorf("cost = %v, want nil (premium requests never become a cost)", *run.CostUSD)
+	}
+
+	argv, err := os.ReadFile(argvFile)
+	if err != nil {
+		t.Fatalf("read argv record: %v", err)
+	}
+	for _, want := range []string{"--model gpt-fake-5", "--reasoning-effort high", "--output-format json"} {
+		if !strings.Contains(string(argv), want) {
+			t.Errorf("spawned argv %q does not carry %q", argv, want)
+		}
+	}
+
+	transcript, err := os.ReadFile(run.TranscriptPath)
+	if err != nil {
+		t.Fatalf("read transcript: %v", err)
+	}
+	for _, want := range []string{`"type":"assistant.message"`, `"type":"result"`} {
+		if !strings.Contains(string(transcript), want) {
+			t.Errorf("transcript does not carry copilot's %s line", want)
+		}
+	}
+
+	out, err := exec.Command("git", "-C", h.repo, "show", "--name-only", "--format=", done.BranchName).Output()
+	if err != nil {
+		t.Fatalf("git show %s: %v", done.BranchName, err)
+	}
+	if strings.TrimSpace(string(out)) != "README.md" {
+		t.Errorf("branch %s tip changed %q, want the agent's README.md edit", done.BranchName, out)
 	}
 }
 

@@ -305,6 +305,10 @@ func configKeys() []configKey {
 			func(p *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Agents: &apiclient.ConfigAgentsPatch{Cursor: &apiclient.AgentPathPatch{Path: p}}}
 			}),
+		agentPathKey("copilot", func(c apiclient.Config) string { return c.Agents.Copilot.Path },
+			func(p *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Agents: &apiclient.ConfigAgentsPatch{Copilot: &apiclient.AgentPathPatch{Path: p}}}
+			}),
 		intKey("parallel.max_parallel", "parallel lanes", "concurrent verifications inside one parallel step (§7.5)",
 			func(c apiclient.Config) int { return c.Parallel.MaxParallel },
 			func(n int) apiclient.ConfigPatch {
@@ -688,9 +692,10 @@ func defaultClientConfig() apiclient.Config {
 			Set:     d.Environment.Set,
 		},
 		Agents: apiclient.ConfigAgents{
-			Claude: apiclient.AgentPath{Path: d.Agents.Claude.Path},
-			Codex:  apiclient.AgentPath{Path: d.Agents.Codex.Path},
-			Cursor: apiclient.AgentPath{Path: d.Agents.Cursor.Path},
+			Claude:  apiclient.AgentPath{Path: d.Agents.Claude.Path},
+			Codex:   apiclient.AgentPath{Path: d.Agents.Codex.Path},
+			Cursor:  apiclient.AgentPath{Path: d.Agents.Cursor.Path},
+			Copilot: apiclient.AgentPath{Path: d.Agents.Copilot.Path},
 		},
 		Parallel: apiclient.ConfigParallel{MaxParallel: d.Parallel.MaxParallel},
 		FanOut:   apiclient.ConfigFanOut{MaxDepth: d.FanOut.MaxDepth, MaxTasks: d.FanOut.MaxTasks},

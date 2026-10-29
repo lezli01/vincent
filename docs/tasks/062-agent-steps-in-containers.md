@@ -211,7 +211,12 @@ and where the agent configuration directories are mounted.
    claude's `.credentials.json` do carry over). `config.Default()`, §12.3's
    listing, §16's credentials bullet and the configuration and security pages
    flip back, with dated notes where the page carries them; a `config.yaml`
-   that sets the key keeps its value. **The alternative it beat:** mounting the
+   that sets the key keeps its value. *Amended 2026-10-29 (task 138.9, issue
+   #861):* `~/.copilot` is mounted beside them. Copilot keeps its login in
+   the OS credential store where one exists, which does not cross the mount,
+   so a containerized copilot step needs plain-text credentials under
+   `~/.copilot` or `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` through
+   `environment`. **The alternative it beat:** mounting the
    directories at their own host paths and leaving HOME to the image, which on
    Linux points the CLI at a HOME the mounts are not in.
 4. **`vincent status` inside a container is out of scope, and documented.** The

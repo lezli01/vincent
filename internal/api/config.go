@@ -146,9 +146,10 @@ type agentPath struct {
 // adapter set is fixed by §9, and a map made "which adapters exist" look like
 // a runtime answer while also giving PATCH no shape to validate against.
 type configAgents struct {
-	Claude agentPath `json:"claude"`
-	Codex  agentPath `json:"codex"`
-	Cursor agentPath `json:"cursor"`
+	Claude  agentPath `json:"claude"`
+	Codex   agentPath `json:"codex"`
+	Cursor  agentPath `json:"cursor"`
+	Copilot agentPath `json:"copilot"`
 }
 
 // configEnvironment is §12.3's child-process policy. Inherit is a union in
@@ -297,9 +298,10 @@ func configBody(cfg config.Config) configResponse {
 			Set:     stringMap(cfg.Environment.Set),
 		},
 		Agents: configAgents{
-			Claude: agentPath{Path: cfg.Agents.Claude.Path},
-			Codex:  agentPath{Path: cfg.Agents.Codex.Path},
-			Cursor: agentPath{Path: cfg.Agents.Cursor.Path},
+			Claude:  agentPath{Path: cfg.Agents.Claude.Path},
+			Codex:   agentPath{Path: cfg.Agents.Codex.Path},
+			Cursor:  agentPath{Path: cfg.Agents.Cursor.Path},
+			Copilot: agentPath{Path: cfg.Agents.Copilot.Path},
 		},
 		Parallel: configParallel{MaxParallel: cfg.Parallel.MaxParallel},
 		FanOut:   configFanOut{MaxDepth: cfg.FanOut.MaxDepth, MaxTasks: cfg.FanOut.MaxTasks},
@@ -452,9 +454,10 @@ type environmentPatch struct {
 }
 
 type agentsPatch struct {
-	Claude *agentPatch `json:"claude"`
-	Codex  *agentPatch `json:"codex"`
-	Cursor *agentPatch `json:"cursor"`
+	Claude  *agentPatch `json:"claude"`
+	Codex   *agentPatch `json:"codex"`
+	Cursor  *agentPatch `json:"cursor"`
+	Copilot *agentPatch `json:"copilot"`
 }
 
 type agentPatch struct {
@@ -601,7 +604,7 @@ func (p configPatch) sets() []config.Set {
 		}
 	}
 	if a := p.Agents; a != nil {
-		for name, ap := range map[string]*agentPatch{"claude": a.Claude, "codex": a.Codex, "cursor": a.Cursor} {
+		for name, ap := range map[string]*agentPatch{"claude": a.Claude, "codex": a.Codex, "cursor": a.Cursor, "copilot": a.Copilot} {
 			if ap != nil {
 				addIfString(add, "agents."+name+".path", ap.Path)
 			}

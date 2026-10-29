@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -305,8 +306,10 @@ func TestRunSuccess(t *testing.T) {
 	if !strings.Contains(res.ResultText, "test prompt for success") {
 		t.Errorf("ResultText %q does not echo the stdin prompt", res.ResultText)
 	}
-	if res.InputTokens != 0 || res.OutputTokens != 0 || res.CostUSD != nil {
-		t.Errorf("tokens %d/%d cost %v, want unreported until task 138.7",
+	// The fake's root usage checkpoint reports 100 in, 42 out (task 138.7);
+	// premium requests never become a cost.
+	if res.InputTokens != 100 || res.OutputTokens != 42 || res.CostUSD != nil {
+		t.Errorf("tokens %d/%d cost %v, want the checkpoint's 100/42 and no cost",
 			res.InputTokens, res.OutputTokens, res.CostUSD)
 	}
 	if !uuidRe.MatchString(res.SessionID) {
@@ -319,8 +322,8 @@ func TestRunSuccess(t *testing.T) {
 	for _, ev := range events {
 		counts[ev.Type]++
 	}
-	if counts[agent.EventOutput] < 2 || counts[agent.EventResult] != 1 || counts[agent.EventUsage] != 0 {
-		t.Errorf("event mix %v, want outputs, exactly 1 result and no usage", counts)
+	if counts[agent.EventOutput] < 2 || counts[agent.EventResult] != 1 || counts[agent.EventUsage] != 1 {
+		t.Errorf("event mix %v, want outputs, exactly 1 result and 1 usage checkpoint", counts)
 	}
 }
 
@@ -539,5 +542,26 @@ func TestAssemble(t *testing.T) {
 				t.Errorf("Failure = %+v, want %q", res.Failure, tt.failure)
 			}
 		})
+	}
+}
+
+// TestAssembleKeepsTheRunsAccount: what the stream assembled about the run's
+// spend reaches Wait's result (task 138.7), and cost stays unreported.
+func TestAssembleKeepsTheRunsAccount(t *testing.T) {
+	const id = "11111111-2222-4333-8444-555555555555"
+	terminal := &agent.RunResult{
+		SessionID: id, InputTokens: 1, OutputTokens: 2, CacheReadTokens: 3, CacheCreationTokens: 4,
+		ReasoningOutputTokens: 5, ModelUsage: []agent.ModelUsage{{Model: "m", InputTokens: 1}},
+		Duration: time.Second, APIDuration: time.Millisecond,
+	}
+	res := assemble(0, id, terminal, nil, "")
+	got := agent.RunResult{
+		SessionID: res.SessionID, InputTokens: res.InputTokens, OutputTokens: res.OutputTokens,
+		CacheReadTokens: res.CacheReadTokens, CacheCreationTokens: res.CacheCreationTokens,
+		ReasoningOutputTokens: res.ReasoningOutputTokens, ModelUsage: res.ModelUsage,
+		Duration: res.Duration, APIDuration: res.APIDuration,
+	}
+	if !reflect.DeepEqual(got, *terminal) || res.CostUSD != nil {
+		t.Errorf("assembled %+v, want the terminal's account %+v and no cost", res, *terminal)
 	}
 }

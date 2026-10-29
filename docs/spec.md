@@ -4318,7 +4318,9 @@ recording and discarding:
   `Patch` carried by the same `EventToolResult`, the way task 070 carried a
   command's output on `Event.Output`. No event type of its own exists, because
   no dialect sends a patch on a line of its own. Only claude fills it (§9.2);
-  codex and cursor never do (§9.3, §9.7).
+  codex and cursor never do (§9.3, §9.7). *Amended 2026-10-29 (task 138.7):*
+  copilot fills it too, from an `edit` or `apply_patch` completion's
+  `diff --git` (§9.9).
 - **`Thinking`** carries the model's reasoning. Adapters emit it only for
   **whole blocks**; a dialect that streams token-level deltas coalesces them
   itself and emits when the block closes. See the §9.7 amendment for why that
@@ -4349,7 +4351,10 @@ and last tool) and `EventSubagentFinished` (`subagent_finished`: status, the
 final tally and a one-line summary). The records the sub-run itself produces
 stay ordinary events stamped with `ParentCallID`; these three are not stamped.
 Only claude produces them. codex and cursor never do, which §9.3 and §9.7 state
-positively, and nothing synthesizes one from tool calls. Nothing keys on the
+positively, and nothing synthesizes one from tool calls. *Amended 2026-10-29
+(task 138.7):* copilot produces `subagent_started` and `subagent_finished`
+from its `subagent.*` lines and stamps the sub-run's records with
+`ParentCallID`, but never `subagent_progress` (§9.9). Nothing keys on the
 spawning tool's name.
 
 *Amended 2026-09-19 (task 124.2, issue #498).* Two more event types join the
@@ -6410,7 +6415,9 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
 A stub. Task 138 adds a fourth adapter, `copilot`, for the standalone GitHub
 Copilot CLI (npm `@github/copilot`); only the unregistered adapter package is
 built so far (*amended 2026-10, task 138.5*), and nothing in §9.1–§9.8 or
-elsewhere has changed for it. The bullets below are added one at a
+elsewhere has changed for it. *Amended 2026-10-29 (task 138.9, issue #861):*
+the adapter is now registered — see the last bullet — while the
+three-adapter prose elsewhere is still 138.15's to amend. The bullets below are added one at a
 time, each in the pull request whose code makes it true, and task 138's later
 items complete the section. Placed after §9.8 for the reason §9.7 gives: no
 section is renumbered.
@@ -6422,7 +6429,7 @@ section is renumbered.
   inventory and the version findings are in
   [task 138](tasks/138-copilot-adapter.md). Fixtures are re-captured only when
   the adapter's tested versions are bumped.
-- **The adapter exists, unregistered** (*2026-10, task 138.5*).
+- **The adapter exists, unregistered** (*2026-10, task 138.5; superseded 2026-10-29 by 138.9, below*).
   `internal/agent/copilot` implements `agent.Adapter` as `copilot`, file for
   file beside cursor's (§9.7). No daemon, config, TUI or CLI surface reaches it
   yet — registration is 138.9's — so nothing in it is user-visible.
@@ -6520,9 +6527,64 @@ section is renumbered.
   a rate-limited turn may switch models and finish cleanly. Lines carrying
   `agentId` are a subagent's, and its `session.error` or `abort` never decides
   the run's outcome. Every other type is `unknown`, raw line
-  kept. No `usage` event is produced and token and cost fields stay unreported:
-  tokens live only on usage checkpoints and turn ends, which are 138.7's, and
-  `premiumRequests` never becomes cost.
+  kept. *Amended 2026-10, task 138.7:* the stream's other events are
+  normalized as the bullets below describe; `premiumRequests` still never
+  becomes cost.
+- **Usage from the checkpoint, as session totals** (*2026-10, task 138.7*).
+  The root agent's `session.usage_checkpoint` is a `usage` event, and the last
+  one fills the result's tokens from `accountingSnapshot.tokenDetails`:
+  `input` → `InputTokens` (the *uncached* input, as claude's is, §9.2 — input
+  + cache_read + cache_write is the `inputTokens` beside it), `output`,
+  `cache_read` → `CacheReadTokens`, `cache_write` → `CacheCreationTokens`.
+  `ReasoningOutputTokens` is `modelMetrics[*].usage.reasoningTokens` summed,
+  and each `modelMetrics` key is a `ModelUsage` row (sorted by model id; the
+  snapshot is an object), with no cost. A checkpoint carrying `agentId` is
+  never the run's. Tokens come from stdout, never `--usage-output-file`. The
+  `result` line's `usage.sessionDurationMs` and `totalApiDurationMs` are
+  `Duration` and `APIDuration`; `NumTurns` stays 0, because the CLI reports no
+  turn count and counting `assistant.turn_start` would be emulation, and no
+  field carries premium requests or `totalNanoAiu`. The figures are the
+  *session's* totals, subagents included: `resume_1.0.105.jsonl`'s checkpoint
+  reports `totalUserRequests: 2` with the first run's tokens in it. While a
+  resume is refused every run is a fresh session and the figures are the
+  run's; whether a resumed run reports them as they are or as a delta is
+  138.11's to decide.
+- **No run header** (*2026-10, task 138.7*). 1.0.105 writes no cwd and no
+  tool list to stdout: `session.start` goes only to the on-disk log,
+  `session.skills_loaded` is never emitted in JSON mode, and
+  `session.tools_updated` carries only the model. Copilot therefore produces no
+  `run_header`, as codex does not (§9.3); `RunHeader.WorkDir` is the CLI's own
+  report, so it is never filled from the spawn spec.
+- **Thinking, input echo, patches and command output** (*2026-10, task
+  138.7*). `assistant.reasoning`'s whole `content` is `thinking`; its
+  `assistant.reasoning_delta` lines stay `unknown` rather than being coalesced,
+  because the closing line carries the block (task 066's whole blocks). The
+  root agent's `user.message` is an `input_echo` carrying nothing, as cursor's
+  is (§9.7). An `edit` or `apply_patch` completion's
+  `result.detailedContent` `diff --git` rides on its `tool_result` as a
+  `Patch` of the hunks from the first `@@` on; `view` writes a diff too and
+  produces none. A `bash` completion's `result.content`, less the trailing
+  `<shellId: N completed with exit code E>`, rides on its `tool_result` as
+  `Output`, the way codex's does (§9.3), and the result's summary is
+  `exit E` from `shellExecution.exitCode`. Only `bash` is captured — the
+  Windows and Linux shell tools' names are 138.3's — and the live
+  `tool.shell_output` and `tool.execution_partial_result` chunks stay
+  `unknown`: the completion is the durable copy.
+- **Subagents** (*2026-10, task 138.7*). `subagent.started` is
+  `subagent_started` (the spawning `toolCallId`, `agentType`,
+  `agentDescription`) and `subagent.completed` is `subagent_finished`
+  (`totalToolCalls`, `totalTokens`, `durationMs`). Every later line carrying
+  that subagent's `agentId` is stamped with the spawning call as its
+  `ParentCallID`, so its output, tool calls and results nest under it rather
+  than reading as the root's, and its last message is never the run's answer.
+  `subagent.failed` is in the schema but in no capture, so it stays `unknown`,
+  as do `subagent.selected` and `subagent.configured`.
+- **Pinned absences** (*2026-10, task 138.7*). Over every 1.0.105 capture
+  there is no `run_header`, `plan` (no to-do tool), `subagent_progress`,
+  `conversation_reset`, `input_request` or `input_canceled` (`InputSupport` is
+  `never`), and no `skill` — skill invocation is 138.13's. A test pins every
+  raw type the captures carry to its normalization, so a type nobody mapped
+  fails it.
 - **SIGTERM exits 0** (*2026-10, task 138.5*). On 1.0.105 a terminated run ends
   `agent.interrupted`, `abort`, …, `result{exitCode:0}`. The engine records a
   termination it asked for whatever the exit code, as for every adapter, and
@@ -6562,6 +6624,16 @@ section is renumbered.
   task 003 decision 2 recognizes nothing neither documented nor captured. Such
   a run fails the ordinary way, and `usage_limit_auto_continue` does not apply
   to copilot.
+- **Registered fourth** (*2026-10-29, task 138.9, issue #861*). `builtin.New`
+  lists copilot after cursor, so the daemon, `vincent doctor` and
+  `workflow validate` all reach it, and `/v1/agents` and `/v1/info` list it
+  fourth with `logged_in: null`. `agents.copilot.path` (§12.3) is served and
+  patched by `/v1/config`, edited in the TUI's daemon view and by `vincent
+  config get/set`; empty resolves `copilot` on `PATH`. Under
+  `mount_agent_config` `~/.copilot` is the fourth directory mounted (§12.3).
+  The step record carries the usage checkpoint's tokens as session totals
+  (above, task 138.7) and never a cost. `scripts/138-gate.sh` proves it end
+  to end on all three OSes.
 
 ## 10. Worktree management
 
@@ -7844,6 +7916,7 @@ agents:
   claude: { path: "" }         # "" = resolve from PATH
   codex:  { path: "" }
   cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
+  copilot: { path: "" }        # the standalone `copilot` CLI, never `gh copilot` (§9.9; task 138.9, 2026-10-29)
 github:
   enabled: true                # read GitHub issues and pull requests (§13.2)
   poll_interval: 5m            # import issues and reconcile pull-request links this often; 0 = off (tasks 052, 130.8)
@@ -7876,7 +7949,7 @@ mcp:                           # the §13.4 MCP server (task 057)
 container:                     # run a task's steps in a container (§16, task 061)
   image: ""                    # "" (default) = every step runs on this host
   runtime: docker              # a docker-CLI-compatible binary; only docker is verified in CI
-  mount_agent_config: true     # bind-mount ~/.claude, ~/.codex, ~/.cursor read-write under the vincent home (062.2)
+  mount_agent_config: true     # bind-mount ~/.claude, ~/.codex, ~/.cursor, ~/.copilot read-write under the vincent home (062.2, 138.9)
   network: true                # false drops the container off the network entirely
   extra_mounts: []             # host:container[:ro]; the repo and worktree are mounted already
 tui:                           # view preference; the daemon validates and relays it (§15)
@@ -7960,6 +8033,12 @@ macOS claude keeps its OAuth login in the Keychain**, not in `~/.claude`, so a
 Mac host must supply `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` through
 `environment` for a containerized claude step to authenticate. Codex's
 file-based `auth.json` and Linux claude's `.credentials.json` do carry over.
+*Amended 2026-10-29 (task 138.9, issue #861):* `~/.copilot` is the fourth
+directory mounted. Copilot stores its login in the OS credential store where
+one exists, and that store does not cross the mount, so a containerized
+copilot step authenticates only from plain-text credentials under
+`~/.copilot` or from `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN`
+passed through `environment`.
 The worktree and repository keep their identical paths (task 061 decision 2),
 which is what claude's cwd-keyed session store needs. The `network: false`
 with `mcp.wire_steps: true` refusal returns, **narrowed** to a workflow that
@@ -17068,6 +17147,13 @@ phase: a click on a label switches tabs there exactly as `tab` does.
     through `environment`, and that value is then in the container's
     environment. Codex's `auth.json` and Linux claude's `.credentials.json` are
     files in the mounted directories.*
+    *Amended 2026-10-29 (task 138.9, issue #861): `~/.copilot` is mounted
+    beside them, so its contents are within reach the same way. Copilot keeps
+    its login in the OS credential store where one exists, which does not
+    cross the mount, so a containerized copilot step authenticates from
+    plain-text credentials under `~/.copilot` or from `COPILOT_GITHUB_TOKEN`,
+    `GH_TOKEN` or `GITHUB_TOKEN` through `environment` — and that token is
+    then in the container's environment (§12.3).*
   - **The daemon is reachable.** Every container is created with
     `--add-host=host.docker.internal:host-gateway` whenever it has a network at
     all, so a process inside it can call the daemon's MCP surface — with the

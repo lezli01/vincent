@@ -170,6 +170,10 @@ agents:
   # editor launcher (§9.7).
   cursor:
     path: ""
+  # copilot resolves the standalone "copilot" CLI — not the retired
+  # "gh copilot" extension (§9.9).
+  copilot:
+    path: ""
 
 # How many verifications inside one "parallel" step run at once (§7.5).
 # The step is done when its last lane is, and a lane that fails fails the
@@ -1128,6 +1132,7 @@ agents:
   claude: { path: "" }
   codex:  { path: "/usr/local/bin/codex" }
   cursor: { path: "" }
+  copilot: { path: "" }
 ```
 
 Where to find each adapter's CLI. An empty path resolves the binary from `PATH`;
@@ -1135,7 +1140,9 @@ an explicit path is used as given and **never consults `PATH`**, which makes it
 the standing fix for a CLI the daemon cannot see.
 
 `cursor` resolves the **`cursor-agent`** binary, never `cursor` — that one is the
-editor launcher and would open a GUI.
+editor launcher and would open a GUI. `copilot` resolves the standalone
+**`copilot`** CLI (the npm `copilot.cmd` shim on Windows), never the retired
+`gh copilot` extension.
 
 ### `github`
 
@@ -1368,7 +1375,7 @@ than running on the host.
 **The image is yours.** It must already carry the agent CLI your workflows'
 agent steps resolve to, and `git`. Vincent builds no image, publishes none and
 bundles none — the same posture it takes toward `gh` and `cosign`. The CLI is
-looked up by its plain name (`claude`, `codex`, `cursor-agent`) on the
+looked up by its plain name (`claude`, `codex`, `cursor-agent`, `copilot`) on the
 **image's** `PATH`: [`agents.*.path`](#agents) is a host path and is ignored
 inside the container, and the host does not need the CLI installed at all. An
 image without it fails the step `agent_unavailable`, the same as a missing CLI
@@ -1394,10 +1401,15 @@ such a project by its resolved path (`cd project && pwd -P`).
 CI; `podman` and `nerdctl` are accepted because they take the same argv, which
 is not the same claim as tested.
 
-**`mount_agent_config`** bind-mounts `~/.claude`, `~/.codex` and `~/.cursor`
-into the container **read-write**, and is **on** by default. The agent CLI runs
-in the container and needs them: subscription-based auth takes no key from the
-environment, and cursor persists `--model` to its own config. It also puts your
+**`mount_agent_config`** bind-mounts `~/.claude`, `~/.codex`, `~/.cursor` and
+`~/.copilot` into the container **read-write**, and is **on** by default. The
+agent CLI runs in the container and needs them: subscription-based auth takes no
+key from the environment, and cursor persists `--model` to its own config.
+Copilot keeps its login in the operating system's credential store when one is
+available, and that does not cross the mount: a containerized copilot step
+authenticates only from plain-text credentials under `~/.copilot` or a
+`COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN` passed through
+[`environment`](#environment). It also puts your
 agent credentials within reach of the image and of every containerized step —
 see [the security model](../security-model.md). Turn it off and an agent CLI
 that then cannot authenticate is the expected result. A `config.yaml` that

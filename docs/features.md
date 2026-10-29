@@ -481,8 +481,8 @@ as before.
 
 That covers **agent steps, command steps and every `check:`**. The agent CLI
 runs inside the container, and its transcript, token and cost records and exit
-code are the same as on the host. Its `~/.claude`, `~/.codex` and `~/.cursor`
-are mounted in by default so it can log in, and vincent's own tools still reach
+code are the same as on the host. Its `~/.claude`, `~/.codex`, `~/.cursor` and
+`~/.copilot` are mounted in by default so it can log in, and vincent's own tools still reach
 it. Chats keep running on the host, except a chat opened on a containerized
 task, whose turns run in that task's container.
 

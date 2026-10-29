@@ -269,6 +269,10 @@ func configFields() map[string]configField {
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Agents: &apiclient.ConfigAgentsPatch{Cursor: &apiclient.AgentPathPatch{Path: v}}}
 			}),
+		"agents.copilot.path": str(func(c apiclient.Config) string { return c.Agents.Copilot.Path },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Agents: &apiclient.ConfigAgentsPatch{Copilot: &apiclient.AgentPathPatch{Path: v}}}
+			}),
 		"parallel.max_parallel": intField(
 			func(c apiclient.Config) int { return c.Parallel.MaxParallel },
 			func(n *int) apiclient.ConfigPatch {

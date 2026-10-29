@@ -150,6 +150,10 @@ agents:
   # editor launcher (§9.7).
   cursor:
     path: ""
+  # copilot resolves the standalone "copilot" CLI — not the retired
+  # "gh copilot" extension (§9.9).
+  copilot:
+    path: ""
 
 # How many verifications inside one "parallel" step run at once (§7.5).
 # The step is done when its last lane is, and a lane that fails fails the

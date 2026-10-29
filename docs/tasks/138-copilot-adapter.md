@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (7/17)
+**Status:** 🔄 in progress (8/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -360,9 +360,15 @@ its code makes true, in its own pull request.
   `--help` over a curated floor; models stay free-form; `logged_in` stays
   `null` (open question 3); `unauthenticated` is classified, quota and rate
   limit are not. ✓ 2026-10-29
-- [ ] **138.7** ([#859](https://github.com/lezli01/vincent/issues/859)) Run header, thinking, patches, subagents and usage
+- [x] **138.7** ([#859](https://github.com/lezli01/vincent/issues/859)) Run header, thinking, patches, subagents and usage
   normalized — usage taken over from 138.5, `RunResult` tokens included; the
-  absent events pinned against every fixture. Depends: 138.5.
+  absent events pinned against every fixture. Depends: 138.5. There is no
+  run header: 1.0.105's stdout carries no cwd or tool list, and the spawn
+  spec is not the CLI's report. Tokens come from the root
+  `session.usage_checkpoint`, never `--usage-output-file`, and are session
+  totals; durations from `result.usage`; `NumTurns` stays 0. Shell output
+  and edit patches ride on their `tool_result`; a subagent's lines carry its
+  spawning call as `ParentCallID`. ✓ 2026-10-29
 - [x] **138.8** ([#860](https://github.com/lezli01/vincent/issues/860)) The per-step vincent MCP server through
   `--additional-mcp-config`. Depends: 138.5. Decision 6 settled on the
   inline carrier alone. `TestStartMCPCallbackThroughCmdShim` launches the
@@ -373,13 +379,20 @@ its code makes true, in its own pull request.
   host spawn instead, which wraps a batch file's line in one outer pair of
   quotes (`procx.BatchCmdLine`, §9.1). No `@file` fallback, temp directory
   or sweep was built. `--allow-tool=vincent` rides beside it for 138.10. ✓ 2026-10-29
-- [ ] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
+- [~] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
   container mount, the engine test and `scripts/138-gate.sh` in CI.
-  Depends: 138.5, 138.8.
+  Depends: 138.5, 138.8. Everything is delivered except the real-CLI walk:
+  `builtin.New` registers copilot fourth, `agents.copilot.path` reaches
+  every config surface, `~/.copilot` is mounted, and the gate (scenarios 1,
+  2, 3 and 5; 4 is 138.10's) runs in `gate-group` group 3 on all three OSes.
+  `VINCENT_GATE_AGENT=copilot` against a real, authenticated CLI is
+  human-only and recorded in `docs/gates/138-copilot-gate.md`, still empty.
 - [ ] **138.10** ([#862](https://github.com/lezli01/vincent/issues/862)) §9.4 restricted mode over `--available-tools`, or a
   per-OS refusal; gate scenario 4. Depends: 138.9, 138.3.
 - [ ] **138.11** ([#863](https://github.com/lezli01/vincent/issues/863)) `Resumer`, session-lost classification, m14 leg 2b.
-  Depends: 138.9.
+  Depends: 138.9. Decide whether a resumed run reports the usage checkpoint's
+  session totals as they are or as a delta: `resume_1.0.105.jsonl`'s
+  includes the first run's tokens (138.7, §9.9).
 - [x] **138.12** ([#864](https://github.com/lezli01/vincent/issues/864)) Published-skill reporting for copilot: a store-read
   `Link` shown as `copilot (reads store)`, a slugless copilot row in the
   install table, `skill.PlanInstall` for `--agent copilot`, and the store
@@ -392,7 +405,7 @@ its code makes true, in its own pull request.
   Depends: the capability items.
 - [ ] **138.16** ([#868](https://github.com/lezli01/vincent/issues/868)) README, guides, references and SEO data. Depends: the
   capability items.
-- [ ] **138.17** ([#869](https://github.com/lezli01/vincent/issues/869)) `docs/gates/138-copilot.md` real runs on three OSes,
+- [ ] **138.17** ([#869](https://github.com/lezli01/vincent/issues/869)) `docs/gates/138-copilot-gate.md` real runs on three OSes,
   the TUI screenshots, the task marked done. Depends: 138.16, 138.15, 138.14.
 
 ## Open questions
