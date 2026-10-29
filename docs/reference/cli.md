@@ -1423,8 +1423,8 @@ for the step level of §8.6's chain, as a repair's do; the agent must be able to
 resume its own session, and one that cannot exits 1 with
 `agent_cannot_resume`. The chat runs with the permission mode a repair on the
 task would — a task whose workflow is `restricted` gets a restricted chat, and
-a chat that resolves to codex exits 1 there, because codex cannot keep a
-resumed turn restricted — and in the task's container when its workflow runs in one.
+a chat that resolves to codex or copilot exits 1 there, because codex cannot,
+and copilot cannot yet, keep a resumed turn restricted — and in the task's container when its workflow runs in one.
 
 A task that never got a worktree — blocked on `branch_exists`, or aborted
 before it was admitted — exits 1 with `task_has_no_worktree`: vincent does not

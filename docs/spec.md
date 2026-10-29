@@ -756,7 +756,9 @@ differs is where it works and how it ends.
   `defaults:` with full-auto as the fallback, clamped by the task's `restricted`
   (§9.4) — a task that runs restricted does not get a full-auto chat, and an
   adapter that cannot keep a resumed turn restricted (codex, §9.3) is refused
-  at open rather than letting a later turn run full-auto.
+  at open rather than letting a later turn run full-auto. *Amended 2026-10-29
+  (task 138.11, issue #863):* copilot is refused the same way until task
+  138.10 gives it a restricted resume (§9.9).
 - **Its first turn opens with the task's context**, assembled by
   `internal/taskrun` at open and stored as `opening_context`: title,
   description and fields for every state; for `blocked`, the repair prompt's
@@ -10936,7 +10938,9 @@ POST   /v1/tasks/{id}/chat             { title?, agent?, model?, effort? }
                                         the daemon does not create it; `400 validation_failed`
                                         for an unregistered agent, and on a restricted task
                                         for an adapter that cannot keep a resumed turn
-                                        restricted (codex, §9.3); `400 agent_cannot_resume`
+                                        restricted (codex, §9.3; copilot until task 138.10,
+                                        §9.9 — amended 2026-10-29, task 138.11);
+                                        `400 agent_cannot_resume`
                                         for an adapter that cannot hold a conversation. It is
                                         **not** an MCP tool (§13.4)
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)

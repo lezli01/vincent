@@ -2590,7 +2590,7 @@ has nowhere to wait — and the reason lands on this row, where you can pick
 another.
 
 Only an agent that can resume its own session can hold a chat, so the agent
-picker offers only those — which today is all three of them. The daemon refuses
+picker offers only those — which today is all four of them. The daemon refuses
 anything else at creation with that reason rather than a generic failure, and
 the form still renders it — it is the backstop for the next adapter, not
 something you are expected to walk into.
