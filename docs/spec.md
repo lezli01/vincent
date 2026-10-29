@@ -6392,8 +6392,9 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
 ### 9.9 Copilot adapter (task 138, stub added 2026-10-28)
 
 A stub. Task 138 adds a fourth adapter, `copilot`, for the standalone GitHub
-Copilot CLI (npm `@github/copilot`); no part of it is built yet, and nothing in
-§9.1–§9.8 or elsewhere has changed for it. The bullets below are added one at a
+Copilot CLI (npm `@github/copilot`); only the unregistered adapter package is
+built so far (*amended 2026-10, task 138.5*), and nothing in §9.1–§9.8 or
+elsewhere has changed for it. The bullets below are added one at a
 time, each in the pull request whose code makes it true, and task 138's later
 items complete the section. Placed after §9.8 for the reason §9.7 gives: no
 section is renumbered.
@@ -6405,6 +6406,64 @@ section is renumbered.
   inventory and the version findings are in
   [task 138](tasks/138-copilot-adapter.md). Fixtures are re-captured only when
   the adapter's tested versions are bumped.
+- **The adapter exists, unregistered** (*2026-10, task 138.5*).
+  `internal/agent/copilot` implements `agent.Adapter` as `copilot`, file for
+  file beside cursor's (§9.7). No daemon, config, TUI or CLI surface reaches it
+  yet — registration is 138.9's — so nothing in it is user-visible.
+- **argv and the stdin prompt** (*2026-10, task 138.5*). A step runs
+  `copilot --output-format json --no-auto-update --session-id <uuid>
+  --allow-all-tools --allow-all-paths --allow-all-urls`, plus `--model <m>`
+  only when §8.6 resolved a model and `--reasoning-effort <e>` only when it
+  resolved an effort. The prompt is the whole of stdin (`JoinedPrompt`), never
+  `-p` or any argv element, so a prompt shaped like a flag stays a prompt. The
+  process cwd is the worktree; `-C` is not passed. With no `--model` the CLI
+  picks `auto` itself, which is why the curated catalog names no default.
+- **Full-auto is the three flags, never the env spelling** (*2026-10, task
+  138.5*). `COPILOT_ALLOW_ALL` is never set: it also trusts the worktree,
+  loading its hooks and MCP servers. `--disable-builtin-mcps` is not passed, so
+  the built-in `github-mcp-server` is available to every run — a stated fact,
+  not a vincent choice yet.
+- **`--no-auto-update` on every spawn** (*2026-10, task 138.5*), the version
+  probe included (`copilot --no-auto-update --version`), so the build Detect
+  reports is the build that runs. `copilot version` is never called.
+- **A generated `--session-id`** (*2026-10, task 138.5*). Each run mints a v4
+  UUID, which copilot adopts. `RunResult.SessionID` is that id even when no
+  `result` line arrives — a killed run included; a `result.sessionId` that
+  disagrees with it is reported as an error, not recorded.
+- **Version verdict: exact strings** (*2026-10, task 138.5*). Detect records
+  `GitHub Copilot CLI 1.0.105.` as `1.0.105` (the line verbatim when it is not
+  that sentence). Tested is `{1.0.105}`; the incompatible list ships empty, so
+  every other build is `untested`, which is advisory (task 041). 1.0.84 is the
+  documented minimum — below it `--help` is not clap-shaped and the effort
+  flag is spelled differently — but it is not enforced. `logged_in` is `null`
+  by design: copilot has no status command.
+- **No mid-run input** (*2026-10, task 138.5*). `InputSupport` is `never`;
+  `Respond` always errors.
+- **Three interim refusals** (*2026-10, task 138.5*), each from `Start` with the
+  shared sentinel and no process spawned: `restricted` →
+  `ErrRestrictedUnsupported` until 138.10 (#862); an MCP server →
+  `ErrMCPUnsupported` until 138.8 (#860), which lands before registration, so
+  no user meets it; a resume → `ErrResumeUnsupported` until 138.11 (#863).
+  `RestrictedSupport` is `never` until 138.10.
+- **The stream** (*2026-10, task 138.5*). Message deltas coalesce into the
+  closing `assistant.message` (`output`); the answer is the last message, since
+  the terminal `result` line carries none. `tool.execution_start` and
+  `tool.execution_complete` are `tool_use` and `tool_result` keyed by
+  `toolCallId`; a `denied` completion is a blocked tool result, not a run
+  failure. `session.error` is `error`, but the `result` line's `exitCode`
+  decides how the run ended: a session.error only supplies the message for a
+  nonzero exit, because the 1.0.105 schema describes it as timeline detail and
+  a rate-limited turn may switch models and finish cleanly. Lines carrying
+  `agentId` are a subagent's, and its `session.error` or `abort` never decides
+  the run's outcome. Every other type is `unknown`, raw line
+  kept. No `usage` event is produced and token and cost fields stay unreported:
+  tokens live only on usage checkpoints and turn ends, which are 138.7's, and
+  `premiumRequests` never becomes cost.
+- **SIGTERM exits 0** (*2026-10, task 138.5*). On 1.0.105 a terminated run ends
+  `agent.interrupted`, `abort`, …, `result{exitCode:0}`. The engine records a
+  termination it asked for whatever the exit code, as for every adapter, and
+  the parser also reads a result after the root agent's `abort` as an error,
+  so the run is never reported as a success.
 
 ## 10. Worktree management
 

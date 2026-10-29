@@ -25,6 +25,9 @@
 //	                      bad-input-request | no-result (cursor, copilot: stderr
 //	                      failure with no terminal event) |
 //	                      flood (emits until killed — the transcript cap) |
+//	                      sigterm (traps SIGTERM and ends `abort`,
+//	                      `result{exitCode:0}`, exit 0, as copilot 1.0.105
+//	                      does; unprompted on Windows — copilot dialect) |
 //	                      report-env (echoes FAKEAGENT_REPORT_ENV's named
 //	                      variables as its result — the §12.3 environment
 //	                      policy) | usage-limit | unauthenticated (task 003) |
