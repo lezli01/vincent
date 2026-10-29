@@ -4210,6 +4210,18 @@ through the seam: the §9.5/§9.6 probes, claude's in-`Start` `--version` probe,
 codex's `app-server` quota exchange and a command step's spawn describe or run
 on the host and do not.
 
+*Amended 2026-10-29 (task 138.8, review F1): a batch-file target gets the
+command line `cmd /c` needs.* When the resolved path ends in `.cmd` or `.bat`,
+as an npm shim's does, the host launcher and the `Probe` beside it set the
+Windows command line themselves (`procx.BatchCmdLine`). It is os/exec's own
+escaping, wrapped in one outer pair of quotes. CreateProcess runs a batch file
+as `cmd /c <line>`. When that line holds more than two `"`, `cmd /c` drops the
+first one and the *last* one. A quoted program path (an npm prefix with a space
+in it) plus any quoted argument then split the path at its space. The outer
+pair is what gets dropped instead. cmd.exe's metacharacters (`&|<>^%`) are
+not escaped. The arguments vincent hands an agent shim carry none of them,
+and the prompt goes over stdin.
+
 *Amended 2026-09-17 (task 062.2, issue #397): a container launcher ships
 beside the host's, and the launcher answers two pre-start questions as well.*
 `Launcher` gains `Resolve` and `Probe`, the hooks 062.1 decision 2 left for
