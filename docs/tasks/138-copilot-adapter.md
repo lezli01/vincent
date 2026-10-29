@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (2/17)
+**Status:** 🔄 in progress (3/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -292,8 +292,8 @@ its code makes true, in its own pull request.
   doctor and `workflow validate` (PR #871). ✓ 2026-10-28
 - [ ] **138.3** ([#855](https://github.com/lezli01/vincent/issues/855)) Windows and Linux runs of the pinned build: pipe stdout,
   the shell tool's name, restriction. Depends: 138.1.
-- [ ] **138.4** ([#856](https://github.com/lezli01/vincent/issues/856)) A Copilot dialect in `cmd/fakeagent`, selected by
-  `--output-format json`. Depends: 138.1.
+- [x] **138.4** ([#856](https://github.com/lezli01/vincent/issues/856)) A Copilot dialect in `cmd/fakeagent`, selected by
+  `--output-format json`. Depends: 138.1. ✓ 2026-10-29
 - [ ] **138.5** ([#857](https://github.com/lezli01/vincent/issues/857)) `internal/agent/copilot` running a full-auto step over
   stdin JSONL, unregistered. Depends: 138.1, 138.4.
 - [ ] **138.6** ([#858](https://github.com/lezli01/vincent/issues/858)) The effort catalog, the stated model and login gaps,
