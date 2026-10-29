@@ -6410,7 +6410,9 @@ precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
 A stub. Task 138 adds a fourth adapter, `copilot`, for the standalone GitHub
 Copilot CLI (npm `@github/copilot`); only the unregistered adapter package is
 built so far (*amended 2026-10, task 138.5*), and nothing in §9.1–§9.8 or
-elsewhere has changed for it. The bullets below are added one at a
+elsewhere has changed for it. *Amended 2026-10-29 (task 138.9, issue #861):*
+the adapter is now registered — see the last bullet — while the
+three-adapter prose elsewhere is still 138.15's to amend. The bullets below are added one at a
 time, each in the pull request whose code makes it true, and task 138's later
 items complete the section. Placed after §9.8 for the reason §9.7 gives: no
 section is renumbered.
@@ -6422,7 +6424,7 @@ section is renumbered.
   inventory and the version findings are in
   [task 138](tasks/138-copilot-adapter.md). Fixtures are re-captured only when
   the adapter's tested versions are bumped.
-- **The adapter exists, unregistered** (*2026-10, task 138.5*).
+- **The adapter exists, unregistered** (*2026-10, task 138.5; superseded 2026-10-29 by 138.9, below*).
   `internal/agent/copilot` implements `agent.Adapter` as `copilot`, file for
   file beside cursor's (§9.7). No daemon, config, TUI or CLI surface reaches it
   yet — registration is 138.9's — so nothing in it is user-visible.
@@ -6562,6 +6564,15 @@ section is renumbered.
   task 003 decision 2 recognizes nothing neither documented nor captured. Such
   a run fails the ordinary way, and `usage_limit_auto_continue` does not apply
   to copilot.
+- **Registered fourth** (*2026-10-29, task 138.9, issue #861*). `builtin.New`
+  lists copilot after cursor, so the daemon, `vincent doctor` and
+  `workflow validate` all reach it, and `/v1/agents` and `/v1/info` list it
+  fourth with `logged_in: null`. `agents.copilot.path` (§12.3) is served and
+  patched by `/v1/config`, edited in the TUI's daemon view and by `vincent
+  config get/set`; empty resolves `copilot` on `PATH`. Under
+  `mount_agent_config` `~/.copilot` is the fourth directory mounted (§12.3).
+  Tokens and cost stay unreported on the step record until 138.7.
+  `scripts/138-gate.sh` proves it end to end on all three OSes.
 
 ## 10. Worktree management
 
@@ -7844,6 +7855,7 @@ agents:
   claude: { path: "" }         # "" = resolve from PATH
   codex:  { path: "" }
   cursor: { path: "" }         # resolves `cursor-agent`, never `cursor` (§9.7)
+  copilot: { path: "" }        # the standalone `copilot` CLI, never `gh copilot` (§9.9; task 138.9, 2026-10-29)
 github:
   enabled: true                # read GitHub issues and pull requests (§13.2)
   poll_interval: 5m            # import issues and reconcile pull-request links this often; 0 = off (tasks 052, 130.8)
@@ -7876,7 +7888,7 @@ mcp:                           # the §13.4 MCP server (task 057)
 container:                     # run a task's steps in a container (§16, task 061)
   image: ""                    # "" (default) = every step runs on this host
   runtime: docker              # a docker-CLI-compatible binary; only docker is verified in CI
-  mount_agent_config: true     # bind-mount ~/.claude, ~/.codex, ~/.cursor read-write under the vincent home (062.2)
+  mount_agent_config: true     # bind-mount ~/.claude, ~/.codex, ~/.cursor, ~/.copilot read-write under the vincent home (062.2, 138.9)
   network: true                # false drops the container off the network entirely
   extra_mounts: []             # host:container[:ro]; the repo and worktree are mounted already
 tui:                           # view preference; the daemon validates and relays it (§15)
@@ -7960,6 +7972,12 @@ macOS claude keeps its OAuth login in the Keychain**, not in `~/.claude`, so a
 Mac host must supply `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` through
 `environment` for a containerized claude step to authenticate. Codex's
 file-based `auth.json` and Linux claude's `.credentials.json` do carry over.
+*Amended 2026-10-29 (task 138.9, issue #861):* `~/.copilot` is the fourth
+directory mounted. Copilot stores its login in the OS credential store where
+one exists, and that store does not cross the mount, so a containerized
+copilot step authenticates only from plain-text credentials under
+`~/.copilot` or from `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN`
+passed through `environment`.
 The worktree and repository keep their identical paths (task 061 decision 2),
 which is what claude's cwd-keyed session store needs. The `network: false`
 with `mcp.wire_steps: true` refusal returns, **narrowed** to a workflow that

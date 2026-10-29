@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **GitHub Copilot CLI is a fourth agent.** A workflow step can name
+  `agent: copilot` and run the standalone `copilot` CLI headlessly, with its
+  `--reasoning-effort` values offered as efforts and vincent's MCP tools
+  wired in. `agents.copilot.path` pins the binary in `config.yaml`, the API,
+  the TUI's daemon view and `vincent config set`; `/v1/agents`, `/v1/info`
+  and `vincent doctor` list it, with its login state unknown (`null`)
+  because the CLI has no probe for it. Tokens and cost are not reported yet,
+  restricted mode and chats are not supported yet, and under
+  `container.mount_agent_config` `~/.copilot` is mounted — a containerized
+  copilot step needs plain-text credentials there or a token through
+  `environment`, since the OS credential store does not cross the mount.
+
 - **Published skills report copilot reading the store.** GitHub Copilot CLI
   loads `~/.agents/skills` itself, so `vincent skills ls`, `vincent doctor`
   and the TUI's skills offer now list `copilot (reads store)` when

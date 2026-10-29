@@ -373,9 +373,14 @@ its code makes true, in its own pull request.
   host spawn instead, which wraps a batch file's line in one outer pair of
   quotes (`procx.BatchCmdLine`, §9.1). No `@file` fallback, temp directory
   or sweep was built. `--allow-tool=vincent` rides beside it for 138.10. ✓ 2026-10-29
-- [ ] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
+- [~] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
   container mount, the engine test and `scripts/138-gate.sh` in CI.
-  Depends: 138.5, 138.8.
+  Depends: 138.5, 138.8. Everything is delivered except the real-CLI walk:
+  `builtin.New` registers copilot fourth, `agents.copilot.path` reaches
+  every config surface, `~/.copilot` is mounted, and the gate (scenarios 1,
+  2, 3 and 5; 4 is 138.10's) runs in `gate-group` group 3 on all three OSes.
+  `VINCENT_GATE_AGENT=copilot` against a real, authenticated CLI is
+  human-only and recorded in `docs/gates/138-copilot-gate.md`, still empty.
 - [ ] **138.10** ([#862](https://github.com/lezli01/vincent/issues/862)) §9.4 restricted mode over `--available-tools`, or a
   per-OS refusal; gate scenario 4. Depends: 138.9, 138.3.
 - [ ] **138.11** ([#863](https://github.com/lezli01/vincent/issues/863)) `Resumer`, session-lost classification, m14 leg 2b.
