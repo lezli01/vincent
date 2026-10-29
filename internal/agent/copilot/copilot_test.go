@@ -306,8 +306,10 @@ func TestRunSuccess(t *testing.T) {
 	if !strings.Contains(res.ResultText, "test prompt for success") {
 		t.Errorf("ResultText %q does not echo the stdin prompt", res.ResultText)
 	}
-	if res.InputTokens != 0 || res.OutputTokens != 0 || res.CostUSD != nil {
-		t.Errorf("tokens %d/%d cost %v, want unreported until task 138.7",
+	// The fake's root usage checkpoint reports 100 in, 42 out (task 138.7);
+	// premium requests never become a cost.
+	if res.InputTokens != 100 || res.OutputTokens != 42 || res.CostUSD != nil {
+		t.Errorf("tokens %d/%d cost %v, want the checkpoint's 100/42 and no cost",
 			res.InputTokens, res.OutputTokens, res.CostUSD)
 	}
 	if !uuidRe.MatchString(res.SessionID) {
@@ -320,8 +322,8 @@ func TestRunSuccess(t *testing.T) {
 	for _, ev := range events {
 		counts[ev.Type]++
 	}
-	if counts[agent.EventOutput] < 2 || counts[agent.EventResult] != 1 || counts[agent.EventUsage] != 0 {
-		t.Errorf("event mix %v, want outputs, exactly 1 result and no usage", counts)
+	if counts[agent.EventOutput] < 2 || counts[agent.EventResult] != 1 || counts[agent.EventUsage] != 1 {
+		t.Errorf("event mix %v, want outputs, exactly 1 result and 1 usage checkpoint", counts)
 	}
 }
 

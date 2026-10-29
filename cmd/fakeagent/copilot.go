@@ -109,11 +109,11 @@ func copilotMain(scenario string) {
 			"errorType": "model_error", "statusCode": 500,
 			"message": "fake copilot failed on purpose",
 		}, false)
-		c.end(1, 1, nil)
+		c.end(1, 1, 100, 42, nil)
 		os.Exit(1)
 	case "nonzero-exit":
 		c.text("about to crash")
-		c.end(3, 1, nil)
+		c.end(3, 1, 100, 42, nil)
 		os.Exit(3)
 	case "hang":
 		if os.Getenv("FAKEAGENT_SPAWN_CHILD") == "1" {
@@ -126,7 +126,7 @@ func copilotMain(scenario string) {
 		os.Exit(0)
 	case "big-usage":
 		c.text("burning tokens")
-		c.end(0, 2_500, nil)
+		c.end(0, 2_500, 2_500_000, 1_200_000, nil)
 	case "usage-limit":
 		// Task 003's leg for copilot. The wording is unverified; see
 		// copilotQuotaMessage. The adapter deliberately leaves it
@@ -137,7 +137,7 @@ func copilotMain(scenario string) {
 				"errorType": "quota_exceeded", "statusCode": 402,
 				"message": copilotQuotaMessage,
 			}, false)
-			c.end(1, 1, nil)
+			c.end(1, 1, 100, 42, nil)
 			os.Exit(1)
 		}
 		c.success(prompt)
@@ -195,7 +195,7 @@ func (c *copilotStream) success(prompt []byte) {
 		}
 	}
 	c.text("done: " + flatten(string(prompt), 1000))
-	c.end(0, 1, files)
+	c.end(0, 1, 100, 42, files)
 }
 
 // sigterm is sigterm_1.0.105.jsonl's ending: copilot traps SIGTERM, writes
@@ -215,16 +215,51 @@ func (c *copilotStream) sigterm() {
 	c.event("agent.interrupted", map[string]any{"activity": "idle", "turn": 0}, true)
 	c.event("abort", map[string]any{"reason": "user_initiated"}, false)
 	c.event("assistant.turn_end", map[string]any{"turnId": "0"}, false)
+	c.checkpoint(1, 100, 42)
 	c.event("assistant.idle", map[string]any{"aborted": true}, true)
 	c.result(0, 1, nil)
 }
 
 // end closes the turn and writes the terminal line (simple_1.0.105.jsonl's
-// last lines).
-func (c *copilotStream) end(exitCode, premium int, files []string) {
+// last lines), reporting inTok and outTok as the session's usage.
+func (c *copilotStream) end(exitCode, premium int, inTok, outTok int64, files []string) {
 	c.event("assistant.turn_end", map[string]any{"turnId": "0"}, false)
+	c.checkpoint(premium, inTok, outTok)
 	c.event("assistant.idle", map[string]any{}, true)
 	c.result(exitCode, premium, files)
+}
+
+// checkpoint is the root session.usage_checkpoint every captured run that
+// reached a result line writes between turn_end and idle — the line the
+// adapter takes its tokens from (§9.9, task 138.7). It is
+// simple_1.0.105.jsonl's, without the cache, routing and per-agent fields no
+// parser reads: the snapshot's tokenDetails split the spend (all of inTok
+// uncached), and modelMetrics carries the same figures under fake-model.
+func (c *copilotStream) checkpoint(premium int, inTok, outTok int64) {
+	details := map[string]any{
+		"input":       map[string]any{"tokenCount": inTok},
+		"cache_read":  map[string]any{"tokenCount": 0},
+		"cache_write": map[string]any{"tokenCount": 0},
+		"output":      map[string]any{"tokenCount": outTok},
+	}
+	c.event("session.usage_checkpoint", map[string]any{
+		"totalPremiumRequests": premium,
+		"accountingSnapshot": map[string]any{
+			"totalPremiumRequestCost": premium, "totalUserRequests": 1,
+			"tokenDetails": details,
+			"modelMetrics": map[string]any{
+				"fake-model": map[string]any{
+					"requests": map[string]any{"count": premium, "cost": premium},
+					"usage": map[string]any{
+						"inputTokens": inTok, "outputTokens": outTok,
+						"cacheReadTokens": 0, "cacheWriteTokens": 0, "reasoningTokens": 0,
+					},
+					"tokenDetails": details,
+				},
+			},
+			"currentModel": "fake-model",
+		},
+	}, false)
 }
 
 // result writes the terminal line, which — unlike every event before it —

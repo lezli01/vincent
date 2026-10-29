@@ -256,3 +256,101 @@ func TestCopilotPromptOnStdin(t *testing.T) {
 		})
 	}
 }
+
+// TestCopilotUsageCheckpoint holds the fake's usage checkpoint to
+// simple_1.0.105.jsonl's: a root line between turn_end and idle, whose every
+// key the capture also carries, with the capture's token split and per-model
+// usage keys exactly — so the adapter reads the fake's tokens off the same
+// fields it reads a real run's (task 138.7).
+func TestCopilotUsageCheckpoint(t *testing.T) {
+	t.Parallel()
+	bin := agenttest.BuildFakeAgent(t)
+	b, err := os.ReadFile(filepath.Join("..", "..", "internal", "agent", "copilot", "testdata", "simple_1.0.105.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := checkpointLine(t, copilotLines(t, string(b)))
+	wantData := want["data"].(map[string]any)
+	wantSnap := wantData["accountingSnapshot"].(map[string]any)
+
+	for _, tt := range []struct {
+		scenario string
+		in, out  float64
+	}{
+		{"success", 100, 42},
+		{"big-usage", 2_500_000, 1_200_000},
+		{"error-event", 100, 42},
+	} {
+		t.Run(tt.scenario, func(t *testing.T) {
+			t.Parallel()
+			stdout, _, _ := runCopilot(t, bin, "do a thing", copilotArgs,
+				"FAKEAGENT_SCENARIO="+tt.scenario, "FAKEAGENT_PROMPT_FILE="+filepath.Join(t.TempDir(), "p"))
+			got := checkpointLine(t, copilotLines(t, stdout))
+			if _, ok := got["agentId"]; ok {
+				t.Errorf("checkpoint carries an agentId; the run's usage is the root's: %v", got)
+			}
+			data := got["data"].(map[string]any)
+			subset(t, "data", keys(data), keys(wantData))
+			snap, _ := data["accountingSnapshot"].(map[string]any)
+			subset(t, "accountingSnapshot", keys(snap), keys(wantSnap))
+			details, _ := snap["tokenDetails"].(map[string]any)
+			if g, w := keys(details), keys(wantSnap["tokenDetails"].(map[string]any)); !reflect.DeepEqual(g, w) {
+				t.Errorf("tokenDetails keys = %v, want %v", g, w)
+			}
+			in, _ := details["input"].(map[string]any)
+			out, _ := details["output"].(map[string]any)
+			if in["tokenCount"] != tt.in || out["tokenCount"] != tt.out {
+				t.Errorf("tokens = %v in, %v out; want %v and %v", in["tokenCount"], out["tokenCount"], tt.in, tt.out)
+			}
+			wantModel := firstValue(t, wantSnap["modelMetrics"].(map[string]any))
+			model := firstValue(t, snap["modelMetrics"].(map[string]any))
+			if g, w := keys(model["usage"].(map[string]any)), keys(wantModel["usage"].(map[string]any)); !reflect.DeepEqual(g, w) {
+				t.Errorf("modelMetrics usage keys = %v, want %v", g, w)
+			}
+		})
+	}
+}
+
+// checkpointLine returns a stream's one session.usage_checkpoint, failing
+// unless it sits where the captures put it: right after turn_end, right
+// before idle.
+func checkpointLine(t *testing.T, lines []map[string]any) map[string]any {
+	t.Helper()
+	at := -1
+	for i, l := range lines {
+		if l["type"] == "session.usage_checkpoint" {
+			if at >= 0 {
+				t.Fatalf("more than one usage checkpoint")
+			}
+			at = i
+		}
+	}
+	if at <= 0 || at+1 >= len(lines) {
+		t.Fatalf("no usage checkpoint inside the stream (at %d of %d lines)", at, len(lines))
+	}
+	if lines[at-1]["type"] != "assistant.turn_end" || lines[at+1]["type"] != "assistant.idle" {
+		t.Errorf("checkpoint sits between %v and %v, want assistant.turn_end and assistant.idle",
+			lines[at-1]["type"], lines[at+1]["type"])
+	}
+	return lines[at]
+}
+
+func subset(t *testing.T, what string, got, of []string) {
+	t.Helper()
+	for _, k := range got {
+		if !slices.Contains(of, k) {
+			t.Errorf("%s key %q is not in the capture's %v", what, k, of)
+		}
+	}
+}
+
+func firstValue(t *testing.T, m map[string]any) map[string]any {
+	t.Helper()
+	if len(m) != 1 {
+		t.Fatalf("want one model, got %v", keys(m))
+	}
+	for _, v := range m {
+		return v.(map[string]any)
+	}
+	return nil
+}

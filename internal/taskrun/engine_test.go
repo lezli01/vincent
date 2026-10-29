@@ -992,10 +992,10 @@ steps:
 	if !strings.Contains(run.ResultSummary, "Implement engine test with copilot") {
 		t.Errorf("result summary %q does not contain the rendered prompt", run.ResultSummary)
 	}
-	// Tokens and cost are unreported until task 138.7 normalizes copilot's
-	// usage (§9.9); that change flips these to the counts it reads.
-	if run.InputTokens != nil || run.OutputTokens != nil {
-		t.Errorf("tokens = %v/%v, want unreported until 138.7", run.InputTokens, run.OutputTokens)
+	// Tokens are the fake's root usage checkpoint's, as task 138.7 reads
+	// them (§9.9); premium requests never become a cost.
+	if run.InputTokens == nil || *run.InputTokens != 100 || run.OutputTokens == nil || *run.OutputTokens != 42 {
+		t.Errorf("tokens = %v/%v, want the checkpoint's 100/42", run.InputTokens, run.OutputTokens)
 	}
 	if run.CostUSD != nil {
 		t.Errorf("cost = %v, want nil (premium requests never become a cost)", *run.CostUSD)
