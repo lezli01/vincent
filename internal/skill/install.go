@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -181,7 +180,7 @@ func PlanInstall(name string, adapters []string, statuses []Status) Plan {
 		}
 	}
 	if storePath != "" {
-		if _, err := os.Lstat(storePath); err == nil {
+		if storeExists(storePath) {
 			if state != StateCurrent {
 				return Plan{Err: fmt.Errorf("%s reads the store copy at %s, which is %s — "+
 					"update it for another agent, e.g. vincent skills install %s --agent claude, "+

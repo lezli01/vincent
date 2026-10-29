@@ -424,6 +424,26 @@ func TestDetectCopilotReadsTheStore(t *testing.T) {
 			}
 		})
 	}
+	// Review F3: a store entry that is a dangling symlink is no copy. Lstat
+	// once took it for one, reporting the row absent and served by copilot
+	// at once, and a copilot-only install a success.
+	t.Run("store a dangling symlink", func(t *testing.T) {
+		home := t.TempDir()
+		mkdirs(t, home, ".copilot")
+		linkInto(t, home, ".agents", name, filepath.Join(home, "gone"))
+		statuses := Detect(Options{Home: home, FS: shipped})
+		row := statuses[0]
+		if store, _ := copilotLinks(row); len(store) != 0 || row.Linked() {
+			t.Errorf("reported copilot reading a store copy that is not there: %+v", row.Links)
+		}
+		if row.State != StateAbsent {
+			t.Errorf("state = %q (%s), want absent", row.State, row.Message)
+		}
+		p := PlanInstall(name, []string{"copilot"}, statuses)
+		if p.Err == nil || !strings.Contains(p.Err.Error(), "none is installed") {
+			t.Errorf("copilot alone over a dangling store link = %+v, want the absent error", p)
+		}
+	})
 	t.Run("copilot holds a link as well", func(t *testing.T) {
 		const other = "vincent-triggers"
 		home := t.TempDir()

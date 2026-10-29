@@ -309,7 +309,7 @@ func detectOne(home string, roots []string, p Published) Status {
 		st.Message = "the shipped copy could not be read: " + p.Error
 		return st
 	}
-	_, storeErr := os.Lstat(st.StorePath)
+	storeHere := storeExists(st.StorePath)
 	for _, root := range roots {
 		agent, adapter := strings.TrimPrefix(root, "."), adapterForRoot(root)
 		entry := filepath.Join(home, root, skillsSubdir, dir)
@@ -325,7 +325,7 @@ func detectOne(home string, roots []string, p Published) Status {
 		// alone (task 138.12 decision 2). Reported beside any link the same
 		// root also holds, undeduplicated: the report says what is on disk.
 		// COPILOT_HOME and COPILOT_SKILLS_DIRS are not followed (§9.8).
-		if storeErr == nil && storeResidentRoot(root) {
+		if storeHere && storeResidentRoot(root) {
 			st.Links = append(st.Links, Link{
 				Agent: agent, Adapter: adapter, Path: st.StorePath, Store: true,
 			})
@@ -354,6 +354,16 @@ func detectOne(home string, roots []string, p Published) Status {
 	return st
 }
 
+// storeExists reports whether the store copy is on disk. It follows a
+// symlink — the store may itself be one — so a dangling link is no copy: an
+// Lstat here once reported a skill as absent and served by copilot in the
+// same row (review F3). detectOne and PlanInstall both ask through it, so the
+// two cannot drift apart again.
+func storeExists(storePath string) bool {
+	_, err := os.Stat(storePath)
+	return err == nil
+}
+
 // installedVersion reads the copy on disk. The store is the source — there is
 // one copy and every link points at it — but a link is consulted when the
 // store is missing, because an agent directory holding a real `--copy` is
@@ -366,7 +376,7 @@ func detectOne(home string, roots []string, p Published) Status {
 // every copy installed before that marker existed — a fact, not a failure.
 func installedVersion(storePath string, links []Link) (version string, found bool, readErr error) {
 	paths := make([]string, 0, 1+len(links))
-	if _, err := os.Stat(storePath); err == nil {
+	if storeExists(storePath) {
 		paths = append(paths, storePath)
 	}
 	for _, l := range links {
