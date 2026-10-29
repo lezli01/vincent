@@ -658,7 +658,7 @@ func doctorSkillRows(skills []apiclient.DoctorSkill) [][]string {
 	missing := false
 	for _, s := range skills {
 		state := skillStateWord(s)
-		if agents := s.Agents(); len(agents) > 0 {
+		if agents := s.AgentLabels(); len(agents) > 0 {
 			state += "  ·  linked into " + strings.Join(agents, ", ")
 		} else {
 			state += "  ·  linked into nothing"

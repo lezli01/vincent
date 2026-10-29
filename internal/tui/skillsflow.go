@@ -45,8 +45,13 @@ type skillsFlow struct {
 	// slugs is the `--agent` selection, derived from the adapters this daemon
 	// reports. It is fixed when the flow opens so that the command shown is
 	// the command run.
-	slugs   []string
-	names   []string
+	slugs []string
+	names []string
+	// notes are the missing skills nothing is run for: a selection of
+	// store-resident adapters only (copilot, task 138.12), where the store
+	// copy either already serves them or is absent. skill.PlanInstall
+	// decides, the same rule `vincent skills install` applies.
+	notes   []string
 	running bool
 	// outcome and err report a finished attempt; log is what the CLI printed.
 	outcome string
@@ -55,11 +60,19 @@ type skillsFlow struct {
 }
 
 func newSkillsFlow(skills []apiclient.DoctorSkill, adapters []string) *skillsFlow {
-	return &skillsFlow{
-		skills: skills,
-		slugs:  skill.Slugs(adapters),
-		names:  skill.Missing(skills),
+	f := &skillsFlow{skills: skills, slugs: skill.Slugs(adapters)}
+	for _, name := range skill.Missing(skills) {
+		plan := skill.PlanInstall(name, adapters, skills)
+		switch {
+		case plan.Run():
+			f.names = append(f.names, name)
+		case plan.Err != nil:
+			f.notes = append(f.notes, name+": "+plan.Err.Error())
+		default:
+			f.notes = append(f.notes, name+": "+plan.Note)
+		}
 	}
+	return f
 }
 
 // reporting is the second screen: an install has finished, one way or the
@@ -159,6 +172,12 @@ func (f *skillsFlow) offerLines() []string {
 	for _, s := range f.skills {
 		out = append(out, "   "+skillRowLine(s))
 	}
+	if len(f.notes) > 0 {
+		out = append(out, "")
+		for _, note := range f.notes {
+			out = append(out, "   "+styleDim.Render(note))
+		}
+	}
 	if len(f.names) == 0 {
 		return append(out, "",
 			"   "+styleDim.Render("Nothing to install."),
@@ -228,7 +247,7 @@ func skillRowLine(s apiclient.DoctorSkill) string {
 		state = styleBad.Render(s.State) + styleDim.Render("  "+s.Message)
 	}
 	row := name + "  " + state
-	if agents := s.Agents(); len(agents) > 0 {
+	if agents := s.AgentLabels(); len(agents) > 0 {
 		row += styleDim.Render("  ·  " + strings.Join(agents, ", "))
 	}
 	return row

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -119,5 +120,101 @@ func TestSkillsInstallNothingToDo(t *testing.T) {
 	}
 	if !strings.Contains(out, "already current") {
 		t.Errorf("stdout = %q", out)
+	}
+}
+
+// seedStore writes every published skill's store copy under home at version.
+func seedStore(t *testing.T, home string, version string) {
+	t.Helper()
+	for _, p := range skill.Publish(nil) {
+		dir := filepath.Join(home, skill.StoreDir, "skills", p.Path)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "---\nname: " + p.Name + "\nmetadata:\n  version: " + version + "\n---\n"
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestSkillsInstallForCopilot is task 138.12 decision 4 end to end. PATH holds
+// no npx, so any attempt to run one would fail the store-present case.
+func TestSkillsInstallForCopilot(t *testing.T) {
+	t.Run("store present", func(t *testing.T) {
+		home := fakeHome(t)
+		t.Setenv("PATH", t.TempDir())
+		seedStore(t, home, "0.0.1")
+		out, errOut, code := runSkills(t, "install", "--agent", "copilot")
+		if code != 0 {
+			t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
+		}
+		if !strings.Contains(out, "nothing to link") || strings.Contains(out, "running npx") {
+			t.Errorf("stdout = %q", out)
+		}
+
+		out, _, code = runSkills(t, "install", "--agent", "copilot", "--json")
+		if code != 0 {
+			t.Fatalf("--json exit %d: %s", code, out)
+		}
+		var res []skillsInstallResult
+		if err := json.Unmarshal([]byte(out), &res); err != nil {
+			t.Fatalf("--json is not parseable: %v\n%s", err, out)
+		}
+		for _, r := range res {
+			if !r.OK || r.Command != "" || r.Note == "" {
+				t.Errorf("result = %+v, want ok with a note and no command", r)
+			}
+		}
+	})
+	t.Run("store absent", func(t *testing.T) {
+		fakeHome(t)
+		t.Setenv("PATH", t.TempDir())
+		out, errOut, code := runSkills(t, "install", "--agent", "copilot")
+		if code != 1 {
+			t.Fatalf("exit %d, want 1\nstdout: %s\nstderr: %s", code, out, errOut)
+		}
+		if !strings.Contains(errOut, "none is installed") || !strings.Contains(errOut, "--agent claude") {
+			t.Errorf("stderr = %q", errOut)
+		}
+		if strings.Contains(errOut, "npx is not installed") {
+			t.Errorf("a copilot-only install tried to run npx: %q", errOut)
+		}
+	})
+	t.Run("copilot and claude", func(t *testing.T) {
+		fakeHome(t)
+		t.Setenv("PATH", t.TempDir())
+		_, errOut, code := runSkills(t, "install", "--agent", "copilot,claude")
+		if code != 1 {
+			t.Fatalf("exit %d, want 1 with no npx", code)
+		}
+		if !strings.Contains(errOut, "--agent claude-code --yes --global") {
+			t.Errorf("the argv does not carry claude's slug alone: %q", errOut)
+		}
+	})
+}
+
+// TestSkillsListNamesCopilotReadingTheStore: the AGENTS column and the
+// doctor row mark the store-read entry rather than calling it a link.
+func TestSkillsListNamesCopilotReadingTheStore(t *testing.T) {
+	home := fakeHome(t)
+	t.Setenv("PATH", t.TempDir())
+	seedStore(t, home, "0.0.1")
+	if err := os.MkdirAll(filepath.Join(home, ".copilot"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, _, code := runSkills(t, "ls")
+	if code != 0 || !strings.Contains(out, "copilot (reads store)") {
+		t.Errorf("exit %d, ls = %q", code, out)
+	}
+	out, _, _ = runSkills(t, "ls", "--json")
+	if !strings.Contains(out, `"store": true`) {
+		t.Errorf("--json does not carry the store-read entry: %s", out)
+	}
+	rows := doctorSkillRows(skill.Detect(skill.Options{}))
+	for _, r := range rows[:len(rows)-1] {
+		if !strings.Contains(r[1], "linked into copilot (reads store)") {
+			t.Errorf("doctor row = %q", r[1])
+		}
 	}
 }

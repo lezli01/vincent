@@ -71,11 +71,13 @@ type Published struct {
 	Error string `json:"error,omitempty"`
 }
 
-// Link is one agent root holding this skill. Agent is the directory's name
-// without its leading dot — `claude`, `cursor`, `zed` — because that is what
-// is on disk; Adapter is the vincent adapter it corresponds to, empty for the
-// agents vincent does not drive. Reporting those is honest rather than noisy:
-// one store serves every agent on the machine.
+// Link is one agent that serves this skill: an agent root holding it, or —
+// with Store set — an agent that reads the store copy itself. Agent is the
+// directory's name without its leading dot — `claude`, `cursor`, `zed` —
+// because that is what is on disk; Adapter is the vincent adapter it
+// corresponds to, empty for the agents vincent does not drive. Reporting
+// those is honest rather than noisy: one store serves every agent on the
+// machine.
 type Link struct {
 	Agent   string `json:"agent"`
 	Adapter string `json:"adapter,omitempty"`
@@ -84,6 +86,19 @@ type Link struct {
 	// nothing about detection and is reported because it is the difference
 	// between a copy that follows the store and one that does not.
 	Symlink bool `json:"symlink"`
+	// Store is an agent that reads `~/.agents/skills` directly (task
+	// 138.12): copilot, whenever `~/.copilot` exists and the store copy
+	// does. Path is then the store path, and nothing is linked.
+	Store bool `json:"store,omitempty"`
+}
+
+// Label is the link for display: the agent, marked when it reads the store
+// rather than holding a link.
+func (l Link) Label() string {
+	if l.Store {
+		return l.Agent + " (reads store)"
+	}
+	return l.Agent
 }
 
 // Status is one published skill's installation state — one row per skill, not
@@ -121,7 +136,8 @@ func (s Status) InstalledLabel() string {
 	}
 }
 
-// Linked reports whether any agent on this machine holds the skill.
+// Linked reports whether any agent on this machine serves the skill — holds
+// a link to it or reads the store copy itself.
 func (s Status) Linked() bool { return len(s.Links) > 0 }
 
 // Agents lists the agent names this skill is linked into, in the order they
@@ -130,6 +146,16 @@ func (s Status) Agents() []string {
 	out := make([]string, 0, len(s.Links))
 	for _, l := range s.Links {
 		out = append(out, l.Agent)
+	}
+	return out
+}
+
+// AgentLabels is Agents for display, each one through Link.Label — the list
+// the CLI, doctor and the TUI print.
+func (s Status) AgentLabels() []string {
+	out := make([]string, 0, len(s.Links))
+	for _, l := range s.Links {
+		out = append(out, l.Label())
 	}
 	return out
 }
@@ -283,18 +309,27 @@ func detectOne(home string, roots []string, p Published) Status {
 		st.Message = "the shipped copy could not be read: " + p.Error
 		return st
 	}
+	_, storeErr := os.Lstat(st.StorePath)
 	for _, root := range roots {
+		agent, adapter := strings.TrimPrefix(root, "."), adapterForRoot(root)
 		entry := filepath.Join(home, root, skillsSubdir, dir)
-		info, err := os.Lstat(entry)
-		if err != nil {
-			continue
+		if info, err := os.Lstat(entry); err == nil {
+			st.Links = append(st.Links, Link{
+				Agent:   agent,
+				Adapter: adapter,
+				Path:    entry,
+				Symlink: info.Mode()&os.ModeSymlink != 0,
+			})
 		}
-		st.Links = append(st.Links, Link{
-			Agent:   strings.TrimPrefix(root, "."),
-			Adapter: adapterForRoot(root),
-			Path:    entry,
-			Symlink: info.Mode()&os.ModeSymlink != 0,
-		})
+		// An agent that reads the store itself is served by the store copy
+		// alone (task 138.12 decision 2). Reported beside any link the same
+		// root also holds, undeduplicated: the report says what is on disk.
+		// COPILOT_HOME and COPILOT_SKILLS_DIRS are not followed (§9.8).
+		if storeErr == nil && storeResidentRoot(root) {
+			st.Links = append(st.Links, Link{
+				Agent: agent, Adapter: adapter, Path: st.StorePath, Store: true,
+			})
+		}
 	}
 	installed, found, readErr := installedVersion(st.StorePath, st.Links)
 	switch {
@@ -335,6 +370,10 @@ func installedVersion(storePath string, links []Link) (version string, found boo
 		paths = append(paths, storePath)
 	}
 	for _, l := range links {
+		if l.Store {
+			// The store itself, already first in the list when it exists.
+			continue
+		}
 		paths = append(paths, l.Path)
 	}
 	if len(paths) == 0 {
