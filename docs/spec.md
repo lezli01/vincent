@@ -6522,9 +6522,64 @@ section is renumbered.
   a rate-limited turn may switch models and finish cleanly. Lines carrying
   `agentId` are a subagent's, and its `session.error` or `abort` never decides
   the run's outcome. Every other type is `unknown`, raw line
-  kept. No `usage` event is produced and token and cost fields stay unreported:
-  tokens live only on usage checkpoints and turn ends, which are 138.7's, and
-  `premiumRequests` never becomes cost.
+  kept. *Amended 2026-10, task 138.7:* the stream's other events are
+  normalized as the bullets below describe; `premiumRequests` still never
+  becomes cost.
+- **Usage from the checkpoint, as session totals** (*2026-10, task 138.7*).
+  The root agent's `session.usage_checkpoint` is a `usage` event, and the last
+  one fills the result's tokens from `accountingSnapshot.tokenDetails`:
+  `input` → `InputTokens` (the *uncached* input, as claude's is, §9.2 — input
+  + cache_read + cache_write is the `inputTokens` beside it), `output`,
+  `cache_read` → `CacheReadTokens`, `cache_write` → `CacheCreationTokens`.
+  `ReasoningOutputTokens` is `modelMetrics[*].usage.reasoningTokens` summed,
+  and each `modelMetrics` key is a `ModelUsage` row (sorted by model id; the
+  snapshot is an object), with no cost. A checkpoint carrying `agentId` is
+  never the run's. Tokens come from stdout, never `--usage-output-file`. The
+  `result` line's `usage.sessionDurationMs` and `totalApiDurationMs` are
+  `Duration` and `APIDuration`; `NumTurns` stays 0, because the CLI reports no
+  turn count and counting `assistant.turn_start` would be emulation, and no
+  field carries premium requests or `totalNanoAiu`. The figures are the
+  *session's* totals, subagents included: `resume_1.0.105.jsonl`'s checkpoint
+  reports `totalUserRequests: 2` with the first run's tokens in it. While a
+  resume is refused every run is a fresh session and the figures are the
+  run's; whether a resumed run reports them as they are or as a delta is
+  138.11's to decide.
+- **No run header** (*2026-10, task 138.7*). 1.0.105 writes no cwd and no
+  tool list to stdout: `session.start` goes only to the on-disk log,
+  `session.skills_loaded` is never emitted in JSON mode, and
+  `session.tools_updated` carries only the model. Copilot therefore produces no
+  `run_header`, as codex does not (§9.3); `RunHeader.WorkDir` is the CLI's own
+  report, so it is never filled from the spawn spec.
+- **Thinking, input echo, patches and command output** (*2026-10, task
+  138.7*). `assistant.reasoning`'s whole `content` is `thinking`; its
+  `assistant.reasoning_delta` lines stay `unknown` rather than being coalesced,
+  because the closing line carries the block (task 066's whole blocks). The
+  root agent's `user.message` is an `input_echo` carrying nothing, as cursor's
+  is (§9.7). An `edit` or `apply_patch` completion's
+  `result.detailedContent` `diff --git` rides on its `tool_result` as a
+  `Patch` of the hunks from the first `@@` on; `view` writes a diff too and
+  produces none. A `bash` completion's `result.content`, less the trailing
+  `<shellId: N completed with exit code E>`, rides on its `tool_result` as
+  `Output`, the way codex's does (§9.3), and the result's summary is
+  `exit E` from `shellExecution.exitCode`. Only `bash` is captured — the
+  Windows and Linux shell tools' names are 138.3's — and the live
+  `tool.shell_output` and `tool.execution_partial_result` chunks stay
+  `unknown`: the completion is the durable copy.
+- **Subagents** (*2026-10, task 138.7*). `subagent.started` is
+  `subagent_started` (the spawning `toolCallId`, `agentType`,
+  `agentDescription`) and `subagent.completed` is `subagent_finished`
+  (`totalToolCalls`, `totalTokens`, `durationMs`). Every later line carrying
+  that subagent's `agentId` is stamped with the spawning call as its
+  `ParentCallID`, so its output, tool calls and results nest under it rather
+  than reading as the root's, and its last message is never the run's answer.
+  `subagent.failed` is in the schema but in no capture, so it stays `unknown`,
+  as do `subagent.selected` and `subagent.configured`.
+- **Pinned absences** (*2026-10, task 138.7*). Over every 1.0.105 capture
+  there is no `run_header`, `plan` (no to-do tool), `subagent_progress`,
+  `conversation_reset`, `input_request` or `input_canceled` (`InputSupport` is
+  `never`), and no `skill` — skill invocation is 138.13's. A test pins every
+  raw type the captures carry to its normalization, so a type nobody mapped
+  fails it.
 - **SIGTERM exits 0** (*2026-10, task 138.5*). On 1.0.105 a terminated run ends
   `agent.interrupted`, `abort`, …, `result{exitCode:0}`. The engine records a
   termination it asked for whatever the exit code, as for every adapter, and

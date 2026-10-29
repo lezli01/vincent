@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -539,5 +540,26 @@ func TestAssemble(t *testing.T) {
 				t.Errorf("Failure = %+v, want %q", res.Failure, tt.failure)
 			}
 		})
+	}
+}
+
+// TestAssembleKeepsTheRunsAccount: what the stream assembled about the run's
+// spend reaches Wait's result (task 138.7), and cost stays unreported.
+func TestAssembleKeepsTheRunsAccount(t *testing.T) {
+	const id = "11111111-2222-4333-8444-555555555555"
+	terminal := &agent.RunResult{
+		SessionID: id, InputTokens: 1, OutputTokens: 2, CacheReadTokens: 3, CacheCreationTokens: 4,
+		ReasoningOutputTokens: 5, ModelUsage: []agent.ModelUsage{{Model: "m", InputTokens: 1}},
+		Duration: time.Second, APIDuration: time.Millisecond,
+	}
+	res := assemble(0, id, terminal, nil, "")
+	got := agent.RunResult{
+		SessionID: res.SessionID, InputTokens: res.InputTokens, OutputTokens: res.OutputTokens,
+		CacheReadTokens: res.CacheReadTokens, CacheCreationTokens: res.CacheCreationTokens,
+		ReasoningOutputTokens: res.ReasoningOutputTokens, ModelUsage: res.ModelUsage,
+		Duration: res.Duration, APIDuration: res.APIDuration,
+	}
+	if !reflect.DeepEqual(got, *terminal) || res.CostUSD != nil {
+		t.Errorf("assembled %+v, want the terminal's account %+v and no cost", res, *terminal)
 	}
 }

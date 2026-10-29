@@ -411,7 +411,16 @@ func assemble(exitCode int, sessionID string, terminal *agent.RunResult, streamE
 		res.IsError = terminal.IsError
 		res.ErrorMessage = terminal.ErrorMessage
 		res.ResultText = terminal.ResultText
-		// Tokens and CostUSD stay unreported until task 138.7 (§9.9).
+		// The run's account of itself, as the stream assembled it (task
+		// 138.7). CostUSD stays nil: a premium request is not a price.
+		res.InputTokens = terminal.InputTokens
+		res.OutputTokens = terminal.OutputTokens
+		res.CacheReadTokens = terminal.CacheReadTokens
+		res.CacheCreationTokens = terminal.CacheCreationTokens
+		res.ReasoningOutputTokens = terminal.ReasoningOutputTokens
+		res.ModelUsage = terminal.ModelUsage
+		res.Duration = terminal.Duration
+		res.APIDuration = terminal.APIDuration
 	}
 	res.Failure = classify(res, stderrTail)
 	if streamErr != nil {

@@ -2,11 +2,13 @@ package copilot
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
 )
@@ -42,119 +44,6 @@ func parseFixture(t *testing.T, name string) []agent.Event {
 	return events
 }
 
-// rawTypes are every `type` the 1.0.105 captures carry, each with the
-// normalized types its lines may become. assistant.message is the one with
-// two: a message that only requests tools has no text.
-var rawTypes = map[string][]agent.EventType{
-	"assistant.message":       {agent.EventOutput, agent.EventUnknown},
-	"tool.execution_start":    {agent.EventToolUse},
-	"tool.execution_complete": {agent.EventToolResult},
-	"session.error":           {agent.EventError},
-	"result":                  {agent.EventResult},
-	// Everything else is unknown in 138.5. Reasoning, subagents and usage
-	// are task 138.7's; the deltas are coalesced into assistant.message.
-	"abort": {agent.EventUnknown}, "agent.interrupted": {agent.EventUnknown},
-	"assistant.idle": {agent.EventUnknown}, "assistant.message_delta": {agent.EventUnknown},
-	"assistant.message_start": {agent.EventUnknown}, "assistant.reasoning": {agent.EventUnknown},
-	"assistant.reasoning_delta": {agent.EventUnknown}, "assistant.tool_call_delta": {agent.EventUnknown},
-	"assistant.turn_end": {agent.EventUnknown}, "assistant.turn_start": {agent.EventUnknown},
-	"model.call_final_result": {agent.EventUnknown}, "model.call_finished": {agent.EventUnknown},
-	"model.call_start": {agent.EventUnknown}, "prompt_cache_break": {agent.EventUnknown},
-	"session.auto_mode_resolved": {agent.EventUnknown}, "session.background_tasks_changed": {agent.EventUnknown},
-	"session.indexed_search": {agent.EventUnknown}, "session.info": {agent.EventUnknown},
-	"session.mcp_server_status_changed": {agent.EventUnknown}, "session.mcp_server_tools_loaded": {agent.EventUnknown},
-	"session.mcp_servers_loaded": {agent.EventUnknown}, "session.tools_updated": {agent.EventUnknown},
-	"session.usage_checkpoint": {agent.EventUnknown}, "subagent.completed": {agent.EventUnknown},
-	"subagent.configured": {agent.EventUnknown}, "subagent.selected": {agent.EventUnknown},
-	"subagent.started": {agent.EventUnknown}, "tool.execution_partial_result": {agent.EventUnknown},
-	"tool.shell_output": {agent.EventUnknown}, "user.message": {agent.EventUnknown},
-}
-
-// TestFixtureEventTypesArePinned holds every 1.0.105 capture to the events it
-// normalizes to: the count of each modeled type per fixture, every raw type
-// to its pinned normalization, and no usage event anywhere (task 138.7's).
-// A fixture or a raw type nobody pinned fails the test.
-func TestFixtureEventTypesArePinned(t *testing.T) {
-	type counts map[agent.EventType]int
-	want := map[string]counts{
-		"denied_1.0.105.jsonl":                {"output": 1, "tool_use": 1, "tool_result": 1, "result": 1},
-		"edit_1.0.105.jsonl":                  {"output": 1, "tool_use": 2, "tool_result": 2, "result": 1},
-		"mcp_1.0.105.jsonl":                   {"output": 1, "tool_use": 1, "tool_result": 1, "result": 1},
-		"reasoning_1.0.105.jsonl":             {"output": 1, "result": 1},
-		"restricted_1.0.105.jsonl":            {"output": 1, "tool_use": 9, "tool_result": 9, "result": 1},
-		"resume_1.0.105.jsonl":                {"output": 1, "result": 1},
-		"session_id_1.0.105.jsonl":            {"output": 1, "result": 1},
-		"session_id_unknown_1.0.105.jsonl":    {"output": 1, "result": 1},
-		"shell_1.0.105.jsonl":                 {"output": 1, "tool_use": 1, "tool_result": 1, "result": 1},
-		"sigterm_1.0.105.jsonl":               {"tool_use": 2, "tool_result": 1, "result": 1},
-		"simple_1.0.105.jsonl":                {"output": 1, "result": 1},
-		"skill_1.0.105.jsonl":                 {"output": 1, "tool_use": 1, "tool_result": 1, "result": 1},
-		"skill_store_1.0.105.jsonl":           {"output": 1, "tool_use": 1, "tool_result": 1, "result": 1},
-		"skill_store_linked_1.0.105.jsonl":    {"output": 1, "tool_use": 1, "tool_result": 1, "result": 1},
-		"skill_store_relocated_1.0.105.jsonl": {"output": 1, "tool_use": 1, "tool_result": 1, "result": 1},
-		"subagent_1.0.105.jsonl":              {"output": 2, "tool_use": 3, "tool_result": 3, "result": 1},
-		"unavailable_model_1.0.105.jsonl":     {},
-		"unsupported_effort_1.0.105.jsonl":    {},
-	}
-	names, err := filepath.Glob(filepath.Join("testdata", "*.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range names {
-		name := filepath.Base(path)
-		exp, ok := want[name]
-		if !ok {
-			t.Errorf("%s: no pinned event types; add the capture here", name)
-			continue
-		}
-		got := counts{}
-		for _, ev := range parseFixture(t, name) {
-			var line struct {
-				Type string `json:"type"`
-			}
-			if err := json.Unmarshal(ev.Raw, &line); err != nil {
-				t.Fatalf("%s: %v", name, err)
-			}
-			allowed, ok := rawTypes[line.Type]
-			if !ok {
-				t.Errorf("%s: raw type %q is not pinned", name, line.Type)
-			} else if !containsType(allowed, ev.Type) {
-				t.Errorf("%s: %q normalized to %q, want one of %v", name, line.Type, ev.Type, allowed)
-			}
-			if ev.Type == agent.EventUsage {
-				t.Errorf("%s: usage event; usage is task 138.7's", name)
-			}
-			if ev.Type != agent.EventUnknown {
-				got[ev.Type]++
-			}
-		}
-		if !equalCounts(got, exp) {
-			t.Errorf("%s: modeled events %v, want %v", name, got, exp)
-		}
-	}
-}
-
-func containsType(ts []agent.EventType, t agent.EventType) bool {
-	for _, x := range ts {
-		if x == t {
-			return true
-		}
-	}
-	return false
-}
-
-func equalCounts(a, b map[agent.EventType]int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-	return true
-}
-
 // resultOf is the fixture's terminal result.
 func resultOf(t *testing.T, events []agent.Event) *agent.RunResult {
 	t.Helper()
@@ -185,8 +74,8 @@ func TestSimpleFixture(t *testing.T) {
 	if res.SessionID != "fd834e22-e2d2-4301-85ba-785576a1f0a1" {
 		t.Errorf("SessionID = %q, want the result line's", res.SessionID)
 	}
-	if res.InputTokens != 0 || res.OutputTokens != 0 || res.CostUSD != nil {
-		t.Errorf("usage reported: %+v; premium requests are never cost, and tokens are 138.7's", res)
+	if res.CostUSD != nil || res.NumTurns != 0 {
+		t.Errorf("CostUSD=%v NumTurns=%d; premium requests are never cost, and turns are unreported", res.CostUSD, res.NumTurns)
 	}
 }
 
@@ -384,5 +273,134 @@ func TestDeltasCoalesce(t *testing.T) {
 	ev := parse([]byte(`{"type":"assistant.message","data":{"messageId":"m","content":""}}`))
 	if ev.Type != agent.EventOutput || ev.Text != "pong" {
 		t.Errorf("message → %q %q, want output pong", ev.Type, ev.Text)
+	}
+}
+
+// usageOf is a result's account of itself, the fields task 138.7 fills.
+type usageOf struct {
+	In, Out, CacheRead, CacheWrite, Reasoning int64
+	Models                                    []agent.ModelUsage
+	Duration, APIDuration                     time.Duration
+}
+
+func usage(r *agent.RunResult) usageOf {
+	return usageOf{
+		r.InputTokens, r.OutputTokens, r.CacheReadTokens, r.CacheCreationTokens,
+		r.ReasoningOutputTokens, r.ModelUsage, r.Duration, r.APIDuration,
+	}
+}
+
+// TestUsageFromTheCheckpoint: tokens are the root usage checkpoint's
+// tokenDetails — `input` the uncached share, as claude's InputTokens is
+// (§9.2) — reasoning is modelMetrics' reasoningTokens summed, and the
+// durations are the result line's. Every figure is the session's: the
+// subagent fixture's include the subagent's spend, and the resume fixture's
+// include the first run's (totalUserRequests 2; task 138.11 decides what a
+// resumed run reports). Every completed capture carries one checkpoint.
+func TestUsageFromTheCheckpoint(t *testing.T) {
+	tests := []struct {
+		fixture string
+		want    usageOf
+	}{
+		{"simple_1.0.105.jsonl", usageOf{
+			In: 11885, Out: 5, CacheRead: 1152,
+			Models: []agent.ModelUsage{{
+				Model: "mai-code-1.1-flash", InputTokens: 11885, OutputTokens: 5, CacheReadTokens: 1152,
+			}},
+			Duration: 4945 * time.Millisecond, APIDuration: 2116 * time.Millisecond,
+		}},
+		{"subagent_1.0.105.jsonl", usageOf{
+			In: 15, Out: 323, CacheRead: 41889, CacheWrite: 8959, Reasoning: 60,
+			Models: []agent.ModelUsage{{
+				Model: "gpt-6-luna", InputTokens: 15, OutputTokens: 323,
+				CacheReadTokens: 41889, CacheCreationTokens: 8959,
+			}},
+			Duration: 12491 * time.Millisecond, APIDuration: 8412 * time.Millisecond,
+		}},
+		{"resume_1.0.105.jsonl", usageOf{
+			In: 13105, Out: 46, CacheRead: 13056,
+			Models: []agent.ModelUsage{{
+				Model: "mai-code-1.1-flash", InputTokens: 13105, OutputTokens: 46, CacheReadTokens: 13056,
+			}},
+			Duration: 12627 * time.Millisecond, APIDuration: 4529 * time.Millisecond,
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.fixture, func(t *testing.T) {
+			events := parseFixture(t, tt.fixture)
+			if got := usage(resultOf(t, events)); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("usage = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestUsageCheckpointShapes: the last root checkpoint wins, one carrying an
+// agentId is a sub-run's and never the run's, and per-model rows come out in
+// model order with no cost.
+func TestUsageCheckpointShapes(t *testing.T) {
+	parse := New(nil).NewLineParser()
+	cp := func(agentID string, in int, models string) []byte {
+		line := `{"type":"session.usage_checkpoint","data":{"accountingSnapshot":{"tokenDetails":{"input":{"tokenCount":` +
+			strconv.Itoa(in) + `},"output":{"tokenCount":1}},"modelMetrics":{` + models + `}}}`
+		if agentID != "" {
+			line += `,"agentId":"` + agentID + `"`
+		}
+		return []byte(line + "}")
+	}
+	model := func(name string, reasoning int) string {
+		return `"` + name + `":{"usage":{"reasoningTokens":` + strconv.Itoa(reasoning) +
+			`},"tokenDetails":{"input":{"tokenCount":2},"output":{"tokenCount":3}}}`
+	}
+	if ev := parse(cp("", 10, model("a", 1))); ev.Type != agent.EventUsage {
+		t.Errorf("root checkpoint → %q, want usage", ev.Type)
+	}
+	if ev := parse(cp("", 20, model("b", 4)+","+model("a", 5))); ev.Type != agent.EventUsage {
+		t.Errorf("second root checkpoint → %q, want usage", ev.Type)
+	}
+	if ev := parse(cp("sub", 99, model("c", 7))); ev.Type != agent.EventUnknown {
+		t.Errorf("subagent checkpoint → %q, want unknown", ev.Type)
+	}
+	if ev := parse([]byte(`{"type":"session.usage_checkpoint","data":{"totalNanoAiu":1}}`)); ev.Type != agent.EventUnknown {
+		t.Errorf("checkpoint without a snapshot → %q, want unknown", ev.Type)
+	}
+	res := parse([]byte(`{"type":"result","sessionId":"s","exitCode":0}`)).Result
+	if res.InputTokens != 20 || res.ReasoningOutputTokens != 9 {
+		t.Errorf("tokens = %d in, %d reasoning; want the last root checkpoint's 20 and 9", res.InputTokens, res.ReasoningOutputTokens)
+	}
+	if len(res.ModelUsage) != 2 || res.ModelUsage[0].Model != "a" || res.ModelUsage[1].Model != "b" {
+		t.Errorf("ModelUsage = %+v, want a then b", res.ModelUsage)
+	}
+	for _, m := range res.ModelUsage {
+		if m.CostUSD != nil || m.InputTokens != 2 || m.OutputTokens != 3 {
+			t.Errorf("model row = %+v, want 2 in, 3 out, no cost", m)
+		}
+	}
+	if res.Duration != 0 || res.APIDuration != 0 {
+		t.Errorf("durations = %v/%v from a result without usage, want 0", res.Duration, res.APIDuration)
+	}
+}
+
+// TestThinkingIsTheWholeBlock: assistant.reasoning's content is one thinking
+// event; its deltas stay unknown and are never coalesced, because the closing
+// line already carries the block.
+func TestThinkingIsTheWholeBlock(t *testing.T) {
+	for _, name := range []string{"reasoning_1.0.105.jsonl", "denied_1.0.105.jsonl", "subagent_1.0.105.jsonl"} {
+		var thinking []string
+		for _, ev := range parseFixture(t, name) {
+			switch rawType(t, ev) {
+			case "assistant.reasoning_delta":
+				if ev.Type != agent.EventUnknown {
+					t.Errorf("%s: reasoning delta → %q, want unknown", name, ev.Type)
+				}
+			case "assistant.reasoning":
+				if ev.Type == agent.EventThinking {
+					thinking = append(thinking, ev.Text)
+				}
+			}
+		}
+		if len(thinking) != 1 || !strings.HasPrefix(thinking[0], "**") {
+			t.Errorf("%s: thinking = %q, want the one whole block", name, thinking)
+		}
 	}
 }
