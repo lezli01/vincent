@@ -134,6 +134,8 @@ agents:
     path: "$(hostpath "$FAKEAGENT")"
   cursor:
     path: "$(hostpath "$FAKEAGENT")"
+  copilot:
+    path: "$(hostpath "$FAKEAGENT")"
 EOF
 
 echo "== start the daemon"
@@ -980,12 +982,13 @@ case "$RECALL" in
   *) fail "turn 2 ran a fresh session rather than resuming one" ;;
 esac
 
-echo "== 2b. the same two turns on codex and cursor"
+echo "== 2b. the same two turns on codex, cursor and copilot"
 # Each adapter spells resume differently — claude and cursor take
-# `--resume <id>`, codex an `exec --json resume <id>` subcommand — and each
-# reports its id off a different stream shape. A daemon that dropped the id for
-# one of them fails here by omission: a fresh session emits no recall line.
-for AGENT in codex cursor; do
+# `--resume <id>`, codex an `exec --json resume <id>` subcommand, copilot
+# `--resume=<id>` (task 138.11) — and each reports its id off a different
+# stream shape. A daemon that dropped the id for one of them fails here by
+# omission: a fresh session emits no recall line.
+for AGENT in codex cursor copilot; do
   OTHER="$(api POST /chats \
     -d "{\"project_id\": $PROJECT_ID, \"title\": \"$AGENT talk\", \"agent\": \"$AGENT\"}")" \
     || fail "POST /v1/chats on $AGENT failed"
@@ -1013,6 +1016,17 @@ for AGENT in codex cursor; do
     *recalled:*) ;;
     *) fail "$AGENT turn 2 ran a fresh session rather than resuming one" ;;
   esac
+  if [[ "$AGENT" == "copilot" ]]; then
+    # Copilot's id is the --session-id vincent minted, and a resume keeps
+    # it. Its usage checkpoint is the session's running total — the fake's
+    # is 200 in by turn 2 — and the turn records its own 100 (task 138.11
+    # decision 1).
+    TURN2="$(api GET "/chats/$OTHER_ID" | jq -c '.turns[] | select(.seq == 2)')"
+    [[ "$(jq -r .session_id <<<"$TURN2")" == "$SESSION" ]] \
+      || fail "copilot turn 2 ran on another session than turn 1's $SESSION: $TURN2"
+    [[ "$(jq -r .input_tokens <<<"$TURN2")" == "100" ]] \
+      || fail "copilot turn 2 recorded the session total, not its own share: $TURN2"
+  fi
   api POST "/chats/$OTHER_ID/archive" >/dev/null || fail "archiving the $AGENT chat failed"
 done
 

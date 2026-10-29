@@ -40,6 +40,31 @@ func classify(res agent.RunResult, stderr string) *agent.Failure {
 	return nil
 }
 
+// sessionLostMarkers are what 1.0.105 prints on stderr, with exit 1 and no
+// JSONL, when `--resume=<id>` names a session it does not know:
+// `Error: No session, task, or name matched '<id>'.`
+// (resume_unknown_1.0.105.txt). Fixture-verified, like codex's.
+var sessionLostMarkers = []string{
+	"no session, task, or name matched",
+}
+
+// classifyResume names a resume copilot refused, in codex's shape (task
+// 138.11). It returns nil for a run that did not resume, and for a resumed
+// run that succeeded. The `resuming` guard is §9.2's rule: a workflow step
+// never resumes, so no step can be misdiagnosed as a lost session.
+func classifyResume(res agent.RunResult, stderr string, resuming bool) *agent.Failure {
+	if !resuming || (!res.IsError && res.ExitCode == 0) {
+		return nil
+	}
+	text := strings.ToLower(strings.Join([]string{res.ErrorMessage, res.ResultText, stderr}, "\n"))
+	for _, m := range sessionLostMarkers {
+		if strings.Contains(text, m) {
+			return &agent.Failure{Kind: agent.FailureSessionLost}
+		}
+	}
+	return nil
+}
+
 // streamFailure is a stream vincent could not read to the end (#139). It
 // outranks whatever the exit code and classify say — the run may well have
 // finished cleanly, but the record of it is missing lines, and §7.1 success

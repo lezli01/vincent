@@ -18,6 +18,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/copilot"
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
@@ -44,6 +45,9 @@ type harness struct {
 	// rather than there because the registry is built once, and an adapter
 	// nothing selects costs the other tests nothing.
 	flood *floodAdapter
+	// totals and perRun are sessionusage_test.go's scripted stubs, one
+	// reporting session totals and one per-run figures (task 138.11).
+	totals, perRun *totalsAdapter
 }
 
 func newHarness(t *testing.T) *harness {
@@ -63,6 +67,8 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{
 		store: st, repo: repo, project: project, dataDir: dataDir,
 		sessionDir: t.TempDir(), cfg: config.Default(), flood: &floodAdapter{},
+		totals: &totalsAdapter{name: totalsAgentName, cumulative: true},
+		perRun: &totalsAdapter{name: perRunAgentName},
 	}
 	t.Setenv("FAKEAGENT_SESSION_DIR", h.sessionDir)
 	h.runner = New(Deps{
@@ -73,7 +79,8 @@ func newHarness(t *testing.T) *harness {
 			claude.New(func() string { return fake }),
 			codex.New(func() string { return fake }),
 			cursor.New(func() string { return fake }),
-			h.flood,
+			copilot.New(func() string { return fake }),
+			h.flood, h.totals, h.perRun,
 		),
 		DataDir: dataDir,
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -162,15 +169,16 @@ func (h *harness) waitTurn(t *testing.T, turnID int64) *store.ChatTurn {
 // first supplies. Nothing here replays a log — the fake CLI is asked to resume
 // its own session, and it says what it remembers.
 //
-// It runs on all three adapters since task 070. Each subtest exercises a
+// It runs on all four adapters since task 138.11. Each subtest exercises a
 // different argv and a different stream: claude's `--resume <id>` with the id
-// on every line, codex's `exec resume <id> -` with a `thread_id` on one, and
-// cursor's `--resume <id>` with a `session_id` on every line. A vincent that
+// on every line, codex's `exec resume <id> -` with a `thread_id` on one,
+// cursor's `--resume <id>` with a `session_id` on every line, and copilot's
+// `--resume=<id>` with a `sessionId` on its result line alone. A vincent that
 // dropped the id for any one of them fails by omission — a fresh session emits
 // no recall line at all — rather than by a difference a reader has to squint
 // at.
 func TestTurnTwoSeesTurnOne(t *testing.T) {
-	for _, agentName := range []string{"claude", "codex", "cursor"} {
+	for _, agentName := range []string{"claude", "codex", "cursor", "copilot"} {
 		t.Run(agentName, func(t *testing.T) {
 			h := newHarness(t)
 			c := h.chatOn(t, agentName)
@@ -204,6 +212,12 @@ func TestTurnTwoSeesTurnOne(t *testing.T) {
 			if second.Seq != 2 {
 				t.Fatalf("turn 2 seq = %d, want 2", second.Seq)
 			}
+			// The fake copilot's checkpoint is the session's total, 200/84
+			// by turn 2; the turn records its own 100/42 (task 138.11).
+			if agentName == "copilot" && (second.InputTokens != 100 || second.OutputTokens != 42) {
+				t.Errorf("copilot turn 2 tokens = %d/%d, want its own 100/42",
+					second.InputTokens, second.OutputTokens)
+			}
 		})
 	}
 }
@@ -224,11 +238,12 @@ func (h *harness) transcript(t *testing.T, chatID int64, seq int) string {
 // silently fresh session would answer as if it had context it does not have,
 // and a reader could not tell that apart from a working conversation.
 //
-// claude and codex both refuse an id they never minted, in their own wordings,
-// and both fixtures back their adapter's markers. cursor is absent on purpose
+// claude, codex and copilot all refuse an id they never minted, in their own
+// wordings, and the fixtures back their adapters' markers (copilot's is
+// resume_unknown_1.0.105.txt, task 138.11). cursor is absent on purpose
 // and TestCursorAdoptsAnUnknownSession is why.
 func TestSessionLostFailsTheTurnAndLeavesTheChatUsable(t *testing.T) {
-	for _, agentName := range []string{"claude", "codex"} {
+	for _, agentName := range []string{"claude", "codex", "copilot"} {
 		t.Run(agentName, func(t *testing.T) {
 			h := newHarness(t)
 			c := h.chatOn(t, agentName)
@@ -423,6 +438,7 @@ func TestAdaptersThatCanResume(t *testing.T) {
 		{"claude", claude.New(bin), true},
 		{"codex", codex.New(bin), true},
 		{"cursor", cursor.New(bin), true},
+		{"copilot", copilot.New(bin), true},
 		{agenttest.NonResumingName, agenttest.StubNonResuming{}, false},
 	} {
 		if got := agent.CanResume(tc.a); got != tc.want {

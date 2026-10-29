@@ -174,8 +174,11 @@ type planItemLine struct {
 	Completed bool   `json:"completed,omitempty"`
 }
 
-// modelUsageLine is one model's share of a run. It carries what the run
-// spent, never what the model is — §9.6's catalog answers that (§13.2).
+// modelUsageLine is one model's share of a run. It carries what the agent
+// reported spending, never what the model is — §9.6's catalog answers that
+// (§13.2). That is the run's spend, except on an agent.CumulativeUsage adapter
+// (copilot) resuming a session, where it is the session's running total: the
+// turn row holds the turn's own share, the transcript the totals (§9.9).
 type modelUsageLine struct {
 	Model            string   `json:"model"`
 	InputTokens      int64    `json:"input_tokens,omitempty"`

@@ -143,7 +143,18 @@ func newSessionID() string {
 // The vincent MCP server (§13.4) rides inline in --additional-mcp-config,
 // with --allow-tool naming it (task 138 decision 6, see mcpConfig).
 //
-// The two refusals are interim, each replaced by the item named: a step is
+// A resumed run (a chat turn, §5.5) passes `--resume=<id>` instead of
+// --session-id and is otherwise the same argv (task 138.11,
+// resume_1.0.105.jsonl). It is always the `=` spelling: --resume takes an
+// optional value, so a separate token could be read as something else. And
+// it is never --session-id with the old id: copilot adopts any UUID it does
+// not know as a fresh session (session_id_unknown_1.0.105.jsonl), so a
+// forgotten session would silently restart — a chat that quietly lost its
+// context — where --resume= refuses it (resume_unknown_1.0.105.txt) and the
+// turn is classified as session_lost. --trust-folder is never passed on either path; it cannot combine
+// with --resume.
+//
+// The restricted refusal is interim, replaced by task 138.10: a step is
 // failed with a stated reason rather than run as something it did not ask for.
 func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 	if spec.PermissionMode == agent.Restricted {
@@ -151,15 +162,13 @@ func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 		return nil, fmt.Errorf("copilot restricted mode is not built yet (task 138.10); "+
 			"refusing to run the step full-auto instead (spec §9.9): %w", agent.ErrRestrictedUnsupported)
 	}
+	args := []string{"--output-format", "json", noAutoUpdate}
 	if spec.ResumeSessionID != "" {
-		// Task 138.11 (#863) resumes with --resume=<id>.
-		return nil, fmt.Errorf("copilot resume is not built yet (task 138.11): %w", agent.ErrResumeUnsupported)
+		args = append(args, "--resume="+spec.ResumeSessionID)
+	} else {
+		args = append(args, "--session-id", sessionID)
 	}
-	args := []string{
-		"--output-format", "json", noAutoUpdate,
-		"--session-id", sessionID,
-		"--allow-all-tools", "--allow-all-paths", "--allow-all-urls",
-	}
+	args = append(args, "--allow-all-tools", "--allow-all-paths", "--allow-all-urls")
 	// --model only when §8.6 resolved one: with none, the CLI picks `auto`
 	// itself (decision 9), and that is what the record says too.
 	if spec.Model != "" {
@@ -238,7 +247,12 @@ func mcpConfig(srv *agent.MCPServer) (string, error) {
 // argv limit); the process tree is killed when ctx is canceled. The caller
 // must consume Events() until closed; Wait blocks on stream end.
 func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandle, error) {
-	sessionID := newSessionID()
+	// A resumed run's session is the one it resumes; a fresh run's is minted
+	// here so it is known before the process writes a line.
+	sessionID := spec.ResumeSessionID
+	if sessionID == "" {
+		sessionID = newSessionID()
+	}
 	args, err := buildArgs(spec, sessionID)
 	if err != nil {
 		return nil, err
@@ -263,6 +277,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 		proc:       proc,
 		stderr:     stderr,
 		sessionID:  sessionID,
+		resuming:   spec.ResumeSessionID != "",
 		events:     make(chan agent.Event, 64),
 		readerDone: make(chan struct{}),
 		procDone:   make(chan struct{}),
@@ -282,9 +297,13 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 type run struct {
 	proc   agent.Process
 	stderr *tailWriter
-	// sessionID is the --session-id this run was started with. It is the
-	// run's session whether or not a result line ever confirms it.
+	// sessionID is the --session-id or --resume= id this run was started
+	// with. It is the run's session whether or not a result line ever
+	// confirms it.
 	sessionID string
+	// resuming records that the run was started with --resume=, so Wait can
+	// tell a refused resume from any other failure (§9.2's rule).
+	resuming bool
 
 	events     chan agent.Event
 	readerDone chan struct{}
@@ -362,7 +381,8 @@ func (r *run) PID() int { return r.proc.PID() }
 // Wait implements agent.RunHandle. It blocks until the stream is fully
 // consumed and the process has exited, then assembles the RunResult per §7.1.
 //
-// SessionID is always the --session-id the run was started with, even when
+// SessionID is always the --session-id or --resume= id the run was started
+// with, even when
 // no result line arrived — a killed run included. A result line that names a
 // different session contradicts the one thing this adapter chose, and is
 // reported as an error rather than recorded.
@@ -383,7 +403,7 @@ func (r *run) Wait() (agent.RunResult, error) {
 		r.mu.Lock()
 		terminal, streamErr := r.terminal, r.streamErr
 		r.mu.Unlock()
-		res := assemble(exitCode, r.sessionID, terminal, streamErr, r.stderr.String())
+		res := assemble(exitCode, r.sessionID, r.resuming, terminal, streamErr, r.stderr.String())
 		r.waitRes = res
 	})
 	return r.waitRes, r.waitErr
@@ -392,8 +412,8 @@ func (r *run) Wait() (agent.RunResult, error) {
 // assemble builds the RunResult Wait returns from what the run left behind:
 // the process's exit code, the session id it was started with, the result
 // line's verdict (nil when none arrived), the reader's own failure, and the
-// stderr tail.
-func assemble(exitCode int, sessionID string, terminal *agent.RunResult, streamErr error, stderrTail string) agent.RunResult {
+// stderr tail. resuming is whether the run was a --resume= run.
+func assemble(exitCode int, sessionID string, resuming bool, terminal *agent.RunResult, streamErr error, stderrTail string) agent.RunResult {
 	res := agent.RunResult{ExitCode: exitCode, SessionID: sessionID}
 	switch {
 	case terminal == nil:
@@ -405,7 +425,7 @@ func assemble(exitCode int, sessionID string, terminal *agent.RunResult, streamE
 	case terminal.SessionID != "" && terminal.SessionID != sessionID:
 		res.IsError = true
 		res.ResultText = terminal.ResultText
-		res.ErrorMessage = fmt.Sprintf("copilot reported session %s, not the --session-id %s it was given",
+		res.ErrorMessage = fmt.Sprintf("copilot reported session %s, not the session %s it was given",
 			terminal.SessionID, sessionID)
 	default:
 		res.IsError = terminal.IsError
@@ -423,6 +443,9 @@ func assemble(exitCode int, sessionID string, terminal *agent.RunResult, streamE
 		res.APIDuration = terminal.APIDuration
 	}
 	res.Failure = classify(res, stderrTail)
+	if f := classifyResume(res, stderrTail, resuming); f != nil {
+		res.Failure = f
+	}
 	if streamErr != nil {
 		streamFailure(&res, streamErr)
 	}
@@ -455,3 +478,24 @@ func (w *tailWriter) String() string {
 
 // Argv implements agent.RunHandle: the command line actually spawned.
 func (r *run) Argv() []string { return r.proc.Argv() }
+
+// SupportsResume implements agent.Resumer (task 138.11): `--resume=<id>`
+// reloads the session (resume_1.0.105.jsonl answered a question about the
+// previous run), the session id is the one passed in (Start), and an id the
+// CLI no longer knows is classified session_lost (resume_unknown_1.0.105.txt,
+// failure.go). Nothing is emulated: vincent never replays a conversation as
+// prompt context.
+func (a *Adapter) SupportsResume() bool { return true }
+
+// SupportsRestrictedResume implements agent.RestrictedResumer. It is false
+// until task 138.10 builds restricted copilot and captures whether
+// --available-tools holds on a --resume run (task 138.11 decision 2), so a
+// chat linked to a restricted task is refused when it is opened rather than
+// failing every turn at Start.
+func (a *Adapter) SupportsRestrictedResume() bool { return false }
+
+// UsageIsSessionTotal implements agent.CumulativeUsage: copilot's usage
+// checkpoint is the session's running total, so a resumed run's figures
+// include every earlier run's (resume_1.0.105.jsonl; spec §9.9, task 138.11
+// decision 1).
+func (a *Adapter) UsageIsSessionTotal() bool { return true }

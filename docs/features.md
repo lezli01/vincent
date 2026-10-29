@@ -76,7 +76,7 @@ rendered below it, and the composer under them](assets/tui-chat.png)
 
 Continuity is the agent CLI resuming **its own** session, not vincent replaying
 the conversation into the next prompt. That means only an adapter that can
-resume may hold a chat — all three of `claude`, `codex` and `cursor` can, each
+resume may hold a chat — all four of `claude`, `codex`, `cursor` and `copilot` can, each
 pinned to a captured fixture from a named CLI build. One that could not would be
 refused at creation rather than having continuity faked for it.
 

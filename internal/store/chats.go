@@ -45,7 +45,7 @@ const chatColumns = `id, project_id, title, state, agent, model, effort, permiss
 
 const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_message, result_text,
 	session_id, input_tokens, output_tokens, cost_usd, exit_code, pid, proc_identity,
-	started_at, ended_at, duration_ms`
+	started_at, ended_at, duration_ms, session_input_tokens, session_output_tokens`
 
 // CreateChat inserts c, assigning its ID and timestamps, and writes the
 // durable chat.created event in the same transaction (§13.3).
@@ -442,11 +442,13 @@ func (s *Store) UpdateChatTurn(ctx context.Context, t *ChatTurn) error {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE chat_turns SET state = ?, fail_reason = ?, error_message = ?, result_text = ?,
 				session_id = ?, input_tokens = ?, output_tokens = ?, cost_usd = ?, exit_code = ?,
-				pid = ?, proc_identity = ?, ended_at = ?, duration_ms = ?
+				pid = ?, proc_identity = ?, ended_at = ?, duration_ms = ?,
+				session_input_tokens = ?, session_output_tokens = ?
 			WHERE id = ?`,
 			string(t.State), nullString(t.FailReason), nullString(t.ErrorMessage), nullString(t.ResultText),
 			nullString(t.SessionID), t.InputTokens, t.OutputTokens, t.CostUSD, t.ExitCode,
-			t.PID, t.ProcIdentity, formatTimePtr(t.EndedAt), t.DurationMS, t.ID); err != nil {
+			t.PID, t.ProcIdentity, formatTimePtr(t.EndedAt), t.DurationMS,
+			t.SessionInputTokens, t.SessionOutputTokens, t.ID); err != nil {
 			return fmt.Errorf("update chat turn %d: %w", t.ID, err)
 		}
 		row := tx.QueryRowContext(ctx, `SELECT `+chatColumns+` FROM chats WHERE id = ?`, t.ChatID)
@@ -500,6 +502,30 @@ func (s *Store) GetChatTurn(ctx context.Context, id int64) (*ChatTurn, error) {
 		return nil, fmt.Errorf("get chat turn %d: %w", id, err)
 	}
 	return t, nil
+}
+
+// PreviousSessionUsage returns the raw session totals recorded by the
+// chat's latest turn before seq that ran on sessionID, and whether one
+// exists (task 138.11 decision 1, §9.9). A turn that recorded no totals —
+// an adapter reporting per-run figures, or one that never reached a usage
+// line — is skipped, so the delta is taken from the last figure the session
+// actually reported.
+func (s *Store) PreviousSessionUsage(ctx context.Context, chatID int64, seq int, sessionID string) (in, out int64, ok bool, err error) {
+	if sessionID == "" {
+		return 0, 0, false, nil
+	}
+	err = s.db.QueryRowContext(ctx, `
+		SELECT session_input_tokens, session_output_tokens FROM chat_turns
+		WHERE chat_id = ? AND seq < ? AND session_id = ?
+			AND session_input_tokens IS NOT NULL AND session_output_tokens IS NOT NULL
+		ORDER BY seq DESC LIMIT 1`, chatID, seq, sessionID).Scan(&in, &out)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, false, nil
+	}
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("previous session usage of chat %d: %w", chatID, err)
+	}
+	return in, out, true, nil
 }
 
 // ListRunningChatTurns returns every turn still marked running — what §12.4
@@ -630,7 +656,8 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 	var endedAt sql.NullString
 	if err := r.Scan(&t.ID, &t.ChatID, &t.Seq, &t.Prompt, (*string)(&t.State), &failReason, &errMsg,
 		&resultText, &sessionID, &t.InputTokens, &t.OutputTokens, &t.CostUSD, &t.ExitCode,
-		&t.PID, &procIdentity, &startedAt, &endedAt, &t.DurationMS); err != nil {
+		&t.PID, &procIdentity, &startedAt, &endedAt, &t.DurationMS,
+		&t.SessionInputTokens, &t.SessionOutputTokens); err != nil {
 		return nil, err
 	}
 	t.FailReason, t.ErrorMessage = failReason.String, errMsg.String

@@ -770,6 +770,13 @@ type ChatTurn struct {
 	StartedAt    time.Time
 	EndedAt      *time.Time
 	DurationMS   *int64
+	// SessionInputTokens and SessionOutputTokens are the session's running
+	// totals as the agent reported them, set only for an adapter whose
+	// figures are session-wide (agent.CumulativeUsage, copilot). InputTokens
+	// and OutputTokens are then this turn's share: these minus the same
+	// session's previous turn's (task 138.11 decision 1, §9.9).
+	SessionInputTokens  *int64
+	SessionOutputTokens *int64
 }
 
 // ChatWorktreeClaim is one chat's claim on a data-root directory (§10). It

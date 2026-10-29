@@ -220,7 +220,7 @@ answered even for a CLI that is missing.
 `GET /v1/info`'s and `GET /v1/doctor`'s `agents[]`, beside `supports_input`.
 
 `supports_resume` is whether the adapter can resume its own session, and so
-whether it may hold a [chat](cli.md#vincent-chat): `true` for all three shipped
+whether it may hold a [chat](cli.md#vincent-chat): `true` for all four shipped
 adapters. It is the same answer `POST /v1/chats` gates on, so a
 picker built on it and the `agent_cannot_resume` refusal cannot disagree, and
 like `restricted_verdict` it is answered for a CLI that is missing. It is
@@ -2939,7 +2939,7 @@ continuity. An adapter that cannot resume is refused:
            "message": "agent \"someagent\" cannot resume its own session, so it cannot hold a conversation; vincent refuses this rather than replaying the log as prompt context"}}
 ```
 
-All three shipped adapters can resume, so today nothing hits this. It is kept
+All four shipped adapters can resume, so today nothing hits this. It is kept
 because it is the contract for the next adapter: faking continuity by replaying
 the log into the prompt is exactly what the refusal exists to prevent. Ask
 [`GET /v1/agents`](#get-v1agents) for `supports_resume` rather than assuming a
@@ -3005,7 +3005,7 @@ Refusals when opening:
 | `409` | `invalid_state` | The task is not in one of the four states; `details.state` says where it is |
 | `409` | `task_locked_by_chat` | A chat is already open on it; `details.chat_id` names it |
 | `409` | `task_has_no_worktree` | The task never got one — blocked on `branch_exists` or `base_branch_missing`, or aborted before it started. Vincent does not create one for a chat |
-| `400` | `validation_failed` | An unregistered agent; or, on a task that runs `restricted`, an agent that cannot keep a resumed turn restricted — codex, whose `exec resume` has no `--sandbox` |
+| `400` | `validation_failed` | An unregistered agent; or, on a task that runs `restricted`, an agent that cannot keep a resumed turn restricted — codex, whose `exec resume` has no `--sandbox`, and copilot, which has no restricted mode yet |
 | `400` | `agent_cannot_resume` | The agent cannot hold a conversation |
 
 A git operation in progress in the worktree is not a refusal: a half-finished
@@ -3218,6 +3218,13 @@ Each turn carries the accounting a step run does — `input_tokens`,
 session it actually ran in, and its own transcript at
 `{data_dir}/transcripts/chat-{chat_id}/{seq}.jsonl`. A turn is `running`, then
 `done`, `failed` or `interrupted`, forever.
+
+On `copilot`, whose CLI reports only the session's running totals, a turn's
+`input_tokens` and `output_tokens` are its own share — the totals minus the
+same session's previous turn's (spec §9.9). The turn's transcript is not
+split: its `agent.result` record (tokens, cache tokens and `model_usage`)
+carries the session's totals so far, so on a resumed copilot turn it is
+larger than the turn row.
 
 ```bash
 curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \

@@ -295,8 +295,8 @@ func usage(r *agent.RunResult) usageOf {
 // (§9.2) — reasoning is modelMetrics' reasoningTokens summed, and the
 // durations are the result line's. Every figure is the session's: the
 // subagent fixture's include the subagent's spend, and the resume fixture's
-// include the first run's (totalUserRequests 2; task 138.11 decides what a
-// resumed run reports). Every completed capture carries one checkpoint.
+// include the first run's (totalUserRequests 2; chatrun records a resumed
+// turn's delta, task 138.11 decision 1). Every completed capture carries one checkpoint.
 func TestUsageFromTheCheckpoint(t *testing.T) {
 	tests := []struct {
 		fixture string

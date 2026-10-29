@@ -1423,8 +1423,8 @@ for the step level of §8.6's chain, as a repair's do; the agent must be able to
 resume its own session, and one that cannot exits 1 with
 `agent_cannot_resume`. The chat runs with the permission mode a repair on the
 task would — a task whose workflow is `restricted` gets a restricted chat, and
-a chat that resolves to codex exits 1 there, because codex cannot keep a
-resumed turn restricted — and in the task's container when its workflow runs in one.
+a chat that resolves to codex or copilot exits 1 there, because codex cannot,
+and copilot cannot yet, keep a resumed turn restricted — and in the task's container when its workflow runs in one.
 
 A task that never got a worktree — blocked on `branch_exists`, or aborted
 before it was admitted — exits 1 with `task_has_no_worktree`: vincent does not
@@ -1869,9 +1869,9 @@ Chats are not tasks. They never appear on the board, they run no workflow, and
 a chat turn never waits for a scheduler slot: it starts when you send it, or it
 is refused because `max_parallel_chats` chats are already running.
 
-Only an agent CLI that can resume its own session can hold a chat. All three
+Only an agent CLI that can resume its own session can hold a chat. All four
 shipped adapters can — `claude` with `--resume`, `codex` with `exec --json resume <id>`,
-`cursor` with `--resume`. An adapter that cannot is refused at creation with
+`cursor` with `--resume`, `copilot` with `--resume=<id>`. An adapter that cannot is refused at creation with
 `agent_cannot_resume` rather than having the conversation faked by replaying
 the log as prompt context.
 

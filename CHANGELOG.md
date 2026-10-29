@@ -21,10 +21,20 @@ list with the user-facing context a commit subject cannot carry.
   and `vincent doctor` list it, with its login state unknown (`null`)
   because the CLI has no probe for it. A step records copilot's token counts
   — the session's totals from its usage checkpoint — but never a cost, since
-  premium requests are not a price; restricted mode and chats are not supported yet, and under
+  premium requests are not a price; restricted mode is not supported yet, and under
   `container.mount_agent_config` `~/.copilot` is mounted — a containerized
   copilot step needs plain-text credentials there or a token through
   `environment`, since the OS credential store does not cross the mount.
+
+- **Copilot can hold a chat.** A chat on `copilot` resumes the CLI's own
+  session with `--resume=<id>`, so each turn sees the turns before it, and
+  `/v1/agents` reports `supports_resume: true` for it. A session the CLI no
+  longer knows fails the turn with `session_lost` and leaves the chat
+  usable. Copilot reports the whole session's token totals, so each turn
+  records its own share: the totals minus the previous turn's on the same
+  session. Spend that another Copilot client adds to the same session
+  between turns counts toward the next turn. A chat on a task that runs
+  `restricted` is still refused on copilot.
 
 - **Published skills report copilot reading the store.** GitHub Copilot CLI
   loads `~/.agents/skills` itself, so `vincent skills ls`, `vincent doctor`

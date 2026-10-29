@@ -421,8 +421,9 @@ func (s *stream) result(line streamLine) *agent.RunResult {
 		res.ErrorMessage = "copilot run aborted: " + s.aborted
 	}
 	// Tokens are the last root usage checkpoint's: session totals, which on
-	// a fresh session are the run's (§9.9; a resumed run's are task
-	// 138.11's). CostUSD stays nil and NumTurns 0: the CLI reports neither,
+	// a fresh session are the run's (§9.9). A resumed run's include every
+	// earlier run's; chatrun turns them into a turn's own spend (task 138.11
+	// decision 1, agent.CumulativeUsage). CostUSD stays nil and NumTurns 0: the CLI reports neither,
 	// and counting turn_start lines would be emulation.
 	if u := s.usage; u != nil {
 		res.InputTokens = u.InputTokens

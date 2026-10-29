@@ -98,8 +98,8 @@ var ErrResumeUnsupported = errors.New("this agent CLI cannot resume a previous s
 //
 // It is an optional interface rather than an Adapter method so that "adding an
 // agent CLI is one new implementation with zero core changes" stays true: an
-// adapter that says nothing cannot resume. All three shipped adapters
-// implement it, and since task 070 all three return true, each pinned to a
+// adapter that says nothing cannot resume. All four shipped adapters
+// implement it, and since task 138.11 all four return true, each pinned to a
 // fixture from a named CLI build. The false leg is exercised against
 // agenttest.StubNonResuming — a refusal proven only against whichever CLI
 // happens to lack the capability today inverts itself the day that CLI gains
@@ -132,6 +132,29 @@ func CanResumeRestricted(a Adapter) bool {
 func CanResume(a Adapter) bool {
 	r, ok := a.(Resumer)
 	return ok && r.SupportsResume()
+}
+
+// CumulativeUsage is implemented by an adapter whose CLI reports a resumed
+// run's token figures as the whole session's totals rather than the run's own
+// (spec §9.9, task 138.11 decision 1). Copilot is the one: its usage
+// checkpoint is a session-wide account (resume_1.0.105.jsonl holds the first
+// run's tokens as well as the resumed one's), and no other line carries a
+// per-call figure. A chat turn on such an adapter records the difference from
+// the same session's previous turn, which internal/chatrun computes.
+//
+// It is optional for the reason Resumer is: an adapter that says nothing
+// reports per-run figures, so claude, codex and cursor are unchanged.
+type CumulativeUsage interface {
+	// UsageIsSessionTotal reports whether RunResult's token figures are the
+	// session's running totals.
+	UsageIsSessionTotal() bool
+}
+
+// UsageIsSessionTotal reports whether a's RunResult token figures are its
+// session's running totals rather than one run's (see CumulativeUsage).
+func UsageIsSessionTotal(a Adapter) bool {
+	c, ok := a.(CumulativeUsage)
+	return ok && c.UsageIsSessionTotal()
 }
 
 // MCPServer is the vincent MCP endpoint a step's agent is wired to (spec

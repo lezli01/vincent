@@ -465,6 +465,9 @@ func (r *Runner) runTurn(
 	if res.SessionID != "" {
 		turn.SessionID = res.SessionID
 	}
+	if agent.UsageIsSessionTotal(adapter) {
+		r.turnShare(turn, res)
+	}
 	// The process is gone, so nothing later in this turn can write a skill.
 	// This is ahead of every ending below rather than deferred: finish's
 	// chat.turn_changed is the cue a client refetches the skill list on, and
@@ -891,6 +894,41 @@ func (r *Runner) journal(turn *store.ChatTurn, handle agent.RunHandle) {
 	if err := r.deps.Store.UpdateChatTurn(r.persist, turn); err != nil {
 		r.deps.Logger.Warn("journal chat turn", "turn", turn.ID, "error", err)
 	}
+}
+
+// turnShare turns an adapter's session totals into this turn's own spend
+// (task 138.11 decision 1, §9.9). Copilot reports the whole session's running
+// total, so the turn's figures are the totals minus those the chat's latest
+// earlier turn on the same session recorded. With no such turn — the first
+// one, or a fresh session after `session_lost` — the totals are the turn's.
+// Totals below the previous figures mean the session was reset under it, so
+// they are taken as they are rather than as a negative spend. A run that
+// reported no usage at all records no totals, so the next turn measures from
+// the last figure the session actually reported.
+//
+// Spend that another client of the same session adds between two vincent
+// turns lands in the second turn's share: nothing in the stream tells them
+// apart, and §9.9 says so rather than working around it.
+func (r *Runner) turnShare(turn *store.ChatTurn, res agent.RunResult) {
+	if res.InputTokens == 0 && res.OutputTokens == 0 {
+		return
+	}
+	in, out := res.InputTokens, res.OutputTokens
+	turn.SessionInputTokens, turn.SessionOutputTokens = &in, &out
+	ctx := r.persist
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	prevIn, prevOut, ok, err := r.deps.Store.PreviousSessionUsage(ctx, turn.ChatID, turn.Seq, turn.SessionID)
+	if err != nil {
+		// The totals are still stored; only this turn's share is overstated.
+		r.deps.Logger.Error("previous session usage", "turn", turn.ID, "error", err)
+		return
+	}
+	if !ok || in < prevIn || out < prevOut {
+		return
+	}
+	turn.InputTokens, turn.OutputTokens = in-prevIn, out-prevOut
 }
 
 // finish writes the turn's ending and returns the chat to idle, in that
