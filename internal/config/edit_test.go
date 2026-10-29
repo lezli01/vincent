@@ -192,6 +192,7 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 		{Path: "debug", Value: "true"},
 		{Path: "environment.unset", Value: RenderList([]string{"MSYSTEM"})},
 		{Path: "agents.cursor.path", Value: RenderString("/opt/cursor-agent")},
+		{Path: "agents.copilot.path", Value: RenderString("/opt/copilot")},
 		{Path: "parallel.max_parallel", Value: "2"},
 		{Path: "mcp.wire_steps", Value: "false"},
 		{Path: "include.max_depth", Value: "9"},
@@ -213,7 +214,7 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 	if cfg.Listen != "127.0.0.1:8080" || cfg.MaxParallelTasks != 7 ||
 		cfg.BranchTemplate != "wip/{{.ID}}" || cfg.LogLevel != "warn" || !cfg.Debug ||
 		cfg.TranscriptMaxBytes != 1<<30 || cfg.MaxTaskCostUSD != 2.5 || cfg.MaxTreeCostUSD != 12.75 ||
-		cfg.Agents.Cursor.Path != "/opt/cursor-agent" || cfg.MCP.WireSteps ||
+		cfg.Agents.Cursor.Path != "/opt/cursor-agent" || cfg.Agents.Copilot.Path != "/opt/copilot" || cfg.MCP.WireSteps ||
 		cfg.Include.MaxDepth != 9 || cfg.Loop.MaxIterations != 3 ||
 		cfg.GitHub.PollInterval != 0 || cfg.Update.Check ||
 		len(cfg.TUI.Board.GroupBy) != 0 || !cfg.TUI.Hyperlinks || len(cfg.Environment.Unset) != 1 ||

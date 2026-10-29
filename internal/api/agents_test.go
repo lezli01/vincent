@@ -15,6 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/copilot"
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -31,6 +32,7 @@ func newAgentsServer(t *testing.T) *httptest.Server {
 		claude.New(func() string { return fake }),
 		codex.New(func() string { return "/nonexistent/codex-not-here" }),
 		cursor.New(func() string { return "/nonexistent/cursor-agent-not-here" }),
+		copilot.New(func() string { return "/nonexistent/copilot-not-here" }),
 	)
 	cache := agent.NewCatalogCache(reg)
 	s := New(Deps{
@@ -201,11 +203,11 @@ func TestAgentsEndpoint(t *testing.T) {
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("agents body: %v", err)
 	}
-	// Three adapters, in registration order — the daemon's own order (T5.3).
-	if len(out.Agents) != 3 {
-		t.Fatalf("agents = %d entries, want claude, codex and cursor", len(out.Agents))
+	// Four adapters, in registration order — the daemon's own order (T5.3).
+	if len(out.Agents) != 4 {
+		t.Fatalf("agents = %d entries, want claude, codex, cursor and copilot", len(out.Agents))
 	}
-	cl, cx, cu := out.Agents[0], out.Agents[1], out.Agents[2]
+	cl, cx, cu, co := out.Agents[0], out.Agents[1], out.Agents[2], out.Agents[3]
 	if cl.Name != "claude" || !cl.Available || cl.Version != "2.1.224" {
 		t.Errorf("claude = %+v, want available 2.1.224", cl)
 	}
@@ -239,6 +241,19 @@ func TestAgentsEndpoint(t *testing.T) {
 	if cu.DefaultModel != "auto" {
 		t.Errorf("cursor default_model = %q, want auto — the only non-empty adapter default (§9.7)", cu.DefaultModel)
 	}
+	// Copilot lists no models and no default (task 138 decision 9); its
+	// curated effort floor survives the missing binary, and its login state
+	// is unknown, never guessed (decision 10).
+	if co.Name != "copilot" || co.Available {
+		t.Errorf("copilot = %+v, want unavailable", co)
+	}
+	if len(co.Efforts) == 0 || len(co.Models) != 0 || co.DefaultModel != "" {
+		t.Errorf("copilot catalog = %d efforts %d models default %q, want curated efforts, no models, no default (§9.9)",
+			len(co.Efforts), len(co.Models), co.DefaultModel)
+	}
+	if co.LoggedIn != nil {
+		t.Errorf("copilot logged_in = %v, want null (§9.9)", *co.LoggedIn)
+	}
 
 	// /v1/info serves availability from the same cache (T2.11): same truth.
 	resp, body = doRequest(t, ts, http.MethodGet, "/v1/info", testToken)
@@ -251,9 +266,9 @@ func TestAgentsEndpoint(t *testing.T) {
 	if err := json.Unmarshal(body, &info); err != nil {
 		t.Fatalf("info body: %v", err)
 	}
-	if len(info.Agents) != 3 || !info.Agents[0].Available ||
-		info.Agents[1].Available || info.Agents[2].Available {
-		t.Errorf("info agents = %+v, want claude available + codex and cursor not", info.Agents)
+	if len(info.Agents) != 4 || !info.Agents[0].Available ||
+		info.Agents[1].Available || info.Agents[2].Available || info.Agents[3].Available {
+		t.Errorf("info agents = %+v, want claude available + codex, cursor and copilot not", info.Agents)
 	}
 
 	// ?refresh=true still answers 200 with the same shape.

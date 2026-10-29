@@ -356,7 +356,7 @@ func agentConfigMounts(c config.Container) []container.Mount {
 		return nil
 	}
 	var out []container.Mount
-	for _, dir := range []string{".claude", ".codex", ".cursor"} {
+	for _, dir := range []string{".claude", ".codex", ".cursor", ".copilot"} {
 		p := filepath.Join(home, dir)
 		if _, err := os.Stat(p); err != nil {
 			continue

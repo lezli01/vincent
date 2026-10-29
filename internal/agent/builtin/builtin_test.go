@@ -15,7 +15,7 @@ func noPath(string) string { return "" }
 // and the daemon probes the adapters in it.
 func TestNewOrder(t *testing.T) {
 	got := builtin.New(noPath).Names()
-	want := []string{"claude", "codex", "cursor"}
+	want := []string{"claude", "codex", "cursor", "copilot"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("Names() = %v, want %v", got, want)
 	}
@@ -29,10 +29,12 @@ func TestConfigPathsIsTotal(t *testing.T) {
 	cfg.Agents.Claude.Path = "/opt/claude"
 	cfg.Agents.Codex.Path = "/opt/codex"
 	cfg.Agents.Cursor.Path = "/opt/cursor-agent"
+	cfg.Agents.Copilot.Path = "/opt/copilot"
 	want := map[string]string{
-		"claude": "/opt/claude",
-		"codex":  "/opt/codex",
-		"cursor": "/opt/cursor-agent",
+		"claude":  "/opt/claude",
+		"codex":   "/opt/codex",
+		"cursor":  "/opt/cursor-agent",
+		"copilot": "/opt/copilot",
 	}
 	paths := builtin.ConfigPaths(func() config.Config { return cfg })
 	names := builtin.New(noPath).Names()

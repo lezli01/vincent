@@ -1027,6 +1027,9 @@ type Agents struct {
 	// Cursor's empty path resolves the `cursor-agent` binary, never `cursor`
 	// — that one is the editor launcher (spec §9.7).
 	Cursor Agent `yaml:"cursor"`
+	// Copilot's empty path resolves the standalone `copilot` CLI, never the
+	// retired `gh copilot` extension (spec §9.9).
+	Copilot Agent `yaml:"copilot"`
 }
 
 // Agent is the per-adapter configuration. An empty Path means the binary is

@@ -227,6 +227,7 @@ func (d *daemonView) configSummaryLines() []string {
 		{"claude", c.Agents.Claude.Path},
 		{"codex", c.Agents.Codex.Path},
 		{"cursor", c.Agents.Cursor.Path},
+		{"copilot", c.Agents.Copilot.Path},
 	} {
 		path := a.path
 		if path == "" {
