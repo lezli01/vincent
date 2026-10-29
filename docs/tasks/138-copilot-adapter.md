@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (8/17)
+**Status:** 🔄 in progress (9/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -388,11 +388,20 @@ its code makes true, in its own pull request.
   `VINCENT_GATE_AGENT=copilot` against a real, authenticated CLI is
   human-only and recorded in `docs/gates/138-copilot-gate.md`, still empty.
 - [ ] **138.10** ([#862](https://github.com/lezli01/vincent/issues/862)) §9.4 restricted mode over `--available-tools`, or a
-  per-OS refusal; gate scenario 4. Depends: 138.9, 138.3.
-- [ ] **138.11** ([#863](https://github.com/lezli01/vincent/issues/863)) `Resumer`, session-lost classification, m14 leg 2b.
-  Depends: 138.9. Decide whether a resumed run reports the usage checkpoint's
-  session totals as they are or as a delta: `resume_1.0.105.jsonl`'s
-  includes the first run's tokens (138.7, §9.9).
+  per-OS refusal; gate scenario 4. Depends: 138.9, 138.3. Hand-off from
+  138.11: `SupportsRestrictedResume()` returns false, so a linked chat on a
+  restricted task is refused at open. Flip it to true here only if a
+  capture proves `--available-tools` holds on a `--resume=` run.
+- [x] **138.11** ([#863](https://github.com/lezli01/vincent/issues/863)) `Resumer`, session-lost classification, m14 leg 2b.
+  Depends: 138.9. A resume is `--resume=<id>` with no `--session-id`
+  (`resume_1.0.105.jsonl`), and an unknown id is `session_lost`
+  (`resume_unknown_1.0.105.txt`). Decision 1: a resumed chat turn records
+  its own spend. Copilot reports session totals (`agent.CumulativeUsage`),
+  so chatrun stores the raw totals on `chat_turns` (migration 0049) and
+  records totals minus the same session's previous turn's. A new session or
+  a shrunk total takes the raw figures. Decision 2:
+  `SupportsRestrictedResume()` is false until 138.10. m14 leg 2b walks a
+  two-turn copilot chat. ✓ 2026-10-29
 - [x] **138.12** ([#864](https://github.com/lezli01/vincent/issues/864)) Published-skill reporting for copilot: a store-read
   `Link` shown as `copilot (reads store)`, a slugless copilot row in the
   install table, `skill.PlanInstall` for `--agent copilot`, and the store
