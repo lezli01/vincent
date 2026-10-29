@@ -551,7 +551,10 @@ func TestBoardTapesSwitchToTasksFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := strings.ReplaceAll(string(raw), "\r\n", "\n")
-	onLanding := map[string]bool{"tui-issues": true, "tui-issue": true, "tui-issue-form": true}
+	onLanding := map[string]bool{
+		"tui-issues": true, "tui-issue": true, "tui-issue-form": true,
+		"tui-handoff-form": true, "tui-issue-handoff": true,
+	}
 	calls := tapeCall.FindAllStringSubmatchIndex(script, -1)
 	if len(calls) == 0 {
 		t.Fatal("no tape call found in scripts/screenshots.sh; the pattern is stale")

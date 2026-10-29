@@ -434,8 +434,9 @@ In detail:
   to hand off.
 
   ![The issues board on platform-infra with all four lanes shown: open,
-  in progress with a `!` for a blocked task, hand-off for finished work, and
-  done for an issue closed as completed](assets/tui-issues.png)
+  in progress with a `!` for a blocked task, hand-off for finished work with
+  each card's delivery and its handoff marker (`claimed (H1)`, `waiting`),
+  and done for issues closed as completed](assets/tui-issues.png)
 - The workflow graph visualizes parallel groups, fan-out lanes and merges,
   the `needs:` edges between lanes and the waves they run in, conditions,
   loops, guards, checks, and nested includes — and, on a task's own Workflow

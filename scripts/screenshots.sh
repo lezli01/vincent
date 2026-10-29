@@ -756,6 +756,34 @@ EOF
   git -C "$REPOS/api" add .vincent
   git -C "$REPOS/api" commit -qm "add the project-scoped workflow"
 
+  # platform-infra's handoff workflow (task 137.14): `role: handoff`, so only
+  # a handoff runs it, and project-scoped so no other project's Workflows
+  # view or new-task form gains a row. The manual step is what keeps the
+  # seeded handoff live — parked at a gate, which holds no slot — without
+  # the `paused` a paused start would put on every marker it claims. The
+  # `run:` bodies stay in the sh∩pwsh intersection the gates are held to.
+  mkdir -p "$REPOS/platform-infra/.vincent/workflows"
+  cat > "$REPOS/platform-infra/.vincent/workflows/handoff-train.yaml" <<'EOF'
+name: handoff-train
+description: Stack the handed-off changes, hold them for a review, then close the issues.
+role: handoff
+steps:
+  - id: stack
+    name: List the delivered commits
+    type: command
+    run: git log -1 --oneline
+  - id: review
+    name: Review the train
+    type: manual
+    instructions: Read the stacked changes before their issues close.
+  - id: deliver
+    name: Close the issues
+    type: command
+    run: vincent handoff deliver {{.Handoff.ID}} --all --close completed
+EOF
+  git -C "$REPOS/platform-infra" add .vincent
+  git -C "$REPOS/platform-infra" commit -qm "add the handoff workflow"
+
   # Acknowledge the first-run full-auto notice up front. It is a real part of
   # the product (§16) but it owns the keyboard until it is dismissed, and the
   # first tape of a run would otherwise spend its keystrokes closing it and
@@ -1065,6 +1093,52 @@ EOF
   local from_issue
   from_issue="$(add "$P_WEB" feature-pr 'stop the header flicker on first paint' "\"issue_id\":$I_FLICKER")"
   wait_state "$from_issue" awaiting_gate 120
+
+  # A handoff (task 137.14): what tui-issues' markers, tui-handoff-form,
+  # tui-issue-handoff and tui-handoff-task are pictures of. Four more
+  # platform-infra issues, each with a task that finishes on its own — an
+  # implicit `change` delivery, ready under incident-response's default
+  # `hand_off: auto` — so all four sit in `hand-off`. Three are claimed by
+  # one handoff, started as a human with no grant; one of those is then
+  # delivered (and closed), one parked `waiting`, and one left `claimed`.
+  # The fourth stays `pending`, the card the form tape opens on. Here, with
+  # the other tasks that must run, ahead of the slow lane that fills every
+  # slot; after every issue above, so no issue id the other tapes show moves.
+  local hand=() t n
+  for n in \
+    'Rotate the eu-west TLS certificates before they expire|rotate the eu-west TLS certificates' \
+    'Alert when the backup bucket stops receiving writes|alert on a silent backup bucket' \
+    'Raise the connection pool limit on the read replicas|raise the replica connection pool limit' \
+    'Retire the legacy-metrics exporter|retire the legacy-metrics exporter'; do
+    hand+=("$(issue "$P_INFRA" "${n%%|*}" chore 2 '["ops"]')")
+    t="$(add "$P_INFRA" incident-response "${n#*|}" "\"issue_id\":${hand[${#hand[@]}-1]}")"
+    wait_state "$t" done 120
+  done
+  local lane=""
+  for (( i = 0; i < 60; i++ )); do
+    lane="$(api GET "/issues?project_id=$P_INFRA" | jq -r --argjson ids "$(printf '%s\n' "${hand[@]}" | jq -sc .)" \
+      '[.[] | select(.id as $i | $ids | index($i)) | .lane] | unique | join(",")')"
+    [[ "$lane" == "hand_off" ]] && break
+    sleep 0.5
+  done
+  [[ "$lane" == "hand_off" ]] || fail "the four handoff issues never all reached hand_off (lanes: ${lane:-none})"
+  I_TRAIN_DONE="${hand[0]}" I_TRAIN_WAIT="${hand[1]}" I_TRAIN_CLAIM="${hand[2]}"
+  local h
+  h="$(api POST /handoffs "$(jq -cn --argjson p "$P_INFRA" --argjson a "$I_TRAIN_DONE" --argjson b "$I_TRAIN_WAIT" --argjson c "$I_TRAIN_CLAIM" \
+    '{project_id: $p, workflow: "handoff-train", issue_ids: [$a, $b, $c], title: "ship the eu-west ops fixes"}')")"
+  T_TRAIN="$(jq -r .task_id <<<"$h")"
+  H_TRAIN="$(jq -r .id <<<"$h")"
+  wait_state "$T_TRAIN" awaiting_gate 120
+  api POST "/handoffs/$H_TRAIN/items/$I_TRAIN_DONE/deliver" '{"close":"completed"}' >/dev/null
+  api POST "/handoffs/$H_TRAIN/items/$I_TRAIN_WAIT/wait" \
+    '{"note":"waiting on the storage team to open the backup bucket alarm"}' >/dev/null
+  local marks=""
+  for (( i = 0; i < 60; i++ )); do
+    marks="$(api GET "/handoffs/$H_TRAIN" | jq -r '[.items[] | .outcome] | join(",")')"
+    [[ "$marks" == "delivered,waiting," ]] && break
+    sleep 0.5
+  done
+  [[ "$marks" == "delivered,waiting," ]] || fail "handoff $H_TRAIN's items never read delivered, waiting, claimed (outcomes: ${marks:-none})"
 
   # A transcript long enough that the output pane has to truncate it. The cap
   # is 5000 records and only *live* chunks trip it (internal/tui/detail.go), so
@@ -2359,6 +2433,67 @@ Sleep 2s
 Escape
 Sleep 2s
 Screenshot "'"$OUT"'/tui-project-overview.png"
+Sleep 2s
+'
+
+  # The handoff screens (task 137.14), appended last for the reason the
+  # #415 block gives. The seed's handoff-train handoff claims three
+  # platform-infra issues — one delivered and closed, one waiting, one
+  # claimed — and leaves a fourth pending.
+
+  # The handoff form, opened with `I` on the pending issue after `space`
+  # selects it: the workflow (handoff-train, the one `role: handoff`
+  # workflow platform-infra has), the seven grant capabilities all off, the
+  # title and paused. It is never submitted.
+  owns platform-infra issue 'legacy-metrics' tui-handoff-form
+  tape tui-handoff-form 1250 platform-infra '
+Sleep 3s
+Type "/"
+Sleep 500ms
+Type "legacy-metrics"
+Sleep 1s
+Enter
+Sleep 1s
+Space
+Sleep 1s
+Type "I"
+Sleep 3s
+Screenshot "'"$OUT"'/tui-handoff-form.png"
+Sleep 2s
+'
+
+  # The waiting issue's detail: its finished task and the Handoff section
+  # under it — the handoff, its task, the outcome and the note.
+  owns platform-infra issue 'backup bucket' tui-issue-handoff
+  tape tui-issue-handoff 1250 platform-infra '
+Sleep 3s
+Type "/"
+Sleep 500ms
+Type "backup bucket"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-issue-handoff.png"
+Sleep 2s
+'
+
+  # The handoff's task, parked at its manual review gate: the Overview's
+  # Items block lists each claimed issue with its delivery and outcome.
+  owns platform-infra task 'ops fixes' tui-handoff-task
+  tape tui-handoff-task 1400 platform-infra '
+Tab
+Sleep 2s
+Type "/"
+Sleep 500ms
+Type "ops fixes"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-handoff-task.png"
 Sleep 2s
 '
 }

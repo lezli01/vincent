@@ -2000,7 +2000,8 @@ follows the issue into whatever lane it moved to.
 
 ![The issues board on platform-infra with the done lane shown: two open
 issues with no task, two in progress (one with a `!` for its blocked task),
-one in hand-off whose task finished, and one done, closed as
+four in hand-off whose tasks finished — each a `change` delivery, one
+`claimed (H1)` and one `waiting` in a handoff — and two done, closed as
 completed](../assets/tui-issues.png)
 
 | Key | Does |
