@@ -35,8 +35,9 @@ package agent
 // that the CLI expands it. Whether the file is put in front of the model by
 // the CLI itself, or merely hinted at for the model to read with a tool, is
 // FileMentionSyntax.Expands — and §5.5 records that with tools allowed
-// `codex exec` and `cursor-agent -p` each read a mentioned path in one tool
-// call, so a mention is worth sending on all three (task 126 decision 6).
+// `codex exec`, `cursor-agent -p` and copilot on stdin each read a mentioned
+// path in one tool call, so a mention is worth sending on all four (task 126
+// decision 6, task 138.13).
 type FileMentioner interface {
 	// FileMentionSyntax is how this adapter's CLI recognizes a mention. It is
 	// static: the same for every build and every directory.
@@ -49,7 +50,7 @@ type FileMentioner interface {
 
 // FileMentionSyntax is how a message names a file (§9.1, task 126).
 type FileMentionSyntax struct {
-	// Sigil is the character a mention starts with: "@" on all three shipped
+	// Sigil is the character a mention starts with: "@" on all four shipped
 	// adapters.
 	Sigil string
 	// Position is where in a message the CLI recognizes a mention.
@@ -76,7 +77,7 @@ const (
 	// position is the adapter's fact to state, not an assumption.
 	MentionLeading MentionPosition = "leading"
 	// MentionAnywhere is a mention the CLI recognizes as a token anywhere in
-	// the message — all three shipped adapters, observed in §5.5. It is what
+	// the message — all four shipped adapters, observed in §5.5 and §9.9. It is what
 	// task 126 decision 8 keys the picker's open rule on.
 	MentionAnywhere MentionPosition = "anywhere"
 )
@@ -84,7 +85,7 @@ const (
 // CanMentionFiles reports whether a implements FileMentioner (§9.1, task
 // 126). Like CanInvokeSkills, it answers interface satisfaction and nothing
 // more, and its false leg is proven against agenttest.StubNoMentions, never
-// against a shipped adapter: all three implement it today, and a refusal
+// against a shipped adapter: all four implement it today, and a refusal
 // pinned to a real CLI inverts itself the day that CLI changes — the lesson
 // recorded on Resumer.
 func CanMentionFiles(a Adapter) bool {

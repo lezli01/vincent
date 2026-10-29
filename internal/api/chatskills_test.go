@@ -17,6 +17,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
+	"github.com/lezli01/vincent/internal/agent/copilot"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
@@ -86,7 +87,8 @@ func newSkillsHarness(t *testing.T) *skillsHarness {
 	// A non-default syntax, so an invocation the route built itself rather
 	// than asking the adapter would show.
 	stub := &agenttest.StubSkills{Syntax: agent.SkillSyntax{Sigil: "$", Position: agent.SkillAnywhere}}
-	reg := agent.NewRegistry(stub, agenttest.StubNoSkills{})
+	reg := agent.NewRegistry(stub, agenttest.StubNoSkills{},
+		copilot.New(func() string { return filepath.Join(dataDir, "no-copilot-here") }))
 	cache := agent.NewSkillCache()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
@@ -329,6 +331,29 @@ func TestChatSkillsAdapterThatCannotListOrInvoke(t *testing.T) {
 			got.ProbeError, got.ProbedAt, got.WorkDir, c.WorktreePath)
 	}
 	h.wantCalls(t, 0, "for an adapter that cannot list")
+}
+
+// TestChatSkillsCopilotCannotListOrInvoke is the same answer from a shipped
+// adapter: copilot neither lists nor invokes (§9.9, task 138.13 decisions B
+// and D), so a copilot chat's skill picker has nothing to offer and the
+// route never probes. Pinned to the real adapter because a capture decided
+// it — copilot's skills_test.go holds the evidence.
+func TestChatSkillsCopilotCannotListOrInvoke(t *testing.T) {
+	h := newSkillsHarness(t)
+	c := h.freeChat(t, "copilot", chatstate.Idle)
+
+	got := h.list(t, c.ID, "?refresh=true")
+	if got.ListVerdict != "unsupported" || got.UnavailableReason != "copilot does not report the skills it loads" {
+		t.Errorf("list = %q %q, want unsupported with copilot's reason", got.ListVerdict, got.UnavailableReason)
+	}
+	if len(got.Skills) != 0 {
+		t.Errorf("skills = %+v, want none", got.Skills)
+	}
+	if got.InvokeVerdict != "unsupported" || got.InvokeSigil != "" || got.InvokePosition != "" {
+		t.Errorf("invoke = %q %q %q, want unsupported with no syntax",
+			got.InvokeVerdict, got.InvokeSigil, got.InvokePosition)
+	}
+	h.wantCalls(t, 0, "for copilot")
 }
 
 // TestChatSkillsProbeOutcomes maps the cache's three answers (§9.6, task 124

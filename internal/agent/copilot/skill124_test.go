@@ -61,6 +61,7 @@ func TestFixtureEventTypesArePinned(t *testing.T) {
 	}
 	want := map[string]counts{
 		"denied_1.0.105.jsonl":                base(counts{"output": 1, "thinking": 1, "tool_use": 1, "tool_result": 1}),
+		"mention_1.0.105.jsonl":               base(counts{"output": 1}),
 		"edit_1.0.105.jsonl":                  base(counts{"output": 1, "tool_use": 2, "tool_result": 2}),
 		"mcp_1.0.105.jsonl":                   base(counts{"output": 1, "tool_use": 1, "tool_result": 1}),
 		"reasoning_1.0.105.jsonl":             base(counts{"output": 1, "thinking": 1}),
@@ -72,6 +73,8 @@ func TestFixtureEventTypesArePinned(t *testing.T) {
 		"sigterm_1.0.105.jsonl":               base(counts{"tool_use": 2, "tool_result": 1}),
 		"simple_1.0.105.jsonl":                base(counts{"output": 1}),
 		"skill_1.0.105.jsonl":                 base(counts{"output": 1, "tool_use": 1, "tool_result": 1}),
+		"skill_invoke_leading_1.0.105.jsonl":  base(counts{"output": 1, "tool_use": 1, "tool_result": 1}),
+		"skill_invoke_mid_1.0.105.jsonl":      base(counts{"output": 1, "tool_use": 1, "tool_result": 1}),
 		"skill_store_1.0.105.jsonl":           base(counts{"output": 1, "tool_use": 1, "tool_result": 1}),
 		"skill_store_linked_1.0.105.jsonl":    base(counts{"output": 1, "tool_use": 1, "tool_result": 1}),
 		"skill_store_relocated_1.0.105.jsonl": base(counts{"output": 1, "thinking": 2, "tool_use": 1, "tool_result": 1}),
@@ -181,10 +184,13 @@ func TestInputEchoIsTheRootPrompt(t *testing.T) {
 }
 
 // TestNoConversationResetOrSkill pins what no capture carries: a
-// conversation reset, and a skill load — even skill_1.0.105.jsonl's `skill`
-// tool call is a tool_use, not a load. Skill invocation is task 138.13's,
-// which replaces this half of the test. Input requests are absent too:
-// copilot's InputSupport is never.
+// conversation reset, and a skill load. A `skill` tool call stays a tool_use
+// — in skill_1.0.105.jsonl, and in skill_invoke_leading_1.0.105.jsonl and
+// skill_invoke_mid_1.0.105.jsonl, where the message named the skill and the
+// model still had to call the tool (task 138.13 decision E): `skill.invoked`
+// is never on stdout on 1.0.105, and nothing synthesizes a skill event from
+// a tool call. Input requests are absent too: copilot's InputSupport is
+// never.
 func TestNoConversationResetOrSkill(t *testing.T) {
 	allFixtures(t, func(name string, i int, ev agent.Event) {
 		switch ev.Type { //nolint:exhaustive // only the absent events matter here

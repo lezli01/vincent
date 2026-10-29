@@ -169,8 +169,9 @@ const (
 )
 
 // CanInvokeSkills reports whether a implements SkillInvoker (§9.1, task 124).
-// Like CanListSkills, its false leg is proven against agenttest.StubNoSkills,
-// never against a shipped adapter: all three implement it today.
+// Like CanListSkills, its false leg is proven against agenttest.StubNoSkills:
+// claude, codex and cursor implement it, and copilot does not, because on
+// 1.0.105 a `/name` on stdin reaches the model as prose (§9.9, task 138.13).
 func CanInvokeSkills(a Adapter) bool {
 	_, ok := a.(SkillInvoker)
 	return ok

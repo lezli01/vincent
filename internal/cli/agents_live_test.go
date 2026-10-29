@@ -12,6 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/copilot"
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/store"
@@ -41,6 +42,7 @@ func TestAgentsCommandAgainstTheRealAPI(t *testing.T) {
 		claude.New(func() string { return fake }),
 		codex.New(func() string { return missing }),
 		cursor.New(func() string { return fake }),
+		copilot.New(func() string { return missing }),
 	)))
 	ctx := t.Context()
 	c := h.client(t)
@@ -147,6 +149,8 @@ func TestAgentsCommandAgainstTheRealAPI(t *testing.T) {
 		}
 		for name, syntax := range map[string][2]string{
 			"claude": {"/", "leading"}, "codex": {"$", "anywhere"}, "cursor": {"/", "anywhere"},
+			// copilot does not invoke (§9.9): registered, so "" rather than null.
+			"copilot": {"", ""},
 		} {
 			a, ok := want.Find(name)
 			if !ok {
@@ -177,7 +181,7 @@ func TestAgentsCommandAgainstTheRealAPI(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("agents: code %d, stderr %q", code, errOut)
 		}
-		for _, name := range []string{"claude", "codex", "cursor"} {
+		for _, name := range []string{"claude", "codex", "cursor", "copilot"} {
 			a, ok := want.Find(name)
 			if !ok {
 				t.Fatalf("GET /v1/agents does not list %s", name)
@@ -188,7 +192,7 @@ func TestAgentsCommandAgainstTheRealAPI(t *testing.T) {
 				continue
 			}
 			if !*a.SupportsFileMentions {
-				t.Errorf("%s: supports_file_mentions = false, want true — all three shipped adapters mention (§9.1)", name)
+				t.Errorf("%s: supports_file_mentions = false, want true — all four shipped adapters mention (§9.1)", name)
 			}
 			if got := [2]string{*a.FileMentionSigil, *a.FileMentionPosition}; got != [2]string{"@", "anywhere"} {
 				t.Errorf("%s: file_mention_sigil, file_mention_position = %q, want [@ anywhere]", name, got)
