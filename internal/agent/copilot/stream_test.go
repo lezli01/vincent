@@ -286,6 +286,60 @@ func TestSessionErrorAndUnknownLines(t *testing.T) {
 	}
 }
 
+// TestExitCodeDecides: a session.error does not fail a run whose result
+// reports exit 0 — a rate-limited turn may switch models and finish — and a
+// subagent's session.error or abort (lines carrying agentId) never decides
+// the parent run's outcome.
+func TestExitCodeDecides(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  bool // IsError
+	}{
+		{"root session.error, exit 0", []string{
+			`{"type":"session.error","data":{"errorType":"rate_limit","message":"slow down","eligibleForAutoSwitch":true}}`,
+			`{"type":"result","sessionId":"s","exitCode":0}`,
+		}, false},
+		{"subagent session.error, exit 0", []string{
+			`{"type":"session.error","data":{"message":"sub broke"},"agentId":"a1"}`,
+			`{"type":"result","sessionId":"s","exitCode":0}`,
+		}, false},
+		{"subagent abort, exit 0", []string{
+			`{"type":"abort","data":{"reason":"user_initiated"},"agentId":"a1"}`,
+			`{"type":"result","sessionId":"s","exitCode":0}`,
+		}, false},
+		{"root abort, exit 0", []string{
+			`{"type":"abort","data":{"reason":"user_initiated"}}`,
+			`{"type":"result","sessionId":"s","exitCode":0}`,
+		}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parse := New(nil).NewLineParser()
+			var last agent.Event
+			for _, l := range tt.lines {
+				last = parse([]byte(l))
+			}
+			if last.Type != agent.EventResult || last.Result.IsError != tt.want {
+				t.Errorf("result = %+v, want IsError=%v", last.Result, tt.want)
+			}
+		})
+	}
+}
+
+// TestSubagentErrorDoesNotExplainTheExit: a nonzero exit takes the root
+// agent's message, never a subagent's.
+func TestSubagentErrorDoesNotExplainTheExit(t *testing.T) {
+	parse := New(nil).NewLineParser()
+	if ev := parse([]byte(`{"type":"session.error","data":{"message":"sub broke"},"agentId":"a1"}`)); ev.Type != agent.EventError || ev.Text != "sub broke" {
+		t.Errorf("subagent session.error → %q %q, want error event", ev.Type, ev.Text)
+	}
+	res := parse([]byte(`{"type":"result","sessionId":"s","exitCode":2}`)).Result
+	if !res.IsError || res.ErrorMessage != "copilot run failed (exit 2)" {
+		t.Errorf("result = %+v, want the generic exit message", res)
+	}
+}
+
 // TestDeltasCoalesce: a closing message without content takes the deltas'
 // text, and deltas alone emit nothing.
 func TestDeltasCoalesce(t *testing.T) {

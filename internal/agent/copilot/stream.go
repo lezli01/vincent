@@ -24,6 +24,10 @@ type streamLine struct {
 	// become CostUSD (task 138 non-goals).
 	SessionID string `json:"sessionId"`
 	ExitCode  *int   `json:"exitCode"`
+	// AgentID is set on a subagent's lines and absent on the root agent's
+	// (subagent_1.0.105.jsonl). A subagent's error or abort is the subagent's
+	// own, and never decides how the run ended.
+	AgentID string `json:"agentId"`
 }
 
 // messageData is assistant.message_delta's and assistant.message's payload.
@@ -66,7 +70,10 @@ type stream struct {
 	// tools maps a toolCallId to the tool name its start line gave, because
 	// the complete line does not repeat it.
 	tools map[string]string
-	// sessionError is the last session.error's message.
+	// sessionError is the root agent's last session.error message. It only
+	// explains a nonzero exit: a session.error is "for timeline display" in
+	// the 1.0.105 schema, and a rate-limited turn can switch models and still
+	// finish cleanly, so the result line's exitCode decides (§9.9).
 	sessionError string
 	// aborted is the reason an `abort` line gave. A run stopped under SIGTERM
 	// still ends `result{exitCode:0}` (sigterm_1.0.105.jsonl), so this is
@@ -150,11 +157,14 @@ func (s *stream) parse(raw []byte) agent.Event {
 			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(line.Data, &d)
-		s.sessionError = d.Message
-		if s.sessionError == "" {
-			s.sessionError = "copilot reported a session error"
+		msg := d.Message
+		if msg == "" {
+			msg = "copilot reported a session error"
 		}
-		return agent.Event{Type: agent.EventError, Text: s.sessionError, Raw: raw}
+		if line.AgentID == "" {
+			s.sessionError = msg
+		}
+		return agent.Event{Type: agent.EventError, Text: msg, Raw: raw}
 	case "abort":
 		// Recorded, not normalized: the line stays unknown, and the result
 		// that follows it is an error (below).
@@ -162,6 +172,9 @@ func (s *stream) parse(raw []byte) agent.Event {
 			Reason string `json:"reason"`
 		}
 		_ = json.Unmarshal(line.Data, &d)
+		if line.AgentID != "" {
+			break
+		}
 		s.aborted = d.Reason
 		if s.aborted == "" {
 			s.aborted = "aborted"
@@ -200,8 +213,10 @@ func (s *stream) toolResult(d toolData) agent.ToolResult {
 // result assembles the terminal line. It carries no answer text, so the last
 // assistant message is the answer, as codex's is (§9.3).
 //
-// A nonzero exitCode is an error; so is a zero one after an `abort`, because
-// that is how a terminated run ends on 1.0.105. The engine records a
+// A nonzero exitCode is an error, explained by the root agent's last
+// session.error when there was one; so is a zero one after the root agent's
+// `abort`, because that is how a terminated run ends on 1.0.105. A
+// session.error alone never fails a zero exit. The engine records a
 // termination it caused whatever the adapter says, so this is the second
 // line of defense, not the first (§9.9).
 func (s *stream) result(line streamLine) *agent.RunResult {
@@ -219,9 +234,6 @@ func (s *stream) result(line streamLine) *agent.RunResult {
 	case s.aborted != "":
 		res.IsError = true
 		res.ErrorMessage = "copilot run aborted: " + s.aborted
-	case s.sessionError != "":
-		res.IsError = true
-		res.ErrorMessage = s.sessionError
 	}
 	// Token counts and cost stay unreported: on 1.0.105 tokens live only on
 	// usage checkpoints and turn ends, which are task 138.7's (§9.9).

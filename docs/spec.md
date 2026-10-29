@@ -6450,15 +6450,20 @@ section is renumbered.
   the terminal `result` line carries none. `tool.execution_start` and
   `tool.execution_complete` are `tool_use` and `tool_result` keyed by
   `toolCallId`; a `denied` completion is a blocked tool result, not a run
-  failure. `session.error` is `error`. Every other type is `unknown`, raw line
+  failure. `session.error` is `error`, but the `result` line's `exitCode`
+  decides how the run ended: a session.error only supplies the message for a
+  nonzero exit, because the 1.0.105 schema describes it as timeline detail and
+  a rate-limited turn may switch models and finish cleanly. Lines carrying
+  `agentId` are a subagent's, and its `session.error` or `abort` never decides
+  the run's outcome. Every other type is `unknown`, raw line
   kept. No `usage` event is produced and token and cost fields stay unreported:
   tokens live only on usage checkpoints and turn ends, which are 138.7's, and
   `premiumRequests` never becomes cost.
 - **SIGTERM exits 0** (*2026-10, task 138.5*). On 1.0.105 a terminated run ends
   `agent.interrupted`, `abort`, …, `result{exitCode:0}`. The engine records a
   termination it asked for whatever the exit code, as for every adapter, and
-  the parser also reads a result after `abort` as an error, so the run is never
-  reported as a success.
+  the parser also reads a result after the root agent's `abort` as an error,
+  so the run is never reported as a success.
 
 ## 10. Worktree management
 
