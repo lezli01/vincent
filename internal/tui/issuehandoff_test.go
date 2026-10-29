@@ -197,6 +197,20 @@ func TestIssueDetailHandoffSection(t *testing.T) {
 		!strings.Contains(page, "returned by human") {
 		t.Fatalf("page has no Handoff section row:\n%s", page)
 	}
+	// Review F5: the handoff row is drawn under Handoff alone — not also as
+	// a ghost `· #0` under Tasks — and each selectable row maps to one line,
+	// so the cursor lands on the line it names.
+	if strings.Contains(page, "#0") {
+		t.Errorf("a handoff row is drawn as a task:\n%s", page)
+	}
+	rows := v.selectRows()
+	if len(v.rowLines) != len(rows) {
+		t.Fatalf("%d row lines for %d rows: %v", len(v.rowLines), len(rows), v.rowLines)
+	}
+	lines := strings.Split(page, "\n")
+	if last := lines[v.rowLines[len(rows)-1]]; !strings.Contains(last, "H9") {
+		t.Errorf("the handoff row maps to %q", last)
+	}
 }
 
 func TestHandoffReasonWords(t *testing.T) {

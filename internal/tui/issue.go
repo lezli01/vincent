@@ -1032,7 +1032,10 @@ func (v *issueView) pageLines(width int) (lines []string) {
 		lines = append(lines, styleDim.Render("  no task yet · "+opKey(keymap.Add)+" starts one"))
 	}
 	for i, row := range rows {
-		if row.mainWorktree {
+		// The Main worktree and Handoff sections render their own rows. A
+		// handoff row carries no task, and drawing it here was a ghost
+		// `· #0` under the issue's tasks (review F5).
+		if row.mainWorktree || row.handoff != nil {
 			continue
 		}
 		t := row.task
