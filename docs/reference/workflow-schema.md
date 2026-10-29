@@ -168,7 +168,7 @@ the including workflow's applies.
 role: handoff                # the only value; absent means an ordinary workflow
 ```
 
-Marks a workflow that a [handoff](../guides/issues.md) runs: one integration
+Marks a workflow that a [handoff](../guides/handoff.md) runs: one integration
 task over several issues whose work is ready, started with `vincent handoff
 start`. The rule runs both ways. A handoff runs only a `role: handoff`
 workflow, and nothing else may start one: `vincent task create`, MCP's

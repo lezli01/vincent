@@ -34,7 +34,7 @@ story: this is loopback, and the token is the one every other client uses.
 
 The tool list **is** the route table: projects, workflows, `resolve`, tasks and
 every human action (`task_cancel`, `task_pause`, `task_approve`, `task_answer`,
-`task_archive`, `task_follow_up`, …), steps, step status, transcripts, diffs,
+`task_archive`, `task_follow_up`, `task_deliver`, …), steps, step status, transcripts, diffs,
 the GitHub reads, the [trigger](triggers.md) reads, `trigger_validate` and both
 dry runs, the [issue](../reference/api.md#issues) routes (`issue_list`,
 `issue_create`, `issue_get`, `issue_patch`, `issue_close`, `issue_reopen`,
@@ -45,7 +45,9 @@ the [handoff](../reference/api.md#handoffs) routes (`handoff_start`,
 `handoff_return`, `handoff_wait`, `handoff_release` — `handoff_start` is
 grant-less: a grant from an agent is refused `grant_needs_human`, and a
 step's verb that would close or comment on an imported issue is refused
-`forge_write_needs_human`),
+`forge_write_needs_human` unless the step is the live handoff's own task and
+its grant names `issue.close` or `issue.comment`; see
+[Handing work off](handoff.md)),
 and the read-only `health`, `info`, `config_get`, `agent_list`,
 `doctor`, `orphan_list`.
 

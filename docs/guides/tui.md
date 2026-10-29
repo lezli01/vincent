@@ -2047,7 +2047,8 @@ or for the cursor's card when nothing is selected. The form asks for the
 form — the grant, as seven capabilities that all start off, an optional title,
 and whether to start paused. `ctrl+s` starts it: the keypress is the consent
 to the grant you ticked. Everything else takes the daemon's defaults; `vincent
-handoff create` is the full surface. A refusal — an issue that stopped being
+handoff start` is the full surface, and [Handing work off](handoff.md) tells
+the whole story. A refusal — an issue that stopped being
 eligible since the board was drawn — names the issue and leaves the form open.
 
 A claimed or waiting issue belongs to its handoff: `a` refuses to start a task

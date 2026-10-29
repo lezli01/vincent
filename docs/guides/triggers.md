@@ -766,6 +766,7 @@ action:
   grant: [pull.create, pull.merge]
 ```
 
+A [handoff](handoff.md) claims finished issues for one integration task.
 This replays `POST /v1/handoffs` in `source.project`: one handoff task,
 running `workflow` (which must declare `role: handoff`), over issues in the
 project's `hand_off` lane. `workflow` is required; `title`, `description` and

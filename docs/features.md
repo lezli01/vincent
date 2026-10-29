@@ -576,7 +576,8 @@ worktree, queued behind the one holding it rather than refused. Work that
 should not wait runs as a side task, in its own worktree cut from the main
 branch, and merges back when it is done — a conflict either blocks for you or
 goes to an agent first. [Working an issue](guides/issues.md) tells the whole
-story.
+story, and [Handing work off](guides/handoff.md) what happens once the work
+is done.
 
 ![An issue imported from acme/web#142: its lane, its labels, its Markdown
 description, the two comments mirrored from GitHub, the Main worktree section
@@ -618,7 +619,8 @@ without creating anything.
 Vincent stores no credential: it prefers your existing `gh` CLI and falls back to
 `GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Of an issue, only a
 person's close or reopen of an imported one is written back, and the close,
-reopen or comment of a handoff you [granted](reference/api.md#handoffs) it;
+reopen or comment of a [handoff](guides/handoff.md) you
+[granted](guides/handoff.md#grants-letting-a-handoff-write-to-github) it;
 otherwise vincent
 writes to GitHub only when you ask it to open a task's pull request or act on
 one, [below](#open-a-pull-request). When GitHub is unavailable, `vincent doctor`
@@ -644,8 +646,8 @@ what happens when the group a `concurrency_key:` names still has unfinished
 work: fire anyway, skip the event, cancel what is running, or hold it until
 the group empties.
 
-A trigger that fires can create a task, start a handoff over the issues ready
-to hand off, follow up a finished one, retry a blocked one, or cancel one,
+A trigger that fires can create a task, start a [handoff](guides/handoff.md)
+over the issues ready to hand off, follow up a finished one, retry a blocked one, or cancel one,
 finding the task by its branch. By default it only
 **proposes**: the task lands `paused` with its agent steps restricted, and you
 start it with `resume`.
