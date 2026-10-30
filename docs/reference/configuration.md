@@ -758,7 +758,7 @@ own budget, so a cap of `$5.00` on a twenty-lane fan-out permits `$100` across
 the tree. To bound the tree as a whole, set
 [`max_tree_cost_usd`](#max_tree_cost_usd) as well.
 
-**It is inert on codex and cursor.** Only claude reports cost. A task run
+**It is inert on codex, cursor and copilot.** Only claude reports cost. A task run
 entirely on an agent that reports none is never blocked by this, whatever you
 set — vincent will not estimate money from token counts. See
 [Agents](../guides/agents.md).
@@ -816,8 +816,8 @@ things and both are checked at the same point. When both are passed at once the
 task blocks `cost_limit`, because raising this value would not clear that one.
 
 **It only counts what was reported.** Only claude reports cost, so a tree run
-entirely on codex or cursor is never blocked by this. A tree that mixes claude
-with codex or cursor lanes counts claude's spend alone, and the rest is not
+entirely on codex, cursor or copilot is never blocked by this. A tree that
+mixes claude with codex, cursor or copilot lanes counts claude's spend alone, and the rest is not
 estimated from token counts. See [Agents](../guides/agents.md).
 
 **It is set here and nowhere else.** No create-time field, `vincent task add`
@@ -914,8 +914,8 @@ Only windows vincent watched close count. A quota an agent merely
 100%, never holds a task. When the reset passes, every waiting task becomes
 eligible again under the normal concurrency caps.
 
-Only claude recognizes a spent quota at all, so this key is inert on codex and
-cursor. See [Agents](../guides/agents.md).
+Only claude recognizes a spent quota at all, so this key is inert on codex,
+cursor and copilot. See [Agents](../guides/agents.md).
 
 ### `parallel`
 
