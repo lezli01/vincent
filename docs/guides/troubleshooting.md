@@ -259,9 +259,9 @@ snapshot is fine; it is the host that changed.
 
 The workflow has a step declaring
 [`on_input: require`](../reference/workflow-schema.md#type-agent): it needs an
-agent that can stop mid-run and ask you something. Codex and cursor never can —
-neither CLI has a control channel — and claude can only inside the CLI version
-family vincent has verified the protocol against.
+agent that can stop mid-run and ask you something. Codex, cursor and copilot
+never can — none of those CLIs has a control channel — and claude can only
+inside the CLI version family vincent has verified the protocol against.
 
 Where you meet it:
 
