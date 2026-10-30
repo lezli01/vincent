@@ -46,8 +46,10 @@ the fake does.
 ## Recorded runs
 
 Each row is one hand-run of the real-CLI legs. CI covers the fakeagent legs on
-every push, so this table only tracks what CI cannot. No real-CLI run has been
-recorded yet; task 138.9 stays open until one is.
+every push, so this table only tracks what CI cannot. The first real-CLI run was
+recorded on 2026-10-30, on Linux. Task 138.9 decides whether one row is
+enough to close it.
 
 | Date | OS | Launched from | CLI version | Token variables | Scenarios | Result |
 |---|---|---|---|---|---|---|
+| 2026-10-30 | Linux arm64 (Docker, `node:24-bookworm`) | bash, npm `copilot` bin on `PATH` | 1.0.105 | `GH_TOKEN` (gh OAuth) | 1, 2 | pass (task 138.3) |

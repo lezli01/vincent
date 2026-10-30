@@ -184,8 +184,8 @@ with zero hits; every `.jsonl` parses line by line under `jq -c .`.
   `session.mcp_server_status_changed`), including the restricted one, where
   its tools are listed as disabled. The vincent MCP tool appears as
   `vincent-health` in `tool.execution_start.data.toolName`.
-- The shell tool is named `bash` on macOS; its Windows and Linux names are
-  138.3's to capture.
+- The shell tool is named `bash` on macOS and Linux and `powershell` on
+  Windows (138.3, below).
 - The task tool's first call in `subagent` failed validation (`"prompt":
   Required`) and was retried; the `subagent.*` events carry the explore agent's
   name, model and tool list.
@@ -240,7 +240,100 @@ isolated-`COPILOT_HOME` discipline could never have observed
   `402 … "quota_exceeded"` (#3431). Whether `--output-format json` emits a
   `session.error` for either (the schema's `session.error` has `errorType`,
   `statusCode` and `eligibleForAutoSwitch`) was not observed.
-- Nothing was captured on Windows or Linux (138.3).
+- Windows and Linux were run (138.3, below), but no fixture was committed from
+  either, because neither showed a shape the macOS fixtures lack.
+
+### Windows run (138.3, 2026-10-30)
+
+Run by hand on Windows against the pinned 1.0.105, installed from npm
+(`copilot.cmd` shim → `node` → the `@github/copilot-win32-x64` native
+`copilot.exe`), with Node 24 and Windows PowerShell 5.1 as the only
+PowerShell. A Node `child_process` harness stood in for the planned Go
+`exec.Cmd` one. It used anonymous pipes for stdout and stderr, put the prompt
+on stdin, and passed `--output-format json --no-auto-update` on every run.
+Results:
+[#855 comment](https://github.com/lezli01/vincent/issues/855#issuecomment-6519640302).
+
+| Check | Result |
+|---|---|
+| Pipe stdout, `.cmd` shim | exit 0, ~29 KB of JSONL on stdout, empty stderr |
+| Pipe stdout, native `copilot.exe` (the npm-bundled one) | exit 0, same shape |
+| github/copilot-cli #3188 (`Failed to sync '<stdout>'`) | does **not** reproduce on 1.0.105 |
+| Shell tool name | `powershell` (`tool.execution_start` → `data.toolName`) |
+| `--available-tools=view,grep,glob`, no allow flags | the model's `create` call fails with `Tool 'create' does not exist`; no file is written; exit 0 |
+| `--available-tools=view,grep,glob,powershell`, no allow flags | the shell call is denied ("no interactive user response was available"); no file is written |
+| Tree-kill through the shim | `taskkill /T /F` on the `cmd.exe` wrapper removed `cmd.exe → node → copilot.exe` and their children in the middle of a tool call; nothing survived |
+
+**Verdicts.**
+
+- **Windows is supported at the pinned build**, for both the shim and the
+  native install. Open question 1 is closed. Exact-string version verdicts
+  (138.5) already confine the claim to 1.0.105. #3188 needs revisiting only if
+  a later pin brings it back.
+- **Restricted mode is `RestrictedAlways`**, mapped over `--available-tools`
+  with no allow flags, on every OS. The read-only set behaves on Windows as it
+  does on macOS, so no per-GOOS refusal is needed. This is input to 138.10.
+- **Input to 138.10's "plus git" (decision 8).** With the shell tool in
+  `--available-tools` and no allow flag, a headless run denies the shell
+  call. The command in that run wrote a file. The Linux run below shows the
+  split: copilot runs a read-only command (`git status`) unprompted and denies
+  one that writes. So listing the shell tool gives read-only git, not a shell
+  bounded to git. 138.10 must decide whether that read-only judgement is
+  enough for §9.4, or whether to add an explicit `--allow-tool`/`--deny-tool`
+  rule. Either way it must be captured on every OS.
+
+**Not covered.** These keep 138.3 open:
+
+- **Job object kill.** The kill used `taskkill /T`, not `procx`'s Job object
+  with `CREATE_NO_WINDOW`. Cancel a real copilot task through vincent and list
+  the processes afterwards.
+- **Console flashing** (github/copilot-cli #4549). Not assessed: the harness
+  ran with `windowsHide`. The real-CLI gate leg (138.9,
+  `VINCENT_GATE_AGENT=copilot`) under Git Bash shows it, and also covers the
+  pipe check through vincent's own spawn path.
+- **WinGet install.** Not tested, because only `GitHub.CopilotApp` was
+  installed. The native exe has been proven from the npm package, so this is
+  optional.
+- **PowerShell 7.** copilot's README requires v6+, but only 5.1 was present.
+  Repeat the tool name and both restricted runs with pwsh 7 installed.
+
+The captures (`simple`, `restricted`, `restricted2`, `native`, `killtest`)
+showed no event shape the macOS fixtures lack, so none is committed as a
+`_windows` fixture.
+
+### Linux run (138.3, 2026-10-30)
+
+Run in Docker on **linux/arm64**: `node:24-bookworm`, with Go 1.26 added for
+the gate. The pinned 1.0.105 was installed with `npm install
+@github/copilot@1.0.105` into a throwaway prefix. Both the
+`@github/copilot-linux-arm64` native binary and the npm `copilot` bin
+(`npm-loader.js` under node) printed `GitHub Copilot CLI 1.0.105.`. The run
+discipline matched 138.1: `--no-auto-update`, `COPILOT_AUTO_UPDATE=false`, a
+fresh `COPILOT_HOME`, the prompt on stdin through a pipe, and a throwaway repo
+with one commit. Authentication was the operator's `gh` OAuth token in
+`GH_TOKEN`.
+
+| Run | Result |
+|---|---|
+| `simple`, native and npm bin, `J` | exit 0, JSONL on stdout, empty stderr |
+| `shell`, `J` | exit 0; the shell tool is `bash`, as on macOS |
+| `edit`, `J` | exit 0; `notes.txt` became `goodbye` |
+| `--available-tools=view,grep,glob`, no allow flags | `session.info {infoType:"configuration"}` lists `bash`, `create` and `edit` among the disabled tools; only `view` ran; no file was written; exit 0 |
+| `--available-tools=view,grep,glob,bash`, no allow flags | `touch x.txt && git status` was denied ("Permission denied because no interactive user response was available"); a following plain `git status` ran unprompted and succeeded; no file was written; exit 0 |
+| Kill of the npm bin's process group (`setsid`, then `TERM` and `KILL` to `-pgid`) in the middle of a run | node and the native binary are both in the group, and nothing survived |
+| `VINCENT_GATE_AGENT=copilot ./scripts/138-gate.sh`, npm bin on `PATH` | **138 GATE PASS**: scenarios 1 and 2 through vincent's own spawn path (`docs/gates/138-copilot-gate.md`) |
+
+The event types and `data` keys of `simple`, `shell`, `edit` and
+`restricted` match the macOS fixtures, apart from per-run variation that is
+not Linux-specific. `auto` routed one run to a reasoning model, which added
+`assistant.reasoning` and reasoning keys on `assistant.message`, and the
+optional `session.indexed_search` and `prompt_cache_break` lines came and went
+between runs. None of these is a new type, and the parser already passes
+unknown events through. So no `_linux` fixture is committed.
+
+**Verdict.** Linux is supported at the pinned build. The restriction holds as
+it does on macOS and Windows, so `RestrictedAlways` stands on all three OSes,
+with the "plus git" caveat above for 138.10.
 
 ### `--model` side-effect captures (138.6, 2026-10-29)
 
@@ -375,8 +468,9 @@ output, not the session, so its shape is pinned by the fixtures alone.
 
 From #852:
 
-- **Windows pipe-stdout bug** (github/copilot-cli #3188): if it still breaks
-  at the pinned build, real Windows use is blocked; 138.3 decides.
+- **Windows pipe-stdout bug** (github/copilot-cli #3188): does not reproduce on
+  1.0.105 (138.3, 2026-10-30). It returns as a risk only if a later pin breaks
+  again.
 - **Schema drift and release churn.** Exact-string version verdicts mean most
   users see `untested`. Fixtures are pinned to one build and parsers must pass
   unknown events through as `unknown`.
@@ -399,8 +493,14 @@ its code makes true, in its own pull request.
   ✓ 2026-10-28
 - [x] **138.2** ([#854](https://github.com/lezli01/vincent/issues/854)) One shared adapter-registry constructor for the daemon,
   doctor and `workflow validate` (PR #871). ✓ 2026-10-28
-- [ ] **138.3** ([#855](https://github.com/lezli01/vincent/issues/855)) Windows and Linux runs of the pinned build: pipe stdout,
-  the shell tool's name, restriction. Depends: 138.1.
+- [~] **138.3** ([#855](https://github.com/lezli01/vincent/issues/855)) Windows and Linux runs of the pinned build: pipe stdout,
+  the shell tool's name, restriction. Depends: 138.1. The Windows leg was run
+  on 2026-10-30. Pipe stdout works for both installs, the shell tool is
+  `powershell`, the restriction holds, and Windows is supported with
+  `RestrictedAlways`. The Linux leg was also run on 2026-10-30, in Docker on
+  arm64: shapes match macOS, the shell tool is `bash`, and the real-CLI gate
+  passes. Still to do, all on Windows: the Job object kill, console flashing,
+  and a pwsh 7 host.
 - [x] **138.4** ([#856](https://github.com/lezli01/vincent/issues/856)) A Copilot dialect in `cmd/fakeagent`, selected by
   `--output-format json`. Depends: 138.1. ✓ 2026-10-29
 - [x] **138.5** ([#857](https://github.com/lezli01/vincent/issues/857)) `internal/agent/copilot` running a full-auto step over
@@ -439,7 +539,8 @@ its code makes true, in its own pull request.
   every config surface, `~/.copilot` is mounted, and the gate (scenarios 1,
   2, 3 and 5; 4 is 138.10's) runs in `gate-group` group 3 on all three OSes.
   `VINCENT_GATE_AGENT=copilot` against a real, authenticated CLI is
-  human-only and recorded in `docs/gates/138-copilot-gate.md`, still empty.
+  human-only and recorded in `docs/gates/138-copilot-gate.md`. Its first
+  row is a Linux pass from 138.3 (2026-10-30).
 - [ ] **138.10** ([#862](https://github.com/lezli01/vincent/issues/862)) §9.4 restricted mode over `--available-tools`, or a
   per-OS refusal; gate scenario 4. Depends: 138.9, 138.3. Hand-off from
   138.11: `SupportsRestrictedResume()` returns false, so a linked chat on a
@@ -478,8 +579,10 @@ its code makes true, in its own pull request.
 
 Carried from #852; each is decided in the item named.
 
-1. **Windows if #3188 persists** — a stated refusal, waiting for upstream, or a
-   file-redirect workaround. 138.3.
+1. **Windows if #3188 persists** — closed by 138.3 (2026-10-30): it does not
+   persist. Both the `.cmd` shim and the native exe write JSONL to a piped
+   stdout and exit 0 on 1.0.105, so Windows is supported and no workaround is
+   built.
 2. **Minimum version** — closed by 138.5 (2026-10-29): exact strings only,
    tested `{1.0.105}`, incompatible empty, so every other build judges
    `untested` (task 041's design rules out ranges). 1.0.84 is recorded in §9.9
