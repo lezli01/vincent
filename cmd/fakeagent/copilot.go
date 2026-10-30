@@ -66,13 +66,19 @@ const copilotWidenedMarker = "fakeagent: copilot restricted argv widened"
 // either OS's name. The real CLI would run both; the fake refuses them, so a
 // test or gate that passes ran the restricted argv vincent promises.
 func copilotWidened(args []string) string {
-	var tools string
+	// Every occurrence counts, in either spelling: the `=` one vincent
+	// passes and the space-separated one, whose value is the next element.
+	var tools []string
 	restricted := false
-	for _, a := range args {
+	for i, a := range args {
 		if v, ok := strings.CutPrefix(a, "--available-tools="); ok {
-			restricted, tools = true, v
+			restricted = true
+			tools = append(tools, strings.Split(v, ",")...)
 		} else if a == "--available-tools" {
 			restricted = true
+			if i+1 < len(args) {
+				tools = append(tools, strings.Split(args[i+1], ",")...)
+			}
 		}
 	}
 	if !restricted {
@@ -87,7 +93,7 @@ func copilotWidened(args []string) string {
 	if os.Getenv("COPILOT_ALLOW_ALL") != "" {
 		return "COPILOT_ALLOW_ALL beside --available-tools"
 	}
-	for _, t := range strings.Split(tools, ",") {
+	for _, t := range tools {
 		if t == "bash" || t == "powershell" || t == "shell" {
 			return "--available-tools names the shell tool " + t
 		}

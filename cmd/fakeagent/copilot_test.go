@@ -439,6 +439,9 @@ func TestCopilotRefusesAWidenedRestrictedArgv(t *testing.T) {
 		{"env allow-all", []string{set}, []string{"COPILOT_ALLOW_ALL=true"}, true},
 		{"bash", []string{set + ",bash"}, nil, true},
 		{"powershell", []string{"--available-tools=view,powershell"}, nil, true},
+		{"space-separated", []string{"--available-tools", "view,grep", "--allow-tool=read"}, nil, false},
+		{"space-separated bash", []string{"--available-tools", "bash,view"}, nil, true},
+		{"earlier occurrence powershell", []string{"--available-tools=powershell", set}, nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
