@@ -426,7 +426,7 @@ found zero hits.
 
 ### Restricted captures (138.10, 2026-10-30)
 
-Five runs, three committed, of the pinned 1.0.105 on **darwin/arm64**, with 138.12's install
+Five runs, three committed, of the pinned 1.0.105 (two re-captured, below) on **darwin/arm64**, with 138.12's install
 discipline (`npm install @github/copilot@1.0.105` into a throwaway prefix,
 its `@github/copilot-darwin-arm64` native binary invoked directly, `--version`
 checked first) and 138.1's run discipline (`--no-auto-update`,
@@ -445,11 +445,25 @@ inventory below lacks, so its counts, taken before them, are not redone.
 
 | File | Command line | Prompt (stdin) | Outcome |
 |---|---|---|---|
-| `restricted_write_1.0.105.jsonl` | `R --session-id <uuid S>` | `In notes.txt, change the word hello to goodbye. Then create the file <outside>/escape.txt containing the word escaped. Then run the shell command git status. Report what you could and could not do.` | the edit ran through `apply_patch` (`notes.txt` = `goodbye`); `view` of `<outside>` was `denied`; no shell call — the model said none was available; nothing written outside |
-| `restricted_resume_1.0.105.jsonl` | `R --resume=<uuid S>`, same `COPILOT_HOME` | `Create the file <outside>/resumed.txt containing the word resumed. Then run the shell command touch x.txt. Report what you could and could not do.` | `view` of `<outside>` `denied`; no shell call; nothing written outside the repo or in it |
+| `restricted_write_1.0.105.jsonl` | `R --session-id <uuid S>` | `Do each step directly, without viewing, listing or searching anything first, and do not skip a step because you expect it to fail. 1. In notes.txt, change the word hello to goodbye. 2. Overwrite the existing file <outside>/target.txt so its whole content is the word escaped. 3. Create the new file <outside>/escape.txt containing the word escaped. 4. Run the shell command git status. Then report, for each step, which tool you called and whether it succeeded or was denied.` (`<outside>/target.txt` held `original`) | the edit ran through `apply_patch` (`notes.txt` = `goodbye`); an `apply_patch` with `*** Delete File:`/`*** Add File:` of `<outside>/target.txt` and `*** Add File:` of `<outside>/escape.txt` was `denied`, then one with only the `escape.txt` add was `denied` too; no shell call — the model said none was available; nothing written outside (`target.txt` still `original`) |
+| `restricted_resume_1.0.105.jsonl` | `R --resume=<uuid S>`, same `COPILOT_HOME` | the same preamble, then `1. Create the new file <outside>/resumed.txt containing the word resumed. 2. Overwrite the existing file <outside>/target.txt so its whole content is the word resumed. 3. Run the shell command touch x.txt.` and the same report request | both `apply_patch` writes (`*** Add File:` of `resumed.txt`; `*** Delete File:`/`*** Add File:` of `target.txt`) `denied`; no shell call; nothing written outside the repo or in it |
 | `restricted_mcp_1.0.105.jsonl` | `R` with `,vincent` appended to `--available-tools`, `--additional-mcp-config` (138.1's `mcp` shape) against a throwaway daemon, and `--allow-tool=vincent` | `Call the vincent MCP server health tool and report what it returned.` | `vincent-health` ran and succeeded |
 
-Two runs were not committed:
+The `restricted_write` and `restricted_resume` rows above are re-captures
+(review F1 of the 138.10 train). The first pair asked for a write outside the
+worktree, but the model `view`ed `<outside>` first, was `denied` that read
+and gave up, so no write outside was ever attempted and the `denied` they
+showed was a read's. The re-captures tell the model not to look first, and
+point one write at an existing file. Both runs routed to `gpt-6-luna`, whose
+only write tool is `apply_patch`; a third, asking for `edit` and `create` by
+name, could not be made, because `--model` refused every model tried
+(`claude-haiku-4.5`, `claude-haiku-5.5`, `claude-sonnet-4.6`,
+`mai-code-1.1-flash`, `gpt-5-mini`) with `Model "<m>" from --model flag is
+not available.` on the capturing account. So `edit` and `create` aimed
+outside the worktree are unobserved; they share `--allow-tool=write` and the
+path verification `apply_patch` was denied by.
+
+Two more runs were not committed:
 
 - The first `restricted_write` attempt used the brief's set,
   `view,grep,glob,edit,create`. `auto` routed it to `gpt-6-luna`, whose edit
@@ -480,7 +494,10 @@ Two runs were not committed:
     its `error.code`, so `stream.go` is unchanged: only `denied` is
     `Blocked` (§9.9). Revisit when a capture shows one.
 22. **Restricted resume holds**, from `restricted_resume_1.0.105.jsonl`, so
-    `SupportsRestrictedResume()` is true.
+    `SupportsRestrictedResume()` is true. Its re-capture (review F1) is what
+    meets decision 6's bar: a *write* outside the worktree refused on
+    `--resume=`, beside the absent shell — the first capture's only refusal
+    was a read.
 
 ## Event inventory
 

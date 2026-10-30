@@ -200,7 +200,9 @@ func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 // does not exist for the model at all. `apply_patch` is the edit tool of the
 // models `auto` routes to that do not use `edit`/`create`
 // (restricted_write_1.0.105.jsonl edited through it); without it those models
-// have no write tool.
+// have no write tool. Its paths come from the patch text, not a `path`
+// argument, and the path check still covers them: the same capture's
+// `*** Add File:` and `*** Delete File:` outside the worktree were denied.
 //
 // The shell is deliberately absent — `bash` on macOS and Linux, `powershell`
 // on Windows — so the set is the same on every GOOS, and restricted copilot
@@ -214,7 +216,8 @@ var restrictedTools = []string{"view", "grep", "glob", "edit", "create", "apply_
 // `--allow-tool=read` and `--allow-tool=write` approve reads and edits;
 // `--allow-all-paths` is not passed, so copilot's path verification still
 // refuses a path outside the worktree, and in a headless run that refusal is a
-// `denied` tool result (restricted_write_1.0.105.jsonl). The vincent MCP
+// `denied` tool result (restricted_write_1.0.105.jsonl: two apply_patch writes
+// outside it). The vincent MCP
 // server joins the set by its name (restricted_mcp_1.0.105.jsonl: `vincent`
 // makes `vincent-health` visible); its --allow-tool is appended with
 // --additional-mcp-config.
@@ -526,8 +529,9 @@ func (a *Adapter) SupportsResume() bool { return true }
 
 // SupportsRestrictedResume implements agent.RestrictedResumer. A --resume run
 // re-passes the same restricted flags, and they hold there:
-// restricted_resume_1.0.105.jsonl resumed a restricted session, its write
-// outside the worktree was denied and it had no shell (task 138.10).
+// restricted_resume_1.0.105.jsonl resumed a restricted session, both its
+// apply_patch writes outside the worktree (a new file and an existing one)
+// were denied and it had no shell (task 138.10, review F1).
 func (a *Adapter) SupportsRestrictedResume() bool { return true }
 
 // UsageIsSessionTotal implements agent.CumulativeUsage: copilot's usage

@@ -6523,8 +6523,16 @@ section is renumbered.
   `edit`/`create` — the first capture without it had no write tool at all.
   `--allow-all-paths` is not passed, so copilot's path verification refuses a
   path outside the worktree, which in a headless run is a `denied` tool
-  result (`restricted_write_1.0.105.jsonl`: the edit inside the worktree ran,
-  a path outside it was denied). Never passed: `--allow-all-tools`,
+  result (`restricted_write_1.0.105.jsonl`: the edit inside the worktree ran;
+  both writes outside it were denied — an `apply_patch` replacing an existing
+  file there and one adding a new file, each naming its path in the patch
+  text's `*** Add File:`/`*** Delete File:` headers, so the path check covers
+  `apply_patch` too). `auto` routed every restricted capture to a model whose
+  only write tool is `apply_patch`, and `--model` was refused for every model
+  on the capturing account, so no capture shows `edit` or `create` aimed
+  outside the worktree; they sit behind the same `--allow-tool=write`
+  approval and path verification (*amended 2026-10-30, task 138.10 review
+  F1: the first captures' only denial was a `view`, a read*). Never passed: `--allow-all-tools`,
   `--allow-all-paths`, `--allow-all-urls`, `--allow-all`, `--yolo` and
   `COPILOT_ALLOW_ALL`, each of which widens past the set; `--sandbox` and
   `--assisted-approval`, which are out of scope. No fetch or web tool is in
@@ -6570,8 +6578,10 @@ section is renumbered.
   2026-10-30, task 138.10*). `SupportsRestrictedResume()` was false until a
   capture proved the bound holds on a `--resume` run. 138.10's does:
   `restricted_resume_1.0.105.jsonl` resumed a restricted session with the
-  same flags, and its write outside the worktree was denied and it had no
-  shell. It is true now, so a linked chat on a restricted task opens on
+  same flags, and both its writes outside the worktree — `apply_patch`
+  adding a new file and replacing an existing one — were denied, and it had
+  no shell (*amended 2026-10-30, task 138.10 review F1: re-captured so the
+  denial is a write, not a read*). It is true now, so a linked chat on a restricted task opens on
   copilot (row 29, §5.5).
 - **The vincent MCP server** (*2026-10-29, task 138.8*). A step wired to §13.4's
   per-step server gets `--additional-mcp-config '<json>'` and
