@@ -203,6 +203,7 @@ winget:
     homepage: "https://github.com/lezli01/vincent"
     publisher_url: "https://lezli01.is-a.dev"
     publisher_support_url: "https://github.com/lezli01/vincent/issues"
+    privacy_url: "https://lezli01.is-a.dev/vincent/latest/privacy.html"
     author: László Szabó
     copyright: "Copyright © 2026 László Szabó"
     release_notes_url: "https://github.com/lezli01/vincent/releases/tag/{{ .Tag }}"

@@ -373,6 +373,7 @@ jobs:
           [ "$(grep -c '^  - Architecture:' "$winget_installer")" -eq 2 ]
           grep -q '^    - PackageIdentifier: Git.Git$' "$winget_installer"
           grep -q '^License: MIT$' "$winget_locale"
+          grep -q '^PrivacyUrl: https://lezli01.is-a.dev/vincent/latest/privacy.html$' "$winget_locale"
 
   # The done-when: the produced artifact runs on each OS. Unpacking the real
   # archive and running the real binary is the only thing that catches a
