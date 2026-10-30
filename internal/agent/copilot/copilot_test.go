@@ -63,6 +63,13 @@ func TestName(t *testing.T) {
 	}
 }
 
+// restrictedBase is the permission half of every restricted argv (task
+// 138.10): the same on every GOOS, because the shell is left out on all.
+var restrictedBase = []string{
+	"--available-tools=view,grep,glob,edit,create,apply_patch",
+	"--allow-tool=read", "--allow-tool=write",
+}
+
 func TestBuildArgs(t *testing.T) {
 	const id = "11111111-2222-4333-8444-555555555555"
 	base := []string{
@@ -110,6 +117,39 @@ func TestBuildArgs(t *testing.T) {
 					`"headers":{"Authorization":"Bearer s3cret-_A9"},"tools":["*"]}}}`,
 				"--allow-tool=vincent"),
 		},
+		{
+			// Task 138.10: restricted replaces the three --allow-all-*
+			// flags with a shell-less tool set (restricted_write_1.0.105.jsonl).
+			name: "restricted is the tool set without a shell",
+			spec: agent.RunSpec{PermissionMode: agent.Restricted},
+			want: append(slices.Clone(base[:5]), restrictedBase...),
+		},
+		{
+			// The vincent server joins --available-tools by its name, and
+			// is still allowed (restricted_mcp_1.0.105.jsonl).
+			name: "restricted with mcp makes the server visible and allowed",
+			spec: agent.RunSpec{
+				PermissionMode: agent.Restricted,
+				MCP:            &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:7777/mcp/step/9", Token: "s3cret-_A9"},
+			},
+			want: []string{
+				"--output-format", "json", "--no-auto-update", "--session-id", id,
+				"--available-tools=view,grep,glob,edit,create,apply_patch,vincent",
+				"--allow-tool=read", "--allow-tool=write",
+				"--additional-mcp-config",
+				`{"mcpServers":{"vincent":{"type":"http","url":"http://127.0.0.1:7777/mcp/step/9",` +
+					`"headers":{"Authorization":"Bearer s3cret-_A9"},"tools":["*"]}}}`,
+				"--allow-tool=vincent",
+			},
+		},
+		{
+			// A restricted resume re-passes the same flags
+			// (restricted_resume_1.0.105.jsonl).
+			name: "restricted resume re-passes the tool set",
+			spec: agent.RunSpec{PermissionMode: agent.Restricted, ResumeSessionID: id, Model: "gpt-6-luna"},
+			want: append(append([]string{"--output-format", "json", "--no-auto-update", "--resume=" + id},
+				restrictedBase...), "--model", "gpt-6-luna"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -140,40 +180,69 @@ func TestSessionIDIsAFreshUUID(t *testing.T) {
 	}
 }
 
-// TestInterimRefusals pins the refusal left in Start, with its sentinel and
-// no process spawned. It is replaced by the item named in buildArgs (§9.9);
-// the resume refusal it once held was 138.11's, and resume_test.go proves
-// what replaced it.
-func TestInterimRefusals(t *testing.T) {
-	tests := []struct {
-		name string
-		spec agent.RunSpec
-		want error
-	}{
-		{
-			name: "restricted",
-			spec: agent.RunSpec{PermissionMode: agent.Restricted},
-			want: agent.ErrRestrictedUnsupported,
-		},
+// TestRestrictedNeverWidens pins task 138.10's bound on every restricted
+// argv, fresh or resumed, with or without the vincent server: no flag that
+// widens past the tool set, and no shell tool under either OS's name — `bash`
+// (macOS, Linux) or `powershell` (Windows) — so restricted copilot has no git.
+func TestRestrictedNeverWidens(t *testing.T) {
+	srv := &agent.MCPServer{Name: "vincent", URL: "http://127.0.0.1:7777/mcp", Token: "t"}
+	for _, spec := range []agent.RunSpec{
+		{PermissionMode: agent.Restricted},
+		{PermissionMode: agent.Restricted, MCP: srv},
+		{PermissionMode: agent.Restricted, ResumeSessionID: "11111111-2222-4333-8444-555555555555", MCP: srv},
+	} {
+		args, err := buildArgs(spec, "11111111-2222-4333-8444-555555555555")
+		if err != nil {
+			t.Fatalf("buildArgs(%+v): %v", spec, err)
+		}
+		var tools []string
+		for _, a := range args {
+			if strings.HasPrefix(a, "--allow-all") || a == "--yolo" || a == "--sandbox" ||
+				strings.HasPrefix(a, "--assisted-approval") {
+				t.Errorf("restricted argv carries %q: %q", a, args)
+			}
+			if v, ok := strings.CutPrefix(a, "--available-tools="); ok {
+				tools = strings.Split(v, ",")
+			}
+		}
+		if tools == nil {
+			t.Fatalf("restricted argv has no --available-tools: %q", args)
+		}
+		for _, shell := range []string{"bash", "powershell", "shell"} {
+			if slices.Contains(tools, shell) {
+				t.Errorf("--available-tools names the shell tool %q: %q", shell, tools)
+			}
+		}
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := &agenttest.RecordingLauncher{}
-			spec := tt.spec
-			spec.Prompt = "should never run"
-			spec.WorkDir = t.TempDir()
-			spec.Launcher = rec
-			h, err := fakeAdapter(t).Start(t.Context(), spec)
-			if !errors.Is(err, tt.want) {
-				t.Fatalf("Start error = %v, want %v", err, tt.want)
-			}
-			if h != nil {
-				t.Error("Start returned a handle; no process may be spawned")
-			}
-			if n := len(rec.Launches()); n != 0 {
-				t.Errorf("launcher saw %d commands, want none", n)
-			}
-		})
+}
+
+// TestStartRunsRestricted: Start agrees with RestrictedSupport — a fresh
+// restricted run spawns with the restricted argv rather than being refused
+// with agent.ErrRestrictedUnsupported (task 138.10 decision 4). The fake
+// refuses an argv that pairs --available-tools with a widening flag or a
+// shell tool, so a run that succeeds ran bounded.
+func TestStartRunsRestricted(t *testing.T) {
+	rec := &agenttest.RecordingLauncher{}
+	h, err := fakeAdapter(t).Start(t.Context(), agent.RunSpec{
+		Prompt:         "hi",
+		WorkDir:        t.TempDir(),
+		PermissionMode: agent.Restricted,
+		Env:            append(os.Environ(), "FAKEAGENT_SCENARIO=success"),
+		Launcher:       rec,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	drain(t, h)
+	res, err := h.Wait()
+	if err != nil || res.IsError || res.ExitCode != 0 {
+		t.Fatalf("Wait = %+v, %v; want succeeded", res, err)
+	}
+	args := rec.Launches()[0].Command.Args
+	for _, want := range restrictedBase {
+		if !slices.Contains(args, want) {
+			t.Errorf("argv %q lacks %q", args, want)
+		}
 	}
 }
 

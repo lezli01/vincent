@@ -81,15 +81,16 @@ func TestClassifyResume(t *testing.T) {
 	}
 }
 
-// TestCapabilities: copilot can hold a chat, cannot yet hold a restricted
-// one (decision 2, until 138.10), and reports session totals (decision 1).
+// TestCapabilities: copilot can hold a chat, a restricted one too (task
+// 138.10: restricted_resume_1.0.105.jsonl stayed bounded), and reports
+// session totals (decision 1).
 func TestCapabilities(t *testing.T) {
 	a := New(nil)
 	if !agent.CanResume(a) {
 		t.Error("CanResume = false, want true (resume_1.0.105.jsonl)")
 	}
-	if agent.CanResumeRestricted(a) {
-		t.Error("CanResumeRestricted = true, want false until task 138.10")
+	if !agent.CanResumeRestricted(a) {
+		t.Error("CanResumeRestricted = false, want true (restricted_resume_1.0.105.jsonl)")
 	}
 	if !agent.UsageIsSessionTotal(a) {
 		t.Error("UsageIsSessionTotal = false, want true")

@@ -125,7 +125,7 @@ func TestOptionsDegrade(t *testing.T) {
 }
 
 // TestCuratedFloor pins the catalog: no models, no default, the seven-value
-// effort floor, no input, no restriction until task 138.10.
+// effort floor, no input, restricted on every OS (task 138.10).
 func TestCuratedFloor(t *testing.T) {
 	opts := New(nil).Curated()
 	if got := values(opts.Efforts, agent.SourceCurated); !slices.Equal(got, curatedEfforts) || len(got) != len(opts.Efforts) {
@@ -139,8 +139,8 @@ func assertCatalogInvariants(t *testing.T, name string, opts agent.Options) {
 	if opts.InputSupport != agent.InputNever {
 		t.Errorf("%s InputSupport = %q, want never", name, opts.InputSupport)
 	}
-	if opts.RestrictedSupport != agent.RestrictedNever {
-		t.Errorf("%s RestrictedSupport = %q, want never", name, opts.RestrictedSupport)
+	if opts.RestrictedSupport != agent.RestrictedAlways {
+		t.Errorf("%s RestrictedSupport = %q, want always", name, opts.RestrictedSupport)
 	}
 	if len(opts.Models) != 0 || opts.DefaultModel != "" {
 		t.Errorf("%s models %v default %q, want none (decision 9)", name, opts.Models, opts.DefaultModel)

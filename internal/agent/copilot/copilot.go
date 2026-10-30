@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -154,21 +155,21 @@ func newSessionID() string {
 // turn is classified as session_lost. --trust-folder is never passed on either path; it cannot combine
 // with --resume.
 //
-// The restricted refusal is interim, replaced by task 138.10: a step is
-// failed with a stated reason rather than run as something it did not ask for.
+// Restricted (task 138.10) replaces the three `--allow-all-*` flags with
+// restrictedArgs: a CLI-enforced tool set with no shell in it, on every OS.
+// A resumed restricted run re-passes the same flags.
 func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
-	if spec.PermissionMode == agent.Restricted {
-		// Task 138.10 (#862) maps restricted onto --available-tools.
-		return nil, fmt.Errorf("copilot restricted mode is not built yet (task 138.10); "+
-			"refusing to run the step full-auto instead (spec §9.9): %w", agent.ErrRestrictedUnsupported)
-	}
 	args := []string{"--output-format", "json", noAutoUpdate}
 	if spec.ResumeSessionID != "" {
 		args = append(args, "--resume="+spec.ResumeSessionID)
 	} else {
 		args = append(args, "--session-id", sessionID)
 	}
-	args = append(args, "--allow-all-tools", "--allow-all-paths", "--allow-all-urls")
+	if spec.PermissionMode == agent.Restricted {
+		args = append(args, restrictedArgs(spec.MCP)...)
+	} else {
+		args = append(args, "--allow-all-tools", "--allow-all-paths", "--allow-all-urls")
+	}
 	// --model only when §8.6 resolved one: with none, the CLI picks `auto`
 	// itself (decision 9), and that is what the record says too.
 	if spec.Model != "" {
@@ -186,11 +187,47 @@ func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 			return nil, err
 		}
 		// --allow-tool names the server although --allow-all-tools already
-		// covers it: restricted mode (task 138.10) drops --allow-all-tools,
-		// and the vincent tools stay allowed there (task 057 decision 9).
+		// covers it in full-auto: restricted mode drops --allow-all-tools,
+		// and the vincent tools stay allowed there (task 057 decision 9,
+		// restricted_mcp_1.0.105.jsonl).
 		args = append(args, "--additional-mcp-config", cfg, "--allow-tool="+spec.MCP.Name)
 	}
 	return args, nil
+}
+
+// restrictedTools is the --available-tools set of a restricted run (spec
+// §9.9, task 138.10): read, search and edit, and nothing else. A tool left out
+// does not exist for the model at all. `apply_patch` is the edit tool of the
+// models `auto` routes to that do not use `edit`/`create`
+// (restricted_write_1.0.105.jsonl edited through it); without it those models
+// have no write tool.
+//
+// The shell is deliberately absent — `bash` on macOS and Linux, `powershell`
+// on Windows — so the set is the same on every GOOS, and restricted copilot
+// has no git. A visible shell runs any command copilot judges read-only
+// without asking (138.3, every OS), and no allow or deny rule bounds it to
+// git: deny beats allow, so `--deny-tool=shell` kills git too (task 138.10
+// decision 1). There is no fetch or web tool either, so no URL rule is needed.
+var restrictedTools = []string{"view", "grep", "glob", "edit", "create", "apply_patch"}
+
+// restrictedArgs is the permission half of a restricted argv.
+// `--allow-tool=read` and `--allow-tool=write` approve reads and edits;
+// `--allow-all-paths` is not passed, so copilot's path verification still
+// refuses a path outside the worktree, and in a headless run that refusal is a
+// `denied` tool result (restricted_write_1.0.105.jsonl). The vincent MCP
+// server joins the set by its name (restricted_mcp_1.0.105.jsonl: `vincent`
+// makes `vincent-health` visible); its --allow-tool is appended with
+// --additional-mcp-config.
+//
+// Never passed: `--allow-all-*`, `--allow-all`, `--yolo` and
+// `COPILOT_ALLOW_ALL` (each widens past the set), `--sandbox` and
+// `--assisted-approval` (out of scope, §9.9).
+func restrictedArgs(srv *agent.MCPServer) []string {
+	tools := restrictedTools
+	if srv != nil {
+		tools = append(slices.Clone(tools), srv.Name)
+	}
+	return []string{"--available-tools=" + strings.Join(tools, ","), "--allow-tool=read", "--allow-tool=write"}
 }
 
 // mcpConfigFile is the --additional-mcp-config document: copilot's
@@ -487,12 +524,11 @@ func (r *run) Argv() []string { return r.proc.Argv() }
 // prompt context.
 func (a *Adapter) SupportsResume() bool { return true }
 
-// SupportsRestrictedResume implements agent.RestrictedResumer. It is false
-// until task 138.10 builds restricted copilot and captures whether
-// --available-tools holds on a --resume run (task 138.11 decision 2), so a
-// chat linked to a restricted task is refused when it is opened rather than
-// failing every turn at Start.
-func (a *Adapter) SupportsRestrictedResume() bool { return false }
+// SupportsRestrictedResume implements agent.RestrictedResumer. A --resume run
+// re-passes the same restricted flags, and they hold there:
+// restricted_resume_1.0.105.jsonl resumed a restricted session, its write
+// outside the worktree was denied and it had no shell (task 138.10).
+func (a *Adapter) SupportsRestrictedResume() bool { return true }
 
 // UsageIsSessionTotal implements agent.CumulativeUsage: copilot's usage
 // checkpoint is the session's running total, so a resumed run's figures

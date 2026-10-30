@@ -392,12 +392,11 @@ func TestOpenChatRefusals(t *testing.T) {
 	}
 }
 
-// TestOpenChatRefusesCopilotOnARestrictedTask is task 138.11 decision 2:
-// copilot can hold a chat, but cannot yet say a resumed turn stays
-// restricted (that capture is 138.10's), so a chat on a restricted task is
-// refused when it is opened rather than failing every turn at Start. The same
-// task opens a chat on claude, and an unrestricted one opens on copilot.
-func TestOpenChatRefusesCopilotOnARestrictedTask(t *testing.T) {
+// TestOpenChatOpensCopilotOnARestrictedTask: task 138.11 decision 2 refused a
+// chat on a restricted task on copilot until a capture proved a resumed turn
+// stays restricted. Task 138.10's restricted_resume_1.0.105.jsonl did, so the
+// open succeeds now, as does one on an unrestricted task.
+func TestOpenChatOpensCopilotOnARestrictedTask(t *testing.T) {
 	h := newLinkedHarness(t)
 	restricted := h.createTask(t, map[string]any{
 		"project_id": h.projectID, "title": "locked down", "restricted": true,
@@ -421,11 +420,8 @@ func TestOpenChatRefusesCopilotOnARestrictedTask(t *testing.T) {
 	}
 
 	code, body := h.post(t, fmt.Sprintf("/v1/tasks/%d/chat", restricted.ID), map[string]any{"agent": "copilot"})
-	if code != http.StatusBadRequest || !strings.Contains(string(body), "cannot keep a resumed turn restricted") {
-		t.Errorf("copilot chat on a restricted task = %d %s, want 400 refusing it", code, body)
-	}
-	if id, err := h.store.OpenLinkedChatID(t.Context(), restricted.ID); err != nil || id != 0 {
-		t.Errorf("a refused open left chat %d (%v)", id, err)
+	if code != http.StatusCreated {
+		t.Errorf("copilot chat on a restricted task = %d %s, want 201", code, body)
 	}
 
 	open := h.blockedWithWorktree(t)
