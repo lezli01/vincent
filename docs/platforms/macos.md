@@ -173,7 +173,7 @@ running, this is why.
   that runs in the terminal and blocks until you close it — `vim`, `nano`, or
   `code --wait`.
 - Everything on this platform behaves the same as Linux, including `restricted`
-  permission mode for all three adapters.
+  permission mode for all four adapters.
 
 ---
 

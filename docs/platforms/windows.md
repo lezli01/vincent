@@ -173,8 +173,20 @@ Falling back to `--force` was rejected outright: it would run full-auto a step
 that explicitly asked not to be, converting a safety choice into its opposite on
 exactly one OS — the failure mode a user would never think to check for.
 
-claude and codex both restrict fine on Windows. If a workflow needs a restricted
-step and must run on Windows, use one of those for that step.
+claude, codex and copilot all restrict fine on Windows. If a workflow needs a
+restricted step and must run on Windows, use one of those for that step.
+copilot's restriction is the same on every OS: vincent passes
+`--available-tools=view,grep,glob,edit,create,apply_patch` (plus `vincent` when
+the MCP server is on), so a restricted copilot step can read and edit files but
+has no shell tool — and so no git. Commit from a command step.
+
+GitHub states that its CLI needs PowerShell 6 or later on Windows. vincent's own
+observation is narrower: the pinned build (1.0.105) ran a headless step with
+Windows PowerShell 5.1 as the only PowerShell installed, through both the npm
+`copilot.cmd` shim and the native `copilot.exe`. Its shell tool is named
+`powershell` either way. That is about the agent step only: a *command step*
+without PowerShell 7 falls back to Windows PowerShell 5.1 (see above), which
+cannot parse `&&`.
 
 ## Terminal notes
 
@@ -193,11 +205,12 @@ step and must run on Windows, use one of those for that step.
 | Thing | Status |
 |---|---|
 | Cursor `restricted` mode | **Unavailable** — task creation refuses it, and a task that gets past that fails; it never downgrades |
+| GitHub Copilot `restricted` mode | **Supported** — bounded by `--available-tools`, with no shell tool, as on macOS and Linux |
 | Authenticode code signing | Not done — SmartScreen prompts once |
 | Boot-time start (no logon) | Not supported — the task is logon-triggered |
 | Windows Service backend | Removed in favor of a Scheduled Task, deliberately |
 
-Everything else — the daemon, the API, the TUI, all three adapters, the
+Everything else — the daemon, the API, the TUI, all four adapters, the
 scheduler, crash recovery, worktrees, transcripts, retention — behaves
 identically to the POSIX platforms, and CI proves it on every pull request.
 

@@ -363,8 +363,9 @@ authenticated network call rather than from `--help`, and cannot honor
 `restricted` on Windows — where it returns `agent.ErrRestrictedUnsupported` from
 `Start` so the engine fails the step rather than silently running it full-auto;
 copilot enumerates no models (ids are free-form, `auto` is the CLI's default),
-takes no mid-run input, always reports `logged_in` as `null`, and is not a
-`SkillInvoker` (spec §9.9).
+takes no mid-run input, reports no cost (it spends premium requests, never
+dollars), always reports `logged_in` as `null`, supports `restricted` on every
+OS as a tool set with no shell, and is not a `SkillInvoker` (spec §9.9).
 A capability an adapter lacks is stated in spec §9.x and ignored at run time; it
 is never emulated.
 

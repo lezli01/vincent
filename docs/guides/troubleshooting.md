@@ -57,7 +57,7 @@ a failed `integrity_check`, a database written by a newer vincent, orphaned
 worktrees, an unreconciled task, or — with `backup.interval` set — a scheduled
 backup whose last attempt failed. A missing or logged-out agent CLI is printed
 plainly and deliberately does **not** set the exit code, so doctor stays usable
-in a script on a machine that only ever installs one of the three adapters.
+in a script on a machine that only ever installs one of the four adapters.
 
 An **unreconciled** task is one whose state and step runs contradict each
 other — it is `queued` (or finished) while one of its step runs is still marked
@@ -160,7 +160,7 @@ in this order:
 **A task that runs [in a container](../reference/configuration.md#container)**
 uses the CLI in the image, not yours, so none of the above applies to it:
 `agents.*.path` is ignored there, and `agent_unavailable` means the image has
-no `claude`, `codex` or `cursor-agent` on its own `PATH`. Check with
+no `claude`, `codex`, `cursor-agent` or `copilot` on its own `PATH`. Check with
 `docker run --rm <image> /bin/sh -c 'command -v claude'`. On macOS, a
 containerized claude step that is not logged in while your own claude is has hit
 the Keychain gap — claude's login does not reach the container; see
@@ -182,10 +182,33 @@ codex   found  0.147.0  auth NOT LOGGED IN  /opt/homebrew/bin/codex
 ```
 
 Run the CLI by hand once and log in (`codex login`, `cursor-agent login`,
-`claude auth login` or `claude` interactively), then run doctor again. All three
-answer this cheaply, so vincent asks them. A claude older than 2.1.41 has no
-`auth status` command, so it shows *unknown* rather than claiming fine. `ok`
-means the CLI found credentials configured, not that they were checked.
+`copilot login`, `claude auth login` or `claude` interactively), then run doctor
+again. claude, codex and cursor answer this cheaply, so vincent asks them. A
+claude older than 2.1.41 has no `auth status` command, so it shows *unknown*
+rather than claiming fine. copilot has no status command at all, so it always
+shows *unknown*, and a logged-out copilot is found by its first run failing
+`agent_unauthenticated`. `ok` means the CLI found credentials configured, not
+that they were checked.
+
+### copilot runs as the wrong GitHub account
+
+Besides the login `copilot login` stores, copilot authenticates from a token in
+`COPILOT_GITHUB_TOKEN`, then `GH_TOKEN`, then `GITHUB_TOKEN`. Those are read from the
+**daemon's** environment, not your shell's, so a `GH_TOKEN` the daemon was
+started with silently decides which account every copilot step runs as — and
+spends premium requests from. vincent cannot tell you which one it is:
+`logged_in` stays *unknown* with a token set. Unset the variable where the
+daemon starts, or set `COPILOT_GITHUB_TOKEN` to the account you mean, then
+restart the daemon. A classic `ghp_` token is rejected by copilot whichever
+variable holds it.
+
+### A copilot step fails with `Model "auto" does not support reasoning effort configuration`
+
+The step sets `effort:` and no `model:`. With no model, copilot picks `auto`,
+and `auto` refuses any effort, so the CLI exits before spending a request. Name
+a model on the step (or in `defaults:`), or drop `effort:`. Effort support is
+per model and vincent does not predict which pairs work; the CLI is the
+authority.
 
 ### `restricted_unsupported`
 
@@ -208,9 +231,10 @@ codex for that step on Windows, or drop the step to `full-auto` **knowingly**.
 The step was to be wired to vincent's own [MCP server](mcp.md) — the default —
 and the adapter cannot carry one for a single run.
 
-All three shipped adapters can, so you will not meet this: claude takes
-`--mcp-config`, codex takes `-c mcp_servers.…` overrides, and cursor gets a
-`.cursor/mcp.json` written into the task worktree. None of them checks your CLI
+All four shipped adapters can, so you will not meet this: claude takes
+`--mcp-config`, codex takes `-c mcp_servers.…` overrides, cursor gets a
+`.cursor/mcp.json` written into the task worktree, and copilot takes
+`--additional-mcp-config`. None of them checks your CLI
 build for MCP support. The reason is reserved for a future adapter with no
 per-run MCP surface.
 
@@ -764,10 +788,11 @@ cancel, or pause and resume.
 The agent CLI is installed and runs, but is not logged in. This one **does**
 block — waiting cannot fix it. Log in with the CLI's own command
 (`claude auth login` or `claude` interactively, `codex login`,
-`cursor-agent login`), then `r` to retry the task.
+`cursor-agent login`, `copilot login`), then `r` to retry the task.
 
 `vincent doctor` catches most of these before a task is ever created: it reports
-`logged_in` for claude, codex and cursor, re-probed on every run. What it cannot
+`logged_in` for claude, codex and cursor, re-probed on every run; copilot has no
+login probe, so it is always *unknown* there. What it cannot
 catch is credentials that are configured but no longer valid — an expired API
 key still reads as logged in — and a claude older than 2.1.41, which has no
 `auth status` command; there the first sign is still a failed step.
@@ -823,8 +848,9 @@ Three things that surprise people:
   its next follow-up. `skip` abandons that follow-up and returns the task to
   `done`.
 
-If a runaway task on codex or cursor sailed past the cap, that is expected:
-neither CLI reports cost, so the cap cannot see them. See
+If a runaway task on codex, cursor or copilot sailed past the cap, that is
+expected: none of those CLIs reports cost (copilot's premium requests are not
+dollars), so the cap cannot see them. See
 [Agents](agents.md).
 
 ### `tree_cost_limit` — raise the tree cap and retry the parent
@@ -880,7 +906,7 @@ Three more things that surprise people:
   lanes it spawns, add to the same tree. A tree already over the cap blocks
   again on the first attempt of its next follow-up.
 
-The cap sees only what agents reported. Codex and cursor report no cost, so
+The cap sees only what agents reported. Codex, cursor and copilot report no cost, so
 their lanes add nothing to the total and a tree that mixes them with claude
 lanes has spent more than the figure says.
 

@@ -1,0 +1,63 @@
+# copilot-review — a restricted review pass driven by the GitHub Copilot CLI
+# (spec §9.9).
+#
+# Copy into {config_dir}/workflows/ for every project, or into
+# .vincent/workflows/ inside one repo (project scope shadows global, §8.1).
+#
+# Three things differ from a claude or codex workflow, and all three are
+# copilot properties rather than vincent's:
+#
+#   * The review step is `restricted`, and that holds on macOS, Linux and
+#     Windows alike: vincent bounds copilot with `--available-tools`, a set of
+#     view, search and file-edit tools. It has no shell — so no git, no build
+#     and no tests inside the agent step. The prompt below asks only for
+#     reading and one written file; the commit is the command step's job.
+#
+#   * There is no `model:` and no `effort:`. Copilot has no model catalog
+#     vincent can list, so a model is free text, and with none the CLI picks
+#     `auto`. `auto` refuses any effort, so an `effort:` here would need an
+#     explicit `model:` beside it.
+#
+#   * Every step spends GitHub Copilot premium requests, which are not
+#     dollars: copilot reports tokens but no cost, so `max_task_cost_usd`
+#     never trips on it.
+name: copilot-review
+description: Review the working tree with GitHub Copilot in restricted mode, write the findings to a file, and commit them.
+
+defaults:
+  agent: copilot
+  max_retries: 1
+
+steps:
+  - id: review
+    type: agent
+    permission_mode: restricted
+    prompt: |
+      Review this repository for correctness bugs and obvious simplifications.
+
+      Task: {{.Task.Title}}
+      {{if .Task.Description}}Context: {{.Task.Description}}{{end}}
+
+      Write your findings to REVIEW.md in the repository root, most severe
+      first, each with a file:line reference. If you find nothing worth
+      reporting, write "No findings." and stop. Do not change any other file.
+      You have no shell in this step: read files, do not try to run commands.
+
+  - id: commit
+    type: command
+    # Single-quoted: the commit message contains ": ", which a plain YAML
+    # scalar cannot carry.
+    #
+    # This step is also the verification. If the agent wrote nothing, `git
+    # add` finds no REVIEW.md and the step fails with nonzero_exit — the task
+    # blocks instead of reporting a review that never happened. `&&` between
+    # two simple commands behaves the same under /bin/sh and pwsh, the two
+    # shells §8.3 hands a command step.
+    run: 'git add REVIEW.md && git commit -m "review: {{.Task.Title}}"'
+
+  - id: read
+    type: manual
+    instructions: |
+      Read REVIEW.md on branch {{.Task.BranchName}} before merging anything.
+      The review step could not run a command, but it could edit files in the
+      worktree: everything it did is in the task transcript.

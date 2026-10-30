@@ -26,7 +26,7 @@ and no database server — the store is an embedded SQLite file.
 | Requirement | Why | Notes |
 |---|---|---|
 | **git** | Projects are git repositories; every task gets a worktree | 2.31 or newer recommended. The daemon logs the detected version at startup and warns below 2.31 rather than refusing to run |
-| **At least one agent CLI** | Agent steps drive a CLI you already have | `claude`, `codex`, or `cursor-agent` — see [Install an agent CLI](#install-an-agent-cli) |
+| **At least one agent CLI** | Agent steps drive a CLI you already have | `claude`, `codex`, `cursor-agent`, or `copilot` — see [Install an agent CLI](#install-an-agent-cli) |
 | A terminal | The TUI is a full-screen terminal app | Any modern terminal. On Windows, Windows Terminal is what ships with Windows 11 |
 
 Vincent stores **no credentials of its own**. It runs the agent CLI you
@@ -310,10 +310,19 @@ at least one, following that vendor's own instructions:
 | Claude Code | `claude` | `claude` |
 | Codex | `codex` | `codex` |
 | Cursor | **`cursor-agent`** | `cursor` |
+| GitHub Copilot | `copilot` | `copilot` |
 
 Cursor's binary name is the one thing worth reading twice: `cursor` on your
 `PATH` is the **editor launcher** and would open a GUI, so vincent resolves
 `cursor-agent` and nothing else.
+
+GitHub Copilot's binary is the standalone `copilot` CLI, not the retired `gh
+copilot` extension. Install it with `npm install -g @github/copilot` (the
+install vincent's own tests were captured against), `brew install copilot-cli`,
+`winget install GitHub.Copilot`, or `curl -fsSL https://gh.io/copilot-install |
+bash`, then run `copilot login` — or set `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` or
+`GITHUB_TOKEN`. vincent cannot tell whether copilot is logged in, so it shows
+`unknown`; see [GitHub Copilot](../guides/agents.md#github-copilot).
 
 Authenticate each CLI the normal way and confirm it runs by hand once. An
 installed-but-unauthenticated CLI probes as present and then fails every run;

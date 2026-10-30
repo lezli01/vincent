@@ -120,14 +120,15 @@ succeeded, because an agent reporting success is a claim and a build is a fact;
 a failed check retries the step with the failure appended to the prompt. Then a
 human gate, and only after approval does anything get pushed.
 
-The other eleven examples are
+The other twelve examples are
 [`fix-and-test`](../../examples/fix-and-test.yaml) (write a failing test, then
 fix it; macOS and Linux only),
 [`docs-update`](../../examples/docs-update.yaml) (bring the docs back in line
 with the code, then have a human read them),
 [`converge`](../../examples/converge.yaml) (loops a repair step until the test
 suite is green), [`cursor-review`](../../examples/cursor-review.yaml) (a review
-pass on the Cursor CLI), [`go-checks`](../../examples/go-checks.yaml) (tests and
+pass on the Cursor CLI), [`copilot-review`](../../examples/copilot-review.yaml)
+(a restricted review pass on GitHub Copilot), [`go-checks`](../../examples/go-checks.yaml) (tests and
 vet in parallel, written to be included by other workflows),
 [`ship`](../../examples/ship.yaml) (asks before it builds, and ends as done when
 there is nothing to publish), and
@@ -264,4 +265,4 @@ instead of accumulating as an empty ref, and the TUI says which happened. See
   example.
 - [Running at login](../guides/running-at-login.md) — `vincent service install`
   so the daemon survives reboots.
-- [Agent CLIs](../guides/agents.md) — what claude, codex and cursor each bring.
+- [Agent CLIs](../guides/agents.md) — what claude, codex, cursor and copilot each bring.

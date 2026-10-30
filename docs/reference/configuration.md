@@ -541,8 +541,8 @@ for example a dev server nobody stopped. Until then a chat turn shows as
 running and the chat takes no new message; cancel the turn if you don't want
 to wait. `0` ends every run at the agent's first answer and kills the background
 work, which is how vincent behaved before this key existed. Only the claude
-adapter has background work; codex and cursor runs end at their answer
-regardless.
+adapter has background work; codex, cursor and copilot runs end at their
+answer regardless.
 
 ### `delete_empty_branch_on_archive`
 
@@ -758,7 +758,8 @@ own budget, so a cap of `$5.00` on a twenty-lane fan-out permits `$100` across
 the tree. To bound the tree as a whole, set
 [`max_tree_cost_usd`](#max_tree_cost_usd) as well.
 
-**It is inert on codex, cursor and copilot.** Only claude reports cost. A task run
+**It is inert on codex, cursor and copilot.** Only claude reports cost —
+copilot spends premium requests, which are not dollars. A task run
 entirely on an agent that reports none is never blocked by this, whatever you
 set — vincent will not estimate money from token counts. See
 [Agents](../guides/agents.md).
@@ -1330,8 +1331,9 @@ daemon is in.
 CLI it spawns for an [agent step](../guides/workflows.md), so a step's agent
 gets the vincent tools with no configuration from you. **On by default**, an
 opt-out. Set it to `false` and no adapter is given an MCP server: no
-`--mcp-config` for claude, no `mcp_servers.*` overrides for codex, and no
-`.cursor/mcp.json` written into the task worktree.
+`--mcp-config` for claude, no `mcp_servers.*` overrides for codex, no
+`.cursor/mcp.json` written into the task worktree, and no
+`--additional-mcp-config` for copilot.
 
 **`max_depth`** and **`max_tasks`** bound recursion. A step's agent can create a
 task whose step runs an agent that creates a task, and unlike `fan_out.max_depth`

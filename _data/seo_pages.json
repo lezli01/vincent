@@ -2,7 +2,7 @@
   {
     "path": "README.md",
     "seo_title": "Local AI coding-agent workflow orchestrator",
-    "description": "Run Claude Code, Codex, and Cursor through durable, verified workflows in isolated git worktrees with vincent's local-first control plane."
+    "description": "Run Claude Code, Codex, Cursor, and GitHub Copilot through durable, verified workflows in isolated git worktrees with vincent's local-first control plane."
   },
   {
     "path": "CODE_OF_CONDUCT.md",
@@ -67,7 +67,7 @@
   {
     "path": "docs/guides/agents.md",
     "seo_title": "Configure coding-agent CLIs",
-    "description": "Compare Claude Code, Codex, and Cursor integration, authentication, models, effort, permissions, input, and cost reporting."
+    "description": "Compare Claude Code, Codex, Cursor, and GitHub Copilot integration, authentication, models, effort, permissions, input, and cost reporting."
   },
   {
     "path": "docs/guides/issues.md",

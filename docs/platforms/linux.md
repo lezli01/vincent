@@ -173,7 +173,7 @@ shell where `which claude` works.
   focused field.
 - `$EDITOR` is honored for edit-and-retry and description editing. It must run
   in the terminal and block until closed.
-- All three adapters support `restricted` permission mode here, including
+- All four adapters support `restricted` permission mode here, including
   cursor — the sandbox that is unavailable on Windows works fine on Linux.
 
 ---

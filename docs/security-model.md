@@ -45,10 +45,19 @@ switches are:
 | claude | `--dangerously-skip-permissions` |
 | codex | `--dangerously-bypass-approvals-and-sandbox` |
 | cursor | `--force` |
+| copilot | `--allow-all-tools --allow-all-paths --allow-all-urls` |
 
-**All three are equivalent in blast radius.** Cursor's reads mildest and is not.
+**All four are equivalent in blast radius.** Cursor's reads mildest and is not.
 An agent in full-auto can read your home directory, use your credentials, and
 reach the network — it is not confined to the worktree.
+
+A copilot step also reaches more MCP servers than vincent's own: the servers in
+your `~/.copilot/mcp-config.json` and the CLI's built-in GitHub MCP server load
+into every run beside vincent's, with whatever
+GitHub access the account it runs as has. Its widening switches are never
+used: vincent passes neither `--allow-all` nor `--yolo`, and strips an inherited
+`COPILOT_ALLOW_ALL` from the agent's environment, so `restricted` stays
+restricted.
 
 What limits the damage, and what does not:
 
@@ -195,6 +204,7 @@ reference for both.
 | claude | Allowlist flags with an edit/read/git/test tool set | all |
 | codex | `--sandbox workspace-write` — writes confined to the worktree | all |
 | cursor | `--sandbox enabled` | **macOS and Linux only** |
+| copilot | `--available-tools=view,grep,glob,edit,create,apply_patch` (plus `vincent` when wired), with writes outside the worktree refused — no shell, so no git either | all |
 
 A task created with
 [`restricted`](reference/api.md#paused-restricted-and-capped-tasks) runs every
@@ -244,7 +254,7 @@ request the agent raises when *it* wants such a skill. In a chat that request
 always reaches you; in a step left to run unattended, `on_input: deny` refuses
 it for you. What the skill *injects* — a shell command written inside its
 own text — is still checked against the allowlist, and a refusal ends the
-invocation before the agent runs. codex and cursor have no such field. Vincent
+invocation before the agent runs. codex, cursor and copilot have no such field. Vincent
 documents this rather than switching skills off in restricted chats, which are
 exactly the chats a reviewer opens on a blocked task; see
 [Agent CLIs](guides/agents.md).

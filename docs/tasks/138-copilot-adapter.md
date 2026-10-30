@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (15/17)
+**Status:** 🔄 in progress (16/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -687,8 +687,10 @@ its code makes true, in its own pull request.
 - [x] **138.15** ([#867](https://github.com/lezli01/vincent/issues/867)) Complete §9.9 and amend the three-adapter prose.
   Depends: the capability items. §9.9 completed; three-adapter prose and
   comments amended (issue #867's pull request). ✓ 2026-10-30
-- [ ] **138.16** ([#868](https://github.com/lezli01/vincent/issues/868)) README, guides, references and SEO data. Depends: the
-  capability items.
+- [x] **138.16** ([#868](https://github.com/lezli01/vincent/issues/868)) README, guides, references and SEO data. Depends: the
+  capability items. A `## GitHub Copilot` section and column in the agents
+  guide, copilot in every page that enumerates or compares adapters, the SEO
+  data, and `examples/copilot-review.yaml`. ✓ 2026-10-30
 - [ ] **138.17** ([#869](https://github.com/lezli01/vincent/issues/869)) `docs/gates/138-copilot-gate.md` real runs on three OSes,
   the TUI screenshots, the task marked done. Depends: 138.16, 138.15, 138.14.
 
