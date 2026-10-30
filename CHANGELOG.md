@@ -13,6 +13,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A privacy policy.** The documentation site publishes
+  [`privacy.html`](https://lezli01.is-a.dev/vincent/latest/privacy.html):
+  what vincent stores on your machine and why, what it hands to agent CLIs,
+  how long it keeps transcripts, logs and backups, how tokens and config are
+  protected, which network calls the daemon makes on its own and how to turn
+  them off, and how to delete everything. The WinGet manifest now carries it
+  as `PrivacyUrl`, which Microsoft's policy 1.5.1 requires.
 - **GitHub Copilot CLI is a fourth agent.** A workflow step can name
   `agent: copilot` and run the standalone `copilot` CLI headlessly, with its
   `--reasoning-effort` values offered as efforts and vincent's MCP tools
