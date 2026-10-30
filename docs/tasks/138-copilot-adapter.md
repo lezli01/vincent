@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (11/17)
+**Status:** 🔄 in progress (12/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -549,15 +549,18 @@ its code makes true, in its own pull request.
   host spawn instead, which wraps a batch file's line in one outer pair of
   quotes (`procx.BatchCmdLine`, §9.1). No `@file` fallback, temp directory
   or sweep was built. `--allow-tool=vincent` rides beside it for 138.10. ✓ 2026-10-29
-- [~] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
+- [x] **138.9** ([#861](https://github.com/lezli01/vincent/issues/861)) Registration in the daemon, config, TUI and CLI, the
   container mount, the engine test and `scripts/138-gate.sh` in CI.
   Depends: 138.5, 138.8. Everything is delivered except the real-CLI walk:
   `builtin.New` registers copilot fourth, `agents.copilot.path` reaches
   every config surface, `~/.copilot` is mounted, and the gate (scenarios 1,
   2, 3 and 5; 4 is 138.10's) runs in `gate-group` group 3 on all three OSes.
   `VINCENT_GATE_AGENT=copilot` against a real, authenticated CLI is
-  human-only and recorded in `docs/gates/138-copilot-gate.md`. Its first
-  row is a Linux pass from 138.3 (2026-10-30).
+  human-only and recorded in `docs/gates/138-copilot-gate.md`. Three passing
+  rows were recorded by 138.3 on 2026-10-30, one on Linux and one each for
+  Windows' npm shim and native exe. That was judged enough to close the item.
+  macOS has no row, but its CLI captures are the 138.1 fixtures, and its
+  fakeagent leg runs in CI. ✓ 2026-10-30
 - [ ] **138.10** ([#862](https://github.com/lezli01/vincent/issues/862)) §9.4 restricted mode over `--available-tools`, or a
   per-OS refusal; gate scenario 4. Depends: 138.9, 138.3. Hand-off from
   138.11: `SupportsRestrictedResume()` returns false, so a linked chat on a

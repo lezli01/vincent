@@ -51,8 +51,8 @@ the fake does.
 
 Each row is one hand-run of the real-CLI legs. CI covers the fakeagent legs on
 every push, so this table only tracks what CI cannot. The first real-CLI run was
-recorded on 2026-10-30, on Linux. Task 138.9 decides how many rows are
-enough to close it.
+recorded on 2026-10-30, on Linux. With the two Windows rows that
+followed, task 138.9 was closed on 2026-10-30.
 
 | Date | OS | Launched from | CLI version | Token variables | Scenarios | Result |
 |---|---|---|---|---|---|---|
