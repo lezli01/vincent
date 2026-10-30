@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/pflag"
 	"golang.org/x/tools/go/packages"
 
+	"github.com/lezli01/vincent/examples"
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/builtin"
 	"github.com/lezli01/vincent/internal/config"
@@ -505,6 +506,32 @@ func TestDocsClaimsChatAdaptersAreCounted(t *testing.T) {
 	for _, name := range resumable {
 		if !strings.Contains(claim[2], "`"+name+"`") {
 			t.Errorf("the `vincent chat` section never names %q among the adapters that can hold a chat", name)
+		}
+	}
+}
+
+// TestDocsClaimsEveryExampleIsOnTheCLIPage: `vincent workflow init --from`'s
+// row lists the examples it accepts. examples.Names() reads the embedded
+// directory, so a new example is offered at once — and the row, edited by
+// hand, kept nine of thirteen after four had shipped (review F3 on #884).
+func TestDocsClaimsEveryExampleIsOnTheCLIPage(t *testing.T) {
+	page, ok := docPages(t)["docs/reference/cli.md"]
+	if !ok {
+		t.Fatal("docs/reference/cli.md is missing")
+	}
+	var row string
+	for line := range strings.SplitSeq(page, "\n") {
+		if strings.HasPrefix(line, "| `--from <example>` |") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatal("docs/reference/cli.md has no `--from <example>` row")
+	}
+	for _, name := range examples.Names() {
+		if !strings.Contains(row, "`"+name+"`") {
+			t.Errorf("the `--from <example>` row never names the shipped example %q", name)
 		}
 	}
 }
