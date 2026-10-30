@@ -105,6 +105,11 @@ configuration and user documentation.
   credentials, publish a stable tag, and install that version through all five
   new paths. This is an external repository/account
   mutation and must not be inferred from a successful local snapshot.
+  The WinGet submission of v0.8.0 was blocked under policy 1.5.1 for want
+  of a privacy policy
+  ([microsoft/winget-pkgs#429585](https://github.com/microsoft/winget-pkgs/pull/429585));
+  that block is tracked in [task 139](139-privacy-policy.md), whose 139.4 is
+  the resubmission. (2026-10-30)
 
 ## Verification (2026-08-20)
 
