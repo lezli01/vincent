@@ -498,6 +498,11 @@ Two more runs were not committed:
     meets decision 6's bar: a *write* outside the worktree refused on
     `--resume=`, beside the absent shell — the first capture's only refusal
     was a read.
+23. **`COPILOT_ALLOW_ALL` is stripped, not just never added** (review F2).
+    Decision 4 kept vincent from setting it, but `Start` passed `spec.Env`
+    through, so a value the daemon inherited reached the child and widened a
+    restricted run past `--available-tools`. `Start` now removes it from the
+    child's environment in every mode (§9.9).
 
 ## Event inventory
 

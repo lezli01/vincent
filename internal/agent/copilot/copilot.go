@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -136,7 +137,7 @@ func newSessionID() string {
 //
 // Full-auto is the three `--allow-all-*` flags, never `COPILOT_ALLOW_ALL`: the
 // env spelling also trusts the worktree and loads its hooks and MCP servers
-// (task 138 decision 4). There is no `-p` and no prompt argument: the prompt
+// (task 138 decision 4), so Start strips an inherited one (childEnv). There is no `-p` and no prompt argument: the prompt
 // is stdin only (decision 2), so a prompt that reads like a flag is only ever
 // a prompt. No `-C` either — the process cwd is the worktree. The built-in
 // GitHub MCP server is left on; --disable-builtin-mcps is not passed (§9.9).
@@ -233,6 +234,34 @@ func restrictedArgs(srv *agent.MCPServer) []string {
 	return []string{"--available-tools=" + strings.Join(tools, ","), "--allow-tool=read", "--allow-tool=write"}
 }
 
+// allowAllEnv is the env spelling of full-auto (help_environment_1.0.105.txt).
+const allowAllEnv = "COPILOT_ALLOW_ALL"
+
+// childEnv is env with COPILOT_ALLOW_ALL removed, in every permission mode
+// (spec §9.9, task 138.10 review F2). Not setting it is not enough: env, or
+// the daemon's own environment when env is nil, may already carry it — a
+// natural setting for someone who runs copilot full-auto in their shell — and
+// then a restricted run would have every tool approved past
+// --available-tools, and every run would trust the worktree and load its
+// hooks, which a restricted agent can write. The name is matched
+// case-insensitively, as Windows reads it; on POSIX a differently cased name
+// is not the variable, and dropping it costs nothing. An env without it is
+// returned as is, so nil keeps meaning "inherit".
+func childEnv(env []string) []string {
+	src := env
+	if src == nil {
+		src = os.Environ()
+	}
+	isAllowAll := func(kv string) bool {
+		k, _, _ := strings.Cut(kv, "=")
+		return strings.EqualFold(k, allowAllEnv)
+	}
+	if !slices.ContainsFunc(src, isAllowAll) {
+		return env
+	}
+	return slices.DeleteFunc(slices.Clone(src), isAllowAll)
+}
+
 // mcpConfigFile is the --additional-mcp-config document: copilot's
 // ~/.copilot/mcp-config.json shape, one HTTP server. Typed rather than a map so
 // the field set is fixed and every value is escaped by encoding/json, never by
@@ -306,7 +335,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 		Path:   path,
 		Args:   args,
 		Dir:    spec.WorkDir,
-		Env:    spec.Env,
+		Env:    childEnv(spec.Env),
 		Stdin:  strings.NewReader(spec.JoinedPrompt()),
 		Stderr: stderr,
 	})

@@ -6478,7 +6478,13 @@ section is renumbered.
   picks `auto` itself, which is why the curated catalog names no default.
 - **Full-auto is the three flags, never the env spelling** (*2026-10, task
   138.5*). `COPILOT_ALLOW_ALL` is never set: it also trusts the worktree,
-  loading its hooks and MCP servers. `--disable-builtin-mcps` is not passed, so
+  loading its hooks and MCP servers. Nor is it inherited (*2026-10-30, task
+  138.10 review F2*): `Start` removes it — any case of the name — from the
+  child's environment in every permission mode, whether §12.3 resolved it or
+  the daemon's own environment carries it, so a user who exports it for
+  their own copilot cannot widen a restricted step past `--available-tools`
+  or have a worktree's hooks, which a restricted agent can write, loaded.
+  `--disable-builtin-mcps` is not passed, so
   the built-in `github-mcp-server` is available to every run — a stated fact,
   not a vincent choice yet.
 - **`--no-auto-update` on every spawn** (*2026-10, task 138.5*), the version
