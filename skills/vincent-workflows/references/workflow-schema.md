@@ -170,10 +170,12 @@ Quote a `run` scalar containing a colon:
 
 ### Agent
 
-An agent step supports `agent` (`claude`, `codex`, or `cursor`), `model`,
+An agent step supports `agent` (`claude`, `codex`, `cursor`, or `copilot`), `model`,
 `effort`, `permission_mode` (`full-auto` or `restricted`), `on_input` (`wait`,
 `deny`, or `require`), `input_timeout`, `check`, and `check_timeout`. Cursor
-ignores `effort`. `permission_mode: restricted` needs an adapter that can
+ignores `effort`. Copilot takes `effort` only with an explicit `model` — its
+default `auto` model refuses any effort — and its model ids are free-form, never
+enumerated. `permission_mode: restricted` needs an adapter that can
 restrict on the host — Cursor cannot on Windows, and a task whose restricted
 step resolves there is refused when it is created. Every attempt is a fresh
 agent session.

@@ -672,8 +672,18 @@ its code makes true, in its own pull request.
   produces no `agent.skill`; it is a `FileMentioner` with `@`, `anywhere`,
   `Expands: false`. m14 leg 12f pins the two `unsupported` verdicts and a
   verbatim `/gate-skill`; leg 13f the mention payload on copilot's stdin. ✓ 2026-10-29
-- [ ] **138.14** ([#866](https://github.com/lezli01/vincent/issues/866)) The `skills/vincent-workflows` runtime text and the
-  built-in re-read. Depends: 138.10, 138.6.
+- [x] **138.14** ([#866](https://github.com/lezli01/vincent/issues/866)) The `skills/vincent-workflows` runtime text and the
+  built-in re-read. Depends: 138.10, 138.6. The skill names copilot at four
+  sites with §9.9's verdicts: no mid-run input (`on_input: require`
+  unsupported, in `SKILL.md` and `control-flow-and-cost.md`); `copilot` in
+  the schema's adapter list; effort only with an explicit `model`, since
+  `auto` refuses it, and free-form model ids; a restricted copilot step has
+  no shell, so no git. The "cannot restrict" sentences still name Cursor on
+  Windows alone, since copilot restricts on every OS. All five built-ins
+  re-read (2026-10-30): no change — each pins `agent: claude`, and
+  `update-workflows`' two adapter lines are adapter-neutral. Its checklist
+  gains no line: an adapter is not a workflow feature (task 037 decision 5).
+  ✓ 2026-10-30
 - [ ] **138.15** ([#867](https://github.com/lezli01/vincent/issues/867)) Complete §9.9 and amend the three-adapter prose.
   Depends: the capability items.
 - [ ] **138.16** ([#868](https://github.com/lezli01/vincent/issues/868)) README, guides, references and SEO data. Depends: the

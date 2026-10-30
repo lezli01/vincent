@@ -4,7 +4,7 @@ description: Create, edit, review, and validate vincent workflow YAML under .vin
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.5.0
+  version: 1.5.1
 ---
 
 # vincent Workflows
@@ -129,7 +129,7 @@ that says to create the task from an issue.
 - Use `on_input: require` only when an agent must ask a question and continue
   the same reasoning session. It requires an adapter that supports mid-run
   input and cannot be nested in `parallel` or `loop` or used by a merge
-  resolver. Codex and Cursor do not support it.
+  resolver. Codex, Cursor and Copilot do not support it.
 - `on_input: wait` keeps the agent process and task slot alive while waiting;
   it is not a substitute for a deliberate approval gate.
 
@@ -229,11 +229,14 @@ itself; `if` to guard it.
   because the slot is held for the whole wait.
 
 **Agent step.** `prompt`; `agent`, `model`, and `effort` only for a specific
-capability (Cursor has no effort); `on_input`, `check`, `check_timeout`.
+capability (Cursor has no effort; Copilot model ids are free-form, and Copilot
+effort needs an explicit `model` because its default `auto` refuses effort);
+`on_input`, `check`, `check_timeout`.
 `permission_mode: restricted` for a step that needs no writes or approval-gated
 actions — a review, a plan, a triage. Denied actions become `permission` input
-requests under `on_input`, and Cursor cannot restrict on Windows. Never widen a
-step to `full-auto` for convenience.
+requests under `on_input`, and Cursor cannot restrict on Windows; a restricted
+Copilot step has no shell, so no git. Never widen a step to `full-auto` for
+convenience.
 
 **Command step.** `run`; `check`, `check_timeout`. `shell` (`sh`, `pwsh`, or
 `cmd`) only when a body truly needs one shell: a pinned shell that is missing
