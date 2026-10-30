@@ -434,19 +434,36 @@ EOF
   task_id="$(api POST /tasks "{\"project_id\":$project_id,\"workflow\":\"138-restricted\",\"title\":\"138 restricted\"}" | jq -r .id)"
   [[ "$task_id" =~ ^[0-9]+$ ]] || fail "creating a restricted copilot task returned no id"
 
+  # Not wait_for_state: a refused argv blocks the task (exit 2,
+  # max_retries: 0), and that helper would fail on `blocked` without saying
+  # why. Stop on done or blocked, and name the fake's refusal when it is the
+  # cause.
   echo "== wait for done"
-  wait_for_state "$task_id" done 300
+  local state="" steps row run_id transcript
+  for _ in $(seq 1 "$(gate_ticks 300)"); do
+    state="$(api GET "/tasks/$task_id" | jq -r .state)"
+    [[ "$state" == "done" || "$state" == "blocked" || "$state" == "aborted" ]] && break
+    sleep "$GATE_POLL"
+  done
+  steps="$(api GET "/tasks/$task_id/steps")"
+  row="$(jq '[.[] | select(.step_id == "careful")][-1]' <<<"$steps")"
+  run_id="$(jq -r '.id // empty' <<<"$row")"
+  transcript=""
+  [[ -n "$run_id" ]] && transcript="$(api GET "/tasks/$task_id/steps/$run_id/transcript")"
+  if grep -q 'restricted argv widened' <<<"$steps$transcript"; then
+    local why
+    why="$(grep -o 'restricted argv widened[^"\\]*' <<<"$steps$transcript")"
+    fail "the fake refused the restricted argv (task $state): ${why%%$'\n'*}"
+  fi
+  if [[ "$state" != "done" ]]; then
+    api GET "/tasks/$task_id" | jq . >&2
+    jq . <<<"$steps" >&2
+    fail "task $task_id never reached done (still $state)"
+  fi
 
   echo "== assert the step ran restricted, with the tool set and no widening flag"
-  local row run_id transcript
-  row="$(api GET "/tasks/$task_id/steps" | jq '[.[] | select(.step_id == "careful")][-1]')"
   [[ "$(jq -r .state <<<"$row")" == "succeeded" ]] || fail "restricted step not succeeded: $row"
   [[ "$(jq -r .agent <<<"$row")" == "copilot" ]] || fail "step did not run as copilot: $row"
-  run_id="$(jq -r .id <<<"$row")"
-  transcript="$(api GET "/tasks/$task_id/steps/$run_id/transcript")"
-  if grep -q 'restricted argv widened' <<<"$transcript"; then
-    fail "the fake refused the restricted argv: $transcript"
-  fi
   grep -q '"permission_mode":"restricted"' <<<"$transcript" \
     || fail "the debug record does not say restricted: $transcript"
   grep -q -- '--available-tools=view,grep,glob,edit,create,apply_patch' <<<"$transcript" \
