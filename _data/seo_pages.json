@@ -115,6 +115,11 @@
     "description": "Design reliable vincent workflows with agents, commands, checks, gates, templates, retries, conditions, loops, and fan-out."
   },
   {
+    "path": "docs/privacy.md",
+    "seo_title": "vincent privacy policy",
+    "description": "What vincent stores on your machine, what it passes to agent CLIs, which network calls it makes, and how to delete your data."
+  },
+  {
     "path": "docs/platforms/linux.md",
     "seo_title": "vincent on Linux",
     "description": "Install, configure, and run vincent on Linux with systemd integration and native filesystem protections."

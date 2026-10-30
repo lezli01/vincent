@@ -45,6 +45,9 @@ Two calls the daemon makes **without** being asked, both switchable:
   or [`github.enabled: false`](reference/configuration.md#github) to switch off
   every GitHub call vincent makes.
 
+The [privacy policy](privacy.md) lists everything vincent stores, what it hands
+to agent CLIs, and how to delete it all.
+
 ### Which agent CLIs work?
 
 Claude Code (`claude`), Codex (`codex`) and Cursor (`cursor-agent`). Pick one

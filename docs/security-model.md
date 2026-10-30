@@ -721,6 +721,7 @@ Stated so you do not assume otherwise:
 ## See also
 
 - [SECURITY.md](../SECURITY.md) — reporting a vulnerability.
+- [Privacy policy](privacy.md) — what vincent stores, sends and deletes.
 - [Agent CLIs](guides/agents.md) — per-adapter behavior.
 - [Writing workflows](guides/workflows.md#93-permission-modes).
 - Spec [§16](https://github.com/lezli01/vincent/blob/master/docs/spec.md) — the normative version.

@@ -546,7 +546,7 @@ switched off, with a dedupe key and limits, and leaves turning one on to you.
 [Task lifecycle](docs/reference/task-lifecycle.md) ·
 [HTTP API](docs/reference/api.md)
 
-**Also** — [Security model](docs/security-model.md) · [FAQ](docs/faq.md) ·
+**Also** — [Security model](docs/security-model.md) · [Privacy policy](docs/privacy.md) · [FAQ](docs/faq.md) ·
 [Changelog](https://lezli01.is-a.dev/vincent/changelog.html) · [Contributing](https://lezli01.is-a.dev/vincent/contributing.html)
 
 ## Build & Test
