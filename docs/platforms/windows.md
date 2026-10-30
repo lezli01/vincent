@@ -94,8 +94,9 @@ per step with `shell: sh | pwsh | cmd`.
 
 Vincent makes **no attempt to translate** command steps between platforms. If a
 workflow is meant to run on Windows and on POSIX, write commands that work in
-both — `&&` chaining is fine everywhere, `test -f` is not — or pin the shell and
-accept that the workflow is platform-specific.
+both — `&&` chaining is fine under `/bin/sh` and PowerShell 7 (Windows
+PowerShell 5.1, the fallback, cannot parse it), `test -f` is not — or pin the
+shell and accept that the workflow is platform-specific.
 
 A workflow that is platform-specific should say so with
 [`platforms:`](../reference/workflow-schema.md#platforms). A file declaring
