@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (12/17)
+**Status:** 🔄 in progress (13/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -424,6 +424,64 @@ found zero hits.
   sending (task 126 decision 6). `TestMentionFallbackReadsThePath` pins it.
 - No new event types: all four carry only types the inventory below lists.
 
+### Restricted captures (138.10, 2026-10-30)
+
+Five runs, three committed, of the pinned 1.0.105 on **darwin/arm64**, with 138.12's install
+discipline (`npm install @github/copilot@1.0.105` into a throwaway prefix,
+its `@github/copilot-darwin-arm64` native binary invoked directly, `--version`
+checked first) and 138.1's run discipline (`--no-auto-update`,
+`COPILOT_AUTO_UPDATE=false`, a fresh `COPILOT_HOME`, the prompt on stdin, the
+throwaway repo with `notes.txt` = `hello`). The host's
+`/opt/homebrew/bin/copilot` (1.0.61) was not used. The operator's token was
+passed as `GH_TOKEN` in the child's environment only. A sibling directory of
+the repo, `outside/`, was the out-of-worktree target. Paths were scrubbed to
+`/tmp/copilot-fixture/{repo,home,outside}`; the same grep (plus the vincent
+token, the daemon port and the operator's `gh` token) found zero hits, and
+every `.jsonl` parses under `jq -c .`. They carry no event type the
+inventory below lacks, so its counts, taken before them, are not redone.
+`R` below stands for
+`--output-format json --available-tools=view,grep,glob,edit,create,apply_patch
+--allow-tool=read --allow-tool=write`. Every run exited 0.
+
+| File | Command line | Prompt (stdin) | Outcome |
+|---|---|---|---|
+| `restricted_write_1.0.105.jsonl` | `R --session-id <uuid S>` | `In notes.txt, change the word hello to goodbye. Then create the file <outside>/escape.txt containing the word escaped. Then run the shell command git status. Report what you could and could not do.` | the edit ran through `apply_patch` (`notes.txt` = `goodbye`); `view` of `<outside>` was `denied`; no shell call — the model said none was available; nothing written outside |
+| `restricted_resume_1.0.105.jsonl` | `R --resume=<uuid S>`, same `COPILOT_HOME` | `Create the file <outside>/resumed.txt containing the word resumed. Then run the shell command touch x.txt. Report what you could and could not do.` | `view` of `<outside>` `denied`; no shell call; nothing written outside the repo or in it |
+| `restricted_mcp_1.0.105.jsonl` | `R` with `,vincent` appended to `--available-tools`, `--additional-mcp-config` (138.1's `mcp` shape) against a throwaway daemon, and `--allow-tool=vincent` | `Call the vincent MCP server health tool and report what it returned.` | `vincent-health` ran and succeeded |
+
+Two runs were not committed:
+
+- The first `restricted_write` attempt used the brief's set,
+  `view,grep,glob,edit,create`. `auto` routed it to `gpt-6-luna`, whose edit
+  tool is `apply_patch` (the full-auto fixtures show it). Neither `edit` nor
+  `create` was disabled, but the model had no write tool at all and edited
+  nothing. That is why `apply_patch` is in the set — it is an edit tool,
+  bounded by the same path verification, so adding it does not widen the
+  restriction past "read, search and edit inside the worktree".
+- A run with `R` asking the model to call `bash` regardless (`Call the tool
+  named bash right now …`) produced no call: the model answered that `bash`
+  was not an available tool. So no capture shows `Tool 'x' does not exist.`
+  with its `error.code`.
+
+**Decisions taken by 138.10.**
+
+18. **No shell in restricted, so no git** (closes 138.3's "plus git" input to
+    decision 8). The shell tool is left out of `--available-tools` on every
+    OS. With it visible, copilot runs any command it judges read-only without
+    asking, on all three OSes, and no rule bounds it to git: deny beats allow,
+    so `--deny-tool=shell` also removes git. Decision 8's "plus git" is
+    therefore dropped rather than met with a weaker set; vincent commits
+    through command steps, as it does for codex (§9.3). The author confirmed
+    this on #862.
+19. **`apply_patch` joins the set**, from the first capture above.
+20. **The vincent server's `--available-tools` entry is its name**,
+    `vincent`, from `restricted_mcp_1.0.105.jsonl`.
+21. **A missing-tool call stays an ordinary failed call.** No capture shows
+    its `error.code`, so `stream.go` is unchanged: only `denied` is
+    `Blocked` (§9.9). Revisit when a capture shows one.
+22. **Restricted resume holds**, from `restricted_resume_1.0.105.jsonl`, so
+    `SupportsRestrictedResume()` is true.
+
 ## Event inventory
 
 Every distinct `type` across the `.jsonl` fixtures, with its total count and
@@ -561,11 +619,17 @@ its code makes true, in its own pull request.
   Windows' npm shim and native exe. That was judged enough to close the item.
   macOS has no row, but its CLI captures are the 138.1 fixtures, and its
   fakeagent leg runs in CI. ✓ 2026-10-30
-- [ ] **138.10** ([#862](https://github.com/lezli01/vincent/issues/862)) §9.4 restricted mode over `--available-tools`, or a
+- [x] **138.10** ([#862](https://github.com/lezli01/vincent/issues/862)) §9.4 restricted mode over `--available-tools`, or a
   per-OS refusal; gate scenario 4. Depends: 138.9, 138.3. Hand-off from
   138.11: `SupportsRestrictedResume()` returns false, so a linked chat on a
   restricted task is refused at open. Flip it to true here only if a
   capture proves `--available-tools` holds on a `--resume=` run.
+  `RestrictedAlways` on every OS, no per-OS refusal; the argv is
+  `--available-tools=view,grep,glob,edit,create,apply_patch[,vincent]
+  --allow-tool=read --allow-tool=write`, with no shell and so no git
+  (decisions below). `SupportsRestrictedResume()` is true on
+  `restricted_resume_1.0.105.jsonl`. Gate scenario 4 runs a restricted step
+  against the fake, which refuses a widened restricted argv. ✓ 2026-10-30
 - [x] **138.11** ([#863](https://github.com/lezli01/vincent/issues/863)) `Resumer`, session-lost classification, m14 leg 2b.
   Depends: 138.9. A resume is `--resume=<id>` with no `--session-id`
   (`resume_1.0.105.jsonl`), and an unknown id is `session_lost`

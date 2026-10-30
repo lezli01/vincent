@@ -20,7 +20,7 @@ VINCENT_GATE_SCENARIO=2 ./scripts/138-gate.sh      # one scenario, for debugging
 | 1 | A `agent: copilot` workflow runs to done; `/v1/agents` lists copilot fourth, with no models, no default model and its effort catalog; the step records `agent=copilot` and non-zero tokens (the fake's 100 in, 42 out) and no cost (§9.9, task 138.7); the transcript carries copilot-shaped lines; the branch carries the edit | yes |
 | 2 | A model the CLI refuses fails the step with the **stderr text** in the step record — copilot writes no `result` line on that path (§9.9, §18) | yes |
 | 3 | `logged_in` is `null` on both `/v1/agents` and `/v1/info`: copilot has no login probe (task 138 decision 10) | no — asserts vincent's own reporting |
-| 4 | *Not yet:* restricted mode is task 138.10 (#862), which adds this scenario | — |
+| 4 | A `permission_mode: restricted` copilot step runs to done on every OS, and the edit reaches the branch through a command step. The fake refuses — exit 2, `fakeagent: copilot restricted argv widened` on stderr — any argv pairing `--available-tools` with an `--allow-all-*` flag, `--yolo` or `COPILOT_ALLOW_ALL`, or naming `bash`/`powershell` in it; the §12.3 debug record shows `--available-tools=view,grep,glob,edit,create,apply_patch` and no `--allow-all` (task 138.10) | no — the fake checks the argv; the real CLI's restricted runs are the task document's captures |
 | 5 | A copilot step calls `step_status` over `/mcp/step/{run_id}` through the inline `--additional-mcp-config` JSON, and the status reaches the API — on Windows through `cmd /c` and the npm shim (task 138.8) | no — the fake makes the call |
 
 ## Running the real-CLI leg

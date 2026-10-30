@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Copilot runs `restricted` steps.** A step with
+  `permission_mode: restricted` on `copilot` no longer fails with
+  `restricted_unsupported`: it runs with
+  `--available-tools=view,grep,glob,edit,create,apply_patch` and
+  `--allow-tool=read --allow-tool=write` instead of the `--allow-all-*` flags,
+  on Linux, macOS and Windows. The agent can read, search and edit inside the
+  worktree; a path outside it is denied, and it has **no shell, so no git** —
+  vincent's command steps commit. The vincent MCP tools stay available. A chat
+  on a task that runs `restricted` now opens on copilot too, and
+  `vincent agents` and `vincent doctor` no longer note `no restricted mode`
+  for it.
+
 - **A privacy policy.** The documentation site publishes
   [`privacy.html`](https://lezli01.is-a.dev/vincent/latest/privacy.html):
   what vincent stores on your machine and why, what it hands to agent CLIs,
@@ -40,8 +52,7 @@ list with the user-facing context a commit subject cannot carry.
   usable. Copilot reports the whole session's token totals, so each turn
   records its own share: the totals minus the previous turn's on the same
   session. Spend that another Copilot client adds to the same session
-  between turns counts toward the next turn. A chat on a task that runs
-  `restricted` is still refused on copilot.
+  between turns counts toward the next turn.
 
 - **Published skills report copilot reading the store.** GitHub Copilot CLI
   loads `~/.agents/skills` itself, so `vincent skills ls`, `vincent doctor`
