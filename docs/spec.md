@@ -58,7 +58,10 @@ amendments in this specification record superseded boundaries, while
   Cursor, is **milestone M5**: §9.7. Its adapter merged ahead of M4 on
   2026-08-11 — see §19 ‡ — so the tree carries three. This goal is annotated
   rather than restated as "three": it records what v1 was *scoped* to deliver,
-  and the scope was met before the third arrived.)
+  and the scope was met before the third arrived. *Amended 2026-10-30 (task 138.15, issue #867):* a fourth,
+  GitHub Copilot CLI (§9.9, task 138), was registered on 2026-10-29. Like
+  cursor it is annotated here rather than restated; it is a task with no
+  milestone row (§19).)
 - Agent, model, and effort selectable per workflow, per step, and per task at
   creation; selectable options discovered ad hoc from the installed CLIs (§9.6).
 - Unattended operation by default (agents run full-auto), with per-workflow/step overrides.
@@ -3781,7 +3784,7 @@ program which happened to print the marker changed daemon state.
 
 ```go
 type AgentAdapter interface {
-    Name() string                                   // "claude", "codex"
+    Name() string                                   // the registry name: "claude", "codex", "cursor", "copilot"
     Detect(ctx context.Context) (Availability, error) // found on PATH? version? logged in (best effort)? supports mid-run input (§7.4)?
     Options(ctx context.Context) (AgentOptions, error) // selectable models/efforts, probed ad hoc (§9.6)
     Start(ctx context.Context, spec RunSpec) (RunHandle, error)
@@ -4063,7 +4066,8 @@ type Option struct {
 ```
 
 The daemon consumes only this interface; adding an agent (Gemini CLI, etc.) is one new
-adapter with zero core changes.
+adapter with zero core changes. (*Amended 2026-10-30, task 138.15:* true of the
+adapter seam, not of configuration — see "Scored against a fourth adapter" below.)
 
 **Skills (task 124, added 2026-09-19, issue #497).** Two optional capabilities
 let the daemon ask an adapter which skills its CLI would load in a given
@@ -4409,6 +4413,11 @@ wrote with them — an ordinary message, a `/name` it could not resolve and an
 echoed answer are all this event (§9.2). Cursor is no longer the only source.*
 Neither is an unmodeled line. §9.7's "genuinely unmodeled lines stay `unknown`"
 still governs every line these two do not claim (task 124 decision 25).
+*Amended 2026-10-30 (task 138.15, issue #867):* copilot never produces `EventSkill`:
+on 1.0.105 `skill.invoked` never reaches stdout, and a `skill` tool call stays a
+`tool_use`. It does produce `EventInputEcho`, from the root agent's
+`user.message` line (§9.9 "Pinned absences", "Thinking, input echo, patches and
+command output").
 
 The run header is emitted from the CLI's init line, which is **not** always the
 stream's first line: claude writes SessionStart hook lines before it, and a
@@ -4499,6 +4508,21 @@ order, and `builtin.ConfigPaths` maps each name to its `agents.<name>.path`.
 The daemon's registry, `vincent doctor`'s daemonless `DetectAgents` and
 `vincent workflow validate`'s local catalogs are all built from it, where each
 used to list the three adapters by hand.
+
+**Scored against a fourth adapter (§9.9, task 138, amended 2026-10-30, task
+138.15).** The seam held: copilot is one package, `internal/agent/copilot`,
+plus one `builtin.New` line, and #854 had already cut the three hand-built
+registries to that one edit. It did **not** hold for configuration. Counted
+from commit `0bc31a03` (138.9) and `d6b6aaaf` (138.12), registering it touched
+eight production packages beyond the adapter's own: `internal/agent/builtin`
+(the registry line and `ConfigPaths`), `internal/config` (the typed
+`agents.copilot.path` and its bootstrap text), `internal/api` and
+`internal/apiclient` (`/v1/config`), `internal/cli` (`vincent config
+get/set`), `internal/tui` (the daemon view), `internal/taskrun` (the
+`~/.copilot` mount under `mount_agent_config`) and `internal/skill` (the
+published-skill table row). "Zero core changes" therefore remains true of the
+adapter seam and not of configuration: a typed `agents.<name>.path` is still
+an edit in every consumer of the config shape.
 
 *Added 2026-08-29 (task 057).* `RunSpec.MCP` carries the §13.4 MCP server a step
 is wired to: `{Name, URL, Token}`, where the URL is the daemon's per-step
@@ -5380,7 +5404,9 @@ The alternative was leaving it out, and that is worse rather than safer: the
 allow-list does not match `mcp__vincent__*`, so a restricted step would see the
 whole tool list and be denied every call — a tool list that is a lie, and an
 agent burning its turns discovering it. Stated here and in §16 because it is
-only defensible written down.
+only defensible written down. *Amended 2026-10-30 (task 138.15, issue #867):* copilot keeps the vincent
+tools visible and allowed the same way, through `--available-tools=…,vincent`
+plus `--allow-tool=vincent` (§9.9).
 
 *Amended 2026-09-11 (task 096).* A task may carry a **`restricted` clamp**,
 set by `restricted: true` on `POST /v1/tasks` (§13.2) and snapshotted on the
@@ -5447,6 +5473,11 @@ skill frontmatter carries interface, policy and dependencies only, and a
 restricted *resumed* codex chat cannot be opened in the first place (§5.5);
 cursor's has no such field, and `--sandbox enabled` still applies to whatever a
 skill does. Stated here and in §16 because it is only defensible written down.
+*Amended 2026-10-30 (task 138.15, issue #867):* copilot cannot be widened by a skill under
+`restricted` either: its `skill` tool is not in the restricted
+`--available-tools` set, so it does not exist for the model; a human's `/name`
+reaches the model as typed (§9.9); and the set has no shell for an injected
+command to use.
 
 Observed on claude 2.1.277, codex-cli 0.154.0 and cursor-agent 2026.09.18. Two
 of the three claude legs are held by committed fixtures — a model's load
@@ -5502,6 +5533,9 @@ recaptured (the option probe it serves is unaffected); it is named here as cut
 down so no future reader draws the same conclusion from it. claude now reports
 a definite boolean, which leaves **no adapter `null` by design**: `null` means a
 probe that could not answer, or a claude outside the gate below.
+*Amended 2026-10-30 (task 138.15, issue #867):* no longer true. copilot is `null` by
+design: it has no status command, and an environment token is not a login
+(§9.9 "Version verdict: exact strings").
 
 - **Only the JSON field decides.** `Detect` runs `claude auth status --json`
   (the flag passed although it is the default, so a change of default cannot
@@ -5561,6 +5595,9 @@ three would answer a different question depending on which one you asked. The
 `incompatible` list ships **empty for all three adapters** — vincent has
 observed no such build — and is wired, rendered and exercised by tests through
 an injected list, so the day one is found the change is one string in one table.
+*Amended 2026-10-30 (task 138.15, issue #867):* all four adapters compare exact strings, and
+every `incompatible` list ships empty, copilot's included (tested `{1.0.105}`,
+§9.9).
 
 `restricted_verdict` rides the *catalog* rather than `Availability`
 (`agent.Options.RestrictedSupport`, mirroring `InputSupport`), because it is
@@ -5749,7 +5786,8 @@ defaults:
   adapter implements `FileMentioner` at all. It is `true` for all four
   shipped adapters (copilot since task 138.13, 2026-10-29) and so separates
   none of them — it is published for the
-  day a fourth adapter lacks the interface, exactly as `supports_resume`
+  day an adapter lacks the interface (*amended 2026-10-30, task 138.15: was "a
+  fourth adapter", written before copilot was the fourth*), exactly as `supports_resume`
   carries a fact every adapter agrees on today. **`file_mention_expands` is
   the field that differs per adapter**, because §9.1 states that expansion,
   not the interface, is the honest capability statement: `true` for claude,
@@ -5958,12 +5996,14 @@ of fact, and `source` is what says which:
   by codex alone (§9.3). claude has no pull and pushes instead (§9.2, §13.2);
   cursor has no surface and grows **no** "cannot report" stub, which is exactly
   the interface change task 026 decision 1 refused. A capability an adapter
-  lacks is stated in §9.x and never emulated (§9.7).
+  lacks is stated in §9.x and never emulated (§9.7). *Amended 2026-10-30 (task 138.15, issue #867):*
+  copilot has no surface either and no stub (§9.9 "Not a quota reporter").
 - **`quotaTTL` = 5 minutes, on `authTTL`'s seam and for `authTTL`'s reason.**
   Binary identity vouches for a percentage no better than it vouches for
   `logged_in`, so a cache hit older than the TTL asks again. Only an adapter
   that is both installed and a `QuotaReporter` is ever asked, so cursor and an
-  uninstalled CLI cost no subprocess however often they are read. Failure
+  uninstalled CLI cost no subprocess however often they are read (copilot
+  too, *amended 2026-10-30, task 138.15*). Failure
   follows the auth rule exactly: the previous reading stands, the error is
   recorded off the wire, and the clock is stamped either way — a persistently
   broken reporter costs one subprocess per TTL, not one per request.
@@ -6221,7 +6261,8 @@ would invalidate every one of them.
   comparison is exact string equality — calver plus a commit sha has no ordering
   to range over, and the sha is part of the binary's identity, not decoration.
   Rather than let one adapter answer a version question differently from the
-  other two, **all three** adapters compare exact strings (§9.5).
+  other two, **all three** adapters compare exact strings (§9.5). *Amended 2026-10-30 (task 138.15, issue #867):*
+  all four do, copilot included (§9.9).
 - **Restricted verdict is a static platform fact** (*added 2026-08-28, task
   041*). `restricted_verdict` is `unsupported` on Windows and `supported`
   elsewhere, derived from the same `sandboxAvailable` value `buildArgs` refuses
@@ -6343,7 +6384,8 @@ repository published.
 
 **States a row reports**, one row per skill carrying the agent list — never one
 row per adapter per skill, which the single-store model would make identical on
-all three by construction:
+every adapter by construction (*amended 2026-10-30, task 138.15: was "all
+three"*):
 
 | state | meaning |
 |---|---|
@@ -6368,9 +6410,10 @@ commas into one element, which the skills CLI reads as a single unknown agent
 name and rejects — every install with more than one adapter selected failed.
 It splits nothing; it consumes each following argument until the next flag.*
 The agent list is mapped through the table above, and the two surfaces answer
-the picker differently on purpose: the **CLI** defaults to all three adapters,
-because a person who typed the command means "put it where my agents look" and
-`--agent` is right there to narrow it, while the **TUI** answers with the
+the picker differently on purpose: the **CLI** defaults to every adapter but
+copilot, which reads the store and has no link to make (*amended 2026-10-30,
+task 138.15: was "all three adapters"*), because a person who typed the
+command means "put it where my agents look" and `--agent` is right there to narrow it, while the **TUI** answers with the
 adapters the daemon actually detected, because that offer is one keypress on a
 screen already showing which ones those are. `npx` is a runtime dependency of
 the **install action only**; its absence is a reported outcome naming the
@@ -6445,17 +6488,21 @@ which is why `metadata.version` is needed rather than reusable from it.
 row, on the GitHub (task 035), release-check (task 055) and container (task 061)
 precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
 
-### 9.9 Copilot adapter (task 138, stub added 2026-10-28)
+### 9.9 Copilot adapter (task 138, added 2026-10-28)
 
-A stub. Task 138 adds a fourth adapter, `copilot`, for the standalone GitHub
-Copilot CLI (npm `@github/copilot`); only the unregistered adapter package is
-built so far (*amended 2026-10, task 138.5*), and nothing in §9.1–§9.8 or
-elsewhere has changed for it. *Amended 2026-10-29 (task 138.9, issue #861):*
-the adapter is now registered — see the last bullet — while the
-three-adapter prose elsewhere is still 138.15's to amend. The bullets below are added one at a
-time, each in the pull request whose code makes it true, and task 138's later
-items complete the section. Placed after §9.8 for the reason §9.7 gives: no
-section is renumbered.
+The fourth adapter, `copilot`, for the standalone GitHub Copilot CLI (npm
+`@github/copilot`), registered fourth (task 138.9). Every bullet below is
+pinned to build 1.0.105, the one the captures under
+`internal/agent/copilot/testdata/` came from. Placed after §9.8 for the reason
+§9.7 gives: no section is renumbered.
+
+*History.* The section was added as a stub on 2026-10-28, when only the
+unregistered adapter package existed (*amended 2026-10, task 138.5*); the
+adapter was registered on 2026-10-29 (task 138.9, issue #861), and each bullet
+landed in the pull request whose code made it true. *Completed 2026-10-30
+(task 138.15, issue #867):* every bullet names the build it was verified on,
+the binary, shell-tool and ACP bullets were added, and the prose elsewhere
+that counted three adapters was amended in place.
 
 - **Captured stream is the only spec** (*2026-10-28, task 138.1*). Copilot's
   `--output-format json` event stream is undocumented, so the adapter's parser
@@ -6468,7 +6515,16 @@ section is renumbered.
   `internal/agent/copilot` implements `agent.Adapter` as `copilot`, file for
   file beside cursor's (§9.7). No daemon, config, TUI or CLI surface reaches it
   yet — registration is 138.9's — so nothing in it is user-visible.
-- **argv and the stdin prompt** (*2026-10, task 138.5*). A step runs
+- **Binary: `copilot`, never `gh copilot`** (*2026-10-30, task 138.15;
+  138.3 and 138.9; 1.0.105*). An empty `agents.copilot.path` (§12.3) resolves
+  `copilot` on `PATH`; the retired `gh copilot` extension is never invoked. On
+  Windows the npm install resolves to the `copilot.cmd` shim (→ `node` → the
+  native `@github/copilot-win32-x64` `copilot.exe`), which the host launcher
+  runs through `cmd /c` (see the MCP bullet's *Inline, no file*, below).
+  github/copilot-cli#3188 (`Failed to sync '<stdout>'` with piped stdout) was
+  checked on 1.0.105 through both the shim and the native exe and does not
+  reproduce (138.3).
+- **argv and the stdin prompt** (*2026-10, task 138.5; 1.0.105*). A step runs
   `copilot --output-format json --no-auto-update --session-id <uuid>
   --allow-all-tools --allow-all-paths --allow-all-urls`, plus `--model <m>`
   only when §8.6 resolved a model and `--reasoning-effort <e>` only when it
@@ -6477,7 +6533,7 @@ section is renumbered.
   process cwd is the worktree; `-C` is not passed. With no `--model` the CLI
   picks `auto` itself, which is why the curated catalog names no default.
 - **Full-auto is the three flags, never the env spelling** (*2026-10, task
-  138.5*). `COPILOT_ALLOW_ALL` is never set: it also trusts the worktree,
+  138.5; 1.0.105*). `COPILOT_ALLOW_ALL` is never set: it also trusts the worktree,
   loading its hooks and MCP servers. Nor is it inherited (*2026-10-30, task
   138.10 review F2*): `Start` removes it — any case of the name — from the
   child's environment in every permission mode, whether §12.3 resolved it or
@@ -6487,11 +6543,11 @@ section is renumbered.
   `--disable-builtin-mcps` is not passed, so
   the built-in `github-mcp-server` is available to every run — a stated fact,
   not a vincent choice yet.
-- **`--no-auto-update` on every spawn** (*2026-10, task 138.5*), the version
+- **`--no-auto-update` on every spawn** (*2026-10, task 138.5; 1.0.105*), the version
   probe included (`copilot --no-auto-update --version`), so the build Detect
   reports is the build that runs. `copilot version` is never called.
-- **A generated `--session-id`** (*2026-10, task 138.5*). Each run mints a v4
-  UUID, which copilot adopts. `RunResult.SessionID` is that id even when no
+- **A generated `--session-id`** (*2026-10, task 138.5; 1.0.105*). Each run mints a v4
+  UUID, which 1.0.105 adopts. `RunResult.SessionID` is that id even when no
   `result` line arrives — a killed run included; a `result.sessionId` that
   disagrees with it is reported as an error, not recorded.
 - **Version verdict: exact strings** (*2026-10, task 138.5*). Detect records
@@ -6507,19 +6563,19 @@ section is renumbered.
   `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` may hold a classic
   `ghp_` PAT, which Copilot rejects, so their presence proves nothing. It
   stays `null` with a token set.
-- **No mid-run input** (*2026-10, task 138.5*). `InputSupport` is `never`;
-  `Respond` always errors.
+- **No mid-run input** (*2026-10, task 138.5; 1.0.105*). `InputSupport` is
+  `never`; `Respond` always errors.
 - **No interim refusal remains** (*2026-10, task 138.5; amended 2026-10-29,
   task 138.8, which retired the third, and task 138.11, which retired the
   resume refusal; retired 2026-10-30 by task 138.10, issue #862*). `Start`
   refused `restricted` with `ErrRestrictedUnsupported` until 138.10 mapped it
   (below); no path in it returns that sentinel now.
-- **Restricted is always supported** (*2026-10-30, task 138.10*).
+- **Restricted is always supported** (*2026-10-30, task 138.10; 1.0.105*).
   `RestrictedSupport` is `always`, on every OS: 138.3 proved the
   `--available-tools` bound on macOS, Linux and Windows, so there is no
   per-GOOS refusal, and §9.4's "cursor on Windows is the one such case" stays
   true. `vincent agents` and `vincent doctor` read it from there.
-- **Restricted argv** (*2026-10-30, task 138.10*). The three `--allow-all-*`
+- **Restricted argv** (*2026-10-30, task 138.10; 1.0.105*). The three `--allow-all-*`
   flags are replaced by
   `--available-tools=view,grep,glob,edit,create,apply_patch
   --allow-tool=read --allow-tool=write`, the same on every GOOS; a
@@ -6544,7 +6600,7 @@ section is renumbered.
   `--assisted-approval`, which are out of scope. No fetch or web tool is in
   the set, so no URL rule is needed.
 - **Restricted copilot has no shell, so no git** (*2026-10-30, task 138.10
-  decision 1*). The shell tool — `bash` on macOS and Linux, `powershell` on
+  decision 1; 1.0.105*). The shell tool — `bash` on macOS and Linux, `powershell` on
   Windows — is left out of `--available-tools`. With it visible, copilot runs
   any command it judges read-only without asking (138.3, all three OSes), and
   no rule bounds it to git: deny beats allow, so `--deny-tool=shell` also
@@ -6552,18 +6608,19 @@ section is renumbered.
   cursor's sandboxed shell (§9.7). The agent does not need to commit: vincent
   commits through command steps, as §9.3 says for codex.
 - **The vincent tools stay visible and allowed when restricted** (*2026-10-30,
-  task 138.10; task 057 decision 9*). With §13.4's server wired, its name
+  task 138.10; task 057 decision 9; 1.0.105*). With §13.4's server wired, its name
   joins the set (`--available-tools=…,vincent`) beside its `--allow-tool=vincent`:
   `--available-tools` hides MCP tools it does not name, and
   `restricted_mcp_1.0.105.jsonl` called `vincent-health` with that spelling.
-- **A refused call is a tool result** (*2026-10-30, task 138.10 decision 7*).
+- **A refused call is a tool result** (*2026-10-30, task 138.10 decision 7;
+  1.0.105*).
   A `denied` call — a path outside the worktree included — is `Blocked`, as
   before. A call to a tool missing from `--available-tools` (138.3 saw
   `Tool 'create' does not exist.` on Windows) was not reproduced by any
   capture: the models asked to call the missing shell said it was unavailable
   instead. Its `error.code` is therefore unknown, and it is classified as any
   other failed call — an error, not `Blocked` — until a capture shows it.
-- **Resume** (*2026-10-29, task 138.11*). Copilot implements `Resumer`, so it
+- **Resume** (*2026-10-29, task 138.11; 1.0.105*). Copilot implements `Resumer`, so it
   can hold a chat (§5.5). A resumed run passes `--resume=<id>` in place of
   `--session-id`, with every other flag a fresh run passes
   (`resume_1.0.105.jsonl`: the second run remembered the first's codeword).
@@ -6574,14 +6631,14 @@ section is renumbered.
   `RunResult.SessionID` is the resumed id even with no `result` line, and a
   `result.sessionId` that disagrees is an error, as on a fresh run.
   `--trust-folder` is still never passed: it cannot combine with `--resume`.
-- **Lost session** (*2026-10-29, task 138.11*). A `--resume=` of an id the
+- **Lost session** (*2026-10-29, task 138.11; 1.0.105*). A `--resume=` of an id the
   CLI does not know exits 1 with no JSONL and
   `Error: No session, task, or name matched '<id>'.` on stderr
   (`resume_unknown_1.0.105.txt`). On a resumed run only, that marker is
   `session_lost`, the way codex's is (§9.3). A fresh run is never classified
   so.
 - **Restricted resume** (*2026-10-29, task 138.11 decision 2; amended
-  2026-10-30, task 138.10*). `SupportsRestrictedResume()` was false until a
+  2026-10-30, task 138.10; 1.0.105*). `SupportsRestrictedResume()` was false until a
   capture proved the bound holds on a `--resume` run. 138.10's does:
   `restricted_resume_1.0.105.jsonl` resumed a restricted session with the
   same flags, and both its writes outside the worktree — `apply_patch`
@@ -6589,7 +6646,7 @@ section is renumbered.
   no shell (*amended 2026-10-30, task 138.10 review F1: re-captured so the
   denial is a write, not a read*). It is true now, so a linked chat on a restricted task opens on
   copilot (row 29, §5.5).
-- **The vincent MCP server** (*2026-10-29, task 138.8*). A step wired to §13.4's
+- **The vincent MCP server** (*2026-10-29, task 138.8; 1.0.105*). A step wired to §13.4's
   per-step server gets `--additional-mcp-config '<json>'` and
   `--allow-tool=vincent` appended to its argv. The JSON is
   `{"mcpServers":{"vincent":{"type":"http","url":…,"headers":{"Authorization":"Bearer …"},"tools":["*"]}}}`,
@@ -6633,7 +6690,7 @@ section is renumbered.
     `<server>-<tool>` (`vincent-health` in `mcp_1.0.105.jsonl`) with
     `mcpServerName` and `mcpToolName` beside it; the parser keeps that split on
     the normalized tool use rather than re-cutting the joined name.
-- **The stream** (*2026-10, task 138.5*). Message deltas coalesce into the
+- **The stream** (*2026-10, task 138.5; 1.0.105*). Message deltas coalesce into the
   closing `assistant.message` (`output`); the answer is the last message, since
   the terminal `result` line carries none. `tool.execution_start` and
   `tool.execution_complete` are `tool_use` and `tool_result` keyed by
@@ -6647,7 +6704,8 @@ section is renumbered.
   kept. *Amended 2026-10, task 138.7:* the stream's other events are
   normalized as the bullets below describe; `premiumRequests` still never
   becomes cost.
-- **Usage from the checkpoint, as session totals** (*2026-10, task 138.7*).
+- **Usage from the checkpoint, as session totals** (*2026-10, task 138.7;
+  1.0.105*).
   The root agent's `session.usage_checkpoint` is a `usage` event, and the last
   one fills the result's tokens from `accountingSnapshot.tokenDetails`:
   `input` → `InputTokens` (the *uncached* input, as claude's is, §9.2 — input
@@ -6684,14 +6742,14 @@ section is renumbered.
   `model_usage`) shows the session's running totals on a resumed copilot
   turn, while `chat_turns.input_tokens`/`output_tokens` hold the turn's own
   share.
-- **No run header** (*2026-10, task 138.7*). 1.0.105 writes no cwd and no
+- **No run header** (*2026-10, task 138.7; 1.0.105*). 1.0.105 writes no cwd and no
   tool list to stdout: `session.start` goes only to the on-disk log,
   `session.skills_loaded` is never emitted in JSON mode, and
   `session.tools_updated` carries only the model. Copilot therefore produces no
   `run_header`, as codex does not (§9.3); `RunHeader.WorkDir` is the CLI's own
   report, so it is never filled from the spawn spec.
 - **Thinking, input echo, patches and command output** (*2026-10, task
-  138.7*). `assistant.reasoning`'s whole `content` is `thinking`; its
+  138.7; 1.0.105*). `assistant.reasoning`'s whole `content` is `thinking`; its
   `assistant.reasoning_delta` lines stay `unknown` rather than being coalesced,
   because the closing line carries the block (task 066's whole blocks). The
   root agent's `user.message` is an `input_echo` carrying nothing, as cursor's
@@ -6701,11 +6759,13 @@ section is renumbered.
   produces none. A `bash` completion's `result.content`, less the trailing
   `<shellId: N completed with exit code E>`, rides on its `tool_result` as
   `Output`, the way codex's does (§9.3), and the result's summary is
-  `exit E` from `shellExecution.exitCode`. Only `bash` is captured — the
-  Windows and Linux shell tools' names are 138.3's — and the live
+  `exit E` from `shellExecution.exitCode`. Only `bash` is mapped. Linux's
+  shell tool is `bash` too (138.3); Windows' is `powershell`, whose completion
+  no fixture pins, so its result carries no `Output` and stays an ordinary
+  `tool_result` (*amended 2026-10-30, task 138.15*). The live
   `tool.shell_output` and `tool.execution_partial_result` chunks stay
   `unknown`: the completion is the durable copy.
-- **Subagents** (*2026-10, task 138.7*). `subagent.started` is
+- **Subagents** (*2026-10, task 138.7; 1.0.105*). `subagent.started` is
   `subagent_started` (the spawning `toolCallId`, `agentType`,
   `agentDescription`) and `subagent.completed` is `subagent_finished`
   (`totalToolCalls`, `totalTokens`, `durationMs`). Every later line carrying
@@ -6721,19 +6781,19 @@ section is renumbered.
   `skill` tool call stays a `tool_use` (amended 2026-10-29, task 138.13). A
   test pins every raw type the captures carry to its normalization, so a type
   nobody mapped fails it.
-- **SIGTERM exits 0** (*2026-10, task 138.5*). On 1.0.105 a terminated run ends
+- **SIGTERM exits 0** (*2026-10, task 138.5; 1.0.105*). On 1.0.105 a terminated run ends
   `agent.interrupted`, `abort`, …, `result{exitCode:0}`. The engine records a
   termination it asked for whatever the exit code, as for every adapter, and
   the parser also reads a result after the root agent's `abort` as an error,
   so the run is never reported as a success.
-- **No model enumeration** (*2026-10, task 138.6*). The catalog lists no
+- **No model enumeration** (*2026-10, task 138.6; 1.0.105*). The catalog lists no
   models and ids are free-form, so §8.2 passes any model through with at most
   its "not in the catalog" warning. Copilot lists models only through the
   interactive `/model`; `help config`'s static list is not what the account
   may use. An unavailable id exits 1 with `Error: Model "…" from --model flag
   is not available.` before any request is spent, and that stderr reaches
   `result_summary` through the no-result path.
-- **Effort probed from `--help`** (*2026-10, task 138.6*). `Options` runs
+- **Effort probed from `--help`** (*2026-10, task 138.6; 1.0.105*). `Options` runs
   `copilot --no-auto-update --help` and reads the clap-style
   `--reasoning-effort … [possible values: …]` line (source `cli`), merged over
   the curated floor `none, minimal, low, medium, high, xhigh, max`. A missing
@@ -6749,10 +6809,10 @@ section is renumbered.
   `config.json` or a `settings.json` (`model_persist_1.0.105.txt`). Every run
   writes logs, session state and the session store, and the first one a
   `firstLaunchAt` in `config.json`, whatever its flags.
-- **Not a quota reporter** (*2026-10, task 138.6*). There is no zero-cost
+- **Not a quota reporter** (*2026-10, task 138.6; 1.0.105*). There is no zero-cost
   plan probe, so the adapter is not a `QuotaReporter`, and premium requests are
   not dollars, so they never become `CostUSD`.
-- **Failure classification** (*2026-10, task 138.6*). A failed run whose error,
+- **Failure classification** (*2026-10, task 138.6; 1.0.105*). A failed run whose error,
   result text or stderr carries `No authentication information found`
   (`logged_out_1.0.105.txt`) is `unauthenticated`; a stream vincent could not
   read to the end still outranks it as `stream_error`. Rate limit and quota
@@ -6760,7 +6820,8 @@ section is renumbered.
   task 003 decision 2 recognizes nothing neither documented nor captured. Such
   a run fails the ordinary way, and `usage_limit_auto_continue` does not apply
   to copilot.
-- **Registered fourth** (*2026-10-29, task 138.9, issue #861*). `builtin.New`
+- **Registered fourth** (*2026-10-29, task 138.9, issue #861; against
+  1.0.105*). `builtin.New`
   lists copilot after cursor, so the daemon, `vincent doctor` and
   `workflow validate` all reach it, and `/v1/agents` and `/v1/info` list it
   fourth with `logged_in: null`. `agents.copilot.path` (§12.3) is served and
@@ -6793,6 +6854,15 @@ section is renumbered.
   (`mention_tools_1.0.105.jsonl`, §5.5), so a mention is worth sending
   (task 126 decision 6). `FileMention` is `@` and the path, never quoted, as
   cursor's is; no Windows path was observed (#557).
+- **ACP considered and rejected** (*task 138 decision 1; recorded 2026-10-30,
+  task 138.15; 1.0.105*). `copilot --acp` is a long-lived JSON-RPC session
+  (`loadSession` to resume, HTTP MCP servers); no vincent adapter speaks that
+  shape — every adapter is one subprocess per run. ACP also has parity gaps,
+  open upstream on 2026-10-30: plugin skills are unavailable in ACP sessions
+  (github/copilot-cli#5269), there is no mid-turn steering (#5198), assisted
+  approval is not exposed (#5047), and `includeCoAuthoredBy: false` is
+  ignored (#5133). A follow-up investigation is task 138's open question 6,
+  not a commitment.
 
 ## 10. Worktree management
 
@@ -11241,6 +11311,11 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         `item.completed`, and the two are separate records
                                         because clients show them at different verbosity
                                         levels.
+                                        *Amended 2026-10-30 (task 138.15, issue
+                                        #867):* copilot fills `agent.command_output`
+                                        (from a `bash` completion) and
+                                        `reasoning_tokens`, but never `agent.plan`
+                                        (§9.9).
                                         **v0 wire change (task 109, 2026-09-17):** three
                                         more record types in the shared vocabulary, the
                                         main loop's account of a subagent, each keyed by
@@ -17384,6 +17459,9 @@ phase: a click on a label switches tabs there exactly as `tab` does.
   `--dangerously-skip-permissions` (claude),
   `--dangerously-bypass-approvals-and-sandbox` (codex), `--force` (cursor).
   Cursor's reads mildest and is not; the first-run notice covers all three.
+  *Amended 2026-10-30 (task 138.15, issue #867):* and `--allow-all-tools --allow-all-paths
+  --allow-all-urls` (copilot, §9.9); the first-run notice covers all four,
+  because it names none.
 - **Listing a chat's skills starts the chat's agent CLI before the human has
   sent anything** (*added 2026-09-19, task 124.9, issue #505*).
   `GET /v1/chats/{id}/skills` (§5.5) spawns the adapter's listing probe on the
@@ -17991,6 +18069,9 @@ accordingly rather than restated: the two-adapter line describes what v1 was
 scoped to deliver, not what the repository contains. T4.6's fresh-machine
 clock is unaffected: cursor is not a prerequisite of the M4 walkthrough, and
 an uninstalled `cursor-agent` is simply an unavailable adapter (§9.5).
+*Amended 2026-10-30 (task 138.15, issue #867):* the tree now carries **four** adapters: copilot
+(§9.9) was registered on 2026-10-29. It arrived as task 138, which has no
+milestone row (the #852 decision), so none is added here.
 
 † **"Signed binaries" is descoped, 2026-08-10** (Phase 4 grill session). Releases
 carry cosign keyless signatures, checksums, and GitHub build attestations —

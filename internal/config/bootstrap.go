@@ -85,7 +85,7 @@ transcript_max_bytes: 512MB
 # It counts one task. Each fan_out lane is its own task and gets its own
 # budget, so a tree of twenty lanes may spend twenty times this; cap the whole
 # tree with max_tree_cost_usd. Only agents that report cost are counted —
-# codex and cursor report none, so the cap is inert on them.
+# codex, cursor and copilot report none, so the cap is inert on them.
 max_task_cost_usd: 0
 
 # Ceiling on what one fan_out tree may spend, in US dollars: a root task and
@@ -109,8 +109,8 @@ usage_limit_recheck_interval: 15m
 # and blocks when the wait would be the estimate above — the case where
 # vincent is guessing. never always blocks.
 #
-# Only claude reports a spent quota at all; codex and cursor recognize no such
-# wording, so this key is inert on them.
+# Only claude reports a spent quota at all; codex, cursor and copilot recognize
+# no such wording, so this key is inert on them.
 usage_limit_auto_continue: always
 
 # Daemon log verbosity: debug | info | warn | error.
