@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (10/17)
+**Status:** 🔄 in progress (11/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -282,20 +282,35 @@ Results:
   enough for §9.4, or whether to add an explicit `--allow-tool`/`--deny-tool`
   rule. Either way it must be captured on every OS.
 
-**Not covered.** These keep 138.3 open:
+**Second Windows run (2026-10-30).** The gaps left by the first run were
+closed by a second hand-run:
+[#855 comment](https://github.com/lezli01/vincent/issues/855#issuecomment-6521139692).
+Setup: Go 1.27, Git Bash, a portable pwsh 7.6.9 first on `PATH`, and vincent
+built from `master` (1e80277c), with the same npm install.
 
-- **Job object kill.** The kill used `taskkill /T`, not `procx`'s Job object
-  with `CREATE_NO_WINDOW`. Cancel a real copilot task through vincent and list
-  the processes afterwards.
-- **Console flashing** (github/copilot-cli #4549). Not assessed: the harness
-  ran with `windowsHide`. The real-CLI gate leg (138.9,
-  `VINCENT_GATE_AGENT=copilot`) under Git Bash shows it, and also covers the
-  pipe check through vincent's own spawn path.
-- **WinGet install.** Not tested, because only `GitHub.CopilotApp` was
-  installed. The native exe has been proven from the npm package, so this is
-  optional.
-- **PowerShell 7.** copilot's README requires v6+, but only 5.1 was present.
-  Repeat the tool name and both restricted runs with pwsh 7 installed.
+| Check | Result |
+|---|---|
+| `VINCENT_GATE_AGENT=copilot ./scripts/138-gate.sh`, shim first on `PATH` | **138 GATE PASS** (scenarios 1 and 2) through vincent's spawn path: pipes, Job object, `CREATE_NO_WINDOW` |
+| The same, native `copilot.exe` first on `PATH` | **138 GATE PASS** |
+| Console flashing (github/copilot-cli #4549) | none; about 8 shell commands ran in a vincent copilot task and no console window opened |
+| Job object kill through the shim | the tree was `vincent.exe → cmd.exe → node.exe → copilot.exe → powershell.exe`; after `vincent task cancel` (task `aborted`), nothing from it survived |
+| Shell tool name, pwsh 7 host | `powershell`, the same as on the 5.1 host |
+| `--available-tools=view,grep,glob`, no allow flags, pwsh 7 host | `create` fails with `Tool 'create' does not exist.`; no file is written; exit 0 |
+| `--available-tools=view,grep,glob,powershell`, no allow flags, pwsh 7 host | `New-Item x.txt` is denied (no interactive user); `git status` runs unprompted; no file is written |
+| WinGet | `winget show GitHub.Copilot --versions` offers 1.0.105; the WinGet-installed exe itself was not run |
+
+Three notes from that run:
+
+- The read-only-runs, writes-denied split matches Linux, so the "plus git"
+  input to 138.10 above holds on every OS.
+- The capture does not show whether copilot's shell tool ran pwsh 7 or 5.1;
+  pwsh 7 was first on `PATH`.
+- Without pwsh 7, vincent's Windows command steps fall back to Windows
+  PowerShell 5.1 (`internal/taskrun/shell.go`). 5.1 cannot parse `&&`, so the
+  gate's `git add -A && git commit` command step fails there after the copilot
+  step has already succeeded. Every gate that uses `&&` in a `run:` body
+  (`m2`, `m5`, `m6`, `134`, `138`) needs pwsh 7 on Windows, as CI's runners
+  have. The 138 gate doc says so. This is not a copilot finding.
 
 The captures (`simple`, `restricted`, `restricted2`, `native`, `killtest`)
 showed no event shape the macOS fixtures lack, so none is committed as a
@@ -493,14 +508,16 @@ its code makes true, in its own pull request.
   ✓ 2026-10-28
 - [x] **138.2** ([#854](https://github.com/lezli01/vincent/issues/854)) One shared adapter-registry constructor for the daemon,
   doctor and `workflow validate` (PR #871). ✓ 2026-10-28
-- [~] **138.3** ([#855](https://github.com/lezli01/vincent/issues/855)) Windows and Linux runs of the pinned build: pipe stdout,
+- [x] **138.3** ([#855](https://github.com/lezli01/vincent/issues/855)) Windows and Linux runs of the pinned build: pipe stdout,
   the shell tool's name, restriction. Depends: 138.1. The Windows leg was run
   on 2026-10-30. Pipe stdout works for both installs, the shell tool is
   `powershell`, the restriction holds, and Windows is supported with
   `RestrictedAlways`. The Linux leg was also run on 2026-10-30, in Docker on
   arm64: shapes match macOS, the shell tool is `bash`, and the real-CLI gate
-  passes. Still to do, all on Windows: the Job object kill, console flashing,
-  and a pwsh 7 host.
+  passes. A second Windows run closed the remaining gaps: the real-CLI gate
+  passes through vincent's spawn path for both installs, the Job object kill
+  leaves nothing behind, no console window flashes, and pwsh 7 gives the same
+  tool name and restriction. ✓ 2026-10-30
 - [x] **138.4** ([#856](https://github.com/lezli01/vincent/issues/856)) A Copilot dialect in `cmd/fakeagent`, selected by
   `--output-format json`. Depends: 138.1. ✓ 2026-10-29
 - [x] **138.5** ([#857](https://github.com/lezli01/vincent/issues/857)) `internal/agent/copilot` running a full-auto step over

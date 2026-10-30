@@ -38,6 +38,10 @@ version (through `cmd //c copilot --version` on Windows, for the npm shim),
 `COPILOT_HOME`, and **whether** each token variable is set — never its value.
 Copy those into the row you record below.
 
+On Windows, put PowerShell 7 (`pwsh`) on `PATH`. Without it, vincent's command
+steps fall back to Windows PowerShell 5.1, which cannot parse the `&&` in
+scenario 1's commit step, so the gate fails after the copilot step has passed.
+
 Scenario 1 names no model: copilot ships no model catalog (task 138
 decision 9), so the account's default is the only model known to exist.
 Scenario 2 asks for `fake-nonexistent`, which the real CLI refuses the way
@@ -47,9 +51,11 @@ the fake does.
 
 Each row is one hand-run of the real-CLI legs. CI covers the fakeagent legs on
 every push, so this table only tracks what CI cannot. The first real-CLI run was
-recorded on 2026-10-30, on Linux. Task 138.9 decides whether one row is
+recorded on 2026-10-30, on Linux. Task 138.9 decides how many rows are
 enough to close it.
 
 | Date | OS | Launched from | CLI version | Token variables | Scenarios | Result |
 |---|---|---|---|---|---|---|
 | 2026-10-30 | Linux arm64 (Docker, `node:24-bookworm`) | bash, npm `copilot` bin on `PATH` | 1.0.105 | `GH_TOKEN` (gh OAuth) | 1, 2 | pass (task 138.3) |
+| 2026-10-30 | Windows (pwsh 7.6.9 on `PATH`) | Git Bash, npm `copilot.cmd` shim first on `PATH` | 1.0.105 | not reported | 1, 2 | pass (task 138.3) |
+| 2026-10-30 | Windows (pwsh 7.6.9 on `PATH`) | Git Bash, npm-bundled native `copilot.exe` first on `PATH` | 1.0.105 | not reported | 1, 2 | pass (task 138.3) |
