@@ -413,3 +413,45 @@ func copilotResultSession(t *testing.T, out string) string {
 	id, _ := last["sessionId"].(string)
 	return id
 }
+
+// TestCopilotRefusesAWidenedRestrictedArgv pins the fake's restricted guard
+// (task 138.10): --available-tools beside a widening flag or naming a shell
+// tool exits 2 with the marker the 138 gate asserts is absent, and the
+// adapter's restricted argv runs.
+func TestCopilotRefusesAWidenedRestrictedArgv(t *testing.T) {
+	t.Parallel()
+	bin := agenttest.BuildFakeAgent(t)
+	base := []string{"-p", "--no-auto-update", "--output-format", "json"}
+	set := "--available-tools=view,grep,glob,edit,create,apply_patch"
+	tests := []struct {
+		name    string
+		args    []string
+		env     []string
+		refused bool
+	}{
+		{"restricted", []string{set, "--allow-tool=read", "--allow-tool=write"}, nil, false},
+		{"full-auto", copilotArgs[4:], nil, false},
+		{"allow-all-tools", []string{set, "--allow-all-tools"}, nil, true},
+		{"allow-all-paths", []string{set, "--allow-all-paths"}, nil, true},
+		{"allow-all-urls", []string{set, "--allow-all-urls"}, nil, true},
+		{"allow-all", []string{set, "--allow-all"}, nil, true},
+		{"yolo", []string{set, "--yolo"}, nil, true},
+		{"env allow-all", []string{set}, []string{"COPILOT_ALLOW_ALL=true"}, true},
+		{"bash", []string{set + ",bash"}, nil, true},
+		{"powershell", []string{"--available-tools=view,powershell"}, nil, true},
+		{"space-separated", []string{"--available-tools", "view,grep", "--allow-tool=read"}, nil, false},
+		{"space-separated bash", []string{"--available-tools", "bash,view"}, nil, true},
+		{"earlier occurrence powershell", []string{"--available-tools=powershell", set}, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			env := append([]string{"FAKEAGENT_SCENARIO=success", "FAKEAGENT_PROMPT_FILE=" + filepath.Join(t.TempDir(), "p")}, tt.env...)
+			_, stderr, code := runCopilot(t, bin, "do a thing", append(slices.Clone(base), tt.args...), env...)
+			marked := strings.Contains(stderr, "fakeagent: copilot restricted argv widened")
+			if marked != tt.refused || (tt.refused && code != 2) {
+				t.Errorf("exit %d, stderr %q; want refused=%v", code, stderr, tt.refused)
+			}
+		})
+	}
+}

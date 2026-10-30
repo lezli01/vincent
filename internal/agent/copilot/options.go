@@ -101,9 +101,9 @@ func mergeOptions(cliEfforts []string) agent.Options {
 		// `copilot --output-format json` has no input channel vincent
 		// drives: the prompt is the whole of stdin (§9.9).
 		InputSupport: agent.InputNever,
-		// Restricted mode is refused until task 138.10 (#862) proves the
-		// `--available-tools` set per OS (decision 8).
-		RestrictedSupport: agent.RestrictedNever,
+		// Restricted is the --available-tools set on every OS (task
+		// 138.10; 138.3 proved it on macOS, Linux and Windows).
+		RestrictedSupport: agent.RestrictedAlways,
 	}
 }
 

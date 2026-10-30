@@ -3,19 +3,18 @@
 # adapter is registered in a real daemon and runs end to end — a workflow
 # whose step names `agent: copilot` reaches done with the edit on its branch
 # (scenario 1), copilot's stderr-only refusal stays diagnosable (scenario 2),
-# its login state is reported as unknown rather than guessed (scenario 3), and
-# a copilot step reaches the daemon's per-step MCP server through its inline
-# `--additional-mcp-config` carrier (scenario 5) — the `cmd /c` quoting of
-# task 138.8 running through a daemon on Windows.
-#
-# Scenario 4 is deliberately absent: restricted mode is #862's, and it will
-# land there without renumbering the others. Chats are #863's.
+# its login state is reported as unknown rather than guessed (scenario 3), a
+# `restricted` copilot step runs on every OS with the restricted argv and no
+# shell tool (scenario 4, task 138.10), and a copilot step reaches the
+# daemon's per-step MCP server through its inline `--additional-mcp-config`
+# carrier (scenario 5) — the `cmd /c` quoting of task 138.8 running through a
+# daemon on Windows. Chats are #863's.
 #
 # Runs against the committed fakeagent so CI never calls a real API; run
 # manually with VINCENT_GATE_AGENT=copilot to exercise the real `copilot` CLI
-# (scenarios 1 and 2 only — 3 and 5 assert vincent's own behavior). That
+# (scenarios 1 and 2 only — 3, 4 and 5 assert vincent's own behavior). That
 # manual run is the other half of the gate and is walked through in
-# docs/gates/138-copilot-gate.md. VINCENT_GATE_SCENARIO=1|2|3|5 runs one
+# docs/gates/138-copilot-gate.md. VINCENT_GATE_SCENARIO=1|2|3|4|5 runs one
 # scenario for debugging.
 #
 # Each scenario gets fresh config/data/repo dirs and its own daemon:
@@ -389,6 +388,101 @@ scenario3() {
 }
 
 # ---------------------------------------------------------------------------
+# Scenario 4 — a `restricted` copilot step runs, on every OS (task 138.10,
+# §9.9). No OS refuses it, so there is no 400 leg as m5's has for cursor on
+# Windows. The fake refuses — exit 2 and a marker on stderr — any argv that
+# pairs --available-tools with an --allow-all-* flag, --yolo or
+# COPILOT_ALLOW_ALL, or names a shell tool in it, so a step that succeeds ran
+# bounded. The §12.3 debug record is what shows the argv itself. Fake-only:
+# the real CLI's restricted runs are the task document's captures.
+# ---------------------------------------------------------------------------
+scenario4() {
+  if (( REAL_AGENT )); then
+    echo "=== scenario 4: skipped (the fake is what checks the restricted argv)"
+    return 0
+  fi
+  echo "=== scenario 4: a restricted copilot step runs with the restricted argv"
+  scenario_dirs s4
+  export FAKEAGENT_SCENARIO=success
+  export FAKEAGENT_EDIT_FILE=README.md
+  copilot_config
+  # debug: true writes the step's argv into its transcript (§12.3).
+  printf 'debug: true\n' >> "$CONFIG_DIR/config.yaml"
+
+  mkdir -p "$CONFIG_DIR/workflows"
+  cat > "$CONFIG_DIR/workflows/138-restricted.yaml" <<EOF
+name: 138-restricted
+description: 138 gate — a restricted copilot step, then a commit.
+steps:
+  - id: careful
+    type: agent
+    agent: copilot
+    permission_mode: restricted
+    max_retries: 0
+    prompt: work carefully
+  - id: commit
+    type: command
+    run: 'git add -A && git commit -m "138 gate: restricted copilot edit"'
+EOF
+
+  daemon_up
+
+  local repo="$TMP/s4/repo"
+  make_repo "$repo"
+  local project_id task_id
+  project_id="$(register_project "$repo")"
+  task_id="$(api POST /tasks "{\"project_id\":$project_id,\"workflow\":\"138-restricted\",\"title\":\"138 restricted\"}" | jq -r .id)"
+  [[ "$task_id" =~ ^[0-9]+$ ]] || fail "creating a restricted copilot task returned no id"
+
+  # Not wait_for_state: a refused argv blocks the task (exit 2,
+  # max_retries: 0), and that helper would fail on `blocked` without saying
+  # why. Stop on done or blocked, and name the fake's refusal when it is the
+  # cause.
+  echo "== wait for done"
+  local state="" steps row run_id transcript
+  for _ in $(seq 1 "$(gate_ticks 300)"); do
+    state="$(api GET "/tasks/$task_id" | jq -r .state)"
+    [[ "$state" == "done" || "$state" == "blocked" || "$state" == "aborted" ]] && break
+    sleep "$GATE_POLL"
+  done
+  steps="$(api GET "/tasks/$task_id/steps")"
+  row="$(jq '[.[] | select(.step_id == "careful")][-1]' <<<"$steps")"
+  run_id="$(jq -r '.id // empty' <<<"$row")"
+  transcript=""
+  [[ -n "$run_id" ]] && transcript="$(api GET "/tasks/$task_id/steps/$run_id/transcript")"
+  if grep -q 'restricted argv widened' <<<"$steps$transcript"; then
+    local why
+    why="$(grep -o 'restricted argv widened[^"\\]*' <<<"$steps$transcript")"
+    fail "the fake refused the restricted argv (task $state): ${why%%$'\n'*}"
+  fi
+  if [[ "$state" != "done" ]]; then
+    api GET "/tasks/$task_id" | jq . >&2
+    jq . <<<"$steps" >&2
+    fail "task $task_id never reached done (still $state)"
+  fi
+
+  echo "== assert the step ran restricted, with the tool set and no widening flag"
+  [[ "$(jq -r .state <<<"$row")" == "succeeded" ]] || fail "restricted step not succeeded: $row"
+  [[ "$(jq -r .agent <<<"$row")" == "copilot" ]] || fail "step did not run as copilot: $row"
+  grep -q '"permission_mode":"restricted"' <<<"$transcript" \
+    || fail "the debug record does not say restricted: $transcript"
+  grep -q -- '--available-tools=view,grep,glob,edit,create,apply_patch' <<<"$transcript" \
+    || fail "the argv carries no restricted --available-tools: $transcript"
+  if grep -q -- '--allow-all' <<<"$transcript"; then
+    fail "the restricted argv carries an --allow-all flag: $transcript"
+  fi
+
+  echo "== assert the edit inside the worktree reached the branch"
+  local branch files
+  branch="$(api GET "/tasks/$task_id" | jq -r .branch_name)"
+  files="$(git -C "$repo" show --name-only --format= "$branch")"
+  grep -qx 'README.md' <<<"$files" || fail "the restricted step changed no tracked file"
+
+  daemon_down
+  unset FAKEAGENT_SCENARIO FAKEAGENT_EDIT_FILE FAKEAGENT_DIALECT
+}
+
+# ---------------------------------------------------------------------------
 # Scenario 5 — a copilot step calls `step_status` on the daemon's per-step MCP
 # server (§13.4), found through the inline `--additional-mcp-config` JSON the
 # adapter puts on its argv (§9.9). On Windows that JSON crosses `cmd /c` to
@@ -447,11 +541,13 @@ case "${VINCENT_GATE_SCENARIO:-all}" in
   1) scenario1 ;;
   2) scenario2 ;;
   3) scenario3 ;;
+  4) scenario4 ;;
   5) scenario5 ;;
   all)
     scenario1
     scenario2
     scenario3
+    scenario4
     scenario5
     ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: ${VINCENT_GATE_SCENARIO:-}" ;;

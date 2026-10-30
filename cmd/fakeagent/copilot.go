@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -55,6 +56,51 @@ To authenticate, you can use any of the following methods:
 // session.go and main.go.
 const copilotQuotaMessage = `402 {"error":{"message":"You have exceeded your premium request quota","code":"quota_exceeded"}}`
 
+// copilotWidenedMarker opens the stderr line of a refused restricted argv,
+// which scripts/138-gate.sh scenario 4 asserts never appears.
+const copilotWidenedMarker = "fakeagent: copilot restricted argv widened"
+
+// copilotWidened returns why a restricted argv — one carrying
+// --available-tools — reaches past its bound, or "" when it does not (task
+// 138.10): a widening flag beside the tool set, or a shell tool in it under
+// either OS's name. The real CLI would run both; the fake refuses them, so a
+// test or gate that passes ran the restricted argv vincent promises.
+func copilotWidened(args []string) string {
+	// Every occurrence counts, in either spelling: the `=` one vincent
+	// passes and the space-separated one, whose value is the next element.
+	var tools []string
+	restricted := false
+	for i, a := range args {
+		if v, ok := strings.CutPrefix(a, "--available-tools="); ok {
+			restricted = true
+			tools = append(tools, strings.Split(v, ",")...)
+		} else if a == "--available-tools" {
+			restricted = true
+			if i+1 < len(args) {
+				tools = append(tools, strings.Split(args[i+1], ",")...)
+			}
+		}
+	}
+	if !restricted {
+		return ""
+	}
+	for _, a := range args {
+		switch {
+		case strings.HasPrefix(a, "--allow-all"), a == "--yolo":
+			return a + " beside --available-tools"
+		}
+	}
+	if os.Getenv("COPILOT_ALLOW_ALL") != "" {
+		return "COPILOT_ALLOW_ALL beside --available-tools"
+	}
+	for _, t := range tools {
+		if t == "bash" || t == "powershell" || t == "shell" {
+			return "--available-tools names the shell tool " + t
+		}
+	}
+	return ""
+}
+
 // copilotMain is the copilot dialect (task 138.4): argv shaped like
 // `copilot -p --no-auto-update --output-format json [--session-id <uuid>] …`,
 // prompt from stdin only, copilot's session-event JSONL on stdout. The
@@ -63,6 +109,12 @@ const copilotQuotaMessage = `402 {"error":{"message":"You have exceeded your pre
 // The prompt is never looked for on argv (task 138 decision 2), so a prompt
 // that reads like a flag — `resume`, `-v`, `--trust` — is only ever a prompt.
 func copilotMain(scenario string) {
+	if bad := copilotWidened(os.Args[1:]); bad != "" {
+		// Task 138.10: before reading anything, so the gate sees a refused
+		// step rather than a run that went past its bound.
+		fmt.Fprintf(os.Stderr, "%s: %s\n", copilotWidenedMarker, bad)
+		os.Exit(2)
+	}
 	prompt, _ := io.ReadAll(os.Stdin)
 
 	// Copilot stamps no session id on its event lines: it is reported once,

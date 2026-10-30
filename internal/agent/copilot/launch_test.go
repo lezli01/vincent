@@ -138,6 +138,53 @@ func TestNeverSetsCopilotAllowAll(t *testing.T) {
 	}
 }
 
+// TestStripsCopilotAllowAll (review F2): a COPILOT_ALLOW_ALL already in the
+// child's environment — resolved by §12.3 or inherited from the daemon — is
+// removed in every permission mode. Left in, it would approve every tool past
+// a restricted run's --available-tools and trust the worktree, loading hooks a
+// restricted agent can write. Every other variable passes through in order.
+func TestStripsCopilotAllowAll(t *testing.T) {
+	for _, mode := range []agent.PermissionMode{agent.Restricted, agent.FullAuto} {
+		for _, inherited := range []bool{false, true} {
+			var env, want []string
+			if inherited {
+				t.Setenv("COPILOT_ALLOW_ALL", "true")
+				t.Setenv("copilot_allow_all", "1")
+			} else {
+				env = []string{"A=1", "COPILOT_ALLOW_ALL=true", "B=2", "Copilot_Allow_All=yes"}
+				want = []string{"A=1", "B=2"}
+			}
+			rec := &agenttest.RecordingLauncher{}
+			h, err := fakeAdapter(t).Start(t.Context(), agent.RunSpec{
+				Prompt: "hi", WorkDir: t.TempDir(), PermissionMode: mode, Env: env, Launcher: rec,
+			})
+			if err != nil {
+				t.Fatalf("%s, inherited=%v: Start: %v", mode, inherited, err)
+			}
+			drain(t, h)
+			_, _ = h.Wait()
+			got := rec.Launches()[0].Command.Env
+			if got == nil {
+				t.Fatalf("%s, inherited=%v: Env = nil, which inherits COPILOT_ALLOW_ALL", mode, inherited)
+			}
+			for _, kv := range got {
+				if k, _, _ := strings.Cut(kv, "="); strings.EqualFold(k, "COPILOT_ALLOW_ALL") {
+					t.Errorf("%s, inherited=%v: child env carries %q", mode, inherited, kv)
+				}
+			}
+			if !inherited && !slices.Equal(got, want) {
+				t.Errorf("%s: Env = %q, want %q", mode, got, want)
+			}
+			if inherited && !slices.Contains(got, "PATH="+os.Getenv("PATH")) {
+				t.Errorf("%s: inherited Env lost PATH: %q", mode, got)
+			}
+			if env != nil && env[1] != "COPILOT_ALLOW_ALL=true" {
+				t.Errorf("%s: Start mutated the caller's Env: %q", mode, env)
+			}
+		}
+	}
+}
+
 // TestDetectProbePinsTheBuild: the version probe carries --no-auto-update
 // too (decision 5), and nothing else but --version.
 func TestDetectProbePinsTheBuild(t *testing.T) {
