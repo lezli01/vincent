@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,9 +65,18 @@ type chatBody struct {
 	HandoffTaskID *int64 `json:"handoff_task_id,omitempty"`
 	// LinkedTaskID is the task this chat was opened on (§5.5, task 119): it
 	// works in that task's worktree, and while it is open the task is locked.
-	LinkedTaskID *int64    `json:"linked_task_id,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	LinkedTaskID *int64 `json:"linked_task_id,omitempty"`
+	// IssueID is the issue this chat was opened on (task 140): it holds that
+	// issue's main worktree, and its branch is the issue's main branch.
+	IssueID *int64 `json:"issue_id,omitempty"`
+	// EndSHA is the commit an issue chat's work ended on, once it let go of
+	// the main worktree (task 140 decision 3).
+	EndSHA    string    `json:"end_sha,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	// Warnings are non-fatal notes on a create — an issue chat opened on a
+	// closed issue (task 140 decision 9). Never set on a read.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // chatTurnBody is one turn as the API renders it.
@@ -95,7 +105,7 @@ func renderChat(c *store.Chat) chatBody {
 		Agent: c.Agent, Model: c.Model, Effort: c.Effort, Branch: c.Branch,
 		AdoptedBranch: c.AdoptedBranch, BaseBranch: c.BaseBranch, BaseSHA: c.BaseSHA, BaseRefresh: renderBaseRefresh(c.BaseRefresh),
 		WorktreePath: c.WorktreePath, SessionID: c.SessionID, PendingInput: c.PendingInput,
-		HandoffTaskID: c.HandoffTaskID, LinkedTaskID: c.LinkedTaskID,
+		HandoffTaskID: c.HandoffTaskID, LinkedTaskID: c.LinkedTaskID, IssueID: c.IssueID, EndSHA: c.EndSHA,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }
@@ -125,6 +135,9 @@ type createChatRequest struct {
 	// does on POST /v1/tasks: BranchName must already exist, and the chat runs
 	// in the project's main checkout when the branch is checked out there.
 	ExistingBranch bool `json:"existing_branch"`
+	// IssueID opens the chat on an issue (task 140): it holds the issue's
+	// main worktree, on the issue's main branch, as a main task does.
+	IssueID *int64 `json:"issue_id"`
 }
 
 // handleChatCreate creates a chat, allocating its worktree and
@@ -180,6 +193,10 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 	base := req.BaseBranch
 	if base == "" {
 		base = project.DefaultBranch
+	}
+	if req.IssueID != nil {
+		s.createIssueChat(w, r, &req, project, name, base)
+		return
 	}
 	branch := strings.TrimSpace(req.BranchName)
 	if req.ExistingBranch {
@@ -505,7 +522,7 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 		writeChatLinked(w, chat, string(chatstate.Archive))
 		return
 	}
-	if !chatstate.Allowed(chat.State, chatstate.Archive) {
+	if !chatstate.AllowedFor(chat.Kind(), chat.State, chatstate.Archive) {
 		writeConflict(w, archiveRefusal(chat.State), map[string]string{"state": string(chat.State), "action": "archive"})
 		return
 	}
@@ -515,7 +532,20 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
 	}
-	if chat.WorktreePath != "" {
+	keepDir := false
+	if chat.OnIssue() {
+		// An issue chat's branch is the issue's main branch and is never
+		// deleted (task 140 decision 4); its tip is the chat's end_sha. The
+		// directory stays for a main task already waiting for it, which
+		// receives it by transfer, uncommitted work included; otherwise it
+		// goes, and the next holder revives it from the branch.
+		s.stampChatEndSHA(r.Context(), project, chat)
+		if keepDir, err = s.deps.Store.IssueHasWaitingMainTask(r.Context(), *chat.IssueID); err != nil {
+			writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
+			return
+		}
+	}
+	if chat.WorktreePath != "" && !keepDir {
 		err = s.deps.Worktrees.RemoveAndRelease(r.Context(), project.Path, chat.WorktreePath, force,
 			func() error {
 				_, err := s.deps.Store.SetChatWorktree(r.Context(), chat.ID, "", "")
@@ -536,7 +566,24 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
 	}
+	if updated.OnIssue() && s.deps.WakeRunner != nil {
+		// A main task queued behind the chat may be admitted now.
+		s.deps.WakeRunner()
+	}
 	writeJSON(w, http.StatusOK, renderChat(updated))
+}
+
+// stampChatEndSHA records an issue chat's branch tip as its end_sha at
+// release (task 140 decision 3). A failed read is logged, never fatal: the
+// branch still has the work, and end_sha is history.
+func (s *Server) stampChatEndSHA(ctx context.Context, project *store.Project, chat *store.Chat) {
+	err := s.deps.Worktrees.HandOverUnderClaim(ctx, project.Path, chat.Branch, func(sha string) error {
+		chat.EndSHA = sha
+		return s.deps.Store.SetChatEndSHA(ctx, chat.ID, sha)
+	})
+	if err != nil {
+		s.deps.Logger.Warn("stamp issue chat end_sha", "chat", chat.ID, "error", err)
+	}
 }
 
 // chatFromPath resolves {id}, answering 400 or 404 itself.

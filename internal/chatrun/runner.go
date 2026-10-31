@@ -291,15 +291,16 @@ func (r *Runner) StopTurn(ctx context.Context, chatID int64) {
 	}
 }
 
-// Close ends a chat linked to a task (task 119): a live turn is cancelled
-// first, then the chat moves `idle → closed`. The task's worktree and branch
-// are not touched — they were never the chat's.
+// Close ends a chat linked to a task (task 119) or opened on an issue (task
+// 140): a live turn is cancelled first, then the chat moves `idle → closed`.
+// Neither worktree nor branch is touched — a linked chat's are the task's,
+// and an issue chat's stay for the issue's next main-worktree holder.
 func (r *Runner) Close(ctx context.Context, chatID int64) (*store.Chat, error) {
 	chat, err := r.deps.Store.GetChat(ctx, chatID)
 	if err != nil {
 		return nil, err
 	}
-	if !chat.Linked() || chatstate.Terminal(chat.State) {
+	if (!chat.Linked() && !chat.OnIssue()) || chatstate.Terminal(chat.State) {
 		return nil, store.ErrInvalidChatAction
 	}
 	r.StopTurn(ctx, chatID)

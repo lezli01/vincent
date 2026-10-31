@@ -93,7 +93,7 @@ func TestLinkedTransitionTable(t *testing.T) {
 	}
 	for _, s := range All {
 		for _, a := range allActions {
-			next, ok := NextFor(true, s, a)
+			next, ok := NextFor(KindLinked, s, a)
 			wantNext, wantOK := want[s][a]
 			if ok != wantOK {
 				t.Errorf("NextFor(linked, %s, %s) legal = %v, want %v", s, a, ok, wantOK)
@@ -102,12 +102,12 @@ func TestLinkedTransitionTable(t *testing.T) {
 			if ok && next != wantNext {
 				t.Errorf("NextFor(linked, %s, %s) = %s, want %s", s, a, next, wantNext)
 			}
-			if got := AllowedFor(true, s, a); got != wantOK {
+			if got := AllowedFor(KindLinked, s, a); got != wantOK {
 				t.Errorf("AllowedFor(linked, %s, %s) = %v, want %v", s, a, got, wantOK)
 			}
 		}
 	}
-	if got, want := ActionsFor(true, Idle), []Action{Close, Send}; !reflect.DeepEqual(got, want) {
+	if got, want := ActionsFor(KindLinked, Idle), []Action{Close, Send}; !reflect.DeepEqual(got, want) {
 		t.Errorf("ActionsFor(linked, idle) = %v, want %v", got, want)
 	}
 }
@@ -130,13 +130,13 @@ func TestTheThreeTerminalStates(t *testing.T) {
 		if got, want := Terminal(s), terminal[s]; got != want {
 			t.Errorf("Terminal(%s) = %v, want %v", s, got, want)
 		}
-		if len(Actions(s)) == 0 && len(ActionsFor(true, s)) == 0 && !terminal[s] {
+		if len(Actions(s)) == 0 && len(ActionsFor(KindLinked, s)) == 0 && !terminal[s] {
 			t.Errorf("state %s is a dead end but is not terminal", s)
 		}
 	}
 	// A closed chat accepts nothing under either table.
 	for _, a := range []Action{Send, Answer, Cancel, Archive, HandOff, Close} {
-		if Allowed(Closed, a) || AllowedFor(true, Closed, a) {
+		if Allowed(Closed, a) || AllowedFor(KindLinked, Closed, a) {
 			t.Errorf("closed accepts %s", a)
 		}
 	}
@@ -231,5 +231,24 @@ func TestNoStateCollidesWithATaskState(t *testing.T) {
 	want := []State{Running, Archived}
 	if !reflect.DeepEqual(shared, want) {
 		t.Errorf("states shared with §6 = %v, want exactly %v", shared, want)
+	}
+}
+
+// TestIssueChatTable is task 140 decision 3: an issue chat can do what a
+// free chat can and also close; both ends are terminal.
+func TestIssueChatTable(t *testing.T) {
+	if got, want := ActionsFor(KindIssue, Idle), []Action{Archive, Close, HandOff, Send}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ActionsFor(issue, idle) = %v, want %v", got, want)
+	}
+	for _, a := range []Action{Close, Archive, HandOff, Send} {
+		if AllowedFor(KindIssue, Closed, a) || AllowedFor(KindIssue, Archived, a) {
+			t.Errorf("%s is legal from a terminal issue chat", a)
+		}
+	}
+	if next, ok := NextFor(KindIssue, Idle, Close); !ok || next != Closed {
+		t.Errorf("NextFor(issue, idle, close) = %s, %v", next, ok)
+	}
+	if AllowedFor(KindIssue, Running, Close) {
+		t.Error("close is legal from a running issue chat; the turn is cancelled first")
 	}
 }

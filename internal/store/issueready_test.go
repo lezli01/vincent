@@ -100,7 +100,7 @@ func seedLaneOf(closed bool, tasks []seedTask) issuestate.Lane {
 	if closed {
 		state = issuestate.Closed
 	}
-	return issuestate.LaneOf(state, unsettled, finished, ready)
+	return issuestate.LaneOf(state, unsettled, finished, ready, false)
 }
 
 // TestLaneOfMatchesLaneExpr seeds an issue for every combination of the

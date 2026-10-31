@@ -41,7 +41,7 @@ func IsChatEvent(t string) bool {
 
 const chatColumns = `id, project_id, title, state, agent, model, effort, permission_mode,
 	branch, adopted_branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input, handoff_task_id,
-	linked_task_id, opening_context, created_at, updated_at`
+	linked_task_id, opening_context, issue_id, end_sha, created_at, updated_at`
 
 const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_message, result_text,
 	session_id, input_tokens, output_tokens, cost_usd, exit_code, pid, proc_identity,
@@ -617,13 +617,19 @@ func scanChat(r rowScanner) (*Chat, error) {
 	var c Chat
 	var model, effort, baseSHA, baseRefresh, worktreePath, sessionID, pending sql.NullString
 	var handoffTaskID, linkedTaskID sql.NullInt64
-	var openingContext sql.NullString
+	var openingContext, endSHA sql.NullString
+	var issueID sql.NullInt64
 	var createdAt, updatedAt string
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
 		&c.PermissionMode, &c.Branch, &c.AdoptedBranch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
-		&handoffTaskID, &linkedTaskID, &openingContext, &createdAt, &updatedAt); err != nil {
+		&handoffTaskID, &linkedTaskID, &openingContext, &issueID, &endSHA, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
+	if issueID.Valid {
+		id := issueID.Int64
+		c.IssueID = &id
+	}
+	c.EndSHA = endSHA.String
 	if linkedTaskID.Valid {
 		id := linkedTaskID.Int64
 		c.LinkedTaskID = &id

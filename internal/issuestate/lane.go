@@ -40,18 +40,23 @@ func ValidLane(s string) bool {
 	return false
 }
 
-// LaneOf is the lane rule (decisions 2 and 4, task 137 decision 13).
-// hasUnsettled is whether any root task of the issue is not settled;
-// hasFinished whether any root task, main-line or side, is `done` or
-// archived from `done`; latestReady whether the latest finished main-line
-// root task exists and its delivery is ready. Closing wins over live tasks;
-// a reopened issue goes back to the lane its tasks give it. s is normalized
-// first, so an unknown stored state reads as open, as everywhere else.
-func LaneOf(s State, hasUnsettled, hasFinished, latestReady bool) Lane {
+// LaneOf is the lane rule (decisions 2 and 4, task 137 decision 13, task 140
+// decision 5). hasUnsettled is whether any root task of the issue is not
+// settled, or a chat on the issue is live; hasFinished whether any root
+// task, main-line or side, is `done` or archived from `done`; latestReady
+// whether the latest finished main-line root task exists and its delivery is
+// ready; chatLatest whether a chat opened on the issue, and not handed off,
+// is the latest main-line work — created after that task finished, or with
+// no such task at all. A chat is work in progress whatever its own state, so
+// chatLatest wins over a ready delivery: the person went back to the issue.
+// Closing wins over everything; a reopened issue goes back to the lane its
+// work gives it. s is normalized first, so an unknown stored state reads as
+// open, as everywhere else.
+func LaneOf(s State, hasUnsettled, hasFinished, latestReady, chatLatest bool) Lane {
 	switch {
 	case Normalize(s) == Closed:
 		return LaneDone
-	case hasUnsettled:
+	case hasUnsettled, chatLatest:
 		return LaneInProgress
 	case latestReady:
 		return LaneHandOff

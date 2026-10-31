@@ -104,6 +104,15 @@ func (s *Server) handleChatDelete(w http.ResponseWriter, r *http.Request) {
 		writeChatLinked(w, chat, "delete")
 		return
 	}
+	if wantBranch && chat.OnIssue() {
+		// An issue chat's branch is its issue's main branch (task 140
+		// decision 4): archive never deletes it, and neither does this.
+		writeErrorDetails(w, http.StatusConflict, CodeIssueChatBranch,
+			fmt.Sprintf("branch %q is issue %d's main branch; delete the chat without delete_branch",
+				chat.Branch, *chat.IssueID),
+			map[string]string{"issue_id": fmt.Sprint(*chat.IssueID), "branch": chat.Branch})
+		return
+	}
 	// Read the project before the delete: the row is about to stop existing
 	// and the §10 judgement needs the repository it lives in.
 	var projectPath string

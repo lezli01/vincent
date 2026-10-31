@@ -17,9 +17,11 @@ import (
 // newChatHandoffCmd carries `vincent task add`'s flags, minus the ones a
 // handoff has no say in: the project, the base branch and the branch name all
 // come from the chat, verbatim, and there is no pull request to start from.
-// `--issue` is kept because a chat row carries no issue: it is the only way a
-// handoff lands in an issue's worktrees, and so the only way `--merge` means
-// anything (task 134.15). Everything else — the workflow, the title, the
+// `--issue` is kept because a free chat's row carries no issue: it is the
+// only way such a handoff lands in an issue's worktrees, and so the only way
+// `--merge` means anything (task 134.15). A chat opened on an issue (task
+// 140) needs neither: the daemon defaults the issue to the chat's and makes
+// the task a main task, and refuses another issue or `--merge` with a 400. Everything else — the workflow, the title, the
 // description, the fields, the priority and the §8.6 overrides — is the
 // ordinary task-create body, validated daemon-side by the same code
 // `POST /v1/tasks` uses.

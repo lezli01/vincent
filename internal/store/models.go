@@ -734,13 +734,35 @@ type Chat struct {
 	// OpeningContext is the task context assembled when a linked chat was
 	// opened, prepended to its first turn's prompt only.
 	OpeningContext string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// IssueID names the issue this chat was opened on (task 140): it holds
+	// that issue's main worktree, as a main-role task does, and its branch is
+	// the issue's main branch. Nil for a free or a linked chat.
+	IssueID *int64
+	// EndSHA is the commit an issue chat's work ended on, stamped when it
+	// let go of the main worktree (task 140 decision 3), as Task.EndSHA is.
+	EndSHA    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Linked reports whether the chat is linked to a task (task 119), which is
 // what selects §5.5's linked transition table.
 func (c *Chat) Linked() bool { return c.LinkedTaskID != nil }
+
+// OnIssue reports whether the chat was opened on an issue (task 140).
+func (c *Chat) OnIssue() bool { return c.IssueID != nil }
+
+// Kind is the §5.5 transition table the chat follows.
+func (c *Chat) Kind() chatstate.Kind {
+	switch {
+	case c.Linked():
+		return chatstate.KindLinked
+	case c.OnIssue():
+		return chatstate.KindIssue
+	default:
+		return chatstate.KindFree
+	}
+}
 
 // ChatTurn is one exchange: a human message and the agent run it produced
 // (spec §5.5, §14). Its accounting columns are step_runs' — tokens, cost,

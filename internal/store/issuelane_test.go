@@ -54,7 +54,7 @@ func wantLaneOf(st issuestate.State, roots []rootSpec) (lane issuestate.Lane, at
 		done = done || r.state == TaskDone || (r.state == taskstate.Archived && r.archivedFrom == TaskDone)
 		attention = attention || taskstate.NeedsHuman(r.state)
 	}
-	return issuestate.LaneOf(st, unsettled, done, done), attention
+	return issuestate.LaneOf(st, unsettled, done, done, false), attention
 }
 
 // TestIssueLaneAndAttention: one issue per case, its lane and attention read

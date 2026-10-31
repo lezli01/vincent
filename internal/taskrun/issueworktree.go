@@ -62,7 +62,27 @@ func (r *Runner) ensureIssueMainWorktree(
 			return err
 		}
 		if holder == nil {
-			return r.createIssueMainWorktree(ctx, task, project, fetch, log)
+			// A closed or archived issue chat may have left the directory in
+			// place for the next holder (task 140 decision 3).
+			chat, err := r.deps.Store.IssueMainWorktreeChatHolder(ctx, *task.IssueID)
+			if err != nil {
+				r.fail(task, ReasonInternalError, withLocalError("reading the issue's main worktree failed", err),
+					log, "read issue main worktree chat holder", err)
+				return err
+			}
+			if chat == nil {
+				return r.createIssueMainWorktree(ctx, task, project, fetch, log)
+			}
+			err = r.takeIssueChatWorktree(ctx, task, project, chat, log)
+			if !errors.Is(err, store.ErrIssueWorktreeNotHeld) {
+				return err
+			}
+			if attempt > 0 {
+				detail := "the issue's main worktree moved during admission; retry the task"
+				r.fail(task, worktree.ReasonGitError, detail, log, "hand over issue main worktree", err)
+				return err
+			}
+			continue
 		}
 		err = r.takeIssueMainWorktree(ctx, task, project, holder, log)
 		if !errors.Is(err, store.ErrIssueWorktreeNotHeld) {
@@ -151,6 +171,48 @@ func (r *Runner) takeIssueMainWorktree(
 	task.BaseRefresh = nil
 	log.Info("received the issue's main worktree from its predecessor",
 		"from_task", holder.ID, "path", holder.WorktreePath, "base_sha", tip)
+	return nil
+}
+
+// takeIssueChatWorktree is case 2 with a released issue chat as the
+// predecessor (task 140 decision 3): the directory, uncommitted work
+// included, passes to task in one transaction, and the chat keeps the tip
+// as its end_sha.
+func (r *Runner) takeIssueChatWorktree(
+	ctx context.Context, task *store.Task, project *store.Project, chat *store.Chat, log *slog.Logger,
+) error {
+	wt := r.deps.Worktrees
+	op, err := wt.InProgressOp(ctx, chat.WorktreePath)
+	if err != nil {
+		return r.worktreeFailed(ctx, task, err, log)
+	}
+	if op != "" {
+		err := fmt.Errorf("issue main worktree %s is partway through a %s", chat.WorktreePath, op)
+		detail := fmt.Sprintf("the issue's main worktree %s, left by chat %d, is partway through a %s; "+
+			"finish or abort it there, then retry", chat.WorktreePath, chat.ID, op)
+		r.fail(task, worktree.ReasonRepoOperationInProgress, detail, log, "hand over issue main worktree", err)
+		return err
+	}
+	var tip string
+	err = wt.HandOverUnderClaim(ctx, project.Path, task.BranchName, func(sha string) error {
+		if err := r.deps.Store.TransferIssueWorktreeFromChat(ctx, chat.ID, task.ID, chat.WorktreePath, sha); err != nil {
+			return err
+		}
+		tip = sha
+		return nil
+	})
+	switch {
+	case errors.Is(err, store.ErrIssueWorktreeNotHeld):
+		return err
+	case err != nil:
+		return r.worktreeFailed(ctx, task, err, log)
+	}
+	task.WorktreePath = chat.WorktreePath
+	task.BaseSHA = tip
+	task.EndSHA = ""
+	task.BaseRefresh = nil
+	log.Info("received the issue's main worktree from its chat",
+		"from_chat", chat.ID, "path", chat.WorktreePath, "base_sha", tip)
 	return nil
 }
 
