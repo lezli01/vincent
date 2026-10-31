@@ -693,6 +693,15 @@ its code makes true, in its own pull request.
   data, and `examples/copilot-review.yaml`. ✓ 2026-10-30
 - [ ] **138.17** ([#869](https://github.com/lezli01/vincent/issues/869)) `docs/gates/138-copilot-gate.md` real runs on three OSes,
   the TUI screenshots, the task marked done. Depends: 138.16, 138.15, 138.14.
+  Progress 2026-10-31: macOS arm64 and Linux arm64 (Docker
+  `node:24-bookworm`) pass gate scenarios 1 and 2 and a two-turn chat
+  against 1.0.105. The gate doc now has the hand-run chat procedure and its
+  rows. The first macOS run failed with `copilot reported no tokens`: it ran
+  the Homebrew cask's install-time 1.0.61, because the gate disables
+  auto-update (decision 5). The gate doc's prerequisites now say to check
+  the version under `COPILOT_AUTO_UPDATE=false`. Still to do: a Windows
+  two-turn chat and the Windows token source, then the screenshot seed and
+  the re-capture.
 
 ## Open questions
 

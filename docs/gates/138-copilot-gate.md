@@ -38,6 +38,15 @@ version (through `cmd //c copilot --version` on Windows, for the npm shim),
 `COPILOT_HOME`, and **whether** each token variable is set — never its value.
 Copy those into the row you record below.
 
+Check the version with `COPILOT_AUTO_UPDATE=false copilot --version`, not a
+bare `--version`. The launcher normally runs the newest build it has
+auto-updated into its cache, but the gate turns that off, so the daemon runs
+the build that was *installed*. A Homebrew cask (`copilot-cli`) installed
+before the cache moved on stays at its install-time build: on 2026-10-31 a
+bare `--version` said 1.0.105 while the gate ran 1.0.61, whose output has no
+usage checkpoint, and scenario 1 failed with `copilot reported no tokens`.
+`brew upgrade --cask copilot-cli` brings the installed build up to date.
+
 On Windows, put PowerShell 7 (`pwsh`) on `PATH`. Without it, vincent's command
 steps fall back to Windows PowerShell 5.1, which cannot parse the `&&` in
 scenario 1's commit step, so the gate fails after the copilot step has passed.
@@ -46,6 +55,23 @@ Scenario 1 names no model: copilot ships no model catalog (task 138
 decision 9), so the account's default is the only model known to exist.
 Scenario 2 asks for `fake-nonexistent`, which the real CLI refuses the way
 the fake does.
+
+## The two-turn chat
+
+The script does not cover chats. Their gate (`m14`) runs only against the
+fake, so a real-CLI chat is walked by hand on the same host as the gate run.
+Start a daemon with a fresh `VINCENT_CONFIG_DIR` and `VINCENT_DATA_DIR`,
+`agents.copilot.path: ""`, and `COPILOT_AUTO_UPDATE=false` exported. Register a
+throwaway repo (`POST /v1/projects`), then open a chat with
+`"agent": "copilot"` (`POST /v1/chats`) and send two messages
+(`POST /v1/chats/{id}/send`), waiting for each turn to leave `running`:
+
+1. `Remember the code word PELICAN for later. Reply with just OK. Do not touch any files.`
+2. `What code word did I ask you to remember? Reply with the word only. Do not touch any files.`
+
+It passes when both turns are `done`, both carry the same `session_id`, and
+turn 2's `result_text` is `PELICAN`. That proves the second turn resumed the
+first turn's session. The TUI's new-chat screen is an equivalent route.
 
 ## Recorded runs
 
@@ -59,3 +85,6 @@ followed, task 138.9 was closed on 2026-10-30.
 | 2026-10-30 | Linux arm64 (Docker, `node:24-bookworm`) | bash, npm `copilot` bin on `PATH` | 1.0.105 | `GH_TOKEN` (gh OAuth) | 1, 2 | pass (task 138.3) |
 | 2026-10-30 | Windows (pwsh 7.6.9 on `PATH`) | Git Bash, npm `copilot.cmd` shim first on `PATH` | 1.0.105 | not reported | 1, 2 | pass (task 138.3) |
 | 2026-10-30 | Windows (pwsh 7.6.9 on `PATH`) | Git Bash, npm-bundled native `copilot.exe` first on `PATH` | 1.0.105 | not reported | 1, 2 | pass (task 138.3) |
+| 2026-10-31 | macOS arm64 | zsh, Homebrew cask `copilot` on `PATH` | 1.0.61 | none set (stored `/login`) | 1 | fail: `copilot reported no tokens`. The cask build ran because the gate turns auto-update off (see above) |
+| 2026-10-31 | macOS arm64 | zsh, Homebrew cask `copilot` on `PATH` | 1.0.105 | none set (stored `/login`) | 1, 2; two-turn chat | pass |
+| 2026-10-31 | Linux arm64 (Docker, `node:24-bookworm`, git 2.39.5) | bash, npm `copilot` bin on `PATH` | 1.0.105 | `GH_TOKEN` (gh OAuth) | 1, 2; two-turn chat | pass |
