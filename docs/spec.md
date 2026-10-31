@@ -1463,7 +1463,11 @@ task 130 decision 6.
 *Amended 2026-10-31 (task 140, issue #885):* **a chat on an issue** (§5.5)
 is a main-worktree holder too. The occupant is now a main task *or* a
 non-terminal issue chat, served as `main_worktree.occupant_task_id` or
-`occupant_chat_id`, and the scheduler's admission predicate reads both. The
+`occupant_chat_id`, and the scheduler's admission predicate reads both. A
+chat is created on an API goroutine, not the scheduler's, so the `queued →
+running` transition of a main task re-checks for a live issue chat in its
+own transaction and loses cleanly — the task stays `queued` — when one was
+opened after the walk read the candidates (review F2). The
 main branch is a main task's, else the branch of any issue chat that was
 not handed off, so a closed or archived chat keeps its branch on the issue's
 line and the next main task revives it. The lane gains a fourth fact: an

@@ -145,6 +145,15 @@ type TaskChange struct {
 	// on a locked task: the chat's process is already dead, and the close
 	// and the abort commit together or not at all.
 	CloseLinkedChats bool
+	// IssueMainFree is admission's re-check (task 140, review F2): when the
+	// task is a main-role task of an issue, the transition is refused with
+	// *IssueWorktreeOccupiedError if a live chat opened on that issue holds
+	// its main worktree. The scheduler read occupancy from ListAdmissible
+	// before this commit, and CreateIssueChat runs on an API goroutine, so
+	// without the check in the same transaction a chat created between the
+	// two would sit beside a running main task. CreateIssueChat's own check
+	// sees a running main task, so whichever commits first wins cleanly.
+	IssueMainFree bool
 	// MergeBack is the merge-back task a side task's `→ done` inserts in the
 	// same transaction (§5.6, task 134 decision 11, 134.14), built by the
 	// engine — which owns the workflow snapshot and has already asked git
@@ -192,6 +201,11 @@ func (s *Store) TransitionTask(
 			}
 		}
 		mergeEv = nil
+		if ch.IssueMainFree {
+			if err = issueMainFreeTx(ctx, tx, id); err != nil {
+				return err
+			}
+		}
 		task, ev, err = transitionTaskTx(ctx, tx, id, from, to, ch)
 		if err != nil {
 			return err
@@ -212,6 +226,29 @@ func (s *Store) TransitionTask(
 		s.notify(mergeEv)
 	}
 	return task, ev, nil
+}
+
+// issueMainFreeTx refuses with *IssueWorktreeOccupiedError when task id is
+// a main-role task of an issue on which a live chat is open (TaskChange's
+// IssueMainFree).
+func issueMainFreeTx(ctx context.Context, tx *sql.Tx, id int64) error {
+	var issueID sql.NullInt64
+	var role sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT issue_id, issue_worktree FROM tasks WHERE id = ?`, id).
+		Scan(&issueID, &role); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("task %d: %w", id, ErrNotFound)
+		}
+		return fmt.Errorf("read task %d issue role: %w", id, err)
+	}
+	if !issueID.Valid || role.String != string(IssueWorktreeMain) {
+		return nil
+	}
+	chat, err := liveIssueChatTx(ctx, tx, issueID.Int64)
+	if err != nil || chat == 0 {
+		return err
+	}
+	return &IssueWorktreeOccupiedError{IssueID: issueID.Int64, ChatID: chat}
 }
 
 // insertMergeBackTx inserts mb, the merge-back of side task source, inside

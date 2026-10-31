@@ -235,3 +235,43 @@ func TestDiscardUnplacedIssueChat(t *testing.T) {
 		t.Error("a chat naming a directory was discarded")
 	}
 }
+
+// TestAdmissionRechecksTheIssueChat is review F2: the scheduler reads
+// occupancy before it marks a task running, and a chat may be opened on the
+// issue in between. The admission's own transaction re-checks, so whichever
+// of the two commits first wins and the other is refused cleanly.
+func TestAdmissionRechecksTheIssueChat(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+
+	is := testIssue(t, s, p.ID, "chat first")
+	task := newMainTask(p.ID, is.ID, "queued")
+	mustCreate(t, s, task)
+	if c := candidateOf(t, s, task.ID); c.IssueOccupied {
+		t.Fatal("a queued main task saw its issue occupied before any chat")
+	}
+	chat, err := openIssueChat(t, s, p.ID, is.ID, "unused")
+	if err != nil {
+		t.Fatalf("CreateIssueChat beside a queued main task: %v", err)
+	}
+	_, _, err = s.TransitionTask(ctx, task.ID, TaskQueued, TaskRunning, TaskChange{IssueMainFree: true})
+	if occ, ok := AsIssueWorktreeOccupied(err); !ok || occ.ChatID != chat.ID {
+		t.Fatalf("admission behind a chat created after the read = %v, want occupied by chat %d", err, chat.ID)
+	}
+	if got, err := s.GetTask(ctx, task.ID); err != nil || got.State != TaskQueued {
+		t.Fatalf("task after the refused admission = %v, %v; want queued", got, err)
+	}
+
+	other := testIssue(t, s, p.ID, "admission first")
+	first := newMainTask(p.ID, other.ID, "admitted")
+	mustCreate(t, s, first)
+	if _, _, err := s.TransitionTask(ctx, first.ID, TaskQueued, TaskRunning, TaskChange{IssueMainFree: true}); err != nil {
+		t.Fatalf("admission with no chat: %v", err)
+	}
+	if _, err := openIssueChat(t, s, p.ID, other.ID, "unused2"); err == nil {
+		t.Error("a chat opened beside a just-admitted main task")
+	} else if occ, ok := AsIssueWorktreeOccupied(err); !ok || occ.TaskID != first.ID {
+		t.Errorf("chat after admission = %v, want occupied by task %d", err, first.ID)
+	}
+}
