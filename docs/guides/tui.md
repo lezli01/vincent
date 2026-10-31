@@ -1979,9 +1979,10 @@ closed, such as `closed · not planned`), the title, its labels and kind,
 
 - **open** — `no tasks`, or `N tasks · cancelled`;
 - **in progress** — `● #T running` (or whichever state) for the task holding
-  the issue's main worktree, then `· +k side` while side tasks are running and
-  `· n merging` while merge-backs are waiting; with no task in the main
-  worktree, `● N tasks`;
+  the issue's main worktree, or `● chat #C` for a
+  [chat opened on the issue](#a-chat-on-the-issue--t) holding it, then
+  `· +k side` while side tasks are running and `· n merging` while merge-backs
+  are waiting; with nothing in the main worktree, `● N tasks`;
 - **hand-off** — `✓ N done`;
 - **done** — `N tasks`, with `· ● live` while one is still unsettled.
 
@@ -1998,7 +1999,7 @@ counting the lines out of sight that are not blank — the totals line, lane
 headers and `none` placeholders as well as issues, the way the issue detail
 counts its page.
 
-Any change to an issue, or to a task
+Any change to an issue, or to a task or a chat
 of an issue on the screen, re-lists it with no keypress, and the selection
 follows the issue into whatever lane it moved to.
 
@@ -2032,6 +2033,7 @@ completed](../assets/tui-issues.png)
 | `I` | Hand the selected issues off — or, with nothing selected, the cursor's pending one — in the [handoff form](#handing-issues-off--space-v-i) |
 | `.` | Mark an idle in-progress issue ready, or a pending hand-off issue not ready |
 | `,` | Return a claimed or waiting issue from its handoff — asks `y`/`n` first |
+| `T` | [Chat on the selected issue](#a-chat-on-the-issue--t), in its main worktree — or reopen the chat already holding it |
 
 The mouse wheel moves the selection one row per tick, and a click selects the
 row under it.
@@ -2076,7 +2078,8 @@ its lane (with `!` when a task waits on you); for an imported issue, a
 `source` fact naming `owner/repo#N` and a `sync` fact giving the sync state,
 when it last synced and the reason it stands there; a **Main
 worktree** section, once the issue has a main branch, naming the branch and
-the task holding it (`enter` on the section opens that task) or `free`; every
+the task holding it (`enter` on the section opens that task), the chat
+opened on the issue holding it (`enter` opens the chat), or `free`; every
 task the issue started, newest first and finished or archived ones included,
 each with its state glyph and its role — `main`, `side · merge manual` or
 `side · merge agent`, or `merge-back of #S`, folded under the side task it
@@ -2092,7 +2095,7 @@ section](../assets/tui-issue.png)
 
 | Key | Does |
 |---|---|
-| `enter` | Open the selected linked task's workspace, or on the Main worktree section the task holding it — `esc` there comes back to the issue |
+| `enter` | Open the selected linked task's workspace, or on the Main worktree section the task or chat holding it — `esc` from a task comes back to the issue |
 | `o` | Open an imported issue's page in a browser |
 | `ctrl+o` | Show the description's and comments' original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description and comments, and the source page — open one in a browser or copy it |
@@ -2110,6 +2113,7 @@ section](../assets/tui-issue.png)
 | `D` | Delete the issue permanently (asks first) |
 | `.` | Mark the issue ready when it is idle in progress, or not ready when it is pending hand-off |
 | `,` | Return the issue from its handoff — asks `y`/`n` first |
+| `T` | [Chat on the issue](#a-chat-on-the-issue--t), in its main worktree — or reopen the chat already holding it |
 
 The page scrolls first: selecting a task never jumps it away from the
 description, and `▲ n more` / `▼ n more` say when it continues above or below.
@@ -2129,6 +2133,34 @@ you opened — or to the task workspace, when you came from one.
 The discussion thread sits under the description, oldest first, each comment
 under its author and time and rendered like the description; a comment
 mirrored from GitHub is marked as GitHub's. It refreshes as comments arrive.
+
+#### A chat on the issue — `T`
+
+`T` on the list or the detail opens a chat that works the issue itself: it
+takes the issue's main worktree and main branch, the way the issue's main
+task does, and lands you in the [chat workspace](#chat-workspace), whose
+header reads `on issue #N`. No form opens: the issue decides the project,
+the worktree and the branch, the chat takes the issue's title, and the agent
+is the daemon's default — `vincent chat start --issue` is the full surface.
+The chat's first turn carries the issue's title, description and latest
+comments. An issue with no main branch yet gets one cut for the chat;
+otherwise the chat receives the directory from the main task or chat before
+it, uncommitted work included. The issue moves to `in progress`, and a chat
+on a closed issue opens with a warning on the note line.
+
+While the chat holds the worktree, the issue's row reads `● chat #C`, its
+Main worktree section names the chat, and `T` — or `enter` on that section
+— reopens it rather than making a second. A main task you start meanwhile,
+from `a` or a merge-back, waits `queued`, and the new-task form says so and
+offers a separate worktree that runs now. A chat cannot be opened while a
+main task is working in the worktree: the note line gives vincent's refusal.
+
+The chat ends one of three ways, all from its workspace or the chats board:
+`ctrl+q` closes it, asking first, and leaves the directory as it stands for
+the issue's next main task; `ctrl+t` hands it off into the issue's next main
+task on the same worktree; archiving it from the chats board lets go too.
+The branch stays the issue's main branch whichever way it ends. See
+[A chat on the issue](issues.md#a-chat-on-the-issue) for the whole story.
 
 #### Starting a task — `a`
 
@@ -2541,6 +2573,9 @@ A chat [opened on a task](#talking-to-an-agent-about-a-task) reads `task #N ·`
 ahead of its title. It works in that task's worktree, so it is never archived:
 `A` is not offered on its row and declines if pressed, and the chat ends by
 being closed from its workspace, landing in `closed` with the other ended chats.
+A chat [opened on an issue](#a-chat-on-the-issue--t) reads `issue #N ·`; it
+holds the issue's main worktree rather than a task's, so `A` archives it like
+any other chat, and its workspace can close it as well.
 
 A `running` row moves. Its state cell carries a turning glyph **beside** the
 `running` label rather than instead of it — the cell is a fixed-width column in
@@ -2657,8 +2692,8 @@ periodic repaint.
 | `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
-| `ctrl+t` | Hand the worktree and branch to a new task — the chat ends; not on a chat opened on a task |
-| `ctrl+q` | Close a chat opened on a task — asks first; the task unlocks, its worktree and branch stay |
+| `ctrl+t` | Hand the worktree and branch to a new task — the chat ends; not on a chat opened on a task. A chat opened on an issue hands off into the issue's next main task |
+| `ctrl+q` | Close a chat opened on a task — asks first; the task unlocks, its worktree and branch stay — or on an issue, whose main worktree is freed for its next main task |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
 | `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
@@ -2805,9 +2840,13 @@ branch both marked `(from the chat)`](../assets/tui-chat-handoff.png)
 
 A chat [opened on a task](#talking-to-an-agent-about-a-task) is the other way
 round: its header reads `on task #N`, the worktree is already that task's, and
-so `ctrl+t` is not offered and declines if pressed. `ctrl+q` ends it instead —
-the only chat it works on — after a `y` to confirm, stopping a running turn
-first.
+so `ctrl+t` is not offered and declines if pressed. `ctrl+q` ends it instead
+after a `y` to confirm, stopping a running turn first.
+
+A chat [opened on an issue](#a-chat-on-the-issue--t) offers both: its header
+reads `on issue #N`, `ctrl+q` closes it and frees the issue's main worktree
+for the next main task, and `ctrl+t` hands it off into that main task. The
+chats board prefixes its row with `issue #N ·`.
 
 The body is the task workspace's [output pane](#task-detail), same records
 and same marks: `▸` a tool call, the outcome indented under it, `·` reasoning,
@@ -3474,7 +3513,7 @@ The first nineteen are the operations screens share, the next ten are the
 | `skip` | `s` | Skip the current step |
 | `cancel` | `c` | Cancel the task |
 | `follow_up` | `F` | Follow up on a finished task |
-| `chat` | `T` | Chat in the task's worktree, or reopen the chat open on it |
+| `chat` | `T` | Chat in the task's worktree, or on the issue's main worktree from the issue screens — or reopen the chat open on it |
 | `palette` | `:` | Open the command palette |
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
 | `help` | `?` | Toggle help |

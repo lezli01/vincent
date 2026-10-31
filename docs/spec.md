@@ -11793,6 +11793,13 @@ change, and a `task.state_changed` whose from and to are equal is what task 090
 decision 1 already declined to publish. `chat.closed` is in the chat family, so
 the per-chat stream carries it.
 
+*Amended 2026-10-31 (task 140.9, issue #885).* Every event of a chat **opened
+on an issue** carries `issue_id` beside the chat's id, title and state, the
+way a linked chat's carry `linked_task_id`: the chat's state moves the
+issue's `main_worktree` occupant and its `attention`, which emit no
+`issue.*` event of their own, so a follower showing the issue re-reads it on
+the chat event. `chat.closed` is published for such a chat too.
+
 *Amended 2026-08-31 (task 067, issue #269).* There is now a **per-chat stream**,
 `GET /v1/chats/{id}/events` (§13.2), the per-task stream's twin. It narrows the
 durable events on the payload's `id` rather than on a column — a chat event
@@ -15272,6 +15279,27 @@ stream for the live tail.
    is in handoff H7 — return it first" — and view 3 words a submit's
    `issue_in_handoff` 409 the same way.
 
+   *Amended 2026-10-31 (task 140.9, issue #885):* **`T`** on both issue
+   screens is the `chat` operation (§6's, below in Keys) on the issue: it
+   posts `POST /v1/chats` with `issue_id`, the issue's title and the
+   daemon's default agent, with no form — the issue decides the project,
+   worktree and branch, as a task decides a linked chat's — and opens the
+   chat workspace on the 201, carrying any `warnings` (a closed issue) to
+   the note line. While the issue's `main_worktree.occupant_chat_id` names a
+   live chat, `T` opens that chat and asks the daemon nothing; an
+   `issue_has_live_chat` 409 from a stale row opens the chat its
+   `details.chat_id` names; any other refusal — `issue_worktree_occupied`
+   while a main task works in the worktree — is shown as the daemon words
+   it. The Main worktree section names a chat occupant as `chat #C`, and
+   `enter` on it opens the chat; the list's in-progress cell reads `● chat
+   #C`. Both screens re-read on a `chat.*` event whose payload's `issue_id`
+   names a shown issue (§13.3). In view 3 seeded from an issue, a chat
+   occupant preselects `separate` as a task occupant does, and is named. The
+   chat workspace's header reads `on issue #N` and the chats board prefixes
+   the row `issue #N ·`; the workspace offers both `ctrl+q` (close, which
+   frees the worktree for the next main task) and `ctrl+t` (hand-off into
+   the issue's next main task), the two endings §5.5 gives the kind.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home
@@ -17266,6 +17294,11 @@ carries no term and offers no `available_actions`; that shared default is
 recorded as an exception on `T` alone, so it does not travel with a moved
 `chat`. The chat workspace's `ctrl+q` close is a fixed key, for the reason its
 `ctrl+t` hand-off is: the composer owns every printable key there.
+*Amended 2026-10-31 (task 140.9, issue #885):* `chat` is also answered on the
+issues list and the issue detail, where it opens a chat on the issue's main
+worktree or reopens the one holding it. It is one operation, so a `tui.keys`
+override moves it on those screens too; neither offers `available_actions`,
+and nothing else there is bound to `T`.
 
 ### Mouse
 
