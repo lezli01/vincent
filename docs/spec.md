@@ -10939,6 +10939,9 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         that occupant — widened to a settled task kept open by
                                         a linked chat — holds the worktree (§5.6, §11); task
                                         125's directory claim still applies beside it (§10).
+                                        *Amended 2026-10-31 (task 140, review F3):* when a chat
+                                        opened on the issue holds it, the 201 carries
+                                        `main_worktree_occupant_chat_id` instead.
                                         `merge_back` enters the
                                         idempotency digest only when present.
                                         *Amended 2026-10-08 (task 134.16, issue #763):* every

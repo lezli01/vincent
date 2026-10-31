@@ -144,6 +144,30 @@ func TestTaskAddQueuedBehindNote(t *testing.T) {
 	}
 }
 
+// TestTaskAddQueuedBehindChatNote is review F3: a main task created while a
+// chat opened on the issue holds the main worktree says which chat it waits
+// behind.
+func TestTaskAddQueuedBehindChatNote(t *testing.T) {
+	f := newIssueWorktreeFixture(t)
+	issueID := mustInt(t, f.issue)
+	chat := &store.Chat{
+		ProjectID: mustInt(t, f.project), Title: "work it", Agent: "claude", PermissionMode: "full_auto",
+		BaseBranch: "main", IssueID: &issueID,
+	}
+	if err := f.h.st.CreateIssueChat(t.Context(), chat, func(int64) string { return "vincent/issue-chat" }); err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	_, errOut, code := runCLI(t, "task", "add", "--project", f.project, "--issue", f.issue, "--title", "next")
+	if code != 0 {
+		t.Fatalf("next: exit %d (%s)", code, errOut)
+	}
+	want := "queued behind chat " + strconv.FormatInt(chat.ID, 10) +
+		" (main worktree busy); pass --separate-worktree to run now\n"
+	if !strings.Contains(errOut, want) {
+		t.Errorf("stderr = %q, want %q", errOut, want)
+	}
+}
+
 func TestTaskShowIssueWorktreeRows(t *testing.T) {
 	f := newIssueWorktreeFixture(t)
 	main := f.occupyMainWorktree(t)

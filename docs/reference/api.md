@@ -2773,7 +2773,9 @@ its side task delivered. A row carries the summary and `GET /v1/issues/{id}`
 carries it in full.
 
 Creating a main task while the main worktree is occupied names the occupant
-in the `201` as `main_worktree_occupant_task_id`. The new task stays `queued`
+in the `201` as `main_worktree_occupant_task_id`, or as
+`main_worktree_occupant_chat_id` when the holder is a
+[chat on the issue](#a-chat-on-an-issue). The new task stays `queued`
 while the occupant holds the worktree — no error, no reason — and is admitted
 once it is free; at most one main task of an issue is in progress at a time.
 

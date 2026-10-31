@@ -445,3 +445,26 @@ func TestMergeBackTaskNamesItsSource(t *testing.T) {
 		t.Errorf("side_active %d, merge_backs_pending %d; want 0, 1", body.SideActive, body.MergeBacksPending)
 	}
 }
+
+// TestMainWorktreeOccupantHintNamesAChat is review F3: a main task created
+// while a chat opened on the issue holds its main worktree names that chat
+// in the 201, not nothing.
+func TestMainWorktreeOccupantHintNamesAChat(t *testing.T) {
+	h := newTaskHarness(t, 0, false)
+	iss := h.issue(t)
+	issueID := iss.ID
+	chat := &store.Chat{
+		ProjectID: h.projectID, Title: "work it", Agent: "claude", PermissionMode: "full_auto",
+		BaseBranch: "main", IssueID: &issueID,
+	}
+	if err := h.store.CreateIssueChat(t.Context(), chat, func(int64) string { return "vincent/issue-chat" }); err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	queued := h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "behind the chat"})
+	if queued.MainWorktreeOccupantTaskID != nil {
+		t.Errorf("hint names task %d, want the chat", *queued.MainWorktreeOccupantTaskID)
+	}
+	if queued.MainWorktreeOccupantChatID == nil || *queued.MainWorktreeOccupantChatID != chat.ID {
+		t.Errorf("chat hint = %v, want chat %d", queued.MainWorktreeOccupantChatID, chat.ID)
+	}
+}

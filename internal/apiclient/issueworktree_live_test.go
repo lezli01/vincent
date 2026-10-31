@@ -70,6 +70,43 @@ func TestIssueWorktreeOverTheWire(t *testing.T) {
 	}
 }
 
+// TestIssueChatOccupantOverTheWire pins task 140's client fields against the
+// real handlers (review F3): Issue.MainWorktree.OccupantChatID and
+// TaskDetail.MainWorktreeOccupantChatID, when a chat opened on the issue
+// holds its main worktree.
+func TestIssueChatOccupantOverTheWire(t *testing.T) {
+	h := newCreateHarness(t)
+	ctx := t.Context()
+	iss, err := h.store.CreateIssue(ctx, store.NewIssue{ProjectID: h.projectID, Title: "Talk it through"}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	issueID := iss.ID
+	chat := &store.Chat{
+		ProjectID: h.projectID, Title: "work it", Agent: "claude", PermissionMode: "full_auto",
+		BaseBranch: "main", IssueID: &issueID,
+	}
+	if err := h.store.CreateIssueChat(ctx, chat, func(int64) string { return "vincent/issue-chat" }); err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	got, err := h.client.GetIssue(ctx, iss.ID, "")
+	if err != nil {
+		t.Fatalf("GetIssue: %v", err)
+	}
+	if mw := got.MainWorktree; mw == nil || mw.OccupantChatID == nil || *mw.OccupantChatID != chat.ID || mw.OccupantTaskID != nil {
+		t.Errorf("Issue.MainWorktree = %+v, want held by chat %d", got.MainWorktree, chat.ID)
+	}
+	queued, err := h.client.CreateTask(ctx, apiclient.CreateTaskRequest{ProjectID: h.projectID, IssueID: &iss.ID})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if queued.MainWorktreeOccupantChatID == nil || *queued.MainWorktreeOccupantChatID != chat.ID ||
+		queued.MainWorktreeOccupantTaskID != nil {
+		t.Errorf("hint = task %v chat %v, want chat %d", queued.MainWorktreeOccupantTaskID,
+			queued.MainWorktreeOccupantChatID, chat.ID)
+	}
+}
+
 // TestIssueWorktreeRefusalsOverTheWire pins task 134.12's two 409s to their
 // decoders against the real handlers: IssueWorktreeMoved names the task now
 // holding the issue's main worktree, IssueHasLiveMainTask the main task that

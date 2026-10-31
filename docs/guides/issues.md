@@ -253,7 +253,8 @@ Everything above is available from every surface:
   `"merge_back": {"on_conflict": "block"}` or `"agent"` for a side task. A
   task reads back `issue_worktree` (`main` or `side`) and `merge_back`; a
   main task created behind an occupant names it in the `201` as
-  `main_worktree_occupant_task_id`; an issue carries `main_worktree`. See
+  `main_worktree_occupant_task_id` (or `main_worktree_occupant_chat_id` behind
+  a chat on the issue); an issue carries `main_worktree`. See
   [The issue's main branch](../reference/api.md#the-issues-main-branch).
 - **MCP.** `task_create` takes the same body, and `issue_get` returns the
   same issue, `main_worktree` included. See
