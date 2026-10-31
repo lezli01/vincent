@@ -259,6 +259,13 @@ func IssueWorktreeMoved(err error) (holderTaskID int64, ok bool) {
 	return conflictID(err, "issue_worktree_moved", "holder_task_id")
 }
 
+// IssueHasLiveChat reports whether err is a chat refused because another
+// chat opened on the issue is still live (409 `issue_has_live_chat`, task
+// 140 decision 2), and if so which chat — the one to open instead.
+func IssueHasLiveChat(err error) (chatID int64, ok bool) {
+	return conflictID(err, "issue_has_live_chat", "chat_id")
+}
+
 // conflictID decodes the id a 409 with the given code names in
 // details[key], the way out of the refusal a client prints.
 func conflictID(err error, code, key string) (int64, bool) {
