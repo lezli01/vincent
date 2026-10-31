@@ -107,6 +107,12 @@ func (s *Store) CreateChat(ctx context.Context, c *Chat) error {
 // filters by the payload's id.
 func chatEvent(evType string, c *Chat, turn *ChatTurn) (*Event, error) {
 	body := map[string]any{"id": c.ID, "title": c.Title, "state": string(c.State)}
+	// A chat opened on an issue names it (task 140.9): its state moves the
+	// issue's row — the occupant, `attention` while it waits on a person —
+	// and a client re-reads the issue without fetching the chat first.
+	if c.IssueID != nil {
+		body["issue_id"] = *c.IssueID
+	}
 	if turn != nil {
 		body["turn_id"] = turn.ID
 		body["turn_seq"] = turn.Seq
