@@ -577,7 +577,9 @@ becomes the issue's main branch, and each later task continues in that
 worktree, queued behind the one holding it rather than refused. Work that
 should not wait runs as a side task, in its own worktree cut from the main
 branch, and merges back when it is done — a conflict either blocks for you or
-goes to an agent first. [Working an issue](guides/issues.md) tells the whole
+goes to an agent first. A chat can work that line too: `vincent chat start
+--issue` opens one in the issue's main worktree, and hands off into the next
+main task. [Working an issue](guides/issues.md) tells the whole
 story, and [Handing work off](guides/handoff.md) what happens once the work
 is done.
 

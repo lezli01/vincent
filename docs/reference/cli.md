@@ -2260,9 +2260,9 @@ touched.
 The flags are `vincent task add`'s, minus the ones a handoff has no say in: the
 project, the base branch and the branch name all come from the chat, and there
 is no pull request to start from (`--github-pull` is not offered). `--issue`
-links the task to a vincent issue, as `task add --issue` does; a chat carries
-no issue of its own, so it is the only way a handoff lands in an issue's
-worktrees. `--title` is still required.
+links the task to a vincent issue, as `task add --issue` does; a chat started
+without `--issue` carries no issue of its own, so it is the only way such a
+handoff lands in an issue's worktrees. `--title` is still required.
 `--description` is where the conversation's context goes: nothing about the
 chat reaches the workflow's prompts automatically.
 
@@ -2273,6 +2273,10 @@ On an issue with no main branch yet the chat's branch becomes the main branch,
 the task is the issue's main task, and `--merge` is inert. `--merge` without
 `--issue` is refused before anything is sent: only a task on an issue is
 merged back.
+
+A chat started with `vincent chat start --issue` needs neither flag: the task
+is linked to the chat's issue and is always its **main** task, in the chat's
+worktree. `--issue` naming another issue, or `--merge`, is refused.
 
 Only an idle chat can be handed off. A live turn must be finished or cancelled
 first (409), a worktree in the middle of a merge, rebase, cherry-pick, revert
