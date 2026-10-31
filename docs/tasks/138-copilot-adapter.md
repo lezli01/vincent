@@ -699,9 +699,18 @@ its code makes true, in its own pull request.
   rows. The first macOS run failed with `copilot reported no tokens`: it ran
   the Homebrew cask's install-time 1.0.61, because the gate disables
   auto-update (decision 5). The gate doc's prerequisites now say to check
-  the version under `COPILOT_AUTO_UPDATE=false`. Still to do: a Windows
-  two-turn chat and the Windows token source, then the screenshot seed and
-  the re-capture.
+  the version under `COPILOT_AUTO_UPDATE=false`. Screenshots, the same day:
+  `scripts/screenshots.sh` now points copilot at a fakeagent wrapper
+  (`agent-copilot`). Before this, the seed's daemon probed whatever real
+  `copilot` was on the operator's PATH. No existing picture shows the
+  adapter list: `tui-daemon-config`'s config list scrolls the adapters out
+  of view, and its alt text in `docs/guides/tui.md`, which claimed they were
+  there, is corrected. Re-shot, `tui-new-task`, `tui-new-task-fields`,
+  `tui-chat-handoff` and `tui-handoff-form` came out byte-identical, and
+  `tui-skills` and `tui-issue-handoff` differed only by unrelated drift, so
+  none of them was committed. A new tape, `tui-daemon-adapters`, shows all
+  four adapters, copilot among them, and the TUI guide's Daemon section uses
+  it. Still to do: a Windows two-turn chat and the Windows token source.
 
 ## Open questions
 

@@ -269,6 +269,8 @@ agents:
     path: "$BIN/agent-slow"
   cursor:
     path: "$BIN/agent-fast"
+  copilot:
+    path: "$BIN/agent-copilot"
 # On, so the triggers shot shows an armed trigger rather than the global-off
 # banner. The seeded triggers only ever seed, so no task comes of it.
 triggers:
@@ -302,6 +304,12 @@ do_seed() {
 
   agent_wrapper agent-slow FAKEAGENT_DIALECT=codex FAKEAGENT_SCENARIO_CODEX=success FAKEAGENT_DELAY_MS=3600000
   agent_wrapper agent-fast FAKEAGENT_DIALECT=cursor FAKEAGENT_SCENARIO_CURSOR=success FAKEAGENT_DELAY_MS=1500
+  # copilot is registered on every daemon (task 138), so the adapter rows
+  # photograph it too. Pointed at the fake like the other three: unset, the
+  # daemon would probe whatever real `copilot` is on the operator's PATH and
+  # the pictures would carry that build. FAKEAGENT_DIALECT makes the version
+  # and help probes answer as copilot 1.0.105 does.
+  agent_wrapper agent-copilot FAKEAGENT_DIALECT=copilot FAKEAGENT_SCENARIO_COPILOT=success FAKEAGENT_DELAY_MS=1500
   agent_wrapper agent-ask FAKEAGENT_SCENARIO=ask-question FAKEAGENT_ASK_MULTI=1
   # The question the answer-form shot is of (issue #414), asked in the terms
   # of the task it parks — a replica restore — rather than the fake's built-in
@@ -2513,6 +2521,21 @@ Sleep 1s
 Enter
 Sleep 4s
 Screenshot "'"$OUT"'/tui-handoff-task.png"
+Sleep 2s
+'
+
+  # The daemon view with the log holding the keys (task 138.17): the blocks
+  # pane pins its end, so the adapters block — all four, copilot's quota
+  # `unknown` by design (§9.9) — is on screen where tui-daemon-config,
+  # whose config list takes the room, cuts it off.
+  tape tui-daemon-adapters 1400 api '
+Type ":"
+Sleep 1s
+Type "daemon"
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-daemon-adapters.png"
 Sleep 2s
 '
 }
