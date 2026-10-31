@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -398,4 +399,31 @@ func mustInt(t *testing.T, s string) int64 {
 		t.Fatalf("parse %q: %v", s, err)
 	}
 	return n
+}
+
+// TestChatCloseOnAnIssue is review F6: `vincent chat close` on a chat
+// opened on an issue closes it and says the issue's main worktree is free,
+// and its help describes both kinds of chat it closes.
+func TestChatCloseOnAnIssue(t *testing.T) {
+	f := newIssueWorktreeFixture(t)
+	issueID := mustInt(t, f.issue)
+	chat := &store.Chat{
+		ProjectID: mustInt(t, f.project), Title: "work it", Agent: "claude", PermissionMode: "full_auto",
+		BaseBranch: "main", IssueID: &issueID,
+	}
+	if err := f.h.st.CreateIssueChat(t.Context(), chat, func(int64) string { return "vincent/issue-chat" }); err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	out, errOut, code := runCLI(t, "chat", "close", strconv.FormatInt(chat.ID, 10))
+	if code != 0 {
+		t.Fatalf("chat close: exit %d (%s)", code, errOut)
+	}
+	want := fmt.Sprintf("chat %d closed; issue %d's main worktree is free for its next main task or chat\n", chat.ID, issueID)
+	if out != want {
+		t.Errorf("stdout = %q, want %q", out, want)
+	}
+	help, _, code := runCLI(t, "chat", "close", "--help")
+	if code != 0 || !strings.Contains(help, "vincent chat start --issue") || !strings.Contains(help, "On an issue:") {
+		t.Errorf("chat close --help (exit %d) does not describe a chat on an issue:\n%s", code, help)
+	}
 }

@@ -2306,7 +2306,9 @@ there. Retry, approve or archive the task afterwards as you would have.
 
 A chat started with `vincent chat start --issue` can be closed too: that
 releases the issue's main worktree, which stays on disk for the issue's next
-main task or chat, and records the branch tip as the chat's `end_sha`. A chat
+main task or chat, and records the branch tip as the chat's `end_sha`. It
+prints `chat N closed; issue M's main worktree is free for its next main task
+or chat`. A chat
 started with `vincent chat start` alone cannot be closed — archive it — and
 neither can a chat that is already closed; both exit 1. A closed chat is hidden
 from `vincent chat list` unless you pass `--archived`. `vincent chat delete`
