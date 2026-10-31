@@ -1186,6 +1186,28 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxIssues: {
+		// T on an issue a chat already holds is a navigation (task 140.9):
+		// the probe needs no daemon to prove the key is handled.
+		"T": func(t *testing.T) {
+			v := issuesFixture()
+			row, ok := v.current()
+			if !ok {
+				t.Fatal("no row under the cursor")
+			}
+			chat := int64(12)
+			for i := range v.issues {
+				if v.issues[i].ID == row.issue.ID {
+					v.issues[i].MainWorktree = &apiclient.IssueMainWorktree{Branch: "vincent/x", OccupantChatID: &chat}
+				}
+			}
+			_, cmd := v.updateKey(registryKey(t, "T"))
+			if cmd == nil {
+				t.Fatal("T did nothing on an issue a chat holds")
+			}
+			if msg, ok := cmd().(openChatMsg); !ok || msg.id != chat {
+				t.Fatalf("T produced %#v, want chat #12 opened", cmd())
+			}
+		},
 		"pgdown": func(t *testing.T) {
 			v := issuesFixture()
 			v.page = 1
@@ -1292,6 +1314,18 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxIssue: {
+		"T": func(t *testing.T) {
+			v := issueFixture()
+			chat := int64(12)
+			v.issue.MainWorktree = &apiclient.IssueMainWorktree{Branch: "vincent/x", OccupantChatID: &chat}
+			_, cmd := v.updateKey(registryKey(t, "T"))
+			if cmd == nil {
+				t.Fatal("T did nothing on an issue a chat holds")
+			}
+			if msg, ok := cmd().(openChatMsg); !ok || msg.id != chat || msg.projectID != 2 {
+				t.Fatalf("T produced %#v, want chat #12 in project 2 opened", cmd())
+			}
+		},
 		"enter": func(t *testing.T) {
 			v := issueFixture()
 			v.render(120, 200) // enter acts on a row that is on screen (review F6)

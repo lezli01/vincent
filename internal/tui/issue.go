@@ -192,6 +192,16 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		v.setNote("saved issue #"+strconv.FormatInt(msg.saved.ID, 10), false)
 		return v, v.loadCmd()
+	case issueChatOpenedMsg:
+		if msg.issueID != v.id {
+			return v, nil
+		}
+		text, bad := issueChatNote(msg)
+		v.setNote(text, bad)
+		if msg.err == nil {
+			return v, v.loadCmd()
+		}
+		return v, nil
 	case issueActedMsg:
 		v.w.act = nil
 		if msg.err == nil && msg.action == issueActDelete {
@@ -319,6 +329,12 @@ func (v *issueView) updateNote(n apiclient.Note) tea.Cmd {
 	switch {
 	case isIssueEvent(ev.Event.Type):
 		if issueEventID(ev.Event) == v.id {
+			return v.scheduleRefresh()
+		}
+	case strings.HasPrefix(ev.Event.Type, "chat."):
+		// A chat opened on this issue moves the Main worktree section and
+		// the attention mark as its state changes (task 140.9).
+		if chatEventIssueID(ev.Event) == v.id {
 			return v.scheduleRefresh()
 		}
 	case strings.HasPrefix(ev.Event.Type, "handoff."):
@@ -458,7 +474,7 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 	if !v.loaded {
 		switch key {
 		case opKey(keymap.Add), opKey(keymap.Delete), opKey(keymap.Comment),
-			opKey(keymap.Ready), opKey(keymap.Return):
+			opKey(keymap.Ready), opKey(keymap.Return), opKey(keymap.Chat):
 			return nil, true
 		}
 		return nil, false
@@ -489,6 +505,10 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 		return nil, true
 	case opKey(keymap.Comment):
 		return v.openComment(), true
+	case opKey(keymap.Chat):
+		// A chat on this issue's main worktree, or the one already holding
+		// it (task 140.9).
+		return issueChatCmd(v.client, v.issue, v.setNote), true
 	}
 	return nil, false
 }
@@ -716,8 +736,14 @@ func (v *issueView) openTask() tea.Cmd {
 	}
 	if row.mainWorktree {
 		mw := v.issue.MainWorktree
+		if id := issueOccupantChat(v.issue); id != 0 {
+			// A chat opened on the issue holds it (task 140.9): enter opens
+			// the chat, as `T` does.
+			pid := v.issue.ProjectID
+			return func() tea.Msg { return openChatMsg{id: id, projectID: pid} }
+		}
 		if mw == nil || mw.OccupantTaskID == nil {
-			v.setNote("the main worktree is free — no task to open", false)
+			v.setNote("the main worktree is free — no task to open · "+opKey(keymap.Chat)+" opens a chat on it", false)
 			return nil
 		}
 		id, state, pid = *mw.OccupantTaskID, "", v.issue.ProjectID
@@ -1007,6 +1033,13 @@ func (v *issueView) pageLines(width int) (lines []string) {
 		}
 		v.rowLines = append(v.rowLines, len(lines))
 		occupant := styleDim.Render("free")
+		if mw.OccupantChatID != nil {
+			// A chat opened on the issue (task 140.9): enter opens it.
+			occupant = styleWarn.Render("●") + " " +
+				styleKey.Render("chat #"+strconv.FormatInt(*mw.OccupantChatID, 10)) + "  " +
+				styleDim.Render("enter opens it · closing it frees the worktree for the next main task")
+			occupant = fitWidth(occupant, max(width-2-10, 1))
+		}
 		if mw.OccupantTaskID != nil {
 			state := ""
 			if mw.OccupantState != nil {
@@ -1029,7 +1062,8 @@ func (v *issueView) pageLines(width int) (lines []string) {
 		styleDim.Render("  "+plural(iss.Tasks.Count, "task", "tasks")+", "+
 			strconv.Itoa(len(iss.Tasks.ActiveIDs))+" active"))
 	if len(v.tasks) == 0 {
-		lines = append(lines, styleDim.Render("  no task yet · "+opKey(keymap.Add)+" starts one"))
+		lines = append(lines, styleDim.Render("  no task yet · "+opKey(keymap.Add)+" starts one, "+
+			opKey(keymap.Chat)+" talks it through in a chat"))
 	}
 	for i, row := range rows {
 		// The Main worktree and Handoff sections render their own rows. A
