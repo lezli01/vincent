@@ -91,7 +91,7 @@ no generic between-step input form, so redesign a later-discovered value as a
 pre-run field, split the work into another task, or—only when the same agent
 session needs it—use `on_input: require` on a question-capable adapter.
 
-Claude can support mid-run questions. Codex and Cursor cannot. `on_input: wait`
+Claude can support mid-run questions. Codex, Cursor and Copilot cannot. `on_input: wait`
 keeps a process and task slot alive, whereas `manual` parks the task and releases
 the slot. `on_input: require` is invalid in parallel groups, loop bodies, and
 merge resolvers.

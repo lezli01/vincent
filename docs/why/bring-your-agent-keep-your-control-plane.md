@@ -8,7 +8,7 @@ the preferred agent changes.
 Vincent runs the agent CLIs already installed and authenticated on the machine.
 It stores no agent API keys, provides no model access of its own, and does not
 replace the vendor's login flow. An agent step launches the same Claude Code,
-Codex, or Cursor binary that could have been run by hand, but places it inside a
+Codex, Cursor, or GitHub Copilot binary that could have been run by hand, but places it inside a
 durable workflow and an isolated task worktree.
 
 Above those adapters, the workflow vocabulary stays consistent. A step can have
@@ -20,7 +20,10 @@ portable even when the selected agent changes.
 Portability does not mean pretending the agents are identical. Vincent documents
 capability differences and refuses to fake them. Codex does not provide the same
 model catalog or mid-run input surface. Cursor expresses effort through its
-model identifier and cannot honor restricted mode on Windows. Cost reporting
+model identifier and cannot honor restricted mode on Windows. GitHub Copilot
+takes no mid-run input, lists no models, and spends premium requests that
+vincent never reports as dollars; its restricted mode holds on every OS but
+has no shell. Cost reporting
 also depends on what the underlying CLI exposes. When a capability is missing,
 the workflow should know that rather than receiving a convincing imitation.
 

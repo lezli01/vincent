@@ -57,7 +57,7 @@ The name is an acronym, and every part of it maps to the system:
   execution.
 - **Executing** — vincent runs workloads rather than merely observing them.
 - **Native agent tooling** — it invokes locally installed tools such as
-  Claude Code, Codex, and Cursor.
+  Claude Code, Codex, Cursor, and GitHub Copilot.
 
 Vincent is an operating layer for day-to-day agent work, not a terminal
 multiplexer. It combines reusable workflows, durable scheduling, git isolation,
@@ -75,7 +75,7 @@ It is released under the [MIT License](LICENSE) and created by `lezli01` at
 |---|---|
 | **Durable local control plane** | A background daemon owns execution and state, so tasks keep running when terminals and TUI sessions close. Install it as a per-user service to resume work after login or reboot. |
 | **Structured, reusable workflows** | Combine agent prompts, deterministic commands, approval gates, parallel groups, isolated fan-out, conditions, loops, breaks, and reusable includes in validated YAML. |
-| **Agent choice at every level** | Run Claude Code, Codex, or Cursor using the CLIs and authentication already on your machine; choose the agent, model, effort, and permission mode per workflow, step, or task. |
+| **Agent choice at every level** | Run Claude Code, Codex, Cursor, or GitHub Copilot using the CLIs and authentication already on your machine; choose the agent, model, effort, and permission mode per workflow, step, or task. |
 | **Safe parallel development** | Every task receives its own git worktree and branch. Global and per-project concurrency caps, priorities, and platform restrictions keep many workloads organized without any of them working in your checkout. |
 | **Conversations, not just tasks** | Start a chat with an agent in its own worktree and branch, continued through the agent CLI's own session, with every turn's transcript, tokens and cost recorded. Chats run outside the task scheduler under their own cap. |
 | **Verification and recovery** | Checks decide whether work succeeded, retries receive the real failure, timeouts are enforced, transcripts are durable, and interrupted steps recover after a daemon restart. |
@@ -123,8 +123,8 @@ daemon — not a mockup, and not a drawing of one.
 A background daemon owns all state and execution: register local git
 repositories, author reusable workflows (agent prompts, shell commands, manual
 gates), and run any number of tasks, each isolated in its own git worktree.
-Agent steps drive locally installed agent CLIs (Claude Code, Codex, and
-Cursor) headlessly. The TUI is a thin client over the daemon's API, so work
+Agent steps drive locally installed agent CLIs (Claude Code, Codex, Cursor
+and GitHub Copilot) headlessly. The TUI is a thin client over the daemon's API, so work
 keeps running when no client is attached.
 
 - **The daemon owns everything.** Clients never touch git, the database or an
@@ -145,13 +145,14 @@ keeps running when no client is attached.
 
 Each adapter runs the CLI you already have installed and authenticated;
 vincent stores no credentials of its own. Select one per workflow, per step,
-or per task (`agent: claude` / `codex` / `cursor`).
+or per task (`agent: claude` / `codex` / `cursor` / `copilot`).
 
 | Agent | Binary | Notes |
 |---|---|---|
 | Claude Code | `claude` | Mid-run questions supported — a step can pause in `awaiting_input` and be answered from the TUI |
 | Codex | `codex` | Non-interactive once started; reports no cost |
 | Cursor | **`cursor-agent`** | Non-interactive; reports no cost |
+| GitHub Copilot | `copilot` | Non-interactive; reports tokens but no cost (it spends premium requests); `restricted` works on every OS but has no shell |
 
 > [!WARNING]
 > **Known limitation in Claude restricted mode:** it does not currently provide
@@ -179,7 +180,7 @@ Three things to know about the Cursor adapter specifically:
   deliberate: a restricted mode that quietly isn't restricted is worse than
   none.
 
-Twelve ready-to-copy workflows ship in [`examples/`](examples), and
+Thirteen ready-to-copy workflows ship in [`examples/`](examples), and
 `vincent workflow init <name> --from <example>` installs one without a checkout;
 [Writing workflows](docs/guides/workflows.md) is the authoring guide and
 [Agent CLIs](docs/guides/agents.md) covers the adapters in full.
@@ -365,8 +366,8 @@ cosign verify-blob checksums.txt \
 sha256sum -c checksums.txt --ignore-missing
 ```
 
-You also need **git** and at least one agent CLI (`claude`, `codex` or
-`cursor-agent`) installed and logged in — vincent runs the CLI you already have
+You also need **git** and at least one agent CLI (`claude`, `codex`,
+`cursor-agent` or `copilot`) installed and logged in — vincent runs the CLI you already have
 and stores no credentials of its own. Per-platform detail, build-from-source
 and upgrade instructions:
 [Installation](docs/getting-started/installation.md).
@@ -435,6 +436,7 @@ are [`fix-and-test`](examples/fix-and-test.yaml) (write a failing test, then
 fix it), [`converge`](examples/converge.yaml) (loop until the suite is green),
 [`docs-update`](examples/docs-update.yaml),
 [`cursor-review`](examples/cursor-review.yaml),
+[`copilot-review`](examples/copilot-review.yaml),
 [`go-checks`](examples/go-checks.yaml) (a parallel verification fragment, for
 including), [`ship`](examples/ship.yaml) (probe, then stop as done or gate and
 push), and [`split-work`](examples/split-work.yaml) (fan a planned change out
@@ -509,14 +511,15 @@ Full documentation lives in **[docs/](docs/README.md)**.
 **Agent skill**
 
 Install the portable workflow- and trigger-authoring skills for Claude Code,
-Codex, Cursor, or another Agent Skills client:
+Codex, Cursor, GitHub Copilot, or another Agent Skills client:
 
 ```sh
 vincent skills install
 ```
 
-That runs `npx skills add` for you, answering its agent picker with all three
-vincent adapters — `--agent claude,codex,cursor` narrows it. The equivalent by
+That runs `npx skills add` for you, answering its agent picker with the three
+adapters that link a skill (claude, codex, cursor) — `--agent` narrows it to
+some of `claude`, `codex`, `copilot`, `cursor`. The equivalent by
 hand, which prompts for the selection instead:
 
 ```sh

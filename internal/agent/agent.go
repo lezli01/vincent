@@ -297,8 +297,8 @@ type RunSpec struct {
 // sends: Prompt alone with no Preamble, and otherwise the preamble followed
 // by the message in `<message>` tags. The message stays verbatim inside the
 // tags, never a template (025 decision 5). It is the one place that framing
-// is spelled, so claude below the input gate, codex and cursor send the same
-// bytes a linked first turn always sent.
+// is spelled, so claude below the input gate, codex, cursor and copilot send
+// the same bytes a linked first turn always sent.
 func (s RunSpec) JoinedPrompt() string {
 	if s.Preamble == "" {
 		return s.Prompt
@@ -372,7 +372,8 @@ const (
 	//
 	// Only codex reports one today (§9.3); claude's `TodoWrite` and cursor's
 	// equivalent are tool calls, not a dedicated stream item, and neither
-	// adapter produces this event (§9.2, §9.7).
+	// adapter produces this event (§9.2, §9.7). copilot has no to-do tool and
+	// never produces one either (§9.9).
 	EventPlan EventType = "plan"
 	// EventCommandOutput carries what a command a tool ran actually printed
 	// — the output body ToolResult refuses to hold (task 070). It is a
@@ -406,9 +407,10 @@ const (
 	// line verbatim.
 	//
 	// Only claude reports one, from the `isSynthetic` line that follows a
-	// `Skill` result and from a forked skill's kickoff (§9.2). codex and
-	// cursor never produce this event: codex's stream has no skill item and
-	// cursor's says nothing about a skill it expanded (§9.3, §9.7). Nothing
+	// `Skill` result and from a forked skill's kickoff (§9.2). codex, cursor
+	// and copilot never produce this event: codex's stream has no skill item,
+	// cursor's says nothing about a skill it expanded, and copilot's
+	// `skill.invoked` never reaches stdout (§9.3, §9.7, §9.9). Nothing
 	// synthesizes one from a tool call.
 	EventSkill EventType = "skill"
 	// EventInputEcho is a line on which the CLI echoed back the prompt vincent
@@ -416,8 +418,9 @@ const (
 	// the text is already on screen, as a chat's human message or a step's
 	// rendered prompt — and exists so the line stops counting as unrecognized.
 	//
-	// Only cursor produces one, from its `user` line (§9.7). claude and codex
-	// echo nothing vincent parses.
+	// cursor produces one from its `user` line (§9.7), claude on a chat turn
+	// (§9.2, task 124.10), and copilot from the root agent's `user.message`
+	// (§9.9). codex echoes nothing vincent parses.
 	EventInputEcho EventType = "input_echo"
 	// EventConversationReset reports that the agent CLI threw away its own
 	// conversation and started a new one — what `/clear` does when it passes
@@ -431,8 +434,9 @@ const (
 	// already on screen, and a reset is news.
 	//
 	// Only claude produces one, from its top-level `conversation_reset` line
-	// (§9.2, captured from 2.1.278). codex and cursor have no comparable line
-	// in their dialects and never produce this event (§9.3, §9.7); nothing
+	// (§9.2, captured from 2.1.278). codex, cursor and copilot have no
+	// comparable line in their dialects and never produce this event (§9.3,
+	// §9.7, §9.9); nothing
 	// synthesizes one from a session id that changed mid-stream.
 	EventConversationReset EventType = "conversation_reset"
 	// EventInputRequest carries a mid-run input request (spec §7.4). A nil
@@ -774,7 +778,8 @@ type RunResult struct {
 	CacheCreationTokens int64
 	// ReasoningOutputTokens is the share of OutputTokens the model spent
 	// thinking rather than answering (codex's `reasoning_output_tokens`,
-	// task 070). 0 is unreported, which is claude and cursor.
+	// task 070; copilot's `modelMetrics[*].usage.reasoningTokens`, summed,
+	// §9.9). 0 is unreported, which is claude and cursor.
 	ReasoningOutputTokens int64
 	// ModelUsage is the per-model breakdown of a run that used more than one
 	// model, in the order the adapter reported it. nil is unreported.
@@ -853,7 +858,8 @@ const (
 	// it was given is gone or expired (task 063 decision 4). Only a chat
 	// turn can produce it — nothing else sets RunSpec.ResumeSessionID.
 	//
-	// claude and codex report it; cursor cannot, and that is the CLI's doing
+	// claude and codex report it, and copilot on a resumed run (§9.9); cursor
+	// cannot, and that is the CLI's doing
 	// rather than a gap in its adapter — handed an id it has never seen,
 	// cursor-agent starts a fresh chat under that id and answers (§9.7, task
 	// 070 decision 2). So a cursor chat is the one place the reading below

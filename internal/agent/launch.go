@@ -19,7 +19,7 @@ import (
 // It exists so where a run executes is the caller's choice and not the
 // adapter's. A host run executes on this machine; task 062.2's container
 // launcher runs the same Command inside the task's container, and a field that
-// launcher needs goes here rather than into three adapters' call shapes.
+// launcher needs goes here rather than into every adapter's call shape.
 type Command struct {
 	// Path is the resolved binary, as the same Launcher's Resolve found it:
 	// the configured path or a host PATH hit for the host launcher, the

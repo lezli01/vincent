@@ -84,8 +84,8 @@
     "path": "docs/why/bring-your-agent-keep-your-control-plane.md",
     "url": "/docs/why/bring-your-agent-keep-your-control-plane.html",
     "title": "Bring your agent, keep your control plane",
-    "seo_title": "Orchestrate Claude Code, Codex, and Cursor locally",
-    "description": "Use Claude Code, Codex, or Cursor behind vincent's local control plane while keeping workflow policy, state, and evidence independent of one agent.",
+    "seo_title": "Orchestrate Claude Code, Codex, Cursor, and GitHub Copilot locally",
+    "description": "Use Claude Code, Codex, Cursor, or GitHub Copilot behind vincent's local control plane while keeping workflow policy, state, and evidence independent of one agent.",
     "image": "/docs/assets/social/bring-your-agent-keep-your-control-plane.png",
     "image_alt": "Bring your agent, keep your control plane"
   },

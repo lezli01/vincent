@@ -345,7 +345,7 @@ is a correctness bug, not a style issue:
 | `internal/apiclient` | Typed HTTP+SSE client — the one client for TUI and CLI; owns its wire types (server DTOs stay unexported) |
 | `internal/workflow` | YAML registry (builtin < global < project shadowing), live reload, `text/template` step engine, creation-time expansion of `include` steps (§7.9) |
 | `internal/taskrun` | Step executors — agent, command and manual are the ones that run something; `parallel`, `fan_out`, `condition`, `loop` and `break` are structure, `check` is a *field* agent and command steps may carry, never a type, and `include` never arrives at all — it is spliced away at task creation (§7.9) — plus guards (`if:`, §7.7), loop iteration (§7.8), retries, timeouts, human actions, recovery, transcripts |
-| `internal/agent` | `AgentAdapter` interface + option catalog; `agent/claude`, `agent/codex`, `agent/cursor` implement it |
+| `internal/agent` | `AgentAdapter` interface + option catalog; `agent/claude`, `agent/codex`, `agent/cursor`, `agent/copilot` implement it |
 | `internal/worktree` | Per-task git worktrees, `vincent/{id}-{slug}` branches, dirty detection |
 | `internal/notify` | The outward signal (§12.3, task 046): a broker subscriber that spawns `notify.command` when a task enters a state in `notify.on`, with an enriched JSON envelope on the child's stdin. Bounded queue, four workers, fixed 10 s per child, no replay |
 | `internal/trigger` | The inward signal (task 096): `{config_dir}/triggers/*.yaml` definitions, their validator and the schema descriptor the form renders from, and the 0600 writer that edits them with `workflow.Edit` ops. Replays `POST /v1/tasks` through an `http.Handler` the way `internal/mcp` does, and never imports `internal/api` (decision 30) |
@@ -361,7 +361,11 @@ faked: codex ships no model catalog and no mid-run input; cursor has no effort
 concept at all (it lives in the model id), probes its models over an
 authenticated network call rather than from `--help`, and cannot honor
 `restricted` on Windows — where it returns `agent.ErrRestrictedUnsupported` from
-`Start` so the engine fails the step rather than silently running it full-auto.
+`Start` so the engine fails the step rather than silently running it full-auto;
+copilot enumerates no models (ids are free-form, `auto` is the CLI's default),
+takes no mid-run input, reports no cost (it spends premium requests, never
+dollars), always reports `logged_in` as `null`, supports `restricted` on every
+OS as a tool set with no shell, and is not a `SkillInvoker` (spec §9.9).
 A capability an adapter lacks is stated in spec §9.x and ignored at run time; it
 is never emulated.
 

@@ -58,7 +58,10 @@ amendments in this specification record superseded boundaries, while
   Cursor, is **milestone M5**: §9.7. Its adapter merged ahead of M4 on
   2026-08-11 — see §19 ‡ — so the tree carries three. This goal is annotated
   rather than restated as "three": it records what v1 was *scoped* to deliver,
-  and the scope was met before the third arrived.)
+  and the scope was met before the third arrived. *Amended 2026-10-30 (task 138.15, issue #867):* a fourth,
+  GitHub Copilot CLI (§9.9, task 138), was registered on 2026-10-29. Like
+  cursor it is annotated here rather than restated; it is a task with no
+  milestone row (§19).)
 - Agent, model, and effort selectable per workflow, per step, and per task at
   creation; selectable options discovered ad hoc from the installed CLIs (§9.6).
 - Unattended operation by default (agents run full-auto), with per-workflow/step overrides.
@@ -780,7 +783,9 @@ differs is where it works and how it ends.
   receives the context, a blank line, and the message in `<message>` tags,
   the bytes a first turn always sent; codex and cursor find an invocation
   anywhere, and a claude outside the gate leaves `/name` to the model. The
-  stored `opening_context` and turn prompt are unchanged.
+  stored `opening_context` and turn prompt are unchanged. *Amended 2026-10-30 (task 138.15, review F1):* copilot
+  takes the one string on stdin too, and finds no invocation anywhere: its
+  `/name` is left to the model (§9.9).
 - **It locks the task while it is open** — every §6 action but `cancel` is
   refused (§6). There is at most one open linked chat per task; a second open is
   refused, and after a close a new one can be opened. Closed chats stay listed
@@ -908,7 +913,7 @@ builds that table already names:
 - **An unknown name** is sent on as text. claude adds a note of its own and the
   model answers; vincent reports that turn's echo as `agent.input_echo`, never
   as a failed skill (§9.2, task 124.10). codex and cursor treat it as plain
-  text.
+  text. *Amended 2026-10-30 (task 138.15, review F1):* so does copilot, which treats every `/name` so (§9.9).
 - **A skill with `user-invocable: false`** ends a claude run **silently** — an
   empty `success` result with `num_turns: 0` and no reply at all.
 - **Leading whitespace defeats claude's expansion.** A message beginning with a
@@ -923,7 +928,7 @@ builds that table already names:
   `awaiting_input`, where the human answers it: `on_input` is a step's setting
   and a chat turn always waits, bounded by `input_timeout` as any other wait
   is. codex and cursor have no mid-run input (§9.3, §9.7), so a skill cannot
-  ask there at all.
+  ask there at all. *Amended 2026-10-30 (task 138.15, review F1):* nor has copilot (§9.9).
 - **Built-in commands pass through too**, `/clear` among them. claude resets
   its own conversation and stamps a new session id, which vincent stores
   last-wins (§9.2), so the **next turn resumes an empty conversation while the
@@ -2277,7 +2282,7 @@ The requirement is enforced at three layers, and only ever on a *positive*
 
 - **Load (§8.2).** A requiring step resolving to an adapter that can never take
   input — codex, cursor: no control channel exists in any version — is a
-  validation error, attributed to the `agent` field that supplied the value.
+  validation error (*Amended 2026-10-30 (task 138.15, review F1):* copilot too, whose `InputSupport` is `never`, §9.9), attributed to the `agent` field that supplied the value.
   claude is not judged here: its support is a version question (§9.3) that only
   a probe answers, and validation never spawns a process.
 - **Task creation (§13.2).** `POST /v1/tasks` resolves every requiring step
@@ -2299,7 +2304,7 @@ The requirement is enforced at three layers, and only ever on a *positive*
   through the run's launcher, so claude's `--version` runs inside the
   container. An adapter that does not implement it keeps the catalog's verdict,
   whose only "cannot" for codex and cursor is the static one and true in any
-  image. As everywhere in this section, only a positive "cannot" fails the
+  image (*Amended 2026-10-30 (task 138.15, review F1):* and for copilot, §9.9). As everywhere in this section, only a positive "cannot" fails the
   step. The creation layer above still reads the host catalog.*
 
 A step's own `on_input` wins over `defaults:` as every other field does, so
@@ -3781,7 +3786,7 @@ program which happened to print the marker changed daemon state.
 
 ```go
 type AgentAdapter interface {
-    Name() string                                   // "claude", "codex"
+    Name() string                                   // the registry name: "claude", "codex", "cursor", "copilot"
     Detect(ctx context.Context) (Availability, error) // found on PATH? version? logged in (best effort)? supports mid-run input (§7.4)?
     Options(ctx context.Context) (AgentOptions, error) // selectable models/efforts, probed ad hoc (§9.6)
     Start(ctx context.Context, spec RunSpec) (RunHandle, error)
@@ -4063,7 +4068,8 @@ type Option struct {
 ```
 
 The daemon consumes only this interface; adding an agent (Gemini CLI, etc.) is one new
-adapter with zero core changes.
+adapter with zero core changes. (*Amended 2026-10-30, task 138.15:* true of the
+adapter seam, not of configuration — see "Scored against a fourth adapter" below.)
 
 **Skills (task 124, added 2026-09-19, issue #497).** Two optional capabilities
 let the daemon ask an adapter which skills its CLI would load in a given
@@ -4409,6 +4415,11 @@ wrote with them — an ordinary message, a `/name` it could not resolve and an
 echoed answer are all this event (§9.2). Cursor is no longer the only source.*
 Neither is an unmodeled line. §9.7's "genuinely unmodeled lines stay `unknown`"
 still governs every line these two do not claim (task 124 decision 25).
+*Amended 2026-10-30 (task 138.15, issue #867):* copilot never produces `EventSkill`:
+on 1.0.105 `skill.invoked` never reaches stdout, and a `skill` tool call stays a
+`tool_use`. It does produce `EventInputEcho`, from the root agent's
+`user.message` line (§9.9 "Pinned absences", "Thinking, input echo, patches and
+command output").
 
 The run header is emitted from the CLI's init line, which is **not** always the
 stream's first line: claude writes SessionStart hook lines before it, and a
@@ -4443,7 +4454,8 @@ wordings are **not fixture-verified**: capturing a genuine quota exhaustion mean
 burning a real five-hour window. Claude ships patterns on that basis; **codex and
 cursor recognize nothing** and behave exactly as before, which is a deliberate
 asymmetry rather than an oversight — an adapter that guessed would send a
-genuinely failed task into a wait it never recovers from.
+genuinely failed task into a wait it never recovers from. *Amended 2026-10-30 (task
+138.15):* copilot recognizes nothing either (§9.9 "Failure classification").
 
 *Amended 2026-09-08:* **a run that finished cleanly is never classified.** The
 matching is substring matching over the error message, the terminal result text
@@ -4500,6 +4512,21 @@ The daemon's registry, `vincent doctor`'s daemonless `DetectAgents` and
 `vincent workflow validate`'s local catalogs are all built from it, where each
 used to list the three adapters by hand.
 
+**Scored against a fourth adapter (§9.9, task 138, amended 2026-10-30, task
+138.15).** The seam held: copilot is one package, `internal/agent/copilot`,
+plus one `builtin.New` line, and #854 had already cut the three hand-built
+registries to that one edit. It did **not** hold for configuration. Counted
+from commit `0bc31a03` (138.9) and `d6b6aaaf` (138.12), registering it touched
+eight production packages beyond the adapter's own: `internal/agent/builtin`
+(the registry line and `ConfigPaths`), `internal/config` (the typed
+`agents.copilot.path` and its bootstrap text), `internal/api` and
+`internal/apiclient` (`/v1/config`), `internal/cli` (`vincent config
+get/set`), `internal/tui` (the daemon view), `internal/taskrun` (the
+`~/.copilot` mount under `mount_agent_config`) and `internal/skill` (the
+published-skill table row). "Zero core changes" therefore remains true of the
+adapter seam and not of configuration: a typed `agents.<name>.path` is still
+an edit in every consumer of the config shape.
+
 *Added 2026-08-29 (task 057).* `RunSpec.MCP` carries the §13.4 MCP server a step
 is wired to: `{Name, URL, Token}`, where the URL is the daemon's per-step
 endpoint and the token is a secret minted for that step run. `nil` is a run with
@@ -4521,7 +4548,8 @@ prefers the older behaviour turns the wiring off with one line
 
 *Amended 2026-09-14 (issue #375, task 057 decision 8).* **No shipped adapter
 returns `ErrMCPUnsupported`.** claude, codex and cursor all carry the server on
-every run, and none of them looks at the installed CLI version to decide. This
+every run, and none of them looks at the installed CLI version to decide.
+*Amended 2026-10-30 (task 138.15, review F1):* copilot carries it too, through `--additional-mcp-config` (§9.9). This
 paragraph used to say "an adapter — or an installed CLI version —" refuses, and
 that §9.5's task 041 surface reports the gap ahead of a run. Both halves are
 withdrawn. Vincent does not probe a CLI build for MCP support, and no facet of
@@ -4633,7 +4661,8 @@ copilot is registered (138.9): no shipped adapter returns `ErrMCPUnsupported`.
   Tokens are **summed** across results, because each `result`'s `usage` covers
   only its own model turn. A run outside input mode has no stdin to keep, and
   a zero wait closes at the first `result`, so both end where they always did.
-  codex and cursor have no background work and ignore the field.
+  codex and cursor have no background work and ignore the field. *Amended 2026-10-30 (task 138.15, review F1):*
+  so does copilot (§9.9).
 - **No non-interactive quota surface** (*added 2026-08-24, task 026*). Against
   claude 2.1.241 the subcommands are `agents auth auto-mode doctor gateway
   import install mcp plugin project setup-token ultrareview update` — there is
@@ -4938,7 +4967,8 @@ it received, with a resolved command expanded into elements. Verified against
   invocation is reported twice.
 - **Below the input gate there is no replay and so no report,** because there
   is no input mode to carry the flag. codex and cursor report no skill load at
-  all (§9.3, §9.7), and for them the human's own `/name` or `$name` in the
+  all (§9.3, §9.7) — *Amended 2026-10-30 (task 138.15):* nor does copilot (§9.9) —
+  and for them the human's own `/name` or `$name` in the
   message stays the only evidence.
 
 *Added 2026-08-29 (task 057).* The §13.4 MCP server rides on
@@ -5071,7 +5101,8 @@ tested list.
   `local_command`; it is recorded here because it is the only place the CLI
   names the built-in it ran.
 - **codex and cursor have no comparable line** (§9.3, §9.7) and never produce
-  the event. Nothing synthesizes one from a session id that changed
+  the event. *Amended 2026-10-30 (task 138.15):* nor does copilot (§9.9 "Pinned absences").
+  Nothing synthesizes one from a session id that changed
   mid-stream: that is inference, and §9's standing rule is that a thing an
   adapter cannot report is said plainly and never faked.
 
@@ -5380,7 +5411,9 @@ The alternative was leaving it out, and that is worse rather than safer: the
 allow-list does not match `mcp__vincent__*`, so a restricted step would see the
 whole tool list and be denied every call — a tool list that is a lie, and an
 agent burning its turns discovering it. Stated here and in §16 because it is
-only defensible written down.
+only defensible written down. *Amended 2026-10-30 (task 138.15, issue #867):* copilot keeps the vincent
+tools visible and allowed the same way, through `--available-tools=…,vincent`
+plus `--allow-tool=vincent` (§9.9).
 
 *Amended 2026-09-11 (task 096).* A task may carry a **`restricted` clamp**,
 set by `restricted: true` on `POST /v1/tasks` (§13.2) and snapshotted on the
@@ -5447,6 +5480,11 @@ skill frontmatter carries interface, policy and dependencies only, and a
 restricted *resumed* codex chat cannot be opened in the first place (§5.5);
 cursor's has no such field, and `--sandbox enabled` still applies to whatever a
 skill does. Stated here and in §16 because it is only defensible written down.
+*Amended 2026-10-30 (task 138.15, issue #867):* copilot cannot be widened by a skill under
+`restricted` either: its `skill` tool is not in the restricted
+`--available-tools` set, so it does not exist for the model; a human's `/name`
+reaches the model as typed (§9.9); and the set has no shell for an injected
+command to use.
 
 Observed on claude 2.1.277, codex-cli 0.154.0 and cursor-agent 2026.09.18. Two
 of the three claude legs are held by committed fixtures — a model's load
@@ -5502,6 +5540,9 @@ recaptured (the option probe it serves is unaffected); it is named here as cut
 down so no future reader draws the same conclusion from it. claude now reports
 a definite boolean, which leaves **no adapter `null` by design**: `null` means a
 probe that could not answer, or a claude outside the gate below.
+*Amended 2026-10-30 (task 138.15, issue #867):* no longer true. copilot is `null` by
+design: it has no status command, and an environment token is not a login
+(§9.9 "Version verdict: exact strings").
 
 - **Only the JSON field decides.** `Detect` runs `claude auth status --json`
   (the flag passed although it is the default, so a change of default cannot
@@ -5561,6 +5602,9 @@ three would answer a different question depending on which one you asked. The
 `incompatible` list ships **empty for all three adapters** — vincent has
 observed no such build — and is wired, rendered and exercised by tests through
 an injected list, so the day one is found the change is one string in one table.
+*Amended 2026-10-30 (task 138.15, issue #867):* all four adapters compare exact strings, and
+every `incompatible` list ships empty, copilot's included (tested `{1.0.105}`,
+§9.9).
 
 `restricted_verdict` rides the *catalog* rather than `Availability`
 (`agent.Options.RestrictedSupport`, mirroring `InputSupport`), because it is
@@ -5749,7 +5793,8 @@ defaults:
   adapter implements `FileMentioner` at all. It is `true` for all four
   shipped adapters (copilot since task 138.13, 2026-10-29) and so separates
   none of them — it is published for the
-  day a fourth adapter lacks the interface, exactly as `supports_resume`
+  day an adapter lacks the interface (*amended 2026-10-30, task 138.15: was "a
+  fourth adapter", written before copilot was the fourth*), exactly as `supports_resume`
   carries a fact every adapter agrees on today. **`file_mention_expands` is
   the field that differs per adapter**, because §9.1 states that expansion,
   not the interface, is the honest capability statement: `true` for claude,
@@ -5958,12 +6003,14 @@ of fact, and `source` is what says which:
   by codex alone (§9.3). claude has no pull and pushes instead (§9.2, §13.2);
   cursor has no surface and grows **no** "cannot report" stub, which is exactly
   the interface change task 026 decision 1 refused. A capability an adapter
-  lacks is stated in §9.x and never emulated (§9.7).
+  lacks is stated in §9.x and never emulated (§9.7). *Amended 2026-10-30 (task 138.15, issue #867):*
+  copilot has no surface either and no stub (§9.9 "Not a quota reporter").
 - **`quotaTTL` = 5 minutes, on `authTTL`'s seam and for `authTTL`'s reason.**
   Binary identity vouches for a percentage no better than it vouches for
   `logged_in`, so a cache hit older than the TTL asks again. Only an adapter
   that is both installed and a `QuotaReporter` is ever asked, so cursor and an
-  uninstalled CLI cost no subprocess however often they are read. Failure
+  uninstalled CLI cost no subprocess however often they are read (copilot
+  too, *amended 2026-10-30, task 138.15*). Failure
   follows the auth rule exactly: the previous reading stands, the error is
   recorded off the wire, and the clock is stamped either way — a persistently
   broken reporter costs one subprocess per TTL, not one per request.
@@ -6221,7 +6268,8 @@ would invalidate every one of them.
   comparison is exact string equality — calver plus a commit sha has no ordering
   to range over, and the sha is part of the binary's identity, not decoration.
   Rather than let one adapter answer a version question differently from the
-  other two, **all three** adapters compare exact strings (§9.5).
+  other two, **all three** adapters compare exact strings (§9.5). *Amended 2026-10-30 (task 138.15, issue #867):*
+  all four do, copilot included (§9.9).
 - **Restricted verdict is a static platform fact** (*added 2026-08-28, task
   041*). `restricted_verdict` is `unsupported` on Windows and `supported`
   elsewhere, derived from the same `sandboxAvailable` value `buildArgs` refuses
@@ -6343,7 +6391,8 @@ repository published.
 
 **States a row reports**, one row per skill carrying the agent list — never one
 row per adapter per skill, which the single-store model would make identical on
-all three by construction:
+every adapter by construction (*amended 2026-10-30, task 138.15: was "all
+three"*):
 
 | state | meaning |
 |---|---|
@@ -6368,9 +6417,10 @@ commas into one element, which the skills CLI reads as a single unknown agent
 name and rejects — every install with more than one adapter selected failed.
 It splits nothing; it consumes each following argument until the next flag.*
 The agent list is mapped through the table above, and the two surfaces answer
-the picker differently on purpose: the **CLI** defaults to all three adapters,
-because a person who typed the command means "put it where my agents look" and
-`--agent` is right there to narrow it, while the **TUI** answers with the
+the picker differently on purpose: the **CLI** defaults to every adapter but
+copilot, which reads the store and has no link to make (*amended 2026-10-30,
+task 138.15: was "all three adapters"*), because a person who typed the
+command means "put it where my agents look" and `--agent` is right there to narrow it, while the **TUI** answers with the
 adapters the daemon actually detected, because that offer is one keypress on a
 screen already showing which ones those are. `npx` is a runtime dependency of
 the **install action only**; its absence is a reported outcome naming the
@@ -6445,17 +6495,21 @@ which is why `metadata.version` is needed rather than reusable from it.
 row, on the GitHub (task 035), release-check (task 055) and container (task 061)
 precedent. `vincent doctor` still exits 0 (§17, task 006 decision 7).
 
-### 9.9 Copilot adapter (task 138, stub added 2026-10-28)
+### 9.9 Copilot adapter (task 138, added 2026-10-28)
 
-A stub. Task 138 adds a fourth adapter, `copilot`, for the standalone GitHub
-Copilot CLI (npm `@github/copilot`); only the unregistered adapter package is
-built so far (*amended 2026-10, task 138.5*), and nothing in §9.1–§9.8 or
-elsewhere has changed for it. *Amended 2026-10-29 (task 138.9, issue #861):*
-the adapter is now registered — see the last bullet — while the
-three-adapter prose elsewhere is still 138.15's to amend. The bullets below are added one at a
-time, each in the pull request whose code makes it true, and task 138's later
-items complete the section. Placed after §9.8 for the reason §9.7 gives: no
-section is renumbered.
+The fourth adapter, `copilot`, for the standalone GitHub Copilot CLI (npm
+`@github/copilot`), registered fourth (task 138.9). Every bullet below is
+pinned to build 1.0.105, the one the captures under
+`internal/agent/copilot/testdata/` came from. Placed after §9.8 for the reason
+§9.7 gives: no section is renumbered.
+
+*History.* The section was added as a stub on 2026-10-28, when only the
+unregistered adapter package existed (*amended 2026-10, task 138.5*); the
+adapter was registered on 2026-10-29 (task 138.9, issue #861), and each bullet
+landed in the pull request whose code made it true. *Completed 2026-10-30
+(task 138.15, issue #867):* every bullet names the build it was verified on,
+the binary, shell-tool and ACP bullets were added, and the prose elsewhere
+that counted three adapters was amended in place.
 
 - **Captured stream is the only spec** (*2026-10-28, task 138.1*). Copilot's
   `--output-format json` event stream is undocumented, so the adapter's parser
@@ -6468,7 +6522,16 @@ section is renumbered.
   `internal/agent/copilot` implements `agent.Adapter` as `copilot`, file for
   file beside cursor's (§9.7). No daemon, config, TUI or CLI surface reaches it
   yet — registration is 138.9's — so nothing in it is user-visible.
-- **argv and the stdin prompt** (*2026-10, task 138.5*). A step runs
+- **Binary: `copilot`, never `gh copilot`** (*2026-10-30, task 138.15;
+  138.3 and 138.9; 1.0.105*). An empty `agents.copilot.path` (§12.3) resolves
+  `copilot` on `PATH`; the retired `gh copilot` extension is never invoked. On
+  Windows the npm install resolves to the `copilot.cmd` shim (→ `node` → the
+  native `@github/copilot-win32-x64` `copilot.exe`), which the host launcher
+  runs through `cmd /c` (see the MCP bullet's *Inline, no file*, below).
+  github/copilot-cli#3188 (`Failed to sync '<stdout>'` with piped stdout) was
+  checked on 1.0.105 through both the shim and the native exe and does not
+  reproduce (138.3).
+- **argv and the stdin prompt** (*2026-10, task 138.5; 1.0.105*). A step runs
   `copilot --output-format json --no-auto-update --session-id <uuid>
   --allow-all-tools --allow-all-paths --allow-all-urls`, plus `--model <m>`
   only when §8.6 resolved a model and `--reasoning-effort <e>` only when it
@@ -6477,7 +6540,7 @@ section is renumbered.
   process cwd is the worktree; `-C` is not passed. With no `--model` the CLI
   picks `auto` itself, which is why the curated catalog names no default.
 - **Full-auto is the three flags, never the env spelling** (*2026-10, task
-  138.5*). `COPILOT_ALLOW_ALL` is never set: it also trusts the worktree,
+  138.5; 1.0.105*). `COPILOT_ALLOW_ALL` is never set: it also trusts the worktree,
   loading its hooks and MCP servers. Nor is it inherited (*2026-10-30, task
   138.10 review F2*): `Start` removes it — any case of the name — from the
   child's environment in every permission mode, whether §12.3 resolved it or
@@ -6487,11 +6550,11 @@ section is renumbered.
   `--disable-builtin-mcps` is not passed, so
   the built-in `github-mcp-server` is available to every run — a stated fact,
   not a vincent choice yet.
-- **`--no-auto-update` on every spawn** (*2026-10, task 138.5*), the version
+- **`--no-auto-update` on every spawn** (*2026-10, task 138.5; 1.0.105*), the version
   probe included (`copilot --no-auto-update --version`), so the build Detect
   reports is the build that runs. `copilot version` is never called.
-- **A generated `--session-id`** (*2026-10, task 138.5*). Each run mints a v4
-  UUID, which copilot adopts. `RunResult.SessionID` is that id even when no
+- **A generated `--session-id`** (*2026-10, task 138.5; 1.0.105*). Each run mints a v4
+  UUID, which 1.0.105 adopts. `RunResult.SessionID` is that id even when no
   `result` line arrives — a killed run included; a `result.sessionId` that
   disagrees with it is reported as an error, not recorded.
 - **Version verdict: exact strings** (*2026-10, task 138.5*). Detect records
@@ -6507,19 +6570,19 @@ section is renumbered.
   `COPILOT_GITHUB_TOKEN`, `GH_TOKEN` and `GITHUB_TOKEN` may hold a classic
   `ghp_` PAT, which Copilot rejects, so their presence proves nothing. It
   stays `null` with a token set.
-- **No mid-run input** (*2026-10, task 138.5*). `InputSupport` is `never`;
-  `Respond` always errors.
+- **No mid-run input** (*2026-10, task 138.5; 1.0.105*). `InputSupport` is
+  `never`; `Respond` always errors.
 - **No interim refusal remains** (*2026-10, task 138.5; amended 2026-10-29,
   task 138.8, which retired the third, and task 138.11, which retired the
   resume refusal; retired 2026-10-30 by task 138.10, issue #862*). `Start`
   refused `restricted` with `ErrRestrictedUnsupported` until 138.10 mapped it
   (below); no path in it returns that sentinel now.
-- **Restricted is always supported** (*2026-10-30, task 138.10*).
+- **Restricted is always supported** (*2026-10-30, task 138.10; 1.0.105*).
   `RestrictedSupport` is `always`, on every OS: 138.3 proved the
   `--available-tools` bound on macOS, Linux and Windows, so there is no
   per-GOOS refusal, and §9.4's "cursor on Windows is the one such case" stays
   true. `vincent agents` and `vincent doctor` read it from there.
-- **Restricted argv** (*2026-10-30, task 138.10*). The three `--allow-all-*`
+- **Restricted argv** (*2026-10-30, task 138.10; 1.0.105*). The three `--allow-all-*`
   flags are replaced by
   `--available-tools=view,grep,glob,edit,create,apply_patch
   --allow-tool=read --allow-tool=write`, the same on every GOOS; a
@@ -6544,7 +6607,7 @@ section is renumbered.
   `--assisted-approval`, which are out of scope. No fetch or web tool is in
   the set, so no URL rule is needed.
 - **Restricted copilot has no shell, so no git** (*2026-10-30, task 138.10
-  decision 1*). The shell tool — `bash` on macOS and Linux, `powershell` on
+  decision 1; 1.0.105*). The shell tool — `bash` on macOS and Linux, `powershell` on
   Windows — is left out of `--available-tools`. With it visible, copilot runs
   any command it judges read-only without asking (138.3, all three OSes), and
   no rule bounds it to git: deny beats allow, so `--deny-tool=shell` also
@@ -6552,18 +6615,19 @@ section is renumbered.
   cursor's sandboxed shell (§9.7). The agent does not need to commit: vincent
   commits through command steps, as §9.3 says for codex.
 - **The vincent tools stay visible and allowed when restricted** (*2026-10-30,
-  task 138.10; task 057 decision 9*). With §13.4's server wired, its name
+  task 138.10; task 057 decision 9; 1.0.105*). With §13.4's server wired, its name
   joins the set (`--available-tools=…,vincent`) beside its `--allow-tool=vincent`:
   `--available-tools` hides MCP tools it does not name, and
   `restricted_mcp_1.0.105.jsonl` called `vincent-health` with that spelling.
-- **A refused call is a tool result** (*2026-10-30, task 138.10 decision 7*).
+- **A refused call is a tool result** (*2026-10-30, task 138.10 decision 7;
+  1.0.105*).
   A `denied` call — a path outside the worktree included — is `Blocked`, as
   before. A call to a tool missing from `--available-tools` (138.3 saw
   `Tool 'create' does not exist.` on Windows) was not reproduced by any
   capture: the models asked to call the missing shell said it was unavailable
   instead. Its `error.code` is therefore unknown, and it is classified as any
   other failed call — an error, not `Blocked` — until a capture shows it.
-- **Resume** (*2026-10-29, task 138.11*). Copilot implements `Resumer`, so it
+- **Resume** (*2026-10-29, task 138.11; 1.0.105*). Copilot implements `Resumer`, so it
   can hold a chat (§5.5). A resumed run passes `--resume=<id>` in place of
   `--session-id`, with every other flag a fresh run passes
   (`resume_1.0.105.jsonl`: the second run remembered the first's codeword).
@@ -6574,14 +6638,14 @@ section is renumbered.
   `RunResult.SessionID` is the resumed id even with no `result` line, and a
   `result.sessionId` that disagrees is an error, as on a fresh run.
   `--trust-folder` is still never passed: it cannot combine with `--resume`.
-- **Lost session** (*2026-10-29, task 138.11*). A `--resume=` of an id the
+- **Lost session** (*2026-10-29, task 138.11; 1.0.105*). A `--resume=` of an id the
   CLI does not know exits 1 with no JSONL and
   `Error: No session, task, or name matched '<id>'.` on stderr
   (`resume_unknown_1.0.105.txt`). On a resumed run only, that marker is
   `session_lost`, the way codex's is (§9.3). A fresh run is never classified
   so.
 - **Restricted resume** (*2026-10-29, task 138.11 decision 2; amended
-  2026-10-30, task 138.10*). `SupportsRestrictedResume()` was false until a
+  2026-10-30, task 138.10; 1.0.105*). `SupportsRestrictedResume()` was false until a
   capture proved the bound holds on a `--resume` run. 138.10's does:
   `restricted_resume_1.0.105.jsonl` resumed a restricted session with the
   same flags, and both its writes outside the worktree — `apply_patch`
@@ -6589,7 +6653,7 @@ section is renumbered.
   no shell (*amended 2026-10-30, task 138.10 review F1: re-captured so the
   denial is a write, not a read*). It is true now, so a linked chat on a restricted task opens on
   copilot (row 29, §5.5).
-- **The vincent MCP server** (*2026-10-29, task 138.8*). A step wired to §13.4's
+- **The vincent MCP server** (*2026-10-29, task 138.8; 1.0.105*). A step wired to §13.4's
   per-step server gets `--additional-mcp-config '<json>'` and
   `--allow-tool=vincent` appended to its argv. The JSON is
   `{"mcpServers":{"vincent":{"type":"http","url":…,"headers":{"Authorization":"Bearer …"},"tools":["*"]}}}`,
@@ -6633,7 +6697,7 @@ section is renumbered.
     `<server>-<tool>` (`vincent-health` in `mcp_1.0.105.jsonl`) with
     `mcpServerName` and `mcpToolName` beside it; the parser keeps that split on
     the normalized tool use rather than re-cutting the joined name.
-- **The stream** (*2026-10, task 138.5*). Message deltas coalesce into the
+- **The stream** (*2026-10, task 138.5; 1.0.105*). Message deltas coalesce into the
   closing `assistant.message` (`output`); the answer is the last message, since
   the terminal `result` line carries none. `tool.execution_start` and
   `tool.execution_complete` are `tool_use` and `tool_result` keyed by
@@ -6647,7 +6711,8 @@ section is renumbered.
   kept. *Amended 2026-10, task 138.7:* the stream's other events are
   normalized as the bullets below describe; `premiumRequests` still never
   becomes cost.
-- **Usage from the checkpoint, as session totals** (*2026-10, task 138.7*).
+- **Usage from the checkpoint, as session totals** (*2026-10, task 138.7;
+  1.0.105*).
   The root agent's `session.usage_checkpoint` is a `usage` event, and the last
   one fills the result's tokens from `accountingSnapshot.tokenDetails`:
   `input` → `InputTokens` (the *uncached* input, as claude's is, §9.2 — input
@@ -6684,14 +6749,14 @@ section is renumbered.
   `model_usage`) shows the session's running totals on a resumed copilot
   turn, while `chat_turns.input_tokens`/`output_tokens` hold the turn's own
   share.
-- **No run header** (*2026-10, task 138.7*). 1.0.105 writes no cwd and no
+- **No run header** (*2026-10, task 138.7; 1.0.105*). 1.0.105 writes no cwd and no
   tool list to stdout: `session.start` goes only to the on-disk log,
   `session.skills_loaded` is never emitted in JSON mode, and
   `session.tools_updated` carries only the model. Copilot therefore produces no
   `run_header`, as codex does not (§9.3); `RunHeader.WorkDir` is the CLI's own
   report, so it is never filled from the spawn spec.
 - **Thinking, input echo, patches and command output** (*2026-10, task
-  138.7*). `assistant.reasoning`'s whole `content` is `thinking`; its
+  138.7; 1.0.105*). `assistant.reasoning`'s whole `content` is `thinking`; its
   `assistant.reasoning_delta` lines stay `unknown` rather than being coalesced,
   because the closing line carries the block (task 066's whole blocks). The
   root agent's `user.message` is an `input_echo` carrying nothing, as cursor's
@@ -6701,11 +6766,13 @@ section is renumbered.
   produces none. A `bash` completion's `result.content`, less the trailing
   `<shellId: N completed with exit code E>`, rides on its `tool_result` as
   `Output`, the way codex's does (§9.3), and the result's summary is
-  `exit E` from `shellExecution.exitCode`. Only `bash` is captured — the
-  Windows and Linux shell tools' names are 138.3's — and the live
+  `exit E` from `shellExecution.exitCode`. Only `bash` is mapped. Linux's
+  shell tool is `bash` too (138.3); Windows' is `powershell`, whose completion
+  no fixture pins, so its result carries no `Output` and stays an ordinary
+  `tool_result` (*amended 2026-10-30, task 138.15*). The live
   `tool.shell_output` and `tool.execution_partial_result` chunks stay
   `unknown`: the completion is the durable copy.
-- **Subagents** (*2026-10, task 138.7*). `subagent.started` is
+- **Subagents** (*2026-10, task 138.7; 1.0.105*). `subagent.started` is
   `subagent_started` (the spawning `toolCallId`, `agentType`,
   `agentDescription`) and `subagent.completed` is `subagent_finished`
   (`totalToolCalls`, `totalTokens`, `durationMs`). Every later line carrying
@@ -6721,19 +6788,19 @@ section is renumbered.
   `skill` tool call stays a `tool_use` (amended 2026-10-29, task 138.13). A
   test pins every raw type the captures carry to its normalization, so a type
   nobody mapped fails it.
-- **SIGTERM exits 0** (*2026-10, task 138.5*). On 1.0.105 a terminated run ends
+- **SIGTERM exits 0** (*2026-10, task 138.5; 1.0.105*). On 1.0.105 a terminated run ends
   `agent.interrupted`, `abort`, …, `result{exitCode:0}`. The engine records a
   termination it asked for whatever the exit code, as for every adapter, and
   the parser also reads a result after the root agent's `abort` as an error,
   so the run is never reported as a success.
-- **No model enumeration** (*2026-10, task 138.6*). The catalog lists no
+- **No model enumeration** (*2026-10, task 138.6; 1.0.105*). The catalog lists no
   models and ids are free-form, so §8.2 passes any model through with at most
   its "not in the catalog" warning. Copilot lists models only through the
   interactive `/model`; `help config`'s static list is not what the account
   may use. An unavailable id exits 1 with `Error: Model "…" from --model flag
   is not available.` before any request is spent, and that stderr reaches
   `result_summary` through the no-result path.
-- **Effort probed from `--help`** (*2026-10, task 138.6*). `Options` runs
+- **Effort probed from `--help`** (*2026-10, task 138.6; 1.0.105*). `Options` runs
   `copilot --no-auto-update --help` and reads the clap-style
   `--reasoning-effort … [possible values: …]` line (source `cli`), merged over
   the curated floor `none, minimal, low, medium, high, xhigh, max`. A missing
@@ -6749,10 +6816,10 @@ section is renumbered.
   `config.json` or a `settings.json` (`model_persist_1.0.105.txt`). Every run
   writes logs, session state and the session store, and the first one a
   `firstLaunchAt` in `config.json`, whatever its flags.
-- **Not a quota reporter** (*2026-10, task 138.6*). There is no zero-cost
+- **Not a quota reporter** (*2026-10, task 138.6; 1.0.105*). There is no zero-cost
   plan probe, so the adapter is not a `QuotaReporter`, and premium requests are
   not dollars, so they never become `CostUSD`.
-- **Failure classification** (*2026-10, task 138.6*). A failed run whose error,
+- **Failure classification** (*2026-10, task 138.6; 1.0.105*). A failed run whose error,
   result text or stderr carries `No authentication information found`
   (`logged_out_1.0.105.txt`) is `unauthenticated`; a stream vincent could not
   read to the end still outranks it as `stream_error`. Rate limit and quota
@@ -6760,7 +6827,8 @@ section is renumbered.
   task 003 decision 2 recognizes nothing neither documented nor captured. Such
   a run fails the ordinary way, and `usage_limit_auto_continue` does not apply
   to copilot.
-- **Registered fourth** (*2026-10-29, task 138.9, issue #861*). `builtin.New`
+- **Registered fourth** (*2026-10-29, task 138.9, issue #861; against
+  1.0.105*). `builtin.New`
   lists copilot after cursor, so the daemon, `vincent doctor` and
   `workflow validate` all reach it, and `/v1/agents` and `/v1/info` list it
   fourth with `logged_in: null`. `agents.copilot.path` (§12.3) is served and
@@ -6793,6 +6861,15 @@ section is renumbered.
   (`mention_tools_1.0.105.jsonl`, §5.5), so a mention is worth sending
   (task 126 decision 6). `FileMention` is `@` and the path, never quoted, as
   cursor's is; no Windows path was observed (#557).
+- **ACP considered and rejected** (*task 138 decision 1; recorded 2026-10-30,
+  task 138.15; 1.0.105*). `copilot --acp` is a long-lived JSON-RPC session
+  (`loadSession` to resume, HTTP MCP servers); no vincent adapter speaks that
+  shape — every adapter is one subprocess per run. ACP also has parity gaps,
+  open upstream on 2026-10-30: plugin skills are unavailable in ACP sessions
+  (github/copilot-cli#5269), there is no mid-turn steering (#5198), assisted
+  approval is not exposed (#5047), and `includeCoAuthoredBy: false` is
+  ignored (#5133). A follow-up investigation is task 138's open question 6,
+  not a commitment.
 
 ## 10. Worktree management
 
@@ -8520,7 +8597,7 @@ never disagrees with itself about a spent window — which means
 `usage_limit_recheck_interval` keeps a meaning in every mode: it is the
 estimate, even where it times no wait. Claude-only in effect, since it is the
 only adapter that recognizes the wording at all (§9.1); inert on codex and
-cursor.
+cursor (*Amended 2026-10-30 (task 138.15):* and copilot, §9.9).
 
 *Amended 2026-09-16 (task 106).* The mode also decides what a recorded wall
 means for the **other** tasks on the adapter, at §7.2's pre-spawn check:
@@ -8558,7 +8635,8 @@ the multiplication is documented here rather than worked around.~~ *Amended
 one task and the multiplication still holds for it; the parent's
 `children.cost_usd` (§13.2) is now where a lane's spend shows. It is also
 inert on the adapters that report no cost: codex (§9.3) and cursor (§9.7) leave
-`cost_usd` unset, and the check is guarded by "some attempt reported a cost"
+`cost_usd` unset (*Amended 2026-10-30 (task 138.15):* so does copilot, §9.9), and the check is guarded
+by "some attempt reported a cost"
 rather than by arithmetic, so a cap must never be estimated from token counts.
 
 *Amended 2026-09-11 (task 096).* A task may carry **its own cap** beside this
@@ -8568,7 +8646,7 @@ either side means "no cap from this side" — this key's own convention — so a
 task cap can tighten the global cap and never lift it: a task that asks for $50
 under a $10 global stops at $10. The task's value is fixed at creation; this key
 stays hot-reloaded. Inert on codex and cursor for the same reason as above
-(task 096 decision 18).
+(task 096 decision 18), and on copilot (*Amended 2026-10-30 (task 138.15):* §9.9).
 
 **`max_tree_cost_usd` (task 116, issue #409, added 2026-09-17).** A ceiling, in
 US dollars, on what **one fan-out tree** may spend. A tree is a root task — one
@@ -8602,7 +8680,8 @@ It is a config key and nothing else. There is no create-time field on
 workflow field. A workflow field would reverse "a budget is not something a step
 inherits" above, and a create-time field can be layered on the same check later,
 the way task 096 added one to `max_task_cost_usd`. It is inert on codex and
-cursor by the same guard, now "some step run in the tree reported a cost", and a
+cursor (*Amended 2026-10-30 (task 138.15):* and copilot, §9.9) by the same guard, now "some
+step run in the tree reported a cost", and a
 tree mixing them with claude counts only what was reported. That undercount is
 stated, never estimated from token counts (task 116 decisions 1–7).
 
@@ -11241,6 +11320,11 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         `item.completed`, and the two are separate records
                                         because clients show them at different verbosity
                                         levels.
+                                        *Amended 2026-10-30 (task 138.15, issue
+                                        #867):* copilot fills `agent.command_output`
+                                        (from a `bash` completion) and
+                                        `reasoning_tokens`, but never `agent.plan`
+                                        (§9.9).
                                         **v0 wire change (task 109, 2026-09-17):** three
                                         more record types in the shared vocabulary, the
                                         main loop's account of a subagent, each keyed by
@@ -11261,7 +11345,12 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         background` with no `summary`, for a call claude
                                         launched without waiting on it. claude fills all of
                                         it and codex and cursor fill none, which their
-                                        adapters' tests state positively. The field is now
+                                        adapters' tests state positively. *Amended
+                                        2026-10-30 (task 138.15, review F1):* copilot
+                                        fills `agent.subagent_started` and
+                                        `agent.subagent_finished`, never
+                                        `agent.subagent_progress` or the background
+                                        verb (§9.9). The field is now
                                         rendered (§15), and the same on-read reasoning
                                         applies: claude runs already on disk render nested.
                                         **v0 wire change (task 110, 2026-09-17):** one
@@ -11279,7 +11368,10 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         and a `Write` overwrite's verb is `updated`.
                                         Every key is omitted when unreported. claude
                                         fills it and codex and cursor fill none, which
-                                        their adapters' tests state positively. On-read
+                                        their adapters' tests state positively. *Amended
+                                        2026-10-30 (task 138.15, review F1):* copilot
+                                        fills it too, from an `edit` or `apply_patch`
+                                        completion (§9.9). On-read
                                         normalization means every claude run already on
                                         disk renders deltas and patches.
                                         **v0 wire change (task 124.2, 2026-09-19):** two
@@ -11326,8 +11418,10 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         replaces an `agent.raw` the same line used to
                                         yield. Only claude fills it; codex and cursor
                                         have no comparable line and never do (§9.3,
-                                        §9.7). On-read normalization means runs already
-                                        on disk lose that raw line too.
+                                        §9.7). *Amended 2026-10-30 (task 138.15):*
+                                        nor does copilot (§9.9). On-read
+                                        normalization means runs already on disk
+                                        lose that raw line too.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
                                         ?by=lane -> JSON {sections:[...]} instead: one section per
@@ -17384,6 +17478,9 @@ phase: a click on a label switches tabs there exactly as `tab` does.
   `--dangerously-skip-permissions` (claude),
   `--dangerously-bypass-approvals-and-sandbox` (codex), `--force` (cursor).
   Cursor's reads mildest and is not; the first-run notice covers all three.
+  *Amended 2026-10-30 (task 138.15, issue #867):* and `--allow-all-tools --allow-all-paths
+  --allow-all-urls` (copilot, §9.9); the first-run notice covers all four,
+  because it names none.
 - **Listing a chat's skills starts the chat's agent CLI before the human has
   sent anything** (*added 2026-09-19, task 124.9, issue #505*).
   `GET /v1/chats/{id}/skills` (§5.5) spawns the adapter's listing probe on the
@@ -17490,7 +17587,8 @@ specifics:
   the allow-list, and a refusal aborts the invocation before the model runs.
   `Skill` is deliberately not in the allow-list, because pre-approving it would
   let a model widen a turn with no human act at all. codex and cursor have no
-  per-skill grant (§9.4).
+  per-skill grant (§9.4). *Amended 2026-10-30 (task 138.15, review F1):* nor has copilot, whose restricted tool set
+  holds no `skill` tool and no shell (§9.4, §9.9).
 - **The per-step endpoint is not a security boundary.** `/mcp/step/{run_id}`
   carries a secret minted for one step run, and it exists to make `task_wait`'s
   deadlock refusal correct and to attribute provenance — not to confine the
@@ -17854,15 +17952,15 @@ carries the rest.
 | Option probe fails (help unparseable) | `GET /v1/agents` serves the curated catalog with `probe_error` set; selection and free text keep working (§9.6) |
 | Model/effort unknown to the catalog | Validation warning only; the CLI is the final authority — a rejected value fails the step with the CLI's error (retry policy applies) |
 | Model *in* the catalog but rejected at run time | Real, not hypothetical, on cursor (§9.7): the step fails with the stderr tail as the message, since no `result` event arrives. Catalog membership is advisory in both directions |
-| Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget. *Amended 2026-09-16 (task 107):* the "where it cannot (`null`)" set is now **empty by design** — claude probes `auth status` (§9.5). `null` is left to a probe that could not answer and to a claude outside `[2.1.41, 3.0.0)`, and for those this row's "the step runs and fails" still holds. Task 003 decision 4 stands |
-| Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer. *Amended 2026-09-08:* the wording is only ever read from a run that **failed** (§9.1) — a step that succeeded while writing about quota stops is a success, not a wall. *Amended 2026-09-08 (task 091):* all of the above is what `usage_limit_auto_continue: always` — the default — does. Under `never`, and under `reported_only` when the CLI named no reset, the same stop **blocks** the task instead with `block_reason: usage_limit` (§7.2, §12.3): the attempt is still `interrupted` and still costs no retry, the cursor does not advance, and a human retry re-runs the step. *Amended 2026-09-16 (task 106):* in the modes that hold, every **other** task on the adapter is held too, at its next agent spawn, with no attempt recorded and no process started, until the observation's `resets_at`. When that passes the §11 walk releases them all under the normal caps |
+| Agent CLI installed but not authenticated | `logged_in: false` where the adapter can tell (§9.5); the new-task form flags it like an unavailable agent. Where it cannot (`null`), the step runs and fails. *Amended 2026-08-14 (task 003):* where the adapter recognizes the CLI's auth wording, that failure is now named `agent_unauthenticated` instead of surfacing as `nonzero_exit`/`agent_error`. Everything else about the row is unchanged and deliberately so — the step still runs, the attempt still fails, the §7.2 budget still applies, and the task still ends up blocked. There is no pre-flight refusal on `logged_in: false`. *Amended 2026-08-15 (task 005):* the "where it cannot (`null`)" set is now **claude alone** — codex probes `login status`, cursor probes `status` (§9.5). Every other clause of this row stands untouched, task 003 decision 4 included: making the state visible is not the same as blocking on it, and `vincent doctor` is where a user sees it before a task burns its retry budget. *Amended 2026-09-16 (task 107):* the "where it cannot (`null`)" set is now **empty by design** — claude probes `auth status` (§9.5). `null` is left to a probe that could not answer and to a claude outside `[2.1.41, 3.0.0)`, and for those this row's "the step runs and fails" still holds. Task 003 decision 4 stands. *Amended 2026-10-30 (task 138.15):* the set is no longer empty: copilot is `null` by design, with no status command and an environment token that is not a login (§9.5, §9.9), so on copilot this row's "the step runs and fails" holds always |
+| Agent stopped by a usage limit | *Added 2026-08-14 (task 003).* Where the adapter recognizes the wording, the attempt is recorded `interrupted` with reason `usage_limit`, consumes **no** retry (§7.2), and the task returns to `queued` with an admission hold (§11) — releasing its slot, so other work keeps running. The hold ends at the reset time the CLI reported, or `usage_limit_recheck_interval` after the stop when it reported none. Recovery is unattended: the scheduler re-admits and the step re-runs. The board says `queued` *with* its reason rather than `blocked` (§15). Where the adapter recognizes nothing — codex and cursor today (§9.1); *Amended 2026-10-30 (task 138.15):* copilot too (§9.9) — the run reads as `nonzero_exit`/`agent_error` exactly as before. *Amended 2026-08-24 (task 026):* the reset the engine acted on is additionally recorded per adapter (§14) and published on change (§13.3), so the fact outlives the hold — `admit_not_before` is cleared by the next transition out of `queued`, and until now the observation went with it. It is retired by the next successful agent step on that adapter, never by a timer. *Amended 2026-09-08:* the wording is only ever read from a run that **failed** (§9.1) — a step that succeeded while writing about quota stops is a success, not a wall. *Amended 2026-09-08 (task 091):* all of the above is what `usage_limit_auto_continue: always` — the default — does. Under `never`, and under `reported_only` when the CLI named no reset, the same stop **blocks** the task instead with `block_reason: usage_limit` (§7.2, §12.3): the attempt is still `interrupted` and still costs no retry, the cursor does not advance, and a human retry re-runs the step. *Amended 2026-09-16 (task 106):* in the modes that hold, every **other** task on the adapter is held too, at its next agent spawn, with no attempt recorded and no process started, until the observation's `resets_at`. When that passes the §11 walk releases them all under the normal caps |
 | `effort` set on a step whose agent has no effort concept | Ignored by the adapter and documented as ignored (cursor, §9.7); a claude/codex effort value on a cursor step is already an §8.2 *error* — it belongs to another adapter's catalog |
 | `restricted` step on an adapter that cannot restrict on this OS | Step fails to start with `restricted_unsupported` (cursor on Windows, §9.7), under the retry policy → typically blocked. Never downgraded to full-auto, and deliberately *not* `agent_unavailable`: the CLI is installed and healthy, so "not found" would send the user to reinstall what is already there. *Amended 2026-08-28 (task 041):* **task creation refuses these** with a `400` naming the step and the agent (§9.4), and `GET /v1/agents` publishes the `restricted_verdict` the gate uses. Reaching the engine anyway means the task and its daemon parted company — a data directory carried to Windows, or a workflow edited after the task was queued — so the reason above stays exactly as it is, as the backstop. Retries are not gated: enforcement is creation-time, and the backstop is what catches the rest. *Amended 2026-09-11 (task 096):* a task created with the `restricted` clamp (§9.4) makes **every** agent step a restricted one, so the same `400` refuses a clamped task whose agent steps resolve to such an adapter — even when its workflow says `full-auto` throughout |
-| Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |
+| Step declaring `on_input: require` on an agent that cannot ask | *Added 2026-08-17 (task 013).* A workflow pinning an adapter with no control channel (codex, cursor; *Amended 2026-10-30 (task 138.15, review F1):* copilot) fails §8.2 validation outright. Otherwise creation is refused with a `400` naming the step and the agent, and the TUI's picker will not select that agent; `GET /v1/agents` publishes the `input_verdict` the gate uses. A task that reaches the engine anyway — claude upgraded past the §9.3 ceiling, a data directory moved — fails the attempt with `input_unsupported` under the §7.2 budget, before anything is spawned. Only a positive "cannot" refuses: an absent or unprobed binary is unknown, and unknown never blocks (§9.6) |
 | Workflow restricted to platforms this host is not | *Added 2026-08-16 (task 010).* Creation is refused with a `400` naming the restriction and the host (§8.1.1); the entry stays listed and says why, and the TUI's picker will not select it. A task that *already* holds such a snapshot — the data directory moved to another OS, or the workflow narrowed after the task was queued — blocks at admission with `platform_unsupported`, before a worktree or any step. Not `invalid_snapshot`: the snapshot is valid, just not here |
 | Runaway step output (agent or command) | Past `transcript_max_bytes` (§12.3) the process tree is killed and the attempt fails `transcript_limit`, under the retry policy. The line that trips the cap is written **whole** — a truncated line would turn a size failure into a parse failure for every later reader of the JSONL — and the partial transcript is kept with a closing `vincent.transcript_limit` annotation, because the lines that got there are what explain the runaway |
-| A task spends past `max_task_cost_usd` | *Added 2026-08-26 (task 033).* The task goes `blocked` with `block_reason = cost_limit` and nothing further runs. It is a **block, not a step failure**: the finished `step_run` keeps its own state and its own reason, no retry is consumed (§7.2), and a retry that was already due does not run — retrying spends more money to arrive at the same wall, and that pre-empts `retry_backoff` too. The check happens at every **attempt boundary**, including inside a `loop` body and a `parallel` group, so the attempt that crossed the line ran to completion and the overshoot is at most one attempt: cost arrives on an agent run's terminal result line and nowhere else (§9.1), and there is no mid-run usage signal to poll. The remedy is to raise the cap (hot-reloaded, §12.3) and `retry`; a `retry` **without** raising it makes exactly one attempt of progress and blocks here again, which is idempotent and loses no work. `resume` is not the escape hatch — it is valid only from `paused` (§6). The cap counts one task, so each `fan_out` lane carries its own budget (*amended 2026-09-17, task 116:* the tree's shared budget is `max_tree_cost_usd`, the next row), and it is inert on codex and cursor, which report no cost at all (§9.3, §9.7). *Amended 2026-09-11 (task 096):* the cap is the **lower** of config's and the task's own `max_task_cost_usd` (§5.3, §12.3), and the block is `cost_limit` whichever side set it. A task cap cannot lift the global one. The task's value is fixed at creation — no route changes it — so when it is the lower side, raising config's does not move the wall, and `retry` makes one attempt of progress per press as above |
-| A tree spends past `max_tree_cost_usd` | *Added 2026-09-17 (task 116, issue #409).* The task whose attempt took the tree's total over the cap goes `blocked` with `block_reason = tree_cost_limit`. The tree is the root and every descendant at any depth, archived ones included, and the total is the lifetime §17 rollup over all of them (§12.3). Everything the row above says about the boundary holds here: it is a block, not a step failure, the finished `step_run` keeps its own state and reason, no retry is consumed, a due retry and a `retry_backoff` hold are pre-empted, and the check runs inside a `loop` body and a `parallel` group. The blocking task is usually a lane, but can be the parent: its own steps before the fan-out, after the join, or a `merge.on_conflict: agent` run. A parent parked in `awaiting_children` makes no attempts, so it never blocks this way while parked; its join stays open on the `blocked` lane, which `children.blocked` names beside `children.cost_usd` (§13.2). **The overshoot is at most one attempt per task still working in the tree**, not one attempt: a lane running when the total crosses finishes the attempt it is on, a queued one makes one attempt when admitted, and each blocks at its own boundary. The remedy is to raise `max_tree_cost_usd` (hot-reloaded) and `retry`, either the parent, whose cascade (§6, task 090) re-admits every blocked lane in one call, or a single lane. Without raising it, a retry on a lane buys that lane one attempt and re-blocks, and a cascade retry buys **one attempt per blocked lane** per press. When both caps are over at the same boundary the block is `cost_limit`, because the per-task cap is the one raising this key cannot clear. A repair run still ends with the reason the task was blocked with (task 033 decision 3). Inert unless some step run in the tree reported a cost; a tree mixing claude with codex or cursor lanes counts only what was reported, and that undercount is never filled in from token counts (§9.3, §9.7) |
+| A task spends past `max_task_cost_usd` | *Added 2026-08-26 (task 033).* The task goes `blocked` with `block_reason = cost_limit` and nothing further runs. It is a **block, not a step failure**: the finished `step_run` keeps its own state and its own reason, no retry is consumed (§7.2), and a retry that was already due does not run — retrying spends more money to arrive at the same wall, and that pre-empts `retry_backoff` too. The check happens at every **attempt boundary**, including inside a `loop` body and a `parallel` group, so the attempt that crossed the line ran to completion and the overshoot is at most one attempt: cost arrives on an agent run's terminal result line and nowhere else (§9.1), and there is no mid-run usage signal to poll. The remedy is to raise the cap (hot-reloaded, §12.3) and `retry`; a `retry` **without** raising it makes exactly one attempt of progress and blocks here again, which is idempotent and loses no work. `resume` is not the escape hatch — it is valid only from `paused` (§6). The cap counts one task, so each `fan_out` lane carries its own budget (*amended 2026-09-17, task 116:* the tree's shared budget is `max_tree_cost_usd`, the next row), and it is inert on codex and cursor, which report no cost at all (§9.3, §9.7). *Amended 2026-10-30 (task 138.15):* and on copilot, which reports none either (§9.9). *Amended 2026-09-11 (task 096):* the cap is the **lower** of config's and the task's own `max_task_cost_usd` (§5.3, §12.3), and the block is `cost_limit` whichever side set it. A task cap cannot lift the global one. The task's value is fixed at creation — no route changes it — so when it is the lower side, raising config's does not move the wall, and `retry` makes one attempt of progress per press as above |
+| A tree spends past `max_tree_cost_usd` | *Added 2026-09-17 (task 116, issue #409).* The task whose attempt took the tree's total over the cap goes `blocked` with `block_reason = tree_cost_limit`. The tree is the root and every descendant at any depth, archived ones included, and the total is the lifetime §17 rollup over all of them (§12.3). Everything the row above says about the boundary holds here: it is a block, not a step failure, the finished `step_run` keeps its own state and reason, no retry is consumed, a due retry and a `retry_backoff` hold are pre-empted, and the check runs inside a `loop` body and a `parallel` group. The blocking task is usually a lane, but can be the parent: its own steps before the fan-out, after the join, or a `merge.on_conflict: agent` run. A parent parked in `awaiting_children` makes no attempts, so it never blocks this way while parked; its join stays open on the `blocked` lane, which `children.blocked` names beside `children.cost_usd` (§13.2). **The overshoot is at most one attempt per task still working in the tree**, not one attempt: a lane running when the total crosses finishes the attempt it is on, a queued one makes one attempt when admitted, and each blocks at its own boundary. The remedy is to raise `max_tree_cost_usd` (hot-reloaded) and `retry`, either the parent, whose cascade (§6, task 090) re-admits every blocked lane in one call, or a single lane. Without raising it, a retry on a lane buys that lane one attempt and re-blocks, and a cascade retry buys **one attempt per blocked lane** per press. When both caps are over at the same boundary the block is `cost_limit`, because the per-task cap is the one raising this key cannot clear. A repair run still ends with the reason the task was blocked with (task 033 decision 3). Inert unless some step run in the tree reported a cost; a tree mixing claude with codex or cursor lanes counts only what was reported, and that undercount is never filled in from token counts (§9.3, §9.7). *Amended 2026-10-30 (task 138.15):* copilot lanes too, which report no cost (§9.9) |
 | A command emits a single line larger than one output record | *Added 2026-08-24 (#139).* Captured, not failed: the line becomes a run of `vincent.output` records marked `partial`, in order, on one stream, preserving phase, stream identity and live offsets. Minified JSON, a base64 blob and a `git diff` of a generated file all reach a megabyte on one line, so this is an ordinary command; failing it would only retry it into the same wall until the task blocked. It was previously a *silent success* — a line-bound reader stopped dead on the first such line, the rest of the stream went to `io.Discard`, and the attempt was judged from exit 0 alone |
 | A transcript write, encode or close fails | *Added 2026-08-24 (#139).* The failure latches on the transcript and the attempt fails `transcript_io_error` under the §7.2 budget — disk full, a revoked permission, a short write, and ENOSPC surfaced at `Close`, which is where a buffered filesystem reports it. Never swallowed by `allow_failure:` (§7.2): vincent failing to record a step is not an outcome the step produced. Only a *success* is overridden — an attempt that already failed keeps the more useful reason. `transcript_max_bytes` is unaffected and stays the only size-based failure (§12.3) |
 | An adapter cannot read its agent's stream to the end | *Added 2026-08-24 (#139).* The adapter latches its reader's error, drains the pipe so the CLI is not left blocked on it until the step timeout, and reports `agent.FailureStreamError`; the engine fails the attempt `agent_protocol_error` under the §7.2 budget. Deliberately not `agent_error`, which means "the CLI reported a failure" and would send a user to inspect a CLI that did nothing wrong — the reader that failed is vincent's. Deliberately not `input_protocol_error` either: that names a control message vincent could not render, and such a message arrived intact |
@@ -17991,6 +18089,9 @@ accordingly rather than restated: the two-adapter line describes what v1 was
 scoped to deliver, not what the repository contains. T4.6's fresh-machine
 clock is unaffected: cursor is not a prerequisite of the M4 walkthrough, and
 an uninstalled `cursor-agent` is simply an unavailable adapter (§9.5).
+*Amended 2026-10-30 (task 138.15, issue #867):* the tree now carries **four** adapters: copilot
+(§9.9) was registered on 2026-10-29. It arrived as task 138, which has no
+milestone row (the #852 decision), so none is added here.
 
 † **"Signed binaries" is descoped, 2026-08-10** (Phase 4 grill session). Releases
 carry cosign keyless signatures, checksums, and GitHub build attestations —

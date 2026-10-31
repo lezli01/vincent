@@ -7,7 +7,7 @@ import "strings"
 // A verdict is advisory everywhere: it is reported on /v1/agents, /v1/info,
 // /v1/doctor and in both UIs, and it refuses nothing. The issue asked for a
 // tested minimum/maximum per vincent release; that is not implementable for
-// all three adapters — cursor's version is calver plus a commit sha
+// all four adapters — cursor's version is calver plus a commit sha
 // (2026.08.04-aaa8809) and admits no range (§9.7) — so the comparison is
 // exact string equality against the builds whose fixtures are in the tree,
 // and the answer for a newer CLI is `untested`, which changes no behaviour.
@@ -47,8 +47,8 @@ const (
 // JudgeVersion compares a probed version string against an adapter's tables.
 //
 // Comparison is exact string equality rather than a range, because one of the
-// three adapters has no parseable version at all (§9.7) and a gate that works
-// for two of three is a gate whose answer depends on which adapter you asked.
+// four adapters has no parseable version at all (§9.7) and a gate that works
+// for three of four is a gate whose answer depends on which adapter you asked.
 // An empty version — a probe that answered with nothing usable — is unknown,
 // never untested: silence is not evidence, the same rule InputUnknown follows.
 func JudgeVersion(version string, tested, incompatible []string) VersionVerdict {

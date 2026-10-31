@@ -8,6 +8,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/agent/codex"
+	"github.com/lezli01/vincent/internal/agent/copilot"
 	"github.com/lezli01/vincent/internal/agent/cursor"
 	"github.com/lezli01/vincent/internal/config"
 )
@@ -21,6 +22,7 @@ func curatedOptions() Options {
 		claude.New(func() string { return "" }),
 		codex.New(func() string { return "" }),
 		cursor.New(func() string { return "" }),
+		copilot.New(func() string { return "" }),
 	)
 	catalogs := make(agent.Catalogs, len(reg.Names()))
 	for _, a := range reg.All() {

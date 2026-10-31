@@ -329,8 +329,8 @@ func (c *SkillCache) Lookup(ctx context.Context, a Adapter, p SkillPlacement, re
 // ReportBundled records the skill names a turn on a's CLI loaded at place,
 // which is what tells that binary's bundled skills from its built-in commands
 // (§9.6, task 124.16, #512). The chat runner calls it with a turn's init
-// line; an adapter whose stream carries no such line — codex, cursor — never
-// does.
+// line; an adapter whose stream carries no such line — codex, cursor,
+// copilot — never does.
 //
 // The classification is stored against the *binary and the place*, never the
 // directory: a bundled skill ships with the installed CLI, so the first turn

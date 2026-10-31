@@ -269,8 +269,8 @@ type Config struct {
 	// block; under `never` it times no wait at all.
 	//
 	// Claude-only in effect. FailureUsageLimit is produced by exactly one
-	// adapter (internal/agent/claude); codex and cursor recognize no quota
-	// wording (task 003 decision 2), so this key is inert on them.
+	// adapter (internal/agent/claude); codex, cursor and copilot recognize no
+	// quota wording (task 003 decision 2), so this key is inert on them.
 	UsageLimitAutoContinue string `yaml:"usage_limit_auto_continue"`
 	LogLevel               string `yaml:"log_level"`
 	// Debug records, in every step's transcript, the exact conditions the

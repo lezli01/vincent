@@ -105,7 +105,7 @@ transcript_max_bytes: 512MB
 # It counts one task. Each fan_out lane is its own task and gets its own
 # budget, so a tree of twenty lanes may spend twenty times this; cap the whole
 # tree with max_tree_cost_usd. Only agents that report cost are counted —
-# codex and cursor report none, so the cap is inert on them.
+# codex, cursor and copilot report none, so the cap is inert on them.
 max_task_cost_usd: 0
 
 # Ceiling on what one fan_out tree may spend, in US dollars: a root task and
@@ -129,8 +129,8 @@ usage_limit_recheck_interval: 15m
 # and blocks when the wait would be the estimate above — the case where
 # vincent is guessing. never always blocks.
 #
-# Only claude reports a spent quota at all; codex and cursor recognize no such
-# wording, so this key is inert on them.
+# Only claude reports a spent quota at all; codex, cursor and copilot recognize
+# no such wording, so this key is inert on them.
 usage_limit_auto_continue: always
 
 # Daemon log verbosity: debug | info | warn | error.
@@ -541,8 +541,8 @@ for example a dev server nobody stopped. Until then a chat turn shows as
 running and the chat takes no new message; cancel the turn if you don't want
 to wait. `0` ends every run at the agent's first answer and kills the background
 work, which is how vincent behaved before this key existed. Only the claude
-adapter has background work; codex and cursor runs end at their answer
-regardless.
+adapter has background work; codex, cursor and copilot runs end at their
+answer regardless.
 
 ### `delete_empty_branch_on_archive`
 
@@ -758,7 +758,8 @@ own budget, so a cap of `$5.00` on a twenty-lane fan-out permits `$100` across
 the tree. To bound the tree as a whole, set
 [`max_tree_cost_usd`](#max_tree_cost_usd) as well.
 
-**It is inert on codex and cursor.** Only claude reports cost. A task run
+**It is inert on codex, cursor and copilot.** Only claude reports cost —
+copilot spends premium requests, which are not dollars. A task run
 entirely on an agent that reports none is never blocked by this, whatever you
 set — vincent will not estimate money from token counts. See
 [Agents](../guides/agents.md).
@@ -816,8 +817,8 @@ things and both are checked at the same point. When both are passed at once the
 task blocks `cost_limit`, because raising this value would not clear that one.
 
 **It only counts what was reported.** Only claude reports cost, so a tree run
-entirely on codex or cursor is never blocked by this. A tree that mixes claude
-with codex or cursor lanes counts claude's spend alone, and the rest is not
+entirely on codex, cursor or copilot is never blocked by this. A tree that
+mixes claude with codex, cursor or copilot lanes counts claude's spend alone, and the rest is not
 estimated from token counts. See [Agents](../guides/agents.md).
 
 **It is set here and nowhere else.** No create-time field, `vincent task add`
@@ -914,8 +915,8 @@ Only windows vincent watched close count. A quota an agent merely
 100%, never holds a task. When the reset passes, every waiting task becomes
 eligible again under the normal concurrency caps.
 
-Only claude recognizes a spent quota at all, so this key is inert on codex and
-cursor. See [Agents](../guides/agents.md).
+Only claude recognizes a spent quota at all, so this key is inert on codex,
+cursor and copilot. See [Agents](../guides/agents.md).
 
 ### `parallel`
 
@@ -1330,8 +1331,9 @@ daemon is in.
 CLI it spawns for an [agent step](../guides/workflows.md), so a step's agent
 gets the vincent tools with no configuration from you. **On by default**, an
 opt-out. Set it to `false` and no adapter is given an MCP server: no
-`--mcp-config` for claude, no `mcp_servers.*` overrides for codex, and no
-`.cursor/mcp.json` written into the task worktree.
+`--mcp-config` for claude, no `mcp_servers.*` overrides for codex, no
+`.cursor/mcp.json` written into the task worktree, and no
+`--additional-mcp-config` for copilot.
 
 **`max_depth`** and **`max_tasks`** bound recursion. A step's agent can create a
 task whose step runs an agent that creates a task, and unlike `fan_out.max_depth`

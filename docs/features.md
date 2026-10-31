@@ -13,7 +13,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Chats | Conversations with an agent in their own worktree and branch — or in a stopped task's, holding the task still while you talk — continued through the agent CLI's own session, with transcripts and cost |
 | Workflows | Validated YAML, templates, declared task fields, checks, retries, timeouts, platform restrictions |
 | Control flow | Parallel groups, isolated fan-out and merge, conditions, loops, breaks, reusable workflow includes |
-| Agents | Claude Code, Codex, and Cursor; per-workflow, per-step, and per-task selection |
+| Agents | Claude Code, Codex, Cursor, and GitHub Copilot; per-workflow, per-step, and per-task selection |
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, a chat in a stopped task's worktree, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent — then merge, close, reopen, comment on or re-run its failed checks from the task's Pull Request tab or the CLI, each written to GitHub only when you ask. No stored credential |
@@ -157,7 +157,7 @@ fields and invalid combinations before a task starts.
 
 Three step types perform work or wait for a person:
 
-- `agent` runs Claude Code, Codex, or Cursor with a rendered prompt.
+- `agent` runs Claude Code, Codex, Cursor, or GitHub Copilot with a rendered prompt.
 - `command` runs a deterministic shell command in the task worktree.
 - `manual` creates an explicit approval gate.
 
@@ -464,6 +464,7 @@ API keys or login credentials.
 | Claude Code | Model and effort discovery, usage and cost reporting, restricted mode, mid-run questions, and the fullest account of its own run — the working directory and tool set it was given, its duration, turns, cache split and refused tool calls, the lines each edit changed with its hunks at `verbose`, and its subagents' work nested in the output pane rather than read as its own. Its remaining usage quota reaches vincent when you let it draw your status line |
 | Codex | Headless execution, restricted mode, session resume so it can hold a chat, its remaining usage quota answered on request over its app-server, and its running to-do list, command output and full token usage in the output pane; no mid-run input or cost reported by the CLI |
 | Cursor | Headless execution and model discovery, and the working directory, duration and cache split of its run in the output pane; reasoning effort is part of the model id, restricted mode is unavailable on Windows, and it has no usage-quota surface to report from |
+| GitHub Copilot | Headless execution, restricted mode on every OS (with no shell), session resume so it can hold a chat, reasoning effort probed from its help, and its subagents, thinking, command output and edit patches in the output pane; no mid-run questions, skill listing or invocation, `@` expansion, cost (it spends premium requests, which are not dollars), login probe, or usage-quota report |
 
 Agent, model, effort, and permission settings resolve from step to task override
 to workflow default to adapter default. The TUI shows which level won, and free

@@ -1161,8 +1161,8 @@ and starts a new one, and the pane marks the point with
 at all four levels, behind the run header's gutter, because what changed is the
 frame of the conversation rather than anything inside it. Everything drawn
 above that line is still there to scroll back to and is no longer something the
-agent can see. Only Claude Code reports a reset; Codex and Cursor have no
-equivalent, and vincent never guesses one from a session that changed.
+agent can see. Only Claude Code reports a reset; Codex, Cursor and GitHub Copilot CLI have
+no equivalent, and vincent never guesses one from a session that changed.
 
 `compact` is what the agent **said and did**, and nothing else. Reasoning is
 hidden, and so is everything about the run itself.
@@ -1262,7 +1262,9 @@ the whole transcript `e` opens has both, though claude rarely reports a
 subagent's change at all. And a subagent's unrecognized lines are only ever
 counted, never expanded.
 
-Codex and cursor report no subagents, so their panes have no rail.
+Codex and cursor report no subagents, so their panes have no rail. Copilot
+does: its subagents start, finish and nest behind the rail like claude's,
+though it reports no progress in between.
 
 ### Reading the whole transcript
 

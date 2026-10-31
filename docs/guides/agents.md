@@ -5,7 +5,7 @@ stores no credentials, embeds no model access, and speaks to no vendor API of
 its own: an agent step spawns the same binary you would have run by hand, in
 the task's worktree, with its prompt on stdin.
 
-Three adapters ship. **What an adapter cannot do is documented and ignored at
+Four adapters ship. **What an adapter cannot do is documented and ignored at
 run time — never emulated.** A field an adapter has no concept of is stated as
 ignored here and in the spec, so a workflow never appears to honor something it
 silently drops.
@@ -14,6 +14,7 @@ silently drops.
 - [Claude Code](#claude-code)
 - [Codex](#codex)
 - [Cursor](#cursor)
+- [GitHub Copilot](#github-copilot)
 - [How vincent finds a CLI](#how-vincent-finds-a-cli)
 - [Agents in a container](#agents-in-a-container)
 - [Choosing models and effort](#choosing-models-and-effort)
@@ -23,26 +24,26 @@ silently drops.
 
 ## At a glance
 
-| | claude | codex | cursor |
-|---|---|---|---|
-| Binary | `claude` | `codex` | **`cursor-agent`** |
-| `agent:` value | `claude` | `codex` | `cursor` |
-| Mid-run questions (`awaiting_input`) | ✅ | — | — |
-| Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | ✅ `exec resume` | ✅ `--resume` |
-| Reports a session it can no longer resume | ✅ `session_lost` | ✅ `session_lost` | **—** (it adopts the id and answers) |
-| Lists its skills in a chat | ✅ from 2.1.277 | ✅ `skills/list` | **—** (its `-p` mode has no listing) |
-| Invokes a skill from a chat message | ✅ `/name` at the **start** | ✅ `$name` anywhere | ✅ `/name` anywhere |
-| Transcript shows a skill you invoked | ✅ in chats | **—** | **—** |
-| Expands an `@path` file mention | ✅ it reads the file for you | **—** (the path stays prose) | **—** (the path stays prose) |
-| Reports cost | ✅ | — | — |
-| `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) |
-| `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
-| `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **refused on Windows** |
-| Carries [vincent's MCP server](mcp.md) for one run | ✅ `--mcp-config` | ✅ `-c mcp_servers.…` | ✅ `.cursor/mcp.json` **in the worktree** |
-| Tested-build list | `2.1.224`, `2.1.226`, `2.1.268`, `2.1.277` | `0.142.5`, `0.147.0`, `0.150.1`, `0.154.0` | `2026.08.04-aaa8809`, `2026.08.11-e8db854`, `2026.08.25-3e8eec8`, `2026.09.18-9a7762b` |
-| Reports whether you are logged in | ✅ from 2.1.41 | ✅ | ✅ |
-| Recognizes a usage limit / auth failure in a run | ✅ | — | — |
-| Reports **remaining** quota without running | **push only** (its status line) | ✅ `app-server --stdio` | **—** (no usage surface) |
+| | claude | codex | cursor | copilot |
+|---|---|---|---|---|
+| Binary | `claude` | `codex` | **`cursor-agent`** | `copilot` (**not** `gh copilot`) |
+| `agent:` value | `claude` | `codex` | `cursor` | `copilot` |
+| Mid-run questions (`awaiting_input`) | ✅ | — | — | — |
+| Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | ✅ `exec resume` | ✅ `--resume` | ✅ `--resume=<id>` |
+| Reports a session it can no longer resume | ✅ `session_lost` | ✅ `session_lost` | **—** (it adopts the id and answers) | ✅ `session_lost` |
+| Lists its skills in a chat | ✅ from 2.1.277 | ✅ `skills/list` | **—** (its `-p` mode has no listing) | **—** (JSON mode reports no skill load) |
+| Invokes a skill from a chat message | ✅ `/name` at the **start** | ✅ `$name` anywhere | ✅ `/name` anywhere | **—** (`/name` reaches the model as prose) |
+| Transcript shows a skill you invoked | ✅ in chats | **—** | **—** | **—** |
+| Expands an `@path` file mention | ✅ it reads the file for you | **—** (the path stays prose) | **—** (the path stays prose) | **—** (the path stays prose) |
+| Reports cost | ✅ | — | — | — (premium requests are not dollars) |
+| `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) | ✅ (free text; `auto` when unset) |
+| `effort:` | ✅ | ✅ | **—** (it lives in the model id) | ✅ with an explicit `model:` |
+| `restricted` mode | ✅ | ✅ | ✅ on macOS/Linux, **refused on Windows** | ✅ on every OS, **no shell** |
+| Carries [vincent's MCP server](mcp.md) for one run | ✅ `--mcp-config` | ✅ `-c mcp_servers.…` | ✅ `.cursor/mcp.json` **in the worktree** | ✅ `--additional-mcp-config`, beside **your own servers** |
+| Tested-build list | `2.1.224`, `2.1.226`, `2.1.268`, `2.1.277` | `0.142.5`, `0.147.0`, `0.150.1`, `0.154.0` | `2026.08.04-aaa8809`, `2026.08.11-e8db854`, `2026.08.25-3e8eec8`, `2026.09.18-9a7762b` | `1.0.105` |
+| Reports whether you are logged in | ✅ from 2.1.41 | ✅ | ✅ | **—** (always unknown) |
+| Recognizes a usage limit / auth failure in a run | ✅ | — | — | auth failure only |
+| Reports **remaining** quota without running | **push only** (its status line) | ✅ `app-server --stdio` | **—** (no usage surface) | **—** (no usage surface) |
 
 A skill is invoked in the CLI's own syntax, typed into your chat message;
 vincent passes the message through unchanged and does not check the name. A
@@ -50,9 +51,13 @@ chat turn on claude asks it to report the commands it expanded, so the skill
 you named — and a command inside it that a permission rule refused — shows up
 in the turn's transcript as its own row. codex and cursor report no skill load
 at all, which is what the third row says: there, the `$name` or `/name` in
-your own message is the only evidence it ran. A task step asks for none of
+your own message is the only evidence it ran. copilot recognizes no skill
+syntax at all: a `/name` reaches its model as prose, and the skill runs only if
+the model chooses to call its `skill` tool, so a copilot chat's skill picker
+has nothing to offer. A task step asks for none of
 this, on any agent. The first two skill rows are also on `GET /v1/agents`, as
-`supports_skill_listing`, `skill_sigil` and `skill_position`. claude and codex
+`supports_skill_listing`, `skill_sigil` and `skill_position` — the last two
+empty on copilot. claude and codex
 can list the skills they would load in a worktree, which is what the listing
 row says. A chat's list,
 with the exact invocation for each skill, is at
@@ -86,20 +91,21 @@ frontmatter applies for the turn that invokes the skill, so it may use tools
 the restricted mode otherwise withholds. It takes an act of yours, either
 typing the name or approving the request the agent raises when *it* wants the
 skill, and a command the skill injects is still checked, with a refusal ending
-the invocation before the agent runs. codex and cursor have no such field. The
+the invocation before the agent runs. codex, cursor and copilot have no such
+field. The
 [Security model](../security-model.md#restricted-mode) has the whole picture.
 
-An `@path` **file mention** passes through the same way, and all three
+An `@path` **file mention** passes through the same way, and all four
 adapters recognize one anywhere in a message — but only claude acts on it.
 claude reads the mentioned file and puts it in front of the model before the
-model sees your message; codex and cursor leave the path as prose, and the
+model sees your message; codex, cursor and copilot leave the path as prose, and the
 model reads it with a tool if it has one, so a mention there is a hint rather
 than guaranteed context. That is the expansion row above, and it is on
 `GET /v1/agents` as `supports_file_mentions`, `file_mention_sigil`,
 `file_mention_position` and `file_mention_expands`, of which only the last
-tells the three apart — which is why
+tells them apart — which is why
 [`vincent agents`](../reference/cli.md#vincent-agents) notes `no @ file
-expansion` on codex and cursor and nothing on claude. Vincent adds no mention
+expansion` on codex, cursor and copilot and nothing on claude. Vincent adds no mention
 to your message and checks no path: what you type is what the CLI gets, in a
 chat turn and in a workflow agent step alike. The TUI chat composer's `@`
 picker is a typing aid over that rule rather than an exception to it — it puts
@@ -114,7 +120,7 @@ point: `conversation reset · the agent no longer sees the turns above`, one
 line at every verbosity level, in the chat workspace, in a task's output pane
 and in `vincent chat transcript`. Scrolling back past that line shows you
 turns the agent can no longer see, which is what the mark is there to tell
-you. Codex and Cursor have no equivalent, so a reset is a claude-only record
+you. Codex, Cursor and Copilot have no equivalent, so a reset is a claude-only record
 — vincent never guesses one from a session id that changed.
 
 [`vincent agents`](../reference/cli.md#vincent-agents), the TUI's daemon view,
@@ -160,22 +166,24 @@ The most capable adapter, and the only one that can be interrupted mid-step.
 - **Reports its subagents.** When claude hands work to subagents, every line
   names the one that produced it, and claude says how each one ended. The output
   pane and `vincent task transcript` draw that work nested behind a rail rather
-  than as the agent's own. Codex and cursor report no subagents, and vincent
+  than as the agent's own. Copilot reports its subagents too, and its work
+  nests the same way. Codex and cursor report no subagents, and vincent
   does not infer one from their tool calls. See
   [When the agent runs subagents](tui.md#when-the-agent-runs-subagents).
 - **Reports what its edits changed.** An edit's outcome is the lines it added
   and removed, `✓ +13 −9`, and at `verbose` the output pane shows the hunks
   themselves. A new file reads `created`, and a subagent's edits keep claude's
   own sentence, because claude reports no change for either. Cursor reports the
-  counts for its edits and no hunks; codex reports neither. See
+  counts for its edits and no hunks; copilot reports the hunks of its `edit`
+  and `apply_patch` calls; codex reports neither. See
   [the output pane](tui.md#what-v-adds).
 - **Reports token usage and cost.** The board's cost column sums every attempt,
-  retries included. The other two adapters report no cost at all — which also
+  retries included. The other three adapters report no cost at all — which also
   means [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd)
   can only stop a task that ran on claude. The same goes for
   [`max_tree_cost_usd`](../reference/configuration.md#max_tree_cost_usd): a
-  fan-out tree counts only its claude spend, so codex and cursor lanes add
-  nothing to the total.
+  fan-out tree counts only its claude spend, so codex, cursor and copilot lanes
+  add nothing to the total.
 - **Recognizes a spent usage quota and a logged-out CLI** in the output of a run
   that failed. A quota stop becomes `usage_limit` — no retry consumed, and by
   default the task waits and re-runs itself, though
@@ -185,7 +193,9 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   neither: their wordings have not been captured from a real run (doing so means
   burning a real quota window), and vincent will not guess at one, because a
   wrong guess parks a genuinely failed task in a wait it never leaves. On those
-  two, both conditions still read as `agent_error` or `nonzero_exit`. See
+  two, both conditions still read as `agent_error` or `nonzero_exit`. Copilot
+  is in between: its logged-out wording was captured, so it recognizes
+  `agent_unauthenticated`, but not a usage limit. See
   [Troubleshooting](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told).
 - **Reports its remaining quota, but only by pushing.** There is no usage
   subcommand to poll; what Claude Code has is a status line, which it hands both
@@ -260,8 +270,9 @@ a step that reaches the engine anyway fails with `input_unsupported`.
     is the exception: it takes the task's permission mode, and codex cannot
     keep a resumed turn restricted. So opening a codex chat on a task that runs
     `restricted` is refused, and codex itself refuses a resumed restricted run
-    rather than running it full-auto. claude and cursor pass their restriction
-    on every turn, so use one of those for a chat on a restricted task.
+    rather than running it full-auto. claude, cursor and copilot pass their
+    restriction on every turn, so use one of those for a chat on a restricted
+    task.
   - A thread codex no longer knows fails that turn with `session_lost` rather
     than quietly starting a new one.
 - **The plan and command output are surfaced.** Codex reports a running to-do
@@ -390,6 +401,123 @@ still over-broad: an id it lists can be rejected at run time. So membership is a
 hint, free text stays accepted, and the CLI is the final authority. The TUI's
 model picker is windowed and type-filterable for exactly this catalog.
 
+## GitHub Copilot
+
+**Binary:** `copilot` — the standalone GitHub Copilot CLI, **not** the retired
+`gh copilot` extension. **Workflow value:** `agent: copilot`.
+
+Install it any of GitHub's ways. vincent's own captures and gates used npm:
+
+```sh
+npm install -g @github/copilot                 # what vincent's captures used
+brew install copilot-cli
+winget install GitHub.Copilot                  # offers 1.0.105
+curl -fsSL https://gh.io/copilot-install | bash
+```
+
+An organization's Copilot policy can disable the CLI for your account, in
+which case no install will run it.
+
+**Authenticating.** Run `copilot login`, or set a token — `COPILOT_GITHUB_TOKEN`
+first, then `GH_TOKEN`, then `GITHUB_TOKEN`. A classic `ghp_` personal access
+token is rejected. Mind the **daemon's** environment: a `GH_TOKEN` or
+`GITHUB_TOKEN` there silently decides which account every copilot step runs
+as, whatever you logged in as in your shell. vincent cannot tell whether you
+are logged in — copilot has no status command — so `logged_in` is always
+`null`, which `vincent agents`, `vincent doctor` and the TUI print as
+`unknown`, token or no token. A logged-out run fails `agent_unauthenticated`
+with the fix named.
+
+- Runs `copilot --output-format json --no-auto-update --session-id <uuid>`,
+  cwd set to the worktree, **prompt on stdin** and nowhere in argv.
+  `full-auto` adds `--allow-all-tools --allow-all-paths --allow-all-urls`.
+  `COPILOT_ALLOW_ALL` is never set — it would also trust the worktree, loading
+  its hooks and MCP servers — and is stripped from the child's environment if
+  your own environment carries it.
+- `--no-auto-update` is passed on **every** spawn, the version probe
+  included, so the build vincent reports is the build that runs.
+- **Models are free text.** Copilot enumerates no models a script can read, so
+  pickers offer free text and the CLI decides: with no `--model` it picks
+  `auto`, and an id your account lacks exits 1 before spending anything.
+- **Effort is probed from `copilot --help`**, merged over the floor
+  `none, minimal, low, medium, high, xhigh, max`. Effort support is per model,
+  and `auto` refuses any effort (`Model "auto" does not support reasoning effort
+  configuration`), so **a copilot step that sets `effort:` needs an explicit
+  `model:`**.
+- **No mid-run input** and **no cost.** `supports_input: false`, so copilot
+  cannot back a step declaring `on_input: require`. Each step spends your
+  **premium requests**, which vincent never shows as dollars, so the board's
+  cost column stays empty and
+  [`max_task_cost_usd`](../reference/configuration.md#max_task_cost_usd) and
+  [`max_tree_cost_usd`](../reference/configuration.md#max_tree_cost_usd) never
+  count a copilot run.
+- **Tokens are session totals.** copilot reports the whole session's running
+  tokens, subagents included. A task step never resumes, so its figures are
+  its own; a chat turn records its own share, the totals minus the previous
+  turn's.
+- **Resumes its own session** with `--resume=<id>`, so copilot holds a
+  [chat](../reference/cli.md#vincent-chat). Unlike cursor, it says when a
+  session is gone: a resumed run on an id the CLI no longer knows fails
+  `session_lost`.
+- **Reports subagents, thinking, command output and patches.** A subagent's
+  lines nest behind a rail as claude's do, `bash` output rides on its tool
+  result at `verbose`, and `edit`/`apply_patch` carry their diff hunks. There
+  is no `#` run header: copilot writes no working directory or tool set to its
+  stream.
+- **Skills are neither listed nor invoked.** copilot reads vincent's
+  [published skills](../reference/cli.md#vincent-skills) from `~/.agents/skills`
+  itself, so `vincent skills ls` shows it as `copilot (reads store)` and
+  `--agent copilot` links nothing. But a `/name` you type reaches the model as
+  prose, and the skill runs only if the model calls its `skill` tool.
+- **`@path` is not expanded.** The path stays prose; with tools allowed the
+  model reads it itself, usually in one `view` call.
+- **Recognizes a logged-out CLI, not a usage limit.** A spent premium-request
+  allowance fails the ordinary way, and
+  [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
+  does not apply. Nor is copilot a quota reporter.
+- **Tested build `1.0.105`.** Every other build is `untested`, which is
+  advisory; 1.0.84 is the documented minimum, below which the effort flag is
+  spelled differently, but it is not enforced.
+
+### `restricted` has no shell, and so no git
+
+`restricted` replaces the three `--allow-all-*` flags with
+`--available-tools=view,grep,glob,edit,create,apply_patch` and
+`--allow-tool=read --allow-tool=write` — the same on macOS, Linux **and
+Windows**, so copilot, like claude and codex, restricts on every operating
+system. A tool left out of `--available-tools` does not exist for
+the model, and without `--allow-all-paths` copilot's own path check refuses a
+write outside the worktree.
+
+The shell tool is left out, so a restricted copilot step has **no shell and
+no git** — narrower than claude's git allowlist or cursor's sandboxed shell.
+copilot runs any command it judges read-only without asking, and no flag
+bounds its shell to git, so the shell goes entirely. Commit from a `command`
+step, as for restricted codex. A chat opened on a restricted task stays
+restricted on every resumed turn.
+
+### Its MCP servers are yours as well as vincent's
+
+A step gets [vincent's own MCP server](mcp.md#your-own-steps-get-this-too) on
+`--additional-mcp-config` with an inline config, plus `--allow-tool=vincent` so
+it stays usable under `restricted`. Nothing is written to the worktree. But
+copilot has no strict switch: that flag **adds** to `~/.copilot/mcp-config.json`,
+so your own servers load into every step beside vincent's, and so does the
+built-in `github-mcp-server`. A workspace's `.mcp.json` or `.github/mcp.json`
+never loads, because it needs a trust flag vincent cannot combine with a session
+id.
+
+### Windows
+
+Both installs work: the npm `copilot.cmd` shim and the native `copilot.exe`
+it wraps were each run through vincent's spawn path on the pinned build, and
+the restriction holds on Windows as elsewhere. copilot's shell tool there is
+`powershell`, not `bash`. GitHub states that the CLI needs PowerShell 6 or
+later on Windows; vincent's own observation is narrower — the pinned build ran
+headless with Windows PowerShell 5.1 as the only PowerShell. vincent's
+[command steps](../platforms/windows.md#the-shell-command-steps-use) are a different matter and want
+pwsh 7 for `&&`.
+
 ## How vincent finds a CLI
 
 By default the daemon resolves each adapter's binary from `PATH`. Override it
@@ -400,6 +528,7 @@ agents:
   claude: { path: "" }                              # "" = resolve from PATH
   codex:  { path: "/usr/local/bin/codex" }
   cursor: { path: "C:/Users/me/.local/bin/cursor-agent.exe" }
+  copilot: { path: "" }
 ```
 
 An explicit path is absolute and never consults `PATH`, which makes it the
@@ -422,9 +551,11 @@ set, and free-text entry is unaffected.
 ### "Found" is not "usable"
 
 An installed but unauthenticated CLI probes as healthy and then fails every
-single run. Every supported CLI can answer that cheaply, so vincent asks:
+single run. Three of the four CLIs can answer that cheaply, so vincent asks:
 `claude auth status`, `codex login status` and `cursor-agent status` populate
-`logged_in` with a definite true/false. claude is asked only from 2.1.41, the
+`logged_in` with a definite true/false. copilot has no status command, and a
+token in its environment proves nothing — it may be a classic PAT copilot
+rejects — so copilot is never asked and its `logged_in` is always `null`. claude is asked only from 2.1.41, the
 build that introduced `auth status`, up to 3.0.0; an older (or not yet verified
 newer) claude is never asked, reports `null`, and the TUI renders that as
 unknown rather than as fine.
@@ -479,8 +610,8 @@ tell at a glance whether you are on ground vincent has walked.
 
 Comparison is exact: cursor's version is `2026.08.04-aaa8809`, calver plus a
 commit sha, which no version range can order — so rather than have one adapter
-answer a different question from the other two, all three compare whole strings.
-The `incompatible` list ships empty for all three, because no such build has
+answer a different question from the others, all four compare whole strings.
+The `incompatible` list ships empty for all four, because no such build has
 been observed.
 
 `vincent doctor` and the TUI's daemon view print the verdict beside each
@@ -492,8 +623,8 @@ adapter, along with the builds it was judged against;
 
 `restricted_verdict` answers whether an adapter can honour
 `permission_mode: restricted` **on this machine**. Cursor answers `unsupported`
-on Windows and `supported` everywhere else; claude and codex answer `supported`
-everywhere.
+on Windows and `supported` everywhere else; claude, codex and copilot answer
+`supported` everywhere.
 
 This is the one health verdict that refuses something. A task whose restricted
 step resolves to an adapter that cannot restrict here is rejected at creation
@@ -508,7 +639,7 @@ the task was queued.
 
 ### How much quota is left, and who will say
 
-Two of the three adapters can now answer "how much quota do I have?" without
+Two of the four adapters can now answer "how much quota do I have?" without
 running a step, and they answer in opposite directions.
 
 - **codex answers on request.** `codex app-server --stdio` speaks JSON-RPC over
@@ -530,6 +661,8 @@ running a step, and they answer in opposite directions.
   and is observation-only exactly as before. Vincent does not emulate what an
   adapter cannot do — there is no "cannot report" stub and no fabricated
   percentage.
+- **copilot cannot either.** It has no zero-cost plan probe, and premium
+  requests are not a window vincent can read, so copilot is no quota reporter.
 
 A reported reading is held **in memory**, not the database: it is as durable as
 the daemon, and a restart drops it until the next probe or push. Nothing here
@@ -566,7 +699,7 @@ when it reaches its agent step, without starting the agent. If
 [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
 says not to wait, it starts and finds the limit itself. A reported reading never
 holds a task, even at 100%. Since only claude recognizes a quota stop at all, that key is
-inert on the other two, exactly as the table above says. The next
+inert on the other three, exactly as the table above says. The next
 successful step on that adapter retires the **observation** — and only the
 observation, since a step completing proves the wall vincent watched has come
 down and proves nothing about a percentage a vendor reported — so an estimate is
@@ -580,8 +713,8 @@ fact you are holding.
 
 Set [`container.image`](../reference/configuration.md#container) and a task's
 agent steps run **inside the task's container**, next to its command steps. The
-CLI that runs is the image's, not yours: vincent looks up `claude`, `codex` or
-`cursor-agent` by name on the image's `PATH`. `agents.*.path` is a host path and
+CLI that runs is the image's, not yours: vincent looks up `claude`, `codex`,
+`cursor-agent` or `copilot` by name on the image's `PATH`. `agents.*.path` is a host path and
 is ignored there, and the host does not need the CLI installed. An image without
 it fails the step `agent_unavailable`. The transcript, the token and cost
 records and the exit code are the same as a host run's. Chats are not tasks and
@@ -654,17 +787,21 @@ authority there, and you find out at run time.
 ## Choosing between them
 
 - **Anything where you may want to answer a question mid-run** — claude. It is
-  the only adapter that can be asked something mid-run; all three can be
-  resumed, so all three can hold a chat.
-- **Cost tracking matters** — claude. The other two report none, so the board's
+  the only adapter that can be asked something mid-run; all four can be
+  resumed, so all four can hold a chat.
+- **Cost tracking matters** — claude. The other three report none, so the board's
   cost column stays empty for them and a configured spend cap, per task or per
   tree, never counts their runs. Vincent will not estimate money from token
   counts.
-- **Cheap, strictly unattended passes** — codex or cursor are fine; set
-  `on_input: deny` and neither will ever try to stop for you anyway.
+- **Cheap, strictly unattended passes** — codex, cursor or copilot are fine;
+  set `on_input: deny` and none of them will ever try to stop for you anyway.
 - **You want a specific model cursor offers** — cursor, remembering that the
   reasoning level is part of the model id and that the step will rewrite your
   saved CLI selection.
+- **You already pay for GitHub Copilot, or want `restricted` bounded on
+  Windows too** — copilot. Remember that it has no mid-run input, reports no
+  cost (each step spends premium requests), and has no shell — so no git —
+  under `restricted`.
 - **Mixed workflows are normal.** Set `agent:` per step: implement with one,
   review with another. A second opinion from a different vendor on the same
   diff is one of the better uses of a multi-step workflow.

@@ -182,7 +182,7 @@ to.
 
 ## Agent adapters
 
-Three adapters ship: `claude`, `codex`, `cursor`. Each runs the CLI you already
+Four adapters ship: `claude`, `codex`, `cursor`, `copilot`. Each runs the CLI you already
 installed and authenticated; vincent stores no credentials.
 
 Adapters differ in what they can do, and the differences are **documented, never
@@ -190,7 +190,8 @@ faked**. A capability an adapter lacks is stated and ignored at run time rather
 than emulated: codex ships no model catalog and no mid-run input; cursor has no
 effort concept at all (it lives in the model id) and cannot honor `restricted`
 on Windows, where the task is refused at creation rather than quietly running
-the step full-auto.
+the step full-auto; copilot has no mid-run input, reports no cost, ships no
+model catalog and cannot invoke a skill.
 
 See [Agent CLIs](../guides/agents.md).
 

@@ -374,7 +374,7 @@ Runs an agent CLI headlessly in the worktree.
 | `model` | string | | Adapter-native id or alias |
 | `effort` | string | | Adapter-native. Cursor has none — it lives in the model id |
 | `permission_mode` | string | | `full-auto` (default) or `restricted`. `restricted` needs an adapter that can restrict on this host — cursor cannot on Windows, and a task whose restricted step resolves there is refused at creation |
-| `on_input` | string | | `wait` (default), `deny`, or `require`. `wait`/`deny` have no effect on codex or cursor; `require` refuses them |
+| `on_input` | string | | `wait` (default), `deny`, or `require`. `wait`/`deny` have no effect on codex, cursor or copilot; `require` refuses them |
 | `input_timeout` | duration | | Bounds each wait in `awaiting_input`, per request |
 | `check` | string | | Shell command that must exit 0 for the attempt to succeed |
 | `check_timeout` | duration | | Defaults to the daemon's `defaults.command_timeout` (15m) — **not** the step's own `timeout`, and not workflow `defaults.timeout` |
@@ -1451,7 +1451,7 @@ other half of the same pre-commit check.
 - Unknown keys are errors.
 - `agent` names a known adapter.
 - A step with `on_input: require` does not resolve to an adapter that can
-  never take mid-run input (codex, cursor). The error points at the `agent`
+  never take mid-run input (codex, cursor, copilot). The error points at the `agent`
   field that supplied the value — the step's own, or `defaults.agent`.
 - The resolved `(agent, model, effort)` triple is checked **cross-catalog**:
   - a value in the resolved adapter's own catalog → valid;

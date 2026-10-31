@@ -50,7 +50,8 @@ to agent CLIs, and how to delete it all.
 
 ### Which agent CLIs work?
 
-Claude Code (`claude`), Codex (`codex`) and Cursor (`cursor-agent`). Pick one
+Claude Code (`claude`), Codex (`codex`), Cursor (`cursor-agent`) and GitHub
+Copilot (`copilot`). Pick one
 per workflow, per step, or per task. See [Agent CLIs](guides/agents.md).
 
 ### Does it work on Windows?
@@ -238,14 +239,16 @@ endpoints.
 
 Vincent is MIT-licensed and free. Your agent CLI's usage is billed by its vendor.
 Claude Code reports cost, so the board's cost column sums every attempt for it;
-codex and cursor report none, and vincent shows nothing rather than guessing.
+codex, cursor and copilot report none — copilot reports tokens, but spends
+premium requests rather than dollars — and vincent shows nothing rather than
+guessing.
 That figure can also be a limit:
 [`max_task_cost_usd`](reference/configuration.md#max_task_cost_usd) blocks a task
 once it has spent past a ceiling you set, and
 [`max_tree_cost_usd`](reference/configuration.md#max_tree_cost_usd) does the same
 for a fan-out task and all of its lanes together. Both are off by default, and —
 for the same reason the column is empty — neither can see a task that ran on
-codex or cursor.
+codex, cursor or copilot.
 
 ### How do I stop everything right now?
 

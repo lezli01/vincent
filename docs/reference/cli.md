@@ -185,7 +185,7 @@ one line of good news per adapter would bury the one warning.
 
 A missing or logged-out agent CLI — or an untested, incompatible or
 cannot-restrict one — is reported and deliberately does
-*not* set the exit code — most machines have one of three adapters installed,
+*not* set the exit code — most machines have one of four adapters installed,
 and a doctor that exits `1` almost everywhere is no use in a script. Neither do
 task *counts*: twelve blocked tasks is information, not a defect.
 
@@ -602,7 +602,7 @@ is no separate draft state.
 | `--merge block\|agent` | With `--separate-worktree`: how the side task is merged back. `block` (the default) is manual — the merge runs, and a conflict blocks for you; `agent` has an agent try to resolve conflicts first |
 | `--paused` | Create the task paused; it starts only when resumed (`vincent task resume`). The scheduler never sees it before then |
 | `--restricted` | Run every agent step restricted, even one whose workflow says full-auto. Refused at creation if a step's agent cannot restrict on this host (cursor on Windows) |
-| `--max-task-cost-usd USD` | This task's own spend cap in USD; the lower of it and config's [`max_task_cost_usd`](configuration.md#max_task_cost_usd) applies, so it can tighten the global cap but not lift it. Inert on codex and cursor, which report no cost |
+| `--max-task-cost-usd USD` | This task's own spend cap in USD; the lower of it and config's [`max_task_cost_usd`](configuration.md#max_task_cost_usd) applies, so it can tighten the global cap but not lift it. Inert on codex, cursor and copilot, which report no cost |
 
 The last three are sent only when you name them, and are recorded on the task
 (`--json` shows `restricted` and `max_task_cost_usd`).
@@ -2318,7 +2318,7 @@ The daemon picks it up on save.
 
 | Flag | Effect |
 |---|---|
-| `--from <example>` | Start from a [shipped example](../../examples) instead of the skeleton: `converge`, `cursor-review`, `docs-update`, `feature-pr`, `fix-and-test`, `go-checks`, `ship`, `split-work`. They are embedded in the binary, so this works from any directory |
+| `--from <example>` | Start from a [shipped example](../../examples) instead of the skeleton: `comment-and-close`, `converge`, `copilot-review`, `cursor-review`, `docs-update`, `feature-pr`, `fix-and-test`, `go-checks`, `merge-train`, `notify-handoff`, `pr-per-issue`, `ship`, `split-work`. They are embedded in the binary, so this works from any directory |
 | `--project ID` | Write into that repository's `.vincent/workflows/` instead of `{config_dir}/workflows/`. **The one part that needs a daemon**, because only the daemon knows which projects exist and where they are |
 | `--json` | The written path, name, scope, source example, and what it shadows |
 

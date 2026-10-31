@@ -84,7 +84,7 @@ and design choices that made a durable orchestrator feel necessary.
 | Page | What it covers |
 |---|---|
 | [Writing workflows](guides/workflows.md) | The authoring guide, in 14 sections: the nine step types, control flow, templates, checks, retries, agents, portability |
-| [Agent CLIs](guides/agents.md) | Claude Code, Codex and Cursor: installing, authenticating, and what each one can and cannot do |
+| [Agent CLIs](guides/agents.md) | Claude Code, Codex, Cursor and GitHub Copilot: installing, authenticating, and what each one can and cannot do |
 | [Using the TUI](guides/tui.md) | The board, task detail, the takeover screens, every key |
 | [Scripting vincent](guides/scripting.md) | `--json`, exit codes, and driving the API directly from a script or CI |
 | [Driving vincent from an agent](guides/mcp.md) | The MCP server: the API as tools, the bounded wait, and wiring vincent's own steps |
@@ -123,7 +123,7 @@ that is *not* true are stated rather than smoothed over.
 - [Privacy policy](privacy.md) — what vincent stores locally, what it sends
   over the network, and how to delete it.
 - [FAQ](faq.md) — the short answers.
-- [Example workflows](../examples) — twelve ready-to-copy files.
+- [Example workflows](../examples) — thirteen ready-to-copy files.
 - [Changelog](https://lezli01.is-a.dev/vincent/changelog.html) — user-visible changes in every release.
 
 ## Contributing

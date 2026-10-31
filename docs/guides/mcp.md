@@ -245,6 +245,12 @@ Two things to know when it is on:
   it is visible in `git status` and in the task diff while the step runs, and it
   is removed when the step ends. Your global `~/.cursor/mcp.json` is never
   touched.
+- **Copilot steps get the server inline**, in `--additional-mcp-config` with
+  `--allow-tool=vincent` beside it, so nothing is written to the worktree. That
+  flag adds to your own servers rather than replacing them: the ones in
+  `~/.copilot/mcp-config.json` load into the step too, and so does the CLI's
+  built-in GitHub MCP server. A workspace `.mcp.json` or `.github/mcp.json`
+  never loads.
 
 An adapter that cannot carry an MCP server fails the step with `mcp_unsupported`
 rather than running an agent that silently has no tools. That is deliberate: a
@@ -257,7 +263,8 @@ An agent step of a task with a
 [`container.image`](../reference/configuration.md#container) runs inside the
 container, where `127.0.0.1` is not the daemon. Its endpoint is
 `http://host.docker.internal:{port}/mcp/step/{run_id}` instead — in claude's and
-codex's per-run config and in cursor's `.cursor/mcp.json` alike — and the tools
+codex's per-run config, in cursor's `.cursor/mcp.json` and in copilot's
+`--additional-mcp-config` alike — and the tools
 are the same.
 
 - **On Linux with Docker Engine**, the daemon's loopback listener cannot be

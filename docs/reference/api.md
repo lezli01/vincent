@@ -2425,7 +2425,7 @@ together. That total is what
 [`max_tree_cost_usd`](configuration.md#max_tree_cost_usd) is compared against,
 and it is how you see why a lane in `blocked` carries `tree_cost_limit`.
 `cost_usd` is `null`, never `0`, when no descendant reported a cost, which is
-every lane that ran on codex or cursor.
+every lane that ran on codex, cursor or copilot.
 
 Both the list and the detail endpoint carry `loop` while a task's **current**
 step is a `loop` (§7.8), and omit it otherwise:
@@ -2510,7 +2510,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 ```
 
 - A negative `max_task_cost_usd` is `400 validation_failed`. The cap is inert on
-  codex and cursor, which report no cost.
+  codex, cursor and copilot, which report no cost.
 - `restricted` goes through the same creation check a workflow's own
   `restricted` step does: if an agent step would run on an adapter that cannot
   restrict on this host — cursor on Windows — the create is
@@ -3117,7 +3117,7 @@ them:
   for the container's CLI and a turn on your host for your host's, never for
   each other. vincent never lists a built-in command, before or after.
 - **`""`** — the question does not arise: there is no list, or this CLI marks
-  nothing as its own, which is every codex and cursor chat.
+  nothing as its own, which is every codex, cursor and copilot chat.
 
 The answer is cached for five minutes, and a failed probe for one.
 `?refresh=true` asks the CLI again. Every finished turn clears the cache for
@@ -3156,7 +3156,7 @@ contains a space and the rule is the adapter's, not yours. `mention_sigil` and
 recognizes a mention as a token anywhere in the message, `leading` when only at
 the start — and `mention_expands` says whether the CLI itself puts the file in
 front of the model (claude) rather than leaving the model to read it with a
-tool (codex, cursor). An agent that cannot mention files at all, or an `agent`
+tool (codex, cursor, copilot). An agent that cannot mention files at all, or an `agent`
 with no adapter on this daemon, answers `""` for both strings, `false` for
 `mention_expands`, and `""` for every row's `mention`: the paths are still
 listed, and the empty sigil is the signal not to offer a picker.
@@ -3275,7 +3275,7 @@ Two failure reasons are worth knowing:
   fails, the chat stays usable and keeps its id, and nothing starts a fresh
   session behind your back: an agent answering with none of the conversation in
   context reads exactly like one that has it, so starting over is a decision you
-  make explicitly. claude and codex both report this; **cursor cannot** — it
+  make explicitly. claude, codex and copilot all report this; **cursor cannot** — it
   adopts an unknown session id and answers — so a cursor chat is the one place
   that reading is unavoidable, and it is a property of the CLI rather than a
   choice vincent makes.
@@ -3626,10 +3626,10 @@ The transcript is the attempt's JSONL file, ranged:
   message is a chat turn's argv alone, never a task step's. A claude
   range fetched with `tail=` or `offset=` that starts after the `Skill` call
   returns that load without `args`. A `Skill` call Claude Code refused yields
-  no `agent.skill`; its `agent.tool_result` reports the refusal. Codex and
-  Cursor report no skill loads, even when a skill ran.
+  no `agent.skill`; its `agent.tool_result` reports the refusal. Codex,
+  Cursor and GitHub Copilot CLI report no skill loads, even when a skill ran.
 - `agent.input_echo` is a line on which the agent CLI echoed back the prompt
-  vincent wrote to it — Cursor does, once per run, and Claude Code on every
+  vincent wrote to it — Cursor and GitHub Copilot CLI do, once per run, and Claude Code on every
   chat turn, where the echo also covers your answers to its own questions and a
   `/name` it could not resolve. It carries only `type` (and `parent_call_id`
   when set) and has no live chunk; the echoed text is in the raw transcript. It is not `agent.raw`, so it is not counted as unrecognized.
@@ -3642,7 +3642,7 @@ The transcript is the attempt's JSONL file, ranged:
   session vincent resumes next turn is still the last one the stream stamped.
   Unlike `agent.input_echo` it **does** stream as a live chunk, with an empty
   payload. Only [Claude Code](../guides/agents.md#claude-code) produces it;
-  Codex and Cursor have no comparable line and vincent never infers one from a
+  Codex, Cursor and GitHub Copilot CLI have no comparable line and vincent never infers one from a
   session id that changed.
 - One stream line can produce **two** records: codex reports a command's outcome
   and the body it printed on a single event, and claude an edit's outcome and

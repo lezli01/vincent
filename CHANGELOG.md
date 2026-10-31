@@ -13,6 +13,12 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A `copilot-review` example, and copilot in the docs.** `vincent workflow
+  init --from copilot-review` hands over a restricted GitHub Copilot review
+  that writes `REVIEW.md` and commits it from a command step. The agents
+  guide has a GitHub Copilot section — install, `copilot login` or a token,
+  premium requests rather than dollars, restricted mode with no shell on
+  every OS — and every page that lists or compares adapters names copilot.
 - **Copilot runs `restricted` steps.** A step with
   `permission_mode: restricted` on `copilot` no longer fails with
   `restricted_unsupported`: it runs with

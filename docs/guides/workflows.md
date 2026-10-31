@@ -11,7 +11,7 @@ schema is shaped the way it is. Keep the
 [Workflow schema](../reference/workflow-schema.md) beside it when you need every
 field and default in table form.
 
-Twelve ready-to-copy files live in [`examples/`](../../examples), and the binary
+Thirteen ready-to-copy files live in [`examples/`](../../examples), and the binary
 will install one for you:
 
 ```sh
@@ -28,6 +28,7 @@ feature in it is there:
 | [`converge`](../../examples/converge.yaml) | Repair until the suite is green | `loop`, `break`, `if:`, `allow_failure` |
 | [`docs-update`](../../examples/docs-update.yaml) | Bring docs back in line with code | Passing one step's `.Result` to the next |
 | [`cursor-review`](../../examples/cursor-review.yaml) | A review pass on the Cursor CLI | Cursor's model ids, no `effort:` |
+| [`copilot-review`](../../examples/copilot-review.yaml) | A review pass on GitHub Copilot CLI | `restricted` with no shell in the agent step, the commit in a command step |
 | [`go-checks`](../../examples/go-checks.yaml) | Run tests and vet together | `parallel`, a fragment written to be included |
 | [`ship`](../../examples/ship.yaml) | Agree on a change, publish it if there is one | `include`, `allow_failure` probe, `condition`, `if:`, `on_input: require`, `manual`, `max_retries: 0` |
 | [`split-work`](../../examples/split-work.yaml) | Plan units, build each in its own lane | Derived `fan_out`: `for_each:`, `lane:`, `needs:`, `max_lanes:`, `schedule:`, `merge: on_conflict: agent`; `include` |
@@ -1862,13 +1863,13 @@ resolver.
 Adapters differ, and the differences are documented rather than smoothed over. A
 capability an adapter lacks is ignored at run time; it is never emulated.
 
-| | claude | codex | cursor |
-|---|:--:|:--:|:--:|
-| Mid-run questions (`on_input`) | ✅ | — | — |
-| Reports cost | ✅ | — | — |
-| `effort:` | ✅ | ✅ | **—** (it lives in the model id) |
-| Model catalog | ✅ | — (account-dependent; free text) | ✅ (probed over the network) |
-| `restricted` on Windows | ✅ | ✅ | **—** (the task is refused at creation; it never downgrades) |
+| | claude | codex | cursor | copilot |
+|---|:--:|:--:|:--:|:--:|
+| Mid-run questions (`on_input`) | ✅ | — | — | — |
+| Reports cost | ✅ | — | — | — (premium requests are not dollars) |
+| `effort:` | ✅ | ✅ | **—** (it lives in the model id) | ✅ (needs an explicit `model:`) |
+| Model catalog | ✅ | — (account-dependent; free text) | ✅ (probed over the network) | — (free text; `auto` when unset) |
+| `restricted` on Windows | ✅ | ✅ | **—** (the task is refused at creation; it never downgrades) | ✅ (no shell, so no git) |
 
 `vincent workflow validate` catches a model or effort value belonging to
 *another* adapter's catalog — claude's `sonnet` or `max` reaching a codex step
@@ -1950,7 +1951,7 @@ take. There, an agent that cannot ask does not degrade, it guesses, and nothing
 in the run says so. `require` makes that explicit, and you notice it in four
 places:
 
-- **In the file.** Pinning `agent: codex` or `agent: cursor` on a requiring step
+- **In the file.** Pinning `agent: codex`, `agent: cursor` or `agent: copilot` on a requiring step
   is a validation error — those CLIs have no control channel in any version.
 - **At task creation.** The agent picker greys out an agent that cannot answer
   questions, and `POST /v1/tasks` refuses one with a 400 naming the step. A
