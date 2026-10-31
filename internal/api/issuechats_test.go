@@ -348,3 +348,35 @@ func TestIssueChatPlacementRefusalsAreConflicts(t *testing.T) {
 	testrepo.Run(t, h.repo, "checkout", branch)
 	wantConflict("branch in the main checkout", checkedOut.ID, "issue_branch_checked_out")
 }
+
+// TestIssueChatArchiveRefusedKeepsNoEndSHA is review F8: an archive refused
+// for a dirty worktree leaves the chat live and holding the worktree, so it
+// must not carry an end_sha — which records letting go. The forced archive
+// that does let go stamps it.
+func TestIssueChatArchiveRefusedKeepsNoEndSHA(t *testing.T) {
+	h := newChatHarness(t)
+	ctx := context.Background()
+	iss := h.newIssue(t, "dirty archive")
+	chatID, _, path := h.openIssueChat(t, iss.ID)
+	if err := os.WriteFile(filepath.Join(path, "wip.txt"), []byte("half done"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/chats/%d/archive", chatID), nil)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("archive of a dirty worktree = %d %s, want 409", resp.StatusCode, body)
+	}
+	got, err := h.store.GetChat(ctx, chatID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EndSHA != "" || got.WorktreePath != path {
+		t.Errorf("after the refused archive: end_sha %q path %q; want none and %s", got.EndSHA, got.WorktreePath, path)
+	}
+	resp, body = h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/chats/%d/archive?force=true", chatID), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("forced archive = %d %s", resp.StatusCode, body)
+	}
+	if got, err = h.store.GetChat(ctx, chatID); err != nil || got.EndSHA == "" {
+		t.Errorf("after the forced archive: end_sha %q (%v), want it stamped", got.EndSHA, err)
+	}
+}

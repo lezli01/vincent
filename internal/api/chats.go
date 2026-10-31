@@ -538,8 +538,8 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 		// deleted (task 140 decision 4); its tip is the chat's end_sha. The
 		// directory stays for a main task already waiting for it, which
 		// receives it by transfer, uncommitted work included; otherwise it
-		// goes, and the next holder revives it from the branch.
-		s.stampChatEndSHA(r.Context(), project, chat)
+		// goes, and the next holder revives it from the branch. end_sha is
+		// stamped below, once the chat has actually let go (review F8).
 		if keepDir, err = s.deps.Store.IssueHasWaitingMainTask(r.Context(), *chat.IssueID); err != nil {
 			writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 			return
@@ -560,6 +560,9 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 			return
 		}
+	}
+	if chat.OnIssue() {
+		s.stampChatEndSHA(r.Context(), project, chat)
 	}
 	updated, err := s.deps.Store.SetChatState(r.Context(), chat.ID, chatstate.Archived)
 	if err != nil {

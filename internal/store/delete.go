@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/issuestate"
 )
 
 // Durable event types for a permanent delete (§13.3, task 092). PR D's ruling
@@ -250,7 +251,7 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 			Message: fmt.Sprintf("chat %d is %s; only an archived chat can be deleted", id, state),
 		}
 	}
-	ev, err := deleteChatRowTx(ctx, tx, id, projectID, title)
+	ev, err := deleteChatRowTx(ctx, tx, id, projectID, title, issueID)
 	if err != nil {
 		return err
 	}
@@ -262,8 +263,20 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 }
 
 // deleteChatRowTx deletes chat id's row and appends its chat.deleted event,
-// which it returns for the caller to publish after the commit.
-func deleteChatRowTx(ctx context.Context, tx *sql.Tx, id, projectID int64, title string) (*Event, error) {
+// which it returns for the caller to publish after the commit. A chat opened
+// on an issue is one of the facts the issue's lane reads (task 140 decision
+// 5), so its delete is watched like every other write that moves a lane, and
+// an issue.lane_changed it causes follows the chat.deleted (review F8).
+func deleteChatRowTx(
+	ctx context.Context, tx *sql.Tx, id, projectID int64, title string, issueID sql.NullInt64,
+) (*Event, error) {
+	var watch laneWatch
+	if issueID.Valid {
+		var err error
+		if watch, err = watchIssueLaneTx(ctx, tx, issueID.Int64, projectID); err != nil {
+			return nil, err
+		}
+	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM chats WHERE id = ?`, id)
 	if err != nil {
 		return nil, fmt.Errorf("delete chat %d: %w", id, err)
@@ -278,6 +291,14 @@ func deleteChatRowTx(ctx context.Context, tx *sql.Tx, id, projectID int64, title
 	if err = appendEventTx(ctx, tx, ev); err != nil {
 		return nil, err
 	}
+	laneEv, err := watch.changedTx(ctx, tx, nil, issuestate.Human)
+	if err != nil || laneEv == nil {
+		return ev, err
+	}
+	if err = appendEventTx(ctx, tx, laneEv); err != nil {
+		return nil, err
+	}
+	ev.follow = laneEv
 	return ev, nil
 }
 
@@ -307,7 +328,7 @@ func (s *Store) DiscardUnplacedIssueChat(ctx context.Context, id int64) error {
 		if !issueID.Valid || worktreePath.String != "" {
 			return fmt.Errorf("discard chat %d: not an unplaced issue chat", id)
 		}
-		ev, err = deleteChatRowTx(ctx, tx, id, projectID, title)
+		ev, err = deleteChatRowTx(ctx, tx, id, projectID, title, issueID)
 		return err
 	})
 	if err != nil {

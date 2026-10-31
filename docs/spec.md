@@ -11900,7 +11900,7 @@ And one issue kind joins the table above, making it eight:
 
 | Type | Payload |
 |---|---|
-| `issue.lane_changed` | `{ id, from, to, task_id?, by? }` — `from`/`to` are §5.6's lanes (`open`, `in_progress`, `hand_off`, `done`); `task_id` names the root task whose create, transition, delete or restore moved the lane, `by` the actor of a close or reopen; exactly one is set. *Amended 2026-10-24 (task 137.15):* a readiness mark — `vincent issue ready`/`unready`, or `deliver --ready` on a done task — that moves the lane sets `by` (`human` or `agent`) |
+| `issue.lane_changed` | `{ id, from, to, task_id?, by? }` — `from`/`to` are §5.6's lanes (`open`, `in_progress`, `hand_off`, `done`); `task_id` names the root task whose create, transition, delete or restore moved the lane, `by` the actor of a close or reopen; exactly one is set. *Amended 2026-10-24 (task 137.15):* a readiness mark — `vincent issue ready`/`unready`, or `deliver --ready` on a done task — that moves the lane sets `by` (`human` or `agent`). *Amended 2026-10-31 (task 140, review F8):* a chat opened on the issue moves the lane too, so its `chat.created` and its `chat.deleted` — a permanent delete, or the rollback of a create whose worktree could not be placed — are each followed by the move they cause, with `by: human` |
 
 It is appended in the **same transaction** as the write that moved the lane,
 **immediately after** the event recording the cause — `task.created`,

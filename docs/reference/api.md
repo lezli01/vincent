@@ -3842,10 +3842,12 @@ they need.
 - `issue.lane_changed` carries `{ id, from, to, task_id?, by? }` and announces
   that an issue moved between [lanes](#issues) (`open`, `in_progress`,
   `hand_off`, `done`). `task_id` names the root task whose create, state
-  change, delete or restore moved it; `by` is the actor of a close or reopen;
+  change, delete or restore moved it; `by` is the actor of a close or reopen,
+  or of a [chat on the issue](#a-chat-on-an-issue) being created or deleted;
   exactly one of the two is set. It is written in the same commit as the
-  event that caused it — the task event, `issue.state_changed`, or a sync
-  refresh's `issue.updated` — and immediately after it, and only when the
+  event that caused it — the task event, `issue.state_changed`, a chat's
+  `chat.created` or `chat.deleted`, or a sync refresh's `issue.updated` — and
+  immediately after it, and only when the
   lane actually moved: a fan-out lane never moves its issue's lane, creating
   or deleting an issue writes none, and a task finishing on a closed issue
   writes none. Like the other `issue.*` events it never reaches a per-task

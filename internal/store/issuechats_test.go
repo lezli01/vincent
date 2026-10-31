@@ -275,3 +275,44 @@ func TestAdmissionRechecksTheIssueChat(t *testing.T) {
 		t.Errorf("chat after admission = %v, want occupied by task %d", err, first.ID)
 	}
 }
+
+// TestIssueChatDeletesAnnounceLaneMoves is review F8: removing an issue
+// chat's row moves the issue's lane, and both ways of removing it — the
+// create rollback and a permanent delete — announce that move after the
+// chat.deleted, as every other lane-moving write does.
+func TestIssueChatDeletesAnnounceLaneMoves(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+
+	is := testIssue(t, s, p.ID, "rolled back")
+	chat, err := openIssueChat(t, s, p.ID, is.ID, "vincent/rolled-back")
+	if err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	w := watchEvents(s)
+	if err := s.DiscardUnplacedIssueChat(ctx, chat.ID); err != nil {
+		t.Fatalf("DiscardUnplacedIssueChat: %v", err)
+	}
+	wantLaneMove(t, s, w.take(), EventChatDeleted, is.ID, issuestate.LaneInProgress, issuestate.LaneOpen, 0, issuestate.Human)
+
+	done := testIssue(t, s, p.ID, "deleted")
+	task := newMainTask(p.ID, done.ID, "delivered")
+	mustCreate(t, s, task)
+	moveTask(t, s, task, TaskRunning, TaskDone)
+	later, err := openIssueChat(t, s, p.ID, done.ID, "unused")
+	if err != nil {
+		t.Fatalf("CreateIssueChat after the delivery: %v", err)
+	}
+	if _, err := s.SetChatState(ctx, later.ID, chatstate.Archived); err != nil {
+		t.Fatal(err)
+	}
+	if lane, _ := laneOfIssue(t, s, done.ID); lane != issuestate.LaneInProgress {
+		t.Fatalf("lane with an archived chat after the delivery = %s, want in_progress", lane)
+	}
+	w.take()
+	if err := s.DeleteChatCascade(ctx, later.ID); err != nil {
+		t.Fatalf("DeleteChatCascade: %v", err)
+	}
+	wantLaneMove(t, s, w.take(), EventChatDeleted, done.ID, issuestate.LaneInProgress, issuestate.LaneHandOff, 0, issuestate.Human)
+}
