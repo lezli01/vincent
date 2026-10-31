@@ -79,6 +79,9 @@ each:
 | `chat_linked_to_task` | Archive, hand-off, or a delete with `delete_branch=true` on a chat linked to a task. The worktree and branch are that task's | `task_id`, `state`, `action` |
 | `issue_worktree_moved` | A `follow_up` or chat on an issue's main task that finished and handed the issue's worktree to a later main task. Continue in that task, or start a new main task | `holder_task_id`, `state` |
 | `issue_has_live_main_task` | An issue delete was refused because one of the issue's main or side tasks has not finished. Finish or cancel it, then delete again | `task_id` |
+| `issue_worktree_occupied` | A [chat on an issue](#a-chat-on-an-issue) was refused because a main task, or another chat, holds the issue's main worktree | `task_id` or `chat_id` |
+| `issue_has_live_chat` | A second chat on an issue, or an issue delete, was refused because a [chat on the issue](#a-chat-on-an-issue) is open. Close or archive it first | `chat_id` |
+| `issue_chat_branch` | `DELETE /v1/chats/{id}?delete_branch=true` on a chat opened on an issue: its branch is the issue's main branch | `issue_id`, `branch` |
 | `handoff_item_resolved` | A handoff item verb named an item already `delivered`, `returned` or `released` with another outcome, or — on a settled handoff — one that is not `waiting`. Nothing was recorded for any item of the call. Repeating an item's own outcome is not refused: it changes nothing | `outcome`, `issue_id` |
 | `issue_in_handoff` | A task create, a chat hand-off or a `follow_up` would add work to an issue a handoff has claimed. Only the handoff's own task may add work to it until the handoff returns or releases the issue | `handoff_id` |
 | `issue_not_eligible` | [`POST /v1/handoffs`](#handoffs) named an issue it may not claim: missing, in another project, closed, not in `hand_off`, already claimed, or already delivered. Nothing was created | `issue_id`, and `handoff_id` when a handoff in the same project claims it |
@@ -2751,8 +2754,11 @@ it holds the main worktree even while `blocked`, `paused` or
 `awaiting_gate` — or a `done` or `aborted` main task whose worktree a
 [linked chat](#a-chat-on-a-stopped-task) still has open. It is `null` when nothing holds it, and `main_worktree` is
 absent while the issue has no main branch. When every main task has been
-archived the issue has none, and the next main task starts a fresh branch.
-`occupant_state` is the occupant's task state, `null` with it. `side_active`
+archived the issue has none, and the next main task starts a fresh branch —
+unless a [chat on the issue](#a-chat-on-an-issue) carries it, which keeps it
+the main branch. `occupant_chat_id` is the open chat on the issue holding the
+worktree instead, `null` otherwise; at most one of the two occupants is set.
+`occupant_state` is the occupant task's state, `null` with it. `side_active`
 counts the issue's side tasks that are neither finished nor archived, and
 `merge_backs_pending` its merge-back tasks likewise; every row of `GET
 /v1/issues` carries all three, read in the list's own query.
@@ -3027,6 +3033,40 @@ ones stay listed under `GET /v1/chats?task_id=7&archived=all`.
 
 `/cancel` on the locked task is the other way out: it stops the turn, closes the
 chat and aborts the task together.
+
+### A chat on an issue
+
+`POST /v1/chats` with `issue_id` opens the chat on that issue (task 140). It
+holds the issue's [main worktree](#the-issues-main-branch) the way a main task
+does, and the chat carries `issue_id`:
+
+- An issue with no main branch gets one: the chat's own `vincent/{id}-{slug}`
+  becomes the issue's main branch. Otherwise the chat takes the main branch,
+  and receives the directory from the finished main task or closed chat that
+  still names it — uncommitted work included, the predecessor's tip stamped
+  as its `end_sha` — or has it re-created from the branch when no directory
+  is left. `branch_name` may only restate the main branch (`400` otherwise).
+- One holder at a time. A main task that has started and not finished, or a
+  finished one a linked chat keeps open, refuses the chat with
+  `409 issue_worktree_occupied`; another open chat on the issue with
+  `409 issue_has_live_chat`. A main task created while the chat holds the
+  worktree, a merge-back included, stays `queued` until the chat lets go.
+- The issue moves to `in_progress`, and stays there while the chat is the
+  latest main-line work — through `idle`, `awaiting_input` (which also sets
+  `attention`), `closed` and `archived` — until a main task finishes after it.
+  A chat opened on a closed issue is allowed with a `warnings` entry; the lane
+  stays `done`.
+- The first turn carries the issue's title, body and comments, bounded.
+
+`POST /v1/chats/{id}/close` is legal on an issue chat from `idle`: it releases
+the worktree, which stays on disk for the next holder, and stamps the branch
+tip as the chat's `end_sha`. `archive` releases it too, and removes the
+directory unless a main task is already waiting for it; the branch is never
+deleted, and `DELETE /v1/chats/{id}?delete_branch=true` is
+`409 issue_chat_branch`. `handoff` defaults `issue_id` to the chat's and
+creates a **main** task in the chat's worktree; another `issue_id`, or a
+`merge_back`, is a `400`. `DELETE /v1/issues/{id}` is
+`409 issue_has_live_chat` while a chat on the issue is open.
 
 Three more things to know:
 

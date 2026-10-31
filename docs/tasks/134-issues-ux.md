@@ -98,7 +98,10 @@ CLI, the API and MCP. For an **open** issue, over its root tasks
 A **closed** issue is `done` (decision 4). Waiting-on-human states stay
 `in_progress` and are marked by `attention` (decision 3). Chats and pull
 requests drive no lane: chats carry no `issue_id`, and a pull request hangs
-off a task.
+off a task. *(Amended 2026-10-31, task 140: a chat may now be
+opened on an issue and carries `issue_id`; such a chat holds the issue's
+main worktree and drives its lane. Other chats, and pull requests, still
+drive none.)*
 
 The lane needs two facts the store does not keep today:
 

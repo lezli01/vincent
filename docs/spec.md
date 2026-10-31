@@ -798,6 +798,37 @@ differs is where it works and how it ends.
 - **On a task that runs in a container, its turns run in that container**
   (§16). A free chat still runs on the host.
 
+#### On an issue (added 2026-10-31, task 140, issue #885)
+
+A chat may be opened **on an issue**: `POST /v1/chats` with `issue_id`
+(§13.2), `vincent chat start --issue`. Such a chat carries `issue_id` and is
+a third kind beside the free chat and the linked chat, with its own
+transition table: everything a free chat may do — `send`, `archive`,
+`hand_off` from `idle` — plus `close` from `idle`, as a linked chat may.
+`closed` and `archived` are both terminal; neither follows the other.
+
+- **It holds the issue's main worktree** (§5.6) as a main-role task does.
+  An issue with no main branch gets one: the chat's `vincent/{id}-{slug}`,
+  cut in the create, becomes the issue's main branch. Otherwise the chat
+  takes the main branch — including a name a queued main task already
+  resolved — and receives the directory by §10's transfer from the settled
+  main task or released chat that names it, uncommitted work included and
+  the predecessor's tip stamped as its `end_sha`, or revives it from the
+  branch. `branch_name` may only restate the main branch.
+- **One holder at a time.** It is refused `409 issue_worktree_occupied`
+  while a main task occupies the worktree, and `409 issue_has_live_chat`
+  while another chat on the issue is not terminal; while it is live, a main
+  task of the issue, merge-backs included, waits `queued` (§11).
+- **Release.** `close` and `archive` let go of the worktree and stamp the
+  branch tip as the chat's `end_sha`. `close` leaves the directory for the
+  next holder; `archive` leaves it when a main task is already waiting for
+  it and removes it otherwise. The branch stays the issue's main branch
+  either way and is never deleted with the chat (`409 issue_chat_branch`).
+- **Handoff** defaults `issue_id` to the chat's and creates a **main** task
+  in the chat's worktree; another issue, or `merge_back`, is a `400`.
+- **Its first turn** carries the issue's title, body and comments, bounded,
+  as a linked chat's carries its task's context.
+
 #### Skills available to a chat (added 2026-09-19, task 124.9, issue #505)
 
 `GET /v1/chats/{id}/skills` (§13.2) answers which skills the chat's agent CLI
@@ -1429,6 +1460,21 @@ holder (task 134 decision 14). Delete is refused with
 `409 issue_has_live_main_task` while any main-role task of the issue is not
 settled (decision 17.1); settled and archived ones do not hold it, narrowing
 task 130 decision 6.
+*Amended 2026-10-31 (task 140, issue #885):* **a chat on an issue** (§5.5)
+is a main-worktree holder too. The occupant is now a main task *or* a
+non-terminal issue chat, served as `main_worktree.occupant_task_id` or
+`occupant_chat_id`, and the scheduler's admission predicate reads both. The
+main branch is a main task's, else the branch of any issue chat that was
+not handed off, so a closed or archived chat keeps its branch on the issue's
+line and the next main task revives it. The lane gains a fourth fact: an
+issue chat that was not handed off, created after the latest finished
+main-line root task finished (or with none finished), holds the issue
+`in_progress`, ahead of a ready delivery; a later main task finishing ready
+moves it to `hand_off`. A live issue chat makes the issue `active`, and one
+`awaiting_input` raises `attention`; one that is closed or archived leaves
+it `in_progress` with the `idle` marker. Delete is refused
+`409 issue_has_live_chat` while one is live. This amends task 134's "chats
+carry no `issue_id`".
 *Amended 2026-10-07 (task 134.14, issue #761):* **merge-back tasks exist.**
 When a side task reaches `done` — at the end of its workflow or of a
 follow-up — and its branch has commits past its `base_sha`, the same

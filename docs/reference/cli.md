@@ -1879,7 +1879,7 @@ the log as prompt context.
 
 ```sh
 vincent chat start TITLE --project ID [--agent NAME] [--model M] [--effort E]
-                  [--base BRANCH] [--branch NAME --existing-branch]
+                  [--base BRANCH] [--branch NAME --existing-branch] [--issue ID]
                   [--message TEXT | --message-file PATH|-] [--json]
 ```
 
@@ -1894,6 +1894,18 @@ turn straight away and waits for it, which is `start` plus `send` in one call.
 when the argument is `-`, exactly as [`chat send`](#vincent-chat-send) reads
 one; the two flags are mutually exclusive. With neither, the chat is created
 and no message is sent.
+
+`--issue` opens the chat on an issue (task 140). It works in the issue's main
+worktree, on the issue's main branch, the way a main task does: an issue with
+no main branch yet gets one cut for the chat, and an issue whose last main task
+or chat has finished hands the chat its directory, uncommitted work included.
+The issue moves to `in progress`, and the chat's first turn carries the issue's
+title, body and comments. Only one thing holds the main worktree at a time:
+while a main task occupies it, or another chat is open on the issue, the chat
+is refused (`409 issue_worktree_occupied`, `409 issue_has_live_chat`), and a
+main task created while the chat holds it waits `queued` until the chat is
+closed, archived or handed off. `--branch` may only restate the issue's main
+branch. A chat on a closed issue is allowed with a warning.
 
 The file is read before the chat is created, so a missing file or input
 `--message-file` refuses (below) creates no chat. A message the daemon refuses
@@ -2288,7 +2300,10 @@ Nothing on disk is touched: the worktree and branch are the task's, and they
 stay exactly as the chat left them — which is the point of talking to an agent
 there. Retry, approve or archive the task afterwards as you would have.
 
-A chat started with `vincent chat start` cannot be closed — archive it — and
+A chat started with `vincent chat start --issue` can be closed too: that
+releases the issue's main worktree, which stays on disk for the issue's next
+main task or chat, and records the branch tip as the chat's `end_sha`. A chat
+started with `vincent chat start` alone cannot be closed — archive it — and
 neither can a chat that is already closed; both exit 1. A closed chat is hidden
 from `vincent chat list` unless you pass `--archived`. `vincent chat delete`
 removes a closed chat's row and transcripts like an archived one's, but refuses
