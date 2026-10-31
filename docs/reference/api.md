@@ -3050,6 +3050,11 @@ does, and the chat carries `issue_id`:
   still names it — uncommitted work included, the predecessor's tip stamped
   as its `end_sha` — or has it re-created from the branch when no directory
   is left. `branch_name` may only restate the main branch (`400` otherwise).
+  A placement a person has to unblock is a `409` with `details.reason`:
+  `issue_branch_checked_out` when the main branch is checked out in the
+  project's main checkout, `repo_operation_in_progress` when the
+  predecessor's directory is partway through a rebase or merge. The refused
+  chat is not kept.
 - One holder at a time. A main task that has started and not finished, or a
   finished one a linked chat keeps open, refuses the chat with
   `409 issue_worktree_occupied`; another open chat on the issue with

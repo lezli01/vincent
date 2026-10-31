@@ -109,6 +109,16 @@ func (s *Server) createIssueChat(
 				map[string]string{"task_id": fmt.Sprint(occupied.TaskID), "chat_id": fmt.Sprint(occupied.ChatID)})
 			return
 		}
+		// A condition a person caused and can fix — the main branch checked
+		// out in the project's main checkout, a rebase left partway through
+		// in the predecessor's directory — is a 409 naming its reason, the
+		// way the task path names it as a block reason (review F7). A git
+		// failure stays the daemon's fault.
+		var wtErr *worktree.Error
+		if errors.As(err, &wtErr) && wtErr.Reason != worktree.ReasonGitError {
+			writeConflict(w, wtErr.Error(), map[string]string{"action": "create", "reason": wtErr.Reason})
+			return
+		}
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
 	}
@@ -165,8 +175,11 @@ func (s *Server) placeIssueChat(ctx context.Context, project *store.Project, cha
 			return err
 		}
 		if op != "" {
-			return fmt.Errorf("the issue's main worktree %s is partway through a %s; finish or abort it there first",
-				holder.Path, op)
+			return &worktree.Error{
+				Reason: worktree.ReasonRepoOperationInProgress,
+				Message: fmt.Sprintf("the issue's main worktree %s is partway through a %s; finish or abort it there first",
+					holder.Path, op),
+			}
 		}
 		return wt.HandOverUnderClaim(ctx, project.Path, chat.Branch, func(sha string) error {
 			if err := s.deps.Store.TransferIssueWorktreeToChat(ctx, holder, chat.ID, holder.Path, sha); err != nil {

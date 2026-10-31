@@ -306,3 +306,45 @@ func TestIssueChatArchive(t *testing.T) {
 		t.Errorf("chat holder after archive = %v, %v; want chat %d", holder, err, chatID)
 	}
 }
+
+// TestIssueChatPlacementRefusalsAreConflicts is review F7: a placement
+// failure a person can fix is a 409 naming its reason, not a 500, and the
+// refused chat leaves nothing behind.
+func TestIssueChatPlacementRefusalsAreConflicts(t *testing.T) {
+	h := newChatHarness(t)
+	ctx := context.Background()
+	wantConflict := func(name string, issueID int64, reason string) {
+		t.Helper()
+		code, body := h.issueChat(t, issueID)
+		e, _ := body["error"].(map[string]any)
+		details, _ := e["details"].(map[string]any)
+		if code != http.StatusConflict || details["reason"] != reason {
+			t.Errorf("%s: issue chat = %d %v, want 409 reason %s", name, code, body, reason)
+		}
+		if v := h.issue(t, issueID); v.MainWorktree == nil || v.MainWorktree.OccupantChatID != nil {
+			t.Errorf("%s: refused chat still occupies the issue: %+v", name, v.MainWorktree)
+		}
+	}
+
+	rebasing := h.newIssue(t, "rebase left over")
+	chatID, _, path := h.openIssueChat(t, rebasing.ID)
+	if resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/chats/%d/close", chatID), nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("close: %d %s", resp.StatusCode, body)
+	}
+	gitDir := testrepo.Run(t, path, "rev-parse", "--absolute-git-dir")
+	if err := os.MkdirAll(filepath.Join(filepath.FromSlash(gitDir), "rebase-merge"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	wantConflict("half-finished rebase", rebasing.ID, "repo_operation_in_progress")
+	if prev, err := h.store.GetChat(ctx, chatID); err != nil || prev.WorktreePath != path {
+		t.Errorf("predecessor after the refusal = %+v, %v; want it to keep %s", prev, err, path)
+	}
+
+	checkedOut := h.newIssue(t, "branch in the main checkout")
+	chatID, branch, _ := h.openIssueChat(t, checkedOut.ID)
+	if resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/chats/%d/archive", chatID), nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("archive: %d %s", resp.StatusCode, body)
+	}
+	testrepo.Run(t, h.repo, "checkout", branch)
+	wantConflict("branch in the main checkout", checkedOut.ID, "issue_branch_checked_out")
+}
