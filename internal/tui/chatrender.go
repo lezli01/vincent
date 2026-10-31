@@ -168,7 +168,11 @@ func (v *chatView) headerLine(width int) string {
 		mid = append(mid, chatHeaderSeg{styleDim.Render(fmt.Sprintf("handed off to task %d", *v.chat.HandoffTaskID)), 5})
 	}
 	// The same permanence for a chat opened on a task (task 119): the task
-	// is whose worktree this is, and whose lock this chat holds while open.
+	// is whose worktree this is, and whose lock this chat holds while open;
+	// and for one opened on an issue (task 140.9), whose main worktree it is.
+	if v.chat.IssueID != nil {
+		mid = append(mid, chatHeaderSeg{styleDim.Render(fmt.Sprintf("on issue #%d", *v.chat.IssueID)), 5})
+	}
 	if v.chat.LinkedTaskID != nil {
 		mid = append(mid, chatHeaderSeg{styleDim.Render(fmt.Sprintf("on task #%d", *v.chat.LinkedTaskID)), 5})
 	}

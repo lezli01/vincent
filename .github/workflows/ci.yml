@@ -571,6 +571,22 @@ jobs:
         shell: bash
         run: ./scripts/138-gate.sh
 
+      # 140: a chat opened on an issue (task 140.11; §5.5, §5.6, §10, §11,
+      # §13.2) — the chat cuts the issue's main branch, a turn leaves an
+      # uncommitted edit in its worktree, a second chat and a chat beside a
+      # running main task are refused, a main task waits behind the chat,
+      # close hands the directory with the edit to it, and a later chat hands
+      # off into the issue's next main task in the same directory. The matrix
+      # earns its place because one directory passes between a chat and two
+      # tasks while git still has it open, the fake agent edits it as a
+      # Windows child, and the `C:/…` worktree paths are compared as the API
+      # returns them. Group 1 because it ran the fewest gates when this was
+      # wired; move it if a measured run says otherwise.
+      - name: 140 gate (a chat on an issue)
+        if: matrix.group == 1
+        shell: bash
+        run: ./scripts/140-gate.sh
+
   gates:
     needs: gate-group
     if: always()

@@ -287,6 +287,17 @@ func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 		v.w.act = nil
 		v.setNote(actedNote(msg), msg.err != nil)
 		return v, v.loadCmd()
+	case issueChatOpenedMsg:
+		// The bar said "opening a chat…"; a refusal stays on it, and a clean
+		// open clears it — the chat workspace is on screen by now.
+		if msg.projectID == v.project.id {
+			text, bad := issueChatNote(msg)
+			v.setNote(text, bad)
+			if msg.err == nil {
+				return v, v.loadCmd()
+			}
+		}
+		return v, nil
 	case viewActivatedMsg:
 		if msg.id == viewIssues {
 			return v, v.loadCmd()
@@ -442,6 +453,13 @@ func (v *issuesView) updateNote(n apiclient.Note) tea.Cmd {
 	case isIssueEvent(t), strings.HasPrefix(t, "project."), strings.HasPrefix(t, "handoff."):
 		// A handoff event moves a card's marker (task 137.11).
 		return v.scheduleRefresh()
+	case strings.HasPrefix(t, "chat."):
+		// A chat opened on a shown issue moves its row — the occupant, and
+		// the attention badge while it waits on a person (task 140.9). A
+		// free chat names no issue and changes no row.
+		if id := chatEventIssueID(ev.Event); id != 0 && v.shows(id) {
+			return v.scheduleRefresh()
+		}
 	case strings.HasPrefix(t, "task."):
 		if id := taskEventIssueID(ev.Event); id != 0 && v.shows(id) {
 			return v.scheduleRefresh()
@@ -587,6 +605,12 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 	case opKey(keymap.Handoff):
 		return v, v.startHandoff()
+	case opKey(keymap.Chat):
+		// A chat on the selected issue's main worktree, or the one already
+		// holding it (task 140.9).
+		if row, ok := v.current(); ok {
+			return v, issueChatCmd(v.client, row.issue, v.setNote)
+		}
 	case issueSelectKey:
 		v.togglePick()
 	case issueSelectAllKey:
@@ -1128,11 +1152,17 @@ func issueTaskCell(iss apiclient.Issue, withState bool) string {
 		return tasks + " · cancelled"
 	case "in_progress":
 		mw := iss.MainWorktree
-		if mw == nil || mw.OccupantTaskID == nil {
+		var s string
+		switch {
+		case mw != nil && mw.OccupantChatID != nil:
+			// A chat opened on the issue holds the worktree (task 140.9).
+			s = "● chat #" + strconv.FormatInt(*mw.OccupantChatID, 10)
+		case mw != nil && mw.OccupantTaskID != nil:
+			s = "● #" + strconv.FormatInt(*mw.OccupantTaskID, 10)
+		default:
 			// Queued, side-only, or from before roles: no occupant to name.
 			return "● " + tasks
 		}
-		s := "● #" + strconv.FormatInt(*mw.OccupantTaskID, 10)
 		if withState && mw.OccupantState != nil {
 			s += " " + *mw.OccupantState
 		}

@@ -353,6 +353,9 @@ type binding struct {
 // mainTabLabel is the label every main-tab row carries.
 const mainTabLabel = "switch to the next main tab, in tui.tabs order (shift+tab goes back)"
 
+// issueChatLabel is `T` on both issue screens (task 140.9).
+const issueChatLabel = "chat with an agent on the issue's main worktree — it moves the issue to in progress, and a main task waits until the chat is closed; with a chat already holding it, reopen that chat"
+
 // bindings is the registry. Order within a scope+context is display order.
 var bindings = []binding{
 	// Global chrome.
@@ -659,7 +662,7 @@ var bindings = []binding{
 	// and a free chat cannot be closed at all. ctrl+q for the reason ctrl+t
 	// is a combination — the composer owns every printable key — and because
 	// the textarea binds ctrl+w, ctrl+d and ctrl+k to editing.
-	{key: chatCloseKey, label: "close this chat — a chat opened on a task; the task's worktree and branch stay, and the task unlocks (asks first)", scope: scopePanel, context: ctxChat, hint: "ctrl+q close", priority: 6},
+	{key: chatCloseKey, label: "close this chat — a chat opened on a task, whose worktree and branch stay and which unlocks, or on an issue, whose main worktree is freed for the next main task (asks first)", scope: scopePanel, context: ctxChat, hint: "ctrl+q close", priority: 6},
 	{key: "esc", label: "back to the chats board", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 7},
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxChat, hint: "ctrl+o raw", priority: 8},
 	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxChat, hint: "ctrl+y copy", priority: 9},
@@ -971,6 +974,10 @@ var bindings = []binding{
 	{op: keymap.Handoff, key: "I", label: "hand the selected issues off — or the cursor's pending one — in a form: workflow, grant, title, paused", scope: scopePanel, context: ctxIssues, hint: "I hand off", priority: 8, term: termHandoff},
 	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssues, hint: ". ready", priority: 8, term: termReady},
 	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssues, hint: ", return", priority: 8, term: termReturn},
+	// A chat on the issue (task 140.9): the `chat` operation, `T` as on a
+	// task, because the gesture is the same — talk it through in its
+	// worktree, or reopen the chat already doing so.
+	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssues, hint: "T chat", priority: 8},
 	// The issue detail (§15 view 13).
 	{op: keymap.OpenRow, key: "enter", label: "open the selected linked task's workspace (esc comes back here)", scope: scopePanel, context: ctxIssue, hint: "enter task", priority: 1, term: termOpenRow},
 	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},
@@ -995,6 +1002,7 @@ var bindings = []binding{
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssue, priority: 11, term: termDelete},
 	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssue, hint: ". ready", priority: 8, term: termReady},
 	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssue, hint: ", return", priority: 8, term: termReturn},
+	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssue, hint: "T chat", priority: 8},
 
 	// The issue form and prompt own the keyboard and print their own key
 	// lines, so these are here to keep ? complete.

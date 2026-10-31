@@ -3894,7 +3894,10 @@ they need.
   its task without a fetch. Every event of a chat
   [opened on a task](#a-chat-on-a-stopped-task) adds `linked_task_id`, and
   `chat.closed` announces that such a chat ended — re-fetch that task too,
-  because its lock just lifted. Opening or closing one emits no `task.*` event:
+  because its lock just lifted. Every event of a chat
+  [opened on an issue](#a-chat-on-an-issue) adds `issue_id`: re-fetch that
+  issue, whose `main_worktree` occupant and `attention` move with the chat's
+  state and emit no `issue.*` event of their own. Opening or closing one emits no `task.*` event:
   the task's state did not change.
   Re-fetch `GET /v1/chats/{id}` when you see one. There is **no per-chat event
   stream and no live-output route**: a chat's normalized output is written to

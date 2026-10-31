@@ -287,6 +287,16 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tea.Batch(cmds...)
+	case issueChatOpenedMsg:
+		// `T` on an issue screen landing (task 140.9). The screen that said
+		// "opening a chat…" hears the outcome either way; a chat that exists
+		// is opened the way openChatMsg opens one, following it into its
+		// project first.
+		cmds := []tea.Cmd{m.broadcast(msg)}
+		if msg.err == nil && msg.chatID != 0 {
+			cmds = append(cmds, m.openObject(openChatMsg{id: msg.chatID, projectID: msg.projectID}))
+		}
+		return m, tea.Batch(cmds...)
 	case openConfigKeyMsg:
 		// The triggers view's global-off banner (task 096.6) names a switch
 		// it must not flip itself: the daemon view's editor is where a config

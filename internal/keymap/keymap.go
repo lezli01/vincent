@@ -188,7 +188,11 @@ var catalog = []Info{
 	{Op: Skip, Default: "s", Meaning: "skip the current step", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: Cancel, Default: "c", Meaning: "cancel the task", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: FollowUp, Default: "F", Meaning: "follow up on a finished task", Kind: KindAction, Surfaces: []Surface{Actions}},
-	{Op: Chat, Default: "T", Meaning: "chat in the task's worktree, or reopen its open chat", Kind: KindAction, Surfaces: []Surface{Actions}},
+	// The issue screens' `T` (task 140.9) is the same gesture on an issue's
+	// main worktree — talk about this thing, or reopen the chat already doing
+	// so — so it is this operation and moves with it, the way `new` is one
+	// operation across the chats board and the issue screens.
+	{Op: Chat, Default: "T", Meaning: "chat in the task's worktree or on the issue's main worktree, or reopen its open chat", Kind: KindAction, Surfaces: []Surface{Actions, "issues", "issue"}},
 
 	{Op: Palette, Default: ":", Meaning: "open the command palette", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: PaletteAlt, Default: "ctrl+p", Meaning: "open the command palette from a text field", Kind: KindGlobal, Surfaces: []Surface{Global, "chat", "new chat"}, Typing: true},

@@ -1,6 +1,6 @@
 # 140 — A chat on an issue, in the issue's main worktree
 
-**Status:** 🔄 in progress (8/11) · **Opened:** 2026-10-31
+**Status:** ✅ done (11/11) · **Opened:** 2026-10-31
 
 Issue [#885](https://github.com/lezli01/vincent/issues/885). A person who
 wants to talk an issue through with an agent today opens a free chat, which
@@ -67,6 +67,22 @@ Conventions for this file are in [the tasks README](README.md).
    `done`.
 10. **Issue delete** is `409 issue_has_live_chat` while an issue chat is
     live; otherwise `chats.issue_id` goes `NULL` (`ON DELETE SET NULL`).
+11. **The TUI key is `chat`, and it posts** (140.9). `T` on both issue
+    screens is the `chat` operation, not a new one: the gesture is the task
+    workspace's — talk about this thing in its worktree, or reopen the chat
+    doing so — so a `tui.keys` override moves it everywhere. It posts
+    `POST /v1/chats` at once, with the issue's title and the daemon's
+    default agent, rather than opening the new-chat form: the issue decides
+    the project, the worktree and the branch, as a task decides a linked
+    chat's, and `vincent chat start --issue` stays the full surface. A live
+    `occupant_chat_id` makes it a navigation; an `issue_has_live_chat` 409
+    from a stale row opens the chat it names; every other refusal is shown
+    as the daemon words it — the TUI does not pre-judge occupancy from a row
+    that may be stale.
+12. **Chat events name the issue** (140.9). Every `chat.*` event of an issue
+    chat carries `issue_id`, the way a linked chat's carry `linked_task_id`:
+    the chat's state moves the issue's occupant and `attention`, which emit
+    no `issue.*` event, and the issue screens re-read on it.
 
 ## Items
 
@@ -85,11 +101,11 @@ Conventions for this file are in [the tasks README](README.md).
 - [x] **140.7** CLI `vincent chat start --issue`; apiclient wire fields.
 - [x] **140.8** Spec §5.5/§5.6, API and CLI references, CHANGELOG, the
   task 134 amendment.
-- [ ] **140.9** TUI: a key on the issues list and issue view that opens a
+- [x] **140.9** TUI: a key on the issues list and issue view that opens a
   chat on the selected issue (`internal/keymap`, `internal/tui/bindings.go`,
   §15), and the card/view showing a chat occupant.
-- [ ] **140.10** `*_live_test.go` coverage of the new wire fields through
+- [x] **140.10** `*_live_test.go` coverage of the new wire fields through
   apiclient and the TUI.
-- [ ] **140.11** A gate (`scripts/140-gate.sh` or an extension of
-  `134-gate.sh`): open → chat → in_progress → queued main task → close →
+- [x] **140.11** A gate (`scripts/140-gate.sh`; walkthrough and runs in
+  [docs/gates/140-issue-chats.md](../gates/140-issue-chats.md)): open → chat → in_progress → queued main task → close →
   admission → handoff.

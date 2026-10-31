@@ -105,7 +105,7 @@ var fixed = []Fixed{
 	{"chat", "pgup", "scroll the conversation back"},
 	{"chat", "ctrl+g", "jump to the live end and follow it again"},
 	{"chat", "ctrl+t", "hand the worktree and branch to a new task"},
-	{"chat", "ctrl+q", "close this chat, opened on a task"},
+	{"chat", "ctrl+q", "close this chat, opened on a task or an issue"},
 	{"chat", "esc", "back to the chats board"},
 	{"chat", "ctrl+o", "show the assistant's original Markdown instead of the rendered view"},
 	{"chat", "ctrl+y", "copy an assistant message, its plain text, or one of its code blocks"},

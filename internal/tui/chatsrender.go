@@ -193,7 +193,11 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	// A chat opened on a task says which one ahead of its title (task 119):
 	// the task holds the worktree and the lock, and it is what a reader of
 	// this row goes looking for. A prefix rather than a column, because
-	// most chats have no task and a column of dashes would tax every row.
+	// most chats have no task and a column of dashes would tax every row. A
+	// chat opened on an issue says which issue the same way (task 140.9).
+	if c.IssueID != nil {
+		title = styleDim.Render(fmt.Sprintf("issue #%d · ", *c.IssueID)) + title
+	}
 	if c.LinkedTaskID != nil {
 		title = styleDim.Render(fmt.Sprintf("task #%d · ", *c.LinkedTaskID)) + title
 	}

@@ -1,7 +1,9 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -315,4 +317,64 @@ func TestIssueChatDeletesAnnounceLaneMoves(t *testing.T) {
 		t.Fatalf("DeleteChatCascade: %v", err)
 	}
 	wantLaneMove(t, s, w.take(), EventChatDeleted, done.ID, issuestate.LaneInProgress, issuestate.LaneHandOff, 0, issuestate.Human)
+}
+
+// TestIssueChatEventsNameTheIssue is task 140.9: every chat.* event of a
+// chat opened on an issue carries issue_id, so a client showing the issue
+// re-reads it when the chat's state moves its occupant or attention. A free
+// chat's events carry none.
+func TestIssueChatEventsNameTheIssue(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	is := testIssue(t, s, p.ID, "the issue")
+
+	w := watchEvents(s)
+	chat, err := openIssueChat(t, s, p.ID, is.ID, "vincent/issue-chat")
+	if err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	if _, err := s.SetChatState(ctx, chat.ID, chatstate.Running); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CloseChat(ctx, chat.ID); err == nil {
+		t.Fatal("closed a running chat")
+	}
+	if _, err := s.SetChatState(ctx, chat.ID, chatstate.Idle); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CloseChat(ctx, chat.ID); err != nil {
+		t.Fatalf("CloseChat: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, e := range w.take() {
+		if !strings.HasPrefix(e.Type, "chat.") {
+			continue
+		}
+		var body struct {
+			IssueID *int64 `json:"issue_id"`
+		}
+		if err := json.Unmarshal(e.Payload, &body); err != nil {
+			t.Fatalf("%s payload: %v", e.Type, err)
+		}
+		if body.IssueID == nil || *body.IssueID != is.ID {
+			t.Errorf("%s payload %s: want issue_id %d", e.Type, e.Payload, is.ID)
+		}
+		seen[e.Type] = true
+	}
+	for _, want := range []string{EventChatCreated, EventChatClosed} {
+		if !seen[want] {
+			t.Errorf("no %s event among %v", want, seen)
+		}
+	}
+
+	free := &Chat{ProjectID: p.ID, Title: "free", Agent: "claude", PermissionMode: "full_auto", BaseBranch: "main"}
+	if err := s.CreateChat(ctx, free); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range w.take() {
+		if e.Type == EventChatCreated && strings.Contains(string(e.Payload), "issue_id") {
+			t.Errorf("a free chat's %s names an issue: %s", e.Type, e.Payload)
+		}
+	}
 }

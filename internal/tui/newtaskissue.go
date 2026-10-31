@@ -67,10 +67,12 @@ func (n *newTask) applyIssue(msg ntIssueMsg) {
 	iss := msg.issue
 	n.issue, n.issueErr = &iss, ""
 	// The worktree row's default (task 134.16 decision 4): `separate` while
-	// another task holds the main worktree, so the task runs now, `main`
-	// otherwise. A human's choice stands.
+	// another task — or a chat opened on the issue (task 140.9) — holds the
+	// main worktree, so the task runs now, `main` otherwise. A human's
+	// choice stands.
 	if !n.worktreePicked {
-		n.setSeparate(iss.MainWorktree != nil && iss.MainWorktree.OccupantTaskID != nil)
+		mw := iss.MainWorktree
+		n.setSeparate(mw != nil && (mw.OccupantTaskID != nil || mw.OccupantChatID != nil))
 	}
 	if iss.Prefill != nil {
 		n.applyIssuePrefill(*iss.Prefill)
@@ -202,6 +204,10 @@ func (n *newTask) worktreeValue() string {
 	if mw := n.issue.MainWorktree; mw != nil && mw.OccupantTaskID != nil {
 		value += "\n" + styleWarn.Render("main worktree busy with #"+strconv.FormatInt(*mw.OccupantTaskID, 10)+
 			" — choose separate to run now, or main to queue behind it")
+	}
+	if id := issueOccupantChat(*n.issue); id != 0 {
+		value += "\n" + styleWarn.Render("main worktree held by chat #"+strconv.FormatInt(id, 10)+
+			" — choose separate to run now, or main to queue until the chat is closed")
 	}
 	return value
 }

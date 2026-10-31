@@ -199,8 +199,9 @@ Troubleshooting.
 
 ## A chat on the issue
 
-`vincent chat start TITLE --project ID --issue ID` (or `POST /v1/chats` with
-`issue_id`) opens a chat that works the issue's main line itself, in the main
+`T` on the issues list or the issue detail in the TUI, `vincent chat start
+TITLE --project ID --issue ID`, or `POST /v1/chats` with `issue_id` opens a
+chat that works the issue's main line itself, in the main
 worktree, the way a main task does. An issue with no main branch yet gets one
 cut for the chat; otherwise the chat takes the main branch and receives the
 directory from the main task or chat before it, uncommitted work included.
@@ -274,4 +275,6 @@ Everything above is available from every surface:
   `separate` while the main worktree is busy and naming the task that holds
   it. `separate` adds a **merge back** row, `manual` (`block`) or `agent`.
   An issue with no main branch yet shows neither row: the task is its first
-  main task. See [Using the TUI](tui.md#issues).
+  main task. `T` on either issue screen opens a chat on the issue, or reopens
+  the one holding its main worktree; a chat occupant is named on the row and
+  in the Main worktree section. See [Using the TUI](tui.md#issues).

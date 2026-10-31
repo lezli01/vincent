@@ -1613,17 +1613,19 @@ func (v *chatView) handoffCmd() tea.Cmd {
 	return func() tea.Msg { return newTaskFromChatMsg{chat: seed} }
 }
 
-// askClose raises the close confirmation, for a chat opened on a task only:
-// a free chat ends by archive or hand-off, and the daemon refuses its close.
-// It asks because a running turn is killed first and a closed chat takes no
-// more messages — the worktree and the branch are the task's and untouched.
+// askClose raises the close confirmation, for a chat opened on a task or on
+// an issue (task 140 decision 3): a free chat ends by archive or hand-off,
+// and the daemon refuses its close. It asks because a running turn is killed
+// first and a closed chat takes no more messages — the worktree and the
+// branch are untouched, and an issue chat's stay for the issue's next main
+// task.
 func (v *chatView) askClose() {
 	chat := v.chat
 	switch {
 	case chat == nil:
 		return
-	case chat.LinkedTaskID == nil:
-		v.note, v.noteBad = "only a chat opened on a task can be closed — archive this one from the chats board", true
+	case chat.LinkedTaskID == nil && chat.IssueID == nil:
+		v.note, v.noteBad = "only a chat opened on a task or an issue can be closed — archive this one from the chats board", true
 	case chatstate.Terminal(chatstate.State(chat.State)):
 		v.note, v.noteBad = "this chat is already "+chat.State, true
 	default:
@@ -1644,6 +1646,10 @@ const chatCloseAnswers = "(y/n)"
 // noteLines ends it with chatCloseAnswers.
 func (v *chatView) closeQuestion() string {
 	prompt := fmt.Sprintf("close this chat? task #%d unlocks, and its worktree and branch stay as they are", derefID(v.chat.LinkedTaskID))
+	if v.chat.IssueID != nil {
+		prompt = fmt.Sprintf("close this chat? issue #%d's main worktree is freed for its next main task, "+
+			"uncommitted work and branch kept as they are", *v.chat.IssueID)
+	}
 	if v.runningTurn() != nil {
 		prompt += " — the running turn is stopped first"
 	}
@@ -1700,13 +1706,17 @@ func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
 		return nil
 	}
 	v.note, v.noteBad = fmt.Sprintf("chat closed — task #%d is unlocked", derefID(msg.chat.LinkedTaskID)), false
+	if msg.chat.IssueID != nil {
+		v.note = fmt.Sprintf("chat closed — issue #%d's main worktree is free for its next main task", *msg.chat.IssueID)
+	}
 	return v.loadCmd()
 }
 
-// liveBindings keeps exactly one way this chat can end (task 119): close for
-// a chat opened on a task, hand-off for a free one. The other is refused by
-// the daemon, and a footer offering it would describe a press that can only
-// fail. Before the chat has loaded neither is known, and neither is offered.
+// liveBindings keeps the ways this chat can end (task 119): close for a chat
+// opened on a task, hand-off for a free one, and both for one opened on an
+// issue (task 140 decision 3). What the daemon refuses is left out, because a
+// footer offering it would describe a press that can only fail. Before the
+// chat has loaded none is known, and none is offered.
 //
 // It drops every other key that would do nothing right now too (issue #801
 // F5): send on a chat that is not idle — sendCmd refuses it there — stop
@@ -1715,7 +1725,8 @@ func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
 // a chat's answer popup — only the task workspace answers it — and the
 // composer's own keys while the close confirmation owns the keyboard.
 func (v *chatView) liveBindings(rows []binding) []binding {
-	linked := v.chat != nil && v.chat.LinkedTaskID != nil
+	onIssue := v.chat != nil && v.chat.IssueID != nil
+	closable := v.chat != nil && v.chat.LinkedTaskID != nil || onIssue
 	free := v.chat != nil && v.chat.LinkedTaskID == nil
 	ended := v.chat == nil || chatstate.Terminal(chatstate.State(v.chat.State))
 	owned := v.closing || v.form != nil
@@ -1729,7 +1740,7 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 			continue
 		}
 		switch {
-		case b.key == chatCloseKey && !linked,
+		case b.key == chatCloseKey && !closable,
 			b.key == chatHandoffKey && !free,
 			b.key == "ctrl+x" && v.runningTurn() == nil,
 			b.key == "tab" && ended,
