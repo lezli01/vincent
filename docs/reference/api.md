@@ -1870,6 +1870,8 @@ what is holding on:
 | `has_lanes` | An archived fan-out parent whose lane rows still exist. Delete the lanes first |
 | `handoff_target` | A `handed_off` chat points at this task and would be left pointing at nothing |
 | `handed_off` | The chat was handed off to a task, which owns its worktree and branch. Delete that task |
+| `issue_chat_holds_worktree` | A [chat on an issue](#a-chat-on-an-issue) still names the issue's main worktree, left for its next main task. Let that task receive it, or archive the chat with no main task waiting so the directory is removed |
+| `issue_chat_holds_branch` | A chat on an issue is the only record of the issue's main branch: no unarchived main task carries it. Start a main task on the issue, then delete the chat |
 
 A [chat opened on a task](#a-chat-on-a-stopped-task) counts as archived once it
 is `closed`, so it can be deleted too. `delete_branch=true` on such a chat, in

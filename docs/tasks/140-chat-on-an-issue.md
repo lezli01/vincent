@@ -43,7 +43,12 @@ Conventions for this file are in [the tasks README](README.md).
    `delete_branch=true` on an issue chat is `409 issue_chat_branch`.
    Archive removes the directory only when no main task is already waiting
    for it; the branch keeps the work and the next holder revives it
-   (`IssueMainBranchHeld` counts an issue chat's branch).
+   (`IssueMainBranchHeld` counts an issue chat's branch). A permanent
+   delete of a released issue chat is refused while the row still holds the
+   issue's work (review F1, decided by the user 2026-10-31):
+   `issue_chat_holds_worktree` while it names a directory, and
+   `issue_chat_holds_branch` while it is the only row naming the main
+   branch — no unarchived main task carries it.
 5. **Lane.** `LaneOf` gains `chatLatest`: a not-handed-off issue chat
    created after the latest finished main-line root task finished, or with
    none finished, makes the lane `in_progress` ahead of a ready delivery.

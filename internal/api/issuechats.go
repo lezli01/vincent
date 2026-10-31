@@ -100,8 +100,8 @@ func (s *Server) createIssueChat(
 	if err := s.placeIssueChat(ctx, project, chat); err != nil {
 		// The chat holds the issue; a row that never got its directory would
 		// hold it forever, so it goes again before the error is reported.
-		if _, aerr := s.deps.Store.SetChatState(ctx, chat.ID, chatstate.Archived); aerr == nil {
-			_ = s.deps.Store.DeleteChatCascade(ctx, chat.ID)
+		if derr := s.deps.Store.DiscardUnplacedIssueChat(ctx, chat.ID); derr != nil {
+			s.deps.Logger.Warn("discard unplaced issue chat", "chat", chat.ID, "error", derr)
 		}
 		var occupied *store.TaskLockedError
 		if errors.As(err, &occupied) {
