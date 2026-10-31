@@ -12,6 +12,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testrepo"
 )
 
 // issueChatView is what the issue-chat tests read off GET /v1/issues/{id}.
@@ -171,5 +172,137 @@ func TestIssueChatRefusesAnotherBranch(t *testing.T) {
 	})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("branch_name on an issue with no main branch = %d %s, want 400", resp.StatusCode, body)
+	}
+}
+
+// newIssue creates an issue on the harness's project.
+func (h *chatHarness) newIssue(t *testing.T, title string) *store.Issue {
+	t.Helper()
+	iss, err := h.store.CreateIssue(context.Background(), store.NewIssue{ProjectID: h.projectID, Title: title}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	return iss
+}
+
+// openIssueChat opens a chat on issueID over the API and returns its id,
+// branch and worktree path.
+func (h *chatHarness) openIssueChat(t *testing.T, issueID int64) (id int64, branch, path string) {
+	t.Helper()
+	code, body := h.issueChat(t, issueID)
+	if code != http.StatusCreated {
+		t.Fatalf("issue chat: %d %v", code, body)
+	}
+	branch, _ = body["branch"].(string)
+	path, _ = body["worktree_path"].(string)
+	return int64(body["id"].(float64)), branch, path
+}
+
+// TestIssueChatHandoff is task 140 decision 7 (review F5): a handoff from an
+// issue chat defaults issue_id to the chat's and is a main task on the
+// chat's branch and worktree; another issue, or merge_back, is a 400.
+func TestIssueChatHandoff(t *testing.T) {
+	h := newChatHarness(t)
+	iss := h.newIssue(t, "hand it on")
+	other := h.newIssue(t, "elsewhere")
+	chatID, branch, path := h.openIssueChat(t, iss.ID)
+
+	if code, body := h.handoff(t, chatID, map[string]any{"issue_id": other.ID}); code != http.StatusBadRequest {
+		t.Errorf("handoff to another issue = %d %v, want 400", code, body)
+	}
+	if code, body := h.handoff(t, chatID, map[string]any{"merge_back": map[string]any{}}); code != http.StatusBadRequest {
+		t.Errorf("handoff with merge_back = %d %v, want 400", code, body)
+	}
+	wantMainTask := func(name string, req map[string]any, issueID int64, branch, path string) {
+		t.Helper()
+		code, body := h.handoff(t, chatID, req)
+		if code != http.StatusCreated {
+			t.Fatalf("%s: handoff = %d %v", name, code, body)
+		}
+		task, _ := body["task"].(map[string]any)
+		got, err := h.store.GetTask(context.Background(), int64(task["id"].(float64)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.IssueID == nil || *got.IssueID != issueID || got.IssueWorktree != store.IssueWorktreeMain ||
+			got.BranchName != branch || got.WorktreePath != path {
+			t.Errorf("%s: task = issue %v role %q branch %q path %q; want main of %d on %s at %s",
+				name, got.IssueID, got.IssueWorktree, got.BranchName, got.WorktreePath, issueID, branch, path)
+		}
+	}
+	wantMainTask("naming the chat's own issue", map[string]any{"issue_id": iss.ID, "title": "explicit"}, iss.ID, branch, path)
+
+	// Without issue_id the chat's issue is the default.
+	second := h.newIssue(t, "default issue")
+	chatID, branch, path = h.openIssueChat(t, second.ID)
+	wantMainTask("without issue_id", map[string]any{"title": "carry on"}, second.ID, branch, path)
+}
+
+// TestIssueChatArchive is task 140 decision 4 (review F5): archiving an issue
+// chat never deletes its branch, which stays the issue's main branch; the
+// directory goes when no main task is waiting for it — the next chat revives
+// it from the branch — and stays, with the chat's claim, when one is.
+func TestIssueChatArchive(t *testing.T) {
+	h := newChatHarness(t)
+	ctx := context.Background()
+	archive := func(id int64) map[string]any {
+		t.Helper()
+		resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/chats/%d/archive", id), nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("archive: %d %s", resp.StatusCode, body)
+		}
+		var out map[string]any
+		_ = json.Unmarshal(body, &out)
+		return out
+	}
+
+	iss := h.newIssue(t, "nothing waits")
+	chatID, branch, path := h.openIssueChat(t, iss.ID)
+	if err := os.WriteFile(filepath.Join(path, "kept.txt"), []byte("committed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	testrepo.Run(t, path, "add", "kept.txt")
+	testrepo.Run(t, path, "commit", "-m", "chat work")
+	out := archive(chatID)
+	if out["state"] != "archived" || out["end_sha"] == nil || out["worktree_path"] != nil {
+		t.Errorf("archived chat = %v, want archived, end_sha set, no worktree", out)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("directory after archive with nothing waiting: %v, want removed", err)
+	}
+	testrepo.Run(t, h.repo, "rev-parse", "--verify", "refs/heads/"+branch)
+	if mw, err := h.store.GetIssueMainWorktree(ctx, iss.ID); err != nil || mw.Branch != branch {
+		t.Errorf("main branch after archive = %q (%v), want %s", mw.Branch, err, branch)
+	}
+	_, again, revived := h.openIssueChat(t, iss.ID)
+	if again != branch {
+		t.Errorf("next chat branch = %q, want the issue's %s", again, branch)
+	}
+	if b, err := os.ReadFile(filepath.Join(revived, "kept.txt")); err != nil || string(b) != "committed" {
+		t.Errorf("revived worktree lacks the archived chat's commit: %q, %v", b, err)
+	}
+
+	waiting := h.newIssue(t, "a main task waits")
+	chatID, _, path = h.openIssueChat(t, waiting.ID)
+	issueID := waiting.ID
+	queued := &store.Task{
+		ProjectID: h.projectID, Title: "next", WorkflowName: "adhoc", WorkflowSnapshot: "steps: []",
+		BaseBranch: "main", State: store.TaskQueued, IssueID: &issueID, IssueWorktree: store.IssueWorktreeMain,
+	}
+	if err := h.store.CreateTask(ctx, queued, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "wip.txt"), []byte("half done"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out = archive(chatID)
+	if out["state"] != "archived" || out["worktree_path"] != path {
+		t.Errorf("archived chat with a waiting task = %v, want its worktree %s kept", out, path)
+	}
+	if b, err := os.ReadFile(filepath.Join(path, "wip.txt")); err != nil || string(b) != "half done" {
+		t.Errorf("uncommitted work after archive = %q, %v", b, err)
+	}
+	if holder, err := h.store.IssueMainWorktreeChatHolder(ctx, waiting.ID); err != nil || holder == nil || holder.ID != chatID {
+		t.Errorf("chat holder after archive = %v, %v; want chat %d", holder, err, chatID)
 	}
 }
