@@ -206,8 +206,8 @@ func (s *Server) handleChatClose(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !chat.Linked() {
-		writeConflict(w, "only a chat opened on a task can be closed; archive this one instead",
+	if !chat.Linked() && !chat.OnIssue() {
+		writeConflict(w, "only a chat opened on a task or an issue can be closed; archive this one instead",
 			map[string]string{"state": string(chat.State), "action": string(chatstate.Close)})
 		return
 	}
@@ -234,6 +234,17 @@ func (s *Server) handleChatClose(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
+	}
+	if updated.OnIssue() {
+		// Closing an issue chat releases the issue's main worktree (task 140
+		// decision 3): the directory stays for the next holder, and the tip
+		// is stamped as the chat's end_sha.
+		if project, err := s.deps.Store.GetProject(r.Context(), updated.ProjectID); err == nil {
+			s.stampChatEndSHA(r.Context(), project, updated)
+		}
+		if s.deps.WakeRunner != nil {
+			s.deps.WakeRunner()
+		}
 	}
 	writeJSON(w, http.StatusOK, renderChat(updated))
 }

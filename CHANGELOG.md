@@ -13,6 +13,12 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- A chat can be opened on an issue (`vincent chat start --issue ID`,
+  `POST /v1/chats` with `issue_id`). It works in the issue's main worktree on
+  its main branch, moves the issue to in progress, starts from the issue's
+  title, body and comments, and can be closed to hand the worktree on to the
+  next main task, or handed off into a main task of the issue (task 140,
+  #885).
 - **A `copilot-review` example, and copilot in the docs.** `vincent workflow
   init --from copilot-review` hands over a restricted GitHub Copilot review
   that writes `REVIEW.md` and commits it from a command step. The agents

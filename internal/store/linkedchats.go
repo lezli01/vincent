@@ -220,7 +220,7 @@ func (s *Store) CloseChat(ctx context.Context, id int64) (*Chat, error) {
 		if err != nil {
 			return fmt.Errorf("get chat %d: %w", id, err)
 		}
-		if !chatstate.AllowedFor(c.Linked(), c.State, chatstate.Close) {
+		if !chatstate.AllowedFor(c.Kind(), c.State, chatstate.Close) {
 			return fmt.Errorf("chat %d: %w", id, ErrInvalidChatAction)
 		}
 		out, ev, err = closeChatTx(ctx, tx, c)

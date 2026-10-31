@@ -160,6 +160,11 @@ func newTaskAddCmd() *cobra.Command {
 						"queued behind #%d (main worktree busy); pass --separate-worktree to run now\n",
 						*t.MainWorktreeOccupantTaskID)
 				}
+				if !separate && t.MainWorktreeOccupantChatID != nil {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+						"queued behind chat %d (main worktree busy); pass --separate-worktree to run now\n",
+						*t.MainWorktreeOccupantChatID)
+				}
 				out := cmd.OutOrStdout()
 				if _, err := fmt.Fprintf(out, "task %d created: %s (%s, branch %s)\n",
 					t.ID, t.Title, t.Workflow, t.BranchName); err != nil {

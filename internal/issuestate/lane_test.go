@@ -29,9 +29,19 @@ func TestLaneOf(t *testing.T) {
 		{"waiting", false, true, true, LaneHandOff},
 		{"waiting", false, true, false, LaneInProgress},
 	} {
-		if got := LaneOf(tc.s, tc.unsettled, tc.finished, tc.ready); got != tc.want {
+		if got := LaneOf(tc.s, tc.unsettled, tc.finished, tc.ready, false); got != tc.want {
 			t.Errorf("LaneOf(%s, unsettled=%v, finished=%v, ready=%v) = %s, want %s",
 				tc.s, tc.unsettled, tc.finished, tc.ready, got, tc.want)
+		}
+		// A chat that is the latest work (task 140 decision 5) is in
+		// progress, ahead of a ready delivery; closing still wins.
+		want := LaneInProgress
+		if Normalize(tc.s) == Closed {
+			want = LaneDone
+		}
+		if got := LaneOf(tc.s, tc.unsettled, tc.finished, tc.ready, true); got != want {
+			t.Errorf("LaneOf(%s, unsettled=%v, finished=%v, ready=%v, chatLatest) = %s, want %s",
+				tc.s, tc.unsettled, tc.finished, tc.ready, got, want)
 		}
 	}
 }

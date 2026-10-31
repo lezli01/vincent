@@ -76,10 +76,12 @@ type IssueTasks struct {
 
 // IssueMainWorktree is an issue's main worktree: its branch, and the
 // admitted, unsettled main task holding it and that task's state — both nil
-// when it is free.
+// when it is free — or the live chat opened on the issue holding it (task
+// 140). At most one of OccupantTaskID and OccupantChatID is set.
 type IssueMainWorktree struct {
 	Branch         string  `json:"branch"`
 	OccupantTaskID *int64  `json:"occupant_task_id"`
+	OccupantChatID *int64  `json:"occupant_chat_id"`
 	OccupantState  *string `json:"occupant_state"`
 }
 

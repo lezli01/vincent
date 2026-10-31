@@ -208,5 +208,9 @@ func (s *Store) IssueMainBranchHeld(ctx context.Context, issueID int64, branch s
 	if err != nil {
 		return false, fmt.Errorf("issue %d main branch %q held: %w", issueID, branch, err)
 	}
-	return n > 0, nil
+	if n > 0 {
+		return true, nil
+	}
+	// A branch an issue chat cut is the issue's too (task 140 decision 4).
+	return s.IssueChatBranchHeld(ctx, issueID, branch)
 }

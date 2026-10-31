@@ -57,6 +57,7 @@ func newChatStartCmd() *cobra.Command {
 		msgFile    string
 		branch     string
 		existing   bool
+		issueID    int64
 	)
 	cmd := &cobra.Command{
 		Use:   "start <title>",
@@ -72,14 +73,21 @@ func newChatStartCmd() *cobra.Command {
 				}
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				chat, err := c.CreateChat(ctx, apiclient.CreateChatRequest{
+				req := apiclient.CreateChatRequest{
 					ProjectID: projectID, Title: args[0], Agent: agentName,
 					Model: model, Effort: effort, BaseBranch: baseBranch,
 					BranchName: branch, ExistingBranch: existing,
-				})
+				}
+				if cmd.Flags().Changed("issue") {
+					req.IssueID = &issueID
+				}
+				chat, err := c.CreateChat(ctx, req)
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
+				}
+				for _, w := range chat.Warnings {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
 				}
 				if message == "" {
 					return printChat(cmd, chat)
@@ -102,6 +110,9 @@ func newChatStartCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&existing, "existing-branch", false,
 		"the --branch given already exists and is adopted; "+
 			"if it is checked out in the project itself, the chat runs there rather than in a worktree")
+	cmd.Flags().Int64Var(&issueID, "issue", 0,
+		"open the chat on this issue: it works in the issue's main worktree, on its main branch, "+
+			"and moves the issue to in progress")
 	cmd.Flags().StringVar(&message, "message", "", "send this first message straight away")
 	cmd.Flags().StringVar(&msgFile, "message-file", "",
 		"send the first message read from this file (- for stdin), byte for byte")

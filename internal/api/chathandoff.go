@@ -15,6 +15,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -96,6 +97,24 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ProjectID = chat.ProjectID
+	// An issue chat hands off into a main task of its own issue, in the same
+	// worktree (task 140 decision 7): issue_id defaults to the chat's, and
+	// another issue or a merge_back — a side task — is a 400.
+	if chat.OnIssue() {
+		if req.IssueID != nil && *req.IssueID != *chat.IssueID {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf(
+				"this chat was opened on issue %d; it hands off into a main task of that issue, not of issue %d",
+				*chat.IssueID, *req.IssueID))
+			return
+		}
+		if req.MergeBack != nil {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				"this chat holds its issue's main worktree; it hands off into a main task, never a side task with merge_back")
+			return
+		}
+		id := *chat.IssueID
+		req.IssueID = &id
+	}
 	// merge_back is validated by the create path's own code; on a handoff it
 	// only selects on_conflict, and is inert when the issue has no main
 	// branch yet (task 134 decision 7, item 134.15).
@@ -112,7 +131,7 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 	// name, never one a main task may trade for another, so a main branch
 	// that appears before the commit is a 400, not a silent rebind.
 	if t.IssueID != nil {
-		if prep.mainWorktree.Branch == "" {
+		if chat.OnIssue() || prep.mainWorktree.Branch == "" {
 			t.IssueWorktree, t.MergeOnConflict = store.IssueWorktreeMain, ""
 		} else {
 			onConflict := t.MergeOnConflict

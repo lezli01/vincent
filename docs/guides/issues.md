@@ -26,7 +26,7 @@ is what moves it.
 | Lane | When |
 |---|---|
 | `open` | The issue is open and no root task is unfinished or done: no task yet, or only cancelled ones |
-| `in_progress` | The issue is open and some root task is not `done`, `aborted` or archived — `paused` included — or every root task has finished but the latest finished main task's work is not ready to hand off |
+| `in_progress` | The issue is open and some root task is not `done`, `aborted` or archived — `paused` included — or every root task has finished but the latest finished main task's work is not ready to hand off, or a [chat on the issue](#a-chat-on-the-issue) is its latest main-line work |
 | `hand_off` | The issue is open, every root task has finished, and the latest finished main task's work is ready. The work is back with you: review it and close the issue. Nothing closes it for you |
 | `done` | The issue is closed — completed, not planned or a duplicate, whatever its tasks are doing. Reopening it returns it to the lane its tasks give it |
 
@@ -39,8 +39,8 @@ sends a `hand_off` issue back to `in_progress`; both are refused while a root
 task of the issue is still running. A newer finished task decides afresh.
 
 Beside the lane, **attention** — the `!` badge — means one of the issue's root
-tasks is waiting on you: `awaiting_input`, `awaiting_gate` or `blocked`. A
-`paused` task carries none. Attention can show on any lane, `done` included.
+tasks is waiting on you: `awaiting_input`, `awaiting_gate` or `blocked` — or
+a chat on the issue is `awaiting_input`. A `paused` task carries none. Attention can show on any lane, `done` included.
 
 The TUI's issues screen stacks the four lanes as foldable sections and hides
 `done` until `s` shows it. Each card's task cell is worded for its lane — an
@@ -66,13 +66,15 @@ A task created from an issue is the issue's **main** task unless you ask
 otherwise. The first main task's branch becomes the issue's **main branch**,
 and every later main task runs on that branch, in the same directory.
 
-**One occupant at a time.** The main worktree is *occupied* while either of
+**One occupant at a time.** The main worktree is *occupied* while any of
 these holds it:
 
 - a main task that has started and not yet finished — even while it is
   `blocked`, `paused` or `awaiting_gate`;
 - a main task that finished `done` or `aborted` but still has its worktree
-  open in a [chat](../reference/api.md#a-chat-on-a-stopped-task) linked to it.
+  open in a [chat](../reference/api.md#a-chat-on-a-stopped-task) linked to it;
+- a [chat opened on the issue](#a-chat-on-the-issue) that is not closed,
+  archived or handed off.
 
 A main task created while the worktree is occupied is **queued, never
 refused**. It waits `queued` with no error and no reason, and is admitted once
@@ -195,6 +197,31 @@ If a chat on the previous main task holds the directory instead, see
 [Projects and worktrees](troubleshooting.md#projects-and-worktrees) in
 Troubleshooting.
 
+## A chat on the issue
+
+`vincent chat start TITLE --project ID --issue ID` (or `POST /v1/chats` with
+`issue_id`) opens a chat that works the issue's main line itself, in the main
+worktree, the way a main task does. An issue with no main branch yet gets one
+cut for the chat; otherwise the chat takes the main branch and receives the
+directory from the main task or chat before it, uncommitted work included.
+The issue moves to `in_progress`, and the chat's first turn carries the
+issue's title, body and comments.
+
+The chat is an occupant like any other: it is refused
+`409 issue_worktree_occupied` while a main task holds the worktree, and
+`409 issue_has_live_chat` while another chat on the issue is open; a main task
+created while the chat holds it — a merge-back included — waits `queued`.
+`vincent chat close` lets go of the worktree and leaves the directory, as it
+stands, for the next main task or chat; archiving lets go too. The branch
+stays the issue's main branch either way, so archiving every main task no
+longer drops it while such a chat carries it, and
+`DELETE /v1/chats/{id}?delete_branch=true` is refused with
+`409 issue_chat_branch`. The issue stays `in_progress` until a main task finishes
+after the chat. `vincent chat handoff` turns the chat into the issue's next
+main task in the same worktree. See
+[A chat on an issue](../reference/api.md#a-chat-on-an-issue) for the full
+rule.
+
 ## Follow-ups, chats, deleting and archiving
 
 **A predecessor is history.** Once a finished main task has handed the
@@ -206,12 +233,15 @@ it too. Continue in that task, or start a new main task.
 **Deleting an issue** is refused with `409 issue_has_live_main_task` while any
 of its main or side tasks has not finished — a side task's completion creates
 a merge-back on the issue, so the issue must still be there. Finish or cancel
-the task named in the error, then delete again.
+the task named in the error, then delete again. It is refused with
+`409 issue_has_live_chat` while a chat on the issue is open; close or archive
+it first.
 
 **Archiving.** While another unarchived main task carries the main branch,
 archiving a main task never deletes the branch. When every main task of the
-issue has been archived, the issue has no main branch any more and the next
-main task cuts a fresh one. A merge-back created before that checks the old
+issue has been archived, and no [chat on the issue](#a-chat-on-the-issue)
+carries the branch, the issue has no main branch any more and the next main
+task cuts a fresh one. A merge-back created before that checks the old
 branch out again and merges into it, or blocks `merge_target_missing` if it
 was deleted.
 
@@ -223,7 +253,8 @@ Everything above is available from every surface:
   `"merge_back": {"on_conflict": "block"}` or `"agent"` for a side task. A
   task reads back `issue_worktree` (`main` or `side`) and `merge_back`; a
   main task created behind an occupant names it in the `201` as
-  `main_worktree_occupant_task_id`; an issue carries `main_worktree`. See
+  `main_worktree_occupant_task_id` (or `main_worktree_occupant_chat_id` behind
+  a chat on the issue); an issue carries `main_worktree`. See
   [The issue's main branch](../reference/api.md#the-issues-main-branch).
 - **MCP.** `task_create` takes the same body, and `issue_get` returns the
   same issue, `main_worktree` included. See
@@ -234,7 +265,9 @@ Everything above is available from every surface:
   on an issue that already has a main branch makes the task a side task,
   merged back with `block` unless `--merge agent` asks for the resolver. On an
   issue with no main branch yet, the chat's branch becomes the main branch,
-  the task is the issue's main task, and `--merge` does nothing.
+  the task is the issue's main task, and `--merge` does nothing. A chat
+  started with `--issue` hands off into the issue's next main task, with no
+  flag needed.
 
 - **The TUI.** Once the issue has a main branch, the new-task form opened
   with `a` has a **worktree** row, `main` or `separate`, preselecting

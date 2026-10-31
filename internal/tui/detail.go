@@ -316,6 +316,10 @@ func (d *detail) updateMsg(msg tea.Msg) tea.Cmd {
 			notes = append(notes, "queued behind #"+strconv.FormatInt(*id, 10)+
 				" (main worktree busy); a separate worktree would run now")
 		}
+		if id := msg.task.MainWorktreeOccupantChatID; id != nil {
+			notes = append(notes, "queued behind chat "+strconv.FormatInt(*id, 10)+
+				" (main worktree busy); a separate worktree would run now")
+		}
 		if len(notes) > 0 {
 			d.actions.setStatus(strings.Join(notes, " · "), false)
 		}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/issuestate"
 )
 
 // Durable event types for a permanent delete (§13.3, task 092). PR D's ruling
@@ -67,6 +68,21 @@ const (
 	// NULL (0023_chat_handoff.sql), so deleting the task would leave a
 	// terminal chat pointing at nothing.
 	DeleteRefusedHandoffTarget = "handoff_target"
+	// DeleteRefusedIssueChatWorktree: a chat opened on an issue that still
+	// names the issue's main worktree — closed, or archived while a main task
+	// waited for the directory (task 140 decision 3). The row is the
+	// directory's §10 claim and the issue's main-branch carrier; deleting it
+	// would leave the directory for gc to take and the branch checked out by
+	// nothing vincent knows about. The next main task receives it, or
+	// archiving the chat with nothing waiting removes it.
+	DeleteRefusedIssueChatWorktree = "issue_chat_holds_worktree"
+	// DeleteRefusedIssueChatBranch: a chat opened on an issue that is the only
+	// row still naming the issue's main branch (task 140 decision 4) — no
+	// unarchived main task carries it. Without the row the issue reads as
+	// having no main branch, and its next main task would cut a new one cut
+	// off from the chat's work. A main task on the issue takes the branch
+	// over, after which the chat can go.
+	DeleteRefusedIssueChatBranch = "issue_chat_holds_branch"
 )
 
 // DeleteTaskCascade hard-deletes an archived task and its step_runs in one
@@ -194,12 +210,14 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 		}
 	}()
 	var (
-		state     string
-		projectID int64
-		title     string
+		state, title         string
+		projectID            int64
+		issueID              sql.NullInt64
+		worktreePath, branch sql.NullString
 	)
 	err = tx.QueryRowContext(ctx,
-		`SELECT state, project_id, title FROM chats WHERE id = ?`, id).Scan(&state, &projectID, &title)
+		`SELECT state, project_id, title, issue_id, worktree_path, branch FROM chats WHERE id = ?`, id).
+		Scan(&state, &projectID, &title, &issueID, &worktreePath, &branch)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("chat %d: %w", id, ErrNotFound)
 	}
@@ -209,7 +227,18 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 	switch chatstate.State(state) {
 	case chatstate.Archived, chatstate.Closed:
 		// A closed linked chat owns no worktree or branch (task 119), so
-		// deleting its row takes nothing from its task.
+		// deleting its row takes nothing from its task. A chat on an issue
+		// may own both on the issue's behalf (task 140), which
+		// issueChatDeleteRefusalTx decides.
+		if issueID.Valid {
+			if refused, err := issueChatDeleteRefusalTx(ctx, tx, id, issueID.Int64,
+				worktreePath.String, branch.String); err != nil || refused != nil {
+				if refused != nil {
+					return refused
+				}
+				return err
+			}
+		}
 	case chatstate.HandedOff:
 		return &DeleteRefusedError{
 			Kind: "chat", ID: id, Reason: DeleteRefusedHandedOff,
@@ -222,18 +251,8 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 			Message: fmt.Sprintf("chat %d is %s; only an archived chat can be deleted", id, state),
 		}
 	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM chats WHERE id = ?`, id)
+	ev, err := deleteChatRowTx(ctx, tx, id, projectID, title, issueID)
 	if err != nil {
-		return fmt.Errorf("delete chat %d: %w", id, err)
-	}
-	if err = oneRowAffected(res, fmt.Sprintf("chat %d", id)); err != nil {
-		return err
-	}
-	ev, err := deletedEvent(EventChatDeleted, id, projectID, title, nil)
-	if err != nil {
-		return err
-	}
-	if err = appendEventTx(ctx, tx, ev); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
@@ -241,6 +260,116 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 	}
 	s.notify(ev)
 	return nil
+}
+
+// deleteChatRowTx deletes chat id's row and appends its chat.deleted event,
+// which it returns for the caller to publish after the commit. A chat opened
+// on an issue is one of the facts the issue's lane reads (task 140 decision
+// 5), so its delete is watched like every other write that moves a lane, and
+// an issue.lane_changed it causes follows the chat.deleted (review F8).
+func deleteChatRowTx(
+	ctx context.Context, tx *sql.Tx, id, projectID int64, title string, issueID sql.NullInt64,
+) (*Event, error) {
+	var watch laneWatch
+	if issueID.Valid {
+		var err error
+		if watch, err = watchIssueLaneTx(ctx, tx, issueID.Int64, projectID); err != nil {
+			return nil, err
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM chats WHERE id = ?`, id)
+	if err != nil {
+		return nil, fmt.Errorf("delete chat %d: %w", id, err)
+	}
+	if err = oneRowAffected(res, fmt.Sprintf("chat %d", id)); err != nil {
+		return nil, err
+	}
+	ev, err := deletedEvent(EventChatDeleted, id, projectID, title, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err = appendEventTx(ctx, tx, ev); err != nil {
+		return nil, err
+	}
+	laneEv, err := watch.changedTx(ctx, tx, nil, issuestate.Human)
+	if err != nil || laneEv == nil {
+		return ev, err
+	}
+	if err = appendEventTx(ctx, tx, laneEv); err != nil {
+		return nil, err
+	}
+	ev.follow = laneEv
+	return ev, nil
+}
+
+// DiscardUnplacedIssueChat deletes an issue chat whose placement failed
+// right after CreateIssueChat (task 140): the row holds the issue, and one
+// that never got its directory would hold it forever. It is not a permanent
+// delete — the chat never ran — so no state or carrier rule applies, but a
+// row that did come to name a directory is kept and the call refused, since
+// that row is the directory's only claim.
+func (s *Store) DiscardUnplacedIssueChat(ctx context.Context, id int64) error {
+	var ev *Event
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		var (
+			projectID    int64
+			title        string
+			issueID      sql.NullInt64
+			worktreePath sql.NullString
+		)
+		err := tx.QueryRowContext(ctx, `SELECT project_id, title, issue_id, worktree_path FROM chats WHERE id = ?`, id).
+			Scan(&projectID, &title, &issueID, &worktreePath)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("chat %d: %w", id, ErrNotFound)
+		}
+		if err != nil {
+			return fmt.Errorf("discard chat %d: %w", id, err)
+		}
+		if !issueID.Valid || worktreePath.String != "" {
+			return fmt.Errorf("discard chat %d: not an unplaced issue chat", id)
+		}
+		ev, err = deleteChatRowTx(ctx, tx, id, projectID, title, issueID)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	s.notify(ev)
+	return nil
+}
+
+// issueChatDeleteRefusalTx is the refusal, if any, a permanent delete of
+// released issue chat id meets (task 140 decisions 3 and 4): it still names
+// the issue's main worktree, or it is the only row naming the issue's main
+// branch.
+func issueChatDeleteRefusalTx(
+	ctx context.Context, tx *sql.Tx, id, issueID int64, worktreePath, branch string,
+) (*DeleteRefusedError, error) {
+	if worktreePath != "" {
+		return &DeleteRefusedError{
+			Kind: "chat", ID: id, Reason: DeleteRefusedIssueChatWorktree,
+			Message: fmt.Sprintf("chat %d still holds issue %d's main worktree %s for its next main task; "+
+				"let that task receive it, or archive the chat with nothing waiting to remove it", id, issueID, worktreePath),
+		}, nil
+	}
+	if branch == "" {
+		return nil, nil
+	}
+	var carried bool
+	if err := tx.QueryRowContext(ctx, `SELECT
+		EXISTS (SELECT 1 FROM tasks WHERE issue_id = ? AND issue_worktree = 'main' AND archived_at IS NULL)
+		OR EXISTS (SELECT 1 FROM chats WHERE issue_id = ? AND id <> ? AND state <> ? AND branch = ?)`,
+		issueID, issueID, id, string(chatstate.HandedOff), branch).Scan(&carried); err != nil {
+		return nil, fmt.Errorf("delete chat %d: read issue %d main branch carriers: %w", id, issueID, err)
+	}
+	if carried {
+		return nil, nil
+	}
+	return &DeleteRefusedError{
+		Kind: "chat", ID: id, Reason: DeleteRefusedIssueChatBranch,
+		Message: fmt.Sprintf("chat %d is the only record that %q is issue %d's main branch; "+
+			"start a main task on the issue to carry it, then delete the chat", id, branch, issueID),
+	}, nil
 }
 
 // deletedEvent builds a task.deleted or chat.deleted event. It carries the id

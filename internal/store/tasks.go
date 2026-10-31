@@ -384,6 +384,9 @@ func (e *NoMainBranchError) Error() string {
 type IssueMainWorktree struct {
 	Branch         string
 	OccupantTaskID *int64
+	// OccupantChatID is the live issue chat holding it (task 140 decision
+	// 2); at most one of it and OccupantTaskID is set.
+	OccupantChatID *int64
 	// OccupantState is the occupant's task state (task 134.16 decision 1),
 	// "" when the worktree is free. Only the issue row fills it.
 	OccupantState TaskState
@@ -394,10 +397,15 @@ type IssueMainWorktree struct {
 // issueRef is the SQL expression naming the issue: a placeholder for a
 // lookup, `i.id` inside issueSelect. Every main-role task of one issue
 // carries the same name, so the lowest id is as good as any and stable.
+//
+// An issue chat's branch is the main branch too (task 140 decision 4) when no
+// unarchived main task names one: the chat cut it, or every main task that
+// carried it was archived while the chat's history keeps it. issueRef is
+// spliced twice, so a placeholder binds twice.
 func issueMainBranchSQL(issueRef string) string {
-	return `SELECT branch_name FROM tasks
+	return `SELECT COALESCE((SELECT branch_name FROM tasks
 		WHERE issue_id = ` + issueRef + ` AND issue_worktree = 'main' AND archived_at IS NULL
-		ORDER BY id LIMIT 1`
+		ORDER BY id LIMIT 1), (` + issueChatBranchSQL(issueRef) + `))`
 }
 
 // issueMainOccupantSQL names the main-role task holding an issue's main
@@ -450,12 +458,13 @@ func issueMainOccupantArgs() []any {
 func (s *Store) GetIssueMainWorktree(ctx context.Context, issueID int64) (IssueMainWorktree, error) {
 	var out IssueMainWorktree
 	var branch sql.NullString
-	var occupant sql.NullInt64
-	// Placeholders in text order: the branch's issue, the occupant's issue,
-	// then the occupant's own arguments.
-	args := append([]any{issueID, issueID}, issueMainOccupantArgs()...)
+	var occupant, chatOccupant sql.NullInt64
+	// Placeholders in text order: the branch's issue (twice), the occupant's
+	// issue, the occupant's own arguments, then the chat occupant's.
+	args := append([]any{issueID, issueID, issueID}, issueMainOccupantArgs()...)
+	args = append(append(args, issueID), terminalChatStateArgs()...)
 	err := s.db.QueryRowContext(ctx, `SELECT (`+issueMainBranchSQL("?")+`), (`+
-		issueMainOccupantSQL("?", "")+`)`, args...).Scan(&branch, &occupant)
+		issueMainOccupantSQL("?", "")+`), (`+issueChatOccupantSQL("?")+`)`, args...).Scan(&branch, &occupant, &chatOccupant)
 	if err != nil {
 		return out, fmt.Errorf("issue %d main worktree: %w", issueID, err)
 	}
@@ -463,6 +472,9 @@ func (s *Store) GetIssueMainWorktree(ctx context.Context, issueID int64) (IssueM
 	if occupant.Valid {
 		id := occupant.Int64
 		out.OccupantTaskID = &id
+	} else if chatOccupant.Valid {
+		id := chatOccupant.Int64
+		out.OccupantChatID = &id
 	}
 	return out, nil
 }
@@ -506,12 +518,11 @@ func bindIssueWorktreeTx(ctx context.Context, tx *sql.Tx, t *Task) error {
 	if t.IssueID == nil || t.ParentTaskID != nil {
 		return fmt.Errorf("insert task: issue_worktree %q needs a root task with an issue", t.IssueWorktree)
 	}
-	var main string
-	err := tx.QueryRowContext(ctx, `SELECT branch_name FROM tasks
-		WHERE issue_id = ? AND issue_worktree = 'main' AND archived_at IS NULL AND id <> ?
-		ORDER BY id LIMIT 1`, *t.IssueID, t.ID).Scan(&main)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("read issue %d main branch: %w", *t.IssueID, err)
+	// An issue chat's branch counts (task 140 decision 2): a main task
+	// created while a chat holds the worktree joins the chat's branch.
+	main, err := issueMainBranchTx(ctx, tx, *t.IssueID, t.ID)
+	if err != nil {
+		return err
 	}
 	if t.IssueWorktree == IssueWorktreeSide {
 		if main == "" {
@@ -967,9 +978,11 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 			+ (SELECT COUNT(*) FROM chats c
 			  WHERE c.project_id = t.project_id AND c.branch = t.branch_name
 			    AND (c.linked_task_id IS NULL OR c.linked_task_id <> t.id)
+			    AND NOT (t.issue_worktree = 'main' AND c.issue_id IS NOT NULL AND c.issue_id = t.issue_id)
 			    AND c.worktree_path IS NOT NULL AND c.worktree_path <> ''),
 			CASE WHEN t.issue_worktree = 'main' AND t.issue_id IS NOT NULL
 			  THEN EXISTS (` + issueMainOccupantSQL("t.issue_id", "t.id") + `)
+			    OR EXISTS (` + issueChatOccupantSQL("t.issue_id") + `)
 			  ELSE 0 END
 		FROM tasks t JOIN projects p ON p.id = t.project_id
 		WHERE t.state = ?
@@ -977,6 +990,7 @@ func (s *Store) ListAdmissible(ctx context.Context) ([]Candidate, error) {
 	args := append(append([]any{}, slotStates...), string(StepRunning), StepTypeFanOut)
 	args = append(args, slotStates...)
 	args = append(args, issueMainOccupantArgs()...)
+	args = append(args, terminalChatStateArgs()...)
 	args = append(args, string(TaskQueued))
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {

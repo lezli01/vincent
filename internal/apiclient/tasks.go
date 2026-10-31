@@ -512,6 +512,9 @@ type TaskDetail struct {
 	// main task is created. The scheduler does not hold the new task behind
 	// it until 134.11. Nil otherwise, and on every read.
 	MainWorktreeOccupantTaskID *int64 `json:"main_worktree_occupant_task_id,omitempty"`
+	// MainWorktreeOccupantChatID is the same hint when a chat opened on the
+	// issue holds the worktree (task 140); at most one of the two is set.
+	MainWorktreeOccupantChatID *int64 `json:"main_worktree_occupant_chat_id,omitempty"`
 	// WorkflowSteps is the task's snapshot: the text edit+retry opens in an
 	// editor, and a gate's instructions.
 	WorkflowSteps []WorkflowStep `json:"workflow_steps,omitempty"`

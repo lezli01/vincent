@@ -80,17 +80,24 @@ func printLinkedChat(w io.Writer, chat *apiclient.Chat, taskID int64) error {
 	return err
 }
 
-// newChatCloseCmd ends a chat opened on a task. It is not a second spelling
-// of `chat archive`: the worktree belongs to the task, so closing removes
-// nothing, and archive is refused on such a chat for exactly that reason.
+// newChatCloseCmd ends a chat opened on a task or on an issue. It is not a
+// second spelling of `chat archive`: closing removes nothing — on a task the
+// worktree belongs to the task, which is why archive is refused there, and on
+// an issue it stays for the issue's next holder (task 140 decision 3).
 func newChatCloseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "close <chat-id>",
-		Short: "End a chat opened on a task, unlocking the task",
-		Long: "Ends a chat opened with `vincent task chat`. A live turn is cancelled first;\n" +
-			"the chat becomes closed and the task's actions come back. The worktree and\n" +
-			"branch are the task's and are left exactly as the chat left them. A chat\n" +
-			"started with `vincent chat start` cannot be closed — archive it instead.",
+		Short: "End a chat opened on a task or an issue, releasing what it held",
+		Long: "Ends a chat opened with `vincent task chat` or `vincent chat start --issue`.\n" +
+			"A live turn is cancelled first, and the chat becomes closed. Nothing on disk\n" +
+			"is touched.\n\n" +
+			"On a task: the task's actions come back. The worktree and branch are the\n" +
+			"task's and are left exactly as the chat left them.\n\n" +
+			"On an issue: the issue's main worktree is released and stays in place,\n" +
+			"uncommitted work included, for the issue's next main task or chat; the\n" +
+			"branch tip is recorded as the chat's end_sha.\n\n" +
+			"A chat started with `vincent chat start` alone cannot be closed — archive it\n" +
+			"instead.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
@@ -109,6 +116,9 @@ func newChatCloseCmd() *cobra.Command {
 				line := fmt.Sprintf("chat %d closed", chat.ID)
 				if chat.LinkedTaskID != nil {
 					line += fmt.Sprintf("; task %d is unlocked", *chat.LinkedTaskID)
+				}
+				if chat.IssueID != nil {
+					line += fmt.Sprintf("; issue %d's main worktree is free for its next main task or chat", *chat.IssueID)
 				}
 				_, err = fmt.Fprintln(cmd.OutOrStdout(), line)
 				return err

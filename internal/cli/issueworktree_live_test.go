@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -141,6 +142,30 @@ func TestTaskAddQueuedBehindNote(t *testing.T) {
 	next := taskAddJSON(t, "task", "add", "--project", f.project, "--issue", f.issue, "--title", "next again")
 	if next.MainWorktreeOccupantTaskID == nil || *next.MainWorktreeOccupantTaskID != main.ID {
 		t.Errorf("--json hint = %v, want %d", next.MainWorktreeOccupantTaskID, main.ID)
+	}
+}
+
+// TestTaskAddQueuedBehindChatNote is review F3: a main task created while a
+// chat opened on the issue holds the main worktree says which chat it waits
+// behind.
+func TestTaskAddQueuedBehindChatNote(t *testing.T) {
+	f := newIssueWorktreeFixture(t)
+	issueID := mustInt(t, f.issue)
+	chat := &store.Chat{
+		ProjectID: mustInt(t, f.project), Title: "work it", Agent: "claude", PermissionMode: "full_auto",
+		BaseBranch: "main", IssueID: &issueID,
+	}
+	if err := f.h.st.CreateIssueChat(t.Context(), chat, func(int64) string { return "vincent/issue-chat" }); err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	_, errOut, code := runCLI(t, "task", "add", "--project", f.project, "--issue", f.issue, "--title", "next")
+	if code != 0 {
+		t.Fatalf("next: exit %d (%s)", code, errOut)
+	}
+	want := "queued behind chat " + strconv.FormatInt(chat.ID, 10) +
+		" (main worktree busy); pass --separate-worktree to run now\n"
+	if !strings.Contains(errOut, want) {
+		t.Errorf("stderr = %q, want %q", errOut, want)
 	}
 }
 
@@ -374,4 +399,31 @@ func mustInt(t *testing.T, s string) int64 {
 		t.Fatalf("parse %q: %v", s, err)
 	}
 	return n
+}
+
+// TestChatCloseOnAnIssue is review F6: `vincent chat close` on a chat
+// opened on an issue closes it and says the issue's main worktree is free,
+// and its help describes both kinds of chat it closes.
+func TestChatCloseOnAnIssue(t *testing.T) {
+	f := newIssueWorktreeFixture(t)
+	issueID := mustInt(t, f.issue)
+	chat := &store.Chat{
+		ProjectID: mustInt(t, f.project), Title: "work it", Agent: "claude", PermissionMode: "full_auto",
+		BaseBranch: "main", IssueID: &issueID,
+	}
+	if err := f.h.st.CreateIssueChat(t.Context(), chat, func(int64) string { return "vincent/issue-chat" }); err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	out, errOut, code := runCLI(t, "chat", "close", strconv.FormatInt(chat.ID, 10))
+	if code != 0 {
+		t.Fatalf("chat close: exit %d (%s)", code, errOut)
+	}
+	want := fmt.Sprintf("chat %d closed; issue %d's main worktree is free for its next main task or chat\n", chat.ID, issueID)
+	if out != want {
+		t.Errorf("stdout = %q, want %q", out, want)
+	}
+	help, _, code := runCLI(t, "chat", "close", "--help")
+	if code != 0 || !strings.Contains(help, "vincent chat start --issue") || !strings.Contains(help, "On an issue:") {
+		t.Errorf("chat close --help (exit %d) does not describe a chat on an issue:\n%s", code, help)
+	}
 }

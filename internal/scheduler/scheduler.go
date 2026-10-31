@@ -259,10 +259,16 @@ func (s *Scheduler) admit(ctx context.Context) {
 // now holds a slot.
 func (s *Scheduler) start(ctx context.Context, task *store.Task, log *slog.Logger) bool {
 	running, _, err := s.deps.Store.TransitionTask(ctx, task.ID,
-		store.TaskQueued, store.TaskRunning, store.TaskChange{})
+		store.TaskQueued, store.TaskRunning, store.TaskChange{IssueMainFree: true})
 	if err != nil {
 		if _, conflict := store.AsStateConflict(err); conflict {
 			return false // a human acted between the query and now
+		}
+		if _, occupied := store.AsIssueWorktreeOccupied(err); occupied {
+			// A chat was opened on the task's issue between the query and
+			// now (task 140, review F2): it holds the main worktree, and the
+			// task waits behind it like any other occupant.
+			return false
 		}
 		log.Error("admission: mark running", "error", err)
 		return false

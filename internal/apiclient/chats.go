@@ -37,9 +37,19 @@ type Chat struct {
 	// chat works in that task's worktree and branch rather than its own, and
 	// while it is open the task is locked; it ends in `closed`, never in
 	// `archived` or `handed_off`.
-	LinkedTaskID *int64    `json:"linked_task_id,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	LinkedTaskID *int64 `json:"linked_task_id,omitempty"`
+	// IssueID is the issue this chat was opened on (task 140): it holds the
+	// issue's main worktree, on the issue's main branch, and ends in
+	// `closed`, `archived` or `handed_off`.
+	IssueID *int64 `json:"issue_id,omitempty"`
+	// EndSHA is the commit an issue chat's work ended on, once it let go of
+	// the main worktree.
+	EndSHA    string    `json:"end_sha,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	// Warnings are non-fatal notes on a create, such as a chat opened on a
+	// closed issue.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ChatSkills is GET /v1/chats/{id}/skills: the skills the chat's agent CLI
@@ -182,6 +192,8 @@ type CreateChatRequest struct {
 	// without the other.
 	BranchName     string `json:"branch_name,omitempty"`
 	ExistingBranch bool   `json:"existing_branch,omitempty"`
+	// IssueID opens the chat on an issue's main worktree (task 140).
+	IssueID *int64 `json:"issue_id,omitempty"`
 }
 
 // CreateChat starts a chat: a title, a project, an agent, and a worktree and

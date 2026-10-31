@@ -153,6 +153,7 @@ the living engineering specification records implementation contracts.
 | [137](137-handoff-pillar.md) | The handoff pillar: deliveries, handoffs that claim `hand_off` issues and record each outcome, and human-given grants for automated forge writes | ✅ done (15/15) |
 | [138](138-copilot-adapter.md) | GitHub Copilot CLI as a fourth agent adapter, pinned to captured fixtures of one build | 🔄 in progress (16/17) |
 | [139](139-privacy-policy.md) | A published privacy policy, and `PrivacyUrl` in the WinGet manifest | 🔄 in progress (3/4) |
+| [140](140-chat-on-an-issue.md) | A chat on an issue: it holds the issue's main worktree, moves it to in progress, and hands off into a main task | 🔄 in progress (8/11) |
 
 ## How to add and update a task document
 

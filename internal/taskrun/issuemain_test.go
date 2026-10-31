@@ -733,3 +733,103 @@ steps:
 			done.BranchName, done.AdoptedBranch, done.WorktreePath, held.WorktreePath)
 	}
 }
+
+// releasedIssueChat opens a chat on issueID in the store, gives it a real
+// worktree on a new branch the way placeIssueChat's cut does, lets dirty
+// write into it, and closes it: the directory a released issue chat leaves
+// for the next main task (task 140 decision 3).
+func (h *engineHarness) releasedIssueChat(t *testing.T, issueID int64, dirty func(path string)) *store.Chat {
+	t.Helper()
+	chat := &store.Chat{
+		ProjectID: h.projectID, Title: "talk it through", Agent: "claude", PermissionMode: "full_auto",
+		BaseBranch: "main", IssueID: &issueID,
+	}
+	if err := h.store.CreateIssueChat(t.Context(), chat, func(id int64) string {
+		return worktree.BranchName(id, "talk it through")
+	}); err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	path := filepath.Join(h.dataDir, "worktrees", "chat-"+strconv.FormatInt(chat.ID, 10))
+	testrepo.Run(t, h.repo, "worktree", "add", "-b", chat.Branch, path, "main")
+	base := testrepo.Run(t, path, "rev-parse", "HEAD")
+	if _, err := h.store.ClaimChatWorktree(t.Context(), chat.ID, path, base, nil); err != nil {
+		t.Fatalf("ClaimChatWorktree: %v", err)
+	}
+	if dirty != nil {
+		dirty(path)
+	}
+	closed, err := h.store.CloseChat(t.Context(), chat.ID)
+	if err != nil {
+		t.Fatalf("CloseChat: %v", err)
+	}
+	return closed
+}
+
+// TestMainTaskReceivesAClosedIssueChatsWorktree is task 140 decision 3 at
+// admission (review F5): a main task admitted after an issue chat closed
+// receives the chat's directory, uncommitted work included, on the chat's
+// branch; the chat keeps the tip as end_sha and lets go of the path.
+func TestMainTaskReceivesAClosedIssueChatsWorktree(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	chat := h.releasedIssueChat(t, iss, func(path string) {
+		testrepo.WriteFile(t, path, "wip.txt", "from the chat\n")
+	})
+	tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+chat.Branch)
+	h.start(t)
+
+	task := h.mainTask(t, iss, "carry on", gatedSnapshot, nil)
+	if task.BranchName != chat.Branch {
+		t.Fatalf("main task branch = %q, want the chat's %q", task.BranchName, chat.Branch)
+	}
+	got := h.waitForState(t, task.ID, store.TaskAwaitingGate, store.TaskBlocked, store.TaskDone)
+	if got.State != store.TaskAwaitingGate {
+		t.Fatalf("main task = %s (%s: %s), want awaiting_gate", got.State, got.BlockReason, got.BlockDetail)
+	}
+	if got.WorktreePath != chat.WorktreePath {
+		t.Fatalf("main task works in %q, want the chat's %q", got.WorktreePath, chat.WorktreePath)
+	}
+	if b, err := os.ReadFile(filepath.Join(got.WorktreePath, "wip.txt")); err != nil || string(b) != "from the chat\n" {
+		t.Errorf("the chat's uncommitted work did not come with the directory: %q, %v", b, err)
+	}
+	if got.BaseSHA != tip {
+		t.Errorf("main task base = %q, want the chat's tip %s", got.BaseSHA, tip)
+	}
+	after, err := h.store.GetChat(t.Context(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.WorktreePath != "" || after.EndSHA != tip {
+		t.Errorf("chat after the transfer = (path %q, end_sha %q), want no path and end_sha %s",
+			after.WorktreePath, after.EndSHA, tip)
+	}
+	h.assertOneClaim(t, got.WorktreePath, task.ID)
+}
+
+// TestHalfFinishedRebaseInAClosedChatsWorktreeBlocksTheMainTask: a git
+// operation an issue chat left partway through is not handed on (review
+// F5). The task blocks repo_operation_in_progress and the chat keeps the
+// directory.
+func TestHalfFinishedRebaseInAClosedChatsWorktreeBlocksTheMainTask(t *testing.T) {
+	h := newEngineHarness(t)
+	iss := newIssue(t, h)
+	chat := h.releasedIssueChat(t, iss, func(path string) {
+		gitDir := testrepo.Run(t, path, "rev-parse", "--absolute-git-dir")
+		if err := os.MkdirAll(filepath.Join(filepath.FromSlash(gitDir), "rebase-merge"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	})
+	h.start(t)
+
+	task := h.mainTask(t, iss, "carry on", gatedSnapshot, nil)
+	got := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskAwaitingGate, store.TaskDone)
+	if got.State != store.TaskBlocked || got.BlockReason != worktree.ReasonRepoOperationInProgress {
+		t.Fatalf("main task = %s (%s), want blocked %s", got.State, got.BlockReason, worktree.ReasonRepoOperationInProgress)
+	}
+	if got.WorktreePath != "" {
+		t.Errorf("blocked task names %q, want nothing", got.WorktreePath)
+	}
+	if after, err := h.store.GetChat(t.Context(), chat.ID); err != nil || after.WorktreePath != chat.WorktreePath {
+		t.Errorf("chat after the refusal = %+v, %v; want it to keep %q", after, err, chat.WorktreePath)
+	}
+}

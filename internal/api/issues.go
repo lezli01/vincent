@@ -189,6 +189,10 @@ type issueMainWorktreeBody struct {
 	Branch         string  `json:"branch"`
 	OccupantTaskID *int64  `json:"occupant_task_id"`
 	OccupantState  *string `json:"occupant_state"`
+	// OccupantChatID is the live chat opened on the issue that holds the
+	// worktree (task 140 decision 2); null otherwise. At most one of it and
+	// occupant_task_id is set.
+	OccupantChatID *int64 `json:"occupant_chat_id"`
 }
 
 // issueTasksBody is the root tasks an issue started.
@@ -269,6 +273,7 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 			Branch:         mw.Branch,
 			OccupantTaskID: mw.OccupantTaskID,
 			OccupantState:  nilIfEmpty(string(mw.OccupantState)),
+			OccupantChatID: mw.OccupantChatID,
 		}
 	}
 	if issues.Mirrored(iss) {
@@ -888,6 +893,13 @@ func (s *Server) handleIssueDelete(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
 				Code: CodeIssueHasLiveMainTask, Message: live.Error(),
 				Details: map[string]string{"task_id": fmt.Sprint(live.TaskID)},
+			}})
+			return
+		}
+		if live, isLive := store.AsIssueHasLiveChat(err); isLive {
+			writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
+				Code: CodeIssueHasLiveChat, Message: live.Error(),
+				Details: map[string]string{"chat_id": fmt.Sprint(live.ChatID)},
 			}})
 			return
 		}

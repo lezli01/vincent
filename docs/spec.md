@@ -683,7 +683,7 @@ creation rather than a queued row (decision 2).
 | `adopted_branch` | *Added 2026-09-21 (task 125).* A task's column, on a chat and for the same reason (§5.3): the chat runs on a branch it did not cut, so archive and `DELETE /v1/chats/{id}?delete_branch=true` both report `not_ours` for it. Always false on a linked chat, which owns no branch at all |
 | `session_id` | **the agent CLI's own conversation id** — the whole of §7.3's chat-only amendment. Empty before the first turn finishes |
 | `pending_input` | the §7.4 request being awaited; non-null exactly in `awaiting_input` |
-| *(permanent delete)* | *Added 2026-09-09 (task 092, issue #350):* `DELETE /v1/chats/{id}` is legal from **`archived` alone**, and is refused from `handed_off` for the reason `archive` is: the task named by `handoff_task_id` owns the worktree and the branch, and a deleted row cannot say that. It is not a §5.5 transition — it removes the row rather than moving it — so the state machine above is unchanged. Its task mirror is refused too: an archived task a `handed_off` chat points at cannot be deleted while that chat exists, because `handoff_task_id` is `ON DELETE SET NULL` and the chat would be left pointing at nothing. *Amended 2026-09-17 (task 119):* legal from `closed` too, and `delete_branch=true` on a linked chat is refused `409 chat_linked_to_task` naming the task — the branch is the task's. Permanently deleting a task takes its linked chats with it (`linked_task_id` is `ON DELETE CASCADE`), which needs no refusal: a task can only reach `archived` once its chat is closed |
+| *(permanent delete)* | *Added 2026-09-09 (task 092, issue #350):* `DELETE /v1/chats/{id}` is legal from **`archived` alone**, and is refused from `handed_off` for the reason `archive` is: the task named by `handoff_task_id` owns the worktree and the branch, and a deleted row cannot say that. It is not a §5.5 transition — it removes the row rather than moving it — so the state machine above is unchanged. Its task mirror is refused too: an archived task a `handed_off` chat points at cannot be deleted while that chat exists, because `handoff_task_id` is `ON DELETE SET NULL` and the chat would be left pointing at nothing. *Amended 2026-09-17 (task 119):* legal from `closed` too, and `delete_branch=true` on a linked chat is refused `409 chat_linked_to_task` naming the task — the branch is the task's. Permanently deleting a task takes its linked chats with it (`linked_task_id` is `ON DELETE CASCADE`), which needs no refusal: a task can only reach `archived` once its chat is closed. *Amended 2026-10-31 (task 140, review F1):* a chat opened on an issue is refused two more ways, because a released one may still be holding the issue's work: `issue_chat_holds_worktree` while it names a `worktree_path` (closed, or archived while a main task waited for the directory) — the row is the directory's §10 claim — and `issue_chat_holds_branch` while it is the only row naming the issue's main branch (no unarchived main task carries it), since without it the next main task would cut a fresh branch cut off from the chat's work |
 | `handoff_task_id` | *Added 2026-09-01 (task 074, issue #288):* the task this chat's worktree and branch were handed to. The **one authoritative foreign key** between the two records; a task's `source_chat_id` (§13.2) is this column read backwards, one indexed query per list, never a second stored copy. Non-null exactly in `handed_off` |
 | `linked_task_id` | *Added 2026-09-17 (task 119, issue #472):* the task this chat was opened on. Null for a free chat, fixed at open, and the **one authoritative foreign key** for the link, as `handoff_task_id` is for a handoff (task 074 decision 2): the lock (§6) and a task's `open_chat_id` (§13.2) are this column read backwards, never a stored copy. It selects the linked transition table below |
 | `opening_context` | *Added 2026-09-17 (task 119):* the task context the daemon assembled when a linked chat was opened, prepended to the **first** turn's prompt and to no later one. A snapshot is exact because the task cannot move while the chat is open. Empty on a free chat |
@@ -797,6 +797,37 @@ differs is where it works and how it ends.
   transaction (§6).
 - **On a task that runs in a container, its turns run in that container**
   (§16). A free chat still runs on the host.
+
+#### On an issue (added 2026-10-31, task 140, issue #885)
+
+A chat may be opened **on an issue**: `POST /v1/chats` with `issue_id`
+(§13.2), `vincent chat start --issue`. Such a chat carries `issue_id` and is
+a third kind beside the free chat and the linked chat, with its own
+transition table: everything a free chat may do — `send`, `archive`,
+`hand_off` from `idle` — plus `close` from `idle`, as a linked chat may.
+`closed` and `archived` are both terminal; neither follows the other.
+
+- **It holds the issue's main worktree** (§5.6) as a main-role task does.
+  An issue with no main branch gets one: the chat's `vincent/{id}-{slug}`,
+  cut in the create, becomes the issue's main branch. Otherwise the chat
+  takes the main branch — including a name a queued main task already
+  resolved — and receives the directory by §10's transfer from the settled
+  main task or released chat that names it, uncommitted work included and
+  the predecessor's tip stamped as its `end_sha`, or revives it from the
+  branch. `branch_name` may only restate the main branch.
+- **One holder at a time.** It is refused `409 issue_worktree_occupied`
+  while a main task occupies the worktree, and `409 issue_has_live_chat`
+  while another chat on the issue is not terminal; while it is live, a main
+  task of the issue, merge-backs included, waits `queued` (§11).
+- **Release.** `close` and `archive` let go of the worktree and stamp the
+  branch tip as the chat's `end_sha`. `close` leaves the directory for the
+  next holder; `archive` leaves it when a main task is already waiting for
+  it and removes it otherwise. The branch stays the issue's main branch
+  either way and is never deleted with the chat (`409 issue_chat_branch`).
+- **Handoff** defaults `issue_id` to the chat's and creates a **main** task
+  in the chat's worktree; another issue, or `merge_back`, is a `400`.
+- **Its first turn** carries the issue's title, body and comments, bounded,
+  as a linked chat's carries its task's context.
 
 #### Skills available to a chat (added 2026-09-19, task 124.9, issue #505)
 
@@ -1429,6 +1460,25 @@ holder (task 134 decision 14). Delete is refused with
 `409 issue_has_live_main_task` while any main-role task of the issue is not
 settled (decision 17.1); settled and archived ones do not hold it, narrowing
 task 130 decision 6.
+*Amended 2026-10-31 (task 140, issue #885):* **a chat on an issue** (§5.5)
+is a main-worktree holder too. The occupant is now a main task *or* a
+non-terminal issue chat, served as `main_worktree.occupant_task_id` or
+`occupant_chat_id`, and the scheduler's admission predicate reads both. A
+chat is created on an API goroutine, not the scheduler's, so the `queued →
+running` transition of a main task re-checks for a live issue chat in its
+own transaction and loses cleanly — the task stays `queued` — when one was
+opened after the walk read the candidates (review F2). The
+main branch is a main task's, else the branch of any issue chat that was
+not handed off, so a closed or archived chat keeps its branch on the issue's
+line and the next main task revives it. The lane gains a fourth fact: an
+issue chat that was not handed off, created after the latest finished
+main-line root task finished (or with none finished), holds the issue
+`in_progress`, ahead of a ready delivery; a later main task finishing ready
+moves it to `hand_off`. A live issue chat makes the issue `active`, and one
+`awaiting_input` raises `attention`; one that is closed or archived leaves
+it `in_progress` with the `idle` marker. Delete is refused
+`409 issue_has_live_chat` while one is live. This amends task 134's "chats
+carry no `issue_id`".
 *Amended 2026-10-07 (task 134.14, issue #761):* **merge-back tasks exist.**
 When a side task reaches `done` — at the end of its workflow or of a
 follow-up — and its branch has commits past its `base_sha`, the same
@@ -10889,6 +10939,9 @@ POST   /v1/tasks                        { project_id, workflow, title, descripti
                                         that occupant — widened to a settled task kept open by
                                         a linked chat — holds the worktree (§5.6, §11); task
                                         125's directory claim still applies beside it (§10).
+                                        *Amended 2026-10-31 (task 140, review F3):* when a chat
+                                        opened on the issue holds it, the 201 carries
+                                        `main_worktree_occupant_chat_id` instead.
                                         `merge_back` enters the
                                         idempotency digest only when present.
                                         *Amended 2026-10-08 (task 134.16, issue #763):* every
@@ -11847,7 +11900,7 @@ And one issue kind joins the table above, making it eight:
 
 | Type | Payload |
 |---|---|
-| `issue.lane_changed` | `{ id, from, to, task_id?, by? }` — `from`/`to` are §5.6's lanes (`open`, `in_progress`, `hand_off`, `done`); `task_id` names the root task whose create, transition, delete or restore moved the lane, `by` the actor of a close or reopen; exactly one is set. *Amended 2026-10-24 (task 137.15):* a readiness mark — `vincent issue ready`/`unready`, or `deliver --ready` on a done task — that moves the lane sets `by` (`human` or `agent`) |
+| `issue.lane_changed` | `{ id, from, to, task_id?, by? }` — `from`/`to` are §5.6's lanes (`open`, `in_progress`, `hand_off`, `done`); `task_id` names the root task whose create, transition, delete or restore moved the lane, `by` the actor of a close or reopen; exactly one is set. *Amended 2026-10-24 (task 137.15):* a readiness mark — `vincent issue ready`/`unready`, or `deliver --ready` on a done task — that moves the lane sets `by` (`human` or `agent`). *Amended 2026-10-31 (task 140, review F8):* a chat opened on the issue moves the lane too, so its `chat.created` and its `chat.deleted` — a permanent delete, or the rollback of a create whose worktree could not be placed — are each followed by the move they cause, with `by: human` |
 
 It is appended in the **same transaction** as the write that moved the lane,
 **immediately after** the event recording the cause — `task.created`,

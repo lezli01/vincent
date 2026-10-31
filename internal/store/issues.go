@@ -220,6 +220,7 @@ func issueSelect() string {
 		(` + issueMainBranchSQL("i.id") + `),
 		(` + issueMainOccupantSQL("i.id", "") + `),
 		(` + issueMainOccupantStateSQL("i.id") + `),
+		(` + issueChatOccupantSQL("i.id") + `),
 		` + sideActiveExpr().sql + `,
 		` + mergeBacksPendingExpr().sql + `,
 		` + latestDeliveryExpr().sql + `,
@@ -243,6 +244,7 @@ func issueSelectArgs() []any {
 	}
 	args = append(args, issueMainOccupantArgs()...)
 	args = append(args, issueMainOccupantArgs()...)
+	args = append(args, terminalChatStateArgs()...)
 	for _, f := range []sqlFrag{
 		sideActiveExpr(), mergeBacksPendingExpr(), latestDeliveryExpr(),
 		handoffMarkerExpr(), markerHandoffColumn("id"), markerHandoffColumn("task_id"), markerTaskPausedExpr(),
@@ -264,6 +266,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		mainBranch                          sql.NullString
 		mainOccupant                        sql.NullInt64
 		mainOccupantState                   sql.NullString
+		mainChatOccupant                    sql.NullInt64
 		rID, rIssueID, rProjectID, rNumber  sql.NullInt64
 		rProvider, rKey, rRepo, rURL, rJSON sql.NullString
 		rRemoteUpdated, rSynced             sql.NullString
@@ -277,7 +280,7 @@ func scanIssue(r rowScanner) (*Issue, error) {
 	if err := r.Scan(&iss.ID, &iss.ProjectID, &iss.Title, &iss.Body, &state, &closeReason, &dupOf,
 		&iss.Kind, &iss.Priority, &iss.Author, &parent, &createdBy, &iss.Version, &created, &updated, &closedAt,
 		&iss.TaskCount, &active, &lane, &attention, &mainBranch, &mainOccupant,
-		&mainOccupantState, &iss.SideActive, &iss.MergeBacksPending, &delivery,
+		&mainOccupantState, &mainChatOccupant, &iss.SideActive, &iss.MergeBacksPending, &delivery,
 		&marker, &markerHandoff, &markerTask, &markerPaused,
 		&rID, &rIssueID, &rProjectID, &rProvider, &rKey, &rRepo, &rNumber, &rURL,
 		&rJSON, &rRemoteUpdated, &rSynced, &rSuppressed, &rStatus); err != nil {
@@ -294,6 +297,9 @@ func scanIssue(r rowScanner) (*Issue, error) {
 		id := mainOccupant.Int64
 		iss.MainWorktree.OccupantTaskID = &id
 		iss.MainWorktree.OccupantState = TaskState(mainOccupantState.String)
+	} else if mainChatOccupant.Valid {
+		id := mainChatOccupant.Int64
+		iss.MainWorktree.OccupantChatID = &id
 	}
 	if dupOf.Valid {
 		iss.DuplicateOfIssueID = &dupOf.Int64
@@ -983,6 +989,13 @@ func (s *Store) DeleteIssue(ctx context.Context, id int64, by issuestate.Actor) 
 		}
 		if live != 0 {
 			return nil, &IssueHasLiveMainTaskError{IssueID: id, TaskID: live, Side: side}
+		}
+		// A live issue chat holds it too (task 140 decision 10): it works in
+		// the issue's main worktree, and the issue is what names that line.
+		if chatID, err := liveIssueChatTx(ctx, tx, id); err != nil {
+			return nil, err
+		} else if chatID != 0 {
+			return nil, &IssueHasLiveChatError{IssueID: id, ChatID: chatID}
 		}
 		// The FK's SET NULL would do this too; it is spelled out because the
 		// tombstone is the point, not a side effect.

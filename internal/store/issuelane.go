@@ -78,12 +78,23 @@ func attentionCond() sqlFrag {
 	return sqlFrag{`t.state IN ` + placeholders(len(nh)), nh}
 }
 
-// activeExpr is Issue.Active: some root task is unsettled.
-func activeExpr() sqlFrag { return rootTaskExists(unsettledCond()) }
+// activeExpr is Issue.Active: some root task is unsettled, or a chat opened
+// on the issue is live (task 140 decision 5) — it works in the issue's main
+// worktree as a running main task does.
+func activeExpr() sqlFrag { return orFrag(rootTaskExists(unsettledCond()), issueLiveChatCond()) }
 
-// attentionExpr is Issue.Attention: some root task needs a person. It is
-// computed for a closed issue too, whose lane is `done` regardless.
-func attentionExpr() sqlFrag { return rootTaskExists(attentionCond()) }
+// attentionExpr is Issue.Attention: some root task needs a person, or a chat
+// on the issue is awaiting input (task 140 decision 5). It is computed for a
+// closed issue too, whose lane is `done` regardless.
+func attentionExpr() sqlFrag { return orFrag(rootTaskExists(attentionCond()), issueAwaitingChatCond()) }
+
+// orFrag is (a OR b), with a's arguments before b's.
+func orFrag(a, b sqlFrag) sqlFrag {
+	return sqlFrag{
+		sql:  `(` + a.sql + ` OR ` + b.sql + `)`,
+		args: append(slices.Clone(a.args), b.args...),
+	}
+}
 
 // laneExpr is issuestate.LaneOf in SQL (task 137 decision 13): closed is
 // `done` whatever the tasks do (decision 4); otherwise an unsettled root
@@ -91,10 +102,16 @@ func attentionExpr() sqlFrag { return rootTaskExists(attentionCond()) }
 // finished work that is not — a delivery marked not ready, or only a side
 // task's — is `in_progress` too, idle until someone marks it ready; and
 // anything else — no task, or only aborted ones (decision 19) — `open`.
+//
+// A chat on the issue that is the latest main-line work (task 140 decision 5,
+// issueLatestChatCond) is `in_progress` too, ahead of a ready delivery.
 func laneExpr() sqlFrag {
 	unsettled, ready, finished := activeExpr(), latestReadyExpr(), rootTaskExists(handedOffCond())
+	chat := issueLatestChatCond()
 	args := []any{string(issuestate.Closed), string(issuestate.LaneDone)}
 	args = append(args, unsettled.args...)
+	args = append(args, string(issuestate.LaneInProgress))
+	args = append(args, chat.args...)
 	args = append(args, string(issuestate.LaneInProgress))
 	args = append(args, ready.args...)
 	args = append(args, string(issuestate.LaneHandOff))
@@ -103,6 +120,7 @@ func laneExpr() sqlFrag {
 	return sqlFrag{
 		sql: `(CASE WHEN i.state = ? THEN ?
 			WHEN ` + unsettled.sql + ` THEN ?
+			WHEN ` + chat.sql + ` THEN ?
 			WHEN ` + ready.sql + ` = 1 THEN ?
 			WHEN ` + finished.sql + ` THEN ?
 			ELSE ? END)`,

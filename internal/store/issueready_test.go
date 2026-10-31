@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
@@ -74,15 +75,40 @@ func mustGetIssue(t *testing.T, s *Store, id int64) *Issue {
 	return iss
 }
 
+// seedChat is one chat opened on a seeded issue (task 140): its state and
+// created_at, in minutes after seedEpoch.
+type seedChat struct {
+	state   chatstate.State
+	created int
+}
+
+// seedChats writes chats onto issue issueID with raw SQL, so created_at can
+// sit before or after a seeded task's finish.
+func seedChats(t *testing.T, s *Store, projectID, issueID int64, chats []seedChat) {
+	t.Helper()
+	for n, c := range chats {
+		at := formatTime(seedEpoch.Add(time.Duration(c.created) * time.Minute))
+		if _, err := s.db.Exec(`INSERT INTO chats (project_id, title, state, agent, permission_mode, branch,
+			base_branch, issue_id, created_at, updated_at) VALUES (?, ?, ?, 'claude', 'full_auto', ?, 'main', ?, ?, ?)`,
+			projectID, fmt.Sprintf("chat-%d-%d", issueID, n), string(c.state),
+			fmt.Sprintf("vincent/chat-%d-%d", issueID, n), issueID, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func finishedState(st seedTask) bool {
 	return st.state == TaskDone || (st.state == TaskArchived && st.archivedFrom == TaskDone)
 }
 
-// seedLaneOf is issuestate.LaneOf over seeded tasks, reduced in Go the way
-// laneExpr reduces them in SQL: the latest finished main-line task is the
-// one with the greatest finished_at (ties to the greater id, which is the
-// later in tasks), and its delivery reads ready unless it says otherwise.
-func seedLaneOf(closed bool, tasks []seedTask) issuestate.Lane {
+// seedLaneOf is issuestate.LaneOf over seeded tasks and chats, reduced in Go
+// the way laneExpr reduces them in SQL: the latest finished main-line task is
+// the one with the greatest finished_at (ties to the greater id, which is
+// the later in tasks), and its delivery reads ready unless it says otherwise;
+// a chat not handed off is the latest work when it was created after that
+// task finished, or there is no such task (task 140 decision 5). It also
+// returns Issue.Active and Issue.Attention over the same rows.
+func seedLaneOf(closed bool, tasks []seedTask, chats []seedChat) (lane issuestate.Lane, active, attention bool) {
 	var unsettled, finished bool
 	latest := -1
 	for n, st := range tasks {
@@ -96,17 +122,27 @@ func seedLaneOf(closed bool, tasks []seedTask) issuestate.Lane {
 		}
 	}
 	ready := latest >= 0 && tasks[latest].raw != rawNotReady
+	chatLatest := false
+	for _, c := range chats {
+		unsettled = unsettled || !chatstate.Terminal(c.state)
+		attention = attention || c.state == chatstate.AwaitingInput
+		after := latest < 0 || tasks[latest].finished == 0 || c.created > tasks[latest].finished
+		chatLatest = chatLatest || (c.state != chatstate.HandedOff && after)
+	}
 	state := issuestate.Open
 	if closed {
 		state = issuestate.Closed
 	}
-	return issuestate.LaneOf(state, unsettled, finished, ready)
+	return issuestate.LaneOf(state, unsettled, finished, ready, chatLatest), unsettled, attention
 }
 
 // TestLaneOfMatchesLaneExpr seeds an issue for every combination of the
 // facts the lane reads — closed, an unsettled root, a finished side task,
-// and the latest main-line delivery's shape — and holds laneExpr to
-// issuestate.LaneOf on each, so the two spellings of the rule cannot drift.
+// the latest main-line delivery's shape, and a chat opened on the issue in
+// each state before or after that delivery finished (task 140, review F4) —
+// and holds laneExpr, activeExpr, attentionExpr and the handoff marker to
+// issuestate.LaneOf and HandoffMarkerOf on each, so the two spellings of
+// the rule cannot drift.
 func TestLaneOfMatchesLaneExpr(t *testing.T) {
 	s := openTest(t)
 	p := testProject(t, s, "p1")
@@ -122,32 +158,64 @@ func TestLaneOfMatchesLaneExpr(t *testing.T) {
 		"newer not ready":    {{state: TaskDone, raw: rawReady, finished: 1}, {state: TaskDone, raw: rawNotReady, finished: 2}},
 		"newer ready":        {{state: TaskDone, raw: rawNotReady, finished: 1}, {state: TaskDone, raw: rawKeyless, finished: 2}},
 	}
+	// Created at minute 0 is before every seeded finish; minute 5 after the
+	// main-line ones and before the side task's, which never counts.
+	chatCases := map[string][]seedChat{
+		"no chat":            nil,
+		"idle chat before":   {{state: chatstate.Idle, created: 0}},
+		"idle chat after":    {{state: chatstate.Idle, created: 5}},
+		"awaiting chat":      {{state: chatstate.AwaitingInput, created: 5}},
+		"closed chat before": {{state: chatstate.Closed, created: 0}},
+		"closed chat after":  {{state: chatstate.Closed, created: 5}},
+		"archived chat":      {{state: chatstate.Archived, created: 5}},
+		"handed-off chat":    {{state: chatstate.HandedOff, created: 5}},
+	}
 	names := make([]string, 0, len(mains))
 	for name := range mains {
 		names = append(names, name)
 	}
 	slices.Sort(names)
+	chatNames := make([]string, 0, len(chatCases))
+	for name := range chatCases {
+		chatNames = append(chatNames, name)
+	}
+	slices.Sort(chatNames)
 	seen := map[issuestate.Lane]bool{}
 	for _, name := range names {
-		for _, closed := range []bool{false, true} {
-			for _, running := range []bool{false, true} {
-				for _, side := range []bool{false, true} {
-					tasks := slices.Clone(mains[name])
-					if running {
-						tasks = append(tasks, seedTask{state: TaskRunning})
+		for _, chatName := range chatNames {
+			for _, closed := range []bool{false, true} {
+				for _, running := range []bool{false, true} {
+					for _, side := range []bool{false, true} {
+						tasks := slices.Clone(mains[name])
+						if running {
+							tasks = append(tasks, seedTask{state: TaskRunning})
+						}
+						if side {
+							// Newest of all, and not ready: a side task is never
+							// the latest delivery, whatever it says.
+							tasks = append(tasks, seedTask{state: TaskDone, side: true, raw: rawNotReady, finished: 9})
+						}
+						label := fmt.Sprintf("%s, %s closed=%v running=%v side=%v", name, chatName, closed, running, side)
+						chats := chatCases[chatName]
+						iss := seedIssue(t, s, p.ID, label, closed, tasks...)
+						if len(chats) > 0 {
+							seedChats(t, s, p.ID, iss.ID, chats)
+							iss = mustGetIssue(t, s, iss.ID)
+						}
+						want, active, attention := seedLaneOf(closed, tasks, chats)
+						if iss.Lane != want || iss.Active != active || iss.Attention != attention {
+							t.Errorf("%s: SQL lane %s active %v attention %v, Go %s %v %v",
+								label, iss.Lane, iss.Active, iss.Attention, want, active, attention)
+						}
+						var marker HandoffMarker
+						if iss.Handoff != nil {
+							marker = iss.Handoff.State
+						}
+						if wantMarker := HandoffMarkerOf(iss.State, want, active, nil, false); marker != wantMarker {
+							t.Errorf("%s: SQL marker %q, HandoffMarkerOf %q", label, marker, wantMarker)
+						}
+						seen[iss.Lane] = true
 					}
-					if side {
-						// Newest of all, and not ready: a side task is never
-						// the latest delivery, whatever it says.
-						tasks = append(tasks, seedTask{state: TaskDone, side: true, raw: rawNotReady, finished: 9})
-					}
-					label := fmt.Sprintf("%s closed=%v running=%v side=%v", name, closed, running, side)
-					iss := seedIssue(t, s, p.ID, label, closed, tasks...)
-					want := seedLaneOf(closed, tasks)
-					if iss.Lane != want {
-						t.Errorf("%s: laneExpr %s, LaneOf %s", label, iss.Lane, want)
-					}
-					seen[iss.Lane] = true
 				}
 			}
 		}

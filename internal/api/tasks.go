@@ -201,6 +201,10 @@ type taskResponse struct {
 	// behind until it settles (task 134.11). Absent otherwise, and on every
 	// other response.
 	MainWorktreeOccupantTaskID *int64 `json:"main_worktree_occupant_task_id,omitempty"`
+	// MainWorktreeOccupantChatID is the same hint when the holder is a chat
+	// opened on the issue (task 140 decision 2, review F3); at most one of
+	// the two is set.
+	MainWorktreeOccupantChatID *int64 `json:"main_worktree_occupant_chat_id,omitempty"`
 	// Delivery is what the task's last finished run delivered (§5.3, task
 	// 137.2), null before one is recorded. A list carries its summary; the
 	// detail carries it in full, as it carries the workflow snapshot.
@@ -1234,7 +1238,7 @@ func (s *Server) handleTaskCreate(w http.ResponseWriter, r *http.Request) {
 	resp := toTaskResponse(&t, s.snaps.get(t.ID, t.WorkflowSnapshot))
 	s.overlayLiveIssue(ctx, &resp, &t)
 	resp.Warnings = warnings
-	resp.MainWorktreeOccupantTaskID = s.mainWorktreeOccupant(ctx, &t)
+	resp.MainWorktreeOccupantTaskID, resp.MainWorktreeOccupantChatID = s.mainWorktreeOccupant(ctx, &t)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -1337,19 +1341,22 @@ func (s *Server) newTaskBranch(
 // will queue behind, or nil. Read after the commit, so it is the occupant the
 // new task actually meets; a failed read degrades to no hint, since the task
 // already exists and the hint is advisory.
-func (s *Server) mainWorktreeOccupant(ctx context.Context, t *store.Task) *int64 {
+func (s *Server) mainWorktreeOccupant(ctx context.Context, t *store.Task) (taskID, chatID *int64) {
 	if t.IssueWorktree != store.IssueWorktreeMain || t.IssueID == nil {
-		return nil
+		return nil, nil
 	}
 	mw, err := s.deps.Store.GetIssueMainWorktree(ctx, *t.IssueID)
 	if err != nil {
 		s.deps.Logger.Warn("read issue main worktree", "issue", *t.IssueID, "error", err)
-		return nil
+		return nil, nil
+	}
+	if mw.OccupantChatID != nil {
+		return nil, mw.OccupantChatID
 	}
 	if mw.OccupantTaskID == nil || *mw.OccupantTaskID == t.ID {
-		return nil
+		return nil, nil
 	}
-	return mw.OccupantTaskID
+	return mw.OccupantTaskID, nil
 }
 
 // checkTaskCatalog applies the §8.2 cross-catalog check to every agent

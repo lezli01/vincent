@@ -178,40 +178,76 @@ var linked = map[State]map[Action]State{
 	Closed:        {},
 }
 
-// tableFor picks the free or the linked table.
-func tableFor(isLinked bool) map[State]map[Action]State {
-	if isLinked {
+// issueChat is the table for a chat opened on an issue (task 140): it holds
+// the issue's main worktree, so it can do everything a free chat can — send,
+// archive, hand off into a main task — and it can also `close`, as a linked
+// chat can, because closing is how it lets go of the worktree for the next
+// main task without archiving its history (task 140 decision 3). `closed`
+// and `archived` are both terminal: "closed, then archived" is not a path.
+var issueChat = map[State]map[Action]State{
+	Idle: {
+		Send:    Running,
+		Archive: Archived,
+		HandOff: HandedOff,
+		Close:   Closed,
+	},
+	Running:       transitions[Running],
+	AwaitingInput: transitions[AwaitingInput],
+	Archived:      {},
+	HandedOff:     {},
+	Closed:        {},
+}
+
+// Kind selects which of §5.5's transition tables a chat follows.
+type Kind int
+
+// The three chat kinds (§5.5): a free chat on its own worktree, a chat linked
+// to a task's worktree (task 119), and a chat on an issue's main worktree
+// (task 140).
+const (
+	KindFree Kind = iota
+	KindLinked
+	KindIssue
+)
+
+// tableFor picks the table for a chat kind.
+func tableFor(k Kind) map[State]map[Action]State {
+	switch k {
+	case KindLinked:
 		return linked
+	case KindIssue:
+		return issueChat
+	default:
+		return transitions
 	}
-	return transitions
 }
 
 // Next returns the state a reaches from s on a free chat, and whether the
 // pair is legal.
-func Next(s State, a Action) (State, bool) { return NextFor(false, s, a) }
+func Next(s State, a Action) (State, bool) { return NextFor(KindFree, s, a) }
 
-// NextFor is Next under the table for a free (false) or linked (true) chat.
-func NextFor(isLinked bool, s State, a Action) (State, bool) {
-	next, ok := tableFor(isLinked)[s][a]
+// NextFor is Next under the table for chat kind k.
+func NextFor(k Kind, s State, a Action) (State, bool) {
+	next, ok := tableFor(k)[s][a]
 	return next, ok
 }
 
 // Allowed reports whether a is legal from s on a free chat.
-func Allowed(s State, a Action) bool { return AllowedFor(false, s, a) }
+func Allowed(s State, a Action) bool { return AllowedFor(KindFree, s, a) }
 
-// AllowedFor is Allowed under the table for a free or linked chat.
-func AllowedFor(isLinked bool, s State, a Action) bool {
-	_, ok := tableFor(isLinked)[s][a]
+// AllowedFor is Allowed under the table for chat kind k.
+func AllowedFor(k Kind, s State, a Action) bool {
+	_, ok := tableFor(k)[s][a]
 	return ok
 }
 
 // Actions lists the actions legal from s on a free chat, sorted, so a client
 // can render the affordances without a second copy of the table.
-func Actions(s State) []Action { return ActionsFor(false, s) }
+func Actions(s State) []Action { return ActionsFor(KindFree, s) }
 
-// ActionsFor is Actions under the table for a free or linked chat.
-func ActionsFor(isLinked bool, s State) []Action {
-	t := tableFor(isLinked)
+// ActionsFor is Actions under the table for chat kind k.
+func ActionsFor(k Kind, s State) []Action {
+	t := tableFor(k)
 	out := make([]Action, 0, len(t[s]))
 	for a := range t[s] {
 		out = append(out, a)
