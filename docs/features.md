@@ -590,7 +590,10 @@ naming the GitHub issue and its URL](assets/tui-issue.png)
 
 On a project whose `origin` remote points at github.com, vincent imports the
 repository's issues into the project's own [issues](#operate-from-a-purpose-built-tui) on every
-reconciler tick, and `vincent issue sync` asks for one now. A GitHub issue
+reconciler tick, and `vincent issue sync` asks for one now. A project's
+[issue source](reference/cli.md#issue-source-flags) is a setting of its own:
+bound to `none` or `jira`, it imports nothing from GitHub, and its pull
+requests are still linked. A GitHub issue
 reaches a task the way any issue does: create the task from the imported issue
 with `vincent task add --issue ID`, `issue_id` over the API, or `issue:` in a
 [trigger](guides/triggers.md). A script that holds only the GitHub number finds
