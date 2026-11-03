@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -295,5 +296,69 @@ func TestProjectListingReusesOrigin(t *testing.T) {
 	now = now.Add(originTTL)
 	if got := effective(); got != "none" {
 		t.Errorf("after the TTL effective = %v, want none read afresh", got)
+	}
+}
+
+// TestProjectRepointRebinds is review F3: re-pointing a derived project's
+// path is a rebind exactly when it changes the effective provider. A path
+// whose origin is not GitHub abandons the imported remotes and drops the
+// sync row; a path whose origin is another github.com repository is not a
+// rebind, so both are kept and the importer's origin_changed gate (task 130
+// decision 15.5) is what answers it.
+func TestProjectRepointRebinds(t *testing.T) {
+	withOrigin := func(url string) string {
+		repo := testrepo.Init(t, "main")
+		testrepo.Run(t, repo, "remote", "add", "origin", url)
+		return repo
+	}
+	for _, tc := range []struct {
+		name, origin, effective string
+		rebind                  bool
+	}{
+		{"off github", "https://example.com/o/r.git", "none", true},
+		{"another github repository", "https://github.com/o/other.git", "github", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newProjectHarness(t)
+			p := h.mustCreate(t, map[string]any{"path": withOrigin("https://github.com/o/r.git")})
+			id := int64(p["id"].(float64))
+			ctx := t.Context()
+			iss, _, err := h.store.UpsertRemoteIssue(ctx, store.RemoteIssue{
+				ProjectID: id, Provider: "github", RemoteKey: "I_1", Repo: "o/r", Number: 1, Title: "t", State: "open",
+			}, "sync")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.store.PutIssueSyncState(ctx, store.IssueSyncState{ProjectID: id, Provider: "github", Repo: "o/r", OK: true}); err != nil {
+				t.Fatal(err)
+			}
+			resp, out := h.doJSON(t, http.MethodPatch, "/v1/projects/"+itoa(id), map[string]any{"path": withOrigin(tc.origin)})
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("re-point: %d %s", resp.StatusCode, out)
+			}
+			if got := decodeProject(t, out)["issue_source"].(map[string]any)["effective"]; got != tc.effective {
+				t.Errorf("effective after re-point = %v, want %s", got, tc.effective)
+			}
+			st, err := h.store.GetIssueSyncState(ctx, id)
+			got, gerr := h.store.GetIssue(ctx, iss.ID)
+			if gerr != nil || got.Remote == nil {
+				t.Fatalf("issue after re-point = %+v, %v", got, gerr)
+			}
+			if tc.rebind {
+				if !errors.Is(err, store.ErrNotFound) {
+					t.Errorf("sync row after a rebinding re-point = %+v, %v; want ErrNotFound", st, err)
+				}
+				if got.Remote.Status != store.RemoteStatusMissing {
+					t.Errorf("remote after a rebinding re-point = %q, want missing", got.Remote.Status)
+				}
+				return
+			}
+			if err != nil || st.Repo != "o/r" {
+				t.Errorf("sync row after a same-provider re-point = %+v, %v; want kept with repo o/r", st, err)
+			}
+			if got.Remote.Status != store.RemoteStatusLive {
+				t.Errorf("remote after a same-provider re-point = %q, want live", got.Remote.Status)
+			}
+		})
 	}
 }
