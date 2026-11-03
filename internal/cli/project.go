@@ -105,7 +105,9 @@ func newProjectLsCmd() *cobra.Command {
 					}
 					return emitJSON(cmd.OutOrStdout(), projects)
 				}
-				header := []string{"ID", "NAME", "PATH", "BRANCH", "WORKFLOW", "CAP", "ISSUES"}
+				// SOURCE, not ISSUES: --stats appends an ISSUES count column, and
+				// a header must name each column once (review F4).
+				header := []string{"ID", "NAME", "PATH", "BRANCH", "WORKFLOW", "CAP", "SOURCE"}
 				if stats {
 					header = append(header, projectStatsHeader...)
 				}

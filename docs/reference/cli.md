@@ -503,7 +503,7 @@ unborn HEAD); pass `--default-branch` explicitly.
 vincent project ls [--stats] [--json]
 ```
 
-Lists registered projects with their ids, paths and defaults. The `ISSUES`
+Lists registered projects with their ids, paths and defaults. The `SOURCE`
 column is the effective issue source: `github (from origin)` or
 `none (from origin)` for a derived one, `none`, `github`, or `jira` with the
 bound site and project key.
