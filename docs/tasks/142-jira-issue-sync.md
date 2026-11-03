@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (2/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (5/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -35,9 +35,9 @@ lists only the hard dependencies the parent records as "Blocked by".
   the open questions' answers or proposed defaults; the dated notes on task
   096 decision 2, task 130 decision 15.1 and task 137 decision 10; the index
   row. ✓ 2026-11-03
-- [ ] **142.2** ([#898](https://github.com/lezli01/vincent/issues/898)) A pure,
+- [x] **142.2** ([#898](https://github.com/lezli01/vincent/issues/898)) A pure,
   stdlib-only package for the mapping of decision 9: state and reason both
-  ways, the kind seed, labels and the transition chooser.
+  ways, the kind seed, labels and the transition chooser. ✓ 2026-11-03
 - [ ] **142.3** ([#899](https://github.com/lezli01/vincent/issues/899)) Cloud
   REST v3 responses captured from a real site, settling the facts this
   document carries unverified. Needs a person with a Jira Cloud site.
@@ -59,11 +59,12 @@ lists only the hard dependencies the parent records as "Blocked by".
   provider or go neutral (decision 11). ✓ 2026-11-03
 - [ ] **142.9** ([#905](https://github.com/lezli01/vincent/issues/905))
   `remote_key` and `source=jira` filters, and `vincent issue ls --remote`.
-- [ ] **142.10** ([#906](https://github.com/lezli01/vincent/issues/906))
+- [x] **142.10** ([#906](https://github.com/lezli01/vincent/issues/906))
   HTML→Markdown for bodies and comments, and Markdown→ADF for outgoing
-  comments (decision 9.5).
-- [ ] **142.11** ([#907](https://github.com/lezli01/vincent/issues/907)) The
+  comments (decision 9.5). ✓ 2026-11-03
+- [x] **142.11** ([#907](https://github.com/lezli01/vincent/issues/907)) The
   fake Jira corpus, an `httptest` leg and a `cmd/fakejira` server.
+  ✓ 2026-11-03
 - [ ] **142.12** ([#908](https://github.com/lezli01/vincent/issues/908)) The
   `internal/jira` client and the importer for Jira: listing, initial import,
   sweep, comments, rate limits and environment credentials; spec §3 row 39
