@@ -329,7 +329,8 @@ explicitly. A "proposed default" is open until that issue.
    issue reaches a task the way a GitHub one does: imported, then created
    from with `issue_id`.
 7. **A `GET /v1/projects/{id}/jira` probe, or a `vincent jira issues` remote
-   browse?** *Proposed default:* neither in v1.
+   browse?** *Proposed default, open until #902:* neither in v1. #902 adds the
+   binding's API, CLI and MCP surface, and is where a probe would land.
 8. **Should "In Progress" (`indeterminate`) appear anywhere?** *Proposed
    default, open until #910:* nowhere in v1; it is kept only in `remote_json`
    (decision 9.10).
