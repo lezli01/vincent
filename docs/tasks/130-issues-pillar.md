@@ -443,6 +443,9 @@ Settled with the author while scoping #667.
    `internal/daemon/issuesync.go`: it calls `github.Client.ListIssuesSince`
    and maps each result onto `store.RemoteIssue`. The `provider` column is the
    only provider seam; the first provider does not design for the second.
+   *Superseded 2026-11-03 (task 142, #896/#897):* a second provider now exists.
+   Task 142 extracts an issue-provider interface (142.4, #900), with GitHub as
+   its first implementation, as task 137's F5 row anticipated.
 2. **Per-issue `issue.created` on import, no `issue.imported` kind.** §13.3's
    six `issue.*` kinds stand and clients debounce. The one new kind is
    `issue.sync_changed {project_id, ok, reason?}`, emitted only on ok↔failing
