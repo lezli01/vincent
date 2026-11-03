@@ -40,8 +40,9 @@
 // # Privacy
 //
 // A Jira mention carries the user's accountId in its link; the converter
-// emits the display name only, never the link, so no account id reaches a
-// stored body (#906, "mentions").
+// emits the display name only — the text of the mention's whole subtree,
+// whichever element carries the marking, with no link or image inside it —
+// so no account id reaches a stored body (#906, "mentions").
 //
 // The package is a leaf: it imports the standard library and x/net/html
 // only. internal/jira (the client, #908) sits beside it.

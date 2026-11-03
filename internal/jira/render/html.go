@@ -131,6 +131,9 @@ func (c *converter) blocks(nodes []*html.Node) []string {
 		case n.Type == html.TextNode:
 			writeText(&buf, n.Data)
 		case n.Type != html.ElementNode, dropped(n):
+		case isMention(n):
+			// Whatever its tag, a mention is its display name, inline.
+			mentionText(&buf, n)
 		case c.isBlock(n):
 			flush()
 			out = append(out, c.block(n)...)
@@ -387,6 +390,10 @@ func (c *converter) row(tr *html.Node) []string {
 
 // inline writes an inline element's Markdown into b.
 func (c *converter) inline(b *strings.Builder, n *html.Node) {
+	if isMention(n) {
+		mentionText(b, n)
+		return
+	}
 	if isMedia(n) {
 		b.WriteString(c.media(n))
 		return
@@ -477,15 +484,9 @@ func codeSpan(b *strings.Builder, n *html.Node) {
 	}
 }
 
-// link writes an inline link, or only its text when it is a mention or has
-// no usable destination.
+// link writes an inline link, or only its text when it has no usable
+// destination. A mention never reaches it: inline renders those first.
 func (c *converter) link(b *strings.Builder, n *html.Node) {
-	if isMention(n) {
-		// The display name, never the profile link: that link is where the
-		// accountId lives.
-		c.inlineKids(b, n)
-		return
-	}
 	href := c.resolve(attr(n, "href"))
 	if img := loneImage(n); img != nil && href != "" {
 		// An image wrapped in a link (Jira's thumbnail → full size) is the
@@ -571,9 +572,27 @@ func loneImage(a *html.Node) *html.Node {
 	return img
 }
 
+// mentionText writes a mention as its display name: the text of its whole
+// subtree and nothing else. No link and no image survives inside one — the
+// profile link, and an avatar's URL, are where the accountId lives (review
+// F7).
+func mentionText(b *strings.Builder, n *html.Node) {
+	for k := n.FirstChild; k != nil; k = k.NextSibling {
+		switch {
+		case k.Type == html.TextNode:
+			writeText(b, k.Data)
+		case k.Type != html.ElementNode, dropped(k):
+		default:
+			mentionText(b, k)
+		}
+	}
+}
+
 // isMention recognises a Jira user mention in rendered HTML. Cloud renders
 // one as a profile link carrying the account id; the shapes below are the
-// documented ones, to be pinned against captured bodies (#899).
+// documented ones, to be pinned against captured bodies (#899). It is asked
+// of every element, not only anchors, so a wrapper (a span) carrying the
+// marking around a plain profile link is a mention too.
 func isMention(n *html.Node) bool {
 	if hasAttr(n, "data-account-id") || hasAttr(n, "accountid") || hasAttr(n, "data-mention-id") ||
 		hasClass(n, "user-hover") || hasClass(n, "mention") {

@@ -147,6 +147,42 @@ func TestMentionNeverLeaksAccountID(t *testing.T) {
 	}
 }
 
+// TestMentionShapesNeverLeakAccountID is review F7: a mention is recognised
+// on whichever element carries the marking, and nothing inside it — an
+// avatar image, a plain profile link — survives as a link or image.
+func TestMentionShapesNeverLeakAccountID(t *testing.T) {
+	const id = "557058:abc"
+	for _, tc := range []struct{ name, in, want string }{
+		{
+			"avatar inside the anchor",
+			`<p>ping <a class="user-hover" data-account-id="` + id + `" href="/jira/people/` + id + `"><img src="https://avatar.test/` + id + `.png" alt="">Jane</a> now</p>`,
+			"ping Jane now",
+		},
+		{
+			"marking on a wrapper span",
+			`<p>ping <span class="mention" data-account-id="` + id + `"><a href="https://acme.atlassian.net/people/` + id + `">Jane</a></span> now</p>`,
+			"ping Jane now",
+		},
+		{
+			"marked image alone",
+			`<p>x <img data-account-id="` + id + `" src="https://avatar.test/` + id + `.png" alt="Jane"> y</p>`,
+			"x y",
+		},
+		{
+			"marking on a block wrapper",
+			`<div class="mention" data-mention-id="` + id + `"><p><a href="/x/` + id + `">@Jane</a></p></div>`,
+			"@Jane",
+		},
+	} {
+		for _, base := range []*url.URL{nil, site(t)} {
+			got := HTMLToMarkdown(tc.in, base)
+			if strings.Contains(got, id) || got != tc.want {
+				t.Errorf("%s (base %v): got %q, want %q", tc.name, base, got, tc.want)
+			}
+		}
+	}
+}
+
 func TestDeeplyNestedLists(t *testing.T) {
 	const depth = 200
 	in := strings.Repeat("<ul><li>x", depth) + strings.Repeat("</li></ul>", depth)
