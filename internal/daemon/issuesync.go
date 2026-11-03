@@ -71,6 +71,11 @@ const (
 	syncReasonNotGitHub     = "not_github"
 	syncReasonNoClient      = "no_client"
 	syncReasonOriginChanged = "origin_changed"
+	// syncReasonSourceNotGitHub is a project whose explicit issue-source
+	// binding is none or jira (task 142.6 decision 3): the GitHub importer
+	// makes no call for it, whatever its origin says. A jira binding
+	// carries it until Jira sync is scheduled (#903).
+	syncReasonSourceNotGitHub = "source_not_github"
 )
 
 // syncIssues runs one import attempt for project through the reconciler's
@@ -90,7 +95,9 @@ func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, 
 		r.logger.Warn("issue sync: state not read", "project", project.ID, "error", err)
 		return
 	}
-	if st.RateLimitedUntil != nil && now.Before(*st.RateLimitedUntil) && bound && haveClient {
+	boundElsewhere := project.IssueSource.Provider == store.IssueProviderNone ||
+		project.IssueSource.Provider == store.IssueProviderJira
+	if st.RateLimitedUntil != nil && now.Before(*st.RateLimitedUntil) && bound && haveClient && !boundElsewhere {
 		// Backing off: no call, no attempt, and the row keeps saying
 		// rate_limited until the provider's reset. A "sync now" waits too.
 		return
@@ -103,7 +110,11 @@ func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, 
 	// none.
 	// Without a git runner the origin cannot be read, which is a missing
 	// client rather than a verdict about the origin.
+	// The binding is first: a project bound to none or jira is not the
+	// GitHub importer's, whatever origin says.
 	switch {
+	case boundElsewhere:
+		next.OK, next.Reason = false, syncReasonSourceNotGitHub
 	case !bound && r.git != nil:
 		next.OK, next.Reason = false, syncReasonNotGitHub
 	case !haveClient:
