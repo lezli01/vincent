@@ -41,6 +41,8 @@ func TestHTMLToMarkdown(t *testing.T) {
 		{"brackets in alt text", `<p><img alt="a]b[c" src="https://y.test/a.png"></p>`, "![a⁆b⁅c](https://y.test/a.png)"},
 		{"image inside a link with text", `<p><a href="https://x.test/">see <img src="https://y.test/a.png"> here</a></p>`, "[see here](https://x.test/) ![](https://y.test/a.png)"},
 		{"emoticon inside a link stays in the label", `<p><a href="https://x.test/">ok <img class="emoticon" alt="(y)" src="https://y.test/e.png"></a></p>`, "[ok (y)](https://x.test/)"},
+		{"code in a list item keeps blank lines", "<ul><li>Run:<pre>make\n\nmake test</pre></li><li>b</li></ul>", "- Run:\n  ```\n  make\n\n  make test\n  ```\n- b"},
+		{"code outside a list keeps blank lines", "<pre>make\n\nmake test</pre>", "```\nmake\n\nmake test\n```"},
 		{"bold italic", "<p><b><i>x</i></b></p>", "**_x_**"},
 		{"italic bold", "<p><i><b>x</b></i></p>", "_**x**_"},
 		{"italic inside bold", "<p><strong>a <em>b</em></strong></p>", "**a _b_**"},

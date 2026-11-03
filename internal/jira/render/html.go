@@ -319,8 +319,15 @@ func (c *converter) list(n *html.Node) string {
 		pad = strings.Repeat(" ", len(marker))
 		first := true
 		for _, blk := range item {
+			fence := 0
 			for _, l := range strings.Split(blk, "\n") {
-				if strings.TrimSpace(l) == "" {
+				// A blank line between an item's blocks is dropped, so the
+				// list stays tight; one inside a code fence is content, and
+				// is kept as the indent alone, which the final trim empties
+				// — the same code converts the same in a list or out of one
+				// (review F10).
+				fence = fenceState(fence, l)
+				if strings.TrimSpace(l) == "" && fence == 0 {
 					continue
 				}
 				if first {
@@ -339,6 +346,25 @@ func (c *converter) list(n *html.Node) string {
 // the source has one, since that is where it is written — and short rows are
 // padded so every row has the same number of cells. A caption becomes a
 // paragraph before the table.
+// fenceState follows the code fences pre writes through an item's lines:
+// open is the backtick run of the fence the line before was inside, 0 for
+// none, and the result is the one this line leaves open. A fence opens with
+// a run of three or more backticks (an info string may follow) and closes on
+// a line of at least as many backticks and nothing else.
+func fenceState(open int, l string) int {
+	run := 0
+	for run < len(l) && l[run] == '`' {
+		run++
+	}
+	switch {
+	case open == 0 && run >= 3:
+		return run
+	case open > 0 && run >= open && run == len(strings.TrimRight(l, " ")):
+		return 0
+	}
+	return open
+}
+
 func (c *converter) table(n *html.Node) []string {
 	var out []string
 	var rows [][]string
