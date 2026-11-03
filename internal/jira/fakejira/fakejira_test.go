@@ -585,8 +585,21 @@ func TestBasicAuth(t *testing.T) {
 	f.user, f.token = "ada@example.com", "s3cret"
 	f.want(f.do("GET", "/rest/api/3/myself", nil), 200)
 
-	if n, _ := CountRequests(f.store.RequestLog, "GET", "/rest/api/3/myself", 401); n != 4 {
-		t.Fatalf("logged %d 401s, want 4", n)
+	// Review F17: each credential defaults on its own, so a Store given only
+	// a user still wants DefaultToken, and the empty token is refused.
+	f.store.User, f.store.Token = "ada@example.com", ""
+	f.user, f.token = "ada@example.com", ""
+	f.want(f.do("GET", "/rest/api/3/myself", nil), 401)
+	f.token = DefaultToken
+	f.want(f.do("GET", "/rest/api/3/myself", nil), 200)
+	f.store.User, f.store.Token = "", "s3cret"
+	f.user, f.token = "", "s3cret"
+	f.want(f.do("GET", "/rest/api/3/myself", nil), 401)
+	f.user = DefaultUser
+	f.want(f.do("GET", "/rest/api/3/myself", nil), 200)
+
+	if n, _ := CountRequests(f.store.RequestLog, "GET", "/rest/api/3/myself", 401); n != 6 {
+		t.Fatalf("logged %d 401s, want 6", n)
 	}
 }
 

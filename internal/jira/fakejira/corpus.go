@@ -276,8 +276,9 @@ type Store struct {
 	ScenarioFile string
 	// RequestLog, when set, gets one `METHOD path status` line per request.
 	RequestLog string
-	// User and Token are the Basic credentials accepted; DefaultUser and
-	// DefaultToken when empty.
+	// User and Token are the Basic credentials accepted. Each defaults on
+	// its own: an empty User is DefaultUser and an empty Token DefaultToken,
+	// whichever the other is — the empty string is never accepted.
 	User, Token string
 	// Now stamps a write's updated and created; time.Now when nil.
 	Now func() time.Time

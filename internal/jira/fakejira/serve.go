@@ -207,9 +207,14 @@ func (s *Store) authorized(r *http.Request) bool {
 	if !ok {
 		return false
 	}
+	// Each credential defaults on its own (review F17): setting only the
+	// user must not leave the empty string as the accepted token.
 	wantUser, wantToken := s.User, s.Token
-	if wantUser == "" && wantToken == "" {
-		wantUser, wantToken = DefaultUser, DefaultToken
+	if wantUser == "" {
+		wantUser = DefaultUser
+	}
+	if wantToken == "" {
+		wantToken = DefaultToken
 	}
 	u := subtle.ConstantTimeCompare([]byte(user), []byte(wantUser))
 	t := subtle.ConstantTimeCompare([]byte(token), []byte(wantToken))
