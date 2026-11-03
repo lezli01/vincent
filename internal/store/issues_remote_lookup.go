@@ -29,6 +29,10 @@ func (s *Store) IssueIDsByRemoteNumber(ctx context.Context, projectID int64, pro
 // number 12 — matched on the display key, never on remote_key, which stays
 // the stable Jira issue id. A GitHub reference passes repo "" and keeps
 // IssueIDsByRemoteNumber's any-repo semantics.
+//
+// The API parameter's name is the display key's, not the column's: a caller
+// holding a provider's stable id — the remote_key column — wants
+// IssueIDByRemoteKey instead.
 func (s *Store) IssueIDsByRemoteRef(ctx context.Context, projectID int64, provider, repo string, number int) ([]int64, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT issue_id FROM issue_remotes
 		WHERE project_id = ? AND provider = ? AND number = ? AND issue_id IS NOT NULL

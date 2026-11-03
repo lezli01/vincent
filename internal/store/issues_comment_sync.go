@@ -119,6 +119,12 @@ func (s *Store) IssueIDByRemoteNumber(ctx context.Context, projectID int64, prov
 // (task 142.4): the importer already holds the issue's key, so no number —
 // which such a provider may not have — is needed to attribute its thread.
 // The key is unique per (project, provider), so at most one row answers.
+//
+// "Remote key" here is the issue_remotes.remote_key column — the provider's
+// stable id (a GitHub node id, a Jira issue id). It is not what the API's
+// GET /v1/issues?remote_key= takes: that parameter is the display key a
+// person reads (`PROJ-12`, `owner/repo#12`) and is answered by
+// IssueIDsByRemoteRef, which never reads this column.
 func (s *Store) IssueIDByRemoteKey(ctx context.Context, projectID int64, provider, remoteKey string) (id int64, ok bool, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT issue_id FROM issue_remotes
 		WHERE project_id = ? AND provider = ? AND remote_key = ?
