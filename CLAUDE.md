@@ -417,6 +417,13 @@ daemon, no shared fixtures:
   scenarios here rather than special-casing adapters for tests.
 - `cmd/fakegh` — the same for `gh`; its mutable issue corpus and `gh api` answers
   live in `internal/github/fakeissues`, so a `net/http` leg can serve the same fake.
+- `cmd/fakejira` — a stand-in Jira Cloud site (#907): `fakejira serve` binds a
+  loopback port, writes it to `--port-file` atomically, and stops cleanly on
+  `POST /_fake/shutdown` on every OS (SIGTERM/interrupt too, on POSIX only —
+  Windows has no graceful signal for a console-less child). Its corpus,
+  scenarios and REST answers live in `internal/jira/fakejira`, whose `*Store`
+  is the `http.Handler` an `httptest` leg mounts too, so both legs serve the
+  same fake; `internal/jira/jiratest` builds and starts the binary.
 - `*live_test.go` — the TUI/apiclient wired to the **real** API handlers over
   `httptest`, which is what keeps client and server wire types from drifting.
 - `e2e_test.go` in `internal/cli` and `internal/tui` build the real binary in
