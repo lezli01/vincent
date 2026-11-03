@@ -19,10 +19,11 @@ type adfNode struct {
 
 // RenderADF renders a POSTed ADF body to the HTML Jira's renderedBody would
 // carry, for exactly the subset #906 emits: a `doc` (version 1) of
-// `paragraph`s holding `text` and `hardBreak`. Any other node, any mark and
-// any attribute is an error the route answers 400, so a client drifting from
-// the subset fails loudly (decision 3). It is deliberately not a converter
-// the code under test could share.
+// `paragraph`s holding `text` and `hardBreak`, and `codeBlock`s holding
+// `text` only, with an optional `attrs.language`. Any other node, any mark
+// and any other attribute is an error the route answers 400, so a client
+// drifting from the subset fails loudly (decision 3). It is deliberately not
+// a converter the code under test could share.
 func RenderADF(raw json.RawMessage) (string, error) {
 	var doc adfNode
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -36,6 +37,14 @@ func RenderADF(raw json.RawMessage) (string, error) {
 	}
 	var paras []string
 	for _, p := range doc.Content {
+		if p.Type == "codeBlock" {
+			block, err := codeBlock(p)
+			if err != nil {
+				return "", err
+			}
+			paras = append(paras, block)
+			continue
+		}
 		if p.Type != "paragraph" {
 			return "", fmt.Errorf("unsupported ADF node %q", p.Type)
 		}
@@ -64,6 +73,47 @@ func RenderADF(raw json.RawMessage) (string, error) {
 		paras = append(paras, b.String())
 	}
 	return strings.Join(paras, "\n"), nil
+}
+
+// codeBlock renders a `codeBlock` as Jira does, `<pre><code>`, with the
+// language as a class when attrs names one. attrs may carry `language` and
+// nothing else; the children are unmarked `text` nodes.
+func codeBlock(n adfNode) (string, error) {
+	if len(n.Marks) > 0 && string(n.Marks) != "null" && string(n.Marks) != "[]" {
+		return "", fmt.Errorf("unsupported ADF marks on %q", n.Type)
+	}
+	var attrs map[string]json.RawMessage
+	if len(n.Attrs) > 0 && string(n.Attrs) != "null" {
+		if err := json.Unmarshal(n.Attrs, &attrs); err != nil {
+			return "", fmt.Errorf("codeBlock attrs: %w", err)
+		}
+	}
+	var lang string
+	for k, v := range attrs {
+		if k != "language" {
+			return "", fmt.Errorf("unsupported ADF attr %q on codeBlock", k)
+		}
+		if err := json.Unmarshal(v, &lang); err != nil {
+			return "", fmt.Errorf("codeBlock language: %w", err)
+		}
+	}
+	var b strings.Builder
+	b.WriteString("<pre><code")
+	if lang != "" {
+		b.WriteString(` class="language-` + html.EscapeString(lang) + `"`)
+	}
+	b.WriteString(">")
+	for _, in := range n.Content {
+		if err := plain(in); err != nil {
+			return "", err
+		}
+		if in.Type != "text" || len(in.Content) > 0 {
+			return "", fmt.Errorf("unsupported ADF node %q in codeBlock", in.Type)
+		}
+		b.WriteString(html.EscapeString(in.Text))
+	}
+	b.WriteString("</code></pre>")
+	return b.String(), nil
 }
 
 func plain(n adfNode) error {

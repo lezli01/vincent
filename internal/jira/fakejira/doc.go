@@ -29,8 +29,9 @@
 //     built-in corpus answers and a write is answered but not kept; set but
 //     missing, the built-in corpus seeds it.
 //   - The ADF renderer: a comment POSTed as ADF is rendered to HTML by a tiny
-//     renderer covering exactly `doc`, `paragraph`, `text` and `hardBreak` —
-//     the subset #906 emits. Any other node, and any mark, is a 400, so a
+//     renderer covering exactly `doc`, `paragraph`, `text`, `hardBreak` and
+//     `codeBlock` (with an optional `attrs.language`) — the subset #906
+//     emits. Any other node, and any mark, is a 400, so a
 //     client that drifts from the subset fails loudly rather than agreeing
 //     with the code under test by construction.
 //   - The routes, all under /rest/api/3: `search/jql` (a JQL subset — see
