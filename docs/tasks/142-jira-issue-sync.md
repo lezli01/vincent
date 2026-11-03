@@ -346,7 +346,8 @@ These are #896's research findings, not vincent-verified; 142.3 (#899) settles
 them against a real site:
 
 - Search is `GET /rest/api/3/search/jql` with `nextPageToken` and no `total`;
-  the old `/search` is being removed. Search is eventually consistent, and JQL
+  the old `/search` is deprecated, with its removal reported for 2025 (#896's
+  finding). Search is eventually consistent, and JQL
   dates are minute-precision in the user's time zone unless given as epoch
   milliseconds.
 - The issue `id` is stable across a move and the key is not; 404 answers both
@@ -367,7 +368,8 @@ them against a real site:
 - **Search lag.** Eventual consistency can make "Jira wins" revert a fresh
   human write on the next tick unless the importer reconciles against outbox
   results.
-- **Cloud API churn**, as the 2025 `/search` removal shows. Endpoints are
+- **Cloud API churn**, as the `/search` deprecation shows (its 2025 removal is
+  #896's finding, settled by 142.3). Endpoints are
   pinned in one place and tested against recorded fixtures (142.3, 142.11).
 - **Service-mode environments** lack the login shell's variables, so a missing
   token must surface as `no_credential` in sync status and doctor (decision 4).
