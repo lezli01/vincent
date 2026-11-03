@@ -712,7 +712,9 @@ from:
 `provider` is what is stored: `derive` (the default), `none`, `github` or
 `jira`. `effective` is what the daemon resolves it to. A derived project is
 `github` when its `origin` is a github.com repository and `none` otherwise.
-`jira` is `null` unless `provider` is `jira`. The binding is daemon state: it
+A project rendering may reuse an `origin` read up to ten seconds old, so a
+re-pointed `origin` can take that long to show; a rebind is always decided
+from a fresh read. `jira` is `null` unless `provider` is `jira`. The binding is daemon state: it
 is never read from a file in the repository.
 
 `POST` and `PATCH` take `issue_source` as `{ provider, jira? }`. It replaces

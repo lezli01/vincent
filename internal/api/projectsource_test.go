@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -256,5 +257,43 @@ func TestProjectRebindOverAPI(t *testing.T) {
 	}
 	if _, err := h.store.GetIssueSyncState(ctx, id); err != nil {
 		t.Errorf("a JQL-only edit rebound the project: %v", err)
+	}
+}
+
+// TestProjectListingReusesOrigin is review F2: a listing resolves a derived
+// project's effective provider from an origin read within originTTL rather
+// than running git for every project on every refresh, and reads origin
+// afresh once that has passed.
+func TestProjectListingReusesOrigin(t *testing.T) {
+	repo := testrepo.Init(t, "main")
+	testrepo.Run(t, repo, "remote", "add", "origin", "https://github.com/o/r.git")
+	h := newProjectHarness(t)
+	now := time.Now()
+	h.srv.origins.now = func() time.Time { return now }
+	h.mustCreate(t, map[string]any{"path": repo})
+	effective := func() any {
+		t.Helper()
+		resp, out := h.doJSON(t, http.MethodGet, "/v1/projects", nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("list: %d %s", resp.StatusCode, out)
+		}
+		var list []map[string]any
+		if err := json.Unmarshal(out, &list); err != nil || len(list) != 1 {
+			t.Fatalf("list = %s, %v", out, err)
+		}
+		return list[0]["issue_source"].(map[string]any)["effective"]
+	}
+	if got := effective(); got != "github" {
+		t.Fatalf("effective = %v, want github", got)
+	}
+	// Origin moves off GitHub; within the TTL the listing runs no git, so
+	// it still reports what it read.
+	testrepo.Run(t, repo, "remote", "set-url", "origin", "https://example.com/o/r.git")
+	if got := effective(); got != "github" {
+		t.Errorf("within the TTL effective = %v, want the cached github (git was run again)", got)
+	}
+	now = now.Add(originTTL)
+	if got := effective(); got != "none" {
+		t.Errorf("after the TTL effective = %v, want none read afresh", got)
 	}
 }

@@ -44,9 +44,10 @@ type projectResponse struct {
 }
 
 // projectResponse renders p, resolving its issue source's effective provider
-// against origin (a local git call per project).
+// against origin — a local git call per derived project, reused for
+// originTTL so a listing does not spawn one per project per refresh.
 func (s *Server) projectResponse(ctx context.Context, p *store.Project, slotsUsed int) projectResponse {
-	return toProjectResponse(p, slotsUsed, s.effectiveIssueProvider(ctx, p))
+	return toProjectResponse(p, slotsUsed, s.renderedIssueProvider(ctx, p))
 }
 
 func toProjectResponse(p *store.Project, slotsUsed int, effective string) projectResponse {

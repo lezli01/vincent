@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/lezli01/vincent/internal/jira/jiramap"
@@ -248,12 +250,14 @@ func normalizeJiraMapping(raw json.RawMessage) (string, string) {
 }
 
 // effectiveIssueProvider resolves a project's binding against its origin
-// (a local git call, never a network one).
+// (a local git call, never a network one), always afresh — a rebind is
+// decided from it — and refreshes the renderings' cache with what it read.
 func (s *Server) effectiveIssueProvider(ctx context.Context, p *store.Project) string {
 	if p.IssueSource.Provider != store.IssueProviderDerive {
 		return p.IssueSource.Provider
 	}
 	_, ok := s.githubRepo(ctx, p)
+	s.origins.put(p.Path, ok)
 	return p.IssueSource.Effective(ok)
 }
 
@@ -263,4 +267,56 @@ func (s *Server) effectiveIssueProvider(ctx context.Context, p *store.Project) s
 // the sweep handles issues that leave the narrowed set.
 func issueSourceRebound(oldEff, newEff string, oldB, newB store.IssueSource) bool {
 	return oldEff != newEff || oldB.JiraSite != newB.JiraSite || oldB.JiraProjectKey != newB.JiraProjectKey
+}
+
+// originTTL is how long a project rendering may reuse what origin said
+// (review F2). A listing renders every project, and the TUI board lists them
+// on every debounced refresh, so resolving derive afresh each time cost one
+// git process per project per event. A re-pointed origin shows up in a
+// listing within this long; a rebind is never decided from the cache.
+const originTTL = 10 * time.Second
+
+// originCache remembers, per project path, whether origin was a github.com
+// remote, for renderings only.
+type originCache struct {
+	mu  sync.Mutex
+	now func() time.Time
+	m   map[string]originEntry
+}
+
+type originEntry struct {
+	github bool
+	at     time.Time
+}
+
+func newOriginCache() *originCache {
+	return &originCache{now: time.Now, m: map[string]originEntry{}}
+}
+
+func (c *originCache) get(path string) (github, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[path]
+	if !ok || c.now().Sub(e.at) >= originTTL {
+		return false, false
+	}
+	return e.github, true
+}
+
+func (c *originCache) put(path string, github bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.m[path] = originEntry{github: github, at: c.now()}
+}
+
+// renderedIssueProvider is effectiveIssueProvider for a rendering: it reuses
+// an origin read within originTTL instead of running git again.
+func (s *Server) renderedIssueProvider(ctx context.Context, p *store.Project) string {
+	if p.IssueSource.Provider != store.IssueProviderDerive {
+		return p.IssueSource.Provider
+	}
+	if gh, ok := s.origins.get(p.Path); ok {
+		return p.IssueSource.Effective(gh)
+	}
+	return s.effectiveIssueProvider(ctx, p)
 }

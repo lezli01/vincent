@@ -181,6 +181,9 @@ type Server struct {
 	// snaps memoizes parsed workflow snapshots for the task list's step
 	// columns; entries are immutable, so it needs no invalidation (§18).
 	snaps *snapshotCache
+	// origins remembers each project path's origin verdict briefly, for
+	// project renderings (review F2).
+	origins *originCache
 	// mcp serves §13.4's Model Context Protocol endpoints from this same
 	// listener (task 057 decision 1). It is built here rather than by the
 	// daemon so it can be handed the pre-auth mux directly: a tool call is
@@ -221,7 +224,7 @@ func New(deps Deps) *Server {
 		// built-in ad-hoc workflow is still served.
 		deps.Workflows = workflow.NewRegistry("", workflow.Options{}, deps.Logger)
 	}
-	s := &Server{deps: deps, snaps: newSnapshotCache(func() int {
+	s := &Server{deps: deps, origins: newOriginCache(), snaps: newSnapshotCache(func() int {
 		if deps.Config == nil {
 			return 0
 		}
