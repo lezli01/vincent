@@ -518,7 +518,7 @@ vincent skills install
 ```
 
 That runs `npx skills add` for you, answering its agent picker with the three
-adapters that link a skill (claude, codex, cursor) — `--agent` narrows it to
+adapters the skills CLI installs for (claude, codex, cursor) — `--agent` narrows it to
 some of `claude`, `codex`, `copilot`, `cursor`. The equivalent by
 hand, which prompts for the selection instead:
 
@@ -527,8 +527,9 @@ npx skills add lezli01/vincent --skill vincent-workflows -g
 npx skills add lezli01/vincent --skill vincent-triggers -g
 ```
 
-GitHub Copilot CLI needs no link: it reads the store, `~/.agents/skills`,
-itself, and `vincent skills ls` names it as `copilot (reads store)`.
+GitHub Copilot CLI and Codex need no link: they read the store,
+`~/.agents/skills`, themselves, and `vincent skills ls` names them as
+`copilot (reads store)` and `codex (reads store)`.
 
 `vincent skills ls` says what is installed and whether it is current, and
 `vincent doctor` carries the same rows. Neither needs a running daemon, and

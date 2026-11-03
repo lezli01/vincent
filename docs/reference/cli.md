@@ -1806,21 +1806,26 @@ binary ships, the state of the copy on disk, and the agents it is linked into.
 | `unreadable` | A copy exists and its `SKILL.md` could not be read or parsed at all |
 
 `skills add … -g` keeps **one** copy in a global store, `~/.agents/skills/`, and
-links it into each agent's directory — so there is one row per skill, not one
-per agent, and one version rather than three.
+links it into the directory of each agent that does not read the store itself —
+so there is one row per skill, not one per agent, and one version rather than
+three.
 
 The agents column is what is on disk. It can name agents vincent does not drive
 (one store serves Cline, Copilot, Zed and the rest), and it can disagree with
 `npx skills list -g`, whose agent column is that CLI's remembered *selection*
 rather than the links it left behind.
 
-Copilot reads the store itself and holds no link, so it is listed as
-`copilot (reads store)` when `~/.copilot` exists and the store holds the skill;
-in `--json` that entry carries `"store": true` and the store path. A
-`~/.copilot/skills/<name>` link, if one exists, is listed as plain `copilot`
-beside it. `COPILOT_HOME` and `COPILOT_SKILLS_DIRS` are not followed — and
-copilot 1.0.105 stops reading `~/.agents/skills` once `COPILOT_HOME` is moved,
-so for a user who moved it the entry is wrong.
+Copilot and codex read the store themselves and hold no link, so each is
+listed as `copilot (reads store)` or `codex (reads store)` when its directory,
+`~/.copilot` or `~/.codex`, exists and the store holds the skill; in `--json`
+that entry carries `"store": true` and the store path. A
+`~/.copilot/skills/<name>` or `~/.codex/skills/<name>` link, if one exists — an
+older skills CLI linked codex there — is listed as plain `copilot` or `codex`
+beside it. `COPILOT_HOME`, `COPILOT_SKILLS_DIRS` and `CODEX_HOME` are not
+followed. Copilot 1.0.105 stops reading `~/.agents/skills` once `COPILOT_HOME`
+is moved, so for a user who moved it the entry is wrong; codex reads the store
+wherever `CODEX_HOME` points, so the only miss there is a codex installed
+without a `~/.codex`.
 
 ### `vincent skills install`
 
