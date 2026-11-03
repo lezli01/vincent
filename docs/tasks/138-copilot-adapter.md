@@ -750,6 +750,11 @@ Carried from #852; each is decided in the item named.
 7. **Hoisting `tailWriter`/`readLoop`** into `internal/agent` as a separate
    refactor afterwards. Filed as
    [#890](https://github.com/lezli01/vincent/issues/890) (2026-11-03).
+   Resolved 2026-11-03 by #890: `agent.TailWriter`
+   (`internal/agent/tail.go`) replaces the four copies, and
+   `agent.ReadLines` (`internal/agent/lines.go`) owns the scanner, the
+   blank-line skip, the per-line copy and the #139 drain. Each adapter keeps
+   its own defers, per-line body and `streamErr` latch; no behaviour changes.
 8. **Codex skills drift** (not copilot) — vercel-labs/skills#2067 moved codex's
    global skills to `~/.agents/skills`; to be filed as its own bug, never fixed
    in passing by 138.12. Filed as

@@ -126,7 +126,7 @@ func callAppServer(
 	ctx, cancel := context.WithTimeout(ctx, appServerTimeout)
 	defer cancel()
 
-	stderr := &tailWriter{max: 8 * 1024}
+	stderr := agent.NewTailWriter(8 * 1024)
 	cmd := base
 	cmd.Args = []string{"app-server", "--stdio"}
 	cmd.Stdin = nil

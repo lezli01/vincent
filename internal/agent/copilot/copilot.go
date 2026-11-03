@@ -1,7 +1,6 @@
 package copilot
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -330,7 +329,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	if err != nil {
 		return nil, err
 	}
-	stderr := &tailWriter{max: 64 * 1024}
+	stderr := agent.NewTailWriter(64 * 1024)
 	proc, err := agent.Launch(spec.Launcher, agent.Command{
 		Path:   path,
 		Args:   args,
@@ -365,7 +364,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 // run is a live copilot process.
 type run struct {
 	proc   agent.Process
-	stderr *tailWriter
+	stderr *agent.TailWriter
 	// sessionID is the --session-id or --resume= id this run was started
 	// with. It is the run's session whether or not a result line ever
 	// confirms it.
@@ -388,24 +387,13 @@ type run struct {
 	waitErr  error
 }
 
-// maxLineBytes bounds one stream line; tool payloads embed file contents and
-// command output, so lines can be large.
-const maxLineBytes = 16 * 1024 * 1024
-
 func (r *run) readLoop(rd io.Reader) {
 	defer close(r.readerDone)
 	defer close(r.events)
-	sc := bufio.NewScanner(rd)
-	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
 	// One parser per run: message deltas and tool names are carried across
 	// lines, so the state belongs to this stream and nothing else (§9.9).
 	parse := (&stream{}).parse
-	for sc.Scan() {
-		line := make([]byte, len(sc.Bytes()))
-		copy(line, sc.Bytes())
-		if len(strings.TrimSpace(string(line))) == 0 {
-			continue
-		}
+	err := agent.ReadLines(rd, func(line []byte) {
 		ev := parse(line)
 		if ev.Type == agent.EventResult && ev.Result != nil {
 			r.mu.Lock()
@@ -414,15 +402,13 @@ func (r *run) readLoop(rd io.Reader) {
 			r.mu.Unlock()
 		}
 		r.events <- ev
-	}
-	// A reader that stopped before the stream did leaves the CLI writing into
-	// a pipe nobody empties, which would hang it until the step timeout.
-	// Drain it, then let Wait name the failure (#139).
-	if err := sc.Err(); err != nil {
+	})
+	// ReadLines has already drained rd (#139); Wait names the failure, since
+	// normalization ended early and the transcript is missing lines.
+	if err != nil {
 		r.mu.Lock()
 		r.streamErr = err
 		r.mu.Unlock()
-		_, _ = io.Copy(io.Discard, rd)
 	}
 }
 
@@ -519,30 +505,6 @@ func assemble(exitCode int, sessionID string, resuming bool, terminal *agent.Run
 		streamFailure(&res, streamErr)
 	}
 	return res
-}
-
-// tailWriter keeps the last max bytes written — enough stderr for error
-// reporting without unbounded growth.
-type tailWriter struct {
-	mu  sync.Mutex
-	buf []byte
-	max int
-}
-
-func (w *tailWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.buf = append(w.buf, p...)
-	if len(w.buf) > w.max {
-		w.buf = w.buf[len(w.buf)-w.max:]
-	}
-	return len(p), nil
-}
-
-func (w *tailWriter) String() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return strings.TrimSpace(string(w.buf))
 }
 
 // Argv implements agent.RunHandle: the command line actually spawned.
