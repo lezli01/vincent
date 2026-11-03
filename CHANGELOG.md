@@ -11,6 +11,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [Unreleased]
 
+### Added
+
+- **Find an issue by any tracker reference.** `GET /v1/issues` takes
+  `remote_key` — `142` for a GitHub issue, `PROJ-12` for a Jira one,
+  case-insensitive — and `source=jira`; `vincent issue ls` gains
+  `--remote KEY` and `--source jira`, and the MCP `issue_list` tool documents
+  both. Like `remote_number` and `--github N`, which keep working unchanged,
+  the lookup needs a project; the two references cannot be combined (task
+  142.9, #905). No Jira issue is imported yet, so a Jira key answers an empty
+  list until Jira issue sync lands.
+
 ### Changed
 
 - **The daemon names an imported issue's source.** An issue's `source` — on

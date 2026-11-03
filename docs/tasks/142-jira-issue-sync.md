@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (5/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (6/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -56,9 +56,13 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [x] **142.8** ([#904](https://github.com/lezli01/vincent/issues/904))
   Daemon-rendered `source.key`/`ref`/`short_ref` and provider display names;
   clients stop building references; provider literals in issue text name the
-  provider or go neutral (decision 11). ✓ 2026-11-03
-- [ ] **142.9** ([#905](https://github.com/lezli01/vincent/issues/905))
+  provider or go neutral (decision 11). A Jira `source.ref` is the stored
+  payload's `key`, which equals the row's `repo` + `-` + `number` (decision
+  9.4's note, fixed by 142.9). ✓ 2026-11-03
+- [x] **142.9** ([#905](https://github.com/lezli01/vincent/issues/905))
   `remote_key` and `source=jira` filters, and `vincent issue ls --remote`.
+  Fixed the Jira display-key storage convention (decision 9.4's note).
+  ✓ 2026-11-03
 - [x] **142.10** ([#906](https://github.com/lezli01/vincent/issues/906))
   HTML→Markdown for bodies and comments, and Markdown→ADF for outgoing
   comments (decision 9.5). ✓ 2026-11-03
@@ -68,7 +72,9 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [ ] **142.12** ([#908](https://github.com/lezli01/vincent/issues/908)) The
   `internal/jira` client and the importer for Jira: listing, initial import,
   sweep, comments, rate limits and environment credentials; spec §3 row 39
-  (decision 10). Depends: 142.7, 142.5, 142.2, 142.10, 142.11.
+  (decision 10). The importer writes the Jira project key in `repo` and the
+  issue number in `number` (decision 9.4's note, fixed by 142.9).
+  Depends: 142.7, 142.5, 142.2, 142.10, 142.11.
 - [ ] **142.13** ([#909](https://github.com/lezli01/vincent/issues/909)) The
   outbox for Jira (decision 3): transitions with resolution, ADF comments,
   echo handling. Depends: 142.12.
@@ -252,6 +258,17 @@ parts; 142.3 settles the Jira facts against a real site.
 4. **`remote_key` is the Jira issue id**, which is stable across a move; the
    key is not. The daemon renders the display reference (`PROJ-12`), and
    clients print `source.ref` (142.8, #904).
+   *Note 2026-11-03 (142.9, #905):* the display key's storage is fixed here,
+   because the `remote_key` lookup needs it before any Jira row exists. A Jira
+   `issue_remotes` row stores the Jira **project key** in `repo` (`PROJ`) and
+   the issue **number** in `number` (`12`); `remote_key` stays the stable
+   issue id. Existing columns, no migration, a plain-SQL lookup. #904 renders
+   `source.ref` from the stored payload's `key`, and #908's importer writes
+   `repo` and `number` to match it, rewriting a moved issue's row to its new key — no key history is kept, so a
+   moved issue's old key answers an empty list. `GET /v1/issues?remote_key=`
+   matches this display key, never the `remote_key` column, and chooses the
+   provider by the key's shape (digits → GitHub, `KEY-N` → Jira), not by the
+   project's binding.
 5. **Bodies are rendered from `renderedFields`/`renderedBody` HTML to
    Markdown**, not by walking ADF, so one converter would also cover a later
    Data Center leg. Outgoing comments are wrapped as minimal ADF. *Beaten:*

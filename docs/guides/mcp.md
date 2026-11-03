@@ -188,7 +188,8 @@ records that step's task as its author.
 and link the two; `task_list`'s `query` takes `issue_id` to list the tasks
 created from one; `issue_get`'s `query` takes `workflow` to preview what
 that create would prefill; and `issue_list`'s `query` takes `project_id` and
-`remote_number` to find the issue a project imported a GitHub issue number as,
+`remote_number` to find the issue a project imported a GitHub issue number as
+(or `remote_key`, which takes `142` or a Jira key such as `PROJ-12`),
 and `lane` — `open`, `in_progress`, `hand_off` or `done`, the last being every
 closed issue — to list one board lane, and `handoff` — `pending`, `claimed`,
 `waiting`, `delivered` or `idle` — to list the issues with that

@@ -826,7 +826,8 @@ The listing is a remote browse and nothing more. It carries no prefill, and a
 GitHub issue reaches a task only once the project has imported it: create the
 task from the imported issue with [`issue_id`](#creating-a-task-from-an-issue)
 on `POST /v1/tasks`, finding its id with
-[`GET /v1/issues?project_id=P&remote_number=N`](#issues);
+[`GET /v1/issues?project_id=P&remote_number=N`](#issues) (or
+`remote_key=N`);
 `GET /v1/issues/{id}?workflow=` previews the prefill that create applies. The
 `?workflow=` parameter this listing used to take, and `github_issue` on
 `POST /v1/tasks`, were removed (tasks 130.11 and 130.13); the parameter is
@@ -2082,7 +2083,8 @@ because request bodies are decoded strictly, a body that still carries it is
 `400 validation_failed` (`unknown field "github_issue"`). A GitHub issue reaches a task by being
 [imported](#issue-sync) and then named by `issue_id`; a script that holds only
 the GitHub number finds the issue's id with
-`GET /v1/issues?project_id=P&remote_number=N`. A task created from a GitHub
+`GET /v1/issues?project_id=P&remote_number=N` (or `remote_key=N`, which also
+takes a Jira key). A task created from a GitHub
 issue before then still serves `github_issue` on every task representation:
 the issue as it was at creation, a **snapshot** that is never re-read, and that
 the upgrade [backfilled](#issue-sync) into the project's issues and linked the
@@ -2579,7 +2581,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 - **List** returns a bare array whose rows omit `body`. Filters: `project_id`,
   `state` (`open`, `closed`; repeatable), `label` (repeatable — every one must
   match, case-insensitively), `kind`, `q` (a substring of the title or body;
-  `%` and `_` are literal), `source` (`local` or `github`), `remote_number`,
+  `%` and `_` are literal), `source` (`local`, `github` or `jira`; any
+  other value is `400 validation_failed`), `remote_number`, `remote_key`,
   `sort` (`updated`, the default, or `created`), `limit` and `offset`.
   `remote_number=N` keeps the issues whose GitHub remote has number `N` — the
   way a script that holds a GitHub issue number finds the vincent issue to
@@ -2587,6 +2590,17 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   across projects: without it the request is `400 validation_failed`. An empty
   array means the project has not imported that issue (yet); a
   [sync now](#issue-sync) and a second look is the way to tell.
+  `remote_key=K` is the same lookup for any tracker's reference, and the
+  provider is chosen by the reference's shape, not by the project's issue
+  source: all digits (`142`) is a GitHub issue number, answered exactly as
+  `remote_number=142` is, in any repository; `KEY-N` (`PROJ-12` — a letter,
+  then letters, digits or underscores, a `-`, and a positive number) is a
+  Jira issue key, matched case-insensitively, so `proj-12` finds `PROJ-12`.
+  Anything else is `400 validation_failed` naming both forms. It requires
+  `project_id`, and giving both `remote_key` and `remote_number` is
+  `400 validation_failed`. It combines with `source` like any filter, so
+  `source=github&remote_key=PROJ-12` is empty. A Jira issue moved to another
+  project answers only its new key.
   `lane` (repeatable; any of them matches) keeps the issues in that lane —
   `open`, `in_progress`, `hand_off` or `done` — and is applied before
   `limit` and `offset`, so a page is a page of that lane. It combines with
