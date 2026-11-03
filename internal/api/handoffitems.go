@@ -195,7 +195,7 @@ func (s *Server) grantHandoffItemWrites(ctx context.Context, w http.ResponseWrit
 			caps = append(caps, store.CapIssueClose)
 		}
 		for _, c := range caps {
-			verdict, err := svc.ForgeWrite(ctx, forgeCaller(r), c, issues.Target{IssueID: iss.ID})
+			verdict, err := svc.ForgeWrite(ctx, forgeCaller(r), c, issues.Target{IssueID: iss.ID, Provider: issues.ProviderName(iss)})
 			if err != nil {
 				s.writeHandoffItemError(w, err)
 				return false
