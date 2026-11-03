@@ -778,6 +778,12 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Published skills installed for codex are reported as reaching codex.**
+  A current skills CLI writes codex's copy to the shared store,
+  `~/.agents/skills`, and links nothing into `~/.codex/skills`; codex reads
+  the store itself. `vincent doctor`, `vincent skills ls` and the daemon
+  view's `S` offer now report such a skill as `codex (reads store)` when
+  `~/.codex` exists, instead of "linked into nothing" (#891).
 - **Footer questions and errors keep their start, and copy and mouse toggles
   say what they did.** A confirmation such as `cancel #42? a running step is
   killed (y/n)` or a failed action's message now leads the footer and is cut

@@ -324,7 +324,9 @@ func detectOne(home string, roots []string, p Published) Status {
 		// An agent that reads the store itself is served by the store copy
 		// alone (task 138.12 decision 2). Reported beside any link the same
 		// root also holds, undeduplicated: the report says what is on disk.
-		// COPILOT_HOME and COPILOT_SKILLS_DIRS are not followed (§9.8).
+		// COPILOT_HOME and COPILOT_SKILLS_DIRS are not followed (§9.8), nor
+		// is CODEX_HOME: codex reads the store wherever CODEX_HOME points,
+		// so for codex that only misses a codex installed without ~/.codex.
 		if storeHere && storeResidentRoot(root) {
 			st.Links = append(st.Links, Link{
 				Agent: agent, Adapter: adapter, Path: st.StorePath, Store: true,
