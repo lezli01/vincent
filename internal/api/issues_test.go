@@ -528,6 +528,114 @@ func TestIssueListByRemoteNumber(t *testing.T) {
 	}
 }
 
+// TestIssueListByRemoteKey is task 142.9 (issue #905): `remote_key` takes a
+// GitHub number or a Jira key, choosing the provider by the key's shape;
+// the Jira row is seeded the way task 142 decision 9.4's dated note fixes
+// the convention #908's importer must write (project key in repo, issue
+// number in number, the stable Jira id in remote_key).
+func TestIssueListByRemoteKey(t *testing.T) {
+	t.Parallel()
+	h := newIssueHarness(t)
+	imp := func(pid int64, provider, key, repo string, number int, title string) *store.Issue {
+		t.Helper()
+		iss, _, err := h.st.UpsertRemoteIssue(t.Context(), store.RemoteIssue{
+			ProjectID: pid, Provider: provider, RemoteKey: key, Repo: repo, Number: number,
+			URL: fmt.Sprintf("https://tracker.example/%s/%d", repo, number), RemoteJSON: `{"state":"OPEN"}`,
+			Title: title, State: issuestate.Open,
+		}, issuestate.Sync)
+		if err != nil {
+			t.Fatalf("UpsertRemoteIssue: %v", err)
+		}
+		return iss
+	}
+	gh := imp(h.pid, "github", "I_142", "o/r", 142, "github 142")
+	jira := imp(h.pid, "jira", "10042", "PROJ", 12, "jira PROJ-12")
+	imp(h.pid, "jira", "10043", "OTHER", 12, "jira OTHER-12")
+	imp(h.otherID, "jira", "20042", "PROJ", 12, "elsewhere")
+	local := h.create(t, map[string]any{"title": "local"})
+
+	list := func(q string) []int64 {
+		t.Helper()
+		resp, out := h.do(t, http.MethodGet, "/v1/issues?"+q, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("list ?%s = %d: %s", q, resp.StatusCode, out)
+		}
+		var rows []issueRowBody
+		if err := json.Unmarshal(out, &rows); err != nil {
+			t.Fatalf("decode list: %v: %s", err, out)
+		}
+		ids := []int64{}
+		for _, r := range rows {
+			ids = append(ids, r.ID)
+		}
+		return ids
+	}
+	p := fmt.Sprintf("project_id=%d", h.pid)
+	for q, want := range map[string][]int64{
+		p + "&remote_key=PROJ-12":               {jira.ID},
+		p + "&remote_key=proj-12":               {jira.ID},
+		p + "&remote_key=142":                   {gh.ID},
+		p + "&remote_number=142":                {gh.ID},
+		p + "&remote_key=PROJ-13":               {},
+		p + "&remote_key=12":                    {},
+		p + "&remote_key=PROJ-12&source=github": {},
+		p + "&remote_key=PROJ-12&source=jira":   {jira.ID},
+		p + "&source=local":                     {local.ID},
+	} {
+		if got := list(q); !slices.Equal(got, want) {
+			t.Errorf("?%s = %v, want %v", q, got, want)
+		}
+	}
+	if got := list(p + "&source=jira"); len(got) != 2 || slices.Contains(got, gh.ID) || !slices.Contains(got, jira.ID) {
+		t.Errorf("?source=jira = %v, want only the two Jira issues", got)
+	}
+	for q, name := range map[string]string{
+		"remote_key=PROJ-12":                        "remote_key",
+		p + "&remote_key=PROJ":                      "remote_key",
+		p + "&remote_key=-12":                       "remote_key",
+		p + "&remote_key=PROJ-0":                    "remote_key",
+		p + "&remote_key=0":                         "remote_key",
+		p + "&remote_key=a%20b-1":                   "remote_key",
+		p + "&remote_key=1PROJ-1":                   "remote_key",
+		p + "&remote_key=PROJ-12&remote_number=142": "mutually exclusive",
+		p + "&source=bogus":                         "jira",
+	} {
+		resp, out := h.do(t, http.MethodGet, "/v1/issues?"+q, nil)
+		wantError(t, resp, out, http.StatusBadRequest, CodeValidationFailed)
+		if !strings.Contains(string(out), name) {
+			t.Errorf("?%s: the 400 does not say %q: %s", q, name, out)
+		}
+	}
+}
+
+func TestParseRemoteKey(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]struct {
+		provider, repo string
+		number         int
+		ok             bool
+	}{
+		"142":        {"github", "", 142, true},
+		"PROJ-12":    {"jira", "PROJ", 12, true},
+		"my_proj2-3": {"jira", "my_proj2", 3, true},
+		"A-B-7":      {},
+		"PROJ":       {},
+		"-12":        {},
+		"PROJ-":      {},
+		"PROJ-0":     {},
+		"PROJ--1":    {},
+		"0":          {},
+		"+1":         {},
+		"":           {},
+		"_P-1":       {},
+	} {
+		p, r, n, ok := parseRemoteKey(in)
+		if p != want.provider || r != want.repo || n != want.number || ok != want.ok {
+			t.Errorf("parseRemoteKey(%q) = %q, %q, %d, %v; want %+v", in, p, r, n, ok, want)
+		}
+	}
+}
+
 func TestIssueLabelCatalogue(t *testing.T) {
 	t.Parallel()
 	h := newIssueHarness(t)

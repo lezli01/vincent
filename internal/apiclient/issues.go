@@ -191,7 +191,7 @@ type IssueListOptions struct {
 	Labels    []string // every one must match
 	Kind      string
 	Query     string // substring of title or body
-	Source    string // "local" or "github"
+	Source    string // "local", "github" or "jira"
 	Sort      string // "updated" (default) or "created"
 	Limit     int
 	Offset    int
@@ -200,6 +200,11 @@ type IssueListOptions struct {
 	// beside it. It is how a script holding a GitHub number finds the issue
 	// id CreateTaskRequest.IssueID takes, now `github_issue` is gone.
 	RemoteNumber int
+	// RemoteKey narrows to the issue imported from that tracker reference —
+	// `142` for GitHub, `PROJ-12` for Jira, case-insensitive (task 142.9,
+	// issue #905). The daemon requires ProjectID beside it and refuses it
+	// together with RemoteNumber.
+	RemoteKey string
 }
 
 func (o IssueListOptions) query() string {
@@ -232,6 +237,9 @@ func (o IssueListOptions) query() string {
 	}
 	if o.RemoteNumber > 0 {
 		v.Set("remote_number", strconv.Itoa(o.RemoteNumber))
+	}
+	if o.RemoteKey != "" {
+		v.Set("remote_key", o.RemoteKey)
 	}
 	if len(v) == 0 {
 		return ""

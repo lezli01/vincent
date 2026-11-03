@@ -3063,7 +3063,7 @@ issue is [`vincent task add --issue`](#from-an-issue).
 ### `vincent issue ls`
 
 ```sh
-vincent issue ls [--project ID] [--state S]... [--lane L]... [--handoff H]... [--label L]... [--kind K] [--search Q] [--source local|github] [--github N] [--limit N] [--json]
+vincent issue ls [--project ID] [--state S]... [--lane L]... [--handoff H]... [--label L]... [--kind K] [--search Q] [--source local|github|jira] [--github N | --remote KEY] [--limit N] [--json]
 ```
 
 Lists issues, most recently updated first. Without `--project` the list spans
@@ -3087,8 +3087,9 @@ ID  PROJECT  STATE               LANE                 KIND  PRIORITY  LABELS  TA
 | `--label L` | Repeatable; **every** label given must be on the issue |
 | `--kind K` | Only issues of this kind |
 | `--search Q` | A substring of the title or body |
-| `--source` | `local` or `github` |
+| `--source` | `local`, `github` or `jira`. The daemon checks the value |
 | `--github N` | Only the issue imported from GitHub issue number `N`. Needs `--project` |
+| `--remote KEY` | Only the issue imported from this tracker reference: a number (`142`) is a GitHub issue, `KEY-N` (`PROJ-12`, case-insensitive) a Jira issue. Needs `--project`; cannot be combined with `--github` |
 | `--limit N` | Maximum rows |
 
 `STATE` carries the close reason of a closed issue. `LANE` is the issue's
@@ -3113,6 +3114,18 @@ vincent issue ls --project 1 --github 200 --json | jq '.[0].id'
 A number means nothing across projects, so without `--project` it exits `1`.
 An empty list means the project has not imported that issue yet; run
 [`vincent issue sync`](#vincent-issue-sync) and look again.
+
+`--remote KEY` is the same lookup for any tracker, choosing the provider by
+the reference's shape rather than by the project's issue source:
+
+```sh
+vincent issue ls --project 1 --remote PROJ-12 --json | jq '.[0].id'
+vincent issue ls --project 1 --remote 200 --json   # the same as --github 200
+```
+
+Without `--project`, or together with `--github`, it exits `1` without asking
+the daemon. A reference of neither shape is the daemon's
+`400 validation_failed`, also exit `1`.
 
 ### `vincent issue show`
 

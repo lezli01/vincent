@@ -132,13 +132,27 @@ func newIssueLsCmd() *cobra.Command {
 			"--github N finds the issue imported from GitHub issue #N and needs\n" +
 			"--project: a GitHub number means nothing across projects. Its ID is what\n" +
 			"`vincent task add --issue` takes. An issue not yet imported lists nothing;\n" +
-			"`vincent issue sync --project P` imports it.",
+			"`vincent issue sync --project P` imports it.\n\n" +
+			"--remote KEY does the same for any tracker's reference: a number (142)\n" +
+			"is a GitHub issue, KEY-N (PROJ-12, case-insensitive) a Jira issue. It\n" +
+			"needs --project too, and cannot be combined with --github.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// The lookup that replaced `task add --github-issue` (task
 			// 130.11, decision 22.4). Refused here as well as by the
 			// daemon, so the message names the flags rather than the
 			// query parameters.
+			if cmd.Flags().Changed("remote") {
+				if cmd.Flags().Changed("github") {
+					return errors.New("--remote and --github cannot be combined: give one issue reference")
+				}
+				if opts.ProjectID == 0 {
+					return errors.New("--remote needs --project: an issue reference is only meaningful within one project")
+				}
+				if opts.RemoteKey == "" {
+					return errors.New("--remote needs an issue reference: 142 for GitHub or PROJ-12 for Jira")
+				}
+			}
 			if cmd.Flags().Changed("github") {
 				if opts.ProjectID == 0 {
 					return errors.New("--github needs --project: a GitHub issue number is only meaningful within one project")
@@ -197,10 +211,12 @@ func newIssueLsCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.Labels, "label", nil, "Only issues carrying this label (repeatable; all must match)")
 	cmd.Flags().StringVar(&opts.Kind, "kind", "", "Only issues of this kind")
 	cmd.Flags().StringVar(&opts.Query, "search", "", "Only issues whose title or body contains this text")
-	cmd.Flags().StringVar(&opts.Source, "source", "", "Only local or github issues")
+	cmd.Flags().StringVar(&opts.Source, "source", "", "Only issues from this source: local, github or jira")
 	cmd.Flags().IntVar(&opts.Limit, "limit", 0, "Maximum rows")
 	cmd.Flags().IntVar(&opts.RemoteNumber, "github", 0,
 		"Only the issue imported from this GitHub issue number (requires --project)")
+	cmd.Flags().StringVar(&opts.RemoteKey, "remote", "",
+		"Only the issue imported from this tracker reference: 142 (GitHub) or PROJ-12 (Jira) (requires --project)")
 	jsonFlag(cmd)
 	return cmd
 }

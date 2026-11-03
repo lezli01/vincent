@@ -349,6 +349,54 @@ func TestIssueLsByGitHubNumber(t *testing.T) {
 	}
 }
 
+// TestIssueLsByRemoteKey: `--remote KEY` is task 142.9 (issue #905) — a
+// number is the GitHub issue, KEY-N a Jira one, case-insensitive. The Jira
+// row is seeded the way task 142 decision 9.4's dated note fixes the
+// convention #908's importer must write. The refusals are the CLI's own: they
+// name the flags, which the daemon's messages never do.
+func TestIssueLsByRemoteKey(t *testing.T) {
+	h := newLiveHarness(t)
+	imp := func(provider, key, repo string, number int) *store.Issue {
+		t.Helper()
+		iss, _, err := h.st.UpsertRemoteIssue(t.Context(), store.RemoteIssue{
+			ProjectID: h.projectID, Provider: provider, RemoteKey: key, Repo: repo, Number: number,
+			URL: "https://tracker.example/" + key, RemoteJSON: `{"state":"OPEN"}`,
+			Title: "imported " + key, State: issuestate.Open,
+		}, issuestate.Sync)
+		if err != nil {
+			t.Fatalf("UpsertRemoteIssue: %v", err)
+		}
+		return iss
+	}
+	gh := imp("github", "I_142", "o/r", 142)
+	jira := imp("jira", "10042", "PROJ", 12)
+
+	for key, want := range map[string]int64{"PROJ-12": jira.ID, "proj-12": jira.ID, "142": gh.ID} {
+		got := issueListJSON(t, "--project", h.project(), "--remote", key)
+		if len(got) != 1 || got[0].ID != want {
+			t.Errorf("ls --remote %s = %+v, want only issue %d", key, got, want)
+		}
+	}
+	if got := issueListJSON(t, "--project", h.project(), "--source", "jira"); len(got) != 1 || got[0].ID != jira.ID {
+		t.Errorf("ls --source jira = %+v, want only issue %d", got, jira.ID)
+	}
+	if _, errOut, code := runCLI(t, "issue", "ls", "--project", h.project(), "--remote", "PROJ"); code != 1 || !strings.Contains(errOut, "PROJ-12") {
+		t.Errorf("--remote PROJ: exit %d, stderr %q; want the daemon's 400", code, errOut)
+	}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"issue", "ls", "--remote", "PROJ-12"}, "--remote needs --project"},
+		{[]string{"issue", "ls", "--project", h.project(), "--remote", "PROJ-12", "--github", "142"}, "--remote and --github"},
+	} {
+		_, errOut, code := runCLI(t, tc.args...)
+		if code != 1 || !strings.Contains(errOut, tc.want) {
+			t.Errorf("%v: exit %d, stderr %q; want %q", tc.args, code, errOut, tc.want)
+		}
+	}
+}
+
 // --body-file reads a file or stdin byte for byte, refuses more than 4 MiB,
 // and cannot be combined with --body.
 func TestIssueAddBodyFile(t *testing.T) {

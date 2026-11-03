@@ -111,3 +111,29 @@ func (s *Store) IssueIDByRemoteNumber(ctx context.Context, projectID int64, prov
 	}
 	return id, true, nil
 }
+
+// IssueIDByRemoteKey returns the issue whose live remote (issue_id NOT
+// NULL) in projectID is provider's remote key; ok is false when none is, a
+// tombstone included. It is IssueIDByRemoteNumber for a provider whose
+// comments are read per issue rather than by a repository-wide listing
+// (task 142.4): the importer already holds the issue's key, so no number —
+// which such a provider may not have — is needed to attribute its thread.
+// The key is unique per (project, provider), so at most one row answers.
+//
+// "Remote key" here is the issue_remotes.remote_key column — the provider's
+// stable id (a GitHub node id, a Jira issue id). It is not what the API's
+// GET /v1/issues?remote_key= takes: that parameter is the display key a
+// person reads (`PROJ-12`, `owner/repo#12`) and is answered by
+// IssueIDsByRemoteRef, which never reads this column.
+func (s *Store) IssueIDByRemoteKey(ctx context.Context, projectID int64, provider, remoteKey string) (id int64, ok bool, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT issue_id FROM issue_remotes
+		WHERE project_id = ? AND provider = ? AND remote_key = ?
+		AND issue_id IS NOT NULL`, projectID, provider, remoteKey).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("look up %s %s: %w", provider, remoteKey, err)
+	}
+	return id, true, nil
+}

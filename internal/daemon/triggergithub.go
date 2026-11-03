@@ -8,6 +8,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/trigger"
 )
@@ -128,16 +129,10 @@ func issueAssignees(is *github.Issue) []string {
 	return nil
 }
 
-// githubRepoFor derives a project's GitHub identity from its `origin` remote
-// at the point of use — the same derivation the API does, and the same known
-// narrowness: an SSH alias, or a GitHub remote not named `origin`, is simply
-// not GitHub-based (task 035 decision 5, unreversed by task 052).
+// githubRepoFor derives a project's GitHub identity from its `origin`
+// remote; it is the GitHub issue source's binding (issuesource.RepoOf), so
+// the triggers, the pull request half and the issue importer agree on which
+// projects are GitHub-based.
 func githubRepoFor(ctx context.Context, git *gitx.Git, project store.Project) (github.Repo, bool) {
-	ctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
-	defer cancel()
-	remote, err := git.Run(ctx, project.Path, "remote", "get-url", "origin")
-	if err != nil {
-		return github.Repo{}, false
-	}
-	return github.ParseRemote(remote)
+	return issuesource.RepoOf(ctx, git, project)
 }

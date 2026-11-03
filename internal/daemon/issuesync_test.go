@@ -13,6 +13,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github/fakeissues"
+	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -591,5 +592,43 @@ func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	if !wait.Poll(wait.DefaultBudget, 50*time.Millisecond, cond) {
 		t.Fatal("condition never held")
+	}
+}
+
+// bindCounter is the GitHub source with its Bind counted: every Bind is a
+// `git remote get-url origin` subprocess.
+type bindCounter struct {
+	*issuesource.GitHub
+	binds int
+}
+
+func (c *bindCounter) Bind(ctx context.Context, project store.Project) (issuesource.Binding, bool) {
+	c.binds++
+	return c.GitHub.Bind(ctx, project)
+}
+
+// TestIssueSyncTickReadsOriginOnce: a tick derives a project's binding from
+// the origin it already read for the pull request half, rather than having
+// the importer read origin a second time (review F1). A "sync now", which
+// has no such reading, binds for itself.
+func TestIssueSyncTickReadsOriginOnce(t *testing.T) {
+	f := newFixture(t, "https://github.com/octo/repo.git")
+	newCorpus(t, issueRow(1, "open"))
+	r := f.reconciler()
+	src := &bindCounter{GitHub: issuesource.NewGitHub(f.client, f.git)}
+	r.issueSrc = src
+	r.Tick(t.Context())
+	if src.binds != 0 {
+		t.Errorf("a tick bound the issue source %d times, want 0: origin was read again", src.binds)
+	}
+	if st := f.syncState(t); !st.OK || st.Repo != "octo/repo" || len(f.issues(t)) != 1 {
+		t.Fatalf("the tick's import: %+v, %d issues", st, len(f.issues(t)))
+	}
+	if err := f.store.RequestIssueSync(t.Context(), f.project.ID); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	r.SyncRequested(t.Context())
+	if src.binds != 1 {
+		t.Errorf("a sync now bound %d times, want 1", src.binds)
 	}
 }
