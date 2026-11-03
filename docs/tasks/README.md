@@ -154,6 +154,7 @@ the living engineering specification records implementation contracts.
 | [138](138-copilot-adapter.md) | GitHub Copilot CLI as a fourth agent adapter, pinned to captured fixtures of one build | ✅ done (17/17) |
 | [139](139-privacy-policy.md) | A published privacy policy, and `PrivacyUrl` in the WinGet manifest | 🔄 in progress (3/4) |
 | [140](140-chat-on-an-issue.md) | A chat on an issue: it holds the issue's main worktree, moves it to in progress, and hands off into a main task | ✅ done (11/11) |
+| [141](141-copilot-acp.md) | Investigating `copilot --acp` for mid-run input and skill listing: listing no, input not yet | ✅ done (6/6) |
 
 ## How to add and update a task document
 

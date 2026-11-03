@@ -744,6 +744,9 @@ Carried from #852; each is decided in the item named.
    two-turn chats pass, with the screenshot record complete.
 6. **ACP follow-up** — an investigation into `copilot --acp` after this ships.
    Filed as [#889](https://github.com/lezli01/vincent/issues/889) (2026-11-03).
+   *Amended 2026-11-03:* done as [task 141](141-copilot-acp.md) (#889) on
+   1.0.105 — skill listing **no**, mid-run input **not yet** (blocked on
+   github/copilot-cli #5269 and #5133 reaching a `latest` release).
 7. **Hoisting `tailWriter`/`readLoop`** into `internal/agent` as a separate
    refactor afterwards. Filed as
    [#890](https://github.com/lezli01/vincent/issues/890) (2026-11-03).

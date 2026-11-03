@@ -6920,6 +6920,25 @@ that counted three adapters was amended in place.
   approval is not exposed (#5047), and `includeCoAuthoredBy: false` is
   ignored (#5133). A follow-up investigation is task 138's open question 6,
   not a commitment.
+  *Amended 2026-11-03 (task 141, issue #889; 1.0.105):* the investigation
+  ran. "One subprocess per run" (decision 1) does not forbid ACP: a run could
+  spawn `copilot --acp`, open one session and exit, so the shape is no longer
+  the reason. The verdicts are captured in `docs/tasks/141/`. **Listing: no**
+  — `available_commands_update` arrives 0.16 s after `session/new` and
+  mixes skills with built-in commands, told apart only by `input.hint`; it
+  agrees with what an ACP run loads but omits the CLI's built-in skills
+  (`customize-cloud-agent`, `github-pr-media`) that a JSON run loads, so
+  serving it beside JSON runs would be emulation (§9.1, task 124 decision 2),
+  and the "Skills" bullet above stands. **Mid-run input: not yet** — ACP
+  raises a machine-readable `session/request_permission` the turn waits on
+  (a §7.4 `permission`; there is no `ask_user` tool in either dialect, so no
+  `question`), but full-auto never raises one and restricted raises one only
+  for paths outside the worktree. Taking it means moving runs to ACP, and on
+  1.0.105 that loses plugin skills (#5269) and `includeCoAuthoredBy` (#5133),
+  both closed 2026-11-03 with fixes only in prereleases (1.0.106-3, 1.0.106-5).
+  #5198 is user steering, not §7.4, and #5047 is out of scope here anyway;
+  neither blocks. The answer changes when a `latest` release carries both
+  fixes.
 
 ## 10. Worktree management
 
