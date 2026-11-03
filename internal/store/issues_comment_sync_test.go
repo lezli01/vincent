@@ -194,6 +194,35 @@ func TestIssueIDByRemoteNumber(t *testing.T) {
 	}
 }
 
+// TestIssueIDByRemoteKey: the per-issue comment attachment (task 142.4)
+// answers by (project, provider, remote key) alone — no number needed — and
+// never for a tombstone, another provider or another project.
+func TestIssueIDByRemoteKey(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	other := testProject(t, s, "p2")
+	numberless := remoteIn(p.ID, "PROJ-1", 0)
+	numberless.Provider, numberless.Repo = "stub", "PROJ"
+	iss := mustUpsertRemote(t, s, numberless)
+	mustUpsertRemote(t, s, remoteIn(other.ID, "PROJ-1", 1))
+
+	if id, ok, err := s.IssueIDByRemoteKey(ctx, p.ID, "stub", "PROJ-1"); err != nil || !ok || id != iss.ID {
+		t.Errorf("stub PROJ-1 = %d, %v, %v; want %d", id, ok, err, iss.ID)
+	}
+	for _, q := range []struct{ provider, key string }{{"github", "PROJ-1"}, {"stub", "PROJ-2"}} {
+		if id, ok, err := s.IssueIDByRemoteKey(ctx, p.ID, q.provider, q.key); err != nil || ok {
+			t.Errorf("%+v = %d, %v, %v; want none", q, id, ok, err)
+		}
+	}
+	if err := s.DeleteIssue(ctx, iss.ID, issuestate.Human); err != nil {
+		t.Fatalf("DeleteIssue: %v", err)
+	}
+	if id, ok, err := s.IssueIDByRemoteKey(ctx, p.ID, "stub", "PROJ-1"); err != nil || ok {
+		t.Errorf("tombstone answered: %d, %v, %v", id, ok, err)
+	}
+}
+
 // TestIssueSyncStateCommentFieldsRoundTrip: the comment pass's bookkeeping
 // is written and read like the issue pass's, and independently of it.
 func TestIssueSyncStateCommentFieldsRoundTrip(t *testing.T) {
