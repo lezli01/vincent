@@ -15,9 +15,10 @@ import (
 // base is the binding's site (for example https://acme.atlassian.net/):
 // every relative href and src is resolved against it, because Jira renders
 // attachments and profile links site-relative. A nil base leaves relative
-// URLs as they are. Only http, https and mailto destinations survive as
-// links or images; any other scheme (javascript:, data:, …) degrades to the
-// element's text.
+// URLs as they are, except a scheme-relative `//host/…` one, which names
+// another host and degrades to text. Only http, https and mailto
+// destinations survive as links or images; any other scheme (javascript:,
+// data:, …) degrades to the element's text.
 //
 // It never fails: unknown elements degrade to their text, malformed markup
 // is repaired by the HTML5 tree builder, and the output is deterministic —
@@ -794,7 +795,10 @@ func (c *converter) resolve(raw string) string {
 	switch strings.ToLower(u.Scheme) {
 	case "http", "https", "mailto":
 	case "":
-		if c.base != nil || u.Opaque != "" {
+		// With no base a site-relative path is kept as it is, but a
+		// scheme-relative `//host/…` names another host, not this site, and
+		// has no scheme to check (review F14).
+		if c.base != nil || u.Opaque != "" || u.Host != "" {
 			return ""
 		}
 	default:

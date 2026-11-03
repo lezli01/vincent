@@ -137,6 +137,10 @@ func TestHTMLToMarkdownNilBase(t *testing.T) {
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
+	// Review F14: a scheme-relative URL is another host, never a link.
+	if got := HTMLToMarkdown(`<a href="//evil.test/x">sr</a> <img src="//evil.test/i.png" alt="i">`, nil); got != "sr i" {
+		t.Errorf("scheme-relative with nil base: got %q, want %q", got, "sr i")
+	}
 }
 
 // TestMentionNeverLeaksAccountID is the privacy half of "mentions": the
