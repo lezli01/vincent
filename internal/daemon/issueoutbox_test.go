@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/issues"
+	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -305,16 +306,20 @@ func TestOutboxRetryClasses(t *testing.T) {
 		{&github.Error{Reason: github.ReasonUnreachable}, now.Add(outboxBackoffBase * 2)},
 		{&github.Error{Reason: github.ReasonUnauthorized}, now.Add(outboxCredentialWait)},
 	}
+	// The drain classifies by the row's source and hands the failure to
+	// retryAs; GitHub's Classify is the one these rows' provider uses.
+	gh := issuesource.NewGitHub(nil, nil)
 	for _, c := range cases {
 		row := f.write(t, 1)
-		f.outbox.retry(t.Context(), row, c.err)
+		f.outbox.retryAs(t.Context(), row, gh.Classify(c.err), c.err)
 		got := f.write(t, 1)
 		if got.Status != store.OutboxPending || !got.NextAttemptAt.Equal(c.want) || got.LastReason != github.ReasonOf(c.err) {
 			t.Errorf("%v: %+v, want pending until %v", c.err, got, c.want)
 		}
 	}
 	row := f.write(t, 1)
-	f.outbox.retry(t.Context(), row, &github.Error{Reason: github.ReasonNoWriteScope})
+	noScope := &github.Error{Reason: github.ReasonNoWriteScope}
+	f.outbox.retryAs(t.Context(), row, gh.Classify(noScope), noScope)
 	if got := f.write(t, 1); got.Status != store.OutboxFailed || got.LastReason != github.ReasonNoWriteScope {
 		t.Errorf("no_write_scope: %+v, want failed", got)
 	}

@@ -331,19 +331,6 @@ func (o *IssueOutbox) adopt(ctx context.Context, row *store.IssueOutbox, cur *is
 		"wanted", row.Desired.State, "remote", remote.State)
 }
 
-// retry is retryAs with err classified by the source the row's provider
-// resolves to — GitHub's when it resolves to none, the one provider whose
-// rows exist today.
-func (o *IssueOutbox) retry(ctx context.Context, row *store.IssueOutbox, err error) {
-	var src issuesource.Source = issuesource.NewGitHub(nil, nil)
-	if iss, ok := o.issue(ctx, row); ok {
-		if s, _ := o.sources(providerOf(iss)); s != nil {
-			src = s
-		}
-	}
-	o.retryAs(ctx, row, src.Classify(err), err)
-}
-
 // retryAs settles a failed call by its classification on the seam's reason
 // vocabulary: a terminal reason fails the row, keeping the local state;
 // everything else keeps it pending until its class says to try again.
