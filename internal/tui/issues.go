@@ -963,8 +963,9 @@ func issueTitleMin(width int) int { return max(30, width*40/100) }
 
 // issueLine is one row: id, state badge, title, labels and kind, the source
 // badge of an imported issue, and the linked-task summary. sharedRepo says
-// every imported row on the list comes from one repository, so the source
-// badge may shorten to `gh#N` without becoming ambiguous.
+// every imported row on the list comes from one provider and repository, so
+// the source badge may shorten to the daemon's short_ref (`gh#N`) without
+// becoming ambiguous.
 func issueLine(iss apiclient.Issue, width int, selected, sharedRepo bool) string {
 	return issueLineMarked(iss, width, selected, sharedRepo, false)
 }
@@ -1016,8 +1017,8 @@ func issueLineMarked(iss apiclient.Issue, width int, selected, sharedRepo, picke
 	if short() && tags != "" {
 		tags = "+" + strconv.Itoa(issueTagCount(iss))
 	}
-	if short() && source != "" && sharedRepo && iss.Source.Number > 0 {
-		source = "gh#" + strconv.Itoa(iss.Source.Number)
+	if short() && source != "" && sharedRepo && iss.Source.ShortRef != "" {
+		source = iss.Source.ShortRef
 	}
 	if short() {
 		tags = ""
@@ -1087,34 +1088,47 @@ func issueTagCount(iss apiclient.Issue) int {
 }
 
 // issuesShareRepo reports whether every imported issue in the list comes
-// from one repository, so a row may name its source `gh#N` (#796): the row
-// starts with vincent's own `#ID`, and a bare `#N` beside it would be a
-// second, unrelated number. A remote's repository can change, so this is
-// read from the list rather than assumed of a project.
+// from one provider and repository, so a row may name its source by the
+// daemon's short_ref (`gh#N`, #796): the row starts with vincent's own
+// `#ID`, and a bare `#N` beside it would be a second, unrelated number. A
+// remote's repository can change, so this is read from the list rather than
+// assumed of a project — and only the client sees the list, which is why
+// the daemon renders both references and the choice stays here (task 142
+// decision 11.1).
 func issuesShareRepo(issues []apiclient.Issue) bool {
-	repo := ""
+	type origin struct{ provider, repo string }
+	var first *origin
 	for _, iss := range issues {
-		if iss.Source == nil || iss.Source.Repo == "" {
+		if iss.Source == nil || iss.Source.Ref == "" {
 			continue
 		}
-		if repo != "" && iss.Source.Repo != repo {
+		o := origin{iss.Source.Provider, iss.Source.Repo}
+		if first != nil && o != *first {
 			return false
 		}
-		repo = iss.Source.Repo
+		first = &o
 	}
 	return true
 }
 
-// issueSourceBadge is `owner/repo#N` for an imported issue, "" for a local one.
+// issueProvider is the display name of an imported issue's provider, as
+// the daemon renders it (`GitHub`, task 142 decision 11.3), so a note that
+// says where a write goes names it rather than spelling one provider. A
+// local issue — or one read before the name was known — says "its remote".
+func issueProvider(iss *apiclient.Issue) string {
+	if iss != nil && iss.Source != nil && iss.Source.ProviderName != "" {
+		return iss.Source.ProviderName
+	}
+	return "its remote"
+}
+
+// issueSourceBadge is the daemon-rendered reference of an imported issue
+// (`owner/repo#N`, `PROJ-12`), "" for a local one.
 func issueSourceBadge(iss apiclient.Issue) string {
-	if iss.Source == nil || iss.Source.Repo == "" {
+	if iss.Source == nil {
 		return ""
 	}
-	badge := iss.Source.Repo
-	if iss.Source.Number > 0 {
-		badge += "#" + strconv.Itoa(iss.Source.Number)
-	}
-	return badge
+	return iss.Source.Ref
 }
 
 // issueTaskSummary is the row's linked-task column, worded for the issue's

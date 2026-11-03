@@ -46,13 +46,17 @@ var issueCloseReasons = []pickerOption{
 
 // What a state change on an imported issue says before it is made (task 130
 // decision 19.2, replaced by 130.10). A human's close or reopen of an issue
-// whose GitHub remote is live is written back, and this keypress is the
-// consent (task 069 decision 2); one whose remote has moved or is gone
-// writes nothing back, and its sync block says which.
-const (
-	issueWritesBack = "this is written to GitHub too"
-	issueRemoteLost = "the GitHub issue has moved or is gone, so this changes vincent's copy only"
-)
+// whose remote is live is written back, and this keypress is the consent
+// (task 069 decision 2); one whose remote has moved or is gone writes
+// nothing back, and its sync block says which. Both name the issue's
+// provider (task 142 decision 11.3).
+func issueWritesBack(provider string) string { return "this is written to " + provider + " too" }
+
+// issueRemoteLost says "the issue on GitHub", never "the GitHub issue", so
+// the "its remote" fallback reads too (review F18).
+func issueRemoteLost(provider string) string {
+	return "the issue on " + provider + " has moved or is gone, so this changes vincent's copy only"
+}
 
 // Issue-prompt messages.
 type (
@@ -156,7 +160,7 @@ func (a *issueAction) begin(action string) tea.Cmd {
 }
 
 // confirmOrRun asks first only where there is something to say: on an
-// imported issue, whether the change is written to GitHub.
+// imported issue, whether the change is written to its provider.
 func (a *issueAction) confirmOrRun() tea.Cmd {
 	a.pick = nil
 	if a.imported() {
@@ -286,7 +290,7 @@ func (a *issueAction) confirmText() []string {
 		out := []string{"Delete " + ref + " permanently? It cannot be undone."}
 		if a.imported() {
 			out = append(out,
-				"This never deletes the issue on GitHub.",
+				"This never deletes the issue on "+issueProvider(&a.issue)+".",
 				"vincent remembers the deletion, so a sync will not import it again.")
 		}
 		return out
@@ -300,12 +304,14 @@ func (a *issueAction) confirmText() []string {
 	return []string{"Reopen " + ref + "?", a.forgeNote()}
 }
 
-// forgeNote says whether a state change on an imported issue reaches GitHub.
+// forgeNote says whether a state change on an imported issue reaches its
+// provider.
 func (a *issueAction) forgeNote() string {
+	provider := issueProvider(&a.issue)
 	if s := a.issue.Sync; s != nil && (s.Reason == "moved" || s.Reason == "gone") {
-		return issueRemoteLost
+		return issueRemoteLost(provider)
 	}
-	return issueWritesBack
+	return issueWritesBack(provider)
 }
 
 // lines draws the prompt for the bottom of the owning screen. Its prose

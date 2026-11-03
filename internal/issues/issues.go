@@ -267,7 +267,7 @@ func (s *Service) checkForgeWrite(ctx context.Context, by issuestate.Actor, id i
 		return err
 	}
 	if WritesBack(iss) {
-		return fmt.Errorf("issue %d: %w", id, ErrForgeWriteNeedsHuman)
+		return ForgeWriteError(iss)
 	}
 	return nil
 }

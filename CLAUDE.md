@@ -299,12 +299,16 @@ Requires bash, go, git, curl, jq.
 
 Dependency direction is one-way: `cli` → `tui`/`daemon`; `daemon` wires
 `store` + `workflow` + `scheduler` + `taskrun` + `events` + `notify` + `api`;
-leaf packages (`taskstate`, `issuestate`, `keymap`, `reasons`, `gitx`, `procx`, `pathx`, `version`, `config`) depend on
+leaf packages (`taskstate`, `issuestate`, `jira/jiramap`, `keymap`, `reasons`, `gitx`, `procx`, `pathx`, `version`, `config`) depend on
 nothing internal — with one deliberate exception: `config` imports `taskstate`
 and `keymap`, and only those, to validate `notify.on` against §6's state
 vocabulary and `tui.keys` against §15's key vocabulary rather than keeping a
 second copy of either (task 046 decision 4, widened by task 118 decision 3).
 `taskstate` and `keymap` are themselves leaves, so the direction stays one-way.
+`internal/jira/jiramap` is a leaf in the same sense: it imports the standard
+library and `issuestate` only — never `issues`, which imports the store — so
+the Jira client and outbox can both consult it (#898; a test walks its
+`go list -deps`). `internal/jira` itself is left for the Jira HTTP client.
 `internal/daemon/daemon.go:Run` is the single wiring point — read it first to see
 how the pieces connect.
 
@@ -354,6 +358,7 @@ is a correctness bug, not a style issue:
 | `internal/pathx` | The one directory comparison (task 132.3): `SameDir` and by-component `Contains`, lexical after `Clean`, case-folded on Windows and macOS, then symlink-resolved. `worktree` and `api` delegate to it, and the TUI matches its working directory with it without importing a git-running package. A leaf |
 | `internal/reasons` | The plain-language catalogue of task and step reasons (task 127, §18): a title, a meaning, the §6 actions and a docs anchor for each `block_reason`/`failure_reason`/`skip_reason`/`queued_reason`. A leaf that spells the strings out; tests hold it to every `Reason*` constant and to `docs/reference/task-lifecycle.md`'s tables |
 | `internal/issuestate` | The issue lifecycle of §5.6 (task 130): `open`/`closed`, close reasons, and which actor (`human`, `agent`, `sync`) may take which action. Pure and stdlib-only, a third vocabulary beside `taskstate` and `chatstate`; the store consults it inside the transaction that changes an issue's state |
+| `internal/jira/jiramap` | The Jira-to-§5.6 mapping (task 142 decision 9, 142.2): a status is closed iff its category is `done`, the close reason comes from the resolution (with a null-resolution status-name fallback), kind and label normalization, the `remote_json` record, and the transition chooser for a vincent close or reopen with typed `no_transition`/`ambiguous_transition`/`transition_needs_fields` failures. Pure; imports stdlib and `issuestate` only, and repeats `issues`' kind and label bounds |
 | `internal/issues` | The one validated write path for issues (§5.6, task 130): title/label/kind/priority rules and actor attribution, shared by the API, sync and triggers. Imports `store` and `issuestate` only; store errors pass through for `errors.Is` |
 | `internal/tui` | Bubble Tea client: thirteen views routed by `viewID` — the board, the task workspace, new task, projects, workflows, daemon, pull requests, the chats board and a chat, the two archived boards, triggers, and the issues list and an issue (§15) |
 
@@ -417,6 +422,13 @@ daemon, no shared fixtures:
   scenarios here rather than special-casing adapters for tests.
 - `cmd/fakegh` — the same for `gh`; its mutable issue corpus and `gh api` answers
   live in `internal/github/fakeissues`, so a `net/http` leg can serve the same fake.
+- `cmd/fakejira` — a stand-in Jira Cloud site (#907): `fakejira serve` binds a
+  loopback port, writes it to `--port-file` atomically, and stops cleanly on
+  `POST /_fake/shutdown` on every OS (SIGTERM/interrupt too, on POSIX only —
+  Windows has no graceful signal for a console-less child). Its corpus,
+  scenarios and REST answers live in `internal/jira/fakejira`, whose `*Store`
+  is the `http.Handler` an `httptest` leg mounts too, so both legs serve the
+  same fake; `internal/jira/jiratest` builds and starts the binary.
 - `*live_test.go` — the TUI/apiclient wired to the **real** API handlers over
   `httptest`, which is what keeps client and server wire types from drifting.
 - `e2e_test.go` in `internal/cli` and `internal/tui` build the real binary in

@@ -32,7 +32,7 @@ func TestIssueSectionRendersTheLinkedIssue(t *testing.T) {
 	d := taskDetailFixture(t)
 	d.task.Issue = &apiclient.TaskIssue{
 		ID: 7, Title: "Crash on start", State: "closed",
-		Source: &apiclient.IssueSource{Provider: "github", Repo: "octo/repo", Number: 200},
+		Source: ghSource(&apiclient.IssueSource{Provider: "github", Repo: "octo/repo", Number: 200}),
 	}
 	// The derived github_issue an imported issue's task also carries is not
 	// a second section.

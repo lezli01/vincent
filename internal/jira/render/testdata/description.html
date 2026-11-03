@@ -1,0 +1,46 @@
+<h1><a name="Summary"></a>Summary</h1>
+<p>The importer drops&nbsp;the <b>first</b> line of a <em>multi-line</em> body. See <a href="/browse/ACME-12" class="issue-link" data-issue-key="ACME-12">ACME-12</a> and <a href="https://example.com/docs?a=1&amp;b=2" rel="nofollow">the docs</a>.</p>
+
+<p>Reported by <a href="/secure/ViewProfile.jspa?accountId=5b10ac8d82e05b22cc7d4ef5" class="user-hover" rel="5b10ac8d82e05b22cc7d4ef5" data-account-id="5b10ac8d82e05b22cc7d4ef5" accountid="5b10ac8d82e05b22cc7d4ef5">Ada Lovelace</a>.</p>
+
+<h2><a name="Stepstoreproduce"></a>Steps to reproduce</h2>
+<ol>
+	<li>Create an issue with a body of
+	<ul>
+		<li>two lines</li>
+		<li>and a <tt>code</tt> span</li>
+	</ul>
+	</li>
+	<li>Run <tt>vincent issue sync</tt></li>
+</ol>
+
+<div class="code panel" style="border-width: 1px;"><div class="codeContent panelContent">
+<pre class="code-go">func main() {
+	fmt.Println(<span class="code-quote">"hello"</span>)
+}
+</pre>
+</div></div>
+
+<blockquote><p>The body is the source of truth.</p></blockquote>
+
+<div class="table-wrap">
+<table class='confluenceTable'><tbody>
+<tr>
+<th class='confluenceTh'>Field</th>
+<th class='confluenceTh'>Value</th>
+</tr>
+<tr>
+<td class='confluenceTd'>status</td>
+<td class='confluenceTd'>open | closed</td>
+</tr>
+<tr>
+<td class='confluenceTd'>priority</td>
+</tr>
+</tbody></table>
+</div>
+
+<hr />
+
+<p><span class="image-wrap" style=""><a id="10001_thumb" href="/rest/api/3/attachment/content/10001" title="screenshot.png" file-preview-type="image" file-preview-id="10001" file-preview-title="screenshot.png"><img src="/rest/api/3/attachment/thumbnail/10001" alt="screenshot.png" style="border: 0px solid black" /></a></span></p>
+
+<p><span class="nobr"><a href="/secure/attachment/10002/trace.log" title="trace.log attached to ACME-7">trace.log<sup><img class="rendericon" src="/images/icons/link_attachment_7.gif" height="7" width="7" align="absmiddle" alt="" border="0"/></sup></a></span></p>

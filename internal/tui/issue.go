@@ -619,7 +619,8 @@ func (v *issueView) liveBindings(rows []binding) []binding {
 // description uses (130.12).
 func (v *issueView) openComment() tea.Cmd {
 	if !v.commentable() {
-		v.setNote("this issue is mirrored from GitHub — comment there; vincent never posts to GitHub", true)
+		p := issueProvider(&v.issue)
+		v.setNote("this issue is mirrored from "+p+" — comment there; vincent never posts to "+p, true)
 		return nil
 	}
 	if v.posting {
@@ -1117,7 +1118,7 @@ func (v *issueView) pageLines(width int) (lines []string) {
 }
 
 // threadLines is the Comments section: oldest first, each headed by its
-// author and time, with a mirrored comment marked as GitHub's. Called inside
+// author and time, with a mirrored comment marked as its provider's. Called inside
 // pageLines' render pass, so the bodies share the description's cache.
 func (v *issueView) threadLines(width int) []string {
 	lines := []string{"", " " + styleTitle.Render("Comments") + styleDim.Render("  "+plural(len(v.comments), "comment", "comments"))}
@@ -1130,13 +1131,19 @@ func (v *issueView) threadLines(width int) []string {
 		}
 		return append(lines, styleDim.Render("  no comment yet"))
 	}
+	// A mirrored comment is tagged with its provider's id (`github`), the
+	// spelling the Source section's provider row uses.
+	remoteTag := "remote"
+	if src := v.issue.Source; src != nil && src.Provider != "" {
+		remoteTag = src.Provider
+	}
 	for i, c := range v.comments {
 		if i > 0 {
 			lines = append(lines, "")
 		}
 		head := "  " + styleKey.Render(c.Author) + styleDim.Render("  "+c.CreatedAt.Local().Format("2006-01-02 15:04"))
 		if c.Remote {
-			head += styleDim.Render("  · github")
+			head += styleDim.Render("  · " + remoteTag)
 		}
 		if c.UpdatedAt.After(c.CreatedAt) {
 			head += styleDim.Render("  · edited")

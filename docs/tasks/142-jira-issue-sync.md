@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (1/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (5/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -35,9 +35,9 @@ lists only the hard dependencies the parent records as "Blocked by".
   the open questions' answers or proposed defaults; the dated notes on task
   096 decision 2, task 130 decision 15.1 and task 137 decision 10; the index
   row. ✓ 2026-11-03
-- [ ] **142.2** ([#898](https://github.com/lezli01/vincent/issues/898)) A pure,
+- [x] **142.2** ([#898](https://github.com/lezli01/vincent/issues/898)) A pure,
   stdlib-only package for the mapping of decision 9: state and reason both
-  ways, the kind seed, labels and the transition chooser.
+  ways, the kind seed, labels and the transition chooser. ✓ 2026-11-03
 - [ ] **142.3** ([#899](https://github.com/lezli01/vincent/issues/899)) Cloud
   REST v3 responses captured from a real site, settling the facts this
   document carries unverified. Needs a person with a Jira Cloud site.
@@ -53,16 +53,18 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [ ] **142.7** ([#903](https://github.com/lezli01/vincent/issues/903)) Issue
   sync scheduled per bound provider, decoupled from pull-request
   reconciliation, and the `jira:` config block. Depends: 142.4, 142.6.
-- [ ] **142.8** ([#904](https://github.com/lezli01/vincent/issues/904))
+- [x] **142.8** ([#904](https://github.com/lezli01/vincent/issues/904))
   Daemon-rendered `source.key`/`ref`/`short_ref` and provider display names;
-  clients stop building references.
+  clients stop building references; provider literals in issue text name the
+  provider or go neutral (decision 11). ✓ 2026-11-03
 - [ ] **142.9** ([#905](https://github.com/lezli01/vincent/issues/905))
   `remote_key` and `source=jira` filters, and `vincent issue ls --remote`.
-- [ ] **142.10** ([#906](https://github.com/lezli01/vincent/issues/906))
+- [x] **142.10** ([#906](https://github.com/lezli01/vincent/issues/906))
   HTML→Markdown for bodies and comments, and Markdown→ADF for outgoing
-  comments (decision 9.5).
-- [ ] **142.11** ([#907](https://github.com/lezli01/vincent/issues/907)) The
+  comments (decision 9.5). ✓ 2026-11-03
+- [x] **142.11** ([#907](https://github.com/lezli01/vincent/issues/907)) The
   fake Jira corpus, an `httptest` leg and a `cmd/fakejira` server.
+  ✓ 2026-11-03
 - [ ] **142.12** ([#908](https://github.com/lezli01/vincent/issues/908)) The
   `internal/jira` client and the importer for Jira: listing, initial import,
   sweep, comments, rate limits and environment credentials; spec §3 row 39
@@ -97,7 +99,7 @@ Settled with the author while scoping #897, except the points marked
 *proposed default*: those carry the default an open question below proposes,
 and are open until the issue it names settles them. Decisions 1–9 merge #897's
 draft list with #896's "Decisions taken"; decision 10 answers #897's own open
-question.
+question; decision 11 was taken delivering 142.8 (#904).
 
 ### 1. A native in-tree Jira Cloud provider; trigger sources stay generic
 
@@ -236,6 +238,12 @@ parts; 142.3 settles the Jira facts against a real site.
 2. **The reason comes from configurable resolution sets.** Duplicate is
    `Duplicate`; not planned is `Won't do`, `Won't Fix`, `Cannot Reproduce`,
    `Incomplete` or `Declined`; anything else, or none, is `completed`.
+   *Amended 2026-11-03 (142.2, #898):* one narrowing on the reason side.
+   When the resolution is null, a done status whose name is in the
+   not-planned set, or is `Cancelled`/`Canceled`, reads as `not_planned`. A
+   team-managed `Won't do → Cancelled` transition sets no resolution, and
+   without this the chooser's achieved reason and the next read-back would
+   disagree on every poll. A set resolution always wins over the status name.
 3. **Write-back picks from the transitions available now**, with an optional
    per-binding override map, and fails with `no_transition`,
    `ambiguous_transition` or `transition_needs_fields` rather than guess.
@@ -274,6 +282,36 @@ answers #897's open question.
 
 *Beaten:* landing row 39 with this document, by the ahead-of-code exception
 rows 36–38 took (task 130 decision 13, task 132 decision 14, task 137).
+
+### 11. Rendered references and provider names (142.8, #904)
+
+Taken while delivering 142.8. Each point is numbered so code can cite it.
+
+1. **The daemon renders `short_ref`; the client picks.** The daemon always
+   fills `short_ref` (`gh#142`, `PROJ-12`), but it serves each issue alone and
+   cannot see the list a row sits in, so the TUI keeps only the choice: it
+   prints `short_ref` when every imported row on the list shares one provider
+   and repo (spec §15's #796 rule, generalized from repo alone) and `ref`
+   otherwise. *Beaten:* the list endpoint deciding, which would make a
+   filtered page and an unfiltered one disagree.
+2. **The snapshot stores only `key`; the rest is rendered at read time.**
+   `store.IssueSnapshotRemote` gains an optional `key` (the task 130.4
+   precedent: a new `omitempty` key in `issue_json`, no migration). `ref`,
+   `short_ref` and `provider_name` are never stored: the issue DTO and both
+   halves of a task's `issue` render through `issues.RenderSource`, so a
+   snapshot taken before this change also gets refs — GitHub's key falls back
+   to its number. *Beaten:* storing rendered strings, which would freeze a
+   rendering bug into every snapshot.
+3. **Static text is neutral; per-issue text names the provider.** Where an
+   issue is in context — state-change and write-back notes, "mirrored from …",
+   the issue detail, the 409 `forge_write_needs_human` prose — the string
+   names `source.provider_name`. Text with no issue in context (MCP tool
+   descriptions, the issue key-table rows, CLI help) says "a remote tracker"
+   or "the issue's source". GitHub-only surfaces keep their names:
+   `vincent github …`, `project_github*`, `/v1/projects/{id}/github*`, the
+   pull-request surfaces and the `S`/sync-status labels (#910). *Beaten:*
+   "the remote" everywhere, since "written to Jira too" is what a user wants
+   to read.
 
 ## Records kept, departed from, narrowed or generalised
 

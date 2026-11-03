@@ -65,6 +65,16 @@ type IssueSource struct {
 	// Status is "moved" or "missing" when the last sweep could no longer
 	// find the remote where it was; empty while it is live.
 	Status string `json:"status,omitempty"`
+	// Key, Ref, ShortRef and ProviderName are rendered by the daemon (task
+	// 142.8); print them rather than building a reference from Repo and
+	// Number. Ref is the full reference (`owner/repo#142`, `PROJ-12`),
+	// ShortRef the compact one a list may print when every imported row
+	// shares one provider and repo (`gh#142`), ProviderName the display
+	// name (`GitHub`, `Jira`).
+	Key          string `json:"key,omitempty"`
+	Ref          string `json:"ref"`
+	ShortRef     string `json:"short_ref"`
+	ProviderName string `json:"provider_name"`
 }
 
 // IssueTasks is the root tasks an issue started: how many, and which are

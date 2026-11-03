@@ -251,7 +251,7 @@ func TestImportedIssueFormAgainstTheRealAPI(t *testing.T) {
 	h.sendKey(keyPress("enter")) // completed
 	lines, _ := detail.w.act.lines(400)
 	out := strings.Join(lines, "\n")
-	if !strings.Contains(out, issueWritesBack) {
+	if !strings.Contains(out, issueWritesBack("GitHub")) {
 		t.Fatalf("the imported close does not say it is written to GitHub:\n%s", out)
 	}
 	h.sendKey(keyPress("y"))

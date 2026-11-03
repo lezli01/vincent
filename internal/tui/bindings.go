@@ -949,11 +949,11 @@ var bindings = []binding{
 	{op: keymap.New, key: "n", label: "file a new issue in this project", scope: scopePanel, context: ctxIssues, hint: "n new", priority: 4},
 	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssues, hint: "o browser", priority: 5, term: termBrowser, remoteOnly: true},
 	{op: keymap.Scope, key: "s", label: "show or hide the done lane", scope: scopePanel, context: ctxIssues, hint: "s done", priority: 6, term: termScope},
-	{op: keymap.Refresh, key: "R", label: "re-read the issues — never a GitHub sync", scope: scopePanel, context: ctxIssues, hint: "R refresh", priority: 7, term: termRefresh},
+	{op: keymap.Refresh, key: "R", label: "re-read the issues — never a sync with a remote tracker", scope: scopePanel, context: ctxIssues, hint: "R refresh", priority: 7, term: termRefresh},
 	{op: keymap.Add, key: "a", label: "create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssues, hint: "a new task", priority: 8, term: termAdd},
 	{key: issueEditKey, label: "edit the selected issue in a form", scope: scopePanel, context: ctxIssues, hint: "i edit", priority: 9},
 	{key: issueStateKey, label: "close or reopen the selected issue — only what the daemon offers", scope: scopePanel, context: ctxIssues, hint: "X close/reopen", priority: 10},
-	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssues, priority: 11, term: termDelete},
+	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes at the issue's source)", scope: scopePanel, context: ctxIssues, priority: 11, term: termDelete},
 	// `R` above only re-reads (task 130 decision 2); `S` is the explicit
 	// request to GitHub, `vincent issue sync` from the list.
 	{key: issueSyncKey, label: "sync this project's issues from GitHub now — sweeping out the ones deleted there", scope: scopePanel, context: ctxIssues, hint: "S sync", priority: 11, github: true},
@@ -984,7 +984,7 @@ var bindings = []binding{
 	{key: rawToggleKey, label: "show the description's and comments' original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 3},
 	{key: linkPickKey, label: "list the links in the description and comments, and the source page — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 4},
 	{key: copyPickKey, label: "copy the title, the description, a comment or the source URL", scope: scopePanel, context: ctxIssue, hint: "ctrl+y copy", priority: 4},
-	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a GitHub sync", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 5, term: termRefresh},
+	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a sync with a remote tracker", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 5, term: termRefresh},
 	// The page is scroll-first (#792): the arrows scroll it, moving the
 	// selection only among the Main worktree and task rows on screen.
 	{key: "down", label: "scroll a line; on screen, move the selection between the Main worktree section and the linked tasks first (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ scroll", priority: 6},
@@ -996,10 +996,10 @@ var bindings = []binding{
 	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 9},
 	{key: issueStateKey, label: "close or reopen the issue — only what the daemon offers", scope: scopePanel, context: ctxIssue, hint: "X close/reopen", priority: 10},
 	// The thread (task 130 decision 24, 130.16): a local comment, written in
-	// $EDITOR. Withheld on an issue whose GitHub remote is live, which takes
-	// no comment here — nothing is ever posted to GitHub.
-	{op: keymap.Comment, key: "W", label: "write a comment in $EDITOR — saved empty, nothing is posted; never on an issue mirrored from GitHub", scope: scopePanel, context: ctxIssue, hint: "W comment", priority: 10, term: termComment},
-	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes on GitHub)", scope: scopePanel, context: ctxIssue, priority: 11, term: termDelete},
+	// $EDITOR. Withheld on an issue whose remote is live, which takes
+	// no comment here — nothing is ever posted to its remote.
+	{op: keymap.Comment, key: "W", label: "write a comment in $EDITOR — saved empty, nothing is posted; never on an issue mirrored from a remote tracker", scope: scopePanel, context: ctxIssue, hint: "W comment", priority: 10, term: termComment},
+	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes at the issue's source)", scope: scopePanel, context: ctxIssue, priority: 11, term: termDelete},
 	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssue, hint: ". ready", priority: 8, term: termReady},
 	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssue, hint: ", return", priority: 8, term: termReturn},
 	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssue, hint: "T chat", priority: 8},
@@ -1007,7 +1007,7 @@ var bindings = []binding{
 	// The issue form and prompt own the keyboard and print their own key
 	// lines, so these are here to keep ? complete.
 	{key: "down", label: "move between the issue's fields (↑/↓, tab)", scope: scopePanel, context: ctxIssueForm, noPalette: true},
-	{key: "enter", label: "edit the field, or open its list; a field mirrored from GitHub says so instead", scope: scopePanel, context: ctxIssueForm, noPalette: true},
+	{key: "enter", label: "edit the field, or open its list; a field mirrored from a remote tracker says so instead", scope: scopePanel, context: ctxIssueForm, noPalette: true},
 	{op: keymap.Editor, key: "e", label: "on the description: open it in $EDITOR", scope: scopePanel, context: ctxIssueForm, noPalette: true, term: termEditor},
 	{op: keymap.FreeText, key: "t", label: "in an open list: type a label or kind it does not offer", scope: scopePanel, context: ctxIssueForm, noPalette: true, term: termFreeText},
 	{op: keymap.Refresh, key: "R", label: "re-read the issue after a conflict, keeping your edits where they still apply", scope: scopePanel, context: ctxIssueForm, noPalette: true, term: termRefresh},

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,6 +182,10 @@ func TestHandoffDeliverImportedByAgent(t *testing.T) {
 	path := itemVerbPath(ho.ID, strconv.FormatInt(iss.ID, 10), "deliver")
 	resp, body := h.postMarked(t, path, nil, headerTaskMarker, "4242")
 	wantReason(t, "agent deliver", resp, body, issueReasonForgeWrite)
+	// Task 142 decision 11.3 (review F5): the refusal names the provider.
+	if !strings.Contains(string(body), "may write to GitHub") {
+		t.Errorf("the deliver refusal does not name GitHub: %s", body)
+	}
 	one := wantStatus(t, http.StatusOK)(h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/handoffs/%d", ho.ID), nil))
 	if it := outcomeOf(t, one, iss.ID); it.Outcome != "" {
 		t.Errorf("a refused deliver recorded %s", it.Outcome)

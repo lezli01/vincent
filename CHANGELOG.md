@@ -9,6 +9,21 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Changed
+
+- **The daemon names an imported issue's source.** An issue's `source` — on
+  `GET /v1/issues`, `GET /v1/issues/{id}` and a task's `issue` — now carries
+  `key`, `ref` (`owner/repo#142`), `short_ref` (`gh#142`) and
+  `provider_name` (`GitHub`), and the TUI and CLI print those instead of
+  building a reference themselves, so a later issue provider needs no client
+  change. GitHub references read as before. The task overview's issue
+  reference is now labelled `source` rather than `github`; the issue key-table
+  rows, CLI help and MCP tool descriptions say "a remote tracker" where no
+  issue is in context; and the `forge_write_needs_human` refusal names the
+  issue's provider.
+
 ## [0.12.0](https://github.com/lezli01/vincent/compare/v0.11.0...v0.12.0) (2026-11-03)
 
 ### Added

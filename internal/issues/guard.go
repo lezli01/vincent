@@ -37,6 +37,10 @@ type Caller struct {
 type Target struct {
 	IssueID int64
 	TaskID  int64
+	// Provider is the display name of the issue's provider (`GitHub`), so
+	// a refusal names where the write would have gone (task 142 decision
+	// 11.3); empty keeps the sentinel's neutral "the forge".
+	Provider string
 }
 
 // Verdict is the guard's answer when it allows a write. By is the actor the
@@ -61,7 +65,10 @@ func (s *Service) ForgeWrite(ctx context.Context, c Caller, capability store.Cap
 		return Verdict{By: c.By}, nil
 	}
 	refuse := func(why string) (Verdict, error) {
-		return Verdict{}, fmt.Errorf("%s on %s: %s: %w", capability, grantee(t), why, ErrForgeWriteNeedsHuman)
+		return Verdict{}, &forgeWriteError{
+			prefix:   fmt.Sprintf("%s on %s: %s", capability, grantee(t), why),
+			provider: t.Provider,
+		}
 	}
 	if c.TaskID == nil {
 		return refuse("the caller is not a handoff's task")
@@ -113,7 +120,7 @@ func (s *Service) IssueWriteAs(ctx context.Context, c Caller, capability store.C
 	if !reaches {
 		return c.By, ctx, nil
 	}
-	v, err := s.ForgeWrite(ctx, c, capability, Target{IssueID: issueID})
+	v, err := s.ForgeWrite(ctx, c, capability, Target{IssueID: issueID, Provider: ProviderName(iss)})
 	if err != nil {
 		return "", ctx, err
 	}

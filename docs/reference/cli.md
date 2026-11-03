@@ -3128,7 +3128,9 @@ them — when the issue has a marker, and — for an
 imported issue — its `owner/repo#N` source, URL and when it last synced, then
 how many tasks it started with the ids still active, the actions it allows,
 its body, and its discussion thread oldest first — each comment under an
-author-and-time line, a comment mirrored from GitHub marked `(github)`.
+author-and-time line, a mirrored comment marked with its provider's id —
+`(github)`. The `source` row is the reference the daemon renders
+(`owner/repo#N`).
 `--json` prints the full issue, without the thread.
 
 ### `vincent issue add`

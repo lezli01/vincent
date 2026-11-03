@@ -245,10 +245,10 @@ func TestIssueClosePromptOnImportedSaysWhereItGoes(t *testing.T) {
 		sync *apiclient.IssueSync
 		want string
 	}{
-		{nil, issueWritesBack},
-		{&apiclient.IssueSync{State: "synced"}, issueWritesBack},
-		{&apiclient.IssueSync{State: "failed", Reason: "moved"}, issueRemoteLost},
-		{&apiclient.IssueSync{State: "failed", Reason: "gone"}, issueRemoteLost},
+		{nil, issueWritesBack("GitHub")},
+		{&apiclient.IssueSync{State: "synced"}, issueWritesBack("GitHub")},
+		{&apiclient.IssueSync{State: "failed", Reason: "moved"}, issueRemoteLost("GitHub")},
+		{&apiclient.IssueSync{State: "failed", Reason: "gone"}, issueRemoteLost("GitHub")},
 	} {
 		v := issueFixture()
 		v.issue.AvailableActions = []string{"close"}
@@ -305,5 +305,21 @@ func TestIssueFormProjectRowIsLocked(t *testing.T) {
 	v.retarget(projectSel{id: 2, name: "web"})
 	if v.w.form == nil || v.w.form.projectID != 2 {
 		t.Fatal("a switch did not re-aim the create form at the new selection")
+	}
+}
+
+// TestIssueRemoteLostReadsWithEitherProvider is review F18: the sentence
+// reads for a named provider and for the "its remote" fallback alike.
+func TestIssueRemoteLostReadsWithEitherProvider(t *testing.T) {
+	for provider, want := range map[string]string{
+		"GitHub":     "the issue on GitHub has moved or is gone",
+		"its remote": "the issue on its remote has moved or is gone",
+	} {
+		if got := issueRemoteLost(provider); !strings.HasPrefix(got, want) {
+			t.Errorf("issueRemoteLost(%q) = %q, want it to start %q", provider, got, want)
+		}
+	}
+	if got := issueRemoteLost(issueProvider(&apiclient.Issue{})); strings.Contains(got, "the its") {
+		t.Errorf("fallback reads %q", got)
 	}
 }

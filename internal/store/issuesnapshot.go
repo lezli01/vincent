@@ -67,6 +67,12 @@ type IssueSnapshotRemote struct {
 	Assignees       []string `json:"assignees,omitempty"`
 	Milestone       string   `json:"milestone,omitempty"`
 	MilestoneNumber int      `json:"milestone_number,omitempty"`
+	// Key is the provider's display key when it is not the number — a Jira
+	// issue's `PROJ-12` (task 142 decision 11.2). Omitted for GitHub, whose
+	// key is its number; the reference is rendered from these parts at read
+	// time and never stored, so a snapshot written before Key existed reads
+	// the same.
+	Key string `json:"key,omitempty"`
 }
 
 // Clone returns a deep copy, nil for nil. A fan-out lane inherits its
@@ -100,6 +106,23 @@ type remoteDetail struct {
 	Milestone       string    `json:"milestone"`
 	MilestoneNumber int       `json:"milestone_number"`
 	CreatedAt       time.Time `json:"created_at"`
+	Key             string    `json:"key"`
+}
+
+// RemotePayloadKey reads the display `key` a provider's stored payload
+// carries (a Jira issue's `PROJ-12`, task 142.8), "" when it carries none or
+// is not JSON. GitHub's payload has no key: its key is its number.
+func RemotePayloadKey(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	var v struct {
+		Key string `json:"key"`
+	}
+	if json.Unmarshal([]byte(raw), &v) != nil {
+		return ""
+	}
+	return v.Key
 }
 
 // NewIssueSnapshot freezes iss for a task created from it at now (task 130
@@ -151,6 +174,9 @@ func NewIssueSnapshot(iss *Issue, now time.Time) *IssueSnapshot {
 			Assignees:       assignees,
 			Milestone:       detail.Milestone,
 			MilestoneNumber: detail.MilestoneNumber,
+		}
+		if rem.Provider != "github" {
+			snap.Remote.Key = detail.Key
 		}
 	}
 	return snap

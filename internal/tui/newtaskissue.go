@@ -154,7 +154,7 @@ func (n *newTask) withdrawField(name, was string) {
 }
 
 // issueSummary is the source row for an issue-seeded draft: `#id title`, its
-// state, the GitHub reference when it is imported, and — on a second line —
+// state, the daemon-rendered source reference when it is imported, and — on a second line —
 // how many tasks it has already started (decision 21.3). Starting another is
 // allowed; the line is there so it is done knowingly.
 func (n *newTask) issueSummary() string {
