@@ -1076,7 +1076,7 @@ is whether `.Steps.foo` exists — that is a run-time fact.
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Steps` | completed steps by id → `{Status, Result, ExitCode}` — [§5.3](#53-passing-one-steps-output-to-the-next) |
 | `.Loop` | `Index` (1-based, **0** outside any loop), `Item`, `IsFirst`, `IsLast` — [§6.4](#64-loops-in-depth) |
-| `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` — the GitHub `Repo`, `Number`, `URL` and `State` of an imported issue, which is what a `gh` call reads. `Repo` and `URL` are deprecated aliases of `Source.Repo`/`Source.URL` — [reference](../reference/workflow-schema.md#issue) |
+| `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` — the `Provider`, `Repo`, `Number`, `Key`, `URL` and `State` of an imported issue (zero for a local one; `Key` is the display key, the GitHub number as a string or a Jira key such as `PROJ-12`, and a Jira issue has `Number` **0** and a browse `URL`), which is what a `gh` call reads — and `Comments` (a list of `Author`, `Body`, `CreatedAt`: the thread, oldest first). `Repo` and `URL` are deprecated aliases of `Source.Repo`/`Source.URL` — [reference](../reference/workflow-schema.md#issue) |
 | `.Host` | `OS`, `Arch` — the **daemon's** GOOS/GOARCH — [§10.4](#104-gating-one-step-by-platform) |
 | `.Worktree` | `Path` |
 | `.LastFailure` | retry attempts only: `{Reason, Output}`; empty otherwise |
