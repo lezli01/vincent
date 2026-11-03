@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (6/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (7/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -41,9 +41,16 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [ ] **142.3** ([#899](https://github.com/lezli01/vincent/issues/899)) Cloud
   REST v3 responses captured from a real site, settling the facts this
   document carries unverified. Needs a person with a Jira Cloud site.
-- [ ] **142.4** ([#900](https://github.com/lezli01/vincent/issues/900)) The
+- [x] **142.4** ([#900](https://github.com/lezli01/vincent/issues/900)) The
   issue-provider interface (decision 2); GitHub implements it with no
-  behaviour change. Depends: 142.1.
+  behaviour change. Depends: 142.1. `internal/issuesource` holds the
+  `Source` interface, the seam's reason vocabulary (pinned equal to
+  `github.Reason*`) and the GitHub source; the repository-wide comment
+  listing and placeholder adoption are optional capabilities found by type
+  assertion. The importer and the drain name no `github` type; the drain
+  dispatches each row on its remote's provider, still one writer; and
+  `store.IssueIDByRemoteKey` attaches a per-issue thread for a source with
+  no repository-wide listing. ✓ 2026-11-03
 - [ ] **142.5** ([#901](https://github.com/lezli01/vincent/issues/901)) The
   `"github"` equality checks replaced, so a second provider writes back and is
   guarded. Depends: 142.4.

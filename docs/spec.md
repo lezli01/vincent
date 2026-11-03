@@ -8560,6 +8560,18 @@ it does for a pending one. GitHub moving off the base is someone else's
 change, and the import adopts it. The 130 gate's read-only scenario found the
 import undoing a refused reopen on the very next tick.
 
+*Amended 2026-11-03 (task 142.4, issue #900).* The importer and the drain
+reach the provider through an issue-provider interface
+(`internal/issuesource`, task 142 decision 2), not through the GitHub client;
+GitHub is its first and only implementation, so nothing above changes for a
+GitHub project. The drain dispatches **each row** on its issue's remote
+provider to that provider's source, and is still **one serialized writer**:
+every provider's writes share the one goroutine, the one-second gap and the
+retry classes above. A row whose provider has no enabled source stays pending
+with the reason it has none — for GitHub, `disabled` or `no_client` exactly as
+before. The reason strings are the seam's own vocabulary and equal GitHub's,
+so no value on the sync row, the outbox or the wire changes.
+
 *Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
 outbound network traffic when it landed, and that sentence read as though it
 were the only one. It is now the first that fires for a *subset* of installs:
