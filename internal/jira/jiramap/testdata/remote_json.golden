@@ -1,0 +1,35 @@
+{
+  "state": "closed",
+  "assignee": "Ada Lovelace",
+  "assignees": [
+    "Ada Lovelace"
+  ],
+  "created_at": "2024-03-05T09:11:12.345Z",
+  "status": "Won't do",
+  "status_category": "done",
+  "resolution": "Won't do",
+  "issue_type": "Bug",
+  "priority": "High",
+  "assignee_account_id": "5b10a2844c20165700ede21g",
+  "reporter": "Charles Babbage",
+  "reporter_account_id": "5b10ac8d82e05b22cc7d4ef5",
+  "parent": "ABC-10",
+  "issue_links": [
+    {
+      "type": "Duplicate",
+      "direction": "outward",
+      "key": "ABC-1"
+    },
+    {
+      "type": "Blocks",
+      "direction": "inward",
+      "key": "ABC-7"
+    }
+  ],
+  "components": [
+    "api",
+    "web"
+  ],
+  "created": "2024-03-05T10:11:12.345+0100",
+  "resolution_date": "2024-03-06T08:00:00.000+0000"
+}
