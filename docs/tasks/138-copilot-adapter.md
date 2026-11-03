@@ -759,3 +759,8 @@ Carried from #852; each is decided in the item named.
    global skills to `~/.agents/skills`; to be filed as its own bug, never fixed
    in passing by 138.12. Filed as
    [#891](https://github.com/lezli01/vincent/issues/891) (2026-11-03).
+   Resolved 2026-11-03 by #891: codex is store-resident like copilot —
+   `vincent skills ls` and `doctor` list it as `codex (reads store)` when
+   `~/.codex` exists and the store holds the skill — but it keeps its
+   `codex` slug, so `PlanInstall` still runs `skills add --agent codex`.
+   Spec §9.8 is amended in place.
