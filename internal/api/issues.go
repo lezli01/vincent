@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/user"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -482,9 +483,60 @@ func issueIDFromPath(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return id, true
 }
 
-// issueSourceGitHub is the one remote provider an issue can come from today,
-// as GET /v1/issues spells it in `source` and matches it for `remote_number`.
-const issueSourceGitHub = "github"
+// issueSourceGitHub and issueSourceJira are the remote providers an issue
+// can come from, as GET /v1/issues spells them in `source` and matches them
+// for `remote_number` and `remote_key`.
+const (
+	issueSourceGitHub = "github"
+	issueSourceJira   = "jira"
+)
+
+// issueSources is the `source` vocabulary of GET /v1/issues: local, then
+// every provider. It is a static list until #901's provider registry
+// replaces it (task 142.9, issue #905).
+var issueSources = []string{"local", issueSourceGitHub, issueSourceJira}
+
+// parseRemoteKey reads GET /v1/issues' `remote_key` (task 142.9, issue
+// #905), choosing the provider by the key's shape rather than by the
+// project's binding — a rebind keeps the previous provider's imports. All
+// digits is a GitHub number, matched in any repo exactly as remote_number
+// is (repo ""); KEY-N, split on the last "-", with KEY a letter then
+// letters, digits or underscores and N a positive integer, is a Jira key,
+// matched on the project key the row stores in repo (task 142 decision 9.4's
+// dated note). ok is false for anything else.
+func parseRemoteKey(v string) (provider, repo string, number int, ok bool) {
+	positive := func(s string) (int, bool) {
+		if s == "" {
+			return 0, false
+		}
+		for _, c := range s {
+			if c < '0' || c > '9' {
+				return 0, false
+			}
+		}
+		n, err := strconv.Atoi(s)
+		return n, err == nil && n > 0
+	}
+	if n, ok := positive(v); ok {
+		return issueSourceGitHub, "", n, true
+	}
+	i := strings.LastIndexByte(v, '-')
+	if i < 1 {
+		return "", "", 0, false
+	}
+	key := v[:i]
+	n, ok := positive(v[i+1:])
+	if !ok {
+		return "", "", 0, false
+	}
+	for j, c := range key {
+		letter := (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+		if !letter && (j == 0 || ((c < '0' || c > '9') && c != '_')) {
+			return "", "", 0, false
+		}
+	}
+	return issueSourceJira, key, n, true
+}
 
 // handleIssueList implements GET /v1/issues. The `q` parameter is a
 // server-side search, unlike §13.2's pickers: an issue set is unbounded in a
@@ -526,13 +578,12 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 	f.Labels = q["label"]
 	f.Kind = q.Get("kind")
 	f.Text = q.Get("q")
-	switch v := q.Get("source"); v {
-	case "", "local", issueSourceGitHub:
-		f.Source = v
-	default:
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, "source must be one of: local, github")
+	if v := q.Get("source"); v != "" && !slices.Contains(issueSources, v) {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"source must be one of: "+strings.Join(issueSources, ", "))
 		return
 	}
+	f.Source = q.Get("source")
 	switch v := q.Get("sort"); v {
 	case "", store.IssueSortUpdated, store.IssueSortCreated:
 		f.Sort = v
@@ -559,9 +610,22 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 	// remote_number maps a GitHub issue number to the vincent issue it was
 	// imported (or backfilled) as — the lookup that replaced the removed
 	// `github_issue` create field for scripts (task 130.11, decision 22.4).
-	// A number means nothing across projects, so it requires project_id.
-	if v := q.Get("remote_number"); v != "" {
-		n, err := strconv.Atoi(v)
+	// remote_key is the same lookup for any tracker's reference — `142` or
+	// `PROJ-12` (task 142.9, issue #905). Either means nothing across
+	// projects, so each requires project_id, and the two are exclusive.
+	numberParam, keyParam := q.Get("remote_number"), q.Get("remote_key")
+	if numberParam != "" && keyParam != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"remote_key and remote_number are mutually exclusive: give one reference")
+		return
+	}
+	var (
+		lookup         bool
+		provider, repo string
+		number         int
+	)
+	if numberParam != "" {
+		n, err := strconv.Atoi(numberParam)
 		if err != nil || n < 1 {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
 				"remote_number must be a positive integer")
@@ -572,9 +636,26 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 				"remote_number requires project_id: an issue number is only meaningful within one project")
 			return
 		}
-		ids, err := s.deps.Store.IssueIDsByRemoteNumber(r.Context(), f.ProjectID, issueSourceGitHub, n)
+		lookup, provider, number = true, issueSourceGitHub, n
+	}
+	if keyParam != "" {
+		p, k, n, ok := parseRemoteKey(keyParam)
+		if !ok {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				fmt.Sprintf("remote_key %q must be a GitHub issue number (142) or a Jira issue key (PROJ-12)", keyParam))
+			return
+		}
+		if f.ProjectID == 0 {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				"remote_key requires project_id: an issue reference is only meaningful within one project")
+			return
+		}
+		lookup, provider, repo, number = true, p, k, n
+	}
+	if lookup {
+		ids, err := s.deps.Store.IssueIDsByRemoteRef(r.Context(), f.ProjectID, provider, repo, number)
 		if err != nil {
-			s.internalError(w, "look up issue by remote number", err)
+			s.internalError(w, "look up issue by remote reference", err)
 			return
 		}
 		if len(ids) == 0 {

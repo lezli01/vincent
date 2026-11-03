@@ -144,6 +144,15 @@ func TestIssuesOverTheWire(t *testing.T) {
 	if _, err := c.ListIssues(ctx, apiclient.IssueListOptions{RemoteNumber: 3}); !errors.As(err, &e) || e.Status != http.StatusBadRequest {
 		t.Errorf("RemoteNumber without ProjectID = %v, want a 400", err)
 	}
+	// RemoteKey reaches the string lookup (task 142.9): a number is the
+	// GitHub issue, and it is refused beside RemoteNumber.
+	byKey, err := c.ListIssues(ctx, apiclient.IssueListOptions{ProjectID: pid, RemoteKey: "3"})
+	if err != nil || len(byKey) != 1 || byKey[0].ID != imported.ID {
+		t.Errorf("ListIssues RemoteKey 3 = %+v, %v", byKey, err)
+	}
+	if _, err := c.ListIssues(ctx, apiclient.IssueListOptions{ProjectID: pid, RemoteKey: "3", RemoteNumber: 3}); !errors.As(err, &e) || e.Status != http.StatusBadRequest {
+		t.Errorf("RemoteKey with RemoteNumber = %v, want a 400", err)
+	}
 }
 
 // TestIssueConflictCarriesALargeIssue: the current issue a stale PATCH's 409

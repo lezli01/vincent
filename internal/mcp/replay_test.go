@@ -323,6 +323,10 @@ func TestIssueListOffersTheRemoteNumberLookup(t *testing.T) {
 	if !strings.Contains(r.Description, "remote_number") || !strings.Contains(r.Description, "project_id") {
 		t.Errorf("issue_list does not document remote_number: %s", r.Description)
 	}
+	// Task 142.9 (issue #905): the string reference and the jira source.
+	if !strings.Contains(r.Description, "remote_key") || !strings.Contains(r.Description, "local|github|jira") {
+		t.Errorf("issue_list does not document remote_key and source jira: %s", r.Description)
+	}
 }
 
 // TestIssueListOffersTheLane: the board lane (task 134.5) is a filter on

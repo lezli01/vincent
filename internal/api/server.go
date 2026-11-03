@@ -400,8 +400,9 @@ func (s *Server) buildHandler() http.Handler {
 	// Issues (§5.6, §13.2, task 130.3). Every route but the permanent
 	// delete is an MCP tool (§13.4); the delete joins task 092's exclusion.
 	// GET /v1/issues?project_id=P&remote_number=N maps a GitHub issue number
-	// to the vincent issue it was imported as (task 130.11, decision 22.4);
-	// it requires project_id.
+	// to the vincent issue it was imported as (task 130.11, decision 22.4),
+	// and ?remote_key=K does the same for `142` or a Jira `PROJ-12` (task
+	// 142.9); each requires project_id.
 	rt.handle(http.MethodGet, "/v1/issues", s.handleIssueList)
 	rt.handle(http.MethodPost, "/v1/issues", s.handleIssueCreate)
 	rt.handle(http.MethodGet, "/v1/issues/{id}", s.handleIssueGet)
