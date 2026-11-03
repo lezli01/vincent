@@ -335,7 +335,11 @@ all.
    ./vincent_*_amd64.deb` and `dnf install ./vincent-*.x86_64.rpm`; run
    `vincent version` after each. Confirm the GoReleaser log contains the WinGet
    pull-request URL—cross-repository PR creation errors can be non-fatal, so a
-   green release job alone is not that proof.
+   green release job alone is not that proof. The release job then comments
+   `@microsoft-github-policy-service agree` on that pull request, which accepts
+   the Microsoft CLA the catalog's policy bot holds every submission for; if
+   the step warns that it found no pull request or could not comment, post that
+   comment by hand.
 
 10. **Read the published notes.** Release Please generates them from the
    Conventional Commits since the last tag and GoReleaser keeps them unchanged
