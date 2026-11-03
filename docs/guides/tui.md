@@ -3167,6 +3167,11 @@ Version, uptime, the config in effect, the adapters detected, and a live tail of
 the daemon log. The view reports, it does not act — `vincent daemon stop` owns
 stopping the daemon, and a TUI that auto-started one has no business killing it.
 
+![The daemon view with the log holding the keys: identity pinned on top, then
+the database and the adapters — claude behind an observed usage limit, codex
+reporting its quota windows, cursor untested at its build, and copilot 1.0.105
+with its quota unknown — above the live daemon log](../assets/tui-daemon-adapters.png)
+
 The **configuration block is the exception**, and only it. `tab` moves `↑`/`↓`
 off the log pane and onto the config list, which then shows every key
 `config.yaml` carries rather than the digest; `enter` opens a typed editor on
@@ -3183,9 +3188,8 @@ nothing is written.
 
 ![The daemon view with `tab` on the config list: each key with the value in
 force and, where they differ, the built-in default — max parallel tasks 4
-against 3, the branch template against an empty one — above the database block
-and the adapters, claude behind an observed usage limit and codex reporting its
-windows](../assets/tui-daemon-config.png)
+against 3, the branch template against an empty one — above the database block,
+with the adapters scrolled out of view below it](../assets/tui-daemon-config.png)
 
 Six keys ask before they apply: `notify.command`, `environment.*`,
 `agents.*.path`, `listen`, `triggers.enabled` and `backup.dir`. They decide what
