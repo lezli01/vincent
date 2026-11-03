@@ -162,7 +162,13 @@ func Labels(in []string) (kept []string, dropped int) {
 // `state` ("open"/"closed"), `assignee` and `assignees` (display names),
 // `created_at` (RFC 3339). The rest are Jira's own fields. Struct order makes
 // the encoding deterministic.
+//
+// `key` is the issue key (ABC-123), which Jira carries beside `fields`, not
+// in it. The store reads a non-GitHub issue's display key from it at read
+// time (store.RemotePayloadKey, task 142.8), so a record without it renders
+// an empty ref everywhere the issue is cited.
 type remoteRecord struct {
+	Key       string    `json:"key"`
 	State     string    `json:"state"`
 	Assignee  string    `json:"assignee,omitempty"`
 	Assignees []string  `json:"assignees,omitempty"`
@@ -204,10 +210,11 @@ func parseJiraTime(s string) time.Time {
 	return time.Time{}
 }
 
-// RemoteJSON encodes the issue's remote_json record. Only the state, which
-// is category-only, is derived; everything else is Jira's value as read.
-func RemoteJSON(f Fields) json.RawMessage {
-	r := remoteRecord{State: string(issuestate.Open)}
+// RemoteJSON encodes the remote_json record of the issue whose key is key
+// (the top-level `key` of Jira's issue, beside f). Only the state, which is
+// category-only, is derived; everything else is Jira's value as read.
+func RemoteJSON(key string, f Fields) json.RawMessage {
+	r := remoteRecord{Key: key, State: string(issuestate.Open)}
 	if f.Status != nil {
 		if f.Status.StatusCategory.Key == CategoryDone {
 			r.State = string(issuestate.Closed)

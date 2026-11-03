@@ -189,7 +189,7 @@ func fullFields() Fields {
 }
 
 func TestRemoteJSONGolden(t *testing.T) {
-	got := RemoteJSON(fullFields())
+	got := RemoteJSON("ABC-42", fullFields())
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, got, "", "  "); err != nil {
 		t.Fatalf("RemoteJSON is not JSON: %v", err)
@@ -210,7 +210,7 @@ func TestRemoteJSONGolden(t *testing.T) {
 	if !bytes.Equal(pretty.Bytes(), want) {
 		t.Errorf("RemoteJSON mismatch; run with -update to see the diff.\ngot:\n%s\nwant:\n%s", pretty.Bytes(), want)
 	}
-	if again := RemoteJSON(fullFields()); !bytes.Equal(again, got) {
+	if again := RemoteJSON("ABC-42", fullFields()); !bytes.Equal(again, got) {
 		t.Error("RemoteJSON is not deterministic")
 	}
 }
@@ -221,14 +221,19 @@ func TestRemoteJSONGolden(t *testing.T) {
 // GitHub-named keys land.
 func TestRemoteJSONSnapshotKeys(t *testing.T) {
 	var detail struct {
+		Key       string    `json:"key"`
 		State     string    `json:"state"`
 		Assignee  string    `json:"assignee"`
 		Assignees []string  `json:"assignees"`
 		CreatedAt time.Time `json:"created_at"`
 	}
-	raw := RemoteJSON(fullFields())
+	raw := RemoteJSON("ABC-42", fullFields())
 	if err := json.Unmarshal(raw, &detail); err != nil {
 		t.Fatalf("snapshot decode: %v", err)
+	}
+	// store.RemotePayloadKey reads the display key from here (review F3).
+	if detail.Key != "ABC-42" {
+		t.Errorf("key = %q, want ABC-42", detail.Key)
 	}
 	if detail.State != "closed" {
 		t.Errorf("state = %q, want closed", detail.State)
@@ -243,7 +248,7 @@ func TestRemoteJSONSnapshotKeys(t *testing.T) {
 	if err := json.Unmarshal(raw, &keys); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"state", "created_at", "assignees"} {
+	for _, k := range []string{"key", "state", "created_at", "assignees"} {
 		if _, ok := keys[k]; !ok {
 			t.Errorf("remote_json lacks %q", k)
 		}
@@ -251,10 +256,13 @@ func TestRemoteJSONSnapshotKeys(t *testing.T) {
 
 	// An open, unassigned issue with an unparsable date still writes
 	// state and omits what it cannot say.
-	raw = RemoteJSON(Fields{Status: status("To Do", CategoryNew), Created: "yesterday"})
+	raw = RemoteJSON("ABC-43", Fields{Status: status("To Do", CategoryNew), Created: "yesterday"})
 	keys = nil
 	if err := json.Unmarshal(raw, &keys); err != nil {
 		t.Fatal(err)
+	}
+	if string(keys["key"]) != `"ABC-43"` {
+		t.Errorf("key = %s, want \"ABC-43\"", keys["key"])
 	}
 	if string(keys["state"]) != `"open"` {
 		t.Errorf("state = %s, want \"open\"", keys["state"])
