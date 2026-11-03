@@ -1296,8 +1296,9 @@ command-step field. That is what lets an agent call
 command reads `VINCENT_TASK_ID` and `VINCENT_STEP_ID` and needs nothing else.
 
 A task created from an issue also gets the issue itself, as a file named by
-`VINCENT_ISSUE_FILE`, beside `VINCENT_ISSUE_ID`, `VINCENT_ISSUE_NUMBER` and
-`VINCENT_ISSUE_URL` (the last two only for a GitHub issue). The file is shaped
+`VINCENT_ISSUE_FILE`, beside `VINCENT_ISSUE_ID`, `VINCENT_ISSUE_NUMBER` (a
+GitHub issue only), and `VINCENT_ISSUE_URL` and `VINCENT_ISSUE_KEY` (an
+imported issue only). The file is shaped
 like `gh issue view --json` output, so a step that used to fetch the issue
 copies it instead — no network, the same in a fan-out lane, and never staged
 by `git add -A`. A task with no issue gets none of these. The keys are listed in

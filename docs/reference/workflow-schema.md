@@ -1140,7 +1140,7 @@ directly:
       Discussion: {{ .Issue.Source.URL }}
 ```
 
-`.Issue.Number` is the **vincent** issue id. The GitHub reference of an
+`.Issue.Number` is the **vincent** issue id. The provider reference of an
 imported issue lives in `.Issue.Source` — `Provider` (`github` or `jira`),
 `Repo` (`owner/name`), `Number`, `Key`, `URL` and `State` — and is zero for an
 issue that was created in vincent. `Key` is the provider's display key: the
@@ -1192,7 +1192,9 @@ Creating a task from an issue also prefills the task's title, its description
 and any declared [`fields:`](#fields) named exactly `issue`, `github_issue`,
 `labels`, `assignee`, `milestone` or `kind`. An issue imported from GitHub
 gives the title `#N ` and the issue title, and the description the issue body
-plus a `GitHub issue #N: <url>` line; an issue created in vincent gives its
+plus a `GitHub issue #N: <url>` line; a Jira issue gives `PROJ-12 ` and a
+`Jira issue PROJ-12: <url>` line instead, and fills no `github_issue`,
+`assignee` or `milestone`; an issue created in vincent gives its
 bare title and body. All of that is editable before the task is created;
 `.Issue` is the untouched copy. A body larger than the description limit fails
 the create rather than being cut short.
