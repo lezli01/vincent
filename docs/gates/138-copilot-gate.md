@@ -73,6 +73,16 @@ It passes when both turns are `done`, both carry the same `session_id`, and
 turn 2's `result_text` is `PELICAN`. That proves the second turn resumed the
 first turn's session. The TUI's new-chat screen is an equivalent route.
 
+On Windows, script the chat in `pwsh`, not Windows PowerShell 5.1. With
+`$ErrorActionPreference = 'Stop'`, 5.1 treats git's stderr warnings as
+terminating errors. One such warning is `re-init: ignored
+--initial-branch=main`, which is harmless. In an elevated shell, a scratch
+directory can end up owned by Administrators, and git then refuses the repo as
+"dubious ownership". Mark only that repo safe, for example with
+`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0=safe.directory` in the harness's
+environment, rather than adding a global `safe.directory`. Both cases surfaced
+on the 2026-11-02 run, and neither is a vincent fault.
+
 ## Recorded runs
 
 Each row is one hand-run of the real-CLI legs. CI covers the fakeagent legs on
@@ -88,3 +98,13 @@ followed, task 138.9 was closed on 2026-10-30.
 | 2026-10-31 | macOS arm64 | zsh, Homebrew cask `copilot` on `PATH` | 1.0.61 | none set (stored `/login`) | 1 | fail: `copilot reported no tokens`. The cask build ran because the gate turns auto-update off (see above) |
 | 2026-10-31 | macOS arm64 | zsh, Homebrew cask `copilot` on `PATH` | 1.0.105 | none set (stored `/login`) | 1, 2; two-turn chat | pass |
 | 2026-10-31 | Linux arm64 (Docker, `node:24-bookworm`, git 2.39.5) | bash, npm `copilot` bin on `PATH` | 1.0.105 | `GH_TOKEN` (gh OAuth) | 1, 2; two-turn chat | pass |
+| 2026-11-02 | Windows amd64 (portable pwsh 7.6.9 on `PATH`) | Git Bash (gate), pwsh (chat); npm `copilot.cmd` shim on `PATH` | 1.0.105 | `GH_TOKEN` (gh OAuth); the other two unset | 1, 2; two-turn chat | pass |
+
+The 2026-11-02 Windows run used isolated vincent config/data directories and
+an isolated `COPILOT_HOME`, with `COPILOT_AUTO_UPDATE=false`. Authentication
+was supplied by `gh auth token` as `GH_TOKEN` in the child environment only;
+no token value was recorded. The script reported `138 GATE PASS`. Both chat
+turns were `done` with the same `session_id`: turn 1 returned `OK`, turn 2
+returned `PELICAN`. The chat returned to `idle`, its worktree stayed clean,
+and the isolated daemon was stopped afterward. This completes the three-OS
+real-CLI record for task 138.17.

@@ -1,6 +1,6 @@
 # 138 — GitHub Copilot CLI as a fourth agent adapter
 
-**Status:** 🔄 in progress (16/17)
+**Status:** ✅ done (17/17)
 
 Issue [#852](https://github.com/lezli01/vincent/issues/852), the epic, and
 its seventeen children below. Spec §9.9 is opened as a stub by this
@@ -691,7 +691,7 @@ its code makes true, in its own pull request.
   capability items. A `## GitHub Copilot` section and column in the agents
   guide, copilot in every page that enumerates or compares adapters, the SEO
   data, and `examples/copilot-review.yaml`. ✓ 2026-10-30
-- [ ] **138.17** ([#869](https://github.com/lezli01/vincent/issues/869)) `docs/gates/138-copilot-gate.md` real runs on three OSes,
+- [x] **138.17** ([#869](https://github.com/lezli01/vincent/issues/869)) `docs/gates/138-copilot-gate.md` real runs on three OSes,
   the TUI screenshots, the task marked done. Depends: 138.16, 138.15, 138.14.
   Progress 2026-10-31: macOS arm64 and Linux arm64 (Docker
   `node:24-bookworm`) pass gate scenarios 1 and 2 and a two-turn chat
@@ -710,7 +710,13 @@ its code makes true, in its own pull request.
   `tui-skills` and `tui-issue-handoff` differed only by unrelated drift, so
   none of them was committed. A new tape, `tui-daemon-adapters`, shows all
   four adapters, copilot among them, and the TUI guide's Daemon section uses
-  it. Still to do: a Windows two-turn chat and the Windows token source.
+  it. Completed 2026-11-02: Windows amd64, portable pwsh 7.6.9 on `PATH`,
+  npm `copilot.cmd` shim, CLI 1.0.105, isolated `COPILOT_HOME`, and
+  `GH_TOKEN` from `gh auth token` (gh OAuth; the other token variables
+  unset). Gate scenarios 1 and 2 pass. Both real chat turns finish `done`
+  with the same `session_id`; turn 1 returns `OK`, turn 2 recalls `PELICAN`,
+  and the worktree stays clean. All three OSes now have a passing gate and
+  two-turn chat record. ✓ 2026-11-02
 
 ## Open questions
 
@@ -732,7 +738,8 @@ Carried from #852; each is decided in the item named.
    or `--resume`, so a project's `.mcp.json`, `.github/mcp.json` and repo hooks
    never load in vincent runs. Recommendation: accept as stated behaviour.
    138.15.
-5. **Release bar** — recommendation: all three real legs. 138.17.
+5. **Release bar** — closed by 138.17 (2026-11-02): all three real legs and
+   two-turn chats pass, with the screenshot record complete.
 6. **ACP follow-up** — an investigation into `copilot --acp` after this ships.
 7. **Hoisting `tailWriter`/`readLoop`** into `internal/agent` as a separate
    refactor afterwards.
