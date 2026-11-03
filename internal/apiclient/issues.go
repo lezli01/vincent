@@ -66,7 +66,7 @@ type IssueSource struct {
 	// find the remote where it was; empty while it is live.
 	Status string `json:"status,omitempty"`
 	// Key, Ref, ShortRef and ProviderName are rendered by the daemon (task
-	// 142.1); print them rather than building a reference from Repo and
+	// 142.8); print them rather than building a reference from Repo and
 	// Number. Ref is the full reference (`owner/repo#142`, `PROJ-12`),
 	// ShortRef the compact one a list may print when every imported row
 	// shares one provider and repo (`gh#142`), ProviderName the display

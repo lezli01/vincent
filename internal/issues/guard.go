@@ -38,8 +38,8 @@ type Target struct {
 	IssueID int64
 	TaskID  int64
 	// Provider is the display name of the issue's provider (`GitHub`), so
-	// a refusal names where the write would have gone (task 142.1 decision
-	// 3); empty keeps the sentinel's neutral "the forge".
+	// a refusal names where the write would have gone (task 142 decision
+	// 11.3); empty keeps the sentinel's neutral "the forge".
 	Provider string
 }
 

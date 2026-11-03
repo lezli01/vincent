@@ -12,7 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// Task 142.1: the daemon renders an imported issue's reference — key, ref,
+// Task 142.8: the daemon renders an imported issue's reference — key, ref,
 // short_ref and provider_name — on the issue DTO and on a task's `issue`,
 // so a client prints it rather than building one from provider parts.
 
@@ -141,8 +141,8 @@ func TestJiraIssueSourceRendersItsKey(t *testing.T) {
 	want("task issue (live)", liveIssueResponse(cur).Source)
 }
 
-// The forge_write_needs_human prose names the issue's provider (task 142.1
-// decision 3).
+// The forge_write_needs_human prose names the issue's provider (task 142
+// decision 11.3).
 func TestForgeWriteRefusalNamesTheProvider(t *testing.T) {
 	t.Parallel()
 	h := newIssueHarness(t)

@@ -274,7 +274,7 @@ func printIssue(out io.Writer, iss *apiclient.Issue) error {
 		fields = append(fields, [2]string{"handoff", issueHandoff(iss.Handoff)})
 	}
 	if src := iss.Source; src != nil {
-		// The daemon renders the reference (task 142.1).
+		// The daemon renders the reference (task 142.8).
 		fields = append(fields, [2]string{"source", src.Ref})
 		if src.URL != "" {
 			fields = append(fields, [2]string{"url", src.URL})

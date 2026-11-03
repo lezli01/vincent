@@ -36,7 +36,7 @@ func issuesFixture() *issuesView {
 }
 
 // ghSource fills a GitHub source the way the daemon renders it (task
-// 142.1: internal/issues.RenderSource), so a hand-built fixture reads like
+// 142.8: internal/issues.RenderSource), so a hand-built fixture reads like
 // the wire. The live tests prove the daemon side; this keeps the unit
 // fixtures honest about what a client is sent.
 func ghSource(src *apiclient.IssueSource) *apiclient.IssueSource {

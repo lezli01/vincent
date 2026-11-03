@@ -90,7 +90,7 @@ type issueSourceBody struct {
 	// "missing", omitted while it is live.
 	Status string `json:"status,omitempty"`
 	// Key, Ref, ShortRef and ProviderName are rendered by the daemon (task
-	// 142.1): a client prints them and never builds a reference from
+	// 142.8): a client prints them and never builds a reference from
 	// provider, repo and number itself. Key is the provider's display key
 	// (the number for GitHub), Ref the full reference (`owner/repo#142`,
 	// `PROJ-12`), ShortRef the compact one a list prints when every
@@ -103,7 +103,7 @@ type issueSourceBody struct {
 }
 
 // newIssueSourceBody is the one constructor of an issueSourceBody (task
-// 142.1 decision 2): the issue DTO, a task's live issue and its frozen
+// 142 decision 11.2): the issue DTO, a task's live issue and its frozen
 // snapshot all render their reference through issues.RenderSource here.
 func newIssueSourceBody(provider, repo string, number int, url, key string) *issueSourceBody {
 	ref := issues.RenderSource(provider, repo, number, key)
@@ -433,7 +433,7 @@ func (s *Server) writeIssueError(w http.ResponseWriter, r *http.Request, id int6
 	case errors.Is(err, issues.ErrMirrored):
 		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonMirrored})
 	case errors.Is(err, issues.ErrForgeWriteNeedsHuman):
-		// The prose names the issue's provider (task 142.1 decision 3):
+		// The prose names the issue's provider (task 142 decision 11.3):
 		// issues.ForgeWriteError builds it per issue.
 		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonForgeWrite})
 	case errors.Is(err, store.ErrInvalidIssueAction):

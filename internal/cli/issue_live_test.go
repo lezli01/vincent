@@ -473,7 +473,7 @@ func TestIssueComment(t *testing.T) {
 		strings.Index(out, "second\nthought"), strings.Index(out, "--- octocat")
 	if body < 0 || body > first || first > second || second > mirrored ||
 		// The issue has no source to name a provider from, so its mirrored
-		// comment is marked by the neutral tag (task 142.1).
+		// comment is marked by the neutral tag (task 142.8).
 		!strings.Contains(out, "(remote)\nfrom upstream") {
 		t.Errorf("show does not print the thread after the body, oldest first:\n%s", out)
 	}

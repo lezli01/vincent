@@ -1558,7 +1558,7 @@ func taskIssueLines(width int, task apiclient.TaskDetail) []string {
 		{"state", valueOr(iss.State, "unknown")},
 	}
 	if src := iss.Source; src != nil && src.Ref != "" {
-		// The daemon renders the reference (task 142.1); the label is
+		// The daemon renders the reference (task 142.8); the label is
 		// "source" because the provider need not be GitHub.
 		facts = append(facts, taskDetailFact{"source", src.Ref})
 		if src.URL != "" {

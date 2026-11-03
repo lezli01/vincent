@@ -11,7 +11,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// Task 142.1 against the real API handlers: a provider other than GitHub
+// Task 142.8 against the real API handlers: a provider other than GitHub
 // needs no client change. A Jira issue's badge is the key the daemon
 // rendered, its state-change note names Jira, and a list mixing it with a
 // GitHub issue never collapses a row to gh#N.

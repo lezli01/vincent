@@ -49,7 +49,7 @@ var issueCloseReasons = []pickerOption{
 // whose remote is live is written back, and this keypress is the consent
 // (task 069 decision 2); one whose remote has moved or is gone writes
 // nothing back, and its sync block says which. Both name the issue's
-// provider (task 142.1 decision 3).
+// provider (task 142 decision 11.3).
 func issueWritesBack(provider string) string { return "this is written to " + provider + " too" }
 
 func issueRemoteLost(provider string) string {

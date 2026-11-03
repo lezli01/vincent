@@ -68,7 +68,7 @@ type IssueSnapshotRemote struct {
 	Milestone       string   `json:"milestone,omitempty"`
 	MilestoneNumber int      `json:"milestone_number,omitempty"`
 	// Key is the provider's display key when it is not the number — a Jira
-	// issue's `PROJ-12` (task 142.1 decision 2). Omitted for GitHub, whose
+	// issue's `PROJ-12` (task 142 decision 11.2). Omitted for GitHub, whose
 	// key is its number; the reference is rendered from these parts at read
 	// time and never stored, so a snapshot written before Key existed reads
 	// the same.
@@ -110,7 +110,7 @@ type remoteDetail struct {
 }
 
 // RemotePayloadKey reads the display `key` a provider's stored payload
-// carries (a Jira issue's `PROJ-12`, task 142.1), "" when it carries none or
+// carries (a Jira issue's `PROJ-12`, task 142.8), "" when it carries none or
 // is not JSON. GitHub's payload has no key: its key is its number.
 func RemotePayloadKey(raw string) string {
 	if raw == "" {

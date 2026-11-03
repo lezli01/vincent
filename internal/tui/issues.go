@@ -1093,8 +1093,8 @@ func issueTagCount(iss apiclient.Issue) int {
 // `#ID`, and a bare `#N` beside it would be a second, unrelated number. A
 // remote's repository can change, so this is read from the list rather than
 // assumed of a project — and only the client sees the list, which is why
-// the daemon renders both references and the choice stays here (task 142.1
-// decision 1).
+// the daemon renders both references and the choice stays here (task 142
+// decision 11.1).
 func issuesShareRepo(issues []apiclient.Issue) bool {
 	type origin struct{ provider, repo string }
 	var first *origin
@@ -1112,7 +1112,7 @@ func issuesShareRepo(issues []apiclient.Issue) bool {
 }
 
 // issueProvider is the display name of an imported issue's provider, as
-// the daemon renders it (`GitHub`, task 142.1 decision 3), so a note that
+// the daemon renders it (`GitHub`, task 142 decision 11.3), so a note that
 // says where a write goes names it rather than spelling one provider. A
 // local issue — or one read before the name was known — says "its remote".
 func issueProvider(iss *apiclient.Issue) string {
