@@ -40,6 +40,10 @@ type issueSyncStatusBody struct {
 	Enabled  bool   `json:"enabled"`
 	Provider string `json:"provider"`
 	Repo     string `json:"repo"`
+	// Site is the bound Jira site when the project's issue source is jira
+	// (task 142.6 decision 5): shown wherever sync status is, so a binding
+	// entered on the wrong site is visible before a token is sent there.
+	Site string `json:"site,omitempty"`
 	// LastSyncedAt is when an import last succeeded; omitted when none has.
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 	OK           bool       `json:"ok"`
@@ -103,7 +107,10 @@ func (s *Server) issueSyncStatus(ctx context.Context, project *store.Project) (i
 		return issueSyncStatusBody{}, err
 	}
 	out.WritesPending, out.WritesFailed, out.WritesConflict = counts.Pending, counts.Failed, counts.Conflict
-	if out.Repo == "" {
+	if project.IssueSource.Provider == store.IssueProviderJira {
+		out.Site = project.IssueSource.JiraSite
+	}
+	if out.Repo == "" && s.effectiveIssueProvider(ctx, project) == store.IssueProviderGitHub {
 		if repo, ok := s.githubRepo(ctx, project); ok {
 			out.Repo = repo.String()
 		}

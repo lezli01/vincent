@@ -2,6 +2,7 @@ package apiclient
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -27,6 +28,8 @@ type Project struct {
 	// BranchTemplate is this project's branch convention; nil inherits the one in
 	// config.yaml, and an unset config means the built-in name (task 001).
 	BranchTemplate *string `json:"branch_template"`
+	// IssueSource is the project's issue-source binding (task 142.6).
+	IssueSource ProjectIssueSource `json:"issue_source"`
 	// SlotsUsed is how many of this project's tasks hold a concurrency slot
 	// right now (§11): `running` or `awaiting_input`, fan-out lanes included.
 	// The daemon counts it against MaxParallelTasks, so it is 0 — not absent
@@ -39,6 +42,60 @@ type Project struct {
 	// when the daemon could not count — it degrades to null rather than
 	// failing the list.
 	Stats *ProjectStats `json:"stats,omitempty"`
+}
+
+// Issue-source providers (task 142.6). IssueProviderDerive follows origin.
+const (
+	IssueProviderDerive = "derive"
+	IssueProviderNone   = "none"
+	IssueProviderGitHub = "github"
+	IssueProviderJira   = "jira"
+)
+
+// ProjectIssueSource is a project's issue-source binding as the daemon holds it
+// (task 142.6, §5.1). Provider is what is stored — derive, none, github or
+// jira — and Effective what it resolves to, which the daemon derives from
+// origin for derive: a client never derives it. Jira is nil unless
+// Provider is jira.
+type ProjectIssueSource struct {
+	Provider  string                  `json:"provider"`
+	Effective string                  `json:"effective"`
+	Jira      *ProjectIssueSourceJira `json:"jira"`
+}
+
+// ProjectIssueSourceJira is the Jira half of a binding. Mapping is a jiramap
+// override object, nil for the defaults. No field holds a credential: it
+// comes from JIRA_USER and JIRA_API_TOKEN in the daemon's environment.
+type ProjectIssueSourceJira struct {
+	Site       string          `json:"site"`
+	ProjectKey string          `json:"project_key"`
+	JQL        string          `json:"jql"`
+	Mapping    json.RawMessage `json:"mapping"`
+}
+
+// Label renders the binding for a person: the effective provider, marked
+// "(from origin)" when derived, and the Jira site and key when bound there.
+func (s ProjectIssueSource) Label() string {
+	eff := s.Effective
+	if eff == "" {
+		eff = IssueProviderNone
+	}
+	switch {
+	case s.Provider == IssueProviderDerive || s.Provider == "":
+		return eff + " (from origin)"
+	case s.Provider == IssueProviderJira && s.Jira != nil:
+		return "jira " + s.Jira.Site + " " + s.Jira.ProjectKey
+	default:
+		return s.Provider
+	}
+}
+
+// ProjectIssueSourceRequest sets a binding on create or PATCH. It replaces the
+// whole binding: Jira must be set for jira and nil for every other
+// provider.
+type ProjectIssueSourceRequest struct {
+	Provider string                  `json:"provider"`
+	Jira     *ProjectIssueSourceJira `json:"jira,omitempty"`
 }
 
 // ProjectStats is the `stats` object of GET /v1/projects?stats=true (§13.2).
@@ -139,6 +196,8 @@ type CreateProjectRequest struct {
 	DefaultWorkflow  *string `json:"default_workflow,omitempty"`
 	MaxParallelTasks *int    `json:"max_parallel_tasks,omitempty"`
 	BranchTemplate   *string `json:"branch_template,omitempty"`
+	// IssueSource is the binding; nil derives it from origin (task 142.6).
+	IssueSource *ProjectIssueSourceRequest `json:"issue_source,omitempty"`
 }
 
 // PatchProjectRequest is the PATCH /v1/projects/{id} body. Every field is an
@@ -153,6 +212,9 @@ type PatchProjectRequest struct {
 	// BranchTemplate set to null or "" makes the project inherit config.yaml
 	// again, which is how a convention is removed (task 001).
 	BranchTemplate Opt[string] `json:"branch_template,omitzero"`
+	// IssueSource replaces the binding; null resets it to derive (task
+	// 142.6).
+	IssueSource Opt[ProjectIssueSourceRequest] `json:"issue_source,omitzero"`
 }
 
 // CreateProject registers a repository. The daemon validates the path is a
@@ -224,4 +286,13 @@ func (c *Client) ListBranches(ctx context.Context, projectID int64) ([]Branch, e
 		return nil, err
 	}
 	return out.Branches, nil
+}
+
+// GetProject fetches one project as GET /v1/projects/{id} serves it.
+func (c *Client) GetProject(ctx context.Context, id int64) (Project, error) {
+	var out Project
+	if err := c.get(ctx, "/v1/projects/"+strconv.FormatInt(id, 10), &out); err != nil {
+		return Project{}, err
+	}
+	return out, nil
 }
