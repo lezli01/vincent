@@ -714,3 +714,47 @@ func TestProjectOverviewNotGitHubIsADash(t *testing.T) {
 		t.Errorf("github cell = %q, want the repository", got)
 	}
 }
+
+// TestProjectFormIssueSource is task 142.6 in the form: the Jira rows show
+// only beside jira, an untouched binding is absent from the patch, and a
+// changed one replaces it whole, keeping the mapping the form cannot edit.
+func TestProjectFormIssueSource(t *testing.T) {
+	original := testProject(1, "vincent")
+	original.IssueSource = apiclient.ProjectIssueSource{Provider: "derive", Effective: "github"}
+	f := newProjectForm(nil, &original)
+	if f.rowShown(pfJiraSite) {
+		t.Error("the Jira rows show on a derived project")
+	}
+	if opts := f.sourceOptions(); opts[0].label != "github (from origin)" {
+		t.Errorf("derive option = %q, want the daemon's effective provider", opts[0].label)
+	}
+	f.source = apiclient.IssueProviderJira
+	if !f.rowShown(pfJiraSite) || !f.rowShown(pfJiraJQL) {
+		t.Error("the Jira rows are hidden beside jira")
+	}
+	f.jiraSite.SetValue(" https://acme.atlassian.net ")
+	f.jiraKey.SetValue("ENG")
+	req := f.patchRequest()
+	src, ok := req.IssueSource.Value()
+	if !ok || src.Provider != "jira" || src.Jira == nil || src.Jira.Site != "https://acme.atlassian.net" || src.Jira.ProjectKey != "ENG" {
+		t.Fatalf("patch = %s, want the jira binding", encode(t, req))
+	}
+
+	bound := testProject(2, "ops")
+	bound.IssueSource = apiclient.ProjectIssueSource{Provider: "jira", Effective: "jira", Jira: &apiclient.ProjectIssueSourceJira{
+		Site: "https://acme.atlassian.net", ProjectKey: "OPS", Mapping: json.RawMessage(`{"overrides":{"reopen":"x"}}`),
+	}}
+	g := newProjectForm(nil, &bound)
+	if req := g.patchRequest(); !req.IssueSource.IsZero() {
+		t.Errorf("untouched jira binding patches %s", encode(t, req))
+	}
+	g.jiraJQL.SetValue("labels = a")
+	src, ok = g.patchRequest().IssueSource.Value()
+	if !ok || src.Jira == nil || src.Jira.JQL != "labels = a" || string(src.Jira.Mapping) != `{"overrides":{"reopen":"x"}}` {
+		t.Errorf("jql edit = %+v, want the jql with the mapping kept", src.Jira)
+	}
+	g.applyFailure(errors.New("issue_source.jira.site must be the site's base URL, with no path"))
+	if g.cursor != pfJiraSite {
+		t.Errorf("a site refusal parked on row %v, want the jira site row", g.cursor)
+	}
+}

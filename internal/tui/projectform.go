@@ -20,6 +20,10 @@ const (
 	pfBranch
 	pfWorkflow
 	pfCap
+	pfSource
+	pfJiraSite
+	pfJiraKey
+	pfJiraJQL
 	pfSave
 	pfRowCount
 )
@@ -36,6 +40,14 @@ func (r pfRow) label() string {
 		return "default workflow"
 	case pfCap:
 		return "max parallel tasks"
+	case pfSource:
+		return "issue source"
+	case pfJiraSite:
+		return "jira site"
+	case pfJiraKey:
+		return "jira project"
+	case pfJiraJQL:
+		return "jira jql"
 	case pfSave:
 		return "save"
 	case pfRowCount:
@@ -64,6 +76,12 @@ type projectForm struct {
 	name     textField
 	branch   textField
 	cap      textField
+	jiraSite textField
+	jiraKey  textField
+	jiraJQL  textField
+	// source is the issue-source provider on its wire spelling (task 142.6):
+	// derive, none, github or jira. The Jira rows show only beside jira.
+	source   string
 	workflow string
 	// workflowSet records that the workflow row was touched, so clearing it
 	// on an edit sends null rather than being mistaken for "unchanged".
@@ -88,8 +106,15 @@ func newProjectForm(client *apiclient.Client, p *apiclient.Project) *projectForm
 		name:     newTextField(),
 		branch:   newTextField(),
 		cap:      newTextField(),
+		jiraSite: newTextField(),
+		jiraKey:  newTextField(),
+		jiraJQL:  newTextField(),
+		source:   apiclient.IssueProviderDerive,
 		rowErr:   map[pfRow]string{},
 	}
+	f.jiraSite.SetPlaceholder("https://example.atlassian.net")
+	f.jiraKey.SetPlaceholder("ENG")
+	f.jiraJQL.SetPlaceholder("(the whole project)")
 	f.path.SetPlaceholder("path to a git repository")
 	f.name.SetPlaceholder("(the directory name)")
 	f.branch.SetPlaceholder("(detected from the repository)")
@@ -103,6 +128,14 @@ func newProjectForm(client *apiclient.Client, p *apiclient.Project) *projectForm
 		}
 		if p.MaxParallelTasks != nil {
 			f.cap.SetValue(strconv.Itoa(*p.MaxParallelTasks))
+		}
+		if p.IssueSource.Provider != "" {
+			f.source = p.IssueSource.Provider
+		}
+		if j := p.IssueSource.Jira; j != nil {
+			f.jiraSite.SetValue(j.Site)
+			f.jiraKey.SetValue(j.ProjectKey)
+			f.jiraJQL.SetValue(j.JQL)
 		}
 		f.cursor = pfName
 	} else {
@@ -151,7 +184,10 @@ func (f *projectForm) paste(text string) tea.Cmd {
 		f.branch, cmd = f.branch.Update(tea.PasteMsg{Content: text})
 	case pfCap:
 		f.cap, cmd = f.cap.Update(tea.PasteMsg{Content: text})
-	case pfWorkflow, pfSave, pfRowCount:
+	case pfJiraSite, pfJiraKey, pfJiraJQL:
+		fld := f.jiraField(f.cursor)
+		*fld, cmd = fld.Update(tea.PasteMsg{Content: text})
+	case pfWorkflow, pfSource, pfSave, pfRowCount:
 		return nil
 	}
 	delete(f.rowErr, f.cursor)
@@ -228,21 +264,66 @@ func (f *projectForm) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 type projectFormClosedMsg struct{}
 
 func (f *projectForm) move(delta int) {
-	next := int(f.cursor) + delta
-	if next < 0 {
-		next = 0
+	next := int(f.cursor)
+	for {
+		next += delta
+		if next < 0 || next >= int(pfRowCount) {
+			return
+		}
+		if f.rowShown(pfRow(next)) {
+			f.cursor = pfRow(next)
+			return
+		}
 	}
-	if next >= int(pfRowCount) {
-		next = int(pfRowCount) - 1
+}
+
+// rowShown hides the Jira rows unless the source is jira.
+func (f *projectForm) rowShown(row pfRow) bool {
+	switch row {
+	case pfJiraSite, pfJiraKey, pfJiraJQL:
+		return f.source == apiclient.IssueProviderJira
+	default:
+		return true
 	}
-	f.cursor = pfRow(next)
+}
+
+// jiraField is the text field behind a Jira row, nil for any other row.
+func (f *projectForm) jiraField(row pfRow) *textField {
+	switch row {
+	case pfJiraSite:
+		return &f.jiraSite
+	case pfJiraKey:
+		return &f.jiraKey
+	case pfJiraJQL:
+		return &f.jiraJQL
+	default:
+		return nil
+	}
+}
+
+// sourceOptions offers the four providers. derive is labelled with what it
+// resolves to when the daemon has said, because a client never derives the
+// effective provider itself.
+func (f *projectForm) sourceOptions() []pickerOption {
+	derive := "derive from origin"
+	if o := f.original; o != nil && o.IssueSource.Provider == apiclient.IssueProviderDerive && o.IssueSource.Effective != "" {
+		derive = o.IssueSource.Effective + " (from origin)"
+	}
+	return []pickerOption{
+		{value: apiclient.IssueProviderDerive, label: derive},
+		{value: apiclient.IssueProviderNone, label: "none", note: "no issues are imported"},
+		{value: apiclient.IssueProviderGitHub, label: "github", note: "origin's GitHub repository"},
+		{value: apiclient.IssueProviderJira, label: "jira", note: "a Jira site and project"},
+	}
 }
 
 func (f *projectForm) activate() tea.Cmd {
 	switch f.cursor {
-	case pfPath, pfName, pfBranch, pfCap:
+	case pfPath, pfName, pfBranch, pfCap, pfJiraSite, pfJiraKey, pfJiraJQL:
 		f.editing = true
 		f.focus(f.cursor)
+	case pfSource:
+		f.pick = newPicker(int(pfSource), "issue source", f.sourceOptions(), false, f.source)
 	case pfWorkflow:
 		f.pick = newPicker(int(pfWorkflow), "default workflow",
 			f.workflowOptions(), false, f.workflow)
@@ -263,7 +344,9 @@ func (f *projectForm) focus(row pfRow) {
 		f.branch.Focus()
 	case pfCap:
 		f.cap.Focus()
-	case pfWorkflow, pfSave, pfRowCount:
+	case pfJiraSite, pfJiraKey, pfJiraJQL:
+		f.jiraField(row).Focus()
+	case pfWorkflow, pfSource, pfSave, pfRowCount:
 	}
 }
 
@@ -272,6 +355,9 @@ func (f *projectForm) blurAll() {
 	f.name.Blur()
 	f.branch.Blur()
 	f.cap.Blur()
+	f.jiraSite.Blur()
+	f.jiraKey.Blur()
+	f.jiraJQL.Blur()
 }
 
 func (f *projectForm) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
@@ -291,7 +377,10 @@ func (f *projectForm) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 		f.branch, cmd = f.branch.Update(msg)
 	case pfCap:
 		f.cap, cmd = f.cap.Update(msg)
-	case pfWorkflow, pfSave, pfRowCount:
+	case pfJiraSite, pfJiraKey, pfJiraJQL:
+		fld := f.jiraField(f.cursor)
+		*fld, cmd = fld.Update(msg)
+	case pfWorkflow, pfSource, pfSave, pfRowCount:
 	}
 	delete(f.rowErr, f.cursor)
 	return cmd
@@ -300,9 +389,15 @@ func (f *projectForm) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 func (f *projectForm) updatePicking(msg tea.KeyPressMsg) tea.Cmd {
 	res := f.pick.update(msg)
 	if res.chosen {
-		f.workflow = res.value
-		f.workflowSet = true
-		delete(f.rowErr, pfWorkflow)
+		switch pfRow(f.pick.row) {
+		case pfSource:
+			f.source = res.value
+			delete(f.rowErr, pfSource)
+		default:
+			f.workflow = res.value
+			f.workflowSet = true
+			delete(f.rowErr, pfWorkflow)
+		}
 	}
 	if res.closed {
 		f.pick = nil
@@ -373,7 +468,50 @@ func (f *projectForm) createRequest() apiclient.CreateProjectRequest {
 	if v, ok := f.capValue(); ok {
 		req.MaxParallelTasks = ptr(v)
 	}
+	if f.source != apiclient.IssueProviderDerive {
+		src := f.sourceRequest()
+		req.IssueSource = &src
+	}
 	return req
+}
+
+// sourceRequest is the binding the form holds. The request replaces the
+// whole binding, so the mapping override — which the form does not edit —
+// is carried over from the project as fetched. Every rule about the site,
+// key and JQL is the daemon's.
+func (f *projectForm) sourceRequest() apiclient.ProjectIssueSourceRequest {
+	req := apiclient.ProjectIssueSourceRequest{Provider: f.source}
+	if f.source != apiclient.IssueProviderJira {
+		return req
+	}
+	j := &apiclient.ProjectIssueSourceJira{
+		Site:       strings.TrimSpace(f.jiraSite.Value()),
+		ProjectKey: strings.TrimSpace(f.jiraKey.Value()),
+		JQL:        strings.TrimSpace(f.jiraJQL.Value()),
+	}
+	if o := f.original; o != nil && o.IssueSource.Jira != nil {
+		j.Mapping = o.IssueSource.Jira.Mapping
+	}
+	req.Jira = j
+	return req
+}
+
+// sourceChanged reports whether the form's binding differs from the
+// project's as fetched.
+func (f *projectForm) sourceChanged() bool {
+	o := f.original.IssueSource
+	stored := o.Provider
+	if stored == "" {
+		stored = apiclient.IssueProviderDerive
+	}
+	if f.source != stored {
+		return true
+	}
+	if f.source != apiclient.IssueProviderJira {
+		return false
+	}
+	want := f.sourceRequest().Jira
+	return o.Jira == nil || want.Site != o.Jira.Site || want.ProjectKey != o.Jira.ProjectKey || want.JQL != o.Jira.JQL
 }
 
 func (f *projectForm) createCmd() tea.Cmd {
@@ -428,6 +566,9 @@ func (f *projectForm) patchRequest() apiclient.PatchProjectRequest {
 	case !ok && o.MaxParallelTasks != nil:
 		req.MaxParallelTasks = apiclient.NullOpt[int]()
 	}
+	if f.sourceChanged() {
+		req.IssueSource = apiclient.SetOpt(f.sourceRequest())
+	}
 	return req
 }
 
@@ -456,6 +597,12 @@ func (f *projectForm) applyFailure(err error) {
 		needle string
 		row    pfRow
 	}{
+		// The binding's fields first: their messages mention a path and
+		// a name, which the generic needles below would claim.
+		{"issue_source.jira.site", pfJiraSite},
+		{"issue_source.jira.project_key", pfJiraKey},
+		{"issue_source.jira.jql", pfJiraJQL},
+		{"issue_source", pfSource},
 		{"max_parallel_tasks", pfCap},
 		{"default_workflow", pfWorkflow},
 		{"default_branch", pfBranch},
