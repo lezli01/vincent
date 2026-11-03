@@ -166,7 +166,7 @@ func skillsFrom(commands []slashCommand) agent.SkillList {
 func initialize(ctx context.Context, q agent.SkillQuery, path string) ([]slashCommand, error) {
 	ctx, cancel := context.WithTimeout(ctx, skillListTimeout)
 	defer cancel()
-	stderr := &tailWriter{max: 64 * 1024}
+	stderr := agent.NewTailWriter(64 * 1024)
 	proc, err := agent.Launch(q.Launcher, agent.Command{
 		Path:      path,
 		Args:      listSkillsArgs(),

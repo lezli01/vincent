@@ -744,10 +744,23 @@ Carried from #852; each is decided in the item named.
    two-turn chats pass, with the screenshot record complete.
 6. **ACP follow-up** — an investigation into `copilot --acp` after this ships.
    Filed as [#889](https://github.com/lezli01/vincent/issues/889) (2026-11-03).
+   *Amended 2026-11-03:* done as [task 141](141-copilot-acp.md) (#889) on
+   1.0.105 — skill listing **no**, mid-run input **not yet** (blocked on
+   github/copilot-cli #5269 and #5133 reaching a `latest` release).
 7. **Hoisting `tailWriter`/`readLoop`** into `internal/agent` as a separate
    refactor afterwards. Filed as
    [#890](https://github.com/lezli01/vincent/issues/890) (2026-11-03).
+   Resolved 2026-11-03 by #890: `agent.TailWriter`
+   (`internal/agent/tail.go`) replaces the four copies, and
+   `agent.ReadLines` (`internal/agent/lines.go`) owns the scanner, the
+   blank-line skip, the per-line copy and the #139 drain. Each adapter keeps
+   its own defers, per-line body and `streamErr` latch; no behaviour changes.
 8. **Codex skills drift** (not copilot) — vercel-labs/skills#2067 moved codex's
    global skills to `~/.agents/skills`; to be filed as its own bug, never fixed
    in passing by 138.12. Filed as
    [#891](https://github.com/lezli01/vincent/issues/891) (2026-11-03).
+   Resolved 2026-11-03 by #891: codex is store-resident like copilot —
+   `vincent skills ls` and `doctor` list it as `codex (reads store)` when
+   `~/.codex` exists and the store holds the skill — but it keeps its
+   `codex` slug, so `PlanInstall` still runs `skills add --agent codex`.
+   Spec §9.8 is amended in place.

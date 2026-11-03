@@ -6,7 +6,6 @@
 package codex
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -247,7 +246,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 		}
 		env = append(env, MCPTokenEnv+"="+spec.MCP.Token)
 	}
-	stderr := &tailWriter{max: 64 * 1024}
+	stderr := agent.NewTailWriter(64 * 1024)
 	proc, err := agent.Launch(spec.Launcher, agent.Command{
 		Path:   path,
 		Args:   buildArgs(spec),
@@ -281,7 +280,7 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 // run is a live Codex process.
 type run struct {
 	proc   agent.Process
-	stderr *tailWriter
+	stderr *agent.TailWriter
 
 	events     chan agent.Event
 	readerDone chan struct{}
@@ -312,22 +311,15 @@ type run struct {
 	waitErr  error
 }
 
-// maxLineBytes bounds one JSONL line; command items embed aggregated output,
-// so lines can be large.
-const maxLineBytes = 16 * 1024 * 1024
+// maxLineBytes keeps the shared cap under the name this package's fixture
+// tests use.
+const maxLineBytes = agent.MaxLineBytes
 
 func (r *run) readLoop(rd io.Reader) {
 	defer close(r.readerDone)
 	defer close(r.events)
-	sc := bufio.NewScanner(rd)
-	sc.Buffer(make([]byte, 64*1024), maxLineBytes)
 	st := &stream{}
-	for sc.Scan() {
-		line := make([]byte, len(sc.Bytes()))
-		copy(line, sc.Bytes())
-		if len(strings.TrimSpace(string(line))) == 0 {
-			continue
-		}
+	err := agent.ReadLines(rd, func(line []byte) {
 		if tid := threadIDOf(line); tid != "" {
 			r.mu.Lock()
 			r.sessionID = tid
@@ -341,16 +333,13 @@ func (r *run) readLoop(rd io.Reader) {
 			r.mu.Unlock()
 		}
 		r.events <- ev
-	}
-	// A reader that stopped before the stream did leaves the CLI writing into
-	// a pipe nobody empties, which would hang it until the step timeout.
-	// Drain it, then let Wait name the failure — normalization ended early,
-	// so the transcript is missing lines the CLI wrote (#139).
-	if err := sc.Err(); err != nil {
+	})
+	// ReadLines has already drained rd (#139); Wait names the failure, since
+	// normalization ended early and the transcript is missing lines.
+	if err != nil {
 		r.mu.Lock()
 		r.streamErr = err
 		r.mu.Unlock()
-		_, _ = io.Copy(io.Discard, rd)
 	}
 }
 
@@ -436,30 +425,6 @@ func (r *run) Wait() (agent.RunResult, error) {
 		r.waitRes = res
 	})
 	return r.waitRes, r.waitErr
-}
-
-// tailWriter keeps the last max bytes written — enough stderr for error
-// reporting without unbounded growth.
-type tailWriter struct {
-	mu  sync.Mutex
-	buf []byte
-	max int
-}
-
-func (w *tailWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.buf = append(w.buf, p...)
-	if len(w.buf) > w.max {
-		w.buf = w.buf[len(w.buf)-w.max:]
-	}
-	return len(p), nil
-}
-
-func (w *tailWriter) String() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return strings.TrimSpace(string(w.buf))
 }
 
 // Argv implements agent.RunHandle: the command line actually spawned.

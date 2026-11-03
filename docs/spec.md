@@ -6407,13 +6407,19 @@ per-agent copy and therefore no per-agent version.
 | vincent adapter | `skills --agent` slug | global directory |
 |---|---|---|
 | claude | `claude-code` | `~/.claude/skills/` |
-| codex | `codex` | `~/.codex/skills/` |
+| codex | `codex` (reads the store) | `~/.agents/skills/` |
 | copilot | — (reads the store) | `~/.agents/skills/` |
 | cursor | `cursor` | `~/.cursor/skills/` |
 
 The slug is a **table, not an identity**: claude's is `claude-code`, and
 copilot has none at all — it reads the store itself, so there is nothing for
-`skills add` to link (task 138 decision 11, task 138.12).
+`skills add` to link (task 138 decision 11, task 138.12). *Amended 2026-11-03
+(issue #891): the codex row said `~/.codex/skills/`, which was the skills CLI's
+codex directory until vercel-labs/skills#2067 (2026-10-07). Since then that
+directory is the store itself — skills 1.7.6's table has codex
+`globalSkillsDir: ~/.agents/skills` — so `--agent codex` writes the store copy
+and links nothing. The slug is kept: unlike copilot's, it is still a valid
+selection, and it is what populates the store.*
 
 **Detection is a filesystem read and never runs `npx`.** The store's
 `SKILL.md` answers the installed version; each `~/.<agent>/skills/<name>` that
@@ -6426,7 +6432,9 @@ about the machine. *Amended 2026-10-29 (task 138.12, #864):* the scan finds the
 agents that hold a **link**; an agent that reads the store **itself** holds
 none, so it gets a store-read entry instead — a link whose path is the store
 copy, marked `store: true` and displayed as `copilot (reads store)`. Copilot is
-the one such agent: its entry is reported when `~/.copilot` exists and the
+one such agent (*amended 2026-11-03, issue #891: was "the one such agent";
+codex is the other, displayed `codex (reads store)` when `~/.codex` exists and
+the store copy does*): its entry is reported when `~/.copilot` exists and the
 store copy does, and counts towards the row's agent list, so doctor no longer
 says "linked into nothing" for a skill copilot serves. A real
 `~/.copilot/skills/<name>` — the skills CLI run with `github-copilot` — is
@@ -6534,6 +6542,28 @@ it as served made `skills install --agent copilot` exit 0 with the stale copy
 left in place. The CLI and the TUI's offer apply that
 one rule (`skill.PlanInstall`). The capture is recorded in
 `docs/tasks/138-copilot-adapter.md`.
+
+*Amended 2026-11-03 (issue #891).* **codex** reads the store too. The 0.154.0
+observation above — a skill under `~/.codex/skills/` answered by `skills/list`
+as `scope: user` — still holds, and is kept as history; what changed is the
+skills CLI, which since vercel-labs/skills#2067 writes codex's copy to the
+store and links nothing (skills 1.7.6, the version `npx` fetched on
+2026-11-03: codex `skillsDir: ".agents/skills"`, `globalSkillsDir:
+~/.agents/skills`). codex-cli 0.166.0's app-server `skills/list`, in a
+throwaway `HOME` with the default `CODEX_HOME`, listed a skill present only in
+`~/.agents/skills` as `scope: user` with the store path; a skill only in
+`~/.codex/skills` was still listed, `scope: user`; and a `~/.codex/skills/<name>`
+symlink to the store copy was listed **once**, with the store path — codex
+dedupes by canonical path. With `CODEX_HOME` relocated the store skill was
+**still** listed, unlike copilot. Detection therefore reports `codex (reads
+store)` when `~/.codex` and the store copy exist, and a legacy
+`~/.codex/skills/<name>` link from an older skills CLI as an ordinary link
+beside it, undeduplicated — copilot's rule. `CODEX_HOME` is not followed;
+for the store that is no gap, since codex reads it regardless, only for
+noticing a codex installed without a `~/.codex`. **Install:** unchanged —
+codex keeps its slug, so a codex selection is a `skills add --agent codex`
+run, which is what populates the store; it never takes copilot's
+"install for another agent first" path.
 
 **vincent will disagree with `npx skills list -g`.** That command's agent
 column is the CLI's remembered selection (`lastSelectedAgents` in
@@ -6920,6 +6950,25 @@ that counted three adapters was amended in place.
   approval is not exposed (#5047), and `includeCoAuthoredBy: false` is
   ignored (#5133). A follow-up investigation is task 138's open question 6,
   not a commitment.
+  *Amended 2026-11-03 (task 141, issue #889; 1.0.105):* the investigation
+  ran. "One subprocess per run" (decision 1) does not forbid ACP: a run could
+  spawn `copilot --acp`, open one session and exit, so the shape is no longer
+  the reason. The verdicts are captured in `docs/tasks/141/`. **Listing: no**
+  — `available_commands_update` arrives 0.16 s after `session/new` and
+  mixes skills with built-in commands, told apart only by `input.hint`; it
+  agrees with what an ACP run loads but omits the CLI's built-in skills
+  (`customize-cloud-agent`, `github-pr-media`) that a JSON run loads, so
+  serving it beside JSON runs would be emulation (§9.1, task 124 decision 2),
+  and the "Skills" bullet above stands. **Mid-run input: not yet** — ACP
+  raises a machine-readable `session/request_permission` the turn waits on
+  (a §7.4 `permission`; there is no `ask_user` tool in either dialect, so no
+  `question`), but full-auto never raises one and restricted raises one only
+  for paths outside the worktree. Taking it means moving runs to ACP, and on
+  1.0.105 that loses plugin skills (#5269) and `includeCoAuthoredBy` (#5133),
+  both closed 2026-11-03 with fixes only in prereleases (1.0.106-3, 1.0.106-5).
+  #5198 is user steering, not §7.4, and #5047 is out of scope here anyway;
+  neither blocks. The answer changes when a `latest` release carries both
+  fixes.
 
 ## 10. Worktree management
 

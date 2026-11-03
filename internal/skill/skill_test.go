@@ -466,14 +466,16 @@ func TestDetectCopilotReadsTheStore(t *testing.T) {
 	})
 }
 
-// TestStoreResidentSlugs: copilot is an adapter vincent installs for, and it
-// adds nothing to the argv.
+// TestStoreResidentSlugs: copilot and codex both read the store (#891), but
+// only copilot is slugless — codex still adds `--agent codex` to the argv.
 func TestStoreResidentSlugs(t *testing.T) {
 	if !slices.Contains(Adapters(), "copilot") {
 		t.Errorf("Adapters() = %v, want copilot listed", Adapters())
 	}
-	if !StoreResident("copilot") || StoreResident("claude") {
-		t.Error("StoreResident does not mark copilot alone")
+	for adapter, want := range map[string]bool{"copilot": true, "codex": true, "claude": false, "cursor": false} {
+		if got := StoreResident(adapter); got != want {
+			t.Errorf("StoreResident(%q) = %v, want %v", adapter, got, want)
+		}
 	}
 	for _, tc := range []struct {
 		in   []string
@@ -482,6 +484,8 @@ func TestStoreResidentSlugs(t *testing.T) {
 		{in: nil, want: "claude-code,codex,cursor"},
 		{in: []string{"copilot"}, want: ""},
 		{in: []string{"copilot", "claude"}, want: "claude-code"},
+		{in: []string{"codex"}, want: "codex"},
+		{in: []string{"codex", "copilot"}, want: "codex"},
 		{in: []string{"bogus"}, want: "claude-code,codex,cursor"},
 	} {
 		if got := strings.Join(Slugs(tc.in), ","); got != tc.want {
@@ -503,6 +507,13 @@ func TestPlanInstall(t *testing.T) {
 	}
 	if p := PlanInstall(name, nil, absent); strings.Join(p.Slugs, ",") != "claude-code,codex,cursor" {
 		t.Errorf("default selection = %+v", p)
+	}
+	// Review F3: codex reads the store but keeps its slug, so a codex
+	// selection is still a `skills add --agent codex` run, never the
+	// slugless short-circuit.
+	if p := PlanInstall(name, []string{"codex"}, absent); !p.Run() || p.Err != nil ||
+		strings.Join(p.Slugs, ",") != "codex" {
+		t.Errorf("codex selection = %+v", p)
 	}
 	p := PlanInstall(name, []string{"copilot"}, absent)
 	if p.Run() || p.Err == nil {

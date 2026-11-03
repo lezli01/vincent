@@ -35,9 +35,11 @@ type agentSlug struct {
 	Slug    string
 	Root    string
 	// Store marks an agent that reads the global store, `~/.agents/skills`,
-	// itself (task 138.12). It has no slug — there is nothing for `skills
-	// add` to link — and detection reports the store copy as read by it
-	// whenever its root exists on this machine.
+	// itself (task 138.12). Detection reports the store copy as read by it
+	// whenever its root exists on this machine. Such an agent may still have
+	// a slug (codex, issue #891): `skills add --agent codex` is valid and
+	// populates the store. One without a slug (copilot) has nothing for
+	// `skills add` to do at all.
 	Store bool
 }
 
@@ -50,9 +52,15 @@ type agentSlug struct {
 // loads `~/.agents/skills` as its `personal-agents` source, so vincent links
 // nothing for it. Its Root still matters: a real `~/.copilot/skills/<name>`,
 // left by running the skills CLI with `github-copilot`, is copilot's link.
+//
+// codex is store-resident too, but keeps its slug (issue #891): since
+// vercel-labs/skills#2067 the skills CLI's codex directory *is* the store,
+// so `--agent codex` writes the store copy and links nothing, and codex-cli
+// reads `~/.agents/skills` as its `user` scope. A `~/.codex/skills/<name>`
+// left by an older skills CLI is still reported as codex's link.
 var agents = []agentSlug{
 	{Adapter: "claude", Slug: "claude-code", Root: ".claude"},
-	{Adapter: "codex", Slug: "codex", Root: ".codex"},
+	{Adapter: "codex", Slug: "codex", Root: ".codex", Store: true},
 	{Adapter: "copilot", Root: ".copilot", Store: true},
 	{Adapter: "cursor", Slug: "cursor", Root: ".cursor"},
 }
@@ -103,8 +111,8 @@ func StoreResident(adapter string) bool {
 // Slugs turns vincent adapter names into `--agent` slugs, in table order and
 // deduplicated. An empty or wholly unrecognized list means all three: a user
 // who asks vincent to install a skill and has no adapter detected still means
-// "put it where my agents look". A store-resident adapter contributes no
-// slug, and a list naming only those gives none — it was recognized, and what
+// "put it where my agents look". A slugless store-resident adapter (copilot)
+// contributes no slug, and a list naming only those gives none — it was recognized, and what
 // it asks for is already served by the store (see PlanInstall).
 func Slugs(adapters []string) []string {
 	want := map[string]bool{}
@@ -133,7 +141,7 @@ func Slugs(adapters []string) []string {
 }
 
 // Plan is what installing one skill for an adapter selection means. Slugs
-// non-empty is a `skills add` run. Slugs empty is a selection of
+// non-empty is a `skills add` run. Slugs empty is a selection of slugless
 // store-resident agents only, where nothing is linked: Note says the store
 // already serves it, or Err says there is no store copy to serve.
 type Plan struct {
@@ -148,8 +156,8 @@ func (p Plan) Run() bool { return len(p.Slugs) > 0 }
 // PlanInstall decides one skill's install for adapters, against the report
 // statuses — the one rule the CLI and the TUI both apply, so the two cannot
 // drift (task 138.12 decision 4). Any adapter with a slug makes it a plain
-// `skills add` for those slugs; a store-resident adapter adds nothing to the
-// argv. Only when every recognized adapter is store-resident does the store
+// `skills add` for those slugs; a slugless store-resident adapter adds nothing
+// to the argv. Only when every recognized adapter is one of those does the store
 // copy decide: present is success with nothing to run, absent is an error
 // naming how to populate it. A store copy that is there but not current —
 // older, differs, unreadable — is not served either: copilot would read the
