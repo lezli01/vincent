@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -605,5 +606,52 @@ func TestShutdownRoute(t *testing.T) {
 	case <-done:
 	case <-time.After(wait.Timeout(10 * time.Second)):
 		t.Fatal("OnShutdown never called")
+	}
+}
+
+// TestTwoStoresOnOneCorpusLoseNothing is review F11: a test's own Store and
+// a cmd/fakejira process are two Stores on one corpus file, each doing
+// load-modify-save. The lock file beside the corpus serialises them, so
+// every write lands and no comment id repeats.
+func TestTwoStoresOnOneCorpusLoseNothing(t *testing.T) {
+	corpus := filepath.Join(t.TempDir(), "corpus.json")
+	a, b := &Store{Path: corpus}, &Store{Path: corpus}
+	start, err := a.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const each = 40
+	body := json.RawMessage(`{"type":"doc","version":1,"content":[]}`)
+	var wg sync.WaitGroup
+	errs := make(chan error, 2*each)
+	for _, s := range []*Store{a, b} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range each {
+				if _, err := s.AddComment("VIN-2", body, "", nil); err != nil {
+					errs <- err
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	end, err := b.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(end.Comments), len(start.Comments)+2*each; got != want {
+		t.Fatalf("%d comments, want %d: concurrent saves lost writes", got, want)
+	}
+	seen := map[string]bool{}
+	for _, c := range end.Comments {
+		if seen[c.ID] {
+			t.Fatalf("comment id %s repeated", c.ID)
+		}
+		seen[c.ID] = true
 	}
 }

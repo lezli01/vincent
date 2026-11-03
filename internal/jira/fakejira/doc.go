@@ -25,7 +25,11 @@
 //     and its rendered HTML side by side; the seed and the tests write both,
 //     and the fake never converts Markdown (decision 3). The file is re-read
 //     on every request and written back through a temp file and a rename, so
-//     a running server sees an edit made between two polls. Unset, the
+//     a running server sees an edit made between two polls. Every
+//     load-modify-save — a request, or a mutation helper (Move, AddComment,
+//     …) — holds an OS lock on the file beside the corpus (Path +
+//     LockSuffix), so a test mutating the corpus through its own Store while
+//     a cmd/fakejira process serves it loses neither side's writes. Unset, the
 //     built-in corpus answers and a write is answered but not kept; set but
 //     missing, the built-in corpus seeds it.
 //   - The ADF renderer: a comment POSTed as ADF is rendered to HTML by a tiny

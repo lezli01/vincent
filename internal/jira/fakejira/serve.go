@@ -93,13 +93,20 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 	return r.ResponseWriter.Write(b)
 }
 
-// ServeHTTP answers one request on either leg. It holds the Store's lock for
-// the whole request, so a load-modify-save never interleaves with another.
+// ServeHTTP answers one request on either leg. It holds the Store's locks
+// for the whole request — its own mutex and the corpus lock file — so a
+// load-modify-save never interleaves with another, in this process or in a
+// test mutating the same corpus file.
 func (s *Store) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rec := &statusRecorder{ResponseWriter: w}
-	s.mu.Lock()
-	hijacked := s.serve(rec, r)
-	s.mu.Unlock()
+	var hijacked bool
+	if err := s.exclusive(func() error {
+		hijacked = s.serve(rec, r)
+		return nil
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	status := rec.status
 	if hijacked {
 		status = 0

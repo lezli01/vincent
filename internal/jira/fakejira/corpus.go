@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 // TimeLayout is Jira's timestamp shape: millisecond precision and a numeric
@@ -285,7 +287,8 @@ type Store struct {
 
 	// mu serialises a request's load-modify-save: httptest serves requests
 	// concurrently, and two writes must not each save a corpus missing the
-	// other's change.
+	// other's change. It covers this Store only; exclusive() adds the lock
+	// file that covers every Store and process on the same Path.
 	mu sync.Mutex
 }
 
@@ -366,14 +369,42 @@ func writeAtomic(path string, data []byte) error {
 	return err
 }
 
+// LockSuffix names the lock file beside the corpus: Path + LockSuffix.
+const LockSuffix = ".lock"
+
+// exclusive runs fn holding the Store's own mutex and, when the corpus is a
+// file, an exclusive OS lock on the lock file beside it. The test mutating
+// the corpus through its own Store and a cmd/fakejira process serving it are
+// two processes doing load-modify-save on one file; without a lock both can
+// save, and the later rename silently drops the other's change (review F11).
+// flock is an advisory lock on Unix and LockFileEx on Windows, and either is
+// released if the process dies holding it.
+func (s *Store) exclusive(fn func() error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Path == "" {
+		return fn()
+	}
+	l := flock.New(s.Path + LockSuffix)
+	if err := l.Lock(); err != nil {
+		return fmt.Errorf("fakejira: lock %s: %w", s.Path, err)
+	}
+	defer func() { _ = l.Unlock() }()
+	return fn()
+}
+
 // Update loads the corpus, applies fn and saves the result, under the same
-// lock the handler holds. It needs a Path.
+// locks the handler holds — the Store's own and the corpus lock file, so it
+// is safe beside a cmd/fakejira process serving the same Path. It needs a
+// Path.
 func (s *Store) Update(fn func(*Corpus) error) error {
 	if s.Path == "" {
 		return ErrNoCorpusFile
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	return s.exclusive(func() error { return s.update(fn) })
+}
+
+func (s *Store) update(fn func(*Corpus) error) error {
 	c, err := s.Load()
 	if err != nil {
 		return err
