@@ -8,6 +8,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/trigger"
 )
@@ -40,6 +41,10 @@ type PullReconciler struct {
 	git    *gitx.Git
 	client *github.Client
 	logger *slog.Logger
+	// issueSrc is the issue importer's source (task 142.4): GitHub over
+	// client and git. It is never nil — its Bind is how a project is judged
+	// GitHub-based even with no client — and calls are gated on client.
+	issueSrc issuesource.Source
 	// triggers is judged on the same tick (task 096.3, decision 31D); nil is
 	// a reconciler with no GitHub triggers to feed.
 	triggers *trigger.Manager
@@ -72,7 +77,8 @@ func NewPullReconciler(
 ) *PullReconciler {
 	return &PullReconciler{
 		store: st, cfg: cfg, git: git, client: client, logger: logger,
-		wake: make(chan struct{}, 1),
+		issueSrc: issuesource.NewGitHub(client, git),
+		wake:     make(chan struct{}, 1),
 	}
 }
 
@@ -152,8 +158,7 @@ func (r *PullReconciler) SyncRequested(ctx context.Context) {
 			r.logger.Warn("issue sync: project not read", "project", st.ProjectID, "error", err)
 			continue
 		}
-		repo, ok := r.issueRepoFor(ctx, *project)
-		r.syncIssues(ctx, *project, repo, ok, r.client != nil && r.git != nil)
+		r.syncIssues(ctx, *project, r.client != nil && r.git != nil)
 	}
 }
 
@@ -199,7 +204,7 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 		// The issue import runs first, so a trigger judged this tick sees
 		// the issues it imported.
 		if syncs {
-			r.syncIssues(ctx, project, repo, ok, haveClient)
+			r.syncIssues(ctx, project, haveClient)
 		}
 		if !haveClient {
 			continue
@@ -305,7 +310,7 @@ func (r *PullReconciler) reconcileProject(ctx context.Context, project store.Pro
 // narrowness: an SSH alias, or a GitHub remote not named `origin`, is simply
 // not GitHub-based (task 035 decision 5, unreversed by task 052).
 func (r *PullReconciler) repoFor(ctx context.Context, project store.Project) (github.Repo, bool) {
-	return githubRepoFor(ctx, r.git, project)
+	return issuesource.RepoOf(ctx, r.git, project)
 }
 
 func (r *PullReconciler) clock() time.Time {
