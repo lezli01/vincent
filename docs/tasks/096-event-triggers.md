@@ -234,6 +234,14 @@ question §2 closed: a first-party Jira client wants a Jira credential, and the
 moment vincent holds one, "the daemon inherits the user's environment" stops
 being true.
 
+*Amended 2026-11-03 (task 142, #896/#897):* the premise "Jira Cloud has no
+first-party CLI" is outdated. Atlassian ships `acli`; it was evaluated for
+issue sync and rejected (task 142 decision 1). For **issue sync only**, the
+beaten alternative is now taken: task 142 adds a native Jira Cloud issue
+provider. Trigger sources stay generic, there is no `type: jira`, and the
+credential half stands. The token is read per use from the inherited
+environment, and vincent holds none.
+
 The §16 posture is `notify`'s, verbatim: arbitrary code run as the invoking user,
 argv that may legitimately carry a secret such as an API token, and the file that
 holds it owner-only.

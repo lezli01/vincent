@@ -679,6 +679,10 @@ arrives with it.
 
 *Settled by the author 2026-10-24:* accepted as written.
 
+*Narrowed 2026-11-03 (task 142):* Jira, the second intake provider, writes
+back natively through the existing outbox (task 142 decision 3). Every other
+target stays a command step, and F5 remains the path for other trackers.
+
 ### 11. The name (2026-10-24)
 
 The entity is **handoff**: `/v1/handoffs`, `vincent handoff`, `.Handoff`. It
