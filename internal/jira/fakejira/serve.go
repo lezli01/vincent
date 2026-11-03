@@ -79,6 +79,10 @@ type statusRecorder struct {
 	status int
 }
 
+// Unwrap lets http.ResponseController reach the connection's writer, so a
+// Flush through the recorder reaches the client (review F16).
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 func (r *statusRecorder) WriteHeader(code int) {
 	if r.status == 0 {
 		r.status = code
@@ -175,9 +179,9 @@ func (s *Store) serveShutdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
+	// The 202 goes out before OnShutdown starts, as its doc promises; the
+	// controller unwraps the statusRecorder to reach the real writer.
+	_ = http.NewResponseController(w).Flush()
 	go s.OnShutdown()
 }
 

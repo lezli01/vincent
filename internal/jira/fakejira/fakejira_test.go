@@ -655,3 +655,18 @@ func TestTwoStoresOnOneCorpusLoseNothing(t *testing.T) {
 		seen[c.ID] = true
 	}
 }
+
+// TestShutdownFlushesItsAnswer is review F16: the 202 is flushed through the
+// status recorder before OnShutdown starts, as OnShutdown's doc says.
+func TestShutdownFlushesItsAnswer(t *testing.T) {
+	called := make(chan struct{})
+	s := &Store{OnShutdown: func() { close(called) }}
+	req := httptest.NewRequest(http.MethodPost, ShutdownPath, nil)
+	req.RemoteAddr = "127.0.0.1:4242"
+	rr := httptest.NewRecorder()
+	s.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted || !rr.Flushed {
+		t.Fatalf("code %d, flushed %v; want 202 flushed", rr.Code, rr.Flushed)
+	}
+	<-called
+}
