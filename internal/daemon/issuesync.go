@@ -74,12 +74,13 @@ const (
 )
 
 // syncIssues runs one import attempt for project through the reconciler's
-// issue source. haveClient is whether a client is wired. The two gates
-// config owns (github.enabled, poll_interval) are the caller's and are
-// already passed.
-func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, haveClient bool) {
+// issue source. b and bound are the project's binding, derived by the
+// caller — once per project per tick, so the importer and the pull request
+// half act on one reading of origin (review F1). haveClient is whether a
+// client is wired. The two gates config owns (github.enabled,
+// poll_interval) are the caller's and are already passed.
+func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, b issuesource.Binding, bound, haveClient bool) {
 	src := r.issueSrc
-	b, bound := src.Bind(ctx, project)
 	now := r.clock()
 	st, err := r.store.GetIssueSyncState(ctx, project.ID)
 	switch {

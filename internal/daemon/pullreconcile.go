@@ -158,7 +158,8 @@ func (r *PullReconciler) SyncRequested(ctx context.Context) {
 			r.logger.Warn("issue sync: project not read", "project", st.ProjectID, "error", err)
 			continue
 		}
-		r.syncIssues(ctx, *project, r.client != nil && r.git != nil)
+		b, bound := r.issueSrc.Bind(ctx, *project)
+		r.syncIssues(ctx, *project, b, bound, r.client != nil && r.git != nil)
 	}
 }
 
@@ -204,7 +205,8 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 		// The issue import runs first, so a trigger judged this tick sees
 		// the issues it imported.
 		if syncs {
-			r.syncIssues(ctx, project, haveClient)
+			b, bound := r.issueBinding(ctx, project, repo, ok)
+			r.syncIssues(ctx, project, b, bound, haveClient)
 		}
 		if !haveClient {
 			continue
@@ -233,6 +235,22 @@ func (r *PullReconciler) issueRepoFor(ctx context.Context, project store.Project
 		return github.Repo{}, false
 	}
 	return r.repoFor(ctx, project)
+}
+
+// issueBinding is the importer's binding for project on a tick that has
+// already read its origin as repo, ok. GitHub's binding is that repository
+// (GitHub.Bind is BindRepo of the same RepoOf), so it is not read a second
+// time: one git subprocess per project per tick, and the importer cannot
+// act on a different origin than the pull request and trigger halves if
+// origin is re-pointed mid-tick (review F1). Any other source binds itself.
+func (r *PullReconciler) issueBinding(ctx context.Context, project store.Project, repo github.Repo, ok bool) (issuesource.Binding, bool) {
+	if r.issueSrc.Provider() != issuesource.ProviderGitHub {
+		return r.issueSrc.Bind(ctx, project)
+	}
+	if !ok {
+		return issuesource.Binding{}, false
+	}
+	return issuesource.BindRepo(repo), true
 }
 
 // failTriggers marks every armed GitHub trigger failing with err. It runs on
