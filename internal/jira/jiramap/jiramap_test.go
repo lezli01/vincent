@@ -370,6 +370,49 @@ func TestChooseTransition(t *testing.T) {
 			Config{},
 			"32", "", "",
 		},
+		// Review F4: a blocked preferred tier falls through to the next.
+		{
+			"reopen falls back to indeterminate when new is blocked", reopenA, "",
+			[]Transition{
+				tr("51", "Reopen", "To Do", CategoryNew, map[string]FieldMeta{"customfield_1": {Required: true}}),
+				tr("61", "Start", "In Progress", CategoryIndeterminate, nil),
+			},
+			Config{},
+			"61", "", "",
+		},
+		{
+			"not planned falls back to Done when Won't do is blocked", closeA, issuestate.NotPlanned,
+			[]Transition{
+				tr("31", "Done", "Done", CategoryDone, resolutionScreen(true, stockResolutions...)),
+				tr("41", "Won't do", "Cancelled", CategoryDone, map[string]FieldMeta{
+					"resolution":    {Required: true, AllowedValues: stockResolutions},
+					"customfield_1": {Required: true},
+				}),
+			},
+			Config{},
+			"31", "Won't Do", "",
+		},
+		{
+			"duplicate falls back to Done when Duplicate is blocked", closeA, issuestate.Duplicate,
+			[]Transition{
+				tr("31", "Done", "Done", CategoryDone, resolutionScreen(true, stockResolutions...)),
+				tr("71", "Duplicate", "Closed", CategoryDone, map[string]FieldMeta{
+					"resolution":    {Required: true, AllowedValues: stockResolutions},
+					"customfield_1": {Required: true},
+				}),
+			},
+			Config{},
+			"31", "Duplicate", "",
+		},
+		{
+			"needs fields only when every tier is blocked", reopenA, "",
+			[]Transition{
+				tr("51", "Reopen", "To Do", CategoryNew, map[string]FieldMeta{"customfield_1": {Required: true}}),
+				tr("61", "Start", "In Progress", CategoryIndeterminate, map[string]FieldMeta{"customfield_2": {Required: true}}),
+			},
+			Config{},
+			"", "", CodeTransitionNeedsFields,
+		},
 		{"no done transition", closeA, issuestate.Completed, companyOpen[:2], Config{}, "", "", CodeNoTransition},
 		{"no transitions at all", closeA, issuestate.Completed, nil, Config{}, "", "", CodeNoTransition},
 		{

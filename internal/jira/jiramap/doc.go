@@ -53,4 +53,11 @@
 // preferred rather than reported ambiguous; for `duplicate`, a done
 // transition not named for a not-planned close is preferred next. A Config
 // override settles any other choice.
+//
+// A transition whose screen requires a field vincent does not set is
+// excluded before any preference is counted, so a blocked preferred
+// transition falls through to the next preference (reopen to an
+// `indeterminate` status when every `new` one is blocked, a plain "Done" when
+// "Won't do" is). `transition_needs_fields` is returned only when no
+// preference has a usable transition and at least one was blocked.
 package jiramap

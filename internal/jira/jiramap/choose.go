@@ -115,12 +115,13 @@ func ChooseTransition(action issuestate.Action, reason issuestate.Reason, ts []T
 		tiers = c.heuristic(want, ts)
 	}
 
+	// A candidate that needs a field vincent does not set is dropped before
+	// its tier is counted, so a blocked preferred tier falls through to the
+	// next; transition_needs_fields is the answer only when no tier has a
+	// usable candidate and at least one was blocked (review F4).
+	var blocked []string
 	for _, tier := range tiers {
-		if len(tier) == 0 {
-			continue
-		}
 		var usable []candidate
-		var blocked []string
 		for _, cd := range tier {
 			if missing := needsFields(cd); len(missing) > 0 {
 				blocked = append(blocked, fmt.Sprintf("%q requires %s", cd.t.Name, strings.Join(missing, ", ")))
@@ -130,7 +131,7 @@ func ChooseTransition(action issuestate.Action, reason issuestate.Reason, ts []T
 		}
 		switch len(usable) {
 		case 0:
-			return fail(CodeTransitionNeedsFields, ErrTransitionNeedsFields, strings.Join(blocked, "; "))
+			continue
 		case 1:
 			cd := usable[0]
 			return Choice{TransitionID: cd.t.ID, Resolution: cd.res, Achieved: c.achieved(cd)}, nil
@@ -141,6 +142,9 @@ func ChooseTransition(action issuestate.Action, reason issuestate.Reason, ts []T
 			}
 			return fail(CodeAmbiguousTransition, ErrAmbiguousTransition, "candidates "+names(amb))
 		}
+	}
+	if len(blocked) > 0 {
+		return fail(CodeTransitionNeedsFields, ErrTransitionNeedsFields, strings.Join(blocked, "; "))
 	}
 	return fail(CodeNoTransition, ErrNoTransition, fmt.Sprintf("none of %s achieves it", names(ts)))
 }
@@ -161,7 +165,8 @@ func (c Config) override(a issuestate.Action, r issuestate.Reason) string {
 }
 
 // heuristic splits the available transitions into preference tiers of
-// accepted candidates; the first non-empty tier is the one counted.
+// accepted candidates; the first tier with a usable candidate (one needing no
+// field vincent does not set) is the one counted.
 func (c Config) heuristic(want Outcome, ts []Transition) [][]candidate {
 	byCategory := func(key string) []Transition {
 		var out []Transition
