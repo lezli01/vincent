@@ -52,8 +52,10 @@ var issueCloseReasons = []pickerOption{
 // provider (task 142 decision 11.3).
 func issueWritesBack(provider string) string { return "this is written to " + provider + " too" }
 
+// issueRemoteLost says "the issue on GitHub", never "the GitHub issue", so
+// the "its remote" fallback reads too (review F18).
 func issueRemoteLost(provider string) string {
-	return "the " + provider + " issue has moved or is gone, so this changes vincent's copy only"
+	return "the issue on " + provider + " has moved or is gone, so this changes vincent's copy only"
 }
 
 // Issue-prompt messages.
@@ -158,7 +160,7 @@ func (a *issueAction) begin(action string) tea.Cmd {
 }
 
 // confirmOrRun asks first only where there is something to say: on an
-// imported issue, whether the change is written to GitHub.
+// imported issue, whether the change is written to its provider.
 func (a *issueAction) confirmOrRun() tea.Cmd {
 	a.pick = nil
 	if a.imported() {
