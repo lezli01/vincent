@@ -123,7 +123,18 @@ type Rebind struct {
 // ["remote_status"]} by sync, as the sweep does. No issue is deleted;
 // binding back re-imports, which matches on the remote key and resets the
 // status to live.
+//
+// A rebind takes the project's issue-source gate for its transaction,
+// cancelling an importer pass in flight and waiting for it to stop, so the
+// pass cannot write the abandoned binding back afterwards (review F1).
 func (s *Store) UpdateProjectRebind(ctx context.Context, p *Project, rebind *Rebind) error {
+	if rebind != nil {
+		unlock, err := s.lockIssueSourceForRebind(ctx, p.ID)
+		if err != nil {
+			return fmt.Errorf("rebind project %d: %w", p.ID, err)
+		}
+		defer unlock()
+	}
 	p.UpdatedAt = time.Now()
 	var evs []*Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error {

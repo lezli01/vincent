@@ -1390,8 +1390,11 @@ holds (task 142 decision 6).
   marked `missing` (which also stops write-back to them), the project's
   `issue_sync_state` row is deleted, and each touched issue announces
   `issue.updated {changed: ["remote_status"]}` as actor `sync`. No issue is
-  deleted, and binding back re-imports and resets them to live. A change to
-  only `jql` or `mapping` is not a rebind; an issue that leaves the narrowed
+  deleted, and binding back re-imports and resets them to live. A rebind is
+  ordered against the importer: it cancels a pass in flight for the project
+  and waits for it to stop, and a pass that started from a project read
+  before the rebind stands down, so no pass writes the abandoned binding back.
+  A change to only `jql` or `mapping` is not a rebind; an issue that leaves the narrowed
   set is marked `missing` by the sweep (task 142 decision 9.11).
 
 *Amended 2026-10-03 (task 130.16, issue #675; task 130 decision 24).* The

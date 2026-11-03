@@ -84,7 +84,30 @@ const (
 // half act on one reading of origin (review F1). haveClient is whether a
 // client is wired. The two gates config owns (github.enabled,
 // poll_interval) are the caller's and are already passed.
+//
+// The pass runs under the project's issue-source gate (review F1): a rebind
+// that commits while it waits leaves it a stale project, so it re-reads the
+// project and stands down for this tick if the binding or path moved; a
+// rebind that arrives mid-pass cancels its context, and nothing more is
+// written — not even the sync row the rebind deleted.
 func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, b issuesource.Binding, bound, haveClient bool) {
+	ctx, done, err := r.store.BeginIssueSourcePass(ctx, project.ID)
+	if err != nil {
+		return
+	}
+	defer done()
+	cur, err := r.store.GetProject(ctx, project.ID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			r.logger.Warn("issue sync: project not read", "project", project.ID, "error", err)
+		}
+		return
+	}
+	if cur.Path != project.Path || cur.IssueSource != project.IssueSource {
+		// Rebound (or re-pointed) since the caller read it: the binding the
+		// caller derived is stale, and the next tick derives it afresh.
+		return
+	}
 	src := r.issueSrc
 	now := r.clock()
 	st, err := r.store.GetIssueSyncState(ctx, project.ID)
@@ -146,6 +169,11 @@ func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, 
 			reset := f.ResetAt.UTC()
 			next.RateLimitedUntil = &reset
 		}
+	}
+	if ctx.Err() != nil {
+		// A rebind cancelled the pass (or the daemon is stopping): the row
+		// it would write is the one the rebind dropped.
+		return
 	}
 	switch {
 	case err != nil:
