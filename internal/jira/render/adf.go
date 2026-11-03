@@ -74,6 +74,12 @@ func MarkdownToADF(md string) json.RawMessage {
 			for ; j < len(lines) && !closesFence(lines[j], fence); j++ {
 				body = append(body, lines[j])
 			}
+			if j == len(lines) && len(body) > 0 && body[len(body)-1] == "" {
+				// A fence running to the end of the input: the input's own
+				// final newline is not part of the code, so "```\ncode\n"
+				// and "```\ncode\n```" carry the same text (review F15).
+				body = body[:len(body)-1]
+			}
 			code := adfNode{Type: "codeBlock"}
 			if lang != "" {
 				code.Attrs = &adfAttrs{Language: lang}

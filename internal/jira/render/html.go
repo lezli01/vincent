@@ -780,6 +780,11 @@ func (c *converter) media(n *html.Node) string {
 // resolve absolutizes a URL against the base and returns "" when the result
 // is not a destination we emit. Characters that would end a Markdown link
 // destination early are percent-encoded rather than escaped.
+// destEscapes percent-encodes what the TUI's linkAt would refuse or misread
+// in a destination: whitespace, parentheses, angle brackets, and square
+// brackets (review F15) — `?a[0]=1` otherwise shows the link as source.
+var destEscapes = strings.NewReplacer(" ", "%20", "(", "%28", ")", "%29", "<", "%3C", ">", "%3E", "[", "%5B", "]", "%5D")
+
 func (c *converter) resolve(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -808,7 +813,7 @@ func (c *converter) resolve(raw string) string {
 	if s == "" {
 		return ""
 	}
-	return strings.NewReplacer(" ", "%20", "(", "%28", ")", "%29", "<", "%3C", ">", "%3E").Replace(s)
+	return destEscapes.Replace(s)
 }
 
 // rawText is n's text, verbatim, with br as a newline — the content of a pre

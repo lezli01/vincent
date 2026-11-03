@@ -49,6 +49,11 @@ func TestMarkdownToADF(t *testing.T) {
 			`{"type":"doc","version":1,"content":[{"type":"codeBlock","attrs":{"language":"sh"},"content":[{"type":"text","text":"echo a\n\necho b"}]}]}`,
 		},
 		{
+			"unterminated fence drops the final newline",
+			"```\ncode\n",
+			`{"type":"doc","version":1,"content":[{"type":"codeBlock","content":[{"type":"text","text":"code"}]}]}`,
+		},
+		{
 			"shorter fence does not close",
 			"````\n```\n````",
 			`{"type":"doc","version":1,"content":[{"type":"codeBlock","content":[{"type":"text","text":"` + "```" + `"}]}]}`,

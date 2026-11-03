@@ -55,9 +55,10 @@ func TestJiraEmphasisNestingParses(t *testing.T) {
 	}
 }
 
-// TestJiraLinksParse is review F9: every link and image the converter writes
-// parses as one, with no Markdown syntax left in the visible text —
-// bracketed labels and alts, and an image inside a link.
+// TestJiraLinksParse is review F9 and F15: every link and image the
+// converter writes parses as one, with no Markdown syntax left in the
+// visible text — bracketed labels and alts, an image inside a link, and a
+// destination carrying brackets of its own.
 func TestJiraLinksParse(t *testing.T) {
 	for _, tc := range []struct {
 		in    string
@@ -67,6 +68,7 @@ func TestJiraLinksParse(t *testing.T) {
 		{`<a href="https://x.test/">[WIP]</a>`, []string{"https://x.test/"}},
 		{`<img alt="a]b" src="https://y.test/a.png">`, []string{"https://y.test/a.png"}},
 		{`<a href="https://x.test/">see <img src="https://y.test/a.png"> here</a>`, []string{"https://x.test/", "https://y.test/a.png"}},
+		{`<a href="https://x.test/?a[0]=1">q</a>`, []string{"https://x.test/?a%5B0%5D=1"}},
 	} {
 		md, segs, refs := renderInline(t, tc.in)
 		if strings.Join(refs.order, " ") != strings.Join(tc.dests, " ") {
