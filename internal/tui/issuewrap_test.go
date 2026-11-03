@@ -32,11 +32,11 @@ func longFixtureIssue() *issueView {
 		"area/tui", "needs-triage", "good-first-issue", "platform/windows",
 		"platform/macos", "platform/linux", "lastlabelmarker",
 	}
-	v.issue.Source = &apiclient.IssueSource{
+	v.issue.Source = ghSource(&apiclient.IssueSource{
 		Provider: "github", Repo: "octo-organisation/a-repository-with-a-long-name", Number: 41,
 		URL:         "https://github.com/octo-organisation/a-repository-with-a-long-name/issues/41",
 		RemoteState: "open",
-	}
+	})
 	v.issue.Sync = &apiclient.IssueSync{State: "failed", Reason: "rate_limited", LastSyncedAt: &synced}
 	v.comments = []apiclient.IssueComment{{
 		ID: 1, Author: "octocat", Body: "Repro is at [the gist](https://example.com/comment-gist).",

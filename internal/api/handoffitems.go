@@ -224,13 +224,13 @@ func handoffItemCheck(v store.HandoffVerb) func(*store.Issue) error {
 		if v.Comment != "" && issues.ThreadMirrored(iss) &&
 			(by != issuestate.Handoff || !issues.WritesBack(iss)) {
 			if by == issuestate.Agent {
-				return fmt.Errorf("issue %d: %w", iss.ID, issues.ErrForgeWriteNeedsHuman)
+				return issues.ForgeWriteError(iss)
 			}
 			return fmt.Errorf("issue %d: %w", iss.ID, issues.ErrMirrored)
 		}
 		if v.Close && by == issuestate.Agent && issues.WritesBack(iss) &&
 			issuestate.Normalize(iss.State) != issuestate.Closed {
-			return fmt.Errorf("issue %d: %w", iss.ID, issues.ErrForgeWriteNeedsHuman)
+			return issues.ForgeWriteError(iss)
 		}
 		return nil
 	}

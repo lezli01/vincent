@@ -92,6 +92,10 @@ written back to GitHub, and only a person, or a handoff a person
 [granted](../reference/api.md#handoffs) `issue.close`, does that. The same
 refusal meets a `vincent issue` command a workflow step or a chat agent runs,
 which the CLI marks with a header.
+The tool descriptions say "a remote tracker" rather than naming GitHub,
+because they are written once for every provider; the refusal itself names
+the issue's provider (`… may write to GitHub`), and an issue's `source`
+carries its `provider_name` and rendered `ref`.
 `issue_comment` adds a comment as your task (`task N`), or `agent` outside a
 step; on an issue whose GitHub remote is live it is refused with
 `forge_write_needs_human`, because that thread is GitHub's — unless your task is

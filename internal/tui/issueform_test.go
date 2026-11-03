@@ -245,10 +245,10 @@ func TestIssueClosePromptOnImportedSaysWhereItGoes(t *testing.T) {
 		sync *apiclient.IssueSync
 		want string
 	}{
-		{nil, issueWritesBack},
-		{&apiclient.IssueSync{State: "synced"}, issueWritesBack},
-		{&apiclient.IssueSync{State: "failed", Reason: "moved"}, issueRemoteLost},
-		{&apiclient.IssueSync{State: "failed", Reason: "gone"}, issueRemoteLost},
+		{nil, issueWritesBack("GitHub")},
+		{&apiclient.IssueSync{State: "synced"}, issueWritesBack("GitHub")},
+		{&apiclient.IssueSync{State: "failed", Reason: "moved"}, issueRemoteLost("GitHub")},
+		{&apiclient.IssueSync{State: "failed", Reason: "gone"}, issueRemoteLost("GitHub")},
 	} {
 		v := issueFixture()
 		v.issue.AvailableActions = []string{"close"}

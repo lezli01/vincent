@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,13 +26,31 @@ func issuesFixture() *issuesView {
 		{ID: 3, ProjectID: 1, Title: "Crash on start", State: "open", Lane: "open", Kind: "bug", Labels: []string{"p1"}, TaskCount: 2},
 		{
 			ID: 5, ProjectID: 1, Title: "Dark mode", State: "open", Lane: "open", Kind: "feature",
-			Source: &apiclient.IssueSource{Provider: "github", Repo: "octo/web", Number: 41, URL: "https://github.com/octo/web/issues/41"},
+			Source: ghSource(&apiclient.IssueSource{Provider: "github", Repo: "octo/web", Number: 41, URL: "https://github.com/octo/web/issues/41"}),
 		},
 		{ID: 4, ProjectID: 1, Title: "Docs typo", State: "open", Lane: "in_progress", Labels: []string{"docs"}, TaskCount: 1, Active: true, Attention: true},
 	}
 	v.loaded = true
 	v.clampCursor()
 	return v
+}
+
+// ghSource fills a GitHub source the way the daemon renders it (task
+// 142.1: internal/issues.RenderSource), so a hand-built fixture reads like
+// the wire. The live tests prove the daemon side; this keeps the unit
+// fixtures honest about what a client is sent.
+func ghSource(src *apiclient.IssueSource) *apiclient.IssueSource {
+	if src.Provider == "" {
+		src.Provider = "github"
+	}
+	src.ProviderName = "GitHub"
+	src.Ref, src.ShortRef = src.Repo, src.Repo
+	if src.Number > 0 {
+		src.Key = strconv.Itoa(src.Number)
+		src.Ref = src.Repo + "#" + src.Key
+		src.ShortRef = "gh#" + src.Key
+	}
+	return src
 }
 
 // issueFixture is the detail on an imported issue with two active tasks and
@@ -43,7 +62,7 @@ func issueFixture() *issueView {
 	v.issue = apiclient.Issue{
 		ID: 5, ProjectID: 2, Title: "Dark mode", State: "open", Kind: "feature", Priority: 2, Author: "human",
 		Body:   "# Why\n\nSee [the mock](https://example.com/mock) for **details**.\n" + strings.Repeat("\nmore\n", 30),
-		Source: &apiclient.IssueSource{Provider: "github", Repo: "octo/web", Number: 41, URL: "https://github.com/octo/web/issues/41", RemoteState: "open"},
+		Source: ghSource(&apiclient.IssueSource{Provider: "github", Repo: "octo/web", Number: 41, URL: "https://github.com/octo/web/issues/41", RemoteState: "open"}),
 		Tasks:  apiclient.IssueTasks{Count: 3, ActiveIDs: []int64{21, 22}},
 	}
 	v.tasks = []apiclient.Task{
@@ -178,7 +197,7 @@ func TestIssueRowFitsAtTheFloor(t *testing.T) {
 		source *apiclient.IssueSource
 	}{
 		{"local", nil},
-		{"imported", &apiclient.IssueSource{Repo: "octo-org/web-frontend", Number: 4127}},
+		{"imported", ghSource(&apiclient.IssueSource{Repo: "octo-org/web-frontend", Number: 4127})},
 	} {
 		iss.Source = c.source
 		for _, width := range []int{80, 76} {
@@ -229,7 +248,7 @@ func TestIssueRowTitleKeepsItsMinimum(t *testing.T) {
 		ID: 12, State: "open", Title: title, Labels: []string{"frontend", "accessibility", "regression"}, Kind: "bug",
 		Lane: "in_progress", TaskCount: 2, Active: true,
 		MainWorktree: &apiclient.IssueMainWorktree{Branch: "b", OccupantTaskID: &occ},
-		Source:       &apiclient.IssueSource{Repo: "octo-org/web-frontend", Number: 4127},
+		Source:       ghSource(&apiclient.IssueSource{Repo: "octo-org/web-frontend", Number: 4127}),
 	}
 	for _, width := range []int{80, 120} {
 		inner := width - len(groupIndent)
@@ -261,7 +280,9 @@ func TestIssueRowTitleKeepsItsMinimum(t *testing.T) {
 
 // issuesShareRepo reads the list, local rows aside.
 func TestIssuesShareRepo(t *testing.T) {
-	src := func(repo string) *apiclient.IssueSource { return &apiclient.IssueSource{Repo: repo, Number: 1} }
+	src := func(repo string) *apiclient.IssueSource {
+		return ghSource(&apiclient.IssueSource{Repo: repo, Number: 1})
+	}
 	shared := []apiclient.Issue{{ID: 1}, {ID: 2, Source: src("o/a")}, {ID: 3, Source: src("o/a")}}
 	if !issuesShareRepo(shared) {
 		t.Error("one repo and a local row read as mixed")
@@ -288,7 +309,7 @@ func TestIssueRowCellTakesTheTitleToTheFloor(t *testing.T) {
 		MainWorktree:      &apiclient.IssueMainWorktree{Branch: "b", OccupantTaskID: &occ, OccupantState: &state},
 		SideActive:        1,
 		MergeBacksPending: 1,
-		Source:            &apiclient.IssueSource{Repo: "o/r", Number: 3},
+		Source:            ghSource(&apiclient.IssueSource{Repo: "o/r", Number: 3}),
 	}
 	for _, width := range []int{58, 50} {
 		line := ansi.Strip(issueLine(iss, width, false, true))

@@ -89,6 +89,28 @@ type issueSourceBody struct {
 	// Status is what the last sweep learned of the remote: "moved" or
 	// "missing", omitted while it is live.
 	Status string `json:"status,omitempty"`
+	// Key, Ref, ShortRef and ProviderName are rendered by the daemon (task
+	// 142.1): a client prints them and never builds a reference from
+	// provider, repo and number itself. Key is the provider's display key
+	// (the number for GitHub), Ref the full reference (`owner/repo#142`,
+	// `PROJ-12`), ShortRef the compact one a list prints when every
+	// imported row shares one provider and repo (`gh#142`), and
+	// ProviderName the provider's display name (`GitHub`).
+	Key          string `json:"key,omitempty"`
+	Ref          string `json:"ref"`
+	ShortRef     string `json:"short_ref"`
+	ProviderName string `json:"provider_name"`
+}
+
+// newIssueSourceBody is the one constructor of an issueSourceBody (task
+// 142.1 decision 2): the issue DTO, a task's live issue and its frozen
+// snapshot all render their reference through issues.RenderSource here.
+func newIssueSourceBody(provider, repo string, number int, url, key string) *issueSourceBody {
+	ref := issues.RenderSource(provider, repo, number, key)
+	return &issueSourceBody{
+		Provider: provider, Repo: repo, Number: number, URL: url,
+		Key: ref.Key, Ref: ref.Ref, ShortRef: ref.ShortRef, ProviderName: ref.ProviderName,
+	}
 }
 
 // renderIssueSyncBlock is iss's sync block, nil for a local issue.
@@ -278,15 +300,10 @@ func renderIssueRow(iss *store.Issue) issueRowBody {
 	}
 	if issues.Mirrored(iss) {
 		r := iss.Remote
-		row.Source = &issueSourceBody{
-			Provider:     r.Provider,
-			Repo:         r.Repo,
-			Number:       r.Number,
-			URL:          r.URL,
-			RemoteState:  remoteState(r.RemoteJSON),
-			LastSyncedAt: r.SyncedAt,
-			Status:       r.Status,
-		}
+		row.Source = newIssueSourceBody(r.Provider, r.Repo, r.Number, r.URL, issues.RemoteKey(r))
+		row.Source.RemoteState = remoteState(r.RemoteJSON)
+		row.Source.LastSyncedAt = r.SyncedAt
+		row.Source.Status = r.Status
 		row.Sync = renderIssueSyncBlock(iss)
 	}
 	return row
@@ -416,6 +433,8 @@ func (s *Server) writeIssueError(w http.ResponseWriter, r *http.Request, id int6
 	case errors.Is(err, issues.ErrMirrored):
 		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonMirrored})
 	case errors.Is(err, issues.ErrForgeWriteNeedsHuman):
+		// The prose names the issue's provider (task 142.1 decision 3):
+		// issues.ForgeWriteError builds it per issue.
 		writeConflict(w, err.Error(), map[string]string{"reason": issueReasonForgeWrite})
 	case errors.Is(err, store.ErrInvalidIssueAction):
 		state := ""

@@ -317,7 +317,7 @@ func (f *issueForm) move(delta int) {
 
 func (f *issueForm) activate() tea.Cmd {
 	if !f.editable(f.cursor) {
-		f.err = f.cursor.label() + " is mirrored from GitHub — it changes there, not here"
+		f.err = f.cursor.label() + " is mirrored from " + issueProvider(f.original) + " — it changes there, not here"
 		return nil
 	}
 	switch f.cursor {
@@ -448,7 +448,7 @@ func (f *issueForm) toggleLabel(name string, free bool) {
 // openEditor hands the description to $EDITOR, seeded with what is typed.
 func (f *issueForm) openEditor() tea.Cmd {
 	if !f.editable(ifBody) {
-		f.err = "description is mirrored from GitHub — it changes there, not here"
+		f.err = "description is mirrored from " + issueProvider(f.original) + " — it changes there, not here"
 		return nil
 	}
 	name := "new-issue"
@@ -572,7 +572,7 @@ func (f *issueForm) applySaved(msg issueFormSavedMsg) tea.Cmd {
 		// The editable list said otherwise when the form opened: the issue
 		// was imported between the read and the save.
 		f.stale = true
-		f.err = "this issue is now mirrored from GitHub, so its title, description and labels change there; " +
+		f.err = "this issue is now mirrored from " + issueProvider(f.original) + ", so its title, description and labels change there; " +
 			opKey(keymap.Refresh) + " re-reads it"
 	default:
 		f.err = errString(msg.err)
@@ -748,7 +748,7 @@ func (f *issueForm) rowLines(r ifRow, width int) []string {
 			out := wrapText(t, width, hanging(indent))
 			out[0] = head + strings.TrimLeft(out[0], " ")
 			if !f.editable(r) {
-				out[len(out)-1] += "  " + styleDim.Render("· mirrored from GitHub")
+				out[len(out)-1] += "  " + styleDim.Render("· mirrored from "+issueProvider(f.original))
 			}
 			return out
 		}
@@ -770,7 +770,7 @@ func (f *issueForm) rowLines(r ifRow, width int) []string {
 	case ifRowCount:
 	}
 	if !f.editable(r) {
-		value += "  " + styleDim.Render("· mirrored from GitHub")
+		value += "  " + styleDim.Render("· mirrored from "+issueProvider(f.original))
 	}
 	return []string{head + value}
 }

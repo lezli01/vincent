@@ -245,7 +245,7 @@ func newIssueShowCmd() *cobra.Command {
 				if err := printIssue(cmd.OutOrStdout(), &iss); err != nil {
 					return err
 				}
-				return printIssueThread(cmd.OutOrStdout(), thread)
+				return printIssueThread(cmd.OutOrStdout(), thread, issueRemoteTag(&iss))
 			})
 		},
 	}
@@ -274,11 +274,8 @@ func printIssue(out io.Writer, iss *apiclient.Issue) error {
 		fields = append(fields, [2]string{"handoff", issueHandoff(iss.Handoff)})
 	}
 	if src := iss.Source; src != nil {
-		ref := src.Repo
-		if src.Number != 0 {
-			ref = fmt.Sprintf("%s#%d", src.Repo, src.Number)
-		}
-		fields = append(fields, [2]string{"source", ref})
+		// The daemon renders the reference (task 142.1).
+		fields = append(fields, [2]string{"source", src.Ref})
 		if src.URL != "" {
 			fields = append(fields, [2]string{"url", src.URL})
 		}
@@ -313,15 +310,24 @@ func printIssue(out io.Writer, iss *apiclient.Issue) error {
 	return nil
 }
 
+// issueRemoteTag is what a mirrored comment is marked with: the issue's
+// provider id (`github`), "remote" when the issue carries none.
+func issueRemoteTag(iss *apiclient.Issue) string {
+	if iss.Source != nil && iss.Source.Provider != "" {
+		return iss.Source.Provider
+	}
+	return "remote"
+}
+
 // printIssueThread writes an issue's comments after its body, oldest first:
 // a header line per comment with its author and time, a mirrored one marked
-// as GitHub's (task 130.16), then its text.
-func printIssueThread(out io.Writer, thread []apiclient.IssueComment) error {
+// with its provider's id, remoteTag (task 130.16), then its text.
+func printIssueThread(out io.Writer, thread []apiclient.IssueComment, remoteTag string) error {
 	for i := range thread {
 		if _, err := fmt.Fprintln(out); err != nil {
 			return err
 		}
-		if err := printIssueComment(out, &thread[i]); err != nil {
+		if err := printIssueComment(out, &thread[i], remoteTag); err != nil {
 			return err
 		}
 	}
@@ -329,10 +335,10 @@ func printIssueThread(out io.Writer, thread []apiclient.IssueComment) error {
 }
 
 // printIssueComment writes one comment: its attribution line, then its text.
-func printIssueComment(out io.Writer, c *apiclient.IssueComment) error {
+func printIssueComment(out io.Writer, c *apiclient.IssueComment, remoteTag string) error {
 	h := fmt.Sprintf("--- %s, %s", dash(c.Author), doctorTime(&c.CreatedAt, "-"))
 	if c.Remote {
-		h += " (github)"
+		h += " (" + remoteTag + ")"
 	}
 	_, err := fmt.Fprintf(out, "%s\n%s\n", h, strings.TrimRight(c.Body, "\n"))
 	return err
@@ -340,7 +346,7 @@ func printIssueComment(out io.Writer, c *apiclient.IssueComment) error {
 
 // newIssueCommentCmd is `vincent issue comment`: a local comment, its author
 // derived by the daemon (task 130 decision 24.6). One on an issue imported
-// from GitHub is refused, as an edit of its title is: nothing is ever posted
+// from a remote tracker is refused, as an edit of its title is: nothing is ever posted
 // there, and its thread is mirrored read-only.
 func newIssueCommentCmd() *cobra.Command {
 	var body, bodyFile string
@@ -364,7 +370,7 @@ func newIssueCommentCmd() *cobra.Command {
 				if wantJSON(cmd) {
 					return emitJSON(cmd.OutOrStdout(), comment)
 				}
-				return printIssueComment(cmd.OutOrStdout(), &comment)
+				return printIssueComment(cmd.OutOrStdout(), &comment, "remote")
 			})
 		},
 	}
@@ -474,7 +480,7 @@ func newIssueEditCmd() *cobra.Command {
 			"The edit is sent at the version just read. If the issue changed in between,\n" +
 			"the daemon refuses it and nothing is retried: re-run the command to apply it\n" +
 			"on top of the current issue. An imported issue's title, body and labels\n" +
-			"mirror GitHub and are refused; its kind and priority are vincent's own.",
+			"mirror its remote tracker and are refused; its kind and priority are vincent's own.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := parseIssueID(args[0])
@@ -697,8 +703,8 @@ func newIssueDeleteCmd() *cobra.Command {
 		Aliases: []string{"rm"},
 		Short:   "Permanently delete issues",
 		Long: "Deletes an issue for good, in any state, and requires --force. It never\n" +
-			"touches GitHub: an imported issue stays open upstream, and the delete leaves\n" +
-			"a tombstone so the next sync does not import it again.",
+			"touches the issue's source: an imported issue stays open upstream, and the\n" +
+			"delete leaves a tombstone so the next sync does not import it again.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ids := make([]int64, 0, len(args))

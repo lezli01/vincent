@@ -2649,6 +2649,11 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   GitHub is deleted here by the next [sweep](#issue-sync), and is `missing`
   only while a live task holds it. `remote_state`, `last_synced_at` and
   `status` are omitted when empty, and list rows carry the same `source`.
+  `source` also carries what the daemon renders, so a client prints it
+  rather than building one: `key` (the provider's display key — the number
+  for GitHub), `ref` (the full reference, `owner/repo#142`), `short_ref`
+  (the compact one, `gh#142`, for a list whose imported rows all share one
+  provider and repository) and `provider_name` (`GitHub`).
   An imported issue also carries `sync` — `{ state, reason?, last_synced_at? }`
   — its [state write-back](#state-write-back); a local issue has none.
   `?workflow=NAME` adds `prefill: { title, description, fields }`, what
@@ -2688,7 +2693,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 |---|---|---|
 | `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
 | `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable. Also a comment on an issue whose GitHub remote is live — one whose remote moved, is missing or was deleted takes comments | `reason` |
-| `forge_write_needs_human` | A forge write by an agent without a grant: `close`, `reopen` or a comment on an issue imported from GitHub, or any `…/github/pull/*` write, from an [MCP](#mcp) tool call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Allowed only for a live handoff's task whose grant names the capability, on its own items and pull requests. A local issue, or one whose remote moved or is missing, is not refused | `reason` |
+| `forge_write_needs_human` | A forge write by an agent without a grant: `close`, `reopen` or a comment on an issue imported from GitHub, or any `…/github/pull/*` write, from an [MCP](#mcp) tool call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Allowed only for a live handoff's task whose grant names the capability, on its own items and pull requests. A local issue, or one whose remote moved or is missing, is not refused. The message names the issue's provider (`… may write to GitHub`) | `reason` |
 | — | `close` on a closed issue, `reopen` on an open one | `state` |
 
 ### Creating a task from an issue
@@ -2716,6 +2721,9 @@ issue.
   is legitimate — and `warnings` says the issue is closed.
 - Every task representation carries `issue: { id, title, state, source? }`:
   the issue as it is now, or the snapshot once the issue has been deleted.
+  `source` is the issue's, rendered fields included — `ref`, `short_ref`,
+  `key` and `provider_name` come out the same from the snapshot, even one
+  taken before the daemon stored keys.
   `null` for a task created without one.
 - For an issue imported from GitHub, `github_issue` is filled in from the
   snapshot, so a consumer reading `.github_issue.number` keeps working, and

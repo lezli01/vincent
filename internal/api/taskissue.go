@@ -41,10 +41,8 @@ func snapshotIssueResponse(snap *store.IssueSnapshot) *taskIssueResponse {
 	}
 	out := &taskIssueResponse{ID: snap.ID, Title: snap.Title, State: snap.State}
 	if rem := snap.Remote; rem != nil {
-		out.Source = &issueSourceBody{
-			Provider: rem.Provider, Repo: rem.Repo, Number: rem.Number, URL: rem.URL,
-			RemoteState: rem.State,
-		}
+		out.Source = newIssueSourceBody(rem.Provider, rem.Repo, rem.Number, rem.URL, rem.Key)
+		out.Source.RemoteState = rem.State
 	}
 	return out
 }

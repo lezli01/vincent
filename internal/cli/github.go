@@ -180,8 +180,8 @@ func taskIssueSummary(issue *apiclient.TaskIssue) string {
 		return ""
 	}
 	ref := fmt.Sprintf("issue %d", issue.ID)
-	if src := issue.Source; src != nil && src.Number > 0 {
-		ref += fmt.Sprintf(" (%s#%d)", src.Repo, src.Number)
+	if src := issue.Source; src != nil && src.Key != "" {
+		ref += " (" + src.Ref + ")"
 	}
 	return strings.TrimSpace(fmt.Sprintf("from %s: %s", ref, issue.Title))
 }
