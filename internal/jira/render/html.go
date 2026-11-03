@@ -56,6 +56,12 @@ type converter struct {
 	// nested mark of the same kind is not written twice and an italic inside
 	// bold is spelled so the TUI's parser can find both (review F8).
 	bold, italic int
+	// inLink is set while a link's label is written; an image or media
+	// wrapper met there is written to deferred instead and emitted after the
+	// link, because an image nested in a link label is not in the TUI's
+	// subset (review F9).
+	inLink   bool
+	deferred []string
 }
 
 // blockTags are the elements that start a block of their own. Anything not
@@ -398,6 +404,21 @@ func (c *converter) inline(b *strings.Builder, n *html.Node) {
 		mentionText(b, n)
 		return
 	}
+	if c.inLink && (isMedia(n) || n.DataAtom == atom.Img) {
+		c.inLink = false
+		var out strings.Builder
+		c.inline(&out, n)
+		c.inLink = true
+		// An emoticon is its alt text and stays in the label; anything
+		// carrying Markdown syntax (an image, an attachment link or
+		// placeholder) goes after the link.
+		if strings.Contains(out.String(), "[") {
+			c.deferred = append(c.deferred, out.String())
+		} else {
+			b.WriteString(out.String())
+		}
+		return
+	}
 	if isMedia(n) {
 		b.WriteString(c.media(n))
 		return
@@ -537,9 +558,14 @@ func (c *converter) link(b *strings.Builder, n *html.Node) {
 		writeImage(b, oneLine(attr(img, "alt")), src)
 		return
 	}
+	savedIn, savedDeferred := c.inLink, c.deferred
+	c.inLink, c.deferred = true, nil
 	inner := c.inlineString(n)
+	images := c.deferred
+	c.inLink, c.deferred = savedIn, savedDeferred
 	if href == "" {
 		b.WriteString(inner)
+		writeAfter(b, images)
 		return
 	}
 	core := oneLine(inner)
@@ -549,11 +575,28 @@ func (c *converter) link(b *strings.Builder, n *html.Node) {
 	if inner != strings.TrimLeft(inner, " \n") {
 		b.WriteString(" ")
 	}
-	b.WriteString("[" + core + "](" + href + ")")
+	b.WriteString("[" + label(core) + "](" + href + ")")
+	writeAfter(b, images)
 	if inner != strings.TrimRight(inner, " \n") {
 		b.WriteString(" ")
 	}
 }
+
+// writeAfter writes the images a link held, each after a space.
+func writeAfter(b *strings.Builder, images []string) {
+	for _, img := range images {
+		b.WriteString(" " + img)
+	}
+}
+
+// labelBrackets swaps the square brackets in a link label or image alt for
+// look-alikes that cannot end the label: the TUI's linkAt closes a label at
+// its first `]`, and the subset has no escapes, so `[[PROJ-1] fix](…)` would
+// show as literal source (review F9). It is the same move as `|` → `¦` in a
+// table cell.
+var labelBrackets = strings.NewReplacer("[", "⁅", "]", "⁆")
+
+func label(s string) string { return labelBrackets.Replace(s) }
 
 func (c *converter) image(b *strings.Builder, n *html.Node) {
 	if hasClass(n, "rendericon") {
@@ -575,7 +618,7 @@ func (c *converter) image(b *strings.Builder, n *html.Node) {
 }
 
 func writeImage(b *strings.Builder, alt, src string) {
-	b.WriteString("![" + alt + "](" + src + ")")
+	b.WriteString("![" + label(alt) + "](" + src + ")")
 }
 
 // loneImage is the single non-decorative img inside a, when that is all a

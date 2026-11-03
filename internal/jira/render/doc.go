@@ -29,6 +29,12 @@
 // HTML or backslash escapes, and text goes out as-is — the TUI would show
 // an escaping backslash literally.
 //
+// Where the parser would misread text, the text is changed instead of
+// escaped: a `|` in a table cell becomes `¦`, a square bracket in a link
+// label or image alt becomes `⁅`/`⁆`, a bold-italic italic is spelled `_`,
+// and an image inside a link is written after the link rather than in its
+// label.
+//
 // # Stability
 //
 // The importer (#908) compares a re-rendered body with the stored one to

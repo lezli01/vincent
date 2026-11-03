@@ -54,3 +54,28 @@ func TestJiraEmphasisNestingParses(t *testing.T) {
 		}
 	}
 }
+
+// TestJiraLinksParse is review F9: every link and image the converter writes
+// parses as one, with no Markdown syntax left in the visible text —
+// bracketed labels and alts, and an image inside a link.
+func TestJiraLinksParse(t *testing.T) {
+	for _, tc := range []struct {
+		in    string
+		dests []string
+	}{
+		{`<a href="https://x.test/">[PROJ-1] fix</a>`, []string{"https://x.test/"}},
+		{`<a href="https://x.test/">[WIP]</a>`, []string{"https://x.test/"}},
+		{`<img alt="a]b" src="https://y.test/a.png">`, []string{"https://y.test/a.png"}},
+		{`<a href="https://x.test/">see <img src="https://y.test/a.png"> here</a>`, []string{"https://x.test/", "https://y.test/a.png"}},
+	} {
+		md, segs, refs := renderInline(t, tc.in)
+		if strings.Join(refs.order, " ") != strings.Join(tc.dests, " ") {
+			t.Errorf("%s → %q: parsed destinations %q, want %q", tc.in, md, refs.order, tc.dests)
+		}
+		for _, s := range segs {
+			if strings.Contains(s.text, "](") {
+				t.Errorf("%s → %q: link syntax left as text in %q", tc.in, md, s.text)
+			}
+		}
+	}
+}
