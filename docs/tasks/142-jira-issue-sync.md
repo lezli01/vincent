@@ -93,8 +93,10 @@ lists only the hard dependencies the parent records as "Blocked by".
 
 ## Decisions (2026-11-03)
 
-Settled with the author while scoping #897. Decisions 1–9 merge #897's draft
-list with #896's "Decisions taken"; decision 10 answers #897's own open
+Settled with the author while scoping #897, except the points marked
+*proposed default*: those carry the default an open question below proposes,
+and are open until the issue it names settles them. Decisions 1–9 merge #897's
+draft list with #896's "Decisions taken"; decision 10 answers #897's own open
 question.
 
 ### 1. A native in-tree Jira Cloud provider; trigger sources stay generic
@@ -172,9 +174,11 @@ being true.
 
 ### 5. The binding is explicit, per project, daemon-side
 
-A project is bound explicitly to one Jira Cloud site plus one project key, and
-the Jira project **id** is recorded on the first successful sync, because a key
-rename changes every issue key but not the id.
+A project is bound explicitly to one Jira Cloud site, and the Jira project
+**id** is recorded on the first successful sync, because a key rename changes
+every issue key but not the id. *Proposed default, open until #902 (open
+question 2):* the binding is the site plus one project key, with no JQL
+narrowing clause.
 
 1. **Sticky**, generalising task 130 decision 15.5: a later mismatch stops that
    project's sync rather than re-keying.
@@ -239,15 +243,18 @@ parts; 142.3 settles the Jira facts against a real site.
 5. **Bodies are rendered from `renderedFields`/`renderedBody` HTML to
    Markdown**, not by walking ADF, so one converter would also cover a later
    Data Center leg. Outgoing comments are wrapped as minimal ADF.
-6. **Restricted-visibility comments are skipped** (privacy).
+6. **Restricted-visibility comments are skipped** (privacy). *Proposed
+   default, open until #908 (open question 5).*
 7. **No Duplicate issue link is written.**
 8. **A sweep 404 marks the issue `missing` and never deletes it.** Jira answers
    404 for deleted and forbidden alike and has no 410, so GitHub's "410
-   deletes" rule has no safe analogue.
+   deletes" rule has no safe analogue. *Proposed default, open until #908
+   (open question 4).*
 9. **`kind` is seeded from `issuetype` on first import only**, narrowing task
    130 decision 15.4 for this provider. Priority stays local.
 10. **"In Progress" is not reflected in lanes.** Jira's `indeterminate`
-    category is kept only in `remote_json` (open question 8).
+    category is kept only in `remote_json`. *Proposed default, open until
+    #910 (open question 8).*
 
 ### 10. Spec placement
 
