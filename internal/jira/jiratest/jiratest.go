@@ -6,6 +6,7 @@ package jiratest
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"os"
 	"os/exec"
@@ -153,10 +154,23 @@ func StartFakeJira(t testing.TB, opts Options) *Server {
 	return srv
 }
 
+// shutdownTimeout bounds the shutdown request. A wedged server that takes
+// the connection and never answers must not hold the cleanup: past this the
+// request fails and the cleanup falls through to killing the process (review
+// F12). A var so the test can shorten it.
+var shutdownTimeout = wait.Timeout(5 * time.Second)
+
 // Shutdown asks the server to stop through POST /_fake/shutdown, reporting
-// whether the route accepted.
+// whether the route accepted. It gives up after shutdownTimeout.
 func (s *Server) Shutdown() bool {
-	resp, err := http.Post(s.URL+fakejira.ShutdownPath, "application/json", nil) //nolint:noctx // a test helper with the default client
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.URL+fakejira.ShutdownPath, http.NoBody)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false
 	}
