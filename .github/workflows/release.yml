@@ -214,6 +214,47 @@ jobs:
           # MACOS_SIGN_IDENTITY and MACOS_KEYCHAIN reach the darwin build hook
           # through $GITHUB_ENV; MACOS_SIGN_REQUIRED is the job-level split.
 
+      # microsoft/winget-pkgs holds every submission until its policy bot sees
+      # the contributor accept the Microsoft CLA in a comment on the PR, so the
+      # acceptance is posted here rather than by hand after each release.
+      # GoReleaser opens the PR from the `vincent-{version}` branch of the fork
+      # (`.goreleaser.yaml`'s `winget.repository`), which is how it is found.
+      # A prerelease never opens one (`skip_upload: auto`), and a failure here
+      # only warns: the release itself has already shipped.
+      - name: Accept the Microsoft CLA on the WinGet pull request
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          FORK_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version dist/metadata.json)"
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease $version opens no WinGet pull request"
+            exit 0
+          fi
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::WINGET_TOKEN is not set; no CLA comment posted"
+            exit 0
+          fi
+          head="$FORK_OWNER:vincent-$version"
+          pr=""
+          # Retry briefly: the PR is created at the end of GoReleaser's run
+          # and the pulls listing can briefly lag behind it.
+          for _ in 1 2 3 4 5 6; do
+            pr="$(gh api "repos/microsoft/winget-pkgs/pulls?head=$head&state=open" --jq '.[0].number // empty')"
+            [ -n "$pr" ] && break
+            sleep 10
+          done
+          if [ -z "$pr" ]; then
+            echo "::warning::no open microsoft/winget-pkgs pull request from $head; post the CLA comment by hand"
+            exit 0
+          fi
+          gh pr comment "$pr" --repo microsoft/winget-pkgs \
+            --body '@microsoft-github-policy-service agree' ||
+            echo "::warning::could not comment on microsoft/winget-pkgs#$pr; post the CLA comment by hand"
+
       # The archives were assembled around these binaries, so verifying the
       # binary verifies what shipped.
       - name: Verify the darwin signatures
