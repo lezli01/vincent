@@ -91,7 +91,7 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [ ] **142.15** ([#911](https://github.com/lezli01/vincent/issues/911)) A
   JIRA doctor row with a credential check and per-project sync health.
   Depends: 142.12.
-- [ ] **142.16** ([#912](https://github.com/lezli01/vincent/issues/912))
+- [x] **142.16** ([#912](https://github.com/lezli01/vincent/issues/912))
   `.Issue.Source.Key`, `VINCENT_ISSUE_KEY`, `source.key` in the issue file,
   and the Jira prefill. Depends: 142.8.
 - [ ] **142.17** ([#913](https://github.com/lezli01/vincent/issues/913)) The
@@ -337,6 +337,28 @@ Taken while delivering 142.8. Each point is numbered so code can cite it.
    "the remote" everywhere, since "written to Jira too" is what a user wants
    to read.
 
+### 12. Jira keys in templates, the issue file and the prefill (142.16, #912)
+
+Settled by the author 2026-11-03 while delivering 142.16. Each point is
+numbered so code can cite it.
+
+1. **No `jira_issue` declared field.** Workflows read `.Issue.Source.Key` or
+   `$VINCENT_ISSUE_KEY`; the prefill's field table is unchanged. This closes
+   open question 6 with its proposed default.
+2. **Only `Key` is added to templates and the issue file.** `.Issue.Source`
+   and the file's `source` gain `Key`/`key`, spelled by `issues.RenderSource`.
+   142.8's `Ref`, `ShortRef` and `ProviderName` stay on the API DTOs; adding
+   them later breaks nothing. *Beaten:* exposing all four now.
+3. **`source.number` is nullable.** A Jira file writes `null` for both
+   `number` and `source.number`, and a Jira step gets no
+   `VINCENT_ISSUE_NUMBER`. A GitHub file's bytes are unchanged apart from the
+   added `key`. *Beaten:* writing `0`, which reads as a real number.
+4. **The Jira prefill is `PROJ-12 <title>`** with a `Jira issue PROJ-12: <url>`
+   link line, never doubling the prefix. A Jira snapshot with no key prefills
+   the local shape. `github_issue`, `assignee` and `milestone` stay
+   GitHub-only; whether a Jira assignee or milestone should fill them is a
+   question for 142.12, which stores them.
+
 ## Records kept, departed from, narrowed or generalised
 
 Citations are to the lines as of this document's commit, after its dated notes were inserted.
@@ -383,8 +405,9 @@ explicitly. A "proposed default" is open until that issue.
    default, open until #908:* mark-only (decision 9.8).
 5. **Mirror restricted-visibility comments?** *Proposed default, open until
    #908:* skip them (decision 9.6).
-6. **The Jira prefill title, and a `jira_issue` field?** *Proposed default,
-   open until #912:* the prefill title is `PROJ-12 <title>`, and there is no
+6. **The Jira prefill title, and a `jira_issue` field?** *Settled by the
+   author 2026-11-03: `PROJ-12 <title>`, no `jira_issue` field (decision 12).*
+   Was the proposed default: the prefill title is `PROJ-12 <title>`, and there is no
    `jira_issue` field. #896's question refers to "task 130 decision 2's
    `github_issue`", but `github_issue` was removed from every create surface
    by task 130 **decision 7** (`docs/tasks/130-issues-pillar.md:184`). A Jira

@@ -24,6 +24,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **Workflows can read an imported issue's display key.** `.Issue.Source.Key`,
+  `$VINCENT_ISSUE_KEY` and the issue file's `source.key` carry the provider's
+  key — the GitHub number as a string, or a Jira issue's `PROJ-12` — and a
+  task created from a Jira issue prefills `PROJ-12 <title>` with a
+  `Jira issue PROJ-12: <url>` link line. For a Jira issue, the issue file's
+  `number` and `source.number` are `null` and no `VINCENT_ISSUE_NUMBER` is
+  set; GitHub issues render, export and write exactly as before apart from the
+  added key.
+
 - **The daemon names an imported issue's source.** An issue's `source` — on
   `GET /v1/issues`, `GET /v1/issues/{id}` and a task's `issue` — now carries
   `key`, `ref` (`owner/repo#142`), `short_ref` (`gh#142`) and

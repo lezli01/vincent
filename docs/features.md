@@ -606,8 +606,9 @@ creation, so a workflow that hands the number to `gh` reads
 value wins over what the issue would have filled in.
 
 Templates receive the issue as `.Issue` — the vincent id, title, body, state,
-labels, author, assignee, milestone, and the GitHub reference in `.Issue.Source`
-— zero-valued when nothing is linked, so
+labels, author, assignee, milestone, and the provider reference in
+`.Issue.Source`, whose `Key` is a Jira issue's `PROJ-12` (also exported as
+`VINCENT_ISSUE_KEY`) — zero-valued when nothing is linked, so
 `{% raw %}{{ if .Issue.Number }}{% endraw %}` lets one workflow serve both. The
 issue is stored on the task at creation, so runs stay reproducible and no step
 render touches the network. Fan-out lanes inherit their parent's issue. Command,
