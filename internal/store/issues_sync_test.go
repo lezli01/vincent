@@ -143,14 +143,14 @@ func TestRequestIssueSync(t *testing.T) {
 		got.Store(id)
 	})
 
-	if err := s.RequestIssueSync(ctx, 999); !errors.Is(err, ErrNotFound) {
+	if err := s.RequestIssueSync(ctx, 999, "github"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown project = %v, want ErrNotFound", err)
 	}
 	if got.Load() != 0 {
 		t.Errorf("callback ran for a refused request")
 	}
 	before := time.Now().Add(-time.Second)
-	if err := s.RequestIssueSync(ctx, p.ID); err != nil {
+	if err := s.RequestIssueSync(ctx, p.ID, "github"); err != nil {
 		t.Fatal(err)
 	}
 	if got.Load() != p.ID {
@@ -172,7 +172,7 @@ func TestRequestIssueSync(t *testing.T) {
 	if err := s.PutIssueSyncState(ctx, *st); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RequestIssueSync(ctx, p.ID); err != nil {
+	if err := s.RequestIssueSync(ctx, p.ID, "github"); err != nil {
 		t.Fatal(err)
 	}
 	again, _ := s.GetIssueSyncState(ctx, p.ID)
@@ -191,7 +191,7 @@ func TestPutIssueSyncStateKeepsALaterRequest(t *testing.T) {
 	p := testProject(t, s, "p1")
 	attempt := time.Now().Add(-time.Minute).UTC()
 	st := IssueSyncState{ProjectID: p.ID, Provider: "github", OK: true, LastAttemptAt: &attempt}
-	if err := s.RequestIssueSync(ctx, p.ID); err != nil {
+	if err := s.RequestIssueSync(ctx, p.ID, "github"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.PutIssueSyncState(ctx, st); err != nil {

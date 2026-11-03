@@ -6,6 +6,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -34,10 +35,12 @@ func NewIssueOutbox(st *store.Store, cfg func() config.Config, client *github.Cl
 
 // githubOnly is the default registry: the GitHub source, enabled exactly
 // when the importer's gates are open — github.enabled and poll_interval,
-// and a client wired.
+// and a client wired. Any other provider — Jira writes back too
+// (issueprovider.WritesBack, task 142.5) but has no writer until #909 —
+// answers no_client, so its rows wait pending and are never failed.
 func (o *IssueOutbox) githubOnly(provider string) (issuesource.Source, string) {
 	switch {
-	case provider != issuesource.ProviderGitHub:
+	case provider != issueprovider.GitHub:
 		return nil, outboxReasonNoClient
 	case !o.cfg().GitHub.Polls():
 		return nil, outboxReasonDisabled

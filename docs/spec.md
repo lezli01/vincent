@@ -1329,6 +1329,15 @@ comment sync updates it in place. A human's comment on that thread is still
 refused `issue_mirrored` (task 130 decision 24.3), and a local issue needs
 no grant: an ungranted agent's write to one stays `agent`.
 
+*Amended 2026-11-03 (task 142.5, issue #901).* "Writes back" is no longer
+"has a live GitHub remote": an issue writes back when it has a live remote
+of a provider that `internal/issueprovider` declares as writing back —
+GitHub and Jira today. Everything above that says GitHub — the guard, the
+human close or reopen that enqueues `set_state`, the granted comment that
+enqueues `add_comment` — holds for a live Jira remote alike, with the
+provider's own comment id as `remote_key`. A moved or missing remote, and a
+remote of a provider the registry does not know, keep their writes local.
+
 *Amended 2026-10-02 (task 130.8, issue #667).* Sync exists: the daemon imports
 and refreshes a GitHub-based project's issues on §12.3's `github.poll_interval`
 tick, as actor `sync`. Three rules it settled:
@@ -1657,6 +1666,11 @@ and the closing actor for a wait resolved by a close. **A close resolves a
 `waiting` item** as `delivered`, by the closing actor — any actor, `sync`
 included, so an imported `Closes #N` ends it — in the close's own
 transaction, with `handoff.settled` when it was the last wait (§5.6).
+
+*Amended 2026-11-03 (task 142.5, issue #901).* "Enqueued for GitHub" above
+reads "enqueued for the issue's provider": a verb's close and comment on an
+issue that writes back (§5.6's 142.5 note) are guarded and enqueued whatever
+the provider.
 
 **`issue_in_handoff`** (decision 14, scope settled 2026-10-24). While an item
 claims an issue, no route adds work to it: a root task created with its
@@ -8618,6 +8632,14 @@ with the reason it has none — for GitHub, `disabled` or `no_client` exactly as
 before. The reason strings are the seam's own vocabulary and equal GitHub's,
 so no value on the sync row, the outbox or the wire changes.
 
+*Amended 2026-11-03 (task 142.5, issue #901).* The store enqueues a row for
+any write-back provider's live remote (§5.6's 142.5 note), so a provider
+can have rows before the daemon has a writer for it — Jira, until its writer
+lands (#909). Such a row waits **pending** with reason `no_client`, its
+attempts uncounted, and is never failed; the import's hold keeps the local
+state against the remote meanwhile, and the row drains once a source for
+the provider is registered.
+
 *Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
 outbound network traffic when it landed, and that sentence read as though it
 were the only one. It is now the first that fires for a *subset* of installs:
@@ -10313,6 +10335,9 @@ POST   /v1/issues/{id}/close            *Added 2026-10-02 (task 130.3).* { reaso
                                         of an issue that writes back to GitHub is **409**
                                         `forge_write_needs_human` (§5.6); a human's enqueues
                                         the write-back, and the issue's `sync` says `pending`.
+                                        *Amended 2026-11-03 (task 142.5):* "writes back" is
+                                        any write-back provider's live remote (§5.6), not
+                                        only GitHub's.
                                         *Amended 2026-10-28 (task 137.7):* unless the agent is
                                         a live handoff's task granted `issue.close` on it
 POST   /v1/issues/{id}/ready            *Added 2026-10-24 (task 137.15, issue #848).* {} →
@@ -10335,6 +10360,7 @@ POST   /v1/issues/{id}/reopen           *Added 2026-10-02 (task 130.3).* {}. Reo
                                         issue is **409** with `details.state`; an agent's
                                         reopen of an issue that writes back is **409**
                                         `forge_write_needs_human` (task 130.10)
+                                        — whatever its provider (task 142.5)
 GET    /v1/issues/{id}/comments         *Added 2026-10-03 (task 130.16).* The thread, oldest
                                         first: `{comments: [{id, issue_id, author, body,
                                         remote, remote_key?, created_at, updated_at}]}`.
@@ -12335,6 +12361,10 @@ refused `409 invalid_state`, `details.reason: forge_write_needs_human`. The
 same refusal reaches a step's or a chat agent's plain HTTP call through the
 marker header (§13.1, §16).
 
+*Amended 2026-11-03 (task 142.5, issue #901).* "An issue that writes back to
+GitHub" above is any issue that writes back (§5.6's 142.5 note), whatever
+its provider; the refusal is the same.
+
 *Amended 2026-10-03 (task 130.16, issue #675).* An issue's thread is two more
 tools, and no exclusion: `issue_comments` reads it and `issue_comment` adds a
 local comment, recording the calling step's task (`task N`) or `agent` as its
@@ -13180,6 +13210,12 @@ GitHub remote, inserted with the comment and naming it in `comment_id`;
 holds the issue's state: supersession, the import's hold and the issue's
 `sync` block read `set_state` rows only, and the project's counts take each
 operation's newest row apart.
+
+*Amended 2026-11-03 (task 142.5, issue #901).* Both ops are enqueued for a
+live remote of **any** provider `internal/issueprovider` declares as writing
+back (GitHub, Jira), not only GitHub's; the value compared is the outbox's
+provider-neutral `RemoteStateOf`. A duplicate's `duplicate_of` number is
+filled only from a target's live remote of the same provider and repository.
 
 *Added 2026-10-03 (task 130.11, issue #670, migration 0040).* The **issue
 backfill**: pure SQL in the migration transaction, so every `Open` path runs it —

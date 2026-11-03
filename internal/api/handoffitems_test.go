@@ -163,10 +163,17 @@ func TestHandoffReturnSide(t *testing.T) {
 // imported issue is refused forge_write_needs_human and records nothing; a
 // human's is accepted and queues the write-back.
 func TestHandoffDeliverImportedByAgent(t *testing.T) {
+	// Jira writes back as GitHub does (task 142.5).
+	for _, provider := range []string{"github", "jira"} {
+		t.Run(provider, func(t *testing.T) { testHandoffDeliverImportedByAgent(t, provider) })
+	}
+}
+
+func testHandoffDeliverImportedByAgent(t *testing.T, provider string) {
 	h := newActionHarness(t)
 	ctx := t.Context()
 	iss, _, err := h.store.UpsertRemoteIssue(ctx, store.RemoteIssue{
-		ProjectID: h.projectID, Provider: "github", RemoteKey: "gh-1", Repo: "o/r", Number: 1,
+		ProjectID: h.projectID, Provider: provider, RemoteKey: "gh-1", Repo: "o/r", Number: 1,
 		Title: "imported", State: issuestate.Open,
 	}, issuestate.Sync)
 	if err != nil {
@@ -183,8 +190,9 @@ func TestHandoffDeliverImportedByAgent(t *testing.T) {
 	resp, body := h.postMarked(t, path, nil, headerTaskMarker, "4242")
 	wantReason(t, "agent deliver", resp, body, issueReasonForgeWrite)
 	// Task 142 decision 11.3 (review F5): the refusal names the provider.
-	if !strings.Contains(string(body), "may write to GitHub") {
-		t.Errorf("the deliver refusal does not name GitHub: %s", body)
+	name := map[string]string{"github": "GitHub", "jira": "Jira"}[provider]
+	if !strings.Contains(string(body), "may write to "+name) {
+		t.Errorf("the deliver refusal does not name %s: %s", name, body)
 	}
 	one := wantStatus(t, http.StatusOK)(h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/handoffs/%d", ho.ID), nil))
 	if it := outcomeOf(t, one, iss.ID); it.Outcome != "" {
@@ -203,10 +211,17 @@ func TestHandoffDeliverImportedByAgent(t *testing.T) {
 // as `vincent issue close` and `issue comment` would make them. An agent
 // that is not the handoff's task stays refused.
 func TestHandoffDeliverImportedUnderAGrant(t *testing.T) {
+	// Jira writes back as GitHub does (task 142.5).
+	for _, provider := range []string{"github", "jira"} {
+		t.Run(provider, func(t *testing.T) { testHandoffDeliverImportedUnderAGrant(t, provider) })
+	}
+}
+
+func testHandoffDeliverImportedUnderAGrant(t *testing.T, provider string) {
 	h := newActionHarness(t)
 	ctx := t.Context()
 	iss, _, err := h.store.UpsertRemoteIssue(ctx, store.RemoteIssue{
-		ProjectID: h.projectID, Provider: "github", RemoteKey: "gh-1", Repo: "o/r", Number: 1,
+		ProjectID: h.projectID, Provider: provider, RemoteKey: "gh-1", Repo: "o/r", Number: 1,
 		Title: "imported", State: issuestate.Open,
 	}, issuestate.Sync)
 	if err != nil {

@@ -139,7 +139,7 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	// still shows, holds the local state (task 130.10): applying GitHub's
 	// here would revert a human's change as "GitHub wins" on the tick before
 	// the drain sends it, or on the tick after it gave up.
-	held, err := holdsLocalStateTx(ctx, tx, id, GitHubStateOf(state, reason))
+	held, err := holdsLocalStateTx(ctx, tx, id, RemoteStateOf(state, reason))
 	if err != nil {
 		return nil, err
 	}

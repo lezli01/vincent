@@ -4,13 +4,9 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/store"
 )
-
-// providerJira is issue_remotes.provider for an issue imported from Jira
-// (task 142, #896). Nothing imports one yet; the renderer knows its shape so
-// a client never has to.
-const providerJira = "jira"
 
 // SourceRef is how an imported issue's reference reads (task 142.8): the
 // daemon renders it so a client prints it and never builds one from a
@@ -35,7 +31,7 @@ type SourceRef struct {
 // reads as repo#number, or its key when it has no number.
 func RenderSource(provider, repo string, number int, key string) SourceRef {
 	switch provider {
-	case providerGitHub:
+	case issueprovider.GitHub:
 		if key == "" && number > 0 {
 			key = strconv.Itoa(number)
 		}
@@ -45,7 +41,7 @@ func RenderSource(provider, repo string, number int, key string) SourceRef {
 			short = "gh#" + strconv.Itoa(number)
 		}
 		return SourceRef{Key: key, Ref: ref, ShortRef: short, ProviderName: "GitHub"}
-	case providerJira:
+	case issueprovider.Jira:
 		return SourceRef{Key: key, Ref: key, ShortRef: key, ProviderName: "Jira"}
 	}
 	ref := key
@@ -69,7 +65,7 @@ func repoRef(repo string, number int) string {
 // and every other provider has none, which RenderSource fills from the
 // number. Nil-safe.
 func RemoteKey(rem *store.IssueRemote) string {
-	if rem == nil || rem.Provider == providerGitHub {
+	if rem == nil || rem.Provider == issueprovider.GitHub {
 		return ""
 	}
 	return store.RemotePayloadKey(rem.RemoteJSON)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -16,10 +17,6 @@ import (
 // A task created from a vincent issue (spec §5.6, §13.2, task 130.7): the
 // `issue_id` create field, the task DTO's `issue` object, and the
 // `github_issue` the DTO derives from an imported issue's snapshot.
-
-// issueProviderGitHub is issue_remotes.provider for a GitHub import; the
-// constant internal/issues spells the same value with is unexported.
-const issueProviderGitHub = "github"
 
 // taskIssueResponse is the issue a task was created from, as the task DTO
 // carries it (§5.3). It is read from the live issue while the link holds and
@@ -63,7 +60,7 @@ func taskGitHubIssue(t *store.Task) *github.Issue {
 		return t.GitHubIssue
 	}
 	snap := t.Issue
-	if snap == nil || snap.Remote == nil || snap.Remote.Provider != issueProviderGitHub || snap.Remote.Number < 1 {
+	if snap == nil || snap.Remote == nil || snap.Remote.Provider != issueprovider.GitHub || snap.Remote.Number < 1 {
 		return nil
 	}
 	rem := snap.Remote
@@ -93,7 +90,7 @@ func taskGitHubIssue(t *store.Task) *github.Issue {
 // ok is false for a task with neither, including one from a local issue.
 func taskGitHubRef(t *store.Task) (repo string, number int, ok bool) {
 	if snap := t.Issue; snap != nil && snap.Remote != nil {
-		if snap.Remote.Provider == issueProviderGitHub && snap.Remote.Number > 0 {
+		if snap.Remote.Provider == issueprovider.GitHub && snap.Remote.Number > 0 {
 			return snap.Remote.Repo, snap.Remote.Number, true
 		}
 		return "", 0, false

@@ -47,6 +47,16 @@ list with the user-facing context a commit subject cannot carry.
   set; GitHub issues render, export and write exactly as before apart from the
   added key.
 
+- **A Jira issue's state change is written back and guarded like a
+  GitHub one.** Whether an imported issue writes back is now a property of
+  its provider rather than a check for GitHub: a human close or reopen of a
+  live Jira import, and a granted handoff's close or comment on one, are
+  queued for Jira, and an ungranted agent's is refused
+  `forge_write_needs_human` exactly as for GitHub. No Jira writer exists yet,
+  so those writes wait as pending (`no_client`) and are never failed; no
+  Jira issue is imported yet either (task 142.5, #901). Nothing changes for
+  a GitHub project.
+
 - **The daemon names an imported issue's source.** An issue's `source` — on
   `GET /v1/issues`, `GET /v1/issues/{id}` and a task's `issue` — now carries
   `key`, `ref` (`owner/repo#142`), `short_ref` (`gh#142`) and
