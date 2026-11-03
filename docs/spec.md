@@ -206,6 +206,7 @@ A registered local git repository.
 | `default_workflow` | optional workflow name preselected in task creation |
 | `max_parallel_tasks` | per-project cap; `null` = no per-project limit (global cap still applies) |
 | `branch_template` | *added 2026-08-13 (task 001).* Optional branch-naming template for this project; `null` inherits `config.yaml`'s `branch_template`, and an unset config means the built-in name. Parsed when written, so a broken template fails at `PATCH /v1/projects/{id}` rather than at every task creation |
+| `issue_source` | *added 2026-11-03 (task 142.6, issue #902).* The project's issue-source binding: `provider` is `derive` (the default, and every project registered before it), `none`, `github` or `jira`; `jira` carries `{ site, project_key, jql, mapping }`. `effective` is the daemon's resolution of `derive` against `origin` — `github` for a github.com remote, `none` otherwise — served so no client derives it. Stored on the project row and edited only through the project routes; **never read from the repository** (task 142 decision 5.2). No field holds a credential. Rules and the rebind are §5.6 |
 
 Registering a project performs validation only (path exists, is a git repo, worktrees
 supported). The repo itself is never modified by registration.
@@ -1359,6 +1360,39 @@ tick, as actor `sync`. Three rules it settled:
   names a different repo stops that project's sync with reason
   `origin_changed` and never re-keys an issue; a rename GitHub redirects is
   followed through the `node_id` match instead.
+
+*Amended 2026-11-03 (task 142.6, issue #902; task 142 decision 5).* A
+project's **issue source is an explicit binding** (§5.1 `issue_source`),
+generalising the sticky repo binding above; one source per project still
+holds (task 142 decision 6).
+
+- **Effective provider.** `derive` resolves to `github` when `origin` is a
+  github.com remote and to `none` otherwise — exactly the behaviour before the
+  binding existed. `none`, `github` and `jira` pin it. `github` on a
+  non-github.com origin is allowed and syncs to `not_github`.
+- **Validation.** `jira` needs a site and a project key. The site is an
+  absolute `https://` base URL — `http://` only on `localhost`, 127.0.0.0/8 or
+  `::1` — with no userinfo, path, query or fragment, stored with a lower-cased
+  host and no trailing slash. The key is an uppercase letter then uppercase
+  letters, digits or underscores. `jql` is an optional single-line narrowing
+  clause without `ORDER BY`, ANDed after the project by the Jira client.
+  `mapping` must decode strictly into the mapping configuration. Any other
+  provider clears the Jira fields. A refusal is `400 validation_failed` naming
+  the field. The Jira credential is never stored: it comes from `JIRA_USER`
+  and `JIRA_API_TOKEN` in the daemon's environment.
+- **The GitHub importer honours it.** A project bound to `none` or `jira` makes
+  no GitHub issue or comment call and records the sync reason
+  `source_not_github`; pull-request linking is unaffected. A `jira` binding
+  keeps that reason until Jira sync is scheduled (task 142.7).
+- **Rebind.** A change to the effective provider, the Jira site or the Jira
+  project key — including by re-pointing `path` at another origin — is applied
+  in the project update's own transaction: the old provider's live remotes are
+  marked `missing` (which also stops write-back to them), the project's
+  `issue_sync_state` row is deleted, and each touched issue announces
+  `issue.updated {changed: ["remote_status"]}` as actor `sync`. No issue is
+  deleted, and binding back re-imports and resets them to live. A change to
+  only `jql` or `mapping` is not a rebind; an issue that leaves the narrowed
+  set is marked `missing` by the sweep (task 142 decision 9.11).
 
 *Amended 2026-10-03 (task 130.16, issue #675; task 130 decision 24).* The
 **discussion thread** exists. An issue's comments are listed oldest first and
@@ -9913,10 +9947,20 @@ GET    /v1/projects                     list. *Amended 2026-09-05 (issue #324):*
                                         default shape; any other value is 400
                                         validation_failed; a failed count is `stats: null`
                                         with a warn log, never a 500
-POST   /v1/projects                     { path, name?, default_branch?, default_workflow?, max_parallel_tasks? }
+POST   /v1/projects                     { path, name?, default_branch?, default_workflow?, max_parallel_tasks?,
+                                        branch_template?, issue_source? }
+                                        *Amended 2026-11-03 (task 142.6):* `issue_source` is
+                                        { provider: derive|none|github|jira, jira?: { site,
+                                        project_key, jql?, mapping? } }; absent or null derives
+                                        it. Every project object carries `issue_source`
+                                        { provider, effective, jira|null } (§5.1, §5.6)
 GET    /v1/projects/{id}                *Amended 2026-10-04 (task 132.1):* `?stats=true` as on
                                         the list
 PATCH  /v1/projects/{id}                any mutable field, incl. path re-pointing
+                                        *Amended 2026-11-03 (task 142.6):* `issue_source`
+                                        replaces the whole binding; null resets it to derive.
+                                        A rebind marks the old source's remotes `missing` and
+                                        drops the sync row in the same transaction (§5.6)
 DELETE /v1/projects/{id}                hard-deletes the project and its task history (rows);
                                         only when no non-archived tasks; ?force first archives
                                         them (worktrees force-removed; refused while any task
@@ -10397,6 +10441,10 @@ GET    /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8, issue #66
                                         `origin_changed`, or a §13.2 GitHub reason such as
                                         `rate_limited`). Sync-status vocabulary, not a §18
                                         task reason. A read; it never calls GitHub.
+                                        *Amended 2026-11-03 (task 142.6):* also
+                                        `source_not_github` for a project bound to none or
+                                        jira, and `site?`, the bound Jira site, so a binding
+                                        entered on the wrong site shows wherever sync does
                                         *Amended 2026-10-03 (task 130.10):* also
                                         { writes_pending, writes_failed, writes_conflict } —
                                         the imported issues whose newest state write-back is
@@ -12406,6 +12454,12 @@ CREATE TABLE projects (
   default_branch      TEXT NOT NULL,
   default_workflow    TEXT,
   max_parallel_tasks  INTEGER,                -- NULL = unlimited (global cap still applies)
+  -- added 2026-11-03 (task 142.6, migration 0051): the issue-source binding (§5.6)
+  issue_provider      TEXT NOT NULL DEFAULT '', -- '' = derive from origin; none | github | jira
+  jira_site           TEXT NOT NULL DEFAULT '', -- set only beside jira
+  jira_project_key    TEXT NOT NULL DEFAULT '',
+  jira_jql            TEXT NOT NULL DEFAULT '', -- optional narrowing clause
+  jira_mapping_json   TEXT NOT NULL DEFAULT '', -- jiramap.Config override; '' = defaults
   created_at          TEXT NOT NULL,          -- RFC3339 UTC throughout
   updated_at          TEXT NOT NULL
 );
