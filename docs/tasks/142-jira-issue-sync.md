@@ -230,26 +230,35 @@ parts; 142.3 settles the Jira facts against a real site.
 
 1. **Closed iff `statusCategory.key == "done"`**, never from `resolution`.
    State is a per-project workflow, and team-managed projects do not support
-   resolution.
+   resolution. *Beaten:* deriving closed from a set `resolution`, which a
+   team-managed project never sets and a company-managed workflow can set on
+   an open status.
 2. **The reason comes from configurable resolution sets.** Duplicate is
    `Duplicate`; not planned is `Won't do`, `Won't Fix`, `Cannot Reproduce`,
    `Incomplete` or `Declined`; anything else, or none, is `completed`.
 3. **Write-back picks from the transitions available now**, with an optional
    per-binding override map, and fails with `no_transition`,
    `ambiguous_transition` or `transition_needs_fields` rather than guess.
+   *Beaten:* guessing a transition by status name, which picks the wrong edge
+   in any workflow with two paths into the same category.
 4. **`remote_key` is the Jira issue id**, which is stable across a move; the
    key is not. The daemon renders the display reference (`PROJ-12`), and
    clients print `source.ref` (142.8, #904).
 5. **Bodies are rendered from `renderedFields`/`renderedBody` HTML to
    Markdown**, not by walking ADF, so one converter would also cover a later
-   Data Center leg. Outgoing comments are wrapped as minimal ADF.
+   Data Center leg. Outgoing comments are wrapped as minimal ADF. *Beaten:*
+   walking ADF, a node tree whose extensions and macros would need a renderer
+   of vincent's own and would not carry to Data Center's wiki markup.
 6. **Restricted-visibility comments are skipped** (privacy). *Proposed
-   default, open until #908 (open question 5).*
+   default, open until #908 (open question 5).* *Beaten:* mirroring them,
+   which would show a role- or group-restricted comment to everyone with the
+   vincent project.
 7. **No Duplicate issue link is written.**
 8. **A sweep 404 marks the issue `missing` and never deletes it.** Jira answers
    404 for deleted and forbidden alike and has no 410, so GitHub's "410
    deletes" rule has no safe analogue. *Proposed default, open until #908
-   (open question 4).*
+   (open question 4).* *Beaten:* deleting after a confirming probe, which
+   still cannot tell deleted from forbidden.
 9. **`kind` is seeded from `issuetype` on first import only**, narrowing task
    130 decision 15.4 for this provider. Priority stays local.
 10. **"In Progress" is not reflected in lanes.** Jira's `indeterminate`
