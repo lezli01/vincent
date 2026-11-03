@@ -52,6 +52,10 @@ func HTMLToMarkdown(src string, base *url.URL) string {
 type converter struct {
 	base *url.URL
 	memo map[*html.Node]bool
+	// bold and italic count the emphasis elements the walk is inside, so a
+	// nested mark of the same kind is not written twice and an italic inside
+	// bold is spelled so the TUI's parser can find both (review F8).
+	bold, italic int
 }
 
 // blockTags are the elements that start a block of their own. Anything not
@@ -402,9 +406,9 @@ func (c *converter) inline(b *strings.Builder, n *html.Node) {
 	case atom.Br:
 		b.WriteString("\n")
 	case atom.Strong, atom.B:
-		c.emphasis(b, n, "**")
+		c.emphasis(b, n, true)
 	case atom.Em, atom.I:
-		c.emphasis(b, n, "*")
+		c.emphasis(b, n, false)
 	case atom.Code, atom.Tt, atom.Kbd, atom.Samp:
 		codeSpan(b, n)
 	case atom.A:
@@ -436,10 +440,37 @@ func (c *converter) inlineString(n *html.Node) string {
 	return b.String()
 }
 
-// emphasis wraps n's content in mark. Whitespace at the content's edges is
-// moved outside the markers — `** bold**` is not emphasis in Markdown.
-func (c *converter) emphasis(b *strings.Builder, n *html.Node, mark string) {
+// emphasis wraps n's content in bold or italic marks. Whitespace at the
+// content's edges is moved outside the markers — `** bold**` is not emphasis
+// in Markdown.
+//
+// The TUI's parser (internal/tui/markdown.go emphasisAt) takes at most two
+// marks of a run and closes a span at the first matching delimiter, so the
+// marks are chosen to stay apart: an element inside one of its own kind adds
+// no marks at all, and an italic inside bold, or around it, is `_` rather
+// than `*` — `**a _b_**` and `_a **b**_` parse, `**a *b***` and `*a **b***`
+// do not.
+func (c *converter) emphasis(b *strings.Builder, n *html.Node, bold bool) {
+	if (bold && c.bold > 0) || (!bold && c.italic > 0) {
+		c.inlineKids(b, n)
+		return
+	}
+	mark := "**"
+	if bold {
+		c.bold++
+	} else {
+		mark = "*"
+		if c.bold > 0 || containsBold(n) {
+			mark = "_"
+		}
+		c.italic++
+	}
 	inner := c.inlineString(n)
+	if bold {
+		c.bold--
+	} else {
+		c.italic--
+	}
 	core := strings.TrimSpace(inner)
 	if core == "" {
 		b.WriteString(edgeSpace(inner))
@@ -448,15 +479,23 @@ func (c *converter) emphasis(b *strings.Builder, n *html.Node, mark string) {
 	if inner != strings.TrimLeft(inner, " \n") {
 		b.WriteString(" ")
 	}
-	if strings.HasPrefix(core, mark) && strings.HasSuffix(core, mark) && len(core) > 2*len(mark) {
-		// <b><b>x</b></b>: already wrapped once.
-		b.WriteString(core)
-	} else {
-		b.WriteString(mark + core + mark)
-	}
+	b.WriteString(mark + core + mark)
 	if inner != strings.TrimRight(inner, " \n") {
 		b.WriteString(" ")
 	}
+}
+
+// containsBold reports whether a strong or b element sits anywhere under n.
+func containsBold(n *html.Node) bool {
+	for k := n.FirstChild; k != nil; k = k.NextSibling {
+		if k.Type != html.ElementNode || dropped(k) {
+			continue
+		}
+		if k.DataAtom == atom.Strong || k.DataAtom == atom.B || containsBold(k) {
+			return true
+		}
+	}
+	return false
 }
 
 // codeSpan is inline code. The backtick run delimiting it is longer than any
