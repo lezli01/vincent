@@ -238,6 +238,12 @@ parts; 142.3 settles the Jira facts against a real site.
 2. **The reason comes from configurable resolution sets.** Duplicate is
    `Duplicate`; not planned is `Won't do`, `Won't Fix`, `Cannot Reproduce`,
    `Incomplete` or `Declined`; anything else, or none, is `completed`.
+   *Amended 2026-11-03 (142.2, #898):* one narrowing on the reason side.
+   When the resolution is null, a done status whose name is in the
+   not-planned set, or is `Cancelled`/`Canceled`, reads as `not_planned`. A
+   team-managed `Won't do → Cancelled` transition sets no resolution, and
+   without this the chooser's achieved reason and the next read-back would
+   disagree on every poll. A set resolution always wins over the status name.
 3. **Write-back picks from the transitions available now**, with an optional
    per-binding override map, and fails with `no_transition`,
    `ambiguous_transition` or `transition_needs_fields` rather than guess.
