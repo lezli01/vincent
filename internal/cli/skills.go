@@ -51,9 +51,10 @@ func newSkillsListCmd() *cobra.Command {
 			"The agent list is what is on disk. It can name agents vincent does not " +
 			"drive — one store serves every agent on the machine — and it can disagree " +
 			"with `npx skills list -g`, which reports the selection the CLI remembers " +
-			"rather than the links it left behind. copilot is listed as " +
-			"\"copilot (reads store)\" when ~/.copilot exists and the store holds the " +
-			"skill: it loads ~/.agents/skills itself, with no link.",
+			"rather than the links it left behind. copilot and codex read " +
+			"~/.agents/skills themselves, with no link, so each is listed as " +
+			"\"copilot (reads store)\" or \"codex (reads store)\" when its " +
+			"directory, ~/.copilot or ~/.codex, exists and the store holds the skill.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			statuses := skill.Detect(skill.Options{})

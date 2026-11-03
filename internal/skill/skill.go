@@ -87,8 +87,9 @@ type Link struct {
 	// between a copy that follows the store and one that does not.
 	Symlink bool `json:"symlink"`
 	// Store is an agent that reads `~/.agents/skills` directly (task
-	// 138.12): copilot, whenever `~/.copilot` exists and the store copy
-	// does. Path is then the store path, and nothing is linked.
+	// 138.12, #891): copilot or codex, whenever `~/.copilot` or `~/.codex`
+	// exists and the store copy does. Path is then the store path, and
+	// nothing is linked.
 	Store bool `json:"store,omitempty"`
 }
 

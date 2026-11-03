@@ -247,3 +247,20 @@ func TestSkillsListNamesCopilotReadingTheStore(t *testing.T) {
 		}
 	}
 }
+
+// TestSkillsListHelpNamesEveryStoreReader (review F1): the built-in help
+// names each agent `ls` can print as "(reads store)", the way
+// docs/reference/cli.md does, so the two cannot drift again.
+func TestSkillsListHelpNamesEveryStoreReader(t *testing.T) {
+	long := newSkillsListCmd().Long
+	for _, a := range skill.Adapters() {
+		if !skill.StoreResident(a) {
+			continue
+		}
+		for _, want := range []string{`"` + a + ` (reads store)"`, "~/." + a} {
+			if !strings.Contains(long, want) {
+				t.Errorf("ls help does not mention %s: %q", want, long)
+			}
+		}
+	}
+}
