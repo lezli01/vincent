@@ -27,7 +27,8 @@
 // issue's thread) and PlaceholderAdopter (task 035's backfill placeholders,
 // migration 0040, which only GitHub rows have).
 //
-// The package imports internal/store and internal/github, and neither may
-// import it back. The interface takes store.Project and store.IssueRemote
+// The package imports internal/store, internal/github, internal/gitx (for
+// RepoOf's `git remote get-url origin`) and internal/issuestate (the state
+// mapping), and neither store nor github may import it back. The interface takes store.Project and store.IssueRemote
 // directly rather than copying them.
 package issuesource
