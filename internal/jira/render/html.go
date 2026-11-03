@@ -30,9 +30,12 @@ func HTMLToMarkdown(src string, base *url.URL) string {
 	context := &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body}
 	nodes, err := html.ParseFragment(strings.NewReader(src), context)
 	if err != nil {
-		// A strings.Reader never fails, so this is unreachable; degrade to
-		// the text rather than invent an error the contract does not have.
-		return oneLine(src)
+		// The reader never fails, but the tree builder refuses input nested
+		// past its open-element limit (512 in x/net/html). Anyone who can
+		// edit a Jira body can produce that, so the fallback must keep the
+		// package's promises too: never the source itself, which would carry
+		// raw markup, script bodies and mention account ids in attributes.
+		return textOnly(src)
 	}
 	c := &converter{base: base, memo: map[*html.Node]bool{}}
 	out := strings.Join(c.blocks(nodes), "\n\n")
@@ -738,6 +741,40 @@ func paragraph(s string) string {
 }
 
 // oneLine collapses every run of whitespace, newlines included, to a space.
+// textOnly is the degraded conversion for input the tree builder refuses:
+// the text tokens alone, on one line, with every tag and attribute dropped
+// and the content of droppedTags skipped. html.Tokenizer has no depth limit,
+// so it accepts whatever ParseFragment rejected.
+func textOnly(src string) string {
+	z := html.NewTokenizer(strings.NewReader(src))
+	var b strings.Builder
+	skip := 0
+	for {
+		switch z.Next() {
+		case html.ErrorToken:
+			return oneLine(b.String())
+		case html.StartTagToken:
+			name, _ := z.TagName()
+			if droppedTags[atom.Lookup(name)] {
+				skip++
+			}
+			b.WriteByte(' ')
+		case html.EndTagToken:
+			name, _ := z.TagName()
+			if droppedTags[atom.Lookup(name)] && skip > 0 {
+				skip--
+			}
+			b.WriteByte(' ')
+		case html.SelfClosingTagToken:
+			b.WriteByte(' ')
+		case html.TextToken:
+			if skip == 0 {
+				b.Write(z.Text())
+			}
+		}
+	}
+}
+
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(s, " ", " ")), " ")
 }

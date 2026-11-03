@@ -161,6 +161,26 @@ func TestDeeplyNestedLists(t *testing.T) {
 	}
 }
 
+// TestPastTheTreeBuildersDepthLimit is review F1: x/net/html refuses input
+// nested past 512 open elements, and the fallback once returned the source
+// itself — raw markup, the script body and the mention's account id.
+func TestPastTheTreeBuildersDepthLimit(t *testing.T) {
+	const id = "557058:abc"
+	m := `<a href="/secure/ViewProfile.jspa?accountId=` + id + `" class="user-hover" data-account-id="` + id + `">Jane</a>`
+	for _, depth := range []int{509, 510, 600, 5000} {
+		in := strings.Repeat("<div>", depth) + "<p>hi " + m + "</p><script>alert(1)</script><style>p{}</style>"
+		got := HTMLToMarkdown(in, nil)
+		for _, bad := range []string{"<", id, "alert", "p{}"} {
+			if strings.Contains(got, bad) {
+				t.Errorf("depth %d: output %q contains %q", depth, got, bad)
+			}
+		}
+		if !strings.Contains(got, "hi") || !strings.Contains(got, "Jane") {
+			t.Errorf("depth %d: lost the text: %q", depth, got)
+		}
+	}
+}
+
 func goldenFixtures(t testing.TB) []string {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join("testdata", "*.html"))
