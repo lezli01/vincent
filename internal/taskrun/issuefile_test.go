@@ -55,8 +55,20 @@ func TestIssueFileMapping(t *testing.T) {
 				`"url":"https://github.com/lezli01/vincent/issues/200","createdAt":null,"state":"OPEN",` +
 				`"stateReason":null,"labels":[{"name":"enhancement"}],"author":{"login":"lezli01"},` +
 				`"comments":[],"id":13,"kind":"","priority":0,"source":{"provider":"github",` +
-				`"repo":"lezli01/vincent","number":200,"url":"https://github.com/lezli01/vincent/issues/200"}}`,
-			workflow.IssueEnv{ID: 13, Number: 200, URL: "https://github.com/lezli01/vincent/issues/200"},
+				`"repo":"lezli01/vincent","number":200,"url":"https://github.com/lezli01/vincent/issues/200",` +
+				`"key":"200"}}`,
+			workflow.IssueEnv{ID: 13, Number: 200, URL: "https://github.com/lezli01/vincent/issues/200", Key: "200"},
+		},
+		{
+			// Task 142.16: a Jira issue has no number, so both numbers are
+			// null, and source carries its key and browse URL.
+			"jira", &store.Task{Issue: jiraSnapshot()},
+			`{"number":null,"title":"Fix the login page","body":"",` +
+				`"url":"https://example.atlassian.net/browse/PROJ-12","createdAt":null,"state":"OPEN",` +
+				`"stateReason":null,"labels":[],"author":{"login":"alice"},` +
+				`"comments":[],"id":14,"kind":"bug","priority":0,"source":{"provider":"jira",` +
+				`"repo":"","number":null,"url":"https://example.atlassian.net/browse/PROJ-12","key":"PROJ-12"}}`,
+			workflow.IssueEnv{ID: 14, URL: "https://example.atlassian.net/browse/PROJ-12", Key: "PROJ-12"},
 		},
 		{
 			"tombstoned remote", &store.Task{Issue: tomb},
@@ -73,8 +85,8 @@ func TestIssueFileMapping(t *testing.T) {
 				`"stateReason":null,"labels":[{"name":"enhancement"},{"name":"area/api"}],` +
 				`"author":{"login":"lezli01"},"comments":[],"id":null,"kind":"","priority":0,` +
 				`"source":{"provider":"github","repo":"lezli01/vincent","number":200,` +
-				`"url":"https://github.com/lezli01/vincent/issues/200"}}`,
-			workflow.IssueEnv{Number: 200, URL: "https://github.com/lezli01/vincent/issues/200"},
+				`"url":"https://github.com/lezli01/vincent/issues/200","key":"200"}}`,
+			workflow.IssueEnv{Number: 200, URL: "https://github.com/lezli01/vincent/issues/200", Key: "200"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

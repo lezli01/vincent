@@ -136,15 +136,20 @@ func TestEnv(t *testing.T) {
 func TestEnvIssueVariables(t *testing.T) {
 	const file = "/repo/.git/worktrees/7/vincent-issue.json"
 	url := "https://github.com/o/r/issues/12"
+	browse := "https://example.atlassian.net/browse/PROJ-12"
 	for _, tc := range []struct {
 		name string
 		ie   IssueEnv
 		want map[string]string
 	}{
 		{"unlinked", IssueEnv{}, map[string]string{}},
-		{"imported", IssueEnv{File: file, ID: 4, Number: 12, URL: url}, map[string]string{
+		{"imported", IssueEnv{File: file, ID: 4, Number: 12, URL: url, Key: "12"}, map[string]string{
 			"VINCENT_ISSUE_FILE": file, "VINCENT_ISSUE_ID": "4",
-			"VINCENT_ISSUE_NUMBER": "12", "VINCENT_ISSUE_URL": url,
+			"VINCENT_ISSUE_NUMBER": "12", "VINCENT_ISSUE_URL": url, "VINCENT_ISSUE_KEY": "12",
+		}},
+		{"jira", IssueEnv{File: file, ID: 5, URL: browse, Key: "PROJ-12"}, map[string]string{
+			"VINCENT_ISSUE_FILE": file, "VINCENT_ISSUE_ID": "5",
+			"VINCENT_ISSUE_URL": browse, "VINCENT_ISSUE_KEY": "PROJ-12",
 		}},
 		{"local", IssueEnv{File: file, ID: 4}, map[string]string{
 			"VINCENT_ISSUE_FILE": file, "VINCENT_ISSUE_ID": "4",
@@ -166,6 +171,28 @@ func TestEnvIssueVariables(t *testing.T) {
 				t.Errorf("issue variables = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestEnvIssueKeyOrder (task 142.16): a GitHub issue's variables keep their
+// order, and VINCENT_ISSUE_KEY comes after them.
+func TestEnvIssueKeyOrder(t *testing.T) {
+	const file = "/repo/.git/worktrees/7/vincent-issue.json"
+	url := "https://github.com/o/r/issues/12"
+	rc := testContext()
+	rc.IssueEnv = IssueEnv{File: file, ID: 4, Number: 12, URL: url, Key: "12"}
+	var got []string
+	for _, kv := range Env(rc) {
+		if strings.HasPrefix(kv, "VINCENT_ISSUE_") {
+			got = append(got, kv)
+		}
+	}
+	want := []string{
+		"VINCENT_ISSUE_FILE=" + file, "VINCENT_ISSUE_ID=4", "VINCENT_ISSUE_NUMBER=12",
+		"VINCENT_ISSUE_URL=" + url, "VINCENT_ISSUE_KEY=12",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("issue variables = %v, want %v", got, want)
 	}
 }
 
