@@ -9,11 +9,26 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
-## [Unreleased]
+## [0.12.0](https://github.com/lezli01/vincent/compare/v0.11.0...v0.12.0) (2026-11-03)
 
 ### Added
 
-- A chat can be opened on an issue (`T` on the TUI's issues list or issue
+- **A claude run waits for its own background work.** A chat turn or agent
+  step on `claude` that ended its turn while a background shell, subagent or
+  monitor was still running used to be closed at that `result`, which killed
+  the work and left a "once it finishes I'll …" message as the outcome. The
+  run now stays open until the work reports back and the agent answers again,
+  bounded by the new `defaults.background_wait` (default `30m`, `0` restores
+  the old behaviour), which counts against `agent_timeout`. Tokens are summed
+  across the run's results. codex, cursor and copilot ignore the key.
+  ([#739](https://github.com/lezli01/vincent/pull/739))
+- **Sync a project's issues from the issues list.** `S` on the TUI's issues
+  list asks the daemon to sync the selected project's issues from GitHub now —
+  exactly `vincent issue sync` — and says whether the sync was requested, is
+  off, or failed. It is offered only on a project with a usable GitHub
+  integration. `R` still only re-reads what the daemon holds.
+  ([#831](https://github.com/lezli01/vincent/pull/831))
+- **Chats on an issue.** A chat can be opened on an issue (`T` on the TUI's issues list or issue
   detail, `vincent chat start --issue ID`, `POST /v1/chats` with
   `issue_id`). It works in the issue's main worktree on its main branch,
   moves the issue to in progress, starts from the issue's title, body and
@@ -23,12 +38,14 @@ list with the user-facing context a commit subject cannot carry.
   Main worktree section name that chat, and the chat workspace offers both
   `ctrl+q` close and `ctrl+t` hand-off. Every `chat.*` event of such a chat
   carries `issue_id`.
+  ([#886](https://github.com/lezli01/vincent/pull/886), [#887](https://github.com/lezli01/vincent/pull/887))
 - **A `copilot-review` example, and copilot in the docs.** `vincent workflow
   init --from copilot-review` hands over a restricted GitHub Copilot review
   that writes `REVIEW.md` and commits it from a command step. The agents
   guide has a GitHub Copilot section — install, `copilot login` or a token,
   premium requests rather than dollars, restricted mode with no shell on
   every OS — and every page that lists or compares adapters names copilot.
+  ([#884](https://github.com/lezli01/vincent/pull/884))
 - **Copilot runs `restricted` steps.** A step with
   `permission_mode: restricted` on `copilot` no longer fails with
   `restricted_unsupported`: it runs with
@@ -40,6 +57,7 @@ list with the user-facing context a commit subject cannot carry.
   on a task that runs `restricted` now opens on copilot too, and
   `vincent agents` and `vincent doctor` no longer note `no restricted mode`
   for it.
+  ([#883](https://github.com/lezli01/vincent/pull/883))
 
 - **A privacy policy.** The documentation site publishes
   [`privacy.html`](https://lezli01.is-a.dev/vincent/latest/privacy.html):
@@ -48,6 +66,7 @@ list with the user-facing context a commit subject cannot carry.
   protected, which network calls the daemon makes on its own and how to turn
   them off, and how to delete everything. The WinGet manifest now carries it
   as `PrivacyUrl`, which Microsoft's policy 1.5.1 requires.
+  ([#881](https://github.com/lezli01/vincent/pull/881))
 - **GitHub Copilot CLI is a fourth agent.** A workflow step can name
   `agent: copilot` and run the standalone `copilot` CLI headlessly, with its
   `--reasoning-effort` values offered as efforts and vincent's MCP tools
@@ -60,6 +79,7 @@ list with the user-facing context a commit subject cannot carry.
   `container.mount_agent_config` `~/.copilot` is mounted — a containerized
   copilot step needs plain-text credentials there or a token through
   `environment`, since the OS credential store does not cross the mount.
+  ([#874](https://github.com/lezli01/vincent/pull/874), [#875](https://github.com/lezli01/vincent/pull/875), [#876](https://github.com/lezli01/vincent/pull/876))
 
 - **Copilot can hold a chat.** A chat on `copilot` resumes the CLI's own
   session with `--resume=<id>`, so each turn sees the turns before it, and
@@ -69,6 +89,7 @@ list with the user-facing context a commit subject cannot carry.
   records its own share: the totals minus the previous turn's on the same
   session. Spend that another Copilot client adds to the same session
   between turns counts toward the next turn.
+  ([#877](https://github.com/lezli01/vincent/pull/877))
 
 - **Published skills report copilot reading the store.** GitHub Copilot CLI
   loads `~/.agents/skills` itself, so `vincent skills ls`, `vincent doctor`
@@ -78,6 +99,7 @@ list with the user-facing context a commit subject cannot carry.
   nothing: it reports a skill already in the store as served, and exits 1 for
   one that is not, saying to install it for another agent first. Copilot
   with other agents installs for those as before.
+  ([#873](https://github.com/lezli01/vincent/pull/873))
 
 - **Copilot chats take `@` file mentions, and say they invoke no skills.**
   `GET /v1/agents` and `vincent agents` now report copilot's `@path` mention
@@ -88,6 +110,7 @@ list with the user-facing context a commit subject cannot carry.
   `/name` in a headless prompt to the model rather than running the skill
   itself, so vincent offers no skill picker for it. A `/name` you type still
   reaches the CLI unchanged.
+  ([#878](https://github.com/lezli01/vincent/pull/878))
 
 - **Handoffs in the TUI.** The issues board shows a hand-off card's delivery
   kind and its handoff marker (`claimed (H7)`, `waiting`, `delivered`, with
@@ -100,6 +123,7 @@ list with the user-facing context a commit subject cannot carry.
   issue with its outcome, and a handoff's task shows its items on the
   Overview. The API adds `handoff_id` to tasks, `handoffs` to the issue
   detail and `paused` to the handoff marker.
+  ([#872](https://github.com/lezli01/vincent/pull/872))
 
 - **Example handoff workflows.** Four new examples run as handoffs
   (`role: handoff`) over the issues whose work is ready: `pr-per-issue`
@@ -110,6 +134,7 @@ list with the user-facing context a commit subject cannot carry.
   and `notify-handoff` posts the handoff to a webhook. Each has a
   ready-to-copy, unarmed trigger under `docs/examples/triggers/`. Install
   one with `vincent workflow init <name> --from <name>`.
+  ([#872](https://github.com/lezli01/vincent/pull/872))
 
 - **Triggers can start handoffs.** A trigger's new `action.type:
   start_handoff` replays `POST /v1/handoffs` with a `workflow`, and either
@@ -123,6 +148,7 @@ list with the user-facing context a commit subject cannot carry.
   trigger apply` refuses a staged file that does it. A `type: issues`
   trigger can also opt in to `handoff_changed`, fired when a handoff item's
   outcome moves, with `outcome`, `from_outcome`, `handoff_id` and `task_id`.
+  ([#871](https://github.com/lezli01/vincent/pull/871))
 
 - **See where each issue stands toward a handoff.** Every issue now carries
   a derived handoff marker — `pending` (a handoff may claim it now),
@@ -132,6 +158,7 @@ list with the user-facing context a commit subject cannot carry.
   task. `vincent issue ls` shows it inside the `LANE` cell
   (`hand_off claimed H7`), `vincent issue show` prints a `handoff` line, and
   `--handoff` / `?handoff=` (repeatable) filter by it.
+  ([#871](https://github.com/lezli01/vincent/pull/871))
 
 - **Record what became of each handoff item.** `vincent handoff deliver`,
   `return`, `wait` and `release` (over `POST
@@ -146,6 +173,7 @@ list with the user-facing context a commit subject cannot carry.
   delivered; `release` drops it. Each call is all or nothing. When a
   handoff's task settles, every item still unresolved is now released
   (`outcome_by: settle`) instead of keeping its claim.
+  ([#870](https://github.com/lezli01/vincent/pull/870))
 
 - **A handoff's grant now lets its step write to GitHub.** A live handoff
   whose grant you gave names a capability may, from its own task, close,
@@ -156,6 +184,7 @@ list with the user-facing context a commit subject cannot carry.
   in place, never twice. On that task's step MCP endpoint the granted
   pull-request writes are listed as tools (`task_github_pull_merge` and the
   rest), and nowhere else.
+  ([#870](https://github.com/lezli01/vincent/pull/870))
 
 - **Handoff workflows get their items.** A workflow declaring `role: handoff`
   is the one a handoff runs: its steps render `.Handoff` — the handoff's id,
@@ -172,6 +201,7 @@ list with the user-facing context a commit subject cannot carry.
   `--task` on a handoff task binds its real items. `GET /v1/workflows` and
   the workflow definition carry `role`, and `GET /v1/handoffs/{id}` carries
   the handoff's `file`.
+  ([#870](https://github.com/lezli01/vincent/pull/870))
 
 - **Start a handoff over finished issues.** `POST /v1/handoffs` claims issues
   in the `hand_off` lane for one integration task running the workflow you
@@ -183,6 +213,7 @@ list with the user-facing context a commit subject cannot carry.
   recorded, and only a human may give one: an agent's handoff is grant-less,
   and a grant from one is refused `grant_needs_human`. Nothing acts on a grant
   yet.
+  ([#851](https://github.com/lezli01/vincent/pull/851))
 
 - **You decide when an issue is ready to hand off.** A workflow may declare
   `hand_off: explicit`: when its task finishes, the issue waits in
@@ -196,6 +227,7 @@ list with the user-facing context a commit subject cannot carry.
   upgrading changes no issue's lane — except an issue whose only finished work
   is a side task that never merged back, which now waits in `in_progress`
   rather than showing as `hand_off` with no delivery to hand off.
+  ([#851](https://github.com/lezli01/vincent/pull/851))
 
 - **The TUI opens on your first main tab, and closing a screen takes you back
   to your tab.** vincent now starts on the first entry of `tui.tabs` — the
@@ -206,6 +238,7 @@ list with the user-facing context a commit subject cannot carry.
   requests, triggers, the new-task form, the archives, a list that is not a
   tab) returns to the main tab you came from rather than always to the board,
   and the task board itself is left by `esc` when `tui.tabs` does not list it.
+  ([#809](https://github.com/lezli01/vincent/pull/809))
 
 - **The TUI's main tabs are drawn in the app header, and a click switches.**
   On a main tab the header shows `Issues │ Tasks` (and `│ Chats` when
@@ -215,6 +248,7 @@ list with the user-facing context a commit subject cannot carry.
   go first, then the labels shorten to initials, and the project name
   truncates last. The task board is now titled **Tasks**, and the task
   workspace's breadcrumb starts `Tasks ›` instead of `Board ›`.
+  ([#808](https://github.com/lezli01/vincent/pull/808))
 
 - **Switch between the TUI's main tabs with `tab` and `shift+tab`.** On the
   task board, the issues list and the chats board — whichever `tui.tabs`
@@ -225,6 +259,7 @@ list with the user-facing context a commit subject cannot carry.
   no longer leaves it for the board, and the palette gains a **tasks** screen
   row. A `tui.tabs` change saved from the config editor applies on the next
   press.
+  ([#806](https://github.com/lezli01/vincent/pull/806))
 
 - **A `tui.tabs` setting for the TUI's main tabs.** `config.yaml` accepts
   `tui.tabs`, an ordered list drawn from `issues`, `tasks` and `chats`,
@@ -235,6 +270,7 @@ list with the user-facing context a commit subject cannot carry.
   the TUI's config editor. Landing on the first tab follows in a later
   release. A daemon
   older than this one refuses a file that sets it.
+  ([#805](https://github.com/lezli01/vincent/pull/805))
 
 - **See who holds an issue's main worktree, and ask for a side task, in the
   TUI.** An issues-board card is now worded for its lane: in progress it names
@@ -249,6 +285,7 @@ list with the user-facing context a commit subject cannot carry.
   The issue API serves `main_worktree.occupant_state`, `side_active` and
   `merge_backs_pending`, every task carries `merge_source_task_id`, and
   `vincent task show` prints a merge-back's `merge-back of #S`.
+  ([#773](https://github.com/lezli01/vincent/pull/773))
 
 - **Ask for a side task from the CLI, triggers and chat handoff.** `vincent
   task add --issue N --separate-worktree` creates a side task that runs now in
@@ -263,6 +300,7 @@ list with the user-facing context a commit subject cannot carry.
   a main branch is still a side task merged back on `block` unless it asks for
   `agent`, and on an issue with no main branch yet `merge_back` is ignored and
   the chat's branch becomes the main branch, where it used to be a `400`.
+  ([#772](https://github.com/lezli01/vincent/pull/772))
 
 - **A finished side task merges itself back into its issue.** When a side
   task (`merge_back` on `POST /v1/tasks`) finishes with commits, vincent
@@ -273,6 +311,7 @@ list with the user-facing context a commit subject cannot carry.
   new block reasons, `merge_source_missing` and `merge_target_missing`, say
   when there is nothing to merge or nowhere to merge it, and an issue can no
   longer be deleted while one of its side tasks is unfinished.
+  ([#771](https://github.com/lezli01/vincent/pull/771))
 
 - **Working an issue, documented.** A new guide,
   [Working an issue](docs/guides/issues.md), explains the issues board's four
@@ -280,6 +319,7 @@ list with the user-facing context a commit subject cannot carry.
   it, side tasks and their two merge-back modes, what to do when a merge-back
   blocks, and the same choices from the API, MCP, triggers and a chat handoff.
   The FAQ answers "my issue's task is `queued`, but slots are free".
+  ([#773](https://github.com/lezli01/vincent/pull/773))
 
 - **The TUI's issues screen is a board of lanes.** The selected project's
   issues are laid out in stacked sections — open, in progress, hand-off and
@@ -288,6 +328,7 @@ list with the user-facing context a commit subject cannot carry.
   line above them. `done` is hidden when the screen opens and `s` shows or
   hides it, replacing the open → closed → all cycle. `←`/`→` fold the section
   you are in and `C`/`O` fold all of them.
+  ([#769](https://github.com/lezli01/vincent/pull/769))
 - **Issues say which lane they are in.** Every issue on the API now carries
   `lane` — `open`, `in_progress`, `hand_off` (its work finished and is waiting
   for you to close it) or `done` (closed) — and `attention`, true while one of
@@ -295,6 +336,7 @@ list with the user-facing context a commit subject cannot carry.
   `GET /v1/projects?stats=true` counts issues per lane under
   `stats.issues.lanes`. Both are derived from the issue's root tasks on every
   read, never stored.
+  ([#768](https://github.com/lezli01/vincent/pull/768))
 - **Event streams say when an issue changes lane.** A new durable event,
   `issue.lane_changed` (`{id, from, to, task_id?, by?}`), is written in the
   same commit as the task write, close or reopen that moved an issue's lane,
@@ -303,6 +345,7 @@ list with the user-facing context a commit subject cannot carry.
   a client can tell which issue a task event concerns. The TUI issues list
   uses this to re-list only when a shown issue's task changes, instead of on
   every task event.
+  ([#769](https://github.com/lezli01/vincent/pull/769))
 - **An `issues` trigger can fire when an issue changes lane.** Name
   `lane_changed` in `match.action` and the trigger fires whenever an issue
   moves between `open`, `in_progress`, `hand_off` and `done`, with
@@ -311,12 +354,14 @@ list with the user-facing context a commit subject cannot carry.
   work is ready for you. A move a task caused carries `by: task` and
   `task_id`. Triggers that name no `match.action` keep firing on exactly the
   events they did before.
+  ([#770](https://github.com/lezli01/vincent/pull/770))
 - **`vincent issue ls` shows the lane.** A `LANE` column follows `STATE`, with
   a trailing ` !` when one of the issue's tasks is waiting on you, and
   `--lane` (repeatable) filters by it — `--lane done` is every closed issue.
   `vincent issue show` prints the lane too. Over MCP, `issue_list` takes
   `lane`, and a repeatable query parameter such as `lane`, `state` or `label`
   can now be passed as an array of strings to repeat it.
+  ([#769](https://github.com/lezli01/vincent/pull/769))
 - **An issue has a main branch.** A task created from an issue with
   `issue_id` is now the issue's main task: the first one's branch becomes the
   issue's main branch, and every later main task of the issue runs on it, in
@@ -328,6 +373,7 @@ list with the user-facing context a commit subject cannot carry.
   `main_worktree_occupant_task_id`. A chat handed off with `issue_id` becomes
   the main task, or a side task once the issue has a main branch. Tasks
   created before this change keep working exactly as they did.
+  ([#768](https://github.com/lezli01/vincent/pull/768))
 - **At most one main task of an issue runs at a time.** The scheduler keeps
   an issue's next main task queued while another main task of the issue has
   started and not finished — including one that is blocked, paused or
@@ -335,6 +381,7 @@ list with the user-facing context a commit subject cannot carry.
   worktree. The waiting task shows no new state or reason; the issue's
   `main_worktree.occupant_task_id` names what it waits on. Side tasks and
   tasks of other issues are not held.
+  ([#769](https://github.com/lezli01/vincent/pull/769))
 - **An issue's next main task picks up where the last one stopped.** Once a
   main task of an issue finishes, the next one starts as soon as it is
   admitted — no longer waiting for the earlier task to be archived — in the
@@ -347,6 +394,7 @@ list with the user-facing context a commit subject cannot carry.
   a main task keeps the issue's branch while a later main task still uses it.
   Deleting an issue answers `409 issue_has_live_main_task` while one of its
   main tasks has not finished.
+  ([#770](https://github.com/lezli01/vincent/pull/770))
 - **Side tasks start from the issue's main branch.** A task created with
   `merge_back` is now cut from the issue's main branch rather than the
   project's base, without fetching or fast-forwarding it — so admitting one
@@ -354,6 +402,7 @@ list with the user-facing context a commit subject cannot carry.
   branch's tip as its `base_sha`. `base_branch` beside `merge_back` must name
   the main branch, and the main branch must already exist in git (its first
   main task has been started), or `POST /v1/tasks` answers `400`.
+  ([#769](https://github.com/lezli01/vincent/pull/769))
 - **The TUI opens on the project you mean.** `vincent --project <name|id>`
   opens the TUI on that project. Without it, launching `vincent` inside a
   registered project's checkout, or inside a task's or chat's worktree, opens
@@ -362,6 +411,7 @@ list with the user-facing context a commit subject cannot carry.
   that is not registered is skipped with a line under the header saying what
   was shown instead. `tui.default_project` is read at startup only, and the
   last selection is kept in `tui.json` as `selected_project`.
+  ([#718](https://github.com/lezli01/vincent/pull/718))
 - **The TUI follows a deleted or renamed project, and says when there are
   none.** Deleting the selected project — from anywhere, even while the
   daemon was unreachable — moves the TUI to `tui.default_project`, or the
@@ -370,6 +420,7 @@ list with the user-facing context a commit subject cannot carry.
   With no project registered every project screen shows one empty state
   pointing at `@`. `@` also opens while reconnecting, on the last list,
   marked stale, and a reconnect reloads only the screens whose load failed.
+  ([#721](https://github.com/lezli01/vincent/pull/721))
 - **A project switch keeps you on the screen you were on.** The board, the
   chats and issues lists, pull requests, the archived boards, workflows and
   triggers stay put and reload for the new project. A task workspace, chat or
@@ -380,6 +431,7 @@ list with the user-facing context a commit subject cannot carry.
   Opening another project's task, chat or issue — from the board, a pull
   request, an issue, a trigger's delivery ledger, a lane jump, or a task you
   just created — switches to its project first and says ``switched to `web` ``.
+  ([#719](https://github.com/lezli01/vincent/pull/719))
 - **Switch project from anywhere in the TUI.** Press `@`, click the header's
   `◆` segment, or run **switch project** from the palette (`ctrl+p` reaches it
   from a chat). A picker lists every project with the tasks that need you
@@ -390,6 +442,7 @@ list with the user-facing context a commit subject cannot carry.
   `tui.keys` that already binds `@` keeps its binding, and the picker stays
   reachable from the palette. The project `tui.default_project` names is
   marked `★` in the picker, beside the selection's `◆`.
+  ([#718](https://github.com/lezli01/vincent/pull/718), [#740](https://github.com/lezli01/vincent/pull/740))
 - **A project overview replaces the Projects screen.** The palette's
   **project overview** row, or the project picker's new last row
   **overview & manage…**, opens one table of every project's figures — tasks
@@ -402,12 +455,14 @@ list with the user-facing context a commit subject cannot carry.
   beside the table. **`enter` now selects** the highlighted project and goes
   back to the view you came from (or opens the highlighted task); `e` edits,
   where `enter` used to. `a`, `D` and `/` are unchanged.
+  ([#719](https://github.com/lezli01/vincent/pull/719))
 - **The TUI names a selected project.** The app header now shows
   `◆ <project>` after the version, or `◆ no project` when none is
   registered. On a narrow
   terminal the header drops the view's tag first, then the version, and
   shortens the project name last. Scoping views to it comes in later
   releases.
+  ([#717](https://github.com/lezli01/vincent/pull/717))
 - **Per-project counts.** `vincent project ls --stats` adds four columns to
   the project list: active tasks, tasks waiting on you, open issues and live
   chats. With `--json` each project carries the full `stats` object, which
@@ -415,6 +470,7 @@ list with the user-facing context a commit subject cannot carry.
   on an answer, issue sync health and the project's last activity. Over the
   API, add `?stats=true` to `GET /v1/projects` or `GET /v1/projects/{id}`;
   without it the response is unchanged. Task counts include fan-out lanes.
+  ([#715](https://github.com/lezli01/vincent/pull/715))
 - **A versioned documentation site.** The site at
   <https://lezli01.is-a.dev/vincent/> now serves the newest release's
   documentation by default, at `/vincent/latest/`, instead of `master`'s. Every
@@ -423,6 +479,7 @@ list with the user-facing context a commit subject cannot carry.
   page switches to the same page in another version, older releases and `dev`
   carry a banner pointing at the latest release, and every existing link
   redirects to its `/latest/` equivalent.
+  ([#713](https://github.com/lezli01/vincent/pull/713), [#714](https://github.com/lezli01/vincent/pull/714), [#716](https://github.com/lezli01/vincent/pull/716))
 - **An issue discussion thread.** Every issue now has comments: add one to a
   local issue with `W` on the issue's screen (written in `$EDITOR`),
   `vincent issue comment <id> --body …`, `POST /v1/issues/{id}/comments` or the
@@ -435,7 +492,7 @@ list with the user-facing context a commit subject cannot carry.
   ever posted to GitHub. A task created from an issue snapshots the thread:
   `.Issue.Comments` in templates and the `comments` array of
   `$VINCENT_ISSUE_FILE`, which until now was always empty.
-  ([#675](https://github.com/lezli01/vincent/issues/675))
+  ([#691](https://github.com/lezli01/vincent/pull/691))
 - **Start a task from an issue in the TUI.** `a` on the issues list or an
   issue's screen opens the new-task form seeded with that issue: a read-only
   source row shows it, its state and its GitHub reference, and how many tasks
@@ -446,14 +503,14 @@ list with the user-facing context a commit subject cannot carry.
   finished ones included, and a task started from an issue names it on its
   Overview and in an Issue section of Task Details; the command palette's
   "open this task's issue" opens it.
-  ([#672](https://github.com/lezli01/vincent/issues/672))
+  ([#689](https://github.com/lezli01/vincent/pull/689))
 - **Find an issue by its GitHub number.** `GET /v1/issues?project_id=P&remote_number=N`,
   the MCP `issue_list` tool's `remote_number`, and
   `vincent issue ls --project P --github N` return the issue a project imported
   GitHub issue `N` as — the way a script that holds only a GitHub number finds
   the issue to create a task from. A number means nothing across projects, so
   each requires the project (`400 validation_failed` without it).
-  ([#670](https://github.com/lezli01/vincent/issues/670))
+  ([#689](https://github.com/lezli01/vincent/pull/689))
 - **Workflow steps can read the task's issue from a file.** A task created
   from an issue now gives every command, check and agent step
   `VINCENT_ISSUE_FILE` — the issue as it was when the task was created, shaped
@@ -463,7 +520,7 @@ list with the user-facing context a commit subject cannot carry.
   outside the working tree so `git add -A` never stages it, is visible to a
   containerized step, and reaches fan-out lanes. A task with no issue gets
   none of these. Its `comments` list is empty until the comment mirror lands.
-  ([#673](https://github.com/lezli01/vincent/issues/673))
+  ([#689](https://github.com/lezli01/vincent/pull/689))
 - **Issue state is written back to GitHub.** Closing or reopening an issue
   imported from GitHub — in the TUI, with the CLI or over the API — now closes
   or reopens it on GitHub too, with the same close reason. The write is
@@ -479,7 +536,7 @@ list with the user-facing context a commit subject cannot carry.
   the switch is back on. Agents may not do this: an MCP `issue_close` or
   `issue_reopen` of an imported issue, and a `vincent` command run by a
   workflow step or a chat agent, is refused `409 forge_write_needs_human`.
-  ([#669](https://github.com/lezli01/vincent/issues/669))
+  ([#688](https://github.com/lezli01/vincent/pull/688))
 - **`vincent issue` manages issues from a shell.** `ls` (across every project,
   or one with `--project`, filtered by state, label, kind, text and source),
   `show`, `add` (`--body-file -` reads stdin; `--idempotency-key` makes a
@@ -487,6 +544,7 @@ list with the user-facing context a commit subject cannot carry.
   stale read is refused rather than overwriting someone else's change),
   `close` with a reason or `--duplicate-of`, `reopen`, `delete --force` (alias
   `rm`) and `labels` join `sync`. Every leaf takes `--json`.
+  ([#688](https://github.com/lezli01/vincent/pull/688))
 - **File, edit, close, reopen and delete issues from the TUI.** On the issues
   list and an issue's screen, `n` opens a form for a new issue and `i` edits
   the selected one — title, description (`e` for `$EDITOR`), labels, kind and
@@ -496,6 +554,7 @@ list with the user-facing context a commit subject cannot carry.
   issue allows, and `D` deletes after asking. On an issue imported from
   GitHub the mirrored fields are read-only, and closing or reopening asks
   first and says it is written to GitHub too.
+  ([#688](https://github.com/lezli01/vincent/pull/688))
 - **Create a task from a vincent issue.** `POST /v1/tasks` takes `issue_id`,
   and `vincent task add --issue ID` sends it: the task is linked to the issue,
   snapshots it, and is prefilled from it — title, description and declared
@@ -506,7 +565,7 @@ list with the user-facing context a commit subject cannot carry.
   imported from GitHub serves `github_issue` derived from it and gets
   `Closes #N` in its compare URL. A closed issue still creates the task, with a
   warning, and the chat handoff accepts `issue_id` too.
-  ([#666](https://github.com/lezli01/vincent/issues/666))
+  ([#687](https://github.com/lezli01/vincent/pull/687))
 - **Issues in the TUI.** A new *issues* screen, from the command palette,
   lists every project's issues — local and imported from GitHub — grouped by
   project, with each one's state and close reason, labels, kind, source
@@ -516,7 +575,8 @@ list with the user-facing context a commit subject cannot carry.
   rendered as Markdown (`ctrl+o` shows the source, `ctrl+l` lists its links),
   priority and author, its active tasks — `enter` opens one, and `esc` in that
   task comes back to the issue — and where an imported issue came from. Both
-  screens update live. ([#668](https://github.com/lezli01/vincent/issues/668))
+  screens update live.
+  ([#687](https://github.com/lezli01/vincent/pull/687))
 - **The issue entity, the foundation of vincent-owned issues.** The daemon's
   database gains per-project issues — title, Markdown body, `open`/`closed`
   with a close reason, labels from a case-insensitive per-project catalogue, a
@@ -529,7 +589,7 @@ list with the user-facing context a commit subject cannot carry.
   CLI, the TUI and GitHub import follow. The database migrates on start
   (migration 0036). Importing a task from a backup drops its issue link unless that
   issue exists in the target project, keeping the snapshot.
-  ([#660](https://github.com/lezli01/vincent/issues/660))
+  ([#682](https://github.com/lezli01/vincent/pull/682))
 - **`.Issue.Source` and a `github_issue` field.** `.Issue` gains `Source` —
   the `Provider`, `Repo`, `Number`, `URL` and `State` of an issue imported
   from GitHub — plus `Kind` and `Priority`. Once tasks can be created from
@@ -540,7 +600,7 @@ list with the user-facing context a commit subject cannot carry.
   the GitHub number beside `issue`'s vincent id, and every existing template
   renders exactly as before; `.Issue.Repo` and `.Issue.URL` are deprecated aliases of
   `.Issue.Source.Repo` and `.Issue.Source.URL`.
-  ([#663](https://github.com/lezli01/vincent/issues/663))
+  ([#684](https://github.com/lezli01/vincent/pull/684))
 - **The `/v1/issues` API.** File, list, read, edit, close, reopen and delete a
   project's issues over REST — `GET`/`POST /v1/issues`,
   `GET`/`PATCH`/`DELETE /v1/issues/{id}`, `POST /v1/issues/{id}/close` and
@@ -556,7 +616,7 @@ list with the user-facing context a commit subject cannot carry.
   `issue_create`, `issue_get`, `issue_patch`, `issue_close`, `issue_reopen`,
   `project_issue_labels`); an issue an agent step files records that step's
   task. The database migrates on start (migration 0037).
-  ([#662](https://github.com/lezli01/vincent/issues/662))
+  ([#685](https://github.com/lezli01/vincent/pull/685))
 - **GitHub issues are imported and kept in sync.** On a GitHub-based project
   the daemon now imports the repository's open issues into the project's
   issue set on the `github.poll_interval` tick — 500 per pass, resuming on the
@@ -574,7 +634,7 @@ list with the user-facing context a commit subject cannot carry.
   `issue.sync_changed` announces a project going from ok to failing or back.
   `POST /v1/projects/{id}/issues/sync` and `vincent issue sync --project P`
   ask for a sync now. The database migrates on start (migration 0038).
-  ([#667](https://github.com/lezli01/vincent/issues/667))
+  ([#681](https://github.com/lezli01/vincent/pull/681), [#687](https://github.com/lezli01/vincent/pull/687))
 - **Triggers on a project's own issues.** A new `type: issues` trigger source
   fires on `opened`, `closed`, `reopened`, `labeled` and `unlabeled` for local
   issues and for GitHub issues the project imports, on any project, with or
@@ -585,10 +645,19 @@ list with the user-facing context a commit subject cannot carry.
   creates the task from that vincent issue. `issue.labels_changed` now carries
   `labels_added` and `labels_removed`, and an import refresh's `issue.updated`
   carries the labels and state it moved.
-  ([#674](https://github.com/lezli01/vincent/issues/674))
+  ([#688](https://github.com/lezli01/vincent/pull/688))
 
 ### Changed
 
+- **Issues deleted on GitHub are deleted in vincent.** When the issue sweep
+  reads `410 Gone` for an imported issue, the issue is now deleted, the same
+  way `DELETE /v1/issues/{id}` deletes one, and later imports skip it; before,
+  it stayed open in the backlog marked `missing`. A `404` still only marks it
+  `missing`, since a lost token grant answers 404 too, and an issue a live main
+  or side task still holds is marked `missing` rather than deleted. A
+  requested sync (`vincent issue sync`, `POST /v1/projects/{id}/issues/sync`)
+  now runs the sweep at once instead of waiting for the daily one.
+  ([#830](https://github.com/lezli01/vincent/pull/830))
 - **Breaking: a workflow step's `vincent github pr` write without a grant is
   refused.** `vincent github pr create`, `merge`, `close`, `reopen`, `comment`
   and `rerun`, run by a workflow step or a chat agent (or over MCP), now answer
@@ -597,6 +666,7 @@ list with the user-facing context a commit subject cannot carry.
   sent to GitHub when refused. A step's own `gh pr …` in its worktree is
   unaffected. An agent's comment on an imported issue is now refused
   `forge_write_needs_human` rather than `issue_mirrored`.
+  ([#870](https://github.com/lezli01/vincent/pull/870))
 
 - **This repository's resolve workflows record their delivery on the task.**
   `github-resolve-issue` and `github-resolve-issue-dag` end by calling
@@ -609,6 +679,7 @@ list with the user-facing context a commit subject cannot carry.
   and snapshots each into its run's scratch so the pull request and its agents
   describe exactly what was stacked. Landing a train no longer clears
   anything: a delivery is task history.
+  ([#850](https://github.com/lezli01/vincent/pull/850))
 
 - **The command palette and the pickers grow with the terminal, and page.**
   The palette and the project, copy and link pickers are still 64×18 at 80×24
@@ -617,6 +688,7 @@ list with the user-facing context a commit subject cannot carry.
   command's whole label is shown under the list. Each list shows
   `▲ n more`/`▼ n more` when it does not fit and pages with `pgup`, `pgdown`,
   `home` and `end` (#794).
+  ([#808](https://github.com/lezli01/vincent/pull/808))
 - **Issue titles keep room on the issues list, and the list pages.** A row's
   title keeps at least 40% of the row (never under 30 columns) while its
   labels and kind collapse to a `+N` count and its GitHub badge to `gh#N`
@@ -627,20 +699,20 @@ list with the user-facing context a commit subject cannot carry.
   hint, a list error and a long note wrap instead of being cut; and the
   footer puts moving, filtering and filing ahead of `o browser`, which it
   offers only on an imported issue.
-  ([#796](https://github.com/lezli01/vincent/issues/796))
+  ([#807](https://github.com/lezli01/vincent/pull/807))
 - **The task board groups by workflow out of the box.** The default
   `tui.board.group_by` is now `[workflow]`, and `g` cycles workflow → flat.
   The board shows one project at a time, so the project level drew nothing.
   Folds you made under the old `[project, workflow]` grouping carry over:
   the upgrade drops their project level and keeps the workflow group folded.
-  ([#703](https://github.com/lezli01/vincent/issues/703))
+  ([#721](https://github.com/lezli01/vincent/pull/721))
 - **`vincent doctor` lists config warnings.** The `paths.config_warnings`
   field, shown as `warning` rows, reports settings that load but do nothing:
   a deprecated grouping level, a `notify` block with only one of its two
   halves, or `delete_remote_branch_on_archive` without
   `delete_empty_branch_on_archive`. Before this, those lines appeared only in
   the daemon log. They never change the exit code.
-  ([#703](https://github.com/lezli01/vincent/issues/703))
+  ([#721](https://github.com/lezli01/vincent/pull/721))
 - **The task board and the archived tasks board show the selected project.**
   Switching project swaps the board's rows in place without a refetch; the
   archived tasks board asks the daemon for that project only, and restarts at
@@ -650,6 +722,7 @@ list with the user-facing context a commit subject cannot carry.
   groups are kept per project in `tui.json`'s `board_folds_by_project`; folds
   saved by an older version are moved to their project once, and a fold saved
   under a workflow-only grouping is dropped.
+  ([#719](https://github.com/lezli01/vincent/pull/719))
 - **Tasks that need you stay visible across projects.** The app header shows
   `(! N elsewhere)` after the project name, on every screen, while tasks in
   other projects wait on you; the board header's needs-attention count is the
@@ -660,6 +733,7 @@ list with the user-facing context a commit subject cannot carry.
   board header's slot count is the selected project's too —
   `2 running · cap 3 · daemon 5/8`, without `cap` for a project that has no
   cap of its own. The bell still rings for every project.
+  ([#722](https://github.com/lezli01/vincent/pull/722))
 - **The chats boards show the selected project only.** The chats board and
   the archived chats board now list only the selected project's chats, in one
   flat list with no project headings. Switching project empties the board and
@@ -667,7 +741,7 @@ list with the user-facing context a commit subject cannot carry.
   the selected project. `←`/`→` no longer fold anything on the chats board,
   and `tui.json` no longer uses `chat_folds`. An older file that still has the
   key reads fine.
-  ([#704](https://github.com/lezli01/vincent/issues/704))
+  ([#719](https://github.com/lezli01/vincent/pull/719))
 - **The TUI's workflows and triggers screens show the selected project.**
   The workflows screen lists what the selected project actually runs: the
   built-in, global and project workflows in one list sorted by name. A
@@ -680,7 +754,7 @@ list with the user-facing context a commit subject cannot carry.
   band of broken files whose project cannot be read, which every project
   shows; the project column and the filter's project term are gone, and a
   new trigger's project is the selected one. Trigger files are still global.
-  ([#706](https://github.com/lezli01/vincent/issues/706))
+  ([#719](https://github.com/lezli01/vincent/pull/719))
 - **The issues and pull-requests screens show the selected project.** The
   issues screen lists only the selected project's issues, in one flat list
   with no project headings, and `n` files a new issue there. The
@@ -692,7 +766,7 @@ list with the user-facing context a commit subject cannot carry.
   appear when the *selected* project has a usable GitHub integration, rather
   than when any project does; switching to a project without one while the
   screen is open keeps the screen and says why there is nothing to list.
-  ([#705](https://github.com/lezli01/vincent/issues/705))
+  ([#720](https://github.com/lezli01/vincent/pull/720))
 - **New tasks, chats and issues are created in the selected project.** The
   new-task, new-chat and new-issue forms show the selected project read-only
   instead of offering a project list, and `n` opens the new-task form on the
@@ -703,7 +777,7 @@ list with the user-facing context a commit subject cannot carry.
   project switches to that project first. `←`/`→` on the new-chat form now
   step only the agent row. With no project selected, the forms never pick
   one for you.
-  ([#707](https://github.com/lezli01/vincent/issues/707))
+  ([#722](https://github.com/lezli01/vincent/pull/722))
 - **TUI lists follow the selected project's events.** The issues, chats,
   pull-request, workflows and triggers screens now refresh on events
   from the selected project, on events that belong to no project, and on any
@@ -714,13 +788,13 @@ list with the user-facing context a commit subject cannot carry.
   The chats boards also batch a burst of chat events into one refresh, as the
   other lists already did, and every list ignores a slow answer that a newer
   one has overtaken.
-  ([#699](https://github.com/lezli01/vincent/issues/699))
+  ([#718](https://github.com/lezli01/vincent/pull/718))
 - **The new-task form no longer has a GitHub issue row.** A task is started
   from an issue on the issue screens instead, and a plain new task makes no
   GitHub call on any project. `GET /v1/projects/{id}/github/issues` no longer
   takes `?workflow=` or returns a per-row `prefill`; preview a task's prefill
   with `GET /v1/issues/{id}?workflow=`.
-  ([#672](https://github.com/lezli01/vincent/issues/672))
+  ([#689](https://github.com/lezli01/vincent/pull/689))
 - **Tasks created from GitHub issues are linked to imported issues.** On
   upgrade, every task created from a GitHub issue before vincent had its own
   issues — archived and never-started tasks and fan-out lanes included — is
@@ -732,7 +806,7 @@ list with the user-facing context a commit subject cannot carry.
   and keeps its backfilled content. The tasks' own snapshots are unchanged, so
   they render exactly as before, and the task's read-only `github_issue` is
   still served.
-  ([#670](https://github.com/lezli01/vincent/issues/670))
+  ([#689](https://github.com/lezli01/vincent/pull/689))
 
 ### Deprecated
 
@@ -743,14 +817,14 @@ list with the user-facing context a commit subject cannot carry.
   `vincent config set` or the TUI's config editor is refused with
   `validation_failed`. Changing any other key still works on a file that has
   the old line, and that line is left as it is.
-  ([#703](https://github.com/lezli01/vincent/issues/703))
+  ([#721](https://github.com/lezli01/vincent/pull/721))
 
 - **`type: github_issues` triggers.** Use `type: issues` on a project that
   imports its GitHub issues. Existing `github_issues` triggers keep firing;
   `vincent trigger validate` and `vincent trigger apply` print a warning. Their
   events now carry `IssueID`, the imported vincent issue's id, so
   `issue: '{{ .Event.IssueID }}'` links the task.
-  ([#674](https://github.com/lezli01/vincent/issues/674))
+  ([#688](https://github.com/lezli01/vincent/pull/688))
 
 ### Removed
 
@@ -774,16 +848,19 @@ list with the user-facing context a commit subject cannot carry.
   - **The `?workflow=` prefill** on `GET /v1/projects/{id}/github/issues` and
     `vincent github issues` is gone; the listing stays as a remote browse.
   - **The new-task form's GitHub issue picker** is gone from the TUI.
-  ([#670](https://github.com/lezli01/vincent/issues/670))
+  ([#689](https://github.com/lezli01/vincent/pull/689))
 
 ### Fixed
 
+- **Built with Go 1.26.10, with Go module dependencies updated.**
+  ([#895](https://github.com/lezli01/vincent/pull/895))
 - **Published skills installed for codex are reported as reaching codex.**
   A current skills CLI writes codex's copy to the shared store,
   `~/.agents/skills`, and links nothing into `~/.codex/skills`; codex reads
   the store itself. `vincent doctor`, `vincent skills ls` and the daemon
   view's `S` offer now report such a skill as `codex (reads store)` when
   `~/.codex` exists, instead of "linked into nothing" (#891).
+  ([#893](https://github.com/lezli01/vincent/pull/893))
 - **Footer questions and errors keep their start, and copy and mouse toggles
   say what they did.** A confirmation such as `cancel #42? a running step is
   killed (y/n)` or a failed action's message now leads the footer and is cut
@@ -791,6 +868,7 @@ list with the user-facing context a commit subject cannot carry.
   the issue screen's pickers, which used to report nothing, says `copied` or
   why it failed on the status line, and `M` says whether the mouse is now on
   or off and what that does to text selection (#794).
+  ([#808](https://github.com/lezli01/vincent/pull/808))
 - **The TUI fits the terminal before it connects, and in its status line and
   first-run notice.** The TUI now runs in the terminal's alternate screen, so
   quitting no longer leaves the last frame in scrollback. The connecting,
@@ -805,7 +883,7 @@ list with the user-facing context a commit subject cannot carry.
   losing the key, and long notices end in `…`, the keymap warning keeping its
   `vincent doctor` pointer. The first-run full-auto notice is rewrapped to
   fit 60×15 with `enter continue` on screen.
-  ([#793](https://github.com/lezli01/vincent/issues/793))
+  ([#807](https://github.com/lezli01/vincent/pull/807))
 - **Task workspace popups take more than six lines and read in full.** The
   follow-up, repair, create-pull-request and pull-request-comment editors
   silently dropped the seventh `enter`; they now take any number of lines and
@@ -817,7 +895,8 @@ list with the user-facing context a commit subject cannot carry.
   attempt strip, step-details sidebar, outcome and failure cards, lane
   selector and diff file rows now shorten the name and keep what tells rows
   apart — the attempt number, `⏸ paused · N new`, `+N -M` — and the Overview's
-  fact labels line up. ([#800](https://github.com/lezli01/vincent/issues/800))
+  fact labels line up.
+  ([#807](https://github.com/lezli01/vincent/pull/807))
 - **Pull request rows keep their title and claim, and the popups keep their
   keys.** At 80 columns a long head branch (a dependabot one, say) cut a
   pull request's title to a few characters and pushed the claiming task off
@@ -829,7 +908,7 @@ list with the user-facing context a commit subject cannot carry.
   body no longer hides the key line or a failed push's error — the footer is
   pinned and the rows scroll — and the shown URL leaves out the encoded body
   (`ctrl+o` still opens it all). The merge popup wraps its title and checks.
-  ([#804](https://github.com/lezli01/vincent/issues/804))
+  ([#807](https://github.com/lezli01/vincent/pull/807))
 - **The archived boards say what they show.** The archived tasks board's
   header names the date window and page instead of the live slot tally, and
   its columns are its own — an ARCHIVED date instead of STEP and ELAPSED, so
@@ -838,7 +917,7 @@ list with the user-facing context a commit subject cannot carry.
   chats board) take `home`/`end`/`pgup`/`pgdown`. `esc` leaves both archived
   boards the same way — after clearing the filter and the tasks board's
   selection — and `<`/`>` are offered only when there is a page that way.
-  ([#804](https://github.com/lezli01/vincent/issues/804))
+  ([#807](https://github.com/lezli01/vincent/pull/807))
 - **The new-task form wraps to its pane, and `ctrl+s` creates from anywhere
   in it.** The title, branch and priority rows, the open lists and the Fields
   editor's input wrapped at the terminal's width rather than the pane's, so at
@@ -846,7 +925,7 @@ list with the user-facing context a commit subject cannot carry.
   the cursor could sit off screen. `ctrl+s` worked only while moving between
   rows; while typing in a field, inside an open list or in the Fields editor
   it did nothing. It now keeps whatever is open and creates the task.
-  ([#797](https://github.com/lezli01/vincent/issues/797))
+  ([#806](https://github.com/lezli01/vincent/pull/806))
 - **Chats read in full at any terminal size.** In a chat, the close
   confirmation, notes and a failed turn's error now wrap instead of being cut
   off — the `(y/n)` that answers the close prompt was lost at 80 and 120
@@ -866,11 +945,13 @@ list with the user-facing context a commit subject cannot carry.
   scroll a line at a time and `alt+g` jumps to the start of the
   conversation, and while you are scrolled back the header says which turn
   you are reading (`turn 2/5`). The skill and file lists always show where you are in them.
+  ([#806](https://github.com/lezli01/vincent/pull/806))
 - **The chats board lines up.** Titles start in the same column whatever a
   chat's state, there is a heading row, the header keeps its `updated` time at
   80 columns, and the archive prompt keeps its `(y/n)` behind a long title.
   The new-chat form keeps the focused field and an open picker on screen at
   small sizes, and its error wraps instead of running off the edge.
+  ([#806](https://github.com/lezli01/vincent/pull/806))
 - **The workflow editor and the trigger form keep what matters on screen.**
   A form longer than its pane now scrolls with the cursor instead of dropping
   its last rows, and the error and key hint stay pinned at the bottom. The
@@ -884,6 +965,7 @@ list with the user-facing context a commit subject cannot carry.
   hints name a rebound `editor` or `refresh` key. The triggers list shows the
   POLL column at 80 columns (it now follows ARMED), and the global-off banner
   wraps to the screen.
+  ([#806](https://github.com/lezli01/vincent/pull/806))
 - **The daemon and projects views fit an 80×24 terminal, and their footers
   follow their forms.** The daemon view keeps its identity block pinned, and
   the config, database and adapter blocks scroll beneath it in a pane of their
@@ -899,6 +981,7 @@ list with the user-facing context a commit subject cannot carry.
   is open, the footer and `?` show that layer's keys, not the screen's
   underneath. A long project name no longer pushes the task number, state
   and title off a needs-you row.
+  ([#806](https://github.com/lezli01/vincent/pull/806))
 - **The issue detail and issue form no longer cut text off.** A long issue
   title, its labels and its GitHub URL now wrap instead of ending in `…`, the
   source badge is a `source` fact rather than a tail the title pushed off the
@@ -908,7 +991,7 @@ list with the user-facing context a commit subject cannot carry.
   comments and the source page too, and `ctrl+y` copies the title,
   description, a comment or the URL. The issue form keeps the highlighted
   label and its key line on screen when the labels picker is long.
-  ([#795](https://github.com/lezli01/vincent/issues/795))
+  ([#806](https://github.com/lezli01/vincent/pull/806))
 - **The task board's cursor stays on screen and on its task.** When a refresh
   re-sorted the board — a selected task finishing and sorting to the bottom,
   `!` or `g` — the cursor could land on a row scrolled off screen, where every
@@ -919,7 +1002,7 @@ list with the user-facing context a commit subject cannot carry.
   failed first load says it could not load tasks rather than "no tasks yet",
   an empty archived board names its date window and `s` rather than offering
   `n`, and a wrapped title cut short no longer gains a space before its `…`.
-  ([#798](https://github.com/lezli01/vincent/issues/798))
+  ([#806](https://github.com/lezli01/vincent/pull/806))
 - **The task workspace's panes scroll to their end.** The Overview cut its
   frame at the screen's height and could not be scrolled, so on a blocked task
   between about 15 and 23 rows tall the failure card lost its action keys and
@@ -938,6 +1021,7 @@ list with the user-facing context a commit subject cannot carry.
   `g`/`home`. The Diff tab pans long lines with `shift+←`/`shift+→`, says when
   it was loaded, and no longer tells you to press `d` (which switches to
   Output there). The Workflow tab's inspector shows each field on its own row.
+  ([#806](https://github.com/lezli01/vincent/pull/806))
 
 - **The help sheet fits a narrow terminal.** A key description too long for
   the width now wraps under its own column instead of being cut off with `…`,
@@ -945,6 +1029,7 @@ list with the user-facing context a commit subject cannot carry.
   keys off the edge, and the mouse wheel scrolls the sheet. The wheel also
   scrolls the right rows on every screen while a status line is showing,
   where it used to land one row off.
+  ([#805](https://github.com/lezli01/vincent/pull/805))
 
 - **Delete and archive questions in the TUI hold the keyboard, and a refused
   chat message is kept.** With a permanent-delete question up on an archived
@@ -960,7 +1045,7 @@ list with the user-facing context a commit subject cannot carry.
   `[n] no` and the `failed:` reason. In a chat, a message the daemon refuses,
   or that never reaches it, stays in the composer; `enter` on a chat that is
   running, waiting on an answer or finished says why instead of sending.
-  ([#790](https://github.com/lezli01/vincent/issues/790))
+  ([#805](https://github.com/lezli01/vincent/pull/805))
 - **The issue detail scrolls with the keys and the wheel you reach for.**
   `↑`/`↓` used to move a hidden selection — the first press with linked tasks
   jumped the page past the whole description — and only `pgup`/`pgdown`
@@ -970,7 +1055,7 @@ list with the user-facing context a commit subject cannot carry.
   page continues; and the footer stops offering `enter` with no task to open
   and `o` on a local issue. The mouse wheel now scrolls the detail and moves
   the issues list's selection, and a click selects a row on either screen.
-  ([#792](https://github.com/lezli01/vincent/issues/792))
+  ([#805](https://github.com/lezli01/vincent/pull/805))
 - **Workflow descriptions and validation errors are no longer cut to one
   row.** The workflows screen and the new-task form's workflow detail and
   picker preview drew a description and each validation finding as a single
@@ -980,6 +1065,7 @@ list with the user-facing context a commit subject cannot carry.
   platform marks now come before the workflow's name, so a long name no
   longer pushes them off the edge, and a new-task step name longer than its
   column keeps two spaces before its type.
+  ([#805](https://github.com/lezli01/vincent/pull/805))
 
 - **Two tasks on one existing branch no longer start together.** When both
   were queued at the same moment, the scheduler admitted both: on a branch
@@ -987,7 +1073,7 @@ list with the user-facing context a commit subject cannot carry.
   working tree at once, and otherwise the second blocked with
   `adopt_branch_checked_out`. The second now waits in the queue until the
   first is archived, as it already did when the two were created apart.
-  ([#749](https://github.com/lezli01/vincent/issues/749))
+  ([#767](https://github.com/lezli01/vincent/pull/767))
 - **An `on_conflict: agent` resolver that leaves conflict markers no longer
   gets them committed.** A fan-out join whose resolver exited successfully
   without resolving staged the files, and staging hid the conflict from the
@@ -996,19 +1082,20 @@ list with the user-facing context a commit subject cannot carry.
   them and blocks with `merge_conflict` if any marker is left, as the workflow
   reference already promised. Only git's default seven-character markers are
   recognised (#756).
+  ([#767](https://github.com/lezli01/vincent/pull/767))
 - **The issues, archived chats and project overview screenshots no longer
   show a stray piece of the command palette's border.** The TUI itself was
   never affected; the recording tool's renderer left the cells painted. The
   screenshot script now gets them repainted before the shot, and the three
   pictures in the docs are recaptured.
-  ([#743](https://github.com/lezli01/vincent/issues/743))
+  ([#746](https://github.com/lezli01/vincent/pull/746))
 - **`vincent daemon stop` returns only once the daemon has exited.** It used
   to return as soon as the daemon released its lock, while the process was
   still shutting down — so on Windows a script that stopped the daemon and
   then deleted its data directory or replaced the binary could fail with
   "being used by another process". Both the graceful stop and `--force` now
   also wait, within the same 30 seconds, for the daemon's process to exit.
-  ([#732](https://github.com/lezli01/vincent/issues/732))
+  ([#741](https://github.com/lezli01/vincent/pull/741))
 - **A containerized agent step reaches its MCP tools on Docker Desktop.** On
   macOS and Windows (and Docker Desktop for Linux) the step dials
   `host.docker.internal`, which Desktop forwards to the daemon's loopback
@@ -1016,13 +1103,13 @@ list with the user-facing context a commit subject cannot carry.
   `403 invalid Host header`. It now accepts that host; the step's own secret
   still authenticates every call, and the shared `/mcp` endpoint keeps its
   DNS-rebinding check.
-  ([#729](https://github.com/lezli01/vincent/issues/729))
+  ([#741](https://github.com/lezli01/vincent/pull/741))
 - **The docs show the TUI one project at a time.** Every TUI screenshot is
   recaptured on the project-scoped screens, and the quickstart and FAQ no
   longer say the board lists every task: it lists the selected project's,
   and a task waiting on you in another project is counted in the header's
   `(! N elsewhere)` badge, with `!` crossing to it.
-  ([#710](https://github.com/lezli01/vincent/issues/710))
+  ([#742](https://github.com/lezli01/vincent/pull/742))
 
 ## [0.11.0](https://github.com/lezli01/vincent/compare/v0.10.1...v0.11.0) (2026-10-01)
 
