@@ -736,13 +736,18 @@ Carried from #852; each is decided in the item named.
    nothing.
 4. **Folder trust** — `--trust-folder` cannot be combined with `--session-id`
    or `--resume`, so a project's `.mcp.json`, `.github/mcp.json` and repo hooks
-   never load in vincent runs. Recommendation: accept as stated behaviour.
-   138.15.
+   never load in vincent runs — closed by 138.15: accepted as stated
+   behaviour. §9.9 states that workspace MCP files never load and that
+   `COPILOT_ALLOW_ALL`, which would trust the worktree and load its hooks, is
+   never set or inherited.
 5. **Release bar** — closed by 138.17 (2026-11-02): all three real legs and
    two-turn chats pass, with the screenshot record complete.
 6. **ACP follow-up** — an investigation into `copilot --acp` after this ships.
+   Filed as [#889](https://github.com/lezli01/vincent/issues/889) (2026-11-03).
 7. **Hoisting `tailWriter`/`readLoop`** into `internal/agent` as a separate
-   refactor afterwards.
+   refactor afterwards. Filed as
+   [#890](https://github.com/lezli01/vincent/issues/890) (2026-11-03).
 8. **Codex skills drift** (not copilot) — vercel-labs/skills#2067 moved codex's
    global skills to `~/.agents/skills`; to be filed as its own bug, never fixed
-   in passing by 138.12.
+   in passing by 138.12. Filed as
+   [#891](https://github.com/lezli01/vincent/issues/891) (2026-11-03).
