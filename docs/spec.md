@@ -10561,7 +10561,9 @@ POST   /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8).* {}. Syn
                                         *Amended 2026-11-04 (task 142.7):* the request is
                                         stamped with the project's resolved provider and
                                         served under that provider's switches alone; a
-                                        project resolving to none records nothing
+                                        project resolving to none records nothing, and
+                                        neither does github pinned on an origin that is
+                                        not a github.com remote
 GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #350).* Also takes
                                         limit, offset, archived_before and archived_since —
                                         GET /v1/tasks' parameters, spelled the same way, because

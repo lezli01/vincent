@@ -956,7 +956,8 @@ itself with [`issue.sync_changed`](#state-events--durable) when it flips the
 verdict. The request is stamped with the provider the project resolves to and
 served under that provider's switches alone. With a switch off the request is
 recorded, `reason` names the switch, and nothing is imported until it is turned
-back on. A project resolving to `none` records nothing, and the answer carries
+back on. A project resolving to `none`, or pinned to `github` on an origin
+that is not a github.com repository, records nothing, and the answer carries
 its derived `not_github` or `source_not_github`. It also wakes the
 [state write-back](#state-write-back). It is not an
 [MCP](#mcp) tool. An unknown project is `404` on both.

@@ -187,7 +187,8 @@ func (s *Server) handleIssueSyncStatus(w http.ResponseWriter, r *http.Request) {
 // now. It only records the request and wakes the importer, so it answers 202
 // with the status as it stands. The request is stamped with the project's
 // resolved provider, which is how the daemon chooses which provider's pass
-// to wake (task 142.7); a project that resolves to none has no pass to wake,
+// to wake (task 142.7); a project that resolves to none — or to github on an
+// origin that is not a github.com remote — has no pass to wake,
 // so nothing is recorded — no row is created for it — and the answer is the
 // derived not_github or source_not_github status — the sync itself lands on the importer's
 // goroutine and announces itself with issue.sync_changed when it changes the
@@ -202,7 +203,13 @@ func (s *Server) handleIssueSyncNow(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	res := s.issueResolution(ctx, project)
-	if res.Provider == store.IssueProviderNone {
+	// github pinned on an origin that names no github.com repository has
+	// no pass to wake either (review F2): the daemon's GitHub pass stands
+	// down on it, so a recorded request would never be served and the
+	// project would read pending for ever instead of not_github. Without a
+	// git runner the origin reads as GitHub's (issueResolution), so this
+	// only fires on an origin actually read.
+	if res.Provider == store.IssueProviderNone || (res.Provider == store.IssueProviderGitHub && !res.OriginGitHub) {
 		out, err := s.issueSyncStatus(ctx, project)
 		if err != nil {
 			s.internalError(w, "read issue sync state", err)

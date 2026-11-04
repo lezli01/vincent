@@ -90,28 +90,37 @@ func TestIssueSyncRowlessReasons(t *testing.T) {
 }
 
 // A project that resolves to none has no pass to wake: "sync now" records
-// nothing and answers with the derived status.
+// nothing and answers with the derived status. Neither has github pinned on
+// an origin off github.com (review F2): the daemon's GitHub pass stands down
+// on it, so a recorded request would read pending for ever.
 func TestIssueSyncNowOnNoneCreatesNoRow(t *testing.T) {
 	h := newProjectHarness(t)
-	woke := make(chan int64, 2)
+	woke := make(chan int64, 3)
 	h.store.OnIssueSyncRequested(func(id int64) { woke <- id })
 	for _, tc := range []struct {
-		name   string
-		body   map[string]any
-		reason string
+		name     string
+		body     map[string]any
+		provider string
+		reason   string
 	}{
-		{"other origin", map[string]any{"path": repoWithOrigin(t, "https://example.com/o/r.git")}, syncReasonNotGitHub},
+		{"other origin", map[string]any{"path": repoWithOrigin(t, "https://example.com/o/r.git")}, "none", syncReasonNotGitHub},
 		{"explicit none", map[string]any{
 			"path": repoWithOrigin(t, "https://github.com/o/r.git"), "issue_source": map[string]any{"provider": "none"},
-		}, syncReasonSourceNotGitHub},
+		}, "none", syncReasonSourceNotGitHub},
+		{"explicit github, other origin", map[string]any{
+			"path": repoWithOrigin(t, "https://example.com/o/r.git"), "issue_source": map[string]any{"provider": "github"},
+		}, "github", syncReasonNotGitHub},
 	} {
 		id := h.createID(t, tc.body)
 		got := h.syncStatus(t, http.MethodPost, id, http.StatusAccepted)
-		if got.Reason != tc.reason || got.Provider != "none" {
-			t.Errorf("%s: sync now = %+v, want %s", tc.name, got, tc.reason)
+		if got.Reason != tc.reason || got.Provider != tc.provider {
+			t.Errorf("%s: sync now = %+v, want %s/%s", tc.name, got, tc.provider, tc.reason)
 		}
 		if _, err := h.store.GetIssueSyncState(t.Context(), id); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("%s: sync now created a row (err %v)", tc.name, err)
+		}
+		if got := h.syncStatus(t, http.MethodGet, id, http.StatusOK); got.Reason != tc.reason {
+			t.Errorf("%s: status after sync now = %+v, want %s", tc.name, got, tc.reason)
 		}
 	}
 	select {
