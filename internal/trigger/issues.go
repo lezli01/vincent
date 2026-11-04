@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -224,7 +225,14 @@ func issueMap(iss *store.Issue) map[string]any {
 	source := map[string]any{"Provider": "", "Repo": "", "Number": 0, "URL": "", "State": ""}
 	assignee, milestone, milestoneNumber := "", "", 0
 	if r := snap.Remote; r != nil {
-		source = map[string]any{"Provider": r.Provider, "Repo": r.Repo, "Number": r.Number, "URL": r.URL, "State": r.State}
+		// Number is GitHub's alone: a Jira row stores PROJ-12's 12, which no
+		// tool outside Jira can resolve, so it reads 0 here exactly as a
+		// task's `.Issue.Source.Number` does (spec §8.x's 142.16 amendment).
+		number := 0
+		if r.Provider == issueprovider.GitHub {
+			number = r.Number
+		}
+		source = map[string]any{"Provider": r.Provider, "Repo": r.Repo, "Number": number, "URL": r.URL, "State": r.State}
 		if len(r.Assignees) > 0 {
 			assignee = strings.Join(r.Assignees, ",")
 		}

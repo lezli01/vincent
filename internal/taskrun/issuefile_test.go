@@ -60,14 +60,15 @@ func TestIssueFileMapping(t *testing.T) {
 			workflow.IssueEnv{ID: 13, Number: 200, URL: "https://github.com/lezli01/vincent/issues/200", Key: "200"},
 		},
 		{
-			// Task 142.16: a Jira issue has no number, so both numbers are
-			// null, and source carries its key and browse URL.
+			// Task 142.16: a Jira issue has no number a tool can resolve, so
+			// both numbers are null although the row stores PROJ-12's 12, and
+			// source carries its key and browse URL.
 			"jira", &store.Task{Issue: jiraSnapshot()},
 			`{"number":null,"title":"Fix the login page","body":"",` +
 				`"url":"https://example.atlassian.net/browse/PROJ-12","createdAt":null,"state":"OPEN",` +
 				`"stateReason":null,"labels":[],"author":{"login":"alice"},` +
 				`"comments":[],"id":14,"kind":"bug","priority":0,"source":{"provider":"jira",` +
-				`"repo":"","number":null,"url":"https://example.atlassian.net/browse/PROJ-12","key":"PROJ-12"}}`,
+				`"repo":"PROJ","number":null,"url":"https://example.atlassian.net/browse/PROJ-12","key":"PROJ-12"}}`,
 			workflow.IssueEnv{ID: 14, URL: "https://example.atlassian.net/browse/PROJ-12", Key: "PROJ-12"},
 		},
 		{

@@ -375,6 +375,25 @@ func TestIssuesMapper(t *testing.T) {
 	}
 }
 
+// TestIssueMapJiraNumber (review F1): `.Event.Issue.Source.Number` is 0
+// for a Jira issue although its row stores PROJ-12's 12, as a task's
+// `.Issue.Source.Number` is, and GitHub's number passes through.
+func TestIssueMapJiraNumber(t *testing.T) {
+	id := int64(7)
+	for _, tc := range []struct {
+		provider, repo string
+		want           int
+	}{{"jira", "PROJ", 0}, {"github", "octo/repo", 12}} {
+		iss := &store.Issue{ID: id, Title: "t", State: "open", Remote: &store.IssueRemote{
+			IssueID: &id, Provider: tc.provider, Repo: tc.repo, Number: 12,
+		}}
+		src, _ := issueMap(iss)["Source"].(map[string]any)
+		if got := src["Number"]; got != tc.want {
+			t.Errorf("%s: Source.Number = %v, want %d", tc.provider, got, tc.want)
+		}
+	}
+}
+
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 // parseIssueEventID reads the issue id out of `issue:{id}:{action}:{event}`.
