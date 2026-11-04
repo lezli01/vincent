@@ -34,7 +34,17 @@ list with the user-facing context a commit subject cannot carry.
   no longer imports GitHub issues, and its sync reports `source_not_github`.
   Its pull requests are still linked. Changing the provider, site or project
   marks the issues imported from the old source `missing` and keeps them.
-  Jira sync itself is not scheduled yet.
+  Jira sync is scheduled by the `jira:` block below.
+- **A `jira:` block in `config.yaml`, and a scheduled Jira sync pass.**
+  `jira.enabled` (default `true`), `jira.poll_interval` (default `5m`, `0`
+  stops it) and `jira.user_env`/`jira.token_env` — the *names* of the
+  environment variables holding the account email and API token (default
+  `JIRA_USER`, `JIRA_API_TOKEN`), never the values. The block is in the
+  bootstrap template and on `GET`/`PATCH /v1/config`, `vincent config get`
+  and the TUI daemon screen. A project bound to Jira now gets a sync row
+  stamped `jira` on that interval: `no_credential` while either variable is
+  missing, then `no_client` until the Jira client lands; nothing is fetched
+  from Jira yet (task 142.7, #903).
 
 ### Changed
 
@@ -49,6 +59,20 @@ list with the user-facing context a commit subject cannot carry.
   `allowed_actors` refusal for a `by: sync` change now names the issue's
   tracker instead of GitHub; which triggers it refuses is unchanged (task
   142.17, #913).
+
+- **Issue sync runs per provider, on its own loop.** GitHub issue import
+  stays on `github.poll_interval` and still runs before that tick's GitHub
+  triggers; Jira sync runs on `jira.poll_interval`; neither ever delays
+  pull-request linking, and `github.enabled: false` no longer has any say
+  over Jira (or `jira.enabled` over GitHub). "Sync now" wakes the provider
+  the project resolves to, and the write-back drain gates each row on its
+  own provider's switches. A project whose issue source resolves to none no
+  longer gets a sync row — existing `not_github` rows are removed — and
+  `GET /v1/projects/{id}/issues/sync` reports `not_github` (or
+  `source_not_github` for an explicit `none`) for it instead of `pending`.
+  A Jira-bound project no longer reports `source_not_github`. A negative
+  `github.poll_interval` is now refused at load instead of being accepted.
+
 - **Workflows can read an imported issue's display key.** `.Issue.Source.Key`,
   `$VINCENT_ISSUE_KEY` and the issue file's `source.key` carry the provider's
   key — the GitHub number as a string, or a Jira issue's `PROJ-12` — and a
