@@ -678,7 +678,7 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
 | `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=` |
 | `GET` | `/v1/projects/{id}/github/pulls` | Its pull requests, newest first — `?state=`, `?limit=`, `?workflow=` |
-| `GET` | `/v1/projects/{id}/issues/sync` | How its GitHub issue import is going |
+| `GET` | `/v1/projects/{id}/issues/sync` | How its issue sync is going |
 | `POST` | `/v1/projects/{id}/issues/sync` | Sync now — `202` with the same body |
 
 `DELETE` succeeds only when no non-archived tasks remain. `?force` archives them
@@ -730,8 +730,9 @@ names the field:
 | `jira.jql` | Optional. One line, no `ORDER BY`, at most 2000 characters. It narrows the project's issues and never replaces the project |
 | `jira.mapping` | Optional. An object of `overrides` (`close_completed`, `close_not_planned`, `close_duplicate`, `reopen`), `duplicate_resolutions` and `not_planned_resolutions`. Unknown fields are refused |
 
-No field holds a credential. The daemon reads the Jira credential from
-`JIRA_USER` and `JIRA_API_TOKEN` in its environment.
+No field holds a credential. The daemon reads the Jira credential from the
+environment variables [`jira.user_env` and `jira.token_env`](configuration.md#jira)
+name — `JIRA_USER` and `JIRA_API_TOKEN` by default.
 
 Changing the effective provider, `jira.site` or `jira.project_key` is a
 **rebind**, applied in the update's own transaction. The previous source's
@@ -740,8 +741,9 @@ them stops. The project's [sync status](#issue-sync) starts over, and each
 touched issue sends `issue.updated` with `changed: ["remote_status"]`. No issue
 is deleted, and binding back re-imports them and marks them live again.
 Changing only `jql` or `mapping` is not a rebind. A project bound to `none` or
-`jira` is skipped by the GitHub issue import, with reason `source_not_github`.
-Its pull requests are still linked.
+`jira` is skipped by the GitHub issue import, and its pull requests are still
+linked. A `none` project's sync status reports `source_not_github`; a `jira`
+project is synced by the Jira pass instead.
 
 ### Project stats
 
@@ -882,10 +884,12 @@ ignored now, like any unknown one.
 
 ### Issue sync
 
-On every [`github.poll_interval`](configuration.md#github) tick the daemon
-imports and refreshes each GitHub-based project's issues into its
-[backlog](#issues). `GET /v1/projects/{id}/issues/sync` reads how that is going;
-it never calls GitHub, and never starts a sync:
+The daemon syncs each project's issues into its [backlog](#issues) from the
+provider its [issue source](#issue-source) resolves to: a GitHub-based project's
+on every [`github.poll_interval`](configuration.md#github), a Jira-bound
+project's on every [`jira.poll_interval`](configuration.md#jira), each on its
+own loop. `GET /v1/projects/{id}/issues/sync` reads how that is going; it never
+calls a provider, and never starts a sync:
 
 ```json
 { "enabled": true, "provider": "github", "repo": "lezli01/vincent",
@@ -895,7 +899,9 @@ it never calls GitHub, and never starts a sync:
   "writes_pending": 1, "writes_failed": 0, "writes_conflict": 0 }
 ```
 
-`enabled` is `github.enabled` and a non-zero `github.poll_interval` together.
+`provider` is `github`, `jira` or `none`. `enabled` is that provider's
+`enabled` and a non-zero `poll_interval` together — `github.*` for a GitHub
+project, `jira.*` for a Jira one — and `false` for `none`.
 `site` is present only for a project bound to Jira: the site its issues would
 come from, shown here so a binding to the wrong site is visible.
 `repo` is the repository the project's first successful sync bound it to, or
@@ -908,12 +914,14 @@ When `ok` is false, `reason` says why:
 
 | `reason` | Meaning |
 |---|---|
-| `github_disabled` | `github.enabled` is false |
-| `poll_disabled` | `github.poll_interval` is `0`: the integration is on, the background tick is not |
+| `github_disabled` | A GitHub project, and `github.enabled` is false |
+| `disabled` | A Jira project, and `jira.enabled` is false |
+| `poll_disabled` | The provider's `poll_interval` is `0`: the integration is on, the background tick is not |
 | `pending` | The importer has not attempted this project yet |
-| `not_github` | No `origin`, or one that is not a github.com repository |
-| `source_not_github` | The project's [issue source](#issue-source) is `none` or `jira`, so the GitHub import skips it |
-| `no_client` | The daemon has no GitHub client wired |
+| `not_github` | The issue source is derived and `origin` is missing or not a github.com repository, or it is pinned to `github` on such an origin. Such a project has no sync row; the reason is derived when it is read |
+| `source_not_github` | The project's [issue source](#issue-source) is pinned to `none`. It has no sync row either |
+| `no_credential` | A Jira project, and the variable named by `jira.user_env` or `jira.token_env` is unset |
+| `no_client` | The daemon has no client wired for the provider — for Jira, every project with its credential set, until the Jira client ships |
 | `origin_changed` | `origin` now names a different repository than the one the project is bound to. Sync stops and is never re-keyed; a rename GitHub redirects is not this |
 | any [GitHub reason](#github-issues) | The last attempt failed with it — `rate_limited`, `no_credential`, `unauthorized`, `unreachable`, … |
 
@@ -945,8 +953,11 @@ the importer — whose sync then includes the sweep, without waiting out the
 day — and answers **`202`** at once with the status as it stands, not
 the outcome of this sync, which lands on the importer's goroutine and announces
 itself with [`issue.sync_changed`](#state-events--durable) when it flips the
-verdict. With a switch off the request is recorded, `reason` names the switch,
-and nothing is imported until it is turned back on. It also wakes the
+verdict. The request is stamped with the provider the project resolves to and
+served under that provider's switches alone. With a switch off the request is
+recorded, `reason` names the switch, and nothing is imported until it is turned
+back on. A project resolving to `none` records nothing, and the answer carries
+its derived `not_github` or `source_not_github`. It also wakes the
 [state write-back](#state-write-back). It is not an
 [MCP](#mcp) tool. An unknown project is `404` on both.
 

@@ -220,7 +220,7 @@ agents:
 
 # The GitHub integration (task 035, task 052, task 069, task 130). It applies
 # only to a project whose "origin" remote is a github.com repository. For such
-# a project the daemon's reconciler tick imports and refreshes its issues into
+# a project the daemon periodically imports and refreshes its issues into
 # vincent's backlog, and links tasks to their pull requests; enabled and
 # poll_interval below are the two switches that stop it.
 #
@@ -240,17 +240,38 @@ agents:
 # saying the credential has no write scope. Set enabled to false to stop the
 # daemon talking to GitHub at all, reads and writes together.
 #
-# poll_interval is the reconciler tick: on each one the daemon imports and
-# refreshes each GitHub-based project's issues, and links a task to its pull
-# request by matching an open pull request's head branch against the task's
-# branch (task 052). It is one of vincent's two standing background calls —
-# the other is the release check below — and it fires only for projects
-# hosted on github.com: set it to 0 to switch the reconciler off, issue import
-# included, and keep the rest of the integration, which then calls GitHub only
-# when you ask it to. "vincent issue sync" asks for an import now.
+# poll_interval paces GitHub issue import and pull-request linking: on each
+# interval the daemon imports and refreshes each GitHub-based project's
+# issues, and links a task to its pull request by matching an open pull
+# request's head branch against the task's branch (task 052). It is one of
+# vincent's standing background calls — the release check below is another —
+# and it fires only for projects hosted on github.com: set it to 0 to stop
+# both, issue import included, and keep the rest of the integration, which
+# then calls GitHub only when you ask it to. "vincent issue sync" asks for an
+# import now. A negative value is refused.
 github:
   enabled: true
   poll_interval: 5m
+
+# The Jira Cloud issue provider (task 142). It does nothing until a project is
+# bound to a Jira site; for a bound project the daemon periodically imports
+# and refreshes its Jira issues into vincent's backlog.
+#
+# vincent stores no Jira credential. user_env and token_env are the NAMES of
+# environment variables the daemon reads the account e-mail and API token
+# from, never the values themselves; a name must be letters, digits and _.
+# When the daemon runs as a service without your shell's environment, set
+# them under environment.set above.
+#
+# jira:
+#   # false stops every Jira call.
+#   enabled: true
+#   # How often bound projects sync; 0 stops it. A negative value is refused.
+#   poll_interval: 5m
+#   # Variable holding the Jira account's e-mail address (a name, not a value).
+#   user_env: JIRA_USER
+#   # Variable holding the Jira API token (a name, not a value).
+#   token_env: JIRA_API_TOKEN
 
 # Check whether a newer vincent has been released (task 055). The daemon asks
 # GitHub for the project's latest stable release once a day, caches the answer
@@ -1169,17 +1190,19 @@ cannot fail because GitHub is down. A pull request is the opposite: only the
 *link* is stored, and its title, state, draft and merged status are re-read
 every time, because a snapshot of them would go stale and lie.
 
-`poll_interval` is the reconciler tick. On each one the daemon imports and
-refreshes each GitHub-based project's issues — open ones first, then
-incrementally, conditional on the last answer so an idle repository costs a
-`304` — and reconciles pull-request links: it lists each project's open pull
-requests and links the ones whose head branch equals a task's branch. It is one
-of vincent's **two** standing outbound calls — the other is
-[`update`](#update)'s release check — and it is the one that fires only for
-projects hosted on github.com, so a daemon with no GitHub-origin project makes
-no call under this key at all. That is why it has its own key — set it to `0`
-and the reconciler stops, issue import included, while the rest of the
-integration keeps working on demand. An issue or a pull request appearing a few
+`poll_interval` paces both GitHub issue import and pull-request linking. On
+each interval the daemon imports and refreshes each GitHub-based project's
+issues — open ones first, then incrementally, conditional on the last answer so
+an idle repository costs a `304` — and reconciles pull-request links: it lists
+each project's open pull requests and links the ones whose head branch equals a
+task's branch. A project whose [issue source](cli.md#issue-source-flags) is
+`none` or `jira` gets no GitHub issue call, and its pull requests are still
+linked. Of vincent's standing outbound calls, this is one that fires only for
+projects hosted on github.com — [`update`](#update)'s release check fires for
+every install — so a daemon with no GitHub-origin project makes no call under
+this key at all. That is why it has its own key — set it to `0` and the
+reconciler stops, issue import included, while the rest of the integration
+keeps working on demand. A negative interval is refused. An issue or a pull request appearing a few
 minutes late costs nothing, and
 [`vincent issue sync`](cli.md#vincent-issue-sync) asks for an import now. A
 failing import is never quiet: each project's last outcome is on
@@ -1220,6 +1243,42 @@ your own host, enterprise and SSO configuration — and otherwise reads
 `GITHUB_TOKEN` or `GH_TOKEN` from the environment the daemon inherited. Both are
 described under [environment variables](#environment-variables), and
 `vincent doctor` reports which one is in play.
+
+### `jira`
+
+```yaml
+jira:
+  enabled: true
+  poll_interval: 5m
+  user_env: JIRA_USER
+  token_env: JIRA_API_TOKEN
+```
+
+The Jira Cloud issue provider. It is commented out in the default file and on
+by default, and it does nothing until a project's
+[issue source](cli.md#issue-source-flags) is bound to a Jira site: with no
+Jira-bound project the daemon makes no Jira call at all.
+
+`poll_interval` paces the Jira sync pass, which runs on its own loop, apart
+from [`github.poll_interval`](#github): a slow Jira site never delays
+pull-request linking. `enabled: false` or `poll_interval: 0` stops the pass,
+and a negative interval is refused. The two blocks are independent —
+`github.enabled: false` never stops the Jira pass, and `jira.enabled: false`
+never stops pull-request linking. Read per use, so a
+[reload](#reload-semantics) governs the next pass.
+
+**There is deliberately no token key here either.** `user_env` and `token_env`
+hold the **names** of the environment variables the daemon reads the Jira
+account's e-mail address and API token from, never the values, and a name that
+is not letters, digits and `_` (not starting with a digit) is refused. The
+values are read per use and are never logged or stored. When the daemon runs as
+a [service](../guides/running-at-login.md) without your shell's environment,
+set the variables under [`environment.set`](#environment).
+
+On each pass a Jira-bound project's [sync status](api.md#issue-sync) reports
+`no_credential` while either variable is unset. With both set it reports
+`no_client`: the Jira client has not shipped yet, so nothing is fetched from
+Jira.
 
 ### `update`
 
@@ -1917,6 +1976,7 @@ vincent project edit 1 --branch-template 'api/{{.Slug}}'
 | `XDG_CONFIG_HOME` / `XDG_DATA_HOME` | Honored on Linux in the normal way |
 | `EDITOR` | Used by the TUI for edit-and-retry, repair prompts, and description editing |
 | `GITHUB_TOKEN` / `GH_TOKEN` | Read by the [`github`](#github) integration when `gh` is absent or logged out. The daemon inherits whatever the process that started it had; vincent never stores a token of its own, and never reports its value — `vincent doctor` names the variable only |
+| `JIRA_USER` / `JIRA_API_TOKEN` | The Jira account's e-mail address and API token, read by the [`jira`](#jira) provider for a Jira-bound project. These are the defaults of `jira.user_env` and `jira.token_env`, which can name other variables. Never stored and never logged |
 
 The two `VINCENT_*_DIR` overrides are how the test suite isolates state, and they
 are equally useful for running a second, throwaway instance:

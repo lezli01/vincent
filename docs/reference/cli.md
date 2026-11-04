@@ -565,16 +565,19 @@ file in the repository.
   `close_duplicate`, `reopen`), `duplicate_resolutions` and
   `not_planned_resolutions`.
 
-The Jira credential is never a flag or a project field: the daemon reads
-`JIRA_USER` and `JIRA_API_TOKEN` from its environment. On `edit`, a Jira flag
+The Jira credential is never a flag or a project field: the daemon reads it
+from the environment variables
+[`jira.user_env` and `jira.token_env`](configuration.md#jira) name —
+`JIRA_USER` and `JIRA_API_TOKEN` by default. On `edit`, a Jira flag
 you leave out keeps its current value.
 
 Changing the effective provider, the Jira site or the Jira project is a
 rebind. The previous source's imported issues are kept, are marked
 `missing`, and are no longer written back. Its sync record is reset. Changing
-only `--jira-jql` or `--jira-mapping` is not a rebind. Until Jira sync ships,
-a project bound to `jira` or `none` reports the sync reason
-`source_not_github`.
+only `--jira-jql` or `--jira-mapping` is not a rebind. A project bound to
+`none` reports the sync reason `source_not_github`. One bound to `jira` is
+synced on [`jira.poll_interval`](configuration.md#jira), and reports
+`no_credential` or, until the Jira client ships, `no_client`.
 
 ```sh
 vincent project edit 1 --issue-source jira --jira-site https://acme.atlassian.net --jira-project ENG
@@ -3340,9 +3343,9 @@ array.
 vincent issue sync --project ID [--status] [--json]
 ```
 
-Asks the daemon to import and refresh the project's GitHub issues now, then
-prints how the import stands. The daemon syncs on its own reconciler goroutine
-and answers at once, so what is printed is the status as of the request, not
+Asks the daemon to import and refresh the project's issues now, from the
+provider its [issue source](#issue-source-flags) resolves to, then prints how
+the import stands. The daemon syncs on its own goroutine and answers at once, so what is printed is the status as of the request, not
 the result of this sync. `--status` only reads it and asks for nothing.
 `--json` prints the
 [`/v1/projects/{id}/issues/sync`](api.md#issue-sync) body.
@@ -3369,8 +3372,10 @@ imported from GitHub unless its task is a live handoff granted that.
 `reason` uses the sync vocabulary of the [API](api.md#issue-sync) —
 `github_disabled`, `poll_disabled`, `pending`, `origin_changed`,
 `rate_limited`, … — and a `rate limited until` row appears while the daemon is
-backing off. With [`github.enabled`](configuration.md#github) off or
-`github.poll_interval: 0` the request is still recorded, and the last row reads
+backing off. With the provider's switch off —
+[`github.enabled`](configuration.md#github) or
+[`jira.enabled`](configuration.md#jira) false, or its `poll_interval: 0` — the
+request is still recorded, and the last row reads
 `requested, but import is off (<reason>)`: nothing is imported until the switch
 is turned back on. An unknown project exits `1`.
 

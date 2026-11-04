@@ -1406,6 +1406,17 @@ holds (task 142 decision 6).
   A change to only `jql` or `mapping` is not a rebind; an issue that leaves the narrowed
   set is marked `missing` by the sweep (task 142 decision 9.11).
 
+*Amended 2026-11-04 (task 142.7, issue #903).* Two sentences above are
+superseded. The Jira credential is read from the variables §12.3's
+`jira.user_env` and `jira.token_env` **name** — `JIRA_USER` and
+`JIRA_API_TOKEN` only by default. And Jira sync is now scheduled, so a
+`jira` binding no longer records `source_not_github`: its row is stamped
+`provider: jira` and says `no_credential` or `no_client` (§12.3's
+amendment of the same date). `source_not_github` now means an explicit
+`none` only, and is derived when read — a project resolving to `none` has
+no sync row, and `github` pinned on a non-github.com origin likewise reads
+`not_github` without one.
+
 *Amended 2026-10-03 (task 130.16, issue #675; task 130 decision 24).* The
 **discussion thread** exists. An issue's comments are listed oldest first and
 reachable over §13.2, §13.4, the CLI and the TUI; each carries `author`,
@@ -10524,6 +10535,14 @@ GET    /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8, issue #66
                                         `source_not_github` for a project bound to none or
                                         jira, and `site?`, the bound Jira site, so a binding
                                         entered on the wrong site shows wherever sync does
+                                        *Amended 2026-11-04 (task 142.7):* the reasons come
+                                        from the row's own provider — `disabled` for a Jira
+                                        row with `jira.enabled` false, the provider's
+                                        `poll_disabled`, `no_credential`, `no_client`; a
+                                        project resolving to none has no row, and reads a
+                                        derived `not_github` or (explicit none)
+                                        `source_not_github` rather than `pending`; a jira
+                                        binding no longer reads `source_not_github`
                                         *Amended 2026-10-03 (task 130.10):* also
                                         { writes_pending, writes_failed, writes_conflict } —
                                         the imported issues whose newest state write-back is
@@ -10535,6 +10554,10 @@ POST   /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8).* {}. Syn
                                         next enabled tick. Not an MCP tool (§13.4).
                                         *Amended 2026-10-03 (task 130.10):* it also wakes the
                                         state write-back drain
+                                        *Amended 2026-11-04 (task 142.7):* the request is
+                                        stamped with the project's resolved provider and
+                                        served under that provider's switches alone; a
+                                        project resolving to none records nothing
 GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #350).* Also takes
                                         limit, offset, archived_before and archived_since —
                                         GET /v1/tasks' parameters, spelled the same way, because
