@@ -27,10 +27,16 @@ type guardFixture struct {
 
 func newGuardFixture(t *testing.T, grant ...string) guardFixture {
 	t.Helper()
+	return newGuardFixtureFrom(t, "github", grant...)
+}
+
+// newGuardFixtureFrom is newGuardFixture with both imports from provider.
+func newGuardFixtureFrom(t *testing.T, provider string, grant ...string) guardFixture {
+	t.Helper()
 	svc, st, pid := newService(t)
 	f := guardFixture{svc: svc, st: st, pid: pid}
-	f.claimed, f.delivering = handedOffImport(t, st, pid, 1)
-	f.other, f.otherDelivering = handedOffImport(t, st, pid, 2)
+	f.claimed, f.delivering = handedOffImportFrom(t, st, pid, provider, 1)
+	f.other, f.otherDelivering = handedOffImportFrom(t, st, pid, provider, 2)
 	gj, err := store.GrantJSON(grant)
 	if err != nil {
 		t.Fatal(err)
@@ -50,14 +56,14 @@ func guardTask(pid int64, title string, state store.TaskState) *store.Task {
 	}
 }
 
-// handedOffImport is a live GitHub import #n whose main task finished done
-// with a change delivery: an issue in the hand_off lane.
-func handedOffImport(t *testing.T, st *store.Store, pid int64, n int) (*store.Issue, *store.Task) {
+// handedOffImportFrom is a live import #n from provider whose main task
+// finished done with a change delivery: an issue in the hand_off lane.
+func handedOffImportFrom(t *testing.T, st *store.Store, pid int64, provider string, n int) (*store.Issue, *store.Task) {
 	t.Helper()
 	ctx := t.Context()
 	key := fmt.Sprintf("I_%d", n)
 	iss, _, err := st.UpsertRemoteIssue(ctx, store.RemoteIssue{
-		ProjectID: pid, Provider: "github", RemoteKey: key, Repo: "o/r", Number: n,
+		ProjectID: pid, Provider: provider, RemoteKey: key, Repo: "o/r", Number: n,
 		Title: key, State: issuestate.Open,
 	}, issuestate.Sync)
 	if err != nil {

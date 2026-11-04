@@ -430,7 +430,7 @@ func TestIssueSyncNowSweeps(t *testing.T) {
 	if len(f.issues(t)) != 2 {
 		t.Fatal("a tick swept before a day passed")
 	}
-	if err := f.store.RequestIssueSync(t.Context(), f.project.ID); err != nil {
+	if err := f.store.RequestIssueSync(t.Context(), f.project.ID, "github"); err != nil {
 		t.Fatalf("request: %v", err)
 	}
 	r.SyncRequested(t.Context())
@@ -581,7 +581,7 @@ func TestIssueSyncNowWakesTheLoop(t *testing.T) {
 	waitFor(t, func() bool { return len(f.issues(t)) == 1 })
 	c.rows = append(c.rows, issueRow(2, "open"))
 	c.edit(2, issueBase.Add(time.Hour), func(map[string]any) {})
-	if err := f.store.RequestIssueSync(t.Context(), f.project.ID); err != nil {
+	if err := f.store.RequestIssueSync(t.Context(), f.project.ID, "github"); err != nil {
 		t.Fatalf("request: %v", err)
 	}
 	waitFor(t, func() bool { return len(f.issues(t)) == 2 })
@@ -624,7 +624,7 @@ func TestIssueSyncTickReadsOriginOnce(t *testing.T) {
 	if st := f.syncState(t); !st.OK || st.Repo != "octo/repo" || len(f.issues(t)) != 1 {
 		t.Fatalf("the tick's import: %+v, %d issues", st, len(f.issues(t)))
 	}
-	if err := f.store.RequestIssueSync(t.Context(), f.project.ID); err != nil {
+	if err := f.store.RequestIssueSync(t.Context(), f.project.ID, "github"); err != nil {
 		t.Fatalf("request: %v", err)
 	}
 	r.SyncRequested(t.Context())

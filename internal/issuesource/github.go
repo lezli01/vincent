@@ -10,12 +10,14 @@ import (
 
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 )
 
 // ProviderGitHub is the provider column's value for every GitHub row.
-const ProviderGitHub = "github"
+// It is the registry's id (internal/issueprovider), which owns the value.
+const ProviderGitHub = issueprovider.GitHub
 
 // GitHub is the GitHub source: *github.Client behind the seam. It also
 // implements RepoCommentLister and PlaceholderAdopter.

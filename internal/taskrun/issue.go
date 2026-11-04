@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issues"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
@@ -124,9 +125,10 @@ func sourceKey(provider, repo string, number int, key string) string {
 	return issues.RenderSource(provider, repo, number, key).Key
 }
 
-// providerGitHub is the Source.Provider of a legacy GitHub snapshot — the
-// same spelling issue_remotes.provider uses for an imported GitHub issue.
-const providerGitHub = "github"
+// providerGitHub is the Source.Provider of a legacy GitHub snapshot: a
+// legacy snapshot is GitHub's by definition, so it names the registry's
+// GitHub id (internal/issueprovider).
+const providerGitHub = issueprovider.GitHub
 
 // cloneIssue copies a snapshot for a task that inherits it — a `fan_out` lane
 // (§7.6, task 035 decision 9). Lanes already inherit `Fields`, and a lane

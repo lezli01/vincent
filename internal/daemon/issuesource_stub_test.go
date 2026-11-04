@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
@@ -249,8 +250,9 @@ func TestStubSourceImportsProbesAndSweeps(t *testing.T) {
 }
 
 // outboxRow inserts a pending write the way the store's enqueue would. The
-// store enqueues only for GitHub remotes today (#901), so a row for another
-// provider can only be written here.
+// store enqueues only for providers internal/issueprovider declares as
+// writing back (task 142.5), so a row for any other provider can only be
+// written here.
 func outboxRow(t *testing.T, st *store.Store, issueID int64, op string, desired, base store.IssueStateValue, commentID *int64) {
 	t.Helper()
 	db, err := sql.Open("sqlite", st.Path())
@@ -373,5 +375,62 @@ func TestIssueSyncAndOutboxNameNoGitHubClient(t *testing.T) {
 		if m := banned.FindAllString(string(b), -1); len(m) > 0 {
 			t.Errorf("%s names %v; it must go through issuesource", name, m)
 		}
+	}
+}
+
+// TestOutboxHoldsAJiraRowUntilAWriterRegisters is task 142.5's hold: a
+// human close of a live Jira import is enqueued by the store itself, waits
+// as no_client under the default registry — never failed, its attempts
+// uncounted, and the local state kept against an import that disagrees —
+// and drains once a Jira source is registered.
+func TestOutboxHoldsAJiraRowUntilAWriterRegisters(t *testing.T) {
+	f := newOutboxFixture(t)
+	ctx := t.Context()
+	src := newStubSource(&stubIssue{key: "PROJ-1", open: true, updated: issueBase})
+	ri := src.mapped(src.issues["PROJ-1"]).Remote
+	ri.ProjectID, ri.Provider = f.project.ID, issueprovider.Jira
+	iss, _, err := f.store.UpsertRemoteIssue(ctx, ri, issuestate.Sync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.TransitionIssue(ctx, iss.ID, issuestate.Close, issuestate.Completed, nil, issuestate.Human); err != nil {
+		t.Fatal(err)
+	}
+
+	for tick := range 2 {
+		f.outbox.Drain(ctx)
+		writes, err := f.store.IssueWrites(ctx, iss.ID)
+		if err != nil || len(writes) != 1 {
+			t.Fatalf("tick %d: writes = %+v, %v; want one", tick, writes, err)
+		}
+		if w := writes[0]; w.Status != store.OutboxPending || w.LastReason != outboxReasonNoClient || w.Attempts != 0 {
+			t.Errorf("tick %d: row = %+v, want pending, %s, 0 attempts", tick, w, outboxReasonNoClient)
+		}
+	}
+	// The importer reports the issue still open: the pending row holds the
+	// local close.
+	if _, _, err := f.store.UpsertRemoteIssue(ctx, ri, issuestate.Sync); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := f.store.GetIssue(ctx, iss.ID); err != nil || got.State != issuestate.Closed {
+		t.Fatalf("after an import = %+v, %v; want the local close kept", got, err)
+	}
+	if len(src.calls) != 0 {
+		t.Fatalf("an unregistered provider was called: %v", src.calls)
+	}
+
+	f.outbox.sources = func(provider string) (issuesource.Source, string) {
+		if provider == issueprovider.Jira {
+			return src, ""
+		}
+		return f.outbox.githubOnly(provider)
+	}
+	f.outbox.Drain(ctx)
+	if !slices.Equal(src.calls, []string{"get PROJ-1", "set PROJ-1"}) {
+		t.Errorf("jira calls = %v", src.calls)
+	}
+	writes, err := f.store.IssueWrites(ctx, iss.ID)
+	if err != nil || len(writes) != 1 || writes[0].Status != store.OutboxDone {
+		t.Errorf("after registering = %+v, %v; want done", writes, err)
 	}
 }

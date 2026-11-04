@@ -1405,9 +1405,12 @@ func (m *root) followTo(p apiclient.Project, open tea.Msg, notice string) tea.Cm
 }
 
 // applyFollow is a follow's switch, its open and its notice. A workspace
-// jump loses the task it came from: the stack is the old project's.
+// jump loses the task it came from: the stack is the old project's. Coming
+// from no selection at all — the startup chain has the project list but has
+// not picked yet — is not leaving a project, for applySwitch's reason, so
+// the jump keeps its from: nothing on the stack belongs to another project.
 func (m *root) applyFollow(p apiclient.Project, open tea.Msg, notice string) tea.Cmd {
-	if o, ok := open.(openTaskMsg); ok {
+	if o, ok := open.(openTaskMsg); ok && m.sel.id != 0 && p.ID != m.sel.id {
 		o.from = 0
 		open = o
 	}

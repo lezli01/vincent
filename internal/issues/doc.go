@@ -22,5 +22,6 @@
 // share. Folding it into the store would bind every store caller — recovery,
 // imports, test fixtures — to that policy, and would leave the policy beside
 // SQL nobody outside the store reads. This package imports only
-// internal/store and internal/issuestate; it never imports internal/api.
+// internal/store, internal/issuestate and internal/issueprovider; it never
+// imports internal/api.
 package issues

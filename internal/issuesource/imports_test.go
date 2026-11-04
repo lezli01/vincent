@@ -28,7 +28,7 @@ func TestImportsAreTheDocumentedSet(t *testing.T) {
 		}
 	}
 	slices.Sort(got)
-	want := []string{"internal/github", "internal/gitx", "internal/issuestate", "internal/store"}
+	want := []string{"internal/github", "internal/gitx", "internal/issueprovider", "internal/issuestate", "internal/store"}
 	if !slices.Equal(got, want) {
 		t.Errorf("internal/issuesource imports %v; doc.go and CLAUDE.md say %v — update both with the code", got, want)
 	}

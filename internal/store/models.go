@@ -6,6 +6,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
 
@@ -78,12 +79,14 @@ type Project struct {
 
 // Issue providers a project may be bound to (task 142.6, spec §5.6).
 // IssueProviderDerive is the stored "" — the source follows origin: github
-// when origin is a github.com remote, none otherwise.
+// when origin is a github.com remote, none otherwise. Derive and none are
+// the binding's own values; the provider ids are the registry's
+// (internal/issueprovider, task 142.5), never a second spelling of them.
 const (
 	IssueProviderDerive = ""
 	IssueProviderNone   = "none"
-	IssueProviderGitHub = "github"
-	IssueProviderJira   = "jira"
+	IssueProviderGitHub = issueprovider.GitHub
+	IssueProviderJira   = issueprovider.Jira
 )
 
 // IssueSource is a project's stored issue-source binding (task 142.6). It is

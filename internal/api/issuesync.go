@@ -8,6 +8,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/doctor"
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -30,8 +31,9 @@ const (
 	syncReasonPending = "pending"
 )
 
-// issueSyncProvider is the one provider an import comes from today.
-const issueSyncProvider = "github"
+// issueSyncProvider is the one provider an import comes from today; #903
+// makes it per project.
+const issueSyncProvider = issueprovider.GitHub
 
 // issueSyncStatusBody is GET and POST /v1/projects/{id}/issues/sync.
 type issueSyncStatusBody struct {
@@ -146,7 +148,7 @@ func (s *Server) handleIssueSyncNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if err := s.deps.Store.RequestIssueSync(ctx, project.ID); err != nil {
+	if err := s.deps.Store.RequestIssueSync(ctx, project.ID, issueSyncProvider); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, CodeNotFound, "project not found")
 			return

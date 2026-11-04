@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -249,10 +250,11 @@ func ThreadMirrored(iss *store.Issue) bool {
 }
 
 // WritesBack reports whether a state change of iss is written back to its
-// remote: it has a live GitHub remote (task 130.10). A moved or missing
-// remote keeps the change local.
+// remote: it has a live remote of a provider that writes back (task 130.10,
+// widened from GitHub to issueprovider.WritesBack by task 142.5). A moved or
+// missing remote, or an unknown provider, keeps the change local.
 func WritesBack(iss *store.Issue) bool {
-	return Mirrored(iss) && iss.Remote.Provider == "github" && iss.Remote.Status == store.RemoteStatusLive
+	return Mirrored(iss) && issueprovider.WritesBack(iss.Remote.Provider) && iss.Remote.Status == store.RemoteStatusLive
 }
 
 // checkForgeWrite refuses an agent's state change of an issue that writes

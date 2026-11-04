@@ -9,13 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuestate"
 )
 
 // The issue state write-back outbox (task 130.10, spec §12.4, §14). A close
-// or reopen of an issue with a live GitHub remote leaves one pending
-// set_state row, written in the transaction that changes the state; the
-// daemon's drain sends it and settles it. Nothing here calls GitHub.
+// or reopen of an issue with a live remote of a provider that writes back
+// (internal/issueprovider) leaves one pending set_state row, written in the
+// transaction that changes the state; the daemon's drain sends it and
+// settles it. Nothing here calls a provider.
 
 // Outbox row statuses.
 const (
@@ -37,14 +39,12 @@ const (
 	OutboxOpAddComment = "add_comment"
 )
 
-// outboxProvider is the provider whose remotes write back. It is the
-// importer's provider column value.
-const outboxProvider = "github"
-
-// IssueStateValue is an issue's state in GitHub's terms: State is "open" or
-// "closed", Reason GitHub's state_reason for a closed one, and DuplicateOf
-// the number of the issue a duplicate names in the same repository, 0 for
-// none.
+// IssueStateValue is an issue's state as the outbox carries it to a
+// provider: State is "open" or "closed", Reason the close reason of a closed
+// one in §5.6's vocabulary (which is GitHub's state_reason, hence the JSON
+// tag), and DuplicateOf the number of the issue a duplicate names in the
+// same provider and repository, 0 for none. Each provider's writer maps it
+// onto its own terms.
 type IssueStateValue struct {
 	State       string `json:"state"`
 	Reason      string `json:"state_reason,omitempty"`
@@ -53,7 +53,7 @@ type IssueStateValue struct {
 
 // Same compares two values the way echo suppression and the drain's
 // preflight do (task 130.10): by state, and by reason when closed — never
-// by a timestamp, and never by DuplicateOf, which GitHub does not report
+// by a timestamp, and never by DuplicateOf, which no provider reports
 // back.
 func (v IssueStateValue) Same(o IssueStateValue) bool {
 	if v.State != o.State {
@@ -62,9 +62,9 @@ func (v IssueStateValue) Same(o IssueStateValue) bool {
 	return v.State != string(issuestate.Closed) || v.Reason == o.Reason
 }
 
-// GitHubStateOf maps a local state and close reason onto GitHub's value.
-// issuestate's reasons are GitHub's vocabulary already.
-func GitHubStateOf(state issuestate.State, reason issuestate.Reason) IssueStateValue {
+// RemoteStateOf maps a local state and close reason onto the value the
+// outbox carries. issuestate's reasons are the outbox's vocabulary already.
+func RemoteStateOf(state issuestate.State, reason issuestate.Reason) IssueStateValue {
 	if issuestate.Normalize(state) != issuestate.Closed {
 		return IssueStateValue{State: string(issuestate.Open)}
 	}
@@ -109,32 +109,36 @@ func (s *Store) kickOutbox() {
 }
 
 // writesBack reports whether a state change of an issue with remote rem is
-// written back: a live GitHub remote only. A moved or missing one keeps the
-// change local (task 130.10), and a local issue has nowhere to write.
+// written back: a live remote of a provider that writes back
+// (issueprovider.WritesBack, task 142.5). A moved or missing one keeps the
+// change local (task 130.10), as does an unknown provider, and a local issue
+// has nowhere to write.
 func writesBack(rem *IssueRemote) bool {
-	return rem != nil && rem.IssueID != nil && rem.Provider == outboxProvider && rem.Status == RemoteStatusLive
+	return rem != nil && rem.IssueID != nil && issueprovider.WritesBack(rem.Provider) && rem.Status == RemoteStatusLive
 }
 
 // enqueueStateWriteTx records the write-back of cur's move to (to, reason)
 // in tx, the transaction making that move. It writes nothing for sync's own
 // transitions, for an issue that does not write back, or when the mapped
-// GitHub value is the one GitHub already has. A pending row for the issue
-// is superseded, and its base carried over: GitHub has not been written
+// value is the one the provider already has. A pending row for the issue
+// is superseded, and its base carried over: the provider has not been written
 // since, so close→reopen with base open sends nothing at all. Reports
 // whether a row was inserted.
 func enqueueStateWriteTx(ctx context.Context, tx *sql.Tx, cur *Issue, to issuestate.State, reason issuestate.Reason, duplicateOf *int64, by issuestate.Actor, now time.Time) (bool, error) {
 	if by == issuestate.Sync || !writesBack(cur.Remote) {
 		return false, nil
 	}
-	desired := GitHubStateOf(to, reason)
+	desired := RemoteStateOf(to, reason)
 	if duplicateOf != nil {
+		// The target counts only when it is a live remote of the same
+		// provider and repository: a number means nothing anywhere else.
 		var (
 			repo   string
 			number sql.NullInt64
 		)
 		err := tx.QueryRowContext(ctx, `
 			SELECT repo, number FROM issue_remotes WHERE issue_id = ? AND provider = ? AND remote_status = ''`,
-			*duplicateOf, outboxProvider).Scan(&repo, &number)
+			*duplicateOf, cur.Remote.Provider).Scan(&repo, &number)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 		case err != nil:
@@ -143,7 +147,7 @@ func enqueueStateWriteTx(ctx context.Context, tx *sql.Tx, cur *Issue, to issuest
 			desired.DuplicateOf = int(number.Int64)
 		}
 	}
-	base := GitHubStateOf(cur.State, cur.CloseReason)
+	base := RemoteStateOf(cur.State, cur.CloseReason)
 	var baseJSON string
 	err := tx.QueryRowContext(ctx, `
 		SELECT base_json FROM issue_sync_outbox WHERE issue_id = ? AND op = ? AND status = ? ORDER BY id DESC LIMIT 1`,
@@ -414,7 +418,7 @@ func rebaseSuccessorTx(ctx context.Context, tx *sql.Tx, o *IssueOutbox, written 
 	if err != nil {
 		return false, err
 	}
-	desired := GitHubStateOf(cur.State, cur.CloseReason)
+	desired := RemoteStateOf(cur.State, cur.CloseReason)
 	if !writesBack(cur.Remote) || desired.Same(written) {
 		return false, nil
 	}

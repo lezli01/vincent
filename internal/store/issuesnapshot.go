@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"github.com/lezli01/vincent/internal/issueprovider"
 )
 
 // IssueSnapshot is the issue a task was created from, frozen at creation
@@ -175,7 +177,7 @@ func NewIssueSnapshot(iss *Issue, now time.Time) *IssueSnapshot {
 			Milestone:       detail.Milestone,
 			MilestoneNumber: detail.MilestoneNumber,
 		}
-		if rem.Provider != "github" {
+		if rem.Provider != issueprovider.GitHub {
 			snap.Remote.Key = detail.Key
 		}
 	}

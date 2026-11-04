@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (9/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (10/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -51,9 +51,18 @@ lists only the hard dependencies the parent records as "Blocked by".
   dispatches each row on its remote's provider, still one writer; and
   `store.IssueIDByRemoteKey` attaches a per-issue thread for a source with
   no repository-wide listing. ✓ 2026-11-03
-- [ ] **142.5** ([#901](https://github.com/lezli01/vincent/issues/901)) The
+- [x] **142.5** ([#901](https://github.com/lezli01/vincent/issues/901)) The
   `"github"` equality checks replaced, so a second provider writes back and is
-  guarded. Depends: 142.4.
+  guarded. Depends: 142.4. The new stdlib-only leaf `internal/issueprovider`
+  holds the provider ids, `Known`, `WritesBack` (true for GitHub and Jira)
+  and `All`; `issues.WritesBack`, the store's outbox enqueue and the
+  duplicate-of lookup (now within the closing issue's own provider and repo)
+  ask it, so a live Jira remote is guarded `forge_write_needs_human` and its
+  human or granted writes are enqueued. With no Jira writer until 142.13
+  (#909), those rows wait `no_client` and are never failed.
+  `store.GitHubStateOf` is `RemoteStateOf`; `RequestIssueSync` takes the
+  provider; `GET /v1/issues`' `source` vocabulary is `local` plus the
+  registry. ✓ 2026-11-03
 - [x] **142.6** ([#902](https://github.com/lezli01/vincent/issues/902)) The
   per-project issue-source binding (decision 5): migration, API, CLI, TUI
   form, MCP and sticky semantics. The GitHub importer honours it now

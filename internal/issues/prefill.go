@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -32,9 +33,6 @@ const (
 	TypeNumber  = "number"
 	TypeBoolean = "boolean"
 )
-
-// providerGitHub is issue_remotes.provider for an imported GitHub issue.
-const providerGitHub = "github"
 
 // FieldDecl is one workflow-declared field reduced to what the mapping
 // reads. The caller keeps the full declaration and is the one that
@@ -85,7 +83,7 @@ func PrefillFrom(snap *store.IssueSnapshot, decls []FieldDecl) Prefill {
 
 // gitHubRemote is snap's GitHub reference, nil for a local issue.
 func gitHubRemote(snap *store.IssueSnapshot) *store.IssueSnapshotRemote {
-	if snap.Remote == nil || snap.Remote.Provider != providerGitHub || snap.Remote.Number == 0 {
+	if snap.Remote == nil || snap.Remote.Provider != issueprovider.GitHub || snap.Remote.Number == 0 {
 		return nil
 	}
 	return snap.Remote
@@ -102,7 +100,7 @@ func prefillRef(snap *store.IssueSnapshot) (prefix, link string, ok bool) {
 		return prefix, "GitHub issue " + prefix, true
 	}
 	rem := snap.Remote
-	if rem == nil || rem.Provider != providerJira || rem.Key == "" {
+	if rem == nil || rem.Provider != issueprovider.Jira || rem.Key == "" {
 		return "", "", false
 	}
 	ref := RenderSource(rem.Provider, rem.Repo, rem.Number, rem.Key)

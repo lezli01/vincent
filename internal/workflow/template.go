@@ -229,7 +229,8 @@ type IssueComment struct {
 
 // IssueSource is `.Issue.Source` — an imported issue's provider reference.
 type IssueSource struct {
-	// Provider is the issue_remotes.provider id: "github" or "jira".
+	// Provider is the issue_remotes.provider id, as internal/issueprovider
+	// declares it: "github" or "jira".
 	Provider string
 	// Repo is `owner/name` for GitHub.
 	Repo string

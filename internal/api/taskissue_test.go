@@ -460,6 +460,7 @@ func TestCompareURLClosesTheImportedIssue(t *testing.T) {
 		{"imported same-repo", func(t *store.Task) { t.Issue = imported("octo/repo") }, true},
 		{"imported cross-repo", func(t *store.Task) { t.Issue = imported("other/repo") }, false},
 		{"local", func(t *store.Task) { t.Issue = &store.IssueSnapshot{ID: 1, Title: "x", State: "open"} }, false},
+		{"jira", func(t *store.Task) { t.Issue = jiraSnapshot() }, false},
 		{"legacy", func(t *store.Task) { t.GitHubIssue = &github.Issue{Repo: "octo/repo", Number: 200} }, true},
 		{"none", func(*store.Task) {}, false},
 	} {
@@ -478,5 +479,25 @@ func TestTaskGitHubIssueKeepsLegacyRows(t *testing.T) {
 	legacy := &github.Issue{Repo: "octo/repo", Number: 7, Title: "old"}
 	if got := taskGitHubIssue(&store.Task{GitHubIssue: legacy}); !reflect.DeepEqual(got, legacy) {
 		t.Errorf("legacy github_issue = %+v", got)
+	}
+}
+
+// jiraSnapshot is a task's snapshot of a Jira import: it has a number, but
+// not a GitHub one.
+func jiraSnapshot() *store.IssueSnapshot {
+	return &store.IssueSnapshot{ID: 1, Title: "x", State: "open", Remote: &store.IssueSnapshotRemote{
+		Provider: "jira", Repo: "octo/repo", Number: 200, Key: "PROJ-200",
+	}}
+}
+
+// TestJiraSnapshotIsNoGitHubIssue: a Jira snapshot derives no github_issue
+// and no GitHub reference to close (task 142.5).
+func TestJiraSnapshotIsNoGitHubIssue(t *testing.T) {
+	task := &store.Task{Issue: jiraSnapshot()}
+	if got := taskGitHubIssue(task); got != nil {
+		t.Errorf("github_issue = %+v, want nil", got)
+	}
+	if repo, n, ok := taskGitHubRef(task); ok || repo != "" || n != 0 {
+		t.Errorf("taskGitHubRef = %q, %d, %v; want none", repo, n, ok)
 	}
 }

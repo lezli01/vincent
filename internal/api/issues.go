@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/user"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issues"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/mcp"
@@ -483,18 +483,19 @@ func issueIDFromPath(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return id, true
 }
 
-// issueSourceGitHub and issueSourceJira are the remote providers an issue
-// can come from, as GET /v1/issues spells them in `source` and matches them
-// for `remote_number` and `remote_key`.
-const (
-	issueSourceGitHub = "github"
-	issueSourceJira   = "jira"
-)
+// issueSourceLocal is GET /v1/issues' `source` for an issue with no remote.
+const issueSourceLocal = "local"
 
 // issueSources is the `source` vocabulary of GET /v1/issues: local, then
-// every provider. It is a static list until #901's provider registry
-// replaces it (task 142.9, issue #905).
-var issueSources = []string{"local", issueSourceGitHub, issueSourceJira}
+// every provider internal/issueprovider declares (task 142.5, #901).
+func issueSources() []string {
+	return append([]string{issueSourceLocal}, issueprovider.All()...)
+}
+
+// validIssueSource reports whether v is a `source` GET /v1/issues accepts.
+func validIssueSource(v string) bool {
+	return v == issueSourceLocal || issueprovider.Known(v)
+}
 
 // parseRemoteKey reads GET /v1/issues' `remote_key` (task 142.9, issue
 // #905), choosing the provider by the key's shape rather than by the
@@ -518,7 +519,7 @@ func parseRemoteKey(v string) (provider, repo string, number int, ok bool) {
 		return n, err == nil && n > 0
 	}
 	if n, ok := positive(v); ok {
-		return issueSourceGitHub, "", n, true
+		return issueprovider.GitHub, "", n, true
 	}
 	i := strings.LastIndexByte(v, '-')
 	if i < 1 {
@@ -535,7 +536,7 @@ func parseRemoteKey(v string) (provider, repo string, number int, ok bool) {
 			return "", "", 0, false
 		}
 	}
-	return issueSourceJira, key, n, true
+	return issueprovider.Jira, key, n, true
 }
 
 // handleIssueList implements GET /v1/issues. The `q` parameter is a
@@ -578,9 +579,9 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 	f.Labels = q["label"]
 	f.Kind = q.Get("kind")
 	f.Text = q.Get("q")
-	if v := q.Get("source"); v != "" && !slices.Contains(issueSources, v) {
+	if v := q.Get("source"); v != "" && !validIssueSource(v) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			"source must be one of: "+strings.Join(issueSources, ", "))
+			"source must be one of: "+strings.Join(issueSources(), ", "))
 		return
 	}
 	f.Source = q.Get("source")
@@ -636,7 +637,7 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 				"remote_number requires project_id: an issue number is only meaningful within one project")
 			return
 		}
-		lookup, provider, number = true, issueSourceGitHub, n
+		lookup, provider, number = true, issueprovider.GitHub, n
 	}
 	if keyParam != "" {
 		p, k, n, ok := parseRemoteKey(keyParam)
