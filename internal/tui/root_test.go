@@ -459,3 +459,59 @@ func TestRootJumpPushesTheTaskItLeaves(t *testing.T) {
 		t.Fatalf("stack after a board open = %v, want empty", view.stack)
 	}
 }
+
+// TestLaneJumpBackStackAcrossFollows pins applyFollow's rule for an
+// openTaskMsg's from (review F3): a follow that leaves a different selected
+// project drops it, because the stack is that project's, while a follow from
+// no selection yet — the startup chain has the project list but has not
+// picked — or into the project already selected keeps it. The first case is
+// what made TestNextFailureOpensABlockedLaneFromRealServer flake with
+// "back stack = [], want the parent".
+func TestLaneJumpBackStackAcrossFollows(t *testing.T) {
+	setup := func(sel int64) (*root, *taskView) {
+		m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
+		m.phase = phaseConnected
+		m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+		m.projects = []apiclient.Project{
+			{ID: testProjectID, Name: "proj"},
+			{ID: otherProjectID, Name: "other"},
+		}
+		if sel != 0 {
+			m.sel = projectSel{id: sel, name: "sel"}
+		}
+		return m, m.views[viewTask].(*taskView)
+	}
+
+	t.Run("no selection yet keeps from", func(t *testing.T) {
+		m, view := setup(0)
+		m.Update(openTaskMsg{id: 42, state: stateBlocked, from: 7, projectID: testProjectID})
+		if m.sel.id != testProjectID {
+			t.Fatalf("selection after the follow = %d, want %d", m.sel.id, testProjectID)
+		}
+		if got := view.stack; len(got) != 1 || got[0] != 7 {
+			t.Fatalf("stack = %v, want [7]", got)
+		}
+	})
+
+	t.Run("leaving another project drops from", func(t *testing.T) {
+		m, view := setup(otherProjectID)
+		m.Update(openTaskMsg{id: 42, state: stateBlocked, from: 7, projectID: testProjectID})
+		if m.sel.id != testProjectID {
+			t.Fatalf("selection after the follow = %d, want %d", m.sel.id, testProjectID)
+		}
+		if len(view.stack) != 0 {
+			t.Fatalf("stack = %v, want empty", view.stack)
+		}
+	})
+
+	// A pending switch confirmed after the selection already moved to its
+	// project reaches applyFollow with p == sel: nothing is left behind.
+	t.Run("following into the selected project keeps from", func(t *testing.T) {
+		m, view := setup(testProjectID)
+		p, _ := m.knownProject(testProjectID)
+		m.applyFollow(p, openTaskMsg{id: 42, state: stateBlocked, from: 7, projectID: testProjectID}, "")
+		if got := view.stack; len(got) != 1 || got[0] != 7 {
+			t.Fatalf("stack = %v, want [7]", got)
+		}
+	})
+}
