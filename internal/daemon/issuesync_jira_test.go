@@ -24,7 +24,11 @@ import (
 // following it. The Jira source itself is another unit's; these stubs hold
 // the importer to the seam it implements.
 
-const jiraSite = "acme.atlassian.net"
+const (
+	jiraSite = "acme.atlassian.net"
+	// jiraStubPageSize is the stub's page: importPageCap pages are 500.
+	jiraStubPageSize = 100
+)
 
 // jiraStubIssue is one issue on the stub: id is its stable remote key,
 // project and number its key ("ENG-7").
@@ -55,8 +59,8 @@ type jiraStub struct {
 	listErr  error
 }
 
-func newJiraStub(pageSize int, issues ...*jiraStubIssue) *jiraStub {
-	s := &jiraStub{byID: map[int]*jiraStubIssue{}, pageSize: pageSize}
+func newJiraStub(issues ...*jiraStubIssue) *jiraStub {
+	s := &jiraStub{byID: map[int]*jiraStubIssue{}, pageSize: jiraStubPageSize}
 	for _, is := range issues {
 		s.add(is)
 	}
@@ -295,7 +299,7 @@ func manyJiraIssues(n int, updated func(i int) time.Time) []*jiraStubIssue {
 func TestJiraImportResumesByIdCursor(t *testing.T) {
 	issues := manyJiraIssues(600, func(i int) time.Time { return issueBase.Add(time.Duration(i) * time.Minute) })
 	issues[599].updated = issueBase.Add(11*time.Hour + 45*time.Minute)
-	src := newJiraStub(100, issues...)
+	src := newJiraStub(issues...)
 	f := newJiraFixture(t, src)
 	f.now = issueBase.Add(11 * time.Hour)
 	f.tick(t)
@@ -362,7 +366,7 @@ func TestJiraImportResumesByIdCursor(t *testing.T) {
 // binding resolves to; a later pass resolving another stops with
 // binding_changed before listing, and no pass after it makes a call.
 func TestJiraBindingChangedStops(t *testing.T) {
-	src := &jiraFull{jiraStub: newJiraStub(100, &jiraStubIssue{id: 10001, number: 1, open: true, updated: issueBase}), projectID: "10042"}
+	src := &jiraFull{jiraStub: newJiraStub(&jiraStubIssue{id: 10001, number: 1, open: true, updated: issueBase}), projectID: "10042"}
 	f := newJiraFixture(t, src)
 	f.tick(t)
 	st := f.syncState(t)
@@ -429,7 +433,7 @@ func TestJiraPassFailuresStop(t *testing.T) {
 		{"list 403", false, issuesource.ReasonForbidden, []string{"list"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stub := newJiraStub(100, &jiraStubIssue{id: 10001, number: 1, open: true, updated: issueBase})
+			stub := newJiraStub(&jiraStubIssue{id: 10001, number: 1, open: true, updated: issueBase})
 			var src issuesource.Source = stub
 			fail := &jiraFail{issuesource.Failure{Reason: tc.reason}}
 			if tc.resolve {
@@ -453,7 +457,7 @@ func TestJiraPassFailuresStop(t *testing.T) {
 	}
 
 	t.Run("429", func(t *testing.T) {
-		stub := newJiraStub(100, &jiraStubIssue{id: 10001, number: 1, open: true, updated: issueBase})
+		stub := newJiraStub(&jiraStubIssue{id: 10001, number: 1, open: true, updated: issueBase})
 		f := newJiraFixture(t, stub)
 		reset := f.now.Add(30 * time.Second)
 		stub.listErr = &jiraFail{issuesource.Failure{Reason: issuesource.ReasonRateLimited, ResetAt: reset}}
@@ -483,7 +487,7 @@ func TestJiraPassFailuresStop(t *testing.T) {
 // listing at the binding returns it again.
 func TestJiraBulkSweep(t *testing.T) {
 	issues := manyJiraIssues(205, func(i int) time.Time { return issueBase.Add(time.Duration(i) * time.Second) })
-	src := &jiraFull{jiraStub: newJiraStub(100, issues...), projectID: "10042"}
+	src := &jiraFull{jiraStub: newJiraStub(issues...), projectID: "10042"}
 	f := newJiraFixture(t, src)
 	f.tick(t)
 	if got := len(f.jiraIssues(t)); got != 205 {
@@ -552,7 +556,7 @@ func TestJiraBulkSweep(t *testing.T) {
 // of a moved issue answers it where it went, and the row is rewritten to
 // that project, number and URL and marked moved there.
 func TestJiraMovedProbeRewrites(t *testing.T) {
-	src := newJiraStub(100,
+	src := newJiraStub(
 		&jiraStubIssue{id: 10001, number: 1, open: true, updated: issueBase},
 		&jiraStubIssue{id: 10002, number: 2, open: true, updated: issueBase},
 	)
@@ -581,7 +585,7 @@ func TestJiraMovedProbeRewrites(t *testing.T) {
 // a Jira row as to a GitHub one — a human close waiting in the outbox is
 // not reverted by an import that still reports the issue open.
 func TestJiraImportKeepsAPendingLocalClose(t *testing.T) {
-	src := newJiraStub(100, &jiraStubIssue{id: 10001, number: 1, open: true, updated: issueBase})
+	src := newJiraStub(&jiraStubIssue{id: 10001, number: 1, open: true, updated: issueBase})
 	f := newJiraFixture(t, src)
 	f.tick(t)
 	iss := f.jiraIssues(t)["10001"]
