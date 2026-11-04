@@ -4,7 +4,7 @@ description: Create, edit, review, and validate vincent workflow YAML under .vin
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.5.2
+  version: 1.5.3
 ---
 
 # vincent Workflows
@@ -101,12 +101,15 @@ unknown — expand includes, and include an agent merge resolver. If referenced 
 or dynamic structure cannot be inspected, report the envelope as unknown rather
 than guessing. See the cost reference for the full rules.
 
-Read the task's issue from `$VINCENT_ISSUE_FILE`, never with `gh issue view`.
-A task created from an issue gets that variable in every step: the path of a
-`gh issue view --json`-shaped snapshot (`number`, `title`, `body`, `state`,
-`labels`, `comments`, …, plus vincent's `id`, `kind`, `priority`, `source`).
-Its `comments` is the issue's thread at task creation, so a step that needs the
-discussion reads it there rather than from GitHub. Copying it
+Read the task's issue from `$VINCENT_ISSUE_FILE`, never from the tracker
+(`gh issue view`, Jira's REST API). A task created from an issue gets that
+variable in every step: the path of a `gh issue view --json`-shaped snapshot
+(`number`, `title`, `body`, `state`, `labels`, `comments`, …, plus vincent's
+`id`, `kind`, `priority`, `source`). For an issue imported from Jira `number`
+is null and the key is `source.key` (also `$VINCENT_ISSUE_KEY` and
+`.Issue.Source.Key`); test `source.provider` before assuming GitHub. Its
+`comments` is the issue's thread at task creation, so a step that needs the
+discussion reads it there rather than from the tracker. Copying it
 costs no network and works the same in a fan-out lane. Branch on `kind` or
 labels with `jq` over that file; never template a title or body into `run:` —
 free text reaches a shell through the file, not through a template. An
