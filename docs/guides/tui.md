@@ -1829,7 +1829,7 @@ Each project is one row of figures, all of them the daemon's own counts:
 | queued, blocked, done | Tasks in each state; archived tasks are never counted |
 | issues (gh) | Open issues, with the ones imported from GitHub in brackets |
 | chats (wait) | Live chats, with the ones waiting on you in brackets |
-| sync | Issue sync: `✓` healthy, `✗` failing, `—` off or no GitHub remote |
+| sync | Issue sync from the project's issue source, GitHub or Jira: `✓` healthy, `✗` failing, `—` off or no issue source |
 | github | `✓ owner/repo` when the GitHub integration is usable, its reason when not, `—` with no GitHub remote |
 | activity | How long ago the project's tasks, issues or chats last changed |
 
