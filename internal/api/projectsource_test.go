@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
 )
@@ -114,6 +115,27 @@ func TestValidateIssueSource(t *testing.T) {
 				t.Errorf("message %q does not name %q", msg, c.needle)
 			}
 		})
+	}
+}
+
+// TestEveryRegisteredProviderIsBindable holds the binding's validator to the
+// provider registry (review F2): a provider added to internal/issueprovider
+// must also become bindable here, or this fails rather than the provider
+// being silently refused at bind time.
+func TestEveryRegisteredProviderIsBindable(t *testing.T) {
+	for _, id := range issueprovider.All() {
+		req := projectSourceRequest{Provider: id}
+		if id == issueprovider.Jira {
+			req = jiraReq("https://x.example", "A", "", "")
+		}
+		got, msg := validateIssueSource(req)
+		if msg != "" {
+			t.Errorf("registered provider %q refused: %s", id, msg)
+			continue
+		}
+		if got.Provider != id {
+			t.Errorf("provider %q stored as %q", id, got.Provider)
+		}
 	}
 }
 
