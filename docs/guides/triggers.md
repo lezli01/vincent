@@ -980,10 +980,13 @@ limits:
 ```
 
 Use a poll script like this for a project vincent does not sync from Jira, or
-for JQL beyond what the project's Jira binding narrows its import to. A project
-bound to Jira issue sync already imports its issues, so an
-[`issues`](#issues-watch-the-projects-issues) trigger matching them is the
-simpler route there: no script, and the created task linked to the issue. The
+for JQL beyond what the project's Jira binding narrows its import to. Binding
+a project to Jira is not the same as importing from it, so check first:
+once `vincent issue ls --project P --source jira` lists the project's Jira
+issues, an [`issues`](#issues-watch-the-projects-issues) trigger matching them
+is the simpler route: no script, and the created task linked to the issue.
+While that list is empty, keep the poll script, because an `issues` trigger
+has nothing to fire on. The
 credential stays where it is, because native sync reads it from the daemon's
 environment too (`JIRA_USER` and `JIRA_API_TOKEN` by default) and reports
 `no_credential` without it.

@@ -23,7 +23,7 @@ import (
 // there is no way to satisfy this test by editing one of the two. When it
 // fails, bump `metadata.version` and paste the hash the failure prints.
 var publishedTrees = map[string]string{
-	"vincent-triggers":  "3a1ba6ea71ad1d0b7b5853a484d0e362f6c7a77758e02e214cc2e39840a77426",
+	"vincent-triggers":  "82a90a8238ef8e72c7d635bfd9ac1fe7372ad343ab71fc920f01df09554299d4",
 	"vincent-workflows": "55d6d1604629f059382ed6cd37ff7f0cecc1dfbddcabc4fb082dce7cc4e0daae",
 }
 

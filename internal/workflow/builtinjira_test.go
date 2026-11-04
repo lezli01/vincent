@@ -46,12 +46,20 @@ func TestBuiltinChecklistsCoverJiraIssues(t *testing.T) {
 		"by: sync may be Jira's importer",
 		"stays untrusted for both",
 		".Event.Issue.Source.Provider",
-		"bound to Jira issue sync",
-		"imports its issues",
+		"--source jira lists them",
+		"a Jira binding alone imports nothing",
 		"from the issue's tracker",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("update-triggers lacks %q", want)
+		}
+	}
+	// A binding is not an import (review F3): until the Jira importer has
+	// run, an issues trigger on a bound project never fires, so no built-in
+	// may migrate a working poll script on the binding alone.
+	for _, stale := range []string{"for a project bound to Jira issue sync becomes", "already imports its issues"} {
+		if strings.Contains(prompt, stale) {
+			t.Errorf("update-triggers still says %q", stale)
 		}
 	}
 }

@@ -1260,11 +1260,14 @@ steps:
           GitHub's, and it stays untrusted for both: item 7 applies unchanged.
           The provider is .Event.Issue.Source.Provider, so a trigger meant for
           one tracker's issues tests it in if:. A poll script that queries
-          Jira for a project bound to Jira issue sync becomes an issues
-          trigger on that project — a source.type change item 14 reports
-          rather than makes on an armed trigger. A poll script stays for a
-          project vincent does not sync from Jira, and for JQL beyond the
-          binding's narrowing clause.
+          Jira becomes an issues trigger on that project only once vincent
+          holds the project's Jira issues — vincent issue ls --project P
+          --source jira lists them; a Jira binding alone imports nothing, and
+          an issues trigger there would never fire — and that is a
+          source.type change item 14 reports rather than makes on an armed
+          trigger. Otherwise the poll script stays, as it does for a project
+          vincent does not sync from Jira and for JQL beyond the binding's
+          narrowing clause.
 
       ## What you may not change
 
