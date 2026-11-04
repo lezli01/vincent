@@ -2947,8 +2947,8 @@ separate family from tasks: they never appear in `GET /v1/tasks` or on the
 board, and tasks never appear here.
 
 ```
-GET    /v1/chats?project_id=&task_id=&state=&archived=&archived_before=
-                &archived_since=&limit=&offset=
+GET    /v1/chats?project_id=&task_id=&issue_id=&state=&archived=
+                &archived_before=&archived_since=&limit=&offset=
                                       newest first; state may repeat
 POST   /v1/chats                      create, with a worktree and a branch — or, with
                                       existing_branch, on a branch that is already there
@@ -2983,6 +2983,13 @@ the same way: terminal chats are hidden unless you ask for them. It covers
 which its name does not say; an explicit `state=` wins over it, and anything but
 `false|true|all` is a `400 validation_failed`. `task_id=` narrows the list to
 the chats opened on one task; add `archived=all` to include the closed ones.
+`issue_id=` narrows it to the chats of the issue and of its tasks: opened on
+the issue, linked to any of its tasks or lanes, or handed off into one. Unlike
+`GET /v1/tasks?issue_id=`, fan-out lanes count — a chat on a lane is still a
+conversation about the issue. It must be a positive integer (anything else is a
+`400 validation_failed`), an issue that does not exist lists nothing, and it
+combines with every other parameter; `archived` keeps its default, so the
+handed-off and closed ones need `archived=all`.
 Every chat carries `linked_task_id` when it was opened on a task, and omits it
 otherwise.
 

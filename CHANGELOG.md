@@ -13,6 +13,11 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **List an issue's chats.** `GET /v1/chats` takes `issue_id`: the chats
+  opened on the issue, linked to any of its tasks — fan-out lanes included —
+  or handed off into its work. A malformed or non-positive id is a
+  `400 validation_failed`, an unknown issue lists nothing, and `archived`
+  keeps its default (#931).
 - **Find an issue by any tracker reference.** `GET /v1/issues` takes
   `remote_key` — `142` for a GitHub issue, `PROJ-12` for a Jira one,
   case-insensitive — and `source=jira`; `vincent issue ls` gains

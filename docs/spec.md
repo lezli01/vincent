@@ -10606,6 +10606,22 @@ GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #35
                                         terminal states, `closed` with the other two. Every chat
                                         representation carries `linked_task_id` (omitted on a
                                         free chat)
+       &issue_id=                       *Amended 2026-11-04 (issue #931):* `issue_id=N`
+                                        narrows to the conversations that concern issue N — a
+                                        chat whose `issue_id` is N (opened on it, task 140), or
+                                        whose `linked_task_id` or `handoff_task_id` names any
+                                        task whose `issue_id` is N. **Fan-out lanes count**,
+                                        where GET /v1/tasks?issue_id= leaves them out: task 130
+                                        decision 5 keeps a lane off "the issue's tasks" because
+                                        it is part of its root's work, and that stands; this
+                                        filter answers which conversations concern the issue,
+                                        and a chat on a lane is one — lanes are not Work-tab
+                                        rows, so it would otherwise appear nowhere on its
+                                        issue. A non-integer or a value below 1 is
+                                        `400 validation_failed`; an unknown issue lists `[]`,
+                                        as `task_id=` does. It ANDs with every other parameter
+                                        and `archived=` keeps its default. Every column it
+                                        reads is already indexed, so no migration
 POST   /v1/chats                        { project_id, title, agent?, model?, effort?,
                                           base_branch?, branch_name?, existing_branch? }
                                         → 201 with the chat, its `vincent/{id}-{slug}` branch
