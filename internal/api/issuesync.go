@@ -211,7 +211,7 @@ func (s *Server) handleIssueSyncNow(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, out)
 		return
 	}
-	if err := s.deps.Store.RequestIssueSyncAs(ctx, project.ID, res.Provider); err != nil {
+	if err := s.deps.Store.RequestIssueSync(ctx, project.ID, res.Provider); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, CodeNotFound, "project not found")
 			return

@@ -200,7 +200,7 @@ func TestIssueSyncSwitchesAreIndependent(t *testing.T) {
 		var ticks atomic.Int32
 		r.jiraTick = func(ctx context.Context) { ticks.Add(1); r.JiraTick(ctx) }
 		runLoops(t, r)
-		if err := f.store.RequestIssueSyncAs(t.Context(), f.project.ID, issuesource.ProviderJira); err != nil {
+		if err := f.store.RequestIssueSync(t.Context(), f.project.ID, issuesource.ProviderJira); err != nil {
 			t.Fatal(err)
 		}
 		r.RequestSync(f.project.ID)
@@ -238,7 +238,7 @@ func TestIssueSyncNowWakesTheResolvedProvider(t *testing.T) {
 		})
 		both := jiraEnv("me", "tok")
 		env.Store(&both)
-		if err := f.store.RequestIssueSyncAs(t.Context(), f.project.ID, issuesource.ProviderJira); err != nil {
+		if err := f.store.RequestIssueSync(t.Context(), f.project.ID, issuesource.ProviderJira); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, func() bool {
@@ -254,7 +254,7 @@ func TestIssueSyncNowWakesTheResolvedProvider(t *testing.T) {
 		newCorpus(t, issueRow(1, "open"))
 		f.cfg.Jira.Enabled = false
 		r := f.reconciler()
-		if err := f.store.RequestIssueSyncAs(t.Context(), f.project.ID, issuesource.ProviderGitHub); err != nil {
+		if err := f.store.RequestIssueSync(t.Context(), f.project.ID, issuesource.ProviderGitHub); err != nil {
 			t.Fatal(err)
 		}
 		r.SyncRequested(t.Context())
@@ -266,7 +266,7 @@ func TestIssueSyncNowWakesTheResolvedProvider(t *testing.T) {
 		f := newFixture(t, "https://github.com/octo/repo.git")
 		f.cfg.GitHub.PollInterval = 0
 		r := f.reconciler()
-		if err := f.store.RequestIssueSyncAs(t.Context(), f.project.ID, issuesource.ProviderGitHub); err != nil {
+		if err := f.store.RequestIssueSync(t.Context(), f.project.ID, issuesource.ProviderGitHub); err != nil {
 			t.Fatal(err)
 		}
 		r.SyncRequested(t.Context())

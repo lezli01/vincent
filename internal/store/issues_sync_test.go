@@ -181,10 +181,10 @@ func TestRequestIssueSync(t *testing.T) {
 	}
 }
 
-// TestRequestIssueSyncAs covers the provider-stamped "sync now" (task
+// TestRequestIssueSyncStampsProvider covers the provider-stamped "sync now" (task
 // 142.7): the row records which provider was asked, a later request from
 // another provider re-stamps it, and only a provider that syncs is accepted.
-func TestRequestIssueSyncAs(t *testing.T) {
+func TestRequestIssueSyncStampsProvider(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	p := testProject(t, s, "p1")
@@ -196,7 +196,7 @@ func TestRequestIssueSyncAs(t *testing.T) {
 		calls.Add(1)
 	})
 
-	if err := s.RequestIssueSyncAs(ctx, p.ID, IssueProviderJira); err != nil {
+	if err := s.RequestIssueSync(ctx, p.ID, IssueProviderJira); err != nil {
 		t.Fatal(err)
 	}
 	if n := calls.Load(); n != 1 {
@@ -210,7 +210,7 @@ func TestRequestIssueSyncAs(t *testing.T) {
 		t.Errorf("after jira request = %+v", st)
 	}
 
-	if err := s.RequestIssueSyncAs(ctx, p.ID, IssueProviderGitHub); err != nil {
+	if err := s.RequestIssueSync(ctx, p.ID, IssueProviderGitHub); err != nil {
 		t.Fatal(err)
 	}
 	if again, _ := s.GetIssueSyncState(ctx, p.ID); again.Provider != IssueProviderGitHub || again.RequestedAt == nil {
@@ -218,11 +218,11 @@ func TestRequestIssueSyncAs(t *testing.T) {
 	}
 
 	for _, bad := range []string{IssueProviderNone, IssueProviderDerive, "gitlab"} {
-		if err := s.RequestIssueSyncAs(ctx, p.ID, bad); err == nil {
+		if err := s.RequestIssueSync(ctx, p.ID, bad); err == nil {
 			t.Errorf("provider %q accepted", bad)
 		}
 	}
-	if err := s.RequestIssueSyncAs(ctx, 999, IssueProviderJira); !errors.Is(err, ErrNotFound) {
+	if err := s.RequestIssueSync(ctx, 999, IssueProviderJira); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown project = %v, want ErrNotFound", err)
 	}
 	if n := calls.Load(); n != 2 {

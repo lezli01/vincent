@@ -189,22 +189,16 @@ func issueSyncEvent(st IssueSyncState) (*Event, error) {
 // block.
 func (s *Store) OnIssueSyncRequested(fn func(projectID int64)) { s.syncRequested.Store(&fn) }
 
-// RequestIssueSync records a "sync now" for the project from provider (task
-// 130.8): it is RequestIssueSyncAs, kept under the name master's callers use.
-func (s *Store) RequestIssueSync(ctx context.Context, projectID int64, provider string) error {
-	return s.RequestIssueSyncAs(ctx, projectID, provider)
-}
-
-// RequestIssueSyncAs records a "sync now" for the project from provider
-// (IssueProviderGitHub or IssueProviderJira; task 142.7): requested_at is
-// stamped and provider set to provider on its row, creating an ok row when
-// there is none — which is no transition, so no event — and after the
+// RequestIssueSync records a "sync now" for the project from provider
+// (IssueProviderGitHub or IssueProviderJira; task 130.8, task 142.7):
+// requested_at is stamped and provider set to provider on its row, creating
+// an ok row when there is none — which is no transition, so no event — and after the
 // commit the OnIssueSyncRequested callback is told. The store holds no lock
 // while it runs. The callback keeps its projectID-only signature: the
 // daemon reads the requested row's Provider to choose which provider's pass
 // to wake, so the provider is stamped on the row rather than passed along.
 // ErrNotFound for an unknown project; an error for any other provider.
-func (s *Store) RequestIssueSyncAs(ctx context.Context, projectID int64, provider string) error {
+func (s *Store) RequestIssueSync(ctx context.Context, projectID int64, provider string) error {
 	switch provider {
 	case IssueProviderGitHub, IssueProviderJira:
 	default:

@@ -37,7 +37,7 @@ import (
 //     reconciler is gated on GitHub's. Off, it idles on a heartbeat and
 //     re-reads the config, so a hot reload reaches the next tick.
 //
-// A "sync now" (store.RequestIssueSyncAs) is this loop's for both
+// A "sync now" (store.RequestIssueSync) is this loop's for both
 // providers: the API stamps the requested row with the project's resolved
 // provider, and the request is served by that provider's pass under that
 // provider's switches alone — a Jira request is served with GitHub off.
