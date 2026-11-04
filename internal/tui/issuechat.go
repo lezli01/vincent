@@ -32,6 +32,9 @@ type issueChatOpenedMsg struct {
 	issueID   int64
 	projectID int64
 	chatID    int64
+	// back is the issue screen `T` was pressed on, where the chat's esc
+	// returns (#932).
+	back viewID
 	// warnings are the 201's advisory notes: a chat on a closed issue.
 	warnings []string
 	err      error
@@ -51,14 +54,14 @@ func issueOccupantChat(iss apiclient.Issue) int64 {
 // opened one first — is the same answer a fresh row would have given, so it
 // opens that chat rather than reporting a refusal the human cannot act on.
 // note is how the calling screen speaks; nil is returned when the key does
-// nothing.
-func issueChatCmd(client *apiclient.Client, iss apiclient.Issue, note func(string, bool)) tea.Cmd {
+// nothing. back is the calling screen, where the chat's esc returns (#932).
+func issueChatCmd(client *apiclient.Client, iss apiclient.Issue, note func(string, bool), back viewID) tea.Cmd {
 	if iss.ID == 0 {
 		return nil
 	}
 	if id := issueOccupantChat(iss); id != 0 {
 		pid := iss.ProjectID
-		return func() tea.Msg { return openChatMsg{id: id, projectID: pid} }
+		return func() tea.Msg { return openChatMsg{id: id, projectID: pid, back: back} }
 	}
 	if client == nil {
 		note("not connected", true)
@@ -74,11 +77,11 @@ func issueChatCmd(client *apiclient.Client, iss apiclient.Issue, note func(strin
 		})
 		if err != nil {
 			if chatID, live := apiclient.IssueHasLiveChat(err); live {
-				return issueChatOpenedMsg{issueID: id, projectID: pid, chatID: chatID}
+				return issueChatOpenedMsg{issueID: id, projectID: pid, chatID: chatID, back: back}
 			}
-			return issueChatOpenedMsg{issueID: id, projectID: pid, err: err}
+			return issueChatOpenedMsg{issueID: id, projectID: pid, err: err, back: back}
 		}
-		return issueChatOpenedMsg{issueID: id, projectID: pid, chatID: chat.ID, warnings: chat.Warnings}
+		return issueChatOpenedMsg{issueID: id, projectID: pid, chatID: chat.ID, warnings: chat.Warnings, back: back}
 	}
 }
 

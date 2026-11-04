@@ -663,7 +663,7 @@ var bindings = []binding{
 	// is a combination — the composer owns every printable key — and because
 	// the textarea binds ctrl+w, ctrl+d and ctrl+k to editing.
 	{key: chatCloseKey, label: "close this chat — a chat opened on a task, whose worktree and branch stay and which unlocks, or on an issue, whose main worktree is freed for the next main task (asks first)", scope: scopePanel, context: ctxChat, hint: "ctrl+q close", priority: 6},
-	{key: "esc", label: "back to the chats board", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 7},
+	{key: "esc", label: "back to where the chat was opened", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 7},
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxChat, hint: "ctrl+o raw", priority: 8},
 	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxChat, hint: "ctrl+y copy", priority: 9},
 	{key: linkPickKey, label: "list the links in the assistant's messages — open one in a browser or copy it", scope: scopePanel, context: ctxChat, hint: "ctrl+l links", priority: 10},

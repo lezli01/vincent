@@ -106,6 +106,11 @@ type chatView struct {
 	chatID int64
 	chat   *apiclient.Chat
 	turns  []apiclient.ChatTurn
+	// back is where esc lands: the view that opened the chat
+	// (openChatMsg.back, #932), or the chats board when it is zero. A
+	// project switch never reads it — switchFallback sends the workspace to
+	// the chats board — and every open sets it afresh.
+	back viewID
 
 	// turnRecords is each turn's normalized records, keyed by seq: the
 	// running turn's live tail and every finished turn whose transcript has
@@ -391,6 +396,7 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		v.composer.SetWidth(chatComposerWidth(msg.Width))
 		return v, nil
 	case openChatMsg:
+		v.back = msg.back
 		return v, v.open(msg.id)
 	case viewActivatedMsg:
 		if msg.id == viewChat && v.chatID != 0 {
@@ -892,7 +898,14 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "esc":
-		return v, func() tea.Msg { return selectViewMsg{id: viewChats} }
+		// The opener, not always the chats board (#932). A selectViewMsg
+		// rather than a re-open, so an issue detail keeps its selection and
+		// scroll.
+		back := v.back
+		if back == 0 {
+			back = viewChats
+		}
+		return v, func() tea.Msg { return selectViewMsg{id: back} }
 	case "ctrl+c":
 		return v, nil
 	// `tab` is the taught key and `f2` the alias for a terminal that

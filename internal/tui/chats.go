@@ -49,9 +49,13 @@ type (
 	// the root rather than straight to the view because the view is not
 	// active yet, and an inactive view receives nothing.
 	// projectID is the chat's project, for selectTaskMsg's reason.
+	// back is where the workspace's esc lands — the view that opened it,
+	// the way openIssueMsg.back and selectTaskMsg.back carry theirs (#932).
+	// Zero is the live chats board.
 	openChatMsg struct {
 		id        int64
 		projectID int64
+		back      viewID
 	}
 	// chatsTickMsg advances the in-progress indicator's frame (task 089) and,
 	// as a consequence of the repaint, the "last activity" column: that cell
@@ -673,8 +677,10 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, nil
 	case opKey(keymap.OpenRow):
 		if c, ok := v.current(); ok {
-			id, pid := c.ID, c.ProjectID
-			return v, func() tea.Msg { return openChatMsg{id: id, projectID: pid} }
+			// The board says which board it is, so a chat opened from the
+			// archive returns to the archive (#932).
+			id, pid, back := c.ID, c.ProjectID, v.viewID()
+			return v, func() tea.Msg { return openChatMsg{id: id, projectID: pid, back: back} }
 		}
 	case opKey(keymap.New):
 		// A chat needs a project, and the form offers no way to register

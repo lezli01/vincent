@@ -15153,6 +15153,15 @@ stream for the live tail.
    carry their key hint on a line of its own, and keep at least three rows in
    a small pane.
 
+   *Amended 2026-11-04 (issue #932).* `esc` returns to **the view that opened
+   the chat**, not always to view 8, the way a task opened from an issue
+   returns to the issue: view 13 for its Main worktree occupant (`enter`) and
+   for `T` on the detail, view 12 for `T` on the issues list, view 10 for an
+   archived chat opened from the archived-chats board — and view 8 for
+   everything else, `T` on a task included. The return is a plain view
+   switch, so the issue detail keeps its selection and scroll. A project
+   switch on the workspace still falls back to view 8.
+
 10. **Archived boards.** *Added 2026-09-09 (task 092, issue #350).* Two
    screens — archived tasks and archived chats — reached from the command
    palette with **no key of their own**: task 049 retired `1..6` and the point

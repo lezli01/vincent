@@ -508,7 +508,7 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 	case opKey(keymap.Chat):
 		// A chat on this issue's main worktree, or the one already holding
 		// it (task 140.9).
-		return issueChatCmd(v.client, v.issue, v.setNote), true
+		return issueChatCmd(v.client, v.issue, v.setNote, viewIssue), true
 	}
 	return nil, false
 }
@@ -739,9 +739,9 @@ func (v *issueView) openTask() tea.Cmd {
 		mw := v.issue.MainWorktree
 		if id := issueOccupantChat(v.issue); id != 0 {
 			// A chat opened on the issue holds it (task 140.9): enter opens
-			// the chat, as `T` does.
+			// the chat, as `T` does, and the chat's esc returns here (#932).
 			pid := v.issue.ProjectID
-			return func() tea.Msg { return openChatMsg{id: id, projectID: pid} }
+			return func() tea.Msg { return openChatMsg{id: id, projectID: pid, back: viewIssue} }
 		}
 		if mw == nil || mw.OccupantTaskID == nil {
 			v.setNote("the main worktree is free — no task to open · "+opKey(keymap.Chat)+" opens a chat on it", false)

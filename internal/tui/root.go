@@ -283,6 +283,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds := []tea.Cmd{m.broadcast(msg)}
 		if msg.err == nil && msg.chatID != 0 {
 			if v, ok := m.views[viewChat].(*chatView); ok {
+				v.back = 0 // the chats board, as before #932
 				cmds = append(cmds, v.open(msg.chatID), m.switchTo(viewChat))
 			}
 		}
@@ -294,7 +295,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// project first.
 		cmds := []tea.Cmd{m.broadcast(msg)}
 		if msg.err == nil && msg.chatID != 0 {
-			cmds = append(cmds, m.openObject(openChatMsg{id: msg.chatID, projectID: msg.projectID}))
+			cmds = append(cmds, m.openObject(openChatMsg{id: msg.chatID, projectID: msg.projectID, back: msg.back}))
 		}
 		return m, tea.Batch(cmds...)
 	case openConfigKeyMsg:
@@ -1188,6 +1189,7 @@ func (m *root) routeOpen(open tea.Msg) tea.Cmd {
 		// and switches second, the same order every takeover that carries an
 		// argument uses.
 		if v, ok := m.views[viewChat].(*chatView); ok {
+			v.back = msg.back
 			return tea.Batch(v.open(msg.id), m.switchTo(viewChat))
 		}
 	case newTaskFromPullMsg, newTaskFromIssueMsg, newTaskFromChatMsg:

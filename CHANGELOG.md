@@ -108,6 +108,14 @@ list with the user-facing context a commit subject cannot carry.
   issue is in context; and the `forge_write_needs_human` refusal names the
   issue's provider.
 
+### Fixed
+
+- **`esc` in a chat returns to the screen that opened it.** A chat opened
+  from an issue — `enter` on its Main worktree section or `T` — now comes
+  back to the issue with its selection kept, `T` on the issues list back to
+  the list, and an archived chat back to the archived-chats board, instead
+  of always landing on the chats board (#932).
+
 ## [0.12.0](https://github.com/lezli01/vincent/compare/v0.11.0...v0.12.0) (2026-11-03)
 
 ### Added
