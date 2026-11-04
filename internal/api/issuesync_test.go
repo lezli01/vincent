@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/config"
+	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -95,13 +96,14 @@ func TestRenderIssueSyncSwitchesWin(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	row := &store.IssueSyncState{Provider: "github", Repo: "o/r", OK: true, LastAttemptAt: &now, LastOKAt: &now}
-	on := config.Default().GitHub
+	on := config.Default()
 	off, noPoll := on, on
-	off.Enabled = false
-	noPoll.PollInterval = 0
+	off.GitHub.Enabled = false
+	noPoll.GitHub.PollInterval = 0
+	res := issuesource.Resolution{Provider: store.IssueProviderGitHub, OriginGitHub: true}
 	for _, tc := range []struct {
 		name    string
-		gh      config.GitHub
+		cfg     config.Config
 		enabled bool
 		reason  string
 	}{
@@ -109,7 +111,7 @@ func TestRenderIssueSyncSwitchesWin(t *testing.T) {
 		{"poll off", noPoll, false, syncReasonPollDisabled},
 		{"on", on, true, ""},
 	} {
-		got := renderIssueSync(tc.gh, row)
+		got := renderIssueSync(tc.cfg, res, row)
 		if got.Enabled != tc.enabled || got.Reason != tc.reason || got.OK != (tc.reason == "") {
 			t.Errorf("%s: %+v", tc.name, got)
 		}

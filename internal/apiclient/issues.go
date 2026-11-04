@@ -462,8 +462,9 @@ func (c *Client) ListIssueLabels(ctx context.Context, projectID int64) ([]IssueL
 // IssueSyncStatus is a project's issue import status (task 130.8): GET and
 // POST /v1/projects/{id}/issues/sync.
 type IssueSyncStatus struct {
-	// Enabled is github.enabled with a non-zero github.poll_interval: whether
-	// the reconciler tick imports at all.
+	// Enabled is the provider's enabled with a non-zero poll_interval
+	// (github's or jira's): whether its sync loop imports at all. False for
+	// a project whose issue source resolves to none.
 	Enabled  bool   `json:"enabled"`
 	Provider string `json:"provider"`
 	Repo     string `json:"repo"`
@@ -473,10 +474,10 @@ type IssueSyncStatus struct {
 	// LastSyncedAt is when an import last succeeded; nil when none has.
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 	OK           bool       `json:"ok"`
-	// Reason names why OK is false: github_disabled, poll_disabled,
-	// pending, rate_limited, not_github, source_not_github, no_client,
-	// origin_changed, or one
-	// of internal/github's unavailability reasons.
+	// Reason names why OK is false: github_disabled (a GitHub project's
+	// switch), disabled (a Jira project's), poll_disabled, pending,
+	// rate_limited, not_github, source_not_github, no_credential, no_client,
+	// origin_changed, or one of the provider's unavailability reasons.
 	Reason           string     `json:"reason,omitempty"`
 	ImportComplete   bool       `json:"import_complete"`
 	RateLimitedUntil *time.Time `json:"rate_limited_until,omitempty"`

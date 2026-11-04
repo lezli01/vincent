@@ -8,37 +8,50 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/doctor"
-	"github.com/lezli01/vincent/internal/issueprovider"
+	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// The issue sync status routes (spec §5.6, §13.2, task 130.8). The daemon's
-// reconciler tick imports and refreshes a GitHub-based project's issues and
+// The issue sync status routes (spec §5.6, §13.2, task 130.8, task 142.7).
+// The daemon's per-provider sync loop imports and refreshes a project's
+// issues from the provider its issue source resolves to (GitHub or Jira) and
 // records how that went in the store's issue_sync_state row; these routes
-// read that row back, and the POST asks for a sync now. Neither ever calls
-// GitHub itself — the importer is the only thing that does.
+// read that row back, and the POST asks for a sync now. Neither ever calls a
+// provider itself — the importer is the only thing that does.
 
-// The sync reasons this file computes from the live config rather than from
-// the stored row. They are not internal/reasons rows: a sync is not a task,
-// and nothing about it blocks one.
+// The sync reasons this file computes from the live config and the
+// project's resolution rather than from the stored row. They are not
+// internal/reasons rows: a sync is not a task, and nothing about it blocks
+// one.
 const (
-	// syncReasonDisabled is `github.enabled: false`.
+	// syncReasonDisabled is `github.enabled: false` on a GitHub row.
 	syncReasonDisabled = "github_disabled"
-	// syncReasonPollDisabled is `github.poll_interval: 0`: the integration
-	// is on, the background tick is not.
+	// syncReasonJiraDisabled is `jira.enabled: false` on a Jira row: the
+	// provider-neutral spelling, since "github_disabled" would blame a
+	// switch that has nothing to do with a Jira project.
+	syncReasonJiraDisabled = issuesource.ReasonDisabled
+	// syncReasonPollDisabled is the provider's `poll_interval: 0`: the
+	// integration is on, the background tick is not.
 	syncReasonPollDisabled = "poll_disabled"
-	// syncReasonPending is a project the importer has not attempted yet.
+	// syncReasonPending is a github or jira project the importer has not
+	// attempted yet.
 	syncReasonPending = "pending"
+	// syncReasonNotGitHub is a derived project whose origin is not a
+	// github.com remote, or an explicit github binding on such an origin:
+	// the daemon's spelling (internal/daemon/issuesync.go), derived here for
+	// a project that has no row because the daemon never writes one for a
+	// project that resolves to none (task 142.7).
+	syncReasonNotGitHub = "not_github"
+	// syncReasonSourceNotGitHub is a project explicitly bound to none.
+	syncReasonSourceNotGitHub = "source_not_github"
 )
-
-// issueSyncProvider is the one provider an import comes from today; #903
-// makes it per project.
-const issueSyncProvider = issueprovider.GitHub
 
 // issueSyncStatusBody is GET and POST /v1/projects/{id}/issues/sync.
 type issueSyncStatusBody struct {
-	// Enabled is whether the reconciler tick imports at all:
-	// github.enabled and a non-zero github.poll_interval.
+	// Enabled is whether the provider's sync loop imports at all: its
+	// `enabled` and a non-zero `poll_interval` (github's or jira's); false
+	// for a project whose source resolves to none.
 	Enabled  bool   `json:"enabled"`
 	Provider string `json:"provider"`
 	Repo     string `json:"repo"`
@@ -64,14 +77,28 @@ type issueSyncStatusBody struct {
 }
 
 // renderIssueSync folds the live config over a project's stored sync row,
-// nil when it has none. A row that exists only because a sync was requested
-// (no attempt yet) is still pending, not ok: nothing has been imported.
-func renderIssueSync(gh config.GitHub, st *store.IssueSyncState) issueSyncStatusBody {
-	out := issueSyncStatusBody{Enabled: gh.Polls(), Provider: issueSyncProvider}
+// nil when it has none. The config folded is the row's provider's — a Jira
+// row is never reported github_disabled because github.enabled is false —
+// or, with no row, the resolved provider's. A row that exists only because a
+// sync was requested (no attempt yet) is still pending, not ok: nothing has
+// been imported.
+//
+// With no row the reason is derived from res rather than reported pending:
+// the daemon never writes a row for a project that resolves to none, so a
+// row-less project is "not attempted yet" only when it has a provider to
+// attempt it with.
+func renderIssueSync(cfg config.Config, res issuesource.Resolution, st *store.IssueSyncState) issueSyncStatusBody {
+	provider := res.Provider
 	if st != nil {
-		if st.Provider != "" {
-			out.Provider = st.Provider
+		provider = st.Provider
+		if provider == "" {
+			// A row written before the provider column was stamped is a
+			// GitHub import's: there was no other kind.
+			provider = store.IssueProviderGitHub
 		}
+	}
+	out := issueSyncStatusBody{Provider: provider}
+	if st != nil {
 		out.Repo = st.Repo
 		out.LastSyncedAt = st.LastOKAt
 		out.OK = st.OK
@@ -79,11 +106,34 @@ func renderIssueSync(gh config.GitHub, st *store.IssueSyncState) issueSyncStatus
 		out.ImportComplete = st.ImportComplete
 		out.RateLimitedUntil = st.RateLimitedUntil
 	}
+	var enabled bool
+	var poll config.Duration
+	switch provider {
+	case store.IssueProviderGitHub:
+		out.Enabled, enabled, poll = cfg.GitHub.Polls(), cfg.GitHub.Enabled, cfg.GitHub.PollInterval
+	case store.IssueProviderJira:
+		out.Enabled, enabled, poll = cfg.Jira.Polls(), cfg.Jira.Enabled, cfg.Jira.PollInterval
+	default:
+		// none: no loop is this project's, so no switch applies. Only a
+		// row-less project gets here (the daemon writes none for it).
+		out.OK, out.Reason = false, syncReasonNotGitHub
+		if res.Explicit {
+			out.Reason = syncReasonSourceNotGitHub
+		}
+		return out
+	}
 	switch {
-	case !gh.Enabled:
+	case !enabled && provider == store.IssueProviderJira:
+		out.OK, out.Reason = false, syncReasonJiraDisabled
+	case !enabled:
 		out.OK, out.Reason = false, syncReasonDisabled
-	case gh.PollInterval <= 0:
+	case poll <= 0:
 		out.OK, out.Reason = false, syncReasonPollDisabled
+	case st == nil && provider == store.IssueProviderGitHub && !res.OriginGitHub:
+		// An explicit github binding on an origin that names no github.com
+		// repository: the importer will say not_github on its first pass, so
+		// say it now rather than promise a sync that cannot happen.
+		out.OK, out.Reason = false, syncReasonNotGitHub
 	case st == nil || st.LastAttemptAt == nil:
 		out.OK, out.Reason = false, syncReasonPending
 	case out.OK:
@@ -103,7 +153,8 @@ func (s *Server) issueSyncStatus(ctx context.Context, project *store.Project) (i
 	if err != nil {
 		return issueSyncStatusBody{}, err
 	}
-	out := renderIssueSync(s.deps.Config().GitHub, st)
+	res := s.issueResolution(ctx, project)
+	out := renderIssueSync(s.deps.Config(), res, st)
 	counts, err := s.deps.Store.CountIssueWrites(ctx, project.ID)
 	if err != nil {
 		return issueSyncStatusBody{}, err
@@ -112,10 +163,8 @@ func (s *Server) issueSyncStatus(ctx context.Context, project *store.Project) (i
 	if project.IssueSource.Provider == store.IssueProviderJira {
 		out.Site = project.IssueSource.JiraSite
 	}
-	if out.Repo == "" && s.effectiveIssueProvider(ctx, project) == store.IssueProviderGitHub {
-		if repo, ok := s.githubRepo(ctx, project); ok {
-			out.Repo = repo.String()
-		}
+	if out.Repo == "" && res.Provider == store.IssueProviderGitHub && res.OriginGitHub && res.Repo != (github.Repo{}) {
+		out.Repo = res.Repo.String()
 	}
 	return out, nil
 }
@@ -136,7 +185,11 @@ func (s *Server) handleIssueSyncStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleIssueSyncNow implements POST /v1/projects/{id}/issues/sync: sync
 // now. It only records the request and wakes the importer, so it answers 202
-// with the status as it stands — the sync itself lands on the importer's
+// with the status as it stands. The request is stamped with the project's
+// resolved provider, which is how the daemon chooses which provider's pass
+// to wake (task 142.7); a project that resolves to none has no pass to wake,
+// so nothing is recorded — no row is created for it — and the answer is the
+// derived not_github or source_not_github status — the sync itself lands on the importer's
 // goroutine and announces itself with issue.sync_changed when it changes the
 // verdict. With a switch off the request is recorded and the status names
 // the switch; nothing is imported until it is turned back on. The same
@@ -148,7 +201,17 @@ func (s *Server) handleIssueSyncNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if err := s.deps.Store.RequestIssueSync(ctx, project.ID, issueSyncProvider); err != nil {
+	res := s.issueResolution(ctx, project)
+	if res.Provider == store.IssueProviderNone {
+		out, err := s.issueSyncStatus(ctx, project)
+		if err != nil {
+			s.internalError(w, "read issue sync state", err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, out)
+		return
+	}
+	if err := s.deps.Store.RequestIssueSyncAs(ctx, project.ID, res.Provider); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, CodeNotFound, "project not found")
 			return
@@ -176,14 +239,16 @@ func (s *Server) fillIssueSync(ctx context.Context, rep *doctor.Report) {
 		s.deps.Logger.Warn("doctor: list issue sync states", "error", err)
 		return
 	}
-	gh := s.deps.Config().GitHub
+	cfg := s.deps.Config()
 	for i := range states {
 		st := &states[i]
 		name := ""
 		if p, err := s.deps.Store.GetProject(ctx, st.ProjectID); err == nil {
 			name = p.Name
 		}
-		body := renderIssueSync(gh, st)
+		// A stored row carries its provider, and a row is folded by it
+		// alone; the resolution only matters to a project with no row.
+		body := renderIssueSync(cfg, issuesource.Resolution{Provider: st.Provider}, st)
 		counts, err := s.deps.Store.CountIssueWrites(ctx, st.ProjectID)
 		if err != nil {
 			s.deps.Logger.Warn("doctor: count issue writes", "project", st.ProjectID, "error", err)

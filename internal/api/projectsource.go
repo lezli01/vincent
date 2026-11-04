@@ -15,6 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/jira/jiramap"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -249,16 +251,30 @@ func normalizeJiraMapping(raw json.RawMessage) (string, string) {
 	return buf.String(), ""
 }
 
-// effectiveIssueProvider resolves a project's binding against its origin
-// (a local git call, never a network one), always afresh — a rebind is
-// decided from it — and refreshes the renderings' cache with what it read.
-func (s *Server) effectiveIssueProvider(ctx context.Context, p *store.Project) string {
-	if p.IssueSource.Provider != store.IssueProviderDerive {
-		return p.IssueSource.Provider
+// issueResolution resolves a project's issue source against its origin (a
+// local git call, never a network one), always afresh — a rebind is decided
+// from it — and refreshes the renderings' cache with what it read. The rule
+// itself is issuesource.ResolveWith's, so the API, the daemon's tick and
+// "sync now" cannot disagree about what a project syncs with (task 142.7).
+//
+// A server with no git runner cannot read origin at all. Like the daemon's
+// importer, which reports no_client rather than not_github then, it does
+// not conclude the origin is not GitHub: a derived project is presumed
+// GitHub's, with no repository, which is what the API reported before the
+// binding existed. The daemon always wires a runner; only tests omit it.
+func (s *Server) issueResolution(ctx context.Context, p *store.Project) issuesource.Resolution {
+	if s.deps.Git == nil {
+		return issuesource.ResolveWith(*p, github.Repo{}, true)
 	}
-	_, ok := s.githubRepo(ctx, p)
-	s.origins.put(p.Path, ok)
-	return p.IssueSource.Effective(ok)
+	repo, ok := s.githubRepo(ctx, p)
+	s.origins.put(p.Path, repo, ok)
+	return issuesource.ResolveWith(*p, repo, ok)
+}
+
+// effectiveIssueProvider is issueResolution's provider: none, github or
+// jira, never derive.
+func (s *Server) effectiveIssueProvider(ctx context.Context, p *store.Project) string {
+	return s.issueResolution(ctx, p).Provider
 }
 
 // issueSourceRebound reports whether an update rebinds the project (task
@@ -276,8 +292,8 @@ func issueSourceRebound(oldEff, newEff string, oldB, newB store.IssueSource) boo
 // listing within this long; a rebind is never decided from the cache.
 const originTTL = 10 * time.Second
 
-// originCache remembers, per project path, whether origin was a github.com
-// remote, for renderings only.
+// originCache remembers, per project path, what origin said — whether it
+// was a github.com remote, and which repository — for renderings only.
 type originCache struct {
 	mu  sync.Mutex
 	now func() time.Time
@@ -285,6 +301,7 @@ type originCache struct {
 }
 
 type originEntry struct {
+	repo   github.Repo
 	github bool
 	at     time.Time
 }
@@ -293,30 +310,34 @@ func newOriginCache() *originCache {
 	return &originCache{now: time.Now, m: map[string]originEntry{}}
 }
 
-func (c *originCache) get(path string) (github, ok bool) {
+func (c *originCache) get(path string) (originEntry, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.m[path]
 	if !ok || c.now().Sub(e.at) >= originTTL {
-		return false, false
+		return originEntry{}, false
 	}
-	return e.github, true
+	return e, true
 }
 
-func (c *originCache) put(path string, github bool) {
+func (c *originCache) put(path string, repo github.Repo, isGitHub bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.m[path] = originEntry{github: github, at: c.now()}
+	c.m[path] = originEntry{repo: repo, github: isGitHub, at: c.now()}
 }
 
-// renderedIssueProvider is effectiveIssueProvider for a rendering: it reuses
-// an origin read within originTTL instead of running git again.
+// renderedIssueResolution is issueResolution for a rendering: it reuses an
+// origin read within originTTL instead of running git again.
+func (s *Server) renderedIssueResolution(ctx context.Context, p *store.Project) issuesource.Resolution {
+	if s.deps.Git != nil {
+		if e, ok := s.origins.get(p.Path); ok {
+			return issuesource.ResolveWith(*p, e.repo, e.github)
+		}
+	}
+	return s.issueResolution(ctx, p)
+}
+
+// renderedIssueProvider is renderedIssueResolution's provider.
 func (s *Server) renderedIssueProvider(ctx context.Context, p *store.Project) string {
-	if p.IssueSource.Provider != store.IssueProviderDerive {
-		return p.IssueSource.Provider
-	}
-	if gh, ok := s.origins.get(p.Path); ok {
-		return p.IssueSource.Effective(gh)
-	}
-	return s.effectiveIssueProvider(ctx, p)
+	return s.renderedIssueResolution(ctx, p).Provider
 }
