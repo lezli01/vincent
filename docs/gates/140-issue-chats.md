@@ -37,7 +37,7 @@ the screens read.
 | # | Do | Expect |
 |---|---|---|
 | 1 | `:issues`, select an open issue with no task, `T` | The chat workspace opens, its header reading `on issue #N`; the footer offers both `ctrl+q close` and `ctrl+t` |
-| 2 | `esc`, `:issues` | The issue sits in `in progress`, its row ending `● chat #C` |
+| 2 | `esc` | Back on the issues list, not the chats board; the issue sits in `in progress`, its row ending `● chat #C` |
 | 3 | `enter` on it | The Main worktree section names the branch and `● chat #C`; `enter` on the section reopens the chat, and so does `T` |
 | 4 | Back on the issue, `a` | The new-task form preselects `separate`, naming `main worktree held by chat #C` |
 | 5 | `esc`, open the chat, `ctrl+q`, `y` | The note reads `chat closed — issue #N's main worktree is free for its next main task`; the issue's row drops `chat #C` with no keypress |
