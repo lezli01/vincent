@@ -318,6 +318,22 @@ func configFields() map[string]configField {
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{GitHub: &apiclient.ConfigGitHubPatch{PollInterval: v}}
 			}),
+		"jira.enabled": boolField(func(c apiclient.Config) bool { return c.Jira.Enabled },
+			func(b *bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Jira: &apiclient.ConfigJiraPatch{Enabled: b}}
+			}),
+		"jira.poll_interval": str(func(c apiclient.Config) string { return c.Jira.PollInterval },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Jira: &apiclient.ConfigJiraPatch{PollInterval: v}}
+			}),
+		"jira.user_env": str(func(c apiclient.Config) string { return c.Jira.UserEnv },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Jira: &apiclient.ConfigJiraPatch{UserEnv: v}}
+			}),
+		"jira.token_env": str(func(c apiclient.Config) string { return c.Jira.TokenEnv },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Jira: &apiclient.ConfigJiraPatch{TokenEnv: v}}
+			}),
 		"update.check": boolField(func(c apiclient.Config) bool { return c.Update.Check },
 			func(b *bool) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Update: &apiclient.ConfigUpdatePatch{Check: b}}

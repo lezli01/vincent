@@ -166,6 +166,7 @@ type Config struct {
 	Include                ConfigInclude     `json:"include"`
 	MCP                    ConfigMCP         `json:"mcp"`
 	GitHub                 ConfigGitHub      `json:"github"`
+	Jira                   ConfigJira        `json:"jira"`
 	Update                 ConfigUpdate      `json:"update"`
 	// Backup is the scheduled-backup policy (task 115); how the timer is
 	// doing is GET /v1/doctor's backup group, not this.
@@ -347,6 +348,15 @@ type ConfigGitHub struct {
 	PollInterval string `json:"poll_interval"`
 }
 
+// ConfigJira is the Jira issue-provider policy (task 142.7). UserEnv and
+// TokenEnv name environment variables; the credential is never served.
+type ConfigJira struct {
+	Enabled      bool   `json:"enabled"`
+	PollInterval string `json:"poll_interval"`
+	UserEnv      string `json:"user_env"`
+	TokenEnv     string `json:"token_env"`
+}
+
 // ConfigUpdate is the release-check policy (task 055) — not the cached answer,
 // which is what GET /v1/update serves.
 type ConfigUpdate struct {
@@ -434,6 +444,7 @@ type ConfigPatch struct {
 	Include                     *ConfigInclude          `json:"include,omitempty"`
 	MCP                         *ConfigMCPPatch         `json:"mcp,omitempty"`
 	GitHub                      *ConfigGitHubPatch      `json:"github,omitempty"`
+	Jira                        *ConfigJiraPatch        `json:"jira,omitempty"`
 	Update                      *ConfigUpdatePatch      `json:"update,omitempty"`
 	Backup                      *ConfigBackupPatch      `json:"backup,omitempty"`
 	Notify                      *ConfigNotifyPatch      `json:"notify,omitempty"`
@@ -481,6 +492,14 @@ type ConfigMCPPatch struct {
 type ConfigGitHubPatch struct {
 	Enabled      *bool   `json:"enabled,omitempty"`
 	PollInterval *string `json:"poll_interval,omitempty"`
+}
+
+// ConfigJiraPatch is the optional half of ConfigJira.
+type ConfigJiraPatch struct {
+	Enabled      *bool   `json:"enabled,omitempty"`
+	PollInterval *string `json:"poll_interval,omitempty"`
+	UserEnv      *string `json:"user_env,omitempty"`
+	TokenEnv     *string `json:"token_env,omitempty"`
 }
 
 // ConfigUpdatePatch is the optional half of ConfigUpdate.
