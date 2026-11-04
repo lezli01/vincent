@@ -673,7 +673,7 @@ func (s *Server) handleTaskArchive(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	task, branch, err := s.deps.Runner.Archive(r.Context(), id, force)
+	task, branch, err := s.deps.Runner.Archive(r.Context(), id, taskrun.ArchiveOptions{Force: force})
 	if err != nil {
 		s.writeActionError(w, err)
 		return

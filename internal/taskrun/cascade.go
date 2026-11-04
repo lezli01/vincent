@@ -87,21 +87,23 @@ func (r *Runner) refuseUnfinishedDescendants(ctx context.Context, id int64) erro
 }
 
 // cascadeArchive archives every settled descendant, deepest first, with the
-// same `force` the parent's archive was given.
+// same options the parent's archive was given: its `force`, its mode, and its
+// event payload, so a lane archived under an unattended root is unattended
+// and carries the root's archived_by marker (task 143).
 //
 // Per-child dirty confirmation is not re-implemented here: each child goes
 // through the ordinary Archive, so §10's refusal of a dirty worktree without
 // explicit confirmation applies to each of them exactly as it does to any
 // task. A conflict-blocked lane is dirty by construction, and that is the
 // correct behaviour rather than a case to carve out (decision 8).
-func (r *Runner) cascadeArchive(ctx context.Context, id int64, force bool) error {
+func (r *Runner) cascadeArchive(ctx context.Context, id int64, opts ArchiveOptions) error {
 	children, err := r.deps.Store.ListChildren(ctx, id)
 	if err != nil {
 		return err
 	}
 	for _, child := range children {
 		// Depth first: a lane that fanned out again owns its own subtree.
-		if err := r.cascadeArchive(ctx, child.ID, force); err != nil {
+		if err := r.cascadeArchive(ctx, child.ID, opts); err != nil {
 			return err
 		}
 		if child.State == store.TaskArchived {
@@ -113,7 +115,7 @@ func (r *Runner) cascadeArchive(ctx context.Context, id int64, force bool) error
 			// archiving half a tree.
 			return &UnfinishedDescendantsError{TaskID: id, IDs: []int64{child.ID}}
 		}
-		if _, _, err := r.Archive(ctx, child.ID, force); err != nil {
+		if _, _, err := r.Archive(ctx, child.ID, opts); err != nil {
 			return fmt.Errorf("archive lane %d: %w", child.ID, err)
 		}
 		r.deps.Logger.Info("archived fan-out lane", "parent", id, "child", child.ID)

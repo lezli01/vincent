@@ -93,7 +93,7 @@ func TestMainWorktreeIsHandedOnWithItsUncommittedWork(t *testing.T) {
 	}
 	h.assertOneClaim(t, got.WorktreePath, second.ID)
 
-	archived, branch, err := h.runner.Archive(t.Context(), first.ID, false)
+	archived, branch, err := h.runner.Archive(t.Context(), first.ID, ArchiveOptions{})
 	if err != nil {
 		t.Fatalf("Archive(handed-on predecessor): %v", err)
 	}
@@ -137,10 +137,10 @@ func TestLastMainTaskArchiveAppliesTheEmptyBranchRule(t *testing.T) {
 				t.Fatalf("second works in %q, want %q", second.WorktreePath, first.WorktreePath)
 			}
 			tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
-			if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+			if _, _, err := h.runner.Archive(t.Context(), first.ID, ArchiveOptions{}); err != nil {
 				t.Fatalf("Archive(first): %v", err)
 			}
-			archived, branch, err := h.runner.Archive(t.Context(), second.ID, false)
+			archived, branch, err := h.runner.Archive(t.Context(), second.ID, ArchiveOptions{})
 			if err != nil {
 				t.Fatalf("Archive(second): %v", err)
 			}
@@ -197,7 +197,7 @@ func TestMainTaskAfterAnArchivedPredecessorGetsAFreshWorktree(t *testing.T) {
 	h.start(t)
 	first := h.settledMainTask(t, iss, "first", committingSnapshot)
 	second := h.mainTask(t, iss, "second", gatedSnapshot, func(task *store.Task) { task.State = store.TaskPaused })
-	if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+	if _, _, err := h.runner.Archive(t.Context(), first.ID, ArchiveOptions{}); err != nil {
 		t.Fatalf("Archive(first): %v", err)
 	}
 	tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
@@ -233,7 +233,7 @@ func TestMainTaskBlocksWhenItsBranchIsInTheMainCheckout(t *testing.T) {
 	h.start(t)
 	first := h.settledMainTask(t, iss, "first", quickSnapshot)
 	second := h.mainTask(t, iss, "second", gatedSnapshot, func(task *store.Task) { task.State = store.TaskPaused })
-	if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+	if _, _, err := h.runner.Archive(t.Context(), first.ID, ArchiveOptions{}); err != nil {
 		t.Fatalf("Archive(first): %v", err)
 	}
 	testrepo.Run(t, h.repo, "checkout", "-q", first.BranchName)
@@ -275,7 +275,7 @@ func TestLegacyAdoptedMainTaskRoutesAsMain(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 	h.waitForState(t, second.ID, store.TaskAborted)
-	if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+	if _, _, err := h.runner.Archive(t.Context(), first.ID, ArchiveOptions{}); err != nil {
 		t.Fatalf("Archive(first): %v", err)
 	}
 	if !h.runner.branchOurs(t.Context(), h.task(t, second.ID), h.runner.deps.Logger) {
@@ -315,7 +315,7 @@ func TestAdoptedIssueMainBranchSurvivesTheLastArchive(t *testing.T) {
 	}
 
 	for _, id := range []int64{first.ID, second.ID} {
-		_, branch, err := h.runner.Archive(t.Context(), id, false)
+		_, branch, err := h.runner.Archive(t.Context(), id, ArchiveOptions{})
 		if err != nil {
 			t.Fatalf("Archive(%d): %v", id, err)
 		}
@@ -368,7 +368,7 @@ func TestHandedOnMainTaskLosesItsContainer(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	before := len(rt.removals())
-	if _, _, err := h.runner.Archive(t.Context(), first.ID, false); err != nil {
+	if _, _, err := h.runner.Archive(t.Context(), first.ID, ArchiveOptions{}); err != nil {
 		t.Fatalf("Archive(first): %v", err)
 	}
 	if removed := rt.removals()[before:]; !slices.Contains(removed, name) {
@@ -410,7 +410,7 @@ func TestForeignBranchBlocksTheFirstMainTask(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 	h.waitForState(t, first.ID, store.TaskAborted)
-	archived, branch, err := h.runner.Archive(t.Context(), first.ID, false)
+	archived, branch, err := h.runner.Archive(t.Context(), first.ID, ArchiveOptions{})
 	if err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestFollowUpOnAHandedOnMainTaskEndsItsRangeAtTheBranch(t *testing.T) {
 	if pred := h.task(t, first.ID); pred.EndSHA == "" {
 		t.Fatal("fixture: the hand-over stamped no end_sha on the predecessor")
 	}
-	if _, _, err := h.runner.Archive(t.Context(), second.ID, false); err != nil {
+	if _, _, err := h.runner.Archive(t.Context(), second.ID, ArchiveOptions{}); err != nil {
 		t.Fatalf("Archive(second): %v", err)
 	}
 
@@ -453,7 +453,7 @@ func TestFollowUpOnAHandedOnMainTaskEndsItsRangeAtTheBranch(t *testing.T) {
 	}
 	h.waitForActorExit(t, first.ID)
 	tip := testrepo.Run(t, h.repo, "rev-parse", "refs/heads/"+first.BranchName)
-	archived, _, err := h.runner.Archive(t.Context(), first.ID, false)
+	archived, _, err := h.runner.Archive(t.Context(), first.ID, ArchiveOptions{})
 	if err != nil {
 		t.Fatalf("Archive(first): %v", err)
 	}
