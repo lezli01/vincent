@@ -110,8 +110,13 @@
 #
 # - `plan-dag` must give every unit a `files` **extended regular expression**
 #   matching every path it may touch, and the units' expressions must not
-#   overlap. That is a design instruction, and the plan gate is where a human
-#   checks it.
+#   overlap, nor match a path a later step owns (`CHANGELOG.md`,
+#   `.vincent-issue/`, and off the documentation path `docs/`, `skills/` and
+#   `internal/workflow/builtin.go`). `plan-dag`'s **check enforces** both on
+#   tracked paths (#935): two units matching one tracked file, or a unit
+#   matching a forbidden one, fail the check and go back to the planner as
+#   retry feedback. An overlap on a file no unit has created yet is invisible
+#   there, and is left to `merge.on_conflict: agent` below.
 # - The lane workflow **enforces** it: `unit-context` writes the expression to
 #   `.vincent-issue/unit-files.re` and the lane's check greps the lane's own
 #   diff against it with `grep -vEf`, failing the lane — with the offending
@@ -1465,7 +1470,9 @@ steps:
          expression (ERE, the `grep -E` dialect) matching every path it may
          create or modify. No two units' expressions may match the same path.
          This is enforced: a lane that commits a path its own expression does
-         not match fails, and the join blocks on a conflict. Anchor them —
+         not match fails, and the join blocks on a conflict. Overlap on
+         tracked files, and the paths below that no unit may own, are also
+         checked when you finish. Anchor them —
          `^internal/store/` — and use `|` for alternatives. Include every path
          the unit touches, tests and testdata included.
       2. **`needs` is happens-after, and it costs wall-clock.** List a unit in
@@ -1616,6 +1623,35 @@ steps:
     #
     # vincent refuses a cycle too, at spawn, with `fan_out_invalid` (§7.6).
     # Catching it here is the difference between a retry and a blocked task.
+    #
+    # The block after the jq program (#935) runs only on a well-formed plan,
+    # and reports every violation before it fails, so the retry prompt names
+    # all of them at once:
+    #
+    # - **Overlap.** Each unit's `files`, blank lines stripped the way the
+    #   lane's `unit-context` strips them, is a pattern file; `git ls-files`
+    #   grepped through it gives the tracked paths the unit owns, and a path
+    #   owned twice is `overlap: <path> matched by <id>, <id>`. It is
+    #   `grep -E` and not jq's `test()` on purpose: the lane enforces with
+    #   `grep -vEf`, and Oniguruma is not ERE, so judging here in any other
+    #   dialect would pass plans the lanes then read differently. A file no
+    #   unit has created yet cannot be seen, and stays the resolver's.
+    # - **Forbidden paths.** The roots "Things no unit may own" lists for this
+    #   classify path, tested two ways. Synthetic probes (`CHANGELOG.md`,
+    #   `.vincent-issue/x`, and `docs/x`, `skills/x`, `builtin.go` off the
+    #   documentation path) catch broad expressions, and are the only cover
+    #   `.vincent-issue/` has — nothing under it is tracked. Probes alone miss
+    #   a narrow one: `^docs/spec\.md$` never matches `docs/x`. So the tracked
+    #   files under the forbidden roots are tested too; on the ci path both
+    #   sets leave `docs/gates/` out, which its units do own.
+    # - **Depth** is advisory: more than three peel rounds prints one line to
+    #   the transcript and passes. A legitimately deep change must not be
+    #   rejected, and a retry cannot argue with a count — the width guidance
+    #   is the prompt's.
+    #
+    # Scratch goes under `git rev-parse --git-path`, outside the worktree, so
+    # the clean-tree assertions above never see it. An expression `grep -E`
+    # rejects fails too: the lane would fail on it anyway.
     check: |
       test -s .vincent-issue/units.jsonl &&
       git diff --quiet &&
@@ -1648,7 +1684,59 @@ steps:
           and all($u[]; .id as $me | all(.needs[]; . != $me))
           and all($u[]; all(.needs[]; . as $d | any($u[]; .id == $d)))
           and ((peel([]) | length) == $n)
-      ' .vincent-issue/units.jsonl > /dev/null
+      ' .vincent-issue/units.jsonl > /dev/null &&
+      {
+        bad=0
+        d=$(git rev-parse --git-path vincent-plan-check) || exit 1
+        rm -rf "$d" && mkdir -p "$d" && git ls-files > "$d/tracked" || exit 1
+        printf '%s\n' CHANGELOG.md .vincent-issue/x > "$d/probes"
+      {{- if ne (index .Steps "classify").ExitCode 2 }}
+        printf '%s\n' docs/x skills/x internal/workflow/builtin.go >> "$d/probes"
+        grep -E '^(docs|skills)/|^internal/workflow/builtin\.go$' "$d/tracked" >> "$d/forbidden"
+      {{- end }}
+      {{- if eq (index .Steps "classify").ExitCode 3 }}
+        grep -v '^docs/gates/' "$d/forbidden" >> "$d/probes"
+      {{- else if ne (index .Steps "classify").ExitCode 2 }}
+        cat "$d/forbidden" >> "$d/probes"
+      {{- end }}
+        : > "$d/owned"
+        for id in $(jq -r '.id' .vincent-issue/units.jsonl); do
+          jq -r --arg id "$id" 'select(.id == $id) | .files' .vincent-issue/units.jsonl |
+            grep -v '^[[:space:]]*$' > "$d/$id.re"
+          grep -Ef "$d/$id.re" "$d/tracked" > "$d/$id.hits"
+          if [ $? -gt 1 ]; then
+            echo "invalid: unit $id: files is not an extended regular expression grep -E accepts" >&2
+            bad=1
+            continue
+          fi
+          awk -v id="$id" '{ print $0 "\t" id }' "$d/$id.hits" >> "$d/owned"
+          sort -u "$d/probes" | grep -Ef "$d/$id.re" |
+            sed "s|^|forbidden: unit $id matches |" > "$d/$id.forbidden"
+          if [ -s "$d/$id.forbidden" ]; then
+            cat "$d/$id.forbidden" >&2
+            bad=1
+          fi
+        done
+        awk -F '\t' '
+          { n[$1]++; ids[$1] = (n[$1] == 1) ? $2 : ids[$1] ", " $2 }
+          END { for (p in n) if (n[p] > 1) print "overlap: " p " matched by " ids[p] }
+        ' "$d/owned" | sort > "$d/overlap"
+        if [ -s "$d/overlap" ]; then
+          cat "$d/overlap" >&2
+          bad=1
+        fi
+        depth=$(jq -s '
+          . as $u
+          | def rounds($id):
+              1 + ([ $u[] | select(.id == $id) | .needs[] | rounds(.) ] | max // 0);
+            [ $u[].id | rounds(.) ] | max
+        ' .vincent-issue/units.jsonl)
+        if [ "$depth" -gt 3 ]; then
+          echo "advisory: the graph is $depth rounds deep; every round waits for the slowest lane of the one before it, so prefer a wider graph" >&2
+        fi
+        rm -rf "$d"
+        test "$bad" -eq 0
+      }
     check_timeout: 2m
 
   - id: plan-emit
