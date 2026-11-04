@@ -425,17 +425,20 @@ func runningFigure(pr apiclient.Project) string {
 }
 
 // notGitHub is the reason the daemon gives — on the §13.2 probe and on the
-// stored sync row alike — for a project whose origin is not on github.com.
+// sync status alike — for a project whose origin is not on github.com and
+// that has no other issue source, or that pins github on such an origin.
 // That is the absence of an integration, not a failing one, so it reads as a
 // dash rather than as ✗ or a reason.
 const notGitHub = "not_github"
 
-// sourceNotGitHub is the stored sync reason for a project whose explicit
-// issue-source binding is none or jira (task 142.6): like notGitHub, the
-// GitHub importer is simply not this project's, so it reads as a dash.
+// sourceNotGitHub is the sync reason for a project explicitly bound to no
+// issue source (task 142.7): like notGitHub, no provider's importer is this
+// project's, so it reads as a dash. A Jira-bound project never reads it.
 const sourceNotGitHub = "source_not_github"
 
-// syncGlyph is the stored issue-sync health: off, healthy, or failing.
+// syncGlyph is the issue-sync health of the project's bound provider,
+// GitHub or Jira alike: off (a switch off — github_disabled, Jira's
+// disabled, poll_disabled — or no source at all), healthy, or failing.
 func syncGlyph(st *apiclient.ProjectStats) string {
 	switch {
 	case !st.IssueSync.Enabled, st.IssueSync.Reason == notGitHub, st.IssueSync.Reason == sourceNotGitHub:

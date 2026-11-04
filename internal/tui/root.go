@@ -648,7 +648,7 @@ func (m *root) syncHelpPane() {
 func (m *root) helpLines(width int) []string {
 	st := m.surfaceTarget()
 	return helpLines(m.activeContext(), m.githubAvailable(),
-		helpState{target: st.target, editable: st.editable, tabs: st.tabs, nextTab: m.nextTabName()}, width)
+		helpState{target: st.target, editable: st.editable, tabs: st.tabs, nextTab: m.nextTabName(), unsyncable: !m.issuesSyncable()}, width)
 }
 
 // helpSheet renders the sheet for the surface under it, against the same
@@ -656,7 +656,20 @@ func (m *root) helpLines(width int) []string {
 func (m *root) helpSheet() string {
 	st := m.surfaceTarget()
 	return helpText(m.activeContext(), m.githubAvailable(),
-		helpState{target: st.target, editable: st.editable, tabs: st.tabs, nextTab: m.nextTabName()})
+		helpState{target: st.target, editable: st.editable, tabs: st.tabs, nextTab: m.nextTabName(), unsyncable: !m.issuesSyncable()})
+}
+
+// issuesSyncable is the `?` sheet's gate on the issues list's `S` (task
+// 142.14 decision 3): the list's own answer while it is the surface, and
+// true elsewhere, where no syncable row is in context anyway.
+func (m *root) issuesSyncable() bool {
+	if m.connScreen() {
+		return true
+	}
+	if v, ok := m.views[m.active].(*issuesView); ok {
+		return v.syncable()
+	}
+	return true
 }
 
 // globalKey runs the root's own single-key bindings, and reports whether key

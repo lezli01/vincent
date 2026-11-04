@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/keymap"
 )
@@ -318,6 +320,16 @@ type binding struct {
 	// from the footer while the selected row has no source page; `?` and
 	// the palette keep it, and the key still says there is none.
 	remoteOnly bool
+	// syncable marks a row that only means something while the selected
+	// project has a sync pass to wake (task 142.14 decision 3): the issues
+	// list's `S`. The gate is the list's own loaded sync status — not the
+	// GitHub probe, which says nothing about a Jira project — so the row is
+	// withheld from the footer, `?` and the palette until that status has
+	// loaded, and whenever it says not_github or source_not_github (a
+	// project with no source, or github pinned off github.com), where a
+	// request would record nothing. A switch that is off keeps the row: `S`
+	// then says import is off, and why.
+	syncable bool
 	// aliased marks a row another row's hint already advertises: `right`
 	// behind ctxTasks' `←/→ fold`, `O` behind its `C/O fold all`, `C` behind
 	// the timeline's and the diff's `O/C fold all`. The footer's `+N` counts
@@ -955,8 +967,9 @@ var bindings = []binding{
 	{key: issueStateKey, label: "close or reopen the selected issue — only what the daemon offers", scope: scopePanel, context: ctxIssues, hint: "X close/reopen", priority: 10},
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes at the issue's source)", scope: scopePanel, context: ctxIssues, priority: 11, term: termDelete},
 	// `R` above only re-reads (task 130 decision 2); `S` is the explicit
-	// request to GitHub, `vincent issue sync` from the list.
-	{key: issueSyncKey, label: "sync this project's issues from GitHub now — sweeping out the ones deleted there", scope: scopePanel, context: ctxIssues, hint: "S sync", priority: 11, github: true},
+	// request to the project's issue source, `vincent issue sync` from the
+	// list, offered only where there is a sync pass to wake (task 142.14).
+	{key: issueSyncKey, label: "sync this project's issues from its issue source now — sweeping out the ones deleted there", scope: scopePanel, context: ctxIssues, hint: "S sync", priority: 11, syncable: true},
 	// Folding the lane sections (task 134.8), the task board's four keys in
 	// the same meaning. Not `fold:` rows: that marker drops a row while the
 	// board is ungrouped, and the issues list always has its sections.
@@ -1129,6 +1142,17 @@ func bindingsFor(ctx bindingContext) []binding {
 		}
 	}
 	return out
+}
+
+// withoutUnsyncable drops the syncable rows — the issues list's `S` — while
+// the project has no sync pass to wake (task 142.14 decision 3). The issues
+// view applies it to its own live rows; the root applies it to the `?`
+// sheet, which does not consult a view's live rows.
+func withoutUnsyncable(rows []binding, syncable bool) []binding {
+	if syncable {
+		return rows
+	}
+	return slices.DeleteFunc(slices.Clone(rows), func(b binding) bool { return b.syncable })
 }
 
 // withoutGitHub drops the rows that only mean something while a project's

@@ -598,11 +598,16 @@ func (v *issuesView) handoffCreated(msg handoffCreatedMsg) tea.Cmd {
 }
 
 // liveBindings withholds ready, handoff and return where they do not apply
-// to the selected row (decision 4), and the selection keys while no card
-// is pending.
+// to the selected row (decision 4), the selection keys while no card is
+// pending, and `S` while the project has no sync pass to wake (task 142.14).
 func (v *issuesView) liveBindings(rows []binding) []binding {
 	row, ok := v.current()
+	syncable := v.syncable()
 	return slices.DeleteFunc(slices.Clone(rows), func(b binding) bool {
+		if b.syncable && !syncable {
+			// `S` only where a sync pass can be woken (task 142.14).
+			return true
+		}
 		switch b.op {
 		case "":
 			return false
