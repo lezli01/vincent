@@ -51,6 +51,11 @@ func newProjectAddCmd() *cobra.Command {
 				if cmd.Flags().Changed("max-parallel") {
 					req.MaxParallelTasks = &maxParallel
 				}
+				src, err := issueSourceFromFlags(cmd, nil)
+				if err != nil {
+					return err
+				}
+				req.IssueSource = src
 				p, err := c.CreateProject(ctx, req)
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
@@ -59,8 +64,8 @@ func newProjectAddCmd() *cobra.Command {
 				if wantJSON(cmd) {
 					return emitJSON(cmd.OutOrStdout(), p)
 				}
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "project %d registered: %s (%s, default branch %s)\n",
-					p.ID, p.Name, p.Path, p.DefaultBranch)
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "project %d registered: %s (%s, default branch %s, issues %s)\n",
+					p.ID, p.Name, p.Path, p.DefaultBranch, p.IssueSource.Label())
 				return err
 			})
 		},
@@ -69,6 +74,7 @@ func newProjectAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&defaultBranch, "default-branch", "", "Base branch for new tasks (default: detected)")
 	cmd.Flags().StringVar(&workflow, "workflow", "", "Default workflow for new tasks")
 	cmd.Flags().IntVar(&maxParallel, "max-parallel", 0, "Per-project concurrency cap")
+	addIssueSourceFlags(cmd)
 	jsonFlag(cmd)
 	return cmd
 }
@@ -99,7 +105,9 @@ func newProjectLsCmd() *cobra.Command {
 					}
 					return emitJSON(cmd.OutOrStdout(), projects)
 				}
-				header := []string{"ID", "NAME", "PATH", "BRANCH", "WORKFLOW", "CAP"}
+				// SOURCE, not ISSUES: --stats appends an ISSUES count column, and
+				// a header must name each column once (review F4).
+				header := []string{"ID", "NAME", "PATH", "BRANCH", "WORKFLOW", "CAP", "SOURCE"}
 				if stats {
 					header = append(header, projectStatsHeader...)
 				}
@@ -111,7 +119,7 @@ func newProjectLsCmd() *cobra.Command {
 					}
 					row := []string{
 						strconv.FormatInt(p.ID, 10), p.Name, p.Path,
-						p.DefaultBranch, p.Workflow(), parallelCap,
+						p.DefaultBranch, p.Workflow(), parallelCap, p.IssueSource.Label(),
 					}
 					if stats {
 						row = append(row, projectStatsCells(p.Stats)...)
@@ -166,6 +174,7 @@ func projectStatsCells(st *apiclient.ProjectStats) []string {
 // per field PATCH /v1/projects/{id} accepts, in the order the help lists them.
 var projectEditFlags = []string{
 	"name", "path", "default-branch", "workflow", "max-parallel", "branch-template",
+	"issue-source", "jira-site", "jira-project", "jira-jql", "jira-mapping",
 }
 
 // errEmptyProjectPatch refuses an edit that names no field. PATCH would accept
@@ -182,7 +191,12 @@ func newProjectEditCmd() *cobra.Command {
 			"as it is. An empty value (--workflow \"\", --max-parallel \"\",\n" +
 			"--branch-template \"\") clears that setting. --path is sent as typed and\n" +
 			"must be absolute; when the new repository lacks the stored default branch,\n" +
-			"pass --default-branch in the same command.",
+			"pass --default-branch in the same command.\n\n" +
+			"--issue-source binds where the project's issues come from: derive (from\n" +
+			"origin, the default), none, github, or jira with --jira-site and\n" +
+			"--jira-project. Changing the provider, site or project is a rebind: the\n" +
+			"old source's imported issues are kept and marked missing. The Jira\n" +
+			"credential is never a flag; the daemon reads JIRA_USER and JIRA_API_TOKEN.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
@@ -196,6 +210,20 @@ func newProjectEditCmd() *cobra.Command {
 				return err
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				if issueSourceFlagsChanged(cmd) {
+					// The binding is replaced whole, so a flag that names one
+					// Jira field keeps the others as the daemon holds them.
+					cur, err := c.GetProject(ctx, id)
+					if err != nil {
+						_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+						return exitError{code: 1}
+					}
+					src, err := issueSourceFromFlags(cmd, &cur.IssueSource)
+					if err != nil {
+						return err
+					}
+					req.IssueSource = apiclient.SetOpt(*src)
+				}
 				p, err := c.PatchProject(ctx, id, req)
 				if err != nil {
 					// The daemon re-runs registration's checks on a new path and
@@ -216,8 +244,8 @@ func newProjectEditCmd() *cobra.Command {
 					template = *p.BranchTemplate
 				}
 				_, err = fmt.Fprintf(cmd.OutOrStdout(),
-					"project %d updated: %s (%s, default branch %s, workflow %s, cap %s, branch template %s)\n",
-					p.ID, p.Name, p.Path, p.DefaultBranch, p.Workflow(), parallelCap, template)
+					"project %d updated: %s (%s, default branch %s, workflow %s, cap %s, branch template %s, issues %s)\n",
+					p.ID, p.Name, p.Path, p.DefaultBranch, p.Workflow(), parallelCap, template, p.IssueSource.Label())
 				return err
 			})
 		},
@@ -228,6 +256,7 @@ func newProjectEditCmd() *cobra.Command {
 	cmd.Flags().String("workflow", "", `Default workflow for new tasks; "" falls back to adhoc`)
 	cmd.Flags().String("max-parallel", "", `Per-project concurrency cap; "" removes the cap`)
 	cmd.Flags().String("branch-template", "", `Branch name template; "" inherits config.yaml`)
+	addIssueSourceFlags(cmd)
 	jsonFlag(cmd)
 	return cmd
 }
@@ -275,6 +304,9 @@ func projectPatchFromFlags(cmd *cobra.Command) (apiclient.PatchProjectRequest, e
 			req.DefaultWorkflow = optional(flag)
 		case "branch-template":
 			req.BranchTemplate = optional(flag)
+		case "issue-source", "jira-site", "jira-project", "jira-jql", "jira-mapping":
+			// Assembled against the project's current binding once a client
+			// exists (issueSourceFromFlags); here they only count as a change.
 		case "max-parallel":
 			v, _ := flags.GetString(flag)
 			v = strings.TrimSpace(v)

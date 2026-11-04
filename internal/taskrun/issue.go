@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issues"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -58,6 +59,7 @@ func issueContext(task *store.Task) workflow.IssueContext {
 				Provider: providerGitHub,
 				Repo:     issue.Repo,
 				Number:   issue.Number,
+				Key:      sourceKey(providerGitHub, issue.Repo, issue.Number, ""),
 				URL:      issue.URL,
 				State:    issue.State,
 			},
@@ -87,6 +89,7 @@ func snapshotContext(snap *store.IssueSnapshot) workflow.IssueContext {
 			Provider: rem.Provider,
 			Repo:     rem.Repo,
 			Number:   rem.Number,
+			Key:      sourceKey(rem.Provider, rem.Repo, rem.Number, rem.Key),
 			URL:      rem.URL,
 			State:    rem.State,
 		}
@@ -112,6 +115,13 @@ func templateComments(in []store.IssueSnapshotComment) []workflow.IssueComment {
 		out = append(out, workflow.IssueComment{Author: c.Author, Body: c.Body, CreatedAt: c.CreatedAt})
 	}
 	return out
+}
+
+// sourceKey is a source's display key (task 142.16) — through
+// issues.RenderSource, the one place a reference is spelled, so GitHub's
+// fallback to the number comes from the same function the API reads.
+func sourceKey(provider, repo string, number int, key string) string {
+	return issues.RenderSource(provider, repo, number, key).Key
 }
 
 // providerGitHub is the Source.Provider of a legacy GitHub snapshot — the
@@ -154,7 +164,8 @@ const issueFileName = "vincent-issue.json"
 //
 // Number is the **GitHub** number and null for a local issue — the file's
 // contract is gh's, which is why it does not follow `.Issue.Number` into
-// being the vincent id (task 130 decision 8). Comments is the snapshot's
+// being the vincent id (task 130 decision 8) — and null for a Jira issue,
+// which has no number (task 142.16), as is source.number. Comments is the snapshot's
 // thread in gh's element shape, oldest first (130.16, closing decision
 // 23.2's gap) — always an array, `[]` when the thread is empty and for a
 // legacy GitHub snapshot, which never carried one.
@@ -190,11 +201,15 @@ type issueFileComment struct {
 	CreatedAt time.Time       `json:"createdAt"`
 }
 
+// issueFileSource is the file's `source`. Number is null for a Jira issue
+// and Key the provider's display key (task 142.16); a GitHub file's bytes
+// are unchanged apart from the added `key`.
 type issueFileSource struct {
 	Provider string `json:"provider"`
 	Repo     string `json:"repo"`
-	Number   int    `json:"number"`
+	Number   *int   `json:"number"`
 	URL      string `json:"url"`
+	Key      string `json:"key"`
 }
 
 // issueFileOf maps a task's snapshot onto issueFile, in issueContext's order:
@@ -222,13 +237,14 @@ func issueFileOf(task *store.Task) (issueFile, workflow.IssueEnv, bool) {
 			Labels:   fileLabels(issue.Labels),
 			Author:   issueFileAuthor{Login: issue.Author},
 			Comments: []issueFileComment{},
-			Source:   &issueFileSource{Provider: providerGitHub, Repo: issue.Repo, Number: issue.Number, URL: issue.URL},
 		}
+		key := sourceKey(providerGitHub, issue.Repo, issue.Number, "")
+		f.Source = &issueFileSource{Provider: providerGitHub, Repo: issue.Repo, Number: &n, URL: issue.URL, Key: key}
 		if !issue.CreatedAt.IsZero() {
 			created := issue.CreatedAt.UTC()
 			f.CreatedAt = &created
 		}
-		return f, workflow.IssueEnv{Number: issue.Number, URL: issue.URL}, true
+		return f, workflow.IssueEnv{Number: issue.Number, URL: issue.URL, Key: key}, true
 	}
 	return issueFile{}, workflow.IssueEnv{}, false
 }
@@ -261,10 +277,17 @@ func snapshotFile(snap *store.IssueSnapshot) (issueFile, workflow.IssueEnv) {
 	}
 	ie := workflow.IssueEnv{ID: snap.ID}
 	if rem := snap.Remote; rem != nil {
-		n := rem.Number
-		f.Number, f.URL = &n, rem.URL
-		f.Source = &issueFileSource{Provider: rem.Provider, Repo: rem.Repo, Number: rem.Number, URL: rem.URL}
-		ie.Number, ie.URL = rem.Number, rem.URL
+		key := sourceKey(rem.Provider, rem.Repo, rem.Number, rem.Key)
+		f.URL = rem.URL
+		f.Source = &issueFileSource{Provider: rem.Provider, Repo: rem.Repo, URL: rem.URL, Key: key}
+		// Only GitHub has a number: a Jira issue writes null for both
+		// numbers and exports no VINCENT_ISSUE_NUMBER (task 142.16).
+		if rem.Provider == providerGitHub {
+			n := rem.Number
+			f.Number, f.Source.Number = &n, &n
+			ie.Number = rem.Number
+		}
+		ie.URL, ie.Key = rem.URL, key
 	}
 	return f, ie
 }

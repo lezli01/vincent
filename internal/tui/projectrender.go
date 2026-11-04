@@ -195,6 +195,7 @@ func (p *projectsView) renderProjectDetail(pr apiclient.Project, height int) str
 		section("Repository"),
 		p.projectFact("default branch", pr.DefaultBranch),
 		p.projectFact("branch naming", projectBranchTemplate(pr)),
+		p.projectFact("issue source", pr.IssueSource.Label()),
 		"",
 		section("Execution defaults"),
 		p.projectFact("workflow", pr.Workflow()),
@@ -429,10 +430,15 @@ func runningFigure(pr apiclient.Project) string {
 // dash rather than as ✗ or a reason.
 const notGitHub = "not_github"
 
+// sourceNotGitHub is the stored sync reason for a project whose explicit
+// issue-source binding is none or jira (task 142.6): like notGitHub, the
+// GitHub importer is simply not this project's, so it reads as a dash.
+const sourceNotGitHub = "source_not_github"
+
 // syncGlyph is the stored issue-sync health: off, healthy, or failing.
 func syncGlyph(st *apiclient.ProjectStats) string {
 	switch {
-	case !st.IssueSync.Enabled, st.IssueSync.Reason == notGitHub:
+	case !st.IssueSync.Enabled, st.IssueSync.Reason == notGitHub, st.IssueSync.Reason == sourceNotGitHub:
 		return overviewDash
 	case st.IssueSync.OK:
 		return "✓"
@@ -612,12 +618,18 @@ func (f *projectForm) renderLines(width int, includeHeading bool) ([]string, int
 	f.name.SetWidth(w)
 	f.branch.SetWidth(w)
 	f.cap.SetWidth(w)
+	f.jiraSite.SetWidth(w)
+	f.jiraKey.SetWidth(w)
+	f.jiraJQL.SetWidth(w)
 	var lines []string
 	if includeHeading {
 		lines = append(lines, " "+styleTitle.Render(strings.ToLower(f.heading())), "")
 	}
 	cursorLine := len(lines)
 	for row := pfRow(0); row < pfRowCount; row++ {
+		if !f.rowShown(row) {
+			continue
+		}
 		if row == f.cursor {
 			cursorLine = len(lines)
 		}
@@ -625,7 +637,7 @@ func (f *projectForm) renderLines(width int, includeHeading bool) ([]string, int
 		if msg, ok := f.rowErr[row]; ok {
 			lines = append(lines, styleBad.Render("      ⚠ "+msg))
 		}
-		if row == pfWorkflow && f.pick != nil {
+		if f.pick != nil && f.pick.row == int(row) {
 			f.pick.setWidth(width)
 			lines = append(lines, f.pick.renderBody()...)
 			lines = append(lines, styleDim.Render("    enter select · esc cancel"))
@@ -677,6 +689,19 @@ func (f *projectForm) rowValue(row pfRow) string {
 			return styleDim.Render("(none — new tasks use adhoc)")
 		}
 		return f.workflow
+	case pfSource:
+		for _, o := range f.sourceOptions() {
+			if o.value == f.source {
+				return o.label
+			}
+		}
+		return f.source
+	case pfJiraSite:
+		return textOrView(f.jiraSite.Value(), f.jiraSite.View(), editing, "(required) https://…")
+	case pfJiraKey:
+		return textOrView(f.jiraKey.Value(), f.jiraKey.View(), editing, "(required) the project key")
+	case pfJiraJQL:
+		return textOrView(f.jiraJQL.Value(), f.jiraJQL.View(), editing, "(the whole project)")
 	case pfSave, pfRowCount:
 	}
 	return ""

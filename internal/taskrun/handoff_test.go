@@ -172,3 +172,38 @@ func TestOrdinaryTaskHasNoHandoff(t *testing.T) {
 		t.Errorf("writeHandoffFile(ordinary) = %+v, %v", env, err)
 	}
 }
+
+// TestHandoffItemCarriesAJiraKey (task 142.16): a handoff item reuses
+// snapshotFile, so a Jira item's issue gains `source.key` with no code of
+// its own, and its `.Handoff` item renders the key.
+func TestHandoffItemCarriesAJiraKey(t *testing.T) {
+	d, err := buildHandoff(&store.Handoff{ID: 1}, []*store.HandoffItem{{HandoffID: 1, IssueID: 14, Issue: jiraSnapshot()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file struct {
+		Items []struct {
+			Issue struct {
+				Number *int `json:"number"`
+				Source struct {
+					Provider string `json:"provider"`
+					Key      string `json:"key"`
+					Number   *int   `json:"number"`
+				} `json:"source"`
+			} `json:"issue"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(d.file, &file); err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(file.Items))
+	}
+	is := file.Items[0].Issue
+	if is.Source.Key != "PROJ-12" || is.Source.Provider != "jira" || is.Source.Number != nil || is.Number != nil {
+		t.Errorf("item issue = %+v, want key PROJ-12 and null numbers", is)
+	}
+	if got := d.ctx.Items[0].Issue.Source.Key; got != "PROJ-12" {
+		t.Errorf(".Handoff item Source.Key = %q, want PROJ-12", got)
+	}
+}

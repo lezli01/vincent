@@ -21,8 +21,31 @@ list with the user-facing context a commit subject cannot carry.
   the lookup needs a project; the two references cannot be combined (task
   142.9, #905). No Jira issue is imported yet, so a Jira key answers an empty
   list until Jira issue sync lands.
+- **A project's issue source is an explicit setting.** Each project now has
+  an issue source: `derive` (the default, which follows `origin` as before),
+  `none`, `github`, or `jira` with a site, a project key, an optional JQL
+  narrowing clause and an optional mapping override. Set it with
+  `vincent project add`/`edit --issue-source` and the `--jira-*` flags, the
+  TUI project form, `issue_source` on `POST`/`PATCH /v1/projects`, or MCP
+  `project_patch`. `vincent project ls` and the projects pane show the
+  effective source. The setting is stored by the daemon and is never read from
+  the repository, and it holds no credential: Jira's comes from `JIRA_USER`
+  and `JIRA_API_TOKEN`. A project on GitHub that is bound to `none` or `jira`
+  no longer imports GitHub issues, and its sync reports `source_not_github`.
+  Its pull requests are still linked. Changing the provider, site or project
+  marks the issues imported from the old source `missing` and keeps them.
+  Jira sync itself is not scheduled yet.
 
 ### Changed
+
+- **Workflows can read an imported issue's display key.** `.Issue.Source.Key`,
+  `$VINCENT_ISSUE_KEY` and the issue file's `source.key` carry the provider's
+  key — the GitHub number as a string, or a Jira issue's `PROJ-12` — and a
+  task created from a Jira issue prefills `PROJ-12 <title>` with a
+  `Jira issue PROJ-12: <url>` link line. For a Jira issue, the issue file's
+  `number` and `source.number` are `null` and no `VINCENT_ISSUE_NUMBER` is
+  set; GitHub issues render, export and write exactly as before apart from the
+  added key.
 
 - **The daemon names an imported issue's source.** An issue's `source` — on
   `GET /v1/issues`, `GET /v1/issues/{id}` and a task's `issue` — now carries

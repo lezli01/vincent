@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/lezli01/vincent/internal/issuestate"
 )
 
-const projectColumns = `id, name, path, default_branch, default_workflow, max_parallel_tasks, branch_template, created_at, updated_at`
+const projectColumns = `id, name, path, default_branch, default_workflow, max_parallel_tasks, branch_template,
+	issue_provider, jira_site, jira_project_key, jira_jql, jira_mapping_json, created_at, updated_at`
 
 // CreateProject inserts p and assigns its ID and timestamps, writing the
 // durable project.created event in the same transaction (spec §13.3). A
@@ -23,10 +26,13 @@ func (s *Store) CreateProject(ctx context.Context, p *Project) error {
 	var ev *Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO projects (name, path, default_branch, default_workflow, max_parallel_tasks, branch_template, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			INSERT INTO projects (name, path, default_branch, default_workflow, max_parallel_tasks, branch_template,
+				issue_provider, jira_site, jira_project_key, jira_jql, jira_mapping_json, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			p.Name, p.Path, p.DefaultBranch, nullString(p.DefaultWorkflow), p.MaxParallelTasks,
-			nullString(p.BranchTemplate), formatTime(p.CreatedAt), formatTime(p.UpdatedAt))
+			nullString(p.BranchTemplate), p.IssueSource.Provider, p.IssueSource.JiraSite,
+			p.IssueSource.JiraProjectKey, p.IssueSource.JiraJQL, p.IssueSource.JiraMappingJSON,
+			formatTime(p.CreatedAt), formatTime(p.UpdatedAt))
 		if err != nil {
 			return fmt.Errorf("insert project: %w", err)
 		}
@@ -96,32 +102,136 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 // UpdatedAt, writing the durable project.updated event in the same
 // transaction (spec §13.3). Returns ErrNotFound when the row does not exist.
 func (s *Store) UpdateProject(ctx context.Context, p *Project) error {
+	return s.UpdateProjectRebind(ctx, p, nil)
+}
+
+// Rebind names the provider whose remotes an issue-source rebind abandons
+// (task 142.6 decision 4). OldProvider is the project's effective provider
+// before the update; "" or none abandons no remote, but the sync row is
+// still dropped.
+type Rebind struct {
+	OldProvider string
+}
+
+// UpdateProjectRebind is UpdateProject that, when rebind is non-nil, also
+// rebinds the project's issue source in the same transaction (task 142.6
+// decision 4): every live remote of rebind.OldProvider whose issue still
+// exists is marked missing — which also stops the outbox writing to it,
+// since it reads live remotes only — and the project's issue_sync_state row
+// is deleted, so the next sync of whatever the project is now bound to
+// starts from nothing. Each issue touched announces issue.updated {changed:
+// ["remote_status"]} by sync, as the sweep does. No issue is deleted;
+// binding back re-imports, which matches on the remote key and resets the
+// status to live.
+//
+// A rebind takes the project's issue-source gate for its transaction,
+// cancelling an importer pass in flight and waiting for it to stop, so the
+// pass cannot write the abandoned binding back afterwards (review F1).
+func (s *Store) UpdateProjectRebind(ctx context.Context, p *Project, rebind *Rebind) error {
+	if rebind != nil {
+		unlock, err := s.lockIssueSourceForRebind(ctx, p.ID)
+		if err != nil {
+			return fmt.Errorf("rebind project %d: %w", p.ID, err)
+		}
+		defer unlock()
+	}
 	p.UpdatedAt = time.Now()
-	var ev *Event
+	var evs []*Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
 			UPDATE projects SET name = ?, path = ?, default_branch = ?, default_workflow = ?,
-				max_parallel_tasks = ?, branch_template = ?, updated_at = ?
+				max_parallel_tasks = ?, branch_template = ?, issue_provider = ?, jira_site = ?,
+				jira_project_key = ?, jira_jql = ?, jira_mapping_json = ?, updated_at = ?
 			WHERE id = ?`,
 			p.Name, p.Path, p.DefaultBranch, nullString(p.DefaultWorkflow), p.MaxParallelTasks,
-			nullString(p.BranchTemplate), formatTime(p.UpdatedAt), p.ID)
+			nullString(p.BranchTemplate), p.IssueSource.Provider, p.IssueSource.JiraSite,
+			p.IssueSource.JiraProjectKey, p.IssueSource.JiraJQL, p.IssueSource.JiraMappingJSON,
+			formatTime(p.UpdatedAt), p.ID)
 		if err != nil {
 			return fmt.Errorf("update project %d: %w", p.ID, err)
 		}
 		if err := oneRowAffected(res, fmt.Sprintf("project %d", p.ID)); err != nil {
 			return err
 		}
-		ev, err = projectEvent(EventProjectUpdated, p.ID, p.Name)
+		ev, err := projectEvent(EventProjectUpdated, p.ID, p.Name)
 		if err != nil {
 			return err
 		}
-		return appendEventTx(ctx, tx, ev)
+		evs = append(evs, ev)
+		if rebind != nil {
+			touched, err := rebindIssueSourceTx(ctx, tx, p.ID, rebind.OldProvider)
+			if err != nil {
+				return err
+			}
+			evs = append(evs, touched...)
+		}
+		for _, e := range evs {
+			if err := appendEventTx(ctx, tx, e); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return err
 	}
-	s.notify(ev)
+	for _, e := range evs {
+		s.notify(e)
+	}
 	return nil
+}
+
+// liveRemotesTx lists the project's live remotes of provider whose issue
+// still exists: their row ids and issue ids, in row order.
+func liveRemotesTx(ctx context.Context, tx *sql.Tx, projectID int64, provider string) (remoteIDs, issueIDs []int64, err error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, issue_id FROM issue_remotes
+		WHERE project_id = ? AND provider = ? AND issue_id IS NOT NULL AND remote_status = ?
+		ORDER BY id`, projectID, provider, RemoteStatusLive)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list remotes to rebind: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var rid, iid int64
+		if err := rows.Scan(&rid, &iid); err != nil {
+			return nil, nil, fmt.Errorf("scan remote to rebind: %w", err)
+		}
+		remoteIDs, issueIDs = append(remoteIDs, rid), append(issueIDs, iid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("list remotes to rebind: %w", err)
+	}
+	return remoteIDs, issueIDs, nil
+}
+
+// rebindIssueSourceTx is the store half of a rebind: it marks the abandoned
+// provider's live remotes missing and drops the sync row, returning one
+// issue.updated event per issue it touched.
+func rebindIssueSourceTx(ctx context.Context, tx *sql.Tx, projectID int64, oldProvider string) ([]*Event, error) {
+	var evs []*Event
+	if oldProvider != "" && oldProvider != IssueProviderNone {
+		remoteIDs, issueIDs, err := liveRemotesTx(ctx, tx, projectID, oldProvider)
+		if err != nil {
+			return nil, err
+		}
+		for i, rid := range remoteIDs {
+			if _, err := tx.ExecContext(ctx, `UPDATE issue_remotes SET remote_status = ? WHERE id = ?`,
+				RemoteStatusMissing, rid); err != nil {
+				return nil, fmt.Errorf("mark remote missing: %w", err)
+			}
+			ev, err := issueEvent(EventIssueUpdated, projectID, issueIDs[i], issuestate.Sync,
+				map[string]any{"changed": []string{"remote_status"}})
+			if err != nil {
+				return nil, err
+			}
+			evs = append(evs, ev)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM issue_sync_state WHERE project_id = ?`, projectID); err != nil {
+		return nil, fmt.Errorf("drop issue sync state: %w", err)
+	}
+	return evs, nil
 }
 
 // DeleteProject removes the project row. Returns ErrNotFound when the row
@@ -204,9 +314,11 @@ func scanProject(r rowScanner) (*Project, error) {
 		branchTemplate   sql.NullString
 		maxPar           sql.NullInt64
 		created, updated string
+		src              = &p.IssueSource
 	)
 	if err := r.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultBranch, &workflow, &maxPar,
-		&branchTemplate, &created, &updated); err != nil {
+		&branchTemplate, &src.Provider, &src.JiraSite, &src.JiraProjectKey, &src.JiraJQL,
+		&src.JiraMappingJSON, &created, &updated); err != nil {
 		return nil, err
 	}
 	p.DefaultWorkflow = workflow.String

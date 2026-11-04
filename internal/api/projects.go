@@ -30,6 +30,9 @@ type projectResponse struct {
 	DefaultWorkflow  *string `json:"default_workflow"`
 	MaxParallelTasks *int    `json:"max_parallel_tasks"`
 	BranchTemplate   *string `json:"branch_template"`
+	// IssueSource is the project's issue-source binding and its effective
+	// provider (task 142.6, §5.1).
+	IssueSource projectSourceResponse `json:"issue_source"`
 	// SlotsUsed is how many of this project's tasks hold a concurrency slot
 	// right now (§11) — `running` or `awaiting_input`, lanes included. It is
 	// non-null and 0 when the project holds none, and it is served here so a
@@ -40,8 +43,16 @@ type projectResponse struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-func toProjectResponse(p *store.Project, slotsUsed int) projectResponse {
+// projectResponse renders p, resolving its issue source's effective provider
+// against origin — a local git call per derived project, reused for
+// originTTL so a listing does not spawn one per project per refresh.
+func (s *Server) projectResponse(ctx context.Context, p *store.Project, slotsUsed int) projectResponse {
+	return toProjectResponse(p, slotsUsed, s.renderedIssueProvider(ctx, p))
+}
+
+func toProjectResponse(p *store.Project, slotsUsed int, effective string) projectResponse {
 	r := projectResponse{
+		IssueSource:      toProjectSourceResponse(p.IssueSource, effective),
 		ID:               p.ID,
 		Name:             p.Name,
 		Path:             p.Path,
@@ -87,7 +98,7 @@ func (s *Server) handleProjectList(w http.ResponseWriter, r *http.Request) {
 		out := make([]projectWithStats, 0, len(projects))
 		for i := range projects {
 			out = append(out, projectWithStats{
-				projectResponse: toProjectResponse(&projects[i], slots[projects[i].ID]),
+				projectResponse: s.projectResponse(r.Context(), &projects[i], slots[projects[i].ID]),
 				Stats:           s.toProjectStats(stats, ok, projects[i].ID),
 			})
 		}
@@ -96,7 +107,7 @@ func (s *Server) handleProjectList(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]projectResponse, 0, len(projects))
 	for i := range projects {
-		out = append(out, toProjectResponse(&projects[i], slots[projects[i].ID]))
+		out = append(out, s.projectResponse(r.Context(), &projects[i], slots[projects[i].ID]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -111,6 +122,9 @@ type projectCreateRequest struct {
 	// parsed here rather than at task creation, so a broken template fails where
 	// it was written instead of on every task from then on.
 	BranchTemplate *string `json:"branch_template"`
+	// IssueSource is the project's issue-source binding (task 142.6);
+	// absent or null derives it from origin.
+	IssueSource json.RawMessage `json:"issue_source"`
 }
 
 func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +192,12 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		p.BranchTemplate = tmpl
 	}
+	src, msg := decodeIssueSource(req.IssueSource)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+		return
+	}
+	p.IssueSource = src
 	if err := s.deps.Store.CreateProject(ctx, &p); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: projects.name") {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
@@ -191,7 +211,7 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 	// A project registered one statement ago owns no task, so its slot count
 	// is 0 by construction — the field is filled here anyway so a client
 	// never has to ask which responses carry it.
-	writeJSON(w, http.StatusCreated, toProjectResponse(&p, 0))
+	writeJSON(w, http.StatusCreated, s.projectResponse(ctx, &p, 0))
 }
 
 func (s *Server) handleProjectGet(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +223,7 @@ func (s *Server) handleProjectGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	resp := toProjectResponse(p, s.projectSlots(r.Context(), p.ID))
+	resp := s.projectResponse(r.Context(), p, s.projectSlots(r.Context(), p.ID))
 	if withStats {
 		stats, ok := s.projectStats(r.Context())
 		writeJSON(w, http.StatusOK, projectWithStats{projectResponse: resp, Stats: s.toProjectStats(stats, ok, p.ID)})
@@ -234,6 +254,9 @@ type projectPatchRequest struct {
 	DefaultWorkflow  opt[string] `json:"default_workflow"`
 	MaxParallelTasks opt[int]    `json:"max_parallel_tasks"`
 	BranchTemplate   opt[string] `json:"branch_template"`
+	// IssueSource replaces the whole binding; null resets it to derive
+	// (task 142.6). It is decoded strictly by decodeIssueSource.
+	IssueSource opt[json.RawMessage] `json:"issue_source"`
 }
 
 func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
@@ -246,6 +269,7 @@ func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	oldSource, oldEff := p.IssueSource, s.effectiveIssueProvider(ctx, p)
 	for field, o := range map[string]interface{ isNull() bool }{
 		"name": req.Name, "path": req.Path, "default_branch": req.DefaultBranch,
 	} {
@@ -328,12 +352,31 @@ func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
 		}
 		p.BranchTemplate = tmpl
 	}
-	if err := s.deps.Store.UpdateProject(ctx, p); err != nil {
+	if req.IssueSource.set {
+		src, msg := decodeIssueSource(req.IssueSource.val)
+		if req.IssueSource.null {
+			src, msg = store.IssueSource{}, ""
+		}
+		if msg != "" {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, msg)
+			return
+		}
+		p.IssueSource = src
+	}
+	// A rebind — the effective provider, the Jira site or the Jira project
+	// changed, including by repointing path at a repository with another
+	// origin — abandons the old provider's remotes in the update's own
+	// transaction (task 142.6 decision 4).
+	var rebind *store.Rebind
+	if newEff := s.effectiveIssueProvider(ctx, p); issueSourceRebound(oldEff, newEff, oldSource, p.IssueSource) {
+		rebind = &store.Rebind{OldProvider: oldEff}
+	}
+	if err := s.deps.Store.UpdateProjectRebind(ctx, p, rebind); err != nil {
 		s.internalError(w, "update project", err)
 		return
 	}
 	s.projectsChanged()
-	writeJSON(w, http.StatusOK, toProjectResponse(p, s.projectSlots(ctx, p.ID)))
+	writeJSON(w, http.StatusOK, s.projectResponse(ctx, p, s.projectSlots(ctx, p.ID)))
 }
 
 // projectsChanged tells the workflow registry to follow the current set of

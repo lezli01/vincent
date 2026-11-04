@@ -1076,7 +1076,7 @@ is whether `.Steps.foo` exists — that is a run-time fact.
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Steps` | completed steps by id → `{Status, Result, ExitCode}` — [§5.3](#53-passing-one-steps-output-to-the-next) |
 | `.Loop` | `Index` (1-based, **0** outside any loop), `Item`, `IsFirst`, `IsLast` — [§6.4](#64-loops-in-depth) |
-| `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` — the GitHub `Repo`, `Number`, `URL` and `State` of an imported issue, which is what a `gh` call reads. `Repo` and `URL` are deprecated aliases of `Source.Repo`/`Source.URL` — [reference](../reference/workflow-schema.md#issue) |
+| `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` — the `Provider`, `Repo`, `Number`, `Key`, `URL` and `State` of an imported issue (zero for a local one; `Key` is the display key, the GitHub number as a string or a Jira key such as `PROJ-12`, and a Jira issue has `Number` **0** and a browse `URL`), which is what a `gh` call reads — and `Comments` (a list of `Author`, `Body`, `CreatedAt`: the thread, oldest first). `Repo` and `URL` are deprecated aliases of `Source.Repo`/`Source.URL` — [reference](../reference/workflow-schema.md#issue) |
 | `.Host` | `OS`, `Arch` — the **daemon's** GOOS/GOARCH — [§10.4](#104-gating-one-step-by-platform) |
 | `.Worktree` | `Path` |
 | `.LastFailure` | retry attempts only: `{Reason, Output}`; empty otherwise |
@@ -1296,8 +1296,9 @@ command-step field. That is what lets an agent call
 command reads `VINCENT_TASK_ID` and `VINCENT_STEP_ID` and needs nothing else.
 
 A task created from an issue also gets the issue itself, as a file named by
-`VINCENT_ISSUE_FILE`, beside `VINCENT_ISSUE_ID`, `VINCENT_ISSUE_NUMBER` and
-`VINCENT_ISSUE_URL` (the last two only for a GitHub issue). The file is shaped
+`VINCENT_ISSUE_FILE`, beside `VINCENT_ISSUE_ID`, `VINCENT_ISSUE_NUMBER` (a
+GitHub issue only), and `VINCENT_ISSUE_URL` and `VINCENT_ISSUE_KEY` (an
+imported issue only). The file is shaped
 like `gh issue view --json` output, so a step that used to fetch the issue
 copies it instead — no network, the same in a fan-out lane, and never staged
 by `git add -A`. A task with no issue gets none of these. The keys are listed in

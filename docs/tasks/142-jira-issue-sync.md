@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (7/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (9/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -54,9 +54,11 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [ ] **142.5** ([#901](https://github.com/lezli01/vincent/issues/901)) The
   `"github"` equality checks replaced, so a second provider writes back and is
   guarded. Depends: 142.4.
-- [ ] **142.6** ([#902](https://github.com/lezli01/vincent/issues/902)) The
+- [x] **142.6** ([#902](https://github.com/lezli01/vincent/issues/902)) The
   per-project issue-source binding (decision 5): migration, API, CLI, TUI
-  form, MCP and sticky semantics.
+  form, MCP and sticky semantics. The GitHub importer honours it now
+  (`source_not_github`), and a rebind marks the old source's remotes
+  `missing` in the project update's transaction. ✓ 2026-11-03
 - [ ] **142.7** ([#903](https://github.com/lezli01/vincent/issues/903)) Issue
   sync scheduled per bound provider, decoupled from pull-request
   reconciliation, and the `jira:` config block. Depends: 142.4, 142.6.
@@ -91,7 +93,7 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [ ] **142.15** ([#911](https://github.com/lezli01/vincent/issues/911)) A
   JIRA doctor row with a credential check and per-project sync health.
   Depends: 142.12.
-- [ ] **142.16** ([#912](https://github.com/lezli01/vincent/issues/912))
+- [x] **142.16** ([#912](https://github.com/lezli01/vincent/issues/912))
   `.Issue.Source.Key`, `VINCENT_ISSUE_KEY`, `source.key` in the issue file,
   and the Jira prefill. Depends: 142.8.
 - [ ] **142.17** ([#913](https://github.com/lezli01/vincent/issues/913)) The
@@ -191,9 +193,37 @@ being true.
 
 A project is bound explicitly to one Jira Cloud site, and the Jira project
 **id** is recorded on the first successful sync, because a key rename changes
-every issue key but not the id. *Proposed default, open until #902 (open
-question 2):* the binding is the site plus one project key, with no JQL
-narrowing clause.
+every issue key but not the id. *Settled by the author 2026-11-03, delivering
+#902 (open question 2, the proposed default overturned):* the binding is the
+site plus one project key, with an **optional JQL narrowing clause**. The
+client ANDs it after `project = <id>` (#908). It is one line with no
+`ORDER BY`, so it can only narrow the set, never replace it: move detection
+and the sweep still ask "is it in this project?".
+
+The binding is stored on the `projects` row (migration 0051): `issue_provider`
+is `''` (derive from `origin`, the default every existing project keeps),
+`none`, `github` or `jira`, beside `jira_site`, `jira_project_key`, `jira_jql`
+and `jira_mapping_json` (a `jiramap.Config` override, decoded strictly by
+`jiramap.ParseConfig`). The recorded Jira project id belongs on
+`issue_sync_state` and arrives with #908, its first writer. On the wire the
+project DTO carries `issue_source: {provider, effective, jira}`; `effective`
+is the daemon's resolution of `derive`, so no client derives it. One pure
+validator in `internal/api/projectsource.go` judges every surface's input.
+Setting any provider but `jira` clears the Jira fields.
+
+**Rebind** (open question 3, settled as proposed): a change to the effective
+provider, the Jira site or the Jira project key — a repoint of `path` at
+another origin included — marks the old provider's live remotes `missing`,
+deletes the project's `issue_sync_state` row and announces
+`issue.updated {changed: ["remote_status"]}` per issue, all in the project
+update's transaction, without waiting for a sync that `none` would never run.
+A change to only the JQL or the mapping is not a rebind (decision 9.11).
+
+**The GitHub importer honours the binding from #902 on**: a project bound to
+`none` or `jira` makes no GitHub issue or comment call and records the sync
+reason `source_not_github`; pull-request linking is untouched (decision 6). A
+`jira` binding keeps that reason until #903 schedules Jira sync, and #910
+refines provider-aware reasons.
 
 1. **Sticky**, generalising task 130 decision 15.5: a later mismatch stops that
    project's sync rather than re-keying.
@@ -296,6 +326,10 @@ parts; 142.3 settles the Jira facts against a real site.
 10. **"In Progress" is not reflected in lanes.** Jira's `indeterminate`
     category is kept only in `remote_json`. *Proposed default, open until
     #910 (open question 8).*
+11. **An issue that leaves the JQL-narrowed set is marked `missing`** while it
+    stays in the bound Jira project, exactly like a sweep 404 (9.8): never
+    deleted, and reset to live when it matches again. *Settled 2026-11-03
+    delivering #902; implemented by the sweep in #908.*
 
 ### 10. Spec placement
 
@@ -337,6 +371,28 @@ Taken while delivering 142.8. Each point is numbered so code can cite it.
    "the remote" everywhere, since "written to Jira too" is what a user wants
    to read.
 
+### 12. Jira keys in templates, the issue file and the prefill (142.16, #912)
+
+Settled by the author 2026-11-03 while delivering 142.16. Each point is
+numbered so code can cite it.
+
+1. **No `jira_issue` declared field.** Workflows read `.Issue.Source.Key` or
+   `$VINCENT_ISSUE_KEY`; the prefill's field table is unchanged. This closes
+   open question 6 with its proposed default.
+2. **Only `Key` is added to templates and the issue file.** `.Issue.Source`
+   and the file's `source` gain `Key`/`key`, spelled by `issues.RenderSource`.
+   142.8's `Ref`, `ShortRef` and `ProviderName` stay on the API DTOs; adding
+   them later breaks nothing. *Beaten:* exposing all four now.
+3. **`source.number` is nullable.** A Jira file writes `null` for both
+   `number` and `source.number`, and a Jira step gets no
+   `VINCENT_ISSUE_NUMBER`. A GitHub file's bytes are unchanged apart from the
+   added `key`. *Beaten:* writing `0`, which reads as a real number.
+4. **The Jira prefill is `PROJ-12 <title>`** with a `Jira issue PROJ-12: <url>`
+   link line, never doubling the prefix. A Jira snapshot with no key prefills
+   the local shape. `github_issue`, `assignee` and `milestone` stay
+   GitHub-only; whether a Jira assignee or milestone should fill them is a
+   question for 142.12, which stores them.
+
 ## Records kept, departed from, narrowed or generalised
 
 Citations are to the lines as of this document's commit, after its dated notes were inserted.
@@ -372,27 +428,31 @@ explicitly. A "proposed default" is open until that issue.
    *Settled by the author 2026-11-03:* the departure is accepted, for issue
    sync only, with the credential half kept and the premise corrected
    (decision 1).
-2. **Site plus project key, or also a JQL narrowing clause?** *Proposed
-   default, open until #902:* the site plus the project key only; no JQL
-   narrowing clause in v1. Free JQL as the whole binding would break move
-   detection and the sweep.
-3. **May a project switch its issue source after imports?** *Proposed default,
-   open until #902:* yes, as an explicit rebind. Earlier imports stay, marked
-   `remote_status: missing`.
+2. **Site plus project key, or also a JQL narrowing clause?** *Settled by the
+   author 2026-11-03 (#902), overturning the proposed default:* an optional
+   JQL narrowing clause **is** in v1, ANDed after the project, single-line and
+   without `ORDER BY` (decision 5). Free JQL as the whole binding stays
+   rejected: it would break move detection and the sweep.
+3. **May a project switch its issue source after imports?** *Settled
+   2026-11-03 (#902), as proposed:* yes, as an explicit rebind at PATCH time.
+   Earlier imports stay, marked `remote_status: missing` (decision 5).
 4. **Sweep 404: mark-only, or delete after a confirming probe?** *Proposed
    default, open until #908:* mark-only (decision 9.8).
 5. **Mirror restricted-visibility comments?** *Proposed default, open until
    #908:* skip them (decision 9.6).
-6. **The Jira prefill title, and a `jira_issue` field?** *Proposed default,
-   open until #912:* the prefill title is `PROJ-12 <title>`, and there is no
+6. **The Jira prefill title, and a `jira_issue` field?** *Settled by the
+   author 2026-11-03: `PROJ-12 <title>`, no `jira_issue` field (decision 12).*
+   Was the proposed default: the prefill title is `PROJ-12 <title>`, and there is no
    `jira_issue` field. #896's question refers to "task 130 decision 2's
    `github_issue`", but `github_issue` was removed from every create surface
    by task 130 **decision 7** (`docs/tasks/130-issues-pillar.md:184`). A Jira
    issue reaches a task the way a GitHub one does: imported, then created
    from with `issue_id`.
 7. **A `GET /v1/projects/{id}/jira` probe, or a `vincent jira issues` remote
-   browse?** *Proposed default, open until #902:* neither in v1. #902 adds the
-   binding's API, CLI and MCP surface, and is where a probe would land.
+   browse?** *Settled by the author 2026-11-03 (#902), overturning the
+   proposed default:* the `GET /v1/projects/{id}/jira` probe **is** in v1. It
+   lands with the Jira client in #908, because nothing can answer it before
+   then; #902 adds only the binding. The remote browse stays out of v1.
 8. **Should "In Progress" (`indeterminate`) appear anywhere?** *Proposed
    default, open until #910:* nowhere in v1; it is kept only in `remote_json`
    (decision 9.10).

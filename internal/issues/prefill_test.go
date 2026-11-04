@@ -111,3 +111,48 @@ func TestPrefillDoesNotTruncate(t *testing.T) {
 		t.Errorf("description is %d bytes, want the whole body", len(got))
 	}
 }
+
+func jiraSnap() *store.IssueSnapshot {
+	return &store.IssueSnapshot{
+		ID: 14, Title: "Fix it", Body: "Body.", State: "open", Kind: "bug",
+		Labels: []string{"backend"},
+		Remote: &store.IssueSnapshotRemote{
+			Provider: "jira", Key: "PROJ-12", URL: "https://example.atlassian.net/browse/PROJ-12",
+			Assignees: []string{"alice"}, Milestone: "Sprint 4", MilestoneNumber: 4,
+		},
+	}
+}
+
+// TestPrefillFromAJiraIssue (task 142.16): a Jira issue's title carries its
+// key and its body a Jira link line, and the GitHub-only fields stay empty.
+func TestPrefillFromAJiraIssue(t *testing.T) {
+	got := PrefillFrom(jiraSnap(), allDecls(TypeString))
+	want := Prefill{
+		Title:       "PROJ-12 Fix it",
+		Description: "Body.\n\nJira issue PROJ-12: https://example.atlassian.net/browse/PROJ-12",
+		Fields:      map[string]string{"issue": "14", "labels": "backend", "kind": "bug"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("prefill =\n %+v\nwant\n %+v", got, want)
+	}
+	if got := PrefillFrom(jiraSnap(), allDecls(TypeInteger)); !reflect.DeepEqual(got.Fields, map[string]string{"issue": "14"}) {
+		t.Errorf("integer fields = %v, want only issue", got.Fields)
+	}
+
+	snap := jiraSnap()
+	snap.Title = "PROJ-12 already keyed"
+	if got := PrefillFrom(snap, nil).Title; got != "PROJ-12 already keyed" {
+		t.Errorf("title = %q, want the prefix not doubled", got)
+	}
+}
+
+// TestPrefillFromAJiraIssueWithNoKey: without a key there is nothing to
+// prefix, so the prefill is the local shape.
+func TestPrefillFromAJiraIssueWithNoKey(t *testing.T) {
+	snap := jiraSnap()
+	snap.Remote.Key = ""
+	got := PrefillFrom(snap, nil)
+	if got.Title != "Fix it" || got.Description != "Body." {
+		t.Errorf("keyless jira prefill = %+v, want the local shape", got)
+	}
+}

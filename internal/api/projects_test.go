@@ -30,6 +30,7 @@ type projectHarness struct {
 	ts    *httptest.Server
 	store *store.Store
 	wt    *worktree.Manager
+	srv   *Server
 }
 
 func newProjectHarness(t *testing.T) *projectHarness {
@@ -61,7 +62,7 @@ func newProjectHarnessWithConfig(t *testing.T, cfg func() config.Config) *projec
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	return &projectHarness{ts: ts, store: st, wt: wt}
+	return &projectHarness{ts: ts, store: st, wt: wt, srv: s}
 }
 
 // doJSON sends an authenticated request with an optional JSON body.

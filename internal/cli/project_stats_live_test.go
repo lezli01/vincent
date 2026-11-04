@@ -40,6 +40,18 @@ func TestProjectLsStats(t *testing.T) {
 		t.Fatalf("project ls --stats = %q, want a header and one row", out)
 	}
 	header, row := strings.Fields(lines[0]), strings.Fields(lines[1])
+	// Every column is named once, so a script can split on the header
+	// (review F4): the issue source is SOURCE, the open-issue count ISSUES.
+	seen := map[string]bool{}
+	for _, h := range header {
+		if seen[h] {
+			t.Errorf("project ls --stats header names %s twice: %q", h, lines[0])
+		}
+		seen[h] = true
+	}
+	if !seen["SOURCE"] {
+		t.Errorf("project ls --stats header has no SOURCE column: %q", lines[0])
+	}
 	if got := strings.Join(header[len(header)-4:], " "); got != "ACTIVE ATTN ISSUES CHATS" {
 		t.Errorf("stats columns = %q", got)
 	}

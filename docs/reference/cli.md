@@ -477,7 +477,10 @@ Task (Windows).
 
 ```sh
 vincent project add <path> [--name NAME] [--default-branch BRANCH]
-                           [--workflow NAME] [--max-parallel N] [--json]
+                           [--workflow NAME] [--max-parallel N]
+                           [--issue-source derive|none|github|jira]
+                           [--jira-site URL] [--jira-project KEY]
+                           [--jira-jql JQL] [--jira-mapping FILE|-] [--json]
 ```
 
 Registers a local git repository.
@@ -488,6 +491,8 @@ Registers a local git repository.
 | `--default-branch` | Detected **once, here**: `origin/HEAD`, then local `main`, then `master`, then the current branch. The name is stored and never re-detected; what is refreshed later is the branch's content, per task, when `fetch_base_branch` is on |
 | `--workflow` | None — a task that names no workflow runs `adhoc` |
 | `--max-parallel` | Unset — only the global cap applies |
+| `--issue-source` | `derive`: the [issue source](#issue-source-flags) follows `origin` |
+| `--jira-site`, `--jira-project`, `--jira-jql`, `--jira-mapping` | Only with `--issue-source jira`; see [issue-source flags](#issue-source-flags) |
 
 Registration is refused if no default branch can be determined (a detached or
 unborn HEAD); pass `--default-branch` explicitly.
@@ -498,7 +503,10 @@ unborn HEAD); pass `--default-branch` explicitly.
 vincent project ls [--stats] [--json]
 ```
 
-Lists registered projects with their ids, paths and defaults.
+Lists registered projects with their ids, paths and defaults. The `SOURCE`
+column is the effective issue source: `github (from origin)` or
+`none (from origin)` for a derived one, `none`, `github`, or `jira` with the
+bound site and project key.
 
 `--stats` adds four count columns: `ACTIVE` (unfinished tasks), `ATTN` (tasks
 waiting on you), `ISSUES` (open issues) and `CHATS` (live chats). Both task
@@ -512,7 +520,9 @@ than missing.
 ```sh
 vincent project edit <id> [--name NAME] [--path PATH] [--default-branch BRANCH]
                           [--workflow NAME] [--max-parallel N] [--branch-template TMPL]
-                          [--json]
+                          [--issue-source derive|none|github|jira]
+                          [--jira-site URL] [--jira-project KEY]
+                          [--jira-jql JQL] [--jira-mapping FILE|-] [--json]
 ```
 
 Changes a registered project's settings. Only the fields whose flags you pass
@@ -526,10 +536,51 @@ are sent; every other field keeps its value.
 | `--workflow` | The default workflow for new tasks | Clears it: tasks fall back to `adhoc` |
 | `--max-parallel` | This project's concurrency cap, a whole number of at least `1` | Clears it: only the global cap applies |
 | `--branch-template` | This project's [`branch_template`](configuration.md#branch_template) | Clears it: the project uses the global one again |
+| `--issue-source` | Where the project's issues come from; see [issue-source flags](#issue-source-flags) | `derive` |
+| `--jira-site`, `--jira-project` | The bound Jira site and project key, with `--issue-source jira` or on a project already bound to jira | Refused by the daemon |
+| `--jira-jql` | The optional JQL narrowing clause | Removes it |
+| `--jira-mapping` | The mapping override, read from a JSON file or `-` for stdin | Removes it |
 
 A value of only whitespace counts as empty. `--max-parallel` refuses anything
 that is not a whole number before sending anything; `0` or a negative number is
 sent, and the daemon refuses it.
+
+#### Issue-source flags
+
+A project's issue source is stored by the daemon and edited only through
+these flags, the TUI's project form and the API. It is never read from a
+file in the repository.
+
+- `derive`, the default, follows `origin`: `github` when it is a github.com
+  repository, `none` otherwise.
+- `none` imports no issues.
+- `github` imports `origin`'s GitHub issues. Pinning it on a project whose
+  origin is not on github.com is allowed; sync then reports `not_github`.
+- `jira` needs `--jira-site`, an absolute `https://` base URL (`http://` only
+  on `localhost` or a loopback address) with no user, path, query or
+  fragment, and `--jira-project`, a Jira project key such as `ENG`.
+  `--jira-jql` optionally narrows the project's issues with one line of JQL
+  that has no `ORDER BY`. `--jira-mapping` overrides the status mapping with a
+  JSON object of `overrides` (`close_completed`, `close_not_planned`,
+  `close_duplicate`, `reopen`), `duplicate_resolutions` and
+  `not_planned_resolutions`.
+
+The Jira credential is never a flag or a project field: the daemon reads
+`JIRA_USER` and `JIRA_API_TOKEN` from its environment. On `edit`, a Jira flag
+you leave out keeps its current value.
+
+Changing the effective provider, the Jira site or the Jira project is a
+rebind. The previous source's imported issues are kept, are marked
+`missing`, and are no longer written back. Its sync record is reset. Changing
+only `--jira-jql` or `--jira-mapping` is not a rebind. Until Jira sync ships,
+a project bound to `jira` or `none` reports the sync reason
+`source_not_github`.
+
+```sh
+vincent project edit 1 --issue-source jira --jira-site https://acme.atlassian.net --jira-project ENG
+vincent project edit 1 --jira-jql 'labels = backend'
+vincent project edit 1 --issue-source derive
+```
 
 ```sh
 vincent project edit 1 --max-parallel 2 --branch-template 'feat/{{.Slug}}'

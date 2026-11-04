@@ -69,8 +69,46 @@ type Project struct {
 	// config.yaml's, and an unset config falls back to the built-in
 	// vincent/{id}-{slug} (task 001).
 	BranchTemplate string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// IssueSource is the project's issue-source binding (task 142.6,
+	// spec §5.1). Its zero value derives the source from origin.
+	IssueSource IssueSource
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Issue providers a project may be bound to (task 142.6, spec §5.6).
+// IssueProviderDerive is the stored "" — the source follows origin: github
+// when origin is a github.com remote, none otherwise.
+const (
+	IssueProviderDerive = ""
+	IssueProviderNone   = "none"
+	IssueProviderGitHub = "github"
+	IssueProviderJira   = "jira"
+)
+
+// IssueSource is a project's stored issue-source binding (task 142.6). It is
+// daemon state only, edited through the project routes and never read from
+// the repository (task 142 decision 5.2). The Jira fields are empty unless
+// Provider is jira; JiraMappingJSON is a jiramap.Config in its persisted
+// spelling, or "".
+type IssueSource struct {
+	Provider        string
+	JiraSite        string
+	JiraProjectKey  string
+	JiraJQL         string
+	JiraMappingJSON string
+}
+
+// Effective resolves the binding against what origin says: an explicit
+// provider wins, and IssueProviderDerive is github exactly when originGitHub.
+func (b IssueSource) Effective(originGitHub bool) string {
+	if b.Provider != IssueProviderDerive {
+		return b.Provider
+	}
+	if originGitHub {
+		return IssueProviderGitHub
+	}
+	return IssueProviderNone
 }
 
 // Task is one unit of work delivered by running a workflow against a project

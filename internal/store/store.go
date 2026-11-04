@@ -44,6 +44,9 @@ type Store struct {
 	// outboxEnqueued fires after a state change enqueued an issue write;
 	// see OnIssueOutboxEnqueued.
 	outboxEnqueued atomic.Pointer[func()]
+	// sourceGates orders importer passes against rebinds; see
+	// BeginIssueSourcePass.
+	sourceGates issueSourceGates
 }
 
 // Open opens (creating if needed) the SQLite database at path, applies the

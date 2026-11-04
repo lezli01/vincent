@@ -436,3 +436,26 @@ func TestStepEndpointAcceptsTheContainerHost(t *testing.T) {
 		t.Errorf("shared /mcp under host.docker.internal = HTTP %d, want 403 from the rebinding guard", got)
 	}
 }
+
+// TestProjectPatchPassesTheIssueSourceThrough: project_patch replays the
+// binding (task 142.6) verbatim, and its description names the shape and
+// where the credential comes from.
+func TestProjectPatchPassesTheIssueSourceThrough(t *testing.T) {
+	t.Parallel()
+	h := &stubHandler{status: http.StatusOK, body: `{"id":3}`}
+	s := New(Deps{Handler: h})
+	body := `{"issue_source":{"provider":"jira","jira":{"site":"https://acme.atlassian.net","project_key":"ENG"}}}`
+	res, err := s.dispatch(t.Context(), routeFor(t, "project_patch"), json.RawMessage(`{"id":3,"body":`+body+`}`))
+	if err != nil || res.IsError {
+		t.Fatalf("dispatch: %v %v", err, res)
+	}
+	if h.got.Method != http.MethodPatch || h.got.URL.Path != "/v1/projects/3" || string(h.gotRaw) != body {
+		t.Errorf("replayed %s %s %s", h.got.Method, h.got.URL.Path, h.gotRaw)
+	}
+	d := routeFor(t, "project_patch").Description
+	for _, want := range []string{"issue_source", "derive|none|github|jira", "JIRA_API_TOKEN"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("project_patch description lacks %q", want)
+		}
+	}
+}

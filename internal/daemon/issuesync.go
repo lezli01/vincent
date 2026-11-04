@@ -71,6 +71,11 @@ const (
 	syncReasonNotGitHub     = "not_github"
 	syncReasonNoClient      = "no_client"
 	syncReasonOriginChanged = "origin_changed"
+	// syncReasonSourceNotGitHub is a project whose explicit issue-source
+	// binding is none or jira (task 142.6 decision 3): the GitHub importer
+	// makes no call for it, whatever its origin says. A jira binding
+	// carries it until Jira sync is scheduled (#903).
+	syncReasonSourceNotGitHub = "source_not_github"
 )
 
 // syncIssues runs one import attempt for project through the reconciler's
@@ -79,7 +84,30 @@ const (
 // half act on one reading of origin (review F1). haveClient is whether a
 // client is wired. The two gates config owns (github.enabled,
 // poll_interval) are the caller's and are already passed.
+//
+// The pass runs under the project's issue-source gate (review F1): a rebind
+// that commits while it waits leaves it a stale project, so it re-reads the
+// project and stands down for this tick if the binding or path moved; a
+// rebind that arrives mid-pass cancels its context, and nothing more is
+// written — not even the sync row the rebind deleted.
 func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, b issuesource.Binding, bound, haveClient bool) {
+	ctx, done, err := r.store.BeginIssueSourcePass(ctx, project.ID)
+	if err != nil {
+		return
+	}
+	defer done()
+	cur, err := r.store.GetProject(ctx, project.ID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			r.logger.Warn("issue sync: project not read", "project", project.ID, "error", err)
+		}
+		return
+	}
+	if cur.Path != project.Path || cur.IssueSource != project.IssueSource {
+		// Rebound (or re-pointed) since the caller read it: the binding the
+		// caller derived is stale, and the next tick derives it afresh.
+		return
+	}
 	src := r.issueSrc
 	now := r.clock()
 	st, err := r.store.GetIssueSyncState(ctx, project.ID)
@@ -90,7 +118,9 @@ func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, 
 		r.logger.Warn("issue sync: state not read", "project", project.ID, "error", err)
 		return
 	}
-	if st.RateLimitedUntil != nil && now.Before(*st.RateLimitedUntil) && bound && haveClient {
+	boundElsewhere := project.IssueSource.Provider == store.IssueProviderNone ||
+		project.IssueSource.Provider == store.IssueProviderJira
+	if st.RateLimitedUntil != nil && now.Before(*st.RateLimitedUntil) && bound && haveClient && !boundElsewhere {
 		// Backing off: no call, no attempt, and the row keeps saying
 		// rate_limited until the provider's reset. A "sync now" waits too.
 		return
@@ -103,7 +133,11 @@ func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, 
 	// none.
 	// Without a git runner the origin cannot be read, which is a missing
 	// client rather than a verdict about the origin.
+	// The binding is first: a project bound to none or jira is not the
+	// GitHub importer's, whatever origin says.
 	switch {
+	case boundElsewhere:
+		next.OK, next.Reason = false, syncReasonSourceNotGitHub
 	case !bound && r.git != nil:
 		next.OK, next.Reason = false, syncReasonNotGitHub
 	case !haveClient:
@@ -135,6 +169,11 @@ func (r *PullReconciler) syncIssues(ctx context.Context, project store.Project, 
 			reset := f.ResetAt.UTC()
 			next.RateLimitedUntil = &reset
 		}
+	}
+	if ctx.Err() != nil {
+		// A rebind cancelled the pass (or the daemon is stopping): the row
+		// it would write is the one the rebind dropped.
+		return
 	}
 	switch {
 	case err != nil:

@@ -670,7 +670,7 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | Method | Path | Body / notes |
 |---|---|---|
 | `GET` | `/v1/projects` | List — `?stats=true` adds per-project counts |
-| `POST` | `/v1/projects` | `{ path, name?, default_branch?, default_workflow?, max_parallel_tasks? }` |
+| `POST` | `/v1/projects` | `{ path, name?, default_branch?, default_workflow?, max_parallel_tasks?, branch_template?, issue_source? }` |
 | `GET` | `/v1/projects/{id}` | `?stats=true` adds its counts |
 | `PATCH` | `/v1/projects/{id}` | Any mutable field, including re-pointing `path` |
 | `DELETE` | `/v1/projects/{id}` | Hard-deletes the project and its task rows |
@@ -697,6 +697,53 @@ numerator that project's `max_parallel_tasks` is applied against, so a client
 renders `slots_used / max_parallel_tasks` without counting rows itself. A
 project holding none reads `0`, never absent, and a project created a moment ago
 reads `0` because it owns no task yet.
+
+### Issue source
+
+Every project object carries `issue_source`, where the project's issues come
+from:
+
+```json
+"issue_source": { "provider": "jira", "effective": "jira",
+  "jira": { "site": "https://acme.atlassian.net", "project_key": "ENG",
+            "jql": "labels = backend", "mapping": null } }
+```
+
+`provider` is what is stored: `derive` (the default), `none`, `github` or
+`jira`. `effective` is what the daemon resolves it to. A derived project is
+`github` when its `origin` is a github.com repository and `none` otherwise.
+A project rendering may reuse an `origin` read up to ten seconds old, so a
+re-pointed `origin` can take that long to show; a rebind is always decided
+from a fresh read. `jira` is `null` unless `provider` is `jira`. The binding is daemon state: it
+is never read from a file in the repository.
+
+`POST` and `PATCH` take `issue_source` as `{ provider, jira? }`. It replaces
+the whole binding, and `null` resets it to `derive`. With `jira`, `jira` is
+required; with any other provider it is refused, and the stored Jira fields
+are cleared. These are checked, each failure a `400 validation_failed` that
+names the field:
+
+| Field | Rule |
+|---|---|
+| `jira.site` | An absolute `https://` base URL, or `http://` on `localhost`, 127.0.0.0/8 or `[::1]`. No user or password, path, query or fragment. Stored with a lower-cased host and no trailing slash |
+| `jira.project_key` | An uppercase letter, then uppercase letters, digits or underscores |
+| `jira.jql` | Optional. One line, no `ORDER BY`, at most 2000 characters. It narrows the project's issues and never replaces the project |
+| `jira.mapping` | Optional. An object of `overrides` (`close_completed`, `close_not_planned`, `close_duplicate`, `reopen`), `duplicate_resolutions` and `not_planned_resolutions`. Unknown fields are refused |
+
+No field holds a credential. The daemon reads the Jira credential from
+`JIRA_USER` and `JIRA_API_TOKEN` in its environment.
+
+Changing the effective provider, `jira.site` or `jira.project_key` is a
+**rebind**, applied in the update's own transaction. The previous source's
+imported issues are marked `remote_status: missing`, and state write-back to
+them stops. The project's [sync status](#issue-sync) starts over, and each
+touched issue sends `issue.updated` with `changed: ["remote_status"]`. No issue
+is deleted, and binding back re-imports them and marks them live again.
+Changing only `jql` or `mapping` is not a rebind. A project bound to `none` or
+`jira` is skipped by the GitHub issue import, with reason `source_not_github`.
+Its pull requests are still linked.
+
+### Project stats
 
 `?stats=true` on the list or on one project adds a `stats` object to each row,
 so a project picker can rank and badge projects without listing every task,
@@ -849,6 +896,8 @@ it never calls GitHub, and never starts a sync:
 ```
 
 `enabled` is `github.enabled` and a non-zero `github.poll_interval` together.
+`site` is present only for a project bound to Jira: the site its issues would
+come from, shown here so a binding to the wrong site is visible.
 `repo` is the repository the project's first successful sync bound it to, or
 the one its `origin` names until then. `last_synced_at` is the last successful
 sync and is absent when none has been. `import_complete` turns `true` once the
@@ -863,6 +912,7 @@ When `ok` is false, `reason` says why:
 | `poll_disabled` | `github.poll_interval` is `0`: the integration is on, the background tick is not |
 | `pending` | The importer has not attempted this project yet |
 | `not_github` | No `origin`, or one that is not a github.com repository |
+| `source_not_github` | The project's [issue source](#issue-source) is `none` or `jira`, so the GitHub import skips it |
 | `no_client` | The daemon has no GitHub client wired |
 | `origin_changed` | `origin` now names a different repository than the one the project is bound to. Sync stops and is never re-keyed; a rename GitHub redirects is not this |
 | any [GitHub reason](#github-issues) | The last attempt failed with it — `rate_limited`, `no_credential`, `unauthorized`, `unreachable`, … |

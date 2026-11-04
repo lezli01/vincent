@@ -76,10 +76,15 @@ type IssueEnv struct {
 	// ID is the vincent issue id, 0 for a task carrying only a legacy
 	// GitHub snapshot (which has none).
 	ID int64
-	// Number and URL are the GitHub reference of an imported issue or a
-	// legacy snapshot, zero for a local issue.
+	// Number is the GitHub number of an imported GitHub issue or a legacy
+	// snapshot, and 0 for a local or a Jira issue (task 142.16).
 	Number int
-	URL    string
+	// URL is the provider's URL of an imported issue — the GitHub issue page,
+	// or the Jira browse URL — and empty for a local issue.
+	URL string
+	// Key is the provider's display key (task 142.16): the GitHub number as
+	// a string, or Jira's `PROJ-12`; empty for a local issue.
+	Key string
 }
 
 // TaskContext is `.Task`.
@@ -224,12 +229,17 @@ type IssueComment struct {
 
 // IssueSource is `.Issue.Source` — an imported issue's provider reference.
 type IssueSource struct {
-	// Provider is "github" for every source vincent imports today.
+	// Provider is the issue_remotes.provider id: "github" or "jira".
 	Provider string
-	// Repo is `owner/name`.
-	Repo   string
+	// Repo is `owner/name` for GitHub.
+	Repo string
+	// Number is the GitHub number, and 0 for a Jira issue.
 	Number int
-	URL    string
+	// Key is the provider's display key (task 142.16): GitHub's number as a
+	// string, Jira's `PROJ-12`.
+	Key string
+	// URL is the provider's URL — the Jira browse URL for Jira.
+	URL string
 	// State is the issue's state on the provider, as captured.
 	State string
 }
@@ -380,6 +390,11 @@ func Env(rc RenderContext) []string {
 	}
 	if ie.URL != "" {
 		out = append(out, "VINCENT_ISSUE_URL="+ie.URL)
+	}
+	// Appended after the older variables so their order never moves
+	// (task 142.16).
+	if ie.Key != "" {
+		out = append(out, "VINCENT_ISSUE_KEY="+ie.Key)
 	}
 	return out
 }

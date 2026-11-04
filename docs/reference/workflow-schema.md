@@ -1078,7 +1078,7 @@ starts.
 | `.Workflow` | `Name`, `Description` |
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` (1-based) |
 | `.Loop` | `Index` (1-based iteration, **0** outside any loop), `Item`, `IsFirst`, `IsLast`. See [`type: loop`](#type-loop) |
-| `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State` of an imported issue; zero for a local one), `Comments` (a list of `Author`, `Body`, `CreatedAt`: the thread, oldest first), and `Repo`/`URL`, deprecated aliases of `Source.Repo`/`Source.URL`. See [`.Issue`](#issue) |
+| `.Issue` | the issue the task was created from: `Number` (the vincent issue id, **0** when there is none), `Title`, `Body`, `State`, `Labels` (a list), `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `Key`, `URL`, `State` of an imported issue; zero for a local one; `Key` is the display key, `Number` is `0` for Jira), `Comments` (a list of `Author`, `Body`, `CreatedAt`: the thread, oldest first), and `Repo`/`URL`, deprecated aliases of `Source.Repo`/`Source.URL`. See [`.Issue`](#issue) |
 | `.Handoff` | the handoff a `role: handoff` task integrates: `ID` (**0** on every other task), `Grant` (a list), `Items` (a list of `Issue`, in `.Issue`'s shape, `Delivery`, `TaskID`, `Branch`, `HeadSHA`) and `ItemLines`, one JSON object per item. See [`.Handoff`](#handoff) |
 | `.Steps` | **completed** steps by id → `{Status, Result, ExitCode}`. `Status` is `succeeded`, `approved` (a passed gate), `skipped` (a false guard) or `failed` — the last only once the workflow has moved past it, which happens only under `allow_failure`. `interrupted` never appears |
 | `.Host` | `OS`, `Arch` — the machine the daemon runs on. This is the per-step platform gate: `{{ ne .Host.OS "windows" }}` |
@@ -1140,10 +1140,13 @@ directly:
       Discussion: {{ .Issue.Source.URL }}
 ```
 
-`.Issue.Number` is the **vincent** issue id. The GitHub reference of an
-imported issue lives in `.Issue.Source` — `Provider` (`github`), `Repo`
-(`owner/name`), `Number`, `URL` and `State` — and is zero for an issue that
-was created in vincent. A template that hands a number to `gh` therefore reads
+`.Issue.Number` is the **vincent** issue id. The provider reference of an
+imported issue lives in `.Issue.Source` — `Provider` (`github` or `jira`),
+`Repo` (`owner/name`), `Number`, `Key`, `URL` and `State` — and is zero for an
+issue that was created in vincent. `Key` is the provider's display key: the
+GitHub number as a string, or a Jira issue's `PROJ-12`. A Jira issue has no
+number — its `Number` is `0` and its `URL` is the Jira browse URL — so a
+template that names it reads `.Issue.Source.Key`. A template that hands a number to `gh` therefore reads
 `.Issue.Source.Number`, never `.Issue.Number`. `.Issue.Repo` and `.Issue.URL`
 are deprecated aliases of `.Issue.Source.Repo` and `.Issue.Source.URL`, kept so
 older templates keep rendering.
@@ -1189,7 +1192,9 @@ Creating a task from an issue also prefills the task's title, its description
 and any declared [`fields:`](#fields) named exactly `issue`, `github_issue`,
 `labels`, `assignee`, `milestone` or `kind`. An issue imported from GitHub
 gives the title `#N ` and the issue title, and the description the issue body
-plus a `GitHub issue #N: <url>` line; an issue created in vincent gives its
+plus a `GitHub issue #N: <url>` line; a Jira issue gives `PROJ-12 ` and a
+`Jira issue PROJ-12: <url>` line instead, and fills no `github_issue`,
+`assignee` or `milestone`; an issue created in vincent gives its
 bare title and body. All of that is editable before the task is created;
 `.Issue` is the untouched copy. A body larger than the description limit fails
 the create rather than being cut short.
@@ -1290,15 +1295,16 @@ run from, which is why every step type that runs a process gets them.
 
 <a id="vincent-issue-file"></a>
 
-A task created from an issue also receives the issue as a **file**, and four
-more variables. A task with no issue receives none of them.
+A task created from an issue also receives the issue as a **file**, and up to
+five more variables. A task with no issue receives none of them.
 
 | Variable | Value |
 |---|---|
 | `VINCENT_ISSUE_FILE` | absolute path of the issue snapshot file |
 | `VINCENT_ISSUE_ID` | the vincent issue id; absent for a task created with the legacy `--github-issue` |
-| `VINCENT_ISSUE_NUMBER` | the GitHub issue number; imported issues and legacy tasks only |
-| `VINCENT_ISSUE_URL` | the GitHub issue URL; imported issues and legacy tasks only |
+| `VINCENT_ISSUE_NUMBER` | the GitHub issue number; imported GitHub issues and legacy tasks only — never set for Jira |
+| `VINCENT_ISSUE_URL` | the provider's issue URL (the Jira browse URL for Jira); imported issues and legacy tasks only |
+| `VINCENT_ISSUE_KEY` | the provider's display key: the GitHub number as a string, or Jira's `PROJ-12`; imported issues and legacy tasks only |
 
 The file has the shape `gh issue view --json
 number,title,body,url,createdAt,state,stateReason,labels,author,comments`
@@ -1306,7 +1312,7 @@ prints, so `jq` written for `gh` reads it unchanged:
 
 | Key | |
 |---|---|
-| `number` | the GitHub number; `null` for a local issue |
+| `number` | the GitHub number; `null` for a local or a Jira issue |
 | `title`, `body` | |
 | `url` | `""` for a local issue |
 | `createdAt` | RFC3339; `null` for a task created before vincent recorded it |
@@ -1317,7 +1323,7 @@ prints, so `jq` written for `gh` reads it unchanged:
 | `comments` | the issue's thread at task creation, oldest first and untruncated, local and mirrored comments alike: `[{"author": {"login": …}, "body": …, "createdAt": …}]`; `[]` without comments and for a legacy task |
 | `id` | the vincent issue id; `null` for a legacy task |
 | `kind`, `priority` | the vincent issue's |
-| `source` | `{provider, repo, number, url}` for an imported issue; `null` for a local one |
+| `source` | `{provider, repo, number, url, key}` for an imported issue; `null` for a local one. `key` is the display key (`"200"`, `"PROJ-12"`); `number` is `null` for Jira |
 
 It is the snapshot taken when the task was created — the same one
 [`.Issue`](#issue) renders — and is written from the task, never fetched, before

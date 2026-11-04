@@ -356,7 +356,7 @@ command timeout, independently of the main step timeout.
 | `.Step` | `ID`, `Name`, `Index`, `Attempt` |
 | `.Loop` | `Index`, `Item`, `IsFirst`, `IsLast` |
 | `.Handoff` | `ID` (`0` outside a handoff task), `Grant`, `Items` (`Issue` in `.Issue`'s shape, `Delivery`, `TaskID`, `Branch`, `HeadSHA`), and `ItemLines`, one JSON object per item |
-| `.Issue` | `Number`, `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `URL`, `State`), `Comments` (`Author`, `Body`, `CreatedAt`), and the deprecated `Repo`, `URL` |
+| `.Issue` | `Number`, `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, `Source` (`Provider`, `Repo`, `Number`, `Key`, `URL`, `State`; `Key` is GitHub's number as a string or Jira's `PROJ-12`, and `Number` is `0` for Jira), `Comments` (`Author`, `Body`, `CreatedAt`), and the deprecated `Repo`, `URL` |
 | `.Steps` | completed step ids → `Status`, `Result`, `ExitCode` |
 | `.Host` | `OS`, `Arch` |
 | `.Worktree` | `Path` |
@@ -390,18 +390,19 @@ steps alike. An unlinked task gets none of them.
 |---|---|
 | `VINCENT_ISSUE_FILE` | absolute path of the snapshot file, outside the working tree |
 | `VINCENT_ISSUE_ID` | the vincent issue id; absent for a legacy `--github-issue` task |
-| `VINCENT_ISSUE_NUMBER` | the GitHub number; imported issues and legacy tasks only |
-| `VINCENT_ISSUE_URL` | the GitHub URL; imported issues and legacy tasks only |
+| `VINCENT_ISSUE_NUMBER` | the GitHub number; imported GitHub issues and legacy tasks only, never Jira |
+| `VINCENT_ISSUE_URL` | the provider's URL (the Jira browse URL for Jira); imported issues and legacy tasks only |
+| `VINCENT_ISSUE_KEY` | the display key: the GitHub number as a string, or Jira's `PROJ-12`; imported issues and legacy tasks only |
 
 The file is shaped like `gh issue view --json
 number,title,body,url,createdAt,state,stateReason,labels,author,comments`, so
 `jq` written for `gh` reads it unchanged: `number` is the GitHub number (`null`
-for a local issue), `state` is `OPEN`/`CLOSED`, `stateReason` is
+for a local or a Jira issue), `state` is `OPEN`/`CLOSED`, `stateReason` is
 `COMPLETED`/`NOT_PLANNED`/`DUPLICATE` or `null`, `labels` is `[{"name": …}]`,
 `author` is `{"login": …}`, and `comments` is the thread at task creation
 in gh's element shape (`author.login`, `body`, `createdAt`). It adds
-`id`, `kind`, `priority`, and `source` (`provider`, `repo`, `number`, `url`;
-`null` for a local issue). Read it instead of `gh issue view`: it needs no
+`id`, `kind`, `priority`, and `source` (`provider`, `repo`, `number`, `url`,
+`key`; `null` for a local issue; `number` is `null` for Jira). Read it instead of `gh issue view`: it needs no
 network, a fan-out lane gets its parent's, and `git add -A` cannot stage it.
 
 A `role: handoff` task, and no other, also gets `VINCENT_HANDOFF_FILE`: `{id,

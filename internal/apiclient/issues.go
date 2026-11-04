@@ -467,11 +467,15 @@ type IssueSyncStatus struct {
 	Enabled  bool   `json:"enabled"`
 	Provider string `json:"provider"`
 	Repo     string `json:"repo"`
+	// Site is the bound Jira site when the project's issue source is jira
+	// (task 142.6); empty otherwise.
+	Site string `json:"site,omitempty"`
 	// LastSyncedAt is when an import last succeeded; nil when none has.
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 	OK           bool       `json:"ok"`
 	// Reason names why OK is false: github_disabled, poll_disabled,
-	// pending, rate_limited, not_github, no_client, origin_changed, or one
+	// pending, rate_limited, not_github, source_not_github, no_client,
+	// origin_changed, or one
 	// of internal/github's unavailability reasons.
 	Reason           string     `json:"reason,omitempty"`
 	ImportComplete   bool       `json:"import_complete"`

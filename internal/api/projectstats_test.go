@@ -25,7 +25,7 @@ import (
 // `stats` must serve exactly these keys, so the opt-in costs a caller who
 // never asks for it nothing (task 132.1).
 var projectKeys = []string{
-	"branch_template", "created_at", "default_branch", "default_workflow", "id",
+	"branch_template", "created_at", "default_branch", "default_workflow", "id", "issue_source",
 	"max_parallel_tasks", "name", "path", "slots_used", "updated_at",
 }
 

@@ -44,7 +44,7 @@ func TestIssueContextCarriesTheSnapshot(t *testing.T) {
 	want := workflow.IssueContext{
 		Number: 200, Repo: "lezli01/vincent",
 		Source: workflow.IssueSource{
-			Provider: "github", Repo: "lezli01/vincent", Number: 200,
+			Provider: "github", Repo: "lezli01/vincent", Number: 200, Key: "200",
 			URL: "https://github.com/lezli01/vincent/issues/200", State: github.StateOpen,
 		},
 		Title:  "Select a GitHub issue when creating a task",
@@ -221,6 +221,19 @@ func localSnapshot() *store.IssueSnapshot {
 	}
 }
 
+// jiraSnapshot is a Jira-imported issue built by hand: no importer exists
+// yet (task 142.12), so this is the shape 142.8's snapshot carries.
+func jiraSnapshot() *store.IssueSnapshot {
+	return &store.IssueSnapshot{
+		ID: 14, Title: "Fix the login page", State: "open", Kind: "bug", Author: "alice",
+		URL: "https://example.atlassian.net/browse/PROJ-12",
+		Remote: &store.IssueSnapshotRemote{
+			Provider: "jira", Key: "PROJ-12",
+			URL: "https://example.atlassian.net/browse/PROJ-12", State: "open",
+		},
+	}
+}
+
 func importedSnapshot() *store.IssueSnapshot {
 	return &store.IssueSnapshot{
 		ID: 13, Title: "Select a GitHub issue", State: "open", Labels: []string{"enhancement"},
@@ -251,7 +264,7 @@ func TestIssueContextOfAVincentIssue(t *testing.T) {
 		t.Errorf("Number = %d, want the vincent id 13", imported.Number)
 	}
 	wantSource := workflow.IssueSource{
-		Provider: "github", Repo: "lezli01/vincent", Number: 200,
+		Provider: "github", Repo: "lezli01/vincent", Number: 200, Key: "200",
 		URL: "https://github.com/lezli01/vincent/issues/200", State: "open",
 	}
 	if imported.Source != wantSource {
@@ -347,5 +360,60 @@ func TestLaneInheritsTheVincentSnapshot(t *testing.T) {
 	child.Issue.Remote.Assignees[0] = "mutated"
 	if parent.Issue.Labels[0] == "mutated" || parent.Issue.Remote.Assignees[0] == "mutated" {
 		t.Error("the lane shares the parent's slices")
+	}
+}
+
+// TestIssueContextOfAJiraIssue (task 142.16): `.Issue.Source` carries the
+// Jira key and provider, and its Number is 0 — Jira has none.
+func TestIssueContextOfAJiraIssue(t *testing.T) {
+	const tmpl = `{{ .Issue.Source.Key }}|{{ .Issue.Source.Provider }}|{{ .Issue.Source.Number }}|{{ .Issue.Source.URL }}`
+	got, err := workflow.Render("run", tmpl, workflow.RenderContext{Issue: issueContext(&store.Task{Issue: jiraSnapshot()})})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	const want = "PROJ-12|jira|0|https://example.atlassian.net/browse/PROJ-12"
+	if got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// TestGitHubIssueRendersUnchanged is the golden check for task 142.16: a
+// template over every `.Issue` field that existed before Source.Key renders
+// byte-identically for an imported GitHub issue and a legacy row.
+func TestGitHubIssueRendersUnchanged(t *testing.T) {
+	const tmpl = `{{ .Issue.Number }}|{{ .Issue.Title }}|{{ .Issue.Body }}|{{ .Issue.State }}|` +
+		`{{ .Issue.Labels }}|{{ .Issue.Kind }}|{{ .Issue.Priority }}|{{ .Issue.Author }}|` +
+		`{{ .Issue.Assignee }}|{{ .Issue.Milestone }}|{{ .Issue.MilestoneNumber }}|{{ len .Issue.Comments }}|` +
+		`{{ .Issue.Source.Provider }}|{{ .Issue.Source.Repo }}|{{ .Issue.Source.Number }}|` +
+		`{{ .Issue.Source.URL }}|{{ .Issue.Source.State }}|{{ .Issue.Repo }}|{{ .Issue.URL }}`
+	for _, tc := range []struct {
+		name string
+		task *store.Task
+		want string
+	}{
+		{
+			"imported", &store.Task{Issue: importedSnapshot()},
+			"13|Select a GitHub issue||open|[enhancement]||0|lezli01|hubot|v0.2.0|4|0|" +
+				"github|lezli01/vincent|200|https://github.com/lezli01/vincent/issues/200|open|" +
+				"lezli01/vincent|https://github.com/lezli01/vincent/issues/200",
+		},
+		{
+			"legacy", legacyTask(storedIssue()),
+			"200|Select a GitHub issue when creating a task|The body as it was when the task was created.|" +
+				"open|[enhancement area/api]||0|lezli01|hubot|v0.2.0|4|0|" +
+				"github|lezli01/vincent|200|https://github.com/lezli01/vincent/issues/200|open|" +
+				"lezli01/vincent|https://github.com/lezli01/vincent/issues/200",
+		},
+	} {
+		got, err := workflow.Render("run", tmpl, workflow.RenderContext{Issue: issueContext(tc.task)})
+		if err != nil {
+			t.Fatalf("%s: render: %v", tc.name, err)
+		}
+		if got != tc.want {
+			t.Errorf("%s: rendered\n %q\nwant\n %q", tc.name, got, tc.want)
+		}
+		if key, _ := workflow.Render("run", `{{ .Issue.Source.Key }}`, workflow.RenderContext{Issue: issueContext(tc.task)}); key != "200" {
+			t.Errorf("%s: Source.Key = %q, want 200", tc.name, key)
+		}
 	}
 }

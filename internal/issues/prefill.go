@@ -1,7 +1,6 @@
 package issues
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -92,16 +91,34 @@ func gitHubRemote(snap *store.IssueSnapshot) *store.IssueSnapshotRemote {
 	return snap.Remote
 }
 
+// prefillRef is the title prefix and the link line's reference of an
+// imported issue (task 142.16): `#N` and `GitHub issue #N` for GitHub,
+// `PROJ-12` and `Jira issue PROJ-12` for Jira. ok is false for a local
+// issue, a Jira snapshot with no key, and any other provider, which all
+// prefill the local shape.
+func prefillRef(snap *store.IssueSnapshot) (prefix, link string, ok bool) {
+	if rem := gitHubRemote(snap); rem != nil {
+		prefix = "#" + strconv.Itoa(rem.Number)
+		return prefix, "GitHub issue " + prefix, true
+	}
+	rem := snap.Remote
+	if rem == nil || rem.Provider != providerJira || rem.Key == "" {
+		return "", "", false
+	}
+	ref := RenderSource(rem.Provider, rem.Repo, rem.Number, rem.Key)
+	return ref.Key, ref.ProviderName + " issue " + ref.Key, true
+}
+
 // prefillTitle is the bare title for a local issue — a `#N` prefix would
-// read as a GitHub number (decision 2) — and `#<GitHub number> title` for an
-// imported one, never doubling a prefix the title already carries.
+// read as a GitHub number (decision 2) — and `#<GitHub number> title` or
+// `PROJ-12 title` for an imported one, never doubling a prefix the title
+// already carries.
 func prefillTitle(snap *store.IssueSnapshot) string {
 	title := strings.TrimSpace(snap.Title)
-	rem := gitHubRemote(snap)
-	if rem == nil {
+	prefix, _, ok := prefillRef(snap)
+	if !ok {
 		return title
 	}
-	prefix := "#" + strconv.Itoa(rem.Number)
 	switch {
 	case title == "":
 		return prefix
@@ -113,17 +130,17 @@ func prefillTitle(snap *store.IssueSnapshot) string {
 }
 
 // prefillDescription is the body with CRLF normalized. An imported issue
-// gets the `GitHub issue #N: <url>` link line as its own trailing block; a
-// local one gets none (decision 3). Nothing is truncated here: an oversized
+// gets the `GitHub issue #N: <url>` (or `Jira issue PROJ-12: <url>`) link
+// line as its own trailing block; a local one gets none (decision 3). Nothing is truncated here: an oversized
 // body fails the API's bound check the way a pasted one would (decision 4).
 func prefillDescription(snap *store.IssueSnapshot) string {
 	body := strings.ReplaceAll(snap.Body, "\r\n", "\n")
 	body = strings.TrimRight(body, "\n")
-	rem := gitHubRemote(snap)
-	if rem == nil {
+	_, ref, ok := prefillRef(snap)
+	if !ok {
 		return body
 	}
-	link := fmt.Sprintf("GitHub issue #%d: %s", rem.Number, rem.URL)
+	link := ref + ": " + snap.Remote.URL
 	if strings.TrimSpace(body) == "" {
 		return link
 	}
@@ -139,6 +156,8 @@ func candidate(snap *store.IssueSnapshot, decl FieldDecl) (string, bool) {
 		kind = TypeString
 	}
 	numeric := kind == TypeString || kind == TypeInteger || kind == TypeNumber
+	// GitHub only: `github_issue` is a GitHub number, and a Jira assignee or
+	// milestone waits on the importer that would store one (task 142.12).
 	rem := gitHubRemote(snap)
 	switch decl.Name {
 	case FieldIssue:
