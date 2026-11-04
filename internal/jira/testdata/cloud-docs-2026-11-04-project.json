@@ -1,0 +1,24 @@
+{
+  "expand": "description,lead,issueTypes,url,projectKeys,permissions,insight",
+  "self": "https://your-domain.atlassian.net/rest/api/3/project/10000",
+  "id": "10000",
+  "key": "EX",
+  "description": "This project was created as an example for REST.",
+  "lead": {
+    "self": "https://your-domain.atlassian.net/rest/api/3/user?accountId=5b10a2844c20165700ede21g",
+    "accountId": "5b10a2844c20165700ede21g",
+    "avatarUrls": {
+      "48x48": "https://avatar-management.example/48.png"
+    },
+    "displayName": "Mia Krystof",
+    "active": true,
+    "timeZone": "Australia/Sydney",
+    "accountType": "atlassian"
+  },
+  "name": "Example",
+  "projectTypeKey": "software",
+  "simplified": false,
+  "style": "classic",
+  "isPrivate": false,
+  "properties": {}
+}
