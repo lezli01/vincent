@@ -49,7 +49,11 @@
 //     screen field or a value outside its allowedValues; `issue/{k}/comment`,
 //     GET paged by startAt and maxResults with `total` (Jira's comment page
 //     has one) and expand=renderedBody, POST with an ADF body and an optional
-//     visibility answering 201; `myself`; and `serverInfo`.
+//     visibility answering 201; `project/{idOrKey}`, the project's id, key
+//     and name or a 404 naming the key; `myself`; and `serverInfo`. An
+//     issue's `comment` field is Jira's PageOfComments with its `total`.
+//     The retired `search` (CHANGE-2046) answers 410 Gone, as Atlassian's
+//     does, so a client straying onto it fails and the request log shows it.
 //   - The per-issue faults, set by `_fake` markers in the corpus or by the
 //     mutation helpers: moved (Store.Move: a new project and key, the same
 //     id, the old key still resolving), deleted (404 with Jira's
@@ -69,11 +73,14 @@
 //   - The mutation helpers, for a test that changes Jira between two syncs:
 //     Move, Delete, Forbid, AddComment, EditComment, RemoveComment,
 //     Transition and SetUpdated, over the general Update. Each needs a Store
-//     with a Path (ErrNoCorpusFile otherwise). They are not writes in the
+//     with a Path (ErrNoCorpusFile otherwise). Corpus.SeedIssues, called
+//     inside Update, bulk-seeds open issues for a paging test that needs
+//     more than 500. They are not writes in the
 //     search-lag sense: only a REST write arms the lag.
 //   - The request log: with Store.RequestLog set, every request appends
 //     `METHOD path status`, flushed per request, and CountRequests counts
-//     them as fakeissues' does. An unreachable answer records status 0.
+//     them as fakeissues' does. The path is exact, so `rest/api/3/search`
+//     and `rest/api/3/search/jql` count apart. An unreachable answer records status 0.
 //   - The control route: `POST /_fake/shutdown`, served only to a loopback
 //     peer and without Jira auth, calls Store.OnShutdown. It is the one way
 //     cmd/fakejira stops cleanly on every OS (decision 1).

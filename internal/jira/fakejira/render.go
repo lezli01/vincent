@@ -9,6 +9,7 @@ import (
 var navigable = []string{
 	"summary", "description", "status", "issuetype", "project", "priority",
 	"labels", "assignee", "reporter", "created", "updated", "resolution",
+	"comment",
 }
 
 // fieldSet is a parsed `fields` parameter.
@@ -162,6 +163,8 @@ func (h *handler) render(is *Issue, fs fieldSet, rendered bool) map[string]any {
 			fields[name] = is.Created
 		case "updated":
 			fields[name] = is.Updated
+		case "comment":
+			fields[name] = h.renderCommentField(is)
 		case "resolution":
 			if is.Resolution != nil {
 				fields[name] = map[string]any{
@@ -195,6 +198,25 @@ func or(s, dflt string) string {
 		return dflt
 	}
 	return s
+}
+
+// renderCommentField is an issue's `comment` field: REST v3's PageOfComments
+// with every comment and its `total`, rendered without renderedBody (an
+// issue read's expand=renderedFields does not reach into it).
+func (h *handler) renderCommentField(is *Issue) map[string]any {
+	thread := []map[string]any{}
+	for i := range h.c.Comments {
+		if h.c.Comments[i].Issue == is.ID {
+			thread = append(thread, h.renderComment(is, &h.c.Comments[i], false))
+		}
+	}
+	return map[string]any{
+		"self":       h.base + apiPrefix + "issue/" + is.ID + "/comment",
+		"comments":   thread,
+		"maxResults": len(thread),
+		"total":      len(thread),
+		"startAt":    0,
+	}
 }
 
 // renderComment is REST v3's Comment shape; renderedBody only when asked.

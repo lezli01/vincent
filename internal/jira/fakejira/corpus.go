@@ -534,6 +534,36 @@ func (s *Store) SetUpdated(idOrKey string, t time.Time) error {
 	})
 }
 
+// SeedIssues appends n open issues to the project with key project, for a
+// test that needs a corpus larger than one search page or call — the paging
+// tests want more than 500. Each gets the next numeric id above the corpus's
+// highest, the key `<project>-<id>`, the project's first status, and an
+// updated one millisecond after the previous one's from base, so both of
+// search's orderings are total. It returns the new ids, oldest first.
+func (c *Corpus) SeedIssues(project string, n int, base time.Time) []string {
+	p := c.project(project)
+	status := ""
+	if p != nil && len(p.Statuses) > 0 {
+		status = p.Statuses[0].ID
+	}
+	var highest int64
+	for i := range c.Issues {
+		highest = max(highest, numericID(c.Issues[i].ID))
+	}
+	ids := make([]string, 0, n)
+	for i := range n {
+		id := strconv.FormatInt(highest+int64(i)+1, 10)
+		stamp := base.Add(time.Duration(i) * time.Millisecond).UTC().Format(TimeLayout)
+		c.Issues = append(c.Issues, Issue{
+			ID: id, Key: project + "-" + id, Project: project,
+			Summary: "Seeded issue " + id, IssueType: "Task", Status: status,
+			Created: stamp, Updated: stamp,
+		})
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // issue finds an issue by id, current key or previous key, hidden or not.
 func (c *Corpus) issue(idOrKey string) *Issue {
 	for i := range c.Issues {
