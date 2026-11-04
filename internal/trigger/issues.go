@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/issueprovider"
+	"github.com/lezli01/vincent/internal/issues"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -222,7 +223,7 @@ func issueEventsFor(ctx context.Context, st Store, d *Definition, e *store.Event
 // reference is Source.
 func issueMap(iss *store.Issue) map[string]any {
 	snap := store.NewIssueSnapshot(iss, time.Time{})
-	source := map[string]any{"Provider": "", "Repo": "", "Number": 0, "URL": "", "State": ""}
+	source := map[string]any{"Provider": "", "Repo": "", "Number": 0, "Key": "", "URL": "", "State": ""}
 	assignee, milestone, milestoneNumber := "", "", 0
 	if r := snap.Remote; r != nil {
 		// Number is GitHub's alone: a Jira row stores PROJ-12's 12, which no
@@ -232,7 +233,14 @@ func issueMap(iss *store.Issue) map[string]any {
 		if r.Provider == issueprovider.GitHub {
 			number = r.Number
 		}
-		source = map[string]any{"Provider": r.Provider, "Repo": r.Repo, "Number": number, "URL": r.URL, "State": r.State}
+		// Key is spelled by issues.RenderSource, as a task's
+		// `.Issue.Source.Key` is (task 142.16): Jira's PROJ-12, GitHub's
+		// number as a string.
+		source = map[string]any{
+			"Provider": r.Provider, "Repo": r.Repo, "Number": number,
+			"Key": issues.RenderSource(r.Provider, r.Repo, r.Number, r.Key).Key,
+			"URL": r.URL, "State": r.State,
+		}
 		if len(r.Assignees) > 0 {
 			assignee = strings.Join(r.Assignees, ",")
 		}

@@ -147,7 +147,7 @@ What an event carries:
 | `id` | `issue:{issue_id}:{action}:{event id}` |
 | `action`, `by`, `author`, `state` | The event, who made it, the issue's author and its current state |
 | `issue_id`, `project_id` | Integers. `issue_id` is what `action.issue` takes |
-| `Issue` | The issue as a task's `.Issue` sees it, read when the event is judged: `Number` (the vincent id), `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` (`Provider`, `Repo`, `Number`, `URL`, `State`, empty for a local issue) |
+| `Issue` | The issue as a task's `.Issue` sees it, read when the event is judged: `Number` (the vincent id), `Title`, `Body`, `State`, `Labels`, `Kind`, `Priority`, `Author`, `Assignee`, `Milestone`, `MilestoneNumber`, and `Source` (`Provider`, `Repo`, `Number`, `Key`, `URL`, `State`, empty for a local issue; `Key` is the tracker's display key, `PROJ-12` or GitHub's number, and `Number` is `0` for a Jira issue) |
 | `labels` | `labeled` and `unlabeled` only: the labels just added or removed |
 | `from`, `to`, `reason` | `closed` and `reopened` only: the state moved, and a close's reason |
 | `lane`, `from_lane` | `lane_changed` only: the lane moved to and from — `open`, `in_progress`, `hand_off` or `done` — as the move recorded them |

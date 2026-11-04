@@ -1217,9 +1217,10 @@ steps:
           .Event.Issue.Number is the vincent id on issues, so a dedupe_key
           built from it renders anew: when the trigger is armed, report the
           migration as a finding rather than making it, as item 14 does for a
-          source.type change. .Event.Issue.Source carries Provider, Repo and
-          Number but no Key; a Jira key reaches the created task's snapshot
-          as source.key, so build a dedupe_key from .Event.issue_id instead.
+          source.type change. .Event.Issue.Source carries Provider, Repo,
+          Number and Key as a task's .Issue.Source does; Number is 0 for a
+          Jira issue, so a dedupe_key that must tell Jira issues apart uses
+          .Event.issue_id or .Event.Issue.Source.Key, never the number.
       17. action.github_issue becomes action.issue. github_issue was removed,
           so a file still carrying it fails validation and fires nothing until
           it is edited (its cursor is kept). Replace it with issue: rendering

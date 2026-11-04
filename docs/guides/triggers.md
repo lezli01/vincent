@@ -341,7 +341,9 @@ Every event carries:
 - **`issue_id`** and **`project_id`**, as integers.
 - **`.Event.Issue`**, the issue as a task's [`.Issue`](../reference/templates.md)
   sees it, read when the event is judged: `Number` is the vincent issue id, and
-  an imported issue's provider reference is `Source`.
+  an imported issue's provider reference is `Source`, whose `Key` is the
+  tracker's display key (`PROJ-12`, or GitHub's number) and whose `Number` is
+  `0` for a Jira issue.
 - **`labels`** on `labeled` and `unlabeled`, and **`from`**, **`to`** and
   **`reason`** on `closed` and `reopened`.
 - **`lane`** and **`from_lane`** on `lane_changed`: the lane the issue moved
