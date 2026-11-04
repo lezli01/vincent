@@ -155,6 +155,15 @@ func TestPlanDAGCheckEnforcesUnitFiles(t *testing.T) {
 			stderr: []string{"invalid: unit bad"},
 		},
 		{
+			// jq accepts any non-empty files string; once blank lines are
+			// stripped nothing is left, and grep -Ef with an empty pattern
+			// file matches nothing on GNU and everything on BSD.
+			name:   "blank files",
+			units:  []planUnit{unit("blank", " \n\t")},
+			fail:   all,
+			stderr: []string{"invalid: unit blank: files has no non-blank line"},
+		},
+		{
 			name: "four rounds is advised, not refused",
 			units: []planUnit{
 				unit("a", "^internal/store/migrations/"),

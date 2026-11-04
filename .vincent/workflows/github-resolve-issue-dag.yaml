@@ -1703,6 +1703,11 @@ steps:
         for id in $(jq -r '.id' .vincent-issue/units.jsonl); do
           jq -r --arg id "$id" 'select(.id == $id) | .files' .vincent-issue/units.jsonl |
             grep -v '^[[:space:]]*$' > "$d/$id.re"
+          if [ ! -s "$d/$id.re" ]; then
+            echo "invalid: unit $id: files has no non-blank line" >&2
+            bad=1
+            continue
+          fi
           grep -Ef "$d/$id.re" "$d/tracked" > "$d/$id.hits"
           if [ $? -gt 1 ]; then
             echo "invalid: unit $id: files is not an extended regular expression grep -E accepts" >&2
