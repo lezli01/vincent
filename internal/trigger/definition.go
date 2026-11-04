@@ -14,6 +14,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -710,16 +711,35 @@ func (d *Definition) wantsAction(action string) bool {
 // untrusted for the same reason: only a tracker close resolves a waiting
 // item by sync (task 137.9).
 //
-// The table is GitHub's and is read unchanged for Jira (task 142.17 decision
-// 2 changed no trust). Its untrusted half holds for both trackers. Its
-// trusted `labeled`/`unlabeled` is verified against GitHub's role table
-// only: on Jira a label is an ordinary field that whoever may edit the issue
-// can change, so whether the exemption holds there is task 142's open
-// question 11.
+// The table is GitHub's, and on `type: issues` it is provider-aware (task
+// 142's open question 11, settled by #908): its untrusted half holds for both
+// trackers (task 142.17 decision 2), but its trusted `labeled`/`unlabeled`
+// was verified against GitHub's role table only. On Jira a label is an
+// ordinary field that whoever may edit the issue can change, so a Jira
+// issue's label change arriving by sync is untrusted exactly as its close or
+// reopen is — syncUntrusted removes it, and trustedEvent is the one reading
+// of both tables. GitHub's exemption is unchanged.
 var trustedEvents = map[string]map[string]bool{
 	SourceGitHubIssues: {"labeled": true, "unlabeled": true, "assigned": true},
 	SourceGitHubPRs:    {"merged": true},
 	SourceIssues:       {"labeled": true, "unlabeled": true},
+}
+
+// syncUntrusted are the trustedEvents of SourceIssues that a provider's sync
+// does not inherit, keyed by the issue's `issue_remotes.provider` (task 142
+// open question 11, settled by #908).
+var syncUntrusted = map[string]map[string]bool{
+	issueprovider.Jira: {"labeled": true, "unlabeled": true},
+}
+
+// trustedEvent reports whether an event of sourceType is trusted when it
+// arrives from an issue of provider — "" for a GitHub source, or for an
+// issues event whose issue has no remote. Only SourceIssues reads provider.
+func trustedEvent(sourceType, provider, action string) bool {
+	if !trustedEvents[sourceType][action] {
+		return false
+	}
+	return sourceType != SourceIssues || !syncUntrusted[provider][action]
 }
 
 // GitHubEvents returns the events a GitHub source type synthesizes.
@@ -777,11 +797,17 @@ func validateGitHubTrust(d *Definition, add addFunc, _ refuseFunc) {
 		if !trustedEvents[d.Source.Type][a] {
 			if d.IsIssues() {
 				// The rationale is the tracker's, not GitHub's (task 142.17
-				// decision 2): a sync change from Jira is as untrusted as one
-				// from GitHub, and the rule does not distinguish them.
+				// decision 2): an untrusted sync change from Jira is as
+				// untrusted as one from GitHub. The rule is provider-aware
+				// only for labeled/unlabeled, which are trusted from GitHub
+				// and not from Jira (task 142 open question 11, settled by
+				// #908) — and since the trigger cannot know at load which
+				// tracker an issue will come from, that half is enforced at
+				// fire time and only noted here (Deprecations).
 				add("allowed_actors", "is required: this trigger can match %q arriving by sync from the issue's "+
 					"tracker (GitHub or Jira), whose author someone outside this machine controls; "+
-					"list the authors to accept, match only %s, or leave sync out of match.by",
+					"list the authors to accept, match only %s (from GitHub only: a Jira issue's label change "+
+					"also needs allowed_actors), or leave sync out of match.by",
 					a, strings.Join(trustedList(d.Source.Type), ", "))
 				return
 			}
@@ -1033,11 +1059,48 @@ var ErrNotFound = errors.New("no such trigger")
 // refused: a file that uses one still loads, arms and fires, so no user file
 // is disarmed by an upgrade (task 130.15 decision 6). `vincent trigger
 // apply` and `vincent trigger validate` print them.
+//
+// Besides github_issues' deprecation, a `type: issues` trigger that loaded on
+// labeled/unlabeled's GitHub exemption earns a note that a Jira issue's label
+// change will not fire it (task 142 open question 11, settled by #908): it is
+// not refused, because it is right for a GitHub-only project and refusing it
+// would disarm triggers users already rely on.
 func Deprecations(d *Definition) []string {
-	if d == nil || d.Source.Type != SourceGitHubIssues {
+	if d == nil {
 		return nil
 	}
-	return []string{"source.type: " + SourceGitHubIssues + " is deprecated: use " + SourceIssues +
-		", which reads the project's imported issues (by: sync) beside its local ones, and link the task with " +
-		"action.issue: '{{ .Event.issue_id }}'; " + SourceGitHubIssues + " keeps firing until a later release removes it"}
+	var out []string
+	if d.Source.Type == SourceGitHubIssues {
+		out = append(out, "source.type: "+SourceGitHubIssues+" is deprecated: use "+SourceIssues+
+			", which reads the project's imported issues (by: sync) beside its local ones, and link the task with "+
+			"action.issue: '{{ .Event.issue_id }}'; "+SourceGitHubIssues+" keeps firing until a later release removes it")
+	}
+	if a := jiraLabelUnlisted(d); a != "" {
+		out = append(out, "allowed_actors: without it a Jira issue's "+a+" by sync will not fire this trigger: "+
+			"on Jira a label is an ordinary field anyone who can edit the issue can change, so only GitHub's "+
+			"label changes are trusted; list the authors to accept, or leave it as is for GitHub issues alone")
+	}
+	return out
+}
+
+// jiraLabelUnlisted names the first of labeled/unlabeled an issues trigger
+// with no allowed_actors can match by sync — the events whose trust is
+// GitHub's alone — or "" when it can match neither.
+func jiraLabelUnlisted(d *Definition) string {
+	if !d.IsIssues() || len(d.AllowedActors) > 0 {
+		return ""
+	}
+	if want, ok := d.Match["by"]; ok && !matchIncludes(want, "sync") {
+		return ""
+	}
+	for _, a := range []string{"labeled", "unlabeled"} {
+		if !d.wantsAction(a) {
+			continue
+		}
+		if want, ok := d.Match["action"]; ok && !matchIncludes(want, a) {
+			continue
+		}
+		return a
+	}
+	return ""
 }

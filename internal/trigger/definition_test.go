@@ -195,7 +195,9 @@ func TestDeprecations(t *testing.T) {
 		if errs := parseDoc(t, doc); len(errs) > 0 {
 			t.Fatalf("%s: refused: %v", src, errs)
 		}
-		d := &Definition{Source: Source{Type: src}}
+		// An allowlist keeps the issues source clear of its Jira label
+		// note, which TestJiraLabelNote pins on its own.
+		d := &Definition{Source: Source{Type: src}, AllowedActors: []string{"alice"}}
 		got := Deprecations(d)
 		if (src == SourceGitHubIssues) != (len(got) == 1) {
 			t.Errorf("%s: deprecations = %v", src, got)

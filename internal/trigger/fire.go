@@ -208,7 +208,7 @@ func judgePlan(ctx context.Context, st Store, d *Definition, ev Event, now time.
 	data := renderData{Event: ev}
 
 	j.Matched, j.MatchMiss = matchEvent(d.Match, ev)
-	if j.Matched && len(d.AllowedActors) > 0 && actorChecked(d, ev) && !actorAllowed(d.AllowedActors, ev) {
+	if j.Matched && actorChecked(d, ev) && actorRequired(d, ev) && !actorAllowed(d.AllowedActors, ev) {
 		j.Matched, j.MatchMiss = false, "allowed_actors"
 	}
 	if !j.Matched {
@@ -381,6 +381,36 @@ func actorChecked(d *Definition, ev Event) bool {
 	}
 	by, _ := ev["by"].(string)
 	return by == "sync"
+}
+
+// actorRequired reports whether an event allowed_actors applies to must
+// name a listed author: always when the trigger lists any, and otherwise
+// on `type: issues` when the event is untrusted — which load already refuses
+// for every event but one it cannot see coming. That one is a `type: issues` label change
+// by sync from a Jira issue: labeled/unlabeled are trusted from GitHub and
+// not from Jira (task 142 open question 11, settled by #908), and a trigger
+// loaded on GitHub's exemption fails closed on it with an allowed_actors
+// miss rather than firing for an author nobody listed.
+func actorRequired(d *Definition, ev Event) bool {
+	if len(d.AllowedActors) > 0 {
+		return true
+	}
+	if !d.IsIssues() {
+		// A GitHub source's untrusted events were all refused at load, and
+		// no other source has an author to check.
+		return false
+	}
+	action, _ := ev["action"].(string)
+	return !trustedEvent(d.Source.Type, eventProvider(ev), action)
+}
+
+// eventProvider is the provider of an issues event's issue — its
+// `.Issue.Source.Provider`, "" for a local issue or any other source.
+func eventProvider(ev Event) string {
+	issue, _ := ev["Issue"].(map[string]any)
+	source, _ := issue["Source"].(map[string]any)
+	p, _ := source["Provider"].(string)
+	return p
 }
 
 // actorAllowed matches allowed_actors against the event's author — on a
