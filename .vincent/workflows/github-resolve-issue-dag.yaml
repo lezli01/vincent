@@ -1,5 +1,9 @@
 # github-resolve-issue-dag — resolve a GitHub issue as a dependency graph.
 #
+# GitHub-only by design (task 142.17): it reads or writes GitHub with `gh`,
+# so it serves a project whose issues come from GitHub. An issue imported
+# from Jira is out of its reach, and there is deliberately no Jira variant.
+#
 # The DAG variant of `github-resolve-issue`. Everything before the
 # implementation and everything after it is the same file, deliberately: the
 # fetch, the four brief paths, the reproduce-first discipline, the documentation

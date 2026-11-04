@@ -375,6 +375,37 @@ func TestIssuesMapper(t *testing.T) {
 	}
 }
 
+// TestIssueMapSource (review F1, F6): `.Event.Issue.Source` matches a
+// task's `.Issue.Source` — Number is 0 for a Jira issue although its row
+// stores PROJ-12's 12, GitHub's number passes through, and Key is the
+// tracker's display key, empty for a local issue.
+func TestIssueMapSource(t *testing.T) {
+	id := int64(7)
+	for _, tc := range []struct {
+		provider, repo, payload string
+		number                  int
+		key                     string
+	}{
+		{"jira", "PROJ", `{"key":"PROJ-12"}`, 0, "PROJ-12"},
+		{"github", "octo/repo", "", 12, "12"},
+		{"", "", "", 0, ""},
+	} {
+		iss := &store.Issue{ID: id, Title: "t", State: "open"}
+		if tc.provider != "" {
+			iss.Remote = &store.IssueRemote{
+				IssueID: &id, Provider: tc.provider, Repo: tc.repo, Number: 12, RemoteJSON: tc.payload,
+			}
+		}
+		src, _ := issueMap(iss)["Source"].(map[string]any)
+		if got := src["Number"]; got != tc.number {
+			t.Errorf("%q: Source.Number = %v, want %d", tc.provider, got, tc.number)
+		}
+		if got := src["Key"]; got != tc.key {
+			t.Errorf("%q: Source.Key = %v, want %q", tc.provider, got, tc.key)
+		}
+	}
+}
+
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 // parseIssueEventID reads the issue id out of `issue:{id}:{action}:{event}`.

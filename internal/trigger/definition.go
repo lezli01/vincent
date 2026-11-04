@@ -701,13 +701,21 @@ func (d *Definition) wantsAction(action string) bool {
 // opened, so its reviewer field is one an outsider can cause.
 //
 // On `type: issues` the same table is read for `by: sync` events only, since
-// those are GitHub's changes arriving through the importer; a `human` or
-// `agent` change was made on this machine and is trusted (task 130.15
-// decision 1), as is a `task` lane move. A sync-delivered lane_changed is
-// untrusted: it comes only from a GitHub close or reopen, which an outsider
-// can make exactly as they make closed and reopened (task 134.7 decision 4).
-// A sync-delivered handoff_changed is untrusted for the same reason: only a
-// GitHub close resolves a waiting item by sync (task 137.9).
+// those are the issue's tracker's changes — GitHub's or Jira's — arriving
+// through its importer; a `human` or `agent` change was made on this machine
+// and is trusted (task 130.15 decision 1), as is a `task` lane move. A
+// sync-delivered lane_changed is untrusted: it comes only from a tracker
+// close or reopen, which an outsider can make exactly as they make closed
+// and reopened (task 134.7 decision 4). A sync-delivered handoff_changed is
+// untrusted for the same reason: only a tracker close resolves a waiting
+// item by sync (task 137.9).
+//
+// The table is GitHub's and is read unchanged for Jira (task 142.17 decision
+// 2 changed no trust). Its untrusted half holds for both trackers. Its
+// trusted `labeled`/`unlabeled` is verified against GitHub's role table
+// only: on Jira a label is an ordinary field that whoever may edit the issue
+// can change, so whether the exemption holds there is task 142's open
+// question 11.
 var trustedEvents = map[string]map[string]bool{
 	SourceGitHubIssues: {"labeled": true, "unlabeled": true, "assigned": true},
 	SourceGitHubPRs:    {"merged": true},
@@ -768,9 +776,12 @@ func validateGitHubTrust(d *Definition, add addFunc, _ refuseFunc) {
 	for _, a := range actions {
 		if !trustedEvents[d.Source.Type][a] {
 			if d.IsIssues() {
-				add("allowed_actors", "is required: this trigger can match %q arriving by sync from GitHub, "+
-					"whose author an outsider controls on a public repository; list the authors to accept, "+
-					"match only %s, or leave sync out of match.by",
+				// The rationale is the tracker's, not GitHub's (task 142.17
+				// decision 2): a sync change from Jira is as untrusted as one
+				// from GitHub, and the rule does not distinguish them.
+				add("allowed_actors", "is required: this trigger can match %q arriving by sync from the issue's "+
+					"tracker (GitHub or Jira), whose author someone outside this machine controls; "+
+					"list the authors to accept, match only %s, or leave sync out of match.by",
 					a, strings.Join(trustedList(d.Source.Type), ", "))
 				return
 			}

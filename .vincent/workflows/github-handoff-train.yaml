@@ -5,6 +5,10 @@
 # the pull request, merges it at the commit it verified, and closes the
 # issues through vincent.
 #
+# GitHub-only by design (task 142.17): it reads or writes GitHub with `gh`,
+# so it serves a project whose issues come from GitHub. An issue imported
+# from Jira is out of its reach, and there is deliberately no Jira variant.
+#
 # It is a handoff workflow (`role: handoff`), so it never runs as an ordinary
 # task. It is started by its trigger, a weekday schedule shipped unarmed as
 # docs/examples/triggers/github-handoff-train.yaml, or by hand:

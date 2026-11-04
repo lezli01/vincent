@@ -366,8 +366,10 @@ command timeout, independently of the main step timeout.
 `.Issue` is the issue the task was created from. `.Issue.Number` is the
 vincent issue id, and `0` when there is none — the same convention as
 `.Loop.Index` — so `{{ if .Issue.Number }}` lets one workflow serve linked and
-unlinked tasks. The GitHub reference of an imported issue is `.Issue.Source`
-(zero for a local issue): a template that passes a number to `gh` uses
+unlinked tasks. The tracker reference of an imported issue is `.Issue.Source`
+(`Provider`, `Repo`, `Number`, `Key`, `URL`; zero for a local issue, and
+`Number` is `0` for Jira, whose issue a template keys on `.Issue.Source.Key`):
+a template that passes a number to `gh` uses
 `.Issue.Source.Number`, or a declared `github_issue` field, never
 `.Issue.Number` or the `issue` field, which hold the vincent id. `.Issue.Repo`
 and `.Issue.URL` are deprecated aliases of `.Issue.Source.Repo`/`.URL`; an
@@ -376,7 +378,7 @@ GitHub number as `.Issue.Number`. New tasks link an issue by its vincent id
 (`issue_id`, `--issue`), never by a GitHub number.
 `Labels` is a list; the numbers are integers and everything else is a string.
 `Comments` is the issue's discussion thread, oldest first and untruncated:
-local comments and the ones mirrored from GitHub alike. A comment body is
+local comments and the ones mirrored from the issue's tracker alike. A comment body is
 free text like the issue's own.
 Numbers are safe to template into `run:`; titles and bodies are not. It is a
 snapshot taken at task creation and never re-read, so rendering it needs no

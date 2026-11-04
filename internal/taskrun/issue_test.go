@@ -222,13 +222,16 @@ func localSnapshot() *store.IssueSnapshot {
 }
 
 // jiraSnapshot is a Jira-imported issue built by hand: no importer exists
-// yet (task 142.12), so this is the shape 142.8's snapshot carries.
+// yet (task 142.12), so this is the shape 142.8's snapshot carries. Its repo
+// and number are what the store writes for `PROJ-12` — the Jira project key
+// and the issue number (task 142 decision 9.4) — so the tests prove the
+// number is withheld rather than merely absent.
 func jiraSnapshot() *store.IssueSnapshot {
 	return &store.IssueSnapshot{
 		ID: 14, Title: "Fix the login page", State: "open", Kind: "bug", Author: "alice",
 		URL: "https://example.atlassian.net/browse/PROJ-12",
 		Remote: &store.IssueSnapshotRemote{
-			Provider: "jira", Key: "PROJ-12",
+			Provider: "jira", Repo: "PROJ", Number: 12, Key: "PROJ-12",
 			URL: "https://example.atlassian.net/browse/PROJ-12", State: "open",
 		},
 	}
@@ -364,7 +367,8 @@ func TestLaneInheritsTheVincentSnapshot(t *testing.T) {
 }
 
 // TestIssueContextOfAJiraIssue (task 142.16): `.Issue.Source` carries the
-// Jira key and provider, and its Number is 0 — Jira has none.
+// Jira key and provider, and its Number is 0 even though the store keeps
+// PROJ-12's 12 — no tool outside Jira can resolve it.
 func TestIssueContextOfAJiraIssue(t *testing.T) {
 	const tmpl = `{{ .Issue.Source.Key }}|{{ .Issue.Source.Provider }}|{{ .Issue.Source.Number }}|{{ .Issue.Source.URL }}`
 	got, err := workflow.Render("run", tmpl, workflow.RenderContext{Issue: issueContext(&store.Task{Issue: jiraSnapshot()})})

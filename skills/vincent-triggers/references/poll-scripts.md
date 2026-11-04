@@ -95,6 +95,17 @@ first run may safely return a wide window: nothing in it can start work.
 
 ## A Jira-style example
 
+Use a poller like this one for a project vincent does not sync from Jira, or
+for JQL beyond what the project's Jira binding narrows its import to. A binding
+alone is not an import: replace a poller only once vincent holds the project's
+Jira issues, which `vincent issue ls --project P --source jira` shows by
+listing them. Then write an `issues` trigger on that project instead, which
+needs no script and links the created task to the issue. While that list is
+empty, keep the poller, since an `issues` trigger there never fires. The
+credential does not go away: native sync reads it from
+the daemon's environment too (`JIRA_USER` and `JIRA_API_TOKEN` by default), and
+reports `no_credential` when they are missing.
+
 The poller below prints Jira issues in "Ready for Dev". Its cursor is the Unix
 time at which the previous run started, which keeps it independent of time
 zones. Each run looks back to that moment plus two minutes of overlap. The

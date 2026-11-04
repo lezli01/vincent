@@ -38,6 +38,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **The built-in maintenance workflows and both skills know about Jira
+  issues.** `update-workflows` gains a checklist item for issues imported
+  from Jira — test `.Issue.Source.Provider`, key on `.Issue.Source.Key` or
+  `$VINCENT_ISSUE_KEY`, look issues up with `vincent issue ls --remote KEY`,
+  never assume `number` is set — and `update-triggers` one for `by: sync`
+  changes from Jira and Jira poll scripts on a Jira-bound project. The
+  `vincent-workflows` and `vincent-triggers` skills describe an imported
+  issue's tracker as GitHub or Jira, and the trigger validator's
+  `allowed_actors` refusal for a `by: sync` change now names the issue's
+  tracker instead of GitHub; which triggers it refuses is unchanged (task
+  142.17, #913).
 - **Workflows can read an imported issue's display key.** `.Issue.Source.Key`,
   `$VINCENT_ISSUE_KEY` and the issue file's `source.key` carry the provider's
   key — the GitHub number as a string, or a Jira issue's `PROJ-12` — and a

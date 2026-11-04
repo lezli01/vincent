@@ -89,7 +89,7 @@ func snapshotContext(snap *store.IssueSnapshot) workflow.IssueContext {
 		ctx.Source = workflow.IssueSource{
 			Provider: rem.Provider,
 			Repo:     rem.Repo,
-			Number:   rem.Number,
+			Number:   sourceNumber(rem.Provider, rem.Number),
 			Key:      sourceKey(rem.Provider, rem.Repo, rem.Number, rem.Key),
 			URL:      rem.URL,
 			State:    rem.State,
@@ -123,6 +123,21 @@ func templateComments(in []store.IssueSnapshotComment) []workflow.IssueComment {
 // fallback to the number comes from the same function the API reads.
 func sourceKey(provider, repo string, number int, key string) string {
 	return issues.RenderSource(provider, repo, number, key).Key
+}
+
+// sourceNumber is `.Issue.Source.Number`: the provider's number for GitHub
+// and 0 for every other tracker (spec §8.x's 142.16 amendment). A Jira row
+// stores the issue number of `PROJ-12` in its number column (task 142
+// decision 9.4), but that is not a number any tool outside Jira can resolve —
+// `gh issue view 12` would open a different issue on a different tracker — so
+// it is gated on the provider exactly as the issue file's number and
+// $VINCENT_ISSUE_NUMBER are (snapshotFile). Templates key a Jira issue on
+// `.Issue.Source.Key`.
+func sourceNumber(provider string, number int) int {
+	if provider != providerGitHub {
+		return 0
+	}
+	return number
 }
 
 // providerGitHub is the Source.Provider of a legacy GitHub snapshot: a

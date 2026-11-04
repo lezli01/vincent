@@ -4,7 +4,7 @@ description: Create, edit, review, arm, and debug vincent event triggers, the YA
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.7.1
+  version: 1.7.2
 ---
 
 # vincent Triggers
@@ -106,15 +106,17 @@ before changing the design.
 
 ## Choose the source
 
-- **`issues`** reads the project's own issues: local ones, and GitHub issues
-  the project imports. Prefer it for anything that starts from an issue.
+- **`issues`** reads the project's own issues: local ones, and issues the
+  project imports from GitHub or Jira. Prefer it for anything that starts
+  from an issue. `.Event.Issue.Source.Provider` (`github`, `jira`, or empty
+  for a local issue) tells them apart.
   - It takes no `command` and no `poll_interval`; it is woken by each issue
     change the daemon commits, and works on a project with no GitHub remote.
   - Events: `opened`, `closed`, `reopened`, `labeled`, `unlabeled`, and the
     opt-in `lane_changed` and `handoff_changed`. There is no `assigned` (a vincent issue has no
     assignee), and it is refused. Edits, comments and deletes fire nothing.
   - `.Event.by` says who made the change: `human`, `agent` (a task's agent
-    over MCP), `sync` (GitHub, through the importer) or, on `lane_changed`
+    over MCP), `sync` (the issue's tracker, through the importer) or, on `lane_changed`
     only, `task` (a root task's start, finish, delete or restore moved it).
   - **`lane_changed`** fires when the issue's board lane moves (`open`,
     `in_progress`, `hand_off`, `done`). `.Event.lane` is the lane moved to,
@@ -133,7 +135,7 @@ before changing the design.
     an item's first resolution),
     `.Event.handoff_id` the handoff and `.Event.task_id` its task.
     `.Event.by` is the item's actor: `handoff`, `human`, `agent` or
-    `settle` are local; `sync` — a GitHub close resolving a waiting item —
+    `settle` are local; `sync` — a tracker close resolving a waiting item —
     is not, so a trigger that can match it from sync needs
     `allowed_actors`, as `closed` does.
   - **Hand-off echo loops.** A `lane: hand_off` trigger whose task is
@@ -145,10 +147,15 @@ before changing the design.
     re-fire itself. Write `match: {by: human}` unless the user wants agent
     changes to fire, and keep `limits.max_per_hour` as the backstop.
   - **Trust.** `human` and `agent` changes are local and trusted. A `sync`
-    change follows `github_issues`' rule: `labeled` and `unlabeled` are
-    trusted; `opened`, `closed`, `reopened`, `lane_changed` and
-    `handoff_changed` (which sync delivers only for a GitHub close or reopen)
-    need `allowed_actors`, matched
+    change arrives from the issue's tracker (GitHub or Jira), whose author
+    someone outside this machine controls, so it follows `github_issues`'
+    rule: `labeled` and `unlabeled` are trusted (a judgement made against
+    GitHub's roles, where labelling needs triage; on Jira anyone who may
+    edit the issue may label it, so flag that to the user before relying
+    on it there);
+    `opened`, `closed`, `reopened`, `lane_changed` and `handoff_changed`
+    (which sync delivers only for a tracker close or reopen) need
+    `allowed_actors`, matched
     against the issue's author. A trigger that can match one of those from
     sync is refused without `allowed_actors` — unless its `match.by` leaves
     `sync` out. `allowed_actors` never refuses a local person's change.

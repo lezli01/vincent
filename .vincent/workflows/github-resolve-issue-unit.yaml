@@ -1,5 +1,9 @@
 # github-resolve-issue-unit — deliver one unit of a planned issue resolution.
 #
+# GitHub-only by design (task 142.17): it reads or writes GitHub with `gh`,
+# so it serves a project whose issues come from GitHub. An issue imported
+# from Jira is out of its reach, and there is deliberately no Jira variant.
+#
 # The lane body of `github-resolve-issue-dag`'s `build` step. That workflow's
 # planner cuts an agreed brief into work units and the edges between them; this
 # file is what one unit runs. It exists as a registry workflow rather than as
