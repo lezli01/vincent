@@ -40,6 +40,18 @@ func TestIssueSyncRows(t *testing.T) {
 			t.Errorf("disabled status does not show %q:\n%s", want, out)
 		}
 	}
+	// A project with no provider pass records no request at all (review
+	// F3): the row must not claim one, whether or not GitHub's switch is on.
+	for _, s := range []apiclient.IssueSyncStatus{
+		{Provider: "none", Reason: "not_github"},
+		{Provider: "none", Reason: "source_not_github"},
+		{Provider: "github", Enabled: true, Reason: "not_github"},
+	} {
+		out := joinRows(issueSyncRows(s, true))
+		if !strings.Contains(out, "sync\tnothing to sync ("+s.Reason+")") || strings.Contains(out, "requested") {
+			t.Errorf("%+v: sync now claims a request:\n%s", s, out)
+		}
+	}
 	if out := joinRows(issueSyncRows(apiclient.IssueSyncStatus{Enabled: true}, false)); strings.Contains(out, "requested") {
 		t.Errorf("--status claims a request:\n%s", out)
 	}

@@ -3377,7 +3377,11 @@ backing off. With the provider's switch off —
 [`jira.enabled`](configuration.md#jira) false, or its `poll_interval: 0` — the
 request is still recorded, and the last row reads
 `requested, but import is off (<reason>)`: nothing is imported until the switch
-is turned back on. An unknown project exits `1`.
+is turned back on. A project with nothing to sync from — its issue source
+resolves to `none`, or is pinned to `github` on an origin that is not a
+github.com repository — records no request, and the last row reads
+`nothing to sync (not_github)` or `nothing to sync (source_not_github)`. An
+unknown project exits `1`.
 
 Tasks created from GitHub issues before the issue set existed were backfilled
 into it on upgrade, as imported issues that have never been synced. The first

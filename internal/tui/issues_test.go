@@ -482,3 +482,22 @@ func TestIssuesListReListsOnlyForItsRows(t *testing.T) {
 		})
 	}
 }
+
+// `S` on a project with no provider pass records nothing (task 142.7), so
+// its note must not say a sync was requested (review F3).
+func TestSyncedNoteSaysNothingToSync(t *testing.T) {
+	for _, tc := range []struct {
+		status apiclient.IssueSyncStatus
+		want   string
+	}{
+		{apiclient.IssueSyncStatus{Provider: "none", Reason: "not_github"}, "nothing to sync (not_github)"},
+		{apiclient.IssueSyncStatus{Provider: "none", Reason: "source_not_github"}, "nothing to sync (source_not_github)"},
+		{apiclient.IssueSyncStatus{Provider: "github", Enabled: true, Reason: "not_github"}, "nothing to sync (not_github)"},
+		{apiclient.IssueSyncStatus{Provider: "jira", Reason: "disabled"}, "sync requested, but import is off (disabled)"},
+		{apiclient.IssueSyncStatus{Provider: "github", Enabled: true, Repo: "o/r", Reason: "pending"}, "sync requested from o/r — the list updates as it lands"},
+	} {
+		if got := syncedNote(issuesSyncedMsg{status: tc.status}); got != tc.want {
+			t.Errorf("%+v: note = %q, want %q", tc.status, got, tc.want)
+		}
+	}
+}
