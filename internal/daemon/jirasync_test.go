@@ -31,7 +31,7 @@ import (
 
 // jiraE2EToken is the fake site's API token; no log line, sync row or error
 // text may ever carry it.
-const jiraE2EToken = "s3cr3t-jira-e2e-token-7f3a" //nolint:gosec // G101: a test fixture's fake token
+const jiraE2EToken = "s3cr3t-jira-e2e-token-7f3a"
 
 type jiraE2E struct {
 	t        *testing.T
