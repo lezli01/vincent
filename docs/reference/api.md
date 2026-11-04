@@ -893,6 +893,7 @@ calls a provider, and never starts a sync:
 
 ```json
 { "enabled": true, "provider": "github", "repo": "lezli01/vincent",
+  "source": "lezli01/vincent", "provider_name": "GitHub",
   "last_synced_at": "2026-10-02T09:15:00Z", "ok": false,
   "reason": "rate_limited", "import_complete": true,
   "rate_limited_until": "2026-10-02T10:00:00Z",
@@ -904,6 +905,11 @@ calls a provider, and never starts a sync:
 project, `jira.*` for a Jira one — and `false` for `none`.
 `site` is present only for a project bound to Jira: the site its issues would
 come from, shown here so a binding to the wrong site is visible.
+`source` and `provider_name` are the display fields, rendered by the daemon so
+no client builds them: `source` is the bound source as a person reads it —
+`owner/repo` for GitHub (the `repo` below), `<site host>/<PROJECTKEY>` for Jira,
+such as `acme.atlassian.net/PROJ` — and `provider_name` is `GitHub` or `Jira`.
+Both are absent for `none`, and `source` is absent while no repository is known.
 `repo` is the repository the project's first successful sync bound it to, or
 the one its `origin` names until then. `last_synced_at` is the last successful
 sync and is absent when none has been. `import_complete` turns `true` once the

@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (12/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (13/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -100,9 +100,9 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [ ] **142.13** ([#909](https://github.com/lezli01/vincent/issues/909)) The
   outbox for Jira (decision 3): transitions with resolution, ADF comments,
   echo handling. Depends: 142.12.
-- [ ] **142.14** ([#910](https://github.com/lezli01/vincent/issues/910))
+- [x] **142.14** ([#910](https://github.com/lezli01/vincent/issues/910))
   Provider-aware sync status reasons, the TUI `S` key, the overview glyph, and
-  the `issue sync` CLI. Depends: 142.7.
+  the `issue sync` CLI (decision 14). Depends: 142.7.
 - [ ] **142.15** ([#911](https://github.com/lezli01/vincent/issues/911)) A
   JIRA doctor row with a credential check and per-project sync health.
   Depends: 142.12.
@@ -451,6 +451,32 @@ numbered so code can cite it.
    arrive with #908, the id's first writer. A change of site or key is
    already a rebind (142.6), which deletes the sync row, so nothing is lost
    meanwhile.
+
+### 14. The sync status names its source, and `S` follows it (142.14, #910)
+
+Settled while scoping 142.14, 2026-11-04. 142.7 had already made the status
+provider-aware on the daemon side; this is the display and the clients.
+
+1. **142.7's reason vocabulary is kept.** `github_disabled` stays GitHub's
+   switch and `disabled` Jira's; `not_github` and `source_not_github` stay the
+   two no-source reasons, and the overview glyph reads both — and any switch
+   off — as a dash. *Beaten:* #910's `provider_disabled` and `not_bound`:
+   GitHub output stays byte-for-byte v0.12.0's, and a field cannot carry an
+   alias, so a rename would break every client that matches the old strings.
+2. **The status gains `source` and `provider_name`, rendered by the daemon**
+   (decision 11: clients never build a reference). `source` is `owner/repo`
+   for GitHub, `<site host>/<PROJECTKEY>` for Jira, absent for none or while
+   no repository is known; `provider_name` comes from `issues.RenderSource`'s
+   table. Both are filled by the per-project read only; doctor and
+   `projectstats` do not carry them. `repo` and `site` stay.
+3. **`S` is offered iff there is a sync pass to wake.** The gate is the issues
+   list's own loaded sync status — not the GitHub probe, which says nothing
+   about a Jira project, and not `projectstats`. Not loaded, `not_github` or
+   `source_not_github` hide it from the footer, `?` and the palette, and the
+   key then does nothing. A switch that is off keeps it: pressing it says
+   import is off. Mechanically, a `syncable` binding flag the issues view's
+   live rows and the root's `?` sheet both apply. The label is
+   provider-neutral, and the note names `source`.
 
 ## Records kept, departed from, narrowed or generalised
 

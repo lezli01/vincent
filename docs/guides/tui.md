@@ -2016,7 +2016,7 @@ completed](../assets/tui-issues.png)
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so; the footer offers `o` only on an imported issue |
 | `s` | Show or hide the done lane |
 | `R` | Re-read the issues |
-| `S` | Sync this project's issues from GitHub now — what `vincent issue sync` does; offered only on a project with a GitHub integration |
+| `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com |
 | `↑`/`↓` | Move the selection |
 | `pgup`/`pgdown` | Move the selection a screenful |
 | `home`/`g`, `end`/`G` | Select the first or the last row |
