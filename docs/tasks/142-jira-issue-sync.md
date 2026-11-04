@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (11/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (12/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -68,9 +68,10 @@ lists only the hard dependencies the parent records as "Blocked by".
   form, MCP and sticky semantics. The GitHub importer honours it now
   (`source_not_github`), and a rebind marks the old source's remotes
   `missing` in the project update's transaction. ✓ 2026-11-03
-- [ ] **142.7** ([#903](https://github.com/lezli01/vincent/issues/903)) Issue
+- [x] **142.7** ([#903](https://github.com/lezli01/vincent/issues/903)) Issue
   sync scheduled per bound provider, decoupled from pull-request
-  reconciliation, and the `jira:` config block. Depends: 142.4, 142.6.
+  reconciliation, and the `jira:` config block (decision 13). Depends: 142.4,
+  142.6. ✓ 2026-11-04
 - [x] **142.8** ([#904](https://github.com/lezli01/vincent/issues/904))
   Daemon-rendered `source.key`/`ref`/`short_ref` and provider display names;
   clients stop building references; provider literals in issue text name the
@@ -91,7 +92,10 @@ lists only the hard dependencies the parent records as "Blocked by".
   `internal/jira` client and the importer for Jira: listing, initial import,
   sweep, comments, rate limits and environment credentials; spec §3 row 39
   (decision 10). The importer writes the Jira project key in `repo` and the
-  issue number in `number` (decision 9.4's note, fixed by 142.9).
+  issue number in `number` (decision 9.4's note, fixed by 142.9). It also
+  records the Jira project id on `issue_sync_state`, compares it stickily,
+  and adds the `binding_changed` reason — moved here from 142.7, since this
+  is the id's first writer (decision 13.6).
   Depends: 142.7, 142.5, 142.2, 142.10, 142.11.
 - [ ] **142.13** ([#909](https://github.com/lezli01/vincent/issues/909)) The
   outbox for Jira (decision 3): transitions with resolution, ADF comments,
@@ -406,6 +410,47 @@ numbered so code can cite it.
    the local shape. `github_issue`, `assignee` and `milestone` stay
    GitHub-only; whether a Jira assignee or milestone should fill them is a
    question for 142.12, which stores them.
+
+### 13. Issue sync on its own loop, per bound provider (142.7, #903)
+
+Settled while scoping and delivering 142.7, 2026-11-04. Each point is
+numbered so code can cite it.
+
+1. **Two loops.** Issue sync runs apart from the pull-request reconciler,
+   with one timer per provider: GitHub issue import on `github.poll_interval`
+   gated on `github.Polls()`, the Jira pass on `jira.poll_interval` gated on
+   `jira.Polls()` (`internal/daemon/issuesyncer.go`). A slow or hanging Jira
+   site never delays pull-request linking, and neither provider's switch
+   governs the other. *Beaten:* one loop ticking at the smaller of the two
+   intervals and skipping whatever is not due, which keeps one goroutine
+   but lets a hanging provider stall the other's pass.
+2. **The ordering invariant is kept inline.** For a project resolving to
+   `github`, the reconciler's own tick runs the GitHub issue pass (shared
+   code) before it judges that project's GitHub triggers, so a `type: issues`
+   trigger sees the same tick's import. *Beaten:* the reconciler waiting on
+   the issue loop's pass, a handshake that re-couples the two loops.
+3. **One resolver.** `issuesource.Resolve` gives a project's effective source
+   — an explicit `issue_provider` wins, otherwise `origin` derives it — and
+   the daemon's tick, "sync now" and the API all call it. "Sync now" stamps
+   the resolved provider on the row and is served under that provider's
+   switches alone. The write-back drain gates each row on its own provider.
+4. **The Jira pass ships before the client.** Its gates run in order:
+   `jira.Polls()`, both named variables set (else `no_credential`, decision
+   4), a wired source (else `no_client`, until #908). The row is stamped
+   `provider: jira`, and a `jira` binding stops carrying `source_not_github`,
+   as decision 5 anticipated. `jira.enabled` is a new key, not a departure
+   from task 069 decision 2, which is GitHub-scoped.
+5. **No sync row for `none`.** A project resolving to `none` — explicitly or
+   derived from a non-GitHub origin — gets no `issue_sync_state` row, and
+   migration 0052 deletes the old `not_github` rows. The API derives the
+   reason when there is no row: `not_github` for a derived project,
+   `source_not_github` for an explicit `none`. A row's
+   `enabled`/`github_disabled` fold reads its own provider's config.
+6. **`binding_changed` moves to 142.12.** Decision 5 stands: the Jira project
+   id, its column, the sticky comparison and the `binding_changed` reason
+   arrive with #908, the id's first writer. A change of site or key is
+   already a rebind (142.6), which deletes the sync row, so nothing is lost
+   meanwhile.
 
 ## Records kept, departed from, narrowed or generalised
 

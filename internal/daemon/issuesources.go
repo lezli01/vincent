@@ -6,16 +6,18 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github"
-	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/store"
 )
 
 // The daemon's issue sources (task 142.4): where the importer and the
-// write-back drain are handed the providers they talk to. GitHub is the only
-// one, built over the daemon's one *github.Client; issuesync.go and
-// issueoutbox.go never name that client themselves. Which projects bind to
-// which provider is task 142's later work (#902, #903).
+// write-back drain are handed the providers they talk to. issuesync.go and
+// issueoutbox.go never name a provider's client themselves.
+//
+// The drain's registry is keyed by provider (task 142.7), and each
+// provider's rows drain under that provider's own gates: a Jira row is never
+// sent under GitHub's switches, and a GitHub row is never held by
+// `jira.enabled: false`.
 
 // NewIssueOutbox builds the drain. It performs no I/O.
 func NewIssueOutbox(st *store.Store, cfg func() config.Config, client *github.Client, logger *slog.Logger) *IssueOutbox {
@@ -29,23 +31,42 @@ func NewIssueOutbox(st *store.Store, cfg func() config.Config, client *github.Cl
 		// so the source takes no git runner.
 		o.gh = issuesource.NewGitHub(client, nil)
 	}
-	o.sources = o.githubOnly
+	o.sources = o.byProvider
 	return o
 }
 
-// githubOnly is the default registry: the GitHub source, enabled exactly
-// when the importer's gates are open — github.enabled and poll_interval,
-// and a client wired. Any other provider — Jira writes back too
-// (issueprovider.WritesBack, task 142.5) but has no writer until #909 —
-// answers no_client, so its rows wait pending and are never failed.
-func (o *IssueOutbox) githubOnly(provider string) (issuesource.Source, string) {
+// WithJiraSource wires the Jira rows' source (#908); until then every Jira
+// row waits with no_client while Jira is switched on.
+func (o *IssueOutbox) WithJiraSource(src issuesource.Source) *IssueOutbox {
+	o.jira = src
+	return o
+}
+
+// byProvider is the default registry: each provider's source, enabled
+// exactly when that provider's importer gates are open — its enabled
+// switch and poll_interval, and a source wired. Jira writes back too
+// (issueprovider.WritesBack, task 142.5) but has no source wired yet, so
+// its rows wait no_client and are never failed; a provider it does not
+// know waits with no_client too.
+func (o *IssueOutbox) byProvider(provider string) (issuesource.Source, string) {
+	cfg := o.cfg()
+	switch provider {
+	case issuesource.ProviderGitHub:
+		return gated(cfg.GitHub.Polls(), o.gh)
+	case issuesource.ProviderJira:
+		return gated(cfg.Jira.Polls(), o.jira)
+	}
+	return nil, outboxReasonNoClient
+}
+
+// gated is one provider's entry: disabled when its switches are off,
+// no_client when they are on and no source is wired.
+func gated(polls bool, src issuesource.Source) (issuesource.Source, string) {
 	switch {
-	case provider != issueprovider.GitHub:
-		return nil, outboxReasonNoClient
-	case !o.cfg().GitHub.Polls():
+	case !polls:
 		return nil, outboxReasonDisabled
-	case o.gh == nil:
+	case src == nil:
 		return nil, outboxReasonNoClient
 	}
-	return o.gh, ""
+	return src, ""
 }

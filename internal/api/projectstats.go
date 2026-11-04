@@ -105,11 +105,14 @@ func (s *Server) projectStats(ctx context.Context) (map[int64]store.ProjectStats
 	return stats, true
 }
 
-func (s *Server) toProjectStats(stats map[int64]store.ProjectStats, ok bool, id int64) *projectStatsResponse {
+// toProjectStats renders p's counts. Its sync health is renderIssueSync's,
+// resolved from the renderings' origin cache: a listing has just resolved
+// every project for its issue_source, so this runs no further git.
+func (s *Server) toProjectStats(ctx context.Context, stats map[int64]store.ProjectStats, ok bool, p *store.Project) *projectStatsResponse {
 	if !ok {
 		return nil
 	}
-	st := stats[id]
+	st := stats[p.ID]
 	byState := make(map[string]int, len(st.TasksByState))
 	for state, n := range st.TasksByState {
 		if n > 0 && state != taskstate.Archived {
@@ -130,7 +133,7 @@ func (s *Server) toProjectStats(stats map[int64]store.ProjectStats, ok bool, id 
 		Chats: projectChatStats{Live: st.ChatsLive, AwaitingInput: st.ChatsAwaitingInput},
 	}
 	if s.deps.Config != nil {
-		health := renderIssueSync(s.deps.Config().GitHub, st.IssueSync)
+		health := renderIssueSync(s.deps.Config(), s.renderedIssueResolution(ctx, p), st.IssueSync)
 		out.IssueSync = projectSyncStats{
 			Enabled: health.Enabled, OK: health.OK, Reason: health.Reason, LastSyncedAt: health.LastSyncedAt,
 		}

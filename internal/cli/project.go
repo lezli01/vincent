@@ -196,7 +196,8 @@ func newProjectEditCmd() *cobra.Command {
 			"origin, the default), none, github, or jira with --jira-site and\n" +
 			"--jira-project. Changing the provider, site or project is a rebind: the\n" +
 			"old source's imported issues are kept and marked missing. The Jira\n" +
-			"credential is never a flag; the daemon reads JIRA_USER and JIRA_API_TOKEN.",
+			"credential is never a flag; the daemon reads the variables jira.user_env\n" +
+			"and jira.token_env name (default JIRA_USER and JIRA_API_TOKEN).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)

@@ -349,15 +349,35 @@ func configKeys() []configKey {
 			func(n int) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{MCP: &apiclient.ConfigMCPPatch{MaxTasks: &n}}
 			}),
-		boolKey("github.enabled", "github enabled", "let the daemon read GitHub at all (task 035)",
+		boolKey("github.enabled", "github enabled", "let the daemon talk to GitHub at all (task 035)",
 			func(c apiclient.Config) bool { return c.GitHub.Enabled },
 			func(b bool) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{GitHub: &apiclient.ConfigGitHubPatch{Enabled: &b}}
 			}),
-		durationKey("github.poll_interval", "github poll", "how often the pull-request reconciler runs; 0 is off",
+		durationKey("github.poll_interval", "github poll", "how often GitHub issues import and pull requests link; 0 is off",
 			func(c apiclient.Config) string { return c.GitHub.PollInterval },
 			func(s string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{GitHub: &apiclient.ConfigGitHubPatch{PollInterval: &s}}
+			}),
+		boolKey("jira.enabled", "jira enabled", "let the daemon sync projects bound to Jira (task 142)",
+			func(c apiclient.Config) bool { return c.Jira.Enabled },
+			func(b bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Jira: &apiclient.ConfigJiraPatch{Enabled: &b}}
+			}),
+		durationKey("jira.poll_interval", "jira poll", "how often Jira-bound projects sync their issues; 0 is off",
+			func(c apiclient.Config) string { return c.Jira.PollInterval },
+			func(s string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Jira: &apiclient.ConfigJiraPatch{PollInterval: &s}}
+			}),
+		envNameKey("jira.user_env", "jira user env", "variable holding the Jira account e-mail",
+			func(c apiclient.Config) string { return c.Jira.UserEnv },
+			func(s string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Jira: &apiclient.ConfigJiraPatch{UserEnv: &s}}
+			}),
+		envNameKey("jira.token_env", "jira token env", "variable holding the Jira API token",
+			func(c apiclient.Config) string { return c.Jira.TokenEnv },
+			func(s string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Jira: &apiclient.ConfigJiraPatch{TokenEnv: &s}}
 			}),
 		boolKey("update.check", "update check", "ask GitHub once a day whether a newer vincent exists",
 			func(c apiclient.Config) bool { return c.Update.Check },
@@ -566,6 +586,22 @@ func durationKey(path, label, help string, read func(apiclient.Config) string,
 	}
 }
 
+// envNameKey is a row that holds the NAME of an environment variable — the
+// jira credential keys (task 142 decision 4). The help says so on the row, so
+// nobody pastes the token itself; the daemon refuses anything that is not a
+// variable name anyway.
+func envNameKey(path, label, help string, read func(apiclient.Config) string,
+	patch func(string) apiclient.ConfigPatch,
+) configKey {
+	return configKey{
+		path: path, label: label, kind: kindText, help: help + " — its name, never the value",
+		read: read,
+		write: func(s string) (apiclient.ConfigPatch, error) {
+			return patch(strings.TrimSpace(s)), nil
+		},
+	}
+}
+
 func boolKey(path, label, help string, read func(apiclient.Config) bool,
 	patch func(bool) apiclient.ConfigPatch,
 ) configKey {
@@ -705,6 +741,10 @@ func defaultClientConfig() apiclient.Config {
 			WireSteps: d.MCP.WireSteps, MaxDepth: d.MCP.MaxDepth, MaxTasks: d.MCP.MaxTasks,
 		},
 		GitHub: apiclient.ConfigGitHub{Enabled: d.GitHub.Enabled, PollInterval: d.GitHub.PollInterval.String()},
+		Jira: apiclient.ConfigJira{
+			Enabled: d.Jira.Enabled, PollInterval: d.Jira.PollInterval.String(),
+			UserEnv: d.Jira.UserEnv, TokenEnv: d.Jira.TokenEnv,
+		},
 		Update: apiclient.ConfigUpdate{Check: d.Update.Check, PollInterval: d.Update.PollInterval.String()},
 		Backup: apiclient.ConfigBackup{Interval: d.Backup.Interval.String(), Keep: d.Backup.Keep, Dir: d.Backup.Dir},
 		Notify: apiclient.ConfigNotify{On: notifyStateNames(d), Command: d.Notify.Command},

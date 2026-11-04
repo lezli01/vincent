@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,9 +12,12 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// TestIssueSyncHonoursTheBinding is task 142.6 decision 3: a github.com
-// project bound to none or jira makes no GitHub issue or comment call and
-// records source_not_github, and its pull requests are still linked.
+// TestIssueSyncHonoursTheBinding is task 142.6 decision 3, as task 142.7
+// leaves it: a github.com project bound to none or jira makes no GitHub
+// issue or comment call — the fake gh's argv log has no issue listing,
+// while the pull request listing still happens and links — and the GitHub
+// pass writes no sync row for it (none gets no row at all; jira's row is
+// the Jira pass's).
 func TestIssueSyncHonoursTheBinding(t *testing.T) {
 	for _, src := range []store.IssueSource{
 		{Provider: store.IssueProviderNone},
@@ -30,8 +34,11 @@ func TestIssueSyncHonoursTheBinding(t *testing.T) {
 			if calls := f.apiCalls(t); len(calls) != 0 {
 				t.Errorf("a project bound to %s made issue calls: %v", src.Provider, calls)
 			}
-			if st := f.syncState(t); st.OK || st.Reason != syncReasonSourceNotGitHub {
-				t.Errorf("sync state = %+v, want %s", st, syncReasonSourceNotGitHub)
+			if calls := f.ghCalls(t); !strings.Contains(calls, "pr list") {
+				t.Errorf("a project bound to %s never listed pull requests:\n%s", src.Provider, calls)
+			}
+			if _, err := f.store.GetIssueSyncState(t.Context(), f.project.ID); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("the GitHub pass wrote a sync row for a %s-bound project: %v", src.Provider, err)
 			}
 			if got := len(f.issues(t)); got != 0 {
 				t.Errorf("imported %d issues, want none", got)

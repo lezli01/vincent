@@ -199,6 +199,9 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 		{Path: "loop.max_iterations", Value: "3"},
 		{Path: "github.poll_interval", Value: "0s"},
 		{Path: "update.check", Value: "false"},
+		{Path: "jira.enabled", Value: "false"},
+		{Path: "jira.poll_interval", Value: "15m"},
+		{Path: "jira.token_env", Value: RenderString("WORK_JIRA_TOKEN")},
 		{Path: "tui.board.group_by", Value: RenderList(nil)},
 		{Path: "tui.hyperlinks", Value: "true"},
 		{Path: "tui.keys", Value: RenderMap(map[string]string{"refresh": "ctrl+e"})},
@@ -217,6 +220,8 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 		cfg.Agents.Cursor.Path != "/opt/cursor-agent" || cfg.Agents.Copilot.Path != "/opt/copilot" || cfg.MCP.WireSteps ||
 		cfg.Include.MaxDepth != 9 || cfg.Loop.MaxIterations != 3 ||
 		cfg.GitHub.PollInterval != 0 || cfg.Update.Check ||
+		cfg.Jira.Enabled || cfg.Jira.PollInterval != Duration(15*time.Minute) ||
+		cfg.Jira.TokenEnv != "WORK_JIRA_TOKEN" || cfg.Jira.UserEnv != "JIRA_USER" ||
 		len(cfg.TUI.Board.GroupBy) != 0 || !cfg.TUI.Hyperlinks || len(cfg.Environment.Unset) != 1 ||
 		cfg.TUI.Keys["refresh"] != "ctrl+e" {
 		t.Errorf("a set did not take: %+v", cfg)
@@ -225,6 +230,45 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 	// the same number of lines it started with.
 	if a, b := strings.Count(string(got), "\n"), strings.Count(defaultConfigYAML, "\n"); a != b {
 		t.Errorf("the template grew from %d lines to %d; a documented key was appended instead of edited", b, a)
+	}
+}
+
+// The jira: block ships commented out (task 142.7), so the first edit of any
+// of its keys has to find it in the virtual file and uncomment the parent with
+// the key — leaving its sibling keys, and the one-line comments between them,
+// commented — rather than append a second jira: block the decoder refuses.
+func TestApplyUncommentsTheJiraBlock(t *testing.T) {
+	got, err := Apply([]byte(defaultConfigYAML), []Set{{Path: "jira.poll_interval", Value: "30m"}})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !strings.Contains(string(got), "\njira:\n") || !strings.Contains(string(got), "\n  poll_interval: 30m\n") {
+		t.Fatalf("jira.poll_interval was not set in place:\n%s", got)
+	}
+	if !strings.Contains(string(got), "\n#   enabled: true\n") {
+		t.Errorf("an untouched sibling was uncommented:\n%s", got)
+	}
+	cfg, err := Decode(got)
+	if err != nil {
+		t.Fatalf("the edited template no longer parses: %v\n%s", err, got)
+	}
+	if cfg.Jira.PollInterval != Duration(30*time.Minute) || !cfg.Jira.Enabled || cfg.Jira.UserEnv != "JIRA_USER" {
+		t.Errorf("Jira = %+v, want 30m with every other default", cfg.Jira)
+	}
+
+	// A second edit to the now-active block sets the next key in place too.
+	got, err = Apply(got, []Set{{Path: "jira.enabled", Value: "false"}})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if strings.Count(string(got), "\njira:") != 1 {
+		t.Errorf("a second jira: block was appended:\n%s", got)
+	}
+	if cfg, err = Decode(got); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if cfg.Jira.Enabled || cfg.Jira.PollInterval != Duration(30*time.Minute) {
+		t.Errorf("Jira = %+v, want disabled at 30m", cfg.Jira)
 	}
 }
 

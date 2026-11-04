@@ -168,6 +168,36 @@ func (s *Store) PutIssueSyncState(ctx context.Context, st IssueSyncState) error 
 	})
 }
 
+// DeleteIssueSyncState drops the project's sync row when provider stamped
+// it, and does nothing otherwise — a row of another provider, or no row at
+// all, is left as it is. It is how a project that stopped being provider's
+// without a rebind (an origin re-pointed off github.com, review F1) loses
+// the row it can no longer refresh: a project resolving to none has no row
+// (task 142.7). Like PutIssueSyncState it treats a missing row as ok, so
+// deleting a failing row announces issue.sync_changed {ok: true} and
+// deleting an ok one announces nothing.
+func (s *Store) DeleteIssueSyncState(ctx context.Context, projectID int64, provider string) error {
+	return s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		var prevOK bool
+		err := tx.QueryRowContext(ctx, `SELECT ok FROM issue_sync_state WHERE project_id = ? AND provider = ?`,
+			projectID, provider).Scan(&prevOK)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read issue sync state of project %d: %w", projectID, err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM issue_sync_state WHERE project_id = ? AND provider = ?`,
+			projectID, provider); err != nil {
+			return nil, fmt.Errorf("delete issue sync state of project %d: %w", projectID, err)
+		}
+		if prevOK {
+			return nil, nil
+		}
+		return issueSyncEvent(IssueSyncState{ProjectID: projectID, OK: true})
+	})
+}
+
 // issueSyncEvent builds issue.sync_changed: project-scoped like every issue
 // event, reason omitted when ok.
 func issueSyncEvent(st IssueSyncState) (*Event, error) {
@@ -189,19 +219,28 @@ func issueSyncEvent(st IssueSyncState) (*Event, error) {
 // block.
 func (s *Store) OnIssueSyncRequested(fn func(projectID int64)) { s.syncRequested.Store(&fn) }
 
-// RequestIssueSync records a "sync now" for the project (task 130.8):
-// requested_at is stamped on its row, creating an ok row for provider when
-// there is none — which is no transition, so no event — and after the commit the
-// OnIssueSyncRequested callback is told. The store holds no lock while it
-// runs. ErrNotFound for an unknown project.
+// RequestIssueSync records a "sync now" for the project from provider
+// (IssueProviderGitHub or IssueProviderJira; task 130.8, task 142.7):
+// requested_at is stamped and provider set to provider on its row, creating
+// an ok row when there is none — which is no transition, so no event — and after the
+// commit the OnIssueSyncRequested callback is told. The store holds no lock
+// while it runs. The callback keeps its projectID-only signature: the
+// daemon reads the requested row's Provider to choose which provider's pass
+// to wake, so the provider is stamped on the row rather than passed along.
+// ErrNotFound for an unknown project; an error for any other provider.
 func (s *Store) RequestIssueSync(ctx context.Context, projectID int64, provider string) error {
+	switch provider {
+	case IssueProviderGitHub, IssueProviderJira:
+	default:
+		return fmt.Errorf("request issue sync of project %d: provider %q cannot sync", projectID, provider)
+	}
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		if err := projectExistsTx(ctx, tx, projectID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO issue_sync_state (project_id, provider, ok, requested_at) VALUES (?, ?, 1, ?)
-			ON CONFLICT (project_id) DO UPDATE SET requested_at = excluded.requested_at`,
+			ON CONFLICT (project_id) DO UPDATE SET requested_at = excluded.requested_at, provider = excluded.provider`,
 			projectID, provider, formatTime(time.Now())); err != nil {
 			return fmt.Errorf("request issue sync of project %d: %w", projectID, err)
 		}

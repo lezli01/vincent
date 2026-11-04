@@ -74,6 +74,7 @@ func TestConfigValuesRoundTripThroughSet(t *testing.T) {
 		Include:  apiclient.ConfigInclude{MaxDepth: 5},
 		MCP:      apiclient.ConfigMCP{WireSteps: true, MaxDepth: 3, MaxTasks: 32},
 		GitHub:   apiclient.ConfigGitHub{Enabled: true, PollInterval: "5m0s"},
+		Jira:     apiclient.ConfigJira{Enabled: true, PollInterval: "5m0s", UserEnv: "JIRA_USER", TokenEnv: "JIRA_API_TOKEN"},
 		Update:   apiclient.ConfigUpdate{Check: true, PollInterval: "24h0m0s"},
 		Backup:   apiclient.ConfigBackup{Interval: "24h0m0s", Keep: 7, Dir: "/var/backups/vincent"},
 		Notify:   apiclient.ConfigNotify{On: []string{"blocked"}, Command: []string{"/bin/echo", "hi"}},
@@ -147,5 +148,39 @@ func TestConfigCostCapsPatchTheirOwnKey(t *testing.T) {
 	}
 	if got, _ := configValue(cfg, "max_tree_cost_usd"); got != "12.75" {
 		t.Errorf("get max_tree_cost_usd = %q, want 12.75", got)
+	}
+}
+
+// The four jira keys (task 142.7) read the field they name and patch only
+// that field: four neighbouring keys under one block are the shape a copied
+// table entry wires to the wrong one.
+func TestConfigJiraKeysPatchTheirOwnField(t *testing.T) {
+	cfg := apiclient.Config{Jira: apiclient.ConfigJira{
+		Enabled: false, PollInterval: "15m0s", UserEnv: "WORK_JIRA_USER", TokenEnv: "WORK_JIRA_TOKEN",
+	}}
+	for path, want := range map[string]struct{ get, patch string }{
+		"jira.enabled":       {"false", `{"jira":{"enabled":false}}`},
+		"jira.poll_interval": {"15m0s", `{"jira":{"poll_interval":"15m0s"}}`},
+		"jira.user_env":      {"WORK_JIRA_USER", `{"jira":{"user_env":"WORK_JIRA_USER"}}`},
+		"jira.token_env":     {"WORK_JIRA_TOKEN", `{"jira":{"token_env":"WORK_JIRA_TOKEN"}}`},
+	} {
+		value, ok := configValue(cfg, path)
+		if !ok {
+			t.Fatalf("configValue does not know %q", path)
+		}
+		if value != want.get {
+			t.Errorf("get %s = %q, want %q", path, value, want.get)
+		}
+		patch, err := configPatchFor(path, value)
+		if err != nil {
+			t.Fatalf("%s: set refuses %q: %v", path, value, err)
+		}
+		b, err := json.Marshal(patch)
+		if err != nil {
+			t.Fatalf("%s: marshal patch: %v", path, err)
+		}
+		if string(b) != want.patch {
+			t.Errorf("%s: patch = %s, want %s", path, b, want.patch)
+		}
 	}
 }

@@ -75,6 +75,7 @@ type configResponse struct {
 	Include                configInclude      `json:"include"`
 	MCP                    configMCP          `json:"mcp"`
 	GitHub                 configGitHub       `json:"github"`
+	Jira                   configJira         `json:"jira"`
 	Update                 configUpdateStatus `json:"update"`
 	Backup                 configBackup       `json:"backup"`
 	Notify                 configNotify       `json:"notify"`
@@ -238,6 +239,16 @@ type configGitHub struct {
 	PollInterval string `json:"poll_interval"`
 }
 
+// configJira is the `jira` block (task 142.7). UserEnv and TokenEnv are
+// variable names, so serving them leaks nothing: the credential itself is
+// never in config.yaml to serve.
+type configJira struct {
+	Enabled      bool   `json:"enabled"`
+	PollInterval string `json:"poll_interval"`
+	UserEnv      string `json:"user_env"`
+	TokenEnv     string `json:"token_env"`
+}
+
 // configUpdateStatus is the `update` block of config.yaml — the release-check
 // policy, not GET /v1/update's cached answer.
 type configUpdateStatus struct {
@@ -315,6 +326,12 @@ func configBody(cfg config.Config) configResponse {
 		GitHub: configGitHub{
 			Enabled:      cfg.GitHub.Enabled,
 			PollInterval: cfg.GitHub.PollInterval.String(),
+		},
+		Jira: configJira{
+			Enabled:      cfg.Jira.Enabled,
+			PollInterval: cfg.Jira.PollInterval.String(),
+			UserEnv:      cfg.Jira.UserEnv,
+			TokenEnv:     cfg.Jira.TokenEnv,
 		},
 		Update: configUpdateStatus{
 			Check:        cfg.Update.Check,
@@ -432,6 +449,7 @@ type configPatch struct {
 	Include                     *includePatch      `json:"include"`
 	MCP                         *mcpPatch          `json:"mcp"`
 	GitHub                      *githubPatch       `json:"github"`
+	Jira                        *jiraPatch         `json:"jira"`
 	Update                      *updatePolicyPatch `json:"update"`
 	Backup                      *backupPatch       `json:"backup"`
 	Notify                      *notifyPatch       `json:"notify"`
@@ -490,6 +508,13 @@ type mcpPatch struct {
 type githubPatch struct {
 	Enabled      *bool   `json:"enabled"`
 	PollInterval *string `json:"poll_interval"`
+}
+
+type jiraPatch struct {
+	Enabled      *bool   `json:"enabled"`
+	PollInterval *string `json:"poll_interval"`
+	UserEnv      *string `json:"user_env"`
+	TokenEnv     *string `json:"token_env"`
 }
 
 type updatePolicyPatch struct {
@@ -631,6 +656,12 @@ func (p configPatch) sets() []config.Set {
 	if v := p.GitHub; v != nil {
 		addIfBool(add, "github.enabled", v.Enabled)
 		addIfString(add, "github.poll_interval", v.PollInterval)
+	}
+	if v := p.Jira; v != nil {
+		addIfBool(add, "jira.enabled", v.Enabled)
+		addIfString(add, "jira.poll_interval", v.PollInterval)
+		addIfString(add, "jira.user_env", v.UserEnv)
+		addIfString(add, "jira.token_env", v.TokenEnv)
 	}
 	if v := p.Update; v != nil {
 		addIfBool(add, "update.check", v.Check)

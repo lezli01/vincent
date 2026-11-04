@@ -870,13 +870,25 @@ func issueSyncRows(s apiclient.IssueSyncStatus, requested bool) [][]string {
 		rows = append(rows, []string{"rate limited until", doctorTime(s.RateLimitedUntil, "-")})
 	}
 	if requested {
-		if s.Enabled {
+		switch {
+		case nothingToSync(s):
+			rows = append(rows, []string{"sync", "nothing to sync (" + s.Reason + ")"})
+		case s.Enabled:
 			rows = append(rows, []string{"sync", "requested"})
-		} else {
+		default:
 			rows = append(rows, []string{"sync", "requested, but import is off (" + s.Reason + ")"})
 		}
 	}
 	return rows
+}
+
+// nothingToSync is whether a "sync now" answer is for a project with no
+// provider pass to wake — one resolving to none, or pinned to github on an
+// origin off github.com — for which the daemon records no request at all
+// (task 142.7, review F3). Those two reasons are only ever derived, never
+// stored, so they say exactly that.
+func nothingToSync(s apiclient.IssueSyncStatus) bool {
+	return !s.OK && (s.Reason == "not_github" || s.Reason == "source_not_github")
 }
 
 // writesValue is a project's state write-back health (task 130.10): the

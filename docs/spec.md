@@ -1406,6 +1406,17 @@ holds (task 142 decision 6).
   A change to only `jql` or `mapping` is not a rebind; an issue that leaves the narrowed
   set is marked `missing` by the sweep (task 142 decision 9.11).
 
+*Amended 2026-11-04 (task 142.7, issue #903).* Two sentences above are
+superseded. The Jira credential is read from the variables §12.3's
+`jira.user_env` and `jira.token_env` **name** — `JIRA_USER` and
+`JIRA_API_TOKEN` only by default. And Jira sync is now scheduled, so a
+`jira` binding no longer records `source_not_github`: its row is stamped
+`provider: jira` and says `no_credential` or `no_client` (§12.3's
+amendment of the same date). `source_not_github` now means an explicit
+`none` only, and is derived when read — a project resolving to `none` has
+no sync row, and `github` pinned on a non-github.com origin likewise reads
+`not_github` without one.
+
 *Amended 2026-10-03 (task 130.16, issue #675; task 130 decision 24).* The
 **discussion thread** exists. An issue's comments are listed oldest first and
 reachable over §13.2, §13.4, the CLI and the TUI; each carries `author`,
@@ -8314,7 +8325,12 @@ agents:
   copilot: { path: "" }        # the standalone `copilot` CLI, never `gh copilot` (§9.9; task 138.9, 2026-10-29)
 github:
   enabled: true                # read GitHub issues and pull requests (§13.2)
-  poll_interval: 5m            # import issues and reconcile pull-request links this often; 0 = off (tasks 052, 130.8)
+  poll_interval: 5m            # import GitHub issues and reconcile pull-request links this often; 0 = off, negative refused (tasks 052, 130.8, 142.7)
+jira:                          # Jira Cloud issue sync, for projects bound to jira (task 142.7, 2026-11-04)
+  enabled: true                # false = no Jira sync pass and no Jira write-back
+  poll_interval: 5m            # run the Jira sync pass this often; 0 = off; negative is refused
+  user_env: JIRA_USER          # the NAME of the variable holding the account email, never its value
+  token_env: JIRA_API_TOKEN    # the NAME of the variable holding the API token, never its value
 update:                        # check for a newer vincent release (task 055)
   check: true                  # opt-out; false = the daemon makes no such request at all
   poll_interval: 24h           # 0 = off, same as check: false; negative is refused
@@ -8639,6 +8655,55 @@ lands (#909). Such a row waits **pending** with reason `no_client`, its
 attempts uncounted, and is never failed; the import's hold keeps the local
 state against the remote meanwhile, and the row drains once a source for
 the provider is registered.
+
+*Amended 2026-11-04 (task 142.7, issue #903).* Issue sync now runs **per
+bound provider, on its own loop**, apart from the pull-request reconciler,
+so a slow or hanging issue provider never delays pull-request linking. A
+project's provider is resolved by one rule shared by the daemon's tick,
+"sync now" and the API (`issuesource.Resolve`): an explicit
+`issue_provider` wins, otherwise it is derived from `origin` — `github` for
+a github.com remote, `none` otherwise.
+
+- **GitHub** issue import stays paced by `github.poll_interval` and gated on
+  `github.enabled` and a non-zero interval, so that key now paces GitHub
+  issue import *and* pull-request linking. It still runs inside the
+  reconciler's tick, for each project resolving to `github`, **before** that
+  tick judges the project's GitHub triggers: a trigger reading issue state
+  sees the same tick's import. A project bound to `none` or `jira` gets no
+  GitHub issue call, and its pull requests are still linked.
+- **Jira** sync is paced by the new `jira.poll_interval` and gated on
+  `jira.enabled` and a non-zero interval, on the issue loop's own timer. Its
+  gates run in order: both variables `jira.user_env` and `jira.token_env`
+  **name** must be set in the daemon's resolved environment, else the row
+  says `no_credential`; then a Jira source must be wired, else `no_client`
+  — which every Jira-bound project reports until the Jira client lands
+  (#908). The row is stamped `provider: jira`. The credentials are read per
+  use and never logged or stored; `user_env`/`token_env` are refused unless
+  they are valid variable names. `jira.enabled` is a new key, not a
+  departure from task 069 decision 2, which is GitHub-scoped. The two
+  switches are independent: `github.enabled: false` never stops the Jira
+  pass, and `jira.enabled: false` never stops pull-request linking.
+- **"Sync now"** stamps the project's resolved provider on its row and wakes
+  the issue loop, which serves it under that provider's switches alone. A
+  project resolving to `none` records no request.
+- **The write-back drain** gates each row on its own provider: GitHub rows
+  under `github.enabled`/`poll_interval` and a client, Jira rows under
+  `jira.enabled`/`poll_interval` and a source. Both loops kick it, and it is
+  still one serialized writer.
+- **A project resolving to `none` has no sync row.** The importer no longer
+  writes `not_github` rows, and migration 0052 deletes the old ones. A
+  project that stops being GitHub's without a rebind — its `origin`
+  re-pointed off github.com — loses its GitHub row on the next pass, once
+  `origin` reads back naming another host (an `origin` that cannot be read
+  at all keeps the row). With no
+  row, `GET /v1/projects/{id}/issues/sync` derives the reason rather than
+  saying `pending`: `not_github` for an unbound project whose origin is not
+  github.com, `source_not_github` for an explicit `none`. A `jira` binding no
+  longer reports `source_not_github`. A row's `enabled`/`github_disabled`
+  fold reads its own provider's config, so a Jira row is never reported
+  disabled because `github.enabled` is false.
+
+A negative `github.poll_interval` is now refused at load, as `jira`'s is.
 
 *Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
 outbound network traffic when it landed, and that sentence read as though it
@@ -10474,6 +10539,14 @@ GET    /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8, issue #66
                                         `source_not_github` for a project bound to none or
                                         jira, and `site?`, the bound Jira site, so a binding
                                         entered on the wrong site shows wherever sync does
+                                        *Amended 2026-11-04 (task 142.7):* the reasons come
+                                        from the row's own provider — `disabled` for a Jira
+                                        row with `jira.enabled` false, the provider's
+                                        `poll_disabled`, `no_credential`, `no_client`; a
+                                        project resolving to none has no row, and reads a
+                                        derived `not_github` or (explicit none)
+                                        `source_not_github` rather than `pending`; a jira
+                                        binding no longer reads `source_not_github`
                                         *Amended 2026-10-03 (task 130.10):* also
                                         { writes_pending, writes_failed, writes_conflict } —
                                         the imported issues whose newest state write-back is
@@ -10485,6 +10558,12 @@ POST   /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8).* {}. Syn
                                         next enabled tick. Not an MCP tool (§13.4).
                                         *Amended 2026-10-03 (task 130.10):* it also wakes the
                                         state write-back drain
+                                        *Amended 2026-11-04 (task 142.7):* the request is
+                                        stamped with the project's resolved provider and
+                                        served under that provider's switches alone; a
+                                        project resolving to none records nothing, and
+                                        neither does github pinned on an origin that is
+                                        not a github.com remote
 GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #350).* Also takes
                                         limit, offset, archived_before and archived_since —
                                         GET /v1/tasks' parameters, spelled the same way, because

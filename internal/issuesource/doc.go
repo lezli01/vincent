@@ -20,6 +20,13 @@
 // sweep's cadence, tombstones, failure recording, and the outbox's retry
 // classes, backoff and pacing.
 //
+// Resolve and ResolveWith (resolve.go) are the one definition of a
+// project's effective issue source (task 142.7): an explicit binding wins,
+// otherwise origin decides — github for a github.com remote, none for any
+// other. The daemon's per-provider sync loops, "sync now" and the API all
+// read it rather than each deriving their own. It takes no config: whether
+// a provider's loop runs at all is the caller's gate.
+//
 // Capabilities only one provider has are separate small interfaces a caller
 // finds by type assertion, never methods every source must fake (the
 // adapters' rule, spec §9): RepoCommentLister (GitHub's repository-wide

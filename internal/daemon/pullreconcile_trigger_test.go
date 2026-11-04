@@ -93,3 +93,35 @@ func TestReconcilerSeedsGitHubTrigger(t *testing.T) {
 		t.Errorf("a seed tick recorded deliveries: %+v, %v", rows, err)
 	}
 }
+
+// TestReconcilerImportsIssuesBeforeJudgingTriggers is task 142.7's ordering
+// invariant: for a project resolving to github, the tick's GitHub issue pass
+// runs before the tick lists for — and so judges — the project's GitHub
+// triggers, so a trigger reading issue state sees the same tick's import.
+// The fake gh's argv log is the order the calls were made in.
+func TestReconcilerImportsIssuesBeforeJudgingTriggers(t *testing.T) {
+	f := newFixture(t, "https://github.com/octo/repo.git")
+	newCorpus(t, issueRow(1, "open"))
+	r := f.withPRTrigger(t)
+	r.Tick(t.Context())
+	lines := strings.Split(strings.ReplaceAll(f.ghCalls(t), "\r", ""), "\n")
+	firstIssue, firstPulls := -1, -1
+	for i, line := range lines {
+		if firstIssue < 0 && strings.HasPrefix(line, "api ") && strings.Contains(line, "/issues") {
+			firstIssue = i
+		}
+		if firstPulls < 0 && strings.HasPrefix(line, "pr list") {
+			firstPulls = i
+		}
+	}
+	if firstIssue < 0 || firstPulls < 0 || firstIssue > firstPulls {
+		t.Fatalf("issue pass at line %d, trigger listing at line %d; want the import first:\n%s",
+			firstIssue, firstPulls, strings.Join(lines, "\n"))
+	}
+	if c, err := f.store.GetTriggerCursor(t.Context(), "prs"); err != nil || !c.LastPollOK {
+		t.Errorf("trigger not judged on the tick: %+v, %v", c, err)
+	}
+	if len(f.issues(t)) != 1 {
+		t.Errorf("the tick imported %d issues, want 1", len(f.issues(t)))
+	}
+}

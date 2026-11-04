@@ -603,3 +603,58 @@ func TestTabViewIDsCoverTheVocabulary(t *testing.T) {
 		t.Errorf("tabViewIDs = %v", tabViewIDs)
 	}
 }
+
+// The jira block (task 142.7) on the daemon screen against the real handlers:
+// all four rows show the served defaults, a duration and a variable name each
+// save into config.yaml and the daemon's config, and a value where a name
+// belongs is refused against the field and never reaches the file.
+func TestConfigEditorShowsAndEditsTheJiraKeys(t *testing.T) {
+	h := newConfigLive(t)
+	want := map[string]string{
+		"jira.enabled":       "true",
+		"jira.poll_interval": "5m0s",
+		"jira.user_env":      "JIRA_USER",
+		"jira.token_env":     "JIRA_API_TOKEN",
+	}
+	for i, k := range h.view.keys {
+		v, ok := want[k.path]
+		if !ok {
+			continue
+		}
+		delete(want, k.path)
+		row := ansi.Strip(h.view.configRow(i, k))
+		if !strings.Contains(row, k.label) || !strings.Contains(row, v) {
+			t.Errorf("%s: row %q does not show %q with %q", k.path, row, k.label, v)
+		}
+	}
+	if len(want) > 0 {
+		t.Fatalf("the daemon screen has no row for %v", want)
+	}
+
+	h.open(t, "jira.poll_interval")
+	h.view.form.input.SetValue("15m")
+	h.press(t, "enter")
+	if h.view.form != nil {
+		t.Fatalf("the editor stayed open after a successful save: %+v", h.view.form)
+	}
+	if h.view.config.Jira.PollInterval != "15m0s" || !strings.Contains(h.file(t), "  poll_interval: 15m") {
+		t.Errorf("jira.poll_interval = %q; config.yaml:\n%s", h.view.config.Jira.PollInterval, h.file(t))
+	}
+
+	h.open(t, "jira.token_env")
+	h.view.form.input.SetValue("WORK_JIRA_TOKEN")
+	h.press(t, "enter")
+	if h.view.form != nil || h.view.config.Jira.TokenEnv != "WORK_JIRA_TOKEN" {
+		t.Fatalf("jira.token_env did not save: form %+v, served %q", h.view.form, h.view.config.Jira.TokenEnv)
+	}
+
+	h.open(t, "jira.user_env")
+	h.view.form.input.SetValue("me@example.com")
+	h.press(t, "enter")
+	if h.view.form == nil || h.view.form.err == "" {
+		t.Fatal("a value where a variable name belongs was not refused against the field")
+	}
+	if strings.Contains(h.file(t), "me@example.com") {
+		t.Error("a refused value reached config.yaml")
+	}
+}

@@ -130,6 +130,58 @@ func TestIssueSyncChangedOnlyOnTransitions(t *testing.T) {
 	}
 }
 
+func TestDeleteIssueSyncState(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	put := func(provider string, ok bool) {
+		t.Helper()
+		if err := s.PutIssueSyncState(ctx, IssueSyncState{ProjectID: p.ID, Provider: provider, OK: ok, Reason: map[bool]string{false: "auth"}[ok]}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func() int { return len(issueEvents(t, s, EventIssueSyncChanged)) }
+
+	// Another provider's row is not this provider's to drop.
+	put(IssueProviderJira, true)
+	if err := s.DeleteIssueSyncState(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := s.GetIssueSyncState(ctx, p.ID); err != nil || st.Provider != IssueProviderJira {
+		t.Fatalf("a jira row after a github delete = %+v, %v", st, err)
+	}
+
+	// An ok row goes without a word: no row counts as ok.
+	put(IssueProviderGitHub, true)
+	if err := s.DeleteIssueSyncState(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetIssueSyncState(ctx, p.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an ok github row survived its delete: %v", err)
+	}
+	if n := count(); n != 0 {
+		t.Fatalf("deleting an ok row = %d events, want 0", n)
+	}
+
+	// A failing row's delete is a transition back to ok.
+	put(IssueProviderGitHub, false)
+	if err := s.DeleteIssueSyncState(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Fatal(err)
+	}
+	evs := issueEvents(t, s, EventIssueSyncChanged)
+	if len(evs) != 2 {
+		t.Fatalf("fail then delete = %d events, want 2", len(evs))
+	}
+	if m := payloadOf(t, evs[1]); m["ok"] != true || m["project_id"] != float64(p.ID) {
+		t.Errorf("delete payload = %v", m)
+	}
+
+	// No row at all is nothing to do.
+	if err := s.DeleteIssueSyncState(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Errorf("deleting no row: %v", err)
+	}
+}
+
 func TestRequestIssueSync(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
@@ -178,6 +230,58 @@ func TestRequestIssueSync(t *testing.T) {
 	again, _ := s.GetIssueSyncState(ctx, p.ID)
 	if again.RequestedAt == nil || again.OK || again.Reason != "auth" || again.Repo != "o/r" {
 		t.Errorf("after second request = %+v", again)
+	}
+}
+
+// TestRequestIssueSyncStampsProvider covers the provider-stamped "sync now" (task
+// 142.7): the row records which provider was asked, a later request from
+// another provider re-stamps it, and only a provider that syncs is accepted.
+func TestRequestIssueSyncStampsProvider(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	var calls atomic.Int64
+	s.OnIssueSyncRequested(func(id int64) {
+		if id != p.ID {
+			t.Errorf("callback got %d, want %d", id, p.ID)
+		}
+		calls.Add(1)
+	})
+
+	if err := s.RequestIssueSync(ctx, p.ID, IssueProviderJira); err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("callback ran %d times, want 1", n)
+	}
+	st, err := s.GetIssueSyncState(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Provider != IssueProviderJira || st.RequestedAt == nil || !st.OK {
+		t.Errorf("after jira request = %+v", st)
+	}
+
+	if err := s.RequestIssueSync(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := s.GetIssueSyncState(ctx, p.ID); again.Provider != IssueProviderGitHub || again.RequestedAt == nil {
+		t.Errorf("after github request = %+v", again)
+	}
+
+	for _, bad := range []string{IssueProviderNone, IssueProviderDerive, "gitlab"} {
+		if err := s.RequestIssueSync(ctx, p.ID, bad); err == nil {
+			t.Errorf("provider %q accepted", bad)
+		}
+	}
+	if err := s.RequestIssueSync(ctx, 999, IssueProviderJira); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown project = %v, want ErrNotFound", err)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Errorf("callback ran %d times, want 2 (refused requests must not wake)", n)
+	}
+	if n := len(issueEvents(t, s, EventIssueSyncChanged)); n != 0 {
+		t.Errorf("requests wrote %d sync events", n)
 	}
 }
 

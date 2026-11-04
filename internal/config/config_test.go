@@ -122,6 +122,9 @@ agents:
 		// 035 opt-out default survives: enabled, with task 052's reconciler
 		// interval.
 		GitHub: GitHub{Enabled: true, PollInterval: Duration(5 * time.Minute)},
+		// And for `jira:` — on, five minutes, and the two variable names the
+		// trigger poll-script example already uses (task 142 decision 4).
+		Jira: Jira{Enabled: true, PollInterval: Duration(5 * time.Minute), UserEnv: "JIRA_USER", TokenEnv: "JIRA_API_TOKEN"},
 		// And for `update:` — the release check is on by default (task 055)
 		// and stays on through a config that overrides everything else, which
 		// is what "opt-out" has to mean for it to be true.
@@ -644,6 +647,72 @@ func TestUpdateNegativePollIntervalRefused(t *testing.T) {
 	path := writeConfig(t, "listen: 127.0.0.1:7777\nupdate:\n  poll_interval: -1h\n")
 	if _, err := Load(path); err == nil {
 		t.Fatal("a negative update.poll_interval loaded")
+	}
+}
+
+// GitHub's interval had no clause of its own until task 142.7, so a negative
+// one loaded and read as "do not poll" — the typo update.poll_interval's
+// clause exists to catch.
+func TestGitHubNegativePollIntervalRefused(t *testing.T) {
+	path := writeConfig(t, "listen: 127.0.0.1:7777\ngithub:\n  poll_interval: -1m\n")
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "github.poll_interval") {
+		t.Fatalf("a negative github.poll_interval: err = %v, want one naming the key", err)
+	}
+}
+
+// The Jira block mirrors GitHub's two switches (task 142.7): enabled and a
+// zero interval each stop the pass on their own.
+func TestJiraSwitches(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		yaml  string
+		polls bool
+	}{
+		{"default", "listen: 127.0.0.1:7777\n", true},
+		{"enabled false", "listen: 127.0.0.1:7777\njira:\n  enabled: false\n", false},
+		{"interval zero", "listen: 127.0.0.1:7777\njira:\n  poll_interval: 0\n", false},
+		{"explicit interval", "listen: 127.0.0.1:7777\njira:\n  poll_interval: 1h\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load(writeConfig(t, tc.yaml))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := cfg.Jira.Polls(); got != tc.polls {
+				t.Errorf("Jira.Polls() = %v, want %v (%+v)", got, tc.polls, cfg.Jira)
+			}
+		})
+	}
+}
+
+// user_env and token_env hold variable names, never values (task 142
+// decision 4): anything that is not a portable name — a pasted e-mail or
+// token included — refuses the file, and a negative interval does too.
+func TestJiraValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml, key string
+	}{
+		{"negative interval", "jira:\n  poll_interval: -5m\n", "jira.poll_interval"},
+		{"empty user_env", "jira:\n  user_env: \"\"\n", "jira.user_env"},
+		{"pasted e-mail", "jira:\n  user_env: me@example.com\n", "jira.user_env"},
+		{"leading digit", "jira:\n  token_env: 1TOKEN\n", "jira.token_env"},
+		{"pasted token", "jira:\n  token_env: ATATT3x-abc=\n", "jira.token_env"},
+		{"empty token_env", "jira:\n  token_env: \"\"\n", "jira.token_env"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, "listen: 127.0.0.1:7777\n"+tc.yaml))
+			if err == nil || !strings.Contains(err.Error(), tc.key) {
+				t.Fatalf("err = %v, want one naming %s", err, tc.key)
+			}
+		})
+	}
+	cfg, err := Load(writeConfig(t, "listen: 127.0.0.1:7777\njira:\n  user_env: _MY_JIRA_USER2\n  token_env: work_jira_token\n"))
+	if err != nil {
+		t.Fatalf("valid names refused: %v", err)
+	}
+	if cfg.Jira.UserEnv != "_MY_JIRA_USER2" || cfg.Jira.TokenEnv != "work_jira_token" {
+		t.Errorf("Jira = %+v", cfg.Jira)
 	}
 }
 

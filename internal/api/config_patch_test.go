@@ -729,3 +729,75 @@ func itoaForTest(n int) string {
 	}
 	return string(digits)
 }
+
+// The jira block (task 142.7) is served with its defaults, written into its
+// documented place — uncommenting the shipped block rather than appending a
+// second — and put into force; a negative interval and a value where a
+// variable name belongs are refused with the validation envelope and leave
+// the file alone.
+func TestConfigPatchRoundTripsJira(t *testing.T) {
+	h := newConfigHarness(t)
+	_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	if !strings.Contains(string(getBody),
+		`"jira":{"enabled":true,"poll_interval":"5m0s","user_env":"JIRA_USER","token_env":"JIRA_API_TOKEN"}`) {
+		t.Fatalf("GET /v1/config does not serve the jira defaults: %s", getBody)
+	}
+
+	resp, out := h.patch(t, `{"jira":{"enabled":false,"poll_interval":"15m","user_env":"WORK_JIRA_USER","token_env":"WORK_JIRA_TOKEN"}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, out)
+	}
+	var answered configResponse
+	if err := json.Unmarshal(out, &answered); err != nil {
+		t.Fatalf("parse patch response: %v", err)
+	}
+	want := configJira{Enabled: false, PollInterval: "15m0s", UserEnv: "WORK_JIRA_USER", TokenEnv: "WORK_JIRA_TOKEN"}
+	if answered.Jira != want {
+		t.Errorf("the patch response says %+v, want %+v", answered.Jira, want)
+	}
+	applied := h.cur.Load().Jira
+	if applied.Enabled || applied.PollInterval != config.Duration(15*time.Minute) ||
+		applied.UserEnv != "WORK_JIRA_USER" || applied.TokenEnv != "WORK_JIRA_TOKEN" {
+		t.Errorf("the applied config says %+v", applied)
+	}
+	if n := strings.Count(string(h.bytes(t)), "\njira:"); n != 1 {
+		t.Errorf("jira: appears %d times, want 1:\n%s", n, h.bytes(t))
+	}
+
+	for _, tc := range []struct{ body, key string }{
+		{`{"jira":{"poll_interval":"-1m"}}`, "jira.poll_interval"},
+		{`{"jira":{"token_env":"ATATT3x-secret="}}`, "jira.token_env"},
+		{`{"jira":{"user_env":"me@example.com"}}`, "jira.user_env"},
+	} {
+		before := h.bytes(t)
+		resp, out := h.patch(t, tc.body)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s: status = %d, want 400 (body %s)", tc.body, resp.StatusCode, out)
+		}
+		var env errorBody
+		if err := json.Unmarshal(out, &env); err != nil || env.Error.Code != CodeValidationFailed {
+			t.Fatalf("%s: want the snake_case validation envelope, got %s", tc.body, out)
+		}
+		if !strings.Contains(env.Error.Message, tc.key) {
+			t.Errorf("%s: message %q does not name %s", tc.body, env.Error.Message, tc.key)
+		}
+		if !bytes.Equal(before, h.bytes(t)) {
+			t.Errorf("%s: a refused value changed config.yaml", tc.body)
+		}
+	}
+}
+
+// A negative github.poll_interval had no validate() clause until task 142.7
+// and loaded as "do not poll"; over the API it is refused like jira's.
+func TestConfigPatchRefusesANegativeGitHubInterval(t *testing.T) {
+	h := newConfigHarness(t)
+	resp, out := h.patch(t, `{"github":{"poll_interval":"-5m"}}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, out)
+	}
+	var env errorBody
+	if err := json.Unmarshal(out, &env); err != nil || env.Error.Code != CodeValidationFailed ||
+		!strings.Contains(env.Error.Message, "github.poll_interval") {
+		t.Fatalf("want the validation envelope naming github.poll_interval, got %s", out)
+	}
+}

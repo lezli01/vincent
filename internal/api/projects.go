@@ -99,7 +99,7 @@ func (s *Server) handleProjectList(w http.ResponseWriter, r *http.Request) {
 		for i := range projects {
 			out = append(out, projectWithStats{
 				projectResponse: s.projectResponse(r.Context(), &projects[i], slots[projects[i].ID]),
-				Stats:           s.toProjectStats(stats, ok, projects[i].ID),
+				Stats:           s.toProjectStats(r.Context(), stats, ok, &projects[i]),
 			})
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -226,7 +226,7 @@ func (s *Server) handleProjectGet(w http.ResponseWriter, r *http.Request) {
 	resp := s.projectResponse(r.Context(), p, s.projectSlots(r.Context(), p.ID))
 	if withStats {
 		stats, ok := s.projectStats(r.Context())
-		writeJSON(w, http.StatusOK, projectWithStats{projectResponse: resp, Stats: s.toProjectStats(stats, ok, p.ID)})
+		writeJSON(w, http.StatusOK, projectWithStats{projectResponse: resp, Stats: s.toProjectStats(r.Context(), stats, ok, p)})
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)

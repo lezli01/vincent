@@ -635,7 +635,7 @@ func (v *issuesView) syncCmd() tea.Cmd {
 	if client == nil || pid == 0 {
 		return nil
 	}
-	v.setNote("asking for a GitHub sync…", false)
+	v.setNote("asking for a sync…", false)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
@@ -644,12 +644,16 @@ func (v *issuesView) syncCmd() tea.Cmd {
 	}
 }
 
-// syncedNote words `S`'s answer the way `vincent issue sync` does: a sync
-// requested, or requested but held back by a switch that is off.
+// syncedNote words `S`'s answer the way `vincent issue sync` does: nothing
+// to sync for a project with no provider pass (none, or github pinned off
+// github.com — nothing was recorded, review F3), a sync requested, or
+// requested but held back by a switch that is off.
 func syncedNote(msg issuesSyncedMsg) string {
 	switch s := msg.status; {
 	case msg.err != nil:
 		return "could not ask for a sync: " + errString(msg.err)
+	case !s.OK && (s.Reason == "not_github" || s.Reason == "source_not_github"):
+		return "nothing to sync (" + s.Reason + ")"
 	case !s.Enabled:
 		return "sync requested, but import is off (" + s.Reason + ")"
 	case s.Repo != "":

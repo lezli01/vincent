@@ -64,6 +64,20 @@ func TestWatchReloadsValidAndDropsInvalid(t *testing.T) {
 		t.Fatalf("reloaded tui.output.level = %q, want quiet", got.TUI.Output.Level)
 	}
 
+	// So is the jira: block (task 142.7): the daemon reads config per sync
+	// pass, so the reloaded value is what the next pass sees.
+	write("max_parallel_tasks: 9\njira:\n  poll_interval: 2m\n  token_env: OTHER_TOKEN\n")
+	if got := next(); got.Jira.PollInterval != Duration(2*time.Minute) || got.Jira.TokenEnv != "OTHER_TOKEN" || !got.Jira.Polls() {
+		t.Fatalf("reloaded jira = %+v, want 2m and OTHER_TOKEN", got.Jira)
+	}
+	// A negative interval is dropped like any invalid edit.
+	write("max_parallel_tasks: 9\njira:\n  poll_interval: -2m\n")
+	time.Sleep(4 * debounce)
+	write("max_parallel_tasks: 9\njira:\n  enabled: false\n")
+	if got := next(); got.Jira.PollInterval < 0 || got.Jira.Enabled {
+		t.Fatalf("reloaded jira = %+v, want the valid edit only", got.Jira)
+	}
+
 	// The deprecated project level is stripped on a reload, not rejected
 	// (task 132.9): the reload is delivered, without the level, and carries
 	// the warning.
