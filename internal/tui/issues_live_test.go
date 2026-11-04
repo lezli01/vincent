@@ -243,6 +243,9 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 func TestIssueSyncKeyAgainstTheRealAPI(t *testing.T) {
 	rec := &requestRecorder{}
 	h := newNewTaskLiveHarnessWith(t, liveOptions{wrap: rec.wrap})
+	// A project resolving to no issue source records no request (task
+	// 142.7), so the project must be GitHub-based for "sync now" to land.
+	addLiveRemote(t, h.repo, "https://github.com/octo/repo.git")
 	ctx := context.Background()
 
 	list := issuesListView(t, h)

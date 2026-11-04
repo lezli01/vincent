@@ -32,9 +32,12 @@ func TestProjectFormBindsIssueSourceLive(t *testing.T) {
 		return msg.project, msg.err
 	}
 
+	// The harness wires the API no git runner, and a server that cannot read
+	// origin presumes a derived project GitHub's (task 142.7, issueResolution)
+	// rather than concluding it is not.
 	p := get()
-	if p.IssueSource.Provider != apiclient.IssueProviderDerive || p.IssueSource.Effective != apiclient.IssueProviderNone {
-		t.Fatalf("new project's issue source = %+v, want derive/none", p.IssueSource)
+	if p.IssueSource.Provider != apiclient.IssueProviderDerive || p.IssueSource.Effective != apiclient.IssueProviderGitHub {
+		t.Fatalf("new project's issue source = %+v, want derive/github", p.IssueSource)
 	}
 	f := newProjectForm(client, &p)
 	f.source = apiclient.IssueProviderJira
