@@ -105,9 +105,12 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [x] **142.16** ([#912](https://github.com/lezli01/vincent/issues/912))
   `.Issue.Source.Key`, `VINCENT_ISSUE_KEY`, `source.key` in the issue file,
   and the Jira prefill. Depends: 142.8.
-- [ ] **142.17** ([#913](https://github.com/lezli01/vincent/issues/913)) The
+- [x] **142.17** ([#913](https://github.com/lezli01/vincent/issues/913)) The
   built-ins' checklists and both skills cover Jira-imported issues. Depends:
-  142.16, 142.9.
+  142.16, 142.9. Done: `update-workflows` item 19 and `update-triggers` item
+  21 carry Jira issues, the `by: sync` refusal names the issue's tracker with
+  the trust rule unchanged, and this repository's `github-*` workflows carry a
+  GitHub-only header note — there are no Jira variants.
 - [ ] **142.18** ([#914](https://github.com/lezli01/vincent/issues/914)) A
   scripted end-to-end gate on all three platforms in CI. Depends: 142.13.
 - [ ] **142.19** ([#915](https://github.com/lezli01/vincent/issues/915)) A new

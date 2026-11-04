@@ -1044,6 +1044,13 @@ curl -sf -u "$JIRA_USER:$JIRA_API_TOKEN" \
 printf '{"cursor":"%s"}\n' "$now"
 ```
 
+*Note 2026-11-04 (task 142.17):* Jira Cloud has since retired
+`/rest/api/3/search`; the live examples in
+`skills/vincent-triggers/references/poll-scripts.md` and
+`docs/guides/triggers.md` call `/rest/api/3/search/jql`. The script above is
+kept as decided. A project bound to Jira issue sync (task 142) no longer needs
+it at all: an `issues` trigger sees its imported issues.
+
 *Demonstrates:* the whole of decision 2 — no Jira package, no stored credential
 (`JIRA_API_TOKEN` comes from the daemon's inherited environment, §2), vendor
 field names reaching templates verbatim, and the cursor protocol from appendix A.

@@ -310,8 +310,10 @@ source:
 ```
 
 An `issues` source reads vincent's own record of every issue change, so it
-works on any project — one with no GitHub remote included — and sees a GitHub
-issue the project [imports](tui.md#issues) the same way it sees a local one. It
+works on any project — one with no GitHub remote included — and sees an issue
+the project [imports](tui.md#issues) from GitHub or Jira the same way it sees a
+local one; `.Event.Issue.Source.Provider` (`github`, `jira`, or empty for a
+local issue) tells them apart. It
 takes no `poll_interval` and no `command`: each issue change the daemon commits
 wakes it.
 
@@ -324,7 +326,7 @@ wakes it.
 | It moves to another [lane](tui.md#issues) | `lane_changed`, only when `match.action` names it |
 | A handoff item's outcome moves | `handoff_changed`, only when `match.action` names it |
 
-One GitHub refresh can produce several events. Edits, comments and deletes fire
+One refresh from the tracker can produce several events. Edits, comments and deletes fire
 nothing, and there is no `assigned`: a vincent issue has no assignee, so
 `match.action: assigned` is refused at load.
 
@@ -332,7 +334,7 @@ Every event carries:
 
 - **`id`**, `issue:{issue_id}:{action}:{event id}`.
 - **`action`**, and **`by`**, who made the change: `human`, `agent` (a task's
-  agent, over MCP), `sync` (GitHub, through the importer), or `task` on a
+  agent, over MCP), `sync` (the issue's tracker, through the importer), or `task` on a
   `lane_changed` that a task starting, finishing, being deleted or restored
   caused.
 - **`author`**, the issue's author, and **`state`**, its state now.
@@ -378,7 +380,8 @@ the lanes instead: the new task moves the issue back to `in_progress`, and to
 per lane.
 
 **Trust.** A `human`, `agent` or `task` change was made on this machine and is trusted.
-A `sync` change came from GitHub, and follows the
+A `sync` change came from the issue's tracker (GitHub or Jira), whose author
+someone outside this machine controls, and follows the
 [table below](#trusted-events-and-allowed_actors): `labeled` and `unlabeled`
 are trusted, `opened`, `closed`, `reopened`, `lane_changed` and
 `handoff_changed` are not — sync moves a lane, or resolves a waiting handoff
@@ -976,10 +979,17 @@ limits:
   max_task_cost_usd: 4.00
 ```
 
-The poll script is yours, and it is the whole of the Jira integration. It
-searches Jira using `$VINCENT_TRIGGER_CURSOR` and prints one line per issue,
-with an `id` that includes the issue's update time. It finishes with a cursor
-line. The Jira credential comes from the daemon's environment. `on_fire: create`
+Use a poll script like this for a project vincent does not sync from Jira, or
+for JQL beyond what the project's Jira binding narrows its import to. A project
+bound to Jira issue sync already imports its issues, so an
+[`issues`](#issues-watch-the-projects-issues) trigger matching them is the
+simpler route there: no script, no credential in the daemon's environment, and
+the created task linked to the issue.
+
+The poll script is yours, and it is the whole of this trigger's Jira
+integration. It searches Jira using `$VINCENT_TRIGGER_CURSOR` and prints one
+line per issue, with an `id` that includes the issue's update time. It finishes
+with a cursor line. The Jira credential comes from the daemon's environment. `on_fire: create`
 runs unattended, so pair it with a tight `max_task_cost_usd` and a workflow
 whose steps run in a container. That limit caps one task. If the workflow fans
 out, each lane is a task of its own, so also set
