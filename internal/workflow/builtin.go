@@ -504,10 +504,13 @@ steps:
          pattern where one exists, and a label where its name is a slug a
          person would not read easily. A workflow that digs an issue number out
          of the task title reads .Issue instead — .Issue.Number is the vincent
-         issue id, .Issue.Source the GitHub reference of an imported one, and
-         .Issue.Repo/.Issue.URL deprecated aliases of .Issue.Source.Repo/URL.
-         A template that passes .Issue.Number or the issue field to GitHub
-         uses .Issue.Source.Number / the github_issue field.
+         issue id, .Issue.Source the imported issue's tracker reference
+         (Provider, Repo, Number, Key, URL), and .Issue.Repo/.Issue.URL
+         deprecated aliases of .Issue.Source.Repo/URL. A template that passes
+         .Issue.Number or the issue field to GitHub uses .Issue.Source.Number /
+         the github_issue field. For a Jira issue Source.Number is 0 and
+         $VINCENT_ISSUE_NUMBER is absent: a template keys on
+         .Issue.Source.Key, or tests .Issue.Source.Provider first.
       5. Closed sets and defaults. A field whose legal values are a fixed list
          is type: enum with values:, not a string with a pattern spelling the
          same alternation and not a set restated in prose — only a list can be
@@ -573,23 +576,24 @@ steps:
           on POST /v1/tasks and action.github_issue on a trigger were removed:
           a task is created from an issue by its vincent id — issue_id over the
           API, --issue on the CLI, issue: on a trigger. A step that still
-          creates tasks with a GitHub number first maps it to the issue id with
-          vincent issue ls --project P --github N (running vincent issue sync
-          and looking again when nothing is imported yet), then passes that id
-          to --issue. A declared github_issue workflow field is a field, not
+          creates tasks from a tracker's number or key first maps it to the
+          issue id with vincent issue ls --project P --github N, or --remote
+          KEY for a Jira key (running vincent issue sync and looking again
+          when nothing is imported yet), then passes that id to --issue. A declared github_issue workflow field is a field, not
           that create flag, and keeps its name; only wording that says
           --github-issue fills it goes.
       15. The task's issue from its snapshot. A step that fetches the task's
-          issue from GitHub — gh issue view, or gh api on the issue — to read
-          it reads $VINCENT_ISSUE_FILE instead: the same JSON gh prints, set
-          on every step of a task created from an issue, with no network and
-          no call per fan-out lane. Keep any gh call that acts on the issue.
+          issue from its tracker — gh issue view, gh api on the issue, a Jira
+          REST call — to read it reads $VINCENT_ISSUE_FILE instead: a snapshot
+          in the shape gh issue view --json prints, whose number is null for a
+          Jira issue, set on every step of a task created from an issue, with
+          no network and no call per fan-out lane. Keep any gh call that acts on the issue.
           Where the step must refuse a task with no issue, test for the
           variable and say to create the task from an issue.
       16. The issue's thread from its snapshot. The file's comments and
           .Issue.Comments carry the issue's discussion as it stood at task
-          creation, local and GitHub comments alike. A step that fetches the
-          comments from GitHub, or a prompt that says the issue body is the
+          creation, local and tracker comments alike. A step that fetches the
+          comments from the tracker, or a prompt that says the issue body is the
           whole brief because the thread was unavailable, reads the thread
           from the snapshot instead.
       17. Hand-off readiness. A workflow whose finished work a person judges
@@ -607,6 +611,18 @@ steps:
           .Item.issue.id and .Item.branch. role: handoff makes POST /v1/tasks
           refuse the workflow, so never add it to one a person also starts
           as an ordinary task, and never to a workflow a fan_out lane names.
+      19. Issues from Jira. An imported issue may come from Jira as well as
+          GitHub. A step that assumes GitHub tests .Issue.Source.Provider (or
+          source.provider in $VINCENT_ISSUE_FILE) before calling gh, and one
+          that identifies the issue on its tracker uses .Issue.Source.Key,
+          $VINCENT_ISSUE_KEY or source.key. Never assume number is set: it is
+          null in the snapshot, 0 in .Issue.Source.Number and absent from
+          $VINCENT_ISSUE_NUMBER for a Jira issue. Look an issue up by its key
+          with vincent issue ls --project P --remote KEY, and never fetch it
+          from the tracker — no gh issue view, no Jira REST call — when the
+          snapshot already carries it. A workflow that only ever reads or
+          writes GitHub issues with gh stays GitHub-only; say so in its
+          header comment rather than adding a Jira branch nobody asked for.
 
       ## What you may not change
 
@@ -1152,14 +1168,14 @@ steps:
       2. An explicit dedupe_key — within "What you may not change" below.
       3. limits.max_per_hour.
       4. limits.max_task_cost_usd on a create_task action.
-      5. issue or github_pull to link a created task, instead of a number
-         parsed out of a title. issue takes a vincent issue id and does not
+      5. issue or github_pull to link a created task, instead of a number or
+         tracker key parsed out of a title. issue takes a vincent issue id and does not
          combine with github_pull.
       6. No poll_interval on an issues, github_issues or github_prs source;
          issues is woken by each issue change, the GitHub two run on
          github.poll_interval.
-      7. allowed_actors wherever match.action can match an untrusted GitHub
-         event — anything but issue labeled, unlabeled or assigned and pull
+      7. allowed_actors wherever match.action can match an untrusted event
+         from GitHub, or arriving by: sync from the issue's tracker — anything but issue labeled, unlabeled or assigned and pull
          request merged, and an absent match.action matches everything but
          the opt-in lane_changed and handoff_changed.
       8. A follow_up, retry or cancel action carries none of the keys a
@@ -1193,14 +1209,17 @@ steps:
           destroys work in flight and is not yours to add. Say in the report
           that a paused task holds its group, so under the on_fire: propose
           default one unadmitted proposal stops the trigger until a human acts.
-      16. Migrate github_issues to issues when the project imports issues: the
-          same events (but no assigned) on the imported issues, arriving by:
-          sync, with the task linked through issue: rendering .Event.issue_id,
-          and match: by: human where the trigger's own agent writes issues.
-          github_issues is deprecated, not removed. .Event.Issue.Number is the
-          vincent id on issues, so a dedupe_key built from it renders anew:
-          when the trigger is armed, report the migration as a finding rather
-          than making it, as item 14 does for a source.type change.
+      16. Migrate github_issues to issues when the project imports its issues:
+          the same events (but no assigned) on the imported issues, arriving
+          by: sync from the tracker, with the task linked through issue:
+          rendering .Event.issue_id, and match: by: human where the trigger's
+          own agent writes issues. github_issues is deprecated, not removed.
+          .Event.Issue.Number is the vincent id on issues, so a dedupe_key
+          built from it renders anew: when the trigger is armed, report the
+          migration as a finding rather than making it, as item 14 does for a
+          source.type change. .Event.Issue.Source carries Provider, Repo and
+          Number but no Key; a Jira key reaches the created task's snapshot
+          as source.key, so build a dedupe_key from .Event.issue_id instead.
       17. action.github_issue becomes action.issue. github_issue was removed,
           so a file still carrying it fails validation and fires nothing until
           it is edited (its cursor is kept). Replace it with issue: rendering
@@ -1237,6 +1256,15 @@ steps:
           item's outcome is match.action: handoff_changed (opt-in, carrying
           outcome, from_outcome, handoff_id and task_id), which needs
           allowed_actors unless match.by leaves out sync.
+      21. Issues from Jira. by: sync may be Jira's importer as well as
+          GitHub's, and it stays untrusted for both: item 7 applies unchanged.
+          The provider is .Event.Issue.Source.Provider, so a trigger meant for
+          one tracker's issues tests it in if:. A poll script that queries
+          Jira for a project bound to Jira issue sync becomes an issues
+          trigger on that project — a source.type change item 14 reports
+          rather than makes on an armed trigger. A poll script stays for a
+          project vincent does not sync from Jira, and for JQL beyond the
+          binding's narrowing clause.
 
       ## What you may not change
 

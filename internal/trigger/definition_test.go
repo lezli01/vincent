@@ -1,6 +1,9 @@
 package trigger
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestParseVariantRefusals covers the rules 096.3–096.5 added, each at the
 // path a form renders it against.
@@ -197,5 +200,36 @@ func TestDeprecations(t *testing.T) {
 		if (src == SourceGitHubIssues) != (len(got) == 1) {
 			t.Errorf("%s: deprecations = %v", src, got)
 		}
+	}
+}
+
+// TestSyncTrustIsTrackerNeutral pins task 142.17 decision 2: the
+// allowed_actors refusal for a by: sync change on an issues source names the
+// issue's tracker, GitHub or Jira, rather than GitHub alone — and it is still
+// a refusal for every action sync can deliver, so the rule itself is
+// unchanged.
+func TestSyncTrustIsTrackerNeutral(t *testing.T) {
+	for _, action := range []string{"opened", "closed", "reopened", "lane_changed"} {
+		t.Run(action, func(t *testing.T) {
+			doc := docFor(SourceIssues, ActionCreateTask)
+			setPath(doc, "match.action", action, false)
+			var msg string
+			for _, e := range parseDoc(t, doc) {
+				if e.Path == "allowed_actors" {
+					msg = e.Message
+				}
+			}
+			if msg == "" {
+				t.Fatalf("by: sync on %s loaded without allowed_actors", action)
+			}
+			for _, want := range []string{"the issue's tracker", "GitHub or Jira", "leave sync out of match.by"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("message %q lacks %q", msg, want)
+				}
+			}
+			if strings.Contains(msg, "public repository") {
+				t.Errorf("message %q still gives the GitHub-only rationale", msg)
+			}
+		})
 	}
 }

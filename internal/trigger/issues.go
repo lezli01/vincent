@@ -40,9 +40,9 @@ import (
 // handoff.item_changed event the same table carries, with the item's outcome
 // moved to and from as `outcome` and `from_outcome`, its `handoff_id`, and
 // the handoff's task as `task_id`. It is opt-in the same way. Its `by` is the
-// item's actor; only `sync` — a GitHub close resolving a waiting item — is
-// an outsider's, and the load-time trust check holds it to allowed_actors as
-// it holds closed.
+// item's actor; only `sync` — a close on the issue's tracker (GitHub or
+// Jira) resolving a waiting item — is an outsider's, and the load-time
+// trust check holds it to allowed_actors as it holds closed.
 
 // issueEventTypes are the issue.* events the source reads. Edits, comments,
 // deletes and issue.sync_changed fire nothing, so they are not read.

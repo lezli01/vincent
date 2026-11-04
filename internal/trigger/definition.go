@@ -768,9 +768,12 @@ func validateGitHubTrust(d *Definition, add addFunc, _ refuseFunc) {
 	for _, a := range actions {
 		if !trustedEvents[d.Source.Type][a] {
 			if d.IsIssues() {
-				add("allowed_actors", "is required: this trigger can match %q arriving by sync from GitHub, "+
-					"whose author an outsider controls on a public repository; list the authors to accept, "+
-					"match only %s, or leave sync out of match.by",
+				// The rationale is the tracker's, not GitHub's (task 142.17
+				// decision 2): a sync change from Jira is as untrusted as one
+				// from GitHub, and the rule does not distinguish them.
+				add("allowed_actors", "is required: this trigger can match %q arriving by sync from the issue's "+
+					"tracker (GitHub or Jira), whose author someone outside this machine controls; "+
+					"list the authors to accept, match only %s, or leave sync out of match.by",
 					a, strings.Join(trustedList(d.Source.Type), ", "))
 				return
 			}
