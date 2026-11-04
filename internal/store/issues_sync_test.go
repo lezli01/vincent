@@ -130,6 +130,58 @@ func TestIssueSyncChangedOnlyOnTransitions(t *testing.T) {
 	}
 }
 
+func TestDeleteIssueSyncState(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	put := func(provider string, ok bool) {
+		t.Helper()
+		if err := s.PutIssueSyncState(ctx, IssueSyncState{ProjectID: p.ID, Provider: provider, OK: ok, Reason: map[bool]string{false: "auth"}[ok]}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func() int { return len(issueEvents(t, s, EventIssueSyncChanged)) }
+
+	// Another provider's row is not this provider's to drop.
+	put(IssueProviderJira, true)
+	if err := s.DeleteIssueSyncState(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := s.GetIssueSyncState(ctx, p.ID); err != nil || st.Provider != IssueProviderJira {
+		t.Fatalf("a jira row after a github delete = %+v, %v", st, err)
+	}
+
+	// An ok row goes without a word: no row counts as ok.
+	put(IssueProviderGitHub, true)
+	if err := s.DeleteIssueSyncState(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetIssueSyncState(ctx, p.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an ok github row survived its delete: %v", err)
+	}
+	if n := count(); n != 0 {
+		t.Fatalf("deleting an ok row = %d events, want 0", n)
+	}
+
+	// A failing row's delete is a transition back to ok.
+	put(IssueProviderGitHub, false)
+	if err := s.DeleteIssueSyncState(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Fatal(err)
+	}
+	evs := issueEvents(t, s, EventIssueSyncChanged)
+	if len(evs) != 2 {
+		t.Fatalf("fail then delete = %d events, want 2", len(evs))
+	}
+	if m := payloadOf(t, evs[1]); m["ok"] != true || m["project_id"] != float64(p.ID) {
+		t.Errorf("delete payload = %v", m)
+	}
+
+	// No row at all is nothing to do.
+	if err := s.DeleteIssueSyncState(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Errorf("deleting no row: %v", err)
+	}
+}
+
 func TestRequestIssueSync(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

@@ -517,6 +517,59 @@ func TestIssueSyncStopsOnARepointedOrigin(t *testing.T) {
 	}
 }
 
+// An origin re-pointed off github.com is not a rebind, so nothing else
+// drops the GitHub row the project synced into (review F1): the pass must,
+// or the row reads as a healthy GitHub sync for ever.
+func TestIssueSyncDropsTheRowOfAnOriginMovedOffGitHub(t *testing.T) {
+	f := newFixture(t, "https://github.com/octo/repo.git")
+	newCorpus(t, issueRow(1, "open"))
+	r := f.reconciler()
+	r.Tick(t.Context())
+	if st := f.syncState(t); !st.OK || st.LastOKAt == nil {
+		t.Fatalf("first import: %+v", st)
+	}
+	testrepo.Run(t, f.project.Path, "remote", "set-url", "origin", "https://gitlab.com/octo/repo.git")
+	events := f.lastEventID(t)
+	before := len(f.apiCalls(t))
+	r.Tick(t.Context())
+	if calls := f.apiCalls(t)[before:]; len(calls) != 0 {
+		t.Errorf("an origin off github.com was listed: %v", calls)
+	}
+	if _, err := f.store.GetIssueSyncState(t.Context(), f.project.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("an origin off github.com kept its GitHub sync row: %v", err)
+	}
+	// The row was ok, and no row counts as ok: no transition to announce.
+	if evs := f.eventsAfter(t, events, store.EventIssueSyncChanged); len(evs) != 0 {
+		t.Errorf("dropping an ok row announced %d sync changes, want 0", len(evs))
+	}
+	if is := f.issues(t)[1]; is.Remote.Repo != "octo/repo" {
+		t.Errorf("the imported issue lost its remote: %+v", is.Remote)
+	}
+	// "sync now" is the other route in: a request that wakes the pass on
+	// such a project leaves no row behind either.
+	if err := f.store.RequestIssueSync(t.Context(), f.project.ID, store.IssueProviderGitHub); err != nil {
+		t.Fatal(err)
+	}
+	r.SyncRequested(t.Context())
+	if _, err := f.store.GetIssueSyncState(t.Context(), f.project.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a requested sync off github.com left a row: %v", err)
+	}
+}
+
+// An origin that cannot be read is not an origin off github.com: the row
+// and its watermarks survive a git failure.
+func TestIssueSyncKeepsTheRowOfAnUnreadableOrigin(t *testing.T) {
+	f := newFixture(t, "https://github.com/octo/repo.git")
+	newCorpus(t, issueRow(1, "open"))
+	r := f.reconciler()
+	r.Tick(t.Context())
+	testrepo.Run(t, f.project.Path, "remote", "remove", "origin")
+	r.Tick(t.Context())
+	if st := f.syncState(t); !st.OK || st.Repo != "octo/repo" || st.LastOKAt == nil {
+		t.Errorf("an unreadable origin changed the row: %+v", st)
+	}
+}
+
 func TestIssueSyncChangedFiresOnTransitionsOnly(t *testing.T) {
 	f := newFixture(t, "https://github.com/octo/repo.git")
 	newCorpus(t, issueRow(1, "open"))

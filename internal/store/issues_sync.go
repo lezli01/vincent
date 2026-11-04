@@ -168,6 +168,36 @@ func (s *Store) PutIssueSyncState(ctx context.Context, st IssueSyncState) error 
 	})
 }
 
+// DeleteIssueSyncState drops the project's sync row when provider stamped
+// it, and does nothing otherwise — a row of another provider, or no row at
+// all, is left as it is. It is how a project that stopped being provider's
+// without a rebind (an origin re-pointed off github.com, review F1) loses
+// the row it can no longer refresh: a project resolving to none has no row
+// (task 142.7). Like PutIssueSyncState it treats a missing row as ok, so
+// deleting a failing row announces issue.sync_changed {ok: true} and
+// deleting an ok one announces nothing.
+func (s *Store) DeleteIssueSyncState(ctx context.Context, projectID int64, provider string) error {
+	return s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		var prevOK bool
+		err := tx.QueryRowContext(ctx, `SELECT ok FROM issue_sync_state WHERE project_id = ? AND provider = ?`,
+			projectID, provider).Scan(&prevOK)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read issue sync state of project %d: %w", projectID, err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM issue_sync_state WHERE project_id = ? AND provider = ?`,
+			projectID, provider); err != nil {
+			return nil, fmt.Errorf("delete issue sync state of project %d: %w", projectID, err)
+		}
+		if prevOK {
+			return nil, nil
+		}
+		return issueSyncEvent(IssueSyncState{ProjectID: projectID, OK: true})
+	})
+}
+
 // issueSyncEvent builds issue.sync_changed: project-scoped like every issue
 // event, reason omitted when ok.
 func issueSyncEvent(st IssueSyncState) (*Event, error) {

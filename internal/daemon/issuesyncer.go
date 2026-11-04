@@ -233,13 +233,68 @@ func resolvesToJira(project store.Project) bool {
 // trigger and pull request halves alike (review F1). Only a project that
 // resolves to github with a github.com origin is GitHub's: one resolving
 // to none, or explicitly bound to github on another host, gets no pass and
-// no sync row.
+// no sync row — and loses the GitHub row it already had (dropGitHubRow).
 func (s *IssueSyncer) gitHubPass(ctx context.Context, project store.Project, repo github.Repo, ok, haveClient bool) {
 	if !ok || issuesource.ResolveWith(project, repo, ok).Provider != issuesource.ProviderGitHub {
+		s.dropGitHubRow(ctx, project, ok)
 		return
 	}
 	b, bound := s.issueBinding(ctx, project, repo, ok)
 	s.syncIssues(ctx, project, b, bound, haveClient)
+}
+
+// dropGitHubRow deletes the GitHub sync row of a project that is no longer
+// GitHub's (review F1 of the 770 train). A rebind deletes the row in its
+// own transaction, but an origin re-pointed off github.com is not a rebind:
+// without this the row kept its provider, its ok and its last_synced_at
+// for ever, so the API, the project stats and doctor all reported a
+// healthy GitHub sync that would never run again, and "sync now" — which
+// records nothing for such a project — could not clear it. With the row
+// gone the API derives not_github from the resolution, which is what task
+// 142.7 says a project resolving to none reads.
+//
+// originGitHub false is also how RepoOf reports an origin it could not
+// read at all (no git runner, a git failure, a timeout). That is not a
+// verdict about the origin, so the row is dropped only when origin reads
+// back and still names no github.com repository: a transient git failure
+// must not cost a project its watermarks. The re-read is one git call, and
+// only for a project that still has a GitHub row, which this then deletes.
+// The delete runs under the issue-source gate like any pass's write, and a
+// rebind that committed meanwhile makes the pass stand down (beginPass).
+func (s *IssueSyncer) dropGitHubRow(ctx context.Context, project store.Project, originGitHub bool) {
+	st, err := s.store.GetIssueSyncState(ctx, project.ID)
+	if err != nil || st.Provider != issuesource.ProviderGitHub {
+		return
+	}
+	if !originGitHub && !s.originReadable(ctx, project) {
+		return
+	}
+	passCtx, cur, _, done, ok := s.beginPass(ctx, project, issuesource.ProviderGitHub)
+	if !ok {
+		return
+	}
+	defer done()
+	if passCtx.Err() != nil {
+		return
+	}
+	if err := s.store.DeleteIssueSyncState(passCtx, cur.ID, issuesource.ProviderGitHub); err != nil {
+		s.logger.Warn("issue sync: stale GitHub row not dropped", "project", project.ID, "error", err)
+		return
+	}
+	s.logger.Info("issue sync stopped", "project", project.ID, "provider", issuesource.ProviderGitHub,
+		"reason", "origin is not a github.com remote")
+}
+
+// originReadable is whether project's origin URL can be read at all,
+// whatever host it names.
+func (s *IssueSyncer) originReadable(ctx context.Context, project store.Project) bool {
+	if s.git == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
+	defer cancel()
+	_, err := s.git.Run(ctx, project.Path, "remote", "get-url", "origin")
+	return err == nil
 }
 
 // jiraPass is one Jira attempt for project, under the same issue-source

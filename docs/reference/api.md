@@ -918,7 +918,7 @@ When `ok` is false, `reason` says why:
 | `disabled` | A Jira project, and `jira.enabled` is false |
 | `poll_disabled` | The provider's `poll_interval` is `0`: the integration is on, the background tick is not |
 | `pending` | The importer has not attempted this project yet |
-| `not_github` | The issue source is derived and `origin` is missing or not a github.com repository, or it is pinned to `github` on such an origin. Such a project has no sync row; the reason is derived when it is read |
+| `not_github` | The issue source is derived and `origin` is missing or not a github.com repository, or it is pinned to `github` on such an origin. Such a project has no sync row — one whose `origin` moves off github.com loses the row it had on the next pass — and the reason is derived when it is read |
 | `source_not_github` | The project's [issue source](#issue-source) is pinned to `none`. It has no sync row either |
 | `no_credential` | A Jira project, and the variable named by `jira.user_env` or `jira.token_env` is unset |
 | `no_client` | The daemon has no client wired for the provider — for Jira, every project with its credential set, until the Jira client ships |

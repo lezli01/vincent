@@ -8691,7 +8691,11 @@ a github.com remote, `none` otherwise.
   `jira.enabled`/`poll_interval` and a source. Both loops kick it, and it is
   still one serialized writer.
 - **A project resolving to `none` has no sync row.** The importer no longer
-  writes `not_github` rows, and migration 0052 deletes the old ones. With no
+  writes `not_github` rows, and migration 0052 deletes the old ones. A
+  project that stops being GitHub's without a rebind — its `origin`
+  re-pointed off github.com — loses its GitHub row on the next pass, once
+  `origin` reads back naming another host (an `origin` that cannot be read
+  at all keeps the row). With no
   row, `GET /v1/projects/{id}/issues/sync` derives the reason rather than
   saying `pending`: `not_github` for an unbound project whose origin is not
   github.com, `source_not_github` for an explicit `none`. A `jira` binding no
