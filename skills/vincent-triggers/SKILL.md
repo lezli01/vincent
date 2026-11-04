@@ -149,7 +149,10 @@ before changing the design.
   - **Trust.** `human` and `agent` changes are local and trusted. A `sync`
     change arrives from the issue's tracker (GitHub or Jira), whose author
     someone outside this machine controls, so it follows `github_issues`'
-    rule for every tracker alike: `labeled` and `unlabeled` are trusted;
+    rule: `labeled` and `unlabeled` are trusted (a judgement made against
+    GitHub's roles, where labelling needs triage; on Jira anyone who may
+    edit the issue may label it, so flag that to the user before relying
+    on it there);
     `opened`, `closed`, `reopened`, `lane_changed` and `handoff_changed`
     (which sync delivers only for a tracker close or reopen) need
     `allowed_actors`, matched

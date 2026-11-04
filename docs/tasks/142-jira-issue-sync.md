@@ -110,7 +110,9 @@ lists only the hard dependencies the parent records as "Blocked by".
   142.16, 142.9. Done: `update-workflows` item 19 and `update-triggers` item
   21 carry Jira issues, the `by: sync` refusal names the issue's tracker with
   the trust rule unchanged, and this repository's `github-*` workflows carry a
-  GitHub-only header note — there are no Jira variants.
+  GitHub-only header note — there are no Jira variants. The trusted
+  `labeled`/`unlabeled` exemption is verified for GitHub only (open
+  question 11).
 - [ ] **142.18** ([#914](https://github.com/lezli01/vincent/issues/914)) A
   scripted end-to-end gate on all three platforms in CI. Depends: 142.13.
 - [ ] **142.19** ([#915](https://github.com/lezli01/vincent/issues/915)) A new
@@ -473,6 +475,17 @@ explicitly. A "proposed default" is open until that issue.
    beside `github.sync`.
 10. **#897's own: should spec §3's Jira row land ahead of code, or with
     #908?** *Settled by the author 2026-11-03:* with #908 (decision 10).
+11. **Is a Jira `labeled`/`unlabeled` by sync trusted?** *Open, raised
+    2026-11-04 by #913's review (F4).* An `issues` trigger reads one trust
+    table for `by: sync` whatever the tracker (`trustedEvents` in
+    `internal/trigger/definition.go`), and it exempts `labeled` and
+    `unlabeled` from `allowed_actors`. That exemption was confirmed against
+    GitHub's repository role table, where labelling needs triage. Nobody has
+    checked it against Jira, where labels are an ordinary field that anyone
+    who may edit the issue can change, and the reporter may be one of them,
+    depending on the permission scheme. 142.17 left the behaviour as it
+    was, because a trust change is out of its scope. This should be settled
+    before the importer (142.12, #908) delivers Jira label changes.
 
 ## Facts carried unverified
 

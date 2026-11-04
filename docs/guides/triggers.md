@@ -385,7 +385,11 @@ someone outside this machine controls, and follows the
 [table below](#trusted-events-and-allowed_actors): `labeled` and `unlabeled`
 are trusted, `opened`, `closed`, `reopened`, `lane_changed` and
 `handoff_changed` are not — sync moves a lane, or resolves a waiting handoff
-item, only by closing or reopening. An `issues` trigger that
+item, only by closing or reopening. The table was judged against GitHub's
+roles, where labelling needs triage. A Jira label is an ordinary field that
+anyone who may edit the issue can change, so before a Jira-bound trigger
+relies on `labeled` from sync, consider naming `allowed_actors` anyway.
+An `issues` trigger that
 can match one of those from sync is refused at load unless it names
 `allowed_actors` — or its `match.by` leaves out `sync`. At judge time the list is
 checked against the author of `sync` events only; a local person's `opened` is

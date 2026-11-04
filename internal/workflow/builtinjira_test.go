@@ -81,3 +81,20 @@ func TestBuiltinsDoNotCallSourceGitHubOnly(t *testing.T) {
 		}
 	}
 }
+
+// The trusted labeled/unlabeled exemption is verified against GitHub's roles
+// only (task 142 open question 11, review F4), so no trigger built-in — each
+// splices the vincent-triggers skill — may present it as settled for Jira.
+func TestTriggerBuiltinsDoNotClaimJiraLabelTrust(t *testing.T) {
+	for name, src := range map[string]string{
+		CreateTriggerName:  CreateTriggerSource,
+		UpdateTriggersName: UpdateTriggersSource,
+	} {
+		if strings.Contains(src, "for every tracker alike") {
+			t.Errorf("%s says the sync trust table holds for every tracker alike", name)
+		}
+		if !strings.Contains(src, "GitHub's roles, where labelling needs triage") {
+			t.Errorf("%s no longer says the labeled exemption was judged against GitHub's roles", name)
+		}
+	}
+}
