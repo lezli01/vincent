@@ -534,23 +534,31 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// Since task 096.3 the same tick judges GitHub triggers: one listing per
 	// kind per project that has an armed GitHub trigger, shared by every
 	// trigger on it (decision 31D). Since task 130.8 it first imports and
-	// refreshes each GitHub-based project's issues (issuesync.go) — an idle
-	// repository costs one conditional request a tick, answered 304 — and a
-	// "sync now" recorded through the store wakes it between ticks.
+	// refreshes each project resolving to github (issuesync.go) — an idle
+	// repository costs one conditional request a tick, answered 304.
 	//
-	// Since task 130.10 the issue state write-back drain runs beside it: a
+	// Since task 142.7 issue sync has its own loop beside it (issuesyncer.go):
+	// the reconciler keeps running the GitHub issue pass inline, before its
+	// triggers, while the issue loop owns the Jira pass on
+	// `jira.poll_interval` and every "sync now" recorded through the store,
+	// for either provider — so a slow Jira site never delays pull request
+	// linking.
+	//
+	// Since task 130.10 the issue state write-back drain runs beside them: a
 	// human's close or reopen of an imported issue enqueues a row in the
 	// transaction that makes it, and the drain sends it — woken by the
-	// enqueue, by every tick, and by a "sync now".
+	// enqueue, by every tick of either loop, and by a "sync now".
 	outbox := NewIssueOutbox(st, currentConfig, githubClient, logger)
 	reconciler := NewPullReconciler(st, currentConfig, git, githubClient, logger).
 		WithTriggers(triggers).WithOutbox(outbox)
+	issueSync := reconciler.IssueSyncer
 	st.OnIssueSyncRequested(func(projectID int64) {
-		reconciler.RequestSync(projectID)
+		issueSync.RequestSync(projectID)
 		outbox.Kick()
 	})
 	st.OnIssueOutboxEnqueued(outbox.Kick)
 	go reconciler.Run(ctx)
+	go issueSync.Run(ctx)
 	go outbox.Run(ctx)
 	// The release check (task 055, §12.3), the same shape again: one
 	// goroutine, config per tick, quiet failure. It is the daemon's first

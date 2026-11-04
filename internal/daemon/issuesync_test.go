@@ -453,11 +453,13 @@ func TestIssueSyncMakesNoCallWhenSwitchedOff(t *testing.T) {
 			tc.set(f)
 			r := f.reconciler()
 			ctx, cancel := context.WithCancel(t.Context())
-			done := make(chan struct{})
-			go func() { r.Run(ctx); close(done) }()
+			done := make(chan struct{}, 2)
+			go func() { r.Run(ctx); done <- struct{}{} }()
+			go func() { r.IssueSyncer.Run(ctx); done <- struct{}{} }()
 			r.RequestSync(f.project.ID)
 			time.Sleep(300 * time.Millisecond)
 			cancel()
+			<-done
 			<-done
 			if calls := f.ghCalls(t); calls != "" {
 				t.Fatalf("a switched-off sync invoked gh:\n%s", calls)
@@ -475,11 +477,13 @@ func TestIssueSyncGatesRecordWhy(t *testing.T) {
 	events := f.lastEventID(t)
 	r.Tick(t.Context())
 	r.Tick(t.Context())
-	if st := f.syncState(t); st.OK || st.Reason != syncReasonNotGitHub {
-		t.Errorf("non-GitHub project: %+v", st)
+	// A project resolving to none gets no row at all (task 142.7): the API
+	// derives not_github from its origin.
+	if _, err := f.store.GetIssueSyncState(t.Context(), f.project.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("non-GitHub project wrote a sync row: %v", err)
 	}
-	if evs := f.eventsAfter(t, events, store.EventIssueSyncChanged); len(evs) != 1 {
-		t.Errorf("two failing ticks announced %d sync changes, want 1", len(evs))
+	if evs := f.eventsAfter(t, events, store.EventIssueSyncChanged); len(evs) != 0 {
+		t.Errorf("two ticks of a non-GitHub project announced %d sync changes, want 0", len(evs))
 	}
 	if calls := f.ghCalls(t); calls != "" {
 		t.Errorf("a non-GitHub project invoked gh:\n%s", calls)
@@ -574,9 +578,11 @@ func TestIssueSyncNowWakesTheLoop(t *testing.T) {
 	r := f.reconciler()
 	f.store.OnIssueSyncRequested(r.RequestSync)
 	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() { r.Run(ctx); close(done) }()
-	t.Cleanup(func() { cancel(); <-done })
+	done := make(chan struct{}, 2)
+	go func() { r.Run(ctx); done <- struct{}{} }()
+	// "Sync now" is the issue loop's (task 142.7).
+	go func() { r.IssueSyncer.Run(ctx); done <- struct{}{} }()
+	t.Cleanup(func() { cancel(); <-done; <-done })
 
 	waitFor(t, func() bool { return len(f.issues(t)) == 1 })
 	c.rows = append(c.rows, issueRow(2, "open"))
@@ -610,7 +616,8 @@ func (c *bindCounter) Bind(ctx context.Context, project store.Project) (issuesou
 // TestIssueSyncTickReadsOriginOnce: a tick derives a project's binding from
 // the origin it already read for the pull request half, rather than having
 // the importer read origin a second time (review F1). A "sync now", which
-// has no such reading, binds for itself.
+// has no such reading, reads origin once itself — to resolve the project —
+// and binds from that reading too, never through the source's Bind.
 func TestIssueSyncTickReadsOriginOnce(t *testing.T) {
 	f := newFixture(t, "https://github.com/octo/repo.git")
 	newCorpus(t, issueRow(1, "open"))
@@ -628,7 +635,10 @@ func TestIssueSyncTickReadsOriginOnce(t *testing.T) {
 		t.Fatalf("request: %v", err)
 	}
 	r.SyncRequested(t.Context())
-	if src.binds != 1 {
-		t.Errorf("a sync now bound %d times, want 1", src.binds)
+	if src.binds != 0 {
+		t.Errorf("a sync now bound %d times, want 0: origin was read again", src.binds)
+	}
+	if st := f.syncState(t); st.RequestedAt != nil {
+		t.Errorf("the sync now was not served: %+v", st)
 	}
 }

@@ -8,13 +8,13 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
-	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/trigger"
 )
 
-// The task↔pull-request reconciler (task 052, spec §12.3), which since task
-// 130.8 is also the issue importer's clock.
+// The task↔pull-request reconciler (task 052, spec §12.3), which also
+// paces the GitHub issue import (task 130.8; since task 142.7 through the
+// shared IssueSyncer, issuesyncer.go).
 //
 // It is a daemon subsystem rather than a side effect of the listing endpoint,
 // for two reasons. A link written only when someone opens a screen exists
@@ -24,38 +24,31 @@ import (
 //
 // It is modelled on internal/notify's posture: it reads the config per tick,
 // so a hot reload governs the next one, and it is bounded — per GitHub-based
-// project, one issue import pass (issuesync.go), one GitHub trigger listing
-// per kind, and one pull request listing. The pull request half's failure
-// policy is **quiet**: a rate-limited or unreachable GitHub degrades to "no
-// new links this tick" and logs at debug, never a per-tick error storm and
-// never a task state change. The issue half's is not (issuesync.go): its
-// failures are logged and recorded on the project's sync row, because a
-// stalled sync is an issue list that silently lies. This is the daemon's
-// standing outbound network traffic, and `github.poll_interval: 0` switches
-// all of it off without switching the integration off.
+// project, one issue import pass (for a project resolving to github), one
+// GitHub trigger listing per kind, and one pull request listing. The pull
+// request half's failure policy is **quiet**: a rate-limited or unreachable
+// GitHub degrades to "no new links this tick" and logs at debug, never a
+// per-tick error storm and never a task state change. The issue half's is
+// not (issuesync.go): its failures are logged and recorded on the project's
+// sync row, because a stalled sync is an issue list that silently lies. This
+// is the daemon's standing outbound GitHub traffic, and
+// `github.poll_interval: 0` switches all of it off without switching the
+// integration off.
+//
+// Issue sync for other providers, and every "sync now", is the IssueSyncer's
+// own loop (task 142.7): a slow Jira site never delays this tick, and this
+// tick never waits on that loop. The GitHub issue pass stays inline here so
+// that a project's import precedes the judgement of its GitHub triggers in
+// the same tick — see Tick.
 
-// PullReconciler links tasks to the pull requests opened from their branches.
+// PullReconciler links tasks to the pull requests opened from their
+// branches. It holds the IssueSyncer whose GitHub pass it runs, and shares
+// that syncer's store, config, git runner, client, clock and outbox.
 type PullReconciler struct {
-	store  *store.Store
-	cfg    func() config.Config
-	git    *gitx.Git
-	client *github.Client
-	logger *slog.Logger
-	// issueSrc is the issue importer's source (task 142.4): GitHub over
-	// client and git. It is never nil — its Bind is how a project is judged
-	// GitHub-based even with no client — and calls are gated on client.
-	issueSrc issuesource.Source
+	*IssueSyncer
 	// triggers is judged on the same tick (task 096.3, decision 31D); nil is
 	// a reconciler with no GitHub triggers to feed.
 	triggers *trigger.Manager
-	// outbox is kicked at the end of every tick (task 130.10); nil is a
-	// reconciler with no write-back drain to wake.
-	outbox *IssueOutbox
-	// now is the clock, seamed for tests.
-	now func() time.Time
-	// wake is a "sync now" (store.RequestIssueSync): one slot, so requests
-	// arriving while one is pending coalesce into it.
-	wake chan struct{}
 }
 
 // WithTriggers makes the tick also judge GitHub triggers.
@@ -64,40 +57,27 @@ func (r *PullReconciler) WithTriggers(m *trigger.Manager) *PullReconciler {
 	return r
 }
 
-// WithOutbox makes every tick wake the issue state write-back drain.
+// WithOutbox makes every tick — this reconciler's and the issue loop's —
+// wake the issue state write-back drain.
 func (r *PullReconciler) WithOutbox(o *IssueOutbox) *PullReconciler {
 	r.outbox = o
 	return r
 }
 
-// NewPullReconciler builds the reconciler. It performs no I/O.
+// NewPullReconciler builds the reconciler over a new IssueSyncer, which the
+// caller runs as the issue loop (r.IssueSyncer.Run). It performs no I/O.
 func NewPullReconciler(
 	st *store.Store, cfg func() config.Config,
 	git *gitx.Git, client *github.Client, logger *slog.Logger,
 ) *PullReconciler {
-	return &PullReconciler{
-		store: st, cfg: cfg, git: git, client: client, logger: logger,
-		issueSrc: issuesource.NewGitHub(client, git),
-		wake:     make(chan struct{}, 1),
-	}
-}
-
-// RequestSync wakes Run to import the projects with an outstanding "sync
-// now" without waiting for poll_interval. It is the store's
-// OnIssueSyncRequested callback, so it runs on the API's writing goroutine
-// and never blocks: a request arriving while one is pending is the same
-// request.
-func (r *PullReconciler) RequestSync(int64) {
-	select {
-	case r.wake <- struct{}{}:
-	default:
-	}
+	return &PullReconciler{IssueSyncer: NewIssueSyncer(st, cfg, git, client, logger)}
 }
 
 // Run ticks until ctx is done. The interval is re-read every tick, so a hot
 // reload that changes `github.poll_interval` — including to 0 — reaches the
 // next one. A disabled reconciler still ticks on a slow heartbeat and does
 // nothing, which is how it notices being switched back on without a restart.
+// "Sync now" is not served here: it is the issue loop's (IssueSyncer.Run).
 func (r *PullReconciler) Run(ctx context.Context) {
 	const idle = time.Minute
 	for {
@@ -112,60 +92,25 @@ func (r *PullReconciler) Run(ctx context.Context) {
 		default:
 			r.failTriggers(ctx, errTriggerGitHubNoPoll)
 		}
-		if !r.sleep(ctx, wait) {
-			return
-		}
-	}
-}
-
-// sleep waits out one interval, serving "sync now" requests as they come;
-// a request does not restart the interval. False when ctx is done.
-func (r *PullReconciler) sleep(ctx context.Context, wait time.Duration) bool {
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-	for {
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
-			return false
+			timer.Stop()
+			return
 		case <-timer.C:
-			return true
-		case <-r.wake:
-			r.SyncRequested(ctx)
 		}
-	}
-}
-
-// SyncRequested runs the issue import for every project with an
-// outstanding "sync now", under the gates a tick applies. The pull request
-// links and triggers wait for the tick: a request asks for issues.
-func (r *PullReconciler) SyncRequested(ctx context.Context) {
-	if !r.cfg().GitHub.Polls() {
-		// The API reports github_disabled / poll_disabled from config; the
-		// request stays recorded and the next enabled tick serves it.
-		return
-	}
-	states, err := r.store.ListIssueSyncStates(ctx)
-	if err != nil {
-		r.logger.Warn("issue sync: requests not listed", "error", err)
-		return
-	}
-	for _, st := range states {
-		if st.RequestedAt == nil || ctx.Err() != nil {
-			continue
-		}
-		project, err := r.store.GetProject(ctx, st.ProjectID)
-		if err != nil {
-			r.logger.Warn("issue sync: project not read", "project", st.ProjectID, "error", err)
-			continue
-		}
-		b, bound := r.issueSrc.Bind(ctx, *project)
-		r.syncIssues(ctx, *project, b, bound, r.client != nil && r.git != nil)
 	}
 }
 
 // Tick reconciles every project once. It is exported so a test can drive one
 // pass without a timer, which is also what keeps the "no call at all" property
 // assertable on this path.
+//
+// Ordering invariant (task 142.7): for a project resolving to github, the
+// GitHub issue pass runs inline, before the project's GitHub triggers are
+// judged, so a trigger reading `type: issues` state sees this tick's
+// import. That is why GitHub's issue timer is this tick rather than the
+// issue loop's.
 func (r *PullReconciler) Tick(ctx context.Context) {
 	if r.outbox != nil {
 		defer r.outbox.Kick()
@@ -181,7 +126,7 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 	// issue import honours both; a directly driven Tick with polling off
 	// still links pull requests, as it always has.
 	syncs := r.cfg().GitHub.Polls()
-	haveClient := r.client != nil && r.git != nil
+	haveClient := r.haveClient()
 	if !haveClient {
 		r.failTriggers(ctx, errTriggerGitHubNoClient)
 		if !syncs {
@@ -203,10 +148,10 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 		}
 		repo, ok := r.issueRepoFor(ctx, project)
 		// The issue import runs first, so a trigger judged this tick sees
-		// the issues it imported.
+		// the issues it imported. A project resolving to none or jira gets
+		// no GitHub issue pass; its pull requests are still linked below.
 		if syncs {
-			b, bound := r.issueBinding(ctx, project, repo, ok)
-			r.syncIssues(ctx, project, b, bound, haveClient)
+			r.gitHubPass(ctx, project, repo, ok, haveClient)
 		}
 		if !haveClient {
 			continue
@@ -226,31 +171,6 @@ func (r *PullReconciler) Tick(ctx context.Context) {
 			r.reconcileProject(ctx, project, repo)
 		}
 	}
-}
-
-// issueRepoFor is repoFor without a git runner: no runner reads as "not
-// GitHub-based" only to the caller that has already gated on the client.
-func (r *PullReconciler) issueRepoFor(ctx context.Context, project store.Project) (github.Repo, bool) {
-	if r.git == nil {
-		return github.Repo{}, false
-	}
-	return r.repoFor(ctx, project)
-}
-
-// issueBinding is the importer's binding for project on a tick that has
-// already read its origin as repo, ok. GitHub's binding is that repository
-// (GitHub.Bind is BindRepo of the same RepoOf), so it is not read a second
-// time: one git subprocess per project per tick, and the importer cannot
-// act on a different origin than the pull request and trigger halves if
-// origin is re-pointed mid-tick (review F1). Any other source binds itself.
-func (r *PullReconciler) issueBinding(ctx context.Context, project store.Project, repo github.Repo, ok bool) (issuesource.Binding, bool) {
-	if r.issueSrc.Provider() != issuesource.ProviderGitHub {
-		return r.issueSrc.Bind(ctx, project)
-	}
-	if !ok {
-		return issuesource.Binding{}, false
-	}
-	return issuesource.BindRepo(repo), true
 }
 
 // failTriggers marks every armed GitHub trigger failing with err. It runs on
@@ -321,21 +241,6 @@ func (r *PullReconciler) reconcileProject(ctx context.Context, project store.Pro
 		// A branch names one task (§10 claims it), so the entry is spent.
 		delete(wanted, pull.HeadBranch)
 	}
-}
-
-// repoFor derives the project's GitHub identity from its `origin` remote at
-// the point of use — the same derivation the API does, and the same known
-// narrowness: an SSH alias, or a GitHub remote not named `origin`, is simply
-// not GitHub-based (task 035 decision 5, unreversed by task 052).
-func (r *PullReconciler) repoFor(ctx context.Context, project store.Project) (github.Repo, bool) {
-	return issuesource.RepoOf(ctx, r.git, project)
-}
-
-func (r *PullReconciler) clock() time.Time {
-	if r.now != nil {
-		return r.now().UTC()
-	}
-	return time.Now().UTC()
 }
 
 // logf keeps the recurring failures at debug. An unreachable GitHub every

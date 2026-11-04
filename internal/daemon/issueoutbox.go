@@ -22,8 +22,8 @@ import (
 // It talks to an issuesource.Source, never to a provider's client (task 142
 // decision 2): each row is dispatched on its issue's remote provider to the
 // source registered for it (task 142.4), still one row at a time, so every
-// provider shares the one serialized writer and its pacing. GitHub is the
-// only source today.
+// provider shares the one serialized writer and its pacing. Each provider's
+// rows wait on that provider's gates alone (task 142.7).
 //
 // Every send is a compare-and-set: the provider is read first, and
 //
@@ -49,10 +49,12 @@ import (
 // one write here that is at-least-once, and visible rather than lost.
 //
 // A row whose provider has no enabled source waits, with the reason it has
-// none. For GitHub those are the importer's config gates: with
-// `github.enabled: false` or `poll_interval: 0` nothing is called and every
-// pending row stays pending with reason `disabled`, drained when the switch
-// comes back on; with no client wired, `no_client`.
+// none. Those are the provider's importer gates: for GitHub, with
+// `github.enabled: false` or `github.poll_interval: 0` nothing is called and
+// every pending GitHub row stays pending with reason `disabled`, drained
+// when the switch comes back on; with no client wired, `no_client`. Jira's
+// rows read `jira.enabled` and `jira.poll_interval` the same way, and wait
+// with `no_client` while no Jira source is wired (#908).
 
 const (
 	// outboxIdle is the heartbeat on which the drain re-reads the config
@@ -72,7 +74,7 @@ const (
 
 // Write-back reasons the drain records on top of the seam's vocabulary.
 const (
-	outboxReasonDisabled      = issuesource.ReasonDisabled // github.enabled false or poll_interval 0
+	outboxReasonDisabled      = issuesource.ReasonDisabled // the provider's enabled false or poll_interval 0
 	outboxReasonNoClient      = syncReasonNoClient         // no source wired for the row's provider
 	outboxReasonRemoteChanged = "remote_changed"           // a conflict: the provider moved off the base first
 	outboxReasonGone          = "gone"                     // the remote is missing
@@ -86,10 +88,11 @@ type sourceFor func(provider string) (src issuesource.Source, holdReason string)
 type IssueOutbox struct {
 	store *store.Store
 	cfg   func() config.Config
-	// gh is the GitHub source, nil when no client is wired.
-	gh *issuesource.GitHub
+	// gh is the GitHub source, nil when no client is wired; jira the Jira
+	// source, nil until the Jira client is wired (#908).
+	gh, jira issuesource.Source
 	// sources is the provider→source registry, read per row; seamed for
-	// tests. The default knows GitHub alone (issuesources.go).
+	// tests. The default is keyed by provider (issuesources.go).
 	sources sourceFor
 	logger  *slog.Logger
 	// now is the clock and sleep the pacing wait, seamed for tests.

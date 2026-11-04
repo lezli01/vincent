@@ -312,7 +312,7 @@ func TestOutboxDispatchesEachRowToItsProvider(t *testing.T) {
 		if provider == stubProvider {
 			return src, ""
 		}
-		return f.outbox.githubOnly(provider)
+		return f.outbox.byProvider(provider)
 	}
 	next := f.outbox.Drain(ctx)
 
@@ -423,7 +423,7 @@ func TestOutboxHoldsAJiraRowUntilAWriterRegisters(t *testing.T) {
 		if provider == issueprovider.Jira {
 			return src, ""
 		}
-		return f.outbox.githubOnly(provider)
+		return f.outbox.byProvider(provider)
 	}
 	f.outbox.Drain(ctx)
 	if !slices.Equal(src.calls, []string{"get PROJ-1", "set PROJ-1"}) {
