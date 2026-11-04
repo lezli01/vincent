@@ -579,17 +579,18 @@ steps:
           creates tasks from a tracker's number or key first maps it to the
           issue id with vincent issue ls --project P --github N, or --remote
           KEY for a Jira key (running vincent issue sync and looking again
-          when nothing is imported yet), then passes that id to --issue. A declared github_issue workflow field is a field, not
-          that create flag, and keeps its name; only wording that says
-          --github-issue fills it goes.
+          when nothing is imported yet), then passes that id to --issue. A
+          declared github_issue workflow field is a field, not that create
+          flag, and keeps its name; only wording that says --github-issue
+          fills it goes.
       15. The task's issue from its snapshot. A step that fetches the task's
           issue from its tracker — gh issue view, gh api on the issue, a Jira
           REST call — to read it reads $VINCENT_ISSUE_FILE instead: a snapshot
           in the shape gh issue view --json prints, whose number is null for a
           Jira issue, set on every step of a task created from an issue, with
-          no network and no call per fan-out lane. Keep any gh call that acts on the issue.
-          Where the step must refuse a task with no issue, test for the
-          variable and say to create the task from an issue.
+          no network and no call per fan-out lane. Keep any gh call that acts
+          on the issue. Where the step must refuse a task with no issue, test
+          for the variable and say to create the task from an issue.
       16. The issue's thread from its snapshot. The file's comments and
           .Issue.Comments carry the issue's discussion as it stood at task
           creation, local and tracker comments alike. A step that fetches the
@@ -1169,15 +1170,16 @@ steps:
       3. limits.max_per_hour.
       4. limits.max_task_cost_usd on a create_task action.
       5. issue or github_pull to link a created task, instead of a number or
-         tracker key parsed out of a title. issue takes a vincent issue id and does not
-         combine with github_pull.
+         tracker key parsed out of a title. issue takes a vincent issue id
+         and does not combine with github_pull.
       6. No poll_interval on an issues, github_issues or github_prs source;
          issues is woken by each issue change, the GitHub two run on
          github.poll_interval.
       7. allowed_actors wherever match.action can match an untrusted event
-         from GitHub, or arriving by: sync from the issue's tracker — anything but issue labeled, unlabeled or assigned and pull
-         request merged, and an absent match.action matches everything but
-         the opt-in lane_changed and handoff_changed.
+         from GitHub, or arriving by: sync from the issue's tracker —
+         anything but issue labeled, unlabeled or assigned and pull request
+         merged, and an absent match.action matches everything but the
+         opt-in lane_changed and handoff_changed.
       8. A follow_up, retry or cancel action carries none of the keys a
          reaction refuses: permission, workflow, title, description, fields,
          issue, github_pull, merge_back, limits.max_task_cost_usd,
