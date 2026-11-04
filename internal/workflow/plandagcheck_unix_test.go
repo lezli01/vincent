@@ -79,7 +79,7 @@ func TestPlanDAGCheckEnforcesUnitFiles(t *testing.T) {
 		stderr []string
 	}{
 		{
-			name: "single unit",
+			name:  "single unit",
 			units: []planUnit{unit("store", "^internal/store/")},
 		},
 		{
