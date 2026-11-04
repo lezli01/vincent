@@ -98,8 +98,10 @@ first run may safely return a wide window: nothing in it can start work.
 Use a poller like this one for a project vincent does not sync from Jira, or
 for JQL beyond what the project's Jira binding narrows its import to. A project
 bound to Jira issue sync already imports its issues: there, write an `issues`
-trigger on that project instead, which needs no script and no credential in
-the daemon's environment, and links the created task to the issue.
+trigger on that project instead, which needs no script and links the created
+task to the issue. The credential does not go away: native sync reads it from
+the daemon's environment too (`JIRA_USER` and `JIRA_API_TOKEN` by default), and
+reports `no_credential` when they are missing.
 
 The poller below prints Jira issues in "Ready for Dev". Its cursor is the Unix
 time at which the previous run started, which keeps it independent of time

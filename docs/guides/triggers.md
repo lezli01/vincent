@@ -983,8 +983,10 @@ Use a poll script like this for a project vincent does not sync from Jira, or
 for JQL beyond what the project's Jira binding narrows its import to. A project
 bound to Jira issue sync already imports its issues, so an
 [`issues`](#issues-watch-the-projects-issues) trigger matching them is the
-simpler route there: no script, no credential in the daemon's environment, and
-the created task linked to the issue.
+simpler route there: no script, and the created task linked to the issue. The
+credential stays where it is, because native sync reads it from the daemon's
+environment too (`JIRA_USER` and `JIRA_API_TOKEN` by default) and reports
+`no_credential` without it.
 
 The poll script is yours, and it is the whole of this trigger's Jira
 integration. It searches Jira using `$VINCENT_TRIGGER_CURSOR` and prints one
