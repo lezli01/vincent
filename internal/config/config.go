@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -315,6 +316,13 @@ type Config struct {
 	// It is read per use, so a hot reload reaches the next call rather than
 	// requiring a restart — the same rule the rest of §12.3 follows.
 	GitHub GitHub `yaml:"github"`
+	// Jira governs the Jira Cloud issue provider (§12.3, task 142): whether
+	// the daemon syncs the issues of a project bound to a Jira site, how
+	// often, and which environment variables hold the credential.
+	//
+	// It is read per use, like GitHub, so a hot reload reaches the next sync
+	// pass rather than requiring a restart.
+	Jira Jira `yaml:"jira"`
 	// Notify is the outward signal: a command the daemon spawns when a task
 	// enters one of the listed states (§12.3, task 046). Its zero value is
 	// off, so a daemon nobody configured spawns nothing.
@@ -400,14 +408,15 @@ type GitHub struct {
 	// A plain bool is right here, as it is for
 	// DeleteEmptyBranchOnArchive: Load unmarshals into Default(), so an
 	// absent key keeps true and an explicit `false` turns the integration
-	// off. There is nothing to validate — a bool is either spelling or a
-	// parse error the strict decoder already refuses — which is why
-	// validate() has no clause for this block.
+	// off. There is nothing to validate for it — a bool is either spelling
+	// or a parse error the strict decoder already refuses; validate()'s one
+	// clause for this block is PollInterval's.
 	Enabled bool `yaml:"enabled"`
-	// PollInterval is the reconciler tick (§12.3): on each one the daemon
-	// imports and refreshes each GitHub-based project's issues (task 130.8)
-	// and reconciles task↔pull-request links (task 052), listing open pull
-	// requests and linking the ones whose head branch is a task's branch.
+	// PollInterval paces GitHub issue import and pull-request linking
+	// (§12.3): on each interval the daemon imports and refreshes each
+	// GitHub-based project's issues (task 130.8) and reconciles
+	// task↔pull-request links (task 052), listing open pull requests and
+	// linking the ones whose head branch is a task's branch.
 	//
 	// This is the daemon's **standing outbound network traffic**, which is
 	// why it is a key rather than a constant, and why `0` disables the
@@ -418,11 +427,86 @@ type GitHub struct {
 	// The default is conservative — an issue or a pull request appearing a
 	// few minutes late costs nothing, and `vincent issue sync` asks for an
 	// import now.
+	//
+	// Non-negative, for update.poll_interval's reason: validate() refuses a
+	// negative value rather than letting it read as `0`.
 	PollInterval Duration `yaml:"poll_interval"`
 }
 
 // Polls reports whether the reconciler should run at all.
 func (g GitHub) Polls() bool { return g.Enabled && g.PollInterval > 0 }
+
+// Jira configures the Jira Cloud issue provider (spec §12.3 — task 142).
+//
+// The block is global, and inert on its own: nothing syncs until a project
+// is bound to a Jira site, and that binding — site, project key, optional
+// JQL narrowing — is per project and daemon-side (task 142 decision 5), not
+// here.
+//
+// There is deliberately no token key here, as there is none under github:
+// (task 142 decision 4). vincent stores no Jira credential: it reads the
+// user's e-mail address and API token out of the environment the daemon
+// inherited, per use, from the variables UserEnv and TokenEnv **name**. The
+// keys hold variable names, never values — a value in config.yaml would be
+// vincent holding a credential, which is what §2's "secret management"
+// non-goal and the credential half of task 096 decision 2 rule out. In
+// service mode, where the daemon lacks the login shell's environment,
+// `environment.set` in this owner-only file is how the variables get there.
+type Jira struct {
+	// Enabled turns the provider on. It defaults to **true** and is harmless
+	// on: with no project bound to Jira the daemon makes no Jira call at all.
+	// This and PollInterval: 0 are the two switches that stop the sync pass.
+	//
+	// `jira.enabled` is a new key of its own, not a departure from task 069
+	// decision 2: that decision is GitHub-scoped — it says there is no second
+	// key gating a GitHub write — and says nothing about another provider.
+	//
+	// A plain bool for the same reason GitHub.Enabled is one: Load
+	// unmarshals into Default(), so an absent key keeps true and an explicit
+	// `false` turns the provider off.
+	Enabled bool `yaml:"enabled"`
+	// PollInterval paces Jira issue sync: on each interval the daemon imports
+	// and refreshes the issues of every project bound to Jira. `0` stops the
+	// pass while leaving the rest of the block legible, mirroring
+	// `github.poll_interval`; a negative value is refused by validate().
+	//
+	// Five minutes, as for GitHub: an issue appearing a few minutes late
+	// costs nothing, and `vincent issue sync` asks for an import now.
+	PollInterval Duration `yaml:"poll_interval"`
+	// UserEnv is the **name** of the environment variable holding the Jira
+	// account's e-mail address. Default `JIRA_USER`, the name the trigger
+	// poll-script example already uses. validate() holds it to a portable
+	// variable name, so a pasted value is refused rather than looked up.
+	UserEnv string `yaml:"user_env"`
+	// TokenEnv is the **name** of the environment variable holding the Jira
+	// API token. Default `JIRA_API_TOKEN`. Never the token itself — see the
+	// type comment.
+	TokenEnv string `yaml:"token_env"`
+}
+
+// Polls reports whether the Jira sync pass should run at all.
+func (j Jira) Polls() bool { return j.Enabled && j.PollInterval > 0 }
+
+// envNameRE is what a jira.*_env key must look like: a variable name every
+// platform's environment and every shell accepts. It is what tells a name
+// from a pasted credential, which nearly always carries a character outside
+// the set (an e-mail's `@`, a token's `-` or `=`).
+var envNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func (j Jira) validate() error {
+	if j.PollInterval < 0 {
+		return fmt.Errorf("jira.poll_interval must not be negative, got %s", j.PollInterval)
+	}
+	for _, k := range []struct{ key, val string }{
+		{"jira.user_env", j.UserEnv},
+		{"jira.token_env", j.TokenEnv},
+	} {
+		if !envNameRE.MatchString(k.val) {
+			return fmt.Errorf("%s must be an environment variable name (letters, digits and _, not starting with a digit), got %q", k.key, k.val)
+		}
+	}
+	return nil
+}
 
 // Update configures the release check (spec §12.3 — task 055).
 //
@@ -1085,6 +1169,14 @@ func Default() Config {
 		Include: Include{MaxDepth: 5},
 		// On by default: an opt-out, per task 035 decision 6.
 		GitHub: GitHub{Enabled: true, PollInterval: Duration(5 * time.Minute)},
+		// On by default and inert until a project is bound to Jira (task 142).
+		//nolint:gosec // G101: the names of env vars, not credentials.
+		Jira: Jira{
+			Enabled:      true,
+			PollInterval: Duration(5 * time.Minute),
+			UserEnv:      "JIRA_USER",
+			TokenEnv:     "JIRA_API_TOKEN",
+		},
 		// On by default with a day between calls (task 055 decision 3).
 		Update: Update{Check: true, PollInterval: Duration(24 * time.Hour)},
 		// Off: the interval is the switch (task 115 decision 1).
@@ -1256,6 +1348,12 @@ func (c Config) validate(lenient bool) error {
 	// and look like it worked.
 	if c.Update.PollInterval < 0 {
 		return fmt.Errorf("update.poll_interval must not be negative, got %s", c.Update.PollInterval)
+	}
+	if c.GitHub.PollInterval < 0 {
+		return fmt.Errorf("github.poll_interval must not be negative, got %s", c.GitHub.PollInterval)
+	}
+	if err := c.Jira.validate(); err != nil {
+		return err
 	}
 	if err := c.Backup.validate(); err != nil {
 		return err

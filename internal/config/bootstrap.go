@@ -200,7 +200,7 @@ agents:
 
 # The GitHub integration (task 035, task 052, task 069, task 130). It applies
 # only to a project whose "origin" remote is a github.com repository. For such
-# a project the daemon's reconciler tick imports and refreshes its issues into
+# a project the daemon periodically imports and refreshes its issues into
 # vincent's backlog, and links tasks to their pull requests; enabled and
 # poll_interval below are the two switches that stop it.
 #
@@ -220,17 +220,38 @@ agents:
 # saying the credential has no write scope. Set enabled to false to stop the
 # daemon talking to GitHub at all, reads and writes together.
 #
-# poll_interval is the reconciler tick: on each one the daemon imports and
-# refreshes each GitHub-based project's issues, and links a task to its pull
-# request by matching an open pull request's head branch against the task's
-# branch (task 052). It is one of vincent's two standing background calls —
-# the other is the release check below — and it fires only for projects
-# hosted on github.com: set it to 0 to switch the reconciler off, issue import
-# included, and keep the rest of the integration, which then calls GitHub only
-# when you ask it to. "vincent issue sync" asks for an import now.
+# poll_interval paces GitHub issue import and pull-request linking: on each
+# interval the daemon imports and refreshes each GitHub-based project's
+# issues, and links a task to its pull request by matching an open pull
+# request's head branch against the task's branch (task 052). It is one of
+# vincent's standing background calls — the release check below is another —
+# and it fires only for projects hosted on github.com: set it to 0 to stop
+# both, issue import included, and keep the rest of the integration, which
+# then calls GitHub only when you ask it to. "vincent issue sync" asks for an
+# import now. A negative value is refused.
 github:
   enabled: true
   poll_interval: 5m
+
+# The Jira Cloud issue provider (task 142). It does nothing until a project is
+# bound to a Jira site; for a bound project the daemon periodically imports
+# and refreshes its Jira issues into vincent's backlog.
+#
+# vincent stores no Jira credential. user_env and token_env are the NAMES of
+# environment variables the daemon reads the account e-mail and API token
+# from, never the values themselves; a name must be letters, digits and _.
+# When the daemon runs as a service without your shell's environment, set
+# them under environment.set above.
+#
+# jira:
+#   # false stops every Jira call.
+#   enabled: true
+#   # How often bound projects sync; 0 stops it. A negative value is refused.
+#   poll_interval: 5m
+#   # Variable holding the Jira account's e-mail address (a name, not a value).
+#   user_env: JIRA_USER
+#   # Variable holding the Jira API token (a name, not a value).
+#   token_env: JIRA_API_TOKEN
 
 # Check whether a newer vincent has been released (task 055). The daemon asks
 # GitHub for the project's latest stable release once a day, caches the answer
