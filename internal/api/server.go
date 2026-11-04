@@ -68,6 +68,14 @@ type Deps struct {
 	// probe then answers "no credential" and the issue endpoints refuse,
 	// which is exactly what a daemon with no reachable GitHub reports.
 	GitHub *github.Client
+	// JiraHTTP is the HTTP client GET /v1/projects/{id}/jira probes Jira
+	// with (task 142.12). Nil is a default client with a sane timeout; tests
+	// substitute one bound to an httptest fake.
+	JiraHTTP *http.Client
+	// Environ is the process environment the Jira credential is resolved
+	// from (through config.yaml's environment block). Nil is os.Environ;
+	// tests substitute a fixed list so no real variable is read.
+	Environ func() []string
 	// Worktrees removes task worktrees during forced project deletion.
 	Worktrees *worktree.Manager
 	// Agents is the adapter registry, for task-override validation.
@@ -330,6 +338,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/projects/{id}/branches", s.handleProjectBranches)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github", s.handleProjectGitHub)
 	rt.handle(http.MethodGet, "/v1/projects/{id}/github/issues", s.handleProjectGitHubIssues)
+	rt.handle(http.MethodGet, "/v1/projects/{id}/jira", s.handleProjectJira)
 	// Issue import status and sync now (§5.6, task 130.8). The GET is a
 	// tool; the POST is not (internal/mcp's Excluded says why).
 	rt.handle(http.MethodGet, "/v1/projects/{id}/issues/sync", s.handleIssueSyncStatus)
