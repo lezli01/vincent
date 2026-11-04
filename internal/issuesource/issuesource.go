@@ -71,6 +71,13 @@ type ListOptions struct {
 	ETag string
 	// PageCap bounds the pages walked; <= 0 is the source's default.
 	PageCap int
+	// After is an opaque resume cursor a previous truncated Page returned
+	// as ResumeAfter, for a source whose OpenOnly walk is ordered by id
+	// rather than by update time (Jira's). Such a source's OpenOnly listing
+	// ignores Since and resumes by After; its other listings use Since as
+	// GitHub's do. A source that resumes by time ignores After (GitHub
+	// does).
+	After string
 }
 
 // Issue is one provider issue, already mapped.
@@ -99,13 +106,15 @@ func (is *Issue) UpdatedAt() time.Time {
 // Page is one issue listing, with GitHub's durable-listing rules: Unchanged
 // is a conditional listing's "nothing moved", ETag is what to send next
 // time, Truncated says PageCap stopped the walk, and ResumeSince is where to
-// resume it from.
+// resume it from. ResumeAfter is set instead, when Truncated, by a source
+// whose OpenOnly walk is ordered by id: the next listing's After.
 type Page struct {
 	Issues      []Issue
 	Unchanged   bool
 	ETag        string
 	Truncated   bool
 	ResumeSince time.Time
+	ResumeAfter string
 }
 
 // Comment is one provider comment on an issue.
@@ -147,7 +156,12 @@ type Source interface {
 	Locate(rem store.IssueRemote) (b Binding, ok bool)
 	// ListIssues lists b's issues updated since opts.Since, oldest first.
 	ListIssues(ctx context.Context, b Binding, opts ListOptions) (Page, error)
-	// GetIssue reads rem's issue, at b.
+	// GetIssue reads rem's issue, at b. An issue that moved off b is an
+	// error Classify maps to ReasonMoved with the new Location; a source
+	// that can read it there (Jira) returns it too, fully mapped with its
+	// NEW Repo, Number, RemoteKey and URL, and the importer rewrites the
+	// remote row to them. GitHub returns a zero Issue there: a zero
+	// Remote.Repo means no rewrite.
 	GetIssue(ctx context.Context, b Binding, rem store.IssueRemote) (Issue, error)
 	// ListComments reads is's whole thread, at b.
 	ListComments(ctx context.Context, b Binding, is *Issue) ([]Comment, error)
