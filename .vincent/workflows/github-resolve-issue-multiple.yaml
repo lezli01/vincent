@@ -2,6 +2,10 @@
 # be worked on onto the board, each as its own `github-resolve-issue` or
 # `github-resolve-issue-dag` task, in one run.
 #
+# GitHub-only by design (task 142.17): it reads or writes GitHub with `gh`,
+# so it serves a project whose issues come from GitHub. An issue imported
+# from Jira is out of its reach, and there is deliberately no Jira variant.
+#
 # ## Why this spawns tasks instead of doing the work
 #
 # The two resolve workflows each deliver **one** issue: one branch, one brief

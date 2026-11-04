@@ -1,6 +1,10 @@
 # github-resolve-issue — pick up a GitHub issue, work out what it is, deliver it
 # on its branch, ready for a pull request.
 #
+# GitHub-only by design (task 142.17): it reads or writes GitHub with `gh`,
+# so it serves a project whose issues come from GitHub. An issue imported
+# from Jira is out of its reach, and there is deliberately no Jira variant.
+#
 # The merge of `github-bug.yaml` and `github-enhancement.yaml`. Those two files
 # were ~80% the same text — fetch, verdict-gate, cross-platform verify, human
 # gate, push, report — and differed in exactly two places: what the first agent

@@ -1,5 +1,9 @@
 # github-create-issue — turn a rough task description into a well-formed GitHub issue.
 #
+# GitHub-only by design (task 142.17): it reads or writes GitHub with `gh`,
+# so it serves a project whose issues come from GitHub. An issue imported
+# from Jira is out of its reach, and there is deliberately no Jira variant.
+#
 # The task carries the draft: its title is the issue's working name, its
 # description the raw material. The first step reads both, decides whether
 # anything is ambiguous, and — when it is — asks you directly through claude's
