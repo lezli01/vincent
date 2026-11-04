@@ -100,7 +100,7 @@ func prefillRef(snap *store.IssueSnapshot) (prefix, link string, ok bool) {
 		return prefix, "GitHub issue " + prefix, true
 	}
 	rem := snap.Remote
-	if rem == nil || rem.Provider != providerJira || rem.Key == "" {
+	if rem == nil || rem.Provider != issueprovider.Jira || rem.Key == "" {
 		return "", "", false
 	}
 	ref := RenderSource(rem.Provider, rem.Repo, rem.Number, rem.Key)
