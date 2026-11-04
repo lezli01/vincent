@@ -156,6 +156,7 @@ the living engineering specification records implementation contracts.
 | [140](140-chat-on-an-issue.md) | A chat on an issue: it holds the issue's main worktree, moves it to in progress, and hands off into a main task | ✅ done (11/11) |
 | [141](141-copilot-acp.md) | Investigating `copilot --acp` for mid-run input and skill listing: listing no, input not yet | ✅ done (6/6) |
 | [142](142-jira-issue-sync.md) | Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync | 🔄 in progress (12/20) |
+| [143](143-auto-archive-on-issue-close.md) | Auto-archive a closed issue's tasks | 🔄 in progress (1/5) |
 
 ## How to add and update a task document
 

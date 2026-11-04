@@ -7422,7 +7422,8 @@ that counted three adapters was amended in place.
   is reported `has_commits` and **kept**, whatever the human answered. The
   remote leg is **not offered** on a delete at all;
   `delete_remote_branch_on_archive` stays honoured only by
-  `POST /v1/tasks/{id}/archive`, because deleting a branch on a forge other
+  `POST /v1/tasks/{id}/archive` — and only by an attended archive there (task
+  143, below) — because deleting a branch on a forge other
   people share is unrecoverable and a delete has no second chance to reconsider.
 
   *Amended 2026-08-16 (task 008).* This bullet used to read "the branch is **never**
@@ -7466,6 +7467,14 @@ that counted three adapters was amended in place.
     upstream (`branch.{name}.remote` + `.merge`; no upstream ⇒ nothing was pushed as
     far as vincent knows, so nothing is attempted), and its failures — rejection,
     unreachable host, timeout — are logged and never fail the archive.
+    *Amended 2026-11-04 (task 143).* "Honoured only by the endpoint" is now
+    enforced by the archive's **mode**, not by which caller reached it. An
+    **unattended** archive — one no human asked for, such as the auto-archive of
+    a closed issue's tasks — never runs the remote leg, whatever this key says,
+    and never forces: a dirty worktree refuses it and leaves the task untouched.
+    The local leg is unchanged. A fan-out parent's cascade inherits its root's
+    mode, so a lane archived under an unattended root is unattended too, and a
+    human's archive of a parent still runs the remote leg for every lane.
   - **`DELETE /v1/projects/{id}?force` sweeps every row it is about to drop,** archived
     ones included: the cascade erases the branch names, so that is the last moment they
     exist. Local leg only, best-effort, exactly like the worktree removal beside it.
@@ -8953,7 +8962,8 @@ policy: on archive, a branch with no commits past its recorded base is deleted, 
 The remote key is deliberately **not** its default-true sibling. Everything it does
 happens on a forge shared with other people and cannot be undone, so it defaults to
 `false` and is honoured only by `POST /v1/tasks/{id}/archive`, where a human asked for
-this one task; `DELETE /v1/projects/{id}?force` never touches a remote. It is inert
+this one task; `DELETE /v1/projects/{id}?force` never touches a remote, and neither
+does an unattended archive or a lane cascaded from one (amended 2026-11-04, task 143). It is inert
 while the local key is off — the remote leg runs only after a local delete that
 succeeded — and that combination is a startup/reload **warning**, not a load failure:
 a key that is merely unreachable is not an invalid one, and refusing the file over it
