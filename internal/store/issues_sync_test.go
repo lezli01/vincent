@@ -181,6 +181,58 @@ func TestRequestIssueSync(t *testing.T) {
 	}
 }
 
+// TestRequestIssueSyncAs covers the provider-stamped "sync now" (task
+// 142.7): the row records which provider was asked, a later request from
+// another provider re-stamps it, and only a provider that syncs is accepted.
+func TestRequestIssueSyncAs(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	var calls atomic.Int64
+	s.OnIssueSyncRequested(func(id int64) {
+		if id != p.ID {
+			t.Errorf("callback got %d, want %d", id, p.ID)
+		}
+		calls.Add(1)
+	})
+
+	if err := s.RequestIssueSyncAs(ctx, p.ID, IssueProviderJira); err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("callback ran %d times, want 1", n)
+	}
+	st, err := s.GetIssueSyncState(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Provider != IssueProviderJira || st.RequestedAt == nil || !st.OK {
+		t.Errorf("after jira request = %+v", st)
+	}
+
+	if err := s.RequestIssueSyncAs(ctx, p.ID, IssueProviderGitHub); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := s.GetIssueSyncState(ctx, p.ID); again.Provider != IssueProviderGitHub || again.RequestedAt == nil {
+		t.Errorf("after github request = %+v", again)
+	}
+
+	for _, bad := range []string{IssueProviderNone, IssueProviderDerive, "gitlab"} {
+		if err := s.RequestIssueSyncAs(ctx, p.ID, bad); err == nil {
+			t.Errorf("provider %q accepted", bad)
+		}
+	}
+	if err := s.RequestIssueSyncAs(ctx, 999, IssueProviderJira); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown project = %v, want ErrNotFound", err)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Errorf("callback ran %d times, want 2 (refused requests must not wake)", n)
+	}
+	if n := len(issueEvents(t, s, EventIssueSyncChanged)); n != 0 {
+		t.Errorf("requests wrote %d sync events", n)
+	}
+}
+
 // TestPutIssueSyncStateKeepsALaterRequest is the regression test for an
 // attempt's write erasing a "sync now" recorded while the attempt ran: the
 // importer read the row, the request landed, and the attempt's write of
