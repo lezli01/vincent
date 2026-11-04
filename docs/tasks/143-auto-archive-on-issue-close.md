@@ -1,6 +1,6 @@
 # 143 — Auto-archive a closed issue's tasks
 
-**Status:** 🔄 in progress (1/5) · **Opened:** 2026-11-04
+**Status:** 🔄 in progress (2/5) · **Opened:** 2026-11-04
 
 The auto-archive stream of [#925](https://github.com/lezli01/vincent/issues/925):
 when an issue reaches `closed`, by any route, the daemon archives the settled
@@ -18,8 +18,11 @@ Conventions for this file are in [the tasks README](README.md).
   step; the fan-out cascade passes the whole of its root's options to every
   lane; the payload is merged into the archive's `task.state_changed` event.
   This document, its index row, and the §10 / §12.3 amendment. ✓ 2026-11-04
-- [ ] **143.2** ([#927](https://github.com/lezli01/vincent/issues/927)) The
-  store query for the archivable tasks of a closed, quiescent issue.
+- [x] **143.2** ([#927](https://github.com/lezli01/vincent/issues/927)) The
+  store query for the archivable tasks of a closed, quiescent issue:
+  `Store.ArchivableIssueTasks` returns a closed issue's settled roots created
+  at or before its close, side work before main tasks, or nothing while any
+  root is unsettled or an issue chat is live. ✓ 2026-11-04
 - [ ] **143.3** ([#928](https://github.com/lezli01/vincent/issues/928)) The
   durable event-cursor worker that archives them, and the
   `archive_tasks_on_issue_close` key. Depends: 143.1, 143.2.
@@ -82,9 +85,11 @@ Confirmed by the author on 2026-11-04.
 
 ### Left open
 
-Owned by 143.2 / 143.3, not settled here:
+Owned by 143.3, not settled here:
 
 - Whether an unresolved handoff item holds the archive (#925 open question 5),
-  which would protect handoff `return` after a reopen.
+  which would protect handoff `return` after a reopen. The 143.2 query does
+  not consult handoff items, so 143.3 decides this in the worker (or widens
+  the query).
 - Who reclaims a released issue chat's leftover main-worktree directory (#925
   open question 7).
