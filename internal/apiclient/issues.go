@@ -471,6 +471,13 @@ type IssueSyncStatus struct {
 	// Site is the bound Jira site when the project's issue source is jira
 	// (task 142.6); empty otherwise.
 	Site string `json:"site,omitempty"`
+	// Source is the bound source as the daemon renders it (task 142.14):
+	// `owner/repo` for GitHub, `<site>/<PROJECTKEY>` for Jira; empty for
+	// none or while no repository is known. Print it; never build one.
+	Source string `json:"source,omitempty"`
+	// ProviderName is the provider's display name (`GitHub`, `Jira`);
+	// empty for none.
+	ProviderName string `json:"provider_name,omitempty"`
 	// LastSyncedAt is when an import last succeeded; nil when none has.
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 	OK           bool       `json:"ok"`
@@ -482,8 +489,8 @@ type IssueSyncStatus struct {
 	ImportComplete   bool       `json:"import_complete"`
 	RateLimitedUntil *time.Time `json:"rate_limited_until,omitempty"`
 	// WritesPending, WritesFailed and WritesConflict count imported issues
-	// whose newest state write-back is waiting, gave up, or found GitHub
-	// changed first (task 130.10).
+	// whose newest state write-back is waiting, gave up, or found the
+	// remote changed first (task 130.10).
 	WritesPending  int `json:"writes_pending"`
 	WritesFailed   int `json:"writes_failed"`
 	WritesConflict int `json:"writes_conflict"`
