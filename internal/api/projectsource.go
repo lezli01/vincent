@@ -180,7 +180,7 @@ func normalizeJiraSite(raw string) (string, string) {
 	case scheme == "" || u.Host == "":
 		return "", fmt.Sprintf("%s %q must be an absolute https:// URL", field, raw)
 	case u.User != nil:
-		return "", fmt.Sprintf("%s must not carry a user or password: the credential comes from JIRA_USER and JIRA_API_TOKEN", field)
+		return "", fmt.Sprintf("%s must not carry a user or password: the credential comes from the variables jira.user_env and jira.token_env name", field)
 	case u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "?"):
 		return "", fmt.Sprintf("%s %q must not have a query", field, raw)
 	case u.Fragment != "" || strings.Contains(raw, "#"):

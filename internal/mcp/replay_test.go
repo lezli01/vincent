@@ -453,7 +453,8 @@ func TestProjectPatchPassesTheIssueSourceThrough(t *testing.T) {
 		t.Errorf("replayed %s %s %s", h.got.Method, h.got.URL.Path, h.gotRaw)
 	}
 	d := routeFor(t, "project_patch").Description
-	for _, want := range []string{"issue_source", "derive|none|github|jira", "JIRA_API_TOKEN"} {
+	// The variable names are config's (review F4), the defaults only that.
+	for _, want := range []string{"issue_source", "derive|none|github|jira", "jira.user_env", "jira.token_env", "JIRA_API_TOKEN"} {
 		if !strings.Contains(d, want) {
 			t.Errorf("project_patch description lacks %q", want)
 		}

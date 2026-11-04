@@ -65,7 +65,8 @@ type ProjectIssueSource struct {
 
 // ProjectIssueSourceJira is the Jira half of a binding. Mapping is a jiramap
 // override object, nil for the defaults. No field holds a credential: it
-// comes from JIRA_USER and JIRA_API_TOKEN in the daemon's environment.
+// comes from the variables jira.user_env and jira.token_env name (default
+// JIRA_USER and JIRA_API_TOKEN) in the daemon's environment.
 type ProjectIssueSourceJira struct {
 	Site       string          `json:"site"`
 	ProjectKey string          `json:"project_key"`
