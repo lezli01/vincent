@@ -1045,9 +1045,9 @@ printf '{"cursor":"%s"}\n' "$now"
 ```
 
 *Note 2026-11-04 (task 142.17):* Jira Cloud has since retired
-`/rest/api/3/search`; the live examples in
-`skills/vincent-triggers/references/poll-scripts.md` and
-`docs/guides/triggers.md` call `/rest/api/3/search/jql`. The script above is
+`/rest/api/3/search`; the live example in
+`skills/vincent-triggers/references/poll-scripts.md` calls
+`/rest/api/3/search/jql`. The script above is
 kept as decided. Once vincent imports a project's Jira issues (task 142,
 from 142.12), that project no longer needs it at all: an `issues` trigger sees
 the imported issues. A binding alone imports nothing.
