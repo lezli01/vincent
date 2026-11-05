@@ -2,10 +2,10 @@ package store
 
 import (
 	"slices"
-
-	"github.com/lezli01/vincent/internal/chatstate"
 	"testing"
 	"time"
+
+	"github.com/lezli01/vincent/internal/chatstate"
 )
 
 // candidatesOf is ClosedIssueArchiveCandidates narrowed to one issue.

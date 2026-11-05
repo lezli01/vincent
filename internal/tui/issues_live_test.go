@@ -270,8 +270,12 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 		return len(detail.chats) == 2 && len(detail.tasks) == 1 && detail.tasks[0].ArchivedAt != nil
 	})
 	out = ansi.Strip(detail.render(120, 60))
+	// The archived task's row says archived once (review F3).
+	if strings.Contains(out, "archived · archived") {
+		t.Errorf("the archived task says archived twice:\n%s", out)
+	}
 	for _, want := range []string{
-		"· archived",
+		"#" + strconv.FormatInt(task.ID, 10) + "  fix the crash  archived",
 		"chat #" + strconv.FormatInt(linked.ID, 10) + "  talk the task  on task #" + strconv.FormatInt(task.ID, 10) + " · closed",
 		"chat #" + strconv.FormatInt(onIssue.ID, 10) + "  talk the issue  on the issue · idle",
 	} {
