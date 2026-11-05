@@ -52,8 +52,9 @@ func unit(id, files string, needs ...string) planUnit {
 
 // plan-dag's check enforces mechanically what a human reviewer was once asked
 // (#935, #936): the units' `files` expressions must not overlap on a tracked
-// path, and none may match a path a later step owns. A violation fails the check, which §8.4 hands back
-// to the planner as retry feedback; depth past three rounds is only advised.
+// path, and none may match a path a later step owns. A violation fails the
+// check, which §8.4 hands back to the planner as retry feedback; depth past
+// three rounds is only advised.
 //
 // The check is extracted from the shipped workflow and rendered through the
 // step template engine for each classify path, so this asserts what the

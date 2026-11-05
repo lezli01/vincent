@@ -1843,9 +1843,10 @@ steps:
     # The price is wall-clock: a round is as slow as its slowest lane, so an
     # edge delays the dependent's whole round and not just the dependent. The
     # planner is told to keep `needs` minimal and the graph wide for this
-    # reason, and its check advises past three rounds. `schedule: eager` is the other trade — merge
-    # each lane as soon as its own `needs` land — and is faster on a deep
-    # graph, at the cost of a timing-dependent starting tree.
+    # reason, and its check advises past three rounds. `schedule: eager` is
+    # the other trade — merge each lane as soon as its own `needs` land — and
+    # is faster on a deep graph, at the cost of a timing-dependent starting
+    # tree.
     #
     # A plan whose units declare no `needs` at all is one round either way: a
     # flat lane list runs as a barrier whatever this field says.
