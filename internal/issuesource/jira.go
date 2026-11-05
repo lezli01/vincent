@@ -284,6 +284,9 @@ func (ref *jiraRef) dropExcluded(ctx context.Context, ids []string, out map[stri
 // visibility set — is dropped, always (decision 4): it is visible only to a
 // role or group, and mirroring it would show it to everyone who reads the
 // issue here. The author is the display name; the account id is not kept.
+// A dropped comment reads to the importer as a deleted one, which it keeps,
+// so one restricted after it was mirrored stays mirrored (task 142 open
+// question 12, review F6 on #943).
 func (*Jira) ListComments(ctx context.Context, b Binding, is *Issue) ([]Comment, error) {
 	ref := jiraRefOf(b)
 	if ref == nil {

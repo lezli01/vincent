@@ -534,7 +534,9 @@ explicitly. A "proposed default" is open until that issue.
    JQL-excluded issue is `missing`, never deleted, and live again when it
    reappears.
 5. **Mirror restricted-visibility comments?** *Settled 2026-11-05 by #908:*
-   no — they are always skipped, with no config knob (decision 9.6).
+   no — they are always skipped, with no config knob (decision 9.6). One
+   mirrored before it was restricted stays mirrored for now: open question
+   12.
 6. **The Jira prefill title, and a `jira_issue` field?** *Settled by the
    author 2026-11-03: `PROJ-12 <title>`, no `jira_issue` field (decision 12).*
    Was the proposed default: the prefill title is `PROJ-12 <title>`, and there is no
@@ -571,6 +573,21 @@ explicitly. A "proposed default" is open until that issue.
     `labeled`/`unlabeled` by `sync` goes through `allowed_actors` like any
     other sync action; GitHub's exemption is unchanged. The trust table is
     provider-aware (`syncUntrusted` in `internal/trigger/definition.go`).
+12. **What happens to a mirrored comment later restricted in Jira?** *Open,
+    raised 2026-11-05 by #943's review (F6).* #908 skips a comment whose
+    `visibility` is set when it reads a thread (decision 9.6), but a skipped
+    comment looks to the importer exactly like a deleted one, and task 130
+    decision 24.1 keeps a mirrored row whose remote comment disappeared. So
+    a comment that was public when it was mirrored and is restricted to a
+    role or group afterwards — often because it held something sensitive —
+    stays here with its old body, visible to every local reader and agent.
+    #908 only narrows the claim to "never newly mirrored". The fix is a
+    choice the comment mirror has never had to make, because GitHub has no
+    restriction: the source would report a restricted comment with a marker
+    instead of dropping it, and the importer would either delete the
+    mirrored row or redact its body, with an event either way. Both need a
+    store write path that does not exist (no comment is ever deleted or
+    rewritten by sync today). To settle before 142.18's end-to-end gate.
 
 ## Facts carried unverified
 
