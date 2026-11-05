@@ -112,6 +112,11 @@ type fakeArchiver struct {
 	mu    sync.Mutex
 	calls []archiveCall
 	errs  map[int64]error
+	// gate, when set, holds every Archive until it is closed, ignoring ctx
+	// the way a worktree removal already under way does.
+	gate chan struct{}
+	// after, when set, runs after each call is recorded.
+	after func(id int64)
 }
 
 type archiveCall struct {
@@ -121,9 +126,16 @@ type archiveCall struct {
 
 func (a *fakeArchiver) Archive(_ context.Context, id int64, opts taskrun.ArchiveOptions) (*store.Task, worktree.BranchOutcome, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.calls = append(a.calls, archiveCall{id, opts})
-	return &store.Task{ID: id}, worktree.BranchOutcome{}, a.errs[id]
+	gate, after, err := a.gate, a.after, a.errs[id]
+	a.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	if after != nil {
+		after(id)
+	}
+	return &store.Task{ID: id}, worktree.BranchOutcome{}, err
 }
 
 func (a *fakeArchiver) ids() []int64 {
@@ -398,4 +410,44 @@ func TestOnEventNeverBlocks(t *testing.T) {
 	if len(h.w.wake) != 1 {
 		t.Errorf("wake channel holds %d, want 1", len(h.w.wake))
 	}
+}
+
+// TestStopJoinsAnInFlightArchive: Stop returns only once an archive already
+// under way has returned, so the daemon never closes the store or the log
+// under one (review F1).
+func TestStopJoinsAnInFlightArchive(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness()
+		h.arch.gate = make(chan struct{})
+		h.st.archivable[7] = []int64{1}
+		h.w.Start(t.Context())
+		synctest.Wait()
+		h.emit(store.EventIssueStateChanged, closeIssue(7))
+		synctest.Wait()
+		if got := h.arch.ids(); !slices.Equal(got, []int64{1}) {
+			t.Fatalf("archived %v, want task 1 in flight", got)
+		}
+
+		var stopped atomic.Bool
+		go func() {
+			h.w.Stop()
+			stopped.Store(true)
+		}()
+		synctest.Wait()
+		if stopped.Load() {
+			t.Fatal("Stop returned while an archive was in flight")
+		}
+		close(h.arch.gate)
+		synctest.Wait()
+		if !stopped.Load() {
+			t.Fatal("Stop did not return after the archive did")
+		}
+		h.w.Stop() // a second Stop is a no-op
+	})
+}
+
+// TestStopBeforeStart: a daemon that fails before starting the worker still
+// calls Stop on its way out.
+func TestStopBeforeStart(t *testing.T) {
+	newHarness().w.Stop()
 }

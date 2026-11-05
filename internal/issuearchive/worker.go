@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"sync"
 
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/issuestate"
@@ -70,6 +71,10 @@ type Deps struct {
 type Worker struct {
 	deps Deps
 	wake chan struct{}
+
+	mu     sync.Mutex
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // New returns a Worker. It does nothing until Start.
@@ -103,8 +108,35 @@ func (w *Worker) Wake() {
 
 // Start runs the loop on its own goroutine. It drains once at start, so a
 // close the previous daemon committed but never acted on is replayed (§12.4).
+// The loop runs until ctx ends or Stop is called.
 func (w *Worker) Start(ctx context.Context) {
-	go w.run(ctx)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.done != nil {
+		return
+	}
+	ctx, w.cancel = context.WithCancel(ctx)
+	w.done = make(chan struct{})
+	go func() {
+		defer close(w.done)
+		w.run(ctx)
+	}()
+}
+
+// Stop cancels the loop and returns only once it has exited, so no archive
+// is in flight when the daemon closes the store and the log (§12.4) — an
+// archive removes the worktree before it writes the transition, and an
+// unjoined one could do the first half against a closing store. It is the
+// notifier's Stop shape. Stop before Start, or twice, is a no-op.
+func (w *Worker) Stop() {
+	w.mu.Lock()
+	cancel, done := w.cancel, w.done
+	w.mu.Unlock()
+	if done == nil {
+		return
+	}
+	cancel()
+	<-done
 }
 
 func (w *Worker) run(ctx context.Context) {

@@ -746,6 +746,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		bridge.close(context.Background())
 		triggers.Stop()
 		sched.Stop()
+		issueArchiver.Stop()
 		runner.Stop()
 		chats.Stop()
 		notifier.Stop()
@@ -765,6 +766,10 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// rest winds down.
 	triggers.Stop()
 	sched.Stop()
+	// Before the runner and the broker: an archive in flight removes a
+	// worktree before it writes `→ archived`, so it must finish while the
+	// store is still open, and nothing new should start during the grace.
+	issueArchiver.Stop()
 	runner.StopGraceful(processGrace)
 	chats.Stop()
 	// Before broker.Close(): the broker is what feeds the notifier's hook, and
