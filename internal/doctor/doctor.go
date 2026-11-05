@@ -91,6 +91,13 @@ type Report struct {
 	Backup  Backup  `json:"backup"`
 	Storage Storage `json:"storage"`
 	Tasks   Tasks   `json:"tasks"`
+	// IssueArchive is the auto-archive's held list (task 143.4, #929): the
+	// settled roots of closed issues that archive_tasks_on_issue_close has
+	// not archived, each with every reason that holds it, and the issue-chat
+	// main-worktree directories closed issues left behind. It is
+	// information, **never a problem** (task 143 decision 16): a dirty
+	// worktree or a live chat is usually a person's deliberate state.
+	IssueArchive IssueArchive `json:"issue_archive"`
 	// Problems is the closed set of findings that make `vincent doctor` exit
 	// 1 (task 006 decision 7). It is computed by Evaluate, on the server as
 	// well as locally, so a client never re-derives the verdict.
@@ -414,6 +421,78 @@ type UnreconciledTask struct {
 	OpenStepRuns int    `json:"open_step_runs"`
 }
 
+// IssueArchive is the auto-archive group (task 143.4). Known is false
+// without a daemon, as Tasks.Known is; Enabled is the live value of
+// archive_tasks_on_issue_close, and with it false both lists stay empty —
+// nothing is held by a feature that is switched off.
+type IssueArchive struct {
+	Known   bool `json:"known"`
+	Enabled bool `json:"enabled"`
+	// Held is every done or aborted, unarchived root of a closed issue that
+	// the archivable rule's task-level predicates cover (task 143 decision
+	// 12), by issue then archive order.
+	Held []HeldTask `json:"held"`
+	// ChatDirs are issue main-worktree directories a closed or archived
+	// issue chat still names on a closed issue and that still exist on disk
+	// (task 143 decisions 11 and 15). A row claims each one, so it is not a
+	// gc orphan, and doctor never reclaims it.
+	ChatDirs []LeftoverChatDir `json:"chat_dirs"`
+	Error    string            `json:"error,omitempty"`
+}
+
+// HeldTask is one task the auto-archive has not archived, with every reason
+// that holds it now (task 143 decision 14).
+type HeldTask struct {
+	TaskID  int64  `json:"task_id"`
+	IssueID int64  `json:"issue_id"`
+	Title   string `json:"title"`
+	State   string `json:"state"`
+	// Role is the task's issue-worktree role: "main", "side" or "".
+	Role string `json:"role"`
+	// Reasons are HoldReasons members in that order; HoldAwaitingRetry
+	// appears only alone.
+	Reasons []string `json:"reasons"`
+}
+
+// LeftoverChatDir is one issue chat's main-worktree directory left on disk
+// after the issue closed.
+type LeftoverChatDir struct {
+	IssueID int64  `json:"issue_id"`
+	ChatID  int64  `json:"chat_id"`
+	Path    string `json:"path"`
+}
+
+// The closed vocabulary of HeldTask.Reasons (task 143 decision 13). The
+// remedies are §18's: clean the worktree, close the chat, settle the lane,
+// or archive by hand — with force if wanted.
+const (
+	// HoldDirty: the task's worktree, or that of an unarchived lane under a
+	// fan-out root, has local changes, untracked files included.
+	HoldDirty = "dirty"
+	// HoldLockedByChat: an open linked chat locks the task.
+	HoldLockedByChat = "locked_by_chat"
+	// HoldUnfinishedLane: a descendant lane is not settled.
+	HoldUnfinishedLane = "unfinished_lane"
+	// HoldHeldForSideWork: an issue main task waiting for a side task or
+	// merge-back of its issue that carries one of the three holds above.
+	HoldHeldForSideWork = "held_for_side_work"
+	// HoldIssueNotQuiescent: another root of the issue is unsettled, or an
+	// issue chat is live.
+	HoldIssueNotQuiescent = "issue_not_quiescent"
+	// HoldHandoffClaimed: a handoff item still claims the issue.
+	HoldHandoffClaimed = "handoff_claimed"
+	// HoldAwaitingRetry: nothing holds the task now; the worker acts only
+	// when an event touches the issue, so it waits for one — or for a
+	// person to archive it.
+	HoldAwaitingRetry = "awaiting_retry"
+)
+
+// HoldReasons is the vocabulary in the order Reasons lists it.
+var HoldReasons = []string{
+	HoldDirty, HoldLockedByChat, HoldUnfinishedLane, HoldHeldForSideWork,
+	HoldIssueNotQuiescent, HoldHandoffClaimed, HoldAwaitingRetry,
+}
+
 // Problem is one finding from the closed unhealthy set (decision 7). A
 // missing or logged-out agent CLI is deliberately not one: most machines have
 // one of three adapters installed, and a doctor that exits 1 almost
@@ -478,6 +557,7 @@ func Compose(ctx context.Context, opts Options) *Report {
 		NewestMigration: store.NewestMigration(),
 	}
 	r.Tasks = Tasks{Counts: zeroStateCounts()}
+	r.IssueArchive = IssueArchive{Held: []HeldTask{}, ChatDirs: []LeftoverChatDir{}}
 	if opts.Agents != nil {
 		r.Agents = opts.Agents
 	} else {

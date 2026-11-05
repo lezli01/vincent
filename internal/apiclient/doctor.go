@@ -66,6 +66,16 @@ type DoctorOrphan = doctor.Orphan
 // DoctorTasks is the report's §6 state tally.
 type DoctorTasks = doctor.Tasks
 
+// DoctorIssueArchive is the report's auto-archive group (task 143.4).
+type DoctorIssueArchive = doctor.IssueArchive
+
+// DoctorHeldTask is one task the auto-archive has not archived.
+type DoctorHeldTask = doctor.HeldTask
+
+// DoctorLeftoverChatDir is one issue chat's main-worktree directory left on
+// disk after its issue closed.
+type DoctorLeftoverChatDir = doctor.LeftoverChatDir
+
 // DoctorProblem is one finding from the closed unhealthy set.
 type DoctorProblem = doctor.Problem
 

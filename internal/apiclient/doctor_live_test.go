@@ -18,6 +18,8 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/doctor"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/issuestate"
+	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -352,5 +354,57 @@ func TestDoctorBackupRoundTrips(t *testing.T) {
 				t.Errorf("a succeeding backup raised a problem: %+v", *problem)
 			}
 		})
+	}
+}
+
+// TestDoctorIssueArchiveRoundTrips is task 143.4's half: the held list, its
+// reasons and the chat-directory list survive the wire as the documented
+// field names.
+func TestDoctorIssueArchiveRoundTrips(t *testing.T) {
+	var st *store.Store
+	c := newDoctorClientWith(t, config.Dirs{Config: t.TempDir(), Data: t.TempDir()}, func(d *api.Deps) { st = d.Store })
+	ctx := t.Context()
+	p := &store.Project{Name: "p", Path: t.TempDir(), DefaultBranch: "main"}
+	if err := st.CreateProject(ctx, p); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	iss, err := st.CreateIssue(ctx, store.NewIssue{ProjectID: p.ID, Title: "an issue"}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	task := &store.Task{
+		ProjectID: p.ID, Title: "the work", WorkflowName: "adhoc", WorkflowSnapshot: "steps: []",
+		BaseBranch: "main", BranchName: "vincent/the-work", State: store.TaskQueued, IssueID: &iss.ID,
+	}
+	if err := st.CreateTask(ctx, task, nil); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	for _, step := range [][2]store.TaskState{{store.TaskQueued, store.TaskRunning}, {store.TaskRunning, store.TaskDone}} {
+		if _, _, err := st.TransitionTask(ctx, task.ID, step[0], step[1], store.TaskChange{}); err != nil {
+			t.Fatalf("→ %s: %v", step[1], err)
+		}
+	}
+	if _, err := st.TransitionIssue(ctx, iss.ID, issuestate.Close, issuestate.Completed, nil, issuestate.Human); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	rep, err := c.Doctor(ctx, false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	ia := rep.IssueArchive
+	want := apiclient.DoctorHeldTask{
+		TaskID: task.ID, IssueID: iss.ID, Title: "the work", State: "done",
+		Reasons: []string{doctor.HoldAwaitingRetry},
+	}
+	if !ia.Known || !ia.Enabled || len(ia.Held) != 1 || ia.ChatDirs == nil {
+		t.Fatalf("issue_archive = %+v", ia)
+	}
+	if got := ia.Held[0]; got.TaskID != want.TaskID || got.IssueID != want.IssueID || got.Title != want.Title ||
+		got.State != want.State || strings.Join(got.Reasons, ",") != doctor.HoldAwaitingRetry {
+		t.Errorf("held = %+v, want %+v", got, want)
+	}
+	if !rep.Healthy() {
+		t.Errorf("a held task made the report unhealthy: %v", rep.Problems)
 	}
 }
