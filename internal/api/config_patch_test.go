@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -799,5 +800,42 @@ func TestConfigPatchRefusesANegativeGitHubInterval(t *testing.T) {
 	if err := json.Unmarshal(out, &env); err != nil || env.Error.Code != CodeValidationFailed ||
 		!strings.Contains(env.Error.Message, "github.poll_interval") {
 		t.Fatalf("want the validation envelope naming github.poll_interval, got %s", out)
+	}
+}
+
+// TestConfigPatchArchiveTasksOnIssueClose: task 143.3's switch is served on
+// GET /v1/config, defaults on, and a PATCH both ways is in force before the
+// answer and written to config.yaml (review F8).
+func TestConfigPatchArchiveTasksOnIssueClose(t *testing.T) {
+	h := newConfigHarness(t)
+	get := func() bool {
+		t.Helper()
+		_, body := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+		var cfg configResponse
+		if err := json.Unmarshal(body, &cfg); err != nil {
+			t.Fatalf("parse config: %v", err)
+		}
+		return cfg.ArchiveTasksOnIssueClose
+	}
+	if !get() {
+		t.Fatal("archive_tasks_on_issue_close defaults off, want on")
+	}
+	for _, want := range []bool{false, true} {
+		resp, body := h.patch(t, fmt.Sprintf(`{"archive_tasks_on_issue_close":%v}`, want))
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("patch %v: status %d: %s", want, resp.StatusCode, body)
+		}
+		if got := get(); got != want {
+			t.Errorf("after patch %v: GET says %v", want, got)
+		}
+		if got := h.cur.Load().ArchiveTasksOnIssueClose; got != want {
+			t.Errorf("after patch %v: config in force says %v", want, got)
+		}
+		if line := fmt.Sprintf("archive_tasks_on_issue_close: %v", want); !strings.Contains(string(h.bytes(t)), line) {
+			t.Errorf("config.yaml lacks %q:\n%s", line, h.bytes(t))
+		}
+	}
+	if resp, body := h.patch(t, `{"archive_tasks_on_issue_close":"yes"}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("non-bool value: status %d, want 400 (%s)", resp.StatusCode, body)
 	}
 }

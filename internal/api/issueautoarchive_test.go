@@ -8,15 +8,18 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/issuearchive"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/scheduler"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testutil/wait"
+	"github.com/lezli01/vincent/internal/worktree"
 )
 
 // lockedBuffer is a log sink the worker writes from its own goroutine.
@@ -49,7 +52,7 @@ func (h *taskHarness) withIssueArchiver(t *testing.T) *lockedBuffer {
 		Logger:   slog.New(slog.NewTextHandler(log, nil)),
 	})
 	h.store.SetEventHook(func(e *store.Event) {
-		if scheduler.WakeOn(e) {
+		if h.sched != nil && scheduler.WakeOn(e) {
 			h.sched.Wake()
 		}
 		w.OnEvent(e)
@@ -170,4 +173,76 @@ func TestClosingAnIssueArchivesItsSettledTasks(t *testing.T) {
 		t.Fatalf("sync close: %v", err)
 	}
 	h.waitArchived(t, synced.ID)
+}
+
+// TestHandoffDeliveryCloseArchives: a handoff item delivered with a close
+// closes the issue and resolves the item in one transaction, so the claim
+// never holds the archive; the issue's done task is archived (task 143.3
+// test 1, review F8).
+func TestHandoffDeliveryCloseArchives(t *testing.T) {
+	h := newTaskHarness(t, 0, true)
+	h.withIssueArchiver(t)
+	iss := h.issue(t)
+	done := h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "work"})
+	h.waitForState(t, done.ID, "done")
+
+	ho := startHandoff(t, h, iss.ID)
+	wantStatus(t, http.StatusOK)(h.postMarked(t, itemVerbPath(ho.ID, strconv.FormatInt(iss.ID, 10), "deliver"),
+		map[string]any{"close": "completed"}))
+	if got, err := h.store.GetIssue(t.Context(), iss.ID); err != nil || got.State != issuestate.Closed {
+		t.Fatalf("issue after deliver --close = %+v, %v; want closed", got, err)
+	}
+	h.waitArchived(t, done.ID)
+	if p := h.archiveEvent(t, done.ID); p["archived_by"] != issuearchive.ArchivedBy {
+		t.Errorf("archive payload = %v, want archived_by %q", p, issuearchive.ArchivedBy)
+	}
+}
+
+// TestLinkedChatHoldsTheArchiveUntilClosed: a chat linked to a done task of
+// the issue (task 119) locks it, so the close is refused and logged; closing
+// the chat publishes the chat.closed the worker maps back to the issue
+// through linked_task_id, and the task is archived then. The chat itself is
+// never archived (task 143.3 tests 8 and 9, review F8).
+func TestLinkedChatHoldsTheArchiveUntilClosed(t *testing.T) {
+	h := newLinkedHarness(t)
+	log := h.withIssueArchiver(t)
+	ctx := t.Context()
+	iss := h.issue(t)
+	task := h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "work"})
+	setState(t, h.taskHarness, task.ID, store.TaskRunning)
+	if _, _, err := h.store.TransitionTask(ctx, task.ID, store.TaskRunning, store.TaskDone, store.TaskChange{}); err != nil {
+		t.Fatalf("→ done: %v", err)
+	}
+	stored, err := h.store.GetTask(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.wt.CreateAndClaim(ctx, h.repo, worktree.TaskOwner(task.ID),
+		stored.BranchName, stored.BaseBranch, false, func(c worktree.Created) error {
+			path := c.Path
+			return h.store.SetTaskProgress(ctx, task.ID, nil, &path, nil)
+		}); err != nil {
+		t.Fatalf("create worktree: %v", err)
+	}
+	chat := h.openChat(t, task.ID)
+
+	h.closeIssue(t, iss.ID)
+	wait.Until(t, "the lock refusal logged", func() bool {
+		return strings.Contains(log.String(), fmt.Sprintf("task=%d issue=%d reason=task_locked_by_chat", task.ID, iss.ID))
+	})
+	if got, _ := h.store.GetTask(ctx, task.ID); got.State != store.TaskDone {
+		t.Fatalf("locked task = %s, want done", got.State)
+	}
+
+	if code, body := h.post(t, fmt.Sprintf("/v1/chats/%d/close", chat.ID), nil); code != http.StatusOK {
+		t.Fatalf("close chat: %d %s", code, body)
+	}
+	h.waitArchived(t, task.ID)
+	c, err := h.store.GetChat(ctx, chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.State == chatstate.Archived {
+		t.Error("the linked chat was archived")
+	}
 }

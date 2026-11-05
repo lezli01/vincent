@@ -100,6 +100,7 @@ CFG="$(api GET /config)" || fail "GET /v1/config failed"
 # see, which is the defect this task closed.
 for key in listen max_parallel_tasks branch_template defaults \
            delete_empty_branch_on_archive delete_remote_branch_on_archive \
+           archive_tasks_on_issue_close \
            fetch_base_branch transcript_retention_days transcript_max_bytes \
            max_task_cost_usd usage_limit_recheck_interval log_level debug \
            environment agents parallel fan_out loop include mcp github \
