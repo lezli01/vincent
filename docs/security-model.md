@@ -645,7 +645,9 @@ below is the whole posture, not a set of tips.
   **not** say who applied a label or requested a review.
   The `issues` source holds a change imported from the issue's tracker, GitHub
   or Jira (`by: sync`), to the same rule as `github_issues`, against the
-  imported issue's author; a change
+  imported issue's author, with one difference: a Jira label change is
+  untrusted, because anyone who may edit a Jira issue may label it, so it needs
+  `allowed_actors` like a close; a change
   made in vincent, by you or an agent, is trusted.
 - **Prompt injection becomes remote.** An issue body, a pull-request title or a
   CI log reaches the trigger's templates as `.Event`. Whatever the file renders
