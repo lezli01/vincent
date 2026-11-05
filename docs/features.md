@@ -601,6 +601,8 @@ reconciler tick, and `vincent issue sync` asks for one now. A project's
 bound to `none` or `jira`, it imports nothing from GitHub, and its pull
 requests are still linked. Bound to `jira`, it imports the open issues of a
 Jira Cloud project instead, on [`jira.poll_interval`](reference/configuration.md#jira),
+writes a person's close or reopen back as a
+[workflow transition](reference/api.md#jira-write-back),
 and [`vincent jira status`](reference/cli.md#vincent-jira-status) checks the binding. A GitHub issue
 reaches a task the way any issue does: create the task from the imported issue
 with `vincent task add --issue ID`, `issue_id` over the API, or `issue:` in a
