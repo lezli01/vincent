@@ -921,8 +921,14 @@ EOF
   # Chats (task 067, issue #413), seeded while claude still points at the
   # conversational CLI — the three swaps below are one-way.
   say "chats"
-  newchat() { # newchat PROJECT AGENT TITLE
-    api POST /chats "{\"project_id\":$1,\"agent\":\"$2\",\"title\":$(jq -Rn --arg t "$3" '$t')}" | jq -r .id
+  # The optional fourth argument opens the chat *on an issue* (task 140):
+  # `POST /v1/chats` takes `issue_id` and holds the issue's main worktree for
+  # the chat's life. A chat on a task is a different endpoint — see
+  # `linked_chat` below.
+  newchat() { # newchat PROJECT AGENT TITLE [ISSUE_ID]
+    local issue=""
+    [[ -n "${4:-}" ]] && issue=",\"issue_id\":$4"
+    api POST /chats "{\"project_id\":$1,\"agent\":\"$2\",\"title\":$(jq -Rn --arg t "$3" '$t')$issue}" | jq -r .id
   }
   chat_send() { # chat_send ID MESSAGE
     api POST "/chats/$1/send" "{\"message\":$(jq -Rn --arg m "$2" '$m')}" >/dev/null
@@ -1086,9 +1092,41 @@ EOF
   # before it ever ran. All three on platform-infra, because the archived
   # board shows one project; feature-pr and docs-refresh are global, so infra
   # can run them.
-  local archived
+  #
+  # The first of them is also what tui-issue-work photographs (issue #934):
+  # the issue detail's Work tab of "The eu-west DNS change broke the status
+  # page", with its archived task and a chat in each ended state. Three
+  # things about the placement are load-bearing:
+  #
+  #   - Both issue chats come *before* the task. A chat on an issue newer
+  #     than its latest delivery puts the issue in `in_progress`, closed or
+  #     not (issueLatestChatCond), and a live one makes it Active
+  #     (issueLiveChatCond) — either would pull it out of the `hand-off`
+  #     lane tui-issues photographs it in. Created first, the task's later
+  #     delivery keeps the lane `hand_off`. So no live issue chat at all.
+  #   - Each issue chat ends before the next starts: a chat on an issue
+  #     holds the issue's main worktree, and the next one (or the task)
+  #     would get a 409 `issue_worktree_occupied` while it does.
+  #   - The chat on the task carries no `issue_id`, so it does not move the
+  #     lane; it needs the task stopped and its worktree still there, so it
+  #     comes after `done` and before the archive.
+  #
+  # cursor, and after every chat above, for the reasons `ended_chat` and
+  # `linked_chat` give: claude must not be asked anything after
+  # agent-walled, and no chat id a chat shot photographs moves.
+  local archived c
+  c="$(newchat "$P_INFRA" cursor 'which records did the DNS change touch?' "$I_DNS")"
+  chat_send "$c" 'Which records did the eu-west DNS change touch, and which of them serve the status page?'
+  wait_chat "$c" idle 120
+  api POST "/chats/$c/archive" >/dev/null
+  c="$(newchat "$P_INFRA" cursor 'is a rollback safe with the TTLs we set?' "$I_DNS")"
+  chat_send "$c" 'Is rolling the DNS change back safe with the TTLs it set, or do we wait them out?'
+  wait_chat "$c" idle 120
+  api POST "/chats/$c/close" >/dev/null
   archived="$(add "$P_INFRA" incident-response 'roll back the eu-west DNS change' "\"issue_id\":$I_DNS")"
   wait_state "$archived" done 120
+  linked_chat "$archived" 'did the rollback restore the status page?' \
+    'Did the rollback restore the status page, and is anything still cached at the edge?'
   api POST "/tasks/$archived/archive" >/dev/null
   archived="$(add "$P_INFRA" feature-pr 'drop the codex 0.9 compatibility shim')"
   wait_state "$archived" awaiting_gate 120
@@ -2494,8 +2532,9 @@ Screenshot "'"$OUT"'/tui-handoff-form.png"
 Sleep 2s
 '
 
-  # The waiting issue's detail: its finished task and the Handoff section
-  # under it — the handoff, its task, the outcome and the note.
+  # The waiting issue's detail: the Work line counting its finished task, and
+  # the Handoff section under it — the handoff, its task, the outcome and the
+  # note.
   owns platform-infra issue 'backup bucket' tui-issue-handoff
   tape tui-issue-handoff 1250 platform-infra '
 Sleep 3s
@@ -2541,6 +2580,29 @@ Sleep 1s
 Enter
 Sleep 4s
 Screenshot "'"$OUT"'/tui-daemon-adapters.png"
+Sleep 2s
+'
+
+  # The issue detail's Work tab (task 144, issue #934): "The eu-west DNS
+  # change broke the status page", whose Tasks list holds its archived task
+  # and whose Chats list holds a chat in each ended state — archived and
+  # closed on the issue, closed on the task. The seed explains why none is
+  # live. The issue sits in the hand-off lane, and the filter narrows the
+  # list to it, so the second enter opens it; tab moves to the Work tab.
+  owns platform-infra issue 'status page' tui-issue-work
+  tape tui-issue-work 1250 platform-infra '
+Sleep 3s
+Type "/"
+Sleep 500ms
+Type "status page"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 2s
+Tab
+Sleep 3s
+Screenshot "'"$OUT"'/tui-issue-work.png"
 Sleep 2s
 '
 }
