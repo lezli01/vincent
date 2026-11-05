@@ -478,7 +478,7 @@ daemon running.
                                  "state": "done", "role": "main",
                                  "reasons": ["dirty", "locked_by_chat"] } ],
                      "chat_dirs": [ { "issue_id": 37, "chat_id": 19,
-                                      "path": "…/worktrees/issue-37" } ] },
+                                      "path": "…/worktrees/chat-19" } ] },
   "problems": []
 }
 ```

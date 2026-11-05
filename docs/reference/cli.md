@@ -240,9 +240,9 @@ local changes, untracked files included), `project_path_missing` (the
 project's directory is gone while such a worktree is still on disk — restore
 the path, or archive by hand with `--force`), `locked_by_chat` (an open linked
 chat on the task, or on an unarchived lane), `unfinished_lane` (a fan-out lane
-is not settled), `held_for_side_work` (an issue main task waiting for a held side task or merge-back of the same
-issue), `issue_not_quiescent` (another task of the issue is unsettled, or an
-issue chat is live) and `handoff_claimed` (a handoff still claims the issue).
+is not settled), `held_for_side_work` (an issue main task waiting for a held
+side task or merge-back of the same issue), `issue_not_quiescent` (another root
+task of the issue is unsettled, or an issue chat is live) and `handoff_claimed` (a handoff still claims the issue).
 `awaiting_retry` stands alone when nothing holds the task any more — the
 auto-archive acts only when something happens on the issue, and cleaning a
 worktree is not such an event, so archive it by hand. Tasks of issues closed
