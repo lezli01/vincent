@@ -2083,13 +2083,29 @@ its lane (with `!` when a task waits on you); for an imported issue, a
 when it last synced and the reason it stands there; a **Main
 worktree** section, once the issue has a main branch, naming the branch and
 the task holding it (`enter` on the section opens that task), the chat
-opened on the issue holding it (`enter` opens the chat), or `free`; every
-task the issue started, newest first and finished or archived ones included,
-each with its state glyph and its role — `main`, `side · merge manual` or
-`side · merge agent`, or `merge-back of #S`, folded under the side task it
-merges; and, for an imported issue,
-where it came from — the URL and the state GitHub last reported; and the
-discussion thread under the description, described below.
+opened on the issue holding it (`enter` opens the chat), or `free`; a
+**Work** line counting the issue's tasks and chats; and, for an imported
+issue, where it came from — the URL and the state GitHub last reported; and
+the discussion thread under the description, described below.
+
+The detail has two tabs, drawn as an `Issue | Work` strip at the top: `tab`
+or `]` moves to the next one and `shift+tab` or `[` to the previous one,
+wrapping, and a click on a tab selects it. There are no digit keys. `enter`
+on the Work line also switches to the **Work** tab, which lists:
+
+- **Tasks** — every task the issue started, newest first and finished or
+  archived ones included (`· archived`), each with its state glyph and its
+  role — `main`, `side · merge manual` or `side · merge agent`, or
+  `merge-back of #S`, folded under the side task it merges — and, on a
+  fan-out parent, `lanes n/m`. Lanes are never rows of their own.
+- **Chats** — every chat that concerns the issue, newest first: opened on
+  it (`on the issue`), opened on one of its tasks (`on task #T`), or handed
+  off into one, each with its state glyph and its state (`closed`,
+  `archived`, `handed off → #T`).
+
+`enter` on a task opens its workspace and on a chat opens the chat; an
+archived or finished one opens read-only, and `esc` comes back to the issue
+on the tab you left. Opening another issue starts it on the Issue tab.
 
 ![The detail of an issue imported from acme/web#142: its lane, labels,
 kind, priority and author, the description rendered as Markdown, two comments
@@ -2099,13 +2115,14 @@ section](../assets/tui-issue.png)
 
 | Key | Does |
 |---|---|
-| `enter` | Open the selected linked task's workspace, or on the Main worktree section the task or chat holding it — `esc` from a task or chat comes back to the issue |
+| `enter` | Open the selected task's workspace or chat, or on the Main worktree section the task or chat holding it — `esc` from a task or chat comes back to the issue. On the Work line, switch to the Work tab |
+| `tab`/`shift+tab`, `]`/`[` | Move to the next or the previous tab — Issue, Work — wrapping |
 | `o` | Open an imported issue's page in a browser |
 | `ctrl+o` | Show the description's and comments' original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description and comments, and the source page — open one in a browser or copy it |
 | `ctrl+y` | Copy the title, the description, a comment or the source URL |
 | `R` | Re-read the issue |
-| `↑`/`↓` | Scroll a line — while a Main worktree or task row is on screen, move the selection among the rows on screen first |
+| `↑`/`↓` | Scroll a line — while a selectable row is on screen, move the selection among the rows on screen first |
 | `pgup`/`pgdown`, `space` | Scroll a page |
 | `ctrl+u`/`ctrl+d` | Scroll half a page |
 | `home`/`end`, `g`/`G` | Jump to the start or the end of the page |
