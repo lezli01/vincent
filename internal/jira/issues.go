@@ -108,7 +108,14 @@ func InitialJQL(projectID, extraJQL, afterID string) string {
 // close is a change to mirror — as unquoted epoch milliseconds, which JQL
 // compares exactly whatever the site's time zone. A zero since omits the
 // updated clause.
-func IncrementalJQL(projectID, extraJQL string, since time.Time) string {
+//
+// It is ordered by id, not by updated, and resumes after afterID when set:
+// a walk a page cap stopped continues from the same since and the last id
+// read. Resuming by time instead cannot get past a window holding more
+// changes than one walk reads — one bulk edit is enough — because every
+// restart lands inside the overlap and reads the same first issues again
+// (review F1 on #943).
+func IncrementalJQL(projectID, extraJQL string, since time.Time, afterID string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "project = %s", projectID)
 	if extra := strings.TrimSpace(extraJQL); extra != "" {
@@ -117,7 +124,10 @@ func IncrementalJQL(projectID, extraJQL string, since time.Time) string {
 	if !since.IsZero() {
 		fmt.Fprintf(&b, " AND updated >= %d", since.Add(-Overlap).UnixMilli())
 	}
-	b.WriteString(" ORDER BY updated ASC, id ASC")
+	if afterID != "" {
+		fmt.Fprintf(&b, " AND id > %s", afterID)
+	}
+	b.WriteString(" ORDER BY id ASC")
 	return b.String()
 }
 

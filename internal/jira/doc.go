@@ -28,8 +28,8 @@
 // expand=renderedFields. The page has no `total`; nextPageToken is absent on
 // the last page, and is followed only within one Search call — it is never
 // returned or stored, so a sync's cursor is the JQL InitialJQL and
-// IncrementalJQL build (id > N, and updated >= since less Overlap), not a
-// token that expires.
+// IncrementalJQL build (both ordered by id and resumed by id > N, the second
+// also bounded by updated >= since less Overlap), not a token that expires.
 //
 // # Errors
 //

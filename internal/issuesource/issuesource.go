@@ -72,11 +72,12 @@ type ListOptions struct {
 	// PageCap bounds the pages walked; <= 0 is the source's default.
 	PageCap int
 	// After is an opaque resume cursor a previous truncated Page returned
-	// as ResumeAfter, for a source whose OpenOnly walk is ordered by id
-	// rather than by update time (Jira's). Such a source's OpenOnly listing
-	// ignores Since and resumes by After; its other listings use Since as
-	// GitHub's do. A source that resumes by time ignores After (GitHub
-	// does).
+	// as ResumeAfter, for a source whose walks are ordered by id rather
+	// than by update time (Jira's). Such a source's OpenOnly listing
+	// ignores Since and resumes by After; its other listings resume a
+	// truncated walk by After too, which then carries the walk's own bound
+	// in place of Since. A source that resumes by time ignores After
+	// (GitHub does).
 	After string
 }
 
@@ -107,7 +108,7 @@ func (is *Issue) UpdatedAt() time.Time {
 // is a conditional listing's "nothing moved", ETag is what to send next
 // time, Truncated says PageCap stopped the walk, and ResumeSince is where to
 // resume it from. ResumeAfter is set instead, when Truncated, by a source
-// whose OpenOnly walk is ordered by id: the next listing's After.
+// whose walks are ordered by id: the next listing's After.
 type Page struct {
 	Issues      []Issue
 	Unchanged   bool

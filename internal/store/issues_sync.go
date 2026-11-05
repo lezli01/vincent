@@ -53,8 +53,9 @@ type IssueSyncState struct {
 	// GitHub row. A pass resolving a different id stops with
 	// binding_changed.
 	RemoteProjectID string
-	// ImportCursor is where an id-ordered initial import resumes
-	// (issuesource.ListOptions.After); "" when none is under way.
+	// ImportCursor is where an id-ordered walk resumes
+	// (issuesource.ListOptions.After): the initial import's, or a later
+	// pass's whose listing a page cap stopped; "" when none is under way.
 	ImportCursor string
 }
 

@@ -13,9 +13,10 @@ func TestJQLBuilders(t *testing.T) {
 	for _, tc := range []struct{ got, want string }{
 		{InitialJQL("10000", "", ""), "project = 10000 AND statusCategory != Done ORDER BY id ASC"},
 		{InitialJQL("10000", " labels = vincent ", "10042"), "project = 10000 AND statusCategory != Done AND (labels = vincent) AND id > 10042 ORDER BY id ASC"},
-		{IncrementalJQL("10000", "", since), "project = 10000 AND updated >= 1793779020000 ORDER BY updated ASC, id ASC"},
-		{IncrementalJQL("10000", "type = Bug", since), "project = 10000 AND (type = Bug) AND updated >= 1793779020000 ORDER BY updated ASC, id ASC"},
-		{IncrementalJQL("10000", "", time.Time{}), "project = 10000 ORDER BY updated ASC, id ASC"},
+		{IncrementalJQL("10000", "", since, ""), "project = 10000 AND updated >= 1793779020000 ORDER BY id ASC"},
+		{IncrementalJQL("10000", "type = Bug", since, ""), "project = 10000 AND (type = Bug) AND updated >= 1793779020000 ORDER BY id ASC"},
+		{IncrementalJQL("10000", "", since, "10042"), "project = 10000 AND updated >= 1793779020000 AND id > 10042 ORDER BY id ASC"},
+		{IncrementalJQL("10000", "", time.Time{}, ""), "project = 10000 ORDER BY id ASC"},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("got  %s\nwant %s", tc.got, tc.want)
@@ -28,7 +29,8 @@ func TestJQLBuilders(t *testing.T) {
 	// must be inside it.
 	for _, jql := range []string{
 		InitialJQL("10000", "", ""), InitialJQL("10000", "", "7"),
-		IncrementalJQL("10000", "", since), IncrementalJQL("10000", "", time.Time{}),
+		IncrementalJQL("10000", "", since, ""), IncrementalJQL("10000", "", since, "7"),
+		IncrementalJQL("10000", "", time.Time{}, ""),
 	} {
 		if _, err := fakejira.ParseJQL(jql); err != nil {
 			t.Errorf("fakejira rejects %q: %v", jql, err)

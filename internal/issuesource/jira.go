@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuestate"
@@ -109,10 +110,13 @@ func (*Jira) Locate(rem store.IssueRemote) (Binding, bool) {
 	return NewBinding(rem.Repo, nil), true
 }
 
-// ListIssues is one search/jql walk. OpenOnly is the initial import's
-// id-ordered walk of the not-done issues, resumed by After; otherwise the
-// incremental walk of everything updated since opts.Since less the client's
-// overlap, resumed by time.
+// ListIssues is one search/jql walk, ordered by id either way. OpenOnly is
+// the initial import's walk of the not-done issues, resumed by After;
+// otherwise the incremental walk of everything updated since opts.Since less
+// the client's overlap. A truncated incremental walk returns a ResumeAfter
+// that carries its window's bound with the last id read, and a listing given
+// one resumes that walk and ignores opts.Since: resuming by time could not
+// get past a window holding more changes than one walk reads (review F1).
 func (*Jira) ListIssues(ctx context.Context, b Binding, opts ListOptions) (Page, error) {
 	ref := jiraRefOf(b)
 	if ref == nil {
@@ -123,10 +127,15 @@ func (*Jira) ListIssues(ctx context.Context, b Binding, opts ListOptions) (Page,
 		pageCap = jiraDefaultPageCap
 	}
 	var jql string
+	since := opts.Since
 	if opts.OpenOnly {
 		jql = jira.InitialJQL(ref.projectRef(), ref.jql, opts.After)
 	} else {
-		jql = jira.IncrementalJQL(ref.projectRef(), ref.jql, opts.Since)
+		var after string
+		if bound, id, ok := parseWindowCursor(opts.After); ok {
+			since, after = bound, id
+		}
+		jql = jira.IncrementalJQL(ref.projectRef(), ref.jql, since, after)
 	}
 	res, err := ref.client.Search(ctx, jql, pageCap)
 	if err != nil {
@@ -145,10 +154,41 @@ func (*Jira) ListIssues(ctx context.Context, b Binding, opts ListOptions) (Page,
 		if opts.OpenOnly {
 			out.ResumeAfter = last.ID
 		} else {
-			out.ResumeSince = last.Fields.UpdatedAt()
+			out.ResumeAfter = windowCursor(since, last.ID)
 		}
 	}
 	return out, nil
+}
+
+// windowCursor is a truncated incremental walk's resume point: the bound
+// every page of the walk asks from (epoch milliseconds, "" for none) and the
+// last id read, as "<ms>:<id>".
+func windowCursor(since time.Time, id string) string {
+	var ms string
+	if !since.IsZero() {
+		ms = strconv.FormatInt(since.UnixMilli(), 10)
+	}
+	return ms + ":" + id
+}
+
+// parseWindowCursor reads windowCursor's string; ok is false for anything
+// else, which then lists from opts.Since as if no walk were under way.
+func parseWindowCursor(s string) (since time.Time, id string, ok bool) {
+	ms, id, found := strings.Cut(s, ":")
+	if !found {
+		return time.Time{}, "", false
+	}
+	if _, err := strconv.ParseUint(id, 10, 64); err != nil {
+		return time.Time{}, "", false
+	}
+	if ms == "" {
+		return time.Time{}, id, true
+	}
+	n, err := strconv.ParseInt(ms, 10, 64)
+	if err != nil {
+		return time.Time{}, "", false
+	}
+	return time.UnixMilli(n).UTC(), id, true
 }
 
 // GetIssue reads rem's issue by its id. One that left b's project is

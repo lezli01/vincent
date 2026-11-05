@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -242,19 +243,30 @@ func TestJiraListingCursors(t *testing.T) {
 	if !page.Truncated || page.ResumeAfter != "10002" || !page.ResumeSince.IsZero() {
 		t.Errorf("open page: truncated %v after %q since %v", page.Truncated, page.ResumeAfter, page.ResumeSince)
 	}
+	// An incremental walk resumes by id from its own bound, never by time:
+	// the resumed listing asks from the first one's since, not the later
+	// one it is given, and after the last id read (review F1).
 	since := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	page, err = src.ListIssues(context.Background(), b, ListOptions{Since: since, After: "ignored", PageCap: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !page.Truncated || page.ResumeAfter != "" || page.ResumeSince.IsZero() {
-		t.Errorf("incremental page: truncated %v after %q since %v", page.Truncated, page.ResumeAfter, page.ResumeSince)
+	if !page.Truncated || !page.ResumeSince.IsZero() || page.ResumeAfter == "" {
+		t.Fatalf("incremental page: truncated %v after %q since %v", page.Truncated, page.ResumeAfter, page.ResumeSince)
+	}
+	last := page.Issues[len(page.Issues)-1].Remote.RemoteKey
+	if want := strconv.FormatInt(since.UnixMilli(), 10) + ":" + last; page.ResumeAfter != want {
+		t.Errorf("incremental cursor %q, want %q", page.ResumeAfter, want)
+	}
+	if _, err := src.ListIssues(context.Background(), b, ListOptions{Since: since.Add(time.Hour), After: page.ResumeAfter, PageCap: 1}); err != nil {
+		t.Fatal(err)
 	}
 	site.mu.Lock()
 	defer site.mu.Unlock()
 	want := []string{
 		"project = 10000 AND statusCategory != Done AND (labels = sync) AND id > 10000 ORDER BY id ASC",
-		jira.IncrementalJQL("10000", "labels = sync", since),
+		jira.IncrementalJQL("10000", "labels = sync", since, ""),
+		jira.IncrementalJQL("10000", "labels = sync", since, last),
 	}
 	if !slices.Equal(site.jqls, want) {
 		t.Errorf("searches = %q, want %q", site.jqls, want)

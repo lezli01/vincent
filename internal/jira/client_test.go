@@ -211,14 +211,14 @@ func TestIncrementalJQLAgainstFake(t *testing.T) {
 	// VIN-2 was updated 2026-08-02T10:00:00.123 and VIN-3 on the 3rd: a mark
 	// two minutes after VIN-2's edit still reads it, through the Overlap.
 	since := time.Date(2026, 8, 2, 10, 2, 0, 0, time.UTC)
-	res, err := f.client.Search(context.Background(), IncrementalJQL("10000", "", since), 5)
+	res, err := f.client.Search(context.Background(), IncrementalJQL("10000", "", since, ""), 5)
 	if record(err) != nil {
 		t.Fatal(err)
 	}
 	if len(res.Issues) != 2 || res.Issues[0].Key != "VIN-2" || res.Issues[1].Key != "VIN-3" {
 		t.Fatalf("incremental: %+v", res.Issues)
 	}
-	all, err := f.client.Search(context.Background(), IncrementalJQL("10000", "", time.Time{}), 5)
+	all, err := f.client.Search(context.Background(), IncrementalJQL("10000", "", time.Time{}, ""), 5)
 	if record(err) != nil || len(all.Issues) != 3 {
 		t.Fatalf("zero since: %d issues (%v)", len(all.Issues), err)
 	}

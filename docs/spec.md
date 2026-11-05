@@ -8767,8 +8767,12 @@ token are redacted from every error string. It lists only through
 `GET /rest/api/3/search/jql`, never the retired `/search`: the initial import
 walks `project = <id> AND statusCategory != Done [AND (<jql>)] AND id > <cursor>
 ORDER BY id ASC`, resuming from the row's `import_cursor`, and an incremental
-pass asks for `updated >=` the watermark less three minutes. A tick reads at
-most 500 issues and resumes on the next. The sweep reads the issues open here
+pass asks for `updated >=` the watermark less three minutes, also in id order.
+An import tick reads at most 500 issues and an incremental one at most 1000;
+either resumes on the next from `import_cursor`, an incremental walk keeping
+its window's bound and the last id read rather than restarting by time, so a
+window holding more changes than one tick reads — one bulk edit — is still
+walked to its end (review F1 on #943). The sweep reads the issues open here
 in bulk through `issue/bulkfetch` when the source offers it. Failures map onto
 the sync row's reasons: 401 `unauthorized`, 403 `forbidden`, 404 on the bound
 project `not_found`, 429 `rate_limited` with `rate_limited_until` taken from

@@ -157,7 +157,7 @@ func (p *issuePass) importIssues(ctx context.Context, now time.Time, requested b
 		if err := p.initialImport(ctx, now); err != nil {
 			return err
 		}
-	} else if err := p.incremental(ctx); err != nil {
+	} else if err := p.incremental(ctx, now); err != nil {
 		return err
 	}
 	if !st.ImportComplete {
@@ -222,7 +222,16 @@ func (p *issuePass) initialImport(ctx context.Context, now time.Time) error {
 // stored ETag. The bound moves only when the watermark does, so an idle
 // repository is asked the same question every tick and answers 304: one
 // request, nothing charged.
-func (p *issuePass) incremental(ctx context.Context) error {
+//
+// A source that resumes a truncated listing by cursor (Jira's, ordered by
+// id) is walked the way initialImport walks: the cursor goes in
+// ImportCursor and is handed back until the walk ends, and the bound is
+// held at when the walk began, because an issue the walk passed may change
+// before it ends and the watermark at the end says nothing about it.
+// Resuming such a window by time could not get past one holding more
+// changes than a walk reads (review F1 on #943). A source resuming by time
+// never sets a cursor, and its pass is exactly as it was.
+func (p *issuePass) incremental(ctx context.Context, now time.Time) error {
 	st := p.st
 	if st.Since == nil {
 		st.Since = sinceFrom(st.Watermark)
@@ -231,7 +240,7 @@ func (p *issuePass) incremental(ctx context.Context) error {
 	if st.Since != nil {
 		since = *st.Since
 	}
-	page, err := p.src.ListIssues(ctx, p.b, issuesource.ListOptions{Since: since, ETag: st.ETag})
+	page, err := p.src.ListIssues(ctx, p.b, issuesource.ListOptions{Since: since, ETag: st.ETag, After: st.ImportCursor})
 	if err != nil {
 		return err
 	}
@@ -244,11 +253,25 @@ func (p *issuePass) incremental(ctx context.Context) error {
 		return err
 	}
 	st.ETag = page.ETag
-	if !sameTime(before, st.Watermark) || laterBound(st.Since, sinceFrom(st.Watermark)) {
+	switch {
+	case page.Truncated && page.ResumeAfter != "":
+		if st.ImportCursor == "" {
+			begin := now.Add(-sinceOverlap)
+			st.Since = &begin
+		}
+		st.ImportCursor = page.ResumeAfter
+		st.ETag = ""
+	case st.ImportCursor != "":
+		// The walk ended: the next pass asks from when it began.
+		st.ImportCursor = ""
+		st.Since = earlierOf(sinceFrom(st.Watermark), st.Since)
+		st.ETag = ""
+	case !sameTime(before, st.Watermark) || laterBound(st.Since, sinceFrom(st.Watermark)):
 		// A new question: the stored ETag answered the old one. The second
-		// clause is an id-ordered import's bound (initialImport), held at
-		// the import's start until a pass has read everything since; a
-		// source resuming by time always has its bound at the watermark's.
+		// clause is an id-ordered walk's bound (initialImport, and the
+		// walk above), held at the walk's start until a pass has read
+		// everything since; a source resuming by time always has its bound
+		// at the watermark's.
 		st.Since = sinceFrom(st.Watermark)
 		st.ETag = ""
 	}

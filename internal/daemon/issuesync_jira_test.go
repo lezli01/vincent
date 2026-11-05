@@ -14,6 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/issueprovider"
 	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/issuestate"
+	"github.com/lezli01/vincent/internal/jira"
 	"github.com/lezli01/vincent/internal/store"
 )
 
@@ -118,6 +119,19 @@ func (s *jiraStub) ListIssues(_ context.Context, _ issuesource.Binding, opts iss
 	if s.listErr != nil {
 		return issuesource.Page{}, s.listErr
 	}
+	// The incremental walk is the real source's: everything updated since
+	// the bound less jira.Overlap, in id order, a truncated walk resumed by
+	// a cursor carrying its bound and the last id ("<ms>:<id>").
+	since, after := opts.Since, 0
+	if !opts.OpenOnly {
+		if ms, id, ok := strings.Cut(opts.After, ":"); ok {
+			after, _ = strconv.Atoi(id)
+			since = time.Time{}
+			if n, err := strconv.ParseInt(ms, 10, 64); err == nil {
+				since = time.UnixMilli(n).UTC()
+			}
+		}
+	}
 	var rows []*jiraStubIssue
 	for _, is := range s.byID {
 		if is.hidden || is.absent || is.project != "ENG" {
@@ -128,28 +142,33 @@ func (s *jiraStub) ListIssues(_ context.Context, _ issuesource.Binding, opts iss
 			if !is.open || is.id <= after {
 				continue
 			}
-		} else if is.updated.Before(opts.Since) {
+		} else if is.id <= after || (!since.IsZero() && is.updated.Before(since.Add(-jira.Overlap))) {
 			continue
 		}
 		rows = append(rows, is)
 	}
 	var page issuesource.Page
-	if !opts.OpenOnly {
-		sort.Slice(rows, func(i, j int) bool { return rows[i].updated.Before(rows[j].updated) })
-		for _, is := range rows {
-			page.Issues = append(page.Issues, s.mapped(is))
-		}
-		return page, nil
-	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].id < rows[j].id })
 	limit := 5 * s.pageSize
+	if !opts.OpenOnly {
+		limit = 10 * s.pageSize
+	}
 	if opts.PageCap > 0 {
 		limit = opts.PageCap * s.pageSize
 	}
 	if len(rows) > limit {
 		rows = rows[:limit]
 		page.Truncated = true
-		page.ResumeAfter = strconv.Itoa(rows[len(rows)-1].id)
+		last := strconv.Itoa(rows[len(rows)-1].id)
+		if opts.OpenOnly {
+			page.ResumeAfter = last
+		} else {
+			var ms string
+			if !since.IsZero() {
+				ms = strconv.FormatInt(since.UnixMilli(), 10)
+			}
+			page.ResumeAfter = ms + ":" + last
+		}
 	}
 	for _, is := range rows {
 		page.Issues = append(page.Issues, s.mapped(is))
@@ -359,6 +378,73 @@ func TestJiraImportResumesByIdCursor(t *testing.T) {
 	}
 	if evs := f.eventsAfter(t, before); len(evs) != 0 {
 		t.Errorf("an overlap re-read announced %d events: %+v", len(evs), evs)
+	}
+}
+
+// TestJiraIncrementalWalksAWindowBiggerThanAPass is review F1 on #943: more
+// issues change inside the overlap than one incremental pass reads (one bulk
+// edit). Resuming by time restarted inside the overlap and read the same
+// first thousand on every tick, forever, with the row saying ok; the walk
+// resumes by id from its own bound instead, reads every issue, still reads
+// one changed behind its cursor, and ends.
+func TestJiraIncrementalWalksAWindowBiggerThanAPass(t *testing.T) {
+	const n = 1100
+	issues := manyJiraIssues(n, func(i int) time.Time { return issueBase.Add(time.Duration(i) * time.Millisecond) })
+	src := newJiraStub(issues...)
+	f := newJiraFixture(t, src)
+	f.now = issueBase.Add(time.Hour)
+	for range 3 {
+		f.tick(t)
+		f.now = f.now.Add(time.Minute)
+	}
+	if st := f.syncState(t); !st.OK || !st.ImportComplete || st.ImportCursor != "" {
+		t.Fatalf("after the import: %+v", st)
+	}
+
+	bulk := f.now
+	for _, is := range issues {
+		is.title, is.updated = fmt.Sprintf("bulk %d", is.id), bulk.Add(time.Duration(is.id%100000)*time.Millisecond)
+	}
+	f.now = f.now.Add(time.Minute)
+	f.tick(t)
+	st := f.syncState(t)
+	if !st.OK || st.ImportCursor == "" {
+		t.Fatalf("a truncated incremental pass left no cursor: %+v", st)
+	}
+
+	// Changed behind the walk's cursor, before the walk ends.
+	issues[0].title, issues[0].updated = "changed mid-walk", f.now
+	walked := false
+	for range 10 {
+		f.now = f.now.Add(time.Minute)
+		f.tick(t)
+		if st = f.syncState(t); !st.OK {
+			t.Fatalf("sync row: %+v", st)
+		}
+		if st.ImportCursor == "" {
+			walked = true
+			break
+		}
+	}
+	if !walked {
+		t.Fatalf("the walk never ended: cursor %q", st.ImportCursor)
+	}
+	// The pass after a walk asks from when it began, so it reads the
+	// issue changed behind the cursor.
+	f.now = f.now.Add(time.Minute)
+	f.tick(t)
+	got := f.jiraIssues(t)
+	retitled := 0
+	for _, is := range issues[1:] {
+		if got[strconv.Itoa(is.id)].Title == is.title {
+			retitled++
+		}
+	}
+	if retitled != n-1 {
+		t.Errorf("retitled %d of %d, want every bulk-edited issue read", retitled, n-1)
+	}
+	if title := got[strconv.Itoa(issues[0].id)].Title; title != "changed mid-walk" {
+		t.Errorf("the issue changed behind the cursor = %q", title)
 	}
 }
 
