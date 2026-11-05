@@ -63,6 +63,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **This repository's `github-resolve-issue-dag` no longer stops for a person
+  to approve the plan.** The `plan-gate` manual step is gone: a task whose plan
+  passes `plan-dag`'s check — which already refuses overlapping or forbidden
+  `files` expressions (#935) — goes on to spawn its lanes unattended, so a task
+  created by `github-resolve-issue-multiple` with `create: now` runs from
+  `fetch` to `deliver` without a human action. `plan-emit` now prints the plan
+  one line per unit (id, title, `needs`, `files`) to stderr, where it reaches
+  the transcript but never the lane list, and its status line names the round
+  count. A dag task already in flight keeps the snapshot it was created with.
+  Issue #936.
 - **The built-in maintenance workflows and both skills know about Jira
   issues.** `update-workflows` gains a checklist item for issues imported
   from Jira — test `.Issue.Source.Provider`, key on `.Issue.Source.Key` or

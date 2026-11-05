@@ -40,8 +40,8 @@
 #     → confirm-red | pin-proof                                    (unchanged)
 #   seed        commit what the lanes must inherit, and nothing else
 #   plan-dag    cut the brief into units and edges; write units.jsonl
-#   plan-emit   validate-and-print, so the graph is a step's stdout
-#   plan-gate   a human reads the graph before N child tasks are spawned
+#   plan-emit   print the graph as a step's stdout, and a readable copy of it
+#               on stderr; nobody approves it before the lanes are spawned
 #   build       the fan-out: one lane per unit, `needs:` is the DAG
 #   integrate   one session on the joined branch: make it cohere, write the PR
 #   docs-sync → verify → deliver                                   (unchanged)
@@ -138,7 +138,7 @@
 # merged yet on any path. A resolver that does not resolve leaves the conflict
 # blocked for a human, which is the default behaviour and the right one.
 #
-# ## Why the plan is a step's stdout, and why a human reads it
+# ## Why the plan is a step's stdout, and why nobody approves it
 #
 # `for_each:` is a template, and a template cannot read a file. `plan-dag` is an
 # agent and an agent step's `.Result` is its final message — not something to
@@ -161,10 +161,29 @@
 # with `fan_out_invalid`; catching it here is the difference between a retry and
 # a blocked task.
 #
-# `plan-gate` is the one human decision this file has, and it is the
-# cheapest one in the workflow. Approving it spawns up to six child tasks, each
-# with a worktree and an agent session; rejecting it costs one planner run. The
-# gate renders the graph inline, so the thing being approved is on the screen.
+# Nobody approves the plan. Starting the task — by hand, or through
+# `github-resolve-issue-multiple`'s `create: now` — is the consent to spend up
+# to the session envelope below, the same way arming `github-handoff-train` is
+# the consent to everything its handoff selects. A step that stopped here would
+# ask a person questions that are either mechanical or unanswerable at a
+# glance, and it was the one stop between `fetch` and `deliver` that a passing
+# plan could not skip (#936). What it used to ask is now covered in two places:
+#
+# - `plan-dag`'s check refuses what can be decided mechanically: `files`
+#   expressions that overlap on a tracked path, an expression matching a path a
+#   later step owns on this classify path, a blank one, a seventh unit — and
+#   advises past three rounds (#935).
+# - Over-splitting, a minimal `needs` and a brief that stands alone rest on the
+#   planner's prompt, which is why its width and one-unit guidance is spelled
+#   out there at length.
+#
+# The plan can still be read after the fact: `plan-emit` prints one line per
+# unit to stderr, which reaches the transcript but never `.Result` (#311), and
+# names the unit and round count on its status line. The person stops that
+# remain are the ones a passing plan cannot avoid: `plan-dag` exhausting its
+# retries, a lane whose check keeps failing, a join's `merge_conflict` the
+# resolver leaves unresolved, a failing `integrate` or `verify`, and the brief
+# steps' `on_input: wait`.
 #
 # ## `schedule: barrier`, and what it costs
 #
@@ -186,8 +205,8 @@
 # What it costs is wall-clock, and the cost is exactly what the planner is told
 # to minimise: **a round is as slow as its slowest lane**, so an edge does not
 # only delay its own dependent, it delays everything sharing that dependent's
-# round. That is why `needs` is described as expensive to the planner and asked
-# about again at the plan gate, and why both are told to prefer a wide graph to
+# round. That is why `needs` is described as expensive to the planner, why its
+# check advises past three rounds, and why it is told to prefer a wide graph to
 # a deep one. `schedule: eager` is the other trade — merge each lane as soon as
 # its own `needs` land — and is the faster of the two on a deep graph, at the
 # cost of a timing-dependent starting tree. This file is deliberately not
@@ -229,8 +248,8 @@
 # one would collide in it: `docs/spec.md`; `docs/tasks/`, where a status marker
 # and its row in `docs/tasks/README.md` change in the same edit; and the
 # screenshot set, where `scripts/screenshots.sh` is one file and one run
-# photographs every shot. The planner gives each to a single unit, and the plan
-# gate asks about it.
+# photographs every shot. The planner gives each to a single unit, and its
+# check refuses two units whose expressions match the same tracked file.
 #
 # A documentation unit still needs a check that can fail. The planner is told to
 # make it fail while the stale text is there — a negated `grep` over the page —
@@ -1762,77 +1781,41 @@ steps:
     # what `for_each` requires. `plan-dag`'s check already validated the
     # content, so there is nothing left here to judge.
     #
-    # Everything this step prints on stdout becomes a lane, so the count is
-    # said on the step's status line and nowhere else. It used to be echoed to
-    # stderr as well, back when the engine merged both streams into `.Result`
-    # (issue #311) and the header arrived as a lane that was not a lane.
+    # Everything this step prints on stdout becomes a lane, so stdout is the
+    # `jq -c` re-emission and nothing else. **stderr is the human-readable
+    # surface**, and it can be one precisely because `.Result` is stdout only
+    # (#311): a header there reaches the transcript and never arrives at
+    # `build` as a lane that is not a lane. It is the plan as nobody approved
+    # it (#936) — one line per unit with its id, title, `needs` and `files`,
+    # the expression's lines folded with ` | ` — so a person reading the task
+    # afterwards sees what was spawned without opening `units.jsonl`.
+    #
+    # The round count is the check's own peel, computed the same way, so the
+    # status line and the depth advisory never disagree about a graph.
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      u=.vincent-issue/units.jsonl
 
-      n=$(jq -s 'length' .vincent-issue/units.jsonl)
-      roots=$(jq -s '[.[] | select((.needs | length) == 0)] | length' .vincent-issue/units.jsonl)
-      say "$n unit(s), $roots in the first round"
-      jq -c '.' .vincent-issue/units.jsonl
-
-  - id: plan-gate
-    name: Approve the graph
-    type: manual
-    # The cheapest decision in this workflow, placed immediately before the
-    # thing it authorises. Approving spawns up to six child tasks, each with a
-    # worktree and an agent session; rejecting costs one planner run.
-    #
-    # The graph is rendered inline rather than referenced by path, because a
-    # gate whose subject is in another window is a gate people approve without
-    # reading. `.Result` is stdout only, so this is exactly the lane list.
-    instructions: |
-      Task #{{.Task.ID}} has cut the agreed change into work units. Approving
-      this spawns one **child task** per unit — each with its own worktree,
-      branch and agent session — and merges their branches back into
-      {{.Task.BranchName}} a round at a time: a round's lanes run together, and
-      the next round is cut from the branch once that one has merged.
-
-      The graph:
-
-      {{ (index .Steps "plan-emit").Result }}
-
-      The plan is also in `.vincent-issue/units.jsonl` in
-      {{.Worktree.Path}}, and the brief it was cut from is in
-      `.vincent-issue/brief.md` next to it.
-
-      These are worth thirty seconds each:
-
-      - **Is it split at all, and should it be?** One unit is a correct answer
-        for a change that is one piece of work. Six units for a two-file fix is
-        the planner being enthusiastic, and it will cost six sessions and six
-        worktrees to find that out.
-      - **Do the `files` expressions overlap?** Two units matching the same
-        path will collide at the join. The lane checks catch a lane that
-        strays outside its own expression; nothing catches two expressions
-        that were written overlapping.
-      - **Is `needs` minimal, and is the graph wide rather than deep?** The
-        lanes run in rounds and a round is as slow as its slowest lane, so
-        every edge costs a whole round rather than just its own dependent. A
-        chain through all the units is the sequential workflow with extra steps
-        and extra cost.
-      - **Does each `brief` stand alone?** A lane sees its own brief, the
-        issue, and the code. It does not see `brief.md` and it does not see the
-        other units. An interface two units share has to be spelled out in both.
-      {{- if eq (index .Steps "classify").ExitCode 2 }}
-      - **Does one unit own each shared documentation file?** This is a
-        documentation issue. `docs/spec.md`, the task records with their index
-        in `docs/tasks/README.md`, and the screenshot set are each one unit's
-        or no one's — two units editing the index collide at the join. And
-        does every unit's `check` fail while its stale text is still there?
-      {{- else if eq (index .Steps "classify").ExitCode 3 }}
-      - **Does one unit own `ci.yml` and `CLAUDE.md`?** This is a CI issue:
-        every gate the change wires is a step in the same job and a line in the
-        same list, so two units editing either collide at the join. And does
-        every gate unit's `check` run its gate?
-      {{- end }}
-
-      Rejecting stops the task here, before any child task exists. Fix the plan
-      by rejecting, then editing and retrying `plan-dag`.
+      n=$(jq -s 'length' "$u")
+      roots=$(jq -s '[.[] | select((.needs | length) == 0)] | length' "$u")
+      r=$(jq -s '
+        . as $u
+        | def rounds($id):
+            1 + ([ $u[] | select(.id == $id) | .needs[] | rounds(.) ] | max // 0);
+          [ $u[].id | rounds(.) ] | max // 0
+      ' "$u")
+      say "$n unit(s) in $r round(s), $roots in the first"
+      {
+        echo "plan: $n unit(s) in $r round(s), $roots in the first"
+        jq -r '
+          "\(.id): \(.title) | needs: "
+          + (if (.needs | length) == 0 then "none" else (.needs | join(", ")) end)
+          + " | files: "
+          + (.files | split("\n") | map(select(test("\\S"))) | join(" | "))
+        ' "$u"
+      } >&2
+      jq -c '.' "$u"
 
   - id: build
     name: Deliver the units in parallel
@@ -1858,9 +1841,9 @@ steps:
     # judgeable on its own work rather than on a stopwatch.
     #
     # The price is wall-clock: a round is as slow as its slowest lane, so an
-    # edge delays the dependent's whole round and not just the dependent. Both
-    # the planner and the plan gate are told to keep `needs` minimal and the
-    # graph wide for this reason. `schedule: eager` is the other trade — merge
+    # edge delays the dependent's whole round and not just the dependent. The
+    # planner is told to keep `needs` minimal and the graph wide for this
+    # reason, and its check advises past three rounds. `schedule: eager` is the other trade — merge
     # each lane as soon as its own `needs` land — and is faster on a deep
     # graph, at the cost of a timing-dependent starting tree.
     #

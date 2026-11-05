@@ -50,9 +50,9 @@ func unit(id, files string, needs ...string) planUnit {
 	return planUnit{ID: id, Title: "unit " + id, Needs: needs, Files: files, Check: "true", Brief: "brief"}
 }
 
-// plan-dag's check enforces what plan-gate asked a human (#935): the units'
-// `files` expressions must not overlap on a tracked path, and none may match
-// a path a later step owns. A violation fails the check, which §8.4 hands back
+// plan-dag's check enforces mechanically what a human reviewer was once asked
+// (#935, #936): the units' `files` expressions must not overlap on a tracked
+// path, and none may match a path a later step owns. A violation fails the check, which §8.4 hands back
 // to the planner as retry feedback; depth past three rounds is only advised.
 //
 // The check is extracted from the shipped workflow and rendered through the
