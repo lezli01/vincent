@@ -48,11 +48,13 @@ type configResponse struct {
 	// The §10 branch-cleanup pair (task 008). Both are reported because the
 	// remote one is inert without the local one, and a client showing only the
 	// key that is on would describe a policy that cannot run.
-	DeleteEmptyBranchOnArchive  bool  `json:"delete_empty_branch_on_archive"`
-	DeleteRemoteBranchOnArchive bool  `json:"delete_remote_branch_on_archive"`
-	FetchBaseBranch             bool  `json:"fetch_base_branch"`
-	TranscriptRetentionDays     int   `json:"transcript_retention_days"`
-	TranscriptMaxBytes          int64 `json:"transcript_max_bytes"`
+	DeleteEmptyBranchOnArchive  bool `json:"delete_empty_branch_on_archive"`
+	DeleteRemoteBranchOnArchive bool `json:"delete_remote_branch_on_archive"`
+	// The unattended archive of a closed issue's settled tasks (task 143).
+	ArchiveTasksOnIssueClose bool  `json:"archive_tasks_on_issue_close"`
+	FetchBaseBranch          bool  `json:"fetch_base_branch"`
+	TranscriptRetentionDays  int   `json:"transcript_retention_days"`
+	TranscriptMaxBytes       int64 `json:"transcript_max_bytes"`
 	// MaxTaskCostUSD is the per-task spend ceiling; 0 is no cap (task 033).
 	// Served for the same reason every other key is: the TUI reads no
 	// configuration from disk (§15).
@@ -294,6 +296,7 @@ func configBody(cfg config.Config) configResponse {
 		},
 		DeleteEmptyBranchOnArchive:  cfg.DeleteEmptyBranchOnArchive,
 		DeleteRemoteBranchOnArchive: cfg.DeleteRemoteBranchOnArchive,
+		ArchiveTasksOnIssueClose:    cfg.ArchiveTasksOnIssueClose,
 		FetchBaseBranch:             cfg.FetchBaseBranch,
 		TranscriptRetentionDays:     cfg.TranscriptRetentionDays,
 		TranscriptMaxBytes:          cfg.TranscriptMaxBytes.Bytes(),
@@ -432,6 +435,7 @@ type configPatch struct {
 	Defaults                    *defaultsPatch     `json:"defaults"`
 	DeleteEmptyBranchOnArchive  *bool              `json:"delete_empty_branch_on_archive"`
 	DeleteRemoteBranchOnArchive *bool              `json:"delete_remote_branch_on_archive"`
+	ArchiveTasksOnIssueClose    *bool              `json:"archive_tasks_on_issue_close"`
 	FetchBaseBranch             *bool              `json:"fetch_base_branch"`
 	TranscriptRetentionDays     *int               `json:"transcript_retention_days"`
 	TranscriptMaxBytes          *int64             `json:"transcript_max_bytes"`
@@ -598,6 +602,7 @@ func (p configPatch) sets() []config.Set {
 	}
 	addIfBool(add, "delete_empty_branch_on_archive", p.DeleteEmptyBranchOnArchive)
 	addIfBool(add, "delete_remote_branch_on_archive", p.DeleteRemoteBranchOnArchive)
+	addIfBool(add, "archive_tasks_on_issue_close", p.ArchiveTasksOnIssueClose)
 	addIfBool(add, "fetch_base_branch", p.FetchBaseBranch)
 	if p.TranscriptRetentionDays != nil {
 		add("transcript_retention_days", strconv.Itoa(*p.TranscriptRetentionDays))

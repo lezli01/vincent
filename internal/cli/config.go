@@ -191,6 +191,9 @@ func configFields() map[string]configField {
 		"delete_remote_branch_on_archive": boolField(
 			func(c apiclient.Config) bool { return c.DeleteRemoteBranchOnArchive },
 			func(b *bool) apiclient.ConfigPatch { return apiclient.ConfigPatch{DeleteRemoteBranchOnArchive: b} }),
+		"archive_tasks_on_issue_close": boolField(
+			func(c apiclient.Config) bool { return c.ArchiveTasksOnIssueClose },
+			func(b *bool) apiclient.ConfigPatch { return apiclient.ConfigPatch{ArchiveTasksOnIssueClose: b} }),
 		"fetch_base_branch": boolField(
 			func(c apiclient.Config) bool { return c.FetchBaseBranch },
 			func(b *bool) apiclient.ConfigPatch { return apiclient.ConfigPatch{FetchBaseBranch: b} }),
