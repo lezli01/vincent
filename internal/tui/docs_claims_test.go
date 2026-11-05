@@ -639,3 +639,32 @@ func TestIssueGuideNamesTheFormsWorktreeRows(t *testing.T) {
 		t.Error("the issue guide still says the TUI cannot start a side task")
 	}
 }
+
+// TestGuideIssueSyncProseIsProviderNeutral holds docs/guides/tui.md's
+// paragraph on the issues list's R and S to the row it explains (review F1 of
+// 787's train): S became the request to the project's issue source, GitHub or
+// Jira alike, and the key table said so while the prose under it went on
+// calling S "the request to GitHub".
+func TestGuideIssueSyncProseIsProviderNeutral(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "guides", "tui.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Join(strings.Fields(string(raw)), " ")
+	start := strings.Index(text, "`R` only re-reads what vincent already holds.")
+	if start < 0 {
+		t.Fatal("the TUI guide no longer explains the issues list's R and S; update this test with it")
+	}
+	paragraph := text[start:]
+	if end := strings.Index(paragraph, "`enter` opens the **issue detail**"); end >= 0 {
+		paragraph = paragraph[:end]
+	}
+	if !strings.Contains(paragraph, "GitHub or Jira") {
+		t.Errorf("the guide's R/S paragraph does not say S asks either issue source: %q", paragraph)
+	}
+	for _, stale := range []string{"never asks GitHub", "request to GitHub", "GitHub no longer lists"} {
+		if strings.Contains(paragraph, stale) {
+			t.Errorf("the guide's R/S paragraph still says %q", stale)
+		}
+	}
+}

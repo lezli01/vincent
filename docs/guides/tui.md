@@ -2062,11 +2062,12 @@ A claimed or waiting issue belongs to its handoff: `a` refuses to start a task
 on it until `,` returns it, which asks first because a return withdraws the
 issue's readiness.
 
-`R` only re-reads what vincent already holds. It never asks GitHub for
-anything: imported issues are refreshed on the daemon's reconciler tick. `S`
-is the request to GitHub: it asks the daemon to sync the project now, and that
-sync also sweeps the open issues GitHub no longer lists — closing the ones
-closed there and deleting the ones deleted there, which the reconciler tick
+`R` only re-reads what vincent already holds. It never asks the issue source
+for anything: imported issues are refreshed on the daemon's reconciler tick.
+`S` is the request to the project's issue source, GitHub or Jira: it asks the
+daemon to sync the project now, and that sync also sweeps the open issues the
+source no longer lists — closing the ones closed there and deleting the ones
+deleted there, which the reconciler tick
 otherwise does only once a day. The note under the list says the sync was
 requested, or that the import is switched off; the issues it changes re-list
 on their own as it lands.
