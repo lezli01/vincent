@@ -280,6 +280,16 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 		}
 	}
 	// enter on each chat opens it, and its esc comes back to the issue.
+	// pressChat's reason: the chat workspace's per-chat stream is not under
+	// the root's context and survives esc, and an open SSE connection holds
+	// httptest's Close. Cleanups run last-registered first, so this one runs
+	// before the server's.
+	chatWS := h.m.views[viewChat].(*chatView)
+	t.Cleanup(func() {
+		if chatWS.streamStop != nil {
+			chatWS.streamStop()
+		}
+	})
 	for _, id := range []int64{onIssue.ID, linked.ID} {
 		for i, row := range detail.selectRows() {
 			if row.chat != nil && row.chat.ID == id {
