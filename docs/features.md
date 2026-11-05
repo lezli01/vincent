@@ -215,7 +215,9 @@ whole conversation in the same worktree, with the task held still until you
 close it.
 
 A finished task keeps its worktree, its branch and its commits until you archive
-it, and that window is where the last mile of real work lives — a branch that
+it (or, for a task of an issue, until the issue closes and the daemon
+[archives it](reference/task-lifecycle.md#closed-issues-archive-their-tasks)),
+and that window is where the last mile of real work lives — a branch that
 needs rebasing onto a `main` that moved, one more commit a review asked for, a
 stray file to drop. A **follow-up run** does that work inside vincent: give a
 `done` or `aborted` task an agent prompt, a shell command, or the name of a
