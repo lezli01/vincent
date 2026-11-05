@@ -74,12 +74,12 @@ func TestIssueStripClickSelectsATab(t *testing.T) {
 			work = h
 		}
 	}
-	v.update(tea.MouseClickMsg{X: work.x0, Y: 0, Button: tea.MouseLeft})
+	v.update(tea.MouseClickMsg{X: work.x0, Y: issueFrameTop, Button: tea.MouseLeft})
 	if v.tab != issueTabWork {
 		t.Fatalf("a click on Work at x=%d left tab %v", work.x0, v.tab)
 	}
 	v.render(120, 60)
-	v.update(tea.MouseClickMsg{X: v.tabHits[0].x0, Y: 0, Button: tea.MouseLeft})
+	v.update(tea.MouseClickMsg{X: v.tabHits[0].x0, Y: issueFrameTop, Button: tea.MouseLeft})
 	if v.tab != issueTabIssue {
 		t.Fatalf("a click on Issue left tab %v", v.tab)
 	}
@@ -97,7 +97,7 @@ func TestIssueStripStaysWhileAPromptOrTheFormIsOpen(t *testing.T) {
 		}
 	}
 	v.w.act = newIssueDelete(v.client, v.issue)
-	v.update(tea.MouseClickMsg{X: v.tabHits[1].x0, Y: 0, Button: tea.MouseLeft})
+	v.update(tea.MouseClickMsg{X: v.tabHits[1].x0, Y: issueFrameTop, Button: tea.MouseLeft})
 	if v.tab != issueTabIssue {
 		t.Fatalf("a click moved the strip to %v under the delete prompt", v.tab)
 	}
@@ -263,5 +263,48 @@ func TestIssueFailedChatListingDegrades(t *testing.T) {
 	}
 	if !strings.Contains(out, "dark mode, first pass") {
 		t.Errorf("the tasks went with the chats:\n%s", out)
+	}
+}
+
+// Review F1: a click on the strip and on a Work-tab row lands where the root
+// draws them. The root takes only its header rows off a click's Y, so the
+// pane's own frame border is still in it; driving the click through
+// root.Update against the drawn screen pins both at real coordinates.
+func TestIssueClicksThroughTheRootHitTheDrawnScreen(t *testing.T) {
+	m := connectedRoot(t)
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	v := issueFixture()
+	m.views[viewIssue] = v
+	m.active = viewIssue
+
+	screen := strings.Split(ansi.Strip(content(m)), "\n")
+	row := func(text string) (x, y int) {
+		t.Helper()
+		for i, line := range screen {
+			if at := strings.Index(line, text); at >= 0 {
+				return ansi.StringWidth(line[:at]), i
+			}
+		}
+		t.Fatalf("%q is not on screen:\n%s", text, strings.Join(screen, "\n"))
+		return 0, 0
+	}
+	x, y := row("Work")
+	m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	if v.tab != issueTabWork {
+		t.Fatalf("a click on Work at screen (%d,%d) left tab %v", x, y, v.tab)
+	}
+
+	screen = strings.Split(ansi.Strip(content(m)), "\n")
+	x, y = row("dark mode, review")
+	m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	rows := v.selectRows()
+	if v.cursor >= len(rows) || rows[v.cursor].task.ID != 22 {
+		t.Fatalf("a click on task #22 at screen row %d left cursor %d", y, v.cursor)
+	}
+
+	x, y = row("Issue │")
+	m.Update(tea.MouseClickMsg{X: x + 2, Y: y, Button: tea.MouseLeft})
+	if v.tab != issueTabIssue {
+		t.Fatalf("a click on Issue at screen row %d left tab %v", y, v.tab)
 	}
 }

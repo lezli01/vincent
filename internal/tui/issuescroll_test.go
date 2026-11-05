@@ -167,7 +167,7 @@ func TestIssueDetailClickSelectsATask(t *testing.T) {
 	if y < 0 {
 		t.Fatalf("second task not on screen:\n%s", strings.Join(lines, "\n"))
 	}
-	v.update(tea.MouseClickMsg{X: 10, Y: y, Button: tea.MouseLeft})
+	v.update(tea.MouseClickMsg{X: 10, Y: issueFrameTop + y, Button: tea.MouseLeft})
 	rows := v.selectRows()
 	if v.cursor >= len(rows) || rows[v.cursor].task.ID != 22 {
 		t.Fatalf("click on task #22 left cursor %d", v.cursor)

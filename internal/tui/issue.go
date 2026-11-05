@@ -913,9 +913,13 @@ func (v *issueView) render(width, height int) string {
 	if v.w.act != nil {
 		footer, tail = v.w.act.lines(width)
 	}
-	// The strip is the pane's first line and never scrolls (task 144).
+	// The strip is the pane's first line and never scrolls (task 144). The
+	// root draws this pane inside its frame (root.framedView) and hands a
+	// click over with only the header rows taken off, so a click's Y counts
+	// the frame's top border: the strip is on Y 1, as renderStrip's x counts
+	// the border on the other axis and taskView's tabY does (review F1).
 	strip := v.renderStrip(width)
-	v.stripY = 0
+	v.stripY = issueFrameTop
 	// Body plus footer never exceed the pane (#795): the prompt wins, and
 	// the page shrinks to nothing before the prompt loses a line.
 	footer = fitFooter(footer, height-1, tail)
@@ -929,14 +933,14 @@ func (v *issueView) render(width, height int) string {
 		limit = len(body) - (room - 1) // the last page has only the ▲ cue
 	}
 	v.scroll = min(max(v.scroll, 0), max(limit, 0))
-	v.view, v.viewTop = room, 1
+	v.view, v.viewTop = room, issueFrameTop+1
 	lines := []string{strip}
 	if room == 0 {
 		return ansi.Truncate(strip, width, "…") + "\n" + strings.Join(footer, "\n")
 	}
 	if cues && v.scroll > 0 {
 		lines = append(lines, styleDim.Render(fmt.Sprintf("  ▲ %d more", v.scroll)))
-		v.view, v.viewTop = room-1, 2
+		v.view, v.viewTop = room-1, issueFrameTop+2
 	}
 	below := 0
 	if cues && v.scroll+v.view < len(body) {
@@ -953,6 +957,10 @@ func (v *issueView) render(width, height int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// issueFrameTop is the root frame's top border: the click row of the pane's
+// first line (review F1).
+const issueFrameTop = 1
 
 // fitFooter cuts a prompt or note to height lines: its leading blank goes
 // first, then the lines above its last tail lines — the key line and the note
