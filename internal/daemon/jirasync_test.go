@@ -120,8 +120,7 @@ func newJiraE2E(t *testing.T, edit func(c *fakejira.Corpus)) *jiraE2E {
 	f.cfg = config.Default()
 	cfg := func() config.Config { return f.cfg }
 	logger := slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	f.sync = NewIssueSyncer(st, cfg, nil, nil, logger).
-		WithJiraSource(newJiraSource(cfg, f.environ, f.ts.Client()))
+	f.sync = wireJiraSource(NewIssueSyncer(st, cfg, nil, nil, logger), cfg, f.environ, f.ts.Client())
 	f.sync.environ = f.environ
 	f.sync.now = f.now
 	return f
@@ -295,6 +294,25 @@ func TestJiraSyncImportsPagesAndResumes(t *testing.T) {
 	}
 	if n, _ := fakejira.CountRequests(f.fake.RequestLog, http.MethodGet, "/rest/api/3/search/jql", http.StatusOK); n == 0 {
 		t.Error("search/jql never called")
+	}
+}
+
+// TestJiraSyncEnabledAfterWiring is review F2 on #943: the source is wired
+// whatever the config says when the daemon starts, so Jira switched on by a
+// later reload imports rather than recording no_client until a restart.
+func TestJiraSyncEnabledAfterWiring(t *testing.T) {
+	f := newJiraE2E(t, nil)
+	f.cfg.Jira.Enabled = false
+	cfg := func() config.Config { return f.cfg }
+	f.sync = wireJiraSource(NewIssueSyncer(f.store, cfg, nil, nil, slog.New(slog.DiscardHandler)), cfg, f.environ, f.ts.Client())
+	f.sync.environ = f.environ
+	f.sync.now = f.now
+
+	f.cfg.Jira.Enabled = true
+	f.tick()
+	f.wantOK()
+	if n := len(f.issues()); n == 0 {
+		t.Fatal("nothing imported once Jira was switched on")
 	}
 }
 
