@@ -553,7 +553,7 @@ func TestBoardTapesSwitchToTasksFirst(t *testing.T) {
 	script := strings.ReplaceAll(string(raw), "\r\n", "\n")
 	onLanding := map[string]bool{
 		"tui-issues": true, "tui-issue": true, "tui-issue-form": true,
-		"tui-handoff-form": true, "tui-issue-handoff": true,
+		"tui-handoff-form": true, "tui-issue-handoff": true, "tui-issue-work": true,
 	}
 	calls := tapeCall.FindAllStringSubmatchIndex(script, -1)
 	if len(calls) == 0 {
