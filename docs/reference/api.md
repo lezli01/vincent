@@ -3960,6 +3960,10 @@ they need.
   `task.state_changed` with the appropriate `to`; the `awaiting_input` payload
   additionally carries the request kind and a one-line summary, which is the
   alert clients key off. The full request comes from `GET /v1/tasks/{id}`.
+  An archive the daemon made because the task's issue closed
+  ([`archive_tasks_on_issue_close`](configuration.md#archive_tasks_on_issue_close))
+  additionally carries `archived_by: "issue_closed"` and `issue_id`. An archive
+  you make carries no `archived_by`.
 - `task.step_advanced` carries `{ current_step }` when the engine moves the
   cursor without a state change, so a board's `k/n` tracks a run instead of
   freezing.

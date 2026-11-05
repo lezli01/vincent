@@ -728,7 +728,8 @@ reason and left for you to archive; it is tried again when the cause clears.
 Chats are never archived.
 
 Its archive event carries `archived_by: "issue_closed"` and the `issue_id`, so
-a [`notify`](#notify) command or an event reader can tell it from yours.
+a reader of the [event stream](api.md#events-sse) can tell it from yours. The
+[`notify`](#notify) envelope does not carry those keys.
 
 Set it to `false` to keep archiving a human action. The change applies from the
 next event, without a restart. Turning it back on does not catch up on issues
