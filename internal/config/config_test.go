@@ -91,12 +91,14 @@ agents:
 		// fully-overriding config — on locally, off for the forge (task 008),
 		// and fetching the base before a worktree is cut (task 056).
 		DeleteEmptyBranchOnArchive: true,
-		FetchBaseBranch:            true,
-		TranscriptRetentionDays:    7,
-		TranscriptMaxBytes:         32 << 20,
-		MaxTaskCostUSD:             12.5,
-		MaxTreeCostUSD:             40,
-		UsageLimitRecheckInterval:  Duration(2 * time.Minute),
+		// Nor archive_tasks_on_issue_close, whose default is on (task 143.3).
+		ArchiveTasksOnIssueClose:  true,
+		FetchBaseBranch:           true,
+		TranscriptRetentionDays:   7,
+		TranscriptMaxBytes:        32 << 20,
+		MaxTaskCostUSD:            12.5,
+		MaxTreeCostUSD:            40,
+		UsageLimitRecheckInterval: Duration(2 * time.Minute),
 		// And the same for `usage_limit_auto_continue`: the file names it
 		// nowhere, so task 003's hold-and-requeue survives a config that
 		// overrides everything else, which is what "no installation changes"
@@ -158,6 +160,21 @@ func TestBranchCleanupDefaults(t *testing.T) {
 	}
 	if d.DeleteRemoteBranchOnArchive {
 		t.Error("delete_remote_branch_on_archive defaults to true, want false")
+	}
+}
+
+// TestArchiveTasksOnIssueClose (task 143.3): on by default, and an explicit
+// false survives unmarshalling into Default().
+func TestArchiveTasksOnIssueClose(t *testing.T) {
+	if !Default().ArchiveTasksOnIssueClose {
+		t.Error("archive_tasks_on_issue_close defaults to false, want true")
+	}
+	cfg, err := Load(writeConfig(t, "archive_tasks_on_issue_close: false\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ArchiveTasksOnIssueClose {
+		t.Error("an explicit false was overwritten by the default true")
 	}
 }
 

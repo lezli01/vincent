@@ -1,6 +1,6 @@
 # 143 — Auto-archive a closed issue's tasks
 
-**Status:** 🔄 in progress (2/5) · **Opened:** 2026-11-04
+**Status:** 🔄 in progress (3/5) · **Opened:** 2026-11-04
 
 The auto-archive stream of [#925](https://github.com/lezli01/vincent/issues/925):
 when an issue reaches `closed`, by any route, the daemon archives the settled
