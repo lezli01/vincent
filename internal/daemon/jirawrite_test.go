@@ -248,9 +248,9 @@ func TestJiraWriteBackConflict(t *testing.T) {
 
 // touch stamps VIN-1 updated at the fixture's now, so it sits inside every
 // incremental window that follows.
-func (f *jiraE2E) touch(id string) {
+func (f *jiraE2E) touch() {
 	f.t.Helper()
-	if err := f.fake.SetUpdated(id, f.now()); err != nil {
+	if err := f.fake.SetUpdated("10001", f.now()); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -261,7 +261,7 @@ func (f *jiraE2E) touch(id string) {
 // decides.
 func TestJiraSearchLagDoesNotRevertAWrite(t *testing.T) {
 	f := newJiraE2E(t, nil)
-	f.touch("10001")
+	f.touch()
 	f.tick()
 	f.wantOK()
 	f.setScenario("search-lag 5")
@@ -303,7 +303,7 @@ func TestJiraSearchLagDoesNotRevertAWrite(t *testing.T) {
 // re-reading by id, keep it closed.
 func TestJiraWriteSettledMidPassIsNotReverted(t *testing.T) {
 	f := newJiraE2E(t, nil)
-	f.touch("10001")
+	f.touch()
 	f.tick()
 	f.wantOK()
 	f.setScenario("search-lag 5")
@@ -311,7 +311,7 @@ func TestJiraWriteSettledMidPassIsNotReverted(t *testing.T) {
 	f.humanTransition("10001", issuestate.Close, issuestate.Completed)
 	// Listed again in the next incremental window, as open: the write has
 	// not reached Jira yet.
-	f.touch("10001")
+	f.touch()
 	ctx := t.Context()
 	after, err := f.store.MaxEventID(ctx)
 	if err != nil {
@@ -368,7 +368,7 @@ func (f *jiraE2E) issueWrites(id string) []*store.IssueOutbox {
 // over three ticks nothing is written again and nothing flips back.
 func TestJiraPostFunctionDriftSettlesOnce(t *testing.T) {
 	f := newJiraE2E(t, nil)
-	f.touch("10001")
+	f.touch()
 	f.tick()
 	f.wantOK()
 	f.advance(time.Second)
