@@ -26,8 +26,8 @@ type fakeStore struct {
 	archivable map[int64][]int64 // issue → ArchivableIssueTasks
 	claimed    map[int64]bool
 	taskIssue  map[int64]int64
-	main       map[int64]bool // task → holds the issue's main role
-	gone       map[int64]bool // task → deleted
+	main       map[int64]bool    // task → holds the issue's main role
+	gone       map[int64]bool    // task → deleted
 	handoffs   map[int64][]int64 // handoff → issue ids
 }
 
@@ -457,7 +457,7 @@ func TestStopJoinsAnInFlightArchive(t *testing.T) {
 
 // TestStopBeforeStart: a daemon that fails before starting the worker still
 // calls Stop on its way out.
-func TestStopBeforeStart(t *testing.T) {
+func TestStopBeforeStart(_ *testing.T) {
 	newHarness().w.Stop()
 }
 
