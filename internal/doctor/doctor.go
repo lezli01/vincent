@@ -469,13 +469,18 @@ const (
 	// HoldDirty: the task's worktree, or that of an unarchived lane under a
 	// fan-out root, has local changes, untracked files included.
 	HoldDirty = "dirty"
+	// HoldProjectPathMissing: the task's project directory is gone while its
+	// worktree, or an unarchived lane's, is still on disk, so the archive
+	// refuses before git can judge it (review F2). Restore the path, or
+	// archive by hand with force.
+	HoldProjectPathMissing = "project_path_missing"
 	// HoldLockedByChat: an open linked chat locks the task, or an unarchived
 	// lane the archive would cascade into.
 	HoldLockedByChat = "locked_by_chat"
 	// HoldUnfinishedLane: a descendant lane is not settled.
 	HoldUnfinishedLane = "unfinished_lane"
 	// HoldHeldForSideWork: an issue main task waiting for a side task or
-	// merge-back of its issue that carries one of the three holds above.
+	// merge-back of its issue that carries one of the four holds above.
 	HoldHeldForSideWork = "held_for_side_work"
 	// HoldIssueNotQuiescent: another root of the issue is unsettled, or an
 	// issue chat is live.
@@ -490,7 +495,7 @@ const (
 
 // HoldReasons is the vocabulary in the order Reasons lists it.
 var HoldReasons = []string{
-	HoldDirty, HoldLockedByChat, HoldUnfinishedLane, HoldHeldForSideWork,
+	HoldDirty, HoldProjectPathMissing, HoldLockedByChat, HoldUnfinishedLane, HoldHeldForSideWork,
 	HoldIssueNotQuiescent, HoldHandoffClaimed, HoldAwaitingRetry,
 }
 

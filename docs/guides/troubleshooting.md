@@ -89,10 +89,11 @@ in flight, because it would stall that task mid-step.
 
 The auto-archive skips a task it cannot archive safely and never forces it.
 Doctor's **Issue archive** group names each one with every reason holding it
-— `dirty`, `locked_by_chat`, `unfinished_lane`, `held_for_side_work`,
-`issue_not_quiescent`, `handoff_claimed`, or `awaiting_retry` alone — and any
-directory a closed issue chat left behind. Clean or commit the worktree, close
-the linked chat, or let the lane finish; a task marked `awaiting_retry` is
+— `dirty`, `project_path_missing`, `locked_by_chat`, `unfinished_lane`,
+`held_for_side_work`, `issue_not_quiescent`, `handoff_claimed`, or
+`awaiting_retry` alone — and any directory a closed issue chat left behind.
+Clean or commit the worktree, put a moved project back at its path, close the
+linked chat, or let the lane finish; a task marked `awaiting_retry` is
 archived only when something next happens on its issue, so archive it yourself
 (`vincent task archive <id>`, with `--force` to discard local changes). The
 group is information: it never sets the exit code, and `--fix` leaves it

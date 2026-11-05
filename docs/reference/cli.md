@@ -236,9 +236,11 @@ The **Issue archive** group reports and changes nothing. A `held` row reads
 `task 412 (issue 37, main, done): dirty, locked_by_chat — Fix the login
 redirect`: every reason is listed, so fixing one never reveals another.
 The reasons are `dirty` (the task's worktree, or an unarchived lane's, has
-local changes, untracked files included), `locked_by_chat` (an open linked
-chat on the task, or on an unarchived lane), `unfinished_lane` (a fan-out lane is not settled), `held_for_side_work`
-(an issue main task waiting for a held side task or merge-back of the same
+local changes, untracked files included), `project_path_missing` (the
+project's directory is gone while such a worktree is still on disk — restore
+the path, or archive by hand with `--force`), `locked_by_chat` (an open linked
+chat on the task, or on an unarchived lane), `unfinished_lane` (a fan-out lane
+is not settled), `held_for_side_work` (an issue main task waiting for a held side task or merge-back of the same
 issue), `issue_not_quiescent` (another task of the issue is unsettled, or an
 issue chat is live) and `handoff_claimed` (a handoff still claims the issue).
 `awaiting_retry` stands alone when nothing holds the task any more — the

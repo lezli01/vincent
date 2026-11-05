@@ -99,7 +99,8 @@ func (s *Server) heldIssueTasks(ctx context.Context) ([]doctor.HeldTask, error) 
 }
 
 // taskArchiveHolds is what Runner.Archive would refuse the task for now:
-// dirty, locked by a chat, or an unfinished lane, in HoldReasons order. Each
+// dirty (or its project path gone), locked by a chat, or an unfinished lane,
+// in HoldReasons order. Each
 // asks the definition the archive itself consults, over the subtree the
 // cascade walks: the root and every unarchived lane.
 func (s *Server) taskArchiveHolds(ctx context.Context, c *store.IssueArchiveCandidate, projects map[int64]string) ([]string, error) {
@@ -119,11 +120,8 @@ func (s *Server) taskArchiveHolds(ctx context.Context, c *store.IssueArchiveCand
 		return nil, err
 	}
 	paths = append(paths, lanes...)
-	for _, p := range paths {
-		if s.archiveSeesDirty(ctx, projectPath, p) {
-			holds = append(holds, doctor.HoldDirty)
-			break
-		}
+	if hold := s.worktreeHold(ctx, projectPath, paths); hold != "" {
+		holds = append(holds, hold)
 	}
 	chatID, err := s.deps.Store.SubtreeOpenLinkedChatID(ctx, c.TaskID)
 	if err != nil {
@@ -142,20 +140,40 @@ func (s *Server) taskArchiveHolds(ctx context.Context, c *store.IssueArchiveCand
 	return holds, nil
 }
 
-// archiveSeesDirty mirrors the refusal worktree.Manager.Remove makes without
-// force: a missing directory is not dirty, and neither is the project's own
-// checkout, which archive never removes (task 125). A worktree git cannot
-// judge is reported dirty, because the unattended archive refuses it the
-// same way. Each IsDirty is bounded by gitx.QueryTimeout.
-func (s *Server) archiveSeesDirty(ctx context.Context, projectPath, path string) bool {
-	if path == "" || s.deps.Worktrees == nil || pathx.SameDir(path, projectPath) {
-		return false
+// worktreeHold is the refusal worktree.Manager.Remove would make without
+// force for any of paths, in Remove's own order: a missing directory is
+// never refused, and neither is the project's own checkout, which archive
+// never removes (task 125); an existing worktree of a project whose path is
+// gone is project_path_missing, decided before git runs (review F2) —
+// cleaning the worktree cannot help there, restoring the path or forcing
+// can; otherwise a dirty one is dirty. A worktree git cannot judge is
+// reported dirty, because the unattended archive refuses it the same way.
+// Each IsDirty is bounded by gitx.QueryTimeout.
+func (s *Server) worktreeHold(ctx context.Context, projectPath string, paths []string) string {
+	if s.deps.Worktrees == nil {
+		return ""
 	}
-	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-		return false
+	var projectMissing *bool
+	for _, path := range paths {
+		if path == "" || pathx.SameDir(path, projectPath) {
+			continue
+		}
+		if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if projectMissing == nil {
+			_, err := os.Stat(projectPath)
+			missing := err != nil
+			projectMissing = &missing
+		}
+		if *projectMissing {
+			return doctor.HoldProjectPathMissing
+		}
+		if dirty, err := s.deps.Worktrees.IsDirty(ctx, path); err != nil || dirty {
+			return doctor.HoldDirty
+		}
 	}
-	dirty, err := s.deps.Worktrees.IsDirty(ctx, path)
-	return err != nil || dirty
+	return ""
 }
 
 // leftoverIssueChatDirs lists, per closed issue, the released issue chat

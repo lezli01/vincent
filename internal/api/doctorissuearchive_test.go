@@ -194,6 +194,32 @@ func TestDoctorIssueArchiveDirtyRootAndLane(t *testing.T) {
 	wantNoIssueArchiveProblem(t, rep)
 }
 
+// TestDoctorIssueArchiveProjectPathMissing is review F2: with the project
+// directory gone, Remove refuses an existing worktree before git runs, so the
+// reason is project_path_missing — never dirty, whose remedy (clean the
+// worktree) cannot help — for the root's worktree and for a lane's alike.
+func TestDoctorIssueArchiveProjectPathMissing(t *testing.T) {
+	f := newIAFixture(t, nil)
+	issue := f.issue(t)
+	root := f.task(t, issue, "", nil, store.TaskDone)
+	f.worktree(t, root, true)
+	fan := f.task(t, issue, "", nil, store.TaskDone)
+	lane := f.task(t, 0, "", fan, store.TaskDone)
+	f.worktree(t, lane, false)
+	gone := f.task(t, issue, "", nil, store.TaskDone)
+	f.claimWorktree(t, gone, filepath.Join(f.dirs.Data, "worktrees", "never-made"))
+	f.closeIssue(t, issue)
+	if err := os.Rename(f.repo, f.repo+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+
+	rep := f.report(t)
+	wantReasons(t, rep, root.ID, doctor.HoldProjectPathMissing)
+	wantReasons(t, rep, fan.ID, doctor.HoldProjectPathMissing)
+	wantReasons(t, rep, gone.ID, doctor.HoldAwaitingRetry)
+	wantNoIssueArchiveProblem(t, rep)
+}
+
 func TestDoctorIssueArchiveLockedByChat(t *testing.T) {
 	f := newIAFixture(t, nil)
 	issue := f.issue(t)

@@ -126,7 +126,11 @@ Confirmed by the author on 2026-11-04.
 13. **A closed vocabulary of reasons** (143.4). `dirty` — the task's
     worktree, or that of an unarchived lane under a fan-out root, has local
     changes, untracked included (`worktree.Manager.IsDirty`; a missing
-    directory, or the project's own checkout, is not dirty); `locked_by_chat`
+    directory, or the project's own checkout, is not dirty);
+    `project_path_missing` — such a worktree exists but the project's
+    directory does not, which `worktree.Manager.Remove` refuses as
+    `ReasonProjectPathMissing` before git runs, so it is never reported
+    `dirty` (review F2, amended 2026-11-05); `locked_by_chat`
     — an open linked chat on the task or on any unarchived lane under it
     (`Store.SubtreeOpenLinkedChatID`), since the cascade archives each lane
     through the ordinary `Archive` and `RefuseLocked` refuses each (review
@@ -137,8 +141,8 @@ Confirmed by the author on 2026-11-04.
     or an issue chat is live; `handoff_claimed` —
     `Store.IssueHandoffClaimed` (decision 10); `held_for_side_work` — only
     on an issue main task (merge-backs are not), when a side task or
-    merge-back candidate of the issue carries `dirty`, `locked_by_chat` or
-    `unfinished_lane`, which is review F3, shared with the worker as
+    merge-back candidate of the issue carries `dirty`,
+    `project_path_missing`, `locked_by_chat` or `unfinished_lane`, which is review F3, shared with the worker as
     `issuearchive.IsIssueMain` and `issuearchive.SideWorkHold`;
     `awaiting_retry` — none of the others. The constants are
     `doctor.Hold*`.
