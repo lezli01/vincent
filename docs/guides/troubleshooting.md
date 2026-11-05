@@ -8,6 +8,7 @@ The failures people actually hit, what each one means, and what to do.
 - [The daemon](#the-daemon)
 - [Agent CLIs](#agent-clis)
 - [Projects and worktrees](#projects-and-worktrees)
+- [Jira](#jira)
 - [Workflows](#workflows)
 - [Tasks that block](#tasks-that-block)
 - [The TUI](#the-tui)
@@ -35,7 +36,8 @@ CLI with its path, version and
 [`logged_in`](agents.md#found-is-not-usable); whether the
 [GitHub integration](../reference/configuration.md#github) can import and sync
 issues, and if not which piece is missing, and how each project's last sync
-went; whether the
+went; whether the [Jira integration](#jira) can reach and sign in to each
+bound site, and how each Jira project's last sync went; whether the
 [skills vincent publishes](../reference/cli.md#vincent-skills) are installed and
 current for your agents; whether a newer vincent has been
 [released](../reference/cli.md#vincent-update) and whether the running daemon is
@@ -506,6 +508,62 @@ Two things follow from running there. Vincent removes nothing when such a task
 is archived — the directory is yours — so `worktree_dirty` never applies to it.
 And the diff tab shows the working directory's diff, so uncommitted work you
 already had when the task started reads as part of the task's diff.
+
+## Jira
+
+`vincent doctor`'s `JIRA` group answers "is vincent syncing my Jira projects,
+and if not, why": the [`jira.enabled`](../reference/configuration.md#jira)
+switch, the two credential variables by name with whether the daemon sees
+each, one `site <url>` row per bound site, and one `sync <project>` row per
+Jira project. Like the GitHub group it never changes the exit code — tasks and
+local issues work whatever it says.
+
+Each site is asked exactly one question, `GET /rest/api/3/myself`. Jira locks
+an account behind a CAPTCHA after repeated refused logins, so doctor never
+asks twice and never retries; the TUI's daemon panel asks nothing at all, and
+its site rows read *not probed*. Run `vincent doctor` after each fix rather
+than in a loop.
+
+A project's sync reason is in the `sync` row, in
+[`vincent issue sync`](../reference/cli.md#vincent-issue-sync), and in
+[`vincent jira status`](../reference/cli.md#vincent-jira-status):
+
+- **`no_credential`** — the variable named by `jira.user_env` (default
+  `JIRA_USER`, the account's e-mail) or `jira.token_env` (default
+  `JIRA_API_TOKEN`) is not set *in the daemon's environment*. Doctor's `note`
+  row names which. A variable exported in your shell is not enough when the
+  daemon was started elsewhere — above all under
+  [`vincent service install`](running-at-login.md), which does not inherit your
+  login shell. Set it under
+  [`environment.set`](../reference/configuration.md#environment) in
+  `config.yaml`; the next pass reads it.
+- **`unauthorized`** — Jira refused the credential. Doctor reads *token
+  rejected; Jira Cloud tokens expire — create a new one*: Atlassian API tokens
+  expire (after at most 365 days), so create a new one and replace the old
+  value. The other cause is the user variable holding the wrong e-mail — it
+  must be the Atlassian account the token belongs to.
+- **`forbidden`** — the credential signed in but may not read the bound
+  project. Grant the account *Browse projects* on it, or bind a project it
+  can read.
+- **`not_found`** — the bound project key does not exist on that site, or is
+  invisible to the credential. Check the key with `vincent jira status`.
+- **`binding_changed`** — the site now answers a different project for the
+  bound key than the first sync recorded (a project deleted and re-created, or
+  a key moved). Sync stops rather than mixing two projects' issues; rebind the
+  project's [issue source](../reference/cli.md#issue-source-flags) to start
+  over.
+- **`rate_limited`** — Jira is throttling the credential. A later pass
+  tries again on its own; nothing to do unless it persists.
+- **`disabled`** — `jira.enabled: false`. Turn it back on to resume.
+- **`pending`** — the project has not been synced yet, or a sync was asked for
+  and has not run. Give it one `jira.poll_interval`.
+- **`unreachable`** — the site did not answer within the budget: check the
+  URL in the binding and the network.
+
+Writing a close or reopen back to Jira is not wired yet, so the transition
+failures (`no_transition`, `ambiguous_transition`, `transition_needs_fields`)
+cannot appear here today; a human's close of a Jira issue waits in the outbox
+instead.
 
 ## Workflows
 

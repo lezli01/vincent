@@ -123,9 +123,16 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [x] **142.14** ([#910](https://github.com/lezli01/vincent/issues/910))
   Provider-aware sync status reasons, the TUI `S` key, the overview glyph, and
   the `issue sync` CLI (decision 14). Depends: 142.7.
-- [ ] **142.15** ([#911](https://github.com/lezli01/vincent/issues/911)) A
+- [x] **142.15** ([#911](https://github.com/lezli01/vincent/issues/911)) A
   JIRA doctor row with a credential check and per-project sync health.
   Depends: 142.12.
+  ✓ 2026-11-05 — a `jira` group in `GET /v1/doctor` and a `JIRA` group in
+  `vincent doctor`: the switch, the two variable names with their presence in
+  the daemon's environment, one `GET /rest/api/3/myself` per distinct bound
+  site (no other call, no retry — the CAPTCHA lockout), made only when probed
+  and never with the switch off, no Jira-bound project or a variable unset,
+  and `jira.sync`. Never a Problem. Settles open question 9. The issue's
+  `edition` field is dropped: proving it would take a second call.
 - [x] **142.16** ([#912](https://github.com/lezli01/vincent/issues/912))
   `.Issue.Source.Key`, `VINCENT_ISSUE_KEY`, `source.key` in the issue file,
   and the Jira prefill. Depends: 142.8.
@@ -569,8 +576,9 @@ explicitly. A "proposed default" is open until that issue.
    default, open until #910:* nowhere in v1; it is kept only in `remote_json`
    (decision 9.10).
 9. **Doctor JSON: additive `jira.sync`, or a provider-neutral `issue_sync`
-   list?** *Proposed default, open until #911:* the additive split — `jira.sync`
-   beside `github.sync`.
+   list?** *Settled 2026-11-05 by #911, with the proposed default:* the
+   additive split — `jira.sync` beside `github.sync`, which keeps its shape
+   and now holds GitHub projects only.
 10. **#897's own: should spec §3's Jira row land ahead of code, or with
     #908?** *Settled by the author 2026-11-03:* with #908 (decision 10).
 11. **Is a Jira `labeled`/`unlabeled` by sync trusted?** *Open, raised
