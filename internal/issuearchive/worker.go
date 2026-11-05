@@ -322,9 +322,23 @@ func (w *Worker) archiveIssue(ctx context.Context, issueID int64) {
 		return
 	}
 	sideRefused := false
-	for _, id := range ids {
+	for i, id := range ids {
 		if ctx.Err() != nil {
 			return
+		}
+		// Each archive can take seconds (it removes a worktree), and
+		// Runner.Archive looks only at the task, never at its issue. A
+		// reopen, a new task or a handoff claim during the loop must stop
+		// the rest (review F4), so the issue is asked again before every
+		// archive after the first, with the same one definition.
+		if i > 0 {
+			still, ok := w.stillArchivable(ctx, issueID, id)
+			if !ok {
+				return
+			}
+			if !still {
+				continue
+			}
 		}
 		t, err := w.deps.Store.GetTask(ctx, id)
 		if err != nil {
@@ -362,6 +376,34 @@ func (w *Worker) archiveIssue(ctx context.Context, issueID int64) {
 			sideRefused = true
 		}
 	}
+}
+
+// stillArchivable asks the issue again for one task: ok is false when the
+// issue as a whole may no longer be archived — claimed by a handoff, or
+// unreadable — and still says whether id is among its archivable tasks now.
+func (w *Worker) stillArchivable(ctx context.Context, issueID, id int64) (still, ok bool) {
+	log := w.deps.Logger
+	claimed, err := w.deps.Store.IssueHandoffClaimed(ctx, issueID)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Warn("issue auto-archive: read handoff claim", "issue", issueID, "error", err)
+		}
+		return false, false
+	}
+	if claimed {
+		return false, false
+	}
+	ids, err := w.deps.Store.ArchivableIssueTasks(ctx, issueID)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Warn("issue auto-archive: read archivable tasks", "issue", issueID, "error", err)
+		}
+		return false, false
+	}
+	if len(ids) == 0 {
+		return false, false
+	}
+	return slices.Contains(ids, id), true
 }
 
 // isIssueMain reports whether t holds the issue's main worktree as a main

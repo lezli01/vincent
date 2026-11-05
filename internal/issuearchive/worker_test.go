@@ -504,3 +504,41 @@ func TestARefusedMainTaskDoesNotHoldOthers(t *testing.T) {
 		}
 	})
 }
+
+// TestReopenMidLoopStopsTheRest: the issue is asked again before every
+// archive after the first, so a reopen, a new task or a handoff claim while
+// the loop runs archives nothing more (review F4).
+func TestReopenMidLoopStopsTheRest(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		flip func(f *fakeStore)
+	}{
+		{"reopened", func(f *fakeStore) { f.archivable[7] = nil }},
+		{"claimed by a handoff", func(f *fakeStore) { f.claimed[7] = true }},
+		{"task no longer returned", func(f *fakeStore) { f.archivable[7] = []int64{3} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				h := newHarness()
+				h.st.archivable[7] = []int64{1, 2, 3}
+				h.arch.after = func(id int64) {
+					if id == 1 {
+						h.st.mu.Lock()
+						tc.flip(h.st)
+						h.st.mu.Unlock()
+					}
+				}
+				h.w.Start(t.Context())
+				h.emit(store.EventIssueStateChanged, closeIssue(7))
+				synctest.Wait()
+				want := []int64{1}
+				if tc.name == "task no longer returned" {
+					want = []int64{1, 3}
+				}
+				if got := h.arch.ids(); !slices.Equal(got, want) {
+					t.Fatalf("archived %v, want %v", got, want)
+				}
+			})
+		})
+	}
+}
