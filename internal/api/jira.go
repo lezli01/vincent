@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/issuesource"
@@ -17,6 +18,17 @@ import (
 // demand and stores nothing — the importer is still the only thing that
 // syncs, and the sync row is still what GET /v1/projects/{id}/issues/sync
 // reads.
+
+// jiraProbeBudget bounds the probe's three Jira calls together. It sits
+// well under the loopback client's ten-second deadline (apiclient's
+// requestTimeout): a site that blackholes the connection, or is just slow,
+// would otherwise hold the handler for the Jira client's 30 s per call, and
+// the CLI would give up first and print a deadline error in place of the
+// unreachable answer the probe exists to give (review F3 on #943) — the
+// trap apiclient's probeTimeout describes for `vincent doctor`. An expired
+// budget fails the call in flight as a transport error: unreachable. A var
+// so a test can shorten it.
+var jiraProbeBudget = 8 * time.Second
 
 // jiraReasonNotJira is a project whose issue source does not resolve to
 // jira: bound to none or github, or derived (derive never yields jira). No
@@ -122,6 +134,8 @@ func (s *Server) jiraProbe(ctx context.Context, project *store.Project) jiraResp
 		return out.fail(jira.ReasonNoCredential)
 	}
 	client.Creds = func() (string, string, error) { return user, token, nil }
+	ctx, cancel := context.WithTimeout(ctx, jiraProbeBudget)
+	defer cancel()
 
 	info, err := client.ServerInfo(ctx)
 	if err != nil {

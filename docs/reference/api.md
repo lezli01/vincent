@@ -907,7 +907,7 @@ a sentence:
 | `not_jira` | The project's [issue source](#issue-source) does not resolve to Jira. No call is made |
 | `disabled` | `jira.enabled` is false. No call is made |
 | `no_credential` | The variable named by `jira.user_env` or `jira.token_env` is unset in the daemon's environment |
-| `unreachable` | The site could not be reached |
+| `unreachable` | The site could not be reached, or the three calls together took longer than 8 seconds |
 | `unauthorized` | Jira rejected the credential (401) |
 | `forbidden` | The credential may not read the project (403) |
 | `not_found` | The bound project does not exist or is not visible to the credential |

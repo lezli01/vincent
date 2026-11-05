@@ -219,6 +219,36 @@ func TestJiraProbeClosedListener(t *testing.T) {
 	}
 }
 
+// A site that accepts the connection and never answers: the probe gives up
+// inside its own budget and answers unreachable, well before the loopback
+// client's ten-second deadline would replace that answer with a timeout
+// (review F3 on #943).
+func TestJiraProbeSiteThatNeverAnswers(t *testing.T) {
+	if jiraProbeBudget >= 10*time.Second {
+		t.Fatalf("jiraProbeBudget %v does not sit under the CLI's 10 s request deadline", jiraProbeBudget)
+	}
+	defer func(b time.Duration) { jiraProbeBudget = b }(jiraProbeBudget)
+	jiraProbeBudget = 200 * time.Millisecond
+	release := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { close(release) })
+	h := newJiraHarness(t, config.Default(), probeEnv())
+	start := time.Now()
+	got, body := h.probe(t, h.project(t, jiraBinding(ts.URL, "VIN")))
+	if got.Available || got.Reason != jira.ReasonUnreachable {
+		t.Fatalf("probe = %s, want unreachable", body)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("probe took %v, want it held to its budget", took)
+	}
+}
+
 // Disabled and not-Jira projects answer without calling Jira at all.
 func TestJiraProbeMakesNoCallWhenOffOrNotJira(t *testing.T) {
 	var calls atomic.Int32
