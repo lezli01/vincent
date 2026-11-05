@@ -87,6 +87,7 @@ func TestIssueDetailEnterOpensTheOccupant(t *testing.T) {
 
 func TestIssueDetailAnnotatesRolesAndFoldsMergeBacks(t *testing.T) {
 	v := rolesIssueFixture()
+	v.setTab(issueTabWork)
 	var order []int64
 	children := map[int64]bool{}
 	for _, row := range v.selectRows() {

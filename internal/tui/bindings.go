@@ -992,7 +992,7 @@ var bindings = []binding{
 	// worktree, or reopen the chat already doing so.
 	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssues, hint: "T chat", priority: 8},
 	// The issue detail (§15 view 13).
-	{op: keymap.OpenRow, key: "enter", label: "open the selected linked task's workspace (esc comes back here)", scope: scopePanel, context: ctxIssue, hint: "enter task", priority: 1, term: termOpenRow},
+	{op: keymap.OpenRow, key: "enter", label: "open the selected row — a task's workspace or a chat, and esc comes back here; on the Issue tab's tasks-and-chats line, switch to the Work tab", scope: scopePanel, context: ctxIssue, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},
 	{key: rawToggleKey, label: "show the description's and comments' original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 3},
 	{key: linkPickKey, label: "list the links in the description and comments, and the source page — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 4},
@@ -1004,6 +1004,10 @@ var bindings = []binding{
 	{key: "pgdown", label: "scroll a page (pgup/pgdown, space)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{key: "ctrl+d", label: "scroll half a page (ctrl+u/ctrl+d)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{key: "end", label: "jump to the end of the page (home/end, g/G)", scope: scopePanel, context: ctxIssue, priority: 7},
+	// The Issue | Work strip (task 144): tab/] forward, shift+tab/[ back,
+	// wrapping; no digit keys (decision 2).
+	{key: "tab", label: "move between the Issue and Work tabs (shift+tab goes back)", scope: scopePanel, context: ctxIssue, hint: "tab work", priority: 6},
+	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{op: keymap.New, key: "n", label: "file a new issue in this issue's project", scope: scopePanel, context: ctxIssue, hint: "n new", priority: 8},
 	{op: keymap.Add, key: "a", label: "create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssue, hint: "a new task", priority: 8, term: termAdd},
 	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 9},

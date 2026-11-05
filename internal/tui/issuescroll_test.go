@@ -160,6 +160,7 @@ func TestIssueDetailWheelScrolls(t *testing.T) {
 // A click on a linked task's row selects it.
 func TestIssueDetailClickSelectsATask(t *testing.T) {
 	v := issueFixture()
+	v.setTab(issueTabWork)
 	const w, h = 100, 120
 	lines := renderedLines(v, w, h)
 	y := lineOf(lines, "dark mode, review")
@@ -250,6 +251,13 @@ func TestIssueDetailEnterNeedsTheSelectionOnScreen(t *testing.T) {
 	if !v.visible(v.cursor) {
 		t.Fatal("the selected row is still off screen at the end of the page")
 	}
+	// The row at the end of the Issue tab is the Work line: enter on it
+	// switches tab (task 144 decision 1), and the Work tab's first row is
+	// on screen there.
+	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd != nil || v.tab != issueTabWork {
+		t.Fatalf("enter on the Work line: tab %v, cmd %v; want the Work tab and no command", v.tab, cmd)
+	}
+	v.render(80, 24)
 	_, cmd := v.updateKey(registryKey(t, "enter"))
 	if cmd == nil {
 		t.Fatal("enter on an on-screen row opened nothing")
