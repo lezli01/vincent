@@ -169,7 +169,7 @@ func TestConfigView(t *testing.T) {
 	}
 	for _, key := range []string{
 		"delete_empty_branch_on_archive", "delete_remote_branch_on_archive", "max_task_cost_usd",
-		"max_tree_cost_usd",
+		"max_tree_cost_usd", "archive_tasks_on_issue_close",
 	} {
 		if !strings.Contains(string(body), key) {
 			t.Errorf("%s missing from the config view", key)

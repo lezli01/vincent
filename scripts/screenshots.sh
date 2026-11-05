@@ -281,6 +281,11 @@ triggers:
 # cmd/fakegh (see daemon_up).
 github:
   poll_interval: 5s
+# Off, so closing an issue (paged, the delivered train issue, the
+# handoff-train workflow's deliver --close) leaves its done tasks on the board
+# and off the archived board, as the committed pictures show them. The key
+# sits below the fold of tui-daemon-config, so its value changes no picture.
+archive_tasks_on_issue_close: false
 EOF
 }
 

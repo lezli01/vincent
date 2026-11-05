@@ -58,6 +58,11 @@ delete_empty_branch_on_archive: true
 # unless delete_empty_branch_on_archive is also on.
 delete_remote_branch_on_archive: false
 
+# Archive a closed issue's settled tasks automatically, once nothing on the
+# issue is still working. Never forces a dirty worktree and never deletes a
+# remote branch; a task it cannot archive is logged and left for you.
+archive_tasks_on_issue_close: true
+
 # Refresh a task's base branch from its remote before the task's worktree is
 # created, and start the task branch at the fetched commit rather than at
 # whatever your local base happened to be. Your own checkout is never touched:

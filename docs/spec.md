@@ -1276,6 +1276,28 @@ stored `state` still never changes, and reopening an issue returns it to the
 lane its tasks give it. An archived task keeps counting toward its issue's
 lane until a human deletes it: the §17 pruner removes transcripts, never rows.
 
+*Amended 2026-11-05 (task 143.3, issue #928):* **closing an issue archives
+its settled tasks.** With `archive_tasks_on_issue_close` on (§12.3, the
+default), the daemon archives a closed issue's root tasks once the issue is
+quiescent — every root settled, no issue chat live — taking the roots created
+at or before the close, side work and merge-backs before main tasks
+(`Store.ArchivableIssueTasks`, task 143 decisions 1–5); if any side task or
+merge-back is refused, the issue's main tasks are held that round, so the
+order holds even when side work stays (review F3). Every close reason
+counts, a sync close included. The archive is §6's, run unattended: it never
+forces a dirty worktree and never deletes a remote branch (§10); a task it
+cannot archive — dirty, locked by a linked chat, a lane still working — is
+logged to `daemon.log` and left for a person. It is retried only when a later
+event touches the issue: a linked chat's close and a lane's settle are such
+events, but cleaning a dirty worktree records none, so a dirty refusal waits
+for an unrelated event or a human archive (#929's doctor row is to list them). While a handoff item still claims the issue (unresolved or
+waiting) none of its tasks is archived, so a `return` after a reopen can still
+follow up its main task (decision 10). Chats are never archived (decision 4);
+a closed or archived issue chat may still name the issue's main-worktree
+directory, a known leftover this does not reclaim (decision 11). Reopening
+before the worker acts archives nothing; there is no grace delay and no
+backfill of issues closed before the upgrade (decision 7).
+
 Input rules — a title of at most 1 KiB, label names of at most 64 bytes, a kind
 of at most 32, a priority of 0–4, a non-empty comment — belong to
 `internal/issues`, the one write path the API, sync and triggers share. The
@@ -1977,7 +1999,7 @@ lane is retried by hand after its chat closes.
 | `approve` | awaiting_gate | Gate step → `approved`; advances; → `queued` |
 | `reject` | awaiting_gate | Gate step → `rejected`; → `blocked` (from which: retry earlier via edit, skip, or abort) |
 | `set priority` | queued, paused | Reorders scheduler admission |
-| `archive` | done, aborted | Removes worktree (warns if dirty — uncommitted changes would be lost; requires `force` in that case); → `archived` |
+| `archive` | done, aborted | Removes worktree (warns if dirty — uncommitted changes would be lost; requires `force` in that case); → `archived`. *Amended 2026-11-05 (task 143.3):* a human action everywhere but one place — the daemon archives a closed issue's settled tasks itself (§5.6), unattended, never forcing |
 | `follow_up` | done, aborted | *Added 2026-08-25 (task 027).* Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch (§7.2, §8.3, §8.6, §13.2); → `queued`, and back to the state it came from when the run ends. Repeatable; it decides nothing about the task's verdict and spends none of the workflow's retry budgets. *Amended 2026-09-13 (task 096): with `paused: true`, → `paused` instead of `queued`, the request persisted, and `resume` starts the run* |
 | `chat` | blocked, awaiting_gate, done, aborted | *Added 2026-09-17 (task 119, issue #472).* Opens a §5.5 chat linked to the task, working in the task's existing worktree and branch (§13.2); no transition — the task stays where it is, **locked** against every other action but `cancel` until the chat is closed. Refused `409 task_has_no_worktree` on a task that never got one, and while a linked chat is already open |
 
@@ -8311,6 +8333,7 @@ defaults:
   background_wait: 30m         # keep a run open for background work the agent left running (§9.2); 0 = end at the first result
 delete_empty_branch_on_archive: true   # archive deletes a branch with no commits past its base (§10)
 delete_remote_branch_on_archive: false # …and its upstream counterpart; attended archive only
+archive_tasks_on_issue_close: true     # archive a closed issue's settled tasks, unattended (§5.6)
 fetch_base_branch: true        # refresh base_branch from its upstream before cutting a worktree (§10)
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
@@ -8970,6 +8993,14 @@ a key that is merely unreachable is not an invalid one, and refusing the file ov
 would revert every unrelated edit in the same save. Both are read per archive, so a
 hot reload reaches the next one.
 
+**`archive_tasks_on_issue_close` (task 143.3, added 2026-11-05).** Whether the
+daemon archives a closed issue's settled tasks (§5.6). Default `true`; a plain
+bool, because `Load` unmarshals into the defaults. It is read once per page of
+events the worker processes, so a hot reload governs the next close with no
+restart. Events read while it is `false` are passed over for good: turning it
+back on acts on later events, never on a backlog. The archive it governs is
+unattended whatever the branch-cleanup pair says — no `force`, no remote leg.
+
 **`github` (task 035, added 2026-08-26; amended 2026-08-31, task 069).** Whether
 the daemon may talk to GitHub about a project whose `origin` is a github.com
 repository (§5.3, §13.2, §15). No call is ever made from a step — the daemon
@@ -9434,6 +9465,15 @@ moved underneath is a 409. The refusal of preconditions in the last bullet is
 about `config.yaml` and stays about `config.yaml`.
 
 ### 12.4 Crash recovery
+
+*Amended 2026-11-05 (task 143.3):* the auto-archive worker (§5.6) keeps its
+place in the events table in a one-row cursor (`issue_archive_cursor`,
+migration 0053), persisted after each page it processes, and drains from it
+once at startup — so a close committed while the daemon was down, or one it
+died processing, is acted on at the next start. Replaying a page is safe: the
+archivable set is derived from current rows and archiving an archived task is
+a no-op. The migration seeds the cursor at the newest event, so an upgrade
+archives nothing from history.
 
 - Before starting any step process, the daemon persists the StepRun (`running`) with
   the child PID and start time once spawned.
@@ -11996,7 +12036,11 @@ Two kinds of streams:
    never on a bare worktree-path write, and deliberately does not wake the scheduler:
    nothing about admission changes when a running task advances a step.)
    (An archive is visible as `task.state_changed` with `to: archived`; there is no
-   separate `task.archived` type — PR D decision. Likewise there is no separate
+   separate `task.archived` type — PR D decision. *Amended 2026-11-05 (task
+   143.3):* an archive the daemon made because the task's issue closed (§5.6)
+   carries `archived_by: "issue_closed"` on that payload; a human archive
+   carries no `archived_by`. `issue_id` tells nothing apart: it is on every
+   state change of an issue's task already (task 134.6 decision 1). No new event type. Likewise there is no separate
    `task.awaiting_input` type — PR F decision: entering the state is
    `task.state_changed` with `to: awaiting_input`, whose payload additionally
    carries the request kind and a one-line summary — the full request comes from

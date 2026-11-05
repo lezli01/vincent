@@ -189,6 +189,15 @@ type Config struct {
 	// effect while DeleteEmptyBranchOnArchive is false: the remote leg runs
 	// after a local delete that succeeded.
 	DeleteRemoteBranchOnArchive bool `yaml:"delete_remote_branch_on_archive"`
+	// ArchiveTasksOnIssueClose lets the daemon archive a closed issue's
+	// settled tasks once nothing on the issue is still working (task 143,
+	// §5.6). Default true. The archive is unattended: it never forces a dirty
+	// worktree and never deletes a remote branch. Read per event page, so a
+	// hot reload applies to the next close with no restart.
+	//
+	// A plain bool, as DeleteEmptyBranchOnArchive is: Load unmarshals into
+	// Default(), so an absent key keeps true.
+	ArchiveTasksOnIssueClose bool `yaml:"archive_tasks_on_issue_close"`
 	// FetchBaseBranch refreshes a task's base branch from its own configured
 	// upstream before the worktree is created, and starts the task branch at
 	// the fetched commit (§10, task 056). Default true: without it every task
@@ -1140,6 +1149,7 @@ func Default() Config {
 		// Deliberately not defaulted true beside its local sibling: this one
 		// writes to a forge (§10, task 008).
 		DeleteRemoteBranchOnArchive: false,
+		ArchiveTasksOnIssueClose:    true,
 		// Default-on outbound traffic needs no separate argument: github.enabled
 		// already defaults true and §26 settled that posture. A fetch reads.
 		FetchBaseBranch:           true,

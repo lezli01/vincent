@@ -94,9 +94,9 @@ func mapIssueEvent(typ string, p *issuePayload) []issueChange {
 	case store.EventIssueCreated:
 		return []issueChange{{action: "opened"}}
 	case store.EventIssueStateChanged, store.EventIssueUpdated:
-		if p.To != "" && p.To != p.From {
+		if to, ok := store.IssueStateMove(typ, p.From, p.To); ok {
 			action := "reopened"
-			if p.To == "closed" {
+			if to == "closed" {
 				action = "closed"
 			}
 			out = append(out, issueChange{action: action, state: true})

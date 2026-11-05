@@ -138,11 +138,14 @@ type Config struct {
 	// it has no commits past its base (§10). DeleteRemoteBranchOnArchive does
 	// the same to its upstream counterpart, and is honoured only on an
 	// attended archive — it is inert while the local one is off.
-	DeleteEmptyBranchOnArchive  bool  `json:"delete_empty_branch_on_archive"`
-	DeleteRemoteBranchOnArchive bool  `json:"delete_remote_branch_on_archive"`
-	FetchBaseBranch             bool  `json:"fetch_base_branch"`
-	TranscriptRetentionDays     int   `json:"transcript_retention_days"`
-	TranscriptMaxBytes          int64 `json:"transcript_max_bytes"`
+	DeleteEmptyBranchOnArchive  bool `json:"delete_empty_branch_on_archive"`
+	DeleteRemoteBranchOnArchive bool `json:"delete_remote_branch_on_archive"`
+	// ArchiveTasksOnIssueClose archives a closed issue's settled tasks
+	// unattended (task 143, §5.6).
+	ArchiveTasksOnIssueClose bool  `json:"archive_tasks_on_issue_close"`
+	FetchBaseBranch          bool  `json:"fetch_base_branch"`
+	TranscriptRetentionDays  int   `json:"transcript_retention_days"`
+	TranscriptMaxBytes       int64 `json:"transcript_max_bytes"`
 	// MaxTaskCostUSD caps what one task may spend across every attempt of
 	// every step, in US dollars; 0 is no cap (§12.3, task 033).
 	MaxTaskCostUSD float64 `json:"max_task_cost_usd"`
@@ -427,6 +430,7 @@ type ConfigPatch struct {
 	Defaults                    *ConfigDefaultsPatch    `json:"defaults,omitempty"`
 	DeleteEmptyBranchOnArchive  *bool                   `json:"delete_empty_branch_on_archive,omitempty"`
 	DeleteRemoteBranchOnArchive *bool                   `json:"delete_remote_branch_on_archive,omitempty"`
+	ArchiveTasksOnIssueClose    *bool                   `json:"archive_tasks_on_issue_close,omitempty"`
 	FetchBaseBranch             *bool                   `json:"fetch_base_branch,omitempty"`
 	TranscriptRetentionDays     *int                    `json:"transcript_retention_days,omitempty"`
 	TranscriptMaxBytes          *int64                  `json:"transcript_max_bytes,omitempty"`

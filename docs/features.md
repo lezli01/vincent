@@ -215,7 +215,9 @@ whole conversation in the same worktree, with the task held still until you
 close it.
 
 A finished task keeps its worktree, its branch and its commits until you archive
-it, and that window is where the last mile of real work lives — a branch that
+it (or, for a task of an issue, until the issue closes and the daemon
+[archives it](reference/task-lifecycle.md#closed-issues-archive-their-tasks)),
+and that window is where the last mile of real work lives — a branch that
 needs rebasing onto a `main` that moved, one more commit a review asked for, a
 stray file to drop. A **follow-up run** does that work inside vincent: give a
 `done` or `aborted` task an agent prompt, a shell command, or the name of a
@@ -579,7 +581,10 @@ should not wait runs as a side task, in its own worktree cut from the main
 branch, and merges back when it is done — a conflict either blocks for you or
 goes to an agent first. A chat can work that line too: `vincent chat start
 --issue` opens one in the issue's main worktree, and hands off into the next
-main task. [Working an issue](guides/issues.md) tells the whole
+main task. When the issue closes, the daemon archives its finished tasks once
+nothing on the issue is still working. It never forces a dirty worktree, and
+[`archive_tasks_on_issue_close: false`](reference/configuration.md#archive_tasks_on_issue_close)
+turns it off. [Working an issue](guides/issues.md) tells the whole
 story, and [Handing work off](guides/handoff.md) what happens once the work
 is done.
 

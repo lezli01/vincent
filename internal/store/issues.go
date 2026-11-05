@@ -43,6 +43,22 @@ const (
 	EventIssueLaneChanged = "issue.lane_changed"
 )
 
+// IssueStateMove is the one reading of an issue state change off the event
+// table: issue.state_changed always moves the state, and issue.updated — a
+// sync refresh — moves it when its payload's to differs from its from. It
+// returns the state moved to, or ok false when typ moved nothing. The issues
+// trigger source (task 130.15) and the auto-archive worker (task 143.3) both
+// ask it, so "this event closed the issue" has one definition.
+func IssueStateMove(typ, from, to string) (string, bool) {
+	if typ != EventIssueStateChanged && typ != EventIssueUpdated {
+		return "", false
+	}
+	if to == "" || to == from {
+		return "", false
+	}
+	return to, true
+}
+
 // ErrIssueChanged is UpdateIssue's compare-and-set refusal: the version the
 // caller read is no longer the stored one.
 var ErrIssueChanged = errors.New("issue changed since it was read")
