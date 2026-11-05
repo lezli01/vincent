@@ -26,7 +26,8 @@ import (
 // directories would be wrong in a table clients read as a contract.
 //
 // `?probe=false` serves adapter availability from the §9.6 binary-identity
-// cache instead of forcing a re-probe (task 029 decision 4).
+// cache instead of forcing a re-probe (task 029 decision 4), and makes no
+// Jira call: the Jira row's sites then read unknown (task 142.15 decision 2).
 func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.doctorReport(r.Context(), wantsProbe(r)))
 }
@@ -90,6 +91,7 @@ func (s *Server) doctorReport(ctx context.Context, probe bool) *doctor.Report {
 	s.fillTasks(ctx, rep)
 	s.fillIssueArchive(ctx, rep)
 	s.fillIssueSync(ctx, rep)
+	s.fillJira(ctx, rep, probe)
 	rep.Evaluate()
 	return rep
 }

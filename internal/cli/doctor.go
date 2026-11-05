@@ -229,6 +229,7 @@ func doctorGroups(rep *apiclient.DoctorReport) []doctorGroup {
 		{name: "DATABASE", rows: doctorDatabaseRows(rep.Database)},
 		{name: "AGENTS", rows: doctorAgentRows(rep.Agents)},
 		{name: "GITHUB", rows: doctorGitHubRows(rep.GitHub)},
+		{name: "JIRA", rows: doctorJiraRows(rep.Jira)},
 		{name: "CONTAINER", rows: doctorContainerRows(rep.Container)},
 		{name: "SKILLS", rows: doctorSkillRows(rep.Skills)},
 		{name: "UPDATE", rows: doctorUpdateRows(rep.Update)},
@@ -585,6 +586,67 @@ func doctorGitHubRows(gh apiclient.DoctorGitHub) [][]string {
 		rows = append(rows, []string{"sync " + doctorSyncProject(p), doctorSyncValue(p)})
 	}
 	return rows
+}
+
+// doctorJiraRows renders the Jira integration row (task 142.15): the
+// switch, the credential variables by name, one row per bound site and one
+// per Jira project's sync. It follows the GitHub row's rule: nothing here is
+// a Problem, and the exit code never moves for it. No value of either
+// variable is ever printed — the report does not carry one.
+func doctorJiraRows(j apiclient.DoctorJira) [][]string {
+	rows := [][]string{
+		{"enabled", boolWord(j.Enabled)},
+		{"credential", doctorJiraVar(j.Credential.UserEnv, j.Credential.UserPresent) + "  " +
+			doctorJiraVar(j.Credential.TokenEnv, j.Credential.TokenPresent)},
+	}
+	if j.Message != "" {
+		rows = append(rows, []string{"note", j.Message})
+	}
+	for _, site := range j.Sites {
+		rows = append(rows, []string{"site " + site.URL, doctorJiraSiteValue(site)})
+	}
+	for _, p := range j.Sync {
+		rows = append(rows, []string{"sync " + doctorSyncProject(p), doctorSyncValue(p)})
+	}
+	return rows
+}
+
+// doctorJiraVar is one credential variable: its name and whether the
+// daemon's environment sets it. Without a daemon presence is unknown — the
+// CLI's environment is not the daemon's.
+func doctorJiraVar(name string, present *bool) string {
+	name = dash(name)
+	switch {
+	case present == nil:
+		return name + " (unknown)"
+	case *present:
+		return name + " set"
+	default:
+		return name + " not set"
+	}
+}
+
+// doctorJiraSiteValue is one site's answer to doctor's one call.
+func doctorJiraSiteValue(site apiclient.DoctorJiraSite) string {
+	var out string
+	switch {
+	case site.Reachable == nil:
+		out = "not probed"
+		if site.Reason != "" {
+			out += " (" + site.Reason + ")"
+		}
+	case site.Authenticated != nil && *site.Authenticated:
+		out = "ok"
+		if site.As != "" {
+			out += " as " + site.As
+		}
+	default:
+		out = "not ok (" + dash(site.Reason) + ")"
+	}
+	if site.Message != "" {
+		out += ": " + site.Message
+	}
+	return out
 }
 
 // doctorSyncProject names a project in its sync row.
