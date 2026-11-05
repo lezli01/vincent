@@ -193,7 +193,7 @@ stays as it is, with a warning in `daemon.log`. A linked chat closing or a
 lane settling retries it. Cleaning a dirty worktree does not, because the
 daemon records no event for it: that task waits for a later event on the issue,
 or for you to archive it. Its `task.state_changed` event carries
-`archived_by: "issue_closed"` and the `issue_id`.
+`archived_by: "issue_closed"`, which yours does not.
 
 ## Human actions
 

@@ -3962,8 +3962,9 @@ they need.
   alert clients key off. The full request comes from `GET /v1/tasks/{id}`.
   An archive the daemon made because the task's issue closed
   ([`archive_tasks_on_issue_close`](configuration.md#archive_tasks_on_issue_close))
-  additionally carries `archived_by: "issue_closed"` and `issue_id`. An archive
-  you make carries no `archived_by`.
+  additionally carries `archived_by: "issue_closed"`. An archive you make
+  carries no `archived_by`. Both carry `issue_id`, as every state change of
+  an issue's task does.
 - `task.step_advanced` carries `{ current_step }` when the engine moves the
   cursor without a state change, so a board's `k/n` tracks a run instead of
   freezing.

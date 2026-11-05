@@ -12038,8 +12038,9 @@ Two kinds of streams:
    (An archive is visible as `task.state_changed` with `to: archived`; there is no
    separate `task.archived` type — PR D decision. *Amended 2026-11-05 (task
    143.3):* an archive the daemon made because the task's issue closed (§5.6)
-   carries `archived_by: "issue_closed"` and `issue_id` on that payload; a
-   human archive carries no `archived_by`. No new event type. Likewise there is no separate
+   carries `archived_by: "issue_closed"` on that payload; a human archive
+   carries no `archived_by`. `issue_id` tells nothing apart: it is on every
+   state change of an issue's task already (task 134.6 decision 1). No new event type. Likewise there is no separate
    `task.awaiting_input` type — PR F decision: entering the state is
    `task.state_changed` with `to: awaiting_input`, whose payload additionally
    carries the request kind and a one-line summary — the full request comes from

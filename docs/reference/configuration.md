@@ -733,7 +733,7 @@ for a dirty worktree is tried again only if some later event touches the
 issue (a task of it settling, a chat on it closing, a handoff change).
 Otherwise it stays `done` until you archive it. Chats are never archived.
 
-Its archive event carries `archived_by: "issue_closed"` and the `issue_id`, so
+Its archive event carries `archived_by: "issue_closed"`, so
 a reader of the [event stream](api.md#events-sse) can tell it from yours. The
 [`notify`](#notify) envelope does not carry those keys.
 
