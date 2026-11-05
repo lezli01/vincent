@@ -266,6 +266,8 @@ retries it. Committing or discarding the changes does not, since the daemon
 sees no event for that: archive the task yourself, or it waits for a later
 event on the issue. Chats are never archived, and a closed chat on the issue may still
 name the issue's worktree directory afterwards; nothing reclaims it yet.
+[`vincent doctor`](../reference/cli.md#vincent-doctor)'s Issue archive group
+lists every such task with the reasons holding it, and any such directory.
 Reopen the issue before it happens and nothing is archived. Turn this off with
 [`archive_tasks_on_issue_close: false`](../reference/configuration.md#archive_tasks_on_issue_close).
 

@@ -796,7 +796,8 @@ vincent has been tested against, the GitHub integration, whether the
 [workflow- and trigger-authoring skills](reference/cli.md#vincent-skills) are
 installed and current for your agents, whether a newer vincent
 has been released and whether the running daemon is older than the binary you
-just ran, disk use, worktrees, and task counts. It supports JSON output for bug
+just ran, disk use, worktrees, task counts, and the finished tasks of closed
+issues the auto-archive left on the board, with every reason holding each. It supports JSON output for bug
 reports and automation, while `--fix` can reclaim orphans and compact the
 database when it is safe to do so.
 
