@@ -154,10 +154,10 @@ func (p *issuePass) adopts() bool {
 func (p *issuePass) importIssues(ctx context.Context, now time.Time, requested bool) error {
 	st := p.st
 	if !st.ImportComplete {
-		if err := p.initialImport(ctx); err != nil {
+		if err := p.initialImport(ctx, now); err != nil {
 			return err
 		}
-	} else if err := p.incremental(ctx); err != nil {
+	} else if err := p.incremental(ctx, now); err != nil {
 		return err
 	}
 	if !st.ImportComplete {
@@ -177,14 +177,23 @@ func (p *issuePass) importIssues(ctx context.Context, now time.Time, requested b
 // initialImport walks the open issues from the watermark, importPageCap
 // pages at a time. Closed history is not imported: an issue closed before
 // the project was synced is not work anybody here will pick up.
-func (p *issuePass) initialImport(ctx context.Context) error {
+//
+// A source whose open walk is ordered by id (Jira's) resumes from the
+// cursor its truncated page returned (ImportCursor) instead of from the
+// watermark. Its walk is not ordered by update time, so the watermark at
+// its end says nothing about an issue read on an earlier tick and changed
+// since: the import records when it began in Since — which nothing else
+// reads until the import completes — and the first incremental bound is
+// no later than that. A source resuming by time never sets a cursor, and
+// its import is exactly as it was.
+func (p *issuePass) initialImport(ctx context.Context, now time.Time) error {
 	st := p.st
 	var since time.Time
 	if st.Watermark != nil {
 		since = *st.Watermark
 	}
 	page, err := p.src.ListIssues(ctx, p.b, issuesource.ListOptions{
-		OpenOnly: true, Since: since, PageCap: importPageCap,
+		OpenOnly: true, Since: since, PageCap: importPageCap, After: st.ImportCursor,
 	})
 	if err != nil {
 		return err
@@ -193,10 +202,18 @@ func (p *issuePass) initialImport(ctx context.Context) error {
 	if err := p.applyIssues(ctx, page); err != nil {
 		return err
 	}
-	if !page.Truncated {
+	switch {
+	case !page.Truncated:
 		st.ImportComplete = true
 		st.ETag = ""
-		st.Since = sinceFrom(st.Watermark)
+		st.Since = earlierOf(sinceFrom(st.Watermark), st.Since)
+		st.ImportCursor = ""
+	case page.ResumeAfter != "":
+		if st.Since == nil {
+			begin := now.Add(-sinceOverlap)
+			st.Since = &begin
+		}
+		st.ImportCursor = page.ResumeAfter
 	}
 	return nil
 }
@@ -205,7 +222,16 @@ func (p *issuePass) initialImport(ctx context.Context) error {
 // stored ETag. The bound moves only when the watermark does, so an idle
 // repository is asked the same question every tick and answers 304: one
 // request, nothing charged.
-func (p *issuePass) incremental(ctx context.Context) error {
+//
+// A source that resumes a truncated listing by cursor (Jira's, ordered by
+// id) is walked the way initialImport walks: the cursor goes in
+// ImportCursor and is handed back until the walk ends, and the bound is
+// held at when the walk began, because an issue the walk passed may change
+// before it ends and the watermark at the end says nothing about it.
+// Resuming such a window by time could not get past one holding more
+// changes than a walk reads (review F1 on #943). A source resuming by time
+// never sets a cursor, and its pass is exactly as it was.
+func (p *issuePass) incremental(ctx context.Context, now time.Time) error {
 	st := p.st
 	if st.Since == nil {
 		st.Since = sinceFrom(st.Watermark)
@@ -214,7 +240,7 @@ func (p *issuePass) incremental(ctx context.Context) error {
 	if st.Since != nil {
 		since = *st.Since
 	}
-	page, err := p.src.ListIssues(ctx, p.b, issuesource.ListOptions{Since: since, ETag: st.ETag})
+	page, err := p.src.ListIssues(ctx, p.b, issuesource.ListOptions{Since: since, ETag: st.ETag, After: st.ImportCursor})
 	if err != nil {
 		return err
 	}
@@ -227,8 +253,25 @@ func (p *issuePass) incremental(ctx context.Context) error {
 		return err
 	}
 	st.ETag = page.ETag
-	if !sameTime(before, st.Watermark) {
-		// A new question: the stored ETag answered the old one.
+	switch {
+	case page.Truncated && page.ResumeAfter != "":
+		if st.ImportCursor == "" {
+			begin := now.Add(-sinceOverlap)
+			st.Since = &begin
+		}
+		st.ImportCursor = page.ResumeAfter
+		st.ETag = ""
+	case st.ImportCursor != "":
+		// The walk ended: the next pass asks from when it began.
+		st.ImportCursor = ""
+		st.Since = earlierOf(sinceFrom(st.Watermark), st.Since)
+		st.ETag = ""
+	case !sameTime(before, st.Watermark) || laterBound(st.Since, sinceFrom(st.Watermark)):
+		// A new question: the stored ETag answered the old one. The second
+		// clause is an id-ordered walk's bound (initialImport, and the
+		// walk above), held at the walk's start until a pass has read
+		// everything since; a source resuming by time always has its bound
+		// at the watermark's.
 		st.Since = sinceFrom(st.Watermark)
 		st.ETag = ""
 	}
@@ -382,17 +425,23 @@ func needsBackfill(st *store.IssueSyncState) bool {
 
 // sweepOpenSet finds the open issues here the provider no longer lists as
 // open, and asks after each one: closed is written, transferred is moved,
-// deleted is deleted, unreadable is missing.
+// deleted is deleted, unreadable is missing. A source with a bulk read
+// (issuesource.BulkGetter) is asked BulkGetMax at a time, and on it absent
+// is missing — never deleted (probeBatch). An id-ordered open walk resumes
+// by its cursor, a time-ordered one by its time.
 func (p *issuePass) sweepOpenSet(ctx context.Context) error {
 	r := p.r
 	open := map[string]bool{}
-	var since time.Time
+	var (
+		since time.Time
+		after string
+	)
 	for calls := 0; ; calls++ {
 		if calls == fullScanCalls {
 			r.logger.Warn("issue sync: open set too large to sweep", "project", p.project.ID, "repo", p.b.String())
 			return nil
 		}
-		page, err := p.src.ListIssues(ctx, p.b, issuesource.ListOptions{OpenOnly: true, Since: since})
+		page, err := p.src.ListIssues(ctx, p.b, issuesource.ListOptions{OpenOnly: true, Since: since, After: after})
 		if err != nil {
 			return err
 		}
@@ -402,12 +451,14 @@ func (p *issuePass) sweepOpenSet(ctx context.Context) error {
 		if !page.Truncated {
 			break
 		}
-		since = page.ResumeSince
+		since, after = page.ResumeSince, page.ResumeAfter
 	}
 	local, err := r.store.ListOpenRemoteIssues(ctx, p.project.ID, p.provider())
 	if err != nil {
 		return err
 	}
+	bulk, _ := p.src.(issuesource.BulkGetter)
+	var batch []store.IssueRemote
 	for _, rem := range local {
 		if open[rem.RemoteKey] {
 			continue
@@ -423,10 +474,76 @@ func (p *issuePass) sweepOpenSet(ctx context.Context) error {
 			// is never probed and stays as the backfill left it.
 			continue
 		}
+		if bulk != nil {
+			if batch = append(batch, rem); len(batch) == issuesource.BulkGetMax {
+				if err := p.probeBatch(ctx, bulk, batch); err != nil {
+					return err
+				}
+				batch = nil
+			}
+			continue
+		}
 		if err := p.probeIssue(ctx, rem, needsBackfill(p.st)); err != nil {
 			return err
 		}
 	}
+	if len(batch) > 0 {
+		return p.probeBatch(ctx, bulk, batch)
+	}
+	return nil
+}
+
+// probeBatch is the sweep's read of up to BulkGetMax remotes the open
+// listing lacked, through a source that reads many in one call (Jira's
+// bulkfetch). An absent one is marked missing and never deleted: the
+// provider answers deleted and unreadable alike by leaving it out, so
+// GitHub's "gone deletes" rule has no analogue here. A moved one is marked
+// moved and its row rewritten to where it went; any other is refreshed, as
+// a single probe's answer is.
+func (p *issuePass) probeBatch(ctx context.Context, bulk issuesource.BulkGetter, batch []store.IssueRemote) error {
+	got, err := bulk.GetIssues(ctx, p.b, batch)
+	if err != nil {
+		return err
+	}
+	for _, rem := range batch {
+		bi, ok := got[rem.RemoteKey]
+		switch {
+		case !ok:
+			err = p.markRemote(ctx, rem, store.RemoteStatusMissing, "")
+		case bi.MovedTo != "":
+			err = p.relocate(ctx, rem, &bi.Issue, bi.MovedTo)
+		default:
+			_, _, err = p.r.store.UpsertRemoteIssue(ctx, p.remoteIssue(&bi.Issue), issuestate.Sync)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// relocate marks rem moved to location and rewrites its row to is's new
+// repository, number, key and URL — a source that read the issue where it
+// went (task 142.12).
+func (p *issuePass) relocate(ctx context.Context, rem store.IssueRemote, is *issuesource.Issue, location string) error {
+	r := p.r
+	if err := r.store.RelocateIssueRemote(ctx, p.project.ID, p.provider(), rem.RemoteKey, p.remoteIssue(is), location); err != nil {
+		return err
+	}
+	r.logger.Info("issue no longer on its provider where it was", "project", p.project.ID,
+		"provider", p.provider(), "repo", p.b.String(), "issue", rem.Number, "status", store.RemoteStatusMoved,
+		"location", location, "to_repo", is.Remote.Repo, "to_issue", is.Remote.Number)
+	return nil
+}
+
+// markRemote records what a probe learned of rem.
+func (p *issuePass) markRemote(ctx context.Context, rem store.IssueRemote, status, location string) error {
+	r := p.r
+	if err := r.store.SetIssueRemoteStatus(ctx, p.project.ID, p.provider(), rem.RemoteKey, status, location); err != nil {
+		return err
+	}
+	r.logger.Info("issue no longer on its provider where it was", "project", p.project.ID,
+		"provider", p.provider(), "repo", p.b.String(), "issue", rem.Number, "status", status, "location", location)
 	return nil
 }
 
@@ -457,6 +574,10 @@ func (p *issuePass) probeIssue(ctx context.Context, rem store.IssueRemote, backf
 		}
 		_, _, err := r.store.UpsertRemoteIssue(ctx, p.remoteIssue(&is), issuestate.Sync)
 		return err
+	case f.Reason == issuesource.ReasonMoved && is.Remote.Repo != "":
+		// A source that read the issue where it went (Jira): the row
+		// follows it there.
+		return p.relocate(ctx, rem, &is, f.Location)
 	case f.Reason == issuesource.ReasonMoved:
 		status, location = store.RemoteStatusMoved, f.Location
 		if strings.Contains(location, "/discussions/") {
@@ -486,12 +607,7 @@ func (p *issuePass) probeIssue(ctx context.Context, rem store.IssueRemote, backf
 	default:
 		return err
 	}
-	if err := r.store.SetIssueRemoteStatus(ctx, projectID, p.provider(), rem.RemoteKey, status, location); err != nil {
-		return err
-	}
-	r.logger.Info("issue no longer on its provider where it was", "project", projectID,
-		"provider", p.provider(), "repo", p.b.String(), "issue", rem.Number, "status", status, "location", location)
-	return nil
+	return p.markRemote(ctx, rem, status, location)
 }
 
 // syncComments is the comment pass (task 130 decision 24, 130.16), through
@@ -619,6 +735,19 @@ func sinceFrom(watermark *time.Time) *time.Time {
 	}
 	since := watermark.Add(-sinceOverlap)
 	return &since
+}
+
+// earlierOf is the earlier of two bounds, nil when both are.
+func earlierOf(a, b *time.Time) *time.Time {
+	if a == nil || (b != nil && b.Before(*a)) {
+		return b
+	}
+	return a
+}
+
+// laterBound is whether next is a bound later than cur.
+func laterBound(cur, next *time.Time) bool {
+	return next != nil && (cur == nil || next.After(*cur))
 }
 
 func laterOf(cur *time.Time, t time.Time) *time.Time {

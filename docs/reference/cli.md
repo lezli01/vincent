@@ -23,6 +23,7 @@ localhost API.
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent trigger`](#vincent-trigger)
 - [`vincent github`](#vincent-github)
+- [`vincent jira`](#vincent-jira)
 - [`vincent issue`](#vincent-issue)
 - [`vincent handoff`](#vincent-handoff)
 - [`vincent gc`](#vincent-gc)
@@ -577,7 +578,8 @@ rebind. The previous source's imported issues are kept, are marked
 only `--jira-jql` or `--jira-mapping` is not a rebind. A project bound to
 `none` reports the sync reason `source_not_github`. One bound to `jira` is
 synced on [`jira.poll_interval`](configuration.md#jira), and reports
-`no_credential` or, until the Jira client ships, `no_client`.
+`no_credential` until both credential variables are set; `vincent jira status`
+checks the binding.
 
 ```sh
 vincent project edit 1 --issue-source jira --jira-site https://acme.atlassian.net --jira-project ENG
@@ -3106,6 +3108,35 @@ actually going. A project whose `origin` is not a github.com URL
 reports `unavailable: this project's origin remote is not a github.com
 repository` — which is not a fault, just a project GitHub's issue import does
 not apply to.
+
+## `vincent jira`
+
+A project's Jira binding. It is read-only: the daemon makes every Jira call,
+with the credential named by `jira.user_env` and `jira.token_env` in its own
+environment, and a client never reads, sends or prints that credential. It
+needs a daemon.
+
+### `vincent jira status`
+
+```sh
+vincent jira status --project ID [--json]
+```
+
+Whether *this* project's issues can be imported from Jira, and if not, the
+first check that failed. The daemon checks, in order, that the project's issue
+source is Jira, that `jira.enabled` is on, that both credential variables are
+set, that the site answers, that it accepts the credential, and that it shows
+the bound project. The `server`, `account` and `project id` rows appear once
+the probe got that far, so a failure reads as where it stopped. The last row
+is `issue import/sync`: `available`, or `unavailable:` and the reason as a
+sentence, such as `unavailable: Jira rejected the credential`. `--json` carries
+the reason's code in `reason` — `not_jira`, `disabled`, `no_credential`,
+`unreachable`, `unauthorized`, `forbidden`, `not_found`, `rate_limited`,
+`bad_request` or `bad_response` — beside the sentence in `message`.
+
+It is the Jira counterpart of [`vincent github status`](#vincent-github-status).
+[`vincent issue sync --status`](#vincent-issue-sync) says how the import is
+actually going.
 
 ## `vincent issue`
 

@@ -1,0 +1,147 @@
+{
+  "startAt": 0,
+  "maxResults": 100,
+  "total": 3,
+  "comments": [
+    {
+      "self": "https://your-domain.atlassian.net/rest/api/3/issue/10001/comment/10000",
+      "id": "10000",
+      "author": {
+        "self": "https://your-domain.atlassian.net/rest/api/3/user?accountId=5b10a2844c20165700ede21g",
+        "accountId": "5b10a2844c20165700ede21g",
+        "avatarUrls": {
+          "48x48": "https://avatar-management.example/48.png"
+        },
+        "displayName": "Emma Richards",
+        "active": true,
+        "timeZone": "Australia/Sydney",
+        "accountType": "atlassian"
+      },
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Lorem ipsum."
+              }
+            ]
+          }
+        ]
+      },
+      "renderedBody": "<p>Lorem ipsum.</p>",
+      "updateAuthor": {
+        "self": "https://your-domain.atlassian.net/rest/api/3/user?accountId=5b10a2844c20165700ede21g",
+        "accountId": "5b10a2844c20165700ede21g",
+        "avatarUrls": {
+          "48x48": "https://avatar-management.example/48.png"
+        },
+        "displayName": "Emma Richards",
+        "active": true,
+        "timeZone": "Australia/Sydney",
+        "accountType": "atlassian"
+      },
+      "created": "2026-10-01T09:00:00.000+0000",
+      "updated": "2026-10-01T09:00:00.000+0000",
+      "jsdPublic": true
+    },
+    {
+      "self": "https://your-domain.atlassian.net/rest/api/3/issue/10001/comment/10001",
+      "id": "10001",
+      "author": {
+        "self": "https://your-domain.atlassian.net/rest/api/3/user?accountId=5b10a2844c20165700ede21g",
+        "accountId": "5b10a2844c20165700ede21g",
+        "avatarUrls": {
+          "48x48": "https://avatar-management.example/48.png"
+        },
+        "displayName": "Emma Richards",
+        "active": true,
+        "timeZone": "Australia/Sydney",
+        "accountType": "atlassian"
+      },
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Admins only."
+              }
+            ]
+          }
+        ]
+      },
+      "renderedBody": "<p>Admins only.</p>",
+      "updateAuthor": {
+        "self": "https://your-domain.atlassian.net/rest/api/3/user?accountId=5b10a2844c20165700ede21g",
+        "accountId": "5b10a2844c20165700ede21g",
+        "avatarUrls": {
+          "48x48": "https://avatar-management.example/48.png"
+        },
+        "displayName": "Emma Richards",
+        "active": true,
+        "timeZone": "Australia/Sydney",
+        "accountType": "atlassian"
+      },
+      "created": "2026-10-02T09:00:00.000+0000",
+      "updated": "2026-10-03T10:00:00.500+0000",
+      "jsdPublic": true,
+      "visibility": {
+        "type": "role",
+        "value": "Administrators",
+        "identifier": "Administrators"
+      }
+    },
+    {
+      "self": "https://your-domain.atlassian.net/rest/api/3/issue/10001/comment/10002",
+      "id": "10002",
+      "author": {
+        "self": "https://your-domain.atlassian.net/rest/api/3/user?accountId=5b10a2844c20165700ede21g",
+        "accountId": "5b10a2844c20165700ede21g",
+        "avatarUrls": {
+          "48x48": "https://avatar-management.example/48.png"
+        },
+        "displayName": "Emma Richards",
+        "active": true,
+        "timeZone": "Australia/Sydney",
+        "accountType": "atlassian"
+      },
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Edited later."
+              }
+            ]
+          }
+        ]
+      },
+      "renderedBody": "<p>Edited <em>later</em>.</p>",
+      "updateAuthor": {
+        "self": "https://your-domain.atlassian.net/rest/api/3/user?accountId=5b10a2844c20165700ede21g",
+        "accountId": "5b10a2844c20165700ede21g",
+        "avatarUrls": {
+          "48x48": "https://avatar-management.example/48.png"
+        },
+        "displayName": "Emma Richards",
+        "active": true,
+        "timeZone": "Australia/Sydney",
+        "accountType": "atlassian"
+      },
+      "created": "2026-10-04T09:00:00.000+0000",
+      "updated": "2026-10-05T09:00:00.000+0000",
+      "jsdPublic": true
+    }
+  ]
+}

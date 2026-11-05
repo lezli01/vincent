@@ -272,6 +272,10 @@ func (h *handler) route(path string) bool {
 		return h.get(h.serverInfo)
 	case len(seg) == 2 && seg[0] == "search" && seg[1] == "jql":
 		return h.get(h.search)
+	case len(seg) == 1 && seg[0] == "search":
+		return h.retiredSearch()
+	case len(seg) == 2 && seg[0] == "project":
+		return h.get(func() bool { return h.project(seg[1]) })
 	case len(seg) == 2 && seg[0] == "issue" && seg[1] == "bulkfetch":
 		if h.r.Method != http.MethodPost {
 			return h.methodNotAllowed()
@@ -364,6 +368,44 @@ func (h *handler) serverInfo() bool {
 		"serverTime":     h.s.stamp(),
 		"scmInfo":        "fakejira",
 		"serverTitle":    title,
+	})
+	return false
+}
+
+// retiredSearch is /rest/api/3/search, which Atlassian removed in favour of
+// search/jql (CHANGE-2046) and now answers 410 Gone. The fake answers the
+// same, so a client that strays onto it fails loudly — and the request log
+// records the stray, for a test asserting none happened.
+func (h *handler) retiredSearch() bool {
+	writeErrors(h.w, http.StatusGone, []string{"The requested API has been removed. Please migrate to the /rest/api/3/search/jql API."}, nil)
+	return false
+}
+
+// project is GET /rest/api/3/project/{projectIdOrKey} (REST v3 "Get
+// project"): the project by key or id, or 404 with Jira's errorMessages.
+func (h *handler) project(idOrKey string) bool {
+	var p *Project
+	for i := range h.c.Projects {
+		if h.c.Projects[i].Key == idOrKey || h.c.Projects[i].ID == idOrKey {
+			p = &h.c.Projects[i]
+			break
+		}
+	}
+	if p == nil {
+		writeErrors(h.w, http.StatusNotFound, []string{fmt.Sprintf("No project could be found with key '%s'.", idOrKey)}, nil)
+		return false
+	}
+	writeJSON(h.w, http.StatusOK, map[string]any{
+		"self":           h.base + apiPrefix + "project/" + p.ID,
+		"id":             p.ID,
+		"key":            p.Key,
+		"name":           p.Name,
+		"description":    "",
+		"projectTypeKey": "software",
+		"simplified":     false,
+		"style":          "classic",
+		"isPrivate":      false,
+		"expand":         "description,lead,issueTypes,url,projectKeys,permissions,insight",
 	})
 	return false
 }

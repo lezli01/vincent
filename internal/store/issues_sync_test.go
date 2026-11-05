@@ -49,6 +49,7 @@ func TestIssueSyncStateRoundTrip(t *testing.T) {
 		ProjectID: p2.ID, Provider: "github", Repo: "o/r", Watermark: at(1), Since: at(2), ETag: `W/"e"`,
 		LastAttemptAt: at(3), LastOKAt: at(4), OK: true, ImportComplete: true,
 		LastFullScanAt: at(5), RateLimitedUntil: at(6), RequestedAt: at(7),
+		RemoteProjectID: "10042", ImportCursor: "10317",
 	}
 	if err := s.PutIssueSyncState(ctx, want); err != nil {
 		t.Fatal(err)
@@ -67,7 +68,8 @@ func TestIssueSyncStateRoundTrip(t *testing.T) {
 	if err != nil || len(all) != 2 || all[0].ProjectID != p1.ID || all[1].ProjectID != p2.ID {
 		t.Errorf("list = %+v, %v", all, err)
 	}
-	if all[0].Watermark != nil || all[0].RequestedAt != nil || all[0].ImportComplete {
+	if all[0].Watermark != nil || all[0].RequestedAt != nil || all[0].ImportComplete ||
+		all[0].RemoteProjectID != "" || all[0].ImportCursor != "" {
 		t.Errorf("sparse row = %+v", all[0])
 	}
 

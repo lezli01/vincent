@@ -1323,9 +1323,13 @@ a [service](../guides/running-at-login.md) without your shell's environment,
 set the variables under [`environment.set`](#environment).
 
 On each pass a Jira-bound project's [sync status](api.md#issue-sync) reports
-`no_credential` while either variable is unset. With both set it reports
-`no_client`: the Jira client has not shipped yet, so nothing is fetched from
-Jira.
+`no_credential` while either variable is unset. With both set, the project's
+open Jira issues are imported and kept in sync; a failed pass reports Jira's
+reason (`unauthorized`, `forbidden`, `not_found`, `rate_limited`,
+`unreachable`, `binding_changed`). Writing back to Jira is not wired yet, so a
+human's close or reopen of a Jira issue waits in the outbox as `no_client`.
+[`GET /v1/projects/{id}/jira`](api.md#jira-probe) (`vincent jira status`)
+checks the binding on demand.
 
 ### `update`
 

@@ -11,8 +11,8 @@ const module = "github.com/lezli01/vincent/"
 
 // TestImportsAreTheDocumentedSet pins the package's internal imports to the
 // list doc.go and CLAUDE.md's package map state (review F4), and proves
-// the "neither imports it back" half: store and github stay free of the
-// seam, even transitively.
+// the "neither imports it back" half: store, github and jira stay free of
+// the seam, even transitively.
 func TestImportsAreTheDocumentedSet(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not on PATH")
@@ -28,11 +28,14 @@ func TestImportsAreTheDocumentedSet(t *testing.T) {
 		}
 	}
 	slices.Sort(got)
-	want := []string{"internal/github", "internal/gitx", "internal/issueprovider", "internal/issuestate", "internal/store"}
+	want := []string{
+		"internal/github", "internal/gitx", "internal/issueprovider", "internal/issuestate",
+		"internal/jira", "internal/jira/jiramap", "internal/jira/render", "internal/store",
+	}
 	if !slices.Equal(got, want) {
 		t.Errorf("internal/issuesource imports %v; doc.go and CLAUDE.md say %v — update both with the code", got, want)
 	}
-	for _, pkg := range []string{"../store", "../github"} {
+	for _, pkg := range []string{"../store", "../github", "../jira", "../jira/jiramap", "../jira/render"} {
 		out, err := exec.Command("go", "list", "-deps", pkg).Output()
 		if err != nil {
 			t.Fatalf("go list -deps %s: %v", pkg, err)

@@ -331,8 +331,9 @@ func (s *IssueSyncer) jiraPass(ctx context.Context, project store.Project) {
 	default:
 		var bound bool
 		if b, bound = src.Bind(ctx, *cur); !bound {
-			// Provisional until #908 says what an unbindable Jira project
-			// is: the binding names nothing the source can find.
+			// An unbindable Jira project (#908, decided): its binding names
+			// nothing the source can address, which is what a 404 on the
+			// bound project says too — not_found, a binding to fix.
 			next.OK, next.Reason = false, issuesource.ReasonNotFound
 			break
 		}
@@ -417,10 +418,38 @@ func (s *IssueSyncer) backingOff(st *store.IssueSyncState, now time.Time) bool {
 // runImport is the shared import through src — the issue pass, then the
 // comment pass — recording the outcome on next. Progress made before a
 // failure is already in next and is kept.
+//
+// A source that resolves its binding (issuesource.BindingResolver — Jira)
+// is asked first, and the provider's project id it answers is sticky (task
+// 142 decision 13.6), as GitHub's repository is through origin_changed: the
+// first pass records it, and a pass resolving a different one stops with
+// binding_changed and makes no further call — nor does any later pass,
+// until a rebind deletes the row and with it the recorded id. A resolution
+// failing is classified like any other call (a 404 on the bound project is
+// not_found).
 func (s *IssueSyncer) runImport(
 	ctx context.Context, src issuesource.Source, project store.Project, b issuesource.Binding,
 	st *store.IssueSyncState, next *store.IssueSyncState, now time.Time,
 ) error {
+	if res, ok := src.(issuesource.BindingResolver); ok {
+		if st.Reason == issuesource.ReasonBindingChanged {
+			next.OK, next.Reason = false, issuesource.ReasonBindingChanged
+			return nil
+		}
+		resolved, id, err := res.ResolveBinding(ctx, b)
+		if err != nil {
+			recordFailure(src, next, err)
+			return err
+		}
+		if st.RemoteProjectID != "" && id != st.RemoteProjectID {
+			next.OK, next.Reason = false, issuesource.ReasonBindingChanged
+			return nil
+		}
+		if id != "" {
+			next.RemoteProjectID = id
+		}
+		b = resolved
+	}
 	p := &issuePass{r: s, src: src, project: project, b: b, st: next}
 	err := p.importIssues(ctx, now, st.RequestedAt != nil)
 	if err == nil {
@@ -434,13 +463,19 @@ func (s *IssueSyncer) runImport(
 		next.OK, next.Reason, next.LastOKAt, next.RateLimitedUntil = true, "", &now, nil
 		return nil
 	}
+	recordFailure(src, next, err)
+	return err
+}
+
+// recordFailure records a failed call's reason on next, and a rate limit's
+// reset, until which the next pass makes no call (backingOff).
+func recordFailure(src issuesource.Source, next *store.IssueSyncState, err error) {
 	f := src.Classify(err)
 	next.OK, next.Reason = false, f.Reason
 	if f.Reason == issuesource.ReasonRateLimited && !f.ResetAt.IsZero() {
 		reset := f.ResetAt.UTC()
 		next.RateLimitedUntil = &reset
 	}
-	return err
 }
 
 // finishPass logs and writes the attempt's row. A failed call is logged

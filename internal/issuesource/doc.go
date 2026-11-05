@@ -9,9 +9,11 @@
 //
 // It supersedes task 130 decision 15.1 ("no internal/issuesource package —
 // the first provider does not design for the second"); the dated note is in
-// docs/tasks/130-issues-pillar.md. GitHub is the first and, for now, the
-// only implementation (github.go). Jira (#908) and task 137 F5's command
-// provider are later implementations that live beside it, in this package.
+// docs/tasks/130-issues-pillar.md. GitHub is the first implementation
+// (github.go) and Jira Cloud the second (jira.go, #908: read side only — its
+// write methods return ErrJiraWriteBackNotImplemented until #909, and the
+// daemon gives it to the importer and never to the outbox). Task 137 F5's
+// command provider is a later implementation that lives beside them.
 //
 // What a Source owns is mechanism: how a project binds to the provider, how
 // a remote row is addressed, how a provider issue maps onto
@@ -32,10 +34,15 @@
 // adapters' rule, spec §9): RepoCommentLister (GitHub's repository-wide
 // since+ETag comment listing; without it the importer reads each listed
 // issue's thread) and PlaceholderAdopter (task 035's backfill placeholders,
-// migration 0040, which only GitHub rows have).
+// migration 0040, which only GitHub rows have) are GitHub's; BulkGetter
+// (bulkfetch) and BindingResolver (the project key to its stable id) are
+// Jira's (capabilities.go).
 //
 // The package imports internal/store, internal/github, internal/gitx (for
 // RepoOf's `git remote get-url origin`), internal/issuestate (the state
-// mapping) and internal/issueprovider (the provider ids), and neither store nor github may import it back. The interface takes store.Project and store.IssueRemote
-// directly rather than copying them.
+// mapping), internal/issueprovider (the provider ids), and internal/jira,
+// internal/jira/jiramap and internal/jira/render (the Jira client, its
+// field mapping and its HTML-to-Markdown rendering); neither store, github
+// nor jira may import it back. The interface takes store.Project and
+// store.IssueRemote directly rather than copying them.
 package issuesource

@@ -484,7 +484,8 @@ type IssueSyncStatus struct {
 	// Reason names why OK is false: github_disabled (a GitHub project's
 	// switch), disabled (a Jira project's), poll_disabled, pending,
 	// rate_limited, not_github, source_not_github, no_credential, no_client,
-	// origin_changed, or one of the provider's unavailability reasons.
+	// origin_changed, binding_changed, or one of the provider's
+	// unavailability reasons.
 	Reason           string     `json:"reason,omitempty"`
 	ImportComplete   bool       `json:"import_complete"`
 	RateLimitedUntil *time.Time `json:"rate_limited_until,omitempty"`

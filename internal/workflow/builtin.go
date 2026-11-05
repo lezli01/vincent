@@ -1261,6 +1261,13 @@ steps:
           allowed_actors unless match.by leaves out sync.
       21. Issues from Jira. by: sync may be Jira's importer as well as
           GitHub's, and it stays untrusted for both: item 7 applies unchanged.
+          One row differs: a Jira issue's labeled or unlabeled by sync is
+          untrusted, because any editor of a Jira issue may label it, so on a
+          project that imports from Jira a trigger whose match.action can
+          match either from sync needs allowed_actors to fire on it at all —
+          without one it loads and silently never fires on a Jira label
+          change. Report such a trigger; adding allowed_actors names people,
+          which is the human's call.
           The provider is .Event.Issue.Source.Provider, so a trigger meant for
           one tracker's issues tests it in if:. A poll script that queries
           Jira becomes an issues trigger on that project only once vincent

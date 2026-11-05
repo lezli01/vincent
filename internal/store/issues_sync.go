@@ -47,11 +47,21 @@ type IssueSyncState struct {
 	// different endpoint and advances independently of the issue pass.
 	CommentWatermark, CommentSince *time.Time
 	CommentETag                    string
+	// RemoteProjectID is the provider's stable id of the bound project,
+	// recorded the first time a pass resolves it (task 142 decision 13.6,
+	// issuesource.BindingResolver); "" is never resolved, as on every
+	// GitHub row. A pass resolving a different id stops with
+	// binding_changed.
+	RemoteProjectID string
+	// ImportCursor is where an id-ordered walk resumes
+	// (issuesource.ListOptions.After): the initial import's, or a later
+	// pass's whose listing a page cap stopped; "" when none is under way.
+	ImportCursor string
 }
 
 const issueSyncColumns = `project_id, provider, repo, watermark, etag, since, last_attempt_at,
 	last_ok_at, ok, reason, import_complete, last_full_scan_at, rate_limited_until, requested_at,
-	comment_watermark, comment_since, comment_etag`
+	comment_watermark, comment_since, comment_etag, remote_project_id, import_cursor`
 
 func scanIssueSyncState(r rowScanner) (*IssueSyncState, error) {
 	var (
@@ -59,12 +69,14 @@ func scanIssueSyncState(r rowScanner) (*IssueSyncState, error) {
 		watermark, since, attempt, okAt  sql.NullString
 		fullScan, rateLimited, requested sql.NullString
 		commentWatermark, commentSince   sql.NullString
+		remoteProjectID                  sql.NullString
 	)
 	if err := r.Scan(&st.ProjectID, &st.Provider, &st.Repo, &watermark, &st.ETag, &since, &attempt,
 		&okAt, &st.OK, &st.Reason, &st.ImportComplete, &fullScan, &rateLimited, &requested,
-		&commentWatermark, &commentSince, &st.CommentETag); err != nil {
+		&commentWatermark, &commentSince, &st.CommentETag, &remoteProjectID, &st.ImportCursor); err != nil {
 		return nil, err
 	}
+	st.RemoteProjectID = remoteProjectID.String
 	for _, f := range []struct {
 		dst **time.Time
 		src sql.NullString
@@ -143,7 +155,7 @@ func (s *Store) PutIssueSyncState(ctx context.Context, st IssueSyncState) error 
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO issue_sync_state (`+issueSyncColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (project_id) DO UPDATE SET
 				provider = excluded.provider, repo = excluded.repo, watermark = excluded.watermark,
 				etag = excluded.etag, since = excluded.since, last_attempt_at = excluded.last_attempt_at,
@@ -152,12 +164,14 @@ func (s *Store) PutIssueSyncState(ctx context.Context, st IssueSyncState) error 
 				rate_limited_until = excluded.rate_limited_until,
 				comment_watermark = excluded.comment_watermark, comment_since = excluded.comment_since,
 				comment_etag = excluded.comment_etag,
+				remote_project_id = excluded.remote_project_id, import_cursor = excluded.import_cursor,
 				requested_at = CASE WHEN issue_sync_state.requested_at > excluded.last_attempt_at
 					THEN issue_sync_state.requested_at ELSE excluded.requested_at END`,
 			st.ProjectID, st.Provider, st.Repo, formatTimePtr(st.Watermark), st.ETag, formatTimePtr(st.Since),
 			formatTimePtr(st.LastAttemptAt), formatTimePtr(st.LastOKAt), st.OK, st.Reason, st.ImportComplete,
 			formatTimePtr(st.LastFullScanAt), formatTimePtr(st.RateLimitedUntil), formatTimePtr(st.RequestedAt),
 			formatTimePtr(st.CommentWatermark), formatTimePtr(st.CommentSince), st.CommentETag,
+			nullString(st.RemoteProjectID), st.ImportCursor,
 		); err != nil {
 			return nil, fmt.Errorf("write issue sync state of project %d: %w", st.ProjectID, err)
 		}
@@ -305,6 +319,91 @@ func (s *Store) SetIssueRemoteStatus(ctx context.Context, projectID int64, provi
 		}
 		return issueEvent(EventIssueUpdated, projectID, issueID.Int64, issuestate.Sync,
 			map[string]any{"changed": []string{"remote_status"}})
+	})
+}
+
+// RelocateIssueRemote records that the remote keyed (project, provider,
+// remoteKey) moved out of its binding to where to says it now lives (task
+// 142.12): in one transaction it marks the row moved, merges location into
+// remote_json as "moved_to", and rewrites repo, number, url and — when
+// to.RemoteKey names another key no row of the project holds — remote_key
+// to the issue's new ones. A Jira issue moved to another project keeps its
+// id but changes key and number, so the row then names the issue where it
+// is; a later listing that returns it at the binding again refreshes it
+// back to live (UpsertRemoteIssue). GitHub's moved path, which learns only
+// a location, is SetIssueRemoteStatus's.
+//
+// It never deletes and never touches a tombstone. A row whose status or
+// remote fields changed announces issue.updated by sync, naming "remote"
+// and, when the status moved, "remote_status"; an unchanged one announces
+// nothing. ErrNotFound for an unknown key.
+func (s *Store) RelocateIssueRemote(ctx context.Context, projectID int64, provider, remoteKey string, to RemoteIssue, location string) error {
+	return s.writeIssue(ctx, func(tx *sql.Tx) (*Event, error) {
+		var (
+			remoteID  int64
+			issueID   sql.NullInt64
+			cur, repo string
+			number    sql.NullInt64
+			url, raw  sql.NullString
+		)
+		err := tx.QueryRowContext(ctx, `
+			SELECT id, issue_id, remote_status, repo, number, url, remote_json FROM issue_remotes
+			WHERE project_id = ? AND provider = ? AND remote_key = ?`,
+			projectID, provider, remoteKey).Scan(&remoteID, &issueID, &cur, &repo, &number, &url, &raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("issue remote %s %q: %w", provider, remoteKey, ErrNotFound)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read issue remote: %w", err)
+		}
+		if !issueID.Valid {
+			return nil, nil
+		}
+		newKey := remoteKey
+		if to.RemoteKey != "" && to.RemoteKey != remoteKey {
+			var taken int
+			err := tx.QueryRowContext(ctx, `
+				SELECT COUNT(*) FROM issue_remotes WHERE project_id = ? AND provider = ? AND remote_key = ?`,
+				projectID, provider, to.RemoteKey).Scan(&taken)
+			if err != nil {
+				return nil, fmt.Errorf("read issue remote: %w", err)
+			}
+			if taken == 0 {
+				newKey = to.RemoteKey
+			}
+		}
+		newURL := url.String
+		if to.URL != "" {
+			newURL = to.URL
+		}
+		remoteJSON := raw.String
+		if location != "" {
+			if remoteJSON, err = mergeMovedTo(raw.String, location); err != nil {
+				return nil, err
+			}
+		}
+		var changed []string
+		if newKey != remoteKey || to.Repo != repo || int64(to.Number) != number.Int64 || newURL != url.String {
+			changed = append(changed, "remote")
+		}
+		if cur != RemoteStatusMoved {
+			changed = append(changed, "remote_status")
+		}
+		if len(changed) == 0 && remoteJSON == raw.String {
+			return nil, nil
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE issue_remotes SET remote_key = ?, repo = ?, number = ?, url = ?, remote_status = ?, remote_json = ?
+			WHERE id = ?`,
+			newKey, to.Repo, remoteNumber(to.Number), newURL, RemoteStatusMoved, nullString(remoteJSON),
+			remoteID); err != nil {
+			return nil, fmt.Errorf("relocate issue remote: %w", err)
+		}
+		if len(changed) == 0 {
+			return nil, nil
+		}
+		return issueEvent(EventIssueUpdated, projectID, issueID.Int64, issuestate.Sync,
+			map[string]any{"changed": changed})
 	})
 }
 

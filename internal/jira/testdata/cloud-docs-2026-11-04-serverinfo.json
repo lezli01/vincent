@@ -1,0 +1,16 @@
+{
+  "baseUrl": "https://your-domain.atlassian.net",
+  "displayUrl": "https://your-domain.atlassian.net",
+  "version": "1001.0.0-SNAPSHOT",
+  "versionNumbers": [
+    1001,
+    0,
+    0
+  ],
+  "deploymentType": "Cloud",
+  "buildNumber": 100277,
+  "buildDate": "2026-10-30T00:00:00.000+0000",
+  "serverTime": "2026-11-04T08:00:00.000+0000",
+  "scmInfo": "f2a9c3c0a8e4e8e1",
+  "serverTitle": "Your Jira"
+}

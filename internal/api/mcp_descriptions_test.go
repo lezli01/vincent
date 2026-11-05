@@ -95,3 +95,25 @@ func TestMCPToolBodyHintsMatchRequestStructs(t *testing.T) {
 		}
 	}
 }
+
+// TestMCPProjectJiraNamesEveryProbeReason keeps project_jira's reason list
+// closed over what the probe can answer (review F4 on #943): every reason
+// jiraMessages renders is one the description must name, or an agent reads
+// the vocabulary as closed without it.
+func TestMCPProjectJiraNamesEveryProbeReason(t *testing.T) {
+	t.Parallel()
+	var desc string
+	for _, r := range mcp.Routes() {
+		if r.Tool == "project_jira" {
+			desc = r.Description
+		}
+	}
+	if desc == "" {
+		t.Fatal("no project_jira tool")
+	}
+	for reason := range jiraMessages {
+		if !regexp.MustCompile(`\b` + regexp.QuoteMeta(reason) + `\b`).MatchString(desc) {
+			t.Errorf("project_jira's description does not name reason %q", reason)
+		}
+	}
+}

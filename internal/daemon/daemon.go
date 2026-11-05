@@ -29,6 +29,8 @@ import (
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/issuearchive"
+	"github.com/lezli01/vincent/internal/issuesource"
+	"github.com/lezli01/vincent/internal/jira"
 	"github.com/lezli01/vincent/internal/mcp"
 	"github.com/lezli01/vincent/internal/notify"
 	"github.com/lezli01/vincent/internal/release"
@@ -568,6 +570,12 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	reconciler := NewPullReconciler(st, currentConfig, git, githubClient, logger).
 		WithTriggers(triggers).WithOutbox(outbox)
 	issueSync := reconciler.IssueSyncer
+	// The Jira source (#908), so the Jira pass imports through the shared
+	// importer instead of recording no_client. The outbox is deliberately
+	// NOT given it (task 142 decision 7): Jira's write-back is #909's, and
+	// until then its rows keep waiting no_client rather than reaching a
+	// source that cannot write.
+	wireJiraSource(issueSync, currentConfig, os.Environ, nil)
 	st.OnIssueSyncRequested(func(projectID int64) {
 		issueSync.RequestSync(projectID)
 		outbox.Kick()
@@ -884,4 +892,31 @@ func stateOfEvent(e *store.Event) string {
 		return string(store.TaskQueued)
 	}
 	return payload.To
+}
+
+// newJiraSource is the Jira source over one client per bound site. Its
+// credentials are read on every request, never kept: config is re-read and
+// its environment policy applied to environ (`environment.set` is how a
+// service install gets the variables), then the two variables
+// jira.user_env and jira.token_env name are looked up. A daemon lacking
+// them gets a no_credential error from the call — the sync row says so —
+// and never a crash. A nil httpc is the client's default.
+// wireJiraSource gives s the Jira source whatever the config says now. It
+// is never gated on jira.enabled or poll_interval at startup: Run notices
+// either being switched on by a hot reload, and a source wired only when
+// Jira polled at start left every Jira project no_client until a restart
+// (review F2 on #943). Wiring makes no call and holds no credential; the
+// live config gates every pass.
+func wireJiraSource(s *IssueSyncer, cfg func() config.Config, environ func() []string, httpc *http.Client) *IssueSyncer {
+	return s.WithJiraSource(newJiraSource(cfg, environ, httpc))
+}
+
+func newJiraSource(cfg func() config.Config, environ func() []string, httpc *http.Client) *issuesource.Jira {
+	creds := func() (string, string, error) {
+		c := cfg()
+		return jira.EnvCredentials(c.Environment.Resolve(environ()), c.Jira.UserEnv, c.Jira.TokenEnv)
+	}
+	return issuesource.NewJira(func(site string) *jira.Client {
+		return jira.New(site, httpc, creds)
+	})
 }

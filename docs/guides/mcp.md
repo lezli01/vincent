@@ -39,7 +39,7 @@ the GitHub reads, the [trigger](triggers.md) reads, `trigger_validate` and both
 dry runs, the [issue](../reference/api.md#issues) routes (`issue_list`,
 `issue_create`, `issue_get`, `issue_patch`, `issue_close`, `issue_reopen`,
 `issue_ready`, `issue_unready`,
-`issue_comments`, `issue_comment`, `project_issue_labels`), the issue import status `project_issue_sync_status`,
+`issue_comments`, `issue_comment`, `project_issue_labels`), the issue import status `project_issue_sync_status`, the Jira probe `project_jira`,
 the [handoff](../reference/api.md#handoffs) routes (`handoff_start`,
 `handoff_list`, `handoff_show`, and the item verbs `handoff_deliver`,
 `handoff_return`, `handoff_wait`, `handoff_release` — `handoff_start` is
