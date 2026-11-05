@@ -1291,7 +1291,11 @@ cannot archive — dirty, locked by a linked chat, a lane still working — is
 logged to `daemon.log` and left for a person. It is retried only when a later
 event touches the issue: a linked chat's close and a lane's settle are such
 events, but cleaning a dirty worktree records none, so a dirty refusal waits
-for an unrelated event or a human archive (#929's doctor row is to list them). While a handoff item still claims the issue (unresolved or
+for an unrelated event or a human archive. *Amended 2026-11-05 (task 143.4,
+issue #929):* `vincent doctor`'s `issue_archive` group (§17) lists every such
+task — each done or aborted root of a closed issue the task-level rule covers,
+held or not — with every reason that holds it, and the issue-chat
+main-worktree directories closed issues left behind; it only reports. While a handoff item still claims the issue (unresolved or
 waiting) none of its tasks is archived, so a `return` after a reopen can still
 follow up its main task (decision 10). Chats are never archived (decision 4);
 a closed or archived issue chat may still name the issue's main-worktree
@@ -10037,6 +10041,18 @@ GET    /v1/doctor                       the whole §17 diagnostic in one body: p
                                         overdue backup and a `prune_error` are not problems.
                                         The GET serves a copy of the timer's status and never
                                         takes a backup
+                                        *Amended 2026-11-05 (task 143.4):* an `issue_archive`
+                                        group, the auto-archive's held list (§5.6, §17) →
+                                        { known, enabled,
+                                          held: [{ task_id, issue_id, title, state, role,
+                                                   reasons[] }],
+                                          chat_dirs: [{ issue_id, chat_id, path }], error? }.
+                                        `enabled` is archive_tasks_on_issue_close; with it false
+                                        both lists are empty. `reasons` are dirty,
+                                        locked_by_chat, unfinished_lane, held_for_side_work,
+                                        issue_not_quiescent, handoff_claimed, in that order, or
+                                        awaiting_retry alone (§18). `known` is false with no
+                                        daemon. It adds nothing to the closed set
 POST   /v1/doctor/fix                   { force? } or ?force — runs gc's reclaim (§10) and
                                         compacts the database, then answers
                                         { actions[], report } with a report taken afterwards.
@@ -18405,6 +18421,21 @@ the whole of the posture, not a set of tips.
   missed a run but nothing failed, and it runs at the first check after it
   starts. A failed prune after a successful run is not a problem either.
 
+  *Amended 2026-11-05 (task 143.4, issue #929).* The report grows a
+  daemon-only `issue_archive` group (§13.2): the settled roots of closed
+  issues that `archive_tasks_on_issue_close` (§5.6, §12.3) has not archived.
+  It lists every done or aborted root the archivable rule's task-level
+  predicates cover — closed issue, root, cutoff at or before `closed_at` —
+  whatever holds it, with **every** reason as a list (§18), and the
+  directories a released issue chat still names on a closed issue while they
+  exist on disk. It is computed per request from current rows and
+  directories, so it cannot go stale and needs no event; it is computed only
+  with the key on, and the text output prints nothing for it when both lists
+  are empty. It is a **row, not a problem**: decision 7's closed set does not
+  move, `vincent doctor` still exits 0, and the group offers no `--fix` —
+  it never archives, forces or deletes, because forcing past a dirty
+  worktree is a human's call (task 143 decisions 12–16).
+
   *Amended 2026-08-15 (task 005).* Retention is about **archived rows**: the pruner
   walks `archived_at`, so a transcript directory whose row was cascade-deleted with its
   project is reached by no retention pass, ever. That directory is `vincent gc`'s
@@ -18587,6 +18618,7 @@ carries the rest.
 | A chat is opened on a task that has no worktree | *Added 2026-09-17 (task 119).* `409 task_has_no_worktree` — a task blocked on `branch_exists` or `base_branch_missing`, or aborted before admission. The daemon does not create the worktree for a chat: preparing it is the engine's, on an admission. `retry` (with `branch_override` where that is the cause) or `follow_up` gets the task a worktree, after which a chat can be opened. A turn of an open linked chat whose task has somehow lost its path fails the turn the same way |
 | `archive`, `handoff` or `DELETE ?delete_branch=true` on a linked chat | *Added 2026-09-17 (task 119).* `409 chat_linked_to_task` with `details.task_id`, naming the task that owns the worktree and branch. Archive and hand-off are not in a linked chat's transition table (§5.5); the delete is refused because the chat's copy of the branch name is history, never an authority. Close the chat instead — a closed chat may be deleted without `delete_branch` |
 | A linked-chat turn's task runs in a container that is gone | *Added 2026-09-17 (task 119).* The turn fails and the chat returns to `idle`, still open. It is never moved to the host: the operator confined that worktree (§16) |
+| A closed issue's settled task the auto-archive could not archive | *Added 2026-11-05 (task 143.4, issue #929).* The task stays on the board, untouched, and `vincent doctor`'s `issue_archive.held` names it with every reason that holds it: `dirty` (its worktree, or an unarchived lane's, has local changes, untracked included), `locked_by_chat` (an open linked chat), `unfinished_lane` (a lane not settled), `held_for_side_work` (a main task waiting for its issue's held side task or merge-back, review F3), `issue_not_quiescent` (another root unsettled, or an issue chat live), `handoff_claimed` (a handoff item claims the issue), or `awaiting_retry` alone when nothing holds it now — the worker acts only when an event touches the issue, and cleaning a worktree records none. The remedy is to clean the worktree, close the chat, settle the lane — or archive by hand, with `force` if wanted. Never a problem: doctor exits 0 |
 | Clock skew / DST | All timestamps stored UTC RFC3339 |
 
 *Added 2026-09-28 (task 127, issue #593).* The reasons in this vocabulary that

@@ -732,6 +732,9 @@ the uncommitted changes is not: the daemon sees nothing, and a task refused
 for a dirty worktree is tried again only if some later event touches the
 issue (a task of it settling, a chat on it closing, a handoff change).
 Otherwise it stays `done` until you archive it. Chats are never archived.
+[`vincent doctor`](cli.md#vincent-doctor)'s Issue archive group lists every
+such task with the reasons holding it, so you can find them without reading
+the log.
 
 Its archive event carries `archived_by: "issue_closed"`, so
 a reader of the [event stream](api.md#events-sse) can tell it from yours. The

@@ -28,6 +28,16 @@ list with the user-facing context a commit subject cannot carry.
   newest first, archived, closed and handed-off ones included, with a
   fan-out parent's `lanes n/m`; `enter` opens any of them and `esc` comes
   back to the tab. The Issue tab sums them up in one line (#933).
+- **`vincent doctor` lists what the auto-archive left behind.** A new Issue
+  archive group (`issue_archive` in `GET /v1/doctor` and `--json`) names every
+  finished task of a closed issue that is still not archived, with every
+  reason holding it — `dirty`, `locked_by_chat`, `unfinished_lane`,
+  `held_for_side_work`, `issue_not_quiescent`, `handoff_claimed`, or
+  `awaiting_retry` when nothing does and the archive simply has not been
+  retried — plus any main-worktree directory a closed issue chat left on
+  disk. It only reports: it never sets the exit code, `--fix` leaves it
+  alone, and it is empty and unprinted with `archive_tasks_on_issue_close`
+  off or nothing held (#929).
 - **List an issue's chats.** `GET /v1/chats` takes `issue_id`: the chats
   opened on the issue, linked to any of its tasks — fan-out lanes included —
   or handed off into its work. A malformed or non-positive id is a
