@@ -794,7 +794,7 @@ See the [pull-requests screen](guides/tui.md#pull-requests), the
 `vincent doctor` produces one report covering paths, configuration, daemon
 health, the recent log tail, the database's footprint, row counts and integrity,
 agent availability, login state and whether the installed CLI build is one
-vincent has been tested against, the GitHub integration, whether the
+vincent has been tested against, the GitHub and Jira integrations, whether the
 [workflow- and trigger-authoring skills](reference/cli.md#vincent-skills) are
 installed and current for your agents, whether a newer vincent
 has been released and whether the running daemon is older than the binary you
