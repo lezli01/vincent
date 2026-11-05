@@ -1329,8 +1329,10 @@ On each pass a Jira-bound project's [sync status](api.md#issue-sync) reports
 `no_credential` while either variable is unset. With both set, the project's
 open Jira issues are imported and kept in sync; a failed pass reports Jira's
 reason (`unauthorized`, `forbidden`, `not_found`, `rate_limited`,
-`unreachable`, `binding_changed`). Writing back to Jira is not wired yet, so a
-human's close or reopen of a Jira issue waits in the outbox as `no_client`.
+`unreachable`, `binding_changed`). The same two switches gate the
+[write-back](api.md#jira-write-back): a human's close or reopen of a Jira issue,
+or a granted handoff's comment on one, is sent as a transition or a comment
+while both are on, and waits `pending` with `disabled` while either is off.
 [`GET /v1/projects/{id}/jira`](api.md#jira-probe) (`vincent jira status`)
 checks the binding on demand.
 

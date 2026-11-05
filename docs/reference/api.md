@@ -1052,8 +1052,37 @@ limit. Every issue imported from GitHub carries the outcome:
 |---|---|
 | `synced` | The issue agrees with GitHub: its last write landed, or it never had one |
 | `pending` | A write is waiting. `reason`, when present, is why it has not gone yet — `disabled` (`github.enabled` is false or `github.poll_interval` is `0`; nothing is called, and it goes when the switch is back on), or a [GitHub reason](#github-issues) it is retrying after: `rate_limited`, `unreachable`, `timeout`, `bad_response`, `no_credential`, `unauthorized` |
-| `failed` | The write gave up; the local state is kept. `reason` is `no_write_scope`, `not_found`, `gone`, `moved`, `forbidden` or `bad_request` — or, without a write, `moved`/`gone` for an issue whose GitHub copy was transferred or deleted, whose state changes stay local |
+| `failed` | The write gave up; the local state is kept. `reason` is `no_write_scope`, `not_found`, `gone`, `moved`, `forbidden` or `bad_request` — or, for Jira, one of the [transition reasons](#jira-write-back) — or, without a write, `moved`/`gone` for an issue whose remote copy was transferred or deleted, whose state changes stay local |
 | `conflict` | GitHub's state changed first and was adopted here (`reason: remote_changed`) |
+
+##### Jira write-back
+
+An issue imported from Jira is written back the same way, under
+[`jira.enabled` and `jira.poll_interval`](configuration.md#jira) instead of
+GitHub's switches: with either off, its writes wait `pending` with `disabled`.
+Jira has no open/closed field, so a close or reopen is a **transition**. The
+daemon lists the transitions the issue offers now and picks the one that lands
+exactly where the change asks — a status in Jira's Done category with the
+matching resolution for a close (`Done`, `Won't Do`, `Duplicate`, by the
+project's [`jira.mapping`](#issue-source)), a status outside it for a reopen —
+honouring the mapping's `overrides` first. A close as `duplicate` sets the
+Duplicate resolution and creates no issue link. A reason is never degraded: a
+change no single transition achieves fails instead, with
+
+| `reason` | Meaning |
+|---|---|
+| `no_transition` | No available transition achieves it — for example, the workflow has no direct path from *In Review* to a Done status. When Jira offers no transition at all, the account may lack the *Transition issues* permission. Close it in Jira, or add a transition override |
+| `ambiguous_transition` | Several transitions achieve it and vincent will not guess. Name one in the mapping's `overrides` |
+| `transition_needs_fields` | The transition that would achieve it needs a required screen field vincent does not set |
+
+A 403 on a transition or a comment is `no_write_scope`, as on GitHub; a 403 on
+a read stays `forbidden`. If a post-function in the workflow sets a different
+resolution than the one sent, the next import adopts Jira's, and nothing is
+written again. Jira's search can trail a write by a few seconds; the import
+confirms a listed state that contradicts a write just made by reading the
+issue directly, so a lagging search never reverts it. A granted handoff's
+comment is posted as an Atlassian Document Format comment and keyed by Jira's
+comment id, so the next comment sync updates it rather than importing a copy.
 
 `last_synced_at` is the later of the last import refresh and the last write
 that landed. A write's outcome is announced as

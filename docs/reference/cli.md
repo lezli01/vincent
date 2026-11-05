@@ -3424,10 +3424,13 @@ and `source` does while no repository is known.
 
 `state writes` counts the issues whose newest
 [state write-back](api.md#state-write-back) is waiting, gave up, or lost to a
-change on GitHub. Run from inside a workflow step or a chat agent — where
+change on its provider. A Jira write that no single transition achieves gives
+up with `no_transition`, `ambiguous_transition` or `transition_needs_fields`
+([Jira write-back](api.md#jira-write-back)), which the issue's `sync` block
+names. Run from inside a workflow step or a chat agent — where
 `VINCENT_TASK_ID` or `VINCENT_CHAT_ID` is set — every `vincent` command marks
 its requests as an agent's, so it may not close, reopen or comment on an issue
-imported from GitHub unless its task is a live handoff granted that.
+imported from GitHub or Jira unless its task is a live handoff granted that.
 
 `reason` uses the sync vocabulary of the [API](api.md#issue-sync) —
 `github_disabled` (GitHub's switch), `disabled` (Jira's), `poll_disabled`, `pending`, `origin_changed`,
