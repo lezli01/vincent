@@ -1285,8 +1285,10 @@ at or before the close, side work and merge-backs before main tasks
 counts, a sync close included. The archive is §6's, run unattended: it never
 forces a dirty worktree and never deletes a remote branch (§10); a task it
 cannot archive — dirty, locked by a linked chat, a lane still working — is
-logged to `daemon.log` and left for a person, and retried when a later event
-clears the cause. While a handoff item still claims the issue (unresolved or
+logged to `daemon.log` and left for a person. It is retried only when a later
+event touches the issue: a linked chat's close and a lane's settle are such
+events, but cleaning a dirty worktree records none, so a dirty refusal waits
+for an unrelated event or a human archive (#929's doctor row is to list them). While a handoff item still claims the issue (unresolved or
 waiting) none of its tasks is archived, so a `return` after a reopen can still
 follow up its main task (decision 10). Chats are never archived (decision 4);
 a closed or archived issue chat may still name the issue's main-worktree

@@ -254,8 +254,10 @@ it lands on. It waits for every task of the issue to finish and for any chat
 on the issue to close, and while a [handoff](handoff.md) still holds
 the issue. Only tasks that existed when the issue closed are archived. It never
 forces: a task with uncommitted changes, or one locked by an open linked chat,
-is left as it is with a warning in `daemon.log`, and tried again when that
-clears. Chats are never archived, and a closed chat on the issue may still
+is left as it is with a warning in `daemon.log`. Closing the linked chat
+retries it. Committing or discarding the changes does not, since the daemon
+sees no event for that: archive the task yourself, or it waits for a later
+event on the issue. Chats are never archived, and a closed chat on the issue may still
 name the issue's worktree directory afterwards; nothing reclaims it yet.
 Reopen the issue before it happens and nothing is archived. Turn this off with
 [`archive_tasks_on_issue_close: false`](../reference/configuration.md#archive_tasks_on_issue_close).

@@ -724,8 +724,12 @@ exactly as it was. It **never deletes a remote branch**, whatever
 [`delete_empty_branch_on_archive`](#delete_empty_branch_on_archive) still
 applies locally. A task it cannot archive — uncommitted changes, an open chat
 linked to it, a fan-out lane still working — is logged to `daemon.log` with the
-reason and left for you to archive; it is tried again when the cause clears.
-Chats are never archived.
+reason and left for you to archive. A linked chat closing or a lane settling
+is an event, so those two are tried again on their own. Committing or deleting
+the uncommitted changes is not: the daemon sees nothing, and a task refused
+for a dirty worktree is tried again only if some later event touches the
+issue (a task of it settling, a chat on it closing, a handoff change).
+Otherwise it stays `done` until you archive it. Chats are never archived.
 
 Its archive event carries `archived_by: "issue_closed"` and the `issue_id`, so
 a reader of the [event stream](api.md#events-sse) can tell it from yours. The

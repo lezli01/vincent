@@ -188,8 +188,10 @@ before the issue's main tasks. This is on by default and switched off with
 It is the same `archive` as yours, made more cautious: it never forces a dirty
 worktree and never deletes a remote branch. A task it cannot archive —
 uncommitted changes, a linked chat still open, a fan-out lane still working —
-stays as it is, with a warning in `daemon.log`, and is tried again when the
-cause clears. Its `task.state_changed` event carries
+stays as it is, with a warning in `daemon.log`. A linked chat closing or a
+lane settling retries it. Cleaning a dirty worktree does not, because the
+daemon records no event for it: that task waits for a later event on the issue,
+or for you to archive it. Its `task.state_changed` event carries
 `archived_by: "issue_closed"` and the `issue_id`.
 
 ## Human actions
