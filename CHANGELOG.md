@@ -13,6 +13,11 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **List an issue's chats.** `GET /v1/chats` takes `issue_id`: the chats
+  opened on the issue, linked to any of its tasks — fan-out lanes included —
+  or handed off into its work. A malformed or non-positive id is a
+  `400 validation_failed`, an unknown issue lists nothing, and `archived`
+  keeps its default (#931).
 - **Find an issue by any tracker reference.** `GET /v1/issues` takes
   `remote_key` — `142` for a GitHub issue, `PROJ-12` for a Jira one,
   case-insensitive — and `source=jira`; `vincent issue ls` gains
@@ -102,6 +107,14 @@ list with the user-facing context a commit subject cannot carry.
   rows, CLI help and MCP tool descriptions say "a remote tracker" where no
   issue is in context; and the `forge_write_needs_human` refusal names the
   issue's provider.
+
+### Fixed
+
+- **`esc` in a chat returns to the screen that opened it.** A chat opened
+  from an issue — `enter` on its Main worktree section or `T` — now comes
+  back to the issue with its selection kept, `T` on the issues list back to
+  the list, and an archived chat back to the archived-chats board, instead
+  of always landing on the chats board (#932).
 
 ## [0.12.0](https://github.com/lezli01/vincent/compare/v0.11.0...v0.12.0) (2026-11-03)
 

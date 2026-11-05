@@ -219,6 +219,10 @@ type ListChatsOptions struct {
 	// one of them open, and any number closed. Closed is terminal, so the
 	// closed ones come back only with Archived set, as on any other listing.
 	TaskID int64
+	// IssueID narrows to the chats that concern one issue (#931): opened on
+	// it, linked to any of its tasks — fan-out lanes included — or handed off
+	// into one. Zero leaves the parameter off.
+	IssueID int64
 	// Archived selects how terminal chats are treated, and reuses ListTasks'
 	// ArchivedScope because the wire parameter is the same one (§13.2,
 	// amended 2026-09-01). The zero value — ArchivedExclude — leaves the
@@ -241,6 +245,9 @@ func (o ListChatsOptions) query() string {
 	}
 	if o.TaskID > 0 {
 		q.Set("task_id", strconv.FormatInt(o.TaskID, 10))
+	}
+	if o.IssueID > 0 {
+		q.Set("issue_id", strconv.FormatInt(o.IssueID, 10))
 	}
 	if o.Archived != ArchivedExclude {
 		q.Set("archived", string(o.Archived))

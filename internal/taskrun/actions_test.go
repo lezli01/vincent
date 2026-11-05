@@ -136,7 +136,7 @@ func (h *actionHarness) invoke(
 	case taskstate.Reject:
 		return h.runner.Reject(ctx, id)
 	case taskstate.Archive:
-		task, _, err := h.runner.Archive(ctx, id, false)
+		task, _, err := h.runner.Archive(ctx, id, ArchiveOptions{})
 		return task, err
 	case taskstate.FollowUp:
 		return h.runner.FollowUp(ctx, id, store.FollowUpRequest{
@@ -501,7 +501,7 @@ func TestArchiveRemovesWorktree(t *testing.T) {
 	task := h.task(t, store.TaskDone)
 	path := h.worktree(t, task)
 
-	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, ArchiveOptions{})
 	if err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestArchiveRefusesDirtyWorktreeWithoutForce(t *testing.T) {
 		t.Fatalf("dirty the worktree: %v", err)
 	}
 
-	if _, _, err := h.runner.Archive(t.Context(), task.ID, false); err == nil {
+	if _, _, err := h.runner.Archive(t.Context(), task.ID, ArchiveOptions{}); err == nil {
 		t.Fatal("archived a dirty worktree without force")
 	} else if worktree.ReasonOf(err) != worktree.ReasonWorktreeDirty {
 		t.Fatalf("err = %v, want a dirty-worktree refusal", err)
@@ -545,7 +545,7 @@ func TestArchiveRefusesDirtyWorktreeWithoutForce(t *testing.T) {
 		t.Errorf("branch %s was deleted by an archive that was refused", task.BranchName)
 	}
 
-	if _, _, err := h.runner.Archive(t.Context(), task.ID, true); err != nil {
+	if _, _, err := h.runner.Archive(t.Context(), task.ID, ArchiveOptions{Force: true}); err != nil {
 		t.Fatalf("Archive(force): %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -561,7 +561,7 @@ func TestArchiveKeepsABranchWithCommits(t *testing.T) {
 	path := h.worktree(t, task)
 	h.commitInWorktree(t, path)
 
-	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, ArchiveOptions{})
 	if err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
@@ -584,7 +584,7 @@ func TestArchiveWithBranchCleanupOff(t *testing.T) {
 	task := h.task(t, store.TaskDone)
 	h.worktree(t, task)
 
-	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, ArchiveOptions{})
 	if err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
@@ -609,7 +609,7 @@ func TestArchiveSurvivesABranchFailure(t *testing.T) {
 	// The recorded base no longer resolves: renamed out from under the task.
 	testrepo.Run(t, h.repo, "branch", "-m", "main", "trunk")
 
-	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, ArchiveOptions{})
 	if err != nil {
 		t.Fatalf("Archive: %v — a branch problem must never fail the archive", err)
 	}
@@ -637,7 +637,7 @@ func TestArchiveWithoutAWorktreeTouchesNoBranch(t *testing.T) {
 	// task. Nothing may touch it.
 	testrepo.Run(t, h.repo, "branch", task.BranchName)
 
-	got, branch, err := h.runner.Archive(t.Context(), task.ID, false)
+	got, branch, err := h.runner.Archive(t.Context(), task.ID, ArchiveOptions{})
 	if err != nil {
 		t.Fatalf("Archive: %v", err)
 	}

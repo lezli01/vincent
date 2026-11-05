@@ -2095,7 +2095,7 @@ section](../assets/tui-issue.png)
 
 | Key | Does |
 |---|---|
-| `enter` | Open the selected linked task's workspace, or on the Main worktree section the task or chat holding it — `esc` from a task comes back to the issue |
+| `enter` | Open the selected linked task's workspace, or on the Main worktree section the task or chat holding it — `esc` from a task or chat comes back to the issue |
 | `o` | Open an imported issue's page in a browser |
 | `ctrl+o` | Show the description's and comments' original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description and comments, and the source page — open one in a browser or copy it |
@@ -2704,7 +2704,7 @@ periodic repaint.
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
-| `esc` | Back to the chats board |
+| `esc` | Back to where the chat was opened from — the issue, the issues list or the archived-chats board — otherwise the chats board |
 
 Scrolled away from the live end, the header says which turn is at the top of
 the window — `turn 2/5` — until `ctrl+g` follows the end again.

@@ -412,7 +412,7 @@ func TestDeletedSourceBlocksMergeSourceMissing(t *testing.T) {
 			got.State, got.StartedAt)
 	}
 	h.waitForActorExit(t, f.side.ID)
-	if _, _, err := h.runner.Archive(t.Context(), f.side.ID, false); err != nil {
+	if _, _, err := h.runner.Archive(t.Context(), f.side.ID, ArchiveOptions{}); err != nil {
 		t.Fatalf("Archive(side): %v", err)
 	}
 	if err := h.store.DeleteTaskCascade(t.Context(), f.side.ID); err != nil {
@@ -441,7 +441,7 @@ func TestMergeBackRevivesAnArchivedMainBranch(t *testing.T) {
 			h := newEngineHarness(t)
 			f := newMergeBackFixture(t, h, store.MergeOnConflictBlock)
 			commitFile(t, f.main.WorktreePath, "main.txt", "main work\n")
-			if _, _, err := h.runner.Archive(t.Context(), f.main.ID, false); err != nil {
+			if _, _, err := h.runner.Archive(t.Context(), f.main.ID, ArchiveOptions{}); err != nil {
 				t.Fatalf("Archive(main): %v", err)
 			}
 			if deleted {
@@ -489,7 +489,7 @@ func TestMergeBackNeverVetoesItsSideTasksDone(t *testing.T) {
 	h := newEngineHarness(t)
 	f := newMergeBackFixture(t, h, store.MergeOnConflictBlock)
 	commitFile(t, f.main.WorktreePath, "main.txt", "main work\n")
-	if _, _, err := h.runner.Archive(t.Context(), f.main.ID, false); err != nil {
+	if _, _, err := h.runner.Archive(t.Context(), f.main.ID, ArchiveOptions{}); err != nil {
 		t.Fatalf("Archive(main): %v", err)
 	}
 	adopter := &store.Task{

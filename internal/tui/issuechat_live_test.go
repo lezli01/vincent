@@ -59,7 +59,8 @@ func (h *actionLiveHarness) pressIssueChat(t *testing.T, issueID int64) int64 {
 // asking for a second; the list's row names it too; a chat event carrying
 // issue_id re-reads the screens when the chat is closed; and a stale row whose
 // `T` meets the daemon's issue_has_live_chat opens the live chat instead of
-// reporting a refusal.
+// reporting a refusal. Every chat opened from an issue screen returns to
+// that screen on esc (#932).
 func TestIssueChatKeyAgainstTheRealAPI(t *testing.T) {
 	h := newActionLiveHarness(t)
 	ctx := context.Background()
@@ -89,8 +90,11 @@ func TestIssueChatKeyAgainstTheRealAPI(t *testing.T) {
 		t.Errorf("the chat workspace does not name the issue:\n%s", header)
 	}
 
-	_, cmd = h.m.Update(selectViewMsg{id: viewIssue})
-	h.p.push(cmd)
+	// esc from the chat T opened is back on the issue (#932).
+	h.pressEsc(t)
+	if h.m.active != viewIssue || detail.id != iss.ID {
+		t.Fatalf("esc from the chat T opened landed on %v (issue #%d), want the issue detail on #%d", h.m.active, detail.id, iss.ID)
+	}
 	h.p.until(30*time.Second, "the detail to read the chat occupant", func() bool {
 		return h.m.active == viewIssue && issueOccupantChat(detail.issue) == first
 	})
@@ -107,8 +111,7 @@ func TestIssueChatKeyAgainstTheRealAPI(t *testing.T) {
 	}
 
 	// enter on the Main worktree section opens the chat too.
-	_, cmd = h.m.Update(selectViewMsg{id: viewIssue})
-	h.p.push(cmd)
+	h.pressEsc(t)
 	h.p.until(30*time.Second, "the detail to come back", func() bool { return h.m.active == viewIssue })
 	h.m.View() // the selection acts only on what the last render drew
 	detail.cursor = 0
@@ -117,6 +120,12 @@ func TestIssueChatKeyAgainstTheRealAPI(t *testing.T) {
 		chat := h.m.views[viewChat].(*chatView)
 		return h.m.active == viewChat && chat.chatID == first
 	})
+	// ...and its esc keeps the issue's selection: a return, not a re-open.
+	h.pressEsc(t)
+	if h.m.active != viewIssue || detail.id != iss.ID || detail.cursor != 0 {
+		t.Fatalf("esc from the occupant chat landed on %v (issue #%d, cursor %d), want the issue detail on #%d at its Main worktree row",
+			h.m.active, detail.id, detail.cursor, iss.ID)
+	}
 
 	list := h.m.views[viewIssues].(*issuesView)
 	_, cmd = h.m.Update(selectViewMsg{id: viewIssues})
@@ -162,9 +171,22 @@ func TestIssueChatKeyAgainstTheRealAPI(t *testing.T) {
 	if got := h.pressIssueChat(t, iss.ID); got != other.ID {
 		t.Errorf("T on a stale row opened chat #%d, want the live chat #%d", got, other.ID)
 	}
+	// T on the list opened it, so esc returns to the list (#932).
+	h.pressEsc(t)
+	if h.m.active != viewIssues {
+		t.Errorf("esc from a chat T opened on the issues list landed on %v, want the list (%v)", h.m.active, viewIssues)
+	}
 	if chats := h.issueChats(t, iss.ID); len(chats) != 2 {
 		t.Errorf("the stale row's T made a chat of its own: %+v", chats)
 	}
+}
+
+// pressEsc presses esc on the active view and routes what it asks for.
+func (h *actionLiveHarness) pressEsc(t *testing.T) {
+	t.Helper()
+	_, cmd := h.m.Update(escKey())
+	h.p.push(cmd)
+	h.p.until(30*time.Second, "esc to leave the chat workspace", func() bool { return h.m.active != viewChat })
 }
 
 func mustRow(t *testing.T, v *issuesView) issueRow {

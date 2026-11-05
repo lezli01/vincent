@@ -183,7 +183,9 @@ type Config struct {
 	// counterpart of a branch that qualified. Default **false**, and honoured
 	// only by POST /v1/tasks/{id}/archive — a forge is shared with other
 	// people and the deletion is unrecoverable, so it happens only when a
-	// human asked for this archive and only when they opted in. It has no
+	// human asked for this archive and only when they opted in. An unattended
+	// archive (task 143) never runs it, and a fan-out cascade inherits its
+	// root's mode — taskrun gates the leg on the mode. It has no
 	// effect while DeleteEmptyBranchOnArchive is false: the remote leg runs
 	// after a local delete that succeeded.
 	DeleteRemoteBranchOnArchive bool `yaml:"delete_remote_branch_on_archive"`

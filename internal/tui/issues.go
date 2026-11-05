@@ -609,7 +609,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// A chat on the selected issue's main worktree, or the one already
 		// holding it (task 140.9).
 		if row, ok := v.current(); ok {
-			return v, issueChatCmd(v.client, row.issue, v.setNote)
+			return v, issueChatCmd(v.client, row.issue, v.setNote, viewIssues)
 		}
 	case issueSelectKey:
 		v.togglePick()

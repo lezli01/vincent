@@ -325,6 +325,18 @@ func (s *Server) handleChatList(w http.ResponseWriter, r *http.Request) {
 		}
 		f.TaskID = &id
 	}
+	// The conversations that concern one issue (#931): opened on it, linked
+	// to any of its tasks or lanes, or handed off into one. Parsed the way
+	// GET /v1/tasks parses its issue_id; an unknown issue lists nothing
+	// rather than 404ing, as task_id does.
+	if v := r.URL.Query().Get("issue_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id < 1 {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, "issue_id must be a positive integer")
+			return
+		}
+		f.IssueID = id
+	}
 	for _, st := range r.URL.Query()["state"] {
 		if !chatstate.Valid(chatstate.State(st)) {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf("unknown chat state %q", st))

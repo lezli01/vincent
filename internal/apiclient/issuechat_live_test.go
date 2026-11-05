@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -126,5 +127,95 @@ func TestIssueChatOverTheWire(t *testing.T) {
 	}
 	if len(warned.Warnings) == 0 {
 		t.Error("a chat on a closed issue came back with no warnings")
+	}
+}
+
+// TestListChatsByIssueOverTheWire is #931's client half against the real
+// handlers: ListChatsOptions.IssueID reaches the store's three-way match, so
+// the chat opened on the issue, the chat linked to a fan-out lane of one of
+// its tasks and the chat handed off into its work all come back, and a chat
+// of no issue does not.
+func TestListChatsByIssueOverTheWire(t *testing.T) {
+	dataDir := t.TempDir()
+	st, err := storetest.Open(filepath.Join(dataDir, "chatsbyissue.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := t.Context()
+	project := &store.Project{Name: "proj", Path: t.TempDir(), DefaultBranch: "main"}
+	if err := st.CreateProject(ctx, project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := api.New(api.Deps{
+		Token: testToken, Config: config.Default, StartedAt: time.Now(),
+		ListenAddr: "127.0.0.1:0", RequestStop: func() {}, Logger: log, Store: st,
+	})
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	client := apiclient.New(ts.URL, testToken)
+
+	iss, err := st.CreateIssue(ctx, store.NewIssue{ProjectID: project.ID, Title: "Talk it through"}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	onIssue := &store.Chat{
+		ProjectID: project.ID, Title: "on the issue", Agent: "claude", PermissionMode: "full_auto",
+		BaseBranch: "main", IssueID: &iss.ID,
+	}
+	if err := st.CreateIssueChat(ctx, onIssue, func(int64) string { return "vincent/issue-chat" }); err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	newTask := func(title string, state store.TaskState) *store.Task {
+		return &store.Task{
+			ProjectID: project.ID, Title: title, WorkflowName: "adhoc", WorkflowSnapshot: "steps: []",
+			BaseBranch: "main", BranchName: "vincent/0-" + title, State: state, IssueID: &iss.ID,
+		}
+	}
+	root := newTask("root", store.TaskAwaitingChildren)
+	if err := st.CreateTask(ctx, root, nil); err != nil {
+		t.Fatalf("CreateTask(root): %v", err)
+	}
+	lane := newTask("lane", store.TaskBlocked)
+	idx := 0
+	lane.ParentTaskID, lane.ParentStepIndex, lane.LaneID = &root.ID, &idx, "a"
+	lane.WorktreePath = filepath.Join(dataDir, "lane")
+	if err := st.CreateTask(ctx, lane, nil); err != nil {
+		t.Fatalf("CreateTask(lane): %v", err)
+	}
+	onLane := &store.Chat{Title: "on the lane", Agent: "claude", PermissionMode: "full_auto"}
+	if err := st.OpenLinkedChat(ctx, lane.ID, store.TaskBlocked, onLane); err != nil {
+		t.Fatalf("OpenLinkedChat: %v", err)
+	}
+	freeChat := func(title string) *store.Chat {
+		c := &store.Chat{
+			ProjectID: project.ID, Title: title, Agent: "claude", PermissionMode: "full_auto",
+			Branch: "vincent/chat-" + title, BaseBranch: "main", BaseSHA: "abc123",
+			WorktreePath: filepath.Join(dataDir, "chat-"+title),
+		}
+		if err := st.CreateChat(ctx, c); err != nil {
+			t.Fatalf("CreateChat(%s): %v", title, err)
+		}
+		return c
+	}
+	handedOff := freeChat("handoff")
+	into := newTask("into", store.TaskQueued)
+	into.BranchName, into.BaseSHA, into.WorktreePath = handedOff.Branch, handedOff.BaseSHA, handedOff.WorktreePath
+	if _, err := st.HandoffChat(ctx, handedOff.ID, into); err != nil {
+		t.Fatalf("HandoffChat: %v", err)
+	}
+	freeChat("free")
+
+	got, err := client.ListChats(ctx, apiclient.ListChatsOptions{IssueID: iss.ID, Archived: apiclient.ArchivedAll})
+	if err != nil {
+		t.Fatalf("ListChats: %v", err)
+	}
+	ids := []int64{}
+	for _, c := range got {
+		ids = append(ids, c.ID)
+	}
+	if want := []int64{handedOff.ID, onLane.ID, onIssue.ID}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("ListChats(issue %d, all) = %v, want %v", iss.ID, ids, want)
 	}
 }

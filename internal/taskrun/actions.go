@@ -565,9 +565,20 @@ func (r *Runner) Reject(ctx context.Context, id int64) (*store.Task, error) {
 // means the branch step did not run. It is never an error: the archive has
 // already committed by then, and a branch problem must not be able to reverse
 // it. Failures are logged here and reported to the caller.
+//
+// opts.Unattended marks an archive no human asked for (task 143): it never
+// forces — Force is treated as false whatever the caller passed, so a dirty
+// worktree refuses and leaves the task untouched — and it never runs the
+// branch step's remote leg, whatever delete_remote_branch_on_archive says
+// (§10). A fan-out parent's lanes inherit the whole of opts.
 func (r *Runner) Archive(
-	ctx context.Context, id int64, force bool,
+	ctx context.Context, id int64, opts ArchiveOptions,
 ) (*store.Task, worktree.BranchOutcome, error) {
+	if opts.Unattended {
+		// "Never forces" is a property of the mode, not something each
+		// unattended caller has to remember.
+		opts.Force = false
+	}
 	task, err := r.deps.Store.GetTask(ctx, id)
 	if err != nil {
 		return nil, worktree.BranchOutcome{}, err
@@ -588,7 +599,7 @@ func (r *Runner) Archive(
 	if err := r.refuseUnfinishedDescendants(ctx, id); err != nil {
 		return nil, worktree.BranchOutcome{}, err
 	}
-	if err := r.cascadeArchive(ctx, id, force); err != nil {
+	if err := r.cascadeArchive(ctx, id, opts); err != nil {
 		return nil, worktree.BranchOutcome{}, err
 	}
 	empty := ""
@@ -603,14 +614,14 @@ func (r *Runner) Archive(
 		// line's only once one of the issue's main tasks has held it (review
 		// F3 of #770).
 		out, err := r.transitionFrom(ctx, task, taskstate.Archive,
-			store.TaskChange{WorktreePath: &empty})
+			store.TaskChange{WorktreePath: &empty, EventPayload: opts.EventPayload})
 		return out, worktree.BranchOutcome{}, err
 	}
 	project, err := r.deps.Store.GetProject(ctx, task.ProjectID)
 	if err != nil {
 		return nil, worktree.BranchOutcome{}, err
 	}
-	ch := store.TaskChange{WorktreePath: &empty}
+	ch := store.TaskChange{WorktreePath: &empty, EventPayload: opts.EventPayload}
 	if issueMain {
 		ch.EndSHA = r.archiveEndSHA(ctx, task, project.Path)
 	}
@@ -630,7 +641,7 @@ func (r *Runner) Archive(
 		if err != nil {
 			return nil, worktree.BranchOutcome{}, err
 		}
-		return out, r.deleteArchivedBranch(ctx, task, project.Path), nil
+		return out, r.deleteArchivedBranch(ctx, task, project.Path, opts.Unattended), nil
 	}
 	// The container is removed before the worktree, because it holds that
 	// worktree as a bind mount and a live mount is a reason a removal fails
@@ -642,7 +653,7 @@ func (r *Runner) Archive(
 	// names a directory that is already gone, and a gc scan landing there
 	// would report the task as a reverse mismatch it never was.
 	var out *store.Task
-	if err := r.deps.Worktrees.RemoveAndRelease(ctx, project.Path, task.WorktreePath, force,
+	if err := r.deps.Worktrees.RemoveAndRelease(ctx, project.Path, task.WorktreePath, opts.Force,
 		func() error {
 			var err error
 			out, err = r.transitionFrom(ctx, task, taskstate.Archive, ch)
@@ -653,7 +664,23 @@ func (r *Runner) Archive(
 	// Outside the callback, not inside it: the branch is checked out in the
 	// worktree until the worktree is gone, and the archive transition must not
 	// be reversible by a branch problem.
-	return out, r.deleteArchivedBranch(ctx, task, project.Path), nil
+	return out, r.deleteArchivedBranch(ctx, task, project.Path, opts.Unattended), nil
+}
+
+// ArchiveOptions is how an archive was asked for (task 143).
+type ArchiveOptions struct {
+	// Force removes a dirty worktree (§10's explicit confirmation). Ignored
+	// when Unattended is set.
+	Force bool
+	// Unattended marks an archive no human asked for — the auto-archive of a
+	// closed issue's tasks. It never forces and never runs the remote leg of
+	// the branch step.
+	Unattended bool
+	// EventPayload is merged into the archive's task.state_changed event,
+	// underneath the core keys (TaskChange.EventPayload): an unattended
+	// caller says why with archived_by. nil leaves the payload as a human
+	// archive has always written it.
+	EventPayload map[string]any
 }
 
 // isIssueMain is whether task is one of its issue's main-role tasks, which
@@ -742,15 +769,21 @@ func (r *Runner) branchOurs(ctx context.Context, task *store.Task, log *slog.Log
 // just reached `archived`. The flags are read through Deps.Config, so a hot
 // reload reaches the next archive with no extra plumbing.
 func (r *Runner) deleteArchivedBranch(
-	ctx context.Context, task *store.Task, projectPath string,
+	ctx context.Context, task *store.Task, projectPath string, unattended bool,
 ) worktree.BranchOutcome {
 	cfg := r.deps.Config()
 	if !cfg.DeleteEmptyBranchOnArchive || task.BranchName == "" {
 		return worktree.BranchOutcome{}
 	}
 	log := r.deps.Logger.With("task", task.ID, "branch", task.BranchName)
-	// The remote leg is attended-only by §10, and this is the attended path:
-	// every caller of Archive is a human asking for this one task.
+	// The remote leg is attended-only by §10 (task 008 decision 3). Archive
+	// has three kinds of caller: the API, which is a human asking for this
+	// one task; the fan-out cascade, which inherits its root's mode; and the
+	// auto-archive of a closed issue's tasks, which is unattended (task 143).
+	// The leg is gated on the mode rather than on the caller, so a lane
+	// archived under an unattended root is unattended too, and a new caller
+	// cannot reach the remote by forgetting to say who it is.
+	remote := cfg.DeleteRemoteBranchOnArchive && !unattended
 	// Whether the branch is ours to delete at all (task 064 decision 3): a
 	// task created from a pull request runs on the contributor's head branch,
 	// and neither leg may touch it.
@@ -768,7 +801,7 @@ func (r *Runner) deleteArchivedBranch(
 		baseSHA = ""
 	}
 	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
-		task.BaseBranch, baseSHA, task.BranchName, cfg.DeleteRemoteBranchOnArchive, &ours)
+		task.BaseBranch, baseSHA, task.BranchName, remote, &ours)
 	if err != nil {
 		log.Warn("archive: branch kept", "result", out.Result, "error", err)
 		return out

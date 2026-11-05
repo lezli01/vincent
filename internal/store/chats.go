@@ -163,7 +163,21 @@ type ChatFilter struct {
 	// TaskID narrows to the chats linked to one task (task 119), which is how
 	// a task's workspace lists its conversations.
 	TaskID *int64
-	States []chatstate.State
+	// IssueID narrows to the conversations that concern one issue (#931): a
+	// chat opened on the issue (`issue_id`, task 140), a chat linked to any
+	// task of the issue (`linked_task_id`, task 119), or a free chat handed
+	// off into one (`handoff_task_id`, task 074). Zero means no filter, the
+	// way TaskFilter.IssueID's zero does.
+	//
+	// "Any task" includes fan-out lanes, which TaskFilter.IssueID leaves out
+	// on purpose: task 130 decision 5 keeps lanes off "the issue's tasks"
+	// because a lane is part of its root's work, not a separate item of work,
+	// and that stands for the tasks list. This filter answers a different
+	// question — which conversations concern the issue — and a chat on a lane
+	// is still one of those. Lanes are not Work-tab rows, so without this the
+	// chat would appear nowhere on its issue.
+	IssueID int64
+	States  []chatstate.State
 	// Archived selects how terminal chats are treated, the way TaskFilter's
 	// field of the same name and type does (§13.2). It covers *every*
 	// terminal state — `archived`, `handed_off` and `closed` alike (§5.5,
@@ -201,6 +215,14 @@ func (s *Store) ListChats(ctx context.Context, f ChatFilter) ([]Chat, error) {
 	if f.TaskID != nil {
 		q += ` AND linked_task_id = ?`
 		args = append(args, *f.TaskID)
+	}
+	if f.IssueID != 0 {
+		// Each arm is indexed: idx_chats_issue, chats_linked_task_idx,
+		// chats_handoff_task_idx, and tasks_issue_idx for the subqueries.
+		q += ` AND (issue_id = ?` +
+			` OR linked_task_id IN (SELECT id FROM tasks WHERE issue_id = ?)` +
+			` OR handoff_task_id IN (SELECT id FROM tasks WHERE issue_id = ?))`
+		args = append(args, f.IssueID, f.IssueID, f.IssueID)
 	}
 	if len(f.States) > 0 {
 		//nolint:gosec // G202: placeholders renders bind markers only, never values.
