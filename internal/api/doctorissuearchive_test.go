@@ -207,6 +207,23 @@ func TestDoctorIssueArchiveLockedByChat(t *testing.T) {
 	wantReasons(t, f.report(t), task.ID, doctor.HoldLockedByChat)
 }
 
+// TestDoctorIssueArchiveLockedLane is review F1: the cascade archives each
+// lane through the ordinary Archive, which a lane's own linked chat refuses,
+// so a settled root with a locked lane is locked_by_chat, not awaiting_retry.
+func TestDoctorIssueArchiveLockedLane(t *testing.T) {
+	f := newIAFixture(t, nil)
+	issue := f.issue(t)
+	root := f.task(t, issue, "", nil, store.TaskDone)
+	lane := f.task(t, 0, "", root, store.TaskDone)
+	f.claimWorktree(t, lane, filepath.Join(f.dirs.Data, "worktrees", "lane"))
+	c := &store.Chat{Title: "about the lane", Agent: "claude", PermissionMode: "full_auto"}
+	if err := f.store.OpenLinkedChat(t.Context(), lane.ID, store.TaskDone, c); err != nil {
+		t.Fatalf("OpenLinkedChat: %v", err)
+	}
+	f.closeIssue(t, issue)
+	wantReasons(t, f.report(t), root.ID, doctor.HoldLockedByChat)
+}
+
 func TestDoctorIssueArchiveUnfinishedLane(t *testing.T) {
 	f := newIAFixture(t, nil)
 	issue := f.issue(t)

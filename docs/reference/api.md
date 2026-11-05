@@ -568,7 +568,7 @@ daemon running.
   issue, then in archive order — with `role` (`main`, `side` or `""`) and
   **every** reason that holds it in `reasons[]`, in this order: `dirty` (its
   worktree, or an unarchived lane's, has local changes, untracked included),
-  `locked_by_chat` (an open linked chat), `unfinished_lane` (a lane is not
+  `locked_by_chat` (an open linked chat on it, or on an unarchived lane), `unfinished_lane` (a lane is not
   settled), `held_for_side_work` (a main task waiting for a held side task or
   merge-back of its issue), `issue_not_quiescent` (another root of the issue
   is unsettled, or an issue chat is live), `handoff_claimed` (a handoff item

@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -261,6 +263,33 @@ func (s *Store) UnarchivedLaneWorktrees(ctx context.Context, taskID int64) ([]st
 		return nil, fmt.Errorf("lane worktrees of task %d: %w", taskID, err)
 	}
 	return out, nil
+}
+
+// SubtreeOpenLinkedChatID returns the id of an open chat locking taskID or
+// any unarchived descendant of it, or 0 when none is locked — the subtree an
+// archive of the root cascades through, each lane by the ordinary Archive
+// and so each refused by its own lock (review F1).
+func (s *Store) SubtreeOpenLinkedChatID(ctx context.Context, taskID int64) (int64, error) {
+	args := append([]any{taskID, taskID, string(TaskArchived)}, terminalChatStateArgs()...)
+	var id int64
+	err := s.db.QueryRowContext(ctx, `
+		WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM tasks WHERE parent_task_id = ?
+			UNION ALL
+			SELECT t.id FROM tasks t JOIN subtree ON t.parent_task_id = subtree.id
+		)
+		SELECT c.id FROM chats c
+		WHERE (c.linked_task_id = ? OR c.linked_task_id IN (
+			SELECT t.id FROM tasks t JOIN subtree ON subtree.id = t.id WHERE t.state <> ?))
+		AND c.state NOT IN (?, ?, ?)
+		ORDER BY c.id LIMIT 1`, args...).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("open chats of task %d's subtree: %w", taskID, err)
+	}
+	return id, nil
 }
 
 // ClosedIssueIDs returns the ids of every closed issue, in id order.

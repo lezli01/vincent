@@ -2,6 +2,8 @@ package store
 
 import (
 	"slices"
+
+	"github.com/lezli01/vincent/internal/chatstate"
 	"testing"
 	"time"
 )
@@ -166,5 +168,57 @@ func TestClosedIssueIDs(t *testing.T) {
 	}
 	if want := []int64{a.ID, c.ID}; !slices.Equal(got, want) {
 		t.Errorf("ClosedIssueIDs = %v, want %v", got, want)
+	}
+}
+
+// TestSubtreeOpenLinkedChatID finds an open chat on the root or on a lane at
+// any depth (review F1), and ignores a closed one.
+func TestSubtreeOpenLinkedChatID(t *testing.T) {
+	s := openTest(t)
+	p := testProject(t, s, "p1")
+	is := testIssue(t, s, p.ID, "fan")
+	closedAt := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	ids := seedArchiveTasks(t, s, p.ID, is.ID, closedAt, []closeSeed{
+		{state: TaskDone, at: preClose},
+		{state: TaskDone, at: preClose, parent: 1},
+		{state: TaskDone, at: preClose, parent: 2},
+		{state: TaskDone, at: preClose},
+	})
+	for i, id := range ids {
+		execT(t, s, `UPDATE tasks SET worktree_path = ? WHERE id = ?`, "/wt/"+string(rune('a'+i)), id)
+	}
+	subtree := func(id int64) int64 {
+		t.Helper()
+		got, err := s.SubtreeOpenLinkedChatID(t.Context(), id)
+		if err != nil {
+			t.Fatalf("SubtreeOpenLinkedChatID(%d): %v", id, err)
+		}
+		return got
+	}
+	if got := subtree(ids[0]); got != 0 {
+		t.Fatalf("unlocked subtree = %d, want 0", got)
+	}
+	deep := &Chat{Title: "deep", Agent: "claude", PermissionMode: "full_auto"}
+	if err := s.OpenLinkedChat(t.Context(), ids[2], TaskDone, deep); err != nil {
+		t.Fatalf("OpenLinkedChat: %v", err)
+	}
+	if got := subtree(ids[0]); got != deep.ID {
+		t.Errorf("root with a locked deep lane = %d, want %d", got, deep.ID)
+	}
+	if got := subtree(ids[3]); got != 0 {
+		t.Errorf("an unrelated root = %d, want 0", got)
+	}
+	if _, err := s.SetChatState(t.Context(), deep.ID, chatstate.Closed); err != nil {
+		t.Fatalf("close chat: %v", err)
+	}
+	if got := subtree(ids[0]); got != 0 {
+		t.Errorf("after the chat closed = %d, want 0", got)
+	}
+	own := &Chat{Title: "own", Agent: "claude", PermissionMode: "full_auto"}
+	if err := s.OpenLinkedChat(t.Context(), ids[3], TaskDone, own); err != nil {
+		t.Fatalf("OpenLinkedChat: %v", err)
+	}
+	if got := subtree(ids[3]); got != own.ID {
+		t.Errorf("a locked root = %d, want %d", got, own.ID)
 	}
 }

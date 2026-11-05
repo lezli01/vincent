@@ -100,7 +100,8 @@ func (s *Server) heldIssueTasks(ctx context.Context) ([]doctor.HeldTask, error) 
 
 // taskArchiveHolds is what Runner.Archive would refuse the task for now:
 // dirty, locked by a chat, or an unfinished lane, in HoldReasons order. Each
-// asks the definition the archive itself consults.
+// asks the definition the archive itself consults, over the subtree the
+// cascade walks: the root and every unarchived lane.
 func (s *Server) taskArchiveHolds(ctx context.Context, c *store.IssueArchiveCandidate, projects map[int64]string) ([]string, error) {
 	var holds []string
 	projectPath, ok := projects[c.ProjectID]
@@ -124,7 +125,7 @@ func (s *Server) taskArchiveHolds(ctx context.Context, c *store.IssueArchiveCand
 			break
 		}
 	}
-	chatID, err := s.deps.Store.OpenLinkedChatID(ctx, c.TaskID)
+	chatID, err := s.deps.Store.SubtreeOpenLinkedChatID(ctx, c.TaskID)
 	if err != nil {
 		return nil, err
 	}

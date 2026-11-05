@@ -127,7 +127,10 @@ Confirmed by the author on 2026-11-04.
     worktree, or that of an unarchived lane under a fan-out root, has local
     changes, untracked included (`worktree.Manager.IsDirty`; a missing
     directory, or the project's own checkout, is not dirty); `locked_by_chat`
-    — `Store.OpenLinkedChatID`, the helper `RefuseLocked` consults;
+    — an open linked chat on the task or on any unarchived lane under it
+    (`Store.SubtreeOpenLinkedChatID`), since the cascade archives each lane
+    through the ordinary `Archive` and `RefuseLocked` refuses each (review
+    F1, amended 2026-11-05);
     `unfinished_lane` — `Store.NonTerminalDescendants`, the predicate
     behind `UnfinishedDescendantsError`; `issue_not_quiescent` — another
     root of the issue (one created after the close included) is unsettled,

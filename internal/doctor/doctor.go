@@ -469,7 +469,8 @@ const (
 	// HoldDirty: the task's worktree, or that of an unarchived lane under a
 	// fan-out root, has local changes, untracked files included.
 	HoldDirty = "dirty"
-	// HoldLockedByChat: an open linked chat locks the task.
+	// HoldLockedByChat: an open linked chat locks the task, or an unarchived
+	// lane the archive would cascade into.
 	HoldLockedByChat = "locked_by_chat"
 	// HoldUnfinishedLane: a descendant lane is not settled.
 	HoldUnfinishedLane = "unfinished_lane"
