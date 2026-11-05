@@ -1,4 +1,4 @@
--- 0053_issue_sync_jira: the importer bookkeeping a Jira source needs (task
+-- 0054_issue_sync_jira: the importer bookkeeping a Jira source needs (task
 -- 142.12, issue #908, spec §5.6, §14).
 --
 -- remote_project_id is the provider's stable id of the bound project,

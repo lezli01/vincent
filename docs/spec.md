@@ -13179,7 +13179,7 @@ CREATE TABLE issue_sync_state (        -- one row per project the importer polle
   comment_watermark  TEXT,                      -- the comment pass's own (task 130.16, migration 0041)
   comment_since      TEXT,
   comment_etag       TEXT NOT NULL DEFAULT '',
-  remote_project_id  TEXT,                      -- the provider's id of the bound project, sticky (task 142.12, migration 0053)
+  remote_project_id  TEXT,                      -- the provider's id of the bound project, sticky (task 142.12, migration 0054)
   import_cursor      TEXT NOT NULL DEFAULT ''   -- an id-ordered initial import's resume point; '' otherwise
 );
 
@@ -13402,7 +13402,7 @@ of `task_id`, cascading with its issue (§13.1 says why it is a second table).
 whose agent step filed it over MCP, `SET NULL` so deleting that task leaves the
 issue it filed. The 24-hour prune (§17) covers both key tables.
 
-*Amended 2026-11-05 (task 142.12, issue #908, migration 0053).*
+*Amended 2026-11-05 (task 142.12, issue #908, migration 0054).*
 `issue_sync_state` gains `remote_project_id`, the provider's stable id of the
 bound project recorded on the first pass that resolves it — NULL for every
 GitHub row, whose sticky key stays `repo` — and compared on every later pass,
