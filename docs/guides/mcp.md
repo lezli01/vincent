@@ -85,7 +85,8 @@ delete's line: a row a human archived is history nobody else may discard. The
 issue delete joins them: it is permanent, and an imported issue's tombstone
 outlives it. Sync now (`POST /v1/projects/{id}/issues/sync`) stays a human act
 too: it asks the importer to poll early and flushes vincent's pending state
-writes to GitHub. Its `GET`, `project_issue_sync_status`, is an ordinary tool.
+writes to the remote. Its `GET`, `project_issue_sync_status`, is an ordinary
+tool, and names the bound source in `source` and `provider_name`.
 `issue_close` and `issue_reopen` are tools, but on an issue imported from
 GitHub they are refused with `forge_write_needs_human`: that issue's state is
 written back to GitHub, and only a person, or a handoff a person

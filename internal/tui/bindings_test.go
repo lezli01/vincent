@@ -1284,6 +1284,9 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"S": func(t *testing.T) {
 			v := issuesFixture()
+			// Offered only once a sync status naming a pass has loaded.
+			st := issueSyncFixture("github", "pending")
+			v.sync, v.syncFor = &st, v.project.id
 			if _, cmd := v.updateKey(registryKey(t, "S")); cmd == nil {
 				t.Fatal("S did not ask for a sync")
 			}

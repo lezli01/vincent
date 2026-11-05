@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/doctor"
 	"github.com/lezli01/vincent/internal/github"
+	"github.com/lezli01/vincent/internal/issues"
 	"github.com/lezli01/vincent/internal/issuesource"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -43,7 +46,9 @@ const (
 	// a project that has no row because the daemon never writes one for a
 	// project that resolves to none (task 142.7).
 	syncReasonNotGitHub = "not_github"
-	// syncReasonSourceNotGitHub is a project explicitly bound to none.
+	// syncReasonSourceNotGitHub is a project explicitly bound to none. A
+	// project explicitly bound to jira never reads it: an unusable Jira
+	// binding reports the Jira source's own reasons instead.
 	syncReasonSourceNotGitHub = "source_not_github"
 )
 
@@ -59,6 +64,15 @@ type issueSyncStatusBody struct {
 	// (task 142.6 decision 5): shown wherever sync status is, so a binding
 	// entered on the wrong site is visible before a token is sent there.
 	Site string `json:"site,omitempty"`
+	// Source is the bound source as a person reads it (task 142.14): the
+	// repository's `owner/repo` for GitHub, `<site>/<PROJECTKEY>` for Jira.
+	// The daemon renders it so a client never builds one (task 142
+	// decision 11); omitted for none, or while no repository is known.
+	Source string `json:"source,omitempty"`
+	// ProviderName is the provider's display name, `GitHub` or `Jira`,
+	// from the same table an imported issue's reference reads from
+	// (issues.RenderSource); omitted for none.
+	ProviderName string `json:"provider_name,omitempty"`
 	// LastSyncedAt is when an import last succeeded; omitted when none has.
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 	OK           bool       `json:"ok"`
@@ -70,7 +84,7 @@ type issueSyncStatusBody struct {
 	RateLimitedUntil *time.Time `json:"rate_limited_until,omitempty"`
 	// WritesPending, WritesFailed and WritesConflict count the project's
 	// imported issues whose newest state write-back is waiting, gave up,
-	// or found GitHub changed first (task 130.10).
+	// or found the remote changed first (task 130.10).
 	WritesPending  int `json:"writes_pending"`
 	WritesFailed   int `json:"writes_failed"`
 	WritesConflict int `json:"writes_conflict"`
@@ -144,7 +158,9 @@ func renderIssueSync(cfg config.Config, res issuesource.Resolution, st *store.Is
 
 // issueSyncStatus reads a project's status. The repo falls back to the one
 // its origin names (a local git call, never a GitHub one) while the importer
-// has not recorded one.
+// has not recorded one. It also renders the display fields — source and
+// provider_name (task 142.14) — which the pure renderIssueSync leaves alone
+// because doctor and the overview glyph, its other callers, show neither.
 func (s *Server) issueSyncStatus(ctx context.Context, project *store.Project) (issueSyncStatusBody, error) {
 	st, err := s.deps.Store.GetIssueSyncState(ctx, project.ID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -166,7 +182,36 @@ func (s *Server) issueSyncStatus(ctx context.Context, project *store.Project) (i
 	if out.Repo == "" && res.Provider == store.IssueProviderGitHub && res.OriginGitHub && res.Repo != (github.Repo{}) {
 		out.Repo = res.Repo.String()
 	}
+	out.Source, out.ProviderName = syncSourceDisplay(out.Provider, out.Repo, project.IssueSource)
 	return out, nil
+}
+
+// syncSourceDisplay renders the bound source and the provider's display
+// name for a sync status (task 142.14 decision 2): GitHub's repository, or
+// Jira's site and project key. Both are empty for none, and source is empty
+// when the parts it is built from are not known yet.
+func syncSourceDisplay(provider, repo string, src store.IssueSource) (source, name string) {
+	switch provider {
+	case store.IssueProviderGitHub:
+		source = repo
+	case store.IssueProviderJira:
+		if host := jiraSiteHost(src.JiraSite); host != "" && src.JiraProjectKey != "" {
+			source = host + "/" + src.JiraProjectKey
+		}
+	default:
+		return "", ""
+	}
+	return source, issues.RenderSource(provider, "", 0, "").ProviderName
+}
+
+// jiraSiteHost is a stored Jira site without its scheme: the host, and the
+// port when it names one (the loopback fake does). The full URL stays in
+// site; source is the short form a person reads.
+func jiraSiteHost(site string) string {
+	if u, err := url.Parse(site); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return strings.TrimSuffix(site, "/")
 }
 
 // handleIssueSyncStatus implements GET /v1/projects/{id}/issues/sync.

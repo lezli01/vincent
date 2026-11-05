@@ -10561,6 +10561,11 @@ GET    /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8, issue #66
                                         { writes_pending, writes_failed, writes_conflict } —
                                         the imported issues whose newest state write-back is
                                         waiting, gave up, or lost to a change on GitHub
+                                        *Amended 2026-11-04 (task 142.14, issue #910):* also
+                                        `source?` and `provider_name?`, rendered by the
+                                        daemon: `owner/repo` or `<site host>/<PROJECTKEY>`,
+                                        and `GitHub` or `Jira`; both absent for none. The
+                                        reason vocabulary is 142.7's, unchanged
 POST   /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8).* {}. Sync now: records
                                         the request and wakes the importer → **202** with the
                                         status body above, as of the request. With a switch
@@ -15421,6 +15426,14 @@ stream for the live tail.
    than on its day. The note words the 202's status: requested, or held back
    by a switch that is off. The footer, `?` and the palette offer it only on
    a project §13.2's probe answers yes for, as they do the pull-request keys.
+   *Amended 2026-11-04 (task 142.14, issue #910):* `S` requests a sync from
+   the project's bound issue source, GitHub or Jira, and is gated on the
+   list's own loaded `GET /v1/projects/{id}/issues/sync`, not on §13.2's
+   probe: the footer, `?` and the palette offer it once that status has
+   loaded and its reason is neither `not_github` nor `source_not_github` —
+   the projects for which the POST records nothing. A switch that is off
+   keeps it, and its note says import is off. Pressed while not offered it
+   does nothing. The note names the status's `source` when there is one.
 
    *Amended 2026-10-28 (task 137.11, issue #844):* a `hand_off` card's
    right cell shows its delivery kind (`change`, `reply`, `none`) and §5.6's

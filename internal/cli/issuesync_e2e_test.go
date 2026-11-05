@@ -56,7 +56,7 @@ func TestIssueSyncSwitchesOff(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("issue sync: code %d, out %q", code, out)
 	}
-	for _, want := range []string{"enabled", "octo/repo", "last synced", "never", "github_disabled", "import complete", "import is off"} {
+	for _, want := range []string{"enabled", "provider", "GitHub", "source", "octo/repo", "last synced", "never", "github_disabled", "import complete", "import is off"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("issue sync does not show %q:\n%s", want, out)
 		}
@@ -75,7 +75,8 @@ func TestIssueSyncSwitchesOff(t *testing.T) {
 		return got
 	}
 	got := status()
-	if got["enabled"] != false || got["ok"] != false || got["reason"] != "github_disabled" || got["provider"] != "github" {
+	if got["enabled"] != false || got["ok"] != false || got["reason"] != "github_disabled" || got["provider"] != "github" ||
+		got["provider_name"] != "GitHub" || got["source"] != "octo/repo" {
 		t.Errorf("disabled status = %v", got)
 	}
 	if _, err := os.Stat(argvLog); !os.IsNotExist(err) {

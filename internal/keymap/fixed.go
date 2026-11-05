@@ -276,7 +276,7 @@ var fixed = []Fixed{
 	{"trigger dry run", "esc", "close the dry run"},
 	{"issues", "i", "edit the selected issue in a form"},
 	{"issues", "X", "close or reopen the selected issue"},
-	{"issues", "S", "sync this project's issues from GitHub now"},
+	{"issues", "S", "sync this project's issues from its issue source now"},
 	{"issues", "left", "collapse the lane section you are in"},
 	{"issues", "right", "expand the collapsed lane section under the cursor"},
 	{"issues", "C", "collapse every lane section"},

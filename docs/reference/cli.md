@@ -3353,6 +3353,8 @@ the result of this sync. `--status` only reads it and asks for nothing.
 ```
 CHECK            VALUE
 enabled          yes
+provider         GitHub
+source           lezli01/vincent
 repo             lezli01/vincent
 last synced      2026-10-02T11:15:00+02:00
 ok               yes
@@ -3362,6 +3364,11 @@ state writes     0 pending, 0 failed, 0 conflict
 sync             requested
 ```
 
+`provider` and `source` name the bound issue source as the daemon renders it:
+`GitHub` and `owner/repo`, or `Jira` and `<site host>/<PROJECTKEY>` such as
+`acme.atlassian.net/PROJ`. Both read `-` for a project with no issue source,
+and `source` does while no repository is known.
+
 `state writes` counts the issues whose newest
 [state write-back](api.md#state-write-back) is waiting, gave up, or lost to a
 change on GitHub. Run from inside a workflow step or a chat agent — where
@@ -3370,7 +3377,7 @@ its requests as an agent's, so it may not close, reopen or comment on an issue
 imported from GitHub unless its task is a live handoff granted that.
 
 `reason` uses the sync vocabulary of the [API](api.md#issue-sync) —
-`github_disabled`, `poll_disabled`, `pending`, `origin_changed`,
+`github_disabled` (GitHub's switch), `disabled` (Jira's), `poll_disabled`, `pending`, `origin_changed`,
 `rate_limited`, … — and a `rate limited until` row appears while the daemon is
 backing off. With the provider's switch off —
 [`github.enabled`](configuration.md#github) or

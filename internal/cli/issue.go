@@ -807,7 +807,8 @@ func newIssueLabelsCmd() *cobra.Command {
 }
 
 // `vincent issue sync` asks the daemon to import and refresh a project's
-// GitHub issues now, then reports how the import stands. The daemon does the
+// issues from its issue source — GitHub or Jira — now, then reports how the
+// import stands. The daemon does the
 // sync on its own reconciler goroutine and answers at once, so what is
 // printed is the status as of the request, not the result of this sync.
 // `--status` only reads it.
@@ -818,7 +819,7 @@ func newIssueSyncCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Sync a project's GitHub issues now, or report the import status",
+		Short: "Sync a project's issues from its issue source now, or report the import status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
@@ -852,6 +853,8 @@ func newIssueSyncCmd() *cobra.Command {
 // issueSyncRows renders an import status for a human. requested says the
 // command just asked for a sync, so the row says one is on its way — unless
 // a switch is off, in which case nothing will happen until it is turned on.
+// provider and source are the daemon's renderings (task 142.14), printed as
+// they come, never built here.
 func issueSyncRows(s apiclient.IssueSyncStatus, requested bool) [][]string {
 	reason := "-"
 	if !s.OK && s.Reason != "" {
@@ -859,6 +862,8 @@ func issueSyncRows(s apiclient.IssueSyncStatus, requested bool) [][]string {
 	}
 	rows := [][]string{
 		{"enabled", boolWord(s.Enabled)},
+		{"provider", dash(s.ProviderName)},
+		{"source", dash(s.Source)},
 		{"repo", dash(s.Repo)},
 		{"last synced", doctorTime(s.LastSyncedAt, "never")},
 		{"ok", boolWord(s.OK)},

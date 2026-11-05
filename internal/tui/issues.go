@@ -68,7 +68,9 @@ func taskEventIssueID(ev apiclient.Event) int64 {
 
 // issueSyncKey is the list's "sync now": what `vincent issue sync` asks for.
 // `R` stays a re-read (task 130 decision 2); this is the separate, explicit
-// request for GitHub, so neither key does the other's work by surprise.
+// request to the project's issue source — GitHub or Jira — so neither key
+// does the other's work by surprise. It is offered only while the list's
+// loaded sync status says there is a pass to wake (task 142.14).
 const issueSyncKey = "S"
 
 // Issues-list messages.
@@ -90,6 +92,11 @@ type (
 		stamp    loadStamp
 		issues   []apiclient.Issue
 		err      error
+		// sync is the project's sync status, read beside the listing so
+		// `S` is offered only where it can wake a pass (task 142.14
+		// decision 3); nil when that read failed, which keeps the one
+		// already held.
+		sync *apiclient.IssueSyncStatus
 	}
 	// openIssueMsg asks the root to open one issue's detail screen. The
 	// root points the detail at it before switching, the order every
@@ -122,6 +129,11 @@ type issuesView struct {
 	now    func() time.Time
 
 	issues []apiclient.Issue
+	// sync is the selected project's sync status as the last listing read
+	// it, and syncFor the project it is for: `S`'s gate (syncable). nil
+	// until one has loaded.
+	sync    *apiclient.IssueSyncStatus
+	syncFor int64
 
 	loaded   bool
 	loading  bool
@@ -312,6 +324,10 @@ func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case issuesSyncedMsg:
 		if msg.projectID == v.project.id {
 			v.setNote(syncedNote(msg), msg.err != nil || !msg.status.Enabled)
+			if msg.err == nil {
+				st := msg.status
+				v.sync, v.syncFor = &st, msg.projectID
+			}
 		}
 		return v, nil
 	case openedURLMsg:
@@ -392,7 +408,13 @@ func (v *issuesView) loadCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		issues, err := client.ListIssues(ctx, opts)
-		return issuesLoadedMsg{showDone: showDone, stamp: stamp, issues: issues, err: err}
+		msg := issuesLoadedMsg{showDone: showDone, stamp: stamp, issues: issues, err: err}
+		if err == nil {
+			if st, serr := client.IssueSyncStatus(ctx, opts.ProjectID); serr == nil {
+				msg.sync = &st
+			}
+		}
+		return msg
 	}
 }
 
@@ -421,6 +443,9 @@ func (v *issuesView) applyLoaded(msg issuesLoadedMsg) {
 	v.loaded, v.loadErr = true, nil
 	v.lastLoad = v.now()
 	v.issues = msg.issues
+	if msg.sync != nil {
+		v.sync, v.syncFor = msg.sync, v.project.id
+	}
 	v.prunePicked()
 	v.reselect()
 }
@@ -536,6 +561,10 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Refresh):
 		return v, v.loadCmd()
 	case issueSyncKey:
+		if !v.syncable() {
+			// Not offered, so not refused either: the key does nothing.
+			return v, nil
+		}
 		return v, v.syncCmd()
 	case opKey(keymap.Scope):
 		v.toggleDone()
@@ -626,10 +655,28 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	return v, nil
 }
 
+// syncable reports whether `S` is on offer (task 142.14 decision 3): the
+// selected project's sync status has loaded and names a pass to wake. A
+// project with no source, or github pinned on an origin off github.com,
+// reads not_github or source_not_github, and a request there records
+// nothing (review F2/F3 of #903). A switch that is off still offers it: the
+// answer then says import is off, and why.
+func (v *issuesView) syncable() bool {
+	if v.sync == nil || v.syncFor != v.project.id || v.project.id == 0 {
+		return false
+	}
+	return !noSyncPass(*v.sync)
+}
+
+// noSyncPass is a status whose project has no provider pass to wake.
+func noSyncPass(s apiclient.IssueSyncStatus) bool {
+	return !s.OK && (s.Reason == "not_github" || s.Reason == "source_not_github")
+}
+
 // syncCmd asks the daemon to sync the selected project's issues now
 // (POST /v1/projects/{id}/issues/sync). The daemon answers at once and runs
-// the sync — the sweep included, so issues deleted on GitHub go — on its
-// importer's goroutine.
+// the sync — the sweep included, so issues deleted at the source go — on
+// the importer's goroutine for the project's provider.
 func (v *issuesView) syncCmd() tea.Cmd {
 	client, pid := v.client, v.project.id
 	if client == nil || pid == 0 {
@@ -652,10 +699,12 @@ func syncedNote(msg issuesSyncedMsg) string {
 	switch s := msg.status; {
 	case msg.err != nil:
 		return "could not ask for a sync: " + errString(msg.err)
-	case !s.OK && (s.Reason == "not_github" || s.Reason == "source_not_github"):
+	case noSyncPass(s):
 		return "nothing to sync (" + s.Reason + ")"
 	case !s.Enabled:
 		return "sync requested, but import is off (" + s.Reason + ")"
+	case s.Source != "":
+		return "sync requested from " + s.Source + " — the list updates as it lands"
 	case s.Repo != "":
 		return "sync requested from " + s.Repo + " — the list updates as it lands"
 	default:

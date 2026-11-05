@@ -1829,7 +1829,7 @@ Each project is one row of figures, all of them the daemon's own counts:
 | queued, blocked, done | Tasks in each state; archived tasks are never counted |
 | issues (gh) | Open issues, with the ones imported from GitHub in brackets |
 | chats (wait) | Live chats, with the ones waiting on you in brackets |
-| sync | Issue sync: `✓` healthy, `✗` failing, `—` off or no GitHub remote |
+| sync | Issue sync from the project's issue source, GitHub or Jira: `✓` healthy, `✗` failing, `—` off or no issue source |
 | github | `✓ owner/repo` when the GitHub integration is usable, its reason when not, `—` with no GitHub remote |
 | activity | How long ago the project's tasks, issues or chats last changed |
 
@@ -2016,7 +2016,7 @@ completed](../assets/tui-issues.png)
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so; the footer offers `o` only on an imported issue |
 | `s` | Show or hide the done lane |
 | `R` | Re-read the issues |
-| `S` | Sync this project's issues from GitHub now — what `vincent issue sync` does; offered only on a project with a GitHub integration |
+| `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com |
 | `↑`/`↓` | Move the selection |
 | `pgup`/`pgdown` | Move the selection a screenful |
 | `home`/`g`, `end`/`G` | Select the first or the last row |
@@ -2062,11 +2062,12 @@ A claimed or waiting issue belongs to its handoff: `a` refuses to start a task
 on it until `,` returns it, which asks first because a return withdraws the
 issue's readiness.
 
-`R` only re-reads what vincent already holds. It never asks GitHub for
-anything: imported issues are refreshed on the daemon's reconciler tick. `S`
-is the request to GitHub: it asks the daemon to sync the project now, and that
-sync also sweeps the open issues GitHub no longer lists — closing the ones
-closed there and deleting the ones deleted there, which the reconciler tick
+`R` only re-reads what vincent already holds. It never asks the issue source
+for anything: imported issues are refreshed on the daemon's reconciler tick.
+`S` is the request to the project's issue source, GitHub or Jira: it asks the
+daemon to sync the project now, and that sync also sweeps the open issues the
+source no longer lists — closing the ones closed there and deleting the ones
+deleted there, which the reconciler tick
 otherwise does only once a day. The note under the list says the sync was
 requested, or that the import is switched off; the issues it changes re-list
 on their own as it lands.

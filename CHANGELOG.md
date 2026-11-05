@@ -18,6 +18,16 @@ list with the user-facing context a commit subject cannot carry.
   or handed off into its work. A malformed or non-positive id is a
   `400 validation_failed`, an unknown issue lists nothing, and `archived`
   keeps its default (#931).
+- **Issue sync status names its source, and `S` works for Jira.**
+  `GET`/`POST /v1/projects/{id}/issues/sync` gain `source` (`owner/repo`, or
+  `acme.atlassian.net/PROJ` for Jira) and `provider_name` (`GitHub`, `Jira`),
+  and `vincent issue sync` prints them as `provider` and `source` rows above
+  `repo`; the MCP `project_issue_sync_status` tool documents both. The TUI
+  issues list's `S` now offers a sync for a Jira-bound project too: it is
+  shown once the project's sync status has loaded and names something to
+  sync, rather than only on a project with a GitHub integration, and it is
+  hidden on a project with no issue source. GitHub output is otherwise
+  unchanged (task 142.14, #910).
 - **Find an issue by any tracker reference.** `GET /v1/issues` takes
   `remote_key` — `142` for a GitHub issue, `PROJ-12` for a Jira one,
   case-insensitive — and `source=jira`; `vincent issue ls` gains

@@ -57,6 +57,32 @@ func TestIssueSyncRows(t *testing.T) {
 	}
 }
 
+// TestIssueSyncRowsNameTheSource: the provider and source rows print the
+// daemon's renderings (task 142.14), a dash for a project with none, and
+// the help no longer promises GitHub alone.
+func TestIssueSyncRowsNameTheSource(t *testing.T) {
+	out := joinRows(issueSyncRows(apiclient.IssueSyncStatus{
+		Enabled: true, Provider: "jira", ProviderName: "Jira", Source: "acme.atlassian.net/PROJ", Reason: "pending",
+	}, true))
+	for _, want := range []string{"provider\tJira", "source\tacme.atlassian.net/PROJ", "repo\t-"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("jira status does not show %q:\n%s", want, out)
+		}
+	}
+	if p, src, r := strings.Index(out, "provider\t"), strings.Index(out, "source\t"), strings.Index(out, "repo\t"); p >= src || src >= r {
+		t.Errorf("provider and source are not above repo:\n%s", out)
+	}
+	out = joinRows(issueSyncRows(apiclient.IssueSyncStatus{Provider: "none", Reason: "source_not_github"}, false))
+	for _, want := range []string{"provider\t-", "source\t-"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("none status does not show %q:\n%s", want, out)
+		}
+	}
+	if short := newIssueSyncCmd().Short; strings.Contains(short, "GitHub") {
+		t.Errorf("issue sync's help still names GitHub: %q", short)
+	}
+}
+
 // TestIssueSyncDoctorRows: doctor's GitHub row lists each project's sync
 // health beside the credential check.
 func TestIssueSyncDoctorRows(t *testing.T) {
