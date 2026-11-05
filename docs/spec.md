@@ -147,6 +147,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 36 | Issues pillar | *Added 2026-10-02 (task 130, issue #659). This row **records a decision ahead of its code**, by the author's explicit exception to the same-pull-request rule (task 130 decision 13); it is true once task 130.1–130.18 (issues #660–#677) land, and until then the system is as rows 11 and 26 describe it.* **vincent owns issues; GitHub is a source it imports from and syncs state with.** Each project has an issue set in SQLite, served over REST, SSE, the CLI, MCP and the TUI like tasks and chats. An issue has a global integer id (no per-project number), a title, a description, labels from a per-project catalogue, a `kind` and a local `priority`; its state is `open` or `closed` with a `close_reason` (`completed`, `not_planned`, `duplicate`), and whether it is being worked on is derived from its root tasks, never stored. A task is created **from** an issue with `issue_id`, keeping a pointer and a creation-time snapshot, and fan-out lanes inherit both. An imported issue's source is a row in `issue_remotes` keyed by GitHub's `node_id`, and sync stores the repository each project is bound to. On a GitHub-based project open issues are imported on the `github.poll_interval` tick; **state is two-way**, with GitHub winning a true conflict, while title, body, labels, assignees, milestone and comments are a **read-only mirror**, and issues created in vincent are never pushed. Only a **human's** state change on an imported issue is written back, through a crash-safe outbox; an MCP- or step-originated one is refused (`forge_write_needs_human`) and nothing closes an issue automatically, so row 11 is kept. `github_issue` on `POST /v1/tasks`, `vincent task add --github-issue` and a trigger's `action.github_issue` are **removed**, a breaking change for API clients and trigger files. Supersedes or departs from, each by name in task 130: task 035 decision 2 (the `?workflow=` prefill and the `github_issue` create path; the one daemon-side mapping is kept), decision 4 for the new-task form only, decision 5 (repository identity is now stored), decision 6 and §12.3's "no call until a human opens the issue picker" (standing per-project issue traffic), decision 7 (prefill retargeted to a vincent issue), and decision 10 for issue state and for re-reading the issue entity; §12.3's "no `ETag`/`If-Match`" (issue `PATCH` requires `version`); task 073 decision 5 (issue descriptions render as Markdown); migration 0016's "a later route joins the table without a migration". Keeps task 035 decisions 3, 8 and 9, task 068 decision 1 and task 069 decision 3 (§5.3, §8.4, §12.3, §13, §14, §15 are amended by each item in its own pull request). *Narrowed 2026-10-24 (task 137 decision 6), ahead of its code — true once task 137.7 lands; see row 38:* "only a human's state change is written back" and "nothing closes an issue automatically" hold for every caller **without a grant**. A granted handoff's change to an imported issue is written back through the same outbox under the actor `handoff`, and task 068 decision 1 and task 069 decision 3, kept above, are narrowed by task 137 the same way. Lanes stay derived: a handoff's progress is a derived marker on a `hand_off` issue, never an issue state *Now true 2026-10-28 (task 137.7, issue #840):* and the mirrored thread is narrowed the same way — a granted handoff's comment on an imported issue is stored as `handoff` and posted to GitHub; a human's is still refused `issue_mirrored` |
 | 37 | Project as root | *Added 2026-10-04 (task 132, issue #694). This row **records a decision ahead of its code**, by the author's explicit exception to the same-pull-request rule (task 132 decision 14); it is true once task 132.1–132.17 (issues #695–#711) land, and until then the system is as §15 describes it.* **The TUI holds exactly one selected project; every project-bearing view shows only that project, and the project overview is the only multi-project view.** The selection is client-side TUI view state, never daemon state, so two TUIs may watch different projects; the daemon, the REST/SSE API, the CLI and MCP stay installation-wide, and the daemon changes only to add per-project counts. Attention stays cross-project on purpose: a badge counts attention tasks in other projects, the bell rings for every project, and `!` switches project when the selected one has nothing left. The overview replaces §15 view 4 (Projects) in place, keeping its management keys, so there are still thirteen views. Supersedes or departs from, each by name in task 132: task 130's "the cross-project TUI navigation is kept" and its decision 16.1 (the issues list is cross-project); task 009's `[project, workflow]` default (the `project` level of `tui.board.group_by` is deprecated, the default becomes `[workflow]`); task 067 decision 6 (the chats board groups by project); task 052.6 and §15 view 7 (pull requests across projects); task 096 decision 14 (the triggers takeover is filtered client-side; decision 8, trigger files are global, is kept); §15's attention clause (refined, not dropped); §15 view 4 and task 020 decision 1 (replaced in place by the overview); the 2026-10-02 `NOT_PLANNED` closures of #637, #640, #649, #650 and #657. Keeps task 129 decision 4, task 054 decision 1 and task 009 decision 1 (§12.3, §13.2, §15 are amended by each item in its own pull request) |
 | 38 | Handoff pillar | *Added 2026-10-24 (task 137). This row **records a decision ahead of its code**, by the author's explicit exception to the same-pull-request rule (task 137 open question 5); it is true once task 137.2–137.15 land, and until then the system is as rows 11, 33 and 36 describe it.* **Vincent owns the state of a handoff; the admin's workflow owns what it does.** A workshop task leaves a **delivery** — a `kind` (`change`, `reply` or `none`), a title, a Markdown body, a summary and the verified `head_sha` — recorded by `vincent task deliver`, or implicit from the task when it never calls it, replacing the resolve workflows' `vincent-delivered/` file convention. An issue may carry many tasks while it is in progress (task 134's one main worktree, queued main tasks and merged-back side tasks), and it moves to `hand_off` only when nothing is running and its latest delivery is **ready**: automatically for a `hand_off: auto` workflow (the default, and the old behaviour), only by `vincent task deliver --ready` for `hand_off: explicit`, or by a human's `vincent issue ready` (and back with `unready`). Finished work that is not ready leaves the issue `in_progress`, marked `idle`. A **handoff** is a record that claims a set of open `hand_off` issues in one project, each with its delivery snapshotted, and is executed by an ordinary root task running a `role: handoff` workflow, which sees its items as `.Handoff` and `$VINCENT_HANDOFF_FILE`; an issue is in at most one live handoff, and while claimed it takes no new task except from the handoff's own task (`409 issue_in_handoff`). Each item ends **delivered** (closed with a reason, or left open and out of later selections), **returned** (claim released and readiness withdrawn, optionally with a follow-up on the issue's latest main-role task, so the issue goes back to `in_progress`), **waiting** (it outlives the task and resolves itself as delivered when the issue closes, by any actor) or **released**, and every item still unresolved when the task settles is released. The handoff has no state machine of its own and adds no issue state and no lane: a `hand_off` issue carries a derived marker, `pending`, `claimed`, `waiting` or `delivered`. A handoff is started by a human (TUI, CLI), by a trigger's `start_handoff`, or by an agent over MCP with no grant. **Automated forge writes need a grant a human gave**: a closed set of capabilities (`issue.comment`, `issue.close`, `pull.create`, `pull.comment`, `pull.merge`, `pull.close`, `checks.rerun`) given by a human's keypress or by a trigger file only a human arms, checked by one guard over issue and pull-request writes against the caller's handoff task and its items, and written back through task 130.10's outbox under a new actor, `handoff`. Vincent ships no merge-train, review or merge step and no target adapter beyond GitHub; everything else a handoff does is a command step in the admin's workflow. Narrows, each by name in task 137: row 11 and task 068 decision 1 (nothing on the step path reaches GitHub without a grant), task 130 decision 10 (a third, granted writer) and task 069 decision 3 (pull-request tools on a granted handoff's per-step MCP endpoint only); a step's ungranted `vincent github pr` write is refused, a breaking change. Amends task 134 decision 2 and narrows its decision 19 (`hand_off` is ready work, not any done work), and narrows task 130 decision 5 while a handoff claims the issue. Keeps task 096 decision 1, task 130 decision 3 and task 134 decisions 1 and 10 (§5, §8, §12, §13, §15, §16 are amended by each item in its own pull request) |
+| 39 | Jira issue sync | *Added 2026-11-05 (task 142.12, issue #908; task 142 decision 10).* **Jira Cloud is the one native non-GitHub issue provider** (task 142 decisions 1 and 8): a project bound to a Jira site and project key (§5.6) imports that project's issues into its issue set through a native Jira Cloud REST v3 client, `internal/jira`, behind the provider seam `internal/issuesource` (task 142 decision 2) — at parity with task 130's GitHub import for reading: initial import, incremental re-reads, the sweep, the comment mirror and rate-limit backoff. Trigger sources stay generic: there is no `type: jira` trigger, and task 096 decision 2 is departed from for issue sync only. The credential comes only from the variables `jira.user_env` and `jira.token_env` name, read per request and never stored, logged or echoed (decision 4). Jira wins on read: state, close reason, title, body and labels follow Jira, `kind` is seeded once, and priority stays local (decision 9). A Jira issue that disappears is `missing`, never deleted; a restricted-visibility comment is never mirrored; and a Jira label change arriving by sync is untrusted on `type: issues` triggers, where GitHub's is trusted. Write-back to Jira is not part of this row's first delivery: the outbox keeps Jira rows at `no_client` until task 142.13 (#909). Cloud only; Data Center, OAuth and scoped API tokens are out (decision 7) (§5.6, §12.3, §13.2, §13.4, §14, §16) |
 
 ## 4. Architecture
 
@@ -1438,6 +1439,27 @@ amendment of the same date). `source_not_github` now means an explicit
 `none` only, and is derived when read — a project resolving to `none` has
 no sync row, and `github` pinned on a non-github.com origin likewise reads
 `not_github` without one.
+
+*Amended 2026-11-05 (task 142.12, issue #908).* Jira is an importing
+provider (§3 row 39). A Jira remote's `remote_key` is the Jira issue **id**,
+which survives a move; `repo` holds the project key and `number` the key's
+numeric suffix, and `url` is `{site}/browse/{KEY}`. State and close reason
+come from `internal/jira/jiramap` (closed iff the status category is `done`);
+bodies and comments are rendered from Jira's rendered HTML; `kind` is seeded
+from the issue type on first import only; the assignee is kept in
+`remote_json` only and never fills a prefill field. An issue whose Jira
+project changed is `moved`, with its new browse URL, and its `repo`/`number`
+are rewritten to the new key. An issue a sweep cannot read — deleted,
+forbidden, archived, or outside the binding's narrowing JQL — is marked
+`missing` and **never deleted** (Jira answers 404 to deleted and forbidden
+alike), and returns to live when it reappears. A comment with a
+`visibility` restriction is never mirrored, with no knob; a mirrored comment's
+`remote_key` is its Jira comment id and its author the display name. The
+project's Jira project **id** is recorded on its sync row on the first
+successful pass, and a later pass that resolves the bound key to a different
+id stops with `binding_changed` and re-keys nothing (task 142 decision 13.6);
+a rebind deletes the row and so starts over. Write-back of a Jira issue's
+state and comments is not yet wired: their outbox rows wait `no_client`.
 
 *Amended 2026-10-03 (task 130.16, issue #675; task 130 decision 24).* The
 **discussion thread** exists. An issue's comments are listed oldest first and
@@ -8737,6 +8759,24 @@ a github.com remote, `none` otherwise.
 
 A negative `github.poll_interval` is now refused at load, as `jira`'s is.
 
+*Amended 2026-11-05 (task 142.12, issue #908).* The Jira source is wired, so
+a Jira-bound project with its credential set no longer reports `no_client`
+on its sync row. The client reads the credential variables on every request
+and never caches, logs or returns them; the `Authorization` header and the
+token are redacted from every error string. It lists only through
+`GET /rest/api/3/search/jql`, never the retired `/search`: the initial import
+walks `project = <id> AND statusCategory != Done [AND (<jql>)] AND id > <cursor>
+ORDER BY id ASC`, resuming from the row's `import_cursor`, and an incremental
+pass asks for `updated >=` the watermark less three minutes. A tick reads at
+most 500 issues and resumes on the next. The sweep reads the issues open here
+in bulk through `issue/bulkfetch` when the source offers it. Failures map onto
+the sync row's reasons: 401 `unauthorized`, 403 `forbidden`, 404 on the bound
+project `not_found`, 429 `rate_limited` with `rate_limited_until` taken from
+`Retry-After` (else `X-RateLimit-Reset`), a failed call `unreachable`, an unset
+variable `no_credential`. A 401 or 403 ends the pass with no fast retry. The
+write-back drain still has no Jira source, so Jira outbox rows keep waiting
+`no_client` until task 142.13.
+
 *Amended 2026-08-29 (task 055).* This was the daemon's **first** standing
 outbound network traffic when it landed, and that sentence read as though it
 were the only one. It is now the first that fires for a *subset* of installs:
@@ -10606,6 +10646,25 @@ GET    /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8, issue #66
                                         daemon: `owner/repo` or `<site host>/<PROJECTKEY>`,
                                         and `GitHub` or `Jira`; both absent for none. The
                                         reason vocabulary is 142.7's, unchanged
+                                        *Amended 2026-11-05 (task 142.12, issue #908):* also
+                                        `binding_changed`, a Jira row whose bound key now
+                                        resolves to another Jira project id, and the Jira
+                                        client's failure reasons (unauthorized, forbidden,
+                                        not_found, rate_limited, unreachable); a Jira row
+                                        with its credential set no longer says no_client
+GET    /v1/projects/{id}/jira           *Added 2026-11-05 (task 142.12, issue #908; task 142
+                                        open question 7).* → { enabled, available, reason,
+                                        message?, site?, project_key?, project_id?,
+                                        server? {version, deployment_type},
+                                        account? {display_name} }. The Jira probe: asks
+                                        serverInfo, myself and the bound project in that order
+                                        and answers the first failure — not_jira (no call),
+                                        disabled (no call), no_credential, unreachable,
+                                        unauthorized, forbidden, not_found, rate_limited,
+                                        bad_request, bad_response. A read that stores
+                                        nothing and never syncs; it never carries the token,
+                                        the user variable's value or an Authorization header.
+                                        Read-only MCP tool `project_jira` (§13.4)
 POST   /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8).* {}. Sync now: records
                                         the request and wakes the importer → **202** with the
                                         status body above, as of the request. With a switch
@@ -13119,7 +13178,9 @@ CREATE TABLE issue_sync_state (        -- one row per project the importer polle
   requested_at       TEXT,                      -- a pending "sync now"
   comment_watermark  TEXT,                      -- the comment pass's own (task 130.16, migration 0041)
   comment_since      TEXT,
-  comment_etag       TEXT NOT NULL DEFAULT ''
+  comment_etag       TEXT NOT NULL DEFAULT '',
+  remote_project_id  TEXT,                      -- the provider's id of the bound project, sticky (task 142.12, migration 0053)
+  import_cursor      TEXT NOT NULL DEFAULT ''   -- an id-ordered initial import's resume point; '' otherwise
 );
 
 CREATE TABLE issue_sync_outbox (       -- an imported issue's state write-back (task 130.10, migration 0039)
@@ -13340,6 +13401,15 @@ of `task_id`, cascading with its issue (§13.1 says why it is a second table).
 `issues.created_by_task_id` is `tasks.created_by_task_id` for an issue: the task
 whose agent step filed it over MCP, `SET NULL` so deleting that task leaves the
 issue it filed. The 24-hour prune (§17) covers both key tables.
+
+*Amended 2026-11-05 (task 142.12, issue #908, migration 0053).*
+`issue_sync_state` gains `remote_project_id`, the provider's stable id of the
+bound project recorded on the first pass that resolves it — NULL for every
+GitHub row, whose sticky key stays `repo` — and compared on every later pass,
+a mismatch stopping sync with `binding_changed`; and `import_cursor`, the
+resume point of an initial import ordered by id (Jira's `id > cursor`), empty
+when none is under way or the source resumes by time. A rebind deletes the
+row, which resets both.
 
 *Added 2026-10-02 (task 130.8, issue #667, migration 0038).* `issue_sync_state`
 is the importer's per-project bookkeeping (§12.3): the bound repo, the
@@ -18143,6 +18213,13 @@ the whole of the posture, not a set of tips.
   identity vincent can verify: a `command` source's trust is whatever its
   script filters, an `http` source's is its signature, and a `schedule`'s is
   the file itself — nobody outside the machine can make a clock strike.
+  *Amended 2026-11-05 (task 142.12, issue #908; task 142 open question 11):*
+  on a `type: issues` trigger the same table is read for `by: sync` events,
+  and it is provider-aware. The `labeled`/`unlabeled` exemption was verified
+  against GitHub's role table only; on Jira a label is an ordinary field any
+  editor of the issue may change, so a Jira issue's label change by sync is
+  untrusted and goes through `allowed_actors` — on a trigger that names none
+  it never fires. GitHub's exemption is unchanged.
 - **Prompt injection becomes remote.** An issue body, a pull-request title or a
   CI log reaches a trigger's templates as `.Event`. Whatever the file renders
   into a title, description, field, prompt or branch reaches an agent. The

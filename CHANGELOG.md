@@ -75,8 +75,31 @@ list with the user-facing context a commit subject cannot carry.
   stamped `jira` on that interval: `no_credential` while either variable is
   missing, then `no_client` until the Jira client lands; nothing is fetched
   from Jira yet (task 142.7, #903).
+- **Jira issues are imported.** A project bound to a Jira Cloud site and
+  project key now imports that project's open issues into its issue set and
+  keeps them in sync on `jira.poll_interval`: titles, bodies, labels, state
+  and close reason follow Jira, comments are mirrored read-only, and a tick
+  reads at most 500 issues and resumes on the next. An issue Jira no longer
+  shows — deleted, archived, forbidden or outside the binding's JQL — is
+  marked `missing` and never deleted; a moved issue is marked `moved` and
+  takes its new key; restricted-visibility comments are never mirrored. The
+  sync row reports `unauthorized`, `forbidden`, `not_found`, `rate_limited`
+  (waiting out `Retry-After`), `unreachable`, and the new `binding_changed`
+  when the bound key starts resolving to a different Jira project. Writing
+  back to Jira is not wired yet: those rows keep waiting `no_client`
+  (task 142.12, #908).
+- **Check a Jira binding.** `GET /v1/projects/{id}/jira`,
+  `vincent jira status` and the MCP tool `project_jira` ask the Jira site,
+  the credential and the bound project in turn and report the first that
+  fails. None of them ever returns the API token (#908).
 
 ### Changed
+
+- **A Jira label change no longer bypasses `allowed_actors`.** On a
+  `type: issues` trigger, a `labeled` or `unlabeled` arriving by `sync` from
+  a Jira-imported issue now needs a listed author, like a close or reopen; a
+  trigger without `allowed_actors` never fires on one. GitHub label changes
+  stay trusted (#908).
 
 - **This repository's `github-resolve-issue-dag` no longer stops for a person
   to approve the plan.** The `plan-gate` manual step is gone: a task whose plan

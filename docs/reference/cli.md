@@ -578,7 +578,8 @@ rebind. The previous source's imported issues are kept, are marked
 only `--jira-jql` or `--jira-mapping` is not a rebind. A project bound to
 `none` reports the sync reason `source_not_github`. One bound to `jira` is
 synced on [`jira.poll_interval`](configuration.md#jira), and reports
-`no_credential` or, until the Jira client ships, `no_client`.
+`no_credential` until both credential variables are set; `vincent jira status`
+checks the binding.
 
 ```sh
 vincent project edit 1 --issue-source jira --jira-site https://acme.atlassian.net --jira-project ENG

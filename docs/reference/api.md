@@ -677,6 +677,7 @@ See [`vincent gc`](cli.md#vincent-gc) for the command over these endpoints.
 | `GET` | `/v1/projects/{id}/branches` | Its local git branches, each with the working tree holding it |
 | `GET` | `/v1/projects/{id}/github` | Can this project's GitHub issues be read? |
 | `GET` | `/v1/projects/{id}/github/issues` | Its issues, newest first — `?state=`, `?limit=` |
+| `GET` | `/v1/projects/{id}/jira` | Can this project's Jira binding be read? |
 | `GET` | `/v1/projects/{id}/github/pulls` | Its pull requests, newest first — `?state=`, `?limit=`, `?workflow=` |
 | `GET` | `/v1/projects/{id}/issues/sync` | How its issue sync is going |
 | `POST` | `/v1/projects/{id}/issues/sync` | Sync now — `202` with the same body |
@@ -882,6 +883,42 @@ on `POST /v1/tasks`, finding its id with
 `POST /v1/tasks`, were removed (tasks 130.11 and 130.13); the parameter is
 ignored now, like any unknown one.
 
+### Jira probe
+
+`GET /v1/projects/{id}/jira` is the Jira counterpart of the GitHub probe. It
+asks Jira three questions on demand, in order: `serverInfo` (is the site
+reachable), `myself` (is the credential accepted) and the bound project (does
+it exist and can the credential see it). It stores nothing and never syncs:
+
+```json
+{ "enabled": true, "available": true, "reason": "",
+  "site": "https://acme.atlassian.net", "project_key": "ENG", "project_id": "10000",
+  "server": { "version": "1001.0.0", "deployment_type": "Cloud" },
+  "account": { "display_name": "Ada Lovelace" } }
+```
+
+`enabled` is [`jira.enabled`](configuration.md#jira). `project_id`, `server` and
+`account` appear once the check that answers them has passed. When `available`
+is false, `reason` names the first check that failed and `message` says it as
+a sentence:
+
+| `reason` | Meaning |
+|---|---|
+| `not_jira` | The project's [issue source](#issue-source) does not resolve to Jira. No call is made |
+| `disabled` | `jira.enabled` is false. No call is made |
+| `no_credential` | The variable named by `jira.user_env` or `jira.token_env` is unset in the daemon's environment |
+| `unreachable` | The site could not be reached |
+| `unauthorized` | Jira rejected the credential (401) |
+| `forbidden` | The credential may not read the project (403) |
+| `not_found` | The bound project does not exist or is not visible to the credential |
+| `rate_limited` | Jira is rate limiting the credential |
+| `bad_request` | Jira refused the request |
+| `bad_response` | The answer arrived and did not parse |
+
+Neither the body nor any error this route writes carries the API token, the
+user variable's value or an `Authorization` header. `vincent jira status` is
+the [CLI](cli.md) for it, and `project_jira` the MCP tool.
+
 ### Issue sync
 
 The daemon syncs each project's issues into its [backlog](#issues) from the
@@ -915,7 +952,7 @@ the one its `origin` names until then. `last_synced_at` is the last successful
 sync and is absent when none has been. `import_complete` turns `true` once the
 first import of the open issues has finished; it runs at most 500 issues a tick
 and resumes where it stopped. `rate_limited_until`, present only while backing
-off, is GitHub's reset time: no call is made, sync-now included, until then.
+off, is the provider's reset time (GitHub's reset, or Jira's `Retry-After`): no call is made, sync-now included, until then.
 When `ok` is false, `reason` says why:
 
 | `reason` | Meaning |
@@ -927,9 +964,10 @@ When `ok` is false, `reason` says why:
 | `not_github` | The issue source is derived and `origin` is missing or not a github.com repository, or it is pinned to `github` on such an origin. Such a project has no sync row — one whose `origin` moves off github.com loses the row it had on the next pass — and the reason is derived when it is read |
 | `source_not_github` | The project's [issue source](#issue-source) is pinned to `none`. It has no sync row either |
 | `no_credential` | A Jira project, and the variable named by `jira.user_env` or `jira.token_env` is unset |
-| `no_client` | The daemon has no client wired for the provider — for Jira, every project with its credential set, until the Jira client ships |
+| `no_client` | The daemon has no client wired for the provider |
+| `binding_changed` | A Jira project whose bound project key now resolves to a different Jira project id than the one recorded on its first successful sync. Sync stops and the issues are never re-keyed; re-bind the project to start over |
 | `origin_changed` | `origin` now names a different repository than the one the project is bound to. Sync stops and is never re-keyed; a rename GitHub redirects is not this |
-| any [GitHub reason](#github-issues) | The last attempt failed with it — `rate_limited`, `no_credential`, `unauthorized`, `unreachable`, … |
+| any [GitHub reason](#github-issues) or [Jira reason](#jira-probe) | The last attempt failed with it — `rate_limited`, `no_credential`, `unauthorized`, `forbidden`, `not_found`, `unreachable`, … |
 
 Tasks created from a GitHub issue before the issue set existed (task 035's
 `github_issue` snapshots) were backfilled into it when the daemon was upgraded:

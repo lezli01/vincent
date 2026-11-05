@@ -88,7 +88,7 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [x] **142.11** ([#907](https://github.com/lezli01/vincent/issues/907)) The
   fake Jira corpus, an `httptest` leg and a `cmd/fakejira` server.
   ✓ 2026-11-03
-- [ ] **142.12** ([#908](https://github.com/lezli01/vincent/issues/908)) The
+- [x] **142.12** ([#908](https://github.com/lezli01/vincent/issues/908)) The
   `internal/jira` client and the importer for Jira: listing, initial import,
   sweep, comments, rate limits and environment credentials; spec §3 row 39
   (decision 10). The importer writes the Jira project key in `repo` and the
@@ -97,6 +97,11 @@ lists only the hard dependencies the parent records as "Blocked by".
   and adds the `binding_changed` reason — moved here from 142.7, since this
   is the id's first writer (decision 13.6).
   Depends: 142.7, 142.5, 142.2, 142.10, 142.11.
+  ✓ 2026-11-05 — also the `GET /v1/projects/{id}/jira` probe (open question
+  7), `vincent jira status` and the `project_jira` MCP tool; settles open
+  questions 4, 5 and 11 and decision 12.4's question. The outbox is not wired
+  to the Jira source: Jira write-back rows keep waiting `no_client` until
+  142.13 (#909).
 - [ ] **142.13** ([#909](https://github.com/lezli01/vincent/issues/909)) The
   outbox for Jira (decision 3): transitions with resolution, ADF comments,
   echo handling. Depends: 142.12.
@@ -116,7 +121,9 @@ lists only the hard dependencies the parent records as "Blocked by".
   the trust rule unchanged, and this repository's `github-*` workflows carry a
   GitHub-only header note — there are no Jira variants. The trusted
   `labeled`/`unlabeled` exemption is verified for GitHub only (open
-  question 11).
+  question 11). *Note 2026-11-05:* open question 11 is settled by 142.12
+  (#908) — the exemption no longer reaches Jira, and `update-triggers` item 21
+  and the triggers skill say so.
 - [ ] **142.18** ([#914](https://github.com/lezli01/vincent/issues/914)) A
   scripted end-to-end gate on all three platforms in CI. Depends: 142.13.
 - [ ] **142.19** ([#915](https://github.com/lezli01/vincent/issues/915)) A new
@@ -409,7 +416,8 @@ numbered so code can cite it.
    link line, never doubling the prefix. A Jira snapshot with no key prefills
    the local shape. `github_issue`, `assignee` and `milestone` stay
    GitHub-only; whether a Jira assignee or milestone should fill them is a
-   question for 142.12, which stores them.
+   question for 142.12, which stores them. *Settled 2026-11-05 by 142.12
+   (#908):* they do not — the Jira assignee is kept in `remote_json` only.
 
 ### 13. Issue sync on its own loop, per bound provider (142.7, #903)
 
@@ -521,10 +529,12 @@ explicitly. A "proposed default" is open until that issue.
 3. **May a project switch its issue source after imports?** *Settled
    2026-11-03 (#902), as proposed:* yes, as an explicit rebind at PATCH time.
    Earlier imports stay, marked `remote_status: missing` (decision 5).
-4. **Sweep 404: mark-only, or delete after a confirming probe?** *Proposed
-   default, open until #908:* mark-only (decision 9.8).
-5. **Mirror restricted-visibility comments?** *Proposed default, open until
-   #908:* skip them (decision 9.6).
+4. **Sweep 404: mark-only, or delete after a confirming probe?** *Settled
+   2026-11-05 by #908:* mark-only (decision 9.8). An absent, archived or
+   JQL-excluded issue is `missing`, never deleted, and live again when it
+   reappears.
+5. **Mirror restricted-visibility comments?** *Settled 2026-11-05 by #908:*
+   no — they are always skipped, with no config knob (decision 9.6).
 6. **The Jira prefill title, and a `jira_issue` field?** *Settled by the
    author 2026-11-03: `PROJ-12 <title>`, no `jira_issue` field (decision 12).*
    Was the proposed default: the prefill title is `PROJ-12 <title>`, and there is no
@@ -557,6 +567,10 @@ explicitly. A "proposed default" is open until that issue.
     depending on the permission scheme. 142.17 left the behaviour as it
     was, because a trust change is out of its scope. This should be settled
     before the importer (142.12, #908) delivers Jira label changes.
+    *Settled 2026-11-05 by #908:* not trusted. On `type: issues` a Jira
+    `labeled`/`unlabeled` by `sync` goes through `allowed_actors` like any
+    other sync action; GitHub's exemption is unchanged. The trust table is
+    provider-aware (`syncUntrusted` in `internal/trigger/definition.go`).
 
 ## Facts carried unverified
 
