@@ -70,6 +70,13 @@ func TestTableRowsEnumeratesEveryMigratedTable(t *testing.T) {
 		if name == "schema_migrations" {
 			continue
 		}
+		// Migration 0053 seeds its one cursor row (task 143.3).
+		if name == "issue_archive_cursor" {
+			if n != 1 {
+				t.Errorf("fresh database: issue_archive_cursor = %d rows, want its seeded 1", n)
+			}
+			continue
+		}
 		if n != 0 {
 			t.Errorf("fresh database: %s = %d rows, want 0", name, n)
 		}
