@@ -173,6 +173,37 @@ func TestShippedRegistryPassesTheChecker(t *testing.T) {
 	}
 }
 
+// TestFixedMeaningsNameNoProviderTheirRowDoesNot holds a fixed key's meaning
+// to its registry row on the one point an override's warning can get wrong:
+// keymap builds "… no longer does <meaning>" from keymap.fixed, so a meaning
+// that names GitHub or Jira where the row has gone provider-neutral tells a
+// Jira-bound user the key synced GitHub (review F2 of 787's train). The two
+// texts are otherwise free to differ — a meaning is a short form of a label.
+func TestFixedMeaningsNameNoProviderTheirRowDoesNot(t *testing.T) {
+	meanings := map[string]string{}
+	for _, f := range keymap.FixedKeys() {
+		meanings[string(f.Surface)+"\x00"+f.Key] = f.Meaning
+	}
+	for _, b := range bindings {
+		if b.key == "" || b.op != "" {
+			continue
+		}
+		surface := string(b.context)
+		if b.scope == scopeGlobal {
+			surface = string(keymap.Global)
+		}
+		meaning, ok := meanings[surface+"\x00"+b.key]
+		if !ok {
+			continue
+		}
+		for _, provider := range []string{"GitHub", "Jira"} {
+			if strings.Contains(meaning, provider) && !strings.Contains(b.label, provider) {
+				t.Errorf("%s %q: keymap meaning %q names %s, the row's label %q does not", surface, b.key, meaning, provider, b.label)
+			}
+		}
+	}
+}
+
 // TestEveryMatchedKeyIsRegistered is the converse 093 left out of reach: every
 // literal key a handler switches on is either a fixed key the catalog records
 // or a key no operation owns by default. A new `case "R":` fails here — it
