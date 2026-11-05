@@ -107,8 +107,7 @@ list with the user-facing context a commit subject cannot carry.
   takes its new key; restricted-visibility comments are never mirrored. The
   sync row reports `unauthorized`, `forbidden`, `not_found`, `rate_limited`
   (waiting out `Retry-After`), `unreachable`, and the new `binding_changed`
-  when the bound key starts resolving to a different Jira project. Writing
-  back to Jira is not wired yet: those rows keep waiting `no_client`
+  when the bound key starts resolving to a different Jira project
   (task 142.12, #908).
 - **Check a Jira binding.** `GET /v1/projects/{id}/jira`,
   `vincent jira status` and the MCP tool `project_jira` ask the Jira site,
