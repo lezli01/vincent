@@ -28,6 +28,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/issuearchive"
 	"github.com/lezli01/vincent/internal/mcp"
 	"github.com/lezli01/vincent/internal/notify"
 	"github.com/lezli01/vincent/internal/release"
@@ -471,6 +472,21 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	notifier.Start(ctx)
 	broker.OnEvent(notifier.OnEvent)
 
+	// The auto-archive of a closed issue's settled tasks (task 143.3, §5.6):
+	// another broker subscriber that only wakes a loop, which reads the
+	// durable events after its own cursor and archives through the runner in
+	// unattended mode. Subscribed here and started beside the runner below,
+	// after recovery, so its start-up replay (§12.4) sees reconciled rows;
+	// archive_tasks_on_issue_close is read per page, so a hot reload governs
+	// the next close.
+	issueArchiver := issuearchive.New(issuearchive.Deps{
+		Store:    st,
+		Archiver: runner,
+		Enabled:  func() bool { return currentConfig().ArchiveTasksOnIssueClose },
+		Logger:   logger,
+	})
+	broker.OnEvent(issueArchiver.OnEvent)
+
 	// The inward signal (§12.3, task 096), wired beside the outward one on
 	// purpose: notify runs a user's argv when a task changes state, a trigger
 	// runs one on an interval — or accepts a signed push, or diffs GitHub —
@@ -714,6 +730,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		return err
 	}
 	sched.Start(ctx)
+	issueArchiver.Start(ctx)
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
