@@ -199,6 +199,11 @@ func renderDoctor(cmd *cobra.Command, w io.Writer, rep *apiclient.DoctorReport, 
 		}
 	}
 	for _, group := range doctorGroups(rep) {
+		if group.quiet && len(group.rows) == 0 {
+			// A group with nothing to say prints nothing at all — the
+			// issue-archive group when its key is off or nothing is held.
+			continue
+		}
 		if err := table(w, []string{group.name, ""}, group.rows); err != nil {
 			return err
 		}
@@ -212,22 +217,25 @@ func renderDoctor(cmd *cobra.Command, w io.Writer, rep *apiclient.DoctorReport, 
 type doctorGroup struct {
 	name string
 	rows [][]string
+	// quiet groups are left out entirely when they have no rows.
+	quiet bool
 }
 
 func doctorGroups(rep *apiclient.DoctorReport) []doctorGroup {
 	return []doctorGroup{
-		{"PATHS", doctorPathRows(rep.Paths)},
-		{"DAEMON", doctorDaemonRows(rep.Daemon)},
-		{"LOG", doctorLogRows(rep.Log)},
-		{"DATABASE", doctorDatabaseRows(rep.Database)},
-		{"AGENTS", doctorAgentRows(rep.Agents)},
-		{"GITHUB", doctorGitHubRows(rep.GitHub)},
-		{"CONTAINER", doctorContainerRows(rep.Container)},
-		{"SKILLS", doctorSkillRows(rep.Skills)},
-		{"UPDATE", doctorUpdateRows(rep.Update)},
-		{"BACKUP", doctorBackupRows(rep.Backup)},
-		{"STORAGE", doctorStorageRows(rep.Storage)},
-		{"TASKS", doctorTaskRows(rep.Tasks)},
+		{name: "PATHS", rows: doctorPathRows(rep.Paths)},
+		{name: "DAEMON", rows: doctorDaemonRows(rep.Daemon)},
+		{name: "LOG", rows: doctorLogRows(rep.Log)},
+		{name: "DATABASE", rows: doctorDatabaseRows(rep.Database)},
+		{name: "AGENTS", rows: doctorAgentRows(rep.Agents)},
+		{name: "GITHUB", rows: doctorGitHubRows(rep.GitHub)},
+		{name: "CONTAINER", rows: doctorContainerRows(rep.Container)},
+		{name: "SKILLS", rows: doctorSkillRows(rep.Skills)},
+		{name: "UPDATE", rows: doctorUpdateRows(rep.Update)},
+		{name: "BACKUP", rows: doctorBackupRows(rep.Backup)},
+		{name: "STORAGE", rows: doctorStorageRows(rep.Storage)},
+		{name: "TASKS", rows: doctorTaskRows(rep.Tasks)},
+		{name: "ISSUE ARCHIVE", rows: doctorIssueArchiveRows(rep.IssueArchive), quiet: true},
 	}
 }
 
@@ -756,6 +764,33 @@ func doctorTaskRows(t apiclient.DoctorTasks) [][]string {
 	}
 	if t.Error != "" {
 		rows = append(rows, []string{"error", t.Error})
+	}
+	return rows
+}
+
+// doctorIssueArchiveRows renders the auto-archive group (task 143.4): one
+// line per held task with its issue and every reason, and one per leftover
+// issue-chat directory. It is information only — nothing here is a Problem —
+// and it returns no rows, so the quiet group is not printed, when the key is off or
+// nothing is held.
+func doctorIssueArchiveRows(ia apiclient.DoctorIssueArchive) [][]string {
+	if !ia.Known {
+		return [][]string{{"state", "unknown — daemon not running"}}
+	}
+	var rows [][]string
+	for _, h := range ia.Held {
+		role := h.Role
+		if role == "" {
+			role = "task"
+		}
+		rows = append(rows, []string{"held", fmt.Sprintf("task %d (issue %d, %s, %s): %s — %s",
+			h.TaskID, h.IssueID, role, h.State, strings.Join(h.Reasons, ", "), h.Title)})
+	}
+	for _, d := range ia.ChatDirs {
+		rows = append(rows, []string{"chat dir", fmt.Sprintf("issue %d, chat %d: %s", d.IssueID, d.ChatID, d.Path)})
+	}
+	if ia.Error != "" {
+		rows = append(rows, []string{"error", ia.Error})
 	}
 	return rows
 }

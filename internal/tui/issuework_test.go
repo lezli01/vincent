@@ -308,3 +308,21 @@ func TestIssueClicksThroughTheRootHitTheDrawnScreen(t *testing.T) {
 		t.Fatalf("a click on Issue at screen row %d left tab %v", y, v.tab)
 	}
 }
+
+// TestIssueWorkArchivedTaskSaysArchivedOnce is review F3: an archived task's
+// state is `archived`, so the row does not repeat it as `archived · archived`.
+func TestIssueWorkArchivedTaskSaysArchivedOnce(t *testing.T) {
+	v := issueFixture()
+	archived := time.Now()
+	v.tasks = append(v.tasks, apiclient.Task{
+		ID: 30, ProjectID: 2, Title: "put away", State: stateArchived, ArchivedAt: &archived,
+	})
+	v.setTab(issueTabWork)
+	out := ansi.Strip(v.render(140, 60))
+	if strings.Contains(out, "archived · archived") {
+		t.Errorf("an archived task says archived twice:\n%s", out)
+	}
+	if !strings.Contains(out, "#30  put away  archived") {
+		t.Errorf("the archived task's row is missing:\n%s", out)
+	}
+}

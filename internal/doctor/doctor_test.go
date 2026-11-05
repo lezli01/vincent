@@ -465,3 +465,27 @@ func TestConfigWarningsAreARowNotAProblem(t *testing.T) {
 		t.Errorf("a config warning changed the problems: %v, was %v", rep.Problems, clean.Problems)
 	}
 }
+
+// TestIssueArchiveIsNeverAProblem is task 143 decision 16: held tasks and
+// leftover chat directories are information, so they leave the closed
+// unhealthy set — and the exit code — alone.
+func TestIssueArchiveIsNeverAProblem(t *testing.T) {
+	rep := &Report{IssueArchive: IssueArchive{
+		Known: true, Enabled: true,
+		Held:     []HeldTask{{TaskID: 1, IssueID: 2, State: "done", Reasons: []string{HoldDirty, HoldLockedByChat}}},
+		ChatDirs: []LeftoverChatDir{{IssueID: 2, ChatID: 3, Path: "/wt/chat-3"}},
+	}}
+	rep.Evaluate()
+	if !rep.Healthy() {
+		t.Errorf("held tasks set the exit code: %v", rep.Problems)
+	}
+}
+
+// TestIssueArchiveUnknownWithoutADaemon: the local report never claims to
+// know which tasks are held, and its lists are empty rather than null.
+func TestIssueArchiveUnknownWithoutADaemon(t *testing.T) {
+	rep := Compose(t.Context(), Options{Dirs: dirs(t), Daemon: Daemon{Status: StatusNotRunning}})
+	if ia := rep.IssueArchive; ia.Known || ia.Held == nil || ia.ChatDirs == nil {
+		t.Errorf("issue_archive without a daemon = %+v", ia)
+	}
+}

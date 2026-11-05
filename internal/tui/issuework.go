@@ -297,7 +297,9 @@ func issueTaskLine(row issueDetailRow, marker string, width int) string {
 		glyph = "·"
 	}
 	state := t.State
-	if t.ArchivedAt != nil {
+	// An archived task's state already says so; the suffix is for a row
+	// whose state is something else (review F3: `archived · archived`).
+	if t.ArchivedAt != nil && t.State != stateArchived {
 		state += " · archived"
 	}
 	if role := issueTaskRole(t); role != "" {

@@ -1,6 +1,6 @@
 # 143 — Auto-archive a closed issue's tasks
 
-**Status:** 🔄 in progress (3/5) · **Opened:** 2026-11-04
+**Status:** 🔄 in progress (4/5) · **Opened:** 2026-11-04
 
 The auto-archive stream of [#925](https://github.com/lezli01/vincent/issues/925):
 when an issue reaches `closed`, by any route, the daemon archives the settled
@@ -29,9 +29,13 @@ Conventions for this file are in [the tasks README](README.md).
   `internal/issuearchive`, wired in `daemon.Run`; its cursor is migration
   0053's one row, seeded at the newest event; decisions 10 and 11 below.
   ✓ 2026-11-05
-- [ ] **143.4** ([#929](https://github.com/lezli01/vincent/issues/929)) A
+- [x] **143.4** ([#929](https://github.com/lezli01/vincent/issues/929)) A
   `vincent doctor` row for settled tasks of closed issues that auto-archive had
-  to skip. Depends: 143.3.
+  to skip. Depends: 143.3. The daemon-only `issue_archive` group
+  (`internal/api/doctorissuearchive.go`) over
+  `Store.ClosedIssueArchiveCandidates`, which shares its predicates with
+  `ArchivableIssueTasks`; the F3 rule shared as `issuearchive.SideWorkHold`;
+  decisions 12–16 below. ✓ 2026-11-05
 - [ ] **143.5** ([#930](https://github.com/lezli01/vincent/issues/930)) An
   acceptance gate proving issue-close auto-archive end to end on all three
   platforms. Depends: 143.3.
@@ -106,7 +110,63 @@ Confirmed by the author on 2026-11-04.
     consistent with decision 4. It is a known leftover; reclaiming it is a
     separate follow-up — a new issue, or an item #929's doctor row reports.
 
+12. **The doctor row lists every candidate, held or not** (143.4, settled
+    2026-11-05). `vincent doctor`'s `issue_archive.held` lists every root
+    the archivable rule's *task-level* predicates cover: the issue is
+    closed, the task is a done or aborted root, and its cutoff (the
+    merge-back cutoff of `ArchivableIssueTasks`) is at or before
+    `closed_at`. Issue-level quiescence does not filter the list; it is a
+    reason. A candidate nothing holds now is listed as `awaiting_retry`,
+    because the worker retries only when an event touches the issue: a dirty
+    worktree cleaned since, an issue closed while the key was off, and an
+    issue closed before the upgrade (decision 7) all stay on the board
+    otherwise. After an upgrade, the tasks of issues closed before it appear
+    here too — intended, since they are exactly what the worker will never
+    act on.
+13. **A closed vocabulary of reasons** (143.4). `dirty` — the task's
+    worktree, or that of an unarchived lane under a fan-out root, has local
+    changes, untracked included (`worktree.Manager.IsDirty`; a missing
+    directory, or the project's own checkout, is not dirty);
+    `project_path_missing` — such a worktree exists but the project's
+    directory does not, which `worktree.Manager.Remove` refuses as
+    `ReasonProjectPathMissing` before git runs, so it is never reported
+    `dirty` (review F2, amended 2026-11-05); `locked_by_chat`
+    — an open linked chat on the task or on any unarchived lane under it
+    (`Store.SubtreeOpenLinkedChatID`), since the cascade archives each lane
+    through the ordinary `Archive` and `RefuseLocked` refuses each (review
+    F1, amended 2026-11-05);
+    `unfinished_lane` — `Store.NonTerminalDescendants`, the predicate
+    behind `UnfinishedDescendantsError`; `issue_not_quiescent` — another
+    root of the issue (one created after the close included) is unsettled,
+    or an issue chat is live; `handoff_claimed` —
+    `Store.IssueHandoffClaimed` (decision 10); `held_for_side_work` — only
+    on an issue main task (merge-backs are not), when a side task or
+    merge-back candidate of the issue carries `dirty`,
+    `project_path_missing`, `locked_by_chat` or `unfinished_lane`, which is review F3, shared with the worker as
+    `issuearchive.IsIssueMain` and `issuearchive.SideWorkHold`;
+    `awaiting_retry` — none of the others. The constants are
+    `doctor.Hold*`.
+14. **Every reason, as a list** (143.4). Each entry carries `reasons: [...]`
+    in `doctor.HoldReasons` order, never one precedence-picked reason, so
+    fixing one never reveals another. `awaiting_retry` appears only alone.
+15. **Leftover issue-chat directories are their own sub-list** (143.4). For
+    each closed issue, the chat `Store.IssueMainWorktreeChatHolder` returns
+    and its directory, while that directory exists, are reported in
+    `issue_archive.chat_dirs`. It is a directory, not a task; a row still
+    claims it, so it is not a gc orphan, and doctor does not reclaim it
+    (decision 11).
+16. **Information, never a problem** (143.4). Held tasks and leftover
+    directories never enter `problems[]`, and `vincent doctor` still exits
+    0; task 006 decision 7's closed unhealthy set is unchanged. The group
+    only reports: it offers no `--fix`, `doctor --fix` gains nothing, and it
+    never archives, forces or deletes — forcing past a dirty worktree stays
+    a human's call. It is computed only with `archive_tasks_on_issue_close`
+    on (empty, and not printed, when the key is off or nothing is held) and
+    is unknown without a daemon. It needs no event, migration or
+    event-vocabulary change: a derived row cannot go stale, and a durable
+    `task.auto_archive_skipped` event stays rejected.
+
 ### Left open
 
 Both questions 143.3 owned are settled: the handoff hold is decision 10, and
-the chat-directory leftover is decision 11.
+the chat-directory leftover is decision 11. 143.4's are decisions 12–16.

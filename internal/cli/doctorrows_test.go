@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
@@ -270,5 +272,60 @@ func TestDoctorBackupRowsRenderTheTimerStatus(t *testing.T) {
 	out = joinRows(doctorBackupRows(apiclient.DoctorBackup{Known: true, Enabled: true, Interval: "24h0m0s", Keep: 7}))
 	if !strings.Contains(out, "none in this directory yet") || strings.Contains(out, "last size") {
 		t.Errorf("a never-succeeded timer rendered wrongly:\n%s", out)
+	}
+}
+
+// TestDoctorIssueArchiveRows (task 143.4): one line per held task with its
+// issue, role, state and every reason, one per leftover chat directory, and
+// nothing at all when the key is off or nothing is held.
+func TestDoctorIssueArchiveRows(t *testing.T) {
+	out := joinRows(doctorIssueArchiveRows(apiclient.DoctorIssueArchive{
+		Known: true, Enabled: true,
+		Held: []apiclient.DoctorHeldTask{
+			{TaskID: 12, IssueID: 3, Title: "fix it", State: "done", Role: "main", Reasons: []string{"dirty", "locked_by_chat"}},
+			{TaskID: 14, IssueID: 3, Title: "loose end", State: "aborted", Reasons: []string{"awaiting_retry"}},
+		},
+		ChatDirs: []apiclient.DoctorLeftoverChatDir{{IssueID: 3, ChatID: 7, Path: "/wt/chat-7"}},
+	}))
+	for _, want := range []string{
+		"held\ttask 12 (issue 3, main, done): dirty, locked_by_chat — fix it",
+		"held\ttask 14 (issue 3, task, aborted): awaiting_retry — loose end",
+		"chat dir\tissue 3, chat 7: /wt/chat-7",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("issue archive rows lack %q:\n%s", want, out)
+		}
+	}
+	for name, ia := range map[string]apiclient.DoctorIssueArchive{
+		"key off":      {Known: true},
+		"nothing held": {Known: true, Enabled: true, Held: []apiclient.DoctorHeldTask{}},
+	} {
+		if rows := doctorIssueArchiveRows(ia); len(rows) != 0 {
+			t.Errorf("%s: rows = %v, want none", name, rows)
+		}
+	}
+	if out := joinRows(doctorIssueArchiveRows(apiclient.DoctorIssueArchive{})); !strings.Contains(out, "unknown — daemon not running") {
+		t.Errorf("an unknown group does not say so:\n%s", out)
+	}
+}
+
+// TestDoctorQuietGroupPrintsNothing: the ISSUE ARCHIVE header is not printed
+// when the group has no rows.
+func TestDoctorQuietGroupPrintsNothing(t *testing.T) {
+	rep := &apiclient.DoctorReport{IssueArchive: apiclient.DoctorIssueArchive{Known: true, Enabled: true}}
+	var b strings.Builder
+	if err := renderDoctor(&cobra.Command{}, &b, rep, nil); err != nil {
+		t.Fatalf("renderDoctor: %v", err)
+	}
+	if strings.Contains(b.String(), "ISSUE ARCHIVE") {
+		t.Errorf("an empty issue archive group was printed:\n%s", b.String())
+	}
+	rep.IssueArchive.Held = []apiclient.DoctorHeldTask{{TaskID: 1, IssueID: 2, State: "done", Reasons: []string{"dirty"}}}
+	b.Reset()
+	if err := renderDoctor(&cobra.Command{}, &b, rep, nil); err != nil {
+		t.Fatalf("renderDoctor: %v", err)
+	}
+	if !strings.Contains(b.String(), "ISSUE ARCHIVE") || !strings.Contains(b.String(), "no problems found") {
+		t.Errorf("a held task is not shown, or became a problem:\n%s", b.String())
 	}
 }

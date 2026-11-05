@@ -321,7 +321,7 @@ func (w *Worker) archiveIssue(ctx context.Context, issueID int64) {
 		log.Warn("issue auto-archive: read archivable tasks", "issue", issueID, "error", err)
 		return
 	}
-	sideRefused := false
+	var hold SideWorkHold
 	for i, id := range ids {
 		if ctx.Err() != nil {
 			return
@@ -344,12 +344,12 @@ func (w *Worker) archiveIssue(ctx context.Context, issueID int64) {
 		if err != nil {
 			if !errors.Is(err, store.ErrNotFound) && ctx.Err() == nil {
 				log.Warn("issue auto-archive: read task", "task", id, "issue", issueID, "error", err)
-				sideRefused = true
+				hold.Refuse(false)
 			}
 			continue
 		}
-		main := isIssueMain(t)
-		if main && sideRefused {
+		main := IsIssueMain(t.IssueWorktree, t.WorkflowName)
+		if hold.Holds(main) {
 			log.Info("issue auto-archive: main task held for refused side work", "task", id, "issue", issueID)
 			continue
 		}
@@ -372,9 +372,7 @@ func (w *Worker) archiveIssue(ctx context.Context, issueID int64) {
 		}
 		log.Warn("issue auto-archive: task not archived",
 			"task", id, "issue", issueID, "reason", refusalReason(err), "error", err)
-		if !main {
-			sideRefused = true
-		}
+		hold.Refuse(main)
 	}
 }
 
@@ -406,12 +404,37 @@ func (w *Worker) stillArchivable(ctx context.Context, issueID, id int64) (still,
 	return slices.Contains(ids, id), true
 }
 
-// isIssueMain reports whether t holds the issue's main worktree as a main
-// task — the group ArchivableIssueTasks orders last. A merge-back carries
-// the main role too but is side work for ordering, exactly as the query
-// treats it.
-func isIssueMain(t *store.Task) bool {
-	return t.IssueWorktree == store.IssueWorktreeMain && t.WorkflowName != workflow.MergeBackName
+// IsIssueMain reports whether a task with this issue_worktree role and
+// workflow holds the issue's main worktree as a main task — the group
+// ArchivableIssueTasks orders last. A merge-back carries the main role too
+// but is side work for ordering, exactly as the query treats it. Doctor's
+// issue_archive row (#929) asks the same question through this function.
+func IsIssueMain(role, workflowName string) bool {
+	return role == store.IssueWorktreeMain && workflowName != workflow.MergeBackName
+}
+
+// SideWorkHold is the review-F3 rule, shared by the worker and doctor's
+// issue_archive row so the two cannot drift: once any of an issue's side
+// tasks or merge-backs is refused, the issue's main tasks wait, because a
+// main task archived first would release — or delete as empty — the branch
+// that side work lands on. Refusals of main tasks hold nothing. The zero
+// value holds nothing.
+type SideWorkHold struct {
+	sideRefused bool
+}
+
+// Refuse records a refused (or unreadable) task; main is IsIssueMain's
+// answer for it, false when the task could not be read.
+func (h *SideWorkHold) Refuse(main bool) {
+	if !main {
+		h.sideRefused = true
+	}
+}
+
+// Holds reports whether a task — main as IsIssueMain answers it — waits for
+// refused side work.
+func (h *SideWorkHold) Holds(main bool) bool {
+	return main && h.sideRefused
 }
 
 // refusalReason names why an archive refused, for daemon.log.

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -33,19 +34,20 @@ const (
 	postClose = time.Hour
 )
 
-// TestArchivableIssueTasks (#927): the daemon may archive an issue's settled
-// roots only once the issue is closed, every root is settled and no issue
-// chat is live; then the roots that existed by the close come back, side
-// work and merge-backs before main tasks.
-func TestArchivableIssueTasks(t *testing.T) {
+// archiveCase is one row of archiveCases.
+type archiveCase struct {
+	name  string
+	open  bool
+	tasks []closeSeed
+	chats []chatstate.State
+	want  []int // 1-based indexes into tasks
+}
+
+// archiveCases is the table TestArchivableIssueTasks and the doctor
+// candidates' parity test both walk.
+func archiveCases() []archiveCase {
 	done, aborted := TaskDone, TaskAborted
-	cases := []struct {
-		name  string
-		open  bool
-		tasks []closeSeed
-		chats []chatstate.State
-		want  []int // 1-based indexes into tasks
-	}{
+	return []archiveCase{
 		{
 			name:  "open issue",
 			open:  true,
@@ -174,21 +176,36 @@ func TestArchivableIssueTasks(t *testing.T) {
 			},
 		},
 	}
-	for _, tc := range cases {
+}
+
+// seedArchiveCase stages one archiveCase and returns its issue and task ids.
+func seedArchiveCase(t *testing.T, s *Store, tc archiveCase) (int64, []int64) {
+	t.Helper()
+	p := testProject(t, s, "p1")
+	is := testIssue(t, s, p.ID, "the issue")
+	closedAt := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	if !tc.open {
+		execT(t, s, `UPDATE issues SET state = 'closed', closed_at = ? WHERE id = ?`,
+			closedAt.Format(TimeFormat), is.ID)
+	}
+	ids := seedArchiveTasks(t, s, p.ID, is.ID, closedAt, tc.tasks)
+	for _, st := range tc.chats {
+		c := testChat(t, s, p.ID)
+		execT(t, s, `UPDATE chats SET issue_id = ?, state = ? WHERE id = ?`, is.ID, string(st), c.ID)
+	}
+	return is.ID, ids
+}
+
+// TestArchivableIssueTasks (#927): the daemon may archive an issue's settled
+// roots only once the issue is closed, every root is settled and no issue
+// chat is live; then the roots that existed by the close come back, side
+// work and merge-backs before main tasks.
+func TestArchivableIssueTasks(t *testing.T) {
+	for _, tc := range archiveCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			s := openTest(t)
-			p := testProject(t, s, "p1")
-			is := testIssue(t, s, p.ID, "the issue")
-			closedAt := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
-			if !tc.open {
-				execT(t, s, `UPDATE issues SET state = 'closed', closed_at = ? WHERE id = ?`,
-					closedAt.Format(TimeFormat), is.ID)
-			}
-			ids := seedArchiveTasks(t, s, p.ID, is.ID, closedAt, tc.tasks)
-			for _, st := range tc.chats {
-				c := testChat(t, s, p.ID)
-				execT(t, s, `UPDATE chats SET issue_id = ?, state = ? WHERE id = ?`, is.ID, string(st), c.ID)
-			}
+			issueID, ids := seedArchiveCase(t, s, tc)
+			is := struct{ ID int64 }{issueID}
 
 			got, err := s.ArchivableIssueTasks(t.Context(), is.ID)
 			if err != nil {
@@ -269,7 +286,7 @@ func seedArchiveTasks(t *testing.T, s *Store, projectID, issueID int64, closedAt
 	t.Helper()
 	ids := make([]int64, len(tasks))
 	for i, tk := range tasks {
-		task := newTask(projectID, "t"+string(rune('a'+i)), TaskQueued)
+		task := newTask(projectID, fmt.Sprintf("i%d-t%c", issueID, rune('a'+i)), TaskQueued)
 		task.IssueID = &issueID
 		mustCreate(t, s, task)
 		ids[i] = task.ID

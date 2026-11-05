@@ -42,8 +42,10 @@ current for your agents; whether a newer vincent has been
 older than the binary you just ran; whether
 [scheduled backups](../reference/configuration.md#backup) are on, when the last
 one succeeded and when the next is due; free disk, worktree count and bytes, and any
-orphaned worktrees; and task counts by state — so "12 blocked" is visible
-without opening the board.
+orphaned worktrees; task counts by state — so "12 blocked" is visible
+without opening the board; and, with
+[`archive_tasks_on_issue_close`](../reference/configuration.md#archive_tasks_on_issue_close)
+on, the finished tasks of closed issues the auto-archive left on the board.
 
 **It works with no daemon**, which is the point: the daemon being down is one of
 the answers. In that mode it exits `2`, still prints everything it can read from
@@ -82,6 +84,20 @@ reclaims, run by the same code) and runs a real `VACUUM`. Two refusals are by
 design and are reported rather than hidden: an orphan with local changes is
 skipped until you pass `--force`, and the `VACUUM` is skipped while any task is
 in flight, because it would stall that task mid-step.
+
+### A closed issue's tasks are still on the board
+
+The auto-archive skips a task it cannot archive safely and never forces it.
+Doctor's **Issue archive** group names each one with every reason holding it
+— `dirty`, `project_path_missing`, `locked_by_chat`, `unfinished_lane`,
+`held_for_side_work`, `issue_not_quiescent`, `handoff_claimed`, or
+`awaiting_retry` alone — and any directory a closed issue chat left behind.
+Clean or commit the worktree, put a moved project back at its path, close the
+linked chat, or let the lane finish; a task marked `awaiting_retry` is
+archived only when something next happens on its issue, so archive it yourself
+(`vincent task archive <id>`, with `--force` to discard local changes). The
+group is information: it never sets the exit code, and `--fix` leaves it
+alone. See [`vincent doctor`](../reference/cli.md#vincent-doctor).
 
 Vincent does not run `git worktree prune` in your repositories. After doctor
 removes an orphan, the repo it came from may still carry a stale registration;

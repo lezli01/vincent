@@ -2103,6 +2103,11 @@ on the Work line also switches to the **Work** tab, which lists:
   off into one, each with its state glyph and its state (`closed`,
   `archived`, `handed off → #T`).
 
+![The Work tab of the issue "The eu-west DNS change broke the status page":
+Tasks lists its one task, archived and marked `main`; Chats lists a closed chat
+opened on that task (`on task #12 · closed`) and the two chats opened on the
+issue, one closed and one archived](../assets/tui-issue-work.png)
+
 `enter` on a task opens its workspace and on a chat opens the chat; an
 archived or finished one opens read-only, and `esc` comes back to the issue
 on the tab you left. Opening another issue starts it on the Issue tab.
@@ -2110,8 +2115,8 @@ on the tab you left. Opening another issue starts it on the Issue tab.
 ![The detail of an issue imported from acme/web#142: its lane, labels,
 kind, priority and author, the description rendered as Markdown, two comments
 marked `· github`, the Main worktree section naming the branch and the task
-holding it at its gate, that task marked `main`, and the Source
-section](../assets/tui-issue.png)
+holding it at its gate, the Work line counting that task and no chats, and
+the Source section](../assets/tui-issue.png)
 
 | Key | Does |
 |---|---|

@@ -472,6 +472,13 @@ daemon running.
   "tasks":    { "known": true, "total": 14,
                 "counts": { "queued": 1, "running": 1, "blocked": 12, "…": 0 },
                 "unreconciled": [] },
+  "issue_archive": { "known": true, "enabled": true,
+                     "held": [ { "task_id": 412, "issue_id": 37,
+                                 "title": "Fix the login redirect",
+                                 "state": "done", "role": "main",
+                                 "reasons": ["dirty", "locked_by_chat"] } ],
+                     "chat_dirs": [ { "issue_id": 37, "chat_id": 19,
+                                      "path": "…/worktrees/chat-19" } ] },
   "problems": []
 }
 ```
@@ -554,7 +561,26 @@ daemon running.
   `prune_error`, an old archive that could not be deleted after a successful
   run, never does, and neither does a `next_due_at` in the past. Reading this
   group never takes a backup.
-- `known: false` on `database`, `tasks` or `backup` means the report was
+- **`issue_archive` is what the auto-archive left on the board** (task 143.4,
+  see [`archive_tasks_on_issue_close`](configuration.md)). `held[]` lists
+  every done or aborted root task of a closed issue, created at or before the
+  close (a merge-back by its side task's creation), that is not archived — by
+  issue, then in archive order — with `role` (`main`, `side` or `""`) and
+  **every** reason that holds it in `reasons[]`, in this order: `dirty` (its
+  worktree, or an unarchived lane's, has local changes, untracked included),
+  `project_path_missing` (the project's directory is gone while such a
+  worktree is still on disk), `locked_by_chat` (an open linked chat on it, or
+  on an unarchived lane), `unfinished_lane` (a lane is not settled), `held_for_side_work` (a main task waiting for a held side task or
+  merge-back of its issue), `issue_not_quiescent` (another root of the issue
+  is unsettled, or an issue chat is live), `handoff_claimed` (a handoff item
+  claims the issue). `awaiting_retry` appears alone when nothing holds the
+  task now: the auto-archive acts only when an event touches the issue.
+  `chat_dirs[]` lists, per closed issue, the closed or archived issue chat
+  that still names the issue's main-worktree directory, while that directory
+  exists. Both lists are empty when `enabled` (the key) is `false`. `error`
+  is omitted when empty. Nothing here reaches `problems[]`, and
+  `POST /v1/doctor/fix` never acts on it.
+- `known: false` on `database`, `tasks`, `backup` or `issue_archive` means the report was
   composed without a daemon (the CLI's degraded path); over this endpoint they
   are always `true`. A `backup` group with `known: false` still carries its
   settings, read from `config.yaml`, and never raises a problem.

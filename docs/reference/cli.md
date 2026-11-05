@@ -115,7 +115,7 @@ empty.
 vincent doctor [--json] [--fix [--force]]
 ```
 
-One report answering "why is nothing running?". Twelve groups:
+One report answering "why is nothing running?". Thirteen groups:
 
 | Group | Rows |
 |---|---|
@@ -131,6 +131,7 @@ One report answering "why is nothing running?". Twelve groups:
 | Backup | whether [scheduled backups](configuration.md#backup) are on, the directory, interval and keep, the last success and last attempt, when the next run is due, the last archive's size, how many scheduled archives are kept, and the last error |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
+| Issue archive | with [`archive_tasks_on_issue_close`](configuration.md#archive_tasks_on_issue_close) on: one `held` row per settled task of a closed issue the auto-archive has not archived, with its issue, role, state and every reason holding it, and one `chat dir` row per issue-chat directory a closed issue left on disk. Printed only when there is something to list |
 
 Exit `0` when everything checked is healthy, `1` when problems were found (they
 are listed under `PROBLEMS`), `2` when no daemon answered.
@@ -230,6 +231,27 @@ state lives in the daemon.
 They are not read from a second process: only the daemon opens the database. The
 byte figures, the row counts and the span are unknown together, for that reason
 and no other.
+
+The **Issue archive** group reports and changes nothing. A `held` row reads
+`task 412 (issue 37, main, done): dirty, locked_by_chat — Fix the login
+redirect`: every reason is listed, so fixing one never reveals another.
+The reasons are `dirty` (the task's worktree, or an unarchived lane's, has
+local changes, untracked files included), `project_path_missing` (the
+project's directory is gone while such a worktree is still on disk — restore
+the path, or archive by hand with `--force`), `locked_by_chat` (an open linked
+chat on the task, or on an unarchived lane), `unfinished_lane` (a fan-out lane
+is not settled), `held_for_side_work` (an issue main task waiting for a held
+side task or merge-back of the same issue), `issue_not_quiescent` (another root
+task of the issue is unsettled, or an issue chat is live) and `handoff_claimed` (a handoff still claims the issue).
+`awaiting_retry` stands alone when nothing holds the task any more — the
+auto-archive acts only when something happens on the issue, and cleaning a
+worktree is not such an event, so archive it by hand. Tasks of issues closed
+before you upgraded, or while the key was off, show up this way too. A
+`chat dir` row is the main-worktree directory a closed or archived issue chat
+still names. None of this ever sets the exit code, and `--fix` never touches
+it: forcing past a dirty worktree is your call, with
+[`vincent task archive --force`](#vincent-task-archive). Without a daemon the
+group reads `unknown — daemon not running`.
 
 `--json` emits the whole report for scripting and for pasting into a bug report.
 
