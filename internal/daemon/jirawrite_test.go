@@ -295,6 +295,65 @@ func TestJiraSearchLagDoesNotRevertAWrite(t *testing.T) {
 	}
 }
 
+// TestJiraWriteSettledMidPassIsNotReverted is review F1 on #945: the
+// listing is read while the human's close is still pending, so the
+// confirming read skips the issue; the drain then settles the write before
+// the refresh's transaction opens. The stale listed open must not be
+// adopted — no state change is announced at all — and the next passes,
+// re-reading by id, keep it closed.
+func TestJiraWriteSettledMidPassIsNotReverted(t *testing.T) {
+	f := newJiraE2E(t, nil)
+	f.touch("10001")
+	f.tick()
+	f.wantOK()
+	f.setScenario("search-lag 5")
+	f.advance(time.Second)
+	f.humanTransition("10001", issuestate.Close, issuestate.Completed)
+	// Listed again in the next incremental window, as open: the write has
+	// not reached Jira yet.
+	f.touch("10001")
+	ctx := t.Context()
+	after, err := f.store.MaxEventID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := f.outbox()
+	drained := false
+	f.sync.afterConfirm = func() {
+		if drained {
+			return
+		}
+		drained = true
+		out.Drain(ctx)
+		if w := f.newestWrite("10001"); w.Status != store.OutboxDone {
+			t.Errorf("write = %+v, want done before the refresh", w)
+		}
+	}
+	for range 3 {
+		f.advance(time.Minute)
+		f.tick()
+		f.wantOK()
+		if iss := f.issue("10001"); iss.State != issuestate.Closed {
+			t.Fatalf("a write settled mid-pass was reverted: %s", iss.State)
+		}
+	}
+	if !drained {
+		t.Fatal("the pass never reached the seam")
+	}
+	evs, err := f.store.ListEvents(ctx, store.EventFilter{
+		AfterID: after, Types: []string{store.EventIssueStateChanged}, ProjectID: f.project.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 0 {
+		t.Errorf("state changes announced after the close = %d, want none", len(evs))
+	}
+	if n := f.posts("10001", "transitions"); n != 1 {
+		t.Errorf("transition POSTs = %d, want the one write", n)
+	}
+}
+
 func (f *jiraE2E) issueWrites(id string) []*store.IssueOutbox {
 	f.t.Helper()
 	writes, err := f.store.IssueWrites(f.t.Context(), f.issue(id).ID)

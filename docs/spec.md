@@ -1492,7 +1492,10 @@ and sync never enqueues a write, so nothing flip-flops. Because Jira's search
 can trail a write, the importer re-reads by id — a consistent read — any
 listed issue whose listed state differs from the local one while its newest
 state write is `done`, and adopts only what that read reports; there is no
-time window and no clock comparison. A granted handoff's comment is posted as
+time window and no clock comparison. A listed copy that was not re-read never
+replaces the local state over a `done` write whose value it disagrees with —
+the drain can settle a write after the importer chose what to re-read — so
+such an issue keeps its state until the next pass reads it by id. A granted handoff's comment is posted as
 ADF (`render.MarkdownToADF`) and its Jira comment id recorded as the local
 comment's `remote_key`, so the comment sync updates it in place. Title, body,
 labels, assignment and In Progress are not written.

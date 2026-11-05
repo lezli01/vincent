@@ -26,6 +26,12 @@ type RemoteIssue struct {
 	State       issuestate.State
 	CloseReason issuestate.Reason
 	Labels      []string // upserted with source = Provider
+	// Unconfirmed marks State as read from a listing that may trail the
+	// source's own writes (issuesource.LaggingLister) and not re-read by
+	// id. A refresh then keeps the local state over a done write the
+	// listing disagrees with, rather than adopting what may be the
+	// pre-write value (task 142.13 decision 1, review F1 on #945).
+	Unconfirmed bool
 }
 
 // UpsertRemoteIssue imports or refreshes the issue keyed (project, provider,
@@ -139,7 +145,7 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	// still shows, holds the local state (task 130.10): applying GitHub's
 	// here would revert a human's change as "GitHub wins" on the tick before
 	// the drain sends it, or on the tick after it gave up.
-	held, err := holdsLocalStateTx(ctx, tx, id, RemoteStateOf(state, reason))
+	held, err := holdsLocalStateTx(ctx, tx, id, RemoteStateOf(state, reason), in.Unconfirmed)
 	if err != nil {
 		return nil, err
 	}

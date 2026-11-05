@@ -288,6 +288,10 @@ func (p *issuePass) applyIssues(ctx context.Context, page issuesource.Page) erro
 	if err != nil {
 		return err
 	}
+	if p.r.afterConfirm != nil {
+		p.r.afterConfirm()
+	}
+	_, lagging := p.src.(issuesource.LaggingLister)
 	seen := map[string]bool{}
 	for i := range page.Issues {
 		is := &page.Issues[i]
@@ -307,7 +311,17 @@ func (p *issuePass) applyIssues(ctx context.Context, page issuesource.Page) erro
 			}
 			is = c
 		}
-		if err := p.applyIssue(ctx, is, needsBackfill(st)); err != nil {
+		apply := is
+		if _, held := confirmed[key]; !held && lagging {
+			// Not re-read: if the drain settled a write since
+			// confirmLagged looked, the store holds the local state
+			// rather than adopt what may be the pre-write value, and the
+			// next pass re-reads it by id (review F1 on #945).
+			u := *is
+			u.Remote.Unconfirmed = true
+			apply = &u
+		}
+		if err := p.applyIssue(ctx, apply, needsBackfill(st)); err != nil {
 			return err
 		}
 		p.listed = append(p.listed, *is)
@@ -328,6 +342,10 @@ func (p *issuePass) applyIssues(ctx context.Context, page issuesource.Page) erro
 // and the listing's copy is not applied. There is no time window and no
 // clock comparison. A source that does not lag (GitHub) is untouched, and
 // the store's own hold rules (pending and failed writes) still apply after.
+// The choice is made before the refresh's transaction opens, so a write the
+// drain settles in between is caught there instead: applyIssues marks every
+// listed copy this did not re-read Unconfirmed, and the store holds the
+// local state over a done write such a copy disagrees with.
 func (p *issuePass) confirmLagged(ctx context.Context, listed []issuesource.Issue) (map[string]*issuesource.Issue, error) {
 	if _, ok := p.src.(issuesource.LaggingLister); !ok {
 		return nil, nil
