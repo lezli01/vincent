@@ -16,19 +16,14 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// ErrJiraWriteBackNotImplemented is what the Jira source's write methods
-// return (task 142 decision 7): the write-back is #909's, and until it lands
-// the outbox is never given this source, so reaching one is a mis-wiring
-// that must fail loudly rather than drop a write.
-var ErrJiraWriteBackNotImplemented = errors.New("jira write-back is not implemented until #909")
-
 // jiraDefaultPageCap bounds an incremental listing given no PageCap. The
 // client's page is 100 issues; ten of them is a generous tick.
 const jiraDefaultPageCap = 10
 
 // Jira is the Jira Cloud source (issue #908, task 142 decision 9): a
 // *jira.Client per bound site behind the seam. It also implements
-// BulkGetter and BindingResolver, and deliberately not RepoCommentLister
+// BulkGetter, BindingResolver, ProjectLocator and LaggingLister, and
+// deliberately not RepoCommentLister
 // (Jira has no project-wide comment feed, so the importer reads each listed
 // issue's thread) nor PlaceholderAdopter (no Jira row is a backfill
 // placeholder).
@@ -40,6 +35,8 @@ var (
 	_ Source          = (*Jira)(nil)
 	_ BulkGetter      = (*Jira)(nil)
 	_ BindingResolver = (*Jira)(nil)
+	_ ProjectLocator  = (*Jira)(nil)
+	_ LaggingLister   = (*Jira)(nil)
 )
 
 // NewJira is the Jira source. newClient builds the client for a binding's
@@ -312,15 +309,69 @@ func (*Jira) ListComments(ctx context.Context, b Binding, is *Issue) ([]Comment,
 	return out, nil
 }
 
-// SetIssueState is #909's.
-func (*Jira) SetIssueState(context.Context, Binding, store.IssueRemote, store.IssueStateValue) error {
-	return ErrJiraWriteBackNotImplemented
+// SetIssueState writes v onto rem's issue (task 142.13, #909): it reads
+// the transitions available now, lets jiramap.ChooseTransition pick the one
+// that achieves v exactly — honouring the binding's override map, and never
+// degrading a reason — and performs it. A close as duplicate sets the
+// Duplicate resolution when the screen offers it and writes no issue link
+// (task 142 decision 9.7). A chooser failure is returned as its
+// *jiramap.ChooseError, which Classify reads as the error's Code.
+func (*Jira) SetIssueState(ctx context.Context, b Binding, rem store.IssueRemote, v store.IssueStateValue) error {
+	ref := jiraRefOf(b)
+	if ref == nil {
+		return &jira.Error{Op: "set issue state", Reason: jira.ReasonBadRequest, Err: errors.New("not a jira binding")}
+	}
+	action, reason := issuestate.Reopen, issuestate.Reason("")
+	if v.State == string(issuestate.Closed) {
+		action, reason = issuestate.Close, issuestate.Reason(v.Reason)
+	}
+	ts, err := ref.client.Transitions(ctx, rem.RemoteKey)
+	if err != nil {
+		return err
+	}
+	choice, err := jiramap.ChooseTransition(action, reason, ts, ref.mapping)
+	if err != nil {
+		var ce *jiramap.ChooseError
+		if len(ts) == 0 && errors.As(err, &ce) {
+			// Jira lists only the transitions the account may perform, so
+			// none at all is as likely a permission as a workflow.
+			ce.Detail = "Jira offered no transition at all; the account may lack the Transition issues permission"
+		}
+		return err
+	}
+	return ref.client.DoTransition(ctx, rem.RemoteKey, choice.TransitionID, choice.Resolution)
 }
 
-// CreateComment is #909's.
-func (*Jira) CreateComment(context.Context, Binding, store.IssueRemote, string) (string, error) {
-	return "", ErrJiraWriteBackNotImplemented
+// CreateComment posts body, rendered from Markdown to ADF, on rem's issue
+// and returns Jira's comment id: the remote key ListComments reports it
+// under, so the comment sync updates the local comment in place (task 137
+// decision 6 parity).
+func (*Jira) CreateComment(ctx context.Context, b Binding, rem store.IssueRemote, body string) (string, error) {
+	ref := jiraRefOf(b)
+	if ref == nil {
+		return "", &jira.Error{Op: "add comment", Reason: jira.ReasonBadRequest, Err: errors.New("not a jira binding")}
+	}
+	return ref.client.AddComment(ctx, rem.RemoteKey, render.MarkdownToADF(body))
 }
+
+// LocateIn is the binding a Jira row is written through: its project's, for
+// the site and the credentials live there, never on the row. ok is false
+// when the project is no longer bound to Jira, or is bound to a different
+// project key than the one the row was imported from.
+func (j *Jira) LocateIn(ctx context.Context, project store.Project, rem store.IssueRemote) (Binding, bool) {
+	if rem.RemoteKey == "" {
+		return Binding{}, false
+	}
+	b, ok := j.Bind(ctx, project)
+	if !ok || !strings.EqualFold(b.String(), rem.Repo) {
+		return Binding{}, false
+	}
+	return b, true
+}
+
+// ListingMayLag is the LaggingLister marker: Jira's search index trails a
+// write by seconds, so a listing can still show the pre-write status.
+func (*Jira) ListingMayLag() bool { return true }
 
 // Classify maps the client's reasons, which are the seam's strings, onto a
 // Failure, with a 429's Retry-After as ResetAt. A moved issue is
@@ -333,6 +384,10 @@ func (*Jira) Classify(err error) Failure {
 	var moved *jiraMovedError
 	if errors.As(err, &moved) {
 		return Failure{Reason: ReasonMoved, Location: moved.location}
+	}
+	var ce *jiramap.ChooseError
+	if errors.As(err, &ce) {
+		return Failure{Reason: ce.Code}
 	}
 	f := Failure{Reason: jira.ReasonOf(err)}
 	var jerr *jira.Error

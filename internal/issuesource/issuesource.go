@@ -28,6 +28,22 @@ const (
 	ReasonUnreachable  = "unreachable"
 )
 
+// The Jira write-back's chooser reasons (task 142.13): a vincent close or
+// reopen that no single available transition achieves exactly. Each is
+// terminal — the row fails and the local state stays as the human set it —
+// and a test pins each to its jiramap.Code* counterpart.
+const (
+	// ReasonNoTransition: no available transition achieves the request
+	// (or Jira offered none, which a missing Transition issues permission
+	// also causes).
+	ReasonNoTransition = "no_transition"
+	// ReasonAmbiguousTransition: several do, and vincent will not guess.
+	ReasonAmbiguousTransition = "ambiguous_transition"
+	// ReasonTransitionNeedsFields: the one that would needs a required
+	// screen field vincent does not set.
+	ReasonTransitionNeedsFields = "transition_needs_fields"
+)
+
 // Failure is a provider error as the sync's policy reads it.
 type Failure struct {
 	// Reason is the seam's vocabulary above, or a provider-specific string

@@ -571,11 +571,13 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		WithTriggers(triggers).WithOutbox(outbox)
 	issueSync := reconciler.IssueSyncer
 	// The Jira source (#908), so the Jira pass imports through the shared
-	// importer instead of recording no_client. The outbox is deliberately
-	// NOT given it (task 142 decision 7): Jira's write-back is #909's, and
-	// until then its rows keep waiting no_client rather than reaching a
-	// source that cannot write.
-	wireJiraSource(issueSync, currentConfig, os.Environ, nil)
+	// importer instead of recording no_client — and, since task 142.13
+	// (#909), the outbox too, so a human's close, reopen or granted handoff
+	// comment on a Jira issue is written back under `jira.enabled` and
+	// `jira.poll_interval`. One source serves both: it keeps no state.
+	jiraSrc := newJiraSource(currentConfig, os.Environ, nil)
+	issueSync.WithJiraSource(jiraSrc)
+	outbox.WithJiraSource(jiraSrc)
 	st.OnIssueSyncRequested(func(projectID int64) {
 		issueSync.RequestSync(projectID)
 		outbox.Kick()

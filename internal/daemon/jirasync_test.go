@@ -618,9 +618,10 @@ func TestJiraSyncFailureReasons(t *testing.T) {
 	}
 }
 
-// TestJiraSyncOutboxRowsStillWaitNoClient is proof (14): a human close of
-// an imported Jira issue enqueues a write the outbox holds as no_client —
-// the daemon never gives the outbox the Jira source until #909.
+// TestJiraSyncOutboxRowsStillWaitNoClient is proof (14), narrowed by #909:
+// a human close of an imported Jira issue enqueues a write that an outbox
+// with no Jira source holds as no_client, making no call. The daemon wires
+// one (jirawrite_test.go drains through it).
 func TestJiraSyncOutboxRowsStillWaitNoClient(t *testing.T) {
 	f := newJiraE2E(t, nil)
 	ctx := t.Context()

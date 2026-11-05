@@ -54,3 +54,23 @@ type BindingResolver interface {
 	// resolved for the rest of the pass.
 	ResolveBinding(ctx context.Context, b Binding) (resolved Binding, remoteProjectID string, err error)
 }
+
+// ProjectLocator is a source whose rows cannot be addressed from the row
+// alone (Jira: the site and credentials are the project's binding, not the
+// row's). The write-back drain binds such a source's rows through their
+// project with LocateIn instead of Locate (task 142.13).
+type ProjectLocator interface {
+	// LocateIn is the binding rem is written through, from project; ok is
+	// false when project no longer binds the place rem was imported from.
+	LocateIn(ctx context.Context, project store.Project, rem store.IssueRemote) (b Binding, ok bool)
+}
+
+// LaggingLister is a source whose listing may trail its own writes (Jira's
+// search index, task 142.13 decision 1). Before adopting a listed state that
+// differs from the local one on an issue whose newest state write is done,
+// the importer confirms it with a consistent read by id and adopts only
+// what that read reports. ListingMayLag is the marker and reports true.
+// GitHub's listing is consistent, so it does not implement it.
+type LaggingLister interface {
+	ListingMayLag() bool
+}

@@ -53,8 +53,13 @@ import (
 // `github.enabled: false` or `github.poll_interval: 0` nothing is called and
 // every pending GitHub row stays pending with reason `disabled`, drained
 // when the switch comes back on; with no client wired, `no_client`. Jira's
-// rows read `jira.enabled` and `jira.poll_interval` the same way, and wait
-// with `no_client` while no Jira source is wired (#908).
+// rows read `jira.enabled` and `jira.poll_interval` the same way (task
+// 142.13, #909): the daemon wires the Jira source, so they drain whenever
+// Jira's switches are on, and rows held pending before it was wired go on
+// the first drain. A Jira state write is a transition the chooser picked
+// (jiramap.ChooseTransition); one it cannot pick fails the row with
+// no_transition, ambiguous_transition or transition_needs_fields, and the
+// local state stays as the human set it.
 
 const (
 	// outboxIdle is the heartbeat on which the drain re-reads the config
@@ -89,7 +94,7 @@ type IssueOutbox struct {
 	store *store.Store
 	cfg   func() config.Config
 	// gh is the GitHub source, nil when no client is wired; jira the Jira
-	// source, nil until the Jira client is wired (#908).
+	// source, nil when none is wired (the daemon always wires one, #909).
 	gh, jira issuesource.Source
 	// sources is the provider→source registry, read per row; seamed for
 	// tests. The default is keyed by provider (issuesources.go).
@@ -235,7 +240,7 @@ func (o *IssueOutbox) send(ctx context.Context, src issuesource.Source, row *sto
 		return
 	}
 	rem := *iss.Remote
-	b, ok := src.Locate(rem)
+	b, ok := o.locate(ctx, src, row, rem)
 	if !ok {
 		o.settle(ctx, row, store.OutboxFailed, issuesource.ReasonBadRequest, nil)
 		return
@@ -269,6 +274,22 @@ func (o *IssueOutbox) send(ctx context.Context, src issuesource.Source, row *sto
 	o.settle(ctx, row, store.OutboxDone, "", &written)
 	o.logger.Info("issue state written to its provider", "issue", row.IssueID, "provider", src.Provider(),
 		"repo", rem.Repo, "number", rem.Number, "state", written.State, "state_reason", written.Reason)
+}
+
+// locate is the binding row's remote is written through: Locate's, or —
+// for a source whose rows are addressed through their project (Jira's site
+// and credentials, issuesource.ProjectLocator) — LocateIn's over the row's
+// project.
+func (o *IssueOutbox) locate(ctx context.Context, src issuesource.Source, row *store.IssueOutbox, rem store.IssueRemote) (issuesource.Binding, bool) {
+	pl, ok := src.(issuesource.ProjectLocator)
+	if !ok {
+		return src.Locate(rem)
+	}
+	project, err := o.store.GetProject(ctx, row.ProjectID)
+	if err != nil {
+		return issuesource.Binding{}, false
+	}
+	return pl.LocateIn(ctx, *project, rem)
 }
 
 // sendComment posts an add_comment row's comment and records its key.
@@ -343,7 +364,11 @@ func (o *IssueOutbox) retryAs(ctx context.Context, row *store.IssueOutbox, f iss
 	var next time.Time
 	switch reason {
 	case issuesource.ReasonNoWriteScope, issuesource.ReasonNotFound, issuesource.ReasonGone,
-		issuesource.ReasonBadRequest, issuesource.ReasonMoved, issuesource.ReasonForbidden:
+		issuesource.ReasonBadRequest, issuesource.ReasonMoved, issuesource.ReasonForbidden,
+		// Jira's chooser (task 142.13): no single transition achieves the
+		// request, and retrying would ask the same workflow again.
+		issuesource.ReasonNoTransition, issuesource.ReasonAmbiguousTransition,
+		issuesource.ReasonTransitionNeedsFields:
 		o.settle(ctx, row, store.OutboxFailed, reason, nil)
 		o.logger.Warn("issue state not written to its provider", "issue", row.IssueID, "reason", reason, "error", err)
 		return

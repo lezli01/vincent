@@ -3,7 +3,6 @@ package issuesource
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -401,14 +400,8 @@ func TestJiraClassify(t *testing.T) {
 	}
 }
 
-func TestJiraWriteBackIsNotImplemented(t *testing.T) {
+func TestJiraLocate(t *testing.T) {
 	src := NewJira(nil)
-	if err := src.SetIssueState(context.Background(), Binding{}, store.IssueRemote{}, store.IssueStateValue{}); !errors.Is(err, ErrJiraWriteBackNotImplemented) {
-		t.Errorf("SetIssueState = %v", err)
-	}
-	if _, err := src.CreateComment(context.Background(), Binding{}, store.IssueRemote{}, "x"); !errors.Is(err, ErrJiraWriteBackNotImplemented) {
-		t.Errorf("CreateComment = %v", err)
-	}
 	if _, ok := src.Locate(store.IssueRemote{RemoteKey: "10001", Repo: "EX"}); !ok {
 		t.Error("Locate refused an addressable row")
 	}

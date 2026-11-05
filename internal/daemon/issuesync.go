@@ -284,6 +284,10 @@ func (p *issuePass) incremental(ctx context.Context, now time.Time) error {
 // unchanged row, which writes no event.
 func (p *issuePass) applyIssues(ctx context.Context, page issuesource.Page) error {
 	st := p.st
+	confirmed, err := p.confirmLagged(ctx, page.Issues)
+	if err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	for i := range page.Issues {
 		is := &page.Issues[i]
@@ -292,16 +296,119 @@ func (p *issuePass) applyIssues(ctx context.Context, page issuesource.Page) erro
 			continue
 		}
 		seen[key] = true
+		// The watermark advances by what the listing said, confirmed or
+		// not: the listing is what the next bound is asked of.
+		st.Watermark = laterOf(st.Watermark, is.UpdatedAt())
+		if c, held := confirmed[key]; held {
+			if c == nil {
+				// The confirming read did not find it here; the sweep
+				// decides about a missing or moved issue, not a listing.
+				continue
+			}
+			is = c
+		}
 		if err := p.applyIssue(ctx, is, needsBackfill(st)); err != nil {
 			return err
 		}
 		p.listed = append(p.listed, *is)
-		st.Watermark = laterOf(st.Watermark, is.UpdatedAt())
 	}
 	// ResumeSince counts pull request rows too, so a window holding only
 	// pull requests still moves the cursor.
 	st.Watermark = laterOf(st.Watermark, page.ResumeSince)
 	return nil
+}
+
+// confirmLagged is task 142.13 decision 1: on a source whose listing may
+// trail its own writes (issuesource.LaggingLister — Jira's search index), a
+// listed state that differs from the local one, on an issue whose newest
+// state write is done, may be the index still showing the state from before
+// that write. Each such issue is re-read by id — a consistent read, through
+// BulkGetter when the source has it — and the listing's copy is replaced by
+// what the read reports; a key mapped to nil was not found at the binding,
+// and the listing's copy is not applied. There is no time window and no
+// clock comparison. A source that does not lag (GitHub) is untouched, and
+// the store's own hold rules (pending and failed writes) still apply after.
+func (p *issuePass) confirmLagged(ctx context.Context, listed []issuesource.Issue) (map[string]*issuesource.Issue, error) {
+	if _, ok := p.src.(issuesource.LaggingLister); !ok {
+		return nil, nil
+	}
+	var rems []store.IssueRemote
+	for i := range listed {
+		is := &listed[i]
+		suspect, err := p.writtenSince(ctx, is)
+		if err != nil {
+			return nil, err
+		}
+		if suspect {
+			rems = append(rems, store.IssueRemote{
+				Provider: is.Remote.Provider, RemoteKey: is.Remote.RemoteKey,
+				Repo: is.Remote.Repo, Number: is.Remote.Number,
+			})
+		}
+	}
+	if len(rems) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]*issuesource.Issue, len(rems))
+	if bulk, ok := p.src.(issuesource.BulkGetter); ok {
+		for start := 0; start < len(rems); start += issuesource.BulkGetMax {
+			batch := rems[start:min(start+issuesource.BulkGetMax, len(rems))]
+			got, err := bulk.GetIssues(ctx, p.b, batch)
+			if err != nil {
+				return nil, err
+			}
+			for _, rem := range batch {
+				bi, found := got[rem.RemoteKey]
+				if !found || bi.MovedTo != "" {
+					out[rem.RemoteKey] = nil
+					continue
+				}
+				is := bi.Issue
+				out[rem.RemoteKey] = &is
+			}
+		}
+		return out, nil
+	}
+	for _, rem := range rems {
+		is, err := p.src.GetIssue(ctx, p.b, rem)
+		if err != nil {
+			if f := p.src.Classify(err); f.Reason == issuesource.ReasonNotFound || f.Reason == issuesource.ReasonMoved {
+				out[rem.RemoteKey] = nil
+				continue
+			}
+			return nil, err
+		}
+		out[rem.RemoteKey] = &is
+	}
+	return out, nil
+}
+
+// writtenSince reports whether is, as listed, differs from its local issue's
+// state while that issue's newest state write is done: the one case a
+// lagging listing could revert a write just made.
+func (p *issuePass) writtenSince(ctx context.Context, is *issuesource.Issue) (bool, error) {
+	st := p.r.store
+	id, ok, err := st.IssueIDByRemoteKey(ctx, p.project.ID, p.provider(), is.Remote.RemoteKey)
+	if err != nil || !ok {
+		return false, err
+	}
+	iss, err := st.GetIssue(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if is.StateValue.Same(store.RemoteStateOf(iss.State, iss.CloseReason)) {
+		return false, nil
+	}
+	writes, err := st.IssueWrites(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	for i := len(writes) - 1; i >= 0; i-- {
+		if writes[i].Op == store.OutboxOpSetState {
+			return writes[i].Status == store.OutboxDone, nil
+		}
+	}
+	return false, nil
 }
 
 // applyIssue writes one provider issue. A backfill placeholder with its

@@ -45,7 +45,8 @@ const (
 
 // IssueSync is an imported issue's state write-back (task 130.10). State
 // is synced, pending, failed or conflict; Reason says why it is not synced
-// (disabled, rate_limited, no_write_scope, moved, gone, …).
+// (disabled, rate_limited, no_write_scope, moved, gone, and Jira's
+// no_transition, ambiguous_transition, transition_needs_fields, …).
 type IssueSync struct {
 	State        string     `json:"state"`
 	Reason       string     `json:"reason,omitempty"`

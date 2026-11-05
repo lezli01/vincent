@@ -24,6 +24,10 @@ const (
 	ReasonNoCredential = "no_credential" //nolint:gosec // G101: a reason, not a credential
 	ReasonBadRequest   = "bad_request"
 	ReasonBadResponse  = "bad_response"
+	// ReasonNoWriteScope is a write call's 403 (task 142.13 decision 3):
+	// the account may read the issue but not transition or comment on it.
+	// Read calls keep ReasonForbidden.
+	ReasonNoWriteScope = "no_write_scope"
 )
 
 // Error is every failure the client returns. Its Error() never carries the
@@ -112,7 +116,7 @@ func statusError(op string, resp *http.Response, body []byte, now time.Time, sec
 	e := &Error{Op: op, Status: resp.StatusCode, Reason: reasonForStatus(resp.StatusCode)}
 	msg := errorText(body)
 	if resp.StatusCode == http.StatusForbidden && captcha(resp.Header) {
-		msg = strings.TrimSpace("CAPTCHA challenge: sign in to Jira in a browser once to clear it. " + msg)
+		msg = strings.TrimSpace(captchaPrefix + " sign in to Jira in a browser once to clear it. " + msg)
 	}
 	if msg != "" {
 		e.Err = errors.New(scrub(msg, secrets))
@@ -122,6 +126,9 @@ func statusError(op string, resp *http.Response, body []byte, now time.Time, sec
 	}
 	return e
 }
+
+// captchaPrefix opens a CAPTCHA 403's message.
+const captchaPrefix = "CAPTCHA challenge:"
 
 // captcha reports Jira's CAPTCHA answer to a login: 403 with
 // X-Seraph-LoginReason AUTHENTICATION_DENIED (or the

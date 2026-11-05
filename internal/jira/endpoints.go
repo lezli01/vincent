@@ -20,6 +20,9 @@ func pathIssue(idOrKey string) string { return apiRoot + "issue/" + url.PathEsca
 // pathComments is GET /rest/api/3/issue/{issueIdOrKey}/comment.
 func pathComments(idOrKey string) string { return pathIssue(idOrKey) + "/comment" }
 
+// pathTransitions is GET and POST /rest/api/3/issue/{issueIdOrKey}/transitions.
+func pathTransitions(idOrKey string) string { return pathIssue(idOrKey) + "/transitions" }
+
 // pathProject is GET /rest/api/3/project/{projectIdOrKey}.
 func pathProject(idOrKey string) string { return apiRoot + "project/" + url.PathEscape(idOrKey) }
 
@@ -34,5 +37,6 @@ const (
 const (
 	expandRenderedFields = "renderedFields"
 	expandRenderedBody   = "renderedBody"
+	expandTransFields    = "transitions.fields"
 	commentOrder         = "created"
 )
