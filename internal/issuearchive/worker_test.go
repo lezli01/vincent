@@ -26,6 +26,8 @@ type fakeStore struct {
 	archivable map[int64][]int64 // issue → ArchivableIssueTasks
 	claimed    map[int64]bool
 	taskIssue  map[int64]int64
+	main       map[int64]bool // task → holds the issue's main role
+	gone       map[int64]bool // task → deleted
 	handoffs   map[int64][]int64 // handoff → issue ids
 }
 
@@ -33,6 +35,7 @@ func newFakeStore() *fakeStore {
 	return &fakeStore{
 		archivable: map[int64][]int64{}, claimed: map[int64]bool{},
 		taskIssue: map[int64]int64{}, handoffs: map[int64][]int64{},
+		main: map[int64]bool{}, gone: map[int64]bool{},
 	}
 }
 
@@ -90,11 +93,17 @@ func (f *fakeStore) IssueHandoffClaimed(_ context.Context, issueID int64) (bool,
 func (f *fakeStore) GetTask(_ context.Context, id int64) (*store.Task, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	iss, ok := f.taskIssue[id]
-	if !ok {
+	if f.gone[id] {
 		return nil, store.ErrNotFound
 	}
-	return &store.Task{ID: id, IssueID: &iss}, nil
+	t := &store.Task{ID: id}
+	if iss, ok := f.taskIssue[id]; ok {
+		t.IssueID = &iss
+	}
+	if f.main[id] {
+		t.IssueWorktree = store.IssueWorktreeMain
+	}
+	return t, nil
 }
 
 func (f *fakeStore) ListHandoffItems(_ context.Context, id int64) ([]*store.HandoffItem, store.HandoffState, error) {
@@ -450,4 +459,48 @@ func TestStopJoinsAnInFlightArchive(t *testing.T) {
 // calls Stop on its way out.
 func TestStopBeforeStart(t *testing.T) {
 	newHarness().w.Stop()
+}
+
+// TestRefusedSideWorkHoldsTheMainTasks: when a side task or merge-back is
+// refused, the issue's main tasks are not archived that round, so a main
+// branch is never released under side work still to land on it; once the
+// refusal clears, the next event archives all of them (review F3).
+func TestRefusedSideWorkHoldsTheMainTasks(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness()
+		h.st.archivable[7] = []int64{2, 3, 1}
+		h.st.main[1] = true
+		h.arch.errs[2] = &store.TaskLockedError{TaskID: 2, ChatID: 9}
+		h.w.Start(t.Context())
+		h.emit(store.EventIssueStateChanged, closeIssue(7))
+		synctest.Wait()
+		if got := h.arch.ids(); !slices.Equal(got, []int64{2, 3}) {
+			t.Fatalf("archived %v, want side tasks 2 and 3 tried and main task 1 held", got)
+		}
+
+		delete(h.arch.errs, 2)
+		h.st.archivable[7] = []int64{2, 1}
+		h.emit(store.EventChatClosed, map[string]any{"state": "closed", "issue_id": 7})
+		synctest.Wait()
+		if got := h.arch.ids(); !slices.Equal(got, []int64{2, 3, 2, 1}) {
+			t.Fatalf("archived %v, want 2 then main task 1 once the lock cleared", got)
+		}
+	})
+}
+
+// TestARefusedMainTaskDoesNotHoldOthers: a main task's own refusal holds
+// nothing; only side work orders the main tasks.
+func TestARefusedMainTaskDoesNotHoldOthers(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness()
+		h.st.archivable[7] = []int64{1, 2}
+		h.st.main[1], h.st.main[2] = true, true
+		h.arch.errs[1] = &worktree.Error{Reason: worktree.ReasonWorktreeDirty, Message: "dirty"}
+		h.w.Start(t.Context())
+		h.emit(store.EventIssueStateChanged, closeIssue(7))
+		synctest.Wait()
+		if got := h.arch.ids(); !slices.Equal(got, []int64{1, 2}) {
+			t.Fatalf("archived %v, want both main tasks tried", got)
+		}
+	})
 }

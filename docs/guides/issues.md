@@ -250,7 +250,8 @@ was deleted.
 by a delivery, or on its tracker and synced in — the daemon archives the
 issue's finished tasks once nothing on the issue is still working: side tasks
 and merge-backs first, the main tasks last, so no merge-back loses the branch
-it lands on. It waits for every task of the issue to finish and for any chat
+it lands on. If a side task or merge-back cannot be archived, the main tasks
+wait with it. It waits for every task of the issue to finish and for any chat
 on the issue to close, and while a [handoff](handoff.md) still holds
 the issue. Only tasks that existed when the issue closed are archived. It never
 forces: a task with uncommitted changes, or one locked by an open linked chat,

@@ -13,6 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/taskstate"
+	"github.com/lezli01/vincent/internal/workflow"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -295,6 +296,14 @@ func (w *Worker) issueOfTask(ctx context.Context, taskID int64) []int64 {
 // archiveIssue archives the issue's archivable tasks one at a time, in the
 // order the query returns them. A refusal is logged and the next task is
 // tried; nothing is ever forced.
+//
+// The query puts side work first so that no main task is archived before
+// the side work that lands on its branch; a refused side task or merge-back
+// would break that order if the main tasks went ahead anyway — a main
+// branch released, or deleted as empty, under a merge-back a person is
+// still fixing. So once any non-main task is refused, the issue's main
+// tasks wait this round (review F3); the event that clears the refusal asks
+// the issue again.
 func (w *Worker) archiveIssue(ctx context.Context, issueID int64) {
 	log := w.deps.Logger
 	claimed, err := w.deps.Store.IssueHandoffClaimed(ctx, issueID)
@@ -312,11 +321,25 @@ func (w *Worker) archiveIssue(ctx context.Context, issueID int64) {
 		log.Warn("issue auto-archive: read archivable tasks", "issue", issueID, "error", err)
 		return
 	}
+	sideRefused := false
 	for _, id := range ids {
 		if ctx.Err() != nil {
 			return
 		}
-		_, _, err := w.deps.Archiver.Archive(ctx, id, taskrun.ArchiveOptions{
+		t, err := w.deps.Store.GetTask(ctx, id)
+		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) && ctx.Err() == nil {
+				log.Warn("issue auto-archive: read task", "task", id, "issue", issueID, "error", err)
+				sideRefused = true
+			}
+			continue
+		}
+		main := isIssueMain(t)
+		if main && sideRefused {
+			log.Info("issue auto-archive: main task held for refused side work", "task", id, "issue", issueID)
+			continue
+		}
+		_, _, err = w.deps.Archiver.Archive(ctx, id, taskrun.ArchiveOptions{
 			Unattended:   true,
 			EventPayload: map[string]any{"archived_by": ArchivedBy, "issue_id": issueID},
 		})
@@ -335,7 +358,18 @@ func (w *Worker) archiveIssue(ctx context.Context, issueID int64) {
 		}
 		log.Warn("issue auto-archive: task not archived",
 			"task", id, "issue", issueID, "reason", refusalReason(err), "error", err)
+		if !main {
+			sideRefused = true
+		}
 	}
+}
+
+// isIssueMain reports whether t holds the issue's main worktree as a main
+// task — the group ArchivableIssueTasks orders last. A merge-back carries
+// the main role too but is side work for ordering, exactly as the query
+// treats it.
+func isIssueMain(t *store.Task) bool {
+	return t.IssueWorktree == store.IssueWorktreeMain && t.WorkflowName != workflow.MergeBackName
 }
 
 // refusalReason names why an archive refused, for daemon.log.

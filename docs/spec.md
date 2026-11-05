@@ -1281,7 +1281,9 @@ its settled tasks.** With `archive_tasks_on_issue_close` on (§12.3, the
 default), the daemon archives a closed issue's root tasks once the issue is
 quiescent — every root settled, no issue chat live — taking the roots created
 at or before the close, side work and merge-backs before main tasks
-(`Store.ArchivableIssueTasks`, task 143 decisions 1–5). Every close reason
+(`Store.ArchivableIssueTasks`, task 143 decisions 1–5); if any side task or
+merge-back is refused, the issue's main tasks are held that round, so the
+order holds even when side work stays (review F3). Every close reason
 counts, a sync close included. The archive is §6's, run unattended: it never
 forces a dirty worktree and never deletes a remote branch (§10); a task it
 cannot archive — dirty, locked by a linked chat, a lane still working — is

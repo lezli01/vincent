@@ -715,7 +715,9 @@ after the close is left alone.
 It waits while any task of the issue is still running, queued, paused or
 waiting on you, or while a chat on the issue is open, and archives when the
 last of them finishes. It also waits while a [handoff](../guides/handoff.md)
-still holds the issue.
+still holds the issue. Side tasks and merge-backs are archived before the
+issue's main tasks, and if one of them cannot be archived, the main tasks wait
+with it.
 
 This archive is careful in ways a human archive need not be. It **never
 forces**: a task whose worktree has uncommitted changes is skipped and left

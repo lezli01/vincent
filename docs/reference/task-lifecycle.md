@@ -182,7 +182,8 @@ The one exception to "until you archive it" is a task started from an
 [issue](../guides/issues.md). When the issue closes, the daemon archives its
 `done` and `aborted` tasks for you, once every task of the issue has finished
 and no chat on it is open — the tasks that existed at the close, side work
-before the issue's main tasks. This is on by default and switched off with
+before the issue's main tasks, which wait while any of that side work cannot
+be archived. This is on by default and switched off with
 [`archive_tasks_on_issue_close`](configuration.md#archive_tasks_on_issue_close).
 
 It is the same `archive` as yours, made more cautious: it never forces a dirty
