@@ -78,6 +78,7 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 	task := &store.Task{
 		ProjectID: h.projectID, Title: "fix the crash", WorkflowName: "implement",
 		BaseBranch: "main", BranchName: "vincent/1-fix-the-crash", State: store.TaskBlocked, IssueID: &issueID,
+		WorktreePath: t.TempDir(), // a linked chat needs one (task 119)
 	}
 	if err := h.st.CreateTask(ctx, task, nil); err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -191,17 +192,33 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 		return h.m.active == viewIssue && detail.loaded && detail.id == local.ID && len(detail.tasks) == 1
 	})
 	out = ansi.Strip(detail.render(120, 60))
-	for _, want := range []string{renamed, "urgent", "bug", "fix the crash", "1 task, 1 active"} {
+	for _, want := range []string{renamed, "urgent", "bug", "1 task (1 active), 0 chats — tab for the work"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the detail is missing %q:\n%s", want, out)
 		}
 	}
 
-	// enter on the linked task opens its workspace; esc comes back here.
+	// tab moves to the Work tab (task 144), which lists the task.
+	h.sendKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	if detail.tab != issueTabWork || h.m.active != viewIssue {
+		t.Fatalf("tab on the issue: tab %v, active view %d; want the Work tab", detail.tab, h.m.active)
+	}
+	out = ansi.Strip(detail.render(120, 60))
+	for _, want := range []string{"fix the crash", "1 task, 1 active", "no chat yet"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the Work tab is missing %q:\n%s", want, out)
+		}
+	}
+
+	// enter on the linked task opens its workspace; esc comes back here,
+	// on the tab it left.
 	h.sendKey(keyPress("enter"))
 	h.p.until(10*time.Second, "the linked task's workspace", func() bool { return h.m.active == viewTask })
 	h.sendKey(keyPress("esc"))
 	h.p.until(10*time.Second, "esc back to the issue", func() bool { return h.m.active == viewIssue })
+	if detail.tab != issueTabWork {
+		t.Errorf("esc back from the task left the issue on tab %v, want Work", detail.tab)
+	}
 
 	// An issue.updated on this issue re-reads the detail.
 	again := "Crash on start (all platforms)"
@@ -228,6 +245,63 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 		}
 		return false
 	})
+
+	// The Work tab against the real chat filter (#931): a closed chat linked
+	// to the task, a chat on the issue, and the task archived — each lands
+	// through the live refresh, with no key press.
+	linked := &store.Chat{Title: "talk the task", Agent: "claude", PermissionMode: "full_auto"}
+	if err := h.st.OpenLinkedChat(ctx, task.ID, store.TaskAborted, linked); err != nil {
+		t.Fatalf("OpenLinkedChat: %v", err)
+	}
+	if _, err := h.st.CloseChat(ctx, linked.ID); err != nil {
+		t.Fatalf("CloseChat: %v", err)
+	}
+	onIssue := &store.Chat{
+		ProjectID: h.projectID, Title: "talk the issue", Agent: "claude", PermissionMode: "full_auto",
+		BaseBranch: "main", IssueID: &issueID,
+	}
+	if err := h.st.CreateIssueChat(ctx, onIssue, func(int64) string { return "vincent/issue-chat" }); err != nil {
+		t.Fatalf("CreateIssueChat: %v", err)
+	}
+	if _, _, err := h.st.TransitionTask(ctx, task.ID, store.TaskAborted, store.TaskArchived, store.TaskChange{}); err != nil {
+		t.Fatalf("TransitionTask: %v", err)
+	}
+	h.p.until(10*time.Second, "the Work tab's chats and the archived task", func() bool {
+		return len(detail.chats) == 2 && len(detail.tasks) == 1 && detail.tasks[0].ArchivedAt != nil
+	})
+	out = ansi.Strip(detail.render(120, 60))
+	for _, want := range []string{
+		"· archived",
+		"chat #" + strconv.FormatInt(linked.ID, 10) + "  talk the task  on task #" + strconv.FormatInt(task.ID, 10) + " · closed",
+		"chat #" + strconv.FormatInt(onIssue.ID, 10) + "  talk the issue  on the issue · idle",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the Work tab is missing %q:\n%s", want, out)
+		}
+	}
+	// enter on each chat opens it, and its esc comes back to the issue.
+	// pressChat's reason: the chat workspace's per-chat stream is not under
+	// the root's context and survives esc, and an open SSE connection holds
+	// httptest's Close. Cleanups run last-registered first, so this one runs
+	// before the server's.
+	chatWS := h.m.views[viewChat].(*chatView)
+	t.Cleanup(func() {
+		if chatWS.streamStop != nil {
+			chatWS.streamStop()
+		}
+	})
+	for _, id := range []int64{onIssue.ID, linked.ID} {
+		for i, row := range detail.selectRows() {
+			if row.chat != nil && row.chat.ID == id {
+				detail.cursor = i
+			}
+		}
+		detail.render(120, 60)
+		h.sendKey(keyPress("enter"))
+		h.p.until(10*time.Second, "the chat", func() bool { return h.m.active == viewChat })
+		h.sendKey(keyPress("esc"))
+		h.p.until(10*time.Second, "esc back to the issue from the chat", func() bool { return h.m.active == viewIssue })
+	}
 
 	// esc returns to the list with the selection kept.
 	h.sendKey(keyPress("esc"))

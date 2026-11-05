@@ -15661,6 +15661,29 @@ stream for the live tail.
    frees the worktree for the next main task) and `ctrl+t` (hand-off into
    the issue's next main task), the two endings §5.5 gives the kind.
 
+   *Amended 2026-11-05 (task 144, issue #933):* view 13 is two tabs behind
+   an **`Issue | Work`** strip, the pane's first line, drawn and clicked as
+   the task workspace's strip is. `tab` and `]` move to the next tab and
+   `shift+tab` and `[` to the previous one, wrapping; there are no digit
+   keys, and none of them moves the strip while the issue form or a prompt
+   holds the keyboard. The **Issue** tab is the page above with the linked
+   tasks collapsed to one selectable **Work** line — `N tasks (A active),
+   M chats — tab for the work` — on which `enter` switches to the Work tab;
+   Main worktree, Handoff and Source stay on it. The **Work** tab holds the
+   linked tasks as described above — merge-backs folded, `· archived`, and a
+   dim `lanes n/m` from `children` on a fan-out parent, lanes never rows —
+   then a **Chats** group: every chat `GET /v1/chats?issue_id=&archived=all`
+   returns (#931), newest first, each with a state glyph, `chat #id`, its
+   title and a dim tail of where it was opened (`on the issue`, `on task
+   #T`) and its state (`closed`, `archived`, `handed off → #T`). Each group
+   says so when it is empty. `enter` opens a task's workspace or a chat,
+   each `esc` returning to view 13; archived and terminal rows open
+   read-only as they do anywhere. The selected tab survives that `esc`, and
+   opening another issue starts on Issue. A failed chat listing reads
+   `chats unavailable` rather than failing the screen. The screen also
+   re-reads on a `chat.*` event of a listed chat or whose `linked_task_id`
+   is a listed task. The tab is client-only and unpaged.
+
 ### Layout
 
 The list above is also the screen contract. View 1 is the board-only home

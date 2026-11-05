@@ -1331,13 +1331,29 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"enter": func(t *testing.T) {
 			v := issueFixture()
-			v.render(120, 200) // enter acts on a row that is on screen (review F6)
+			v.setTab(issueTabWork) // the linked tasks are on the Work tab (task 144)
+			v.render(120, 200)     // enter acts on a row that is on screen (review F6)
 			_, cmd := v.updateKey(registryKey(t, "enter"))
 			if cmd == nil {
 				t.Fatal("enter did not open the linked task")
 			}
 			if msg, ok := cmd().(selectTaskMsg); !ok || msg.id != 21 || msg.back != viewIssue {
 				t.Fatalf("enter produced %#v, want task #21 returning to the issue", cmd())
+			}
+		},
+		// The Issue | Work strip (task 144).
+		"tab": func(t *testing.T) {
+			v := issueFixture()
+			v.updateKey(registryKey(t, "tab"))
+			if v.tab != issueTabWork {
+				t.Fatalf("tab left the strip on %v, want Work", v.tab)
+			}
+		},
+		"]": func(t *testing.T) {
+			v := issueFixture()
+			v.updateKey(registryKey(t, "]"))
+			if v.tab != issueTabWork {
+				t.Fatalf("] left the strip on %v, want Work", v.tab)
 			}
 		},
 		"o": func(t *testing.T) {
@@ -1387,6 +1403,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		// selection; on the 80×24 first screen, where none is, it scrolls.
 		"down": func(t *testing.T) {
 			v := issueFixture()
+			v.setTab(issueTabWork)
 			v.render(100, 120)
 			v.updateKey(registryKey(t, "down"))
 			if v.cursor != 1 {

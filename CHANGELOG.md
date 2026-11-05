@@ -22,6 +22,12 @@ list with the user-facing context a commit subject cannot carry.
   `issue_id`. On by default; `archive_tasks_on_issue_close: false` turns it
   off, live, from config, the API, the CLI and the TUI. Issues closed before
   the upgrade are not archived (#928).
+- **An issue's work on one tab.** The TUI's issue detail has an
+  `Issue | Work` strip (`tab`/`shift+tab`, `]`/`[`, or a click). The Work tab
+  lists every task the issue started and every chat on it or on its tasks,
+  newest first, archived, closed and handed-off ones included, with a
+  fan-out parent's `lanes n/m`; `enter` opens any of them and `esc` comes
+  back to the tab. The Issue tab sums them up in one line (#933).
 - **List an issue's chats.** `GET /v1/chats` takes `issue_id`: the chats
   opened on the issue, linked to any of its tasks — fan-out lanes included —
   or handed off into its work. A malformed or non-positive id is a

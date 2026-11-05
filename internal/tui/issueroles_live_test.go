@@ -92,9 +92,15 @@ func TestIssueWorktreeRolesAgainstTheRealAPI(t *testing.T) {
 	// The detail, opened, annotates it; cancelling the main task frees the
 	// worktree, and the detail re-reads from the event.
 	h.send(openIssueMsg{id: iss.ID, projectID: iss.ProjectID})
+	// The linked tasks are on the Work tab (task 144); opening the issue
+	// starts it on the Issue tab, so the tab is chosen once it has opened.
 	h.p.until(10*time.Second, "the side task's annotation", func() bool {
+		if detail.id == iss.ID {
+			detail.setTab(issueTabWork)
+		}
 		return strings.Contains(ansi.Strip(detail.render(160, 80)), "side · merge agent")
 	})
+	detail.setTab(issueTabIssue)
 	if _, err := h.m.client.Cancel(t.Context(), main.ID); err != nil {
 		t.Fatalf("cancel the main task: %v", err)
 	}

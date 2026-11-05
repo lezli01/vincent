@@ -425,7 +425,8 @@ In detail:
   foldable sections with a count and a `!` badge for what waits on you, and
   `done` hidden until `s` shows it. Each row carries the issue's state,
   labels, source and the tasks it started; the screen opens one to its Markdown-rendered description, its discussion thread
-  and its active tasks. A form files and edits issues there, `W` writes a
+  and its active tasks, and a Work tab lists every task and chat it has,
+  archived and closed ones included. A form files and edits issues there, `W` writes a
   comment in `$EDITOR`, and the same screens close, reopen and delete them,
   mark finished work ready, and hand ready issues off in a form that asks for
   the workflow and the grant;

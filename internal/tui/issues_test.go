@@ -405,11 +405,22 @@ func TestIssueDetailShowsSourceAndTasks(t *testing.T) {
 	v.issue.Body = "short"
 	out := ansi.Strip(v.render(120, 60))
 	for _, want := range []string{
-		"#5", "Dark mode", "octo/web#41", "high", "3 tasks, 2 active",
-		"#21", "dark mode, first pass", "https://github.com/octo/web/issues/41",
+		"Issue │ Work", "#5", "Dark mode", "octo/web#41", "high", "3 tasks (2 active), 0 chats — tab for the work",
+		"https://github.com/octo/web/issues/41",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the detail is missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "dark mode, first pass") {
+		t.Errorf("the Issue tab lists the tasks the Work tab holds:\n%s", out)
+	}
+	// The tasks are on the Work tab (task 144).
+	v.setTab(issueTabWork)
+	out = ansi.Strip(v.render(120, 60))
+	for _, want := range []string{"3 tasks, 2 active", "#21", "dark mode, first pass"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the Work tab is missing %q:\n%s", want, out)
 		}
 	}
 }

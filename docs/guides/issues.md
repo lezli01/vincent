@@ -223,6 +223,12 @@ main task in the same worktree. See
 [A chat on an issue](../reference/api.md#a-chat-on-an-issue) for the full
 rule.
 
+In the TUI the issue detail's **Work** tab lists every task and chat the issue
+has, newest first, archived and closed ones included: a chat opened on the
+issue, one opened on any of its tasks, and one handed off into one. `tab` or
+`]` switches to it from the description, and `enter` on a row opens the task
+or the chat. See [Issues](tui.md#issues) in the TUI guide.
+
 ## Follow-ups, chats, deleting and archiving
 
 **A predecessor is history.** Once a finished main task has handed the

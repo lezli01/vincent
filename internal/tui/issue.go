@@ -59,7 +59,12 @@ type (
 		// commentsErr, shown in the thread's place for the same reason.
 		comments    []apiclient.IssueComment
 		commentsErr error
-		err         error
+		// chats are the chats that concern the issue (#931), for the Work
+		// tab (task 144). A listing that failed is chatsErr, and the tab
+		// says the chats are unavailable rather than failing the screen.
+		chats    []apiclient.Chat
+		chatsErr error
+		err      error
 	}
 	// issueCommentEditedMsg is $EDITOR closing on a comment draft.
 	issueCommentEditedMsg struct {
@@ -94,9 +99,24 @@ type issueView struct {
 	commentsErr error
 	posting     bool
 
-	// cursor is the selected row of selectRows — the Main worktree section,
-	// when the issue has a main branch, then the linked tasks in display
-	// order; scroll is the page's first line.
+	// chats and chatsErr are the Work tab's chats as last read (task 144).
+	chats    []apiclient.Chat
+	chatsErr error
+
+	// tab is the strip's selection (task 144). It survives esc back from a
+	// task or chat, which keeps the view for the same id, and resets when
+	// another issue is opened. tabPos is each tab's cursor and scroll while
+	// the other is shown; tabHits the strip's columns as last drawn, and
+	// stripY the pane line it is on.
+	tab     issueTab
+	tabPos  [issueTabCount][2]int
+	tabHits []issueTabHit
+	stripY  int
+
+	// cursor is the selected row of selectRows — on the Issue tab the Main
+	// worktree section, when the issue has a main branch, the Work line and
+	// the handoffs; on the Work tab the linked tasks then the chats, in
+	// display order; scroll is the page's first line.
 	cursor int
 	scroll int
 	// The page is scroll-first (#792): the arrows scroll it, and move the
@@ -161,6 +181,8 @@ func (v *issueView) open(id int64) tea.Cmd {
 	if id != v.id {
 		v.issue, v.tasks, v.loaded, v.loadErr = apiclient.Issue{}, nil, false, nil
 		v.comments, v.commentsErr, v.posting = nil, nil, false
+		v.chats, v.chatsErr = nil, nil
+		v.tab, v.tabPos = issueTabIssue, [issueTabCount][2]int{}
 		// A re-read still pending is the other issue's: left armed, it would
 		// swallow this one's events — a comment landing in the debounce
 		// window would never show.
@@ -291,7 +313,13 @@ func (v *issueView) loadCmd() tea.Cmd {
 			tasks = nil
 		}
 		comments, commentsErr := client.ListIssueComments(ctx, id)
-		return issueLoadedMsg{id: id, issue: iss, tasks: tasks, comments: comments, commentsErr: commentsErr}
+		chats, chatsErr := client.ListChats(ctx, apiclient.ListChatsOptions{
+			IssueID: id, Archived: apiclient.ArchivedAll,
+		})
+		return issueLoadedMsg{
+			id: id, issue: iss, tasks: tasks, comments: comments, commentsErr: commentsErr,
+			chats: chats, chatsErr: chatsErr,
+		}
 	}
 }
 
@@ -305,6 +333,10 @@ func (v *issueView) applyLoaded(msg issueLoadedMsg) {
 	}
 	v.issue, v.tasks, v.loaded, v.loadErr = msg.issue, msg.tasks, true, nil
 	v.comments, v.commentsErr = msg.comments, msg.commentsErr
+	v.chats, v.chatsErr = msg.chats, msg.chatsErr
+	if msg.chatsErr != nil {
+		v.chats = nil
+	}
 	v.cursor = min(v.cursor, max(len(v.selectRows())-1, 0))
 }
 
@@ -333,8 +365,10 @@ func (v *issueView) updateNote(n apiclient.Note) tea.Cmd {
 		}
 	case strings.HasPrefix(ev.Event.Type, "chat."):
 		// A chat opened on this issue moves the Main worktree section and
-		// the attention mark as its state changes (task 140.9).
-		if chatEventIssueID(ev.Event) == v.id {
+		// the attention mark as its state changes (task 140.9); one the
+		// Work tab lists, or one linked to a task it lists, moves that tab
+		// (task 144).
+		if chatEventIssueID(ev.Event) == v.id || v.chatEventConcerns(ev.Event) {
 			return v.scheduleRefresh()
 		}
 	case strings.HasPrefix(ev.Event.Type, "handoff."):
@@ -374,6 +408,10 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	// key its warning said it took (task 118, task 128 decision 3; review F5).
 	if cmd, ok := v.issueOp(msg.String()); ok {
 		return v, cmd
+	}
+	if delta, ok := issueTabKey(msg.String()); ok {
+		v.cycleTab(delta)
+		return v, nil
 	}
 	switch msg.String() {
 	case "up", "k":
@@ -576,6 +614,10 @@ func (v *issueView) updateClick(msg tea.MouseClickMsg) {
 	if v.w.open() || msg.Button != tea.MouseLeft {
 		return
 	}
+	if msg.Y == v.stripY {
+		v.clickStrip(msg.X)
+		return
+	}
 	at := v.scroll + msg.Y - v.viewTop
 	if at < v.scroll || at >= v.scroll+v.view {
 		return
@@ -684,16 +726,29 @@ type issueDetailRow struct {
 	// handoff is a row of the Handoff section (task 137.11): enter opens
 	// the handoff's task.
 	handoff *apiclient.IssueHandoffEntry
+	// workLine is the Issue tab's "N tasks, M chats" line, enter on which
+	// switches to the Work tab (task 144 decision 1).
+	workLine bool
+	// chat is a row of the Work tab's Chats group: enter opens the chat.
+	chat *apiclient.Chat
 }
 
-// selectRows is what the cursor walks, in display order: the Main worktree
-// section when the issue has a main branch, then the linked tasks newest
-// first with each merge-back folded under the side task it merges. A
-// merge-back whose source is not listed stays a top-level row.
+// selectRows is what the cursor walks, in display order. On the Issue tab:
+// the Main worktree section when the issue has a main branch, the Work line,
+// then the handoffs. On the Work tab: the linked tasks newest first with each
+// merge-back folded under the side task it merges — a merge-back whose source
+// is not listed stays a top-level row — then the chats newest first.
 func (v *issueView) selectRows() []issueDetailRow {
 	var rows []issueDetailRow
-	if v.issue.MainWorktree != nil {
-		rows = append(rows, issueDetailRow{mainWorktree: true})
+	if v.tab == issueTabIssue {
+		if v.issue.MainWorktree != nil {
+			rows = append(rows, issueDetailRow{mainWorktree: true})
+		}
+		rows = append(rows, issueDetailRow{workLine: true})
+		for i := range v.issue.Handoffs {
+			rows = append(rows, issueDetailRow{handoff: &v.issue.Handoffs[i]})
+		}
+		return rows
 	}
 	listed := make(map[int64]bool, len(v.tasks))
 	for _, t := range v.tasks {
@@ -713,15 +768,17 @@ func (v *issueView) selectRows() []issueDetailRow {
 			}
 		}
 	}
-	for i := range v.issue.Handoffs {
-		rows = append(rows, issueDetailRow{handoff: &v.issue.Handoffs[i]})
+	chats := v.workChats()
+	for i := range chats {
+		rows = append(rows, issueDetailRow{chat: &chats[i]})
 	}
 	return rows
 }
 
-// openTask opens the selected row's task — a linked task, or the Main
-// worktree section's occupant — in its workspace, which returns here on esc
-// rather than to the board.
+// openTask opens the selected row — a linked task, a handoff's task or the
+// Main worktree section's occupant in its workspace, a chat in the chat view,
+// each returning here on esc rather than to the board — or, on the Work
+// line, switches to the Work tab.
 func (v *issueView) openTask() tea.Cmd {
 	rows := v.selectRows()
 	// The selection acts only while it is on screen (#792): on the first
@@ -731,6 +788,14 @@ func (v *issueView) openTask() tea.Cmd {
 		return nil
 	}
 	row := rows[v.cursor]
+	if row.workLine {
+		v.setTab(issueTabWork)
+		return nil
+	}
+	if c := row.chat; c != nil {
+		id, pid := c.ID, c.ProjectID
+		return func() tea.Msg { return openChatMsg{id: id, projectID: pid, back: viewIssue} }
+	}
 	id, state, pid := row.task.ID, row.task.State, row.task.ProjectID
 	if row.handoff != nil {
 		id, state, pid = row.handoff.TaskID, "", v.issue.ProjectID
@@ -848,10 +913,17 @@ func (v *issueView) render(width, height int) string {
 	if v.w.act != nil {
 		footer, tail = v.w.act.lines(width)
 	}
+	// The strip is the pane's first line and never scrolls (task 144). The
+	// root draws this pane inside its frame (root.framedView) and hands a
+	// click over with only the header rows taken off, so a click's Y counts
+	// the frame's top border: the strip is on Y 1, as renderStrip's x counts
+	// the border on the other axis and taskView's tabY does (review F1).
+	strip := v.renderStrip(width)
+	v.stripY = issueFrameTop
 	// Body plus footer never exceed the pane (#795): the prompt wins, and
 	// the page shrinks to nothing before the prompt loses a line.
-	footer = fitFooter(footer, height, tail)
-	room := height - len(footer)
+	footer = fitFooter(footer, height-1, tail)
+	room := height - 1 - len(footer)
 	// The page scrolls freely, and the selection never pulls it (#792). A
 	// page taller than the pane gives a line to a ▲ cue while it continues
 	// above and to a ▼ cue while it continues below — the picker's idiom.
@@ -861,14 +933,14 @@ func (v *issueView) render(width, height int) string {
 		limit = len(body) - (room - 1) // the last page has only the ▲ cue
 	}
 	v.scroll = min(max(v.scroll, 0), max(limit, 0))
-	v.view, v.viewTop = room, 0
-	var lines []string
+	v.view, v.viewTop = room, issueFrameTop+1
+	lines := []string{strip}
 	if room == 0 {
-		return strings.Join(footer, "\n")
+		return ansi.Truncate(strip, width, "…") + "\n" + strings.Join(footer, "\n")
 	}
 	if cues && v.scroll > 0 {
 		lines = append(lines, styleDim.Render(fmt.Sprintf("  ▲ %d more", v.scroll)))
-		v.view, v.viewTop = room-1, 1
+		v.view, v.viewTop = room-1, issueFrameTop+2
 	}
 	below := 0
 	if cues && v.scroll+v.view < len(body) {
@@ -885,6 +957,10 @@ func (v *issueView) render(width, height int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// issueFrameTop is the root frame's top border: the click row of the pane's
+// first line (review F1).
+const issueFrameTop = 1
 
 // fitFooter cuts a prompt or note to height lines: its leading blank goes
 // first, then the lines above its last tail lines — the key line and the note
@@ -984,6 +1060,9 @@ func (v *issueView) pageLines(width int) (lines []string) {
 	if v.loadErr != nil {
 		lines = append(lines, styled(wrapText("⚠ could not re-read the issue: "+errString(v.loadErr), width, hanging("  ")), styleBad)...)
 	}
+	if v.tab == issueTabWork {
+		return append(lines, v.workTabLines(v.selectRows(), width, len(lines))...)
+	}
 	lines = append(lines, "")
 
 	labels := "none"
@@ -1059,45 +1138,7 @@ func (v *issueView) pageLines(width int) (lines []string) {
 		lines = append(lines, marker+styleDim.Render(padRight("occupant", 10))+occupant)
 	}
 
-	lines = append(lines, "", " "+styleTitle.Render("Tasks")+
-		styleDim.Render("  "+plural(iss.Tasks.Count, "task", "tasks")+", "+
-			strconv.Itoa(len(iss.Tasks.ActiveIDs))+" active"))
-	if len(v.tasks) == 0 {
-		lines = append(lines, styleDim.Render("  no task yet · "+opKey(keymap.Add)+" starts one, "+
-			opKey(keymap.Chat)+" talks it through in a chat"))
-	}
-	for i, row := range rows {
-		// The Main worktree and Handoff sections render their own rows. A
-		// handoff row carries no task, and drawing it here was a ghost
-		// `· #0` under the issue's tasks (review F5).
-		if row.mainWorktree || row.handoff != nil {
-			continue
-		}
-		t := row.task
-		marker := "  "
-		if i == v.cursor {
-			marker = styleFocus.Render("› ")
-		}
-		v.rowLines = append(v.rowLines, len(lines))
-		if row.child {
-			marker += "  └ "
-		}
-		glyph := taskStateGlyph(t.State)
-		if glyph == "" {
-			glyph = "·"
-		}
-		state := t.State
-		if t.ArchivedAt != nil {
-			state += " · archived"
-		}
-		if role := issueTaskRole(t); role != "" {
-			state = role + " · " + state
-		}
-		lead := marker + stateStyles[t.State].Render(glyph) + " " +
-			styleKey.Render("#"+strconv.FormatInt(t.ID, 10)) + "  "
-		title := fitTitle(t.Title, width-cols(lead)-2-cols(state))
-		lines = append(lines, lead+title+"  "+styleDim.Render(state))
-	}
+	lines = append(lines, v.issueTabWorkLines(rows, width, len(lines))...)
 	lines = append(lines, v.handoffLines(rows, width, len(lines))...)
 
 	if iss.Source != nil {
