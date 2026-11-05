@@ -3128,9 +3128,11 @@ source is Jira, that `jira.enabled` is on, that both credential variables are
 set, that the site answers, that it accepts the credential, and that it shows
 the bound project. The `server`, `account` and `project id` rows appear once
 the probe got that far, so a failure reads as where it stopped. The last row
-is `issue import/sync`: `available`, or `unavailable:` and the reason —
-`not_jira`, `disabled`, `no_credential`, `unreachable`, `unauthorized`,
-`forbidden`, `not_found`, `rate_limited`, `bad_request` or `bad_response`.
+is `issue import/sync`: `available`, or `unavailable:` and the reason as a
+sentence, such as `unavailable: Jira rejected the credential`. `--json` carries
+the reason's code in `reason` — `not_jira`, `disabled`, `no_credential`,
+`unreachable`, `unauthorized`, `forbidden`, `not_found`, `rate_limited`,
+`bad_request` or `bad_response` — beside the sentence in `message`.
 
 It is the Jira counterpart of [`vincent github status`](#vincent-github-status).
 [`vincent issue sync --status`](#vincent-issue-sync) says how the import is

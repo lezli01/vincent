@@ -108,6 +108,15 @@ func TestJiraStatusAgainstTheRealHandler(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "unavailable: ") || strings.Contains(out, "Cloud") {
 		t.Errorf("jira status unauthorized: code %d, out %s", code, out)
 	}
+	// The row reads the reason as a sentence; the code is --json's (review
+	// F5 on #943: the CLI reference says so).
+	if !strings.Contains(out, "unavailable: Jira rejected the credential") || strings.Contains(out, "unavailable: unauthorized") {
+		t.Errorf("jira status unauthorized row: %s", out)
+	}
+	out, _ = run("--project", id, "--json")
+	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Reason != "unauthorized" {
+		t.Errorf("jira status unauthorized --json: %+v, %v (%s)", got, err, out)
+	}
 
 	if out, code := run("--project", "9999"); code != 1 || !strings.Contains(out, "Error:") {
 		t.Errorf("jira status unknown project: code %d, out %s", code, out)
