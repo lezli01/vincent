@@ -78,6 +78,11 @@ delete_empty_branch_on_archive: true
 # unless delete_empty_branch_on_archive is also on.
 delete_remote_branch_on_archive: false
 
+# Archive a closed issue's settled tasks automatically, once nothing on the
+# issue is still working. Never forces a dirty worktree and never deletes a
+# remote branch; a task it cannot archive is logged and left for you.
+archive_tasks_on_issue_close: true
+
 # Refresh a task's base branch from its remote before the task's worktree is
 # created, and start the task branch at the fetched commit rather than at
 # whatever your local base happened to be. Your own checkout is never touched:
@@ -694,6 +699,41 @@ never fails the archive.
 It does nothing while `delete_empty_branch_on_archive` is `false`. That
 combination still loads — a key that cannot do anything is not an invalid one —
 but the daemon logs a warning at startup and on any reload that introduces it.
+
+### `archive_tasks_on_issue_close`
+
+```yaml
+archive_tasks_on_issue_close: true
+```
+
+When an [issue](../guides/issues.md) closes — by any route: the TUI, the CLI,
+the API, a delivery, or a sync from its tracker — the daemon archives the
+issue's finished tasks for you, once nothing on the issue is still working.
+Only the tasks that existed when the issue closed are archived; a task started
+after the close is left alone.
+
+It waits while any task of the issue is still running, queued, paused or
+waiting on you, or while a chat on the issue is open, and archives when the
+last of them finishes. It also waits while a [handoff](../guides/handoff.md)
+still holds the issue.
+
+This archive is careful in ways a human archive need not be. It **never
+forces**: a task whose worktree has uncommitted changes is skipped and left
+exactly as it was. It **never deletes a remote branch**, whatever
+[`delete_remote_branch_on_archive`](#delete_remote_branch_on_archive) says;
+[`delete_empty_branch_on_archive`](#delete_empty_branch_on_archive) still
+applies locally. A task it cannot archive — uncommitted changes, an open chat
+linked to it, a fan-out lane still working — is logged to `daemon.log` with the
+reason and left for you to archive; it is tried again when the cause clears.
+Chats are never archived.
+
+Its archive event carries `archived_by: "issue_closed"` and the `issue_id`, so
+a [`notify`](#notify) command or an event reader can tell it from yours.
+
+Set it to `false` to keep archiving a human action. The change applies from the
+next event, without a restart. Turning it back on does not catch up on issues
+closed while it was off, and upgrading to a version with this key does not
+archive issues closed before the upgrade.
 
 ### `transcript_retention_days`
 

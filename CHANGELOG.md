@@ -13,6 +13,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Closing an issue archives its tasks.** Once a closed issue has nothing
+  still working — every task finished, no chat on it open, no handoff holding
+  it — the daemon archives the tasks that existed at the close, side work
+  before main tasks. It never forces a dirty worktree and never deletes a
+  remote branch; a task it cannot archive is logged to `daemon.log` and left
+  for you. The archive event carries `archived_by: "issue_closed"` and
+  `issue_id`. On by default; `archive_tasks_on_issue_close: false` turns it
+  off, live, from config, the API, the CLI and the TUI. Issues closed before
+  the upgrade are not archived (#928).
 - **List an issue's chats.** `GET /v1/chats` takes `issue_id`: the chats
   opened on the issue, linked to any of its tasks — fan-out lanes included —
   or handed off into its work. A malformed or non-positive id is a

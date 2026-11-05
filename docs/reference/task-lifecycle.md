@@ -71,7 +71,7 @@ task's existing worktree, and returns it to the state it came from. See
 | `awaiting_children` | A `fan_out` step's lanes are running as child tasks; this task owns no process | no |
 | `blocked` | A step failed and retries are exhausted; waiting for a human | no |
 | `paused` | You asked it to hold; takes effect at the next step boundary. Or it was created held, and has not run yet | no |
-| `done` | Every step succeeded. Worktree and branch retained for inspection. `follow_up` runs more work in them; `archive` tears them down | no |
+| `done` | Every step succeeded. Worktree and branch retained for inspection. `follow_up` runs more work in them; `archive` tears them down — or, for a task of a closed issue, the daemon does ([below](#closed-issues-archive-their-tasks)) | no |
 | `aborted` | You cancelled, or rejected terminally. Worktree and branch retained, and open to `follow_up` on the same terms as `done` | no |
 | `archived` | Terminal. Worktree removed, record kept — until a human discards it with [`vincent task delete`](cli.md#vincent-task-delete), which is not an action on this page's list and is the only thing that removes the row. A deleted task can be brought back from a backup with [`vincent task import`](cli.md#vincent-task-import). The branch is kept unless it has no commits past its base, in which case it is deleted ([`delete_empty_branch_on_archive`](configuration.md#delete_empty_branch_on_archive)) | no |
 
@@ -176,6 +176,22 @@ One edge worth knowing about: because a follow-up's process is live while it
 runs, `cancel` during one aborts the task — so `done → aborted` is reachable,
 which it was not before follow-ups existed.
 
+### Closed issues archive their tasks
+
+The one exception to "until you archive it" is a task started from an
+[issue](../guides/issues.md). When the issue closes, the daemon archives its
+`done` and `aborted` tasks for you, once every task of the issue has finished
+and no chat on it is open — the tasks that existed at the close, side work
+before the issue's main tasks. This is on by default and switched off with
+[`archive_tasks_on_issue_close`](configuration.md#archive_tasks_on_issue_close).
+
+It is the same `archive` as yours, made more cautious: it never forces a dirty
+worktree and never deletes a remote branch. A task it cannot archive —
+uncommitted changes, a linked chat still open, a fan-out lane still working —
+stays as it is, with a warning in `daemon.log`, and is tried again when the
+cause clears. Its `task.state_changed` event carries
+`archived_by: "issue_closed"` and the `issue_id`.
+
 ## Human actions
 
 | Action | Valid from | Effect |
@@ -191,7 +207,7 @@ which it was not before follow-ups existed.
 | `approve` | awaiting_gate | Gate `approved`, advance → `queued` |
 | `reject` | awaiting_gate | Gate `rejected` → `blocked`, from which you can edit-and-retry an earlier step, skip, or abort |
 | `set priority` | queued, paused | Reorders scheduler admission |
-| `archive` | done, aborted | Removes the worktree → `archived`, then deletes the branch **only** if it has no commits past its base. Refuses on a dirty worktree unless forced — uncommitted work would be lost, and a refusal never reaches the branch |
+| `archive` | done, aborted | Removes the worktree → `archived`, then deletes the branch **only** if it has no commits past its base. Refuses on a dirty worktree unless forced — uncommitted work would be lost, and a refusal never reaches the branch. The daemon takes this action itself for a closed issue's tasks, never forced ([below](#closed-issues-archive-their-tasks)) |
 | `follow_up` | done, aborted | Runs one more piece of work — an agent prompt, a shell command or a registry workflow — in the task's existing worktree and branch → `queued` (→ `paused` when [held](api.md#holding-a-retry-or-a-follow-up)), and back to the state it came from when it ends. Repeatable; it never changes the task's verdict and never spends the workflow's retry budgets |
 | `chat` | blocked, awaiting_gate, done, aborted | Opens a [chat](#chatting-with-a-stopped-task) with an agent in the task's existing worktree and branch. The task does not move, and it is **locked** — every other action but `cancel` is refused — until you close the chat |
 

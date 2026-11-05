@@ -23,9 +23,12 @@ Conventions for this file are in [the tasks README](README.md).
   `Store.ArchivableIssueTasks` returns a closed issue's settled roots created
   at or before its close, side work before main tasks, or nothing while any
   root is unsettled or an issue chat is live. ✓ 2026-11-04
-- [ ] **143.3** ([#928](https://github.com/lezli01/vincent/issues/928)) The
+- [x] **143.3** ([#928](https://github.com/lezli01/vincent/issues/928)) The
   durable event-cursor worker that archives them, and the
   `archive_tasks_on_issue_close` key. Depends: 143.1, 143.2.
+  `internal/issuearchive`, wired in `daemon.Run`; its cursor is migration
+  0053's one row, seeded at the newest event; decisions 10 and 11 below.
+  ✓ 2026-11-05
 - [ ] **143.4** ([#929](https://github.com/lezli01/vincent/issues/929)) A
   `vincent doctor` row for settled tasks of closed issues that auto-archive had
   to skip. Depends: 143.3.
@@ -83,13 +86,27 @@ Confirmed by the author on 2026-11-04.
    the core keys (`TaskChange.EventPayload`), so an `issue_id` passed in it can
    never contradict the row's.
 
+10. **A claimed issue holds its archive** (143.3, settled 2026-11-05).
+    While any handoff item on a closed issue has an outcome that claims it
+    (`HandoffOutcome.Claims()`: unresolved or waiting), the worker archives
+    none of the issue's tasks. A handoff `return` after a reopen follows up
+    the issue's latest main task, and that follow-up is refused once the
+    task is archived. The hold lives in the worker, through
+    `Store.IssueHandoffClaimed` over `idx_handoff_items_claim`'s condition;
+    `ArchivableIssueTasks` is unchanged, and #929's doctor row can ask the
+    same helper. The worker wakes on `handoff.item_changed` and
+    `handoff.settled`, so the release, return, delivery or settle that ends
+    the claim archives the issue then. Ordinary delivery closes the issue and
+    marks the item delivered in one transaction, so the hold is normally a
+    no-op.
+11. **A released issue chat's leftover main-worktree directory is out of
+    scope** (143.3, settled 2026-11-05). A closed or archived issue chat can
+    still name the issue's main-worktree directory (task 140 decision 3,
+    `Store.IssueMainWorktreeChatHolder`). The worker does not touch it,
+    consistent with decision 4. It is a known leftover; reclaiming it is a
+    separate follow-up — a new issue, or an item #929's doctor row reports.
+
 ### Left open
 
-Owned by 143.3, not settled here:
-
-- Whether an unresolved handoff item holds the archive (#925 open question 5),
-  which would protect handoff `return` after a reopen. The 143.2 query does
-  not consult handoff items, so 143.3 decides this in the worker (or widens
-  the query).
-- Who reclaims a released issue chat's leftover main-worktree directory (#925
-  open question 7).
+Both questions 143.3 owned are settled: the handoff hold is decision 10, and
+the chat-directory leftover is decision 11.
