@@ -1,6 +1,6 @@
 # 143 — Auto-archive a closed issue's tasks
 
-**Status:** 🔄 in progress (4/5) · **Opened:** 2026-11-04
+**Status:** ✅ done (5/5) · **Opened:** 2026-11-04
 
 The auto-archive stream of [#925](https://github.com/lezli01/vincent/issues/925):
 when an issue reaches `closed`, by any route, the daemon archives the settled
@@ -36,9 +36,11 @@ Conventions for this file are in [the tasks README](README.md).
   `Store.ClosedIssueArchiveCandidates`, which shares its predicates with
   `ArchivableIssueTasks`; the F3 rule shared as `issuearchive.SideWorkHold`;
   decisions 12–16 below. ✓ 2026-11-05
-- [ ] **143.5** ([#930](https://github.com/lezli01/vincent/issues/930)) An
+- [x] **143.5** ([#930](https://github.com/lezli01/vincent/issues/930)) An
   acceptance gate proving issue-close auto-archive end to end on all three
-  platforms. Depends: 143.3.
+  platforms. Depends: 143.3. `scripts/143-gate.sh`, wired in `ci.yml`'s
+  `gate-group` (group 1); its record is
+  [docs/gates/143-auto-archive.md](../gates/143-auto-archive.md). ✓ 2026-11-05
 
 ## Decisions
 
