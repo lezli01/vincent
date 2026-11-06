@@ -195,7 +195,7 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
-VINCENT_GATE_BIN=/some/dir ./scripts/m1-gate.sh # copy prebuilt vincent/fakeagent/fakegh from there instead of building
+VINCENT_GATE_BIN=/some/dir ./scripts/m1-gate.sh # copy prebuilt vincent/fakeagent/fakegh/fakejira from there instead of building
 ```
 
 All twenty-six of those run in `ci.yml`'s `gate-group` job on all three platforms:
