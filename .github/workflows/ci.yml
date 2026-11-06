@@ -280,7 +280,7 @@ jobs:
         shell: bash
         run: |
           echo "VINCENT_GATE_BIN=$RUNNER_TEMP/gate-bin" >> "$GITHUB_ENV"
-          go build -o "$RUNNER_TEMP/gate-bin/" ./cmd/vincent ./cmd/fakeagent ./cmd/fakegh
+          go build -o "$RUNNER_TEMP/gate-bin/" ./cmd/vincent ./cmd/fakeagent ./cmd/fakegh ./cmd/fakejira
 
       # M1: the scripted curl flow against the fake agent.
       - name: M1 gate (fake agent)
@@ -586,6 +586,26 @@ jobs:
         if: matrix.group == 1
         shell: bash
         run: ./scripts/140-gate.sh
+
+      # 142: Jira issue sync end to end (task 142.18; §5.6, §12.3, §13.2,
+      # §13.4) — the import, an idle sync, a close read from Jira, a human
+      # close written once, a close surviving a forced stop, jira.enabled
+      # false, a read-only token, a conflict Jira wins, no done transition,
+      # moved and deleted issues, the MCP guard, the comment mirror, a
+      # granted handoff's ADF comment and close, a missing credential, and a
+      # Jira-bound project with a GitHub origin. It is the first gate with a
+      # background HTTP server — cmd/fakejira on a loopback port — and the
+      # matrix earns its place there: the fake binds :0 and writes its port
+      # to a file the gate polls for, because no port chosen in bash is free
+      # on every runner, and the gate stops it with POST /_fake/shutdown and
+      # waits for it to exit before removing its directory, because Windows
+      # has no graceful signal for a console-less child and will not delete
+      # a running executable. Group 1, the lightest measured on Windows when
+      # this was wired.
+      - name: 142 gate (Jira issues)
+        if: matrix.group == 1
+        shell: bash
+        run: ./scripts/142-gate.sh
 
       # 143: auto-archive on issue close (task 143.5; §5.6, §6, §10, §12.3,
       # §12.4) — closing an issue through the API archives its done task
