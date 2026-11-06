@@ -88,8 +88,8 @@ too: it asks the importer to poll early and flushes vincent's pending state
 writes to the remote. Its `GET`, `project_issue_sync_status`, is an ordinary
 tool, and names the bound source in `source` and `provider_name`.
 `issue_close` and `issue_reopen` are tools, but on an issue imported from
-GitHub they are refused with `forge_write_needs_human`: that issue's state is
-written back to GitHub, and only a person, or a handoff a person
+GitHub or Jira they are refused with `forge_write_needs_human`: that issue's
+state is written back to its tracker, and only a person, or a handoff a person
 [granted](../reference/api.md#handoffs) `issue.close`, does that. The same
 refusal meets a `vincent issue` command a workflow step or a chat agent runs,
 which the CLI marks with a header.

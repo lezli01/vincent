@@ -421,7 +421,7 @@ In detail:
   with the task claiming each one, and is where a link is made or removed
   by hand. It is offered only when the selected project qualifies.
 - An issues screen lays the selected project's issues — filed in vincent or
-  imported from GitHub — out as a board of four lanes vincent derives from
+  imported from GitHub or Jira — out as a board of four lanes vincent derives from
   each issue and its tasks: open, in progress, hand-off and done, stacked as
   foldable sections with a count and a `!` badge for what waits on you, and
   `done` hidden until `s` shows it. Each row carries the issue's state,

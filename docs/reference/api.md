@@ -823,7 +823,7 @@ issue and chat:
 | `tasks.active` | Tasks not yet `done` or `aborted`, fan-out lanes included — counted over the same rows as `slots_used` (every task, not only roots), so the two agree about lanes. It is not `slots_used`: a `queued` or `blocked` task is active without holding a slot. This is **not** an issue's `active`, which counts only root tasks |
 | `tasks.attention` | Tasks in `awaiting_input`, `awaiting_gate` or `blocked`, lanes included. A fan-out parent in `awaiting_children` is not counted; its lane that needs you is |
 | `issues.open` | Open issues |
-| `issues.open_imported` | Open issues imported from GitHub |
+| `issues.open_imported` | Open issues imported from GitHub or Jira |
 | `issues.active` | Open issues with an unfinished root task, as on the issue itself |
 | `issues.lanes` | Issues per [lane](#issues) — `open`, `in_progress`, `hand_off` and `done`, every key always present. Closed issues are counted, as `done`, which the three figures above never count |
 | `chats.live` | Chats in `idle`, `running` or `awaiting_input` |
@@ -2718,8 +2718,8 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/tasks" \
 
 ## Issues
 
-A project's backlog, owned by vincent: issues you file here and, later, issues
-imported from GitHub. An issue has no process and no worktree — work on it is a
+A project's backlog, owned by vincent: issues you file here and issues
+imported from GitHub or Jira. An issue has no process and no worktree — work on it is a
 task created from it.
 
 | Method | Path | What |
@@ -2896,7 +2896,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 |---|---|---|
 | `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
 | `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable. Also a comment on an issue whose GitHub remote is live — one whose remote moved, is missing or was deleted takes comments | `reason` |
-| `forge_write_needs_human` | A forge write by an agent without a grant: `close`, `reopen` or a comment on an issue imported from GitHub, or any `…/github/pull/*` write, from an [MCP](#mcp) tool call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Allowed only for a live handoff's task whose grant names the capability, on its own items and pull requests. A local issue, or one whose remote moved or is missing, is not refused. The message names the issue's provider (`… may write to GitHub`) | `reason` |
+| `forge_write_needs_human` | A forge write by an agent without a grant: `close`, `reopen` or a comment on an issue imported from GitHub or Jira, or any `…/github/pull/*` write, from an [MCP](#mcp) tool call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Allowed only for a live handoff's task whose grant names the capability, on its own items and pull requests. A local issue, or one whose remote moved or is missing, is not refused. The message names the issue's provider (`… may write to GitHub`) | `reason` |
 | — | `close` on a closed issue, `reopen` on an open one | `state` |
 
 ### Creating a task from an issue
@@ -3787,9 +3787,9 @@ delivered, returned or released with another outcome (or one that is not
 waiting, once the handoff has settled); a verb repeating an item's own
 outcome succeeds and changes nothing for it, its `comment` and `close`
 included; `forge_write_needs_human` for a step's `close` or
-`comment` on an issue imported from GitHub, unless the step is the
+`comment` on an issue imported from GitHub or Jira, unless the step is the
 handoff's own task and its grant names `issue.close` or `issue.comment` —
-then the write is made as `handoff` and queued for GitHub; `issue_mirrored` for a human's
+then the write is made as `handoff` and queued for the issue's tracker; `issue_mirrored` for a human's
 comment on one; and a follow-up's own refusals. `404` for an unknown handoff
 or an issue that is not one of its items.
 
