@@ -24,10 +24,14 @@ func TestDoctorWithoutADaemon(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2 (no daemon answered)\n%s", code, out)
 	}
-	for _, want := range []string{"PATHS", "DAEMON", "LOG", "DATABASE", "AGENTS", "BACKUP", "STORAGE", "TASKS"} {
+	for _, want := range []string{"PATHS", "DAEMON", "LOG", "DATABASE", "AGENTS", "JIRA", "BACKUP", "STORAGE", "TASKS"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the degraded report is missing the %s group:\n%s", want, out)
 		}
+	}
+	// The CLI's environment is not the daemon's (task 142.15 decision 4).
+	if !strings.Contains(out, "JIRA_USER (unknown)") {
+		t.Errorf("the local jira row does not leave presence unknown:\n%s", out)
 	}
 	if !strings.Contains(out, "not_running") {
 		t.Errorf("the daemon row does not say it is down:\n%s", out)

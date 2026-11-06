@@ -489,3 +489,46 @@ func TestIssueArchiveUnknownWithoutADaemon(t *testing.T) {
 		t.Errorf("issue_archive without a daemon = %+v", ia)
 	}
 }
+
+// TestLocalJiraRowIsConfigOnly: without a daemon the Jira row is what
+// config.yaml says — the switch and the two variable names. Presence is
+// unknown, because this process's environment is not the daemon's, and
+// there are no sites and no sync (task 142.15 decision 4).
+func TestLocalJiraRowIsConfigOnly(t *testing.T) {
+	d := dirs(t)
+	write(t, filepath.Join(d.Config, "config.yaml"), "jira:\n  user_env: ACME_JIRA_USER\n")
+	t.Setenv("ACME_JIRA_USER", "someone@example.com")
+	rep := Compose(t.Context(), Options{Dirs: d})
+	j := rep.Jira
+	if !j.Enabled || j.Credential.UserEnv != "ACME_JIRA_USER" || j.Credential.TokenEnv != "JIRA_API_TOKEN" {
+		t.Errorf("jira row = %+v", j)
+	}
+	if j.Credential.UserPresent != nil || j.Credential.TokenPresent != nil {
+		t.Errorf("a local report claims presence: %+v", j.Credential)
+	}
+	if len(j.Sites) != 0 || len(j.Sync) != 0 || j.Message != "" {
+		t.Errorf("a local report carries daemon-only facts: %+v", j)
+	}
+}
+
+// TestJiraFailuresAreNeverProblems: every "no" the Jira row can hold leaves
+// `vincent doctor`'s verdict alone.
+func TestJiraFailuresAreNeverProblems(t *testing.T) {
+	rep := Compose(t.Context(), Options{Dirs: dirs(t)})
+	before := len(rep.Problems)
+	no := false
+	rep.Jira = Jira{
+		Enabled:    true,
+		Credential: JiraCredential{UserEnv: "JIRA_USER", TokenEnv: "JIRA_API_TOKEN", UserPresent: &no, TokenPresent: &no},
+		Message:    "JIRA_USER and JIRA_API_TOKEN are not set",
+		Sites: []JiraSite{
+			{URL: "https://a.atlassian.net", Reachable: &no, Reason: "unreachable"},
+			{URL: "https://b.atlassian.net", Reason: "no_credential"},
+		},
+		Sync: []ProjectIssueSync{{ProjectID: 1, Reason: "unauthorized"}},
+	}
+	rep.Evaluate()
+	if len(rep.Problems) != before {
+		t.Errorf("problems = %+v, want the Jira row to add none", rep.Problems)
+	}
+}

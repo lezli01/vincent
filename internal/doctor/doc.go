@@ -6,7 +6,8 @@
 // whether config.yaml parses (§12.2, §12.3), adapter detection (§9.5), the
 // daemon log's stat and tail, disk free under the data dir, and the worktree
 // scan (§10) — because the report has to be composable **without** a daemon.
-// The daemon-only rows (database size, schema version, integrity, task counts)
+// The daemon-only rows (database size, schema version, integrity, task counts,
+// and the Jira row's credential presence, sites and sync — task 142.15)
 // are filled in by the API handler on top of what Compose returns; the CLI's
 // no-daemon path just leaves them unknown.
 //

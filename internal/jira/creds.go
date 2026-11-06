@@ -50,3 +50,12 @@ func lookupEnv(env []string, name string) (string, bool) {
 	}
 	return val, found && val != ""
 }
+
+// EnvSet reports whether name is set, non-empty, in a resolved K=V
+// environment, by the rule EnvCredentials looks a variable up with. It is how
+// `vincent doctor` says which of the two variables is missing (task 142.15)
+// without ever handling a value.
+func EnvSet(env []string, name string) bool {
+	_, ok := lookupEnv(env, name)
+	return ok
+}

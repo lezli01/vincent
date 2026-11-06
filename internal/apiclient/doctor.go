@@ -44,9 +44,19 @@ type DoctorAgent = doctor.Agent
 // DoctorGitHub is the report's GitHub issue integration row (task 035).
 type DoctorGitHub = doctor.GitHub
 
-// DoctorProjectIssueSync is one project's issue sync health in the GitHub row
-// (task 130.8).
+// DoctorProjectIssueSync is one project's issue sync health in the GitHub
+// row (task 130.8) or the Jira row (task 142.15).
 type DoctorProjectIssueSync = doctor.ProjectIssueSync
+
+// DoctorJira is the report's Jira issue integration row (task 142.15).
+type DoctorJira = doctor.Jira
+
+// DoctorJiraCredential is the Jira row's credential block: variable names
+// and presence, never values.
+type DoctorJiraCredential = doctor.JiraCredential
+
+// DoctorJiraSite is one bound Jira site's reachability and authentication.
+type DoctorJiraSite = doctor.JiraSite
 
 // DoctorContainer is the report's container-execution row (§16, task 061).
 type DoctorContainer = doctor.Container

@@ -279,9 +279,12 @@ func (s *Server) handleIssueSyncNow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, out)
 }
 
-// fillIssueSync adds each project's sync health to doctor's GitHub row. Like
-// the rest of that row it is information, never a Problem; a failed read
-// leaves the list empty rather than failing the report.
+// fillIssueSync adds each project's sync health to doctor's GitHub or Jira
+// row, by the row's provider: jira rows to the Jira row, every other row —
+// github, and one with no provider, as before — to the GitHub row (task
+// 142.15, task 142 open question 9's additive split). Like the rest of
+// either row it is information, never a Problem; a failed read leaves the
+// lists empty rather than failing the report.
 func (s *Server) fillIssueSync(ctx context.Context, rep *doctor.Report) {
 	if s.deps.Store == nil {
 		return
@@ -305,7 +308,7 @@ func (s *Server) fillIssueSync(ctx context.Context, rep *doctor.Report) {
 		if err != nil {
 			s.deps.Logger.Warn("doctor: count issue writes", "project", st.ProjectID, "error", err)
 		}
-		rep.GitHub.Sync = append(rep.GitHub.Sync, doctor.ProjectIssueSync{
+		row := doctor.ProjectIssueSync{
 			ProjectID:      st.ProjectID,
 			Project:        name,
 			OK:             body.OK,
@@ -315,6 +318,11 @@ func (s *Server) fillIssueSync(ctx context.Context, rep *doctor.Report) {
 			WritesPending:  counts.Pending,
 			WritesFailed:   counts.Failed,
 			WritesConflict: counts.Conflict,
-		})
+		}
+		if st.Provider == store.IssueProviderJira {
+			rep.Jira.Sync = append(rep.Jira.Sync, row)
+		} else {
+			rep.GitHub.Sync = append(rep.GitHub.Sync, row)
+		}
 	}
 }

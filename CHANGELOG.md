@@ -25,6 +25,19 @@ list with the user-facing context a commit subject cannot carry.
   search no longer reverts a close you just made. Writes wait while
   `jira.enabled` is false or `jira.poll_interval` is `0`, and ones queued
   before this release go out on the first pass (#909).
+- **`vincent doctor` has a `JIRA` group.** It shows whether `jira.enabled`
+  is on, whether the daemon sees the `jira.user_env` and `jira.token_env`
+  variables (by name, never their values), whether each bound Jira site is
+  reachable and accepts the credential, and how each Jira project last
+  synced. An expired token reads "token rejected; Jira Cloud tokens expire —
+  create a new one", and a missing variable names itself and the
+  `environment.set` fix. Each site is asked one question
+  (`GET /rest/api/3/myself`), only when the report is probed — `vincent
+  doctor`, `vincent doctor --fix`, the MCP `doctor` tool, or any
+  `GET /v1/doctor` without `?probe=false` — and never by the TUI's daemon
+  panel, so a bad token is never retried into Jira's CAPTCHA lockout. It never changes the exit code. `GET /v1/doctor` carries it as
+  `jira`, and its `github.sync` now lists GitHub projects only — a Jira
+  project used to show up there (#911).
 - **Closing an issue archives its tasks.** Once a closed issue has nothing
   still working — every task finished, no chat on it open, no handoff holding
   it — the daemon archives the tasks that existed at the close, side work

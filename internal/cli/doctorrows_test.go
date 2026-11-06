@@ -329,3 +329,66 @@ func TestDoctorQuietGroupPrintsNothing(t *testing.T) {
 		t.Errorf("a held task is not shown, or became a problem:\n%s", b.String())
 	}
 }
+
+// The Jira row (task 142.15). Like the GitHub row it never accuses and is
+// never a Problem.
+
+func TestDoctorJiraRowRendersSitesCredentialAndSync(t *testing.T) {
+	yes, no := true, false
+	out := joinRows(doctorJiraRows(apiclient.DoctorJira{
+		Enabled: true,
+		Credential: apiclient.DoctorJiraCredential{
+			UserEnv: "JIRA_USER", TokenEnv: "JIRA_API_TOKEN", UserPresent: &yes, TokenPresent: &yes,
+		},
+		Sites: []apiclient.DoctorJiraSite{
+			{URL: "https://a.atlassian.net", Reachable: &yes, Authenticated: &yes, As: "Ada"},
+			{URL: "https://b.atlassian.net", Reachable: &yes, Authenticated: &no, Reason: "unauthorized", Message: "token rejected"},
+			{URL: "https://c.atlassian.net"},
+		},
+		Sync: []apiclient.DoctorProjectIssueSync{{ProjectID: 3, Project: "web", Reason: "unauthorized"}},
+	}))
+	for _, want := range []string{
+		"enabled\tyes",
+		"credential\tJIRA_USER set  JIRA_API_TOKEN set",
+		"site https://a.atlassian.net\tok as Ada",
+		"site https://b.atlassian.net\tnot ok (unauthorized): token rejected",
+		"site https://c.atlassian.net\tnot probed",
+		"sync web\tnot ok (unauthorized)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the jira row does not show %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDoctorJiraRowMissingVariable(t *testing.T) {
+	yes, no := true, false
+	out := joinRows(doctorJiraRows(apiclient.DoctorJira{
+		Enabled: true,
+		Credential: apiclient.DoctorJiraCredential{
+			UserEnv: "JIRA_USER", TokenEnv: "JIRA_API_TOKEN", UserPresent: &yes, TokenPresent: &no,
+		},
+		Message: "JIRA_API_TOKEN is not set in the daemon's environment",
+		Sites:   []apiclient.DoctorJiraSite{{URL: "https://a.atlassian.net", Reason: "no_credential", Message: "no Jira credential"}},
+	}))
+	for _, want := range []string{
+		"JIRA_API_TOKEN not set",
+		"note\tJIRA_API_TOKEN is not set in the daemon's environment",
+		"not probed (no_credential)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the jira row does not show %q:\n%s", want, out)
+		}
+	}
+}
+
+// Without a daemon presence is unknown, not "not set".
+func TestDoctorJiraRowLocal(t *testing.T) {
+	out := joinRows(doctorJiraRows(apiclient.DoctorJira{
+		Enabled:    true,
+		Credential: apiclient.DoctorJiraCredential{UserEnv: "JIRA_USER", TokenEnv: "JIRA_API_TOKEN"},
+	}))
+	if !strings.Contains(out, "JIRA_USER (unknown)  JIRA_API_TOKEN (unknown)") || strings.Contains(out, "not set") {
+		t.Errorf("a local jira row claims presence:\n%s", out)
+	}
+}

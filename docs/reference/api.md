@@ -450,6 +450,15 @@ daemon running.
                   "supports_input": false, "version_verdict": "tested",
                   "tested_versions": "0.142.5, 0.147.0, 0.150.1, 0.154.0",
                   "restricted_verdict": "supported" } ],
+  "jira":     { "enabled": true,
+                "credential": { "user_env": "JIRA_USER", "token_env": "JIRA_API_TOKEN",
+                                "user_present": true, "token_present": true },
+                "sites": [ { "url": "https://acme.atlassian.net", "reachable": true,
+                             "authenticated": true, "as": "Ada Lovelace" } ],
+                "sync": [ { "project_id": 3, "project": "web", "ok": true,
+                            "last_synced_at": "2026-11-05T09:58:00Z",
+                            "import_complete": true, "writes_pending": 0,
+                            "writes_failed": 0, "writes_conflict": 0 } ] },
   "skills":   [ { "name": "vincent-workflows",
                   "description": "Create, edit, review, and validate vincent workflow YAML…",
                   "shipped_version": "1.0.0", "installed_version": "1.0.0",
@@ -523,6 +532,24 @@ daemon running.
   `/v1/agents` uses instead: it is for a caller that is not in that loop and
   wants the rest of the report cheaply — the TUI's daemon panel, which opens on
   a keypress, is the one in the tree. `vincent doctor` always forces.
+- **`jira` is a row, not a verdict** (task 142.15): the
+  [`jira.enabled`](configuration.md#jira) switch; `credential`, the two
+  variable **names** with `user_present`/`token_present` — whether the
+  daemon's environment, as [`environment`](configuration.md#environment)
+  shapes it, sets each, `null` in a report composed with no daemon — and never
+  a value; `message`, naming a missing variable and the `environment.set` fix;
+  `sites[]`, one per distinct site a Jira-bound project names, with
+  `reachable` and `authenticated` (`null` when unknown), `as` (the display
+  name the credential authenticated as) and, when not usable, `reason` and
+  `message`; and `sync[]`, the Jira projects' sync rows in `github.sync`'s
+  shape. `github.sync` holds GitHub projects only. Each site gets exactly one
+  `GET /rest/api/3/myself`, in parallel under one 8 s budget — no other call,
+  no retry, so a bad token is refused once per site and does not trip Jira's
+  CAPTCHA lockout — and only when probed: **`?probe=false` makes no Jira
+  call**, and every site then reads `null`. No call is made either with
+  `jira.enabled` false, with no Jira-bound project, or with a variable unset
+  (the site's `reason` is then `disabled` or `no_credential`). Nothing in it
+  reaches `problems[]`.
 - **`skills[]` is one row per published skill**, never one per agent. The
   `skills` CLI keeps a single copy in a global store, `~/.agents/skills/`, and
   links it into each agent's directory, so a per-agent version would be the same
@@ -591,7 +618,8 @@ daemon running.
   `orphans_known` is `false` only when the daemon has no reclaimer wired.
 
 `POST /v1/doctor/fix` takes `{ "force": true }` or `?force` and answers with
-what it did plus a report taken afterwards:
+what it did plus a report taken afterwards. That report is always probed, and
+it is the only one: each bound Jira site is still asked one `myself` per fix.
 
 ```json
 { "actions": [

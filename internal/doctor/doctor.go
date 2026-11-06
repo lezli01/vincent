@@ -63,6 +63,12 @@ type Report struct {
 	// **row, not a problem**: tasks and local issues are unaffected by every
 	// "no" it can report, so nothing here makes `vincent doctor` exit 1.
 	GitHub GitHub `json:"github"`
+	// Jira is the Jira integration's row (task 142.15): the `jira.enabled`
+	// switch, the credential variables, one reachability and authentication
+	// answer per distinct bound Jira site, and each Jira-bound project's sync
+	// health. Like GitHub it is a **row, not a problem**: nothing in it makes
+	// `vincent doctor` exit 1.
+	Jira Jira `json:"jira"`
 	// Container is the container-execution row (§16, task 061). Like GitHub
 	// it is a **row, not a problem**: containerization is off by default, and
 	// a machine with no runtime runs every step on the host exactly as it
@@ -270,16 +276,75 @@ type GitHub struct {
 	Usable bool `json:"usable"`
 	// Message is Reason spelled for a human, empty when Usable.
 	Message string `json:"message,omitempty"`
-	// Sync is each project's issue import and sync health (task 130.8), one
-	// entry per project the reconciler has polled or been asked to. Only a
-	// daemon can answer it, so a local report leaves it empty.
+	// Sync is each GitHub project's issue import and sync health (task
+	// 130.8), one entry per project the reconciler has polled or been asked
+	// to. Only a daemon can answer it, so a local report leaves it empty.
+	// Since task 142.15 it holds GitHub projects only; a Jira project's row
+	// is in Jira.Sync (task 142 open question 9, the additive split).
 	Sync []ProjectIssueSync `json:"sync,omitempty"`
 }
 
-// ProjectIssueSync is one project's issue sync health in the GitHub row.
-// Reason uses the sync vocabulary of GET /v1/projects/{id}/issues/sync
-// (github_disabled, poll_disabled, pending, rate_limited, …), with the config
-// switches taking precedence over what the importer last recorded.
+// Jira is the §12.1 row for the Jira integration (task 142.15). It answers
+// the question the GitHub row answers for GitHub: is vincent syncing this
+// machine's Jira-bound projects, and if not, why not?
+//
+// Only a daemon can answer most of it: the credential lives in the daemon's
+// environment, not the CLI's — least of all under `vincent service install`
+// — so a local report fills Enabled and the two variable names and leaves
+// presence, sites and sync unknown (decision 4).
+type Jira struct {
+	// Enabled is `jira.enabled` from config.yaml (§12.3).
+	Enabled bool `json:"enabled"`
+	// Credential is what the configuration and the daemon's environment say
+	// about the credential: never its values.
+	Credential JiraCredential `json:"credential"`
+	// Message is a sentence for a human about the row as a whole — the
+	// missing-variable sentence — empty when there is nothing to say.
+	Message string `json:"message,omitempty"`
+	// Sites is one entry per distinct site a Jira-bound project names,
+	// normalized the way the Jira client normalizes it. Only a daemon can
+	// answer it.
+	Sites []JiraSite `json:"sites,omitempty"`
+	// Sync is each Jira project's issue sync health, the same shape as
+	// GitHub.Sync. Only a daemon can answer it.
+	Sync []ProjectIssueSync `json:"sync,omitempty"`
+}
+
+// JiraCredential is the credential block: the variable **names**
+// config.yaml gives (jira.user_env, jira.token_env) and whether the daemon's
+// environment, as the environment block shapes it, sets each. A nil presence
+// is unknown — every local report. No value is ever carried.
+type JiraCredential struct {
+	UserEnv      string `json:"user_env"`
+	TokenEnv     string `json:"token_env"`
+	UserPresent  *bool  `json:"user_present"`
+	TokenPresent *bool  `json:"token_present"`
+}
+
+// JiraSite is one bound site's answer to one `GET /rest/api/3/myself`, the
+// only call doctor makes to Jira (decision 1): a bad token is refused once
+// per site, never two or three times, so doctor is not what trips Jira's
+// CAPTCHA lockout. Reachable and Authenticated are nil when unknown: not
+// probed (probe=false, the switch off, a missing variable) or, for
+// Authenticated, a site that could not be reached.
+type JiraSite struct {
+	URL           string `json:"url"`
+	Reachable     *bool  `json:"reachable"`
+	Authenticated *bool  `json:"authenticated"`
+	// As is the display name the credential authenticated as.
+	As string `json:"as,omitempty"`
+	// Reason is the sync vocabulary's reason when the site is not usable,
+	// or why it was not probed (disabled, no_credential); empty when ok or
+	// simply not asked.
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// ProjectIssueSync is one project's issue sync health in the GitHub or Jira
+// row. Reason uses the sync vocabulary of GET /v1/projects/{id}/issues/sync
+// (github_disabled, disabled, poll_disabled, pending, rate_limited, …),
+// with the config switches taking precedence over what the importer last
+// recorded.
 type ProjectIssueSync struct {
 	ProjectID int64  `json:"project_id"`
 	Project   string `json:"project"`
@@ -570,6 +635,7 @@ func Compose(ctx context.Context, opts Options) *Report {
 		r.Agents = DetectAgents(ctx, cfg)
 	}
 	r.GitHub = DetectGitHub(ctx, cfg)
+	r.Jira = JiraConfig(cfg)
 	r.Container = DetectContainer(ctx, cfg)
 	r.Update = updateRow(cfg, opts.Update, r.Daemon.Version)
 	r.Skills = DetectSkills()
@@ -719,6 +785,17 @@ func DetectGitHub(ctx context.Context, cfg config.Config) GitHub {
 		out.Message = github.Message(detection.Reason)
 	}
 	return out
+}
+
+// JiraConfig is the Jira row as configuration alone answers it (task
+// 142.15 decision 4): the switch and the two variable names. Presence stays
+// unknown because the environment this process reads is not the daemon's;
+// the API handler fills the rest.
+func JiraConfig(cfg config.Config) Jira {
+	return Jira{
+		Enabled:    cfg.Jira.Enabled,
+		Credential: JiraCredential{UserEnv: cfg.Jira.UserEnv, TokenEnv: cfg.Jira.TokenEnv},
+	}
 }
 
 // updateRow renders the release check. The comparison is against **this

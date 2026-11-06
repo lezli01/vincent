@@ -26,7 +26,8 @@ import (
 // directories would be wrong in a table clients read as a contract.
 //
 // `?probe=false` serves adapter availability from the §9.6 binary-identity
-// cache instead of forcing a re-probe (task 029 decision 4).
+// cache instead of forcing a re-probe (task 029 decision 4), and makes no
+// Jira call: the Jira row's sites then read unknown (task 142.15 decision 2).
 func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.doctorReport(r.Context(), wantsProbe(r)))
 }
@@ -90,6 +91,7 @@ func (s *Server) doctorReport(ctx context.Context, probe bool) *doctor.Report {
 	s.fillTasks(ctx, rep)
 	s.fillIssueArchive(ctx, rep)
 	s.fillIssueSync(ctx, rep)
+	s.fillJira(ctx, rep, probe)
 	rep.Evaluate()
 	return rep
 }
@@ -284,9 +286,13 @@ func (s *Server) handleDoctorFix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	force := req.Force || hasForce(r)
-	// Both reports force the re-probe: repair is the deliberate-command path
-	// decision 2 was written about, so `?probe` is a GET-only flag.
-	before := s.doctorReport(r.Context(), true)
+	// The answered report forces the re-probe: repair is the deliberate-command
+	// path decision 2 was written about, so `?probe` is a GET-only flag. The
+	// before-report only tells compactDatabase where the database is and how
+	// big it was, so it is not probed: probing it too would ask each bound
+	// Jira site a second question per fix, and repeated refusals are what
+	// trip Jira's lockout (task 142.15 decision 1).
+	before := s.doctorReport(r.Context(), false)
 	actions := s.reclaimOrphans(r.Context(), force)
 	actions = append(actions, s.compactDatabase(r.Context(), before))
 	writeJSON(w, http.StatusOK, doctor.FixResult{

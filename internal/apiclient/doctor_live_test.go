@@ -19,6 +19,7 @@ import (
 	"github.com/lezli01/vincent/internal/doctor"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/issuestate"
+	"github.com/lezli01/vincent/internal/jira/fakejira"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskrun"
@@ -406,5 +407,43 @@ func TestDoctorIssueArchiveRoundTrips(t *testing.T) {
 	}
 	if !rep.Healthy() {
 		t.Errorf("a held task made the report unhealthy: %v", rep.Problems)
+	}
+}
+
+// TestDoctorJiraRoundTrips keeps DoctorJira in step with the wire: the
+// credential block's tri-state presence and a site's pointers have to
+// survive the daemon's encoder (task 142.15).
+func TestDoctorJiraRoundTrips(t *testing.T) {
+	const user, token = "doctor-live@example.com", "doctor-live-secret-31c5"
+	fake := httptest.NewServer(&fakejira.Store{User: user, Token: token})
+	t.Cleanup(fake.Close)
+	dirs := config.Dirs{Config: t.TempDir(), Data: t.TempDir()}
+	c := newDoctorClientWith(t, dirs, func(d *api.Deps) {
+		d.Environ = func() []string { return []string{"JIRA_USER=" + user, "JIRA_API_TOKEN=" + token} }
+		p := &store.Project{
+			Name: "jp", Path: t.TempDir(), DefaultBranch: "main",
+			IssueSource: store.IssueSource{Provider: store.IssueProviderJira, JiraSite: fake.URL, JiraProjectKey: "VIN"},
+		}
+		if err := d.Store.CreateProject(t.Context(), p); err != nil {
+			t.Fatalf("CreateProject: %v", err)
+		}
+	})
+	rep, err := c.Doctor(t.Context(), true)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	j := rep.Jira
+	if !j.Enabled || j.Credential.UserEnv != "JIRA_USER" || j.Credential.UserPresent == nil || !*j.Credential.UserPresent {
+		t.Errorf("jira row = %+v", j)
+	}
+	if len(j.Sites) != 1 || j.Sites[0].URL != fake.URL || j.Sites[0].Authenticated == nil || !*j.Sites[0].Authenticated || j.Sites[0].As == "" {
+		t.Errorf("sites = %+v", j.Sites)
+	}
+	rep, err = c.Doctor(t.Context(), false)
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(rep.Jira.Sites) != 1 || rep.Jira.Sites[0].Reachable != nil {
+		t.Errorf("probe=false sites = %+v, want reachability unknown", rep.Jira.Sites)
 	}
 }
