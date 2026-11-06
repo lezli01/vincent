@@ -82,15 +82,24 @@ ONLY="${VINCENT_GATE_SCENARIO:-}"
 fail() { echo "GATE FAIL: $*" >&2; exit 1; }
 
 JPID="" JBASE=""
+# jira_down stops the fake gracefully, then kills a survivor before waiting:
+# `wait` blocks until the child exits, so a fake that never received the
+# shutdown (JBASE unset because jira_up failed before reading its port file)
+# or ignored it would otherwise hang cleanup until the job timeout.
 jira_down() {
   [[ -n "$JPID" ]] || return 0
-  curl -sS -X POST --max-time 5 "$JBASE/_fake/shutdown" >/dev/null 2>&1 || true
+  if [[ -n "$JBASE" ]]; then
+    curl -sS -X POST --max-time 5 "$JBASE/_fake/shutdown" >/dev/null 2>&1 || true
+  fi
   for _ in $(seq 1 "$(gate_ticks 10)"); do
     kill -0 "$JPID" 2>/dev/null || break
     sleep "$GATE_POLL"
   done
+  if kill -0 "$JPID" 2>/dev/null; then
+    kill -9 "$JPID" 2>/dev/null || true
+  fi
   wait "$JPID" 2>/dev/null || true
-  JPID=""
+  JPID="" JBASE=""
 }
 
 cleanup() {
@@ -195,6 +204,8 @@ YAML
 # file once it appears.
 jira_up() {
   local portfile="$TMP/jira-port.$RANDOM"
+  # A stale JBASE would point jira_down's shutdown at the previous, dead fake.
+  JBASE=""
   "$FAKEJIRA" serve --addr 127.0.0.1:0 --port-file "$(hostpath "$portfile")" \
     --corpus "$(hostpath "$CORPUS")" --scenario-file "$(hostpath "$JSCENARIO")" \
     --requests-file "$(hostpath "$JREQUESTS")" \
