@@ -24,6 +24,21 @@
 // binary lives in, which is also what avoids Windows' "exe busy" race on
 // cleanup. The request log is appended and closed per request, so there is
 // nothing left to flush at exit.
+//
+// The corpus mutations a real Jira client cannot make — someone moving,
+// deleting or hiding an issue on the site — are subcommands, so a bash gate
+// changes the corpus through fakejira.Store's helpers while a server serves
+// it, holding the corpus's OS lock exactly as a Go test does, never by
+// editing the JSON underneath the server:
+//
+//	fakejira seed   --corpus F                   # write the built-in corpus to a missing F
+//	fakejira move   --corpus F ISSUE PROJECT KEY # move ISSUE (id or key) to PROJECT as KEY
+//	fakejira delete --corpus F ISSUE             # 404 everywhere, absent from every list
+//	fakejira forbid --corpus F ISSUE             # hidden from the credentials
+//
+// Each exits 0 on success, 1 when the issue or project is not in the corpus,
+// and 2 on a usage error. Transitions and comments are not subcommands: the
+// fake's own REST routes take them, as Jira's do.
 package main
 
 import (
@@ -48,11 +63,65 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stderr))
 }
 
+const usage = `usage: fakejira serve --corpus F --scenario-file S --requests-file R --port-file P [--addr 127.0.0.1:0] [--user U --token T]
+       fakejira seed --corpus F
+       fakejira move --corpus F ISSUE PROJECT KEY
+       fakejira delete --corpus F ISSUE
+       fakejira forbid --corpus F ISSUE`
+
 func run(args []string, stderr io.Writer) int {
-	if len(args) == 0 || args[0] != "serve" {
-		_, _ = fmt.Fprintln(stderr, "usage: fakejira serve --corpus F --scenario-file S --requests-file R --port-file P [--addr 127.0.0.1:0] [--user U --token T]")
+	if len(args) == 0 {
+		_, _ = fmt.Fprintln(stderr, usage)
 		return 2
 	}
+	switch args[0] {
+	case "serve":
+		return runServe(args[1:], stderr)
+	case "seed", "move", "delete", "forbid":
+		return runMutation(args[0], args[1:], stderr)
+	}
+	_, _ = fmt.Fprintln(stderr, usage)
+	return 2
+}
+
+// mutationArgs is how many positional arguments each mutation takes.
+var mutationArgs = map[string]int{"seed": 0, "move": 3, "delete": 1, "forbid": 1}
+
+// runMutation applies one corpus mutation through fakejira.Store, under the
+// lock a serving fakejira takes for each request.
+func runMutation(name string, args []string, stderr io.Writer) int {
+	fl := flag.NewFlagSet("fakejira "+name, flag.ContinueOnError)
+	fl.SetOutput(stderr)
+	corpus := fl.String("corpus", "", "corpus JSON file")
+	if err := fl.Parse(args); err != nil {
+		return 2
+	}
+	if *corpus == "" || fl.NArg() != mutationArgs[name] {
+		_, _ = fmt.Fprintln(stderr, usage)
+		return 2
+	}
+	store := &fakejira.Store{Path: *corpus}
+	pos := fl.Args()
+	var err error
+	switch name {
+	case "seed":
+		// Load seeds a missing file and leaves an existing one as it is.
+		err = store.Update(func(*fakejira.Corpus) error { return nil })
+	case "move":
+		err = store.Move(pos[0], pos[1], pos[2])
+	case "delete":
+		err = store.Delete(pos[0])
+	case "forbid":
+		err = store.Forbid(pos[0])
+	}
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "fakejira:", err)
+		return 1
+	}
+	return 0
+}
+
+func runServe(args []string, stderr io.Writer) int {
 	fl := flag.NewFlagSet("fakejira serve", flag.ContinueOnError)
 	fl.SetOutput(stderr)
 	corpus := fl.String("corpus", "", "corpus JSON file (seeded from the built-in corpus when missing)")
@@ -62,7 +131,7 @@ func run(args []string, stderr io.Writer) int {
 	addr := fl.String("addr", "127.0.0.1:0", "loopback address to listen on")
 	user := fl.String("user", os.Getenv("FAKEJIRA_USER"), "accepted Basic auth user")
 	token := fl.String("token", os.Getenv("FAKEJIRA_API_TOKEN"), "accepted Basic auth API token")
-	if err := fl.Parse(args[1:]); err != nil {
+	if err := fl.Parse(args); err != nil {
 		return 2
 	}
 	if err := serve(*addr, *portFile, &fakejira.Store{
