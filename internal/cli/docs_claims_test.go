@@ -25,6 +25,7 @@ import (
 	"github.com/lezli01/vincent/examples"
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/builtin"
+	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/taskstate"
@@ -506,6 +507,45 @@ func TestDocsClaimsChatAdaptersAreCounted(t *testing.T) {
 	for _, name := range resumable {
 		if !strings.Contains(claim[2], "`"+name+"`") {
 			t.Errorf("the `vincent chat` section never names %q among the adapters that can hold a chat", name)
+		}
+	}
+}
+
+// The `vincent doctor` section counts its groups in a word and lists them in
+// a table. Task 142.15 added JIRA as the fourteenth and the sentence kept
+// saying "Thirteen" (review F3 on #948), so both are held to doctorGroups.
+func TestDocsClaimsDoctorGroupsAreCounted(t *testing.T) {
+	page, ok := docPages(t)["docs/reference/cli.md"]
+	if !ok {
+		t.Fatal("docs/reference/cli.md is missing")
+	}
+	start := strings.Index(page, "\n## `vincent doctor`\n")
+	if start < 0 {
+		t.Fatal("docs/reference/cli.md has no `vincent doctor` section")
+	}
+	section := page[start+1:]
+	if end := strings.Index(section, "\n## "); end >= 0 {
+		section = section[:end]
+	}
+	claim := regexp.MustCompile(`(\w+) groups:`).FindStringSubmatch(section)
+	if claim == nil {
+		t.Fatal("the `vincent doctor` section no longer counts its groups")
+	}
+	groups := doctorGroups(&apiclient.DoctorReport{})
+	words := []string{
+		"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+		"eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+	}
+	if len(groups) >= len(words) || !strings.EqualFold(claim[1], words[len(groups)]) {
+		t.Errorf("the `vincent doctor` section says %q groups; doctor renders %d", claim[1], len(groups))
+	}
+	rows := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^\| ([^|]+?) \|`).FindAllStringSubmatch(section, -1) {
+		rows[strings.ToUpper(m[1])] = true
+	}
+	for _, g := range groups {
+		if !rows[g.name] {
+			t.Errorf("the `vincent doctor` table has no row for the %s group", g.name)
 		}
 	}
 }

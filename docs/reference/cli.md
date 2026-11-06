@@ -115,7 +115,7 @@ empty.
 vincent doctor [--json] [--fix [--force]]
 ```
 
-One report answering "why is nothing running?". Thirteen groups:
+One report answering "why is nothing running?". Fourteen groups:
 
 | Group | Rows |
 |---|---|
