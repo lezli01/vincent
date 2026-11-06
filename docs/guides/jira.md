@@ -59,9 +59,11 @@ variables, **by name**, on every request:
 | `JIRA_API_TOKEN` | An API token of that account | [`jira.token_env`](../reference/configuration.md#jira) |
 
 `config.yaml` holds the variable names, never the values, and nothing about
-the credential is written to the database or the log. Because the values are
-read per request, a new token takes effect on the next sync pass with no
-restart.
+the credential is written to the database or the log. The values are read per
+request, but from the environment the daemon started with: a new token set
+under [`environment.set`](../reference/configuration.md#environment) takes
+effect on the next sync pass with no restart, while one exported in a shell
+reaches the daemon only when it is restarted from that shell.
 
 The variables must be set **in the daemon's environment**. One exported in
 your shell is enough when that shell started the daemon. Under

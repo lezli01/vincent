@@ -107,3 +107,30 @@ func TestDocsClaimsMirrorRulesNameJira(t *testing.T) {
 			"state them for GitHub alone:\n  %s", strings.Join(bad, "\n  "))
 	}
 }
+
+// TestDocsClaimsTokenNoRestartNamesEnvironmentSet holds the pages to where a
+// Jira credential is read from. The daemon resolves it per request, but over
+// its own os.Environ(), fixed when it started (newJiraSource in
+// internal/daemon); only `environment.set`, hot-reloaded from config.yaml,
+// changes without a restart. A paragraph promising a new token "with no
+// restart" must say that it means `environment.set` (review F3 on #950).
+func TestDocsClaimsTokenNoRestartNamesEnvironmentSet(t *testing.T) {
+	noRestart := regexp.MustCompile(`(?i)(?:\bno|\bwithout(?: a)?) restart`)
+	credential := regexp.MustCompile(`(?i)\btoken\b|credential`)
+	var bad []string
+	for name, para := range docParagraphs(t) {
+		for _, p := range para {
+			aboutJira := strings.Contains(name, "jira") ||
+				strings.Contains(p, "Jira") || strings.Contains(p, "JIRA_")
+			jiraCredential := aboutJira && credential.MatchString(p)
+			if jiraCredential && noRestart.MatchString(p) && !strings.Contains(p, "environment.set") {
+				bad = append(bad, name+": "+p)
+			}
+		}
+	}
+	if len(bad) > 0 {
+		t.Errorf("only an environment.set credential changes without a restart, but these "+
+			"paragraphs promise a new Jira credential takes effect without one:\n  %s",
+			strings.Join(bad, "\n  "))
+	}
+}
