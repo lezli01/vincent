@@ -209,11 +209,22 @@ Jira-imported issues like any other, as `by: sync`. A Jira `labeled` or
 `unlabeled` is **untrusted** — anyone who may edit a Jira issue may label it
 — so a trigger on one must name `allowed_actors`. An `issues` trigger sees
 `opened`, `closed`, `reopened`, `labeled`, `unlabeled`, `lane_changed` and
-`handoff_changed`, never a move between two open Jira statuses; to start work when an
-issue reaches *Ready for Dev*, narrow the binding's JQL to
-`status = "Ready for Dev"` and fire on `opened`. A
-[poll-script trigger](triggers.md) still fits a Jira project vincent does not
-sync, or JQL beyond what the binding narrows to. There is no `type: jira`.
+`handoff_changed`, never a move between two open Jira statuses. Every one of
+those events by `sync` is untrusted — `opened`, `closed` and `reopened` for
+every tracker — so an `issues` trigger that can match one must name
+`allowed_actors`, which for a Jira issue are reporter display names (see
+[Trust](triggers.md#issues-watch-the-projects-issues)).
+
+Do not narrow the binding's JQL to a status to start work when an issue
+reaches *Ready for Dev*. An issue the binding's JQL stops matching is marked
+`missing` (see [Moved and missing issues](#moved-and-missing-issues)), so the
+moment someone moves it on to *In Progress* its Jira close is no longer read
+and a close in vincent is no longer written back. Keep the binding's JQL on
+something an issue keeps while it is worked on, such as a label, and start
+Ready-for-Dev work with a
+[poll-script trigger](triggers.md#a-jira-status-starts-work-unattended). A
+poll-script trigger also fits a Jira project vincent does not sync, or JQL
+beyond what the binding narrows to. There is no `type: jira`.
 
 ## Turning it off
 
