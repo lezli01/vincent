@@ -155,6 +155,26 @@ func TestDoctorJiraUnauthorizedOnce(t *testing.T) {
 	}
 }
 
+// POST /v1/doctor/fix composes two reports, before and after the repair,
+// and still asks each site exactly one question (review F1).
+func TestDoctorFixAsksJiraOncePerSite(t *testing.T) {
+	site, _, log := loggedSite(t)
+	h := newJiraHarness(t, config.Default(), probeEnv())
+	h.project(t, jiraBinding(site, "VIN"))
+	resp, body := doRequest(t, h.ts, http.MethodPost, "/v1/doctor/fix", testToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("doctor fix = %d: %s", resp.StatusCode, body)
+	}
+	var res doctor.FixResult
+	if err := json.Unmarshal(body, &res); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if res.Report == nil || len(res.Report.Jira.Sites) != 1 || !isTrue(res.Report.Jira.Sites[0].Authenticated) {
+		t.Errorf("fix report jira = %+v, want the one site probed and authenticated", res.Report)
+	}
+	wantOnlyMyself(t, log)
+}
+
 // probe=false — the TUI panel's refresh — makes no call, and still fills
 // the credential block, the sites and the sync rows, reachability unknown.
 func TestDoctorJiraProbeFalseMakesNoCall(t *testing.T) {

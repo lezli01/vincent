@@ -618,7 +618,8 @@ daemon running.
   `orphans_known` is `false` only when the daemon has no reclaimer wired.
 
 `POST /v1/doctor/fix` takes `{ "force": true }` or `?force` and answers with
-what it did plus a report taken afterwards:
+what it did plus a report taken afterwards. That report is always probed, and
+it is the only one: each bound Jira site is still asked one `myself` per fix.
 
 ```json
 { "actions": [

@@ -10114,7 +10114,9 @@ GET    /v1/doctor                       the whole §17 diagnostic in one body: p
                                         Never a problem
 POST   /v1/doctor/fix                   { force? } or ?force — runs gc's reclaim (§10) and
                                         compacts the database, then answers
-                                        { actions[], report } with a report taken afterwards.
+                                        { actions[], report } with a report taken afterwards,
+                                        always probed and the only probed one: each Jira site
+                                        still gets one `myself` per fix (review F1, 2026-11-06).
                                         A dirty orphan needs force; a non-directory is
                                         reported and never removed. VACUUM is **skipped**
                                         while any task holds a slot (§11) and says so, rather
