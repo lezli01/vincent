@@ -146,8 +146,14 @@ lists only the hard dependencies the parent records as "Blocked by".
   question 11). *Note 2026-11-05:* open question 11 is settled by 142.12
   (#908) — the exemption no longer reaches Jira, and `update-triggers` item 21
   and the triggers skill say so.
-- [ ] **142.18** ([#914](https://github.com/lezli01/vincent/issues/914)) A
+- [~] **142.18** ([#914](https://github.com/lezli01/vincent/issues/914)) A
   scripted end-to-end gate on all three platforms in CI. Depends: 142.13.
+  In flight: `scripts/142-gate.sh`, fifteen scenarios against `cmd/fakejira`
+  on a loopback port, wired into `ci.yml`'s `gate-group` (group 1) and
+  recorded in [`docs/gates/142-jira-issues.md`](../gates/142-jira-issues.md).
+  `fakejira seed`, `move`, `delete` and `forbid` are the corpus mutations the
+  gate makes while the fake serves. Passed on macOS 2026-11-06; it is `[x]`
+  once its pull request's CI has run it on Linux and Windows.
 - [ ] **142.19** ([#915](https://github.com/lezli01/vincent/issues/915)) A new
   Jira guide and the docs sweep, including security, privacy and SEO.
   Depends: 142.13, 142.14, 142.15, 142.16.
@@ -611,6 +617,10 @@ explicitly. A "proposed default" is open until that issue.
     mirrored row or redact its body, with an event either way. Both need a
     store write path that does not exist (no comment is ever deleted or
     rewritten by sync today). To settle before 142.18's end-to-end gate.
+    *Note 2026-11-06:* 142.18 shipped without settling it, by the author's
+    decision: the gate's scenario 12 proves only that a comment restricted
+    *before* it is read is never mirrored, and asserts nothing about one
+    restricted after. The question needs an issue of its own.
 
 ## Facts carried unverified
 

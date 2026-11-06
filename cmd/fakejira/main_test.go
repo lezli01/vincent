@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -82,5 +83,66 @@ func TestRefusesNonLoopback(t *testing.T) {
 	}
 	if code := run(nil, io.Discard); code != 2 {
 		t.Errorf("no subcommand exited %d", code)
+	}
+}
+
+// TestMutationSubcommands: seed writes the built-in corpus, and move, delete
+// and forbid change it through the Store's helpers — the corpus a serving
+// fakejira then answers from.
+func TestMutationSubcommands(t *testing.T) {
+	corpus := filepath.Join(t.TempDir(), "corpus.json")
+	mut := func(args ...string) (int, string) {
+		var b strings.Builder
+		code := run(append([]string{args[0], "--corpus", corpus}, args[1:]...), &b)
+		return code, b.String()
+	}
+	if code, out := mut("seed"); code != 0 {
+		t.Fatalf("seed exited %d: %s", code, out)
+	}
+	if code, out := mut("move", "VIN-1", "OPS", "OPS-7"); code != 0 {
+		t.Fatalf("move exited %d: %s", code, out)
+	}
+	if code, out := mut("delete", "VIN-2"); code != 0 {
+		t.Fatalf("delete exited %d: %s", code, out)
+	}
+	if code, out := mut("forbid", "VIN-3"); code != 0 {
+		t.Fatalf("forbid exited %d: %s", code, out)
+	}
+	// seed over an existing file keeps what is there.
+	if code, out := mut("seed"); code != 0 {
+		t.Fatalf("second seed exited %d: %s", code, out)
+	}
+	c, err := (&fakejira.Store{Path: corpus}).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]fakejira.Issue{}
+	for _, is := range c.Issues {
+		got[is.ID] = is
+	}
+	if is := got["10001"]; is.Key != "OPS-7" || is.Project != "OPS" || len(is.PreviousKeys) != 1 || is.PreviousKeys[0] != "VIN-1" {
+		t.Errorf("moved VIN-1 = %+v", is)
+	}
+	if is := got["10002"]; is.Fake == nil || !is.Fake.Deleted {
+		t.Errorf("deleted VIN-2 = %+v", is)
+	}
+	if is := got["10003"]; is.Fake == nil || !is.Fake.Forbidden {
+		t.Errorf("forbidden VIN-3 = %+v", is)
+	}
+
+	if code, _ := mut("delete", "VIN-99"); code != 1 {
+		t.Errorf("deleting an unknown issue exited %d, want 1", code)
+	}
+	if code, _ := mut("move", "OPS-7", "NOPE", "NOPE-1"); code != 1 {
+		t.Errorf("moving into an unknown project exited %d, want 1", code)
+	}
+	if code, _ := mut("move", "OPS-7"); code != 2 {
+		t.Errorf("move with one argument exited %d, want 2", code)
+	}
+	if code := run([]string{"delete", "VIN-1"}, io.Discard); code != 2 {
+		t.Errorf("delete without --corpus exited %d, want 2", code)
+	}
+	if code := run([]string{"bogus"}, io.Discard); code != 2 {
+		t.Errorf("an unknown subcommand exited %d, want 2", code)
 	}
 }
