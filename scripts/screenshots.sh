@@ -49,6 +49,14 @@ OUT="$ROOT/docs/assets"
 VINCENT="$BIN/vincent"
 FAKEAGENT="$BIN/fakeagent"
 FAKEGH="$BIN/fakegh"
+FAKEJIRA="$BIN/fakejira"
+
+# The fake Jira site's throwaway credentials (task 142.20). The daemon reads
+# Jira credentials only from its environment — jira.user_env/jira.token_env,
+# JIRA_USER/JIRA_API_TOKEN by default — so daemon_up sets these two there and
+# nowhere else: the maintainer's own Jira token never reaches the seed.
+JIRA_SHOTS_USER="docs@example.invalid"
+JIRA_SHOTS_TOKEN="shots-jira-token"
 
 export VINCENT_CONFIG_DIR="$CONFIG_DIR"
 export VINCENT_DATA_DIR="$DATA_DIR"
@@ -127,6 +135,7 @@ daemon_up() {
   gopath="$(go env GOPATH)"
   env -u GITHUB_TOKEN -u GH_TOKEN HOME="$HOME_DIR" GOCACHE="$gocache" \
     GOMODCACHE="$gomodcache" GOPATH="$gopath" PATH="$BIN:$PATH" \
+    JIRA_USER="$JIRA_SHOTS_USER" JIRA_API_TOKEN="$JIRA_SHOTS_TOKEN" \
     "$VINCENT" daemon start >/dev/null
   PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
   TOKEN="$(cat "$DATA_DIR/token")"
@@ -142,10 +151,53 @@ daemon_attach() {
     || fail "the seeded daemon is not answering on $BASE — re-seed"
 }
 
+# jira_up starts cmd/fakejira on a loopback port of its own choosing — the
+# one Jira site the mobile-app project is bound to (task 142.20). It runs
+# beside the daemon rather than under it, so `seed` leaves it up for
+# `capture` the way it leaves the daemon up; its pid and port are kept under
+# $SHOTS for jira_down. http:// is accepted for a binding only on a loopback
+# host (§5.6), which this is.
+JBASE=""
+jira_up() {
+  local portfile="$SHOTS/jira-port"
+  rm -f "$portfile"
+  "$FAKEJIRA" serve --addr 127.0.0.1:0 --port-file "$portfile" \
+    --corpus "$SHOTS/jira-corpus.json" \
+    --user "$JIRA_SHOTS_USER" --token "$JIRA_SHOTS_TOKEN" 2> "$SHOTS/fakejira.err" &
+  echo $! > "$SHOTS/fakejira.pid"
+  for (( i = 0; i < 40; i++ )); do
+    [[ -s "$portfile" ]] && break
+    kill -0 "$(cat "$SHOTS/fakejira.pid")" 2>/dev/null || fail "fakejira exited: $(cat "$SHOTS/fakejira.err")"
+    sleep 0.5
+  done
+  [[ -s "$portfile" ]] || fail "fakejira wrote no port file"
+  JBASE="http://127.0.0.1:$(tr -d '\r\n' < "$portfile")"
+}
+
+# jira_down stops the fake the way scripts/142-gate.sh does: the shutdown
+# endpoint first, then a kill for a survivor, so `clean` leaves no process.
+jira_down() {
+  local pid=""
+  [[ -f "$SHOTS/fakejira.pid" ]] && pid="$(cat "$SHOTS/fakejira.pid")"
+  [[ -n "$pid" ]] || return 0
+  if [[ -s "$SHOTS/jira-port" ]]; then
+    curl -sS -X POST --max-time 5 "http://127.0.0.1:$(tr -d '\r\n' < "$SHOTS/jira-port")/_fake/shutdown" >/dev/null 2>&1 || true
+  fi
+  for (( i = 0; i < 20; i++ )); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.5
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null || true
+  fi
+  rm -f "$SHOTS/fakejira.pid"
+}
+
 do_clean() {
   if [[ -x "$VINCENT" ]]; then
     "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
   fi
+  jira_down
   rm -rf "$SHOTS"
   echo "removed $SHOTS"
 }
@@ -286,6 +338,12 @@ github:
 # and off the archived board, as the committed pictures show them. The key
 # sits below the fold of tui-daemon-config, so its value changes no picture.
 archive_tasks_on_issue_close: false
+# On, for the one Jira-bound project (task 142.20), answered by cmd/fakejira
+# (see jira_up). A short tick, so a close made in the fake reaches vincent
+# seconds later rather than on the five-minute default.
+jira:
+  enabled: true
+  poll_interval: 5s
 EOF
 }
 
@@ -300,12 +358,12 @@ do_seed() {
   # Built with the release ldflags rather than plain `go build`: the TUI
   # header prints its own version, and an uninjected build prints the module
   # pseudo-version (`v0.5.1-0.2026…+dirty`), which is noise in a screenshot.
-  say "build vincent + fakeagent"
+  say "build vincent + fakeagent + fakegh + fakejira"
   local vpkg="github.com/lezli01/vincent/internal/version" vtag
   vtag="$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"
   (cd "$ROOT" && go build -trimpath \
     -ldflags "-X $vpkg.version=${vtag#v} -X $vpkg.commit=$(git -C "$ROOT" rev-parse --short HEAD) -X $vpkg.date=$(date -u +%Y-%m-%d)" \
-    -o "$BIN/" ./cmd/vincent ./cmd/fakeagent ./cmd/fakegh)
+    -o "$BIN/" ./cmd/vincent ./cmd/fakeagent ./cmd/fakegh ./cmd/fakejira)
 
   agent_wrapper agent-slow FAKEAGENT_DIALECT=codex FAKEAGENT_SCENARIO_CODEX=success FAKEAGENT_DELAY_MS=3600000
   agent_wrapper agent-fast FAKEAGENT_DIALECT=cursor FAKEAGENT_SCENARIO_CURSOR=success FAKEAGENT_DELAY_MS=1500
@@ -449,6 +507,103 @@ EOF
   wrap "$FAKEGH" gh FAKEGH_SCENARIO=success FAKEGH_REPO=acme/web \
     FAKEGH_PR_BRANCH=feat/2-bump-the-design-tokens 'FAKEGH_PR_TITLE=Bump the design tokens' \
     "FAKEGH_ISSUES_FILE=$SHOTS/gh-issues.json"
+
+  # The Jira half (task 142.20): cmd/fakejira's corpus for the mobile-app
+  # project, bound to its MOB project at the end of the seed. What
+  # tui-issue-jira is a picture of: MOB-7, a Bug with labels and a mirrored
+  # two-comment thread, whose third comment is restricted to a role and so is
+  # never imported (§5.6) — the shot shows the thread without it. A Story and
+  # a Task beside it, so the list has one of each issue type; and MOB-4, open
+  # here and closed in the fake after the import as Won't Do, because the
+  # initial import asks only for issues not yet done — it is how the project
+  # has an issue closed `not_planned` by sync.
+  cat > "$SHOTS/jira-corpus.json" <<'EOF'
+{
+  "site": {
+    "serverTitle": "Jira",
+    "myself": {"accountId": "557058:docs-bot", "displayName": "Docs Bot", "emailAddress": "docs@example.invalid"}
+  },
+  "projects": [
+    {
+      "id": "10100", "key": "MOB", "name": "Mobile",
+      "statuses": [
+        {"id": "10100", "name": "To Do", "category": "new"},
+        {"id": "10101", "name": "In Progress", "category": "indeterminate"},
+        {"id": "10102", "name": "Done", "category": "done"}
+      ],
+      "transitions": [
+        {"id": "11", "name": "Start progress", "from": ["10100"], "to": "10101"},
+        {"id": "31", "name": "Done", "from": ["10100", "10101"], "to": "10102",
+         "fields": [{"key": "resolution", "name": "Resolution", "required": true,
+                     "allowedValues": [{"id": "10000", "name": "Done"}, {"id": "10001", "name": "Won't Do"}]}]},
+        {"id": "41", "name": "Reopen", "from": ["10102"], "to": "10100"}
+      ]
+    }
+  ],
+  "issues": [
+    {
+      "id": "10204", "key": "MOB-4", "project": "MOB",
+      "summary": "Port the settings screen to a web view", "issueType": "Story", "priority": "Low",
+      "labels": ["settings"],
+      "reporter": {"accountId": "557058:priya", "displayName": "Priya Nair"},
+      "status": "10100",
+      "created": "2026-09-02T09:00:00.000+0000", "updated": "2026-09-02T09:00:00.000+0000"
+    },
+    {
+      "id": "10207", "key": "MOB-7", "project": "MOB",
+      "summary": "Push notifications arrive twice after an app update", "issueType": "Bug", "priority": "High",
+      "labels": ["push", "android"],
+      "reporter": {"accountId": "557058:tomas", "displayName": "Tomas Berg"},
+      "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "After updating to 4.12 on Android, every push arrives twice until the app is reopened."}]}]},
+      "descriptionHtml": "<p>After updating to 4.12 on Android, every push arrives twice until the app is reopened.</p>",
+      "status": "10100",
+      "created": "2026-09-24T08:15:00.000+0000", "updated": "2026-09-26T14:20:00.000+0000"
+    },
+    {
+      "id": "10209", "key": "MOB-9", "project": "MOB",
+      "summary": "Offline mode for the order history screen", "issueType": "Story", "priority": "Medium",
+      "labels": ["offline"],
+      "reporter": {"accountId": "557058:priya", "displayName": "Priya Nair"},
+      "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Cache the last 50 orders so the screen opens without a connection."}]}]},
+      "descriptionHtml": "<p>Cache the last 50 orders so the screen opens without a connection.</p>",
+      "status": "10100",
+      "created": "2026-09-18T10:00:00.000+0000", "updated": "2026-09-18T10:00:00.000+0000"
+    },
+    {
+      "id": "10211", "key": "MOB-11", "project": "MOB",
+      "summary": "Raise the minimum iOS version to 17", "issueType": "Task", "priority": "Medium",
+      "labels": ["ios"],
+      "reporter": {"accountId": "557058:tomas", "displayName": "Tomas Berg"},
+      "status": "10101",
+      "created": "2026-09-27T11:30:00.000+0000", "updated": "2026-09-28T09:00:00.000+0000"
+    }
+  ],
+  "comments": [
+    {
+      "id": "20701", "issue": "10207",
+      "author": {"accountId": "557058:priya", "displayName": "Priya Nair"},
+      "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Reproduced on a Pixel 8. The old FCM token is still registered next to the new one."}]}]},
+      "bodyHtml": "<p>Reproduced on a Pixel 8. The old FCM token is still registered next to the new one.</p>",
+      "created": "2026-09-25T09:10:00.000+0000", "updated": "2026-09-25T09:10:00.000+0000"
+    },
+    {
+      "id": "20702", "issue": "10207",
+      "author": {"accountId": "557058:tomas", "displayName": "Tomas Berg"},
+      "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Then unregistering the previous token on upgrade should fix it."}]}]},
+      "bodyHtml": "<p>Then unregistering the previous token on upgrade should fix it.</p>",
+      "created": "2026-09-26T14:20:00.000+0000", "updated": "2026-09-26T14:20:00.000+0000"
+    },
+    {
+      "id": "20703", "issue": "10207",
+      "author": {"accountId": "557058:priya", "displayName": "Priya Nair"},
+      "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Support only: two enterprise customers have reported this."}]}]},
+      "bodyHtml": "<p>Support only: two enterprise customers have reported this.</p>",
+      "visibility": {"type": "role", "value": "Administrators"},
+      "created": "2026-09-26T15:00:00.000+0000", "updated": "2026-09-26T15:00:00.000+0000"
+    }
+  ]
+}
+EOF
 
   say "config"
   write_config agent-chat
@@ -741,7 +896,7 @@ EOF
 
   say "repositories"
   local p
-  for p in api web docs-portal platform-infra agent-adapters release-tooling security-labs; do
+  for p in api web docs-portal platform-infra agent-adapters release-tooling security-labs mobile-app; do
     make_repo "$p"
   done
 
@@ -806,6 +961,9 @@ EOF
   # first tape of a run would otherwise spend its keystrokes closing it and
   # photograph the board it never reached.
   printf '{\n  "full_auto_notice_ack": true\n}\n' > "$DATA_DIR/tui.json"
+
+  say "fake jira"
+  jira_up
 
   say "daemon"
   daemon_up
@@ -1297,6 +1455,43 @@ EOF
     sleep 0.5
   done
   [[ "$seeded" == "true" ]] || fail "trigger ci-red never seeded: $got"
+
+  # The Jira-bound project (task 142.20), registered last so every other
+  # project, task and issue keeps the id the other shots show. Bound at
+  # creation to the fake's MOB project; the sync is asked for rather than
+  # waited out, and the wait is for MOB-7's two public comments, which the
+  # same pass mirrors after the issues. Then MOB-4 is closed in the fake as
+  # Won't Do, and the next poll closes it here as not planned.
+  say "jira project"
+  local p_mob
+  p_mob="$(api POST /projects "$(jq -cn --arg p "$REPOS/mobile-app" --arg s "$JBASE" \
+    '{path: $p, name: "mobile-app", default_workflow: "feature-pr", max_parallel_tasks: 2,
+      issue_source: {provider: "jira", jira: {site: $s, project_key: "MOB"}}}')" | jq -r .id)"
+  api POST "/projects/$p_mob/issues/sync" >/dev/null
+  local mob7="" mob_comments=""
+  for (( i = 0; i < 120; i++ )); do
+    mob7="$(api GET "/issues?project_id=$p_mob&source=jira" | jq -r '.[] | select(.source.key == "MOB-7") | .id')"
+    if [[ -n "$mob7" ]]; then
+      mob_comments="$(api GET "/issues/$mob7/comments" | jq '[.comments[] | select(.remote)] | length')"
+      [[ "$mob_comments" == "2" ]] && break
+    fi
+    sleep 0.5
+  done
+  [[ "$mob_comments" == "2" ]] || fail "MOB-7 and its two public comments were never imported (issue ${mob7:-none}, ${mob_comments:-0} comments)"
+  [[ "$(api GET "/issues?project_id=$p_mob&source=jira" | jq length)" == "4" ]] \
+    || fail "the MOB import is not the four open issues: $(api GET "/issues?project_id=$p_mob&source=jira" | jq -c 'map(.source.key)')"
+  local out
+  out="$(curl -sS -X POST -u "$JIRA_SHOTS_USER:$JIRA_SHOTS_TOKEN" -H "Content-Type: application/json" \
+    -d '{"transition":{"id":"31"},"fields":{"resolution":{"name":"Won'"'"'t Do"}}}' \
+    -w $'\n%{http_code}' "$JBASE/rest/api/3/issue/MOB-4/transitions")" || fail "closing MOB-4 in the fake failed"
+  [[ "${out##*$'\n'}" == 2* ]] || fail "closing MOB-4 in the fake -> ${out##*$'\n'}: ${out%$'\n'*}"
+  local mob4=""
+  for (( i = 0; i < 120; i++ )); do
+    mob4="$(api GET "/issues?project_id=$p_mob&source=jira" | jq -r '.[] | select(.source.key == "MOB-4") | "\(.state)/\(.close_reason)"')"
+    [[ "$mob4" == "closed/not_planned" ]] && break
+    sleep 0.5
+  done
+  [[ "$mob4" == "closed/not_planned" ]] || fail "MOB-4 never closed here as not planned (last: ${mob4:-none})"
 
   sleep 6
   say "seeded — $(api GET /tasks | jq 'length') tasks and $(api GET /chats | jq '.chats | length') chats across $(api GET /projects | jq 'length') projects"
@@ -2603,6 +2798,27 @@ Sleep 2s
 Tab
 Sleep 3s
 Screenshot "'"$OUT"'/tui-issue-work.png"
+Sleep 2s
+'
+
+  # One Jira issue (task 142.20), appended last for the reason the #415
+  # block gives: MOB-7 on the Jira-bound mobile-app project — its key-style
+  # ref, its labels, the two public comments the import mirrored (the
+  # restricted third is not there) and the Source section naming the site.
+  # Driven the way tui-issue is: the filter commits on its own enter, and the
+  # second opens the row.
+  owns mobile-app issue 'twice' tui-issue-jira
+  tape tui-issue-jira 1600 mobile-app '
+Sleep 3s
+Type "/"
+Sleep 500ms
+Type "twice"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 4s
+Screenshot "'"$OUT"'/tui-issue-jira.png"
 Sleep 2s
 '
 }

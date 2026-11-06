@@ -103,7 +103,7 @@ daemon — not a mockup, and not a drawing of one.
 </p>
 
 <p align="center">
-  <img src="docs/assets/tui-project-overview.png" alt="The project overview showing seven repositories with their figures, a totals row, and the tasks that need you across every project" width="1000">
+  <img src="docs/assets/tui-project-overview.png" alt="The project overview showing eight repositories with their figures, a totals row, and the tasks that need you across every project" width="1000">
 </p>
 
 <p align="center">

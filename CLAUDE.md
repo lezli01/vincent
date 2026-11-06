@@ -238,13 +238,15 @@ exit 126 before running an assertion.
 `scripts/screenshots.sh` is the other seeding script, and the **only** source of
 the images under `docs/assets/tui-*.png`. It seeds a throwaway installation —
 its own config and data dirs, its own `$HOME` (so the skills and status-line
-rows are the seed's, not yours), seven git repos (one a GitHub project, answered
-by `cmd/fakegh`), a daemon, twenty-six tasks (a two-round fan-out with three
+rows are the seed's, not yours), eight git repos (one a GitHub project, answered
+by `cmd/fakegh`, and one a Jira-bound project, answered by `cmd/fakejira`),
+a daemon, twenty-six tasks (a two-round fan-out with three
 lanes, a loop and a handoff's task among them, three archived, eight started from an
 issue), eleven chats (four live, three archived — one of them on an issue —
-one closed on an issue and three closed on a task) and sixteen issues
-(thirteen local, three of them closed, and three imported from the fake GitHub
-with a mirrored thread, platform-infra's filling every lane) covering every
+one closed on an issue and three closed on a task) and twenty issues
+(thirteen local, three of them closed; three imported from the fake GitHub
+with a mirrored thread; four imported from the fake Jira, one with a mirrored
+thread and one closed there as Won't Do; platform-infra's filling every lane) covering every
 state — and photographs the running TUI with VHS
 (`brew install vhs`).
 Documentation never draws a screen: no ASCII mock-ups of panels, no hand-written
