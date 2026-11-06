@@ -1743,7 +1743,7 @@ reaches a task once the project has imported it into its [issues](#issues);
 from a shell, `vincent task add --issue ID` creates the task from it.
 
 For an issue, the row shows `#id` and the title, the issue's state, and the
-`owner/repo#N` reference when it was imported from GitHub. If the issue has
+source reference (`owner/repo#N`, `PROJ-12`) when it was imported. If the issue has
 already started tasks, a second line says how many and how many are still
 active — `2 tasks already started from this issue (1 active)`. Starting
 another is allowed; the list itself is on the issue's own screen. A closed
@@ -1830,7 +1830,7 @@ Each project is one row of figures, all of them the daemon's own counts:
 | `!` | Tasks that need you |
 | running | Slots in use against the project's own cap (`2/3`), or a bare count when it has none |
 | queued, blocked, done | Tasks in each state; archived tasks are never counted |
-| issues (gh) | Open issues, with the ones imported from GitHub in brackets |
+| issues (gh) | Open issues, with the ones imported from a remote tracker (GitHub or Jira) in brackets |
 | chats (wait) | Live chats, with the ones waiting on you in brackets |
 | sync | Issue sync from the project's issue source, GitHub or Jira: `✓` healthy, `✗` failing, `—` off or no issue source |
 | github | `✓ owner/repo` when the GitHub integration is usable, its reason when not, `—` with no GitHub remote |
@@ -1947,8 +1947,8 @@ states exist for.
 ### Issues
 
 The selected project's issues — the ones filed in vincent and the ones imported
-from GitHub — as a board of four lanes. It is in the palette whether or not
-the project has a GitHub integration: issues are vincent's own. Switching
+from GitHub or Jira — as a board of four lanes. It is in the palette whether or not
+the project has a GitHub integration or a Jira binding: issues are vincent's own. Switching
 project swaps the list, and the header reads "loading ‹project›…" until the
 new one arrives.
 
@@ -2134,7 +2134,7 @@ the Source section](../assets/tui-issue.png)
 | `n` | File a new issue in this issue's project |
 | `a` | Create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the issue in the issue form |
-| `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from GitHub, whose thread is GitHub's |
+| `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from a remote tracker, whose thread is the tracker's |
 | `X` | Close or reopen the issue — only what vincent offers for it |
 | `D` | Delete the issue permanently (asks first) |
 | `.` | Mark the issue ready when it is idle in progress, or not ready when it is pending hand-off |
@@ -2158,7 +2158,7 @@ you opened — or to the task workspace, when you came from one.
 
 The discussion thread sits under the description, oldest first, each comment
 under its author and time and rendered like the description; a comment
-mirrored from GitHub is marked as GitHub's. It refreshes as comments arrive.
+mirrored from a remote tracker is marked with its tracker's name. It refreshes as comments arrive.
 
 #### A chat on the issue — `T`
 
@@ -2226,9 +2226,9 @@ it does not suggest. Priority is `none`, `urgent`, `high`, `medium` or `low`.
 description, the admin and api labels, kind feature and priority
 medium](../assets/tui-issue-form.png)
 
-On an issue imported from GitHub the title, description and labels mirror
-GitHub, so the form shows them as "mirrored from GitHub" and will not edit
-them; kind and priority are vincent's own and save as usual.
+On an issue imported from GitHub or Jira the title, description and labels
+mirror the issue's tracker, so the form shows them as "mirrored from GitHub"
+or "mirrored from Jira" and will not edit them; kind and priority are vincent's own and save as usual.
 
 An edit sends only the fields you changed. If someone else changed the issue
 while the form was open, the save is refused and says so: `R` takes the issue

@@ -406,6 +406,20 @@ is one you may sync between machines. Prefer naming a variable under
 `environment.inherit` and letting the value come from the environment that
 starts the daemon.
 
+**The Jira credential** lives only in the daemon's environment, under the
+names [`jira.user_env` and `jira.token_env`](reference/configuration.md#jira)
+give (`JIRA_USER` and `JIRA_API_TOKEN` by default). Vincent reads it per
+request and never stores, logs or echoes it — not in the database, not in an
+API answer, not in an error. It can do whatever that Atlassian account may do
+in Jira; vincent uses it to read the bound project's issues and comments and,
+only on a person's close or reopen or a handoff you granted, to transition an
+issue or comment on it. Under a service it is set through `environment.set`
+and is then plaintext in `config.yaml`, as above. The site it is sent to comes
+from the project's [issue source](reference/cli.md#issue-source-flags), which
+must be `https://` (plain `http://` only on a loopback address) and is daemon
+state, never read from the repository: a file in a repository naming a site
+would point your token at whoever wrote it.
+
 The token file gates only vincent's own API. It is not an agent credential and
 grants no model access.
 
@@ -503,18 +517,19 @@ head commit you named and never deletes the branch, none of them is an MCP tool
 so an agent cannot reach them, and `github.enabled: false` turns them off with
 every read.
 
-Closing or reopening an issue imported from GitHub writes its state back too.
+Closing or reopening an issue imported from GitHub or Jira writes its state
+back to its tracker too.
 That one is an MCP tool, because closing a local issue leaves the machine for
 nothing, so the daemon refuses it by caller instead: an MCP call, and a request
 from a `vincent` command a workflow step or a chat agent runs, is refused
 `forge_write_needs_human`. The step and chat case is told apart by a header the
 CLI sends when `VINCENT_TASK_ID` or `VINCENT_CHAT_ID` is in its environment. It
-keeps an agent's honest `vincent issue close` off GitHub; it is **not** a
+keeps an agent's honest `vincent issue close` off GitHub and Jira; it is **not** a
 boundary — an agent running as you can unset those variables, or read the token
 and call the API like anything else running as you.
 
-The same check now covers every write vincent makes to GitHub for a caller:
-an imported issue's close, reopen and comment, and the pull-request writes
+The same check now covers every write vincent makes to GitHub or Jira for a
+caller: an imported issue's close, reopen and comment, and the pull-request writes
 (`vincent github pr create`, `merge`, `close`, `reopen`, `comment`, `rerun`).
 A workflow step's or chat agent's call to any of them is refused
 `forge_write_needs_human` — the pull-request ones included, which used to be
@@ -525,6 +540,9 @@ trigger file only a person arms; an agent can start a handoff but never with a
 grant. On a granted handoff's step, the pull-request writes it was granted
 also appear as MCP tools; nowhere else. This is the same best-effort marker,
 not a privilege boundary: it keeps the honest path inside what you granted.
+A Jira write goes through the same outbox as a GitHub one, and while
+`jira.enabled` is `false` or `jira.poll_interval` is `0` it waits rather than
+being sent.
 
 **One of those worktree files carries a token.** To give a cursor step
 [vincent's own tools](guides/mcp.md) — cursor has no per-run MCP flag — the

@@ -177,9 +177,11 @@ person](../assets/tui-issue-handoff.png)
 issues: #13 delivered, #14 waiting and #15 still
 unresolved](../assets/tui-handoff-task.png)
 
-## Grants: letting a handoff write to GitHub
+<a id="grants-letting-a-handoff-write-to-github"></a>
 
-A workflow step that writes to GitHub through vincent — `vincent github pr
+## Grants: letting a handoff write to GitHub or Jira
+
+A workflow step that writes to GitHub or Jira through vincent — `vincent github pr
 create`, `merge`, `close`, `reopen`, `comment` or `rerun`, or a close, a reopen or a
 comment on an imported issue — is refused `409 forge_write_needs_human`.
 Nothing is sent. A **grant** is how you say yes in advance, for one handoff.
@@ -187,8 +189,8 @@ It names capabilities from a closed list:
 
 | Capability | Lets the handoff's task |
 |---|---|
-| `issue.comment` | Comment on its imported issues |
-| `issue.close` | Close or reopen its imported issues |
+| `issue.comment` | Comment on its imported issues, in the issue's tracker |
+| `issue.close` | Close or reopen its imported issues, in the issue's tracker |
 | `pull.create` | Push an item's branch and open its pull request |
 | `pull.comment` | Comment on its pull requests |
 | `pull.merge` | Merge its pull requests |
@@ -197,7 +199,10 @@ It names capabilities from a closed list:
 
 A granted write is admitted only from the handoff's **own task**, and only on
 the handoff's own items and pull requests. It is made as `handoff`, not as
-you, and queued for GitHub like any other write vincent makes. Every other
+you, and queued like any other write vincent makes: the `issue.*`
+capabilities write to the issue's tracker, GitHub or
+[Jira](jira.md#write-back), and the `pull.*` and `checks.rerun` ones to
+GitHub. Every other
 step — another task, a fan-out lane — is still refused.
 
 **Only a person gives a grant.** An agent may start a handoff, but one that

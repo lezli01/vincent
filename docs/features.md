@@ -17,6 +17,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Human oversight | Approval gates, mid-run answers where supported, blocked-step recovery, edit-and-retry, ad-hoc repair agents, a chat in a stopped task's worktree, follow-up runs on finished tasks, a notify hook that reaches you with no client open |
 | Visibility | Grouped task board, live output, durable transcripts, metrics, file-grouped diffs, workflow graph |
 | GitHub | Create a task from an issue or a **pull request**, prefilled and editable — a pull-request task runs on that pull request's head branch; issue details in templates; a project's pull requests, each linked to the task whose branch it came from, with that task's own tab carrying its live CI checks; and **open a pull request** for a task — push its branch and create the PR from inside vincent — then merge, close, reopen, comment on or re-run its failed checks from the task's Pull Request tab or the CLI, each written to GitHub only when you ask. No stored credential |
+| Issues | A project's own issues — local, or imported from GitHub or [Jira Cloud](guides/jira.md) — with lanes, a main worktree per issue, side tasks and merge-back; a person's close or reopen written back to the issue's tracker. No stored credential |
 | Event triggers | Start or act on tasks from a project's own issue changes, a polled command, GitHub issue and pull-request changes, a signed push, or a cron or interval schedule; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs; built-in workflows that write triggers and never switch one on |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
 | Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore, scheduled backups with retention |
@@ -565,8 +566,8 @@ See [Driving vincent from an agent](guides/mcp.md).
 
 A task starts from an issue where the issue is on screen: `a` on the issues
 list or on one issue's screen opens the new-task form seeded with it. A
-read-only source row names the issue — its state, its `owner/repo#N` when it
-was imported from GitHub, and how many tasks it has already started — and the
+read-only source row names the issue — its state, its source reference
+(`owner/repo#N` or `PROJ-12`) when it was imported, and how many tasks it has already started — and the
 form fills in the title, the body, and any declared `fields:` named exactly
 `issue`, `github_issue`, `labels`, `assignee`, `milestone`, or `kind`. Every
 value lands in an ordinary editable row, so a guess can be corrected or cleared
@@ -603,7 +604,8 @@ requests are still linked. Bound to `jira`, it imports the open issues of a
 Jira Cloud project instead, on [`jira.poll_interval`](reference/configuration.md#jira),
 writes a person's close or reopen back as a
 [workflow transition](reference/api.md#jira-write-back),
-and [`vincent jira status`](reference/cli.md#vincent-jira-status) checks the binding. A GitHub issue
+and [`vincent jira status`](reference/cli.md#vincent-jira-status) checks the binding —
+[Jira issue sync](guides/jira.md) tells the whole story. A GitHub issue
 reaches a task the way any issue does: create the task from the imported issue
 with `vincent task add --issue ID`, `issue_id` over the API, or `issue:` in a
 [trigger](guides/triggers.md). A script that holds only the GitHub number finds
@@ -615,8 +617,11 @@ link line, and any declared `fields:` named exactly `issue`, `github_issue`,
 `labels`, `assignee`, `milestone` or `kind`. A declared `issue` field gets the
 vincent issue id and `github_issue` the GitHub **number**, validated at
 creation, so a workflow that hands the number to `gh` reads
-`{% raw %}{{ index .Task.Fields "github_issue" }}{% endraw %}`. Every explicit
-value wins over what the issue would have filled in.
+`{% raw %}{{ index .Task.Fields "github_issue" }}{% endraw %}`. A Jira issue
+prefills the title `PROJ-12 <title>` and a `Jira issue PROJ-12: <url>` link
+line instead, and has no number, so `github_issue`, `assignee` and
+`milestone` stay GitHub-only. Every explicit value wins over what the issue
+would have filled in.
 
 Templates receive the issue as `.Issue` — the vincent id, title, body, state,
 labels, author, assignee, milestone, and the provider reference in
@@ -635,15 +640,19 @@ to backfilled issues on upgrade, and the first sync adopts those from GitHub.
 without creating anything.
 
 Vincent stores no credential: it prefers your existing `gh` CLI and falls back to
-`GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. Of an issue, only a
-person's close or reopen of an imported one is written back, and the close,
-reopen or comment of a [handoff](guides/handoff.md) you
-[granted](guides/handoff.md#grants-letting-a-handoff-write-to-github) it;
+`GITHUB_TOKEN`/`GH_TOKEN` from the daemon's environment. For Jira it reads an
+account e-mail and API token from the environment variables named by
+[`jira.user_env` and `jira.token_env`](reference/configuration.md#jira)
+(`JIRA_USER` and `JIRA_API_TOKEN` by default), and stores neither. Of an
+issue, only a person's close or reopen of an imported one is written back to
+the issue's tracker, and the close, reopen or comment of a
+[handoff](guides/handoff.md) you
+[granted](guides/handoff.md#grants-letting-a-handoff-write-to-github-or-jira) it;
 otherwise vincent
 writes to GitHub only when you ask it to open a task's pull request or act on
 one, [below](#open-a-pull-request). When GitHub is unavailable, `vincent doctor`
 reports why and everything else is unaffected. Set `github.enabled: false` in
-`config.yaml` to switch it off entirely.
+`config.yaml` to switch it off entirely, and `jira.enabled: false` for Jira.
 
 See the [CLI reference](reference/cli.md#vincent-issue-ls), the
 [configuration reference](reference/configuration.md), and the

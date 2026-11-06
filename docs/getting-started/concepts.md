@@ -109,6 +109,20 @@ worth knowing up front:
   and the CLI both render that list rather than re-deriving it, so "what may
   happen next" has exactly one definition.
 
+## An issue
+
+A project's unit of intent: a bug or a feature to work on. Tasks are created
+from an issue, and the issue's tasks share one main branch and worktree, so
+each builds on the last.
+
+Where a project's issues come from is its **issue source**, one per project:
+local only, GitHub — derived from the project's `origin` remote — or a Jira
+Cloud project, bound explicitly. An imported issue is kept in sync with its
+tracker, and a person's close or reopen of it is written back.
+
+See [Working an issue](../guides/issues.md) and
+[Jira issue sync](../guides/jira.md).
+
 ## A worktree
 
 Every task gets its own `git worktree` on its own branch, named

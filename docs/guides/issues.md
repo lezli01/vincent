@@ -5,7 +5,8 @@ title: Working an issue
 # Working an issue
 
 An issue is a project's unit of intent: a bug or a feature, filed in vincent or
-[imported from GitHub](../features.md#start-from-an-issue). Work on it is done
+[imported from GitHub](../features.md#start-from-an-issue) or
+[Jira](jira.md). Work on it is done
 by tasks created from it, and those tasks share **one main line of work** — a
 main branch and a main worktree — so each task builds on what the last one
 left instead of starting over from the project's base branch. This page

@@ -25,8 +25,11 @@ already in the daemon's environment; vincent stores neither. Opening a pull
 request — and merging, closing, reopening, commenting on or re-running the
 failed checks of a task's linked one — are the only things it writes to GitHub,
 and each happens only when you ask.
+A project bound to Jira Cloud reads its credential the same way, from the
+environment variables `JIRA_USER` and `JIRA_API_TOKEN` (names configurable),
+and stores none of it.
 
-Two calls the daemon makes **without** being asked, both switchable:
+Three calls the daemon makes **without** being asked, all switchable:
 
 - **The release check.** Once a day the daemon asks GitHub for vincent's latest
   stable release, so `vincent doctor` can tell you a newer one exists. It is one
@@ -44,6 +47,12 @@ Two calls the daemon makes **without** being asked, both switchable:
   project never makes it. Set `poll_interval: 0` to stop it and keep the rest,
   or [`github.enabled: false`](reference/configuration.md#github) to switch off
   every GitHub call vincent makes.
+- **The Jira sync.** Every
+  [`jira.poll_interval`](reference/configuration.md#jira) (5 minutes by
+  default) the daemon imports and refreshes the issues of each project bound to
+  a Jira Cloud site. A daemon with no Jira-bound project never makes it. Set
+  `jira.poll_interval: 0` to stop it, or `jira.enabled: false` to switch off
+  every Jira call vincent makes.
 
 The [privacy policy](privacy.md) lists everything vincent stores, what it hands
 to agent CLIs, and how to delete it all.
@@ -169,6 +178,15 @@ press `E` to edit the prompt and retry. See
 
 It is waiting for a scheduler slot. Check `max_parallel_tasks` (default 3) and
 the per-project cap, and raise the task's priority to move it up the queue.
+
+### Does vincent work with Jira?
+
+Yes, with Jira Cloud. Bind a project's issue source to a Jira site and project
+key, put the account's e-mail and an API token in the daemon's environment, and
+vincent imports the project's issues, keeps them in sync, and writes a
+person's close or reopen back as a workflow transition. It stores no
+credential. Jira Data Center and Jira Server are not supported. See
+[Jira issue sync](guides/jira.md).
 
 ### What happens to an issue once its work is done?
 
