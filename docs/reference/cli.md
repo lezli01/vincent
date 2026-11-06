@@ -3164,7 +3164,7 @@ actually going.
 ## `vincent issue`
 
 A project's issues: the local tracker of [`/v1/issues`](api.md#issues), with
-issues imported from GitHub alongside. Needs a daemon. Every refusal is exit 1
+issues imported from GitHub or Jira alongside. Needs a daemon. Every refusal is exit 1
 with `Error: ` and the daemon's own wording on stderr. Starting a task from an
 issue is [`vincent task add --issue`](#from-an-issue).
 
@@ -3303,7 +3303,8 @@ $ vincent issue edit 12 --priority 1
 Error: issue 12 changed since it was read; re-run the command to apply the edit on top of the current version
 ```
 
-An imported issue's title, body and labels mirror GitHub and are refused; the
+An imported issue's title, body and labels mirror its tracker
+(GitHub or Jira) and are refused; the
 command prints the daemon's message and then which fields are editable on that
 issue (its kind and priority).
 
@@ -3314,11 +3315,11 @@ vincent issue comment <id> (--body B | --body-file PATH|-) [--json]
 ```
 
 Adds a comment to an issue's thread. The daemon records you as its author;
-no flag sets it. An issue imported from GitHub has a read-only mirror of its
-GitHub thread, so a comment on it is refused while its remote is live, as an
+no flag sets it. An issue imported from GitHub or Jira has a read-only mirror of its
+thread there, so a comment on it is refused while its remote is live, as an
 edit of its title is. The one exception is a workflow step of a live handoff
 [granted](#vincent-handoff-start) `issue.comment` on that issue: its comment
-is posted to GitHub. `--body-file`
+is posted to the issue's tracker. `--body-file`
 reads the comment from a file, or from stdin with `-`.
 
 ### `vincent issue close`
@@ -3543,10 +3544,10 @@ each issue first.
 
 Each command is all or nothing: one refused item or side effect — an item
 already delivered, returned or released with another outcome, a workflow step closing or
-commenting on an issue imported from GitHub without its handoff's grant, a
+commenting on an issue imported from GitHub or Jira without its handoff's grant, a
 follow-up its task cannot take — records nothing for any of them. The
 handoff's own task, granted `issue.close` or `issue.comment`, may close or
-comment on its imported items; those writes are queued for GitHub.
+comment on its imported items; those writes are queued for the issue's tracker.
 Repeating an item's own outcome succeeds and changes nothing for it, its
 `--comment-file` and `--close` included. When the handoff's task settles,
 every item still unresolved is released.

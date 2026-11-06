@@ -28,9 +28,12 @@ and no database server — the store is an embedded SQLite file.
 | **git** | Projects are git repositories; every task gets a worktree | 2.31 or newer recommended. The daemon logs the detected version at startup and warns below 2.31 rather than refusing to run |
 | **At least one agent CLI** | Agent steps drive a CLI you already have | `claude`, `codex`, `cursor-agent`, or `copilot` — see [Install an agent CLI](#install-an-agent-cli) |
 | A terminal | The TUI is a full-screen terminal app | Any modern terminal. On Windows, Windows Terminal is what ships with Windows 11 |
+| Issue trackers *(optional)* | Importing a project's issues from GitHub or Jira Cloud, and the GitHub pull-request features | GitHub: the `gh` CLI signed in, or `GITHUB_TOKEN`/`GH_TOKEN`. Jira Cloud: the Atlassian account's e-mail in `JIRA_USER` and an API token in `JIRA_API_TOKEN` (the names are configurable) — see [Jira issue sync](../guides/jira.md). Under a service, set them with [`environment.set`](../reference/configuration.md#environment) |
 
 Vincent stores **no credentials of its own**. It runs the agent CLI you
-installed, authenticated as you already authenticated it.
+installed, authenticated as you already authenticated it, and reads an issue
+tracker's credential from `gh` or the daemon's environment each time it needs
+one, never saving it.
 
 Go is *not* required to run vincent — only to
 [build it from source](#build-from-source).

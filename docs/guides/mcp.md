@@ -88,8 +88,8 @@ too: it asks the importer to poll early and flushes vincent's pending state
 writes to the remote. Its `GET`, `project_issue_sync_status`, is an ordinary
 tool, and names the bound source in `source` and `provider_name`.
 `issue_close` and `issue_reopen` are tools, but on an issue imported from
-GitHub they are refused with `forge_write_needs_human`: that issue's state is
-written back to GitHub, and only a person, or a handoff a person
+GitHub or Jira they are refused with `forge_write_needs_human`: that issue's
+state is written back to its tracker, and only a person, or a handoff a person
 [granted](../reference/api.md#handoffs) `issue.close`, does that. The same
 refusal meets a `vincent issue` command a workflow step or a chat agent runs,
 which the CLI marks with a header.
@@ -98,10 +98,10 @@ because they are written once for every provider; the refusal itself names
 the issue's provider (`… may write to GitHub`), and an issue's `source`
 carries its `provider_name` and rendered `ref`.
 `issue_comment` adds a comment as your task (`task N`), or `agent` outside a
-step; on an issue whose GitHub remote is live it is refused with
-`forge_write_needs_human`, because that thread is GitHub's — unless your task is
-a live handoff granted `issue.comment` on that issue, whose comment is posted
-to GitHub.
+step; on an issue whose remote (GitHub or Jira) is live it is refused with
+`forge_write_needs_human`, because that thread is its tracker's — unless your
+task is a live handoff granted `issue.comment` on that issue, whose comment is
+posted to the issue's tracker.
 The [task import](../reference/api.md#importing-a-task) that undoes one sits
 beside them: it reads a file the caller names and writes rows no agent should
 be able to create.

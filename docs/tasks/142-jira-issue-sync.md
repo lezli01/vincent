@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (16/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (17/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -154,9 +154,13 @@ lists only the hard dependencies the parent records as "Blocked by".
   `fakejira seed`, `move`, `delete` and `forbid` are the corpus mutations the
   gate makes while the fake serves. Passed on macOS 2026-11-06; it is `[x]`
   once its pull request's CI has run it on Linux and Windows.
-- [ ] **142.19** ([#915](https://github.com/lezli01/vincent/issues/915)) A new
+- [x] **142.19** ([#915](https://github.com/lezli01/vincent/issues/915)) A new
   Jira guide and the docs sweep, including security, privacy and SEO.
-  Depends: 142.13, 142.14, 142.15, 142.16.
+  Depends: 142.13, 142.14, 142.15, 142.16. Done: `docs/guides/jira.md`, and
+  features, the docs index, installation, concepts, the issues, handoff and
+  TUI guides, security, privacy, the FAQ and `_data/seo_pages.json` name Jira
+  where they were GitHub-only. The overview's `issues (gh)` header is left
+  in code and documented as printed. ✓ 2026-11-06
 - [ ] **142.20** ([#916](https://github.com/lezli01/vincent/issues/916)) A
   Jira-bound project seeded in `scripts/screenshots.sh`, and the issue shots
   recaptured. Depends: 142.12, 142.8, 142.14.

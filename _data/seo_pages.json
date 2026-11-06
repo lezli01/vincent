@@ -75,9 +75,14 @@
     "description": "How vincent tracks an issue on four lanes, runs its tasks in one main worktree, and merges side tasks back by hand or with an agent."
   },
   {
+    "path": "docs/guides/jira.md",
+    "seo_title": "Sync Jira Cloud issues into vincent",
+    "description": "Bind a vincent project to a Jira Cloud project: credentials from the environment, status and resolution mapping, transition overrides, write-back and troubleshooting."
+  },
+  {
     "path": "docs/guides/handoff.md",
     "seo_title": "Hand off finished work with vincent: deliveries, handoffs and grants",
-    "description": "How a vincent task records its delivery, how a handoff claims ready issues for one integration task, the four outcomes, and the grants that let it write to GitHub."
+    "description": "How a vincent task records its delivery, how a handoff claims ready issues for one integration task, the four outcomes, and the grants that let it write to GitHub or Jira."
   },
   {
     "path": "docs/guides/running-at-login.md",
@@ -97,7 +102,7 @@
   {
     "path": "docs/guides/triggers.md",
     "seo_title": "Start vincent tasks from events with triggers",
-    "description": "Turn polled commands, GitHub issue and pull-request changes, or signed pushes into proposed vincent tasks, follow-ups, retries, and cancels, with dry runs and a delivery ledger."
+    "description": "Turn a project's issues (local, GitHub or Jira), polled commands, GitHub pull-request changes, signed pushes or schedules into proposed vincent tasks, follow-ups, retries, and cancels, with dry runs and a delivery ledger."
   },
   {
     "path": "docs/guides/troubleshooting.md",

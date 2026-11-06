@@ -134,13 +134,18 @@ default) and run `git worktree prune`.
 vincent collects **no telemetry** and has **no account**. It sends no usage
 data, crash reports or identifiers to anyone.
 
-The daemon makes **two kinds of call on its own**, and each can be switched
+The daemon makes **three kinds of call on its own**, and each can be switched
 off:
 
 | Call | What it sends | Default | Switch off |
 |---|---|---|---|
 | Release check | One unauthenticated `GET` to GitHub for the latest vincent release. No token, no identifier | every 24 h | [`update.check: false`](reference/configuration.md#update) or `update.poll_interval: 0` |
-| GitHub reconciler | For projects whose `origin` is on github.com only: reads that repository's issues and open pull requests through `gh` or `GITHUB_TOKEN`/`GH_TOKEN` | every 5 min | [`github.poll_interval: 0`](reference/configuration.md#github), or `github.enabled: false` for no GitHub call at all |
+| GitHub reconciler | For projects whose `origin` is on github.com only: reads that repository's open pull requests, and its issues when the project's [issue source](reference/cli.md#issue-source-flags) resolves to GitHub, through `gh` or `GITHUB_TOKEN`/`GH_TOKEN` | every 5 min | [`github.poll_interval: 0`](reference/configuration.md#github), or `github.enabled: false` for no GitHub call at all |
+| Jira issue sync | For projects bound to a Jira Cloud site only: reads the bound project's issues and comments from that site, as the account in `JIRA_USER`/`JIRA_API_TOKEN` | every 5 min | [`jira.poll_interval: 0`](reference/configuration.md#jira), or `jira.enabled: false` for no Jira call at all (or rebind the project to `none`) |
+
+What the two issue imports read is mirrored into `vincent.db`. A Jira comment
+restricted to a group or role is never newly mirrored; one mirrored before it
+was restricted stays, with the body it had.
 
 Everything else happens only because you, a workflow you wrote or a trigger you
 armed asked for it:
@@ -152,6 +157,11 @@ armed asked for it:
 - `vincent update`, which downloads and installs a release when you run it.
 - GitHub writes — pushing a branch, opening, merging or commenting on a pull
   request — which happen only when you ask for them.
+- Jira writes — a close or reopen sent as a workflow transition, a handoff's
+  comment — which happen only when a person closes or reopens an imported
+  issue or grants a handoff the write. `vincent doctor` asks each bound Jira
+  site one question (`myself`) when it probes, and `vincent jira status` checks
+  one binding when you run it.
 - Event trigger sources you configure: poll commands, GitHub issue and pull
   request polls, and schedules.
 - [`notify.command`](reference/configuration.md#notify), a program of yours the
