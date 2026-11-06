@@ -10,9 +10,9 @@
 // It supersedes task 130 decision 15.1 ("no internal/issuesource package —
 // the first provider does not design for the second"); the dated note is in
 // docs/tasks/130-issues-pillar.md. GitHub is the first implementation
-// (github.go) and Jira Cloud the second (jira.go, #908: read side only — its
-// write methods return ErrJiraWriteBackNotImplemented until #909, and the
-// daemon gives it to the importer and never to the outbox). Task 137 F5's
+// (github.go) and Jira Cloud the second (jira.go: the read side is #908's,
+// the write-back through transitions and ADF comments #909's, task 142.13).
+// Task 137 F5's
 // command provider is a later implementation that lives beside them.
 //
 // What a Source owns is mechanism: how a project binds to the provider, how
@@ -35,8 +35,10 @@
 // since+ETag comment listing; without it the importer reads each listed
 // issue's thread) and PlaceholderAdopter (task 035's backfill placeholders,
 // migration 0040, which only GitHub rows have) are GitHub's; BulkGetter
-// (bulkfetch) and BindingResolver (the project key to its stable id) are
-// Jira's (capabilities.go).
+// (bulkfetch), BindingResolver (the project key to its stable id),
+// ProjectLocator (a row written through its project's binding) and
+// LaggingLister (a listing confirmed by id before a state it shows is
+// adopted over a write just made) are Jira's (capabilities.go).
 //
 // The package imports internal/store, internal/github, internal/gitx (for
 // RepoOf's `git remote get-url origin`), internal/issuestate (the state

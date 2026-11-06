@@ -197,10 +197,19 @@ func enqueueStateWriteTx(ctx context.Context, tx *sql.Tx, cur *Issue, to issuest
 // state, and adopting the very value the write failed to replace would undo
 // it on the next tick. Once GitHub moves off the base someone else changed
 // it, and GitHub is the authority again.
-func holdsLocalStateTx(ctx context.Context, tx *sql.Tx, issueID int64, remote IssueStateValue) (bool, error) {
-	var status, baseJSON string
-	err := tx.QueryRowContext(ctx, `SELECT status, base_json FROM issue_sync_outbox WHERE issue_id = ? AND op = ?
-		ORDER BY id DESC LIMIT 1`, issueID, OutboxOpSetState).Scan(&status, &baseJSON)
+//
+// A done one holds it only when unconfirmed: the value comes from a listing
+// that may trail the source's own writes (issuesource.LaggingLister, Jira's
+// search) and was not re-read by id, and it differs from what the write
+// sent (task 142.13 decision 1). The importer decides which issues to
+// re-read before this transaction opens, so a write the drain settles in
+// between reaches here done with only the stale listing to adopt; holding
+// it leaves the decision to the next pass, whose read by id is consistent
+// (review F1 on #945).
+func holdsLocalStateTx(ctx context.Context, tx *sql.Tx, issueID int64, remote IssueStateValue, unconfirmed bool) (bool, error) {
+	var status, desiredJSON, baseJSON string
+	err := tx.QueryRowContext(ctx, `SELECT status, desired_json, base_json FROM issue_sync_outbox WHERE issue_id = ? AND op = ?
+		ORDER BY id DESC LIMIT 1`, issueID, OutboxOpSetState).Scan(&status, &desiredJSON, &baseJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -216,6 +225,15 @@ func holdsLocalStateTx(ctx context.Context, tx *sql.Tx, issueID int64, remote Is
 			return false, fmt.Errorf("decode newest write of issue %d: %w", issueID, err)
 		}
 		return remote.Same(base), nil
+	case OutboxDone:
+		if !unconfirmed {
+			return false, nil
+		}
+		var desired IssueStateValue
+		if err := json.Unmarshal([]byte(desiredJSON), &desired); err != nil {
+			return false, fmt.Errorf("decode newest write of issue %d: %w", issueID, err)
+		}
+		return !remote.Same(desired), nil
 	}
 	return false, nil
 }

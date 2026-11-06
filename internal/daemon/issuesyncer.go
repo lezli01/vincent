@@ -84,6 +84,10 @@ type IssueSyncer struct {
 	// jiraTick and syncNow are what Run calls, seamed so the loop's timing
 	// is testable inside a synctest bubble without a store.
 	jiraTick, syncNow func(context.Context)
+	// afterConfirm, when set, runs between a listing's confirming reads and
+	// its refresh — the window the drain may settle a write in (review F1
+	// on #945); seamed for tests.
+	afterConfirm func()
 	// wake is a "sync now": one slot, so requests arriving while one is
 	// pending coalesce into it.
 	wake chan struct{}

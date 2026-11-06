@@ -1,11 +1,25 @@
-// Package jira is vincent's native Jira Cloud REST v3 client: the read side
-// of the Jira issue source of spec §5.6 (task 142.12, #908). It is
+// Package jira is vincent's native Jira Cloud REST v3 client: both sides of
+// the Jira issue source of spec §5.6 — the reads the importer makes (task
+// 142.12, #908) and the writes the outbox's drain makes (task 142.13,
+// #909). It is
 // hand-written net/http, the way internal/github/rest.go is — no SDK
 // (task 142 decision 1) — and it imports the standard library and
 // internal/jira/jiramap only, never internal/issuesource, internal/store or
 // internal/config, so the source and the outbox can both build on it without
-// a cycle; a test walks `go list -deps` to hold that. Write-back (#909) is
-// not here.
+// a cycle; a test walks `go list -deps` to hold that.
+//
+// # Writes (task 142.13)
+//
+// write.go is the write half, three calls and nothing more: Transitions
+// lists the transitions available on an issue with their screen fields
+// (expand=transitions.fields), decoded into the shape
+// jiramap.ChooseTransition reads; DoTransition performs one, setting the
+// resolution on its screen only when one is given; AddComment posts an
+// Atlassian Document Format body and returns Jira's comment id. Which
+// transition to take is jiramap's decision, never this package's. A 403 on
+// a write is ReasonNoWriteScope rather than the read path's ReasonForbidden
+// (decision 3), so the drain fails the row terminally the way it fails
+// GitHub's missing write scope.
 //
 // # Credentials (task 142 decision 4, spec §12.3)
 //

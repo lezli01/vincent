@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (14/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (15/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -102,9 +102,24 @@ lists only the hard dependencies the parent records as "Blocked by".
   questions 4, 5 and 11 and decision 12.4's question. The outbox is not wired
   to the Jira source: Jira write-back rows keep waiting `no_client` until
   142.13 (#909).
-- [ ] **142.13** ([#909](https://github.com/lezli01/vincent/issues/909)) The
+- [x] **142.13** ([#909](https://github.com/lezli01/vincent/issues/909)) The
   outbox for Jira (decision 3): transitions with resolution, ADF comments,
   echo handling. Depends: 142.12.
+  ✓ 2026-11-05 — the daemon hands the outbox the Jira source; a row is bound
+  through its project (`issuesource.ProjectLocator`). Three decisions:
+  (1) the importer confirms a stale-looking listed state — one that differs
+  from the local state while the issue's newest `set_state` row is `done` —
+  with a consistent read by id (bulkfetch) before adopting it, gated on the
+  `issuesource.LaggingLister` capability, so GitHub is untouched; no time
+  window, no clock comparison, no migration. (2) The drain records the
+  desired value as written, since `Choice.Achieved` always equals the
+  request; a post-function's different resolution is adopted by the next
+  read as `sync` and never re-written (no `achieved_json`, no post-write
+  GET). (3) A 403 on a transition or comment POST is `no_write_scope`; an
+  empty transitions list is `no_transition`, whose detail names a missing
+  *Transition issues* permission; no `mypermissions` probe. The new
+  terminal reasons are `no_transition`, `ambiguous_transition` and
+  `transition_needs_fields`. No Duplicate link is written (decision 9.7).
 - [x] **142.14** ([#910](https://github.com/lezli01/vincent/issues/910))
   Provider-aware sync status reasons, the TUI `S` key, the overview glyph, and
   the `issue sync` CLI (decision 14). Depends: 142.7.
@@ -616,7 +631,8 @@ them against a real site:
   5.3) and by showing the site on every status surface.
 - **Search lag.** Eventual consistency can make "Jira wins" revert a fresh
   human write on the next tick unless the importer reconciles against outbox
-  results.
+  results. *Mitigated 2026-11-05 (142.13 decision 1): the importer confirms
+  such a listing with a read by id before adopting it.*
 - **Cloud API churn**, as the `/search` deprecation shows (its 2025 removal is
   #896's finding, settled by 142.3). Endpoints are
   pinned in one place and tested against recorded fixtures (142.3, 142.11).

@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Jira write-back.** Closing or reopening an issue imported from Jira now
+  changes it in Jira too, and a granted handoff's comment is posted there.
+  A close or reopen is a workflow transition: vincent picks the one that
+  lands on the right status and resolution (your `jira.mapping` overrides
+  first), sets the Duplicate resolution for a duplicate without adding a
+  link, and never settles for a different reason. When no single transition
+  fits, the write fails with `no_transition`, `ambiguous_transition` or
+  `transition_needs_fields` on the issue's sync state and your close is kept;
+  a write the account may not make fails `no_write_scope`. Jira's lagging
+  search no longer reverts a close you just made. Writes wait while
+  `jira.enabled` is false or `jira.poll_interval` is `0`, and ones queued
+  before this release go out on the first pass (#909).
 - **Closing an issue archives its tasks.** Once a closed issue has nothing
   still working — every task finished, no chat on it open, no handoff holding
   it — the daemon archives the tasks that existed at the close, side work
@@ -95,8 +107,7 @@ list with the user-facing context a commit subject cannot carry.
   takes its new key; restricted-visibility comments are never mirrored. The
   sync row reports `unauthorized`, `forbidden`, `not_found`, `rate_limited`
   (waiting out `Retry-After`), `unreachable`, and the new `binding_changed`
-  when the bound key starts resolving to a different Jira project. Writing
-  back to Jira is not wired yet: those rows keep waiting `no_client`
+  when the bound key starts resolving to a different Jira project
   (task 142.12, #908).
 - **Check a Jira binding.** `GET /v1/projects/{id}/jira`,
   `vincent jira status` and the MCP tool `project_jira` ask the Jira site,

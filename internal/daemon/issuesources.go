@@ -35,8 +35,8 @@ func NewIssueOutbox(st *store.Store, cfg func() config.Config, client *github.Cl
 	return o
 }
 
-// WithJiraSource wires the Jira rows' source (#908); until then every Jira
-// row waits with no_client while Jira is switched on.
+// WithJiraSource wires the Jira rows' source (task 142.13, #909); without
+// one every Jira row waits with no_client while Jira is switched on.
 func (o *IssueOutbox) WithJiraSource(src issuesource.Source) *IssueOutbox {
 	o.jira = src
 	return o
@@ -45,9 +45,8 @@ func (o *IssueOutbox) WithJiraSource(src issuesource.Source) *IssueOutbox {
 // byProvider is the default registry: each provider's source, enabled
 // exactly when that provider's importer gates are open — its enabled
 // switch and poll_interval, and a source wired. Jira writes back too
-// (issueprovider.WritesBack, task 142.5) but has no source wired yet, so
-// its rows wait no_client and are never failed; a provider it does not
-// know waits with no_client too.
+// (issueprovider.WritesBack, task 142.5) through the source the daemon
+// wires (#909); a provider it does not know waits with no_client.
 func (o *IssueOutbox) byProvider(provider string) (issuesource.Source, string) {
 	cfg := o.cfg()
 	switch provider {
