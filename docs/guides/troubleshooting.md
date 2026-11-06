@@ -560,10 +560,26 @@ A project's sync reason is in the `sync` row, in
 - **`unreachable`** — the site did not answer within the budget: check the
   URL in the binding and the network.
 
-Writing a close or reopen back to Jira is not wired yet, so the transition
-failures (`no_transition`, `ambiguous_transition`, `transition_needs_fields`)
-cannot appear here today; a human's close of a Jira issue waits in the outbox
-instead.
+A close or reopen of a Jira issue in vincent is written back to Jira as a
+transition. A write that gives up is counted in the `sync` row's
+`writes N pending, N failed, N conflict`, and the issue's own `sync` field
+(`vincent issue show`) carries its reason. Jira has no open/closed field, so
+three reasons are Jira's own (see
+[Jira write-back](../reference/api.md#jira-write-back)):
+
+- **`no_transition`** — no transition the issue offers lands where the
+  change asks, such as no direct path from *In Review* to a Done status, or
+  none at all because the account lacks *Transition issues*. Close it in Jira,
+  grant the permission, or add a transition override to the project's
+  `jira.mapping`.
+- **`ambiguous_transition`** — several transitions qualify and vincent will
+  not guess. Name one in the mapping's `overrides`.
+- **`transition_needs_fields`** — the matching transition has a required
+  screen field vincent does not set. Make the field optional on that screen,
+  or make the change in Jira.
+
+A 403 on a transition or comment is `no_write_scope`: the token may read the
+project but not change it.
 
 ## Workflows
 
