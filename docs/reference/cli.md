@@ -3303,7 +3303,8 @@ $ vincent issue edit 12 --priority 1
 Error: issue 12 changed since it was read; re-run the command to apply the edit on top of the current version
 ```
 
-An imported issue's title, body and labels mirror GitHub and are refused; the
+An imported issue's title, body and labels mirror its tracker
+(GitHub or Jira) and are refused; the
 command prints the daemon's message and then which fields are editable on that
 issue (its kind and priority).
 

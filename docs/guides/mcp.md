@@ -98,10 +98,10 @@ because they are written once for every provider; the refusal itself names
 the issue's provider (`… may write to GitHub`), and an issue's `source`
 carries its `provider_name` and rendered `ref`.
 `issue_comment` adds a comment as your task (`task N`), or `agent` outside a
-step; on an issue whose GitHub remote is live it is refused with
-`forge_write_needs_human`, because that thread is GitHub's — unless your task is
-a live handoff granted `issue.comment` on that issue, whose comment is posted
-to GitHub.
+step; on an issue whose remote (GitHub or Jira) is live it is refused with
+`forge_write_needs_human`, because that thread is its tracker's — unless your
+task is a live handoff granted `issue.comment` on that issue, whose comment is
+posted to the issue's tracker.
 The [task import](../reference/api.md#importing-a-task) that undoes one sits
 beside them: it reads a file the caller names and writes rows no agent should
 be able to create.

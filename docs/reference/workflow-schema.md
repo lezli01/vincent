@@ -1172,8 +1172,9 @@ is 0 outside a loop, so one workflow serves both kinds of task:
 string.
 
 `Comments` is a list too: the issue's discussion thread, oldest first and
-untruncated — local comments and the ones mirrored from GitHub alike — each
-with `Author` (the GitHub login of a mirrored comment), `Body` and
+untruncated — local comments and the ones mirrored from GitHub or Jira alike —
+each with `Author` (the GitHub login, or the Jira display name, of a mirrored
+comment), `Body` and
 `CreatedAt`. A legacy `--github-issue` task has none.
 
 ```yaml

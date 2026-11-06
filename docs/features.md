@@ -431,7 +431,7 @@ In detail:
   comment in `$EDITOR`, and the same screens close, reopen and delete them,
   mark finished work ready, and hand ready issues off in a form that asks for
   the workflow and the grant;
-  an imported issue's mirrored fields and its thread, which mirrors GitHub's,
+  an imported issue's mirrored fields and its thread, which mirror its tracker's (GitHub or Jira),
   stay read-only. It is offered whether or not any project uses GitHub. From
   a shell, `vincent issue` lists, shows, files, edits, comments on, closes,
   reopens and deletes them, and marks an issue's finished work ready (or not)

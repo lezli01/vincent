@@ -79,3 +79,31 @@ func docParagraphs(t *testing.T) map[string][]string {
 	}
 	return out
 }
+
+// TestDocsClaimsMirrorRulesNameJira holds the pages to the mirror and
+// forge-write rules being provider-agnostic. issues.ErrMirrored and
+// ErrForgeWriteNeedsHuman refuse the same writes on a Jira-imported issue as
+// on a GitHub one, so a paragraph stating one of them for GitHub alone tells a
+// reader binding a project to Jira that the rule does not apply to them
+// (review F2 on #950). A paragraph that names Jira too is taken to cover it,
+// and an image's alt text is skipped: it describes one captured issue, which
+// may well be a GitHub one.
+func TestDocsClaimsMirrorRulesNameJira(t *testing.T) {
+	githubOnly := regexp.MustCompile(`mirrors? GitHub\b|GitHub remote is live|` +
+		`thread is GitHub's|posted to GitHub|mirrored from GitHub`)
+	var bad []string
+	for name, para := range docParagraphs(t) {
+		for _, p := range para {
+			if strings.HasPrefix(p, "![") {
+				continue
+			}
+			if githubOnly.MatchString(p) && !strings.Contains(p, "Jira") {
+				bad = append(bad, name+": "+p)
+			}
+		}
+	}
+	if len(bad) > 0 {
+		t.Errorf("the mirror and forge-write rules hold for Jira too, but these paragraphs "+
+			"state them for GitHub alone:\n  %s", strings.Join(bad, "\n  "))
+	}
+}

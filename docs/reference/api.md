@@ -1122,8 +1122,8 @@ above. Only a person's change is written back: an agent's — over MCP, or a
 `forge_write_needs_human`, unless it is a live handoff's task whose grant names
 `issue.close` (close and reopen) or `issue.comment`, on one of its items. Such
 a write is made as `by: handoff`, with `handoff_id` on its event, and is
-written back like a person's; a granted comment is posted to GitHub and keeps
-GitHub's comment id as its `remote_key`. A person's comment on an imported
+written back like a person's; a granted comment is posted to the issue's tracker (GitHub or Jira)
+and keeps the tracker's comment id as its `remote_key`. A person's comment on an imported
 issue is still refused `issue_mirrored`. That marker is best-effort, not a security
 boundary: see the [security model](../security-model.md).
 
@@ -2843,7 +2843,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   state; `tasks.count` and `tasks.active_ids` over the root tasks created from
   the issue (fan-out lanes never count); `editable`, the fields a `PATCH` may
   touch; `commentable`, whether a local comment is taken — `false` only while
-  the GitHub remote is live, so it is `true` on an issue whose remote moved or
+  the issue's GitHub or Jira remote is live, so it is `true` on an issue whose remote moved or
   is missing even though its `body` is not editable; and `source` — `{ provider, repo, number, url, remote_state,
   last_synced_at, status }` for an imported issue, `null` for a local one.
   `last_synced_at` is when the importer last wrote the issue from the remote.
@@ -2875,12 +2875,13 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   same project, and is cleared by reopening. **Reopen** takes `{}`.
 - **Comments** — `GET /v1/issues/{id}/comments` lists `{ comments: [{ id,
   issue_id, author, body, remote, remote_key?, created_at, updated_at }] }`,
-  oldest first; `remote` marks a comment mirrored from GitHub, read-only, and
-  `remote_key` is its GitHub id. `POST` takes `{ body }` and answers `201`
+  oldest first; `remote` marks a comment mirrored from the issue's tracker
+  (GitHub or Jira), read-only, and `remote_key` is its id there. `POST` takes `{ body }` and answers `201`
   with the comment; the daemon records its author as it does an issue's. An
   empty body, or one over 64 KiB, is `400`. There is no `Idempotency-Key`.
-  Nothing is ever posted to GitHub: a comment edited there is updated in
-  place, and one deleted there stays.
+  A person's comment is never posted to the tracker — only a granted
+  handoff's is (see [Handoffs](#handoffs)). A mirrored comment edited there is
+  updated in place, and one deleted there stays.
 - **Delete** answers `204` from any state, unless one of the issue's
   [main or side tasks](#the-issues-main-branch) has not finished: then it is
   `409 issue_has_live_main_task` naming it — a main task first, a side task
@@ -2895,7 +2896,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
 | `409` | When | `details` |
 |---|---|---|
 | `issue_changed` | `PATCH` with a stale `version` | `reason`, and `issue`: the issue as it is now — re-apply your edit to it and send its `version` |
-| `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror GitHub. `kind` and `priority` stay editable. Also a comment on an issue whose GitHub remote is live — one whose remote moved, is missing or was deleted takes comments | `reason` |
+| `issue_mirrored` | `PATCH` touching an imported issue's `title`, `body` or labels, which mirror the issue's tracker (GitHub or Jira). `kind` and `priority` stay editable. Also a comment on an issue whose remote is live — one whose remote moved, is missing or was deleted takes comments | `reason` |
 | `forge_write_needs_human` | A forge write by an agent without a grant: `close`, `reopen` or a comment on an issue imported from GitHub or Jira, or any `…/github/pull/*` write, from an [MCP](#mcp) tool call or a request carrying `X-Vincent-Task-Id` or `X-Vincent-Chat-Id`. Allowed only for a live handoff's task whose grant names the capability, on its own items and pull requests. A local issue, or one whose remote moved or is missing, is not refused. The message names the issue's provider (`… may write to GitHub`) | `reason` |
 | — | `close` on a closed issue, `reopen` on an open one | `state` |
 
