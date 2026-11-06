@@ -134,3 +134,24 @@ func TestDocsClaimsTokenNoRestartNamesEnvironmentSet(t *testing.T) {
 			strings.Join(bad, "\n  "))
 	}
 }
+
+// TestDocsClaimsIssueTasksShareWorktreeNamesSideTasks holds the pages to an
+// issue's tasks not all sharing its main worktree: a side task runs in a
+// worktree of its own and is merged back (docs/guides/issues.md). A paragraph
+// saying an issue's tasks share one main branch or worktree must name the side
+// task too (review F4 on #950).
+func TestDocsClaimsIssueTasksShareWorktreeNamesSideTasks(t *testing.T) {
+	share := regexp.MustCompile(`(?i)tasks (?:share|build on) (?:\*\*)?one main`)
+	var bad []string
+	for name, para := range docParagraphs(t) {
+		for _, p := range para {
+			if share.MatchString(p) && !strings.Contains(strings.ToLower(p), "side task") {
+				bad = append(bad, name+": "+p)
+			}
+		}
+	}
+	if len(bad) > 0 {
+		t.Errorf("a side task runs apart from the issue's main worktree, but these paragraphs "+
+			"say every task of an issue shares it:\n  %s", strings.Join(bad, "\n  "))
+	}
+}

@@ -112,8 +112,10 @@ worth knowing up front:
 ## An issue
 
 A project's unit of intent: a bug or a feature to work on. Tasks are created
-from an issue, and the issue's tasks share one main branch and worktree, so
-each builds on the last.
+from an issue, and by default the issue's tasks build on one main branch and
+worktree, so each builds on the last; a
+[side task](../guides/issues.md#side-tasks-and-merge-back) can run in a
+worktree of its own and be merged back.
 
 Where a project's issues come from is its **issue source**, one per project:
 local only, GitHub — derived from the project's `origin` remote — or a Jira
