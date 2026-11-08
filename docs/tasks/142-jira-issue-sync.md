@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (18/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (19/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -38,12 +38,11 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [x] **142.2** ([#898](https://github.com/lezli01/vincent/issues/898)) A pure,
   stdlib-only package for the mapping of decision 9: state and reason both
   ways, the kind seed, labels and the transition chooser. ✓ 2026-11-03
-- [~] **142.3** ([#899](https://github.com/lezli01/vincent/issues/899)) Cloud
+- [x] **142.3** ([#899](https://github.com/lezli01/vincent/issues/899)) Cloud
   REST v3 responses captured from a real site, settling the facts this
   document carries unverified. Needs a person with a Jira Cloud site.
-  Captured 2026-11-08 into `internal/jira/testdata/jira-cloud-2026-11/`; the
-  outcomes are under "Facts verified" below. Open: the human review that no
-  secret, email, real `accountId` or real site name remains.
+  Captured into `internal/jira/testdata/jira-cloud-2026-11/`, scrubbed and
+  reviewed; the outcomes are under "Facts verified" below. ✓ 2026-11-08
 - [x] **142.4** ([#900](https://github.com/lezli01/vincent/issues/900)) The
   issue-provider interface (decision 2); GitHub implements it with no
   behaviour change. Depends: 142.1. `internal/issuesource` holds the
