@@ -1849,8 +1849,9 @@ project's repository and execution defaults show beside the table; a narrower
 one drops that pane first, then the columns from the right, keeping name, `!`
 and running to the last.
 
-![The project overview: seven registered repositories with their figures and a
-totals row, and the six tasks that need you across every project below
+![The project overview: eight registered repositories with their figures and a
+totals row — the Jira-bound mobile-app among them, its sync column showing a
+clean pass — and the seven tasks that need you across every project below
 them](../assets/tui-project-overview.png)
 
 | Key | Does |
@@ -2117,6 +2118,14 @@ kind, priority and author, the description rendered as Markdown, two comments
 marked `· github`, the Main worktree section naming the branch and the task
 holding it at its gate, the Work line counting that task and no chats, and
 the Source section](../assets/tui-issue.png)
+
+An issue imported from Jira reads the same way, under its Jira key:
+
+![The detail of MOB-7, an issue imported from Jira: its labels, kind and
+author, `source MOB-7` and its sync state, the description, the two public
+comments marked `· jira`, the Work line with no task or chat yet, and the
+Source section naming the provider, the key, the browse URL on the Jira site
+and the remote state](../assets/tui-issue-jira.png)
 
 | Key | Does |
 |---|---|

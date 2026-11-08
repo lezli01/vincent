@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (17/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (18/20) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -161,9 +161,15 @@ lists only the hard dependencies the parent records as "Blocked by".
   TUI guides, security, privacy, the FAQ and `_data/seo_pages.json` name Jira
   where they were GitHub-only. The overview's `issues (gh)` header is left
   in code and documented as printed. ✓ 2026-11-06
-- [ ] **142.20** ([#916](https://github.com/lezli01/vincent/issues/916)) A
+- [x] **142.20** ([#916](https://github.com/lezli01/vincent/issues/916)) A
   Jira-bound project seeded in `scripts/screenshots.sh`, and the issue shots
-  recaptured. Depends: 142.12, 142.8, 142.14.
+  recaptured. Depends: 142.12, 142.8, 142.14. Done: an eighth repository,
+  `mobile-app`, bound to `cmd/fakejira`'s MOB project (four issues imported,
+  MOB-7's two public comments mirrored and its restricted one skipped, MOB-4
+  closed there as Won't Do and here as not planned); the new
+  `tui-issue-jira.png` (the author's answer to #916: a dedicated
+  shot, not a mixed list), and `tui-project-overview.png`, `tui-project-picker.png` and
+  `tui-daemon-config.png` recaptured. ✓ 2026-11-06
 
 ## Decisions (2026-11-03)
 

@@ -98,6 +98,11 @@ JQL. Each later pass, every
 [`jira.poll_interval`](../reference/configuration.md#jira) (5 minutes by
 default), reads what changed since the last one, closed issues included.
 
+![An issue imported from Jira in the TUI: MOB-7 with its labels, `source
+MOB-7`, its sync state, the description, the two public comments mirrored
+from Jira and marked `· jira` — a third, restricted to a role, is not among
+them — and the Source section with the Jira browse URL](../assets/tui-issue-jira.png)
+
 - **Open or closed.** A Jira issue is closed in vincent if and only if its
   status is in Jira's *Done* category. Every other status — *To Do*,
   *In Progress*, *In Review*, any custom one — is open. The resolution never
