@@ -38,9 +38,12 @@ lists only the hard dependencies the parent records as "Blocked by".
 - [x] **142.2** ([#898](https://github.com/lezli01/vincent/issues/898)) A pure,
   stdlib-only package for the mapping of decision 9: state and reason both
   ways, the kind seed, labels and the transition chooser. ✓ 2026-11-03
-- [ ] **142.3** ([#899](https://github.com/lezli01/vincent/issues/899)) Cloud
+- [~] **142.3** ([#899](https://github.com/lezli01/vincent/issues/899)) Cloud
   REST v3 responses captured from a real site, settling the facts this
   document carries unverified. Needs a person with a Jira Cloud site.
+  Captured 2026-11-08 into `internal/jira/testdata/jira-cloud-2026-11/`; the
+  outcomes are under "Facts verified" below. Open: the human review that no
+  secret, email, real `accountId` or real site name remains.
 - [x] **142.4** ([#900](https://github.com/lezli01/vincent/issues/900)) The
   issue-provider interface (decision 2); GitHub implements it with no
   behaviour change. Depends: 142.1. `internal/issuesource` holds the
@@ -649,6 +652,97 @@ them against a real site:
   (429 with `Retry-After`). Cloud tokens expire within 365 days, so a 401 is a
   routine failure.
 - The `acli` facts in decision 1 and the Atlassian Ascend dates in decision 7.
+
+*Note 2026-11-08:* the API facts above are settled below; the `acli` and
+Ascend facts are not API behaviour and stay unverified.
+
+## Facts verified (142.3, 2026-11-08)
+
+Captured from a throwaway Jira Cloud Free site (`serverInfo` version
+`1001.0.0-SNAPSHOT`, build 100295) with a classic API token and `curl`, against
+one team-managed project and two company-managed projects on the default
+"Software Simplified Workflow". The scrubbed responses are in
+`internal/jira/testdata/jira-cloud-2026-11/`, one `<endpoint>_<case>.json` (or
+`.txt` for a non-JSON body) and `.headers.txt` (the status line and an
+allow-list of headers) per call. The account, email, display name, avatar
+hash, cloud id and site are replaced; nothing else is edited.
+
+1. **The issue `id` survives a move; the old key resolves.** VCA-3 (id 10006)
+   was moved to project VCB with `POST /rest/api/3/bulk/issues/move` and became
+   VCB-4. `GET issue/VCA-3` answers 200 with `key` VCB-4 and the same `id`;
+   `fields.project.id` changed from 10001 to 10002 (`issue_moved_by_old_key`,
+   `issue_moved_by_id`). The move bumps `updated`.
+2. **Adding or editing a comment bumps the issue's `updated`.** It went from
+   21:31:38.993 to 21:32:56.408 on the first comment and to 21:33:02.230 on
+   editing it; a role-restricted comment bumps it too. Re-reading threads only
+   for changed issues is sound.
+3. **Epoch-ms `updated >= N` is honoured to the millisecond.** With N equal to
+   the issue's own `updated` in epoch ms the issue matches, and with N+1 it
+   does not (also checked at ±1 s, ±5 s and ±30 s on five issues). This site
+   shows no minute granularity, so the comment on `jira.Overlap` describes a
+   case this capture did not reproduce; the overlap is still justified by
+   search lag (fact 6) and costs only idempotent re-reads.
+4. **`search/jql` page size.** With the `IssueFieldNames` list and
+   `expand=renderedFields`, `maxResults=5000` returns 100 issues and a
+   `nextPageToken` (`search_jql_max_fields`). Id-only, it returned all 103
+   issues in one page. A smaller `maxResults` (40) is honoured. The last page
+   carries `isLast: true` and no `nextPageToken`; no page carries `total`.
+5. **`https://{site}/_edge/tenant_info` returns `{"cloudId": …}`**,
+   unauthenticated (`tenant_info`). `https://api.atlassian.com/ex/jira/{cloudId}/rest/api/3/myself`
+   answered 200 with the same classic token over Basic auth. A scoped token was
+   not exercised.
+6. **Search lag after a write.** Five label edits were each visible to
+   `search/jql` on the first poll, 300–410 ms after the PUT returned. This is
+   an idle Free site, so it is a lower bound, not a budget.
+
+Also found, beyond the six:
+
+- **Team-managed projects do carry a resolution.** VTM-2 moved to Done reads
+  `resolution: Done` (`issue_done_team_managed`), contradicting #896's finding
+  that team-managed projects have no resolution field. Its transitions have
+  no screen, so the resolution cannot be chosen through the API there.
+- **The simplified workflow forces `resolution` to Done.** Its Done transition
+  carries a `system:update-field` post-function setting resolution 10000
+  (Done). With a transition screen that offers `resolution` (the built-in
+  "Resolve Issue Screen" was added to VCA's Done transition for the capture),
+  a POST asking for `Won't Do` still lands as Done, and a POST with no
+  `resolution` succeeds although the screen marks it required
+  (`transition_post_204_screen_with_resolution`,
+  `transition_post_204_screen_without_resolution`). A vincent close reason
+  other than Done therefore does not survive write-back on a default
+  company-managed project, and nothing in the response says so.
+- **Without a transition screen, sending `fields.resolution` is a 400**:
+  `"Field 'resolution' cannot be set. It is not on the appropriate screen, or
+  unknown."` on both project types (`transition_post_400_resolution_not_on_screen`).
+  A default project's transitions have no screen (`transitions_*` with empty
+  `fields`), which is why `jira.Transition` sends `resolution` only when
+  `transitions.fields` lists it.
+- **Validators are invisible to `expand=transitions.fields`.** A "field
+  required" validator on Done (due date) fails the POST with the validator's
+  own message in `errorMessages` and empty `errors`
+  (`transition_post_400_missing_required_field`); the transition list shows
+  nothing to predict it.
+- **`bulkfetch` drops a deleted id silently**: the answer omits it and
+  `issueErrors` is empty. A moved issue asked for by id and by old key comes
+  back once (`bulkfetch_deleted_and_moved`).
+- **A deleted issue is a 404** with `"Issue does not exist or you do not have
+  permission to see it."` (`issue_deleted_404`).
+- **A bad token is a 401 whose body is plain text** — `Client must be
+  authenticated to access this resource.` — under `content-type:
+  application/json`, with `x-seraph-loginreason: AUTHENTICATED_FAILED`
+  (`myself_401_invalid_token`). Decoding it as JSON fails. A revoked token
+  draws exactly the same answer (`myself_401_revoked_token`), so the two
+  cannot be told apart; an expired token was not available to capture.
+- **The burst limit is 350 requests per 1-second window** for token traffic:
+  `ratelimit-policy: "jira-burst-based";q=100;w=1`, `x-ratelimit-limit: 350`
+  on every answer. 1,200 searches at about 80 a second never hit it; 600 sent
+  250 at a time drew 40 429s with `retry-after: 1`, `x-ratelimit-reset`,
+  `ratelimit-reason: jira-burst-based` and a JSON body carrying `status: 429`
+  (`rate_limited_429`).
+- **A role-restricted comment can only be posted by a member of that role**
+  (400 `commentLevel: You are currently not a member of the project role`),
+  and on write `visibility.value` and `visibility.identifier` are mutually
+  exclusive, though a read returns both.
 
 ## Risks
 
