@@ -1,0 +1,130 @@
+{
+  "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+  "id": "10008",
+  "self": "https://example-site.atlassian.net/rest/api/3/issue/10008",
+  "key": "VCA-5",
+  "renderedFields": {
+    "summary": null,
+    "issuetype": null,
+    "components": null,
+    "created": "Today 9:31 PM",
+    "description": "<p>Seeded fixture issue number 5.</p>",
+    "project": null,
+    "reporter": null,
+    "priority": null,
+    "resolution": null,
+    "labels": null,
+    "resolutiondate": "Today 9:33 PM",
+    "comment": {
+      "comments": [],
+      "self": "https://example-site.atlassian.net/rest/api/3/issue/10008/comment",
+      "maxResults": 0,
+      "total": 0,
+      "startAt": 0
+    },
+    "issuelinks": null,
+    "assignee": null,
+    "updated": "Today 9:33 PM",
+    "status": null
+  },
+  "fields": {
+    "summary": "Fixture issue 5",
+    "issuetype": {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10006",
+      "id": "10006",
+      "description": "A small, distinct piece of work.",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+      "name": "Task",
+      "subtask": false,
+      "avatarId": 10318,
+      "hierarchyLevel": 0
+    },
+    "components": [],
+    "created": "2026-11-08T21:31:39.834+0100",
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Seeded fixture issue number 5."
+            }
+          ]
+        }
+      ]
+    },
+    "project": {
+      "self": "https://example-site.atlassian.net/rest/api/3/project/10001",
+      "id": "10001",
+      "key": "VCA",
+      "name": "Vincent Company A",
+      "projectTypeKey": "software",
+      "simplified": false,
+      "avatarUrls": {
+        "48x48": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407",
+        "24x24": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407?size=small",
+        "16x16": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407?size=xsmall",
+        "32x32": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407?size=medium"
+      }
+    },
+    "reporter": {
+      "self": "https://example-site.atlassian.net/rest/api/3/user?accountId=557058%3A00000000-0000-4000-8000-000000000001",
+      "accountId": "557058:00000000-0000-4000-8000-000000000001",
+      "emailAddress": "fixture.user@example.com",
+      "avatarUrls": {
+        "48x48": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+        "24x24": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+        "16x16": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+        "32x32": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png"
+      },
+      "displayName": "Fixture User",
+      "active": true,
+      "timeZone": "Europe/Budapest",
+      "accountType": "atlassian"
+    },
+    "priority": {
+      "self": "https://example-site.atlassian.net/rest/api/3/priority/3",
+      "iconUrl": "https://example-site.atlassian.net/images/icons/priorities/medium_new.svg",
+      "name": "Medium",
+      "id": "3"
+    },
+    "resolution": {
+      "self": "https://example-site.atlassian.net/rest/api/3/resolution/10000",
+      "id": "10000",
+      "description": "Work has been completed on this issue.",
+      "name": "Done"
+    },
+    "labels": [
+      "batch-0",
+      "fixture"
+    ],
+    "resolutiondate": "2026-11-08T21:33:46.743+0100",
+    "comment": {
+      "comments": [],
+      "self": "https://example-site.atlassian.net/rest/api/3/issue/10008/comment",
+      "maxResults": 0,
+      "total": 0,
+      "startAt": 0
+    },
+    "issuelinks": [],
+    "assignee": null,
+    "updated": "2026-11-08T21:33:46.769+0100",
+    "status": {
+      "self": "https://example-site.atlassian.net/rest/api/3/status/10005",
+      "description": "",
+      "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+      "name": "Done",
+      "id": "10005",
+      "statusCategory": {
+        "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/3",
+        "id": 3,
+        "key": "done",
+        "colorName": "green",
+        "name": "Done"
+      }
+    }
+  }
+}

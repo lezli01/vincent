@@ -1,0 +1,105 @@
+{
+  "expand": "description,lead,issueTypes,url,projectKeys,permissions,insight",
+  "self": "https://example-site.atlassian.net/rest/api/3/project/10003",
+  "id": "10003",
+  "key": "VTM",
+  "description": "",
+  "lead": {
+    "self": "https://example-site.atlassian.net/rest/api/3/user?accountId=557058:00000000-0000-4000-8000-000000000001",
+    "accountId": "557058:00000000-0000-4000-8000-000000000001",
+    "avatarUrls": {
+      "48x48": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+      "24x24": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+      "16x16": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+      "32x32": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png"
+    },
+    "displayName": "Fixture User",
+    "active": true
+  },
+  "components": [],
+  "issueTypes": [
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10009",
+      "id": "10009",
+      "description": "Epics track collections of related bugs, stories, and tasks.",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10307?size=medium",
+      "name": "Epic",
+      "subtask": false,
+      "avatarId": 10307,
+      "hierarchyLevel": 1
+    },
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10010",
+      "id": "10010",
+      "description": "Subtasks track small pieces of work that are part of a larger task.",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10316?size=medium",
+      "name": "Subtask",
+      "subtask": true,
+      "avatarId": 10316,
+      "hierarchyLevel": -1
+    },
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10011",
+      "id": "10011",
+      "description": "",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+      "name": "Task",
+      "subtask": false,
+      "avatarId": 10318,
+      "hierarchyLevel": 0
+    },
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10012",
+      "id": "10012",
+      "description": "",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10315?size=medium",
+      "name": "Story",
+      "subtask": false,
+      "avatarId": 10315,
+      "hierarchyLevel": 0
+    },
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10013",
+      "id": "10013",
+      "description": "",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10314?size=medium",
+      "name": "Feature",
+      "subtask": false,
+      "avatarId": 10314,
+      "hierarchyLevel": 0
+    },
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10014",
+      "id": "10014",
+      "description": "",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+      "name": "Bug",
+      "subtask": false,
+      "avatarId": 10303,
+      "hierarchyLevel": 0
+    }
+  ],
+  "assigneeType": "UNASSIGNED",
+  "versions": [],
+  "name": "Vincent Team",
+  "roles": {
+    "atlassian-addons-project-access": "https://example-site.atlassian.net/rest/api/3/project/10003/role/10014",
+    "Administrator": "https://example-site.atlassian.net/rest/api/3/project/10003/role/10010",
+    "jira-guest-member": "https://example-site.atlassian.net/rest/api/3/project/10003/role/10013",
+    "Viewer": "https://example-site.atlassian.net/rest/api/3/project/10003/role/10012",
+    "Member": "https://example-site.atlassian.net/rest/api/3/project/10003/role/10011"
+  },
+  "avatarUrls": {
+    "48x48": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10405",
+    "24x24": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10405?size=small",
+    "16x16": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10405?size=xsmall",
+    "32x32": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10405?size=medium"
+  },
+  "projectTypeKey": "software",
+  "simplified": true,
+  "style": "next-gen",
+  "isPrivate": false,
+  "properties": {},
+  "entityId": "6e7004ef-2ecb-4e85-bdcd-d61bb4aa74aa",
+  "uuid": "6e7004ef-2ecb-4e85-bdcd-d61bb4aa74aa"
+}

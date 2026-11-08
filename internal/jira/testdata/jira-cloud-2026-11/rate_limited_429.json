@@ -1,0 +1,7 @@
+{
+  "errorMessages": [
+    "The request has been rate-limited. Please try again later."
+  ],
+  "errors": {},
+  "status": 429
+}

@@ -1,0 +1,182 @@
+{
+  "expand": "transitions",
+  "transitions": [
+    {
+      "id": "11",
+      "name": "Backlog",
+      "to": {
+        "self": "https://example-site.atlassian.net/rest/api/3/status/10006",
+        "description": "",
+        "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+        "name": "Backlog",
+        "id": "10006",
+        "statusCategory": {
+          "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "To Do"
+        }
+      },
+      "hasScreen": false,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {},
+      "isLooped": false
+    },
+    {
+      "id": "21",
+      "name": "Selected for Development",
+      "to": {
+        "self": "https://example-site.atlassian.net/rest/api/3/status/10004",
+        "description": "",
+        "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+        "name": "Selected for Development",
+        "id": "10004",
+        "statusCategory": {
+          "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "To Do"
+        }
+      },
+      "hasScreen": false,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {},
+      "isLooped": false
+    },
+    {
+      "id": "31",
+      "name": "In Progress",
+      "to": {
+        "self": "https://example-site.atlassian.net/rest/api/3/status/3",
+        "description": "",
+        "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/inprogress.png",
+        "name": "In Progress",
+        "id": "3",
+        "statusCategory": {
+          "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "In Progress"
+        }
+      },
+      "hasScreen": false,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {},
+      "isLooped": false
+    },
+    {
+      "id": "41",
+      "name": "Done",
+      "to": {
+        "self": "https://example-site.atlassian.net/rest/api/3/status/10005",
+        "description": "",
+        "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+        "name": "Done",
+        "id": "10005",
+        "statusCategory": {
+          "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "Done"
+        }
+      },
+      "hasScreen": true,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {
+        "fixVersions": {
+          "required": false,
+          "schema": {
+            "type": "array",
+            "items": "version",
+            "system": "fixVersions"
+          },
+          "name": "Fix versions",
+          "key": "fixVersions",
+          "operations": [
+            "set",
+            "add",
+            "remove"
+          ],
+          "allowedValues": []
+        },
+        "assignee": {
+          "required": false,
+          "schema": {
+            "type": "user",
+            "system": "assignee"
+          },
+          "name": "Assignee",
+          "key": "assignee",
+          "autoCompleteUrl": "https://example-site.atlassian.net/rest/api/3/user/assignable/search?issueKey=VCA-8&query=",
+          "operations": [
+            "set"
+          ]
+        },
+        "worklog": {
+          "required": false,
+          "schema": {
+            "type": "array",
+            "items": "worklog",
+            "system": "worklog"
+          },
+          "name": "Log Work",
+          "key": "worklog",
+          "operations": [
+            "add"
+          ]
+        },
+        "resolution": {
+          "required": true,
+          "schema": {
+            "type": "resolution",
+            "system": "resolution"
+          },
+          "name": "Resolution",
+          "key": "resolution",
+          "operations": [
+            "set"
+          ],
+          "allowedValues": [
+            {
+              "self": "https://example-site.atlassian.net/rest/api/3/resolution/10000",
+              "id": "10000",
+              "name": "Done"
+            },
+            {
+              "self": "https://example-site.atlassian.net/rest/api/3/resolution/10001",
+              "id": "10001",
+              "name": "Won't Do"
+            },
+            {
+              "self": "https://example-site.atlassian.net/rest/api/3/resolution/10002",
+              "id": "10002",
+              "name": "Duplicate"
+            },
+            {
+              "self": "https://example-site.atlassian.net/rest/api/3/resolution/10003",
+              "id": "10003",
+              "name": "Cannot Reproduce"
+            }
+          ]
+        }
+      },
+      "isLooped": false
+    }
+  ]
+}

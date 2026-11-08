@@ -1,0 +1,6 @@
+{
+  "errorMessages": [],
+  "errors": {
+    "resolution": "Field 'resolution' cannot be set. It is not on the appropriate screen, or unknown."
+  }
+}

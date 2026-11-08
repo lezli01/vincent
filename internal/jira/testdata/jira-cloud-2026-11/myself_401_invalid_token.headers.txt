@@ -1,0 +1,4 @@
+HTTP/2 401 
+content-type: application/json;charset=UTF-8
+x-seraph-loginreason: AUTHENTICATED_FAILED
+www-authenticate: OAuth realm="https%3A%2F%2Fexample-site.atlassian.net"
