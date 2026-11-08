@@ -161,9 +161,13 @@ JBASE=""
 jira_up() {
   local portfile="$SHOTS/jira-port"
   rm -f "$portfile"
+  # Every descriptor is the fake's own (review F2): in `seed` mode it
+  # outlives this script, and an inherited stdout would hold a pipe the
+  # seed was run into — `screenshots.sh seed | tee log` — open until `clean`.
   "$FAKEJIRA" serve --addr 127.0.0.1:0 --port-file "$portfile" \
     --corpus "$SHOTS/jira-corpus.json" \
-    --user "$JIRA_SHOTS_USER" --token "$JIRA_SHOTS_TOKEN" 2> "$SHOTS/fakejira.err" &
+    --user "$JIRA_SHOTS_USER" --token "$JIRA_SHOTS_TOKEN" \
+    < /dev/null > "$SHOTS/fakejira.out" 2> "$SHOTS/fakejira.err" &
   echo $! > "$SHOTS/fakejira.pid"
   for (( i = 0; i < 40; i++ )); do
     [[ -s "$portfile" ]] && break
@@ -174,12 +178,28 @@ jira_up() {
   JBASE="http://127.0.0.1:$(tr -d '\r\n' < "$portfile")"
 }
 
+# jira_is_ours says whether pid $1 is still the fake jira_up started for
+# this $SHOTS: a fakejira whose argv names this installation's port file.
+jira_is_ours() {
+  local args
+  args="$(ps -p "$1" -o args= 2>/dev/null)" || return 1
+  [[ "$args" == *fakejira* && "$args" == *"$SHOTS/jira-port"* ]]
+}
+
 # jira_down stops the fake the way scripts/142-gate.sh does: the shutdown
 # endpoint first, then a kill for a survivor, so `clean` leaves no process.
+# Unlike the gate's $!, this pid crosses invocations through a file that can
+# outlive its process — a crashed fake, a reboot over a persistent /tmp — so
+# it is signalled only while it is provably still the fake (review F1), the
+# PID-reuse guard recovery applies to agent processes.
 jira_down() {
   local pid=""
   [[ -f "$SHOTS/fakejira.pid" ]] && pid="$(cat "$SHOTS/fakejira.pid")"
   [[ -n "$pid" ]] || return 0
+  if ! jira_is_ours "$pid"; then
+    rm -f "$SHOTS/fakejira.pid"
+    return 0
+  fi
   if [[ -s "$SHOTS/jira-port" ]]; then
     curl -sS -X POST --max-time 5 "http://127.0.0.1:$(tr -d '\r\n' < "$SHOTS/jira-port")/_fake/shutdown" >/dev/null 2>&1 || true
   fi
@@ -187,7 +207,7 @@ jira_down() {
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.5
   done
-  if kill -0 "$pid" 2>/dev/null; then
+  if jira_is_ours "$pid"; then
     kill -9 "$pid" 2>/dev/null || true
   fi
   rm -f "$SHOTS/fakejira.pid"
