@@ -49,7 +49,7 @@
 #
 # ## Which issues are ready
 #
-# The deterministic half is the survey, and it drops an issue for exactly four
+# The deterministic half is the survey, and it drops an issue for exactly five
 # reasons, in this order:
 #
 #   1. it is already on an unarchived task (the task's linked `issue.id`, or
@@ -57,14 +57,16 @@
 #      the task 035 snapshots were backfilled into the issue set — its
 #      `github_issue` snapshot or field) — which is also what makes
 #      re-running this safe;
-#   2. it carries none of `bug`, `enhancement`, `documentation`, `ci` — the
+#   2. it does not carry `vincent-ready` — a person's explicit opt-in that
+#      the issue is ready for an agent; nothing without it is considered;
+#   3. it carries none of `bug`, `enhancement`, `documentation`, `ci` — the
 #      resolve workflows' `fetch` refuses such an issue, so a task for it would
 #      be born blocked;
-#   3. GitHub's own "blocked by" relation names an issue that is still open.
+#   4. GitHub's own "blocked by" relation names an issue that is still open.
 #      Only the head of a dependency chain has no open blocker, so this is what
 #      makes a chain yield **one** issue at a time: the next link becomes ready
 #      when the one before it closes, and the next run picks it up;
-#   4. it is an umbrella whose sub-issues are still open — the sub-issues are
+#   5. it is an umbrella whose sub-issues are still open — the sub-issues are
 #      the work, and they are surveyed on their own.
 #
 # The judgement half is `select`, the one agent in this file. It fills the
@@ -309,11 +311,12 @@ steps:
         echo '[]' > "$scratch/deps.json"
       fi
 
-      # The four exclusions, in the order the header gives them. Whatever is
+      # The five exclusions, in the order the header gives them. Whatever is
       # left is a candidate, and a candidate carries what the triage needs to
       # judge it: body, recent comments, parent, and the open issues waiting
       # on it.
       jq --slurpfile deps "$scratch/deps.json" --slurpfile claims "$scratch/claims.json" '
+        def opted_in: (.labels // []) | any(. == "vincent-ready");
         def resolvable: (.labels // []) | any(. == "bug" or . == "enhancement" or . == "documentation" or . == "ci");
         ($deps[0] | map({key: (.number | tostring), value: .}) | from_entries) as $d
         | ($claims[0] | group_by(.key) | map({key: .[0].key, value: .}) | from_entries) as $c
@@ -330,6 +333,8 @@ steps:
                excluded:
                  (if ($on | length) > 0 then
                     "already on task " + ($on | map("\(.task) (\(.state))") | join(", "))
+                  elif (opted_in | not) then
+                    "not labeled vincent-ready"
                   elif (resolvable | not) then
                     "labeled none of bug, enhancement, documentation or ci"
                   elif $x == null then
@@ -410,9 +415,10 @@ steps:
       ## Input
 
       - `.vincent-issues/candidates.json` — the issues a deterministic survey
-        found ready: open; labeled bug, enhancement, documentation or ci; not
-        already on a vincent task; blocked by no open issue under GitHub's own
-        "blocked by" relation; and not an umbrella with open sub-issues. Each
+        found ready: open; labeled vincent-ready and one of bug, enhancement,
+        documentation or ci; not already on a vincent task; blocked by no open
+        issue under GitHub's own "blocked by" relation; and not an umbrella
+        with open sub-issues. Each
         carries `body`, its last ten `comments`, `parent`, and `blocking_open`
         — the open issues GitHub records as waiting on this one.
       - `.vincent-issues/open-issues.json` — every open issue the survey saw,
