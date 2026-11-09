@@ -3,6 +3,8 @@ package issuesource
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -62,13 +64,50 @@ func loadJiraCapture(t *testing.T, name string) jiraCapture {
 			c.header.Add(strings.TrimSpace(k), strings.TrimSpace(v))
 		}
 	}
+	if c.body, err = readCaptureBody(jiraCaptureDir, name); err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// errNoCaptureBody is a capture with neither a .json nor a .txt body.
+var errNoCaptureBody = errors.New("capture has no body file")
+
+// readCaptureBody reads dir/<name>.json, else dir/<name>.txt. Only a missing
+// file moves on to the next extension; any other read error is returned as
+// itself, as internal/jira's loadCapture does (review F2).
+func readCaptureBody(dir, name string) ([]byte, error) {
 	for _, ext := range []string{".json", ".txt"} {
-		if c.body, err = os.ReadFile(filepath.Join(jiraCaptureDir, name+ext)); err == nil {
-			return c
+		body, err := os.ReadFile(filepath.Join(dir, name+ext))
+		if err == nil {
+			return body, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
 		}
 	}
-	t.Fatalf("capture %s has no body file", name)
-	return c
+	return nil, fmt.Errorf("%s: %w", name, errNoCaptureBody)
+}
+
+func TestReadCaptureBody(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "text.txt"), []byte("hi"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A directory where the body should be: an existing path that cannot be
+	// read as a file, which must not read as "no body file".
+	if err := os.Mkdir(filepath.Join(dir, "unreadable.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := readCaptureBody(dir, "text"); err != nil || string(body) != "hi" {
+		t.Errorf("text = %q, %v", body, err)
+	}
+	if _, err := readCaptureBody(dir, "absent"); !errors.Is(err, errNoCaptureBody) {
+		t.Errorf("absent = %v, want errNoCaptureBody", err)
+	}
+	if _, err := readCaptureBody(dir, "unreadable"); err == nil || errors.Is(err, errNoCaptureBody) {
+		t.Errorf("unreadable = %v, want the read error itself", err)
+	}
 }
 
 func (c jiraCapture) replay(w http.ResponseWriter) {
