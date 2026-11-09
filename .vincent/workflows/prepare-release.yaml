@@ -1417,9 +1417,13 @@ steps:
         }
         echo "preparation PR #$number is merged"
 
-        # Release Please reruns on that merge and rewrites its branch. Give it
-        # a bounded chance to finish before reading the PR, so the version and
-        # head this task writes against are the post-merge ones.
+        # Release Please reruns on that merge and rewrites its branch — but
+        # only when the merge changes what it would release. A preparation PR
+        # of `docs:` and `chore(deps):` commits usually does not, and then
+        # the branch stays on the old base; `push` merges the base in for
+        # exactly that case. Give it a bounded chance to finish before
+        # reading the PR, so the version and head this task writes against
+        # are the post-merge ones whenever there are any.
         say "waiting for Release Please to refresh its PR"
         waited=0
         while [ "$waited" -lt 600 ]; do
@@ -1693,18 +1697,46 @@ steps:
       head=$(jq -r .headRefName .vincent-prepare/pr.json)
 
       git -C "$rp" add CHANGELOG.md site-changelog.md
+      sha=""
       if git -C "$rp" diff --cached --quiet; then
-        say "both changelogs were already written on $head: nothing to push"
-        echo "neither changelog changed on $head" >&2
-        echo "the audit passed, so they were already written — nothing to push" >&2
-        exit 0
+        # Not an exit: a re-run lands here with the changelogs already on the
+        # branch, and the branch may still be behind the base — the merge
+        # below is then the only thing this step has to push.
+        echo "neither changelog changed on $head: the audit passed, so they were already written"
+      else
+        echo "== staged"
+        git -C "$rp" --no-pager diff --cached --stat
+        git -C "$rp" commit -q -m "docs(changelog): curate the $version entry and write the site changelog"
+        sha=$(git -C "$rp" rev-parse HEAD)
       fi
 
-      echo "== staged"
-      git -C "$rp" --no-pager diff --cached --stat
+      # `strict: true` on the base branch: a release branch that does not
+      # contain the base tip is BEHIND and cannot merge, and `verify` refuses
+      # it. Release Please does not rebuild its branch for a base commit that
+      # changes nothing it would release — this run's own preparation PR is
+      # usually exactly that — so the branch can still sit on the base it was
+      # last built from. Merge the base in here, never rebase: a merge keeps
+      # the changelog commit and the push below stays a fast-forward. Done
+      # before the push so the PR's CI runs once, on the final head.
+      git -C "$rp" fetch --quiet origin \
+        "+refs/heads/$VINCENT_BASE_BRANCH:refs/remotes/origin/$VINCENT_BASE_BRANCH"
+      if ! git -C "$rp" merge-base --is-ancestor \
+          "refs/remotes/origin/$VINCENT_BASE_BRANCH" HEAD; then
+        say "merging $VINCENT_BASE_BRANCH into $head so the release PR is up to date"
+        git -C "$rp" merge -q --no-edit "refs/remotes/origin/$VINCENT_BASE_BRANCH" || {
+          git -C "$rp" merge --abort || true
+          say "merging $VINCENT_BASE_BRANCH into $head conflicts: look at it by hand"
+          echo "merging $VINCENT_BASE_BRANCH into $head conflicts — resolve it by hand or re-run this task" >&2
+          exit 1
+        }
+        echo "merged $VINCENT_BASE_BRANCH into $head as $(git -C "$rp" rev-parse --short HEAD)"
+      fi
 
-      git -C "$rp" commit -q -m "docs(changelog): curate the $version entry and write the site changelog"
-      sha=$(git -C "$rp" rev-parse HEAD)
+      if [ "$(git -C "$rp" rev-parse HEAD)" = "$(git -C "$rp" rev-parse "refs/remotes/origin/$head")" ]; then
+        say "both changelogs were already written on $head and it is up to date: nothing to push"
+        echo "$head already carries both changelogs and $VINCENT_BASE_BRANCH — nothing to push"
+        exit 0
+      fi
 
       # The one write to somebody else's branch. The status is set before it
       # and says where it is going, so a fast-forward refused because Release
@@ -1712,10 +1744,12 @@ steps:
       # rather than one that says `nonzero_exit`.
       say "pushing the changelogs to $head"
       git -C "$rp" push origin "HEAD:refs/heads/$head"
-      printf '%s\n' "$sha" > .vincent-prepare/changelog-sha.txt
+      if [ -n "$sha" ]; then
+        printf '%s\n' "$sha" > .vincent-prepare/changelog-sha.txt
+      fi
 
       echo
-      echo "pushed $sha to $head"
+      echo "pushed $(git -C "$rp" rev-parse HEAD) to $head"
       say "pushed the v$version changelogs to $head"
 
   - id: dry-run
