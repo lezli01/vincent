@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (19/20) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (20/21) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -172,6 +172,16 @@ lists only the hard dependencies the parent records as "Blocked by".
   `tui-issue-jira.png` (the author's answer to #916: a dedicated
   shot, not a mixed list), and `tui-project-overview.png`, `tui-project-picker.png` and
   `tui-daemon-config.png` recaptured. ✓ 2026-11-06
+- [x] **142.21** ([#954](https://github.com/lezli01/vincent/issues/954)) The
+  `jira` and `issuesource` tests read 142.3's real captures instead of the
+  hand-shaped `cloud-docs-*` stopgap (decision 3). Depends: 142.3. Search
+  walks the three captured pages by `nextPageToken`; the 401 plain-text body,
+  the real 429 headers, `bulkfetch` dropping a deleted id and returning a
+  moved one once, a deleted issue's 404, team-managed Done with
+  `resolution: Done` and the transition 400s are each a test. One
+  documented-shape file, `cloud-docs-2026-11-04-issue.json`, stays: no capture
+  has a parent, a link, a component or an assignee. The `jira.Overlap`
+  comment now cites fact 3 and fact 6. ✓ 2026-11-09
 
 ## Decisions (2026-11-03)
 
@@ -680,7 +690,8 @@ hash, cloud id and site are replaced; nothing else is edited.
    does not (also checked at ±1 s, ±5 s and ±30 s on five issues). This site
    shows no minute granularity, so the comment on `jira.Overlap` describes a
    case this capture did not reproduce; the overlap is still justified by
-   search lag (fact 6) and costs only idempotent re-reads.
+   search lag (fact 6) and costs only idempotent re-reads. *The comment was
+   rewritten to match by 142.21, 2026-11-09.*
 4. **`search/jql` page size.** With the `IssueFieldNames` list and
    `expand=renderedFields`, `maxResults=5000` returns 100 issues and a
    `nextPageToken` (`search_jql_max_fields`). Id-only, it returned all 103
