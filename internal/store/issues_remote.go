@@ -152,7 +152,7 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	overridden := false
 	if held {
 		state, reason = issuestate.Normalize(cur.State), cur.CloseReason
-	} else if overridden, err = markOverriddenTx(ctx, tx, id, RemoteStateOf(state, reason), now); err != nil {
+	} else if overridden, err = markOverriddenTx(ctx, tx, id, RemoteStateOf(cur.State, cur.CloseReason), RemoteStateOf(state, reason), now); err != nil {
 		return nil, err
 	}
 	var changed []string

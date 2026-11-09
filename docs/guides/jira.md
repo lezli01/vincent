@@ -194,7 +194,10 @@ Jira wins the reason: the next import changes the issue's close reason to
 `completed`, and nothing is written again. It does not happen silently. The
 issue's `sync` field reads `conflict` with reason `resolution_overridden`
 until its next write, the project's sync row counts it as a conflict, and the
-import's `issue.updated` event carries `reason_from` and `reason_to`. To keep
+import's `issue.updated` event carries `reason_from` and `reason_to`. Only
+the first import after the write is read that way: once an import has read
+the write back, someone changing the resolution in Jira later is an ordinary
+edit there, adopted without the flag. To keep
 `not_planned` and `duplicate` closes, remove the post-function from the Done
 transition, or name a transition without it in the mapping's
 [`overrides`](#transition-overrides).

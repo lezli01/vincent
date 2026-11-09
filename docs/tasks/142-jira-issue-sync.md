@@ -196,7 +196,11 @@ lists only the hard dependencies the parent records as "Blocked by".
   closed value with another reason than the issue's newest `done` `set_state`
   row asked for re-marks that row `conflict` with `last_reason`
   `resolution_overridden` in the same transaction (amending 142.13 decision
-  2); a reopen, a matching read, a held unconfirmed listing and a `pending`
+  2) — but only on the first refresh adopted after the row settled, which
+  stamps the row's `read_back_at` whatever it read, and only while the issue
+  still holds the row's value, so a later re-resolve or reopen-and-close in
+  the tracker, and a reason already adopted before an upgrade, are plain
+  remote changes (review F1 on #956, 2026-11-09); a reopen, a matching read, a held unconfirmed listing and a `pending`
   or `failed` row are untouched. (2) The issue adopts Jira's reason by
   `sync` and its sync block reads `conflict`/`resolution_overridden` until
   its next write; no new sync state. (3) Every closed→closed reason move adds

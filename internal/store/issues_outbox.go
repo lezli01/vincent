@@ -263,37 +263,49 @@ func holdsLocalStateTx(ctx context.Context, tx *sql.Tx, issueID int64, remote Is
 // with another reason after a done write is an override whichever tracker
 // produced it (decision 4). Reports whether the row was re-marked.
 //
+// Only the first adopted read after the write settled can be one (review
+// F1 on #956): a post-function rewrites the resolution inside the
+// transition, so that read already shows it, and any later move is someone
+// re-resolving the issue in the tracker. So the first adopted read stamps
+// read_back_at, whatever it found, and a stamped row is left alone. local
+// is the issue's value before this refresh; it must still be the row's
+// desired value, which excludes a row settled before read_back_at existed
+// whose issue has since adopted another value.
+//
 // The caller has already decided not to hold the local state, so remote is
 // the value the refresh adopts.
-func markOverriddenTx(ctx context.Context, tx *sql.Tx, issueID int64, remote IssueStateValue, now time.Time) (bool, error) {
-	if remote.State != string(issuestate.Closed) {
-		return false, nil
-	}
+func markOverriddenTx(ctx context.Context, tx *sql.Tx, issueID int64, local, remote IssueStateValue, now time.Time) (bool, error) {
 	var (
 		id                  int64
 		status, desiredJSON string
+		readBack            sql.NullString
 	)
-	err := tx.QueryRowContext(ctx, `SELECT id, status, desired_json FROM issue_sync_outbox WHERE issue_id = ? AND op = ?
-		ORDER BY id DESC LIMIT 1`, issueID, OutboxOpSetState).Scan(&id, &status, &desiredJSON)
+	err := tx.QueryRowContext(ctx, `SELECT id, status, desired_json, read_back_at FROM issue_sync_outbox
+		WHERE issue_id = ? AND op = ? ORDER BY id DESC LIMIT 1`, issueID, OutboxOpSetState).Scan(&id, &status, &desiredJSON, &readBack)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("read newest write of issue %d: %w", issueID, err)
 	}
-	if status != OutboxDone {
+	if status != OutboxDone || readBack.Valid {
 		return false, nil
 	}
 	var desired IssueStateValue
 	if err := json.Unmarshal([]byte(desiredJSON), &desired); err != nil {
 		return false, fmt.Errorf("decode newest write of issue %d: %w", issueID, err)
 	}
-	if desired.State != string(issuestate.Closed) || desired.Same(remote) {
+	stamp := formatTime(now)
+	if remote.State != string(issuestate.Closed) || desired.State != string(issuestate.Closed) ||
+		desired.Same(remote) || !desired.Same(local) {
+		if _, err := tx.ExecContext(ctx, `UPDATE issue_sync_outbox SET read_back_at = ? WHERE id = ?`, stamp, id); err != nil {
+			return false, fmt.Errorf("stamp issue write %d read back: %w", id, err)
+		}
 		return false, nil
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE issue_sync_outbox SET status = ?, last_reason = ?, updated_at = ? WHERE id = ?`,
-		OutboxConflict, OutboxReasonResolutionOverridden, formatTime(now), id); err != nil {
+		UPDATE issue_sync_outbox SET status = ?, last_reason = ?, read_back_at = ?, updated_at = ? WHERE id = ?`,
+		OutboxConflict, OutboxReasonResolutionOverridden, stamp, stamp, id); err != nil {
 		return false, fmt.Errorf("mark issue write %d overridden: %w", id, err)
 	}
 	return true, nil

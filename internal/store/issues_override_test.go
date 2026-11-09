@@ -202,3 +202,99 @@ func TestClosedReasonMoveCarriesTheDelta(t *testing.T) {
 		t.Errorf("payload = %s, want reason_from completed, reason_to duplicate", evs[0].Payload)
 	}
 }
+
+// Only the first adopted read after the write can show an override (review
+// F1 on #956). A close the tracker honored, then re-resolved there by a
+// person, is a plain remote change: the write stays done.
+func TestRefreshReResolvedAfterAnHonoredCloseIsNoOverride(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	iss, in := settledClose(t, s)
+	in.State, in.CloseReason = issuestate.Closed, issuestate.NotPlanned
+	mustUpsertRemote(t, s, in) // honored
+
+	after, _ := s.MaxEventID(ctx)
+	in.CloseReason = issuestate.Completed
+	got := mustUpsertRemote(t, s, in)
+	if got.CloseReason != issuestate.Completed {
+		t.Errorf("close reason = %s, want the tracker's completed", got.CloseReason)
+	}
+	if w := newestWriteOf(t, s, iss.ID); w.Status != OutboxDone || w.LastReason != "" {
+		t.Errorf("write = %s/%s, want done: the close was honored before the re-resolve", w.Status, w.LastReason)
+	}
+	evs, _ := s.ListEvents(ctx, EventFilter{AfterID: after, Types: []string{EventIssueUpdated}})
+	if len(evs) != 1 {
+		t.Fatalf("issue.updated = %d, want 1", len(evs))
+	}
+	if slices.Contains(changedOf(t, evs[0]), "sync") {
+		t.Errorf("payload = %s: a re-resolve names no sync change", evs[0].Payload)
+	}
+	if c, _ := s.CountIssueWrites(ctx, got.ProjectID); c.Conflict != 0 {
+		t.Errorf("counts = %+v, want no conflict", c)
+	}
+}
+
+// A reopen in the tracker, then a close there with another reason, is two
+// plain remote changes: neither marks the write.
+func TestRefreshReopenThenCloseAfterADoneCloseIsNoOverride(t *testing.T) {
+	s := openTest(t)
+	iss, in := settledClose(t, s)
+	in.State, in.CloseReason = issuestate.Closed, issuestate.NotPlanned
+	mustUpsertRemote(t, s, in) // honored
+	in.State, in.CloseReason = issuestate.Open, ""
+	mustUpsertRemote(t, s, in)
+	in.State, in.CloseReason = issuestate.Closed, issuestate.Completed
+	got := mustUpsertRemote(t, s, in)
+	if got.State != issuestate.Closed || got.CloseReason != issuestate.Completed {
+		t.Errorf("issue = %s/%s, want the tracker's closed/completed", got.State, got.CloseReason)
+	}
+	if w := newestWriteOf(t, s, iss.ID); w.Status != OutboxDone || w.LastReason != "" {
+		t.Errorf("write = %s/%s, want done", w.Status, w.LastReason)
+	}
+}
+
+// The same when the very first read after the write is the reopen: the
+// write was read back then, so the later close is not its override.
+func TestRefreshCloseAfterAReopenedFirstReadIsNoOverride(t *testing.T) {
+	s := openTest(t)
+	iss, in := settledClose(t, s)
+	mustUpsertRemote(t, s, in) // still open: reopened there
+	in.State, in.CloseReason = issuestate.Closed, issuestate.Completed
+	mustUpsertRemote(t, s, in)
+	if w := newestWriteOf(t, s, iss.ID); w.Status != OutboxDone || w.LastReason != "" {
+		t.Errorf("write = %s/%s, want done", w.Status, w.LastReason)
+	}
+}
+
+// A done row settled before read_back_at existed, whose issue has already
+// adopted another reason, is not flagged on the first refresh after an
+// upgrade: nothing changed, and nothing is announced.
+func TestRefreshOfAnAlreadyAdoptedReasonIsNoOverride(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	iss, in := settledClose(t, s)
+	in.State, in.CloseReason = issuestate.Closed, issuestate.Completed
+	// As a pre-upgrade daemon left it: the issue adopted completed, and the
+	// done row was never read back.
+	if _, err := s.db.ExecContext(ctx, `UPDATE issues SET close_reason = ? WHERE id = ?`,
+		string(issuestate.Completed), iss.ID); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := s.MaxEventID(ctx)
+	mustUpsertRemote(t, s, in)
+	if w := newestWriteOf(t, s, iss.ID); w.Status != OutboxDone || w.LastReason != "" {
+		t.Errorf("write = %s/%s, want done", w.Status, w.LastReason)
+	}
+	if evs, _ := s.ListEvents(ctx, EventFilter{AfterID: after}); len(evs) != 0 {
+		t.Errorf("an unchanged refresh announced %d events", len(evs))
+	}
+}
+
+func changedOf(t *testing.T, ev Event) []string {
+	t.Helper()
+	var changed []string
+	for _, c := range payloadOf(t, ev)["changed"].([]any) {
+		changed = append(changed, c.(string))
+	}
+	return changed
+}

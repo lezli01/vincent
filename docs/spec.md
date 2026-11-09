@@ -12374,7 +12374,9 @@ to its `issue.updated` — whatever the cause, a re-resolve in the tracker or a
 post-function rewriting the resolution a write chose — and a state-changing
 refresh keeps its `from`/`to`/`reason`. Reason names only, never text. When
 the refresh adopts a closed value with another reason than the issue's newest
-write asked for, and that write had ended `done`, the importer re-marks the
+write asked for, and that write had ended `done` and this is the first refresh
+adopted since (while the issue still holds the write's value — review F1 on
+#956), the importer re-marks the
 write `conflict` with `last_reason` `resolution_overridden` in the same
 transaction, and the event's `changed` names `sync` too: the provider still
 wins the reason, and the issue's sync block says that it did.
