@@ -16,10 +16,13 @@ import (
 const BulkFetchMax = 100
 
 // Overlap is how far an incremental search reaches back before its last
-// high-water mark: search/jql is eventually consistent (an issue written a
-// moment ago can still answer its old `updated`), and `updated` compares at
-// minute granularity on some sites, so a window that only touched the mark
-// would miss an edit. Re-reading a few minutes is idempotent.
+// high-water mark. The comparison itself is exact: a real Cloud site honours
+// epoch-ms `updated >= N` to the millisecond (task 142.3, "Facts verified"
+// 3). The reach-back is for search lag — search/jql is eventually
+// consistent, and an edit was seen there 300–410 ms after its write on an
+// idle site (fact 6), a lower bound rather than a budget — so a window that
+// only touched the mark could miss an edit not yet indexed when it ran.
+// Re-reading a few minutes is idempotent, so the margin is generous.
 const Overlap = 3 * time.Minute
 
 // IssueFieldNames is the explicit `fields` list every issue read sends:
