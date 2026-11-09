@@ -309,7 +309,7 @@ vincent version
 ```
 
 mise selects the matching GitHub release archive for the current OS and
-architecture. Pin a version with `github:lezli01/vincent@0.12.0`.
+architecture. Pin a version with `github:lezli01/vincent@0.13.0`.
 
 Package-manager metadata moves on stable releases only, and a WinGet
 submission is not installable until Microsoft merges it. If a channel reports
