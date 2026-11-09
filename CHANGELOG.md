@@ -11,127 +11,74 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 
-
-### Features
-
-* **api,cli,tui:** carry the jira: config block through every surface ([5720507](https://github.com/lezli01/vincent/commit/5720507d19bd34cc066432a360fed6b9d758a703))
-* **api:** accept and serve a project's issue_source binding ([c87b29a](https://github.com/lezli01/vincent/commit/c87b29a6b0110bad89721de2863aa374dc654c5e))
-* **api:** add an issue_id filter to GET /v1/chats ([7d6c2ba](https://github.com/lezli01/vincent/commit/7d6c2ba3bab74bfc0b8195a66b4672245604af99))
-* **api:** add the GET /v1/projects/{id}/jira probe ([c068a30](https://github.com/lezli01/vincent/commit/c068a30b777ffa9048aab598ec799447f3699271))
-* **api:** render source and provider_name on issue sync status ([1d01d22](https://github.com/lezli01/vincent/commit/1d01d22c22ca8fca33f9e1c4d319303035763ffe))
-* **api:** resolve issue sync through the shared resolver, per provider ([8fe8b32](https://github.com/lezli01/vincent/commit/8fe8b3224b7392e7b3de60fc36b0d80ea44a83ce))
-* **cli:** add --issue-source and --jira-* flags to project add and edit ([8126c17](https://github.com/lezli01/vincent/commit/8126c170a7a5536bc27697b083895d574a99f55b))
-* **cli:** print provider and source rows in vincent issue sync ([7b8c717](https://github.com/lezli01/vincent/commit/7b8c71779aa6b9f0bb37a2d8e849db0db4576228))
-* **config:** add archive_tasks_on_issue_close, default on (task 143.3) ([951136a](https://github.com/lezli01/vincent/commit/951136adb0979b367ed3bdc41e4379bc6bceb5dc))
-* **config:** add the jira: block and refuse a negative github.poll_interval ([d089fc1](https://github.com/lezli01/vincent/commit/d089fc1b99570c3ee23d78468819ca3ccbb1b267))
-* **daemon:** importer rules a Jira source needs ([b7b7c4d](https://github.com/lezli01/vincent/commit/b7b7c4dbce576d4c93d0c3b01c786f23e3aa9cb0))
-* **daemon:** run issue sync on its own per-provider loop ([7ea9feb](https://github.com/lezli01/vincent/commit/7ea9feb0e70d9829461baf8a82e5eb4d73e71da8))
-* **daemon:** skip GitHub issue import for projects bound to none or jira ([f92fcf3](https://github.com/lezli01/vincent/commit/f92fcf39a123e613cf418a02e7ac48078cd02fe5))
-* **doctor:** add a Jira row with one myself call per site ([8e1bb00](https://github.com/lezli01/vincent/commit/8e1bb00719a08badf83cd5734e8fceb94520cdf5))
-* **doctor:** report held auto-archives of closed issues ([9cbbe82](https://github.com/lezli01/vincent/commit/9cbbe82abac3e4b601cc2ef08e9a72681ca06f15))
-* **issuearchive:** archive a closed issue's settled tasks (task 143.3) ([97fbde0](https://github.com/lezli01/vincent/commit/97fbde0d2105c4f9e91389a7ec682c74a9cf8f8b))
-* **issues:** ask a provider registry whether an issue writes back ([4bafa1f](https://github.com/lezli01/vincent/commit/4bafa1f40f5626d55a42d70fe3015abeedd807e1))
-* **issues:** look issues up by remote_key and filter source=jira ([3aad47f](https://github.com/lezli01/vincent/commit/3aad47ff04ccb947853571e128cee8173f83c076))
-* **issuesource:** add the Jira source and wire it into the daemon ([454bc50](https://github.com/lezli01/vincent/commit/454bc5005ea1ce57cc1364e19aeaa4eb9fec447f))
-* **issuesource:** add the one issue-source resolver (142.7) ([671acab](https://github.com/lezli01/vincent/commit/671acab159d09644e88b5ebe41e7a0c9fbd0ea5d))
-* **issues:** render issue source references in the daemon ([86fbf67](https://github.com/lezli01/vincent/commit/86fbf67a95b3edfa09df1f88791dedca881c11dc))
-* **jira:** add a pure Jira-to-vincent mapping package ([5ebad3c](https://github.com/lezli01/vincent/commit/5ebad3c8d07bc98604a7455415fd785695abb3ca))
-* **jira:** add the native Jira Cloud REST v3 read client ([8bffe4d](https://github.com/lezli01/vincent/commit/8bffe4db98004becdc4db0ef1c279d71bbfdf7e1))
-* **jira:** convert rendered HTML bodies to Markdown and comments to ADF ([8889ffb](https://github.com/lezli01/vincent/commit/8889ffbacdf18a567082af0e94337e981b42c582))
-* **jira:** write state changes and handoff comments back through the outbox ([f9ea1c3](https://github.com/lezli01/vincent/commit/f9ea1c36e236e56888140c9a8c7b2ea0dabb2074))
-* **store,issuesource:** Jira importer seam — sticky project id, id cursor, bulk read, relocate ([7b530cf](https://github.com/lezli01/vincent/commit/7b530cf1f64e35ffa2a0e31d4017c567ab12c8cc))
-* **store:** add ArchivableIssueTasks for a closed, quiescent issue ([3d767d8](https://github.com/lezli01/vincent/commit/3d767d86cf1ff32d39baf0014123e96be8653b58))
-* **store:** add the issue auto-archive cursor and handoff-claim check ([80d4cc1](https://github.com/lezli01/vincent/commit/80d4cc18c4128241f7ecfa6f79b174f58d603e15))
-* **store:** drop not_github issue sync rows (142.7) ([4579dbf](https://github.com/lezli01/vincent/commit/4579dbf0caa310f3c508913bfad68179063e1299))
-* **store:** flag a resolution a post-function overrode ([ba872e5](https://github.com/lezli01/vincent/commit/ba872e5ab7b89eb917bb7031641da1da224337ca))
-* **store:** look up an issue by its remote key ([2321f54](https://github.com/lezli01/vincent/commit/2321f54daa55442cd76612c73e97a0c4c04aa503))
-* **store:** stamp the provider on a sync-now request (142.7) ([4fe09b2](https://github.com/lezli01/vincent/commit/4fe09b29c271277e9df510de3dbd5c7a0f009ef9))
-* **store:** store a project's issue-source binding and rebind in one transaction ([679fdb8](https://github.com/lezli01/vincent/commit/679fdb87d0373ceee761a6135d12552760c1edfb))
-* **taskrun:** expose an imported issue's display key to templates, env and the issue file ([6e697f1](https://github.com/lezli01/vincent/commit/6e697f151889fbb97a07e278e2b7182d4177375c))
-* **taskrun:** give Runner.Archive an unattended mode ([24e44a3](https://github.com/lezli01/vincent/commit/24e44a345ba2392ba15ff86b742b6f548a950ebd))
-* **trigger:** treat a Jira label change by sync as untrusted ([c04afdf](https://github.com/lezli01/vincent/commit/c04afdf1d9a84668e55e36de30a68983f2abc682))
-* **tui:** add an Issue | Work tab strip to the issue detail ([9fc7530](https://github.com/lezli01/vincent/commit/9fc75304248b3023454c624ef43faf629d3164d9))
-* **tui:** edit a project's issue source in the project form ([cf7c4a8](https://github.com/lezli01/vincent/commit/cf7c4a8e61e947bc7a771f8339c7d0087b9a0a79))
-* **tui:** offer S wherever the issues list's sync status has a pass ([45c94f9](https://github.com/lezli01/vincent/commit/45c94f957e71c06d0efff1b30fb227d0535e0b48))
-* **workflows:** drop the human plan gate from github-resolve-issue-dag ([1fe7150](https://github.com/lezli01/vincent/commit/1fe715052daf19c8d8760b5148fb154b30c70891)), closes [#936](https://github.com/lezli01/vincent/issues/936)
-* **workflows:** enforce disjoint and allowed unit files in plan-dag's check ([8fbc58b](https://github.com/lezli01/vincent/commit/8fbc58b80709b51baae2f31a677bd942b1623104))
-* **workflows:** let github-resolve-issue-multiple skip its gate ([697b8ed](https://github.com/lezli01/vincent/commit/697b8ed5ae1911923734e9710732d6a67ecbf470))
-* **workflow:** teach the built-in checklists Jira-imported issues ([87394d6](https://github.com/lezli01/vincent/commit/87394d67cbb4e8194a4e417b27f87ad435daeea4))
-
-
-### Bug Fixes
-
-* **api:** ask each Jira site once per doctor --fix (review F1) ([9e2d95f](https://github.com/lezli01/vincent/commit/9e2d95f4b55fa7992d9d1093400a70f7ecd0038f))
-* **api:** hold the Jira probe under the client's deadline (review F3) ([ebb681a](https://github.com/lezli01/vincent/commit/ebb681a923558489a3374112a8c9a74737275bbb))
-* **api:** name the issue's provider in the handoff-deliver refusal (review F5) ([4f1f285](https://github.com/lezli01/vincent/commit/4f1f285a6b428e2a20992d7f630f44a8b95da1a0))
-* **api:** record no sync request for github pinned off github.com (review F2) ([5a580b6](https://github.com/lezli01/vincent/commit/5a580b6a75f2e5295992fe79f9439cbdb350ecd9))
-* **api:** reuse a recent origin read when rendering projects (review F2) ([17ee60c](https://github.com/lezli01/vincent/commit/17ee60c90671d3b326d4893904b249ea2faf79ab))
-* **cli,tui:** say nothing to sync where sync now records nothing (review F3) ([e0d5ae6](https://github.com/lezli01/vincent/commit/e0d5ae688e1892edf82a448c4a2413baddfe4bb6))
-* **cli:** head project ls's issue-source column SOURCE (review F4) ([7380980](https://github.com/lezli01/vincent/commit/73809803e31e871fd32b2ffa6d99d147e08f3726))
-* **daemon:** drop the GitHub sync row of an origin moved off github.com (review F1) ([5b708f9](https://github.com/lezli01/vincent/commit/5b708f9ecd8a69aba8e1ae830229eea51d38c3ee))
-* **daemon:** hold an unconfirmed lagging listing over a write settled mid-pass (review F1) ([745519c](https://github.com/lezli01/vincent/commit/745519cc7f1768a5d98478a768ac4a09c3a42177))
-* **daemon:** order an issue-source rebind against an importer pass (review F1) ([a347d90](https://github.com/lezli01/vincent/commit/a347d90b58e6e50ba6562dc238a49c22e935edbb))
-* **daemon:** read each project's origin once per tick (review F1) ([3a3c19e](https://github.com/lezli01/vincent/commit/3a3c19efc858c7f0f2f5fb8569070bfdb42eef05))
-* **daemon:** wire the Jira source whatever the startup config says (review F2) ([4606223](https://github.com/lezli01/vincent/commit/4606223e4a38727356fdeddb3012e7668f184ac9))
-* **doctor:** report a lane's linked-chat lock as locked_by_chat (review F1) ([553e555](https://github.com/lezli01/vincent/commit/553e555c681fb6e635813a97a06ad46c27049d33))
-* **doctor:** report a missing project path, not dirty, for a held issue task (review F2) ([d1b2f95](https://github.com/lezli01/vincent/commit/d1b2f95ad4d67e271ba8cc799f35bb49554a7631))
-* **fakejira:** default the user and token independently (review F17) ([8980d00](https://github.com/lezli01/vincent/commit/8980d00a9db92bd508e9a1dd32b2026268581ded))
-* **fakejira:** flush the shutdown route's 202 through the status recorder (review F16) ([005e1f3](https://github.com/lezli01/vincent/commit/005e1f3a4b78b5483a5341f33a53ecdacde01c61))
-* **fakejira:** lock the corpus file across processes (review F11) ([c7cb091](https://github.com/lezli01/vincent/commit/c7cb091784a3c7eae150664144bad090dcb0069d))
-* **fakejira:** render the codeBlock render.MarkdownToADF emits (review F2) ([65dba29](https://github.com/lezli01/vincent/commit/65dba29ab14e3c8d455cd768c868f3d330ab5185))
-* **gate:** kill a surviving fake Jira before waiting on it (review F1) ([673c1d8](https://github.com/lezli01/vincent/commit/673c1d80cdd07eaf39d6c233970b11eae357129c))
-* **issuearchive:** ask the issue again before each archive (review F4) ([cef6f5f](https://github.com/lezli01/vincent/commit/cef6f5ff7bfa1b2113172244a9141b2807125fa0))
-* **issuearchive:** hold an issue's main tasks while its side work is refused (review F3) ([0135e97](https://github.com/lezli01/vincent/commit/0135e9768fe04361f65e941d3d9e833d868e88e6))
-* **issuearchive:** stop and join the worker at daemon shutdown (review F1) ([e73ccdf](https://github.com/lezli01/vincent/commit/e73ccdf9f2157975756f1684ffbd05f721d1d209))
-* **issues:** name Jira through the provider registry in prefill ([4126d7b](https://github.com/lezli01/vincent/commit/4126d7b1bf54f86121e8a6132805beb974b580ae))
-* **issuesource:** resume a truncated Jira incremental walk by id (review F1) ([2c7e12f](https://github.com/lezli01/vincent/commit/2c7e12f3670464edfac32bb7b4226635a114e779))
-* **jiramap:** drop blocked transitions before choosing a tier (review F4) ([74f835a](https://github.com/lezli01/vincent/commit/74f835ac5965444ebd673a8b2837d0762b7558a0))
-* **jiramap:** write the issue key into the remote_json record (review F3) ([b0feedd](https://github.com/lezli01/vincent/commit/b0feedd544fc7efdcee802e97b441d403d8ab0c5))
-* **jiratest:** bound the shutdown request so cleanup can kill (review F12) ([a0b66fe](https://github.com/lezli01/vincent/commit/a0b66fe3c87be72d3f69b9e026285ed932320baf))
-* **keymap:** name the issue source, not GitHub, in issues S's meaning (review F2) ([a952e3e](https://github.com/lezli01/vincent/commit/a952e3ec2a4ba30307a0f4367061db2a4c80c601))
-* **mcp:** name bad_request among project_jira's reasons (review F4) ([6913dfc](https://github.com/lezli01/vincent/commit/6913dfc671e1bcb9cb5cb114616ed61d418ed22f))
-* **render:** degrade to text tokens past the tree builder's depth limit (review F1) ([fb73845](https://github.com/lezli01/vincent/commit/fb738452984bf16afc782fad7e84aaacea6ed719))
-* **render:** drop scheme-relative URLs when there is no base (review F14) ([8a6100e](https://github.com/lezli01/vincent/commit/8a6100e3002da0a68c7aca980043f4d16bd97f5e))
-* **render:** escape square brackets in destinations and trim an open fence's final newline (review F15) ([a269586](https://github.com/lezli01/vincent/commit/a269586c362f5239a71055c2da25e23339e56283))
-* **render:** keep blank lines inside a code block in a list item (review F10) ([4465c20](https://github.com/lezli01/vincent/commit/4465c20fa8a20a000a542c21164de2461b82757f))
-* **render:** keep link labels and alts parseable by the TUI (review F9) ([e57fc43](https://github.com/lezli01/vincent/commit/e57fc43f4478192cfd12e7cd89c05fdfeaa510e1))
-* **render:** nest bold and italic in a form the TUI parses (review F8) ([3c1af74](https://github.com/lezli01/vincent/commit/3c1af74b62413b514eecddac278bc5e1c47cc331))
-* **render:** render any marked mention as plain text (review F7) ([f18dca3](https://github.com/lezli01/vincent/commit/f18dca3f9fe7954fe96c3d2bfb63cbdec25c5ebc))
-* **screenshots:** keep the seed's closed issues' tasks unarchived (review F5) ([d89649b](https://github.com/lezli01/vincent/commit/d89649b123d1c9cddd7c32bd4f974ffe08028c9c))
-* **scripts:** guard the fake Jira's pid and detach its stdio (review F1, F2) ([6f77265](https://github.com/lezli01/vincent/commit/6f772650f8975345ef21a12fc1e048dc682889a0))
-* **store:** flag resolution_overridden only on the first read back (review F1) ([b0b2688](https://github.com/lezli01/vincent/commit/b0b26884fb2e2a79ee10419a5ac15115a1ff4aac))
-* **store:** renumber the Jira importer migration to 0054 ([bee4651](https://github.com/lezli01/vincent/commit/bee465113aa4c82a205b4a8609e1c2838286bd02))
-* **taskrun:** withhold a Jira issue's number from .Issue.Source.Number (review F1) ([0ee69fc](https://github.com/lezli01/vincent/commit/0ee69fc2688781a832b14706d31308bbba90ace6))
-* **trigger:** carry Source.Key in .Event.Issue (review F6) ([9930b3d](https://github.com/lezli01/vincent/commit/9930b3d9b7eb7739182cc16c1b6423a2b6c9dd54))
-* **tui:** count the frame border in the issue detail's click rows (review F1) ([21cfd2b](https://github.com/lezli01/vincent/commit/21cfd2bc7252afceccbf2073fd6a7f6224eef11e))
-* **tui:** keep a lane jump's back stack when nothing is selected yet ([954cba8](https://github.com/lezli01/vincent/commit/954cba8e33232baacd5edef2f52192e2b67cdb69))
-* **tui:** phrase the remote-lost note so the provider fallback reads (review F18) ([e7c2d4f](https://github.com/lezli01/vincent/commit/e7c2d4f44af238446f2b94e444f473de5841774b))
-* **tui:** return from the chat workspace to its opener ([91f9e39](https://github.com/lezli01/vincent/commit/91f9e39232797343a28aca3c54278083658d6a0e))
-* **tui:** say archived once on an archived task's Work-tab row (review F3) ([f5d2ddd](https://github.com/lezli01/vincent/commit/f5d2ddd253dd1a13bde86d5239fcca3de8d22a35))
-* **workflows:** refuse a unit whose files has no non-blank line in plan-dag's check (review F2) ([2730844](https://github.com/lezli01/vincent/commit/2730844ddc66299aab04fe72b704edfafe1fd7c5))
-
-## [Unreleased]
-
 ### Added
 
-- **Jira write-back.** Closing or reopening an issue imported from Jira now
-  changes it in Jira too, and a granted handoff's comment is posted there.
-  A close or reopen is a workflow transition: vincent picks the one that
-  lands on the right status and resolution (your `jira.mapping` overrides
-  first), sets the Duplicate resolution for a duplicate without adding a
-  link, and never settles for a different reason. When no single transition
-  fits, the write fails with `no_transition`, `ambiguous_transition` or
-  `transition_needs_fields` on the issue's sync state and your close is kept;
-  a write the account may not make fails `no_write_scope`. Jira's lagging
-  search no longer reverts a close you just made. Writes wait while
-  `jira.enabled` is false or `jira.poll_interval` is `0`, and ones queued
-  before this release go out on the first pass (#909). When a workflow's
+- **Jira Cloud issue sync.** A project bound to a Jira Cloud site and
+  project key imports that project's issues into its issue set and keeps
+  them in sync on `jira.poll_interval`: titles, bodies (Jira's rendered HTML
+  converted to Markdown), labels, state and close reason follow Jira, and
+  comments are mirrored read-only. A tick reads at most 500 issues and
+  resumes on the next. An issue Jira no longer shows — deleted, archived,
+  forbidden or outside the binding's JQL — is marked `missing` and never
+  deleted, and comes back when it reappears; a moved issue is marked `moved`
+  and takes its new key; restricted-visibility comments are never mirrored.
+  The sync row reports `unauthorized`, `forbidden`, `not_found`,
+  `rate_limited` (waiting out `Retry-After`), `unreachable`, `no_credential`,
+  and `binding_changed` when the bound key starts resolving to a different
+  Jira project. A new [Jira guide](docs/guides/jira.md) covers binding,
+  credentials, what syncs, write-back and its failure reasons, and Jira
+  issues in workflows and triggers, and the rest of the docs now say "GitHub
+  or Jira" wherever they meant any tracker (task 142).
+  ([#943](https://github.com/lezli01/vincent/pull/943), [#950](https://github.com/lezli01/vincent/pull/950), [#951](https://github.com/lezli01/vincent/pull/951))
+- **Jira write-back.** Closing or reopening an issue imported from Jira
+  changes it in Jira too, and a granted handoff's comment is posted there as
+  ADF. A close or reopen is a workflow transition: vincent picks the one
+  that lands on the right status and resolution (your `jira.mapping`
+  overrides first), sets the Duplicate resolution for a duplicate without
+  adding a link, and never settles for a different reason. When no single
+  transition fits, the write fails with `no_transition`,
+  `ambiguous_transition` or `transition_needs_fields` on the issue's sync
+  state and your close is kept; a write the account may not make fails
+  `no_write_scope`. Jira's lagging search does not revert a close you just
+  made. Writes go through the same crash-safe outbox as GitHub's, and wait
+  while `jira.enabled` is false or `jira.poll_interval` is `0`. Whether an
+  imported issue writes back is a property of its provider, so an ungranted
+  agent's close or comment on a live Jira import is refused
+  `forge_write_needs_human` exactly as on GitHub. When a workflow's
   post-function rewrites the resolution you chose — a default
   company-managed Done transition sets *Done* whatever its screen said —
   vincent takes Jira's reason but no longer silently: the issue's sync state
   reads `conflict` with `resolution_overridden`, and the import's
   `issue.updated` event carries `reason_from` and `reason_to`, as it now does
-  for any change of a closed issue's reason (#953).
+  for any change of a closed issue's reason.
+  ([#923](https://github.com/lezli01/vincent/pull/923), [#945](https://github.com/lezli01/vincent/pull/945), [#956](https://github.com/lezli01/vincent/pull/956))
+- **A project's issue source is an explicit setting.** Each project has an
+  issue source: `derive` (the default, which follows `origin` as before),
+  `none`, `github`, or `jira` with a site, a project key, an optional JQL
+  narrowing clause and an optional transition-mapping override. Set it with
+  `vincent project add`/`edit --issue-source` and the `--jira-*` flags, the
+  TUI project form, `issue_source` on `POST`/`PATCH /v1/projects`, or MCP
+  `project_patch`. `vincent project ls` (under a `SOURCE` column) and the
+  projects pane show the effective source. The setting is stored by the
+  daemon, never read from the repository, and holds no credential. A project
+  on GitHub that is bound to `none` or `jira` no longer imports GitHub
+  issues, and its sync reports `source_not_github`; its pull requests are
+  still linked. Changing the provider, site or project marks the issues
+  imported from the old source `missing` and keeps them.
+  ([#922](https://github.com/lezli01/vincent/pull/922))
+- **A `jira:` block in `config.yaml`.** `jira.enabled` (default `true`),
+  `jira.poll_interval` (default `5m`, `0` stops it) and
+  `jira.user_env`/`jira.token_env` — the *names* of the environment
+  variables holding the account email and API token (default `JIRA_USER`,
+  `JIRA_API_TOKEN`), never the values, which are read on each request and
+  never stored or logged. The block is in the bootstrap template and on
+  `GET`/`PATCH /v1/config`, `vincent config get` and the TUI daemon screen.
+  ([#937](https://github.com/lezli01/vincent/pull/937))
+- **Check a Jira binding.** `GET /v1/projects/{id}/jira`,
+  `vincent jira status` and the MCP tool `project_jira` ask the Jira site,
+  the credential and the bound project in turn and report the first that
+  fails. None of them ever returns the API token.
+  ([#943](https://github.com/lezli01/vincent/pull/943))
 - **`vincent doctor` has a `JIRA` group.** It shows whether `jira.enabled`
   is on, whether the daemon sees the `jira.user_env` and `jira.token_env`
   variables (by name, never their values), whether each bound Jira site is
@@ -142,116 +89,105 @@ list with the user-facing context a commit subject cannot carry.
   (`GET /rest/api/3/myself`), only when the report is probed — `vincent
   doctor`, `vincent doctor --fix`, the MCP `doctor` tool, or any
   `GET /v1/doctor` without `?probe=false` — and never by the TUI's daemon
-  panel, so a bad token is never retried into Jira's CAPTCHA lockout. It never changes the exit code. `GET /v1/doctor` carries it as
-  `jira`, and its `github.sync` now lists GitHub projects only — a Jira
-  project used to show up there (#911).
-- **Closing an issue archives its tasks.** Once a closed issue has nothing
-  still working — every task finished, no chat on it open, no handoff holding
-  it — the daemon archives the tasks that existed at the close, side work
-  before main tasks. It never forces a dirty worktree and never deletes a
-  remote branch; a task it cannot archive is logged to `daemon.log` and left
-  for you. The archive event carries `archived_by: "issue_closed"` and
-  `issue_id`. On by default; `archive_tasks_on_issue_close: false` turns it
-  off, live, from config, the API, the CLI and the TUI. Issues closed before
-  the upgrade are not archived (#928).
-- **An issue's work on one tab.** The TUI's issue detail has an
-  `Issue | Work` strip (`tab`/`shift+tab`, `]`/`[`, or a click). The Work tab
-  lists every task the issue started and every chat on it or on its tasks,
-  newest first, archived, closed and handed-off ones included, with a
-  fan-out parent's `lanes n/m`; `enter` opens any of them and `esc` comes
-  back to the tab. The Issue tab sums them up in one line (#933).
-- **`vincent doctor` lists what the auto-archive left behind.** A new Issue
-  archive group (`issue_archive` in `GET /v1/doctor` and `--json`) names every
-  finished task of a closed issue that is still not archived, with every
-  reason holding it — `dirty`, `locked_by_chat`, `unfinished_lane`,
-  `held_for_side_work`, `issue_not_quiescent`, `handoff_claimed`, or
-  `awaiting_retry` when nothing does and the archive simply has not been
-  retried — plus any main-worktree directory a closed issue chat left on
-  disk. It only reports: it never sets the exit code, `--fix` leaves it
-  alone, and it is empty and unprinted with `archive_tasks_on_issue_close`
-  off or nothing held (#929).
-- **List an issue's chats.** `GET /v1/chats` takes `issue_id`: the chats
-  opened on the issue, linked to any of its tasks — fan-out lanes included —
-  or handed off into its work. A malformed or non-positive id is a
-  `400 validation_failed`, an unknown issue lists nothing, and `archived`
-  keeps its default (#931).
-- **Issue sync status names its source, and `S` works for Jira.**
-  `GET`/`POST /v1/projects/{id}/issues/sync` gain `source` (`owner/repo`, or
-  `acme.atlassian.net/PROJ` for Jira) and `provider_name` (`GitHub`, `Jira`),
-  and `vincent issue sync` prints them as `provider` and `source` rows above
-  `repo`; the MCP `project_issue_sync_status` tool documents both. The TUI
-  issues list's `S` now offers a sync for a Jira-bound project too: it is
-  shown once the project's sync status has loaded and names something to
-  sync, rather than only on a project with a GitHub integration, and it is
-  hidden on a project with no issue source. GitHub output is otherwise
-  unchanged (task 142.14, #910).
+  panel, so a bad token is never retried into Jira's CAPTCHA lockout. It
+  never changes the exit code. `GET /v1/doctor` carries it as `jira`, and
+  its `github.sync` now lists GitHub projects only — a Jira project used to
+  show up there.
+  ([#948](https://github.com/lezli01/vincent/pull/948))
 - **Find an issue by any tracker reference.** `GET /v1/issues` takes
   `remote_key` — `142` for a GitHub issue, `PROJ-12` for a Jira one,
   case-insensitive — and `source=jira`; `vincent issue ls` gains
   `--remote KEY` and `--source jira`, and the MCP `issue_list` tool documents
   both. Like `remote_number` and `--github N`, which keep working unchanged,
-  the lookup needs a project; the two references cannot be combined (task
-  142.9, #905). No Jira issue is imported yet, so a Jira key answers an empty
-  list until Jira issue sync lands.
-- **A project's issue source is an explicit setting.** Each project now has
-  an issue source: `derive` (the default, which follows `origin` as before),
-  `none`, `github`, or `jira` with a site, a project key, an optional JQL
-  narrowing clause and an optional mapping override. Set it with
-  `vincent project add`/`edit --issue-source` and the `--jira-*` flags, the
-  TUI project form, `issue_source` on `POST`/`PATCH /v1/projects`, or MCP
-  `project_patch`. `vincent project ls` and the projects pane show the
-  effective source. The setting is stored by the daemon and is never read from
-  the repository, and it holds no credential: Jira's comes from `JIRA_USER`
-  and `JIRA_API_TOKEN`. A project on GitHub that is bound to `none` or `jira`
-  no longer imports GitHub issues, and its sync reports `source_not_github`.
-  Its pull requests are still linked. Changing the provider, site or project
-  marks the issues imported from the old source `missing` and keeps them.
-  Jira sync is scheduled by the `jira:` block below.
-- **A `jira:` block in `config.yaml`, and a scheduled Jira sync pass.**
-  `jira.enabled` (default `true`), `jira.poll_interval` (default `5m`, `0`
-  stops it) and `jira.user_env`/`jira.token_env` — the *names* of the
-  environment variables holding the account email and API token (default
-  `JIRA_USER`, `JIRA_API_TOKEN`), never the values. The block is in the
-  bootstrap template and on `GET`/`PATCH /v1/config`, `vincent config get`
-  and the TUI daemon screen. A project bound to Jira now gets a sync row
-  stamped `jira` on that interval: `no_credential` while either variable is
-  missing, then `no_client` until the Jira client lands; nothing is fetched
-  from Jira yet (task 142.7, #903).
-- **Jira issues are imported.** A project bound to a Jira Cloud site and
-  project key now imports that project's open issues into its issue set and
-  keeps them in sync on `jira.poll_interval`: titles, bodies, labels, state
-  and close reason follow Jira, comments are mirrored read-only, and a tick
-  reads at most 500 issues and resumes on the next. An issue Jira no longer
-  shows — deleted, archived, forbidden or outside the binding's JQL — is
-  marked `missing` and never deleted; a moved issue is marked `moved` and
-  takes its new key; restricted-visibility comments are never mirrored. The
-  sync row reports `unauthorized`, `forbidden`, `not_found`, `rate_limited`
-  (waiting out `Retry-After`), `unreachable`, and the new `binding_changed`
-  when the bound key starts resolving to a different Jira project
-  (task 142.12, #908).
-- **Check a Jira binding.** `GET /v1/projects/{id}/jira`,
-  `vincent jira status` and the MCP tool `project_jira` ask the Jira site,
-  the credential and the bound project in turn and report the first that
-  fails. None of them ever returns the API token (#908).
+  the lookup needs a project, and the two references cannot be combined.
+  ([#921](https://github.com/lezli01/vincent/pull/921))
+- **Workflows can read an imported issue's display key.**
+  `.Issue.Source.Key`, `$VINCENT_ISSUE_KEY`, the issue file's `source.key`
+  and a handoff item's `source.key` carry the provider's key — the GitHub
+  number as a string, or a Jira issue's `PROJ-12` — and `.Event.Issue` on a
+  trigger carries it too. A task created from a Jira issue prefills
+  `PROJ-12 <title>` with a `Jira issue PROJ-12: <url>` link line. For a Jira
+  issue, the issue file's `number` and `source.number` are `null`, no
+  `VINCENT_ISSUE_NUMBER` is set and `VINCENT_ISSUE_URL` is the Jira browse
+  URL; GitHub issues render, export and write exactly as before apart from
+  the added key.
+  ([#922](https://github.com/lezli01/vincent/pull/922), [#924](https://github.com/lezli01/vincent/pull/924))
+- **Issue sync status names its source, and `S` works for Jira.**
+  `GET`/`POST /v1/projects/{id}/issues/sync` gain `source` (`owner/repo`, or
+  `acme.atlassian.net/PROJ` for Jira) and `provider_name` (`GitHub`, `Jira`),
+  and `vincent issue sync` prints them as `provider` and `source` rows above
+  `repo`; the MCP `project_issue_sync_status` tool documents both. The TUI
+  issues list's `S` offers a sync for a Jira-bound project too: it is shown
+  once the project's sync status has loaded and names something to sync,
+  rather than only on a project with a GitHub integration, and it is hidden
+  on a project with no issue source. GitHub output is otherwise unchanged.
+  ([#939](https://github.com/lezli01/vincent/pull/939))
+- **Closing an issue archives its tasks.** Once a closed issue has nothing
+  still working — every task finished, no chat on it open, no handoff
+  holding it — the daemon archives the tasks that existed at the close, side
+  work before main tasks. It never forces a dirty worktree and never deletes
+  a remote branch; a task it cannot archive is logged to `daemon.log` and
+  left for you. The archive event carries `archived_by: "issue_closed"` and
+  `issue_id`. On by default; `archive_tasks_on_issue_close: false` turns it
+  off, live, from config, the API, the CLI and the TUI. Issues closed before
+  the upgrade are not archived (task 143).
+  ([#938](https://github.com/lezli01/vincent/pull/938), [#941](https://github.com/lezli01/vincent/pull/941))
+- **`vincent doctor` lists what the auto-archive left behind.** A new Issue
+  archive group (`issue_archive` in `GET /v1/doctor` and `--json`) names
+  every finished task of a closed issue that is still not archived, with
+  every reason holding it — `dirty`, `locked_by_chat`, `unfinished_lane`,
+  `held_for_side_work`, `issue_not_quiescent`, `handoff_claimed`, or
+  `awaiting_retry` when nothing does and the archive simply has not been
+  retried — plus any main-worktree directory a closed issue chat left on
+  disk. It only reports: it never sets the exit code, `--fix` leaves it
+  alone, and it is empty and unprinted with `archive_tasks_on_issue_close`
+  off or nothing held.
+  ([#944](https://github.com/lezli01/vincent/pull/944))
+- **An issue's work on one tab.** The TUI's issue detail has an
+  `Issue | Work` strip (`tab`/`shift+tab`, `]`/`[`, or a click). The Work tab
+  lists every task the issue started and every chat on it or on its tasks,
+  newest first, archived, closed and handed-off ones included, with a
+  fan-out parent's `lanes n/m`; `enter` opens any of them and `esc` comes
+  back to the tab. The Issue tab sums them up in one line.
+  ([#942](https://github.com/lezli01/vincent/pull/942))
+- **List an issue's chats.** `GET /v1/chats` takes `issue_id`: the chats
+  opened on the issue, linked to any of its tasks — fan-out lanes included —
+  or handed off into its work. A malformed or non-positive id is a
+  `400 validation_failed`, an unknown issue lists nothing, and `archived`
+  keeps its default.
+  ([#938](https://github.com/lezli01/vincent/pull/938))
 
 ### Changed
 
+- **Issue sync runs per provider, on its own loop.** GitHub issue import
+  stays on `github.poll_interval` and still runs before that tick's GitHub
+  triggers; Jira sync runs on `jira.poll_interval`; neither ever delays
+  pull-request linking, and `github.enabled: false` has no say over Jira (nor
+  `jira.enabled` over GitHub). "Sync now" wakes the provider the project
+  resolves to, and the write-back drain gates each row on its own provider's
+  switches. A project whose issue source resolves to none no longer gets a
+  sync row — existing `not_github` rows are removed — and
+  `GET /v1/projects/{id}/issues/sync` reports `not_github` (or
+  `source_not_github` for an explicit `none`) for it instead of `pending`.
+  A negative `github.poll_interval` is now refused at load instead of being
+  accepted.
+  ([#937](https://github.com/lezli01/vincent/pull/937))
+- **The daemon names an imported issue's source.** An issue's `source` — on
+  `GET /v1/issues`, `GET /v1/issues/{id}` and a task's `issue` — carries
+  `key`, `ref` (`owner/repo#142`), `short_ref` (`gh#142`) and
+  `provider_name` (`GitHub`), and the TUI and CLI print those instead of
+  building a reference themselves. GitHub references read as before. The
+  task overview's issue reference is labelled `source` rather than `github`;
+  the issue key-table rows, CLI help and MCP tool descriptions say "a remote
+  tracker" where no issue is in context; and the `forge_write_needs_human`
+  refusal names the issue's provider.
+  ([#920](https://github.com/lezli01/vincent/pull/920))
 - **A Jira label change no longer bypasses `allowed_actors`.** On a
   `type: issues` trigger, a `labeled` or `unlabeled` arriving by `sync` from
-  a Jira-imported issue now needs a listed author, like a close or reopen; a
+  a Jira-imported issue needs a listed author, like a close or reopen; a
   trigger without `allowed_actors` never fires on one. GitHub label changes
-  stay trusted (#908).
-
-- **This repository's `github-resolve-issue-dag` no longer stops for a person
-  to approve the plan.** The `plan-gate` manual step is gone: a task whose plan
-  passes `plan-dag`'s check — which already refuses overlapping or forbidden
-  `files` expressions (#935) — goes on to spawn its lanes unattended, so a task
-  created by `github-resolve-issue-multiple` with `create: now` runs from
-  `fetch` to `deliver` without a human action. `plan-emit` now prints the plan
-  one line per unit (id, title, `needs`, `files`) to stderr, where it reaches
-  the transcript but never the lane list, and its status line names the round
-  count. A dag task already in flight keeps the snapshot it was created with.
-  Issue #936.
+  stay trusted.
+  ([#943](https://github.com/lezli01/vincent/pull/943))
 - **The built-in maintenance workflows and both skills know about Jira
   issues.** `update-workflows` gains a checklist item for issues imported
   from Jira — test `.Issue.Source.Provider`, key on `.Issue.Source.Key` or
@@ -260,60 +196,36 @@ list with the user-facing context a commit subject cannot carry.
   changes from Jira and Jira poll scripts on a Jira-bound project. The
   `vincent-workflows` and `vincent-triggers` skills describe an imported
   issue's tracker as GitHub or Jira, and the trigger validator's
-  `allowed_actors` refusal for a `by: sync` change now names the issue's
-  tracker instead of GitHub; which triggers it refuses is unchanged (task
-  142.17, #913).
-
-- **Issue sync runs per provider, on its own loop.** GitHub issue import
-  stays on `github.poll_interval` and still runs before that tick's GitHub
-  triggers; Jira sync runs on `jira.poll_interval`; neither ever delays
-  pull-request linking, and `github.enabled: false` no longer has any say
-  over Jira (or `jira.enabled` over GitHub). "Sync now" wakes the provider
-  the project resolves to, and the write-back drain gates each row on its
-  own provider's switches. A project whose issue source resolves to none no
-  longer gets a sync row — existing `not_github` rows are removed — and
-  `GET /v1/projects/{id}/issues/sync` reports `not_github` (or
-  `source_not_github` for an explicit `none`) for it instead of `pending`.
-  A Jira-bound project no longer reports `source_not_github`. A negative
-  `github.poll_interval` is now refused at load instead of being accepted.
-
-- **Workflows can read an imported issue's display key.** `.Issue.Source.Key`,
-  `$VINCENT_ISSUE_KEY` and the issue file's `source.key` carry the provider's
-  key — the GitHub number as a string, or a Jira issue's `PROJ-12` — and a
-  task created from a Jira issue prefills `PROJ-12 <title>` with a
-  `Jira issue PROJ-12: <url>` link line. For a Jira issue, the issue file's
-  `number` and `source.number` are `null` and no `VINCENT_ISSUE_NUMBER` is
-  set; GitHub issues render, export and write exactly as before apart from the
-  added key.
-
-- **A Jira issue's state change is written back and guarded like a
-  GitHub one.** Whether an imported issue writes back is now a property of
-  its provider rather than a check for GitHub: a human close or reopen of a
-  live Jira import, and a granted handoff's close or comment on one, are
-  queued for Jira, and an ungranted agent's is refused
-  `forge_write_needs_human` exactly as for GitHub. No Jira writer exists yet,
-  so those writes wait as pending (`no_client`) and are never failed; no
-  Jira issue is imported yet either (task 142.5, #901). Nothing changes for
-  a GitHub project.
-
-- **The daemon names an imported issue's source.** An issue's `source` — on
-  `GET /v1/issues`, `GET /v1/issues/{id}` and a task's `issue` — now carries
-  `key`, `ref` (`owner/repo#142`), `short_ref` (`gh#142`) and
-  `provider_name` (`GitHub`), and the TUI and CLI print those instead of
-  building a reference themselves, so a later issue provider needs no client
-  change. GitHub references read as before. The task overview's issue
-  reference is now labelled `source` rather than `github`; the issue key-table
-  rows, CLI help and MCP tool descriptions say "a remote tracker" where no
-  issue is in context; and the `forge_write_needs_human` refusal names the
-  issue's provider.
+  `allowed_actors` refusal for a `by: sync` change names the issue's tracker
+  instead of GitHub; which triggers it refuses is unchanged.
+  ([#924](https://github.com/lezli01/vincent/pull/924))
+- **This repository's issue workflows can run unattended.**
+  `github-resolve-issue-multiple` takes `create: now` to skip its approval
+  gate and create the planned tasks directly (`gate` stays the default).
+  `github-resolve-issue-dag` no longer stops for a person to approve the
+  plan: the `plan-gate` manual step is gone, and a task whose plan passes
+  `plan-dag`'s check — which now refuses overlapping or forbidden `files`
+  expressions and a unit with no files — spawns its lanes unattended.
+  `plan-emit` prints the plan one line per unit (id, title, `needs`,
+  `files`) to stderr, where it reaches the transcript but never the lane
+  list, and its status line names the round count. A dag task already in
+  flight keeps the snapshot it was created with.
+  ([#917](https://github.com/lezli01/vincent/pull/917), [#938](https://github.com/lezli01/vincent/pull/938), [#940](https://github.com/lezli01/vincent/pull/940))
+- **Go module dependencies updated.**
+  ([#957](https://github.com/lezli01/vincent/pull/957))
 
 ### Fixed
 
 - **`esc` in a chat returns to the screen that opened it.** A chat opened
-  from an issue — `enter` on its Main worktree section or `T` — now comes
-  back to the issue with its selection kept, `T` on the issues list back to
-  the list, and an archived chat back to the archived-chats board, instead
-  of always landing on the chats board (#932).
+  from an issue — `enter` on its Main worktree section or `T` — comes back
+  to the issue with its selection kept, `T` on the issues list back to the
+  list, and an archived chat back to the archived-chats board, instead of
+  always landing on the chats board.
+  ([#938](https://github.com/lezli01/vincent/pull/938))
+- **Jumping to a fan-out lane right after the TUI starts keeps the way
+  back.** Opening a lane before a project was selected dropped its parent
+  task from the back stack, so `esc` did not return to it.
+  ([#923](https://github.com/lezli01/vincent/pull/923))
 
 ## [0.12.0](https://github.com/lezli01/vincent/compare/v0.11.0...v0.12.0) (2026-11-03)
 
