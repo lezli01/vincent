@@ -108,6 +108,43 @@ func TestIssueSyncBlockAndCounts(t *testing.T) {
 	}
 }
 
+// TestIssueSyncBlockShowsAnOverriddenResolution is task 142.22 (#953): a
+// done not_planned close the provider then reads back closed/completed —
+// a post-function rewrote the resolution — renders the adopted reason and
+// sync {state: conflict, reason: resolution_overridden}, counted as a
+// conflict.
+func TestIssueSyncBlockShowsAnOverriddenResolution(t *testing.T) {
+	t.Parallel()
+	h := newIssueHarness(t)
+	ctx := t.Context()
+	iss := h.imported(t, "I_1", 1)
+	h.must(t, http.StatusOK, http.MethodPost, fmt.Sprintf("/v1/issues/%d/close", iss.ID), map[string]any{"reason": "not_planned"})
+	rows, _ := h.st.PendingIssueWrites(ctx, timeZero)
+	if len(rows) != 1 || rows[0].Desired.Reason != "not_planned" {
+		t.Fatalf("pending writes = %+v, want the not_planned close", rows)
+	}
+	if _, err := h.st.SettleIssueWrite(ctx, rows[0].ID, store.OutboxDone, "", &rows[0].Desired); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := h.st.UpsertRemoteIssue(ctx, store.RemoteIssue{
+		ProjectID: h.pid, Provider: "github", RemoteKey: "I_1", Repo: "o/r", Number: 1,
+		URL: "https://github.com/o/r/issues/1", Title: "I_1",
+		State: issuestate.Closed, CloseReason: issuestate.Completed,
+	}, issuestate.Sync); err != nil {
+		t.Fatal(err)
+	}
+	got := h.must(t, http.StatusOK, http.MethodGet, fmt.Sprintf("/v1/issues/%d", iss.ID), nil)
+	if got.State != "closed" || got.CloseReason != "completed" {
+		t.Errorf("issue = %s/%s, want the provider's closed/completed", got.State, got.CloseReason)
+	}
+	if got.Sync == nil || got.Sync.State != issueSyncConflict || got.Sync.Reason != store.OutboxReasonResolutionOverridden {
+		t.Errorf("sync = %+v, want conflict/%s", got.Sync, store.OutboxReasonResolutionOverridden)
+	}
+	if st := h.syncStatus(t, http.MethodGet, h.pid, http.StatusOK); st.WritesConflict != 1 {
+		t.Errorf("writes_conflict = %d, want 1", st.WritesConflict)
+	}
+}
+
 func TestIssueCloseOverMCPOfAnImportedIssueIsRefused(t *testing.T) {
 	t.Parallel()
 	h := newIssueHarness(t)
