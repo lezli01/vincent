@@ -4048,12 +4048,12 @@ they need.
   `comment_id` on `issue.comment_added` and `issue.comment_updated` — the
   latter a mirrored comment edited on GitHub, always `by: sync`. A sync refresh's `issue.updated` adds
   `labels_added` and `labels_removed` when `changed` holds `labels`, and
-  `from`, `to` and — on a close — `reason` when the state moved, or
-  `reason_from` and `reason_to` when a closed issue's close reason moved
-  (with `sync` in `changed` too when that override flagged a write
-  [`resolution_overridden`](#jira-write-back)); these deltas
+  `from`, `to` and — on a close — `reason` when the state moved; these deltas
   are what an [`issues` trigger](../guides/triggers.md#issues-watch-the-projects-issues)
-  reads. None carries a
+  reads. It adds `reason_from` and `reason_to` instead when a closed issue's
+  close reason moved (with `sync` in `changed` too when that override flagged
+  a write [`resolution_overridden`](#jira-write-back)); no trigger action
+  fires on those. None carries a
   title, body or comment text, and none reaches a per-task stream.
   `issue.state_changed` adds `duplicate_of` when a duplicate close names one.
   Follow one project's issues with
