@@ -1,0 +1,92 @@
+{
+  "expand": "description,lead,issueTypes,url,projectKeys,permissions,insight",
+  "self": "https://example-site.atlassian.net/rest/api/3/project/10001",
+  "id": "10001",
+  "key": "VCA",
+  "description": "",
+  "lead": {
+    "self": "https://example-site.atlassian.net/rest/api/3/user?accountId=557058:00000000-0000-4000-8000-000000000001",
+    "accountId": "557058:00000000-0000-4000-8000-000000000001",
+    "avatarUrls": {
+      "48x48": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+      "24x24": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+      "16x16": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+      "32x32": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png"
+    },
+    "displayName": "Fixture User",
+    "active": true
+  },
+  "components": [],
+  "issueTypes": [
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10006",
+      "id": "10006",
+      "description": "A small, distinct piece of work.",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+      "name": "Task",
+      "subtask": false,
+      "avatarId": 10318,
+      "hierarchyLevel": 0
+    },
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10007",
+      "id": "10007",
+      "description": "A small piece of work that's part of a larger task.",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10316?size=medium",
+      "name": "Sub-task",
+      "subtask": true,
+      "avatarId": 10316,
+      "hierarchyLevel": -1
+    },
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10005",
+      "id": "10005",
+      "description": "Stories track functionality or features expressed as user goals.",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10300?size=medium",
+      "name": "Story",
+      "subtask": false,
+      "avatarId": 10300,
+      "hierarchyLevel": 0
+    },
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10008",
+      "id": "10008",
+      "description": "A problem or error.",
+      "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+      "name": "Bug",
+      "subtask": false,
+      "avatarId": 10303,
+      "hierarchyLevel": 0
+    },
+    {
+      "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10000",
+      "id": "10000",
+      "description": "A big user story that needs to be broken down. Created by Jira Software - do not edit or delete.",
+      "iconUrl": "https://example-site.atlassian.net/images/icons/issuetypes/epic.svg",
+      "name": "Epic",
+      "subtask": false,
+      "hierarchyLevel": 1
+    }
+  ],
+  "assigneeType": "UNASSIGNED",
+  "versions": [],
+  "name": "Vincent Company A",
+  "roles": {
+    "atlassian-addons-project-access": "https://example-site.atlassian.net/rest/api/3/project/10001/role/10003",
+    "jira-guest-member": "https://example-site.atlassian.net/rest/api/3/project/10001/role/10009",
+    "Administrators": "https://example-site.atlassian.net/rest/api/3/project/10001/role/10002"
+  },
+  "avatarUrls": {
+    "48x48": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407",
+    "24x24": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407?size=small",
+    "16x16": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407?size=xsmall",
+    "32x32": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407?size=medium"
+  },
+  "projectTypeKey": "software",
+  "simplified": false,
+  "style": "classic",
+  "isPrivate": false,
+  "properties": {},
+  "entityId": "4bbd2a47-34fe-4924-8a80-dd639d5e71f5",
+  "uuid": "4bbd2a47-34fe-4924-8a80-dd639d5e71f5"
+}

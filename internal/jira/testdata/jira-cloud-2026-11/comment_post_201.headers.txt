@@ -1,0 +1,7 @@
+HTTP/2 201 
+content-type: application/json;charset=UTF-8
+location: https://example-site.atlassian.net/rest/api/3/issue/10005/comment/10000
+ratelimit-policy: "jira-burst-based";q=100;w=1
+ratelimit: "jira-burst-based";r=198;t=1
+x-ratelimit-limit: 200
+x-ratelimit-remaining: 198

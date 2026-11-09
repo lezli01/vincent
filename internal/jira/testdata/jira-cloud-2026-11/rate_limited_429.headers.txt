@@ -1,0 +1,9 @@
+HTTP/2 429 
+content-type: application/json;charset=utf-8
+ratelimit-policy: "jira-burst-based";q=100;w=1
+ratelimit: "jira-burst-based";r=0;t=4
+x-ratelimit-limit: 350
+x-ratelimit-remaining: 0
+retry-after: 1
+x-ratelimit-reset: 2026-11-08T20:37Z
+ratelimit-reason: jira-burst-based

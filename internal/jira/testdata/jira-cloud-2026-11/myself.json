@@ -1,0 +1,25 @@
+{
+  "self": "https://example-site.atlassian.net/rest/api/3/user?accountId=557058:00000000-0000-4000-8000-000000000001",
+  "accountId": "557058:00000000-0000-4000-8000-000000000001",
+  "accountType": "atlassian",
+  "emailAddress": "fixture.user@example.com",
+  "avatarUrls": {
+    "48x48": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+    "24x24": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+    "16x16": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+    "32x32": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png"
+  },
+  "displayName": "Fixture User",
+  "active": true,
+  "timeZone": "Europe/Budapest",
+  "locale": "en_US",
+  "groups": {
+    "size": 4,
+    "items": []
+  },
+  "applicationRoles": {
+    "size": 1,
+    "items": []
+  },
+  "expand": "groups,applicationRoles"
+}

@@ -1,0 +1,612 @@
+{
+  "expand": "names,schema",
+  "issues": [
+    {
+      "expand": "operations,versionedRepresentations,editmeta,changelog,renderedFields",
+      "id": "10004",
+      "self": "https://example-site.atlassian.net/rest/api/3/issue/10004",
+      "key": "VCA-1",
+      "renderedFields": {
+        "summary": null,
+        "issuetype": null,
+        "components": null,
+        "created": "Today 9:31 PM",
+        "description": "<h1><a name=\"Richfixtureheading\"></a>Rich fixture heading</h1>\n\n<h2><a name=\"Secondlevelheading\"></a>Second-level heading</h2>\n\n<p>Paragraph with <b>bold</b>, <em>italic</em>, <tt>inline code</tt> and a <a href=\"https://example.com/docs?a=1&amp;b=2\" class=\"external-link\" rel=\"nofollow noreferrer\">link to example</a>.</p>\n\n<p>Mention: <a href=\"https://example-site.atlassian.net/secure/ViewProfile.jspa?accountId=557058%3A00000000-0000-4000-8000-000000000001\" class=\"user-hover\" rel=\"557058:00000000-0000-4000-8000-000000000001\" data-account-id=\"557058:00000000-0000-4000-8000-000000000001\" accountid=\"557058:00000000-0000-4000-8000-000000000001\" rel=\"noreferrer\">Fixture User</a> please look.</p>\n\n<ul>\n\t<li>bullet one</li>\n\t<li>bullet two\n\t<ul>\n\t\t<li>nested bullet</li>\n\t</ul>\n\t</li>\n</ul>\n\n\n<ol>\n\t<li>first</li>\n\t<li>second</li>\n</ol>\n\n\n<div class=\"code panel\" style=\"border-width: 1px;\"><div class=\"codeContent panelContent\">\n<pre class=\"code-go\"><span class=\"code-keyword\">func</span> main() {\n\tfmt.Println(<span class=\"code-quote\">\"hello &lt;vincent&gt; &amp; co\"</span>)\n}\n</pre>\n</div></div>\n\n<div class='table-wrap'>\n<table class='confluenceTable'><tbody>\n<tr>\n<th class='confluenceTh'>Header A</th>\n<th class='confluenceTh'>Header B</th>\n</tr>\n<tr>\n<td class='confluenceTd'>cell 1</td>\n<td class='confluenceTd'>cell 2</td>\n</tr>\n<tr>\n<td class='confluenceTd'>cell 3</td>\n<td class='confluenceTd'>cell 4</td>\n</tr>\n</tbody></table>\n</div>\n\n\n<p><span class=\"image-wrap\" style=\"\"><a id=\"10000_thumb\" href=\"/rest/api/3/attachment/content/10000\" title=\"fixture.png\" file-preview-type=\"image\" file-preview-id=\"10000\" file-preview-title=\"fixture.png\"><jira-attachment-thumbnail url=\"https://example-site.atlassian.net/rest/api/3/attachment/thumbnail/10000?default=false\" jira-url=\"https://example-site.atlassian.net/rest/api/3/attachment/thumbnail/10000\" filename=\"fixture.png\"><img src=\"https://example-site.atlassian.net/rest/api/3/attachment/thumbnail/10000\" data-attachment-name=\"fixture.png\" data-attachment-type=\"thumbnail\" data-media-services-id=\"b5bd82f6-1186-4d5a-adbc-8a80a8059d7d\" data-media-services-type=\"file\" style=\"border: 0px solid black\" /></jira-attachment-thumbnail></a></span></p>\n\n<blockquote><p>A quoted line.</p></blockquote>",
+        "project": null,
+        "reporter": null,
+        "priority": null,
+        "resolution": null,
+        "labels": null,
+        "resolutiondate": null,
+        "comment": {
+          "comments": [],
+          "self": "https://example-site.atlassian.net/rest/api/3/issue/10004/comment",
+          "maxResults": 0,
+          "total": 0,
+          "startAt": 0
+        },
+        "issuelinks": null,
+        "assignee": null,
+        "updated": "Today 9:32 PM",
+        "status": null
+      },
+      "fields": {
+        "summary": "Rich fixture issue",
+        "issuetype": {
+          "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10006",
+          "id": "10006",
+          "description": "A small, distinct piece of work.",
+          "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+          "name": "Task",
+          "subtask": false,
+          "avatarId": 10318,
+          "hierarchyLevel": 0
+        },
+        "components": [],
+        "created": "2026-11-08T21:31:38.494+0100",
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 1
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Rich fixture heading"
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Second-level heading"
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Paragraph with "
+                },
+                {
+                  "type": "text",
+                  "text": "bold",
+                  "marks": [
+                    {
+                      "type": "strong"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": ", "
+                },
+                {
+                  "type": "text",
+                  "text": "italic",
+                  "marks": [
+                    {
+                      "type": "em"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": ", "
+                },
+                {
+                  "type": "text",
+                  "text": "inline code",
+                  "marks": [
+                    {
+                      "type": "code"
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": " and a "
+                },
+                {
+                  "type": "text",
+                  "text": "link to example",
+                  "marks": [
+                    {
+                      "type": "link",
+                      "attrs": {
+                        "href": "https://example.com/docs?a=1&b=2"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "."
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Mention: "
+                },
+                {
+                  "type": "mention",
+                  "attrs": {
+                    "id": "557058:00000000-0000-4000-8000-000000000001",
+                    "text": "@Fixture User",
+                    "accessLevel": ""
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": " please look."
+                }
+              ]
+            },
+            {
+              "type": "bulletList",
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "bullet one"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "bullet two"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "bulletList",
+                      "content": [
+                        {
+                          "type": "listItem",
+                          "content": [
+                            {
+                              "type": "paragraph",
+                              "content": [
+                                {
+                                  "type": "text",
+                                  "text": "nested bullet"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "orderedList",
+              "attrs": {
+                "order": 1
+              },
+              "content": [
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "first"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "listItem",
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "second"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "codeBlock",
+              "attrs": {
+                "language": "go"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "func main() {\n\tfmt.Println(\"hello <vincent> & co\")\n}"
+                }
+              ]
+            },
+            {
+              "type": "table",
+              "attrs": {
+                "isNumberColumnEnabled": false,
+                "layout": "default"
+              },
+              "content": [
+                {
+                  "type": "tableRow",
+                  "content": [
+                    {
+                      "type": "tableHeader",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "Header A",
+                              "marks": [
+                                {
+                                  "type": "strong"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableHeader",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "Header B",
+                              "marks": [
+                                {
+                                  "type": "strong"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "tableRow",
+                  "content": [
+                    {
+                      "type": "tableCell",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "cell 1"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableCell",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "cell 2"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "tableRow",
+                  "content": [
+                    {
+                      "type": "tableCell",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "cell 3"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "tableCell",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "cell 4"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "mediaSingle",
+              "attrs": {
+                "layout": "center"
+              },
+              "content": [
+                {
+                  "type": "media",
+                  "attrs": {
+                    "type": "file",
+                    "id": "b5bd82f6-1186-4d5a-adbc-8a80a8059d7d",
+                    "collection": "",
+                    "height": 183,
+                    "width": 200
+                  }
+                }
+              ]
+            },
+            {
+              "type": "blockquote",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "A quoted line."
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "project": {
+          "self": "https://example-site.atlassian.net/rest/api/3/project/10001",
+          "id": "10001",
+          "key": "VCA",
+          "name": "Vincent Company A",
+          "projectTypeKey": "software",
+          "simplified": false,
+          "avatarUrls": {
+            "48x48": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407",
+            "24x24": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407?size=small",
+            "16x16": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407?size=xsmall",
+            "32x32": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10407?size=medium"
+          }
+        },
+        "reporter": {
+          "self": "https://example-site.atlassian.net/rest/api/3/user?accountId=557058%3A00000000-0000-4000-8000-000000000001",
+          "accountId": "557058:00000000-0000-4000-8000-000000000001",
+          "emailAddress": "fixture.user@example.com",
+          "avatarUrls": {
+            "48x48": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+            "24x24": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+            "16x16": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+            "32x32": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png"
+          },
+          "displayName": "Fixture User",
+          "active": true,
+          "timeZone": "Europe/Budapest",
+          "accountType": "atlassian"
+        },
+        "priority": {
+          "self": "https://example-site.atlassian.net/rest/api/3/priority/3",
+          "iconUrl": "https://example-site.atlassian.net/images/icons/priorities/medium_new.svg",
+          "name": "Medium",
+          "id": "3"
+        },
+        "resolution": null,
+        "labels": [
+          "batch-0",
+          "fixture"
+        ],
+        "resolutiondate": null,
+        "comment": {
+          "comments": [],
+          "self": "https://example-site.atlassian.net/rest/api/3/issue/10004/comment",
+          "maxResults": 0,
+          "total": 0,
+          "startAt": 0
+        },
+        "issuelinks": [],
+        "assignee": null,
+        "updated": "2026-11-08T21:32:36.776+0100",
+        "status": {
+          "self": "https://example-site.atlassian.net/rest/api/3/status/10006",
+          "description": "",
+          "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+          "name": "Backlog",
+          "id": "10006",
+          "statusCategory": {
+            "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/2",
+            "id": 2,
+            "key": "new",
+            "colorName": "blue-gray",
+            "name": "To Do"
+          }
+        }
+      }
+    },
+    {
+      "expand": "operations,versionedRepresentations,editmeta,changelog,renderedFields",
+      "id": "10006",
+      "self": "https://example-site.atlassian.net/rest/api/3/issue/10006",
+      "key": "VCB-4",
+      "renderedFields": {
+        "summary": null,
+        "issuetype": null,
+        "components": null,
+        "created": "Today 9:31 PM",
+        "description": "<p>Seeded fixture issue number 3.</p>",
+        "project": null,
+        "reporter": null,
+        "priority": null,
+        "resolution": null,
+        "labels": null,
+        "resolutiondate": null,
+        "comment": {
+          "comments": [],
+          "self": "https://example-site.atlassian.net/rest/api/3/issue/10006/comment",
+          "maxResults": 0,
+          "total": 0,
+          "startAt": 0
+        },
+        "issuelinks": null,
+        "assignee": null,
+        "updated": "Today 9:33 PM",
+        "status": null
+      },
+      "fields": {
+        "summary": "Fixture issue 3",
+        "issuetype": {
+          "self": "https://example-site.atlassian.net/rest/api/3/issuetype/10006",
+          "id": "10006",
+          "description": "A small, distinct piece of work.",
+          "iconUrl": "https://example-site.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10318?size=medium",
+          "name": "Task",
+          "subtask": false,
+          "avatarId": 10318,
+          "hierarchyLevel": 0
+        },
+        "components": [],
+        "created": "2026-11-08T21:31:39.246+0100",
+        "description": {
+          "type": "doc",
+          "version": 1,
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Seeded fixture issue number 3."
+                }
+              ]
+            }
+          ]
+        },
+        "project": {
+          "self": "https://example-site.atlassian.net/rest/api/3/project/10002",
+          "id": "10002",
+          "key": "VCB",
+          "name": "Vincent Company B",
+          "projectTypeKey": "software",
+          "simplified": false,
+          "avatarUrls": {
+            "48x48": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10409",
+            "24x24": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10409?size=small",
+            "16x16": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10409?size=xsmall",
+            "32x32": "https://example-site.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10409?size=medium"
+          }
+        },
+        "reporter": {
+          "self": "https://example-site.atlassian.net/rest/api/3/user?accountId=557058%3A00000000-0000-4000-8000-000000000001",
+          "accountId": "557058:00000000-0000-4000-8000-000000000001",
+          "emailAddress": "fixture.user@example.com",
+          "avatarUrls": {
+            "48x48": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+            "24x24": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+            "16x16": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png",
+            "32x32": "https://secure.gravatar.com/avatar/00000000000000000000000000000000?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FLA-6.png"
+          },
+          "displayName": "Fixture User",
+          "active": true,
+          "timeZone": "Europe/Budapest",
+          "accountType": "atlassian"
+        },
+        "priority": {
+          "self": "https://example-site.atlassian.net/rest/api/3/priority/3",
+          "iconUrl": "https://example-site.atlassian.net/images/icons/priorities/medium_new.svg",
+          "name": "Medium",
+          "id": "3"
+        },
+        "resolution": null,
+        "labels": [
+          "batch-0",
+          "fixture"
+        ],
+        "resolutiondate": null,
+        "comment": {
+          "comments": [],
+          "self": "https://example-site.atlassian.net/rest/api/3/issue/10006/comment",
+          "maxResults": 0,
+          "total": 0,
+          "startAt": 0
+        },
+        "issuelinks": [],
+        "assignee": null,
+        "updated": "2026-11-08T21:33:57.797+0100",
+        "status": {
+          "self": "https://example-site.atlassian.net/rest/api/3/status/10006",
+          "description": "",
+          "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+          "name": "Backlog",
+          "id": "10006",
+          "statusCategory": {
+            "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/2",
+            "id": 2,
+            "key": "new",
+            "colorName": "blue-gray",
+            "name": "To Do"
+          }
+        }
+      }
+    }
+  ],
+  "issueErrors": []
+}

@@ -1,0 +1,105 @@
+{
+  "expand": "transitions",
+  "transitions": [
+    {
+      "id": "11",
+      "name": "To Do",
+      "to": {
+        "self": "https://example-site.atlassian.net/rest/api/3/status/10007",
+        "description": "",
+        "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+        "name": "To Do",
+        "id": "10007",
+        "statusCategory": {
+          "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/2",
+          "id": 2,
+          "key": "new",
+          "colorName": "blue-gray",
+          "name": "To Do"
+        }
+      },
+      "hasScreen": false,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {},
+      "isLooped": false
+    },
+    {
+      "id": "21",
+      "name": "In Progress",
+      "to": {
+        "self": "https://example-site.atlassian.net/rest/api/3/status/10008",
+        "description": "",
+        "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+        "name": "In Progress",
+        "id": "10008",
+        "statusCategory": {
+          "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "In Progress"
+        }
+      },
+      "hasScreen": false,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {},
+      "isLooped": false
+    },
+    {
+      "id": "31",
+      "name": "In Review",
+      "to": {
+        "self": "https://example-site.atlassian.net/rest/api/3/status/10010",
+        "description": "",
+        "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+        "name": "In Review",
+        "id": "10010",
+        "statusCategory": {
+          "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/4",
+          "id": 4,
+          "key": "indeterminate",
+          "colorName": "yellow",
+          "name": "In Progress"
+        }
+      },
+      "hasScreen": false,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {},
+      "isLooped": false
+    },
+    {
+      "id": "41",
+      "name": "Done",
+      "to": {
+        "self": "https://example-site.atlassian.net/rest/api/3/status/10009",
+        "description": "",
+        "iconUrl": "https://example-site.atlassian.net/images/icons/statuses/generic.png",
+        "name": "Done",
+        "id": "10009",
+        "statusCategory": {
+          "self": "https://example-site.atlassian.net/rest/api/3/statuscategory/3",
+          "id": 3,
+          "key": "done",
+          "colorName": "green",
+          "name": "Done"
+        }
+      },
+      "hasScreen": false,
+      "isGlobal": true,
+      "isInitial": false,
+      "isAvailable": true,
+      "isConditional": false,
+      "fields": {},
+      "isLooped": false
+    }
+  ]
+}
