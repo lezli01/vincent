@@ -12318,7 +12318,7 @@ the issue is already in — appends nothing. Six kinds:
 | Type | Payload |
 |---|---|
 | `issue.created` | `{ id, by }` |
-| `issue.updated` | `{ id, changed: [field, …], by }` — field names sorted; an import refresh lists `state` when it moved, and adds `labels_added`/`labels_removed` and `from`/`to`/`reason` (below) |
+| `issue.updated` | `{ id, changed: [field, …], by }` — field names sorted; an import refresh lists `state` when it moved, and adds `labels_added`/`labels_removed` and `from`/`to`/`reason` (below), or `reason_from`/`reason_to` when a closed issue's reason moved (*amended 2026-11-09, task 142.22*) |
 | `issue.state_changed` | `{ id, from, to, reason, by }` |
 | `issue.labels_changed` | `{ id, labels: [name, …], labels_added: [name, …], labels_removed: [name, …], by }` |
 | `issue.comment_added` | `{ id, comment_id, by }` |
@@ -12367,6 +12367,17 @@ is `issue.updated` with `changed: ["sync"]` and `by: sync` — when it ends
 `done`, `failed` or `conflict`, and when a pending write's reason changes
 (not on every retry with the same reason). A conflict's adoption of GitHub's
 value is an ordinary `issue.state_changed` by `sync` when the state moved.
+
+*Amended 2026-11-09 (task 142.22, issue #953).* An import refresh that keeps
+an issue closed but moves its close reason adds `reason_from` and `reason_to`
+to its `issue.updated` — whatever the cause, a re-resolve in the tracker or a
+post-function rewriting the resolution a write chose — and a state-changing
+refresh keeps its `from`/`to`/`reason`. Reason names only, never text. When
+the refresh adopts a closed value with another reason than the issue's newest
+write asked for, and that write had ended `done`, the importer re-marks the
+write `conflict` with `last_reason` `resolution_overridden` in the same
+transaction, and the event's `changed` names `sync` too: the provider still
+wins the reason, and the issue's sync block says that it did.
 
 *Amended 2026-10-07 (task 134.6, issue #753).* An issue's lane (§5.6) is
 derived, so until now nothing announced a move: a client saw it only by

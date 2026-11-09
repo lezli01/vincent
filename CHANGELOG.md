@@ -24,7 +24,13 @@ list with the user-facing context a commit subject cannot carry.
   a write the account may not make fails `no_write_scope`. Jira's lagging
   search no longer reverts a close you just made. Writes wait while
   `jira.enabled` is false or `jira.poll_interval` is `0`, and ones queued
-  before this release go out on the first pass (#909).
+  before this release go out on the first pass (#909). When a workflow's
+  post-function rewrites the resolution you chose — a default
+  company-managed Done transition sets *Done* whatever its screen said —
+  vincent takes Jira's reason but no longer silently: the issue's sync state
+  reads `conflict` with `resolution_overridden`, and the import's
+  `issue.updated` event carries `reason_from` and `reason_to`, as it now does
+  for any change of a closed issue's reason (#953).
 - **`vincent doctor` has a `JIRA` group.** It shows whether `jira.enabled`
   is on, whether the daemon sees the `jira.user_env` and `jira.token_env`
   variables (by name, never their values), whether each bound Jira site is
