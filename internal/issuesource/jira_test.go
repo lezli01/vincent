@@ -433,25 +433,46 @@ func TestJiraMoved(t *testing.T) {
 
 // TestJiraBulkDropsJQLExcluded: with extra JQL on the binding, a bulk read
 // leaves out what the JQL no longer matches, so the importer marks it
-// missing. A moved issue is reported moved without being filtered.
+// missing, and keeps what it still matches. A moved issue is reported moved
+// without being filtered. The captured bulkfetch answers only VCA-1 (10004)
+// in the project, so each half is proved by its own filter answer: page 3
+// does not contain 10004, page 1 does (review F1).
 func TestJiraBulkDropsJQLExcluded(t *testing.T) {
-	site := newJiraSite(t)
-	src := site.source(nil)
-	b := site.bound(src, "labels = sync")
-	site.mu.Lock()
-	site.search = func(string) string { return "search_jql_page3_last" } // VCA-1 not among them
-	site.mu.Unlock()
-	got, err := src.GetIssues(context.Background(), b, []store.IssueRemote{{RemoteKey: "10004"}, {RemoteKey: "10006"}, {RemoteKey: "10007"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := got["10004"]; ok || len(got) != 1 || got["10006"].MovedTo == "" {
-		t.Errorf("bulk = %v, want only the moved 10006", got)
-	}
-	site.mu.Lock()
-	defer site.mu.Unlock()
-	if last := site.jqls[len(site.jqls)-1]; last != "project = 10001 AND (labels = sync) AND id in (10004) ORDER BY id ASC" {
-		t.Errorf("filter JQL = %q", last)
+	for _, tc := range []struct {
+		search string
+		kept   bool
+	}{
+		{"search_jql_page3_last", false},
+		{"search_jql_page1", true},
+	} {
+		site := newJiraSite(t)
+		src := site.source(nil)
+		b := site.bound(src, "labels = sync")
+		site.mu.Lock()
+		site.search = func(string) string { return tc.search }
+		site.mu.Unlock()
+		got, err := src.GetIssues(context.Background(), b, []store.IssueRemote{{RemoteKey: "10004"}, {RemoteKey: "10006"}, {RemoteKey: "10007"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got["10006"].MovedTo == "" {
+			t.Errorf("%s: bulk = %v, want the moved 10006", tc.search, got)
+		}
+		kept, ok := got["10004"]
+		switch {
+		case ok != tc.kept:
+			t.Errorf("%s: 10004 reported = %v, want %v (bulk %v)", tc.search, ok, tc.kept, got)
+		case ok && (kept.MovedTo != "" || kept.Issue.Remote.Repo != "VCA"):
+			t.Errorf("%s: kept 10004 = %+v, want unmoved in VCA", tc.search, kept)
+		}
+		if want := map[bool]int{false: 1, true: 2}[tc.kept]; len(got) != want {
+			t.Errorf("%s: bulk has %d issues, want %d", tc.search, len(got), want)
+		}
+		site.mu.Lock()
+		if last := site.jqls[len(site.jqls)-1]; last != "project = 10001 AND (labels = sync) AND id in (10004) ORDER BY id ASC" {
+			t.Errorf("%s: filter JQL = %q", tc.search, last)
+		}
+		site.mu.Unlock()
 	}
 }
 
