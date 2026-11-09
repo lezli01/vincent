@@ -8,6 +8,30 @@ permalink: /changelog.html
 
 This is the human-readable vincent release history. The generated [canonical CHANGELOG](https://github.com/lezli01/vincent/blob/master/CHANGELOG.md) remains the source used by release automation, while this page removes duplicate commit subjects and keeps the product impact clear.
 
+## 0.13.0 — Jira Cloud issues, and closed issues that tidy up after themselves
+
+Released 2026-11-09.
+
+### Added
+
+- **Jira Cloud issues.** Bind a project to a Jira Cloud site and project key, and its issues are imported and kept in sync like GitHub's: titles, bodies, labels, state and close reason follow Jira, and comment threads are mirrored, never the restricted ones. Moved issues follow their new key, and issues Jira stops showing are marked missing, never deleted. A new Jira guide walks through it. ([#943](https://github.com/lezli01/vincent/pull/943), [#950](https://github.com/lezli01/vincent/pull/950))
+- **Closes and reopens go back to Jira.** Closing or reopening a Jira issue in vincent runs the matching Jira transition, and a granted handoff can comment there. When no transition fits, or a Jira workflow overrides the resolution you chose, the issue's sync state says so instead of failing quietly. ([#923](https://github.com/lezli01/vincent/pull/923), [#945](https://github.com/lezli01/vincent/pull/945), [#956](https://github.com/lezli01/vincent/pull/956))
+- **Choose each project's issue source.** A project's issues can follow its origin as before, come from GitHub or Jira, or not be synced at all — set from `vincent project add`/`edit`, the TUI project form or the API. Credentials stay in your environment (`JIRA_USER` and `JIRA_API_TOKEN` by default), never in vincent. ([#922](https://github.com/lezli01/vincent/pull/922), [#937](https://github.com/lezli01/vincent/pull/937))
+- **Check your Jira setup.** `vincent jira status` tells you whether the site, the credential and the bound project work, and `vincent doctor` gains a Jira group showing each site and how each Jira project last synced — without ever retrying a bad token into a lockout. ([#943](https://github.com/lezli01/vincent/pull/943), [#948](https://github.com/lezli01/vincent/pull/948))
+- **Jira keys everywhere you need them.** Find an issue by `PROJ-12` with `vincent issue ls --remote`, read the key in workflows from `.Issue.Source.Key` or `$VINCENT_ISSUE_KEY`, and start a task from a Jira issue already titled with its key. `S` on the issues list syncs a Jira project too, and the sync status names its source. ([#921](https://github.com/lezli01/vincent/pull/921), [#922](https://github.com/lezli01/vincent/pull/922), [#939](https://github.com/lezli01/vincent/pull/939))
+- **Closing an issue archives its tasks.** Once a closed issue's work has settled, vincent archives its tasks for you — never forcing a dirty worktree or deleting a remote branch — and `vincent doctor` lists anything it had to leave behind, with the reason. Turn it off with `archive_tasks_on_issue_close: false`. ([#938](https://github.com/lezli01/vincent/pull/938), [#941](https://github.com/lezli01/vincent/pull/941), [#944](https://github.com/lezli01/vincent/pull/944))
+- **An issue's work on one tab.** The issue screen has an `Issue | Work` strip: the Work tab lists every task and chat the issue has had, archived ones included, and opens any of them. ([#938](https://github.com/lezli01/vincent/pull/938), [#942](https://github.com/lezli01/vincent/pull/942))
+
+### Changed
+
+- **GitHub and Jira sync on their own schedules.** Each provider has its own interval and its own on/off switch, and neither holds up pull-request linking. ([#937](https://github.com/lezli01/vincent/pull/937))
+- **The built-in maintenance workflows and skills know about Jira issues**, so `update-workflows` and `update-triggers` carry them into your existing workflows and triggers. A Jira label change made by sync now needs a trusted author before a trigger fires on it. ([#924](https://github.com/lezli01/vincent/pull/924), [#943](https://github.com/lezli01/vincent/pull/943))
+- **Go module dependencies updated.** ([#957](https://github.com/lezli01/vincent/pull/957))
+
+### Fixed
+
+- **Leaving a chat returns you to where you opened it** — the issue, the issues list or the archived chats — instead of always to the chats board. ([#938](https://github.com/lezli01/vincent/pull/938))
+
 ## 0.12.0 — Issues, handoffs and GitHub Copilot
 
 Released 2026-11-03.
