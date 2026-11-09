@@ -45,8 +45,16 @@
 // the field, and never on reopen), or a typed ChooseError whose Code is
 // `no_transition`, `ambiguous_transition` or `transition_needs_fields`. It
 // never degrades a requested reason to another one: every success reports an
-// Achieved outcome equal to the request, and Achieved is what FromJira will
-// read back after the transition.
+// Achieved outcome equal to the request, and Achieved is what FromJira
+// reads of the transition's target status and the resolution it sets.
+// That is not a promise about what Jira holds afterwards: a post-function
+// can rewrite the resolution once the transition has run — the default
+// company-managed workflow's Done transition carries a
+// `system:update-field` post-function setting resolution Done, so a
+// "Won't Do" chosen on its screen lands as Done after a 204 — and the API
+// exposes post-functions nowhere, as it exposes no validators, so the
+// chooser cannot see one coming. The importer's next read records that
+// case as `resolution_overridden` on the write (task 142.22, #953).
 //
 // Where both a name-matching transition (say "Won't do") and a generic done
 // transition whose resolution list happens to offer the reason (say "Done")

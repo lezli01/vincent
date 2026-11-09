@@ -66,7 +66,11 @@
 //     `unreachable` (the connection is hijacked and closed — no HTTP answer
 //     at all) and `search-lag N` (after a write, the next N search calls
 //     answer each written issue's pre-write status and updated; the count
-//     lives in the corpus's `_fake` state, so it survives between requests).
+//     lives in the corpus's `_fake` state, so it survives between requests)
+//     and `resolution-overridden` (a transition into a done-category status
+//     answers 204 as usual, then ends with resolution Done whatever its
+//     screen set — the default company-managed workflow's
+//     `system:update-field` post-function, task 142.22).
 //   - Auth: every route but the control route wants `Authorization: Basic
 //     base64(user:token)` matching Store.User and Store.Token (DefaultUser
 //     and DefaultToken when unset); anything else is a 401.

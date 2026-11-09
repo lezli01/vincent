@@ -58,8 +58,10 @@ type Outcome struct {
 }
 
 // Choice is the transition to perform. Resolution is the resolution to set
-// on its screen, "" for none. Achieved is what FromJira reads after it, and
-// always equals the request.
+// on its screen, "" for none. Achieved is what FromJira reads of the
+// transition's target and that resolution, and always equals the request —
+// unless a post-function rewrites the resolution afterwards, which no
+// transition listing shows (see the package doc, task 142.22).
 type Choice struct {
 	TransitionID string
 	Resolution   string
