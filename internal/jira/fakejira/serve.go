@@ -32,6 +32,18 @@ const (
 	ScenarioReadOnly     = "read-only"
 	ScenarioUnreachable  = "unreachable"
 	ScenarioSearchLag    = "search-lag"
+	// ScenarioResolutionOverridden plays the default company-managed
+	// workflow's `system:update-field` post-function (task 142.22, #953):
+	// every transition into a done-category status still answers 204, then
+	// ends with resolution Done whatever its screen set.
+	ScenarioResolutionOverridden = "resolution-overridden"
+)
+
+// The resolution ScenarioResolutionOverridden's post-function sets: the
+// simplified workflow's Done, id 10000, as on the captured site.
+const (
+	overriddenResolutionID   = "10000"
+	overriddenResolutionName = "Done"
 )
 
 // scenario is the parsed scenario for one request.
@@ -59,7 +71,8 @@ func (s *Store) scenario() (scenario, error) {
 		return scenario{}, nil
 	}
 	switch fields[0] {
-	case ScenarioRateLimited, ScenarioUnauthorized, ScenarioReadOnly, ScenarioUnreachable, "success", "":
+	case ScenarioRateLimited, ScenarioUnauthorized, ScenarioReadOnly, ScenarioUnreachable,
+		ScenarioResolutionOverridden, "success", "":
 		if len(fields) == 1 {
 			return scenario{name: fields[0]}, nil
 		}
@@ -629,6 +642,13 @@ func (h *handler) transition(idOrKey string) bool {
 		}
 		writeErrors(h.w, http.StatusInternalServerError, []string{err.Error()}, nil)
 		return false
+	}
+	if h.sc.name == ScenarioResolutionOverridden {
+		if p := h.c.project(is.Project); p != nil {
+			if st := p.status(is.Status); st != nil && st.Category == CategoryDone {
+				is.Resolution = &Allowed{ID: overriddenResolutionID, Name: overriddenResolutionName}
+			}
+		}
 	}
 	h.armLag(is, before)
 	h.w.WriteHeader(http.StatusNoContent)

@@ -546,6 +546,27 @@ func TestSearchLag(t *testing.T) {
 	}
 }
 
+// TestResolutionOverridden: the post-function scenario answers a Done
+// transition 204 and leaves resolution Done whatever its screen set; a
+// transition into a non-done status is untouched (task 142.22).
+func TestResolutionOverridden(t *testing.T) {
+	f := newFixture(t)
+	f.scenario(ScenarioResolutionOverridden)
+	f.want(f.do("POST", "/rest/api/3/issue/VIN-1/transitions", map[string]any{
+		"transition": map[string]any{"id": "31"},
+		"fields":     map[string]any{"resolution": map[string]any{"name": "Won't Do"}},
+	}), 204)
+	is := f.want(f.do("GET", "/rest/api/3/issue/VIN-1?fields=status,resolution", nil), 200).body
+	if st, res := path(is, "fields", "status", "id"), path(is, "fields", "resolution", "name"); st != "10002" || res != "Done" {
+		t.Fatalf("after the Done transition: status %v resolution %v, want 10002 Done", st, res)
+	}
+	f.want(f.do("POST", "/rest/api/3/issue/VIN-1/transitions", map[string]any{"transition": map[string]any{"id": "41"}}), 204)
+	is = f.want(f.do("GET", "/rest/api/3/issue/VIN-1?fields=status,resolution", nil), 200).body
+	if st, res := path(is, "fields", "status", "id"), path(is, "fields", "resolution"); st != "10000" || res != nil {
+		t.Fatalf("after reopen: status %v resolution %v, want 10000 and none", st, res)
+	}
+}
+
 func TestCorpusEditedOnDisk(t *testing.T) {
 	f := newFixture(t)
 	f.want(f.do("GET", "/rest/api/3/issue/VIN-1", nil), 200)

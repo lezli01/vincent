@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -398,6 +400,87 @@ func TestJiraPostFunctionDriftSettlesOnce(t *testing.T) {
 	}
 	if n := len(f.issueWrites("10001")); n != 1 {
 		t.Errorf("writes = %d, want the one: sync enqueues none", n)
+	}
+	// The adoption is named on the write (task 142.22).
+	if w := f.newestWrite("10001"); w.Status != store.OutboxConflict || w.LastReason != store.OutboxReasonResolutionOverridden {
+		t.Errorf("write = %s/%s, want conflict/%s", w.Status, w.LastReason, store.OutboxReasonResolutionOverridden)
+	}
+}
+
+// TestJiraResolutionOverriddenByPostFunction is task 142.22 (#953) end to
+// end: on a Done transition whose post-function forces resolution Done, a
+// vincent not_planned close gets its 204 and lands as Done. The drain
+// settles the write done, the next import adopts completed by sync, marks
+// the write conflict/resolution_overridden, and announces the reason delta;
+// nothing is written again over the ticks that follow.
+func TestJiraResolutionOverriddenByPostFunction(t *testing.T) {
+	f := newJiraE2E(t, nil)
+	f.touch()
+	f.tick()
+	f.wantOK()
+	f.setScenario(fakejira.ScenarioResolutionOverridden)
+	f.advance(time.Second)
+	f.humanTransition("10001", issuestate.Close, issuestate.NotPlanned)
+	out := f.outbox()
+	out.Drain(t.Context())
+	if w := f.newestWrite("10001"); w.Status != store.OutboxDone {
+		t.Fatalf("write = %s/%s, want done: the transition answered 204", w.Status, w.LastReason)
+	}
+	if is := f.jiraIssue("10001"); is.Resolution == nil || is.Resolution.Name != "Done" {
+		t.Fatalf("Jira holds resolution %+v, want the post-function's Done", is.Resolution)
+	}
+	ctx := t.Context()
+	since, err := f.store.MaxEventID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 3 {
+		f.advance(time.Minute)
+		f.tick()
+		f.wantOK()
+		out.Drain(ctx)
+		iss := f.issue("10001")
+		if iss.State != issuestate.Closed || iss.CloseReason != issuestate.Completed {
+			t.Fatalf("tick %d: issue %s/%s, want Jira's closed/completed", i, iss.State, iss.CloseReason)
+		}
+		if w := f.newestWrite("10001"); w.Status != store.OutboxConflict || w.LastReason != store.OutboxReasonResolutionOverridden {
+			t.Fatalf("tick %d: write = %s/%s, want conflict/%s", i, w.Status, w.LastReason, store.OutboxReasonResolutionOverridden)
+		}
+	}
+	if n := f.posts("10001", "transitions"); n != 1 {
+		t.Errorf("transition POSTs = %d, want the one write: no ping-pong", n)
+	}
+	if writes, err := f.store.IssueWrites(ctx, f.issue("10001").ID); err != nil || len(writes) != 1 {
+		t.Errorf("writes = %d, %v; want the one: sync enqueues none", len(writes), err)
+	}
+	evs, err := f.store.ListEvents(ctx, store.EventFilter{
+		AfterID: since, Types: []string{store.EventIssueUpdated}, ProjectID: f.project.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var deltas int
+	for _, ev := range evs {
+		var body struct {
+			By         string   `json:"by"`
+			Changed    []string `json:"changed"`
+			ReasonFrom string   `json:"reason_from"`
+			ReasonTo   string   `json:"reason_to"`
+		}
+		if err := json.Unmarshal(ev.Payload, &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.ReasonFrom == "" {
+			continue
+		}
+		deltas++
+		if body.By != string(issuestate.Sync) || body.ReasonFrom != string(issuestate.NotPlanned) ||
+			body.ReasonTo != string(issuestate.Completed) || !slices.Contains(body.Changed, "sync") {
+			t.Errorf("reason delta event = %s", ev.Payload)
+		}
+	}
+	if deltas != 1 {
+		t.Errorf("reason delta events = %d, want one: %d issue.updated", deltas, len(evs))
 	}
 }
 

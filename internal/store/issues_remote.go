@@ -149,8 +149,11 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	if err != nil {
 		return nil, err
 	}
+	overridden := false
 	if held {
 		state, reason = issuestate.Normalize(cur.State), cur.CloseReason
+	} else if overridden, err = markOverriddenTx(ctx, tx, id, RemoteStateOf(cur.State, cur.CloseReason), RemoteStateOf(state, reason), now); err != nil {
+		return nil, err
 	}
 	var changed []string
 	if in.Title != cur.Title {
@@ -165,6 +168,11 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 	}
 	if reason != cur.CloseReason {
 		changed = append(changed, "close_reason")
+	}
+	if overridden {
+		// The sync block moved to conflict/resolution_overridden, as a
+		// settled write announces "sync" (task 142.22).
+		changed = append(changed, "sync")
 	}
 	labelsMoved := !sameLabelSet(cur.Labels, in.Labels)
 	if labelsMoved {
@@ -228,6 +236,11 @@ func refreshRemoteIssueTx(ctx context.Context, tx *sql.Tx, in RemoteIssue, remot
 		if state == issuestate.Closed {
 			extra["reason"] = string(reason)
 		}
+	} else if state == issuestate.Closed && reason != cur.CloseReason {
+		// A closed issue whose reason moved — a human re-resolving it in the
+		// tracker, or a post-function overriding the reason vincent wrote
+		// (task 142.22) — names both ends, whatever the cause.
+		extra["reason_from"], extra["reason_to"] = string(cur.CloseReason), string(reason)
 	}
 	ev, err := issueEvent(EventIssueUpdated, cur.ProjectID, id, by, extra)
 	if err != nil {

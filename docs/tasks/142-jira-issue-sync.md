@@ -1,6 +1,6 @@
 # 142 — Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync
 
-**Status:** 🔄 in progress (20/21) · **Opened:** 2026-11-03
+**Status:** 🔄 in progress (21/22) · **Opened:** 2026-11-03
 
 Issue [#897](https://github.com/lezli01/vincent/issues/897), part of
 [#896](https://github.com/lezli01/vincent/issues/896), the parent. Today a
@@ -117,7 +117,11 @@ lists only the hard dependencies the parent records as "Blocked by".
   desired value as written, since `Choice.Achieved` always equals the
   request; a post-function's different resolution is adopted by the next
   read as `sync` and never re-written (no `achieved_json`, no post-write
-  GET). (3) A 403 on a transition or comment POST is `no_write_scope`; an
+  GET). *Amended 2026-11-09 (142.22, #953):* still no read-back in the
+  drain, but that adoption is no longer silent — when the importer adopts a
+  closed value with another reason over a `done` close, it re-marks the row
+  `conflict`/`resolution_overridden` in the same transaction, and the
+  event carries `reason_from`/`reason_to`. (3) A 403 on a transition or comment POST is `no_write_scope`; an
   empty transitions list is `no_transition`, whose detail names a missing
   *Transition issues* permission; no `mypermissions` probe. The new
   terminal reasons are `no_transition`, `ambiguous_transition` and
@@ -182,6 +186,29 @@ lists only the hard dependencies the parent records as "Blocked by".
   documented-shape file, `cloud-docs-2026-11-04-issue.json`, stays: no capture
   has a parent, a link, a component or an assignee. The `jira.Overlap`
   comment now cites fact 3 and fact 6. ✓ 2026-11-09
+- [x] **142.22** ([#953](https://github.com/lezli01/vincent/issues/953)) A
+  resolution a post-function overrides is a named outcome. On a
+  company-managed Done transition whose screen offers resolution and which
+  still carries `system:update-field` (resolution Done), a `not_planned` or
+  `duplicate` close gets its 204 and lands as Done
+  (`transition_post_204_screen_*`). Jira still wins the reason. Decisions:
+  (1) the importer, not the drain, detects it — a refresh that adopts a
+  closed value with another reason than the issue's newest `done` `set_state`
+  row asked for re-marks that row `conflict` with `last_reason`
+  `resolution_overridden` in the same transaction (amending 142.13 decision
+  2) — but only on the first refresh adopted after the row settled, which
+  stamps the row's `read_back_at` whatever it read, and only while the issue
+  still holds the row's value, so a later re-resolve or reopen-and-close in
+  the tracker, and a reason already adopted before an upgrade, are plain
+  remote changes (review F1 on #956, 2026-11-09); a reopen, a matching read, a held unconfirmed listing and a `pending`
+  or `failed` row are untouched. (2) The issue adopts Jira's reason by
+  `sync` and its sync block reads `conflict`/`resolution_overridden` until
+  its next write; no new sync state. (3) Every closed→closed reason move adds
+  `reason_from`/`reason_to` to the refresh's `issue.updated`, and the
+  override adds `sync` to `changed` (spec §13.3 amended). (4) Detection is
+  provider-neutral in the store. (5) `jiramap`'s doc no longer promises
+  `Achieved` is what Jira holds afterwards. `fakejira`'s
+  `resolution-overridden` scenario plays the post-function. ✓ 2026-11-09
 
 ## Decisions (2026-11-03)
 

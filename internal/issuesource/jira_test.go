@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -147,6 +148,8 @@ type jiraSite struct {
 	// status, when set, answers every request with it: the captured answer
 	// for 401 and 429, a bare envelope otherwise.
 	status int
+	// transitions records every transition POST's body.
+	transitions []string
 }
 
 func newJiraSite(t *testing.T) *jiraSite {
@@ -211,6 +214,18 @@ func (s *jiraSite) serve(w http.ResponseWriter, r *http.Request) {
 		reply("issue_moved_by_id")
 	case "/rest/api/3/issue/10008":
 		reply("issue_done_company_managed")
+	case "/rest/api/3/issue/10008/transitions":
+		// The company-managed Done screen offering resolution, and the 204
+		// a transition through it answered (task 142.22).
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			s.mu.Lock()
+			s.transitions = append(s.transitions, string(body))
+			s.mu.Unlock()
+			reply("transition_post_204_screen_with_resolution")
+			return
+		}
+		reply("transitions_company_managed_from_backlog_with_screen")
 	default:
 		reply("issue_deleted_404")
 	}

@@ -1081,7 +1081,7 @@ limit. Every issue imported from GitHub carries the outcome:
 | `synced` | The issue agrees with GitHub: its last write landed, or it never had one |
 | `pending` | A write is waiting. `reason`, when present, is why it has not gone yet — `disabled` (`github.enabled` is false or `github.poll_interval` is `0`; nothing is called, and it goes when the switch is back on), or a [GitHub reason](#github-issues) it is retrying after: `rate_limited`, `unreachable`, `timeout`, `bad_response`, `no_credential`, `unauthorized` |
 | `failed` | The write gave up; the local state is kept. `reason` is `no_write_scope`, `not_found`, `gone`, `moved`, `forbidden` or `bad_request` — or, for Jira, one of the [transition reasons](#jira-write-back) — or, without a write, `moved`/`gone` for an issue whose remote copy was transferred or deleted, whose state changes stay local |
-| `conflict` | GitHub's state changed first and was adopted here (`reason: remote_changed`) |
+| `conflict` | The tracker's value was adopted over the write. `reason: remote_changed` — the issue changed there first, before the write was sent; `reason: resolution_overridden` — the write landed, but the first import after it read closed with another reason (a [Jira post-function](#jira-write-back) rewrote the resolution), and that reason is the issue's now. Only that first read can set it: a reason changed in the tracker after an import has read the write back is a plain remote change, and the write stays `synced`. It stays until the issue's next write |
 
 ##### Jira write-back
 
@@ -1105,8 +1105,12 @@ change no single transition achieves fails instead, with
 
 A 403 on a transition or a comment is `no_write_scope`, as on GitHub; a 403 on
 a read stays `forbidden`. If a post-function in the workflow sets a different
-resolution than the one sent, the next import adopts Jira's, and nothing is
-written again. Jira's search can trail a write by a few seconds; the import
+resolution than the one sent — a default company-managed workflow's Done
+transition sets resolution Done whatever its screen chose — Jira answers the
+transition with success, the next import adopts Jira's reason, and nothing is
+written again; the write is re-marked `conflict` with
+`reason: resolution_overridden` (on the first import after the write only), and the import's `issue.updated` carries
+`reason_from` and `reason_to`. Jira's search can trail a write by a few seconds; the import
 confirms a listed state that contradicts a write just made by reading the
 issue directly, so a lagging search never reverts it. A granted handoff's
 comment is posted as an Atlassian Document Format comment and keyed by Jira's
@@ -4046,7 +4050,10 @@ they need.
   `labels_added` and `labels_removed` when `changed` holds `labels`, and
   `from`, `to` and — on a close — `reason` when the state moved; these deltas
   are what an [`issues` trigger](../guides/triggers.md#issues-watch-the-projects-issues)
-  reads. None carries a
+  reads. It adds `reason_from` and `reason_to` instead when a closed issue's
+  close reason moved (with `sync` in `changed` too when that override flagged
+  a write [`resolution_overridden`](#jira-write-back)); no trigger action
+  fires on those. None carries a
   title, body or comment text, and none reaches a per-task stream.
   `issue.state_changed` adds `duplicate_of` when a duplicate close names one.
   Follow one project's issues with

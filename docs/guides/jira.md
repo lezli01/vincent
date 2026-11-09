@@ -181,6 +181,27 @@ While `jira.enabled` is `false` or `jira.poll_interval` is `0`, writes are
 **not dropped**: they wait `pending` with `disabled`, and are sent once both
 are back on.
 
+### Close reasons on a default company-managed workflow
+
+A company-managed project's default Done transition still carries the
+simplified workflow's `system:update-field` post-function, which sets the
+resolution to *Done* after the transition has run — even when its screen
+offers *Won't Do* or *Duplicate* and vincent chose one. Jira accepts the
+transition, so the write succeeds, and the issue lands as Done. Jira's API
+does not show post-functions, so vincent cannot see this coming.
+
+Jira wins the reason: the next import changes the issue's close reason to
+`completed`, and nothing is written again. It does not happen silently. The
+issue's `sync` field reads `conflict` with reason `resolution_overridden`
+until its next write, the project's sync row counts it as a conflict, and the
+import's `issue.updated` event carries `reason_from` and `reason_to`. Only
+the first import after the write is read that way: once an import has read
+the write back, someone changing the resolution in Jira later is an ordinary
+edit there, adopted without the flag. To keep
+`not_planned` and `duplicate` closes, remove the post-function from the Done
+transition, or name a transition without it in the mapping's
+[`overrides`](#transition-overrides).
+
 ## Moved and missing issues
 
 An issue moved to another Jira project is marked `moved`, and its key and

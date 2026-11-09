@@ -28,6 +28,17 @@ const (
 	OutboxSuperseded = "superseded"
 )
 
+// OutboxReasonResolutionOverridden is the last_reason of a done set_state
+// row the importer re-marks conflict (task 142.22, #953): the provider
+// accepted the close — a 204 — but then reads closed with another reason,
+// because a post-function (Jira's `system:update-field` setting resolution
+// Done on a default company-managed workflow) rewrote the one the write
+// chose. The provider still wins the reason; this records that it did. The
+// drain's own conflict reason, remote_changed, lives with the drain in
+// internal/daemon; this one is the store's because only the importer's
+// transaction can see it.
+const OutboxReasonResolutionOverridden = "resolution_overridden"
+
 // Outbox operations. OutboxOpSetState is a close or reopen; title, body
 // and labels are a read-only mirror and are never written back (task 130
 // decision 9). OutboxOpAddComment is a granted handoff's comment (task 137
@@ -236,6 +247,68 @@ func holdsLocalStateTx(ctx context.Context, tx *sql.Tx, issueID int64, remote Is
 		return !remote.Same(desired), nil
 	}
 	return false, nil
+}
+
+// markOverriddenTx re-marks the issue's newest set_state row conflict with
+// OutboxReasonResolutionOverridden when an import refresh adopts remote and
+// the row is a done close that asked for another reason (task 142.22,
+// #953). It amends, and does not overturn, task 142.13 decision 2: the
+// drain still settles a successful transition done with the value it sent,
+// without a read-back, and the importer — whose read by id or confirmed
+// listing is what reaches here — is the one that notices the provider
+// holds something else. Any other status, an open desired value, or a
+// remote that is open (someone reopened it: a plain remote change, not an
+// override) leaves the row alone. Detection does not ask the provider:
+// only Jira can rewrite a reason after accepting it, but a closed read
+// with another reason after a done write is an override whichever tracker
+// produced it (decision 4). Reports whether the row was re-marked.
+//
+// Only the first adopted read after the write settled can be one (review
+// F1 on #956): a post-function rewrites the resolution inside the
+// transition, so that read already shows it, and any later move is someone
+// re-resolving the issue in the tracker. So the first adopted read stamps
+// read_back_at, whatever it found, and a stamped row is left alone. local
+// is the issue's value before this refresh; it must still be the row's
+// desired value, which excludes a row settled before read_back_at existed
+// whose issue has since adopted another value.
+//
+// The caller has already decided not to hold the local state, so remote is
+// the value the refresh adopts.
+func markOverriddenTx(ctx context.Context, tx *sql.Tx, issueID int64, local, remote IssueStateValue, now time.Time) (bool, error) {
+	var (
+		id                  int64
+		status, desiredJSON string
+		readBack            sql.NullString
+	)
+	err := tx.QueryRowContext(ctx, `SELECT id, status, desired_json, read_back_at FROM issue_sync_outbox
+		WHERE issue_id = ? AND op = ? ORDER BY id DESC LIMIT 1`, issueID, OutboxOpSetState).Scan(&id, &status, &desiredJSON, &readBack)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read newest write of issue %d: %w", issueID, err)
+	}
+	if status != OutboxDone || readBack.Valid {
+		return false, nil
+	}
+	var desired IssueStateValue
+	if err := json.Unmarshal([]byte(desiredJSON), &desired); err != nil {
+		return false, fmt.Errorf("decode newest write of issue %d: %w", issueID, err)
+	}
+	stamp := formatTime(now)
+	if remote.State != string(issuestate.Closed) || desired.State != string(issuestate.Closed) ||
+		desired.Same(remote) || !desired.Same(local) {
+		if _, err := tx.ExecContext(ctx, `UPDATE issue_sync_outbox SET read_back_at = ? WHERE id = ?`, stamp, id); err != nil {
+			return false, fmt.Errorf("stamp issue write %d read back: %w", id, err)
+		}
+		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE issue_sync_outbox SET status = ?, last_reason = ?, read_back_at = ?, updated_at = ? WHERE id = ?`,
+		OutboxConflict, OutboxReasonResolutionOverridden, stamp, stamp, id); err != nil {
+		return false, fmt.Errorf("mark issue write %d overridden: %w", id, err)
+	}
+	return true, nil
 }
 
 const outboxSelect = `SELECT o.id, o.issue_id, i.project_id, o.op, o.desired_json, o.base_json, o.status,
