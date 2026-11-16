@@ -29,6 +29,14 @@ list with the user-facing context a commit subject cannot carry.
   Both now judge it against the issue's base branch, as archive does, and
   keep it.
 
+- **A resumed loop picks up in the iteration it stopped in.** A task
+  re-admitted inside a `loop` step — by `retry`, a daemon restart, a
+  usage-limit hold or a paced-retry backoff — used to walk the loop from
+  iteration 1 again. Every earlier iteration that held a failed
+  `allow_failure` step (every non-final pass of a converge loop) then ran in
+  full a second time, re-spending its agent runs and, in a merge-pass loop,
+  re-pushing earlier passes. Finished iterations are now left alone (#962).
+
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 
 ### Added

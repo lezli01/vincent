@@ -96,9 +96,11 @@ func TestLoopForEachRecordsItsListLengthOnEveryBodyRow(t *testing.T) {
 // one about the same loop — row 1 saying "of 3", row 3 saying "of 1" — which
 // is the one way a per-row extent can be worse than the guess it replaces.
 //
-// The fixture stands in for an admission interrupted mid-body: iterations 1
-// and 2 have a finished `head` row each and no `tail` row, against a list that
-// now re-derives to a single item.
+// The fixture stands in for an admission interrupted mid-body: iteration 1
+// finished (`head` and `tail`), iteration 2 has a finished `head` row and no
+// `tail` row, against a list that now re-derives to a single item. Iteration 1
+// is whole because the loop only reaches iteration 2 once 1 has ended, and a
+// re-admitted loop resumes in iteration 2 without revisiting it (issue #962).
 func TestLoopExtentOnReadmissionIsTheClampedOne(t *testing.T) {
 	h := newEngineHarness(t)
 	ctx := t.Context()
@@ -110,14 +112,22 @@ func TestLoopExtentOnReadmissionIsTheClampedOne(t *testing.T) {
 	task := h.createTask(t, snapshot)
 
 	// Seeded before the scheduler runs, so the task is admitted onto them.
-	for i, item := range []string{"alpha", "beta"} {
+	// The earlier admission planned two iterations, so its rows say "of 2".
+	for _, seed := range []struct {
+		step, item string
+		iteration  int
+	}{
+		{"head", "alpha", 1},
+		{"tail", "alpha", 1},
+		{"head", "beta", 2},
+	} {
 		finished := time.Now()
 		if err := h.store.CreateStepRun(ctx, &store.StepRun{
-			TaskID: task.ID, StepIndex: 0, StepID: "head", StepType: "command",
-			Attempt: 1, Iteration: i + 1, LoopItem: item,
+			TaskID: task.ID, StepIndex: 0, StepID: seed.step, StepType: "command",
+			Attempt: 1, Iteration: seed.iteration, LoopItem: seed.item, LoopTotal: 2,
 			State: store.StepSucceeded, FinishedAt: &finished,
 		}); err != nil {
-			t.Fatalf("seed iteration %d: %v", i+1, err)
+			t.Fatalf("seed %s in iteration %d: %v", seed.step, seed.iteration, err)
 		}
 	}
 	h.start(t)
@@ -126,13 +136,15 @@ func TestLoopExtentOnReadmissionIsTheClampedOne(t *testing.T) {
 	if done.State != store.TaskDone {
 		t.Fatalf("task state = %s (block_reason %q), want done", done.State, done.BlockReason)
 	}
-	// Two iterations survive the clamp, so both `tail` rows say "of 2" — the
-	// list length of 1 is never what any row records.
+	// Two iterations survive the clamp, so the resumed iteration's `tail` row
+	// says "of 2" like the seeded one — the list length of 1 is never what any
+	// row records.
 	if got := loopTotalsAt(h.stepRuns(t, task.ID), 0, "tail"); !equalInts(got, []int{2, 2}) {
-		t.Errorf("loop_total on the resumed rows = %v, want [2 2] — the clamped extent, "+
+		t.Errorf("loop_total on the tail rows = %v, want [2 2] — the clamped extent, "+
 			"not the one-item list it re-derived", got)
 	}
-	if got := countLines(t, done.WorktreePath, "tail.txt"); got != 2 {
-		t.Errorf("tail ran %d times, want 2 — the clamp keeps both recorded iterations", got)
+	// The clamp keeps iteration 2, so its missing `tail` runs — once.
+	if got := countLines(t, done.WorktreePath, "tail.txt"); got != 1 {
+		t.Errorf("tail ran %d times, want 1 — iteration 2's, which the clamp keeps", got)
 	}
 }
