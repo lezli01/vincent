@@ -9650,6 +9650,15 @@ client's, so recovery first stops the agent through its pid file in the task's
 container (task 061 decision 9, keyed by the turn) and then runs the host kill
 above for the client.
 
+*Amended 2026-11-16 (issue #960).* Once every `running` turn is finalized,
+recovery also returns to `idle` every chat still in a state that holds a
+process (`running`, `awaiting_input`). No such chat has a running turn at that
+point, so its state is a leftover — an earlier daemon failed a turn before its
+process was up and never moved the chat back — and nothing else would ever
+release it: it would refuse every send and hold a §11 slot forever. Recovery
+runs before any turn is admitted, so there is no live turn to race. As above,
+the chat stays **open**, and a task it locks stays locked.
+
 *Amended 2026-09-21 (task 124.17, issue #513).* Recovery also sweeps the
 **skill probes** (§5.5) a dead daemon may have left running inside a task's
 container. A probe writes no row, so the walk over `running` turns — which is
