@@ -151,9 +151,7 @@ func (s *Store) createTasks(
 	}
 	// After the commit, in insertion order: a subscriber must never see a
 	// task.created for a row a rollback took away.
-	for _, ev := range events {
-		s.notify(ev)
-	}
+	s.notify(events...)
 	return nil
 }
 

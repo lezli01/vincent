@@ -183,9 +183,7 @@ func (s *Store) UpdateProjectRebind(ctx context.Context, p *Project, rebind *Reb
 	if err != nil {
 		return err
 	}
-	for _, e := range evs {
-		s.notify(e)
-	}
+	s.notify(evs...)
 	return nil
 }
 

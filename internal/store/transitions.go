@@ -218,13 +218,7 @@ func (s *Store) TransitionTask(
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, ce := range chatEvs {
-		s.notify(ce)
-	}
-	s.notify(ev)
-	if mergeEv != nil {
-		s.notify(mergeEv)
-	}
+	s.notify(append(chatEvs, ev, mergeEv)...)
 	return task, ev, nil
 }
 

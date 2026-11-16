@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -49,11 +50,57 @@ const (
 // fires strictly post-commit — a subscriber must never observe an event the
 // database has not durably recorded.
 //
-// fn runs synchronously on the writing goroutine and must not block.
+// fn sees events in ascending id order — what makes the SSE streams' dedupe
+// by id lossless (§13.3, issue #963). It runs synchronously on a writing
+// goroutine, though not always the one that wrote the event: while one
+// goroutine is delivering, events other writers commit are queued and it
+// delivers them too. An event fn appends itself is delivered after fn
+// returns, never from inside it. fn must not block.
 func (s *Store) SetEventHook(fn func(*Event)) { s.eventHook.Store(&fn) }
 
-// notify runs the event hook, if one is registered.
-func (s *Store) notify(e *Event) {
+// eventPublisher puts the event hook's deliveries in id order (issue #963).
+//
+// Every SSE stream dedupes its replay-to-live seam by id (`ev.ID <= lastID`,
+// phase 2 / T2.7 decision, §13.3), which is lossless only if the hook sees
+// ids in ascending order. Calling the hook straight from each notify did not
+// guarantee that: a hook that appends events itself (the daemon's
+// children_changed relay, task 014 decision 14) published them before the
+// rest of the batch that triggered it, and two writers could publish in the
+// opposite order to their commits.
+//
+// So notify enqueues and one goroutine at a time drains: pending events are
+// kept sorted by id, and whoever finds the queue undrained delivers them, in
+// order, until it is empty. An event appended from inside the hook is
+// enqueued behind the current batch and delivered by the same drain loop
+// after it — never recursively, which is also why the lock is not held while
+// the hook runs.
+type eventPublisher struct {
+	mu       sync.Mutex
+	pending  []*Event // sorted by ID, ascending
+	draining bool
+	// seq spans AppendEvent's insert and its enqueue, so two appends cannot
+	// reach the queue in the opposite order to the ids they were assigned.
+	// It is never held while the hook runs, so an append from inside the
+	// hook cannot deadlock on it.
+	seq sync.Mutex
+}
+
+// notify publishes evs, and the events chained behind each, to the event hook
+// in id order. A write that commits several events passes them in one call:
+// the whole batch is queued before the first is delivered, so an event the
+// hook appends cannot be delivered ahead of the batch's later ones.
+func (s *Store) notify(evs ...*Event) {
+	for _, e := range evs {
+		s.enqueue(e)
+	}
+	s.drain()
+}
+
+// enqueue adds e and its follow chain to the publication queue.
+func (s *Store) enqueue(e *Event) {
+	p := &s.pub
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	// A nil event is a write that had nothing to announce — updateChat takes
 	// an empty type for the columns no client is told about (session id,
 	// worktree path, pending input) and hands the nil straight here. Publishing
@@ -61,13 +108,47 @@ func (s *Store) notify(e *Event) {
 	// is handed, so writing a chat's session id panicked
 	// `GET /v1/events` for everyone. Dropped here rather than guarded in three
 	// handlers: "there is no event" is this function's business (task 067).
-	if e == nil {
+	for ; e != nil; e = e.follow {
+		// After every event with an id <= e's, so equal ids keep their
+		// arrival order.
+		i := len(p.pending)
+		for i > 0 && p.pending[i-1].ID > e.ID {
+			i--
+		}
+		p.pending = append(p.pending, nil)
+		copy(p.pending[i+1:], p.pending[i:])
+		p.pending[i] = e
+	}
+}
+
+// drain delivers the queue to the hook unless another call is already doing
+// so — on this goroutine, further up the stack, or on another one; that call
+// delivers whatever was enqueued here before it returns.
+func (s *Store) drain() {
+	p := &s.pub
+	p.mu.Lock()
+	if p.draining {
+		p.mu.Unlock()
 		return
 	}
-	if fn := s.eventHook.Load(); fn != nil && *fn != nil {
-		(*fn)(e)
+	p.draining = true
+	defer func() {
+		// A panicking hook must not leave every later event undelivered.
+		p.mu.Lock()
+		p.draining = false
+		p.mu.Unlock()
+	}()
+	for len(p.pending) > 0 {
+		e := p.pending[0]
+		p.pending[0] = nil
+		p.pending = p.pending[1:]
+		p.mu.Unlock()
+		if fn := s.eventHook.Load(); fn != nil && *fn != nil {
+			(*fn)(e)
+		}
+		p.mu.Lock()
 	}
-	s.notify(e.follow)
+	p.mu.Unlock()
 }
 
 // AppendEvent inserts e and assigns its ID (the SSE Last-Event-ID cursor).
@@ -79,18 +160,23 @@ func (s *Store) AppendEvent(ctx context.Context, e *Event) error {
 	if len(e.Payload) == 0 {
 		e.Payload = json.RawMessage("{}")
 	}
+	s.pub.seq.Lock()
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO events (ts, type, task_id, project_id, payload_json) VALUES (?, ?, ?, ?, ?)`,
 		formatTime(e.TS), e.Type, e.TaskID, e.ProjectID, string(e.Payload))
 	if err != nil {
+		s.pub.seq.Unlock()
 		return fmt.Errorf("insert event: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
+		s.pub.seq.Unlock()
 		return fmt.Errorf("insert event: %w", err)
 	}
 	e.ID = id
-	s.notify(e)
+	s.enqueue(e)
+	s.pub.seq.Unlock()
+	s.drain()
 	return nil
 }
 
