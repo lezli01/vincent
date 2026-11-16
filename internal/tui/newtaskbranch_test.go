@@ -462,3 +462,22 @@ func TestNewChatBranchListingFollowsTheProject(t *testing.T) {
 		t.Errorf("the re-aimed form is on %d, want %d", v.create.projectID, f.projectID+1)
 	}
 }
+
+// A fork pull request's task runs on vincent/pr-{n}, never on the head name
+// (#964), so the form's summary line names that branch; a same-repository one
+// still names its head.
+func TestPullSummaryNamesTheForkBranch(t *testing.T) {
+	fork := &newTask{pull: &apiclient.GitHubPullRequest{
+		Number: 355, Title: "Typo", Repo: "o/r", HeadRepo: "c/r", HeadBranch: "master",
+	}}
+	got := fork.pullSummary()
+	if !strings.Contains(got, "branch vincent/pr-355") || strings.Contains(got, "branch master") {
+		t.Errorf("fork summary = %q, want branch vincent/pr-355", got)
+	}
+	same := &newTask{pull: &apiclient.GitHubPullRequest{
+		Number: 412, Title: "Thing", Repo: "o/r", HeadRepo: "o/r", HeadBranch: "feature/x",
+	}}
+	if got := same.pullSummary(); !strings.Contains(got, "branch feature/x") {
+		t.Errorf("same-repo summary = %q, want branch feature/x", got)
+	}
+}

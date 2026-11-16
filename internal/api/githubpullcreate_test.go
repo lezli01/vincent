@@ -139,8 +139,31 @@ func TestCreateTaskFromForkPullRecordsTheFork(t *testing.T) {
 	if task.GitHubPull == nil || !task.GitHubPull.Fork {
 		t.Fatalf("link = %+v, want the fork flag set", task.GitHubPull)
 	}
-	if task.BranchName != "typo-fix" {
-		t.Errorf("branch = %q, want the fork's head branch", task.BranchName)
+	if task.BranchName != "vincent/pr-355" {
+		t.Errorf("branch = %q, want the namespaced vincent/pr-355, never the fork's head name (#964)", task.BranchName)
+	}
+}
+
+// Issue #964: a fork's head branch name says nothing about the local branch
+// of the same name. Admission (engine.pullSpecFor) runs the task on
+// tasks.branch_name and decision 4 fast-forwards a local branch of that name,
+// so a fork pull request opened from the contributor's synced `master` would
+// move the human's own `master` onto unreviewed third-party commits and let
+// the agent commit on top. A fork's task therefore runs on a namespaced
+// branch, `vincent/pr-{n}`, never on the head name.
+func TestCreateTaskFromForkPullNamespacesTheBranch(t *testing.T) {
+	h := newGitHubHarness(t, nil, ghOrigin)
+	resp, body := h.createFromPull(t, map[string]any{"github_pull": 355})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create: %d %s", resp.StatusCode, body)
+	}
+	var out taskResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("create body: %v (%s)", err, body)
+	}
+	if out.BranchName != "vincent/pr-355" {
+		t.Errorf("branch = %q, want vincent/pr-355: a fork's head name may be any local branch "+
+			"(master, main) and must never be fast-forwarded onto a contributor's commits", out.BranchName)
 	}
 }
 
