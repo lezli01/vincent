@@ -517,7 +517,7 @@ func TestExpandReportsACycleAheadOfTheDepthBound(t *testing.T) {
 // TestIncludeWarningsIsLinearInTheIncludeGraph is issue #966: the load-time
 // probe runs on every registry load, before any task exists, over files a
 // `git pull` can deliver. A chain of files each including the next one twice
-// is a legal graph — no cycle, shallower than the probe's depth guard — whose
+// is a legal graph — no cycle, no missing name — whose
 // expansion doubles at every level, so a probe that builds the expansion does
 // 2^n work for n tiny files and thirty of them exhaust the daemon's memory.
 // The probe answers questions about workflow *names* (a cycle, a missing
