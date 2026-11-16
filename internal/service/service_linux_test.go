@@ -68,3 +68,27 @@ func TestRenderUnitEscapes(t *testing.T) {
 		t.Errorf("PATH is not quoted-and-escaped:\n%s", unit)
 	}
 }
+
+// TestRenderUnitQuotesPathsWithSpaces (#968): systemd splits both ExecStart=
+// and an unquoted Environment= on whitespace. An executable under a directory
+// with a space must stay one argv[0], and a config or data dir with a space
+// must not be truncated at it — §12.1 pins the dirs so the service and the CLI
+// use the same database. `$` is also a variable reference in ExecStart= (but
+// not in Environment=), so it must be doubled there.
+func TestRenderUnitQuotesPathsWithSpaces(t *testing.T) {
+	unit := renderUnit(Options{
+		Exe:  "/home/u/my apps/$bin/vincent",
+		Dirs: config.Dirs{Config: "/home/u/my cfg", Data: `/home/u/my "data"`},
+		Path: "/usr/bin",
+	})
+
+	for _, want := range []string{
+		`ExecStart="/home/u/my apps/$$bin/vincent" daemon`,
+		`Environment="VINCENT_CONFIG_DIR=/home/u/my cfg"`,
+		`Environment="VINCENT_DATA_DIR=/home/u/my \"data\""`,
+	} {
+		if !strings.Contains(unit, want) {
+			t.Errorf("unit is missing %q:\n%s", want, unit)
+		}
+	}
+}
