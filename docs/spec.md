@@ -3331,6 +3331,15 @@ shadowing and only a task picks a root):
 | A step id the expansion already used | both workflows |
 | A callee whose `platforms:` (§8.1.1) excludes this host | the callee and the host |
 
+*Amended 2026-11-16 (issue #966):* the load warning covers three of these
+rows, not all five. It reports a cycle, an unresolvable name and a callee
+whose `platforms:` excludes the daemon's host, at most one per workflow. It
+never builds the expansion: it walks the include graph by workflow name,
+resolving each name once, so its cost is linear in the include edges and a
+legal graph that multiplies on expansion cannot stall a reload. It therefore
+cannot see the depth bound or a duplicate step id, and both stay
+creation-time 400s only (task 019 decision 8).
+
 The caller's own `platforms:` is **not** rewritten from its callees': it stays
 a property of the file as written, so a workflow's declared restriction means
 one thing. The consequence is that `vincent workflow validate` cannot tell you
