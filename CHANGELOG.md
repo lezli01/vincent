@@ -63,6 +63,14 @@ list with the user-facing context a commit subject cannot carry.
   expanded by systemd. Re-run `vincent service install` to rewrite an
   existing unit.
 
+- **Config and trigger saves no longer fail on Windows while the daemon is
+  reading the file.** Two quick `PATCH /v1/config` calls, a trigger edit, or
+  `vincent trigger apply` writing several files could answer 500 with a
+  sharing violation, because the daemon's own reload still had the file
+  open. The write now waits that reader out for up to two seconds, the way
+  workflow saves already did.
+  ([#969](https://github.com/lezli01/vincent/issues/969))
+
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 
 ### Added

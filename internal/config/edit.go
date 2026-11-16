@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/lezli01/vincent/internal/fileswap"
 )
 
 // This file is the write half of §12.3 (task 060): the daemon edits its own
@@ -286,10 +288,10 @@ func WriteFile(path string, b []byte) (err error) {
 	}
 	// A file that predates the tightened modes keeps its own mode through a
 	// rename, so the mode is set on the replacement rather than inherited.
-	if err = os.Chmod(tmp, FilePerm); err != nil {
-		return fmt.Errorf("write config: %w", err)
-	}
-	if err = os.Rename(tmp, path); err != nil {
+	// fileswap does the chmod and the rename as one step, and on Windows
+	// waits out a reader of the target — the daemon's own reload of
+	// config.yaml or a trigger file — rather than failing the write (#969).
+	if err = fileswap.Replace(tmp, path, FilePerm); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil

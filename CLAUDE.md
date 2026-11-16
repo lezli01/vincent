@@ -305,12 +305,13 @@ Requires bash, go, git, curl, jq.
 
 Dependency direction is one-way: `cli` → `tui`/`daemon`; `daemon` wires
 `store` + `workflow` + `scheduler` + `taskrun` + `events` + `notify` + `api`;
-leaf packages (`taskstate`, `issuestate`, `issueprovider`, `jira/jiramap`, `keymap`, `reasons`, `gitx`, `procx`, `pathx`, `version`, `config`) depend on
+leaf packages (`taskstate`, `issuestate`, `issueprovider`, `jira/jiramap`, `keymap`, `reasons`, `gitx`, `procx`, `pathx`, `fileswap`, `version`, `config`) depend on
 nothing internal — with one deliberate exception: `config` imports `taskstate`
-and `keymap`, and only those, to validate `notify.on` against §6's state
-vocabulary and `tui.keys` against §15's key vocabulary rather than keeping a
-second copy of either (task 046 decision 4, widened by task 118 decision 3).
-`taskstate` and `keymap` are themselves leaves, so the direction stays one-way.
+and `keymap` to validate `notify.on` against §6's state vocabulary and
+`tui.keys` against §15's key vocabulary rather than keeping a second copy of
+either (task 046 decision 4, widened by task 118 decision 3), and `fileswap`
+to replace its files the way `workflow` does (#969), and only those three.
+All three are themselves leaves, so the direction stays one-way.
 `internal/jira/jiramap` is a leaf in the same sense: it imports the standard
 library and `issuestate` only — never `issues`, which imports the store — so
 the Jira client and outbox can both consult it (#898; a test walks its
@@ -362,6 +363,7 @@ is a correctness bug, not a style issue:
 | `internal/trigger` | The inward signal (task 096): `{config_dir}/triggers/*.yaml` definitions, their validator and the schema descriptor the form renders from, and the 0600 writer that edits them with `workflow.Edit` ops. Replays `POST /v1/tasks` through an `http.Handler` the way `internal/mcp` does, and never imports `internal/api` (decision 30) |
 | `internal/keymap` | The TUI's rebindable operations (task 118, §12.3, §15): ids, default keys and surfaces, the fixed keys and recorded exceptions, key-string parsing, and the one clause checker the registry tests run over the defaults and `config` runs over `tui.keys`. A leaf |
 | `internal/pathx` | The one directory comparison (task 132.3): `SameDir` and by-component `Contains`, lexical after `Clean`, case-folded on Windows and macOS, then symlink-resolved. `worktree` and `api` delegate to it, and the TUI matches its working directory with it without importing a git-running package. A leaf |
+| `internal/fileswap` | The one atomic replacement (#969, §12.3): `Replace` does the chmod and rename that complete a temp-file write as one step, and on Windows retries a contended error (sharing or lock violation, access denied) with backoff for at most 2 s, because the daemon's own reloads hold the target open. `workflow.WriteFile` and `config.WriteFile` (hence the trigger writer) both use it. A leaf: stdlib and `golang.org/x/sys/windows` only |
 | `internal/reasons` | The plain-language catalogue of task and step reasons (task 127, §18): a title, a meaning, the §6 actions and a docs anchor for each `block_reason`/`failure_reason`/`skip_reason`/`queued_reason`. A leaf that spells the strings out; tests hold it to every `Reason*` constant and to `docs/reference/task-lifecycle.md`'s tables |
 | `internal/issuestate` | The issue lifecycle of §5.6 (task 130): `open`/`closed`, close reasons, and which actor (`human`, `agent`, `sync`) may take which action. Pure and stdlib-only, a third vocabulary beside `taskstate` and `chatstate`; the store consults it inside the transaction that changes an issue's state |
 | `internal/issueprovider` | The issue-provider registry (task 142.5, task 142 decision 2, §5.6): the `issue_remotes.provider` ids (`github`, `jira`), `Known`, `WritesBack` and `All`. The store's outbox enqueue, `issues.WritesBack`, the API's `source` vocabulary and `issuesource` ask it rather than compare a `"github"` literal. Stdlib only, so the store can import it; a test walks its `go list -deps` |

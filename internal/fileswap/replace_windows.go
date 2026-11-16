@@ -1,4 +1,4 @@
-package workflow
+package fileswap
 
 import (
 	"errors"
@@ -8,8 +8,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// replaceFile puts tmp in place of path with mode perm, completing the atomic
-// write WriteFile started — retrying while another handle stands in the way.
+// Replace puts tmp in place of path with mode perm, completing the atomic
+// write the caller started — retrying while another handle stands in the way.
 //
 // Windows is the platform where a rename is not purely an operation on a name.
 // Replacing an open file needs every other handle on it to have been opened
@@ -18,9 +18,11 @@ import (
 // target blocks the replacement with ERROR_SHARING_VIOLATION or
 // ERROR_ACCESS_DENIED. `os.Chmod` is narrower still — it opens for
 // FILE_WRITE_ATTRIBUTES sharing only writes — so a plain reader fails it too.
-// The daemon supplies those readers itself: writing a workflow makes the
-// scope directory's watcher fire, the registry reloads, and the reload reads
-// every `*.yaml` in the directory including the one being replaced. A virus
+// The daemon supplies those readers itself: writing a workflow, config.yaml or a
+// trigger file makes a watcher fire, and the reload reads the file being
+// replaced — the workflow registry reads every `*.yaml` in the scope
+// directory, config.Load reads config.yaml, and the trigger registry reads
+// every trigger file (issue #969). A virus
 // scanner opening the freshly closed temporary file does the same to the
 // source side of the rename.
 //
@@ -29,7 +31,7 @@ import (
 // answer is a 500 for a file that is about to become writable. A failure that
 // outlasts the window is still returned, so a genuinely locked file is still
 // an error rather than a hang.
-func replaceFile(tmp, path string, perm os.FileMode) error {
+func Replace(tmp, path string, perm os.FileMode) error {
 	deadline := time.Now().Add(replaceWaitFor)
 	delay := replaceFirstDelay
 	for {
