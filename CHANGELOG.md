@@ -13,6 +13,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A chat whose turn failed before its agent started returns to idle.** A
+  turn that failed before the agent process was up — no adapter for the
+  chat's agent, a transcript that could not be opened, or an agent that
+  refused to start — left its chat `running` for good: every later send was
+  refused, the chat could be neither archived nor closed, and it held one of
+  the `max_parallel_chats` slots. The chat now returns to `idle` as soon as
+  the turn fails, and a daemon restart repairs chats already stuck that way
+  (#960).
+
 - **Workflow includes can no longer exhaust the daemon at load.** The include
   check run on every registry load built each workflow's full expansion, so a
   few files each including the next one twice cost exponential time and
