@@ -1600,6 +1600,12 @@ holder (task 134 decision 14). Delete is refused with
 `409 issue_has_live_main_task` while any main-role task of the issue is not
 settled (decision 17.1); settled and archived ones do not hold it, narrowing
 task 130 decision 6.
+*Amended 2026-11-16 (issue #961):* the same base-branch judgement holds at
+permanent delete — `DELETE /v1/tasks/{id}?delete_branch=true` on a main task
+and the branch sweep of `DELETE /v1/projects/{id}` — which had judged a
+successor against its own `base_sha` and force-deleted a branch carrying a
+predecessor's commits. The project sweep also asks the line, not the row,
+whose branch it is (task 134.12).
 *Amended 2026-10-31 (task 140, issue #885):* **a chat on an issue** (§5.5)
 is a main-worktree holder too. The occupant is now a main task *or* a
 non-terminal issue chat, served as `main_worktree.occupant_task_id` or

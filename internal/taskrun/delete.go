@@ -50,7 +50,8 @@ func RemoveProposalDir(dataDir string, id int64, log *slog.Logger) {
 // `has_commits` and kept, whatever the human answered. The remote leg is not
 // offered — `delete_remote_branch_on_archive` stays honoured only by archive,
 // because deleting a branch on a forge other people share is unrecoverable and
-// a delete has no second chance to reconsider.
+// a delete has no second chance to reconsider. An issue's main task is judged
+// against the issue's base branch, as archive judges it (emptinessBase, #961).
 //
 // The order is deliberate. The row goes first: a failed unlink must not
 // resurrect a row that has already been reported gone, and `vincent gc`
@@ -94,7 +95,7 @@ func (r *Runner) Delete(
 	// and this must not touch it. Same answer archive gives.
 	ours := r.branchOurs(ctx, task, log)
 	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
-		task.BaseBranch, task.BaseSHA, task.BranchName, false, &ours)
+		task.BaseBranch, emptinessBase(task), task.BranchName, false, &ours)
 	if err != nil {
 		log.Warn("delete: branch kept", "result", out.Result, "error", err)
 		return out, nil

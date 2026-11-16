@@ -21,6 +21,14 @@ list with the user-facing context a commit subject cannot carry.
   a callee restricted to this host no longer warns, and one that excludes it
   now does.
 
+- **Deleting an issue's main task no longer deletes the issue's branch
+  with a predecessor's commits on it.** Permanently deleting a later main
+  task of an issue with `delete_branch=true`, or deleting the whole project,
+  judged the shared issue branch empty against the tip that task received
+  and force-deleted it, losing an earlier main task's unmerged commits.
+  Both now judge it against the issue's base branch, as archive does, and
+  keep it.
+
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 
 ### Added
