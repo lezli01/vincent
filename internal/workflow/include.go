@@ -20,7 +20,6 @@ package workflow
 // there.
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -214,35 +213,96 @@ func IncludeNames(wf *Workflow) []string {
 // platform. Task creation, where the root is known, is where each becomes a
 // 400.
 //
-// At most one is reported: expansion stops at the first problem, and a second
+// At most one is reported: the walk stops at the first problem, and a second
 // pass would only describe the same file differently.
 func IncludeWarnings(wf *Workflow, lookup LookupFunc) []string {
 	if wf == nil || lookup == nil || !HasInclude(wf) {
 		return nil
 	}
-	// A generous depth: this is a probe, not a bound check, and the bound is
-	// enforced at creation where the config is in hand. Step ids are not
-	// checked either — a duplicate is a creation-time error about a specific
-	// pair of files, and reporting it as a load warning would blame whichever
-	// file happened to be loading. Going through the expander rather than
-	// Expand is what leaves that check out.
-	x := &expander{opts: ExpandOptions{
-		Lookup: lookup,
-		Limits: IncludeLimits{MaxDepth: cycleProbeDepth},
-	}}
-	if _, err := x.body(wf.Steps, "steps", 0, []string{wf.Name}, nil); err != nil {
-		var ie *IncludeError
-		if errors.As(err, &ie) {
-			return []string{ie.Error()}
+	// The probe walks the include graph by *name* rather than building the
+	// expansion (issue #966). Every question it answers — a cycle, a missing
+	// name, a callee this host cannot run — is a property of the names, and
+	// an expansion is exponential in them: a file including the next one
+	// twice doubles it at every level, and this runs on every registry load
+	// over files a `git pull` can deliver. Step ids are not checked either —
+	// a duplicate is a creation-time error about a specific pair of files,
+	// and reporting it as a load warning would blame whichever file happened
+	// to be loading. No depth guard is needed: a cycle is caught on the stack,
+	// and the walk visits each name once.
+	p := &includeProbe{lookup: lookup, platform: HostPlatform(), done: map[string]bool{}}
+	if err := p.body(wf.Steps, "steps", []string{wf.Name}); err != nil {
+		return []string{err.Error()}
+	}
+	return nil
+}
+
+// includeProbe is the load-time walk over an include graph. `done` holds the
+// names already walked without a problem: a name's subgraph is the same
+// wherever it is reached from, so a second include site of it has nothing new
+// to report and is skipped, which makes the walk linear in the include edges.
+// A problem ends the walk, so `done` never holds a name that had one.
+type includeProbe struct {
+	lookup   LookupFunc
+	platform string
+	done     map[string]bool
+}
+
+// body walks one step list, reaching every place expander.body splices: the
+// top level, group and loop bodies, and fan_out lanes' inline steps. Paths are
+// spelled exactly as the expander spells them, so a warning reads the same as
+// the 400 the same problem becomes at creation.
+func (p *includeProbe) body(steps []Step, path string, stack []string) error {
+	for i, step := range steps {
+		stepPath := fmt.Sprintf("%s[%d]", path, i)
+		if step.Type == StepInclude {
+			if err := p.include(step.Workflow, stepPath, stack); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := p.body(step.Steps, stepPath+".steps", stack); err != nil {
+			return err
+		}
+		for j, lane := range step.Lanes {
+			if err := p.body(lane.Steps, fmt.Sprintf("%s.lanes[%d].steps", stepPath, j), stack); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-// cycleProbeDepth bounds the load-time probe. It is not a policy — the policy
-// is include.max_depth at creation — only a guard against walking a legal but
-// enormous graph while holding the registry's lock.
-const cycleProbeDepth = 64
+// include checks one include site the way expander.splice does — cycle, then
+// resolution, then platform — and walks the callee once.
+func (p *includeProbe) include(name, path string, stack []string) error {
+	if idx := indexOf(stack, name); idx >= 0 {
+		return &IncludeError{
+			Path: path,
+			Message: fmt.Sprintf("workflow cycle: %s",
+				strings.Join(append(append([]string{}, stack[idx:]...), name), " → ")),
+		}
+	}
+	if p.done[name] {
+		return nil
+	}
+	callee, ok := p.lookup(name)
+	if !ok {
+		return &IncludeError{Path: path, Message: fmt.Sprintf("included workflow %q not found", name)}
+	}
+	if !callee.SupportsPlatform(p.platform) {
+		return &IncludeError{
+			Path: path,
+			Message: fmt.Sprintf("included workflow %q does not run on %s (platforms: %s)",
+				name, p.platform, strings.Join(callee.Platforms, ", ")),
+		}
+	}
+	next := append(append([]string{}, stack...), name)
+	if err := p.body(callee.Steps, fmt.Sprintf("%s.include(%s).steps", path, name), next); err != nil {
+		return err
+	}
+	p.done[name] = true
+	return nil
+}
 
 type expander struct {
 	opts ExpandOptions

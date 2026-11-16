@@ -197,6 +197,11 @@ creation.
 - **Depth**: `include.max_depth`, default 5, beside `fan_out.max_depth: 3` and
   `loop.max_iterations: 10`. No expanded-step bound: decision 5 already makes a
   diamond a 400, so an expansion cannot silently multiply.
+  *Amended 2026-11-16 (#966):* that holds at creation only. The load-time
+  warning never checks ids, so it walks the include graph **by name**, each
+  name once, rather than building the expansion — linear in the include
+  edges, with no depth guard. Creation keeps `include.max_depth` as its one
+  bound.
 - **Platforms**: if any transitively included callee's `platforms:` (§8.1.1)
   excludes this host, 400 at creation plus a load-time warning.
 
