@@ -1038,6 +1038,11 @@ state, and inventing one would mean a task that is half-waiting.
   to put the answers. This is judged on the **resolved** value, so a
   `defaults.on_input: require` reaching a silent sub-step is caught too.
 
+For the same reason a `parallel` sub-step that resolves to `on_input: wait` —
+the default — **runs as `deny`**: its questions get the canned auto-answer and
+its permission requests are denied, so the task never moves to `awaiting_input`
+while its siblings run.
+
 ---
 
 # Making steps talk to each other
@@ -1967,7 +1972,9 @@ places:
 
 `require` is not valid inside a `parallel` group, inside a `loop` body, or on a
 `merge.agent` resolver: `awaiting_input` holds one pending request for the whole
-task. [`ship.yaml`](../../examples/ship.yaml) puts it on the top-level step that
+task. Inside a `parallel` group `wait` runs as `deny` for the same reason, so a
+question that needs you belongs in a sequential step.
+[`ship.yaml`](../../examples/ship.yaml) puts it on the top-level step that
 implements the change, and pins `agent: claude` on that step so a task-level
 `--agent` cannot swap in an agent that would guess instead of asking. A step's
 own `on_input` still wins over `defaults:`, so a mostly-interactive workflow can
