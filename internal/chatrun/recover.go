@@ -64,7 +64,32 @@ func (r *Runner) Recover(ctx context.Context) error {
 			}
 		}
 	}
+	if err := r.releaseStuckChats(ctx); err != nil {
+		return err
+	}
 	return r.sweepSkillProbes(ctx)
+}
+
+// releaseStuckChats returns to idle every chat still holding a process once
+// the walk above has finalized every running turn (#960). Such a chat has no
+// running turn at all — an earlier daemon failed its turn before the process
+// was up and never moved the chat back — so nothing will ever release it, and
+// it would refuse every send and hold a §11 cap slot forever. Recover runs
+// before any turn is admitted, so there is no live turn to race. The chat
+// stays open, so a task it locks stays locked.
+func (r *Runner) releaseStuckChats(ctx context.Context) error {
+	chats, err := r.deps.Store.ListChats(ctx, store.ChatFilter{
+		States: []chatstate.State{chatstate.Running, chatstate.AwaitingInput},
+	})
+	if err != nil {
+		return err
+	}
+	for i := range chats {
+		if _, err := r.deps.Store.SetChatState(ctx, chats[i].ID, chatstate.Idle); err != nil {
+			return fmt.Errorf("recover chat %d: %w", chats[i].ID, err)
+		}
+	}
+	return nil
 }
 
 // skillProbeSweepWorkers bounds how many probe kills run at once (task 124.17
