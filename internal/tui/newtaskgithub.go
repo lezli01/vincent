@@ -84,8 +84,14 @@ func (n *newTask) pullSummary() string {
 	if n.pull == nil {
 		return ""
 	}
+	// A fork's task runs on vincent/pr-{n}, never on the head name (#964),
+	// so the line names the branch the task will actually be on.
+	branch := n.pull.HeadBranch
+	if n.pull.Fork() {
+		branch = "vincent/pr-" + strconv.Itoa(n.pull.Number)
+	}
 	out := "#" + strconv.Itoa(n.pull.Number) + " " + n.pull.Title +
-		" · branch " + n.pull.HeadBranch
+		" · branch " + branch
 	if n.pull.Fork() {
 		out += " · fork (" + n.pull.HeadRepo + "): nothing can be pushed back"
 	}

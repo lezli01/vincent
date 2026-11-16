@@ -1269,6 +1269,14 @@ func (s *Server) newTaskBranch(
 	spec := s.branchSpec(branchName, project)
 	if pull != nil {
 		spec.Pull = pull.HeadBranch
+		if pull.Fork() {
+			// A fork's head lives in another repository, so a local branch
+			// of the same name (often `master`) is a coincidence, not a copy,
+			// and decision 4 would fast-forward it onto the contributor's
+			// commits (#964). A fork's task runs on its own namespace;
+			// admission reads the head from refs/pull/{n}/head regardless.
+			spec.Pull = fmt.Sprintf("vincent/pr-%d", pull.Number)
+		}
 	}
 	bctx := branchContext(t.Title, t.BaseBranch, t.Fields, project)
 	preview, err := resolveBranchPreview(spec, bctx)

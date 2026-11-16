@@ -37,6 +37,14 @@ list with the user-facing context a commit subject cannot carry.
   full a second time, re-spending its agent runs and, in a merge-pass loop,
   re-pushing earlier passes. Finished iterations are now left alone (#962).
 
+- **A task from a fork pull request no longer moves your own branch.** A fork's
+  task used to run on a local branch named after the fork's head branch, so a
+  pull request opened from a fork's `master` fast-forwarded your local `master`
+  onto the contributor's unreviewed commits, and the agent then committed on
+  top. A fork's task now runs on `vincent/pr-{n}`, still fetched from
+  `refs/pull/{n}/head`; a same-repository pull request still runs on its head
+  branch (#964).
+
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 
 ### Added

@@ -455,7 +455,8 @@ branch to one that exists.
 
 These three belong to a task created from a pull request
 ([`--github-pull`](../reference/cli.md#creating-a-task-from-a-pull-request)),
-whose branch is the pull request's head rather than one vincent cut. All three
+whose branch is the pull request's head rather than one vincent cut (for a fork,
+`vincent/pr-N`, fetched from the pull request's head). All three
 happen at admission, before any step runs.
 
 `pull_fetch_failed` means the head could not be fetched. Unlike the base-branch

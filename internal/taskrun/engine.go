@@ -914,7 +914,8 @@ func (r *Runner) worktreeFailed(ctx context.Context, task *store.Task, err error
 
 // pullSpecFor assembles the worktree layer's pull-request spec from what the
 // task already carries (task 064). Nothing here is fetched: the head branch
-// *is* `tasks.branch_name` (decision 1) and the fork flag was recorded on the
+// *is* `tasks.branch_name` (decision 1) — for a fork, the namespaced
+// `vincent/pr-{n}` (#964) — and the fork flag was recorded on the
 // link at creation (decision 8), so admission needs no GitHub call — which is
 // what keeps §10's "creation is offline, admission runs git" shape intact.
 func pullSpecFor(task *store.Task) worktree.PullSpec {

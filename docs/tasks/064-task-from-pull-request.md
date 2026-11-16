@@ -35,6 +35,13 @@ no mutating `gh` subcommand. Fetching is a read.
    honored, not reopened — the new level sits above the literal, it does not
    change what the literal means.
 
+   *Amended 2026-11-16 ([#964](https://github.com/lezli01/vincent/issues/964)):
+   for a **fork** the level resolves to `vincent/pr-{n}`, not the head branch
+   name. A fork's head lives in another repository, so a local branch of the
+   same name — usually the human's own `master` — is a coincidence, not a copy,
+   and decision 4 fast-forwarded it onto the contributor's commits. A
+   same-repository pull request keeps the head name.*
+
 2. **The head is fetched at admission, and a failure is a new block reason.**
    `POST /v1/tasks` stays entirely offline (§10) — it resolves the PR over
    GitHub for the prefill, as `github_issue` already does, but runs no git.
@@ -79,6 +86,12 @@ no mutating `gh` subcommand. Fetching is a read.
    The daemon does not `git remote add` the fork: §10 (task 056) states nothing
    local is mutated, and a remote left behind after archive is exactly the
    residue that rule exists to prevent.
+
+   *Amended 2026-11-16 ([#964](https://github.com/lezli01/vincent/issues/964)):
+   that local branch is `vincent/pr-{n}` (decision 1's amendment), never the
+   fork's head name. Decision 4 still applies to it: a `vincent/pr-{n}` left by
+   an earlier task on the same pull request is fast-forwarded, or blocks with
+   `pull_branch_diverged`.*
 
 6. **`base_sha` is the head commit as it stood at admission.** So
    `GET /v1/tasks/{id}/diff` answers "what did this task change", which is what

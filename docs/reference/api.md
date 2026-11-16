@@ -1175,7 +1175,7 @@ fork}` — and everything renderable is re-read on every request, because draft,
 state and merged status are live by nature and a snapshot of them would read
 exactly like a current one while being wrong. `branch` and `fork` are not
 renderable either: `branch: true` says this task's `branch_name` **is** this pull
-request's head branch, because the task was created from it
+request's head branch (for a fork, the namespaced `vincent/pr-{n}`), because the task was created from it
 ([`github_pull` on `POST /v1/tasks`](#tasks)), and `fork: true` that the head
 lives in another repository, so the branch carries no upstream and nothing can be
 pushed back. Both are absent on a link a reconciler or a human made.
@@ -1962,7 +1962,7 @@ time.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&limit=&offset=&parent_id=&include_children=&issue_id=` | List. Fan-out lanes are **excluded** by default — `parent_id` lists one parent's lanes in merge order, `include_children=true` the flat everything. `issue_id` lists the tasks created from one [issue](#creating-a-task-from-an-issue) |
-| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_pull?, issue_id?, merge_back?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue), as its [main task](#the-issues-main-branch) unless `merge_back` asks for a side task. `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head. `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
+| `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_pull?, issue_id?, merge_back?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue), as its [main task](#the-issues-main-branch) unless `merge_back` asks for a side task. `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head (`vincent/pr-{n}` for a fork). `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
 | `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
@@ -2310,7 +2310,9 @@ on the pull request. Four consequences follow:
   tick, and the reconciler will not overwrite it. The link carries `branch: true`
   — this task's branch came from this pull request — and `fork: true` when the head
   lives in another repository, in which case the branch has no upstream and nothing
-  can be pushed back.
+  can be pushed back. A fork's task never runs on the head branch's *name* — a
+  fork opened from its `master` would otherwise move your own `master` — but on
+  `vincent/pr-{n}`, fetched from `refs/pull/{n}/head`.
 - Archiving deletes **neither** branch leg; the outcome is `not_ours` (below).
 - `POST /v1/tasks/{id}/retry` refuses `branch_override` with a `409`.
 
