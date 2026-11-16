@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -510,5 +511,65 @@ func TestExpandReportsACycleAheadOfTheDepthBound(t *testing.T) {
 	_, err := Expand(mustParse(t, "name: a\nsteps:\n  - {id: to, type: include, workflow: b}\n"), opts)
 	if err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("error = %v, want the cycle rather than the bound it also crosses", err)
+	}
+}
+
+// TestIncludeWarningsIsLinearInTheIncludeGraph is issue #966: the load-time
+// probe runs on every registry load, before any task exists, over files a
+// `git pull` can deliver. A chain of files each including the next one twice
+// is a legal graph — no cycle, no missing name — whose
+// expansion doubles at every level, so a probe that builds the expansion does
+// 2^n work for n tiny files and thirty of them exhaust the daemon's memory.
+// The probe answers questions about workflow *names* (a cycle, a missing
+// name, a callee that cannot run here), so its work must be bounded by the
+// include graph, not by the size of the expansion.
+func TestIncludeWarningsIsLinearInTheIncludeGraph(t *testing.T) {
+	const n = 16
+	sources := map[string]string{}
+	for i := range n {
+		sources[fmt.Sprintf("w%d", i)] = fmt.Sprintf("name: w%d\nsteps:\n"+
+			"  - {id: a%d, type: include, workflow: w%d}\n"+
+			"  - {id: b%d, type: include, workflow: w%d}\n", i, i, i+1, i, i+1)
+	}
+	sources[fmt.Sprintf("w%d", n)] = fmt.Sprintf("name: w%d\nsteps:\n  - {id: leaf, type: command, run: make}\n", n)
+	inner := registry(t, sources)
+	lookups := 0
+	lookup := func(name string) (*Workflow, bool) {
+		lookups++
+		return inner(name)
+	}
+	root := mustParse(t, sources["w0"])
+
+	if w := IncludeWarnings(root, lookup); len(w) != 0 {
+		t.Fatalf("warnings = %v, want none: the graph has no cycle, no missing name and is %d deep", w, n)
+	}
+	// Two include edges per file: a probe that visits each name once resolves
+	// at most 2n names. Anything near 2^n is walking the expansion.
+	if limit := 4 * n; lookups > limit {
+		t.Errorf("IncludeWarnings resolved %d names for a %d-file include graph, want at most %d: "+
+			"the load-time probe is exponential in the include graph (issue #966)", lookups, n+1, limit)
+	}
+}
+
+// TestIncludeWarningsJudgesTheHostPlatform is the probe's platform half of
+// issue #966: the load-time warning judges a callee's `platforms:` against
+// the host it runs on, as task creation does. The probe used to judge it
+// against an empty GOOS, which warned about a callee restricted to this very
+// host and was silent about one that excludes it.
+func TestIncludeWarningsJudgesTheHostPlatform(t *testing.T) {
+	other := PlatformWindows
+	if HostPlatform() == PlatformWindows {
+		other = PlatformPosix
+	}
+	lookup := registry(t, map[string]string{
+		"here":  "name: here\nplatforms: [" + HostPlatform() + "]\nsteps:\n  - {id: h, type: command, run: make}\n",
+		"there": "name: there\nplatforms: [" + other + "]\nsteps:\n  - {id: t, type: command, run: make}\n",
+	})
+	if w := IncludeWarnings(mustParse(t, "name: r\nsteps:\n  - {id: x, type: include, workflow: here}\n"), lookup); len(w) != 0 {
+		t.Errorf("warnings for a callee that runs on %s = %v, want none", HostPlatform(), w)
+	}
+	w := IncludeWarnings(mustParse(t, "name: r\nsteps:\n  - {id: x, type: include, workflow: there}\n"), lookup)
+	if len(w) != 1 || !strings.Contains(w[0], "does not run on "+HostPlatform()) {
+		t.Errorf("warnings for a callee restricted to %s = %v, want one naming %s", other, w, HostPlatform())
 	}
 }

@@ -9,6 +9,18 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
+## [Unreleased]
+
+### Fixed
+
+- **Workflow includes can no longer exhaust the daemon at load.** The include
+  check run on every registry load built each workflow's full expansion, so a
+  few files each including the next one twice cost exponential time and
+  memory before any task existed. It now walks the include graph by name,
+  each workflow once. Its platform warning is also judged against the host:
+  a callee restricted to this host no longer warns, and one that excludes it
+  now does.
+
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 
 ### Added
