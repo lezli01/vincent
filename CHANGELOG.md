@@ -54,6 +54,15 @@ list with the user-facing context a commit subject cannot carry.
   are denied, and the task stays `running` (#965). `on_input: wait` is still
   accepted there; `require` is still rejected.
 
+- **The Linux service survives paths with spaces.** The systemd user unit
+  written by `vincent service install` now quotes `ExecStart=` and the
+  `VINCENT_CONFIG_DIR`/`VINCENT_DATA_DIR` environment lines. Before, an
+  executable under a directory with a space failed to start, and a config or
+  data directory with a space was truncated, so the service ran against a
+  different database than the CLI; a `$` in the executable path was also
+  expanded by systemd. Re-run `vincent service install` to rewrite an
+  existing unit.
+
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 
 ### Added
