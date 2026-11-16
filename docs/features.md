@@ -777,8 +777,9 @@ somebody's branch stop being out-of-band git.
 `s` cycles the listing between open, closed and all, so a merged pull request you
 want to redo is reachable. A workflow field declared `pull` receives the number,
 which is how a `run:` step acts on the pull request. A fork works too: its head
-is fetched and checked out, and vincent says up front that nothing can be pushed
-back to it.
+is fetched and checked out on `vincent/pr-N`, never on the fork's branch name, so
+a fork opened from its `master` cannot move yours, and vincent says up front that
+nothing can be pushed back to it.
 
 Two branch rules follow from the task not owning its branch. If you already have
 that branch locally, vincent fast-forwards it, and refuses rather than discarding
