@@ -521,7 +521,7 @@ func (d *detail) loadCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		task, err := client.GetTask(ctx, id)
-		return detailLoadedMsg{id: id, seq: seq, task: task, err: err}
+		return detailLoadedMsg{id: id, seq: seq, task: cleanTaskDetail(task), err: err}
 	}
 }
 

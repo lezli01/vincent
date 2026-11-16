@@ -435,7 +435,7 @@ func (b *board) tasksCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		tasks, err := client.ListTasks(ctx, opts)
-		return boardLoadedMsg{archived: archived, stamp: stamp, tasks: tasks, err: err}
+		return boardLoadedMsg{archived: archived, stamp: stamp, tasks: cleanTasks(tasks), err: err}
 	}
 }
 

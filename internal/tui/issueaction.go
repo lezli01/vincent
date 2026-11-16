@@ -90,6 +90,8 @@ const (
 	iaDuplicate
 	iaConfirm
 	iaBusy
+	// iaMove is `m`'s lane picker (task 145).
+	iaMove
 )
 
 // issueAction is one open prompt.
@@ -114,7 +116,7 @@ func issueActionFor(client *apiclient.Client, id int64) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		iss, err := client.GetIssue(ctx, id, "")
-		return issueActionTargetMsg{issue: iss, err: err}
+		return issueActionTargetMsg{issue: cleanIssue(iss), err: err}
 	}
 }
 
@@ -186,7 +188,7 @@ func (a *issueAction) updateKey(msg tea.KeyPressMsg) (cmd tea.Cmd, done bool) {
 			// Still listing; esc gives up.
 			return nil, msg.String() == "esc"
 		}
-	case iaChoose, iaReason:
+	case iaChoose, iaReason, iaMove:
 	}
 	res := a.pick.update(msg)
 	if res.closed && !res.chosen {
@@ -198,6 +200,8 @@ func (a *issueAction) updateKey(msg tea.KeyPressMsg) (cmd tea.Cmd, done bool) {
 	switch a.stage {
 	case iaChoose:
 		return a.begin(res.value), false
+	case iaMove:
+		return a.move(res.value)
 	case iaReason:
 		a.reason = res.value
 		if a.reason == "duplicate" {
@@ -226,7 +230,7 @@ func (a *issueAction) duplicatesCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		list, err := client.ListIssues(ctx, apiclient.IssueListOptions{ProjectID: iss.ProjectID})
-		return issueDuplicatesMsg{id: iss.ID, issues: list, err: err}
+		return issueDuplicatesMsg{id: iss.ID, issues: cleanIssues(list), err: err}
 	}
 }
 
@@ -275,7 +279,10 @@ func (a *issueAction) run() tea.Cmd {
 			out.err = client.DeleteIssue(ctx, id)
 		case issueActReady, issueActUnready, issueActReturn:
 			out.issue, out.err = runHandoff(ctx, client, iss, action)
+		case issueActCancel:
+			out.issue, out.err = runCancel(ctx, client, iss)
 		}
+		out.issue = cleanIssue(out.issue)
 		return out
 	}
 }
@@ -286,6 +293,8 @@ func (a *issueAction) confirmText() []string {
 	switch a.action {
 	case issueActReturn:
 		return returnConfirmText(a.issue)
+	case issueActCancel:
+		return cancelConfirmText(a.issue)
 	case issueActDelete:
 		out := []string{"Delete " + ref + " permanently? It cannot be undone."}
 		if a.imported() {
@@ -339,7 +348,7 @@ func (a *issueAction) lines(width int) (out []string, tail int) {
 			break
 		}
 		fallthrough
-	case iaChoose, iaReason:
+	case iaChoose, iaReason, iaMove:
 		a.pick.setWidth(width - 4)
 		rows := append([]string{" " + styleTitle.Render(a.pick.heading) +
 			styleDim.Render("  issue #"+strconv.FormatInt(a.issue.ID, 10))}, a.pick.renderBody()...)
@@ -373,7 +382,7 @@ func issueEditFor(client *apiclient.Client, id int64) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		iss, err := client.GetIssue(ctx, id, "")
-		return issueEditTargetMsg{issue: iss, err: err}
+		return issueEditTargetMsg{issue: cleanIssue(iss), err: err}
 	}
 }
 
@@ -444,6 +453,11 @@ func actedNote(msg issueActedMsg) string {
 	switch msg.action {
 	case issueActReady, issueActUnready, issueActReturn:
 		return handoffActedNote(msg)
+	case issueActCancel:
+		if msg.err != nil {
+			return "cancel the tasks of issue #" + strconv.FormatInt(msg.id, 10) + ": " + errString(msg.err)
+		}
+		return landedNote("cancelled the tasks of issue #"+strconv.FormatInt(msg.id, 10), msg.issue)
 	}
 	ref := "issue #" + strconv.FormatInt(msg.id, 10)
 	if msg.err != nil {
@@ -455,5 +469,6 @@ func actedNote(msg issueActedMsg) string {
 	case issueActClose:
 		return "closed " + ref
 	}
-	return "reopened " + ref
+	// A reopened issue lands where its tasks put it (task 145 decision 3).
+	return landedNote("reopened "+ref, msg.issue)
 }

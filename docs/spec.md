@@ -15611,7 +15611,8 @@ stream for the live tail.
    80, about 47 at 120 — while the parts right of it give way, in this
    order: the occupant's state word; the tags become a `+N` count (labels
    plus one for a kind), never a label cut in half; the source badge
-   shortens to `gh#N`; the count goes; the badge goes. Only then may the
+   shortens to `gh#N`; the count goes; the badge goes *(amended 2026-11-16:
+   the badge no longer goes — see the note of that date below)*. Only then may the
    task cell take the title below its minimum, down to F2's 12-column
    floor, and the cell's counts survive whole — the one part of F2 kept.
    Below that floor the row is cut at the pane's edge, as before. `gh#N` is
@@ -15665,6 +15666,44 @@ stream for the live tail.
    consent (task 069 decision 2); every other option takes the daemon's
    default, and the CLI stays the full surface. `.` (`ready`) and `,`
    (`return`) act as on view 13. The board has no `select:` mode.
+
+   *Amended 2026-11-16 (task 145; narrows task 134.8's "no key moves an
+   issue between lanes" above, keeping task 134 decision 1).* **`m` moves
+   a card** on view 12 and on view 13, a fixed key in both contexts. The
+   lane stays derived: `m` reads the issue (`GET /v1/issues/{id}`, for
+   `available_actions` and `tasks.active_ids`), opens a picker over the
+   other lanes, and runs the action the picked lane is derived from — open
+   → in progress opens the new-task form seeded from the issue; in progress
+   → open cancels every id in `tasks.active_ids`, after a `y`/`n`; in
+   progress → hand-off is `ready` on an `idle` issue; hand-off → in progress
+   is `unready` on a `pending` one and `return` (asking first) on a claimed
+   one; any open lane → done is the close of `X`, with its reason prompt;
+   done → any lane is the reopen of `X`. Close and reopen are offered only
+   when `available_actions` holds them. Every other move is listed disabled
+   with its reason and runs nothing: open ⇄ hand-off always, in progress →
+   open once the issue has finished work or when no root task is unsettled
+   (a chat holds it), in progress → hand-off while a task runs, and a
+   delivered hand-off → in progress. A reopen and a cancel say the lane the
+   issue landed in, which a reopen does not choose. `internal/tui`'s
+   `planLaneMove` is the one table, and it reads only the DTO.
+
+   *Amended 2026-11-16.* **A card always shows the id its issue was
+   imported under** — the source badge, `owner/repo#N`, `gh#N` or a Jira
+   key — and no longer gives way last: once the title is at its minimum, a
+   badge that still does not fit is cut from its start behind `…`, never
+   below the `#N` or key that ends it, and below that the title gives way
+   to it, down to its 12-column floor.
+
+   *Amended 2026-11-16.* **An issue's title and labels, and a task's title,
+   are drawn as one line of plain text** on every screen — views 12 and 13,
+   the boards, the task workspace and every screen that names a task or an
+   issue (`cleanTask` beside `cleanIssue`): the daemon accepts a title almost verbatim (a local
+   create trims the ends, a sync takes the provider's), so the TUI strips
+   terminal escapes and controls and turns each run of whitespace — line
+   breaks and tabs included — into one space where an issue enters it
+   (`cleanIssue`), never rewriting the daemon's copy. A 1 KiB title with no
+   break is cut by the row rules above and wraps on view 13; no title can
+   widen, lengthen or recolor a frame.
 
 13. **Issue detail.** *Added 2026-10-02 (task 130.9, issue #668).* One issue:
    a header with state, id, title and source badge; the body; labels, kind,

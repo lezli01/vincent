@@ -142,7 +142,7 @@ func (t *taskView) laneCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		kids, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ParentID: id})
-		return taskLanesMsg{taskID: id, children: kids, err: err}
+		return taskLanesMsg{taskID: id, children: cleanTasks(kids), err: err}
 	}
 }
 

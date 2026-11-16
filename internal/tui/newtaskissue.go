@@ -48,7 +48,7 @@ func (n *newTask) issueCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		iss, err := client.GetIssue(ctx, id, workflow)
-		return ntIssueMsg{projectID: projectID, workflow: workflow, issueID: id, issue: iss, err: err}
+		return ntIssueMsg{projectID: projectID, workflow: workflow, issueID: id, issue: cleanIssue(iss), err: err}
 	}
 }
 

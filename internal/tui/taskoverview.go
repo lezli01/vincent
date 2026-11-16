@@ -293,7 +293,7 @@ func (t *taskView) overviewLines(width, height int) []string {
 	// (task 130 decision 21.4): what it is for, at a glance.
 	if iss := task.Issue; iss != nil {
 		out = append(out, "  "+styleDim.Render("issue ")+
-			fmt.Sprintf("#%d %s", iss.ID, iss.Title)+"  "+styleDim.Render(iss.State))
+			fmt.Sprintf("#%d %s", iss.ID, oneLine(iss.Title))+"  "+styleDim.Render(iss.State))
 	}
 	out = append(out, "")
 	switch {
@@ -566,7 +566,7 @@ func (t *taskView) paletteExtras() []paletteEntry {
 	msg := openIssueMsg{id: iss.ID, back: viewTask, projectID: t.detail.task.ProjectID}
 	return []paletteEntry{{
 		group:  "task",
-		label:  fmt.Sprintf("open this task's issue — #%d %s", iss.ID, iss.Title),
+		label:  fmt.Sprintf("open this task's issue — #%d %s", iss.ID, oneLine(iss.Title)),
 		action: func() tea.Msg { return msg },
 	}}
 }

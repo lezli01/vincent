@@ -208,7 +208,7 @@ func (b *board) laneCmd(parentID int64) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		lanes, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ParentID: parentID})
-		return boardLanesMsg{archived: archived, stamp: stamp, parentID: parentID, lanes: lanes, err: err}
+		return boardLanesMsg{archived: archived, stamp: stamp, parentID: parentID, lanes: cleanTasks(lanes), err: err}
 	}
 }
 
