@@ -2472,6 +2472,9 @@ Behavior with `on_input: wait` (the default):
 vincent immediately auto-responds through the adapter's `Respond()` — questions
 get a canned "no user is available; decide with your best judgment" answer,
 permission requests are denied — and the task never leaves `running`.
+*Amended 2026-11-16 (issue #965):* a sub-step of a `parallel` group runs as
+`deny` whatever it resolves to, `wait` included (§7.5) — the one
+`awaiting_input` above cannot be shared by siblings asking at once.
 
 `on_input: require` (workflow `defaults` or per step, added 2026-08-17, task
 013) is `wait` plus a **precondition**: the step will only run on an adapter
@@ -2548,6 +2551,15 @@ that happens to share the word.
   actor goroutine and releases the slot (§6), and no state means "one sub-step
   is gated". `on_input: require` is rejected for the same reason —
   `awaiting_input` holds one pending request for the whole task (§7.4).
+  *Amended 2026-11-16 (issue #965):* the same holds for `wait`, which is the
+  default, so a sub-step that resolves to `wait` **runs as `deny`**: its
+  questions get §7.4's canned answer, its permission requests are denied, and
+  the task never leaves `running` on a sub-step's account. Before this, the
+  first sibling to ask parked the whole task while the others kept running,
+  and a second sibling's request was invalid from `awaiting_input`, dropped,
+  and left its agent idle until `agent_timeout`. `wait` is clamped rather than
+  rejected because rejecting the default would invalidate every existing group
+  with an agent sub-step.
   Groups do not nest. *Amended 2026-08-18 (task 015):* `condition` steps are
   rejected here too — a group is a set, with no sequence to end — and a
   sub-step may carry an `if:`, which subsets the group. Sub-step guards are

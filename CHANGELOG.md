@@ -45,6 +45,15 @@ list with the user-facing context a commit subject cannot carry.
   `refs/pull/{n}/head`; a same-repository pull request still runs on its head
   branch (#964).
 
+- **Agent sub-steps of a `parallel` group no longer park the task on a
+  question.** A sub-step resolving to `on_input: wait` — including the
+  default, when nothing sets `on_input` — used to move the whole task to
+  `awaiting_input`, so a second sibling's question was dropped and that agent
+  idled until `agent_timeout`, blocking the task. Inside a group `wait` now
+  runs as `deny`: questions get the canned auto-answer and permission requests
+  are denied, and the task stays `running` (#965). `on_input: wait` is still
+  accepted there; `require` is still rejected.
+
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 
 ### Added

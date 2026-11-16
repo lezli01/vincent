@@ -50,7 +50,17 @@ func resolvePermission(wf *workflow.Workflow, step workflow.Step, clamp bool) ag
 // before the step starts (task 013), and the pre-flight that enforces that has
 // already run by the time this value reaches an adapter — so InputPolicy stays
 // two-valued and no adapter learns a third.
-func resolveInputPolicy(step workflow.Step, defaults workflow.Defaults) agent.InputPolicy {
+//
+// A sub-step running in a `parallel` group always resolves to deny (§7.5,
+// issue #965). awaiting_input holds one request for the whole task (§7.4), so
+// a sibling that parked it would leave every other sibling's question with
+// nowhere to go — the serialization task 014 decision 19 rejected for
+// `require`. Clamped rather than rejected, because `wait` is the default and
+// rejecting it would invalidate every existing group with an agent sub-step.
+func resolveInputPolicy(step workflow.Step, defaults workflow.Defaults, parallel bool) agent.InputPolicy {
+	if parallel {
+		return agent.InputDeny
+	}
 	switch firstNonEmpty(step.OnInput, defaults.OnInput) {
 	case workflow.InputDeny:
 		return agent.InputDeny

@@ -57,7 +57,10 @@ func (r *Runner) runAgentStep(
 	}
 
 	inputTimeout := resolveInputTimeout(env.step, env.wf.Defaults, r.deps.Config())
-	onInput := resolveInputPolicy(env.step, env.wf.Defaults)
+	onInput := resolveInputPolicy(env.step, env.wf.Defaults, env.parallel)
+	if env.parallel && firstNonEmpty(env.step.OnInput, env.wf.Defaults.OnInput) != workflow.InputDeny {
+		env.log.Info("on_input: wait runs as deny inside a parallel group (§7.5)")
+	}
 
 	// Where the process runs: the task's container when it has one (task
 	// 062.2), the host otherwise. Chosen before the pre-flight, because a

@@ -445,6 +445,15 @@ saying.
 answering order nobody asked for and leaves the other agents idle holding the
 one slot.
 
+*Amended 2026-11-16 (issue #965):* `on_input: wait` — the default — reached
+that rejected design anyway: the first sibling to ask parked the whole task,
+and a second sibling's request was dropped, its agent idling until
+`agent_timeout`. A sub-step resolving to `wait` now **runs as `deny`**
+(§7.5). It is clamped, not rejected: rejecting the default would invalidate
+every existing group with an agent sub-step, and `deny` is what a sub-step can
+honour without a task state of its own. `require` stays rejected — it promises
+an answer, which a clamp could not keep.
+
 ### 20. `Settled()` is a new predicate; `Terminal()` is left alone
 
 *2026-08-17.* Decision 6 says the parent re-queues when the last descendant
@@ -620,7 +629,8 @@ an `agent:` the policy will never run.
   `manual` rejected inside a group — a gate ends the actor goroutine and
   releases the slot (§6), and there is no state meaning "one sub-step of one
   group is gated" — and `on_input: require` rejected for the same reason
-  (decision 19); `check`, `timeout` and `max_retries` legal per sub-step, plus a
+  (decision 19; *amended 2026-11-16, issue #965:* `wait` stays legal and runs
+  as `deny`); `check`, `timeout` and `max_retries` legal per sub-step, plus a
   group-level `timeout`; `rejectFields` for everything that is not
   `steps`/`max_parallel`/`timeout`; the `parallel.max_parallel` daemon default in
   `internal/config` (decision 30).

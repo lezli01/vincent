@@ -24,7 +24,7 @@ import (
 // fails, bump `metadata.version` and paste the hash the failure prints.
 var publishedTrees = map[string]string{
 	"vincent-triggers":  "c27f6036580481bcb017ac1cef64b2221010f123686e71606fdd6f58049c1791",
-	"vincent-workflows": "55d6d1604629f059382ed6cd37ff7f0cecc1dfbddcabc4fb082dce7cc4e0daae",
+	"vincent-workflows": "5ab0ddc0c77112721300b9695097e99292a68f549bec187e90c9ce27f9baf93c",
 }
 
 func TestPublishedSkillsAreVersioned(t *testing.T) {

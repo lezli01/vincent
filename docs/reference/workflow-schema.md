@@ -374,7 +374,7 @@ Runs an agent CLI headlessly in the worktree.
 | `model` | string | | Adapter-native id or alias |
 | `effort` | string | | Adapter-native. Cursor has none — it lives in the model id |
 | `permission_mode` | string | | `full-auto` (default) or `restricted`. `restricted` needs an adapter that can restrict on this host — cursor cannot on Windows, and a task whose restricted step resolves there is refused at creation |
-| `on_input` | string | | `wait` (default), `deny`, or `require`. `wait`/`deny` have no effect on codex, cursor or copilot; `require` refuses them |
+| `on_input` | string | | `wait` (default), `deny`, or `require`. `wait`/`deny` have no effect on codex, cursor or copilot; `require` refuses them. Inside a `parallel` group `wait` runs as `deny`, and `require` is rejected |
 | `input_timeout` | duration | | Bounds each wait in `awaiting_input`, per request |
 | `check` | string | | Shell command that must exit 0 for the attempt to succeed |
 | `check_timeout` | duration | | Defaults to the daemon's `defaults.command_timeout` (15m) — **not** the step's own `timeout`, and not workflow `defaults.timeout` |
@@ -947,7 +947,10 @@ saying "one member of this structure is parked" — which §6 has no room for.
 `on_input: require` is refused inside both for the same reason: `awaiting_input`
 holds one pending request for the whole task. Refusal is judged on the
 **resolved** value, so `defaults.on_input: require` reaching a silent member is
-caught at load.
+caught at load. For the same reason a `parallel` sub-step that resolves to
+`on_input: wait` — the default — **runs as `deny`**: its questions get the
+canned auto-answer and its permission requests are denied, so the task never
+moves to `awaiting_input` while its siblings run.
 
 ## Conditions
 

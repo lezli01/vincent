@@ -93,7 +93,7 @@ func (r *Runner) runGroup(ctx context.Context, env *stepEnv) stepOutcome {
 			// run is not thrown away by a linter that failed first.
 			subEnv := &stepEnv{
 				task: env.task, project: env.project, wf: env.wf,
-				step: sub, index: env.index, inGroup: true,
+				step: sub, index: env.index, inGroup: true, parallel: true,
 				followUp: env.followUp,
 				log:      env.log.With("sub_step", sub.ID),
 			}
