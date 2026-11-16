@@ -249,6 +249,12 @@ func (a *actionBar) dispatch(client *apiclient.Client, id int64, action string, 
 // single-task path and the bulk one so the two cannot drift into meaning
 // different things by the same key.
 func callAction(ctx context.Context, client *apiclient.Client, id int64, action string, force bool) (apiclient.Task, apiclient.BranchOutcome, int, error) {
+	task, branch, retried, err := callActionRaw(ctx, client, id, action, force)
+	return cleanTask(task), branch, retried, err
+}
+
+// callActionRaw is callAction before the answer's titles are cleaned.
+func callActionRaw(ctx context.Context, client *apiclient.Client, id int64, action string, force bool) (apiclient.Task, apiclient.BranchOutcome, int, error) {
 	switch action {
 	case apiclient.ActionCancel:
 		task, err := client.Cancel(ctx, id)

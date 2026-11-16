@@ -269,9 +269,10 @@ func TestIssueRowTitleKeepsItsMinimum(t *testing.T) {
 	if line := ansi.Strip(issueLine(iss, 78, false, true)); !strings.Contains(line, "gh#4127") {
 		t.Errorf("a shared repo did not shorten to gh#N at 80 columns:\n%s", line)
 	}
-	// Rows from several repositories keep owner/repo, never gh#N.
-	if line := ansi.Strip(issueLine(iss, 78, false, false)); strings.Contains(line, "gh#") || !strings.Contains(line, "octo-org/") {
-		t.Errorf("mixed repos lost the full source badge:\n%s", line)
+	// Rows from several repositories never shorten to gh#N; a badge too
+	// wide loses its start, never its number (2026-11-16).
+	if line := ansi.Strip(issueLine(iss, 78, false, false)); strings.Contains(line, "gh#") || !strings.Contains(line, "frontend#4127") {
+		t.Errorf("mixed repos lost the source badge's number:\n%s", line)
 	}
 	if got := issueTitleMin(78); got != 31 {
 		t.Errorf("the title minimum at 80 columns is %d, want 31", got)

@@ -338,7 +338,7 @@ func (f *answerForm) submitTask(resp apiclient.InputResponse, client *apiclient.
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
 		task, err := client.Answer(ctx, taskID, resp)
-		return actionResultMsg{taskID: taskID, action: apiclient.ActionAnswer, task: task, err: err}
+		return actionResultMsg{taskID: taskID, action: apiclient.ActionAnswer, task: cleanTask(task), err: err}
 	}
 }
 

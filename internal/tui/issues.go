@@ -295,6 +295,13 @@ func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		v.w.act = act
 		return v, cmd
+	case issueMoveTargetMsg:
+		if msg.err != nil {
+			v.setNote("could not read the issue: "+errString(msg.err), true)
+			return v, nil
+		}
+		v.w.form, v.w.act = nil, newIssueMove(v.client, msg.issue)
+		return v, nil
 	case issueActedMsg:
 		v.w.act = nil
 		v.setNote(actedNote(msg), msg.err != nil)
@@ -408,6 +415,7 @@ func (v *issuesView) loadCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		issues, err := client.ListIssues(ctx, opts)
+		issues = cleanIssues(issues)
 		msg := issuesLoadedMsg{showDone: showDone, stamp: stamp, issues: issues, err: err}
 		if err == nil {
 			if st, serr := client.IssueSyncStatus(ctx, opts.ProjectID); serr == nil {
@@ -610,6 +618,10 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case issueStateKey:
 		if row, ok := v.current(); ok {
 			return v, issueActionFor(v.client, row.issue.ID)
+		}
+	case issueMoveKey:
+		if row, ok := v.current(); ok {
+			return v, issueMoveFor(v.client, row.issue.ID)
 		}
 	case opKey(keymap.Delete):
 		if row, ok := v.current(); ok {
@@ -1049,10 +1061,14 @@ func issueLineMarked(iss apiclient.Issue, width int, selected, sharedRepo, picke
 	// (#796, superseding review F2 on #773's 12-column floor for the title),
 	// in a fixed order: the occupant's state word, then the tags become a
 	// `+N` count — never a label cut in half — then the source badge
-	// shortens to `gh#N`, then the count goes, then the badge. Only then may
-	// the task cell take the title below its minimum, down to
-	// issueTitleFloor, and the cell's counts survive whole: render's cut
-	// applies below that, as before.
+	// shortens to `gh#N`, then the count goes. Only then may the title go
+	// below its minimum, down to issueTitleFloor, and the cell's counts
+	// survive whole: render's cut applies below that, as before.
+	//
+	// The source badge never goes (2026-11-16): the issue's id where it was
+	// synced from is what a person matches the card against. A badge that
+	// does not fit loses its start — `…/web#41` — never the number at its
+	// end, and below that the title gives way to it.
 	part := func(s string) int {
 		if s == "" {
 			return 0
@@ -1076,12 +1092,8 @@ func issueLineMarked(iss apiclient.Issue, width int, selected, sharedRepo, picke
 	if short() {
 		tags = ""
 	}
-	if short() && source != "" && !sharedRepo {
-		// Rows from several repositories keep `owner/repo#N`, cut as before.
-		source = fitWidth(source, ansi.StringWidth(source)-(issueTitleMin(width)-titleRoom()))
-	}
-	if short() {
-		source = ""
+	if short() && source != "" {
+		source = fitLeft(source, ansi.StringWidth(source)-(issueTitleMin(width)-titleRoom()), sourceKeep(iss))
 	}
 	titleW := max(titleRoom(), issueTitleFloor)
 	title := ansi.Truncate(iss.Title, titleW, "…")
@@ -1182,6 +1194,28 @@ func issueSourceBadge(iss apiclient.Issue) string {
 		return ""
 	}
 	return iss.Source.Ref
+}
+
+// fitLeft cuts s to w cells from its start, behind a `…`, so the end of a
+// reference — its number — survives. It never cuts below keep cells, the
+// part that identifies the issue on its own.
+func fitLeft(s string, w, keep int) string {
+	sw := ansi.StringWidth(s)
+	w = max(w, keep+1)
+	if sw <= w {
+		return s
+	}
+	return "…" + ansi.TruncateLeft(s, sw-(w-1), "")
+}
+
+// sourceKeep is how much of the badge's end identifies the issue alone:
+// `#41` of `owner/repo#41`, or the whole of a key such as `PROJ-12`.
+func sourceKeep(iss apiclient.Issue) int {
+	ref := issueSourceBadge(iss)
+	if i := strings.LastIndex(ref, "#"); i >= 0 {
+		return ansi.StringWidth(ref[i:])
+	}
+	return ansi.StringWidth(ref)
 }
 
 // issueTaskSummary is the row's linked-task column, worded for the issue's

@@ -1229,7 +1229,7 @@ func (n *newTask) submit() tea.Cmd {
 			if err != nil {
 				return ntFailedMsg{err: err}
 			}
-			return taskCreatedMsg{task: task}
+			return taskCreatedMsg{task: cleanTaskDetail(task)}
 		}
 	}
 	return func() tea.Msg {
@@ -1239,7 +1239,7 @@ func (n *newTask) submit() tea.Cmd {
 		if err != nil {
 			return ntFailedMsg{err: err}
 		}
-		return taskCreatedMsg{task: task}
+		return taskCreatedMsg{task: cleanTaskDetail(task)}
 	}
 }
 

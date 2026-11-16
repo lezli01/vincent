@@ -158,6 +158,7 @@ the living engineering specification records implementation contracts.
 | [142](142-jira-issue-sync.md) | Jira issue sync: Jira Cloud issues in a project's issue set, at parity with GitHub issue sync | 🔄 in progress (21/22) |
 | [143](143-auto-archive-on-issue-close.md) | Auto-archive a closed issue's tasks | ✅ done (5/5) |
 | [144](144-issue-work-tab.md) | An `Issue \| Work` tab strip on the issue detail, listing every task and chat of the issue | ✅ done (1/1) |
+| [145](145-issue-lane-move.md) | Moving an issue between lanes from the TUI: `m` runs the action the picked lane is derived from | ✅ done (1/1) |
 
 ## How to add and update a task document
 

@@ -375,7 +375,7 @@ func (v *pullRequestsView) loadCmd() tea.Cmd {
 		// id. The listing failing is not a reason to hide the pull requests.
 		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ProjectID: pid})
 		if err == nil {
-			msg.tasks = tasks
+			msg.tasks = cleanTasks(tasks)
 		}
 		return msg
 	}

@@ -965,6 +965,9 @@ var bindings = []binding{
 	{op: keymap.Add, key: "a", label: "create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssues, hint: "a new task", priority: 8, term: termAdd},
 	{key: issueEditKey, label: "edit the selected issue in a form", scope: scopePanel, context: ctxIssues, hint: "i edit", priority: 9},
 	{key: issueStateKey, label: "close or reopen the selected issue — only what the daemon offers", scope: scopePanel, context: ctxIssues, hint: "X close/reopen", priority: 10},
+	// Moving a card (task 145): the lane is still derived, so `m` runs the
+	// action the picked lane is derived from, and lists what it cannot do.
+	{key: issueMoveKey, label: issueMoveLabel, scope: scopePanel, context: ctxIssues, hint: "m move", priority: 10},
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes at the issue's source)", scope: scopePanel, context: ctxIssues, priority: 11, term: termDelete},
 	// `R` above only re-reads (task 130 decision 2); `S` is the explicit
 	// request to the project's issue source, `vincent issue sync` from the
@@ -1012,6 +1015,7 @@ var bindings = []binding{
 	{op: keymap.Add, key: "a", label: "create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssue, hint: "a new task", priority: 8, term: termAdd},
 	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 9},
 	{key: issueStateKey, label: "close or reopen the issue — only what the daemon offers", scope: scopePanel, context: ctxIssue, hint: "X close/reopen", priority: 10},
+	{key: issueMoveKey, label: issueMoveLabel, scope: scopePanel, context: ctxIssue, hint: "m move", priority: 10},
 	// The thread (task 130 decision 24, 130.16): a local comment, written in
 	// $EDITOR. Withheld on an issue whose remote is live, which takes
 	// no comment here — nothing is ever posted to its remote.
@@ -1030,8 +1034,8 @@ var bindings = []binding{
 	{op: keymap.Refresh, key: "R", label: "re-read the issue after a conflict, keeping your edits where they still apply", scope: scopePanel, context: ctxIssueForm, noPalette: true, term: termRefresh},
 	{key: "ctrl+s", label: "save — a create, or an edit of only the fields that changed", scope: scopePanel, context: ctxIssueForm, noPalette: true},
 	{key: "esc", label: "close the form (asks first when something is unsaved)", scope: scopePanel, context: ctxIssueForm, noPalette: true},
-	{key: "enter", label: "pick the action, close reason or duplicate target", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
-	{key: "y", label: "confirm the close, reopen or delete", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
+	{key: "enter", label: "pick the action, lane, close reason or duplicate target", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
+	{key: "y", label: "confirm the close, reopen, delete, return or cancel", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
 	{key: "esc", label: "cancel — nothing is written", scope: scopePanel, context: ctxIssuePrompt, noPalette: true},
 	// The handoff form (task 137.11) owns the keyboard and prints its own
 	// key line, like the issue form.

@@ -100,7 +100,7 @@ func handoffFileTitles(raw json.RawMessage) map[int64]string {
 	out := map[int64]string{}
 	for _, it := range f.Items {
 		if it.Issue.ID != nil {
-			out[*it.Issue.ID] = it.Issue.Title
+			out[*it.Issue.ID] = oneLine(it.Issue.Title)
 		}
 	}
 	return out

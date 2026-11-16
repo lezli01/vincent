@@ -22,7 +22,8 @@ this page is the story behind them.
 Every issue is on one of four lanes, derived by vincent from the issue and its
 **root** tasks (fan-out lanes never count). A lane is never set by hand:
 starting a task, finishing one, marking its work ready, or closing the issue
-is what moves it.
+is what moves it. In the TUI, `m` [moves a card](tui.md#moving-an-issue-between-lanes--m)
+by running that action for the lane you pick.
 
 | Lane | When |
 |---|---|

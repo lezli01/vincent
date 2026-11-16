@@ -1497,7 +1497,7 @@ func (t *taskView) detailLines(width int) []string {
 		// A legacy row (task 035): the GitHub issue captured at creation,
 		// rendered as the history it is.
 		issueLines := renderTaskDetailFacts(width, []taskDetailFact{
-			{"issue", fmt.Sprintf("%s#%d · %s", issue.Repo, issue.Number, issue.Title)},
+			{"issue", fmt.Sprintf("%s#%d · %s", issue.Repo, issue.Number, oneLine(issue.Title))},
 			{"state", issue.State},
 			{"url", issue.URL},
 			{"labels", valueOr(issue.LabelList(), "none")},
@@ -1554,7 +1554,7 @@ func (t *taskView) detailLines(width int) []string {
 func taskIssueLines(width int, task apiclient.TaskDetail) []string {
 	iss := task.Issue
 	facts := []taskDetailFact{
-		{"issue", fmt.Sprintf("#%d · %s", iss.ID, iss.Title)},
+		{"issue", fmt.Sprintf("#%d · %s", iss.ID, oneLine(iss.Title))},
 		{"state", valueOr(iss.State, "unknown")},
 	}
 	if src := iss.Source; src != nil && src.Ref != "" {
@@ -2272,7 +2272,7 @@ func (t *taskView) lanesCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		kids, err := client.ListTasks(ctx, apiclient.ListTasksOptions{ParentID: id})
-		return taskLaneListMsg{taskID: id, children: kids, err: err}
+		return taskLaneListMsg{taskID: id, children: cleanTasks(kids), err: err}
 	}
 }
 

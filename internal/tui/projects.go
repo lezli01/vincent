@@ -229,6 +229,7 @@ func (p *projectsView) loadCmd() tea.Cmd {
 		// failing is a reason to hide the projects, so only the project
 		// fetch can fail the load.
 		tasks, taskErr := client.ListTasks(ctx, apiclient.ListTasksOptions{})
+		tasks = cleanTasks(tasks)
 		if taskErr != nil {
 			tasks = nil
 		}

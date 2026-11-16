@@ -306,9 +306,11 @@ func (v *issueView) loadCmd() tea.Cmd {
 		if err != nil {
 			return issueLoadedMsg{id: id, err: err}
 		}
+		iss = cleanIssue(iss)
 		tasks, err := client.ListTasks(ctx, apiclient.ListTasksOptions{
 			IssueID: id, Archived: apiclient.ArchivedAll,
 		})
+		tasks = cleanTasks(tasks)
 		if err != nil {
 			tasks = nil
 		}
@@ -485,6 +487,9 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case issueEditKey:
 		iss := v.issue
 		return v, v.w.openForm(v.client, &iss, iss.ProjectID)
+	case issueMoveKey:
+		v.w.form, v.w.act = nil, newIssueMove(v.client, v.issue)
+		return v, nil
 	case issueStateKey:
 		act, cmd, note := newIssueStateAction(v.client, v.issue)
 		if note != "" {

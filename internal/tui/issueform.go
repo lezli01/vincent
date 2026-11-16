@@ -496,7 +496,7 @@ func (f *issueForm) submit() tea.Cmd {
 			ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 			defer cancel()
 			iss, err := client.CreateIssue(ctx, req, key)
-			return issueFormSavedMsg{issue: iss, err: err}
+			return issueFormSavedMsg{issue: cleanIssue(iss), err: err}
 		}
 	}
 	if !f.dirty() {
@@ -508,7 +508,7 @@ func (f *issueForm) submit() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
 		iss, err := client.PatchIssue(ctx, id, p)
-		return issueFormSavedMsg{issue: iss, err: err}
+		return issueFormSavedMsg{issue: cleanIssue(iss), err: err}
 	}
 }
 
@@ -588,14 +588,14 @@ func (f *issueForm) reloadCmd() tea.Cmd {
 	}
 	if cur := f.current; cur != nil {
 		f.current = nil
-		return func() tea.Msg { return issueFormReloadedMsg{issue: *cur} }
+		return func() tea.Msg { return issueFormReloadedMsg{issue: cleanIssue(*cur)} }
 	}
 	client, id := f.client, f.original.ID
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		iss, err := client.GetIssue(ctx, id, "")
-		return issueFormReloadedMsg{issue: iss, err: err}
+		return issueFormReloadedMsg{issue: cleanIssue(iss), err: err}
 	}
 }
 

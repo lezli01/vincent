@@ -1979,7 +1979,8 @@ headers, so an empty one reads "none match".
 
 Each row carries the issue's id, its state (with the close reason once it is
 closed, such as `closed · not planned`), the title, its labels and kind,
-`owner/repo#N` when it was imported, and its tasks, worded for its lane:
+where it was imported from — `owner/repo#N` for GitHub, the key such as
+`PROJ-12` for Jira — and its tasks, worded for its lane:
 
 - **open** — `no tasks`, or `N tasks · cancelled`;
 - **in progress** — `● #T running` (or whichever state) for the task holding
@@ -1995,8 +1996,14 @@ never less than 30 columns — 31 at 80 columns. A row too narrow for the rest
 gives up, in turn, the occupant's state; the labels and kind, which become a
 count such as `+4` rather than a label cut in half; the `owner/repo#N` badge,
 which becomes `gh#N` when every imported issue on the list comes from the same
-repository; the count; and the badge. Only then does the tasks column take the
-title below its minimum, never under 12 columns, so its counts stay.
+repository; and the count. The imported id never goes: a badge that still
+does not fit loses its start instead — `…/web#41` — never the number, and
+below that the title gives way to it, never under 12 columns.
+
+Titles, of issues and of tasks alike, are drawn as one line of plain text: a
+line break or tab in one reads as a space, and terminal escape sequences are
+dropped rather than sent to your terminal. vincent's stored title is not
+changed.
 
 A list taller than the screen shows `▲ n more` above and `▼ n more` below,
 counting the lines out of sight that are not blank — the totals line, lane
@@ -2031,6 +2038,7 @@ completed](../assets/tui-issues.png)
 | `a` | Create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the selected issue in the issue form |
 | `X` | Close or reopen the selected issue — only what vincent offers for it |
+| `m` | [Move the selected issue to another lane](#moving-an-issue-between-lanes--m) — runs the action that lane comes from, or says why it cannot |
 | `D` | Delete the selected issue permanently (asks first) |
 | `space` | Select the card for a handoff — only a `pending` hand-off card; any other is refused with the reason |
 | `V` | Select every pending hand-off card the filter is showing, or clear the selection |
@@ -2145,6 +2153,7 @@ and the remote state](../assets/tui-issue-jira.png)
 | `i` | Edit the issue in the issue form |
 | `W` | Write a comment in `$EDITOR` — saved empty, nothing is added. Not offered on an issue mirrored from a remote tracker, whose thread is the tracker's |
 | `X` | Close or reopen the issue — only what vincent offers for it |
+| `m` | [Move the issue to another lane](#moving-an-issue-between-lanes--m) — runs the action that lane comes from, or says why it cannot |
 | `D` | Delete the issue permanently (asks first) |
 | `.` | Mark the issue ready when it is idle in progress, or not ready when it is pending hand-off |
 | `,` | Return the issue from its handoff — asks `y`/`n` first |
@@ -2256,6 +2265,26 @@ changes vincent's copy only.
 main or side tasks has not finished, which the daemon refuses. Deleting an imported
 issue never deletes it on GitHub, and vincent remembers the deletion so a sync
 does not import it again.
+
+#### Moving an issue between lanes — `m`
+
+A lane is never set by hand — vincent derives it from the issue and its tasks
+(see [Lanes](issues.md#lanes)) — so `m` moves a card by doing what the lane
+you pick comes from. It lists every other lane with what picking it does; a
+move that cannot be made is listed in red with the reason, and picking it
+leaves the card where it is.
+
+| From | To | What `m` does |
+|---|---|---|
+| open | in progress | Opens the new-task form seeded from the issue, as `a` does |
+| in progress | open | Cancels the issue's running tasks, after asking. Refused once it has finished work, or when only a chat holds it |
+| in progress | hand-off | Marks idle work ready, as `.` does. Refused while a task is still running |
+| hand-off | in progress | Marks it not ready, or returns it from its handoff (asks first) |
+| any open lane | done | Closes it, asking for the reason as `X` does |
+| done | any other | Reopens it. Its tasks decide the lane it lands in, and the note says which |
+
+Open → hand-off and hand-off → open are always refused: hand-off means work
+finished, and open means none was done.
 
 ### Workflows
 

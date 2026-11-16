@@ -79,6 +79,10 @@ stored lane, no human-settable lane and no dragging a card between lanes.
 [#641](https://github.com/lezli01/vincent/issues/641), which proposed a stored
 `in_progress`, was closed as not planned.
 
+*Amended 2026-11-16 ([task 145](145-issue-lane-move.md) decision 1, by the
+author):* the lane stays derived and unsettable, but a card is no longer
+immovable — `m` in the TUI runs the action the picked lane is derived from.
+
 *Alternative beaten:* a stored, human-settable `in_progress`. GitHub cannot
 hold it, so sync would have to preserve it (task 130 open question 1), and it
 would drift from the tasks it describes.

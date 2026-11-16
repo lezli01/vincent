@@ -221,7 +221,7 @@ func (d *detail) retryCmd(override apiclient.Override) tea.Cmd {
 		task, retried, err := client.Retry(ctx, id, override)
 		return actionResultMsg{
 			taskID: id, action: apiclient.ActionRetry,
-			task: task, retried: retried, err: err,
+			task: cleanTask(task), retried: retried, err: err,
 		}
 	}
 }
