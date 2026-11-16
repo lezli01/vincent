@@ -11,9 +11,10 @@ import (
 // cannot replace a file another handle has open unless that handle passed
 // FILE_SHARE_DELETE, which `os.Open`/`os.ReadFile` do not. The daemon opens
 // config.yaml and every trigger file that way on its own reload, so a config
-// PATCH or a trigger write that raced one answered 500. workflow.WriteFile
-// waits such a handle out (internal/workflow/replace_windows.go); this writer
-// must too.
+// PATCH or a trigger write that raced one answered 500. fileswap.Replace
+// (internal/fileswap/replace_windows.go) waits such a handle out, and both
+// workflow.WriteFile and this writer complete their writes through it; this
+// test proves the config side does.
 func TestWriteFileWaitsOutAReaderOfTheTarget(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("max_concurrent: 1\n"), FilePerm); err != nil {
