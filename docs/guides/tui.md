@@ -3287,6 +3287,20 @@ And inside the editor:
 Everything here is also
 [`vincent config get|set`](../reference/cli.md#vincent-config).
 
+When the issue-close auto-archive
+([`archive_tasks_on_issue_close`](../reference/configuration.md#archive_tasks_on_issue_close))
+is holding something, an **auto-archive held** block appears between the
+database and the adapters. It is the `vincent doctor` group of the same name:
+one row per held task — `issue #N`, `task #M`, its role and state, every
+reason that holds it, then the task's title, which is what a narrow terminal
+cuts first — and one dim row per issue-chat directory left on disk. Reasons
+are the tokens [`vincent doctor`](../reference/cli.md#vincent-doctor)
+documents; `awaiting_retry` on its own is dim, because nothing holds that task
+and it is waiting for the next event, and every other reason is a warning
+rather than a problem. The block reports and has no keys: clean the worktree,
+close the chat or archive the task by hand from the board. With the key off,
+or nothing held, it is not shown at all.
+
 Each adapter row carries what vincent knows about its usage window. Where the
 adapter reports one, the reading is spelled out window by window —
 `quota codex app-server · 5h 28% → 13:00 · 7d 53% → 11:00 · read 09:14` —

@@ -85,7 +85,17 @@ func (l *pathLog) snapshot() []string {
 
 func newBoardLiveHarness(t *testing.T) *boardLiveHarness {
 	t.Helper()
-	return newBoardLiveHarnessConfig(t, config.Default)
+	return newBoardLiveHarnessConfig(t, workflowGroupedConfig)
+}
+
+// workflowGroupedConfig is config.Default with the board grouped by workflow,
+// the level these tests exercise. The daemon's default became `[issue]` in
+// task 148.1, ahead of the TUI rendering that level (148.2, #983); pinning
+// the grouping here keeps these tests about the grouping mechanics.
+func workflowGroupedConfig() config.Config {
+	cfg := config.Default()
+	cfg.TUI.Board.GroupBy = []config.BoardGroup{config.BoardGroupWorkflow}
+	return cfg
 }
 
 // newBoardLiveHarnessConfig is the same harness against a chosen

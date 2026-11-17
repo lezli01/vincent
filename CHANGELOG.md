@@ -109,6 +109,13 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **The TUI daemon view shows what the issue-close auto-archive is holding.**
+  When `archive_tasks_on_issue_close` has left a closed issue's task
+  unarchived, an "auto-archive held" block between the database and the
+  adapters lists each held task with its issue, state and every reason, and
+  each issue-chat directory left on disk — the same facts `vincent doctor`
+  prints. It is shown only when something is held (#986).
+
 - **Jira Cloud issue sync.** A project bound to a Jira Cloud site and
   project key imports that project's issues into its issue set and keeps
   them in sync on `jira.poll_interval`: titles, bodies (Jira's rendered HTML

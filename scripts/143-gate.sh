@@ -25,6 +25,11 @@
 #   6. the key off: with `archive_tasks_on_issue_close: false` a closed
 #      issue's done task stays `done`, and doctor's `issue_archive` is
 #      disabled and empty
+#   7. closed in Jira as Won't Do: an issue imported from cmd/fakejira is
+#      transitioned to Done with resolution "Won't Do" over the fake's REST
+#      API; after a sync it reads `closed`/`not_planned`, its done task is
+#      archived with `archived_by: "issue_closed"` and the issue's id, and
+#      the daemon POSTed no transition back to Jira
 #
 # Scenarios 3 and 5 assert that something did *not* happen. They do it with
 # an ordering barrier rather than a sleep: after the asserted event the gate
@@ -34,6 +39,15 @@
 # processed, and "still done" is proven, not guessed. Scenario 6 cannot use
 # one — with the key off the worker reads nothing, a barrier included — so
 # it is the gate's one bounded-window negative assertion.
+#
+# Scenarios 4 and 7's "no write-back" is proven the same way, through the
+# outbox rather than the worker: a write-back row is written in the
+# transaction that moves the issue's state (store.enqueueStateWriteTx), so
+# once the issue reads closed the row either exists — pending, failed or in
+# conflict, which the project's sync status counts — or the drain has
+# already settled it, which it does only after the request it would make
+# has reached the fake's log. `no_write_back` reads the counts first and the
+# log second, so a write-back cannot slip between them.
 #
 # Task-numbered rather than `mN` because this is not a §19 milestone, like
 # 130-gate.sh and 134-gate.sh. Each scenario runs its own daemon over its
@@ -45,6 +59,11 @@
 # `pwsh` both accept. The GitHub half is cmd/fakegh installed as `gh` on the
 # daemon's PATH, its corpus in a file the gate edits, and every call it was
 # asked to make in FAKEGH_ARGV_FILE — 130-gate.sh scenario 4's pattern.
+# The Jira half is cmd/fakejira serving its corpus on a loopback port of its
+# own choosing, edited only through its REST routes and logging every
+# request — 142-gate.sh's pattern — and stopped before the temporary
+# directory is removed, because Windows will not delete a running
+# executable.
 #
 # The gate observes the rules CLAUDE.md records: no pipe into `grep -q` or
 # any other early-exiting consumer (capture first, match a here-string),
@@ -65,13 +84,36 @@ if [[ "${OS:-}" == "Windows_NT" ]]; then
   EXE=".exe"
 fi
 VINCENT="$BIN/vincent$EXE"
+FAKEJIRA="$BIN/fakejira$EXE"
 
 ONLY="${VINCENT_GATE_SCENARIO:-}"
 
 fail() { echo "GATE FAIL: $*" >&2; exit 1; }
 
+JPID="" JBASE=""
+# jira_down stops the fake gracefully, then kills a survivor before waiting:
+# `wait` blocks until the child exits, so a fake that never received the
+# shutdown (JBASE unset because jira_up failed before reading its port file)
+# or ignored it would otherwise hang cleanup until the job timeout.
+jira_down() {
+  [[ -n "$JPID" ]] || return 0
+  if [[ -n "$JBASE" ]]; then
+    curl -sS -X POST --max-time 5 "$JBASE/_fake/shutdown" >/dev/null 2>&1 || true
+  fi
+  for _ in $(seq 1 "$(gate_ticks 10)"); do
+    kill -0 "$JPID" 2>/dev/null || break
+    sleep "$GATE_POLL"
+  done
+  if kill -0 "$JPID" 2>/dev/null; then
+    kill -9 "$JPID" 2>/dev/null || true
+  fi
+  wait "$JPID" 2>/dev/null || true
+  JPID="" JBASE=""
+}
+
 cleanup() {
   "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
+  jira_down
   rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -80,9 +122,9 @@ hostpath() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi
 }
 
-echo "== build vincent and the fake gh"
+echo "== build vincent, the fake Jira and the fake gh"
 mkdir -p "$BIN"
-gate_build "$BIN" vincent
+gate_build "$BIN" vincent fakejira
 # cmd/fakegh is built *as* `gh`, so the daemon's PATH lookup finds it exactly
 # the way it would find the real CLI.
 gate_build_as "$BIN/gh$EXE" fakegh
@@ -95,6 +137,12 @@ unset GITHUB_TOKEN GH_TOKEN
 export FAKEGH_SCENARIO=success
 REPO_SLUG=gate/archive
 export FAKEGH_REPO="$REPO_SLUG"
+
+# The credentials the fake Jira accepts, and the daemon reads from the
+# variables jira.user_env and jira.token_env name (their defaults).
+JIRA_GATE_USER="gate@example.com"
+JIRA_GATE_TOKEN="gate-jira-token"
+export JIRA_USER="$JIRA_GATE_USER" JIRA_API_TOKEN="$JIRA_GATE_TOKEN"
 
 CONFIG_DIR="" DATA_DIR="" REPO="" CORPUS="" GH_ARGV=""
 scenario_dirs() { # scenario_dirs NAME
@@ -116,6 +164,44 @@ scenario_dirs() { # scenario_dirs NAME
   FAKEGH_SCENARIO_FILE="$(hostpath "$TMP/$1/gh-scenario.txt")"
   FAKEGH_ARGV_FILE="$(hostpath "$GH_ARGV")"
   write_workflows
+}
+
+# jira_up SCENARIO: the fake Jira over the scenario's seeded corpus, on a
+# port of its own choosing read from its port file once it appears; every
+# request it answers is logged to JREQUESTS.
+JCORPUS="" JREQUESTS=""
+jira_up() {
+  local dir="$TMP/$1" portfile="$TMP/$1/jira-port"
+  JCORPUS="$dir/jira-corpus.json"
+  JREQUESTS="$dir/jira-requests.txt"
+  : > "$dir/jira-scenario.txt"
+  "$FAKEJIRA" seed --corpus "$(hostpath "$JCORPUS")" || fail "fakejira seed failed"
+  # A stale JBASE would point jira_down's shutdown at the previous, dead fake.
+  JBASE=""
+  "$FAKEJIRA" serve --addr 127.0.0.1:0 --port-file "$(hostpath "$portfile")" \
+    --corpus "$(hostpath "$JCORPUS")" --scenario-file "$(hostpath "$dir/jira-scenario.txt")" \
+    --requests-file "$(hostpath "$JREQUESTS")" \
+    --user "$JIRA_GATE_USER" --token "$JIRA_GATE_TOKEN" 2> "$dir/fakejira.err" &
+  JPID=$!
+  for _ in $(seq 1 "$(gate_ticks 20)"); do
+    [[ -s "$portfile" ]] && break
+    kill -0 "$JPID" 2>/dev/null || fail "fakejira exited: $(cat "$dir/fakejira.err")"
+    sleep "$GATE_POLL"
+  done
+  [[ -s "$portfile" ]] || fail "fakejira wrote no port file"
+  JBASE="http://127.0.0.1:$(tr -d '\r\n' < "$portfile")"
+}
+
+# jira_transition KEY TRANSITION_ID RESOLUTION: someone else, on the Jira
+# site, as its REST API takes it — never a jq edit of the corpus the fake is
+# serving.
+jira_transition() {
+  local out body
+  body="$(jq -cn --arg t "$2" --arg r "$3" '{transition: {id: $t}, fields: {resolution: {name: $r}}}')"
+  out="$(curl -sS -X POST -u "$JIRA_GATE_USER:$JIRA_GATE_TOKEN" -H "Content-Type: application/json" \
+    -d "$body" -w $'\n%{http_code}' "$JBASE/rest/api/3/issue/$1/transitions")" \
+    || fail "curl POST Jira issue/$1/transitions failed"
+  [[ "${out##*$'\n'}" == 2* ]] || fail "Jira POST issue/$1/transitions -> ${out##*$'\n'}: ${out%$'\n'*}"
 }
 
 PORT="" TOKEN="" BASE=""
@@ -243,6 +329,15 @@ doctor_json() {
 }
 
 branch_exists() { git -C "$REPO" rev-parse --verify --quiet "refs/heads/$1" >/dev/null; }
+
+# no_write_back PROJECT: the project's outbox holds no state write-back that
+# is pending, failed or in conflict. Called after the issue reads closed and
+# before the fake's request log is counted (see the header).
+no_write_back() {
+  local st
+  st="$(api GET "/projects/$1/issues/sync" | jq -c '{writes_pending, writes_failed, writes_conflict}')"
+  expect_eq "$st" '{"writes_pending":0,"writes_failed":0,"writes_conflict":0}' "the project's write-back outbox after a close read in from its provider"
+}
 
 run_scenario() { [[ -z "$ONLY" || "$ONLY" == "$1" ]]; }
 
@@ -391,6 +486,7 @@ if run_scenario 4; then
   expect_eq "$STATE" closed "the imported issue after the sync"
   wait_state "$T" archived 60
   expect_eq "$(archive_event "$T" | jq -r .archived_by)" issue_closed "the archive event's archived_by"
+  no_write_back "$P"
   CALLS="$(tr -d '\r' < "$GH_ARGV")"
   WRITES="$(grep -cE -- '-X (PATCH|POST|PUT|DELETE)' <<<"$CALLS" || true)"
   expect_eq "$WRITES" 0 "writes the fake was asked for after the GitHub close ($CALLS)"
@@ -447,6 +543,65 @@ if run_scenario 6; then
     '[false,0,0]' "doctor's issue_archive with the key off"
   daemon_down
   echo "=== scenario 6 PASS"
+fi
+
+# --------------------------------------------------------------------------
+# Scenario 7: closed in Jira as Won't Do, read in by a sync.
+# --------------------------------------------------------------------------
+if run_scenario 7; then
+  echo "=== scenario 7: closed in Jira as Won't Do"
+  scenario_dirs s7
+  make_repo "$REPO"
+  jira_up s7
+  write_config 'github:
+  enabled: false
+jira:
+  enabled: true
+  poll_interval: 1s
+'
+  daemon_up
+  P="$(api POST /projects "$(jq -cn --arg p "$(hostpath "$REPO")" --arg s "$JBASE" \
+    '{path: $p, issue_source: {provider: "jira", jira: {site: $s, projects: [{key: "VIN"}]}}}')" | jq -r .id)"
+  api POST "/projects/$P/issues/sync" >/dev/null
+  I=""
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
+    I="$(api GET "/issues?project_id=$P&source=jira" | jq -r '.[] | select(.source.key == "VIN-1") | .id')"
+    [[ -n "$I" ]] && break
+    sleep "$GATE_POLL"
+  done
+  [[ -n "$I" ]] || fail "Jira issue VIN-1 was never imported"
+  T="$(create_task "$P" "$I" quick "from Jira")"
+  wait_state "$T" done 60
+
+  # Transition 31 is the seed's Done, a status in category `done`; the
+  # resolution is what maps the close reason (jiramap): Won't Do is
+  # not_planned.
+  jira_transition VIN-1 31 "Won't Do"
+  api POST "/projects/$P/issues/sync" >/dev/null
+
+  STATE=""
+  for _ in $(seq 1 "$(gate_ticks 30)"); do
+    STATE="$(api GET "/issues/$I" | jq -r '"\(.state)/\(.close_reason)"')"
+    [[ "$STATE" == closed/not_planned ]] && break
+    sleep "$GATE_POLL"
+  done
+  expect_eq "$STATE" closed/not_planned "the imported Jira issue after the sync"
+  wait_state "$T" archived 60
+  PAYLOAD="$(archive_event "$T")"
+  [[ -n "$PAYLOAD" ]] || fail "no task.state_changed -> archived event for task $T"
+  expect_eq "$(jq -r .archived_by <<<"$PAYLOAD")" issue_closed "the archive event's archived_by"
+  expect_eq "$(jq -r .issue_id <<<"$PAYLOAD")" "$I" "the archive event's issue_id"
+  # The daemon addresses a Jira issue by its id (VIN-1 is 10001 in the
+  # seed); the gate's own transition above used the key, so any line here
+  # is a write-back of a close that was read in from Jira.
+  no_write_back "$P"
+  REQS=""
+  if [[ -f "$JREQUESTS" ]]; then REQS="$(tr -d '\r' < "$JREQUESTS")"; fi
+  WRITES="$(grep -cE -- '^POST rest/api/3/issue/10001/transitions ' <<<"$REQS" || true)"
+  expect_eq "$WRITES" 0 "transitions the daemon POSTed for VIN-1 after the Jira close"
+  daemon_down
+  jira_down
+  echo "=== scenario 7 PASS"
 fi
 
 echo

@@ -130,7 +130,7 @@ type configBoard struct {
 	// GroupBy is always present, empty list included: `null` would make a
 	// flat table indistinguishable from a client's own default. Never carries
 	// the deprecated `project` level: a load strips it (task 132.9), so this
-	// is `workflow` or nothing.
+	// holds `issue` and `workflow` (task 148) or nothing.
 	GroupBy []string `json:"group_by"`
 }
 

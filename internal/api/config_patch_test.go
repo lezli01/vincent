@@ -647,6 +647,62 @@ func TestConfigPatchRefusesTheProjectGroupLevel(t *testing.T) {
 	}
 }
 
+// The issue level (task 148) is a level like workflow: a patch setting it
+// lands, is written into config.yaml and put into force, and GET serves it.
+func TestConfigPatchSetsTheIssueGroupLevel(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want []string
+	}{
+		{`{"tui":{"board":{"group_by":["issue"]}}}`, []string{"issue"}},
+		{`{"tui":{"board":{"group_by":["workflow","issue"]}}}`, []string{"workflow", "issue"}},
+	} {
+		h := newConfigHarness(t)
+		resp, out := h.patch(t, tc.body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200 (body %s)", tc.body, resp.StatusCode, out)
+		}
+		want := make([]config.BoardGroup, len(tc.want))
+		for i, l := range tc.want {
+			want[i] = config.BoardGroup(l)
+		}
+		if got := h.cur.Load().TUI.Board.GroupBy; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: the applied config says %v, want %v", tc.body, got, want)
+		}
+		_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+		var served configResponse
+		if err := json.Unmarshal(getBody, &served); err != nil {
+			t.Fatalf("parse config: %v", err)
+		}
+		if !reflect.DeepEqual(served.TUI.Board.GroupBy, tc.want) {
+			t.Errorf("%s: GET serves group_by %v, want %v", tc.body, served.TUI.Board.GroupBy, tc.want)
+		}
+	}
+}
+
+// An unknown level is refused naming the whole vocabulary, nothing written.
+func TestConfigPatchRefusesAnUnknownGroupLevel(t *testing.T) {
+	h := newConfigHarness(t)
+	before := h.bytes(t)
+	resp, out := h.patch(t, `{"tui":{"board":{"group_by":["state"]}}}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body %s)", resp.StatusCode, out)
+	}
+	var env errorBody
+	if err := json.Unmarshal(out, &env); err != nil || env.Error.Code != CodeValidationFailed {
+		t.Fatalf("want the snake_case validation envelope, got %s", out)
+	}
+	if !strings.Contains(env.Error.Message, "want issue, workflow, or []") {
+		t.Errorf("message %q does not name the vocabulary", env.Error.Message)
+	}
+	if !bytes.Equal(before, h.bytes(t)) {
+		t.Error("a refused group_by changed config.yaml")
+	}
+	if h.applied.Load() != 0 {
+		t.Error("a refused group_by was applied")
+	}
+}
+
 // A file bootstrapped before task 132.9 still says `group_by: [project,
 // workflow]`. A patch of an unrelated key must land (task 132 decision 50):
 // the line it never touched stays as written, and the config served and put
@@ -654,7 +710,7 @@ func TestConfigPatchRefusesTheProjectGroupLevel(t *testing.T) {
 func TestConfigPatchLeavesALegacyGroupByLineAlone(t *testing.T) {
 	h := newConfigHarness(t)
 	const legacy = "    group_by: [project, workflow]\n"
-	src := strings.Replace(string(h.bytes(t)), "    group_by: [workflow]\n", legacy, 1)
+	src := strings.Replace(string(h.bytes(t)), "    group_by: [issue]\n", legacy, 1)
 	if !strings.Contains(src, legacy) {
 		t.Fatal("the template has no group_by line to make legacy")
 	}
