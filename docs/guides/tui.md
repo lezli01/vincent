@@ -3013,8 +3013,9 @@ describe a run that is over, so they are left off and the title takes the
 room.
 
 ![platform-infra's archived tasks board over its default window of the last 7
-days: three archived tasks, grouped by workflow like the live
-board](../assets/tui-archived.png)
+days: three archived tasks, grouped by issue like the live board — a `no
+issue` group of two, and `issue #11 · The eu-west DNS change broke the status
+page` holding the DNS rollback](../assets/tui-archived.png)
 
 ![api's archived chats board: three finished conversations — one archived, and
 two closed chats that were opened on task #1, each saying so ahead of its
