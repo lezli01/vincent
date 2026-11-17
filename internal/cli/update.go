@@ -56,6 +56,13 @@ func newUpdateCmd() *cobra.Command {
 			"There is no prompt. This command is already the explicit human act, and " +
 			"the command tree does not prompt because its purpose is scripting — use " +
 			"--dry-run to see what would happen.\n\n" +
+			"--master installs the newest build of the master branch instead: a rolling " +
+			"prerelease the project's CI rebuilds, signs and checksums on every push to " +
+			"master, verified exactly as a release is. It is ahead of the latest release " +
+			"and untested beyond CI. Its version is the next patch release with the " +
+			"commits since the last release and the commit, such as 0.21.1-master.5.gabc1234, " +
+			"so a later release is offered to a master build by a plain `vincent update`, " +
+			"and running that returns it to the release track.\n\n" +
 			"Exit codes — with --check: 0 up to date, 1 the check failed, 2 an update " +
 			"is available. Without: 0 nothing to do or swapped successfully, 1 " +
 			"verification or the swap failed and the binary is untouched, 2 an update " +
@@ -65,15 +72,19 @@ func newUpdateCmd() *cobra.Command {
 			checkOnly, _ := cmd.Flags().GetBool("check")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			requireSig, _ := cmd.Flags().GetBool("require-signature")
+			master, _ := cmd.Flags().GetBool("master")
 			return runUpdate(cmd, updateOpts{
 				checkOnly:  checkOnly,
 				dryRun:     dryRun,
 				requireSig: requireSig,
+				master:     master,
 			})
 		},
 	}
 	cmd.Flags().Bool("check", false, "Report whether an update is available and change nothing")
 	cmd.Flags().Bool("dry-run", false, "Print what an update would do, without downloading or swapping")
+	cmd.Flags().Bool("master", false,
+		"Install the newest build of the master branch rather than the latest release")
 	cmd.Flags().Bool("require-signature", false,
 		"Fail rather than proceed when cosign is not installed to verify the signature")
 	jsonFlag(cmd)
@@ -84,6 +95,9 @@ type updateOpts struct {
 	checkOnly  bool
 	dryRun     bool
 	requireSig bool
+	// master targets the newest master build (task 147) instead of the
+	// latest release.
+	master bool
 	// baseURL and downloadBase are test seams pointing at an httptest server.
 	// They are unexported fields rather than hidden flags: a user-settable
 	// release source is an unaudited URL this command downloads and executes.
@@ -98,7 +112,16 @@ func runUpdate(cmd *cobra.Command, opts updateOpts) error {
 	current := version.Version()
 
 	ctx, cancel := context.WithTimeout(cmd.Context(), release.Timeout)
-	latest, err := release.New(release.Options{BaseURL: opts.baseURL}).Latest(ctx)
+	feed := release.New(release.Options{BaseURL: opts.baseURL})
+	var (
+		latest release.Release
+		err    error
+	)
+	if opts.master {
+		latest, err = feed.Master(ctx)
+	} else {
+		latest, err = feed.Latest(ctx)
+	}
 	cancel()
 	if err != nil {
 		// Exit 1, not 2: the check itself failed. A script cannot tell "you
@@ -114,6 +137,14 @@ func runUpdate(cmd *cobra.Command, opts updateOpts) error {
 	}
 
 	available := release.IsNewer(current, latest.Version)
+	if opts.master {
+		// Any other build is the one asked for: a master build is newer
+		// than the release it precedes but sorts below it, and a different
+		// master build is newer or older only by its commit, which only the
+		// branch knows. The explicit flag is the decision to take it.
+		available = release.Canonical(current) != release.Canonical(latest.Version)
+	}
+	track := updateTrack(opts.master)
 	channel, exe := selfupdate.Detect()
 	if opts.executable != "" {
 		exe = opts.executable
@@ -121,21 +152,21 @@ func runUpdate(cmd *cobra.Command, opts updateOpts) error {
 	}
 
 	if opts.checkOnly {
-		return updateCheckResult(cmd, out, current, latest, available)
+		return updateCheckResult(cmd, out, current, latest, available, track)
 	}
 	if !available {
 		if wantJSON(cmd) {
-			return emitJSON(out, updateJSON(current, latest, false, false, string(channel)))
+			return emitJSON(out, updateJSON(current, latest, false, false, string(channel), track))
 		}
-		_, _ = fmt.Fprintf(out, "vincent %s is the latest release.\n", displayVersion(current))
+		_, _ = fmt.Fprintf(out, "vincent %s is the latest %s.\n", displayVersion(current), track.noun())
 		return nil
 	}
 	if !channel.Owned() {
-		return updateNotOwned(cmd, out, current, latest, channel)
+		return updateNotOwned(cmd, out, current, latest, channel, track)
 	}
 	if opts.dryRun {
 		if wantJSON(cmd) {
-			return emitJSON(out, updateJSON(current, latest, true, false, string(channel)))
+			return emitJSON(out, updateJSON(current, latest, true, false, string(channel), track))
 		}
 		_, _ = fmt.Fprintf(out,
 			"Would download vincent %s, verify it, and replace %s.\nNothing was changed (--dry-run).\n",
@@ -149,7 +180,12 @@ func runUpdate(cmd *cobra.Command, opts updateOpts) error {
 		RequireSignature: opts.requireSig,
 		Executable:       exe,
 	})
-	result, err := up.Apply(cmd.Context(), latest.Version)
+	var result selfupdate.Result
+	if opts.master {
+		result, err = up.ApplyFrom(cmd.Context(), release.MasterTag, latest.Version)
+	} else {
+		result, err = up.Apply(cmd.Context(), latest.Version)
+	}
 	if err != nil {
 		// The one promise worth repeating at the point of failure: nothing
 		// was replaced. Swap rolls back, and every failure before it happens
@@ -159,7 +195,7 @@ func runUpdate(cmd *cobra.Command, opts updateOpts) error {
 		return exitError{code: 1}
 	}
 	if wantJSON(cmd) {
-		payload := updateJSON(current, latest, true, true, string(channel))
+		payload := updateJSON(current, latest, true, true, string(channel), track)
 		payload["path"] = result.Path
 		payload["signature_verified"] = result.SignatureVerified
 		return emitJSON(out, payload)
@@ -172,13 +208,43 @@ func runUpdate(cmd *cobra.Command, opts updateOpts) error {
 			"The SHA-256 checksum matched. The cosign signature was NOT verified — "+
 				"install cosign, or pass --require-signature to refuse an unverified update.")
 	}
+	if opts.master {
+		_, _ = fmt.Fprintln(out,
+			"This is a master build, ahead of the latest release. `vincent update` returns to the "+
+				"release track once a newer release is out; `vincent update --master` takes the next master build.")
+	}
 	printRestartHint(out)
 	return nil
+}
+
+// updateTrackKind is what an update targets: the latest release, or the
+// newest master build (task 147).
+type updateTrackKind string
+
+const (
+	trackRelease updateTrackKind = "release"
+	trackMaster  updateTrackKind = "master"
+)
+
+func updateTrack(master bool) updateTrackKind {
+	if master {
+		return trackMaster
+	}
+	return trackRelease
+}
+
+// noun is how a message names the track's newest build.
+func (t updateTrackKind) noun() string {
+	if t == trackMaster {
+		return "master build"
+	}
+	return "release"
 }
 
 // updateCheckResult prints the --check answer and picks the exit code.
 func updateCheckResult(
 	cmd *cobra.Command, out io.Writer, current string, latest release.Release, available bool,
+	track updateTrackKind,
 ) error {
 	if wantJSON(cmd) {
 		if err := emitJSON(out, map[string]any{
@@ -187,12 +253,17 @@ func updateCheckResult(
 			"update_available": available,
 			"published_at":     latest.PublishedAt.UTC().Format(time.RFC3339),
 			"release_url":      latest.URL,
+			"track":            string(track),
 		}); err != nil {
 			return err
 		}
 	} else {
 		_, _ = fmt.Fprintf(out, "current  %s\n", displayVersion(current))
-		_, _ = fmt.Fprintf(out, "latest   %s\n", latest.Version)
+		label := "latest "
+		if track == trackMaster {
+			label = "master "
+		}
+		_, _ = fmt.Fprintf(out, "%s  %s\n", label, latest.Version)
 		if available {
 			_, _ = fmt.Fprintf(out, "An update is available: %s\n", latest.URL)
 		} else {
@@ -210,11 +281,16 @@ func updateCheckResult(
 // "up to date" from "not mine to perform".
 func updateNotOwned(
 	cmd *cobra.Command, out io.Writer, current string,
-	latest release.Release, channel selfupdate.Channel,
+	latest release.Release, channel selfupdate.Channel, track updateTrackKind,
 ) error {
 	upgrade := channel.UpgradeCommand()
+	if track == trackMaster {
+		// A package manager carries releases only: its upgrade command
+		// would not install a master build, so none is offered.
+		upgrade = ""
+	}
 	if wantJSON(cmd) {
-		payload := updateJSON(current, latest, true, false, string(channel))
+		payload := updateJSON(current, latest, true, false, string(channel), track)
 		payload["upgrade_command"] = upgrade
 		if err := emitJSON(out, payload); err != nil {
 			return err
@@ -224,6 +300,11 @@ func updateNotOwned(
 	_, _ = fmt.Fprintf(out, "vincent %s is available; this binary is %s.\n",
 		latest.Version, displayVersion(current))
 	switch {
+	case track == trackMaster:
+		_, _ = fmt.Fprintf(out,
+			"It was installed by %s, which carries releases only, so vincent will not replace it with a "+
+				"master build. Install master from a direct download instead:\n\n    %s\n",
+			channel, latest.URL)
 	case upgrade != "":
 		_, _ = fmt.Fprintf(out, "It was installed by %s, so upgrade it with:\n\n    %s\n",
 			channel, upgrade)
@@ -242,8 +323,11 @@ func updateNotOwned(
 	return exitError{code: 2}
 }
 
-func updateJSON(current string, latest release.Release, available, swapped bool, channel string) map[string]any {
+func updateJSON(
+	current string, latest release.Release, available, swapped bool, channel string, track updateTrackKind,
+) map[string]any {
 	return map[string]any{
+		"track":            string(track),
 		"current_version":  current,
 		"latest_version":   latest.Version,
 		"update_available": available,

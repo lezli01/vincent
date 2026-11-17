@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -79,6 +80,11 @@ type latestBody struct {
 	Draft       bool   `json:"draft"`
 	Prerelease  bool   `json:"prerelease"`
 	PublishedAt string `json:"published_at"`
+	// Assets are read by Master only: a master build's version is the one
+	// its archives are named with.
+	Assets []struct {
+		Name string `json:"name"`
+	} `json:"assets"`
 }
 
 // maxBody caps what is read off the wire. A release body can carry an entire
@@ -93,40 +99,92 @@ const maxBody = 1 << 20
 // release is a release candidate" and "there is no release" are the same
 // thing to a user on a stable channel.
 func (c *Client) Latest(ctx context.Context) (Release, error) {
-	url := fmt.Sprintf("%s/repos/%s/releases/latest", c.base, Repo)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	body, err := c.get(ctx, "latest", "latest release")
 	if err != nil {
-		return Release{}, fmt.Errorf("build release request: %w", err)
-	}
-	// Accept is the only header set. No Authorization — this endpoint is
-	// public and a token would make the call identifying — and no User-Agent
-	// beyond Go's default, which says nothing about this install (§16).
-	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return Release{}, fmt.Errorf("fetch latest release: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		// 403 and 429 are the rate limit, which is the expected failure for
-		// an unauthenticated call and is why the poll interval is a day.
-		// They are not special-cased: every non-200 degrades identically.
-		return Release{}, fmt.Errorf("fetch latest release: %s", resp.Status)
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
-	if err != nil {
-		return Release{}, fmt.Errorf("read latest release: %w", err)
-	}
-	var body latestBody
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return Release{}, fmt.Errorf("parse latest release: %w", err)
+		return Release{}, err
 	}
 	return fromBody(body)
 }
 
-// fromBody normalizes and screens one release object. It is separate from
-// Latest so the table-driven parse tests run against captured bodies without
-// a transport.
+// get reads one release of Repo — "latest", or "tags/<tag>" — as what names
+// it in an error.
+func (c *Client) get(ctx context.Context, which, what string) (latestBody, error) {
+	url := fmt.Sprintf("%s/repos/%s/releases/%s", c.base, Repo, which)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return latestBody{}, fmt.Errorf("build release request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return latestBody{}, fmt.Errorf("fetch %s: %w", what, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return latestBody{}, fmt.Errorf("fetch %s: %s", what, resp.Status)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	if err != nil {
+		return latestBody{}, fmt.Errorf("read %s: %w", what, err)
+	}
+	var body latestBody
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return latestBody{}, fmt.Errorf("parse %s: %w", what, err)
+	}
+	return body, nil
+}
+
+// MasterTag is the rolling prerelease the master-build workflow replaces on
+// every push to master (task 147): the newest build of master, signed and
+// checksummed exactly as a release is. It is never a semantic version, so
+// it can never be mistaken for a release, and it is not named `master`,
+// which would make the tag and the branch an ambiguous ref.
+const MasterTag = "master-latest"
+
+// masterArchive matches a master build's archive name, as
+// `.goreleaser.yaml`'s `name_template` writes it, capturing the version.
+var masterArchive = regexp.MustCompile(`^vincent_(.+)_(?:linux|darwin|windows)_(?:amd64|arm64)\.(?:tar\.gz|zip)$`)
+
+// Master reads the newest master build (task 147). Its Version is the
+// build's own, read off its archive names — `0.21.1-master.5.gabc1234`, the
+// patch after the newest release, the commits since it and the commit — so
+// it is a semantic version that sorts below the release it precedes and is
+// never offered by Latest or IsNewer.
+func (c *Client) Master(ctx context.Context) (Release, error) {
+	body, err := c.get(ctx, "tags/"+MasterTag, "the latest master build")
+	if err != nil {
+		return Release{}, err
+	}
+	if strings.TrimSpace(body.TagName) != MasterTag || body.Draft {
+		return Release{}, fmt.Errorf("the latest master build is not published under %s", MasterTag)
+	}
+	for _, a := range body.Assets {
+		m := masterArchive.FindStringSubmatch(a.Name)
+		if m == nil {
+			continue
+		}
+		v := Canonical(m[1])
+		if !IsMasterBuild(v) {
+			return Release{}, fmt.Errorf("master build archive %q does not carry a master version", a.Name)
+		}
+		rel := Release{Version: v, URL: strings.TrimSpace(body.HTMLURL)}
+		if t, err := time.Parse(time.RFC3339, body.PublishedAt); err == nil {
+			rel.PublishedAt = t.UTC()
+		}
+		if rel.URL == "" {
+			rel.URL = fmt.Sprintf("https://github.com/%s/releases/tag/%s", Repo, MasterTag)
+		}
+		return rel, nil
+	}
+	return Release{}, fmt.Errorf("the latest master build has no archives yet")
+}
+
+// IsMasterBuild reports whether v is a master build's version: a semantic
+// version whose prerelease starts with "master.".
+func IsMasterBuild(v string) bool {
+	return strings.HasPrefix(semver.Prerelease(Canonical(v)), "-master.")
+}
+
 func fromBody(body latestBody) (Release, error) {
 	tag := strings.TrimSpace(body.TagName)
 	if tag == "" {

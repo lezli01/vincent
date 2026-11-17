@@ -59,7 +59,8 @@ func New(opts Options) *Updater {
 // Result reports what an Apply did, in the terms `vincent update` prints and
 // `--json` serializes.
 type Result struct {
-	// Version is the release that was installed.
+	// Version is the version that was installed, "v"-prefixed: a release's
+	// tag, or a master build's own version.
 	Version string `json:"version"`
 	// Path is the file that was replaced.
 	Path string `json:"path"`
@@ -82,6 +83,18 @@ var ErrNotOwned = errors.New("this vincent was installed by a package manager")
 // old binary untouched because nothing has been written to it yet; a failure
 // during the swap rolls back (see Swap).
 func (u *Updater) Apply(ctx context.Context, version string) (Result, error) {
+	tag := version
+	if !strings.HasPrefix(tag, "v") {
+		tag = "v" + tag
+	}
+	return u.ApplyFrom(ctx, tag, version)
+}
+
+// ApplyFrom is Apply for a build published under a tag that is not its
+// version: the rolling master build (task 147), whose tag is
+// release.MasterTag and whose archives carry the build's own version. The
+// chain and the guarantee are Apply's.
+func (u *Updater) ApplyFrom(ctx context.Context, tag, version string) (Result, error) {
 	dest := u.executable
 	if dest == "" {
 		ch, exe := Detect()
@@ -94,10 +107,6 @@ func (u *Updater) Apply(ctx context.Context, version string) (Result, error) {
 		return Result{}, errors.New("cannot locate the running vincent binary")
 	}
 
-	tag := version
-	if !strings.HasPrefix(tag, "v") {
-		tag = "v" + tag
-	}
 	asset := hostAsset(version)
 
 	checksums, err := u.fetch(ctx, tag, "checksums.txt")
@@ -122,7 +131,7 @@ func (u *Updater) Apply(ctx context.Context, version string) (Result, error) {
 	if err := Swap(dest, binary); err != nil {
 		return Result{}, err
 	}
-	return Result{Version: tag, Path: dest, SignatureVerified: signed}, nil
+	return Result{Version: "v" + strings.TrimPrefix(version, "v"), Path: dest, SignatureVerified: signed}, nil
 }
 
 // checkSignature runs the cosign leg and reports whether it actually ran.

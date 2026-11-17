@@ -1,0 +1,159 @@
+name: Master build
+
+# Every push to master is built, signed and published as the rolling
+# `master-latest` prerelease (task 147), which `vincent update --master`
+# installs. It is the release pipeline's own snapshot: the same goreleaser
+# config, the same archives and checksums.txt, and the same keyless cosign
+# signature over checksums.txt — so the update verifies a master build
+# through exactly the chain it verifies a release through (task 055).
+#
+# The release is replaced, not appended to: its archives are named with the
+# build's version, so a rerun of `gh release upload --clobber` would leave
+# the previous build's archives beside the new ones. Deleting the release
+# and its tag and creating both afresh at this commit is the replacement.
+# The tag is `master-latest`, never `master`, which would make the tag and the
+# branch an ambiguous ref. It is a prerelease and never marked latest, so the
+# stable check (`releases/latest`) cannot see it, and it matches neither the
+# `v*` tag trigger of the release and pages workflows nor sitever's semver
+# filter.
+#
+# On a pull request that touches this file or `.goreleaser.yaml` the build
+# runs and nothing is signed or published, so a change to either is proven
+# before it reaches master.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    paths:
+      - .github/workflows/master-build.yml
+      - .goreleaser.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Master pushes queue rather than cancel: a run cancelled between deleting
+# the release and creating it would leave no master build until the next
+# one finished. GitHub keeps only the newest pending run, so a burst of
+# merges still builds once more, not once each.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # replace the master-latest release
+      id-token: write # keyless cosign over checksums.txt
+    env:
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the version counts the commits since the last release tag
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # Pinned to the commit release.yml pins: this job holds id-token: write,
+      # so a moved tag could sign arbitrary bytes with vincent's identity.
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: env.PUBLISH == 'true'
+
+      # The next patch release, the commits since the last one, and the
+      # commit: 0.21.1-master.5.gabc1234. It sorts above the release it
+      # follows and below the one it precedes, so a plain `vincent update`
+      # moves a master build back onto releases once a newer one is out.
+      - name: Name the build
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*')"
+          IFS=. read -r major minor patch <<<"${tag#v}"
+          patch="${patch%%-*}"
+          count="$(git rev-list --count "$tag..HEAD")"
+          sha="$(git rev-parse --short=7 HEAD)"
+          version="$major.$minor.$((patch + 1))-master.$count.g$sha"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "master build $version (from $tag)"
+
+      - name: Build
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish,sign
+        env:
+          VINCENT_MASTER_VERSION: ${{ steps.version.outputs.version }}
+          # A snapshot renders the package-manager manifests without using
+          # their credentials; the placeholders keep it self-contained.
+          HOMEBREW_TAP_TOKEN: unset
+          SCOOP_BUCKET_TOKEN: unset
+          WINGET_TOKEN: unset
+
+      - name: Check the archives
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            test -f "dist/vincent_${VERSION}_${target}.tar.gz"
+          done
+          for target in windows_amd64 windows_arm64; do
+            test -f "dist/vincent_${VERSION}_${target}.zip"
+          done
+          tar -xzf "dist/vincent_${VERSION}_linux_amd64.tar.gz" -C "$RUNNER_TEMP" vincent
+          got="$("$RUNNER_TEMP/vincent" version)"
+          echo "$got"
+          case "$got" in
+            *"$VERSION"*) ;;
+            *) echo "the built binary does not report $VERSION" >&2; exit 1 ;;
+          esac
+
+      # The same sign-blob invocation .goreleaser.yaml's `signs:` runs for a
+      # release, so `vincent update`'s cosign check reads it unchanged.
+      - name: Sign checksums.txt
+        if: env.PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign sign-blob \
+            --new-bundle-format=false --use-signing-config=false \
+            --output-certificate=dist/checksums.txt.pem \
+            --output-signature=dist/checksums.txt.sig \
+            dist/checksums.txt --yes
+
+      - name: Publish master-latest
+        if: env.PUBLISH == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release delete master-latest --cleanup-tag --yes || true
+          notes="The newest build of master, $VERSION, built from ${GITHUB_SHA}.
+
+          Install it over a direct-download vincent with \`vincent update --master\`. It is replaced on every push to master, is ahead of the latest release, and is tested by CI only.
+
+          Verify a download the way a release's is verified:
+
+          \`\`\`sh
+          cosign verify-blob checksums.txt \\
+            --certificate checksums.txt.pem \\
+            --signature checksums.txt.sig \\
+            --certificate-identity-regexp 'https://github.com/lezli01/vincent/.*' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          sha256sum --ignore-missing -c checksums.txt
+          \`\`\`"
+          gh release create master-latest \
+            --prerelease --latest=false \
+            --target "$GITHUB_SHA" \
+            --title "master build $VERSION" \
+            --notes "$notes" \
+            dist/vincent_"$VERSION"_*.tar.gz dist/vincent_"$VERSION"_*.zip \
+            dist/checksums.txt dist/checksums.txt.sig dist/checksums.txt.pem

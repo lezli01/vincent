@@ -416,6 +416,23 @@ Per channel:
 | [A release archive](#download-a-release) | `vincent update` |
 | [`go install`](#build-from-source) | `go install github.com/lezli01/vincent/cmd/vincent@latest` |
 
+### The newest master build
+
+To run the newest build of the `master` branch rather than the latest release,
+on a direct-download install:
+
+```sh
+vincent update --master
+```
+
+CI builds, signs and publishes every push to `master` as the rolling
+[`master-latest`](https://github.com/lezli01/vincent/releases/tag/master-latest)
+prerelease, and `vincent update --master` verifies it the way it verifies a
+release. It is ahead of the latest release and tested by CI only. Run
+`vincent update --master` again to move to a newer master build. A plain
+`vincent update` returns to releases once a release newer than your build is
+out. A package-managed install is never switched to a master build.
+
 Whichever route you take, the running daemon keeps its **old** code until it is
 restarted — `vincent update` swaps the binary and nothing else. `vincent daemon
 status` says so when the two disagree:
