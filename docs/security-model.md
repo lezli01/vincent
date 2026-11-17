@@ -411,7 +411,7 @@ names [`jira.user_env` and `jira.token_env`](reference/configuration.md#jira)
 give (`JIRA_USER` and `JIRA_API_TOKEN` by default). Vincent reads it per
 request and never stores, logs or echoes it — not in the database, not in an
 API answer, not in an error. It can do whatever that Atlassian account may do
-in Jira; vincent uses it to read the bound project's issues and comments and,
+in Jira; vincent uses it to read the bound projects' issues and comments and,
 only on a person's close or reopen or a handoff you granted, to transition an
 issue or comment on it. Under a service it is set through `environment.set`
 and is then plaintext in `config.yaml`, as above. The site it is sent to comes

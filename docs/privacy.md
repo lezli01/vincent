@@ -141,7 +141,7 @@ off:
 |---|---|---|---|
 | Release check | One unauthenticated `GET` to GitHub for the latest vincent release. No token, no identifier | every 24 h | [`update.check: false`](reference/configuration.md#update) or `update.poll_interval: 0` |
 | GitHub reconciler | For projects whose `origin` is on github.com only: reads that repository's open pull requests, and its issues when the project's [issue source](reference/cli.md#issue-source-flags) resolves to GitHub, through `gh` or `GITHUB_TOKEN`/`GH_TOKEN` | every 5 min | [`github.poll_interval: 0`](reference/configuration.md#github), or `github.enabled: false` for no GitHub call at all |
-| Jira issue sync | For projects bound to a Jira Cloud site only: reads the bound project's issues and comments from that site, as the account in `JIRA_USER`/`JIRA_API_TOKEN` | every 5 min | [`jira.poll_interval: 0`](reference/configuration.md#jira), or `jira.enabled: false` for no Jira call at all (or rebind the project to `none`) |
+| Jira issue sync | For projects bound to a Jira Cloud site only: reads the bound projects' issues and comments from that site, as the account in `JIRA_USER`/`JIRA_API_TOKEN` | every 5 min | [`jira.poll_interval: 0`](reference/configuration.md#jira), or `jira.enabled: false` for no Jira call at all (or rebind the project to `none`) |
 
 What the two issue imports read is mirrored into `vincent.db`. A Jira comment
 restricted to a group or role is never newly mirrored; one mirrored before it

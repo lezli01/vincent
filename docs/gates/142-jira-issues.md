@@ -13,7 +13,7 @@ corpus (project `VIN` with VIN-1 *To Do*, VIN-2 *In Progress* and VIN-3
 *Done*, and a second project `OPS`) on a port it chooses and writes to a
 file. The project is bound to it over the API as
 `issue_source: {provider: jira, jira: {site: http://127.0.0.1:<port>,
-project_key: VIN}}` — plain `http` is accepted for a loopback host only —
+projects: [{key: VIN}]}}` (the list form since task 146) — plain `http` is accepted for a loopback host only —
 and the daemon reads the credential from `JIRA_USER` and `JIRA_API_TOKEN`.
 What the daemon sent is read from the fake's request log.
 

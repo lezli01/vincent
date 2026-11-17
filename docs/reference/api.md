@@ -976,8 +976,8 @@ a sentence:
 | `no_credential` | The variable named by `jira.user_env` or `jira.token_env` is unset in the daemon's environment |
 | `unreachable` | The site could not be reached, or the three calls together took longer than 8 seconds |
 | `unauthorized` | Jira rejected the credential (401) |
-| `forbidden` | The credential may not read the project (403) |
-| `not_found` | The bound project does not exist or is not visible to the credential |
+| `forbidden` | The credential may not read a bound project (403) |
+| `not_found` | A bound project does not exist or is not visible to the credential |
 | `rate_limited` | Jira is rate limiting the credential |
 | `bad_request` | Jira refused the request |
 | `bad_response` | The answer arrived and did not parse |
@@ -1032,7 +1032,7 @@ When `ok` is false, `reason` says why:
 | `source_not_github` | The project's [issue source](#issue-source) is pinned to `none`. It has no sync row either |
 | `no_credential` | A Jira project, and the variable named by `jira.user_env` or `jira.token_env` is unset |
 | `no_client` | The daemon has no client wired for the provider |
-| `binding_changed` | A Jira project whose bound project key now resolves to a different Jira project id than the one recorded on its first successful sync. Sync stops and the issues are never re-keyed; re-bind the project to start over |
+| `binding_changed` | A Jira project one of whose bound project keys now resolves to a different Jira project id than the one recorded on its first successful sync. Sync stops and the issues are never re-keyed; re-bind the project to start over |
 | `origin_changed` | `origin` now names a different repository than the one the project is bound to. Sync stops and is never re-keyed; a rename GitHub redirects is not this |
 | any [GitHub reason](#github-issues) or [Jira reason](#jira-probe) | The last attempt failed with it — `rate_limited`, `no_credential`, `unauthorized`, `forbidden`, `not_found`, `unreachable`, … |
 

@@ -543,12 +543,13 @@ A project's sync reason is in the `sync` row, in
   expire (after at most 365 days), so create a new one and replace the old
   value. The other cause is the user variable holding the wrong e-mail — it
   must be the Atlassian account the token belongs to.
-- **`forbidden`** — the credential signed in but may not read the bound
+- **`forbidden`** — the credential signed in but may not read a bound
   project. Grant the account *Browse projects* on it, or bind a project it
   can read.
-- **`not_found`** — the bound project key does not exist on that site, or is
-  invisible to the credential. Check the key with `vincent jira status`.
-- **`binding_changed`** — the site now answers a different project for the
+- **`not_found`** — a bound project key does not exist on that site, or is
+  invisible to the credential. `vincent jira status` checks every bound
+  project in order and names the key that failed.
+- **`binding_changed`** — the site now answers a different project for a
   bound key than the first sync recorded (a project deleted and re-created, or
   a key moved). Sync stops rather than mixing two projects' issues; rebind the
   project's [issue source](../reference/cli.md#issue-source-flags) to start

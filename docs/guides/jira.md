@@ -4,8 +4,8 @@ title: Jira issue sync
 
 # Jira issue sync
 
-A vincent project can take its issues from a Jira Cloud project instead of
-GitHub. Bound to a Jira site, the daemon imports the project's open issues
+A vincent project can take its issues from one or more Jira Cloud projects
+instead of GitHub. Bound to a Jira site, the daemon imports those projects' open issues
 into vincent's own [issues](issues.md), keeps them in sync on a timer, and
 writes a person's close or reopen back to Jira as a workflow transition. From
 there a Jira issue is worked like any other: it has a lane, starts tasks, and
@@ -99,8 +99,8 @@ and imports nothing.
 
 - [`vincent jira status --project ID`](../reference/cli.md#vincent-jira-status)
   checks one binding on demand: is the site reachable, is the credential
-  accepted, and does the bound project exist and is it visible to the
-  account. It stores nothing and never syncs.
+  accepted, and does each bound project exist and is it visible to the
+  account — naming the first project that fails. It stores nothing and never syncs.
 - [`vincent doctor`](../reference/cli.md#vincent-doctor)'s `JIRA` group shows
   the `jira.enabled` switch, whether the daemon sees each credential variable,
   one row per bound site and one per Jira project. It asks each distinct site

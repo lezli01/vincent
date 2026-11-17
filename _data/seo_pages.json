@@ -77,7 +77,7 @@
   {
     "path": "docs/guides/jira.md",
     "seo_title": "Sync Jira Cloud issues into vincent",
-    "description": "Bind a vincent project to a Jira Cloud project: credentials from the environment, status and resolution mapping, transition overrides, write-back and troubleshooting."
+    "description": "Bind a vincent project to one or more Jira Cloud projects, each with optional JQL: credentials from the environment, status and resolution mapping, transition overrides, write-back and troubleshooting."
   },
   {
     "path": "docs/guides/handoff.md",

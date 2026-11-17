@@ -3159,8 +3159,10 @@ Whether *this* project's issues can be imported from Jira, and if not, the
 first check that failed. The daemon checks, in order, that the project's issue
 source is Jira, that `jira.enabled` is on, that both credential variables are
 set, that the site answers, that it accepts the credential, and that it shows
-the bound project. The `server`, `account` and `project id` rows appear once
-the probe got that far, so a failure reads as where it stopped. The last row
+each bound project, in the binding's order. The `projects` row lists the bound
+keys. The `server`, `account` and `project ids` rows appear once the probe got
+that far, so a failure reads as where it stopped; a failed project check names
+the project's key at the end of the reason. The last row
 is `issue import/sync`: `available`, or `unavailable:` and the reason as a
 sentence, such as `unavailable: Jira rejected the credential`. `--json` carries
 the reason's code in `reason` — `not_jira`, `disabled`, `no_credential`,
