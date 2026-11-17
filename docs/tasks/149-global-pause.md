@@ -28,7 +28,7 @@ Conventions for this file are in [the tasks README](README.md).
 ### 1. Three displayed states, one stored fact
 
 *2026-11-17.* Only "a pause is recorded" is stored (the `global_pause`
-singleton, migration 0057). `pausing` and `paused` are that one fact told
+singleton, migration 0058). `pausing` and `paused` are that one fact told
 apart by whether any task is still `running` — still executing a step that
 will park at its boundary. Storing `pausing` would need a writer to notice the
 last task parking; deriving it cannot go stale.
@@ -106,7 +106,7 @@ line before it acts, since it changes what every project is doing.
 
 ## Tasks
 
-- [x] **149.1** Store, engine and scheduler: migration 0057, the hold, the
+- [x] **149.1** Store, engine and scheduler: migration 0058, the hold, the
   boundary park, the mark, `PauseAll`/`ContinueAll`.
 - [x] **149.2** API, client, MCP exclusion, `vincent daemon pause` /
   `continue`, and the pause line in `vincent daemon status`.

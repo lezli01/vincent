@@ -13022,7 +13022,7 @@ CREATE TABLE tasks (
   block_reason        TEXT,                   -- set while state='blocked'
   block_detail        TEXT,                   -- daemon-authored sentence explaining block_reason (§5.3, issue #594, migration 0035); cleared with it
   pause_requested     INTEGER NOT NULL DEFAULT 0, -- §6 pause accepted, not yet taken effect
-  global_pause        INTEGER NOT NULL DEFAULT 0, -- the pause, pending or taken, is the global pause's (§11, task 149, migration 0057); cleared by any human action
+  global_pause        INTEGER NOT NULL DEFAULT 0, -- the pause, pending or taken, is the global pause's (§11, task 149, migration 0058); cleared by any human action
   retry_cursor_at     TEXT,                   -- last human `retry`; the retry budget counts failures after it (§7.2)
   pending_override_json TEXT,                 -- edit+retry text awaiting the next attempt's step_run
   pending_repair_json TEXT,                   -- ad-hoc repair request awaiting its admission (§6, task 025, migration 0010);
@@ -13263,7 +13263,7 @@ CREATE TABLE agent_quota (
   source             TEXT NOT NULL       -- 'observed'; the seam a probe would fill
 );
 
--- The global pause (§11, task 149, added 2026-11-17, migration 0057): a
+-- The global pause (§11, task 149, added 2026-11-17, migration 0058): a
 -- singleton whose row means "paused". Durable, so a daemon restarted for
 -- maintenance comes back paused rather than admitting the queue.
 CREATE TABLE global_pause (

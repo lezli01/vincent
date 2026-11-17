@@ -1,4 +1,4 @@
--- 0057_global_pause: the daemon-wide pause (task 149, spec §6, §11).
+-- 0058_global_pause: the daemon-wide pause (task 149, spec §6, §11).
 --
 -- global_pause is a singleton: a row means "paused", no row means "active".
 -- It is durable on purpose — the pause exists for maintenance, and the most
