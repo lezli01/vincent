@@ -60,6 +60,22 @@ The CHANGELOG note (148.3) and the configuration reference are the signal.
 `[issue]`, drops the unknown level (task 009 decision 6 allows it) and draws
 the flat table. 148.2 lands in the same release as 148.1.
 
+*2026-11-17, amended.* 148.1 merged to `master` without 148.2 (the train
+for #875, review F2), so the window is open on `master` and the rolling
+`master-latest` build until 148.2 lands: a fresh install's board is the
+flat table, the config editor cannot offer `issue`, and the configuration
+reference's `[issue]` row describes a grouping no TUI draws yet. The
+default stays `[issue]` regardless — a file bootstrapped in the window says
+`[issue]` and so groups by issue the moment 148.2 lands, where a temporary
+`[workflow]` would stay `[workflow]` for good (decision 4). Two obligations
+follow:
+
+- **No release is cut between 148.1 and 148.2.** A tag in the window
+  would publish the gap under `/latest/` and to every `vincent update`.
+- **148.2 restores the guard.** `TestDefaultGroupingMatchesTheConfigDefault`
+  only logs a default level the TUI does not render; once `parseGrouping`
+  keeps `issue`, 148.2 deletes that branch so the comparison fails again.
+
 ## Tasks
 
 - [x] **148.1** (#982) `internal/config`: the `issue` level, its validation
@@ -68,6 +84,8 @@ the flat table. 148.2 lands in the same release as 148.1.
   amendments and task 009's note. ✓ 2026-11-17
 - [ ] **148.2** (#983) The TUI renders the `issue` level: the group key, the
   `g` cycle, the headers and the group for tasks started from no issue, and
-  the config editor's choices.
+  the config editor's choices. Before 148.2 merges, no release is cut;
+  with it, `TestDefaultGroupingMatchesTheConfigDefault` fails again rather
+  than logging (decision 6, amended).
 - [ ] **148.3** (#984) The TUI guide, the features page, the screenshots and
   the CHANGELOG entry.
