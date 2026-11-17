@@ -49,11 +49,13 @@ step's verb that would close, reopen or comment on an imported issue is refused
 its grant names `issue.close` or `issue.comment`; see
 [Handing work off](handoff.md)),
 and the read-only `health`, `info`, `config_get`, `agent_list`,
-`doctor`, `orphan_list`.
+`doctor`, `orphan_list`, `daemon_pause_status`.
 
-Twenty-four routes are deliberately **not** tools:
+Twenty-six routes are deliberately **not** tools:
 
 - `POST /v1/daemon/stop`
+- `POST /v1/daemon/pause`
+- `POST /v1/daemon/continue`
 - `POST /v1/agents/{name}/quota`
 - `POST /v1/daemon/backup`
 - `DELETE /v1/projects/{id}`

@@ -7852,6 +7852,42 @@ cannot be admitted while the caller holds its slot. A silent hang becomes an
 error the agent can act on, no new state is introduced, and these caps keep
 their current meaning.
 
+### Global pause (task 149, added 2026-11-17)
+
+A daemon-wide pause for maintenance: `POST /v1/daemon/pause` (§13.2),
+`vincent daemon pause` (§12.1), `Z` in the TUI (§15). While one is recorded:
+
+- **Admission holds.** The walk admits nothing. It is checked per candidate,
+  after the pending-pause park and before the task 003 usage hold, so a pause
+  requested on a queued task still takes effect — the same reason the usage
+  hold is a predicate rather than a SQL filter. Queued tasks stay `queued` and
+  keep their place in the order; a task created during the pause, by a human,
+  a trigger or a handoff, queues behind the hold like any other.
+- **Running tasks park at their next step boundary** — §6's soft `pause`,
+  never a kill. The engine reads the pause itself at every boundary, so a task
+  admitted in the instant before the pause committed parks too; taking the
+  pause also sets `pause_requested` on every running task a human had not
+  already paused, so each shows as pausing.
+- **Tasks waiting on a human stay where they are** (`awaiting_gate`,
+  `blocked`, `awaiting_children`). An `awaiting_input` task is not waited on
+  and parks at the step boundary after its answer. **Chats are not paused**:
+  a chat turn is a foreground conversation (§5.5).
+
+Three states are reported and one is stored: `active` (no pause), `pausing`
+(a pause, with tasks still `running`) and `paused` (a pause, none running).
+`pausing` is derived rather than stored, so it cannot go stale when the last
+task parks.
+
+`continue` (`POST /v1/daemon/continue`) lifts the pause and resumes **exactly**
+the tasks it parked — each through §6's `resume`, with its own transition —
+and withdraws the pause requests that had not taken effect. Which tasks those
+are is `tasks.global_pause` (§14): set beside every pause the global pause
+made, cleared by any human action on the task, the way every human action but
+`pause` clears `pause_requested` (§6). So a task a human paused by hand, before
+the pause or during it, stays paused after `continue`. The pause is durable — a
+daemon restarted for maintenance comes back paused — and both writes are
+idempotent: pausing a paused daemon keeps the original time and reason.
+
 ### Chats (task 063, added 2026-08-30)
 
 Chat turns are bounded by their **own** cap, `max_parallel_chats` (default 3),
@@ -7921,6 +7957,7 @@ One Go binary, `vincent`:
 | `vincent daemon start / stop / status` | Background daemon management (start detaches; stop = graceful shutdown) |
 | `vincent daemon logs [-n N] [-f]` | *Added 2026-08-28 (task 047).* Prints the tail of `{data_dir}/logs/daemon.log` (§17), 500 lines by default, `-f` following it on a two-second cadence. It reads the file **from disk and never calls the API**, so it needs no daemon and starts none — it cannot exit 2. A missing file is an error naming the path; an empty one prints nothing and succeeds |
 | `vincent daemon backup <path.tar.gz> / restore <path.tar.gz>` | *Added 2026-08-25 (task 030).* One `.tar.gz` of the database (`VACUUM INTO`, §14), `transcripts/`, `config.yaml` and `workflows/`, plus a manifest. `backup` is a thin API client and needs a **running** daemon; `restore` runs client-side and needs a **stopped** one, and refuses a newer schema or an occupied destination without `--force`. *Amended 2026-09-17 (task 115):* the daemon can also take the same archive **on a schedule**, into `backup.dir`, keeping the newest `backup.keep` of its own archives (§12.3). There is no new command: `restore` takes a scheduled archive exactly as it takes a manual one |
+| `vincent daemon pause [--reason TEXT] [--wait] / continue` | *Added 2026-11-17 (task 149).* The global pause (§11): `pause` holds admission and parks every running task at its next step boundary; `--wait` returns once none is still finishing a step (exit 1 after `--timeout`, default 30m, the pause staying in effect); `continue` lifts it and resumes exactly the tasks it parked. Thin API clients that need a **running** daemon. `vincent daemon status` adds one line while a pause is in effect |
 | `vincent task import <archive.tar.gz> <task-id> [--project <id>]` | *Added 2026-09-17 (task 117, issue #411).* Copies one task that was `archived` in a `daemon backup` archive — its row, its step runs and its `transcripts/{id}/` — back into this installation, with its id, `archived`. The undo for `vincent task delete`. A thin API client of `POST /v1/tasks/import` (§13.2) that needs a **running** daemon, exits 2 without one, and resolves the archive path before sending it |
 | `vincent service install / uninstall / status` | Registers OS-native autostart, always as the invoking user: launchd agent, systemd user unit, Windows Scheduled Task |
 | `vincent workflow ls / validate [file] / render <file> / init <name>` | Registry listing / YAML validation / template dry run / writing a new registry file. *Amended 2026-08-26 (task 034):* `init` writes the §5.2 scope directory a `--project` flag selects — global by default, resolved from §12.2 with **no daemon**; `--project N` needs one, purely to resolve the id to a repository root. `--from <example>` writes an embedded `examples/*.yaml` with its top-level `name:` rewritten. It refuses an existing path (`O_EXCL`) or a name another file in the same scope already declares, and only warns when the name shadows a lower scope. *Added 2026-08-28 (task 044):* `render` executes every template the file declares — `prompt`, `run`, `check`, `instructions`, `if` and `for_each` — against a synthetic §8.4 preview context and prints what each step would send, with the §8.6 triple each agent step resolves to. Where `validate` parses a template, this **executes** it, which is the only way `missingkey=error` catches a typo'd field. It is offline for the same reason `validate` is; `--task`/`--project` reach the daemon for a real task's facts and for registry lookups. Exit 0 clean · 1 a render error · 2 no daemon answered a `--task`/`--project` |
@@ -10234,6 +10271,17 @@ GET    /v1/update                       *Added 2026-08-29 (task 055).* the daemo
                                         **daemon's** build, which may be older than the binary
                                         that asked — that is what `vincent daemon status` reports
                                         after a swap. A prerelease never appears here
+GET    /v1/daemon/pause                 the global pause (§11, task 149, added 2026-11-17) →
+                                        { state: active|pausing|paused, paused_at, reason,
+                                        running, awaiting_input, queued, held }. `held` is the
+                                        tasks the pause parked; `pausing` is a pause with
+                                        `running` > 0
+POST   /v1/daemon/pause                 { reason? } → the same body. Takes the pause; a repeat
+                                        keeps the first time and reason. `reason` is one line,
+                                        at most 200 characters, else 400
+POST   /v1/daemon/continue              → the same body plus `resumed`. Lifts the pause and
+                                        resumes the tasks it parked; on an active daemon it
+                                        resumes nothing
 POST   /v1/daemon/stop                  graceful shutdown (§12.4); 202, then the daemon exits.
                                         `vincent daemon stop` calls this and waits for exit
 POST   /v1/daemon/backup                { path } → { path, bytes, database_bytes,
@@ -12140,6 +12188,13 @@ Two kinds of streams:
    `workflow.registry_changed`, `agent.quota_changed`,
    `task.github_pull_changed`, `task.delivery_changed`, `task.deleted`, `chat.deleted`,
    `task.restored`, `trigger.fired`, `trigger.poll_changed`, `daemon.shutting_down`.
+   *Added 2026-11-17 (task 149): `daemon.pause_changed` announces the global
+   pause (§11) being taken or lifted, with `{paused, paused_at, reason}` and no
+   `task_id` or `project_id`. It is written only on a real change, never on a
+   repeated pause or continue. `scheduler.WakeOn` is **true** for it: lifting
+   the pause is exactly when a held queue becomes admissible. The move from
+   `pausing` to `paused` has no event of its own — it is the last running
+   task's `task.state_changed`, on which a client showing a pause refetches.*
    *Added 2026-09-13 (task 096): `trigger.fired` announces a delivery whose
    outcome is `fired`, published post-commit after its ledger row. Its payload
    is `{trigger_id, delivery_id, action}`; the event's `project_id` is the
@@ -12575,6 +12630,11 @@ children inherit (`environment`), and whether steps are wired to MCP at all
 it runs under. The route-table parity test fails on either an unexposed or a
 silently exposed route, so this cannot drift.
 
+*Amended 2026-11-17 (task 149).* `POST /v1/daemon/pause` and
+`POST /v1/daemon/continue` join `daemon/stop` on its line: an agent must not
+halt — or restart — every piece of work the daemon supervising it runs, its own
+step included. `GET /v1/daemon/pause` is the tool `daemon_pause_status`.
+
 *Added 2026-08-30 (task 060, issue #244).* **`config_get` is the one tool whose
 body differs from its route's.** §12.3 serves `environment.set`'s values and
 `notify.command`'s argv over HTTP, where the boundary is loopback plus an 0600
@@ -12941,6 +13001,7 @@ CREATE TABLE tasks (
   block_reason        TEXT,                   -- set while state='blocked'
   block_detail        TEXT,                   -- daemon-authored sentence explaining block_reason (§5.3, issue #594, migration 0035); cleared with it
   pause_requested     INTEGER NOT NULL DEFAULT 0, -- §6 pause accepted, not yet taken effect
+  global_pause        INTEGER NOT NULL DEFAULT 0, -- the pause, pending or taken, is the global pause's (§11, task 149, migration 0057); cleared by any human action
   retry_cursor_at     TEXT,                   -- last human `retry`; the retry budget counts failures after it (§7.2)
   pending_override_json TEXT,                 -- edit+retry text awaiting the next attempt's step_run
   pending_repair_json TEXT,                   -- ad-hoc repair request awaiting its admission (§6, task 025, migration 0010);
@@ -13179,6 +13240,15 @@ CREATE TABLE agent_quota (
   resets_at          TEXT NOT NULL,      -- the effective reset the engine acted on
   resets_at_reported INTEGER NOT NULL,   -- 1 = the CLI named it; 0 = usage_limit_recheck_interval supplied it
   source             TEXT NOT NULL       -- 'observed'; the seam a probe would fill
+);
+
+-- The global pause (§11, task 149, added 2026-11-17, migration 0057): a
+-- singleton whose row means "paused". Durable, so a daemon restarted for
+-- maintenance comes back paused rather than admitting the queue.
+CREATE TABLE global_pause (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  paused_at  TEXT NOT NULL,
+  reason     TEXT NOT NULL DEFAULT ''   -- one line; '' is none
 );
 
 CREATE TABLE idempotency_keys (       -- §13.1 replay protection (task 040)
@@ -17512,6 +17582,16 @@ Global: `:` palette (`ctrl+p` where a text field has the keyboard) · `?` help (
 a status line reminds of the running task count on exit) · `M` toggle mouse · `@` switch project (*added 2026-10-05,
 task 132.4*: opens the project picker, §15 Layout; the operation is `project`,
 rebindable like every global).
+
+*Added 2026-11-17 (task 149):* `Z` pauses all work, or continues it (§11). It
+asks y/n on the status line first — it changes what every project is doing —
+and the operation is `pause_all`, rebindable like every global. While a pause
+is in effect every screen shows it twice, on the terms the connection badge
+has (task 129.15: drawn only while it is news, never shed): a header badge,
+`⏸ pausing (N finishing)` or `⏸ PAUSED`, and a status line under the header
+with the time, the reason and the held and queued counts. The daemon view's
+identity block carries a `work` row that says `▶ active` too, since that screen
+answers whether the daemon is working.
 
 *Amended 2026-10-21 (task 136.2, issue #787):* `tab`/`shift+tab` are no
 longer a global "move focus between panels" — that row had stopped being true
