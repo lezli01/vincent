@@ -1,6 +1,6 @@
 # 149 — A global pause: pause all work, continue all work
 
-**Status:** 🔄 in progress (3/4) · **Opened:** 2026-11-17
+**Status:** ✅ done (4/4) · **Opened:** 2026-11-17
 
 The author asked for one command that pauses everything and one that continues
 everything, so maintenance — upgrading vincent, rebooting, rotating a token,
@@ -112,5 +112,5 @@ line before it acts, since it changes what every project is doing.
   `continue`, and the pause line in `vincent daemon status`.
 - [x] **149.3** TUI: `Z`, the header badge, the status line, the daemon view's
   `work` row.
-- [ ] **149.4** Screenshots: a capture of the paused header in
-  `scripts/screenshots.sh`.
+- [x] **149.4** Screenshots: `tui-global-pause`, the last tape in
+  `scripts/screenshots.sh`, photographs the pausing header and status line.

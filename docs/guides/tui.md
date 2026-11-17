@@ -3733,6 +3733,12 @@ chats are not affected. The pause shows on every screen, twice:
 - a line under the header gives the time, the reason if one was given, and how
   many tasks are held and queued.
 
+![The task board while the pause is taking effect: the header reads
+"⏸ pausing (3 finishing)" beside the project, and the line under it says
+three tasks are still finishing their step, since when, the reason
+"upgrading vincent", and how many are held, queued and awaiting
+input](../assets/tui-global-pause.png)
+
 Neither is drawn when work is running normally. The [daemon view](#daemon)'s
 `work` row says which of the three it is — `▶ active` included.
 

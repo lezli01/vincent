@@ -162,7 +162,7 @@ the living engineering specification records implementation contracts.
 | [146](146-jira-several-projects.md) | Several Jira projects in one binding, each with its own optional JQL | ✅ done (1/1) |
 | [147](147-update-to-master.md) | `vincent update --master`: install the newest master build, which CI builds and publishes on every push to master | ✅ done (1/1) |
 | [148](148-board-group-by-issue.md) | The board grouped by vincent issue: an `issue` level for `tui.board.group_by`, `[issue]` the default | 🔄 in progress (2/3) |
-| [149](149-global-pause.md) | A global pause: `vincent daemon pause` / `continue`, the `Z` key, and the pause shown on every TUI screen | 🔄 in progress (3/4) |
+| [149](149-global-pause.md) | A global pause: `vincent daemon pause` / `continue`, the `Z` key, and the pause shown on every TUI screen | ✅ done (4/4) |
 
 ## How to add and update a task document
 
