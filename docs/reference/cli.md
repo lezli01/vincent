@@ -1800,7 +1800,9 @@ vincent update [--master] [--check] [--dry-run] [--require-signature] [--json]
 ```
 
 Asks GitHub for the latest **stable** release and, unless `--check` is given,
-installs it over this binary. A prerelease is never offered.
+installs it over this binary. A prerelease is never offered. A build from
+source that `vincent version` reports as a release plus commits, such as
+`v0.13.0-46-gabc1234`, is past that release, so only a later one is offered.
 
 **`--master`** targets the newest build of the `master` branch instead. CI
 builds every push to `master` with the release pipeline's own configuration,

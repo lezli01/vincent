@@ -106,6 +106,22 @@ func TestIsNewer(t *testing.T) {
 		{"empty latest", "v0.3.0", "", false},
 		{"prerelease is never an update", "v0.4.1", "v0.5.0-rc.1", false},
 		{"patch ordering", "v0.4.1", "v0.4.10", true},
+		// A source build stamped by `git describe --tags --always --dirty`
+		// (the mage build) is past the tag it names, never behind it, and
+		// behind the next release only.
+		{"describe past the release", "v0.13.0-46-ge7b38595", "v0.13.0", false},
+		{"describe past an older release", "v0.13.0-46-ge7b38595", "v0.12.3", false},
+		{"describe behind the next patch", "v0.13.0-46-ge7b38595", "v0.13.1", true},
+		{"describe behind the next minor", "v0.13.0-46-ge7b38595", "v0.14.0", true},
+		{"dirty describe past the release", "v0.13.0-46-ge7b38595-dirty", "v0.13.0", false},
+		{"dirty tree on the release", "v0.13.0-dirty", "v0.13.0", false},
+		{"dirty tree on an older release", "v0.12.0-dirty", "v0.13.0", true},
+		{"describe without a v", "0.13.0-2-gabcdef0", "v0.13.0", false},
+		{"bare hash from --always", "e7b3859", "v0.13.0", false},
+		// `go install …@master` stamps a pseudo-version, which already sorts
+		// between the release before it and the one after.
+		{"pseudo-version past the release", "v0.13.1-0.20261117075329-e7b38595abcd", "v0.13.0", false},
+		{"pseudo-version behind the next patch", "v0.13.1-0.20261117075329-e7b38595abcd", "v0.13.1", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := IsNewer(tc.current, tc.latest); got != tc.want {
