@@ -16555,7 +16555,10 @@ only for an imported issue, the dim `closed` only for a closed one, and the
 label truncated with `…` to fit the title column on a normal or a wrapped
 board so the count, the `! n` badge and the marked count stay on screen. The
 `no issue` group is ordered by the band sort like any other, never pinned
-last. The label is display only — a fold path holds keys, so an issue whose
+last. The header shows the issue as it is now, so `issue.updated`,
+`issue.state_changed` and `issue.deleted` refetch the board as a task event
+does — renaming or closing an issue writes no task event (review F1,
+PR #1000). The label is display only — a fold path holds keys, so an issue whose
 title changes keeps its fold — and a single-value level names its label, not
 its key, in the panel title: `Tasks · no issue`. Grouping by issue drops no
 column: `WORKFLOW` stays and is dropped only when `workflow` is a level. `g`

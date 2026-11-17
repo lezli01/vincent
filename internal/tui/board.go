@@ -757,7 +757,13 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 	// refetch it. What is drawn for the selection is filtered in memory.
 	// A linked chat opening or closing changes a row's `open_chat_id` and
 	// available_actions without a task event (task 119).
-	if _, lock := lockEventTask(ev.Event); isTaskEvent(ev.Event.Type) || lock {
+	//
+	// An issue group's header is drawn from the row's live `issue` (task
+	// 148.2): its title, its short ref and `closed`. Renaming, closing or
+	// deleting the issue — here, from another client or by sync — writes
+	// only an issue.* event, so those refetch too, or the header would keep
+	// the old title until some unrelated task event happened by.
+	if _, lock := lockEventTask(ev.Event); isTaskEvent(ev.Event.Type) || lock || redrawsIssueHeader(ev.Event.Type) {
 		cmds = append(cmds, b.scheduleRefresh())
 	}
 	if ev.Event.Type == eventAgentQuotaChanged {
@@ -770,6 +776,18 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 
 func isTaskEvent(t string) bool {
 	return strings.HasPrefix(t, "task.") || strings.HasPrefix(t, "project.")
+}
+
+// redrawsIssueHeader reports whether an issue.* event can change what an
+// issue group's header draws — the title, the imported ref or the state.
+// Comments, labels and lane moves never reach a header, so they do not
+// refetch the board.
+func redrawsIssueHeader(t string) bool {
+	switch t {
+	case "issue.updated", "issue.state_changed", "issue.deleted":
+		return true
+	}
+	return false
 }
 
 // eventWorkflowRegistryChanged is the durable event the daemon writes after
