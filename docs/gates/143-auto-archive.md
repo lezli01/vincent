@@ -1,7 +1,7 @@
 # Task 143 gate — auto-archive on issue close
 
 **Acceptance (task 143.5):** when an issue reaches `closed`, by the API or by
-a sync from GitHub, the daemon archives the settled tasks it started, with
+a sync from GitHub or Jira, the daemon archives the settled tasks it started, with
 `archived_by: "issue_closed"` on the archive event; the unattended archive
 deletes an empty branch locally and never on the remote, never forces a dirty
 worktree — which `vincent doctor` then reports as held, without a problem —
@@ -11,10 +11,11 @@ all with `archive_tasks_on_issue_close: false`.
 
 ## Scripted: `scripts/143-gate.sh`
 
-Six scenarios over curl, `vincent doctor --json` and git, each with its own
+Seven scenarios over curl, `vincent doctor --json` and git, each with its own
 daemon, run in `ci.yml`'s `gate-group` (group 1) on Linux, macOS and Windows.
 No agent CLI is involved: every step is an `exit 0` command step or a manual
-gate, and the GitHub half is `cmd/fakegh` installed as `gh`.
+gate, the GitHub half is `cmd/fakegh` installed as `gh`, and the Jira half
+is `cmd/fakejira` on a loopback port, edited only through its REST routes.
 
 | # | Scenario | Asserts |
 |---|---|---|
@@ -24,6 +25,7 @@ gate, and the GitHub half is `cmd/fakegh` installed as `gh`.
 | 4 | sync close | an issue imported from the fake GitHub is closed in its corpus; after `POST /v1/projects/{id}/issues/sync` it reads `closed`, its done task is `archived` with `archived_by: "issue_closed"`, and the fake's argv log shows no write |
 | 5 | reopen before settle | closed then reopened while its task waits at a manual gate; approved, the task reaches `done` and is still `done` once the barrier is archived |
 | 6 | key off | with `archive_tasks_on_issue_close: false` a closed issue's done task stays `done` over a 10 s window, and doctor's `issue_archive` is `enabled: false` with both lists empty |
+| 7 | Jira sync close (Won't Do) | an issue imported from the fake Jira (VIN-1) has a done task; the gate POSTs transition `31` (Done) with resolution "Won't Do" to the fake's REST API, then `POST /v1/projects/{id}/issues/sync`; the issue reads `closed`/`not_planned`, the task is `archived` with `archived_by: "issue_closed"` and the `issue_id`, and the fake's request log has no transition POST for VIN-1's id ([#988](https://github.com/lezli01/vincent/issues/988)) |
 
 The **ordering barrier** in scenarios 2, 3 and 5 is a second issue of the
 same project whose done task must archive: closed after the asserted event
@@ -37,3 +39,4 @@ is the gate's one bounded-window negative assertion.
 | Date | Where | Result | By |
 |---|---|---|---|
 | 2026-11-05 | `scripts/143-gate.sh` on macOS (darwin/arm64) | PASS, all six scenarios | task 143.5 |
+| 2026-11-17 | `scripts/143-gate.sh` on macOS (darwin/arm64) | PASS, all seven scenarios; scenario 7 also alone (`VINCENT_GATE_SCENARIO=7`) | #988 |

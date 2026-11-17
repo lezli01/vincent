@@ -41,6 +41,8 @@ Conventions for this file are in [the tasks README](README.md).
   platforms. Depends: 143.3. `scripts/143-gate.sh`, wired in `ci.yml`'s
   `gate-group` (group 1); its record is
   [docs/gates/143-auto-archive.md](../gates/143-auto-archive.md). ✓ 2026-11-05
+  *2026-11-17:* scenario 7 (a close read in from Jira, Won't Do) was added
+  for [#988](https://github.com/lezli01/vincent/issues/988), part of #981.
 - [x] **143.6** ([#986](https://github.com/lezli01/vincent/issues/986)) The
   TUI daemon view shows 143.4's group: an auto-archive block between the
   database and the adapters, rendered from the doctor report the view already
