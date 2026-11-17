@@ -2,6 +2,7 @@ package fakejira
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,9 +12,10 @@ import (
 
 // Query is a parsed JQL query in the fake's subset.
 type Query struct {
-	// ProjectKey or ProjectID, from `project = "KEY"` or `project = ID`.
-	ProjectKey string
-	ProjectID  string
+	// ProjectKeys and ProjectIDs, from `project = "KEY"`, `project = ID`
+	// or `project in ("KEY", ID, ...)`; an issue in any of them matches.
+	ProjectKeys []string
+	ProjectIDs  []string
 	// UpdatedSince, from `updated >= <epoch ms>`; zero when absent.
 	UpdatedSince    time.Time
 	HasUpdatedSince bool
@@ -28,7 +30,8 @@ type Query struct {
 }
 
 // ParseJQL parses the subset of JQL the fake answers: clauses joined by AND
-// out of `project = "KEY"`, `project = ID`, `updated >= <epoch ms>`,
+// out of `project = "KEY"`, `project = ID`, `project in (...)` of those
+// (task 146's several projects), `updated >= <epoch ms>`,
 // `statusCategory != Done` and `id > N`, then optionally `ORDER BY updated
 // ASC, id ASC` or `ORDER BY id ASC`. Keywords and field names are
 // case-insensitive. Anything else — another field, operator or ordering, an
@@ -53,6 +56,15 @@ func ParseJQL(jql string) (Query, error) {
 		if i+2 >= len(toks) {
 			return Query{}, fmt.Errorf("incomplete clause")
 		}
+		if toks[i].is("project") && toks[i+1].is("in") {
+			n, err := q.projectIn(toks[i+2:])
+			if err != nil {
+				return Query{}, err
+			}
+			i += 2 + n
+			clauses++
+			continue
+		}
 		field, op, val := toks[i], toks[i+1], toks[i+2]
 		i += 3
 		if err := q.clause(field, op, val); err != nil {
@@ -76,18 +88,46 @@ func ParseJQL(jql string) (Query, error) {
 	return q, nil
 }
 
+// projectIn parses the `(a, b, ...)` of `project in`, returning how many
+// tokens it read.
+func (q *Query) projectIn(toks []token) (int, error) {
+	if len(toks) == 0 || toks[0].text != "(" || toks[0].quoted {
+		return 0, fmt.Errorf("project in needs a parenthesised list")
+	}
+	for i := 1; i < len(toks); i += 2 {
+		if err := q.project(toks[i]); err != nil {
+			return 0, err
+		}
+		if i+1 >= len(toks) {
+			break
+		}
+		switch sep := toks[i+1]; {
+		case sep.text == ")" && !sep.quoted:
+			return i + 2, nil
+		case sep.text != "," || sep.quoted:
+			return 0, fmt.Errorf("expected , or ) in project in, got %q", sep.text)
+		}
+	}
+	return 0, fmt.Errorf("unterminated project in")
+}
+
+// project adds one `project` value: a quoted key or a numeric id.
+func (q *Query) project(val token) error {
+	if val.quoted {
+		q.ProjectKeys = append(q.ProjectKeys, val.text)
+		return nil
+	}
+	if _, err := strconv.ParseInt(val.text, 10, 64); err == nil {
+		q.ProjectIDs = append(q.ProjectIDs, val.text)
+		return nil
+	}
+	return fmt.Errorf("project must be a quoted key or a numeric id")
+}
+
 func (q *Query) clause(field, op, val token) error {
 	switch {
 	case field.is("project") && op.text == "=":
-		if val.quoted {
-			q.ProjectKey = val.text
-			return nil
-		}
-		if _, err := strconv.ParseInt(val.text, 10, 64); err == nil {
-			q.ProjectID = val.text
-			return nil
-		}
-		return fmt.Errorf("project must be a quoted key or a numeric id")
+		return q.project(val)
 	case field.is("updated") && op.text == ">=" && !val.quoted:
 		ms, err := strconv.ParseInt(val.text, 10, 64)
 		if err != nil {
@@ -146,8 +186,8 @@ func tokenize(s string) ([]token, error) {
 			}
 			out = append(out, token{text: string(r[i+1 : j]), quoted: true})
 			i = j + 1
-		case c == ',':
-			out = append(out, token{text: ","})
+		case c == ',' || c == '(' || c == ')':
+			out = append(out, token{text: string(c)})
 			i++
 		case c == '=' || c == '!' || c == '<' || c == '>':
 			j := i + 1
@@ -173,11 +213,11 @@ func tokenize(s string) ([]token, error) {
 // match reports whether an issue view satisfies the query.
 func (q Query) match(c *Corpus, is *Issue) bool {
 	p := c.project(is.Project)
-	if q.ProjectKey != "" && is.Project != q.ProjectKey {
-		return false
-	}
-	if q.ProjectID != "" && (p == nil || p.ID != q.ProjectID) {
-		return false
+	if len(q.ProjectKeys)+len(q.ProjectIDs) > 0 {
+		in := slices.Contains(q.ProjectKeys, is.Project) || (p != nil && slices.Contains(q.ProjectIDs, p.ID))
+		if !in {
+			return false
+		}
 	}
 	if q.HasUpdatedSince {
 		t, err := time.Parse(TimeLayout, is.Updated)

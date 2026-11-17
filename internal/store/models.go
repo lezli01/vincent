@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -93,13 +94,37 @@ const (
 // daemon state only, edited through the project routes and never read from
 // the repository (task 142 decision 5.2). The Jira fields are empty unless
 // Provider is jira; JiraMappingJSON is a jiramap.Config in its persisted
-// spelling, or "".
+// spelling, or "". JiraProjects are the Jira projects on JiraSite the
+// binding syncs, at least one beside jira, in the order the binding names
+// them (task 146); the site, the credential and the mapping are shared.
 type IssueSource struct {
 	Provider        string
 	JiraSite        string
-	JiraProjectKey  string
-	JiraJQL         string
+	JiraProjects    []JiraProject
 	JiraMappingJSON string
+}
+
+// JiraProject is one Jira project a binding syncs: its key, and the
+// optional JQL that narrows its issues ("" for all of them).
+type JiraProject struct {
+	Key string `json:"key"`
+	JQL string `json:"jql,omitempty"`
+}
+
+// Equal reports whether b and o are the same binding, the projects compared
+// in order.
+func (b IssueSource) Equal(o IssueSource) bool {
+	return b.Provider == o.Provider && b.JiraSite == o.JiraSite &&
+		b.JiraMappingJSON == o.JiraMappingJSON && slices.Equal(b.JiraProjects, o.JiraProjects)
+}
+
+// JiraKeys is the bound Jira project keys, in the binding's order.
+func (b IssueSource) JiraKeys() []string {
+	keys := make([]string, len(b.JiraProjects))
+	for i, p := range b.JiraProjects {
+		keys[i] = p.Key
+	}
+	return keys
 }
 
 // Effective resolves the binding against what origin says: an explicit

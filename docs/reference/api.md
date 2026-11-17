@@ -760,8 +760,10 @@ from:
 
 ```json
 "issue_source": { "provider": "jira", "effective": "jira",
-  "jira": { "site": "https://acme.atlassian.net", "project_key": "ENG",
-            "jql": "labels = backend", "mapping": null } }
+  "jira": { "site": "https://acme.atlassian.net",
+            "projects": [ { "key": "ENG", "jql": "labels = backend" },
+                          { "key": "OPS", "jql": "" } ],
+            "mapping": null } }
 ```
 
 `provider` is what is stored: `derive` (the default), `none`, `github` or
@@ -781,21 +783,29 @@ names the field:
 | Field | Rule |
 |---|---|
 | `jira.site` | An absolute `https://` base URL, or `http://` on `localhost`, 127.0.0.0/8 or `[::1]`. No user or password, path, query or fragment. Stored with a lower-cased host and no trailing slash |
-| `jira.project_key` | An uppercase letter, then uppercase letters, digits or underscores |
-| `jira.jql` | Optional. One line, no `ORDER BY`, at most 2000 characters. It narrows the project's issues and never replaces the project |
+| `jira.projects` | One to 50 Jira projects on the site, each key once. The site, the credential and `mapping` are shared |
+| `jira.projects[i].key` | An uppercase letter, then uppercase letters, digits or underscores |
+| `jira.projects[i].jql` | Optional. One line, no `ORDER BY`, at most 2000 characters. It narrows that project's issues only, and never replaces the project |
 | `jira.mapping` | Optional. An object of `overrides` (`close_completed`, `close_not_planned`, `close_duplicate`, `reopen`), `duplicate_resolutions` and `not_planned_resolutions`. Unknown fields are refused |
+
+The single-project spelling, `jira.project_key` with an optional `jira.jql`,
+is still accepted and read as a one-project list. Sending it beside
+`jira.projects` is refused, and responses carry `projects` only.
 
 No field holds a credential. The daemon reads the Jira credential from the
 environment variables [`jira.user_env` and `jira.token_env`](configuration.md#jira)
 name — `JIRA_USER` and `JIRA_API_TOKEN` by default.
 
-Changing the effective provider, `jira.site` or `jira.project_key` is a
-**rebind**, applied in the update's own transaction. The previous source's
-imported issues are marked `remote_status: missing`, and state write-back to
-them stops. The project's [sync status](#issue-sync) starts over, and each
-touched issue sends `issue.updated` with `changed: ["remote_status"]`. No issue
-is deleted, and binding back re-imports them and marks them live again.
-Changing only `jql` or `mapping` is not a rebind. A project bound to `none` or
+Changing the effective provider, `jira.site` or the set of Jira project keys
+is a **rebind**, applied in the update's own transaction. The previous
+source's imported issues are marked `remote_status: missing`, and state
+write-back to them stops — except, when the binding stays on the same Jira
+site, the issues of every project it still names, which stay live. The
+project's [sync status](#issue-sync) starts over, so an added project is
+imported from scratch, and each touched issue sends `issue.updated` with
+`changed: ["remote_status"]`. No issue is deleted, and binding back
+re-imports them and marks them live again. Changing only a `jql`, the
+projects' order or `mapping` is not a rebind. A project bound to `none` or
 `jira` is skipped by the GitHub issue import, and its pull requests are still
 linked. A `none` project's sync status reports `source_not_github`; a `jira`
 project is synced by the Jira pass instead.
@@ -941,18 +951,21 @@ ignored now, like any unknown one.
 
 `GET /v1/projects/{id}/jira` is the Jira counterpart of the GitHub probe. It
 asks Jira three questions on demand, in order: `serverInfo` (is the site
-reachable), `myself` (is the credential accepted) and the bound project (does
-it exist and can the credential see it). It stores nothing and never syncs:
+reachable), `myself` (is the credential accepted) and each bound project in
+order (does it exist and can the credential see it). It stores nothing and
+never syncs:
 
 ```json
 { "enabled": true, "available": true, "reason": "",
-  "site": "https://acme.atlassian.net", "project_key": "ENG", "project_id": "10000",
+  "site": "https://acme.atlassian.net",
+  "projects": [ { "key": "ENG", "project_id": "10000" }, { "key": "OPS", "project_id": "10001" } ],
   "server": { "version": "1001.0.0", "deployment_type": "Cloud" },
   "account": { "display_name": "Ada Lovelace" } }
 ```
 
-`enabled` is [`jira.enabled`](configuration.md#jira). `project_id`, `server` and
-`account` appear once the check that answers them has passed. When `available`
+`enabled` is [`jira.enabled`](configuration.md#jira). A project's `project_id`,
+`server` and `account` appear once the check that answers them has passed.
+When a project's check fails, `message` ends with that project's key. When `available`
 is false, `reason` names the first check that failed and `message` says it as
 a sentence:
 
@@ -963,8 +976,8 @@ a sentence:
 | `no_credential` | The variable named by `jira.user_env` or `jira.token_env` is unset in the daemon's environment |
 | `unreachable` | The site could not be reached, or the three calls together took longer than 8 seconds |
 | `unauthorized` | Jira rejected the credential (401) |
-| `forbidden` | The credential may not read the project (403) |
-| `not_found` | The bound project does not exist or is not visible to the credential |
+| `forbidden` | The credential may not read a bound project (403) |
+| `not_found` | A bound project does not exist or is not visible to the credential |
 | `rate_limited` | Jira is rate limiting the credential |
 | `bad_request` | Jira refused the request |
 | `bad_response` | The answer arrived and did not parse |
@@ -1019,7 +1032,7 @@ When `ok` is false, `reason` says why:
 | `source_not_github` | The project's [issue source](#issue-source) is pinned to `none`. It has no sync row either |
 | `no_credential` | A Jira project, and the variable named by `jira.user_env` or `jira.token_env` is unset |
 | `no_client` | The daemon has no client wired for the provider |
-| `binding_changed` | A Jira project whose bound project key now resolves to a different Jira project id than the one recorded on its first successful sync. Sync stops and the issues are never re-keyed; re-bind the project to start over |
+| `binding_changed` | A Jira project one of whose bound project keys now resolves to a different Jira project id than the one recorded on its first successful sync. Sync stops and the issues are never re-keyed; re-bind the project to start over |
 | `origin_changed` | `origin` now names a different repository than the one the project is bound to. Sync stops and is never re-keyed; a rename GitHub redirects is not this |
 | any [GitHub reason](#github-issues) or [Jira reason](#jira-probe) | The last attempt failed with it — `rate_limited`, `no_credential`, `unauthorized`, `forbidden`, `not_found`, `unreachable`, … |
 

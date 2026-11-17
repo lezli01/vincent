@@ -48,9 +48,11 @@ const jiraReasonNotJira = "not_jira"
 //     no_credential, unreachable, unauthorized, forbidden, not_found,
 //     rate_limited, bad_request or bad_response (jira.Reason*).
 //   - message: reason as a sentence for a human; never Jira's own error text.
-//   - site, project_key: the binding's, set whenever the project is on Jira.
-//   - project_id: Jira's numeric id for project_key, once the project check
-//     answered.
+//   - site, projects: the binding's site and its projects' keys (task 146),
+//     set whenever the project is on Jira; each project carries Jira's
+//     numeric id once its check answered. The projects are checked in the
+//     binding's order and the first that fails is the answer, its message
+//     naming its key.
 //   - server: {version, deployment_type} from serverInfo, once reachable.
 //   - account: {display_name} of the credential's user, once accepted.
 //
@@ -58,15 +60,20 @@ const jiraReasonNotJira = "not_jira"
 // the value of the user variable, or an Authorization header: the body is
 // built from Jira's answers and the reason vocabulary only.
 type jiraResponse struct {
-	Enabled    bool            `json:"enabled"`
-	Available  bool            `json:"available"`
-	Reason     string          `json:"reason"`
-	Message    string          `json:"message,omitempty"`
-	Site       string          `json:"site,omitempty"`
-	ProjectKey string          `json:"project_key,omitempty"`
-	ProjectID  string          `json:"project_id,omitempty"`
-	Server     *jiraServerBody `json:"server,omitempty"`
-	Account    *jiraAccount    `json:"account,omitempty"`
+	Enabled   bool               `json:"enabled"`
+	Available bool               `json:"available"`
+	Reason    string             `json:"reason"`
+	Message   string             `json:"message,omitempty"`
+	Site      string             `json:"site,omitempty"`
+	Projects  []jiraProbeProject `json:"projects,omitempty"`
+	Server    *jiraServerBody    `json:"server,omitempty"`
+	Account   *jiraAccount       `json:"account,omitempty"`
+}
+
+// jiraProbeProject is one bound project as the probe reports it.
+type jiraProbeProject struct {
+	Key       string `json:"key"`
+	ProjectID string `json:"project_id,omitempty"`
 }
 
 type jiraServerBody struct {
@@ -125,7 +132,10 @@ func (s *Server) jiraProbe(ctx context.Context, project *store.Project) jiraResp
 		return out.fail(jiraReasonNotJira)
 	}
 	client := jira.New(res.JiraSite, s.deps.JiraHTTP, nil)
-	out.Site, out.ProjectKey = client.Site(), res.JiraProjectKey
+	out.Site = client.Site()
+	for _, p := range res.JiraProjects {
+		out.Projects = append(out.Projects, jiraProbeProject{Key: p.Key})
+	}
 	if !cfg.Jira.Enabled {
 		return out.fail(issuesource.ReasonDisabled)
 	}
@@ -147,13 +157,18 @@ func (s *Server) jiraProbe(ctx context.Context, project *store.Project) jiraResp
 		return out.failWith(s, "myself", err)
 	}
 	out.Account = &jiraAccount{DisplayName: me.DisplayName}
-	p, err := client.Project(ctx, res.JiraProjectKey)
-	if err != nil {
-		return out.failWith(s, "project", err)
-	}
-	out.ProjectID = p.ID
-	if p.Key != "" {
-		out.ProjectKey = p.Key
+	for i := range out.Projects {
+		bound := &out.Projects[i]
+		p, err := client.Project(ctx, bound.Key)
+		if err != nil {
+			out = out.failWith(s, "project", err)
+			out.Message += " (project " + bound.Key + ")"
+			return out
+		}
+		bound.ProjectID = p.ID
+		if p.Key != "" {
+			bound.Key = p.Key
+		}
 	}
 	out.Available = true
 	return out

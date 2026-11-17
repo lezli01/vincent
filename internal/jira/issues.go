@@ -89,16 +89,67 @@ func parseTime(s string) time.Time {
 	return time.Time{}
 }
 
-// InitialJQL is the first import's query: the project's open issues in id
-// order, resuming after afterID when set, and narrowed by the binding's extra
-// JQL when set. The project is its numeric id, which survives a rename of
-// the key.
-func InitialJQL(projectID, extraJQL, afterID string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "project = %s AND statusCategory != Done", projectID)
-	if extra := strings.TrimSpace(extraJQL); extra != "" {
-		fmt.Fprintf(&b, " AND (%s)", extra)
+// Scope is one Jira project a sync reads, and the binding's optional JQL
+// narrowing it (task 146). Project is the numeric id, which survives a
+// rename of the key, or a quoted key before the id is known.
+type Scope struct {
+	Project string
+	JQL     string
+}
+
+// scopeClause is what a query says about the projects it reads, as a head
+// that opens the query and a tail that follows the state clause. One scope
+// keeps the shape a single-project binding has always sent — `project = X`,
+// with its JQL as the tail — so its queries are unchanged. Several are one
+// head: `project in (...)` when none narrows, otherwise a parenthesised OR
+// of `(project = X AND (jql))` for each that does and the `project = Y` or
+// `project in (...)` of those that do not. Each scope's JQL is parenthesised
+// on its own, so an OR inside it cannot reach another project.
+func scopeClause(scopes []Scope) (head, tail string) {
+	if len(scopes) == 1 {
+		if extra := strings.TrimSpace(scopes[0].JQL); extra != "" {
+			tail = " AND (" + extra + ")"
+		}
+		return "project = " + scopes[0].Project, tail
 	}
+	var (
+		plain []string
+		terms []string
+	)
+	for _, sc := range scopes {
+		if extra := strings.TrimSpace(sc.JQL); extra != "" {
+			terms = append(terms, "(project = "+sc.Project+" AND ("+extra+"))")
+			continue
+		}
+		plain = append(plain, sc.Project)
+	}
+	switch len(plain) {
+	case 0:
+	case 1:
+		terms = append(terms, "project = "+plain[0])
+	default:
+		terms = append(terms, "project in ("+strings.Join(plain, ", ")+")")
+	}
+	if len(terms) == 1 {
+		return terms[0], ""
+	}
+	return "(" + strings.Join(terms, " OR ") + ")", ""
+}
+
+// InitialJQL is InitialJQLFor one project.
+func InitialJQL(projectID, extraJQL, afterID string) string {
+	return InitialJQLFor([]Scope{{Project: projectID, JQL: extraJQL}}, afterID)
+}
+
+// InitialJQLFor is the first import's query: the open issues of every
+// scope in id order, resuming after afterID when set. Jira's issue ids are
+// unique across a site, so one id cursor walks every project at once.
+func InitialJQLFor(scopes []Scope, afterID string) string {
+	head, tail := scopeClause(scopes)
+	var b strings.Builder
+	b.WriteString(head)
+	b.WriteString(" AND statusCategory != Done")
+	b.WriteString(tail)
 	if afterID != "" {
 		fmt.Fprintf(&b, " AND id > %s", afterID)
 	}
@@ -106,11 +157,16 @@ func InitialJQL(projectID, extraJQL, afterID string) string {
 	return b.String()
 }
 
-// IncrementalJQL is a later sync's query: everything in the project updated
-// since the high-water mark less Overlap — closed issues included, since a
-// close is a change to mirror — as unquoted epoch milliseconds, which JQL
-// compares exactly whatever the site's time zone. A zero since omits the
-// updated clause.
+// IncrementalJQL is IncrementalJQLFor one project.
+func IncrementalJQL(projectID, extraJQL string, since time.Time, afterID string) string {
+	return IncrementalJQLFor([]Scope{{Project: projectID, JQL: extraJQL}}, since, afterID)
+}
+
+// IncrementalJQLFor is a later sync's query: everything in the scopes
+// updated since the high-water mark less Overlap — closed issues included,
+// since a close is a change to mirror — as unquoted epoch milliseconds,
+// which JQL compares exactly whatever the site's time zone. A zero since
+// omits the updated clause.
 //
 // It is ordered by id, not by updated, and resumes after afterID when set:
 // a walk a page cap stopped continues from the same since and the last id
@@ -118,12 +174,11 @@ func InitialJQL(projectID, extraJQL, afterID string) string {
 // changes than one walk reads — one bulk edit is enough — because every
 // restart lands inside the overlap and reads the same first issues again
 // (review F1 on #943).
-func IncrementalJQL(projectID, extraJQL string, since time.Time, afterID string) string {
+func IncrementalJQLFor(scopes []Scope, since time.Time, afterID string) string {
+	head, tail := scopeClause(scopes)
 	var b strings.Builder
-	fmt.Fprintf(&b, "project = %s", projectID)
-	if extra := strings.TrimSpace(extraJQL); extra != "" {
-		fmt.Fprintf(&b, " AND (%s)", extra)
-	}
+	b.WriteString(head)
+	b.WriteString(tail)
 	if !since.IsZero() {
 		fmt.Fprintf(&b, " AND updated >= %d", since.Add(-Overlap).UnixMilli())
 	}

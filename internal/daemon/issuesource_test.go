@@ -21,7 +21,7 @@ import (
 func TestIssueSyncHonoursTheBinding(t *testing.T) {
 	for _, src := range []store.IssueSource{
 		{Provider: store.IssueProviderNone},
-		{Provider: store.IssueProviderJira, JiraSite: "https://acme.atlassian.net", JiraProjectKey: "ENG"},
+		{Provider: store.IssueProviderJira, JiraSite: "https://acme.atlassian.net", JiraProjects: []store.JiraProject{{Key: "ENG"}}},
 	} {
 		t.Run(src.Provider, func(t *testing.T) {
 			f := newFixture(t, "https://github.com/octo/repo.git")

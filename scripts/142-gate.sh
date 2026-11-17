@@ -303,7 +303,7 @@ make_repo() { # make_repo PATH [ORIGIN]
 jira_project() {
   make_repo "$TMP/$1" "${2:-}"
   PID="$(api POST /projects "$(jq -cn --arg p "$(hostpath "$TMP/$1")" --arg s "$JBASE" \
-    '{path: $p, issue_source: {provider: "jira", jira: {site: $s, project_key: "VIN"}}}')" | jq -r .id)"
+    '{path: $p, issue_source: {provider: "jira", jira: {site: $s, projects: [{key: "VIN"}]}}}')" | jq -r .id)"
   sync_now > /dev/null
   wait_for 30 "the import of VIN-1 and VIN-2" imported_count_is 2
 }

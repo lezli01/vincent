@@ -54,7 +54,7 @@ func TestIssueSyncKeyFollowsTheSyncStatus(t *testing.T) {
 	}{
 		{"github", "https://github.com/octo/repo.git", store.IssueSource{}, true},
 		{"jira", "https://example.com/o/r.git", store.IssueSource{
-			Provider: store.IssueProviderJira, JiraSite: "https://acme.atlassian.net", JiraProjectKey: "PROJ",
+			Provider: store.IssueProviderJira, JiraSite: "https://acme.atlassian.net", JiraProjects: []store.JiraProject{{Key: "PROJ"}},
 		}, true},
 		{"none", "https://github.com/octo/repo.git", store.IssueSource{Provider: store.IssueProviderNone}, false},
 		{"github pinned off github.com", "https://example.com/o/r.git", store.IssueSource{Provider: store.IssueProviderGitHub}, false},

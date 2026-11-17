@@ -622,22 +622,22 @@ func (f *projectForm) renderLines(width int, includeHeading bool) ([]string, int
 	f.branch.SetWidth(w)
 	f.cap.SetWidth(w)
 	f.jiraSite.SetWidth(w)
-	f.jiraKey.SetWidth(w)
-	f.jiraJQL.SetWidth(w)
+	for i := range f.jira {
+		f.jira[i].key.SetWidth(w)
+		f.jira[i].jql.SetWidth(w)
+	}
 	var lines []string
 	if includeHeading {
 		lines = append(lines, " "+styleTitle.Render(strings.ToLower(f.heading())), "")
 	}
 	cursorLine := len(lines)
-	for row := pfRow(0); row < pfRowCount; row++ {
-		if !f.rowShown(row) {
-			continue
-		}
-		if row == f.cursor {
+	for _, pos := range f.positions() {
+		row := pos.row
+		if pos == f.pos() {
 			cursorLine = len(lines)
 		}
-		lines = append(lines, strings.Split(f.renderRow(row), "\n")...)
-		if msg, ok := f.rowErr[row]; ok {
+		lines = append(lines, strings.Split(f.renderRow(pos), "\n")...)
+		if msg := f.posErr(pos); msg != "" {
 			lines = append(lines, styleBad.Render("      ⚠ "+msg))
 		}
 		if f.pick != nil && f.pick.row == int(row) {
@@ -661,23 +661,53 @@ func (f *projectForm) renderLines(width int, includeHeading bool) ([]string, int
 		lines = append(lines, styleDim.Render(
 			"  an empty cap means no project cap — the daemon-wide limit still applies"))
 	}
+	if f.source == apiclient.IssueProviderJira && len(f.jira) > 1 {
+		lines = append(lines, styleDim.Render(
+			"  clear a jira project's key and jql to remove it"))
+	}
 	return lines, cursorLine
 }
 
-func (f *projectForm) renderRow(row pfRow) string {
-	marker := "  "
-	if row == f.cursor {
-		marker = styleFocus.Render("▸ ")
+// posErr is the daemon's complaint about the line at pos, "" for none.
+func (f *projectForm) posErr(pos pfPos) string {
+	switch pos.row {
+	case pfJiraKey:
+		return f.jira[pos.at].keyErr
+	case pfJiraJQL:
+		return f.jira[pos.at].jqlErr
+	default:
+		return f.rowErr[pos.row]
 	}
-	label := styleDim.Render(fmt.Sprintf("%-20s", row.label()))
-	if row == pfSave {
-		return "  " + marker + styleTitle.Render("save")
-	}
-	return strings.Join(indentRows("  "+marker+label, strings.Split(f.rowValue(row), "\n")), "\n")
 }
 
-func (f *projectForm) rowValue(row pfRow) string {
-	editing := f.editing && f.cursor == row
+// posLabel is the label of the line at pos: a Jira project's key row is
+// numbered once the binding names more than one.
+func (f *projectForm) posLabel(pos pfPos) string {
+	if pos.row == pfJiraKey && len(f.jira) > 1 {
+		return fmt.Sprintf("jira project %d", pos.at+1)
+	}
+	return pos.row.label()
+}
+
+func (f *projectForm) renderRow(pos pfPos) string {
+	row := pos.row
+	marker := "  "
+	if pos == f.pos() {
+		marker = styleFocus.Render("▸ ")
+	}
+	label := styleDim.Render(fmt.Sprintf("%-20s", f.posLabel(pos)))
+	switch row {
+	case pfSave:
+		return "  " + marker + styleTitle.Render("save")
+	case pfJiraAdd:
+		return "  " + marker + styleDim.Render("+ add a jira project")
+	}
+	return strings.Join(indentRows("  "+marker+label, strings.Split(f.rowValue(pos), "\n")), "\n")
+}
+
+func (f *projectForm) rowValue(pos pfPos) string {
+	row := pos.row
+	editing := f.editing && f.pos() == pos
 	switch row {
 	case pfPath:
 		return textOrView(f.path.Value(), f.path.View(), editing, "(required)")
@@ -702,10 +732,12 @@ func (f *projectForm) rowValue(row pfRow) string {
 	case pfJiraSite:
 		return textOrView(f.jiraSite.Value(), f.jiraSite.View(), editing, "(required) https://…")
 	case pfJiraKey:
-		return textOrView(f.jiraKey.Value(), f.jiraKey.View(), editing, "(required) the project key")
+		pr := &f.jira[pos.at]
+		return textOrView(pr.key.Value(), pr.key.View(), editing, "(required) the project key")
 	case pfJiraJQL:
-		return textOrView(f.jiraJQL.Value(), f.jiraJQL.View(), editing, "(the whole project)")
-	case pfSave, pfRowCount:
+		pr := &f.jira[pos.at]
+		return textOrView(pr.jql.Value(), pr.jql.View(), editing, "(the whole project)")
+	case pfJiraAdd, pfSave, pfRowCount:
 	}
 	return ""
 }

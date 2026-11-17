@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -160,7 +161,7 @@ func (f *jiraE2E) setScenario(s string) {
 func (f *jiraE2E) bind(key string) {
 	f.t.Helper()
 	f.project.IssueSource = store.IssueSource{
-		Provider: store.IssueProviderJira, JiraSite: f.ts.URL, JiraProjectKey: key,
+		Provider: store.IssueProviderJira, JiraSite: f.ts.URL, JiraProjects: []store.JiraProject{{Key: key}},
 	}
 	if err := f.store.UpdateProject(f.t.Context(), &f.project); err != nil {
 		f.t.Fatal(err)
@@ -644,5 +645,63 @@ func TestJiraSyncOutboxRowsStillWaitNoClient(t *testing.T) {
 	}
 	if n := len(f.requests()); n != calls {
 		t.Errorf("the outbox made %d calls to Jira", n-calls)
+	}
+}
+
+// TestJiraSyncSeveralProjects is task 146 end to end: one binding naming
+// two Jira projects imports both in one walk, records each project's id,
+// follows a change in either, and an issue moved from one bound project to
+// the other stays live under its new key rather than being marked moved.
+func TestJiraSyncSeveralProjects(t *testing.T) {
+	var ops []string
+	f := newJiraE2E(t, func(c *fakejira.Corpus) {
+		ops = c.SeedIssues("OPS", 2, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+	})
+	f.project.IssueSource.JiraProjects = []store.JiraProject{{Key: "VIN"}, {Key: "OPS"}}
+	if err := f.store.UpdateProject(t.Context(), &f.project); err != nil {
+		t.Fatal(err)
+	}
+	f.tick()
+	f.wantOK()
+	got := f.issues()
+	for _, id := range append([]string{"10001", "10002"}, ops...) {
+		if got[id] == nil {
+			t.Fatalf("issue %s not imported; have %v", id, slices.Collect(maps.Keys(got)))
+		}
+	}
+	if r := f.issue(ops[0]).Remote; r.Repo != "OPS" || r.URL != f.ts.URL+"/browse/OPS-"+ops[0] {
+		t.Errorf("OPS remote = %+v", r)
+	}
+	if st := f.row(); st.RemoteProjectID != "OPS:10001,VIN:10000" || !st.ImportComplete {
+		t.Errorf("sync row = project ids %q import complete %v", st.RemoteProjectID, st.ImportComplete)
+	}
+
+	// A change in the second project is followed.
+	if err := f.fake.Update(func(c *fakejira.Corpus) error {
+		for i := range c.Issues {
+			if c.Issues[i].ID == ops[1] {
+				c.Issues[i].Summary = "Renamed in OPS"
+				c.Issues[i].Updated = f.now().Add(time.Minute).Format(fakejira.TimeLayout)
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.advance(2 * time.Minute)
+	f.tick()
+	f.wantOK()
+	if title := f.issue(ops[1]).Title; title != "Renamed in OPS" {
+		t.Errorf("OPS issue title = %q, want the change", title)
+	}
+
+	// Moving between bound projects is not leaving the binding.
+	if err := f.fake.Move("VIN-1", "OPS", "OPS-7"); err != nil {
+		t.Fatal(err)
+	}
+	f.sweep()
+	f.wantOK()
+	if r := f.issue("10001").Remote; r.Status != store.RemoteStatusLive || r.Repo != "OPS" || r.Number != 7 {
+		t.Errorf("issue moved within the binding = %+v, want live as OPS-7", r)
 	}
 }

@@ -34,8 +34,10 @@ type Resolution struct {
 	// github.com still links pull requests).
 	OriginGitHub bool
 	Repo         github.Repo
-	// JiraSite and JiraProjectKey are the binding's, set when Provider is jira.
-	JiraSite, JiraProjectKey string
+	// JiraSite and JiraProjects are the binding's, set when Provider is
+	// jira: the site and every project on it the binding syncs (task 146).
+	JiraSite     string
+	JiraProjects []store.JiraProject
 }
 
 // ResolveWith resolves project against an origin the caller has already
@@ -53,7 +55,7 @@ func ResolveWith(project store.Project, repo github.Repo, originGitHub bool) Res
 		r.Repo = repo
 	}
 	if r.Provider == store.IssueProviderJira {
-		r.JiraSite, r.JiraProjectKey = src.JiraSite, src.JiraProjectKey
+		r.JiraSite, r.JiraProjects = src.JiraSite, src.JiraProjects
 	}
 	return r
 }

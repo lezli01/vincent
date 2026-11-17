@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -29,9 +30,11 @@ func addIssueSourceFlags(cmd *cobra.Command) {
 		"Where the project's issues come from: derive (from origin), none, github or jira")
 	cmd.Flags().String("jira-site", "",
 		"Jira site base URL, e.g. https://example.atlassian.net (with --issue-source jira)")
-	cmd.Flags().String("jira-project", "", "Jira project key, e.g. ENG (with --issue-source jira)")
+	cmd.Flags().StringArray("jira-project", nil,
+		"Jira project to sync: KEY, or KEY:JQL to narrow its issues (with --issue-source jira); "+
+			"repeat for several projects on the site — the flags replace the project list")
 	cmd.Flags().String("jira-jql", "",
-		`Optional JQL clause narrowing the Jira project's issues; "" removes it`)
+		`Optional JQL clause narrowing the issues of a binding's only Jira project; "" removes it`)
 	cmd.Flags().String("jira-mapping", "",
 		`Jira mapping override: a JSON file, or - for stdin; "" removes it`)
 }
@@ -49,8 +52,9 @@ func issueSourceFlagsChanged(cmd *cobra.Command) bool {
 // issueSourceFromFlags builds the binding the flags ask for. current is the
 // project's binding for an edit (nil for add): the request replaces the whole
 // binding, so a Jira field not named keeps its current value, and changing
-// only --jira-jql on a jira project needs no other flag. It returns nil when
-// no issue-source flag was given.
+// only --jira-jql on a single-project jira binding needs no other flag. Any
+// --jira-project replaces the whole project list. It returns nil when no
+// issue-source flag was given.
 func issueSourceFromFlags(cmd *cobra.Command, current *apiclient.ProjectIssueSource) (*apiclient.ProjectIssueSourceRequest, error) {
 	if !issueSourceFlagsChanged(cmd) {
 		return nil, nil
@@ -79,15 +83,24 @@ func issueSourceFromFlags(cmd *cobra.Command, current *apiclient.ProjectIssueSou
 	j := apiclient.ProjectIssueSourceJira{}
 	if current != nil && current.Provider == apiclient.IssueProviderJira && current.Jira != nil {
 		j = *current.Jira
+		j.Projects = slices.Clone(j.Projects)
 	}
 	if flags.Changed("jira-site") {
 		j.Site, _ = flags.GetString("jira-site")
 	}
 	if flags.Changed("jira-project") {
-		j.ProjectKey, _ = flags.GetString("jira-project")
+		specs, _ := flags.GetStringArray("jira-project")
+		j.Projects = parseJiraProjects(specs)
 	}
 	if flags.Changed("jira-jql") {
-		j.JQL, _ = flags.GetString("jira-jql")
+		if len(j.Projects) > 1 {
+			return nil, errors.New("--jira-jql narrows a binding's only project; with several, give each its JQL as --jira-project KEY:JQL")
+		}
+		jql, _ := flags.GetString("jira-jql")
+		if len(j.Projects) == 0 {
+			j.Projects = []apiclient.JiraProject{{}}
+		}
+		j.Projects[0].JQL = jql
 	}
 	if flags.Changed("jira-mapping") {
 		src, _ := flags.GetString("jira-mapping")
@@ -99,6 +112,18 @@ func issueSourceFromFlags(cmd *cobra.Command, current *apiclient.ProjectIssueSou
 	}
 	req.Jira = &j
 	return req, nil
+}
+
+// parseJiraProjects reads --jira-project values: KEY, or KEY:JQL. A key
+// has no colon, so the first one ends it and the JQL may hold more. The
+// key's and the JQL's rules are the daemon's.
+func parseJiraProjects(specs []string) []apiclient.JiraProject {
+	out := make([]apiclient.JiraProject, 0, len(specs))
+	for _, spec := range specs {
+		key, jql, _ := strings.Cut(spec, ":")
+		out = append(out, apiclient.JiraProject{Key: strings.TrimSpace(key), JQL: strings.TrimSpace(jql)})
+	}
+	return out
 }
 
 // readJiraMapping reads --jira-mapping: "" removes the override, - reads

@@ -23,7 +23,7 @@ import (
 func (f *reconcileFixture) bindJira(t *testing.T) {
 	t.Helper()
 	f.project.IssueSource = store.IssueSource{
-		Provider: store.IssueProviderJira, JiraSite: "https://acme.atlassian.net", JiraProjectKey: "ENG",
+		Provider: store.IssueProviderJira, JiraSite: "https://acme.atlassian.net", JiraProjects: []store.JiraProject{{Key: "ENG"}},
 	}
 	if err := f.store.UpdateProject(t.Context(), &f.project); err != nil {
 		t.Fatal(err)

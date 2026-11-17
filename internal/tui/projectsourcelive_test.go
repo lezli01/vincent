@@ -42,13 +42,13 @@ func TestProjectFormBindsIssueSourceLive(t *testing.T) {
 	f := newProjectForm(client, &p)
 	f.source = apiclient.IssueProviderJira
 	f.jiraSite.SetValue("https://Acme.atlassian.net/")
-	f.jiraKey.SetValue("ENG")
+	f.jira[0].key.SetValue("ENG")
 	got, err := save(f)
 	if err != nil {
 		t.Fatalf("bind jira: %v", err)
 	}
 	if j := got.IssueSource.Jira; got.IssueSource.Effective != "jira" || j == nil ||
-		j.Site != "https://acme.atlassian.net" || j.ProjectKey != "ENG" {
+		j.Site != "https://acme.atlassian.net" || len(j.Projects) != 1 || j.Projects[0].Key != "ENG" {
 		t.Fatalf("bound = %+v", got.IssueSource)
 	}
 

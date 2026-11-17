@@ -422,7 +422,7 @@ func TestDoctorJiraRoundTrips(t *testing.T) {
 		d.Environ = func() []string { return []string{"JIRA_USER=" + user, "JIRA_API_TOKEN=" + token} }
 		p := &store.Project{
 			Name: "jp", Path: t.TempDir(), DefaultBranch: "main",
-			IssueSource: store.IssueSource{Provider: store.IssueProviderJira, JiraSite: fake.URL, JiraProjectKey: "VIN"},
+			IssueSource: store.IssueSource{Provider: store.IssueProviderJira, JiraSite: fake.URL, JiraProjects: []store.JiraProject{{Key: "VIN"}}},
 		}
 		if err := d.Store.CreateProject(t.Context(), p); err != nil {
 			t.Fatalf("CreateProject: %v", err)

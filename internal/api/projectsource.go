@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,10 @@ const (
 	maxJiraProjectKey = 255
 	maxJiraJQL        = 2000
 	maxJiraSite       = 2048
+	// maxJiraProjects bounds how many projects one binding syncs (task 146).
+	// Every pass reads them in one query, so the bound keeps that query far
+	// inside what Jira accepts.
+	maxJiraProjects = 50
 )
 
 var (
@@ -49,18 +54,36 @@ var (
 // Effective is the daemon's resolution of "derive" against origin, so no
 // client derives it.
 type projectSourceResponse struct {
-	Provider  string             `json:"provider"`
-	Effective string             `json:"effective"`
-	Jira      *projectSourceJira `json:"jira"`
+	Provider  string                     `json:"provider"`
+	Effective string                     `json:"effective"`
+	Jira      *projectSourceJiraResponse `json:"jira"`
 }
 
-// projectSourceJira is the Jira half of the binding, on the wire in and out.
-// Mapping is a jiramap override object, or null for the defaults.
+// projectSourceJiraResponse is the Jira half of the binding as it is read:
+// the site, every project it syncs (task 146), and the mapping override, or
+// null for the defaults.
+type projectSourceJiraResponse struct {
+	Site     string                     `json:"site"`
+	Projects []projectSourceJiraProject `json:"projects"`
+	Mapping  json.RawMessage            `json:"mapping"`
+}
+
+// projectSourceJiraProject is one Jira project of a binding, in and out.
+type projectSourceJiraProject struct {
+	Key string `json:"key"`
+	JQL string `json:"jql"`
+}
+
+// projectSourceJira is the Jira half of the binding as create and PATCH
+// accept it. Projects is the list (task 146); ProjectKey and JQL are the
+// single-project spelling every binding had before it, still accepted as a
+// one-entry list so a script written for it keeps working, and never both.
 type projectSourceJira struct {
-	Site       string          `json:"site"`
-	ProjectKey string          `json:"project_key"`
-	JQL        string          `json:"jql"`
-	Mapping    json.RawMessage `json:"mapping"`
+	Site       string                     `json:"site"`
+	Projects   []projectSourceJiraProject `json:"projects"`
+	ProjectKey string                     `json:"project_key"`
+	JQL        string                     `json:"jql"`
+	Mapping    json.RawMessage            `json:"mapping"`
 }
 
 // projectSourceRequest is the binding as create and PATCH accept it. It
@@ -77,7 +100,10 @@ func toProjectSourceResponse(b store.IssueSource, effective string) projectSourc
 		out.Provider = issueSourceDerive
 	}
 	if b.Provider == store.IssueProviderJira {
-		j := &projectSourceJira{Site: b.JiraSite, ProjectKey: b.JiraProjectKey, JQL: b.JiraJQL}
+		j := &projectSourceJiraResponse{Site: b.JiraSite, Projects: make([]projectSourceJiraProject, len(b.JiraProjects))}
+		for i, p := range b.JiraProjects {
+			j.Projects[i] = projectSourceJiraProject{Key: p.Key, JQL: p.JQL}
+		}
 		if b.JiraMappingJSON != "" {
 			j.Mapping = json.RawMessage(b.JiraMappingJSON)
 		}
@@ -128,23 +154,13 @@ func validateIssueSource(req projectSourceRequest) (store.IssueSource, string) {
 		return store.IssueSource{Provider: provider}, ""
 	}
 	if req.Jira == nil {
-		return store.IssueSource{}, "issue_source.jira is required with provider jira: it needs a site and a project_key"
+		return store.IssueSource{}, "issue_source.jira is required with provider jira: it needs a site and at least one project"
 	}
 	site, msg := normalizeJiraSite(req.Jira.Site)
 	if msg != "" {
 		return store.IssueSource{}, msg
 	}
-	key := strings.TrimSpace(req.Jira.ProjectKey)
-	switch {
-	case key == "":
-		return store.IssueSource{}, "issue_source.jira.project_key is required with provider jira"
-	case len(key) > maxJiraProjectKey:
-		return store.IssueSource{}, fmt.Sprintf("issue_source.jira.project_key is longer than %d characters", maxJiraProjectKey)
-	case !jiraKeyPattern.MatchString(key):
-		return store.IssueSource{}, fmt.Sprintf(
-			"issue_source.jira.project_key %q is not a Jira project key: an uppercase letter, then uppercase letters, digits or underscores", key)
-	}
-	jql, msg := validateJiraJQL(req.Jira.JQL)
+	projects, msg := validateJiraProjects(req.Jira)
 	if msg != "" {
 		return store.IssueSource{}, msg
 	}
@@ -153,8 +169,70 @@ func validateIssueSource(req projectSourceRequest) (store.IssueSource, string) {
 		return store.IssueSource{}, msg
 	}
 	return store.IssueSource{
-		Provider: provider, JiraSite: site, JiraProjectKey: key, JiraJQL: jql, JiraMappingJSON: mapping,
+		Provider: provider, JiraSite: site, JiraProjects: projects, JiraMappingJSON: mapping,
 	}, ""
+}
+
+// validateJiraProjects checks the binding's projects (task 146): one to
+// maxJiraProjects of them, each a well-formed key with optional JQL, no key
+// twice. The single-project spelling is read as a one-entry list and
+// refused beside the list. A message names the field it is about —
+// issue_source.jira.projects[i].key, or project_key for the old spelling —
+// so a client can park it on the row it came from.
+func validateJiraProjects(j *projectSourceJira) ([]store.JiraProject, string) {
+	legacy := strings.TrimSpace(j.ProjectKey) != "" || strings.TrimSpace(j.JQL) != ""
+	switch {
+	case legacy && len(j.Projects) > 0:
+		return nil, "issue_source.jira: send projects, or the single project_key and jql, not both"
+	case legacy:
+		key, msg := validateJiraKey(j.ProjectKey, "issue_source.jira.project_key")
+		if msg != "" {
+			return nil, msg
+		}
+		jql, msg := validateJiraJQL(j.JQL, "issue_source.jira.jql")
+		if msg != "" {
+			return nil, msg
+		}
+		return []store.JiraProject{{Key: key, JQL: jql}}, ""
+	case len(j.Projects) == 0:
+		return nil, "issue_source.jira.projects is required with provider jira: at least one project"
+	case len(j.Projects) > maxJiraProjects:
+		return nil, fmt.Sprintf("issue_source.jira.projects has %d projects; at most %d", len(j.Projects), maxJiraProjects)
+	}
+	out := make([]store.JiraProject, 0, len(j.Projects))
+	seen := map[string]int{}
+	for i, p := range j.Projects {
+		field := fmt.Sprintf("issue_source.jira.projects[%d]", i)
+		key, msg := validateJiraKey(p.Key, field+".key")
+		if msg != "" {
+			return nil, msg
+		}
+		if at, dup := seen[key]; dup {
+			return nil, fmt.Sprintf("%s.key %q is already projects[%d]: name each project once, with one JQL", field, key, at)
+		}
+		seen[key] = i
+		jql, msg := validateJiraJQL(p.JQL, field+".jql")
+		if msg != "" {
+			return nil, msg
+		}
+		out = append(out, store.JiraProject{Key: key, JQL: jql})
+	}
+	return out, ""
+}
+
+// validateJiraKey checks one project key, field naming it in the message.
+func validateJiraKey(raw, field string) (string, string) {
+	key := strings.TrimSpace(raw)
+	switch {
+	case key == "":
+		return "", field + " is required with provider jira"
+	case len(key) > maxJiraProjectKey:
+		return "", fmt.Sprintf("%s is longer than %d characters", field, maxJiraProjectKey)
+	case !jiraKeyPattern.MatchString(key):
+		return "", fmt.Sprintf(
+			"%s %q is not a Jira project key: an uppercase letter, then uppercase letters, digits or underscores", field, key)
+	}
+	return key, ""
 }
 
 // normalizeJiraSite accepts an absolute https:// site base, or http:// on a
@@ -210,13 +288,13 @@ func loopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// validateJiraJQL checks the optional narrowing clause. The client ANDs it
-// after `project = <id>` (#908), so it may not reorder the result or reach
-// past the project; a single line with no ORDER BY is all that can be
+// validateJiraJQL checks one project's optional narrowing clause, field
+// naming it in the message. The client ANDs it, parenthesised, onto
+// `project = <id>` (#908, task 146), so it may not reorder the result or
+// reach past its project; a single line with no ORDER BY is all that can be
 // checked without a site.
-func validateJiraJQL(raw string) (string, string) {
+func validateJiraJQL(raw, field string) (string, string) {
 	jql := strings.TrimSpace(raw)
-	const field = "issue_source.jira.jql"
 	switch {
 	case jql == "":
 		return "", ""
@@ -278,11 +356,38 @@ func (s *Server) effectiveIssueProvider(ctx context.Context, p *store.Project) s
 }
 
 // issueSourceRebound reports whether an update rebinds the project (task
-// 142.6 decision 4): its effective provider changed, or its Jira site or
-// project key did. A change to only the JQL or the mapping is not a rebind;
-// the sweep handles issues that leave the narrowed set.
+// 142.6 decision 4): its effective provider changed, or its Jira site did,
+// or the set of Jira projects it names (task 146 decision 4) — one added
+// needs an initial import of its own, which only a fresh sync row runs. A
+// change to only the JQL, the mapping or the projects' order is not a
+// rebind; the sweep handles issues that leave a narrowed set.
 func issueSourceRebound(oldEff, newEff string, oldB, newB store.IssueSource) bool {
-	return oldEff != newEff || oldB.JiraSite != newB.JiraSite || oldB.JiraProjectKey != newB.JiraProjectKey
+	return oldEff != newEff || oldB.JiraSite != newB.JiraSite || !sameJiraKeys(oldB.JiraKeys(), newB.JiraKeys())
+}
+
+// sameJiraKeys is whether a and b name the same projects, in any order.
+func sameJiraKeys(a, b []string) bool {
+	a, b = slices.Clone(a), slices.Clone(b)
+	slices.Sort(a)
+	slices.Sort(b)
+	return slices.Equal(a, b)
+}
+
+// rebindFor is the rebind an update that issueSourceRebound says rebinds
+// makes. A Jira binding that stays on its site keeps the issues of every
+// project it still names live, and abandons only the dropped projects'
+// (task 146 decision 4); any other rebind abandons the old provider's
+// remotes whole.
+func rebindFor(oldEff, newEff string, oldB, newB store.IssueSource) *store.Rebind {
+	rb := &store.Rebind{OldProvider: oldEff}
+	if oldEff == store.IssueProviderJira && newEff == store.IssueProviderJira && oldB.JiraSite == newB.JiraSite {
+		for _, k := range oldB.JiraKeys() {
+			if slices.Contains(newB.JiraKeys(), k) {
+				rb.KeepRepos = append(rb.KeepRepos, k)
+			}
+		}
+	}
+	return rb
 }
 
 // originTTL is how long a project rendering may reuse what origin said

@@ -39,7 +39,7 @@ func TestJiraStatusAgainstTheRealHandler(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	p := &store.Project{Name: "p", Path: t.TempDir(), DefaultBranch: "main", IssueSource: store.IssueSource{
-		Provider: store.IssueProviderJira, JiraSite: fj.URL, JiraProjectKey: "VIN",
+		Provider: store.IssueProviderJira, JiraSite: fj.URL, JiraProjects: []store.JiraProject{{Key: "VIN"}},
 	}}
 	if err := st.CreateProject(t.Context(), p); err != nil {
 		t.Fatalf("CreateProject: %v", err)
@@ -97,7 +97,7 @@ func TestJiraStatusAgainstTheRealHandler(t *testing.T) {
 
 	out, code = run("--project", id, "--json")
 	var got apiclient.JiraStatus
-	if err := json.Unmarshal([]byte(out), &got); err != nil || code != 0 || !got.Available || got.ProjectID != "10000" {
+	if err := json.Unmarshal([]byte(out), &got); err != nil || code != 0 || !got.Available || len(got.Projects) != 1 || got.Projects[0].ProjectID != "10000" {
 		t.Errorf("jira status --json: code %d, %+v, %v (%s)", code, got, err, out)
 	}
 

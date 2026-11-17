@@ -38,7 +38,7 @@ func TestProjectJiraOverTheWire(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	p := &store.Project{Name: "p", Path: t.TempDir(), DefaultBranch: "main", IssueSource: store.IssueSource{
-		Provider: store.IssueProviderJira, JiraSite: fj.URL, JiraProjectKey: "VIN",
+		Provider: store.IssueProviderJira, JiraSite: fj.URL, JiraProjects: []store.JiraProject{{Key: "VIN"}},
 	}}
 	if err := st.CreateProject(t.Context(), p); err != nil {
 		t.Fatalf("CreateProject: %v", err)
@@ -65,7 +65,7 @@ func TestProjectJiraOverTheWire(t *testing.T) {
 		t.Fatalf("ProjectJira: %v", err)
 	}
 	if !got.Enabled || !got.Available || got.Reason != "" || got.Unavailable() != "" ||
-		got.Site != fj.URL || got.ProjectKey != "VIN" || got.ProjectID != "10000" ||
+		got.Site != fj.URL || len(got.Projects) != 1 || got.Projects[0] != (apiclient.JiraStatusProject{Key: "VIN", ProjectID: "10000"}) ||
 		got.Server == nil || got.Server.DeploymentType != "Cloud" || got.Server.Version == "" ||
 		got.Account == nil || got.Account.DisplayName == "" {
 		t.Errorf("ProjectJira = %+v", got)

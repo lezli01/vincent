@@ -207,7 +207,7 @@ A registered local git repository.
 | `default_workflow` | optional workflow name preselected in task creation |
 | `max_parallel_tasks` | per-project cap; `null` = no per-project limit (global cap still applies) |
 | `branch_template` | *added 2026-08-13 (task 001).* Optional branch-naming template for this project; `null` inherits `config.yaml`'s `branch_template`, and an unset config means the built-in name. Parsed when written, so a broken template fails at `PATCH /v1/projects/{id}` rather than at every task creation |
-| `issue_source` | *added 2026-11-03 (task 142.6, issue #902).* The project's issue-source binding: `provider` is `derive` (the default, and every project registered before it), `none`, `github` or `jira`; `jira` carries `{ site, project_key, jql, mapping }`. `effective` is the daemon's resolution of `derive` against `origin` — `github` for a github.com remote, `none` otherwise — served so no client derives it; a rendering may reuse an `origin` read up to 10 s old (review F2), a rebind never does. Stored on the project row and edited only through the project routes; **never read from the repository** (task 142 decision 5.2). No field holds a credential. Rules and the rebind are §5.6 |
+| `issue_source` | *added 2026-11-03 (task 142.6, issue #902).* The project's issue-source binding: `provider` is `derive` (the default, and every project registered before it), `none`, `github` or `jira`; `jira` carries `{ site, project_key, jql, mapping }` (*amended 2026-11-17, task 146:* `{ site, projects: [{ key, jql }], mapping }` — any number of projects on the site, each with its own optional JQL; §5.6). `effective` is the daemon's resolution of `derive` against `origin` — `github` for a github.com remote, `none` otherwise — served so no client derives it; a rendering may reuse an `origin` read up to 10 s old (review F2), a rebind never does. Stored on the project row and edited only through the project routes; **never read from the repository** (task 142 decision 5.2). No field holds a credential. Rules and the rebind are §5.6 |
 
 Registering a project performs validation only (path exists, is a git repo, worktrees
 supported). The repo itself is never modified by registration.
@@ -1432,6 +1432,24 @@ holds (task 142 decision 6).
   before the rebind stands down, so no pass writes the abandoned binding back.
   A change to only `jql` or `mapping` is not a rebind; an issue that leaves the narrowed
   set is marked `missing` by the sweep (task 142 decision 9.11).
+
+*Amended 2026-11-17 (task 146).* A `jira` binding names **one or more
+projects** on its site: `projects` is a list of 1–50 `{ key, jql? }`, each
+key once, each key and JQL held to the rules above; the site, the credential
+and `mapping` stay one per binding. `project_key` and `jql` are still
+accepted on create and PATCH as a one-project list, never beside `projects`,
+and are no longer served. The sync reads every bound project in one walk,
+each project's JQL ANDed onto that project alone, so one project's JQL never
+narrows another's issues. A rebind is now a change to the effective provider,
+the site or the **set** of keys: a project added is imported from scratch
+(the sync row is deleted), and a project dropped has only its own issues
+marked `missing` — the issues of every project still named stay live and
+keep being written back. Reordering the projects or editing one's JQL is not
+a rebind. An issue moved from one bound project to another is not `moved`:
+it is refreshed under its new key and stays live; `moved` means it left
+every bound project. A single project's sync row still records its Jira
+project id; several record `KEY:id` pairs sorted by key, and any one key
+resolving to a different id stops the sync with `binding_changed`.
 
 *Amended 2026-11-04 (task 142.7, issue #903).* Two sentences above are
 superseded. The Jira credential is read from the variables §12.3's
@@ -10265,6 +10283,9 @@ POST   /v1/projects                     { path, name?, default_branch?, default_
                                         project_key, jql?, mapping? } }; absent or null derives
                                         it. Every project object carries `issue_source`
                                         { provider, effective, jira|null } (§5.1, §5.6)
+                                        *Amended 2026-11-17 (task 146):* `jira` is { site,
+                                        projects: [{ key, jql? }], mapping? }; project_key
+                                        and jql are still read as a one-project list
 GET    /v1/projects/{id}                *Amended 2026-10-04 (task 132.1):* `?stats=true` as on
                                         the list
 PATCH  /v1/projects/{id}                any mutable field, incl. path re-pointing
@@ -10272,6 +10293,8 @@ PATCH  /v1/projects/{id}                any mutable field, incl. path re-pointin
                                         replaces the whole binding; null resets it to derive.
                                         A rebind marks the old source's remotes `missing` and
                                         drops the sync row in the same transaction (§5.6)
+                                        *Amended 2026-11-17 (task 146):* but for the remotes of
+                                        the Jira projects the binding still names
 DELETE /v1/projects/{id}                hard-deletes the project and its task history (rows);
                                         only when no non-archived tasks; ?force first archives
                                         them (worktrees force-removed; refused while any task
@@ -10796,6 +10819,10 @@ GET    /v1/projects/{id}/jira           *Added 2026-11-05 (task 142.12, issue #9
                                         nothing and never syncs; it never carries the token,
                                         the user variable's value or an Authorization header.
                                         Read-only MCP tool `project_jira` (§13.4)
+                                        *Amended 2026-11-17 (task 146):* `project_key?` and
+                                        `project_id?` are `projects?: [{ key, project_id? }]`;
+                                        every bound project is checked in order, and a
+                                        failing one's key ends `message`
 POST   /v1/projects/{id}/issues/sync    *Added 2026-10-02 (task 130.8).* {}. Sync now: records
                                         the request and wakes the importer → **202** with the
                                         status body above, as of the request. With a switch
@@ -12847,9 +12874,11 @@ CREATE TABLE projects (
   -- added 2026-11-03 (task 142.6, migration 0051): the issue-source binding (§5.6)
   issue_provider      TEXT NOT NULL DEFAULT '', -- '' = derive from origin; none | github | jira
   jira_site           TEXT NOT NULL DEFAULT '', -- set only beside jira
-  jira_project_key    TEXT NOT NULL DEFAULT '',
-  jira_jql            TEXT NOT NULL DEFAULT '', -- optional narrowing clause
+  -- jira_project_key and jira_jql, dropped 2026-11-17 by migration 0056 (task 146)
   jira_mapping_json   TEXT NOT NULL DEFAULT '', -- jiramap.Config override; '' = defaults
+  -- added 2026-11-17 (task 146, migration 0056): [{"key": "...", "jql": "..."}],
+  -- the bound Jira projects in order; '' beside every provider but jira
+  jira_projects       TEXT NOT NULL DEFAULT '',
   created_at          TEXT NOT NULL,          -- RFC3339 UTC throughout
   updated_at          TEXT NOT NULL
 );

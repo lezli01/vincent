@@ -181,9 +181,10 @@ the per-project cap, and raise the task's priority to move it up the queue.
 
 ### Does vincent work with Jira?
 
-Yes, with Jira Cloud. Bind a project's issue source to a Jira site and project
-key, put the account's e-mail and an API token in the daemon's environment, and
-vincent imports the project's issues, keeps them in sync, and writes a
+Yes, with Jira Cloud. Bind a project's issue source to a Jira site and one or
+more of its project keys, each optionally narrowed by its own JQL, put the
+account's e-mail and an API token in the daemon's environment, and vincent
+imports those projects' issues, keeps them in sync, and writes a
 person's close or reopen back as a workflow transition. It stores no
 credential. Jira Data Center and Jira Server are not supported. See
 [Jira issue sync](guides/jira.md).

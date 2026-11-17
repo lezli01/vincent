@@ -35,7 +35,10 @@ func TestIssueSourceFromFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	bound := &apiclient.ProjectIssueSource{Provider: "jira", Effective: "jira", Jira: &apiclient.ProjectIssueSourceJira{
-		Site: "https://acme.atlassian.net", ProjectKey: "ENG", JQL: "labels = a",
+		Site: "https://acme.atlassian.net", Projects: []apiclient.JiraProject{{Key: "ENG", JQL: "labels = a"}},
+	}}
+	several := &apiclient.ProjectIssueSource{Provider: "jira", Effective: "jira", Jira: &apiclient.ProjectIssueSourceJira{
+		Site: "https://acme.atlassian.net", Projects: []apiclient.JiraProject{{Key: "ENG"}, {Key: "OPS"}},
 	}}
 	derived := &apiclient.ProjectIssueSource{Provider: "derive", Effective: "github"}
 	for _, tc := range []struct {
@@ -50,12 +53,23 @@ func TestIssueSourceFromFlags(t *testing.T) {
 		{
 			"bind jira", derived,
 			[]string{"--issue-source", "jira", "--jira-site", "https://x.example", "--jira-project", "OPS", "--jira-mapping", mapping},
-			`{"provider":"jira","jira":{"site":"https://x.example","project_key":"OPS","jql":"","mapping":{"overrides":{"reopen":"Again"}}}}`,
+			`{"provider":"jira","jira":{"site":"https://x.example","projects":[{"key":"OPS","jql":""}],"mapping":{"overrides":{"reopen":"Again"}}}}`,
 		},
 		{
 			"jql only keeps the rest", bound,
 			[]string{"--jira-jql", "labels = b"},
-			`{"provider":"jira","jira":{"site":"https://acme.atlassian.net","project_key":"ENG","jql":"labels = b","mapping":null}}`,
+			`{"provider":"jira","jira":{"site":"https://acme.atlassian.net","projects":[{"key":"ENG","jql":"labels = b"}],"mapping":null}}`,
+		},
+		{
+			"several projects, each with its jql", bound,
+			[]string{"--jira-project", "ENG", "--jira-project", " OPS : labels = \"a:b\" OR type = Bug", "--jira-project", "WEB:"},
+			`{"provider":"jira","jira":{"site":"https://acme.atlassian.net","projects":[{"key":"ENG","jql":""},` +
+				`{"key":"OPS","jql":"labels = \"a:b\" OR type = Bug"},{"key":"WEB","jql":""}],"mapping":null}}`,
+		},
+		{
+			"--jira-project replaces the list", several,
+			[]string{"--jira-project", "WEB"},
+			`{"provider":"jira","jira":{"site":"https://acme.atlassian.net","projects":[{"key":"WEB","jql":""}],"mapping":null}}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,6 +86,13 @@ func TestIssueSourceFromFlags(t *testing.T) {
 	if _, err := sourceJSON(t, derived, "--jira-site", "https://x.example"); err == nil ||
 		!strings.Contains(err.Error(), "--issue-source jira") {
 		t.Errorf("a Jira flag on a non-jira project = %v, want a refusal naming --issue-source jira", err)
+	}
+	if _, err := sourceJSON(t, several, "--jira-jql", "labels = a"); err == nil ||
+		!strings.Contains(err.Error(), "--jira-project KEY:JQL") {
+		t.Errorf("--jira-jql on several projects = %v, want a refusal naming --jira-project KEY:JQL", err)
+	}
+	if bound.Jira.Projects[0].JQL != "labels = a" {
+		t.Errorf("building the request edited the current binding: %+v", bound.Jira.Projects)
 	}
 	bad := filepath.Join(t.TempDir(), "bad.json")
 	if err := os.WriteFile(bad, []byte(`{nope`), 0o600); err != nil {
