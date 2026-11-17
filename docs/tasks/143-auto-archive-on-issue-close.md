@@ -1,6 +1,6 @@
 # 143 — Auto-archive a closed issue's tasks
 
-**Status:** ✅ done (5/5) · **Opened:** 2026-11-04
+**Status:** ✅ done (6/6) · **Opened:** 2026-11-04
 
 The auto-archive stream of [#925](https://github.com/lezli01/vincent/issues/925):
 when an issue reaches `closed`, by any route, the daemon archives the settled
@@ -41,6 +41,13 @@ Conventions for this file are in [the tasks README](README.md).
   platforms. Depends: 143.3. `scripts/143-gate.sh`, wired in `ci.yml`'s
   `gate-group` (group 1); its record is
   [docs/gates/143-auto-archive.md](../gates/143-auto-archive.md). ✓ 2026-11-05
+- [x] **143.6** ([#986](https://github.com/lezli01/vincent/issues/986)) The
+  TUI daemon view shows 143.4's group: an auto-archive block between the
+  database and the adapters, rendered from the doctor report the view already
+  fetches, quiet unless something is held, reporting only (decision 16). The
+  task title trails the reasons, not the issue title, because doctor's JSON
+  stays as it is; leftover chat dirs are listed; no new screenshot, since the
+  seed keeps the key off. §15 amended. ✓ 2026-11-17
 
 ## Decisions
 

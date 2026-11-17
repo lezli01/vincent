@@ -14882,6 +14882,22 @@ stream for the live tail.
    the view shows it rather than leaving it to the command. Like the database
    block it reports and offers nothing to press. `vincent daemon backup` takes a
    manual archive, and the schedule is edited in the view's configuration block.
+   *Amended 2026-11-17 (issue #986):* **an auto-archive block**, between the
+   database block and the adapters, rendered from the `issue_archive` group of
+   the same `GET /v1/doctor?probe=false` report (task 143.4) — no fetch of its
+   own. One row per held task with the facts `vincent doctor` prints: `issue
+   #N`, `task #M`, the role when it is `main` or `side`, the state, every
+   reason in `HoldReasons` order as its snake_case token (§18 owns their
+   meaning), and the task title trailing, elided to the pane width, so a narrow
+   terminal loses the title before a reason. `awaiting_retry` alone renders dim,
+   because nothing holds the task; every other reason renders as a warning, and
+   nothing as a problem (task 143 decision 16). One dim row per leftover
+   issue-chat directory follows, and the group's `error` is one warning line.
+   The block emits **no lines at all**, heading and separator included, unless
+   the report was fetched, `known` and `enabled` are true, and something is held
+   or listed or failed — so with it quiet the view is laid out exactly as
+   before. Its heading is one of the block starts the pinned pane honours. It
+   reports and offers nothing to press: no cursor, no key.
    **Adapter verdicts (task 041, added 2026-08-28):** each adapter row trails
    with its §9.5 health facets — `untested` and the builds it was judged
    against, `incompatible`, and "no restricted mode here" where the adapter
