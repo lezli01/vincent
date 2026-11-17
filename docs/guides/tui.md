@@ -468,9 +468,19 @@ selected project, and nothing else is refetched.
 
 ### Grouping
 
-The rows are **grouped by workflow** out of the box. There is no project
-level: the board shows one project at a time, so grouping by it would draw
-nothing.
+The rows are **grouped by the vincent issue** each task was started from,
+out of the box ([`tui.board.group_by`](../reference/configuration.md#tuiboardgroup_by)
+is `[issue]`). Every task started from no issue — a handoff's task among
+them — sits in one `no issue` group, ordered like any other. Grouping by
+workflow is the other level, one `g` away. There is no project level: the
+board shows one project at a time, so grouping by it would draw nothing.
+
+An issue header reads `issue #<id> · <title>`, then the short reference of
+an issue imported from GitHub or Jira, and a dim `closed` once the issue is
+closed. It shows the issue as it is now, so renaming or closing it redraws
+the header. On a narrow board the end of the title gives way first, then
+`closed`, so the count and badges always show. The picture below is the
+board grouped by workflow.
 
 ![api's board grouped by workflow — feature-pr, platform-upgrade,
 verify-build, feature-delivery and docs-refresh — each header carrying its
@@ -481,16 +491,19 @@ task count, and feature-pr its needs-attention badge](../assets/tui-grouping.png
 - **Grouping does not reorder anything.** The sort is what it always was, and a
   group sits where its first task does, so the group holding the oldest thing
   waiting on a human is the top group.
-- A grouped level loses its column — the header already names it — and the
-  width it frees is spent on the row: on the title first, and once the title
-  has reached its ceiling, on `STEP` and `STATUS`.
+- Grouping by workflow drops the `WORKFLOW` column — the header already
+  names it — and the width it frees is spent on the row: on the title first,
+  and once the title has reached its ceiling, on `STEP` and `STATUS`.
+  Grouping by issue drops no column.
 - An open header is a label: the cursor steps over it, and clicking it selects
   nothing.
-- **A level every task shares draws no header.** A board whose tasks all run
-  one workflow is a flat list. The panel title names what the missing header
-  would have — `Tasks · verify-build` — and the grouped column stays dropped.
-  The level is judged on the tasks on screen, so a filter down to one workflow
-  quiets it too. A fold you left on that level is kept, and applies again when
+- **A level every task shares draws no header.** A board whose tasks all
+  share one issue, or all run one workflow, is a flat list. The panel title
+  names what the missing header would have — `Tasks · issue #42 · Fix login`,
+  or `Tasks · verify-build` — shortening a long issue title before the filter
+  and selection it also names, and a workflow level's column stays dropped.
+  The level is judged on the tasks on screen, so a filter down to one issue
+  (`/#42`) or one workflow quiets it too. A fold you left on that level is kept, and applies again when
   a second value comes back.
 
 | Key | Does |
@@ -528,9 +541,10 @@ Three things mean a fold can never hide work waiting on you:
 Folds are kept **per project** and remembered across restarts, in
 `{data_dir}/tui.json` ([files](../reference/files.md)): folding `build` in one
 project leaves `build` open in another, and switching away and back finds the
-folds as you left them. They survive `g`, a filter and a reconnect, and a group
-is forgotten when its workflow leaves the project's board, or with the project
-when it is removed. Folds saved by an older vincent are carried over to their
+folds as you left them. A fold names an issue by its id, so renaming the
+issue keeps it. Folds survive `g`, a filter and a reconnect, and a group is
+forgotten when its workflow or issue leaves the project's board, or with the
+project when it is removed. Folds saved by an older vincent are carried over to their
 project the first time the board starts. `V`
 still selects tasks inside a collapsed group — the selection is a set of tasks,
 not of rows. With `group_by: []` there are no groups, so the four keys do
