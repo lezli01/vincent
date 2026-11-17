@@ -4052,11 +4052,16 @@ they need.
   event.** The stream never replays history unasked: catch-up is a REST snapshot
   first, then the stream. A `Last-Event-ID` ahead of every event the daemon
   holds — one kept across `vincent daemon restore` onto an older database — is
-  treated the same way, as no cursor at all. That only works while the cursor is
-  still ahead: if the restored daemon has already written past it by the time
-  the client reconnects, the stream resumes after it and the restored events
-  below it are skipped. A client kept open across a restore should re-read its
-  state over REST rather than rely on the stream alone.
+  treated the same way, as no cursor at all.
+- **Every durable stream names its event history.** The response carries an
+  `X-Event-Generation` header: an integer that changes only when the daemon
+  starts on a database `vincent daemon restore` put in place, because an event
+  id names one event only within one history. Send the generation your
+  `Last-Event-ID` came from back in the same request header; a cursor sent with
+  a different generation is treated as no cursor at all, so the stream starts
+  live instead of skipping the restored events below it. A client that sees the
+  generation change between two connections should re-read its state over REST:
+  no event will say what the restore changed.
 - `task.deleted` and `chat.deleted` carry `{ id, title }` and announce a
   [permanent delete](#permanent-delete). They exist even though there is no
   `task.archived` type, and for the reason there is not one: an archive *is*

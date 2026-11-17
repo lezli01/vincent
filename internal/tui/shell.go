@@ -114,6 +114,9 @@ func (s *shell) setProject(p projectSel) tea.Cmd {
 // reloadIfFailed is the board's: the shell issues no load of its own.
 func (s *shell) reloadIfFailed() tea.Cmd { return s.board.reloadIfFailed() }
 
+// reloadNow is the board's too.
+func (s *shell) reloadNow() tea.Cmd { return s.board.reloadNow() }
+
 // setProjects hands the root's project list to the board (projectListAware).
 func (s *shell) setProjects(projects []apiclient.Project) { s.board.setProjects(projects) }
 

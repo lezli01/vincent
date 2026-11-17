@@ -321,6 +321,10 @@ func (b *board) reloadIfFailed() tea.Cmd {
 	return b.loadCmd()
 }
 
+// reloadNow repeats the load unconditionally (failedReloader), for the
+// reconnect that found a restored event history.
+func (b *board) reloadNow() tea.Cmd { return b.loadCmd() }
+
 // stampProject is the project a load is pinned to (loadstamp.go). The live
 // listing is the same whichever project is selected, so it is pinned to none
 // and a switch drops nothing in flight; the archived listing is per project.

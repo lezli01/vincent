@@ -282,6 +282,30 @@ func (s *Store) MaxEventID(ctx context.Context) (int64, error) {
 	return id, nil
 }
 
+// EventGeneration returns the event history's generation (§13.3, issue
+// #1001): the identity under which an event id means one event. It changes
+// only when the daemon starts on a restored database (BumpEventGeneration), so
+// a client resuming with a cursor from another generation is told so.
+func (s *Store) EventGeneration(ctx context.Context) (int64, error) {
+	var gen int64
+	if err := s.db.QueryRowContext(ctx, `SELECT generation FROM event_history WHERE id = 1`).Scan(&gen); err != nil {
+		return 0, fmt.Errorf("event generation: %w", err)
+	}
+	return gen, nil
+}
+
+// BumpEventGeneration starts a new event history and returns its generation.
+// The daemon calls it on its first start after `vincent daemon restore`.
+func (s *Store) BumpEventGeneration(ctx context.Context) (int64, error) {
+	var gen int64
+	if err := s.db.QueryRowContext(ctx,
+		`UPDATE event_history SET generation = generation + 1 WHERE id = 1 RETURNING generation`,
+	).Scan(&gen); err != nil {
+		return 0, fmt.Errorf("bump event generation: %w", err)
+	}
+	return gen, nil
+}
+
 // ListEvents returns events matching f in id order — the catch-up query
 // behind SSE Last-Event-ID resume (spec §13.3).
 func (s *Store) ListEvents(ctx context.Context, f EventFilter) ([]Event, error) {

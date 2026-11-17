@@ -297,6 +297,56 @@ func TestStreamEventsLiveResumeAcrossReconnect(t *testing.T) {
 	}
 }
 
+// TestStreamEventsResetsOnARestoredHistory is issue #1001: the daemon the
+// subscription reconnects to serves another event history (it was restored
+// onto an older database). The old cursor is dropped and the reconnect is
+// announced as a reset, and the server — told the generation the cursor came
+// from — does not replay after it.
+func TestStreamEventsResetsOnARestoredHistory(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := h.client().StreamEvents(ctx, testStreamOptions())
+	if c, ok := nextNote(t, ch).(apiclient.ConnectedNote); !ok || c.Reset {
+		t.Fatalf("first note = %+v, want a ConnectedNote that is no reset", c)
+	}
+	ev1 := h.append(t, "task.state_changed")
+	if en, ok := nextNote(t, ch).(apiclient.EventNote); !ok || en.Event.ID != ev1.ID {
+		t.Fatalf("first event = %+v, want #%d", en, ev1.ID)
+	}
+
+	// The restore, as the daemon's next start sees it: a new generation.
+	// The event appended while the stream is down sits past the cursor, where
+	// a resume would replay it.
+	if _, err := h.st.BumpEventGeneration(t.Context()); err != nil {
+		t.Fatalf("BumpEventGeneration: %v", err)
+	}
+	h.ts.CloseClientConnections()
+	hidden := h.append(t, "step.started")
+
+	for {
+		n := nextNote(t, ch)
+		if _, ok := n.(apiclient.DisconnectedNote); ok {
+			continue
+		}
+		c, ok := n.(apiclient.ConnectedNote)
+		if !ok {
+			t.Fatalf("note = %T before the reconnect, want ConnectedNote", n)
+		}
+		if !c.Reset || c.Cursor != 0 {
+			t.Fatalf("reconnect = %+v, want a reset with cursor 0", c)
+		}
+		break
+	}
+	live := h.append(t, "gate.waiting")
+	en, ok := nextNote(t, ch).(apiclient.EventNote)
+	if !ok || en.Event.ID != live.ID {
+		t.Fatalf("first event after the reset = %+v, want the live #%d, not the replayed #%d",
+			en, live.ID, hidden.ID)
+	}
+}
+
 func TestStreamEventsTypeFilter(t *testing.T) {
 	h := newHarness(t)
 	ctx, cancel := context.WithCancel(context.Background())

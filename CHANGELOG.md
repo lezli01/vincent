@@ -27,9 +27,17 @@ list with the user-facing context a commit subject cannot carry.
   in the restored one, and the daemon then sent it nothing until new events
   climbed past that id — possibly thousands of them. A cursor ahead of every
   stored event is now treated as no cursor, so the stream delivers each new
-  event at once (#967). A client that reconnects only after the restored
-  daemon's events have already passed its old cursor can still miss the ones
-  below it; re-read state after a restore.
+  event at once (#967).
+
+- **A client kept open across a restore no longer silently skips the restored
+  daemon's events.** When the restored daemon had already written past a
+  connected client's old event cursor before it reconnected — the usual case,
+  since clients back off for up to five seconds — the stream resumed after
+  that cursor and every restored event below it was lost, while the TUI kept
+  showing the replaced database. The daemon now starts a new event history on
+  its first start after `vincent daemon restore`; a client reconnecting from
+  the old one is told so and starts afresh, and the TUI reloads every view
+  (#1001).
 
 - **A chat whose turn failed before its agent started returns to idle.** A
   turn that failed before the agent process was up — no adapter for the

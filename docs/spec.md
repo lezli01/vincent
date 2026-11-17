@@ -12298,8 +12298,23 @@ Two kinds of streams:
    This catches the stale cursor only while it is still ahead of the table: if the
    restored daemon has already written past it before the client reconnects, the
    cursor is indistinguishable from a real one, and the restored events between the
-   backup's last id and that cursor are not delivered. Closing that window needs an
-   identity per event history that a restore changes, which is a follow-up.
+   backup's last id and that cursor are not delivered. ~~Closing that window needs an
+   identity per event history that a restore changes, which is a follow-up.~~
+   *Amended 2026-11-17 (issue #1001):* that identity now exists. The database holds
+   an **event history generation** (`event_history`, migration 0057; a fresh
+   installation starts at 1). `vincent daemon restore` still opens nothing (§4): it
+   leaves a `restored` marker file in the data directory, and the daemon's first
+   start after it bumps the generation and only then removes the marker
+   (crash-first — a crash between the two costs one extra bump, never a missed
+   one). Every durable stream (`/v1/events`, `/v1/tasks/{id}/events`,
+   `/v1/chats/{id}/events`) names its generation in an `X-Event-Generation`
+   response header. A resuming client sends the generation its `Last-Event-ID`
+   came from in the same header, and a cursor presented with another generation is
+   treated as no cursor, whatever its value — no replay after it. The client
+   (`apiclient`) drops its cursor when a reconnect names a different generation and
+   announces that connection as a reset (`ConnectedNote{Reset: true}`); the TUI
+   then reloads every view rather than only the ones whose last load failed, since
+   no event will say what the restore changed.
 
 2. **Live output** — ephemeral, high-volume. `agent.output`, `agent.tool_use`,
    `agent.tool_result`, `agent.thinking` (T4.16), `agent.run_header` (task 066 —

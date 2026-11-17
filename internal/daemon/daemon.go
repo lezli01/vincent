@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/builtin"
 	"github.com/lezli01/vincent/internal/api"
+	"github.com/lezli01/vincent/internal/backup"
 	"github.com/lezli01/vincent/internal/backupsched"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/config"
@@ -167,6 +169,10 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		return err
 	}
 	defer func() { _ = st.Close() }()
+	if err := startRestoredHistory(ctx, st, dirs.Data, logger); err != nil {
+		logger.Error("startup failed: event history", "error", err)
+		return err
+	}
 
 	// git availability is probed once and logged; a missing or old git warns
 	// rather than fails — the daemon still serves (phase 1 decision).
@@ -921,4 +927,29 @@ func newJiraSource(cfg func() config.Config, environ func() []string, httpc *htt
 	return issuesource.NewJira(func(site string) *jira.Client {
 		return jira.New(site, httpc, creds)
 	})
+}
+
+// startRestoredHistory begins a new event history when `vincent daemon
+// restore` left its marker (issue #1001, §13.3): the restored database's event
+// ids will climb back over ids clients already saw from the replaced one, and
+// the bumped generation is what tells a reconnecting client so. Crash-first:
+// the bump is committed before the marker is removed, so a crash between the
+// two costs at most one extra bump, never a missed one.
+func startRestoredHistory(ctx context.Context, st *store.Store, dataDir string, logger *slog.Logger) error {
+	marker := filepath.Join(dataDir, backup.RestoredMarker)
+	if _, err := os.Stat(marker); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat %s: %w", marker, err)
+	}
+	gen, err := st.BumpEventGeneration(ctx)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(marker); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove %s: %w", marker, err)
+	}
+	logger.Info("restored database: new event history", "generation", gen)
+	return nil
 }

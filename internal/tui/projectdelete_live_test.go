@@ -351,6 +351,38 @@ func TestCleanReconnectReloadsNoView(t *testing.T) {
 	}
 }
 
+// A reconnect the stream reports as a reset — the daemon came back on a
+// restored event history, so no event will ever say what changed (§13.3,
+// issue #1001) — reloads every view, not only the failed ones.
+func TestResetReconnectReloadsEveryView(t *testing.T) {
+	h := newSwitchHarness(t)
+	views := listStamps(h.m)
+	// Settled as TestCleanReconnectReloadsNoView is, for the same reason.
+	h.p.settle(10*time.Second, 4*refreshDebounce, "the opening loads to settle", func() (bool, int) {
+		sum := len(h.paths.snapshot())
+		for _, s := range views {
+			sum += int(s.issued)
+		}
+		return true, sum
+	})
+	issued := map[viewID]uint64{}
+	for id, s := range views {
+		issued[id] = s.issued
+	}
+	h.disconnect()
+	h.paths.down.Store(false)
+	_, cmd := h.m.Update(noteMsg{note: apiclient.ConnectedNote{Reset: true}})
+	h.p.push(cmd)
+	h.p.until(10*time.Second, "every view to reload", func() bool {
+		for id, s := range views {
+			if s.issued == issued[id] {
+				return false
+			}
+		}
+		return true
+	})
+}
+
 // A delete made while the stream was down never arrives as an event; the
 // reconnect's relist catches it (decision 49).
 func TestDeleteDuringAnOutageIsCaughtOnReconnect(t *testing.T) {
