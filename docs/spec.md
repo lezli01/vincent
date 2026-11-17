@@ -12277,6 +12277,11 @@ Two kinds of streams:
    *Amended 2026-11-17 (issue #967):* a `Last-Event-ID` ahead of the largest id in
    the `events` table — a cursor kept across `vincent daemon restore` onto an older
    database — names no event this database holds, and is treated as no cursor.
+   This catches the stale cursor only while it is still ahead of the table: if the
+   restored daemon has already written past it before the client reconnects, the
+   cursor is indistinguishable from a real one, and the restored events between the
+   backup's last id and that cursor are not delivered. Closing that window needs an
+   identity per event history that a restore changes, which is a follow-up.
 
 2. **Live output** — ephemeral, high-volume. `agent.output`, `agent.tool_use`,
    `agent.tool_result`, `agent.thinking` (T4.16), `agent.run_header` (task 066 —
