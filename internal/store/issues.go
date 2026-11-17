@@ -640,9 +640,7 @@ func (s *Store) writeIssueEvents(ctx context.Context, fn func(*sql.Tx) ([]*Event
 	if err != nil {
 		return err
 	}
-	for _, e := range evs {
-		s.notify(e)
-	}
+	s.notify(evs...)
 	return nil
 }
 

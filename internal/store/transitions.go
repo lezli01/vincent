@@ -218,13 +218,7 @@ func (s *Store) TransitionTask(
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, ce := range chatEvs {
-		s.notify(ce)
-	}
-	s.notify(ev)
-	if mergeEv != nil {
-		s.notify(mergeEv)
-	}
+	s.notify(append(chatEvs, ev, mergeEv)...)
 	return task, ev, nil
 }
 
@@ -783,7 +777,9 @@ func statePayload(from, to TaskState, t *Task, extra map[string]any) (json.RawMe
 }
 
 // appendEventTx inserts an event inside an open transaction, assigning its
-// id — the same insert AppendEvent performs standalone.
+// id, and records it against tx so commitTx queues it for the event hook in
+// the same step as the commit (review F2). Every event row is written here:
+// AppendEvent is a one-statement transaction around it.
 func appendEventTx(ctx context.Context, tx *sql.Tx, e *Event) error {
 	if e.TS.IsZero() {
 		e.TS = time.Now()
@@ -802,21 +798,23 @@ func appendEventTx(ctx context.Context, tx *sql.Tx, e *Event) error {
 		return fmt.Errorf("insert event: %w", err)
 	}
 	e.ID = id
+	txEvents.record(tx, e)
 	return nil
 }
 
 // withTx runs fn in a transaction, committing on success and rolling back on
-// any error or panic.
+// any error or panic. The events fn appended reach the event hook from the
+// commit itself (commitTx), in id order with every other writer's.
 func (s *Store) withTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackTx(tx)
 	if err := fn(tx); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.commitTx(tx); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 	return nil

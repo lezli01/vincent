@@ -80,6 +80,13 @@ list with the user-facing context a commit subject cannot carry.
   workflow saves already did.
   ([#969](https://github.com/lezli01/vincent/issues/969))
 
+- **Live event streams no longer skip events.** `GET /v1/events`, a task's
+  event stream and a chat's stream could silently drop durable events — every
+  fan-out round lost its lanes' `task.created` — and a `Last-Event-ID`
+  reconnect never brought them back, because the cursor had already moved
+  past them. The daemon now publishes events in id order, so a stream that
+  resumes by id misses nothing (#963).
+
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 
 ### Added

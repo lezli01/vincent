@@ -747,6 +747,10 @@ type Event struct {
 	// caller's single post-commit notify correct without each one learning
 	// that a task write can announce two things.
 	follow *Event
+	// queued is set once the event has entered the publication queue, so
+	// commitTx and a caller's notify cannot both deliver it (review F2).
+	// Guarded by eventPublisher.mu.
+	queued bool
 }
 
 // Chat is a titled conversation with an agent, scoped to a project and

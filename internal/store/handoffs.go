@@ -592,8 +592,7 @@ func (s *Store) StartHandoff(ctx context.Context, in NewHandoff) ([]int64, error
 	if err != nil {
 		return nil, err
 	}
-	s.notify(taskEv)
-	s.notify(ev)
+	s.notify(taskEv, ev)
 	return issueIDs, nil
 }
 
@@ -936,8 +935,7 @@ func (s *Store) SetHandoffItemOutcome(
 	if err != nil {
 		return nil, err
 	}
-	s.notify(ev)
-	s.notify(settleEv)
+	s.notify(ev, settleEv)
 	return out, nil
 }
 

@@ -247,8 +247,7 @@ func (s *Store) CreateIssueChat(ctx context.Context, c *Chat, nameBranch func(in
 	if err != nil {
 		return err
 	}
-	s.notify(ev)
-	s.notify(laneEv)
+	s.notify(ev, laneEv)
 	return nil
 }
 
