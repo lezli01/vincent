@@ -9429,7 +9429,7 @@ value every version since task 132.9 bootstrapped — loads as `[workflow]`,
 with no rewrite and no warning, since a bootstrapped value cannot be told
 apart from a chosen one (the task 132 decision 51 reasoning). The `project`
 deprecation above is unchanged. How the TUI renders the level is task 148's
-second item.
+second item (§15 *Grouping*, amended 2026-11-17 for task 148.2).
 
 *Amended 2026-09-17 (task 111, issue #404):* `tui.hyperlinks`, a bool, default
 `false`, turns on OSC 8 hyperlinks for Markdown links in the output pane (§15,
@@ -13833,7 +13833,8 @@ stream for the live tail.
    `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
    *Grouping* below.
    *Amended 2026-11-17 (task 148):* the configured default is `[issue]`, with
-   `workflow` the other level (§12.3).
+   `workflow` the other level (§12.3); the rows nest under one header per
+   vincent issue and a `no issue` group (*Grouping* below, task 148.2).
    **Several tasks can be selected at once (task 011, added 2026-08-16):**
    `space` marks the row under the cursor, `V` marks everything the filter is
    showing, and while anything is marked the task-action keys act on the whole
@@ -16540,9 +16541,32 @@ names nothing and is pruned (review F3).
 *Amended 2026-11-17 (task 148, issue #982):* `issue` joins `workflow` as a
 level and `[issue]` is the configured default (§12.3); a file that says
 `[workflow]` keeps it. A TUI that does not know the `issue` level drops it
-like any unknown level and draws the flat table. The
-`project` rows below describe the rules as they were written; with one level
-they apply to it alone. The rules the grouping does not get to bend:
+like any unknown level and draws the flat table.
+*Amended 2026-11-17 (task 148.2, issue #983):* the TUI renders the `issue`
+level. A task's group is the vincent issue it was started from (§5.6), keyed
+`#<id>` — a deleted issue's frozen snapshot keeps its id, so its tasks keep
+their group — and every task with no issue, a handoff's task among them, sits
+in one `no issue` group under a reserved key (`#none`) that cannot equal a
+workflow name or an issue key, nor the `—` an unnamed workflow's group uses,
+so the two never alias in a fold path. The header reads
+`issue #<id> · <title> · <short ref> · closed` and then the count and badges
+every header carries: the ref (the daemon-rendered `short_ref`, else `ref`)
+only for an imported issue, the dim `closed` only for a closed one, and the
+label truncated with `…` to fit the title column on a normal or a wrapped
+board so the count, the `! n` badge and the marked count stay on screen. The
+`no issue` group is ordered by the band sort like any other, never pinned
+last. The label is display only — a fold path holds keys, so an issue whose
+title changes keeps its fold — and a single-value level names its label, not
+its key, in the panel title: `Tasks · no issue`. Grouping by issue drops no
+column: `WORKFLOW` stays and is dropped only when `workflow` is a level. `g`
+cycles issue → workflow → flat; a configured two-level grouping is outside
+the cycle and `g` from it goes to issue. The `/` filter also matches the
+task's issue — its `#<id>`, title and imported short ref — under every
+grouping, so filtering for an issue keeps its whole group. Fan-out lanes,
+merge-backs and side tasks are unchanged: lanes splice under their root and
+so follow its group, and the others carry their own issue.
+The `project` rows below describe the rules as they were written; with one
+level they apply to it alone. The rules the grouping does not get to bend:
 
 - **Ordering is untouched.** The tasks are sorted by band exactly as before and
   the groups take the order of their first task, so a group holding work that
@@ -17515,7 +17539,9 @@ live process, `A` removes the worktree and a dirty one re-prompts for `force`.
 `set priority` (§6) has no key — priority is chosen in the new-task flow.
 
 Panel-local: `/` filters **whichever list has focus** — tasks, projects, workflows
-— so one key means one thing everywhere. `g` cycles the task table's grouping
+— so one key means one thing everywhere. *Amended 2026-11-17 (task 148.2):*
+on the task board it matches a task's id, title and state, and the vincent
+issue it was started from — `#<id>`, title and imported short ref. `g` cycles the task table's grouping
 (task 009), taking the key from the table widget's undocumented go-to-top alias,
 which `home` still is. `space` marks the row for a bulk action and `V` marks
 every row the filter is showing (task 011); neither moves the cursor, because
