@@ -487,7 +487,11 @@ only when you run that command, only when vincent — not a package manager —
 owns the binary, and only after the download is verified: the cosign signature
 over `checksums.txt` against the project's pinned identity and issuer, then the
 archive's SHA-256 against that verified file. On any mismatch nothing is
-replaced and the old binary is left byte-identical. Without `cosign` on your
+replaced and the old binary is left byte-identical. `--master` installs the
+newest master build through the same chain: CI signs that build's
+`checksums.txt` with the same keyless identity a release carries, so a master
+build is trusted exactly as far as a release is, no less checked. It is ahead of
+the latest release and tested by CI only. Without `cosign` on your
 `PATH` the checksum check runs alone and the command says so; pass
 `--require-signature` to refuse in that case. On Windows a running executable
 cannot be overwritten, so the old one is renamed to `<name>.vincent-old` beside

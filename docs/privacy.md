@@ -154,7 +154,9 @@ armed asked for it:
 - Git operations on your repositories, including fetching a task's base branch
   from its remote before the task starts
   ([`fetch_base_branch`](reference/configuration.md#fetch_base_branch)).
-- `vincent update`, which downloads and installs a release when you run it.
+- `vincent update`, which downloads and installs a release when you run it,
+  or the newest master build with `--master`. Both read and download from
+  this project's GitHub releases only.
 - GitHub writes — pushing a branch, opening, merging or commenting on a pull
   request — which happen only when you ask for them.
 - Jira writes — a close or reopen sent as a workflow transition, a handoff's

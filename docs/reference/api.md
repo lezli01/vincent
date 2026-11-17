@@ -416,7 +416,10 @@ daemon running.
 - `error` carries why the last poll failed and is **absent** when it worked, as
   above. A quietly failing check would otherwise look identical to one with
   nothing to report.
-- A prerelease never appears here.
+- A prerelease never appears here, and neither does the rolling master build
+  [`vincent update --master`](cli.md#vincent-update) installs. A daemon running
+  a master build is reported behind once a release newer than its build is
+  out.
 
 ## Doctor
 
