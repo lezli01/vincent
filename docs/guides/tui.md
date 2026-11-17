@@ -479,12 +479,14 @@ An issue header reads `issue #<id> · <title>`, then the short reference of
 an issue imported from GitHub or Jira, and a dim `closed` once the issue is
 closed. It shows the issue as it is now, so renaming or closing it redraws
 the header. On a narrow board the end of the title gives way first, then
-`closed`, so the count and badges always show. The picture below is the
-board grouped by workflow.
+`closed`, so the count and badges always show. The picture below is
+platform-infra's board.
 
-![api's board grouped by workflow — feature-pr, platform-upgrade,
-verify-build, feature-delivery and docs-refresh — each header carrying its
-task count, and feature-pr its needs-attention badge](../assets/tui-grouping.png)
+![platform-infra's board grouped by issue: a `no issue` group first, holding
+the claude task awaiting input and the handoff task awaiting approval, then
+one `issue #<id> · <title>` header per issue — #9, #10, #16, #15, #14 and #13,
+the last marked closed — each carrying its task count, and the groups holding
+something that needs attention their badge](../assets/tui-grouping.png)
 
 - The header shows the group's task count, and the needs-attention badge when
   it holds any — a group can never be the reason you missed something waiting.
@@ -571,8 +573,8 @@ While anything is selected, a `✓` appears beside those rows, the panel title
 counts them (`Tasks — 5 selected`), and the **action keys act on the whole
 selection**:
 
-![Every row of api's board selected, the panel title reading "Tasks — 5
-selected", and the action bar offering each action with the number of selected tasks it can move](../assets/tui-multi-select.png)
+![Every row of api's board selected, the panel title reading "Tasks · no
+issue — 5 selected", and the action bar offering each action with the number of selected tasks it can move](../assets/tui-multi-select.png)
 
 The count beside each key is how many of the selected tasks that action can
 actually move — an action shows up when *some* selected task accepts it, and the

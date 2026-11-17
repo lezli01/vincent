@@ -322,8 +322,10 @@ walks each one):
 
 In detail:
 
-- A filterable, grouped task board for the selected project shows state,
-  current step, elapsed time,
+- A filterable task board for the selected project, grouped by the vincent
+  issue each task was started from (tasks from no issue share one `no issue`
+  group; `g` switches to grouping by workflow, or to a flat list), shows
+  state, current step, elapsed time,
   reported cost, the step's own status message, and a `⇡#123` marker on a task
   with a pull request. The status is kept at 120 columns, and a column no task
   has anything to say in (a cost no agent reported, a status nobody set) is
