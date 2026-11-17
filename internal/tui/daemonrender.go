@@ -463,22 +463,26 @@ func issueArchiveLines(ia apiclient.DoctorIssueArchive, width int) []string {
 			style = styleDim
 		}
 		row := field("issue #"+strconv.FormatInt(h.IssueID, 10), facts+"  "+style.Render(reasons))
+		// The title is the task's, which may be an issue's title as a
+		// GitHub or Jira sync took it: one line, no terminal controls,
+		// before it is measured or drawn — as every other screen does.
+		title := oneLine(h.Title)
 		switch {
-		case h.Title == "":
+		case title == "":
 		case width <= 0:
 			// No size message yet: nothing to elide to.
-			row += "  " + h.Title
+			row += "  " + title
 		default:
-			row += elideTail("  "+h.Title, width-lipgloss.Width(row))
+			row += elideTail("  "+title, width-lipgloss.Width(row))
 		}
 		out = append(out, row)
 	}
 	for _, c := range ia.ChatDirs {
 		out = append(out, styleDim.Render(fmt.Sprintf("   %s%s  chat #%d  %s",
-			padRight("chat dir", 22), "issue #"+strconv.FormatInt(c.IssueID, 10), c.ChatID, c.Path)))
+			padRight("chat dir", 22), "issue #"+strconv.FormatInt(c.IssueID, 10), c.ChatID, oneLine(c.Path))))
 	}
 	if ia.Error != "" {
-		out = append(out, styleWarn.Render("   ⚠ held tasks unknown: "+ia.Error))
+		out = append(out, styleWarn.Render("   ⚠ held tasks unknown: "+oneLine(ia.Error)))
 	}
 	return out
 }

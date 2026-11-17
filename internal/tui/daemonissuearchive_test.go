@@ -118,6 +118,32 @@ func TestIssueArchiveLinesAreQuietWhenNothingIsHeld(t *testing.T) {
 	}
 }
 
+// A held task's title is drawn as one line with no terminal controls: an
+// escape sequence or a line break in it, as a synced issue's title may carry,
+// would drive the terminal and split the row past the view's height budget.
+func TestIssueArchiveLinesCleanTheTitle(t *testing.T) {
+	ia := heldArchive()
+	ia.Held[0].Title = "evil\x1b]0;pwned\x07\nsecond line"
+	for _, width := range []int{0, 200, 75} {
+		lines := issueArchiveLines(ia, width)
+		if len(lines) != 4 {
+			t.Fatalf("width %d: want heading, two held rows and a chat dir, got %d lines: %q", width, len(lines), lines)
+		}
+		row := lines[1]
+		if strings.Contains(row, "\n") || strings.Contains(row, "\x1b]") || strings.Contains(row, "\x07") {
+			t.Errorf("width %d: the title reached the row raw: %q", width, row)
+		}
+		if width != 75 && !strings.Contains(ansi.Strip(row), "evil second line") {
+			t.Errorf("width %d: the cleaned title is missing: %q", width, ansi.Strip(row))
+		}
+		if width > 0 {
+			if w := ansi.StringWidth(row); w > width {
+				t.Errorf("the row is %d cells wide in a %d-cell pane: %q", w, width, row)
+			}
+		}
+	}
+}
+
 // A narrow terminal loses the title first: every reason survives.
 func TestIssueArchiveLinesElideTheTitleNotTheReasons(t *testing.T) {
 	ia := heldArchive()
