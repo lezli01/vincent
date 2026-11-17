@@ -276,11 +276,12 @@ list with the user-facing context a commit subject cannot carry.
   issue a task was started from, and one `no issue` group for the rest — a
   handoff's own task among them. Workflow grouping stays, one `g` away (`g`
   cycles issue → workflow → flat), and the two levels nest in either order.
-  An existing `config.yaml` that says `group_by: [workflow]` under
-  `tui.board` — including the one an earlier vincent wrote for you — keeps
-  grouping by workflow, and nothing warns about it; to switch, change that
-  line to `group_by: [issue]` (or delete it), in the file or from the TUI's
-  config editor (task 148).
+  An existing `config.yaml` that says `group_by: [workflow]` — or the
+  older bootstrapped `[project, workflow]` — under `tui.board`, including
+  the one an earlier vincent wrote for you, keeps grouping by workflow, and
+  nothing warns about it; to switch, change that line to
+  `group_by: [issue]` (or delete it), in the file or from the TUI's config
+  editor (task 148).
   ([#982](https://github.com/lezli01/vincent/issues/982), [#983](https://github.com/lezli01/vincent/issues/983))
 - **Issue sync runs per provider, on its own loop.** GitHub issue import
   stays on `github.poll_interval` and still runs before that tick's GitHub
