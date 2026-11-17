@@ -29,11 +29,12 @@ import (
 // Nothing is ever *refused* a collapse, which is what would make the feature
 // unpredictable on exactly the busy board that wants it.
 
-// foldPath names one group by the labels of its header and every header above
-// it, outermost first: ["api", "build"] is the `build` workflow inside the
-// `api` project. Labels rather than indices, so a refetch that reorders the
+// foldPath names one group by the keys of its header and every header above
+// it, outermost first: ["#42", "build"] is the `build` workflow inside issue
+// 42 (task 148). Keys rather than indices, so a refetch that reorders the
 // board — or a `g` press that renders a different set of levels — leaves the
-// set meaning what it meant.
+// set meaning what it meant; keys rather than display labels, so an issue
+// whose title changes keeps its fold.
 type foldPath []string
 
 func (p foldPath) equal(other foldPath) bool { return slices.Equal(p, other) }
@@ -82,9 +83,12 @@ func (f foldSet) without(p foldPath) foldSet {
 
 // prune drops paths that name nothing on the board any more.
 //
-// A path survives while every segment is still a workflow name occurring
-// somewhere in the *unfiltered* task list, independent of which levels are
-// currently rendered (task 054 decision 4). Pruning against the rendered
+// A path survives while every segment is still a group key occurring
+// somewhere in the *unfiltered* task list — at any level: a workflow name, an
+// issue's `#<id>` or the no-issue key — independent of which levels are
+// currently rendered (task 054 decision 4, task 148). A workflow fold
+// therefore survives a board grouped by issue, and an issue fold one grouped
+// by workflow. Pruning against the rendered
 // grouping instead would make `g` destructive: cycling to the flat table
 // stops every path from appearing, and the issue's other acceptance criterion
 // is that folds survive `g` cycling away and back. A filter leaves the set
@@ -99,9 +103,11 @@ func (f foldSet) prune(tasks []apiclient.Task) foldSet {
 	if len(f) == 0 || len(tasks) == 0 {
 		return f
 	}
-	known := make(map[string]struct{}, len(tasks))
+	known := make(map[string]struct{}, 2*len(tasks))
 	for _, t := range tasks {
-		known[groupValue(t, groupWorkflow)] = struct{}{}
+		for _, k := range []groupKey{groupIssue, groupWorkflow} {
+			known[groupValue(t, k)] = struct{}{}
+		}
 	}
 	out := make(foldSet, 0, len(f))
 	for _, p := range f {

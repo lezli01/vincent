@@ -24,6 +24,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
+	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -351,9 +352,9 @@ func TestBoardGroupsFromTheDaemonConfig(t *testing.T) {
 		t.Errorf("the board drew a project header or named the project as a skipped level:\n%s", got)
 	}
 	b := h.m.views[viewHome].(*shell).board
-	if !b.group.equal(defaultGrouping()) {
+	if !b.group.equal(byWorkflow()) {
 		t.Errorf("board grouping = %s, want the configured %s",
-			b.group.label(), defaultGrouping().label())
+			b.group.label(), byWorkflow().label())
 	}
 	// A grouped level costs no column: the header names it.
 	if strings.Contains(content(h.m), "WORKFLOW") {
@@ -488,5 +489,86 @@ func TestBoardShowsOnlyTheSelectedProject(t *testing.T) {
 	h.p.until(10*time.Second, "the attention clause to move off the badge", func() bool {
 		got := content(h.m)
 		return strings.Contains(got, "1 need attention") && !strings.Contains(got, "elsewhere")
+	})
+}
+
+// TestBoardGroupsByIssueFromTheDaemon is task 148.2 end to end: the
+// daemon's default grouping is [issue], GET /v1/tasks rows carry the issue
+// they were started from, and the board draws one header per issue plus
+// `no issue` from them — with WORKFLOW kept as a column.
+func TestBoardGroupsByIssueFromTheDaemon(t *testing.T) {
+	h := newBoardLiveHarnessConfig(t, config.Default)
+	ctx := context.Background()
+	iss, err := h.st.CreateIssue(ctx, store.NewIssue{ProjectID: h.projectID, Title: "grouped issue"}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	onIssue := &store.Task{
+		ProjectID: h.projectID, Title: "issue task", WorkflowName: "three",
+		WorkflowSnapshot: threeStepWorkflow, BaseBranch: "main", State: store.TaskQueued,
+		IssueID: &iss.ID,
+		Issue:   &store.IssueSnapshot{ID: iss.ID, Title: iss.Title, State: "open"},
+	}
+	resolve := func(id int64) (string, error) { return worktree.BranchName(id, onIssue.Title), nil }
+	if err := h.st.CreateTask(ctx, onIssue, resolve); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	h.createTask(t, "plain task")
+
+	want := "▾ issue #" + strconv.FormatInt(iss.ID, 10) + " · grouped issue"
+	h.p.until(20*time.Second, "the issue headers to render", func() bool {
+		got := content(h.m)
+		return strings.Contains(got, want) && strings.Contains(got, "▾ no issue")
+	})
+	got := content(h.m)
+	if !strings.Contains(got, want) || !strings.Contains(got, "▾ no issue") {
+		t.Fatalf("the board drew no issue headers:\n%s", got)
+	}
+	if !strings.Contains(got, "WORKFLOW") {
+		t.Error("the WORKFLOW column was dropped on a board grouped by issue")
+	}
+	if b := h.m.views[viewHome].(*shell).board; !b.group.equal(byIssue()) {
+		t.Errorf("board grouping = %s, want the default by issue", b.group.label())
+	}
+}
+
+// TestIssueHeaderFollowsTheIssue is review F1 on PR #1000: an issue header
+// is drawn from the row's live issue, so renaming or closing the issue —
+// which writes only an issue.* event, never a task.* one — must redraw it.
+func TestIssueHeaderFollowsTheIssue(t *testing.T) {
+	h := newBoardLiveHarnessConfig(t, config.Default)
+	ctx := context.Background()
+	iss, err := h.st.CreateIssue(ctx, store.NewIssue{ProjectID: h.projectID, Title: "before rename"}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	onIssue := &store.Task{
+		ProjectID: h.projectID, Title: "issue task", WorkflowName: "three",
+		WorkflowSnapshot: threeStepWorkflow, BaseBranch: "main", State: store.TaskQueued,
+		IssueID: &iss.ID,
+		Issue:   &store.IssueSnapshot{ID: iss.ID, Title: iss.Title, State: "open"},
+	}
+	resolve := func(id int64) (string, error) { return worktree.BranchName(id, onIssue.Title), nil }
+	if err := h.st.CreateTask(ctx, onIssue, resolve); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	head := "issue #" + strconv.FormatInt(iss.ID, 10) + " · "
+	h.p.until(20*time.Second, "the issue header to render", func() bool {
+		return strings.Contains(content(h.m), head+"before rename")
+	})
+
+	title := "after rename"
+	if _, err := h.st.UpdateIssue(ctx, iss.ID, iss.Version, store.IssuePatch{Title: &title}, issuestate.Human); err != nil {
+		t.Fatalf("UpdateIssue: %v", err)
+	}
+	h.p.until(20*time.Second, "the header to show the new title", func() bool {
+		return strings.Contains(content(h.m), head+"after rename")
+	})
+
+	if _, err := h.st.TransitionIssue(ctx, iss.ID, issuestate.Close, issuestate.Completed, nil, issuestate.Human); err != nil {
+		t.Fatalf("TransitionIssue: %v", err)
+	}
+	h.p.until(20*time.Second, "the header to show the issue closed", func() bool {
+		return strings.Contains(content(h.m), head+"after rename · closed")
 	})
 }

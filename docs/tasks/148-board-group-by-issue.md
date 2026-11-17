@@ -1,6 +1,6 @@
 # 148 — The board grouped by vincent issue
 
-**Status:** 🔄 in progress (1/3) · **Opened:** 2026-11-17 · **Issues:** #981, #982, #983, #984
+**Status:** 🔄 in progress (2/3) · **Opened:** 2026-11-17 · **Issues:** #981, #982, #983, #984
 
 The author asked for the task board to be grouped by the vincent issue each
 task was started from, and for that to be the default. Issue #981 splits it in
@@ -76,16 +76,42 @@ follow:
   only logs a default level the TUI does not render; once `parseGrouping`
   keeps `issue`, 148.2 deletes that branch so the comparison fails again.
 
+### 7. The no-issue group's key is not `groupUnnamed`
+
+*2026-11-17 (148.2).* Every level's group has a stable key, which fold paths,
+partitioning and pruning use, and a separate display label. An issue's key
+is `#<id>`; a task with no issue gets the reserved key `#none`, labelled
+`no issue`. It is deliberately not the `—` the workflow level already uses
+for a task with no workflow name: under `[issue, workflow]` the two would be
+the same path segment and a fold on one would alias the other. A `#` cannot
+open a workflow name (`^[a-z0-9][a-z0-9._-]*$`) and `none` is not an issue
+id, so the key collides with neither level. For a workflow, key and label
+are the same string, so every existing fold keeps working. This refines the
+issue's "for example `—`".
+
+### 8. Handoff tasks sit in `no issue`
+
+*2026-11-17 (148.2), settled with the author.* A task started by a handoff
+carries no issue and sits in the single `no issue` group. A separate
+`handoff H<id>` group is out of scope and can be a later issue.
+
+### 9. The filter matches the issue
+
+*2026-11-17 (148.2), settled with the author.* The board's `/` filter also
+matches a task's issue — its `#<id>`, title and imported short ref — under
+every grouping, so filtering for an issue keeps its whole group.
+
 ## Tasks
 
 - [x] **148.1** (#982) `internal/config`: the `issue` level, its validation
   message, the `[issue]` default and the bootstrap template; the `PATCH
   /v1/config` and load tests; the configuration reference, the §12.3 and §15
   amendments and task 009's note. ✓ 2026-11-17
-- [ ] **148.2** (#983) The TUI renders the `issue` level: the group key, the
+- [x] **148.2** (#983) The TUI renders the `issue` level: the group key, the
   `g` cycle, the headers and the group for tasks started from no issue, and
   the config editor's choices. Before 148.2 merges, no release is cut;
   with it, `TestDefaultGroupingMatchesTheConfigDefault` fails again rather
-  than logging (decision 6, amended).
+  than logging (decision 6, amended). Decisions 7–9; the §15 *Grouping* and
+  filter amendments. ✓ 2026-11-17
 - [ ] **148.3** (#984) The TUI guide, the features page, the screenshots and
   the CHANGELOG entry.

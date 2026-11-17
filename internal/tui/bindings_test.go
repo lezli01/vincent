@@ -216,7 +216,7 @@ func foldingShell(t *testing.T) *shell {
 		task(2, stateQueued, inWorkflow("deploy")),
 	)
 	s.focus = panelTasks
-	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
+	s.board.group, s.board.configGroup = byWorkflow(), byWorkflow()
 	s.board.dataDir, s.board.foldsLoaded = "", true
 	s.render(120, 37)
 	return s

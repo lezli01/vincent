@@ -6,12 +6,14 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 // Grouping for the task table (§15, task 009). The board's rows are nested
-// under headers by workflow, which is what says what a task is *doing*. It is
+// under headers by vincent issue (task 148) — what a task is *for* — or by
+// workflow, which is what says what a task is *doing*. It is
 // configuration — `tui.board.group_by` in config.yaml, served on
 // `GET /v1/config` — because the shape that suits one workflow is not the
 // shape that suits six. There is no project level: the board shows one
@@ -30,7 +32,10 @@ import (
 // and what it renders comes from the wire.
 type groupKey string
 
-const groupWorkflow groupKey = "workflow"
+const (
+	groupIssue    groupKey = "issue"
+	groupWorkflow groupKey = "workflow"
+)
 
 // grouping is the levels in effect, outermost first. Empty is a flat table —
 // exactly what every version before this one rendered.
@@ -39,12 +44,15 @@ type grouping []groupKey
 // defaultGrouping is what the board renders before the daemon's config
 // arrives, and what it keeps when no daemon is reachable. It matches
 // config.Default(); boardgroup_test.go holds the two together.
-func defaultGrouping() grouping { return grouping{groupWorkflow} }
+func defaultGrouping() grouping { return grouping{groupIssue} }
 
-// groupingCycle is what `g` steps through: by workflow, then flat. The key is
-// a quick look at the board another way, not an editor for the config file.
+// groupingCycle is what `g` steps through: by issue, by workflow, then flat
+// (task 148). The key is a quick look at the board another way, not an
+// editor for the config file, so a two-level grouping is reachable only
+// through config.yaml, and `g` from one jumps to the head of the cycle.
 func groupingCycle() []grouping {
 	return []grouping{
+		{groupIssue},
 		{groupWorkflow},
 		{},
 	}
@@ -92,7 +100,7 @@ func parseGrouping(levels []string) grouping {
 	out := make(grouping, 0, len(levels))
 	for _, l := range levels {
 		k := groupKey(l)
-		if k != groupWorkflow {
+		if k != groupIssue && k != groupWorkflow {
 			continue
 		}
 		if !out.has(k) {
@@ -136,12 +144,17 @@ type boardRow struct {
 	lane int
 	// label, count and attention describe the group a header opens. The
 	// attention count is on the header so a collapsed group can never hide
-	// that something is waiting on a human (§15, task 054 decision 3).
+	// that something is waiting on a human (§15, task 054 decision 3). The
+	// label is display text only; the group is named by its key, which is
+	// what path carries (task 148: an issue's label holds its title, which
+	// may change, and its key `#<id>`, which does not). closed adds the dim
+	// `· closed` an issue header ends its label with.
 	label     string
+	closed    bool
 	count     int
 	attention int
 	// path names the group for the fold set (boardfold.go): this header's
-	// label and every label above it, outermost first. Empty on a task row.
+	// key and every key above it, outermost first. Empty on a task row.
 	path foldPath
 	// collapsed and marked are filled in by applyFolds, never by groupRows:
 	// a folded header stands in for rows that are not on screen, so it says
@@ -167,6 +180,9 @@ func (r boardRow) selectable() bool { return (!r.header || r.collapsed) && r.lin
 // the value a skipped level would have named is returned, in level order, for
 // the panel title to carry instead.
 //
+// What is returned is the skipped group's display label (groupTitle), never
+// its key: the panel title reads `Tasks · no issue`, not `Tasks · #none`.
+//
 // An empty task list skips nothing: there is no value to name, and no header
 // to draw either way.
 func shownLevels(tasks []apiclient.Task, g grouping) (shown grouping, skipped []string) {
@@ -184,7 +200,11 @@ func shownLevels(tasks []apiclient.Task, g grouping) (shown grouping, skipped []
 			}
 		}
 		if single {
-			skipped = append(skipped, first)
+			label, closed := groupTitle(tasks[0], k)
+			if closed {
+				label += groupLabelSep + issueStateClosed
+			}
+			skipped = append(skipped, label)
 			continue
 		}
 		shown = append(shown, k)
@@ -236,7 +256,8 @@ func groupRows(tasks []apiclient.Task, g grouping) []boardRow {
 			out = append(out, boardRow{
 				header:    true,
 				depth:     depth,
-				label:     grp.key,
+				label:     grp.label,
+				closed:    grp.closed,
 				count:     len(grp.tasks),
 				attention: countAttention(grp.tasks),
 				path:      sub,
@@ -248,9 +269,15 @@ func groupRows(tasks []apiclient.Task, g grouping) []boardRow {
 	return out
 }
 
+// taskGroup is one group of one level. key names it — partitioning, fold
+// paths, pruning — and label and closed only draw it; for a workflow the two
+// are the same string, which is what keeps every pre-148 fold meaning what it
+// meant. The label comes from the group's first task in band order.
 type taskGroup struct {
-	key   string
-	tasks []apiclient.Task
+	key    string
+	label  string
+	closed bool
+	tasks  []apiclient.Task
 }
 
 // partitionTasks splits a sorted list by one level, preserving both the order
@@ -264,7 +291,8 @@ func partitionTasks(tasks []apiclient.Task, k groupKey) []taskGroup {
 		if !ok {
 			i = len(out)
 			index[key] = i
-			out = append(out, taskGroup{key: key})
+			label, closed := groupTitle(t, k)
+			out = append(out, taskGroup{key: key, label: label, closed: closed})
 		}
 		out[i].tasks = append(out[i].tasks, t)
 	}
@@ -277,15 +305,79 @@ func partitionTasks(tasks []apiclient.Task, k groupKey) []taskGroup {
 // a rendering bug.
 const groupUnnamed = "—"
 
+// groupNoIssue is the key of the group holding every task with no vincent
+// issue — a handoff's task among them (task 148 decision 8). It is not
+// groupUnnamed: under [issue, workflow] a fold on the no-issue group and one
+// on the unnamed-workflow group would otherwise be the same path segment and
+// alias each other. A `#` cannot open a workflow name
+// (`^[a-z0-9][a-z0-9._-]*$`) and `none` is not an issue id, so it collides
+// with neither level's keys.
+const groupNoIssue = "#none"
+
+// groupNoIssueLabel is what the no-issue group's header, and the panel title
+// when it is the only group, say.
+const groupNoIssueLabel = "no issue"
+
+// groupLabelSep joins the parts of an issue header's label.
+const groupLabelSep = " · "
+
+// issueStateClosed is §5.6's closed state, as the wire spells it — the same
+// literal issuestate.Closed holds, compared here rather than imported for the
+// reason groupKey's values are.
+const issueStateClosed = "closed"
+
+// groupValue is a task's key at one level: the string fold paths, partitions
+// and pruning compare. An issue's is `#<id>`, a deleted issue's frozen
+// snapshot included (task 130 decision 6) — it keeps its id.
 func groupValue(t apiclient.Task, k groupKey) string {
 	var v string
-	if k == groupWorkflow {
+	switch k {
+	case groupIssue:
+		if t.Issue == nil {
+			return groupNoIssue
+		}
+		return "#" + strconv.FormatInt(t.Issue.ID, 10)
+	case groupWorkflow:
 		v = t.Workflow
 	}
 	if strings.TrimSpace(v) == "" {
 		return groupUnnamed
 	}
 	return v
+}
+
+// groupTitle is how a task's group at one level is drawn: the display label,
+// and whether it ends in a dim `· closed`. An issue reads
+// `issue #<id> · <title> · <short ref>`, the ref only when it was imported —
+// the short form the daemon rendered, falling back to the full one (task
+// 142.8). Every other level's label is its key.
+func groupTitle(t apiclient.Task, k groupKey) (label string, closed bool) {
+	if k != groupIssue {
+		return groupValue(t, k), false
+	}
+	iss := t.Issue
+	if iss == nil {
+		return groupNoIssueLabel, false
+	}
+	label = "issue " + groupValue(t, k)
+	if title := strings.TrimSpace(iss.Title); title != "" {
+		label += groupLabelSep + title
+	}
+	if ref := issueRef(iss); ref != "" {
+		label += groupLabelSep + ref
+	}
+	return label, strings.TrimSpace(iss.State) == issueStateClosed
+}
+
+// issueRef is an imported issue's compact reference, or "" for a local one.
+func issueRef(iss *apiclient.TaskIssue) string {
+	if iss == nil || iss.Source == nil {
+		return ""
+	}
+	if ref := strings.TrimSpace(iss.Source.ShortRef); ref != "" {
+		return ref
+	}
+	return strings.TrimSpace(iss.Source.Ref)
 }
 
 // groupGlyphOpen and groupGlyphFolded open a header line. A glyph rather than
@@ -307,24 +399,80 @@ const (
 var styleGroup = lipgloss.NewStyle().Bold(true)
 
 // headerCell renders a group header into the title column — the widest column
-// and the only one guaranteed to be there at any width (boardcols.go).
-func (r boardRow) headerCell() string {
+// and the only one guaranteed to be there at any width (boardcols.go). width
+// is that column's width; the label is what gives way when it is too narrow,
+// so the count, the `! n` badge and the marked count — what a fold must never
+// hide (task 054 decision 3) — stay on screen whatever an issue's title runs
+// to. Zero or less renders the whole label.
+func (r boardRow) headerCell(width int) string {
 	glyph := groupGlyphOpen
 	if r.collapsed {
 		glyph = groupGlyphFolded
 	}
-	label := strings.Repeat(groupIndent, r.depth) + glyph + " " + r.label
-	out := styleGroup.Render(label) + styleDim.Render("  "+strconv.Itoa(r.count))
+	lead := strings.Repeat(groupIndent, r.depth) + glyph + " "
+	label := r.label
+	tail := styleDim.Render("  " + strconv.Itoa(r.count))
 	if r.attention > 0 {
-		out += "  " + styleWarn.Render(attentionBadge+" "+strconv.Itoa(r.attention))
+		tail += "  " + styleWarn.Render(attentionBadge+" "+strconv.Itoa(r.attention))
 	}
 	if r.marked > 0 {
 		// What a bulk action would touch inside a group whose rows are not on
 		// screen. The selection is a set of tasks and not a view (task 011),
 		// so folding one away must not make it invisible.
-		out += "  " + styleKey.Render(markGlyph+" "+strconv.Itoa(r.marked))
+		tail += "  " + styleKey.Render(markGlyph+" "+strconv.Itoa(r.marked))
 	}
-	return out
+	closed := ""
+	if r.closed {
+		closed = groupLabelSep + issueStateClosed
+	}
+	if width > 0 {
+		lead, label, closed = fitHeader(glyph, lead, label, closed, width-ansi.StringWidth(tail))
+	}
+	out := styleGroup.Render(lead + label)
+	if closed != "" {
+		out += styleDim.Render(closed)
+	}
+	return out + tail
+}
+
+// fitHeader shortens a header's lead, label and `closed` to room cells, so
+// that nothing after them — the count and the badges — reaches the tail the
+// table would cut. Each step gives up the least informative thing left:
+//
+//  1. the end of the title, keeping `closed` — it is state, and the title is
+//     a name the header has already begun — while the label keeps at least
+//     its head (`issue #42`, the part before the first ` · `);
+//  2. `closed`, leaving the label the whole room;
+//  3. the label and the indentation, leaving the glyph alone.
+//
+// Review F3 on PR #1000: `closed` used to be kept at any width, so a narrow
+// title column lost the marked count or the `! n` badge instead.
+func fitHeader(glyph, lead, label, closed string, room int) (string, string, string) {
+	room -= ansi.StringWidth(lead)
+	if ansi.StringWidth(label)+ansi.StringWidth(closed) <= room {
+		return lead, label, closed
+	}
+	head, _, _ := strings.Cut(label, groupLabelSep)
+	if r := room - ansi.StringWidth(closed); closed != "" && r >= ansi.StringWidth(head) {
+		return lead, fitLabel(label, head, r), closed
+	}
+	if room >= 1 {
+		return lead, fitLabel(label, head, room), ""
+	}
+	return glyph, "", ""
+}
+
+// fitLabel truncates label to room cells. A room too narrow for the head and
+// a few cells of what follows it gets the bare head, which still names the
+// group, rather than a head cut short by an ellipsis.
+func fitLabel(label, head string, room int) string {
+	if ansi.StringWidth(label) <= room {
+		return label
+	}
+	if hw := ansi.StringWidth(head); room >= hw && room < hw+ansi.StringWidth(groupLabelSep)+2 {
+		return head
+	}
+	return ansi.Truncate(label, room, "…")
 }
 
 // groupIndent is one level of nesting, for headers and for the task titles

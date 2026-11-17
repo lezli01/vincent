@@ -151,7 +151,10 @@ func startedBefore(a, b apiclient.Task) bool {
 }
 
 // filterTasks keeps tasks matching a case-insensitive substring of the id,
-// title or state. The project name is not matched: the board shows one
+// title or state, or of the vincent issue the task was started from — its
+// `#<id>`, title and imported short ref (task 148 decision 9), so filtering
+// for an issue keeps its whole group whatever the board is grouped by. The
+// project name is not matched: the board shows one
 // project (task 132.8), so it would match every row or none. Filtering is
 // client-side: it runs on every keystroke against a list already in memory,
 // so a round-trip per character would be pure latency.
@@ -162,9 +165,11 @@ func filterTasks(tasks []apiclient.Task, query string) []apiclient.Task {
 	}
 	out := make([]apiclient.Task, 0, len(tasks))
 	for _, t := range tasks {
-		haystack := strings.ToLower(strings.Join([]string{
-			strconv.FormatInt(t.ID, 10), t.Title, t.State, stateWords(t.State),
-		}, " "))
+		fields := []string{strconv.FormatInt(t.ID, 10), t.Title, t.State, stateWords(t.State)}
+		if t.Issue != nil {
+			fields = append(fields, "#"+strconv.FormatInt(t.Issue.ID, 10), t.Issue.Title, issueRef(t.Issue))
+		}
+		haystack := strings.ToLower(strings.Join(fields, " "))
 		if strings.Contains(haystack, q) {
 			out = append(out, t)
 		}

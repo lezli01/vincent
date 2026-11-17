@@ -270,7 +270,7 @@ type board struct {
 
 func newBoard() *board {
 	fi := newTextField()
-	fi.SetPlaceholder("filter by id, title or state")
+	fi.SetPlaceholder("filter by id, title, state or issue")
 	fi.SetPrompt("/")
 	b := &board{
 		now:         time.Now,
@@ -757,7 +757,13 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 	// refetch it. What is drawn for the selection is filtered in memory.
 	// A linked chat opening or closing changes a row's `open_chat_id` and
 	// available_actions without a task event (task 119).
-	if _, lock := lockEventTask(ev.Event); isTaskEvent(ev.Event.Type) || lock {
+	//
+	// An issue group's header is drawn from the row's live `issue` (task
+	// 148.2): its title, its short ref and `closed`. Renaming, closing or
+	// deleting the issue — here, from another client or by sync — writes
+	// only an issue.* event, so those refetch too, or the header would keep
+	// the old title until some unrelated task event happened by.
+	if _, lock := lockEventTask(ev.Event); isTaskEvent(ev.Event.Type) || lock || redrawsIssueHeader(ev.Event.Type) {
 		cmds = append(cmds, b.scheduleRefresh())
 	}
 	if ev.Event.Type == eventAgentQuotaChanged {
@@ -770,6 +776,18 @@ func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 
 func isTaskEvent(t string) bool {
 	return strings.HasPrefix(t, "task.") || strings.HasPrefix(t, "project.")
+}
+
+// redrawsIssueHeader reports whether an issue.* event can change what an
+// issue group's header draws — the title, the imported ref or the state.
+// Comments, labels and lane moves never reach a header, so they do not
+// refetch the board.
+func redrawsIssueHeader(t string) bool {
+	switch t {
+	case "issue.updated", "issue.state_changed", "issue.deleted":
+		return true
+	}
+	return false
 }
 
 // eventWorkflowRegistryChanged is the durable event the daemon writes after
@@ -1680,7 +1698,7 @@ func (b *board) rowsFor(rows []boardRow, cols []table.Column, set columnSet) []t
 	var lines [][]string
 	for _, r := range rows {
 		if r.header {
-			out = append(out, groupHeaderRow(r, set))
+			out = append(out, groupHeaderRow(r, set, cols))
 			lines = nil
 			continue
 		}
@@ -1705,8 +1723,9 @@ func (b *board) rowsFor(rows []boardRow, cols []table.Column, set columnSet) []t
 // groupHeaderRow renders a group header as a table row: the label in the
 // title column — the widest, and the only one that survives every width — and
 // every other cell blank, so the header reads as a break in the list rather
-// than as a task with missing figures.
-func groupHeaderRow(r boardRow, set columnSet) table.Row {
+// than as a task with missing figures. The row is built in column order, so
+// the title cell's width is cols at the index it lands on.
+func groupHeaderRow(r boardRow, set columnSet, cols []table.Column) table.Row {
 	row := make(table.Row, 0, maxBoardColumns)
 	if set.mark {
 		// A group is not something a bulk action can name: the marker column is
@@ -1719,7 +1738,11 @@ func groupHeaderRow(r boardRow, set columnSet) table.Row {
 	}
 	// Then STATE and ARCHIVED on the archive (#804 AR-10), STATE, STEP and
 	// ELAPSED on the live board.
-	row = append(row, r.headerCell(), "", "")
+	width := 0
+	if len(row) < len(cols) {
+		width = cols[len(row)].Width
+	}
+	row = append(row, r.headerCell(width), "", "")
 	if !set.archived {
 		row = append(row, "")
 	}

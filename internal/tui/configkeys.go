@@ -106,8 +106,9 @@ var (
 	// file is: the TUI reads its configuration from the API, not from disk.
 	usageLimitAutoContinueChoices = []string{"always", "reported_only", "never"}
 	// No "project": the board shows one project at a time, and the daemon
-	// refuses a write that sets that level (task 132.9).
-	groupByChoices = []string{"workflow"}
+	// refuses a write that sets that level (task 132.9). "issue" since task
+	// 148.
+	groupByChoices = []string{"issue", "workflow"}
 	inheritChoices = []string{"all", "none"}
 )
 
