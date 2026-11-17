@@ -285,7 +285,9 @@ func newDaemonStatusCmd() *cobra.Command {
 			// so a daemon started before the swap keeps its old code until it
 			// is restarted. Nothing is broken, which is why this is a line and
 			// not an exit code: the status is still healthy.
-			if release.IsNewer(h.Version, version.Version()) {
+			// IsLaterBuild, not IsNewer: the binary may be a source or master
+			// build, which a release comparison never calls newer.
+			if release.IsLaterBuild(h.Version, version.Version()) {
 				_, _ = fmt.Fprintf(out,
 					"this binary is %s — the running daemon is older; restart it to pick the new build up\n",
 					version.Version())

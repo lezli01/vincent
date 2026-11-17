@@ -128,7 +128,7 @@ One report answering "why is nothing running?". Fourteen groups:
 | Jira | whether [`jira.enabled`](configuration.md#jira) is on; the `credential` row naming [`jira.user_env` and `jira.token_env`](configuration.md#jira) with `set` or `not set` for each in the daemon's environment (`(unknown)` with no daemon — the CLI's environment is not the daemon's), never a value; a `note` naming a missing variable and the [`environment.set`](configuration.md#environment) fix; one `site <url>` row per distinct site a Jira-bound project names: `ok as <name>`, `not ok (<reason>)` with a sentence, or `not probed`; and one `sync <project>` row per Jira project, in the GitHub row's format. Each site is asked one question, `GET /rest/api/3/myself`, so a bad token is refused once per site and never trips Jira's CAPTCHA lockout. Nothing here changes the exit code |
 | Container | whether [`container.image`](configuration.md#container) names an image, which image, whether the configured runtime answered, and whether steps run in it or on this host |
 | Skills | per [published skill](#vincent-skills): the version this binary ships, the state of the copy in the global skills store, and the agents it is linked into |
-| Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it |
+| Update | whether [`update.check`](configuration.md#update) is on, the latest stable release and when it was last seen, this binary's version, and whether the running daemon is older than it — a source build (`v0.13.0-46-gabc1234`) or a master build counts, a `dev` build never does |
 | Backup | whether [scheduled backups](configuration.md#backup) are on, the directory, interval and keep, the last success and last attempt, when the next run is due, the last archive's size, how many scheduled archives are kept, and the last error |
 | Storage | disk free under the data dir, worktree count and bytes, orphans |
 | Tasks | counts by state, so "12 blocked" is visible without opening the board, plus any task whose state and step runs contradict each other |
@@ -393,8 +393,10 @@ start time. Exit `0` healthy, `1` not running, `2` unresponsive. Which agent
 CLIs the daemon resolved is [`vincent agents`](#vincent-agents).
 
 If the binary you just ran is newer than the daemon that answered — which is
-what you have right after [`vincent update`](#vincent-update) — it says so and
-tells you to restart it. That is a line, not a failure: the running daemon keeps
+what you have right after [`vincent update`](#vincent-update), or after
+rebuilding from source — it says so and tells you to restart it. Releases,
+source builds (`v0.13.0-46-gabc1234`) and master builds are all ordered; a
+`dev` build has no place on that line and never triggers it. That is a line, not a failure: the running daemon keeps
 its old code until it is restarted, and everything keeps working meanwhile.
 
 ### `vincent daemon logs`

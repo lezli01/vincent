@@ -183,3 +183,38 @@ func serveFile(t *testing.T, status int, name string) *httptest.Server {
 	t.Cleanup(srv.Close)
 	return srv
 }
+
+// IsLaterBuild compares two builds already on this machine — the running
+// daemon's and this binary's — where neither need be a release: a source
+// build, a master build and a pseudo-version all have a place on the line.
+func TestIsLaterBuild(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		running, binary string
+		want            bool
+	}{
+		{"older release", "v0.12.0", "v0.13.0", true},
+		{"same release", "v0.13.0", "v0.13.0", false},
+		{"newer daemon", "v0.13.0", "v0.12.0", false},
+		{"release then source build past it", "v0.13.0", "v0.13.0-46-ge7b38595", true},
+		{"source build then a later one", "v0.13.0-40-gaaaaaaa", "v0.13.0-46-ge7b38595", true},
+		{"source build then an earlier one", "v0.13.0-46-ge7b38595", "v0.13.0-40-gaaaaaaa", false},
+		{"same commit, one dirty", "v0.13.0-46-ge7b38595-dirty", "v0.13.0-46-ge7b38595", false},
+		{"same count, another hash", "v0.13.0-46-gaaaaaaa", "v0.13.0-46-ge7b38595", false},
+		{"source build then the next release", "v0.13.0-46-ge7b38595", "v0.13.1", true},
+		{"master build then a later one", "v0.13.1-master.46.ge7b3859", "v0.13.1-master.47.g1234567", true},
+		{"master build and a source build of its commit", "v0.13.1-master.46.ge7b3859", "v0.13.0-46-ge7b38595", false},
+		{"source build then a later master build", "v0.13.0-46-ge7b38595", "v0.13.1-master.50.g7654321", true},
+		{"master build then the next release", "v0.13.1-master.46.ge7b3859", "v0.13.1", true},
+		{"pseudo-versions", "v0.13.1-0.20261117075329-e7b38595abcd", "v0.13.1-0.20261118080000-123456789abc", true},
+		{"dev binary", "v0.13.0", "dev", false},
+		{"dev daemon", "dev", "v0.13.0", false},
+		{"bare hash", "e7b3859", "v0.13.0", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsLaterBuild(tc.running, tc.binary); got != tc.want {
+				t.Errorf("IsLaterBuild(%q, %q) = %v, want %v", tc.running, tc.binary, got, tc.want)
+			}
+		})
+	}
+}

@@ -236,13 +236,24 @@ func Canonical(v string) string {
 // it, then `-dirty` for uncommitted changes.
 var describe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:-(\d+)-g([0-9a-f]+))?(-dirty)?$`)
 
-// describedVersion is v, canonical, with a `git describe` stamp placed where
-// the build really is on the version line. On the tag — clean or dirty — it
-// is that release. Past it, it is the next patch's lowest prerelease,
-// `v0.13.1-0.46.gabc1234`, which sorts above the tag and below every release
-// after it, as a Go pseudo-version does. Anything else is Canonical's.
-func describedVersion(v string) string {
-	m := describe.FindStringSubmatch(strings.TrimSpace(v))
+// masterBuild matches a master build's version (task 147):
+// `<next patch>-master.<commits>.g<hash>`.
+var masterBuild = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)-master\.(\d+)\.g[0-9a-f]+$`)
+
+// orderKey is v, canonical, placed where the build really is on the version
+// line, for ordering only. A `git describe` stamp on a tag — clean or dirty —
+// is that release; past one it is the next patch's lowest prerelease with
+// the commit count, `v0.13.1-0.46`, above the tag and below every release
+// after it, as a Go pseudo-version sorts. A master build of the same commit
+// gets the same key, since it is the same build line. The hash is dropped:
+// it orders nothing, and two builds that differ only by it are neither
+// earlier nor later than each other. Anything else is Canonical's.
+func orderKey(v string) string {
+	v = strings.TrimSpace(v)
+	if m := masterBuild.FindStringSubmatch(v); m != nil {
+		return Canonical("v" + m[1] + "-0." + m[2])
+	}
+	m := describe.FindStringSubmatch(v)
 	if m == nil {
 		return Canonical(v)
 	}
@@ -253,7 +264,22 @@ func describedVersion(v string) string {
 	if err != nil {
 		return ""
 	}
-	return Canonical(fmt.Sprintf("v%s.%s.%d-0.%s.g%s", m[1], m[2], patch+1, m[4], m[5]))
+	return Canonical(fmt.Sprintf("v%s.%s.%d-0.%s", m[1], m[2], patch+1, m[4]))
+}
+
+// IsLaterBuild reports whether binary is a strictly later build than
+// running — the running daemon's version against this binary's, after a
+// swap. Unlike IsNewer neither side need be a release: a source build, a
+// master build or a pseudo-version is ordered by orderKey, so a daemon
+// started from an earlier source or master build is reported as behind the
+// binary that replaced it. A `dev` build or a bare hash has no place on the
+// line and is never later or earlier.
+func IsLaterBuild(running, binary string) bool {
+	r, b := orderKey(running), orderKey(binary)
+	if r == "" || b == "" {
+		return false
+	}
+	return semver.Compare(b, r) > 0
 }
 
 // IsNewer reports whether latest is a strictly newer stable version than
@@ -266,11 +292,11 @@ func describedVersion(v string) string {
 //
 // A source build stamped by `git describe --tags --always --dirty` — what
 // the mage build injects — is read as what it is rather than as semver
-// would read it (describedVersion): `v0.13.0-46-gabc1234` is 46 commits
+// would read it (orderKey): `v0.13.0-46-gabc1234` is 46 commits
 // past v0.13.0, not a prerelease below it, so it is behind the next release
 // and never behind v0.13.0 itself.
 func IsNewer(current, latest string) bool {
-	c, l := describedVersion(current), Canonical(latest)
+	c, l := orderKey(current), Canonical(latest)
 	if c == "" || l == "" {
 		return false
 	}
