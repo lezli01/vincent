@@ -694,56 +694,47 @@ func (s *shell) renderBoardOnly() string {
 		parts = append(parts, s.board.render(s.bodyW, areaH))
 		return strings.Join(parts, "\n")
 	}
-	title := s.panelTitle(panelTasks)
-	if !s.connected {
-		title += styleDim.Render(" · stale")
-	}
+	title := s.framedTitle(panelTasks, s.bodyW, true)
 	parts = append(parts, frame(title, s.board.render(s.bodyW-2, areaH-2), s.bodyW, areaH, true))
 	return strings.Join(parts, "\n")
 }
 
 func (s *shell) renderBox(b box) string {
-	title := s.panelTitle(b.id)
+	focused := s.focus == b.id
+	return frame(s.framedTitle(b.id, b.w, focused), s.panelContent(b.id, b.w-2, b.h-2), b.w, b.h, focused)
+}
+
+// framedTitle is a panel's title as a frame w cells wide draws it, with
+// `· stale` when the stream is down. The Tasks title gets the frame's width
+// as its budget (tasksTitle).
+func (s *shell) framedTitle(id panelID, w int, focused bool) string {
+	stale := ""
 	if !s.connected {
-		title += styleDim.Render(" · stale")
+		stale = " · stale"
 	}
-	return frame(title, s.panelContent(b.id, b.w-2, b.h-2), b.w, b.h, s.focus == b.id)
+	var title string
+	if id == panelTasks {
+		// What frame keeps of a title: its label is the title padded by a
+		// space each side (and the focus glyph and its space when focused),
+		// truncated to w-3 cells.
+		pad := 2
+		if focused {
+			pad += ansi.StringWidth(focusGlyph) + 1
+		}
+		title = s.tasksTitle(w - 3 - pad - len(stale))
+	} else {
+		title = s.panelTitle(id)
+	}
+	if stale != "" {
+		title += styleDim.Render(stale)
+	}
+	return title
 }
 
 func (s *shell) panelTitle(id panelID) string {
 	switch id {
 	case panelTasks:
-		// A committed filter is view state, applied and named here (§15) —
-		// losing track of why rows are missing trains people to distrust
-		// the table.
-		title := "Tasks"
-		// A grouping level every shown task shares draws no header (task
-		// 129 decision 4); its value is named here instead, in level order,
-		// because the grouped column is still dropped (009 decision 3).
-		if _, skipped := s.board.shownGroup(); len(skipped) > 0 {
-			title += " · " + strings.Join(skipped, " › ")
-		}
-		// `g` regroups for the session, and the title names any grouping but
-		// the configured one — the rule the output pane's `v` already follows
-		// (§15). The group headers show what the grouping *is*; this says it
-		// is not the one the config asked for.
-		if !s.board.group.equal(s.board.configGroup) {
-			title += " — " + s.board.group.label()
-		}
-		// `H` is named beside the filter it composes with (task 129.18).
-		if s.board.attentionOnly {
-			title += " — needs you"
-		}
-		if v := s.board.filter.Value(); v != "" && !s.board.filtering {
-			title += " — /" + v
-		}
-		// The selection is a set of tasks, not of rows (task 011): a marked
-		// task the filter is hiding is still going to be archived, and this
-		// count is what says so.
-		if n := len(s.board.projectMarks()); n > 0 {
-			title += fmt.Sprintf(" — %d selected", n)
-		}
-		return title
+		return s.tasksTitle(-1)
 	case panelTimeline:
 		if s.detail.taskID != 0 {
 			return fmt.Sprintf("Timeline — #%d", s.detail.taskID)
@@ -752,6 +743,76 @@ func (s *shell) panelTitle(id panelID) string {
 	default:
 		return s.detail.outputTitle()
 	}
+}
+
+// tasksTitle is the Tasks panel's title within budget cells; a negative
+// budget is unbounded.
+//
+// The indicators after the name — a session regrouping, `needs you`, the
+// committed filter and the selection count — are what stop a table with rows
+// missing from being distrusted, so they are never what gives way. The
+// skipped-level label before them is free text when it names an issue (task
+// 148.2: its whole title), so it alone is truncated to the room they leave,
+// and dropped when there is none (review F2, PR #1000).
+func (s *shell) tasksTitle(budget int) string {
+	const name = "Tasks"
+	title := name
+	// A grouping level every shown task shares draws no header (task
+	// 129 decision 4); its value is named here instead, in level order,
+	// because the grouped column is still dropped (009 decision 3).
+	var skippedLabel string
+	if _, skipped := s.board.shownGroup(); len(skipped) > 0 {
+		skippedLabel = strings.Join(skipped, " › ")
+	}
+	suffix := s.tasksTitleSuffix()
+	if skippedLabel != "" {
+		const sep = " · "
+		if budget >= 0 {
+			room := budget - ansi.StringWidth(name+sep+suffix)
+			if room < ansi.StringWidth(skippedLabel) {
+				// Below a few cells a truncated label says nothing but `…`.
+				if room < 4 {
+					skippedLabel = ""
+				} else {
+					skippedLabel = ansi.Truncate(skippedLabel, room, "…")
+				}
+			}
+		}
+		if skippedLabel != "" {
+			title += sep + skippedLabel
+		}
+	}
+	return title + suffix
+}
+
+// tasksTitleSuffix is the indicators the Tasks title carries after its name
+// and skipped-level label, each led by ` — `.
+func (s *shell) tasksTitleSuffix() string {
+	var title string
+	// `g` regroups for the session, and the title names any grouping but
+	// the configured one — the rule the output pane's `v` already follows
+	// (§15). The group headers show what the grouping *is*; this says it
+	// is not the one the config asked for.
+	if !s.board.group.equal(s.board.configGroup) {
+		title += " — " + s.board.group.label()
+	}
+	// `H` is named beside the filter it composes with (task 129.18).
+	if s.board.attentionOnly {
+		title += " — needs you"
+	}
+	// A committed filter is view state, applied and named here (§15) —
+	// losing track of why rows are missing trains people to distrust
+	// the table.
+	if v := s.board.filter.Value(); v != "" && !s.board.filtering {
+		title += " — /" + v
+	}
+	// The selection is a set of tasks, not of rows (task 011): a marked
+	// task the filter is hiding is still going to be archived, and this
+	// count is what says so.
+	if n := len(s.board.projectMarks()); n > 0 {
+		title += fmt.Sprintf(" — %d selected", n)
+	}
+	return title
 }
 
 func (s *shell) panelContent(id panelID, w, h int) string {

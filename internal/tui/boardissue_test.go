@@ -384,3 +384,39 @@ func TestArchivedBoardGroupsByIssue(t *testing.T) {
 		}
 	}
 }
+
+// TestSingleIssueTitleKeepsItsIndicators is review F2 on PR #1000: a
+// single-issue board names the issue's whole title in the panel title, and
+// filtering for the issue (`/#42`) is the common way to get one. The free-text
+// label is what gives way at a narrow width, never the filter, the regrouping
+// or the selection count that follow it.
+func TestSingleIssueTitleKeepsItsIndicators(t *testing.T) {
+	const long = "Rework the scheduler's per-project admission caps for fan-out lanes"
+	for _, width := range []int{100, 80, 60} {
+		s, _ := newShellFixture(t,
+			task(1, stateQueued, onIssue(42, long), issueImported("acme/app#142", ""), issueClosed()),
+			task(2, stateQueued, onIssue(42, long), issueImported("acme/app#142", ""), issueClosed()),
+			task(3, stateQueued),
+		)
+		// Configured by workflow, regrouped by issue for the session, so the
+		// regrouping is named too; the filter leaves the one issue on screen.
+		s.board.configGroup, s.board.group = byWorkflow(), byIssue()
+		s.board.filter.SetValue("#42")
+		s.board.marks = markSet{1}
+
+		out := ansi.Strip(s.render(width, 30))
+		top := strings.SplitN(out, "\n", 2)[0]
+		if w := ansi.StringWidth(top); w > width {
+			t.Errorf("width %d: the title line is %d cells:\n%s", width, w, top)
+		}
+		for _, want := range []string{"Tasks · ", " — by issue", " — /#42", " — 1 selected"} {
+			if !strings.Contains(top, want) {
+				t.Errorf("width %d: the title line lost %q:\n%s", width, want, top)
+			}
+		}
+		// The unbounded title, which the tests above compare, is unchanged.
+		if got := s.panelTitle(panelTasks); !strings.Contains(got, long) {
+			t.Errorf("width %d: unbounded title = %q, want the whole issue title", width, got)
+		}
+	}
+}

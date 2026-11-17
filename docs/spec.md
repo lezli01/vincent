@@ -16560,7 +16560,10 @@ last. The header shows the issue as it is now, so `issue.updated`,
 does — renaming or closing an issue writes no task event (review F1,
 PR #1000). The label is display only — a fold path holds keys, so an issue whose
 title changes keeps its fold — and a single-value level names its label, not
-its key, in the panel title: `Tasks · no issue`. Grouping by issue drops no
+its key, in the panel title: `Tasks · no issue`. That label is free text for
+an issue, so it alone is truncated to the frame's width: the regrouping,
+`needs you`, filter and selection indicators after it always stay on screen
+(review F2, PR #1000). Grouping by issue drops no
 column: `WORKFLOW` stays and is dropped only when `workflow` is a level. `g`
 cycles issue → workflow → flat; a configured two-level grouping is outside
 the cycle and `g` from it goes to issue. The `/` filter also matches the
