@@ -3,6 +3,10 @@ package api
 import (
 	"fmt"
 	"testing"
+
+	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/store"
 )
 
 // Issue #967: `vincent daemon restore` swaps in an older vincent.db while the
@@ -49,5 +53,41 @@ func TestTaskStreamCursorAheadOfRestoredTableStillDeliversNewEvents(t *testing.T
 	if f := c.next(t); f.id != fmt.Sprint(live.ID) {
 		t.Fatalf("first frame = %+v, want the restored daemon's new event %d "+
 			"(a cursor ahead of MAX(id) must not swallow it)", f, live.ID)
+	}
+}
+
+// The chat stream goes through the same startStream and filters its live loop
+// on the same `ev.ID <= lastID` (review F2), so it is pinned here too: a
+// regression that stopped routing it through startStream, or derived its own
+// lastID from the raw cursor, would swallow the restored daemon's chat events.
+func TestChatStreamCursorAheadOfRestoredTableStillDeliversNewEvents(t *testing.T) {
+	h := newSSEHarness(t)
+	c := &store.Chat{
+		ProjectID: h.projectID, Title: "restored", Agent: "claude",
+		PermissionMode: string(agent.FullAuto), BaseBranch: "main",
+	}
+	if err := h.st.CreateChat(t.Context(), c); err != nil {
+		t.Fatalf("CreateChat: %v", err)
+	}
+	high, err := h.st.MaxEventID(t.Context())
+	if err != nil {
+		t.Fatalf("MaxEventID: %v", err)
+	}
+	stale := high + 1000
+
+	sc := openSSE(t, fmt.Sprintf("%s/v1/chats/%d/events", h.ts.URL, c.ID), fmt.Sprint(stale))
+	if _, err := h.st.SetChatState(t.Context(), c.ID, chatstate.Running); err != nil {
+		t.Fatalf("SetChatState: %v", err)
+	}
+	live, err := h.st.MaxEventID(t.Context())
+	if err != nil {
+		t.Fatalf("MaxEventID: %v", err)
+	}
+	if live > stale {
+		t.Fatalf("test setup: new event id %d already past the stale cursor %d", live, stale)
+	}
+	if f := sc.next(t); f.id != fmt.Sprint(live) || f.event != store.EventChatState {
+		t.Fatalf("first frame = %+v, want the restored daemon's %s event %d "+
+			"(a cursor ahead of MAX(id) must not swallow it)", f, store.EventChatState, live)
 	}
 }
