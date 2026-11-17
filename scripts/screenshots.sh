@@ -1687,10 +1687,13 @@ Sleep 6s
 Screenshot "'"$OUT"'/tui-board.png"
 '
 
-  # Grouping: by workflow, the shape the board takes out of the box — there
-  # is no project level, since the board shows one project (task 132). api
-  # runs the most workflows, so its board has the most groups.
-  tape tui-grouping 1400 api '
+  # Grouping: by issue, the shape the board takes out of the box (task 148)
+  # — there is no project level, since the board shows one project (task
+  # 132). platform-infra has the most tasks started from an issue, one group
+  # each, and a `no issue` group holding the handoff's own task and the
+  # claude task waiting for input. api's tasks carry no issue, and giving
+  # them one would change every api shot.
+  tape tui-grouping 1400 platform-infra '
 Tab
 Sleep 2s
 Sleep 3s
