@@ -265,8 +265,9 @@ the issue. Only tasks that existed when the issue closed are archived. It never
 forces: a task with uncommitted changes, or one locked by an open linked chat,
 is left as it is with a warning in `daemon.log`. Closing the linked chat
 retries it. Committing or discarding the changes does not, since the daemon
-sees no event for that: archive the task yourself, or it waits for a later
-event on the issue. Chats are never archived, and a closed chat on the issue may still
+sees no event for that: archive the task yourself — archiving a side task
+or merge-back by hand also retries the main tasks waiting on it — or it waits
+for a later event on the issue. Chats are never archived, and a closed chat on the issue may still
 name the issue's worktree directory afterwards; nothing reclaims it yet.
 [`vincent doctor`](../reference/cli.md#vincent-doctor)'s Issue archive group
 lists every such task with the reasons holding it, and any such directory.

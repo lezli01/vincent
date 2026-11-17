@@ -1291,7 +1291,12 @@ cannot archive — dirty, locked by a linked chat, a lane still working — is
 logged to `daemon.log` and left for a person. It is retried only when a later
 event touches the issue: a linked chat's close and a lane's settle are such
 events, but cleaning a dirty worktree records none, so a dirty refusal waits
-for an unrelated event or a human archive. *Amended 2026-11-05 (task 143.4,
+for an unrelated event or a human archive. *Amended 2026-11-17 (issue #985):*
+a human archive of one of the issue's tasks — a `task.state_changed →
+archived` with no `archived_by`, a cascade from one included — is such an
+event, so archiving a refused side task or merge-back by hand releases the
+main tasks held behind it; the worker's own archives (`archived_by:
+issue_closed`) do not wake it. *Amended 2026-11-05 (task 143.4,
 issue #929):* `vincent doctor`'s `issue_archive` group (§17) lists every such
 task — each done or aborted root of a closed issue the task-level rule covers,
 held or not — with every reason that holds it, and the issue-chat

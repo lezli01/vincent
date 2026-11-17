@@ -227,6 +227,7 @@ type payload struct {
 	State        string `json:"state"`
 	IssueID      int64  `json:"issue_id"`
 	LinkedTaskID int64  `json:"linked_task_id"`
+	ArchivedBy   string `json:"archived_by"`
 }
 
 // issuesOf returns the issues e may have made archivable.
@@ -241,10 +242,17 @@ func (w *Worker) issuesOf(ctx context.Context, e *store.Event) []int64 {
 			return []int64{p.ID}
 		}
 	case store.EventTaskStateChanged:
-		// archived is settled too, but archiving never makes anything
-		// else archivable — and the worker's own archives would wake it.
+		// archived is settled too, and archiving a side task or merge-back
+		// can make the rest archivable: a refused one holds the issue's
+		// main tasks (review F3, SideWorkHold), and archiving it by hand is
+		// the remedy the issues guide gives, so a human archive — or a
+		// cascade from one, neither carrying archived_by — asks the issue
+		// again (#985). The worker's own archives carry
+		// archived_by: ArchivedBy and are skipped: the loop that wrote them
+		// already walks the whole issue, so waking on them would only
+		// re-run the query once per auto-archived task.
 		to := taskstate.State(p.To)
-		if p.IssueID != 0 && taskstate.Settled(to) && to != taskstate.Archived {
+		if p.IssueID != 0 && taskstate.Settled(to) && (to != taskstate.Archived || p.ArchivedBy != ArchivedBy) {
 			return []int64{p.IssueID}
 		}
 	case store.EventChatState, store.EventChatClosed, store.EventChatArchived, store.EventChatHandedOff:
