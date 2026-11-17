@@ -158,7 +158,7 @@ func TestBlockedBoardRowShowsItsReasonOnlyWhenItFits(t *testing.T) {
 	}{
 		{"wide", 220, nil, "! blocked · check failed"},
 		{"80 columns", 80, nil, "! blocked"},
-		{"120 grouped", 120, defaultGrouping(), "! blocked"},
+		{"120 grouped", 120, byWorkflow(), "! blocked"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cols, _ := boardColumns(tc.width, tc.g, false, content)

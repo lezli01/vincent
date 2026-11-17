@@ -254,7 +254,7 @@ func TestCollapsedHeaderCountsWhatItHides(t *testing.T) {
 	if !r.collapsed || r.count != 2 || r.attention != 1 || r.marked != 2 {
 		t.Fatalf("collapsed header = %+v, want 2 tasks, 1 needing attention, 2 marked", r)
 	}
-	cell := r.headerCell()
+	cell := r.headerCell(0)
 	for _, want := range []string{groupGlyphFolded, "build", "2", attentionBadge, markGlyph} {
 		if !strings.Contains(cell, want) {
 			t.Errorf("collapsed header cell %q does not carry %q", cell, want)
@@ -360,7 +360,7 @@ func TestFlatGroupingHasNoFolds(t *testing.T) {
 			t.Errorf("a flat board still advertises %q", row.key)
 		}
 	}
-	b.group = defaultGrouping()
+	b.group = byWorkflow()
 	if !slices.EqualFunc(b.folds(), want, foldPath.equal) {
 		t.Errorf("folds = %v after cycling back, want %v", b.folds(), want)
 	}
@@ -428,7 +428,7 @@ func TestJumpAttentionOpensTheGroupItLandsIn(t *testing.T) {
 		task(1, stateQueued, inWorkflow("build")),
 		task(2, stateAwaitingInput, inWorkflow("deploy")),
 	)
-	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
+	s.board.group, s.board.configGroup = byWorkflow(), byWorkflow()
 	s.board.foldsLoaded = true
 	s.render(120, 37)
 	s.board.updateKey(keyFoldC)

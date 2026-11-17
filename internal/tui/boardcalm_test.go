@@ -161,7 +161,7 @@ func TestSingleProjectDrawsWorkflowHeadersOnly(t *testing.T) {
 	// No level is skipped, so the title names nothing: there is no project
 	// level to skip since task 132.9.
 	s, _ := newShellFixture(t, b.tasks...)
-	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
+	s.board.group, s.board.configGroup = byWorkflow(), byWorkflow()
 	if got := s.panelTitle(panelTasks); got != "Tasks" {
 		t.Errorf("title = %q, want a plain title", got)
 	}
@@ -172,7 +172,7 @@ func TestSingleValueBoardIsFlatAndNamedInTheTitle(t *testing.T) {
 		task(1, stateQueued, inProject("api"), inWorkflow("verify-build")),
 		task(2, stateQueued, inProject("api"), inWorkflow("verify-build")),
 	)
-	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
+	s.board.group, s.board.configGroup = byWorkflow(), byWorkflow()
 	for _, r := range s.board.rows() {
 		if r.header {
 			t.Fatalf("a one-project, one-workflow board drew the header %q", r.label)

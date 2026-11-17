@@ -106,7 +106,7 @@ func TestNoProjectColumnAtAnyWidth(t *testing.T) {
 		}
 	}
 	for _, b := range []*board{newBoard(), newArchivedBoard()} {
-		if got := b.filter.Placeholder(); got != "filter by id, title or state" {
+		if got := b.filter.Placeholder(); got != "filter by id, title, state or issue" {
 			t.Errorf("placeholder = %q", got)
 		}
 	}

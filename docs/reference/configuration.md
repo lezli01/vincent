@@ -1816,7 +1816,7 @@ when the group holds any, the needs-attention badge and count.
 A grouped level costs no column — the header names it, so `PROJECT` and
 `WORKFLOW` drop out and the width goes to the title.
 
-**`g` cycles the grouping for the session** — workflow → flat — and never
+**`g` cycles the grouping for the session** — issue → workflow → flat — and never
 writes to this file. The Tasks panel title names the
 grouping whenever it is not the one configured here.
 

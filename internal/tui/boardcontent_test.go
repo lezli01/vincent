@@ -63,7 +63,7 @@ func oldColumnsFor(width int, g grouping, marking bool) columnSet {
 
 var ladderWidths = []int{80, 100, 120, 160, 200}
 
-func ladderGroupings() []grouping { return []grouping{nil, defaultGrouping()} }
+func ladderGroupings() []grouping { return []grouping{nil, byWorkflow()} }
 
 // TestStatusKeptAt120Grouped is the headline: the default grouped board at
 // 120 columns keeps STATUS, cuts STEP to its counter and drops COST, and the
@@ -75,7 +75,7 @@ func TestStatusKeptAt120Grouped(t *testing.T) {
 			{status: true, cost: true},
 			{status: true, cost: true, pr: true},
 		} {
-			set := columnsFor(120, defaultGrouping(), marking, content)
+			set := columnsFor(120, byWorkflow(), marking, content)
 			if !set.status || set.cost || set.stepName || set.pr {
 				t.Errorf("marking=%v %+v: set %+v, want STATUS on, COST/PR off, short STEP",
 					marking, content, set)
@@ -88,10 +88,10 @@ func TestStatusKeptAt120Grouped(t *testing.T) {
 			}
 		}
 	}
-	if w := columnsFor(120, defaultGrouping(), false, boardContent{status: true}).titleWidth(120); w != 40 {
+	if w := columnsFor(120, byWorkflow(), false, boardContent{status: true}).titleWidth(120); w != 40 {
 		t.Errorf("title at 120 grouped = %d, want 40", w)
 	}
-	if w := columnsFor(120, defaultGrouping(), true, boardContent{status: true}).titleWidth(120); w != 37 {
+	if w := columnsFor(120, byWorkflow(), true, boardContent{status: true}).titleWidth(120); w != 37 {
 		t.Errorf("title at 120 grouped, marked = %d, want 37", w)
 	}
 }
@@ -158,7 +158,7 @@ func TestPRIsShedFirst(t *testing.T) {
 			}
 		}
 	}
-	if !columnsFor(200, defaultGrouping(), false, fullContent).pr {
+	if !columnsFor(200, byWorkflow(), false, fullContent).pr {
 		t.Error("200 columns grouped has room for PR")
 	}
 }

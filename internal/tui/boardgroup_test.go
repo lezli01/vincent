@@ -17,7 +17,21 @@ import (
 // groupedBoard is the fixture for everything in this file: a board with the
 // §15 default grouping, unlike testBoard's flat table.
 func groupedBoard(tasks ...apiclient.Task) *board {
+	return groupedBoardBy(byWorkflow(), tasks...)
+}
+
+// byWorkflow is the [workflow] grouping — groupedBoard's, which every test
+// written before task 148 made [issue] the default was written against.
+func byWorkflow() grouping { return grouping{groupWorkflow} }
+
+// byIssue is the [issue] grouping, the default since task 148.
+func byIssue() grouping { return grouping{groupIssue} }
+
+// groupedBoardBy is groupedBoard under any grouping, configured as well as
+// shown so the panel title names no regrouping.
+func groupedBoardBy(g grouping, tasks ...apiclient.Task) *board {
 	b := selectTestProject(newBoard())
+	b.group, b.configGroup = g, g
 	b.now = func() time.Time { return testNow }
 	b.bell = func() {}
 	b.loaded = true
@@ -59,13 +73,13 @@ func TestDefaultGroupingMatchesTheConfigDefault(t *testing.T) {
 	for _, l := range config.Default().TUI.Board.GroupBy {
 		levels = append(levels, string(l))
 	}
-	// The daemon's default names the issue level from task 148.1 on; this TUI
-	// renders it from 148.2 (#983), and until then drops it as it drops any
-	// level it does not know. The comparison resumes on its own once every
-	// default level is one parseGrouping keeps.
-	if want := parseGrouping(levels); len(want) != len(levels) {
-		t.Logf("config default %v names a level this TUI does not render yet (task 148.2)", levels)
-	} else if !defaultGrouping().equal(want) {
+	// Every default level must be one parseGrouping keeps: a level dropped
+	// here is a fresh install's board rendering flat (task 148 decision 6).
+	want := parseGrouping(levels)
+	if len(want) != len(levels) {
+		t.Errorf("config default %v names a level this TUI does not render", levels)
+	}
+	if !defaultGrouping().equal(want) {
 		t.Errorf("TUI default grouping = %s, config default = %s",
 			defaultGrouping().label(), want.label())
 	}
@@ -108,7 +122,7 @@ func TestGroupOrderFollowsTheBandSort(t *testing.T) {
 		t.Errorf("group %q attention = %d, want 1 — a header must not hide that work is waiting",
 			rows[0].label, rows[0].attention)
 	}
-	cell := rows[0].headerCell()
+	cell := rows[0].headerCell(0)
 	if !strings.Contains(cell, attentionBadge) {
 		t.Errorf("header cell %q carries no attention badge", cell)
 	}
@@ -132,8 +146,8 @@ func TestGroupHeaderCountsItsTasks(t *testing.T) {
 	if rows[0].count != 3 {
 		t.Errorf("build header count = %d, want 3", rows[0].count)
 	}
-	if !strings.Contains(rows[0].headerCell(), "3") {
-		t.Errorf("build header %q does not show its count", rows[0].headerCell())
+	if !strings.Contains(rows[0].headerCell(0), "3") {
+		t.Errorf("build header %q does not show its count", rows[0].headerCell(0))
 	}
 	if rows[4].count != 1 {
 		t.Errorf("docs header count = %d, want 1", rows[4].count)
@@ -201,9 +215,11 @@ func TestGroupCycleKeepsTheSelectedTask(t *testing.T) {
 		t.Fatalf("fixture selected %d, want 2", got)
 	}
 
-	// workflow → flat → workflow: there is no project level to visit (task
-	// 132.9).
-	for _, want := range []grouping{{}, {groupWorkflow}} {
+	// workflow → flat → issue → workflow: there is no project level to visit
+	// (task 132.9). Neither task has an issue, so the issue level is one
+	// group and draws no header (task 129 decision 4) — the cursor still
+	// follows the task through it.
+	for _, want := range []grouping{{}, {groupIssue}, {groupWorkflow}} {
 		b.updateKey(tea.KeyPressMsg{Code: 'g', Text: "g"})
 		if !b.group.equal(want) {
 			t.Fatalf("g moved to %s, want %s", b.group.label(), want.label())
@@ -399,10 +415,15 @@ func TestDeprecatedProjectLevelIsDropped(t *testing.T) {
 // TestConfigFetchFailureKeepsTheGrouping: a config request that timed out is
 // not a statement about how anyone wants their board.
 func TestConfigFetchFailureKeepsTheGrouping(t *testing.T) {
-	b := groupedBoard(task(1, stateRunning))
+	b := newBoard()
 	b.applyConfig(boardConfigMsg{err: errTest})
 	if !b.group.equal(defaultGrouping()) {
 		t.Errorf("group = %s after a failed fetch, want the default kept", b.group.label())
+	}
+	b = groupedBoard(task(1, stateRunning))
+	b.applyConfig(boardConfigMsg{err: errTest})
+	if !b.group.equal(byWorkflow()) {
+		t.Errorf("group = %s after a failed fetch, want the configured %s kept", b.group.label(), byWorkflow().label())
 	}
 }
 
@@ -422,7 +443,7 @@ func TestPressedGroupingSurvivesAReconnect(t *testing.T) {
 		t.Errorf("group = %s after a refetch, want the pressed %s",
 			b.group.label(), pressed.label())
 	}
-	if !b.configGroup.equal(defaultGrouping()) {
+	if !b.configGroup.equal(byWorkflow()) {
 		t.Errorf("configGroup = %s, want what the daemon served", b.configGroup.label())
 	}
 }
@@ -435,7 +456,7 @@ func TestPanelTitleNamesAnUnconfiguredGrouping(t *testing.T) {
 		task(1, stateRunning, inProject("api"), inWorkflow("build")),
 		task(2, stateRunning, inProject("web"), inWorkflow("docs")),
 	)
-	s.board.group, s.board.configGroup = defaultGrouping(), defaultGrouping()
+	s.board.group, s.board.configGroup = byWorkflow(), byWorkflow()
 	if got := s.panelTitle(panelTasks); got != "Tasks" {
 		t.Errorf("title = %q under the configured grouping, want a plain %q", got, "Tasks")
 	}
@@ -468,8 +489,8 @@ func TestGroupSummaryReadsAsASetting(t *testing.T) {
 // rewrite of it could silently take the assertions with it — which is exactly
 // what task 042's `slices.Equal` change does.
 func TestGroupingEqualAndHas(t *testing.T) {
-	// A second level for the predicates to tell apart: the vocabulary has
-	// held only workflow since task 132.9.
+	// An invented level for the predicates to tell apart, so the test does
+	// not move with the vocabulary.
 	const groupOther groupKey = "other"
 	cases := []struct {
 		name string

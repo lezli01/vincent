@@ -270,7 +270,7 @@ type board struct {
 
 func newBoard() *board {
 	fi := newTextField()
-	fi.SetPlaceholder("filter by id, title or state")
+	fi.SetPlaceholder("filter by id, title, state or issue")
 	fi.SetPrompt("/")
 	b := &board{
 		now:         time.Now,
@@ -1680,7 +1680,7 @@ func (b *board) rowsFor(rows []boardRow, cols []table.Column, set columnSet) []t
 	var lines [][]string
 	for _, r := range rows {
 		if r.header {
-			out = append(out, groupHeaderRow(r, set))
+			out = append(out, groupHeaderRow(r, set, cols))
 			lines = nil
 			continue
 		}
@@ -1705,8 +1705,9 @@ func (b *board) rowsFor(rows []boardRow, cols []table.Column, set columnSet) []t
 // groupHeaderRow renders a group header as a table row: the label in the
 // title column — the widest, and the only one that survives every width — and
 // every other cell blank, so the header reads as a break in the list rather
-// than as a task with missing figures.
-func groupHeaderRow(r boardRow, set columnSet) table.Row {
+// than as a task with missing figures. The row is built in column order, so
+// the title cell's width is cols at the index it lands on.
+func groupHeaderRow(r boardRow, set columnSet, cols []table.Column) table.Row {
 	row := make(table.Row, 0, maxBoardColumns)
 	if set.mark {
 		// A group is not something a bulk action can name: the marker column is
@@ -1719,7 +1720,11 @@ func groupHeaderRow(r boardRow, set columnSet) table.Row {
 	}
 	// Then STATE and ARCHIVED on the archive (#804 AR-10), STATE, STEP and
 	// ELAPSED on the live board.
-	row = append(row, r.headerCell(), "", "")
+	width := 0
+	if len(row) < len(cols) {
+		width = cols[len(row)].Width
+	}
+	row = append(row, r.headerCell(width), "", "")
 	if !set.archived {
 		row = append(row, "")
 	}

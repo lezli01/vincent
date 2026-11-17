@@ -274,7 +274,7 @@ Three behaviors matter:
 | Key | Does |
 |---|---|
 | `tab` / `shift+tab` | Next / previous [main tab](#main-tabs), when the board is one |
-| `/` | Filter by id, title or state; `tab` commits the filter, `esc` clears it |
+| `/` | Filter by id, title, state or issue; `tab` commits the filter, `esc` clears it |
 | `H` | Show only the tasks that need you — awaiting input, awaiting approval, blocked, or a fan-out one of whose lanes is. `H` again shows every task |
 | `enter` | Open the selected task |
 
@@ -495,7 +495,7 @@ task count, and feature-pr its needs-attention badge](../assets/tui-grouping.png
 
 | Key | Does |
 |---|---|
-| `g` | Cycle workflow → flat for the session |
+| `g` | Cycle issue → workflow → flat for the session |
 
 The panel title names the grouping whenever it is not the configured one.
 
