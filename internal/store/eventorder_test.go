@@ -206,3 +206,46 @@ func TestEventHookSeesConcurrentWritersInIDOrder(t *testing.T) {
 			len(seen), len(want))
 	}
 }
+
+// TestEventHookPanicLeavesThePublisherAlive is review F3: a hook that
+// panics unwinds through drain, which must clear `draining` on the way out.
+// Otherwise every later write would find a drain apparently in progress and
+// nothing would ever reach the hook again. Events still queued behind the
+// one that panicked are delivered by the next write, in id order.
+func TestEventHookPanicLeavesThePublisherAlive(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+
+	var seen []string
+	s.SetEventHook(func(e *Event) {
+		if e.Type == "test.boom" {
+			panic("hook failed")
+		}
+		seen = append(seen, e.Type)
+	})
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("the hook's panic did not reach the writer")
+			}
+		}()
+		// One transaction, so both events are queued before the first is
+		// delivered: the second is left behind by the panic.
+		boom, after := &Event{Type: "test.boom"}, &Event{Type: "test.queued"}
+		err := s.withTx(ctx, func(tx *sql.Tx) error {
+			if err := appendEventTx(ctx, tx, boom); err != nil {
+				return err
+			}
+			return appendEventTx(ctx, tx, after)
+		})
+		t.Errorf("withTx returned (%v) instead of propagating the hook's panic", err)
+	}()
+
+	if err := s.AppendEvent(ctx, &Event{Type: "test.later"}); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	if want := []string{"test.queued", "test.later"}; !slices.Equal(seen, want) {
+		t.Fatalf("hook saw %v after the panic, want %v", seen, want)
+	}
+}
