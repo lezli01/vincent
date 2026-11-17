@@ -487,8 +487,9 @@ func issueArchiveLines(ia apiclient.DoctorIssueArchive, width int) []string {
 	return out
 }
 
-// elideTail is s cut to room cells with an ellipsis, dim, or nothing when
-// the room would leave only the ellipsis.
+// elideTail is s cut to room cells with an ellipsis, or nothing when the
+// room would leave only the ellipsis. It never styles: a title cut by a
+// resize must look like the same title whole.
 func elideTail(s string, room int) string {
 	if lipgloss.Width(s) <= room {
 		return s
@@ -496,7 +497,7 @@ func elideTail(s string, room int) string {
 	if room < 4 {
 		return ""
 	}
-	return styleDim.Render(ansi.Truncate(s, room, "…"))
+	return ansi.Truncate(s, room, "…")
 }
 
 // dbRowSummary lists the tables biggest-first, so whichever one is growing is

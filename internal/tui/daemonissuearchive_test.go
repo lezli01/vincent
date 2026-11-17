@@ -160,6 +160,13 @@ func TestIssueArchiveLinesElideTheTitleNotTheReasons(t *testing.T) {
 	if w := ansi.StringWidth(row); w > width {
 		t.Errorf("the row is %d cells wide in a %d-cell pane: %q", w, width, row)
 	}
+	// Cut or whole, the title is drawn in the same style: the elided row is
+	// the whole row's prefix plus an ellipsis, escape codes included.
+	whole := issueArchiveLines(ia, 200)[1]
+	cut := issueArchiveLines(ia, width)[1]
+	if !strings.HasSuffix(cut, "…") || !strings.HasPrefix(whole, strings.TrimSuffix(cut, "…")) {
+		t.Errorf("the elided title is styled unlike the whole one:\n whole %q\n cut   %q", whole, cut)
+	}
 	// Narrower than the reasons: the title goes entirely, the reasons stay
 	// for the frame to elide.
 	row = ansi.Strip(issueArchiveLines(ia, 20)[1])
