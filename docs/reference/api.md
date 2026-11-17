@@ -4050,7 +4050,9 @@ they need.
 
 - **A connection without `Last-Event-ID` starts live at the next committed
   event.** The stream never replays history unasked: catch-up is a REST snapshot
-  first, then the stream.
+  first, then the stream. A `Last-Event-ID` ahead of every event the daemon
+  holds — one kept across `vincent daemon restore` onto an older database — is
+  treated the same way, as no cursor at all.
 - `task.deleted` and `chat.deleted` carry `{ id, title }` and announce a
   [permanent delete](#permanent-delete). They exist even though there is no
   `task.archived` type, and for the reason there is not one: an archive *is*
