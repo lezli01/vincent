@@ -570,7 +570,8 @@ times with a confirmation between each. Select the tasks instead:
 | `esc` | Clear the selection |
 
 While anything is selected, a `✓` appears beside those rows, the panel title
-counts them (`Tasks — 5 selected`), and the **action keys act on the whole
+counts them (`Tasks · no issue — 5 selected` on api's board, where the
+title already names its one group), and the **action keys act on the whole
 selection**:
 
 ![Every row of api's board selected, the panel title reading "Tasks · no
