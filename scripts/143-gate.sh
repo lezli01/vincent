@@ -40,6 +40,15 @@
 # one — with the key off the worker reads nothing, a barrier included — so
 # it is the gate's one bounded-window negative assertion.
 #
+# Scenarios 4 and 7's "no write-back" is proven the same way, through the
+# outbox rather than the worker: a write-back row is written in the
+# transaction that moves the issue's state (store.enqueueStateWriteTx), so
+# once the issue reads closed the row either exists — pending, failed or in
+# conflict, which the project's sync status counts — or the drain has
+# already settled it, which it does only after the request it would make
+# has reached the fake's log. `no_write_back` reads the counts first and the
+# log second, so a write-back cannot slip between them.
+#
 # Task-numbered rather than `mN` because this is not a §19 milestone, like
 # 130-gate.sh and 134-gate.sh. Each scenario runs its own daemon over its
 # own config, data and repository, so VINCENT_GATE_SCENARIO=n runs one
@@ -321,6 +330,15 @@ doctor_json() {
 
 branch_exists() { git -C "$REPO" rev-parse --verify --quiet "refs/heads/$1" >/dev/null; }
 
+# no_write_back PROJECT: the project's outbox holds no state write-back that
+# is pending, failed or in conflict. Called after the issue reads closed and
+# before the fake's request log is counted (see the header).
+no_write_back() {
+  local st
+  st="$(api GET "/projects/$1/issues/sync" | jq -c '{writes_pending, writes_failed, writes_conflict}')"
+  expect_eq "$st" '{"writes_pending":0,"writes_failed":0,"writes_conflict":0}' "the project's write-back outbox after a close read in from its provider"
+}
+
 run_scenario() { [[ -z "$ONLY" || "$ONLY" == "$1" ]]; }
 
 # --------------------------------------------------------------------------
@@ -468,6 +486,7 @@ if run_scenario 4; then
   expect_eq "$STATE" closed "the imported issue after the sync"
   wait_state "$T" archived 60
   expect_eq "$(archive_event "$T" | jq -r .archived_by)" issue_closed "the archive event's archived_by"
+  no_write_back "$P"
   CALLS="$(tr -d '\r' < "$GH_ARGV")"
   WRITES="$(grep -cE -- '-X (PATCH|POST|PUT|DELETE)' <<<"$CALLS" || true)"
   expect_eq "$WRITES" 0 "writes the fake was asked for after the GitHub close ($CALLS)"
@@ -575,6 +594,7 @@ jira:
   # The daemon addresses a Jira issue by its id (VIN-1 is 10001 in the
   # seed); the gate's own transition above used the key, so any line here
   # is a write-back of a close that was read in from Jira.
+  no_write_back "$P"
   REQS=""
   if [[ -f "$JREQUESTS" ]]; then REQS="$(tr -d '\r' < "$JREQUESTS")"; fi
   WRITES="$(grep -cE -- '^POST rest/api/3/issue/10001/transitions ' <<<"$REQS" || true)"
