@@ -13,6 +13,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A chat whose turn failed before its agent started returns to idle.** A
+  turn that failed before the agent process was up — no adapter for the
+  chat's agent, a transcript that could not be opened, or an agent that
+  refused to start — left its chat `running` for good: every later send was
+  refused, the chat could be neither archived nor closed, and it held one of
+  the `max_parallel_chats` slots. The chat now returns to `idle` as soon as
+  the turn fails, and a daemon restart repairs chats already stuck that way
+  (#960).
+
 - **Workflow includes can no longer exhaust the daemon at load.** The include
   check run on every registry load built each workflow's full expansion, so a
   few files each including the next one twice cost exponential time and
@@ -20,6 +29,56 @@ list with the user-facing context a commit subject cannot carry.
   each workflow once. Its platform warning is also judged against the host:
   a callee restricted to this host no longer warns, and one that excludes it
   now does.
+
+- **Deleting an issue's main task no longer deletes the issue's branch
+  with a predecessor's commits on it.** Permanently deleting a later main
+  task of an issue with `delete_branch=true`, or deleting the whole project,
+  judged the shared issue branch empty against the tip that task received
+  and force-deleted it, losing an earlier main task's unmerged commits.
+  Both now judge it against the issue's base branch, as archive does, and
+  keep it.
+
+- **A resumed loop picks up in the iteration it stopped in.** A task
+  re-admitted inside a `loop` step — by `retry`, a daemon restart, a
+  usage-limit hold or a paced-retry backoff — used to walk the loop from
+  iteration 1 again. Every earlier iteration that held a failed
+  `allow_failure` step (every non-final pass of a converge loop) then ran in
+  full a second time, re-spending its agent runs and, in a merge-pass loop,
+  re-pushing earlier passes. Finished iterations are now left alone (#962).
+
+- **A task from a fork pull request no longer moves your own branch.** A fork's
+  task used to run on a local branch named after the fork's head branch, so a
+  pull request opened from a fork's `master` fast-forwarded your local `master`
+  onto the contributor's unreviewed commits, and the agent then committed on
+  top. A fork's task now runs on `vincent/pr-{n}`, still fetched from
+  `refs/pull/{n}/head`; a same-repository pull request still runs on its head
+  branch (#964).
+
+- **Agent sub-steps of a `parallel` group no longer park the task on a
+  question.** A sub-step resolving to `on_input: wait` — including the
+  default, when nothing sets `on_input` — used to move the whole task to
+  `awaiting_input`, so a second sibling's question was dropped and that agent
+  idled until `agent_timeout`, blocking the task. Inside a group `wait` now
+  runs as `deny`: questions get the canned auto-answer and permission requests
+  are denied, and the task stays `running` (#965). `on_input: wait` is still
+  accepted there; `require` is still rejected.
+
+- **The Linux service survives paths with spaces.** The systemd user unit
+  written by `vincent service install` now quotes `ExecStart=` and the
+  `VINCENT_CONFIG_DIR`/`VINCENT_DATA_DIR` environment lines. Before, an
+  executable under a directory with a space failed to start, and a config or
+  data directory with a space was truncated, so the service ran against a
+  different database than the CLI; a `$` in the executable path was also
+  expanded by systemd. Re-run `vincent service install` to rewrite an
+  existing unit.
+
+- **Config and trigger saves no longer fail on Windows while the daemon is
+  reading the file.** Two quick `PATCH /v1/config` calls, a trigger edit, or
+  `vincent trigger apply` writing several files could answer 500 with a
+  sharing violation, because the daemon's own reload still had the file
+  open. The write now waits that reader out for up to two seconds, the way
+  workflow saves already did.
+  ([#969](https://github.com/lezli01/vincent/issues/969))
 
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 

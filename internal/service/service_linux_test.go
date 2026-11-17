@@ -20,9 +20,9 @@ func TestRenderUnit(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"ExecStart=/opt/vincent/bin/vincent daemon",
-		"Environment=VINCENT_CONFIG_DIR=/home/u/.config/vincent",
-		"Environment=VINCENT_DATA_DIR=/home/u/.local/share/vincent",
+		`ExecStart="/opt/vincent/bin/vincent" daemon`,
+		`Environment="VINCENT_CONFIG_DIR=/home/u/.config/vincent"`,
+		`Environment="VINCENT_DATA_DIR=/home/u/.local/share/vincent"`,
 		// Quoted, and carrying the install-time PATH: without it the user
 		// manager's default applies and no agent CLI resolves (T4.15).
 		`Environment="PATH=/home/u/.npm-global/bin:/usr/local/bin:/usr/bin"`,
@@ -59,12 +59,36 @@ func TestRenderUnitEscapes(t *testing.T) {
 		Path: `/home/u/my bin:/opt/50%n:/usr/bin`,
 	})
 
-	if !strings.Contains(unit, "Environment=VINCENT_CONFIG_DIR=/home/u/100%%cfg") {
+	if !strings.Contains(unit, `Environment="VINCENT_CONFIG_DIR=/home/u/100%%cfg"`) {
 		t.Errorf("percent in the config dir was not escaped:\n%s", unit)
 	}
 	// The space is why PATH is quoted: an unquoted Environment= splits on
 	// whitespace and would drop everything after "my".
 	if !strings.Contains(unit, `Environment="PATH=/home/u/my bin:/opt/50%%n:/usr/bin"`) {
 		t.Errorf("PATH is not quoted-and-escaped:\n%s", unit)
+	}
+}
+
+// TestRenderUnitQuotesPathsWithSpaces (#968): systemd splits both ExecStart=
+// and an unquoted Environment= on whitespace. An executable under a directory
+// with a space must stay one argv[0], and a config or data dir with a space
+// must not be truncated at it — §12.1 pins the dirs so the service and the CLI
+// use the same database. `$` is also a variable reference in ExecStart= (but
+// not in Environment=), so it must be doubled there.
+func TestRenderUnitQuotesPathsWithSpaces(t *testing.T) {
+	unit := renderUnit(Options{
+		Exe:  "/home/u/my apps/$bin/vincent",
+		Dirs: config.Dirs{Config: "/home/u/my cfg", Data: `/home/u/my "data"`},
+		Path: "/usr/bin",
+	})
+
+	for _, want := range []string{
+		`ExecStart="/home/u/my apps/$$bin/vincent" daemon`,
+		`Environment="VINCENT_CONFIG_DIR=/home/u/my cfg"`,
+		`Environment="VINCENT_DATA_DIR=/home/u/my \"data\""`,
+	} {
+		if !strings.Contains(unit, want) {
+			t.Errorf("unit is missing %q:\n%s", want, unit)
+		}
 	}
 }

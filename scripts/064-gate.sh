@@ -88,7 +88,10 @@ export FAKEGH_SCENARIO=success
 # would pass for the wrong reason.
 PR_BRANCH="feature/add-a-thing"
 export FAKEGH_PR_BRANCH="$PR_BRANCH"
-FORK_BRANCH="typo-fix"
+# A fork's head name (fakegh's #355 is `typo-fix`) is a name in someone else's
+# repository, so the task runs on its own namespaced branch instead (#964).
+FORK_HEAD="typo-fix"
+FORK_BRANCH="vincent/pr-355"
 MERGED_BRANCH="vincent/3-ship-the-thing"
 
 CONFIG_DIR="" DATA_DIR=""
@@ -321,6 +324,11 @@ if run_scenario 3; then
   echo "== scenario 3: a fork pull request runs, with no upstream and no remote added"
   scenario_dirs s3
   make_project "$TMP/s3"
+  # #964: a local branch that happens to share the fork's head name, and is an
+  # ancestor of the fork's head, is exactly the branch the old naming
+  # fast-forwarded onto the contributor's commits. It must not move.
+  git -C "$REPO" branch "$FORK_HEAD" main
+  own_sha="$(git -C "$REPO" rev-parse "$FORK_HEAD")"
   write_workflow gate "$NOOP_WORKFLOW"
   daemon_up
   pid="$(register_project "$REPO")"
@@ -340,6 +348,8 @@ if run_scenario 3; then
   wt="$(jq -r .worktree_path <<<"$task")"
   on="$(git -C "$wt" rev-parse --abbrev-ref HEAD)"
   [[ "$on" == "$FORK_BRANCH" ]] || fail "the worktree is on $on, want $FORK_BRANCH"
+  [[ "$(git -C "$REPO" rev-parse "$FORK_HEAD")" == "$own_sha" ]] \
+    || fail "the local $FORK_HEAD branch moved to $(git -C "$REPO" rev-parse "$FORK_HEAD"), want $own_sha"
 
   rc=0
   git -C "$REPO" config --get "branch.$FORK_BRANCH.remote" >/dev/null || rc=$?

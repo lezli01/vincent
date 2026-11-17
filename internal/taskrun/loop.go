@@ -181,7 +181,14 @@ func (r *Runner) runLoop(ctx context.Context, env *stepEnv) stepOutcome {
 		"driver", plan.driver, "iterations", plan.total, "max_iterations", limit,
 		"body", len(env.step.Steps))
 
-	for iteration := 1; iteration <= plan.total; iteration++ {
+	// Resume in the iteration the loop stopped in, never before it (decision
+	// 12, issue #962). Every earlier iteration is finished by construction —
+	// the loop only reaches k+1 once k's body ran out or a condition ended it
+	// — and its rows can legitimately read as unfinished to runIteration's
+	// within-iteration rule: an allow_failure step's `failed` row, a skipped
+	// guard, a decision step that is always re-asked. That rule is for the
+	// resumed iteration alone.
+	for iteration := resumeIteration(history); iteration <= plan.total; iteration++ {
 		outcome, stop := r.runIteration(loopCtx, env, plan, order, iteration, history)
 		if stop {
 			return r.loopStop(ctx, loopCtx, env, outcome)
@@ -461,6 +468,20 @@ func recordedItems(history []store.StepRun) map[int]string {
 		}
 	}
 	return out
+}
+
+// resumeIteration is the iteration a (re-)admitted loop starts in: the
+// highest one any body row records, or 1 when none has run. Derived from the
+// rows, never persisted (decision 7, task 014 decision 17). A `for_each`
+// loop's empty-list decision row carries iteration 0 and so never counts.
+func resumeIteration(history []store.StepRun) int {
+	resume := 1
+	for i := range history {
+		if it := history[i].Iteration; it > resume {
+			resume = it
+		}
+	}
+	return resume
 }
 
 // latestStatesIn is the state of the newest attempt of each body step within

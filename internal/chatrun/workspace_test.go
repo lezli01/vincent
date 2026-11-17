@@ -410,8 +410,8 @@ func TestStartFailureInvalidatesToo(t *testing.T) {
 	}
 	inv := h.recordInvalidations(c.ID)
 
-	// No waitIdle: this branch's finish is handed no chat, so the turn row is
-	// the ending to wait for — and the invalidation precedes it.
+	// The turn row is the ending to wait for: finish writes it before the
+	// chat goes back to idle (#960), and the invalidation precedes both.
 	turn := h.sendAndWait(t, c.ID, "hello")
 	if turn.State != chatstate.TurnFailed || turn.FailReason != ReasonAgentError {
 		t.Fatalf("turn = %s/%s (%s), want failed/%s",

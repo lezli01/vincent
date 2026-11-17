@@ -94,7 +94,8 @@ session needs it—use `on_input: require` on a question-capable adapter.
 Claude can support mid-run questions. Codex, Cursor and Copilot cannot. `on_input: wait`
 keeps a process and task slot alive, whereas `manual` parks the task and releases
 the slot. `on_input: require` is invalid in parallel groups, loop bodies, and
-merge resolvers.
+merge resolvers, and inside a parallel group `on_input: wait` runs as `deny`:
+a sub-step's questions are auto-answered and nobody is asked.
 
 ### Concurrency and budget
 

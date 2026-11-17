@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/lezli01/vincent/internal/fileswap"
 )
 
 // This file is the write half of §8 (task 065): the daemon edits a workflow
@@ -745,8 +747,8 @@ func WriteFile(path string, b []byte) (err error) {
 	}
 	// A rename keeps the temporary file's own mode, so it is set on the
 	// replacement rather than inherited from the target — which is why the
-	// chmod and the rename are one step (replace_unix.go, replace_windows.go).
-	if err = replaceFile(tmp, path, perm); err != nil {
+	// chmod and the rename are one step (internal/fileswap).
+	if err = fileswap.Replace(tmp, path, perm); err != nil {
 		return fmt.Errorf("write workflow: %w", err)
 	}
 	return nil

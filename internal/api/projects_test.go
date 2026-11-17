@@ -19,6 +19,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/testrepo"
@@ -569,3 +570,52 @@ func insertTask(t *testing.T, st *store.Store, projectID int64, state store.Task
 }
 
 func itoa(id int64) string { return strconv.FormatInt(id, 10) }
+
+// TestProjectDeleteKeepsAnIssueMainBranchWithPredecessorCommits is #961's
+// project-delete leg: an issue's main tasks share one branch, and a
+// successor's base_sha is the tip it received. The sweep must judge such a
+// row against the issue's base branch, as archive does, rather than its own
+// base_sha — otherwise the successor reads the branch empty and force-deletes
+// the predecessor's unmerged commit.
+func TestProjectDeleteKeepsAnIssueMainBranchWithPredecessorCommits(t *testing.T) {
+	h := newProjectHarness(t)
+	ctx := context.Background()
+	repo := testrepo.Init(t, "main")
+	p := h.mustCreate(t, map[string]any{"path": repo, "name": "issue-line"})
+	id := int64(p["id"].(float64))
+	iss, err := h.store.CreateIssue(ctx, store.NewIssue{ProjectID: id, Title: "Lock file leaks"}, issuestate.Human)
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	baseTip := testrepo.Run(t, repo, "rev-parse", "main")
+	const branch = "vincent/1-first"
+	testrepo.Run(t, repo, "branch", branch)
+	testrepo.Run(t, repo, "switch", "-q", branch)
+	testrepo.WriteFile(t, repo, "work.txt", "the predecessor's work\n")
+	testrepo.Run(t, repo, "add", ".")
+	testrepo.Run(t, repo, "commit", "-q", "-m", "the predecessor's work")
+	testrepo.Run(t, repo, "switch", "-q", "main")
+	tip := testrepo.Run(t, repo, "rev-parse", branch)
+
+	for _, row := range []struct{ title, baseSHA string }{
+		{"first", baseTip}, // cut the branch from main and committed
+		{"second", tip},    // received the tip and committed nothing
+	} {
+		tk := &store.Task{
+			ProjectID: id, Title: row.title, WorkflowName: "adhoc", WorkflowSnapshot: "x",
+			BaseBranch: "main", BaseSHA: row.baseSHA, BranchName: branch, State: store.TaskArchived,
+			IssueID: &iss.ID, IssueWorktree: store.IssueWorktreeMain,
+		}
+		if err := h.store.CreateTask(ctx, tk, nil); err != nil {
+			t.Fatalf("insert %s: %v", row.title, err)
+		}
+	}
+
+	resp, out := h.doJSON(t, http.MethodDelete, "/v1/projects/"+itoa(id), nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete = %d %s", resp.StatusCode, out)
+	}
+	if !branchExists(t, repo, branch) {
+		t.Errorf("%s was deleted though it carries the predecessor's commit %s past main", branch, tip)
+	}
+}

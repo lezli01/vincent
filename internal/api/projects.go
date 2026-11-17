@@ -455,7 +455,8 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 // It covers the whole slice, archived rows included, because after the cascade
 // the branch names are gone forever — this is the last moment they exist. An
 // archived row whose branch survived (the setting was off when it was archived)
-// is reachable from nowhere else.
+// is reachable from nowhere else. Ownership and the emptiness base follow
+// archive's rules, issue-main rows included (branchOursForSweep, #961).
 //
 // Local only: `delete_remote_branch_on_archive` is honoured by
 // POST /v1/tasks/{id}/archive alone, since §10's rule is that the unattended
@@ -471,8 +472,16 @@ func (s *Server) deleteEmptyBranches(ctx context.Context, p *store.Project, task
 		if t.BranchName == "" {
 			continue
 		}
-		ours := !t.GitHubPull.FromPull() && !t.AdoptedBranch
-		out, err := s.deps.Worktrees.DeleteEmptyBranch(ctx, p.Path, t.BaseBranch, t.BaseSHA, t.BranchName, false, &ours)
+		ours, baseSHA := s.branchOursForSweep(ctx, t), t.BaseSHA
+		if issueMainRow(t) {
+			// Judged against the issue's base branch, never this row's
+			// base_sha, exactly as taskrun's emptinessBase does for archive
+			// and task delete: a successor's base_sha is the tip it
+			// received, so it would read a branch carrying a predecessor's
+			// commits as empty (#961, spec §5.6).
+			baseSHA = ""
+		}
+		out, err := s.deps.Worktrees.DeleteEmptyBranch(ctx, p.Path, t.BaseBranch, baseSHA, t.BranchName, false, &ours)
 		if err != nil {
 			s.deps.Logger.Warn("project delete: branch kept",
 				"task", t.ID, "branch", t.BranchName, "result", out.Result, "error", err)
@@ -483,6 +492,36 @@ func (s *Server) deleteEmptyBranches(ctx context.Context, p *store.Project, task
 				"task", t.ID, "branch", t.BranchName, "base", t.BaseBranch)
 		}
 	}
+}
+
+// issueMainRow is whether t is one of an issue's main-role tasks, whose
+// branch is the issue's line rather than the row's own (task 134).
+func issueMainRow(t *store.Task) bool {
+	return t.IssueWorktree == store.IssueWorktreeMain && t.IssueID != nil
+}
+
+// branchOursForSweep is whether t's branch is vincent's to delete, the same
+// answer taskrun's Runner.branchOurs gives — keep the two in step. A pull
+// request's head branch is the contributor's (task 064 decision 3). An
+// issue-main row asks its line (Store.IssueMainBranchLine, task 134.12): a
+// joiner row's adopted flag does not say whose the branch is, the line's
+// first main task's does, and a failed read keeps the branch. Any other row
+// is ours unless it adopted an existing branch (task 125 decision 6).
+// BranchSharedByOther is not consulted: every row of the project is going.
+func (s *Server) branchOursForSweep(ctx context.Context, t *store.Task) bool {
+	if t.GitHubPull.FromPull() {
+		return false
+	}
+	if issueMainRow(t) {
+		_, adopted, err := s.deps.Store.IssueMainBranchLine(ctx, *t.IssueID, t.BranchName)
+		if err != nil {
+			s.deps.Logger.Warn("project delete: read who started the issue's main branch; keeping it",
+				"task", t.ID, "branch", t.BranchName, "error", err)
+			return false
+		}
+		return !adopted
+	}
+	return !t.AdoptedBranch
 }
 
 // projectFromPath resolves the {id} path segment to a project, writing the

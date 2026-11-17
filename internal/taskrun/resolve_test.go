@@ -120,8 +120,12 @@ func TestResolvePermissionAndInputPolicy(t *testing.T) {
 		if got := resolvePermission(wf, tc.step, false); got != tc.wantPerm {
 			t.Errorf("resolvePermission(%+v, %+v) = %s, want %s", tc.step, tc.defaults, got, tc.wantPerm)
 		}
-		if got := resolveInputPolicy(tc.step, tc.defaults); got != tc.wantIn {
+		if got := resolveInputPolicy(tc.step, tc.defaults, false); got != tc.wantIn {
 			t.Errorf("resolveInputPolicy(%+v, %+v) = %s, want %s", tc.step, tc.defaults, got, tc.wantIn)
+		}
+		// Inside a parallel group every policy runs as deny (§7.5, #965).
+		if got := resolveInputPolicy(tc.step, tc.defaults, true); got != agent.InputDeny {
+			t.Errorf("resolveInputPolicy(%+v, %+v, parallel) = %s, want deny", tc.step, tc.defaults, got)
 		}
 	}
 }

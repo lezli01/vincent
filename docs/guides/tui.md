@@ -1766,8 +1766,9 @@ links to the issue from then on, and
 [`.Issue`](../reference/workflow-schema.md#template-context) renders from that
 capture.
 
-For a pull request, the row shows the number, the title, the head branch,
-and, for a fork, that nothing can be pushed back to it. A task runs on the
+For a pull request, the row shows the number, the title, the branch the task
+will run on — the head branch, or `vincent/pr-N` for a fork — and, for a fork,
+that nothing can be pushed back to it. A task runs on the
 pull request's head branch, so that is a decision made where the pull request
 is on screen. The prefill lands in the same editable rows — the title, the
 description, and a declared `pull` field carrying the number. An issue and a

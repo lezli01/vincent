@@ -691,6 +691,22 @@ func isIssueMain(task *store.Task) bool {
 	return task.IssueWorktree == store.IssueWorktreeMain && task.IssueID != nil
 }
 
+// emptinessBase is the base SHA the §10 empty-branch rule judges task's
+// branch against, for archive and permanent delete alike (#961). An issue's
+// main task is judged against the issue's base branch ("" asks
+// DeleteEmptyBranch for the branch tip), never against its own base_sha: a
+// successor's base_sha is the tip it received, so a last main task that
+// committed nothing would read "empty" and delete a branch carrying every
+// predecessor's commits (spec §5.6, task 134.12). The base branch is the
+// conservative question: it can keep a branch that is empty, never delete
+// one that is not. Every other task is judged against its recorded base_sha.
+func emptinessBase(task *store.Task) string {
+	if isIssueMain(task) {
+		return ""
+	}
+	return task.BaseSHA
+}
+
 // issueBranchHeld is whether one of the issue's main tasks has ever held
 // task's branch in a worktree (Store.IssueMainBranchHeld). A failed read
 // answers false, which keeps the branch: a kept branch is recoverable, a
@@ -790,18 +806,8 @@ func (r *Runner) deleteArchivedBranch(
 	// ...and a branch the user pointed the task at is not ours either (task
 	// 125 decision 6): vincent did not cut it, so neither leg may touch it.
 	ours := r.branchOurs(ctx, task, log)
-	baseSHA := task.BaseSHA
-	if isIssueMain(task) {
-		// Empty against the issue's base branch, never against this task's
-		// base_sha. A successor's base_sha is the tip it received, so a last
-		// main task that committed nothing would read "empty" and delete a
-		// branch carrying every predecessor's commits. The base branch is the
-		// conservative question: it can keep a branch that is empty, never
-		// delete one that is not.
-		baseSHA = ""
-	}
 	out, err := r.deps.Worktrees.DeleteEmptyBranch(ctx, projectPath,
-		task.BaseBranch, baseSHA, task.BranchName, remote, &ours)
+		task.BaseBranch, emptinessBase(task), task.BranchName, remote, &ours)
 	if err != nil {
 		log.Warn("archive: branch kept", "result", out.Result, "error", err)
 		return out

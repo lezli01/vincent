@@ -78,10 +78,11 @@ or description, so the prefill is what fills them in.
    what proves it is the pull-request refusal and not the generic "needs a
    blocked task" one.
 3. **A fork pull request runs, with no upstream and no remote added**
-   (decision 5). The task from #355 is on `typo-fix` with `fork: true` and
+   (decision 5). The task from #355 is on `vincent/pr-355` — never the fork's
+   head name `typo-fix` (#964) — with `fork: true` and
    `branch: true`. Once `done`, `base_sha` is the commit at
-   `refs/pull/355/head`, the worktree is on `typo-fix`,
-   `git config --get branch.typo-fix.remote` exits 1, and `git remote` still
+   `refs/pull/355/head`, the worktree is on `vincent/pr-355`,
+   `git config --get branch.vincent/pr-355.remote` exits 1, and `git remote` still
    lists exactly `local` and `origin`. No push is attempted: with no upstream,
    what git does depends on the user's global `push.autoSetupRemote` and falls
    through to `origin`, a github.com URL — so "cannot push back" is asserted as
@@ -122,7 +123,8 @@ TUI. Use a throwaway repository.
    commit appears on the pull request.
 2. **A fork pull request runs and cannot push back.** Open a pull request from
    the second account's fork. Create a task from it the same way. The task
-   runs on the fork's head branch; the project repository gains no remote and
+   runs on `vincent/pr-N`, not on the fork's head-branch name, and a local
+   branch of that name is left where it was; the project repository gains no remote and
    the branch no upstream; a `git push` step fails rather than pushing
    anywhere.
 3. **A merged pull request's head survives archive.** With both

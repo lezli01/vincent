@@ -388,12 +388,12 @@ func (r *Runner) runTurn(
 	adapter, ok := r.deps.Agents.Get(chat.Agent)
 	if !ok {
 		r.finish(turn, chatstate.TurnFailed, ReasonAgentUnavailable,
-			fmt.Sprintf("no adapter named %q", chat.Agent), nil)
+			fmt.Sprintf("no adapter named %q", chat.Agent), chat)
 		return
 	}
 	tr, err := transcript.Open(r.transcriptDir(chat.ID), fmt.Sprintf("%d.jsonl", turn.Seq))
 	if err != nil {
-		r.finish(turn, chatstate.TurnFailed, ReasonTranscriptIOError, err.Error(), nil)
+		r.finish(turn, chatstate.TurnFailed, ReasonTranscriptIOError, err.Error(), chat)
 		return
 	}
 	defer tr.Close()
@@ -446,7 +446,7 @@ func (r *Runner) runTurn(
 		// like every other one past placement, and ahead of finish for the
 		// reason given below.
 		r.invalidateSkills(workDir)
-		r.finish(turn, chatstate.TurnFailed, reason, err.Error(), nil)
+		r.finish(turn, chatstate.TurnFailed, reason, err.Error(), chat)
 		return
 	}
 	live := &liveTurn{

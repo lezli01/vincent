@@ -4,7 +4,7 @@ description: Create, edit, review, and validate vincent workflow YAML under .vin
 license: LICENSE.txt
 metadata:
   author: lezli01
-  version: 1.5.3
+  version: 1.5.4
 ---
 
 # vincent Workflows
@@ -134,7 +134,9 @@ that says to create the task from an issue.
   input and cannot be nested in `parallel` or `loop` or used by a merge
   resolver. Codex, Cursor and Copilot do not support it.
 - `on_input: wait` keeps the agent process and task slot alive while waiting;
-  it is not a substitute for a deliberate approval gate.
+  it is not a substitute for a deliberate approval gate. Inside a `parallel`
+  group it runs as `deny`, so a question that needs a human belongs in a
+  sequential step.
 
 Place a manual gate immediately before the effect it authorizes. Make the
 instructions name the artifact or change to inspect and the next action that

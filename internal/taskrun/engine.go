@@ -234,6 +234,12 @@ type stepEnv struct {
 	step    workflow.Step
 	index   int
 	inGroup bool
+	// parallel marks a sub-step actually running beside its siblings in a
+	// `parallel` group. inGroup is wider — the fan-out resolver and a repair
+	// borrow it for naming and each runs alone — so it cannot say this. A
+	// parallel sub-step's `on_input: wait` runs as `deny` (§7.5, #965): the
+	// task has one awaiting_input slot (§7.4), and siblings sharing it race.
+	parallel bool
 	// conflicts are the files a fan_out join is asking an `on_conflict:
 	// agent` resolver to fix (§7.6, task 014 decision 24). Empty everywhere
 	// else.
@@ -914,7 +920,8 @@ func (r *Runner) worktreeFailed(ctx context.Context, task *store.Task, err error
 
 // pullSpecFor assembles the worktree layer's pull-request spec from what the
 // task already carries (task 064). Nothing here is fetched: the head branch
-// *is* `tasks.branch_name` (decision 1) and the fork flag was recorded on the
+// *is* `tasks.branch_name` (decision 1) — for a fork, the namespaced
+// `vincent/pr-{n}` (#964) — and the fork flag was recorded on the
 // link at creation (decision 8), so admission needs no GitHub call — which is
 // what keeps §10's "creation is offline, admission runs git" shape intact.
 func pullSpecFor(task *store.Task) worktree.PullSpec {

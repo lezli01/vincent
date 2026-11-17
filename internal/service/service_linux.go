@@ -32,9 +32,9 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s daemon
-Environment=VINCENT_CONFIG_DIR=%s
-Environment=VINCENT_DATA_DIR=%s
+ExecStart="%s" daemon
+Environment="VINCENT_CONFIG_DIR=%s"
+Environment="VINCENT_DATA_DIR=%s"
 Environment="PATH=%s"
 Restart=on-failure
 RestartSec=5
@@ -48,21 +48,28 @@ WantedBy=default.target
 //
 // Values are escaped for the unit-file syntax: `%` introduces a systemd
 // specifier anywhere in a unit, so a directory or PATH entry containing one
-// would expand to something else entirely. PATH is additionally quoted —
-// unquoted `Environment=` splits on whitespace, which would silently truncate
-// a PATH containing a space at that entry.
+// would expand to something else entirely. Every value is also quoted:
+// `ExecStart=` and an unquoted `Environment=` split on whitespace, so an
+// executable under a directory with a space would become a different argv[0],
+// and a config or data dir or PATH containing one would be silently truncated —
+// running the service against a different database than the CLI (§12.1, #968).
 func renderUnit(o Options) string {
 	return fmt.Sprintf(unitTemplate,
-		unitEscape(o.Exe), unitEscape(o.Dirs.Config), unitEscape(o.Dirs.Data), unitQuoted(o.Path))
+		unitExecQuoted(o.Exe), unitQuoted(o.Dirs.Config), unitQuoted(o.Dirs.Data), unitQuoted(o.Path))
 }
-
-func unitEscape(s string) string { return strings.ReplaceAll(s, "%", "%%") }
 
 // unitQuoted escapes a value destined for the inside of a double-quoted
 // unit-file string.
 func unitQuoted(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "%", "%%")
 	return r.Replace(s)
+}
+
+// unitExecQuoted is unitQuoted for a word of `ExecStart=`, which — unlike
+// `Environment=` — also substitutes `$VAR` and `${VAR}`, so a literal `$` is
+// doubled.
+func unitExecQuoted(s string) string {
+	return strings.ReplaceAll(unitQuoted(s), "$", "$$")
 }
 
 func unitPath() (string, error) {

@@ -399,7 +399,7 @@ A unit of work delivered by running a workflow against a project.
 | `workflow_name` | name as resolved at creation time |
 | `workflow_snapshot` | full YAML content captured at creation; **execution always uses the snapshot**, so later edits to workflow files never mutate in-flight or historical tasks |
 | `base_branch` | defaults to project `default_branch`. *Amended 2026-10-07 (task 134.13, issue #760):* a side task's (`issue_worktree = 'side'`) is the issue's main branch, set at creation — a `base_branch` naming another branch is a 400 (§13.2) — and re-asserted in the insert transaction, which writes the main branch it sees |
-| `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override. *Amended 2026-09-21 (task 125):* `existing_branch` adds no level. It selects a worktree-creation **mode** (§10) for whatever name the chain already produced, which is why a literal, a project template and a config template all work with it unchanged |
+| `branch_name` | `vincent/{id}-{slug}` by default (slug: lowercase title, `[a-z0-9-]`, max 40 chars). *Amended 2026-08-13 (task 001):* configurable through the chain `built-in < config.yaml < project < per-task literal`. Resolved and persisted inside the task's insert transaction, so no committed task carries an empty one. *Amended 2026-08-30 (task 064):* the chain gains a level above the literal — a task created from a pull request (`github_pull`, §13.2) runs on that pull request's **head branch**, which nothing else may override. *Amended 2026-11-16 (#964):* for a **fork** pull request the level resolves to `vincent/pr-{n}` instead, never the fork's head name (§10). *Amended 2026-09-21 (task 125):* `existing_branch` adds no level. It selects a worktree-creation **mode** (§10) for whatever name the chain already produced, which is why a literal, a project template and a config template all work with it unchanged |
 | `worktree_path` | assigned when the worktree is created |
 | `base_sha` | *Added 2026-08-29 (task 056).* The commit `branch_name` was actually cut from, written beside `worktree_path` when creation fetched `base_branch` from its upstream (§10). NULL means `base_branch` itself still names the fork point — every task predating this and every task created with `fetch_base_branch: false`. It exists because once a task branch starts at a fetched remote tip, `base_branch` names a moving ref that is no longer where the task began, and the two places that read it as the fork point — `GET /v1/tasks/{id}/diff`'s merge-base (§13.2) and archive's empty-branch check (§10) — would otherwise both answer against the stale local commit. *Amended 2026-08-30 (task 064):* on a task created from a pull request it is the **head commit as it stood at admission**, so the diff tab answers "what did this task change" rather than re-rendering the pull request's own diff. *Amended 2026-09-14 (task 099, issue #430):* now served on every task representation (§13.2), reversing 056 decision 4 — without it a human cannot tell a task cut from a fresh upstream tip from one cut from a stale local branch *Amended 2026-09-21 (task 125):* on a task created on an **existing branch** (`existing_branch`, §13.2) it is that branch's tip at admission, for the same reason and with the same effect — the diff answers what this task changed, not what the branch already carried. Such a task records **no** `base_refresh`: the fetch it ran was the adopted branch's own, and no base fast-forward was attempted, so NULL is the honest "this admission refreshed no base". *Amended 2026-10-07 (task 134.13, issue #760):* on a **side task** it is the issue's main branch's tip at the cut, resolved locally with no fetch (§10), so the side task's diff does not collapse to empty once its commits are merged back into the main branch. |
 | `base_refresh` | *Added 2026-09-14 (task 099, issue #430).* JSON: what worktree creation's base fetch and the fast-forward of the local base that follows it did (§10) — `{fetch: {result: fetched\|no_upstream\|error\|disabled, remote?, ref?, error?}, fast_forward: {result: advanced\|up_to_date\|skipped\|not_attempted, reason?: diverged\|local_ahead\|checkout_dirty\|checkout_busy\|error, worktree?, error?}}`. Written in the same claim write as `worktree_path` and `base_sha`, so a worktree that already existed is never re-recorded. NULL means no worktree was created since migration 0031, or the task came from a pull request, which refreshes no base; `disabled` is recorded, so "key off" and "not recorded" stay apart. A chat handoff copies the chat's (§5.5). *Amended 2026-10-07 (task 134.13):* a side task records `{fetch: disabled, fast_forward: not_attempted}` whatever `fetch_base_branch` says, because its base is never refreshed (§10). Display-only: nothing reads it to decide anything, so a malformed value reads as NULL rather than making the row unreadable |
@@ -1600,6 +1600,12 @@ holder (task 134 decision 14). Delete is refused with
 `409 issue_has_live_main_task` while any main-role task of the issue is not
 settled (decision 17.1); settled and archived ones do not hold it, narrowing
 task 130 decision 6.
+*Amended 2026-11-16 (issue #961):* the same base-branch judgement holds at
+permanent delete — `DELETE /v1/tasks/{id}?delete_branch=true` on a main task
+and the branch sweep of `DELETE /v1/projects/{id}` — which had judged a
+successor against its own `base_sha` and force-deleted a branch carrying a
+predecessor's commits. The project sweep also asks the line, not the row,
+whose branch it is (task 134.12).
 *Amended 2026-10-31 (task 140, issue #885):* **a chat on an issue** (§5.5)
 is a main-worktree holder too. The occupant is now a main task *or* a
 non-terminal issue chat, served as `main_worktree.occupant_task_id` or
@@ -2466,6 +2472,9 @@ Behavior with `on_input: wait` (the default):
 vincent immediately auto-responds through the adapter's `Respond()` — questions
 get a canned "no user is available; decide with your best judgment" answer,
 permission requests are denied — and the task never leaves `running`.
+*Amended 2026-11-16 (issue #965):* a sub-step of a `parallel` group runs as
+`deny` whatever it resolves to, `wait` included (§7.5) — the one
+`awaiting_input` above cannot be shared by siblings asking at once.
 
 `on_input: require` (workflow `defaults` or per step, added 2026-08-17, task
 013) is `wait` plus a **precondition**: the step will only run on an adapter
@@ -2542,6 +2551,15 @@ that happens to share the word.
   actor goroutine and releases the slot (§6), and no state means "one sub-step
   is gated". `on_input: require` is rejected for the same reason —
   `awaiting_input` holds one pending request for the whole task (§7.4).
+  *Amended 2026-11-16 (issue #965):* the same holds for `wait`, which is the
+  default, so a sub-step that resolves to `wait` **runs as `deny`**: its
+  questions get §7.4's canned answer, its permission requests are denied, and
+  the task never leaves `running` on a sub-step's account. Before this, the
+  first sibling to ask parked the whole task while the others kept running,
+  and a second sibling's request was invalid from `awaiting_input`, dropped,
+  and left its agent idle until `agent_timeout`. `wait` is clamped rather than
+  rejected because rejecting the default would invalidate every existing group
+  with an agent sub-step.
   Groups do not nest. *Amended 2026-08-18 (task 015):* `condition` steps are
   rejected here too — a group is a set, with no sequence to end — and a
   sub-step may carry an `if:`, which subsets the group. Sub-step guards are
@@ -7318,6 +7336,16 @@ that counted three adapters was amended in place.
     below. A **fork** gets no upstream at all: nothing can push back, and that is
     said on the task at creation rather than discovered when a delivery step fails.
     The daemon never runs `git remote add` for a fork.
+  - *Amended 2026-11-16 (#964).* **A fork's task runs on `vincent/pr-{n}`, never on
+    the fork's head-branch name.** The head lives in another repository, so a local
+    branch sharing its name — typically the human's own `master`, since forks are
+    often opened from a synced `master` — is a coincidence, not a copy, and "fast-forward
+    or block" above would move it onto the contributor's unreviewed commits.
+    Everything else holds for the namespaced branch: it is fetched from
+    `refs/pull/{n}/head`, an existing `vincent/pr-{n}` (an earlier task on the same
+    pull request) is fast-forwarded or blocks with `pull_branch_diverged`, it gets no
+    upstream, and archive still never deletes it. A same-repository pull request is
+    unchanged and keeps the head name.
   - **`base_sha` is the head commit at admission** (§5.3), so
     `GET /v1/tasks/{id}/diff` answers "what did this task change" rather than
     re-rendering the pull request's own diff.
@@ -7435,7 +7463,8 @@ that counted three adapters was amended in place.
   *Amended 2026-08-30 (task 064).* The chain grows a level above the literal:
   `built-in < config.yaml < project < per-task literal < pull request`, reported by
   `/v1/resolve` as source `pull`. A task created from a pull request runs on that
-  pull request's head branch and nothing else may name it — a project template or a
+  pull request's head branch — for a fork, `vincent/pr-{n}` (*amended 2026-11-16,
+  #964*, see the second creation mode above) — and nothing else may name it — a project template or a
   typed literal would put the commits somewhere the pull request never sees. Two
   consequences, both refusals: the creation-time collision check does not apply to a
   pull-request task (its branch is expected to exist; the in-transaction claim check
@@ -9649,6 +9678,15 @@ the chat's state, and `idle` is not terminal. When the task runs in a container
 client's, so recovery first stops the agent through its pid file in the task's
 container (task 061 decision 9, keyed by the turn) and then runs the host kill
 above for the client.
+
+*Amended 2026-11-16 (issue #960).* Once every `running` turn is finalized,
+recovery also returns to `idle` every chat still in a state that holds a
+process (`running`, `awaiting_input`). No such chat has a running turn at that
+point, so its state is a leftover — an earlier daemon failed a turn before its
+process was up and never moved the chat back — and nothing else would ever
+release it: it would refuse every send and hold a §11 slot forever. Recovery
+runs before any turn is admitted, so there is no live turn to race. As above,
+the chat stays **open**, and a task it locks stays locked.
 
 *Amended 2026-09-21 (task 124.17, issue #513).* Recovery also sweeps the
 **skill probes** (§5.5) a dead daemon may have left running inside a task's

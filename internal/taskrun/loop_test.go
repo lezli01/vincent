@@ -791,3 +791,62 @@ func TestLoopForEachRecordedIterationsPastTheCeilingBlock(t *testing.T) {
 		t.Errorf("planLoop error = %v, want errLoopLimit", err)
 	}
 }
+
+// TestLoopRetryResumesAtTheBlockedIteration is decision 12's "does not
+// restart at iteration 1" for the converge shape (issue #962). Iteration 1
+// finished — its `allow_failure` probe left a `failed` row, the break did not
+// take, `tick` ran — and iteration 2 blocked on `boom`. A retry must resume in
+// iteration 2. Walking from iteration 1 instead re-runs its probe (latest row
+// `failed`), which marks the rest of that finished iteration for re-running
+// too, so every earlier pass's work happens again before the blocked one is
+// reached.
+func TestLoopRetryResumesAtTheBlockedIteration(t *testing.T) {
+	h := newEngineHarness(t)
+	h.start(t)
+	boom := script(
+		"test -f fixed.txt",
+		"if (-not (Test-Path fixed.txt)) { exit 1 }",
+	)
+	snapshot := loopSnapshot("count: 2",
+		commandStep("probe", script("exit 1", "exit 1"), "allow_failure: true", "max_retries: 0"),
+		"  - {id: passed, type: break, if: '{{ eq (index .Steps \"probe\").ExitCode 0 }}'}\n",
+		commandStep("tick", appendCmd("ticks.txt", "x")),
+		commandStep("boom", boom, "if: '{{ not .Loop.IsFirst }}'", "max_retries: 0"),
+	)
+	task := h.createTask(t, snapshot)
+
+	blocked := h.waitForState(t, task.ID, store.TaskBlocked, store.TaskDone)
+	if blocked.State != store.TaskBlocked {
+		t.Fatalf("task state = %s, want blocked on iteration 2's boom", blocked.State)
+	}
+	if got := countLines(t, blocked.WorktreePath, "ticks.txt"); got != 2 {
+		t.Fatalf("ticks before the retry = %d, want 2 (one per iteration)", got)
+	}
+	if err := os.WriteFile(filepath.Join(blocked.WorktreePath, "fixed.txt"), []byte("ok\n"), 0o600); err != nil {
+		t.Fatalf("write flag file: %v", err)
+	}
+	if _, _, err := h.runner.Retry(t.Context(), task.ID, store.Override{}); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+
+	done := h.waitForState(t, task.ID, store.TaskDone, store.TaskBlocked)
+	if done.State != store.TaskDone {
+		t.Fatalf("task state after retry = %s (block_reason %q), want done", done.State, done.BlockReason)
+	}
+	byIteration := iterationsOf(h.stepRuns(t, task.ID))
+	var probes1 int
+	for _, r := range byIteration[1] {
+		if r.StepID == "probe" {
+			probes1++
+		}
+	}
+	if probes1 != 1 {
+		t.Errorf("iteration 1 probe rows = %d, want 1 — a finished iteration must not run again on retry", probes1)
+	}
+	// Three ticks: iterations 1 and 2 before the block, and iteration 2's
+	// again after its probe re-ran (decision 7, reopened). A fourth is
+	// iteration 1 re-running.
+	if got := countLines(t, done.WorktreePath, "ticks.txt"); got != 3 {
+		t.Errorf("ticks = %d, want 3 — the retry restarted at iteration 1 instead of resuming iteration 2", got)
+	}
+}

@@ -910,7 +910,9 @@ Things worth knowing before you use it:
   a merged one are why `--state` exists on
   [`vincent github prs`](#vincent-github-prs).
 - **A fork runs, and cannot push back.** Its head is fetched from
-  `refs/pull/N/head` into a branch with no upstream. The command says so on the
+  `refs/pull/N/head` into a branch named `vincent/pr-N` — never the fork's
+  head-branch name, which may well be `master` and would move your own — with
+  no upstream. The command says so on the
   line above; a delivery step will fail rather than push somewhere nobody
   watches.
 - **A local branch of that name is fast-forwarded**, or, if it has diverged, the
