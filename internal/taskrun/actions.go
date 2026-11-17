@@ -458,6 +458,7 @@ func (r *Runner) PrepareFollowUp(
 	tr, _ := rule(task.State, taskstate.FollowUp)
 	noPause := false
 	ch.PauseRequested = &noPause
+	ch.GlobalPause = &noPause
 	return task.State, tr.To, ch, nil
 }
 
@@ -952,6 +953,13 @@ func (r *Runner) applyAction(
 	if ch.PauseRequested == nil && action != taskstate.Pause {
 		noPause := false
 		ch.PauseRequested = &noPause
+	}
+	// Whatever a human does to a task makes its pause theirs: the global
+	// pause's mark clears, so `continue` will not resume a task a human has
+	// since paused, nor re-pause one they resumed (task 149).
+	if ch.GlobalPause == nil {
+		noMark := false
+		ch.GlobalPause = &noMark
 	}
 	updated, _, err := r.deps.Store.TransitionTask(ctx, task.ID, task.State, tr.To, ch)
 	if err != nil {

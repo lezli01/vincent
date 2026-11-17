@@ -88,6 +88,11 @@ type TaskChange struct {
 	// transitions leave it alone; every human action but `pause` clears it,
 	// because each of them is a human saying "go" (§6).
 	PauseRequested *bool
+	// GlobalPause sets or clears the global-pause mark (task 149): the task's
+	// pause, pending or taken, was the daemon-wide pause's. The engine's park
+	// sets it when the pause it takes is the global one; every human action
+	// clears it, because the task is then the human's again (§6).
+	GlobalPause *bool
 	// RetryCursorAt moves the retry-budget cursor — a human `retry` stamps
 	// it with now, and the budget then counts only later failures (§7.2).
 	RetryCursorAt *time.Time
@@ -466,7 +471,7 @@ func transitionTaskTx(
 	}
 	res, err := tx.ExecContext(ctx, `
 		UPDATE tasks SET state = ?, current_step = ?, block_reason = ?, block_detail = ?, worktree_path = ?,
-			end_sha = ?, workflow_snapshot = ?, pause_requested = ?, retry_cursor_at = ?,
+			end_sha = ?, workflow_snapshot = ?, pause_requested = ?, global_pause = ?, retry_cursor_at = ?,
 			pending_override_json = ?, pending_repair_json = ?,
 			pending_follow_up_json = ?, pending_input_json = ?,
 			admit_not_before = ?, queued_reason = ?, settled_children_watermark = ?,
@@ -474,7 +479,7 @@ func transitionTaskTx(
 			delivery_json = ?
 		WHERE id = ? AND state = ?`,
 		string(t.State), t.CurrentStep, nullString(t.BlockReason), nullString(t.BlockDetail), nullString(t.WorktreePath),
-		nullString(t.EndSHA), t.WorkflowSnapshot, t.PauseRequested, formatTimePtr(t.RetryCursorAt), pendingOverride,
+		nullString(t.EndSHA), t.WorkflowSnapshot, t.PauseRequested, t.GlobalPause, formatTimePtr(t.RetryCursorAt), pendingOverride,
 		pendingRepair, pendingFollowUp,
 		nullString(t.PendingInputJSON),
 		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
@@ -673,6 +678,9 @@ func applyChange(t *Task, ch TaskChange) {
 	}
 	if ch.PauseRequested != nil {
 		t.PauseRequested = *ch.PauseRequested
+	}
+	if ch.GlobalPause != nil {
+		t.GlobalPause = *ch.GlobalPause
 	}
 	if ch.RetryCursorAt != nil {
 		t.RetryCursorAt = ch.RetryCursorAt

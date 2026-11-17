@@ -141,6 +141,15 @@ func (s *Scheduler) admit(ctx context.Context) {
 		s.deps.Logger.Error("admission: list admissible", "error", err)
 		return
 	}
+	// The global pause (task 149) holds the whole queue. Like the usage
+	// hold below it is checked per candidate rather than by returning
+	// early: a pause requested on a queued task must still take effect.
+	pause, err := s.deps.Store.GetGlobalPause(ctx)
+	if err != nil {
+		s.deps.Logger.Error("admission: read global pause", "error", err)
+		return
+	}
+	held := pause != nil
 
 	// admitted counts this walk's own admissions per project; the candidate
 	// rows carry the counts as of the query, which predate them.
@@ -197,6 +206,9 @@ func (s *Scheduler) admit(ctx context.Context) {
 		// take effect until the hold expired, which is exactly the "showing
 		// queued while the human asked for paused" lie the comment above
 		// calls out. Pause first, then the hold, then the caps.
+		if held {
+			continue
+		}
 		if c.Task.AdmitNotBefore != nil && now.Before(*c.Task.AdmitNotBefore) {
 			continue
 		}
@@ -402,10 +414,12 @@ func (s *Scheduler) resumeSettledParents(ctx context.Context) {
 	}
 }
 
-// WakeOn reports whether an event should trigger re-evaluation. Only two
-// event types change what may be admitted; the rest (step progress, gate
-// waits) would just spin the loop.
+// WakeOn reports whether an event should trigger re-evaluation. Only three
+// event types change what may be admitted — a transition, a reorder, and the
+// global pause being taken or lifted (task 149); the rest (step progress,
+// gate waits) would just spin the loop.
 func WakeOn(e *store.Event) bool {
 	return e != nil &&
-		(e.Type == store.EventTaskStateChanged || e.Type == store.EventTaskPriorityChanged)
+		(e.Type == store.EventTaskStateChanged || e.Type == store.EventTaskPriorityChanged ||
+			e.Type == store.EventGlobalPauseChanged)
 }

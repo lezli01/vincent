@@ -119,6 +119,10 @@ type Runner struct {
 	// still reach the database after the run context is canceled.
 	persist context.Context //nolint:containedctx // deliberately outlives the run
 
+	// globalMu serializes PauseAll and ContinueAll (task 149), so a
+	// continue's resumes cannot interleave with a pause taken again.
+	globalMu sync.Mutex
+
 	mu   sync.Mutex
 	live map[int64]*liveRun
 	// containers is the container each admitted task's steps exec into (§16,

@@ -622,6 +622,13 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 			r.park(task, log)
 			return
 		}
+		// The global pause (task 149) is read here rather than mirrored onto
+		// each live run: a task admitted in the instant before the pause
+		// committed has no mark, and must park all the same.
+		if r.globallyPaused(ctx, log) {
+			r.parkGlobal(task, log)
+			return
+		}
 		index := w.rowIndex(pos)
 		env := &stepEnv{
 			task: task, project: project, wf: wf,
@@ -1780,6 +1787,27 @@ func (r *Runner) park(task *store.Task, log *slog.Logger) {
 	if r.transition(task, taskstate.Park, store.TaskChange{PauseRequested: &noPause}, log) {
 		log.Info("task paused at a step boundary")
 	}
+}
+
+// parkGlobal is park for the global pause (task 149): the same transition,
+// marking the task as the global pause's so `continue` resumes it.
+func (r *Runner) parkGlobal(task *store.Task, log *slog.Logger) {
+	noPause, mark := false, true
+	if r.transition(task, taskstate.Park, store.TaskChange{PauseRequested: &noPause, GlobalPause: &mark}, log) {
+		log.Info("task paused at a step boundary by the global pause")
+	}
+}
+
+// globallyPaused reports whether the daemon-wide pause is on. A failed read
+// is logged and treated as active: the pause is an operator's convenience,
+// and a database error is not a reason to stop work nobody asked to stop.
+func (r *Runner) globallyPaused(ctx context.Context, log *slog.Logger) bool {
+	p, err := r.deps.Store.GetGlobalPause(ctx)
+	if err != nil {
+		log.Error("read global pause", "error", err)
+		return false
+	}
+	return p != nil
 }
 
 func (r *Runner) finishStepRun(run *store.StepRun, outcome stepOutcome, log *slog.Logger) {
