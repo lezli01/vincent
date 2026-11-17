@@ -133,6 +133,9 @@ type taskResponse struct {
 	PendingInput json.RawMessage `json:"pending_input,omitempty"`
 	// PauseRequested is a pause accepted but not yet in effect (§6).
 	PauseRequested bool `json:"pause_requested"`
+	// GlobalPause marks a pause, pending or taken, that the global pause
+	// made (task 149): `POST /v1/daemon/continue` resumes exactly these.
+	GlobalPause bool `json:"global_pause"`
 	// GitHubIssue is the issue snapshot this task was created from (§5.3,
 	// task 035); null for every task created without one. It is served as
 	// captured and never refreshed — clients render it as history, not as the
@@ -293,6 +296,7 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 		GitHubPull:        t.GitHubPull,
 		WorkflowOrigin:    t.WorkflowOrigin,
 		PauseRequested:    t.PauseRequested,
+		GlobalPause:       t.GlobalPause,
 		AvailableActions:  availableActions(t.State),
 		CreatedAt:         t.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:         t.UpdatedAt.UTC().Format(time.RFC3339),

@@ -37,6 +37,11 @@ type Route struct {
 // Streaming.
 var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/daemon/stop"},
+	// The global pause's two writes (task 149), on daemon/stop's line: an
+	// agent must not halt — or restart — every piece of work the daemon
+	// supervising it runs, its own step included. The read stays a tool.
+	{Method: http.MethodPost, Path: "/v1/daemon/pause"},
+	{Method: http.MethodPost, Path: "/v1/daemon/continue"},
 	// Task 057 decision 4 named this one before it existed: an agent must not
 	// be able to *reconfigure* the daemon supervising it. PATCH /v1/config can
 	// change the argv the daemon spawns (notify.command, agents.*.path), what
@@ -220,6 +225,7 @@ var routes = []Route{
 	{http.MethodGet, "/v1/agents", "agent_list", "The agent adapters and their selectable models and effort levels (§9.6)."},
 	{http.MethodGet, "/v1/doctor", "doctor", "The diagnostic report: directories, log, database figures and detected problems."},
 	{http.MethodGet, "/v1/update", "update_status", "The daemon's cached release check (§12.3): the latest stable release, when it was last seen, and whether this build is behind it. Read-only — it never downloads or installs anything."},
+	{http.MethodGet, "/v1/daemon/pause", "daemon_pause_status", "The global pause (task 149): state is active, pausing (paused, but tasks still finishing their step) or paused; paused_at and reason; the running, awaiting_input, queued and held (parked by the pause) task counts. Read-only."},
 	{http.MethodGet, "/v1/maintenance/orphans", "orphan_list", "Data-root directories no task row claims (§10)."},
 	{http.MethodGet, "/v1/projects", "project_list", "List registered projects. Query: stats=true adds each project's counts (task 132.1): tasks.by_state/active/attention over every non-archived task row, fan-out lanes included; issues.open/open_imported/active; chats.live/awaiting_input; issue_sync health; last_activity_at. stats is null when the daemon could not count."},
 	{http.MethodPost, "/v1/projects", "project_create", "Register a git repository as a project. Body: {path, name?, default_branch?, default_workflow?, max_parallel_tasks?, branch_template?, issue_source?}. issue_source is as project_patch takes it; absent derives it from origin."},

@@ -159,6 +159,11 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodPatch, "/v1/triggers/{id}"},
 		{http.MethodDelete, "/v1/triggers/{id}"},
 		{http.MethodPost, "/v1/triggers/{id}/events"},
+		// Task 149: the global pause's writes, on daemon/stop's line — an
+		// agent must not halt or restart every task the daemon supervising
+		// it runs, its own step included. The read is a tool.
+		{http.MethodPost, "/v1/daemon/pause"},
+		{http.MethodPost, "/v1/daemon/continue"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))
