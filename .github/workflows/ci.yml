@@ -612,13 +612,16 @@ jobs:
       # with archived_by issue_closed, deletes the empty branch locally and
       # never on origin; a task held at a manual gate is archived only once
       # approved; a dirty worktree is never forced and doctor holds it as
-      # dirty; a close read in from GitHub by a sync archives too, with no
-      # write; a reopen before the task settles keeps it; and the key off
+      # dirty; a close read in from GitHub or Jira (Won't Do, not_planned)
+      # by a sync archives too, with no write; a reopen before the task settles keeps it; and the key off
       # archives nothing. The matrix earns its place because the archive
       # deletes a branch and a worktree directory git had open, which
       # Windows refuses while a handle is held; the remote-untouched leg
       # reads `git ls-remote` of a `C:/…` bare repository; and the sync close
-      # is a `gh.exe` child of the detached daemon. Group 1 because it
+      # is a `gh.exe` child of the detached daemon. The Jira leg starts
+      # cmd/fakejira on a loopback port and stops it before the temporary
+      # directory goes, because Windows will not delete a running
+      # executable. Group 1 because it
       # measured lightest on Windows (237 s, run 42007181114).
       - name: 143 gate (auto-archive on issue close)
         if: matrix.group == 1
