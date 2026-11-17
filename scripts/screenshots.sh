@@ -1377,7 +1377,10 @@ EOF
   # is 5000 records and only *live* chunks trip it (internal/tui/detail.go), so
   # this has to keep producing while the TUI watches rather than have produced:
   # 100 lines a second crosses the cap in under a minute and keeps going —
-  # slow enough that paging back to the top outruns the arriving tail.
+  # slow enough that paging back to the top outruns the arriving tail. It has
+  # to outlive the whole capture too: tui-task-overview-running needs it still
+  # running, and 600 batches (ten minutes) ran out before that tape was
+  # reached. 3000 batches is the 300000 documents the lines count to.
   cat > "$CONFIG_DIR/workflows/corpus-index.yaml" <<'EOF'
 name: corpus-index
 description: Reindex every document in the corpus.
@@ -1390,7 +1393,7 @@ steps:
     run: |
       i=0
       b=0
-      while [ $b -lt 600 ]; do
+      while [ $b -lt 3000 ]; do
         b=$((b + 1))
         j=0
         while [ $j -lt 100 ]; do
