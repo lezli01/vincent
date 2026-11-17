@@ -4054,9 +4054,11 @@ they need.
   holds — one kept across `vincent daemon restore` onto an older database — is
   treated the same way, as no cursor at all.
 - **Every durable stream names its event history.** The response carries an
-  `X-Event-Generation` header: an integer that changes only when the daemon
-  starts on a database `vincent daemon restore` put in place, because an event
-  id names one event only within one history. Send the generation your
+  `X-Event-Generation` header: an opaque integer that changes only when the
+  daemon starts on a database `vincent daemon restore` put in place, because an
+  event id names one event only within one history. Compare it for equality
+  only: each restore picks a new random value, so restoring the same backup
+  twice still yields two different generations. Send the generation your
   `Last-Event-ID` came from back in the same request header; a cursor sent with
   a different generation is treated as no cursor at all, so the stream starts
   live instead of skipping the restored events below it. A client that sees the
