@@ -409,7 +409,9 @@ daemon running.
   is the **never-polled** state and it is not the same answer as "no update
   available" — a daemon that started ten seconds ago does not know yet.
 - `update_available` is the daemon's verdict, computed server-side, so every
-  client agrees. A `dev` build is never reported as behind.
+  client agrees. A `dev` build is never reported as behind, and neither is a
+  build from source stamped by `git describe`, such as `v0.13.0-46-gabc1234`,
+  against the release it is past: it is behind only a later release.
 - `current_version` is the **daemon's** build. The binary that made the request
   may be a newer one, which is exactly what `vincent daemon status` reports
   after an update.

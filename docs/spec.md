@@ -8914,6 +8914,14 @@ on one API's documented behaviour. Comparison normalizes the `v` prefix —
 goreleaser injects `{{.Version}}` without one while tags carry one — and a `dev`
 build is never reported as behind.
 
+*Amended 2026-11-17.* A build from source stamped by `git describe --tags
+--always --dirty` — the mage build — is placed where it really is on the
+version line: on a tag, clean or `-dirty`, it is that release; past one,
+`v0.13.0-46-gabc1234` is above v0.13.0 and below every release after it. Read
+as plain semver, that suffix is a prerelease *below* v0.13.0, which offered a
+build 46 commits newer the release it was cut from. A Go pseudo-version from
+`go install …@<commit>` already sorts this way and is unchanged.
+
 Either `check: false` or `poll_interval: 0` stops the poller; a negative interval
 refuses the file, because rounding a typo to "do not poll" would look like it
 worked. The cache is in memory and not in SQLite: a restart re-polls, no

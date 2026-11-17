@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -230,6 +231,31 @@ func Canonical(v string) string {
 	return semver.Canonical(v)
 }
 
+// describe matches what `git describe --tags --always --dirty` prints at or
+// past a release tag: the tag, then `-<commits>-g<hash>` when HEAD is past
+// it, then `-dirty` for uncommitted changes.
+var describe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:-(\d+)-g([0-9a-f]+))?(-dirty)?$`)
+
+// describedVersion is v, canonical, with a `git describe` stamp placed where
+// the build really is on the version line. On the tag — clean or dirty — it
+// is that release. Past it, it is the next patch's lowest prerelease,
+// `v0.13.1-0.46.gabc1234`, which sorts above the tag and below every release
+// after it, as a Go pseudo-version does. Anything else is Canonical's.
+func describedVersion(v string) string {
+	m := describe.FindStringSubmatch(strings.TrimSpace(v))
+	if m == nil {
+		return Canonical(v)
+	}
+	if m[4] == "" {
+		return Canonical("v" + m[1] + "." + m[2] + "." + m[3])
+	}
+	patch, err := strconv.Atoi(m[3])
+	if err != nil {
+		return ""
+	}
+	return Canonical(fmt.Sprintf("v%s.%s.%d-0.%s.g%s", m[1], m[2], patch+1, m[4], m[5]))
+}
+
 // IsNewer reports whether latest is a strictly newer stable version than
 // current.
 //
@@ -237,8 +263,14 @@ func Canonical(v string) string {
 // behind. It has no place on the version line: it may be newer than every
 // release or older than all of them, and telling a developer building from
 // source to download a release is noise at best and wrong at worst.
+//
+// A source build stamped by `git describe --tags --always --dirty` — what
+// the mage build injects — is read as what it is rather than as semver
+// would read it (describedVersion): `v0.13.0-46-gabc1234` is 46 commits
+// past v0.13.0, not a prerelease below it, so it is behind the next release
+// and never behind v0.13.0 itself.
 func IsNewer(current, latest string) bool {
-	c, l := Canonical(current), Canonical(latest)
+	c, l := describedVersion(current), Canonical(latest)
 	if c == "" || l == "" {
 		return false
 	}
