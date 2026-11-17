@@ -277,7 +277,8 @@ Reopen the issue before it happens and nothing is archived.
 ### What auto-archive never touches
 
 The auto-archive acts only on tasks started from an issue, and only once that
-issue is closed. These are left on the board by design:
+issue is closed. These are out of its scope by design, and it never archives
+them:
 
 - **A task with no issue.** Only tasks started from an issue are archived when
   it closes. That includes a task started on its own, a task that files issues
@@ -286,21 +287,28 @@ issue is closed. These are left on the board by design:
 - **A task whose issue is still open.** A task can be `done` long before its
   issue closes — for example while a handoff delivers its work. It stays on
   the board until the issue closes, or until you archive it.
+- **A task started after the issue closed.** Someone chose to work there, so it
+  is left alone. Archive it yourself.
+
+### What auto-archive waits for
+
+These tasks are in scope, but held: each is archived later, once something
+on its issue moves, or when you archive it yourself.
+
 - **Every task of an issue that still has unfinished work.** One task of the
   issue left `blocked`, `paused`, or waiting at a gate or for an answer — even
   an attempt you abandoned — holds all of them, as an open chat on the issue
   does. Cancel or finish it, and the archive follows on its own.
-- **A task started after the issue closed.** Someone chose to work there, so it
-  is left alone. Archive it yourself.
 - **Tasks of an issue closed before you upgraded, or while
   `archive_tasks_on_issue_close` was off.** There is no catch-up. Such an issue
   is archived only if something later happens on it — a task of it finishing,
   or one archived by hand, for example. Otherwise archive its tasks yourself.
 - **A task with uncommitted changes.** It is never forced, and committing or
-  discarding the changes records no event, so nothing retries it. Clean the
-  worktree, then archive it yourself (`vincent task archive <id>`, or
-  `--force` to discard the changes). Archiving a held side task or merge-back
-  by hand also releases the main tasks waiting on it.
+  discarding the changes records no event, so only a later event on the issue
+  retries it. Clean the worktree, then archive it yourself
+  (`vincent task archive <id>`, or `--force` to discard the changes).
+  Archiving a held side task or merge-back by hand also releases the main
+  tasks waiting on it.
 
 ### Finding out why a task is held
 
@@ -310,7 +318,9 @@ names one task and every reason holding it; the reasons are listed under
 [`vincent doctor`](../reference/cli.md#vincent-doctor), and what to do about
 each is in [A closed issue's tasks are still on the board](troubleshooting.md#a-closed-issues-tasks-are-still-on-the-board).
 The group only reports: it never archives anything. A finished task that is
-*not* listed is one of the cases above — out of scope, not a stuck archive.
+*not* listed is one of the three cases under
+[What auto-archive never touches](#what-auto-archive-never-touches) — out of
+scope, not a stuck archive.
 
 Turn this off with
 [`archive_tasks_on_issue_close: false`](../reference/configuration.md#archive_tasks_on_issue_close).
