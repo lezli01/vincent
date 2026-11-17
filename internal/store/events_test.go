@@ -152,3 +152,24 @@ func TestMaxEventID(t *testing.T) {
 		t.Errorf("MaxEventID = %d, want the last appended id %d", got, last)
 	}
 }
+
+// TestEventGeneration is issue #1001: a fresh database starts its event
+// history at generation 1, and each bump starts another, different one.
+func TestEventGeneration(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	if gen, err := s.EventGeneration(ctx); err != nil || gen != 1 {
+		t.Fatalf("EventGeneration on a fresh database = %d, %v; want 1", gen, err)
+	}
+	seen := map[int64]bool{1: true}
+	for range 3 {
+		gen, err := s.BumpEventGeneration(ctx)
+		if err != nil || gen <= 0 || seen[gen] {
+			t.Fatalf("BumpEventGeneration = %d, %v; want a positive generation not seen before (%v)", gen, err, seen)
+		}
+		seen[gen] = true
+		if got, err := s.EventGeneration(ctx); err != nil || got != gen {
+			t.Fatalf("EventGeneration after the bump = %d, %v; want %d", got, err, gen)
+		}
+	}
+}

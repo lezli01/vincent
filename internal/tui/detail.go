@@ -703,6 +703,11 @@ func (d *detail) appendChunk(note apiclient.OutputNote) {
 // updateGlobalNote reacts to the shell's stream: any durable event about this
 // task means the timeline may have changed.
 func (d *detail) updateGlobalNote(n apiclient.Note) tea.Cmd {
+	if c, ok := n.(apiclient.ConnectedNote); ok && c.Reset && d.taskID != 0 {
+		// A restored event history (issue #1001): no event will say what
+		// changed, so re-read the task.
+		return d.scheduleRefresh()
+	}
 	ev, ok := n.(apiclient.EventNote)
 	if !ok || d.taskID == 0 {
 		return nil

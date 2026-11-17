@@ -356,6 +356,10 @@ func (v *issueView) scheduleRefresh() tea.Cmd {
 // issue.comment_added and issue.comment_updated, name the issue in `id` like
 // every issue.* event, so they re-read the thread with the rest.
 func (v *issueView) updateNote(n apiclient.Note) tea.Cmd {
+	if c, ok := n.(apiclient.ConnectedNote); ok && c.Reset && v.id != 0 {
+		// A restored event history (issue #1001): re-read the issue.
+		return v.scheduleRefresh()
+	}
 	ev, ok := n.(apiclient.EventNote)
 	if !ok || v.id == 0 {
 		return nil

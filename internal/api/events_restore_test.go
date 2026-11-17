@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/agent"
@@ -90,4 +92,74 @@ func TestChatStreamCursorAheadOfRestoredTableStillDeliversNewEvents(t *testing.T
 		t.Fatalf("first frame = %+v, want the restored daemon's %s event %d "+
 			"(a cursor ahead of MAX(id) must not swallow it)", f, store.EventChatState, live)
 	}
+}
+
+// Issue #1001, the half of #967 a high-water check cannot see: once the
+// restored database's sequence has climbed past the stale cursor, the cursor
+// looks legitimate. Every durable stream therefore names its event history's
+// generation, and a cursor presented with another generation is ignored — no
+// replay after it — exactly like one past MAX(id).
+func TestEventsCursorFromAnotherGenerationIsIgnored(t *testing.T) {
+	h := newSSEHarness(t)
+	cursor := h.append(t, "task.state_changed")
+	h.append(t, "task.state_changed") // what a replay after the cursor would send
+	old, err := h.st.EventGeneration(t.Context())
+	if err != nil {
+		t.Fatalf("EventGeneration: %v", err)
+	}
+	gen, err := h.st.BumpEventGeneration(t.Context())
+	if err != nil {
+		t.Fatalf("BumpEventGeneration: %v", err)
+	}
+
+	c, served := openSSEGen(t, h.ts.URL+"/v1/events", cursor.ID, old)
+	if served != fmt.Sprint(gen) {
+		t.Fatalf("X-Event-Generation = %q, want %d", served, gen)
+	}
+	live := h.append(t, "task.state_changed")
+	if f := c.next(t); f.id != fmt.Sprint(live.ID) {
+		t.Fatalf("first frame = %+v, want the live event %d: a cursor from generation %d "+
+			"must not be replayed after on generation %d", f, live.ID, old, gen)
+	}
+}
+
+// The control: a cursor presented with the current generation resumes as
+// before.
+func TestEventsCursorFromTheSameGenerationReplays(t *testing.T) {
+	h := newSSEHarness(t)
+	cursor := h.append(t, "task.state_changed")
+	next := h.append(t, "task.state_changed")
+	gen, err := h.st.EventGeneration(t.Context())
+	if err != nil {
+		t.Fatalf("EventGeneration: %v", err)
+	}
+	c, _ := openSSEGen(t, h.ts.URL+"/v1/events", cursor.ID, gen)
+	if f := c.next(t); f.id != fmt.Sprint(next.ID) {
+		t.Fatalf("first frame = %+v, want the replayed event %d", f, next.ID)
+	}
+}
+
+// openSSEGen is openSSE resuming from cursor under generation gen; it returns
+// the generation the response named.
+func openSSEGen(t *testing.T, url string, cursor, gen int64) (*sseClient, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Last-Event-ID", fmt.Sprint(cursor))
+	req.Header.Set(eventGenerationHeader, fmt.Sprint(gen))
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		t.Fatalf("open stream: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		t.Fatalf("stream status = %d", resp.StatusCode)
+	}
+	c := &sseClient{resp: resp, frames: make(chan sseFrame, 256)}
+	t.Cleanup(c.close)
+	go c.pump()
+	return c, resp.Header.Get(eventGenerationHeader)
 }

@@ -23,6 +23,9 @@ const (
 	// maxFrameSize bounds one SSE line; payloads are ids + small JSON, but a
 	// diff-bearing future payload should not kill the stream.
 	maxFrameSize = 1 << 20
+	// eventGenerationHeader names the event history a stream serves (§13.3,
+	// issue #1001); the client echoes the one its cursor came from.
+	eventGenerationHeader = "X-Event-Generation"
 )
 
 // Event is one durable state event as framed on the wire (§13.3): the full
@@ -75,7 +78,17 @@ func (n OutputNote) Text() string {
 
 // ConnectedNote reports a (re)established stream. Cursor is the resume
 // position the connection asked for (0 = live-only).
-type ConnectedNote struct{ Cursor int64 }
+//
+// Reset reports a reconnect to a different event history than the one the
+// subscription was following — the daemon was restored onto an older
+// database (§13.3, issue #1001). The old cursor named events of the replaced
+// history, so it was dropped (Cursor is 0) and nothing between it and now was
+// replayed: a consumer must re-snapshot its state over REST rather than trust
+// the events it holds.
+type ConnectedNote struct {
+	Cursor int64
+	Reset  bool
+}
 
 // DisconnectedNote reports a dropped stream; the subscription retries by
 // itself after RetryIn.
@@ -134,9 +147,10 @@ func (c *Client) streamLoop(ctx context.Context, path string, opts StreamOptions
 		maxB = defaultMaxBackoff
 	}
 	cursor := opts.LastEventID
+	var gen int64 // the event history's generation; 0 until a daemon names one
 	backoff := initial
 	for {
-		connected, err := c.streamOnce(ctx, path, opts, &cursor, ch)
+		connected, err := c.streamOnce(ctx, path, opts, &cursor, &gen, ch)
 		if ctx.Err() != nil {
 			return
 		}
@@ -157,10 +171,16 @@ func (c *Client) streamLoop(ctx context.Context, path string, opts StreamOptions
 
 // streamOnce runs one connection: dial, announce, then decode frames until
 // the stream breaks. connected reports whether the dial reached streaming.
+//
+// gen is the event history the cursor belongs to. A daemon answering with a
+// different one has been restored since (issue #1001): the cursor is dropped
+// and the connection announced as a reset. The request carried gen too, so
+// that daemon has already ignored the stale cursor rather than replay after
+// it.
 func (c *Client) streamOnce(
-	ctx context.Context, path string, opts StreamOptions, cursor *int64, ch chan<- Note,
+	ctx context.Context, path string, opts StreamOptions, cursor, gen *int64, ch chan<- Note,
 ) (connected bool, err error) {
-	req, err := c.buildStreamRequest(ctx, path, opts, *cursor)
+	req, err := c.buildStreamRequest(ctx, path, opts, *cursor, *gen)
 	if err != nil {
 		return false, err
 	}
@@ -172,14 +192,21 @@ func (c *Client) streamOnce(
 	if resp.StatusCode != http.StatusOK {
 		return false, decodeError(resp)
 	}
-	if !send(ctx, ch, ConnectedNote{Cursor: *cursor}) {
+	reset := false
+	if served, perr := strconv.ParseInt(resp.Header.Get(eventGenerationHeader), 10, 64); perr == nil {
+		if *gen != 0 && served != *gen {
+			*cursor, reset = 0, true
+		}
+		*gen = served
+	}
+	if !send(ctx, ch, ConnectedNote{Cursor: *cursor, Reset: reset}) {
 		return true, ctx.Err()
 	}
 	return true, c.readFrames(ctx, resp.Body, cursor, ch)
 }
 
 func (c *Client) buildStreamRequest(
-	ctx context.Context, path string, opts StreamOptions, cursor int64,
+	ctx context.Context, path string, opts StreamOptions, cursor, gen int64,
 ) (*http.Request, error) {
 	q := url.Values{}
 	if len(opts.Types) > 0 {
@@ -200,6 +227,9 @@ func (c *Client) buildStreamRequest(
 	req.Header.Set("Accept", "text/event-stream")
 	if cursor > 0 {
 		req.Header.Set("Last-Event-ID", strconv.FormatInt(cursor, 10))
+		if gen != 0 {
+			req.Header.Set(eventGenerationHeader, strconv.FormatInt(gen, 10))
+		}
 	}
 	return req, nil
 }

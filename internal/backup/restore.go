@@ -32,6 +32,12 @@ var (
 	ErrUnsafeEntry = errors.New("archive entry is not safe to extract")
 )
 
+// RestoredMarker is the file Restore leaves in the data directory beside the
+// restored vincent.db (issue #1001, §13.3). Restore opens no database (§4), so
+// it cannot start a new event history itself; the daemon does, on its first
+// start, when it finds this file — then removes it.
+const RestoredMarker = "restored"
+
 // Dirs are the two directories a restore writes into (§12.2).
 type Dirs struct {
 	Data   string
@@ -202,6 +208,13 @@ func Restore(archive string, dirs Dirs, force bool) (Report, error) {
 		}
 		rep.Files++
 		rep.Bytes += n
+	}
+	if dirs.Data != "" {
+		// Written last, so it marks a restore that completed.
+		p := filepath.Join(dirs.Data, RestoredMarker)
+		if err := os.WriteFile(p, nil, entryMode); err != nil {
+			return rep, fmt.Errorf("write %s: %w", p, err)
+		}
 	}
 	return rep, nil
 }

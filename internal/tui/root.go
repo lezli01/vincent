@@ -1633,13 +1633,19 @@ func (m *root) applyDeletedSwitch(p apiclient.Project, why, notice string) tea.C
 	return cmd
 }
 
-// reloadFailedViews reloads every projectScoped view whose last load failed,
-// walked directly in view order as scopeCmds does (task 132 decision 48).
-func (m *root) reloadFailedViews() tea.Cmd {
+// reloadViews reloads every projectScoped view whose last load failed,
+// walked directly in view order as scopeCmds does (task 132 decision 48) — or
+// every one of them when all, for a reconnect onto a restored event history
+// (issue #1001).
+func (m *root) reloadViews(all bool) tea.Cmd {
 	var cmds []tea.Cmd
 	for i := range m.views {
 		if fr, ok := m.views[i].(failedReloader); ok {
-			if cmd := fr.reloadIfFailed(); cmd != nil {
+			cmd := fr.reloadIfFailed()
+			if all {
+				cmd = fr.reloadNow()
+			}
+			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -1739,7 +1745,11 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 			// Only the views whose last load failed — a switch made
 			// offline among them — refetch. The selection is kept and
 			// is checked against the relisted projects when they land.
-			reload = m.reloadFailedViews()
+			// A reset is the exception: the daemon came back on a
+			// restored event history, so every view holds state from a
+			// database that is gone and no event will correct it (§13.3,
+			// issue #1001) — all of them reload.
+			reload = m.reloadViews(n.Reset)
 		}
 		// Distinct from phaseConnected, which only means the health probe
 		// answered: this is the event stream itself being established, and

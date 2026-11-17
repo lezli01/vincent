@@ -110,6 +110,7 @@ Project-scoped workflows live in the repository instead, at
   token                                             # API bearer token, 0600
   daemon.json                                       # { port, pid, started_at }
   daemon.lock                                       # single-instance lock
+  restored                                          # left by `vincent daemon restore`; consumed at the next start
   tui.json                                          # TUI-local view state
   logs/daemon.log                                   # rotated, size-capped
   worktrees/{task_id}/                              # one git worktree per task
@@ -131,6 +132,7 @@ mode of a data directory that already exists.
 | `token` | The API bearer token, created `0600` at first start. On Windows it relies on the per-user ACL of `%LOCALAPPDATA%`. Anyone who can read it can drive your daemon |
 | `daemon.json` | How clients find the daemon: port, pid, start time. Written atomically, removed on graceful shutdown |
 | `daemon.lock` | Single-instance enforcement; releases automatically when the process dies |
+| `restored` | An empty marker `vincent daemon restore` writes beside the restored `vincent.db`. The daemon's next start begins a new [event history](api.md#state-events--durable) — so a client still holding an event cursor from the replaced database is told its cursor no longer applies — and then removes it. It exists only between a restore and the next start |
 | `tui.json` | TUI-local view state: the first-run full-auto acknowledgment, the board's collapsed groups (`board_folds_by_project`, one list per project id; an older `board_folds` list is migrated into it and removed), the last selected project (`selected_project`, `{id, name}`, written on every selection change; with several TUIs the last one to switch wins), and whether the offer to make vincent [claude's status line](cli.md#vincent-statusline) was declined. Written by the TUI, never read by the daemon; deleting it re-shows the full-auto notice, opens every group and lets the status-line offer come back |
 | `logs/daemon.log` | The daemon log, rotated and size-capped. Read by `vincent daemon logs` and the TUI's daemon view — from disk in both cases, so it still works when the daemon is what died |
 | `trigger-proposals/{task_id}/` | A trigger proposal a `create-trigger` or `update-triggers` task staged: the full proposed `{id}.yaml` files and `manifest.json`. The directory is `0700` and the files `0600`, because a trigger's argv can carry a token. [`vincent trigger apply`](cli.md#vincent-trigger-apply) removes it once every file is installed; a proposal that was rejected at its approval step stays until the task is deleted |
