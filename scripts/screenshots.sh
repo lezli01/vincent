@@ -380,7 +380,11 @@ do_seed() {
   # pseudo-version (`v0.5.1-0.2026…+dirty`), which is noise in a screenshot.
   say "build vincent + fakeagent + fakegh + fakejira"
   local vpkg="github.com/lezli01/vincent/internal/version" vtag
-  vtag="$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"
+  # Matched to release tags only, as master-build.yml does: since task 147
+  # the rolling `master-latest` prerelease tag is the nearest tag on any
+  # branch cut from master, and an unmatched describe stamps every frame
+  # `vincent master-latest` (review F1).
+  vtag="$(git -C "$ROOT" describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null || echo v0.0.0)"
   (cd "$ROOT" && go build -trimpath \
     -ldflags "-X $vpkg.version=${vtag#v} -X $vpkg.commit=$(git -C "$ROOT" rev-parse --short HEAD) -X $vpkg.date=$(date -u +%Y-%m-%d)" \
     -o "$BIN/" ./cmd/vincent ./cmd/fakeagent ./cmd/fakegh ./cmd/fakejira)
