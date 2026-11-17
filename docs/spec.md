@@ -8519,7 +8519,7 @@ container:                     # run a task's steps in a container (§16, task 0
   extra_mounts: []             # host:container[:ro]; the repo and worktree are mounted already
 tui:                           # view preference; the daemon validates and relays it (§15)
   board:
-    group_by: [workflow]       # task-table grouping, outermost first; [] = flat (project deprecated, task 132.9)
+    group_by: [issue]          # task-table grouping, outermost first: issue, workflow; [] = flat (project deprecated, task 132.9)
   hyperlinks: false            # OSC 8 links for sanitized http(s) Markdown links; opt-in (task 111)
   keys: {}                     # operation id → one key, e.g. {refresh: ctrl+e}; {} = the §15 defaults (task 118)
   output:
@@ -9417,6 +9417,19 @@ with the deprecation handled leniently, so a PATCH of any other key lands on a
 file that still carries the bootstrapped line and leaves that line as written.
 This narrows task 128 decision 2's whole-file posture for this deprecation
 only; `tui.keys` keeps it.
+*Amended 2026-11-17 (task 148, issue #982):* the accepted levels are `issue`
+and `workflow`, alone or both in either order, and the default — of
+`Config.Default` and of the bootstrapped file — is `[issue]`: the issues pillar
+(§5.6) is how work is organised, so the issue a task was started from is what
+a board is read by first. `workflow` stays a full level. This amends task 009
+decision 6's closed vocabulary; `state` stays out for that decision's own
+reason. An unknown level is refused with `want issue, workflow, or [] for a
+flat table`. The migration is literal: a file that says `[workflow]` — the
+value every version since task 132.9 bootstrapped — loads as `[workflow]`,
+with no rewrite and no warning, since a bootstrapped value cannot be told
+apart from a chosen one (the task 132 decision 51 reasoning). The `project`
+deprecation above is unchanged. How the TUI renders the level is task 148's
+second item.
 
 *Amended 2026-09-17 (task 111, issue #404):* `tui.hyperlinks`, a bool, default
 `false`, turns on OSC 8 hyperlinks for Markdown links in the output pane (§15,
@@ -13819,6 +13832,8 @@ stream for the live tail.
    headers — projects, and the workflows of a project inside it — configured by
    `tui.board.group_by` (§12.3) and cycled for the session with `g`. See
    *Grouping* below.
+   *Amended 2026-11-17 (task 148):* the configured default is `[issue]`, with
+   `workflow` the other level (§12.3).
    **Several tasks can be selected at once (task 011, added 2026-08-16):**
    `space` marks the row under the cursor, `V` marks everything the filter is
    showing, and while anything is marked the task-action keys act on the whole
@@ -16521,7 +16536,11 @@ only place a released version kept folds — is migrated by stripping the
 project segment (task 132 decision 35's original premise, now true), so an
 upgrade keeps every fold; only a per-project set written by an unreleased
 build between 132.8 and 132.9 can still hold a project-segment path, which
-names nothing and is pruned (review F3). The
+names nothing and is pruned (review F3).
+*Amended 2026-11-17 (task 148, issue #982):* `issue` joins `workflow` as a
+level and `[issue]` is the configured default (§12.3); a file that says
+`[workflow]` keeps it. A TUI that does not know the `issue` level drops it
+like any unknown level and draws the flat table. The
 `project` rows below describe the rules as they were written; with one level
 they apply to it alone. The rules the grouping does not get to bend:
 

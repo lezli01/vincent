@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -230,6 +231,37 @@ func TestApplyOverTheTemplateStillParses(t *testing.T) {
 	// the same number of lines it started with.
 	if a, b := strings.Count(string(got), "\n"), strings.Count(defaultConfigYAML, "\n"); a != b {
 		t.Errorf("the template grew from %d lines to %d; a documented key was appended instead of edited", b, a)
+	}
+}
+
+// tui.board.group_by takes the issue level (task 148) through an edit, both
+// levels round-tripping in order, and an unknown level is refused by the
+// decode that follows the edit, so a writer never puts it on disk.
+func TestApplyBoardGroupBy(t *testing.T) {
+	got, err := Apply([]byte(defaultConfigYAML), []Set{
+		{Path: "tui.board.group_by", Value: RenderList([]string{"issue", "workflow"})},
+	})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	cfg, err := Decode(got)
+	if err != nil {
+		t.Fatalf("decode: %v\n%s", err, got)
+	}
+	if want := []BoardGroup{BoardGroupIssue, BoardGroupWorkflow}; !reflect.DeepEqual(cfg.TUI.Board.GroupBy, want) {
+		t.Errorf("group_by = %v, want %v", cfg.TUI.Board.GroupBy, want)
+	}
+
+	bad, err := Apply([]byte(defaultConfigYAML), []Set{
+		{Path: "tui.board.group_by", Value: RenderList([]string{"state"})},
+	})
+	if err == nil {
+		if _, err = Decode(bad); err == nil {
+			t.Fatal("an unknown group_by level was accepted")
+		}
+	}
+	if !strings.Contains(err.Error(), "want issue, workflow, or []") {
+		t.Errorf("error = %v, want one naming the vocabulary", err)
 	}
 }
 

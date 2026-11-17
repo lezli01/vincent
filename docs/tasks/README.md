@@ -161,6 +161,7 @@ the living engineering specification records implementation contracts.
 | [145](145-issue-lane-move.md) | Moving an issue between lanes from the TUI: `m` runs the action the picked lane is derived from | ✅ done (1/1) |
 | [146](146-jira-several-projects.md) | Several Jira projects in one binding, each with its own optional JQL | ✅ done (1/1) |
 | [147](147-update-to-master.md) | `vincent update --master`: install the newest master build, which CI builds and publishes on every push to master | ✅ done (1/1) |
+| [148](148-board-group-by-issue.md) | The board grouped by vincent issue: an `issue` level for `tui.board.group_by`, `[issue]` the default | 🔄 in progress (1/3) |
 
 ## How to add and update a task document
 

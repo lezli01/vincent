@@ -354,11 +354,13 @@ update:
 # hot-reloads them and serves them on GET /v1/config; the TUI reads them from
 # there.
 #
-# group_by nests the task table under headers, outermost level first. The one
-# level is workflow; use [] for one flat list of tasks. A grouped level drops
-# its own column — the header already names it — and "g" cycles the grouping
-# for the session without touching this file. The board shows one project at
-# a time, so there is no project level.
+# group_by nests the task table under headers, outermost level first. The
+# levels are issue (the vincent issue a task was started from) and workflow;
+# list one, or both in either order ([issue, workflow] or [workflow, issue]),
+# or use [] for one flat list of tasks. A grouped level drops its own column —
+# the header already names it — and "g" cycles the grouping for the session
+# without touching this file. The board shows one project at a time, so there
+# is no project level.
 #
 # hyperlinks makes a Markdown link in the output pane clickable, as an OSC 8
 # hyperlink, when its destination is a plain http or https URL. Off by default:
@@ -386,7 +388,7 @@ update:
 # last.
 tui:
   board:
-    group_by: [workflow]
+    group_by: [issue]
   hyperlinks: false
   # keys:
   #   refresh: ctrl+e

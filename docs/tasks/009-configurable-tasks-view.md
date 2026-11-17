@@ -126,6 +126,12 @@ An unknown or repeated level fails the load and names the key; the TUI, being a 
 *ignores* one instead — a newer daemon may serve a level this build predates, and a
 board with one level of a two-level grouping is still a board.
 
+*Amended 2026-11-17 by [task 148](148-board-group-by-issue.md) decision 2:* `issue`
+joins `workflow` as a level and is the default. The argument above kept agent, model and
+priority out because none of them is how anyone reads a board; the issue *is* how the
+issues pillar (§5.6) organises work, so it does not apply. `state` stays absent for the
+reason above.
+
 ## Tasks
 
 - [x] **009.1** — `internal/config`: the `tui.board.group_by` key, its vocabulary,

@@ -141,7 +141,7 @@ agents:
 		// overrides everything else still runs every step on the host.
 		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
 		TUI: TUI{
-			Board:  BoardView{GroupBy: []BoardGroup{BoardGroupWorkflow}},
+			Board:  BoardView{GroupBy: []BoardGroup{BoardGroupIssue}},
 			Output: OutputView{Level: "normal"},
 			Tabs:   []string{"issues", "tasks"},
 		},
@@ -345,11 +345,12 @@ func TestUsageLimitAutoContinueModes(t *testing.T) {
 }
 
 // TestBoardGroupingDefault pins §15's default: the TUI shows one project at a
-// time, and within it a board is read by what each task is doing (task 132.9,
-// superseding task 009's [project, workflow]). The bootstrapped file says the
-// same, so a fresh installation's file and an absent one agree.
+// time, and within it a board is read by the issue each task belongs to (task
+// 148, superseding task 132.9's [workflow] and task 009's [project, workflow]).
+// The bootstrapped file says the same, so a fresh installation's file and an
+// absent one agree.
 func TestBoardGroupingDefault(t *testing.T) {
-	want := []BoardGroup{BoardGroupWorkflow}
+	want := []BoardGroup{BoardGroupIssue}
 	if got := Default().TUI.Board.GroupBy; !reflect.DeepEqual(got, want) {
 		t.Errorf("default group_by = %v, want %v", got, want)
 	}
@@ -416,6 +417,95 @@ func TestBoardGroupingProjectIsStrippedOnLoad(t *testing.T) {
 	cfg.TUI.Board.GroupBy = []BoardGroup{BoardGroupProject}
 	if err := cfg.Validate(); err == nil {
 		t.Error("Validate accepted the project level")
+	}
+}
+
+// TestBoardGroupingVocabulary: issue and workflow, alone or nested in either
+// order, and the empty list, are the whole vocabulary (task 148 decision 1).
+// Each loads as written, without a warning.
+func TestBoardGroupingVocabulary(t *testing.T) {
+	for _, tc := range []struct {
+		file string
+		want []BoardGroup
+	}{
+		{"[issue]", []BoardGroup{BoardGroupIssue}},
+		{"[workflow]", []BoardGroup{BoardGroupWorkflow}},
+		{"[issue, workflow]", []BoardGroup{BoardGroupIssue, BoardGroupWorkflow}},
+		{"[workflow, issue]", []BoardGroup{BoardGroupWorkflow, BoardGroupIssue}},
+		{"[]", []BoardGroup{}},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			cfg, err := Load(writeConfig(t, "tui:\n  board:\n    group_by: "+tc.file+"\n"))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if !reflect.DeepEqual(cfg.TUI.Board.GroupBy, tc.want) {
+				t.Errorf("group_by = %v, want %v", cfg.TUI.Board.GroupBy, tc.want)
+			}
+			if w := cfg.Warnings(); len(w) != 0 {
+				t.Errorf("Warnings = %q, want none", w)
+			}
+		})
+	}
+}
+
+// TestBoardGroupingRefusals: a repeated level and an unknown one are refused,
+// the unknown one naming the whole vocabulary. `state` stays out on task 009
+// decision 6's own reason (it would fight the band sort).
+func TestBoardGroupingRefusals(t *testing.T) {
+	for file, want := range map[string]string{
+		"[issue, issue]":  `"issue" listed twice`,
+		"[state]":         `unknown level "state"; want issue, workflow, or [] for a flat table`,
+		"[issue, agent]":  `unknown level "agent"; want issue, workflow, or [] for a flat table`,
+		"[workflow, foo]": `unknown level "foo"`,
+	} {
+		t.Run(file, func(t *testing.T) {
+			_, err := Load(writeConfig(t, "tui:\n  board:\n    group_by: "+file+"\n"))
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("Load error = %v, want one saying %q", err, want)
+			}
+		})
+	}
+}
+
+// TestBoardGroupingLiteralMigration is task 148 decisions 4 and 5: a file an
+// earlier version bootstrapped says `[workflow]`, and it loads as exactly
+// that — no rewrite to the new default and no notice — while a freshly
+// bootstrapped one says `[issue]`.
+func TestBoardGroupingLiteralMigration(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := EnsureDefaultFile(dir); err != nil {
+		t.Fatalf("EnsureDefaultFile: %v", err)
+	}
+	path := filepath.Join(dir, "config.yaml")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load the bootstrapped file: %v", err)
+	}
+	if want := []BoardGroup{BoardGroupIssue}; !reflect.DeepEqual(cfg.TUI.Board.GroupBy, want) {
+		t.Errorf("bootstrapped group_by = %v, want %v", cfg.TUI.Board.GroupBy, want)
+	}
+
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := strings.Replace(string(src), "    group_by: [issue]\n", "    group_by: [workflow]\n", 1)
+	if old == string(src) {
+		t.Fatal("the template has no group_by: [issue] line")
+	}
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load the earlier bootstrap: %v", err)
+	}
+	if want := []BoardGroup{BoardGroupWorkflow}; !reflect.DeepEqual(cfg.TUI.Board.GroupBy, want) {
+		t.Errorf("an earlier bootstrap's group_by = %v, want %v as written", cfg.TUI.Board.GroupBy, want)
+	}
+	if w, kw := cfg.Warnings(), cfg.KeyWarnings(); len(w) != 0 || len(kw) != 0 {
+		t.Errorf("an earlier bootstrap warns: %q %q", w, kw)
 	}
 }
 

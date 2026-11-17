@@ -917,27 +917,37 @@ func (c Config) KeyWarnings() []string {
 type BoardView struct {
 	// GroupBy nests the rows under group headers, outermost level first.
 	//
-	// The default groups by workflow: the TUI shows one project at a time
-	// (task 132), and within that project the workflow is what says what a
-	// task is *doing* — the same reason it is a column the width budget sheds
-	// last (boardcols.go). An empty list — `group_by: []` — is the flat
-	// table. Task 009's `[project, workflow]` default, and its "read project
-	// by project" rationale, are superseded by task 132 decision 6: on a
-	// board scoped to one project the project level has one value, draws no
-	// header (task 129 decision 4), and so does nothing. A loaded file that
-	// still lists it has it stripped with a warning (stripDeprecatedGroups);
-	// a write that sets it is refused.
+	// The default groups by issue (task 148): the issues pillar (§5.6) is how
+	// work is organised, so the issue a task was started from is the first
+	// thing that says what it belongs to. Workflow stays a full level — what
+	// a task is *doing*, the same reason it is a column the width budget sheds
+	// last (boardcols.go) — and the two nest in either order. An empty list —
+	// `group_by: []` — is the flat table. An existing file is read literally:
+	// a `[workflow]` an earlier version bootstrapped stays `[workflow]` (task
+	// 148 decision 4), with no notice (decision 5).
+	//
+	// Task 009's `[project, workflow]` default, and its "read project by
+	// project" rationale, are superseded by task 132 decision 6: on a board
+	// scoped to one project the project level has one value, draws no header
+	// (task 129 decision 4), and so does nothing. A loaded file that still
+	// lists it has it stripped with a warning (stripDeprecatedGroups); a write
+	// that sets it is refused.
 	GroupBy []BoardGroup `yaml:"group_by"`
 }
 
 // BoardGroup is one grouping level of the task table.
 type BoardGroup string
 
-// The grouping vocabulary. Deliberately not `state`: the board's band sort
-// already orders by state and pins the tasks waiting on a human above
-// everything (§15), so a state grouping would fight the one ordering rule
-// the board is not allowed to lose.
+// The grouping vocabulary: issue and workflow. Task 148 amends task 009
+// decision 6, which kept agent, model and priority out because none of them
+// is how anyone reads a board; the issue is how the issues pillar (§5.6)
+// organises work, so that argument does not reach it. Still deliberately not
+// `state`, for decision 6's own reason: the board's band sort already orders
+// by state and pins the tasks waiting on a human above everything (§15), so
+// a state grouping would fight the one ordering rule the board is not
+// allowed to lose.
 const (
+	BoardGroupIssue    BoardGroup = "issue"
 	BoardGroupWorkflow BoardGroup = "workflow"
 	// BoardGroupProject is deprecated (task 132.9): no longer a level, only
 	// recognized so a load can strip it with a warning rather than refuse a
@@ -997,9 +1007,9 @@ func (b BoardView) validate() error {
 		seen[g] = true
 	}
 	for _, g := range b.GroupBy {
-		if g != BoardGroupWorkflow {
+		if g != BoardGroupIssue && g != BoardGroupWorkflow {
 			return fmt.Errorf(
-				"tui.board.group_by: unknown level %q; want workflow, or [] for a flat table", g)
+				"tui.board.group_by: unknown level %q; want issue, workflow, or [] for a flat table", g)
 		}
 	}
 	return nil
@@ -1200,7 +1210,7 @@ func Default() Config {
 		Container: Container{Runtime: "docker", MountAgentConfig: true, Network: true},
 		TUI: TUI{
 			Board: BoardView{
-				GroupBy: []BoardGroup{BoardGroupWorkflow},
+				GroupBy: []BoardGroup{BoardGroupIssue},
 			},
 			// normal is the level every version before task 129.11 opened
 			// at, so an absent key changes nothing.

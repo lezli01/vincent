@@ -368,11 +368,13 @@ container:
 # hot-reloads them and serves them on GET /v1/config; the TUI reads them from
 # there.
 #
-# group_by nests the task table under headers, outermost level first. The one
-# level is workflow; use [] for one flat list of tasks. A grouped level drops
-# its own column — the header already names it — and "g" cycles the grouping
-# for the session without touching this file. The board shows one project at
-# a time, so there is no project level.
+# group_by nests the task table under headers, outermost level first. The
+# levels are issue (the vincent issue a task was started from) and workflow;
+# list one, or both in either order ([issue, workflow] or [workflow, issue]),
+# or use [] for one flat list of tasks. A grouped level drops its own column —
+# the header already names it — and "g" cycles the grouping for the session
+# without touching this file. The board shows one project at a time, so there
+# is no project level.
 #
 # hyperlinks makes a Markdown link in the output pane clickable, as an OSC 8
 # hyperlink, when its destination is a plain http or https URL. Off by default:
@@ -400,7 +402,7 @@ container:
 # last.
 tui:
   board:
-    group_by: [workflow]
+    group_by: [issue]
   hyperlinks: false
   # keys:
   #   refresh: ctrl+e
@@ -1741,7 +1743,7 @@ before you do.
 ```yaml
 tui:
   board:
-    group_by: [workflow]
+    group_by: [issue]
   hyperlinks: false
   keys: {}
   output:
@@ -1763,11 +1765,24 @@ How the task table is grouped, outermost level first.
 
 | Value | Board |
 |---|---|
-| `[workflow]` (default) | One group per workflow in the selected project |
+| `[issue]` (default) | One group per vincent issue in the selected project, by the issue each task was started from |
+| `[workflow]` | One group per workflow in the selected project |
+| `[issue, workflow]` | Issues, and the workflows within each issue |
+| `[workflow, issue]` | Workflows, and the issues within each workflow |
 | `[]` | One flat list |
 
-The one accepted level is `workflow`. An unknown level, a repeated one, or
-anything that is not a list fails the load and names the key.
+The accepted levels are `issue` and `workflow`, alone or both in either order.
+An unknown level, a repeated one, or anything that is not a list fails the load
+and names the key, and an unknown level's message lists the vocabulary:
+`want issue, workflow, or [] for a flat table`.
+
+**The default is `[issue]`** since this version; it was `[workflow]` before.
+Only a fresh `config.yaml` — and a file that leaves the key out — gets the new
+default. A file that already says `group_by: [workflow]`, including the one an
+earlier version bootstrapped, is read as written: it keeps grouping by
+workflow, nothing rewrites it and nothing warns about it, because a
+bootstrapped value cannot be told apart from a chosen one. Change it to
+`[issue]` (or delete the line) to take the new default.
 
 **`project` is deprecated.** The TUI shows one project at a time, so a
 `project` level had one value, drew no header and did nothing. Files written
