@@ -254,11 +254,12 @@ task cuts a fresh one. A merge-back created before that checks the old
 branch out again and merges into it, or blocks `merge_target_missing` if it
 was deleted.
 
-**Closing an issue archives its tasks.** When an issue closes — from vincent,
-by a delivery, or on its tracker and synced in — the daemon archives the
-issue's finished tasks once nothing on the issue is still working: side tasks
-and merge-backs first, the main tasks last, so no merge-back loses the branch
-it lands on. If a side task or merge-back cannot be archived, the main tasks
+## Closing an issue archives its tasks
+
+When an issue closes — from vincent, by a delivery, or on its tracker and
+synced in — the daemon archives the issue's finished tasks once nothing on
+the issue is still working: side tasks and merge-backs first, the main tasks
+last, so no merge-back loses the branch it lands on. If a side task or merge-back cannot be archived, the main tasks
 wait with it. It waits for every task of the issue to finish and for any chat
 on the issue to close, and while a [handoff](handoff.md) still holds
 the issue. Only tasks that existed when the issue closed are archived. It never
@@ -271,7 +272,47 @@ for a later event on the issue. Chats are never archived, and a closed chat on t
 name the issue's worktree directory afterwards; nothing reclaims it yet.
 [`vincent doctor`](../reference/cli.md#vincent-doctor)'s Issue archive group
 lists every such task with the reasons holding it, and any such directory.
-Reopen the issue before it happens and nothing is archived. Turn this off with
+Reopen the issue before it happens and nothing is archived.
+
+### What auto-archive never touches
+
+The auto-archive acts only on tasks started from an issue, and only once that
+issue is closed. These are left on the board by design:
+
+- **A task with no issue.** Only tasks started from an issue are archived when
+  it closes. That includes a task started on its own, a task that files issues
+  or starts tasks on them but has no issue itself, and a
+  [handoff](handoff.md)'s own task. Archive it yourself.
+- **A task whose issue is still open.** A task can be `done` long before its
+  issue closes — for example while a handoff delivers its work. It stays on
+  the board until the issue closes, or until you archive it.
+- **Every task of an issue that still has unfinished work.** One task of the
+  issue left `blocked`, `paused`, or waiting at a gate or for an answer — even
+  an attempt you abandoned — holds all of them, as an open chat on the issue
+  does. Cancel or finish it, and the archive follows on its own.
+- **A task started after the issue closed.** Someone chose to work there, so it
+  is left alone. Archive it yourself.
+- **Tasks of an issue closed before you upgraded, or while
+  `archive_tasks_on_issue_close` was off.** There is no catch-up. Such an issue
+  is archived only if something later happens on it — a task of it finishing,
+  or one archived by hand, for example. Otherwise archive its tasks yourself.
+- **A task with uncommitted changes.** It is never forced, and committing or
+  discarding the changes records no event, so nothing retries it. Clean the
+  worktree, then archive it yourself (`vincent task archive <id>`, or
+  `--force` to discard the changes). Archiving a held side task or merge-back
+  by hand also releases the main tasks waiting on it.
+
+### Finding out why a task is held
+
+With `archive_tasks_on_issue_close` on, [`vincent doctor`](../reference/cli.md#vincent-doctor)
+prints an **Issue archive** group whenever something is held. Each `held` row
+names one task and every reason holding it; the reasons are listed under
+[`vincent doctor`](../reference/cli.md#vincent-doctor), and what to do about
+each is in [A closed issue's tasks are still on the board](troubleshooting.md#a-closed-issues-tasks-are-still-on-the-board).
+The group only reports: it never archives anything. A finished task that is
+*not* listed is one of the cases above — out of scope, not a stuck archive.
+
+Turn this off with
 [`archive_tasks_on_issue_close: false`](../reference/configuration.md#archive_tasks_on_issue_close).
 
 ## From the API, MCP, triggers, a chat and the TUI
