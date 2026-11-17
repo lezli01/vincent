@@ -83,6 +83,10 @@ type eventPublisher struct {
 	// It is never held while the hook runs, so an append from inside the
 	// hook cannot deadlock on it.
 	seq sync.Mutex
+	// drained, when set, runs after a drain has released the queue. It is a
+	// test seam only: a write made from it lands exactly where review F1's
+	// lost wakeup did.
+	drained func()
 }
 
 // notify publishes evs, and the events chained behind each, to the event hook
@@ -132,11 +136,17 @@ func (s *Store) drain() {
 		return
 	}
 	p.draining = true
+	finished := false
 	defer func() {
-		// A panicking hook must not leave every later event undelivered.
-		p.mu.Lock()
-		p.draining = false
-		p.mu.Unlock()
+		// Only a panicking hook gets here with draining still set. Clearing
+		// it keeps the publisher alive: the events still queued behind the
+		// one that panicked are delivered by the next write's drain, not
+		// re-delivered from this unwinding goroutine.
+		if !finished {
+			p.mu.Lock()
+			p.draining = false
+			p.mu.Unlock()
+		}
 	}()
 	for len(p.pending) > 0 {
 		e := p.pending[0]
@@ -148,7 +158,16 @@ func (s *Store) drain() {
 		}
 		p.mu.Lock()
 	}
+	// Cleared in the same critical section that saw the queue empty (review
+	// F1). Releasing the lock first left a window in which another writer
+	// could enqueue, find draining still set and return, and nobody would
+	// deliver its event until some unrelated later write.
+	p.draining = false
+	finished = true
 	p.mu.Unlock()
+	if p.drained != nil {
+		p.drained()
+	}
 }
 
 // AppendEvent inserts e and assigns its ID (the SSE Last-Event-ID cursor).

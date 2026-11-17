@@ -1,6 +1,7 @@
 package store
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -78,5 +79,37 @@ func TestEventHookPublishesInIDOrderAcrossFanOut(t *testing.T) {
 	}
 	if len(stored) != len(seen) {
 		t.Errorf("hook saw %d events, %d were committed", len(seen), len(stored))
+	}
+}
+
+// TestEventEnqueuedAsADrainEndsIsDelivered is review F1: a drain that left
+// its loop, released the queue and only then cleared `draining` let a write
+// landing in that gap find a drain apparently in progress and return, so its
+// event sat in the queue until some unrelated later write. On a quiet daemon
+// that can be a task's last state change.
+//
+// The write is made from the drained seam, which runs exactly in that gap,
+// so the test is deterministic rather than a race it might lose.
+func TestEventEnqueuedAsADrainEndsIsDelivered(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+
+	var seen []string
+	s.SetEventHook(func(e *Event) { seen = append(seen, e.Type) })
+	once := false
+	s.pub.drained = func() {
+		if once {
+			return
+		}
+		once = true
+		if err := s.AppendEvent(ctx, &Event{Type: "test.second"}); err != nil {
+			t.Errorf("AppendEvent: %v", err)
+		}
+	}
+	if err := s.AppendEvent(ctx, &Event{Type: "test.first"}); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	if want := []string{"test.first", "test.second"}; !slices.Equal(seen, want) {
+		t.Fatalf("hook saw %v once both writes returned, want %v: an event was left in the queue", seen, want)
 	}
 }
