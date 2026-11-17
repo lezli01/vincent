@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,6 +24,30 @@ func jiraReq(site, key, jql, mapping string) projectSourceRequest {
 	return projectSourceRequest{Provider: "jira", Jira: j}
 }
 
+// jiraList is a binding on https://x.example naming keys in its projects list, edit applied to
+// its Jira half when non-nil.
+func jiraList(keys ...string) func(edit func(*projectSourceJira)) projectSourceRequest {
+	return func(edit func(*projectSourceJira)) projectSourceRequest {
+		j := &projectSourceJira{Site: "https://x.example"}
+		for _, k := range keys {
+			j.Projects = append(j.Projects, projectSourceJiraProject{Key: k})
+		}
+		if edit != nil {
+			edit(j)
+		}
+		return projectSourceRequest{Provider: "jira", Jira: j}
+	}
+}
+
+// manyKeys is n distinct project keys.
+func manyKeys(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = fmt.Sprintf("K%d", i)
+	}
+	return out
+}
+
 // TestValidateIssueSource is task 142.6 decision 2, table-driven.
 func TestValidateIssueSource(t *testing.T) {
 	ok := []struct {
@@ -35,40 +60,60 @@ func TestValidateIssueSource(t *testing.T) {
 		{"github", projectSourceRequest{Provider: "github"}, store.IssueSource{Provider: "github"}},
 		{
 			"https", jiraReq("https://Example.Atlassian.NET", "ENG", "", ""),
-			store.IssueSource{Provider: "jira", JiraSite: "https://example.atlassian.net", JiraProjectKey: "ENG"},
+			store.IssueSource{Provider: "jira", JiraSite: "https://example.atlassian.net", JiraProjects: []store.JiraProject{{Key: "ENG"}}},
 		},
 		{
 			"trailing slash", jiraReq("https://example.atlassian.net/", "ENG_2", "", ""),
-			store.IssueSource{Provider: "jira", JiraSite: "https://example.atlassian.net", JiraProjectKey: "ENG_2"},
+			store.IssueSource{Provider: "jira", JiraSite: "https://example.atlassian.net", JiraProjects: []store.JiraProject{{Key: "ENG_2"}}},
 		},
 		{
 			"http 127.0.0.1", jiraReq("http://127.0.0.1:8080", "A", "", ""),
-			store.IssueSource{Provider: "jira", JiraSite: "http://127.0.0.1:8080", JiraProjectKey: "A"},
+			store.IssueSource{Provider: "jira", JiraSite: "http://127.0.0.1:8080", JiraProjects: []store.JiraProject{{Key: "A"}}},
 		},
 		{
 			"http localhost", jiraReq("http://localhost:9", "A", "", ""),
-			store.IssueSource{Provider: "jira", JiraSite: "http://localhost:9", JiraProjectKey: "A"},
+			store.IssueSource{Provider: "jira", JiraSite: "http://localhost:9", JiraProjects: []store.JiraProject{{Key: "A"}}},
 		},
 		{
 			"http [::1]", jiraReq("http://[::1]:9", "A", "", ""),
-			store.IssueSource{Provider: "jira", JiraSite: "http://[::1]:9", JiraProjectKey: "A"},
+			store.IssueSource{Provider: "jira", JiraSite: "http://[::1]:9", JiraProjects: []store.JiraProject{{Key: "A"}}},
 		},
 		{
 			"jql and mapping", jiraReq("https://x.example", "A", "  labels = backend  ",
 				`{ "overrides": {"reopen": "Back to do"}, "duplicate_resolutions": ["Dup"] }`),
 			store.IssueSource{
-				Provider: "jira", JiraSite: "https://x.example", JiraProjectKey: "A", JiraJQL: "labels = backend",
+				Provider: "jira", JiraSite: "https://x.example", JiraProjects: []store.JiraProject{{Key: "A", JQL: "labels = backend"}},
 				JiraMappingJSON: `{"overrides":{"reopen":"Back to do"},"duplicate_resolutions":["Dup"]}`,
 			},
 		},
 	}
+	ok = append(ok, []struct {
+		name string
+		req  projectSourceRequest
+		want store.IssueSource
+	}{
+		{
+			"several projects", jiraList(" ENG ", "OPS")(func(j *projectSourceJira) { j.Projects[1].JQL = " type = Bug " }),
+			store.IssueSource{Provider: "jira", JiraSite: "https://x.example", JiraProjects: []store.JiraProject{{Key: "ENG"}, {Key: "OPS", JQL: "type = Bug"}}},
+		},
+		{
+			"as many as allowed", jiraList(manyKeys(maxJiraProjects)...)(nil),
+			store.IssueSource{Provider: "jira", JiraSite: "https://x.example", JiraProjects: func() []store.JiraProject {
+				var ps []store.JiraProject
+				for _, k := range manyKeys(maxJiraProjects) {
+					ps = append(ps, store.JiraProject{Key: k})
+				}
+				return ps
+			}()},
+		},
+	}...)
 	for _, c := range ok {
 		t.Run(c.name, func(t *testing.T) {
 			got, msg := validateIssueSource(c.req)
 			if msg != "" {
 				t.Fatalf("refused: %s", msg)
 			}
-			if got != c.want {
+			if !got.Equal(c.want) {
 				t.Errorf("got %+v, want %+v", got, c.want)
 			}
 		})
@@ -85,7 +130,17 @@ func TestValidateIssueSource(t *testing.T) {
 			projectSourceRequest{Provider: "github", Jira: &projectSourceJira{Site: "https://x"}},
 		},
 		{"no site", "issue_source.jira.site is required", jiraReq("", "ENG", "", "")},
-		{"no key", "issue_source.jira.project_key is required", jiraReq("https://x.example", "", "", "")},
+		{"no key", "issue_source.jira.projects is required", jiraReq("https://x.example", "", "", "")},
+		{"jql without key", "issue_source.jira.project_key is required", jiraReq("https://x.example", "", "labels = a", "")},
+		{"both spellings", "not both", jiraList("A", "B")(func(j *projectSourceJira) { j.ProjectKey = "C" })},
+		{"duplicate key", "projects[2].key \"A\" is already projects[0]", jiraList("A", "B", "A")(nil)},
+		{"bad listed key", "issue_source.jira.projects[1].key \"b\" is not a Jira project key", jiraList("A", "b")(nil)},
+		{"empty listed key", "issue_source.jira.projects[0].key is required", jiraList("")(nil)},
+		{
+			"bad listed jql", "issue_source.jira.projects[1].jql must not contain ORDER BY",
+			jiraList("A", "B")(func(j *projectSourceJira) { j.Projects[1].JQL = "x ORDER BY id" }),
+		},
+		{"too many", "at most 50", jiraList(manyKeys(maxJiraProjects + 1)...)(nil)},
 		{"http non-loopback", "https://", jiraReq("http://example.atlassian.net", "A", "", "")},
 		{"userinfo", "user or password", jiraReq("https://me:tok@example.atlassian.net", "A", "", "")},
 		{"path", "no path", jiraReq("https://example.atlassian.net/jira", "A", "", "")},
@@ -171,10 +226,13 @@ func TestProjectIssueSourceOverAPI(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("bind jira: %d %s", resp.StatusCode, out)
 	}
+	// The single-project spelling is read back as the list (task 146).
 	src = decodeProject(t, out)["issue_source"].(map[string]any)
 	jira, _ := src["jira"].(map[string]any)
+	projects, _ := jira["projects"].([]any)
 	if src["provider"] != "jira" || src["effective"] != "jira" || jira == nil ||
-		jira["site"] != "https://acme.atlassian.net" || jira["project_key"] != "ENG" || jira["jql"] != "labels = x" {
+		jira["site"] != "https://acme.atlassian.net" || len(projects) != 1 ||
+		fmt.Sprint(projects[0]) != "map[jql:labels = x key:ENG]" || jira["project_key"] != nil {
 		t.Fatalf("bound issue_source = %v", src)
 	}
 	if m, _ := jira["mapping"].(map[string]any); m == nil {
@@ -212,7 +270,7 @@ func TestProjectIssueSourceOverAPI(t *testing.T) {
 		t.Errorf("after null issue_source = %v, want derive", src)
 	}
 	stored, err := h.store.GetProject(t.Context(), id)
-	if err != nil || stored.IssueSource != (store.IssueSource{}) {
+	if err != nil || !stored.IssueSource.Equal(store.IssueSource{}) {
 		t.Errorf("stored binding = %+v, %v; want cleared", stored.IssueSource, err)
 	}
 }
@@ -280,6 +338,45 @@ func TestProjectRebindOverAPI(t *testing.T) {
 	}
 	if _, err := h.store.GetIssueSyncState(ctx, id); err != nil {
 		t.Errorf("a JQL-only edit rebound the project: %v", err)
+	}
+
+	// Several projects (task 146 decision 4): adding one rebinds — it needs
+	// an import of its own — but keeps the issues of the one still named;
+	// reordering them or editing one's JQL does not.
+	eng, _, err := h.store.UpsertRemoteIssue(ctx, store.RemoteIssue{
+		ProjectID: id, Provider: "jira", RemoteKey: "100", Repo: "ENG", Number: 1, Title: "e", State: "open",
+	}, "sync")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := func(projects ...map[string]any) map[string]any {
+		return map[string]any{"issue_source": map[string]any{"provider": "jira", "jira": map[string]any{
+			"site": "https://acme.atlassian.net", "projects": projects,
+		}}}
+	}
+	engP, opsP := map[string]any{"key": "ENG"}, map[string]any{"key": "OPS", "jql": "type = Bug"}
+	if resp, out = h.doJSON(t, http.MethodPatch, path, list(engP, opsP)); resp.StatusCode != http.StatusOK {
+		t.Fatalf("add a project: %d %s", resp.StatusCode, out)
+	}
+	if _, err := h.store.GetIssueSyncState(ctx, id); err == nil {
+		t.Error("adding a project kept the sync row")
+	}
+	if got, err := h.store.GetIssue(ctx, eng.ID); err != nil || got.Remote == nil || got.Remote.Status != store.RemoteStatusLive {
+		t.Errorf("a still-bound project's issue after the rebind = %+v, %v; want live", got, err)
+	}
+	put()
+	opsP["jql"] = "type = Task"
+	if resp, out = h.doJSON(t, http.MethodPatch, path, list(opsP, engP)); resp.StatusCode != http.StatusOK {
+		t.Fatalf("reorder: %d %s", resp.StatusCode, out)
+	}
+	if _, err := h.store.GetIssueSyncState(ctx, id); err != nil {
+		t.Errorf("reordering the projects rebound the project: %v", err)
+	}
+	if resp, out = h.doJSON(t, http.MethodPatch, path, list(opsP)); resp.StatusCode != http.StatusOK {
+		t.Fatalf("drop a project: %d %s", resp.StatusCode, out)
+	}
+	if got, err := h.store.GetIssue(ctx, eng.ID); err != nil || got.Remote == nil || got.Remote.Status != store.RemoteStatusMissing {
+		t.Errorf("a dropped project's issue = %+v, %v; want missing", got, err)
 	}
 }
 

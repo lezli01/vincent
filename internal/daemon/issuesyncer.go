@@ -396,7 +396,7 @@ func (s *IssueSyncer) beginPass(ctx context.Context, project store.Project, prov
 		done()
 		return nil, nil, nil, nil, false
 	}
-	if cur.Path != project.Path || cur.IssueSource != project.IssueSource {
+	if cur.Path != project.Path || !cur.IssueSource.Equal(project.IssueSource) {
 		done()
 		return nil, nil, nil, nil, false
 	}

@@ -18,15 +18,22 @@ type JiraStatus struct {
 	// sentence to show. Neither carries Jira's error text or the credential.
 	Reason  string `json:"reason"`
 	Message string `json:"message,omitempty"`
-	// Site and ProjectKey are the project's Jira binding; ProjectID is
-	// Jira's id for the key, once the project check answered.
-	Site       string `json:"site,omitempty"`
-	ProjectKey string `json:"project_key,omitempty"`
-	ProjectID  string `json:"project_id,omitempty"`
+	// Site and Projects are the project's Jira binding (task 146), the
+	// projects in the binding's order, each with Jira's id for its key once
+	// its check answered. The first project whose check failed is named in
+	// Message.
+	Site     string              `json:"site,omitempty"`
+	Projects []JiraStatusProject `json:"projects,omitempty"`
 	// Server is set once the site answered, Account once the credential was
 	// accepted.
 	Server  *JiraServer  `json:"server,omitempty"`
 	Account *JiraAccount `json:"account,omitempty"`
+}
+
+// JiraStatusProject is one bound project as the probe reports it.
+type JiraStatusProject struct {
+	Key       string `json:"key"`
+	ProjectID string `json:"project_id,omitempty"`
 }
 
 // JiraServer is the probe's serverInfo summary.

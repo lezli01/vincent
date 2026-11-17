@@ -6,13 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/lezli01/vincent/internal/issuestate"
 )
 
 const projectColumns = `id, name, path, default_branch, default_workflow, max_parallel_tasks, branch_template,
-	issue_provider, jira_site, jira_project_key, jira_jql, jira_mapping_json, created_at, updated_at`
+	issue_provider, jira_site, jira_projects, jira_mapping_json, created_at, updated_at`
 
 // CreateProject inserts p and assigns its ID and timestamps, writing the
 // durable project.created event in the same transaction (spec §13.3). A
@@ -27,11 +29,11 @@ func (s *Store) CreateProject(ctx context.Context, p *Project) error {
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO projects (name, path, default_branch, default_workflow, max_parallel_tasks, branch_template,
-				issue_provider, jira_site, jira_project_key, jira_jql, jira_mapping_json, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				issue_provider, jira_site, jira_projects, jira_mapping_json, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			p.Name, p.Path, p.DefaultBranch, nullString(p.DefaultWorkflow), p.MaxParallelTasks,
 			nullString(p.BranchTemplate), p.IssueSource.Provider, p.IssueSource.JiraSite,
-			p.IssueSource.JiraProjectKey, p.IssueSource.JiraJQL, p.IssueSource.JiraMappingJSON,
+			encodeJiraProjects(p.IssueSource.JiraProjects), p.IssueSource.JiraMappingJSON,
 			formatTime(p.CreatedAt), formatTime(p.UpdatedAt))
 		if err != nil {
 			return fmt.Errorf("insert project: %w", err)
@@ -109,8 +111,14 @@ func (s *Store) UpdateProject(ctx context.Context, p *Project) error {
 // (task 142.6 decision 4). OldProvider is the project's effective provider
 // before the update; "" or none abandons no remote, but the sync row is
 // still dropped.
+//
+// KeepRepos are the repos (Jira project keys) of OldProvider's remotes the
+// rebind keeps live: a Jira binding that adds or drops a project on the same
+// site abandons only the dropped projects' issues (task 146 decision 4).
+// They are compared case-insensitively; nil keeps none.
 type Rebind struct {
 	OldProvider string
+	KeepRepos   []string
 }
 
 // UpdateProjectRebind is UpdateProject that, when rebind is non-nil, also
@@ -141,11 +149,11 @@ func (s *Store) UpdateProjectRebind(ctx context.Context, p *Project, rebind *Reb
 		res, err := tx.ExecContext(ctx, `
 			UPDATE projects SET name = ?, path = ?, default_branch = ?, default_workflow = ?,
 				max_parallel_tasks = ?, branch_template = ?, issue_provider = ?, jira_site = ?,
-				jira_project_key = ?, jira_jql = ?, jira_mapping_json = ?, updated_at = ?
+				jira_projects = ?, jira_mapping_json = ?, updated_at = ?
 			WHERE id = ?`,
 			p.Name, p.Path, p.DefaultBranch, nullString(p.DefaultWorkflow), p.MaxParallelTasks,
 			nullString(p.BranchTemplate), p.IssueSource.Provider, p.IssueSource.JiraSite,
-			p.IssueSource.JiraProjectKey, p.IssueSource.JiraJQL, p.IssueSource.JiraMappingJSON,
+			encodeJiraProjects(p.IssueSource.JiraProjects), p.IssueSource.JiraMappingJSON,
 			formatTime(p.UpdatedAt), p.ID)
 		if err != nil {
 			return fmt.Errorf("update project %d: %w", p.ID, err)
@@ -159,7 +167,7 @@ func (s *Store) UpdateProjectRebind(ctx context.Context, p *Project, rebind *Reb
 		}
 		evs = append(evs, ev)
 		if rebind != nil {
-			touched, err := rebindIssueSourceTx(ctx, tx, p.ID, rebind.OldProvider)
+			touched, err := rebindIssueSourceTx(ctx, tx, p.ID, *rebind)
 			if err != nil {
 				return err
 			}
@@ -182,10 +190,11 @@ func (s *Store) UpdateProjectRebind(ctx context.Context, p *Project, rebind *Reb
 }
 
 // liveRemotesTx lists the project's live remotes of provider whose issue
-// still exists: their row ids and issue ids, in row order.
-func liveRemotesTx(ctx context.Context, tx *sql.Tx, projectID int64, provider string) (remoteIDs, issueIDs []int64, err error) {
+// still exists, but for those whose repo is in keep (case-insensitive):
+// their row ids and issue ids, in row order.
+func liveRemotesTx(ctx context.Context, tx *sql.Tx, projectID int64, provider string, keep []string) (remoteIDs, issueIDs []int64, err error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, issue_id FROM issue_remotes
+		SELECT id, issue_id, repo FROM issue_remotes
 		WHERE project_id = ? AND provider = ? AND issue_id IS NOT NULL AND remote_status = ?
 		ORDER BY id`, projectID, provider, RemoteStatusLive)
 	if err != nil {
@@ -193,9 +202,15 @@ func liveRemotesTx(ctx context.Context, tx *sql.Tx, projectID int64, provider st
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var rid, iid int64
-		if err := rows.Scan(&rid, &iid); err != nil {
+		var (
+			rid, iid int64
+			repo     string
+		)
+		if err := rows.Scan(&rid, &iid, &repo); err != nil {
 			return nil, nil, fmt.Errorf("scan remote to rebind: %w", err)
+		}
+		if slices.ContainsFunc(keep, func(k string) bool { return strings.EqualFold(k, repo) }) {
+			continue
 		}
 		remoteIDs, issueIDs = append(remoteIDs, rid), append(issueIDs, iid)
 	}
@@ -206,12 +221,12 @@ func liveRemotesTx(ctx context.Context, tx *sql.Tx, projectID int64, provider st
 }
 
 // rebindIssueSourceTx is the store half of a rebind: it marks the abandoned
-// provider's live remotes missing and drops the sync row, returning one
-// issue.updated event per issue it touched.
-func rebindIssueSourceTx(ctx context.Context, tx *sql.Tx, projectID int64, oldProvider string) ([]*Event, error) {
+// provider's live remotes missing — all but rebind.KeepRepos' — and drops
+// the sync row, returning one issue.updated event per issue it touched.
+func rebindIssueSourceTx(ctx context.Context, tx *sql.Tx, projectID int64, rebind Rebind) ([]*Event, error) {
 	var evs []*Event
-	if oldProvider != "" && oldProvider != IssueProviderNone {
-		remoteIDs, issueIDs, err := liveRemotesTx(ctx, tx, projectID, oldProvider)
+	if oldProvider := rebind.OldProvider; oldProvider != "" && oldProvider != IssueProviderNone {
+		remoteIDs, issueIDs, err := liveRemotesTx(ctx, tx, projectID, oldProvider, rebind.KeepRepos)
 		if err != nil {
 			return nil, err
 		}
@@ -314,20 +329,25 @@ func scanProject(r rowScanner) (*Project, error) {
 		branchTemplate   sql.NullString
 		maxPar           sql.NullInt64
 		created, updated string
+		jiraProjects     string
 		src              = &p.IssueSource
 	)
 	if err := r.Scan(&p.ID, &p.Name, &p.Path, &p.DefaultBranch, &workflow, &maxPar,
-		&branchTemplate, &src.Provider, &src.JiraSite, &src.JiraProjectKey, &src.JiraJQL,
+		&branchTemplate, &src.Provider, &src.JiraSite, &jiraProjects,
 		&src.JiraMappingJSON, &created, &updated); err != nil {
 		return nil, err
 	}
+	projects, err := decodeJiraProjects(jiraProjects)
+	if err != nil {
+		return nil, fmt.Errorf("project %d: %w", p.ID, err)
+	}
+	src.JiraProjects = projects
 	p.DefaultWorkflow = workflow.String
 	p.BranchTemplate = branchTemplate.String
 	if maxPar.Valid {
 		v := int(maxPar.Int64)
 		p.MaxParallelTasks = &v
 	}
-	var err error
 	if p.CreatedAt, err = parseTime(created); err != nil {
 		return nil, err
 	}
@@ -347,4 +367,30 @@ func oneRowAffected(res sql.Result, what string) error {
 		return fmt.Errorf("%s: %w", what, ErrNotFound)
 	}
 	return nil
+}
+
+// encodeJiraProjects is the jira_projects column's spelling of ps: a JSON
+// array, ” for none.
+func encodeJiraProjects(ps []JiraProject) string {
+	if len(ps) == 0 {
+		return ""
+	}
+	// JiraProject holds two strings: it cannot fail to encode.
+	b, err := json.Marshal(ps)
+	if err != nil {
+		panic("store: encoding jira projects: " + err.Error())
+	}
+	return string(b)
+}
+
+// decodeJiraProjects reads the jira_projects column; ” is none.
+func decodeJiraProjects(raw string) ([]JiraProject, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var ps []JiraProject
+	if err := json.Unmarshal([]byte(raw), &ps); err != nil {
+		return nil, fmt.Errorf("decode jira_projects: %w", err)
+	}
+	return ps, nil
 }

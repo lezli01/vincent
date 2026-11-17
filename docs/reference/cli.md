@@ -503,7 +503,7 @@ Task (Windows).
 vincent project add <path> [--name NAME] [--default-branch BRANCH]
                            [--workflow NAME] [--max-parallel N]
                            [--issue-source derive|none|github|jira]
-                           [--jira-site URL] [--jira-project KEY]
+                           [--jira-site URL] [--jira-project KEY[:JQL]]...
                            [--jira-jql JQL] [--jira-mapping FILE|-] [--json]
 ```
 
@@ -530,7 +530,7 @@ vincent project ls [--stats] [--json]
 Lists registered projects with their ids, paths and defaults. The `SOURCE`
 column is the effective issue source: `github (from origin)` or
 `none (from origin)` for a derived one, `none`, `github`, or `jira` with the
-bound site and project key.
+bound site and project keys.
 
 `--stats` adds four count columns: `ACTIVE` (unfinished tasks), `ATTN` (tasks
 waiting on you), `ISSUES` (open issues) and `CHATS` (live chats). Both task
@@ -545,7 +545,7 @@ than missing.
 vincent project edit <id> [--name NAME] [--path PATH] [--default-branch BRANCH]
                           [--workflow NAME] [--max-parallel N] [--branch-template TMPL]
                           [--issue-source derive|none|github|jira]
-                          [--jira-site URL] [--jira-project KEY]
+                          [--jira-site URL] [--jira-project KEY[:JQL]]...
                           [--jira-jql JQL] [--jira-mapping FILE|-] [--json]
 ```
 
@@ -561,8 +561,9 @@ are sent; every other field keeps its value.
 | `--max-parallel` | This project's concurrency cap, a whole number of at least `1` | Clears it: only the global cap applies |
 | `--branch-template` | This project's [`branch_template`](configuration.md#branch_template) | Clears it: the project uses the global one again |
 | `--issue-source` | Where the project's issues come from; see [issue-source flags](#issue-source-flags) | `derive` |
-| `--jira-site`, `--jira-project` | The bound Jira site and project key, with `--issue-source jira` or on a project already bound to jira | Refused by the daemon |
-| `--jira-jql` | The optional JQL narrowing clause | Removes it |
+| `--jira-site` | The bound Jira site, with `--issue-source jira` or on a project already bound to jira | Refused by the daemon |
+| `--jira-project` | The bound Jira projects, `KEY` or `KEY:JQL`, repeated for each; any `--jira-project` replaces the whole list | Refused by the daemon |
+| `--jira-jql` | The optional JQL narrowing clause of a binding's only project; refused when it binds several | Removes it |
 | `--jira-mapping` | The mapping override, read from a JSON file or `-` for stdin | Removes it |
 
 A value of only whitespace counts as empty. `--max-parallel` refuses anything
@@ -582,9 +583,13 @@ file in the repository.
   origin is not on github.com is allowed; sync then reports `not_github`.
 - `jira` needs `--jira-site`, an absolute `https://` base URL (`http://` only
   on `localhost` or a loopback address) with no user, path, query or
-  fragment, and `--jira-project`, a Jira project key such as `ENG`.
-  `--jira-jql` optionally narrows the project's issues with one line of JQL
-  that has no `ORDER BY`. `--jira-mapping` overrides the status mapping with a
+  fragment, and at least one `--jira-project`. Each names one Jira project
+  on that site: its key, such as `ENG`, and optionally a colon and one line
+  of JQL with no `ORDER BY` that narrows that project's issues only, as in
+  `--jira-project 'OPS:type = Bug'`. A key holds no colon, so the first one
+  ends it. Repeat the flag to sync several projects, up to 50.
+  `--jira-jql` narrows a binding's only project, and is refused when the
+  binding has several. `--jira-mapping` overrides the status mapping with a
   JSON object of `overrides` (`close_completed`, `close_not_planned`,
   `close_duplicate`, `reopen`), `duplicate_resolutions` and
   `not_planned_resolutions`.
@@ -595,10 +600,12 @@ from the environment variables
 `JIRA_USER` and `JIRA_API_TOKEN` by default. On `edit`, a Jira flag
 you leave out keeps its current value.
 
-Changing the effective provider, the Jira site or the Jira project is a
-rebind. The previous source's imported issues are kept, are marked
-`missing`, and are no longer written back. Its sync record is reset. Changing
-only `--jira-jql` or `--jira-mapping` is not a rebind. A project bound to
+Changing the effective provider, the Jira site or the set of Jira projects is
+a rebind. The previous source's imported issues are kept, are marked
+`missing`, and are no longer written back — except the issues of the Jira
+projects the binding still names on the same site, which stay live. Its sync
+record is reset, so a project you add is imported from scratch. Changing only
+a project's JQL, the projects' order or `--jira-mapping` is not a rebind. A project bound to
 `none` reports the sync reason `source_not_github`. One bound to `jira` is
 synced on [`jira.poll_interval`](configuration.md#jira), and reports
 `no_credential` until both credential variables are set; `vincent jira status`
@@ -607,6 +614,7 @@ checks the binding.
 ```sh
 vincent project edit 1 --issue-source jira --jira-site https://acme.atlassian.net --jira-project ENG
 vincent project edit 1 --jira-jql 'labels = backend'
+vincent project edit 1 --jira-project ENG --jira-project 'OPS:type = Bug'
 vincent project edit 1 --issue-source derive
 ```
 

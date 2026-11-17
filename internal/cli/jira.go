@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -59,7 +60,7 @@ func jiraStatusRows(status apiclient.JiraStatus) [][]string {
 	rows := [][]string{
 		{"enabled", boolWord(status.Enabled)},
 		{"site", dash(status.Site)},
-		{"project", dash(status.ProjectKey)},
+		{"projects", dash(jiraProjectKeys(status.Projects))},
 	}
 	if status.Server != nil {
 		rows = append(rows, []string{"server", dash(jiraServerLine(*status.Server))})
@@ -67,13 +68,33 @@ func jiraStatusRows(status apiclient.JiraStatus) [][]string {
 	if status.Account != nil {
 		rows = append(rows, []string{"account", dash(status.Account.DisplayName)})
 	}
-	if status.ProjectID != "" {
-		rows = append(rows, []string{"project id", status.ProjectID})
+	if ids := jiraProjectIDs(status.Projects); ids != "" {
+		rows = append(rows, []string{"project ids", ids})
 	}
 	if status.Available {
 		return append(rows, []string{"issue import/sync", "available"})
 	}
 	return append(rows, []string{"issue import/sync", "unavailable: " + status.Unavailable()})
+}
+
+// jiraProjectKeys is the bound keys, comma-separated.
+func jiraProjectKeys(ps []apiclient.JiraStatusProject) string {
+	keys := make([]string, len(ps))
+	for i, p := range ps {
+		keys[i] = p.Key
+	}
+	return strings.Join(keys, ", ")
+}
+
+// jiraProjectIDs is "KEY id" for each project whose check answered.
+func jiraProjectIDs(ps []apiclient.JiraStatusProject) string {
+	var out []string
+	for _, p := range ps {
+		if p.ProjectID != "" {
+			out = append(out, p.Key+" "+p.ProjectID)
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 func jiraServerLine(s apiclient.JiraServer) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -48,11 +49,17 @@ func NewJira(newClient func(site string) *jira.Client) *Jira {
 
 // jiraRef is the handle a Jira binding carries.
 type jiraRef struct {
-	client  *jira.Client
-	key     string // the bound project key
-	jql     string // the binding's extra JQL, "" for none
+	client *jira.Client
+	// scopes are the bound projects, in the binding's order (task 146).
+	scopes  []jiraScope
 	mapping jiramap.Config
-	// projectID is the stable project id ResolveBinding read; "" before.
+}
+
+// jiraScope is one bound project: its key, its extra JQL ("" for none), and
+// the stable project id ResolveBinding read ("" before).
+type jiraScope struct {
+	key       string
+	jql       string
 	projectID string
 }
 
@@ -60,41 +67,75 @@ type jiraRef struct {
 func (*Jira) Provider() string { return issueprovider.Jira }
 
 // Bind reads project's Jira binding; it makes no call. The binding's key is
-// the project key, which is also what every imported row stores in repo
-// (task 142 decision 9.4's dated note), so a rebind to another key is a new
-// binding. A mapping that does not parse falls back to the defaults: the API
-// refuses one at write time, so this is only a defence.
+// its project keys joined by commas — one key alone is just that key, which
+// is also what every imported row stores in repo (task 142 decision 9.4's
+// dated note). A mapping that does not parse falls back to the defaults:
+// the API refuses one at write time, so this is only a defence.
 func (j *Jira) Bind(_ context.Context, project store.Project) (Binding, bool) {
 	src := project.IssueSource
-	if src.Provider != store.IssueProviderJira || strings.TrimSpace(src.JiraSite) == "" ||
-		strings.TrimSpace(src.JiraProjectKey) == "" || j.newClient == nil {
+	if src.Provider != store.IssueProviderJira || strings.TrimSpace(src.JiraSite) == "" || j.newClient == nil {
+		return Binding{}, false
+	}
+	ref := &jiraRef{client: j.newClient(src.JiraSite)}
+	for _, p := range src.JiraProjects {
+		if key := strings.TrimSpace(p.Key); key != "" {
+			ref.scopes = append(ref.scopes, jiraScope{key: key, jql: strings.TrimSpace(p.JQL)})
+		}
+	}
+	if len(ref.scopes) == 0 {
 		return Binding{}, false
 	}
 	mapping, err := jiramap.ParseConfig([]byte(src.JiraMappingJSON))
 	if err != nil {
 		mapping = jiramap.Config{}
 	}
-	ref := &jiraRef{
-		client: j.newClient(src.JiraSite), key: src.JiraProjectKey,
-		jql: strings.TrimSpace(src.JiraJQL), mapping: mapping,
-	}
-	return NewBinding(src.JiraProjectKey, ref), true
+	ref.mapping = mapping
+	return NewBinding(ref.keyString(), ref), true
 }
 
-// ResolveBinding reads b's project (GET project/{key}) for its stable id,
-// which every later query names instead of the key.
+// keyString is the binding's sticky key: its project keys, comma-joined.
+func (ref *jiraRef) keyString() string {
+	keys := make([]string, len(ref.scopes))
+	for i, sc := range ref.scopes {
+		keys[i] = sc.key
+	}
+	return strings.Join(keys, ",")
+}
+
+// ResolveBinding reads each of b's projects (GET project/{key}) for its
+// stable id, which every later query names instead of the key. The id it
+// answers is the one project's id for a single-project binding — what the
+// sync row recorded before a binding could name more — and otherwise
+// "KEY:id" for each project, sorted by key, so the sticky comparison (task
+// 142 decision 13.6) notices any one key being reassigned.
 func (*Jira) ResolveBinding(ctx context.Context, b Binding) (Binding, string, error) {
 	ref := jiraRefOf(b)
 	if ref == nil {
 		return b, "", &jira.Error{Op: "resolve binding", Reason: jira.ReasonBadRequest, Err: errors.New("not a jira binding")}
 	}
-	p, err := ref.client.Project(ctx, ref.key)
-	if err != nil {
-		return b, "", err
-	}
 	next := *ref
-	next.projectID = p.ID
-	return NewBinding(b.String(), &next), p.ID, nil
+	next.scopes = slices.Clone(ref.scopes)
+	for i := range next.scopes {
+		p, err := ref.client.Project(ctx, next.scopes[i].key)
+		if err != nil {
+			return b, "", err
+		}
+		next.scopes[i].projectID = p.ID
+	}
+	return NewBinding(b.String(), &next), next.stickyID(), nil
+}
+
+// stickyID is ResolveBinding's recorded id.
+func (ref *jiraRef) stickyID() string {
+	if len(ref.scopes) == 1 {
+		return ref.scopes[0].projectID
+	}
+	pairs := make([]string, len(ref.scopes))
+	for i, sc := range ref.scopes {
+		pairs[i] = sc.key + ":" + sc.projectID
+	}
+	slices.Sort(pairs)
+	return strings.Join(pairs, ",")
 }
 
 // Locate is the binding a Jira row names: its project key. It carries no
@@ -126,13 +167,13 @@ func (*Jira) ListIssues(ctx context.Context, b Binding, opts ListOptions) (Page,
 	var jql string
 	since := opts.Since
 	if opts.OpenOnly {
-		jql = jira.InitialJQL(ref.projectRef(), ref.jql, opts.After)
+		jql = jira.InitialJQLFor(ref.queryScopes(), opts.After)
 	} else {
 		var after string
 		if bound, id, ok := parseWindowCursor(opts.After); ok {
 			since, after = bound, id
 		}
-		jql = jira.IncrementalJQL(ref.projectRef(), ref.jql, since, after)
+		jql = jira.IncrementalJQLFor(ref.queryScopes(), since, after)
 	}
 	res, err := ref.client.Search(ctx, jql, pageCap)
 	if err != nil {
@@ -233,17 +274,17 @@ func (*Jira) GetIssues(ctx context.Context, b Binding, rems []store.IssueRemote)
 		if err != nil {
 			return nil, err
 		}
-		var here []string
+		here := map[int][]string{}
 		for i := range got {
 			is := &got[i]
 			if is.ID == "" {
 				continue
 			}
 			bi := BulkIssue{Issue: ref.issueOf(is)}
-			if ref.moved(is) {
+			if at := ref.scopeOf(is); at < 0 {
 				bi.MovedTo = bi.Issue.Remote.URL
 			} else {
-				here = append(here, is.ID)
+				here[at] = append(here[at], is.ID)
 			}
 			out[is.ID] = bi
 		}
@@ -254,24 +295,30 @@ func (*Jira) GetIssues(ctx context.Context, b Binding, rems []store.IssueRemote)
 	return out, nil
 }
 
-// dropExcluded removes from out the ids the binding's extra JQL no longer
-// matches. Without extra JQL every id still in the project matches.
-func (ref *jiraRef) dropExcluded(ctx context.Context, ids []string, out map[string]BulkIssue) error {
-	if ref.jql == "" || len(ids) == 0 {
-		return nil
-	}
-	jql := "project = " + ref.projectRef() + " AND (" + ref.jql + ") AND id in (" + strings.Join(ids, ", ") + ") ORDER BY id ASC"
-	res, err := ref.client.Search(ctx, jql, (len(ids)+jira.BulkFetchMax-1)/jira.BulkFetchMax+1)
-	if err != nil {
-		return err
-	}
-	match := make(map[string]bool, len(res.Issues))
-	for i := range res.Issues {
-		match[res.Issues[i].ID] = true
-	}
-	for _, id := range ids {
-		if !match[id] {
-			delete(out, id)
+// dropExcluded removes from out the ids their project's extra JQL no longer
+// matches; here is the ids still in a bound project, by its scope index.
+// Without extra JQL every id still in its project matches, and each project
+// that has one is asked on its own, so one project's JQL never judges
+// another's issues.
+func (ref *jiraRef) dropExcluded(ctx context.Context, here map[int][]string, out map[string]BulkIssue) error {
+	for at, sc := range ref.scopes {
+		ids := here[at]
+		if sc.jql == "" || len(ids) == 0 {
+			continue
+		}
+		jql := "project = " + sc.ref() + " AND (" + sc.jql + ") AND id in (" + strings.Join(ids, ", ") + ") ORDER BY id ASC"
+		res, err := ref.client.Search(ctx, jql, (len(ids)+jira.BulkFetchMax-1)/jira.BulkFetchMax+1)
+		if err != nil {
+			return err
+		}
+		match := make(map[string]bool, len(res.Issues))
+		for i := range res.Issues {
+			match[res.Issues[i].ID] = true
+		}
+		for _, id := range ids {
+			if !match[id] {
+				delete(out, id)
+			}
 		}
 	}
 	return nil
@@ -356,14 +403,18 @@ func (*Jira) CreateComment(ctx context.Context, b Binding, rem store.IssueRemote
 
 // LocateIn is the binding a Jira row is written through: its project's, for
 // the site and the credentials live there, never on the row. ok is false
-// when the project is no longer bound to Jira, or is bound to a different
-// project key than the one the row was imported from.
+// when the project is no longer bound to Jira, or no longer binds the Jira
+// project key the row was imported from.
 func (j *Jira) LocateIn(ctx context.Context, project store.Project, rem store.IssueRemote) (Binding, bool) {
 	if rem.RemoteKey == "" {
 		return Binding{}, false
 	}
 	b, ok := j.Bind(ctx, project)
-	if !ok || !strings.EqualFold(b.String(), rem.Repo) {
+	if !ok {
+		return Binding{}, false
+	}
+	ref := jiraRefOf(b)
+	if ref == nil || !slices.ContainsFunc(ref.scopes, func(sc jiraScope) bool { return strings.EqualFold(sc.key, rem.Repo) }) {
 		return Binding{}, false
 	}
 	return b, true
@@ -413,23 +464,45 @@ func jiraRefOf(b Binding) *jiraRef {
 	return ref
 }
 
-// projectRef is what a query names the project by: its stable id once
-// resolved, the quoted key before.
-func (ref *jiraRef) projectRef() string {
-	if ref.projectID != "" {
-		return ref.projectID
+// ref is what a query names the project by: its stable id once resolved,
+// the quoted key before.
+func (sc jiraScope) ref() string {
+	if sc.projectID != "" {
+		return sc.projectID
 	}
-	return strconv.Quote(ref.key)
+	return strconv.Quote(sc.key)
 }
 
-// moved is whether is has left the bound project.
-func (ref *jiraRef) moved(is *jira.Issue) bool {
-	if ref.projectID != "" && is.Fields.Project.ID != "" {
-		return is.Fields.Project.ID != ref.projectID
+// queryScopes is every bound project as the JQL builders take it.
+func (ref *jiraRef) queryScopes() []jira.Scope {
+	out := make([]jira.Scope, len(ref.scopes))
+	for i, sc := range ref.scopes {
+		out[i] = jira.Scope{Project: sc.ref(), JQL: sc.jql}
 	}
-	p, _ := splitJiraKey(is.Key)
-	return p != "" && !strings.EqualFold(p, ref.key)
+	return out
 }
+
+// scopeOf is the index of the bound project is is in, -1 when it is in
+// none of them: it has left the binding. An issue moved from one bound
+// project to another has not left it; the importer rewrites its key.
+func (ref *jiraRef) scopeOf(is *jira.Issue) int {
+	key, _ := splitJiraKey(is.Key)
+	for i, sc := range ref.scopes {
+		if sc.projectID != "" && is.Fields.Project.ID != "" {
+			if is.Fields.Project.ID == sc.projectID {
+				return i
+			}
+			continue
+		}
+		if key == "" || strings.EqualFold(key, sc.key) {
+			return i
+		}
+	}
+	return -1
+}
+
+// moved is whether is has left every bound project.
+func (ref *jiraRef) moved(is *jira.Issue) bool { return ref.scopeOf(is) < 0 }
 
 func (ref *jiraRef) base() *url.URL {
 	u, err := url.Parse(ref.client.Site())

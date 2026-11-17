@@ -26,27 +26,46 @@ vincent project edit 1 --issue-source jira \
   --jira-site https://acme.atlassian.net --jira-project ENG
 ```
 
+A binding can name any number of projects on its site, each with its own
+optional JQL. Repeat `--jira-project`, giving a project's JQL after a colon:
+
+```sh
+vincent project edit 1 --issue-source jira \
+  --jira-site https://acme.atlassian.net \
+  --jira-project ENG --jira-project 'OPS:type = Bug'
+```
+
 The same binding is the `issue_source` object of
 [`POST` and `PATCH /v1/projects`](../reference/api.md#issue-source), and the
-**jira site**, **jira project** and **jira jql** rows of the TUI's project form.
+**jira site** row and the **jira project** and **jql** rows of the TUI's
+project form, one pair per project. **+ add a jira project** adds a pair, and
+clearing a project's key and JQL removes it.
 
 - **The site** is an absolute `https://` base URL with no path, user, query or
   fragment. `http://` is accepted only on `localhost`, a 127.0.0.0/8 address or
   `[::1]`.
-- **The project** is a Jira project key, such as `ENG`.
-- **The JQL** is optional: one line, no `ORDER BY`. It narrows the project's
-  issues and never replaces the project, so `--jira-jql 'labels = backend'`
-  imports only the bound project's issues labelled `backend`.
+- **The projects** are one or more Jira project keys on the site, such as
+  `ENG`, up to 50. The site, the credential and the mapping are shared by
+  all of them.
+- **Each project's JQL** is optional: one line, no `ORDER BY`. It narrows
+  that project's issues only and never replaces the project, so
+  `--jira-project 'ENG:labels = backend'` imports only `ENG`'s issues
+  labelled `backend`, and leaves another bound project's issues alone. On a
+  binding with one project, `--jira-jql` sets that project's JQL.
 
 The binding lives in the daemon's database, never in a file in the
 repository — see the [security model](../security-model.md#credentials) for
 why.
 
-Changing the provider, the site or the project key is a **rebind**. The
-previous source's imported issues are kept, marked `missing`, and no longer
-written back, and the project's sync starts over. Changing only the JQL or the
-mapping is not a rebind. Binding back re-imports the kept issues and marks
-them live again.
+Changing the provider, the site or the set of project keys is a **rebind**.
+The previous source's imported issues are kept, marked `missing`, and no
+longer written back, and the project's sync starts over. When only the keys
+change, the issues of the projects still bound stay live: adding a project
+imports it from scratch, and removing one marks only its issues `missing`.
+Changing only a JQL, the projects' order or the mapping is not a rebind.
+Binding back re-imports the kept issues and marks them live again. An issue
+moved in Jira from one bound project to another stays live under its new
+key.
 
 ## Credentials
 

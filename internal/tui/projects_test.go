@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -733,28 +734,91 @@ func TestProjectFormIssueSource(t *testing.T) {
 		t.Error("the Jira rows are hidden beside jira")
 	}
 	f.jiraSite.SetValue(" https://acme.atlassian.net ")
-	f.jiraKey.SetValue("ENG")
+	f.jira[0].key.SetValue("ENG")
 	req := f.patchRequest()
 	src, ok := req.IssueSource.Value()
-	if !ok || src.Provider != "jira" || src.Jira == nil || src.Jira.Site != "https://acme.atlassian.net" || src.Jira.ProjectKey != "ENG" {
+	if !ok || src.Provider != "jira" || src.Jira == nil || src.Jira.Site != "https://acme.atlassian.net" ||
+		!slices.Equal(src.Jira.Projects, []apiclient.JiraProject{{Key: "ENG"}}) {
 		t.Fatalf("patch = %s, want the jira binding", encode(t, req))
 	}
 
 	bound := testProject(2, "ops")
 	bound.IssueSource = apiclient.ProjectIssueSource{Provider: "jira", Effective: "jira", Jira: &apiclient.ProjectIssueSourceJira{
-		Site: "https://acme.atlassian.net", ProjectKey: "OPS", Mapping: json.RawMessage(`{"overrides":{"reopen":"x"}}`),
+		Site: "https://acme.atlassian.net", Projects: []apiclient.JiraProject{{Key: "OPS"}}, Mapping: json.RawMessage(`{"overrides":{"reopen":"x"}}`),
 	}}
 	g := newProjectForm(nil, &bound)
 	if req := g.patchRequest(); !req.IssueSource.IsZero() {
 		t.Errorf("untouched jira binding patches %s", encode(t, req))
 	}
-	g.jiraJQL.SetValue("labels = a")
+	g.jira[0].jql.SetValue("labels = a")
 	src, ok = g.patchRequest().IssueSource.Value()
-	if !ok || src.Jira == nil || src.Jira.JQL != "labels = a" || string(src.Jira.Mapping) != `{"overrides":{"reopen":"x"}}` {
+	if !ok || src.Jira == nil || !slices.Equal(src.Jira.Projects, []apiclient.JiraProject{{Key: "OPS", JQL: "labels = a"}}) ||
+		string(src.Jira.Mapping) != `{"overrides":{"reopen":"x"}}` {
 		t.Errorf("jql edit = %+v, want the jql with the mapping kept", src.Jira)
 	}
 	g.applyFailure(errors.New("issue_source.jira.site must be the site's base URL, with no path"))
 	if g.cursor != pfJiraSite {
 		t.Errorf("a site refusal parked on row %v, want the jira site row", g.cursor)
+	}
+}
+
+// TestProjectFormJiraProjects is task 146 in the form: a key and JQL row per
+// project, an add row that opens a new one, clearing a pair removes it, and
+// a refusal of one project lands on its own row.
+func TestProjectFormJiraProjects(t *testing.T) {
+	bound := testProject(3, "multi")
+	bound.IssueSource = apiclient.ProjectIssueSource{Provider: "jira", Effective: "jira", Jira: &apiclient.ProjectIssueSourceJira{
+		Site: "https://acme.atlassian.net", Projects: []apiclient.JiraProject{{Key: "ENG"}, {Key: "OPS", JQL: "type = Bug"}},
+	}}
+	f := newProjectForm(nil, &bound)
+	text := ansi.Strip(f.render(120))
+	for _, want := range []string{"jira project 1", "ENG", "jira project 2", "OPS", "type = Bug", "+ add a jira project"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("form lacks %q:\n%s", want, text)
+		}
+	}
+	if req := f.patchRequest(); !req.IssueSource.IsZero() {
+		t.Errorf("untouched binding patches %s", encode(t, req))
+	}
+
+	// Walk down to the add row and open a third project.
+	for f.cursor != pfJiraAdd {
+		f.updateKey(keyPress("down"))
+	}
+	f.updateKey(keyPress("enter"))
+	if !f.editing || f.cursor != pfJiraKey || f.jiraAt != 2 {
+		t.Fatalf("add opened row %v pair %d editing %v, want the third key", f.cursor, f.jiraAt, f.editing)
+	}
+	for _, r := range "WEB" {
+		f.updateKey(keyPress(string(r)))
+	}
+	f.updateKey(keyPress("enter"))
+	src, _ := f.patchRequest().IssueSource.Value()
+	want := []apiclient.JiraProject{{Key: "ENG"}, {Key: "OPS", JQL: "type = Bug"}, {Key: "WEB"}}
+	if src.Jira == nil || !slices.Equal(src.Jira.Projects, want) {
+		t.Fatalf("projects = %+v, want %+v", src.Jira, want)
+	}
+
+	// Clearing the first project's key removes it.
+	f.cursor, f.jiraAt = pfJiraKey, 0
+	f.updateKey(keyPress("enter"))
+	f.updateKey(keyPress("ctrl+u"))
+	f.updateKey(keyPress("enter"))
+	if len(f.jira) != 2 || f.jira[0].key.Value() != "OPS" {
+		t.Fatalf("pairs after clearing ENG = %d, first %q", len(f.jira), f.jira[0].key.Value())
+	}
+
+	// The daemon counts the projects sent; an empty pair is not sent.
+	f.jira = append(f.jira[:1], newJiraPair("", ""), f.jira[1])
+	f.applyFailure(errors.New(`issue_source.jira.projects[1].jql must not contain ORDER BY`))
+	if f.cursor != pfJiraJQL || f.jiraAt != 2 || f.jira[2].jqlErr == "" {
+		t.Errorf("refusal parked on row %v pair %d, want WEB's jql", f.cursor, f.jiraAt)
+	}
+	if !strings.Contains(ansi.Strip(f.render(120)), "⚠ issue_source.jira.projects[1].jql") {
+		t.Error("the refusal is not shown under its row")
+	}
+	f.applyFailure(errors.New("issue_source.jira.projects is required with provider jira: at least one project"))
+	if f.cursor != pfJiraKey || f.jiraAt != 0 {
+		t.Errorf("a list refusal parked on row %v pair %d, want the first key", f.cursor, f.jiraAt)
 	}
 }

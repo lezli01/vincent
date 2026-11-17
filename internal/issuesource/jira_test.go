@@ -240,7 +240,7 @@ func (s *jiraSite) source(creds func() (string, string, error)) *Jira {
 
 func (s *jiraSite) project(jql string) store.Project {
 	return store.Project{ID: 1, IssueSource: store.IssueSource{
-		Provider: store.IssueProviderJira, JiraSite: s.ts.URL, JiraProjectKey: "VCA", JiraJQL: jql,
+		Provider: store.IssueProviderJira, JiraSite: s.ts.URL, JiraProjects: []store.JiraProject{{Key: "VCA", JQL: jql}},
 	}}
 }
 
@@ -264,7 +264,7 @@ func TestJiraBindNeedsAJiraBinding(t *testing.T) {
 		{},
 		{IssueSource: store.IssueSource{Provider: store.IssueProviderGitHub}},
 		{IssueSource: store.IssueSource{Provider: store.IssueProviderJira, JiraSite: "acme.atlassian.net"}},
-		{IssueSource: store.IssueSource{Provider: store.IssueProviderJira, JiraProjectKey: "EX"}},
+		{IssueSource: store.IssueSource{Provider: store.IssueProviderJira, JiraProjects: []store.JiraProject{{Key: "EX"}}}},
 	} {
 		if _, ok := src.Bind(context.Background(), p); ok {
 			t.Errorf("Bind(%+v) = ok", p.IssueSource)

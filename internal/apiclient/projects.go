@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -67,15 +68,33 @@ type ProjectIssueSource struct {
 // override object, nil for the defaults. No field holds a credential: it
 // comes from the variables jira.user_env and jira.token_env name (default
 // JIRA_USER and JIRA_API_TOKEN) in the daemon's environment.
+//
+// Projects are the Jira projects on Site the binding syncs (task 146), at
+// least one, each with its own optional JQL.
 type ProjectIssueSourceJira struct {
-	Site       string          `json:"site"`
-	ProjectKey string          `json:"project_key"`
-	JQL        string          `json:"jql"`
-	Mapping    json.RawMessage `json:"mapping"`
+	Site     string          `json:"site"`
+	Projects []JiraProject   `json:"projects"`
+	Mapping  json.RawMessage `json:"mapping"`
+}
+
+// JiraProject is one Jira project of a binding: its key, and the JQL that
+// narrows its issues ("" for all of them).
+type JiraProject struct {
+	Key string `json:"key"`
+	JQL string `json:"jql"`
+}
+
+// Keys is the bound project keys, in the binding's order.
+func (j ProjectIssueSourceJira) Keys() []string {
+	out := make([]string, len(j.Projects))
+	for i, p := range j.Projects {
+		out[i] = p.Key
+	}
+	return out
 }
 
 // Label renders the binding for a person: the effective provider, marked
-// "(from origin)" when derived, and the Jira site and key when bound there.
+// "(from origin)" when derived, and the Jira site and keys when bound there.
 func (s ProjectIssueSource) Label() string {
 	eff := s.Effective
 	if eff == "" {
@@ -85,7 +104,7 @@ func (s ProjectIssueSource) Label() string {
 	case s.Provider == IssueProviderDerive || s.Provider == "":
 		return eff + " (from origin)"
 	case s.Provider == IssueProviderJira && s.Jira != nil:
-		return "jira " + s.Jira.Site + " " + s.Jira.ProjectKey
+		return "jira " + s.Jira.Site + " " + strings.Join(s.Jira.Keys(), ", ")
 	default:
 		return s.Provider
 	}

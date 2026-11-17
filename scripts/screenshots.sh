@@ -1486,7 +1486,7 @@ EOF
   local p_mob
   p_mob="$(api POST /projects "$(jq -cn --arg p "$REPOS/mobile-app" --arg s "$JBASE" \
     '{path: $p, name: "mobile-app", default_workflow: "feature-pr", max_parallel_tasks: 2,
-      issue_source: {provider: "jira", jira: {site: $s, project_key: "MOB"}}}')" | jq -r .id)"
+      issue_source: {provider: "jira", jira: {site: $s, projects: [{key: "MOB"}]}}}')" | jq -r .id)"
   api POST "/projects/$p_mob/issues/sync" >/dev/null
   local mob7="" mob_comments=""
   for (( i = 0; i < 120; i++ )); do

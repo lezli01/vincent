@@ -363,13 +363,14 @@ func (s *Server) handleProjectPatch(w http.ResponseWriter, r *http.Request) {
 		}
 		p.IssueSource = src
 	}
-	// A rebind — the effective provider, the Jira site or the Jira project
-	// changed, including by repointing path at a repository with another
-	// origin — abandons the old provider's remotes in the update's own
-	// transaction (task 142.6 decision 4).
+	// A rebind — the effective provider, the Jira site or the set of Jira
+	// projects changed, including by repointing path at a repository with
+	// another origin — abandons the old provider's remotes in the update's
+	// own transaction (task 142.6 decision 4), but for those of the Jira
+	// projects the binding still names (task 146 decision 4).
 	var rebind *store.Rebind
 	if newEff := s.effectiveIssueProvider(ctx, p); issueSourceRebound(oldEff, newEff, oldSource, p.IssueSource) {
-		rebind = &store.Rebind{OldProvider: oldEff}
+		rebind = rebindFor(oldEff, newEff, oldSource, p.IssueSource)
 	}
 	if err := s.deps.Store.UpdateProjectRebind(ctx, p, rebind); err != nil {
 		s.internalError(w, "update project", err)

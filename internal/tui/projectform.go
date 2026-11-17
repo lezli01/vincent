@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"os"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -22,8 +24,11 @@ const (
 	pfCap
 	pfSource
 	pfJiraSite
+	// pfJiraKey and pfJiraJQL repeat once per Jira project of the binding
+	// (task 146); projectForm.jiraAt says which one the cursor is on.
 	pfJiraKey
 	pfJiraJQL
+	pfJiraAdd
 	pfSave
 	pfRowCount
 )
@@ -47,7 +52,9 @@ func (r pfRow) label() string {
 	case pfJiraKey:
 		return "jira project"
 	case pfJiraJQL:
-		return "jira jql"
+		return "  jql"
+	case pfJiraAdd:
+		return ""
 	case pfSave:
 		return "save"
 	case pfRowCount:
@@ -77,8 +84,11 @@ type projectForm struct {
 	branch   textField
 	cap      textField
 	jiraSite textField
-	jiraKey  textField
-	jiraJQL  textField
+	// jira is the binding's Jira projects, one key and JQL row pair each
+	// (task 146), never empty: a binding being written starts with one.
+	// jiraAt is the pair the cursor is on when it is on a key or JQL row.
+	jira   []jiraPair
+	jiraAt int
 	// source is the issue-source provider on its wire spelling (task 142.6):
 	// derive, none, github or jira. The Jira rows show only beside jira.
 	source   string
@@ -98,6 +108,28 @@ type projectForm struct {
 	saving bool
 }
 
+// jiraPair is one Jira project's rows: its key and its optional JQL, and
+// the daemon's complaint about either.
+type jiraPair struct {
+	key, jql       textField
+	keyErr, jqlErr string
+}
+
+func newJiraPair(key, jql string) jiraPair {
+	pr := jiraPair{key: newTextField(), jql: newTextField()}
+	pr.key.SetPlaceholder("ENG")
+	pr.jql.SetPlaceholder("(the whole project)")
+	pr.key.SetValue(key)
+	pr.jql.SetValue(jql)
+	return pr
+}
+
+// empty is a pair with nothing typed: it is not sent, and is dropped when
+// an edit leaves it so beside another.
+func (pr *jiraPair) empty() bool {
+	return strings.TrimSpace(pr.key.Value()) == "" && strings.TrimSpace(pr.jql.Value()) == ""
+}
+
 func newProjectForm(client *apiclient.Client, p *apiclient.Project) *projectForm {
 	f := &projectForm{
 		client:   client,
@@ -107,14 +139,10 @@ func newProjectForm(client *apiclient.Client, p *apiclient.Project) *projectForm
 		branch:   newTextField(),
 		cap:      newTextField(),
 		jiraSite: newTextField(),
-		jiraKey:  newTextField(),
-		jiraJQL:  newTextField(),
 		source:   apiclient.IssueProviderDerive,
 		rowErr:   map[pfRow]string{},
 	}
 	f.jiraSite.SetPlaceholder("https://example.atlassian.net")
-	f.jiraKey.SetPlaceholder("ENG")
-	f.jiraJQL.SetPlaceholder("(the whole project)")
 	f.path.SetPlaceholder("path to a git repository")
 	f.name.SetPlaceholder("(the directory name)")
 	f.branch.SetPlaceholder("(detected from the repository)")
@@ -134,11 +162,16 @@ func newProjectForm(client *apiclient.Client, p *apiclient.Project) *projectForm
 		}
 		if j := p.IssueSource.Jira; j != nil {
 			f.jiraSite.SetValue(j.Site)
-			f.jiraKey.SetValue(j.ProjectKey)
-			f.jiraJQL.SetValue(j.JQL)
+			for _, jp := range j.Projects {
+				f.jira = append(f.jira, newJiraPair(jp.Key, jp.JQL))
+			}
 		}
 		f.cursor = pfName
-	} else {
+	}
+	if len(f.jira) == 0 {
+		f.jira = []jiraPair{newJiraPair("", "")}
+	}
+	if p == nil {
 		// Adding: the path is the only field that has to be typed, so the
 		// cursor starts there and it prefills with where the TUI was
 		// launched — usually the repository the user means, and one ctrl+u
@@ -187,10 +220,10 @@ func (f *projectForm) paste(text string) tea.Cmd {
 	case pfJiraSite, pfJiraKey, pfJiraJQL:
 		fld := f.jiraField(f.cursor)
 		*fld, cmd = fld.Update(tea.PasteMsg{Content: text})
-	case pfWorkflow, pfSource, pfSave, pfRowCount:
+	case pfWorkflow, pfSource, pfJiraAdd, pfSave, pfRowCount:
 		return nil
 	}
-	delete(f.rowErr, f.cursor)
+	f.clearRowErr()
 	return cmd
 }
 
@@ -264,40 +297,106 @@ func (f *projectForm) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 type projectFormClosedMsg struct{}
 
 func (f *projectForm) move(delta int) {
-	next := int(f.cursor)
-	for {
-		next += delta
-		if next < 0 || next >= int(pfRowCount) {
-			return
-		}
-		if f.rowShown(pfRow(next)) {
-			f.cursor = pfRow(next)
-			return
+	pos := f.positions()
+	at := slices.Index(pos, f.pos())
+	if at < 0 {
+		at = 0
+	}
+	if next := at + delta; next >= 0 && next < len(pos) {
+		f.cursor, f.jiraAt = pos[next].row, pos[next].at
+	}
+}
+
+// pfPos is one line of the form: a row, and for a Jira project's rows the
+// pair it belongs to (0 for every other row).
+type pfPos struct {
+	row pfRow
+	at  int
+}
+
+// pos is where the cursor is.
+func (f *projectForm) pos() pfPos {
+	if f.cursor == pfJiraKey || f.cursor == pfJiraJQL {
+		return pfPos{f.cursor, f.jiraAt}
+	}
+	return pfPos{row: f.cursor}
+}
+
+// positions is every line the form shows, in order: a key and a JQL row
+// for each Jira project between the site and the add row.
+func (f *projectForm) positions() []pfPos {
+	var out []pfPos
+	for row := pfRow(0); row < pfRowCount; row++ {
+		switch {
+		case !f.rowShown(row):
+		case row == pfJiraKey:
+			for i := range f.jira {
+				out = append(out, pfPos{pfJiraKey, i}, pfPos{pfJiraJQL, i})
+			}
+		case row == pfJiraJQL:
+		default:
+			out = append(out, pfPos{row: row})
 		}
 	}
+	return out
 }
 
 // rowShown hides the Jira rows unless the source is jira.
 func (f *projectForm) rowShown(row pfRow) bool {
 	switch row {
-	case pfJiraSite, pfJiraKey, pfJiraJQL:
+	case pfJiraSite, pfJiraKey, pfJiraJQL, pfJiraAdd:
 		return f.source == apiclient.IssueProviderJira
 	default:
 		return true
 	}
 }
 
-// jiraField is the text field behind a Jira row, nil for any other row.
+// jiraField is the text field behind a Jira row — a key or JQL row's of
+// the pair the cursor is on — nil for any other row.
 func (f *projectForm) jiraField(row pfRow) *textField {
 	switch row {
 	case pfJiraSite:
 		return &f.jiraSite
 	case pfJiraKey:
-		return &f.jiraKey
+		return &f.jira[f.jiraAt].key
 	case pfJiraJQL:
-		return &f.jiraJQL
+		return &f.jira[f.jiraAt].jql
 	default:
 		return nil
+	}
+}
+
+// addJiraProject appends an empty pair and starts typing its key.
+func (f *projectForm) addJiraProject() {
+	f.jira = append(f.jira, newJiraPair("", ""))
+	f.cursor, f.jiraAt = pfJiraKey, len(f.jira)-1
+	f.editing = true
+	f.focus(pfJiraKey)
+}
+
+// dropEmptyJiraPair drops the pair the cursor is on when an edit left it
+// empty beside another: clearing a project's key and JQL removes it.
+func (f *projectForm) dropEmptyJiraPair() {
+	if (f.cursor != pfJiraKey && f.cursor != pfJiraJQL) || len(f.jira) < 2 || !f.jira[f.jiraAt].empty() {
+		return
+	}
+	f.jira = slices.Delete(f.jira, f.jiraAt, f.jiraAt+1)
+	if f.jiraAt >= len(f.jira) {
+		f.cursor, f.jiraAt = pfJiraAdd, 0
+	} else {
+		f.cursor = pfJiraKey
+	}
+}
+
+// clearRowErr forgets the complaint on the row the cursor is on.
+func (f *projectForm) clearRowErr() {
+	switch f.cursor {
+	case pfJiraKey:
+		f.jira[f.jiraAt].keyErr = ""
+	case pfJiraJQL:
+		f.jira[f.jiraAt].jqlErr = ""
+	default:
+		delete(f.rowErr, f.cursor)
 	}
 }
 
@@ -313,7 +412,7 @@ func (f *projectForm) sourceOptions() []pickerOption {
 		{value: apiclient.IssueProviderDerive, label: derive},
 		{value: apiclient.IssueProviderNone, label: "none", note: "no issues are imported"},
 		{value: apiclient.IssueProviderGitHub, label: "github", note: "origin's GitHub repository"},
-		{value: apiclient.IssueProviderJira, label: "jira", note: "a Jira site and project"},
+		{value: apiclient.IssueProviderJira, label: "jira", note: "Jira projects on one site"},
 	}
 }
 
@@ -324,6 +423,8 @@ func (f *projectForm) activate() tea.Cmd {
 		f.focus(f.cursor)
 	case pfSource:
 		f.pick = newPicker(int(pfSource), "issue source", f.sourceOptions(), false, f.source)
+	case pfJiraAdd:
+		f.addJiraProject()
 	case pfWorkflow:
 		f.pick = newPicker(int(pfWorkflow), "default workflow",
 			f.workflowOptions(), false, f.workflow)
@@ -346,7 +447,7 @@ func (f *projectForm) focus(row pfRow) {
 		f.cap.Focus()
 	case pfJiraSite, pfJiraKey, pfJiraJQL:
 		f.jiraField(row).Focus()
-	case pfWorkflow, pfSource, pfSave, pfRowCount:
+	case pfWorkflow, pfSource, pfJiraAdd, pfSave, pfRowCount:
 	}
 }
 
@@ -356,8 +457,10 @@ func (f *projectForm) blurAll() {
 	f.branch.Blur()
 	f.cap.Blur()
 	f.jiraSite.Blur()
-	f.jiraKey.Blur()
-	f.jiraJQL.Blur()
+	for i := range f.jira {
+		f.jira[i].key.Blur()
+		f.jira[i].jql.Blur()
+	}
 }
 
 func (f *projectForm) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
@@ -365,6 +468,7 @@ func (f *projectForm) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 	case "esc", "enter":
 		f.editing = false
 		f.blurAll()
+		f.dropEmptyJiraPair()
 		return nil
 	}
 	var cmd tea.Cmd
@@ -380,9 +484,9 @@ func (f *projectForm) updateEditing(msg tea.KeyPressMsg) tea.Cmd {
 	case pfJiraSite, pfJiraKey, pfJiraJQL:
 		fld := f.jiraField(f.cursor)
 		*fld, cmd = fld.Update(msg)
-	case pfWorkflow, pfSource, pfSave, pfRowCount:
+	case pfWorkflow, pfSource, pfJiraAdd, pfSave, pfRowCount:
 	}
-	delete(f.rowErr, f.cursor)
+	f.clearRowErr()
 	return cmd
 }
 
@@ -477,17 +581,21 @@ func (f *projectForm) createRequest() apiclient.CreateProjectRequest {
 
 // sourceRequest is the binding the form holds. The request replaces the
 // whole binding, so the mapping override — which the form does not edit —
-// is carried over from the project as fetched. Every rule about the site,
-// key and JQL is the daemon's.
+// is carried over from the project as fetched. A project with nothing typed
+// is left out; every rule about the site, the keys and the JQL is the
+// daemon's.
 func (f *projectForm) sourceRequest() apiclient.ProjectIssueSourceRequest {
 	req := apiclient.ProjectIssueSourceRequest{Provider: f.source}
 	if f.source != apiclient.IssueProviderJira {
 		return req
 	}
-	j := &apiclient.ProjectIssueSourceJira{
-		Site:       strings.TrimSpace(f.jiraSite.Value()),
-		ProjectKey: strings.TrimSpace(f.jiraKey.Value()),
-		JQL:        strings.TrimSpace(f.jiraJQL.Value()),
+	j := &apiclient.ProjectIssueSourceJira{Site: strings.TrimSpace(f.jiraSite.Value()), Projects: []apiclient.JiraProject{}}
+	for i := range f.jira {
+		if pr := &f.jira[i]; !pr.empty() {
+			j.Projects = append(j.Projects, apiclient.JiraProject{
+				Key: strings.TrimSpace(pr.key.Value()), JQL: strings.TrimSpace(pr.jql.Value()),
+			})
+		}
 	}
 	if o := f.original; o != nil && o.IssueSource.Jira != nil {
 		j.Mapping = o.IssueSource.Jira.Mapping
@@ -511,7 +619,7 @@ func (f *projectForm) sourceChanged() bool {
 		return false
 	}
 	want := f.sourceRequest().Jira
-	return o.Jira == nil || want.Site != o.Jira.Site || want.ProjectKey != o.Jira.ProjectKey || want.JQL != o.Jira.JQL
+	return o.Jira == nil || want.Site != o.Jira.Site || !slices.Equal(want.Projects, o.Jira.Projects)
 }
 
 func (f *projectForm) createCmd() tea.Cmd {
@@ -587,12 +695,19 @@ func (f *projectForm) capValue() (int, bool) {
 	return v, true
 }
 
+// jiraFieldRef matches the field a refusal of one Jira project names:
+// issue_source.jira.projects[i].key or .jql.
+var jiraFieldRef = regexp.MustCompile(`issue_source\.jira\.projects\[(\d+)\]\.(key|jql)`)
+
 // applyFailure parks the daemon's complaint on the row it names, the same
 // routing the new-task form uses: the server writes field names into its
 // validation messages, so the mapping reads them instead of guessing.
 func (f *projectForm) applyFailure(err error) {
 	f.saving = false
 	msg := errString(err)
+	if f.applyJiraFailure(msg) {
+		return
+	}
 	for _, m := range []struct {
 		needle string
 		row    pfRow
@@ -600,8 +715,6 @@ func (f *projectForm) applyFailure(err error) {
 		// The binding's fields first: their messages mention a path and
 		// a name, which the generic needles below would claim.
 		{"issue_source.jira.site", pfJiraSite},
-		{"issue_source.jira.project_key", pfJiraKey},
-		{"issue_source.jira.jql", pfJiraJQL},
 		{"issue_source", pfSource},
 		{"max_parallel_tasks", pfCap},
 		{"default_workflow", pfWorkflow},
@@ -618,4 +731,39 @@ func (f *projectForm) applyFailure(err error) {
 		}
 	}
 	f.err = msg
+}
+
+// applyJiraFailure parks a refusal of one Jira project on its key or JQL
+// row, and one of the list as a whole on the first key row. The index the
+// daemon names counts the projects sent, which skip the empty pairs.
+func (f *projectForm) applyJiraFailure(msg string) bool {
+	at, field := 0, "key"
+	if m := jiraFieldRef.FindStringSubmatch(msg); m != nil {
+		sent, _ := strconv.Atoi(m[1])
+		at, field = f.pairOfSent(sent), m[2]
+	} else if !strings.Contains(msg, "issue_source.jira.projects") {
+		return false
+	}
+	f.jiraAt = at
+	if field == "jql" {
+		f.jira[at].jqlErr, f.cursor = msg, pfJiraJQL
+	} else {
+		f.jira[at].keyErr, f.cursor = msg, pfJiraKey
+	}
+	return true
+}
+
+// pairOfSent is the pair the sent project at index sent came from.
+func (f *projectForm) pairOfSent(sent int) int {
+	n := 0
+	for i := range f.jira {
+		if f.jira[i].empty() {
+			continue
+		}
+		if n == sent {
+			return i
+		}
+		n++
+	}
+	return 0
 }

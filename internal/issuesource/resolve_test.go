@@ -1,6 +1,7 @@
 package issuesource
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/github"
@@ -9,7 +10,7 @@ import (
 
 func TestResolveWith(t *testing.T) {
 	gh := github.Repo{Owner: "o", Name: "r"}
-	jira := store.IssueSource{Provider: store.IssueProviderJira, JiraSite: "acme.atlassian.net", JiraProjectKey: "ACME", JiraJQL: "x"}
+	jira := store.IssueSource{Provider: store.IssueProviderJira, JiraSite: "acme.atlassian.net", JiraProjects: []store.JiraProject{{Key: "ACME", JQL: "x"}}}
 	cases := []struct {
 		name   string
 		src    store.IssueSource
@@ -44,14 +45,14 @@ func TestResolveWith(t *testing.T) {
 			name: "explicit jira, github origin", src: jira, origin: true,
 			want: Resolution{
 				Provider: store.IssueProviderJira, Explicit: true, OriginGitHub: true, Repo: gh,
-				JiraSite: "acme.atlassian.net", JiraProjectKey: "ACME",
+				JiraSite: "acme.atlassian.net", JiraProjects: []store.JiraProject{{Key: "ACME", JQL: "x"}},
 			},
 		},
 		{
 			name: "explicit jira, other origin", src: jira,
 			want: Resolution{
 				Provider: store.IssueProviderJira, Explicit: true,
-				JiraSite: "acme.atlassian.net", JiraProjectKey: "ACME",
+				JiraSite: "acme.atlassian.net", JiraProjects: []store.JiraProject{{Key: "ACME", JQL: "x"}},
 			},
 		},
 	}
@@ -63,7 +64,7 @@ func TestResolveWith(t *testing.T) {
 			}
 			p := store.Project{ID: 1, IssueSource: tc.src}
 			got := ResolveWith(p, repo, tc.origin)
-			if got != tc.want {
+			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("ResolveWith = %+v, want %+v", got, tc.want)
 			}
 			if eff := tc.src.Effective(tc.origin); got.Provider != eff {
@@ -77,10 +78,10 @@ func TestResolveWith(t *testing.T) {
 // explicit binding still wins.
 func TestResolveNilGitIsNotGitHub(t *testing.T) {
 	p := store.Project{ID: 1, Path: t.TempDir()}
-	if got := Resolve(t.Context(), nil, p); got != (Resolution{Provider: store.IssueProviderNone}) {
+	if got := Resolve(t.Context(), nil, p); !reflect.DeepEqual(got, Resolution{Provider: store.IssueProviderNone}) {
 		t.Errorf("Resolve(nil git, derive) = %+v", got)
 	}
-	p.IssueSource = store.IssueSource{Provider: store.IssueProviderJira, JiraSite: "s", JiraProjectKey: "K"}
+	p.IssueSource = store.IssueSource{Provider: store.IssueProviderJira, JiraSite: "s", JiraProjects: []store.JiraProject{{Key: "K"}}}
 	if got := Resolve(t.Context(), nil, p); got.Provider != ProviderJira || got.JiraSite != "s" || got.OriginGitHub {
 		t.Errorf("Resolve(nil git, jira) = %+v", got)
 	}

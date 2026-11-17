@@ -188,15 +188,15 @@ func (s *Server) issueSyncStatus(ctx context.Context, project *store.Project) (i
 
 // syncSourceDisplay renders the bound source and the provider's display
 // name for a sync status (task 142.14 decision 2): GitHub's repository, or
-// Jira's site and project key. Both are empty for none, and source is empty
+// Jira's site and project keys, comma-joined. Both are empty for none, and source is empty
 // when the parts it is built from are not known yet.
 func syncSourceDisplay(provider, repo string, src store.IssueSource) (source, name string) {
 	switch provider {
 	case store.IssueProviderGitHub:
 		source = repo
 	case store.IssueProviderJira:
-		if host := jiraSiteHost(src.JiraSite); host != "" && src.JiraProjectKey != "" {
-			source = host + "/" + src.JiraProjectKey
+		if host := jiraSiteHost(src.JiraSite); host != "" && len(src.JiraProjects) > 0 {
+			source = host + "/" + strings.Join(src.JiraKeys(), ",")
 		}
 	default:
 		return "", ""

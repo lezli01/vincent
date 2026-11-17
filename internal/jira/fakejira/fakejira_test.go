@@ -195,6 +195,8 @@ func TestSearchJQLSubset(t *testing.T) {
 		{`project = "VIN" AND updated >= ` + strconv.FormatInt(since+1, 10), []string{"VIN-3"}},
 		{`project = "VIN" and statusCategory != Done`, []string{"VIN-1", "VIN-2"}},
 		{`project = "VIN" AND id > 10001 ORDER BY id ASC`, []string{"VIN-2", "VIN-3"}},
+		{`project in ("OPS", 10000) AND id > 10001`, []string{"VIN-2", "VIN-3"}},
+		{`project in ("OPS")`, []string{}},
 	} {
 		a := f.want(f.do("GET", search(tc.jql), nil), 200)
 		if got := keys(t, a); !reflect.DeepEqual(got, tc.want) {
@@ -222,6 +224,10 @@ func TestSearchJQLSubset(t *testing.T) {
 		`summary ~ "sync"`,
 		`project = "VIN" OR id > 1`,
 		`(project = "VIN")`,
+		`project in "VIN"`,
+		`project in ("VIN" "OPS")`,
+		`project in ("VIN",`,
+		`project in (VIN)`,
 		`project = "VIN" ORDER BY created DESC`,
 		`project = "VIN" ORDER BY updated DESC`,
 		`statusCategory = Done`,

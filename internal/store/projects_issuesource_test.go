@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -18,12 +19,11 @@ func TestProjectIssueSourceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.IssueSource != (IssueSource{}) {
+	if !got.IssueSource.Equal(IssueSource{}) {
 		t.Fatalf("new project's binding = %+v, want derive", got.IssueSource)
 	}
 	want := IssueSource{
-		Provider: IssueProviderJira, JiraSite: "https://x.atlassian.net", JiraProjectKey: "ENG",
-		JiraJQL: "labels = a", JiraMappingJSON: `{"overrides":{"reopen":"Back"}}`,
+		Provider: IssueProviderJira, JiraSite: "https://x.atlassian.net", JiraProjects: []JiraProject{{Key: "ENG", JQL: "labels = a"}}, JiraMappingJSON: `{"overrides":{"reopen":"Back"}}`,
 	}
 	got.IssueSource = want
 	if err := s.UpdateProject(ctx, got); err != nil {
@@ -33,7 +33,7 @@ func TestProjectIssueSourceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.IssueSource != want {
+	if !again.IssueSource.Equal(want) {
 		t.Errorf("binding = %+v, want %+v", again.IssueSource, want)
 	}
 }
@@ -144,7 +144,85 @@ func TestMigrateKeepsExistingProjectsDerived(t *testing.T) {
 	if err != nil || len(ps) != 1 {
 		t.Fatalf("projects = %+v, %v", ps, err)
 	}
-	if ps[0].IssueSource != (IssueSource{}) {
+	if !ps[0].IssueSource.Equal(IssueSource{}) {
 		t.Errorf("migrated binding = %+v, want derive", ps[0].IssueSource)
+	}
+}
+
+// A Jira binding made before 0056 keeps its one project and its JQL as the
+// only entry of the list (task 146); a binding without JQL stores none, and
+// a project not on Jira gets no list.
+func TestMigrateJiraBindingToProjectList(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vincent.db")
+	migrateTo(t, path, 55)
+	func() {
+		db, err := sql.Open("sqlite", dsn(path))
+		if err != nil {
+			t.Fatalf("reopen at 0055: %v", err)
+		}
+		defer func() { _ = db.Close() }()
+		now := formatTime(time.Now())
+		for _, row := range [][]string{
+			{"narrowed", "jira", "ENG", "labels = backend"},
+			{"whole", "jira", "OPS", ""},
+			{"derived", "", "", ""},
+		} {
+			if _, err := db.Exec(`INSERT INTO projects (name, path, default_branch, created_at, updated_at,
+				issue_provider, jira_site, jira_project_key, jira_jql)
+				VALUES (?, ?, 'main', ?, ?, ?, 'https://acme.atlassian.net', ?, ?)`,
+				row[0], "/"+row[0], now, now, row[1], row[2], row[3]); err != nil {
+				t.Fatalf("insert pre-0056 project: %v", err)
+			}
+		}
+	}()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open migrated: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	ps, err := s.ListProjects(t.Context())
+	if err != nil || len(ps) != 3 {
+		t.Fatalf("projects = %+v, %v", ps, err)
+	}
+	want := map[string][]JiraProject{
+		"narrowed": {{Key: "ENG", JQL: "labels = backend"}},
+		"whole":    {{Key: "OPS"}},
+		"derived":  nil,
+	}
+	for _, p := range ps {
+		if got := p.IssueSource.JiraProjects; !slices.Equal(got, want[p.Name]) {
+			t.Errorf("%s: jira projects = %+v, want %+v", p.Name, got, want[p.Name])
+		}
+	}
+}
+
+// A Jira binding that drops one of its projects abandons only that
+// project's issues (task 146 decision 4): KeepRepos stay live.
+func TestUpdateProjectRebindKeepsStillBoundProjects(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	jiraRemote := func(key, repo string, n int) RemoteIssue {
+		r := remoteIn(p.ID, key, n)
+		r.Provider, r.Repo = IssueProviderJira, repo
+		return r
+	}
+	eng := mustUpsertRemote(t, s, jiraRemote("100", "ENG", 1))
+	ops := mustUpsertRemote(t, s, jiraRemote("200", "OPS", 1))
+	p.IssueSource = IssueSource{Provider: IssueProviderJira, JiraSite: "https://x", JiraProjects: []JiraProject{{Key: "ENG"}}}
+	if err := s.UpdateProjectRebind(ctx, p, &Rebind{OldProvider: IssueProviderJira, KeepRepos: []string{"eng"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		id   int64
+		want string
+	}{{eng.ID, RemoteStatusLive}, {ops.ID, RemoteStatusMissing}} {
+		got, err := s.GetIssue(ctx, c.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Remote == nil || got.Remote.Status != c.want {
+			t.Errorf("issue %d remote = %+v, want %q", c.id, got.Remote, c.want)
+		}
 	}
 }

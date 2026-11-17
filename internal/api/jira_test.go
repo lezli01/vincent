@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -110,7 +111,7 @@ func fakeSite(t *testing.T, mw func(http.Handler) http.Handler) (site, scenario 
 }
 
 func jiraBinding(site, key string) store.IssueSource {
-	return store.IssueSource{Provider: store.IssueProviderJira, JiraSite: site, JiraProjectKey: key}
+	return store.IssueSource{Provider: store.IssueProviderJira, JiraSite: site, JiraProjects: []store.JiraProject{{Key: key}}}
 }
 
 func TestJiraProbeAvailable(t *testing.T) {
@@ -120,7 +121,7 @@ func TestJiraProbeAvailable(t *testing.T) {
 	if !got.Available || got.Reason != "" || !got.Enabled {
 		t.Fatalf("probe = %s, want available", body)
 	}
-	if got.Site != site || got.ProjectKey != "VIN" || got.ProjectID != "10000" {
+	if got.Site != site || len(got.Projects) != 1 || got.Projects[0] != (jiraProbeProject{Key: "VIN", ProjectID: "10000"}) {
 		t.Errorf("binding fields = %+v", got)
 	}
 	if got.Server == nil || got.Server.DeploymentType != "Cloud" || got.Server.Version == "" {
@@ -134,6 +135,30 @@ func TestJiraProbeAvailable(t *testing.T) {
 	_ = json.Unmarshal(body, &raw)
 	if r, ok := raw["reason"]; !ok || r != "" {
 		t.Errorf("reason field = %v (present %v), want \"\"", r, ok)
+	}
+}
+
+// The probe checks every bound project in order (task 146): each answers
+// with its id, and the first that fails is the answer, named by its key.
+func TestJiraProbeSeveralProjects(t *testing.T) {
+	site, _ := fakeSite(t, nil)
+	h := newJiraHarness(t, config.Default(), probeEnv())
+	both := jiraBinding(site, "VIN")
+	both.JiraProjects = append(both.JiraProjects, store.JiraProject{Key: "OPS", JQL: "labels = a"})
+	got, body := h.probe(t, h.project(t, both))
+	want := []jiraProbeProject{{Key: "VIN", ProjectID: "10000"}, {Key: "OPS", ProjectID: "10001"}}
+	if !got.Available || !slices.Equal(got.Projects, want) {
+		t.Fatalf("probe = %s, want both projects with their ids", body)
+	}
+
+	missing := jiraBinding(site, "VIN")
+	missing.JiraProjects = append(missing.JiraProjects, store.JiraProject{Key: "NOPE"})
+	got, body = h.probe(t, h.project(t, missing))
+	if got.Available || got.Reason != jira.ReasonNotFound || !strings.HasSuffix(got.Message, "(project NOPE)") {
+		t.Fatalf("probe = %s, want not_found naming NOPE", body)
+	}
+	if want := []jiraProbeProject{{Key: "VIN", ProjectID: "10000"}, {Key: "NOPE"}}; !slices.Equal(got.Projects, want) {
+		t.Errorf("projects = %+v, want %+v", got.Projects, want)
 	}
 }
 
@@ -191,8 +216,8 @@ func TestJiraProbeReasons(t *testing.T) {
 			if (got.Server != nil) != tc.server || (got.Account != nil) != tc.account {
 				t.Errorf("server %v account %v, want %v %v: %s", got.Server, got.Account, tc.server, tc.account, body)
 			}
-			if got.Site != site || got.ProjectKey != tc.key {
-				t.Errorf("binding = %q %q, want %q %q", got.Site, got.ProjectKey, site, tc.key)
+			if got.Site != site || len(got.Projects) != 1 || got.Projects[0].Key != tc.key {
+				t.Errorf("binding = %q %+v, want %q %q", got.Site, got.Projects, site, tc.key)
 			}
 			if strings.Contains(string(body), jiraProbeToken) {
 				t.Errorf("probe body carries the token: %s", body)

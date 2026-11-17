@@ -491,7 +491,7 @@ func TestJiraBindingChangedStops(t *testing.T) {
 	}
 
 	// A rebind drops the row and with it the recorded id.
-	f.project.IssueSource.JiraProjectKey = "OPS"
+	f.project.IssueSource.JiraProjects = []store.JiraProject{{Key: "OPS"}}
 	rebind := &store.Rebind{OldProvider: store.IssueProviderJira}
 	if err := f.store.UpdateProjectRebind(t.Context(), &f.project, rebind); err != nil {
 		t.Fatal(err)
