@@ -138,7 +138,7 @@ func TestUpdatePrintsPackageManagerCommand(t *testing.T) {
 	} {
 		cmd, out := updateTestCmd(t)
 		err := updateNotOwned(cmd, out, "v0.1.0",
-			releaseFixture(), c)
+			releaseFixture(), c, trackRelease)
 		if got := exitCodeOf(err); got != 2 {
 			t.Errorf("%s: exit code = %d, want 2", c, got)
 		}
@@ -152,7 +152,7 @@ func TestUpdatePrintsPackageManagerCommand(t *testing.T) {
 // where to get the release and exits 2, and does not offer to swap.
 func TestUpdateUnknownChannelChangesNothing(t *testing.T) {
 	cmd, out := updateTestCmd(t)
-	err := updateNotOwned(cmd, out, "v0.1.0", releaseFixture(), selfupdate.ChannelUnknown)
+	err := updateNotOwned(cmd, out, "v0.1.0", releaseFixture(), selfupdate.ChannelUnknown, trackRelease)
 	if got := exitCodeOf(err); got != 2 {
 		t.Errorf("exit code = %d, want 2", got)
 	}

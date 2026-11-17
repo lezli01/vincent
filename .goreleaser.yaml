@@ -264,8 +264,16 @@ signs:
     artifacts: checksum
     output: true
 
+# The master build (task 147, `.github/workflows/master-build.yml`) is a
+# snapshot too, named by the workflow: VINCENT_MASTER_VERSION is the next
+# patch, the commits since the last release and the commit, such as
+# 0.21.1-master.5.gabc1234. It is a semantic version (the `g` keeps an
+# all-digit hash from reading as a number with a leading zero), and it is
+# what `vincent update --master` reads off the archive names. Every other
+# snapshot — the release dry run, a local build — keeps `-next`.
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  version_template: >-
+    {{ if index .Env "VINCENT_MASTER_VERSION" }}{{ index .Env "VINCENT_MASTER_VERSION" }}{{ else }}{{ incpatch .Version }}-next{{ end }}
 
 # Grouped by Conventional Commit type and stripped of commit hashes, because the
 # defaults render one flat list where every line opens with a 40-char SHA —

@@ -154,6 +154,14 @@ check script proves the mode on tests of its own. The shard count lives only
 in the job's matrix; four is what fits the free plan's 20 concurrent jobs at
 peak, beside the twelve gate groups.
 
+Every push to `master` is also built and published by
+`.github/workflows/master-build.yml` (task 147) as the rolling `master-latest`
+prerelease that `vincent update --master` installs: the release's own
+goreleaser config as a snapshot, versioned `<next patch>-master.<commits>.g<sha>`
+through `VINCENT_MASTER_VERSION`, with `checksums.txt` cosign-signed the way a
+release's is. A change to `.goreleaser.yaml`'s archive names or signing is a
+change to it too; a pull request touching either file runs its build.
+
 Plain toolchain works too (`go build ./...`, `go test ./...`). Single test:
 
 ```sh

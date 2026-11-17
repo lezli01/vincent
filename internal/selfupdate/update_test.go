@@ -47,6 +47,27 @@ func TestApplySwapsVerifiedRelease(t *testing.T) {
 	assertExecutable(t, dest)
 }
 
+// The master build (task 147) is installed from its rolling tag through the
+// same chain, its archive named with the build's own version.
+func TestApplyFromInstallsMasterBuild(t *testing.T) {
+	const version = "0.21.1-master.5.gabc1234"
+	rel := newFakeBuild(t, "master-latest", version, []byte("master vincent binary"))
+	dest := existingBinary(t)
+	up := New(Options{DownloadBase: rel.URL, CosignPath: stubCosign(t, 0), Executable: dest})
+	res, err := up.ApplyFrom(t.Context(), "master-latest", version)
+	if err != nil {
+		t.Fatalf("ApplyFrom: %v", err)
+	}
+	if res.Version != "v"+version || !res.SignatureVerified {
+		t.Errorf("result = %+v, want v%s verified", res, version)
+	}
+	assertContents(t, dest, "master vincent binary")
+	// A release tag is not where the master build lives.
+	if _, err := up.Apply(t.Context(), version); err == nil {
+		t.Error("Apply found the master build under a v-prefixed tag")
+	}
+}
+
 // One flipped byte in the archive must refuse and leave the old binary
 // **byte-identical** — the acceptance criterion, asserted on the bytes rather
 // than on the exit path.
@@ -209,7 +230,14 @@ type fakeRelease struct {
 // the two signing sidecars, and serves them at the download-URL layout.
 func newFakeRelease(t *testing.T, binary []byte) *fakeRelease {
 	t.Helper()
-	name := AssetName(fakeVersion, runtime.GOOS, runtime.GOARCH)
+	return newFakeBuild(t, "v"+fakeVersion, fakeVersion, binary)
+}
+
+// newFakeBuild is newFakeRelease for a build published under tag, its
+// archive named with version — the master build's shape (task 147).
+func newFakeBuild(t *testing.T, tag, version string, binary []byte) *fakeRelease {
+	t.Helper()
+	name := AssetName(version, runtime.GOOS, runtime.GOARCH)
 	archive := packArchive(t, binary)
 	sum := sha256.Sum256(archive)
 	checksums := fmt.Appendf(nil, "%s  %s\n", hex.EncodeToString(sum[:]), name)
@@ -224,7 +252,7 @@ func newFakeRelease(t *testing.T, binary []byte) *fakeRelease {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		// The layout Apply builds: {base}/{tag}/{asset}.
 		parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
-		if len(parts) != 2 || parts[0] != "v"+fakeVersion {
+		if len(parts) != 2 || parts[0] != tag {
 			http.NotFound(w, req)
 			return
 		}

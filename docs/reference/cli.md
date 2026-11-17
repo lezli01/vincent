@@ -1796,11 +1796,27 @@ Details worth knowing:
 ## `vincent update`
 
 ```sh
-vincent update [--check] [--dry-run] [--require-signature] [--json]
+vincent update [--master] [--check] [--dry-run] [--require-signature] [--json]
 ```
 
 Asks GitHub for the latest **stable** release and, unless `--check` is given,
 installs it over this binary. A prerelease is never offered.
+
+**`--master`** targets the newest build of the `master` branch instead. CI
+builds every push to `master` with the release pipeline's own configuration,
+signs its `checksums.txt` the way a release's is signed, and publishes it as
+the rolling `master-latest` prerelease, replacing the previous one. It is
+verified exactly as a release is. A master build is ahead of the latest
+release and tested by CI only.
+
+A master build's version is the next patch release, the commits since the last
+release and the commit, such as `0.21.1-master.5.gabc1234`; `vincent version`
+reports it. With `--master`, any build other than the newest master build counts
+as an update, including a release, a development build and an older master build.
+Without it, a master build is offered the first release after it, so a plain
+`vincent update` returns a master install to the release track once a newer
+release is out. A package manager carries releases only: on an install it owns,
+`--master` changes nothing and points at the master build's download page.
 
 This command talks to the release feed directly rather than through the daemon,
 so it works with no daemon running and before the daemon's own background check
@@ -1845,7 +1861,8 @@ Exit codes:
 | `--check` | up to date | the check failed (offline, rate-limited) | an update is available |
 | no flag | nothing to do, **or** swapped successfully | verification or the swap failed; the binary is untouched | an update exists but a package manager owns this install |
 
-`--json` carries `swapped`, which is what separates the two `0`s.
+`--json` carries `swapped`, which is what separates the two `0`s, and `track`:
+`release`, or `master` with `--master`.
 
 ```sh
 vincent update --check --json
@@ -1854,8 +1871,15 @@ vincent update --check --json
   "latest_version": "v0.5.0",
   "update_available": true,
   "published_at": "2026-08-21T09:31:07Z",
-  "release_url": "https://github.com/lezli01/vincent/releases/tag/v0.5.0"
+  "release_url": "https://github.com/lezli01/vincent/releases/tag/v0.5.0",
+  "track": "release"
 }
+```
+
+```sh
+vincent update --master          # install the newest master build
+vincent update --master --check  # is there a newer one?
+vincent update                   # back to releases, once one is newer
 ```
 
 ## `vincent skills`

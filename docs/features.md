@@ -881,7 +881,9 @@ as archives plus platform-friendly packages:
 The daemon asks GitHub once a day whether a newer **stable** release exists and
 `vincent doctor` shows the answer; `vincent update --check` asks on demand, and
 `vincent update` applies one — verifying the download, and never touching a
-binary a package manager owns. The check is an opt-out
+binary a package manager owns. `vincent update --master` installs the newest
+build of the `master` branch instead, which CI builds, signs and publishes on
+every push and which is verified the same way. The check is an opt-out
 ([`update.check: false`](reference/configuration.md#update)); applying is always
 something you run.
 

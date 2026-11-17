@@ -160,6 +160,7 @@ the living engineering specification records implementation contracts.
 | [144](144-issue-work-tab.md) | An `Issue \| Work` tab strip on the issue detail, listing every task and chat of the issue | ✅ done (1/1) |
 | [145](145-issue-lane-move.md) | Moving an issue between lanes from the TUI: `m` runs the action the picked lane is derived from | ✅ done (1/1) |
 | [146](146-jira-several-projects.md) | Several Jira projects in one binding, each with its own optional JQL | ✅ done (1/1) |
+| [147](147-update-to-master.md) | `vincent update --master`: install the newest master build, which CI builds and publishes on every push to master | ✅ done (1/1) |
 
 ## How to add and update a task document
 
