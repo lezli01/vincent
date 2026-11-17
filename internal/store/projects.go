@@ -274,7 +274,7 @@ func (s *Store) DeleteProjectCascade(ctx context.Context, id int64) (err error) 
 	}
 	defer func() {
 		if err != nil {
-			_ = tx.Rollback()
+			rollbackTx(tx)
 		}
 	}()
 	var name string
@@ -313,7 +313,7 @@ func (s *Store) DeleteProjectCascade(ctx context.Context, id int64) (err error) 
 	if err = appendEventTx(ctx, tx, ev); err != nil {
 		return err
 	}
-	if err = tx.Commit(); err != nil {
+	if err = s.commitTx(tx); err != nil {
 		return fmt.Errorf("delete project %d: %w", id, err)
 	}
 	s.notify(ev)

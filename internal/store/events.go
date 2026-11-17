@@ -68,8 +68,9 @@ func (s *Store) SetEventHook(fn func(*Event)) { s.eventHook.Store(&fn) }
 // rest of the batch that triggered it, and two writers could publish in the
 // opposite order to their commits.
 //
-// So notify enqueues and one goroutine at a time drains: pending events are
-// kept sorted by id, and whoever finds the queue undrained delivers them, in
+// So a transaction's commit queues every event it wrote, under seq (commitTx,
+// review F2), and one goroutine at a time drains: pending events are kept
+// sorted by id, and whoever finds the queue undrained delivers them, in
 // order, until it is empty. An event appended from inside the hook is
 // enqueued behind the current batch and delivered by the same drain loop
 // after it — never recursively, which is also why the lock is not held while
@@ -78,10 +79,11 @@ type eventPublisher struct {
 	mu       sync.Mutex
 	pending  []*Event // sorted by ID, ascending
 	draining bool
-	// seq spans AppendEvent's insert and its enqueue, so two appends cannot
-	// reach the queue in the opposite order to the ids they were assigned.
-	// It is never held while the hook runs, so an append from inside the
-	// hook cannot deadlock on it.
+	// seq spans a transaction's commit and the enqueue of the events it
+	// wrote (commitTx), so no two writers can reach the queue in the
+	// opposite order to the ids they were assigned. It is taken only while
+	// holding the connection and never held while the hook runs, so an
+	// append from inside the hook cannot deadlock on it.
 	seq sync.Mutex
 	// drained, when set, runs after a drain has released the queue. It is a
 	// test seam only: a write made from it lands exactly where review F1's
@@ -90,9 +92,13 @@ type eventPublisher struct {
 }
 
 // notify publishes evs, and the events chained behind each, to the event hook
-// in id order. A write that commits several events passes them in one call:
-// the whole batch is queued before the first is delivered, so an event the
-// hook appends cannot be delivered ahead of the batch's later ones.
+// in id order. Every event row is written by appendEventTx, whose commitTx
+// has already queued the whole transaction's events — so the batch is queued
+// before its first is delivered, and an event the hook appends cannot
+// overtake the batch's later ones. A caller's post-commit notify therefore
+// finds its events queued and only drains; it is kept so a write states what
+// it announces, and so an event that never went through commitTx is still
+// published.
 func (s *Store) notify(evs ...*Event) {
 	for _, e := range evs {
 		s.enqueue(e)
@@ -113,6 +119,13 @@ func (s *Store) enqueue(e *Event) {
 	// `GET /v1/events` for everyone. Dropped here rather than guarded in three
 	// handlers: "there is no event" is this function's business (task 067).
 	for ; e != nil; e = e.follow {
+		// commitTx already queued every event its transaction wrote, which
+		// is all of them; a caller's post-commit notify then finds them
+		// queued and only drains. Never queue one twice.
+		if e.queued {
+			continue
+		}
+		e.queued = true
 		// After every event with an id <= e's, so equal ids keep their
 		// arrival order.
 		i := len(p.pending)
@@ -179,24 +192,72 @@ func (s *Store) AppendEvent(ctx context.Context, e *Event) error {
 	if len(e.Payload) == 0 {
 		e.Payload = json.RawMessage("{}")
 	}
-	s.pub.seq.Lock()
-	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO events (ts, type, task_id, project_id, payload_json) VALUES (?, ?, ?, ?, ?)`,
-		formatTime(e.TS), e.Type, e.TaskID, e.ProjectID, string(e.Payload))
-	if err != nil {
-		s.pub.seq.Unlock()
-		return fmt.Errorf("insert event: %w", err)
+	// A transaction of its own, so the insert reaches the hook through
+	// commitTx like every other event write and takes the publication lock
+	// in the same order they do: connection first, then seq.
+	return s.withTx(ctx, func(tx *sql.Tx) error { return appendEventTx(ctx, tx, e) })
+}
+
+// commitTx commits tx and queues the events appendEventTx recorded in it as
+// one step under the publication lock, then delivers the queue (review F2).
+//
+// The single connection already serializes transactions, so ids are
+// assigned in commit order; holding seq from the commit until the events are
+// queued makes queue order commit order too. Without it a writer could
+// commit id N, lose the CPU, and watch another writer commit and deliver
+// N+1 first — after which every live stream drops N by its `<= lastID`
+// dedupe and a reconnect never replays it (issue #963, cause (a)).
+//
+// seq is only ever taken by a goroutine that already holds the connection
+// (it is inside tx), and nothing holding seq waits for the connection, so
+// the two cannot deadlock. The hook runs after both are released: an event
+// it appends opens a transaction of its own.
+func (s *Store) commitTx(tx *sql.Tx) error {
+	p := &s.pub
+	p.seq.Lock()
+	evs := txEvents.take(tx)
+	if err := tx.Commit(); err != nil {
+		p.seq.Unlock()
+		return err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		s.pub.seq.Unlock()
-		return fmt.Errorf("insert event: %w", err)
+	for _, e := range evs {
+		s.enqueue(e)
 	}
-	e.ID = id
-	s.enqueue(e)
-	s.pub.seq.Unlock()
+	p.seq.Unlock()
 	s.drain()
 	return nil
+}
+
+// rollbackTx rolls tx back and forgets the events it recorded. It is safe
+// after a successful commitTx, where it does nothing.
+func rollbackTx(tx *sql.Tx) {
+	txEvents.take(tx)
+	_ = tx.Rollback()
+}
+
+// txEvents holds, per open transaction, the events appendEventTx inserted in
+// it, until commitTx queues them or rollbackTx drops them. It is keyed by
+// the transaction rather than kept on the Store because the helpers that
+// append inside a transaction are handed only the *sql.Tx.
+var txEvents = txEventLog{m: map[*sql.Tx][]*Event{}}
+
+type txEventLog struct {
+	mu sync.Mutex
+	m  map[*sql.Tx][]*Event
+}
+
+func (l *txEventLog) record(tx *sql.Tx, e *Event) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.m[tx] = append(l.m[tx], e)
+}
+
+func (l *txEventLog) take(tx *sql.Tx) []*Event {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	evs := l.m[tx]
+	delete(l.m, tx)
+	return evs
 }
 
 // EventFilter narrows ListEvents. Zero values mean "no filter".

@@ -229,7 +229,7 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 	var undo func()
 	defer func() {
 		if err != nil {
-			_ = tx.Rollback()
+			rollbackTx(tx)
 			if undo != nil {
 				undo()
 			}
@@ -403,7 +403,7 @@ func (s *Store) ImportTask(ctx context.Context, exp *TaskExport, opts ImportOpti
 	if err = watch.followTx(ctx, tx, ev, id); err != nil {
 		return nil, err
 	}
-	if err = tx.Commit(); err != nil {
+	if err = s.commitTx(tx); err != nil {
 		return nil, fmt.Errorf("import task %d: %w", id, err)
 	}
 	s.notify(ev)

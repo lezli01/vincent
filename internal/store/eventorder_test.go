@@ -1,7 +1,10 @@
 package store
 
 import (
+	"database/sql"
+	"runtime"
 	"slices"
+	"sync"
 	"testing"
 )
 
@@ -111,5 +114,95 @@ func TestEventEnqueuedAsADrainEndsIsDelivered(t *testing.T) {
 	}
 	if want := []string{"test.first", "test.second"}; !slices.Equal(seen, want) {
 		t.Fatalf("hook saw %v once both writes returned, want %v: an event was left in the queue", seen, want)
+	}
+}
+
+// TestEventHookSeesConcurrentWritersInIDOrder is issue #963, cause (a), and
+// review F2/F3: writers on several goroutines — standalone AppendEvents and
+// transactions that each commit two events, with a hook that appends from
+// inside itself the way the daemon's children_changed relay does — must
+// reach the hook in ascending id order, each committed event exactly once,
+// all of them by the time every writer has returned.
+//
+// Before commitTx queued a transaction's events under the lock that spans
+// its commit, a transaction could commit id N and another writer could
+// commit and deliver N+1 before N was queued; a live stream then drops N.
+// That window is a few instructions wide, so this is a stress test: it
+// fails only sometimes against the old code. Run it under -race.
+func TestEventHookSeesConcurrentWritersInIDOrder(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+
+	var (
+		mu   sync.Mutex
+		seen []int64
+	)
+	s.SetEventHook(func(e *Event) {
+		mu.Lock()
+		seen = append(seen, e.ID)
+		mu.Unlock()
+		if e.Type == "test.tx" {
+			if err := s.AppendEvent(ctx, &Event{Type: "test.relay"}); err != nil {
+				t.Errorf("relay AppendEvent: %v", err)
+			}
+		}
+	})
+
+	const writers, rounds = 8, 200
+	var wg sync.WaitGroup
+	for w := range writers {
+		wg.Go(func() {
+			for range rounds {
+				var err error
+				if w%2 == 0 {
+					err = s.AppendEvent(ctx, &Event{Type: "test.append"})
+				} else {
+					// What every transactional writer does: commit two
+					// events, then notify them.
+					a, b := &Event{Type: "test.tx"}, &Event{Type: "test.tx2"}
+					err = s.withTx(ctx, func(tx *sql.Tx) error {
+						if err := appendEventTx(ctx, tx, a); err != nil {
+							return err
+						}
+						return appendEventTx(ctx, tx, b)
+					})
+					if err == nil {
+						// Callers do work between the commit and their
+						// notify; yielding here stands for it, and is what
+						// let another writer deliver a higher id first.
+						runtime.Gosched()
+						s.notify(a, b)
+					}
+				}
+				if err != nil {
+					t.Errorf("writer %d: %v", w, err)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+
+	stored, err := s.ListEvents(ctx, EventFilter{})
+	if err != nil {
+		t.Fatalf("ListEvents: %v", err)
+	}
+	want := make([]int64, 0, len(stored))
+	for _, e := range stored {
+		want = append(want, e.ID)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.IsSorted(seen) {
+		for i := 1; i < len(seen); i++ {
+			if seen[i] <= seen[i-1] {
+				t.Errorf("hook saw id %d after %d: a live stream deduping by id drops it", seen[i], seen[i-1])
+				break
+			}
+		}
+	}
+	if !slices.Equal(seen, want) {
+		t.Errorf("hook saw %d events, %d were committed; every committed event must reach the hook exactly once",
+			len(seen), len(want))
 	}
 }

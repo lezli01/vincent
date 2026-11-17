@@ -107,7 +107,7 @@ func (s *Store) DeleteTaskCascade(ctx context.Context, id int64) (err error) {
 	}
 	defer func() {
 		if err != nil {
-			_ = tx.Rollback()
+			rollbackTx(tx)
 		}
 	}()
 	var (
@@ -180,7 +180,7 @@ func (s *Store) DeleteTaskCascade(ctx context.Context, id int64) (err error) {
 	if err = watch.followTx(ctx, tx, ev, id); err != nil {
 		return err
 	}
-	if err = tx.Commit(); err != nil {
+	if err = s.commitTx(tx); err != nil {
 		return fmt.Errorf("delete task %d: %w", id, err)
 	}
 	s.notify(ev)
@@ -206,7 +206,7 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 	}
 	defer func() {
 		if err != nil {
-			_ = tx.Rollback()
+			rollbackTx(tx)
 		}
 	}()
 	var (
@@ -255,7 +255,7 @@ func (s *Store) DeleteChatCascade(ctx context.Context, id int64) (err error) {
 	if err != nil {
 		return err
 	}
-	if err = tx.Commit(); err != nil {
+	if err = s.commitTx(tx); err != nil {
 		return fmt.Errorf("delete chat %d: %w", id, err)
 	}
 	s.notify(ev)
