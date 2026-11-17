@@ -819,8 +819,11 @@ func updateRow(cfg config.Config, st release.Status, daemonVersion string) Updat
 	}
 	// Strictly older, not merely different: a `dev` binary talking to a
 	// released daemon is a developer's own doing and not a finding, and
-	// release.IsNewer already refuses to call `dev` a version.
-	out.DaemonOutdated = release.IsNewer(daemonVersion, current)
+	// release.IsLaterBuild refuses to call `dev` a version. It orders source
+	// and master builds too, which IsNewer — a release check that never
+	// offers a prerelease — could not, so a daemon left running on an
+	// earlier one of those is reported as well.
+	out.DaemonOutdated = release.IsLaterBuild(daemonVersion, current)
 	return out
 }
 
