@@ -245,7 +245,8 @@ func TestEventsThatTouchAnIssue(t *testing.T) {
 		{"sync edit", store.EventIssueUpdated, map[string]any{"id": 7}, false},
 		{"task done", store.EventTaskStateChanged, map[string]any{"to": "done", "issue_id": 7}, true},
 		{"task aborted", store.EventTaskStateChanged, map[string]any{"to": "aborted", "issue_id": 7}, true},
-		{"task archived", store.EventTaskStateChanged, map[string]any{"to": "archived", "issue_id": 7}, false},
+		{"task archived", store.EventTaskStateChanged, map[string]any{"to": "archived", "issue_id": 7}, true},
+		{"task auto-archived", store.EventTaskStateChanged, map[string]any{"to": "archived", "issue_id": 7, "archived_by": ArchivedBy}, false},
 		{"task running", store.EventTaskStateChanged, map[string]any{"to": "running", "issue_id": 7}, false},
 		{"task without issue", store.EventTaskStateChanged, map[string]any{"to": "done"}, false},
 		{"issue chat closed", store.EventChatClosed, map[string]any{"state": "closed", "issue_id": 7}, true},
@@ -541,4 +542,34 @@ func TestReopenMidLoopStopsTheRest(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestHumanArchiveOfHeldSideWorkRetriesTheMain: a side task refused as
+// dirty holds the issue's main task (review F3); the remedy the issues guide
+// prescribes is archiving that side task by hand, and the human archive's
+// task.state_changed → archived event — issue_id set, no archived_by — must
+// ask the issue again so the held main task is archived (issue #985, D1).
+func TestHumanArchiveOfHeldSideWorkRetriesTheMain(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness()
+		h.st.archivable[7] = []int64{2, 1}
+		h.st.main[1] = true
+		h.arch.errs[2] = &worktree.Error{Reason: worktree.ReasonWorktreeDirty, Message: "dirty"}
+		h.w.Start(t.Context())
+		h.emit(store.EventIssueStateChanged, closeIssue(7))
+		synctest.Wait()
+		if got := h.arch.ids(); !slices.Equal(got, []int64{2}) {
+			t.Fatalf("archived %v, want side task 2 tried and main task 1 held", got)
+		}
+
+		// A person force-archives side task 2: it leaves the query, and
+		// main task 1 is all that remains.
+		delete(h.arch.errs, 2)
+		h.st.archivable[7] = []int64{1}
+		h.emit(store.EventTaskStateChanged, map[string]any{"id": 2, "from": "done", "to": "archived", "issue_id": 7})
+		synctest.Wait()
+		if got := h.arch.ids(); !slices.Equal(got, []int64{2, 1}) {
+			t.Fatalf("after the human archive of side task 2, archived %v; main task 1 was never retried", got)
+		}
+	})
 }

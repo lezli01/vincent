@@ -730,7 +730,9 @@ reason and left for you to archive. A linked chat closing or a lane settling
 is an event, so those two are tried again on their own. Committing or deleting
 the uncommitted changes is not: the daemon sees nothing, and a task refused
 for a dirty worktree is tried again only if some later event touches the
-issue (a task of it settling, a chat on it closing, a handoff change).
+issue (a task of it settling or archived by hand, a chat on it closing, a
+handoff change) — so archiving a held side task yourself releases the main
+tasks waiting on it.
 Otherwise it stays `done` until you archive it. Chats are never archived.
 [`vincent doctor`](cli.md#vincent-doctor)'s Issue archive group lists every
 such task with the reasons holding it, so you can find them without reading

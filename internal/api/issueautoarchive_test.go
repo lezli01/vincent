@@ -246,3 +246,53 @@ func TestLinkedChatHoldsTheArchiveUntilClosed(t *testing.T) {
 		t.Error("the linked chat was archived")
 	}
 }
+
+// TestHumanArchiveOfRefusedSideWorkReleasesTheMain is #985 over the real
+// path (review F1): a dirty side task is refused at the close and holds the
+// issue's main task (review F3); archiving the side task by hand through
+// POST /v1/tasks/{id}/archive emits the archive event the worker wakes on —
+// issue_id from the store's state payload, no archived_by — and the held
+// main task is archived then, with nothing else to wake the issue.
+func TestHumanArchiveOfRefusedSideWorkReleasesTheMain(t *testing.T) {
+	h := newTaskHarness(t, 0, true)
+	log := h.withIssueArchiver(t)
+	ctx := t.Context()
+
+	iss := h.issue(t)
+	main := h.createTask(t, map[string]any{"issue_id": iss.ID, "title": "main"})
+	h.waitForState(t, main.ID, "done")
+	side := h.createTask(t, map[string]any{
+		"issue_id": iss.ID, "title": "side", "merge_back": map[string]any{"on_conflict": "block"},
+	})
+	h.waitForState(t, side.ID, "done")
+	sideTask, err := h.store.GetTask(ctx, side.ID)
+	if err != nil || sideTask.WorktreePath == "" {
+		t.Fatalf("side task = %+v, %v; want a worktree", sideTask, err)
+	}
+	if err := os.WriteFile(filepath.Join(sideTask.WorktreePath, "untracked.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	h.closeIssue(t, iss.ID)
+	wait.Until(t, "the side refusal and the main hold logged", func() bool {
+		s := log.String()
+		return strings.Contains(s, fmt.Sprintf("task=%d issue=%d reason=worktree_dirty", side.ID, iss.ID)) &&
+			strings.Contains(s, fmt.Sprintf("main task held for refused side work\" task=%d issue=%d", main.ID, iss.ID))
+	})
+	if got, _ := h.store.GetTask(ctx, main.ID); got.State != store.TaskDone {
+		t.Fatalf("held main task = %s, want done", got.State)
+	}
+
+	resp, body := h.doJSON(t, http.MethodPost, fmt.Sprintf("/v1/tasks/%d/archive", side.ID),
+		map[string]any{"force": true})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("archive side task: %d %s", resp.StatusCode, body)
+	}
+	if p := h.archiveEvent(t, side.ID); p["issue_id"] != float64(iss.ID) || p["archived_by"] != nil {
+		t.Errorf("human archive payload = %v, want issue_id %d and no archived_by", p, iss.ID)
+	}
+	h.waitArchived(t, main.ID)
+	if p := h.archiveEvent(t, main.ID); p["archived_by"] != issuearchive.ArchivedBy {
+		t.Errorf("main archive payload = %v, want archived_by %q", p, issuearchive.ArchivedBy)
+	}
+}

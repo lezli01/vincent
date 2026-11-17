@@ -172,3 +172,15 @@ Confirmed by the author on 2026-11-04.
 
 Both questions 143.3 owned are settled: the handoff hold is decision 10, and
 the chat-directory leftover is decision 11. 143.4's are decisions 12–16.
+
+### Follow-up 2026-11-17 (issue #985)
+
+The worker skipped every `task.state_changed → archived`, on the premise that
+archiving never makes anything else archivable. Review F3's side-work hold
+made that false: a human archive of a refused side task or merge-back is
+exactly what releases the main tasks held behind it, and the issues guide
+prescribes it. `Worker.issuesOf` now wakes the issue on an archive that
+carries no `archived_by` — a human archive or a cascade from one — and still
+skips the worker's own (`archived_by: issue_closed`, decision 9), which the
+running loop already covers. Decision 12's `awaiting_retry` is unchanged;
+cleaning a dirty worktree still records no event.

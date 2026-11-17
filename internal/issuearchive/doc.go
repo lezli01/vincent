@@ -30,8 +30,11 @@
 // releases a link lock or a live issue chat; or a handoff item on it changed
 // or its handoff settled. A refusal is logged to daemon.log and never blocks
 // the cursor: the retry comes from a later event on the issue. A chat close
-// or a lane settle is one; cleaning a dirty worktree records no event, so a
-// dirty refusal waits for an unrelated event or a human archive.
+// or a lane settle is one, and so is a human archive of one of its tasks
+// (any task.state_changed → archived without archived_by, #985), which is
+// what releases main tasks held behind a refused side task. Cleaning a dirty
+// worktree records no event, so a dirty refusal waits for an unrelated event
+// or a human archive.
 //
 // While a handoff item on the issue still claims it (HandoffOutcome.Claims),
 // none of its tasks is archived (task 143 decision 10): a handoff `return`

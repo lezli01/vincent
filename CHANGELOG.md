@@ -13,6 +13,14 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **Archiving a held side task by hand now archives the closed issue's main
+  tasks.** When a closed issue's side task or merge-back could not be
+  auto-archived (uncommitted changes, a missing project path, a linked chat),
+  its main tasks were held with it; archiving that side task yourself, as the
+  issues guide advises, left the main tasks `done` on the board until some
+  unrelated event touched the issue. A human archive of an issue's task now
+  asks the issue again, so the held main tasks are archived at once (#985).
+
 - **An event stream left open across a restore no longer goes silent.** A
   client that stayed connected through `vincent daemon restore` reconnected
   with an event cursor taken from the replaced database, ahead of every event
