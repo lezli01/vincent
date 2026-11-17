@@ -229,6 +229,19 @@ func (s *Server) startStream(
 			s.internalError(w, "max event id", err)
 			return nil, 0, false
 		}
+		// A cursor past the largest id names no event this database ever
+		// held — a client kept its cursor across `vincent daemon restore`
+		// onto an older vincent.db (#967). Filtering on it would drop every
+		// event until the sequence climbed past it, so it is treated as no
+		// cursor at all (§13.3): no replay, and lastID 0 lets the live loop
+		// deliver everything, including what committed between the
+		// subscription and the MaxEventID read — clamping to highWater
+		// would drop those.
+		if cursor > highWater {
+			cursor = 0
+		}
+	}
+	if cursor > 0 {
 		// The first page is read before the headers so a store failure can
 		// still be answered with an error envelope rather than a half-open
 		// stream; later pages have nowhere to report to but the connection.

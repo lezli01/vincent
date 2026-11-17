@@ -338,8 +338,10 @@ artifact is small.
 
 **Not in the archive, and recoverable without it:** `worktrees/` (disposable —
 the branches they held are in your repositories), `token`, `daemon.json`,
-`daemon.lock`, `logs/` and `tui.json`. A restored installation mints a **fresh
-API token** at next start, so every client re-reads it.
+`daemon.lock`, `logs/` and `tui.json`. Restore leaves an existing `token`
+where it is, so a restore in place keeps the **same API token** and clients stay
+authorized; restored into an empty data directory, the daemon mints a fresh one
+at next start.
 
 **Restore is the only vincent command that touches the data directory
 directly**, because the daemon it would overwrite has to be down for it to be
