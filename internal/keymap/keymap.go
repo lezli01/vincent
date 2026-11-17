@@ -85,6 +85,9 @@ const (
 	// which project": not ctrl+e, which the m11 gate rebinds to, and not one
 	// of the ctrl keys bubbles' text fields edit with.
 	Project Op = "project"
+	// PauseAll takes or lifts the global pause (task 149). `Z` for sleep: no
+	// surface uses it, and a capital keeps it out of reach of a stray press.
+	PauseAll Op = "pause_all"
 )
 
 // Kind is which of decision 1's three families an operation belongs to.
@@ -209,6 +212,7 @@ var catalog = []Info{
 	// Not Typing: a text field types `@` (the chat composer's file mention
 	// among them), and ctrl+p's palette row reaches the picker from there.
 	{Op: Project, Default: "@", Meaning: "switch project", Kind: KindGlobal, Surfaces: []Surface{Global}},
+	{Op: PauseAll, Default: "Z", Meaning: "pause all work, or continue it (asks first)", Kind: KindGlobal, Surfaces: []Surface{Global}},
 }
 
 // Catalog returns every rebindable operation, in documentation order.
