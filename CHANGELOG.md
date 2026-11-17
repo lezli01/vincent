@@ -13,6 +13,16 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **An event stream left open across a restore no longer goes silent.** A
+  client that stayed connected through `vincent daemon restore` reconnected
+  with an event cursor taken from the replaced database, ahead of every event
+  in the restored one, and the daemon then sent it nothing until new events
+  climbed past that id — possibly thousands of them. A cursor ahead of every
+  stored event is now treated as no cursor, so the stream delivers each new
+  event at once (#967). A client that reconnects only after the restored
+  daemon's events have already passed its old cursor can still miss the ones
+  below it; re-read state after a restore.
+
 - **A chat whose turn failed before its agent started returns to idle.** A
   turn that failed before the agent process was up — no adapter for the
   chat's agent, a transcript that could not be opened, or an agent that

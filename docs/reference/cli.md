@@ -479,8 +479,9 @@ restores over the gap. Nothing is deleted on any path, and the command prints
 where everything went.
 
 Worktrees are not in a backup and are not restored; the branches they held are
-in your repositories. A fresh API token is minted at next start, so every
-client re-reads it.
+in your repositories. The `token` is not in a backup either: a restore in place
+keeps the existing one, and only an empty data directory gets a fresh token at
+next start.
 
 ## `vincent service`
 
