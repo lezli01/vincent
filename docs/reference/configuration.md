@@ -708,6 +708,15 @@ but the daemon logs a warning at startup and on any reload that introduces it.
 archive_tasks_on_issue_close: true
 ```
 
+It acts only on tasks started from an issue, and only once that issue is
+closed. Tasks with no issue (including a handoff's task and a task that starts
+issue tasks without having an issue itself), tasks of an issue still open,
+and tasks started after the close are never archived by it. Tasks of issues
+closed before the upgrade, or while this was off, are archived only if
+something later happens on the issue. See
+[What auto-archive never touches](../guides/issues.md#what-auto-archive-never-touches)
+and [What auto-archive waits for](../guides/issues.md#what-auto-archive-waits-for).
+
 When an [issue](../guides/issues.md) closes — by any route: the TUI, the CLI,
 the API, a delivery, or a sync from its tracker — the daemon archives the
 issue's finished tasks for you, once nothing on the issue is still working.

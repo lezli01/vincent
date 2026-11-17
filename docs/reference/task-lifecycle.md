@@ -185,12 +185,16 @@ and no chat on it is open — the tasks that existed at the close, side work
 before the issue's main tasks, which wait while any of that side work cannot
 be archived. This is on by default and switched off with
 [`archive_tasks_on_issue_close`](configuration.md#archive_tasks_on_issue_close).
+A task with no issue, one whose issue is still open and one started after the
+close are never archived by it; see
+[What auto-archive never touches](../guides/issues.md#what-auto-archive-never-touches).
 
 It is the same `archive` as yours, made more cautious: it never forces a dirty
 worktree and never deletes a remote branch. A task it cannot archive —
 uncommitted changes, a linked chat still open, a fan-out lane still working —
 stays as it is, with a warning in `daemon.log`. A linked chat closing or a
-lane settling retries it. Cleaning a dirty worktree does not, because the
+lane settling retries it, and archiving a held side task or merge-back by hand
+retries the main tasks waiting on it. Cleaning a dirty worktree does not, because the
 daemon records no event for it: that task waits for a later event on the issue,
 or for you to archive it. Its `task.state_changed` event carries
 `archived_by: "issue_closed"`, which yours does not.

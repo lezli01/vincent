@@ -99,7 +99,10 @@ linked chat, or let the lane finish; a task marked `awaiting_retry` is
 archived only when something next happens on its issue, so archive it yourself
 (`vincent task archive <id>`, with `--force` to discard local changes). The
 group is information: it never sets the exit code, and `--fix` leaves it
-alone. See [`vincent doctor`](../reference/cli.md#vincent-doctor).
+alone. See [`vincent doctor`](../reference/cli.md#vincent-doctor). A finished
+task the group does not list is out of the auto-archive's scope by design — a
+task with no issue, one whose issue is still open, or one started after the
+close; see [What auto-archive never touches](issues.md#what-auto-archive-never-touches).
 
 Vincent does not run `git worktree prune` in your repositories. After doctor
 removes an orphan, the repo it came from may still carry a stale registration;
