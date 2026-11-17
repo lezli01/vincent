@@ -95,8 +95,7 @@ func (s *Store) HandoffChat(ctx context.Context, chatID int64, t *Task) (*Chat, 
 	}
 	// After the commit, task first: a subscriber that reacts to
 	// chat.handed_off by fetching the task must find it.
-	s.notify(taskEv)
-	s.notify(chatEv)
+	s.notify(taskEv, chatEv)
 	return chat, nil
 }
 

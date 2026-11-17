@@ -311,9 +311,7 @@ func (s *Store) ResolveHandoffItems(ctx context.Context, v HandoffVerb) (*Handof
 	if err != nil {
 		return nil, err
 	}
-	for _, e := range evs {
-		s.notify(e)
-	}
+	s.notify(evs...)
 	if res.Kick {
 		s.kickOutbox()
 	}

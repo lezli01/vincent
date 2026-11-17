@@ -38,6 +38,8 @@ type Store struct {
 	path string
 	// eventHook fires after an event's transaction commits; see SetEventHook.
 	eventHook atomic.Pointer[func(*Event)]
+	// pub orders what eventHook sees by event id; see notify.
+	pub eventPublisher
 	// syncRequested fires after RequestIssueSync commits; see
 	// OnIssueSyncRequested.
 	syncRequested atomic.Pointer[func(int64)]
