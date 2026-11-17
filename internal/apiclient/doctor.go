@@ -86,6 +86,10 @@ type DoctorHeldTask = doctor.HeldTask
 // disk after its issue closed.
 type DoctorLeftoverChatDir = doctor.LeftoverChatDir
 
+// DoctorHoldAwaitingRetry is the HeldTask reason meaning nothing holds the
+// task: it waits for the next event or a person (task 143 decision 13).
+const DoctorHoldAwaitingRetry = doctor.HoldAwaitingRetry
+
 // DoctorProblem is one finding from the closed unhealthy set.
 type DoctorProblem = doctor.Problem
 

@@ -7,6 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
 )
@@ -55,7 +58,19 @@ func (d *daemonView) render(width, height int) string {
 	databaseAt := len(blocks)
 	blocks = append(blocks, d.databaseLines()...)
 	blocks = append(blocks, "")
+	starts := []int{configAt, databaseAt}
+	// The auto-archive block (#986) emits nothing at all, separator
+	// included, when it has nothing to show, so the layout without it is
+	// the layout from before it existed.
+	if d.doctorOK {
+		if archive := issueArchiveLines(d.doctor.IssueArchive, d.width); len(archive) > 0 {
+			starts = append(starts, len(blocks))
+			blocks = append(blocks, archive...)
+			blocks = append(blocks, "")
+		}
+	}
 	adaptersAt := len(blocks)
+	starts = append(starts, adaptersAt)
 	blocks = append(blocks, d.adapterLines()...)
 	blocks = append(blocks, "")
 
@@ -80,7 +95,7 @@ func (d *daemonView) render(width, height int) string {
 			pane.EnsureVisible(row, row)
 			blocks = pane.View()
 		} else {
-			blocks = d.pinnedBlocks(blocks, []int{configAt, databaseAt, adaptersAt}, room)
+			blocks = d.pinnedBlocks(blocks, starts, room)
 		}
 	}
 	logH = max(d.height-len(head)-len(blocks), logH)
@@ -411,6 +426,73 @@ func backupLines(b apiclient.DoctorBackup) []string {
 		out = append(out, styleWarn.Render("   ⚠ old archives were not removed: "+b.PruneError))
 	}
 	return out
+}
+
+// issueArchiveLines is the auto-archive block (#986, §15): every task the
+// issue-close auto-archive is holding, and every issue-chat directory left
+// on disk, as `vincent doctor` lists them (task 143.4). It rides the doctor
+// report the database block already fetches. Task 143 decision 16 makes this
+// information, never a problem, so it is quiet — no lines at all — when the
+// daemon did not report it, the key is off, or nothing is held; and nothing
+// renders in the problem colour. Like the rest of this view it reports and
+// offers nothing to press.
+//
+// Reasons lead and the task title trails, elided to width, so a narrow
+// terminal loses the title before any reason (the adapter-row precedent).
+func issueArchiveLines(ia apiclient.DoctorIssueArchive, width int) []string {
+	if !ia.Known || !ia.Enabled || (len(ia.Held) == 0 && len(ia.ChatDirs) == 0 && ia.Error == "") {
+		return nil
+	}
+	head := " " + styleTitle.Render("auto-archive held")
+	if len(ia.Held) > 0 {
+		head += styleDim.Render("   " + plural(len(ia.Held), "task", "tasks"))
+	}
+	out := []string{head}
+	for _, h := range ia.Held {
+		facts := "task #" + strconv.FormatInt(h.TaskID, 10)
+		if h.Role == "main" || h.Role == "side" {
+			facts += "  " + h.Role
+		}
+		facts += "  " + h.State
+		reasons := strings.Join(h.Reasons, ", ")
+		// awaiting_retry alone means nothing holds the task: it waits for
+		// the next event or a person. Every other reason is something to
+		// clear, which is a warning — never bad (decision 16).
+		style := styleWarn
+		if len(h.Reasons) == 1 && h.Reasons[0] == apiclient.DoctorHoldAwaitingRetry {
+			style = styleDim
+		}
+		row := field("issue #"+strconv.FormatInt(h.IssueID, 10), facts+"  "+style.Render(reasons))
+		switch {
+		case h.Title == "":
+		case width <= 0:
+			// No size message yet: nothing to elide to.
+			row += "  " + h.Title
+		default:
+			row += elideTail("  "+h.Title, width-lipgloss.Width(row))
+		}
+		out = append(out, row)
+	}
+	for _, c := range ia.ChatDirs {
+		out = append(out, styleDim.Render(fmt.Sprintf("   %s%s  chat #%d  %s",
+			padRight("chat dir", 22), "issue #"+strconv.FormatInt(c.IssueID, 10), c.ChatID, c.Path)))
+	}
+	if ia.Error != "" {
+		out = append(out, styleWarn.Render("   ⚠ held tasks unknown: "+ia.Error))
+	}
+	return out
+}
+
+// elideTail is s cut to room cells with an ellipsis, dim, or nothing when
+// the room would leave only the ellipsis.
+func elideTail(s string, room int) string {
+	if lipgloss.Width(s) <= room {
+		return s
+	}
+	if room < 4 {
+		return ""
+	}
+	return styleDim.Render(ansi.Truncate(s, room, "…"))
 }
 
 // dbRowSummary lists the tables biggest-first, so whichever one is growing is
