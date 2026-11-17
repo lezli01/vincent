@@ -185,12 +185,25 @@ func (s *projectScope) reloadIfFailed() tea.Cmd {
 	return s.reload()
 }
 
+// reloadNow repeats the list load unconditionally (failedReloader): the
+// reconnect that found a restored event history (issue #1001).
+func (s *projectScope) reloadNow() tea.Cmd {
+	if s.reload == nil {
+		return nil
+	}
+	return s.reload()
+}
+
 // failedReloader is implemented by every projectScoped view through
 // projectScope. On a reconnect the root walks the views directly, as it does
 // for setProject, and reloads only the ones whose last load failed (task 132
-// decision 48): a clean reconnect costs no fetch of its own.
+// decision 48): a clean reconnect costs no fetch of its own. A reconnect that
+// reports a reset — the daemon was restored onto another event history, so no
+// event since the drop will ever arrive (§13.3, issue #1001) — reloads every
+// one through reloadNow instead.
 type failedReloader interface {
 	reloadIfFailed() tea.Cmd
+	reloadNow() tea.Cmd
 }
 
 // noProjectsEmpty is the one empty state every project-scoped view draws once

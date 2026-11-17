@@ -34,6 +34,10 @@ const (
 	// enough that a page is a few hundred KiB of envelopes, large enough
 	// that a realistic catch-up is a handful of queries.
 	replayPageSize = 512
+	// eventGenerationHeader carries the event history's generation (§13.3,
+	// issue #1001): on every durable stream's response, and on a resuming
+	// request as the generation its Last-Event-ID came from.
+	eventGenerationHeader = "X-Event-Generation"
 )
 
 // eventJSON is the SSE `data:` body of a durable event: the full envelope,
@@ -224,6 +228,21 @@ func (s *Server) startStream(
 		page      []store.Event
 		err       error
 	)
+	// The event history's generation (issue #1001): an id names an event
+	// only within one history, and `vincent daemon restore` starts another
+	// whose sequence climbs back over ids a client already saw. A cursor
+	// presented with a different generation is no cursor at all, whatever
+	// its value — the same treatment as one past the high-water mark below.
+	gen, err := s.deps.Store.EventGeneration(r.Context())
+	if err != nil {
+		s.internalError(w, "event generation", err)
+		return nil, 0, false
+	}
+	if raw := strings.TrimSpace(r.Header.Get(eventGenerationHeader)); raw != "" && cursor > 0 {
+		if known, perr := strconv.ParseInt(raw, 10, 64); perr != nil || known != gen {
+			cursor = 0
+		}
+	}
 	if cursor > 0 {
 		if highWater, err = s.deps.Store.MaxEventID(r.Context()); err != nil {
 			s.internalError(w, "max event id", err)
@@ -253,6 +272,7 @@ func (s *Server) startStream(
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set(eventGenerationHeader, strconv.FormatInt(gen, 10))
 	w.WriteHeader(http.StatusOK)
 	rc := http.NewResponseController(w)
 

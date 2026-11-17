@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -280,6 +282,62 @@ func (s *Store) MaxEventID(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("max event id: %w", err)
 	}
 	return id, nil
+}
+
+// EventGeneration returns the event history's generation (§13.3, issue
+// #1001): the identity under which an event id means one event. It changes
+// only when the daemon starts on a restored database (BumpEventGeneration), so
+// a client resuming with a cursor from another generation is told so. It is
+// an opaque identity: compare it for equality, never order it.
+func (s *Store) EventGeneration(ctx context.Context) (int64, error) {
+	var gen int64
+	if err := s.db.QueryRowContext(ctx, `SELECT generation FROM event_history WHERE id = 1`).Scan(&gen); err != nil {
+		return 0, fmt.Errorf("event generation: %w", err)
+	}
+	return gen, nil
+}
+
+// BumpEventGeneration starts a new event history and returns its generation.
+// The daemon calls it on its first start after `vincent daemon restore`.
+//
+// The new generation is random, never derived from the current one (review
+// F1 of issue #1001's train): the row lives in vincent.db, the very file a
+// restore replaces, so `generation + 1` would hand two different histories
+// the same number whenever the same backup is restored twice — the second
+// restore climbs to the generation the first one's clients already hold, and
+// their stale cursors are trusted again. Clients compare generations for
+// equality only, so a fresh positive 63-bit value that differs from the
+// current one is all an identity needs.
+func (s *Store) BumpEventGeneration(ctx context.Context) (int64, error) {
+	cur, err := s.EventGeneration(ctx)
+	if err != nil {
+		return 0, err
+	}
+	gen, err := newEventGeneration(cur)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE event_history SET generation = ? WHERE id = 1`, gen,
+	); err != nil {
+		return 0, fmt.Errorf("bump event generation: %w", err)
+	}
+	return gen, nil
+}
+
+// newEventGeneration draws a positive generation other than cur. Zero is
+// excluded because apiclient reads it as "no generation known yet".
+func newEventGeneration(cur int64) (int64, error) {
+	for {
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return 0, fmt.Errorf("bump event generation: %w", err)
+		}
+		gen := int64(binary.BigEndian.Uint64(b[:]) >> 1)
+		if gen != 0 && gen != cur {
+			return gen, nil
+		}
+	}
 }
 
 // ListEvents returns events matching f in id order — the catch-up query

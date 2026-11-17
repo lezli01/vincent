@@ -711,6 +711,12 @@ func (v *chatView) applyChatNote(msg chatNoteMsg) tea.Cmd {
 	}
 	next := readNextChatNote(msg.chatID, msg.next)
 	switch note := msg.note.(type) {
+	case apiclient.ConnectedNote:
+		if note.Reset {
+			// A restored event history (issue #1001): no chat event will
+			// say what changed, so re-read the chat.
+			return tea.Batch(next, v.loadCmd())
+		}
 	case apiclient.EventNote:
 		if strings.HasPrefix(note.Event.Type, "chat.") {
 			// The daemon invalidates a chat's skill listing when a turn ends

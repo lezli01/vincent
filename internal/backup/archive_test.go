@@ -333,6 +333,10 @@ func TestRoundTripIntoCleanDirectories(t *testing.T) {
 			t.Errorf("%s restored as %q, want %q", pair[1], got, want)
 		}
 	}
+	// The marker the daemon starts a new event history on (issue #1001).
+	if _, err := os.Stat(filepath.Join(into.Data, RestoredMarker)); err != nil {
+		t.Errorf("restore left no %s marker: %v", RestoredMarker, err)
+	}
 	// The excluded files stay excluded on the way back too.
 	for _, gone := range []string{"token", "daemon.json", "tui.json", DatabaseEntry + "-wal"} {
 		if _, err := os.Stat(filepath.Join(into.Data, gone)); !errors.Is(err, os.ErrNotExist) {
