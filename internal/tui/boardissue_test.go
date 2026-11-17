@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -313,6 +314,52 @@ func TestIssueHeaderTruncatesToItsColumn(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestIssueHeaderKeepsItsBadgesAtTheNarrowestColumn is review F3 on PR
+// #1000: `closed` is what gives way after the title, so on the narrowest
+// title column (16) and on an 80-column board with marking on (27) the count,
+// the `! n` badge and the marked count are never what the table cuts — nested
+// under a second level and with two-digit counts too.
+func TestIssueHeaderKeepsItsBadgesAtTheNarrowestColumn(t *testing.T) {
+	for _, tc := range []struct {
+		width, depth, count, attention, marked int
+	}{
+		{width: 16, count: 3, attention: 2, marked: 1},
+		{width: 16, depth: 1, count: 3, attention: 2, marked: 1},
+		{width: 20, count: 3, attention: 2, marked: 1},
+		{width: 24, count: 3, attention: 2, marked: 1},
+		{width: 27, count: 3, attention: 2, marked: 1},
+		{width: 27, depth: 1, count: 12, attention: 10, marked: 11},
+		{width: 40, depth: 1, count: 12, attention: 10, marked: 11},
+	} {
+		r := boardRow{
+			header: true, label: "issue #42 · Fix the login flow", closed: true, depth: tc.depth,
+			count: tc.count, attention: tc.attention, marked: tc.marked,
+		}
+		cell := ansi.Strip(r.headerCell(tc.width))
+		if w := ansi.StringWidth(cell); w > tc.width {
+			t.Errorf("%+v: header %q is %d wide", tc, cell, w)
+		}
+		for _, part := range []string{
+			"  " + strconv.Itoa(tc.count),
+			attentionBadge + " " + strconv.Itoa(tc.attention),
+			markGlyph + " " + strconv.Itoa(tc.marked),
+		} {
+			if !strings.HasSuffix(cell, part) && !strings.Contains(cell, part+"  ") {
+				t.Errorf("%+v: header %q lost %q", tc, cell, part)
+			}
+		}
+	}
+	// Where `closed` fits beside the issue's head it is kept; where it does
+	// not, the bare head names the group rather than a head cut short.
+	r := boardRow{header: true, label: "issue #42 · Fix the login flow", closed: true, count: 3, attention: 2, marked: 1}
+	if cell := ansi.Strip(r.headerCell(33)); !strings.Contains(cell, "issue #42 · closed") {
+		t.Errorf("width 33: header %q, want the head kept with closed", cell)
+	}
+	if cell := ansi.Strip(r.headerCell(24)); !strings.HasPrefix(cell, "▾ issue #42  3") {
+		t.Errorf("width 24: header %q, want the bare head", cell)
 	}
 }
 

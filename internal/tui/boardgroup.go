@@ -426,18 +426,53 @@ func (r boardRow) headerCell(width int) string {
 		closed = groupLabelSep + issueStateClosed
 	}
 	if width > 0 {
-		room := width - ansi.StringWidth(lead) - ansi.StringWidth(tail)
-		if ansi.StringWidth(label)+ansi.StringWidth(closed) > room {
-			// `closed` outranks the end of a title: it is state, the title
-			// is a name the header has already begun.
-			label = ansi.Truncate(label, max(room-ansi.StringWidth(closed), 1), "…")
-		}
+		lead, label, closed = fitHeader(glyph, lead, label, closed, width-ansi.StringWidth(tail))
 	}
 	out := styleGroup.Render(lead + label)
 	if closed != "" {
 		out += styleDim.Render(closed)
 	}
 	return out + tail
+}
+
+// fitHeader shortens a header's lead, label and `closed` to room cells, so
+// that nothing after them — the count and the badges — reaches the tail the
+// table would cut. Each step gives up the least informative thing left:
+//
+//  1. the end of the title, keeping `closed` — it is state, and the title is
+//     a name the header has already begun — while the label keeps at least
+//     its head (`issue #42`, the part before the first ` · `);
+//  2. `closed`, leaving the label the whole room;
+//  3. the label and the indentation, leaving the glyph alone.
+//
+// Review F3 on PR #1000: `closed` used to be kept at any width, so a narrow
+// title column lost the marked count or the `! n` badge instead.
+func fitHeader(glyph, lead, label, closed string, room int) (string, string, string) {
+	room -= ansi.StringWidth(lead)
+	if ansi.StringWidth(label)+ansi.StringWidth(closed) <= room {
+		return lead, label, closed
+	}
+	head, _, _ := strings.Cut(label, groupLabelSep)
+	if r := room - ansi.StringWidth(closed); closed != "" && r >= ansi.StringWidth(head) {
+		return lead, fitLabel(label, head, r), closed
+	}
+	if room >= 1 {
+		return lead, fitLabel(label, head, room), ""
+	}
+	return glyph, "", ""
+}
+
+// fitLabel truncates label to room cells. A room too narrow for the head and
+// a few cells of what follows it gets the bare head, which still names the
+// group, rather than a head cut short by an ellipsis.
+func fitLabel(label, head string, room int) string {
+	if ansi.StringWidth(label) <= room {
+		return label
+	}
+	if hw := ansi.StringWidth(head); room >= hw && room < hw+ansi.StringWidth(groupLabelSep)+2 {
+		return head
+	}
+	return ansi.Truncate(label, room, "…")
 }
 
 // groupIndent is one level of nesting, for headers and for the task titles

@@ -16553,7 +16553,10 @@ so the two never alias in a fold path. The header reads
 every header carries: the ref (the daemon-rendered `short_ref`, else `ref`)
 only for an imported issue, the dim `closed` only for a closed one, and the
 label truncated with `…` to fit the title column on a normal or a wrapped
-board so the count, the `! n` badge and the marked count stay on screen. The
+board so the count, the `! n` badge and the marked count stay on screen: the
+title's end gives way first, then `closed` (the label falls back to the bare
+`issue #<id>` where only that fits), then the label and indentation (review
+F3, PR #1000). The
 `no issue` group is ordered by the band sort like any other, never pinned
 last. The header shows the issue as it is now, so `issue.updated`,
 `issue.state_changed` and `issue.deleted` refetch the board as a task event
