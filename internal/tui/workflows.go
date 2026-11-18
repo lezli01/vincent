@@ -125,6 +125,13 @@ type workflowsView struct {
 	// It follows the shape projectsView uses for its form: a nullable
 	// sub-model that takes the keys and renders in place (decision 13).
 	graph *graphLayer
+	// preview is the graph the wide layout draws for the selected entry, and
+	// previewArmed the entry whose read is waiting for the selection to rest.
+	// While the graph has the keyboard, graph and preview are the same layer.
+	preview      *graphLayer
+	previewArmed wfResolveKey
+	// hits is where the wide layout last drew each entry.
+	hits []mgmtHit
 
 	// vp scrolls the list. Without it a registry taller than the terminal is
 	// simply cut off — a truncation that predates the graph and that the
@@ -149,7 +156,8 @@ func (w *workflowsView) setProject(p projectSel) tea.Cmd {
 		w.cursor, w.expanded = 0, false
 		// The editor and the graph are on one of the old project's files
 		// (review F6); retarget handles the create prompt.
-		w.editor, w.graph = nil, nil
+		w.editor, w.graph, w.preview = nil, nil, nil
+		w.previewArmed = wfResolveKey{}
 	}
 	return w.projectScope.setProject(p)
 }
@@ -246,9 +254,15 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		// Crossing the wide layout's breakpoint reorders the list, and the
+		// selection stays on the entry rather than on the row.
+		line, selected := w.currentLine()
 		w.width, w.height, w.termW = msg.Width, msg.Height, msg.Width
+		if selected {
+			w.selectKey(line.key())
+		}
 		w.sizeGraph()
-		return w, nil
+		return w, w.previewCmd()
 	case viewActivatedMsg:
 		if msg.id == viewWorkflows {
 			return w, w.loadCmd()
@@ -259,7 +273,9 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return w, w.loadCmd()
 	case workflowsLoadedMsg:
 		w.applyLoaded(msg)
-		return w, w.resolveCmd()
+		return w, tea.Batch(w.resolveCmd(), w.previewCmd())
+	case workflowPreviewDueMsg:
+		return w, w.previewDue(msg.key)
 	case workflowResolvedMsg:
 		if msg.err == nil {
 			if w.resolutions == nil {
@@ -285,6 +301,9 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return w.updateKey(msg)
 	case tea.MouseClickMsg, tea.MouseWheelMsg:
+		if w.frameless() {
+			return w, w.updateWideMouse(msg)
+		}
 		w.updateGraphMouse(msg)
 		return w, nil
 	}
@@ -371,9 +390,9 @@ func (w *workflowsView) updateNote(n apiclient.Note) tea.Cmd {
 		// reflecting saves immediately is this view's stated §15 behaviour,
 		// and a graph that went stale while you edited the file under it
 		// would be the wrong half of that promise (decision 19).
-		if w.graph != nil {
-			w.graph.loading = true
-			cmds = append(cmds, w.definitionCmd(w.graph.key))
+		if g := w.shownGraph(); g != nil {
+			g.loading = true
+			cmds = append(cmds, w.definitionCmd(g.key))
 		}
 		return tea.Batch(cmds...)
 	}
@@ -392,11 +411,15 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
 		w.moveCursor(-1)
-		return w, w.resolveCmd()
+		return w, tea.Batch(w.resolveCmd(), w.previewCmd())
 	case "down", "j":
 		w.moveCursor(1)
-		return w, w.resolveCmd()
+		return w, tea.Batch(w.resolveCmd(), w.previewCmd())
 	case "enter":
+		// The wide layout always shows the steps, so enter goes on into the graph.
+		if w.wideTerm() {
+			return w, w.openGraph()
+		}
 		w.expanded = !w.expanded
 		return w, w.resolveCmd()
 	case "g":
@@ -416,6 +439,10 @@ func (w *workflowsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return w, nil
 	case opKey(keymap.Refresh):
 		w.err = ""
+		if g := w.preview; g != nil {
+			g.err, g.loading = "", true
+			return w, tea.Batch(w.loadCmd(), w.definitionCmd(g.key))
+		}
 		return w, w.loadCmd()
 	case "esc":
 		// One layer per press (§15): an error note clears first; with
@@ -505,6 +532,9 @@ func (w *workflowsView) lines() []wfLine {
 		entries = append(entries, wfLine{entry: e, projectID: w.project.id, shadows: globalScope[e.Name]})
 	}
 	sortLines(entries)
+	if w.wideTerm() {
+		groupLines(entries)
+	}
 	return append(out, entries...)
 }
 

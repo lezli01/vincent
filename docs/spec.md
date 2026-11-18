@@ -15868,8 +15868,10 @@ stream for the live tail.
    130 columns the management screens have wide layouts over their existing
    models**, and a narrower terminal keeps the layouts this section describes:
    projects as a grid of cards beside the cross-project attention list; workflows
-   unframed; the daemon as a dashboard of boxes; pull requests in Linked and
-   Unclaimed columns with a preview that reads a claimed pull request's checks
+   grouped into This project, Global and Built-in, with the selected entry's graph
+   beside them, read once the selection rests, and from 150 columns its details,
+   `g` or `enter` moving the keyboard into the graph; the daemon as a dashboard of
+   boxes; pull requests in Linked and Unclaimed columns with a preview that reads a claimed pull request's checks
    through `GET /v1/tasks/{id}/github/pull/checks` once the selection rests on it;
    triggers as cards beside their details and deliveries; and the archived boards
    as cards and the chats workspace. `tab` crosses between archived tasks and

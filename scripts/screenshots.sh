@@ -1665,18 +1665,18 @@ do_capture() {
 
   # The three Workflows tapes open the global fan-out workflow by its row on
   # api's Workflows view, which lists the global registry and api's own
-  # entries together, by name, a project entry ahead of the global one it
-  # shadows (task 132 decision 39). api shadows feature-delivery, so the
-  # global copy — the one with the lanes — is the row after api's. Every
+  # entries grouped by scope, This project, Global and Built-in, each by name
+  # (task 150.7). api shadows feature-delivery, and the global copy is the one
+  # with the lanes. Every
   # workflow the seed or the built-ins add moves it, so the row is computed
   # the way the view sorts rather than counted by hand, which is how those
   # tapes once photographed docs-refresh instead.
   local wf_row p_api
   p_api="$(project_id api)"
   wf_row="$(jq -n --argjson g "$(api GET /workflows)" --argjson p "$(api GET "/workflows?project_id=$p_api")" '
-    [($p.workflows[] | select(.scope == "project") | {name, own: 0}),
-     ($g.workflows[] | {name, own: 1})]
-    | sort_by(.name, .own) | map("\(.name)/\(.own)") | index("feature-delivery/1")')"
+    [($p.workflows[] | select(.scope == "project") | {name, rank: 0}),
+     ($g.workflows[] | {name, rank: (if .scope == "global" then 1 else 2 end)})]
+    | sort_by(.rank, .name) | map("\(.name)/\(.rank)") | index("feature-delivery/1")')"
   [[ "$wf_row" =~ ^[0-9]+$ ]] || fail "feature-delivery is not in api's Workflows view"
 
   # The task board: its columns, cards and preview (task 150.6), wide enough

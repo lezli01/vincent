@@ -764,7 +764,7 @@ var bindings = []binding{
 	{key: "esc", label: "finish the field, or close the list without picking", scope: scopePanel, context: ctxProjectFormField, hint: "esc done", priority: 3},
 
 	// Workflows.
-	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows, hint: "enter steps", priority: 1},
+	{key: "enter", label: "show the entry's steps, or explore its graph where the steps are already on screen", scope: scopePanel, context: ctxWorkflows, hint: "enter open", priority: 1},
 	{op: keymap.Editor, key: "e", label: "open the workflow file in $EDITOR (the view updates when you save)", scope: scopePanel, context: ctxWorkflows, hint: "e edit", priority: 2, term: termEditor},
 	{op: keymap.Refresh, key: "R", label: "re-read the registry", scope: scopePanel, context: ctxWorkflows, hint: "R reload", priority: 3, term: termRefresh},
 	{key: "g", label: "draw the workflow as a control-flow graph", scope: scopePanel, context: ctxWorkflows, hint: "g graph", priority: 4},

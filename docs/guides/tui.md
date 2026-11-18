@@ -2159,15 +2159,15 @@ project, because the global file is shared by all of them. If the project's
 own workflows cannot be read, the global rows stay on screen with an error
 line above them.
 
-On a wide terminal the merged registry stays in the left rail. The focused
-pane names the selected entry's scope and source, availability and findings,
-then reveals its resolved step list with `enter`. `g` uses that focused pane
-for the graph while keeping the registry visible, so `esc` returns to the same
-entry with its surrounding scopes still in view.
+From 130 columns the registry is grouped into **This project**, **Global** and
+**Built-in**, and the selected workflow's graph is drawn beside it as you move.
+From 150 columns a details pane adds the entry's scope and source, availability
+and findings, declared fields, and steps with the agents they resolve to. `g` or
+`enter` moves the keyboard into the graph, and `esc` returns to the same entry.
 
 | Key | Does |
 |---|---|
-| `enter` | Show the entry's steps |
+| `enter` | Show the entry's steps. From 130 columns, where they are already on screen, explore its graph |
 | `g` | Draw the entry as a control-flow graph |
 | `i` | Edit the entry in a structured form |
 | `a` | Create a workflow, globally or in the selected project |
@@ -2277,12 +2277,14 @@ a file broken badly enough that the forms cannot load it.
 A numbered list of top-level steps can name a `parallel` group or a `fan_out`
 but cannot show where control goes. `g` draws it:
 
-![The Workflows view: the registry on the left with its scopes, shadowing and
-one invalid entry, and on the right the selected workflow drawn as a graph — an
-agent step into a four-lane fan_out, one lane guarded by an `if`](../assets/tui-workflow-graph.png)
+![The Workflows view: the registry grouped by scope on the left, the selected
+workflow drawn as a graph in the middle — an agent step into a four-lane
+fan_out, one lane guarded by an `if` — and its details on the
+right](../assets/tui-workflow-graph.png)
 
-The graph opens **over** the list, not instead of it: `enter`'s step list, with
-its findings and platform notes, is still there when you press `esc`.
+On a narrower terminal the graph opens **over** the list, not instead of it:
+`enter`'s step list, with its findings and platform notes, is still there when
+you press `esc`.
 
 How to read it. Every one of these works with color turned off:
 

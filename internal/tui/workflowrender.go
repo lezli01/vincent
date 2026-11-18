@@ -25,6 +25,14 @@ func (w *workflowsView) render(width, height int) string {
 	if w.editor != nil {
 		return w.renderEditor(width, height)
 	}
+	if w.frameless() && w.width > 0 {
+		w.sizeGraph()
+		out := w.renderWide(w.width, w.height)
+		if w.graph != nil && w.graph.modal != nil {
+			return w.overlayStepModal(out)
+		}
+		return out
+	}
 	if w.graph != nil {
 		w.sizeGraph()
 		var out string
@@ -115,7 +123,7 @@ func (w *workflowsView) renderRegistryRail(lines []wfLine, height int) string {
 func workflowRailBadge(entry apiclient.WorkflowEntry) (lead, trail string) {
 	switch {
 	case !entry.Valid():
-		return styleBad.Render("✗ invalid") + " ", ""
+		return styleBad.Render(ic("✗")+" invalid") + " ", ""
 	case !entry.RunsHere():
 		return styleWarn.Render("! platform") + " ", ""
 	case len(entry.Warnings) > 0:
@@ -260,7 +268,7 @@ func (w *workflowsView) renderList(width, height int) string {
 // viewport's arithmetic does not change when a node with more detail is
 // selected.
 func (w *workflowsView) renderGraph(width, height int) string {
-	g := w.graph
+	g := w.shownGraph()
 	out := []string{w.graphHeader()}
 	body := max(height-graphChromeRows, 1)
 
@@ -294,7 +302,7 @@ func (w *workflowsView) renderGraph(width, height int) string {
 }
 
 func (w *workflowsView) graphHeader() string {
-	g := w.graph
+	g := w.shownGraph()
 	parts := []string{" " + styleTitle.Render(g.key.name), styleDim.Render("[" + g.scope + "]")}
 	if g.loading {
 		parts = append(parts, styleDim.Render("refreshing…"))
@@ -316,7 +324,7 @@ const inspectorRows = 3
 func (w *workflowsView) inspector(width int) []string {
 	rule := strings.Repeat("─", max(width, 1))
 	out := []string{styleDim.Render(rule)}
-	fields := w.graph.graph.Detail()
+	fields := w.shownGraph().graph.Detail()
 	if len(fields) == 0 {
 		return append(out, styleDim.Render("  nothing selected"), "")
 	}
