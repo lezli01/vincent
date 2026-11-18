@@ -289,6 +289,10 @@ type Branch struct {
 	MainCheckout bool `json:"main_checkout,omitempty"`
 	// Current marks the branch the project's main checkout has at HEAD.
 	Current bool `json:"current,omitempty"`
+	// Ahead is how many commits the branch has that AheadOf, the project's
+	// default branch, does not. Nil when git could not say.
+	Ahead   *int   `json:"ahead,omitempty"`
+	AheadOf string `json:"ahead_of,omitempty"`
 }
 
 type branchListResponse struct {

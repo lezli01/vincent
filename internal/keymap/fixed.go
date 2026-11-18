@@ -86,6 +86,7 @@ var fixed = []Fixed{
 	{"new task", "enter", "open the focused field's editor or picker"},
 	{"new task", "+", "nudge the priority"},
 	{"new task", "ctrl+s", "create the task"},
+	{"new task", "left", "move to the workflow list on the wide form"},
 	{"new task fields", "down", "move between the fields"},
 	{"new task fields", "enter", "edit the row under the cursor, toggle a declared boolean, or open a declared enum's list"},
 	{"new task fields", "left", "step a declared enum or boolean through its values in place"},

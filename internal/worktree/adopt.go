@@ -3,6 +3,7 @@ package worktree
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/lezli01/vincent/internal/gitx"
@@ -299,6 +300,35 @@ func (m *Manager) ListBranches(ctx context.Context, repo string) ([]Branch, erro
 		})
 	}
 	return branches, nil
+}
+
+// BranchesAhead counts, for every local branch, the commits it has that base
+// does not. It is one `for-each-ref`, so a project with two hundred branches
+// costs one git call. The count is a courtesy on a picker: a git older than
+// 2.41, which has no `ahead-behind` atom, or a base that does not exist answers
+// nil and the picker simply says nothing.
+func (m *Manager) BranchesAhead(ctx context.Context, repo, base string) map[string]int {
+	if base == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
+	defer cancel()
+	out, err := m.git.Run(ctx, repo, "for-each-ref",
+		"--format=%(refname:short) %(ahead-behind:refs/heads/"+base+")", "refs/heads/")
+	if err != nil {
+		return nil
+	}
+	ahead := map[string]int{}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			continue
+		}
+		if n, err := strconv.Atoi(fields[1]); err == nil {
+			ahead[fields[0]] = n
+		}
+	}
+	return ahead
 }
 
 // checkedOutBranches maps every branch git reports as checked out to the

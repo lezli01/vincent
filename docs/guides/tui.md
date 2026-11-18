@@ -1486,6 +1486,19 @@ project before the form opens. A guided form: project → workflow
 *(worktree and merge back, when seeded from an issue that has a main branch)* →
 base branch → branch → priority → start → optional agent/model/effort override.
 
+**From 130 columns and 24 rows the whole form is one screen.** The workflows are
+listed on the left, grouped by where they come from. The draft is in the middle,
+and the section you are in has the thick border. The pane on the right says what
+would run: the selected workflow's description and steps with the agent, model
+and effort each would use, where the work happens, and what is still missing
+before the task can be created. `tab` walks the same fields in the same order at
+every width. The effort row is left out once you choose an agent that has no
+effort levels.
+
+On this screen `←` moves to the workflow list and `→` or `enter` comes back to
+the field you left. In the list, `↑`/`↓` choose a workflow as you move, from the
+top of the list to the bottom, and `/` filters it.
+
 **The two branch rows are lists** over the project's own local branches, served
 by [`GET /v1/projects/{id}/branches`](../reference/api.md). `enter` opens one,
 `/` narrows it and `t` types a name it does not offer, exactly as the override
@@ -1606,13 +1619,14 @@ heads the Workflow stage. The rail follows
 the ordinary field cursor — there is no separate Next button or second set of
 navigation keys.
 
-![New task at its Execution stage: the six stages in the left rail, each with
-what has been decided so far, and on the right the model override's list open
-over the agent/model/effort rows](../assets/tui-new-task.png)
+![New task on one screen: the workflows on the left, the draft in the middle with
+the model override's list open, and what would run on the right](../assets/tui-new-task.png)
 
 | Key | Does |
 |---|---|
 | `enter` | Open the focused field's editor or picker; on the start row, toggle creating the task paused |
+| `←` / `→` | On the one-screen form, move to the workflow list and back to the field you left |
+| `/` | In the one-screen form's workflow list, filter the workflows |
 | `t` | In an open list, type a value it does not offer |
 | `a` / `d` | In Fields, add or remove a custom row (declared rows cannot be removed) |
 | `e` | Edit the description in `$EDITOR` |
@@ -1949,6 +1963,13 @@ opened on the issue holding it (`enter` opens the chat), or `free`; a
 **Work** line counting the issue's tasks and chats; and, for an imported
 issue, where it came from — the URL and the state GitHub last reported; and
 the discussion thread under the description, described below.
+
+On a terminal at least 120 columns wide and 18 rows tall, the detail spreads
+out. A band across the top holds the id, the title, the lane and what the issue
+is waiting on. Under it, the description, comments, Main worktree and Work
+scroll in the main pane, with each comment in its own box, and a **Details**
+pane beside them keeps the facts and the source in view. A smaller terminal
+shows everything as one scrolling page.
 
 The detail has two tabs, drawn as an `Issue | Work` strip at the top: `tab`
 or `]` moves to the next one and `shift+tab` or `[` to the previous one,
@@ -2524,10 +2545,14 @@ would use, and both end with a row for typing a value the catalog has never
 heard of — a model shipped this morning is not in it. Changing the agent
 re-scopes both lists and clears anything chosen under the previous one.
 
-`←`/`→` still step the agent row one at a time without opening its list,
-which is quicker when you have two agents. They are not
-offered on the model and effort rows, where stepping through a hundred values
-answers nothing.
+`←`/`→` still step the agent row one at a time without opening its list, which is
+quicker when you have two agents. They step a model or effort list of six or fewer
+the same way. A longer list stays behind `enter`, where stepping through a hundred
+values would answer nothing. An agent with no effort levels has no effort row.
+
+![The new-chat screen: the chat list on the left, the title, agent cards, model and
+effort chips and branch choice in the middle, and a summary of what the chat would
+get on the right](../assets/tui-new-chat.png)
 
 Title and base branch are typed. The base row's placeholder names the selected
 project's actual default branch; leave it empty and
@@ -2570,13 +2595,18 @@ One conversation: the finished turns above, the running turn's live output below
 them, and a composer at the bottom.
 
 Your own messages are easy to find in it. A prompt is drawn as a right-aligned
-bubble — as wide as it needs to be, up to about two thirds of the pane, wrapping
-inside itself and marked with `›` on *every* line, not just the first. The
-agent's half of a turn is untouched: flush left, full width. The distinction is
-alignment and the marker as much as it is the colour, so it survives a
-monochrome terminal, `NO_COLOR` and an SSH session that lost the palette. Line
-breaks you typed are line breaks in the bubble, and a long prompt is not cut
-short — the tail of what you asked stays readable.
+card titled `You` — as wide as it needs to be, up to about two thirds of the
+pane, wrapping inside itself, with how long ago you sent it on its top edge. The
+agent's half of a turn starts with a heading that names the agent, the turn and
+when it answered, and runs flush left at the full width. The border and the title
+carry the distinction as much as the colour does, so it survives a monochrome
+terminal, `NO_COLOR` and an SSH session that lost the palette. Line breaks you
+typed are line breaks in the card, and a long prompt is not cut short — the tail
+of what you asked stays readable.
+
+What the agent did is one short line per tool call: `✓` when it finished, `✗`
+when it failed, `⊘` when a permission rule refused it, and `◌` while it is still
+going. The `verbose` level shows each call and its result separately.
 
 The composer sits inside a titled `message` box, so the field you type into does
 not read as one more row of the conversation. The border comes out of the pane's
@@ -2588,7 +2618,7 @@ a draft taller still scrolls inside it, and the box's title says how many lines
 are out of view (`+N lines`). The conversation shrinks to pay for the rows.
 
 ![The chat workspace at `quiet`: the second turn's prompt as a right-aligned
-bubble, the answer rendered below it with its fenced block, and the titled
+card, the answer rendered below it with its fenced block, and the titled
 `message` composer under them](../assets/tui-chat.png)
 
 **While a turn runs, an in-progress indicator sits just above that box** — a

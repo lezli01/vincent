@@ -897,7 +897,7 @@ remember one:
   { "name": "main", "checked_out_in": "/home/me/code/app",
     "main_checkout": true, "current": true },
   { "name": "feat/OPS-412", "checked_out_in": "/home/me/.local/share/vincent/worktrees/12" },
-  { "name": "spike/parser" }
+  { "name": "spike/parser", "ahead": 3, "ahead_of": "main" }
 ] }
 ```
 
@@ -3133,7 +3133,8 @@ in its own git worktree and `vincent/{id}-{slug}` branch — or, when it was
 `existing_branch`, on a branch that already exists. Each turn resumes
 the agent CLI's own session, so turn N has turns 1..N-1 in context. Chats are a
 separate family from tasks: they never appear in `GET /v1/tasks` or on the
-board, and tasks never appear here.
+board, and tasks never appear here. A chat carries its `permission_mode`, and
+the two reads, `GET /v1/chats` and `GET /v1/chats/{id}`, add its `turn_count`.
 
 ```
 GET    /v1/chats?project_id=&task_id=&issue_id=&state=&archived=

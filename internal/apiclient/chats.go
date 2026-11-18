@@ -20,6 +20,10 @@ type Chat struct {
 	Agent     string `json:"agent"`
 	Model     string `json:"model,omitempty"`
 	Effort    string `json:"effort,omitempty"`
+	// PermissionMode is what the chat's turns run under.
+	PermissionMode string `json:"permission_mode,omitempty"`
+	// TurnCount is how many turns the chat has, on the list and single reads.
+	TurnCount int    `json:"turn_count,omitempty"`
 	Branch    string `json:"branch"`
 	// AdoptedBranch says the chat runs on a branch vincent did not cut
 	// (task 125).

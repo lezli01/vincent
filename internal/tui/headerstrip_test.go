@@ -189,8 +189,23 @@ func TestStripInEveryConnectionPhase(t *testing.T) {
 	}
 }
 
+// A chat open in the workspace is still the Chats tab.
+func TestOpenChatKeepsTheStrip(t *testing.T) {
+	m := tabsRoot(t, "issues", "tasks", "chats")
+	v := m.views[viewChat].(*chatView)
+	v.back, v.termW = viewChats, 170
+	m.switchTo(viewChat)
+	v.back, v.termW = viewChats, 170
+	if got := stripHeader(m, 170); !strings.Contains(got, "▦ Issues │ ▶ Tasks") {
+		t.Fatalf("the open chat's header = %q, want the strip", got)
+	}
+}
+
 func TestNoStripOffATabRoot(t *testing.T) {
 	m := tabsRoot(t, "issues", "tasks", "chats")
+	// A chat opened from an issue keeps the whole screen; one inside the chats
+	// workspace is still the Chats tab (TestOpenChatKeepsTheStrip).
+	m.views[viewChat].(*chatView).back = viewIssue
 	for _, id := range []viewID{
 		viewTask, viewIssue, viewArchived, viewArchivedChats, viewProjects,
 		viewWorkflows, viewDaemon, viewPullRequests, viewTriggers, viewChat, viewNewTask,

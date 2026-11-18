@@ -19,6 +19,9 @@ func (v *chatsView) render(width, height int) string {
 	if width < 4 || height < 2 {
 		return ""
 	}
+	if v.createWide() {
+		return v.renderCreateWide(width, height)
+	}
 	if v.create != nil {
 		// The form is the whole screen while it is open, held to the board's
 		// height like anything else the board returns: a form taller than

@@ -1728,12 +1728,12 @@ Screenshot "'"$OUT"'/tui-diff.png"
   # model override's list open. The form opens on the workflow row: the
   # project row above it is the selection, drawn and never focused (task
   # 132.13), so the project is the one the tape launches on.
-  tape tui-new-task 1050 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-new-task 1250 api '
 Tab
 Sleep 2s
 Type "n"
 Sleep 3s
-Down 1
+Tab
 Sleep 500ms
 Enter
 Sleep 500ms
@@ -2243,15 +2243,13 @@ Sleep 2s
   # commits the filter and the choice with two enters. In Fields the ticket
   # gets a value, and the `multiple` enum is left open with two regions
   # ticked: the list is the only way to change one. The form opens on its
-  # workflow row, so the first enter opens the workflow picker; the project
-  # is platform-infra, the one the tape launches on.
-  tape tui-new-task-fields 1250 platform-infra '
+  # workflow list, where `/` starts the filter; the project is platform-infra,
+  # the one the tape launches on.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-new-task-fields 1250 platform-infra '
 Tab
 Sleep 2s
 Type "n"
 Sleep 3s
-Enter
-Sleep 1s
 Type "/"
 Sleep 500ms
 Type "change"
@@ -2260,7 +2258,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 1s
-Down 1
+Tab
 Sleep 500ms
 Enter
 Sleep 500ms
@@ -2895,6 +2893,23 @@ Sleep 1s
 Enter
 Sleep 5s
 Screenshot "'"$OUT"'/tui-task-workspace.png"
+Sleep 2s
+'
+
+  # The wide new-chat form (task 150.11), between the chat list and what the
+  # chat would get. The title row has the keyboard when the form opens.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-new-chat 1250 api '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 3s
+Type "n"
+Sleep 3s
+Type "why does the eu-west replica lag at midnight?"
+Sleep 2s
+Screenshot "'"$OUT"'/tui-new-chat.png"
 Sleep 2s
 '
 }

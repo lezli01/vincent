@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,13 @@ const (
 	chatCardH = 6
 	// chatPreviewTurns is how many of the latest turns the preview draws.
 	chatPreviewTurns = 6
+	// chatPreviewToolTurns is how many of those show their tool activity, and
+	// chatPreviewToolTail how much of each transcript is read for it.
+	chatPreviewToolTurns = 3
+	chatPreviewToolTail  = 64 << 10
+	// chatFooterSummaryMinW is the narrowest terminal whose status bar carries
+	// the board's summary. Narrower ones keep it on the filter box's edge.
+	chatFooterSummaryMinW = 150
 	// chatPreviewDebounce is how long the selection must rest before the
 	// chat is read, so holding an arrow key costs one read.
 	chatPreviewDebounce = 150 * time.Millisecond
@@ -66,7 +74,10 @@ type chatPreview struct {
 	updated time.Time
 	chat    apiclient.Chat
 	turns   []apiclient.ChatTurn
-	err     string
+	// tools is the latest turns' tool activity by seq. A transcript that cannot
+	// be read, or has gone to retention, leaves its turn without check lines.
+	tools map[int][]apiclient.TranscriptRecord
+	err   string
 }
 
 // chatPreviewKey names what a read is for: a chat as of a change.
@@ -85,12 +96,15 @@ type (
 		chat    *apiclient.Chat
 		turns   []apiclient.ChatTurn
 		err     error
+		tools   map[int][]apiclient.TranscriptRecord
 	}
 )
 
 // frameless reports that the live board draws its own panes, so the root must
 // not wrap it in another frame. The new-chat form and the archive keep theirs.
-func (v *chatsView) frameless() bool { return v.workspaceShown() && v.create == nil }
+func (v *chatsView) frameless() bool {
+	return v.createWide() || (v.workspaceShown() && v.create == nil)
+}
 
 // workspaceShown reports whether the board is drawn as the workspace: always
 // for the live board, and on a wide terminal for the archive.
@@ -126,8 +140,30 @@ func (v *chatsView) previewDue(key chatPreviewKey) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		chat, turns, err := client.GetChat(ctx, key.id)
-		return chatPreviewMsg{key: key, updated: updated, chat: chat, turns: turns, err: err}
+		msg := chatPreviewMsg{key: key, updated: updated, chat: chat, turns: turns, err: err}
+		if err == nil {
+			msg.tools = readPreviewTools(ctx, client, key.id, turns)
+		}
+		return msg
 	}
+}
+
+// readPreviewTools reads the tool activity of the latest turns, the ones the
+// pane has room for. Each read asks for the transcript's tail only.
+func readPreviewTools(ctx context.Context, client *apiclient.Client, id int64, turns []apiclient.ChatTurn) map[int][]apiclient.TranscriptRecord {
+	tools := map[int][]apiclient.TranscriptRecord{}
+	for _, t := range turns[max(len(turns)-chatPreviewToolTurns, 0):] {
+		records, _, err := client.ChatTurnTranscript(ctx, id, t.Seq, apiclient.TranscriptOptions{Tail: chatPreviewToolTail})
+		if err != nil {
+			continue
+		}
+		for _, rec := range records {
+			if rec.Type == "agent.tool_use" || rec.Type == "agent.tool_result" {
+				tools[t.Seq] = append(tools[t.Seq], sanitizeToolRecord(rec))
+			}
+		}
+	}
+	return tools
 }
 
 // applyPreview keeps a read's answer, sanitized: a prompt and an answer are
@@ -143,7 +179,7 @@ func (v *chatsView) applyPreview(msg chatPreviewMsg) {
 	if v.previews == nil {
 		v.previews = map[int64]chatPreview{}
 	}
-	p := chatPreview{updated: msg.updated}
+	p := chatPreview{updated: msg.updated, tools: msg.tools}
 	if msg.err != nil {
 		p.err = errString(msg.err)
 		v.previews[msg.key.id] = p
@@ -208,7 +244,7 @@ func (v *chatsView) workspacePanes(width, height, top int) []string {
 			p = &held
 		}
 	}
-	out = joinColumns(out, chatPreviewPane(c, ok, p, width-listW-detailsW, height))
+	out = joinColumns(out, chatPreviewPane(c, ok, p, v.now(), width-listW-detailsW, height))
 	if detailsW > 0 {
 		var turns []apiclient.ChatTurn
 		if p != nil {
@@ -226,11 +262,39 @@ func (v *chatsView) chatsFilterBox(width int) []string {
 		v.filter.SetWidth(max(width-6, 10))
 		body = fieldRows("", v.filter)
 	}
-	title := ""
+	title, summary := "", ""
 	if v.archived {
 		title = archiveSwitches(false, v.window)
 	}
-	return drawBox(title, v.chatsSummary(), body, width, len(body)+2, edgesRounded, styleDim)
+	if v.archived || width < chatFooterSummaryMinW {
+		summary = v.chatsSummary()
+	}
+	return drawBox(title, summary, body, width, len(body)+2, edgesRounded, styleDim)
+}
+
+// footerSummary is the live board's state for the status bar, "" where the
+// filter box's edge carries it instead.
+func (v *chatsView) footerSummary(width int) string {
+	if v.createWide() {
+		return v.create.footerSummary()
+	}
+	if v.archived || v.create != nil || width < chatFooterSummaryMinW {
+		return ""
+	}
+	parts, waiting := v.chatsSummaryParts()
+	out := styleDim.Render(strings.Join(parts, " · "))
+	if waiting != "" {
+		out += styleDim.Render(" · ") + styleWarn.Render(attentionBadge+" "+waiting)
+	}
+	return " " + out + "  "
+}
+
+// footerSummary is the board's, because the board is beside the conversation.
+func (v *chatView) footerSummary(width int) string {
+	if !v.frameless() {
+		return ""
+	}
+	return v.side.footerSummary(width)
 }
 
 // chatsSummary says what the board is showing, for the filter box's edge.
@@ -238,7 +302,16 @@ func (v *chatsView) chatsSummary() string {
 	if v.archived {
 		return styleDim.Render(v.pageCount(plural(len(v.chats), "chat", "chats")))
 	}
-	var parts []string
+	parts, waiting := v.chatsSummaryParts()
+	out := styleDim.Render(strings.Join(parts, " · "))
+	if waiting != "" {
+		out = styleWarn.Render(waiting) + styleDim.Render(" · ") + out
+	}
+	return out
+}
+
+// chatsSummaryParts is the live board's state, and how many chats wait on you.
+func (v *chatsView) chatsSummaryParts() (parts []string, waiting string) {
 	switch {
 	case v.loadErr != "":
 		parts = append(parts, oneLine(v.loadErr))
@@ -260,11 +333,10 @@ func (v *chatsView) chatsSummary() string {
 	if !v.lastLoad.IsZero() {
 		parts = append(parts, "updated "+v.lastLoad.Format("15:04:05"))
 	}
-	out := styleDim.Render(strings.Join(parts, " · "))
 	if n := countChatsAwaiting(v.chats); n > 0 && v.loadErr == "" {
-		out = styleWarn.Render(strconv.Itoa(n)+" waiting on you") + styleDim.Render(" · ") + out
+		waiting = strconv.Itoa(n) + " waiting on you"
 	}
-	return out
+	return parts, waiting
 }
 
 // chatGroupLook is one group's heading on the list.
@@ -304,6 +376,9 @@ func (v *chatsView) chatListPane(w, h, top int) []string {
 		counts[chatBand(r.chat.State)]++
 	}
 	var body []string
+	if v.create != nil {
+		body = append(chatDraftCard(inner), "")
+	}
 	type span struct {
 		from int
 		id   int64
@@ -323,11 +398,13 @@ func (v *chatsView) chatListPane(w, h, top int) []string {
 			from, to = len(body), len(body)+chatCardH
 		}
 		spans = append(spans, span{len(body), r.chat.ID})
-		body = append(body, v.chatCard(*r.chat, i == v.cursor, inner)...)
+		body = append(body, v.chatCard(*r.chat, i == v.cursor && v.create == nil, inner)...)
 	}
 	room := max(h-2, 1)
 	start := 0
-	if len(body) > room {
+	// While a chat is being written the list has no selection to follow, and the
+	// card standing in for the draft stays at the top.
+	if len(body) > room && v.create == nil {
 		start = min(max(to-room, min(from, max(from-1, 0))), len(body)-room)
 		if from < start {
 			start = from
@@ -363,6 +440,9 @@ func (v *chatsView) chatCard(c apiclient.Chat, selected bool, w int) []string {
 		body = append(body, line)
 	}
 	status, style := chatCardStatus(c, v.frame)
+	if c.TurnCount > 0 {
+		status += " · " + plural(c.TurnCount, "turn", "turns")
+	}
 	body = append(body, padBetweenCells(style.Render(status), toneCyan.Render(chatLinkMark(c)), inner))
 	return drawBox("", "", body, w, chatCardH, edges, border)
 }
@@ -402,19 +482,19 @@ func chatLinkMark(c apiclient.Chat) string {
 
 // chatStatePill is a chat's state, set into the conversation's top edge.
 func chatStatePill(state string) string {
-	style := styleDim
+	style, label := styleDim, chatStateLabel(state)
 	switch state {
 	case "awaiting_input":
-		style = styleWarn
+		style, label = styleWarn, attentionBadge+" "+label
 	case "running":
 		style = toneCyan
 	}
-	return style.Bold(true).Reverse(true).Render(" " + chatStateLabel(state) + " ")
+	return style.Bold(true).Reverse(true).Render(" " + label + " ")
 }
 
 // chatPreviewPane is the selected chat's latest turns, newest at the bottom,
 // with an agent's question pinned under them.
-func chatPreviewPane(c apiclient.Chat, ok bool, p *chatPreview, w, h int) []string {
+func chatPreviewPane(c apiclient.Chat, ok bool, p *chatPreview, now time.Time, w, h int) []string {
 	if !ok {
 		body := []string{styleDim.Render("Select a chat to read it here.")}
 		return drawBox(styleTitle.Render("Conversation"), "", body, w, h, edgesRounded, styleDim)
@@ -422,7 +502,7 @@ func chatPreviewPane(c apiclient.Chat, ok bool, p *chatPreview, w, h int) []stri
 	inner := max(w-4, 1)
 	room := max(h-2, 1)
 	foot := chatPreviewFoot(c, inner)
-	lines := chatPreviewLines(c, p, inner)
+	lines := chatPreviewLines(c, p, now, inner)
 	if keep := room - len(foot); len(lines) > keep {
 		lines = lines[max(len(lines)-keep, 0):]
 	}
@@ -437,7 +517,7 @@ func chatPreviewPane(c apiclient.Chat, ok bool, p *chatPreview, w, h int) []stri
 }
 
 // chatPreviewLines is the conversation as one read saw it.
-func chatPreviewLines(c apiclient.Chat, p *chatPreview, inner int) []string {
+func chatPreviewLines(c apiclient.Chat, p *chatPreview, now time.Time, inner int) []string {
 	switch {
 	case p == nil:
 		return []string{styleDim.Render("Loading…")}
@@ -448,8 +528,12 @@ func chatPreviewLines(c apiclient.Chat, p *chatPreview, inner int) []string {
 	}
 	var out []string
 	for _, t := range p.turns[max(len(p.turns)-chatPreviewTurns, 0):] {
-		out = append(out, promptBubbleLines(t.Prompt, inner)...)
-		out = append(out, "", toneMagenta.Bold(true).Render(ic("◈ ")+oneLine(c.Agent))+styleDim.Render(fmt.Sprintf("  ·  turn %d", t.Seq)))
+		asked, answered := chatTurnAges(t, now)
+		out = append(out, promptCardLines(t.Prompt, asked, inner)...)
+		out = append(out, "", chatTurnHeading(c.Agent, t.Seq, answered), "")
+		if checks := chatPreviewChecks(p.tools[t.Seq], inner); len(checks) > 0 {
+			out = append(append(out, checks...), "")
+		}
 		if t.ResultText != "" {
 			out = append(out, markdownLines(t.ResultText, inner)...)
 		}
@@ -492,11 +576,16 @@ func chatQuestionCard(c apiclient.Chat, w int) []string {
 	}
 	inner := max(w-4, 1)
 	var body []string
-	for _, q := range req.Questions {
-		body = append(body, styled(wrapText(sanitizeText(q.Text), inner, wrapOpts{maxLines: 3}), styleTitle)...)
-		for _, o := range q.Options {
-			body = append(body, ansi.Truncate(ic("○ ")+oneLine(o), inner, "…"))
+	for i, q := range req.Questions {
+		if i > 0 {
+			body = append(body, "")
 		}
+		body = append(body, styled(wrapText(sanitizeText(q.Text), inner, wrapOpts{maxLines: 3}), styleTitle)...)
+		body = append(body, "")
+		for _, o := range q.Options {
+			body = append(body, ansi.Truncate("  "+ic("○ ")+oneLine(o), inner, "…"))
+		}
+		body = append(body, styleDim.Render("  ✎ "+answerCardFreeText))
 	}
 	if req.Permission != nil {
 		body = append(body, styleTitle.Render("Permission requested"))
@@ -525,6 +614,9 @@ func chatDetailsPane(c apiclient.Chat, ok bool, turns []apiclient.ChatTurn, now 
 	}
 	if c.Effort != "" {
 		body = append(body, row("effort", c.Effort))
+	}
+	if c.PermissionMode != "" {
+		body = append(body, row("permission", strings.ReplaceAll(c.PermissionMode, "_", "-")))
 	}
 	if c.Branch != "" {
 		body = append(body, "", styleTitle.Render(ic("⎇ Branch")), toneCyan.Render(ansi.Truncate(oneLine(c.Branch), inner, "…")))
@@ -624,18 +716,47 @@ func (v *chatView) sideShown(width int) bool {
 // frameless reports that the workspace draws its own panes.
 func (v *chatView) frameless() bool { return v.sideShown(v.termW) }
 
+// chatOpenFilterMinH is the shortest terminal that keeps the filter box above
+// an open conversation; a shorter one spends the rows on the conversation.
+const chatOpenFilterMinH = 16
+
+// paneEdge is the conversation pane's top edge: the chat on the left, and the
+// reading modes in force and its state on the right.
+func (v *chatView) paneEdge(w int) (title, right string) {
+	if v.chat == nil {
+		return styleTitle.Render("chat"), ""
+	}
+	right = chatStatePill(v.chat.State)
+	for _, mark := range slices.Backward(v.headerMarks()) {
+		right = mark.text + " " + right
+	}
+	id := "#" + strconv.FormatInt(v.chatID, 10)
+	room := max(w-ansi.StringWidth(right)-ansi.StringWidth(id)-chatPaneEdgeChrome, chatHeaderTitleMin)
+	return styleKey.Render(id) + " " + styleTitle.Render(ansi.Truncate(oneLine(v.chat.Title), room, "…")), right
+}
+
+// chatPaneEdgeChrome is the columns a box's corners, rules and gaps take from
+// its top edge, so the state beside a long title is never dropped.
+const chatPaneEdgeChrome = 10
+
 // renderWorkspace is the conversation with the list on its left and the
-// details on its right. Its frame is the focus colour: this is the pane the
-// keyboard is in.
+// details on its right, under the board's filter. Its frame is the focus
+// colour: this is the pane the keyboard is in.
 func (v *chatView) renderWorkspace(width, height int) string {
 	listW, detailsW := chatPaneWidths(width)
 	v.side.selectedID = v.chatID
 	v.side.restoreSelection()
-	out := v.side.chatListPane(listW, height, 0)
+	var filter []string
+	if height >= chatOpenFilterMinH {
+		filter = v.side.chatsFilterBox(width)
+	}
+	height -= len(filter)
+	out := v.side.chatListPane(listW, height, len(filter))
 
 	midW := width - listW - detailsW
-	body := strings.Split(v.renderConversation(max(midW-4, 4), max(height-2, 4)), "\n")
-	out = joinColumns(out, drawBox("", "", body, midW, height, edgesRounded, styleFocus))
+	body := strings.Split(v.conversationUnder(nil, max(midW-4, 4), max(height-2, 4)), "\n")
+	title, right := v.paneEdge(midW)
+	out = joinColumns(out, drawBox(title, right, body, midW, height, edgesRounded, styleFocus))
 	if detailsW > 0 {
 		var c apiclient.Chat
 		ok := v.chat != nil
@@ -644,7 +765,7 @@ func (v *chatView) renderWorkspace(width, height int) string {
 		}
 		out = joinColumns(out, chatDetailsPane(c, ok, v.turns, v.now(), detailsW, height))
 	}
-	return strings.Join(out, "\n")
+	return strings.Join(append(filter, out...), "\n")
 }
 
 // updateClick opens the chat card under the pointer from inside a conversation.

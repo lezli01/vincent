@@ -1739,6 +1739,22 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxNewTask: {
+		"left": func(t *testing.T) {
+			n := wideTask(t)
+			n.cursor = ntTitle
+			press(n, "left")
+			if n.cursor != ntWorkflow {
+				t.Fatalf("← left the cursor on %v, want the workflow list", n.cursor)
+			}
+		},
+		"/": func(t *testing.T) {
+			n := wideTask(t)
+			n.cursor = ntWorkflow
+			press(n, "/")
+			if n.pick == nil || !n.pick.filtering {
+				t.Fatal("/ did not start filtering the workflow list")
+			}
+		},
 		"enter": func(t *testing.T) {
 			n := loadedForm(t)
 			moveTo(n, ntWorkflow)

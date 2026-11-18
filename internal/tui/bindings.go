@@ -285,6 +285,8 @@ const (
 
 // binding is one registry row.
 type binding struct {
+	// wideForm marks a key only the wide new-task screen answers (task 150.11).
+	wideForm bool
 	// key is the press as tea reports it — the canonical one when a label
 	// documents aliases ("f" for f/G). Empty for palette-only navigation.
 	key   string
@@ -585,6 +587,8 @@ var bindings = []binding{
 	{key: "+", label: "nudge the priority (+/-; higher runs first)", scope: scopePanel, context: ctxNewTask, hint: "+/- priority", priority: 4},
 	{op: keymap.Refresh, key: "R", label: "re-probe the adapters (the list is otherwise cache-served)", scope: scopePanel, context: ctxNewTask, hint: "R re-probe", priority: 5, term: termRefresh},
 	{key: "ctrl+s", label: "create the task — from any field or open list, which is kept first", scope: scopePanel, context: ctxNewTask, hint: "ctrl+s create", priority: 1},
+	{key: "left", label: "on the wide form: move to the workflow list (→ or enter comes back)", scope: scopePanel, context: ctxNewTask, hint: "← workflows", priority: 2, wideForm: true},
+	{op: keymap.Filter, key: "/", label: "on the wide form's workflow list: filter the workflows", scope: scopePanel, context: ctxNewTask, priority: 7, term: termFilter, wideForm: true},
 	// The free-text row of an open picker (task 093). Registered on each of
 	// the four contexts a picker that offers one can be open in: a model or an
 	// effort newer than the catalog is the case it exists for (§9.6), and the
@@ -739,7 +743,7 @@ var bindings = []binding{
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
 	{key: "enter", label: "open the focused field's list, or move on from a text field", scope: scopePanel, context: ctxNewChat, hint: "enter list", priority: 2},
 	{key: "tab", label: "next field (shift+tab goes back)", scope: scopePanel, context: ctxNewChat, hint: "tab next", priority: 3},
-	{key: "left", label: "step the agent field in place (← →); enter opens its list", scope: scopePanel, context: ctxNewChat, hint: "← →  step", priority: 4},
+	{key: "left", label: "step the agent, or a short model or effort list, in place (← →); enter opens its list", scope: scopePanel, context: ctxNewChat, hint: "← →  step", priority: 4},
 	{key: "esc", label: "close an open list, else discard the draft", scope: scopePanel, context: ctxNewChat, hint: "esc cancel", priority: 5},
 	{op: keymap.FreeText, key: "t", label: "in an open list: type a value it does not offer", scope: scopePanel, context: ctxNewChat, priority: 6, term: termFreeText},
 

@@ -259,7 +259,10 @@ type newTask struct {
 	// rather than to POST /v1/tasks.
 	handoff *apiclient.Chat
 
-	cursor   ntRow
+	cursor ntRow
+	// formRow is the row ← left for the workflow list on the wide form, where →
+	// comes back to (task 150.11).
+	formRow  ntRow
 	mode     ntMode
 	pick     *picker
 	fieldsEd *fieldsEditor
@@ -681,7 +684,7 @@ func (n *newTask) reset() {
 	n.workflow, n.workflowPicked = "", false
 	n.projectID = 0
 	// The first row a cursor may rest on: the project row is display-only.
-	n.cursor = ntWorkflow
+	n.cursor, n.formRow = ntWorkflow, ntProject
 	n.mode = ntNavigating
 	n.pick, n.fieldsEd = nil, nil
 	n.rowErr = map[ntRow]string{}
@@ -857,6 +860,9 @@ func (n *newTask) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 }
 
 func (n *newTask) updateNavigating(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	if cmd, handled := n.updateWideKey(msg); handled {
+		return n, cmd
+	}
 	switch msg.String() {
 	case "up", "k":
 		n.moveCursor(-1)
@@ -933,6 +939,12 @@ func (n *newTask) rowVisible(row ntRow) bool {
 		return n.issueID != 0 || n.pull != nil
 	case ntWorktree:
 		return n.worktreeChoice()
+	case ntEffort:
+		// An agent chosen here that has no effort levels, as cursor has none
+		// (§9.7), has nothing to offer on this row. With no agent chosen the
+		// workflow's steps decide, and they may name one that does.
+		a, ok := n.agents.Find(n.agent)
+		return n.agent == "" || !ok || len(a.Efforts) > 0
 	case ntMergeBack:
 		return n.sideTask()
 	case ntBranch, ntBranchName:

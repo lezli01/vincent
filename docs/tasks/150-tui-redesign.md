@@ -1,6 +1,6 @@
 # 150 — A ground-up redesign of the TUI
 
-**Status:** ✅ done (9/9) · **Opened:** 2026-11-18
+**Status:** ✅ done (11/11) · **Opened:** 2026-11-18
 **Spec:** §15 · **Branch:** `feat/tui-redesign`
 
 The author asked for the TUI to be redesigned from the ground up. Four problems
@@ -60,6 +60,19 @@ workspace.
 15. **The management screens get wide layouts over their existing models.** From
     130 columns they use cards and panes; a narrower terminal keeps its tables.
 16. **The two archives are one screen.** `tab` crosses between tasks and chats.
+17. **A chat turn follows the accepted mock in both panes.** The prompt is a
+    `You` card, the answer has a heading, and tool calls are check lines at
+    `compact` and `normal`. This supersedes the `›` bubble and narrows task 071's
+    shared vocabulary for tool lines in this view; `verbose` keeps the output
+    pane's lines. *Beat:* keeping the task pane's two lines per call, which the
+    mock replaced.
+18. **New task and new chat are one screen from 130 columns.** The accepted mocks
+    are in `150-mocks/`. They redraw the same rows and keys, so narrower terminals
+    keep the existing forms. Model and effort appear only where the agent can use
+    them: an agent with no effort levels has no effort control, a long model
+    catalog is a list, and an agent that lists no models keeps a typed model id
+    because its CLI still accepts one. *Beat:* the six-stage guided form at every
+    width.
 
 ## Tasks
 
@@ -74,3 +87,7 @@ workspace.
 - [x] **150.8** The Nerd Font icon opt-in: `tui.icons`.
 - [x] **150.9** §15, the user guides, the key tables and every `tui-*.png`
   recaptured with `scripts/screenshots.sh`.
+- [x] **150.10** The opened issue's wide layout: a title band, the conversation
+  pane with boxed comments, and a details pane, from 120 columns and 18 rows.
+- [x] **150.11** The wide new-task and new-chat screens, and each branch's commits
+  ahead of the project's default branch on `GET /v1/projects/{id}/branches`.

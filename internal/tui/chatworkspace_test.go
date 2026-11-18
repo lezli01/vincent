@@ -270,7 +270,7 @@ func TestOpenChatStaysInTheWorkspace(t *testing.T) {
 		}
 	}
 	out := ansi.Strip(strings.Join(lines, "\n"))
-	for _, want := range []string{"◌ Chats", "Details", "is asking", "esc leave the form"} {
+	for _, want := range []string{"◌ Chats", "Details", "is asking", "esc put away"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the workspace is missing %q:\n%s", want, out)
 		}
@@ -301,5 +301,109 @@ func TestOpenChatClickSwitchesChats(t *testing.T) {
 	}
 	if msg, ok := cmd().(openChatMsg); !ok || msg.id != 1 || msg.back != viewChats {
 		t.Fatalf("the click produced %#v, want chat #1 opened", cmd())
+	}
+}
+
+// A call and its outcome are one line, and the mark says how it went.
+func TestToolChecksPairCallsWithOutcomes(t *testing.T) {
+	records := []apiclient.TranscriptRecord{
+		{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{{Name: "Read", Summary: "internal/agent/catalog.go", CallID: "a"}}},
+		{Type: "agent.tool_result", Results: []apiclient.TranscriptToolResult{{CallID: "a"}}},
+		{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{{Name: "Bash", Summary: "go test", CallID: "b"}}},
+		{Type: "agent.tool_result", Results: []apiclient.TranscriptToolResult{{CallID: "b", IsError: true, Summary: "exit 1"}}},
+		{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{{Name: "Edit", Summary: "main.go", CallID: "c"}}},
+	}
+	got := plainLines(outputLines(records, levelNormal, 80, lineOpts{toolChecks: true}))
+	want := []string{"✓ read internal/agent/catalog.go", "✗ bash go test · exit 1", "◌ edit main.go"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("the checks are\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if out := strings.Join(plainLines(outputLines(records, levelVerbose, 80, lineOpts{toolChecks: true})), "\n"); strings.Contains(out, "✓ read") {
+		t.Errorf("verbose lost the separate call and result lines:\n%s", out)
+	}
+}
+
+// The preview reads the same way the open conversation does.
+func TestChatPreviewDrawsTheTurnLikeTheConversation(t *testing.T) {
+	v := chatWorkspaceFixture(t)
+	v.selectedID = 1
+	v.restoreSelection()
+	v.chats[3].TurnCount, v.chats[3].PermissionMode = 2, "full_auto"
+	ended := chatWorkspaceNow.Add(-2 * time.Minute)
+	v.applyPreview(chatPreviewMsg{
+		key: previewKeyOfChat(t, v), updated: chatWorkspaceNow.Add(-time.Hour),
+		turns: []apiclient.ChatTurn{{Seq: 3, Prompt: "where is it?", ResultText: "In limits.go.", StartedAt: chatWorkspaceNow.Add(-4 * time.Minute), EndedAt: &ended}},
+		tools: map[int][]apiclient.TranscriptRecord{3: {
+			{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{{Name: "Read", Summary: "limits.go", CallID: "a"}}},
+			{Type: "agent.tool_result", Results: []apiclient.TranscriptToolResult{{CallID: "a"}}},
+		}},
+	})
+	out := ansi.Strip(v.render(170, 44))
+	for _, want := range []string{"─ You ─", "◷ 4m", "◈ claude  ·  turn 3  ·  ◷ 2m", "✓ read limits.go", "○ idle · 2 turns", "full-auto"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the workspace is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// The pinned question offers its options and a way to write your own.
+func TestChatQuestionCardOffersAnotherAnswer(t *testing.T) {
+	out := ansi.Strip(chatWorkspaceFixture(t).render(160, 40))
+	for _, want := range []string{"! waiting on you", "✎ Type another answer"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the conversation is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// An open question is answered in the card, with the mock's dots and keys.
+func TestOpenChatQuestionIsTheCard(t *testing.T) {
+	v := awaitingChat(t)
+	out := ansi.Strip(v.render(120, 40))
+	for _, want := range []string{"› ○", "✎ Type another answer", "space select  ·  enter submit  ·  esc put away"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the card is missing %q:\n%s", want, out)
+		}
+	}
+	v.form.pick()
+	if out := ansi.Strip(v.render(120, 40)); !strings.Contains(out, "› ◉") {
+		t.Errorf("the chosen option is not filled:\n%s", out)
+	}
+}
+
+// The status bar carries the board's state on a wide terminal, and the filter
+// box's edge keeps it on a narrow one.
+func TestChatSummaryMovesToTheStatusBar(t *testing.T) {
+	v := chatWorkspaceFixture(t)
+	wide := ansi.Strip(v.footerSummary(chatFooterSummaryMinW))
+	for _, want := range []string{"4 chats", "! 1 waiting on you"} {
+		if !strings.Contains(wide, want) {
+			t.Errorf("the status bar's summary %q is missing %q", wide, want)
+		}
+	}
+	if edge := ansi.Strip(v.chatsFilterBox(chatFooterSummaryMinW)[0]); strings.Contains(edge, "waiting on you") {
+		t.Errorf("the summary is drawn twice: %q", edge)
+	}
+	if v.footerSummary(chatFooterSummaryMinW-1) != "" {
+		t.Error("a narrow status bar spent its room on the summary")
+	}
+	if edge := ansi.Strip(v.chatsFilterBox(chatFooterSummaryMinW - 1)[0]); !strings.Contains(edge, "waiting on you") {
+		t.Errorf("a narrow terminal lost the summary: %q", edge)
+	}
+}
+
+// The open conversation's top edge names the chat and its state, under the
+// board's filter.
+func TestOpenChatPaneEdgeNamesTheChat(t *testing.T) {
+	side := chatWorkspaceFixture(t)
+	v := awaitingChat(t)
+	v.side, v.chatID, v.now = side, 4, side.now
+	v.update(tea.WindowSizeMsg{Width: 170, Height: 40})
+	lines := strings.Split(ansi.Strip(v.render(170, 40)), "\n")
+	if !strings.Contains(lines[1], "filter by title") {
+		t.Errorf("the filter box is not above the panes: %q", lines[1])
+	}
+	if !strings.Contains(lines[3], "#4 ") || !strings.Contains(lines[3], "! waiting on you") {
+		t.Errorf("the pane's top edge is %q", lines[3])
 	}
 }

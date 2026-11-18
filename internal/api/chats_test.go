@@ -331,6 +331,32 @@ func TestChatTurnRendersThroughTheWire(t *testing.T) {
 	if got.CostUSD == 0 {
 		t.Fatal("turn recorded no cost")
 	}
+
+	// Both reads say how many turns the chat has and what it runs under.
+	var read struct {
+		Chat struct {
+			TurnCount      *int   `json:"turn_count"`
+			PermissionMode string `json:"permission_mode"`
+		} `json:"chat"`
+		Chats []struct {
+			ID        int64 `json:"id"`
+			TurnCount *int  `json:"turn_count"`
+		} `json:"chats"`
+	}
+	_, body = h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/chats/%d", id), nil)
+	if err := json.Unmarshal(body, &read); err != nil {
+		t.Fatal(err)
+	}
+	if read.Chat.TurnCount == nil || *read.Chat.TurnCount != 1 || read.Chat.PermissionMode != string(agent.FullAuto) {
+		t.Fatalf("GET /v1/chats/%d = %s", id, body)
+	}
+	_, body = h.doJSON(t, http.MethodGet, "/v1/chats", nil)
+	if err := json.Unmarshal(body, &read); err != nil {
+		t.Fatal(err)
+	}
+	if len(read.Chats) != 1 || read.Chats[0].TurnCount == nil || *read.Chats[0].TurnCount != 1 {
+		t.Fatalf("GET /v1/chats = %s", body)
+	}
 }
 
 // TestChatActionsIn409WhenTheFSMSaysNo: the API and the runner consult one

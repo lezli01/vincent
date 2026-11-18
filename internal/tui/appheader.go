@@ -180,8 +180,42 @@ type headerTabHit struct {
 // advertises a key that means something else on the screen. Input capture
 // does not hide it — a filter being typed is transient, and the strip
 // should not flicker — so this is tabSwitches without that clause.
+//
+// An open chat inside the chats workspace keeps the strip too (task 150.5): it
+// is still the Chats tab, with the keyboard in the conversation.
 func (m *root) stripShown() bool {
+	if tab, ok := m.workspaceTab(); ok {
+		return len(m.tabs) > 1 && m.isTabRoot(tab)
+	}
 	return m.isTabRoot(m.active) && len(m.tabs) > 1 && !m.panelOwnsLocalKey("tab")
+}
+
+// chatInWorkspace reports that the screen is an open chat between the
+// workspace's side panes.
+func (m *root) chatInWorkspace() bool {
+	v, ok := m.views[m.active].(*chatView)
+	return ok && m.active == viewChat && v.frameless()
+}
+
+// workspaceTab is the main tab a full-width screen off the tab strip belongs to:
+// an open chat or a new chat under Chats, and a new task under Tasks. tab moves
+// between the form's own fields there, and the strip stays for where you are.
+func (m *root) workspaceTab() (viewID, bool) {
+	if m.chatInWorkspace() {
+		return viewChats, true
+	}
+	switch v := m.views[m.active].(type) {
+	case *newTask:
+		return viewHome, v.frameless()
+	case *chatsView:
+		return viewChats, m.active == viewChats && v.createWide()
+	}
+	return 0, false
+}
+
+// footerSummarizer is a screen that says how it stands on the status bar.
+type footerSummarizer interface {
+	footerSummary(width int) string
 }
 
 // tabStripForm is how much a tab's label says.
@@ -224,7 +258,8 @@ func (m *root) tabStrip(form tabStripForm) (string, []headerTabHit) {
 		}
 		label := " " + m.tabLabel(id, form) + " "
 		style := styleDim
-		if id == m.active {
+		tab, inWorkspace := m.workspaceTab()
+		if id == m.active || (inWorkspace && id == tab) {
 			style = styleTabActive
 		}
 		b.WriteString(style.Render(label))
@@ -286,5 +321,9 @@ func (m *root) footerPill() string {
 		return ""
 	}
 	title := ansi.Truncate(m.views[m.active].title(), footerPillMaxTitle, "…")
-	return styleTabActive.Render(" " + tabGlyph(m.active) + " " + title + " ")
+	pill := styleTabActive.Render(" " + tabGlyph(m.active) + " " + title + " ")
+	if s, ok := m.views[m.active].(footerSummarizer); ok {
+		pill += s.footerSummary(m.width)
+	}
+	return pill
 }

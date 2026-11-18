@@ -15858,6 +15858,33 @@ stream for the live tail.
    opens the live conversation between the same side panes, unless the chat was
    opened from another view. The archived chats board keeps its table.
 
+   *Amended 2026-11-18 (task 150 decision 17; applies to views 8 and 9).* **A
+   chat turn reads the same in the preview and the open conversation.** The
+   human's half is a right-aligned card titled `You` with the prompt's age on its
+   top edge, replacing the `›` bubble above; the width cap, the kept line breaks
+   and the absence of a line cap stand. The agent's half opens with a heading
+   naming the agent, the turn and the answer's age. At `compact` and `normal` a
+   tool call and its outcome are one check line (`✓`, `✗`, `⊘`, or `◌` while it
+   runs), which narrows task 071's one vocabulary for this view alone: `verbose`
+   keeps the output pane's separate lines, and prose is still its renderer
+   verbatim. The preview reads the tool activity of the latest three turns. An
+   open chat in the workspace keeps the main tabs and the filter box, and its
+   pane's top edge carries the title, the reading modes and the state. The pinned
+   question is answered in its card. From 150 columns the board's summary is on
+   the status bar. `GET /v1/chats` and `GET /v1/chats/{id}` carry `turn_count`,
+   and every chat body carries `permission_mode`.
+
+   *Amended 2026-11-18 (task 150 decision 18; applies to the new-task view and
+   the new-chat form).* **From 130 columns and 24 rows each form is one screen.**
+   New task lists the workflows, the draft's sections and what the draft would
+   run, as `POST /v1/resolve` answers it. New chat sits between the chat list and
+   a summary. The rows, their order and their keys are unchanged, and a narrower
+   terminal keeps the earlier layouts. The effort control is absent for an agent
+   that reports no effort levels. `←`/`→` step a model or effort catalog of six
+   or fewer. `GET /v1/projects/{id}/branches` adds `ahead` and `ahead_of`: each
+   branch's commits past the project's default branch, absent when git cannot
+   say (older than 2.41, or no such local base).
+
    *Amended 2026-11-18 (task 150.6; applies to views 1 and 2).* **The live task
    board is four columns of cards**: Needs you (`taskstate.NeedsHuman`), Running
    (`running`, `awaiting_children`), Queued (`queued`, `paused`) and Finished.
@@ -16178,6 +16205,16 @@ stream for the live tail.
    the row `issue #N ·`; the workspace offers both `ctrl+q` (close, which
    frees the worktree for the next main task) and `ctrl+t` (hand-off into
    the issue's next main task), the two endings §5.5 gives the kind.
+
+   *Amended 2026-11-18 (task 150.10):* from 120 columns and 18 rows view 13
+   draws its own panes instead of the root's frame: a title band (id, title
+   wrapped to at most four lines, lane pill, the card's status line, kind,
+   author and age); a focused pane holding the `Issue | Work` strip, a rule and
+   the scrolling page, each comment boxed with its author and time in the top
+   edge; and a **Details** pane holding the state, the facts, Source and sync,
+   which leave the page. The Details pane does not scroll and says how many
+   lines it cut. A smaller terminal, and the issue form, keep the framed page
+   this section describes.
 
    *Amended 2026-11-05 (task 144, issue #933):* view 13 is two tabs behind
    an **`Issue | Work`** strip, the pane's first line, drawn and clicked as
