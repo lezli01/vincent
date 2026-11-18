@@ -138,8 +138,7 @@ func (v *issuesView) previewPane(w, h int) []string {
 func (v *issuesView) previewFacts(iss apiclient.Issue, section, inner int) []string {
 	out := styled(wrapText(iss.Title, inner, wrapOpts{maxLines: 3}), styleTitle)
 
-	look := issueLaneLooks[section]
-	state := look.tone.Bold(true).Reverse(true).Render(" " + ic(look.glyph) + " " + issueLaneTitle(issueSections[section].label) + " ")
+	state := issueLanePill(section)
 	if iss.Attention {
 		state += "  " + styleWarn.Bold(true).Render(attentionBadge+" needs you")
 	}
@@ -164,6 +163,12 @@ func (v *issuesView) previewFacts(iss apiclient.Issue, section, inner int) []str
 		out = append(out, styled(wrapText(oneLine(d.Summary), inner, wrapOpts{maxLines: 2}), styleDim)...)
 	}
 	return append(out, "")
+}
+
+// issueLanePill is a lane as a filled badge: its glyph, name and colour.
+func issueLanePill(section int) string {
+	look := issueLaneLooks[section]
+	return look.tone.Bold(true).Reverse(true).Render(" " + ic(look.glyph) + " " + issueLaneTitle(issueSections[section].label) + " ")
 }
 
 // previewMeta says who filed the issue, when, and how urgent it is.

@@ -672,7 +672,7 @@ func (v *issueView) handoffLines(rows []issueDetailRow, width, base int) []strin
 	if len(v.issue.Handoffs) == 0 {
 		return nil
 	}
-	lines := []string{"", " " + styleTitle.Render("Handoff")}
+	lines := []string{"", v.sectionHead("⇄", "Handoff")}
 	for i, row := range rows {
 		h := row.handoff
 		if h == nil {
