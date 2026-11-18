@@ -40,10 +40,18 @@ vincent opens on the first of your [main tabs](#main-tabs) — by default the
 issues list — and `tab` reaches the task board, which is the board and
 nothing else:
 
-![The board filtered to one running task](../assets/tui-board.png)
+![The task board: columns of task cards grouped by issue, with a preview of the
+selected task](../assets/tui-board.png)
+
+The redesigned screens use the width you give them. Wider terminals add panes
+beside the main one, such as a preview or a details column, and narrower ones
+keep the essentials. Icons are plain Unicode unless you set
+[`tui.icons: nerd`](../reference/configuration.md#tuiicons) for a terminal using a
+Nerd Font.
 
 `enter` opens the selected task in a separate full-screen workspace, on its
-**Overview**. That workspace has seven full-view tabs — **Overview**,
+**Overview**. From 130 columns the workspace keeps the steps beside the tabs, adds
+the task's details from 150, and opens on **Output**. Below 130 columns it has seven full-view tabs — **Overview**,
 **Output**, **Diff**, **Steps**, **Task Details**, **Step Details** and
 **Workflow** — and an eighth, **Pull Request**, on a task with a linked pull
 request, so the surface being read gets the whole terminal. The strip draws
@@ -59,7 +67,7 @@ opened any other way — the command palette, pull requests, triggers, `!`, a
 new task — returns to your [main tab](#main-tabs), and so does a project
 switch while the task board is not one of your tabs.
 
-New task, projects, workflows, chats, the two archived boards, issues,
+New task, projects, workflows, chats, the archive, issues,
 triggers, daemon, and — for GitHub projects — pull requests are full-screen
 takeovers too. `esc`
 closes one layer at a time (popup → task/screen → selection → filter) and
@@ -1183,20 +1191,14 @@ A [`fan_out` step](workflows.md) runs its lanes as **real child tasks**, each
 with its own worktree, branch, steps and transcript. None of that lives in the
 parent, so the parent's job is to be the way in.
 
-Lanes are kept off the board's list on purpose — a sixty-four-lane tree would
-bury the work you actually asked for — so `L` on a fan-out parent hangs them
-underneath it as indented rows, and `L` again folds them away. Nested fan-outs
-compose, down to `fan_out.max_depth`. An expanded lane row is an ordinary task
-row: the same folding, the same `space` selection, the same action keys. Lanes
-stay out of the flat count, out of every group header's count and out of the `!`
-attention badge, so a board with nothing expanded reads exactly as it did
-before. What is expanded is remembered for the session and not written to disk —
-a task id is not a label, and there is no honest way to restore one archived
-while the TUI was down.
+Lanes are kept off the board on purpose, because a sixty-four-lane tree would
+bury the work you actually asked for. The parent's card counts them instead, as
+in `⑂ 2 of 3 lanes done`, and its Overview names the lanes that need you. Lanes
+stay out of the board's counts and out of the `!` attention badge.
 
-![The board filtered to a fan-out parent in awaiting_children and expanded with
-`L`: its storage and client lanes done, and the handlers lane — spawned in the
-second round, once both had merged — waiting at its gate](../assets/tui-lanes.png)
+![A fan-out parent's Overview: waiting on one of its three lanes, with the
+handlers lane named as the one awaiting approval and `l` to open
+it](../assets/tui-lanes.png)
 
 Inside the workspace:
 
@@ -3477,7 +3479,7 @@ Some keys are not operations, and `tui.keys` cannot move them or give their key
 to anything else:
 
 - **Keys that belong to one screen** and mean nothing shared — `g` groups the
-  board, `L` shows a fan-out's lanes, `m` merges a pull request, and `X`, `i`,
+  archived board, `m` merges a pull request, and `X`, `i`,
   `u`, `P`, `U`, `S` and the like.
 - **Keys that work as a set** — folding (`←`/`→`, `C`/`O`, `space`), paging
   (`<`/`>`), moving (`↑`/`↓`, `K`/`J`) and the task tabs (`[`/`]`).

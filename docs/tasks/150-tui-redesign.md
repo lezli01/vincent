@@ -1,6 +1,6 @@
 # 150 — A ground-up redesign of the TUI
 
-**Status:** 🚧 in progress (7/9) · **Opened:** 2026-11-18
+**Status:** 🚧 in progress (8/9) · **Opened:** 2026-11-18
 **Spec:** §15 · **Branch:** `feat/tui-redesign`
 
 The author asked for the TUI to be redesigned from the ground up. Four problems
@@ -76,5 +76,5 @@ workspace.
   summary; Archived is one column with its time window as text; Projects has no
   current-project badge; and below 130 columns all six keep their older tables.
 - [x] **150.8** The Nerd Font icon opt-in: `tui.icons`.
-- [ ] **150.9** §15, the user guides, the key tables and every `tui-*.png`
+- [x] **150.9** §15, the user guides, the key tables and every `tui-*.png`
   recaptured with `scripts/screenshots.sh`.

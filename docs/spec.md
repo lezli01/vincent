@@ -14054,7 +14054,8 @@ stream for the live tail.
    task 050 decision 6 in part (below the ceiling `STATUS` no longer wraps).
    Task 050 decision 4, the uniform row height clamped to three, is kept.*
 
-   **A fan-out parent is expandable (issue #316, added 2026-09-03).** Task 014
+   **A fan-out parent is expandable (issue #316, added 2026-09-03; retired
+   2026-11-18 by task 150.6, whose card board reads lanes in the workspace).** Task 014
    decision 13 — descendants are excluded from the task list — is **kept**: a
    list is the work someone asked for, and a 64-task tree buries it. What
    changes is that a `fan_out` parent's row is now a disclosure control. `L`
@@ -16789,7 +16790,7 @@ level they apply to it alone. The rules the grouping does not get to bend:
   cursor rests on it, and it shows `▸` rather than `▾`, its task count, its
   attention badge and how many of its tasks the bulk selection holds. It is a
   row and not a task: it has no state and no `available_actions`, so the §6
-  action keys, `space`, `enter` and `L` do nothing while the cursor is on one
+  action keys, `space` and `enter` do nothing while the cursor is on one
   and the detail panels hold the last task rather than blanking. Folding is
   a view over the same band sort — the rows that remain are in the order they
   were. It is never refused: what protects the failure the original rule named is
@@ -18007,9 +18008,9 @@ log alone re-reads on a short timer, because it is the only part that changes wh
 you watch. Uptime ticks locally from the daemon's `started_at` rather than from a
 fetched figure, so it cannot drift between refreshes.
 
-*Amended 2026-09-03 (issue #316).* Walking a fan-out is four keys, registered in
-`internal/tui/bindings.go` like every other. On the **board**, `L` expands or
-collapses the selected fan-out's lanes rather than drilling into them. In the
+*Amended 2026-09-03 (issue #316; the board's `L` was retired 2026-11-18, task
+150.6).* Walking a fan-out is three keys, registered in
+`internal/tui/bindings.go` like every other. In the
 **task workspace**, `l` opens the lane the current tab's selection resolves to
 and `U` opens this lane's parent — both on every tab that can name a lane,
 because a reader standing anywhere in a parent means the same thing by them, and
@@ -18154,7 +18155,7 @@ workspace and the new-chat form.
 
 **What is fixed, and why.** No override may name or take these, and naming one
 in `tui.keys` is refused with the reason: the surface-local rows that carry no
-term (`g`, `L`, `m`, `X`, `i`, `u`, `P`, `U`, `S`, …), because they appear once
+term (`g`, `m`, `X`, `i`, `u`, `P`, `U`, `S`, …), because they appear once
 and a vocabulary that named them would be a list of every key; the multi-key
 sets — fold, page, `↑`/`↓`, `K`/`J`, `[`/`]` — because a set is not a shape one
 key can describe (task 093 decision 6); `esc`, because it is the layer stack

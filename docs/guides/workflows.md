@@ -786,8 +786,8 @@ merges what finished and spawns whatever those merges made ready. Lanes are merg
 order, stopping at the first conflict. A lane list with no `needs:` is one such
 round — spawn, park, merge, done. You still get one branch to review.
 
-Watch the children with `vincent task ls --include-children`, or press `L` on
-the parent in the TUI. They are hidden from the board by default; the parent's
+Watch the children with `vincent task ls --include-children`, or open the parent
+in the TUI, whose Overview names the lanes that need you. They are hidden from the board by default; the parent's
 `awaiting_children (×2 ●1 ✓3)` breakdown is how you learn one of them needs
 you: `×` counts the blocked lanes, `!` the ones waiting on you.
 

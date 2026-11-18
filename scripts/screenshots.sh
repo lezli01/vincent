@@ -1709,7 +1709,9 @@ Type "/"
 Sleep 500ms
 Type "design tokens"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -1984,8 +1986,7 @@ Sleep 2s
   # beside the tab they are of, and the pictures above stay the ones they were.
 
   # The task workspace's other tabs (issue #414), each on the task whose
-  # state is what the tab is for. `enter` on a board row opens the workspace
-  # on its Overview (task 129.12); the digits pick a tab.
+  # state is what the tab is for. The digits pick a tab.
 
   # Steps, on the blocked task: a command step and an agent step
   # that succeeded, then both failed attempts of the step it is blocked on,
@@ -1998,7 +1999,7 @@ Type "/"
 Sleep 500ms
 Type "signed checksums"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 4s
@@ -2022,7 +2023,7 @@ Type "/"
 Sleep 500ms
 Type "public API"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2044,7 +2045,7 @@ Type "/"
 Sleep 500ms
 Type "harden"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2064,7 +2065,7 @@ Type "/"
 Sleep 500ms
 Type "public API"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2085,7 +2086,7 @@ Type "/"
 Sleep 500ms
 Type "public API"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2108,7 +2109,9 @@ Type "/"
 Sleep 500ms
 Type "design tokens"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2134,7 +2137,7 @@ Type "/"
 Sleep 500ms
 Type "signed checksums"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2159,7 +2162,9 @@ Type "/"
 Sleep 500ms
 Type "design tokens"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2189,7 +2194,7 @@ Type "/"
 Sleep 500ms
 Type "read replica"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2215,7 +2220,9 @@ Type "/"
 Sleep 500ms
 Type "focus ring"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2297,7 +2304,7 @@ Type "/"
 Sleep 500ms
 Type "tenant_id"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 4s
@@ -2311,8 +2318,8 @@ Screenshot "'"$OUT"'/tui-loop.png"
 Sleep 2s
 '
 
-  # The fan-out (task 084), parked between its two rounds. On the board, `L`
-  # hangs its three lanes under it.
+  # The fan-out (task 084), parked between its two rounds: the Overview lists
+  # its three lanes.
   owns api task 'v2 storage' tui-lanes
   tape tui-lanes 1250 api '
 Tab
@@ -2321,9 +2328,11 @@ Type "/"
 Sleep 500ms
 Type "v2 storage"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
-Type "L"
+Enter
+Sleep 4s
+Type "0"
 Sleep 3s
 Screenshot "'"$OUT"'/tui-lanes.png"
 Sleep 2s
@@ -2338,7 +2347,7 @@ Type "/"
 Sleep 500ms
 Type "v2 storage"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2360,7 +2369,7 @@ Type "/"
 Sleep 500ms
 Type "v2 storage"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2543,8 +2552,11 @@ Sleep 2s
   # each on the task whose state the question is about: the corpus reindex
   # while it runs (what is happening now?), the checksum task blocked on its
   # failed step (where and why did it fail?) and the design-tokens task done
-  # with its pull request linked (what did it deliver?). `enter` alone is the
-  # journey — the workspace opens on Overview, so no digit is pressed. The
+  # with its pull request linked (what did it deliver?). These tapes are wide
+  # enough for the workspace's rail, where a fresh open lands on Output, so
+  # `0` picks the Overview. Finished starts folded, so a finished task takes
+  # one more `enter`: the first commits the filter, the second opens its group
+  # and the third opens the task. The
   # running one is the reindex rather than the soak the Output tape uses, so
   # the two pictures show two different running tasks.
   owns docs-portal task 'reindex' tui-task-overview-running
@@ -2556,10 +2568,12 @@ Type "/"
 Sleep 500ms
 Type "reindex"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 5s
+Type "0"
+Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-running.png"
 Sleep 2s
 '
@@ -2572,10 +2586,12 @@ Type "/"
 Sleep 500ms
 Type "signed checksums"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 4s
+Type "0"
+Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-blocked.png"
 Sleep 2s
 '
@@ -2588,10 +2604,14 @@ Type "/"
 Sleep 500ms
 Type "design tokens"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 4s
+Type "0"
+Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-done.png"
 Sleep 2s
 '
@@ -2659,7 +2679,7 @@ Type "/"
 Sleep 500ms
 Type "header flicker"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2760,10 +2780,12 @@ Type "/"
 Sleep 500ms
 Type "ops fixes"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 4s
+Type "0"
+Sleep 2s
 Screenshot "'"$OUT"'/tui-handoff-task.png"
 Sleep 2s
 '
@@ -2868,7 +2890,7 @@ Type "/"
 Sleep 500ms
 Type "signed checksums"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 5s
