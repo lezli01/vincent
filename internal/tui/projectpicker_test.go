@@ -225,9 +225,9 @@ func TestProjectPickerHeaderClick(t *testing.T) {
 		t.Fatalf("hit starts at %d, the glyph is drawn at %d", m.headerHit[0], x)
 	}
 	// Outside the segment: nothing.
-	m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 0})
+	m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: m.width - 2, Y: 0})
 	if m.projPick != nil {
-		t.Fatal("a click on the app name opened the picker")
+		t.Fatal("a click on the version opened the picker")
 	}
 	_, cmd := m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: m.headerHit[1] - 1, Y: 0})
 	drainPicker(m, cmd)

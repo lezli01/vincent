@@ -409,7 +409,7 @@ tui:
   output:
     level: normal
   # default_project: web
-  # tabs: [issues, tasks]
+  # tabs: [issues, tasks, chats]
 ```
 
 ## Keys
@@ -1758,7 +1758,7 @@ tui:
   output:
     level: normal
   # default_project: web
-  tabs: [issues, tasks]
+  tabs: [issues, tasks, chats]
 ```
 
 The one section the daemon does not act on. It validates it, hot-reloads it with
@@ -1989,7 +1989,7 @@ that sets it.
 #### `tui.tabs`
 
 The TUI's main tabs, in order. Each entry is one of `issues`, `tasks` or
-`chats`, and the default is `[issues, tasks]`. The order is the order of the
+`chats`, and the default is `[issues, tasks, chats]`. The order is the order of the
 tab strip and the order `tab` cycles through, and the first entry is where the
 TUI opens — there is no separate setting for that. A single entry, such as
 `[tasks]`, is valid and turns the strip off.

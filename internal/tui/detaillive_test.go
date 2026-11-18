@@ -383,10 +383,10 @@ func TestNowLineFollowsLiveOutputAndLeavesWithRunning(t *testing.T) {
 	h.p.push(cmd)
 	nowLine := func() string {
 		lines := strings.Split(ansi.Strip(content(h.m)), "\n")
-		if len(lines) < 2 {
+		if len(lines) < 3 {
 			return ""
 		}
-		return lines[1]
+		return lines[2]
 	}
 	h.p.until(20*time.Second, "the now-line to quote the transcript", func() bool {
 		return strings.Contains(nowLine(), "first-line")

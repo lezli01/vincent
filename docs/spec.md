@@ -8562,7 +8562,7 @@ tui:                           # view preference; the daemon validates and relay
   output:
     level: normal              # quiet | compact | normal | verbose: the output pane's opening level (task 129.11)
   # default_project: web       # the project the TUI opens on, by name; read at startup only (task 132.3)
-  tabs: [issues, tasks]        # the main tabs, in order, from issues | tasks | chats; the first is where the TUI opens (task 136)
+  tabs: [issues, tasks, chats] # the main tabs, in order, from issues | tasks | chats; the first is where the TUI opens (task 136)
 ```
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
@@ -15824,6 +15824,19 @@ stream for the live tail.
    150 ms. A read is kept per issue until the row's `version` moves or `R`
    clears it, a failed read included, and a description is sanitized before
    it is drawn. Below 150 columns the pane is absent and nothing is read.
+
+   *Amended 2026-11-18 (task 150.4; applies to every view).* **The app header
+   leads with the project, then the main tabs, each with a glyph and a count
+   once its screen has loaded, and ends with the version at the far right.**
+   The active tab is reverse video. Width is shed in this order: the version,
+   the elsewhere badge, the counts, the labels to initials, and last the
+   project's name; the connection and pause badges are never shed. At 21 rows
+   and taller a rule separates the header from the screen. **The status bar
+   offers at most six palette-reachable keys**, in priority order, whatever the
+   width, superseding task 094's width-only contest; the rest stay behind `+N`,
+   and a popup's or form's own keys are never held back. From 100 columns it
+   starts by naming the screen. `tui.tabs` now defaults to
+   `[issues, tasks, chats]`.
 
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:

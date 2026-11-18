@@ -1215,7 +1215,7 @@ func Default() Config {
 			// normal is the level every version before task 129.11 opened
 			// at, so an absent key changes nothing.
 			Output: OutputView{Level: "normal"},
-			Tabs:   []string{"issues", "tasks"},
+			Tabs:   []string{"issues", "tasks", "chats"},
 		},
 	}
 }

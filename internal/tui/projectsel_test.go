@@ -290,30 +290,29 @@ func TestHeaderProjectSegment(t *testing.T) {
 	}
 
 	for _, w := range []int{60, 80, 120} {
-		if got := header(w); !strings.Contains(got, "vincent 0.9.0  ◆ no project  [") {
+		if got := header(w); !strings.HasPrefix(got, " ◆ no project  [") || !strings.HasSuffix(got, "vincent 0.9.0 ") {
 			t.Errorf("width %d, no selection: %q", w, got)
 		}
 	}
 	m.sel = projectSel{id: 1, name: "web"}
-	if got := header(80); !strings.HasPrefix(got, " vincent 0.9.0  ◆ web  [") {
+	if got := header(80); !strings.HasPrefix(got, " ◆ web  [") {
 		t.Errorf("selected: %q", got)
 	}
 
 	m.sel.name = strings.Repeat("n", 40)
-	// 60 columns: the 40-cell name still fits beside the version, so only
-	// the tag goes.
+	// 60 columns: the version goes first, and the tag still fits.
 	got := header(60)
-	if strings.Contains(got, "[") || !strings.Contains(got, "0.9.0") || !strings.Contains(got, m.sel.name) {
-		t.Errorf("tag should shed first: %q", got)
+	if !strings.Contains(got, "[") || strings.Contains(got, "0.9.0") || !strings.Contains(got, m.sel.name) {
+		t.Errorf("version should shed first: %q", got)
 	}
-	// Narrower: the version goes, the name still whole.
-	got = header(52)
-	if strings.Contains(got, "0.9.0") || !strings.Contains(got, " vincent  ◆ "+m.sel.name) {
-		t.Errorf("version should shed second: %q", got)
+	// Narrower: the tag goes, the name still whole.
+	got = header(46)
+	if strings.Contains(got, "[") || !strings.Contains(got, " ◆ "+m.sel.name) {
+		t.Errorf("tag should shed second: %q", got)
 	}
 	// Narrower still: the name truncates.
 	got = header(30)
-	if !strings.HasSuffix(got, "…") || ansi.StringWidth(got) > 30 || !strings.HasPrefix(got, " vincent  ◆ n") {
+	if !strings.HasSuffix(got, "…") || ansi.StringWidth(got) > 30 || !strings.HasPrefix(got, " ◆ n") {
 		t.Errorf("name should truncate last: %q", got)
 	}
 

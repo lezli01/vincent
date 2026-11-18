@@ -71,7 +71,7 @@ from — or to the first one, if that tab has since been removed from
 
 The board, the issues list and the chats board can be **main tabs**: the
 screens [`tui.tabs`](../reference/configuration.md#tuitabs) lists, by default
-`[issues, tasks]`. On one of them, `tab` switches to the next in that order and
+`[issues, tasks, chats]`. On one of them, `tab` switches to the next in that order and
 `shift+tab` to the previous, wrapping round; the footer's `tab issues` or
 `tab tasks` names where it goes. It only switches when there are two or more,
 and never while something on the screen has the keyboard: typing in the board's
@@ -79,12 +79,13 @@ filter, the first `tab` commits the filter and the second switches; an open
 issue form or new-chat form keeps `tab` for its fields. It works while the
 daemon is unreachable too, over what the screens last showed.
 
-The app header shows the tabs in place of the screen's name —
-`vincent 0.x  ◆ api  Issues │ Tasks`, with `│ Chats` when you add it — the one
-you are on highlighted. Click a label to switch to it; a click follows the same
-rule as `tab`, so it does nothing while you are typing in a filter. On a narrow
-terminal the labels shorten to initials (`I │ T`) before the project name
-does; they are never dropped. The strip only appears where `tab` switches: the
+The app header starts with the project, then shows the tabs with how many things
+each holds — `◆ api  ▦ Issues (10) │ ▶ Tasks (26) │ ◌ Chats (4)` — the one you are
+on highlighted, and vincent's version at the far right. Click a label to switch to
+it; a click follows the same rule as `tab`, so it does nothing while you are typing
+in a filter. As the terminal narrows the version goes first, then the count of
+attention elsewhere, then the tab counts, and the labels shorten to initials
+(`I │ T │ C`) before the project name does; they are never dropped. The strip only appears where `tab` switches: the
 task workspace, an issue, the archives and the management screens keep their
 own name or breadcrumb, as does the new-chat form, which uses `tab` for its
 fields. With a single tab in `tui.tabs` there is no strip.
@@ -3505,11 +3506,12 @@ unreachable, every action is under **Not available now**. The palette is
 different on purpose: it runs what you pick, so it lists only the actions that
 can run.
 
-The footer shows as many of the focused surface's keys as the terminal is wide
-enough for, in priority order, and then tells you what is left: a dim **`+N`**
-after the action keys counts the keys this surface has that the line is not
-showing — the ones that did not fit, the ones with no short form, and, on a
-narrow terminal, the task actions that did not fit. When a task offers more
+The status bar names the screen you are on, from 100 columns up, and offers that
+screen's main keys: at most six, in priority order, fewer on a narrow terminal.
+It then tells you what is left: a dim **`+N`** after the action keys counts the
+keys this surface has that the line is not showing — the ones past the main six,
+the ones that did not fit, the ones with no short form, and, on a narrow terminal,
+the task actions that did not fit. When a task offers more
 actions than the line holds, the ones listed first stay — on a `blocked` task
 that is `r retry`, `E edit+retry` and `R repair` — and the rest give their place
 up from the end: the `!` attention count, then `T chat`, then archive, cancel

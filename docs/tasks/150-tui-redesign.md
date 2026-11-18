@@ -1,6 +1,6 @@
 # 150 — A ground-up redesign of the TUI
 
-**Status:** 🚧 in progress (3/9) · **Opened:** 2026-11-18
+**Status:** 🚧 in progress (4/9) · **Opened:** 2026-11-18
 **Spec:** §15 · **Branch:** `feat/tui-redesign`
 
 The author asked for the TUI to be redesigned from the ground up. Four problems
@@ -45,13 +45,19 @@ workspace.
 10. **Done is a column from the start.** The accepted board shows all four
     lanes, so the listing no longer filters to open issues by default. `s` hides
     the column. This reverses task 134 decision 5's default.
+11. **The status bar offers the main keys only.** At most six palette-reachable
+    keys show, however wide the terminal, and `+N` stands for the rest. This
+    reverses task 094's rule that the width alone decides, because a long row of
+    keys was one of the four problems this redesign exists to solve.
+12. **Chats is a default tab.** `tui.tabs` defaults to `[issues, tasks, chats]`,
+    so the three project boards are all one key away.
 
 ## Tasks
 
 - [x] **150.1** Design tokens: tones, glyphs and the rounded and thick boxes.
 - [x] **150.2** The issues board: columns, cards, lane and card navigation.
 - [x] **150.3** The issue preview pane.
-- [ ] **150.4** The shell: top tabs with counts, filter box and status bar.
+- [x] **150.4** The shell: top tabs with counts, filter box and status bar.
 - [ ] **150.5** The chats workspace.
 - [ ] **150.6** The task board and task workspace.
 - [ ] **150.7** The management views: projects, workflows, daemon, pull requests,

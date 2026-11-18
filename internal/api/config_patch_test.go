@@ -434,8 +434,8 @@ func TestConfigPatchRoundTripsTUIOutputLevel(t *testing.T) {
 func TestConfigPatchRoundTripsTUITabs(t *testing.T) {
 	h := newConfigHarness(t)
 	_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
-	if !strings.Contains(string(getBody), `"tabs":["issues","tasks"]`) {
-		t.Fatalf("GET /v1/config does not serve tui.tabs [issues, tasks] by default: %s", getBody)
+	if !strings.Contains(string(getBody), `"tabs":["issues","tasks","chats"]`) {
+		t.Fatalf("GET /v1/config does not serve tui.tabs [issues, tasks, chats] by default: %s", getBody)
 	}
 	resp, out := h.patch(t, `{"tui":{"tabs":["tasks","chats","issues"]}}`)
 	if resp.StatusCode != http.StatusOK {

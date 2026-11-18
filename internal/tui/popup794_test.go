@@ -93,8 +93,8 @@ func TestPaletteBoxIsSizedAndAnchoredUnderTheChrome(t *testing.T) {
 	m.palette = newPalette(paletteEntries(ctxTasks, taskActions{}, false, true, false, nil, nil))
 	frame := content(m)
 	row, _ := popupTop(t, frame, "commands")
-	if m.chromeTop() != 2 || row != 2 {
-		t.Errorf("with a status line the box starts on row %d, chromeTop %d, want 2", row, m.chromeTop())
+	if m.chromeTop() != 3 || row != 3 {
+		t.Errorf("with a status line the box starts on row %d, chromeTop %d, want 3", row, m.chromeTop())
 	}
 	if !strings.Contains(ansi.Strip(frame), "switched to `api`") {
 		t.Error("the status line is covered by the box")
@@ -258,7 +258,7 @@ func TestFooterStatusLeadsAndIsCutFromTheRight(t *testing.T) {
 		}
 	}
 	// A short status leaves room for hints after it.
-	if got := statusFooter(200, "copied", false); !strings.HasPrefix(got, " copied · ") {
+	if got := statusFooter(200, "copied", false); !strings.HasPrefix(got, " copied  ") {
 		t.Errorf("hints do not follow a short status: %q", got)
 	}
 }

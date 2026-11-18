@@ -116,13 +116,13 @@ func (w *wheelSpy) render(_, _ int) string { return "" }
 func TestWheelYIsOffsetByTheChrome(t *testing.T) {
 	m := connectedRoot(t)
 	m.keysNotice = "a status line"
-	if m.chromeTop() != 2 {
-		t.Fatalf("chromeTop = %d with the status line up, want 2", m.chromeTop())
+	if m.chromeTop() != 3 {
+		t.Fatalf("chromeTop = %d with the rule and the status line up, want 3", m.chromeTop())
 	}
 	spy := &wheelSpy{}
 	m.views[m.active] = spy
 	m.Update(tea.MouseWheelMsg{X: 3, Y: 7, Button: tea.MouseWheelDown})
-	if len(spy.got) != 1 || spy.got[0].Y != 5 {
+	if len(spy.got) != 1 || spy.got[0].Y != 4 {
 		t.Fatalf("the view got %+v, want one wheel event at Y 5", spy.got)
 	}
 }

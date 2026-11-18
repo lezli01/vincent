@@ -138,8 +138,8 @@ func TestNowLinePrefersTheStatusMessage(t *testing.T) {
 	if want := styleStatus.Render(" " + statusGlyph + " running the unit tests"); line != want {
 		t.Errorf("now-line is not styled as the timeline styles a status: %q", line)
 	}
-	if lines := strings.Split(ansi.Strip(content(m)), "\n"); !strings.Contains(lines[1], "running the unit tests") {
-		t.Errorf("the line under the header is %q, want the now-line", lines[1])
+	if lines := strings.Split(ansi.Strip(content(m)), "\n"); !strings.Contains(lines[2], "running the unit tests") {
+		t.Errorf("the line under the header's rule is %q, want the now-line", lines[2])
 	}
 	// The Overview's running frame no longer says it a second time.
 	if out := ansi.Strip(strings.Join(v.overviewLines(120, 40), "\n")); strings.Contains(out, "latest status") {
@@ -219,7 +219,7 @@ func TestHeaderAndNowLineReadWithoutColour(t *testing.T) {
 	if !strings.Contains(lines[0], "Tasks"+crumbSep+"#4"+crumbSep+"Overview") {
 		t.Errorf("breadcrumb without colour = %q", lines[0])
 	}
-	if !strings.Contains(lines[1], statusGlyph+" halfway there") {
-		t.Errorf("now-line without colour = %q", lines[1])
+	if !strings.Contains(lines[2], statusGlyph+" halfway there") {
+		t.Errorf("now-line without colour = %q", lines[2])
 	}
 }

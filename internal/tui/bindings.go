@@ -976,10 +976,8 @@ var bindings = []binding{
 	// request to the project's issue source, `vincent issue sync` from the
 	// list, offered only where there is a sync pass to wake (task 142.14).
 	{key: issueSyncKey, label: "sync this project's issues from its issue source now — sweeping out the ones deleted there", scope: scopePanel, context: ctxIssues, hint: "S sync", priority: 11, syncable: true},
-	// Folding the lane sections (task 134.8), the task board's four keys in
-	// the same meaning. Not `fold:` rows: that marker drops a row while the
-	// board is ungrouped, and the issues list always has its sections.
-	{key: "left", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, hint: "←/→ lane", priority: 12},
+	// Crossing the columns (task 150.2), a main key of the board.
+	{key: "left", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, hint: "←/→ lane", priority: 3},
 	{key: "right", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, priority: 13, aliased: true},
 	// Paging (#796), the issue detail's and the timeline's keys.
 	{key: "pgdown", label: "page the column (pgup/pgdown, home/g, end/G)", scope: scopePanel, context: ctxIssues, priority: 16},
