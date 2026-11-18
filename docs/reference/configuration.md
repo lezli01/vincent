@@ -1787,8 +1787,9 @@ and names the key, and an unknown level's message lists the vocabulary:
 
 **The default is `[issue]`** since this version; it was `[workflow]` before.
 Only a fresh `config.yaml` — and a file that leaves the key out — gets the new
-default. A file that already says `group_by: [workflow]`, including the one an
-earlier version bootstrapped, is read as written: it keeps grouping by
+default. A file that already says `group_by: [workflow]` (or the older
+bootstrapped `[project, workflow]`, which loads as `[workflow]` — below),
+including the one an earlier version bootstrapped, is read as written: it keeps grouping by
 workflow, nothing rewrites it and nothing warns about it, because a
 bootstrapped value cannot be told apart from a chosen one. Change it to
 `[issue]` (or delete the line) to take the new default.

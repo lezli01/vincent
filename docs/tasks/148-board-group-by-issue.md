@@ -1,6 +1,6 @@
 # 148 — The board grouped by vincent issue
 
-**Status:** 🔄 in progress (2/3) · **Opened:** 2026-11-17 · **Issues:** #981, #982, #983, #984
+**Status:** ✅ done (3/3) · **Opened:** 2026-11-17 · **Completed:** 2026-11-17 · **Issues:** #981, #982, #983, #984
 
 The author asked for the task board to be grouped by the vincent issue each
 task was started from, and for that to be the default. Issue #981 splits it in
@@ -113,5 +113,5 @@ every grouping, so filtering for an issue keeps its whole group.
   with it, `TestDefaultGroupingMatchesTheConfigDefault` fails again rather
   than logging (decision 6, amended). Decisions 7–9; the §15 *Grouping* and
   filter amendments. ✓ 2026-11-17
-- [ ] **148.3** (#984) The TUI guide, the features page, the screenshots and
-  the CHANGELOG entry.
+- [x] **148.3** (#984) The TUI guide, the features page, the screenshots and
+  the CHANGELOG entry. ✓ 2026-11-17

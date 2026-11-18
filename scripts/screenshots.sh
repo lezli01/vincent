@@ -380,7 +380,11 @@ do_seed() {
   # pseudo-version (`v0.5.1-0.2026…+dirty`), which is noise in a screenshot.
   say "build vincent + fakeagent + fakegh + fakejira"
   local vpkg="github.com/lezli01/vincent/internal/version" vtag
-  vtag="$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"
+  # Matched to release tags only, as master-build.yml does: since task 147
+  # the rolling `master-latest` prerelease tag is the nearest tag on any
+  # branch cut from master, and an unmatched describe stamps every frame
+  # `vincent master-latest` (review F1).
+  vtag="$(git -C "$ROOT" describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null || echo v0.0.0)"
   (cd "$ROOT" && go build -trimpath \
     -ldflags "-X $vpkg.version=${vtag#v} -X $vpkg.commit=$(git -C "$ROOT" rev-parse --short HEAD) -X $vpkg.date=$(date -u +%Y-%m-%d)" \
     -o "$BIN/" ./cmd/vincent ./cmd/fakeagent ./cmd/fakegh ./cmd/fakejira)
@@ -1377,7 +1381,10 @@ EOF
   # is 5000 records and only *live* chunks trip it (internal/tui/detail.go), so
   # this has to keep producing while the TUI watches rather than have produced:
   # 100 lines a second crosses the cap in under a minute and keeps going —
-  # slow enough that paging back to the top outruns the arriving tail.
+  # slow enough that paging back to the top outruns the arriving tail. It has
+  # to outlive the whole capture too: tui-task-overview-running needs it still
+  # running, and 600 batches (ten minutes) ran out before that tape was
+  # reached. 3000 batches is the 300000 documents the lines count to.
   cat > "$CONFIG_DIR/workflows/corpus-index.yaml" <<'EOF'
 name: corpus-index
 description: Reindex every document in the corpus.
@@ -1390,7 +1397,7 @@ steps:
     run: |
       i=0
       b=0
-      while [ $b -lt 600 ]; do
+      while [ $b -lt 3000 ]; do
         b=$((b + 1))
         j=0
         while [ $j -lt 100 ]; do
@@ -1687,10 +1694,13 @@ Sleep 6s
 Screenshot "'"$OUT"'/tui-board.png"
 '
 
-  # Grouping: by workflow, the shape the board takes out of the box — there
-  # is no project level, since the board shows one project (task 132). api
-  # runs the most workflows, so its board has the most groups.
-  tape tui-grouping 1400 api '
+  # Grouping: by issue, the shape the board takes out of the box (task 148)
+  # — there is no project level, since the board shows one project (task
+  # 132). platform-infra has the most tasks started from an issue, one group
+  # each, and a `no issue` group holding the handoff's own task and the
+  # claude task waiting for input. api's tasks carry no issue, and giving
+  # them one would change every api shot.
+  tape tui-grouping 1400 platform-infra '
 Tab
 Sleep 2s
 Sleep 3s
