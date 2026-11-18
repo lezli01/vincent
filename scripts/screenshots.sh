@@ -1574,7 +1574,7 @@ Require vincent
 
 Set Shell "bash"
 Set FontSize $FONT_PX
-Set Width $COLS_PX
+Set Width ${TAPE_WIDTH:-$COLS_PX}
 Set Height $height
 Set Padding 24
 Set Margin 36
@@ -2862,6 +2862,19 @@ Sleep 2s
   if [[ -z "${VINCENT_SHOTS_ONLY:-}" || "${VINCENT_SHOTS_ONLY}" == "tui-global-pause" ]]; then
     api POST /daemon/continue >/dev/null
   fi
+
+  # The issue preview (task 150.3) needs a terminal wider than every other
+  # tape's, so this one alone sets TAPE_WIDTH. The selection moves to the
+  # blocked in-progress issue, and the sleep outlasts the description's read.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-issues-preview 1250 platform-infra '
+Sleep 3s
+Right
+Sleep 500ms
+Down
+Sleep 3s
+Screenshot "'"$OUT"'/tui-issues-preview.png"
+Sleep 2s
+'
 }
 
 case "${1:-all}" in

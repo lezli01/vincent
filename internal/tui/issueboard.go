@@ -248,12 +248,17 @@ func issueAge(now, at time.Time) string {
 // The source never goes (#796): it is what a person matches the card against
 // at its origin, so the labels give way to a `+N` count first.
 func issueCardTags(iss apiclient.Issue, width int, sharedRepo bool) string {
+	// With no labels to share the line with, the source may have all of it.
+	limit := width
+	if len(iss.Labels) > 0 {
+		limit = width / 2
+	}
 	source := issueSourceBadge(iss)
-	if ansi.StringWidth(source) > width/2 && sharedRepo && iss.Source.ShortRef != "" {
+	if ansi.StringWidth(source) > limit && sharedRepo && iss.Source.ShortRef != "" {
 		source = iss.Source.ShortRef
 	}
 	if source != "" {
-		source = fitLeft(source, width/2, sourceKeep(iss))
+		source = fitLeft(source, limit, sourceKeep(iss))
 	}
 	room := width
 	if source != "" {

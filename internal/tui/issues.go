@@ -173,6 +173,15 @@ type issuesView struct {
 	picked map[int64]bool
 	// handoff is the open handoff form, nil when none is.
 	handoff *handoffForm
+
+	// previewOn is whether the terminal is wide enough for the preview pane.
+	// previews holds the descriptions read for it, by issue; previewArmed is
+	// the read waiting for the selection to rest, and previewReading the one
+	// under way (issuepreview.go).
+	previewOn      bool
+	previews       map[int64]issuePreview
+	previewArmed   issuePreviewKey
+	previewReading issuePreviewKey
 }
 
 func newIssuesView() *issuesView {
@@ -208,6 +217,7 @@ func (v *issuesView) setProject(p projectSel) tea.Cmd {
 		v.cursor, v.selected = 0, 0
 		v.w.act = nil
 		v.picked, v.handoff = nil, nil
+		v.forgetPreviews()
 	}
 	return v.projectScope.setProject(p)
 }
@@ -239,7 +249,23 @@ func (v *issuesView) paste(text string) tea.Cmd {
 	return cmd
 }
 
+// update routes msg, then arms the preview's read for wherever the selection
+// has come to rest.
 func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case issuePreviewDueMsg:
+		return v, v.previewDue(msg.key)
+	case issuePreviewMsg:
+		v.applyPreview(msg)
+		return v, nil
+	case tea.WindowSizeMsg:
+		v.previewOn = msg.Width >= issuePreviewMinW
+	}
+	p, cmd := v.route(msg)
+	return p, tea.Batch(cmd, v.previewCmd())
+}
+
+func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 	if v.handoff != nil {
 		if key, ok := msg.(tea.KeyPressMsg); ok {
 			cmd, closed := v.handoff.updateKey(key)
@@ -557,6 +583,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return v, backToTab
 	case opKey(keymap.Refresh):
+		v.forgetPreviews()
 		return v, v.loadCmd()
 	case issueSyncKey:
 		if !v.syncable() {
@@ -785,6 +812,7 @@ func (v *issuesView) render(width, height int) string {
 	if v.w.form != nil {
 		return v.w.form.render(width, height)
 	}
+	v.previewOn = width >= issuePreviewMinW
 	lines := make([]string, 0, height)
 	lines = append(lines, v.filterBox(width)...)
 	lines = append(lines, v.bodyNotice(width)...)
@@ -807,7 +835,12 @@ func (v *issuesView) render(width, height int) string {
 	footer = fitFooter(footer, max(height-len(lines), 0), tail)
 	v.cardHits = nil
 	if room := height - len(lines) - len(footer); room >= 3 && v.boardShown() {
-		lines = append(lines, v.boardLines(width, room, len(lines))...)
+		if v.previewOn {
+			pane := issuePreviewWidth(width)
+			lines = append(lines, joinColumns(v.boardLines(width-pane, room, len(lines)), v.previewPane(pane, room))...)
+		} else {
+			lines = append(lines, v.boardLines(width, room, len(lines))...)
+		}
 	}
 	lines = append(lines, footer...)
 	for i, line := range lines {

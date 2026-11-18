@@ -2017,6 +2017,14 @@ reference shortens to `gh#N` when every imported issue comes from one repository
 and a reference that still does not fit loses its start — `…/web#41` — never the
 number.
 
+On a terminal at least 150 columns wide, a preview of the selected issue sits to
+the right of the board. It shows the issue's lane, who opened it and when, its
+priority, kind and labels, the work on it and its branch, and as much of the
+description as fits. `enter` opens the full issue.
+
+![The issues board with a preview pane on the right, showing the selected
+blocked issue's lane, labels, work and description.](../assets/tui-issues-preview.png)
+
 Titles, of issues and of tasks alike, are drawn as one line of plain text: a
 line break or tab in one reads as a space, and terminal escape sequences are
 dropped rather than sent to your terminal. vincent's stored title is not

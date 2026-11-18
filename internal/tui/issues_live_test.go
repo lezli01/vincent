@@ -162,7 +162,7 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 	h.p.until(10*time.Second, "the open listing", func() bool {
 		return !list.showDone && !list.loading && len(list.issues) == 1
 	})
-	reqs := rec.matching("GET /v1/issues")
+	reqs := rec.matching("GET /v1/issues?")
 	if last := reqs[len(reqs)-1]; !strings.Contains(last, "state=open") {
 		t.Errorf("the listing with done hidden does not ask for open issues: %s", last)
 	}
@@ -170,7 +170,7 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 	h.p.until(10*time.Second, "the listing with done shown", func() bool {
 		return list.showDone && list.loaded && !list.loading && len(list.issues) == 1
 	})
-	reqs = rec.matching("GET /v1/issues")
+	reqs = rec.matching("GET /v1/issues?")
 	if last := reqs[len(reqs)-1]; strings.Contains(last, "state=") {
 		t.Errorf("the listing with done shown still filters by state: %s", last)
 	}

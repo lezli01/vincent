@@ -15817,6 +15817,14 @@ stream for the live tail.
    draws its own boxes, so the root does not frame it; the issue and handoff
    forms keep the root's frame. Colours are named ANSI colours (§15 Colour).
 
+   *Amended 2026-11-18 (task 150.3).* **At 150 columns and wider a preview of
+   the selected issue sits right of the columns**, at 30% of the terminal and
+   at most 56 columns. The list row supplies its facts; only the description
+   is read, through `GET /v1/issues/{id}`, once the selection has rested for
+   150 ms. A read is kept per issue until the row's `version` moves or `R`
+   clears it, a failed read included, and a description is sanitized before
+   it is drawn. Below 150 columns the pane is absent and nothing is read.
+
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:
    only such an event can move a row's task count or active marker. A step
