@@ -985,9 +985,9 @@ func frame(title, content string, w, h int, focused bool) string {
 	label = ansi.Truncate(label, max(inner-1, 0), "…")
 	fill := inner - 1 - ansi.StringWidth(label)
 	var sb strings.Builder
-	sb.WriteString(border.Render("┌─"))
+	sb.WriteString(border.Render("╭─"))
 	sb.WriteString(label)
-	sb.WriteString(border.Render(strings.Repeat("─", max(fill, 0)) + "┐"))
+	sb.WriteString(border.Render(strings.Repeat("─", max(fill, 0)) + "╮"))
 
 	lines := strings.Split(content, "\n")
 	side := border.Render("│")
@@ -1006,7 +1006,7 @@ func frame(title, content string, w, h int, focused bool) string {
 		sb.WriteString(side)
 	}
 	sb.WriteString("\n")
-	sb.WriteString(border.Render("└" + strings.Repeat("─", inner) + "┘"))
+	sb.WriteString(border.Render("╰" + strings.Repeat("─", inner) + "╯"))
 	return sb.String()
 }
 

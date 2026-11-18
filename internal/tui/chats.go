@@ -150,6 +150,9 @@ type chatsView struct {
 
 	width, height int
 
+	// termW is the terminal's width, which decides whether the archive is
+	// drawn as the workspace.
+	termW int
 	// cardHits is where the last render drew each chat card, for a click.
 	cardHits []chatCardHit
 	// previewOn is whether the conversation is on screen beside the list.
@@ -327,8 +330,6 @@ func (v *chatsView) addressed(msg tea.Msg) bool {
 		// Only the archived board deletes, and only a chat sweep is its own;
 		// a task sweep's outcome is the archived tasks board's (#790).
 		return m.chats && v.archived
-	case chatPreviewDueMsg, chatPreviewMsg:
-		return !v.archived
 	default:
 		return true
 	}
@@ -340,7 +341,7 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		v.width, v.height = msg.Width, msg.Height
+		v.width, v.height, v.termW = msg.Width, msg.Height, msg.Width
 		v.previewOn = msg.Width >= chatWorkspaceMinW
 		return v, nil
 	case chatPreviewDueMsg:
@@ -638,6 +639,8 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	v.note = ""
 	if v.archived {
 		switch msg.String() {
+		case "tab":
+			return v, func() tea.Msg { return selectViewMsg{id: viewArchived} }
 		case opKey(keymap.Delete):
 			v.askDelete()
 			return v, nil

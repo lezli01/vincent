@@ -135,8 +135,11 @@ func (b *board) cardFolded(column int, key string) bool {
 	if v, ok := b.cardFolds[cardFoldKey(column, key)]; ok {
 		return v
 	}
-	return column == taskColumnFinished
+	return column == taskColumnFinished && !b.archived
 }
+
+// frameless reports that the archive's cards draw their own panes.
+func (b *board) frameless() bool { return b.archived && b.cards }
 
 func (b *board) setCardFold(column int, key string, folded bool) {
 	if b.cardFolds == nil {
@@ -353,7 +356,11 @@ func (b *board) cardKey(key string) bool {
 	case "O":
 		b.foldAllCards(false)
 	case opKey(keymap.OpenRow):
-		// Only reached on a folded group: a task's enter is the shell's.
+		// A task's enter belongs to whoever opens tasks; a folded group's is here.
+		s, ok := b.cardStop()
+		if !ok || !s.header {
+			return false
+		}
 		b.toggleCardFold()
 	default:
 		return false
@@ -413,11 +420,17 @@ func (b *board) cardFilterBox(width int) []string {
 	if b.infoOK {
 		agents = b.agentsSummary()
 	}
+	if b.archived {
+		agents = archiveSwitch(true)
+	}
 	return drawBox(agents, b.cardSummary(), body, width, len(body)+2, edgesRounded, styleDim)
 }
 
 // cardSummary says what the board is showing, for the filter box's edge.
 func (b *board) cardSummary() string {
+	if b.archived {
+		return styleDim.Render(b.label() + " · " + plural(len(b.tasks), "task", "tasks"))
+	}
 	tasks := b.projectTasks()
 	parts := []string{plural(len(tasks), "task", "tasks"), strconv.Itoa(countRunning(tasks)) + " running"}
 	if b.infoOK && b.info.MaxParallelTasks > 0 {
@@ -445,10 +458,23 @@ func (b *board) cardSummary() string {
 
 // cardNotices is what must be said above the columns: a stale board.
 func (b *board) cardNotices(width int) []string {
-	if b.loadErr == nil {
-		return nil
+	var out []string
+	if b.archived {
+		out = b.archivedStatus()
 	}
-	return []string{styleBad.Render(ansi.Truncate(" ⚠ "+b.staleNote(), width, "…"))}
+	if b.loadErr != nil {
+		out = append(out, styleBad.Render(ansi.Truncate(" ⚠ "+b.staleNote(), width, "…")))
+	}
+	return out
+}
+
+// archiveSwitch is the archive's Tasks and Chats, the one on screen highlighted.
+func archiveSwitch(tasks bool) string {
+	on, off := styleTabActive, styleDim
+	if tasks {
+		return on.Render(" ▶ Tasks ") + " " + off.Render(" ◌ Chats ")
+	}
+	return off.Render(" ▶ Tasks ") + " " + on.Render(" ◌ Chats ")
 }
 
 // cardColumns draws the columns that fit, the cursor's always among them.
@@ -459,6 +485,10 @@ func (b *board) cardColumns(width, height, top int) []string {
 	var at taskStop
 	if ok {
 		at = stops[cursor][pos]
+	}
+	if b.archived {
+		// An archive is one column: everything in it has finished.
+		return b.cardColumn(taskColumnFinished, groups[taskColumnFinished], at, at.key, 0, top, width, height, issueLaneMore{})
 	}
 	// The selected task's issue is lit in every column it has work in.
 	litIssue := at.key
@@ -488,6 +518,9 @@ func (b *board) cardColumns(width, height, top int) []string {
 func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit string, x, top, w, h int, more issueLaneMore) []string {
 	look := taskColumnLooks[c]
 	title := look.tone.Bold(true).Render(look.glyph + " " + look.name)
+	if b.archived {
+		title = toneBlue.Bold(true).Render("▣ Archived tasks")
+	}
 	if more.left {
 		title = styleDim.Render("‹ ") + title
 	}

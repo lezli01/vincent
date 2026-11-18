@@ -15862,6 +15862,18 @@ stream for the live tail.
    leave the strip there but keep their digits, a fresh open lands on Output, and
    a blocked task's reason and recovery keys are pinned under the tab.
 
+   *Amended 2026-11-18 (task 150.7; applies to views 3 to 7, 10 and 11).* **From
+   130 columns the management screens have wide layouts over their existing
+   models**, and a narrower terminal keeps the layouts this section describes:
+   projects as a grid of cards beside the cross-project attention list; workflows
+   unframed; the daemon as a dashboard of boxes; pull requests in Linked and
+   Unclaimed columns with a preview that reads a claimed pull request's checks
+   through `GET /v1/tasks/{id}/github/pull/checks` once the selection rests on it;
+   triggers as cards beside their details and deliveries; and the archived boards
+   as cards and the chats workspace. `tab` crosses between archived tasks and
+   archived chats at any width, and `enter` opens an archived task. Every frame in
+   the TUI has rounded corners.
+
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:
    only such an event can move a row's task count or active marker. A step

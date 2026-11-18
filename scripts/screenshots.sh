@@ -1771,7 +1771,7 @@ Screenshot "'"$OUT"'/tui-new-task.png"
 '
 
   # Workflows, expanded into the control-flow graph of the fan-out workflow.
-  tape tui-workflow-graph 1400 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-workflow-graph 1400 api '
 Type ":"
 Sleep 1s
 Type "workflows"
@@ -1835,7 +1835,7 @@ Sleep 2s
 
   # Triggers (task 096): the list with the armed command source selected and
   # its ledger of `seeded` deliveries beside it.
-  tape tui-triggers 1250 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-triggers 1250 api '
 Type ":"
 Sleep 1s
 Type "triggers"
@@ -2376,7 +2376,7 @@ Sleep 2s
 
   # The pull requests screen (task 052): the open listing of the one GitHub
   # project, with #412 claimed by the task the reconciler linked it to.
-  tape tui-pull-requests 1050 web '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-pull-requests 1050 web '
 Type ":"
 Sleep 1s
 Type "pull requests"
@@ -2388,7 +2388,7 @@ Sleep 2s
 '
 
   # The two archived boards (task 092), each opened from the palette.
-  tape tui-archived 1050 platform-infra '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-archived 1050 platform-infra '
 Type ":"
 Sleep 1s
 Type "archived tasks"
@@ -2399,7 +2399,7 @@ Screenshot "'"$OUT"'/tui-archived.png"
 Sleep 2s
 '
 
-  tape tui-archived-chats 1050 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-archived-chats 1050 api '
 Type ":"
 Sleep 1s
 Type "archived chats"
@@ -2420,7 +2420,7 @@ Sleep 2s
   # The daemon view with `tab` on the config list (task 060): every key,
   # its value, and the default where the two differ, with the adapters and
   # their usage windows below.
-  tape tui-daemon-config 1400 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-daemon-config 1400 api '
 Type ":"
 Sleep 1s
 Type "daemon"
@@ -2687,7 +2687,7 @@ Sleep 2s
   # overviewFullWidth()+overviewDetailWidth columns, wider than this tape, so
   # it is not in the shot. Appended last, after tui-projects was retired, for
   # the reason the swap order is one-way.
-  tape tui-project-overview 1250 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-project-overview 1250 api '
 Type ":"
 Sleep 1s
 Type "project overview"
@@ -2772,7 +2772,7 @@ Sleep 2s
   # pane pins its end, so the adapters block — all four, copilot's quota
   # `unknown` by design (§9.9) — is on screen where tui-daemon-config,
   # whose config list takes the room, cuts it off.
-  tape tui-daemon-adapters 1400 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-daemon-adapters 1400 api '
 Type ":"
 Sleep 1s
 Type "daemon"

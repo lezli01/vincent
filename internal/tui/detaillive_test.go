@@ -227,7 +227,7 @@ func TestLiveSplitDocumentMatchesTheColdTranscript(t *testing.T) {
 	got := content(h.m)
 	// The now-line under the header quotes the tail's last line by design
 	// (task 129.9); the duplication this pins is inside the pane.
-	if _, pane, ok := strings.Cut(got, "┌"); ok {
+	if _, pane, ok := strings.Cut(got, "╭"); ok {
 		got = pane
 	}
 	if strings.Count(got, "| Step | State |") != 0 {

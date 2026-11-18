@@ -25,12 +25,12 @@ func specialKey(code rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: code} 
 func popupTop(t *testing.T, frame, title string) (row, width int) {
 	t.Helper()
 	for i, l := range strings.Split(ansi.Strip(frame), "\n") {
-		at := strings.Index(l, "┌─ ▸ "+title)
+		at := strings.Index(l, "╭─ ▸ "+title)
 		if at < 0 {
 			continue
 		}
 		box := l[at:]
-		end := strings.Index(box, "┐")
+		end := strings.Index(box, "╮")
 		return i, ansi.StringWidth(box[:end]) + 1
 	}
 	t.Fatalf("no %q box on the frame:\n%s", title, ansi.Strip(frame))
@@ -40,13 +40,13 @@ func popupTop(t *testing.T, frame, title string) (row, width int) {
 // popupHeight counts the box's rows from its top border to its bottom one.
 func popupHeight(frame, title string, top int) int {
 	lines := strings.Split(ansi.Strip(frame), "\n")
-	at := strings.Index(lines[top], "┌─ ▸ "+title)
+	at := strings.Index(lines[top], "╭─ ▸ "+title)
 	if at < 0 {
 		return 0
 	}
 	col := ansi.StringWidth(lines[top][:at])
 	for i := top + 1; i < len(lines); i++ {
-		if strings.HasPrefix(ansi.Cut(lines[i], col, col+1), "└") {
+		if strings.HasPrefix(ansi.Cut(lines[i], col, col+1), "╰") {
 			return i - top + 1
 		}
 	}

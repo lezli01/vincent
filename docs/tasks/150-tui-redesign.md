@@ -57,6 +57,10 @@ workspace.
 14. **The wide task workspace shows its steps and details as panes.** Steps, Task
     Details and Step Details leave the tab strip from 130 columns.
 
+15. **The management screens get wide layouts over their existing models.** From
+    130 columns they use cards and panes; a narrower terminal keeps its tables.
+16. **The two archives are one screen.** `tab` crosses between tasks and chats.
+
 ## Tasks
 
 - [x] **150.1** Design tokens: tones, glyphs and the rounded and thick boxes.
@@ -65,8 +69,12 @@ workspace.
 - [x] **150.4** The shell: top tabs with counts, filter box and status bar.
 - [x] **150.5** The chats workspace.
 - [x] **150.6** The task board and task workspace.
-- [ ] **150.7** The management views: projects, workflows, daemon, pull requests,
-  triggers and the archives.
+- [~] **150.7** The management views: projects, workflows, daemon, pull requests,
+  triggers and the archives. Built, with these gaps against the accepted mock-ups:
+  Workflows has only its new frame (no scope groups, no graph beside the list, no
+  details pane); Daemon's adapters are lines rather than cards and it has no Work
+  summary; Archived is one column with its time window as text; Projects has no
+  current-project badge; and below 130 columns all six keep their older tables.
 - [ ] **150.8** The Nerd Font icon opt-in.
 - [ ] **150.9** §15, the user guides, the key tables and every `tui-*.png`
   recaptured with `scripts/screenshots.sh`.

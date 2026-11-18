@@ -52,6 +52,18 @@ func tabGlyph(id viewID) string {
 		return "▶"
 	case viewChats, viewChat:
 		return "◌"
+	case viewProjects:
+		return headerProjectGlyph
+	case viewWorkflows:
+		return "⟡"
+	case viewDaemon:
+		return "◉"
+	case viewPullRequests:
+		return "⇅"
+	case viewTriggers:
+		return "⚡"
+	case viewArchived, viewArchivedChats:
+		return "▣"
 	}
 	return "•"
 }

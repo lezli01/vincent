@@ -37,6 +37,9 @@ func (v *triggersView) render(width, height int) string {
 	case v.form != nil:
 		return v.renderForm(v.width, v.height)
 	}
+	if v.wide() {
+		return v.renderWide(v.width, v.height)
+	}
 	return v.renderList(v.width, v.height)
 }
 

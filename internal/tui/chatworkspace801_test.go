@@ -309,7 +309,7 @@ func TestChatFooterFitsShortPanes(t *testing.T) {
 				t.Errorf("%s 80×%d: render drew %d lines", c.name, h, len(lines))
 				continue
 			}
-			if last := lines[len(lines)-1]; !strings.Contains(last, "┘") {
+			if last := lines[len(lines)-1]; !strings.Contains(last, "╯") {
 				t.Errorf("%s 80×%d: the composer's bottom border is cut:\n%s", c.name, h, strings.Join(lines, "\n"))
 			}
 		}

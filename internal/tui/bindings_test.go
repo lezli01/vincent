@@ -716,6 +716,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	// models the live boards are, in archived mode — which is the point of
 	// decision 5: one model, so a probe here is a probe of the real screen.
 	ctxArchived: {
+		"tab": func(t *testing.T) {
+			b := testArchivedBoard()
+			if _, cmd := b.updateKey(registryKey(t, "tab")); cmd == nil {
+				t.Fatal("tab did not switch to the archived chats")
+			}
+		},
 		"R": func(t *testing.T) {
 			b := testArchivedBoard()
 			b.client = offlineClient()
@@ -785,6 +791,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxArchivedChats: {
+		"tab": func(t *testing.T) {
+			v := archivedChatsFixture()
+			if _, cmd := v.updateKey(registryKey(t, "tab")); cmd == nil {
+				t.Fatal("tab did not switch to the archived tasks")
+			}
+		},
 		"enter": func(t *testing.T) {
 			v := archivedChatsFixture()
 			_, cmd := v.updateKey(registryKey(t, "enter"))

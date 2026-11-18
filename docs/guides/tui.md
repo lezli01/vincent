@@ -1635,6 +1635,10 @@ form tells you what will actually run rather than what you typed.
 
 ### Projects
 
+From 130 columns wide, each project is a card with its figures, arranged in a grid
+you move through with the arrow keys, and everything that needs you across projects
+is listed beside the cards. A narrower terminal shows the table described below.
+
 The project overview is the one screen that shows every registered project at
 once; everything else shows the selected project. Open it from the palette's
 "project overview" row, or from the last row of the project picker (`@`),
@@ -1698,6 +1702,11 @@ With no project registered, the overview says how to add one: `a`, or
 `vincent project add <path>` from a shell.
 
 ### Pull requests
+
+From 130 columns wide, pull requests are cards in two columns, **Linked to a task**
+and **Unclaimed**, with a preview of the selected one. The preview lists the checks
+of a pull request a task claims, read once the selection rests on it. `←` and `→`
+cross the columns.
 
 The selected project's pull requests, when its `origin` is a github.com
 repository vincent can authenticate to. The
@@ -2813,6 +2822,10 @@ held by a conversation nobody came back to.
 
 ### Archived
 
+`tab` switches between archived tasks and archived chats. From 130 columns wide,
+archived tasks are cards grouped by issue with a preview, and archived chats use the
+chats workspace. `enter` opens the selected task or chat, and `esc` comes back.
+
 Two screens, one for tasks and one for chats, reached from the command palette
 (`:`). They are the boards you already know, in a second mode: the same
 `/` filter — and, for tasks, the same grouping, folding and `space`/`V`
@@ -2880,6 +2893,9 @@ chat still points at the task. Delete those first and try again. On a closed
 because the branch is the task's; `y` deletes it.
 
 ### Triggers
+
+From 130 columns wide, each trigger is a card showing whether it is armed and how
+its last poll went, with the selected trigger's details and deliveries beside it.
 
 What starts work on its own, and what each event became. The screen shows the
 selected project's triggers and what the daemon learned running each one.
@@ -3067,6 +3083,9 @@ nothing.
 | `esc` | Close the dry run |
 
 ### Daemon
+
+From 130 columns wide, this screen is a dashboard: the daemon, its configuration
+and its database side by side, the adapters under them, and the log below.
 
 Version, uptime, the config in effect, the adapters detected, and a live tail of
 the daemon log. The view reports, it does not act — `vincent daemon stop` owns

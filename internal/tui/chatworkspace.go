@@ -90,12 +90,16 @@ type (
 
 // frameless reports that the live board draws its own panes, so the root must
 // not wrap it in another frame. The new-chat form and the archive keep theirs.
-func (v *chatsView) frameless() bool { return !v.archived && v.create == nil }
+func (v *chatsView) frameless() bool { return v.workspaceShown() && v.create == nil }
+
+// workspaceShown reports whether the board is drawn as the workspace: always
+// for the live board, and on a wide terminal for the archive.
+func (v *chatsView) workspaceShown() bool { return !v.archived || v.termW >= mgmtWideMinW }
 
 // previewCmd arms the read of the selected chat, if the conversation is on
 // screen and does not already hold that chat as of its latest change.
 func (v *chatsView) previewCmd() tea.Cmd {
-	if v.archived || !v.previewOn || v.client == nil {
+	if !v.workspaceShown() || !v.previewOn || v.client == nil {
 		return nil
 	}
 	c, ok := v.current()
@@ -222,11 +226,18 @@ func (v *chatsView) chatsFilterBox(width int) []string {
 		v.filter.SetWidth(max(width-6, 10))
 		body = fieldRows("", v.filter)
 	}
-	return drawBox("", v.chatsSummary(), body, width, len(body)+2, edgesRounded, styleDim)
+	title := ""
+	if v.archived {
+		title = archiveSwitch(false)
+	}
+	return drawBox(title, v.chatsSummary(), body, width, len(body)+2, edgesRounded, styleDim)
 }
 
 // chatsSummary says what the board is showing, for the filter box's edge.
 func (v *chatsView) chatsSummary() string {
+	if v.archived {
+		return styleDim.Render(v.label() + " · " + plural(len(v.chats), "chat", "chats"))
+	}
 	var parts []string
 	switch {
 	case v.loadErr != "":
@@ -274,6 +285,9 @@ var chatGroupLooks = []chatGroupLook{
 // card on screen. top is the view line the pane starts on.
 func (v *chatsView) chatListPane(w, h, top int) []string {
 	title := toneBlue.Bold(true).Render("◌ Chats")
+	if v.archived {
+		title = toneBlue.Bold(true).Render("▣ Archived chats")
+	}
 	right := toneBlue.Render(strconv.Itoa(len(v.rows())))
 	inner := max(w-4, 1)
 	rows := v.rows()

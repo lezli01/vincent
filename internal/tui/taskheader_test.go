@@ -117,7 +117,7 @@ func TestWorkspaceFrameIsUntitledAndTheHeaderIsTheBreadcrumb(t *testing.T) {
 		t.Errorf("app header still carries the view tag: %q", lines[0])
 	}
 	for _, line := range lines {
-		if strings.HasPrefix(line, "┌") && strings.Contains(line, "Task") {
+		if strings.HasPrefix(line, "╭") && strings.Contains(line, "Task") {
 			t.Errorf("the workspace frame is titled: %q", line)
 		}
 	}

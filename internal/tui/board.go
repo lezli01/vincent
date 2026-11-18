@@ -559,12 +559,28 @@ func (b *board) scheduleRefresh() tea.Cmd {
 }
 
 func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
+	p, cmd := b.route(msg)
+	if b.archived {
+		return p, tea.Batch(cmd, b.previewCmd())
+	}
+	return p, cmd
+}
+
+func (b *board) route(msg tea.Msg) (panel, tea.Cmd) {
 	if !b.addressed(msg) {
 		return b, nil
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		b.width, b.height = msg.Width, msg.Height
+		if b.archived {
+			b.cards = msg.Width >= mgmtWideMinW
+		}
+		return b, nil
+	case tea.MouseClickMsg:
+		if b.cards && msg.Button == tea.MouseLeft {
+			b.cardClick(msg.X, msg.Y)
+		}
 		return b, nil
 	case viewActivatedMsg:
 		// The archived board re-lists each time it opens, as the archived
@@ -908,6 +924,16 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 
 	if b.archived {
 		switch msg.String() {
+		case "tab":
+			return b, func() tea.Msg { return selectViewMsg{id: viewArchivedChats} }
+		case opKey(keymap.OpenRow):
+			if b.cards {
+				if s, ok := b.cardStop(); ok && s.header {
+					b.toggleCardFold()
+					return b, nil
+				}
+			}
+			return b, b.openArchivedTask()
 		case opKey(keymap.Delete):
 			b.askDelete()
 			return b, nil
@@ -1040,6 +1066,20 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	b.skipHeaders(travelDir(before, b.tbl.Cursor()))
 	b.rememberSelection()
 	return b, cmd
+}
+
+// openArchivedTask opens the selected task's workspace, and esc comes back here.
+func (b *board) openArchivedTask() tea.Cmd {
+	id, ok := b.selected()
+	if !ok {
+		return nil
+	}
+	t, ok := b.taskByID(id)
+	if !ok {
+		return nil
+	}
+	state, pid := t.State, t.ProjectID
+	return func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid, back: viewArchived} }
 }
 
 // travelDir is the direction a cursor move was going in, which is the
@@ -1433,6 +1473,9 @@ func moveCursorTo(t *table.Model, i int) {
 }
 
 func (b *board) render(width, height int) string {
+	if b.archived && b.cards {
+		return b.renderCards(width, height)
+	}
 	if width > 0 {
 		b.width = width
 	}

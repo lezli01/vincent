@@ -354,5 +354,9 @@ func (w *workflowsView) graphPaneOrigin() (x, y int) {
 		return graphPaneX, graphPaneY
 	}
 	railWidth, _ := guidedPaneWidths(w.width)
+	if w.frameless() {
+		// The root draws no frame around the panes here.
+		return graphPaneX + railWidth, graphPaneY
+	}
 	return graphPaneX + railWidth + 1, graphPaneY + 1
 }

@@ -50,6 +50,9 @@ func (d *daemonView) render(width, height int) string {
 		// leaves vincent's own directories, so it goes on screen alone.
 		return strings.Join(d.skills.render(d.width), "\n")
 	}
+	if d.wide() {
+		return d.renderWide(d.width, d.height)
+	}
 	head := d.identityLines()
 	var blocks []string
 	blocks = append(blocks, "")

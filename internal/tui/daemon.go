@@ -72,6 +72,9 @@ type (
 // daemon is unreachable: the log is worth reading exactly then, and it comes
 // off the filesystem rather than the API for that reason.
 type daemonView struct {
+	// termW is the terminal's width, which picks the dashboard (mgmtscreens.go).
+	termW int
+
 	client  *apiclient.Client
 	dataDir string
 	now     func() time.Time
@@ -306,7 +309,7 @@ func (d *daemonView) refreshCmd() tea.Cmd {
 func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		d.width, d.height = msg.Width, msg.Height
+		d.width, d.height, d.termW = msg.Width, msg.Height, msg.Width
 		return d, nil
 	case viewActivatedMsg:
 		if msg.id != viewDaemon {

@@ -607,6 +607,7 @@ var bindings = []binding{
 	// listed under ctxTasks; these are the three the mode adds. There is no
 	// §6 action key: an archived task offers no `available_actions`, which is
 	// what makes the workspace `enter` opens read-only for free.
+	{key: "tab", label: "switch to archived chats", scope: scopePanel, context: ctxArchived, hint: "tab chats", priority: 0, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the archived task's workspace — read-only, because an archived task offers no actions", scope: scopePanel, context: ctxArchived, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Delete, key: "D", label: "delete permanently (asks first — the row, its step attempts and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchived, hint: "D delete", priority: 2, term: termDelete},
 	// `s` rather than `d` (task 093): cycling the date window is the same
@@ -628,6 +629,7 @@ var bindings = []binding{
 
 	// Archived chats. The same three keys, on the same reasoning: a chat that
 	// ended is history, and this is the only place it can be discarded.
+	{key: "tab", label: "switch to archived tasks", scope: scopePanel, context: ctxArchivedChats, hint: "tab tasks", priority: 0, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the archived chat's workspace — read-only, the conversation as it ended", scope: scopePanel, context: ctxArchivedChats, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Delete, key: "D", label: "delete permanently (asks first — the row, its turns and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchivedChats, hint: "D delete", priority: 2, term: termDelete},
 	{op: keymap.Scope, key: "s", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchivedChats, hint: "s window", priority: 3, term: termScope},

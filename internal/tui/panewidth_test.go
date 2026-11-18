@@ -95,10 +95,10 @@ func TestPaneWidthChatComposerKeepsEveryWrappedRow(t *testing.T) {
 		if !strings.Contains(plain, "─ message ") {
 			t.Errorf("%dx%d: the composer is not framed:\n%s", tc.width, tc.height, plain)
 		}
-		if !strings.Contains(plain, "└") || !strings.Contains(plain, "┐") {
+		if !strings.Contains(plain, "╰") || !strings.Contains(plain, "╮") {
 			t.Errorf("%dx%d: the frame lost a corner, so it collapsed to an edge:\n%s", tc.width, tc.height, plain)
 		}
-		if last := ansi.Strip(lines[len(lines)-1]); !strings.HasPrefix(last, "└") {
+		if last := ansi.Strip(lines[len(lines)-1]); !strings.HasPrefix(last, "╰") {
 			t.Errorf("%dx%d: the last line of the pane is %q, want the composer's bottom edge", tc.width, tc.height, last)
 		}
 	}

@@ -79,6 +79,10 @@ func (l wfLine) key() wfResolveKey {
 
 // workflowsView is §15's view 5: the merged registry, live.
 type workflowsView struct {
+	// termW is the terminal's width, which decides whether the root frames
+	// the view (mgmtscreens.go).
+	termW int
+
 	// projectScope is the root's selected project (task 132.2). A switch
 	// reloads, and stamps drops a load issued for the previous project or
 	// overtaken by a newer one (task 132.5).
@@ -242,7 +246,7 @@ func (w *workflowsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		w.width, w.height = msg.Width, msg.Height
+		w.width, w.height, w.termW = msg.Width, msg.Height, msg.Width
 		w.sizeGraph()
 		return w, nil
 	case viewActivatedMsg:

@@ -124,7 +124,7 @@ func (d *detail) clickOutputTitle(x, y int, focused bool) tea.Cmd {
 	if y != 0 {
 		return nil
 	}
-	start := 3 // after "┌─ "
+	start := 3 // after "╭─ "
 	if focused {
 		start += 2 // the "▸ " glyph
 	}
