@@ -25,6 +25,9 @@ func (v *chatsView) render(width, height int) string {
 		// the pane would push the frame's own footer off it (#801 F13).
 		return clipLines(v.create.render(width, height), height)
 	}
+	if !v.archived {
+		return v.renderWorkspace(width, height)
+	}
 	lines := make([]string, 0, height)
 	lines = append(lines, v.headerLine(width))
 	if v.filtering || v.filter.Value() != "" {

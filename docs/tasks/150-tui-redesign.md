@@ -1,6 +1,6 @@
 # 150 — A ground-up redesign of the TUI
 
-**Status:** 🚧 in progress (4/9) · **Opened:** 2026-11-18
+**Status:** 🚧 in progress (5/9) · **Opened:** 2026-11-18
 **Spec:** §15 · **Branch:** `feat/tui-redesign`
 
 The author asked for the TUI to be redesigned from the ground up. Four problems
@@ -58,7 +58,7 @@ workspace.
 - [x] **150.2** The issues board: columns, cards, lane and card navigation.
 - [x] **150.3** The issue preview pane.
 - [x] **150.4** The shell: top tabs with counts, filter box and status bar.
-- [ ] **150.5** The chats workspace.
+- [x] **150.5** The chats workspace.
 - [ ] **150.6** The task board and task workspace.
 - [ ] **150.7** The management views: projects, workflows, daemon, pull requests,
   triggers and the archives.

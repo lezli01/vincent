@@ -52,7 +52,7 @@ func TestChatAnswerPopupTakesTheComposersPlace(t *testing.T) {
 	if strings.Contains(out, "message…") || strings.Contains(out, "─ message") {
 		t.Errorf("the composer is drawn under the popup that owns the keyboard:\n%s", out)
 	}
-	last := lines[len(lines)-1]
+	last := lines[len(lines)-2] // above the card's bottom edge
 	if !strings.Contains(last, "esc leave the form") {
 		t.Errorf("the popup's key line is not pinned at its bottom: %q", last)
 	}

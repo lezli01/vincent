@@ -231,6 +231,9 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 	// retains the pointer only so both screens share the established action state.
 	home.boardOnly = true
 	home.detail.active = false
+	chats := newChatsView()
+	chat := newChatView(level, raw, links)
+	chat.side = chats
 	return [viewCount]panel{
 		viewHome:      home,
 		viewTask:      newTaskView(home.detail),
@@ -245,8 +248,8 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 		// switch to a project without one leaves the screen up with its
 		// reason.
 		viewPullRequests:  newPullRequestsView(),
-		viewChats:         newChatsView(),
-		viewChat:          newChatView(level, raw, links),
+		viewChats:         chats,
+		viewChat:          chat,
 		viewArchived:      newArchivedBoard(),
 		viewArchivedChats: newArchivedChatsView(),
 		viewTriggers:      newTriggersView(),

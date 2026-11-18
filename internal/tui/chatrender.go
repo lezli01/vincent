@@ -56,6 +56,14 @@ func (v *chatView) render(width, height int) string {
 	if width < 4 || height < 4 {
 		return ""
 	}
+	if v.sideShown(width) {
+		return v.renderWorkspace(width, height)
+	}
+	return v.renderConversation(width, height)
+}
+
+// renderConversation is the conversation itself, at whatever width it is given.
+func (v *chatView) renderConversation(width, height int) string {
 	if width > 0 {
 		v.width = width
 	}
@@ -88,13 +96,17 @@ func (v *chatView) render(width, height int) string {
 // the whole form around the cursor cut the line that says how to submit or
 // leave it, which is the one line every question needs.
 func (v *chatView) formLines(width, height int) []string {
-	lines, from, to := v.form.lines(width)
+	inner := max(width-4, 1)
+	lines, from, to := v.form.lines(inner)
 	keys := lines[len(lines)-1]
-	rows := windowRange(lines[:len(lines)-1], from, to, max(height/2-1, 1))
-	out := make([]string, 0, len(rows)+2)
-	out = append(out, "")
-	out = append(out, rows...)
-	return append(out, keys)
+	rows := windowRange(lines[:len(lines)-1], from, to, max(height/2-3, 1))
+	body := append(slices.Clone(rows), keys)
+	agent := "the agent"
+	if v.chat != nil {
+		agent = v.chat.Agent
+	}
+	card := drawBox(styleWarn.Bold(true).Render(chatAskingTitle(agent)), "", body, width, len(body)+2, edgesThick, styleWarn)
+	return append([]string{""}, card...)
 }
 
 // bodyView lays the conversation into the viewport. The window is bottom-

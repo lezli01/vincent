@@ -15838,6 +15838,16 @@ stream for the live tail.
    starts by naming the screen. `tui.tabs` now defaults to
    `[issues, tasks, chats]`.
 
+   *Amended 2026-11-18 (task 150.5; applies to views 8 and 9).* **The live chats
+   board and an open chat are one workspace.** Chat cards are grouped by
+   `awaiting_input`, `running`, idle and ended. At 100 columns and wider the
+   selected chat's latest six turns are previewed beside the list, read through
+   `GET /v1/chats/{id}` once the selection has rested for 150 ms and again when
+   the row's `updated_at` moves; at 150 columns its details are drawn too. A
+   pending §7.4 question is a thick card pinned under the conversation. `enter`
+   opens the live conversation between the same side panes, unless the chat was
+   opened from another view. The archived chats board keeps its table.
+
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:
    only such an event can move a row's task count or active marker. A step

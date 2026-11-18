@@ -24,11 +24,11 @@ func archivedChatBoard(title string) *chatsView {
 	return v
 }
 
-// TestChatsBoardHeadingNamesTheColumns: a dim heading sits above the rows, and
-// its "title" starts where every row's title does.
+// TestChatsBoardHeadingNamesTheColumns: on the archived board, the one still
+// drawn as a table, a dim heading sits above the rows, and its "title" starts
+// where every row's title does.
 func TestChatsBoardHeadingNamesTheColumns(t *testing.T) {
 	for name, v := range map[string]*chatsView{
-		"live":     chatsFixture(),
 		"archived": archivedChatBoard("first"),
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -149,6 +149,17 @@ type chatsView struct {
 	noteBad bool
 
 	width, height int
+
+	// cardHits is where the last render drew each chat card, for a click.
+	cardHits []chatCardHit
+	// previewOn is whether the conversation is on screen beside the list.
+	// previews holds the chats read for it; previewArmed is the read waiting
+	// for the selection to rest, and previewReading the one under way
+	// (chatworkspace.go).
+	previewOn      bool
+	previews       map[int64]chatPreview
+	previewArmed   chatPreviewKey
+	previewReading chatPreviewKey
 }
 
 func newChatsView() *chatsView {
@@ -207,6 +218,7 @@ func (v *chatsView) setProject(p projectSel) tea.Cmd {
 		v.chats, v.loaded, v.loadErr = nil, false, ""
 		v.cursor, v.page = 0, 0
 		v.confirm, v.delPrompt = nil, nil
+		v.forgetPreviews()
 	}
 	return v.projectScope.setProject(p)
 }
@@ -266,7 +278,7 @@ func (v *chatsView) bindingContext() bindingContext {
 // chatView.update gives.
 func (v *chatsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	p, cmd := v.updateMsg(msg)
-	return p, tea.Batch(cmd, v.armTick())
+	return p, tea.Batch(cmd, v.armTick(), v.previewCmd())
 }
 
 // anyRunning reports whether the board has a chat worth animating.
@@ -315,6 +327,8 @@ func (v *chatsView) addressed(msg tea.Msg) bool {
 		// Only the archived board deletes, and only a chat sweep is its own;
 		// a task sweep's outcome is the archived tasks board's (#790).
 		return m.chats && v.archived
+	case chatPreviewDueMsg, chatPreviewMsg:
+		return !v.archived
 	default:
 		return true
 	}
@@ -327,6 +341,12 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		v.width, v.height = msg.Width, msg.Height
+		v.previewOn = msg.Width >= chatWorkspaceMinW
+		return v, nil
+	case chatPreviewDueMsg:
+		return v, v.previewDue(msg.key)
+	case chatPreviewMsg:
+		v.applyPreview(msg)
 		return v, nil
 	case viewActivatedMsg:
 		// The instance's own id: the archived board is this model too, and
@@ -386,6 +406,9 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v.updateKey(msg)
 	case tea.MouseWheelMsg:
 		v.updateWheel(msg)
+		return v, nil
+	case tea.MouseClickMsg:
+		v.updateClick(msg)
 		return v, nil
 	}
 	return v, nil
@@ -729,6 +752,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.cycleScope()
 		return v, v.loadCmd()
 	case opKey(keymap.Refresh):
+		v.forgetPreviews()
 		return v, v.loadCmd()
 	}
 	return v, nil

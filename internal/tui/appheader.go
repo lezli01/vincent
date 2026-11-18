@@ -43,14 +43,14 @@ func (v *chatsView) tabCount() (int, bool) { return len(v.chats), v.loaded }
 
 func (s *shell) tabCount() (int, bool) { return len(s.board.projectTasks()), s.board.loaded }
 
-// tabGlyph is a main tab's icon.
+// tabGlyph is a screen's icon: a main tab's, shared by the screens it opens.
 func tabGlyph(id viewID) string {
 	switch id {
-	case viewIssues:
+	case viewIssues, viewIssue:
 		return "▦"
-	case viewHome:
+	case viewHome, viewTask:
 		return "▶"
-	case viewChats:
+	case viewChats, viewChat:
 		return "◌"
 	}
 	return "•"

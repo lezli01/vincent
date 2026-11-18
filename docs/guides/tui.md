@@ -1964,6 +1964,22 @@ whole pull-request history to answer it would be paid for by everyone. Acting on
 a merged pull request and redoing a reverted one are the cases the other two
 states exist for.
 
+### Chats
+
+The Chats tab is one workspace for the selected project's live chats. On the left,
+each chat is a card, grouped into **Waiting on you**, **Running** and **Idle**. On a
+terminal at least 100 columns wide the selected chat's latest turns are beside the
+list, and at 150 columns its details are on the right: the agent, branch, turns,
+tokens, cost and what the chat was opened on. When an agent asks something, the
+question is pinned under the conversation in a thick card.
+
+`enter` moves you into the conversation, keeping the list and the details around
+it, and `esc` moves you back to the list. Click another card to switch chats. The
+preview shows what the chat had finished saying when it was last read; open the
+chat to follow a running turn live. A chat you opened from an issue or from the
+archive keeps the whole screen, and on a narrow terminal the conversation opens
+over the list.
+
 ### Issues
 
 The selected project's issues — the ones filed in vincent and the ones imported

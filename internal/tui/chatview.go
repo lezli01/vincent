@@ -111,6 +111,11 @@ type chatView struct {
 	// project switch never reads it — switchFallback sends the workspace to
 	// the chats board — and every open sets it afresh.
 	back viewID
+	// side is the live chats board, whose list the workspace draws beside the
+	// conversation, and termW the terminal's width, which v.width stops being
+	// once the conversation is drawn in a pane (chatworkspace.go).
+	side  *chatsView
+	termW int
 
 	// turnRecords is each turn's normalized records, keyed by seq: the
 	// running turn's live tail and every finished turn whose transcript has
@@ -392,7 +397,7 @@ func (v *chatView) armTick() tea.Cmd {
 func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		v.width, v.height = msg.Width, msg.Height
+		v.width, v.height, v.termW = msg.Width, msg.Height, msg.Width
 		v.composer.SetWidth(chatComposerWidth(msg.Width))
 		return v, nil
 	case openChatMsg:
@@ -442,6 +447,8 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v.updateKey(msg)
 	case tea.MouseWheelMsg:
 		return v, v.updateWheel(msg)
+	case tea.MouseClickMsg:
+		return v, v.updateClick(msg)
 	}
 	return v, nil
 }

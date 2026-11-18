@@ -1873,8 +1873,9 @@ Sleep 2s
 
   # Chats (task 067): the second board, on api, with the chat waiting on a
   # human sorted to the top and counted in the header badge, a `running` row
-  # below it, and a finished one.
-  tape tui-chats 900 api '
+  # below it, and a finished one. Wider than the other tapes, so the workspace
+  # shows all three of its panes (task 150.5).
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-chats 1250 api '
 Type ":"
 Sleep 1s
 Type "chats"
