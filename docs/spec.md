@@ -8566,6 +8566,14 @@ tui:                           # view preference; the daemon validates and relay
   icons: unicode               # unicode | nerd: the glyphs the TUI's icons are drawn in; nerd needs a Nerd Font (task 150.8)
 ```
 
+*Amended 2026-11-18 (task 151).* `vincent fonts` and `U` on the daemon view install
+the Nerd Font behind `tui.icons: nerd`, per user, on macOS and Linux. It runs in the
+client, because a font belongs to the machine with the screen. The archive and each
+face are pinned by SHA-256 in `internal/nerdfont`; those hashes also decide what
+uninstall may remove, so no manifest is kept. A terminal's font cannot be read, so
+the TUI shows real icons and sets `tui.icons` only once someone confirms them. An SSH
+session is not offered the install.
+
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
 (§5.5) as well as tasks, and none of them gains a chat-specific twin:
 `defaults.agent_timeout` bounds a running turn and `defaults.input_timeout` an

@@ -47,7 +47,9 @@ The redesigned screens use the width you give them. Wider terminals add panes
 beside the main one, such as a preview or a details column, and narrower ones
 keep the essentials. Icons are plain Unicode unless you set
 [`tui.icons: nerd`](../reference/configuration.md#tuiicons) for a terminal using a
-Nerd Font.
+Nerd Font. On macOS and Linux, `U` on the Daemon screen sets one up: it says what
+it will download, installs the font for your user, then shows you sample icons and
+turns them on only if you say they look right.
 
 `enter` opens the selected task in a separate full-screen workspace, on its
 **Overview**. From 130 columns the workspace keeps the steps beside the tabs, adds
@@ -3146,6 +3148,7 @@ the editor says so before you apply it.
 | `f` / `G` | Follow the end of the log again |
 | `i` | Make vincent claude's status line, or remove it — the exact JSON is shown first |
 | `S` | Install the agent skills vincent publishes — the exact command is shown first |
+| `U` | Set up Nerd Font icons — what gets downloaded is shown first |
 
 And inside the editor:
 

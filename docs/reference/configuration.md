@@ -1973,6 +1973,9 @@ The glyphs the TUI draws its icons in.
 | `unicode` (default) | Plain Unicode symbols that work in any font |
 | `nerd` | Richer icons from a [Nerd Font](https://www.nerdfonts.com/), which your terminal must be using |
 
+On macOS and Linux, [`vincent fonts install`](cli.md#vincent-fonts) or `U` on the
+TUI's Daemon screen installs one for you.
+
 Any other value fails the load and names the two. Saving it in the TUI's config
 editor applies it at once; a change made anywhere else reaches a running TUI the next
 time it reads the config, like `tui.hyperlinks`. It covers the app header, the boards,

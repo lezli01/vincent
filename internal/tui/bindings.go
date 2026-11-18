@@ -198,7 +198,10 @@ const (
 	// keyboard, and `n` means "not now" in here and nothing at all out
 	// there.
 	ctxSkills bindingContext = "agent skills"
-	ctxForm   bindingContext = "answer form"
+	// ctxFonts is the daemon view's Nerd Font flow (task 151), its own context
+	// for the same reason.
+	ctxFonts bindingContext = "nerd font"
+	ctxForm  bindingContext = "answer form"
 	// ctxRepairForm is the §6 repair popup (task 025). Its own context
 	// rather than more ctxForm rows: the two popups share a shape and
 	// nothing else — one picks from what an agent asked, the other types a
@@ -927,6 +930,16 @@ var bindings = []binding{
 	// only when it means the same one. `s` was unavailable — it is the
 	// vocabulary's "cycle a listing's scope" — and `S` carries no term.
 	{key: "S", label: "install the agent skills vincent publishes — the exact command is shown first", scope: scopePanel, context: ctxDaemon, hint: "S skills", priority: 7},
+	// Task 151. Another write outside vincent's own directories, so another
+	// key that says what it will do before it does it.
+	{key: "U", label: "set up Nerd Font icons — what gets downloaded is shown first", scope: scopePanel, context: ctxDaemon, hint: "U icons", priority: 8},
+
+	// The Nerd Font flow owns the keyboard and prints its own key line.
+	{key: "enter", label: "install the font, or turn the icons on once you can see them", scope: scopePanel, context: ctxFonts, noPalette: true},
+	{key: "y", label: "turn the icons on", scope: scopePanel, context: ctxFonts, noPalette: true},
+	{key: "n", label: "keep Unicode icons", scope: scopePanel, context: ctxFonts, noPalette: true},
+	{key: "u", label: "remove the font vincent installed and go back to Unicode icons", scope: scopePanel, context: ctxFonts, noPalette: true},
+	{key: "esc", label: "close without changing anything", scope: scopePanel, context: ctxFonts, noPalette: true},
 
 	// The §9.8 offer: it owns the keyboard while it is open and prints its
 	// own key line, so these are here to keep ? complete.

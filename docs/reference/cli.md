@@ -19,6 +19,7 @@ localhost API.
 - [`vincent statusline`](#vincent-statusline)
 - [`vincent update`](#vincent-update)
 - [`vincent skills`](#vincent-skills)
+- [`vincent fonts`](#vincent-fonts)
 - [`vincent chat`](#vincent-chat)
 - [`vincent workflow`](#vincent-workflow)
 - [`vincent trigger`](#vincent-trigger)
@@ -1933,6 +1934,50 @@ vincent update --master          # install the newest master build
 vincent update --master --check  # is there a newer one?
 vincent update                   # back to releases, once one is newer
 ```
+
+## `vincent fonts`
+
+Installs JetBrainsMono Nerd Font Mono, the font behind
+[`tui.icons: nerd`](configuration.md#tuiicons), for your user on macOS and Linux. On any other
+operating system `install` and `uninstall` exit 1 and say so. None of these
+commands needs the daemon to do its work, so **none can exit 2**.
+
+Installing a font does not change your terminal. Choose the font in your
+terminal's settings, then run `vincent config set tui.icons nerd`. Ghostty and
+WezTerm already include these icons, so they need no install.
+
+### `vincent fonts status`
+
+```sh
+vincent fonts status [--json]
+```
+
+Reports whether the font is `absent`, `partial`, `installed`, or in `conflict`
+with a different file of the same name, and what this terminal needs next.
+
+### `vincent fonts install`
+
+```sh
+vincent fonts install [--force]
+```
+
+Downloads the pinned Nerd Fonts release (134 MB) from GitHub, verifies it against
+a checksum built into vincent, and installs four font files into
+`~/Library/Fonts` on macOS, or `$XDG_DATA_HOME/fonts` (by default
+`~/.local/share/fonts`) on Linux. A different file with the same name stops the
+install before anything is downloaded.
+
+Over SSH it refuses, because the font has to be on the machine with your screen.
+`--force` installs anyway.
+
+### `vincent fonts uninstall`
+
+```sh
+vincent fonts uninstall
+```
+
+Removes only the files whose content is exactly what `install` wrote, then sets
+`tui.icons` back to `unicode` if the daemon is running.
 
 ## `vincent skills`
 

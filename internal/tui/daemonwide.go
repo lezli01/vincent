@@ -108,7 +108,7 @@ func (d *daemonView) adapterRows(width, height int) []string {
 		}
 		row = joinColumns(row, d.adapterCard(a, w))
 	}
-	for _, offer := range []func() (string, bool){d.statusLineLine, d.skillsLine} {
+	for _, offer := range []func() (string, bool){d.statusLineLine, d.skillsLine, d.fontLine} {
 		if line, ok := offer(); ok {
 			row = append(row, ansi.Truncate(line, width, "…"))
 		}

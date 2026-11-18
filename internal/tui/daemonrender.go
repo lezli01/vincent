@@ -45,6 +45,9 @@ func (d *daemonView) render(width, height int) string {
 		// preview competing with four other blocks is not on screen.
 		return strings.Join(d.statusLine.render(d.width), "\n")
 	}
+	if d.fonts != nil {
+		return strings.Join(d.fonts.render(d.width), "\n")
+	}
 	if d.skills != nil {
 		// And so is the §9.8 offer, for the same reason: the command it runs
 		// leaves vincent's own directories, so it goes on screen alone.
@@ -621,7 +624,20 @@ func (d *daemonView) adapterLines() []string {
 	if line, ok := d.skillsLine(); ok {
 		out = append(out, line)
 	}
+	if line, ok := d.fontLine(); ok {
+		out = append(out, line)
+	}
 	return out
+}
+
+// fontLine is where the Nerd Font flow advertises itself (task 151). It goes
+// away once the icons are on; `U` still opens the flow, to remove the font.
+func (d *daemonView) fontLine() (string, bool) {
+	if !d.configOK || d.config.TUI.Icons == iconSetNerd {
+		return "", false
+	}
+	return "   " + styleDim.Render("vincent can draw richer icons with a Nerd Font  ") +
+		styleKey.Render("U") + styleDim.Render(" to set it up"), true
 }
 
 // skillsLine is the daemon view's half of the §9.8 offer (task 095). It sits

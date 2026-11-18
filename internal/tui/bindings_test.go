@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/nerdfont"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
 )
@@ -2530,7 +2531,48 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
+	ctxFonts: {
+		"enter": func(t *testing.T) {
+			d := openFontFlow(t)
+			if _, cmd := d.updateKey(registryKey(t, "enter")); cmd == nil || d.fonts.stage != fontWorking {
+				t.Fatal("enter did not start the install")
+			}
+		},
+		"y": func(t *testing.T) {
+			d := openFontFlow(t)
+			if _, cmd := d.updateKey(registryKey(t, "y")); cmd == nil {
+				t.Fatal("y did not act on the font flow")
+			}
+		},
+		"n": func(t *testing.T) {
+			d := openFontFlow(t)
+			d.updateKey(registryKey(t, "n"))
+			if d.fonts != nil {
+				t.Fatal("n did not close the font flow")
+			}
+		},
+		"u": func(t *testing.T) {
+			d := openFontFlow(t)
+			d.fonts.stage, d.fonts.state = fontPreview, nerdfont.StateInstalled
+			if _, cmd := d.updateKey(registryKey(t, "u")); cmd == nil {
+				t.Fatal("u did not remove the font")
+			}
+		},
+		"esc": func(t *testing.T) {
+			d := openFontFlow(t)
+			d.updateKey(registryKey(t, "esc"))
+			if d.fonts != nil {
+				t.Fatal("esc did not close the font flow")
+			}
+		},
+	},
+
 	ctxDaemon: {
+		"U": func(t *testing.T) {
+			if openFontFlow(t).fonts == nil {
+				t.Fatal("U did not open the font flow")
+			}
+		},
 		"R": func(t *testing.T) {
 			d := newTestDaemonView([]string{"a log line"}, nil)
 			if _, cmd := d.updateKey(registryKey(t, "R")); cmd == nil {

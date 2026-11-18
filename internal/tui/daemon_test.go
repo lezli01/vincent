@@ -28,6 +28,11 @@ func newTestDaemonView(lines []string, tailErr error) *daemonView {
 		return filepath.Join(os.TempDir(), "vincent-tui-no-such-home", ".claude", "settings.json"), nil
 	}
 	d.exePath = func() (string, error) { return testExe, nil }
+	// Never the developer's real fonts, and never their terminal (task 151).
+	d.fontDir = func() (string, error) {
+		return filepath.Join(os.TempDir(), "vincent-tui-no-such-fonts"), nil
+	}
+	d.fontEnv = func(string) string { return "" }
 	return d
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/keymap"
+	"github.com/lezli01/vincent/internal/nerdfont"
 )
 
 const (
@@ -137,6 +138,13 @@ type daemonView struct {
 	// skillsDeclined is the persisted "not now". The state the offer is
 	// about comes off d.doctor.Skills.
 	skillsDeclined bool
+	// fonts is the open Nerd Font flow (task 151), nil when it is not open.
+	// fontRelease, fontDir and fontEnv are fields so a test never touches the
+	// network or the developer's real font directory.
+	fonts       *fontFlow
+	fontRelease nerdfont.Release
+	fontDir     func() (string, error)
+	fontEnv     func(string) string
 
 	// settingsPath resolves ~/.claude/settings.json and exePath this binary.
 	// They are fields so a test can point them at a temp file and a fixed
@@ -168,6 +176,9 @@ func newDaemonView() *daemonView {
 		tail:         daemon.TailFile,
 		settingsPath: claudeSettingsPath,
 		exePath:      os.Executable,
+		fontRelease:  nerdfont.Pinned,
+		fontDir:      nerdfont.DefaultDir,
+		fontEnv:      os.Getenv,
 		keys:         configKeys(),
 		vp:           viewport.New(),
 		following:    true,
@@ -338,8 +349,20 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 		d.applyConfig(msg)
 		return d, nil
 	case configSavedMsg:
+		if d.fonts != nil && msg.path == "tui.icons" {
+			d.fonts.applySaved(msg)
+			if msg.err == nil {
+				d.config, d.configOK, d.configErr, d.configAt = msg.cfg, true, nil, d.now()
+			}
+			return d, nil
+		}
 		d.applySaved(msg)
 		return d, nil
+	case fontWorkDoneMsg:
+		if d.fonts == nil {
+			return d, nil
+		}
+		return d, d.fonts.applyWork(msg, d.client)
 	case openConfigKeyMsg:
 		d.openKey(msg.path)
 		return d, nil
@@ -486,6 +509,13 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return d, cmd
 	}
+	if d.fonts != nil {
+		cmd, done := d.fonts.update(msg, d.client)
+		if done {
+			d.fonts = nil
+		}
+		return d, cmd
+	}
 	if d.skills != nil {
 		cmd, done := d.skills.update(msg, d.dataDir)
 		if done {
@@ -540,6 +570,10 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// documented key that silently does nothing is worse than one that
 		// opens a screen saying why.
 		d.skills = newSkillsFlow(d.reportedSkills(), d.availableAdapters())
+		return d, nil
+	case "U":
+		dir, err := d.fontDir()
+		d.fonts = newFontFlow(d.fontRelease, dir, err, d.fontEnv)
 		return d, nil
 	case "f", "G", "end":
 		d.setFollowing(true)
@@ -602,7 +636,7 @@ func (d *daemonView) syncFollowToViewport() {
 // would send every single-key global — R, f, g, q — into the text field on the
 // first keystroke.
 func (d *daemonView) capturesInput() bool {
-	return d.form != nil || d.statusLine != nil || d.skills != nil
+	return d.form != nil || d.statusLine != nil || d.skills != nil || d.fonts != nil
 }
 
 // bindingContext names the layer that owns the keyboard (#803): each of the
@@ -616,6 +650,8 @@ func (d *daemonView) bindingContext() bindingContext {
 		return ctxStatusLine
 	case d.skills != nil:
 		return ctxSkills
+	case d.fonts != nil:
+		return ctxFonts
 	default:
 		return ctxDaemon
 	}

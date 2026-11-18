@@ -164,6 +164,7 @@ the living engineering specification records implementation contracts.
 | [148](148-board-group-by-issue.md) | The board grouped by vincent issue: an `issue` level for `tui.board.group_by`, `[issue]` the default | ✅ done (3/3) |
 | [149](149-global-pause.md) | A global pause: `vincent daemon pause` / `continue`, the `Z` key, and the pause shown on every TUI screen | ✅ done (4/4) |
 | [150](150-tui-redesign.md) | A ground-up redesign of the TUI: top tabs, an issues board of cards, and a chats workspace | ✅ done (9/9) |
+| [151](151-nerd-font-install.md) | Installing the Nerd Font behind `tui.icons: nerd`: `vincent fonts` and `U` on the Daemon screen | ✅ done (3/3) |
 
 ## How to add and update a task document
 
