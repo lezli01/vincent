@@ -228,7 +228,7 @@ func (v *chatsView) chatsFilterBox(width int) []string {
 	}
 	title := ""
 	if v.archived {
-		title = archiveSwitch(false)
+		title = archiveSwitches(false, v.window)
 	}
 	return drawBox(title, v.chatsSummary(), body, width, len(body)+2, edgesRounded, styleDim)
 }
@@ -236,7 +236,7 @@ func (v *chatsView) chatsFilterBox(width int) []string {
 // chatsSummary says what the board is showing, for the filter box's edge.
 func (v *chatsView) chatsSummary() string {
 	if v.archived {
-		return styleDim.Render(v.label() + " · " + plural(len(v.chats), "chat", "chats"))
+		return styleDim.Render(v.pageCount(plural(len(v.chats), "chat", "chats")))
 	}
 	var parts []string
 	switch {

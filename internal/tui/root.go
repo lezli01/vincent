@@ -1735,6 +1735,9 @@ func (m *root) scopeViews() tea.Cmd { return tea.Batch(m.scopeCmds()...) }
 func (m *root) scopeCmds() []tea.Cmd {
 	var cmds []tea.Cmd
 	for i := range m.views {
+		if aware, ok := m.views[i].(currentProjectAware); ok {
+			aware.setCurrentProject(m.sel.id)
+		}
 		if ps, ok := m.views[i].(projectScoped); ok {
 			if cmd := ps.setProject(m.sel); cmd != nil {
 				cmds = append(cmds, cmd)

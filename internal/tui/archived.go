@@ -129,6 +129,15 @@ func (p *archivedPager) label() string {
 	return s
 }
 
+// pageCount is what the wide archive says at the edge of its filter box. The
+// window has its own switch there, so only the page is left to name.
+func (p *archivedPager) pageCount(count string) string {
+	if p.page > 0 {
+		return fmt.Sprintf("page %d · %s", p.page+1, count)
+	}
+	return count
+}
+
 // rowDeletePrompt is the archived boards' confirmation. It is its own type rather
 // than an actionBar pending action for the reason the whole feature is: delete
 // is not a §6 action, and actionBar's pending state is keyed on one.

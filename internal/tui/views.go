@@ -142,6 +142,12 @@ type projectListAware interface {
 	setProjects([]apiclient.Project)
 }
 
+// currentProjectAware is a view that shows which project is selected without
+// being scoped to it: the overview lists them all.
+type currentProjectAware interface {
+	setCurrentProject(id int64)
+}
+
 // projectScope is the projectScoped implementation every project-bearing
 // view embeds. It stores the selection and, when the embedding view has
 // supplied one, runs its list load: a switch reloads (task 132 decision 25),

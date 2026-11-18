@@ -237,6 +237,9 @@ type board struct {
 	// is the point of a mode rather than a second model (decision 5).
 	archived bool
 	archivedPager
+	// cardPerRow is how many cards a row of the wide archive last held, for the
+	// arrow keys (archivegrid.go).
+	cardPerRow int
 	// delPrompt is the delete confirmation, and delNote is what the sweep
 	// reported. They are the board's own rather than the action bar's,
 	// because delete is not a §6 action (task 092).

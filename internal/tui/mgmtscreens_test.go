@@ -251,3 +251,70 @@ func TestArchiveWideDrawsCards(t *testing.T) {
 		}
 	}
 }
+
+func wideArchive(t *testing.T) *board {
+	t.Helper()
+	b := testArchivedBoard()
+	b.project = projectSel{id: 1, name: "api"}
+	b.update(tea.WindowSizeMsg{Width: 180, Height: 44})
+	b.tasks = []apiclient.Task{
+		{ID: 14, ProjectID: 1, Title: "retire the v1 reference", State: "archived"},
+		{ID: 13, ProjectID: 1, Title: "drop the old shim", State: "archived"},
+		{ID: 10, ProjectID: 1, Title: "trim the changelog", State: "archived"},
+		{ID: 12, ProjectID: 1, Title: "roll back the change", State: "archived", Issue: &apiclient.TaskIssue{ID: 11, Title: "DNS broke"}},
+	}
+	b.loaded = true
+	b.render(180, 44)
+	return b
+}
+
+// The arrows walk the archive's grid as it is drawn.
+func TestArchiveWideArrowsWalkTheGrid(t *testing.T) {
+	b := wideArchive(t)
+	if b.cardPerRow != 2 {
+		t.Fatalf("a wide archive fits %d cards a row", b.cardPerRow)
+	}
+	var free []taskStop
+	for _, s := range cardStops(b.cardGroups())[taskColumnFinished] {
+		if s.key == groupNoIssue {
+			free = append(free, s)
+		}
+	}
+	if len(free) != 3 {
+		t.Fatalf("the No issue group holds %d stops, want 3", len(free))
+	}
+	selected := func() int64 {
+		id, _ := b.selected()
+		return id
+	}
+	b.restOn(free[0])
+	b.updateKey(keyPress("right"))
+	if got := selected(); got != free[1].id {
+		t.Fatalf("right moved to #%d, want #%d", got, free[1].id)
+	}
+	b.updateKey(keyPress("left"))
+	b.updateKey(keyPress("down"))
+	if got := selected(); got != free[2].id {
+		t.Fatalf("down moved to #%d, want the next row's #%d", got, free[2].id)
+	}
+}
+
+func TestArchiveWideNamesEveryWindow(t *testing.T) {
+	out := ansi.Strip(wideArchive(t).render(180, 44))
+	for _, w := range archivedWindows {
+		if !strings.Contains(out, w.label) {
+			t.Errorf("the switch is missing %q:\n%s", w.label, out)
+		}
+	}
+}
+
+func TestProjectsWideBadgesTheCurrentProject(t *testing.T) {
+	p := wideProjects(t)
+	if strings.Contains(ansi.Strip(p.render(180, 44)), " current ") {
+		t.Fatal("a badge was drawn with no project selected")
+	}
+	p.setCurrentProject(2)
+	if out := ansi.Strip(p.render(180, 44)); !strings.Contains(out, "◆ web  current") {
+		t.Errorf("the selected project has no badge:\n%s", out)
+	}
+}

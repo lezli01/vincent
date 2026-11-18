@@ -150,7 +150,8 @@ func (d *daemonView) identityLines() []string {
 	)
 	// The global pause (task 149), `active` included: this is the screen
 	// that answers "is this daemon working?", so it says so either way.
-	if d.pauseOK {
+	// The dashboard says it in its Work box instead.
+	if d.pauseOK && !d.wide() {
 		out = append(out, field("work", pauseStateLabel(d.pause)+styleDim.Render("   "+opKey(keymap.PauseAll)+" pause / continue all")))
 	}
 	out = append(out,

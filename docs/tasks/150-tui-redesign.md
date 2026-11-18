@@ -1,6 +1,6 @@
 # 150 — A ground-up redesign of the TUI
 
-**Status:** 🚧 in progress (8/9) · **Opened:** 2026-11-18
+**Status:** ✅ done (9/9) · **Opened:** 2026-11-18
 **Spec:** §15 · **Branch:** `feat/tui-redesign`
 
 The author asked for the TUI to be redesigned from the ground up. Four problems
@@ -69,11 +69,8 @@ workspace.
 - [x] **150.4** The shell: top tabs with counts, filter box and status bar.
 - [x] **150.5** The chats workspace.
 - [x] **150.6** The task board and task workspace.
-- [~] **150.7** The management views: projects, workflows, daemon, pull requests,
-  triggers and the archives. Built, with these gaps against the accepted mock-ups:
-  Daemon's adapters are lines rather than cards and it has no Work
-  summary; Archived is one column with its time window as text; and Projects has
-  no current-project badge.
+- [x] **150.7** The management views: projects, workflows, daemon, pull requests,
+  triggers and the archives.
 - [x] **150.8** The Nerd Font icon opt-in: `tui.icons`.
 - [x] **150.9** §15, the user guides, the key tables and every `tui-*.png`
   recaptured with `scripts/screenshots.sh`.

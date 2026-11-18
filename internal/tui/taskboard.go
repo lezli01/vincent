@@ -236,6 +236,10 @@ func (b *board) restOn(s taskStop) {
 
 // moveCard moves the cursor delta stops within its column.
 func (b *board) moveCard(delta int) {
+	if b.archived && b.cardPerRow > 1 {
+		b.stepArchive(delta, 0)
+		return
+	}
 	groups := b.cardGroups()
 	stops := cardStops(groups)
 	c, i, ok := b.cardCursor(stops, groups)
@@ -262,6 +266,10 @@ func (b *board) moveCardEdge(last bool) {
 // moveColumn moves the cursor to the nearest column in delta's direction with
 // anywhere to rest, at the same height or the last stop above it.
 func (b *board) moveColumn(delta int) {
+	if b.archived && b.cardPerRow > 1 {
+		b.stepArchive(0, delta)
+		return
+	}
 	groups := b.cardGroups()
 	stops := cardStops(groups)
 	c, i, ok := b.cardCursor(stops, groups)
@@ -421,7 +429,7 @@ func (b *board) cardFilterBox(width int) []string {
 		agents = b.agentsSummary()
 	}
 	if b.archived {
-		agents = archiveSwitch(true)
+		agents = archiveSwitches(true, b.window)
 	}
 	return drawBox(agents, b.cardSummary(), body, width, len(body)+2, edgesRounded, styleDim)
 }
@@ -429,7 +437,7 @@ func (b *board) cardFilterBox(width int) []string {
 // cardSummary says what the board is showing, for the filter box's edge.
 func (b *board) cardSummary() string {
 	if b.archived {
-		return styleDim.Render(b.label() + " · " + plural(len(b.tasks), "task", "tasks"))
+		return styleDim.Render(b.pageCount(plural(len(b.tasks), "task", "tasks")))
 	}
 	tasks := b.projectTasks()
 	parts := []string{plural(len(tasks), "task", "tasks"), strconv.Itoa(countRunning(tasks)) + " running"}
@@ -537,7 +545,15 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 	type span struct {
 		from, h int
 		stop    taskStop
+		// x0 and x1 are the card's cells across the column; a zero x1 is all of it.
+		x0, x1 int
 	}
+	perRow := 1
+	if b.archived {
+		perRow = archivePerRow(inner)
+		b.cardPerRow = perRow
+	}
+	cardW := (inner - 2) / perRow
 	var spans []span
 	from, to := 0, 0
 	rail := styleDim.Render("│ ")
@@ -551,20 +567,28 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 			from, to = len(body), len(body)+2
 		}
 		if g.folded {
-			spans = append(spans, span{len(body), 2, stop})
+			spans = append(spans, span{from: len(body), h: 2, stop: stop})
 		}
 		body = append(body, cardGroupHeader(g, selected, g.key == lit && lit != groupNoIssue, inner))
 		if g.folded {
 			body = append(body, rail+styleDim.Render(cardFoldSummary(g.tasks)))
 			continue
 		}
-		for _, t := range g.tasks {
-			chosen := !at.header && t.ID == at.id
-			if chosen {
-				from, to = len(body), len(body)+taskCardH
+		for r := 0; r < len(g.tasks); r += perRow {
+			row := make([]string, taskCardH)
+			for k, t := range g.tasks[r:min(r+perRow, len(g.tasks))] {
+				chosen := !at.header && t.ID == at.id
+				if chosen {
+					from, to = len(body), len(body)+taskCardH
+				}
+				s := span{from: len(body), h: taskCardH, stop: taskStop{id: t.ID, column: c, key: g.key}}
+				if perRow > 1 {
+					s.x0, s.x1 = 2+k*cardW, 2+(k+1)*cardW
+				}
+				spans = append(spans, s)
+				row = joinColumns(row, b.taskCard(t, chosen, cardW))
 			}
-			spans = append(spans, span{len(body), taskCardH, taskStop{id: t.ID, column: c, key: g.key}})
-			for _, line := range b.taskCard(t, chosen, inner-2) {
+			for _, line := range row {
 				body = append(body, rail+line)
 			}
 		}
@@ -584,7 +608,11 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 	for _, s := range spans {
 		if s.from >= start && s.from+s.h <= start+room {
 			y := top + 1 + s.from - start
-			b.cardHits = append(b.cardHits, taskCardHit{x + 2, x + 2 + inner, y, y + s.h, s.stop})
+			x0, x1 := x+2, x+2+inner
+			if s.x1 > 0 {
+				x0, x1 = x+2+s.x0, x+2+s.x1
+			}
+			b.cardHits = append(b.cardHits, taskCardHit{x0, x1, y, y + s.h, s.stop})
 		}
 	}
 	return drawBox(title, right, body[start:], w, h, edgesRounded, styleDim)

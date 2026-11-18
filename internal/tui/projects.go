@@ -132,6 +132,8 @@ type projectsView struct {
 	// grid, for the arrow keys and a click (mgmtscreens.go).
 	termW, perRow int
 	hits          []mgmtHit
+	// currentID is the project the rest of the TUI is on, for its card's badge.
+	currentID int64
 }
 
 func newProjectsView() *projectsView {
@@ -151,6 +153,9 @@ func newProjectsView() *projectsView {
 }
 
 func (p *projectsView) title() string { return "Projects" }
+
+// setCurrentProject records the selection (currentProjectAware).
+func (p *projectsView) setCurrentProject(id int64) { p.currentID = id }
 
 // setClient fetches only while the overview is on screen: its stats are
 // worth a request only while someone is reading them, and activation

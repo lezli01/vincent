@@ -1670,12 +1670,12 @@ fan-out parent one of whose lanes is — oldest wait first, each led by its
 project. On a wide terminal the highlighted
 project's repository and execution defaults show beside the table; a narrower
 one drops that pane first, then the columns from the right, keeping name, `!`
-and running to the last.
+and running to the last. From 130 columns each project is a card, and the one
+you are on says `current`.
 
-![The project overview: eight registered repositories with their figures and a
-totals row — the Jira-bound mobile-app among them, its sync column showing a
-clean pass — and the seven tasks that need you across every project below
-them](../assets/tui-project-overview.png)
+![The project overview: eight registered repositories as cards with their
+figures, api marked as the current project, beside the tasks that need you
+across every project](../assets/tui-project-overview.png)
 
 | Key | Does |
 |---|---|
@@ -2852,10 +2852,14 @@ columns: ID, WORKFLOW, TITLE, STATE, ARCHIVED (when it was archived, as
 describe a run that is over, so they are left off and the title takes the
 room.
 
-![platform-infra's archived tasks board over its default window of the last 7
-days: three archived tasks, grouped by issue like the live board — a `no
-issue` group of two, and `issue #11 · The eu-west DNS change broke the status
-page` holding the DNS rollback](../assets/tui-archived.png)
+From 130 columns the archive is cards instead, grouped by issue and two to a row
+where they fit, so the arrow keys move across a row as well as down. A switch at
+the top shows whether you are on tasks or chats and which time window is on.
+
+![platform-infra's archived tasks over the default window of the last 7 days:
+three cards grouped by issue — issue #11, The eu-west DNS change broke the status
+page, holding the DNS rollback, and a No issue group of two side by side — beside
+a preview of the selected task](../assets/tui-archived.png)
 
 ![api's archived chats board: three finished conversations — one archived, and
 two closed chats that were opened on task #1, each saying so ahead of its
@@ -3088,17 +3092,22 @@ nothing.
 
 ### Daemon
 
-From 130 columns wide, this screen is a dashboard: the daemon, its configuration
-and its database side by side, the adapters under them, and the log below.
+From 130 columns wide, this screen is a dashboard: the daemon and a summary of
+its work, its configuration and its database side by side, a card for each
+adapter under them, and the log below. The Work box shows whether work is paused,
+how many concurrency slots are in use, and how many of those are working, waiting
+on you, or fan-out lanes. On a terminal under 30 rows the adapters stay one line
+each, so the log keeps its room.
 
 Version, uptime, the config in effect, the adapters detected, and a live tail of
 the daemon log. The view reports, it does not act — `vincent daemon stop` owns
 stopping the daemon, and a TUI that auto-started one has no business killing it.
 
-![The daemon view with the log holding the keys: identity pinned on top, then
-the database and the adapters — claude behind an observed usage limit, codex
-reporting its quota windows, cursor untested at its build, and copilot 1.0.105
-with its quota unknown — above the live daemon log](../assets/tui-daemon-adapters.png)
+![The daemon dashboard with the log holding the keys: the daemon and its work,
+the config and the database on top, then a card for each adapter — claude behind
+an observed usage limit, codex reporting its quota windows, cursor untested at
+its build, and copilot 1.0.105 with its quota unknown — above the live daemon
+log](../assets/tui-daemon-adapters.png)
 
 The **configuration block is the exception**, and only it. `tab` moves `↑`/`↓`
 off the log pane and onto the config list, which then shows every key

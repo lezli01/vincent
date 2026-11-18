@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -141,7 +140,12 @@ func (p *projectsView) projectGrid(rows []apiclient.Project, cardW, perRow, room
 // projectCard is one project's figures.
 func (p *projectsView) projectCard(pr apiclient.Project, w int, selected bool) []string {
 	inner := max(w-4, 1)
-	head := padBetweenCells(toneMagenta.Bold(true).Render(ic(headerProjectGlyph)+" "+ansi.Truncate(oneLine(pr.Name), max(inner-12, 4), "…")),
+	badge := ""
+	if pr.ID == p.currentID {
+		badge = " " + styleTabActive.Render(" current ")
+	}
+	name := ansi.Truncate(oneLine(pr.Name), max(inner-12-ansi.StringWidth(badge), 4), "…")
+	head := padBetweenCells(toneMagenta.Bold(true).Render(ic(headerProjectGlyph)+" "+name)+badge,
 		styleDim.Render(p.overviewCell(pr, ocActivity)), inner)
 	stats := strings.Join([]string{
 		styleWarn.Bold(true).Render(attentionBadge + " " + p.overviewCell(pr, ocAttention)),
@@ -213,38 +217,6 @@ func (d *daemonView) wide() bool {
 }
 
 func (d *daemonView) frameless() bool { return d.wide() }
-
-// renderWide is the daemon as a dashboard: identity, configuration and database
-// side by side, the adapters under them, and the log taking what is left.
-func (d *daemonView) renderWide(width, height int) string {
-	identity, config, database := d.identityLines()[1:], d.configLines()[1:], d.databaseLines()[1:]
-	if d.doctorOK {
-		database = append(database, issueArchiveLines(d.doctor.IssueArchive, width/3)...)
-	}
-	adapters := d.adapterLines()[1:]
-	topH := min(max(len(identity), len(config), len(database))+2, max(height/2, 8))
-	adapterH := min(len(adapters)+2, max(height/4, 4))
-	logH := max(height-topH-adapterH, 5)
-
-	w := width / 3
-	configBorder := styleDim
-	if d.focusConfig {
-		configBorder = styleFocus
-	}
-	top := joinColumns(
-		drawBox(styleTitle.Render(ic("◉ Daemon")), styleDim.Render(fmt.Sprintf("up %s · pid %d", formatUptime(d.info.Uptime(d.now())), d.info.PID)), identity, w, topH, edgesRounded, styleDim),
-		joinColumns(
-			drawBox(styleTitle.Render(ic("⚙ Config in effect")), "", config, w, topH, edgesRounded, configBorder),
-			drawBox(styleTitle.Render(ic("▤ Database")), "", database, width-2*w, topH, edgesRounded, styleDim),
-		),
-	)
-	top = append(top, drawBox(styleTitle.Render(ic("◈ Adapters")), "", adapters, width, adapterH, edgesRounded, styleDim)...)
-	log := strings.Split(d.renderLog(max(logH-1, 2)), "\n")
-	if len(log) > 1 {
-		log = log[1:]
-	}
-	return strings.Join(append(top, drawBox(styleTitle.Render(ic("≡ Recent log")), "", log, width, logH, edgesRounded, styleDim)...), "\n")
-}
 
 // Triggers.
 
