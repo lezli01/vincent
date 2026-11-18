@@ -266,6 +266,23 @@ type board struct {
 	lastBellAt    time.Time
 
 	width, height int
+
+	// cards puts the live board in its columns of cards (taskboard.go).
+	// cardFolds is which groups were folded or opened by hand, cardHeader the
+	// folded group the cursor rests on, cardHits where the last render drew
+	// each card, and cardPage how many cards pgup and pgdown move by.
+	cards      bool
+	cardFolds  map[string]bool
+	cardHeader *taskStop
+	cardHits   []taskCardHit
+	cardPage   int
+	// previewOn is whether the preview pane is on screen. previews holds the
+	// steps read for it; previewArmed is the read waiting for the selection to
+	// rest, and previewReading the one under way.
+	previewOn      bool
+	previews       map[int64]taskPreview
+	previewArmed   taskPreviewKey
+	previewReading taskPreviewKey
 }
 
 func newBoard() *board {
@@ -625,6 +642,11 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 		b.marks = b.marks.drop(msg.done...)
 		b.refreshPending = false
 		return b, b.loadCmd()
+	case taskPreviewDueMsg:
+		return b, b.previewDue(msg.key)
+	case taskPreviewMsg:
+		b.applyPreview(msg)
+		return b, nil
 	case tea.KeyPressMsg:
 		return b.updateKey(msg)
 	case tea.MouseWheelMsg:
@@ -912,6 +934,10 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 	}
 
+	if b.cards && b.cardKey(msg.String()) {
+		return b, nil
+	}
+
 	switch msg.String() {
 	case opKey(keymap.Filter):
 		b.filtering = true
@@ -957,11 +983,6 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// it is still listed.
 		b.attentionOnly = !b.attentionOnly
 		return b, nil
-	case "L":
-		// Expand or collapse the fan-out under the cursor (boardlanes.go).
-		// Lanes stay out of the list and out of every count; this is the way
-		// to see them, in whatever state the parent is in.
-		return b, b.toggleLanes()
 	case "g":
 		// Cycles the grouping for the session (§15, task 009); the config
 		// file stays the starting point and is never written from here. This
@@ -1008,6 +1029,9 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	// moving on a row that cannot be skipped.
 	if cmd, handled := b.actions.handleKey(msg.String(), b.client, b.target()); handled {
 		return b, cmd
+	}
+	if b.cards {
+		return b, nil
 	}
 
 	before := b.tbl.Cursor()
@@ -1132,6 +1156,10 @@ func (b *board) paste(text string) tea.Cmd {
 // wheelMove is one wheel notch on the task table: the cursor moves, and the
 // panels below follow it through the usual settle window.
 func (b *board) wheelMove(delta int) {
+	if b.cards {
+		b.moveCard(delta)
+		return
+	}
 	if delta > 0 {
 		b.tbl.MoveDown(delta)
 	} else {
@@ -1280,6 +1308,9 @@ func (b *board) visible() []apiclient.Task {
 // detail panels empty until something moved. A header always has rows beneath
 // it, so the scan always lands.
 func (b *board) selected() (int64, bool) {
+	if b.cards {
+		return b.cardSelected()
+	}
 	rows := b.rows()
 	i := b.tbl.Cursor()
 	if i < 0 {
@@ -1306,6 +1337,9 @@ func (b *board) selected() (int64, bool) {
 // its cursor index but never remaps it, so tracking the index alone would
 // silently select a different task whenever the sort shifted.
 func (b *board) rememberSelection() {
+	if b.cards {
+		return
+	}
 	if r := b.rowAt(b.tbl.Cursor()); r.header && r.collapsed {
 		// The cursor is parked on a fold. selectedID cannot say that — it
 		// names a task — so the path is remembered alongside it, and the last
@@ -1322,6 +1356,10 @@ func (b *board) rememberSelection() {
 // restoreSelection moves the cursor back onto the remembered task — after a
 // refresh that reordered the rows, and after `g` regrouped them.
 func (b *board) restoreSelection(rows []boardRow) {
+	if b.cards {
+		b.cardHeader = nil
+		return
+	}
 	if len(b.selectedPath) > 0 {
 		if i := headerIndex(rows, b.selectedPath); i >= 0 && rows[i].collapsed {
 			moveCursorTo(&b.tbl, i)

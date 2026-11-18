@@ -462,21 +462,19 @@ var bindings = []binding{
 	// because replaying tab from the palette would switch from a screen the
 	// palette already covered, and the screen rows are the palette's way.
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxTasks, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
-	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
+	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxTasks, hint: "↑↓ card", priority: 3},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Filter, key: "/", label: "filter by id, title, state or issue", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
-	{key: "g", label: "group the tasks: issue → workflow → flat (config.yaml sets the one you start on)", scope: scopePanel, context: ctxTasks, hint: "g group", priority: 4},
+	{key: "left", label: "move to the column on the left", scope: scopePanel, context: ctxTasks, hint: "←/→ lane", priority: 4},
+	{key: "right", label: "move to the column on the right", scope: scopePanel, context: ctxTasks, priority: 4, aliased: true},
+	{key: "f", label: "fold or open the issue group under the cursor", scope: scopePanel, context: ctxTasks, hint: "f fold", priority: 8},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
 	{op: keymap.AttentionFilter, key: "H", label: "show only the tasks that need a human — awaiting input, awaiting approval, blocked, or a fan-out whose lane is (H again shows every task)", scope: scopePanel, context: ctxTasks, hint: "H needs you", priority: 6, term: termAttention},
 	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
-	{key: "L", label: "expand or collapse the selected fan-out's lanes, as indented rows under it (lanes are hidden from the board otherwise, and stay out of every count)", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 7},
-	// Folding (task 054). ← and → walk the group tree a level at a time; the
-	// cursor rests on a collapsed header, which is how every level stays
-	// addressable. C/O are the diff pane's two letters in the same meaning.
-	{key: "left", label: "collapse the group you are in (← again folds the group around it; the header keeps the count and the ! badge)", scope: scopePanel, context: ctxTasks, hint: "←/→ fold", priority: 8, fold: true},
-	{key: "right", label: "expand the collapsed group under the cursor, one level", scope: scopePanel, context: ctxTasks, priority: 9, fold: true, aliased: true},
-	{key: "C", label: "collapse every group", scope: scopePanel, context: ctxTasks, hint: "C/O fold all", priority: 10, fold: true},
-	{key: "O", label: "expand every group", scope: scopePanel, context: ctxTasks, priority: 11, fold: true, aliased: true},
+	// Folding the issue groups (task 150.6). C/O are the diff pane's two
+	// letters in the same meaning.
+	{key: "C", label: "fold every issue group", scope: scopePanel, context: ctxTasks, hint: "C/O fold all", priority: 10},
+	{key: "O", label: "open every issue group", scope: scopePanel, context: ctxTasks, priority: 11, aliased: true},
 
 	// Overview (task 129.12). `0` is the tab's own row, the way 5, 6 and 7
 	// are theirs; the four digits after it are the frame's jump links, each

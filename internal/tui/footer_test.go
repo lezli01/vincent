@@ -192,27 +192,6 @@ func TestFooterAliasRowsDoNotCount(t *testing.T) {
 	}
 }
 
-// TestFooterFlatBoardDropsFoldRows: with `group_by: []` the fold keys do
-// nothing, so shell.liveBindings drops them and the footer neither names them
-// nor counts them — naming a press that does nothing and counting one are the
-// same lie (task 054 decision 5, task 094 decision 5).
-func TestFooterFlatBoardDropsFoldRows(t *testing.T) {
-	s := &shell{board: &board{}}
-	rows := s.liveBindings(bindingsFor(ctxTasks))
-	line := ansi.Strip(renderFooter(200, rows, &actionBar{}, taskActions{}, 0, false))
-	for _, b := range bindingsFor(ctxTasks) {
-		if b.fold && b.hint != "" && strings.Contains(line, b.hint) {
-			t.Errorf("a flat board still advertises %q: %q", b.hint, line)
-		}
-	}
-	if got, want := footerMore(line), footerHiddenRows(line, rows); got != want {
-		t.Fatalf("footer says +%d, want +%d on a flat board: %q", got, want, line)
-	}
-	if got, want := footerMore(line), footerHiddenRows(line, bindingsFor(ctxTasks)); got == want {
-		t.Fatalf("+%d counts the fold rows the board dropped: %q", got, line)
-	}
-}
-
 // TestFooterNarrowCountsWhatTheCutTook: a narrow line gives up task actions
 // from the end of their order rather than letting the left-truncating `…` take
 // the first ones (issue #595), the `+N` survives — it is the last segment

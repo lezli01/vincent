@@ -482,13 +482,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("/ did not open the task filter")
 			}
 		},
-		"g": func(t *testing.T) {
+		"f": func(t *testing.T) {
 			s, _ := newShellFixture(t, task(1, stateRunning))
 			s.focus = panelTasks
-			s.board.group = defaultGrouping()
-			s.update(registryKey(t, "g"))
-			if s.board.group.equal(defaultGrouping()) {
-				t.Fatalf("g did not change the grouping (still %s)", s.board.group.label())
+			s.board.cards = true
+			s.update(registryKey(t, "f"))
+			if !s.board.cardFolded(taskColumnRunning, groupNoIssue) {
+				t.Fatal("f did not fold the issue group under the cursor")
 			}
 		},
 		"space": func(t *testing.T) {
@@ -513,28 +513,6 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s.update(registryKey(t, "V"))
 			if s.board.hasMarks() {
 				t.Fatalf("V did not clear the selection (marks %v)", s.board.marks)
-			}
-		},
-		"L": func(t *testing.T) {
-			s, _ := newShellFixture(t, task(4, stateAwaitingChildren))
-			s.focus = panelTasks
-			s.update(registryKey(t, "L"))
-			if !s.board.lanes.expanded.has(4) {
-				t.Fatalf("L did not expand the fan-out (expanded %v)", s.board.lanes.expanded)
-			}
-			s.update(registryKey(t, "L"))
-			if s.board.lanes.expanded.has(4) {
-				t.Fatalf("L did not collapse it again (expanded %v)", s.board.lanes.expanded)
-			}
-			// A task with no lanes answers the press with none: the fetch
-			// comes back empty and the row closes itself, so the marker never
-			// promises rows that are not there.
-			s2, _ := newShellFixture(t, task(5, stateRunning))
-			s2.focus = panelTasks
-			s2.update(registryKey(t, "L"))
-			s2.update(boardLanesMsg{parentID: 5})
-			if s2.board.lanes.expanded.has(5) {
-				t.Fatalf("an empty lane fetch left task 5 expanded (%v)", s2.board.lanes.expanded)
 			}
 		},
 		"left": func(t *testing.T) {

@@ -94,7 +94,7 @@ func TestFanOutParentExpandsInEveryStateItPassesThrough(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := boardWithCursorOnParent(tc.parent, task(8, stateRunning))
-			b.toggleLanes()
+			toggleLanes(b)
 			if !b.lanes.expanded.has(7) {
 				t.Fatalf("L did not expand a %s parent", tc.name)
 			}
@@ -106,7 +106,7 @@ func TestFanOutParentExpandsInEveryStateItPassesThrough(t *testing.T) {
 				t.Fatalf("rows = %v, want the lanes under the parent (%v)", got, tc.want)
 			}
 			// And a second press takes them away again.
-			b.toggleLanes()
+			toggleLanes(b)
 			if got := laneIDs(b); !equalIDs(got, tc.collapsed...) {
 				t.Fatalf("a second L left %v on the board, want %v", got, tc.collapsed)
 			}
@@ -484,5 +484,12 @@ func TestNarrowBoardShedsColumnsWithLanesOnIt(t *testing.T) {
 		if !strings.Contains(out, groupIndent+"lane api") {
 			t.Errorf("the lane lost its indent at width %d:\n%s", width, out)
 		}
+	}
+}
+
+// toggleLanes expands or collapses the fan-out under the cursor.
+func toggleLanes(b *board) {
+	if id, ok := b.selected(); ok {
+		b.lanes.expanded = b.lanes.expanded.toggle(id)
 	}
 }

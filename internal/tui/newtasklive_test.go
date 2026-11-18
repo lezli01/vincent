@@ -248,7 +248,7 @@ func newNewTaskLiveHarnessWith(t *testing.T, opts liveOptions) *newTaskLiveHarne
 	}
 
 	m := newRoot(ctx, cn, ackedDir(t))
-	m.Update(tea.WindowSizeMsg{Width: 160, Height: 60})
+	m.Update(tea.WindowSizeMsg{Width: 128, Height: 60})
 	msg := runCmd(t, m.Init(), 10*time.Second)
 	if _, ok := msg.(connectedMsg); !ok {
 		t.Fatalf("probe = %T, want connectedMsg", msg)

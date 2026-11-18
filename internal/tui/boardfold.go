@@ -516,6 +516,9 @@ func (b *board) expandAll() tea.Cmd {
 // awaiting_input transition both call: a fold is never allowed to be the
 // reason work waiting on a human cannot be reached (task 054 decision 3).
 func (b *board) expandFor(id int64) bool {
+	if b.cards {
+		return b.expandCardFor(id)
+	}
 	if len(b.folds()) == 0 {
 		return false
 	}

@@ -15848,6 +15848,20 @@ stream for the live tail.
    opens the live conversation between the same side panes, unless the chat was
    opened from another view. The archived chats board keeps its table.
 
+   *Amended 2026-11-18 (task 150.6; applies to views 1 and 2).* **The live task
+   board is four columns of cards**: Needs you (`taskstate.NeedsHuman`), Running
+   (`running`, `awaiting_children`), Queued (`queued`, `paused`) and Finished.
+   Each column groups its tasks by issue, tasks with no issue last, and
+   `tui.board.group_by` and `g` no longer apply to it; the archived board keeps
+   its table and its grouping. `f`, `C` and `O` fold groups, session-only, and
+   Finished starts folded; a task entering `awaiting_input` opens its group. A
+   fan-out's lanes are read in its workspace, so `L` is gone. From 170 columns a
+   preview reads the selected task once the selection has rested for 150 ms.
+   **From 130 columns the task workspace is a title band, the steps beside the
+   tabs and, from 150, the task's details**; Steps, Task Details and Step Details
+   leave the strip there but keep their digits, a fresh open lands on Output, and
+   a blocked task's reason and recovery keys are pinned under the tab.
+
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:
    only such an event can move a row's task count or active marker. A step

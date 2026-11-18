@@ -128,6 +128,9 @@ type taskView struct {
 	connected bool
 	width     int
 	height    int
+	// termW is the terminal's width, railTop and railW where the wide layout
+	// drew the steps (taskworkspace.go).
+	termW, railTop, railW int
 
 	// details is the Task Details tab's inspector. popupDetails is the
 	// second instance of the same pane, owned by whichever answer, repair or
@@ -351,7 +354,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		t.width, t.height = msg.Width, msg.Height
+		t.width, t.height, t.termW = msg.Width, msg.Height, msg.Width
 		return t, t.detail.update(msg)
 	case selectTaskMsg:
 		// Which of the three ways this task was opened decides what happens
@@ -380,6 +383,11 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		// restores the tab the reader left that task on, and the pull
 		// requests takeover's create route lands where its form belongs.
 		landing := taskTabOverview
+		if t.wide() {
+			// The steps and the details are already beside the tabs, so the
+			// wide layout opens on what the task is saying.
+			landing = taskTabOutput
+		}
 		switch {
 		case msg.openPR:
 			landing = taskTabPull
@@ -836,6 +844,9 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	if t.popup {
 		return nil
 	}
+	if t.wide() && msg.X < t.railW {
+		return t.detail.clickTimeline(msg.Y - t.railTop)
+	}
 	// The root's outer frame and the title rows put the tab strip on tabY.
 	if msg.Y == t.tabY {
 		for _, hit := range t.tabHits {
@@ -908,21 +919,12 @@ func (t *taskView) render(width, height int) string {
 	if height > 0 {
 		t.height = height
 	}
-	lines := t.titleLines(t.width)
-	t.tabY = 1 + len(lines) // root border + title rows
-	lines = append(lines, t.renderTabs(), "")
-	t.bodyY = t.tabY + 2 // tab strip + blank separator
-	bodyH := max(t.height-len(lines), 1)
-	if !t.connected {
-		// Indented and set off by a blank line like every other banner in the
-		// workspace (#800 W15).
-		lines = append(lines, styleWarn.Render("  ⚠ daemon unreachable — task data is stale"), "")
-		t.bodyY += 2
-		bodyH -= 2
+	var out string
+	if t.wide() {
+		out = t.renderWide(t.width, t.height)
+	} else {
+		out = t.renderTabbed()
 	}
-	body := t.renderTabBody(t.width, max(bodyH, 1))
-	lines = append(lines, body)
-	out := strings.Join(lines, "\n")
 	if t.popup && (t.detail.form != nil || t.detail.repair != nil ||
 		t.detail.followUp != nil || t.createPR != nil || t.pullMerge != nil || t.pullComment != nil) {
 		// overlay clips to the background it is given. The root adds visual
@@ -947,6 +949,25 @@ func (t *taskView) render(width, height int) string {
 		}
 	}
 	return out
+}
+
+// renderTabbed is the workspace on a terminal too narrow for its side panes.
+func (t *taskView) renderTabbed() string {
+	lines := t.titleLines(t.width)
+	t.tabY = 1 + len(lines) // root border + title rows
+	lines = append(lines, t.renderTabs(), "")
+	t.bodyY = t.tabY + 2 // tab strip + blank separator
+	bodyH := max(t.height-len(lines), 1)
+	if !t.connected {
+		// Indented and set off by a blank line like every other banner in the
+		// workspace (#800 W15).
+		lines = append(lines, styleWarn.Render("  ⚠ daemon unreachable — task data is stale"), "")
+		t.bodyY += 2
+		bodyH -= 2
+	}
+	body := t.renderTabBody(t.width, max(bodyH, 1))
+	lines = append(lines, body)
+	return strings.Join(lines, "\n")
 }
 
 // taskTabNames are the strip's labels, indexed by taskViewTab.

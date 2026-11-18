@@ -27,6 +27,8 @@ func TestBulkArchiveLive(t *testing.T) {
 		ids = append(ids, task.ID)
 	}
 
+	// Finished work starts folded.
+	h.m.views[viewHome].(*shell).board.setCardFold(taskColumnFinished, groupNoIssue, false)
 	h.p.until(30*time.Second, "the board to show both finished tasks", func() bool {
 		out := content(h.m)
 		return strings.Contains(out, "finished-one") && strings.Contains(out, "finished-two")

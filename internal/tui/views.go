@@ -230,6 +230,7 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 	// them as separate screens. The task view owns detail updates; the home shell
 	// retains the pointer only so both screens share the established action state.
 	home.boardOnly = true
+	home.board.cards = true
 	home.detail.active = false
 	chats := newChatsView()
 	chat := newChatView(level, raw, links)

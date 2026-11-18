@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/apiclient"
+
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
@@ -24,33 +26,34 @@ func withLenientKeymap(t *testing.T, overrides map[string]string) []string {
 	return warnings
 }
 
-// A shadowed fixed key does not fire on its surface: with refresh on g, the
-// task table's g no longer regroups — refresh is not answered there, so the
-// key does nothing at all.
+// A shadowed fixed key does not fire on its surface: with refresh on f, the
+// task table's f no longer folds — refresh is not answered there, so the key
+// does nothing at all.
 func TestShadowedFixedKeyDoesNotFire(t *testing.T) {
 	m := connectedRoot(t)
 	b := m.views[viewHome].(*shell).board
+	b.project = projectSel{id: 1, name: "api"}
+	b.tasks = []apiclient.Task{{ID: 1, ProjectID: 1, State: stateRunning}}
 	if ctx := m.activeContext(); ctx != ctxTasks {
 		t.Fatalf("fixture is on %s, want the task table", ctx)
 	}
-	before := b.group
-	m.Update(key("g"))
-	if b.group.equal(before) {
-		t.Fatal("control: g does not regroup under the shipped keymap")
+	m.Update(key("f"))
+	if !b.cardFolded(taskColumnRunning, groupNoIssue) {
+		t.Fatal("control: f does not fold under the shipped keymap")
 	}
+	m.Update(key("f"))
 
-	withLenientKeymap(t, map[string]string{"refresh": "g"})
-	before = b.group
-	m.Update(key("g"))
-	if !b.group.equal(before) {
-		t.Errorf("a shadowed g still regrouped the task table (%s → %s)", before.label(), b.group.label())
+	withLenientKeymap(t, map[string]string{"refresh": "f"})
+	m.Update(key("f"))
+	if b.cardFolded(taskColumnRunning, groupNoIssue) {
+		t.Error("a shadowed f still folded the issue group")
 	}
 }
 
 // `?`, the palette and the footer render what a lenient load left without a
 // key as unbound rather than advertising a key that does something else now.
 func TestUnboundRowsRenderAsUnbound(t *testing.T) {
-	withLenientKeymap(t, map[string]string{"refresh": "g", "retry": "o", "chat": "q"})
+	withLenientKeymap(t, map[string]string{"refresh": "f", "retry": "o", "chat": "q"})
 
 	var sawGroup, sawBrowser bool
 	for i, b := range registry() {
@@ -60,7 +63,7 @@ func TestUnboundRowsRenderAsUnbound(t *testing.T) {
 			if !b.unbound || b.key != "" || b.hint != "" {
 				t.Errorf("browser row %q: key %q hint %q unbound %v", b.label, b.key, b.hint, b.unbound)
 			}
-		case b.op == "" && b.context == ctxTasks && bindings[i].key == "g":
+		case b.op == "" && b.context == ctxTasks && bindings[i].key == "f":
 			sawGroup = true
 			if !b.unbound || b.key != "" {
 				t.Errorf("group row %q: key %q unbound %v", b.label, b.key, b.unbound)

@@ -1,6 +1,6 @@
 # 150 — A ground-up redesign of the TUI
 
-**Status:** 🚧 in progress (5/9) · **Opened:** 2026-11-18
+**Status:** 🚧 in progress (6/9) · **Opened:** 2026-11-18
 **Spec:** §15 · **Branch:** `feat/tui-redesign`
 
 The author asked for the TUI to be redesigned from the ground up. Four problems
@@ -51,6 +51,11 @@ workspace.
     keys was one of the four problems this redesign exists to solve.
 12. **Chats is a default tab.** `tui.tabs` defaults to `[issues, tasks, chats]`,
     so the three project boards are all one key away.
+13. **The task board is columns grouped by issue.** Needs you, Running, Queued
+    and Finished are columns, and every column groups its cards by issue, with
+    Finished folded to start. This retires `tui.board.group_by` for the live board.
+14. **The wide task workspace shows its steps and details as panes.** Steps, Task
+    Details and Step Details leave the tab strip from 130 columns.
 
 ## Tasks
 
@@ -59,7 +64,7 @@ workspace.
 - [x] **150.3** The issue preview pane.
 - [x] **150.4** The shell: top tabs with counts, filter box and status bar.
 - [x] **150.5** The chats workspace.
-- [ ] **150.6** The task board and task workspace.
+- [x] **150.6** The task board and task workspace.
 - [ ] **150.7** The management views: projects, workflows, daemon, pull requests,
   triggers and the archives.
 - [ ] **150.8** The Nerd Font icon opt-in.

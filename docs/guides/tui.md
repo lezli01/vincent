@@ -198,177 +198,37 @@ and pull request](../assets/tui-task-overview-done.png)
 
 ## The board
 
-One row per task in the [selected project](#switching-project): id, title,
-state, current step `k/n` with its name, elapsed, and cost so far. Switching
-project swaps the rows in place, without asking the daemon for anything — the
-board already holds every project's tasks and only shows one. The header
-shows running-versus-cap counts, how many tasks need a human, and which agents
-need a look.
+The Tasks tab is a board of four columns, so what needs you is always first:
 
-**The board says only what needs a look.** When nothing is waiting on you, the
-needs-attention clause is not drawn at all; when something is, it reads
-`! 2 need attention` — and `! 2 need attention (all tasks)` while a filter is
-committed, because the count is deliberately the whole board's, not the
-filter's. It counts the selected project; tasks waiting in other projects are
-counted by the app header's `(! 1 elsewhere)` badge after the project name,
-drawn on every screen and gone at zero. The footer's hint,
-`! next attention (3)`, counts both — every task `!` will visit. Every healthy agent collapses into one dim `agents ✓`: only an agent
-that is not logged in (`codex ⚠`) or out of quota (`claude ⏳14:20`) is named
-beside it, and one that is not installed is not mentioned — `vincent doctor`
-and the daemon view list the whole catalog. With no agent installed at all the
-header reads `no adapters`. The app header above the board drops
-`● connected` for the same reason: it appears only while the TUI is connecting,
-reconnecting or disconnected. After it, `◆ api` names the project the TUI has
-selected, or `◆ no project` while none is registered. It selects the first
-project by name; `@`, or a click on the segment, [switches it](#switching-project).
-On a main tab the header ends in the [tab strip](#main-tabs); on a narrow
-terminal it drops the version first, then the `elsewhere` badge, then shortens
-the strip's labels to initials, and shortens the project name last. On other
-screens it drops the view's tag first, then the version, then the `elsewhere`
-badge, and shortens the project name last. The action keys for the
-selected task are in the footer, once — there is no second copy of them inside
-the board.
+- **Needs you** — blocked, waiting for an answer, or waiting for approval;
+- **Running** — working now, or waiting on its fan-out lanes;
+- **Queued** — waiting for a slot, held until a limit resets, or paused;
+- **Finished** — done or cancelled.
 
-The running count is the selected project's, beside its own cap and the
-daemon's: `2 running · cap 3 · daemon 5/8`. A project with no cap of its own
-leaves the `cap` clause out, `2 running · daemon 5/8`. Each figure counts every
-task holding a concurrency slot — `awaiting_input` as well as `running`,
-fan-out lanes as well as the root tasks the board lists — which is the number
-the scheduler admits against, so a full pool reads as full. Because the daemon
-figure can exceed what is on screen, the header explains it when it has to:
-`2 running · cap 3 · daemon 5/8 · 2 lanes · 1 on input`, with each clause
-dropped when it is zero and shed on a terminal too narrow for it. Until the
-board has heard the project figures it shows the daemon's alone, `5/8 running`. A task
-on a question is counted in both the slot count and the needs-attention badge,
-being at once a slot holder and something waiting on you.
+![The task board: columns of task cards grouped by issue.](../assets/tui-board.png)
 
-Three behaviors matter:
-
-- **Tasks that need you are pinned to the top** with a distinct badge —
-  `! awaiting input`, `! awaiting approval` and `! blocked`. `!` jumps to the
-  next one from anywhere. A blocked row names its reason in words,
-  `! blocked · check failed`, when the board has width to spare; on a board
-  without a surplus the reason is the first thing the cell gives up, and it
-  reads `! blocked`.
-- **The terminal bell rings when a task enters `awaiting_input`**, so most
-  terminals flash or badge the window even when it is not focused.
-- **A task waiting on a clock says when it resumes.** A task whose agent hit a
-  usage limit — or whose failed step is pacing its next attempt with
-  `retry_backoff` — is `queued` like any other, but its state cell reads
-  `queued → 14:20`, the time vincent will try it again, on its own. It holds no
-  slot and needs nothing from you; the detail header names the reason in full
-  (`queued · usage limit reached → 14:20`, `queued · waiting to retry → 14:20`). See
-  [Troubleshooting](troubleshooting.md#usage_limit--do-nothing-unless-you-asked-to-be-told) and
-  [`retry_backoff`](troubleshooting.md#retry_backoff--also-do-nothing-but-for-a-different-reason).
-- **The header badges the agent, not just the task.** An adapter vincent has
-  watched run out is named as `claude ⏳14:20` beside `agents ✓`, and stays that
-  way until a step on that adapter succeeds — so a board full of `queued` rows
-  says which window they are all waiting on. An adapter that
-  [reports its own quota](agents.md#how-much-quota-is-left-and-who-will-say) is
-  badged the same way once that reading hits 100%, and reads a bare `⏳` when
-  the source named no reset, since `⏳00:00` would be a time vincent invented.
-  A reading is only a statement: nothing is withheld on a percentage. A window
-  vincent *watched* close is also a brake. In the default mode, a task that
-  reaches an agent step on that adapter shows the same `queued → 14:20` and
-  waits for the window without starting the agent.
+Each card shows the task's id, workflow and age, two lines of title, one dot per
+workflow step with the step it has reached, a linked pull request as `⇡#123`, and
+one status line that says what is happening, such as `! needs your approval` or
+`⑂ 2 of 3 lanes done`. The selected card has a thick border.
 
 | Key | Does |
 |---|---|
-| `tab` / `shift+tab` | Next / previous [main tab](#main-tabs), when the board is one |
-| `/` | Filter by id, title, state or issue; `tab` commits the filter, `esc` clears it |
-| `H` | Show only the tasks that need you — awaiting input, awaiting approval, blocked, or a fan-out one of whose lanes is. `H` again shows every task |
-| `enter` | Open the selected task |
+| `↑` `↓` | Move through a column |
+| `←` `→` | Cross to the next column that has a card |
+| `pgup` `pgdown` `home` `end` | Move further within the column |
+| `enter` | Open the task |
+| `/` | Filter by id, title, state or issue |
+| `H` | Show only what needs you |
 
-**`H` narrows the board to what needs you.** It keeps a task that is
-awaiting input, awaiting approval or blocked, and a fan-out parent whose
-lanes include one of those. It lasts for the session, like the `/` filter,
-and composes with it: a row is shown only when both keep it. Grouping still
-applies, and a group left empty draws nothing. `V` then selects only what is
-shown, and `!` cycles within it. The panel title says it is on —
-`Tasks — needs you — /api` — and a board with nothing left says so and names
-the key that turns it off. Pressing `H` again keeps the cursor on the same
-task. A parent is kept on the rollup the daemon serves on its row, so against
-an older daemon that serves none, a parent whose lane needs you is not kept;
-the lane's own row is still one `L` away.
+The filter box's top edge counts the tasks, says how many are running against the
+concurrency cap, and shows any agent that needs a look. A terminal too narrow for
+all four columns shows the ones around your selection, with `‹` and `›` where more
+are hidden. From 170 columns a preview of the selected task sits on the right: its
+steps, its issue across the board, and the keys that act on it now.
 
-**A cell too long for its column wraps rather than disappearing.** The title,
-the state, the step and the status carry across up to three lines of the same
-row, so `waiting on lanes (×2 ●1 ✓3)` and a step's own message are readable
-without opening the task. Every row on a board is the same height — as tall as
-the tallest row in the list, and never more than three lines — so a board where
-nothing overflows is one line per task, exactly as before. The list, not the
-part of it you can see: one long title far down the board makes the rows above
-it tall too, and a filter that hides it makes them short again. What still does
-not fit at three lines ends in `…`. Clicking any line of a row selects that row,
-and `j`/`k` move a task at a time whatever the height. The id, elapsed, cost,
-the pull request marker and the marker column do not wrap, and neither does
-the workflow: it is a name you scan down, which a fourteen-cell wrap makes
-unreadable, so under width pressure it is dropped instead. There is no project
-column — the header names the one project the board shows.
-
-**The title has a ceiling.** It takes whatever the fixed columns leave, up to a
-comfortable width; past that the extra room goes to `STEP` and then `STATUS` —
-the two columns whose content actually outgrows them — then to `STATE`, as far
-as a blocked row's reason needs, and only what none of them can use comes back
-to the title. So a 200-column board shows
-`3/7 green · loop 4/10 · repair 2/3` whole instead of spending the room on a
-title's trailing blanks. A loop rollup too wide for the column it is given
-drops clauses from the tail rather than wrapping — the body step goes first,
-then the `for_each` item, then the counter, which is the last thing to survive.
-
-**The board speaks in the Steps tab's glyphs.** `●` running, `✓` done, `×`
-blocked or failed, `!` waiting on you (or, for a step run, interrupted by a
-daemon restart), `○` not started, `■` stopped, `–` skipped. Colour only
-reinforces a glyph, so the board reads the same without colour.
-
-- A fan-out parent's state names its lanes by state:
-  `waiting on lanes (×1 !1 ●1 ✓2)` is one blocked lane, one waiting on you,
-  one running and two done. Blocked lanes come first, so when the cell is too
-  narrow for all of it, the done count is cut before the blocked one. A state
-  with no glyph is spelled out (`1 paused`). The breakdown comes from the
-  task's `children` rollup, which the task list serves on every row that has
-  lanes. Against an older daemon, whose list rows carry no rollup, a parent's
-  row shows a bare `waiting on lanes`; open the parent, or press `L`, to see
-  its lanes.
-- An expanded lane reads `lane api` rather than repeating its parent's title.
-- With room to spare after the step and any loop rollup, `STEP` adds one pip
-  per workflow step: `3/5 build ✓✓●○○`. The pips never make the cell wrap or
-  take width from another column, so at 80 columns they are usually absent.
-
-The board also has a **`STATUS` column**: what the task's newest step run
-said about *itself*, if it said anything —
-`compiling internal/store`, `3 tests red`. It is set by the step, not by
-vincent, through [`vincent status`](../reference/cli.md#vincent-status), so it
-is empty until a workflow asks for it; see
-[Reporting status from a step](workflows.md#56-reporting-status-from-a-step).
-The column is there only while some task on the board has a status. When it
-is, it outranks the cost and the step name: a 120-column board keeps it, with
-the step cut to its `3/7` counter and no `COST` column. It still needs a title
-of 32 cells, so an 80-column board drops it before the workflow.
-Below a comfortably wide title the status is cut to one line with `…` rather
-than wrapped, so it never makes the rows taller. On a wider board it wraps like
-the title.
-
-The **`COST` column** is there only while some task on the board reported a
-cost. Codex and several other agents never do, and a column of dashes is room
-taken from the title to say nothing.
-
-A task with a linked pull request carries a **`PR` column** marker,
-`⇡#123`, whether it is still running or done. That includes a task created from
-a pull request. It shows the number only; open the task's Pull Request tab for
-its state. The board reads the link from the task list and asks GitHub nothing.
-`PR` is the first column dropped when the terminal narrows. A link you
-unlinked is not marked.
-
-Whether these three columns show is decided by every task the board holds
-after the filter, including tasks in folded groups and tasks scrolled out of
-view. So scrolling never makes a column appear or disappear.
-
-Elapsed on the board is **wall clock** from the task's start. That is
-deliberate: a task idle on a human for 35 of its 40 minutes must not read as
-"5m" on the board whose job is to flag it. The per-attempt figures in the
-timeline are the other measure — active time, with the excluded wait shown
-beside it rather than silently subtracted.
+Elapsed time is **wall clock** from the task's start, so a task idle on a human for
+35 of its 40 minutes never reads as 5 minutes.
 
 ### Switching project
 
@@ -467,96 +327,25 @@ marked `offline — list may be stale`. A switch made then takes effect when
 the connection returns: the screens whose loads failed reload for the
 selected project, and nothing else is refetched.
 
-### Grouping
+### Issue groups
 
-The rows are **grouped by the vincent issue** each task was started from,
-out of the box ([`tui.board.group_by`](../reference/configuration.md#tuiboardgroup_by)
-is `[issue]`). Every task started from no issue — a handoff's task among
-them — sits in one `no issue` group, ordered like any other. Grouping by
-workflow is the other level, one `g` away. There is no project level: the
-board shows one project at a time, so grouping by it would draw nothing.
-
-An issue header reads `issue #<id> · <title>`, then the short reference of
-an issue imported from GitHub or Jira, and a dim `closed` once the issue is
-closed. It shows the issue as it is now, so renaming or closing it redraws
-the header. On a narrow board the end of the title gives way first, then
-`closed`, so the count and badges always show. The picture below is
-platform-infra's board.
-
-![platform-infra's board grouped by issue: a `no issue` group first, holding
-the claude task awaiting input and the handoff task awaiting approval, then
-one `issue #<id> · <title>` header per issue — #9, #10, #16, #15, #14 and #13,
-the last marked closed — each carrying its task count, and the groups holding
-something that needs attention their badge](../assets/tui-grouping.png)
-
-- The header shows the group's task count, and the needs-attention badge when
-  it holds any — a group can never be the reason you missed something waiting.
-- **Grouping does not reorder anything.** The sort is what it always was, and a
-  group sits where its first task does, so the group holding the oldest thing
-  waiting on a human is the top group.
-- Grouping by workflow drops the `WORKFLOW` column — the header already
-  names it — and the width it frees is spent on the row: on the title first,
-  and once the title has reached its ceiling, on `STEP` and `STATUS`.
-  Grouping by issue drops no column.
-- An open header is a label: the cursor steps over it, and clicking it selects
-  nothing.
-- **A level every task shares draws no header.** A board whose tasks all
-  share one issue, or all run one workflow, is a flat list. The panel title
-  names what the missing header would have — `Tasks · issue #42 · Fix login`,
-  or `Tasks · verify-build` — shortening a long issue title before the filter
-  and selection it also names, and a workflow level's column stays dropped.
-  The level is judged on the tasks on screen, so a filter down to one issue
-  (`/#42`) or one workflow quiets it too. A fold you left on that level is kept, and applies again when
-  a second value comes back.
+Inside every column, tasks are grouped under the issue they belong to, and tasks
+with no issue sit under **No issue** at the bottom. The selected task's issue is
+highlighted in every column, so you can follow one piece of work across the
+board. The preview adds up how many of the issue's tasks need you, are running,
+are queued and have finished.
 
 | Key | Does |
 |---|---|
-| `g` | Cycle issue → workflow → flat for the session |
+| `f` | Fold the issue group under the cursor, or open the one the cursor rests on |
+| `C` | Fold every group |
+| `O` | Open every group |
 
-The panel title names the grouping whenever it is not the configured one.
-
-### Folding groups
-
-On an installation with six projects on it, most of the board is not what you
-are working on. Fold the rest away:
-
-| Key | Does |
-|---|---|
-| `←` | Collapse the group you are in. Press it again on the header it closed to fold the group around that |
-| `→` | Expand the collapsed group under the cursor, one level |
-| `C` | Collapse every group |
-| `O` | Expand every group |
-
-A collapsed header shows `▸` instead of `▾`, and it keeps everything that made
-the group worth reading at a glance: the task count, the `!` needs-attention
-badge, and how many of its tasks are selected. **The cursor rests on a collapsed
-header** — that is what makes it a row rather than a label, and it is how `←`
-and `→` reach every nesting level. It is not a task, so the action keys, `space`
-and `enter` do nothing there.
-
-Three things mean a fold can never hide work waiting on you:
-
-- the header's badge and count survive the fold;
-- `!` (jump to the next task that needs you) opens whatever group it lands in;
-- a collapsed group **opens by itself** the moment a task inside it starts
-  waiting for input.
-
-Folds are kept **per project** and remembered across restarts, in
-`{data_dir}/tui.json` ([files](../reference/files.md)): folding `build` in one
-project leaves `build` open in another, and switching away and back finds the
-folds as you left them. A fold names an issue by its id, so renaming the
-issue keeps it. Folds survive `g`, a filter and a reconnect, and a group is
-forgotten when its workflow or issue leaves the project's board, or with the
-project when it is removed. Folds saved by an older vincent are carried over to their
-project the first time the board starts. `V`
-still selects tasks inside a collapsed group — the selection is a set of tasks,
-not of rows. With `group_by: []` there are no groups, so the four keys do
-nothing. A fresh install has nothing folded.
-
-Set the grouping you start with in `config.yaml`
-([`tui.board.group_by`](../reference/configuration.md#tuiboardgroup_by)); `[]`
-gives you one flat list. A file that still lists the old `project` level loads
-with it stripped, and `vincent doctor` says so.
+Groups in **Finished** start folded, and the other columns start open. A folded
+group keeps a line saying what it holds. The cursor can rest on it, but it is not a
+task, so the action keys and `space` do nothing there; `enter` opens it. A fold can
+never hide work waiting on you: `!` opens the group it lands in, and a group opens
+by itself when a task in it starts waiting. Folds last until you quit.
 
 ### Acting on several tasks at once
 
@@ -567,7 +356,6 @@ times with a confirmation between each. Select the tasks instead:
 |---|---|
 | `space` | Select the task under the cursor (again deselects) |
 | `V` | Select every task the filter is showing — or clear that selection |
-| `L` | Expand the selected fan-out's lanes as indented rows under it, or collapse them again. Each lane row reads `lane <id>`. Lanes are hidden from the board otherwise, and stay out of every count |
 | `esc` | Clear the selection |
 
 While anything is selected, a `✓` appears beside those rows, the panel title
@@ -601,6 +389,16 @@ The rest of the behavior follows from what a selection is:
   the selection, so that is what `A` acts on.
 
 ## Task detail
+
+From 130 columns wide, a task opens as one workspace: its name, state and reason
+across the top, its steps on the left, and Output, Diff, Overview and Workflow in
+the middle. From 150 columns its workflow, branch, usage and links are on the
+right. When a task is blocked, the reason and the keys that can restart it are
+pinned under the tab. On a narrower terminal the same views are tabs, and the
+digits below reach them at any width.
+
+![The task workspace: steps on the left, the output in the middle, details on the
+right, and a failure card with its recovery keys.](../assets/tui-task-workspace.png)
 
 `enter` opens the selected task on its **Overview** — from the board, the
 palette, a lane jump or the pull requests takeover alike, and after `!` has

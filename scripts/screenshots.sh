@@ -1679,32 +1679,14 @@ do_capture() {
     | sort_by(.name, .own) | map("\(.name)/\(.own)") | index("feature-delivery/1")')"
   [[ "$wf_row" =~ ^[0-9]+$ ]] || fail "feature-delivery is not in api's Workflows view"
 
-  # The board-only home screen, filtered to one running task.
+  # The task board: its columns, cards and preview (task 150.6), wide enough
+  # for all of them.
   owns api task 'harden' tui-board
   running api 'harden' tui-board
-  tape tui-board 1250 api '
-Tab
-Sleep 2s
-Type "/"
-Sleep 500ms
-Type "harden"
-Sleep 1s
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-board 1250 api '
 Tab
 Sleep 6s
 Screenshot "'"$OUT"'/tui-board.png"
-'
-
-  # Grouping: by issue, the shape the board takes out of the box (task 148)
-  # — there is no project level, since the board shows one project (task
-  # 132). platform-infra has the most tasks started from an issue, one group
-  # each, and a `no issue` group holding the handoff's own task and the
-  # claude task waiting for input. api's tasks carry no issue, and giving
-  # them one would change every api shot.
-  tape tui-grouping 1400 platform-infra '
-Tab
-Sleep 2s
-Sleep 3s
-Screenshot "'"$OUT"'/tui-grouping.png"
 '
 
   # Bulk selection — `V` takes every row the filter is showing, and the
@@ -2874,6 +2856,23 @@ Sleep 500ms
 Down
 Sleep 3s
 Screenshot "'"$OUT"'/tui-issues-preview.png"
+Sleep 2s
+'
+
+  # The wide task workspace on the blocked task (task 150.6): the steps, the
+  # output, the details, and the failure pinned under the tab.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-task-workspace 1250 release-tooling '
+Tab
+Sleep 2s
+Type "/"
+Sleep 500ms
+Type "signed checksums"
+Sleep 1s
+Tab
+Sleep 1s
+Enter
+Sleep 5s
+Screenshot "'"$OUT"'/tui-task-workspace.png"
 Sleep 2s
 '
 }

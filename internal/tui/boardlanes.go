@@ -167,33 +167,6 @@ func (l *laneTree) apply(msg boardLanesMsg) {
 	}
 }
 
-// toggleLanes is `L`: open or close the fan-out under the cursor.
-//
-// It acts on any task row rather than on a state whitelist. A parent's lanes
-// are worth reading in every state it passes through — `awaiting_children`
-// while they run, `blocked` when the join or the merge failed, `done`
-// afterwards — and a list row carries no field that says "this task once had
-// lanes" in the last two (§13.2 serves `children` on the detail endpoint
-// only). So the press asks, and a task with no lanes answers with none: the
-// fetch comes back empty, laneTree.apply drops the id again, and nothing on
-// screen moved.
-func (b *board) toggleLanes() tea.Cmd {
-	id, ok := b.selected()
-	if !ok {
-		return nil
-	}
-	b.lanes.expanded = b.lanes.expanded.toggle(id)
-	if !b.lanes.expanded.has(id) {
-		// A collapse needs nothing from the daemon: the rows stay cached so
-		// the next `L` is instant.
-		return nil
-	}
-	// The cursor stays where it is. `L` is a statement about *this* row, and
-	// moving onto the first lane would take the reader off the row they were
-	// reading — the same argument `space` already makes.
-	return b.laneCmd(id)
-}
-
 // laneCmd fetches one parent's lanes. §13.2 already returns them in merge
 // order, so the board sorts nothing here: lane order is the order the join
 // will merge in, which is the order a human reading a fan-out wants.
