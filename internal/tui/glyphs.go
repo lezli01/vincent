@@ -31,17 +31,17 @@ import (
 func taskStateGlyph(state string) string {
 	switch state {
 	case stateBlocked:
-		return "×"
+		return ic("×")
 	case stateAwaitingGate, stateAwaitingInput:
 		return attentionBadge
 	case stateRunning, stateAwaitingChildren:
-		return "●"
+		return ic("●")
 	case stateDone:
-		return "✓"
+		return ic("✓")
 	case stateQueued:
-		return "○"
+		return ic("○")
 	case stateAborted:
-		return "■"
+		return ic("■")
 	default:
 		return ""
 	}
@@ -344,7 +344,7 @@ func boardStepPips(t apiclient.Task) string {
 	}
 	current := taskStateGlyph(t.State)
 	if current == "" {
-		current = "○"
+		current = ic("○")
 	}
-	return strings.Repeat("✓", k-1) + current + strings.Repeat("○", n-k)
+	return strings.Repeat(ic("✓"), k-1) + current + strings.Repeat(ic("○"), n-k)
 }

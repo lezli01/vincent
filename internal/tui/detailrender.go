@@ -1126,19 +1126,19 @@ func wrapTimelineFields(fields []string, width int, continuationIndent string) [
 func attemptStateGlyph(state string) string {
 	switch state {
 	case "succeeded", "approved":
-		return "✓"
+		return ic("✓")
 	case "running":
-		return "●"
+		return ic("●")
 	case "failed", "rejected":
-		return "×"
+		return ic("×")
 	case "interrupted":
 		return "!"
 	case "skipped":
 		return "–"
 	case stepStateStopped:
-		return "■"
+		return ic("■")
 	default:
-		return "○"
+		return ic("○")
 	}
 }
 

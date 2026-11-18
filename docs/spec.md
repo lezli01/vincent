@@ -8563,6 +8563,7 @@ tui:                           # view preference; the daemon validates and relay
     level: normal              # quiet | compact | normal | verbose: the output pane's opening level (task 129.11)
   # default_project: web       # the project the TUI opens on, by name; read at startup only (task 132.3)
   tabs: [issues, tasks, chats] # the main tabs, in order, from issues | tasks | chats; the first is where the TUI opens (task 136)
+  icons: unicode               # unicode | nerd: the glyphs the TUI's icons are drawn in; nerd needs a Nerd Font (task 150.8)
 ```
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
@@ -15873,6 +15874,10 @@ stream for the live tail.
    as cards and the chats workspace. `tab` crosses between archived tasks and
    archived chats at any width, and `enter` opens an archived task. Every frame in
    the TUI has rounded corners.
+
+   *Amended 2026-11-18 (task 150.8).* `tui.icons` (§12.3) picks the glyphs of the
+   app header, boards, cards and side panes: `unicode`, the default, or `nerd`. It
+   applies from every config answer, and only to text the TUI itself wrote.
 
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:

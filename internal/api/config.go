@@ -107,6 +107,8 @@ type configContainer struct {
 type configTUI struct {
 	Board      configBoard `json:"board"`
 	Hyperlinks bool        `json:"hyperlinks"`
+	// Icons is `tui.icons` (task 150.8).
+	Icons string `json:"icons"`
 	// Keys is `tui.keys` as written, operation id → key (task 118). Always an
 	// object, empty included, on group_by's rule: `{}` is the shipped keymap
 	// the file chose, and `null` would read as a daemon that predates the key.
@@ -357,6 +359,7 @@ func configBody(cfg config.Config) configResponse {
 		TUI: configTUI{
 			Board:      configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)},
 			Hyperlinks: cfg.TUI.Hyperlinks,
+			Icons:      cfg.TUI.Icons,
 			Keys:       stringMap(cfg.TUI.Keys),
 			Output:     configOutput{Level: cfg.TUI.Output.Level},
 			DefaultProject: func() string {
@@ -552,6 +555,8 @@ type containerPatch struct {
 type tuiPatch struct {
 	Board      *boardPatch `json:"board"`
 	Hyperlinks *bool       `json:"hyperlinks"`
+	// Icons is `tui.icons` (task 150.8).
+	Icons *string `json:"icons"`
 	// Keys replaces the whole map rather than merging into it, the way
 	// environment.set does: `{}` goes back to the shipped keymap, and an
 	// operation left out of the map goes back to its default.
@@ -702,6 +707,7 @@ func (p configPatch) sets() []config.Set {
 			add("tui.board.group_by", config.RenderList(*v.Board.GroupBy))
 		}
 		addIfBool(add, "tui.hyperlinks", v.Hyperlinks)
+		addIfString(add, "tui.icons", v.Icons)
 		if v.Keys != nil {
 			add("tui.keys", config.RenderMap(*v.Keys))
 		}

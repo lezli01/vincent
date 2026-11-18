@@ -47,23 +47,23 @@ func (s *shell) tabCount() (int, bool) { return len(s.board.projectTasks()), s.b
 func tabGlyph(id viewID) string {
 	switch id {
 	case viewIssues, viewIssue:
-		return "▦"
+		return ic("▦")
 	case viewHome, viewTask:
-		return "▶"
+		return ic("▶")
 	case viewChats, viewChat:
-		return "◌"
+		return ic("◌")
 	case viewProjects:
-		return headerProjectGlyph
+		return ic(headerProjectGlyph)
 	case viewWorkflows:
-		return "⟡"
+		return ic("⟡")
 	case viewDaemon:
-		return "◉"
+		return ic("◉")
 	case viewPullRequests:
-		return "⇅"
+		return ic("⇅")
 	case viewTriggers:
-		return "⚡"
+		return ic("⚡")
 	case viewArchived, viewArchivedChats:
-		return "▣"
+		return ic("▣")
 	}
 	return "•"
 }
@@ -84,7 +84,7 @@ type headerParts struct {
 
 // segment is the project's name with its glyph.
 func (headerParts) segment(name string) string {
-	return toneMagenta.Bold(true).Render(headerProjectGlyph + " " + name)
+	return toneMagenta.Bold(true).Render(ic(headerProjectGlyph) + " " + name)
 }
 
 // left is the header's start: the project, then what is news about it.

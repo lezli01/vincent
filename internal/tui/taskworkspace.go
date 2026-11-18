@@ -113,7 +113,7 @@ func (t *taskView) taskRail(w, h int) []string {
 	if d.loaded && d.task.StepTotal > 0 {
 		right = toneBlue.Render(strconv.Itoa(d.task.StepTotal))
 	}
-	return drawBox(toneBlue.Bold(true).Render("▤ Steps"), right, body, w, h, edgesRounded, styleDim)
+	return drawBox(toneBlue.Bold(true).Render(ic("▤ Steps")), right, body, w, h, edgesRounded, styleDim)
 }
 
 // taskMiddle is the tabs and the tab on screen, with a failure pinned under it.
@@ -170,9 +170,9 @@ func (t *taskView) taskFailureCard(w int) []string {
 		}
 		body = append(body, ansi.Truncate(keys, inner, "…"))
 	}
-	title := "✗ This task stopped"
+	title := ic("✗ This task stopped")
 	if r := d.task.BlockReason; r != nil && *r != "" {
-		title = "✗ " + reasons.Explain(*r).Title
+		title = ic("✗ ") + reasons.Explain(*r).Title
 	}
 	return drawBox(styleBad.Bold(true).Render(title), "", body, w, len(body)+2, edgesThick, styleBad)
 }
@@ -208,24 +208,24 @@ func (t *taskView) taskDetailsPane(w, h int) []string {
 		room := max(inner-ansi.StringWidth(k)-1, 1)
 		return padBetweenCells(styleDim.Render(k), ansi.Truncate(oneLine(val), room, "…"), inner)
 	}
-	body := []string{styleTitle.Render("⟡ Workflow"), row("name", valueOr(task.Workflow, "—"))}
+	body := []string{styleTitle.Render(ic("⟡ Workflow")), row("name", valueOr(task.Workflow, "—"))}
 	if task.WorkflowOrigin != nil {
 		body = append(body, row("source", task.WorkflowOrigin.Source()))
 	}
 	if task.BranchName != "" {
-		body = append(body, "", styleTitle.Render("⎇ Branch"), toneCyan.Render(ansi.Truncate(oneLine(task.BranchName), inner, "…")))
+		body = append(body, "", styleTitle.Render(ic("⎇ Branch")), toneCyan.Render(ansi.Truncate(oneLine(task.BranchName), inner, "…")))
 		if task.BaseBranch != "" {
 			body = append(body, row("base", task.BaseBranch))
 		}
 	}
-	body = append(body, "", styleTitle.Render("◷ Usage"))
+	body = append(body, "", styleTitle.Render(ic("◷ Usage")))
 	if elapsed, ok := task.Elapsed(d.now()); ok {
 		body = append(body, row("elapsed", formatElapsed(elapsed)))
 	}
 	if tokens := task.InputTokens + task.OutputTokens; tokens > 0 {
 		body = append(body, row("tokens", chatTokens(tokens)))
 	}
-	body = append(body, row("cost", formatCost(task.CostUSD)), "", styleTitle.Render("▦ Linked"))
+	body = append(body, row("cost", formatCost(task.CostUSD)), "", styleTitle.Render(ic("▦ Linked")))
 	links := taskLinks(task.Task)
 	if len(links) == 0 {
 		links = []string{styleDim.Render("no issue or pull request")}

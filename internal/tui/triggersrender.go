@@ -195,7 +195,7 @@ func (v *triggersView) tableLines(rows []apiclient.TriggerSummary, width, height
 func trigArmed(s apiclient.TriggerSummary) (string, lipgloss.Style) {
 	switch {
 	case s.Armed:
-		return "● armed", styleOK
+		return ic("● armed"), styleOK
 	case !s.Valid:
 		return "✗ invalid", styleBad
 	case !s.Enabled:

@@ -194,7 +194,7 @@ func (v *chatsView) workspacePanes(width, height, top int) []string {
 			text = noProjectsEmpty()
 		}
 		body := styled(wrapText(text, max(width-4, 1), wrapOpts{}), styleDim)
-		return drawBox(toneBlue.Bold(true).Render("◌ Chats"), "", body, width, height, edgesRounded, styleDim)
+		return drawBox(toneBlue.Bold(true).Render(ic("◌ Chats")), "", body, width, height, edgesRounded, styleDim)
 	}
 	listW, detailsW := chatPaneWidths(width)
 	out := v.chatListPane(listW, height, top)
@@ -221,7 +221,7 @@ func (v *chatsView) workspacePanes(width, height, top int) []string {
 
 // chatsFilterBox is the rounded box above the panes.
 func (v *chatsView) chatsFilterBox(width int) []string {
-	body := []string{toneBlue.Render("⌕ ") + styleDim.Render(v.filter.Placeholder())}
+	body := []string{toneBlue.Render(ic("⌕ ")) + styleDim.Render(v.filter.Placeholder())}
 	if v.filtering || v.filter.Value() != "" {
 		v.filter.SetWidth(max(width-6, 10))
 		body = fieldRows("", v.filter)
@@ -284,9 +284,9 @@ var chatGroupLooks = []chatGroupLook{
 // chatListPane draws the cards in their groups, scrolled to keep the selected
 // card on screen. top is the view line the pane starts on.
 func (v *chatsView) chatListPane(w, h, top int) []string {
-	title := toneBlue.Bold(true).Render("◌ Chats")
+	title := toneBlue.Bold(true).Render(ic("◌ Chats"))
 	if v.archived {
-		title = toneBlue.Bold(true).Render("▣ Archived chats")
+		title = toneBlue.Bold(true).Render(ic("▣ Archived chats"))
 	}
 	right := toneBlue.Render(strconv.Itoa(len(v.rows())))
 	inner := max(w-4, 1)
@@ -317,7 +317,7 @@ func (v *chatsView) chatListPane(w, h, top int) []string {
 			}
 			band = b
 			look := chatGroupLooks[b]
-			body = append(body, look.tone.Bold(true).Render(look.glyph+" "+look.name)+" "+styleDim.Render(strconv.Itoa(counts[b])))
+			body = append(body, look.tone.Bold(true).Render(ic(look.glyph)+" "+look.name)+" "+styleDim.Render(strconv.Itoa(counts[b])))
 		}
 		if i == v.cursor {
 			from, to = len(body), len(body)+chatCardH
@@ -352,7 +352,7 @@ func (v *chatsView) chatCard(c apiclient.Chat, selected bool, w int) []string {
 	if selected {
 		titleStyle, edges, border = styleTitle, edgesThick, styleFocus
 	}
-	head := styleKey.Render("#"+strconv.FormatInt(c.ID, 10)) + "  " + toneMagenta.Render("◈ "+oneLine(c.Agent))
+	head := styleKey.Render("#"+strconv.FormatInt(c.ID, 10)) + "  " + toneMagenta.Render(ic("◈ ")+oneLine(c.Agent))
 	body := []string{padBetweenCells(head, styleDim.Render(chatCardAge(c, v.now())), inner)}
 	title := wrapText(oneLine(c.Title), inner, wrapOpts{maxLines: 2})
 	for i := range 2 {
@@ -382,20 +382,20 @@ func chatCardStatus(c apiclient.Chat, frame int) (string, lipgloss.Style) {
 	case "awaiting_input":
 		return attentionBadge + " has a question", styleWarn.Bold(true)
 	case "running":
-		return "▶ working " + spinnerFrame(frame), toneCyan
+		return ic("▶ working ") + spinnerFrame(frame), toneCyan
 	case "idle":
-		return "○ idle", styleDim
+		return ic("○ idle"), styleDim
 	}
-	return "✓ " + chatStateLabel(c.State), styleDim
+	return ic("✓ ") + chatStateLabel(c.State), styleDim
 }
 
 // chatLinkMark names what a chat was opened on, "" for a free chat.
 func chatLinkMark(c apiclient.Chat) string {
 	switch {
 	case c.IssueID != nil:
-		return "▦ #" + strconv.FormatInt(*c.IssueID, 10)
+		return ic("▦ #") + strconv.FormatInt(*c.IssueID, 10)
 	case c.LinkedTaskID != nil:
-		return "▶ #" + strconv.FormatInt(*c.LinkedTaskID, 10)
+		return ic("▶ #") + strconv.FormatInt(*c.LinkedTaskID, 10)
 	}
 	return ""
 }
@@ -449,7 +449,7 @@ func chatPreviewLines(c apiclient.Chat, p *chatPreview, inner int) []string {
 	var out []string
 	for _, t := range p.turns[max(len(p.turns)-chatPreviewTurns, 0):] {
 		out = append(out, promptBubbleLines(t.Prompt, inner)...)
-		out = append(out, "", toneMagenta.Bold(true).Render("◈ "+oneLine(c.Agent))+styleDim.Render(fmt.Sprintf("  ·  turn %d", t.Seq)))
+		out = append(out, "", toneMagenta.Bold(true).Render(ic("◈ ")+oneLine(c.Agent))+styleDim.Render(fmt.Sprintf("  ·  turn %d", t.Seq)))
 		if t.ResultText != "" {
 			out = append(out, markdownLines(t.ResultText, inner)...)
 		}
@@ -476,7 +476,7 @@ func chatPreviewFoot(c apiclient.Chat, inner int) []string {
 	hint := "enter opens this chat"
 	switch c.State {
 	case "running":
-		hint = "▶ working · enter follows it live"
+		hint = ic("▶ working · enter follows it live")
 	case "idle":
 		hint = "enter continues this chat"
 	}
@@ -495,7 +495,7 @@ func chatQuestionCard(c apiclient.Chat, w int) []string {
 	for _, q := range req.Questions {
 		body = append(body, styled(wrapText(sanitizeText(q.Text), inner, wrapOpts{maxLines: 3}), styleTitle)...)
 		for _, o := range q.Options {
-			body = append(body, ansi.Truncate("○ "+oneLine(o), inner, "…"))
+			body = append(body, ansi.Truncate(ic("○ ")+oneLine(o), inner, "…"))
 		}
 	}
 	if req.Permission != nil {
@@ -519,7 +519,7 @@ func chatDetailsPane(c apiclient.Chat, ok bool, turns []apiclient.ChatTurn, now 
 	inner := max(w-4, 1)
 	row := func(k, val string) string { return padBetweenCells(styleDim.Render(k), oneLine(val), inner) }
 
-	body := []string{styleTitle.Render("◈ Agent"), row("agent", c.Agent)}
+	body := []string{styleTitle.Render(ic("◈ Agent")), row("agent", c.Agent)}
 	if c.Model != "" {
 		body = append(body, row("model", c.Model))
 	}
@@ -527,12 +527,12 @@ func chatDetailsPane(c apiclient.Chat, ok bool, turns []apiclient.ChatTurn, now 
 		body = append(body, row("effort", c.Effort))
 	}
 	if c.Branch != "" {
-		body = append(body, "", styleTitle.Render("⎇ Branch"), toneCyan.Render(ansi.Truncate(oneLine(c.Branch), inner, "…")))
+		body = append(body, "", styleTitle.Render(ic("⎇ Branch")), toneCyan.Render(ansi.Truncate(oneLine(c.Branch), inner, "…")))
 		if c.BaseBranch != "" {
 			body = append(body, row("base", c.BaseBranch))
 		}
 	}
-	body = append(body, "", styleTitle.Render("◷ Activity"), row("turns", strconv.Itoa(len(turns))))
+	body = append(body, "", styleTitle.Render(ic("◷ Activity")), row("turns", strconv.Itoa(len(turns))))
 	tokens, cost, priced := chatUsage(turns)
 	if tokens > 0 {
 		body = append(body, row("tokens", chatTokens(tokens)))
@@ -540,13 +540,13 @@ func chatDetailsPane(c apiclient.Chat, ok bool, turns []apiclient.ChatTurn, now 
 	if priced {
 		body = append(body, row("cost", fmt.Sprintf("$%.2f", cost)))
 	}
-	if age := strings.TrimPrefix(issueAge(now, c.CreatedAt), "◷ "); age != "" {
+	if age := strings.TrimPrefix(issueAge(now, c.CreatedAt), ic("◷ ")); age != "" {
 		if age != "now" {
 			age += " ago"
 		}
 		body = append(body, row("started", age))
 	}
-	body = append(body, "", styleTitle.Render("▦ Linked"))
+	body = append(body, "", styleTitle.Render(ic("▦ Linked")))
 	links := chatLinks(c)
 	if len(links) == 0 {
 		links = []string{styleDim.Render("no issue or task")}

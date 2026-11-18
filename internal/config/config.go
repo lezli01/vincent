@@ -762,6 +762,21 @@ type TUI struct {
 	// decision 1). One entry is valid and is the opt-out of the strip.
 	// Default [issues, tasks]. The daemon never reads it; it validates it.
 	Tabs []string `yaml:"tabs"`
+	// Icons is the glyph set the TUI draws its icons in (task 150.8): one of
+	// IconSets, default unicode, which needs no special font. The TUI applies
+	// it from every config it reads. The daemon never reads it; it validates
+	// it.
+	Icons string `yaml:"icons"`
+}
+
+// IconSets is tui.icons' vocabulary.
+var IconSets = []string{"unicode", "nerd"}
+
+func validateIcons(set string) error {
+	if slices.Contains(IconSets, set) {
+		return nil
+	}
+	return fmt.Errorf("tui.icons: unknown icon set %q; want one of %s", set, strings.Join(IconSets, ", "))
 }
 
 // TabViews is tui.tabs' vocabulary (task 136 decision 2): the project-scoped
@@ -883,6 +898,9 @@ func (t TUI) validate(lenient bool) error {
 		return err
 	}
 	if err := validateTabs(t.Tabs); err != nil {
+		return err
+	}
+	if err := validateIcons(t.Icons); err != nil {
 		return err
 	}
 	var err error
@@ -1216,6 +1234,7 @@ func Default() Config {
 			// at, so an absent key changes nothing.
 			Output: OutputView{Level: "normal"},
 			Tabs:   []string{"issues", "tasks", "chats"},
+			Icons:  "unicode",
 		},
 	}
 }

@@ -87,7 +87,7 @@ type issueLaneMore struct{ left, right bool }
 // that fit around the selected one, and a cue for the cards that do not.
 func (v *issuesView) laneLines(sec int, issues []apiclient.Issue, x, top, w, h int, more issueLaneMore) []string {
 	look := issueLaneLooks[sec]
-	title := look.tone.Bold(true).Render(look.glyph + " " + issueLaneTitle(issueSections[sec].label))
+	title := look.tone.Bold(true).Render(ic(look.glyph) + " " + issueLaneTitle(issueSections[sec].label))
 	if more.left {
 		title = styleDim.Render("‹ ") + title
 	}
@@ -178,7 +178,7 @@ func (v *issuesView) issueCard(iss apiclient.Issue, w int) []string {
 
 	head := styleKey.Render("#" + strconv.FormatInt(iss.ID, 10))
 	if v.picked[iss.ID] {
-		head = styleFocus.Render("◆ ") + head
+		head = styleFocus.Render(ic("✔ ")) + head
 	}
 	if kind := issueKindMark(iss.Kind); kind != "" {
 		head += "  " + kind
@@ -214,11 +214,11 @@ func issueKindMark(kind string) string {
 	case "":
 		return ""
 	case "bug":
-		return styleBad.Render("◆ bug")
+		return styleBad.Render(ic("◆ bug"))
 	case "feature":
-		return styleOK.Render("✦ feature")
+		return styleOK.Render(ic("✦ feature"))
 	case "chore":
-		return toneMagenta.Render("● chore")
+		return toneMagenta.Render(ic("● chore"))
 	}
 	return styleDim.Render("• " + kind)
 }
@@ -231,17 +231,17 @@ func issueAge(now, at time.Time) string {
 	d := now.Sub(at)
 	switch {
 	case d < time.Minute:
-		return "◷ now"
+		return ic("◷ now")
 	case d < time.Hour:
-		return "◷ " + strconv.Itoa(int(d.Minutes())) + "m"
+		return ic("◷ ") + strconv.Itoa(int(d.Minutes())) + "m"
 	case d < 24*time.Hour:
-		return "◷ " + strconv.Itoa(int(d.Hours())) + "h"
+		return ic("◷ ") + strconv.Itoa(int(d.Hours())) + "h"
 	case d < 30*24*time.Hour:
-		return "◷ " + strconv.Itoa(int(d.Hours()/24)) + "d"
+		return ic("◷ ") + strconv.Itoa(int(d.Hours()/24)) + "d"
 	case d < 365*24*time.Hour:
-		return "◷ " + strconv.Itoa(int(d.Hours()/(30*24))) + "mo"
+		return ic("◷ ") + strconv.Itoa(int(d.Hours()/(30*24))) + "mo"
 	}
-	return "◷ " + strconv.Itoa(int(d.Hours()/(365*24))) + "y"
+	return ic("◷ ") + strconv.Itoa(int(d.Hours()/(365*24))) + "y"
 }
 
 // issueCardTags is a card's labels on the left and its source on the right.
@@ -290,31 +290,31 @@ func issueCardTags(iss apiclient.Issue, width int, sharedRepo bool) string {
 // issueCardStatus is a card's last line, led by a glyph so it survives NO_COLOR:
 // what is true of the issue, the thing that most needs a person first.
 func issueCardStatus(iss apiclient.Issue) (string, lipgloss.Style) {
-	tasks := strings.TrimPrefix(issueTaskSummary(iss), "● ")
+	tasks := ic(strings.TrimPrefix(issueTaskSummary(iss), "● "))
 	hand := issueHandoffCell(iss)
 	switch {
 	case iss.Attention:
 		return attentionBadge + " " + tasks + " · needs you", styleWarn.Bold(true)
 	case iss.State == "closed":
-		return "✓ " + strings.TrimPrefix(issueStateBadge(iss), "closed · "), styleOK
+		return ic("✓ ") + strings.TrimPrefix(issueStateBadge(iss), "closed · "), styleOK
 	case hand != "" && iss.Lane == "hand_off":
 		// The column already says the work is finished, and the marker is what
 		// a narrow card must not lose.
-		return "⇄ " + hand, toneMagenta
+		return ic("⇄ ") + hand, toneMagenta
 	case hand != "":
-		return "⇄ " + hand + " · " + tasks, toneMagenta
+		return ic("⇄ ") + hand + " · " + tasks, toneMagenta
 	case iss.Active:
-		return "▶ " + tasks, toneCyan
+		return ic("▶ ") + tasks, toneCyan
 	case iss.Lane == "hand_off":
 		return tasks, styleOK
 	}
-	return "○ " + tasks, styleDim
+	return ic("○ ") + tasks, styleDim
 }
 
 // filterBox is the rounded box above the board: the filter, and at its top
 // right what the board is showing.
 func (v *issuesView) filterBox(width int) []string {
-	body := []string{toneBlue.Render("⌕ ") + styleDim.Render(v.filter.Placeholder())}
+	body := []string{toneBlue.Render(ic("⌕ ")) + styleDim.Render(v.filter.Placeholder())}
 	if v.filtering || v.filter.Value() != "" {
 		v.filter.SetWidth(max(width-6, 10))
 		body = fieldRows("", v.filter)

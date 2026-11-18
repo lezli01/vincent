@@ -326,6 +326,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.broadcast(msg)
 	case boardConfigMsg, daemonConfigMsg, configSavedMsg:
 		m.applyHyperlinks(msg)
+		applyIcons(msg)
 		m.applyOutputLevel(msg)
 		m.applyKeymap(msg)
 		land := m.applyTabs(msg)
@@ -1910,6 +1911,26 @@ func (m *root) applyOutputLevel(msg tea.Msg) {
 	case configSavedMsg:
 		if msg.err == nil {
 			m.level.adopt(msg.cfg.TUI.Output.Level)
+		}
+	}
+}
+
+// applyIcons adopts `tui.icons` from whichever config answer arrived (task
+// 150.8). A failed fetch or a refused save changes nothing, for
+// applyHyperlinks' reason.
+func applyIcons(msg tea.Msg) {
+	switch msg := msg.(type) {
+	case boardConfigMsg:
+		if msg.err == nil {
+			setIconSet(msg.icons)
+		}
+	case daemonConfigMsg:
+		if msg.err == nil {
+			setIconSet(msg.config.TUI.Icons)
+		}
+	case configSavedMsg:
+		if msg.err == nil {
+			setIconSet(msg.cfg.TUI.Icons)
 		}
 	}
 }

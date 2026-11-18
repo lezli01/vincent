@@ -169,13 +169,13 @@ func (v *issueView) chatEventConcerns(ev apiclient.Event) bool {
 func chatStateGlyph(state string) string {
 	switch state {
 	case "running":
-		return "●"
+		return ic("●")
 	case "awaiting_input":
 		return attentionBadge
 	case "handed_off":
-		return "✓"
+		return ic("✓")
 	case "closed", "archived":
-		return "■"
+		return ic("■")
 	}
 	return "·"
 }

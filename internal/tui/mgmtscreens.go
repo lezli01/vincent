@@ -48,7 +48,7 @@ func mgmtCard(body []string, w, h int, selected bool) []string {
 
 // mgmtFilterBox is the rounded box at the top of a management screen.
 func mgmtFilterBox(filter *textField, typing bool, summary string, width int) []string {
-	body := []string{toneBlue.Render("⌕ ") + styleDim.Render(filter.Placeholder())}
+	body := []string{toneBlue.Render(ic("⌕ ")) + styleDim.Render(filter.Placeholder())}
 	if typing || filter.Value() != "" {
 		filter.SetWidth(max(width-6, 10))
 		body = fieldRows("", *filter)
@@ -94,7 +94,7 @@ func (p *projectsView) renderWide(width, height int) string {
 	if empty, ok := p.emptyBody(rows); ok {
 		body = styled(wrapText(strings.TrimSpace(ansi.Strip(empty)), max(listW-4, 1), wrapOpts{}), styleDim)
 	}
-	left := drawBox(toneBlue.Bold(true).Render("◆ Projects"), toneBlue.Render(strconv.Itoa(len(rows))), body, listW, h, edgesRounded, styleDim)
+	left := drawBox(toneBlue.Bold(true).Render(ic("◆ Projects")), toneBlue.Render(strconv.Itoa(len(rows))), body, listW, h, edgesRounded, styleDim)
 	return strings.Join(append(lines, joinColumns(left, p.attentionPane(paneW, h))...), "\n")
 }
 
@@ -141,23 +141,23 @@ func (p *projectsView) projectGrid(rows []apiclient.Project, cardW, perRow, room
 // projectCard is one project's figures.
 func (p *projectsView) projectCard(pr apiclient.Project, w int, selected bool) []string {
 	inner := max(w-4, 1)
-	head := padBetweenCells(toneMagenta.Bold(true).Render(headerProjectGlyph+" "+ansi.Truncate(oneLine(pr.Name), max(inner-12, 4), "…")),
+	head := padBetweenCells(toneMagenta.Bold(true).Render(ic(headerProjectGlyph)+" "+ansi.Truncate(oneLine(pr.Name), max(inner-12, 4), "…")),
 		styleDim.Render(p.overviewCell(pr, ocActivity)), inner)
 	stats := strings.Join([]string{
 		styleWarn.Bold(true).Render(attentionBadge + " " + p.overviewCell(pr, ocAttention)),
-		toneCyan.Render("▶ " + p.overviewCell(pr, ocRunning)),
-		toneBlue.Render("◷ " + p.overviewCell(pr, ocQueued)),
-		styleBad.Render("✗ " + p.overviewCell(pr, ocBlocked)),
-		styleOK.Render("✓ " + p.overviewCell(pr, ocDone)),
+		toneCyan.Render(ic("▶ ") + p.overviewCell(pr, ocRunning)),
+		toneBlue.Render(ic("◷ ") + p.overviewCell(pr, ocQueued)),
+		styleBad.Render(ic("✗ ") + p.overviewCell(pr, ocBlocked)),
+		styleOK.Render(ic("✓ ") + p.overviewCell(pr, ocDone)),
 	}, "   ")
 	link := styleDim.Render("local only")
 	if gh := p.githubCell(pr.ID); gh != overviewDash {
-		link = toneCyan.Render("⇅ " + strings.TrimPrefix(gh, "✓ "))
+		link = toneCyan.Render(ic("⇅ ") + strings.TrimPrefix(gh, ic("✓ ")))
 	}
 	body := []string{
 		head, "", stats, "",
-		"▦ " + p.overviewCell(pr, ocIssues) + styleDim.Render(" issues (imported)"),
-		"◌ " + p.overviewCell(pr, ocChats) + styleDim.Render(" chats (waiting)"),
+		ic("▦ ") + p.overviewCell(pr, ocIssues) + styleDim.Render(" issues (imported)"),
+		ic("◌ ") + p.overviewCell(pr, ocChats) + styleDim.Render(" chats (waiting)"),
 		link,
 	}
 	return mgmtCard(body, w, projectCardH, selected)
@@ -232,18 +232,18 @@ func (d *daemonView) renderWide(width, height int) string {
 		configBorder = styleFocus
 	}
 	top := joinColumns(
-		drawBox(styleTitle.Render("◉ Daemon"), styleDim.Render(fmt.Sprintf("up %s · pid %d", formatUptime(d.info.Uptime(d.now())), d.info.PID)), identity, w, topH, edgesRounded, styleDim),
+		drawBox(styleTitle.Render(ic("◉ Daemon")), styleDim.Render(fmt.Sprintf("up %s · pid %d", formatUptime(d.info.Uptime(d.now())), d.info.PID)), identity, w, topH, edgesRounded, styleDim),
 		joinColumns(
-			drawBox(styleTitle.Render("⚙ Config in effect"), "", config, w, topH, edgesRounded, configBorder),
-			drawBox(styleTitle.Render("▤ Database"), "", database, width-2*w, topH, edgesRounded, styleDim),
+			drawBox(styleTitle.Render(ic("⚙ Config in effect")), "", config, w, topH, edgesRounded, configBorder),
+			drawBox(styleTitle.Render(ic("▤ Database")), "", database, width-2*w, topH, edgesRounded, styleDim),
 		),
 	)
-	top = append(top, drawBox(styleTitle.Render("◈ Adapters"), "", adapters, width, adapterH, edgesRounded, styleDim)...)
+	top = append(top, drawBox(styleTitle.Render(ic("◈ Adapters")), "", adapters, width, adapterH, edgesRounded, styleDim)...)
 	log := strings.Split(d.renderLog(max(logH-1, 2)), "\n")
 	if len(log) > 1 {
 		log = log[1:]
 	}
-	return strings.Join(append(top, drawBox(styleTitle.Render("≡ Recent log"), "", log, width, logH, edgesRounded, styleDim)...), "\n")
+	return strings.Join(append(top, drawBox(styleTitle.Render(ic("≡ Recent log")), "", log, width, logH, edgesRounded, styleDim)...), "\n")
 }
 
 // Triggers.
@@ -287,7 +287,7 @@ func (v *triggersView) renderWide(width, height int) string {
 	if len(rows) == 0 {
 		cards = []string{styleDim.Render("no triggers here — a creates one, and it starts disabled")}
 	}
-	left := drawBox(toneBlue.Bold(true).Render("⚡ Triggers"), toneBlue.Render(strconv.Itoa(len(rows))), cards, listW, h, edgesRounded, styleDim)
+	left := drawBox(toneBlue.Bold(true).Render(ic("⚡ Triggers")), toneBlue.Render(strconv.Itoa(len(rows))), cards, listW, h, edgesRounded, styleDim)
 
 	detailW := width - listW
 	body := v.detailLines(detailW - 4)
@@ -309,7 +309,7 @@ func (v *triggersView) triggerCard(s apiclient.TriggerSummary, w int, selected b
 	}
 	poll, pollStyle := trigPollCell(s)
 	return mgmtCard([]string{
-		padBetweenCells(toneMagenta.Bold(true).Render("⚡ "+ansi.Truncate(oneLine(s.ID), max(inner-16, 4), "…")), armStyle.Bold(true).Reverse(true).Render(" "+armed+" "), inner),
+		padBetweenCells(toneMagenta.Bold(true).Render(ic("⚡ ")+ansi.Truncate(oneLine(s.ID), max(inner-16, 4), "…")), armStyle.Bold(true).Reverse(true).Render(" "+armed+" "), inner),
 		flow, "",
 		padBetweenCells(pollStyle.Render("poll "+poll)+styleDim.Render(" · "+v.ago(s.Poll.LastPollAt)), styleDim.Render("fired "+v.ago(s.Poll.LastFireAt)), inner),
 	}, w, triggerCardH, selected)
@@ -395,8 +395,8 @@ func (v *pullRequestsView) renderWide(width, height int) string {
 	laneW := (width - paneW) / pullColumnCount
 	cols := v.pullLaneRows()
 	v.hits = nil
-	left := v.pullLane(toneCyan.Bold(true).Render("▶ Linked to a task"), rows, cols[pullColumnLinked], 0, len(lines), laneW, h)
-	right := v.pullLane(styleDim.Render("○ Unclaimed"), rows, cols[pullColumnUnclaimed], laneW, len(lines), width-paneW-laneW, h)
+	left := v.pullLane(toneCyan.Bold(true).Render(ic("▶ Linked to a task")), rows, cols[pullColumnLinked], 0, len(lines), laneW, h)
+	right := v.pullLane(styleDim.Render(ic("○ Unclaimed")), rows, cols[pullColumnUnclaimed], laneW, len(lines), width-paneW-laneW, h)
 	return strings.Join(append(lines, joinColumns(joinColumns(left, right), v.pullPreview(paneW, h))...), "\n")
 }
 
@@ -436,12 +436,12 @@ func (v *pullRequestsView) pullCard(p apiclient.GitHubPullRequest, w int, select
 	inner := max(w-4, 1)
 	link := styleDim.Render("no task")
 	if p.TaskID != nil {
-		link = toneCyan.Render("▶ task #" + strconv.FormatInt(*p.TaskID, 10))
+		link = toneCyan.Render(ic("▶ task #") + strconv.FormatInt(*p.TaskID, 10))
 	}
 	return mgmtCard([]string{
 		padBetweenCells(styleKey.Render("#"+strconv.Itoa(p.Number))+"  "+pullStatePill(p), styleDim.Render(issueAge(v.now(), p.UpdatedAt)), inner),
 		ansi.Truncate(oneLine(p.Title), inner, "…"),
-		toneCyan.Render(ansi.Truncate("⎇ "+oneLine(p.HeadBranch)+" → "+oneLine(p.BaseBranch), inner, "…")),
+		toneCyan.Render(ansi.Truncate(ic("⎇ ")+oneLine(p.HeadBranch)+" → "+oneLine(p.BaseBranch), inner, "…")),
 		link,
 	}, w, pullCardH, selected)
 }
@@ -459,7 +459,7 @@ func (v *pullRequestsView) pullPreview(w, h int) []string {
 	if p.Author != "" {
 		body = append(body, styleDim.Render("by "+oneLine(p.Author)))
 	}
-	body = append(body, toneCyan.Render(ansi.Truncate("⎇ "+oneLine(p.HeadBranch), inner, "…")), "", styleTitle.Render("✓ Checks"))
+	body = append(body, toneCyan.Render(ansi.Truncate(ic("⎇ ")+oneLine(p.HeadBranch), inner, "…")), "", styleTitle.Render(ic("✓ Checks")))
 	body = append(body, v.pullCheckLines(p, inner)...)
 	if p.TaskID != nil {
 		task := "#" + strconv.FormatInt(*p.TaskID, 10)
@@ -468,7 +468,7 @@ func (v *pullRequestsView) pullPreview(w, h int) []string {
 			task += " " + oneLine(t.Title)
 			state = stateWords(t.State)
 		}
-		body = append(body, "", styleTitle.Render("▶ Task"), ansi.Truncate(task, inner, "…"), styleDim.Render(state))
+		body = append(body, "", styleTitle.Render(ic("▶ Task")), ansi.Truncate(task, inner, "…"), styleDim.Render(state))
 	}
 	return drawBox(styleKey.Render("#"+strconv.Itoa(p.Number)), "", body, w, h, edgesRounded, styleDim)
 }
@@ -490,14 +490,14 @@ func (v *pullRequestsView) pullCheckLines(p apiclient.GitHubPullRequest, inner i
 	}
 	out := make([]string, 0, len(held.runs))
 	for _, r := range held.runs {
-		glyph, style := "○", styleDim
+		glyph, style := ic("○"), styleDim
 		switch r.State {
 		case "success":
-			glyph, style = "✓", styleOK
+			glyph, style = ic("✓"), styleOK
 		case "failure", "timed_out", "cancelled", "action_required":
-			glyph, style = "✗", styleBad
+			glyph, style = ic("✗"), styleBad
 		case "in_progress":
-			glyph, style = "●", toneCyan
+			glyph, style = ic("●"), toneCyan
 		}
 		out = append(out, style.Render(glyph+" ")+ansi.Truncate(oneLine(r.Name), max(inner-2, 1), "…"))
 	}

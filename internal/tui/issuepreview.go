@@ -139,7 +139,7 @@ func (v *issuesView) previewFacts(iss apiclient.Issue, section, inner int) []str
 	out := styled(wrapText(iss.Title, inner, wrapOpts{maxLines: 3}), styleTitle)
 
 	look := issueLaneLooks[section]
-	state := look.tone.Bold(true).Reverse(true).Render(" " + look.glyph + " " + issueLaneTitle(issueSections[section].label) + " ")
+	state := look.tone.Bold(true).Reverse(true).Render(" " + ic(look.glyph) + " " + issueLaneTitle(issueSections[section].label) + " ")
 	if iss.Attention {
 		state += "  " + styleWarn.Bold(true).Render(attentionBadge+" needs you")
 	}
@@ -155,7 +155,7 @@ func (v *issuesView) previewFacts(iss apiclient.Issue, section, inner int) []str
 	}
 
 	status, style := issueCardStatus(iss)
-	out = append(out, "", styleTitle.Render("▶ Work"))
+	out = append(out, "", styleTitle.Render(ic("▶ Work")))
 	out = append(out, styled(wrapText(status, inner, wrapOpts{maxLines: 2}), style)...)
 	if iss.MainWorktree != nil && iss.MainWorktree.Branch != "" {
 		out = append(out, toneCyan.Render(iss.MainWorktree.Branch))
@@ -172,7 +172,7 @@ func previewMeta(iss apiclient.Issue, now time.Time) string {
 	if iss.Author != "" {
 		parts = append(parts, "by "+oneLine(iss.Author))
 	}
-	if age := strings.TrimPrefix(issueAge(now, iss.CreatedAt), "◷ "); age == "now" {
+	if age := strings.TrimPrefix(issueAge(now, iss.CreatedAt), ic("◷ ")); age == "now" {
 		parts = append(parts, "opened just now")
 	} else if age != "" {
 		parts = append(parts, "opened "+age+" ago")
@@ -204,7 +204,7 @@ func previewDescription(lines []string, inner, room int) []string {
 	if room < 2 {
 		return nil
 	}
-	out := []string{styleTitle.Render("≡ Description")}
+	out := []string{styleTitle.Render(ic("≡ Description"))}
 	if len(lines) <= room-1 {
 		return append(out, lines...)
 	}

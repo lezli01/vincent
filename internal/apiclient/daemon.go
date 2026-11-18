@@ -203,6 +203,9 @@ type ConfigTUI struct {
 	Board ConfigBoard `json:"board"`
 	// Hyperlinks turns on OSC 8 links in the output pane (task 111).
 	Hyperlinks bool `json:"hyperlinks"`
+	// Icons is `tui.icons` (task 150.8): unicode or nerd. Empty from a daemon
+	// that predates the key, which reads as unicode.
+	Icons string `json:"icons"`
 	// Keys is `tui.keys`: operation id → key, overriding the shipped keymap
 	// (task 118). Empty is the shipped keymap. The daemon has already refused
 	// a map that breaks §15's vocabulary, so what arrives here is one the TUI
@@ -543,6 +546,8 @@ type ConfigContainerPatch struct {
 type ConfigTUIPatch struct {
 	Board      *ConfigBoardPatch `json:"board,omitempty"`
 	Hyperlinks *bool             `json:"hyperlinks,omitempty"`
+	// Icons sets `tui.icons` (task 150.8).
+	Icons *string `json:"icons,omitempty"`
 	// Keys replaces the whole map; a pointer to an empty map restores the
 	// shipped keymap.
 	Keys   *map[string]string `json:"keys,omitempty"`

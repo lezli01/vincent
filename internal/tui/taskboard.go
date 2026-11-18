@@ -381,7 +381,7 @@ func (b *board) renderCards(width, height int) string {
 	}
 	if body, ok := b.emptyBody(b.rowsForEmpty()); ok {
 		text := strings.TrimSpace(ansi.Strip(body))
-		box := drawBox(toneBlue.Bold(true).Render("▶ Tasks"), "", styled(wrapText(text, max(width-4, 1), wrapOpts{}), styleDim), width, room, edgesRounded, styleDim)
+		box := drawBox(toneBlue.Bold(true).Render(ic("▶ Tasks")), "", styled(wrapText(text, max(width-4, 1), wrapOpts{}), styleDim), width, room, edgesRounded, styleDim)
 		return strings.Join(append(lines, box...), "\n")
 	}
 	boardW := width
@@ -411,7 +411,7 @@ func (b *board) rowsForEmpty() []boardRow {
 
 // cardFilterBox is the rounded box above the columns.
 func (b *board) cardFilterBox(width int) []string {
-	body := []string{toneBlue.Render("⌕ ") + styleDim.Render(b.filter.Placeholder())}
+	body := []string{toneBlue.Render(ic("⌕ ")) + styleDim.Render(b.filter.Placeholder())}
 	if b.filtering || b.filter.Value() != "" {
 		b.filter.SetWidth(max(width-6, 10))
 		body = fieldRows("", b.filter)
@@ -472,9 +472,9 @@ func (b *board) cardNotices(width int) []string {
 func archiveSwitch(tasks bool) string {
 	on, off := styleTabActive, styleDim
 	if tasks {
-		return on.Render(" ▶ Tasks ") + " " + off.Render(" ◌ Chats ")
+		return on.Render(ic(" ▶ Tasks ")) + " " + off.Render(ic(" ◌ Chats "))
 	}
-	return off.Render(" ▶ Tasks ") + " " + on.Render(" ◌ Chats ")
+	return off.Render(ic(" ▶ Tasks ")) + " " + on.Render(ic(" ◌ Chats "))
 }
 
 // cardColumns draws the columns that fit, the cursor's always among them.
@@ -517,9 +517,9 @@ func (b *board) cardColumns(width, height, top int) []string {
 // cardColumn draws one column, scrolled to keep the cursor on screen.
 func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit string, x, top, w, h int, more issueLaneMore) []string {
 	look := taskColumnLooks[c]
-	title := look.tone.Bold(true).Render(look.glyph + " " + look.name)
+	title := look.tone.Bold(true).Render(ic(look.glyph) + " " + look.name)
 	if b.archived {
-		title = toneBlue.Bold(true).Render("▣ Archived tasks")
+		title = toneBlue.Bold(true).Render(ic("▣ Archived tasks"))
 	}
 	if more.left {
 		title = styleDim.Render("‹ ") + title
@@ -596,10 +596,10 @@ func cardGroupHeader(g taskCardGroup, selected, lit bool, w int) string {
 	if g.folded {
 		fold = "▸ "
 	}
-	mark, name := "○ ", "No issue"
+	mark, name := ic("○ "), "No issue"
 	style, markStyle := styleDim, styleDim
 	if g.issue != nil {
-		mark = "▦ #" + strconv.FormatInt(g.issue.ID, 10) + " "
+		mark = ic("▦ #") + strconv.FormatInt(g.issue.ID, 10) + " "
 		name = oneLine(g.issue.Title)
 		if strings.TrimSpace(g.issue.State) == issueStateClosed {
 			name += " · closed"
@@ -645,10 +645,10 @@ func (b *board) taskCard(t apiclient.Task, selected bool, w int) []string {
 	}
 	head := styleKey.Render("#" + strconv.FormatInt(t.ID, 10))
 	if b.marks.has(t.ID) {
-		head = styleFocus.Render("◆ ") + head
+		head = styleFocus.Render(ic("✔ ")) + head
 	}
 	if t.Workflow != "" {
-		head += "  " + toneMagenta.Render("⟡ "+oneLine(t.Workflow))
+		head += "  " + toneMagenta.Render(ic("⟡ ")+oneLine(t.Workflow))
 	}
 	age := styleDim.Render(issueAge(b.now(), t.UpdatedAt))
 	if room := inner - ansi.StringWidth(age) - 1; ansi.StringWidth(head) > room {
@@ -663,7 +663,7 @@ func (b *board) taskCard(t apiclient.Task, selected bool, w int) []string {
 		}
 		body = append(body, line)
 	}
-	body = append(body, padBetweenCells(taskCardProgress(t), toneCyan.Render(formatPR(t.GitHubPull)), inner))
+	body = append(body, padBetweenCells(taskCardProgress(t), toneCyan.Render(ic(formatPR(t.GitHubPull))), inner))
 	status, style := taskCardStatus(t, b.now())
 	body = append(body, style.Render(status))
 	return drawBox("", "", body, w, taskCardH, edges, border)
@@ -691,15 +691,15 @@ func taskStepDots(t apiclient.Task) string {
 	for i := range t.StepTotal {
 		switch {
 		case i < t.CurrentStep || t.State == stateDone:
-			b.WriteString(styleOK.Render("✓"))
+			b.WriteString(styleOK.Render(ic("✓")))
 		case i > t.CurrentStep:
-			b.WriteString(styleDim.Render("○"))
+			b.WriteString(styleDim.Render(ic("○")))
 		case t.State == stateBlocked || t.State == stateAborted:
-			b.WriteString(styleBad.Render("✗"))
+			b.WriteString(styleBad.Render(ic("✗")))
 		case t.State == stateQueued:
-			b.WriteString(styleDim.Render("○"))
+			b.WriteString(styleDim.Render(ic("○")))
 		default:
-			b.WriteString(styleOK.Render("●"))
+			b.WriteString(styleOK.Render(ic("●")))
 		}
 	}
 	return b.String()
@@ -720,31 +720,31 @@ func taskCardStatus(t apiclient.Task, now time.Time) (string, lipgloss.Style) {
 		return attentionBadge + " needs your approval", styleWarn
 	case stateAwaitingChildren:
 		if c := t.Children; c != nil {
-			return fmt.Sprintf("⑂ %d of %d lanes done", c.Settled, c.Total), toneMagenta
+			return fmt.Sprintf(ic("⑂ %d of %d lanes done"), c.Settled, c.Total), toneMagenta
 		}
-		return "⑂ waiting on its lanes", toneMagenta
+		return ic("⑂ waiting on its lanes"), toneMagenta
 	case stateRunning:
 		if t.StatusMessage != nil && strings.TrimSpace(*t.StatusMessage) != "" {
-			return "▶ " + oneLine(*t.StatusMessage), toneCyan
+			return ic("▶ ") + oneLine(*t.StatusMessage), toneCyan
 		}
 		if d, ok := t.Elapsed(now); ok {
-			return "▶ running · " + formatElapsed(d), toneCyan
+			return ic("▶ running · ") + formatElapsed(d), toneCyan
 		}
-		return "▶ running", toneCyan
+		return ic("▶ running"), toneCyan
 	case stateQueued:
 		if t.AdmitNotBefore != nil {
-			return "◷ " + boardStateLabel(t), styleWarn
+			return ic("◷ ") + boardStateLabel(t), styleWarn
 		}
-		return "◷ waiting for a slot", styleDim
+		return ic("◷ waiting for a slot"), styleDim
 	case statePaused:
-		return "⏸ paused", styleWarn
+		return ic("⏸ paused"), styleWarn
 	case stateDone:
 		if t.CostUSD != nil {
-			return "✓ done · " + formatCost(t.CostUSD), styleOK
+			return ic("✓ done · ") + formatCost(t.CostUSD), styleOK
 		}
-		return "✓ done", styleOK
+		return ic("✓ done"), styleOK
 	case stateAborted:
-		return "✗ " + stateWords(t.State), styleDim
+		return ic("✗ ") + stateWords(t.State), styleDim
 	}
 	return "· " + stateWords(t.State), styleDim
 }
@@ -851,15 +851,15 @@ func (b *board) taskPreviewPane(w, h int) []string {
 	if meta := taskPreviewMeta(t, b.now()); meta != "" {
 		body = append(body, styleDim.Render(ansi.Truncate(meta, inner, "…")), "")
 	}
-	body = append(body, styleTitle.Render("▤ Steps"))
+	body = append(body, styleTitle.Render(ic("▤ Steps")))
 	body = append(body, b.previewSteps(t, inner)...)
 	if t.Issue != nil {
-		body = append(body, "", toneBlue.Bold(true).Render("▦ Issue #"+strconv.FormatInt(t.Issue.ID, 10))+" "+
-			ansi.Truncate(oneLine(t.Issue.Title), max(inner-ansi.StringWidth("▦ Issue #"+strconv.FormatInt(t.Issue.ID, 10))-1, 1), "…"))
+		body = append(body, "", toneBlue.Bold(true).Render(ic("▦ Issue #")+strconv.FormatInt(t.Issue.ID, 10))+" "+
+			ansi.Truncate(oneLine(t.Issue.Title), max(inner-ansi.StringWidth(ic("▦ Issue #")+strconv.FormatInt(t.Issue.ID, 10))-1, 1), "…"))
 		body = append(body, b.issueTally(t.Issue.ID, inner))
 	}
 	if actions := taskPreviewActions(t, inner); len(actions) > 0 {
-		body = append(append(body, "", styleTitle.Render("⚡ What you can do")), actions...)
+		body = append(append(body, "", styleTitle.Render(ic("⚡ What you can do"))), actions...)
 	}
 	return drawBox(styleKey.Render("#"+strconv.FormatInt(t.ID, 10)), "", body, w, h, edgesRounded, styleDim)
 }
@@ -888,7 +888,7 @@ func taskPreviewMeta(t apiclient.Task, now time.Time) string {
 		parts = append(parts, oneLine(t.Workflow))
 	}
 	if t.StartedAt != nil {
-		if age := strings.TrimPrefix(issueAge(now, *t.StartedAt), "◷ "); age == "now" {
+		if age := strings.TrimPrefix(issueAge(now, *t.StartedAt), ic("◷ ")); age == "now" {
 			parts = append(parts, "started just now")
 		} else if age != "" {
 			parts = append(parts, "started "+age+" ago")
@@ -937,15 +937,15 @@ func (b *board) previewSteps(t apiclient.Task, inner int) []string {
 func taskStepGlyph(state string) (string, lipgloss.Style) {
 	switch state {
 	case "succeeded":
-		return "✓", styleOK
+		return ic("✓"), styleOK
 	case "failed", "timed_out", "interrupted":
-		return "✗", styleBad
+		return ic("✗"), styleBad
 	case "skipped", stepStateStopped:
 		return "–", styleDim
 	case "running":
-		return "●", toneCyan
+		return ic("●"), toneCyan
 	}
-	return "○", styleDim
+	return ic("○"), styleDim
 }
 
 // issueTally counts an issue's tasks across the columns.
@@ -961,7 +961,7 @@ func (b *board) issueTally(issue int64, inner int) string {
 	for c, n := range counts {
 		if n > 0 {
 			look := taskColumnLooks[c]
-			parts = append(parts, look.tone.Render(look.glyph+" "+strconv.Itoa(n)+" "+words[c]))
+			parts = append(parts, look.tone.Render(ic(look.glyph)+" "+strconv.Itoa(n)+" "+words[c]))
 		}
 	}
 	return ansi.Truncate(strings.Join(parts, "  "), inner, "…")
