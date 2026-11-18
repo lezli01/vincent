@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -140,32 +139,27 @@ type issuesView struct {
 	loadErr  error
 	lastLoad time.Time
 
-	// cursor indexes lines(). selected is the issue under it and
-	// selectedLane the folded section, so a re-list that reorders the rows
-	// — every update moves an issue to the top, and a task can move it to
-	// another section — keeps the selection on the thing rather than on the
-	// index (remember).
-	cursor       int
-	selected     int64
-	selectedLane string
-	// What the last render drew, for a click (§15 Mouse): the screen line
-	// the list's window starts on, the body line it starts at, how many it
-	// shows, and the body line of lines()[0] (-1 when no list is drawn).
-	clickTop, clickFrom, clickShown, listAt int
-	// page is how many body rows the last render showed, at least one: the
-	// step pgup and pgdown move the selection by (#796).
+	// cursor indexes lines(). selected is the issue under it, so a re-list
+	// that reorders the rows — every update moves an issue to the top, and a
+	// task can move it to another lane — keeps the selection on the thing
+	// rather than on the index (remember).
+	cursor   int
+	selected int64
+	// cardHits is where the last render drew each card, for a click (§15
+	// Mouse).
+	cardHits []issueCardHit
+	// page is how many cards the selection's column showed in the last
+	// render, at least one: the step pgup and pgdown move the selection by
+	// (#796).
 	page int
-	// folded is the set of collapsed sections, by lane. Session-only, and
-	// kept across a project switch, as the filter is.
-	folded map[string]bool
 
 	filter    textField
 	filtering bool
 
-	// showDone is `s`'s toggle (task 134 decision 5): hidden, the default,
-	// lists `state=open` and draws three sections; shown lists every state
-	// and draws `done` fourth. Session-only, and kept across a project
-	// switch.
+	// showDone is `s`'s toggle (task 134 decision 5): shown, the default
+	// since the board's columns (task 150 decision 3), lists every state and
+	// draws `done` fourth; hidden lists `state=open` and draws three columns.
+	// Session-only, and kept across a project switch.
 	showDone    bool
 	note        string
 	noteBad     bool
@@ -185,7 +179,7 @@ func newIssuesView() *issuesView {
 	fi := newTextField()
 	fi.SetPlaceholder("filter by id, title, label or kind")
 	fi.SetPrompt("/")
-	v := &issuesView{now: time.Now, filter: fi, folded: map[string]bool{}, w: newIssueWrites()}
+	v := &issuesView{now: time.Now, filter: fi, showDone: true, page: 1, w: newIssueWrites()}
 	v.reload = v.loadCmd
 	return v
 }
@@ -205,13 +199,13 @@ func (v *issuesView) setProjects(ps []apiclient.Project) { v.noProjects = len(ps
 // reload goes out (task 132.11), so the issues of the project just left are
 // never shown under the name of the one just chosen, and the header reads
 // "loading ‹name›…" until the stamped load lands. The filter text, the
-// `done` toggle and the folds stay: they say what the human wants to see,
+// `done` toggle stay: they say what the human wants to see,
 // not where.
 func (v *issuesView) setProject(p projectSel) tea.Cmd {
 	if p.id != v.project.id {
 		v.issues, v.loaded, v.loadErr = nil, false, nil
 		v.lastLoad = time.Time{}
-		v.cursor, v.selected, v.selectedLane = 0, 0, ""
+		v.cursor, v.selected = 0, 0
 		v.w.act = nil
 		v.picked, v.handoff = nil, nil
 	}
@@ -358,8 +352,8 @@ func (v *issuesView) update(msg tea.Msg) (panel, tea.Cmd) {
 	return v, nil
 }
 
-// updateWheel is one wheel notch on the list (task 114 decision 5, #792):
-// the selection moves one row, as a notch moves one task on the home board.
+// updateWheel is one wheel notch on the board (task 114 decision 5, #792):
+// the selection moves one card, as a notch moves one task on the home board.
 // The form and the prompt own the wheel as they own the keyboard (task 078
 // decision 3) — the prompt names the issue under the cursor.
 func (v *issuesView) updateWheel(msg tea.MouseWheelMsg) {
@@ -374,22 +368,18 @@ func (v *issuesView) updateWheel(msg tea.MouseWheelMsg) {
 	}
 }
 
-// updateClick selects the row under the pointer — an issue or a section
-// header (§15 Mouse: "click a row to select it").
+// updateClick selects the card under the pointer (§15 Mouse: "click a row to
+// select it").
 func (v *issuesView) updateClick(msg tea.MouseClickMsg) {
-	if v.w.open() || msg.Button != tea.MouseLeft || v.listAt < 0 {
+	if v.w.open() || msg.Button != tea.MouseLeft {
 		return
 	}
-	if msg.Y < v.clickTop || msg.Y >= v.clickTop+v.clickShown {
-		return
+	for _, h := range v.cardHits {
+		if msg.X >= h.x0 && msg.X < h.x1 && msg.Y >= h.y0 && msg.Y < h.y1 {
+			v.selectIssue(h.id)
+			return
+		}
 	}
-	i := v.clickFrom + msg.Y - v.clickTop - v.listAt
-	lines := v.lines()
-	if i < 0 || i >= len(lines) || !lines[i].selectable() {
-		return
-	}
-	v.cursor = i
-	v.remember(lines)
 }
 
 // loadCmd lists the selected project's issues in one call. With no project
@@ -578,16 +568,10 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.toggleDone()
 		return v, v.loadCmd()
 	case "left":
-		v.fold(true)
+		v.moveLane(-1)
 		return v, nil
 	case "right":
-		v.fold(false)
-		return v, nil
-	case "C":
-		v.foldAll(true)
-		return v, nil
-	case "O":
-		v.foldAll(false)
+		v.moveLane(1)
 		return v, nil
 	case opKey(keymap.OpenRow):
 		row, ok := v.current()
@@ -726,12 +710,10 @@ func syncedNote(msg issuesSyncedMsg) string {
 
 // toggleDone shows or hides the `done` section (task 134 decision 5). It
 // replaces the open → closed → all cycle: a closed issue is `done`, so the
-// one question left is whether to see them. Shown, the section opens
-// expanded.
+// one question left is whether to see them.
 func (v *issuesView) toggleDone() {
 	v.showDone = !v.showDone
 	if v.showDone {
-		delete(v.folded, issueLaneDone)
 		v.setNote("showing the done lane…", false)
 		return
 	}
@@ -804,14 +786,9 @@ func (v *issuesView) render(width, height int) string {
 		return v.w.form.render(width, height)
 	}
 	lines := make([]string, 0, height)
-	lines = append(lines, v.headerLine(width))
-	if v.filtering || v.filter.Value() != "" {
-		v.filter.SetWidth(max(width-1, 10))
-		lines = append(lines, fieldRows(" ", v.filter)...)
-	}
-	lines = append(lines, "")
+	lines = append(lines, v.filterBox(width)...)
+	lines = append(lines, v.bodyNotice(width)...)
 
-	body, cursorRow := v.bodyLines(width)
 	var footer []string
 	if v.note != "" {
 		style := styleDim
@@ -819,21 +796,19 @@ func (v *issuesView) render(width, height int) string {
 			style = styleBad
 		}
 		// The note wraps (#796), and fitFooter counts the lines it takes.
-		footer = append([]string{""}, styled(wrapText(v.note, width, hanging("  ")), style)...)
+		footer = styled(wrapText(v.note, width, hanging("  ")), style)
 	}
 	tail := 0
 	if v.w.act != nil {
 		footer, tail = v.w.act.lines(width)
 	}
-	// The prompt wins over the list, as it does on the detail (#795,
-	// review F11): the rows shrink to nothing before the prompt loses a line.
+	// The prompt wins over the board (#795, review F11): the columns shrink
+	// to nothing before the prompt loses a line.
 	footer = fitFooter(footer, max(height-len(lines), 0), tail)
-	room := height - len(lines) - len(footer)
-	shown, start, rows, above := cuedWindow(body, cursorRow, max(room, 0))
-	// A click hit-tests the body rows only: a cue line selects nothing.
-	v.clickTop, v.clickFrom, v.clickShown = len(lines)+above, start, rows
-	v.page = max(rows, 1)
-	lines = append(lines, shown...)
+	v.cardHits = nil
+	if room := height - len(lines) - len(footer); room >= 3 && v.boardShown() {
+		lines = append(lines, v.boardLines(width, room, len(lines))...)
+	}
 	lines = append(lines, footer...)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
@@ -841,39 +816,16 @@ func (v *issuesView) render(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// cuedWindow is window with the issue detail's overflow cues (#796): a dim
-// `▲ n more` line while the body continues above and `▼ n more` while it
-// continues below, each counting the hidden lines that are not blank and
-// each taking one line of the height. It returns the lines to draw, the
-// body line the shown rows start at, how many body rows are shown, and how
-// many cue lines precede them. A height under three keeps the plain window:
-// a cue there would leave no room for the row it is about.
-func cuedWindow(body []string, focus, height int) (out []string, start, rows, above int) {
-	if height <= 0 {
-		return nil, 0, 0, 0
-	}
-	start, rows, above = cuedSpan(len(body), focus, height)
-	end := start + rows
-	if above > 0 {
-		out = append(out, styleDim.Render(fmt.Sprintf("  ▲ %d more", nonBlank(body[:start]))))
-	}
-	out = append(out, body[start:end]...)
-	if end < len(body) && len(body) > height && height >= 3 {
-		out = append(out, styleDim.Render(fmt.Sprintf("  ▼ %d more", nonBlank(body[end:]))))
-	}
-	return out, start, rows, above
-}
-
-// cuedSpan is cuedWindow's arithmetic without the lines: for an n-line body
+// cuedSpan is the arithmetic of a window with overflow cues: for an n-line body
 // in height rows focused on line focus, the body line the shown rows start
-// at, how many are shown, and how many cue lines precede them.
-func cuedSpan(n, focus, height int) (start, rows, above int) {
+// at and how many are shown.
+func cuedSpan(n, focus, height int) (start, rows int) {
 	if height <= 0 {
-		return 0, 0, 0
+		return 0, 0
 	}
 	if n <= height || height < 3 {
 		start = windowStart(n, focus, height)
-		return start, min(n, height), 0
+		return start, min(n, height)
 	}
 	// One cue first; both only when the window sits away from either end.
 	h := height - 1
@@ -882,233 +834,42 @@ func cuedSpan(n, focus, height int) (start, rows, above int) {
 		h = height - 2
 		start = windowStart(n, focus, h)
 	}
-	if start > 0 {
-		above = 1
-	}
-	return start, h, above
+	return start, h
 }
 
-func (v *issuesView) headerLine(width int) string {
-	left := " " + styleTitle.Render("issues")
-	switch {
-	case v.project.id == 0:
-		left += styleDim.Render("  ·  no project selected")
-	case !v.loaded && v.loading:
-		// The project's name, not a bare "listing…": after a switch this is
-		// the one line saying which project the empty list is waiting on.
-		left += styleDim.Render("  ·  loading " + v.project.name + "…")
-	case v.loaded:
-		left += styleDim.Render("  ·  " + plural(len(v.issues), "issue", "issues"))
-	}
-	if n := len(v.picked); n > 0 {
-		left += "  " + styleFocus.Render(strconv.Itoa(n)+" selected")
-	}
-	right := ""
-	if !v.lastLoad.IsZero() {
-		right = styleDim.Render("updated "+v.lastLoad.Format("15:04:05")) + " "
-	}
-	return padBetween(left, right, width)
-}
+// boardShown reports whether there is a listing to draw columns for: a failed
+// reload keeps the last one on screen under its error.
+func (v *issuesView) boardShown() bool { return v.project.id != 0 && v.loaded }
 
-// totalsLine counts the listing per section, unfiltered: `N open · N in
-// progress · N hand-off`, then the `done` count once `s` shows it, or a dim
-// reminder that it is hidden and which key shows it.
-func (v *issuesView) totalsLine() string {
-	totals := v.laneTotals()
-	parts := make([]string, 0, len(issueSections))
-	for i := range len(issueSections) - 1 {
-		parts = append(parts, strconv.Itoa(totals[i])+" "+issueSections[i].label)
-	}
-	line := "  " + strings.Join(parts, " · ")
-	if v.showDone {
-		return line + " · " + strconv.Itoa(totals[len(issueSections)-1]) + " " + issueLaneDone
-	}
-	return line + styleDim.Render(" · "+issueLaneDone+" hidden ("+opKey(keymap.Scope)+")")
-}
-
-func (v *issuesView) bodyLines(width int) (lines []string, cursorRow int) {
-	v.listAt = -1
-	// The prose here wraps to the pane under its 2-column margin (#796)
-	// rather than meeting render's cut: an error or a hint is read whole.
+// bodyNotice is the prose above the board, or in place of it. It wraps to the
+// pane (#796) rather than meeting render's cut: an error or a hint is read
+// whole.
+func (v *issuesView) bodyNotice(width int) []string {
 	prose := func(text string, style lipgloss.Style) []string {
 		return styled(wrapText(text, width, hanging("  ")), style)
 	}
-	if v.project.id == 0 {
+	switch {
+	case v.project.id == 0:
 		// Never an unfiltered list in its place (task 132.11). No selection
 		// means no project is registered only once a listing has said so;
 		// until then it is still resolving.
 		if v.noProjects {
-			return prose(noProjectsEmpty(), styleDim), 0
+			return prose(noProjectsEmpty(), styleDim)
 		}
-		return prose("Resolving the project…", styleDim), 0
-	}
-	if v.loadErr != nil {
+		return prose("Resolving the project…", styleDim)
+	case v.loadErr != nil:
 		// Screen-wide, because the list is one request.
 		out := prose("⚠ could not list issues: "+errString(v.loadErr), styleBad)
-		if !v.loaded {
-			return out, 0
+		if v.loaded {
+			out = append(out, prose("showing what was listed at "+v.lastLoad.Format("15:04:05"), styleDim)...)
 		}
-		out = append(out, prose("showing what was listed at "+v.lastLoad.Format("15:04:05"), styleDim)...)
-		out = append(out, "")
-		rest, row := v.listLines(width)
-		v.listAt += len(out)
-		return append(out, rest...), row + len(out)
+		return out
+	case !v.loaded:
+		return prose("listing "+v.project.name+"'s issues…", styleDim)
+	case len(v.issues) == 0:
+		return prose("`vincent issue add` files one; a GitHub project's issues arrive on the reconciler tick.", styleDim)
 	}
-	if !v.loaded {
-		return prose("listing "+v.project.name+"'s issues…", styleDim), 0
-	}
-	lines, cursorRow = v.listLines(width)
-	if len(v.issues) == 0 {
-		lines = append(lines, "")
-		lines = append(lines, prose("`vincent issue add` files one; a GitHub project's issues arrive on the reconciler tick.", styleDim)...)
-	}
-	return lines, cursorRow
-}
-
-// listLines is the totals line and the sections, filtered, and the cursor's
-// line in them.
-func (v *issuesView) listLines(width int) (lines []string, cursorRow int) {
-	filtering := strings.TrimSpace(v.filter.Value()) != ""
-	rows := v.lines()
-	lines = make([]string, 0, len(rows)+2)
-	lines = append(lines, v.totalsLine(), "")
-	v.listAt = len(lines)
-	inner := max(width-len(groupIndent), 12)
-	shared := issuesShareRepo(v.issues)
-	for i, row := range rows {
-		selected := i == v.cursor
-		if selected {
-			cursorRow = len(lines)
-		}
-		switch {
-		case row.header:
-			lines = append(lines, issueSectionHeader(row, selected))
-		case row.none:
-			none := "none"
-			if filtering {
-				none = "none match"
-			}
-			lines = append(lines, groupIndent+"  "+styleDim.Render(none))
-		default:
-			lines = append(lines, groupIndent+issueLineMarked(row.issue, inner, selected, shared, v.picked[row.issue.ID]))
-		}
-	}
-	return lines, cursorRow
-}
-
-// issueSectionHeader is a section's header: the fold glyph, the bold label,
-// the count, and the `! n` badge for the issues whose root task waits on a
-// human — kept on the header so folding the section cannot hide it.
-func issueSectionHeader(row issueRow, selected bool) string {
-	marker := "  "
-	if selected {
-		marker = styleFocus.Render("› ")
-	}
-	glyph := groupGlyphOpen
-	if row.collapsed {
-		glyph = groupGlyphFolded
-	}
-	out := marker + styleGroup.Render(glyph+" "+issueSections[row.section].label) +
-		styleDim.Render("  "+strconv.Itoa(row.count))
-	if row.attention > 0 {
-		out += "  " + styleWarn.Render(attentionBadge+" "+strconv.Itoa(row.attention))
-	}
-	return out
-}
-
-// issueTitleFloor is the narrowest a row's title is ever drawn before
-// render's own cut: the one part of review F2 on #773 that #796 kept, and
-// only the task cell may take the title down to it.
-const issueTitleFloor = 12
-
-// issueTitleMin is the room a row's title keeps while the tags and the
-// source badge give way (#796): 40% of the row, and never under 30 columns —
-// 31 at 80 columns, 47 at 120. The title is what a row is read by.
-func issueTitleMin(width int) int { return max(30, width*40/100) }
-
-// issueLine is one row: id, state badge, title, labels and kind, the source
-// badge of an imported issue, and the linked-task summary. sharedRepo says
-// every imported row on the list comes from one provider and repository, so
-// the source badge may shorten to the daemon's short_ref (`gh#N`) without
-// becoming ambiguous.
-func issueLine(iss apiclient.Issue, width int, selected, sharedRepo bool) string {
-	return issueLineMarked(iss, width, selected, sharedRepo, false)
-}
-
-// issueLineMarked is issueLine with the handoff selection's glyph (task
-// 137.11) on a picked card.
-func issueLineMarked(iss apiclient.Issue, width int, selected, sharedRepo, picked bool) string {
-	marker := "  "
-	if selected {
-		marker = styleFocus.Render("› ")
-	}
-	if picked {
-		marker = styleFocus.Render("◆ ")
-		if selected {
-			marker = styleFocus.Render("›◆")
-		}
-	}
-	id := padRight("#"+strconv.FormatInt(iss.ID, 10), 6)
-	state := issueStateBadge(iss)
-	tags := issueTags(iss)
-	source := issueSourceBadge(iss)
-	tasks := issueTaskSummary(iss)
-	// The handoff marker (task 137.11) sits right of the tags and the
-	// source badge, and never gives way to them: they shed first.
-	hand := issueHandoffCell(iss)
-
-	// The title keeps issueTitleMin while the parts right of it give way
-	// (#796, superseding review F2 on #773's 12-column floor for the title),
-	// in a fixed order: the occupant's state word, then the tags become a
-	// `+N` count — never a label cut in half — then the source badge
-	// shortens to `gh#N`, then the count goes. Only then may the title go
-	// below its minimum, down to issueTitleFloor, and the cell's counts
-	// survive whole: render's cut applies below that, as before.
-	//
-	// The source badge never goes (2026-11-16): the issue's id where it was
-	// synced from is what a person matches the card against. A badge that
-	// does not fit loses its start — `…/web#41` — never the number at its
-	// end, and below that the title gives way to it.
-	part := func(s string) int {
-		if s == "" {
-			return 0
-		}
-		return 2 + ansi.StringWidth(s)
-	}
-	lead := 2 + len(id) + ansi.StringWidth(state) + 2
-	titleRoom := func() int {
-		return width - lead - part(tags) - part(source) - part(hand) - 2 - ansi.StringWidth(tasks)
-	}
-	short := func() bool { return titleRoom() < issueTitleMin(width) }
-	if short() {
-		tasks = issueTaskSummaryShort(iss)
-	}
-	if short() && tags != "" {
-		tags = "+" + strconv.Itoa(issueTagCount(iss))
-	}
-	if short() && source != "" && sharedRepo && iss.Source.ShortRef != "" {
-		source = iss.Source.ShortRef
-	}
-	if short() {
-		tags = ""
-	}
-	if short() && source != "" {
-		source = fitLeft(source, ansi.StringWidth(source)-(issueTitleMin(width)-titleRoom()), sourceKeep(iss))
-	}
-	titleW := max(titleRoom(), issueTitleFloor)
-	title := ansi.Truncate(iss.Title, titleW, "…")
-
-	line := marker + styleKey.Render(id) + issueStateStyle(iss).Render(state) + "  " +
-		padDisplayWidth(title, titleW)
-	for _, part := range []string{tags, source} {
-		if part != "" {
-			line += "  " + styleDim.Render(part)
-		}
-	}
-	if hand != "" {
-		line += "  " + styleWarn.Render(hand)
-	}
-	return line + "  " + issueTaskStyle(iss).Render(tasks)
+	return nil
 }
 
 // issueStateBadge is the state word, with the close reason when closed.
@@ -1128,28 +889,6 @@ func issueStateStyle(iss apiclient.Issue) lipgloss.Style {
 		return styleOK
 	}
 	return styleDim
-}
-
-// issueTags is the labels and the kind, the two things a row is filtered by
-// besides its title.
-func issueTags(iss apiclient.Issue) string {
-	parts := make([]string, 0, len(iss.Labels)+1)
-	for _, l := range iss.Labels {
-		parts = append(parts, "["+l+"]")
-	}
-	if iss.Kind != "" {
-		parts = append(parts, iss.Kind)
-	}
-	return strings.Join(parts, " ")
-}
-
-// issueTagCount is how many tags issueTags draws: the labels, and the kind.
-func issueTagCount(iss apiclient.Issue) int {
-	n := len(iss.Labels)
-	if iss.Kind != "" {
-		n++
-	}
-	return n
 }
 
 // issuesShareRepo reports whether every imported issue in the list comes
@@ -1223,14 +962,7 @@ func sourceKeep(iss apiclient.Issue) int {
 // makes no task fetch of its own (task 130 decision 16.4). The close reason
 // is never repeated here: the state badge carries it.
 func issueTaskSummary(iss apiclient.Issue) string {
-	return issueTaskCell(iss, true)
-}
-
-// issueTaskSummaryShort is issueTaskSummary without the occupant's state
-// word, the first thing a row too narrow for its parts gives up: the
-// side and merging counts the cell exists to show stay.
-func issueTaskSummaryShort(iss apiclient.Issue) string {
-	return issueTaskCell(iss, false)
+	return issueTaskCell(iss)
 }
 
 // fitWidth cuts s to at most w columns with an ellipsis, or to nothing when
@@ -1242,7 +974,7 @@ func fitWidth(s string, w int) string {
 	return ansi.Truncate(s, w, "…")
 }
 
-func issueTaskCell(iss apiclient.Issue, withState bool) string {
+func issueTaskCell(iss apiclient.Issue) string {
 	tasks := plural(iss.TaskCount, "task", "tasks")
 	switch iss.Lane {
 	case "open":
@@ -1264,7 +996,7 @@ func issueTaskCell(iss apiclient.Issue, withState bool) string {
 			// Queued, side-only, or from before roles: no occupant to name.
 			return "● " + tasks
 		}
-		if withState && mw.OccupantState != nil {
+		if mw.OccupantState != nil {
 			s += " " + *mw.OccupantState
 		}
 		if iss.SideActive > 0 {
@@ -1294,13 +1026,6 @@ func issueTaskCell(iss apiclient.Issue, withState bool) string {
 		return "● " + tasks
 	}
 	return tasks
-}
-
-func issueTaskStyle(iss apiclient.Issue) lipgloss.Style {
-	if iss.Active {
-		return styleWarn
-	}
-	return styleDim
 }
 
 // issuePriorityLabel names an issue's priority. The scale is Linear's and

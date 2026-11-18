@@ -1971,52 +1971,51 @@ the project has a GitHub integration or a Jira binding: issues are vincent's own
 project swaps the list, and the header reads "loading ‹project›…" until the
 new one arrives.
 
-The lanes are stacked sections, top to bottom:
+The lanes are columns, left to right:
 
-- **open** — no task is working on the issue and none has finished: it has no
+- **Open** — no task is working on the issue and none has finished: it has no
   task yet, or only cancelled ones;
-- **in progress** — a task started from it is still working, waiting or blocked;
-- **hand-off** — every task started from it has settled and at least one
+- **In progress** — a task started from it is still working, waiting or blocked;
+- **Hand-off** — every task started from it has settled and at least one
   finished `done`, so it is back with you to review and close;
-- **done** — the issue is closed, whatever the reason.
+- **Done** — the issue is closed, whatever the reason.
 
-vincent works out an issue's lane from its state and its tasks, so the lanes
-cannot be dragged and no key moves an issue between them: starting a task,
-finishing one, or closing the issue does that. Each section's header shows its
-count and, with `! n`, how many of its issues have a task waiting on you; an
-empty section still shows its header, with `0` and "none". A line above the
-sections totals them.
+vincent works out an issue's lane from its state and its tasks. Starting a task,
+finishing one, or closing the issue moves its card, and `m` moves a card by
+running the action the lane you pick stands for. Each column's top edge shows
+its count and, with `! n`, how many of its issues have a task waiting on you. An
+empty column reads "no issues".
 
-`done` is hidden when the screen opens, and the totals line says so with
-`done hidden (s)`: `s` shows it as the fourth section, listing closed issues
-too, and `s` again hides it. `←` and `→` fold and unfold the section you are
-in, and `C` and `O` fold and unfold all of them; a folded header keeps its
-count and its `! n`. The `done` setting and the folds last until you quit, and
-survive a project switch. `/` filters within the sections and keeps their
-headers, so an empty one reads "none match".
+`↑` and `↓` move through a column, and `←` and `→` cross to the next column that
+has a card. `pgup`, `pgdown`, `home` and `end` stay inside the column. A terminal
+too narrow for all four columns shows the ones around your selection, with `‹`
+and `›` on the edges where more are hidden. A column taller than the screen
+counts the cards it hides, as `▲ 3  ▼ 8 more`.
 
-Each row carries the issue's id, its state (with the close reason once it is
-closed, such as `closed · not planned`), the title, its labels and kind,
-where it was imported from — `owner/repo#N` for GitHub, the key such as
-`PROJ-12` for Jira — and its tasks, worded for its lane:
+`s` hides the Done column, listing open issues only, and `s` again shows it. That
+choice lasts until you quit and survives a project switch. `/` filters within the
+columns and keeps them on screen, so an empty one reads "none match".
 
-- **open** — `no tasks`, or `N tasks · cancelled`;
-- **in progress** — `● #T running` (or whichever state) for the task holding
-  the issue's main worktree, or `● chat #C` for a
-  [chat opened on the issue](#a-chat-on-the-issue--t) holding it, then
-  `· +k side` while side tasks are running and `· n merging` while merge-backs
-  are waiting; with nothing in the main worktree, `● N tasks`;
-- **hand-off** — `✓ N done`;
-- **done** — `N tasks`, with `· ● live` while one is still unsettled.
+Each card carries the issue's id, kind and age, two lines of title, its labels,
+where it was imported from — `owner/repo#N` for GitHub, the key such as `PROJ-12`
+for Jira — and one status line. The selected card has a thick border. The status
+line says what most needs saying:
 
-The title is what a row is read by, so it keeps at least 40% of the row, and
-never less than 30 columns — 31 at 80 columns. A row too narrow for the rest
-gives up, in turn, the occupant's state; the labels and kind, which become a
-count such as `+4` rather than a label cut in half; the `owner/repo#N` badge,
-which becomes `gh#N` when every imported issue on the list comes from the same
-repository; and the count. The imported id never goes: a badge that still
-does not fit loses its start instead — `…/web#41` — never the number, and
-below that the title gives way to it, never under 12 columns.
+- `! … · needs you` — a task is waiting on you;
+- `✓ not planned`, or another close reason — the issue is closed;
+- `⇄ …` — its handoff marker, such as `claimed (H7)`;
+- `▶ #T running` (or whichever state) — the task holding the issue's main
+  worktree, or `▶ chat #C` for a
+  [chat opened on the issue](#a-chat-on-the-issue--t), then `· +k side` while side
+  tasks are running and `· n merging` while merge-backs are waiting; with nothing
+  in the main worktree, `▶ N tasks`;
+- `✓ N done` — in the Hand-off column;
+- `○ no tasks`, or `○ N tasks · cancelled` — nothing is working on it.
+
+The imported id never goes: labels give way to a count such as `+2` first, the
+reference shortens to `gh#N` when every imported issue comes from one repository,
+and a reference that still does not fit loses its start — `…/web#41` — never the
+number.
 
 Titles, of issues and of tasks alike, are drawn as one line of plain text: a
 line break or tab in one reads as a space, and terminal escape sequences are

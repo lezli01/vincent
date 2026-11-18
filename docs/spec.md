@@ -15801,6 +15801,22 @@ stream for the live tail.
    The selection follows the issue id across a re-list, into whatever section
    it moved to, and falls to the nearest row when the issue leaves the view.
 
+   *Amended 2026-11-18 (task 150.2; supersedes the stacked sections, the fold
+   keys, the totals line and the row layout described in this view's notes
+   above and below, whose text stays as the record).* **The lanes are columns
+   of cards**, left to right in the same order. A column's top edge carries
+   its glyph, title, count and `! n` badge; an empty one reads "no issues", or
+   "none match" under a filter. A card shows the id, kind and age, two lines
+   of title, the labels, the source and one status line; the selected card has
+   thick edges, so selection survives `NO_COLOR`. `↑`/`↓`, `pgup`/`pgdown` and
+   `home`/`end` stay inside a column, and `←`/`→` cross to the nearest column
+   holding a card. `C` and `O` are gone from this view. **`done` is shown by
+   default**: the listing has no state filter, and `s` hides the column and
+   lists `state=open`. A terminal too narrow for every column shows the ones
+   around the selection, marking hidden neighbours with `‹` and `›`. The view
+   draws its own boxes, so the root does not frame it; the issue and handoff
+   forms keep the root's frame. Colours are named ANSI colours (§15 Colour).
+
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:
    only such an event can move a row's task count or active marker. A step

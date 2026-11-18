@@ -505,7 +505,7 @@ func (v *issuesView) pickAll() {
 		return
 	}
 	for _, row := range v.lines() {
-		if row.header || row.none || !handoffPending(row.issue) {
+		if row.header || !handoffPending(row.issue) {
 			continue
 		}
 		if v.picked == nil {

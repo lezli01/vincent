@@ -62,14 +62,11 @@ func boardFixture() *issuesView {
 func issueLayout(v *issuesView) []string {
 	var out []string
 	for _, r := range v.lines() {
-		switch {
-		case r.header:
+		if r.header {
 			out = append(out, "header:"+issueSections[r.section].label)
-		case r.none:
-			out = append(out, "none")
-		default:
-			out = append(out, "#"+strconv.FormatInt(r.issue.ID, 10))
+			continue
 		}
+		out = append(out, "#"+strconv.FormatInt(r.issue.ID, 10))
 	}
 	return out
 }
@@ -96,133 +93,115 @@ func TestIssuesPartitionIntoSectionsInBoardOrder(t *testing.T) {
 	}
 }
 
-func TestIssuesEmptySectionsDrawZeroAndNone(t *testing.T) {
+func TestIssuesEmptyColumnsSaySo(t *testing.T) {
 	v := boardFixture()
 	v.showDone = false
 	v.issues = []apiclient.Issue{{ID: 1, Title: "only", State: "open", Lane: "open"}}
 	v.clampCursor()
 	out := ansi.Strip(v.render(100, 20))
-	for _, want := range []string{"▾ in progress  0", "▾ hand-off  0", "none"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the list is missing %q:\n%s", want, out)
-		}
-	}
-	if got := strings.Count(out, "none"); got != 2 {
-		t.Errorf("%d placeholders, want one per empty section:\n%s", got, out)
+	if got := strings.Count(out, "no issues"); got != 2 {
+		t.Errorf("%d placeholders, want one per empty column:\n%s", got, out)
 	}
 }
 
-func TestIssuesTotalsLineAndAttentionBadge(t *testing.T) {
+// A column's edge carries its title, its count and the attention badge, so a
+// card scrolled out of the column cannot hide that someone is needed.
+func TestIssuesColumnEdgesCountAndWarn(t *testing.T) {
 	v := boardFixture()
 	out := ansi.Strip(v.render(120, 30))
-	if !strings.Contains(out, "2 open · 2 in progress · 1 hand-off · 3 done") {
-		t.Errorf("the totals line is wrong:\n%s", out)
-	}
-	for _, want := range []string{"▾ in progress  2  ! 1", "▾ hand-off  1  ! 1"} {
+	for _, want := range []string{"○ Open", "◐ In progress", "⇄ Hand-off", "✓ Done", "! 1  2", "! 1  1"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("the list is missing the header %q:\n%s", want, out)
+			t.Errorf("the board is missing %q:\n%s", want, out)
 		}
-	}
-	v.showDone = false
-	if out := ansi.Strip(v.render(120, 30)); !strings.Contains(out, "1 hand-off · done hidden (s)") {
-		t.Errorf("the hidden-done totals do not say how to show it:\n%s", out)
 	}
 }
 
-// `done` is hidden by default and lists open only; `s` shows it with every
-// state, every close reason drawn, and hides it again.
+// `done` is a column from the start and lists every state; `s` hides it,
+// listing open issues only, and shows it again.
 func TestIssuesDoneToggle(t *testing.T) {
 	v := newIssuesView()
 	v.client = offlineClient()
 	v.project = projectSel{id: 1, name: "api"}
-	if v.showDone {
-		t.Fatal("done is shown on a fresh list")
+	if !v.showDone || len(v.listOptions().States) != 0 {
+		t.Fatalf("a fresh board has showDone=%v states=%v, want shown with no state filter", v.showDone, v.listOptions().States)
 	}
-	if got := v.listOptions().States; !slices.Equal(got, []string{"open"}) {
-		t.Fatalf("hidden done listed states %v, want [open]", got)
-	}
-	v.issues, v.loaded = []apiclient.Issue{{ID: 1, State: "open", Lane: "open"}}, true
-	if got := strings.Join(issueLayout(v), ","); strings.Contains(got, "done") || strings.Count(got, "header:") != 3 {
-		t.Fatalf("hidden done drew %s, want three sections", got)
+	shown := boardFixture()
+	out := ansi.Strip(shown.render(140, 40))
+	for _, want := range []string{"✓ Done", "✓ completed", "✓ not planned", "✓ duplicate"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the done column is missing %q:\n%s", want, out)
+		}
 	}
 
 	if _, cmd := v.updateKey(registryKey(t, "s")); cmd == nil {
 		t.Fatal("s did not re-list")
 	}
-	if !v.showDone || len(v.listOptions().States) != 0 {
-		t.Fatalf("s left showDone=%v states=%v, want shown with no state filter", v.showDone, v.listOptions().States)
-	}
-	shown := boardFixture()
-	out := ansi.Strip(shown.render(140, 30))
-	for _, want := range []string{"▾ done  3", "closed · completed", "closed · not planned", "closed · duplicate"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the shown done section is missing %q:\n%s", want, out)
-		}
-	}
-
-	v.updateKey(registryKey(t, "s"))
 	if v.showDone || !slices.Equal(v.listOptions().States, []string{"open"}) {
-		t.Fatal("s again did not hide done")
+		t.Fatal("s did not hide done")
+	}
+	v.issues, v.loaded = []apiclient.Issue{{ID: 1, State: "open", Lane: "open"}}, true
+	if got := strings.Join(issueLayout(v), ","); strings.Contains(got, "done") || strings.Count(got, "header:") != 3 {
+		t.Fatalf("hidden done drew %s, want three columns", got)
+	}
+	v.updateKey(registryKey(t, "s"))
+	if !v.showDone || len(v.listOptions().States) != 0 {
+		t.Fatal("s again did not show done")
 	}
 }
 
-func TestIssuesFoldKeys(t *testing.T) {
+// ↑ and ↓ stay inside a column; ← and → cross to the next column with a card,
+// at the same height or the last card above it.
+func TestIssuesLaneKeys(t *testing.T) {
 	v := boardFixture()
-	if row, ok := v.current(); !ok || row.issue.ID != 11 {
-		t.Fatalf("a fresh list starts on %+v, want #11 (expanded headers are skipped)", row)
-	}
-	v.updateKey(registryKey(t, "left"))
-	if got := issueLayout(v)[:2]; !slices.Equal(got, []string{"header:open", "header:in progress"}) {
-		t.Fatalf("← did not fold the open section: %v", issueLayout(v))
-	}
-	if v.cursor != 0 {
-		t.Fatalf("← left the cursor at %d, want on the folded header", v.cursor)
-	}
-	if !strings.Contains(ansi.Strip(v.render(120, 30)), "▸ open  2") {
-		t.Errorf("the folded header lost its glyph or count:\n%s", ansi.Strip(v.render(120, 30)))
+	if got := selectedID(v); got != 11 {
+		t.Fatalf("a fresh board starts on #%d, want #11", got)
 	}
 	v.updateKey(registryKey(t, "down"))
-	if row, ok := v.current(); !ok || row.issue.ID != 13 {
-		t.Fatalf("down from a folded header went to %+v, want #13 past the expanded header", row)
+	v.updateKey(registryKey(t, "down"))
+	if got := selectedID(v); got != 14 {
+		t.Fatalf("down stopped on #%d, want #14, the column's last card", got)
 	}
-	v.updateKey(registryKey(t, "up"))
 	v.updateKey(registryKey(t, "right"))
-	if row, ok := v.current(); !ok || row.issue.ID != 11 {
-		t.Fatalf("→ left the cursor on %+v, want the section's first issue", row)
+	if got := selectedID(v); got != 17 {
+		t.Fatalf("right went to #%d, want #17 at the same height", got)
 	}
-
-	v.updateKey(registryKey(t, "C"))
-	if got := issueLayout(v); !slices.Equal(got, []string{"header:open", "header:in progress", "header:hand-off", "header:done"}) {
-		t.Fatalf("C folded to %v, want only headers", got)
+	v.updateKey(registryKey(t, "right"))
+	if got := selectedID(v); got != 12 {
+		t.Fatalf("right went to #%d, want #12, the shorter column's last card", got)
 	}
-	v.updateKey(registryKey(t, "O"))
-	if got := len(issueLayout(v)); got != 12 {
-		t.Fatalf("O left %d lines, want all 12", got)
+	v.updateKey(registryKey(t, "left"))
+	v.updateKey(registryKey(t, "left"))
+	v.updateKey(registryKey(t, "left"))
+	if got := selectedID(v); got != 11 {
+		t.Fatalf("left at the first column went to #%d, want it to stay on #11", got)
 	}
 }
 
-// Hiding done and showing it again opens it expanded, even if it was folded.
-func TestIssuesShownDoneOpensExpanded(t *testing.T) {
+// An empty column is stepped over rather than landed on.
+func TestIssuesLaneKeysSkipEmptyColumns(t *testing.T) {
 	v := boardFixture()
-	v.folded[issueLaneDone] = true
-	v.toggleDone()
-	v.toggleDone()
-	if v.folded[issueLaneDone] {
-		t.Fatal("done came back folded")
+	v.issues = []apiclient.Issue{
+		{ID: 1, Title: "a", State: "open", Lane: "open"},
+		{ID: 2, Title: "b", State: "open", Lane: "hand_off"},
+	}
+	v.clampCursor()
+	v.updateKey(registryKey(t, "right"))
+	if got := selectedID(v); got != 2 {
+		t.Fatalf("right landed on #%d, want #2 past the empty column", got)
 	}
 }
 
-func TestIssuesFilterKeepsHeaders(t *testing.T) {
+func TestIssuesFilterKeepsColumns(t *testing.T) {
 	v := boardFixture()
 	v.filter.SetValue("working")
 	v.clampCursor()
-	want := []string{"header:open", "none", "header:in progress", "#13", "header:hand-off", "none", "header:done", "none"}
+	want := []string{"header:open", "header:in progress", "#13", "header:hand-off", "header:done"}
 	if got := issueLayout(v); !slices.Equal(got, want) {
 		t.Fatalf("filtered lines = %v, want %v", got, want)
 	}
 	out := ansi.Strip(v.render(120, 30))
 	if strings.Count(out, "none match") != 3 {
-		t.Errorf("the empty sections do not say none match:\n%s", out)
+		t.Errorf("the empty columns do not say none match:\n%s", out)
 	}
 	if row, ok := v.current(); !ok || row.issue.ID != 13 {
 		t.Errorf("the filter left the cursor on %+v, want the one match", row)
@@ -264,11 +243,10 @@ func TestIssuesReselectAcrossSections(t *testing.T) {
 func TestIssuesToggleSurvivesSwitchAndDropsStale(t *testing.T) {
 	v := boardFixture()
 	v.showDone = false
-	v.folded["hand_off"] = true
 	v.setProject(projectSel{id: 2, name: "web"})
 	v.updateKey(registryKey(t, "s"))
-	if !v.showDone || !v.folded["hand_off"] {
-		t.Fatal("the toggle or the folds did not survive a switch")
+	if !v.showDone {
+		t.Fatal("the toggle did not survive a switch")
 	}
 
 	v.showDone = false
@@ -280,8 +258,8 @@ func TestIssuesToggleSurvivesSwitchAndDropsStale(t *testing.T) {
 	}
 }
 
-// The list stays legible at §15's floors: the totals, every header and the
-// cursor's row are on screen.
+// The board stays legible at §15's floors: the cursor's card and its column
+// are on screen, with nothing past the edges.
 func TestIssuesLegibleAtTheFloors(t *testing.T) {
 	for _, size := range [][2]int{{80, 20}, {60, 15}} {
 		v := boardFixture()
@@ -299,8 +277,8 @@ func TestIssuesLegibleAtTheFloors(t *testing.T) {
 		if !strings.Contains(out, "#16") {
 			t.Errorf("%dx%d: the cursor's row is off screen:\n%s", size[0], size[1], out)
 		}
-		if !strings.Contains(out, "▾ done") {
-			t.Errorf("%dx%d: the cursor's section header is off screen:\n%s", size[0], size[1], out)
+		if !strings.Contains(out, "✓ Done") {
+			t.Errorf("%dx%d: the cursor's column is off screen:\n%s", size[0], size[1], out)
 		}
 	}
 }
@@ -328,14 +306,14 @@ func selectedID(v *issuesView) int64 {
 	return row.issue.ID
 }
 
-// #796: pgdown and pgup move by the rows on screen, home/g and end/G reach
-// the ends, and none of them rests on a line the cursor may not.
+// #796: pgdown and pgup move by the cards on screen, home/g and end/G reach the
+// ends of the column, and none of them leaves it.
 func TestIssuesPagingKeys(t *testing.T) {
 	v := longIssuesFixture()
 	v.render(80, 20)
 	page := v.page
-	if page < 10 {
-		t.Fatalf("an 80x20 pane pages by %d rows", page)
+	if page < 1 {
+		t.Fatalf("an 80x20 pane pages by %d cards", page)
 	}
 	v.updateKey(keyPress("pgdown"))
 	if got := selectedID(v); got != int64(1+page) {
@@ -352,8 +330,8 @@ func TestIssuesPagingKeys(t *testing.T) {
 	for _, k := range []string{"end", "G"} {
 		v.updateKey(keyPress("home"))
 		v.updateKey(keyPress(k))
-		if got := selectedID(v); got != 40 {
-			t.Errorf("%s selected #%d, want #40", k, got)
+		if got := selectedID(v); got != 30 {
+			t.Errorf("%s selected #%d, want #30, the column's last card", k, got)
 		}
 	}
 	for _, k := range []string{"home", "g"} {
@@ -363,71 +341,58 @@ func TestIssuesPagingKeys(t *testing.T) {
 			t.Errorf("%s selected #%d, want #1", k, got)
 		}
 	}
-	// A page landing on the in-progress header steps past it.
 	v.selectIssue(30)
-	v.page = 1
 	v.updateKey(keyPress("pgdown"))
-	if got := selectedID(v); got != 31 {
-		t.Errorf("pgdown onto an expanded header landed on #%d, want #31", got)
-	}
-	if v.selected != 31 {
-		t.Errorf("paging did not remember the selection: %d", v.selected)
-	}
-	// A collapsed header holds the cursor, and is the last thing end reaches.
-	v.folded["in_progress"] = true
-	v.updateKey(keyPress("end"))
-	if row := v.lines()[v.cursor]; !row.header || v.selectedLane != "in_progress" {
-		t.Errorf("end did not rest on the collapsed header: %+v", row)
+	if got := selectedID(v); got != 30 {
+		t.Errorf("pgdown left the column for #%d", got)
 	}
 	// The filter owns the keys while it types.
 	v.updateKey(keyPress("/"))
 	v.updateKey(keyPress("home"))
-	if v.selectedLane != "in_progress" {
-		t.Error("home moved the selection while the filter was typing")
+	if got := selectedID(v); got != 30 {
+		t.Errorf("home moved the selection to #%d while the filter was typing", got)
 	}
 }
 
-// #796: a list taller than its pane says how much it hides, above and
-// below, and a click on a cue selects nothing while a click on a row still
-// selects it.
+// #796: a column taller than its pane says how many cards it hides, above and
+// below, and a click on the cue selects nothing while a click on a card does.
 func TestIssuesOverflowCuesAndClicks(t *testing.T) {
 	v := longIssuesFixture()
 	lines := renderedLines(v, 80, 20)
-	if shows(lines, "▲") || !shows(lines, "▼") {
-		t.Fatalf("at the top, want only a ▼ cue:\n%s", strings.Join(lines, "\n"))
-	}
-	// 46 body lines, the one blank among them shown; every hidden one counts.
-	want := fmt.Sprintf("▼ %d more", 46-v.page)
-	if !shows(lines, want) {
-		t.Errorf("want %q:\n%s", want, strings.Join(lines, "\n"))
-	}
 	if len(lines) != 20 {
-		t.Errorf("the list drew %d lines in a 20-line pane", len(lines))
+		t.Errorf("the board drew %d lines in a 20-line pane", len(lines))
+	}
+	want := fmt.Sprintf("▼ %d more", 30-v.page)
+	if shows(lines, "▲") || !shows(lines, want) {
+		t.Fatalf("at the top, want only %q:\n%s", want, strings.Join(lines, "\n"))
 	}
 
 	v.selectIssue(20)
 	lines = renderedLines(v, 80, 20)
-	up, down := lineOf(lines, "▲"), lineOf(lines, "▼")
-	if up < 0 || down < 0 {
+	cue := lineOf(lines, "▲")
+	if cue < 0 || !shows(lines, "▼") {
 		t.Fatalf("in the middle, want both cues:\n%s", strings.Join(lines, "\n"))
 	}
-	v.update(tea.MouseClickMsg{X: 10, Y: up, Button: tea.MouseLeft})
-	v.update(tea.MouseClickMsg{X: 10, Y: down, Button: tea.MouseLeft})
+	v.update(tea.MouseClickMsg{X: 10, Y: cue, Button: tea.MouseLeft})
 	if got := selectedID(v); got != 20 {
 		t.Errorf("a click on a cue moved the selection to #%d", got)
 	}
-	y := lineOf(lines, "issue 17 ")
-	v.update(tea.MouseClickMsg{X: 10, Y: y, Button: tea.MouseLeft})
-	if got := selectedID(v); got != 17 {
-		t.Errorf("a click on the row for #17 selected #%d", got)
+	var other issueCardHit
+	for _, h := range v.cardHits {
+		if h.id != 20 && h.id <= 30 {
+			other = h
+		}
+	}
+	if other.id == 0 {
+		t.Fatalf("no other card drawn in the column: %+v", v.cardHits)
+	}
+	v.update(tea.MouseClickMsg{X: other.x0, Y: other.y0, Button: tea.MouseLeft})
+	if got := selectedID(v); got != other.id {
+		t.Errorf("a click on the card for #%d selected #%d", other.id, got)
 	}
 
-	v.updateKey(keyPress("end"))
-	if lines = renderedLines(v, 80, 20); !shows(lines, "▲") || shows(lines, "▼") {
-		t.Errorf("at the end, want only a ▲ cue:\n%s", strings.Join(lines, "\n"))
-	}
 	short := issuesFixture()
-	if lines = renderedLines(short, 80, 20); shows(lines, "▲") || shows(lines, "▼") {
-		t.Errorf("a list that fits drew a cue:\n%s", strings.Join(lines, "\n"))
+	if lines = renderedLines(short, 160, 40); shows(lines, "▲") || shows(lines, "▼") {
+		t.Errorf("a board that fits drew a cue:\n%s", strings.Join(lines, "\n"))
 	}
 }

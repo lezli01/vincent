@@ -2620,20 +2620,12 @@ Sleep 2s
   # every lane (issue #766): two task-less ones in `open`, the blocked loop's
   # and the paused postmortem's issues in `in progress` (the first with a
   # `!`), the archived DNS rollback's in `hand-off`, and one closed as
-  # completed in `done`. `s` shows or hides the `done` lane (task 134
-  # decision 5), hidden by default, so it is pressed once: shown is the one
-  # that draws all four lanes, and a second press would hide it again. `s`
-  # leaves a "showing the done lane…" note under the rows that outlives
-  # the listing; `esc` clears the note first and keeps the lane shown
-  # (§15's one layer per press), so it is pressed once rather than
-  # photographed. The list is the screen the TUI lands on (#789), so the
-  # tape opens no palette and has no ghost to repaint.
+  # completed in `done`. All four columns are on the board from the start
+  # (task 150 decision 10), so the tape presses nothing. The list is the
+  # screen the TUI lands on (#789), so the tape opens no palette and has no
+  # ghost to repaint.
   tape tui-issues 1250 platform-infra '
 Sleep 3s
-Type "s"
-Sleep 3s
-Escape
-Sleep 2s
 Screenshot "'"$OUT"'/tui-issues.png"
 Sleep 2s
 '

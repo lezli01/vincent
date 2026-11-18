@@ -179,106 +179,6 @@ func TestIssueRowTaskSummary(t *testing.T) {
 	}
 }
 
-// TestIssueRowFitsAtTheFloor is review F2 on #773, as #796 left it: an
-// in-progress card with labels, a kind and a source badge stays within the
-// 80-column floor, and what it gives up first is the occupant's state word,
-// never the side and merging counts.
-func TestIssueRowFitsAtTheFloor(t *testing.T) {
-	occ, state := int64(123), "awaiting_input"
-	iss := apiclient.Issue{
-		ID: 12, State: "open", Title: "Crash on cold start", Labels: []string{"bug"}, Kind: "bug",
-		Lane: "in_progress", TaskCount: 4, Active: true,
-		MainWorktree:      &apiclient.IssueMainWorktree{Branch: "b", OccupantTaskID: &occ, OccupantState: &state},
-		SideActive:        1,
-		MergeBacksPending: 1,
-	}
-	for _, c := range []struct {
-		name   string
-		source *apiclient.IssueSource
-	}{
-		{"local", nil},
-		{"imported", ghSource(&apiclient.IssueSource{Repo: "octo-org/web-frontend", Number: 4127})},
-	} {
-		iss.Source = c.source
-		for _, width := range []int{80, 76} {
-			line := ansi.Strip(issueLine(iss, width, true, true))
-			if got := ansi.StringWidth(line); got > width {
-				t.Errorf("%s at %d columns: the row is %d wide:\n%s", c.name, width, got, line)
-			}
-			if !strings.Contains(line, "● #123 · +1 side · 1 merging") {
-				t.Errorf("%s at %d columns: the row lost its counts:\n%s", c.name, width, line)
-			}
-		}
-	}
-	// With room, nothing is given up.
-	iss.Source = nil
-	if line := ansi.Strip(issueLine(iss, 160, false, true)); !strings.Contains(line, "● #123 awaiting_input · +1 side · 1 merging") ||
-		!strings.Contains(line, "[bug] bug") {
-		t.Errorf("a wide row dropped a part:\n%s", line)
-	}
-}
-
-// rowTitleWidth is how many columns of a row the title takes: the run of
-// title text from its start, its ellipsis included.
-func rowTitleWidth(line, title string) int {
-	i := strings.Index(line, title[:10])
-	if i < 0 {
-		return 0
-	}
-	n := 0
-	for _, r := range line[i:] {
-		if r != '…' && !strings.ContainsRune(title, r) {
-			break
-		}
-		n++
-		if r == '…' {
-			break
-		}
-	}
-	return n
-}
-
-// #796: the title keeps max(30, 40% of the row) while the tags become a
-// `+N` count — never a label cut in half — and a source shared by the whole
-// list shortens to `gh#N`.
-func TestIssueRowTitleKeepsItsMinimum(t *testing.T) {
-	occ := int64(123)
-	title := strings.Repeat("abcdefghij", 10)
-	iss := apiclient.Issue{
-		ID: 12, State: "open", Title: title, Labels: []string{"frontend", "accessibility", "regression"}, Kind: "bug",
-		Lane: "in_progress", TaskCount: 2, Active: true,
-		MainWorktree: &apiclient.IssueMainWorktree{Branch: "b", OccupantTaskID: &occ},
-		Source:       ghSource(&apiclient.IssueSource{Repo: "octo-org/web-frontend", Number: 4127}),
-	}
-	for _, width := range []int{80, 120} {
-		inner := width - len(groupIndent)
-		line := ansi.Strip(issueLine(iss, inner, false, true))
-		if got := ansi.StringWidth(line); got > inner {
-			t.Errorf("%d columns: the row is %d wide, over %d:\n%s", width, got, inner, line)
-		}
-		if got, want := rowTitleWidth(line, title), issueTitleMin(inner); got < want {
-			t.Errorf("%d columns: the title has %d columns, want at least %d:\n%s", width, got, want, line)
-		}
-		if !strings.Contains(line, "+4") || strings.Contains(line, "[") {
-			t.Errorf("%d columns: the tags are not a +4 count:\n%s", width, line)
-		}
-		if !strings.Contains(line, "● #123") {
-			t.Errorf("%d columns: the row lost its cell:\n%s", width, line)
-		}
-	}
-	if line := ansi.Strip(issueLine(iss, 78, false, true)); !strings.Contains(line, "gh#4127") {
-		t.Errorf("a shared repo did not shorten to gh#N at 80 columns:\n%s", line)
-	}
-	// Rows from several repositories never shorten to gh#N; a badge too
-	// wide loses its start, never its number (2026-11-16).
-	if line := ansi.Strip(issueLine(iss, 78, false, false)); strings.Contains(line, "gh#") || !strings.Contains(line, "frontend#4127") {
-		t.Errorf("mixed repos lost the source badge's number:\n%s", line)
-	}
-	if got := issueTitleMin(78); got != 31 {
-		t.Errorf("the title minimum at 80 columns is %d, want 31", got)
-	}
-}
-
 // issuesShareRepo reads the list, local rows aside.
 func TestIssuesShareRepo(t *testing.T) {
 	src := func(repo string) *apiclient.IssueSource {
@@ -299,31 +199,6 @@ func TestIssuesShareRepo(t *testing.T) {
 	}
 }
 
-// F2's remaining guarantee: a cell too long for what is left takes the title
-// below its minimum, never below 12, and its counts survive whole.
-func TestIssueRowCellTakesTheTitleToTheFloor(t *testing.T) {
-	occ, state := int64(123), "awaiting_input"
-	title := strings.Repeat("abcdefghij", 10)
-	iss := apiclient.Issue{
-		ID: 12, State: "open", Title: title, Labels: []string{"bug"}, Kind: "bug",
-		Lane: "in_progress", TaskCount: 4, Active: true,
-		MainWorktree:      &apiclient.IssueMainWorktree{Branch: "b", OccupantTaskID: &occ, OccupantState: &state},
-		SideActive:        1,
-		MergeBacksPending: 1,
-		Source:            ghSource(&apiclient.IssueSource{Repo: "o/r", Number: 3}),
-	}
-	for _, width := range []int{58, 50} {
-		line := ansi.Strip(issueLine(iss, width, false, true))
-		got := rowTitleWidth(line, title)
-		if got < issueTitleFloor || got >= issueTitleMin(width) {
-			t.Errorf("%d columns: the title has %d columns, want [%d, %d):\n%s", width, got, issueTitleFloor, issueTitleMin(width), line)
-		}
-		if !strings.Contains(line, "● #123 · +1 side · 1 merging") {
-			t.Errorf("%d columns: the cell lost its counts:\n%s", width, line)
-		}
-	}
-}
-
 // #796 decision 7: moving and filtering are what an 80-column footer keeps
 // — the pinned segment leaves no room past them — ahead of anything later,
 // filing comes before the browser, and `o browser` is in the footer only on
@@ -336,7 +211,7 @@ func TestIssuesFooterOrderAndBrowserWithholding(t *testing.T) {
 		return ansi.Strip(line)
 	}
 	narrow := footer(80)
-	for _, want := range []string{"↑↓ move", "/ filter"} {
+	for _, want := range []string{"↑↓ card", "/ filter"} {
 		if !strings.Contains(narrow, want) {
 			t.Errorf("the 80-column footer lost %q: %q", want, narrow)
 		}
@@ -364,7 +239,7 @@ func TestIssuesFooterOrderAndBrowserWithholding(t *testing.T) {
 func TestIssueRowShowsBadges(t *testing.T) {
 	v := issuesFixture()
 	out := ansi.Strip(v.render(160, 30))
-	for _, want := range []string{"octo/web#41", "[p1]", "bug", "● 1 task", "open"} {
+	for _, want := range []string{"octo/web#41", "p1", "◆ bug", "1 task", "○ Open"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the list is missing %q:\n%s", want, out)
 		}

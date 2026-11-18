@@ -44,7 +44,7 @@ func TestIssueLaneMovesFromTheBoard(t *testing.T) {
 	// section, not the store's opinion, since the board is what is tested.
 	laneOf := func(id int64) string {
 		for _, row := range list.rows() {
-			if !row.header && !row.none && row.issue.ID == id {
+			if !row.header && row.issue.ID == id {
 				return issueSections[row.section].lane
 			}
 		}
@@ -140,7 +140,7 @@ func TestIssueLaneMovesFromTheBoard(t *testing.T) {
 	}
 	h.p.until(20*time.Second, "the idle marker", func() bool {
 		for _, row := range list.rows() {
-			if !row.header && !row.none && row.issue.ID == iss.ID {
+			if !row.header && row.issue.ID == iss.ID {
 				return row.issue.Lane == "in_progress" && issueMarker(row.issue) == markerIdle
 			}
 		}

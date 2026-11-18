@@ -956,7 +956,7 @@ var bindings = []binding{
 	// out of the footer elsewhere, and `?` and the palette still list it.
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxIssues, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected issue", scope: scopePanel, context: ctxIssues, hint: "enter open", priority: 1, term: termOpenRow},
-	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ move", priority: 2},
+	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ card", priority: 2},
 	{op: keymap.Filter, key: "/", label: "filter by id, title, label or kind", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 3, term: termFilter},
 	// The writes (task 130.12). `n` is §15's "make a new one here", the
 	// chats board's precedent; `i` is the trigger list's "edit in a form";
@@ -979,12 +979,10 @@ var bindings = []binding{
 	// Folding the lane sections (task 134.8), the task board's four keys in
 	// the same meaning. Not `fold:` rows: that marker drops a row while the
 	// board is ungrouped, and the issues list always has its sections.
-	{key: "left", label: "collapse the lane section you are in (the header keeps the count and the ! badge)", scope: scopePanel, context: ctxIssues, hint: "←/→ fold", priority: 12},
-	{key: "right", label: "expand the collapsed lane section under the cursor", scope: scopePanel, context: ctxIssues, priority: 13, aliased: true},
-	{key: "C", label: "collapse every lane section", scope: scopePanel, context: ctxIssues, hint: "C/O fold all", priority: 14},
-	{key: "O", label: "expand every lane section", scope: scopePanel, context: ctxIssues, priority: 15, aliased: true},
+	{key: "left", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, hint: "←/→ lane", priority: 12},
+	{key: "right", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, priority: 13, aliased: true},
 	// Paging (#796), the issue detail's and the timeline's keys.
-	{key: "pgdown", label: "page the list (pgup/pgdown, home/g, end/G)", scope: scopePanel, context: ctxIssues, priority: 16},
+	{key: "pgdown", label: "page the column (pgup/pgdown, home/g, end/G)", scope: scopePanel, context: ctxIssues, priority: 16},
 	// Handoffs (task 137.11). The selection is the task table's shape (task
 	// 011) over the pending hand-off cards only; liveBindings withholds
 	// ready, handoff and return where they do not apply to the row.

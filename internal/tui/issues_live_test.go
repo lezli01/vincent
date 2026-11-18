@@ -103,7 +103,7 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 			issueSections[rows[0].section].lane, rows[0].issue.Lane)
 	}
 	out := ansi.Strip(list.render(160, 40))
-	for _, want := range []string{"Crash on start", "● 1 task", "[p1]", "▾ in progress  1"} {
+	for _, want := range []string{"Crash on start", "1 task", "p1", "◐ In progress"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the list is missing %q:\n%s", want, out)
 		}
@@ -152,26 +152,27 @@ func TestIssueScreensAgainstTheRealAPI(t *testing.T) {
 		return list.loaded && len(rows) == 1 && rows[0].issue.ID == local.ID
 	})
 
-	// `s` shows the done lane: every state is listed, and nothing is
-	// closed. `s` again hides it, back to the open listing.
+	// The done column is on the board from the start: every state is listed,
+	// and nothing is closed. `s` hides it, back to the open listing, and `s`
+	// again shows it.
+	if got := ansi.Strip(list.render(160, 40)); !strings.Contains(got, "✓ Done") {
+		t.Errorf("the done column is not drawn:\n%s", got)
+	}
+	h.sendKey(keyPress("s"))
+	h.p.until(10*time.Second, "the open listing", func() bool {
+		return !list.showDone && !list.loading && len(list.issues) == 1
+	})
+	reqs := rec.matching("GET /v1/issues")
+	if last := reqs[len(reqs)-1]; !strings.Contains(last, "state=open") {
+		t.Errorf("the listing with done hidden does not ask for open issues: %s", last)
+	}
 	h.sendKey(keyPress("s"))
 	h.p.until(10*time.Second, "the listing with done shown", func() bool {
 		return list.showDone && list.loaded && !list.loading && len(list.issues) == 1
 	})
-	if got := ansi.Strip(list.render(160, 40)); !strings.Contains(got, "▾ done  0") {
-		t.Errorf("the shown done section is not drawn:\n%s", got)
-	}
-	reqs := rec.matching("GET /v1/issues")
+	reqs = rec.matching("GET /v1/issues")
 	if last := reqs[len(reqs)-1]; strings.Contains(last, "state=") {
 		t.Errorf("the listing with done shown still filters by state: %s", last)
-	}
-	h.sendKey(keyPress("s"))
-	h.p.until(10*time.Second, "the open listing again", func() bool {
-		return !list.showDone && !list.loading && len(list.issues) == 1
-	})
-	reqs = rec.matching("GET /v1/issues")
-	if last := reqs[len(reqs)-1]; !strings.Contains(last, "state=open") {
-		t.Errorf("the listing with done hidden does not ask for open issues: %s", last)
 	}
 
 	// An issue.updated re-lists with no keypress.

@@ -1218,32 +1218,17 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"left": func(t *testing.T) {
 			v := issuesFixture()
+			v.selectIssue(4)
 			v.updateKey(registryKey(t, "left"))
-			if !v.folded["open"] {
-				t.Fatal("left did not fold the cursor's section")
+			if row, ok := v.current(); !ok || row.section != 0 {
+				t.Fatalf("left left the cursor on %+v, want the first column", row)
 			}
 		},
 		"right": func(t *testing.T) {
 			v := issuesFixture()
-			v.updateKey(registryKey(t, "left"))
 			v.updateKey(registryKey(t, "right"))
-			if v.folded["open"] {
-				t.Fatal("right did not expand the folded section")
-			}
-		},
-		"C": func(t *testing.T) {
-			v := issuesFixture()
-			v.updateKey(registryKey(t, "C"))
-			if !v.folded["open"] || !v.folded["in_progress"] || !v.folded["hand_off"] {
-				t.Fatalf("C folded %v, want every shown section", v.folded)
-			}
-		},
-		"O": func(t *testing.T) {
-			v := issuesFixture()
-			v.updateKey(registryKey(t, "C"))
-			v.updateKey(registryKey(t, "O"))
-			if len(v.folded) != 0 {
-				t.Fatalf("O left %v folded", v.folded)
+			if row, ok := v.current(); !ok || row.section == 0 {
+				t.Fatalf("right left the cursor on %+v, want a later column", row)
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -1270,10 +1255,10 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"s": func(t *testing.T) {
 			v := issuesFixture()
 			if _, cmd := v.updateKey(registryKey(t, "s")); cmd == nil {
-				t.Fatal("s did not re-list with the done lane shown")
+				t.Fatal("s did not re-list with the done lane hidden")
 			}
-			if !v.showDone {
-				t.Fatal("s did not show the done lane")
+			if v.showDone {
+				t.Fatal("s did not hide the done lane")
 			}
 		},
 		"R": func(t *testing.T) {

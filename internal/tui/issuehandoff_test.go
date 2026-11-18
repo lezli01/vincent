@@ -43,7 +43,7 @@ func handoffBoardFixture() *issuesView {
 func cursorOn(t *testing.T, v *issuesView, id int64) {
 	t.Helper()
 	for i, row := range v.lines() {
-		if !row.header && !row.none && row.issue.ID == id {
+		if !row.header && row.issue.ID == id {
 			v.cursor = i
 			v.remember(v.lines())
 			return
@@ -69,12 +69,11 @@ func TestIssueHandoffCell(t *testing.T) {
 			t.Errorf("cell = %q, want %q", got, tc.want)
 		}
 	}
-	// The marker survives a narrow row; the tags give way first.
+	// The marker has the card's status line to itself, whatever its labels.
 	iss := v.issues[1]
 	iss.Labels = []string{"backend", "urgent"}
-	line := ansi.Strip(issueLine(iss, 70, false, true))
-	if !strings.Contains(line, "claimed (H7)") || strings.Contains(line, "[backend]") {
-		t.Errorf("narrow row %q: want the marker kept and the tags shed", line)
+	if line, _ := issueCardStatus(iss); !strings.Contains(line, "claimed (H7)") {
+		t.Errorf("card status %q: want the marker kept", line)
 	}
 }
 
@@ -90,8 +89,8 @@ func TestIssueHandoffSelection(t *testing.T) {
 	if !v.picked[10] {
 		t.Fatal("space did not select the pending card")
 	}
-	if h := ansi.Strip(v.headerLine(120)); !strings.Contains(h, "1 selected") {
-		t.Errorf("header %q does not count the selection", h)
+	if h := ansi.Strip(v.boardSummary()); !strings.Contains(h, "1 selected") {
+		t.Errorf("summary %q does not count the selection", h)
 	}
 	v.update(registryKey(t, issueSelectAllKey))
 	if len(v.picked) != 0 {

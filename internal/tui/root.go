@@ -2653,6 +2653,9 @@ func (m *root) framedView(id viewID) string {
 	if m.width < 4 || h < 3 {
 		return m.views[id].render(m.width, h)
 	}
+	if f, ok := m.views[id].(frameless); ok && f.frameless() {
+		return fitHeight(m.views[id].render(m.width, h), h)
+	}
 	content := m.views[id].render(m.width-2, h-2)
 	title := m.views[id].title()
 	if _, ok := m.views[id].(headerTagger); ok {
@@ -2660,6 +2663,10 @@ func (m *root) framedView(id viewID) string {
 	}
 	return frame(title, content, m.width, h, true)
 }
+
+// frameless is a view that draws its own boxes while it says so (task 150.2),
+// and would read as a box inside a box in the root's frame.
+type frameless interface{ frameless() bool }
 
 // quitReminder is §15's exit line: the daemon keeps working after the TUI
 // closes, and the running count is what makes that worth saying. It is a

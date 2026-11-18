@@ -37,9 +37,9 @@ func TestJiraIssueSourceAgainstTheRealAPI(t *testing.T) {
 	if !issuesShareRepo(list) {
 		t.Error("a Jira-only list reads as mixed")
 	}
-	for _, width := range []int{160, 78} {
-		if line := ansi.Strip(issueLine(jira, width, false, true)); !strings.Contains(line, "PROJ-12") || strings.Contains(line, "gh#") {
-			t.Errorf("%d columns: the Jira row is not badged PROJ-12:\n%s", width, line)
+	for _, width := range []int{40, 24} {
+		if line := ansi.Strip(issueCardTags(jira, width, true)); !strings.Contains(line, "PROJ-12") || strings.Contains(line, "gh#") {
+			t.Errorf("%d columns: the Jira card is not badged PROJ-12:\n%s", width, line)
 		}
 	}
 	a := &issueAction{issue: jira, action: issueActClose}
@@ -59,8 +59,7 @@ func TestJiraIssueSourceAgainstTheRealAPI(t *testing.T) {
 		t.Error("a GitHub and a Jira issue read as one source")
 	}
 	for _, iss := range list {
-		// Narrow enough that a shared list would shorten the badge.
-		line := ansi.Strip(issueLine(iss, 78, false, issuesShareRepo(list)))
+		line := ansi.Strip(issueCardTags(iss, 30, issuesShareRepo(list)))
 		if strings.Contains(line, "gh#") {
 			t.Errorf("a mixed list collapsed a row to gh#N:\n%s", line)
 		}
