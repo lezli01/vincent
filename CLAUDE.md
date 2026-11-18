@@ -207,11 +207,20 @@ VINCENT_GATE_BIN=/some/dir ./scripts/m1-gate.sh # copy prebuilt vincent/fakeagen
 ```
 
 All twenty-six of those run in `ci.yml`'s `gate-group` job on all three platforms:
-four groups per OS, balanced by measured Windows time, each gate one named
-step that runs in exactly one group (`if: matrix.group == N`). The `gates` job
-is now only an aggregator that fails unless every group passed, kept because
-branch protection requires `gates (<os>)` by name. A new gate is a step in
-`gate-group` with a group number — the lightest group's — and every gate
+four groups, balanced by measured Windows time, each gate one named step that
+runs in exactly one group (`if: contains(matrix.groups, N)`). Linux and
+Windows run the four as four jobs; macOS runs them as two, `1+2` and `3+4`
+(2026-11-17), because GitHub's hosted macOS arm64 pool is the scarce one — at five
+macOS jobs a run, with every merge starting two runs, jobs were cancelled
+unrun with "The job was not acquired by Runner of type hosted". A group job's
+limit is 20 minutes. The `gates` job is now only an aggregator, kept because
+branch protection requires `gates (<os>)` by name, and each of its three
+checks judges **its own OS's** group jobs, read from the run's job list —
+`needs.gate-group.result` is the whole matrix, and had turned all three red
+for one missing macOS runner. `.github/workflows/ci-retry.yml` reruns a failed
+CI run's failed jobs, at most twice, only when a job's annotation says it
+never got a runner; a job that ran and failed is never retried. A new gate is
+a step in `gate-group` with a group number — the lightest group's — and every gate
 script sources `scripts/lib/gate.sh` right after setting `ROOT`: it builds
 through `gate_build` / `gate_build_as` (which copy from `VINCENT_GATE_BIN`,
 built once per CI job, when it is set), and its wait loops sleep `$GATE_POLL`

@@ -194,6 +194,9 @@ type root struct {
 	// decision 36): drawn as the status line's y/n question, and applied or
 	// dropped — with any open waiting on it — by the answer.
 	pending *pendingSwitch
+	// globalPause is the daemon-wide pause (task 149): the header badge, the
+	// status line under it and `Z`'s question are drawn from it.
+	globalPause globalPauseState
 
 	// links is the session's `tui.hyperlinks` (task 111). The root fills it
 	// because the config arrives in three messages bound for three different
@@ -269,6 +272,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.openObject(msg)
 	case followFetchedMsg:
 		return m, m.updateFollowFetched(msg)
+	case globalPauseMsg:
+		return m, m.updateGlobalPause(msg)
 	case selectViewMsg:
 		return m, m.switchTo(msg.id)
 	case backToTabMsg:
@@ -498,6 +503,11 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.pending != nil && msg.String() != "ctrl+c" {
 		return m, m.updatePendingSwitchKey(msg)
 	}
+	// `Z`'s question (task 149) owns the keyboard the same way: it is the
+	// question on screen, and y must not reach the view under it.
+	if m.globalPause.asking && msg.String() != "ctrl+c" {
+		return m, m.updatePauseAskKey(msg)
+	}
 	// The help overlay owns every key but ctrl+c, the palette's rule (task
 	// 114 decision 2). It sits above the input-capture gate: over a chat, a
 	// key that fell through would type into a draft the sheet is hiding, and
@@ -697,6 +707,12 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.selNotice = "mouse off — native selection works; " + k + " turns it back on"
 		}
 		return nil, true
+	case opKey(keymap.PauseAll):
+		// Global, and asked first (task 149): it changes what every project
+		// is doing, which no stray key should.
+		if m.phase == phaseConnected {
+			return m.pressPauseAll(), true
+		}
 	case opKey(keymap.Project):
 		// While reconnecting too: the picker opens on the cached list.
 		if m.phase == phaseConnected || m.phase == phaseReconnecting {
@@ -1726,7 +1742,7 @@ func (m *root) scopeCmds() []tea.Cmd {
 }
 
 func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
-	var reprobe, relist, repick, reload tea.Cmd
+	var reprobe, relist, repick, reload, repause tea.Cmd
 	if m.notes == nil {
 		// A stale note from a stream torn down by retry; never re-arm on a
 		// nil channel — that receive would block forever.
@@ -1757,6 +1773,16 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		// Last-Event-ID starts live at the *next* event, §13.3).
 		m.streamLive = true
 		m.setConnected(true)
+		// Read once, when the stream first comes up (task 149). After that
+		// the stream keeps it current: a reconnect resumes from
+		// Last-Event-ID, so a pause taken or lifted while it was down is
+		// replayed as its event rather than refetched here.
+		// Once per session, success or not: a daemon that cannot answer
+		// (one older than the route) is asked again only by the event.
+		if !m.globalPause.asked {
+			m.globalPause.asked = true
+			repause = fetchGlobalPause(m.client)
+		}
 		if m.projPick != nil {
 			m.projPick.offline = false
 		}
@@ -1784,9 +1810,12 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		if projectPickerEvent(n.Event.Type) {
 			repick = m.scheduleProjectPicker()
 		}
+		if m.globalPause.refetchOn(n.Event.Type) {
+			repause = fetchGlobalPause(m.client)
+		}
 	}
 	// Every view sees the note, not just the visible one.
-	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe, relist, repick, reload)
+	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe, relist, repick, reload, repause)
 }
 
 // delegate routes a message to the active view.
@@ -2140,6 +2169,9 @@ func (m *root) statusLine() (string, bool) {
 	if m.pending != nil {
 		return styleWarn.Render(" " + m.pending.promptFit(m.width-1)), true
 	}
+	if m.globalPause.asking {
+		return styleWarn.Render(fitStatus(" "+m.globalPause.question(), m.width)), true
+	}
 	if m.keysNotice != "" {
 		head := m.keysNotice
 		if m.width > 0 && cols(head+m.keysMore) > m.width {
@@ -2152,6 +2184,9 @@ func (m *root) statusLine() (string, bool) {
 			return styleWarn.Render(fitStatus(" ⚠ "+m.selNotice, m.width)), true
 		}
 		return styleDim.Render(fitStatus(" "+m.selNotice, m.width)), true
+	}
+	if m.globalPause.shown() && m.phase == phaseConnected {
+		return styleWarn.Render(fitStatus(m.globalPause.statusLine(), m.width)), true
 	}
 	return "", false
 }
@@ -2297,6 +2332,12 @@ func (m *root) headerLine() string {
 	badge := ""
 	if m.phase != phaseConnected {
 		badge = m.connBadge() + "  "
+	}
+	// The global pause (task 149) rides beside it, on the same terms: drawn
+	// only while it is news, and never shed — a paused daemon looks like an
+	// idle one unless something says otherwise.
+	if pb := m.globalPause.badge(); pb != "" {
+		badge += pb + "  "
 	}
 	lead := func(name string) string { return " " + styleTitle.Render(name) + "  " + badge }
 	full := "vincent"

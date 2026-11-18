@@ -20,7 +20,7 @@ state stay on your machine; vincent provides the control plane around them.
 | Issues | A project's own issues — local, or imported from GitHub or [Jira Cloud](guides/jira.md) — with lanes, a main worktree per issue, side tasks and merge-back; a person's close or reopen written back to the issue's tracker. No stored credential |
 | Event triggers | Start or act on tasks from a project's own issue changes, a polled command, GitHub issue and pull-request changes, a signed push, or a cron or interval schedule; off twice by default, proposed paused and restricted, deduplicated and rate-limited, with a delivery ledger and dry runs; built-in workflows that write triggers and never switch one on |
 | Integration | Full CLI, JSON output, stable exit codes, localhost REST API, durable state SSE and live output streams |
-| Operations | Automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore, scheduled backups with retention |
+| Operations | A global pause for maintenance — one command or key to pause all work and one to continue it, shown on every TUI screen — automatic usage-limit waits, one-command diagnostics, configuration editing from the TUI and CLI, orphan cleanup, database integrity checks, backup and restore, scheduled backups with retention |
 | Platforms | Windows, macOS, and Linux; Homebrew, a universal macOS `.pkg`, Scoop, mise, deb/rpm, and archives; WinGet submitted, pending Microsoft review |
 
 ## Orchestrate work instead of terminals
@@ -34,6 +34,13 @@ The scheduler admits work by priority and creation time while enforcing a
 global concurrency cap and an optional cap for each project. A task waiting at
 a human gate, blocked step, or fan-out join releases its slot instead of
 starving other work.
+
+For maintenance, **one pause covers everything**: `vincent daemon pause` (or
+`Z` in the TUI) stops admitting work and lets every running task finish its
+current step before parking it, and `vincent daemon continue` resumes exactly
+what the pause parked — a task you paused yourself stays paused. The pause
+survives a daemon restart, and every TUI screen says whether work is pausing or
+paused. See [Pausing all work](guides/tui.md#pausing-all-work).
 
 A task can also be created **held**: it waits `paused` on the board, with no
 worktree and no agent started, until you resume it. Two more

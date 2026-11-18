@@ -348,6 +348,9 @@ func TestWakeOnFiltersEvents(t *testing.T) {
 		// about admission changes when it does, so waking the loop on it
 		// would spin it once per status message.
 		{store.EventTaskStatusChanged, false},
+		// Task 149: lifting the global pause is the moment a held queue
+		// becomes admissible.
+		{store.EventGlobalPauseChanged, true},
 	}
 	for _, c := range cases {
 		if got := WakeOn(&store.Event{Type: c.evType}); got != c.want {
@@ -356,5 +359,49 @@ func TestWakeOnFiltersEvents(t *testing.T) {
 	}
 	if WakeOn(nil) {
 		t.Error("WakeOn(nil) = true, want false")
+	}
+}
+
+// TestGlobalPauseHoldsTheQueue: while the global pause is on (task 149)
+// nothing is admitted, a pending pause still parks, and lifting the pause
+// lets the very next walk admit what waited.
+func TestGlobalPauseHoldsTheQueue(t *testing.T) {
+	h := newHarness(t, 10)
+	p := h.project(t, "proj", nil)
+	waiting := h.task(t, p, "waiting", store.TaskQueued, 0, time.Minute)
+	crashed := h.task(t, p, "crashed", store.TaskRunning, 0, 2*time.Minute)
+	if _, _, err := h.store.SetGlobalPause(t.Context(), "", time.Now()); err != nil {
+		t.Fatalf("SetGlobalPause: %v", err)
+	}
+	// The pause marked the running task; a crash then re-queues it with the
+	// request still pending (§12.4).
+	if _, _, err := h.store.TransitionTask(t.Context(), crashed.ID,
+		store.TaskRunning, store.TaskQueued, store.TaskChange{}); err != nil {
+		t.Fatalf("re-queue: %v", err)
+	}
+
+	h.sched.admit(t.Context())
+
+	if got := h.admitter.ids(); len(got) != 0 {
+		t.Fatalf("admitted %v under the global pause", got)
+	}
+	if got := h.state(t, crashed.ID); got != store.TaskPaused {
+		t.Fatalf("crashed task state = %s, want paused (its pending pause parks it)", got)
+	}
+	if got := h.state(t, waiting.ID); got != store.TaskQueued {
+		t.Fatalf("waiting task state = %s, want queued", got)
+	}
+	ids, _, err := h.store.ClearGlobalPause(t.Context())
+	if err != nil {
+		t.Fatalf("ClearGlobalPause: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != crashed.ID {
+		t.Fatalf("ClearGlobalPause = %v, want [%d] — the task the pause parked", ids, crashed.ID)
+	}
+
+	h.sched.admit(t.Context())
+
+	if got := h.admitter.ids(); len(got) != 1 || got[0] != waiting.ID {
+		t.Fatalf("admitted %v after the pause lifted, want [%d]", got, waiting.ID)
 	}
 }

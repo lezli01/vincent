@@ -5,9 +5,11 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/issuestate"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 func openIssueChat(t *testing.T, s *Store, projectID, issueID int64, branch string) (*Chat, error) {
@@ -122,6 +124,7 @@ func TestIssueChatHoldsTheLineOfMainWork(t *testing.T) {
 	if lane, _ := laneOfIssue(t, s, is.ID); lane != issuestate.LaneHandOff {
 		t.Errorf("lane after a ready main task finished after the chat = %s, want hand_off", lane)
 	}
+	clockPast(t, task.FinishedAt)
 	again, err := openIssueChat(t, s, p.ID, is.ID, "unused")
 	if err != nil {
 		t.Fatalf("chat after hand_off: %v", err)
@@ -302,6 +305,7 @@ func TestIssueChatDeletesAnnounceLaneMoves(t *testing.T) {
 	task := newMainTask(p.ID, done.ID, "delivered")
 	mustCreate(t, s, task)
 	moveTask(t, s, task, TaskRunning, TaskDone)
+	clockPast(t, task.FinishedAt)
 	later, err := openIssueChat(t, s, p.ID, done.ID, "unused")
 	if err != nil {
 		t.Fatalf("CreateIssueChat after the delivery: %v", err)
@@ -377,4 +381,21 @@ func TestIssueChatEventsNameTheIssue(t *testing.T) {
 			t.Errorf("a free chat's %s names an issue: %s", e.Type, e.Payload)
 		}
 	}
+}
+
+// clockPast waits until the wall clock reads strictly later than at, so a
+// row stamped next is ordered after it. A chat is the latest main-line work
+// only when its created_at is *greater* than the delivery's finished_at
+// (issueLatestChatCond), and Windows' wall clock is coarse enough that a chat
+// opened straight after a transition can carry the very same timestamp: the
+// tie made TestIssueChatDeletesAnnounceLaneMoves fail on the windows-latest
+// leg, every rerun of one job, while passing everywhere else.
+func clockPast(t *testing.T, at *time.Time) {
+	t.Helper()
+	if at == nil {
+		t.Fatal("clockPast: the task has no finished_at")
+	}
+	wait.Until(t, "the wall clock to pass the delivery's finished_at", func() bool {
+		return time.Now().After(*at)
+	})
 }

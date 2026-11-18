@@ -196,6 +196,10 @@ type Task struct {
 	// effect (spec §6). Persisted so a crash, which re-queues the task,
 	// cannot discard it.
 	PauseRequested bool
+	// GlobalPause marks a pause — pending or taken — that the daemon-wide
+	// pause made rather than a human on this task (task 149). `continue`
+	// resumes exactly the tasks carrying it.
+	GlobalPause bool
 	// RetryCursorAt is the last human retry. The retry budget counts only
 	// failed attempts after it, which is how retry resets it (§6, §7.2).
 	RetryCursorAt *time.Time

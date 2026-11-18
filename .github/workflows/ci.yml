@@ -250,20 +250,42 @@ jobs:
   #
   # `gates` only checks the result. Branch protection requires the checks
   # `gates (ubuntu-latest|macos-latest|windows-latest)` by name, so that job
-  # id keeps its os matrix and fails unless every group on every OS passed —
-  # one red group turns all three red, and the group's own name says which.
+  # id keeps its os matrix, and each fails unless every group of its own OS
+  # passed — the group's own name says which.
+  #
+  # macOS runs the same four groups as two jobs, `1+2` and `3+4` (2026-11-17).
+  # GitHub's hosted macOS arm64 pool is the scarce one: a run asked for five
+  # macOS jobs at once — `ci (macos-latest)` and four groups — and every merge
+  # starts two runs together (the master push and the release-please PR), so
+  # macOS jobs queued for 15-30 min and were then cancelled with "The job was
+  # not acquired by Runner of type hosted even after multiple attempts". The
+  # gates run faster there than on Windows, which the groups are balanced by,
+  # so two jobs cost little wall-clock and cut each run's macOS demand to
+  # three. `groups` is what the steps test; `group` only names the job.
   gate-group:
     name: gate group (${{ matrix.os }}, ${{ matrix.group }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 12
+    # 20, not 12 (2026-11-17): two Windows groups were killed mid-gate at 12 min,
+    # one of them after a cache restore failed and it built cold. A macOS
+    # job carries two groups' gates.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
         # Balanced by measured Windows step time, ~235 s of gates a group.
         # Rebalance when one group outgrows the rest; each gate's step below
         # names its group.
-        group: [1, 2, 3, 4]
+        include:
+          - { os: ubuntu-latest, group: '1', groups: [1] }
+          - { os: ubuntu-latest, group: '2', groups: [2] }
+          - { os: ubuntu-latest, group: '3', groups: [3] }
+          - { os: ubuntu-latest, group: '4', groups: [4] }
+          - { os: macos-latest, group: '1+2', groups: [1, 2] }
+          - { os: macos-latest, group: '3+4', groups: [3, 4] }
+          - { os: windows-latest, group: '1', groups: [1] }
+          - { os: windows-latest, group: '2', groups: [2] }
+          - { os: windows-latest, group: '3', groups: [3] }
+          - { os: windows-latest, group: '4', groups: [4] }
     steps:
       - uses: actions/checkout@v7
         with:
@@ -284,14 +306,14 @@ jobs:
 
       # M1: the scripted curl flow against the fake agent.
       - name: M1 gate (fake agent)
-        if: matrix.group == 4
+        if: contains(matrix.groups, 4)
         shell: bash
         run: ./scripts/m1-gate.sh
 
       # M2: multi-step workflow with an input round-trip, hard-kill recovery,
       # and cap stress — all against the fake agent.
       - name: M2 gate (fake agent)
-        if: matrix.group == 1
+        if: contains(matrix.groups, 1)
         shell: bash
         run: ./scripts/m2-gate.sh
 
@@ -301,7 +323,7 @@ jobs:
       # all three OSes rather than one: the refusal is only real on Windows, and
       # "restricted simply runs" is only real off it.
       - name: M5 gate (fake agent)
-        if: matrix.group == 3
+        if: contains(matrix.groups, 3)
         shell: bash
         run: ./scripts/m5-gate.sh
 
@@ -310,7 +332,7 @@ jobs:
       # actually bite — git's behaviour on Windows is the thing a gate should
       # prove rather than assume.
       - name: M6 gate (parallel and fan-out)
-        if: matrix.group == 3
+        if: contains(matrix.groups, 3)
         shell: bash
         run: ./scripts/m6-gate.sh
 
@@ -319,7 +341,7 @@ jobs:
       # matrix here is the shell: every `run:` body is written to be accepted
       # by /bin/sh and pwsh alike, and Windows is what proves it.
       - name: M7 gate (conditions)
-        if: matrix.group == 4
+        if: contains(matrix.groups, 4)
         shell: bash
         run: ./scripts/m7-gate.sh
 
@@ -330,7 +352,7 @@ jobs:
       # mid-iteration, and the kill path is `taskkill` there and SIGKILL
       # everywhere else.
       - name: M8 gate (loops)
-        if: matrix.group == 1
+        if: contains(matrix.groups, 1)
         shell: bash
         run: ./scripts/m8-gate.sh
 
@@ -341,7 +363,7 @@ jobs:
       # multi-line step order and provenance chain, which is where jq's CRLF
       # bites (the m8 finding).
       - name: M9 gate (includes)
-        if: matrix.group == 1
+        if: contains(matrix.groups, 1)
         shell: bash
         run: ./scripts/m9-gate.sh
 
@@ -355,7 +377,7 @@ jobs:
       # and after `awaiting_input` — a second MCP client, whose own CRLF
       # handling and config path Windows tests too.
       - name: M10 gate (MCP)
-        if: matrix.group == 4
+        if: contains(matrix.groups, 4)
         shell: bash
         run: ./scripts/m10-gate.sh
 
@@ -365,7 +387,7 @@ jobs:
       # Windows, and the 0600 assertion is POSIX-only and says so rather than
       # pretending Windows has a mode.
       - name: M11 gate (configuration)
-        if: matrix.group == 2
+        if: contains(matrix.groups, 2)
         shell: bash
         run: ./scripts/m11-gate.sh
 
@@ -378,7 +400,7 @@ jobs:
       # supported host that CI cannot exercise — a gate that has never run on a
       # platform is not known to pass there.
       - name: M12 gate (containers)
-        if: matrix.group == 3
+        if: contains(matrix.groups, 3)
         shell: bash
         run: ./scripts/m12-gate.sh
 
@@ -388,7 +410,7 @@ jobs:
       # backslash paths, and the project scope is a repo path the gate builds
       # on the host it runs on.
       - name: M13 gate (workflow editor)
-        if: matrix.group == 3
+        if: contains(matrix.groups, 3)
         shell: bash
         run: ./scripts/m13-gate.sh
 
@@ -408,7 +430,7 @@ jobs:
       # listing against the fake, the directory the list is about, and the
       # invocation a claude turn reports back.
       - name: M14 gate (chats end to end)
-        if: matrix.group == 2
+        if: contains(matrix.groups, 2)
         shell: bash
         run: ./scripts/m14-gate.sh
 
@@ -419,7 +441,7 @@ jobs:
       # `git rev-list` answer read back through the platform's own line
       # endings.
       - name: M15 gate (archived boards and delete)
-        if: matrix.group == 4
+        if: contains(matrix.groups, 4)
         shell: bash
         run: ./scripts/m15-gate.sh
 
@@ -430,7 +452,7 @@ jobs:
       # through a child's environment, and an HMAC over bytes that must reach
       # the daemon exactly as they were signed.
       - name: M16 gate (event triggers)
-        if: matrix.group == 3
+        if: contains(matrix.groups, 3)
         shell: bash
         run: ./scripts/m16-gate.sh
 
@@ -442,7 +464,7 @@ jobs:
       # workflow validate` by a loop, and "the global file was rewritten" is
       # an atomic rename over a file the registry watcher is watching.
       - name: 123 gate (global update-workflows)
-        if: matrix.group == 4
+        if: contains(matrix.groups, 4)
         shell: bash
         run: ./scripts/123-gate.sh
 
@@ -454,7 +476,7 @@ jobs:
       # and `/private/var/…` on macOS, and the diverged case asserts a ref did
       # not move in a repository three git processes share.
       - name: 125 gate (run on an existing branch)
-        if: matrix.group == 4
+        if: contains(matrix.groups, 4)
         shell: bash
         run: ./scripts/125-gate.sh
 
@@ -466,7 +488,7 @@ jobs:
       # admission configured, and "no remote was added for the fork" and the
       # branch's upstream are read back through Windows' own line endings.
       - name: 064 gate (task from a pull request)
-        if: matrix.group == 3
+        if: contains(matrix.groups, 3)
         shell: bash
         run: ./scripts/064-gate.sh
 
@@ -478,7 +500,7 @@ jobs:
       # worktree branch a pull request's head is matched against is made by
       # git on the host.
       - name: 052 gate (GitHub pull requests)
-        if: matrix.group == 4
+        if: contains(matrix.groups, 4)
         shell: bash
         run: ./scripts/052-gate.sh
 
@@ -490,7 +512,7 @@ jobs:
       # limit, and the argv the fake records is read back with the platform's
       # own line endings.
       - name: 069 gate (open a pull request)
-        if: matrix.group == 2
+        if: contains(matrix.groups, 2)
         shell: bash
         run: ./scripts/069-gate.sh
 
@@ -504,7 +526,7 @@ jobs:
       # included, and the argv log it writes is read back with the platform's
       # own line endings.
       - name: 068 gate (pull request writes)
-        if: matrix.group == 4
+        if: contains(matrix.groups, 4)
         shell: bash
         run: ./scripts/068-gate.sh
 
@@ -520,7 +542,7 @@ jobs:
       # daemon process, and the argv log and the multi-line `jq` captures
       # are read back with the platform's own line endings.
       - name: 130 gate (issues)
-        if: matrix.group == 2
+        if: contains(matrix.groups, 2)
         shell: bash
         run: ./scripts/130-gate.sh
 
@@ -537,7 +559,7 @@ jobs:
       # `run:` body has to mean the same to /bin/sh and pwsh, and the
       # `C:/…` worktree paths are compared as the API returns them.
       - name: 134 gate (issue main worktree and merge-back)
-        if: matrix.group == 4
+        if: contains(matrix.groups, 4)
         shell: bash
         run: ./scripts/134-gate.sh
 
@@ -553,7 +575,7 @@ jobs:
       # Go child wrote with the platform's line endings; and the racing claim
       # is decided by a SQLite unique index under real concurrent HTTP.
       - name: 137 gate (handoffs)
-        if: matrix.group == 2
+        if: contains(matrix.groups, 2)
         shell: bash
         run: ./scripts/137-gate.sh
 
@@ -567,7 +589,7 @@ jobs:
       # quoting is what keeps the JSON carrier whole there. Group 3 because it
       # was the lightest on Windows when this was wired (run 40874635332).
       - name: 138 gate (copilot adapter)
-        if: matrix.group == 3
+        if: contains(matrix.groups, 3)
         shell: bash
         run: ./scripts/138-gate.sh
 
@@ -583,7 +605,7 @@ jobs:
       # returns them. Group 1 because it ran the fewest gates when this was
       # wired; move it if a measured run says otherwise.
       - name: 140 gate (a chat on an issue)
-        if: matrix.group == 1
+        if: contains(matrix.groups, 1)
         shell: bash
         run: ./scripts/140-gate.sh
 
@@ -603,7 +625,7 @@ jobs:
       # a running executable. Group 1, the lightest measured on Windows when
       # this was wired.
       - name: 142 gate (Jira issues)
-        if: matrix.group == 1
+        if: contains(matrix.groups, 1)
         shell: bash
         run: ./scripts/142-gate.sh
 
@@ -624,7 +646,7 @@ jobs:
       # executable. Group 1 because it
       # measured lightest on Windows (237 s, run 42007181114).
       - name: 143 gate (auto-archive on issue close)
-        if: matrix.group == 1
+        if: contains(matrix.groups, 1)
         shell: bash
         run: ./scripts/143-gate.sh
 
@@ -633,15 +655,36 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Reads this run's job list; nothing else.
+    permissions:
+      actions: read
     strategy:
+      # One OS's red must not cancel the other two's verdicts: each is a
+      # separately required check (2026-11-17).
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       # always() above, so a failed, cancelled or skipped group reaches this
       # step and turns the check red rather than skipping it.
+      #
+      # Each check judges its own OS's groups only (2026-11-17). It used to read
+      # `needs.gate-group.result`, which is the whole matrix: a macOS group
+      # GitHub never found a runner for turned `gates (ubuntu-latest)` and
+      # `gates (windows-latest)` red too, so three red checks named one
+      # missing machine. The job list of this attempt is the per-OS answer;
+      # `needs` still orders this after every group.
       - name: Every gate group passed
         env:
-          RESULT: ${{ needs.gate-group.result }}
+          GH_TOKEN: ${{ github.token }}
+          OS: ${{ matrix.os }}
+          ALL: ${{ needs.gate-group.result }}
         run: |
-          echo "gate-group: $RESULT"
-          [ "$RESULT" = success ]
+          echo "gate-group (all OSes): $ALL"
+          jobs="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            --jq ".jobs[] | select(.name | startswith(\"gate group ($OS, \")) | \"\(.name)\t\(.conclusion)\"")"
+          printf '%s\n' "$jobs"
+          [ -n "$jobs" ] || { echo "no gate group job for $OS in this attempt"; exit 1; }
+          bad="$(printf '%s\n' "$jobs" | awk -F'\t' '$2 != "success"')"
+          [ -z "$bad" ] || { echo "not passed:"; printf '%s\n' "$bad"; exit 1; }

@@ -16,7 +16,7 @@ import (
 const taskColumns = `id, project_id, title, description, fields_json, workflow_name, workflow_snapshot,
 	base_branch, branch_name, adopted_branch, worktree_path, base_sha, base_refresh, priority, agent_override, model_override, effort_override,
 	restricted, max_task_cost_usd,
-	state, current_step, block_reason, block_detail, pause_requested, retry_cursor_at, pending_override_json,
+	state, current_step, block_reason, block_detail, pause_requested, global_pause, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
 	parent_task_id, parent_step_index, lane_id, lane_order, settled_children_watermark,
 	github_issue_json, github_pull_json,
@@ -1256,10 +1256,14 @@ func (s *Store) ArchivedTaskIDsBefore(ctx context.Context, cutoff time.Time) ([]
 // transition at the step boundary. The write is conditional on the task
 // still running, so a task that finished in the meantime reports a state
 // conflict rather than acquiring a flag nothing will ever read.
+//
+// A human pause on a task the global pause had already marked takes it over:
+// the mark clears, so lifting the global pause leaves this one in place
+// (task 149).
 func (s *Store) RequestPause(ctx context.Context, id int64) (*Task, error) {
 	return s.conditionalTaskUpdate(ctx, id, TaskRunning,
 		[]TaskState{TaskRunning},
-		`UPDATE tasks SET pause_requested = 1, updated_at = ? WHERE id = ? AND state = ?`,
+		`UPDATE tasks SET pause_requested = 1, global_pause = 0, updated_at = ? WHERE id = ? AND state = ?`,
 		formatTime(time.Now()), id, string(TaskRunning))
 }
 
@@ -1410,7 +1414,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		&agentOv, &modelOv, &effortOv,
 		&t.Restricted, &t.MaxTaskCostUSD,
 		(*string)(&t.State), &t.CurrentStep, &blockReason, &blockDetail,
-		&t.PauseRequested, &retryCursor, &pendingOv,
+		&t.PauseRequested, &t.GlobalPause, &retryCursor, &pendingOv,
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
 		&parentID, &parentStep, &laneID, &laneOrder, &watermark,
 		&githubIssue, &githubPull, &workflowOrigin,

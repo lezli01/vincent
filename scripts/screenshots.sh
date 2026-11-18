@@ -2851,6 +2851,25 @@ Sleep 4s
 Screenshot "'"$OUT"'/tui-issue-jira.png"
 Sleep 2s
 '
+
+  # The global pause (task 149), appended last because it changes what every
+  # project is doing: the seed's running tasks park at their next step
+  # boundary, which would move every tape after it. The header badge and
+  # the status line under it are what the shot is for; the board under them
+  # is api's. The pause is lifted again afterwards, so a seeded daemon left
+  # up to iterate on tapes (`seed`) is not left paused.
+  if [[ -z "${VINCENT_SHOTS_ONLY:-}" || "${VINCENT_SHOTS_ONLY}" == "tui-global-pause" ]]; then
+    api POST /daemon/pause '{"reason":"upgrading vincent"}' >/dev/null
+  fi
+  tape tui-global-pause 1250 api '
+Tab
+Sleep 6s
+Screenshot "'"$OUT"'/tui-global-pause.png"
+Sleep 2s
+'
+  if [[ -z "${VINCENT_SHOTS_ONLY:-}" || "${VINCENT_SHOTS_ONLY}" == "tui-global-pause" ]]; then
+    api POST /daemon/continue >/dev/null
+  fi
 }
 
 case "${1:-all}" in

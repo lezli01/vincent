@@ -159,6 +159,9 @@ are long-lived by contract and no write deadline is set.
 | `GET` | `/v1/update` | The daemon's **cached** release check — see [Update check](#update-check). Never polls |
 | `POST` | `/v1/daemon/stop` | Graceful shutdown → `202`, then the daemon exits |
 | `POST` | `/v1/daemon/backup` | `{ path }` — writes a `.tar.gz` of daemon state to `path`. See [Backup](#backup) |
+| `GET` | `/v1/daemon/pause` | The global pause → `{ state, paused_at, reason, running, awaiting_input, queued, held }`. See [Global pause](#global-pause) |
+| `POST` | `/v1/daemon/pause` | `{ reason? }` — pause all work → the same body. Not an MCP tool |
+| `POST` | `/v1/daemon/continue` | Lift the pause and resume the tasks it parked → the same body plus `resumed`. Not an MCP tool |
 | `GET` | `/v1/maintenance/orphans` | Directories under the data dir no task claims, with sizes. Removes nothing |
 | `POST` | `/v1/maintenance/gc` | `{ force?, dry_run? }` — reclaims them. Same body shape as the list |
 
@@ -262,6 +265,39 @@ mention. All four are `null` when the daemon has no adapter registry to ask,
 as `supports_resume` is. They are the answer for a client that has **no chat
 yet** — `vincent agents`, and any agent picker; a client that already has a
 chat reads the same facts from that chat, so it needs only one call.
+
+### Global pause
+
+`POST /v1/daemon/pause` pauses all work, for maintenance: the scheduler admits
+nothing, and every running task finishes its current step and then parks as
+`paused` — §6's soft pause, never a kill. Tasks waiting on a human stay where
+they are and chats are not affected. The pause is durable across a daemon
+restart. The body is optional; `reason` is one line of at most 200 characters,
+else `400 validation_failed`.
+
+All three routes answer with the same shape:
+
+```json
+{ "state": "pausing", "paused_at": "2026-11-17T08:30:00Z", "reason": "upgrading",
+  "running": 2, "awaiting_input": 0, "queued": 4, "held": 1 }
+```
+
+| Field | Meaning |
+|---|---|
+| `state` | `active` (no pause), `pausing` (a pause, with tasks still finishing a step) or `paused` |
+| `paused_at`, `reason` | When and why; `null` and `""` while active |
+| `running` | Tasks still executing a step; each parks at its next step boundary |
+| `awaiting_input` | Tasks holding an agent idle on a question; not waited on, they park after the answer |
+| `queued` | Tasks admission is holding back |
+| `held` | Tasks the pause parked — the ones `continue` resumes |
+| `resumed` | On `POST /v1/daemon/continue` only: how many it resumed |
+
+Pausing a paused daemon is a `200` that keeps the first time and reason.
+`POST /v1/daemon/continue` lifts the pause, withdraws the pause requests that
+had not taken effect, and resumes exactly the tasks the pause parked — a task
+paused by hand, before or during the pause, stays paused. Every task carries
+`global_pause`, true while its pause (pending or taken) is the global pause's.
+Each change is announced as [`daemon.pause_changed`](#events-sse).
 
 ### Backup
 
@@ -2694,7 +2730,8 @@ events on the stream to say what forty rows already say.
 - **`?archived=` defaults to false.** `true` selects only archived tasks, `all`
   returns both.
 - **Every task representation carries `available_actions`** (the actions valid
-  right now) and `pause_requested`, so clients never restate the state machine.
+  right now) and `pause_requested`, so clients never restate the state machine,
+  and `global_pause` — true while that pause is the [global pause](#global-pause)'s.
   While a [linked chat](#a-chat-on-a-stopped-task) is open it also carries
   `open_chat_id`, and `available_actions` is `["cancel"]` where cancel is legal
   (`blocked`, `awaiting_gate`) and `[]` otherwise. `open_chat_id` is omitted
@@ -4043,6 +4080,7 @@ handoff.created         handoff.item_changed    handoff.settled
 project.*               workflow.registry_changed
 trigger.fired           trigger.poll_changed
 agent.quota_changed     daemon.shutting_down
+daemon.pause_changed
 ```
 
 Payloads carry ids and the new state, not full objects — clients re-fetch what
@@ -4140,6 +4178,11 @@ they need.
   is on the durable side deliberately, so a client that blinks recovers the
   message through `Last-Event-ID`. It is emitted only when the stored value
   actually changed, so a step re-asserting the same line does not wake you.
+- `daemon.pause_changed` carries `{ paused, paused_at, reason }` and no
+  `task_id`, whenever the [global pause](#global-pause) is taken or lifted —
+  never on a repeat. The move from `pausing` to `paused` is the last running
+  task's `task.state_changed`; refetch `GET /v1/daemon/pause` on those while a
+  pause is in effect.
 - `agent.quota_changed` carries `{ agent, spent, resets_at, source }` and no
   `task_id`: the fact is about an adapter, not about any one task. It is
   emitted when a `usage_limit` stop is observed, when a successful run retires
@@ -4252,6 +4295,8 @@ Every route on this page is a tool, with these exceptions:
 |---|---|
 | `POST /v1/daemon/stop` | An agent must not stop the daemon supervising it |
 | `POST /v1/daemon/backup` | Destructive admin |
+| `POST /v1/daemon/pause` | An agent must not halt every piece of work the daemon supervising it runs, its own step included. `GET /v1/daemon/pause` is the tool `daemon_pause_status` |
+| `POST /v1/daemon/continue` | Same |
 | `DELETE /v1/projects/{id}` | Destructive admin |
 | `DELETE /v1/tasks/{id}` | Destructive admin, on the same line: a row a human archived is history nobody else may discard. Archive stays a tool — the row and its transcripts survive it |
 | `DELETE /v1/chats/{id}` | Same |

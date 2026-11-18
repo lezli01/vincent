@@ -487,6 +487,12 @@ seconds before being killed, and their runs are marked `interrupted`. The API â€
 SSE streams included â€” stays up through the grace period, so clients watch the
 wind-down live.
 
+To stop work *without* interrupting a step, use the
+[global pause](api.md#global-pause) first (`vincent daemon pause --wait`): no new
+task is admitted, every running task parks `paused` at its next step boundary,
+and `vincent daemon continue` resumes them afterwards. The pause survives the
+restart, so a daemon stopped and started while paused comes back paused.
+
 ---
 
 ## See also

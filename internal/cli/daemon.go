@@ -83,7 +83,8 @@ func newDaemonCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&hideConsole, "hide-console", false,
 		"detach from the console the OS allocated for this process (Windows only; no-op elsewhere)")
 	cmd.AddCommand(newDaemonStartCmd(), newDaemonStopCmd(), newDaemonStatusCmd(),
-		newDaemonLogsCmd(), newDaemonBackupCmd(), newDaemonRestoreCmd())
+		newDaemonLogsCmd(), newDaemonBackupCmd(), newDaemonRestoreCmd(),
+		newDaemonPauseCmd(), newDaemonContinueCmd())
 	return cmd
 }
 
@@ -280,6 +281,15 @@ func newDaemonStatusCmd() *cobra.Command {
 			}
 			_, _ = fmt.Fprintf(out, "daemon is running (pid %d, port %d, version %s, started %s)\n",
 				ri.PID, ri.Port, h.Version, ri.StartedAt.Local().Format(time.RFC3339))
+			// The global pause (task 149) is the other half of "is it
+			// working": a healthy daemon that admits nothing looks idle, not
+			// paused. Best effort — a daemon too old to have the route, or a
+			// token problem, leaves the health answer standing.
+			if c, err := apiclient.Discover(dirs.Data); err == nil {
+				if p, err := c.GlobalPause(cmd.Context()); err == nil && !p.Active() {
+					_, _ = fmt.Fprintln(out, "work is "+pauseSummary(p)+" — `vincent daemon continue` resumes it")
+				}
+			}
 			// The post-swap mismatch (task 055). `vincent update` replaces the
 			// binary and nothing else — it drains nothing and kills nothing —
 			// so a daemon started before the swap keeps its old code until it

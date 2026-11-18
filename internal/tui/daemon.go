@@ -151,6 +151,11 @@ type daemonView struct {
 	// rather than pretending a dead daemon's last figures are current.
 	connected bool
 
+	// pause is the root's last reading of the global pause (task 149),
+	// relayed as globalPauseStateMsg; pauseOK is whether one has landed.
+	pause   apiclient.GlobalPause
+	pauseOK bool
+
 	width, height int
 }
 
@@ -322,6 +327,9 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return d, tea.Batch(d.logCmd(), d.tickCmd())
 	case daemonInfoMsg:
 		d.applyInfo(msg)
+		return d, nil
+	case globalPauseStateMsg:
+		d.pause, d.pauseOK = msg.pause, msg.ok
 		return d, nil
 	case daemonConfigMsg:
 		d.applyConfig(msg)

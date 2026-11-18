@@ -12,6 +12,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // logPaneMinHeight is the fewest log lines the pane ever shows, its header
@@ -143,6 +144,13 @@ func (d *daemonView) identityLines() []string {
 	out[0] += styleDim.Render("   up " + formatUptime(i.Uptime(d.now())) + "   pid " + strconv.Itoa(i.PID))
 	out = append(out,
 		field("version", version),
+	)
+	// The global pause (task 149), `active` included: this is the screen
+	// that answers "is this daemon working?", so it says so either way.
+	if d.pauseOK {
+		out = append(out, field("work", pauseStateLabel(d.pause)+styleDim.Render("   "+opKey(keymap.PauseAll)+" pause / continue all")))
+	}
+	out = append(out,
 		field("listening", i.Listen),
 		field("data dir", d.dataDirOrUnknown()),
 		field("log", d.logPathOrUnknown()),

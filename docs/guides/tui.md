@@ -3582,7 +3582,7 @@ Setting an operation to its own default changes nothing.
 ### The operations
 
 The first nineteen are the operations screens share, the next ten are the
-[task actions](#the-action-bar), and the last nine are the global keys.
+[task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
 |---|---|---|
@@ -3624,6 +3624,7 @@ The first nineteen are the operations screens share, the next ten are the
 | `quit` | `q` | Quit the TUI |
 | `new` | `n` | New task — or new chat, on the chats board, or new issue, on the issue screens |
 | `project` | `@` | Switch project |
+| `pause_all` | `Z` | Pause all work, or continue it — asks first. See [Pausing all work](#pausing-all-work) |
 
 `new` is one operation everywhere because it is one gesture, "make a new one
 here", so moving it moves all three.
@@ -3719,6 +3720,38 @@ Paste normally arrives as a bracketed paste from your terminal's own binding
 (`Cmd+V`, `Ctrl+Shift+V`, middle click) and lands in the focused field with no
 key involved. `ctrl+v` is the fallback for terminals that pass the key through
 instead.
+
+## Pausing all work
+
+`Z`, from any screen, pauses all work — handy before upgrading vincent,
+rebooting, or anything else you would rather do with nothing in flight. It asks
+first, on the status line, because it changes what every project is doing:
+`y` pauses, `n` or `esc` leaves things as they are.
+
+While paused, nothing new starts and every running task finishes the step it is
+on and then parks as `paused`. Tasks waiting on you stay where they are, and
+chats are not affected. The pause shows on every screen, twice:
+
+- the header carries **`⏸ pausing (N finishing)`** while tasks are still
+  finishing their step, then **`⏸ PAUSED`** once none is;
+- a line under the header gives the time, the reason if one was given, and how
+  many tasks are held and queued.
+
+![The task board while the pause is taking effect: the header reads
+"⏸ pausing (3 finishing)" beside the project, and the line under it says
+three tasks are still finishing their step, since when, the reason
+"upgrading vincent", and how many are held, queued and awaiting
+input](../assets/tui-global-pause.png)
+
+Neither is drawn when work is running normally. The [daemon view](#daemon)'s
+`work` row says which of the three it is — `▶ active` included.
+
+`Z` again asks whether to continue: queued tasks start again and the tasks the
+pause parked resume. A task you paused yourself with `p` stays paused. The same
+pause is [`vincent daemon pause`](../reference/cli.md#vincent-daemon-pause) and
+[`vincent daemon continue`](../reference/cli.md#vincent-daemon-continue) on the
+command line, so a script can pause, wait for running tasks to park, do its
+maintenance and continue.
 
 ## When the daemon is unreachable
 

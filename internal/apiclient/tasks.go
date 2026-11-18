@@ -83,8 +83,10 @@ type Task struct {
 	BlockReason *string `json:"block_reason"`
 	// BlockDetail is the daemon-authored sentence that explains BlockReason
 	// (§5.3); nil or empty means no detail.
-	BlockDetail      *string  `json:"block_detail"`
-	PauseRequested   bool     `json:"pause_requested"`
+	BlockDetail    *string `json:"block_detail"`
+	PauseRequested bool    `json:"pause_requested"`
+	// GlobalPause marks a pause the global pause made (task 149).
+	GlobalPause      bool     `json:"global_pause"`
 	AvailableActions []string `json:"available_actions"`
 	// OpenChatID names the open chat linked to this task (task 119), nil when
 	// there is none. While it is set the task is locked — AvailableActions is

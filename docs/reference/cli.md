@@ -399,6 +399,53 @@ source builds (`v0.13.0-46-gabc1234`) and master builds are all ordered; a
 `dev` build has no place on that line and never triggers it. That is a line, not a failure: the running daemon keeps
 its old code until it is restarted, and everything keeps working meanwhile.
 
+### `vincent daemon pause`
+
+```sh
+vincent daemon pause [--reason TEXT] [--wait] [--timeout DURATION] [--json]
+```
+
+Pauses all work, for maintenance. The daemon stops admitting queued tasks, and
+every running task finishes the step it is on and then parks as `paused` — the
+same soft pause as [`vincent task pause`](#vincent-task-pause), so no step is
+cut short. Tasks waiting on you (gates, blocks, questions) stay where they are,
+chats are not affected, and tasks created during the pause — by you, a trigger
+or a handoff — queue behind it. The pause survives a daemon restart.
+
+While any task is still finishing its step the pause reports `pausing`; once
+none is, `paused`:
+
+```
+pausing — 2 tasks still finishing their step (since 2026-11-17T09:30:00+01:00): upgrading vincent; 0 tasks held, 4 tasks queued
+```
+
+| Flag | Effect |
+|---|---|
+| `--reason` | A one-line note (at most 200 characters) shown wherever the pause is |
+| `--wait` | Return only once no task is still finishing its step — the moment it is safe to stop or upgrade the daemon |
+| `--timeout` | With `--wait`, give up after this long (default `30m`): exit `1`, the pause staying in effect |
+
+Pausing an already-paused daemon changes nothing and keeps the original time
+and reason. Needs a running daemon; exits `2` without one.
+
+### `vincent daemon continue`
+
+```sh
+vincent daemon continue [--json]
+```
+
+Lifts the pause: queued tasks are admitted again, running tasks whose pause had
+not taken effect carry on, and every task the pause parked is resumed. A task
+you paused yourself — before the pause or during it — **stays paused**. On a
+daemon that is not paused it resumes nothing.
+
+```
+active — resumed 2 tasks
+```
+
+While a pause is in effect, [`vincent daemon status`](#vincent-daemon-status)
+adds a line saying so.
+
 ### `vincent daemon logs`
 
 ```sh

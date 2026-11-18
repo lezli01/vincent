@@ -388,6 +388,9 @@ var bindings = []binding{
 	// lists it and running it from a chat opens the picker rather than typing
 	// `@` into the draft.
 	{op: keymap.Project, key: "@", label: "switch project — pick the project the TUI is looking at", scope: scopeGlobal},
+	// Task 149: the global pause. It asks y/n on the status line before it
+	// acts, since it changes what every project is doing.
+	{op: keymap.PauseAll, key: "Z", label: "pause all work, or continue it — nothing new starts and running tasks park at their next step; asks first", scope: scopeGlobal},
 	// Paste is normally the terminal's own (Cmd+V, Ctrl+Shift+V, middle
 	// click): it arrives as bracketed paste and lands in the focused field
 	// with no key involved. ctrl+v is the fallback for terminals that pass
