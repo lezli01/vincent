@@ -282,7 +282,7 @@ func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, i
 	}
 	if q := sent.Queued; q != nil {
 		// The chat had a live turn, so the message waits behind it (task
-		// 153). There is no answer to wait for yet: it runs as its own
+		// 156). There is no answer to wait for yet: it runs as its own
 		// turn once the live one ends done.
 		if wantJSON(cmd) {
 			return emitJSON(cmd.OutOrStdout(), q)

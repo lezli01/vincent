@@ -1,5 +1,5 @@
 -- 0059_chat_queue: follow-up messages queued behind a live chat turn (task
--- 153, issue #1010, spec §5.5).
+-- 156, issue #1010, spec §5.5).
 --
 -- A queued message exists only behind a live turn. When that turn ends `done`
 -- the runner pops the oldest row into a new chat_turns row in one transaction

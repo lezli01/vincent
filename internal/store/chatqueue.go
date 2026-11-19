@@ -30,12 +30,11 @@ type ChatQueuedMessage struct {
 // of the queue is stale.
 var ErrQueuedMessageGone = errors.New("the message is no longer queued")
 
-// Queue pause reasons that are not a turn failure reason (task 156 decision
-// 3). A failed turn pauses the queue with its own fail_reason.
-const (
-	QueuePauseInterrupted = "interrupted"
-	QueuePauseCanceled    = "canceled"
-)
+// QueuePauseInterrupted is the one queue pause reason that is not a turn
+// failure reason (task 156 decision 3): an interrupted turn has none. A failed
+// turn pauses the queue with its own fail_reason — a human cancel is a failed
+// turn whose reason is chatrun's `canceled`, so it needs no constant here.
+const QueuePauseInterrupted = "interrupted"
 
 const chatQueueColumns = `id, chat_id, position, prompt, created_at, updated_at`
 

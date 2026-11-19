@@ -25,7 +25,7 @@ const (
 	// stream can link the two without a fetch.
 	EventChatHandedOff = "chat.handed_off"
 	// EventChatQueue is a chat's queue of follow-up messages changing (task
-	// 153): a message queued, edited, deleted or started, the queue paused,
+	// 156): a message queued, edited, deleted or started, the queue paused,
 	// resumed or cleared. It carries queued_count and queue_paused, so a
 	// client re-renders the badge without a fetch.
 	EventChatQueue = "chat.queue_changed"
@@ -430,7 +430,7 @@ func (s *Store) CreateChatTurn(ctx context.Context, chatID int64, prompt string)
 			return fmt.Errorf("get chat %d: %w", chatID, err)
 		}
 		// Send is legal from a live chat too, but there it queues (task
-		// 153): only an idle chat's send starts a turn.
+		// 156): only an idle chat's send starts a turn.
 		next, ok := chatstate.Next(c.State, chatstate.Send)
 		if !ok || c.State != chatstate.Idle {
 			return fmt.Errorf("chat %d: %w", chatID, ErrInvalidChatAction)
