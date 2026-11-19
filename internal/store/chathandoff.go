@@ -86,7 +86,7 @@ func (s *Store) HandoffChat(ctx context.Context, chatID int64, t *Task) (*Chat, 
 		}
 		// Handing off deletes the queue in the same transaction (task 156
 		// decision 6): the task does not inherit the chat's follow-ups.
-		if _, err := deleteChatQueueTx(ctx, tx, chatID); err != nil {
+		if err := deleteChatQueueTx(ctx, tx, chatID); err != nil {
 			return err
 		}
 		if err := setQueuePauseTx(ctx, tx, c, false, ""); err != nil {

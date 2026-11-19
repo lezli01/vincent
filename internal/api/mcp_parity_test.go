@@ -90,6 +90,11 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodGet, "/v1/chats/{id}"},
 		{http.MethodPost, "/v1/chats/{id}/send"},
 		{http.MethodPost, "/v1/chats/{id}/answer"},
+		{http.MethodGet, "/v1/chats/{id}/queue"},
+		{http.MethodPatch, "/v1/chats/{id}/queue/{qid}"},
+		{http.MethodDelete, "/v1/chats/{id}/queue/{qid}"},
+		{http.MethodPost, "/v1/chats/{id}/queue/resume"},
+		{http.MethodPost, "/v1/chats/{id}/queue/clear"},
 		{http.MethodPost, "/v1/chats/{id}/cancel"},
 		{http.MethodPost, "/v1/chats/{id}/archive"},
 		// The two read routes are excluded by the same §13.4 reasoning, not

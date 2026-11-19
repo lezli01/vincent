@@ -153,7 +153,7 @@ func (s *Store) DeleteChatQueued(ctx context.Context, chatID, id int64) error {
 // decision 3).
 func (s *Store) ClearChatQueue(ctx context.Context, chatID int64) error {
 	ev, err := s.chatQueueTx(ctx, chatID, func(tx *sql.Tx, c *Chat) error {
-		if _, err := deleteChatQueueTx(ctx, tx, chatID); err != nil {
+		if err := deleteChatQueueTx(ctx, tx, chatID); err != nil {
 			return err
 		}
 		return setQueuePauseTx(ctx, tx, c, false, "")
@@ -355,16 +355,14 @@ func popChatQueueTx(ctx context.Context, tx *sql.Tx, c *Chat) (*ChatTurn, error)
 	return insertChatTurnTx(ctx, tx, c, m.Prompt)
 }
 
-// deleteChatQueueTx deletes every queued message of chatID and reports how
-// many there were. Archive, close and hand-off call it in the transaction
-// that makes the chat terminal (task 156 decision 6).
-func deleteChatQueueTx(ctx context.Context, tx *sql.Tx, chatID int64) (int64, error) {
-	res, err := tx.ExecContext(ctx, `DELETE FROM chat_queued_messages WHERE chat_id = ?`, chatID)
-	if err != nil {
-		return 0, fmt.Errorf("clear chat %d queue: %w", chatID, err)
+// deleteChatQueueTx deletes every queued message of chatID. Archive, close
+// and hand-off call it in the transaction that makes the chat terminal (task
+// 156 decision 6).
+func deleteChatQueueTx(ctx context.Context, tx *sql.Tx, chatID int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM chat_queued_messages WHERE chat_id = ?`, chatID); err != nil {
+		return fmt.Errorf("clear chat %d queue: %w", chatID, err)
 	}
-	n, _ := res.RowsAffected()
-	return n, nil
+	return nil
 }
 
 func setQueuePauseTx(ctx context.Context, tx *sql.Tx, c *Chat, paused bool, reason string) error {

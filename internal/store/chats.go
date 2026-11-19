@@ -374,7 +374,7 @@ func (s *Store) updateChat(ctx context.Context, id int64, evType string, mutate 
 		if chatstate.Terminal(c.State) {
 			// Archive deletes the queue in the transaction that ends the
 			// chat (task 156 decision 6): nothing can ever drain it.
-			if _, err := deleteChatQueueTx(ctx, tx, c.ID); err != nil {
+			if err := deleteChatQueueTx(ctx, tx, c.ID); err != nil {
 				return err
 			}
 			if err := setQueuePauseTx(ctx, tx, c, false, ""); err != nil {
