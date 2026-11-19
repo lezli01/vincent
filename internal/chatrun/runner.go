@@ -628,6 +628,7 @@ func (r *Runner) runTurn(
 	if res.SessionID != "" {
 		turn.SessionID = res.SessionID
 	}
+	recordContext(turn, adapter, res)
 	if agent.UsageIsSessionTotal(adapter) {
 		r.turnShare(turn, res)
 	}
@@ -1060,6 +1061,29 @@ func (r *Runner) journal(turn *store.ChatTurn, handle agent.RunHandle) {
 	}
 }
 
+// recordContext copies the run's cache counts and context figures onto the
+// turn (task 156). Zero is "not reported" in a RunResult and stays nil here,
+// so a reader can tell it from a reported zero; the cache counts are recorded
+// only when the adapter reports any, and never for an adapter whose input
+// already counts them (agent.CacheInInput), which the heading would
+// otherwise count twice.
+func recordContext(turn *store.ChatTurn, adapter agent.Adapter, res agent.RunResult) {
+	turn.CacheReadTokens, turn.CacheCreationTokens = nil, nil
+	if (res.CacheReadTokens != 0 || res.CacheCreationTokens != 0) && !agent.InputIncludesCache(adapter) {
+		cr, cw := res.CacheReadTokens, res.CacheCreationTokens
+		turn.CacheReadTokens, turn.CacheCreationTokens = &cr, &cw
+	}
+	turn.ContextTokens, turn.ContextWindow = positive(res.ContextTokens), positive(res.ContextWindow)
+}
+
+// positive is n as a pointer, nil when n is not positive.
+func positive(n int64) *int64 {
+	if n <= 0 {
+		return nil
+	}
+	return &n
+}
+
 // turnShare turns an adapter's session totals into this turn's own spend
 // (task 138.11 decision 1, §9.9). Copilot reports the whole session's running
 // total, so the turn's figures are the totals minus those the chat's latest
@@ -1079,20 +1103,30 @@ func (r *Runner) turnShare(turn *store.ChatTurn, res agent.RunResult) {
 	}
 	in, out := res.InputTokens, res.OutputTokens
 	turn.SessionInputTokens, turn.SessionOutputTokens = &in, &out
+	// The cache totals are a session's running figures too, and take the
+	// same share subtraction under the same rules (task 156 decision 3).
+	cr, cw := res.CacheReadTokens, res.CacheCreationTokens
+	if turn.CacheReadTokens != nil {
+		turn.SessionCacheReadTokens, turn.SessionCacheCreationTokens = &cr, &cw
+	}
 	ctx := r.persist
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	prevIn, prevOut, ok, err := r.deps.Store.PreviousSessionUsage(ctx, turn.ChatID, turn.Seq, turn.SessionID)
+	prev, ok, err := r.deps.Store.PreviousSessionUsage(ctx, turn.ChatID, turn.Seq, turn.SessionID)
 	if err != nil {
 		// The totals are still stored; only this turn's share is overstated.
 		r.deps.Logger.Error("previous session usage", "turn", turn.ID, "error", err)
 		return
 	}
-	if !ok || in < prevIn || out < prevOut {
+	if !ok || in < prev.InputTokens || out < prev.OutputTokens {
 		return
 	}
-	turn.InputTokens, turn.OutputTokens = in-prevIn, out-prevOut
+	turn.InputTokens, turn.OutputTokens = in-prev.InputTokens, out-prev.OutputTokens
+	if turn.CacheReadTokens != nil && cr >= prev.CacheReadTokens && cw >= prev.CacheCreationTokens {
+		dr, dw := cr-prev.CacheReadTokens, cw-prev.CacheCreationTokens
+		turn.CacheReadTokens, turn.CacheCreationTokens = &dr, &dw
+	}
 }
 
 // finishUnstarted ends a popped turn that never reached runTurn — a stop or

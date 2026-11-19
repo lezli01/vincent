@@ -447,3 +447,9 @@ func (a *Adapter) SupportsResume() bool { return true }
 // SupportsRestrictedResume implements agent.RestrictedResumer: `codex exec
 // resume` takes no `-s/--sandbox`, so a resumed run cannot be restricted.
 func (a *Adapter) SupportsRestrictedResume() bool { return false }
+
+var _ agent.CacheInInput = (*Adapter)(nil)
+
+// InputIncludesCache implements agent.CacheInInput (task 156, §9.3): codex's
+// `input_tokens` already counts its `cached_input_tokens`.
+func (a *Adapter) InputIncludesCache() bool { return true }

@@ -882,6 +882,19 @@ type ChatTurn struct {
 	// session's previous turn's (task 138.11 decision 1, §9.9).
 	SessionInputTokens  *int64
 	SessionOutputTokens *int64
+	// CacheReadTokens and CacheCreationTokens are the turn's cache spend,
+	// which InputTokens leaves out (task 156 decision 3); on a
+	// CumulativeUsage adapter they are this turn's share of the session
+	// cache totals in SessionCacheReadTokens and SessionCacheCreationTokens.
+	// ContextTokens is the prompt size of the run's last top-level model
+	// call and ContextWindow its model's window (decisions 1 and 2). nil is
+	// unreported for every one of them, never zero.
+	CacheReadTokens            *int64
+	CacheCreationTokens        *int64
+	ContextTokens              *int64
+	ContextWindow              *int64
+	SessionCacheReadTokens     *int64
+	SessionCacheCreationTokens *int64
 }
 
 // ChatWorktreeClaim is one chat's claim on a data-root directory (§10). It

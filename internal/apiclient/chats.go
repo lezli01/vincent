@@ -190,6 +190,15 @@ type ChatTurn struct {
 	StartedAt    time.Time  `json:"started_at"`
 	EndedAt      *time.Time `json:"ended_at,omitempty"`
 	DurationMS   *int64     `json:"duration_ms,omitempty"`
+	// CacheReadTokens and CacheCreationTokens are the turn's cache spend,
+	// which input_tokens leaves out; ContextTokens is the prompt size of the
+	// run's last model call and ContextWindow its model's window (task 156,
+	// §5.5, §9.2). Each is absent when the adapter did not report it — never
+	// zero for "unknown".
+	CacheReadTokens     *int64 `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens *int64 `json:"cache_creation_tokens,omitempty"`
+	ContextTokens       *int64 `json:"context_tokens,omitempty"`
+	ContextWindow       *int64 `json:"context_window,omitempty"`
 }
 
 // CreateChatRequest is the POST /v1/chats body. An omitted agent resolves

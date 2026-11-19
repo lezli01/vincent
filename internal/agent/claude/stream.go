@@ -87,16 +87,23 @@ type streamLine struct {
 }
 
 // streamModelUsage is one entry of the result line's `modelUsage` map, whose
-// key is the model id. The model-describing members claude also sends there
-// (`contextWindow`, `maxOutputTokens`, `canonicalModel`, `provider`) are
-// deliberately not read: they are facts about the model, and §9.6's option
-// catalog is where those belong.
+// key is the model id.
+//
+// ContextWindow and CanonicalModel are read since task 156 (decision 1),
+// which amends task 066's choice to leave every model-describing member
+// unread: §9.6's catalog holds aliases (`sonnet`, `""` for the default) and
+// cannot tell a 200k model from a 1M one, while the run's own report names
+// the window of the model it actually used. They feed RunResult.ContextWindow
+// only — ModelUsage still carries what the run spent, not what a model is.
+// `maxOutputTokens` and `provider` stay unread.
 type streamModelUsage struct {
 	InputTokens              int64    `json:"inputTokens"`
 	OutputTokens             int64    `json:"outputTokens"`
 	CacheReadInputTokens     int64    `json:"cacheReadInputTokens"`
 	CacheCreationInputTokens int64    `json:"cacheCreationInputTokens"`
 	CostUSD                  *float64 `json:"costUSD"`
+	ContextWindow            int64    `json:"contextWindow"`
+	CanonicalModel           string   `json:"canonicalModel"`
 }
 
 // streamPermissionDenial is one entry of the result line's
@@ -158,6 +165,12 @@ type streamMessage struct {
 	// shape sees nothing in the other, which is what keeps the block readers
 	// below unchanged.
 	Text string
+	// Model and Usage are an assistant line's model id and the usage of the
+	// model call it belongs to (task 156). The last top-level pair is the
+	// run's context figure: RunResult.ContextTokens and the model whose
+	// window RunResult.ContextWindow names.
+	Model string
+	Usage *streamUsage
 }
 
 // UnmarshalJSON decodes `content` in whichever of its two shapes it arrived.
@@ -167,10 +180,13 @@ type streamMessage struct {
 func (m *streamMessage) UnmarshalJSON(b []byte) error {
 	var raw struct {
 		Content json.RawMessage `json:"content"`
+		Model   string          `json:"model"`
+		Usage   *streamUsage    `json:"usage"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
+	m.Model, m.Usage = raw.Model, raw.Usage
 	switch {
 	case len(raw.Content) == 0:
 		return nil
@@ -288,6 +304,13 @@ type streamParser struct {
 	// replayed is the last `<command-name>` this stream replayed, which is
 	// the skill a `<local-command-stderr>` refusal belongs to.
 	replayed string
+	// mainModel and mainContext are the last top-level assistant line's model
+	// and prompt size — input plus cache-read plus cache-write tokens — the
+	// fourth thing that spans lines (task 156 decision 2). A subagent's lines
+	// carry a `parent_tool_use_id` and never touch them: a subagent's prompt
+	// is not the conversation's. The result line reads both.
+	mainModel   string
+	mainContext int64
 }
 
 // parse normalizes one verbatim stream-json line into an agent.Event. The raw
@@ -298,6 +321,7 @@ func (p *streamParser) parse(raw []byte) agent.Event {
 		return agent.Event{Type: agent.EventUnknown, Raw: raw}
 	}
 	p.remember(line.ParentToolUseID)
+	p.watchContext(&line)
 	var ev agent.Event
 	switch load, ok := p.claim(&line); {
 	case ok:
@@ -318,7 +342,63 @@ func (p *streamParser) parse(raw []byte) agent.Event {
 	// Every line carries it, so it is attached once here rather than in each
 	// of the four arms (task 066).
 	ev.ParentCallID = line.ParentToolUseID
+	if ev.Type == agent.EventResult && ev.Result != nil {
+		ev.Result.ContextTokens = p.mainContext
+		ev.Result.ContextWindow = contextWindow(line.ModelUsage, p.mainModel)
+	}
 	return ev
+}
+
+// watchContext remembers a top-level assistant line's model and prompt size
+// (task 156 decision 2). Claude writes one assistant line per content block,
+// each repeating its call's usage, so the last line of the last call wins and
+// a repeat changes nothing.
+func (p *streamParser) watchContext(line *streamLine) {
+	if line.Type != "assistant" || line.ParentToolUseID != "" || line.Message == nil {
+		return
+	}
+	if line.Message.Model != "" {
+		p.mainModel = line.Message.Model
+	}
+	if u := line.Message.Usage; u != nil {
+		p.mainContext = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+	}
+}
+
+// contextWindow is the window `modelUsage` reports for the run's main model
+// (task 156 decision 1), or 0 when it reports none. The assistant lines name
+// the model without the suffix the map's key may carry (`claude-opus-5`
+// against `claude-opus-5[1m]`), so a key matches on itself, on itself with
+// its bracketed suffix cut, or on its `canonicalModel`. With no main model to
+// match — a stream whose assistant lines were not seen — the entry that
+// carried the most tokens is the main loop's: a subagent's haiku is the
+// small one.
+func contextWindow(m map[string]streamModelUsage, model string) int64 {
+	if len(m) == 0 {
+		return 0
+	}
+	names := make([]string, 0, len(m))
+	for name := range m {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	if model != "" {
+		for _, name := range names {
+			base, _, _ := strings.Cut(name, "[")
+			if name == model || base == model || m[name].CanonicalModel == model {
+				return m[name].ContextWindow
+			}
+		}
+	}
+	var best string
+	var most int64 = -1
+	for _, name := range names {
+		u := m[name]
+		if t := u.InputTokens + u.OutputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens; t > most {
+			best, most = name, t
+		}
+	}
+	return m[best].ContextWindow
 }
 
 // claim disarms the line's scope and reports the skill load the line is, if

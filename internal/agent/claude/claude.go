@@ -602,6 +602,14 @@ func (r *run) Wait() (agent.RunResult, error) {
 			res.InputTokens = inputTokens
 			res.OutputTokens = outputTokens
 			res.CostUSD = terminal.CostUSD
+			// The cache counts and the context figures ride to the run's
+			// result because a chat turn persists them (task 156): its
+			// heading counts what the turn processed, and its gauge how full
+			// the context is.
+			res.CacheReadTokens = terminal.CacheReadTokens
+			res.CacheCreationTokens = terminal.CacheCreationTokens
+			res.ContextTokens = terminal.ContextTokens
+			res.ContextWindow = terminal.ContextWindow
 		} else {
 			res.IsError = true
 			res.ErrorMessage = "stream ended without a result event"

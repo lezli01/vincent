@@ -67,6 +67,11 @@ type Agent struct {
 	FileMentionSigil    *string `json:"file_mention_sigil"`
 	FileMentionPosition *string `json:"file_mention_position"`
 	FileMentionExpands  *bool   `json:"file_mention_expands"`
+	// CompactCommand is the message that compacts this adapter's session
+	// context (task 156 decision 4): "/compact" for claude, "" for an
+	// adapter that cannot compact, nil for no judgement. A client offers
+	// compaction only when it is non-empty.
+	CompactCommand *string `json:"compact_command"`
 	// InputVerdict is the daemon's verdict on backing an `on_input: require`
 	// step (§7.4, task 013): "supported", "unsupported" or "unknown". Empty
 	// means the daemon predates the field, which is treated as unknown —
