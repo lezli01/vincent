@@ -2517,6 +2517,7 @@ task-only.
 | `/` | Filter by title, agent or branch |
 | `s` | Cycle the listing between live, ended (archived, handed-off or closed), and all |
 | `R` | Reload the board |
+| `S` | [Search every chat](#chat-search)'s title, prompts and answers, live and archived |
 | `home`/`end`, `pgup`/`pgdown` | Jump to the first or last chat, or move a page |
 
 The mouse wheel moves the cursor one chat per tick, as it does on the task
@@ -2708,7 +2709,7 @@ periodic repaint.
 | `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
-| `esc` | Back to where the chat was opened from — the issue, the issues list or the archived-chats board — otherwise the chats board |
+| `esc` | Back to where the chat was opened from — the issue, the issues list, the archived-chats board or the [chat search](#chat-search) — otherwise the chats board |
 
 **Queued messages.** A message sent while a turn runs is drawn as a faded
 `You` card marked `queued` below the live turn, and becomes a real turn when
