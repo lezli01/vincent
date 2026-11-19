@@ -814,9 +814,18 @@ type Chat struct {
 	IssueID *int64
 	// EndSHA is the commit an issue chat's work ended on, stamped when it
 	// let go of the main worktree (task 140 decision 3), as Task.EndSHA is.
-	EndSHA    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	EndSHA string
+	// QueuePaused is a queue a turn's non-`done` ending stopped from
+	// draining (task 156 decision 3): it stays paused until a human resumes
+	// or clears it. QueuePauseReason says which ending paused it — a turn
+	// failure reason, `interrupted`, or `canceled`.
+	QueuePaused      bool
+	QueuePauseReason string
+	// QueuedCount is how many follow-up messages wait behind the live turn
+	// (task 156). It is read with the row, never written through it.
+	QueuedCount int
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Linked reports whether the chat is linked to a task (task 119), which is

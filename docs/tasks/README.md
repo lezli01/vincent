@@ -169,6 +169,7 @@ the living engineering specification records implementation contracts.
 | [153](153-force-delete.md) | Force delete for tasks, chats and issues whose archive or delete fails on something vincent cannot resolve | ✅ done (5/5) |
 | [154](154-chat-hides-unparsed-lines.md) | A chat hides the lines vincent cannot parse below verbose, instead of counting them between messages | ✅ done (1/1) |
 | [155](155-archive-finished-tasks-after.md) | Archive a task that has sat finished for `archive_finished_tasks_after` (12h by default) | ✅ done (2/2) |
+| [156](156-chat-message-queue.md) | Queue chat messages sent while a turn runs; steering gated on a claude capture | 🔄 in progress (3/5) |
 
 ## How to add and update a task document
 

@@ -3190,7 +3190,13 @@ POST   /v1/chats                      create, with a worktree and a branch — o
                                       existing_branch, on a branch that is already there
 POST   /v1/tasks/{id}/chat            open a chat on a stopped task, in its worktree
 GET    /v1/chats/{id}                 { chat, turns[] } — the whole conversation
-POST   /v1/chats/{id}/send            start a turn
+POST   /v1/chats/{id}/send            start a turn on an idle chat, or queue the
+                                      message behind a live one (202 either way)
+GET    /v1/chats/{id}/queue           { messages[], paused, pause_reason }
+PATCH  /v1/chats/{id}/queue/{qid}     edit a queued message — 409 once it started
+DELETE /v1/chats/{id}/queue/{qid}     remove a queued message — 409 once it started
+POST   /v1/chats/{id}/queue/resume    lift a paused queue; an idle chat starts the next now
+POST   /v1/chats/{id}/queue/clear     delete every queued message and lift the pause
 POST   /v1/chats/{id}/answer          answer a mid-run request
 POST   /v1/chats/{id}/cancel          stop the live turn
 POST   /v1/chats/{id}/archive         remove the worktree; terminal
@@ -3204,6 +3210,19 @@ GET    /v1/chats/{id}/turns/{seq}/transcript
 GET    /v1/chats/{id}/skills?refresh= the skills the chat's agent would load — see Skills
 GET    /v1/chats/{id}/files?limit=    the files of the chat's workspace — see Files
 ```
+
+**The queue** (task 156). A `send` to a chat whose turn is `running` or
+`awaiting_input` does not start a turn: it answers `202` with
+`{"queued": true, "queued_message": {id, chat_id, position, prompt, created_at,
+updated_at}}`, and the message runs as the next turn once the live one ends
+`done` — on the same `max_parallel_chats` slot, so the cap is never contested
+mid-queue. A queued message never answers a pending question. A turn that ends
+`failed`, `interrupted` or cancelled pauses the queue instead; the chat is idle
+and usable, and a fresh `send` still starts a turn. A send to an idle chat over
+the cap is still `409 chat_cap_reached` — it is never queued. Archive, close
+and hand-off discard the queue. A chat carries `queued_count`, `queue_paused`,
+`queue_pause_reason`, and `can_steer` with `steer_reason`: no adapter can
+steer a running turn yet, so `can_steer` is always `false`.
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
 excluded, the stream, the transcript, the skill list and the file list
@@ -4119,6 +4138,7 @@ task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed task.delivery_changed
 chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off         chat.closed
+chat.queue_changed
 task.deleted            chat.deleted
 task.restored
 issue.created           issue.updated           issue.state_changed

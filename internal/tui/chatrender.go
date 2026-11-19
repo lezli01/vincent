@@ -406,6 +406,10 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 			}
 		}
 	}
+	if q := v.queueLines(width); len(q) > 0 {
+		lines = append(lines, q...)
+		pad(len(q))
+	}
 	if len(lines) == 0 {
 		switch {
 		case v.chat == nil && v.loadErr != "":

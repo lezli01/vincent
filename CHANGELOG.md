@@ -11,6 +11,22 @@ list with the user-facing context a commit subject cannot carry.
 
 ## [Unreleased]
 
+### Added
+
+- **A chat queues the messages you send while its turn runs.** `enter` on a
+  running chat, or one waiting on the agent's question, no longer refuses:
+  the message is queued and runs as the next turn once the current one ends
+  `done`, without giving up the chat's `max_parallel_chats` slot. Queued
+  messages show as faded `You` cards; `↑` on an empty composer edits the
+  newest, and `ctrl+d` deletes it. A turn that fails, is cancelled or is
+  interrupted pauses the queue instead of draining it — `alt+r` resumes it,
+  `alt+c` clears it. `vincent chat send` on a live chat queues and says so,
+  `vincent chat queue` lists, edits, removes, resumes and clears, and the API
+  gains `GET /v1/chats/{id}/queue` and its edit, delete, resume and clear
+  routes plus a `chat.queue_changed` event. Archiving, closing or handing off
+  a chat discards its queue. Steering a message into the running turn
+  (`ctrl+s`) is not available on any agent yet, and the key says so (#1010).
+
 ### Fixed
 
 - **Archiving a held side task by hand now archives the closed issue's main

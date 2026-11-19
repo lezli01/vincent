@@ -49,9 +49,19 @@ type Chat struct {
 	IssueID *int64 `json:"issue_id,omitempty"`
 	// EndSHA is the commit an issue chat's work ended on, once it let go of
 	// the main worktree.
-	EndSHA    string    `json:"end_sha,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	EndSHA string `json:"end_sha,omitempty"`
+	// QueuedCount is how many follow-up messages wait behind the live turn
+	// (task 156); QueuePaused and QueuePauseReason say whether a turn that
+	// did not end `done` stopped them from draining, and why.
+	QueuedCount      int    `json:"queued_count"`
+	QueuePaused      bool   `json:"queue_paused"`
+	QueuePauseReason string `json:"queue_pause_reason,omitempty"`
+	// CanSteer says whether a message can be written into the running turn;
+	// SteerReason says why not (task 156 decision 4).
+	CanSteer    bool      `json:"can_steer"`
+	SteerReason string    `json:"steer_reason,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 	// Warnings are non-fatal notes on a create, such as a chat opened on a
 	// closed issue.
 	Warnings []string `json:"warnings,omitempty"`
@@ -346,13 +356,94 @@ func (c *Client) ChatFiles(ctx context.Context, id int64, limit int) (*ChatFiles
 // SendChat starts a turn. A 409 with code `chat_cap_reached` means
 // `max_parallel_chats` chats are already running — the send is refused, not
 // queued (§11).
-func (c *Client) SendChat(ctx context.Context, id int64, message string) (*ChatTurn, error) {
-	var out ChatTurn
+func (c *Client) SendChat(ctx context.Context, id int64, message string) (*ChatSend, error) {
+	var raw json.RawMessage
 	body := map[string]string{"message": message}
-	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/send", id), body, &out); err != nil {
+	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/send", id), body, &raw); err != nil {
+		return nil, err
+	}
+	var queued struct {
+		Queued  bool               `json:"queued"`
+		Message *ChatQueuedMessage `json:"queued_message"`
+	}
+	if err := json.Unmarshal(raw, &queued); err != nil {
+		return nil, fmt.Errorf("decode chat send: %w", err)
+	}
+	if queued.Queued {
+		return &ChatSend{Queued: queued.Message}, nil
+	}
+	var turn ChatTurn
+	if err := json.Unmarshal(raw, &turn); err != nil {
+		return nil, fmt.Errorf("decode chat send: %w", err)
+	}
+	return &ChatSend{Turn: &turn}, nil
+}
+
+// ChatSend is what a send did (task 156): started a turn on an idle chat, or
+// queued the message behind a live one. Exactly one field is set.
+type ChatSend struct {
+	Turn   *ChatTurn
+	Queued *ChatQueuedMessage
+}
+
+// ChatQueuedMessage is a follow-up message waiting behind a chat's live turn
+// (task 156).
+type ChatQueuedMessage struct {
+	ID        int64     `json:"id"`
+	ChatID    int64     `json:"chat_id"`
+	Position  int       `json:"position"`
+	Prompt    string    `json:"prompt"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ChatQueue is GET /v1/chats/{id}/queue: the queued messages in the order
+// they will run, and the pause holding them.
+type ChatQueue struct {
+	Messages    []ChatQueuedMessage `json:"messages"`
+	Paused      bool                `json:"paused"`
+	PauseReason string              `json:"pause_reason,omitempty"`
+}
+
+// ChatQueue lists a chat's queued messages.
+func (c *Client) ChatQueue(ctx context.Context, id int64) (*ChatQueue, error) {
+	var out ChatQueue
+	if err := c.get(ctx, fmt.Sprintf("/v1/chats/%d/queue", id), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// EditChatQueued replaces a queued message's text. A message that already
+// started is a 409.
+func (c *Client) EditChatQueued(ctx context.Context, id, qid int64, message string) (*ChatQueuedMessage, error) {
+	var out ChatQueuedMessage
+	body := map[string]string{"message": message}
+	if err := c.send(ctx, http.MethodPatch, fmt.Sprintf("/v1/chats/%d/queue/%d", id, qid), body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteChatQueued removes a queued message. A message that already started
+// is a 409.
+func (c *Client) DeleteChatQueued(ctx context.Context, id, qid int64) error {
+	return c.send(ctx, http.MethodDelete, fmt.Sprintf("/v1/chats/%d/queue/%d", id, qid), nil, nil)
+}
+
+// ResumeChatQueue lifts a paused queue; on an idle chat the oldest message
+// starts at once.
+func (c *Client) ResumeChatQueue(ctx context.Context, id int64) (*ChatQueue, error) {
+	var out ChatQueue
+	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/queue/resume", id), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ClearChatQueue deletes every queued message and lifts the pause.
+func (c *Client) ClearChatQueue(ctx context.Context, id int64) error {
+	return c.post(ctx, fmt.Sprintf("/v1/chats/%d/queue/clear", id), nil, nil)
 }
 
 // AnswerChat answers a chat's pending §7.4 input request.

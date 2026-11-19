@@ -665,7 +665,12 @@ var bindings = []binding{
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "R reload", priority: 6, term: termRefresh},
 
 	// Chat workspace.
-	{key: "enter", label: "send the message", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
+	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done (task 156)", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
+	{op: keymap.Steer, key: "ctrl+s", label: "steer the running turn — unavailable on every agent for now; the composer says why", scope: scopePanel, context: ctxChat, priority: 15},
+	{key: chatQueueEditKey, label: "on an empty composer, edit the newest queued message (enter saves, esc stops editing)", scope: scopePanel, context: ctxChat, priority: 16},
+	{key: chatQueueDeleteKey, label: "delete the queued message being edited", scope: scopePanel, context: ctxChat, priority: 17},
+	{key: chatQueueResumeKey, label: "resume a paused queue — on an idle chat the next message starts now", scope: scopePanel, context: ctxChat, priority: 18},
+	{key: chatQueueClearKey, label: "clear the queue: delete every queued message", scope: scopePanel, context: ctxChat, priority: 19},
 	// ctrl+j is the key the row names (issue #500) because a legacy terminal
 	// can always send it: there shift+enter arrives as a bare CR, which is
 	// enter, which sends. All three are the textarea's own newline binding,

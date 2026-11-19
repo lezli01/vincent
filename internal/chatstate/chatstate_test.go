@@ -11,7 +11,7 @@ import (
 // that quietly does something §5.5 does not describe.
 func TestTransitionTable(t *testing.T) {
 	allActions := []Action{
-		Send, Answer, Cancel, Archive, HandOff, Close,
+		Send, Steer, Answer, Cancel, Archive, HandOff, Close,
 		TurnStarted, InputRequested, InputClosed, TurnFinished, TurnInterrupted,
 	}
 	// want[state][action] is the state the pair reaches; a missing entry
@@ -23,6 +23,8 @@ func TestTransitionTable(t *testing.T) {
 			HandOff: HandedOff,
 		},
 		Running: {
+			Send:            Running,
+			Steer:           Running,
 			TurnStarted:     Running,
 			InputRequested:  AwaitingInput,
 			TurnFinished:    Idle,
@@ -30,6 +32,7 @@ func TestTransitionTable(t *testing.T) {
 			Cancel:          Idle,
 		},
 		AwaitingInput: {
+			Send:            AwaitingInput,
 			Answer:          Running,
 			InputClosed:     Running,
 			TurnFinished:    Idle,
@@ -65,7 +68,7 @@ func TestTransitionTable(t *testing.T) {
 // the task's.
 func TestLinkedTransitionTable(t *testing.T) {
 	allActions := []Action{
-		Send, Answer, Cancel, Archive, HandOff, Close,
+		Send, Steer, Answer, Cancel, Archive, HandOff, Close,
 		TurnStarted, InputRequested, InputClosed, TurnFinished, TurnInterrupted,
 	}
 	want := map[State]map[Action]State{
@@ -74,6 +77,8 @@ func TestLinkedTransitionTable(t *testing.T) {
 			Close: Closed,
 		},
 		Running: {
+			Send:            Running,
+			Steer:           Running,
 			TurnStarted:     Running,
 			InputRequested:  AwaitingInput,
 			TurnFinished:    Idle,
@@ -81,6 +86,7 @@ func TestLinkedTransitionTable(t *testing.T) {
 			Cancel:          Idle,
 		},
 		AwaitingInput: {
+			Send:            AwaitingInput,
 			Answer:          Running,
 			InputClosed:     Running,
 			TurnFinished:    Idle,
@@ -250,5 +256,29 @@ func TestIssueChatTable(t *testing.T) {
 	}
 	if AllowedFor(KindIssue, Running, Close) {
 		t.Error("close is legal from a running issue chat; the turn is cancelled first")
+	}
+}
+
+// TestSendQueuesOutsideIdle pins task 156 in every table: send is legal from
+// both live states and leaves the state where it is (it enqueues), steer is
+// legal from `running` alone, and no terminal state offers either.
+func TestSendQueuesOutsideIdle(t *testing.T) {
+	for _, k := range []Kind{KindFree, KindLinked, KindIssue} {
+		for _, s := range []State{Running, AwaitingInput} {
+			if next, ok := NextFor(k, s, Send); !ok || next != s {
+				t.Errorf("kind %d: NextFor(%s, send) = %s, %v; want %s, true", k, s, next, ok, s)
+			}
+		}
+		if next, ok := NextFor(k, Running, Steer); !ok || next != Running {
+			t.Errorf("kind %d: steer from running = %s, %v", k, next, ok)
+		}
+		if AllowedFor(k, AwaitingInput, Steer) || AllowedFor(k, Idle, Steer) {
+			t.Errorf("kind %d: steer must be legal from running only", k)
+		}
+		for _, s := range All {
+			if Terminal(s) && (AllowedFor(k, s, Send) || AllowedFor(k, s, Steer)) {
+				t.Errorf("kind %d: terminal %s offers send or steer", k, s)
+			}
+		}
 	}
 }

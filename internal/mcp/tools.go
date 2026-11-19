@@ -148,6 +148,13 @@ var Excluded = []Route{
 	{Method: http.MethodGet, Path: "/v1/chats/{id}"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/send"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/answer"},
+	// The chat queue (task 156) stays off the surface with the rest of the
+	// chat routes (task 063 decision 2).
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/queue"},
+	{Method: http.MethodPatch, Path: "/v1/chats/{id}/queue/{qid}"},
+	{Method: http.MethodDelete, Path: "/v1/chats/{id}/queue/{qid}"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/queue/resume"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/queue/clear"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/cancel"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/archive"},
 	// Handoff joins the list under the same rule rather than as an exception

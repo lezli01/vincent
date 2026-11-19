@@ -42,7 +42,7 @@ func newChatCmd() *cobra.Command {
 	cmd.AddCommand(newChatStartCmd(), newChatSendCmd(), newChatAnswerCmd(),
 		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatTranscriptCmd(),
 		newChatSkillsCmd(), newChatFilesCmd(), newChatArchiveCmd(), newChatHandoffCmd(),
-		newChatCloseCmd(), newChatDeleteCmd())
+		newChatCloseCmd(), newChatDeleteCmd(), newChatQueueCmd())
 	return cmd
 }
 
@@ -135,7 +135,7 @@ func newChatSendCmd() *cobra.Command {
 	var msgFile string
 	cmd := &cobra.Command{
 		Use:   "send <chat-id> [<message>]",
-		Short: "Send a message and wait for the answer",
+		Short: "Send a message and wait for the answer, or queue it behind a live turn",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
@@ -275,11 +275,24 @@ func (s *turnSpinner) erase() {
 // race on stderr for no gain; a select over three channels costs nothing and
 // leaves `-race` nothing to find.
 func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, id int64, message string) error {
-	turn, err := c.SendChat(ctx, id, message)
+	sent, err := c.SendChat(ctx, id, message)
 	if err != nil {
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 		return exitError{code: 1}
 	}
+	if q := sent.Queued; q != nil {
+		// The chat had a live turn, so the message waits behind it (task
+		// 153). There is no answer to wait for yet: it runs as its own
+		// turn once the live one ends done.
+		if wantJSON(cmd) {
+			return emitJSON(cmd.OutOrStdout(), q)
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+			"queued as message %d (position %d): chat %d has a live turn, and this runs after it\n",
+			q.ID, q.Position, id)
+		return nil
+	}
+	turn := sent.Turn
 	// Elapsed is measured from here rather than from turn.StartedAt: this is
 	// how long the human at the terminal has been waiting, and it needs no
 	// agreement between two machines' clocks to be true.
