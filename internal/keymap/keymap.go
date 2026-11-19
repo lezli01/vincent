@@ -67,6 +67,11 @@ const (
 	// ChatSearch opens the search over every chat from the chats board
 	// (task 156 decision 4). S for "search": `/` filters the list in view.
 	ChatSearch Op = "chat_search"
+	// ExportChat opens the export form for the chat on screen, or the chats
+	// board's selected row (task 156). alt+e for "export": the chat composer
+	// owns every printable key, the textarea binds none of alt+e, and no
+	// surface answers it.
+	ExportChat Op = "export_chat"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -203,6 +208,9 @@ var catalog = []Info{
 		"chat",
 	}, Typing: true},
 	{Op: ChatSearch, Default: "S", Meaning: "search every chat", Kind: KindTerm, Surfaces: []Surface{"chats"}},
+	{Op: ExportChat, Default: "alt+e", Meaning: "export the chat as Markdown, HTML or JSON", Kind: KindTerm, Surfaces: []Surface{
+		"chats", "archived chats", "chat",
+	}},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: Approve, Default: "a", Meaning: "approve the gate", Kind: KindAction, Surfaces: []Surface{Actions}},

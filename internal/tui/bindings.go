@@ -191,6 +191,9 @@ const (
 	// context for the reason every popup has one: it owns the keyboard while
 	// it is up, and its enter switches the project rather than opening a row.
 	ctxProjectPicker bindingContext = "project picker"
+	// ctxChatExport is the root's export form (task 156), a popup with its
+	// own context for the project picker's reason: it owns the keyboard.
+	ctxChatExport bindingContext = "export chat"
 
 	ctxNewChat bindingContext = "new chat"
 	ctxDaemon  bindingContext = "daemon"
@@ -651,6 +654,7 @@ var bindings = []binding{
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchivedChats, hint: "</> page", priority: 4},
 	{op: keymap.Filter, key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxArchivedChats, priority: 5, term: termFilter},
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxArchivedChats, priority: 6, term: termRefresh},
+	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxArchivedChats, priority: 7},
 
 	// Chats board. Its tab row exists only while chats is one of tui.tabs:
 	// mainTabRows drops it otherwise.
@@ -673,6 +677,7 @@ var bindings = []binding{
 	// Chat search (task 156).
 	{key: "enter", label: "open the chat — on a turn's match, scrolled to that turn", scope: scopePanel, context: ctxChatSearch, hint: "enter open", priority: 1},
 	{key: "down", label: "move between results (↑/↓, pgup/pgdown)", scope: scopePanel, context: ctxChatSearch, hint: "↑/↓ move", priority: 2},
+	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChats, priority: 7},
 
 	// Chat workspace.
 	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done (task 156)", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
@@ -728,6 +733,9 @@ var bindings = []binding{
 	// agent with a compact command (`/compact` on claude), and only while
 	// the chat is idle: chatView.liveBindings drops it otherwise.
 	{op: keymap.Compact, key: "alt+k", label: "compact the agent's context — sends its compact command (/compact on claude) as the next message (asks first)", scope: scopePanel, context: ctxChat, hint: "alt+k compact", priority: 15},
+	// alt rather than a letter for ctrl+r's reason — the composer owns every
+	// printable key — and alt+e because the textarea binds no alt+e.
+	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChat, priority: 15},
 
 	// The chat workspace's skill list, while it is open. noPalette for the
 	// reason the daemon view's skill offer's rows are: a key that only
@@ -759,6 +767,14 @@ var bindings = []binding{
 	// The project picker (task 132.4): every printable key types into its
 	// filter, so its own keys are the ones a filter does not type.
 	{key: "down", label: "move the highlight (↑/↓)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
+
+	// The export form (task 156). noPalette for the project picker's reason:
+	// a key that only exists inside a popup cannot be replayed into one that
+	// is shut.
+	{key: "down", label: "move between format, diff and path (↑/↓, tab/shift+tab); once written, between the copy choices", scope: scopePanel, context: ctxChatExport, noPalette: true},
+	{key: "space", label: "on format, cycle md → html → json; on include diff, toggle it (←/→ too)", scope: scopePanel, context: ctxChatExport, noPalette: true},
+	{key: "enter", label: "export and write the file; once written, copy the highlighted choice — the path, or the Markdown", scope: scopePanel, context: ctxChatExport, noPalette: true},
+	{key: "esc", label: "close the form", scope: scopePanel, context: ctxChatExport, noPalette: true},
 	{key: "enter", label: "switch to the highlighted project — or, on the last row, open the project overview", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 	{key: "esc", label: "close the picker without switching", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 	{key: "pgdown", label: "page the list (pgup/pgdown, home/end)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
@@ -1252,3 +1268,7 @@ const (
 	// settings hand it over.
 	helpAltKey = "f1"
 )
+
+// chatExportLabel is the export operation's row on every surface it is on
+// (task 156): the same gesture, so the same words.
+const chatExportLabel = "export the chat as Markdown, HTML or JSON — a form picks the format, the diff and the path"

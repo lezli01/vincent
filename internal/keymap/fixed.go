@@ -127,6 +127,17 @@ var fixed = []Fixed{
 	// alt+down is alt+up's other half, matched by the same handler and named
 	// in alt+up's label the way pgdown is in pgup's (issue #801 F8).
 	{"chat", "alt+down", "scroll the conversation forward one line"},
+	// The export form (task 156), a root popup that owns the keyboard while
+	// it is up, as the project picker does.
+	{"export chat", "up", "move between the form's rows"},
+	{"export chat", "down", "move between the form's rows"},
+	{"export chat", "tab", "move between the form's rows"},
+	{"export chat", "shift+tab", "move between the form's rows"},
+	{"export chat", "space", "change the focused choice"},
+	{"export chat", "left", "change the focused choice"},
+	{"export chat", "right", "change the focused choice"},
+	{"export chat", "enter", "export, or copy the highlighted choice once written"},
+	{"export chat", "esc", "close the form"},
 	{"chat skills", "up", "move the highlight"},
 	{"chat skills", "down", "move the highlight"},
 	{"chat skills", "tab", "insert the highlighted skill, or the top match"},

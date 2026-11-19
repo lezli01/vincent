@@ -846,6 +846,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("R did not reload the board")
 			}
 		},
+		"alt+e": func(t *testing.T) {
+			v := archivedChatsFixture()
+			_, cmd := v.updateKey(registryKey(t, "alt+e"))
+			if _, ok := drain(cmd).(openChatExportMsg); !ok {
+				t.Fatalf("alt+e produced %T, want openChatExportMsg", drain(cmd))
+			}
+		},
 	},
 	ctxChatSearch: {
 		"enter": func(t *testing.T) {
@@ -871,6 +878,17 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			_, cmd := v.updateKey(registryKey(t, "S"))
 			if msg, ok := drain(cmd).(selectViewMsg); !ok || msg.id != viewChatSearch {
 				t.Fatalf("S produced %#v, want the chat search", drain(cmd))
+			}
+		},
+		"alt+e": func(t *testing.T) {
+			v := chatsFixture()
+			_, cmd := v.updateKey(registryKey(t, "alt+e"))
+			msg, ok := drain(cmd).(openChatExportMsg)
+			if !ok {
+				t.Fatalf("alt+e produced %T, want openChatExportMsg", drain(cmd))
+			}
+			if c, _ := v.current(); msg.id != c.ID {
+				t.Fatalf("alt+e opened the export for chat %d, want the selected %d", msg.id, c.ID)
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -973,6 +991,18 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.chat.QueuedCount = 2
 			if _, cmd := v.updateKey(registryKey(t, "alt+c")); cmd == nil {
 				t.Fatal("alt+c did not clear the queue")
+			}
+		},
+		"alt+e": func(t *testing.T) {
+			v := chatViewFixture()
+			v.composer.SetValue("draft")
+			_, cmd := v.updateKey(registryKey(t, "alt+e"))
+			msg, ok := drain(cmd).(openChatExportMsg)
+			if !ok || msg.id != v.chat.ID {
+				t.Fatalf("alt+e produced %#v, want openChatExportMsg for chat %d", drain(cmd), v.chat.ID)
+			}
+			if v.composer.Value() != "draft" {
+				t.Fatalf("alt+e reached the composer: %q", v.composer.Value())
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -3112,6 +3142,37 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	// The `@` file picker, opened by the draft's own token (task 126.11).
 	// Every probe types the mention in rather than opening the list by hand:
 	// there is no key that opens it.
+	ctxChatExport: {
+		"down": func(t *testing.T) {
+			m := exportProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.exportForm.row != exportRowDiff {
+				t.Fatalf("down left the form on row %d", m.exportForm.row)
+			}
+		},
+		"space": func(t *testing.T) {
+			m := exportProbeRoot(t)
+			m.Update(registryKey(t, "space"))
+			if m.exportForm.chosen() != "html" {
+				t.Fatalf("space left the format at %q, want html", m.exportForm.chosen())
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := exportProbeRoot(t)
+			m.exportForm.path.SetValue("")
+			m.Update(registryKey(t, "enter"))
+			if m.exportForm == nil || !errors.Is(m.exportForm.err, errEmptyExportPath) {
+				t.Fatal("enter did not try to export (an empty path should say so)")
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := exportProbeRoot(t)
+			m.Update(registryKey(t, "esc"))
+			if m.exportForm != nil {
+				t.Fatal("esc left the export form open")
+			}
+		},
+	},
 	ctxProjectPicker: {
 		"pgdown": func(t *testing.T) {
 			m := pickerProbeRoot(t)
@@ -3640,6 +3701,15 @@ func TestAliasRowsAreDeclared(t *testing.T) {
 
 // pickerProbeRoot is a root with the project picker open over two projects,
 // the first of them selected.
+// exportProbeRoot is a connected root with the export form open.
+func exportProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := newRoot(testCtx(t), connector{}, ackedDir(t))
+	m.phase = phaseConnected
+	m.exportForm = newChatExportForm(7, "Fix the build", t.TempDir())
+	return m
+}
+
 func pickerProbeRoot(t *testing.T) *root {
 	t.Helper()
 	m := newRoot(testCtx(t), connector{}, ackedDir(t))

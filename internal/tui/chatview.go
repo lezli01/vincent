@@ -1086,6 +1086,13 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "alt+a":
 		v.reopenForm()
 		return v, nil
+	case opKey(keymap.ExportChat):
+		// The draft stays exactly as it is: the form is a root popup, and
+		// esc on it comes back to the composer untouched.
+		if v.chat == nil {
+			return v, nil
+		}
+		return v, openChatExportCmd(v.chat.ID, v.chat.Title)
 	}
 	var cmd tea.Cmd
 	v.composer, cmd = v.composer.Update(msg)

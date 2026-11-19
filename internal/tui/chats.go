@@ -727,6 +727,12 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.filtering = true
 		v.filter.Focus()
 		return v, nil
+	case opKey(keymap.ExportChat):
+		// Every state exports, archived and handed off included (task 156),
+		// so this is the one row key the archived board shares unchanged.
+		if c, ok := v.current(); ok {
+			return v, openChatExportCmd(c.ID, c.Title)
+		}
 	case opKey(keymap.OpenRow):
 		if c, ok := v.current(); ok {
 			// The board says which board it is, so a chat opened from the

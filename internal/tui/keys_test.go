@@ -54,7 +54,8 @@ var reboundKeys = map[string]string{
 	"comment":          "f16",
 	// alt+j: compact is a Typing operation on the chat surface, so it must
 	// stay off every key the composer types.
-	"compact": "alt+j",
+	"compact":     "alt+j",
+	"export_chat": "alt+x",
 }
 
 // withKeymap installs overrides for one test and restores the defaults after.
