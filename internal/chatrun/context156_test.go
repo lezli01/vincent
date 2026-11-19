@@ -41,8 +41,10 @@ func checkContext(t *testing.T, i int, turn *store.ChatTurn, cr, cw, ctx, win in
 func TestTurnRecordsContextFigures(t *testing.T) {
 	h := newHarness(t)
 	h.perRun.setResults(
-		agent.RunResult{SessionID: "s1", InputTokens: 10, OutputTokens: 5, CacheReadTokens: 900,
-			CacheCreationTokens: 90, ContextTokens: 1000, ContextWindow: 200000, ResultText: "ok"},
+		agent.RunResult{
+			SessionID: "s1", InputTokens: 10, OutputTokens: 5, CacheReadTokens: 900,
+			CacheCreationTokens: 90, ContextTokens: 1000, ContextWindow: 200000, ResultText: "ok",
+		},
 		agent.RunResult{SessionID: "s1", InputTokens: 10, OutputTokens: 5, ResultText: "ok"},
 	)
 	c := h.chatOn(t, perRunAgentName)
@@ -63,8 +65,10 @@ func TestTurnRecordsContextFigures(t *testing.T) {
 func TestCacheInInputRecordsNoCache(t *testing.T) {
 	h := newHarness(t)
 	h.perRun.cacheInInput = true
-	h.perRun.setResults(agent.RunResult{SessionID: "s1", InputTokens: 1000, OutputTokens: 5,
-		CacheReadTokens: 900, ResultText: "ok"})
+	h.perRun.setResults(agent.RunResult{
+		SessionID: "s1", InputTokens: 1000, OutputTokens: 5,
+		CacheReadTokens: 900, ResultText: "ok",
+	})
 	c := h.chatOn(t, perRunAgentName)
 	turn := h.sendAndWait(t, c.ID, "turn")
 	h.waitIdle(t, c.ID)
@@ -82,8 +86,10 @@ func TestCacheInInputRecordsNoCache(t *testing.T) {
 func TestSessionCacheTotalsBecomeTurnShares(t *testing.T) {
 	h := newHarness(t)
 	run := func(session string, in, out, cr, cw int64) agent.RunResult {
-		return agent.RunResult{SessionID: session, InputTokens: in, OutputTokens: out,
-			CacheReadTokens: cr, CacheCreationTokens: cw, ResultText: "ok"}
+		return agent.RunResult{
+			SessionID: session, InputTokens: in, OutputTokens: out,
+			CacheReadTokens: cr, CacheCreationTokens: cw, ResultText: "ok",
+		}
 	}
 	h.totals.setResults(
 		run("s1", 100, 40, 1000, 10), // first turn: raw is the turn's
