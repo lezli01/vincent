@@ -592,8 +592,11 @@ func (f *newChatForm) submit() tea.Cmd {
 	f.submitting = true
 	req := f.request()
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
-		defer cancel()
+		// No actionTimeout here: the daemon makes the worktree before it
+		// answers, and the client already holds the call to a deadline that
+		// covers that (apiclient's worktreeTimeout). Thirty seconds would
+		// report a timeout for a chat the daemon goes on to create.
+		ctx := context.Background()
 		chat, err := client.CreateChat(ctx, req)
 		return chatCreatedMsg{chat: chat, err: err}
 	}

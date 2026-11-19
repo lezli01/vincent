@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/daemon"
+	"github.com/lezli01/vincent/internal/gitx"
 )
 
 // requestTimeout bounds plain REST calls. Everything here talks to loopback,
@@ -34,6 +35,18 @@ const requestTimeout = 10 * time.Second
 // `vincent doctor` must never give. Every other call keeps requestTimeout: a
 // wedged daemon is still caught in ten seconds everywhere it means anything.
 const probeTimeout = 3 * time.Minute
+
+// worktreeTimeout bounds the calls that make a worktree before they answer:
+// POST /v1/chats cuts the chat's branch and adds its worktree synchronously,
+// because a chat has no queue to wait in (§10). That work is held to the
+// daemon's own git budgets — a base-branch fetch of up to gitx.RemoteTimeout,
+// then a `git worktree add` of up to gitx.WorktreeTimeout — and on Windows a
+// checkout routinely outlasts requestTimeout. A client that gives up first
+// reports a timeout for a chat the daemon goes on to create, which is the
+// one answer a create must never give. As with probeTimeout, the
+// deadline has to exceed the server's sum, with a margin for the queries
+// around the two and for waiting on another creation's lock.
+const worktreeTimeout = gitx.RemoteTimeout + gitx.WorktreeTimeout + time.Minute
 
 // EnvTimeoutScale names the factor the test suite sets on a loaded CI leg
 // (#731, internal/testutil/wait) so the budgets its tests inherit from here —
@@ -65,10 +78,13 @@ type Client struct {
 	token   string
 	// rest carries request/response calls and enforces requestTimeout;
 	// probes carries the adapter-probing calls and enforces probeTimeout;
+	// worktrees carries the calls that create a worktree before answering
+	// and enforces worktreeTimeout;
 	// stream has no timeout because SSE responses never end on their own.
-	rest   *http.Client
-	probes *http.Client
-	stream *http.Client
+	rest      *http.Client
+	probes    *http.Client
+	worktrees *http.Client
+	stream    *http.Client
 }
 
 // New returns a client for the daemon at baseURL (e.g. "http://127.0.0.1:7777")
@@ -85,11 +101,12 @@ func New(baseURL, token string) *Client {
 		rt = markerTransport{base: rt, headers: h}
 	}
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
-		rest:    &http.Client{Timeout: ScaleTimeout(requestTimeout), Transport: rt},
-		probes:  &http.Client{Timeout: probeTimeout, Transport: rt},
-		stream:  &http.Client{Transport: rt},
+		baseURL:   strings.TrimRight(baseURL, "/"),
+		token:     token,
+		rest:      &http.Client{Timeout: ScaleTimeout(requestTimeout), Transport: rt},
+		probes:    &http.Client{Timeout: probeTimeout, Transport: rt},
+		worktrees: &http.Client{Timeout: worktreeTimeout, Transport: rt},
+		stream:    &http.Client{Transport: rt},
 	}
 }
 

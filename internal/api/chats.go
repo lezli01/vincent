@@ -157,6 +157,12 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// The create outlives its caller. The row is written before the worktree
+	// exists, so a client that gives up mid-checkout — a timeout, an Esc —
+	// must not cancel the git work under it and strand a chat with no
+	// worktree: the creation runs to completion under git's own budgets, and
+	// the chat.created event tells every client it exists.
+	r = r.WithContext(context.WithoutCancel(r.Context()))
 	if req.Title == "" {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "title is required")
 		return
