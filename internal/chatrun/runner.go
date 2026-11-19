@@ -179,6 +179,12 @@ type Runner struct {
 	// cover. StopTurn is what needs it: closing a chat must wait for a turn
 	// that has not yet reached track (task 119).
 	turns map[int64]*turnCtl
+
+	// handover is a test seam, nil in production: it runs on a chat's actor
+	// goroutine at each queue handover (task 156), after a `done` ending has
+	// popped the next turn and before that turn is checked against a stop or
+	// a shutdown — the window those two checks exist for.
+	handover func(chatID int64)
 }
 
 // turnCtl cancels one accepted turn and reports when its goroutine is gone.
@@ -346,7 +352,10 @@ func (r *Runner) launch(chat *store.Chat, turn *store.ChatTurn) {
 			r.mu.Unlock()
 			close(ctl.done)
 		}()
-		for turn != nil {
+		for popped := false; turn != nil; popped = true {
+			if popped && r.handover != nil {
+				r.handover(chatID)
+			}
 			ctx, cancelCause := context.WithCancelCause(r.base)
 			r.mu.Lock()
 			ctl.cancel = cancelCause
