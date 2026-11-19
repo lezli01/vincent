@@ -111,6 +111,9 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// human's composer offers behind `@`, and an agent in that worktree
 		// can run `ls`.
 		{http.MethodGet, "/v1/chats/{id}/files"},
+		// Task 156 decision 6: the export is a chat read under the same
+		// rule; an MCP tool was not asked for.
+		{http.MethodGet, "/v1/chats/{id}/export"},
 		// Task 065 decision 5, under the same wording: a workflow file is
 		// what the daemon runs, so an agent editing one is an agent
 		// rewriting the rules it runs under.
