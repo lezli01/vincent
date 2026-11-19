@@ -2650,7 +2650,7 @@ periodic repaint.
 |---|---|
 | `enter` | Send the message. While a turn runs — or the agent waits on its question — the message is queued and runs after that turn ends `done`; it never answers the question. The footer then reads `enter queue` |
 | `↑` | On an empty composer, edit the newest queued message: `enter` saves it, `ctrl+d` deletes it, `esc` stops editing |
-| `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now |
+| `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now, paused or not: an idle chat holding an unpaused queue (left by a daemon crash mid-recovery) says so under the queue, and this starts it |
 | `alt+c` | Clear the queue: delete every queued message |
 | `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
 | `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting |

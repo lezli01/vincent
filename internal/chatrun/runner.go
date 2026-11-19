@@ -185,6 +185,9 @@ type Runner struct {
 	// popped the next turn and before that turn is checked against a stop or
 	// a shutdown — the window those two checks exist for.
 	handover func(chatID int64)
+	// resumeRead is the same kind of seam for ResumeQueue: it runs after a
+	// resume has read the chat and before the store lifts the pause.
+	resumeRead func(chatID int64)
 }
 
 // turnCtl cancels one accepted turn and reports when its goroutine is gone.
@@ -310,26 +313,56 @@ func (r *Runner) checkCap(ctx context.Context) error {
 // with messages queued the oldest starts at once, which takes a slot the way
 // a send does and is refused the same way when the cap is full; on a live
 // chat the queue drains when that turn ends `done`.
+//
+// start is decided from a read taken before the store's transaction, so a
+// live turn can end between the two: its ending saw the pause still set and
+// went idle, and this resume, having read a live chat, lifts the pause and
+// starts nothing — an idle chat with an unpaused queue nothing will drain
+// (review F4). The chat is read again after the commit, and a resume that
+// finds it in exactly that state starts the queue as one on an idle chat
+// would have.
 func (r *Runner) ResumeQueue(ctx context.Context, chatID int64) (*store.ChatTurn, error) {
+	turn, started, err := r.resumeQueueOnce(ctx, chatID)
+	if err != nil || turn != nil || started {
+		return turn, err
+	}
 	chat, err := r.deps.Store.GetChat(ctx, chatID)
 	if err != nil {
 		return nil, err
 	}
+	if chat.State != chatstate.Idle || chat.QueuePaused || chat.QueuedCount == 0 {
+		return nil, nil
+	}
+	turn, _, err = r.resumeQueueOnce(ctx, chatID)
+	return turn, err
+}
+
+// resumeQueueOnce is one resume: it reads the chat, checks the cap when it
+// means to start a turn, and has the store lift the pause. started reports
+// whether it asked the store to start one.
+func (r *Runner) resumeQueueOnce(ctx context.Context, chatID int64) (turn *store.ChatTurn, started bool, err error) {
+	chat, err := r.deps.Store.GetChat(ctx, chatID)
+	if err != nil {
+		return nil, false, err
+	}
 	if chatstate.Terminal(chat.State) {
-		return nil, store.ErrInvalidChatAction
+		return nil, false, store.ErrInvalidChatAction
 	}
 	start := chat.State == chatstate.Idle && chat.QueuedCount > 0
+	if r.resumeRead != nil {
+		r.resumeRead(chatID)
+	}
 	if start {
 		if err := r.checkCap(ctx); err != nil {
-			return nil, err
+			return nil, true, err
 		}
 	}
-	turn, err := r.deps.Store.ResumeChatQueue(ctx, chatID, start)
+	turn, err = r.deps.Store.ResumeChatQueue(ctx, chatID, start)
 	if err != nil || turn == nil {
-		return nil, err
+		return nil, start, err
 	}
 	r.launch(chat, turn)
-	return turn, nil
+	return turn, start, nil
 }
 
 // launch starts the chat's actor goroutine on turn. The goroutine runs every

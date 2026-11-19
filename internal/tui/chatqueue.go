@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/reasons"
 )
 
@@ -124,8 +125,13 @@ func (v *chatView) deleteQueuedCmd() tea.Cmd {
 	})
 }
 
+// resumeQueueCmd resumes a paused queue, and starts the queue of an idle chat
+// that holds one whether or not it is paused: a chat can be left idle with an
+// unpaused queue — a crash between recovery's two writes, a resume racing a
+// turn's ending — and nothing else would ever drain it (review F4).
 func (v *chatView) resumeQueueCmd() tea.Cmd {
-	if v.chat == nil || !v.chat.QueuePaused {
+	stranded := v.chat != nil && v.chat.State == string(chatstate.Idle) && v.chat.QueuedCount > 0
+	if v.chat == nil || !v.chat.QueuePaused && !stranded {
 		v.note, v.noteBad = "the queue is not paused", false
 		return nil
 	}
@@ -176,6 +182,18 @@ func (v *chatView) queueLines(width int) []string {
 		lines = append(lines, "")
 		for _, l := range promptCardLines(m.Prompt, label, width) {
 			lines = append(lines, styleDim.Render(ansi.Strip(l)))
+		}
+	}
+	stranded := !v.queue.Paused && len(v.queue.Messages) > 0 &&
+		v.chat != nil && v.chat.State == string(chatstate.Idle)
+	if stranded {
+		// An idle chat whose queue is not paused has nothing that will run
+		// it (review F4); say how to start it.
+		text := fmt.Sprintf("%s waiting with no turn running. %s starts the next · %s clear queue",
+			countNoun(len(v.queue.Messages), "queued message"), chatQueueResumeKey, chatQueueClearKey)
+		lines = append(lines, "")
+		for _, l := range wrapText(text, max(width-1, 1), wrapOpts{indent: 2}) {
+			lines = append(lines, " "+styleWarn.Render(l))
 		}
 	}
 	if v.queue.Paused && len(v.queue.Messages) > 0 {

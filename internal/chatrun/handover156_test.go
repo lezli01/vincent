@@ -103,3 +103,45 @@ func TestShutdownDuringAHandoverInterruptsThePoppedTurn(t *testing.T) {
 	chat := handoverRun(t, h, func(int64) { h.runner.cancel() })
 	assertHandoverEnding(t, h, chat, chatstate.TurnInterruptedState, "", store.QueuePauseInterrupted)
 }
+
+// TestResumeRacingATurnsEndingStillStartsTheQueue is review F4: a resume
+// that reads a running chat, whose turn then ends `done` against a queue
+// still paused — so the chat goes idle — must not leave the chat idle with an
+// unpaused queue nothing will drain. It starts the queue instead.
+func TestResumeRacingATurnsEndingStillStartsTheQueue(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("FAKEAGENT_DELAY_MS", "300")
+	c := h.chat(t)
+	first, err := h.runner.Send(t.Context(), c.ID, "first")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	h.submitQueued(t, c.ID, "next")
+	// The queue a failed turn paused, with a fresh turn now running: the
+	// state the race starts from.
+	if err := h.store.PauseChatQueue(t.Context(), c.ID, ReasonTimeout); err != nil {
+		t.Fatalf("PauseChatQueue: %v", err)
+	}
+	var fired atomic.Bool
+	h.runner.resumeRead = func(int64) {
+		if !fired.CompareAndSwap(false, true) {
+			return
+		}
+		// The turn ends between the resume's read and its write.
+		if got := h.waitTurn(t, first.ID); got.State != chatstate.TurnDone {
+			t.Errorf("first turn = %s/%s, want done", got.State, got.FailReason)
+		}
+		h.waitIdle(t, c.ID)
+	}
+	next, err := h.runner.ResumeQueue(t.Context(), c.ID)
+	if err != nil || next == nil {
+		t.Fatalf("ResumeQueue = %v, %v; want the queued message started", next, err)
+	}
+	if got := h.waitTurn(t, next.ID); got.State != chatstate.TurnDone || got.Prompt != "next" {
+		t.Errorf("resumed turn = %q/%s, want the queued message done", got.Prompt, got.State)
+	}
+	chat := h.waitIdle(t, c.ID)
+	if chat.QueuePaused || chat.QueuedCount != 0 {
+		t.Errorf("after the resume paused=%v queued=%d, want false/0", chat.QueuePaused, chat.QueuedCount)
+	}
+}

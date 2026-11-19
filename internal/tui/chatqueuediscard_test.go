@@ -122,3 +122,28 @@ func TestChatFooterSaysEnterQueuesWhileATurnRuns(t *testing.T) {
 		t.Errorf("an unloaded chat offers enter: %q", got)
 	}
 }
+
+// TestAltRStartsAnIdleChatsUnpausedQueue is review F4's way out in the TUI:
+// an idle chat left holding an unpaused queue — nothing will drain it — says
+// so under the queue, and alt+r starts it rather than refusing because the
+// queue is not paused.
+func TestAltRStartsAnIdleChatsUnpausedQueue(t *testing.T) {
+	v := newChatView(newLevelHolder(), newRawHolder(), newHyperlinkHolder())
+	v.client = apiclient.New("http://127.0.0.1:0", "t")
+	v.chatID, v.chat = 3, &apiclient.Chat{ID: 3, State: "idle", QueuedCount: 1}
+	v.queue = &apiclient.ChatQueue{Messages: []apiclient.ChatQueuedMessage{{ID: 7, ChatID: 3, Prompt: "next"}}}
+	if got := ansi.Strip(strings.Join(v.queueLines(80), "\n")); !strings.Contains(got, "alt+r starts the next") {
+		t.Errorf("the stranded queue's lines = %q, want them to say alt+r starts it", got)
+	}
+	if cmd := v.resumeQueueCmd(); cmd == nil {
+		t.Errorf("alt+r on an idle chat's unpaused queue was refused: %q", v.note)
+	}
+	// A live chat's unpaused queue drains by itself: nothing to resume.
+	v.chat.State = "running"
+	if cmd := v.resumeQueueCmd(); cmd != nil {
+		t.Error("alt+r on a running chat's unpaused queue sent a resume")
+	}
+	if got := ansi.Strip(strings.Join(v.queueLines(80), "\n")); strings.Contains(got, "alt+r") {
+		t.Errorf("a running chat's queue offers alt+r: %q", got)
+	}
+}
