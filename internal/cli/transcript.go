@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatexport"
 )
 
 // transcriptPollInterval paces `--follow`, on the TUI's cadence.
@@ -526,7 +527,7 @@ func renderTranscriptRecord(
 				}
 				continue
 			}
-			parts = append(parts, strings.TrimSpace(tool.Name+" "+tool.Summary))
+			parts = append(parts, chatexport.ToolSummary(tool.Name, tool.Summary))
 		}
 		return mark + strings.Join(parts, ", "), true
 	case "agent.skill":
