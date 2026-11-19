@@ -63,6 +63,11 @@ func (r *Runner) Recover(ctx context.Context) error {
 				return fmt.Errorf("recover chat %d: %w", chat.ID, err)
 			}
 		}
+		// The rest of the queue waits for a human (task 156 decision 3): a
+		// restart drains nothing on its own.
+		if err := r.deps.Store.PauseChatQueue(ctx, chat.ID, store.QueuePauseInterrupted); err != nil {
+			return fmt.Errorf("recover chat %d queue: %w", chat.ID, err)
+		}
 	}
 	if err := r.releaseStuckChats(ctx); err != nil {
 		return err
@@ -87,6 +92,9 @@ func (r *Runner) releaseStuckChats(ctx context.Context) error {
 	for i := range chats {
 		if _, err := r.deps.Store.SetChatState(ctx, chats[i].ID, chatstate.Idle); err != nil {
 			return fmt.Errorf("recover chat %d: %w", chats[i].ID, err)
+		}
+		if err := r.deps.Store.PauseChatQueue(ctx, chats[i].ID, store.QueuePauseInterrupted); err != nil {
+			return fmt.Errorf("recover chat %d queue: %w", chats[i].ID, err)
 		}
 	}
 	return nil

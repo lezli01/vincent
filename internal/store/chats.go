@@ -24,6 +24,11 @@ const (
 	// task (task 074). It carries the task's id, so a client that follows the
 	// stream can link the two without a fetch.
 	EventChatHandedOff = "chat.handed_off"
+	// EventChatQueue is a chat's queue of follow-up messages changing (task
+	// 156): a message queued, edited, deleted or started, the queue paused,
+	// resumed or cleared. It carries queued_count and queue_paused, so a
+	// client re-renders the badge without a fetch.
+	EventChatQueue = "chat.queue_changed"
 )
 
 // ChatEventTypes is the chat.* family, in the order it is declared. It exists
@@ -31,7 +36,7 @@ const (
 // filtering on the payload's id: a chat event carries no task_id column, so
 // without this a replay would scan every task event behind the cursor.
 func ChatEventTypes() []string {
-	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed}
+	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue}
 }
 
 // IsChatEvent reports whether an event type belongs to the chat family.
@@ -41,7 +46,9 @@ func IsChatEvent(t string) bool {
 
 const chatColumns = `id, project_id, title, state, agent, model, effort, permission_mode,
 	branch, adopted_branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input, handoff_task_id,
-	linked_task_id, opening_context, issue_id, end_sha, created_at, updated_at`
+	linked_task_id, opening_context, issue_id, end_sha, created_at, updated_at,
+	queue_paused, queue_pause_reason,
+	(SELECT COUNT(*) FROM chat_queued_messages q WHERE q.chat_id = chats.id)`
 
 const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_message, result_text,
 	session_id, input_tokens, output_tokens, cost_usd, exit_code, pid, proc_identity,
@@ -364,6 +371,16 @@ func (s *Store) updateChat(ctx context.Context, id int64, evType string, mutate 
 		}
 		mutate(c)
 		c.UpdatedAt = time.Now()
+		if chatstate.Terminal(c.State) {
+			// Archive deletes the queue in the transaction that ends the
+			// chat (task 156 decision 6): nothing can ever drain it.
+			if err := deleteChatQueueTx(ctx, tx, c.ID); err != nil {
+				return err
+			}
+			if err := setQueuePauseTx(ctx, tx, c, false, ""); err != nil {
+				return err
+			}
+		}
 		// base_refresh is written back as read unless mutate replaced it, so
 		// SetChatWorktree clearing the claim keeps the record (task 099).
 		refreshJSON, err := marshalBaseRefresh(c.BaseRefresh)
@@ -412,28 +429,15 @@ func (s *Store) CreateChatTurn(ctx context.Context, chatID int64, prompt string)
 		if err != nil {
 			return fmt.Errorf("get chat %d: %w", chatID, err)
 		}
+		// Send is legal from a live chat too, but there it queues (task
+		// 156): only an idle chat's send starts a turn.
 		next, ok := chatstate.Next(c.State, chatstate.Send)
-		if !ok {
+		if !ok || c.State != chatstate.Idle {
 			return fmt.Errorf("chat %d: %w", chatID, ErrInvalidChatAction)
 		}
-		var seq int
-		if err := tx.QueryRowContext(ctx,
-			`SELECT COALESCE(MAX(seq), 0) + 1 FROM chat_turns WHERE chat_id = ?`, chatID).Scan(&seq); err != nil {
-			return fmt.Errorf("next chat turn seq: %w", err)
-		}
-		t := &ChatTurn{
-			ChatID: chatID, Seq: seq, Prompt: prompt,
-			State: chatstate.TurnRunning, SessionID: c.SessionID, StartedAt: time.Now(),
-		}
-		res, err := tx.ExecContext(ctx, `
-			INSERT INTO chat_turns (chat_id, seq, prompt, state, session_id, started_at)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			t.ChatID, t.Seq, t.Prompt, string(t.State), nullString(t.SessionID), formatTime(t.StartedAt))
+		t, err := insertChatTurnTx(ctx, tx, c, prompt)
 		if err != nil {
-			return fmt.Errorf("insert chat turn: %w", err)
-		}
-		if t.ID, err = res.LastInsertId(); err != nil {
-			return fmt.Errorf("insert chat turn: %w", err)
+			return err
 		}
 		c.State = next
 		c.UpdatedAt = time.Now()
@@ -456,6 +460,32 @@ func (s *Store) CreateChatTurn(ctx context.Context, chatID int64, prompt string)
 	return turn, nil
 }
 
+// insertChatTurnTx inserts a running turn for chat c with the next seq. The
+// caller moves the chat's state; this writes the turn row only.
+func insertChatTurnTx(ctx context.Context, tx *sql.Tx, c *Chat, prompt string) (*ChatTurn, error) {
+	chatID := c.ID
+	var seq int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(seq), 0) + 1 FROM chat_turns WHERE chat_id = ?`, chatID).Scan(&seq); err != nil {
+		return nil, fmt.Errorf("next chat turn seq: %w", err)
+	}
+	t := &ChatTurn{
+		ChatID: chatID, Seq: seq, Prompt: prompt,
+		State: chatstate.TurnRunning, SessionID: c.SessionID, StartedAt: time.Now(),
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO chat_turns (chat_id, seq, prompt, state, session_id, started_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		t.ChatID, t.Seq, t.Prompt, string(t.State), nullString(t.SessionID), formatTime(t.StartedAt))
+	if err != nil {
+		return nil, fmt.Errorf("insert chat turn: %w", err)
+	}
+	if t.ID, err = res.LastInsertId(); err != nil {
+		return nil, fmt.Errorf("insert chat turn: %w", err)
+	}
+	return t, nil
+}
+
 // ErrInvalidChatAction is a §5.5 transition the FSM does not allow. The API
 // turns it into a 409, the way an invalid §6 action becomes one.
 var ErrInvalidChatAction = errors.New("action not allowed in this chat state")
@@ -467,17 +497,8 @@ var ErrInvalidChatAction = errors.New("action not allowed in this chat state")
 func (s *Store) UpdateChatTurn(ctx context.Context, t *ChatTurn) error {
 	var ev *Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE chat_turns SET state = ?, fail_reason = ?, error_message = ?, result_text = ?,
-				session_id = ?, input_tokens = ?, output_tokens = ?, cost_usd = ?, exit_code = ?,
-				pid = ?, proc_identity = ?, ended_at = ?, duration_ms = ?,
-				session_input_tokens = ?, session_output_tokens = ?
-			WHERE id = ?`,
-			string(t.State), nullString(t.FailReason), nullString(t.ErrorMessage), nullString(t.ResultText),
-			nullString(t.SessionID), t.InputTokens, t.OutputTokens, t.CostUSD, t.ExitCode,
-			t.PID, t.ProcIdentity, formatTimePtr(t.EndedAt), t.DurationMS,
-			t.SessionInputTokens, t.SessionOutputTokens, t.ID); err != nil {
-			return fmt.Errorf("update chat turn %d: %w", t.ID, err)
+		if err := updateChatTurnTx(ctx, tx, t); err != nil {
+			return err
 		}
 		row := tx.QueryRowContext(ctx, `SELECT `+chatColumns+` FROM chats WHERE id = ?`, t.ChatID)
 		c, err := scanChat(row)
@@ -494,6 +515,23 @@ func (s *Store) UpdateChatTurn(ctx context.Context, t *ChatTurn) error {
 		return err
 	}
 	s.notify(ev)
+	return nil
+}
+
+// updateChatTurnTx writes the whole turn row back inside tx.
+func updateChatTurnTx(ctx context.Context, tx *sql.Tx, t *ChatTurn) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE chat_turns SET state = ?, fail_reason = ?, error_message = ?, result_text = ?,
+			session_id = ?, input_tokens = ?, output_tokens = ?, cost_usd = ?, exit_code = ?,
+			pid = ?, proc_identity = ?, ended_at = ?, duration_ms = ?,
+			session_input_tokens = ?, session_output_tokens = ?
+		WHERE id = ?`,
+		string(t.State), nullString(t.FailReason), nullString(t.ErrorMessage), nullString(t.ResultText),
+		nullString(t.SessionID), t.InputTokens, t.OutputTokens, t.CostUSD, t.ExitCode,
+		t.PID, t.ProcIdentity, formatTimePtr(t.EndedAt), t.DurationMS,
+		t.SessionInputTokens, t.SessionOutputTokens, t.ID); err != nil {
+		return fmt.Errorf("update chat turn %d: %w", t.ID, err)
+	}
 	return nil
 }
 
@@ -690,11 +728,14 @@ func scanChat(r rowScanner) (*Chat, error) {
 	var openingContext, endSHA sql.NullString
 	var issueID sql.NullInt64
 	var createdAt, updatedAt string
+	var pauseReason sql.NullString
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
 		&c.PermissionMode, &c.Branch, &c.AdoptedBranch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
-		&handoffTaskID, &linkedTaskID, &openingContext, &issueID, &endSHA, &createdAt, &updatedAt); err != nil {
+		&handoffTaskID, &linkedTaskID, &openingContext, &issueID, &endSHA, &createdAt, &updatedAt,
+		&c.QueuePaused, &pauseReason, &c.QueuedCount); err != nil {
 		return nil, err
 	}
+	c.QueuePauseReason = pauseReason.String
 	if issueID.Valid {
 		id := issueID.Int64
 		c.IssueID = &id

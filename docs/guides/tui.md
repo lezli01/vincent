@@ -2648,7 +2648,11 @@ periodic repaint.
 
 | Key | Does |
 |---|---|
-| `enter` | Send the message |
+| `enter` | Send the message. While a turn runs — or the agent waits on its question — the message is queued and runs after that turn ends `done`; it never answers the question. The footer then reads `enter queue` |
+| `↑` | On an empty composer, edit the newest queued message: `enter` saves it, `ctrl+d` deletes it, `esc` stops editing |
+| `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now, paused or not: an idle chat holding an unpaused queue (left by a daemon crash mid-recovery) says so under the queue, and this starts it |
+| `alt+c` | Clear the queue: delete every queued message |
+| `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
 | `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting |
 | `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
@@ -2666,6 +2670,16 @@ periodic repaint.
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to where the chat was opened from — the issue, the issues list or the archived-chats board — otherwise the chats board |
+
+**Queued messages.** A message sent while a turn runs is drawn as a faded
+`You` card marked `queued` below the live turn, and becomes a real turn when
+it starts. A turn that fails, is cancelled with `ctrl+x`, or is interrupted by
+a daemon restart pauses the queue instead of draining it, and a card under the
+queue says so and why, with `alt+r` to resume and `alt+c` to clear. The chat
+stays usable while the queue is paused: a new message starts a turn as usual.
+Archiving, closing or handing off the chat discards its queue, and the
+confirmation — or the hand-off form's submit row — says how many queued
+messages will be discarded.
 
 Scrolled away from the live end, the header says which turn is at the top of
 the window — `turn 2/5` — until `ctrl+g` follows the end again.
@@ -2858,12 +2872,12 @@ conversation says the agent is waiting, and `alt+a` brings the question back
 with what you picked. Answering it from `vincent chat answer` or over the API
 closes it here too: the popup follows the chat's state rather than its own.
 
-A send refused because `max_parallel_chats` chats are already running says so
-and creates nothing. It is a refusal, not a queue: finish or stop another
-conversation and send again — the message stays in the composer until the
-daemon takes it, so a refused or failed send loses nothing you typed. Only an
-idle chat takes a message: `enter` while a turn runs, while the agent waits on
-an answer, or on a finished chat sends nothing and says why.
+A send to an idle chat refused because `max_parallel_chats` chats are already
+running says so and creates nothing. It is a refusal, not a queue: finish or
+stop another conversation and send again — the message stays in the composer
+until the daemon takes it, so a refused or failed send loses nothing you typed.
+A live chat queues the message instead (see **Queued messages** above); only
+`enter` on a finished chat sends nothing and says why.
 
 A turn that runs past `agent_timeout`, or sits unanswered past `input_timeout`,
 fails and returns the chat to `idle` — the slot comes back rather than being
@@ -3503,7 +3517,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first nineteen are the operations screens share, the next ten are the
+The first twenty are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3527,6 +3541,7 @@ The first nineteen are the operations screens share, the next ten are the
 | `ready` | `.` | Mark an issue ready to hand off, or not ready |
 | `handoff` | `I` | Hand the selected issues off |
 | `return` | `,` | Return an issue from its handoff |
+| `steer` | `ctrl+s` | Steer a chat's running turn, where its agent can — none can yet |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

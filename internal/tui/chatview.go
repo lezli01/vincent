@@ -14,6 +14,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The chat workspace (§15, task 067, closing task 063.2): turn history above,
@@ -25,6 +26,9 @@ import (
 // actions. What the two do share is the §7.4 answer popup, which is reused
 // rather than forked — the request is the same request.
 
+// chatComposerPlaceholder is the composer's hint on an idle chat.
+const chatComposerPlaceholder = "message… (enter sends, ctrl+j or shift+enter for a newline)"
+
 // Chat workspace messages.
 type (
 	// chatLoadedMsg is the chat and its whole conversation.
@@ -32,6 +36,9 @@ type (
 		id    int64
 		chat  *apiclient.Chat
 		turns []apiclient.ChatTurn
+		// queue is the chat's queued messages (task 156), fetched only
+		// when the chat says it has some or a pause.
+		queue *apiclient.ChatQueue
 		err   error
 	}
 	// chatTranscriptMsg is one finished turn's rendered record, or the live
@@ -50,9 +57,9 @@ type (
 		chatID int64
 		// sent is the trimmed draft the request carried, so acceptance
 		// takes that out of the composer and nothing typed since (review F8).
-		sent string
-		turn *apiclient.ChatTurn
-		err  error
+		sent   string
+		result *apiclient.ChatSend
+		err    error
 	}
 	// chatAnsweredMsg reports POST /v1/chats/{id}/answer.
 	chatAnsweredMsg struct {
@@ -106,6 +113,11 @@ type chatView struct {
 	chatID int64
 	chat   *apiclient.Chat
 	turns  []apiclient.ChatTurn
+	// queue is the chat's queued messages and pause (task 156), nil when it
+	// has none; editingQueued is the queued message `↑` put in the
+	// composer, 0 when the composer holds a new message.
+	queue         *apiclient.ChatQueue
+	editingQueued int64
 	// back is where esc lands: the view that opened the chat
 	// (openChatMsg.back, #932), or the chats board when it is zero. A
 	// project switch never reads it — switchFallback sends the workspace to
@@ -227,7 +239,7 @@ type chatView struct {
 
 func newChatView(level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *chatView {
 	ta := textarea.New()
-	ta.Placeholder = "message… (enter sends, ctrl+j or shift+enter for a newline)"
+	ta.Placeholder = chatComposerPlaceholder
 	// enter sends — updateKey takes it before the composer sees it — so the
 	// textarea's newline moves to the keys issue #500 names. Rebound here
 	// rather than matched in updateKey and handed to InsertString, because
@@ -330,7 +342,11 @@ func (v *chatView) loadCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		chat, turns, err := client.GetChat(ctx, id)
-		return chatLoadedMsg{id: id, chat: chat, turns: turns, err: err}
+		var queue *apiclient.ChatQueue
+		if err == nil && queueWanted(chat) {
+			queue, err = client.ChatQueue(ctx, id)
+		}
+		return chatLoadedMsg{id: id, chat: chat, turns: turns, queue: queue, err: err}
 	}
 }
 
@@ -424,6 +440,8 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case chatNoteMsg:
 		return v, v.applyChatNote(msg)
+	case chatQueueDoneMsg:
+		return v, v.applyQueueDone(msg)
 	case chatSentMsg:
 		return v, v.applySent(msg)
 	case chatAnsweredMsg:
@@ -498,7 +516,14 @@ func (v *chatView) applyLoaded(msg chatLoadedMsg) {
 		return
 	}
 	v.loadErr = ""
-	v.chat, v.turns = msg.chat, msg.turns
+	v.chat, v.turns, v.queue = msg.chat, msg.turns, msg.queue
+	// The message being edited may have started or been deleted elsewhere:
+	// the edit ends with it, and what was typed stays in the composer.
+	if v.editingQueued != 0 && !v.queueHas(v.editingQueued) {
+		v.editingQueued = 0
+		v.note, v.noteBad = "the queued message already started — what you typed stays here", true
+	}
+	v.syncPlaceholder()
 	v.bodyDirty = true
 	// The popup follows the chat's own state: it opens when the daemon says
 	// awaiting_input and closes when it stops saying so, which is what makes
@@ -818,6 +843,13 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	// The draft the inline hints were about is gone with it (task 124.14).
 	v.skills.inlineNote, v.skills.noteFor = "", ""
 	v.note = ""
+	if msg.result != nil && msg.result.Queued != nil {
+		// Queued behind the live turn (task 156): nothing new is running,
+		// so the live seam stays where it is.
+		v.note, v.noteBad = "queued — it runs after the current turn", false
+		v.bodyDirty = true
+		return v.loadCmd()
+	}
 	// Only the live seam is the new turn's to reset: the records of every
 	// finished turn stay (issue #801 F10), and the new turn's tail is fetched
 	// once the reload shows it running.
@@ -912,7 +944,29 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, cmd
 		}
 	}
+	if v.editingQueued != 0 {
+		switch msg.String() {
+		case "esc":
+			v.stopQueueEdit()
+			return v, nil
+		case "enter":
+			return v, v.saveQueueEditCmd()
+		case chatQueueDeleteKey:
+			return v, v.deleteQueuedCmd()
+		}
+	}
 	switch msg.String() {
+	case chatQueueEditKey:
+		if v.startQueueEdit() {
+			return v, nil
+		}
+	case chatQueueResumeKey:
+		return v, v.resumeQueueCmd()
+	case chatQueueClearKey:
+		return v, v.clearQueueCmd()
+	case opKey(keymap.Steer):
+		v.steerNote()
+		return v, nil
 	case "esc":
 		// The opener, not always the chats board (#932). A selectViewMsg
 		// rather than a re-open, so an issue detail keeps its selection and
@@ -1682,7 +1736,7 @@ func (v *chatView) closeQuestion() string {
 	if v.runningTurn() != nil {
 		prompt += " — the running turn is stopped first"
 	}
-	return prompt
+	return prompt + queueDiscardNote(v.chat)
 }
 
 // promptKeys names the close confirmation's answers while it is up, so the
@@ -1741,6 +1795,11 @@ func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
 	return v.loadCmd()
 }
 
+// chatQueueHintPriority is where `enter queue` ranks in a live chat's footer:
+// after `ctrl+x stop` and `pgup/pgdown scroll`, which must fit at 80 columns
+// (spec §15, issue #801), and ahead of `ctrl+r detail`.
+const chatQueueHintPriority = 4
+
 // liveBindings keeps the ways this chat can end (task 119): close for a chat
 // opened on a task, hand-off for a free one, and both for one opened on an
 // issue (task 140 decision 3). What the daemon refuses is left out, because a
@@ -1748,17 +1807,24 @@ func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
 // chat has loaded none is known, and none is offered.
 //
 // It drops every other key that would do nothing right now too (issue #801
-// F5): send on a chat that is not idle — sendCmd refuses it there — stop
-// with no running turn, skills on a chat that has ended or not
+// F5): send on a chat that has ended or not loaded — sendCmd refuses it
+// there — steer outside a running turn, stop with no running turn, skills on a chat that has ended or not
 // loaded, the reopen key with no question put away, ctrl+t task details in
 // a chat's answer popup — only the task workspace answers it — and the
 // composer's own keys while the close confirmation owns the keyboard.
+//
+// While a turn runs or waits on a question, enter queues rather than sends
+// (task 156 decision 5), and the footer says so: `enter queue`. Steer is
+// offered only beside a running turn, marked unavailable when the daemon says
+// this chat cannot steer.
 func (v *chatView) liveBindings(rows []binding) []binding {
 	onIssue := v.chat != nil && v.chat.IssueID != nil
 	closable := v.chat != nil && v.chat.LinkedTaskID != nil || onIssue
 	free := v.chat != nil && v.chat.LinkedTaskID == nil
 	ended := v.chat == nil || chatstate.Terminal(chatstate.State(v.chat.State))
 	owned := v.closing || v.form != nil
+	live := v.chat != nil && (v.chat.State == string(chatstate.Running) || v.chat.State == string(chatstate.AwaitingInput))
+	running := v.chat != nil && v.chat.State == string(chatstate.Running)
 	out := make([]binding, 0, len(rows))
 	for _, b := range rows {
 		if b.context == ctxForm && b.key == "ctrl+t" {
@@ -1774,27 +1840,53 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 			b.key == "ctrl+x" && v.runningTurn() == nil,
 			b.key == "tab" && ended,
 			b.key == "alt+a" && v.formAway == nil,
-			b.key == "enter" && (v.chat == nil || v.chat.State != string(chatstate.Idle)),
+			b.key == "enter" && ended,
+			b.op == keymap.Steer && (!running || owned),
 			owned && (b.key == "enter" || b.key == "ctrl+j" || b.key == "tab"):
 			continue
+		}
+		switch {
+		case b.key == "enter" && live:
+			// Ranked behind stop and the scroll keys: at 80 columns those
+			// are what a reader of a running turn needs, and the composer's
+			// placeholder already says enter queues (syncPlaceholder).
+			b.hint, b.priority = "enter queue", chatQueueHintPriority
+		case b.op == keymap.Steer && b.hint != "" && !v.chat.CanSteer:
+			b.hint += " (unavailable)"
 		}
 		out = append(out, b)
 	}
 	return out
 }
 
-// sendRefusal says why a chat in state s takes no turn now, and what does.
-func sendRefusal(s chatstate.State) string {
-	switch {
-	case s == chatstate.Running:
-		return "a turn is running — wait for it, or ctrl+x to cancel it"
-	case s == chatstate.AwaitingInput:
-		return "the agent is waiting on an answer — answer it in the popup first"
-	case chatstate.Terminal(s):
-		return "this chat is " + chatStateLabel(string(s)) + " and takes no more turns"
-	default:
-		return "only an idle chat takes a turn"
+// queueHas reports whether the loaded queue still holds message id.
+func (v *chatView) queueHas(id int64) bool {
+	if v.queue == nil {
+		return false
 	}
+	for i := range v.queue.Messages {
+		if v.queue.Messages[i].ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// syncPlaceholder says in the composer what enter will do: send a turn, or
+// queue the message behind the live one (task 156).
+func (v *chatView) syncPlaceholder() {
+	if v.chat != nil && (v.chat.State == string(chatstate.Running) || v.chat.State == string(chatstate.AwaitingInput)) {
+		v.composer.Placeholder = "message… (enter queues it to run after the current turn)"
+		return
+	}
+	v.composer.Placeholder = chatComposerPlaceholder
+}
+
+// sendRefusal says why a terminal chat in state s takes no message. Every
+// live state takes one: idle sends it, running and awaiting_input queue it
+// (task 156).
+func sendRefusal(s chatstate.State) string {
+	return "this chat is " + chatStateLabel(string(s)) + " and takes no more turns"
 }
 
 func (v *chatView) sendCmd() tea.Cmd {
@@ -1814,18 +1906,12 @@ func (v *chatView) sendCmd() tea.Cmd {
 		v.note, v.noteBad = "this chat has not loaded — nothing was sent", true
 		return nil
 	}
-	// `send` is legal only from idle (chatstate), and a turn is refused,
-	// never queued (§11): the daemon would answer 409 invalid_state, so it
-	// is refused here, with the draft kept, the way close and hand-off are.
-	if v.chat != nil && v.chat.State != string(chatstate.Idle) {
+	// A live chat takes the message too, and queues it behind the running
+	// turn (task 156); only a terminal chat refuses here, with the draft
+	// kept, the way close and hand-off are. A message sent while the agent
+	// waits on a question never answers it — the popup does.
+	if chatstate.Terminal(chatstate.State(v.chat.State)) {
 		v.note, v.noteBad = sendRefusal(chatstate.State(v.chat.State)), true
-		// The refusal points at the answer popup, and esc may have closed
-		// it: bring it back, or the note names something no key reopens
-		// (review F9).
-		if v.chat.State == string(chatstate.AwaitingInput) {
-			v.reopenForm()
-			v.syncForm()
-		}
 		return nil
 	}
 	if v.sending {
@@ -1835,8 +1921,8 @@ func (v *chatView) sendCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
-		turn, err := client.SendChat(ctx, id, message)
-		return chatSentMsg{chatID: id, sent: message, turn: turn, err: err}
+		sent, err := client.SendChat(ctx, id, message)
+		return chatSentMsg{chatID: id, sent: message, result: sent, err: err}
 	}
 }
 

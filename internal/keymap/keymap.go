@@ -54,6 +54,11 @@ const (
 	// Return returns a claimed or waiting issue from its handoff, after a
 	// y/n prompt (task 137.11 decision 4). `,` beside ready's `.`.
 	Return Op = "return"
+	// Steer writes a message into a chat's running turn (task 156 decision
+	// 5). ctrl+s for "steer": free on the chat surface, and a key the
+	// composer would not type. No adapter can steer yet, so on every chat it
+	// names why rather than doing anything else under its name.
+	Steer Op = "steer"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -180,6 +185,9 @@ var catalog = []Info{
 	}},
 	{Op: Return, Default: ",", Meaning: "return the issue from its handoff", Kind: KindTerm, Surfaces: []Surface{
 		"issues", "issue",
+	}},
+	{Op: Steer, Default: "ctrl+s", Meaning: "steer the chat's running turn, where its agent can", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
 	}},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},
@@ -313,6 +321,7 @@ var exceptions = []exception{
 	{key: "N", ops: []Op{NextFailure}, anyFixed: true, why: "task 129.18: N is the popups' no too, and the popups own the keyboard"},
 	{key: "r", ops: []Op{Retry}, anyFixed: true, why: "r retries the connection while disconnected, when no task is on screen"},
 	{key: "enter", ops: []Op{OpenRow}, anyFixed: true, why: "enter activates the focused thing on every surface"},
+	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
 	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},
 }
 

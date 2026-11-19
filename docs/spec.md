@@ -717,7 +717,7 @@ chats too — the same objection that kept a `kind` column off `tasks`.
 |---|---|
 | `idle` | no live turn; the state a chat is created in and the one every finished turn returns it to |
 | `running` | a live turn: an agent process is up, owned by the chat's runner goroutine |
-| `awaiting_input` | a turn holding its process while the agent waits on a §7.4 request. It **holds** its cap slot, for §6's reason: the process is alive on its stdin. *Amended 2026-08-31 (task 067, issue #269): that hold is now **bounded** by `defaults.input_timeout` — the wait expires, the turn fails `input_timeout`, the process tree is killed and the chat returns to `idle`, releasing the slot* |
+| `awaiting_input` | a turn holding its process while the agent waits on a §7.4 request. It **holds** its cap slot, for §6's reason: the process is alive on its stdin. *Amended 2026-08-31 (task 067, issue #269): that hold is now **bounded** by `defaults.input_timeout` — the wait expires, the turn fails `input_timeout`, the process tree is killed and the chat returns to `idle`, releasing the slot* *Amended 2026-11-19 (task 156, issue #1010): a message sent here is **queued** and waits behind the request; it never answers it — `answer` stays the deliberate action* |
 | `archived` | terminal. The worktree is gone; nothing further can run in it. *Amended 2026-09-01 (task 074, issue #288): this was "the only terminal state"; there are now two.* *Amended 2026-09-17 (task 119, issue #472): there are now **three** — `closed` below, deliberately* |
 | `handed_off` | *Added 2026-09-01 (task 074, issue #288):* terminal. The worktree and branch belong to the task named by `handoff_task_id`, which is the **sole owner** of their cleanup and lifecycle from then on (§10). `worktree_path` is cleared in the handoff transaction — that is what transferring the §10 claim means concretely — while `branch`, `base_branch` and `base_sha` stay on the row as history. Reusing `archived` was rejected on mechanism, not taste: archiving *removes* the worktree and may delete the branch, which is exactly the state a handoff transfers, so "archiving a handed-off chat must never remove task-owned workspace state" is true by construction — `archive` is simply not legal from here. *Amended 2026-09-01 (issue #298): that refusal now **says so**. `POST /v1/chats/{id}/archive` on a `handed_off` chat answers `409` naming the handoff — the task owns the worktree now — and on an `archived` one that it is already archived, rather than the single sentence "a chat with a live turn cannot be archived" that both terminal states used to get and neither could be true of (§11, §13.2)* |
 | `closed` | *Added 2026-09-17 (task 119, issue #472):* terminal, and the only terminal state a **linked** chat can reach. The conversation is over; the worktree and branch it worked in were never its own, and closing touches neither. Not `archived`, because `archived` means "the worktree is gone", which closing must never make true; not `handed_off`, because nothing was transferred |
@@ -1201,6 +1201,35 @@ holds by there being nothing to inject. §7.3 is untouched and the chat's
 `send` over `max_parallel_chats` is **refused, not queued** (§11). That refusal
 is not in the FSM: the cap is about how many chats are running, not about what
 this chat may do.
+
+*Amended 2026-11-19 (task 156, issue #1010): the queue.* The human-actions
+paragraph above now reads: `send` is legal from `idle`, `running` and
+`awaiting_input`; **outside `idle` it queues** and leaves the state where it
+is. A queued message is a row of `chat_queued_messages` (§14), and exists only
+behind a live turn. When that turn ends `done` and the queue is not paused, the
+runner pops the oldest message into a new turn in **one transaction** that
+deletes the row and records the ending, and the chat stays `running` —
+`running → running` through `turn_started` — so it never leaves its
+`max_parallel_chats` slot and no other chat can take it in between (§11). A
+message is therefore a queued row or a turn, never both and never neither. A
+turn that ends `failed` (any reason, `input_timeout` included), `interrupted`,
+or by a human `cancel` **pauses** the queue instead (`chats.queue_paused`,
+`queue_pause_reason`, set in the transaction that records the ending): the
+chat is `idle` and usable, a fresh `send` starts a turn as before, and the
+queue waits until it is resumed (`POST /v1/chats/{id}/queue/resume`, which on
+an idle chat starts the next message subject to the cap like any send) or
+cleared. A queued message can be edited or deleted until it starts; afterwards
+it is a turn, and the edit is a `409`. `archive`, `hand_off` and `close` stay
+legal from `idle` only, and delete the chat's queue in the transaction that
+ends it. The "refused, not queued" of the paragraph above is unchanged: an
+idle chat's send over the cap is still `409 chat_cap_reached`.
+
+A second new action, **`steer`**, is legal from `running` only (not
+`awaiting_input`, where `answer` is the input): writing a message into the
+live turn rather than after it. It is in the table so the API's state refusal
+and the capability refusal stay distinct, but **no adapter steers yet** (§9.1),
+so every chat reports `can_steer: false` with a reason and no steer route is
+served. It is never emulated by cancel-and-resend.
 
 ### 5.6 Issue (added 2026-10-02, task 130.1, issue #660)
 
@@ -4824,6 +4853,17 @@ records no date for `--approve-mcps`).
 `--additional-mcp-config` (§9.9), so the paragraph above still holds once
 copilot is registered (138.9): no shipped adapter returns `ErrMCPUnsupported`.
 
+*Amended 2026-11-19 (task 156, issue #1010): steering.* Writing a second
+message into a **running** turn, folded into it before that turn's result, is
+an optional adapter capability, to be found by type assertion the way resume
+is. Task 156 gates it on a verified capture: a named CLI version, a second
+input line written into a live process mid-tool-use and mid-text, and a record
+that the CLI answered it inside the same turn. **No adapter has such a capture
+yet, so none implements it**, every chat reports `can_steer: false`, and a
+message sent during a turn is queued (§5.5). "Runs after the current reply in
+the same process" is not steering and is not offered as such; nor is
+cancel-and-resend.
+
 ### 9.2 Claude Code adapter
 
 - Invocation (indicative; exact flags pinned per detected CLI version at
@@ -5361,6 +5401,10 @@ tested list.
   mid-stream: that is inference, and §9's standing rule is that a thing an
   adapter cannot report is said plainly and never faked.
 
+*Amended 2026-11-19 (task 156, issue #1010).* claude does **not** steer a
+running turn (§9.1): a message sent during one is queued and runs as the next
+turn. Claude's stream-json input mode may turn out to support it; until a capture against a named 2.1.x build shows it folding a second `user` line into the live turn, it is not claimed
+
 ### 9.3 Codex adapter
 
 - Invocation (pinned against codex-cli 0.142.5): `codex exec --json`, cwd =
@@ -5616,6 +5660,10 @@ variable. The §13.4 server is wired as `-c mcp_servers.vincent.url=…` plus
 passed through the step's environment. Per-run: nothing mutates the user's
 `~/.codex/config.toml`. The token is therefore **not** on the command line here,
 unlike claude's — codex offers the indirection and claude does not.
+
+*Amended 2026-11-19 (task 156, issue #1010).* codex does **not** steer a
+running turn (§9.1): a message sent during one is queued and runs as the next
+turn.
 
 ### 9.4 Permission modes
 
@@ -6571,6 +6619,10 @@ Two consequences are handled rather than assumed away:
 - A daemon crash leaves it behind, so §12.4 recovery removes a leftover one from
   every live task's worktree. An empty `.cursor` goes with it; a `.cursor` the
   user or the agent put something else in stays.
+
+*Amended 2026-11-19 (task 156, issue #1010).* cursor does **not** steer a
+running turn (§9.1): a message sent during one is queued and runs as the next
+turn.
 
 ### 9.8 Published skills (task 095, added 2026-09-10)
 
@@ -7853,6 +7905,10 @@ cannot be admitted while the caller holds its slot. A silent hang becomes an
 error the agent can act on, no new state is introduced, and these caps keep
 their current meaning.
 
+*Amended 2026-11-19 (task 156, issue #1010).* copilot does **not** steer a
+running turn (§9.1): a message sent during one is queued and runs as the next
+turn.
+
 ### Global pause (task 149, added 2026-11-17)
 
 A daemon-wide pause for maintenance: `POST /v1/daemon/pause` (§13.2),
@@ -7908,6 +7964,13 @@ accumulating — and that reasoning does not stop applying because the noun
 changed from step to turn. So a chat turn is counted; what differs is only that
 the response to a full cap is a refusal a human sees rather than a queue a
 human waits in.
+
+*Amended 2026-11-19 (task 156, issue #1010).* A chat's own **message queue**
+(§5.5) does not change this: a queued message exists only behind a live turn,
+and a drain **inherits the finishing turn's slot** — the chat goes `running →
+running` without ever being counted out — so the cap is never contested
+mid-queue and a chat never waits on it. Nothing goes through
+`internal/scheduler`, and an idle chat's send over the cap is still refused.
 
 *Amended 2026-08-31 (task 067, issue #269).* A chat's slot is now **bounded in
 time as well as counted**. §7.2's `defaults.agent_timeout` bounds a running
@@ -9784,6 +9847,14 @@ shape as `store.InterruptTask`, and the same "rows and processes, not
 directories" rule. The human sees the interrupted turn against the
 conversation and decides whether to say it again.
 
+*Amended 2026-11-19 (task 156, issue #1010).* A queued message that had
+started is a turn, so it is finalized `interrupted` and never re-run by this
+same rule; the messages still queued behind it stay queued, and recovery
+**pauses** the queue (`queue_pause_reason: interrupted`), so a restart drains
+nothing on its own. A message that had not started is still a queued row: the
+pop that turns one into a turn is one transaction, so there is no state in
+between to recover.
+
 *Amended 2026-09-17 (task 119, issue #472).* A turn of a chat **linked to a
 task** (§5.5) is recovered by the same rule: finalized `interrupted`, never
 re-run, the chat back to `idle`. The chat stays **open**, so the task it locks
@@ -11052,7 +11123,21 @@ GET    /v1/chats/{id}                   { chat, turns[] } — the whole conversa
 POST   /v1/chats/{id}/send              { message } → 202 with the new turn. `409` outside
                                         `idle` (§5.5), and `409 chat_cap_reached` when
                                         `max_parallel_chats` chats already hold a live process
-                                        — **refused, never queued** (§11)
+                                        — **refused, never queued** (§11).
+                                        *Amended 2026-11-19 (task 156, issue #1010):* on a
+                                        `running` or `awaiting_input` chat it queues instead,
+                                        → 202 `{ queued: true, queued_message }`; `409` only
+                                        on a terminal chat
+GET    /v1/chats/{id}/queue             *Added 2026-11-19 (task 156).* `{ messages[], paused,
+                                        pause_reason }`, oldest first
+PATCH  /v1/chats/{id}/queue/{qid}       { message } → the edited message; `409` once it started
+DELETE /v1/chats/{id}/queue/{qid}       204; `409` once it started
+POST   /v1/chats/{id}/queue/resume      lift the pause; on an idle chat the next message
+                                        starts now, `409 chat_cap_reached` over the cap
+POST   /v1/chats/{id}/queue/clear       204; every queued message deleted, the pause lifted.
+                                        A chat body carries `queued_count`, `queue_paused`,
+                                        `queue_pause_reason`, `can_steer` and `steer_reason`.
+                                        No steer route is served while no adapter can steer
 POST   /v1/chats/{id}/answer            the §7.4 answer flow verbatim: same normalized request,
                                         same `Respond()`. `409` outside `awaiting_input`.
                                         *Amended 2026-08-31 (task 067, issue #269), replacing the
@@ -12515,6 +12600,12 @@ change, and a `task.state_changed` whose from and to are equal is what task 090
 decision 1 already declined to publish. `chat.closed` is in the chat family, so
 the per-chat stream carries it.
 
+*Amended 2026-11-19 (task 156, issue #1010).* One more durable chat kind,
+**`chat.queue_changed`**: a message queued, edited, deleted or started, or the
+queue paused, resumed or cleared. It carries `queued_count`, `queue_paused`
+and `queue_pause_reason` beside the chat's id, title and state, is published
+post-commit like every other event, and rides the per-chat stream.
+
 *Amended 2026-10-31 (task 140.9, issue #885).* Every event of a chat **opened
 on an issue** carries `issue_id` beside the chat's id, title and state, the
 way a linked chat's carry `linked_task_id`: the chat's state moves the
@@ -13405,6 +13496,19 @@ CREATE TABLE chat_turns (
     -- session's previous turn's. NULL for every per-run adapter (§9.9).
     session_input_tokens  INTEGER,
     session_output_tokens INTEGER
+);
+
+-- Added 2026-11-19 (task 156, issue #1010): follow-up messages queued behind a
+-- live turn (§5.5). A row becomes a chat_turns row in the transaction that
+-- deletes it. chats gains queue_paused INTEGER NOT NULL DEFAULT 0 and
+-- queue_pause_reason TEXT.
+CREATE TABLE chat_queued_messages (
+    id         INTEGER PRIMARY KEY,
+    chat_id    INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    position   INTEGER NOT NULL,
+    prompt     TEXT    NOT NULL,
+    created_at TEXT    NOT NULL,
+    updated_at TEXT    NOT NULL
 );
 
 -- Event-trigger runtime state (task 096, added 2026-09-11; migrations 0029, 0030).
@@ -15631,7 +15735,13 @@ stream for the live tail.
    so the root footer is the one key line, and `chatView.liveBindings` drops
    every row a press would do nothing for — send while the chat is not idle
    or a prompt or the answer form owns the keyboard, `ctrl+x` with no running
-   turn, `tab`/`f2` on an ended chat. `pgup/pgdown` ranks ahead of `ctrl+r`
+   turn, `tab`/`f2` on an ended chat. *Amended 2026-11-19 (task 156 decision
+   5, review F2):* send is dropped only on an ended or unloaded chat; while a
+   turn runs or waits on a question the row reads **`enter queue`**, ranked
+   after `ctrl+x stop` and `pgup/pgdown scroll` so those still fit at 80
+   columns (the composer's placeholder says it too), and
+   `ctrl+s steer` is offered beside a running turn, marked `(unavailable)`
+   while the chat's `can_steer` is false. `pgup/pgdown` ranks ahead of `ctrl+r`
    so it still fits at 80 columns. **Nothing in the workspace is cut to one
    line**: the close confirmation, notes and a failed turn's error wrap, the
    prompt's answer keys (`(y/n)`) kept apart from the question so a wrap
@@ -18004,6 +18114,16 @@ read-only and no longer steps)*, `esc` discards.
 chats board it makes a chat, and everywhere else it still makes a task. `!` is
 **not** extended to chats — an `awaiting_input` chat is pinned and badged on
 its own board and nowhere else.
+
+*Amended 2026-11-19 (task 156, issue #1010).* In the chat workspace `enter`
+on a `running` or `awaiting_input` chat **queues** the message rather than
+refusing it, and the composer's placeholder says so. Queued messages render as
+faded `You` cards marked `queued` below the live turn; `↑` on an empty
+composer edits the newest (`enter` saves, `ctrl+d` deletes, `esc` stops). A
+paused queue renders a card naming why, with `alt+r` to resume and `alt+c` to
+clear. `ctrl+s` is the rebindable `steer` operation (task 118's registry, with
+a recorded exception beside the forms' fixed `ctrl+s`); no adapter can steer
+yet, so it puts the daemon's `steer_reason` in the composer note.
 
 *Amended 2026-09-01 (task 074, issue #288).* `ctrl+t` on the chat workspace
 opens the **new-task form in handoff mode**, seeded with the chat: the project,

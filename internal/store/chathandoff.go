@@ -84,6 +84,14 @@ func (s *Store) HandoffChat(ctx context.Context, chatID int64, t *Task) (*Chat, 
 			string(c.State), t.ID, formatTime(c.UpdatedAt), chatID, string(chatstate.Idle)); err != nil {
 			return fmt.Errorf("hand off chat %d: %w", chatID, err)
 		}
+		// Handing off deletes the queue in the same transaction (task 156
+		// decision 6): the task does not inherit the chat's follow-ups.
+		if err := deleteChatQueueTx(ctx, tx, chatID); err != nil {
+			return err
+		}
+		if err := setQueuePauseTx(ctx, tx, c, false, ""); err != nil {
+			return err
+		}
 		if chatEv, err = chatHandoffEvent(c, t.ID); err != nil {
 			return err
 		}

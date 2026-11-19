@@ -179,12 +179,26 @@ type Runner struct {
 	// cover. StopTurn is what needs it: closing a chat must wait for a turn
 	// that has not yet reached track (task 119).
 	turns map[int64]*turnCtl
+
+	// handover is a test seam, nil in production: it runs on a chat's actor
+	// goroutine at each queue handover (task 156), after a `done` ending has
+	// popped the next turn and before that turn is checked against a stop or
+	// a shutdown — the window those two checks exist for.
+	handover func(chatID int64)
+	// resumeRead is the same kind of seam for ResumeQueue: it runs after a
+	// resume has read the chat and before the store lifts the pause.
+	resumeRead func(chatID int64)
 }
 
 // turnCtl cancels one accepted turn and reports when its goroutine is gone.
+//
+// cancel is the turn currently running; a queue drain replaces it for each
+// turn it pops (task 156). Both fields are guarded by Runner.mu. stopped
+// makes a StopTurn that lands during a handover stop the next turn too.
 type turnCtl struct {
-	cancel context.CancelCauseFunc
-	done   chan struct{}
+	cancel  context.CancelCauseFunc
+	stopped bool
+	done    chan struct{}
 }
 
 // liveTurn is one running turn: the handle to stop it and the id of the row
@@ -226,35 +240,137 @@ func (r *Runner) Stop() {
 	r.wg.Wait()
 }
 
-// Send starts a turn on chat id with the human's message. It refuses rather
-// than queues when the cap is reached, and it is the only producer of
-// `idle → running` (§5.5).
+// Send starts a turn on chat id with the human's message, or queues it
+// behind the chat's live turn (task 156). It returns the turn it started,
+// nil when the message was queued; Submit says which.
 func (r *Runner) Send(ctx context.Context, chatID int64, prompt string) (*store.ChatTurn, error) {
+	turn, _, err := r.Submit(ctx, chatID, prompt)
+	return turn, err
+}
+
+// Submit is a human message to chat id. On an idle chat it starts a turn and
+// is the only producer of `idle → running` (§5.5); it refuses rather than
+// queues when the cap is reached (task 063 decision 1, which task 156 leaves
+// standing). On a live chat — `running` or `awaiting_input` — it appends the
+// message to the chat's queue and returns the queued row: it never answers a
+// pending §7.4 request (task 156 decision 2).
+func (r *Runner) Submit(
+	ctx context.Context, chatID int64, prompt string,
+) (*store.ChatTurn, *store.ChatQueuedMessage, error) {
+	chat, err := r.deps.Store.GetChat(ctx, chatID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !chatstate.AllowedFor(chat.Kind(), chat.State, chatstate.Send) {
+		return nil, nil, store.ErrInvalidChatAction
+	}
+	if chatstate.HoldsProcess(chat.State) {
+		m, err := r.deps.Store.EnqueueChatMessage(ctx, chatID, prompt)
+		if err == nil {
+			return nil, m, nil
+		}
+		if !errors.Is(err, store.ErrInvalidChatAction) {
+			return nil, nil, err
+		}
+		// The live turn ended between the read and the enqueue, and the
+		// chat is idle now: this message starts the next turn instead.
+		if chat, err = r.deps.Store.GetChat(ctx, chatID); err != nil {
+			return nil, nil, err
+		}
+	}
+	if err := r.checkCap(ctx); err != nil {
+		return nil, nil, err
+	}
+	turn, err := r.deps.Store.CreateChatTurn(ctx, chatID, prompt)
+	if err != nil {
+		return nil, nil, err
+	}
+	r.launch(chat, turn)
+	return turn, nil, nil
+}
+
+// checkCap refuses a new turn on an idle chat when `max_parallel_chats` chats
+// already hold a process. The cap is checked before the row is written, and
+// it counts chats rather than turns because a chat holds exactly one process
+// at a time. It is racy only against another send in the same instant; the
+// store is a single writer, so the window is one statement wide and the worst
+// outcome is one extra process — the same tolerance §11's own tally has.
+//
+// A queue drain never comes here: it inherits the finishing turn's slot
+// (task 156 decision 1).
+func (r *Runner) checkCap(ctx context.Context) error {
+	n, err := r.deps.Store.CountChatsHoldingProcess(ctx)
+	if err != nil {
+		return err
+	}
+	if limit := r.maxParallelChats(); n >= limit {
+		return fmt.Errorf("%w: %d of %d chats are already running", ErrChatCapReached, n, limit)
+	}
+	return nil
+}
+
+// ResumeQueue lifts a paused queue (task 156 decision 3). On an idle chat
+// with messages queued the oldest starts at once, which takes a slot the way
+// a send does and is refused the same way when the cap is full; on a live
+// chat the queue drains when that turn ends `done`.
+//
+// start is decided from a read taken before the store's transaction, so a
+// live turn can end between the two: its ending saw the pause still set and
+// went idle, and this resume, having read a live chat, lifts the pause and
+// starts nothing — an idle chat with an unpaused queue nothing will drain
+// (review F4). The chat is read again after the commit, and a resume that
+// finds it in exactly that state starts the queue as one on an idle chat
+// would have.
+func (r *Runner) ResumeQueue(ctx context.Context, chatID int64) (*store.ChatTurn, error) {
+	turn, started, err := r.resumeQueueOnce(ctx, chatID)
+	if err != nil || turn != nil || started {
+		return turn, err
+	}
 	chat, err := r.deps.Store.GetChat(ctx, chatID)
 	if err != nil {
 		return nil, err
 	}
-	if !chatstate.Allowed(chat.State, chatstate.Send) {
-		return nil, store.ErrInvalidChatAction
+	if chat.State != chatstate.Idle || chat.QueuePaused || chat.QueuedCount == 0 {
+		return nil, nil
 	}
-	// The cap is checked before the row is written, and it counts chats
-	// rather than turns because a chat holds exactly one process at a time.
-	// It is racy only against another send in the same instant; the store is
-	// a single writer, so the window is one statement wide and the worst
-	// outcome is one extra process — the same tolerance §11's own tally has.
-	n, err := r.deps.Store.CountChatsHoldingProcess(ctx)
+	turn, _, err = r.resumeQueueOnce(ctx, chatID)
+	return turn, err
+}
+
+// resumeQueueOnce is one resume: it reads the chat, checks the cap when it
+// means to start a turn, and has the store lift the pause. started reports
+// whether it asked the store to start one.
+func (r *Runner) resumeQueueOnce(ctx context.Context, chatID int64) (turn *store.ChatTurn, started bool, err error) {
+	chat, err := r.deps.Store.GetChat(ctx, chatID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	if limit := r.maxParallelChats(); n >= limit {
-		return nil, fmt.Errorf("%w: %d of %d chats are already running", ErrChatCapReached, n, limit)
+	if chatstate.Terminal(chat.State) {
+		return nil, false, store.ErrInvalidChatAction
 	}
-	turn, err := r.deps.Store.CreateChatTurn(ctx, chatID, prompt)
-	if err != nil {
-		return nil, err
+	start := chat.State == chatstate.Idle && chat.QueuedCount > 0
+	if r.resumeRead != nil {
+		r.resumeRead(chatID)
 	}
-	ctx, cancelCause := context.WithCancelCause(r.base)
-	ctl := &turnCtl{cancel: cancelCause, done: make(chan struct{})}
+	if start {
+		if err := r.checkCap(ctx); err != nil {
+			return nil, true, err
+		}
+	}
+	turn, err = r.deps.Store.ResumeChatQueue(ctx, chatID, start)
+	if err != nil || turn == nil {
+		return nil, start, err
+	}
+	r.launch(chat, turn)
+	return turn, start, nil
+}
+
+// launch starts the chat's actor goroutine on turn. The goroutine runs every
+// turn its own `done` endings pop from the queue, so a drain never leaves the
+// chat's slot (task 156 decision 1).
+func (r *Runner) launch(chat *store.Chat, turn *store.ChatTurn) {
+	chatID := chat.ID
+	ctl := &turnCtl{done: make(chan struct{})}
 	r.mu.Lock()
 	r.turns[chatID] = ctl
 	r.mu.Unlock()
@@ -269,9 +385,44 @@ func (r *Runner) Send(ctx context.Context, chatID int64, prompt string) (*store.
 			r.mu.Unlock()
 			close(ctl.done)
 		}()
-		r.runTurn(ctx, cancelCause, chat, turn)
+		for popped := false; turn != nil; popped = true {
+			if popped && r.handover != nil {
+				r.handover(chatID)
+			}
+			ctx, cancelCause := context.WithCancelCause(r.base)
+			r.mu.Lock()
+			ctl.cancel = cancelCause
+			stopped := ctl.stopped
+			r.mu.Unlock()
+			if r.base.Err() != nil {
+				// The daemon is going away during a handover: the popped
+				// message is a turn now, so it is interrupted and never
+				// re-run, and the rest of the queue stays paused (§12.4).
+				cancelCause(errCanceled)
+				r.finishUnstarted(turn, chatstate.TurnInterruptedState, "", "", chat)
+				return
+			}
+			if stopped {
+				// StopTurn ran while the previous turn was handing over:
+				// this one never starts, and its ending pauses the rest.
+				cancelCause(errCanceled)
+				r.finishUnstarted(turn, chatstate.TurnFailed, ReasonCanceled, "canceled", chat)
+				return
+			}
+			next := r.runTurn(ctx, cancelCause, chat, turn)
+			cancelCause(errCanceled)
+			if next == nil {
+				return
+			}
+			fresh, err := r.deps.Store.GetChat(r.persist, chatID)
+			if err != nil {
+				r.deps.Logger.Error("reload chat for queued turn", "chat", chatID, "error", err)
+				r.finish(next, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
+				return
+			}
+			chat, turn = fresh, next
+		}
 	}()
-	return turn, nil
 }
 
 // StopTurn cancels the chat's accepted turn, if it has one, and waits until
@@ -280,11 +431,18 @@ func (r *Runner) Send(ctx context.Context, chatID int64, prompt string) (*store.
 func (r *Runner) StopTurn(ctx context.Context, chatID int64) {
 	r.mu.Lock()
 	ctl := r.turns[chatID]
+	var cancel context.CancelCauseFunc
+	if ctl != nil {
+		ctl.stopped = true
+		cancel = ctl.cancel
+	}
 	r.mu.Unlock()
 	if ctl == nil {
 		return
 	}
-	ctl.cancel(errCanceled)
+	if cancel != nil {
+		cancel(errCanceled)
+	}
 	select {
 	case <-ctl.done:
 	case <-ctx.Done():
@@ -364,7 +522,9 @@ func (r *Runner) Running(chatID int64) bool {
 // before its transcript file existed. It is a statement about runTurn's
 // ordering: the adapter lookup and transcript.Open are the only two failures
 // ahead of the writer, and every later ending — Start's agent_error and
-// session_lost included — leaves a file behind, even an empty one.
+// session_lost included — leaves a file behind, even an empty one. A popped
+// queue turn a stop or a shutdown ends before runTurn (task 156) gets an
+// empty file too, from finishUnstarted.
 //
 // It is exported for a client holding the turn row, which is how `vincent chat
 // transcript` tells "there never was a transcript" from "the file is gone"
@@ -375,11 +535,13 @@ func TurnWritesNoTranscript(reason string) bool {
 	return reason == ReasonAgentUnavailable || reason == ReasonTranscriptIOError
 }
 
-// runTurn is the actor: one goroutine, sole writer of this chat's state and
-// this turn's row, living for exactly one turn.
+// runTurn runs one turn on the chat's actor goroutine, the sole writer of this
+// chat's state and this turn's row. It returns the queued message its `done`
+// ending popped into the next turn (task 156), which the same goroutine runs
+// without releasing the chat's slot, or nil when the chat went idle.
 func (r *Runner) runTurn(
 	ctx context.Context, cancelCause context.CancelCauseFunc, chat *store.Chat, turn *store.ChatTurn,
-) {
+) (next *store.ChatTurn) {
 	// Cancel is a cause-setting cancel so the ending can tell a human's stop
 	// from a clock's (§7.2, §7.4). The deferred one is last and therefore
 	// never the cause a live path observed.
@@ -387,14 +549,14 @@ func (r *Runner) runTurn(
 	defer cancelCause(errCanceled)
 	adapter, ok := r.deps.Agents.Get(chat.Agent)
 	if !ok {
-		r.finish(turn, chatstate.TurnFailed, ReasonAgentUnavailable,
+		next = r.finish(turn, chatstate.TurnFailed, ReasonAgentUnavailable,
 			fmt.Sprintf("no adapter named %q", chat.Agent), chat)
-		return
+		return next
 	}
 	tr, err := transcript.Open(r.transcriptDir(chat.ID), fmt.Sprintf("%d.jsonl", turn.Seq))
 	if err != nil {
-		r.finish(turn, chatstate.TurnFailed, ReasonTranscriptIOError, err.Error(), chat)
-		return
+		next = r.finish(turn, chatstate.TurnFailed, ReasonTranscriptIOError, err.Error(), chat)
+		return next
 	}
 	defer tr.Close()
 	// The cap is read per turn, not cached: config hot-reloads (§12.3), and
@@ -405,8 +567,8 @@ func (r *Runner) runTurn(
 
 	workDir, launcher, place, env, err := r.turnPlace(ctx, chat, turn)
 	if err != nil {
-		r.finish(turn, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
-		return
+		next = r.finish(turn, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
+		return next
 	}
 	env = withChatMarker(env, chat.ID)
 	spec := agent.RunSpec{
@@ -446,8 +608,8 @@ func (r *Runner) runTurn(
 		// like every other one past placement, and ahead of finish for the
 		// reason given below.
 		r.invalidateSkills(workDir)
-		r.finish(turn, chatstate.TurnFailed, reason, err.Error(), chat)
-		return
+		next = r.finish(turn, chatstate.TurnFailed, reason, err.Error(), chat)
+		return next
 	}
 	live := &liveTurn{
 		turnID: turn.ID, handle: handle, cancel: cancel,
@@ -479,30 +641,31 @@ func (r *Runner) runTurn(
 	case ctx.Err() != nil && r.base.Err() != nil:
 		// The daemon is going away under a live turn. It is interrupted, not
 		// failed, and it is never re-run (decision 5).
-		r.finish(turn, chatstate.TurnInterruptedState, "", "", chat)
+		next = r.finish(turn, chatstate.TurnInterruptedState, "", "", chat)
 	case errors.Is(cause, errTurnTimeout):
-		r.finish(turn, chatstate.TurnFailed, ReasonTimeout,
+		next = r.finish(turn, chatstate.TurnFailed, ReasonTimeout,
 			fmt.Sprintf("turn ran past agent_timeout (%s)", r.agentTimeout()), chat)
 	case errors.Is(cause, errTranscriptLimit):
-		r.finish(turn, chatstate.TurnFailed, ReasonTranscriptLimit,
+		next = r.finish(turn, chatstate.TurnFailed, ReasonTranscriptLimit,
 			"the turn's transcript reached transcript_max_bytes", chat)
 	case errors.Is(cause, errInputTimeout):
-		r.finish(turn, chatstate.TurnFailed, ReasonInputTimeout,
+		next = r.finish(turn, chatstate.TurnFailed, ReasonInputTimeout,
 			fmt.Sprintf("no answer within input_timeout (%s)", r.inputTimeout()), chat)
 	case ctx.Err() != nil:
-		r.finish(turn, chatstate.TurnFailed, ReasonCanceled, "canceled", chat)
+		next = r.finish(turn, chatstate.TurnFailed, ReasonCanceled, "canceled", chat)
 	case waitErr != nil:
-		r.finish(turn, chatstate.TurnFailed, ReasonAgentError, waitErr.Error(), chat)
+		next = r.finish(turn, chatstate.TurnFailed, ReasonAgentError, waitErr.Error(), chat)
 	case res.Failure != nil && res.Failure.Kind == agent.FailureSessionLost:
 		// The stored session is gone. The chat stays usable and keeps its
 		// id: clearing it here would silently convert the next turn into a
 		// fresh conversation, which is the behaviour decision 4 rejects.
-		r.finish(turn, chatstate.TurnFailed, ReasonSessionLost, res.ErrorMessage, chat)
+		next = r.finish(turn, chatstate.TurnFailed, ReasonSessionLost, res.ErrorMessage, chat)
 	case res.IsError:
-		r.finish(turn, chatstate.TurnFailed, ReasonAgentError, res.ErrorMessage, chat)
+		next = r.finish(turn, chatstate.TurnFailed, ReasonAgentError, res.ErrorMessage, chat)
 	default:
-		r.finish(turn, chatstate.TurnDone, "", "", chat)
+		next = r.finish(turn, chatstate.TurnDone, "", "", chat)
 	}
+	return next
 }
 
 // Workspace resolves the directory chat's next turn would start in, without
@@ -932,11 +1095,26 @@ func (r *Runner) turnShare(turn *store.ChatTurn, res agent.RunResult) {
 	turn.InputTokens, turn.OutputTokens = in-prevIn, out-prevOut
 }
 
+// finishUnstarted ends a popped turn that never reached runTurn — a stop or
+// a shutdown landing during a queue handover (task 156). It opens the turn's
+// transcript first, empty, so that TurnWritesNoTranscript stays true: only
+// runTurn's two early failures leave a turn with no file (review F5). A
+// transcript that cannot be opened ends the turn the way runTurn's would.
+func (r *Runner) finishUnstarted(turn *store.ChatTurn, state chatstate.TurnState, reason, msg string, chat *store.Chat) {
+	tr, err := transcript.Open(r.transcriptDir(chat.ID), fmt.Sprintf("%d.jsonl", turn.Seq))
+	if err != nil {
+		r.finish(turn, chatstate.TurnFailed, ReasonTranscriptIOError, err.Error(), chat)
+		return
+	}
+	tr.Close()
+	r.finish(turn, state, reason, msg, chat)
+}
+
 // finish writes the turn's ending and returns the chat to idle, in that
 // order: a reader must never see an idle chat with a turn still running.
 func (r *Runner) finish(
 	turn *store.ChatTurn, state chatstate.TurnState, reason, msg string, chat *store.Chat,
-) {
+) *store.ChatTurn {
 	ctx := r.persist
 	if ctx == nil {
 		ctx = context.Background()
@@ -947,20 +1125,29 @@ func (r *Runner) finish(
 	ms := now.Sub(turn.StartedAt).Milliseconds()
 	turn.DurationMS = &ms
 	turn.PID = nil
-	if err := r.deps.Store.UpdateChatTurn(ctx, turn); err != nil {
-		r.deps.Logger.Error("finish chat turn", "turn", turn.ID, "error", err)
-	}
 	if chat == nil {
-		return
-	}
-	if turn.SessionID != "" && turn.SessionID != chat.SessionID {
-		if _, err := r.deps.Store.SetChatSession(ctx, chat.ID, turn.SessionID); err != nil {
-			r.deps.Logger.Error("store chat session", "chat", chat.ID, "error", err)
+		if err := r.deps.Store.UpdateChatTurn(ctx, turn); err != nil {
+			r.deps.Logger.Error("finish chat turn", "turn", turn.ID, "error", err)
 		}
+		return nil
 	}
-	if _, err := r.deps.Store.SetChatState(ctx, chat.ID, chatstate.Idle); err != nil {
-		r.deps.Logger.Error("chat back to idle", "chat", chat.ID, "error", err)
+	// One transaction records the ending, stores the session id and decides
+	// what the chat does next: drain the queue on a `done` turn, or go idle
+	// and pause a non-empty queue on any other ending (task 156 decisions 1
+	// and 3).
+	pause := reason
+	if state == chatstate.TurnInterruptedState {
+		pause = store.QueuePauseInterrupted
 	}
+	next, err := r.deps.Store.FinishChatTurn(ctx, turn, pause)
+	if err != nil {
+		r.deps.Logger.Error("finish chat turn", "turn", turn.ID, "error", err)
+		if _, err := r.deps.Store.SetChatState(ctx, chat.ID, chatstate.Idle); err != nil {
+			r.deps.Logger.Error("chat back to idle", "chat", chat.ID, "error", err)
+		}
+		return nil
+	}
+	return next
 }
 
 func (r *Runner) track(chatID int64, lt *liveTurn) {
@@ -1009,4 +1196,14 @@ func withChatMarker(env []string, chatID int64) []string {
 		}
 	}
 	return append(out, envChatID+"="+strconv.FormatInt(chatID, 10))
+}
+
+// SteerUnavailable is why a chat cannot steer its running turn (task 156
+// decision 4), or "" when it can. Steering ships only on an adapter whose CLI
+// has been captured folding a second message into the live turn before that
+// turn's result; no adapter has such a capture yet, so every chat answers
+// with a reason, and the message can only be queued. It is never emulated by
+// cancel-and-resend.
+func SteerUnavailable(agentName string) string {
+	return fmt.Sprintf("%s cannot steer a running turn; send queues the message to run after it", agentName)
 }

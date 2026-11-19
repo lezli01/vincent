@@ -304,11 +304,31 @@ func TestChatViewKeepsTheDraftOnARefusedSend(t *testing.T) {
 	}
 }
 
-// TestChatViewRefusesEnterLocallyWhenNotIdle: `send` is legal only from idle
-// (chatstate), so enter on any other chat sends nothing, keeps the draft and
-// says why.
-func TestChatViewRefusesEnterLocallyWhenNotIdle(t *testing.T) {
-	for _, state := range []string{"running", "awaiting_input", "closed", "archived"} {
+// TestChatViewQueuesOnALiveChatAndRefusesATerminalOne: a live chat takes
+// enter and queues the message (task 156); a terminal chat sends nothing,
+// keeps the draft and says why.
+func TestChatViewQueuesOnALiveChatAndRefusesATerminalOne(t *testing.T) {
+	for _, state := range []string{"running", "awaiting_input"} {
+		t.Run(state, func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = &apiclient.Client{}
+			v.chat.State = state
+			v.composer.SetValue("hello")
+			if _, cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
+				t.Fatalf("enter on a %s chat sent nothing; it should queue", state)
+			}
+			v.applySent(chatSentMsg{chatID: 1, sent: "hello", result: &apiclient.ChatSend{
+				Queued: &apiclient.ChatQueuedMessage{ID: 9, ChatID: 1, Position: 1, Prompt: "hello"},
+			}})
+			if got := v.composer.Value(); got != "" {
+				t.Fatalf("a queued send left %q in the composer", got)
+			}
+			if !strings.Contains(v.note, "queued") || v.noteBad {
+				t.Fatalf("a queued send noted %q (bad=%v)", v.note, v.noteBad)
+			}
+		})
+	}
+	for _, state := range []string{"closed", "archived"} {
 		t.Run(state, func(t *testing.T) {
 			v := chatViewFixture()
 			v.client = &apiclient.Client{}
@@ -414,35 +434,26 @@ func TestChatViewKeepsTextTypedWhileASendIsInFlight(t *testing.T) {
 	}
 }
 
-// TestChatViewRefusedSendReopensTheAnswerPopup: esc closes the answer popup,
-// and the awaiting_input refusal tells the human to answer in it — so enter
-// brings it back rather than naming a popup no key reopens (review F9).
-func TestChatViewRefusedSendReopensTheAnswerPopup(t *testing.T) {
+// TestChatViewSendWhileAwaitingInputNeverAnswers: enter on a chat waiting on
+// the agent's question queues the draft (task 156 decision 2); it never
+// answers the request, so the popup is left as it was.
+func TestChatViewSendWhileAwaitingInputNeverAnswers(t *testing.T) {
 	v := chatViewFixture()
 	v.client = &apiclient.Client{}
 	v.applyLoaded(chatLoadedMsg{id: 1, chat: &apiclient.Chat{
 		ID: 1, State: "awaiting_input",
 		PendingInput: []byte(`{"kind":"question","questions":[{"text":"Which?","options":["a","b"]}]}`),
 	}})
-	if v.form == nil {
-		t.Fatal("fixture: the answer popup did not open")
-	}
 	v.updateKey(registryKey(t, "esc"))
 	if v.form != nil {
 		t.Fatal("fixture: esc did not close the answer popup")
 	}
 	v.composer.SetValue("hello")
-	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd != nil {
-		t.Fatal("enter on an awaiting_input chat issued a command")
+	if _, cmd := v.updateKey(registryKey(t, "enter")); cmd == nil {
+		t.Fatal("enter on an awaiting_input chat sent nothing; it should queue")
 	}
-	if !strings.Contains(v.note, "popup") {
-		t.Fatalf("the refusal reads %q", v.note)
-	}
-	if v.form == nil {
-		t.Fatal("the refusal names the answer popup but did not reopen it")
-	}
-	if got := v.composer.Value(); got != "hello" {
-		t.Fatalf("the refusal changed the draft to %q", got)
+	if v.form != nil {
+		t.Fatal("a queued send reopened the answer popup as if it were the answer")
 	}
 }
 

@@ -532,7 +532,8 @@ func (v *chatsView) applyArchived(msg chatArchivedMsg) tea.Cmd {
 		if isChatWorktreeDirty(msg.err) {
 			v.confirm = &archivePrompt{
 				id: msg.id, force: true,
-				text: "worktree has local changes — archive anyway and lose them? (y/n)",
+				text: fmt.Sprintf("worktree has local changes — archive anyway and lose them%s? (y/n)",
+					queueDiscardNote(v.chatByID(msg.id))),
 			}
 			return nil
 		}
@@ -579,6 +580,16 @@ func (v *chatsView) current() (apiclient.Chat, bool) {
 		return apiclient.Chat{}, false
 	}
 	return *rows[v.cursor].chat, true
+}
+
+// chatByID is the loaded chat with this id, nil when the board has none.
+func (v *chatsView) chatByID(id int64) *apiclient.Chat {
+	for i := range v.chats {
+		if v.chats[i].ID == id {
+			return &v.chats[i]
+		}
+	}
+	return nil
 }
 
 func (v *chatsView) restoreSelection() {
@@ -759,8 +770,8 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 				id: c.ID, title: c.Title,
 				// The title is cut: a long one pushed `(y/n)` off the line,
 				// and the answer keys are the part a reader needs (#801 F2).
-				text: fmt.Sprintf("archive %q and remove its worktree? (y/n)",
-					ansi.Truncate(c.Title, archivePromptTitleWidth, "…")),
+				text: fmt.Sprintf("archive %q and remove its worktree%s? (y/n)",
+					ansi.Truncate(c.Title, archivePromptTitleWidth, "…"), queueDiscardNote(&c)),
 			}
 		}
 	case opKey(keymap.Scope):

@@ -906,6 +906,50 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChat: {
+		"ctrl+s": func(t *testing.T) {
+			v := chatViewFixture()
+			v.chat.State, v.chat.SteerReason = "running", "claude cannot steer a running turn"
+			v.updateKey(registryKey(t, "ctrl+s"))
+			if !strings.Contains(v.note, "cannot steer") {
+				t.Fatalf("ctrl+s noted %q, want the daemon's steer reason", v.note)
+			}
+		},
+		"up": func(t *testing.T) {
+			v := chatViewFixture()
+			v.queue = &apiclient.ChatQueue{Messages: []apiclient.ChatQueuedMessage{{ID: 3, Prompt: "old"}, {ID: 4, Prompt: "newest"}}}
+			v.updateKey(registryKey(t, "up"))
+			if v.editingQueued != 4 || v.composer.Value() != "newest" {
+				t.Fatalf("up edited %d with %q, want the newest queued message", v.editingQueued, v.composer.Value())
+			}
+		},
+		"ctrl+d": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			v.queue = &apiclient.ChatQueue{Messages: []apiclient.ChatQueuedMessage{{ID: 4, Prompt: "newest"}}}
+			v.updateKey(registryKey(t, "up"))
+			if _, cmd := v.updateKey(registryKey(t, "ctrl+d")); cmd == nil {
+				t.Fatal("ctrl+d did not delete the queued message being edited")
+			}
+			if v.editingQueued != 0 {
+				t.Fatal("ctrl+d left the edit state on")
+			}
+		},
+		"alt+r": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			v.chat.QueuePaused, v.chat.QueuedCount = true, 1
+			if _, cmd := v.updateKey(registryKey(t, "alt+r")); cmd == nil {
+				t.Fatal("alt+r did not resume the paused queue")
+			}
+		},
+		"alt+c": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			v.chat.QueuedCount = 2
+			if _, cmd := v.updateKey(registryKey(t, "alt+c")); cmd == nil {
+				t.Fatal("alt+c did not clear the queue")
+			}
+		},
 		"enter": func(t *testing.T) {
 			v := chatViewFixture()
 			v.client = offlineClient()

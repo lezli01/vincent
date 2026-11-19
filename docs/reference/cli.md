@@ -2156,7 +2156,9 @@ The message is the second argument or the content of `--message-file`, and
 exactly one of the two: giving both, or neither, is refused and exits 1.
 
 Sends a message and blocks until the turn ends, then prints the agent's answer
-on stdout. A failed turn prints its reason on stderr and exits 1 — including
+on stdout. On a chat whose turn is still live the message is queued instead —
+see [`vincent chat queue`](#vincent-chat-queue) — and the command returns at
+once. A failed turn prints its reason on stderr and exits 1 — including
 `session_lost`, which means the agent CLI no longer knows the session this chat
 was resuming. The chat stays usable; starting a fresh conversation is a
 decision you make, not one vincent makes silently. `cursor` is the exception,
@@ -2187,7 +2189,7 @@ Interrupting `vincent chat send` stops the polling, not the turn: the turn
 belongs to the daemon. [`vincent chat cancel`](#vincent-chat-cancel) is what
 ends it.
 
-Exits 1 with `chat_cap_reached` when `max_parallel_chats` chats already hold a
+Exits 1 with `chat_cap_reached` when the chat is idle and `max_parallel_chats` chats already hold a
 live agent process. The send is refused, never queued.
 
 #### `--message-file`
@@ -2250,6 +2252,26 @@ place. Questions are answered by the number `vincent chat show` prints them
 under — repeat `--answer` for one index to give a multi-select several values —
 and a permission request takes `--allow` or `--deny`. It is `vincent task
 answer` for a chat, flag for flag, because it is the same request.
+
+### `vincent chat queue`
+
+```sh
+vincent chat queue list CHAT_ID [--json]
+vincent chat queue edit CHAT_ID MESSAGE_ID MESSAGE [--json]
+vincent chat queue rm CHAT_ID MESSAGE_ID
+vincent chat queue resume CHAT_ID [--json]
+vincent chat queue clear CHAT_ID
+```
+
+A message sent to a chat whose turn is still running — or waiting on the
+agent's question — is queued rather than refused: `vincent chat send` prints
+`queued as message N` and exits 0 without waiting, and the message runs as the
+next turn once the live one ends `done`. `list` shows the queue in the order it
+will run. `edit` and `rm` act on a message that has not started; one that has
+is a turn now, and the daemon refuses with a 409. A turn that fails, is
+cancelled or is interrupted pauses the queue: `list` says so and why, `resume`
+lifts the pause — on an idle chat the next message starts at once, subject to
+`max_parallel_chats` like any send — and `clear` deletes every queued message.
 
 ### `vincent chat cancel`
 
