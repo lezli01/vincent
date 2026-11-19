@@ -522,7 +522,9 @@ func (r *Runner) Running(chatID int64) bool {
 // before its transcript file existed. It is a statement about runTurn's
 // ordering: the adapter lookup and transcript.Open are the only two failures
 // ahead of the writer, and every later ending — Start's agent_error and
-// session_lost included — leaves a file behind, even an empty one.
+// session_lost included — leaves a file behind, even an empty one. A popped
+// queue turn a stop or a shutdown ends before runTurn (task 156) gets an
+// empty file too, from finishUnstarted.
 //
 // It is exported for a client holding the turn row, which is how `vincent chat
 // transcript` tells "there never was a transcript" from "the file is gone"
