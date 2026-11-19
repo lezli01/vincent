@@ -63,6 +63,12 @@ delete_remote_branch_on_archive: false
 # remote branch; a task it cannot archive is logged and left for you.
 archive_tasks_on_issue_close: true
 
+# Archive a task that has sat finished (done or aborted) this long, whether or
+# not it came from an issue. A follow-up restarts the clock. Never forces a
+# dirty worktree and never deletes a remote branch; an issue's main task waits
+# while anything else on its issue is still working. 0 turns it off.
+archive_finished_tasks_after: 12h
+
 # Refresh a task's base branch from its remote before the task's worktree is
 # created, and start the task branch at the fetched commit rather than at
 # whatever your local base happened to be. Your own checkout is never touched:

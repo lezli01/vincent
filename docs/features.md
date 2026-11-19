@@ -222,10 +222,12 @@ consume the blocked step's retries. When the fix needs more than one prompt,
 whole conversation in the same worktree, with the task held still until you
 close it.
 
-A finished task keeps its worktree, its branch and its commits until you archive
-it (or, for a task of an issue, until the issue closes and the daemon
-[archives it](reference/task-lifecycle.md#closed-issues-archive-their-tasks)),
-and that window is where the last mile of real work lives — a branch that
+A finished task keeps its worktree, its branch and its commits until it is
+archived — by you, by the daemon once it has sat finished for
+[12 hours](reference/task-lifecycle.md#finished-tasks-archive-after-a-while),
+or, for a task of an issue, when the issue closes and the daemon
+[archives it](reference/task-lifecycle.md#closed-issues-archive-their-tasks).
+That window is where the last mile of real work lives — a branch that
 needs rebasing onto a `main` that moved, one more commit a review asked for, a
 stray file to drop. A **follow-up run** does that work inside vincent: give a
 `done` or `aborted` task an agent prompt, a shell command, or the name of a

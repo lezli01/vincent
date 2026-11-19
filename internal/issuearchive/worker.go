@@ -379,7 +379,7 @@ func (w *Worker) archiveIssue(ctx context.Context, issueID int64) {
 			return
 		}
 		log.Warn("issue auto-archive: task not archived",
-			"task", id, "issue", issueID, "reason", refusalReason(err), "error", err)
+			"task", id, "issue", issueID, "reason", RefusalReason(err), "error", err)
 		hold.Refuse(main)
 	}
 }
@@ -445,8 +445,9 @@ func (h *SideWorkHold) Holds(main bool) bool {
 	return main && h.sideRefused
 }
 
-// refusalReason names why an archive refused, for daemon.log.
-func refusalReason(err error) string {
+// RefusalReason names why an archive refused, for daemon.log. The age-based
+// auto-archive (internal/finishedarchive, task 155) logs with it too.
+func RefusalReason(err error) string {
 	if r := worktree.ReasonOf(err); r != "" {
 		return r
 	}

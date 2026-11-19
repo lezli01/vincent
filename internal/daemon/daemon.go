@@ -28,6 +28,7 @@ import (
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/container"
 	"github.com/lezli01/vincent/internal/events"
+	"github.com/lezli01/vincent/internal/finishedarchive"
 	"github.com/lezli01/vincent/internal/github"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/issuearchive"
@@ -495,6 +496,19 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	})
 	broker.OnEvent(issueArchiver.OnEvent)
 
+	// The age-based auto-archive (task 155, §6): a timer, not a subscriber,
+	// because what makes a finished task due is the passing of time, which
+	// records no event. Started beside the issue worker, after recovery, and
+	// archiving through the same runner in the same unattended mode;
+	// archive_finished_tasks_after is read per sweep, so a hot reload
+	// governs the next one.
+	finishedArchiver := finishedarchive.New(finishedarchive.Deps{
+		Store:    st,
+		Archiver: runner,
+		After:    func() time.Duration { return currentConfig().ArchiveFinishedTasksAfter.Std() },
+		Logger:   logger,
+	})
+
 	// The inward signal (§12.3, task 096), wired beside the outward one on
 	// purpose: notify runs a user's argv when a task changes state, a trigger
 	// runs one on an interval — or accepts a signed push, or diffs GitHub —
@@ -747,6 +761,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	}
 	sched.Start(ctx)
 	issueArchiver.Start(ctx)
+	finishedArchiver.Start(ctx)
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
@@ -763,6 +778,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		triggers.Stop()
 		sched.Stop()
 		issueArchiver.Stop()
+		finishedArchiver.Stop()
 		runner.Stop()
 		chats.Stop()
 		notifier.Stop()
@@ -786,6 +802,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// worktree before it writes `→ archived`, so it must finish while the
 	// store is still open, and nothing new should start during the grace.
 	issueArchiver.Stop()
+	finishedArchiver.Stop()
 	runner.StopGraceful(processGrace)
 	chats.Stop()
 	// Before broker.Close(): the broker is what feeds the notifier's hook, and

@@ -1336,8 +1336,10 @@ up its retries.
 ## Following up on a finished task
 
 A `done` or `aborted` task still owns everything it made — its worktree, its
-branch, its commits — until you archive it, or, for a task of an issue, until
-the issue closes and the daemon
+branch, its commits — until you archive it, until it has sat finished for
+[12 hours](../reference/task-lifecycle.md#finished-tasks-archive-after-a-while)
+(a follow-up restarts that clock), or, for a task of an issue, until the issue
+closes and the daemon
 [archives it](../reference/task-lifecycle.md#closed-issues-archive-their-tasks).
 `F` is how you do one more thing in
 there without leaving vincent: rebase the branch onto a `main` that moved, add

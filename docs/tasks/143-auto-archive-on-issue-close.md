@@ -60,6 +60,9 @@ Confirmed by the author on 2026-11-04.
    by this stream: the requirement asks for automatic archiving outright.
    Archive stays a human action everywhere else — §6 still lists it as one, and
    nothing here archives a task whose issue is open.
+   *Superseded in part 2026-11-19 by [task 155](155-archive-finished-tasks-after.md)
+   decision 3:* the daemon now also archives any finished root, an open
+   issue's included, once it has sat finished for `archive_finished_tasks_after`.
 2. **Every close reason counts** — `completed`, `not_planned` and `duplicate`
    alike. A reason-filtered rule was rejected: a task of a not-planned issue is
    no more worth keeping on the board than one of a completed one.

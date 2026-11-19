@@ -144,10 +144,13 @@ type Config struct {
 	DeleteRemoteBranchOnArchive bool `json:"delete_remote_branch_on_archive"`
 	// ArchiveTasksOnIssueClose archives a closed issue's settled tasks
 	// unattended (task 143, §5.6).
-	ArchiveTasksOnIssueClose bool  `json:"archive_tasks_on_issue_close"`
-	FetchBaseBranch          bool  `json:"fetch_base_branch"`
-	TranscriptRetentionDays  int   `json:"transcript_retention_days"`
-	TranscriptMaxBytes       int64 `json:"transcript_max_bytes"`
+	ArchiveTasksOnIssueClose bool `json:"archive_tasks_on_issue_close"`
+	// ArchiveFinishedTasksAfter archives a root task that has been done or
+	// aborted this long, unattended (task 155); "0s" is off.
+	ArchiveFinishedTasksAfter string `json:"archive_finished_tasks_after"`
+	FetchBaseBranch           bool   `json:"fetch_base_branch"`
+	TranscriptRetentionDays   int    `json:"transcript_retention_days"`
+	TranscriptMaxBytes        int64  `json:"transcript_max_bytes"`
 	// MaxTaskCostUSD caps what one task may spend across every attempt of
 	// every step, in US dollars; 0 is no cap (§12.3, task 033).
 	MaxTaskCostUSD float64 `json:"max_task_cost_usd"`
@@ -456,6 +459,7 @@ type ConfigPatch struct {
 	DeleteEmptyBranchOnArchive  *bool                   `json:"delete_empty_branch_on_archive,omitempty"`
 	DeleteRemoteBranchOnArchive *bool                   `json:"delete_remote_branch_on_archive,omitempty"`
 	ArchiveTasksOnIssueClose    *bool                   `json:"archive_tasks_on_issue_close,omitempty"`
+	ArchiveFinishedTasksAfter   *string                 `json:"archive_finished_tasks_after,omitempty"`
 	FetchBaseBranch             *bool                   `json:"fetch_base_branch,omitempty"`
 	TranscriptRetentionDays     *int                    `json:"transcript_retention_days,omitempty"`
 	TranscriptMaxBytes          *int64                  `json:"transcript_max_bytes,omitempty"`

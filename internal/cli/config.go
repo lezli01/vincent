@@ -194,6 +194,8 @@ func configFields() map[string]configField {
 		"archive_tasks_on_issue_close": boolField(
 			func(c apiclient.Config) bool { return c.ArchiveTasksOnIssueClose },
 			func(b *bool) apiclient.ConfigPatch { return apiclient.ConfigPatch{ArchiveTasksOnIssueClose: b} }),
+		"archive_finished_tasks_after": str(func(c apiclient.Config) string { return c.ArchiveFinishedTasksAfter },
+			func(v *string) apiclient.ConfigPatch { return apiclient.ConfigPatch{ArchiveFinishedTasksAfter: v} }),
 		"fetch_base_branch": boolField(
 			func(c apiclient.Config) bool { return c.FetchBaseBranch },
 			func(b *bool) apiclient.ConfigPatch { return apiclient.ConfigPatch{FetchBaseBranch: b} }),
