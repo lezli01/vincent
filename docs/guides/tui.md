@@ -393,6 +393,13 @@ The rest of the behavior follows from what a selection is:
 - **Uncommitted changes still re-prompt.** A bulk archive archives the clean
   worktrees and asks again about only the dirty ones —
   `2 of 5 selected tasks have uncommitted changes`.
+- **An archive git refuses offers a force delete.** When an archive fails on
+  the worktree itself, such as a `git_error`, the line asks
+  `force delete #7? (y/n)` instead, for that task or for the selected ones that
+  failed. `y` removes them from whatever state they are in, cleans their
+  worktrees as far as it can and keeps their branches. The chats board, the
+  archived boards (after a refused delete) and an issue whose delete its tasks
+  are holding ask the same.
 - **What succeeded leaves the selection; what failed stays in it**, so a retry
   needs no re-selecting.
 - **The keys work from any panel.** Whatever has focus, the footer is counting

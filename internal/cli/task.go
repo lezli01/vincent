@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"os"
 	"slices"
 	"strconv"
@@ -1045,9 +1046,14 @@ func newTaskArchiveCmd() *cobra.Command {
 					// (§6): the reason lives in details, not in the message, so
 					// flattening the error to its prose would lose both the
 					// discriminator and the way out.
-					if isDirtyWorktreeErr(err) {
+					switch {
+					case isDirtyWorktreeErr(err) && !force:
 						_, _ = fmt.Fprintln(cmd.ErrOrStderr(),
 							"  pass --force to archive it anyway, discarding those changes")
+					case isStuckArchiveErr(err):
+						// The way out of a failure no retry fixes (task 153).
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+							"  if this keeps failing, `vincent task delete --force %d` removes the task anyway\n", id)
 					}
 					return exitError{code: 1}
 				}
@@ -1093,6 +1099,21 @@ func branchOutcome(o apiclient.BranchOutcome) *apiclient.BranchOutcome {
 func isDirtyWorktreeErr(err error) bool {
 	var apiErr *apiclient.Error
 	return errors.As(err, &apiErr) && apiErr.Details["reason"] == "worktree_dirty"
+}
+
+// isStuckArchiveErr reports an archive that failed on its worktree or on the
+// daemon's side rather than on the task's state: the failures a force delete
+// is the way out of (task 153). A state refusal is not one — the task is
+// simply not finished yet.
+func isStuckArchiveErr(err error) bool {
+	var apiErr *apiclient.Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	if apiErr.Status >= http.StatusInternalServerError {
+		return true
+	}
+	return apiErr.Status == http.StatusConflict && apiErr.Details["reason"] != ""
 }
 
 func newTaskAnswerCmd() *cobra.Command {

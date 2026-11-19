@@ -151,6 +151,12 @@ func (p *archivedPager) pageCount(count string) string {
 type rowDeletePrompt struct {
 	ids   []int64
 	chats bool
+	// force marks the second ask (task 153): the ordinary delete was refused,
+	// or an archive failed on something no retry fixes, and this one removes
+	// the rows from any state. It has two answers, not three — a force
+	// delete never deletes a branch. cause is the refusal it answers.
+	force bool
+	cause string
 }
 
 // question is what the prompt reads on screen. It names the consequence — and
@@ -163,6 +169,11 @@ func (p *rowDeletePrompt) question() string {
 	what := plural(len(p.ids), noun, noun+"s") // the count is plural's
 	if len(p.ids) == 1 {
 		what = fmt.Sprintf("%s %d", noun, p.ids[0])
+	}
+	if p.force {
+		return fmt.Sprintf(
+			"force delete %s? [y] yes · [n] no · %s · it goes from any state with what is tied to it · its branch stays",
+			what, ansi.Truncate(p.cause, forceCauseWidth, "…"))
 	}
 	return fmt.Sprintf(
 		"delete %s permanently? [y] row and transcripts · [b] and its branch (one with commits is kept) · [n] no",
@@ -205,17 +216,47 @@ func wrapStatus(text string, width int, style lipgloss.Style) []string {
 	return lines
 }
 
-// deletePromptKeys are the footer's answers to a rowDeletePrompt; esc is
-// an alias of `n`.
-func deletePromptKeys() promptAnswers {
+// keys are the footer's answers to the prompt; esc is an alias of `n`.
+func (p *rowDeletePrompt) keys() promptAnswers {
+	if p.force {
+		return promptHint("y", "force delete", "n", "no")
+	}
 	return promptHint("y", "delete", "b", "and its branch", "n", "no")
+}
+
+// forceOffer is the force re-ask a sweep's refusals earn (task 153), or nil:
+// the ordinary delete refused rows a force delete would take — not archived,
+// a lane or a handoff holding on. A live process is not one; nothing but
+// cancelling it gets past that.
+func (m deleteResultMsg) forceOffer() *rowDeletePrompt {
+	if m.forced {
+		return nil
+	}
+	var ids []int64
+	for _, r := range m.refused {
+		if reason, ok := apiclient.DeleteRefused(r.err); ok && reason != "live_process" {
+			ids = append(ids, r.id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return &rowDeletePrompt{ids: ids, chats: m.chats, force: true, cause: errString(m.refused[0].err)}
 }
 
 // deleteResultMsg is the outcome of one sweep: one thing a human asked for and
 // one answer, the shape bulkResultMsg has and for the same reason.
 type deleteResultMsg struct {
 	chats bool
-	total int
+	// archived is which board sent it, so the live chats board's force
+	// delete (task 153) and the archived board's sweep never report on
+	// each other.
+	archived bool
+	// forced marks a force delete, and warnings are what its cleanup left
+	// behind (task 153).
+	forced   bool
+	warnings []string
+	total    int
 	// done are the ids the daemon deleted; refused are the ones it answered
 	// 409 for, which on an archived board means a lane or a handoff is
 	// holding on; failed is everything else.
@@ -229,7 +270,14 @@ type deleteResultMsg struct {
 // separately from failures because they are not the same news: a refusal names
 // a row that is holding on and is acted on by deleting that row first.
 func (m deleteResultMsg) summary() string {
-	parts := []string{fmt.Sprintf("delete · %d of %d", len(m.done), m.total)}
+	verb := "delete"
+	if m.forced {
+		verb = "force delete"
+	}
+	parts := []string{fmt.Sprintf("%s · %d of %d", verb, len(m.done), m.total)}
+	if len(m.warnings) > 0 {
+		parts = append(parts, "left behind: "+m.warnings[0])
+	}
 	if m.branches > 0 {
 		parts = append(parts, fmt.Sprintf("%s deleted", plural(m.branches, "branch", "branches")))
 	}
@@ -245,7 +293,9 @@ func (m deleteResultMsg) summary() string {
 }
 
 // bad reports whether the report should be shown as a problem.
-func (m deleteResultMsg) bad() bool { return len(m.refused) > 0 || len(m.failed) > 0 }
+func (m deleteResultMsg) bad() bool {
+	return len(m.refused) > 0 || len(m.failed) > 0 || len(m.warnings) > 0
+}
 
 // dispatchDelete sends one DELETE per row, sequentially, in the order the
 // board handed them over.
@@ -255,18 +305,19 @@ func (m deleteResultMsg) bad() bool { return len(m.refused) > 0 || len(m.failed)
 // second definition of what a delete means is a second thing to keep in step.
 // Sequential for the reason dispatchBulk is — the line a human reads afterwards
 // has to be built from outcomes that actually happened.
-func dispatchDelete(client *apiclient.Client, ids []int64, branch, chats bool) tea.Cmd {
+func dispatchDelete(client *apiclient.Client, ids []int64, p deleteAsk) tea.Cmd {
 	if client == nil || len(ids) == 0 {
 		return nil
 	}
 	ids = slices.Clone(ids) // the selection may change while the sweep runs
 	return func() tea.Msg {
-		msg := deleteResultMsg{chats: chats, total: len(ids)}
+		msg := deleteResultMsg{chats: p.chats, archived: p.archived, forced: p.force, total: len(ids)}
 		for _, id := range ids {
-			out, err := deleteWithTimeout(client, id, branch, chats)
+			out, warnings, err := deleteWithTimeout(client, id, p)
 			switch {
 			case err == nil:
 				msg.done = append(msg.done, id)
+				msg.warnings = append(msg.warnings, warnings...)
 				if out.Result == apiclient.BranchDeleted {
 					msg.branches++
 				}
@@ -288,11 +339,26 @@ func refusedDelete(err error) bool {
 	return ok
 }
 
-func deleteWithTimeout(client *apiclient.Client, id int64, branch, chat bool) (apiclient.BranchOutcome, error) {
+// deleteAsk is what a sweep was asked to do: which kind of row, from which
+// board, with the branch or by force (task 153).
+type deleteAsk struct {
+	chats, archived, branch, force bool
+}
+
+func deleteWithTimeout(client *apiclient.Client, id int64, p deleteAsk) (apiclient.BranchOutcome, []string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 	defer cancel()
-	if chat {
-		return client.DeleteChat(ctx, id, branch)
+	switch {
+	case p.force && p.chats:
+		warnings, err := client.ForceDeleteChat(ctx, id)
+		return apiclient.BranchOutcome{}, warnings, err
+	case p.force:
+		warnings, err := client.ForceDeleteTask(ctx, id)
+		return apiclient.BranchOutcome{}, warnings, err
+	case p.chats:
+		out, err := client.DeleteChat(ctx, id, p.branch)
+		return out, nil, err
 	}
-	return client.DeleteTask(ctx, id, branch)
+	out, err := client.DeleteTask(ctx, id, p.branch)
+	return out, nil, err
 }

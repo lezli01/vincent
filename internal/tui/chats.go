@@ -231,7 +231,7 @@ func (v *chatsView) promptKeys() promptAnswers {
 	case v.create != nil:
 		return nil
 	case v.delPrompt != nil:
-		return deletePromptKeys()
+		return v.delPrompt.keys()
 	case v.confirm != nil:
 		return promptHint("y", "archive", "n", "no")
 	}
@@ -327,9 +327,11 @@ func (v *chatsView) addressed(msg tea.Msg) bool {
 	case chatsTickMsg:
 		return m.archived == v.archived
 	case deleteResultMsg:
-		// Only the archived board deletes, and only a chat sweep is its own;
-		// a task sweep's outcome is the archived tasks board's (#790).
-		return m.chats && v.archived
+		// Only a chat sweep is this board's, and only one this board sent: the
+		// archived board's sweep, or the live board's force delete after a
+		// stuck archive (task 153). A task sweep's outcome is the archived
+		// tasks board's (#790).
+		return m.chats && m.archived == v.archived
 	default:
 		return true
 	}
@@ -394,6 +396,7 @@ func (v *chatsView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyArchived(msg)
 	case deleteResultMsg:
 		v.note, v.noteBad = msg.summary(), msg.bad()
+		v.delPrompt = msg.forceOffer()
 		return v, v.loadCmd()
 	case chatCreatedMsg:
 		return v, v.applyCreated(msg)
@@ -530,6 +533,15 @@ func (v *chatsView) applyArchived(msg chatArchivedMsg) tea.Cmd {
 			v.confirm = &archivePrompt{
 				id: msg.id, force: true,
 				text: "worktree has local changes — archive anyway and lose them? (y/n)",
+			}
+			return nil
+		}
+		if isStuckArchive(apiclient.ActionArchive, msg.err) {
+			// An archive no retry fixes (task 153): offer the way out
+			// rather than leaving the chat on the board for good.
+			v.delPrompt = &rowDeletePrompt{
+				ids: []int64{msg.id}, chats: true, force: true,
+				cause: "archive failed: " + actionErrString(msg.err),
 			}
 			return nil
 		}
@@ -784,10 +796,17 @@ func (v *chatsView) askDelete() {
 func (v *chatsView) answerDelete(key string) tea.Cmd {
 	p := v.delPrompt
 	switch key {
-	case "y", "b":
+	case "b":
+		if p.force {
+			return nil // a force delete never deletes a branch (task 153)
+		}
 		v.delPrompt = nil
 		v.note, v.noteBad = "deleting…", false
-		return dispatchDelete(v.client, p.ids, key == "b", true)
+		return dispatchDelete(v.client, p.ids, deleteAsk{chats: true, archived: v.archived, branch: true})
+	case "y":
+		v.delPrompt = nil
+		v.note, v.noteBad = "deleting…", false
+		return dispatchDelete(v.client, p.ids, deleteAsk{chats: true, archived: v.archived, force: p.force})
 	case "n", "esc":
 		v.delPrompt = nil
 		v.note, v.noteBad = "", false

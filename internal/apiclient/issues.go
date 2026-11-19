@@ -443,6 +443,25 @@ func (c *Client) DeleteIssue(ctx context.Context, id int64) error {
 	return c.send(ctx, http.MethodDelete, fmt.Sprintf("/v1/issues/%d", id), nil, nil)
 }
 
+// ForceDeletedIssue is what DELETE /v1/issues/{id}?force=true removed (task
+// 153): the issue's holding tasks and chats, and what their cleanup left.
+type ForceDeletedIssue struct {
+	TaskIDs  []int64  `json:"task_ids"`
+	ChatIDs  []int64  `json:"chat_ids"`
+	Warnings []string `json:"warnings"`
+}
+
+// ForceDeleteIssue deletes an issue whose ordinary delete is held by an
+// unsettled main or side task or an open issue chat (task 153): those are
+// force-deleted first (ForceDeleteTask, ForceDeleteChat), then the issue. A
+// holder with a live process refuses the whole call, before anything is
+// removed, with a 409 whose DeleteRefused reason is `live_process`.
+func (c *Client) ForceDeleteIssue(ctx context.Context, id int64) (ForceDeletedIssue, error) {
+	var out ForceDeletedIssue
+	err := c.send(ctx, http.MethodDelete, fmt.Sprintf("/v1/issues/%d?force=true", id), nil, &out)
+	return out, err
+}
+
 // IssueHasLiveMainTask reports whether err is an issue delete refused
 // because one of its main tasks has not settled (409
 // `issue_has_live_main_task`, task 134.12), and if so which task: finish

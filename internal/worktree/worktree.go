@@ -597,6 +597,47 @@ func (m *Manager) Remove(ctx context.Context, projectPath, worktreePath string, 
 	return m.prune(ctx, projectPath)
 }
 
+// Discard is a force delete's worktree removal (task 153): Remove with force,
+// and when that fails — a broken repository, a project path that moved, a
+// prune git will not do — the directory itself, but only inside the manager's
+// root, exactly as Reclaim takes it. It never fails a caller: the row it
+// belonged to is already gone, so what it returns is a description of what
+// was left behind (a directory, or a stale registration `git worktree prune`
+// clears), or nil when nothing was. projectPath may be empty when the project
+// row is gone too.
+//
+// The project's main checkout is never touched: Remove declines it before
+// doing anything, so the fallback is never reached for one.
+func (m *Manager) Discard(ctx context.Context, projectPath, worktreePath string) error {
+	if worktreePath == "" {
+		return nil
+	}
+	var first error
+	if projectPath != "" {
+		if sameDir(worktreePath, projectPath) {
+			return nil
+		}
+		if first = m.Remove(ctx, projectPath, worktreePath, true); first == nil {
+			return nil
+		}
+	}
+	if _, err := os.Stat(worktreePath); err != nil {
+		if first != nil {
+			return fmt.Errorf("worktree %s is gone, but git could not prune its registration in %s "+
+				"(git worktree prune there clears it): %w", worktreePath, projectPath, first)
+		}
+		return nil
+	}
+	if err := m.removeDirect(worktreePath); err != nil {
+		return fmt.Errorf("worktree %s was kept: %w", worktreePath, errors.Join(first, err))
+	}
+	if first != nil {
+		return fmt.Errorf("worktree %s was deleted without git; git worktree prune in %s clears its registration: %w",
+			worktreePath, projectPath, first)
+	}
+	return nil
+}
+
 // Reclaim deletes a directory under the manager's root without consulting
 // git at all — gc's removal path (task 005), and doctor's (task 006). An
 // orphan has, by definition, no task row and often no reachable repo, so

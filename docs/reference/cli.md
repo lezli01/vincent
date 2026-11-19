@@ -1596,11 +1596,18 @@ Error: worktree_dirty: worktree ~/.local/share/vincent/worktrees/7 has local cha
 The first line is the daemon's, printed as it stands; the second is the
 command's own.
 
+An archive that fails on the worktree for any other reason, such as a
+`git_error` from a repository vincent can no longer read, names
+[`vincent task delete --force`](#vincent-task-delete) as the way out if the
+failure persists. `vincent chat archive` does the same with
+`vincent chat delete --force`.
+
 ### `vincent task delete`
 
 ```sh
 vincent task delete <id>... [--branch] [--json]
 vincent task delete --before <date|duration> [--branch] [--json]
+vincent task delete <id>... --force [--json]
 ```
 
 Aliased as `vincent task rm`. Permanently deletes an **archived** task: the
@@ -1634,6 +1641,17 @@ and to archive alone.
 and it does not stop at the first refusal. `--json` emits one entry per row
 with `id`, `deleted`, `branch` and, on a refusal, `reason` and `error`. Exit is
 1 if any row was refused or failed.
+
+`--force` is the way out for a task that cannot be archived or deleted, for
+example because archive keeps failing with a git error vincent cannot resolve
+(the failed `vincent task archive` suggests it). It deletes the task from
+**any** state except one with a live agent process — `running` or
+`awaiting_input`, refused with `live_process`: cancel it first. The task's
+fan-out lanes and the chats tied to it go with it. Its worktree, container and
+transcripts are cleaned up best-effort after the row is gone; whatever could not
+be is printed as `left behind:` (and as `warnings` under `--json`), not failed.
+The branch is never deleted, so `--force` takes neither `--branch` nor
+`--before`. See [Force delete](api.md#force-delete).
 
 ### `vincent task import`
 
@@ -2436,6 +2454,7 @@ ends.
 ```sh
 vincent chat delete CHAT_ID... [--branch] [--json]
 vincent chat delete --before <date|duration> [--branch] [--json]
+vincent chat delete CHAT_ID... --force [--json]
 ```
 
 Aliased as `vincent chat rm`. `vincent task delete` for a chat: permanently
@@ -2455,6 +2474,11 @@ can see coming.
 `--before` measures from when the chat *ended*, which for a terminal chat is
 its `updated_at` — chats have no `archived_at` column, because the transition
 into a terminal state is the last write the row takes.
+
+`--force` deletes a chat from any state except a live turn (`running`,
+`awaiting_input`), handed-off chats included — `vincent task delete --force`
+for a chat. Its worktree is cleaned up best-effort unless it belongs to a task
+(a linked or handed-off chat); the branch is never deleted.
 
 ### `vincent chat handoff`
 
@@ -3503,7 +3527,7 @@ Reopens a closed issue.
 ### `vincent issue delete`
 
 ```sh
-vincent issue delete <id>... --force [--json]
+vincent issue delete <id>... --force [--cascade] [--json]
 ```
 
 Aliased as `vincent issue rm`. Permanently deletes issues, in any state. The
@@ -3515,6 +3539,12 @@ and never prompts. It never touches GitHub — an imported issue stays as it is
 upstream — and it leaves a tombstone so the next sync does not import the
 issue again. `--json` emits one entry per id with `id`, `deleted` and, on a
 failure, `error`; exit is 1 if any id failed.
+
+`--cascade` is the way past that refusal, and past an open chat on the issue:
+the unsettled main and side tasks and the open issue chats are
+[force-deleted](api.md#force-delete) first, as `vincent task delete --force`
+would, then the issue. It is refused as a whole, before anything is removed,
+while any of them has a live agent process.
 
 ### `vincent issue labels`
 

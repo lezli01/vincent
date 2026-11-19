@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/taskrun"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -17,6 +18,9 @@ import (
 // written in curl.
 type deleteRequest struct {
 	DeleteBranch bool `json:"delete_branch"`
+	// Force removes the row from any state without a live process, and
+	// never fails on its cleanup (task 153).
+	Force bool `json:"force"`
 }
 
 // deleteResponse is what a permanent delete says (§13.2, task 092). `branch`
@@ -26,24 +30,50 @@ type deleteRequest struct {
 type deleteResponse struct {
 	Deleted bool            `json:"deleted"`
 	Branch  *branchResponse `json:"branch,omitempty"`
+	// Forced marks a force delete (task 153); Warnings is what its
+	// best-effort cleanup left behind — a worktree directory, a stale git
+	// registration — each naming the row it belonged to. Both are omitted
+	// on an ordinary delete.
+	Forced   bool     `json:"forced,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
-// deleteBranchWanted reads `delete_branch` from the query or the body, in that
-// order. It defaults to false: keeping a branch is the recoverable answer.
-func deleteBranchWanted(w http.ResponseWriter, r *http.Request) (bool, bool) {
-	switch v := r.URL.Query().Get("delete_branch"); v {
-	case "true":
-		return true, true
-	case "", "false":
-	default:
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, "delete_branch must be true or false")
-		return false, false
+// deleteOptions is what a DELETE asked for.
+type deleteOptions struct {
+	branch, force bool
+}
+
+// deleteOptionsWanted reads `delete_branch` and `force` from the query or the
+// body, a query value winning. Both default to false: keeping a branch is the
+// recoverable answer, and so is refusing a delete. The two are exclusive — a
+// force delete never deletes a branch (task 153).
+func deleteOptionsWanted(w http.ResponseWriter, r *http.Request) (deleteOptions, bool) {
+	var opts deleteOptions
+	for _, f := range []struct {
+		name string
+		dst  *bool
+	}{{"delete_branch", &opts.branch}, {"force", &opts.force}} {
+		switch v := r.URL.Query().Get(f.name); v {
+		case "true":
+			*f.dst = true
+		case "", "false":
+		default:
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, f.name+" must be true or false")
+			return opts, false
+		}
 	}
 	var req deleteRequest
 	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
-		return false, false
+		return opts, false
 	}
-	return req.DeleteBranch, true
+	opts.branch = opts.branch || req.DeleteBranch
+	opts.force = opts.force || req.Force
+	if opts.branch && opts.force {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"force and delete_branch cannot be combined: a force delete never deletes a branch")
+		return opts, false
+	}
+	return opts, true
 }
 
 // handleTaskDelete permanently removes an archived task (§13.2, task 092).
@@ -62,10 +92,19 @@ func (s *Server) handleTaskDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	branch, ok := deleteBranchWanted(w, r)
+	opts, ok := deleteOptionsWanted(w, r)
 	if !ok {
 		return
 	}
+	if opts.force {
+		warnings, err := s.deps.Runner.ForceDelete(r.Context(), id)
+		if !s.writeDeleteError(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, deleteResponse{Deleted: true, Forced: true, Warnings: warnings})
+		return
+	}
+	branch := opts.branch
 	// The task's linked chats go with it through the schema's cascade (task
 	// 119); their transcripts are listed first, while the rows still exist.
 	taskID := id
@@ -94,10 +133,19 @@ func (s *Server) handleChatDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	wantBranch, ok := deleteBranchWanted(w, r)
+	opts, ok := deleteOptionsWanted(w, r)
 	if !ok {
 		return
 	}
+	if opts.force {
+		warnings, err := s.forceDeleteChat(r, chat.ID)
+		if !s.writeDeleteError(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, deleteResponse{Deleted: true, Forced: true, Warnings: warnings})
+		return
+	}
+	wantBranch := opts.branch
 	if wantBranch && chat.Linked() {
 		// The branch copy on a linked chat is display history, never trusted
 		// for a delete: the branch is the task's (task 119 decision 1).
@@ -146,6 +194,49 @@ func (s *Server) handleChatDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, deleteResponse{Deleted: true, Branch: toBranchResponse(out)})
+}
+
+// forceDeleteChat removes a chat from any state without a live turn (task
+// 153) and then cleans up after it, best-effort: its transcripts, and its
+// worktree when the directory is the chat's own. A linked chat's directory is
+// its task's (task 119), a handed-off chat's belongs to the task it was
+// handed to (task 074), and an issue chat's stays when a main task waits to
+// receive it (task 140 decision 3) — exactly what archive would keep.
+func (s *Server) forceDeleteChat(r *http.Request, id int64) ([]string, error) {
+	ctx := r.Context()
+	if s.deps.Chats != nil && s.deps.Chats.Running(id) {
+		return nil, &store.DeleteRefusedError{
+			Kind: "chat", ID: id, Reason: store.DeleteRefusedLive,
+			Message: fmt.Sprintf("chat %d still has a live turn; cancel it first", id),
+		}
+	}
+	chat, err := s.deps.Store.ForceDeleteChat(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	s.deps.Logger.Warn("force delete: chat removed", "chat", id, "state", chat.State)
+	taskrun.RemoveTranscriptDir(s.deps.Dirs.Data, worktree.ChatOwner(id).Dir(), s.deps.Logger)
+	warnings := []string{}
+	if chat.WorktreePath == "" || chat.Linked() || chat.State == chatstate.HandedOff {
+		return warnings, nil
+	}
+	if chat.OnIssue() {
+		waiting, err := s.deps.Store.IssueHasWaitingMainTask(ctx, *chat.IssueID)
+		if err != nil || waiting {
+			// A failed read keeps the directory: one left for gc is
+			// recoverable, one taken from a waiting task is not.
+			return warnings, nil
+		}
+	}
+	projectPath := ""
+	if p, err := s.deps.Store.GetProject(ctx, chat.ProjectID); err == nil {
+		projectPath = p.Path
+	}
+	if err := s.deps.Worktrees.Discard(ctx, projectPath, chat.WorktreePath); err != nil {
+		s.deps.Logger.Warn("force delete: worktree left behind", "chat", id, "error", err)
+		warnings = append(warnings, fmt.Sprintf("chat %d: %v", id, err))
+	}
+	return warnings, nil
 }
 
 // writeDeleteError maps a delete failure onto §13.1 and reports whether the

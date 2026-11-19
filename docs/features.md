@@ -250,7 +250,11 @@ removes the row, its attempts and its transcripts for good, optionally with its
 branch — never a branch carrying commits past its base, which stays vincent's
 standing rule wherever it is asked. A delete refuses rather than cascading:
 a fan-out parent whose lanes still exist, or a task a handed-off chat points
-at, is named as what is holding on.
+at, is named as what is holding on. When something vincent cannot resolve keeps a
+row from being archived or deleted, such as a git error, a **force delete**
+removes it anyway, from any state but a live process, with its worktree
+cleaned as far as possible and its branch kept. The TUI offers it when the
+archive fails; `--force` does it from the command line.
 
 Every state transition is persisted before execution. If the daemon dies
 mid-step, restart recovery finalizes the interrupted attempt, verifies and

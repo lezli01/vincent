@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/keymap"
@@ -33,8 +34,23 @@ type actionResultMsg struct {
 	// task's own row does not show — the parent comes back unchanged, still
 	// `awaiting_children` — and no other action sets it.
 	retried int
-	err     error
+	// warnings is what a force delete's cleanup left behind (task 153); no
+	// other action sets it.
+	warnings []string
+	err      error
 }
+
+// actionForceDelete is the bar's one pending question that is not a §6
+// action (task 153): offered only after an archive failed on something a
+// retry will not fix, it removes the task from any state that holds no live
+// process. It is never in available_actions and has no key of its own — the
+// failure that offers it is the way in, as the dirty re-ask's is.
+const actionForceDelete = "force delete"
+
+// forceCauseWidth is how much of the failure a force-delete question quotes.
+// The footer is one line cut from the right, so the answer keys come first
+// and the cause is cut short enough to leave its consequence readable.
+const forceCauseWidth = 60
 
 // actionOps binds the §6 actions the bar dispatches to the operations whose
 // keys they answer (task 118). Pause and resume share one operation, which is
@@ -160,6 +176,9 @@ type actionBar struct {
 	// one that carries `force` after a dirty worktree refused the first.
 	pending string
 	force   bool
+	// cause is why a force delete is being offered: the failure it is the
+	// way out of, said in the question so `y` is answered knowing it.
+	cause string
 	// pendingIDs pins the tasks a confirmation is for, when they are not
 	// simply "the row under the cursor": a bulk selection, and — on the force
 	// re-ask — the subset of it whose worktrees were dirty. nil means the
@@ -184,13 +203,13 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 		switch key {
 		case "y":
 			action, force, ids := a.pending, a.force, a.pendingIDs
-			a.pending, a.force, a.pendingIDs = "", false, nil
+			a.pending, a.force, a.pendingIDs, a.cause = "", false, nil, ""
 			if len(ids) > 0 {
 				return a.dispatchBulk(client, ids, action, force), true
 			}
 			return a.dispatch(client, t.id, action, force), true
 		case "n", "esc":
-			a.pending, a.force, a.pendingIDs = "", false, nil
+			a.pending, a.force, a.pendingIDs, a.cause = "", false, nil, ""
 			a.setStatus("cancelled", false)
 			return nil, true
 		}
@@ -236,6 +255,14 @@ func (a *actionBar) dispatch(client *apiclient.Client, id int64, action string, 
 		return nil
 	}
 	a.setStatus(action+"…", false)
+	if action == actionForceDelete {
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+			defer cancel()
+			warnings, err := client.ForceDeleteTask(ctx, id)
+			return actionResultMsg{taskID: id, action: action, warnings: warnings, err: err}
+		}
+	}
 	return func() tea.Msg {
 		task, branch, retried, err := callActionWithTimeout(client, id, action, force)
 		return actionResultMsg{
@@ -283,6 +310,11 @@ func callActionRaw(ctx context.Context, client *apiclient.Client, id int64, acti
 	case apiclient.ActionArchive:
 		task, branch, err := client.Archive(ctx, id, force)
 		return task, branch, 0, err
+	case actionForceDelete:
+		// The bulk path's force delete; the single one keeps the cleanup's
+		// warnings (dispatch), a batch reports counts only.
+		_, err := client.ForceDeleteTask(ctx, id)
+		return apiclient.Task{ID: id}, apiclient.BranchOutcome{}, 0, err
 	default:
 		return apiclient.Task{}, apiclient.BranchOutcome{}, 0, fmt.Errorf("unknown action %q", action)
 	}
@@ -292,6 +324,17 @@ func callActionRaw(ctx context.Context, client *apiclient.Client, id int64, acti
 // as the second confirmation rather than an error, because `force` *is* the
 // dirty confirmation (§6) and re-asking is what a human expects to be asked.
 func (a *actionBar) applyResult(msg actionResultMsg) {
+	if msg.action == actionForceDelete && msg.err == nil {
+		status := fmt.Sprintf("#%d force-deleted", msg.taskID)
+		if n := len(msg.warnings); n > 0 {
+			status += " · left behind: " + msg.warnings[0]
+			if n > 1 {
+				status += fmt.Sprintf(" (and %d more)", n-1)
+			}
+		}
+		a.setStatus(status, len(msg.warnings) > 0)
+		return
+	}
 	if msg.err == nil {
 		status := msg.action + " · now " + msg.task.State
 		// A cascade leaves the parent exactly where it was, so "now
@@ -313,6 +356,14 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 		a.pending, a.force = apiclient.ActionArchive, true
 		a.pendingIDs, a.bulkTotal = nil, 0
 		a.status = ""
+		return
+	}
+	if isStuckArchive(msg.action, msg.err) {
+		// An archive no retry will fix (task 153): offer the way out
+		// instead of leaving the task on the board for good.
+		a.pending, a.force = actionForceDelete, false
+		a.pendingIDs, a.bulkTotal = nil, 0
+		a.cause, a.status = actionErrString(msg.err), ""
 		return
 	}
 	var apiErr *apiclient.Error
@@ -345,7 +396,7 @@ func (a *actionBar) clear() {
 	if len(a.pendingIDs) > 0 {
 		return
 	}
-	a.pending, a.force = "", false
+	a.pending, a.force, a.cause = "", false, ""
 	a.status, a.statusBad = "", false
 }
 
@@ -356,6 +407,9 @@ func (a *actionBar) confirmPrompt(t taskActions) string {
 		return a.bulkPrompt(n)
 	}
 	switch {
+	case a.pending == actionForceDelete:
+		return fmt.Sprintf("force delete #%d? (y/n) · archive failed: %s · the task goes anyway, its branch stays",
+			t.id, ansi.Truncate(a.cause, forceCauseWidth, "…"))
 	case a.pending == apiclient.ActionArchive && a.force:
 		return fmt.Sprintf("#%d has uncommitted changes — archive anyway and lose them? (y/n)", t.id)
 	case a.pending == apiclient.ActionArchive:
@@ -372,6 +426,13 @@ func (a *actionBar) confirmPrompt(t taskActions) string {
 // three are already archived and re-asking about all five would be a lie.
 func (a *actionBar) bulkPrompt(n int) string {
 	switch {
+	case a.pending == actionForceDelete:
+		subject := selectedNoun(n)
+		if a.bulkTotal > n {
+			subject = fmt.Sprintf("%d of %s", n, selectedNoun(a.bulkTotal))
+		}
+		return fmt.Sprintf("force delete %s? (y/n) · their archive failed: %s · branches stay",
+			subject, ansi.Truncate(a.cause, forceCauseWidth, "…"))
 	case a.pending == apiclient.ActionArchive && a.force:
 		subject := selectedNoun(n)
 		if a.bulkTotal > n {

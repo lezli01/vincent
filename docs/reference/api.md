@@ -2020,7 +2020,7 @@ time.
 | `POST` | `/v1/tasks` | `{ project_id, workflow, title, description?, fields?, base_branch?, branch_name?, existing_branch?, priority?, agent?, model?, effort?, github_pull?, issue_id?, merge_back?, paused?, restricted?, max_task_cost_usd? }` — `issue_id` creates the task [from an issue](#creating-a-task-from-an-issue), as its [main task](#the-issues-main-branch) unless `merge_back` asks for a side task. `branch_name` is used verbatim and wins over any template, **except** on a `github_pull` task, whose branch is the pull request's head (`vincent/pr-{n}` for a fork). `existing_branch` runs the task on a branch that already exists — see [Running on an existing branch](#running-on-an-existing-branch). `paused`, `restricted` and `max_task_cost_usd` are the [create-time limits](#paused-restricted-and-capped-tasks). Accepts an optional `Idempotency-Key` header |
 | `GET` | `/v1/tasks/{id}` | Full task |
 | `PATCH` | `/v1/tasks/{id}` | `{ priority }` — queued/paused only |
-| `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. See [Permanent delete](#permanent-delete) |
+| `DELETE` | `/v1/tasks/{id}` | Permanent delete of an **archived** task. `?delete_branch=true` (or `{ "delete_branch": true }`) → `{ deleted: true, branch? }`. `?force=true` deletes it from any state without a live process → `{ deleted: true, forced: true, warnings? }`. See [Permanent delete](#permanent-delete) and [Force delete](#force-delete) |
 | `POST` | `/v1/tasks/import` | `{ path, task_id, project_id? }` — one archived task back out of a backup archive. See [Importing a task](#importing-a-task) |
 | `GET` | `/v1/tasks/{id}/steps` | Every step run, every attempt, in position order. `state` may be `stopped` (a `condition` step ended the run, or a `break` ended its loop), and a `skipped` row carries `skip_reason: "condition"` when a guard skipped it and `null` when you did. A row inside a `loop` (§7.8) carries `iteration` (1-based) and, for `for_each`, `loop_item` — a loop's body steps share the loop's `step_index`, so those are what tell two of them apart — plus `loop_total`, how many iterations the admission that wrote the row planned to run (the `count:`, or the resolved `for_each` list's length; `0` outside a loop and on a row written before the daemon recorded it). A `fan_out` step with `needs:` between its lanes puts its rounds on the same `iteration` column (0-based, so a flat lane list still reads `0`), which is the one other place a non-zero `iteration` appears — under `schedule: eager` that number is a monotonic merge counter rather than the lane's wave, and the step may write up to one merge row per lane; the two cannot be confused because a `fan_out` is not valid inside a loop body. A `fan_out` row appears when its round's lanes are **spawned**, not when they merge: the park opens the row `running` and that round's merge admission finalizes the same one (§7.6), so a parent whose lanes are working is on the timeline rather than missing from it. Each row also carries **what the attempt was given**: `rendered_prompt`, `rendered_run`, `rendered_check` and `rendered_if` are the substituted text the adapter, the shell and the guard actually saw — the full bytes, unlike `prompt_override`/`run_override`, which are booleans here — with `rendered_for_each` the resolved list an iteration drew its `loop_item` from, carried as a **string holding a JSON array** rather than as an array field, and `input_truncated` saying a field was cut at its 64 KiB ceiling. Beside them the resolution the attempt ran under: `agent_source`, `model_source` and `effort_source` name which level supplied each part (`step`, `task`, `workflow`, `adapter`), and `permission_mode`, `timeout_ms`, `check_timeout_ms`, `shell` and `work_dir` are the values that were in force, recorded rather than re-resolved, so they still describe the attempt after a config reload or a task patch. `null` (or `0`, or `""`) means nothing was recorded — an attempt from before the daemon recorded any of this, and every field the step type has no input for — while an empty string on a rendered field is a render that produced nothing. `rendered_if` is evidence, not a decision: a guard is re-evaluated every time it is reached |
 | `POST` | `/v1/tasks/{id}/steps/{step_id}/status` | `{ message }` → `{ message }` as stored. What the **running** step is doing, in its own words. Called by that step's own process — see [Step status](#step-status) |
@@ -2121,6 +2121,10 @@ what is holding on:
 | `handed_off` | The chat was handed off to a task, which owns its worktree and branch. Delete that task |
 | `issue_chat_holds_worktree` | A [chat on an issue](#a-chat-on-an-issue) still names the issue's main worktree, left for its next main task. Let that task receive it, or archive the chat with no main task waiting so the directory is removed |
 | `issue_chat_holds_branch` | A chat on an issue is the only record of the issue's main branch: no unarchived main task carries it. Start a main task on the issue, then delete the chat |
+| `live_process` | A [force delete](#force-delete) only: the task, one of its lanes, or a chat tied to it has a live agent process. Cancel it first |
+
+Every refusal but `live_process` is one a [force delete](#force-delete) gets
+past.
 
 A [chat opened on a task](#a-chat-on-a-stopped-task) counts as archived once it
 is `closed`, so it can be deleted too. `delete_branch=true` on such a chat, in
@@ -2139,6 +2143,47 @@ column nulls itself, and `mcp.max_depth`'s walk simply stops one link early.
 A client resuming `/v1/events` from a cursor older than a delete will see events
 for an id that now `404`s. That is the same thing a project delete does to a
 stale cursor, and it is survivable: re-fetch, and drop what is gone.
+
+### Force delete
+
+`?force=true` on `DELETE /v1/tasks/{id}`, `DELETE /v1/chats/{id}` and
+`DELETE /v1/issues/{id}` is the way out for a row whose archive or delete keeps
+failing on something vincent cannot resolve: a git error, a repository that
+moved, a worktree git no longer recognises. `{ "force": true }` in the body
+works too for the task and chat routes.
+
+A force delete removes the row from **any state except one holding a live
+agent process**. A task that is `running` or `awaiting_input`, a lane of it
+that is, or a chat mid-turn on it, is a `409` with `details.reason:
+"live_process"`. Cancel it first. Nothing else refuses:
+
+- a **task** goes with its fan-out lanes, its linked chats and any chat that
+  was handed off to it;
+- a **chat** goes from `idle`, `closed`, `archived` or `handed_off`, including
+  a chat on an issue that the ordinary delete would keep;
+- an **issue** first force-deletes what holds it (its unsettled main and side
+  tasks, and its open chats), then itself. A holder with a live process
+  refuses the whole call before anything is removed.
+
+The rows are removed first, in one transaction. The cleanup that was failing
+runs afterwards and can only warn, never fail: the task's container, its
+worktree (`git worktree remove --force`, then the directory itself, but only
+inside vincent's worktrees directory and never the project's own checkout),
+its transcripts and staged proposals. A linked or handed-off chat's worktree
+belongs to its task and is left alone, as is an issue chat's directory while a
+main task waits to receive it. Whatever could not be cleaned comes back in
+`warnings`, each naming the row it belonged to:
+
+```json
+{ "deleted": true, "forced": true,
+  "warnings": ["task 7: worktree /…/worktrees/7-add-login was deleted without git; git worktree prune in /src/app clears its registration: …"] }
+```
+
+The issue route answers `{ deleted, forced, task_ids, chat_ids, warnings }`.
+
+A force delete **never deletes a branch**. `force=true` with
+`delete_branch=true` is a `400`. The work on the branch survives under its own
+name.
 
 ### Importing a task
 
@@ -2796,7 +2841,7 @@ task created from it.
 | `POST` | `/v1/issues/{id}/unready` | Withdraw it from the `hand_off` lane. See [Ready to hand off](#ready-to-hand-off) |
 | `GET` | `/v1/issues/{id}/comments` | The discussion thread, oldest first |
 | `POST` | `/v1/issues/{id}/comments` | Add a local comment |
-| `DELETE` | `/v1/issues/{id}` | Delete permanently, from any state |
+| `DELETE` | `/v1/issues/{id}` | Delete permanently, from any state. `?force=true` also force-deletes the tasks and chats holding it — see [Force delete](#force-delete) |
 | `GET` | `/v1/projects/{id}/issue-labels` | The project's label catalogue |
 
 ```sh
@@ -3357,7 +3402,8 @@ deleted, and `DELETE /v1/chats/{id}?delete_branch=true` is
 `409 issue_chat_branch`. `handoff` defaults `issue_id` to the chat's and
 creates a **main** task in the chat's worktree; another `issue_id`, or a
 `merge_back`, is a `400`. `DELETE /v1/issues/{id}` is
-`409 issue_has_live_chat` while a chat on the issue is open.
+`409 issue_has_live_chat` while a chat on the issue is open, unless it is a
+[force delete](#force-delete).
 
 Three more things to know:
 

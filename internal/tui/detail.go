@@ -414,6 +414,10 @@ func (d *detail) applyAction(msg actionResultMsg) tea.Cmd {
 		return nil
 	}
 	d.actions.applyResult(msg)
+	if msg.action == actionForceDelete && msg.err == nil {
+		// The task is gone (task 153): there is nothing left to show here.
+		return backToTab
+	}
 	if msg.action == apiclient.ActionRepair && d.repair != nil {
 		if msg.err != nil {
 			// Same reasoning as the answer form: keep what was typed on
