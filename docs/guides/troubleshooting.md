@@ -418,8 +418,9 @@ In the TUI, a failed archive asks `force delete #7? (y/n)` instead of leaving
 the error on the line, and the archived boards ask the same about a delete
 they refused. A force delete works from any state except a live agent process;
 cancel a running task or turn first. It cleans up the worktree as far as it
-can and prints what it had to leave behind. It never deletes a branch, so the
-work on it stays. See [Force delete](../reference/api.md#force-delete).
+can and prints what it had to leave behind. Unlike an archive, it leaves the
+branch in place even when the branch has no commits past its base, so the work
+on it stays. See [Force delete](../reference/api.md#force-delete).
 
 ### `branch_exists` / `worktree_path_occupied`
 
