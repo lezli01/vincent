@@ -40,6 +40,14 @@ list with the user-facing context a commit subject cannot carry.
 - **`GET /v1/agents` reports `compact_command`**, and a chat turn reports
   `cache_read_tokens`, `cache_creation_tokens`, `context_tokens` and
   `context_window` (#1015).
+- **Search across every chat, live and archived.** A full-text index covers
+  every chat's title, the prompts it was sent and the agent's final answers,
+  matching by substring so `429` finds `status429Body`. Search it from the TUI
+  ("Search all chats" in the command palette, or `S` on the chats screen),
+  where `enter` on a match opens the chat at that turn; with
+  `vincent chat search`; or with `GET /v1/chats/search`. Archived, handed-off
+  and closed chats are searched by default, and an answer stays findable
+  after its transcript has been removed by retention (#1022).
 
 ### Fixed
 

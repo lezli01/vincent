@@ -1242,6 +1242,16 @@ live turn rather than after it. It is in the table so the API's state refusal
 and the capability refusal stay distinct, but **no adapter steers yet** (§9.1),
 so every chat reports `can_steer: false` with a reason and no steer route is
 served. It is never emulated by cancel-and-resend.
+*Amended 2026-11-19 (task 156, issue #1022):* **chats are searchable.** A
+full-text index covers every chat's `title`, each turn's `prompt` and each
+turn's `result_text` — what was asked and what was answered, never the tool
+output in a transcript. It covers every state, live and terminal alike, and
+because `result_text` is a column and not a file, an answer stays searchable
+after §12.2's retention deletes its transcript. Matching is by substring and
+ignores case (§14's trigram tokenizer), every term of a query must match, and
+a term shorter than three characters is refused rather than scanned for. The
+search is served by `GET /v1/chats/search` (§13.2) and is, like every chat
+route, not an MCP tool.
 
 ### 5.6 Issue (added 2026-10-02, task 130.1, issue #660)
 
@@ -11145,6 +11155,24 @@ GET    /v1/chats                        *Amended 2026-09-09 (task 092, issue #35
                                         as `task_id=` does. It ANDs with every other parameter
                                         and `archived=` keeps its default. Every column it
                                         reads is already indexed, so no migration
+GET    /v1/chats/search                 *Added 2026-11-19 (task 156, issue #1022).*
+                                        ?q=&project_id=&archived=&limit=&turns= — full-text
+                                        search over every chat's title, prompts and final
+                                        answers (§5.5). → { results: [{ chat, matches: [{ seq,
+                                        field: title|prompt|result, snippet, segments: [{ text,
+                                        match }] }], match_count }] }, best match (bm25) first,
+                                        matches in conversation order with the title as seq 0.
+                                        q's whitespace-separated terms are each searched for
+                                        literally and ANDed — FTS5 syntax is never passed
+                                        through. A blank q is `400 validation_failed`; a term
+                                        under three characters is `400 query_too_short`.
+                                        `archived` takes GET /v1/chats' values with their
+                                        meaning but **defaults to `all`**, not `false`: finding
+                                        a chat that is done with is the point of searching.
+                                        limit caps chats (default 20, at most 100), turns the
+                                        matches per chat (default 5, at most 50). The
+                                        highlight is data (`segments`), never markup. Not an
+                                        MCP tool (§13.4, decision row 29)
 POST   /v1/chats                        { project_id, title, agent?, model?, effort?,
                                           base_branch?, branch_name?, existing_branch? }
                                         → 201 with the chat, its `vincent/{id}-{slug}` branch
@@ -13066,6 +13094,11 @@ The same rule again, and more plainly: the list is what a human's composer
 offers behind `@`, and an agent already sitting in that worktree can run
 `ls`.
 
+*Amended 2026-11-19 (task 156, issue #1022).* Chat search joins the chat
+family's exclusion under row 29, as a chat read:
+
+    GET    /v1/chats/search
+
 *Amended 2026-10-02 (task 130.3, issue #662).* One more, **thirty-seven** in
 all:
 
@@ -13602,6 +13635,21 @@ CREATE TABLE chat_queued_messages (
     created_at TEXT    NOT NULL,
     updated_at TEXT    NOT NULL
 );
+
+-- Chat search (task 156, issue #1022, added 2026-11-19; migration 0059).
+-- Two external-content FTS5 tables, trigram-tokenized so matching is by
+-- substring: one over chats.title, one over chat_turns(prompt, result_text).
+-- External content stores only the index, never a second copy of the text,
+-- and one table cannot hold both because an external-content table reads
+-- from exactly one content table. AFTER INSERT / UPDATE OF / DELETE triggers
+-- on chats and chat_turns keep both in step — the update triggers fire only
+-- when the indexed text changed, which is when a turn's answer lands and when
+-- a chat is renamed — and a cascaded delete (a permanent delete, a project
+-- delete) fires the turns' delete trigger, leaving nothing behind.
+CREATE VIRTUAL TABLE chat_title_fts USING fts5(
+    title, content = 'chats', content_rowid = 'id', tokenize = 'trigram');
+CREATE VIRTUAL TABLE chat_turn_fts USING fts5(
+    prompt, result_text, content = 'chat_turns', content_rowid = 'id', tokenize = 'trigram');
 
 -- Event-trigger runtime state (task 096, added 2026-09-11; migrations 0029, 0030).
 -- A trigger's definition is a file under {config_dir}/triggers/, never a row:
@@ -16508,6 +16556,24 @@ stream for the live tail.
    `chats unavailable` rather than failing the screen. The screen also
    re-reads on a `chat.*` event of a listed chat or whose `linked_task_id`
    is a listed task. The tab is client-only and unpaged.
+
+14. **Chat search.** *Added 2026-11-19 (task 156, issue #1022).* A takeover
+    reached from the command palette's "Search all chats", on any tab, and
+    from `S` on the chats board (rebindable; `/` keeps filtering the board's
+    list, and `ctrl+f` is left for in-conversation search). A query box over
+    results from `GET /v1/chats/search` with its default scope, every chat
+    live and terminal, re-queried after typing pauses. Results are grouped by
+    chat: a header row with the chat's state glyph, a live or archived
+    marker and its title, then one row per match — the title, or `turn N`
+    asked or answered — whose snippet marks the matching text with a style
+    that survives `NO_COLOR`, not with colour alone. A refused query
+    (`query_too_short`) says so in place. `enter` on a turn's row opens that
+    chat **on that turn**: the workspace fetches the turn if it has not, puts
+    the turn's heading at the top of the viewport and leaves follow mode, so
+    live output does not pull it back to the end. `enter` on a chat's header
+    or title row opens the chat where it normally opens. A terminal chat
+    opens read-only, as from the archived board. `esc` from the chat returns
+    to the search with its query and selection kept.
 
 ### Layout
 

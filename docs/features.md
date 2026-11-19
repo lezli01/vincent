@@ -97,6 +97,14 @@ how full the session's context is — and offers `/compact` when it nears the
 limit. Archiving a chat cleans up its worktree, and an empty branch
 with it, the way archiving a task does.
 
+Old conversations stay findable. **Search every chat**, live or archived, by
+its title, what you asked or what the agent answered: matching is by
+substring, so `429` finds `status429Body`. In the TUI, "Search all chats" in
+the command palette or `S` on the chats screen opens the search, and `enter` on
+a match opens the chat at that turn. From a shell,
+[`vincent chat search`](reference/cli.md#vincent-chat-search) prints the same
+results, and `GET /v1/chats/search` serves them.
+
 And when an exploration turns out to be the start of real work, **hand the chat
 off to a task**. The task adopts the chat's worktree, branch, base branch and
 base SHA exactly as they are — no copy, no rename, no hidden commit, so
