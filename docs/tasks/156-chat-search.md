@@ -1,6 +1,6 @@
 # 156 — Search across every chat, live and archived
 
-**Status:** 🔄 in progress (4/5) · **Opened:** 2026-11-19 · **Issue:** #1022 (epic #1009)
+**Status:** ✅ done (5/5) · **Opened:** 2026-11-19 · **Issue:** #1022 (epic #1009)
 
 The chats board's `/` filters by title, agent and branch only. Nothing found a
 chat by what was said in it, and archived chats were out of reach entirely.
@@ -24,9 +24,8 @@ Conventions for this file are in [the tasks README](README.md).
 - [x] **156.4** TUI: the chat search view, the "Search all chats" palette
   entry and `S` on the chats screen; `enter` on a match opens the chat on that
   turn, `esc` returns to the search. ✓ 2026-11-19
-- [ ] **156.5** Capture `docs/assets/tui-chat-search.png` with
-  `scripts/screenshots.sh` (the tape is in place; the capture has not been
-  run).
+- [x] **156.5** Capture `docs/assets/tui-chat-search.png` with
+  `scripts/screenshots.sh`. ✓ 2026-11-19
 
 ## Decisions
 
