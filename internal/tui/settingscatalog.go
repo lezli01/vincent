@@ -33,6 +33,8 @@ var (
 	syncPresets   = []string{"0s", "5m", "15m", "1h"}
 	updatePresets = []string{"0s", "1h", "12h", "24h"}
 	backupPresets = []string{"0s", "6h", "24h"}
+	// archivePresets is task 155's clock: off, a working day, a day, a week.
+	archivePresets = []string{"0s", "1h", "12h", "24h", "168h"}
 )
 
 // settingsCatalog is the whole screen, in display order.
@@ -74,6 +76,7 @@ var settingsCatalog = []settingsCategory{
 			{path: "delete_empty_branch_on_archive", label: "Delete empty branches", desc: "Remove a task's branch when it has no commits of its own"},
 			{path: "delete_remote_branch_on_archive", label: "Delete on the remote too", desc: "Also remove its upstream branch; this cannot be undone"},
 			{path: "archive_tasks_on_issue_close", label: "Archive when an issue closes", desc: "Tidy up a closed issue's finished tasks automatically"},
+			{path: "archive_finished_tasks_after", label: "Archive finished tasks after", desc: "Tidy up a task left done or aborted this long; 0 never does", presets: archivePresets},
 		}},
 	}},
 	{"$", "Cost & quota", []settingsSection{

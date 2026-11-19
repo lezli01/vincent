@@ -896,6 +896,47 @@ func TestConfigPatchArchiveTasksOnIssueClose(t *testing.T) {
 	}
 }
 
+// TestConfigPatchArchiveFinishedTasksAfter: task 155's clock is served on
+// GET /v1/config as a duration string, defaults to 12h, and a PATCH is in
+// force before the answer and written to config.yaml; a negative age is
+// refused and changes nothing.
+func TestConfigPatchArchiveFinishedTasksAfter(t *testing.T) {
+	h := newConfigHarness(t)
+	get := func() string {
+		t.Helper()
+		_, body := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+		var cfg configResponse
+		if err := json.Unmarshal(body, &cfg); err != nil {
+			t.Fatalf("parse config: %v", err)
+		}
+		return cfg.ArchiveFinishedTasksAfter
+	}
+	if got := get(); got != "12h0m0s" {
+		t.Fatalf("archive_finished_tasks_after = %q, want 12h0m0s", got)
+	}
+	for _, c := range []struct{ in, want string }{{"30m", "30m0s"}, {"0s", "0s"}} {
+		resp, body := h.patch(t, fmt.Sprintf(`{"archive_finished_tasks_after":%q}`, c.in))
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("patch %s: status %d: %s", c.in, resp.StatusCode, body)
+		}
+		if got := get(); got != c.want {
+			t.Errorf("after patch %s: GET says %q, want %q", c.in, got, c.want)
+		}
+		if got := h.cur.Load().ArchiveFinishedTasksAfter.String(); got != c.want {
+			t.Errorf("after patch %s: config in force says %s", c.in, got)
+		}
+		if line := "archive_finished_tasks_after: " + c.in; !strings.Contains(string(h.bytes(t)), line) {
+			t.Errorf("config.yaml lacks %q:\n%s", line, h.bytes(t))
+		}
+	}
+	if resp, body := h.patch(t, `{"archive_finished_tasks_after":"-1h"}`); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("negative age: status %d, want 400 (%s)", resp.StatusCode, body)
+	}
+	if got := get(); got != "0s" {
+		t.Errorf("a refused patch changed the value to %q", got)
+	}
+}
+
 // The daemon renders a candidate template with its own renderer, says when one
 // does not render, and writes nothing (task 152).
 func TestBranchPreviewRendersACandidate(t *testing.T) {

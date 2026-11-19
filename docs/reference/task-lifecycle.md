@@ -150,8 +150,9 @@ worktree existed re-blocks on the same reason without starting an agent, and one
 blocked because its agent CLI is missing has its repair fail the same way — both
 honest outcomes rather than a hidden filter.
 
-**A finished task is not finished with until you archive it.** `done` and
-`aborted` both keep the worktree, the branch and the commits, and `follow_up`
+**A finished task is not finished with until it is archived** — by you, or by
+the daemon [after it has sat finished for a while](#finished-tasks-archive-after-a-while).
+`done` and `aborted` both keep the worktree, the branch and the commits, and `follow_up`
 is how you do one more piece of work in them without leaving vincent. You supply
 one of three things — an agent prompt, a shell command, or the name of a
 workflow from the registry — and the daemon runs it on the task's own branch, in
@@ -178,8 +179,8 @@ which it was not before follow-ups existed.
 
 ### Closed issues archive their tasks
 
-The one exception to "until you archive it" is a task started from an
-[issue](../guides/issues.md). When the issue closes, the daemon archives its
+A task started from an [issue](../guides/issues.md) can also go sooner than
+that. When the issue closes, the daemon archives its
 `done` and `aborted` tasks for you, once every task of the issue has finished
 and no chat on it is open — the tasks that existed at the close, side work
 before the issue's main tasks, which wait while any of that side work cannot
@@ -198,6 +199,22 @@ retries the main tasks waiting on it. Cleaning a dirty worktree does not, becaus
 daemon records no event for it: that task waits for a later event on the issue,
 or for you to archive it. Its `task.state_changed` event carries
 `archived_by: "issue_closed"`, which yours does not.
+
+### Finished tasks archive after a while
+
+A root task that has been `done` or `aborted` for
+[`archive_finished_tasks_after`](configuration.md#archive_finished_tasks_after)
+— 12 hours by default, `0` for never — is archived by the daemon, whether or
+not it has an issue and whether that issue is open or closed. The clock runs
+from the task's last finish, so a follow-up restarts it. An issue's main task
+waits while anything else on its issue still needs its branch: another task of
+the issue not yet finished, an open chat on the issue, a handoff holding it,
+or a side task or merge-back not yet archived.
+
+It is the same cautious archive as the closed-issue one: never forced, never
+touching a remote branch. A task it cannot archive stays as it is, with one
+warning in `daemon.log`, and is tried again an hour later. Its
+`task.state_changed` event carries `archived_by: "finished_after"`.
 
 ## Human actions
 

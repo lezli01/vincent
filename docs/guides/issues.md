@@ -278,17 +278,21 @@ Reopen the issue before it happens and nothing is archived.
 
 The auto-archive acts only on tasks started from an issue, and only once that
 issue is closed. These are out of its scope by design, and it never archives
-them:
+them. Each of them is still archived once it has sat finished for
+[`archive_finished_tasks_after`](../reference/configuration.md#archive_finished_tasks_after)
+(12 hours by default), which is a separate clock that does not care about the
+issue:
 
 - **A task with no issue.** Only tasks started from an issue are archived when
   it closes. That includes a task started on its own, a task that files issues
   or starts tasks on them but has no issue itself, and a
-  [handoff](handoff.md)'s own task. Archive it yourself.
+  [handoff](handoff.md)'s own task.
 - **A task whose issue is still open.** A task can be `done` long before its
-  issue closes — for example while a handoff delivers its work. It stays on
-  the board until the issue closes, or until you archive it.
-- **A task started after the issue closed.** Someone chose to work there, so it
-  is left alone. Archive it yourself.
+  issue closes — for example while a handoff delivers its work. The issue's
+  main task stays on the board while a handoff holds the issue; the rest go on
+  the clock above.
+- **A task started after the issue closed.** Someone chose to work there, so the
+  close leaves it alone.
 
 ### What auto-archive waits for
 

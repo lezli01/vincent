@@ -168,6 +168,7 @@ the living engineering specification records implementation contracts.
 | [152](152-settings-screen.md) | A Settings screen for everything in `config.yaml` | ✅ done (3/3) |
 | [153](153-force-delete.md) | Force delete for tasks, chats and issues whose archive or delete fails on something vincent cannot resolve | ✅ done (5/5) |
 | [154](154-chat-hides-unparsed-lines.md) | A chat hides the lines vincent cannot parse below verbose, instead of counting them between messages | ✅ done (1/1) |
+| [155](155-archive-finished-tasks-after.md) | Archive a task that has sat finished for `archive_finished_tasks_after` (12h by default) | ✅ done (2/2) |
 
 ## How to add and update a task document
 

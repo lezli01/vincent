@@ -62,6 +62,7 @@ transcript_max_bytes: 32MB
 max_task_cost_usd: 12.5
 max_tree_cost_usd: 40
 usage_limit_recheck_interval: 2m
+archive_finished_tasks_after: 30m
 log_level: warn
 agents:
   claude:
@@ -93,6 +94,7 @@ agents:
 		DeleteEmptyBranchOnArchive: true,
 		// Nor archive_tasks_on_issue_close, whose default is on (task 143.3).
 		ArchiveTasksOnIssueClose:  true,
+		ArchiveFinishedTasksAfter: Duration(30 * time.Minute),
 		FetchBaseBranch:           true,
 		TranscriptRetentionDays:   7,
 		TranscriptMaxBytes:        32 << 20,
@@ -161,6 +163,25 @@ func TestBranchCleanupDefaults(t *testing.T) {
 	}
 	if d.DeleteRemoteBranchOnArchive {
 		t.Error("delete_remote_branch_on_archive defaults to true, want false")
+	}
+}
+
+// TestArchiveFinishedTasksAfter (task 155): 12h by default, 0 is off and
+// loads, a negative age is refused.
+func TestArchiveFinishedTasksAfter(t *testing.T) {
+	if got := Default().ArchiveFinishedTasksAfter.Std(); got != 12*time.Hour {
+		t.Errorf("archive_finished_tasks_after defaults to %s, want 12h", got)
+	}
+	cfg, err := Load(writeConfig(t, "archive_finished_tasks_after: 0s\n"))
+	if err != nil {
+		t.Fatalf("Load 0s: %v", err)
+	}
+	if cfg.ArchiveFinishedTasksAfter != 0 {
+		t.Errorf("an explicit 0s loaded as %s", cfg.ArchiveFinishedTasksAfter)
+	}
+	if _, err := Load(writeConfig(t, "archive_finished_tasks_after: -1h\n")); err == nil ||
+		!strings.Contains(err.Error(), "archive_finished_tasks_after") {
+		t.Errorf("a negative age loaded, err = %v", err)
 	}
 }
 

@@ -83,6 +83,12 @@ delete_remote_branch_on_archive: false
 # remote branch; a task it cannot archive is logged and left for you.
 archive_tasks_on_issue_close: true
 
+# Archive a task that has sat finished (done or aborted) this long, whether or
+# not it came from an issue. A follow-up restarts the clock. Never forces a
+# dirty worktree and never deletes a remote branch; an issue's main task waits
+# while anything else on its issue is still working. 0 turns it off.
+archive_finished_tasks_after: 12h
+
 # Refresh a task's base branch from its remote before the task's worktree is
 # created, and start the task branch at the fetched commit rather than at
 # whatever your local base happened to be. Your own checkout is never touched:
@@ -754,10 +760,58 @@ Its archive event carries `archived_by: "issue_closed"`, so
 a reader of the [event stream](api.md#events-sse) can tell it from yours. The
 [`notify`](#notify) envelope does not carry those keys.
 
-Set it to `false` to keep archiving a human action. The change applies from the
+Set it to `false` to stop archiving on close; the
+[age-based archive](#archive_finished_tasks_after) still applies. The change applies from the
 next event, without a restart. Turning it back on does not catch up on issues
 closed while it was off, and upgrading to a version with this key does not
 archive issues closed before the upgrade.
+
+### `archive_finished_tasks_after`
+
+```yaml
+archive_finished_tasks_after: 12h
+```
+
+A task that has been `done` or `aborted` for this long is archived for you:
+its worktree is removed and, under
+[`delete_empty_branch_on_archive`](#delete_empty_branch_on_archive), a branch
+with no commits of its own is deleted. A branch with commits is always kept,
+so nothing committed is lost. The default is `12h`; `0` turns it off. A
+negative duration does not load.
+
+The clock starts when the task last finished. A
+[follow-up](task-lifecycle.md#states) returns a task to `done` or
+`aborted` and restarts it, so a task you keep working with stays on the board.
+It covers every root task: one with no issue, one whose issue is still open,
+and one whose issue is closed. Fan-out lanes are archived with their root,
+never on their own. Chats are never archived.
+
+One kind of task waits even when it is old enough: an issue's **main** task,
+the one that owns the issue's branch and worktree. It waits while any other
+task of the issue is still running, queued, paused, blocked or waiting on you,
+while a chat on the issue is open, while a [handoff](../guides/handoff.md)
+holds the issue, and until the issue's side tasks and merge-backs have been
+archived. A merge-back lands on the main task's worktree, and a handoff
+`return` follows up the main task, so archiving it earlier would break both.
+Side tasks, merge-backs and tasks with no issue do not wait.
+
+The archive is the same unattended one
+[`archive_tasks_on_issue_close`](#archive_tasks_on_issue_close) makes. It
+**never forces** a worktree with uncommitted changes, and it **never deletes a
+remote branch**, whatever
+[`delete_remote_branch_on_archive`](#delete_remote_branch_on_archive) says. A
+task it cannot archive — uncommitted changes, an open chat linked to it, a
+fan-out lane still working — is left exactly as it was, with one warning in
+`daemon.log`, and tried again an hour later. Archive it yourself
+(`vincent task archive <id>`, with `--force` to discard the changes) if you
+would rather not wait.
+
+The daemon checks once a minute, and once at start, so a task whose time came
+while the daemon was down is archived as soon as it is back. Its archive event
+carries `archived_by: "finished_after"`, so a reader of the
+[event stream](api.md#events-sse) can tell it from yours and from the
+closed-issue archive's `issue_closed`. The change applies from the next check,
+without a restart.
 
 ### `transcript_retention_days`
 

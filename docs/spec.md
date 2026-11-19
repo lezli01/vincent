@@ -8494,6 +8494,7 @@ defaults:
 delete_empty_branch_on_archive: true   # archive deletes a branch with no commits past its base (§10)
 delete_remote_branch_on_archive: false # …and its upstream counterpart; attended archive only
 archive_tasks_on_issue_close: true     # archive a closed issue's settled tasks, unattended (§5.6)
+archive_finished_tasks_after: 12h      # archive a root done/aborted this long, unattended; 0 = off (§6)
 fetch_base_branch: true        # refresh base_branch from its upstream before cutting a worktree (§10)
 transcript_retention_days: 90   # transcripts of *archived* tasks older than this are pruned
 transcript_max_bytes: 512MB     # per-run transcript cap (§18); past it the step fails `transcript_limit`
@@ -9211,6 +9212,29 @@ events the worker processes, so a hot reload governs the next close with no
 restart. Events read while it is `false` are passed over for good: turning it
 back on acts on later events, never on a backlog. The archive it governs is
 unattended whatever the branch-cleanup pair says — no `force`, no remote leg.
+
+**`archive_finished_tasks_after` (task 155, added 2026-11-19).** How long a
+root task may sit in `done` or `aborted` before the daemon archives it
+(§6, §10). Default `12h`, so it is on for every install, existing ones
+included, from the upgrade; `0` is off and a negative duration is a load
+error. The clock is `finished_at`, which every entry into `done` or `aborted`
+restamps, so a follow-up (task 027) restarts it. Every root is in scope —
+with no issue, on an open issue, on a closed one — with one hold: an issue's
+main task (task 134 decision 7; a merge-back is not one) is skipped while
+another root of its issue is unsettled, a chat on the issue is live, a
+handoff item claims the issue (task 143 decision 10), or a side task or
+merge-back of the issue is not yet archived — the closed-issue archive's
+quiescence and side-work-first order, kept as a hold because each task ages
+on its own clock (`Store.FinishedArchiveDue`). Lanes go with their root. The
+worker (`internal/finishedarchive`) is a timer, not an event subscriber,
+because the passing of time records no event: it sweeps once at start, so a
+deadline that passed while the daemon was down is met on return (§12.4), and
+then every minute, reading the key per sweep so a hot reload governs the next
+one. The archive is §6's, unattended exactly as §5.6's is — no `force`, no
+remote leg. A refusal (dirty worktree, linked-chat lock, unfinished lane) is
+logged once at warn and asked again after an hour rather than every sweep,
+since a refusal costs a `git status` and cleaning a worktree records nothing
+to watch; a task that leaves the due set is forgotten.
 
 **`github` (task 035, added 2026-08-26; amended 2026-08-31, task 069).** Whether
 the daemon may talk to GitHub about a project whose `origin` is a github.com
@@ -12377,7 +12401,10 @@ Two kinds of streams:
    separate `task.archived` type — PR D decision. *Amended 2026-11-05 (task
    143.3):* an archive the daemon made because the task's issue closed (§5.6)
    carries `archived_by: "issue_closed"` on that payload; a human archive
-   carries no `archived_by`. `issue_id` tells nothing apart: it is on every
+   carries no `archived_by`. *Amended 2026-11-19 (task 155):* one the daemon
+   made because the task sat finished for `archive_finished_tasks_after`
+   (§12.3) carries `archived_by: "finished_after"`. It is not the issue
+   worker's own marker, so it wakes that worker the way a human archive does. `issue_id` tells nothing apart: it is on every
    state change of an issue's task already (task 134.6 decision 1). No new event type. Likewise there is no separate
    `task.awaiting_input` type — PR F decision: entering the state is
    `task.state_changed` with `to: awaiting_input`, whose payload additionally

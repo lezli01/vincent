@@ -198,6 +198,14 @@ type Config struct {
 	// A plain bool, as DeleteEmptyBranchOnArchive is: Load unmarshals into
 	// Default(), so an absent key keeps true.
 	ArchiveTasksOnIssueClose bool `yaml:"archive_tasks_on_issue_close"`
+	// ArchiveFinishedTasksAfter lets the daemon archive a root task that has
+	// sat in `done` or `aborted` this long (task 155, §6, §10). Default 12h;
+	// `0` is off. The clock is finished_at, which every entry into either
+	// state restamps, so a follow-up restarts it. The archive is unattended,
+	// exactly as the closed-issue one is: it never forces a dirty worktree and
+	// never deletes a remote branch. Read on every sweep, so a hot reload
+	// applies to the next one with no restart.
+	ArchiveFinishedTasksAfter Duration `yaml:"archive_finished_tasks_after"`
 	// FetchBaseBranch refreshes a task's base branch from its own configured
 	// upstream before the worktree is created, and starts the task branch at
 	// the fetched commit (§10, task 056). Default true: without it every task
@@ -1178,6 +1186,7 @@ func Default() Config {
 		// writes to a forge (§10, task 008).
 		DeleteRemoteBranchOnArchive: false,
 		ArchiveTasksOnIssueClose:    true,
+		ArchiveFinishedTasksAfter:   Duration(12 * time.Hour),
 		// Default-on outbound traffic needs no separate argument: github.enabled
 		// already defaults true and §26 settled that posture. A fetch reads.
 		FetchBaseBranch:           true,
@@ -1358,6 +1367,12 @@ func (c Config) validate(lenient bool) error {
 	}
 	if c.MaxTreeCostUSD < 0 {
 		return fmt.Errorf("max_tree_cost_usd must not be negative, got %v", c.MaxTreeCostUSD)
+	}
+	// Non-negative: zero is the documented "off" (task 155). A negative age
+	// would archive a task the moment it finished, which is not what anyone
+	// writing a minus sign meant.
+	if c.ArchiveFinishedTasksAfter < 0 {
+		return fmt.Errorf("archive_finished_tasks_after must not be negative, got %s", c.ArchiveFinishedTasksAfter)
 	}
 	// Positive, not merely non-negative: zero would re-admit a quota-held task
 	// on the very next tick, which is the tight respawn loop the hold exists
