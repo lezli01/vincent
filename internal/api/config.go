@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/worktree"
@@ -281,6 +282,9 @@ type configTriggers struct {
 
 type configNotify struct {
 	On []string `json:"on"`
+	// ChatOn is the chat half of the selector (task 156), served as `[]`
+	// rather than null when empty, as On is.
+	ChatOn []string `json:"chat_on"`
 	// Command is argv, served in full. It can carry a secret, and that is why
 	// config.yaml is 0600 — not why this endpoint would hide it (decision 2).
 	Command []string `json:"command"`
@@ -351,7 +355,11 @@ func configBody(cfg config.Config) configResponse {
 			Keep:     cfg.Backup.Keep,
 			Dir:      cfg.Backup.Dir,
 		},
-		Notify:   configNotify{On: notifyStates(cfg.Notify.On), Command: stringList(cfg.Notify.Command)},
+		Notify: configNotify{
+			On:      notifyStates(cfg.Notify.On),
+			ChatOn:  chatNotifyStates(cfg.Notify.ChatOn),
+			Command: stringList(cfg.Notify.Command),
+		},
 		Triggers: configTriggers{Enabled: cfg.Triggers.Enabled},
 		Container: configContainer{
 			Image:            cfg.Container.Image,
@@ -393,6 +401,15 @@ func boardGroupBy(levels []config.BoardGroup) []string {
 
 // notifyStates renders the §6 states notify fires on, `[]` when none.
 func notifyStates(states []taskstate.State) []string {
+	out := make([]string, 0, len(states))
+	for _, st := range states {
+		out = append(out, string(st))
+	}
+	return out
+}
+
+// chatNotifyStates is notifyStates for `notify.chat_on` (task 156).
+func chatNotifyStates(states []chatstate.NotifyState) []string {
 	out := make([]string, 0, len(states))
 	for _, st := range states {
 		out = append(out, string(st))
@@ -542,6 +559,7 @@ type backupPatch struct {
 
 type notifyPatch struct {
 	On      *[]string `json:"on"`
+	ChatOn  *[]string `json:"chat_on"`
 	Command *[]string `json:"command"`
 }
 
@@ -691,6 +709,9 @@ func (p configPatch) sets() []config.Set {
 	if v := p.Notify; v != nil {
 		if v.On != nil {
 			add("notify.on", config.RenderList(*v.On))
+		}
+		if v.ChatOn != nil {
+			add("notify.chat_on", config.RenderList(*v.ChatOn))
 		}
 		if v.Command != nil {
 			add("notify.command", config.RenderList(*v.Command))

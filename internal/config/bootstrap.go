@@ -327,6 +327,13 @@ update:
 # awaiting_input, done. Only root tasks notify — a fan_out lane is a task row,
 # and a twenty-lane tree would otherwise send twenty-one messages.
 #
+# "chat_on" does the same for chats, which "on" never covers (task 156): a
+# chat entering awaiting_input, or a turn ending turn_done or turn_failed.
+# The envelope's "kind" says "chat" rather than "task" and carries chat_id.
+# turn_interrupted is not accepted: only a daemon restart causes one. The
+# daemon cannot tell whether you are already looking at the chat, so it fires
+# whenever the moment happens.
+#
 # It is fire-and-forget: at most 4 notifiers run at once, a child is killed
 # after 10 seconds, failures are logged and never retried, and nothing is
 # replayed for events that happened while the daemon was down.
@@ -337,6 +344,7 @@ update:
 #
 # notify:
 #   on: [blocked, awaiting_gate, awaiting_input]
+#   chat_on: [awaiting_input, turn_done]
 #   command: ["/usr/local/bin/notify-me"]
 
 # Event triggers start work from a system rather than from you: a trigger file

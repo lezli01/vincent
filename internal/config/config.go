@@ -14,6 +14,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
@@ -662,14 +663,39 @@ type Notify struct {
 	// On lists the states whose arrival fires Command. Empty — the default —
 	// fires nothing.
 	On []taskstate.State `yaml:"on"`
+	// ChatOn lists the chat moments that fire Command (task 156): a chat
+	// parking on a question, or a turn ending done or failed. Empty — the
+	// default — fires nothing for chats. It is a second key rather than a
+	// widened `on` because §6's state names and a chat's moments are two
+	// vocabularies, and `awaiting_input` appears in both: one list could not
+	// say "tasks only" or "chats only". This reverses task 063 decision 7,
+	// which kept `notify:` silent on chats.
+	ChatOn []chatstate.NotifyState `yaml:"chat_on"`
 	// Command is argv, never a shell string: there is no portable shell to
 	// assume, and a string would invite quoting bugs that differ per platform.
 	// Empty means the hook is off.
 	Command []string `yaml:"command"`
 }
 
-// Enabled reports whether the hook can fire at all.
+// Enabled reports whether the hook can fire for a task at all. It is the task
+// half only, unchanged by task 156; ChatEnabled is the chat half.
 func (n Notify) Enabled() bool { return len(n.On) > 0 && len(n.Command) > 0 }
+
+// ChatEnabled reports whether the hook can fire for a chat at all (task 156).
+func (n Notify) ChatEnabled() bool { return len(n.ChatOn) > 0 && len(n.Command) > 0 }
+
+// FiresChat reports whether the chat moment s should spawn the command.
+func (n Notify) FiresChat(s chatstate.NotifyState) bool {
+	if len(n.Command) == 0 {
+		return false
+	}
+	for _, want := range n.ChatOn {
+		if want == s {
+			return true
+		}
+	}
+	return false
+}
 
 // Fires reports whether a transition into s should spawn the command.
 func (n Notify) Fires(s taskstate.State) bool {
@@ -697,6 +723,10 @@ func (n Notify) Fires(s taskstate.State) bool {
 // branch_template precedent of validating in internal/daemon does not apply:
 // that one exists because the branch-template context lives in
 // internal/worktree, a package with real dependencies.
+//
+// Task 156 adds internal/chatstate, a third leaf, on the same reasoning:
+// `notify.chat_on` is validated against chatstate.NotifyOn rather than a
+// second copy of it, so `turn_interrupted` is refused in one place.
 func (n Notify) validate() error {
 	seen := make(map[taskstate.State]bool, len(n.On))
 	for _, s := range n.On {
@@ -708,6 +738,17 @@ func (n Notify) validate() error {
 			return fmt.Errorf("notify.on: %q listed twice", s)
 		}
 		seen[s] = true
+	}
+	seenChat := make(map[chatstate.NotifyState]bool, len(n.ChatOn))
+	for _, s := range n.ChatOn {
+		if !chatstate.ValidNotify(s) {
+			return fmt.Errorf("notify.chat_on: unknown chat state %q; want one of %s",
+				s, strings.Join(chatNotifyNames(), ", "))
+		}
+		if seenChat[s] {
+			return fmt.Errorf("notify.chat_on: %q listed twice", s)
+		}
+		seenChat[s] = true
 	}
 	for i, arg := range n.Command {
 		if strings.TrimSpace(arg) == "" {
@@ -721,6 +762,15 @@ func (n Notify) validate() error {
 func stateNames() []string {
 	out := make([]string, 0, len(taskstate.All))
 	for _, s := range taskstate.All {
+		out = append(out, string(s))
+	}
+	return out
+}
+
+// chatNotifyNames renders `notify.chat_on`'s vocabulary for an error message.
+func chatNotifyNames() []string {
+	out := make([]string, 0, len(chatstate.NotifyOn))
+	for _, s := range chatstate.NotifyOn {
 		out = append(out, string(s))
 	}
 	return out
@@ -1444,13 +1494,21 @@ func (c Config) Warnings() []string {
 	// nothing happens (task 046 decision 10). Neither refuses the file: a user
 	// commenting `command` out for an afternoon should not have the same save
 	// revert an unrelated log_level edit.
-	if len(c.Notify.Command) > 0 && len(c.Notify.On) == 0 {
-		out = append(out, "notify.command is set while notify.on is empty: "+
+	//
+	// `chat_on` is the other selector (task 156): a command with either list
+	// set is not half-written, and a chat_on with no command is the same
+	// mistake as an `on` with none, so it gets the same warning.
+	if len(c.Notify.Command) > 0 && len(c.Notify.On) == 0 && len(c.Notify.ChatOn) == 0 {
+		out = append(out, "notify.command is set while notify.on and notify.chat_on are empty: "+
 			"no state fires the hook, so the command will never run")
 	}
 	if len(c.Notify.On) > 0 && len(c.Notify.Command) == 0 {
 		out = append(out, "notify.on lists states while notify.command is empty: "+
 			"there is nothing to run, so no notification will be delivered")
+	}
+	if len(c.Notify.ChatOn) > 0 && len(c.Notify.Command) == 0 {
+		out = append(out, "notify.chat_on lists states while notify.command is empty: "+
+			"there is nothing to run, so no chat notification will be delivered")
 	}
 	return out
 }

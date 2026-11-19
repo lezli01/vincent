@@ -79,7 +79,8 @@ func newConfigSetCmd() *cobra.Command {
 		Short: "Change one configuration key",
 		Long: "Change one key in config.yaml and apply it.\n\n" +
 			"Lists and argv are whitespace-separated in one argument: " +
-			`vincent config set notify.on "blocked awaiting_gate". ` +
+			`vincent config set notify.on "blocked awaiting_gate", or ` +
+			`vincent config set notify.chat_on "awaiting_input turn_done". ` +
 			"environment.set takes NAME=VALUE pairs the same way, and tui.keys " +
 			`OPERATION=KEY pairs: vincent config set tui.keys "refresh=ctrl+e". An argument ` +
 			"containing a space cannot be written this way and has to be edited " +
@@ -362,6 +363,10 @@ func configFields() map[string]configField {
 		"notify.on": listField(func(c apiclient.Config) []string { return c.Notify.On },
 			func(v *[]string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Notify: &apiclient.ConfigNotifyPatch{On: v}}
+			}),
+		"notify.chat_on": listField(func(c apiclient.Config) []string { return c.Notify.ChatOn },
+			func(v *[]string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{Notify: &apiclient.ConfigNotifyPatch{ChatOn: v}}
 			}),
 		"notify.command": listField(func(c apiclient.Config) []string { return c.Notify.Command },
 			func(v *[]string) apiclient.ConfigPatch {

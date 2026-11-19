@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -151,6 +152,40 @@ func TestConfigPatchKeepsCommentsAndUncommentsInPlace(t *testing.T) {
 	}
 }
 
+// notify.chat_on (task 156) is reachable the way notify.on is: a patch writes
+// it into the commented block, applies it, and GET serves it — and an unset
+// chat_on is served as [] rather than null, as on is.
+func TestConfigPatchNotifyChatOn(t *testing.T) {
+	h := newConfigHarness(t)
+	_, initial := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	var before map[string]any
+	if err := json.Unmarshal(initial, &before); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if got, ok := before["notify"].(map[string]any)["chat_on"].([]any); !ok || len(got) != 0 {
+		t.Errorf("unset chat_on served as %#v, want []", before["notify"].(map[string]any)["chat_on"])
+	}
+
+	resp, body := h.patch(t, `{"notify":{"chat_on":["awaiting_input","turn_failed"],"command":["/bin/echo","hi"]}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(h.bytes(t)), "chat_on: [awaiting_input, turn_failed]") {
+		t.Errorf("chat_on was not written to config.yaml:\n%s", h.bytes(t))
+	}
+	_, getBody := doRequest(t, h.ts, http.MethodGet, "/v1/config", testToken)
+	var got configResponse
+	if err := json.Unmarshal(getBody, &got); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if want := []string{"awaiting_input", "turn_failed"}; !slices.Equal(got.Notify.ChatOn, want) {
+		t.Errorf("GET notify.chat_on = %q, want %q", got.Notify.ChatOn, want)
+	}
+	if len(got.Notify.On) != 0 {
+		t.Errorf("patching chat_on touched notify.on: %q", got.Notify.On)
+	}
+}
+
 // "An invalid patch writes nothing" is asserted on the bytes, not on a
 // reload: a file that was written and then reverted is still a file that was
 // written, and a crash between the two would leave the bad one.
@@ -164,6 +199,8 @@ func TestConfigPatchRejectionLeavesTheFileByteIdentical(t *testing.T) {
 		{"a duration that will not parse", `{"defaults":{"agent_timeout":"soon"}}`},
 		{"a branch template that does not compile", `{"branch_template":"vincent/{{.ID"}`},
 		{"a notify state that is not one", `{"notify":{"on":["exploded"]}}`},
+		{"a chat notify state that is not one", `{"notify":{"chat_on":["blocked"]}}`},
+		{"a chat notify turn_interrupted", `{"notify":{"chat_on":["turn_interrupted"]}}`},
 		{"a backup interval under an hour", `{"backup":{"interval":"30m"}}`},
 		{"a relative backup dir", `{"backup":{"dir":"backups"}}`},
 		{"a keymap giving quit's key to refresh", `{"tui":{"keys":{"refresh":"q"}}}`},

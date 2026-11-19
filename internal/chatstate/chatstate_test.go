@@ -282,3 +282,34 @@ func TestSendQueuesOutsideIdle(t *testing.T) {
 		}
 	}
 }
+
+// TestNotifyVocabulary pins `notify.chat_on`'s accepted values (task 156):
+// exactly three, `turn_interrupted` refused, and each turn outcome mapped to
+// its moment.
+func TestNotifyVocabulary(t *testing.T) {
+	want := []NotifyState{"awaiting_input", "turn_done", "turn_failed"}
+	if !reflect.DeepEqual(NotifyOn, want) {
+		t.Errorf("NotifyOn = %v, want %v", NotifyOn, want)
+	}
+	for _, s := range want {
+		if !ValidNotify(s) {
+			t.Errorf("ValidNotify(%q) = false", s)
+		}
+	}
+	for _, s := range []NotifyState{"turn_interrupted", "idle", "running", "done", ""} {
+		if ValidNotify(s) {
+			t.Errorf("ValidNotify(%q) = true; it is not a hook moment", s)
+		}
+	}
+	cases := map[TurnState]NotifyState{TurnDone: NotifyTurnDone, TurnFailed: NotifyTurnFailed}
+	for ts, ns := range cases {
+		if got, ok := NotifyForTurn(ts); !ok || got != ns {
+			t.Errorf("NotifyForTurn(%q) = %q, %v; want %q", ts, got, ok, ns)
+		}
+	}
+	for _, ts := range []TurnState{TurnRunning, TurnInterruptedState} {
+		if got, ok := NotifyForTurn(ts); ok {
+			t.Errorf("NotifyForTurn(%q) = %q; want no moment", ts, got)
+		}
+	}
+}

@@ -326,9 +326,10 @@ leaf packages (`taskstate`, `issuestate`, `issueprovider`, `jira/jiramap`, `keym
 nothing internal — with one deliberate exception: `config` imports `taskstate`
 and `keymap` to validate `notify.on` against §6's state vocabulary and
 `tui.keys` against §15's key vocabulary rather than keeping a second copy of
-either (task 046 decision 4, widened by task 118 decision 3), and `fileswap`
-to replace its files the way `workflow` does (#969), and only those three.
-All three are themselves leaves, so the direction stays one-way.
+either (task 046 decision 4, widened by task 118 decision 3), `chatstate` to
+validate `notify.chat_on` against its chat moments (task 156), and `fileswap`
+to replace its files the way `workflow` does (#969), and only those four.
+All four are themselves leaves, so the direction stays one-way.
 `internal/jira/jiramap` is a leaf in the same sense: it imports the standard
 library and `issuestate` only — never `issues`, which imports the store — so
 the Jira client and outbox can both consult it (#898; a test walks its
