@@ -1814,6 +1814,20 @@ chat to follow a running turn live. A chat you opened from an issue or from the
 archive keeps the whole screen, and on a narrow terminal the conversation opens
 over the list.
 
+Each turn's heading reads `◈ agent · turn N · age · 42s · 18.2k↑ 1.1k↓ · $0.04`:
+how long the turn took, the tokens it processed (cache reads and writes
+included) and produced, and its cost. A part the agent did not report is left
+out, so a copilot turn never shows dollars, and a running turn shows none of
+them yet. Below 150 columns, where the details pane is hidden, the chat's header
+carries one totals line with the same tokens and cost.
+
+When the agent reports how full its context is — claude does, the others do
+not — a gauge sits on the conversation's edge: `ctx ▰▰▰▱▱ 61%`, or the bare
+count (`ctx 122.0k`) when no window was reported, and `ctx 61%` on a narrow
+terminal. Past 80% it turns yellow (with `NO_COLOR`, a `!` marks it instead),
+and on claude it names `alt+k`, which asks you to confirm and then sends
+`/compact` as the next message. Like sending, it waits while a turn is running.
+
 ### Issues
 
 The selected project's issues — the ones filed in vincent and the ones imported
@@ -2667,6 +2681,7 @@ periodic repaint.
 | `alt+g` | Jump to the start of the conversation |
 | `ctrl+g` | Jump to the live end and follow it again |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
+| `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to where the chat was opened from — the issue, the issues list or the archived-chats board — otherwise the chats board |
@@ -3542,6 +3557,7 @@ The first twenty are the operations screens share, the next ten are the
 | `handoff` | `I` | Hand the selected issues off |
 | `return` | `,` | Return an issue from its handoff |
 | `steer` | `ctrl+s` | Steer a chat's running turn, where its agent can — none can yet |
+| `compact` | `alt+k` | Compact the chat agent's context — sends its compact command (`/compact` on claude) as the next message; asks first |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

@@ -26,6 +26,20 @@ list with the user-facing context a commit subject cannot carry.
   routes plus a `chat.queue_changed` event. Archiving, closing or handing off
   a chat discards its queue. Steering a message into the running turn
   (`ctrl+s`) is not available on any agent yet, and the key says so (#1010).
+- **A chat shows what each turn cost and how full its context is.** Each turn
+  heading now reads `◈ agent · turn N · age · 42s · 18.2k↑ 1.1k↓ · $0.04`:
+  the duration, the tokens the turn processed (cache included) and what it
+  produced, and the cost when the agent reports one — never for copilot. A
+  context gauge on the conversation's edge shows how full the session's
+  context is (`ctx ▰▰▰▱▱ 61%`), read from the agent's own report of its last
+  model call and its model's window; it turns yellow past 80%, and on claude
+  offers `alt+k` to send `/compact` after a confirmation. Below 150 columns,
+  where the details pane is hidden, the chat header carries the chat's token
+  and cost totals. Only claude reports the context figures today; the other
+  adapters show no gauge rather than an estimate (#1015).
+- **`GET /v1/agents` reports `compact_command`**, and a chat turn reports
+  `cache_read_tokens`, `cache_creation_tokens`, `context_tokens` and
+  `context_window` (#1015).
 
 ### Fixed
 

@@ -704,6 +704,18 @@ A turn is `running`, then one of `done`, `failed` or `interrupted`, forever.
 turn actually ran in — claude may hand a resumed conversation a new id, and a
 turn that failed `session_lost` names the id that was refused.
 
+*Amended 2026-11-19 (task 156, issue #1015).* A turn also records
+`cache_read_tokens` and `cache_creation_tokens` — its cache spend, which
+`input_tokens` leaves out on every adapter but codex — `context_tokens`, the
+prompt size of the run's last top-level model call, and `context_window`, the
+window the run reported for its model (§9.2). Each is null when the adapter
+did not report it, never zero. On a session-totals adapter (copilot, §9.9) the
+cache counts are the turn's share, under task 138.11's rules, of raw totals
+kept in `session_cache_read_tokens`/`session_cache_creation_tokens` (§14). On
+an adapter whose `input_tokens` already counts its cache (codex,
+`agent.CacheInInput`, §9.3) the cache counts are not recorded at all, so a
+reader adding them to the input never counts the cache twice.
+
 #### Chat lifecycle
 
 The vocabulary is deliberately **separate from §6's** and lives here rather
@@ -4863,6 +4875,16 @@ yet, so none implements it**, every chat reports `can_steer: false`, and a
 message sent during a turn is queued (§5.5). "Runs after the current reply in
 the same process" is not steering and is not offered as such; nor is
 cancel-and-resend.
+*Amended 2026-11-19 (task 156 decision 4, issue #1015).* Two more optional
+capabilities, each found by type assertion and never emulated.
+`agent.Compactor` — `CompactCommand() string` — names the message that
+compacts the adapter's session context; claude's is `/compact`, and no other
+adapter implements it. `GET /v1/agents` publishes it as `compact_command`
+(§9.6), and the chat workspace offers it past its context gauge's threshold
+(§15). `agent.CacheInInput` — `InputIncludesCache() bool` — says the
+adapter's `InputTokens` already count its `CacheReadTokens`; codex is the one
+(§9.3), and a chat turn on it records no cache counts (§5.5). `RunResult`
+gains `ContextTokens` and `ContextWindow` (§9.2), both 0 when unreported.
 
 ### 9.2 Claude Code adapter
 
@@ -5046,6 +5068,25 @@ since they were captured:
   `modelUsage`'s `contextWindow`, `maxOutputTokens`, `canonicalModel` and
   `provider` are deliberately **not** read: they describe the model rather than
   the run, and §9.6's catalog is where a fact about a model belongs.
+  *Amended 2026-11-19 (task 156 decisions 1 and 2, issue #1015):* this
+  deliberately reverses that for `contextWindow` and `canonicalModel`. §9.6's
+  catalog holds aliases (`sonnet`, `opus`, `haiku`, `""` for the default) and
+  cannot tell a 200k model from a 1M one or know which model the default is,
+  while the run's own report names the window of the model it actually used,
+  exactly. `RunResult.ContextWindow` is the `contextWindow` of the main loop's
+  model: the entry whose key, whose key with its bracketed suffix cut
+  (`claude-opus-5[1m]`), or whose `canonicalModel` equals the `model` of the
+  last top-level `assistant` line, and failing a match the entry that spent the
+  most tokens — never a subagent's haiku. `RunResult.ContextTokens` is the
+  last top-level (no `parent_tool_use_id`) `assistant` line's
+  `message.usage`: `input_tokens + cache_read_input_tokens +
+  cache_creation_input_tokens`, the prompt size of the run's last model call.
+  A `<synthetic>` assistant line is claude's own and no model call, and is
+  skipped. Neither is ever estimated from the totals, which add up every call;
+  a stream without either leaves it 0. `maxOutputTokens` and `provider` stay
+  unread, and `ModelUsage` still carries what the run spent. The terminal
+  result now also carries the cache counts and both figures to `Wait`'s
+  result, because a chat turn persists them (§5.5).
 - **The structured tool outcome.** `tool_use_result` and `tool_result_meta` ride
   on a `user` line *beside* `message`, not inside it. `tool_use_result` decodes
   as either an object or a bare string — the deny fixture's is
@@ -5664,6 +5705,12 @@ unlike claude's — codex offers the indirection and claude does not.
 *Amended 2026-11-19 (task 156, issue #1010).* codex does **not** steer a
 running turn (§9.1): a message sent during one is queued and runs as the next
 turn.
+*Amended 2026-11-19 (task 156, issue #1015).* Codex reports **no context
+figures**: its `turn.completed` usage is the run's total, and no captured line
+carries a per-call prompt size, so `ContextTokens` and `ContextWindow` stay 0
+and a codex chat shows no context gauge. Its `input_tokens` already include
+`cached_input_tokens`, so the adapter implements `agent.CacheInInput` and a
+chat turn records no cache counts (§5.5). It has no `Compactor`.
 
 ### 9.4 Permission modes
 
@@ -6334,6 +6381,14 @@ of fact, and `source` is what says which:
   `usage_limit` classification behave exactly as they do today. This is
   display.
 
+*Amended 2026-11-19 (task 156 decision 4, issue #1015).* **`compact_command`**
+is a flat sibling of the capability fields above, by task 041's rule: the
+adapter's `agent.Compactor` command verbatim (§9.1) — `"/compact"` for claude,
+`""` for codex, cursor and copilot — and `null` when there is no adapter
+registry to ask or the registry does not know the name. A client offers
+compaction only when it is non-empty. The MCP `agent_list` tool replays this
+route, so it carries the field too.
+
 ### 9.7 Cursor adapter (M5)
 
 Placed after §9.6 rather than between §9.3 and §9.4 deliberately: section
@@ -6623,6 +6678,12 @@ Two consequences are handled rather than assumed away:
 *Amended 2026-11-19 (task 156, issue #1010).* cursor does **not** steer a
 running turn (§9.1): a message sent during one is queued and runs as the next
 turn.
+*Amended 2026-11-19 (task 156, issue #1015).* Cursor reports **no context
+figures**: its `result` line's `usage` is the run's total and no captured line
+carries a per-call prompt size, so `ContextTokens` and `ContextWindow` stay 0
+and a cursor chat shows no context gauge. Its run result does not carry the
+cache counts to a chat turn either, so a cursor turn records none. It has no
+`Compactor`.
 
 ### 9.8 Published skills (task 095, added 2026-09-10)
 
@@ -7226,6 +7287,17 @@ that counted three adapters was amended in place.
   #5198 is user steering, not §7.4, and #5047 is out of scope here anyway;
   neither blocks. The answer changes when a `latest` release carries both
   fixes.
+
+*Amended 2026-11-19 (task 156, issue #1015).* Copilot reports **no context
+figures**: its usage checkpoint is the session's running total and no line
+carries a per-call prompt size (§9.9's token bullet), so `ContextTokens` and
+`ContextWindow` stay 0 and a copilot chat shows no context gauge. Its cache
+counts are session totals like its input and output, so a chat turn records
+its share of them under task 138.11 decision 1's rules — first turn and fresh
+session raw, a reset taken as it is, a turn that reported nothing skipped —
+from raw totals kept in `chat_turns.session_cache_read_tokens` /
+`session_cache_creation_tokens` (§14). It reports no dollars, so a copilot
+turn's heading never shows a cost (§15). It has no `Compactor`.
 
 ## 10. Worktree management
 
@@ -11120,6 +11192,12 @@ DELETE /v1/chats/{id}                   *Added 2026-09-09 (task 092, issue #350)
                                         Same response and the same branch rule as the task's
 GET    /v1/chats/{id}                   { chat, turns[] } — the whole conversation, oldest turn
                                         first, each with its accounting (§5.5)
+                                        *Amended 2026-11-19 (task 156, issue #1015).* A turn
+                                        also carries `cache_read_tokens`, `cache_creation_tokens`,
+                                        `context_tokens` and `context_window` (§5.5), each
+                                        omitted when the adapter did not report it. The raw
+                                        session cache totals stay off the wire, as the raw
+                                        input and output totals do.
 POST   /v1/chats/{id}/send              { message } → 202 with the new turn. `409` outside
                                         `idle` (§5.5), and `409 chat_cap_reached` when
                                         `max_parallel_chats` chats already hold a live process
@@ -13495,7 +13573,18 @@ CREATE TABLE chat_turns (
     -- output_tokens are then this turn's share: these minus the same
     -- session's previous turn's. NULL for every per-run adapter (§9.9).
     session_input_tokens  INTEGER,
-    session_output_tokens INTEGER
+    session_output_tokens INTEGER,
+    -- Added 2026-11-19 (task 156, migration 0059): the turn's cache spend
+    -- (its share on a session-totals adapter; never recorded where the
+    -- input already counts the cache, codex), the last top-level call's
+    -- prompt size and the run's reported context window, and the raw
+    -- session cache totals the share is taken from. NULL = not reported.
+    cache_read_tokens             INTEGER,
+    cache_creation_tokens         INTEGER,
+    context_tokens                INTEGER,
+    context_window                INTEGER,
+    session_cache_read_tokens     INTEGER,
+    session_cache_creation_tokens INTEGER
 );
 
 -- Added 2026-11-19 (task 156, issue #1010): follow-up messages queued behind a
@@ -18092,6 +18181,27 @@ count reads as the whole output. There is no failure heuristic — the tail is
 the tail whatever the outcome, so a failing command's last line is always
 visible — and `agent.command_output` stays verbose-only. `normal` and `verbose`
 render exactly as before.
+
+*Amended 2026-11-19 (task 156, issue #1015).* A chat turn's heading reads
+`◈ agent · turn N · age · 42s · 18.2k↑ 1.1k↓ · $0.04`: the duration once the
+turn has ended, `↑` input plus cache-read plus cache-write and `↓` output when
+non-zero, and the cost only when `cost_usd` is non-null — so copilot never
+shows dollars. A running turn shows no usage, and one compact formatter
+(`18.2k`, `1.1M`) serves the heading, the gauge and the totals. A **context
+gauge** sits on the conversation pane's edge, read from the latest turn with
+`context_tokens` (§5.5): `ctx ▰▰▰▱▱ 61%` with a window, collapsing to
+`ctx 61%` where the bar does not fit and to nothing where neither does; the
+bare count (`ctx 122.0k`) without a window; and nothing when no turn reports
+the figure. Past 80% it turns yellow (a named ANSI colour) and leads with `!`,
+which carries the warning alone under `NO_COLOR`. Below 150 columns, where the
+details pane is hidden, the chat's header carries one totals line
+(`Σ 2.6k tokens · $0.08`), the details pane's figures. When the chat's agent
+has a `compact_command` (§9.6) and the gauge is past 80%, the warning names the
+rebindable `compact` operation (default `alt+k`, chat surface, `tui.keys`),
+which asks y/n and then sends the command verbatim as the next message through
+`POST /v1/chats/{id}/send`, leaving the draft alone. Like sending, it is not
+offered while a turn is running; an adapter without the capability gets
+neither the key nor the hint.
 
 *Amended 2026-08-31 (task 067).* The chats board and the chat workspace carry
 their own rows in the registry (`internal/tui/bindings.go`), which is what the

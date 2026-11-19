@@ -105,6 +105,11 @@ payload also names `contextWindow`, `maxOutputTokens`, `canonicalModel` and
 `provider`. Those describe the model rather than this run, and §9.6's option
 catalog is where a fact about a model belongs, so they are read by nothing. A
 field on the wire that no client can use is a field that will be wrong later.
+*Amended 2026-11-19 (task 156 decision 1):* `contextWindow` and
+`canonicalModel` are now read, for `RunResult.ContextWindow` only — the window
+of the model the run actually used, which a catalog of aliases cannot know.
+`ModelUsage` still carries only what the run spent, and `maxOutputTokens` and
+`provider` stay unread.
 
 ## Task list
 

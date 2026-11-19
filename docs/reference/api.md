@@ -176,6 +176,7 @@ are long-lived by contract and no write deadline is set.
     "supports_skill_listing": true, "skill_sigil": "/", "skill_position": "leading",
     "supports_file_mentions": true, "file_mention_sigil": "@",
     "file_mention_position": "anywhere", "file_mention_expands": true,
+    "compact_command": "/compact",
     "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268, 2.1.277",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
@@ -266,6 +267,12 @@ mention. All four are `null` when the daemon has no adapter registry to ask,
 as `supports_resume` is. They are the answer for a client that has **no chat
 yet** — `vincent agents`, and any agent picker; a client that already has a
 chat reads the same facts from that chat, so it needs only one call.
+
+`compact_command` is the message that compacts the adapter's session context,
+verbatim: `"/compact"` for claude and `""` for codex, cursor and copilot, which
+cannot compact. A client offers compaction only when it is non-empty — the TUI
+chat's context gauge does, past 80% — and it is `null` when the daemon has no
+adapter registry to ask, as `supports_resume` is.
 
 ### Global pause
 
@@ -3623,6 +3630,23 @@ same session's previous turn's (spec §9.9). The turn's transcript is not
 split: its `agent.result` record (tokens, cache tokens and `model_usage`)
 carries the session's totals so far, so on a resumed copilot turn it is
 larger than the turn row.
+
+A turn also carries four figures, each **omitted when the agent did not report
+it** — absent is "unknown", never zero:
+
+- `cache_read_tokens` and `cache_creation_tokens` — the turn's cache spend,
+  which `input_tokens` leaves out. The TUI's turn heading adds them to the
+  input. On copilot they are the turn's share of the session totals, as the
+  input and output are. Codex's `input_tokens` already include its cached
+  input, so a codex turn reports neither.
+- `context_tokens` — the prompt size of the run's last model call: its input
+  plus cache-read plus cache-write tokens. This is how full the conversation's
+  context was when the turn ended, not what the turn spent.
+- `context_window` — the size of that model's context window, as the run
+  itself reported it.
+
+Only claude reports `context_tokens` and `context_window` today; codex, cursor
+and copilot report no per-call prompt size, and vincent does not estimate one.
 
 ```bash
 curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \

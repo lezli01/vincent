@@ -91,7 +91,10 @@ refused at creation rather than having continuity faked for it.
 A chat is real work, not a scratchpad. The agent may commit to the chat's
 branch, every turn records its tokens, cost and duration, and each turn keeps
 its own transcript — the accounting a conversation held in a terminal never
-leaves behind. Archiving a chat cleans up its worktree, and an empty branch
+leaves behind. Each turn's heading shows what it took and what it cost
+(`42s · 18.2k↑ 1.1k↓ · $0.04`), and on claude a gauge on the conversation shows
+how full the session's context is — and offers `/compact` when it nears the
+limit. Archiving a chat cleans up its worktree, and an empty branch
 with it, the way archiving a task does.
 
 And when an exploration turns out to be the start of real work, **hand the chat
