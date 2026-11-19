@@ -9716,7 +9716,11 @@ for pause and resume, `approve`, `reject`, `retry`, `edit_retry`, `repair`,
 132.4* — `project`, `@` by default, which opens the project picker). *Amended 2026-11-19 (task 157, issue
 #1015):* `compact`, `alt+k` by default on the chat surface, is one more term;
 it is answered while the composer has the keyboard, so the printable-key
-refusal below covers it (§15). Every other key
+refusal below covers it (§15). *Amended 2026-11-19 (tasks 158 and 159, issues
+#1022 and #1023; review F3):* `chat_search`, `S` by default on the chats
+board, and `export_chat`, `alt+e` by default on the chat workspace and both
+chats boards, are two more terms; and `pause_all`, `Z` by default (*added
+2026-11-17, task 149*), is one more global. Every other key
 the TUI answers is fixed (§15). An override **replaces** the operation's
 default on every surface that carries it; it is not an alias, so the vacated
 key is free for another override in the same edit and two operations may swap.

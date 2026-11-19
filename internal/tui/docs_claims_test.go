@@ -669,3 +669,36 @@ func TestGuideIssueSyncProseIsProviderNeutral(t *testing.T) {
 		}
 	}
 }
+
+// TestConfigReferenceNamesEveryOperation holds docs/reference/configuration.md's
+// tui.keys operation table — "the ones a reader names, and nothing else" — to
+// keymap.Catalog(): every operation config validates against must be named
+// there, so a new operation fails here until the reference moves (review F3).
+func TestConfigReferenceNamesEveryOperation(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "reference", "configuration.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	named := map[string]bool{}
+	inTable := false
+	for _, line := range strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n") {
+		if !inTable {
+			inTable = strings.HasPrefix(line, "| Kind | Operation ids |")
+			continue
+		}
+		if !strings.HasPrefix(line, "|") {
+			break
+		}
+		for _, m := range regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(line, -1) {
+			named[m[1]] = true
+		}
+	}
+	if len(named) == 0 {
+		t.Fatal("docs/reference/configuration.md lost its \"| Kind | Operation ids |\" table")
+	}
+	for _, info := range keymap.Catalog() {
+		if !named[string(info.Op)] {
+			t.Errorf("docs/reference/configuration.md's operation table does not name %q", info.Op)
+		}
+	}
+}
