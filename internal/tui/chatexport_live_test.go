@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -73,7 +74,7 @@ func TestChatExportFormAgainstTheRealAPI(t *testing.T) {
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	wrote := stubClipboard(t, nil)
+	wrote := stubClipboardSync(t)
 
 	cwd := t.TempDir()
 	m := newRoot(testCtx(t), connector{}, ackedDir(t))
@@ -119,9 +120,9 @@ func TestChatExportFormAgainstTheRealAPI(t *testing.T) {
 
 	press("down")
 	press("enter")
-	pm.until(10*time.Second, "the Markdown to reach the clipboard", func() bool { return len(*wrote) == 1 })
-	if (*wrote)[0] != sanitizeText(string(body)) {
-		t.Fatalf("copied %q, want the written Markdown", (*wrote)[0])
+	pm.until(10*time.Second, "the Markdown to reach the clipboard", func() bool { return len(wrote.texts()) == 1 })
+	if got := wrote.texts()[0]; got != sanitizeText(string(body)) {
+		t.Fatalf("copied %q, want the written Markdown", got)
 	}
 	if m.exportForm != nil {
 		t.Fatal("the copy left the form open")
@@ -155,4 +156,34 @@ func TestChatExportFormatSwapsTheExtension(t *testing.T) {
 	if got := f.path.Value(); got != "notes/export.json" {
 		t.Fatalf("edited path became %q, want only its extension swapped", got)
 	}
+}
+
+// syncClipboard records clipboard writes under a lock. A live test pushes the
+// copy command onto its own goroutine, the way the runtime does, while the
+// test goroutine polls for the write — stubClipboard's bare slice suits only
+// tests that run the command inline.
+type syncClipboard struct {
+	mu    sync.Mutex
+	wrote []string
+}
+
+func (c *syncClipboard) texts() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.wrote...)
+}
+
+// stubClipboardSync points the write seam at a locked recorder for one test.
+func stubClipboardSync(t *testing.T) *syncClipboard {
+	t.Helper()
+	c := &syncClipboard{}
+	prev := clipboardWrite
+	clipboardWrite = func(text string) error {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.wrote = append(c.wrote, text)
+		return nil
+	}
+	t.Cleanup(func() { clipboardWrite = prev })
+	return c
 }
