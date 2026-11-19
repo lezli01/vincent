@@ -2189,7 +2189,7 @@ Interrupting `vincent chat send` stops the polling, not the turn: the turn
 belongs to the daemon. [`vincent chat cancel`](#vincent-chat-cancel) is what
 ends it.
 
-Exits 1 with `chat_cap_reached` when `max_parallel_chats` chats already hold a
+Exits 1 with `chat_cap_reached` when the chat is idle and `max_parallel_chats` chats already hold a
 live agent process. The send is refused, never queued.
 
 #### `--message-file`

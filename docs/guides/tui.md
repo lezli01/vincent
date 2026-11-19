@@ -2870,12 +2870,12 @@ conversation says the agent is waiting, and `alt+a` brings the question back
 with what you picked. Answering it from `vincent chat answer` or over the API
 closes it here too: the popup follows the chat's state rather than its own.
 
-A send refused because `max_parallel_chats` chats are already running says so
-and creates nothing. It is a refusal, not a queue: finish or stop another
-conversation and send again — the message stays in the composer until the
-daemon takes it, so a refused or failed send loses nothing you typed. Only an
-idle chat takes a message: `enter` while a turn runs, while the agent waits on
-an answer, or on a finished chat sends nothing and says why.
+A send to an idle chat refused because `max_parallel_chats` chats are already
+running says so and creates nothing. It is a refusal, not a queue: finish or
+stop another conversation and send again — the message stays in the composer
+until the daemon takes it, so a refused or failed send loses nothing you typed.
+A live chat queues the message instead (see **Queued messages** above); only
+`enter` on a finished chat sends nothing and says why.
 
 A turn that runs past `agent_timeout`, or sits unanswered past `input_timeout`,
 fails and returns the chat to `idle` — the slot comes back rather than being
