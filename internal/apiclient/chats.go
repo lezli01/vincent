@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"time"
@@ -201,10 +202,11 @@ type CreateChatRequest struct {
 }
 
 // CreateChat starts a chat: a title, a project, an agent, and a worktree and
-// branch of its own.
+// branch of its own. The daemon makes the worktree before it answers, so the
+// call is held to worktreeTimeout, not the loopback deadline.
 func (c *Client) CreateChat(ctx context.Context, req CreateChatRequest) (*Chat, error) {
 	var out Chat
-	if err := c.post(ctx, "/v1/chats", req, &out); err != nil {
+	if err := c.sendVia(ctx, c.worktrees, http.MethodPost, "/v1/chats", nil, req, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

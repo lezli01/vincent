@@ -412,6 +412,15 @@ func (c *Client) send(ctx context.Context, method, path string, body, out any) e
 
 // sendWith is send with extra request headers — an Idempotency-Key.
 func (c *Client) sendWith(ctx context.Context, method, path string, hdr http.Header, body, out any) error {
+	return c.sendVia(ctx, c.rest, method, path, hdr, body, out)
+}
+
+// sendVia is sendWith over a caller-chosen http.Client, the write-side twin of
+// getVia: a request whose server-side cost is a worktree creation is held to
+// worktreeTimeout rather than the loopback deadline.
+func (c *Client) sendVia(
+	ctx context.Context, hc *http.Client, method, path string, hdr http.Header, body, out any,
+) error {
 	var rdr io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -433,7 +442,7 @@ func (c *Client) sendWith(ctx context.Context, method, path string, hdr http.Hea
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := c.rest.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", method, path, err)
 	}

@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -527,5 +529,45 @@ func TestChatListArchivedParam(t *testing.T) {
 	resp, raw := h.doJSON(t, http.MethodGet, "/v1/chats?archived=yes", nil)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("archived=yes = %d %s, want 400", resp.StatusCode, raw)
+	}
+}
+
+// TestChatCreateOutlivesItsCaller: the chat row is written before its
+// worktree exists, so a client that gives up mid-create — its deadline, an
+// Esc in the TUI — must not cancel the git work and strand a chat with no
+// worktree. The request arrives already cancelled, which is the worst case of
+// a caller leaving: the create still finishes whole.
+func TestChatCreateOutlivesItsCaller(t *testing.T) {
+	h := newChatHarness(t)
+	body := fmt.Sprintf(`{"project_id":%d,"title":"a talk"}`, h.projectID)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/v1/chats", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ts.Config.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create under a cancelled request: %d %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		ID           int64  `json:"id"`
+		WorktreePath string `json:"worktree_path"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.WorktreePath == "" {
+		t.Fatal("created chat has no worktree")
+	}
+	if _, err := os.Stat(out.WorktreePath); err != nil {
+		t.Fatalf("worktree %s: %v", out.WorktreePath, err)
+	}
+	chat, err := h.store.GetChat(t.Context(), out.ID)
+	if err != nil {
+		t.Fatalf("get chat: %v", err)
+	}
+	if chat.WorktreePath != out.WorktreePath {
+		t.Fatalf("stored worktree %q, answered %q", chat.WorktreePath, out.WorktreePath)
 	}
 }

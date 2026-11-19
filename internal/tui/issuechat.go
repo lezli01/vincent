@@ -70,8 +70,11 @@ func issueChatCmd(client *apiclient.Client, iss apiclient.Issue, note func(strin
 	note("opening a chat on issue #"+strconv.FormatInt(iss.ID, 10)+"…", false)
 	id, pid, title := iss.ID, iss.ProjectID, issueChatTitle(iss)
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
-		defer cancel()
+		// No actionTimeout here: the daemon makes the worktree before it
+		// answers, and the client already holds the call to a deadline that
+		// covers that (apiclient's worktreeTimeout). Thirty seconds would
+		// report a timeout for a chat the daemon goes on to create.
+		ctx := context.Background()
 		chat, err := client.CreateChat(ctx, apiclient.CreateChatRequest{
 			ProjectID: pid, Title: title, IssueID: &id,
 		})
