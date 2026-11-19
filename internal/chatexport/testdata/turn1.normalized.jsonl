@@ -1,0 +1,12 @@
+{"type":"agent.run_header","work_dir":"/repo","available_tools":["Read","Bash"]}
+{"type":"agent.output","text":"Looking at the parser."}
+{"type":"agent.tool_use","tools":[{"name":"Read","summary":"internal/parse/parse.go","call_id":"t1"},{"name":"Grep","summary":"func Parse","call_id":"t2"}]}
+{"type":"agent.tool_result","results":[{"call_id":"t1","name":"Read","summary":"120 lines"},{"call_id":"t2","name":"Grep","summary":"3 matches"}]}
+{"type":"agent.tool_use","tools":[{"name":"Task","summary":"explore","call_id":"t3"}]}
+{"type":"agent.tool_use","parent_call_id":"t3","tools":[{"name":"Read","summary":"nested.go","call_id":"n1"}]}
+{"type":"agent.tool_result","results":[{"call_id":"t3","name":"Task","summary":"done"}]}
+{"type":"agent.tool_use","tools":[{"name":"Bash","summary":"go test ./internal/parse","call_id":"t4"}]}
+{"type":"agent.command_output","output":"FAIL secret output that must not appear"}
+{"type":"agent.tool_result","results":[{"call_id":"t4","name":"Bash","is_error":true}]}
+not json at all
+{"type":"agent.result","result_text":"Fixed it.","input_tokens":1200,"output_tokens":340}

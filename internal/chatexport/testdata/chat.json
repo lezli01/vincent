@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "exported_at": "2026-11-19T10:00:00Z",
+  "chat": {
+    "id": 7,
+    "title": "Fix the parser",
+    "project_id": 1,
+    "project": "demo",
+    "agent": "claude",
+    "model": "opus",
+    "effort": "high",
+    "permission_mode": "full_auto",
+    "state": "idle",
+    "branch": "vincent/chat-7-fix-the-parser",
+    "base_branch": "main",
+    "base_sha": "abc123",
+    "linked_task_id": 3,
+    "issue_id": 9,
+    "created_at": "2026-11-19T09:00:00Z"
+  },
+  "turns": [
+    {
+      "seq": 1,
+      "state": "done",
+      "prompt": "Why does `Parse` fail?",
+      "tools": [
+        {
+          "name": "Read",
+          "arg": "internal/parse/parse.go"
+        },
+        {
+          "name": "Grep",
+          "arg": "func Parse"
+        },
+        {
+          "name": "Task",
+          "arg": "explore"
+        },
+        {
+          "name": "Bash",
+          "arg": "go test ./internal/parse",
+          "failed": true
+        }
+      ],
+      "answer": "Fixed it.\n\n- one\n- two",
+      "input_tokens": 1200,
+      "output_tokens": 340,
+      "cost_usd": 0.0123,
+      "duration_ms": 12345,
+      "started_at": "2026-11-19T09:00:00Z"
+    },
+    {
+      "seq": 2,
+      "state": "failed",
+      "prompt": "Run it again",
+      "tools": [],
+      "input_tokens": 10,
+      "output_tokens": 0,
+      "fail_reason": "agent_error",
+      "error_message": "rate limited",
+      "started_at": "2026-11-19T09:00:00Z"
+    },
+    {
+      "seq": 3,
+      "state": "done",
+      "prompt": "Summarize",
+      "tools": [],
+      "tools_note": "tool calls unavailable: the transcript was pruned (transcript_retention_days)",
+      "answer": "All good.",
+      "input_tokens": 5,
+      "output_tokens": 6,
+      "cost_usd": 0,
+      "started_at": "2026-11-19T09:00:00Z"
+    },
+    {
+      "seq": 4,
+      "state": "failed",
+      "prompt": "Hello?",
+      "tools": [],
+      "tools_note": "tool calls unavailable: this turn never wrote a transcript",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "fail_reason": "agent_unavailable",
+      "started_at": "2026-11-19T09:00:00Z"
+    },
+    {
+      "seq": 5,
+      "state": "done",
+      "prompt": "copilot turn",
+      "tools": [
+        {
+          "name": "view",
+          "arg": "README.md"
+        }
+      ],
+      "answer": "Read it.",
+      "input_tokens": 50,
+      "output_tokens": 20,
+      "duration_ms": 900,
+      "started_at": "2026-11-19T09:00:00Z"
+    },
+    {
+      "seq": 6,
+      "state": "running",
+      "prompt": "Keep going",
+      "tools": [
+        {
+          "name": "Edit",
+          "arg": "x.go"
+        }
+      ],
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "started_at": "2026-11-19T09:00:00Z"
+    }
+  ],
+  "diff": "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1 +1 @@\n-old\n+new ```\n"
+}
