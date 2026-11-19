@@ -1121,6 +1121,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("alt+g left the window at line %d", v.vp.YOffset())
 			}
 		},
+		"alt+k": func(t *testing.T) {
+			v := chatViewFixture()
+			v.compactCmds = map[string]string{"claude": "/compact"}
+			v.updateKey(registryKey(t, "alt+k"))
+			if !v.compacting {
+				t.Fatal("alt+k did not ask to compact the context")
+			}
+		},
 		"alt+a": func(t *testing.T) {
 			v := awaitingChat(t)
 			v.updateKey(registryKey(t, "esc"))

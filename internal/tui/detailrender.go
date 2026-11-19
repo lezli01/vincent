@@ -1266,12 +1266,7 @@ func formatTokens(r apiclient.StepRun) string {
 	return fmt.Sprintf("%s↓/%s↑", compactCount(in), compactCount(out))
 }
 
-func compactCount(n int64) string {
-	if n < 1000 {
-		return fmt.Sprintf("%d", n)
-	}
-	return fmt.Sprintf("%.1fk", float64(n)/1000)
-}
+func compactCount(n int64) string { return chatTokens(n) }
 
 // agentTriple renders the §8.6 resolution that actually ran, which is what a
 // reader compares against when an attempt behaves differently from the last.

@@ -59,6 +59,11 @@ const (
 	// composer would not type. No adapter can steer yet, so on every chat it
 	// names why rather than doing anything else under its name.
 	Steer Op = "steer"
+	// Compact sends the chat agent's compact command (`/compact` on claude)
+	// as the next message, after a y/n prompt (task 156 decision 4). alt+k
+	// for "kompact": the composer owns every letter, `c` is §6 cancel, and
+	// the textarea binds ctrl+k and alt+c to editing.
+	Compact Op = "compact"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -189,6 +194,11 @@ var catalog = []Info{
 	{Op: Steer, Default: "ctrl+s", Meaning: "steer the chat's running turn, where its agent can", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}},
+	// Typing: it is answered while the composer has the keyboard, so it may
+	// only ever be bound to a key the composer would not type.
+	{Op: Compact, Default: "alt+k", Meaning: "compact the chat agent's context (asks first)", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: Approve, Default: "a", Meaning: "approve the gate", Kind: KindAction, Surfaces: []Surface{Actions}},

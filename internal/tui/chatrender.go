@@ -65,8 +65,25 @@ func (v *chatView) render(width, height int) string {
 
 // renderConversation is the conversation itself, at whatever width it is given.
 func (v *chatView) renderConversation(width, height int) string {
-	return v.conversationUnder([]string{v.headerLine(width), ""}, width, height)
+	head := []string{v.headerLine(width)}
+	if totals := v.totalsLine(); totals != "" {
+		head = append(head, " "+totals)
+	}
+	return v.conversationUnder(append(head, ""), width, height)
 }
+
+// totalsLine is the conversation's totals while the details pane, which
+// carries them, is hidden: below chatDetailsMinW (task 156).
+func (v *chatView) totalsLine() string {
+	if v.termW >= chatDetailsMinW {
+		return ""
+	}
+	return chatTotalsLine(v.turns)
+}
+
+// chatGaugeWideMin is the narrowest header that draws the gauge's bar; a
+// narrower one keeps the percentage alone.
+const chatGaugeWideMin = 100
 
 // conversationUnder is the conversation below head, which the workspace leaves
 // empty because its pane's top edge says the same things.
@@ -199,7 +216,11 @@ func (v *chatView) headerLine(width int) string {
 		mid = append(mid, chatHeaderSeg{styleDim.Render(fmt.Sprintf("on task #%d", *v.chat.LinkedTaskID)), 5})
 	}
 	pause := chatPauseMark()
-	right := append(v.headerMarks(), chatHeaderSeg{styleDim.Render(plural(len(v.turns), "turn", "turns")), 3})
+	right := v.headerMarks()
+	if gauge, _ := chatGauge(v.turns, width >= chatGaugeWideMin, v.gaugeCompactKey()); gauge != "" {
+		right = append(right, chatHeaderSeg{gauge, 1})
+	}
+	right = append(right, chatHeaderSeg{styleDim.Render(plural(len(v.turns), "turn", "turns")), 3})
 
 	sep := styleDim.Render("  ·  ")
 	join := func(segs []chatHeaderSeg, sepw string) string {
@@ -356,7 +377,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 		asked, answered := chatTurnAges(*t, now)
 		prompt := promptCardLines(t.Prompt, asked, width)
 		lines = append(lines, prompt...)
-		lines = append(lines, "", " "+chatTurnHeading(agent, t.Seq, answered), "")
+		lines = append(lines, "", " "+chatTurnHeading(agent, *t, answered), "")
 		pad(len(prompt) + 3)
 		switch recs := v.turnRecords[t.Seq]; {
 		case len(recs) > 0:
@@ -449,6 +470,8 @@ func (v *chatView) noteLines(width int) []string {
 	switch {
 	case v.closing && v.chat != nil:
 		text, style, keys = v.closeQuestion(), styleWarn, chatCloseAnswers
+	case v.compacting && v.chat != nil:
+		text, style, keys = v.compactQuestion(), styleWarn, chatCloseAnswers
 	case v.note != "":
 		text = v.note
 		if v.noteBad {

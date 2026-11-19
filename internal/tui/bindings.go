@@ -714,6 +714,10 @@ var bindings = []binding{
 	// The way back to a question esc put away (issue #801 F7). Offered only
 	// while one is put away: chatView.liveBindings drops it otherwise.
 	{key: "alt+a", label: "reopen the agent's question after esc closed it (what you picked is kept)", scope: scopePanel, context: ctxChat, hint: "alt+a answer", priority: 1},
+	// The context gauge's way out (task 156 decision 4). Offered only for an
+	// agent with a compact command (`/compact` on claude), and only while
+	// the chat is idle: chatView.liveBindings drops it otherwise.
+	{op: keymap.Compact, key: "alt+k", label: "compact the agent's context — sends its compact command (/compact on claude) as the next message (asks first)", scope: scopePanel, context: ctxChat, hint: "alt+k compact", priority: 15},
 
 	// The chat workspace's skill list, while it is open. noPalette for the
 	// reason the daemon view's skill offer's rows are: a key that only
