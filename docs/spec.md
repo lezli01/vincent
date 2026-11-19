@@ -17876,6 +17876,17 @@ nowhere, the default is still `normal`, and the pane title still names any level
 but the default — which matters most for this one, since it is the level whose
 effect can be to hide the only thing a turn produced.
 
+*Amended 2026-11-19 (task 154).* In the **chat workspace**, an unrecognized
+line leaves no trace at quiet, compact or normal: no `… N unrecognized
+line(s) (ctrl+r)` count, only the lines whole at verbose. A claude chat's
+stream carries `rate_limit_event`, `system`/`thinking_tokens` and
+`control_request` lines vincent does not model, so a count stood between
+nearly every pair of messages, and readers cycled the level away from the
+default to escape it. The task workspace's output pane keeps the count at
+compact and normal, as the offer to expand it is: a step's run is read for
+what the machine did, a conversation for what was said. The level itself is
+unchanged — still one session value shared by both panes, default `normal`.
+
 *Amended 2026-09-19 (task 124.12, issue #508; task 124 decisions 37–39).*
 `quiet` shows a **third** thing besides what the agent said and what went
 wrong: an acknowledgement of what the **human** did. That was already true of

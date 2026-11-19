@@ -246,9 +246,10 @@ func (v *chatView) headerMarks() []chatHeaderSeg {
 		marks = append(marks, chatHeaderSeg{styleDim.Render("raw"), 2})
 	}
 	// The level rides in the header for the reason the output pane's title
-	// carries it: ctrl+r on a conversation with no reasoning and no
-	// unrecognized lines changes nothing on screen, and a reader needs to
-	// see that the key did something.
+	// carries it: ctrl+r on a conversation with no reasoning changes nothing
+	// on screen below verbose — unrecognized lines leave no count in a chat
+	// (lineOpts.hideRaw) — and a reader needs to see that the key did
+	// something.
 	if l := v.level.get(); l != levelNormal {
 		marks = append(marks, chatHeaderSeg{styleDim.Render(l.String()), 2})
 	}
@@ -360,7 +361,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 		switch recs := v.turnRecords[t.Seq]; {
 		case len(recs) > 0:
 			body, at := outputLinesAt(recs, v.recordSeqs(t.Seq), level, width,
-				lineOpts{expandKey: chatExpandKey, raw: raw, hyperlinks: links, cache: &v.mdcache, toolChecks: true})
+				lineOpts{expandKey: chatExpandKey, raw: raw, hyperlinks: links, cache: &v.mdcache, toolChecks: true, hideRaw: true})
 			lines = append(lines, body...)
 			anchors = append(anchors, at...)
 		case t.State == "running":

@@ -2826,9 +2826,10 @@ did and nothing else, including a skill it loaded itself, drawn on its `Skill`
 call's line as [in the task pane](#what-v-adds). At `normal`
 reasoning is truncated to its first lines and the run header appears. At
 `verbose` you get everything, including the dialect lines vincent does not
-model — which sit behind a `… N unrecognized line(s) (ctrl+r)` count at
-`compact` and `normal`, and leave no trace at all at `quiet`, rather than
-filling the screen.
+model, such as claude's rate-limit and thinking-token lines. Below `verbose` a
+chat leaves no trace of them at all, not even a count, so the default shows
+only what vincent parsed. The task workspace's output pane still counts them
+at `compact` and `normal`.
 
 `ctrl+y` and `ctrl+l` are the task pane's
 [reader actions](#seeing-the-source-and-taking-it-away) on this prose — the same
