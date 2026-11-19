@@ -38,6 +38,16 @@ func queueWanted(c *apiclient.Chat) bool {
 	return c != nil && (c.QueuedCount > 0 || c.QueuePaused)
 }
 
+// queueDiscardNote is what an ending that deletes the chat's queue — archive,
+// close, hand-off (task 156 decision 6) — adds to its confirmation: how many
+// queued messages go with it. Empty when the queue is.
+func queueDiscardNote(c *apiclient.Chat) string {
+	if c == nil || c.QueuedCount <= 0 {
+		return ""
+	}
+	return " — " + countNoun(c.QueuedCount, "queued message") + " will be discarded"
+}
+
 // queueAction runs fn against the daemon and reports it as a
 // chatQueueDoneMsg.
 func (v *chatView) queueAction(note string, fn func(ctx context.Context, c *apiclient.Client, id int64) error) tea.Cmd {

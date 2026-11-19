@@ -2677,7 +2677,9 @@ it starts. A turn that fails, is cancelled with `ctrl+x`, or is interrupted by
 a daemon restart pauses the queue instead of draining it, and a card under the
 queue says so and why, with `alt+r` to resume and `alt+c` to clear. The chat
 stays usable while the queue is paused: a new message starts a turn as usual.
-Archiving, closing or handing off the chat discards its queue.
+Archiving, closing or handing off the chat discards its queue, and the
+confirmation — or the hand-off form's submit row — says how many queued
+messages will be discarded.
 
 Scrolled away from the live end, the header says which turn is at the top of
 the window — `turn 2/5` — until `ctrl+g` follows the end again.

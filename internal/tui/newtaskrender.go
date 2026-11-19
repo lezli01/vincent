@@ -322,8 +322,12 @@ func (n *newTask) renderRow(row ntRow) string {
 		if n.submitting {
 			label = "creating…"
 		}
-		return cursor + styleKey.Render("[ "+label+" ]") + "  " +
-			styleDim.Render("enter · ctrl+s from anywhere")
+		hint := "enter · ctrl+s from anywhere"
+		if n.handoff != nil {
+			// The hand-off deletes the chat's queue (task 156 decision 6).
+			hint += queueDiscardNote(n.handoff)
+		}
+		return cursor + styleKey.Render("[ "+label+" ]") + "  " + styleDim.Render(hint)
 	}
 	// indentRows, not a plain concatenation: an edited text row wraps, and its
 	// further rows line up under the first rather than under the label.

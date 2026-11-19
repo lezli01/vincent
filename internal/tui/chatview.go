@@ -1736,7 +1736,7 @@ func (v *chatView) closeQuestion() string {
 	if v.runningTurn() != nil {
 		prompt += " — the running turn is stopped first"
 	}
-	return prompt
+	return prompt + queueDiscardNote(v.chat)
 }
 
 // promptKeys names the close confirmation's answers while it is up, so the
