@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 )
@@ -74,7 +75,10 @@ func Dir(goos, home, xdgDataHome string) (string, error) {
 	case "darwin":
 		return filepath.Join(home, "Library", "Fonts"), nil
 	case "linux":
-		if filepath.IsAbs(xdgDataHome) {
+		// XDG_DATA_HOME is a Linux path, so it is judged by Linux's rule (a
+		// leading slash) whatever the host: filepath.IsAbs would call "/x"
+		// relative on Windows.
+		if path.IsAbs(xdgDataHome) {
 			return filepath.Join(xdgDataHome, "fonts"), nil
 		}
 		return filepath.Join(home, ".local", "share", "fonts"), nil
