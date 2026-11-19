@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/keymap"
 )
@@ -69,5 +71,54 @@ func TestChatHandoffFormNamesTheDiscardedQueue(t *testing.T) {
 	n.handoff.QueuedCount = 0
 	if got := n.renderRow(ntCreate); strings.Contains(got, "queued") {
 		t.Errorf("hand-off submit row = %q names a queue the chat does not have", got)
+	}
+}
+
+// TestChatFooterSaysEnterQueuesWhileATurnRuns is task 156 decision 5 in the
+// footer (review F2): enter is offered while a turn runs or waits on a
+// question, reading `enter queue`, and steer is shown beside a running turn
+// as unavailable.
+func TestChatFooterSaysEnterQueuesWhileATurnRuns(t *testing.T) {
+	hints := func(v *chatView) map[string]string {
+		out := map[string]string{}
+		for _, b := range v.liveBindings(bindingsFor(ctxChat)) {
+			if b.context == ctxChat && b.hint != "" {
+				out[b.key] = b.hint
+			}
+		}
+		return out
+	}
+	v := newChatView(newLevelHolder(), newRawHolder(), newHyperlinkHolder())
+	v.chatID = 3
+	for _, tc := range []struct {
+		state, enter, steer string
+	}{
+		{"idle", "enter send", ""},
+		{"running", "enter queue", "ctrl+s steer (unavailable)"},
+		{"awaiting_input", "enter queue", ""},
+		{"closed", "", ""},
+	} {
+		v.chat = &apiclient.Chat{ID: 3, State: tc.state, SteerReason: "no agent can steer yet"}
+		h := hints(v)
+		if h["enter"] != tc.enter {
+			t.Errorf("%s: enter hint = %q, want %q", tc.state, h["enter"], tc.enter)
+		}
+		if h["ctrl+s"] != tc.steer {
+			t.Errorf("%s: steer hint = %q, want %q", tc.state, h["ctrl+s"], tc.steer)
+		}
+	}
+	v.chat = &apiclient.Chat{ID: 3, State: "running", CanSteer: true}
+	if got := hints(v)["ctrl+s"]; got != "ctrl+s steer" {
+		t.Errorf("a chat that can steer shows %q, want %q", got, "ctrl+s steer")
+	}
+	// On screen at a width that has room, after the keys 80 columns keep.
+	v.chat = &apiclient.Chat{ID: 3, State: "running"}
+	line, _ := buildFooter(140, v.liveBindings(bindingsFor(ctxChat)), nil, taskActions{}, attentionTally{}, false, true)
+	if got := ansi.Strip(line); !strings.Contains(got, "enter queue") {
+		t.Errorf("the 140-column footer of a running chat lacks enter queue: %q", got)
+	}
+	v.chat = nil
+	if got := hints(v)["enter"]; got != "" {
+		t.Errorf("an unloaded chat offers enter: %q", got)
 	}
 }

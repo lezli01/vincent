@@ -1795,6 +1795,11 @@ func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
 	return v.loadCmd()
 }
 
+// chatQueueHintPriority is where `enter queue` ranks in a live chat's footer:
+// after `ctrl+x stop` and `pgup/pgdown scroll`, which must fit at 80 columns
+// (spec §15, issue #801), and ahead of `ctrl+r detail`.
+const chatQueueHintPriority = 4
+
 // liveBindings keeps the ways this chat can end (task 119): close for a chat
 // opened on a task, hand-off for a free one, and both for one opened on an
 // issue (task 140 decision 3). What the daemon refuses is left out, because a
@@ -1802,17 +1807,24 @@ func (v *chatView) applyClosed(msg chatClosedMsg) tea.Cmd {
 // chat has loaded none is known, and none is offered.
 //
 // It drops every other key that would do nothing right now too (issue #801
-// F5): send on a chat that is not idle — sendCmd refuses it there — stop
-// with no running turn, skills on a chat that has ended or not
+// F5): send on a chat that has ended or not loaded — sendCmd refuses it
+// there — steer outside a running turn, stop with no running turn, skills on a chat that has ended or not
 // loaded, the reopen key with no question put away, ctrl+t task details in
 // a chat's answer popup — only the task workspace answers it — and the
 // composer's own keys while the close confirmation owns the keyboard.
+//
+// While a turn runs or waits on a question, enter queues rather than sends
+// (task 156 decision 5), and the footer says so: `enter queue`. Steer is
+// offered only beside a running turn, marked unavailable when the daemon says
+// this chat cannot steer.
 func (v *chatView) liveBindings(rows []binding) []binding {
 	onIssue := v.chat != nil && v.chat.IssueID != nil
 	closable := v.chat != nil && v.chat.LinkedTaskID != nil || onIssue
 	free := v.chat != nil && v.chat.LinkedTaskID == nil
 	ended := v.chat == nil || chatstate.Terminal(chatstate.State(v.chat.State))
 	owned := v.closing || v.form != nil
+	live := v.chat != nil && (v.chat.State == string(chatstate.Running) || v.chat.State == string(chatstate.AwaitingInput))
+	running := v.chat != nil && v.chat.State == string(chatstate.Running)
 	out := make([]binding, 0, len(rows))
 	for _, b := range rows {
 		if b.context == ctxForm && b.key == "ctrl+t" {
@@ -1828,9 +1840,19 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 			b.key == "ctrl+x" && v.runningTurn() == nil,
 			b.key == "tab" && ended,
 			b.key == "alt+a" && v.formAway == nil,
-			b.key == "enter" && (v.chat == nil || v.chat.State != string(chatstate.Idle)),
+			b.key == "enter" && ended,
+			b.op == keymap.Steer && (!running || owned),
 			owned && (b.key == "enter" || b.key == "ctrl+j" || b.key == "tab"):
 			continue
+		}
+		switch {
+		case b.key == "enter" && live:
+			// Ranked behind stop and the scroll keys: at 80 columns those
+			// are what a reader of a running turn needs, and the composer's
+			// placeholder already says enter queues (syncPlaceholder).
+			b.hint, b.priority = "enter queue", chatQueueHintPriority
+		case b.op == keymap.Steer && b.hint != "" && !v.chat.CanSteer:
+			b.hint += " (unavailable)"
 		}
 		out = append(out, b)
 	}
@@ -1860,18 +1882,11 @@ func (v *chatView) syncPlaceholder() {
 	v.composer.Placeholder = chatComposerPlaceholder
 }
 
-// sendRefusal says why a chat in state s takes no turn now, and what does.
+// sendRefusal says why a terminal chat in state s takes no message. Every
+// live state takes one: idle sends it, running and awaiting_input queue it
+// (task 156).
 func sendRefusal(s chatstate.State) string {
-	switch {
-	case s == chatstate.Running:
-		return "a turn is running — wait for it, or ctrl+x to cancel it"
-	case s == chatstate.AwaitingInput:
-		return "the agent is waiting on an answer — answer it in the popup first"
-	case chatstate.Terminal(s):
-		return "this chat is " + chatStateLabel(string(s)) + " and takes no more turns"
-	default:
-		return "only an idle chat takes a turn"
-	}
+	return "this chat is " + chatStateLabel(string(s)) + " and takes no more turns"
 }
 
 func (v *chatView) sendCmd() tea.Cmd {

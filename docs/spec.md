@@ -15735,7 +15735,13 @@ stream for the live tail.
    so the root footer is the one key line, and `chatView.liveBindings` drops
    every row a press would do nothing for — send while the chat is not idle
    or a prompt or the answer form owns the keyboard, `ctrl+x` with no running
-   turn, `tab`/`f2` on an ended chat. `pgup/pgdown` ranks ahead of `ctrl+r`
+   turn, `tab`/`f2` on an ended chat. *Amended 2026-11-19 (task 156 decision
+   5, review F2):* send is dropped only on an ended or unloaded chat; while a
+   turn runs or waits on a question the row reads **`enter queue`**, ranked
+   after `ctrl+x stop` and `pgup/pgdown scroll` so those still fit at 80
+   columns (the composer's placeholder says it too), and
+   `ctrl+s steer` is offered beside a running turn, marked `(unavailable)`
+   while the chat's `can_steer` is false. `pgup/pgdown` ranks ahead of `ctrl+r`
    so it still fits at 80 columns. **Nothing in the workspace is cut to one
    line**: the close confirmation, notes and a failed turn's error wrap, the
    prompt's answer keys (`(y/n)`) kept apart from the question so a wrap

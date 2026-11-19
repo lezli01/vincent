@@ -2648,11 +2648,11 @@ periodic repaint.
 
 | Key | Does |
 |---|---|
-| `enter` | Send the message. While a turn runs — or the agent waits on its question — the message is queued and runs after that turn ends `done`; it never answers the question |
+| `enter` | Send the message. While a turn runs — or the agent waits on its question — the message is queued and runs after that turn ends `done`; it never answers the question. The footer then reads `enter queue` |
 | `↑` | On an empty composer, edit the newest queued message: `enter` saves it, `ctrl+d` deletes it, `esc` stops editing |
 | `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now |
 | `alt+c` | Clear the queue: delete every queued message |
-| `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why and the message can only be queued (rebindable as `steer`) |
+| `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
 | `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting |
 | `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
