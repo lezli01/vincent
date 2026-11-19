@@ -225,7 +225,7 @@ func (v *chatView) headerLine(width int) string {
 	}
 	pause := chatPauseMark()
 	right := v.headerMarks()
-	if gauge, _ := chatGauge(v.turns, width >= chatGaugeWideMin, v.gaugeCompactKey()); gauge != "" {
+	if gauge, _ := chatGauge(v.turns, width >= chatGaugeWideMin, v.compactCommand(), v.gaugeCompactKey()); gauge != "" {
 		right = append(right, chatHeaderSeg{gauge, 1})
 	}
 	right = append(right, chatHeaderSeg{styleDim.Render(plural(len(v.turns), "turn", "turns")), 3})

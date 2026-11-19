@@ -744,7 +744,7 @@ func (v *chatView) paneEdge(w int) (title, right string) {
 		return ansi.StringWidth(g)+1+ansi.StringWidth(right)+ansi.StringWidth(id)+chatPaneEdgeChrome+chatHeaderTitleMin <= w
 	}
 	for _, wide := range []bool{true, false} {
-		if g, _ := chatGauge(v.turns, wide, v.gaugeCompactKey()); g != "" && fits(g) {
+		if g, _ := chatGauge(v.turns, wide, v.compactCommand(), v.gaugeCompactKey()); g != "" && fits(g) {
 			right = g + " " + right
 			break
 		}

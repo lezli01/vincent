@@ -72,10 +72,20 @@ func chatTurnInput(t apiclient.ChatTurn) int64 {
 // chatContext is the latest context figure a conversation has: the prompt
 // size of the last turn that reported one, and its window (0 when the run did
 // not report one). ok is false when no turn reported a context size.
-func chatContext(turns []apiclient.ChatTurn) (tokens, window int64, ok bool) {
+//
+// A compact turn — one whose prompt is the agent's compact command, compact
+// — that reported no size ends the walk with ok false: claude reports none
+// for a local command, and every figure before it measured a context the
+// compaction has just discarded, so the gauge stays empty until a turn
+// reports the new size rather than repeat the old one and invite another
+// compact (review F2).
+func chatContext(turns []apiclient.ChatTurn, compact string) (tokens, window int64, ok bool) {
 	for i := len(turns) - 1; i >= 0; i-- {
 		t := turns[i]
 		if t.ContextTokens == nil {
+			if isCompactPrompt(t.Prompt, compact) {
+				return 0, 0, false
+			}
 			continue
 		}
 		if t.ContextWindow != nil {
@@ -86,16 +96,27 @@ func chatContext(turns []apiclient.ChatTurn) (tokens, window int64, ok bool) {
 	return 0, 0, false
 }
 
+// isCompactPrompt reports whether prompt is the compact command, alone or
+// with the instructions claude's /compact takes after it.
+func isCompactPrompt(prompt, compact string) bool {
+	if compact == "" {
+		return false
+	}
+	rest, found := strings.CutPrefix(strings.TrimSpace(prompt), compact)
+	return found && (rest == "" || rest[0] == ' ' || rest[0] == '\t' || rest[0] == '\n')
+}
+
 // chatGauge is the context gauge for a conversation: `ctx ▰▰▰▱▱ 61%` wide,
 // `ctx 61%` narrow, and `ctx 122k` when the run reported no window. "" when no
 // turn reported a context size. hot is past chatGaugeHot.
 //
 // It never relies on colour alone (§15 Colour): past the threshold it turns
 // yellow *and* carries a `!`, so the warning survives NO_COLOR and a 16-colour
-// terminal. compact is the key that compacts the context, named in the warning
-// only where the agent can compact ("" otherwise).
-func chatGauge(turns []apiclient.ChatTurn, wide bool, compact string) (text string, hot bool) {
-	tokens, window, ok := chatContext(turns)
+// terminal. compactCmd is the agent's compact command (see chatContext), and
+// compact the key that sends it, named in the warning only where the agent
+// can compact ("" otherwise).
+func chatGauge(turns []apiclient.ChatTurn, wide bool, compactCmd, compact string) (text string, hot bool) {
+	tokens, window, ok := chatContext(turns, compactCmd)
 	if !ok {
 		return "", false
 	}

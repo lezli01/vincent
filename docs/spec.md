@@ -18334,7 +18334,10 @@ gauge** sits on the conversation pane's edge, read from the latest turn with
 `context_tokens` (§5.5): `ctx ▰▰▰▱▱ 61%` with a window, collapsing to
 `ctx 61%` where the bar does not fit and to nothing where neither does; the
 bare count (`ctx 122.0k`) without a window; and nothing when no turn reports
-the figure. Past 80% it turns yellow (a named ANSI colour) and leads with `!`,
+the figure. A compact turn — its prompt is the agent's `compact_command` — that
+reported no figure ends that walk: the gauge draws nothing until a later turn
+reports the compacted size, rather than repeat the discarded context's figure
+(review F2, 2026-11-19). Past 80% it turns yellow (a named ANSI colour) and leads with `!`,
 which carries the warning alone under `NO_COLOR`. Below 150 columns, where the
 details pane is hidden, the chat's header carries one totals line
 (`Σ 2.6k tokens · $0.08`), the details pane's figures. When the chat's agent

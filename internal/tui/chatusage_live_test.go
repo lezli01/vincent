@@ -132,7 +132,7 @@ func TestChatUsageCrossesTheWireLive(t *testing.T) {
 			t.Errorf("the heading %q lacks %q", heading, want)
 		}
 	}
-	gauge, hot := chatGauge(v.turns, true, v.gaugeCompactKey())
+	gauge, hot := chatGauge(v.turns, true, v.compactCommand(), v.gaugeCompactKey())
 	if !hot || !strings.Contains(ansi.Strip(gauge), "85%") || !strings.Contains(ansi.Strip(gauge), "alt+k compact") {
 		t.Errorf("the gauge reads %q (hot=%v)", ansi.Strip(gauge), hot)
 	}
@@ -160,7 +160,7 @@ func TestChatUsageCrossesTheWireLive(t *testing.T) {
 	if b := turns[0]; b.CacheReadTokens != nil || b.CacheCreationTokens != nil || b.ContextTokens != nil || b.ContextWindow != nil {
 		t.Errorf("an unreported figure arrived as %+v", b)
 	}
-	if g, _ := chatGauge(turns, true, ""); g != "" {
+	if g, _ := chatGauge(turns, true, "", ""); g != "" {
 		t.Errorf("a turn with no context figure drew a gauge %q", ansi.Strip(g))
 	}
 }

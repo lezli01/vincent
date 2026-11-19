@@ -151,11 +151,11 @@ func TestChatGaugeFits(t *testing.T) {
 }
 
 func TestChatGaugeWarnsPastEightyPercent(t *testing.T) {
-	cool, hot := chatGauge([]apiclient.ChatTurn{usageTurn(1, 100_000, 200_000)}, true, "")
+	cool, hot := chatGauge([]apiclient.ChatTurn{usageTurn(1, 100_000, 200_000)}, true, "", "")
 	if hot || strings.Contains(ansi.Strip(cool), "!") {
 		t.Errorf("50%% warned: %q", ansi.Strip(cool))
 	}
-	gauge, hot := chatGauge([]apiclient.ChatTurn{usageTurn(1, 170_000, 200_000)}, true, "")
+	gauge, hot := chatGauge([]apiclient.ChatTurn{usageTurn(1, 170_000, 200_000)}, true, "", "")
 	if !hot {
 		t.Fatal("85% did not warn")
 	}
@@ -226,7 +226,7 @@ func TestChatCompactKey(t *testing.T) {
 		v.client = client
 		v.chat.Agent = "codex"
 		v.compactCmds = map[string]string{"claude": "/compact"}
-		if g, _ := chatGauge(v.turns, true, v.gaugeCompactKey()); strings.Contains(g, "compact") {
+		if g, _ := chatGauge(v.turns, true, v.compactCommand(), v.gaugeCompactKey()); strings.Contains(g, "compact") {
 			t.Errorf("the gauge offers compaction to codex: %q", ansi.Strip(g))
 		}
 		for _, b := range v.liveBindings(bindingsFor(ctxChat)) {
@@ -249,7 +249,7 @@ func TestChatCompactKey(t *testing.T) {
 		v.client = client
 		v.compactCmds = map[string]string{"claude": "/compact"}
 		v.composer.SetValue("a draft I am still writing")
-		if g, _ := chatGauge(v.turns, true, v.gaugeCompactKey()); !strings.Contains(ansi.Strip(g), "alt+k compact") {
+		if g, _ := chatGauge(v.turns, true, v.compactCommand(), v.gaugeCompactKey()); !strings.Contains(ansi.Strip(g), "alt+k compact") {
 			t.Errorf("the hot gauge does not name the key: %q", ansi.Strip(g))
 		}
 		offered := false
@@ -310,4 +310,42 @@ func TestChatCompactKey(t *testing.T) {
 			t.Fatal("alt+k asked to compact a running chat")
 		}
 	})
+}
+
+// TestChatGaugeAfterCompact: claude reports no context size for a /compact
+// turn, so the gauge must not fall back to the hot pre-compact figure and
+// offer to compact again; it is empty until the next turn reports, and that
+// turn's figure is the one drawn (review F2).
+func TestChatGaugeAfterCompact(t *testing.T) {
+	hot := usageTurn(1, 190_000, 200_000)
+	compact := usageTurn(2, 0, 0)
+	compact.Prompt = "/compact"
+	withArgs := compact
+	withArgs.Prompt = "/compact keep the API notes"
+	running := compact
+	running.State, running.EndedAt = "running", nil
+	after := usageTurn(3, 30_000, 200_000)
+	notCompact := compact
+	notCompact.Prompt = "/compaction notes?"
+
+	for _, tc := range []struct {
+		name  string
+		turns []apiclient.ChatTurn
+		cmd   string
+		want  string
+	}{
+		{"compact turn", []apiclient.ChatTurn{hot, compact}, "/compact", ""},
+		{"compact with instructions", []apiclient.ChatTurn{hot, withArgs}, "/compact", ""},
+		{"compact still running", []apiclient.ChatTurn{hot, running}, "/compact", ""},
+		{"turn after compact", []apiclient.ChatTurn{hot, compact, after}, "/compact", "ctx ▰▱▱▱▱ 15%"},
+		{"not the command", []apiclient.ChatTurn{hot, notCompact}, "/compact", "! ctx ▰▰▰▰▰ 95% · alt+k compact"},
+		{"compact command unknown", []apiclient.ChatTurn{hot, compact}, "", "! ctx ▰▰▰▰▰ 95% · alt+k compact"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g, _ := chatGauge(tc.turns, true, tc.cmd, "alt+k")
+			if got := ansi.Strip(g); got != tc.want {
+				t.Errorf("gauge = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }

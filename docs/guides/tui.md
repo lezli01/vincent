@@ -1827,6 +1827,8 @@ count (`ctx 122.0k`) when no window was reported, and `ctx 61%` on a narrow
 terminal. Past 80% it turns yellow (with `NO_COLOR`, a `!` marks it instead),
 and on claude it names `alt+k`, which asks you to confirm and then sends
 `/compact` as the next message. Like sending, it waits while a turn is running.
+After a `/compact` the gauge disappears until the next turn reports the new,
+smaller size.
 
 ### Issues
 
