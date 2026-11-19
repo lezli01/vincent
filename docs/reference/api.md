@@ -3334,9 +3334,10 @@ turn's final answer (`result_text`). Tool output in transcripts is not indexed.
 A turn's answer stays searchable after transcript retention deletes its files,
 because the answer is kept on the turn row.
 
-- `q` is required. It is split on whitespace. Every term must appear, matching
-  by substring and ignoring case, so `429` finds `status429Body`. Each term is
-  searched for literally: quotes, `*`, `-`, parentheses and `NEAR`/`AND`/`OR`
+- `q` is required. It is split on whitespace. Every term must appear somewhere
+  in the chat — its title or any turn's prompt or answer, not necessarily the
+  same one — matching by substring and ignoring case, so `429` finds
+  `status429Body`. Each term is searched for literally: quotes, `*`, `-`, parentheses and `NEAR`/`AND`/`OR`
   are text, not query syntax. A missing or blank `q` is a `400`
   `validation_failed`. A term shorter than three characters is a `400`
   `query_too_short`, because the trigram index cannot answer it without a full

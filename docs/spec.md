@@ -1286,7 +1286,9 @@ turn's `result_text` — what was asked and what was answered, never the tool
 output in a transcript. It covers every state, live and terminal alike, and
 because `result_text` is a column and not a file, an answer stays searchable
 after §12.2's retention deletes its transcript. Matching is by substring and
-ignores case (§14's trigram tokenizer), every term of a query must match, and
+ignores case (§14's trigram tokenizer), every term of a query must appear
+somewhere in the chat — its title or any turn's prompt or answer, not
+necessarily together (review F1, 2026-11-19) — and
 a term shorter than three characters is refused rather than scanned for. The
 search is served by `GET /v1/chats/search` (§13.2) and is, like every chat
 route, not an MCP tool.
@@ -11207,8 +11209,9 @@ GET    /v1/chats/search                 *Added 2026-11-19 (task 158, issue #1022
                                         match }] }], match_count }] }, best match (bm25) first,
                                         matches in conversation order with the title as seq 0.
                                         q's whitespace-separated terms are each searched for
-                                        literally and ANDed — FTS5 syntax is never passed
-                                        through. A blank q is `400 validation_failed`; a term
+                                        literally; a chat matches when every term appears in
+                                        its title or any of its turns. FTS5 syntax is never
+                                        passed through. A blank q is `400 validation_failed`; a term
                                         under three characters is `400 query_too_short`.
                                         `archived` takes GET /v1/chats' values with their
                                         meaning but **defaults to `all`**, not `false`: finding

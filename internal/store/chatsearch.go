@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -91,24 +92,52 @@ type ChatSearchOptions struct {
 	TurnsPerChat int
 }
 
-// ChatSearchExpression turns a human's search text into a safe FTS5 MATCH
-// expression: each whitespace-separated term is a double-quoted string with
-// its embedded quotes doubled, and the terms are ANDed. FTS5 syntax is never
-// passed through, so `"`, `*`, `-`, `NEAR`, `AND` or a parenthesis is only
-// ever text to find.
-func ChatSearchExpression(q string) (string, error) {
+// chatSearchTerms turns a human's search text into safe FTS5 strings: each
+// whitespace-separated term is a double-quoted string with its embedded
+// quotes doubled. FTS5 syntax is never passed through, so `"`, `*`, `-`,
+// `NEAR`, `AND` or a parenthesis is only ever text to find.
+func chatSearchTerms(q string) ([]string, error) {
 	terms := strings.Fields(q)
 	if len(terms) == 0 {
-		return "", ErrSearchQueryEmpty
+		return nil, ErrSearchQueryEmpty
 	}
 	quoted := make([]string, len(terms))
 	for i, t := range terms {
 		if utf8.RuneCountInString(t) < MinSearchTermRunes {
-			return "", ErrSearchQueryTooShort
+			return nil, ErrSearchQueryTooShort
 		}
 		quoted[i] = `"` + strings.ReplaceAll(t, `"`, `""`) + `"`
 	}
-	return strings.Join(quoted, " AND "), nil
+	return quoted, nil
+}
+
+// The two indexes, each joined to its chat as `c` so chatSearchScope's tail
+// applies to either.
+const (
+	chatTitleFrom = ` FROM chat_title_fts JOIN chats c ON c.id = chat_title_fts.rowid
+		WHERE chat_title_fts MATCH ?`
+	chatTurnFrom = ` FROM chat_turn_fts JOIN chat_turns t ON t.id = chat_turn_fts.rowid JOIN chats c ON c.id = t.chat_id
+		WHERE chat_turn_fts MATCH ?`
+)
+
+// chatsWithEveryTerm is a subquery for the ids of the chats in which every
+// term appears somewhere — in the title or in any turn's prompt or answer.
+// FTS5 evaluates MATCH per index row, so ANDing the terms in one expression
+// would demand them all in the title alone or in one turn alone; the terms
+// are instead matched one at a time over both indexes and the chat sets
+// intersected (review F1).
+func chatsWithEveryTerm(terms []string, scope string, scopeArgs []any) (string, []any) {
+	var parts []string
+	var args []any
+	for _, t := range terms {
+		parts = append(parts, `SELECT id FROM (SELECT c.id AS id`+chatTitleFrom+scope+
+			` UNION SELECT c.id`+chatTurnFrom+scope+`)`)
+		args = append(args, t)
+		args = append(args, scopeArgs...)
+		args = append(args, t)
+		args = append(args, scopeArgs...)
+	}
+	return strings.Join(parts, ` INTERSECT `), args
 }
 
 type chatSearchRow struct {
@@ -121,24 +150,30 @@ type chatSearchRow struct {
 
 // SearchChats runs q over every chat's title, prompts and answers within
 // opts' scope, and returns the chats it matched best first (bm25), each with
-// its matches.
+// its matches. A chat is found when every term appears somewhere in it; its
+// matches are then every title or turn field holding any of the terms, so
+// the reader sees where each one was.
 func (s *Store) SearchChats(ctx context.Context, q string, opts ChatSearchOptions) ([]ChatSearchHit, error) {
-	expr, err := ChatSearchExpression(q)
+	terms, err := chatSearchTerms(q)
 	if err != nil {
 		return nil, err
 	}
+	expr := strings.Join(terms, " OR ")
 	limit := clampSearch(opts.Limit, DefaultChatSearchLimit, MaxChatSearchLimit)
 	perChat := clampSearch(opts.TurnsPerChat, DefaultChatSearchTurns, MaxChatSearchTurns)
 
 	scope, scopeArgs := chatSearchScope(opts)
+	if len(terms) > 1 {
+		every, everyArgs := chatsWithEveryTerm(terms, scope, scopeArgs)
+		scope += ` AND c.id IN (` + every + `)`
+		scopeArgs = append(slices.Clip(scopeArgs), everyArgs...)
+	}
 	snip := func(table string, col int) string {
 		return fmt.Sprintf(`COALESCE(snippet(%s, %d, '%s', '%s', '…', 64), '')`, table, col, snippetOpen, snippetClose)
 	}
 	var rows []chatSearchRow
 
-	titleQ := `SELECT c.id, bm25(chat_title_fts), ` + snip("chat_title_fts", 0) + `
-		FROM chat_title_fts JOIN chats c ON c.id = chat_title_fts.rowid
-		WHERE chat_title_fts MATCH ?` + scope + `
+	titleQ := `SELECT c.id, bm25(chat_title_fts), ` + snip("chat_title_fts", 0) + chatTitleFrom + scope + `
 		ORDER BY bm25(chat_title_fts) LIMIT ?`
 	if err := s.searchRows(ctx, titleQ, append(append([]any{expr}, scopeArgs...), chatSearchRowCap),
 		func(sc func(...any) error) error {
@@ -155,9 +190,7 @@ func (s *Store) SearchChats(ctx context.Context, q string, opts ChatSearchOption
 		return nil, fmt.Errorf("search chat titles: %w", err)
 	}
 
-	turnQ := `SELECT t.chat_id, t.seq, bm25(chat_turn_fts), ` + snip("chat_turn_fts", 0) + `, ` + snip("chat_turn_fts", 1) + `
-		FROM chat_turn_fts JOIN chat_turns t ON t.id = chat_turn_fts.rowid JOIN chats c ON c.id = t.chat_id
-		WHERE chat_turn_fts MATCH ?` + scope + `
+	turnQ := `SELECT t.chat_id, t.seq, bm25(chat_turn_fts), ` + snip("chat_turn_fts", 0) + `, ` + snip("chat_turn_fts", 1) + chatTurnFrom + scope + `
 		ORDER BY bm25(chat_turn_fts) LIMIT ?`
 	if err := s.searchRows(ctx, turnQ, append(append([]any{expr}, scopeArgs...), chatSearchRowCap),
 		func(sc func(...any) error) error {

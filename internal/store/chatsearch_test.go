@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -134,6 +135,50 @@ func TestChatSearchFindsTitlePromptAndAnswer(t *testing.T) {
 	}
 	if ids := searchIDs(t, s, "handler widget", ChatSearchOptions{}); len(ids) != 0 {
 		t.Errorf("terms in different chats matched %v, want none: terms AND", ids)
+	}
+}
+
+// TestChatSearchTermsSpanTheChat: every term must appear somewhere in the
+// chat, not all in one title or one turn — terms in two turns, or in the
+// title and a turn, find the chat, and each place shows as a match (review
+// F1). A term the chat lacks still drops it.
+func TestChatSearchTermsSpanTheChat(t *testing.T) {
+	s := openTest(t)
+	p := testProject(t, s, "p1")
+	turns := searchChat(t, s, p.ID, "talk",
+		[2]string{"plan the rollback", "ok"},
+		[2]string{"unrelated", "fine"},
+		[2]string{"and the database?", "postgres it is"})
+	titled := searchChat(t, s, p.ID, "Rollback plan", [2]string{"which store", "postgres"})
+	searchChat(t, s, p.ID, "other", [2]string{"rollback only", "ok"})
+
+	if ids := searchIDs(t, s, "rollback postgres", ChatSearchOptions{}); !slices.Equal(ids, []int64{turns.ID, titled.ID}) {
+		t.Fatalf("rollback postgres matched %v, want %v and %v", ids, turns.ID, titled.ID)
+	}
+	hits, err := s.SearchChats(t.Context(), "rollback postgres", ChatSearchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range hits {
+		var where []string
+		for _, m := range h.Matches {
+			where = append(where, fmt.Sprintf("%d/%s", m.Seq, m.Field))
+		}
+		want := map[int64][]string{
+			turns.ID:  {"1/prompt", "3/result"},
+			titled.ID: {"0/title", "1/result"},
+		}[h.Chat.ID]
+		if !slices.Equal(where, want) {
+			t.Errorf("chat %d matched at %v, want %v", h.Chat.ID, where, want)
+		}
+	}
+	if ids := searchIDs(t, s, "rollback postgres walrus", ChatSearchOptions{}); len(ids) != 0 {
+		t.Errorf("a term no chat holds still matched %v", ids)
+	}
+	// The scope applies to the per-term sets too.
+	setChatState(t, s, titled.ID, chatstate.Archived)
+	if ids := searchIDs(t, s, "rollback postgres", ChatSearchOptions{Archived: ArchivedOnly}); !slices.Equal(ids, []int64{titled.ID}) {
+		t.Errorf("archived-only matched %v, want %v", ids, titled.ID)
 	}
 }
 

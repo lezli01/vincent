@@ -2307,8 +2307,8 @@ vincent chat search QUERY... [--project ID] [--archived false|true|all] [--limit
 Searches every chat's title, the prompts it was sent and the agent's final
 answers. Tool output in transcripts is not searched. Matching is by substring
 and ignores case, so `429` finds `status429Body`. Every term must appear
-somewhere in the chat's matching text, and each term must be at least three
-characters long; a shorter one exits 1 with `query_too_short`. Quotes, `*`,
+somewhere in the chat — its title or any turn, not necessarily the same
+one — and each term must be at least three characters long; a shorter one exits 1 with `query_too_short`. Quotes, `*`,
 `-` and words like `NEAR` are searched for as plain text.
 
 Results are grouped by chat, best match first. Each group starts with the
