@@ -13162,6 +13162,13 @@ family's exclusion under row 29, as a chat read:
 
     GET    /v1/chats/search
 
+*Amended 2026-11-19 (task 156 decision 6, issue #1023).* One more:
+
+    GET    /v1/chats/{id}/export
+
+The chat family's rule again: an export is something a human keeps or shares,
+an MCP tool for it was not asked for, and one can follow the same route later.
+
 *Amended 2026-10-02 (task 130.3, issue #662).* One more, **thirty-seven** in
 all:
 
