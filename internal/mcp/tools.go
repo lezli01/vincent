@@ -190,6 +190,10 @@ var Excluded = []Route{
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/turns/{seq}/transcript"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/skills"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/files"},
+	// `GET /v1/chats/search` (task 156) is a chat read under the same rule:
+	// decision row 29 keeps the whole chat family off the MCP surface, and an
+	// agent wanting an old conversation is not who the search is for.
+	{Method: http.MethodGet, Path: "/v1/chats/search"},
 }
 
 // GrantedRoute is an Excluded forge write that becomes a tool on a granted

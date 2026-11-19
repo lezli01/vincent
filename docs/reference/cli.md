@@ -2298,6 +2298,30 @@ the way `vincent task list --archived` works. All three terminal states come
 back under the one flag: a handed-off or closed chat is as done with as an
 archived one.
 
+### `vincent chat search`
+
+```sh
+vincent chat search QUERY... [--project ID] [--archived false|true|all] [--limit N] [--json]
+```
+
+Searches every chat's title, the prompts it was sent and the agent's final
+answers. Tool output in transcripts is not searched. Matching is by substring
+and ignores case, so `429` finds `status429Body`. Every term must appear
+somewhere in the chat's matching text, and each term must be at least three
+characters long; a shorter one exits 1 with `query_too_short`. Quotes, `*`,
+`-` and words like `NEAR` are searched for as plain text.
+
+Results are grouped by chat, best match first. Each group starts with the
+chat's id, state and title, followed by one line per match: where it is
+(`title`, `turn N asked`, `turn N answer`) and a snippet around it. At most
+five matches are listed per chat, and `… N more` counts the rest.
+
+Unlike `vincent chat list`, the search covers archived, handed-off and closed
+chats by default, because finding a chat you are done with is the point.
+`--archived false` searches only live chats, `--archived true` only the
+terminal ones. `--json` emits the `results` array of
+[`GET /v1/chats/search`](api.md#searching-chats).
+
 ### `vincent chat show`
 
 ```sh

@@ -3193,6 +3193,8 @@ the two reads, `GET /v1/chats` and `GET /v1/chats/{id}`, add its `turn_count`.
 GET    /v1/chats?project_id=&task_id=&issue_id=&state=&archived=
                 &archived_before=&archived_since=&limit=&offset=
                                       newest first; state may repeat
+GET    /v1/chats/search?q=&project_id=&archived=&limit=&turns=
+                                      full-text search — see Searching chats
 POST   /v1/chats                      create, with a worktree and a branch — or, with
                                       existing_branch, on a branch that is already there
 POST   /v1/tasks/{id}/chat            open a chat on a stopped task, in its worktree
@@ -3322,6 +3324,53 @@ has sent to.
 A chat opened on a task follows a second table. From `idle` it offers `send`
 and `close`, and nothing else: `archive` and `hand_off` would reach a worktree
 and a branch that belong to the task.
+
+### Searching chats
+
+`GET /v1/chats/search` searches every chat's title, each turn's prompt and each
+turn's final answer (`result_text`). Tool output in transcripts is not indexed.
+A turn's answer stays searchable after transcript retention deletes its files,
+because the answer is kept on the turn row.
+
+- `q` is required. It is split on whitespace. Every term must appear, matching
+  by substring and ignoring case, so `429` finds `status429Body`. Each term is
+  searched for literally: quotes, `*`, `-`, parentheses and `NEAR`/`AND`/`OR`
+  are text, not query syntax. A missing or blank `q` is a `400`
+  `validation_failed`. A term shorter than three characters is a `400`
+  `query_too_short`, because the trigram index cannot answer it without a full
+  scan.
+- `archived` takes `GET /v1/chats`' values with their meaning: `false` for
+  live chats, `true` for the three terminal states (`archived`, `handed_off`,
+  `closed`), `all` for both. **The default is `all`**, unlike the list route,
+  because finding a chat you are done with is the point of searching. Other
+  values are a `400`.
+- `project_id` narrows to one project. Without it every project is searched.
+- `limit` caps the chats returned (default 20, at most 100). `turns` caps the
+  matches listed per chat (default 5, at most 50).
+
+```json
+{
+  "results": [
+    {
+      "chat": { "id": 12, "title": "rate limits", "state": "archived", "...": "..." },
+      "match_count": 2,
+      "matches": [
+        { "seq": 1, "field": "prompt", "snippet": "why the 429?",
+          "segments": [{ "text": "why the " }, { "text": "429", "match": true }, { "text": "?" }] },
+        { "seq": 1, "field": "result", "snippet": "it returns status429Body", "segments": ["..."] }
+      ]
+    }
+  ]
+}
+```
+
+Chats are ordered best match first (FTS5 `bm25`). Within a chat, matches come
+in conversation order: the title (`seq` 0, `field` `title`), then each turn's
+`prompt` before its `result`. `match_count` counts every match before the cap.
+`snippet` is plain text with whitespace folded to single spaces, and
+`segments` is the same text split into runs, with `match: true` on the runs
+that matched. A client highlights from those runs and never parses markup. The
+route is not an MCP tool, like every chat route.
 
 ### A chat on a stopped task
 

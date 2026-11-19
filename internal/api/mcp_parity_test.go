@@ -172,6 +172,8 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// Task 152: a preview for PATCH /v1/config's branch_template, with no
 		// use outside a form that edits the configuration.
 		{http.MethodPost, "/v1/config/branch-preview"},
+		// Task 156: chat search, a chat read under decision row 29.
+		{http.MethodGet, "/v1/chats/search"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))
