@@ -2481,6 +2481,42 @@ included. Exit `1` on an unknown chat, a terminal one (it has no next turn, so
 no directory to list for), a linked chat whose task no longer has a worktree,
 or a workspace that has gone missing under the daemon. Exit `2` with no daemon.
 
+### `vincent chat export`
+
+```sh
+vincent chat export CHAT_ID [--format md|html|json] [--with-diff] [-o | --output FILE] [--json]
+```
+
+The whole chat as one document: its metadata, then every turn's prompt, tool
+calls (one line each, never their output), answer and usage. `--format md` is
+the default; `html` is a single self-contained page with no scripts and nothing
+loaded from elsewhere; `json` is the document model with a top-level
+`"version"`. The daemon renders it — this command, the TUI and
+`GET /v1/chats/{id}/export` all produce the same bytes.
+
+```sh
+vincent chat export 12 > chat-12.md
+vincent chat export 12 --format html -o chat-12.html
+vincent chat export 12 --json | jq -r '.turns[].tools[].name'
+```
+
+The document goes to stdout, or with `-o` (`--output`) to that file, written through a
+temporary file and renamed into place so a failed write leaves no half
+document behind. The command never picks a file name for you.
+
+`--with-diff` appends the base-to-tip diff of the directory the chat works in
+today — its own worktree, or its linked task's. A chat with no directory left,
+such as a handed-off one, still exports, with a `diff unavailable:` note in
+place of the diff.
+
+`--json` is `--format json`; combining it with `--format md` or `--format html`
+is refused. Every chat state exports, archived and handed off included. A turn
+whose transcript has been pruned renders from its answer with a note in place
+of its tool calls.
+
+Exit `0` on success. Exit `1` on an unknown chat or a file that cannot be
+written. Exit `2` with no daemon.
+
 ### `vincent chat archive`
 
 ```sh

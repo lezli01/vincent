@@ -1172,6 +1172,44 @@ the skills route's: one workspace-relative path per line on stdout, `--mention`
 printing the daemon's own mention text rather than text a client assembled, and
 `--limit` passing straight through to `?limit=`. It needed **no wire change**.
 
+#### Exporting a chat (added 2026-11-19, task 156, issue #1023)
+
+A chat exports as one document — Markdown, a self-contained HTML page, or
+JSON — through `GET /v1/chats/{id}/export` (§13.2), which `vincent chat
+export` (§12.1) and the TUI's export form (§15) consume. The **daemon renders**
+(`internal/chatexport`); clients only write the bytes, so every surface
+produces the same document. It carries the chat's metadata (id, title,
+project, agent, model, effort, permission mode, state, branch, base branch and
+base SHA, the linked task, the handoff task and the issue the chat was opened
+on, where set, the creation time and the export time), then one section per
+turn in `seq` order: the prompt, **one line per tool call** (its name, its key
+argument and a failed marker — never the tool's output), the answer (the turn's
+`result_text`) and its usage (input and output tokens, cost only when the
+adapter reports one — absent, never `$0`, for copilot, §9.9 — duration, and a
+failed turn's `fail_reason` and `error_message`). The tool lines are read from
+the turn's transcript through the normalizer `?format=normalized` serves. Every
+state exports, `archived`, `handed_off` and `closed` included; a running turn
+renders with what it has so far.
+
+**Retention fallback.** A turn whose transcript is gone still renders from its
+row — prompt, `result_text`, usage — with a one-line note in place of its tool
+list: that the transcript was pruned (`transcript_retention_days`, §12.2), or,
+for a turn `chatrun.TurnWritesNoTranscript` says never wrote one
+(`agent_unavailable`, `transcript_io_error`, task 103 decision 4), that it
+never wrote one. A missing transcript is never an error for the export.
+
+**The diff** (`diff=true`, `--with-diff`) is the base-to-tip diff of the
+directory the chat works in **today**, computed as `GET /v1/tasks/{id}/diff`
+computes its own (one shared helper): commits plus the working tree against
+the merge-base with the recorded base. A free chat and a chat in an issue's
+main worktree diff their own `worktree_path` against the chat's base; a
+**linked** chat (task 119) diffs its task's worktree against the **task's**
+base, the chat's base fields being display copies. With no directory left — a
+`handed_off` chat, whose worktree now belongs to its task, an archived chat
+whose worktree was removed, or a path that no longer exists — the export still
+succeeds and says `diff unavailable: <reason>` in place of the diff. Per-turn
+commit attribution was considered and not taken (task 156 decision 1).
+
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
 `hand_off` creates a task in the chat's project that **adopts** the chat's
@@ -8084,6 +8122,11 @@ cheaply: one short-lived `git ls-files` on the host, no adapter deadline and
 no agent process at all. It is not a turn, is not counted here, is not
 refused at the cap, and touches no chat or turn row.
 
+*Amended 2026-11-19 (task 156, issue #1023).* **Exporting** a chat
+(`GET /v1/chats/{id}/export`, §5.5) holds no slot either: it reads rows, files
+and at most one `git diff`, is not a turn, is not counted here, is not refused
+at the cap, and touches no chat or turn row.
+
 The two caps are independent by design: a running chat consumes no
 `max_parallel_tasks` or per-project slot, and does not delay an admissible task.
 The combined ceiling on live agent processes is therefore
@@ -8113,6 +8156,7 @@ One Go binary, `vincent`:
 | `vincent chat send <chat-id> [<message>] [--message-file <path\|->]`, `vincent chat start … [--message <text> \| --message-file <path\|->]` | *Added 2026-09-19 (task 124.5, issue #501).* `--message-file` takes a chat message out of argv, where a shell changes it without a word — Git Bash (MSYS2) rewrites a leading `/name` into a Windows path, and bash and pwsh expand `$name` inside double quotes — by reading it from a file, or from stdin when the argument is `-`. The bytes read are the message: nothing is trimmed, so a trailing newline is sent. `send` takes the positional message or the flag, exactly one, and refuses both and neither; `start`'s `--message` and `--message-file` are mutually exclusive, and with neither `start` sends nothing, as before. The file is read **before any request**, so input refused locally on `start` creates no chat. Refused locally, exit 1: a missing file; empty input (whitespace alone is not empty); input that is not valid UTF-8, because the message travels as a JSON string and `encoding/json` would replace an invalid byte with U+FFFD — a leading BOM is valid and passes unchanged, error text never quotes the content; and input over **4 MiB**, the bound `--fields-file` reads under. That is the CLI's guard against an unbounded pipe, **not** the message limit: `POST /v1/chats/{id}/send` stays on §13.1's ordinary 64 KiB body tier, so a message whose body exceeds it is still `413 payload_too_large` from the daemon — after `start` has created the chat, which is then left `idle`, as with `--message`. No wire change, and nothing detects or repairs a message a shell has already rewritten (§9.1: the daemon passes the message through verbatim) |
 | `vincent chat skills <chat-id> [--refresh] [--json]` | *Added 2026-09-20 (task 124.11, issue #507).* Lists the skills the chat's agent CLI would load in the chat's directory through `GET /v1/chats/{id}/skills` (§13.2), and needs **no wire change**: that route, its verdicts and `--refresh`'s `?refresh=true` all shipped with 124.9. The table is `SKILL`, `INVOKE`, `ARGS`, `DESCRIPTION`; `INVOKE` is the row's `invocation` verbatim, which is the only cell that separates two rows sharing a name — codex's `[$name](path)` — and is why it is a column rather than something the client assembles. There is no `SCOPE` column: claude reports none, so it would be blank for every claude chat, and `scope`, `plugin`, `path` and `aliases` stay in `--json`. Every cell is the CLI's own word and is **blank**, never `-`, where the CLI said nothing (decision 8); rows keep the route's order and nothing is keyed by name. Nothing is truncated: nothing in `internal/cli` measures a terminal, and a width-dependent table is non-deterministic under a pipe. **stdout is the table and nothing else** — the `unsupported`/`unknown` verdict with its `unavailable_reason` or `probe_error`, the `problems[]` rows as `warning: <path>: <message>`, and the invocation line all go to stderr at exit 0, as `chat handoff`'s warnings and `chat transcript`'s "no transcript" notice already do; under either non-`supported` verdict no table is printed at all. A `probe_error` beside a **`supported`** list is the §5.5 row where the cache kept an earlier list, and the command says so on stderr above the invocation line — a table that is printed is never silently a stale one. One generic invocation line — `invoke: vincent chat send <id> '<sigil>NAME your message'`, always single-quoted — is built from `invoke_sigil` and `invoke_position`, never from a row, so it prints for an empty list and beside an `unsupported` list whose adapter can still invoke (cursor's shape, task 124 decision 2). Its quoting note keys off the **sigil, not the agent name**: `$` gets the bash/zsh/pwsh expansion warning, `/` the Git Bash `MSYS_NO_PATHCONV=1` / `--message-file` note. Exit **0** whenever the daemon answered, `unsupported` and `unknown` included, as `vincent agents` exits (task 041 decision 4); **1** on a 404 or a 409 (a terminal chat, a linked chat whose task has no worktree); **2** with no daemon, through `withClient`. `vincent skills` is the other command about skills and stays about the ones vincent *publishes*; the two help texts point at each other |
 | `vincent chat files <chat-id> [--limit N] [--mention \| --json]` | *Added 2026-09-22 (task 126.7, issue #551).* Lists the files of the directory the chat's next turn would start in through `GET /v1/chats/{id}/files` (§13.2), and needs **no wire change**: that route, its `?limit=`, its `truncated` flag and `apiclient.(*Client).ChatFiles` all shipped with 126.6. **stdout is the listing and nothing else** — one workspace-relative path per line, in the route's order, unsorted (task 126 decision 21) — so `vincent chat files 12 | wc -l` counts files and the list pipes into `xargs`, which a padded table would not. `--mention` switches stdout to each row's `mention`, printed **verbatim**: the `@"…"`-on-a-space quoting rule has one definition and it lives in the adapter (decision 1), so no client rebuilds it and this command does not either. `--json` emits the response object unchanged with `files` always an array, which makes `--json | jq -r '.files[].mention'` the same answer; the two are mutually exclusive, as `chat transcript`'s `--json` and `--raw` are, because both are spellings of stdout. `--limit N` passes through and may only *lower* the daemon's ceiling (decisions 4 and 36); `0` is the ceiling, the `vincent github issues --limit` spelling. A cut listing earns one stderr line (`warning: the listing was cut at N file(s)`) at exit **0** — `truncated` exists to make a cut visible and a silent one is the failure mode it was added against — and an empty `mention_sigil` under `--mention` earns one `no mention text: …` line at exit 0 rather than a column of empty strings, because `""` is how an adapter says it cannot mention files and is a signal, not a refusal (decision 38). There is **no `--refresh`**: decision 5 removed the server cache such a flag would invalidate, and a flag that invalidates nothing is a lie about the route. Exit **0** whenever the daemon answered, empty and truncated included; **1** on a 404, on either 409 (a terminal chat, a linked chat whose task has no worktree) and on the 400 a vanished workspace produces; **2** with no daemon, through `withClient` |
+| `vincent chat export <chat-id> [--format md\|html\|json] [--with-diff] [-o <file>]` | *Added 2026-11-19 (task 156, issue #1023).* Writes the chat as one document through `GET /v1/chats/{id}/export` (§5.5, §13.2), a thin client over `apiclient.(*Client).ChatExport`: the daemon renders and the command carries its bytes to stdout, or with `-o` to that file, written atomically through a temporary file and `fileswap.Replace` because a half-written export is worse than none. The CLI never invents a filename; the route's `Content-Disposition` name is for the TUI. `--format` defaults to `md`. The CLI-wide `--json` is a synonym for `--format json`, and `--json` beside `--format md\|html` is refused. `--with-diff` sends `diff=true`. Exit **0** on success, **1** on a 404 or a file that cannot be written, **2** with no daemon |
 | `vincent task diff <id>` | *Added 2026-09-15 (task 100).* Prints the task's diff through `GET /v1/tasks/{id}/diff` (§13.2), which does not change. `--by lane` reads `?by=lane` and prints every section in the daemon's order under an ASCII header — `# lane <lane_id> (task <child_task_id>, merge <12-char sha>)`, or `# remainder (…)` last — including a section with no change. `--stat` is a per-file `FILE`/`ADDED`/`REMOVED` table the **CLI** computes from the body (counted inside hunks only; `binary` for a binary file), with a leading `LANE` column under `--by lane`. `--json` is `{"diff": …}`, the sections array, or `[{path, added, removed, binary}]` rows that under `--by lane` also carry `lane_id`, `child_task_id` and `remainder`; the stat shapes are the CLI's, not wire types. The ungrouped form is **streamed with no size cap**, unlike the TUI's bounded read, because its piped output is meant for `git apply` and a cut patch is a corrupt one. It is the CLI's **first colour**: only when stdout is a terminal and `NO_COLOR` is unset (colorprofile also honours `TERM=dumb`), and piped output is the daemon's bytes exactly. Any `--by` other than `lane` is refused client-side before a request, exit 1 |
 | `vincent task commits <id>` | *Added 2026-09-29 (issue #601).* Lists the task's commits through `GET /v1/tasks/{id}/commits` (§13.2), one line each: 12-char sha, author time in local time to the minute, subject, and `[lane <lane_id>, task <child_task_id>]` on a lane merge. `--json` is the wire list. A 409 exits 1 with the daemon's message; a daemon that predates the route (its router's `404 no such endpoint`) is reported as needing a restart |
 | `vincent project add <path> / ls / edit <id> / rm <id>` | Thin API clients for scripting. *Amended 2026-08-28 (task 048):* `rm` deletes the registration and its task rows, forwarding `--force` as `?force`. It never prompts — the daemon's two 409s (`N non-archived task(s)`, and one naming a `running` task) are the confirmation story, and an interactive question would be the first in a command tree whose purpose is scripting. *Amended 2026-09-16 (task 105, issue #394):* `edit <id>` is `PATCH /v1/projects/{id}` (§13.2, unchanged), sending only the fields whose flags were given — `--name`, `--path`, `--default-branch`, `--workflow`, `--max-parallel`, `--branch-template` — and refusing, with exit 1 and no daemon contacted, an edit that names none. An empty or whitespace-only value clears an optional field (`--workflow`, `--max-parallel`, `--branch-template` send `null`), the TUI form's rule and `config set`'s; `--name`, `--path` and `--default-branch` have no clear form and an empty value goes to the daemon as typed. It covers all six patchable fields, `branch_template` included, although `add` and the TUI form do not set that one. `--path` is sent as typed, like `add <path>`, so a relative path gets the daemon's must-be-absolute refusal rather than being resolved against the caller's directory |
@@ -11394,6 +11438,25 @@ GET    /v1/chats/{id}/files             *Added 2026-09-21 (task 126.6, issue #55
                                         for a workspace that is gone or a `limit` that is not a
                                         positive integer; `500` for any other git failure. No
                                         event and no row. It is **not** an MCP tool (§13.4)
+GET    /v1/chats/{id}/export            *Added 2026-11-19 (task 156, issue #1023).* The chat as
+       ?format=md|html|json&diff=       one document (§5.5 "Exporting a chat"). `format` defaults
+                                        to `md`; `diff=true` appends the base-to-tip diff of the
+                                        directory the chat works in today (`false` is the
+                                        default). `200` with `Content-Type` `text/markdown;
+                                        charset=utf-8`, `text/html; charset=utf-8` or
+                                        `application/json`, and `Content-Disposition:
+                                        attachment; filename=chat-<id>-<slug>.<ext>`. JSON is
+                                        the document model with a top-level `"version": 1`;
+                                        an asked-for diff that cannot be produced is
+                                        `"diff": null, "diff_unavailable": "<reason>"` and a
+                                        one-line note in the other two, never an error. HTML
+                                        is one page with inline CSS, no scripts and no external
+                                        assets; answers and prompts go through goldmark with
+                                        raw HTML disabled. `400 validation_failed` for a bad
+                                        `format` or `diff`, checked before the chat is loaded;
+                                        `404` for an unknown chat. Every state exports. No
+                                        event, no row touched, no slot held (§11). It is **not**
+                                        an MCP tool (§13.4)
 GET    /v1/chats/{id}/events            *Added 2026-08-31 (task 067).* SSE: this chat's durable
                                         `chat.*` events interleaved with its live output, the
                                         per-task stream's shape for a chat. The filter is the
@@ -18303,6 +18366,17 @@ paused queue renders a card naming why, with `alt+r` to resume and `alt+c` to
 clear. `ctrl+s` is the rebindable `steer` operation (task 118's registry, with
 a recorded exception beside the forms' fixed `ctrl+s`); no adapter can steer
 yet, so it puts the daemon's `steer_reason` in the composer note.
+*Amended 2026-11-19 (task 156, issue #1023).* **Exporting a chat** is the
+rebindable operation `export_chat`, default `alt+e`, on the chat workspace and
+on the chats board (live and archived) for the selected row, and in the command
+palette. It opens a small form: the format (`md`, `html` or `json`, default
+`md`), whether to include the diff (default off), and a path prefilled
+`./chat-<id>-<slug>.<ext>` in the TUI's working directory, whose extension
+follows the format. The TUI fetches `GET /v1/chats/{id}/export` (§13.2) and
+writes the file itself — the file is the client's — atomically through
+`fileswap`; a fetch or write failure is shown in the form, never dropped.
+Afterwards it offers to copy the path or, for `md`, the Markdown itself through
+the task 076 clipboard transports.
 
 *Amended 2026-09-01 (task 074, issue #288).* `ctrl+t` on the chat workspace
 opens the **new-task form in handoff mode**, seeded with the chat: the project,

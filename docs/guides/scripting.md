@@ -169,6 +169,16 @@ turn — the same NDJSON records `task transcript --json` prints for an attempt:
 vincent chat transcript 3 --turn 2 --json | jq -r 'select(.type == "agent.tool_use") | .tools[].name'
 ```
 
+`chat export` writes a whole conversation as one document — Markdown, a
+self-contained HTML page, or JSON — for a pull request, a ticket or an archive.
+Export every chat to HTML, diff included:
+
+```sh
+vincent chat list --json | jq -r '.[].id' | while read -r id; do
+  vincent chat export "$id" --format html --with-diff -o "chat-$id.html"
+done
+```
+
 `vincent task show <id> --json` carries two fields worth knowing about:
 `available_actions`, which is what the daemon will accept right now — read it
 instead of probing for `409`s, and every name in it has a `vincent task <action>`

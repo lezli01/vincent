@@ -2518,6 +2518,7 @@ task-only.
 | `s` | Cycle the listing between live, ended (archived, handed-off or closed), and all |
 | `R` | Reload the board |
 | `S` | [Search every chat](#chat-search)'s title, prompts and answers, live and archived |
+| `alt+e` | [Export the selected chat](#exporting-a-chat) as Markdown, HTML or JSON |
 | `home`/`end`, `pgup`/`pgdown` | Jump to the first or last chat, or move a page |
 
 The mouse wheel moves the cursor one chat per tick, as it does on the task
@@ -2707,6 +2708,7 @@ periodic repaint.
 | `ctrl+g` | Jump to the live end and follow it again |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
+| `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to where the chat was opened from — the issue, the issues list, the archived-chats board or the [chat search](#chat-search) — otherwise the chats board |
@@ -2923,6 +2925,31 @@ A turn that runs past `agent_timeout`, or sits unanswered past `input_timeout`,
 fails and returns the chat to `idle` — the slot comes back rather than being
 held by a conversation nobody came back to.
 
+#### Exporting a chat
+
+`alt+e` — in a chat, on the chats board, or on the archived chats board —
+opens a small form that writes the chat to a file: every turn's prompt, its
+tool calls one line each, the answer and its usage. The daemon renders the
+document, the same one `vincent chat export` prints, and the TUI writes it.
+
+| Key | Does, in the export form |
+|---|---|
+| `↑`/`↓`, `tab`/`shift+tab` | Move between format, include diff and path |
+| `space`, `←`/`→` | On format, cycle `md` → `html` → `json`; on include diff, toggle it |
+| `enter` | Export and write the file |
+| `esc` | Close the form |
+
+The path starts as `./chat-<id>-<slug>.<ext>` in the directory you started
+the TUI from, and its extension follows the format. The file is written
+atomically. A failure — the daemon refusing, or a path that cannot be written —
+is shown in the form, which stays open so you can fix the path and press
+`enter` again. Once the file is written, the form offers to copy its path or,
+for Markdown, the document itself; `enter` copies the highlighted choice.
+
+Include diff appends the base-to-tip diff of the directory the chat works in
+today: its own worktree, or its linked task's. A chat with no directory left
+still exports and says why its diff is unavailable.
+
 ### Archived
 
 `tab` switches between archived tasks and archived chats. From 130 columns wide,
@@ -2972,6 +2999,7 @@ there is nothing to withhold and no flag saying so.
 |---|---|
 | `D` | Delete permanently — asks first |
 | `s` | Cycle the window: last 7 days → last 30 days → all time |
+| `alt+e` | [Export the selected chat](#exporting-a-chat) — an archived chat exports like any other |
 | `<` / `>` | Turn the page (a hundred rows at a time) — offered only where there is a page that way |
 | `enter` | Open the row's workspace, read-only |
 | `/` | Filter, exactly as on the live board |
@@ -3584,6 +3612,7 @@ The first twenty are the operations screens share, the next ten are the
 | `steer` | `ctrl+s` | Steer a chat's running turn, where its agent can — none can yet |
 | `compact` | `alt+k` | Compact the chat agent's context — sends its compact command (`/compact` on claude) as the next message; asks first |
 | `chat_search` | `S` | Search every chat, from the chats board |
+| `export_chat` | `alt+e` | Export a chat as Markdown, HTML or JSON — from the chat, the chats board or the archived chats board. See [Exporting a chat](#exporting-a-chat) |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

@@ -3218,6 +3218,8 @@ GET    /v1/chats/{id}/turns/{seq}/transcript
                                       one turn's transcript, with ?offset= / ?tail=
 GET    /v1/chats/{id}/skills?refresh= the skills the chat's agent would load — see Skills
 GET    /v1/chats/{id}/files?limit=    the files of the chat's workspace — see Files
+GET    /v1/chats/{id}/export?format=&diff=
+                                      the chat as Markdown, HTML or JSON — see Exporting
 ```
 
 **The queue** (task 156). A `send` to a chat whose turn is `running` or
@@ -3234,8 +3236,8 @@ and hand-off discard the queue. A chat carries `queued_count`, `queue_paused`,
 steer a running turn yet, so `can_steer` is always `false`.
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
-excluded, the stream, the transcript, the skill list and the file list
-included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
+excluded, the stream, the transcript, the skill list, the file list and the
+export included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
 but starts a chat.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
@@ -3648,6 +3650,51 @@ git runs, and a chat on a task that has lost its worktree with
 `409 task_has_no_worktree` (`details.task_id`). A workspace that has been
 deleted under the daemon, and a `limit` that is not a positive integer, are
 each `400 validation_failed`; any other git failure is a `500`.
+
+### Exporting
+
+```
+GET /v1/chats/{id}/export?format=md|html|json&diff=true|false
+```
+
+The whole chat as one document, rendered by the daemon so every client writes
+the same bytes. `format` defaults to `md`; `diff` defaults to `false`.
+
+| `format` | `Content-Type` | What it is |
+|---|---|---|
+| `md` | `text/markdown; charset=utf-8` | a title and metadata list, then per turn: prompt, tool calls, answer, usage |
+| `html` | `text/html; charset=utf-8` | one self-contained page: inline CSS, no scripts, nothing loaded from elsewhere |
+| `json` | `application/json` | the document model, with a top-level `"version": 1` |
+
+Every answer carries `Content-Disposition: attachment; filename=chat-<id>-<slug>.<ext>`.
+
+The metadata is the chat's id, title, project, agent, model, effort,
+permission mode, state, branch, base branch and base SHA, the linked task,
+handoff task and issue where set, and the creation and export times. Each turn
+lists one line per tool call — the tool, its key argument (file, command,
+pattern or URL) and `(failed)` when the call errored — and never the tool's
+output. Its answer is the turn's `result_text`; its usage is tokens, cost when
+the agent reports one (copilot never does, and the cost is then absent rather
+than `$0`), duration, and a failed turn's reason. In HTML, prompts and answers
+are rendered from Markdown with raw HTML disabled, so a `<script>` in an
+agent's answer never reaches the page.
+
+A turn whose transcript has been pruned (`transcript_retention_days`) still
+exports from its row, with a note in place of its tool calls; a turn that never
+wrote a transcript (`agent_unavailable`, `transcript_io_error`) says so instead.
+
+`diff=true` appends the base-to-tip diff — commits plus uncommitted changes to
+tracked files — of the directory the chat works in today: its own worktree, or,
+for a chat opened on a task, the task's worktree against the task's base. When
+there is no such directory (a handed-off chat, an archived one whose worktree
+is gone) the export still answers `200`: JSON carries `"diff": null` and a
+`"diff_unavailable"` reason, Markdown and HTML a one-line `diff unavailable:`
+note.
+
+Every state exports, archived, handed off and closed included. The route
+touches no row and holds no `max_parallel_chats` slot. A bad `format` or `diff`
+is `400 validation_failed`, checked before the chat is looked up; an unknown
+chat is `404`.
 
 ### Sending a turn
 

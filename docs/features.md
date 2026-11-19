@@ -114,6 +114,12 @@ and branch from then on. `ctrl+t` in the chat workspace,
 [`vincent chat handoff`](reference/cli.md#vincent-chat-handoff), or
 `POST /v1/chats/{id}/handoff`.
 
+**Export a chat** to keep or share it: Markdown, a self-contained HTML page, or
+JSON, with every turn's prompt, tool calls, answer and usage, and optionally
+the diff of the chat's worktree. From the TUI, with
+[`vincent chat export`](reference/cli.md#vincent-chat-export), or
+`GET /v1/chats/{id}/export`.
+
 It works the other way round too: **chat with a stopped task**. When a task
 stops for you — blocked on a failing step, waiting at a gate, done, or aborted
 — open a chat on the task and talk the fix through in the task's own worktree,
