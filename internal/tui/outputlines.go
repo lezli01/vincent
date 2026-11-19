@@ -982,6 +982,14 @@ type lineOpts struct {
 	// at compact and normal (task 150.5). Verbose keeps both records' lines,
 	// because that level means "show me the machine".
 	toolChecks bool
+	// hideRaw drops the unrecognized-line count below verbose, so a line no
+	// parser models leaves no trace at quiet, compact or normal — only
+	// verbose, which shows the lines whole, admits they exist. The chat sets
+	// it: a claude chat's stream carries rate-limit, thinking-token and
+	// control lines vincent does not model, and their counts between every
+	// message were noise a reader cycled the level to escape. The task
+	// output pane keeps the count, its affordance to expand.
+	hideRaw bool
 }
 
 // outputLines renders the normalized records into wrapped pane lines.
@@ -1085,7 +1093,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 		// an offer — "there are lines here, `v` shows them" — and quiet is
 		// the level that makes no offers, so an unparsed line leaves no
 		// trace at all rather than a row of arithmetic about itself.
-		if level == levelQuiet {
+		if level == levelQuiet || (opts.hideRaw && level != levelVerbose) {
 			return
 		}
 		note(railed(enter(rawParent), []string{styleDim.Render(fmt.Sprintf(

@@ -167,6 +167,7 @@ the living engineering specification records implementation contracts.
 | [151](151-nerd-font-install.md) | Installing the Nerd Font behind `tui.icons: nerd`: `vincent fonts` and `U` on the Daemon screen | ✅ done (3/3) |
 | [152](152-settings-screen.md) | A Settings screen for everything in `config.yaml` | ✅ done (3/3) |
 | [153](153-force-delete.md) | Force delete for tasks, chats and issues whose archive or delete fails on something vincent cannot resolve | ✅ done (5/5) |
+| [154](154-chat-hides-unparsed-lines.md) | A chat hides the lines vincent cannot parse below verbose, instead of counting them between messages | ✅ done (1/1) |
 
 ## How to add and update a task document
 

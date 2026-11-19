@@ -65,10 +65,12 @@ func TestChatLevelsMeanWhatTheSpecSays(t *testing.T) {
 			t.Errorf("compact dropped %q:\n%s", want, compact)
 		}
 	}
-	// The count is the affordance that says there is more, and it names the
-	// key that shows it — ctrl+r here, never `v` (decision 7).
-	if !strings.Contains(compact, "unrecognized line(s) (ctrl+r)") {
-		t.Errorf("compact did not offer ctrl+r for the collapsed lines:\n%s", compact)
+	// A chat leaves no trace of an unrecognized line below verbose — not
+	// even the count the task output pane offers (task 154): claude's
+	// rate-limit, thinking-token and control lines made one between every
+	// message.
+	if strings.Contains(compact, "unrecognized") {
+		t.Errorf("compact counted the unrecognized lines:\n%s", compact)
 	}
 
 	normal := body(levelNormal)
@@ -80,6 +82,9 @@ func TestChatLevelsMeanWhatTheSpecSays(t *testing.T) {
 	}
 	if !strings.Contains(normal, "lines (ctrl+r)") {
 		t.Errorf("normal did not truncate reasoning behind a count:\n%s", normal)
+	}
+	if strings.Contains(normal, "unrecognized") || strings.Contains(normal, "hook_created") {
+		t.Errorf("normal showed a trace of the unrecognized line:\n%s", normal)
 	}
 
 	verbose := body(levelVerbose)
