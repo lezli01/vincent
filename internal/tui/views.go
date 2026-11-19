@@ -41,6 +41,9 @@ const (
 	// chats have.
 	viewIssues
 	viewIssue
+	// viewSettings is every key of config.yaml on a screen of its own (task
+	// 152). It is reached from the palette and the Daemon screen, never a tab.
+	viewSettings
 	viewCount
 )
 
@@ -262,5 +265,6 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 		viewTriggers:      newTriggersView(),
 		viewIssues:        newIssuesView(),
 		viewIssue:         newIssueView(raw, links),
+		viewSettings:      newSettingsView(),
 	}
 }

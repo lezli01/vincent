@@ -20,7 +20,7 @@ func TestProjectScopedRegistry(t *testing.T) {
 		viewChats, viewChat, viewArchived, viewArchivedChats, viewTriggers,
 		viewIssues, viewIssue,
 	}
-	unscoped := []viewID{viewProjects, viewDaemon}
+	unscoped := []viewID{viewProjects, viewDaemon, viewSettings}
 	if got := len(scoped) + len(unscoped); got != int(viewCount) {
 		t.Fatalf("%d views classified, viewCount is %d: decide whether the new view is project-bearing", got, viewCount)
 	}

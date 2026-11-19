@@ -49,14 +49,16 @@ func (a AgentStatus) NotAuthenticated() bool {
 // Info is the GET /v1/info body: the daemon's own identity, its global cap
 // and adapter availability.
 type Info struct {
-	Version          string    `json:"version"`
-	Commit           string    `json:"commit"`
-	Built            string    `json:"built"`
-	PID              int       `json:"pid"`
-	StartedAt        time.Time `json:"started_at"`
-	UptimeSeconds    int64     `json:"uptime_seconds"`
-	Listen           string    `json:"listen"`
-	MaxParallelTasks int       `json:"max_parallel_tasks"`
+	Version       string    `json:"version"`
+	Commit        string    `json:"commit"`
+	Built         string    `json:"built"`
+	PID           int       `json:"pid"`
+	StartedAt     time.Time `json:"started_at"`
+	UptimeSeconds int64     `json:"uptime_seconds"`
+	Listen        string    `json:"listen"`
+	// ConfigPath is the config.yaml the daemon watches.
+	ConfigPath       string `json:"config_path,omitempty"`
+	MaxParallelTasks int    `json:"max_parallel_tasks"`
 	// Slots is how much of MaxParallelTasks is in use right now (§11). The
 	// daemon counts it, so every client renders the same number — a client
 	// that counted running rows itself would miss awaiting_input and every
@@ -414,6 +416,26 @@ func (c *Client) PatchConfig(ctx context.Context, req ConfigPatch) (Config, erro
 	var out Config
 	if err := c.send(ctx, http.MethodPatch, "/v1/config", req, &out); err != nil {
 		return Config{}, err
+	}
+	return out, nil
+}
+
+// BranchPreview is what a candidate branch_template makes for a sample task.
+// Error is a template that does not render, which a client shows while it is
+// still being typed.
+type BranchPreview struct {
+	Branch string `json:"branch"`
+	Error  string `json:"error"`
+	TaskID int64  `json:"task_id"`
+	Title  string `json:"title"`
+}
+
+// PreviewBranchTemplate asks the daemon to render a template. It writes nothing.
+func (c *Client) PreviewBranchTemplate(ctx context.Context, template string) (BranchPreview, error) {
+	var out BranchPreview
+	body := map[string]string{"template": template}
+	if err := c.send(ctx, http.MethodPost, "/v1/config/branch-preview", body, &out); err != nil {
+		return BranchPreview{}, err
 	}
 	return out, nil
 }

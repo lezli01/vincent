@@ -213,7 +213,7 @@ func (w *workflowsView) frameless() bool {
 // The daemon dashboard.
 
 func (d *daemonView) wide() bool {
-	return d.termW >= mgmtWideMinW && d.form == nil && d.statusLine == nil && d.skills == nil && d.fonts == nil
+	return d.termW >= mgmtWideMinW && d.statusLine == nil && d.skills == nil && d.fonts == nil
 }
 
 func (d *daemonView) frameless() bool { return d.wide() }

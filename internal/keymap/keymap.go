@@ -119,7 +119,7 @@ type Info struct {
 // catalog is the operation set, in the order the docs list it.
 var catalog = []Info{
 	{Op: Refresh, Default: "R", Meaning: "refresh / re-read", Kind: KindTerm, Surfaces: []Surface{
-		"new task", "archived tasks", "archived chats", "chats", "workflows", "workflow editor", "workflow graph",
+		"settings", "new task", "archived tasks", "archived chats", "chats", "workflows", "workflow editor", "workflow graph",
 		"step detail", "pull requests", "daemon", "triggers", "trigger ledger", "trigger form",
 		"issues", "issue", "issue form",
 	}},
@@ -135,7 +135,7 @@ var catalog = []Info{
 		"issues", "issue",
 	}},
 	{Op: Editor, Default: "e", Meaning: "edit in $EDITOR", Kind: KindTerm, Surfaces: []Surface{
-		"output", "new task", "workflows", "workflow graph", "step detail", "triggers",
+		"settings", "output", "new task", "workflows", "workflow graph", "step detail", "triggers",
 		"repair form", "follow-up form", "open a pull request", "comment on a pull request",
 		"issue form",
 	}},
@@ -154,7 +154,7 @@ var catalog = []Info{
 		"archived tasks", "archived chats", "chats", "pull requests", "issues",
 	}},
 	{Op: Filter, Default: "/", Meaning: "filter", Kind: KindTerm, Surfaces: []Surface{
-		"new task", "task table", "archived tasks", "archived chats", "chats", "projects", "pull requests", "triggers",
+		"settings", "new task", "task table", "archived tasks", "archived chats", "chats", "projects", "pull requests", "triggers",
 		"issues",
 	}},
 	{Op: Lane, Default: "l", Meaning: "open a fan-out lane", Kind: KindTerm, Surfaces: []Surface{

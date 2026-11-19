@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/api"
@@ -23,10 +24,10 @@ import (
 // keystrokes and nothing about the wire; what is worth proving here is that a
 // keypress ends as an edited config.yaml and a re-rendered block.
 
-// configLiveHarness is a daemon view wired to a real API server whose config
+// configLiveHarness is the Settings screen wired to a real API server whose config
 // dir holds the shipped template.
 type configLiveHarness struct {
-	view *daemonView
+	view *settingsView
 	path string
 }
 
@@ -52,15 +53,13 @@ func newConfigLive(t *testing.T) *configLiveHarness {
 	t.Cleanup(ts.Close)
 	client := apiclient.New(ts.URL, token)
 
-	d := newDaemonView()
-	d.setDataDir(t.TempDir())
-	d.width, d.height = 120, 40
+	d := newSettingsView()
+	d.update(tea.WindowSizeMsg{Width: 180, Height: 44})
 	cfg, err := client.Config(t.Context())
 	if err != nil {
 		t.Fatalf("GET /v1/config: %v", err)
 	}
 	d.client = client
-	d.connected = true
 	d.update(daemonConfigMsg{config: cfg})
 	return &configLiveHarness{view: d, path: filepath.Join(dir, config.FileName)}
 }
@@ -81,15 +80,10 @@ func (h *configLiveHarness) press(t *testing.T, key string) {
 
 func (h *configLiveHarness) open(t *testing.T, path string) {
 	t.Helper()
-	for i, k := range h.view.keys {
-		if k.path == path {
-			h.view.cursor = i
-			h.view.focusConfig = true
-			h.press(t, "enter")
-			return
-		}
+	h.view.openKey(path)
+	if h.view.form == nil {
+		t.Fatalf("no config key %q", path)
 	}
-	t.Fatalf("no config key %q", path)
 }
 
 func (h *configLiveHarness) file(t *testing.T) string {
@@ -302,7 +296,7 @@ func TestConfigEditorRendersAValidationErrorAgainstTheField(t *testing.T) {
 	if h.view.form.err == "" {
 		t.Error("the daemon's refusal is not rendered against the field")
 	}
-	out := strings.Join(h.view.form.render(120), "\n")
+	out := h.view.render(180, 44)
 	if !strings.Contains(out, "soon") {
 		t.Errorf("the value that was refused is no longer on screen:\n%s", out)
 	}
@@ -360,7 +354,7 @@ func TestConfigEditorRefusesDangerousKeysWithoutConfirmation(t *testing.T) {
 func TestConfigEditorSaysListenNeedsARestart(t *testing.T) {
 	h := newConfigLive(t)
 	h.open(t, "listen")
-	out := strings.Join(h.view.form.render(120), "\n")
+	out := h.view.render(180, 44)
 	if !strings.Contains(out, "restart") {
 		t.Errorf("the listen editor does not say it needs a restart:\n%s", out)
 	}
@@ -559,8 +553,8 @@ func TestConfigEditorSetsTheTabs(t *testing.T) {
 	if h.view.form == nil {
 		t.Fatal("enter did not open the editor")
 	}
-	out := ansi.Strip(strings.Join(h.view.form.render(120), "\n"))
-	for _, want := range []string{"default issues tasks", "accepted: issues tasks chats", "the first is where the TUI opens"} {
+	out := ansi.Strip(h.view.render(180, 44))
+	for _, want := range []string{"accepted: issues tasks chats", "the first is where vincent opens"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the tabs editor does not say %q:\n%s", want, out)
 		}
@@ -616,19 +610,18 @@ func TestConfigEditorShowsAndEditsTheJiraKeys(t *testing.T) {
 		"jira.user_env":      "JIRA_USER",
 		"jira.token_env":     "JIRA_API_TOKEN",
 	}
-	for i, k := range h.view.keys {
+	for _, k := range h.view.keys {
 		v, ok := want[k.path]
 		if !ok {
 			continue
 		}
 		delete(want, k.path)
-		row := ansi.Strip(h.view.configRow(i, k))
-		if !strings.Contains(row, k.label) || !strings.Contains(row, v) {
-			t.Errorf("%s: row %q does not show %q with %q", k.path, row, k.label, v)
+		if got := k.read(h.view.config); got != v {
+			t.Errorf("%s reads %q, want %q", k.path, got, v)
 		}
 	}
 	if len(want) > 0 {
-		t.Fatalf("the daemon screen has no row for %v", want)
+		t.Fatalf("the Settings screen has no row for %v", want)
 	}
 
 	h.open(t, "jira.poll_interval")

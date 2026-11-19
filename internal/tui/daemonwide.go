@@ -40,14 +40,10 @@ func (d *daemonView) renderWide(width, height int) string {
 
 	w := width / 3
 	workH := min(len(work)+2, max(topH-3, 2))
-	configBorder := styleDim
-	if d.focusConfig {
-		configBorder = styleFocus
-	}
 	left := drawBox(styleTitle.Render(ic("◉ Daemon")), styleDim.Render(fmt.Sprintf("up %s · pid %d", formatUptime(d.info.Uptime(d.now())), d.info.PID)), identity, w, topH-workH, edgesRounded, styleDim)
 	left = append(left, drawBox(styleTitle.Render(ic("▶ Work")), "", work, w, workH, edgesRounded, styleDim)...)
 	top := joinColumns(left, joinColumns(
-		drawBox(styleTitle.Render(ic("⚙ Config in effect")), "", config, w, topH, edgesRounded, configBorder),
+		drawBox(styleTitle.Render(ic("⚙ Config in effect")), "", config, w, topH, edgesRounded, styleDim),
 		drawBox(styleTitle.Render(ic("▤ Database")), "", database, width-2*w, topH, edgesRounded, styleDim),
 	))
 	top = append(top, adapters...)

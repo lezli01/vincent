@@ -221,6 +221,8 @@ const (
 	// context because while it is open it owns the keyboard, and its keys are
 	// nothing like the log pane's underneath it.
 	ctxConfigEdit bindingContext = "config editor"
+	// ctxSettings is the Settings screen (task 152).
+	ctxSettings bindingContext = "settings"
 	// ctxStatusLine is the daemon view's status-line flow (task 082), its
 	// own context for the reason ctxSkills has one (#803).
 	ctxStatusLine bindingContext = "status line"
@@ -416,7 +418,10 @@ var bindings = []binding{
 	{label: "tasks — the task board", scope: scopeGlobal, nav: true, navTarget: viewHome},
 	{label: "project overview — every project's figures, what needs you, add, edit, remove", scope: scopeGlobal, nav: true, navTarget: viewProjects},
 	{label: "workflows — registry with scopes and validity", scope: scopeGlobal, nav: true, navTarget: viewWorkflows},
-	{label: "daemon — identity, config, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
+	{label: "daemon — identity, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
+	// Settings get a palette row and no key, the pattern every takeover but
+	// new task follows, and no main tab (task 152).
+	{label: "settings — everything in config.yaml, explained and editable", scope: scopeGlobal, nav: true, navTarget: viewSettings},
 	{label: "pull requests — what is open in this project on GitHub", scope: scopeGlobal, nav: true, navTarget: viewPullRequests, github: true},
 	// Chats get a palette row and no direct key, the pattern every takeover
 	// but new task follows. `n` is not shared: on the chats board it makes a
@@ -921,8 +926,7 @@ var bindings = []binding{
 	// The config block became editable in task 060. tab is what says whether
 	// ↑/↓ mean the config list or the log pane — the view has two scrollable
 	// things now and one pair of arrows.
-	{key: "tab", label: "move between the config list and the log pane", scope: scopePanel, context: ctxDaemon, hint: "tab config", priority: 4},
-	{key: "enter", label: "edit the selected configuration key (e also opens it)", scope: scopePanel, context: ctxDaemon, hint: "enter edit", priority: 5},
+	{key: "enter", label: "open Settings, where every configuration key is changed", scope: scopePanel, context: ctxDaemon, hint: "enter settings", priority: 4},
 	// Task 082. The only key in vincent that leads to a write outside its own
 	// data dir, which is why the label says whose file it is: what it opens
 	// shows the exact JSON before anything happens, and the same key takes it
@@ -956,12 +960,23 @@ var bindings = []binding{
 	{key: "n", label: "not now — remembered, and i brings it back", scope: scopePanel, context: ctxStatusLine, noPalette: true},
 	{key: "esc", label: "close without writing anything", scope: scopePanel, context: ctxStatusLine, noPalette: true},
 
+	// The Settings screen (task 152).
+	{key: "down", label: "move between the settings (↑/↓ or j/k)", scope: scopePanel, context: ctxSettings, hint: "↑/↓ setting", priority: 1},
+	{key: "left", label: "change the selected setting (←/→)", scope: scopePanel, context: ctxSettings, hint: "←/→ change", priority: 2},
+	{key: "enter", label: "edit the selected setting", scope: scopePanel, context: ctxSettings, hint: "enter edit", priority: 3},
+	{key: "tab", label: "next category (shift+tab goes back)", scope: scopePanel, context: ctxSettings, hint: "tab category", priority: 4},
+	{op: keymap.Filter, key: "/", label: "search every setting", scope: scopePanel, context: ctxSettings, hint: "/ search", priority: 5, term: termFilter},
+	{key: "backspace", label: "reset the selected setting to its default", scope: scopePanel, context: ctxSettings, hint: "⌫ reset", priority: 6},
+	{op: keymap.Editor, key: "e", label: "open config.yaml in $EDITOR", scope: scopePanel, context: ctxSettings, priority: 7, term: termEditor},
+	{op: keymap.Refresh, key: "R", label: "re-read the configuration", scope: scopePanel, context: ctxSettings, priority: 8, term: termRefresh},
+	{key: "esc", label: "clear the search, else leave Settings", scope: scopePanel, context: ctxSettings, priority: 9},
+
 	// The config editor: it owns the keyboard while it is open and prints its
 	// own key line, so these are here to keep ? complete.
 	{key: "left", label: "choose a value, for a key with a fixed vocabulary (←/→)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
-	{key: "enter", label: "apply the change; the daemon validates and writes config.yaml", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
+	{key: "enter", label: "apply the change; the daemon validates and writes config.yaml", scope: scopePanel, context: ctxConfigEdit, hint: "enter apply", priority: 1, noPalette: true},
 	{key: "y", label: "confirm a key that decides what the daemon executes or exposes", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
-	{key: "esc", label: "close the editor without saving (the confirmation returns to the field)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
+	{key: "esc", label: "close the editor without saving (the confirmation returns to the field)", scope: scopePanel, context: ctxConfigEdit, hint: "esc cancel", priority: 2, noPalette: true},
 
 	// Triggers (§15 view 11, task 096 decision 25). `space` flips `enabled`
 	// and asks before it turns one on (decision 19); `T` and `X` are the two

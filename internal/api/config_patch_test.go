@@ -895,3 +895,50 @@ func TestConfigPatchArchiveTasksOnIssueClose(t *testing.T) {
 		t.Errorf("non-bool value: status %d, want 400 (%s)", resp.StatusCode, body)
 	}
 }
+
+// The daemon renders a candidate template with its own renderer, says when one
+// does not render, and writes nothing (task 152).
+func TestBranchPreviewRendersACandidate(t *testing.T) {
+	h := newConfigHarness(t)
+	before := string(h.bytes(t))
+	for _, tc := range []struct {
+		template, branch string
+		bad              bool
+	}{
+		{"feat/{{.ID}}-{{.Slug}}", "feat/128-cap-the-public-api-per-tenant", false},
+		{"feat/{{.Nope}}", "", true},
+		{"feat/{{", "", true},
+	} {
+		payload, err := json.Marshal(map[string]string{"template": tc.template})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, h.ts.URL+"/v1/config/branch-preview", bytes.NewReader(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("%q: status %d: %s (%v)", tc.template, resp.StatusCode, body, err)
+		}
+		var got struct {
+			Branch string `json:"branch"`
+			Error  string `json:"error"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Branch != tc.branch || (got.Error != "") != tc.bad {
+			t.Errorf("%q answered %+v", tc.template, got)
+		}
+	}
+	if string(h.bytes(t)) != before {
+		t.Error("a preview wrote config.yaml")
+	}
+}

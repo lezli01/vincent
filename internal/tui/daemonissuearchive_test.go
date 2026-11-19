@@ -212,7 +212,6 @@ func TestDaemonPinnedBlocksCountTheAutoArchiveHeading(t *testing.T) {
 			report := testDoctorReport()
 			report.IssueArchive = ia
 			d.update(daemonDoctorMsg{report: report})
-			d.focusConfig = false
 			lines := strings.Split(ansi.Strip(d.render(sz[0]-2, sz[1]-3)), "\n")
 			logPath := filepath.FromSlash("/data/logs/daemon.log")
 			at := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, logPath) })

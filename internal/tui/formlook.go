@@ -62,6 +62,12 @@ func (s *formStack) add(block []string, focused bool) {
 	s.lines = append(s.lines, block...)
 }
 
+// extend appends a block that belongs to the focused one, so both stay in view.
+func (s *formStack) extend(block []string) {
+	s.lines = append(s.lines, block...)
+	s.to = len(s.lines)
+}
+
 // view is the stack cut to height around the focused section.
 func (s *formStack) view(height int) []string { return windowRange(s.lines, s.from, s.to, height) }
 

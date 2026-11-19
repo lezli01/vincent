@@ -92,6 +92,7 @@ neither a subcommand nor on this list:
 | In the TUI | From a shell |
 |---|---|
 | Creating and editing a workflow in the workflows view | `vincent workflow init`, your `$EDITOR`, then `vincent workflow validate` |
+| The live branch-name preview while editing the template in Settings | `vincent config set branch_template`, which refuses a template that does not compile |
 | A task's **Workflow** tab | No subcommand; `vincent workflow render` previews a workflow file |
 | The triggers view: its list, a trigger's delivery ledger, a dry poll, and creating, editing, arming or deleting a trigger | `vincent trigger ls`, `validate`, `test` and `apply`. Arming is done in the TUI or in `$EDITOR`, never by `apply` |
 | The agent / model / effort preview in the new-task form and the workflows view, and the new-task form's branch-name preview | `vincent workflow render`, which resolves the same triple the same way. No subcommand previews the branch name a task would get; `vincent task show` prints it once the task exists |

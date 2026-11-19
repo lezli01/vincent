@@ -3122,6 +3122,64 @@ nothing.
 | `ctrl+s` | Run the dry run — judge the sample, or poll the source again |
 | `esc` | Close the dry run |
 
+### Settings
+
+Every key in `config.yaml`, explained and editable, on a screen of its own. Open
+it from the command palette (`:` then `settings`), or with `enter` on the Daemon
+screen. It has no main tab.
+
+The categories are on the left, the selected category's settings are in the
+middle, and the pane on the right explains the selected setting: what it does, its
+default and when a change takes effect. A yellow dot marks a setting that differs
+from its default. On a terminal under 130 columns or 24 rows, the settings fill
+the screen and `tab` moves between categories.
+
+![Settings on the Work & limits category: the categories on the left, tasks and
+chats at once with their steppers in the middle, and an explanation of the
+selected setting on the right](../assets/tui-settings.png)
+
+**A change applies as you make it**, and there is no save step. Numbers, on/off
+switches, fixed choices and common durations change with `←` and `→`. Anything
+else opens an editor with `enter`. A value the daemon refuses is put back, with
+the reason on screen, and nothing is written.
+
+![Editing the branch template: the fields that can be inserted and a preview of
+the branch name the template makes](../assets/tui-settings-branch.png)
+
+Six kinds of setting always ask first, whichever key changes them:
+`notify.command`, `environment.*`, `agents.*.path`, `listen`, `triggers.enabled`
+and `backup.dir`. They decide what the daemon executes or exposes, and [agents run
+full-auto by default](../security-model.md). `listen` is written to the file, and
+the running daemon keeps its address until it restarts.
+
+![The confirmation for a new agent program, showing the value it replaces and the
+value it would become](../assets/tui-settings-confirm.png)
+
+| Key | Does |
+|---|---|
+| `↑` / `↓` | Move between settings |
+| `←` / `→` | Change the selected setting |
+| `enter` | Edit the selected setting |
+| `tab` / `shift+tab` | Next or previous category |
+| `/` | Search every setting by name, key or description |
+| `backspace` | Reset the selected setting to its default |
+| `e` | Open `config.yaml` in `$EDITOR` |
+| `R` | Re-read the configuration |
+| `esc` | Clear the search, else leave Settings |
+
+And inside the editor:
+
+| Key | Does |
+|---|---|
+| `←` / `→` | Choose a value, for a key with a fixed vocabulary |
+| `tab` | In the branch template, insert the highlighted field |
+| `enter` | Apply the change — the daemon validates and writes `config.yaml` |
+| `y` | Confirm a setting that decides what the daemon executes or exposes |
+| `esc` | Close without saving; on the confirmation it returns to the field |
+
+Everything here is also
+[`vincent config get|set`](../reference/cli.md#vincent-config).
+
 ### Daemon
 
 From 130 columns wide, this screen is a dashboard: the daemon and a summary of
@@ -3131,8 +3189,8 @@ how many concurrency slots are in use, and how many of those are working, waitin
 on you, or fan-out lanes. On a terminal under 30 rows the adapters stay one line
 each, so the log keeps its room.
 
-Version, uptime, the config in effect, the adapters detected, and a live tail of
-the daemon log. The view reports, it does not act — `vincent daemon stop` owns
+Version, uptime, a digest of the config in effect, the adapters detected, and a
+live tail of the daemon log. The view reports, it does not act — `vincent daemon stop` owns
 stopping the daemon, and a TUI that auto-started one has no business killing it.
 
 ![The daemon dashboard with the log holding the keys: the daemon and its work,
@@ -3141,56 +3199,19 @@ an observed usage limit, codex reporting its quota windows, cursor untested at
 its build, and copilot 1.0.105 with its quota unknown — above the live daemon
 log](../assets/tui-daemon-adapters.png)
 
-The **configuration block is the exception**, and only it. `tab` moves `↑`/`↓`
-off the log pane and onto the config list, which then shows every key
-`config.yaml` carries rather than the digest; `enter` opens a typed editor on
-the selected key, and applying it writes the file through the daemon. Stopping
-the daemon and `vincent gc` act on the process supervising this TUI, which is
-what that sentence is about; a configuration edit changes a file the daemon owns
-and already reloads, and which you can edit by hand at any moment anyway.
-
-Each row shows the value in force and, where they differ, the built-in default.
-The daemon serves the values it has loaded and not where they came from, so a
-row says "differs from the default" rather than "set in the file". A refusal
-renders against the field, with the value that caused it still there to fix, and
-nothing is written.
-
-![The daemon view with `tab` on the config list: each key with the value in
-force and, where they differ, the built-in default — max parallel tasks 4
-against 3, the branch template against an empty one — above the database block,
-with the adapters scrolled out of view below it](../assets/tui-daemon-config.png)
-
-Six keys ask before they apply: `notify.command`, `environment.*`,
-`agents.*.path`, `listen`, `triggers.enabled` and `backup.dir`. They decide what
-the daemon executes or exposes, and [agents run full-auto by default](../security-model.md)
-— a stray keystroke must not change the argv the daemon spawns as you, let a
-trigger file start agents as you, or send archives of `config.yaml` and every
-transcript to a folder someone else can read. `listen` is written to the
-file and the running daemon keeps the address it bound until it is restarted;
-the editor says so before you apply it.
+The config box is a digest. `enter` opens [Settings](#settings), where every key
+is changed.
 
 | Key | Does |
 |---|---|
-| `tab` | Move `↑`/`↓` between the config list and the log pane |
-| `↑` / `↓` | Select a configuration key, once the list has the arrows |
-| `enter` / `e` | Open the editor on the selected key, once the list has the arrows; from the log pane they move the arrows to the list first, so the editor never opens on a key you cannot see |
+| `enter` | Open [Settings](#settings) |
+| `↑` / `↓` | Scroll the log |
 | `R` | Re-read the daemon info, the config and the log |
 | `f` / `G` | Follow the end of the log again |
 | `i` | Make vincent claude's status line, or remove it — the exact JSON is shown first |
 | `S` | Install the agent skills vincent publishes — the exact command is shown first |
 | `U` | Set up Nerd Font icons — what gets downloaded is shown first |
 
-And inside the editor:
-
-| Key | Does |
-|---|---|
-| `←` / `→` | Choose a value, for a key with a fixed vocabulary |
-| `enter` | Apply the change — the daemon validates and writes `config.yaml` |
-| `y` | Confirm one of the six keys that decide what the daemon executes or exposes |
-| `esc` | Close without saving; on the confirmation it returns to the field |
-
-Everything here is also
-[`vincent config get|set`](../reference/cli.md#vincent-config).
 
 When the issue-close auto-archive
 ([`archive_tasks_on_issue_close`](../reference/configuration.md#archive_tasks_on_issue_close))

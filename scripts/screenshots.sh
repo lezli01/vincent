@@ -356,7 +356,7 @@ github:
 # Off, so closing an issue (paged, the delivered train issue, the
 # handoff-train workflow's deliver --close) leaves its done tasks on the board
 # and off the archived board, as the committed pictures show them. The key
-# sits below the fold of tui-daemon-config, so its value changes no picture.
+# is on no captured screen, so its value changes no picture.
 archive_tasks_on_issue_close: false
 # On, for the one Jira-bound project (task 142.20), answered by cmd/fakejira
 # (see jira_up). A short tick, so a close made in the fake reaches vincent
@@ -2424,21 +2424,53 @@ Screenshot "'"$OUT"'/tui-archived-chats.png"
 Sleep 2s
 '
 
-  # The daemon view with `tab` on the config list (task 060): every key,
-  # its value, and the default where the two differ, with the adapters and
-  # their usage windows below.
-  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-daemon-config 1400 api '
+  # Settings (task 152), opened from the palette on its first category.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-settings 1250 api '
 Type ":"
 Sleep 1s
-Type "daemon"
+Type "settings"
 Sleep 1s
 Enter
 Sleep 4s
-Tab
-Sleep 1s
-Down 3
+Screenshot "'"$OUT"'/tui-settings.png"
 Sleep 2s
-Screenshot "'"$OUT"'/tui-daemon-config.png"
+'
+
+  # The branch template's editor, with the daemon's preview of the name.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-settings-branch 1250 api '
+Type ":"
+Sleep 1s
+Type "settings"
+Sleep 1s
+Enter
+Sleep 4s
+Tab 2
+Sleep 1s
+Enter
+Sleep 2s
+Screenshot "'"$OUT"'/tui-settings-branch.png"
+Sleep 2s
+'
+
+  # The confirmation a key that decides what the daemon runs stops at.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-settings-confirm 1250 api '
+Type ":"
+Sleep 1s
+Type "settings"
+Sleep 1s
+Enter
+Sleep 4s
+Tab 4
+Sleep 1s
+Enter
+Sleep 1s
+Ctrl+U
+Sleep 500ms
+Type "/opt/agents/claude-next"
+Sleep 1s
+Enter
+Sleep 2s
+Screenshot "'"$OUT"'/tui-settings-confirm.png"
 Sleep 2s
 '
 
@@ -2790,7 +2822,7 @@ Sleep 2s
 
   # The daemon view with the log holding the keys (task 138.17): the blocks
   # pane pins its end, so the adapters block — all four, copilot's quota
-  # `unknown` by design (§9.9) — is on screen where tui-daemon-config,
+  # `unknown` by design (§9.9) — is on screen where the daemon dashboard,
   # whose config list takes the room, cuts it off.
   TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-daemon-adapters 1400 api '
 Type ":"

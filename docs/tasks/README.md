@@ -165,6 +165,7 @@ the living engineering specification records implementation contracts.
 | [149](149-global-pause.md) | A global pause: `vincent daemon pause` / `continue`, the `Z` key, and the pause shown on every TUI screen | ✅ done (4/4) |
 | [150](150-tui-redesign.md) | A ground-up redesign of the TUI: top tabs, an issues board of cards, and a chats workspace | ✅ done (11/11) |
 | [151](151-nerd-font-install.md) | Installing the Nerd Font behind `tui.icons: nerd`: `vincent fonts` and `U` on the Daemon screen | ✅ done (3/3) |
+| [152](152-settings-screen.md) | A Settings screen for everything in `config.yaml` | ✅ done (3/3) |
 
 ## How to add and update a task document
 

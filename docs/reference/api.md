@@ -151,6 +151,7 @@ are long-lived by contract and no write deadline is set.
 | `GET` | `/v1/health` | Liveness → `{ status, version }`. **Unauthenticated** |
 | `GET` | `/v1/info` | Version, uptime, agent availability, caps in effect, `slots`, `orphans`, the database's byte footprint, and the container runtime |
 | `GET` | `/v1/config` | The effective global config — **every** key in `config.yaml`, including the `tui` section the daemon only relays |
+| `POST` | `/v1/config/branch-preview` | Renders a candidate `branch_template` for a sample task and writes nothing. Answers `{branch, task_id, title}`, or `{error, task_id, title}` for a template that does not render |
 | `PATCH` | `/v1/config` | Partial, snake_case, mirroring the read shape. Validates, writes `config.yaml` comment-preservingly, and applies the result before answering → the config in force. An invalid patch is `400 validation_failed` with the file byte-identical |
 | `GET` | `/v1/agents` | Per-adapter availability plus model/effort options. `?refresh=true` forces a re-probe — including the reported [usage quota](#usage-quota) |
 | `POST` | `/v1/agents/{name}/quota` | Pushes a usage reading for one adapter → `204`. What [`vincent statusline`](cli.md#vincent-statusline) posts from Claude Code's status line. Not an MCP tool |
@@ -4307,6 +4308,7 @@ Every route on this page is a tool, with these exceptions:
 | `POST /v1/maintenance/gc` | Destructive admin |
 | `POST /v1/doctor/fix` | Destructive admin |
 | `PATCH /v1/config` | An agent must not reconfigure the daemon supervising it — a patch changes the argv it spawns, what its children inherit, and whether steps get MCP at all |
+| `POST /v1/config/branch-preview` | It previews a value for that same patch, and has no use outside a form that edits the configuration |
 | `POST /v1/workflows` | Same line: a workflow file is what that daemon runs. `GET /v1/workflows/schema` is an ordinary tool |
 | `PATCH /v1/workflows` | Same |
 | `POST /v1/triggers` | An agent must not author or arm a trigger that starts agents, and enabling one is a `PATCH`. The reads, `POST /v1/triggers/validate` and both dry runs are ordinary tools: a dry run fires nothing, and `/poll` runs only a command the user configured |

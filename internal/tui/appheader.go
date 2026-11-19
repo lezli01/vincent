@@ -58,6 +58,8 @@ func tabGlyph(id viewID) string {
 		return ic("⟡")
 	case viewDaemon:
 		return ic("◉")
+	case viewSettings:
+		return ic("⚙")
 	case viewPullRequests:
 		return ic("⇅")
 	case viewTriggers:

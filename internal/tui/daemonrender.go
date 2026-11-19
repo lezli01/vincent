@@ -21,11 +21,6 @@ import (
 // own sized to leave the log at least this much.
 const logPaneMinHeight = 3
 
-// configRowsShown is how many config keys the list shows at once with the
-// config focused. It is a cap, not a promise that ten fit: on a short
-// terminal the blocks pane is smaller still and follows the cursor.
-const configRowsShown = 10
-
 func (d *daemonView) render(width, height int) string {
 	if width > 0 {
 		d.width = width
@@ -33,15 +28,8 @@ func (d *daemonView) render(width, height int) string {
 	if height > 0 {
 		d.height = height
 	}
-	if d.form != nil {
-		// The editor is a takeover, not an overlay: while it is open it owns
-		// the keyboard (capturesInput), and rendering the blocks underneath it
-		// would suggest the keys they document still work.
-		return strings.Join(d.form.render(d.width), "\n")
-	}
 	if d.statusLine != nil {
-		// A takeover too, and for one reason more than the editor has: §16
-		// asks that the exact JSON be on screen before it is written, and a
+		// A takeover: §16 asks that the exact JSON be on screen before it is written, and a
 		// preview competing with four other blocks is not on screen.
 		return strings.Join(d.statusLine.render(d.width), "\n")
 	}
@@ -90,20 +78,7 @@ func (d *daemonView) render(width, height int) string {
 		// The cue line separates the pane from the log; the blank would only
 		// cost it a row.
 		blocks = blocks[:len(blocks)-1]
-		if d.focusConfig {
-			pane := newScrollPane(d.width, room, true)
-			pane.SetContentLines(blocks)
-			// Follow the cursor, the block's heading in view when it fits.
-			row := configAt + 1 + d.cursor
-			if first, _ := d.configWindow(); first > 0 {
-				row += 1 - first
-			}
-			pane.EnsureVisible(configAt, row)
-			pane.EnsureVisible(row, row)
-			blocks = pane.View()
-		} else {
-			blocks = d.pinnedBlocks(blocks, starts, room)
-		}
+		blocks = d.pinnedBlocks(blocks, starts, room)
 	}
 	logH = max(d.height-len(head)-len(blocks), logH)
 	head = append(head, blocks...)
@@ -126,7 +101,7 @@ func (d *daemonView) pinnedBlocks(blocks []string, starts []int, room int) []str
 	}
 	shown := blocks[hidden:]
 	shown = shown[:min(len(shown), max(room-1, 0))]
-	cue := styleDim.Render("  ↑ " + plural(hidden, "line", "lines") + " above — tab moves to the config list")
+	cue := styleDim.Render("  ↑ " + plural(hidden, "line", "lines") + " above — enter opens Settings")
 	return append([]string{cue}, shown...)
 }
 
@@ -195,29 +170,15 @@ func orphanLine(n int) (string, bool) {
 // configLines is the configuration the daemon actually has loaded, which is
 // not always the file on disk — it hot-reloads, and nothing announces it.
 //
-// Every key config.yaml carries is here and every one of them is editable
-// (task 060). The block used to show nine of the eleven GET /v1/config served,
-// which meant `branch_template`, `environment` and `notify` could not be seen
-// from any client at all, let alone changed.
+// This is a digest. Every key is on the Settings screen (task 152), which is
+// where one is changed.
 func (d *daemonView) configLines() []string {
 	head := " " + styleTitle.Render("config in effect")
 	if !d.configOK {
 		return []string{head, "  " + d.unavailable(d.configErr, "config")}
 	}
-	if d.focusConfig {
-		head += styleDim.Render("   ↑/↓ select   enter edit   tab back to the log")
-	} else {
-		head += styleDim.Render("   tab for every key, and to edit")
-	}
-	out := []string{head}
-	if d.focusConfig {
-		out = append(out, d.configListLines()...)
-	} else {
-		out = append(out, d.configSummaryLines()...)
-	}
-	if d.saved != "" {
-		out = append(out, "   "+styleDim.Render(d.saved+" saved to config.yaml"))
-	}
+	head += styleDim.Render("   enter opens Settings")
+	out := append([]string{head}, d.configSummaryLines()...)
 	if line, ok := d.staleLine(d.configErr, d.configAt); ok {
 		out = append(out, line)
 	}
@@ -226,7 +187,7 @@ func (d *daemonView) configLines() []string {
 
 // configSummaryLines is the digest this block has always been: the settings
 // someone opens this view to check, at a glance, with the log still on screen
-// underneath. Tab swaps it for the full list.
+// underneath.
 func (d *daemonView) configSummaryLines() []string {
 	c := d.config
 	out := []string{
@@ -266,74 +227,6 @@ func (d *daemonView) configSummaryLines() []string {
 		out = append(out, field(a.name+" path", path))
 	}
 	return out
-}
-
-// configListLines is the editable table: every key config.yaml carries, one
-// per row, scrolling under the cursor. It is what the summary above cannot
-// be — `branch_template`, `environment` and `notify` have no digest line, and
-// before task 060 that meant no client could see them at all.
-func (d *daemonView) configListLines() []string {
-	var out []string
-	first, last := d.configWindow()
-	if first > 0 {
-		out = append(out, "   "+styleDim.Render(fmt.Sprintf("↑ %d more", first)))
-	}
-	for i := first; i < last; i++ {
-		out = append(out, d.configRow(i, d.keys[i]))
-	}
-	if rest := len(d.keys) - last; rest > 0 {
-		out = append(out, "   "+styleDim.Render(fmt.Sprintf("↓ %d more", rest)))
-	}
-	return out
-}
-
-// configWindow is the slice of the key list the block shows. The full table
-// is thirty-odd rows, which is taller than the log pane it shares the view
-// with — the log is the thing worth watching here, and a config block that
-// pushes it off the screen would have taken away the reason this view exists.
-// So the list scrolls with the cursor, and says how many rows are out of
-// sight in each direction.
-func (d *daemonView) configWindow() (first, last int) {
-	if len(d.keys) <= configRowsShown {
-		return 0, len(d.keys)
-	}
-	first = min(max(d.cursor-configRowsShown/2, 0), len(d.keys)-configRowsShown)
-	return first, first + configRowsShown
-}
-
-// configRow renders one key: what it is, what it is set to, and — when they
-// differ — what it would be if the file said nothing.
-//
-// "differs from the default" is what the marker claims, and it is all this
-// view can honestly claim: GET /v1/config serves effective values and carries
-// no provenance, so a value that happens to equal the built-in is
-// indistinguishable from one the file never mentions.
-func (d *daemonView) configRow(i int, k configKey) string {
-	value := k.display(d.config)
-	if value == "" {
-		value = styleDim.Render("(empty)")
-	}
-	line := field(k.label, value)
-	if def := k.def(); def != k.read(d.config) {
-		line += styleDim.Render("   default " + defaultOrEmpty(def))
-	}
-	if k.restart {
-		line += styleDim.Render("   restart to apply")
-	}
-	if i != d.cursor {
-		return " " + line
-	}
-	if d.focusConfig {
-		return styleFocus.Render("›") + line
-	}
-	return styleDim.Render("›") + line
-}
-
-func defaultOrEmpty(s string) string {
-	if s == "" {
-		return "(empty)"
-	}
-	return s
 }
 
 // databaseLines is §17's footprint (task 029): how big the database is, which

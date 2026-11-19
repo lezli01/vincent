@@ -15885,6 +15885,16 @@ stream for the live tail.
    branch's commits past the project's default branch, absent when git cannot
    say (older than 2.41, or no such local base).
 
+   *Amended 2026-11-18 (task 152; applies to the daemon view and adds view 14).*
+   **Configuration has a screen of its own.** Settings lists every key the config
+   editor could reach, in eleven categories, with an explanation pane. It is
+   reached from the palette and the daemon view and is never a `tui.tabs` entry.
+   A change applies when it is made, through `PATCH /v1/config`. The four-key
+   confirmation of task 060 and its later additions stand on every path to such a
+   key, the arrows and reset included. The daemon view keeps a digest and no
+   longer edits. `POST /v1/config/branch-preview` renders a candidate template
+   with the daemon's own renderer, and `GET /v1/info` adds `config_path`.
+
    *Amended 2026-11-18 (task 150.6; applies to views 1 and 2).* **The live task
    board is four columns of cards**: Needs you (`taskstate.NeedsHuman`), Running
    (`running`, `awaiting_children`), Queued (`queued`, `paused`) and Finished.

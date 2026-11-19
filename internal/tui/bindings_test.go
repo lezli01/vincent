@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -2583,6 +2584,75 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
+	ctxSettings: {
+		"down": func(t *testing.T) {
+			v := settingsFixture(t)
+			before := v.selected
+			v.updateKey(registryKey(t, "down"))
+			if v.selected == before {
+				t.Fatal("down did not move to the next setting")
+			}
+		},
+		"left": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.client = offlineClient()
+			v.updateKey(registryKey(t, "left"))
+			if v.value(mustSetting(t, v, v.selected)) == mustSetting(t, v, v.selected).read(v.config) {
+				t.Fatal("left did not change the setting")
+			}
+		},
+		"enter": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.updateKey(registryKey(t, "enter"))
+			if v.form == nil {
+				t.Fatal("enter did not open the editor")
+			}
+		},
+		"tab": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.updateKey(registryKey(t, "tab"))
+			if v.category != 1 {
+				t.Fatalf("tab left the category at %d", v.category)
+			}
+		},
+		"/": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.updateKey(registryKey(t, "/"))
+			if !v.searching {
+				t.Fatal("/ did not start a search")
+			}
+		},
+		"backspace": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.client = offlineClient()
+			v.config.MaxParallelTasks = 9
+			v.updateKey(registryKey(t, "backspace"))
+			if got := v.shown["max_parallel_tasks"]; got != "3" {
+				t.Fatalf("backspace sent %q, want the default 3", got)
+			}
+		},
+		"e": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.info, v.infoOK = apiclient.Info{ConfigPath: "/tmp/config.yaml"}, true
+			v.exec = func(_ *exec.Cmd, _ tea.ExecCallback) tea.Cmd { return func() tea.Msg { return nil } }
+			if v.updateKey(registryKey(t, "e")) == nil {
+				t.Fatal("e did not open config.yaml")
+			}
+		},
+		"R": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.client = offlineClient()
+			if v.updateKey(registryKey(t, "R")) == nil {
+				t.Fatal("R did not re-read the configuration")
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := settingsFixture(t)
+			if v.updateKey(registryKey(t, "esc")) == nil {
+				t.Fatal("esc did not leave Settings")
+			}
+		},
+	},
 	ctxDaemon: {
 		"U": func(t *testing.T) {
 			if openFontFlow(t).fonts == nil {
@@ -2611,21 +2681,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("down did not reach the log pane's scroll path (follow was never re-synced)")
 			}
 		},
-		"tab": func(t *testing.T) {
-			d := newTestDaemonView([]string{"a log line"}, nil)
-			d.updateKey(registryKey(t, "tab"))
-			if !d.focusConfig {
-				t.Fatal("tab did not move the arrows onto the config list")
-			}
-		},
 		"enter": func(t *testing.T) {
 			d := newTestDaemonView([]string{"a log line"}, nil)
-			d.update(daemonConfigMsg{config: testConfig()})
-			// The row is live only with the config list focused (#803).
-			d.focusConfig = true
-			d.updateKey(registryKey(t, "enter"))
-			if d.form == nil {
-				t.Fatal("enter did not open the config editor")
+			_, cmd := d.updateKey(registryKey(t, "enter"))
+			if cmd == nil {
+				t.Fatal("enter did not open Settings")
+			}
+			if msg, ok := cmd().(selectViewMsg); !ok || msg.id != viewSettings {
+				t.Fatalf("enter sent %#v, want Settings", msg)
 			}
 		},
 		"i": func(t *testing.T) {
