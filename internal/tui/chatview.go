@@ -185,7 +185,11 @@ type chatView struct {
 	// turnAt is each turn's first body line, rebuilt on every render. It is
 	// what makes "which turns are on screen" answerable, and so what drives
 	// the lazy transcript fetch.
-	turnAt     map[int]int
+	turnAt map[int]int
+	// landSeq is the turn an open from the search lands on (task 156): each
+	// render pins that turn's heading to the top of the window, out of
+	// follow mode, until the reader scrolls or types. 0 is none.
+	landSeq    int
 	builtWidth int
 
 	composer textarea.Model
@@ -320,7 +324,10 @@ func (v *chatView) bindingContext() bindingContext {
 
 // open points the workspace at a chat: it loads the conversation and
 // subscribes to that chat's stream, dropping any previous subscription.
-func (v *chatView) open(id int64) tea.Cmd {
+func (v *chatView) open(id int64) tea.Cmd { return v.openAt(id, 0) }
+
+// openAt opens chat id landed on turn seq (task 156); seq 0 is a plain open.
+func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	if v.streamStop != nil {
 		v.streamStop()
 		v.streamStop = nil
@@ -335,7 +342,26 @@ func (v *chatView) open(id int64) tea.Cmd {
 	v.files = chatFileList{}
 	v.composer.SetValue("")
 	v.composer.Focus()
+	v.landSeq = seq
+	if seq > 0 {
+		v.following = false
+	}
 	return tea.Batch(v.loadCmd(), v.streamCmd(), v.loadAgentsCmd())
+}
+
+// landFetch asks for the landing turn's transcript, which the load's own
+// fetch of the newest turns may not include: an old turn is the usual
+// target of a search.
+func (v *chatView) landFetch() tea.Cmd {
+	if v.landSeq == 0 {
+		return nil
+	}
+	for _, t := range v.turns {
+		if t.Seq == v.landSeq {
+			return v.fetchTurn(t)
+		}
+	}
+	return nil
 }
 
 func (v *chatView) loadCmd() tea.Cmd {
@@ -433,7 +459,7 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case chatLoadedMsg:
 		v.applyLoaded(msg)
-		return v, v.fetchTranscripts()
+		return v, tea.Batch(v.fetchTranscripts(), v.landFetch())
 	case clipboardResultMsg:
 		v.note, v.noteBad = msg.notice()
 		return v, nil
@@ -472,8 +498,10 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		v.frame++
 		return v, nil
 	case tea.KeyPressMsg:
+		v.landSeq = 0
 		return v.updateKey(msg)
 	case tea.MouseWheelMsg:
+		v.landSeq = 0
 		return v, v.updateWheel(msg)
 	case tea.MouseClickMsg:
 		return v, v.updateClick(msg)

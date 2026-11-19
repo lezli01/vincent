@@ -164,6 +164,14 @@ func (v *chatView) bodyView(width, height int) string {
 			v.vp.SetYOffset(max(y-above, 0))
 		}
 	}
+	// A landing from the search (task 156) holds its turn at the top until
+	// the reader moves.
+	if v.landSeq > 0 {
+		if at, ok := v.turnAt[v.landSeq]; ok {
+			v.following = false
+			v.vp.SetYOffset(at)
+		}
+	}
 	return v.vp.View()
 }
 

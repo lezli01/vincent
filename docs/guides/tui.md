@@ -2615,6 +2615,30 @@ the draft alone; a second press discards the draft and returns you to the board.
 | `ctrl+s` | Create the chat and open it |
 | `esc` | Close an open list, else discard the draft |
 
+### Chat search
+
+**Search all chats** in the palette, or `S` on the chats board, opens a search
+over every chat in every project: live, archived, handed off and closed. It
+searches each chat's title, the messages sent to it and the agent's final
+answers. Tool output is not searched. Matching ignores case and finds text
+inside identifiers, so `429` finds `status429Body`. Every word you type must
+appear, and each word needs at least three characters.
+
+Results update as you type and are grouped by chat. Each group starts with the
+chat's state, title, id and agent, and says whether the chat is live or
+archived. Under it, one row per match shows where the match is (`title`,
+`turn N asked` or `turn N answer`) and a snippet with the matching text
+underlined and reversed, so it still shows under `NO_COLOR`.
+
+| Key | Does |
+|---|---|
+| `↑` / `↓`, `pgup` / `pgdown` | Move between results |
+| `enter` | Open the chat. On a turn's match, the chat opens scrolled to that turn, out of follow mode, and stays there until you scroll or type |
+| `esc` | Close the search. From a chat opened here, `esc` comes back to the search with its query and selection kept |
+
+![Chat search: the query "rollback" finding a closed chat by the words of its
+prompt, with the match highlighted](../assets/tui-chat-search.png)
+
 ### Chat workspace
 
 One conversation: the finished turns above, the running turn's live output below
@@ -3558,6 +3582,7 @@ The first twenty are the operations screens share, the next ten are the
 | `return` | `,` | Return an issue from its handoff |
 | `steer` | `ctrl+s` | Steer a chat's running turn, where its agent can — none can yet |
 | `compact` | `alt+k` | Compact the chat agent's context — sends its compact command (`/compact` on claude) as the next message; asks first |
+| `chat_search` | `S` | Search every chat, from the chats board |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

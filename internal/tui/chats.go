@@ -56,6 +56,9 @@ type (
 		id        int64
 		projectID int64
 		back      viewID
+		// seq is the turn to land on (task 156): the chat opens scrolled to
+		// that turn's heading, out of follow mode. 0 opens it as usual.
+		seq int
 	}
 	// chatsTickMsg advances the in-progress indicator's frame (task 089) and,
 	// as a consequence of the repaint, the "last activity" column: that cell
@@ -777,6 +780,10 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Scope):
 		v.cycleScope()
 		return v, v.loadCmd()
+	case opKey(keymap.ChatSearch):
+		if !v.archived {
+			return v, func() tea.Msg { return selectViewMsg{id: viewChatSearch} }
+		}
 	case opKey(keymap.Refresh):
 		v.forgetPreviews()
 		return v, v.loadCmd()

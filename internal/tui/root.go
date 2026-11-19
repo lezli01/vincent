@@ -1052,6 +1052,8 @@ func (m *root) activeContext() bindingContext {
 		return m.views[viewChats].(*chatsView).bindingContext()
 	case viewChat:
 		return m.views[viewChat].(*chatView).bindingContext()
+	case viewChatSearch:
+		return ctxChatSearch
 	case viewTriggers:
 		return m.views[viewTriggers].(*triggersView).bindingContext()
 	case viewIssues:
@@ -1224,7 +1226,7 @@ func (m *root) routeOpen(open tea.Msg) tea.Cmd {
 		// argument uses.
 		if v, ok := m.views[viewChat].(*chatView); ok {
 			v.back = msg.back
-			return tea.Batch(v.open(msg.id), m.switchTo(viewChat))
+			return tea.Batch(v.openAt(msg.id, msg.seq), m.switchTo(viewChat))
 		}
 	case newTaskFromPullMsg, newTaskFromIssueMsg, newTaskFromChatMsg:
 		// A seeded form, once its project is the selection.

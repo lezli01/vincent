@@ -44,6 +44,9 @@ const (
 	// viewSettings is every key of config.yaml on a screen of its own (task
 	// 152). It is reached from the palette and the Daemon screen, never a tab.
 	viewSettings
+	// viewChatSearch searches every chat (task 156). Reached from the palette
+	// and the chats board's S, never a tab.
+	viewChatSearch
 	viewCount
 )
 
@@ -266,5 +269,6 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 		viewIssues:        newIssuesView(),
 		viewIssue:         newIssueView(raw, links),
 		viewSettings:      newSettingsView(),
+		viewChatSearch:    newChatSearchView(),
 	}
 }

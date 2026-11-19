@@ -2944,6 +2944,23 @@ Sleep 2s
 Screenshot "'"$OUT"'/tui-new-chat.png"
 Sleep 2s
 '
+
+  # Chat search (task 156): every chat, live and ended, searched from the
+  # palette. "rollback" is in the prompt of the closed chat on the archived
+  # DNS rollback task (linked_chat above), so the picture shows an ended
+  # chat found by its words — what the board's own `/` cannot do.
+  tape tui-chat-search 1250 platform-infra '
+Type ":"
+Sleep 1s
+Type "search all chats"
+Sleep 1s
+Enter
+Sleep 2s
+Type "rollback"
+Sleep 3s
+Screenshot "'"$OUT"'/tui-chat-search.png"
+Sleep 2s
+'
 }
 
 case "${1:-all}" in

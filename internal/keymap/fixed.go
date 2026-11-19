@@ -229,6 +229,8 @@ var fixed = []Fixed{
 	{"pull requests", "P", "open a pull request for a task that has none"},
 	{"pull requests", "u", "unlink it"},
 	{"pull requests", "down", "move the selection"},
+	{"chat search", "enter", "open the chat — on a turn's match, scrolled to that turn"},
+	{"chat search", "down", "move between results (↑/↓, pgup/pgdown)"},
 	{"issues", "tab", "switch to the next main tab"},
 	{"issues", "down", "move the selection"},
 	{"issues", "space", "select this pending hand-off issue for a handoff"},

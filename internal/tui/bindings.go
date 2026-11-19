@@ -164,6 +164,8 @@ const (
 	// surface (review F4).
 	ctxConnection bindingContext = "connection"
 	ctxChats      bindingContext = "chats"
+	// ctxChatSearch is the chat search screen (task 156).
+	ctxChatSearch bindingContext = "chat search"
 	ctxChat       bindingContext = "chat"
 	// ctxChatSkills is the chat workspace's skill list (task 124.13). Its
 	// own context because while it is open it owns the keyboard, and `tab`,
@@ -427,6 +429,7 @@ var bindings = []binding{
 	// but new task follows. `n` is not shared: on the chats board it makes a
 	// chat, everywhere else it still makes a task.
 	{label: "chats — conversations with an agent, each in its own worktree", scope: scopeGlobal, nav: true, navTarget: viewChats},
+	{label: "Search all chats — find text in any chat's title, prompts or answers, live or archived", scope: scopeGlobal, nav: true, navTarget: viewChatSearch},
 	// The two archived boards get palette rows and no keys, for the reason
 	// task 049 retired 1..6 and task 067 gave chats a row: retiring memorized
 	// keys without substituting new ones is the point. `s` is skip and `A` is
@@ -663,6 +666,13 @@ var bindings = []binding{
 	// this is the way back to them.
 	{op: keymap.Scope, key: "s", label: "cycle the listing between live, ended (archived, handed-off or closed), and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 5, term: termScope},
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "R reload", priority: 6, term: termRefresh},
+	// `S` rather than `/` (task 156 decision 4): `/` filters the list in
+	// view, and this searches every chat's words, archived ones included.
+	{op: keymap.ChatSearch, key: "S", label: "search every chat's title, prompts and answers, live and archived", scope: scopePanel, context: ctxChats, hint: "S search", priority: 7},
+
+	// Chat search (task 156).
+	{key: "enter", label: "open the chat — on a turn's match, scrolled to that turn", scope: scopePanel, context: ctxChatSearch, hint: "enter open", priority: 1},
+	{key: "down", label: "move between results (↑/↓, pgup/pgdown)", scope: scopePanel, context: ctxChatSearch, hint: "↑/↓ move", priority: 2},
 
 	// Chat workspace.
 	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done (task 156)", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},

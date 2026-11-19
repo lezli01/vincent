@@ -847,7 +847,32 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 	},
+	ctxChatSearch: {
+		"enter": func(t *testing.T) {
+			v := chatSearchFixture()
+			_, cmd := v.updateKey(registryKey(t, "enter"))
+			msg, ok := drain(cmd).(openChatMsg)
+			if !ok || msg.id != 7 || msg.seq != 2 || msg.back != viewChatSearch {
+				t.Fatalf("enter produced %#v, want chat 7 opened at turn 2 with esc back to the search", drain(cmd))
+			}
+		},
+		"down": func(t *testing.T) {
+			v := chatSearchFixture()
+			v.cursor = 0
+			v.updateKey(registryKey(t, "down"))
+			if v.cursor != 1 {
+				t.Fatalf("down left the cursor at %d", v.cursor)
+			}
+		},
+	},
 	ctxChats: {
+		"S": func(t *testing.T) {
+			v := chatsFixture()
+			_, cmd := v.updateKey(registryKey(t, "S"))
+			if msg, ok := drain(cmd).(selectViewMsg); !ok || msg.id != viewChatSearch {
+				t.Fatalf("S produced %#v, want the chat search", drain(cmd))
+			}
+		},
 		"enter": func(t *testing.T) {
 			v := chatsFixture()
 			_, cmd := v.updateKey(registryKey(t, "enter"))
@@ -3647,4 +3672,21 @@ func openProjectForm(t *testing.T) *projectsView {
 		t.Fatal("a did not open the project form")
 	}
 	return p
+}
+
+// chatSearchFixture is the search screen holding one chat matched by its
+// title and by turn 2's answer, the cursor on the turn's match.
+func chatSearchFixture() *chatSearchView {
+	v := newChatSearchView()
+	v.results = []apiclient.ChatSearchResult{{
+		Chat: apiclient.Chat{ID: 7, ProjectID: 1, Title: "t", State: "idle"},
+		Matches: []apiclient.ChatSearchMatch{
+			{Seq: 0, Field: apiclient.ChatSearchFieldTitle},
+			{Seq: 2, Field: apiclient.ChatSearchFieldResult},
+		},
+		MatchCount: 2,
+	}}
+	v.buildRows()
+	v.cursor = 2
+	return v
 }
