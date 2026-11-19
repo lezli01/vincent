@@ -2,6 +2,9 @@ package chatrun
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -54,6 +57,16 @@ func assertHandoverEnding(t *testing.T, h *harness, chat *store.Chat, want chats
 	}
 	if p := turns[1]; p.Prompt != "second" || p.State != want || p.FailReason != reason {
 		t.Errorf("popped turn = %q %s/%s, want %q %s/%s", p.Prompt, p.State, p.FailReason, "second", want, reason)
+	}
+	// TurnWritesNoTranscript says a turn ending this way has a transcript,
+	// so `vincent chat transcript` reads it rather than reporting a missing
+	// file (review F5).
+	if TurnWritesNoTranscript(turns[1].FailReason) {
+		t.Errorf("TurnWritesNoTranscript(%q) is true for a handover ending", turns[1].FailReason)
+	}
+	path := filepath.Join(h.runner.transcriptDir(chat.ID), fmt.Sprintf("%d.jsonl", turns[1].Seq))
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("the popped turn has no transcript: %v", err)
 	}
 	if !chat.QueuePaused || chat.QueuePauseReason != pause || chat.QueuedCount != 1 {
 		t.Errorf("chat paused=%v reason=%q queued=%d, want true/%s/1",

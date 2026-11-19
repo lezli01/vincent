@@ -399,14 +399,14 @@ func (r *Runner) launch(chat *store.Chat, turn *store.ChatTurn) {
 				// message is a turn now, so it is interrupted and never
 				// re-run, and the rest of the queue stays paused (§12.4).
 				cancelCause(errCanceled)
-				r.finish(turn, chatstate.TurnInterruptedState, "", "", chat)
+				r.finishUnstarted(turn, chatstate.TurnInterruptedState, "", "", chat)
 				return
 			}
 			if stopped {
 				// StopTurn ran while the previous turn was handing over:
 				// this one never starts, and its ending pauses the rest.
 				cancelCause(errCanceled)
-				r.finish(turn, chatstate.TurnFailed, ReasonCanceled, "canceled", chat)
+				r.finishUnstarted(turn, chatstate.TurnFailed, ReasonCanceled, "canceled", chat)
 				return
 			}
 			next := r.runTurn(ctx, cancelCause, chat, turn)
@@ -1091,6 +1091,21 @@ func (r *Runner) turnShare(turn *store.ChatTurn, res agent.RunResult) {
 		return
 	}
 	turn.InputTokens, turn.OutputTokens = in-prevIn, out-prevOut
+}
+
+// finishUnstarted ends a popped turn that never reached runTurn — a stop or
+// a shutdown landing during a queue handover (task 156). It opens the turn's
+// transcript first, empty, so that TurnWritesNoTranscript stays true: only
+// runTurn's two early failures leave a turn with no file (review F5). A
+// transcript that cannot be opened ends the turn the way runTurn's would.
+func (r *Runner) finishUnstarted(turn *store.ChatTurn, state chatstate.TurnState, reason, msg string, chat *store.Chat) {
+	tr, err := transcript.Open(r.transcriptDir(chat.ID), fmt.Sprintf("%d.jsonl", turn.Seq))
+	if err != nil {
+		r.finish(turn, chatstate.TurnFailed, ReasonTranscriptIOError, err.Error(), chat)
+		return
+	}
+	tr.Close()
+	r.finish(turn, state, reason, msg, chat)
 }
 
 // finish writes the turn's ending and returns the chat to idle, in that
