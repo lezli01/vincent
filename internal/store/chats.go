@@ -35,6 +35,10 @@ const (
 	// applies from the next turn when made during a live one. It carries the
 	// chat, so a list repaints without a fetch.
 	EventChatUpdated = "chat.updated"
+	// EventChatViewed is a person having looked at the chat (task 156): its
+	// last_viewed_at advanced, so its unread mark may have cleared in every
+	// client, not just the one that viewed it.
+	EventChatViewed = "chat.viewed"
 )
 
 // ChatEventTypes is the chat.* family, in the order it is declared. It exists
@@ -42,7 +46,7 @@ const (
 // filtering on the payload's id: a chat event carries no task_id column, so
 // without this a replay would scan every task event behind the cursor.
 func ChatEventTypes() []string {
-	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue, EventChatUpdated, EventChatDraft}
+	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue, EventChatUpdated, EventChatDraft, EventChatViewed}
 }
 
 // IsChatEvent reports whether an event type belongs to the chat family.
@@ -54,7 +58,21 @@ const chatColumns = `id, project_id, title, state, agent, model, effort, permiss
 	branch, adopted_branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input, handoff_task_id,
 	linked_task_id, opening_context, issue_id, end_sha, created_at, updated_at,
 	queue_paused, queue_pause_reason, draft, stash, draft_updated_at,
-	(SELECT COUNT(*) FROM chat_queued_messages q WHERE q.chat_id = chats.id)`
+	(SELECT COUNT(*) FROM chat_queued_messages q WHERE q.chat_id = chats.id),
+	last_viewed_at, ` + chatUnreadExpr
+
+// chatUnreadExpr derives Chat.Unread in SQL (task 156) so a list stays one
+// query: the chat's latest terminal turn finished after it was last viewed,
+// or it has one at all when it was never viewed. A running turn never counts
+// — there is nothing to read until it ends. ended_at and last_viewed_at are
+// both store.TimeFormat, so the TEXT comparison is chronological; an
+// interrupted turn recovery left without ended_at falls back to started_at.
+// It names the table unaliased, which every `SELECT chatColumns FROM chats`
+// is.
+const chatUnreadExpr = `COALESCE((
+		SELECT MAX(COALESCE(ct.ended_at, ct.started_at)) FROM chat_turns ct
+		WHERE ct.chat_id = chats.id AND ct.state IN ('done', 'failed', 'interrupted')
+	) > COALESCE(chats.last_viewed_at, ''), 0) AS unread`
 
 const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_message, result_text,
 	session_id, input_tokens, output_tokens, cost_usd, exit_code, pid, proc_identity,
@@ -503,6 +521,53 @@ func (s *Store) updateChatOrRefuse(ctx context.Context, id int64, evType string,
 	return out, nil
 }
 
+// MarkChatViewed records that a person looked at chat id at `at` (task 156)
+// and returns the chat as it now reads, Unread re-derived. It is monotonic:
+// last_viewed_at becomes max(existing, at), so a client with a slow clock or
+// a late request never resurrects an unread mark another client cleared.
+// The chat.viewed event is written, in the same transaction, only when the
+// value advanced — a repeat view announces nothing. updated_at is left
+// alone on purpose: it orders the archive and drives auto-archive, and
+// looking at a chat is not a change to it.
+func (s *Store) MarkChatViewed(ctx context.Context, id int64, at time.Time) (*Chat, error) {
+	var out *Chat
+	var ev *Event
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE chats SET last_viewed_at = ?
+			WHERE id = ? AND (last_viewed_at IS NULL OR last_viewed_at < ?)`,
+			formatTime(at), id, formatTime(at))
+		if err != nil {
+			return fmt.Errorf("mark chat %d viewed: %w", id, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("mark chat %d viewed: %w", id, err)
+		}
+		c, err := scanChat(tx.QueryRowContext(ctx, `SELECT `+chatColumns+` FROM chats WHERE id = ?`, id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("chat %d: %w", id, ErrNotFound)
+		}
+		if err != nil {
+			return fmt.Errorf("get chat %d: %w", id, err)
+		}
+		out = c
+		if n == 0 {
+			return nil
+		}
+		ev, err = chatEvent(EventChatViewed, c, nil)
+		if err != nil {
+			return err
+		}
+		return appendEventTx(ctx, tx, ev)
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.notify(ev)
+	return out, nil
+}
+
 // CreateChatTurn inserts a running turn, assigning its seq, and moves the chat
 // to `running` in the same transaction. Both halves are one write because a
 // chat that is running with no turn row — or the reverse — is the state
@@ -850,11 +915,12 @@ func scanChat(r rowScanner) (*Chat, error) {
 	var openingContext, endSHA sql.NullString
 	var issueID sql.NullInt64
 	var createdAt, updatedAt string
-	var pauseReason, draftUpdatedAt sql.NullString
+	var pauseReason, draftUpdatedAt, lastViewedAt sql.NullString
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
 		&c.PermissionMode, &c.Branch, &c.AdoptedBranch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
 		&handoffTaskID, &linkedTaskID, &openingContext, &issueID, &endSHA, &createdAt, &updatedAt,
-		&c.QueuePaused, &pauseReason, &c.Draft, &c.Stash, &draftUpdatedAt, &c.QueuedCount); err != nil {
+		&c.QueuePaused, &pauseReason, &c.Draft, &c.Stash, &draftUpdatedAt, &c.QueuedCount,
+		&lastViewedAt, &c.Unread); err != nil {
 		return nil, err
 	}
 	var err error
@@ -886,6 +952,9 @@ func scanChat(r rowScanner) (*Chat, error) {
 		return nil, err
 	}
 	if c.UpdatedAt, err = parseTime(updatedAt); err != nil {
+		return nil, err
+	}
+	if c.LastViewedAt, err = parseTimePtr(lastViewedAt); err != nil {
 		return nil, err
 	}
 	return &c, nil

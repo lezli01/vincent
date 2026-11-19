@@ -73,6 +73,12 @@ type Chat struct {
 	DraftUpdatedAt *time.Time `json:"draft_updated_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
+	// LastViewedAt is when a person last looked at the chat (task 156), nil
+	// when nobody ever has. It is the daemon's, shared by every client.
+	LastViewedAt *time.Time `json:"last_viewed_at"`
+	// Unread says a turn finished since LastViewedAt (task 156); the daemon
+	// derives it, so a client never compares timestamps itself.
+	Unread bool `json:"unread"`
 	// Warnings are non-fatal notes on a create, such as a chat opened on a
 	// closed issue, or a first message that was not sent (task 161).
 	Warnings []string `json:"warnings,omitempty"`
@@ -554,6 +560,18 @@ func (c *Client) ArchiveChat(ctx context.Context, id int64, force bool) (*Chat, 
 	}
 	var out Chat
 	if err := c.post(ctx, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// MarkChatViewed records that the chat was looked at (task 156) and returns
+// it with its unread mark re-derived. The daemon stamps its own clock and
+// never moves the mark backwards, so calling it on every open is safe; a
+// view that advanced the mark is announced to every client as chat.viewed.
+func (c *Client) MarkChatViewed(ctx context.Context, id int64) (*Chat, error) {
+	var out Chat
+	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/viewed", id), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

@@ -833,6 +833,13 @@ type Chat struct {
 	DraftUpdatedAt *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	// LastViewedAt is when a person last looked at the chat (task 156): one
+	// value per chat, shared by every client, since the installation has no
+	// per-user identity. Nil = never viewed. Only MarkChatViewed writes it.
+	LastViewedAt *time.Time
+	// Unread is derived, never stored: the chat's latest terminal turn ended
+	// after LastViewedAt (or exists at all when it is nil). See chatUnreadExpr.
+	Unread bool
 }
 
 // Linked reports whether the chat is linked to a task (task 119), which is
