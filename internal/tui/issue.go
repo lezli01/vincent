@@ -233,8 +233,13 @@ func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		return v, nil
 	case issueActedMsg:
+		prev := v.w.act
 		v.w.act = nil
-		if msg.err == nil && msg.action == issueActDelete {
+		if offer := issueForceOffer(v.client, prev, msg); offer != nil {
+			v.w.act = offer
+			return v, nil
+		}
+		if msg.err == nil && (msg.action == issueActDelete || msg.action == issueActForceDelete) {
 			// The issue is gone; its screen has nothing left to show.
 			return v, func() tea.Msg { return selectViewMsg{id: viewIssues} }
 		}

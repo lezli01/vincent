@@ -215,8 +215,8 @@ func TestChatDeleteResultReachesTheChatsBoard(t *testing.T) {
 		name string
 		msg  deleteResultMsg
 	}{
-		{"success", deleteResultMsg{chats: true, total: 1, done: []int64{1}}},
-		{"failure", deleteResultMsg{chats: true, total: 1, failed: []bulkFailure{{id: 1, err: errors.New("boom")}}}},
+		{"success", deleteResultMsg{chats: true, archived: true, total: 1, done: []int64{1}}},
+		{"failure", deleteResultMsg{chats: true, archived: true, total: 1, failed: []bulkFailure{{id: 1, err: errors.New("boom")}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			chats := archivedChatsFixture()
@@ -260,7 +260,8 @@ func TestArchivedTasksPromptAndReportFitEightyColumns(t *testing.T) {
 
 	b.updateKey(registryKey(t, "n")) // directly: through the root, n is the bug above
 	b.update(deleteResultMsg{
-		total: 3, done: []int64{3},
+		archived: true,
+		total:    3, done: []int64{3},
 		refused: []bulkFailure{{id: 2, err: errors.New("a lane is holding on")}},
 		failed:  []bulkFailure{{id: 1, err: errors.New("connection refused")}},
 	})

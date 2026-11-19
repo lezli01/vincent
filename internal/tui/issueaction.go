@@ -35,6 +35,10 @@ const (
 	issueActClose  = "close"
 	issueActReopen = "reopen"
 	issueActDelete = "delete"
+	// issueActForceDelete is never in available_actions (task 153): it is
+	// offered only after a delete was refused because a live main or side
+	// task, or an open issue chat, holds the issue.
+	issueActForceDelete = "force delete"
 )
 
 // The close reasons, as the daemon spells them.
@@ -77,6 +81,8 @@ type (
 		id     int64
 		action string
 		issue  apiclient.Issue
+		// forced is what a force delete took with it (task 153).
+		forced apiclient.ForceDeletedIssue
 		err    error
 	}
 )
@@ -104,6 +110,8 @@ type issueAction struct {
 	dupOf  *int64
 	pick   *picker
 	note   string
+	// cause is the refusal a force delete answers (task 153).
+	cause string
 }
 
 // issueActionFor reads the issue `X` acts on. The detail already holds it in
@@ -277,6 +285,8 @@ func (a *issueAction) run() tea.Cmd {
 			out.issue, out.err = client.ReopenIssue(ctx, id)
 		case issueActDelete:
 			out.err = client.DeleteIssue(ctx, id)
+		case issueActForceDelete:
+			out.forced, out.err = client.ForceDeleteIssue(ctx, id)
 		case issueActReady, issueActUnready, issueActReturn:
 			out.issue, out.err = runHandoff(ctx, client, iss, action)
 		case issueActCancel:
@@ -295,6 +305,13 @@ func (a *issueAction) confirmText() []string {
 		return returnConfirmText(a.issue)
 	case issueActCancel:
 		return cancelConfirmText(a.issue)
+	case issueActForceDelete:
+		out := []string{
+			ref + " is held: " + a.cause,
+			"Force delete it? Its unsettled main and side tasks and open chats are deleted with it, " +
+				"from whatever state they are in; their worktrees are cleaned as far as possible and their branches stay.",
+		}
+		return out
 	case issueActDelete:
 		out := []string{"Delete " + ref + " permanently? It cannot be undone."}
 		if a.imported() {
@@ -464,6 +481,8 @@ func actedNote(msg issueActedMsg) string {
 		return msg.action + " " + ref + ": " + errString(msg.err)
 	}
 	switch msg.action {
+	case issueActForceDelete:
+		return forceDeletedNote(ref, msg.forced)
 	case issueActDelete:
 		return "deleted " + ref
 	case issueActClose:
@@ -471,4 +490,39 @@ func actedNote(msg issueActedMsg) string {
 	}
 	// A reopened issue lands where its tasks put it (task 145 decision 3).
 	return landedNote("reopened "+ref, msg.issue)
+}
+
+// issueForceOffer is the force re-ask a refused delete earns (task 153): the
+// issue is held by a live main or side task or an open issue chat. It is nil
+// for any other outcome, a live process included — that refusal comes from
+// the force delete itself, and nothing but cancelling gets past it.
+func issueForceOffer(client *apiclient.Client, prev *issueAction, msg issueActedMsg) *issueAction {
+	if prev == nil || msg.action != issueActDelete || msg.err == nil {
+		return nil
+	}
+	_, task := apiclient.IssueHasLiveMainTask(msg.err)
+	_, chat := apiclient.IssueHasLiveChat(msg.err)
+	if !task && !chat {
+		return nil
+	}
+	return &issueAction{
+		client: client, issue: prev.issue, action: issueActForceDelete,
+		stage: iaConfirm, cause: errString(msg.err),
+	}
+}
+
+// forceDeletedNote says what a force delete took with the issue and what its
+// cleanup left behind.
+func forceDeletedNote(ref string, f apiclient.ForceDeletedIssue) string {
+	parts := []string{"force-deleted " + ref}
+	if n := len(f.TaskIDs); n > 0 {
+		parts = append(parts, "with "+plural(n, "task", "tasks"))
+	}
+	if n := len(f.ChatIDs); n > 0 {
+		parts = append(parts, "with "+plural(n, "chat", "chats"))
+	}
+	if len(f.Warnings) > 0 {
+		parts = append(parts, "left behind: "+f.Warnings[0])
+	}
+	return strings.Join(parts, " · ")
 }

@@ -137,8 +137,9 @@ func TestArchivedBoardConfirmationNamesTheConsequence(t *testing.T) {
 func TestArchivedBoardBulkReportCountsRefusalsAndDeletions(t *testing.T) {
 	b := testArchivedBoard()
 	b.update(deleteResultMsg{
-		total: 3,
-		done:  []int64{1, 2},
+		archived: true,
+		total:    3,
+		done:     []int64{1, 2},
 		refused: []bulkFailure{{id: 3, err: &apiclient.Error{
 			Status: 409, Code: "invalid_state", Message: "task 3 still has fan-out lanes (task 9)",
 		}}},

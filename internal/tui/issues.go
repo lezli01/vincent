@@ -323,7 +323,12 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 		v.w.form, v.w.act = nil, newIssueMove(v.client, msg.issue)
 		return v, nil
 	case issueActedMsg:
+		prev := v.w.act
 		v.w.act = nil
+		if offer := issueForceOffer(v.client, prev, msg); offer != nil {
+			v.w.act = offer
+			return v, nil
+		}
 		v.setNote(actedNote(msg), msg.err != nil)
 		return v, v.loadCmd()
 	case issueChatOpenedMsg:

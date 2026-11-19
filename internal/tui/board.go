@@ -658,6 +658,9 @@ func (b *board) route(msg tea.Msg) (panel, tea.Cmd) {
 		return b, b.loadCmd()
 	case deleteResultMsg:
 		b.delNote, b.delNoteBad = msg.summary(), msg.bad()
+		// Refusals a force delete would take are re-asked by force (task
+		// 153), the way an archive's dirty worktree is re-asked with it.
+		b.delPrompt = msg.forceOffer()
 		// What the daemon deleted leaves the selection; what it refused stays
 		// marked, so acting on the named holder and retrying needs no
 		// re-selection (task 011's shape).
@@ -710,7 +713,7 @@ func (b *board) addressed(msg tea.Msg) bool {
 		// A chat sweep's outcome is the archived chats board's (#790): taken
 		// here it reported on the wrong board and dropped task marks whose
 		// ids happened to match the chats'.
-		return !m.chats
+		return !m.chats && m.archived == b.archived
 	default:
 		return true
 	}
@@ -2103,10 +2106,17 @@ func (b *board) askDelete() {
 func (b *board) answerDelete(key string) tea.Cmd {
 	p := b.delPrompt
 	switch key {
-	case "y", "b":
+	case "b":
+		if p.force {
+			return nil // a force delete never deletes a branch (task 153)
+		}
 		b.delPrompt = nil
 		b.delNote, b.delNoteBad = "deleting…", false
-		return dispatchDelete(b.client, p.ids, key == "b", false)
+		return dispatchDelete(b.client, p.ids, deleteAsk{archived: b.archived, branch: true})
+	case "y":
+		b.delPrompt = nil
+		b.delNote, b.delNoteBad = "deleting…", false
+		return dispatchDelete(b.client, p.ids, deleteAsk{archived: b.archived, force: p.force})
 	case "n", "esc":
 		b.delPrompt = nil
 		b.delNote, b.delNoteBad = "", false
@@ -2246,7 +2256,7 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 
 func (b *board) promptKeys() promptAnswers {
 	if b.delPrompt != nil {
-		return deletePromptKeys()
+		return b.delPrompt.keys()
 	}
 	return nil
 }

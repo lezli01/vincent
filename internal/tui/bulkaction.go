@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -104,6 +105,20 @@ func (a *actionBar) applyBulkResult(msg bulkResultMsg) {
 		a.pending, a.force = apiclient.ActionArchive, true
 		a.pendingIDs = msg.dirty
 		a.bulkTotal = msg.total
+		return
+	}
+	// The archives that failed on something no retry fixes are offered the
+	// force delete (task 153), the way the dirty ones are offered force.
+	var stuck []int64
+	for _, f := range msg.failed {
+		if isStuckArchive(msg.action, f.err) {
+			stuck = append(stuck, f.id)
+		}
+	}
+	if len(stuck) > 0 {
+		a.pending, a.force = actionForceDelete, false
+		a.pendingIDs, a.bulkTotal = stuck, msg.total
+		a.cause = actionErrString(msg.failed[0].err)
 	}
 }
 
@@ -155,6 +170,25 @@ func isDirtyWorktree(action string, err error) bool {
 	}
 	var apiErr *apiclient.Error
 	return errors.As(err, &apiErr) && apiErr.Details["reason"] == "worktree_dirty"
+}
+
+// isStuckArchive reports an archive that failed on its worktree or on the
+// daemon's side rather than on the task's state — a git error, a project
+// path that is gone — which a force delete is the way out of (task 153). A
+// dirty worktree is not one: force is its answer. Neither is a 409 naming a
+// state, which means the task simply moved on.
+func isStuckArchive(action string, err error) bool {
+	if action != apiclient.ActionArchive || err == nil || isDirtyWorktree(action, err) {
+		return false
+	}
+	var apiErr *apiclient.Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	if apiErr.Status >= http.StatusInternalServerError {
+		return true
+	}
+	return apiErr.Status == http.StatusConflict && apiErr.Details["reason"] != ""
 }
 
 // selectedNoun names a count of marked tasks for a prompt or a status line.

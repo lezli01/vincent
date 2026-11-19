@@ -11,8 +11,37 @@ import (
 // (§13.2, task 092). `branch` carries archive's vocabulary unchanged, so the
 // same BranchOutcome and the same Summary render both.
 type deleteResponse struct {
-	Deleted bool           `json:"deleted"`
-	Branch  *BranchOutcome `json:"branch"`
+	Deleted  bool           `json:"deleted"`
+	Branch   *BranchOutcome `json:"branch"`
+	Forced   bool           `json:"forced"`
+	Warnings []string       `json:"warnings"`
+}
+
+// ForceDeleteTask permanently removes a task from any state but one with a
+// live agent process (running, awaiting_input), together with its fan-out
+// lanes and the chats tied to it (task 153). It is the way out for a task
+// whose archive or delete keeps failing — a git error vincent cannot resolve.
+// Its worktree, container and transcripts are cleaned best-effort after the
+// row is gone; what could not be cleaned comes back as warnings, never as an
+// error. A branch is never deleted. A live process is refused with a 409
+// whose DeleteRefused reason is `live_process`.
+func (c *Client) ForceDeleteTask(ctx context.Context, id int64) ([]string, error) {
+	return c.forceDeleteRow(ctx, "/v1/tasks/", id)
+}
+
+// ForceDeleteChat is ForceDeleteTask for a chat (task 153): any state but
+// running and awaiting_input. A linked or handed-off chat's worktree is its
+// task's, and is left alone.
+func (c *Client) ForceDeleteChat(ctx context.Context, id int64) ([]string, error) {
+	return c.forceDeleteRow(ctx, "/v1/chats/", id)
+}
+
+func (c *Client) forceDeleteRow(ctx context.Context, prefix string, id int64) ([]string, error) {
+	var out deleteResponse
+	if err := c.send(ctx, http.MethodDelete, prefix+strconv.FormatInt(id, 10)+"?force=true", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Warnings, nil
 }
 
 // DeleteTask permanently removes an archived task: the row, its step_runs and

@@ -462,6 +462,14 @@ func newChatArchiveCmd() *cobra.Command {
 				chat, err := c.ArchiveChat(ctx, id, force)
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					switch {
+					case isDirtyWorktreeErr(err) && !force:
+						_, _ = fmt.Fprintln(cmd.ErrOrStderr(),
+							"  pass --force to archive it anyway, discarding those changes")
+					case isStuckArchiveErr(err):
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+							"  if this keeps failing, `vincent chat delete --force %d` removes the chat anyway\n", id)
+					}
 					return exitError{code: 1}
 				}
 				if wantJSON(cmd) {

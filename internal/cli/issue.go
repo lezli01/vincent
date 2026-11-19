@@ -713,14 +713,18 @@ func conflictDetail(err error, key string) string {
 var errIssueDeleteNeedsForce = errors.New("deleting an issue is permanent; pass --force to delete it")
 
 func newIssueDeleteCmd() *cobra.Command {
-	var force bool
+	var force, cascade bool
 	cmd := &cobra.Command{
 		Use:     "delete <id>...",
 		Aliases: []string{"rm"},
 		Short:   "Permanently delete issues",
 		Long: "Deletes an issue for good, in any state, and requires --force. It never\n" +
 			"touches the issue's source: an imported issue stays open upstream, and the\n" +
-			"delete leaves a tombstone so the next sync does not import it again.",
+			"delete leaves a tombstone so the next sync does not import it again.\n\n" +
+			"An issue whose main or side task has not settled, or that has an open issue\n" +
+			"chat, is refused. --cascade force-deletes those first (as `vincent task delete\n" +
+			"--force` would), then the issue — refused as a whole while any of them has a\n" +
+			"live agent process.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ids := make([]int64, 0, len(args))
@@ -733,6 +737,11 @@ func newIssueDeleteCmd() *cobra.Command {
 			}
 			if !force {
 				return errIssueDeleteNeedsForce
+			}
+			if cascade {
+				return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+					return issueForceDeleteAll(ctx, cmd, c, ids)
+				})
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				out := cmd.OutOrStdout()
@@ -747,7 +756,7 @@ func newIssueDeleteCmd() *cobra.Command {
 							if live, ok := apiclient.IssueHasLiveMainTask(err); ok {
 								_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
 									"  main task %d has not settled: finish or cancel it first "+
-										"(`vincent task cancel %d`)\n", live, live)
+										"(`vincent task cancel %d`), or pass --cascade to delete it too\n", live, live)
 							}
 						}
 						continue
@@ -770,8 +779,54 @@ func newIssueDeleteCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Confirm the permanent delete (required)")
+	cmd.Flags().BoolVar(&cascade, "cascade", false,
+		"Also force-delete the unsettled main and side tasks and open chats holding the issue")
 	jsonFlag(cmd)
 	return cmd
+}
+
+// issueForceDeleteAll is `issue delete --force --cascade` (task 153): one
+// force delete per issue, reported like the plain delete with what went with
+// each and what the cleanup left behind.
+func issueForceDeleteAll(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, ids []int64) error {
+	out := cmd.OutOrStdout()
+	reports := make([]deleteReport, 0, len(ids))
+	bad := false
+	for _, id := range ids {
+		res, err := c.ForceDeleteIssue(ctx, id)
+		if err != nil {
+			bad = true
+			reason, _ := apiclient.DeleteRefused(err)
+			reports = append(reports, deleteReport{ID: id, Error: apiMessage(err), Reason: reason, Forced: true})
+			if !wantJSON(cmd) {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: issue %d: %s\n", id, apiMessage(err))
+			}
+			continue
+		}
+		reports = append(reports, deleteReport{ID: id, Deleted: true, Forced: true, Warnings: res.Warnings})
+		if wantJSON(cmd) {
+			continue
+		}
+		_, _ = fmt.Fprintf(out, "issue %d deleted\n", id)
+		for _, t := range res.TaskIDs {
+			_, _ = fmt.Fprintf(out, "  task %d force-deleted\n", t)
+		}
+		for _, ch := range res.ChatIDs {
+			_, _ = fmt.Fprintf(out, "  chat %d force-deleted\n", ch)
+		}
+		for _, w := range res.Warnings {
+			_, _ = fmt.Fprintln(out, "  left behind: "+w)
+		}
+	}
+	if wantJSON(cmd) {
+		if err := emitJSON(out, reports); err != nil {
+			return err
+		}
+	}
+	if bad {
+		return exitError{code: 1}
+	}
+	return nil
 }
 
 func newIssueLabelsCmd() *cobra.Command {
