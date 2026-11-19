@@ -585,7 +585,13 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 			})
 		var wtErr *worktree.Error
 		if errors.As(err, &wtErr) {
-			writeConflict(w, wtErr.Error(), map[string]string{"state": string(chat.State), "action": "archive"})
+			// `reason` is the worktree's own vocabulary, the discriminator a
+			// task's archive refusal carries too: `worktree_dirty` is the
+			// one a client re-sends with force, any other one a force
+			// delete is the way out of (task 153).
+			writeConflict(w, wtErr.Error(), map[string]string{
+				"state": string(chat.State), "action": "archive", "reason": wtErr.Reason,
+			})
 			return
 		}
 		if err != nil {

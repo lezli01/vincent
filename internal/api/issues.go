@@ -989,25 +989,93 @@ func (s *Server) handleIssueDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	if r.URL.Query().Get("force") == "true" {
+		s.forceDeleteIssue(w, r, id)
+		return
+	}
 	if err := issues.New(s.deps.Store).Delete(ctx, issueActor(r), id); err != nil {
-		if live, isLive := store.AsIssueHasLiveMainTask(err); isLive {
-			writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
-				Code: CodeIssueHasLiveMainTask, Message: live.Error(),
-				Details: map[string]string{"task_id": fmt.Sprint(live.TaskID)},
-			}})
-			return
-		}
-		if live, isLive := store.AsIssueHasLiveChat(err); isLive {
-			writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
-				Code: CodeIssueHasLiveChat, Message: live.Error(),
-				Details: map[string]string{"chat_id": fmt.Sprint(live.ChatID)},
-			}})
-			return
-		}
-		s.writeIssueError(w, r, id, "delete issue", err)
+		s.writeIssueDeleteError(w, r, id, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// writeIssueDeleteError maps an issue delete's failure, the two holder
+// refusals (task 134.12, task 140 decision 10) included.
+func (s *Server) writeIssueDeleteError(w http.ResponseWriter, r *http.Request, id int64, err error) {
+	if live, isLive := store.AsIssueHasLiveMainTask(err); isLive {
+		writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
+			Code: CodeIssueHasLiveMainTask, Message: live.Error(),
+			Details: map[string]string{"task_id": fmt.Sprint(live.TaskID)},
+		}})
+		return
+	}
+	if live, isLive := store.AsIssueHasLiveChat(err); isLive {
+		writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
+			Code: CodeIssueHasLiveChat, Message: live.Error(),
+			Details: map[string]string{"chat_id": fmt.Sprint(live.ChatID)},
+		}})
+		return
+	}
+	s.writeIssueError(w, r, id, "delete issue", err)
+}
+
+// forceDeleteIssueResponse is DELETE /v1/issues/{id}?force=true's answer
+// (task 153): what went with the issue, and what the cleanup left behind.
+type forceDeleteIssueResponse struct {
+	Deleted  bool     `json:"deleted"`
+	Forced   bool     `json:"forced"`
+	TaskIDs  []int64  `json:"task_ids"`
+	ChatIDs  []int64  `json:"chat_ids"`
+	Warnings []string `json:"warnings"`
+}
+
+// forceDeleteIssue deletes an issue whose ordinary delete is held (task 153):
+// it force-deletes the unsettled main and side tasks and the open issue chats
+// that hold it, then deletes the issue. A holder with a live process refuses
+// the whole call before anything is removed — a 409 with
+// `reason: live_process` naming it. A holder created after the check is the
+// ordinary delete's 409 again; re-issuing finishes the job.
+func (s *Server) forceDeleteIssue(w http.ResponseWriter, r *http.Request, id int64) {
+	ctx := r.Context()
+	if _, err := s.deps.Store.GetIssue(ctx, id); err != nil {
+		s.writeIssueError(w, r, id, "delete issue", err)
+		return
+	}
+	taskIDs, chatIDs, err := s.deps.Store.IssueDeleteHolders(ctx, id)
+	if err != nil {
+		s.internalError(w, "issue delete holders", err)
+		return
+	}
+	if err := s.deps.Store.ForceDeleteBlocker(ctx, id, taskIDs, chatIDs); !s.writeDeleteError(w, err) {
+		return
+	}
+	if len(taskIDs) > 0 && s.deps.Runner == nil {
+		s.internalError(w, "issue force delete", errors.New("no task runner is configured"))
+		return
+	}
+	out := forceDeleteIssueResponse{Deleted: true, Forced: true, TaskIDs: taskIDs, ChatIDs: chatIDs, Warnings: []string{}}
+	for _, tid := range taskIDs {
+		warnings, err := s.deps.Runner.ForceDelete(ctx, tid)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.writeDeleteError(w, err)
+			return
+		}
+		out.Warnings = append(out.Warnings, warnings...)
+	}
+	for _, cid := range chatIDs {
+		warnings, err := s.forceDeleteChat(r, cid)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.writeDeleteError(w, err)
+			return
+		}
+		out.Warnings = append(out.Warnings, warnings...)
+	}
+	if err := issues.New(s.deps.Store).Delete(ctx, issueActor(r), id); err != nil {
+		s.writeIssueDeleteError(w, r, id, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // issueLabelBody is one entry of a project's label catalogue.
