@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -549,4 +551,70 @@ func (c *Client) ChatTurnTranscriptRaw(
 ) (data []byte, nextOffset int64, err error) {
 	return c.transcriptRawAt(ctx,
 		fmt.Sprintf("/v1/chats/%d/turns/%d/transcript%s", chatID, seq, opts.query("raw")))
+}
+
+// ChatExportOptions selects an export's rendering (§13.2 GET
+// /v1/chats/{id}/export, task 156). Format is "md", "html" or "json"; empty
+// is the daemon's default, md.
+type ChatExportOptions struct {
+	Format   string
+	WithDiff bool
+}
+
+// ChatExport is one rendered export: its bytes, its Content-Type, and the
+// file name the daemon suggests in Content-Disposition (which only the TUI
+// uses — the CLI never invents a name).
+type ChatExport struct {
+	Body        []byte
+	ContentType string
+	Filename    string
+}
+
+// ChatExport fetches GET /v1/chats/{id}/export. The daemon renders; the
+// client only carries the bytes, so every client writes the same document.
+//
+// It is read on the stream client for DiffStream's reason: an export with
+// its diff is bounded only by the worktree, and requestTimeout bounds the
+// wait for the headers, not the read.
+func (c *Client) ChatExport(ctx context.Context, chatID int64, opts ChatExportOptions) (*ChatExport, error) {
+	q := url.Values{}
+	if opts.Format != "" {
+		q.Set("format", opts.Format)
+	}
+	if opts.WithDiff {
+		q.Set("diff", "true")
+	}
+	path := "/v1/chats/" + strconv.FormatInt(chatID, 10) + "/export"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build export request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	headers := time.AfterFunc(requestTimeout, cancel)
+	resp, err := c.stream.Do(req)
+	if !headers.Stop() && err == nil {
+		_ = resp.Body.Close()
+		err = context.DeadlineExceeded
+	}
+	if err != nil {
+		return nil, fmt.Errorf("GET chat export: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, decodeError(resp)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read chat export: %w", err)
+	}
+	out := &ChatExport{Body: body, ContentType: resp.Header.Get("Content-Type")}
+	if _, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition")); err == nil {
+		out.Filename = params["filename"]
+	}
+	return out, nil
 }
