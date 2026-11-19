@@ -401,6 +401,26 @@ uncommitted work would be lost; it refuses unless you force it.
 Inspect the worktree first (its path is on the task detail view), commit or
 discard, then archive again.
 
+### A task or chat cannot be archived or deleted
+
+Archive fails with `git_error` (or `project_path_missing`) and keeps failing:
+the worktree's repository moved, its `.git` link points nowhere, or git
+refuses the directory for some other reason vincent cannot fix. A force delete
+removes the row anyway:
+
+```sh
+vincent task delete 7 --force
+vincent chat delete 3 --force
+vincent issue delete 12 --force --cascade   # an issue held by its tasks or chats
+```
+
+In the TUI, a failed archive asks `force delete #7? (y/n)` instead of leaving
+the error on the line, and the archived boards ask the same about a delete
+they refused. A force delete works from any state except a live agent process;
+cancel a running task or turn first. It cleans up the worktree as far as it
+can and prints what it had to leave behind. It never deletes a branch, so the
+work on it stays. See [Force delete](../reference/api.md#force-delete).
+
 ### `branch_exists` / `worktree_path_occupied`
 
 The branch this task would use, or its worktree directory, already exists from an
