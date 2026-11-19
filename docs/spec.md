@@ -9657,7 +9657,10 @@ for pause and resume, `approve`, `reject`, `retry`, `edit_retry`, `repair`,
 `archive` shared with the term) and the global chrome (`palette`, `palette_alt`, `help`, `help_alt`, `next_attention`,
 `mouse`, `quit`, and `new`, which is also the chats board's `n` and — *added
 2026-10-03, task 130.12* — the issue screens', and — *added 2026-10-05, task
-132.4* — `project`, `@` by default, which opens the project picker). Every other key
+132.4* — `project`, `@` by default, which opens the project picker). *Amended 2026-11-19 (task 156, issue
+#1015):* `compact`, `alt+k` by default on the chat surface, is one more term;
+it is answered while the composer has the keyboard, so the printable-key
+refusal below covers it (§15). Every other key
 the TUI answers is fixed (§15). An override **replaces** the operation's
 default on every surface that carries it; it is not an alias, so the vacated
 key is free for another override in the same edit and two operations may swap.
