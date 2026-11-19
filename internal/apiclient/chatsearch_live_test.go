@@ -18,7 +18,7 @@ import (
 	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
-// TestSearchChatsAgainstTheRealAPI is task 156's client half: SearchChats
+// TestSearchChatsAgainstTheRealAPI is task 158's client half: SearchChats
 // decodes the real GET /v1/chats/search handler's body, and a too-short
 // query surfaces as the typed error code.
 func TestSearchChatsAgainstTheRealAPI(t *testing.T) {

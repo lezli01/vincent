@@ -170,9 +170,9 @@ the living engineering specification records implementation contracts.
 | [154](154-chat-hides-unparsed-lines.md) | A chat hides the lines vincent cannot parse below verbose, instead of counting them between messages | ✅ done (1/1) |
 | [155](155-archive-finished-tasks-after.md) | Archive a task that has sat finished for `archive_finished_tasks_after` (12h by default) | ✅ done (2/2) |
 | [156](156-chat-message-queue.md) | Queue chat messages sent while a turn runs; steering gated on a claude capture | 🔄 in progress (3/5) |
-| [156](156-chat-turn-usage-and-context-gauge.md) | Per-turn usage in a chat's turn headings, a context gauge, and `/compact` on claude | 🔄 in progress (3/4) |
-| [156](156-chat-search.md) | Search every chat's title, prompts and answers, live and archived, and open a result on its turn | ✅ done (5/5) |
-| [156](156-chat-export.md) | Export a chat as Markdown, HTML or JSON: `GET /v1/chats/{id}/export`, `vincent chat export`, the TUI's export form | ✅ done (4/4) |
+| [157](157-chat-turn-usage-and-context-gauge.md) | Per-turn usage in a chat's turn headings, a context gauge, and `/compact` on claude | 🔄 in progress (3/4) |
+| [158](158-chat-search.md) | Search every chat's title, prompts and answers, live and archived, and open a result on its turn | ✅ done (5/5) |
+| [159](159-chat-export.md) | Export a chat as Markdown, HTML or JSON: `GET /v1/chats/{id}/export`, `vincent chat export`, the TUI's export form | ✅ done (4/4) |
 
 ## How to add and update a task document
 

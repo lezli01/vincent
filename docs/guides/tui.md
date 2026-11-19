@@ -3585,7 +3585,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twenty are the operations screens share, the next ten are the
+The first twenty-three are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |

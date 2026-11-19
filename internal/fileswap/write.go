@@ -9,7 +9,7 @@ import (
 // WriteFile writes data to path atomically: into a temporary file beside it,
 // then Replace. A reader — or a crash — sees the old file or the new one,
 // never half of either. `vincent chat export -o` and the TUI's export form
-// write through it (task 156), because a half-written export is worse than
+// write through it (task 159), because a half-written export is worse than
 // none.
 //
 // The temporary file is created in path's own directory so the rename never

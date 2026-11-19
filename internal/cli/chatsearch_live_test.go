@@ -9,7 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/chatstate"
 )
 
-// `vincent chat search` (task 156) against the real GET /v1/chats/search
+// `vincent chat search` (task 158) against the real GET /v1/chats/search
 // handler: the grouped text output, --json, the archived scope, and a
 // too-short query's exit 1.
 func TestChatSearchCommand(t *testing.T) {

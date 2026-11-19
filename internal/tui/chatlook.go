@@ -14,7 +14,7 @@ import (
 // opening a chat never changes how the conversation looks.
 
 // chatTurnHeading heads the agent's half of a turn: who answered, which turn,
-// when, and — once it ended — what it spent (task 156, chatTurnUsage).
+// when, and — once it ended — what it spent (task 157, chatTurnUsage).
 func chatTurnHeading(agent string, t apiclient.ChatTurn, age string) string {
 	line := toneMagenta.Bold(true).Render(ic("◈ ")+oneLine(agent)) + styleDim.Render(fmt.Sprintf("  ·  turn %d", t.Seq))
 	if age != "" {

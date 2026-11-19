@@ -450,6 +450,6 @@ func (a *Adapter) SupportsRestrictedResume() bool { return false }
 
 var _ agent.CacheInInput = (*Adapter)(nil)
 
-// InputIncludesCache implements agent.CacheInInput (task 156, §9.3): codex's
+// InputIncludesCache implements agent.CacheInInput (task 157, §9.3): codex's
 // `input_tokens` already counts its `cached_input_tokens`.
 func (a *Adapter) InputIncludesCache() bool { return true }

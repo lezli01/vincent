@@ -210,7 +210,7 @@ var md = goldmark.New(
 )
 
 // imagesToLinks turns every image into a link to it, so the page loads
-// nothing from anywhere when it is opened (task 156 decision 2: no external
+// nothing from anywhere when it is opened (task 159 decision 2: no external
 // assets). The reader can still follow the link.
 type imagesToLinks struct{}
 

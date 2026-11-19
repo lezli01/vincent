@@ -60,15 +60,15 @@ const (
 	// names why rather than doing anything else under its name.
 	Steer Op = "steer"
 	// Compact sends the chat agent's compact command (`/compact` on claude)
-	// as the next message, after a y/n prompt (task 156 decision 4). alt+k
+	// as the next message, after a y/n prompt (task 157 decision 4). alt+k
 	// for "kompact": the composer owns every letter, `c` is §6 cancel, and
 	// the textarea binds ctrl+k and alt+c to editing.
 	Compact Op = "compact"
 	// ChatSearch opens the search over every chat from the chats board
-	// (task 156 decision 4). S for "search": `/` filters the list in view.
+	// (task 158 decision 4). S for "search": `/` filters the list in view.
 	ChatSearch Op = "chat_search"
 	// ExportChat opens the export form for the chat on screen, or the chats
-	// board's selected row (task 156). alt+e for "export": the chat composer
+	// board's selected row (task 159). alt+e for "export": the chat composer
 	// owns every printable key, the textarea binds none of alt+e, and no
 	// surface answers it.
 	ExportChat Op = "export_chat"
@@ -344,7 +344,7 @@ var exceptions = []exception{
 	{key: "r", ops: []Op{Retry}, anyFixed: true, why: "r retries the connection while disconnected, when no task is on screen"},
 	{key: "enter", ops: []Op{OpenRow}, anyFixed: true, why: "enter activates the focused thing on every surface"},
 	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
-	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 156: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},
+	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 158: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},
 	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},
 }
 

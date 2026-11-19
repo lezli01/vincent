@@ -20,7 +20,7 @@ func TestProjectScopedRegistry(t *testing.T) {
 		viewChats, viewChat, viewArchived, viewArchivedChats, viewTriggers,
 		viewIssues, viewIssue,
 	}
-	// The chat search spans every project (task 156 decision 3).
+	// The chat search spans every project (task 158 decision 3).
 	unscoped := []viewID{viewProjects, viewDaemon, viewSettings, viewChatSearch}
 	if got := len(scoped) + len(unscoped); got != int(viewCount) {
 		t.Fatalf("%d views classified, viewCount is %d: decide whether the new view is project-bearing", got, viewCount)

@@ -883,7 +883,7 @@ type ChatTurn struct {
 	SessionInputTokens  *int64
 	SessionOutputTokens *int64
 	// CacheReadTokens and CacheCreationTokens are the turn's cache spend,
-	// which InputTokens leaves out (task 156 decision 3); on a
+	// which InputTokens leaves out (task 157 decision 3); on a
 	// CumulativeUsage adapter they are this turn's share of the session
 	// cache totals in SessionCacheReadTokens and SessionCacheCreationTokens.
 	// ContextTokens is the prompt size of the run's last top-level model

@@ -28,7 +28,7 @@ import (
 )
 
 // exportHarness is GET /v1/chats/{id}/export over the real handler, a real
-// store and real git (task 156). Chats and turns are written straight into
+// store and real git (task 159). Chats and turns are written straight into
 // the store, and transcripts straight onto disk, so each case is exactly the
 // row and file it names — no agent ever runs.
 type exportHarness struct {

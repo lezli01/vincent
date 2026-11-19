@@ -158,10 +158,10 @@ func UsageIsSessionTotal(a Adapter) bool {
 }
 
 // CacheInInput is implemented by an adapter whose InputTokens already count
-// the cached input its CacheReadTokens report (task 156, §9.3). Codex is the
+// the cached input its CacheReadTokens report (task 157, §9.3). Codex is the
 // one: its `input_tokens` includes `cached_input_tokens`, as OpenAI's usage
 // does. A chat turn's heading adds the cache counts to the input to show
-// what a turn processed (task 156 decision 3), so on such an adapter the
+// what a turn processed (task 157 decision 3), so on such an adapter the
 // turn records no cache counts rather than counting the cache twice.
 //
 // It is optional for the reason CumulativeUsage is: an adapter that says
@@ -179,7 +179,7 @@ func InputIncludesCache(a Adapter) bool {
 }
 
 // Compactor is implemented by an adapter whose CLI compacts a conversation's
-// context when sent a command as the next message (task 156 decision 4,
+// context when sent a command as the next message (task 157 decision 4,
 // §9.1). Claude is the one: `/compact`. The chat's context gauge offers the
 // command past its threshold, and only for an adapter that names one —
 // compaction is never emulated.
@@ -801,7 +801,7 @@ type RunResult struct {
 	// timing and token columns, and these reach a reader through the
 	// transcript, which §13.2 re-normalizes on every read. A chat turn is
 	// the one exception: it persists the cache counts and the two context
-	// figures (task 156).
+	// figures (task 157).
 	//
 	// Duration is the CLI's, not vincent's, and the two legitimately
 	// disagree: claude's excludes the time a §7.4 input wait adds to ours.
@@ -820,7 +820,7 @@ type RunResult struct {
 	CacheCreationTokens int64
 	// ContextTokens is the prompt size of the run's last top-level model
 	// call — its input plus cache-read plus cache-write tokens — which is how
-	// full the conversation's context was when the run ended (task 156
+	// full the conversation's context was when the run ended (task 157
 	// decision 2). It is never derived from the totals above, which add up
 	// every call of the run. ContextWindow is the size of the window that
 	// model has, as the run itself reported it (decision 1). 0 is

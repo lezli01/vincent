@@ -1,4 +1,4 @@
--- 0059_chat_search: a full-text index over every chat (task 156, #1022,
+-- 0061_chat_search: a full-text index over every chat (task 158, #1022,
 -- spec §5.5, §14).
 --
 -- What is indexed is a chat's title, each turn's prompt and each turn's
@@ -6,7 +6,7 @@
 -- which §12.2's retention deletes. `result_text` is a column, not a file, so
 -- an answer stays searchable after its transcript is gone.
 --
--- Tokenizer: trigram (task 156 decision 2). Matching is by substring, so
+-- Tokenizer: trigram (task 158 decision 2). Matching is by substring, so
 -- `429` finds `status429Body` and `body_format` finds a path that contains
 -- it; the unicode61 default would split neither. The cost is a larger index
 -- and that a term under three characters cannot use it — the API refuses

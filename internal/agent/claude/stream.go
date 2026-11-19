@@ -89,7 +89,7 @@ type streamLine struct {
 // streamModelUsage is one entry of the result line's `modelUsage` map, whose
 // key is the model id.
 //
-// ContextWindow and CanonicalModel are read since task 156 (decision 1),
+// ContextWindow and CanonicalModel are read since task 157 (decision 1),
 // which amends task 066's choice to leave every model-describing member
 // unread: §9.6's catalog holds aliases (`sonnet`, `""` for the default) and
 // cannot tell a 200k model from a 1M one, while the run's own report names
@@ -166,7 +166,7 @@ type streamMessage struct {
 	// below unchanged.
 	Text string
 	// Model and Usage are an assistant line's model id and the usage of the
-	// model call it belongs to (task 156). The last top-level pair is the
+	// model call it belongs to (task 157). The last top-level pair is the
 	// run's context figure: RunResult.ContextTokens and the model whose
 	// window RunResult.ContextWindow names.
 	Model string
@@ -306,7 +306,7 @@ type streamParser struct {
 	replayed string
 	// mainModel and mainContext are the last top-level assistant line's model
 	// and prompt size — input plus cache-read plus cache-write tokens — the
-	// fourth thing that spans lines (task 156 decision 2). A subagent's lines
+	// fourth thing that spans lines (task 157 decision 2). A subagent's lines
 	// carry a `parent_tool_use_id` and never touch them: a subagent's prompt
 	// is not the conversation's. The result line reads both.
 	mainModel   string
@@ -350,7 +350,7 @@ func (p *streamParser) parse(raw []byte) agent.Event {
 }
 
 // watchContext remembers a top-level assistant line's model and prompt size
-// (task 156 decision 2). Claude writes one assistant line per content block,
+// (task 157 decision 2). Claude writes one assistant line per content block,
 // each repeating its call's usage, so the last line of the last call wins and
 // a repeat changes nothing. A `<synthetic>` line is one claude wrote itself
 // — a forked skill's stand-in reply carries all-zero usage — and is no model
@@ -369,7 +369,7 @@ func (p *streamParser) watchContext(line *streamLine) {
 }
 
 // contextWindow is the window `modelUsage` reports for the run's main model
-// (task 156 decision 1), or 0 when it reports none. The assistant lines name
+// (task 157 decision 1), or 0 when it reports none. The assistant lines name
 // the model without the suffix the map's key may carry (`claude-opus-5`
 // against `claude-opus-5[1m]`), so a key matches on itself, on itself with
 // its bracketed suffix cut, or on its `canonicalModel`. With no main model to

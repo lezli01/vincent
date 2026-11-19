@@ -30,7 +30,7 @@ func finalResult(t *testing.T, fixture string) *agent.RunResult {
 	return res
 }
 
-// TestContextFigures is task 156 decisions 1 and 2 against captured runs: the
+// TestContextFigures is task 157 decisions 1 and 2 against captured runs: the
 // window is the one modelUsage reports for the main loop's model, and the
 // prompt size is the last top-level assistant call's input plus its cache.
 func TestContextFigures(t *testing.T) {

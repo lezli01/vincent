@@ -9,13 +9,13 @@ import (
 	"unicode/utf8"
 )
 
-// Chat search (task 156, #1022, spec §5.5, §14): a full-text query over the
-// two FTS5 indexes 0059_chat_search.sql keeps — chat titles and each turn's
+// Chat search (task 158, #1022, spec §5.5, §14): a full-text query over the
+// two FTS5 indexes 0061_chat_search.sql keeps — chat titles and each turn's
 // prompt and final answer.
 
 // MinSearchTermRunes is the shortest term the trigram index can answer. A
 // shorter one would need a full scan, which the index exists to avoid, so it
-// is refused rather than served slowly (task 156 decision 2).
+// is refused rather than served slowly (task 158 decision 2).
 const MinSearchTermRunes = 3
 
 // The defaults and ceilings for a search's caps. Conservative: the result is
@@ -81,7 +81,7 @@ type ChatSearchHit struct {
 
 // ChatSearchOptions scopes a search. Archived means what ChatFilter.Archived
 // does — its zero value excludes every terminal chat — and the API is the
-// party that defaults it to ArchivedAll for search (task 156 decision 3).
+// party that defaults it to ArchivedAll for search (task 158 decision 3).
 type ChatSearchOptions struct {
 	ProjectID *int64
 	Archived  ArchivedFilter

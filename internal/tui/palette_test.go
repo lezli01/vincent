@@ -106,7 +106,7 @@ func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
 	// Twelve: the five takeovers, the chats board (task 067), the two
 	// archived boards (task 092), triggers (task 096.6), issues (task
 	// 130.9), the task board (task 136.2), Settings (task 152) and the chat
-	// search (task 156). Navigation
+	// search (task 158). Navigation
 	// survives a disconnect because reaching a screen is not an action on the
 	// daemon — an archived board shows what it last fetched, the way every
 	// other one does.

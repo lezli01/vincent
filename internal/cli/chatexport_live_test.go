@@ -14,7 +14,7 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// `vincent chat export` (task 156) against the real GET /v1/chats/{id}/export
+// `vincent chat export` (task 159) against the real GET /v1/chats/{id}/export
 // handler. The command carries the daemon's bytes and renders nothing itself,
 // so the assertions compare what it wrote with what the route serves.
 

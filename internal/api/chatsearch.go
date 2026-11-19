@@ -10,7 +10,7 @@ import (
 )
 
 // CodeQueryTooShort is a chat search whose terms are too short for the
-// trigram index (task 156 decision 2): refused rather than answered with a
+// trigram index (task 158 decision 2): refused rather than answered with a
 // full scan.
 const CodeQueryTooShort = "query_too_short"
 
@@ -25,7 +25,7 @@ type chatSearchHitBody struct {
 // chatSearchMatchBody is one place a chat matched. Seq is 0 for the title.
 // The snippet is plain text, and Segments is the same text split into runs
 // marked as matching or not — the highlight is data, never markup or ANSI a
-// client would have to parse (task 156).
+// client would have to parse (task 158).
 type chatSearchMatchBody struct {
 	Seq      int                     `json:"seq"`
 	Field    string                  `json:"field"`
@@ -38,11 +38,11 @@ type chatSearchSegmentBody struct {
 	Match bool   `json:"match,omitempty"`
 }
 
-// handleChatSearch serves GET /v1/chats/search (task 156, #1022, §13.2):
+// handleChatSearch serves GET /v1/chats/search (task 158, #1022, §13.2):
 // a full-text search over every chat's title, prompts and final answers.
 // `archived` is GET /v1/chats' parameter with GET /v1/chats' values, but
 // defaults to `all` — finding a chat that is done with is the point of
-// searching (task 156 decision 3).
+// searching (task 158 decision 3).
 func (s *Server) handleChatSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	text := q.Get("q")

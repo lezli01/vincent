@@ -74,7 +74,7 @@ func (s *Store) FileSizes() (FileSizes, error) {
 // figure describing *this* binary's database rather than a fixed contract.
 // SQLite's own `sqlite_%` tables are excluded — they are the engine's
 // bookkeeping, not vincent's data. So are virtual tables and their shadow
-// tables (the FTS5 chat search index, task 156): an external-content index
+// tables (the FTS5 chat search index, task 158): an external-content index
 // holds no rows of its own, and its `_data`/`_idx`/`_config` shadows are
 // FTS5's bookkeeping, counted in pages rather than in anything a reader of
 // the figure would recognise.

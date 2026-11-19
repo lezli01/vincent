@@ -164,7 +164,7 @@ const (
 	// surface (review F4).
 	ctxConnection bindingContext = "connection"
 	ctxChats      bindingContext = "chats"
-	// ctxChatSearch is the chat search screen (task 156).
+	// ctxChatSearch is the chat search screen (task 158).
 	ctxChatSearch bindingContext = "chat search"
 	ctxChat       bindingContext = "chat"
 	// ctxChatSkills is the chat workspace's skill list (task 124.13). Its
@@ -191,7 +191,7 @@ const (
 	// context for the reason every popup has one: it owns the keyboard while
 	// it is up, and its enter switches the project rather than opening a row.
 	ctxProjectPicker bindingContext = "project picker"
-	// ctxChatExport is the root's export form (task 156), a popup with its
+	// ctxChatExport is the root's export form (task 159), a popup with its
 	// own context for the project picker's reason: it owns the keyboard.
 	ctxChatExport bindingContext = "export chat"
 
@@ -670,11 +670,11 @@ var bindings = []binding{
 	// this is the way back to them.
 	{op: keymap.Scope, key: "s", label: "cycle the listing between live, ended (archived, handed-off or closed), and all", scope: scopePanel, context: ctxChats, hint: "s listing", priority: 5, term: termScope},
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxChats, hint: "R reload", priority: 6, term: termRefresh},
-	// `S` rather than `/` (task 156 decision 4): `/` filters the list in
+	// `S` rather than `/` (task 158 decision 4): `/` filters the list in
 	// view, and this searches every chat's words, archived ones included.
 	{op: keymap.ChatSearch, key: "S", label: "search every chat's title, prompts and answers, live and archived", scope: scopePanel, context: ctxChats, hint: "S search", priority: 7},
 
-	// Chat search (task 156).
+	// Chat search (task 158).
 	{key: "enter", label: "open the chat — on a turn's match, scrolled to that turn", scope: scopePanel, context: ctxChatSearch, hint: "enter open", priority: 1},
 	{key: "down", label: "move between results (↑/↓, pgup/pgdown)", scope: scopePanel, context: ctxChatSearch, hint: "↑/↓ move", priority: 2},
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChats, priority: 7},
@@ -729,7 +729,7 @@ var bindings = []binding{
 	// The way back to a question esc put away (issue #801 F7). Offered only
 	// while one is put away: chatView.liveBindings drops it otherwise.
 	{key: "alt+a", label: "reopen the agent's question after esc closed it (what you picked is kept)", scope: scopePanel, context: ctxChat, hint: "alt+a answer", priority: 1},
-	// The context gauge's way out (task 156 decision 4). Offered only for an
+	// The context gauge's way out (task 157 decision 4). Offered only for an
 	// agent with a compact command (`/compact` on claude), and only while
 	// the chat is idle: chatView.liveBindings drops it otherwise.
 	{op: keymap.Compact, key: "alt+k", label: "compact the agent's context — sends its compact command (/compact on claude) as the next message (asks first)", scope: scopePanel, context: ctxChat, hint: "alt+k compact", priority: 15},
@@ -768,7 +768,7 @@ var bindings = []binding{
 	// filter, so its own keys are the ones a filter does not type.
 	{key: "down", label: "move the highlight (↑/↓)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 
-	// The export form (task 156). noPalette for the project picker's reason:
+	// The export form (task 159). noPalette for the project picker's reason:
 	// a key that only exists inside a popup cannot be replayed into one that
 	// is shut.
 	{key: "down", label: "move between format, diff and path (↑/↓, tab/shift+tab); once written, between the copy choices", scope: scopePanel, context: ctxChatExport, noPalette: true},
@@ -1270,5 +1270,5 @@ const (
 )
 
 // chatExportLabel is the export operation's row on every surface it is on
-// (task 156): the same gesture, so the same words.
+// (task 159): the same gesture, so the same words.
 const chatExportLabel = "export the chat as Markdown, HTML or JSON — a form picks the format, the diff and the path"

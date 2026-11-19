@@ -56,7 +56,7 @@ type (
 		id        int64
 		projectID int64
 		back      viewID
-		// seq is the turn to land on (task 156): the chat opens scrolled to
+		// seq is the turn to land on (task 158): the chat opens scrolled to
 		// that turn's heading, out of follow mode. 0 opens it as usual.
 		seq int
 	}
@@ -728,7 +728,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.filter.Focus()
 		return v, nil
 	case opKey(keymap.ExportChat):
-		// Every state exports, archived and handed off included (task 156),
+		// Every state exports, archived and handed off included (task 159),
 		// so this is the one row key the archived board shares unchanged.
 		if c, ok := v.current(); ok {
 			return v, openChatExportCmd(c.ID, c.Title)

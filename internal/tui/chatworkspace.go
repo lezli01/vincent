@@ -661,7 +661,7 @@ func chatUsage(turns []apiclient.ChatTurn) (tokens int64, cost float64, priced b
 }
 
 // chatTokens is a token count in the fewest cells: `950`, `18.2k`, `1.1M`.
-// It is the TUI's one compact number formatter (task 156); compactCount is
+// It is the TUI's one compact number formatter (task 157); compactCount is
 // the same thing under the name the step details use.
 func chatTokens(n int64) string {
 	switch {
@@ -736,7 +736,7 @@ func (v *chatView) paneEdge(w int) (title, right string) {
 		right = mark.text + " " + right
 	}
 	id := "#" + strconv.FormatInt(v.chatID, 10)
-	// The context gauge rides on this edge (task 156): with its bar where the
+	// The context gauge rides on this edge (task 157): with its bar where the
 	// title keeps its minimum beside it, with the percentage alone where it
 	// does not, and not at all where even that would push the state off — a
 	// box drops a right side that does not fit whole.

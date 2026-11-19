@@ -68,7 +68,7 @@ type Agent struct {
 	FileMentionPosition *string `json:"file_mention_position"`
 	FileMentionExpands  *bool   `json:"file_mention_expands"`
 	// CompactCommand is the message that compacts this adapter's session
-	// context (task 156 decision 4): "/compact" for claude, "" for an
+	// context (task 157 decision 4): "/compact" for claude, "" for an
 	// adapter that cannot compact, nil for no judgement. A client offers
 	// compaction only when it is non-empty.
 	CompactCommand *string `json:"compact_command"`

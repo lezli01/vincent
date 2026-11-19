@@ -1,6 +1,6 @@
 package tui
 
-// The chat search screen (task 156, #1022, §15): a query box over
+// The chat search screen (task 158, #1022, §15): a query box over
 // GET /v1/chats/search and its results grouped by chat. enter on a match
 // opens the chat on that turn; esc from the chat comes back here with the
 // query and the cursor where they were.

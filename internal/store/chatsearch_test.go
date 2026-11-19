@@ -73,7 +73,7 @@ func snippetText(parts []SnippetPart) (all, matched string) {
 }
 
 // TestFTS5IsCompiledIn fails loudly if a driver bump drops FTS5 or its
-// trigram tokenizer, which chat search has no fallback for (task 156
+// trigram tokenizer, which chat search has no fallback for (task 158
 // decision 1).
 func TestFTS5IsCompiledIn(t *testing.T) {
 	s := openTest(t)
@@ -314,11 +314,11 @@ func TestChatSearchSurvivesRetention(t *testing.T) {
 	}
 }
 
-// TestMigration0059BackfillsChatSearch: a database at 0058 holding chats
+// TestMigration0061BackfillsChatSearch: a database at 0060 holding chats
 // with turns gains the index on open, and the backfilled rows are found.
-func TestMigration0059BackfillsChatSearch(t *testing.T) {
+func TestMigration0061BackfillsChatSearch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vincent.db")
-	migrateTo(t, path, 58)
+	migrateTo(t, path, 60)
 	func() {
 		db, err := sql.Open("sqlite", dsn(path))
 		if err != nil {
@@ -340,7 +340,7 @@ func TestMigration0059BackfillsChatSearch(t *testing.T) {
 	}()
 	s, err := Open(path)
 	if err != nil {
-		t.Fatalf("Open (migrating 58 -> 59): %v", err)
+		t.Fatalf("Open (migrating 60 -> 61): %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	for _, q := range []string{"apricot", "loquat", "feijoa"} {

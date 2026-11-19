@@ -1,4 +1,4 @@
-# 156 — Per-turn usage and a context gauge in the chat
+# 157 — Per-turn usage and a context gauge in the chat
 
 **Status:** 🔄 in progress (3/4) · **Opened:** 2026-11-19 · **Issue:** #1015
 (part of the chat UX epic, #1009)
@@ -14,21 +14,21 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [x] **156.1** Store and runner: migration `0059_chat_turn_context.sql`
+- [x] **157.1** Store and runner: migration `0060_chat_turn_context.sql`
   (`cache_read_tokens`, `cache_creation_tokens`, `context_tokens`,
   `context_window`, and the raw `session_cache_*` totals the copilot share
   needs), `RunResult.ContextTokens`/`ContextWindow` filled by the claude
   adapter, `chatrun` persisting them with the cache counts and extending
   `turnShare` to the cache, `agent.Compactor` (claude's `/compact`) and
   `agent.CacheInInput` (codex). ✓ 2026-11-19
-- [x] **156.2** The wire: the four `ChatTurn` fields on `GET /v1/chats/{id}`
+- [x] **157.2** The wire: the four `ChatTurn` fields on `GET /v1/chats/{id}`
   and `compact_command` on `GET /v1/agents` (and so on the MCP `agent_list`
   tool), with the spec amended in §5.5, §9.1, §9.2, §9.3, §9.6, §9.7, §9.9,
   §13.2, §14 and §15. ✓ 2026-11-19
-- [x] **156.3** The TUI: the turn heading's usage, the context gauge, the
+- [x] **157.3** The TUI: the turn heading's usage, the context gauge, the
   totals line below 150 columns, and the rebindable compact key behind a
   confirmation. ✓ 2026-11-19
-- [ ] **156.4** A `cmd/fakeagent` scenario whose claude-shaped result reports
+- [ ] **157.4** A `cmd/fakeagent` scenario whose claude-shaped result reports
   `contextWindow` and a final assistant usage, seeded by
   `scripts/screenshots.sh` into a chat, and the chat shots re-captured so the
   gauge appears in them.
@@ -62,9 +62,9 @@ Confirmed by the author on 2026-11-19.
 
 5. **The share needs the raw session cache totals.** Task 138.11 subtracts
    the previous turn's *raw* totals, so the cache share needs raw cache totals
-   beside the raw input and output. Migration 0059 therefore adds
+   beside the raw input and output. Migration 0060 therefore adds
    `session_cache_read_tokens` and `session_cache_creation_tokens` beside the
-   four columns the plan named. A turn written before 0059 answers 0 for them,
+   four columns the plan named. A turn written before 0060 answers 0 for them,
    which makes the next turn's cache share the whole session's — the
    first-turn rule.
 6. **Codex records no cache counts.** Codex's `input_tokens` already include

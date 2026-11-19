@@ -1,6 +1,6 @@
 package cli
 
-// `vincent chat search` — GET /v1/chats/search (task 156, #1022, §13.2): a
+// `vincent chat search` — GET /v1/chats/search (task 158, #1022, §13.2): a
 // full-text search over every chat's title, prompts and final answers.
 
 import (

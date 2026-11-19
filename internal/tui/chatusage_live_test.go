@@ -24,7 +24,7 @@ import (
 	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
-// TestChatUsageCrossesTheWireLive holds task 156's wire against the real
+// TestChatUsageCrossesTheWireLive holds task 157's wire against the real
 // handlers: a turn's cache counts and context figures, and each adapter's
 // compact_command, reach the chat workspace as the store recorded them — and a
 // figure the store left null stays absent rather than arriving as zero.

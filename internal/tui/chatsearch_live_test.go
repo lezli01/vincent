@@ -141,7 +141,7 @@ func searchAndLand(t *testing.T, m *root, p *pump, word string, chatID int64) {
 	}
 }
 
-// TestChatSearchAgainstTheRealAPI is task 156's TUI half: the palette entry
+// TestChatSearchAgainstTheRealAPI is task 158's TUI half: the palette entry
 // and the chats board's `S` both open the search; enter on a turn's match
 // opens the chat — live or archived — with that turn at the top, fetching
 // its transcript; esc comes back with the query and cursor kept.

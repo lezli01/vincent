@@ -38,7 +38,7 @@ type totalsAdapter struct {
 	mu     sync.Mutex
 	script []totalsRun
 	// results, when set, are answered ahead of script: whole RunResults, for
-	// a test that states cache counts and context figures (task 156).
+	// a test that states cache counts and context figures (task 157).
 	results []agent.RunResult
 }
 

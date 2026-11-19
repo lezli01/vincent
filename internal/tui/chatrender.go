@@ -73,7 +73,7 @@ func (v *chatView) renderConversation(width, height int) string {
 }
 
 // totalsLine is the conversation's totals while the details pane, which
-// carries them, is hidden: below chatDetailsMinW (task 156).
+// carries them, is hidden: below chatDetailsMinW (task 157).
 func (v *chatView) totalsLine() string {
 	if v.termW >= chatDetailsMinW {
 		return ""
@@ -164,7 +164,7 @@ func (v *chatView) bodyView(width, height int) string {
 			v.vp.SetYOffset(max(y-above, 0))
 		}
 	}
-	// A landing from the search (task 156) holds its turn at the top until
+	// A landing from the search (task 158) holds its turn at the top until
 	// the reader moves.
 	if v.landSeq > 0 {
 		if at, ok := v.turnAt[v.landSeq]; ok {

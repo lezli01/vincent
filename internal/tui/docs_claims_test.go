@@ -187,6 +187,7 @@ func TestGuideOperationsTableMatchesCatalog(t *testing.T) {
 	words := []string{
 		"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
 		"eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
+		"twenty-one", "twenty-two", "twenty-three", "twenty-four", "twenty-five",
 	}
 	text := strings.Join(strings.Fields(prose.String()), " ")
 	for _, c := range []struct {

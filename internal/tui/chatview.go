@@ -186,7 +186,7 @@ type chatView struct {
 	// what makes "which turns are on screen" answerable, and so what drives
 	// the lazy transcript fetch.
 	turnAt map[int]int
-	// landSeq is the turn an open from the search lands on (task 156): each
+	// landSeq is the turn an open from the search lands on (task 158): each
 	// render pins that turn's heading to the top of the window, out of
 	// follow mode, until the reader scrolls or types. 0 is none.
 	landSeq    int
@@ -225,7 +225,7 @@ type chatView struct {
 	// next key: `y` closes, anything else keeps the chat open and is spent
 	// on declining, so a draft is never typed into by the answer.
 	closing bool
-	// compacting is the compact confirmation on screen (task 156): like
+	// compacting is the compact confirmation on screen (task 157): like
 	// closing, it owns the next key. compactCmds is each adapter's compact
 	// command from GET /v1/agents, by name; an adapter without one is absent.
 	compacting  bool
@@ -326,7 +326,7 @@ func (v *chatView) bindingContext() bindingContext {
 // subscribes to that chat's stream, dropping any previous subscription.
 func (v *chatView) open(id int64) tea.Cmd { return v.openAt(id, 0) }
 
-// openAt opens chat id landed on turn seq (task 156); seq 0 is a plain open.
+// openAt opens chat id landed on turn seq (task 158); seq 0 is a plain open.
 func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	if v.streamStop != nil {
 		v.streamStop()
@@ -1953,7 +1953,7 @@ func (v *chatView) sendCmd() tea.Cmd {
 }
 
 // sendMessage sends message as the chat's next turn: the composer's draft, or
-// the compact command (task 156), which takes exactly the same route and the
+// the compact command (task 157), which takes exactly the same route and the
 // same refusals.
 func (v *chatView) sendMessage(message string) tea.Cmd {
 	if message == "" {

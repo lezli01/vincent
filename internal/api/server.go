@@ -445,7 +445,7 @@ func (s *Server) buildHandler() http.Handler {
 	// the tasks table, and no chat route is an MCP tool (§13.4, decision 2).
 	rt.handle(http.MethodGet, "/v1/chats", s.handleChatList)
 	// The literal segment outranks {id} in ServeMux, so "search" is never
-	// read as a chat id (task 156).
+	// read as a chat id (task 158).
 	rt.handle(http.MethodGet, "/v1/chats/search", s.handleChatSearch)
 	rt.handle(http.MethodPost, "/v1/chats", s.handleChatCreate)
 	rt.handle(http.MethodGet, "/v1/chats/{id}", s.handleChatGet)

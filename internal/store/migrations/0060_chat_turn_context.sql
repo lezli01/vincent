@@ -1,9 +1,9 @@
 -- 0060_chat_turn_context: a chat turn's cache counts and its context figures
--- (task 156, issue #1015, spec §5.5, §9.2, §14).
+-- (task 157, issue #1015, spec §5.5, §9.2, §14).
 --
 -- cache_read_tokens and cache_creation_tokens are the turn's own cache spend,
 -- which the turn heading adds to input_tokens to show what the turn actually
--- processed (task 156 decision 3). On a cumulative-usage adapter (copilot)
+-- processed (task 157 decision 3). On a cumulative-usage adapter (copilot)
 -- they are this turn's share, computed in internal/chatrun the way
 -- input_tokens is (task 138.11 decision 1), from the raw session totals in
 -- session_cache_read_tokens and session_cache_creation_tokens.

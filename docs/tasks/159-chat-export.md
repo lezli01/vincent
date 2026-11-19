@@ -1,4 +1,4 @@
-# 156 — Export a chat as Markdown, HTML or JSON
+# 159 — Export a chat as Markdown, HTML or JSON
 
 **Status:** ✅ done (4/4) · **Opened:** 2026-11-19 · **Issue:** #1023 (chat UX epic #1009)
 
@@ -12,20 +12,20 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [x] **156.1** `internal/chatexport`: the document model (`Export`, JSON
+- [x] **159.1** `internal/chatexport`: the document model (`Export`, JSON
   `"version": 1`), the Markdown, HTML (goldmark, raw HTML disabled, inline
   CSS, no scripts, images turned into links) and JSON renderings, the
   normalized-transcript tool reader, and `ToolSummary`, the one definition of
   a tool call's one-line form, which `vincent task transcript` / `chat
   transcript` now call. Golden tests per format. ✓ 2026-11-19
-- [x] **156.2** `GET /v1/chats/{id}/export?format=&diff=`: the retention
+- [x] **159.2** `GET /v1/chats/{id}/export?format=&diff=`: the retention
   fallback, the diff of the directory the chat works in today through
   `diffMergeBase`/`diffFrom`, factored out of `handleTaskDiff` (whose output
   is unchanged), and `apiclient.(*Client).ChatExport`. ✓ 2026-11-19
-- [x] **156.3** `vincent chat export <id> [--format] [--with-diff] [-o]`, with
+- [x] **159.3** `vincent chat export <id> [--format] [--with-diff] [-o]`, with
   `--json` as a synonym for `--format json`, writing `-o` atomically through
   the new `fileswap.WriteFile`. ✓ 2026-11-19
-- [x] **156.4** The TUI's rebindable "export chat" operation on the chat
+- [x] **159.4** The TUI's rebindable "export chat" operation on the chat
   workspace and the chats board, in the palette, opening the export form;
   copying the path or the Markdown afterwards. ✓ 2026-11-19
 

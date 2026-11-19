@@ -11,7 +11,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/cursor"
 )
 
-// TestAgentsReportCompactCommand pins task 156 decision 4's capability on
+// TestAgentsReportCompactCommand pins task 157 decision 4's capability on
 // GET /v1/agents: `/compact` for claude, "" for every other shipped adapter,
 // and null — "nobody can say" — with no registry to ask.
 func TestAgentsReportCompactCommand(t *testing.T) {

@@ -1,4 +1,4 @@
-# 156 — Search across every chat, live and archived
+# 158 — Search across every chat, live and archived
 
 **Status:** ✅ done (5/5) · **Opened:** 2026-11-19 · **Issue:** #1022 (epic #1009)
 
@@ -12,19 +12,19 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [x] **156.1** Store: migration `0059_chat_search.sql` — two external-content
+- [x] **158.1** Store: migration `0061_chat_search.sql` — two external-content
   FTS5 tables, trigram-tokenized, over `chats.title` and
   `chat_turns(prompt, result_text)`, kept in step by triggers and backfilled
   with `rebuild` — and `Store.SearchChats`, which quotes every term, scopes by
   project and the archived window, ranks by `bm25`, groups by chat and caps
   chats and matches. ✓ 2026-11-19
-- [x] **156.2** API: `GET /v1/chats/search`, the `query_too_short` code, the
+- [x] **158.2** API: `GET /v1/chats/search`, the `query_too_short` code, the
   route listed as not-an-MCP-tool, and `apiclient.SearchChats`. ✓ 2026-11-19
-- [x] **156.3** CLI: `vincent chat search`. ✓ 2026-11-19
-- [x] **156.4** TUI: the chat search view, the "Search all chats" palette
+- [x] **158.3** CLI: `vincent chat search`. ✓ 2026-11-19
+- [x] **158.4** TUI: the chat search view, the "Search all chats" palette
   entry and `S` on the chats screen; `enter` on a match opens the chat on that
   turn, `esc` returns to the search. ✓ 2026-11-19
-- [x] **156.5** Capture `docs/assets/tui-chat-search.png` with
+- [x] **158.5** Capture `docs/assets/tui-chat-search.png` with
   `scripts/screenshots.sh`. ✓ 2026-11-19
 
 ## Decisions

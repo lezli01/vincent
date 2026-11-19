@@ -114,7 +114,7 @@ type Export struct {
 	Chat       Chat      `json:"chat"`
 	Turns      []Turn    `json:"turns"`
 	// Diff is the base-to-tip diff of the directory the chat works in today
-	// (task 156 decision 1), present only when it was asked for and could be
+	// (task 159 decision 1), present only when it was asked for and could be
 	// produced; an empty string is a diff with no changes. DiffUnavailable
 	// says why an asked-for diff is absent. Neither is set when no diff was
 	// asked for.
@@ -165,7 +165,7 @@ type Turn struct {
 }
 
 // ToolCall is one tool call: what was called, on what, and whether it
-// failed. The call's output is never here (task 156 decision 3).
+// failed. The call's output is never here (task 159 decision 3).
 type ToolCall struct {
 	Name   string `json:"name"`
 	Arg    string `json:"arg,omitempty"`

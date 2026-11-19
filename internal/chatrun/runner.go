@@ -1062,7 +1062,7 @@ func (r *Runner) journal(turn *store.ChatTurn, handle agent.RunHandle) {
 }
 
 // recordContext copies the run's cache counts and context figures onto the
-// turn (task 156). Zero is "not reported" in a RunResult and stays nil here,
+// turn (task 157). Zero is "not reported" in a RunResult and stays nil here,
 // so a reader can tell it from a reported zero; the cache counts are recorded
 // only when the adapter reports any, and never for an adapter whose input
 // already counts them (agent.CacheInInput), which the heading would
@@ -1104,7 +1104,7 @@ func (r *Runner) turnShare(turn *store.ChatTurn, res agent.RunResult) {
 	in, out := res.InputTokens, res.OutputTokens
 	turn.SessionInputTokens, turn.SessionOutputTokens = &in, &out
 	// The cache totals are a session's running figures too, and take the
-	// same share subtraction under the same rules (task 156 decision 3).
+	// same share subtraction under the same rules (task 157 decision 3).
 	cr, cw := res.CacheReadTokens, res.CacheCreationTokens
 	if turn.CacheReadTokens != nil {
 		turn.SessionCacheReadTokens, turn.SessionCacheCreationTokens = &cr, &cw

@@ -24,7 +24,7 @@ func fmtPtr(p *int64) any {
 	return *p
 }
 
-// checkContext compares a turn's four task 156 columns; -1 is "nil".
+// checkContext compares a turn's four task 157 columns; -1 is "nil".
 func checkContext(t *testing.T, i int, turn *store.ChatTurn, cr, cw, ctx, win int64) {
 	t.Helper()
 	if !ptrEq(turn.CacheReadTokens, cr) || !ptrEq(turn.CacheCreationTokens, cw) ||
@@ -37,7 +37,7 @@ func checkContext(t *testing.T, i int, turn *store.ChatTurn, cr, cw, ctx, win in
 
 // TestTurnRecordsContextFigures: a per-run adapter's cache counts and
 // context figures land on the turn as reported, and a figure the run did not
-// report stays nil rather than becoming zero (task 156).
+// report stays nil rather than becoming zero (task 157).
 func TestTurnRecordsContextFigures(t *testing.T) {
 	h := newHarness(t)
 	h.perRun.setResults(
@@ -78,7 +78,7 @@ func TestCacheInInputRecordsNoCache(t *testing.T) {
 	}
 }
 
-// TestSessionCacheTotalsBecomeTurnShares is task 156 decision 3 under task
+// TestSessionCacheTotalsBecomeTurnShares is task 157 decision 3 under task
 // 138.11's rules: on a session-totals adapter the cache counts take the same
 // share subtraction as the input and output — raw on the first turn and on a
 // new session, as they are after a reset, and measured from the last turn

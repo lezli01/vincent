@@ -13,7 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// A chat's usage on screen (task 156): what each turn spent in its heading,
+// A chat's usage on screen (task 157): what each turn spent in its heading,
 // how full the agent's context is on the conversation pane's edge, and the
 // conversation's totals over the conversation when the details pane is not
 // there to carry them. Every figure is the daemon's — a field the adapter did
@@ -55,7 +55,7 @@ func chatTurnUsage(t apiclient.ChatTurn) []string {
 }
 
 // chatTurnInput is what a turn processed: its input and the cache it read
-// and wrote, which claude's and copilot's input leaves out (task 156
+// and wrote, which claude's and copilot's input leaves out (task 157
 // decision 3). An adapter whose input already counts the cache records no
 // cache counts, so nothing is counted twice.
 func chatTurnInput(t apiclient.ChatTurn) int64 {
@@ -121,7 +121,7 @@ func chatGauge(turns []apiclient.ChatTurn, wide bool, compact string) (text stri
 }
 
 // chatTotalsLine is the conversation's totals, the figures the details pane
-// shows, for a terminal too narrow to show that pane (task 156). "" when no
+// shows, for a terminal too narrow to show that pane (task 157). "" when no
 // turn reported tokens or a cost.
 func chatTotalsLine(turns []apiclient.ChatTurn) string {
 	tokens, cost, priced := chatUsage(turns)

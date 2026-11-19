@@ -18,7 +18,7 @@ import (
 )
 
 // handleChatExport is GET /v1/chats/{id}/export (§5.5 "Exporting a chat",
-// §13.2, task 156): the chat as one Markdown, HTML or JSON document, rendered
+// §13.2, task 159): the chat as one Markdown, HTML or JSON document, rendered
 // here so every client writes the same bytes.
 //
 // It is information, like /skills and /files (§12.2's chats amendments):
@@ -154,7 +154,7 @@ func (s *Server) chatTurnTools(chat *store.Chat, turn *store.ChatTurn) ([]chatex
 }
 
 // chatExportDiff is the base-to-tip diff of the directory the chat works in
-// today (task 156 decision 1), or the reason there is none. A linked chat's
+// today (task 159 decision 1), or the reason there is none. A linked chat's
 // directory is its task's worktree and its base is the task's, the chat's
 // own base fields being display copies of the task's (§5.5).
 func (s *Server) chatExportDiff(ctx context.Context, chat *store.Chat) (diff, unavailable string) {

@@ -100,7 +100,7 @@ type root struct {
 	projPick        *projectPicker
 	projPickSeq     int
 	projPickPending bool
-	// exportForm is the task 156 export form, open when non-nil, and routed
+	// exportForm is the task 159 export form, open when non-nil, and routed
 	// exactly like the pickers above: a popup that owns the keyboard.
 	exportForm *chatExportForm
 	// headerHit is the header's `◆` segment as last rendered, [x0, x1) on

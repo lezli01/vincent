@@ -2034,7 +2034,7 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 
 // diffBase is what a diff is taken against: the commit the work started at
 // when it recorded one (§5.3, task 056), and the branch name only when it did
-// not. handleTaskDiff and the chat export (task 156) both ask it.
+// not. handleTaskDiff and the chat export (task 159) both ask it.
 func diffBase(baseSHA, baseBranch string) string {
 	if baseSHA != "" {
 		return baseSHA
@@ -2044,7 +2044,7 @@ func diffBase(baseSHA, baseBranch string) string {
 
 // diffMergeBase is merge-base(base, tip) in dir, tip being HEAD when empty.
 // It and diffFrom are the git half of GET /v1/tasks/{id}/diff, factored out
-// so the chat export's `diff=true` (task 156 decision 1) computes its diff
+// so the chat export's `diff=true` (task 159 decision 1) computes its diff
 // the same way rather than by a copy.
 func (s *Server) diffMergeBase(ctx context.Context, dir, base, tip string) (string, error) {
 	head := "HEAD"

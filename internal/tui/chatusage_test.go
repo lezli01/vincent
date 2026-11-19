@@ -17,7 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// Task 156: per-turn usage in the heading, the context gauge on the
+// Task 157: per-turn usage in the heading, the context gauge on the
 // conversation pane's edge, the totals line under 150 columns, and the
 // compact key.
 

@@ -1,7 +1,7 @@
 package cli
 
 // `vincent chat export` — a chat as one Markdown, HTML or JSON document, read
-// from `GET /v1/chats/{id}/export` (§5.5, §12.1, §13.2, task 156).
+// from `GET /v1/chats/{id}/export` (§5.5, §12.1, §13.2, task 159).
 //
 // The daemon renders; this command only carries the bytes to stdout or to a
 // file, so the CLI, the TUI and curl write the same document.
@@ -88,7 +88,7 @@ func newChatExportCmd() *cobra.Command {
 var errExportJSONFormat = errors.New("--json is --format json; it cannot be combined with --format md or html")
 
 // exportFormat resolves --format and the CLI-wide --json, which here is a
-// synonym for --format json (task 156).
+// synonym for --format json (task 159).
 func exportFormat(format string, formatSet, asJSON bool) (chatexport.Format, error) {
 	f, err := chatexport.ParseFormat(format)
 	if err != nil {

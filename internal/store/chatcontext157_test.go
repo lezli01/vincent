@@ -2,7 +2,7 @@ package store
 
 import "testing"
 
-// TestChatTurnContextRoundTrip is migration 0059 (task 156): the four new
+// TestChatTurnContextRoundTrip is migration 0060 (task 157): the four new
 // columns and the two session cache totals survive a write and a read, and a
 // reported zero stays distinct from an unreported nil.
 func TestChatTurnContextRoundTrip(t *testing.T) {
@@ -60,7 +60,7 @@ func TestChatTurnContextRoundTrip(t *testing.T) {
 
 // TestPreviousSessionUsageCarriesCacheTotals: the share subtraction reads
 // the cache totals beside the input and output, and a turn written without
-// them (before migration 0059) answers zero for them.
+// them (before migration 0060) answers zero for them.
 func TestPreviousSessionUsageCarriesCacheTotals(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

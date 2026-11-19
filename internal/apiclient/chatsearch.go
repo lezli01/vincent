@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-// ChatSearchResult is one chat GET /v1/chats/search found (task 156): the
+// ChatSearchResult is one chat GET /v1/chats/search found (task 158): the
 // chat as the list renders it, the places it matched in conversation order
 // (title first), and how many there were before the per-chat cap.
 type ChatSearchResult struct {

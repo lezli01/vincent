@@ -619,7 +619,7 @@ func (s *Store) GetChatTurn(ctx context.Context, id int64) (*ChatTurn, error) {
 }
 
 // SessionUsage is the raw session totals one chat turn recorded (task 138.11
-// decision 1, task 156 decision 3).
+// decision 1, task 157 decision 3).
 type SessionUsage struct {
 	InputTokens, OutputTokens            int64
 	CacheReadTokens, CacheCreationTokens int64

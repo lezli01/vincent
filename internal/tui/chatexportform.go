@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/fileswap"
 )
 
-// The export form (task 156, §15): a root popup that exports one chat to a
+// The export form (task 159, §15): a root popup that exports one chat to a
 // file. The daemon renders the document (GET /v1/chats/{id}/export) and the
 // TUI only writes the bytes, because the file is the client's — which is
 // also why the path is resolved against the TUI's own working directory.

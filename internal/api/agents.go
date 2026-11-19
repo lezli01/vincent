@@ -65,7 +65,7 @@ type agentResponse struct {
 	FileMentionPosition *string `json:"file_mention_position"`
 	FileMentionExpands  *bool   `json:"file_mention_expands"`
 	// CompactCommand is the message that compacts this adapter's session
-	// context, verbatim (task 156 decision 4, §9.1): "/compact" for claude
+	// context, verbatim (task 157 decision 4, §9.1): "/compact" for claude
 	// and "" for an adapter that cannot compact, which is every other one.
 	// A client offers compaction only when it is non-empty — it is never
 	// emulated. Null with no registry to ask, as supports_resume is.
@@ -193,7 +193,7 @@ type adapterCapabilities struct {
 // adapterCapabilities answers `supports_resume`, the three skill fields, the
 // four file-mention fields and `compact_command` from one registry lookup, so
 // the nine cannot disagree about which adapter they asked (§9.6, task 124,
-// task 126, task 156).
+// task 126, task 157).
 func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 	if s.deps.Agents == nil {
 		return adapterCapabilities{}
