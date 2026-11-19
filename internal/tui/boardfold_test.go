@@ -437,7 +437,7 @@ func TestJumpAttentionOpensTheGroupItLandsIn(t *testing.T) {
 		t.Fatalf("C did not fold the waiting task's workflow: %v", s.board.folds())
 	}
 
-	s.jumpAttention()
+	s.jumpAttention(0)
 	if s.board.folds().has(foldPath{"deploy"}) {
 		t.Errorf("! left the group it jumped into folded: %v", s.board.folds())
 	}

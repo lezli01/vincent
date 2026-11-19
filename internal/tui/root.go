@@ -216,6 +216,13 @@ type root struct {
 
 	width  int
 	height int
+
+	// focused is the terminal's last focus report (task 156, focus.go).
+	// It starts true, so a terminal that never reports focus behaves as one
+	// that is always looked at.
+	focused bool
+	// bell is the one terminal bell tasks and chats share (bell.go).
+	bell bellState
 }
 
 // newRoot builds the shell. ctx bounds background work (the SSE stream);
@@ -236,6 +243,8 @@ func newRoot(ctx context.Context, cn connector, dataDir string) *root {
 		level:   level,
 		mouseOn: true,
 		notice:  firstRunNotice{active: !noticeAcknowledged(dataDir)},
+		focused: true,
+		bell:    newBellState(),
 	}
 	m.setTabs(defaultTabs())
 	m.setDataDir(dataDir)
@@ -272,6 +281,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.broadcast(msg)
 	case tea.KeyPressMsg:
 		return m.updateKey(msg)
+	case tea.FocusMsg, tea.BlurMsg:
+		return m, m.updateFocus(msg)
 	case selectTaskMsg, openTaskMsg, openIssueMsg, openChatMsg, taskCreatedMsg:
 		// Every open follows its object into its project first (task 132.6):
 		// openObject switches when it must, then routes.
@@ -791,13 +802,11 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return m.openProjectPicker(), true
 		}
 	case opKey(keymap.NextAttention):
-		// Jump to the next task needing a human — global, so it also pulls
-		// a takeover screen back to the board it acts on.
+		// Jump to the next task needing a human or chat waiting on one —
+		// global, so a task target also pulls a takeover screen back to the
+		// board it acts on.
 		if m.phase == phaseConnected {
-			if cmd, ok := m.crossAttention(); ok {
-				return cmd, true
-			}
-			return tea.Batch(m.switchTo(viewHome), m.deliver(viewHome, jumpAttentionMsg{})), true
+			return m.nextAttention(), true
 		}
 	case opKey(keymap.New):
 		// Not while the form is already up: there, n is "no" to the discard
@@ -1459,30 +1468,87 @@ func (m *root) updateFollowFetched(msg followFetchedMsg) tea.Cmd {
 	return m.followTo(p, withProjectID(msg.open, msg.projectID), "")
 }
 
-// crossAttention is `!` leaving the selected project (task 132 decision 52):
-// once the selection's attention tasks are exhausted — or it has none — the
-// press goes to the next project by name that has one, wrapping, and opens
-// its first attention task in board order. The open follows the object
-// (decision 38), so a dirty draft asks first (decision 36), and raises a
-// notice naming the switch. ok is false when no other project has an
-// attention task: the press then stays in the selection, which is the wrap
-// back to its first.
-func (m *root) crossAttention() (tea.Cmd, bool) {
+// nextAttention is `!` (task 132 decision 52, task 156): the selection's
+// next target after the one in front of the human — the open chat when `!`
+// is pressed inside one, the board's cursor row otherwise — and, once the
+// selection's targets are exhausted or it has none, the first target of the
+// next project that has one. Tasks and waiting chats are one walk, oldest
+// wait first. With no target anywhere the press still lands on the board,
+// as it always has.
+func (m *root) nextAttention() tea.Cmd {
 	s, ok := m.views[viewHome].(*shell)
 	if !ok {
-		return nil, false
+		return nil
 	}
-	if _, wrapped, _ := s.nextAttention(); !wrapped {
-		return nil, false
+	next, wrapped, ok := s.nextAttention(m.attentionCurrent())
+	if wrapped {
+		if cmd, crossed := m.crossAttention(s); crossed {
+			return cmd
+		}
 	}
+	if !ok {
+		return tea.Batch(m.switchTo(viewHome), m.deliver(viewHome, jumpAttentionMsg{}))
+	}
+	return m.openAttention(next)
+}
+
+// attentionCurrent is the chat `!` was pressed in, when the active view is
+// an open chat: the walk moves on from it rather than from the board's
+// cursor, which the human is not looking at. Nil anywhere else.
+func (m *root) attentionCurrent() *attentionTarget {
+	if m.active != viewChat {
+		return nil
+	}
+	v, ok := m.views[viewChat].(*chatView)
+	if !ok || v.chatID == 0 {
+		return nil
+	}
+	cur := chatTarget(apiclient.Chat{ID: v.chatID})
+	return &cur
+}
+
+// attentionBack is where esc from a chat `!` opened lands: the view `!` was
+// pressed from (task 156). Pressed inside a chat, that chat's own way back is
+// kept — going back to the chat that was just left would be no way out.
+func (m *root) attentionBack() viewID {
+	if m.active == viewChat {
+		if v, ok := m.views[viewChat].(*chatView); ok {
+			return v.back
+		}
+	}
+	return m.active
+}
+
+// openAttention lands on a target of the selected project: a task is
+// selected on the board, the way `!` always has; a chat is opened, through
+// openObject like every other open.
+func (m *root) openAttention(t attentionTarget) tea.Cmd {
+	if t.isChat() {
+		return m.openObject(openChatMsg{id: t.id(), projectID: t.projectID(), back: m.attentionBack()})
+	}
+	return tea.Batch(m.switchTo(viewHome), m.deliver(viewHome, jumpAttentionMsg{id: t.id()}))
+}
+
+// crossAttention is `!` leaving the selected project (task 132 decision 52):
+// the press goes to the next project by name that has a target, wrapping,
+// and opens its first target — a task in board order or a waiting chat,
+// oldest wait first (task 156). The open follows the object (decision 38),
+// so a dirty draft asks first (decision 36), and raises a notice naming the
+// switch. ok is false when no other project has a target: the press then
+// stays in the selection, which is the wrap back to its first.
+func (m *root) crossAttention(s *shell) (tea.Cmd, bool) {
 	for _, p := range projectsAfter(m.projects, m.sel.id) {
 		targets := s.board.attentionTargets(p.ID)
 		if len(targets) == 0 {
 			continue
 		}
 		t := targets[0]
-		open := selectTaskMsg{id: t.ID, state: t.State, projectID: p.ID, attention: true}
-		return m.followTo(p, open, attentionNotice(p.Name, t.ID)), true
+		if t.isChat() {
+			open := openChatMsg{id: t.id(), projectID: p.ID, back: m.attentionBack()}
+			return m.followTo(p, open, attentionNotice(p.Name, t)), true
+		}
+		open := selectTaskMsg{id: t.id(), state: t.task.State, projectID: p.ID, attention: true}
+		return m.followTo(p, open, attentionNotice(p.Name, t)), true
 	}
 	return nil, false
 }
@@ -1506,8 +1572,11 @@ func projectsAfter(projects []apiclient.Project, sel int64) []apiclient.Project 
 }
 
 // attentionNotice is the line a `!` that crossed projects raises.
-func attentionNotice(name string, task int64) string {
-	return fmt.Sprintf("%s — switched to `%s` (task #%d needs you)", attentionBadge, name, task)
+func attentionNotice(name string, t attentionTarget) string {
+	if t.isChat() {
+		return fmt.Sprintf("%s — switched to `%s` (chat #%d is waiting on you)", attentionBadge, name, t.id())
+	}
+	return fmt.Sprintf("%s — switched to `%s` (task #%d needs you)", attentionBadge, name, t.id())
 }
 
 // followTo switches to p and then routes open, unless the active view holds
@@ -1912,7 +1981,7 @@ func (m *root) updateNote(n apiclient.Note) (tea.Model, tea.Cmd) {
 		}
 	}
 	// Every view sees the note, not just the visible one.
-	return m, tea.Batch(m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe, relist, repick, reload, repause)
+	return m, tea.Batch(m.bellCmd(n), m.broadcast(noteMsg{note: n}), waitNote(m.notes), reprobe, relist, repick, reload, repause)
 }
 
 // delegate routes a message to the active view.
@@ -2389,6 +2458,7 @@ func (m *root) View() tea.View {
 		// framed by a working app reads as decoration.
 		v := tea.NewView(fitHeight(m.notice.render(), m.height))
 		v.AltScreen = true
+		v.ReportFocus = true
 		return v
 	}
 	var b strings.Builder
@@ -2426,6 +2496,9 @@ func (m *root) View() tea.View {
 	if m.mouseOn && !m.notice.active {
 		v.MouseMode = tea.MouseModeCellMotion
 	}
+	// Focus reports gate the bell and tell the chat workspace whether an
+	// arriving turn was seen (task 156, focus.go).
+	v.ReportFocus = true
 	return v
 }
 

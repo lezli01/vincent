@@ -27,9 +27,12 @@ type (
 	selectionSettledMsg struct{ id int64 }
 	// focusPanelMsg asks the shell to focus one panel.
 	focusPanelMsg struct{ id panelID }
-	// jumpAttentionMsg asks the shell to jump to the next task needing a
-	// human — the root routes `!` here from any screen.
-	jumpAttentionMsg struct{}
+	// jumpAttentionMsg asks the shell to jump to a task needing a human —
+	// the root routes `!` here from any screen. id is the task the root's
+	// walk chose (task 156: the walk is over tasks and waiting chats, so
+	// only the root, which knows the open chat, can say what comes next);
+	// zero leaves the choice to the shell's own nextAttention.
+	jumpAttentionMsg struct{ id int64 }
 )
 
 // shell is the board screen. The legacy three-panel composition remains behind
@@ -174,7 +177,7 @@ func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
 		s.focus = msg.id
 		return s, nil
 	case jumpAttentionMsg:
-		return s, s.jumpAttention()
+		return s, s.jumpAttention(msg.id)
 	case selectTaskMsg:
 		// An explicit open — task creation, or a caller that knows the id.
 		// It skips the settle window: a deliberate action is not a cursor
@@ -270,8 +273,7 @@ func (s *shell) routeBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 		s.board.wheelMove(delta)
 		return s, nil
 	case jumpAttentionMsg:
-		s.selectAttention()
-		return s, nil
+		return s, s.selectAttention(msg.id)
 	case selectTaskMsg:
 		// A `!` that crossed projects lands here after the switch, so the
 		// fold it opens is the target project's (task 132 decision 35).
@@ -292,15 +294,24 @@ func (s *shell) routeBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 
 // selectAttention advances the board cursor without opening the task. The home
 // screen is a navigation surface now; enter is the explicit boundary into the
-// task workspace.
-func (s *shell) selectAttention() {
-	next, _, ok := s.nextAttention()
-	if !ok {
-		return
+// task workspace. id is the root's choice, or zero for the shell's own; a
+// choice that is a waiting chat opens the chat, which is not a row here
+// (task 156).
+func (s *shell) selectAttention(id int64) tea.Cmd {
+	if id == 0 {
+		next, _, ok := s.nextAttention(nil)
+		if !ok {
+			return nil
+		}
+		if next.isChat() {
+			return openAttentionChat(next, viewHome)
+		}
+		id = next.id()
 	}
-	s.board.expandFor(next)
-	s.board.selectedID = next
+	s.board.expandFor(id)
+	s.board.selectedID = id
 	s.board.restoreSelection(s.board.rows())
+	return nil
 }
 
 // forward hands one message to both sub-models.
@@ -546,13 +557,21 @@ func (s *shell) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	}
 }
 
-// jumpAttention moves to the next task needing a human, wrapping through
-// the pinned attention rows in board order, and opens it immediately — a
-// jump is deliberate, like enter, so it skips the settle window.
-func (s *shell) jumpAttention() tea.Cmd {
-	next, _, ok := s.nextAttention()
-	if !ok {
-		return nil
+// jumpAttention moves to the next task needing a human — id when the root
+// chose it, the shell's own nextAttention otherwise — and opens it
+// immediately: a jump is deliberate, like enter, so it skips the settle
+// window. A waiting chat the shell chose opens the chat (task 156).
+func (s *shell) jumpAttention(id int64) tea.Cmd {
+	next := id
+	if next == 0 {
+		t, _, ok := s.nextAttention(nil)
+		if !ok {
+			return nil
+		}
+		if t.isChat() {
+			return openAttentionChat(t, viewHome)
+		}
+		next = t.id()
 	}
 	// A fold is never what keeps you from work that needs a human: the key
 	// that exists for finding it opens whatever group it lands in, and the
@@ -564,34 +583,28 @@ func (s *shell) jumpAttention() tea.Cmd {
 	return s.openNow(next)
 }
 
-// nextAttention is the selected project's next task needing a human after
-// the cursor, in board order through visible() — so a committed filter
-// still applies inside the selected project (task 132 decision 52). wrapped
-// reports that the selection's attention tasks are exhausted and next is
-// the first of them again: the point at which the root crosses into the
-// next project instead, when one has an attention task. ok is false when
-// the selection has none at all.
-func (s *shell) nextAttention() (next int64, wrapped, ok bool) {
-	var attention []int64
-	for _, t := range s.board.visible() {
-		if needsAttention(t.State) {
-			attention = append(attention, t.ID)
+// nextAttention is the selected project's next target after cur — its
+// tasks needing a human through visible(), so a committed filter still
+// applies inside the selected project (task 132 decision 52), and its
+// waiting chats, oldest wait first (task 156). cur is the chat `!` was
+// pressed in; nil means the board's cursor row. wrapped reports that the
+// selection's targets are exhausted and next is the first of them again:
+// the point at which the root crosses into the next project instead, when
+// one has a target. ok is false when the selection has none at all.
+func (s *shell) nextAttention(cur *attentionTarget) (next attentionTarget, wrapped, ok bool) {
+	if cur == nil {
+		if id, ok := s.board.selected(); ok {
+			at := taskTarget(apiclient.Task{ID: id})
+			cur = &at
 		}
 	}
-	if len(attention) == 0 {
-		return 0, true, false
-	}
-	cur, _ := s.board.selected()
-	for i, id := range attention {
-		if id != cur {
-			continue
-		}
-		if i+1 < len(attention) {
-			return attention[i+1], false, true
-		}
-		return attention[0], true, true
-	}
-	return attention[0], false, true
+	return nextTarget(s.board.selectionTargets(), cur)
+}
+
+// openAttentionChat opens a waiting chat `!` landed on, with esc going back
+// to the view it was pressed from (task 156).
+func openAttentionChat(t attentionTarget, back viewID) tea.Cmd {
+	return func() tea.Msg { return openChatMsg{id: t.id(), projectID: t.projectID(), back: back} }
 }
 
 // liveBindings drops the registry rows whose keys are inert in the shell's
