@@ -25,12 +25,12 @@ func specialKey(code rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: code} 
 func popupTop(t *testing.T, frame, title string) (row, width int) {
 	t.Helper()
 	for i, l := range strings.Split(ansi.Strip(frame), "\n") {
-		at := strings.Index(l, "┌─ ▸ "+title)
+		at := strings.Index(l, "╭─ ▸ "+title)
 		if at < 0 {
 			continue
 		}
 		box := l[at:]
-		end := strings.Index(box, "┐")
+		end := strings.Index(box, "╮")
 		return i, ansi.StringWidth(box[:end]) + 1
 	}
 	t.Fatalf("no %q box on the frame:\n%s", title, ansi.Strip(frame))
@@ -40,13 +40,13 @@ func popupTop(t *testing.T, frame, title string) (row, width int) {
 // popupHeight counts the box's rows from its top border to its bottom one.
 func popupHeight(frame, title string, top int) int {
 	lines := strings.Split(ansi.Strip(frame), "\n")
-	at := strings.Index(lines[top], "┌─ ▸ "+title)
+	at := strings.Index(lines[top], "╭─ ▸ "+title)
 	if at < 0 {
 		return 0
 	}
 	col := ansi.StringWidth(lines[top][:at])
 	for i := top + 1; i < len(lines); i++ {
-		if strings.HasPrefix(ansi.Cut(lines[i], col, col+1), "└") {
+		if strings.HasPrefix(ansi.Cut(lines[i], col, col+1), "╰") {
 			return i - top + 1
 		}
 	}
@@ -93,8 +93,8 @@ func TestPaletteBoxIsSizedAndAnchoredUnderTheChrome(t *testing.T) {
 	m.palette = newPalette(paletteEntries(ctxTasks, taskActions{}, false, true, false, nil, nil))
 	frame := content(m)
 	row, _ := popupTop(t, frame, "commands")
-	if m.chromeTop() != 2 || row != 2 {
-		t.Errorf("with a status line the box starts on row %d, chromeTop %d, want 2", row, m.chromeTop())
+	if m.chromeTop() != 3 || row != 3 {
+		t.Errorf("with a status line the box starts on row %d, chromeTop %d, want 3", row, m.chromeTop())
 	}
 	if !strings.Contains(ansi.Strip(frame), "switched to `api`") {
 		t.Error("the status line is covered by the box")
@@ -258,7 +258,7 @@ func TestFooterStatusLeadsAndIsCutFromTheRight(t *testing.T) {
 		}
 	}
 	// A short status leaves room for hints after it.
-	if got := statusFooter(200, "copied", false); !strings.HasPrefix(got, " copied · ") {
+	if got := statusFooter(200, "copied", false); !strings.HasPrefix(got, " copied  ") {
 		t.Errorf("hints do not follow a short status: %q", got)
 	}
 }

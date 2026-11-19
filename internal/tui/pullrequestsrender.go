@@ -27,6 +27,9 @@ func (v *pullRequestsView) render(width, height int) string {
 	if width < 4 || height < 2 {
 		return ""
 	}
+	if v.wide() {
+		return v.renderWide(width, height)
+	}
 	lines := make([]string, 0, height)
 	lines = append(lines, v.headerLine(width))
 	if v.filtering || v.filter.Value() != "" {

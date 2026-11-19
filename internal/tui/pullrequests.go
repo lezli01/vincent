@@ -201,6 +201,13 @@ type pullRequestsView struct {
 	refreshWait bool
 
 	width, height int
+	// termW is the terminal's width, hits the wide layout's cards, checks the
+	// checks read for its preview, and checksArmed the read waiting for the
+	// selection to rest (mgmtscreens.go).
+	termW       int
+	hits        []mgmtHit
+	checks      map[int64]pullChecks
+	checksArmed int64
 }
 
 func newPullRequestsView() *pullRequestsView {
@@ -287,9 +294,24 @@ func (v *pullRequestsView) paste(text string) tea.Cmd {
 }
 
 func (v *pullRequestsView) update(msg tea.Msg) (panel, tea.Cmd) {
+	p, cmd := v.route(msg)
+	return p, tea.Batch(cmd, v.checksCmd())
+}
+
+func (v *pullRequestsView) route(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		v.width, v.height = msg.Width, msg.Height
+		v.width, v.height, v.termW = msg.Width, msg.Height, msg.Width
+		return v, nil
+	case pullChecksDueMsg:
+		return v, v.checksDue(msg.taskID)
+	case pullChecksMsg:
+		v.applyChecks(msg)
+		return v, nil
+	case tea.MouseClickMsg:
+		if i, ok := mgmtHitAt(v.hits, msg); ok && v.wide() && v.confirm == nil {
+			v.cursor = i
+		}
 		return v, nil
 	case githubProbeMsg:
 		return v, v.applyProbe(msg)
@@ -461,6 +483,22 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, cmd
 	}
 
+	if v.wide() {
+		switch msg.String() {
+		case "up", "k":
+			v.movePullCard(-1)
+			return v, nil
+		case "down", "j":
+			v.movePullCard(1)
+			return v, nil
+		case "left":
+			v.movePullColumn(-1)
+			return v, nil
+		case "right":
+			v.movePullColumn(1)
+			return v, nil
+		}
+	}
 	switch msg.String() {
 	case "up", "k":
 		v.cursor = max(v.cursor-1, 0)
@@ -499,6 +537,7 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return v, backToTab
 	case opKey(keymap.Refresh):
+		v.checks = nil
 		return v, v.loadCmd()
 	case opKey(keymap.Browser):
 		return v, v.openSelected()

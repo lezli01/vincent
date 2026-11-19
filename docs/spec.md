@@ -8562,8 +8562,17 @@ tui:                           # view preference; the daemon validates and relay
   output:
     level: normal              # quiet | compact | normal | verbose: the output pane's opening level (task 129.11)
   # default_project: web       # the project the TUI opens on, by name; read at startup only (task 132.3)
-  tabs: [issues, tasks]        # the main tabs, in order, from issues | tasks | chats; the first is where the TUI opens (task 136)
+  tabs: [issues, tasks, chats] # the main tabs, in order, from issues | tasks | chats; the first is where the TUI opens (task 136)
+  icons: unicode               # unicode | nerd: the glyphs the TUI's icons are drawn in; nerd needs a Nerd Font (task 150.8)
 ```
+
+*Amended 2026-11-18 (task 151).* `vincent fonts` and `U` on the daemon view install
+the Nerd Font behind `tui.icons: nerd`, per user, on macOS and Linux. It runs in the
+client, because a font belongs to the machine with the screen. The archive and each
+face are pinned by SHA-256 in `internal/nerdfont`; those hashes also decide what
+uninstall may remove, so no manifest is kept. A terminal's font cannot be read, so
+the TUI shows real icons and sets `tui.icons` only once someone confirms them. An SSH
+session is not offered the install.
 
 *Amended 2026-08-31 (task 067, issue #269).* Four of these keys reach **chats**
 (§5.5) as well as tasks, and none of them gains a chat-specific twin:
@@ -14053,7 +14062,8 @@ stream for the live tail.
    task 050 decision 6 in part (below the ceiling `STATUS` no longer wraps).
    Task 050 decision 4, the uniform row height clamped to three, is kept.*
 
-   **A fan-out parent is expandable (issue #316, added 2026-09-03).** Task 014
+   **A fan-out parent is expandable (issue #316, added 2026-09-03; retired
+   2026-11-18 by task 150.6, whose card board reads lanes in the workspace).** Task 014
    decision 13 — descendants are excluded from the task list — is **kept**: a
    list is the work someone asked for, and a 64-task tree buries it. What
    changes is that a `fan_out` parent's row is now a disclosure control. `L`
@@ -15801,6 +15811,125 @@ stream for the live tail.
    The selection follows the issue id across a re-list, into whatever section
    it moved to, and falls to the nearest row when the issue leaves the view.
 
+   *Amended 2026-11-18 (task 150.2; supersedes the stacked sections, the fold
+   keys, the totals line and the row layout described in this view's notes
+   above and below, whose text stays as the record).* **The lanes are columns
+   of cards**, left to right in the same order. A column's top edge carries
+   its glyph, title, count and `! n` badge; an empty one reads "no issues", or
+   "none match" under a filter. A card shows the id, kind and age, two lines
+   of title, the labels, the source and one status line; the selected card has
+   thick edges, so selection survives `NO_COLOR`. `↑`/`↓`, `pgup`/`pgdown` and
+   `home`/`end` stay inside a column, and `←`/`→` cross to the nearest column
+   holding a card. `C` and `O` are gone from this view. **`done` is shown by
+   default**: the listing has no state filter, and `s` hides the column and
+   lists `state=open`. A terminal too narrow for every column shows the ones
+   around the selection, marking hidden neighbours with `‹` and `›`. The view
+   draws its own boxes, so the root does not frame it; the issue and handoff
+   forms keep the root's frame. Colours are named ANSI colours (§15 Colour).
+
+   *Amended 2026-11-18 (task 150.3).* **At 150 columns and wider a preview of
+   the selected issue sits right of the columns**, at 30% of the terminal and
+   at most 56 columns. The list row supplies its facts; only the description
+   is read, through `GET /v1/issues/{id}`, once the selection has rested for
+   150 ms. A read is kept per issue until the row's `version` moves or `R`
+   clears it, a failed read included, and a description is sanitized before
+   it is drawn. Below 150 columns the pane is absent and nothing is read.
+
+   *Amended 2026-11-18 (task 150.4; applies to every view).* **The app header
+   leads with the project, then the main tabs, each with a glyph and a count
+   once its screen has loaded, and ends with the version at the far right.**
+   The active tab is reverse video. Width is shed in this order: the version,
+   the elsewhere badge, the counts, the labels to initials, and last the
+   project's name; the connection and pause badges are never shed. At 21 rows
+   and taller a rule separates the header from the screen. **The status bar
+   offers at most six palette-reachable keys**, in priority order, whatever the
+   width, superseding task 094's width-only contest; the rest stay behind `+N`,
+   and a popup's or form's own keys are never held back. From 100 columns it
+   starts by naming the screen. `tui.tabs` now defaults to
+   `[issues, tasks, chats]`.
+
+   *Amended 2026-11-18 (task 150.5; applies to views 8 and 9).* **The live chats
+   board and an open chat are one workspace.** Chat cards are grouped by
+   `awaiting_input`, `running`, idle and ended. At 100 columns and wider the
+   selected chat's latest six turns are previewed beside the list, read through
+   `GET /v1/chats/{id}` once the selection has rested for 150 ms and again when
+   the row's `updated_at` moves; at 150 columns its details are drawn too. A
+   pending §7.4 question is a thick card pinned under the conversation. `enter`
+   opens the live conversation between the same side panes, unless the chat was
+   opened from another view. The archived chats board keeps its table.
+
+   *Amended 2026-11-18 (task 150 decision 17; applies to views 8 and 9).* **A
+   chat turn reads the same in the preview and the open conversation.** The
+   human's half is a right-aligned card titled `You` with the prompt's age on its
+   top edge, replacing the `›` bubble above; the width cap, the kept line breaks
+   and the absence of a line cap stand. The agent's half opens with a heading
+   naming the agent, the turn and the answer's age. At `compact` and `normal` a
+   tool call and its outcome are one check line (`✓`, `✗`, `⊘`, or `◌` while it
+   runs), which narrows task 071's one vocabulary for this view alone: `verbose`
+   keeps the output pane's separate lines, and prose is still its renderer
+   verbatim. The preview reads the tool activity of the latest three turns. An
+   open chat in the workspace keeps the main tabs and the filter box, and its
+   pane's top edge carries the title, the reading modes and the state. The pinned
+   question is answered in its card. From 150 columns the board's summary is on
+   the status bar. `GET /v1/chats` and `GET /v1/chats/{id}` carry `turn_count`,
+   and every chat body carries `permission_mode`.
+
+   *Amended 2026-11-18 (task 150 decision 18; applies to the new-task view and
+   the new-chat form).* **From 130 columns and 24 rows each form is one screen.**
+   New task lists the workflows, the draft's sections and what the draft would
+   run, as `POST /v1/resolve` answers it. New chat sits between the chat list and
+   a summary. The rows, their order and their keys are unchanged, and a narrower
+   terminal keeps the earlier layouts. The effort control is absent for an agent
+   that reports no effort levels. `←`/`→` step a model or effort catalog of six
+   or fewer. `GET /v1/projects/{id}/branches` adds `ahead` and `ahead_of`: each
+   branch's commits past the project's default branch, absent when git cannot
+   say (older than 2.41, or no such local base).
+
+   *Amended 2026-11-18 (task 152; applies to the daemon view and adds view 14).*
+   **Configuration has a screen of its own.** Settings lists every key the config
+   editor could reach, in eleven categories, with an explanation pane. It is
+   reached from the palette and the daemon view and is never a `tui.tabs` entry.
+   A change applies when it is made, through `PATCH /v1/config`. The four-key
+   confirmation of task 060 and its later additions stand on every path to such a
+   key, the arrows and reset included. The daemon view keeps a digest and no
+   longer edits. `POST /v1/config/branch-preview` renders a candidate template
+   with the daemon's own renderer, and `GET /v1/info` adds `config_path`.
+
+   *Amended 2026-11-18 (task 150.6; applies to views 1 and 2).* **The live task
+   board is four columns of cards**: Needs you (`taskstate.NeedsHuman`), Running
+   (`running`, `awaiting_children`), Queued (`queued`, `paused`) and Finished.
+   Each column groups its tasks by issue, tasks with no issue last, and
+   `tui.board.group_by` and `g` no longer apply to it; the archived board keeps
+   its table and its grouping. `f`, `C` and `O` fold groups, session-only, and
+   Finished starts folded; a task entering `awaiting_input` opens its group. A
+   fan-out's lanes are read in its workspace, so `L` is gone. From 170 columns a
+   preview reads the selected task once the selection has rested for 150 ms.
+   **From 130 columns the task workspace is a title band, the steps beside the
+   tabs and, from 150, the task's details**; Steps, Task Details and Step Details
+   leave the strip there but keep their digits, a fresh open lands on Output, and
+   a blocked task's reason and recovery keys are pinned under the tab.
+
+   *Amended 2026-11-18 (task 150.7; applies to views 3 to 7, 10 and 11).* **From
+   130 columns the management screens have wide layouts over their existing
+   models**, and a narrower terminal keeps the layouts this section describes:
+   projects as a grid of cards beside the cross-project attention list; workflows
+   grouped into This project, Global and Built-in, with the selected entry's graph
+   beside them, read once the selection rests, and from 150 columns its details,
+   `g` or `enter` moving the keyboard into the graph; the daemon as a dashboard of
+   boxes, with a Work summary read from `GET /v1/info`'s slots and, from 30 rows, a
+   card per adapter; pull requests in Linked and Unclaimed columns with a preview that reads a claimed pull request's checks
+   through `GET /v1/tasks/{id}/github/pull/checks` once the selection rests on it;
+   triggers as cards beside their details and deliveries; and the archived boards
+   as cards, two to a row where they fit, and the chats workspace, each with a
+   switch showing the time window `s` cycles. The selected project's card says
+   `current`. `tab` crosses between archived tasks and
+   archived chats at any width, and `enter` opens an archived task. Every frame in
+   the TUI has rounded corners.
+
+   *Amended 2026-11-18 (task 150.8).* `tui.icons` (§12.3) picks the glyphs of the
+   app header, boards, cards and side panes: `unicode`, the default, or `nerd`. It
+   applies from every config answer, and only to text the TUI itself wrote.
+
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:
    only such an event can move a row's task count or active marker. A step
@@ -16086,6 +16215,16 @@ stream for the live tail.
    the row `issue #N ·`; the workspace offers both `ctrl+q` (close, which
    frees the worktree for the next main task) and `ctrl+t` (hand-off into
    the issue's next main task), the two endings §5.5 gives the kind.
+
+   *Amended 2026-11-18 (task 150.10):* from 120 columns and 18 rows view 13
+   draws its own panes instead of the root's frame: a title band (id, title
+   wrapped to at most four lines, lane pill, the card's status line, kind,
+   author and age); a focused pane holding the `Issue | Work` strip, a rule and
+   the scrolling page, each comment boxed with its author and time in the top
+   edge; and a **Details** pane holding the state, the facts, Source and sync,
+   which leave the page. The Details pane does not scroll and says how many
+   lines it cut. A smaller terminal, and the issue form, keep the framed page
+   this section describes.
 
    *Amended 2026-11-05 (task 144, issue #933):* view 13 is two tabs behind
    an **`Issue | Work`** strip, the pane's first line, drawn and clicked as
@@ -16711,7 +16850,7 @@ level they apply to it alone. The rules the grouping does not get to bend:
   cursor rests on it, and it shows `▸` rather than `▾`, its task count, its
   attention badge and how many of its tasks the bulk selection holds. It is a
   row and not a task: it has no state and no `available_actions`, so the §6
-  action keys, `space`, `enter` and `L` do nothing while the cursor is on one
+  action keys, `space` and `enter` do nothing while the cursor is on one
   and the detail panels hold the last task rather than blanking. Folding is
   a view over the same band sort — the rows that remain are in the order they
   were. It is never refused: what protects the failure the original rule named is
@@ -17929,9 +18068,9 @@ log alone re-reads on a short timer, because it is the only part that changes wh
 you watch. Uptime ticks locally from the daemon's `started_at` rather than from a
 fetched figure, so it cannot drift between refreshes.
 
-*Amended 2026-09-03 (issue #316).* Walking a fan-out is four keys, registered in
-`internal/tui/bindings.go` like every other. On the **board**, `L` expands or
-collapses the selected fan-out's lanes rather than drilling into them. In the
+*Amended 2026-09-03 (issue #316; the board's `L` was retired 2026-11-18, task
+150.6).* Walking a fan-out is three keys, registered in
+`internal/tui/bindings.go` like every other. In the
 **task workspace**, `l` opens the lane the current tab's selection resolves to
 and `U` opens this lane's parent — both on every tab that can name a lane,
 because a reader standing anywhere in a parent means the same thing by them, and
@@ -18076,7 +18215,7 @@ workspace and the new-chat form.
 
 **What is fixed, and why.** No override may name or take these, and naming one
 in `tui.keys` is refused with the reason: the surface-local rows that carry no
-term (`g`, `L`, `m`, `X`, `i`, `u`, `P`, `U`, `S`, …), because they appear once
+term (`g`, `m`, `X`, `i`, `u`, `P`, `U`, `S`, …), because they appear once
 and a vocabulary that named them would be a list of every key; the multi-key
 sets — fold, page, `↑`/`↓`, `K`/`J`, `[`/`]` — because a set is not a shape one
 key can describe (task 093 decision 6); `esc`, because it is the layer stack

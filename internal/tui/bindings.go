@@ -198,7 +198,10 @@ const (
 	// keyboard, and `n` means "not now" in here and nothing at all out
 	// there.
 	ctxSkills bindingContext = "agent skills"
-	ctxForm   bindingContext = "answer form"
+	// ctxFonts is the daemon view's Nerd Font flow (task 151), its own context
+	// for the same reason.
+	ctxFonts bindingContext = "nerd font"
+	ctxForm  bindingContext = "answer form"
 	// ctxRepairForm is the §6 repair popup (task 025). Its own context
 	// rather than more ctxForm rows: the two popups share a shape and
 	// nothing else — one picks from what an agent asked, the other types a
@@ -218,6 +221,8 @@ const (
 	// context because while it is open it owns the keyboard, and its keys are
 	// nothing like the log pane's underneath it.
 	ctxConfigEdit bindingContext = "config editor"
+	// ctxSettings is the Settings screen (task 152).
+	ctxSettings bindingContext = "settings"
 	// ctxStatusLine is the daemon view's status-line flow (task 082), its
 	// own context for the reason ctxSkills has one (#803).
 	ctxStatusLine bindingContext = "status line"
@@ -282,6 +287,8 @@ const (
 
 // binding is one registry row.
 type binding struct {
+	// wideForm marks a key only the wide new-task screen answers (task 150.11).
+	wideForm bool
 	// key is the press as tea reports it — the canonical one when a label
 	// documents aliases ("f" for f/G). Empty for palette-only navigation.
 	key   string
@@ -411,7 +418,10 @@ var bindings = []binding{
 	{label: "tasks — the task board", scope: scopeGlobal, nav: true, navTarget: viewHome},
 	{label: "project overview — every project's figures, what needs you, add, edit, remove", scope: scopeGlobal, nav: true, navTarget: viewProjects},
 	{label: "workflows — registry with scopes and validity", scope: scopeGlobal, nav: true, navTarget: viewWorkflows},
-	{label: "daemon — identity, config, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
+	{label: "daemon — identity, adapters, log", scope: scopeGlobal, nav: true, navTarget: viewDaemon},
+	// Settings get a palette row and no key, the pattern every takeover but
+	// new task follows, and no main tab (task 152).
+	{label: "settings — everything in config.yaml, explained and editable", scope: scopeGlobal, nav: true, navTarget: viewSettings},
 	{label: "pull requests — what is open in this project on GitHub", scope: scopeGlobal, nav: true, navTarget: viewPullRequests, github: true},
 	// Chats get a palette row and no direct key, the pattern every takeover
 	// but new task follows. `n` is not shared: on the chats board it makes a
@@ -462,21 +472,19 @@ var bindings = []binding{
 	// because replaying tab from the palette would switch from a screen the
 	// palette already covered, and the screen rows are the palette's way.
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxTasks, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
-	{key: "down", label: "move the selection (↑/↓ — the panels follow the cursor)", scope: scopePanel, context: ctxTasks, hint: "↑/↓ select", priority: 3},
+	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxTasks, hint: "↑↓ card", priority: 3},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Filter, key: "/", label: "filter by id, title, state or issue", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
-	{key: "g", label: "group the tasks: issue → workflow → flat (config.yaml sets the one you start on)", scope: scopePanel, context: ctxTasks, hint: "g group", priority: 4},
+	{key: "left", label: "move to the column on the left", scope: scopePanel, context: ctxTasks, hint: "←/→ lane", priority: 4},
+	{key: "right", label: "move to the column on the right", scope: scopePanel, context: ctxTasks, priority: 4, aliased: true},
+	{key: "f", label: "fold or open the issue group under the cursor", scope: scopePanel, context: ctxTasks, hint: "f fold", priority: 8},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
 	{op: keymap.AttentionFilter, key: "H", label: "show only the tasks that need a human — awaiting input, awaiting approval, blocked, or a fan-out whose lane is (H again shows every task)", scope: scopePanel, context: ctxTasks, hint: "H needs you", priority: 6, term: termAttention},
 	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
-	{key: "L", label: "expand or collapse the selected fan-out's lanes, as indented rows under it (lanes are hidden from the board otherwise, and stay out of every count)", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 7},
-	// Folding (task 054). ← and → walk the group tree a level at a time; the
-	// cursor rests on a collapsed header, which is how every level stays
-	// addressable. C/O are the diff pane's two letters in the same meaning.
-	{key: "left", label: "collapse the group you are in (← again folds the group around it; the header keeps the count and the ! badge)", scope: scopePanel, context: ctxTasks, hint: "←/→ fold", priority: 8, fold: true},
-	{key: "right", label: "expand the collapsed group under the cursor, one level", scope: scopePanel, context: ctxTasks, priority: 9, fold: true, aliased: true},
-	{key: "C", label: "collapse every group", scope: scopePanel, context: ctxTasks, hint: "C/O fold all", priority: 10, fold: true},
-	{key: "O", label: "expand every group", scope: scopePanel, context: ctxTasks, priority: 11, fold: true, aliased: true},
+	// Folding the issue groups (task 150.6). C/O are the diff pane's two
+	// letters in the same meaning.
+	{key: "C", label: "fold every issue group", scope: scopePanel, context: ctxTasks, hint: "C/O fold all", priority: 10},
+	{key: "O", label: "open every issue group", scope: scopePanel, context: ctxTasks, priority: 11, aliased: true},
 
 	// Overview (task 129.12). `0` is the tab's own row, the way 5, 6 and 7
 	// are theirs; the four digits after it are the frame's jump links, each
@@ -584,6 +592,8 @@ var bindings = []binding{
 	{key: "+", label: "nudge the priority (+/-; higher runs first)", scope: scopePanel, context: ctxNewTask, hint: "+/- priority", priority: 4},
 	{op: keymap.Refresh, key: "R", label: "re-probe the adapters (the list is otherwise cache-served)", scope: scopePanel, context: ctxNewTask, hint: "R re-probe", priority: 5, term: termRefresh},
 	{key: "ctrl+s", label: "create the task — from any field or open list, which is kept first", scope: scopePanel, context: ctxNewTask, hint: "ctrl+s create", priority: 1},
+	{key: "left", label: "on the wide form: move to the workflow list (→ or enter comes back)", scope: scopePanel, context: ctxNewTask, hint: "← workflows", priority: 2, wideForm: true},
+	{op: keymap.Filter, key: "/", label: "on the wide form's workflow list: filter the workflows", scope: scopePanel, context: ctxNewTask, priority: 7, term: termFilter, wideForm: true},
 	// The free-text row of an open picker (task 093). Registered on each of
 	// the four contexts a picker that offers one can be open in: a model or an
 	// effort newer than the catalog is the case it exists for (§9.6), and the
@@ -609,6 +619,7 @@ var bindings = []binding{
 	// listed under ctxTasks; these are the three the mode adds. There is no
 	// §6 action key: an archived task offers no `available_actions`, which is
 	// what makes the workspace `enter` opens read-only for free.
+	{key: "tab", label: "switch to archived chats", scope: scopePanel, context: ctxArchived, hint: "tab chats", priority: 0, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the archived task's workspace — read-only, because an archived task offers no actions", scope: scopePanel, context: ctxArchived, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Delete, key: "D", label: "delete permanently (asks first — the row, its step attempts and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchived, hint: "D delete", priority: 2, term: termDelete},
 	// `s` rather than `d` (task 093): cycling the date window is the same
@@ -630,6 +641,7 @@ var bindings = []binding{
 
 	// Archived chats. The same three keys, on the same reasoning: a chat that
 	// ended is history, and this is the only place it can be discarded.
+	{key: "tab", label: "switch to archived tasks", scope: scopePanel, context: ctxArchivedChats, hint: "tab tasks", priority: 0, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the archived chat's workspace — read-only, the conversation as it ended", scope: scopePanel, context: ctxArchivedChats, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Delete, key: "D", label: "delete permanently (asks first — the row, its turns and its transcripts go; optionally its branch, unless the branch has commits)", scope: scopePanel, context: ctxArchivedChats, hint: "D delete", priority: 2, term: termDelete},
 	{op: keymap.Scope, key: "s", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchivedChats, hint: "s window", priority: 3, term: termScope},
@@ -736,7 +748,7 @@ var bindings = []binding{
 	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
 	{key: "enter", label: "open the focused field's list, or move on from a text field", scope: scopePanel, context: ctxNewChat, hint: "enter list", priority: 2},
 	{key: "tab", label: "next field (shift+tab goes back)", scope: scopePanel, context: ctxNewChat, hint: "tab next", priority: 3},
-	{key: "left", label: "step the agent field in place (← →); enter opens its list", scope: scopePanel, context: ctxNewChat, hint: "← →  step", priority: 4},
+	{key: "left", label: "step the agent, or a short model or effort list, in place (← →); enter opens its list", scope: scopePanel, context: ctxNewChat, hint: "← →  step", priority: 4},
 	{key: "esc", label: "close an open list, else discard the draft", scope: scopePanel, context: ctxNewChat, hint: "esc cancel", priority: 5},
 	{op: keymap.FreeText, key: "t", label: "in an open list: type a value it does not offer", scope: scopePanel, context: ctxNewChat, priority: 6, term: termFreeText},
 
@@ -764,7 +776,7 @@ var bindings = []binding{
 	{key: "esc", label: "finish the field, or close the list without picking", scope: scopePanel, context: ctxProjectFormField, hint: "esc done", priority: 3},
 
 	// Workflows.
-	{key: "enter", label: "show the entry's steps", scope: scopePanel, context: ctxWorkflows, hint: "enter steps", priority: 1},
+	{key: "enter", label: "show the entry's steps, or explore its graph where the steps are already on screen", scope: scopePanel, context: ctxWorkflows, hint: "enter open", priority: 1},
 	{op: keymap.Editor, key: "e", label: "open the workflow file in $EDITOR (the view updates when you save)", scope: scopePanel, context: ctxWorkflows, hint: "e edit", priority: 2, term: termEditor},
 	{op: keymap.Refresh, key: "R", label: "re-read the registry", scope: scopePanel, context: ctxWorkflows, hint: "R reload", priority: 3, term: termRefresh},
 	{key: "g", label: "draw the workflow as a control-flow graph", scope: scopePanel, context: ctxWorkflows, hint: "g graph", priority: 4},
@@ -914,8 +926,7 @@ var bindings = []binding{
 	// The config block became editable in task 060. tab is what says whether
 	// ↑/↓ mean the config list or the log pane — the view has two scrollable
 	// things now and one pair of arrows.
-	{key: "tab", label: "move between the config list and the log pane", scope: scopePanel, context: ctxDaemon, hint: "tab config", priority: 4},
-	{key: "enter", label: "edit the selected configuration key (e also opens it)", scope: scopePanel, context: ctxDaemon, hint: "enter edit", priority: 5},
+	{key: "enter", label: "open Settings, where every configuration key is changed", scope: scopePanel, context: ctxDaemon, hint: "enter settings", priority: 4},
 	// Task 082. The only key in vincent that leads to a write outside its own
 	// data dir, which is why the label says whose file it is: what it opens
 	// shows the exact JSON before anything happens, and the same key takes it
@@ -927,6 +938,16 @@ var bindings = []binding{
 	// only when it means the same one. `s` was unavailable — it is the
 	// vocabulary's "cycle a listing's scope" — and `S` carries no term.
 	{key: "S", label: "install the agent skills vincent publishes — the exact command is shown first", scope: scopePanel, context: ctxDaemon, hint: "S skills", priority: 7},
+	// Task 151. Another write outside vincent's own directories, so another
+	// key that says what it will do before it does it.
+	{key: "U", label: "set up Nerd Font icons — what gets downloaded is shown first", scope: scopePanel, context: ctxDaemon, hint: "U icons", priority: 8},
+
+	// The Nerd Font flow owns the keyboard and prints its own key line.
+	{key: "enter", label: "install the font, or turn the icons on once you can see them", scope: scopePanel, context: ctxFonts, noPalette: true},
+	{key: "y", label: "turn the icons on", scope: scopePanel, context: ctxFonts, noPalette: true},
+	{key: "n", label: "keep Unicode icons", scope: scopePanel, context: ctxFonts, noPalette: true},
+	{key: "u", label: "remove the font vincent installed and go back to Unicode icons", scope: scopePanel, context: ctxFonts, noPalette: true},
+	{key: "esc", label: "close without changing anything", scope: scopePanel, context: ctxFonts, noPalette: true},
 
 	// The §9.8 offer: it owns the keyboard while it is open and prints its
 	// own key line, so these are here to keep ? complete.
@@ -939,12 +960,23 @@ var bindings = []binding{
 	{key: "n", label: "not now — remembered, and i brings it back", scope: scopePanel, context: ctxStatusLine, noPalette: true},
 	{key: "esc", label: "close without writing anything", scope: scopePanel, context: ctxStatusLine, noPalette: true},
 
+	// The Settings screen (task 152).
+	{key: "down", label: "move between the settings (↑/↓ or j/k)", scope: scopePanel, context: ctxSettings, hint: "↑/↓ setting", priority: 1},
+	{key: "left", label: "change the selected setting (←/→)", scope: scopePanel, context: ctxSettings, hint: "←/→ change", priority: 2},
+	{key: "enter", label: "edit the selected setting", scope: scopePanel, context: ctxSettings, hint: "enter edit", priority: 3},
+	{key: "tab", label: "next category (shift+tab goes back)", scope: scopePanel, context: ctxSettings, hint: "tab category", priority: 4},
+	{op: keymap.Filter, key: "/", label: "search every setting", scope: scopePanel, context: ctxSettings, hint: "/ search", priority: 5, term: termFilter},
+	{key: "backspace", label: "reset the selected setting to its default", scope: scopePanel, context: ctxSettings, hint: "⌫ reset", priority: 6},
+	{op: keymap.Editor, key: "e", label: "open config.yaml in $EDITOR", scope: scopePanel, context: ctxSettings, priority: 7, term: termEditor},
+	{op: keymap.Refresh, key: "R", label: "re-read the configuration", scope: scopePanel, context: ctxSettings, priority: 8, term: termRefresh},
+	{key: "esc", label: "clear the search, else leave Settings", scope: scopePanel, context: ctxSettings, priority: 9},
+
 	// The config editor: it owns the keyboard while it is open and prints its
 	// own key line, so these are here to keep ? complete.
 	{key: "left", label: "choose a value, for a key with a fixed vocabulary (←/→)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
-	{key: "enter", label: "apply the change; the daemon validates and writes config.yaml", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
+	{key: "enter", label: "apply the change; the daemon validates and writes config.yaml", scope: scopePanel, context: ctxConfigEdit, hint: "enter apply", priority: 1, noPalette: true},
 	{key: "y", label: "confirm a key that decides what the daemon executes or exposes", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
-	{key: "esc", label: "close the editor without saving (the confirmation returns to the field)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
+	{key: "esc", label: "close the editor without saving (the confirmation returns to the field)", scope: scopePanel, context: ctxConfigEdit, hint: "esc cancel", priority: 2, noPalette: true},
 
 	// Triggers (§15 view 11, task 096 decision 25). `space` flips `enabled`
 	// and asks before it turns one on (decision 19); `T` and `X` are the two
@@ -956,7 +988,7 @@ var bindings = []binding{
 	// out of the footer elsewhere, and `?` and the palette still list it.
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxIssues, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected issue", scope: scopePanel, context: ctxIssues, hint: "enter open", priority: 1, term: termOpenRow},
-	{key: "down", label: "move the selection (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ move", priority: 2},
+	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ card", priority: 2},
 	{op: keymap.Filter, key: "/", label: "filter by id, title, label or kind", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 3, term: termFilter},
 	// The writes (task 130.12). `n` is §15's "make a new one here", the
 	// chats board's precedent; `i` is the trigger list's "edit in a form";
@@ -976,15 +1008,11 @@ var bindings = []binding{
 	// request to the project's issue source, `vincent issue sync` from the
 	// list, offered only where there is a sync pass to wake (task 142.14).
 	{key: issueSyncKey, label: "sync this project's issues from its issue source now — sweeping out the ones deleted there", scope: scopePanel, context: ctxIssues, hint: "S sync", priority: 11, syncable: true},
-	// Folding the lane sections (task 134.8), the task board's four keys in
-	// the same meaning. Not `fold:` rows: that marker drops a row while the
-	// board is ungrouped, and the issues list always has its sections.
-	{key: "left", label: "collapse the lane section you are in (the header keeps the count and the ! badge)", scope: scopePanel, context: ctxIssues, hint: "←/→ fold", priority: 12},
-	{key: "right", label: "expand the collapsed lane section under the cursor", scope: scopePanel, context: ctxIssues, priority: 13, aliased: true},
-	{key: "C", label: "collapse every lane section", scope: scopePanel, context: ctxIssues, hint: "C/O fold all", priority: 14},
-	{key: "O", label: "expand every lane section", scope: scopePanel, context: ctxIssues, priority: 15, aliased: true},
+	// Crossing the columns (task 150.2), a main key of the board.
+	{key: "left", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, hint: "←/→ lane", priority: 3},
+	{key: "right", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, priority: 13, aliased: true},
 	// Paging (#796), the issue detail's and the timeline's keys.
-	{key: "pgdown", label: "page the list (pgup/pgdown, home/g, end/G)", scope: scopePanel, context: ctxIssues, priority: 16},
+	{key: "pgdown", label: "page the column (pgup/pgdown, home/g, end/G)", scope: scopePanel, context: ctxIssues, priority: 16},
 	// Handoffs (task 137.11). The selection is the task table's shape (task
 	// 011) over the pending hand-off cards only; liveBindings withholds
 	// ready, handoff and return where they do not apply to the row.

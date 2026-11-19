@@ -52,7 +52,14 @@ type answerForm struct {
 	// task workspace answers it, and in a chat there is no task to read
 	// (issue #801 F7).
 	noDetails bool
+	// card draws the form as the chat workspace's pinned question (task
+	// 150.5): the question plain over its options, radio dots for the
+	// brackets, and only the keys a reader needs to answer.
+	card bool
 }
+
+// answerCardFreeText is the free-text row's label on the pinned question.
+const answerCardFreeText = "Type another answer"
 
 func newAnswerForm(req apiclient.InputRequest) *answerForm {
 	f := &answerForm{
@@ -469,6 +476,8 @@ func (f *answerForm) status() (lipgloss.Style, string) {
 		return styleDim, "enter keeps this answer · esc discards it"
 	case f.submitting:
 		return styleDim, "submitting…"
+	case f.card:
+		return styleDim, "space select  ·  enter submit  ·  esc put away"
 	}
 	details := " · ctrl+t task details"
 	if f.noDetails {
@@ -552,6 +561,9 @@ const headerPrefix = "  ? "
 // reason). Continuation lines are indented to the row's marker column, so a
 // wrapped option still reads as one option.
 func (f *answerForm) renderRow(i int, row formRow, width int) []string {
+	if f.card {
+		return f.renderCardRow(i, row, width)
+	}
 	if row.kind == rowHeader {
 		out := wrapText(row.text, width-cols(headerPrefix), wrapOpts{})
 		for j := range out {
@@ -580,6 +592,73 @@ func (f *answerForm) renderRow(i int, row formRow, width int) []string {
 		out[j] = strings.Repeat(" ", indent) + style.Render(out[j])
 	}
 	return out
+}
+
+// renderCardRow is one row of the pinned question. The cursor and the filled
+// dot carry the selection without colour.
+func (f *answerForm) renderCardRow(i int, row formRow, width int) []string {
+	if row.kind == rowHeader {
+		var out []string
+		if i > 0 {
+			out = append(out, "")
+		}
+		out = append(out, styled(wrapText(row.text, width, wrapOpts{}), styleTitle)...)
+		return append(out, "")
+	}
+	focused := i == f.cursor && !f.editing
+	cursor, style := "  ", stylePlain
+	if focused {
+		cursor, style = styleFocus.Render("› "), styleFocus.Bold(true)
+	}
+	text, body := f.rowBody(row)
+	if row.kind == rowFree {
+		switch {
+		case text != row.text:
+			style = body // what was typed, held as the answer
+		case focused:
+			text = answerCardFreeText
+		default:
+			text, style = answerCardFreeText, styleDim
+		}
+	}
+	prefix := cursor + f.cardMarker(row) + " "
+	indent := ansi.StringWidth(prefix)
+	out := wrapText(text, max(width-indent, 1), wrapOpts{})
+	for j := range out {
+		lead := prefix
+		if j > 0 {
+			lead = strings.Repeat(" ", indent)
+		}
+		out[j] = lead + style.Render(out[j])
+	}
+	return out
+}
+
+// cardMarker is a row's mark on the pinned question.
+func (f *answerForm) cardMarker(row formRow) string {
+	dot := func(on bool) string {
+		if on {
+			return styleFocus.Render(ic("◉"))
+		}
+		return ic("○")
+	}
+	switch row.kind {
+	case rowAllow:
+		return dot(f.allow != nil && *f.allow)
+	case rowDeny:
+		return dot(f.allow != nil && !*f.allow)
+	case rowOption:
+		q := f.req.Questions[row.question]
+		on := contains(f.answers[q.Text], q.Options[row.option])
+		if q.MultiSelect {
+			return checkbox(on)
+		}
+		return dot(on)
+	case rowFree:
+		return styleDim.Render("✎")
+	case rowHeader:
+	}
+	return " "
 }
 
 // rowBody is what a row says, and how. A free-text row that holds an answer

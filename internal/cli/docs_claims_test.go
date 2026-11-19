@@ -196,6 +196,8 @@ var tuiOnlyClientCalls = map[string]string{
 	"CreateWorkflow": "the workflow editor; task 065 gave it no CLI counterpart — `workflow init`, `$EDITOR` and `workflow validate` are the shell's route",
 	"PatchWorkflow":  "the workflow editor; task 065 gave it no CLI counterpart — `workflow init`, `$EDITOR` and `workflow validate` are the shell's route",
 	"WorkflowSchema": "the workflow editor; task 065 gave it no CLI counterpart — `workflow init`, `$EDITOR` and `workflow validate` are the shell's route",
+	// The Settings screen.
+	"PreviewBranchTemplate": "the Settings screen's live branch-name preview; task 152 gave it no CLI counterpart — `vincent config set branch_template` validates the template it writes",
 	// A task's Workflow tab.
 	"GetTaskWorkflow": "the task Workflow tab's graph; 017 decision 20 and 051 declined `vincent task workflow`",
 	// The triggers view.

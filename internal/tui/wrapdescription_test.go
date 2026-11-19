@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -163,7 +164,7 @@ func longForm(t *testing.T) *newTask {
 // (N1): the pane cuts them. Both the committed workflow's detail and the
 // picker's preview must wrap, compact and guided.
 func TestNewTaskWrapsTheWorkflowDetail(t *testing.T) {
-	for _, size := range [][2]int{{80, 40}, {250, 60}} {
+	for _, size := range [][2]int{{80, 40}, {128, 60}} {
 		for _, tc := range []struct{ workflow, what, text string }{
 			{"verbose", "description", longDescription},
 			{"broken", "validation error", longError},
@@ -186,6 +187,9 @@ func TestNewTaskWrapsTheWorkflowDetail(t *testing.T) {
 					t.Fatal("workflow picker did not open")
 				}
 				for range len(n.pick.options) {
+					press(n, "up")
+				}
+				for range len(n.pick.options) {
 					if opt, ok := n.pick.current(); ok && opt.value == tc.workflow {
 						break
 					}
@@ -197,6 +201,28 @@ func TestNewTaskWrapsTheWorkflowDetail(t *testing.T) {
 				out := n.render(size[0], size[1])
 				assertFullyReadable(t, tc.what, out, tc.text, size[0])
 			})
+		}
+	}
+}
+
+// The wide form's cards have one line each, so the pane beside them carries the
+// previewed workflow's description and errors whole (task 150.11).
+func TestNewTaskWideDescribesTheWorkflowWhole(t *testing.T) {
+	for _, tc := range []struct{ workflow, text string }{
+		{"verbose", longDescription},
+		{"broken", longError},
+	} {
+		n := longForm(t)
+		n.update(tea.WindowSizeMsg{Width: 250, Height: 60})
+		n.projectID = 1
+		n.workflow = tc.workflow
+		moveTo(n, ntWorkflow)
+		out := ansi.Strip(n.render(250, 60))
+		for _, word := range strings.Fields(tc.text) {
+			if !strings.Contains(out, word) {
+				t.Errorf("%s: %q never rendered:\n%s", tc.workflow, word, out)
+				break
+			}
 		}
 	}
 }

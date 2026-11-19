@@ -47,7 +47,7 @@ func TestStripOnBothDefaultTabs(t *testing.T) {
 	for _, id := range []viewID{viewHome, viewIssues} {
 		m.Update(selectViewMsg{id: id})
 		got := stripHeader(m, 120)
-		if !strings.HasSuffix(got, "◆ no project  Issues │ Tasks") {
+		if !strings.Contains(got, "◆ no project   ▦ Issues │ ▶ Tasks") || !strings.HasSuffix(got, "vincent 0.9.0 ") {
 			t.Errorf("view %v header = %q, want the strip in place of the tag", id, got)
 		}
 		if strings.Contains(got, "[") {
@@ -61,6 +61,7 @@ func TestStripOnBothDefaultTabs(t *testing.T) {
 // truncate. The strip is never dropped.
 func TestStripShedding(t *testing.T) {
 	m := attentionRoot(t, task(2, stateBlocked, inProjectID(otherProjectID, "other")))
+	m.Update(boardConfigMsg{tabs: []string{"issues", "tasks"}})
 	m.version = "0.9.0"
 	m.sel.name = "a-twenty-char-projec"
 	m.views[viewHome].(*shell).setProject(m.sel)
@@ -68,16 +69,16 @@ func TestStripShedding(t *testing.T) {
 	for _, id := range []viewID{viewHome, viewIssues} {
 		m.Update(selectViewMsg{id: id})
 		got := stripHeader(m, 80)
-		if !strings.Contains(got, "Issues │ Tasks") || !strings.Contains(got, m.sel.name) {
+		if !strings.Contains(got, "▦ Issues │ ▶ Tasks") || !strings.Contains(got, m.sel.name) {
 			t.Fatalf("view %v at 80 columns: %q, want the full strip and name", id, got)
 		}
 	}
 
 	seen := map[string]bool{}
-	for w := 80; w >= 32; w-- {
+	for w := 80; w >= 26; w-- {
 		got := stripHeader(m, w)
-		long := strings.HasSuffix(got, "Issues │ Tasks")
-		short := strings.HasSuffix(got, "I │ T")
+		long := strings.Contains(got, "▦ Issues │ ▶ Tasks")
+		short := strings.HasSuffix(strings.TrimRight(got, " "), "I │ T")
 		version := strings.Contains(got, "0.9.0")
 		badge := strings.Contains(got, "elsewhere")
 		whole := strings.Contains(got, m.sel.name)
@@ -141,7 +142,7 @@ func TestStripClickSwitches(t *testing.T) {
 
 	// The active label, the separator between labels and a cell past the
 	// strip do nothing.
-	for _, x := range []int{tasks.x0, issues.x1 + 1, tasks.x1 + 1} {
+	for _, x := range []int{tasks.x0, issues.x1, tasks.x1 + 1} {
 		clickHeader(m, x)
 		if m.active != viewHome {
 			t.Fatalf("click at %d moved to %v", x, m.active)
@@ -163,7 +164,7 @@ func TestStripClickWhileTypingDoesNothing(t *testing.T) {
 	if !m.views[viewHome].(*shell).board.filtering {
 		t.Fatal("/ did not open the board's filter")
 	}
-	if got := stripHeader(m, 120); !strings.Contains(got, "Issues │ Tasks") {
+	if got := stripHeader(m, 120); !strings.Contains(got, "▦ Issues │ ▶ Tasks") {
 		t.Fatalf("typing hid the strip: %q", got)
 	}
 	clickHeader(m, tabSpan(t, m, viewIssues).x0)
@@ -177,7 +178,7 @@ func TestStripInEveryConnectionPhase(t *testing.T) {
 		m := tabsRoot(t)
 		m.switchTo(viewHome)
 		m.phase = phase
-		if got := stripHeader(m, 120); !strings.Contains(got, "Issues │ Tasks") {
+		if got := stripHeader(m, 120); !strings.Contains(got, "▦ Issues │ ▶ Tasks") {
 			t.Errorf("phase %v header = %q, want the strip", phase, got)
 			continue
 		}
@@ -188,8 +189,23 @@ func TestStripInEveryConnectionPhase(t *testing.T) {
 	}
 }
 
+// A chat open in the workspace is still the Chats tab.
+func TestOpenChatKeepsTheStrip(t *testing.T) {
+	m := tabsRoot(t, "issues", "tasks", "chats")
+	v := m.views[viewChat].(*chatView)
+	v.back, v.termW = viewChats, 170
+	m.switchTo(viewChat)
+	v.back, v.termW = viewChats, 170
+	if got := stripHeader(m, 170); !strings.Contains(got, "▦ Issues │ ▶ Tasks") {
+		t.Fatalf("the open chat's header = %q, want the strip", got)
+	}
+}
+
 func TestNoStripOffATabRoot(t *testing.T) {
 	m := tabsRoot(t, "issues", "tasks", "chats")
+	// A chat opened from an issue keeps the whole screen; one inside the chats
+	// workspace is still the Chats tab (TestOpenChatKeepsTheStrip).
+	m.views[viewChat].(*chatView).back = viewIssue
 	for _, id := range []viewID{
 		viewTask, viewIssue, viewArchived, viewArchivedChats, viewProjects,
 		viewWorkflows, viewDaemon, viewPullRequests, viewTriggers, viewChat, viewNewTask,
@@ -207,14 +223,14 @@ func TestNoStripOffATabRoot(t *testing.T) {
 		m := tabsRoot(t, "chats", "tasks")
 		m.switchTo(viewChats)
 		m.views[viewChats].(*chatsView).create = newNewChatForm(nil, 1)
-		if got := stripHeader(m, 120); !strings.HasSuffix(got, "[Chats]") || len(m.headerTabs) != 0 {
+		if got := stripHeader(m, 120); !strings.Contains(got, "[Chats]") || len(m.headerTabs) != 0 {
 			t.Errorf("new-chat form header = %q, want the tag and no strip", got)
 		}
 	})
 	t.Run("one tab", func(t *testing.T) {
 		m := tabsRoot(t, "tasks")
 		m.switchTo(viewHome)
-		if got := stripHeader(m, 120); !strings.HasSuffix(got, "[Tasks]") || len(m.headerTabs) != 0 {
+		if got := stripHeader(m, 120); !strings.Contains(got, "[Tasks]") || len(m.headerTabs) != 0 {
 			t.Errorf("single-tab header = %q, want the tag and no strip", got)
 		}
 	})
@@ -223,7 +239,7 @@ func TestNoStripOffATabRoot(t *testing.T) {
 func TestStripFollowsTheConfig(t *testing.T) {
 	m := tabsRoot(t, "chats", "issues", "tasks")
 	m.switchTo(viewIssues)
-	if got := stripHeader(m, 120); !strings.HasSuffix(got, "Chats │ Issues │ Tasks") {
+	if got := stripHeader(m, 120); !strings.Contains(got, "◌ Chats │ ▦ Issues │ ▶ Tasks") {
 		t.Fatalf("header = %q, want three labels in config order", got)
 	}
 	var ids []viewID
@@ -234,7 +250,7 @@ func TestStripFollowsTheConfig(t *testing.T) {
 		t.Fatalf("spans name %v, want %v", ids, want)
 	}
 	m.Update(boardConfigMsg{tabs: []string{"tasks", "issues"}})
-	if got := stripHeader(m, 120); !strings.HasSuffix(got, "Tasks │ Issues") || m.active != viewIssues {
+	if got := stripHeader(m, 120); !strings.Contains(got, "▶ Tasks │ ▦ Issues") || m.active != viewIssues {
 		t.Fatalf("after a reload header = %q on %v, want the new strip and no move", got, m.active)
 	}
 }

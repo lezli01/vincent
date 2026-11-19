@@ -39,7 +39,7 @@ type popupPage struct {
 func (pg popupPage) span(c int) (first, last int) {
 	n := len(pg.entryRow)
 	rows := pg.entryRow[n-1] + 1
-	start, h, _ := cuedSpan(rows, pg.entryRow[c], pg.height)
+	start, h := cuedSpan(rows, pg.entryRow[c], pg.height)
 	first, last = c, c
 	for first > 0 && pg.entryRow[first-1] >= start {
 		first--
@@ -108,7 +108,7 @@ func popupPageKey(key string, cursor, n int, pg popupPage) int {
 // what pgup and pgdown move through.
 func popupWindow(rows []string, entryRow []int, cursorRow, height int) (out []string, page popupPage) {
 	page = popupPage{entryRow: entryRow, height: height}
-	start, h, _ := cuedSpan(len(rows), cursorRow, height)
+	start, h := cuedSpan(len(rows), cursorRow, height)
 	end := min(start+h, len(rows))
 	if height <= 0 {
 		return nil, page

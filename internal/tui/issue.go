@@ -129,6 +129,11 @@ type issueView struct {
 	view     int
 	viewTop  int
 
+	// termW and termH are the terminal's size, which pick the wide layout
+	// (issuewide.go); paneW is the conversation pane's outer width there, past
+	// which a click is in the details, and zero on the narrow page.
+	termW, termH, paneW int
+
 	raw   *rawHolder
 	links *hyperlinkHolder
 	md    mdCache
@@ -196,6 +201,9 @@ func (v *issueView) open(id int64) tea.Cmd {
 }
 
 func (v *issueView) update(msg tea.Msg) (panel, tea.Cmd) {
+	if size, ok := msg.(tea.WindowSizeMsg); ok {
+		v.termW, v.termH = size.Width, size.Height
+	}
 	if cmd, ok := v.w.update(msg); ok {
 		return v, cmd
 	}
@@ -623,6 +631,9 @@ func (v *issueView) updateClick(msg tea.MouseClickMsg) {
 	if v.w.open() || msg.Button != tea.MouseLeft {
 		return
 	}
+	if v.paneW > 0 && msg.X >= v.paneW {
+		return
+	}
 	if msg.Y == v.stripY {
 		v.clickStrip(msg.X)
 		return
@@ -909,6 +920,17 @@ func (v *issueView) render(width, height int) string {
 	if v.w.form != nil {
 		return v.w.form.render(width, height)
 	}
+	if v.wide() {
+		return v.renderWide(width, height)
+	}
+	v.paneW = 0
+	return strings.Join(v.paneLines(width, height, issueFrameTop), "\n")
+}
+
+// paneLines is the strip, the page's window and the footer, in at most height
+// lines of width cells. top is the screen line the strip is on, which a click is
+// measured against. The wide layout rules the strip off from the page.
+func (v *issueView) paneLines(width, height, top int) []string {
 	body := v.pageLines(width)
 	var footer []string
 	tail := 0
@@ -927,12 +949,16 @@ func (v *issueView) render(width, height int) string {
 	// click over with only the header rows taken off, so a click's Y counts
 	// the frame's top border: the strip is on Y 1, as renderStrip's x counts
 	// the border on the other axis and taskView's tabY does (review F1).
-	strip := v.renderStrip(width)
-	v.stripY = issueFrameTop
+	head := []string{v.renderStrip(width)}
+	if v.wide() {
+		head = append(head, styleDim.Render(strings.Repeat("─", width)))
+	}
+	chrome := len(head)
+	v.stripY = top
 	// Body plus footer never exceed the pane (#795): the prompt wins, and
 	// the page shrinks to nothing before the prompt loses a line.
-	footer = fitFooter(footer, height-1, tail)
-	room := height - 1 - len(footer)
+	footer = fitFooter(footer, height-chrome, tail)
+	room := max(height-chrome-len(footer), 0)
 	// The page scrolls freely, and the selection never pulls it (#792). A
 	// page taller than the pane gives a line to a ▲ cue while it continues
 	// above and to a ▼ cue while it continues below — the picker's idiom.
@@ -942,14 +968,16 @@ func (v *issueView) render(width, height int) string {
 		limit = len(body) - (room - 1) // the last page has only the ▲ cue
 	}
 	v.scroll = min(max(v.scroll, 0), max(limit, 0))
-	v.view, v.viewTop = room, issueFrameTop+1
-	lines := []string{strip}
+	v.view, v.viewTop = room, top+chrome
+	lines := head
 	if room == 0 {
-		return ansi.Truncate(strip, width, "…") + "\n" + strings.Join(footer, "\n")
+		lines = append(lines[:1:1], footer...)
+		lines[0] = ansi.Truncate(lines[0], width, "…")
+		return lines
 	}
 	if cues && v.scroll > 0 {
 		lines = append(lines, styleDim.Render(fmt.Sprintf("  ▲ %d more", v.scroll)))
-		v.view, v.viewTop = room-1, issueFrameTop+2
+		v.view, v.viewTop = room-1, top+chrome+1
 	}
 	below := 0
 	if cues && v.scroll+v.view < len(body) {
@@ -964,7 +992,7 @@ func (v *issueView) render(width, height int) string {
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 // issueFrameTop is the root frame's top border: the click row of the pane's
@@ -1044,27 +1072,35 @@ func fitTitle(title string, room int) string {
 // rowLines, for the arrows and the click.
 func (v *issueView) pageLines(width int) (lines []string) {
 	v.rowLines = v.rowLines[:0]
+	wide := v.wide()
+	// The wide layout's band names the issue, so its page does not.
+	var named []string
+	if !wide {
+		named = []string{" " + styleTitle.Render(v.title()), ""}
+	}
 	switch {
 	case v.loadErr != nil && !v.loaded:
-		return append([]string{" " + styleTitle.Render(v.title()), ""},
+		return append(named,
 			styled(wrapText("⚠ could not read the issue: "+errString(v.loadErr), width, hanging("  ")), styleBad)...)
 	case !v.loaded:
-		return []string{" " + styleTitle.Render(v.title()), "", styleDim.Render("  reading…")}
+		return append(named, styleDim.Render("  reading…"))
 	}
 	iss := v.issue
 
-	// The title wraps under itself (#795); the source badge is a fact of
-	// its own below rather than a tail the title pushes off the line.
-	head := " " + issueStateStyle(iss).Render(issueStateBadge(iss)) + "  " +
-		styleKey.Render("#"+strconv.FormatInt(iss.ID, 10)) + "  "
-	indent := strings.Repeat(" ", cols(head))
-	for i, l := range wrapText(iss.Title, width, hanging(indent)) {
-		l = strings.TrimLeft(l, " ")
-		if i == 0 {
-			lines = append(lines, head+styleTitle.Render(l))
-			continue
+	if !wide {
+		// The title wraps under itself (#795); the source badge is a fact of
+		// its own below rather than a tail the title pushes off the line.
+		head := " " + issueStateStyle(iss).Render(issueStateBadge(iss)) + "  " +
+			styleKey.Render("#"+strconv.FormatInt(iss.ID, 10)) + "  "
+		indent := strings.Repeat(" ", cols(head))
+		for i, l := range wrapText(iss.Title, width, hanging(indent)) {
+			l = strings.TrimLeft(l, " ")
+			if i == 0 {
+				lines = append(lines, head+styleTitle.Render(l))
+				continue
+			}
+			lines = append(lines, indent+styleTitle.Render(l))
 		}
-		lines = append(lines, indent+styleTitle.Render(l))
 	}
 	if v.loadErr != nil {
 		lines = append(lines, styled(wrapText("⚠ could not re-read the issue: "+errString(v.loadErr), width, hanging("  ")), styleBad)...)
@@ -1072,34 +1108,24 @@ func (v *issueView) pageLines(width int) (lines []string) {
 	if v.tab == issueTabWork {
 		return append(lines, v.workTabLines(v.selectRows(), width, len(lines))...)
 	}
-	lines = append(lines, "")
-
-	labels := "none"
-	if len(iss.Labels) > 0 {
-		labels = strings.Join(iss.Labels, ", ")
-	}
-	kind := iss.Kind
-	if kind == "" {
-		kind = "none"
-	}
-	facts := [][2]string{
-		{"lane", issueLaneLabel(iss)},
-		{"labels", labels},
-		{"kind", kind},
-		{"priority", issuePriorityLabel(iss.Priority)},
-		{"author", iss.Author},
-	}
-	if badge := issueSourceBadge(iss); badge != "" {
-		facts = append(facts, [2]string{"source", badge})
-	}
-	if iss.Sync != nil {
-		facts = append(facts, [2]string{"sync", issueSyncFact(iss.Sync)})
-	}
-	for _, f := range facts {
-		lines = append(lines, factLines(f[0], f[1], width)...)
+	if !wide {
+		lines = append(lines, "")
+		facts := issueFacts(iss)
+		if badge := issueSourceBadge(iss); badge != "" {
+			facts = append(facts, [2]string{"source", badge})
+		}
+		if iss.Sync != nil {
+			facts = append(facts, [2]string{"sync", issueSyncFact(iss.Sync)})
+		}
+		for _, f := range facts {
+			lines = append(lines, factLines(f[0], f[1], width)...)
+		}
 	}
 
-	lines = append(lines, "", " "+styleTitle.Render("Description"))
+	if len(lines) > 0 {
+		lines = append(lines, "")
+	}
+	lines = append(lines, v.sectionHead("≡", "Description"))
 	v.md.begin()
 	if strings.TrimSpace(iss.Body) == "" {
 		lines = append(lines, styleDim.Render("  no description"))
@@ -1114,7 +1140,7 @@ func (v *issueView) pageLines(width int) (lines []string) {
 
 	rows := v.selectRows()
 	if mw := iss.MainWorktree; mw != nil {
-		lines = append(lines, "", " "+styleTitle.Render("Main worktree"))
+		lines = append(lines, "", v.sectionHead("⎇", "Main worktree"))
 		lines = append(lines, "  "+styleDim.Render(padRight("branch", 10))+mw.Branch)
 		marker := "  "
 		if v.cursor == 0 {
@@ -1150,18 +1176,10 @@ func (v *issueView) pageLines(width int) (lines []string) {
 	lines = append(lines, v.issueTabWorkLines(rows, width, len(lines))...)
 	lines = append(lines, v.handoffLines(rows, width, len(lines))...)
 
-	if iss.Source != nil {
+	if iss.Source != nil && !wide {
 		lines = append(lines, "", " "+styleTitle.Render("Source"))
-		src := iss.Source
-		for _, f := range [][2]string{
-			{"provider", src.Provider},
-			{"issue", issueSourceBadge(iss)},
-			{"url", src.URL},
-			{"remote", src.RemoteState},
-		} {
-			if f[1] != "" {
-				lines = append(lines, factLines(f[0], f[1], width)...)
-			}
+		for _, f := range issueSourceFacts(iss) {
+			lines = append(lines, factLines(f[0], f[1], width)...)
 		}
 	}
 	return lines
@@ -1171,7 +1189,7 @@ func (v *issueView) pageLines(width int) (lines []string) {
 // author and time, with a mirrored comment marked as its provider's. Called inside
 // pageLines' render pass, so the bodies share the description's cache.
 func (v *issueView) threadLines(width int) []string {
-	lines := []string{"", " " + styleTitle.Render("Comments") + styleDim.Render("  "+plural(len(v.comments), "comment", "comments"))}
+	lines := []string{"", v.sectionHead("◌", "Comments") + styleDim.Render("  "+plural(len(v.comments), "comment", "comments"))}
 	if v.commentsErr != nil {
 		return append(lines, styled(wrapText("⚠ could not read the comments: "+errString(v.commentsErr), width, hanging("  ")), styleBad)...)
 	}
@@ -1188,6 +1206,10 @@ func (v *issueView) threadLines(width int) []string {
 		remoteTag = src.Provider
 	}
 	for i, c := range v.comments {
+		if v.wide() {
+			lines = append(lines, v.commentCard(&v.comments[i], remoteTag, width)...)
+			continue
+		}
 		if i > 0 {
 			lines = append(lines, "")
 		}

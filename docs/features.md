@@ -367,9 +367,8 @@ In detail:
   the permission mode, timeouts, shell and working directory it ran under — all
   recorded when it ran, so they still say what happened after you edit the config
   or patch the task.
-- A fan-out is something you can watch. `L` hangs a fan-out parent's lanes
-  under it as indented board rows in every state it passes through — without
-  putting them in any count — one key opens the lane you are pointing at and
+- A fan-out is something you can watch. The parent's card counts its lanes and
+  its Overview names the ones that need you, one key opens the lane you are pointing at and
   another opens a lane's parent, the Output pane cycles the lanes' live output,
   the Diff tab groups `lane › file` so you can see which lane wrote what, and a
   failed join names the lane, its child task and that lane's own block reason.

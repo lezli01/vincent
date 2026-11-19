@@ -16,6 +16,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/claude"
@@ -158,7 +159,7 @@ func newBoardLiveHarnessConfig(t *testing.T, cfg func() config.Config) *boardLiv
 	m := newRoot(testCtx(t), cn, ackedDir(t))
 	// A width the full column set fits, so assertions read real values
 	// rather than truncation.
-	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.Update(tea.WindowSizeMsg{Width: 128, Height: 40})
 
 	msg := runCmd(t, m.Init(), 10*time.Second)
 	if _, ok := msg.(connectedMsg); !ok {
@@ -273,7 +274,7 @@ func TestBoardPinsAndBadgesAwaitingInput(t *testing.T) {
 	}
 
 	h.p.until(20*time.Second, "the awaiting-input badge", func() bool {
-		return strings.Contains(content(h.m), stateWords(string(store.TaskAwaitingInput)))
+		return strings.Contains(content(h.m), "has a question")
 	})
 
 	got := content(h.m)
@@ -328,71 +329,6 @@ func TestBoardEnterOpensDetail(t *testing.T) {
 	})
 }
 
-// TestBoardGroupsFromTheDaemonConfig walks the whole path the grouping takes:
-// config.yaml → GET /v1/config → apiclient → the task table. It is a live
-// test for the reason the others are — the board renders what the daemon
-// serves, and a wire type that drifted would show up here and nowhere else.
-func TestBoardGroupsFromTheDaemonConfig(t *testing.T) {
-	h := newBoardLiveHarness(t)
-	h.createTask(t, "grouped task")
-	h.createTaskIn(t, "other task", "other")
-
-	h.p.until(20*time.Second, "the tasks to appear", func() bool {
-		got := content(h.m)
-		return strings.Contains(got, "grouped task") && strings.Contains(got, "other task")
-	})
-	// The default grouping, fetched rather than assumed: two workflows draw
-	// their headers, and the project draws none — it is no level since task
-	// 132.9, so the panel title does not name it either.
-	h.p.until(10*time.Second, "the group headers to render", func() bool {
-		got := content(h.m)
-		return strings.Contains(got, "▾ three") && strings.Contains(got, "▾ other")
-	})
-	if got := content(h.m); strings.Contains(got, "▾ board") || strings.Contains(got, "Tasks · board") {
-		t.Errorf("the board drew a project header or named the project as a skipped level:\n%s", got)
-	}
-	b := h.m.views[viewHome].(*shell).board
-	if !b.group.equal(byWorkflow()) {
-		t.Errorf("board grouping = %s, want the configured %s",
-			b.group.label(), byWorkflow().label())
-	}
-	// A grouped level costs no column: the header names it.
-	if strings.Contains(content(h.m), "WORKFLOW") {
-		t.Error("the WORKFLOW column is still on a board grouped by workflow")
-	}
-}
-
-// TestBoardHonoursAConfiguredFlatTable is the other end of the setting: a
-// config that asks for no grouping gets the table every version before this
-// one rendered, columns included.
-func TestBoardHonoursAConfiguredFlatTable(t *testing.T) {
-	flat := func() config.Config {
-		cfg := config.Default()
-		cfg.TUI.Board.GroupBy = nil
-		return cfg
-	}
-	h := newBoardLiveHarnessConfig(t, flat)
-	h.createTask(t, "flat task")
-
-	h.p.until(20*time.Second, "the task to appear", func() bool {
-		return strings.Contains(content(h.m), "flat task")
-	})
-	h.p.until(10*time.Second, "the configured flat table to apply", func() bool {
-		b := h.m.views[viewHome].(*shell).board
-		return len(b.group) == 0
-	})
-	got := content(h.m)
-	// The open glyph only: ▸ is the diff pane's and the pickers' marker too,
-	// so scanning a whole frame for it proves nothing. A flat board renders no
-	// headers at all, folded or otherwise.
-	if strings.Contains(got, groupGlyphOpen) {
-		t.Errorf("a flat board rendered a group header:\n%s", got)
-	}
-	if !strings.Contains(got, "WORKFLOW") {
-		t.Errorf("a flat board dropped the WORKFLOW column:\n%s", got)
-	}
-}
-
 // TestCollapsedGroupOpensForAwaitingInput drives task 054 decision 3's third
 // safeguard through the real event path: the daemon commits a transition into
 // awaiting_input, the shell's live SSE stream carries it, and the fold hiding
@@ -402,44 +338,31 @@ func TestCollapsedGroupOpensForAwaitingInput(t *testing.T) {
 	h := newBoardLiveHarness(t)
 	quiet := h.createTask(t, "quiet task")
 	noisy := h.createTask(t, "noisy task")
-	// A second workflow, so the one quiet and noisy share draws a header ←
-	// can fold (task 129 decision 4).
-	h.createTaskIn(t, "spare task", "spare")
 	ctx := context.Background()
-
-	h.p.until(20*time.Second, "all three tasks to appear", func() bool {
-		got := content(h.m)
-		return strings.Contains(got, "quiet task") && strings.Contains(got, "noisy task") &&
-			strings.Contains(got, "spare task")
+	wait := func(id int64) {
+		t.Helper()
+		if _, _, err := h.st.TransitionTask(ctx, id, store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {
+			t.Fatalf("TransitionTask(running): %v", err)
+		}
+		if _, _, err := h.st.TransitionTask(ctx, id, store.TaskRunning, store.TaskAwaitingInput, store.TaskChange{}); err != nil {
+			t.Fatalf("TransitionTask(awaiting): %v", err)
+		}
+	}
+	wait(quiet.ID)
+	h.p.until(20*time.Second, "the waiting task to appear", func() bool {
+		return strings.Contains(content(h.m), "has a question")
 	})
 
 	b := h.m.views[viewHome].(*shell).board
-	b.updateKey(tea.KeyPressMsg{Code: tea.KeyLeft})
-	if got := content(h.m); strings.Contains(got, "noisy task") {
-		t.Fatalf("← did not fold the group away:\n%s", got)
-	}
-	if len(b.folds()) == 0 {
-		t.Fatal("← folded nothing")
+	b.selectedID = quiet.ID
+	b.updateKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	if !b.cardFolded(taskColumnNeedsYou, groupNoIssue) {
+		t.Fatal("f folded nothing")
 	}
 
-	if _, _, err := h.st.TransitionTask(
-		ctx, quiet.ID, store.TaskQueued, store.TaskRunning, store.TaskChange{},
-	); err != nil {
-		t.Fatalf("TransitionTask(quiet): %v", err)
-	}
-	if _, _, err := h.st.TransitionTask(
-		ctx, noisy.ID, store.TaskQueued, store.TaskRunning, store.TaskChange{},
-	); err != nil {
-		t.Fatalf("TransitionTask(noisy): %v", err)
-	}
-	if _, _, err := h.st.TransitionTask(
-		ctx, noisy.ID, store.TaskRunning, store.TaskAwaitingInput, store.TaskChange{},
-	); err != nil {
-		t.Fatalf("TransitionTask(awaiting): %v", err)
-	}
-
+	wait(noisy.ID)
 	h.p.until(20*time.Second, "the fold to open over the waiting task", func() bool {
-		return len(b.folds()) == 0 && strings.Contains(content(h.m), "noisy task")
+		return !b.cardFolded(taskColumnNeedsYou, groupNoIssue) && strings.Contains(content(h.m), "noisy task")
 	})
 }
 
@@ -515,20 +438,13 @@ func TestBoardGroupsByIssueFromTheDaemon(t *testing.T) {
 	}
 	h.createTask(t, "plain task")
 
-	want := "▾ issue #" + strconv.FormatInt(iss.ID, 10) + " · grouped issue"
+	want := "▦ #" + strconv.FormatInt(iss.ID, 10) + " grouped issue"
 	h.p.until(20*time.Second, "the issue headers to render", func() bool {
-		got := content(h.m)
-		return strings.Contains(got, want) && strings.Contains(got, "▾ no issue")
+		got := ansi.Strip(content(h.m))
+		return strings.Contains(got, want) && strings.Contains(got, "○ No issue")
 	})
-	got := content(h.m)
-	if !strings.Contains(got, want) || !strings.Contains(got, "▾ no issue") {
-		t.Fatalf("the board drew no issue headers:\n%s", got)
-	}
-	if !strings.Contains(got, "WORKFLOW") {
-		t.Error("the WORKFLOW column was dropped on a board grouped by issue")
-	}
-	if b := h.m.views[viewHome].(*shell).board; !b.group.equal(byIssue()) {
-		t.Errorf("board grouping = %s, want the default by issue", b.group.label())
+	if got := ansi.Strip(content(h.m)); !strings.Contains(got, "⟡ three") {
+		t.Errorf("the cards lost their workflow:\n%s", got)
 	}
 }
 
@@ -552,9 +468,9 @@ func TestIssueHeaderFollowsTheIssue(t *testing.T) {
 	if err := h.st.CreateTask(ctx, onIssue, resolve); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	head := "issue #" + strconv.FormatInt(iss.ID, 10) + " · "
+	head := "▦ #" + strconv.FormatInt(iss.ID, 10) + " "
 	h.p.until(20*time.Second, "the issue header to render", func() bool {
-		return strings.Contains(content(h.m), head+"before rename")
+		return strings.Contains(ansi.Strip(content(h.m)), head+"before rename")
 	})
 
 	title := "after rename"
@@ -562,13 +478,14 @@ func TestIssueHeaderFollowsTheIssue(t *testing.T) {
 		t.Fatalf("UpdateIssue: %v", err)
 	}
 	h.p.until(20*time.Second, "the header to show the new title", func() bool {
-		return strings.Contains(content(h.m), head+"after rename")
+		return strings.Contains(ansi.Strip(content(h.m)), head+"after rename")
 	})
 
 	if _, err := h.st.TransitionIssue(ctx, iss.ID, issuestate.Close, issuestate.Completed, nil, issuestate.Human); err != nil {
 		t.Fatalf("TransitionIssue: %v", err)
 	}
 	h.p.until(20*time.Second, "the header to show the issue closed", func() bool {
-		return strings.Contains(content(h.m), head+"after rename · closed")
+		b := h.m.views[viewHome].(*shell).board
+		return strings.Contains(ansi.Strip(b.renderCards(200, 50)), head+"after rename · closed")
 	})
 }

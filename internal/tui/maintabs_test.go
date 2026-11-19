@@ -20,13 +20,14 @@ func shiftTabKey() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyTab, Mo
 func escKey() tea.KeyPressMsg      { return tea.KeyPressMsg{Code: tea.KeyEscape} }
 
 // tabsRoot is a connected root with tui.tabs set to names, the way a config
-// answer sets it.
+// answer sets it; no names means the two boards these tests walk between.
 func tabsRoot(t *testing.T, names ...string) *root {
 	t.Helper()
 	m := connectedRoot(t)
-	if names != nil {
-		m.Update(boardConfigMsg{tabs: names})
+	if names == nil {
+		names = []string{"issues", "tasks"}
 	}
+	m.Update(boardConfigMsg{tabs: names})
 	return m
 }
 
@@ -58,9 +59,9 @@ func tabFlatten(cmd tea.Cmd) []tea.Msg {
 }
 
 func TestTabCyclesTheDefaultTabs(t *testing.T) {
-	m := tabsRoot(t)
-	if !slices.Equal(m.tabs, []viewID{viewIssues, viewHome}) {
-		t.Fatalf("default tabs = %v, want issues then tasks", m.tabs)
+	m := connectedRoot(t)
+	if !slices.Equal(m.tabs, []viewID{viewIssues, viewHome, viewChats}) {
+		t.Fatalf("default tabs = %v, want issues, tasks, chats", m.tabs)
 	}
 	m.Update(selectViewMsg{id: viewIssues})
 	m.Update(tabKey())
@@ -68,15 +69,19 @@ func TestTabCyclesTheDefaultTabs(t *testing.T) {
 		t.Fatalf("tab on issues went to %v, want the board", m.active)
 	}
 	m.Update(tabKey())
+	if m.active != viewChats {
+		t.Fatalf("tab on the board went to %v, want chats", m.active)
+	}
+	m.Update(tabKey())
 	if m.active != viewIssues {
-		t.Fatalf("tab on the board went to %v, want issues (it wraps)", m.active)
+		t.Fatalf("tab on chats went to %v, want issues (it wraps)", m.active)
 	}
 	m.Update(shiftTabKey())
-	if m.active != viewHome {
-		t.Fatalf("shift+tab on issues went to %v, want the board", m.active)
+	if m.active != viewChats {
+		t.Fatalf("shift+tab on issues went to %v, want chats", m.active)
 	}
-	if m.lastTab != viewHome {
-		t.Fatalf("lastTab = %v, want the board", m.lastTab)
+	if m.lastTab != viewChats {
+		t.Fatalf("lastTab = %v, want chats", m.lastTab)
 	}
 }
 
@@ -237,9 +242,9 @@ func TestApplyTabs(t *testing.T) {
 		names []string
 		want  []viewID
 	}{
-		{"missing", nil, []viewID{viewIssues, viewHome}},
-		{"empty", []string{}, []viewID{viewIssues, viewHome}},
-		{"unknown only", []string{"pull_requests"}, []viewID{viewIssues, viewHome}},
+		{"missing", nil, defaultTabs()},
+		{"empty", []string{}, defaultTabs()},
+		{"unknown only", []string{"pull_requests"}, defaultTabs()},
 		{"unknown dropped", []string{"chats", "nope", "tasks"}, []viewID{viewChats, viewHome}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

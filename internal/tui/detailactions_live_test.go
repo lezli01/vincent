@@ -147,7 +147,7 @@ func newActionLiveHarness(t *testing.T) *actionLiveHarness {
 	}
 
 	m := newRoot(ctx, cn, ackedDir(t))
-	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	m.Update(tea.WindowSizeMsg{Width: 128, Height: 40})
 	msg := runCmd(t, m.Init(), 10*time.Second)
 	if _, ok := msg.(connectedMsg); !ok {
 		t.Fatalf("probe = %T, want connectedMsg", msg)

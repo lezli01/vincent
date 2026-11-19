@@ -321,6 +321,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/info", s.handleInfo)
 	rt.handle(http.MethodGet, "/v1/config", s.handleConfig)
 	rt.handle(http.MethodPatch, "/v1/config", s.handleConfigPatch)
+	rt.handle(http.MethodPost, "/v1/config/branch-preview", s.handleBranchPreview)
 	rt.handle(http.MethodGet, "/v1/agents", s.handleAgents)
 	rt.handle(http.MethodPost, "/v1/agents/{name}/quota", s.handleAgentQuotaReport)
 	rt.handle(http.MethodGet, "/v1/doctor", s.handleDoctor)
@@ -593,13 +594,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 // infoResponse is the GET /v1/info body (initial shape, phase 1 decision;
 // agent availability joined in T1.7).
 type infoResponse struct {
-	Version          string `json:"version"`
-	Commit           string `json:"commit"`
-	Built            string `json:"built"`
-	PID              int    `json:"pid"`
-	StartedAt        string `json:"started_at"`
-	UptimeSeconds    int64  `json:"uptime_seconds"`
-	Listen           string `json:"listen"`
+	Version       string `json:"version"`
+	Commit        string `json:"commit"`
+	Built         string `json:"built"`
+	PID           int    `json:"pid"`
+	StartedAt     string `json:"started_at"`
+	UptimeSeconds int64  `json:"uptime_seconds"`
+	Listen        string `json:"listen"`
+	// ConfigPath is the config.yaml this daemon watches, so a client can offer
+	// to open it.
+	ConfigPath       string `json:"config_path,omitempty"`
 	MaxParallelTasks int    `json:"max_parallel_tasks"`
 	// Slots is how much of that cap is in use right now (§11). It rides
 	// beside MaxParallelTasks because the two are only meaningful together:
@@ -704,6 +708,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		StartedAt:        s.deps.StartedAt.UTC().Format(time.RFC3339),
 		UptimeSeconds:    int64(time.Since(s.deps.StartedAt).Seconds()),
 		Listen:           s.deps.ListenAddr,
+		ConfigPath:       s.configPath(),
 		MaxParallelTasks: cfg.MaxParallelTasks,
 		Slots:            s.infoSlots(r.Context()),
 		Agents:           agents,

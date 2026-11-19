@@ -37,6 +37,9 @@ func (v *triggersView) render(width, height int) string {
 	case v.form != nil:
 		return v.renderForm(v.width, v.height)
 	}
+	if v.wide() {
+		return v.renderWide(v.width, v.height)
+	}
 	return v.renderList(v.width, v.height)
 }
 
@@ -192,7 +195,7 @@ func (v *triggersView) tableLines(rows []apiclient.TriggerSummary, width, height
 func trigArmed(s apiclient.TriggerSummary) (string, lipgloss.Style) {
 	switch {
 	case s.Armed:
-		return "● armed", styleOK
+		return ic("● armed"), styleOK
 	case !s.Valid:
 		return "✗ invalid", styleBad
 	case !s.Enabled:

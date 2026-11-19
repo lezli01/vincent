@@ -30,6 +30,11 @@ type branchBody struct {
 	MainCheckout bool `json:"main_checkout,omitempty"`
 	// Current marks the branch the project's main checkout has at HEAD.
 	Current bool `json:"current,omitempty"`
+	// Ahead is how many commits this branch has that AheadOf, the project's
+	// default branch, does not. Absent when git could not say: an older git, or
+	// a default branch that does not exist locally.
+	Ahead   *int   `json:"ahead,omitempty"`
+	AheadOf string `json:"ahead_of,omitempty"`
 }
 
 // handleProjectBranches lists the project's local branches.
@@ -54,14 +59,19 @@ func (s *Server) handleProjectBranches(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "list branches", err)
 		return
 	}
+	ahead := s.deps.Worktrees.BranchesAhead(r.Context(), project.Path, project.DefaultBranch)
 	resp := branchListResponse{Branches: make([]branchBody, 0, len(branches))}
 	for _, b := range branches {
-		resp.Branches = append(resp.Branches, branchBody{
+		body := branchBody{
 			Name:         b.Name,
 			CheckedOutIn: b.CheckedOutIn,
 			MainCheckout: b.CheckedOutIn != "" && worktree.SameDir(b.CheckedOutIn, project.Path),
 			Current:      b.Current,
-		})
+		}
+		if n, ok := ahead[b.Name]; ok {
+			body.Ahead, body.AheadOf = &n, project.DefaultBranch
+		}
+		resp.Branches = append(resp.Branches, body)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

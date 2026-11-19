@@ -106,7 +106,7 @@ func TestLiveChangeFromRealServer(t *testing.T) {
 	// path by changing state behind the TUI's back and watching the row
 	// re-render — the refresh is event-driven, never polled (§13.3).
 	p2.until(15*time.Second, "the initial board load", func() bool {
-		return strings.Contains(content(m), "queued")
+		return strings.Contains(content(m), "waiting for a slot")
 	})
 	if _, _, err := st.TransitionTask(ctx, task.ID,
 		store.TaskQueued, store.TaskRunning, store.TaskChange{}); err != nil {

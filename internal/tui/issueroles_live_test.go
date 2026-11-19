@@ -36,7 +36,7 @@ func TestIssueWorktreeRolesAgainstTheRealAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create the main task: %v", err)
 	}
-	occupied := "● #" + strconv.FormatInt(main.ID, 10) + " awaiting_gate"
+	occupied := "#" + strconv.FormatInt(main.ID, 10) + " awaiting_gate"
 	h.p.until(20*time.Second, "the card naming the occupant", func() bool {
 		return strings.Contains(ansi.Strip(list.render(160, 40)), occupied)
 	})

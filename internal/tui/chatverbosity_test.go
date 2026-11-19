@@ -256,10 +256,8 @@ const mdFixture = "# Findings\n\nThe **fix** is in `internal/tui`, and it is *sm
 // lines in a task workspace and in a chat. There is one renderer, and this is
 // what says so.
 func TestChatAndTaskPaneRenderMarkdownIdentically(t *testing.T) {
-	recs := []apiclient.TranscriptRecord{
-		{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{{Name: "Edit", CallID: "c1"}}},
-		{Type: "agent.output", Text: mdFixture},
-	}
+	// Prose only: a chat draws tool calls as check lines (task 150.5).
+	recs := []apiclient.TranscriptRecord{{Type: "agent.output", Text: mdFixture}}
 	for _, level := range []outputLevel{levelQuiet, levelCompact, levelNormal, levelVerbose} {
 		for _, width := range []int{40, 80} {
 			d := newTestDetail(t)

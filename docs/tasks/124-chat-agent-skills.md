@@ -1183,7 +1183,7 @@ In the parent's delivery order. An item with no `Depends:` tag has no blocker.
   variable disturbs the §11 hold, `initialize` being answered ahead of
   scenario dispatch. The list's one `builtin` row is absent from both
   pictures, no chat turn having run on that binary to classify it (124.16).
-  Accepted drift: `docs/assets/tui-daemon-config.png` was not re-shot, so its
+  Accepted drift: the daemon config screenshot (retired by task 152) was not re-shot, so its
   adapters line still reads claude 2.1.224 — `VINCENT_SHOTS_ONLY` captured
   only the new tape and every other PNG is byte-identical. `docs/guides/tui.md`
   carries both pictures, one per opener. ✓ 2026-09-21

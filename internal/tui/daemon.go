@@ -11,6 +11,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/keymap"
+	"github.com/lezli01/vincent/internal/nerdfont"
 )
 
 const (
@@ -72,6 +73,9 @@ type (
 // daemon is unreachable: the log is worth reading exactly then, and it comes
 // off the filesystem rather than the API for that reason.
 type daemonView struct {
+	// termW is the terminal's width, which picks the dashboard (mgmtscreens.go).
+	termW int
+
 	client  *apiclient.Client
 	dataDir string
 	now     func() time.Time
@@ -97,24 +101,6 @@ type daemonView struct {
 	// is the only place the pane's width and height are known.
 	logDirty bool
 
-	// keys is the editable config surface, and cursor is the row under the
-	// selection. focusConfig moves j/k off the log pane and onto that list —
-	// the view has two scrollable things now, and tab is what says which one
-	// the arrows mean.
-	keys        []configKey
-	cursor      int
-	focusConfig bool
-	// form is the open editor, nil when none is. While it is non-nil the view
-	// captures input: every single-key global would otherwise land in the
-	// text field.
-	form *configForm
-	// saved names the key the last successful patch changed, so the block can
-	// say what moved rather than silently re-rendering.
-	saved string
-	// pendingKey is a key another view asked to open (openConfigKeyMsg)
-	// before the config had loaded; applyConfig opens it when it lands.
-	pendingKey string
-
 	// statusLine is the open §16 status-line flow, nil when it is not open.
 	// It is a takeover for the same reason the config editor is.
 	statusLine *statusLineFlow
@@ -134,6 +120,13 @@ type daemonView struct {
 	// skillsDeclined is the persisted "not now". The state the offer is
 	// about comes off d.doctor.Skills.
 	skillsDeclined bool
+	// fonts is the open Nerd Font flow (task 151), nil when it is not open.
+	// fontRelease, fontDir and fontEnv are fields so a test never touches the
+	// network or the developer's real font directory.
+	fonts       *fontFlow
+	fontRelease nerdfont.Release
+	fontDir     func() (string, error)
+	fontEnv     func(string) string
 
 	// settingsPath resolves ~/.claude/settings.json and exePath this binary.
 	// They are fields so a test can point them at a temp file and a fixed
@@ -165,7 +158,9 @@ func newDaemonView() *daemonView {
 		tail:         daemon.TailFile,
 		settingsPath: claudeSettingsPath,
 		exePath:      os.Executable,
-		keys:         configKeys(),
+		fontRelease:  nerdfont.Pinned,
+		fontDir:      nerdfont.DefaultDir,
+		fontEnv:      os.Getenv,
 		vp:           viewport.New(),
 		following:    true,
 	}
@@ -306,7 +301,7 @@ func (d *daemonView) refreshCmd() tea.Cmd {
 func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		d.width, d.height = msg.Width, msg.Height
+		d.width, d.height, d.termW = msg.Width, msg.Height, msg.Width
 		return d, nil
 	case viewActivatedMsg:
 		if msg.id != viewDaemon {
@@ -335,11 +330,23 @@ func (d *daemonView) update(msg tea.Msg) (panel, tea.Cmd) {
 		d.applyConfig(msg)
 		return d, nil
 	case configSavedMsg:
-		d.applySaved(msg)
+		if d.fonts != nil && msg.path == "tui.icons" {
+			d.fonts.applySaved(msg)
+			if msg.err == nil {
+				d.config, d.configOK, d.configErr, d.configAt = msg.cfg, true, nil, d.now()
+			}
+			return d, nil
+		}
+		// Settings saved it: the digest follows what is in force.
+		if msg.err == nil {
+			d.config, d.configOK, d.configErr, d.configAt = msg.cfg, true, nil, d.now()
+		}
 		return d, nil
-	case openConfigKeyMsg:
-		d.openKey(msg.path)
-		return d, nil
+	case fontWorkDoneMsg:
+		if d.fonts == nil {
+			return d, nil
+		}
+		return d, d.fonts.applyWork(msg, d.client)
 	case daemonDoctorMsg:
 		d.applyDoctor(msg)
 		return d, nil
@@ -388,30 +395,6 @@ func (d *daemonView) applyConfig(msg daemonConfigMsg) {
 	d.configOK = true
 	d.config = msg.config
 	d.configAt = d.now()
-	if d.pendingKey != "" && d.form == nil {
-		d.openKey(d.pendingKey)
-	}
-}
-
-// openKey puts the config list's cursor on one key and opens its editor: how
-// another view sends somebody to a switch it can name but must not flip — the
-// triggers view's banner and `triggers.enabled`. The editor is the one that
-// asks before a dangerous key applies. A config that has not loaded yet opens
-// the key when it lands.
-func (d *daemonView) openKey(path string) {
-	for i, k := range d.keys {
-		if k.path != path {
-			continue
-		}
-		d.focusConfig, d.cursor = true, i
-		if !d.configOK {
-			d.pendingKey = path
-			return
-		}
-		d.pendingKey = ""
-		d.form = newConfigForm(k, d.config)
-		return
-	}
 }
 
 // applyDoctor keeps the last-good report behind a failed refresh, the way the
@@ -443,27 +426,6 @@ func (d *daemonView) applyLog(msg daemonLogMsg) {
 	d.logDirty = true
 }
 
-// applySaved lands the answer to a PATCH. A refusal keeps the editor open
-// with the message against the field — that is the whole reason the form
-// stays up — and a success closes it and adopts the configuration the daemon
-// reported, which is what is in force rather than what was asked for.
-func (d *daemonView) applySaved(msg configSavedMsg) {
-	if d.form == nil {
-		return
-	}
-	d.form.saving = false
-	if msg.err != nil {
-		d.form.err = errString(msg.err)
-		return
-	}
-	d.form = nil
-	d.saved = msg.path
-	d.config = msg.cfg
-	d.configOK = true
-	d.configErr = nil
-	d.configAt = d.now()
-}
-
 // applyStatusLine lands one reading. Unlike the other blocks it does not keep
 // the last-good one behind an error: this reading is of a local file that was
 // either read or not, and an offer to rewrite a file from a stale idea of what
@@ -476,10 +438,10 @@ func (d *daemonView) applyStatusLine(msg statusLineStateMsg) {
 }
 
 func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
-	if d.form != nil {
-		cmd, done := d.form.update(msg, d.client)
+	if d.fonts != nil {
+		cmd, done := d.fonts.update(msg, d.client)
 		if done {
-			d.form = nil
+			d.fonts = nil
 		}
 		return d, cmd
 	}
@@ -508,23 +470,9 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return d, backToTab
 	case opKey(keymap.Refresh):
 		return d, d.refreshCmd()
-	case "tab":
-		// Two scrollable things on one view: tab says which one j/k mean.
-		d.focusConfig = !d.focusConfig
-		return d, nil
-	case "enter", "e":
-		// Only the config list's own cursor is a choice the user can see.
-		// With the log focused that cursor is wherever it was left — listen
-		// by default, a key that decides what the daemon exposes — so the key
-		// moves focus to the list rather than opening an editor on it (#803).
-		if !d.focusConfig {
-			d.focusConfig = true
-			return d, nil
-		}
-		if k, ok := d.selectedKey(); ok && d.configOK {
-			d.form = newConfigForm(k, d.config)
-		}
-		return d, nil
+	case "enter":
+		// Configuration is changed on its own screen (task 152).
+		return d, func() tea.Msg { return selectViewMsg{id: viewSettings} }
 	case "i":
 		// The offer only advertises itself when it applies, but the key works
 		// whatever the file says: a documented key that silently does nothing
@@ -538,20 +486,16 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// opens a screen saying why.
 		d.skills = newSkillsFlow(d.reportedSkills(), d.availableAdapters())
 		return d, nil
+	case "U":
+		dir, err := d.fontDir()
+		d.fonts = newFontFlow(d.fontRelease, dir, err, d.fontEnv)
+		return d, nil
 	case "f", "G", "end":
 		d.setFollowing(true)
 		return d, nil
 	case "j", "down":
-		if d.focusConfig {
-			d.moveCursor(1)
-			return d, nil
-		}
 		d.vp.ScrollDown(1)
 	case "k", "up":
-		if d.focusConfig {
-			d.moveCursor(-1)
-			return d, nil
-		}
 		d.vp.ScrollUp(1)
 	default:
 		var cmd tea.Cmd
@@ -561,23 +505,6 @@ func (d *daemonView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	d.syncFollowToViewport()
 	return d, nil
-}
-
-// selectedKey is the config row under the cursor.
-func (d *daemonView) selectedKey() (configKey, bool) {
-	if d.cursor < 0 || d.cursor >= len(d.keys) {
-		return configKey{}, false
-	}
-	return d.keys[d.cursor], true
-}
-
-// moveCursor walks the config list, clamped rather than wrapped: a list this
-// long is read top to bottom and wrapping past the end reads as a jump.
-func (d *daemonView) moveCursor(delta int) {
-	if len(d.keys) == 0 {
-		return
-	}
-	d.cursor = min(max(d.cursor+delta, 0), len(d.keys)-1)
 }
 
 func (d *daemonView) setFollowing(on bool) {
@@ -594,12 +521,9 @@ func (d *daemonView) syncFollowToViewport() {
 	d.following = d.vp.AtBottom()
 }
 
-// capturesInput is true exactly while the config editor is open. It was
-// permanently false before this view could edit anything; leaving it that way
-// would send every single-key global — R, f, g, q — into the text field on the
-// first keystroke.
+// capturesInput is true while one of the view's flows owns the keyboard.
 func (d *daemonView) capturesInput() bool {
-	return d.form != nil || d.statusLine != nil || d.skills != nil
+	return d.statusLine != nil || d.skills != nil || d.fonts != nil
 }
 
 // bindingContext names the layer that owns the keyboard (#803): each of the
@@ -607,31 +531,15 @@ func (d *daemonView) capturesInput() bool {
 // rather than the log pane's underneath.
 func (d *daemonView) bindingContext() bindingContext {
 	switch {
-	case d.form != nil:
-		return ctxConfigEdit
 	case d.statusLine != nil:
 		return ctxStatusLine
 	case d.skills != nil:
 		return ctxSkills
+	case d.fonts != nil:
+		return ctxFonts
 	default:
 		return ctxDaemon
 	}
-}
-
-// liveBindings drops `enter edit` while the log has focus: there enter only
-// moves focus to the config list (#803).
-func (d *daemonView) liveBindings(rows []binding) []binding {
-	if d.focusConfig {
-		return rows
-	}
-	out := rows[:0:0]
-	for _, b := range rows {
-		if b.context == ctxDaemon && b.key == "enter" {
-			continue
-		}
-		out = append(out, b)
-	}
-	return out
 }
 
 // reportedSkills is the §9.8 group off the doctor report, empty when none has

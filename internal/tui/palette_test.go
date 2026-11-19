@@ -29,7 +29,7 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 		ctxTasks, ctxTaskOverview, ctxTimeline, ctxTaskDetails, ctxOutput, ctxDiff,
 		ctxNewTask, ctxNewTaskFields, ctxProjects, ctxProjectForm, ctxProjectFormField, ctxWorkflows, ctxWorkflowGraph, ctxWorkflowEditor,
 		ctxTaskWorkflow, ctxTaskStepDetails, ctxTaskPull,
-		ctxDaemon, ctxPullRequests,
+		ctxDaemon, ctxSettings, ctxPullRequests,
 		ctxChats, ctxChat, ctxNewChat,
 		ctxArchived, ctxArchivedChats,
 		ctxTriggers, ctxTriggerLedger,
@@ -103,14 +103,14 @@ func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
 	if actions != 0 {
 		t.Errorf("palette offers %d task actions while disconnected, want 0", actions)
 	}
-	// Eleven: the five takeovers, the chats board (task 067), the two
+	// Twelve: the five takeovers, the chats board (task 067), the two
 	// archived boards (task 092), triggers (task 096.6), issues (task
-	// 130.9) and the task board (task 136.2). Navigation
+	// 130.9), the task board (task 136.2) and Settings (task 152). Navigation
 	// survives a disconnect because reaching a screen is not an action on the
 	// daemon — an archived board shows what it last fetched, the way every
 	// other one does.
-	if nav != 11 {
-		t.Errorf("palette lists %d navigation entries while disconnected, want all 11", nav)
+	if nav != 12 {
+		t.Errorf("palette lists %d navigation entries while disconnected, want all 12", nav)
 	}
 }
 
@@ -272,36 +272,5 @@ func TestPaletteOffersTheStatusLineKey(t *testing.T) {
 	}
 	if !found {
 		t.Error("the daemon palette does not offer the claude status line")
-	}
-}
-
-// TestPaletteFlatBoardDropsFoldRows (issue #372): with `group_by: []` the
-// board's fold keys do nothing, so the palette must not offer them — the
-// footer already drops them through shell.liveBindings (task 054 decision 5),
-// and task 094 decision 5 left the palette's copy of the same lie for this
-// issue. Driven through root.openPalette, the palette's one real caller.
-func TestPaletteFlatBoardDropsFoldRows(t *testing.T) {
-	m := newRoot(testCtx(t), fakeConnector(), ackedDir(t))
-	m.phase = phaseConnected
-	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	if ctx := m.activeContext(); ctx != ctxTasks {
-		t.Fatalf("fixture: active context is %s, want %s", ctx, ctxTasks)
-	}
-	m.views[viewHome].(*shell).board.group = nil
-
-	folds := map[string]bool{}
-	for _, b := range bindingsFor(ctxTasks) {
-		if b.fold {
-			folds[b.label] = true
-		}
-	}
-	if len(folds) == 0 {
-		t.Fatal("fixture: the board declares no fold rows")
-	}
-	m.openPalette()
-	for _, e := range m.palette.entries {
-		if e.group == string(ctxTasks) && folds[e.label] {
-			t.Errorf("a flat board's palette still offers %q (key %q), which does nothing", e.label, e.key)
-		}
 	}
 }

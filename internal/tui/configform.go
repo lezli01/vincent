@@ -2,10 +2,10 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
@@ -67,6 +67,21 @@ func newConfigForm(k configKey, cur apiclient.Config) *configForm {
 	}
 	return f
 }
+
+// setValue puts a value in the editor, as the arrows and reset do for a key that
+// must be confirmed before it applies.
+func (f *configForm) setValue(value string) {
+	switch f.key.kind {
+	case kindBool, kindEnum:
+		f.choice = indexOf(f.key.choices, value)
+	default:
+		f.input.SetValue(value)
+		f.input.CursorEnd()
+	}
+}
+
+// errDaemonUnreachable is a change made with no daemon to send it to.
+var errDaemonUnreachable = errors.New("the daemon is not reachable")
 
 // value is what the form would submit.
 func (f *configForm) value() string {
@@ -153,66 +168,6 @@ func (f *configForm) save(client *apiclient.Client) tea.Cmd {
 	}
 }
 
-// render draws the editor. It is deliberately plain: one key, one field, the
-// default beside it, and the line that says what happens when it applies.
-// Every line of prose wraps at the three-column indent (#803): a help text, a
-// default, an error or a value under confirmation can be any length — a
-// notify.command is routinely wider than the screen — and a line frame() cuts
-// hides the very keys that answer the question.
-func (f *configForm) render(width int) []string {
-	out := []string{
-		" " + styleTitle.Render("edit "+f.key.path),
-		"",
-	}
-	wrapped := func(style lipgloss.Style, text string) []string {
-		lines := wrapText(text, width, wrapOpts{prefix: "   ", indent: 3})
-		for i, l := range lines {
-			lines[i] = "   " + style.Render(strings.TrimPrefix(l, "   "))
-		}
-		return lines
-	}
-	if f.key.help != "" {
-		out = append(out, wrapped(styleDim, f.key.help)...)
-	}
-	out = append(out, wrapped(lipgloss.NewStyle(), "default "+defaultOrEmpty(f.key.def()))...)
-	out = append(out, "")
-	switch f.key.kind {
-	case kindBool, kindEnum:
-		out = append(out, "   "+f.renderChoices())
-	default:
-		f.input.SetWidth(max(width-3, 10))
-		out = append(out, fieldRows("   ", f.input)...)
-		if len(f.key.choices) > 0 {
-			out = append(out, wrapped(styleDim, "accepted: "+strings.Join(f.key.choices, " "))...)
-		}
-	}
-	out = append(out, "")
-	if f.key.restart {
-		// Said before it is applied, not after: `listen` is written to the
-		// file and the running daemon keeps the address it bound, so GET
-		// /v1/config will go on reporting the old one until a restart.
-		out = append(out, wrapped(styleWarn,
-			"takes effect on the next daemon restart; the running daemon keeps its address")...)
-	}
-	if f.err != "" {
-		out = append(out, wrapped(styleBad, "⚠ "+f.err)...)
-	}
-	out = append(out, "")
-	switch {
-	case f.confirming:
-		// The value in full, then the keys on a line of their own, so a long
-		// value can never push them off the screen.
-		out = append(out, wrapped(styleWarn, "this changes what the daemon executes or exposes.")...)
-		out = append(out, wrapped(styleWarn, "set "+f.key.path+" to "+f.displayValue()+"?")...)
-		out = append(out, "   "+styleWarn.Render("y confirm   esc back"))
-	case f.saving:
-		out = append(out, "   "+styleDim.Render("saving…"))
-	default:
-		out = append(out, "   "+styleDim.Render(f.keyLine()))
-	}
-	return out
-}
-
 // displayValue renders an empty value as something a reader can see: a
 // confirmation that reads "set agents.claude.path to " and stops is not one.
 func (f *configForm) displayValue() string {
@@ -221,25 +176,6 @@ func (f *configForm) displayValue() string {
 		return "(empty)"
 	}
 	return v
-}
-
-func (f *configForm) keyLine() string {
-	if f.key.kind == kindBool || f.key.kind == kindEnum {
-		return "←/→ choose   enter apply   esc cancel"
-	}
-	return "enter apply   esc cancel"
-}
-
-func (f *configForm) renderChoices() string {
-	parts := make([]string, 0, len(f.key.choices))
-	for i, c := range f.key.choices {
-		if i == f.choice {
-			parts = append(parts, styleFocus.Render("["+c+"]"))
-			continue
-		}
-		parts = append(parts, styleDim.Render(" "+c+" "))
-	}
-	return strings.Join(parts, " ")
 }
 
 func indexOf(items []string, want string) int {

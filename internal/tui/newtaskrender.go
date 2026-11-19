@@ -119,6 +119,9 @@ func (n *newTask) render(width, height int) string {
 	if len(n.projects) == 0 {
 		return "\n  " + noProjectsEmpty() + "\n"
 	}
+	if n.frameless() && width >= mgmtWideMinW {
+		return n.renderWide(width, height)
+	}
 	if guidedTakeover(width, height) {
 		return n.renderGuided(width, height)
 	}

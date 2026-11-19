@@ -409,7 +409,8 @@ tui:
   output:
     level: normal
   # default_project: web
-  # tabs: [issues, tasks]
+  # tabs: [issues, tasks, chats]
+  # icons: unicode
 ```
 
 ## Keys
@@ -1758,7 +1759,8 @@ tui:
   output:
     level: normal
   # default_project: web
-  tabs: [issues, tasks]
+  tabs: [issues, tasks, chats]
+  icons: unicode
 ```
 
 The one section the daemon does not act on. It validates it, hot-reloads it with
@@ -1962,6 +1964,27 @@ The key is new in this version. A daemon older than it refuses a `config.yaml`
 that sets it — unknown keys are an error — so leave it out if you run an older
 daemon against the same config directory.
 
+#### `tui.icons`
+
+The glyphs the TUI draws its icons in.
+
+| Value | Icons |
+|---|---|
+| `unicode` (default) | Plain Unicode symbols that work in any font |
+| `nerd` | Richer icons from a [Nerd Font](https://www.nerdfonts.com/), which your terminal must be using |
+
+On macOS and Linux, [`vincent fonts install`](cli.md#vincent-fonts) or `U` on the
+TUI's Daemon screen installs one for you.
+
+Any other value fails the load and names the two. Saving it in the TUI's config
+editor applies it at once; a change made anywhere else reaches a running TUI the next
+time it reads the config, like `tui.hyperlinks`. It covers the app header, the boards,
+the cards and the side panes. Text you or an agent wrote is never changed.
+
+The key is new in this version. A daemon older than it refuses a `config.yaml` that
+sets it — unknown keys are an error — so leave it out if you run an older daemon
+against the same config directory.
+
 #### `tui.default_project`
 
 The name of the project the TUI opens on. Unset by default. It is the third of
@@ -1989,7 +2012,7 @@ that sets it.
 #### `tui.tabs`
 
 The TUI's main tabs, in order. Each entry is one of `issues`, `tasks` or
-`chats`, and the default is `[issues, tasks]`. The order is the order of the
+`chats`, and the default is `[issues, tasks, chats]`. The order is the order of the
 tab strip and the order `tab` cycles through, and the first entry is where the
 TUI opens — there is no separate setting for that. A single entry, such as
 `[tasks]`, is valid and turns the strip off.

@@ -978,6 +978,10 @@ type lineOpts struct {
 	// Nil renders every document every time, which is what a caller with no
 	// pane behind it wants.
 	cache *mdCache
+	// toolChecks draws each paired tool call and its outcome as one check line
+	// at compact and normal (task 150.5). Verbose keeps both records' lines,
+	// because that level means "show me the machine".
+	toolChecks bool
 }
 
 // outputLines renders the normalized records into wrapped pane lines.
@@ -1094,9 +1098,28 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 		docAt[doc.first] = i
 	}
 	skills := skillLoadsAtCalls(records)
+	var checks *toolCheckIndex
+	if opts.toolChecks && (level == levelCompact || level == levelNormal) {
+		checks = newToolCheckIndex(records)
+	}
 	for i := 0; i < len(records); i++ {
 		rec := records[i]
 		parent := rec.ParentCallID
+		if checks != nil && parent == "" {
+			if rec.Type == "agent.tool_result" && checks.absorbs(rec.Results) {
+				continue
+			}
+			if rec.Type == "agent.tool_use" && checks.covers(rec.Tools) {
+				enter("")
+				var added []string
+				for _, t := range rec.Tools {
+					added = append(added, wrapLine(checks.line(t), width)...)
+				}
+				fromRecord(seqAt(seqs, i), added)
+				lastWasOutput = false
+				continue
+			}
+		}
 		if parent != "" && level == levelQuiet {
 			// Quiet is what the agent said and what went wrong; a subagent's
 			// internals are neither, one level down.

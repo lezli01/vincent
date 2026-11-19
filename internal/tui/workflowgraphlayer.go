@@ -140,7 +140,14 @@ func (w *workflowsView) openGraph() tea.Cmd {
 	}
 	key := line.key()
 	w.err = ""
+	if w.wideTerm() && w.preview != nil && w.preview.key == key {
+		w.graph = w.preview
+		return nil
+	}
 	w.graph = newGraphLayer(key, line.entry)
+	if w.wideTerm() {
+		w.preview = w.graph
+	}
 	return w.definitionCmd(key)
 }
 
@@ -164,7 +171,7 @@ func (w *workflowsView) definitionCmd(key wfResolveKey) tea.Cmd {
 // applyDefinition lands a fetch. A response for an entry the layer has since
 // moved off is dropped rather than drawn.
 func (w *workflowsView) applyDefinition(msg workflowDefinitionMsg) {
-	g := w.graph
+	g := w.shownGraph()
 	if g == nil || g.key != msg.key {
 		return
 	}
@@ -200,16 +207,20 @@ func (w *workflowsView) applyDefinition(msg workflowDefinitionMsg) {
 
 // sizeGraph gives the component the room the layer's chrome leaves it.
 func (w *workflowsView) sizeGraph() {
-	if w.graph == nil {
+	g := w.shownGraph()
+	if g == nil {
 		return
 	}
 	width, height := w.width, w.height
-	if guidedTakeover(width, height) {
+	switch {
+	case w.frameless():
+		width, height = w.graphPaneSize()
+	case guidedTakeover(width, height):
 		_, width = guidedPaneWidths(width)
 		width -= 2  // focused pane border
 		height -= 2 // focused pane border
 	}
-	w.graph.graph.SetSize(max(width, 1), max(height-graphChromeRows, 1))
+	g.graph.SetSize(max(width, 1), max(height-graphChromeRows, 1))
 	w.syncModal()
 }
 
@@ -235,6 +246,7 @@ func (w *workflowsView) updateGraphKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			g.err = ""
 		default:
 			w.graph = nil
+			return w, w.previewCmd()
 		}
 		return w, nil
 	case opKey(keymap.Editor):
@@ -312,13 +324,14 @@ const (
 // and the hit test already support. Drag-to-pan is a stateful gesture that
 // belongs to an editor (decision 14).
 func (w *workflowsView) updateGraphMouse(msg tea.Msg) {
-	if w.graph == nil || !w.graph.loaded {
+	g := w.shownGraph()
+	if g == nil || !g.loaded {
 		return
 	}
 	// While the step modal is open it owns the mouse as it owns the keys: the
 	// wheel scrolls it, and a click never reaches the graph behind it, where
 	// it would move the selection the modal is a detail of (issue #802 WF-12).
-	if m := w.graph.modal; m != nil {
+	if m := g.modal; m != nil {
 		if wheel, ok := msg.(tea.MouseWheelMsg); ok {
 			switch wheel.Button {
 			case tea.MouseWheelDown:
@@ -338,18 +351,23 @@ func (w *workflowsView) updateGraphMouse(msg tea.Msg) {
 		if msg.X < x || msg.Y < y {
 			return
 		}
-		w.graph.graph.ClickAt(msg.X-x, msg.Y-y)
+		g.graph.ClickAt(msg.X-x, msg.Y-y)
 	case tea.MouseWheelMsg:
 		switch msg.Button {
 		case tea.MouseWheelDown:
-			w.graph.graph.Scroll(1)
+			g.graph.Scroll(1)
 		case tea.MouseWheelUp:
-			w.graph.graph.Scroll(-1)
+			g.graph.Scroll(-1)
 		}
 	}
 }
 
 func (w *workflowsView) graphPaneOrigin() (x, y int) {
+	if w.frameless() {
+		// Past the registry, this pane's border and padding, and the header.
+		list, _ := wfPaneWidths(w.width)
+		return list + 2, len(w.statusLines()) + 2
+	}
 	if !guidedTakeover(w.width, w.height) {
 		return graphPaneX, graphPaneY
 	}

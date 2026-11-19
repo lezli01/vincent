@@ -52,8 +52,8 @@ func TestChatAnswerPopupTakesTheComposersPlace(t *testing.T) {
 	if strings.Contains(out, "message…") || strings.Contains(out, "─ message") {
 		t.Errorf("the composer is drawn under the popup that owns the keyboard:\n%s", out)
 	}
-	last := lines[len(lines)-1]
-	if !strings.Contains(last, "esc leave the form") {
+	last := lines[len(lines)-2] // above the card's bottom edge
+	if !strings.Contains(last, "esc put away") {
 		t.Errorf("the popup's key line is not pinned at its bottom: %q", last)
 	}
 	if strings.Contains(out, "ctrl+t task details") {
@@ -309,7 +309,7 @@ func TestChatFooterFitsShortPanes(t *testing.T) {
 				t.Errorf("%s 80×%d: render drew %d lines", c.name, h, len(lines))
 				continue
 			}
-			if last := lines[len(lines)-1]; !strings.Contains(last, "┘") {
+			if last := lines[len(lines)-1]; !strings.Contains(last, "╯") {
 				t.Errorf("%s 80×%d: the composer's bottom border is cut:\n%s", c.name, h, strings.Join(lines, "\n"))
 			}
 		}

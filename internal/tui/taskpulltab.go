@@ -94,6 +94,10 @@ func (t *taskView) tabs() []taskViewTab {
 		taskTabOverview, taskTabOutput, taskTabDiff,
 		taskTabSteps, taskTabDetails, taskTabStepDetails, taskTabWorkflow,
 	}
+	if t.wide() {
+		// The steps and the details have panes of their own here.
+		tabs = []taskViewTab{taskTabOutput, taskTabDiff, taskTabOverview, taskTabWorkflow}
+	}
 	if t.pullTabAvailable() {
 		tabs = append(tabs, taskTabPull)
 	}

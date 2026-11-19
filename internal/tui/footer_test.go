@@ -94,11 +94,9 @@ func footerHiddenRows(line string, rows []binding) int {
 	return n
 }
 
-// TestFooterAdmitsWhatTheWidthHolds is task 094's first half: how many hinted
-// keys reach the line is decided by the width, never by a constant. The
-// assertions are against widths — a cap that had merely moved from five to
-// eight would pass a "more than five" check and fail this one.
-func TestFooterAdmitsWhatTheWidthHolds(t *testing.T) {
+// TestFooterAdmitsTheMainKeys: a narrow line shows what its width holds, and a
+// wide one stops at the main keys (task 150 decision 11).
+func TestFooterAdmitsTheMainKeys(t *testing.T) {
 	bar := &actionBar{}
 	rows := bindingsFor(ctxTasks)
 	widths := []int{60, 80, 100, 140, 200}
@@ -111,8 +109,8 @@ func TestFooterAdmitsWhatTheWidthHolds(t *testing.T) {
 				width, counts[i], widths[i-1], counts[i-1])
 		}
 	}
-	if last := counts[len(counts)-1]; last <= 5 {
-		t.Fatalf("200 columns show %d hints — the five-key cap is still in force", last)
+	if last := counts[len(counts)-1]; last > footerMainKeys+1 {
+		t.Fatalf("200 columns show %d hints, want the %d main keys and tab", last, footerMainKeys)
 	}
 	if counts[0] >= counts[len(counts)-1] {
 		t.Fatalf("60 and 200 columns both show %d hints — the width is not deciding", counts[0])
@@ -182,51 +180,15 @@ func TestFooterNoMoreWhenNothingIsHidden(t *testing.T) {
 	}
 }
 
-// TestFooterAliasRowsDoNotCount: `right` and `O` are advertised by `←/→ fold`
-// and `C/O fold all`, so a grouped board showing every hint is hiding `V`
-// alone — not `V`, `right` and `O` (task 094 decision 4).
+// TestFooterAliasRowsDoNotCount: `right` and `O` share the hints of `←/→ fold`
+// and `C/O fold all`, so `+N` never counts them as keys of their own (task 094
+// decision 4).
 func TestFooterAliasRowsDoNotCount(t *testing.T) {
 	rows := bindingsFor(ctxTasks)
 	line := ansi.Strip(renderFooter(200, rows, &actionBar{}, taskActions{}, 0, false))
-	for _, b := range rows {
-		if b.hint != "" && !strings.Contains(line, b.hint) {
-			t.Fatalf("200 columns did not fit %q: %q", b.hint, line)
-		}
-	}
-	naive := 0
-	for _, b := range rows {
-		if b.noPalette || (b.hint != "" && strings.Contains(line, b.hint)) {
-			continue
-		}
-		naive++
-	}
 	want := footerHiddenRows(line, rows)
-	if naive != want+2 {
-		t.Fatalf("expected `right` and `O` to be the board's alias rows: %d unadvertised rows, %d counted", naive, want)
-	}
 	if got := footerMore(line); got != want {
 		t.Fatalf("footer says +%d, want +%d — the alias rows are being counted: %q", got, want, line)
-	}
-}
-
-// TestFooterFlatBoardDropsFoldRows: with `group_by: []` the fold keys do
-// nothing, so shell.liveBindings drops them and the footer neither names them
-// nor counts them — naming a press that does nothing and counting one are the
-// same lie (task 054 decision 5, task 094 decision 5).
-func TestFooterFlatBoardDropsFoldRows(t *testing.T) {
-	s := &shell{board: &board{}}
-	rows := s.liveBindings(bindingsFor(ctxTasks))
-	line := ansi.Strip(renderFooter(200, rows, &actionBar{}, taskActions{}, 0, false))
-	for _, b := range bindingsFor(ctxTasks) {
-		if b.fold && b.hint != "" && strings.Contains(line, b.hint) {
-			t.Errorf("a flat board still advertises %q: %q", b.hint, line)
-		}
-	}
-	if got, want := footerMore(line), footerHiddenRows(line, rows); got != want {
-		t.Fatalf("footer says +%d, want +%d on a flat board: %q", got, want, line)
-	}
-	if got, want := footerMore(line), footerHiddenRows(line, bindingsFor(ctxTasks)); got == want {
-		t.Fatalf("+%d counts the fold rows the board dropped: %q", got, line)
 	}
 }
 

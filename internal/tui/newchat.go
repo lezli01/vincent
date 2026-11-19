@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -406,10 +407,18 @@ func (f *newChatForm) setAgentIdx(i int) {
 // the selection, shown and never chosen here (task 132.13).
 func (f *newChatForm) moveFocus(delta int) {
 	next := (f.focus + ncRow(delta) + ncRowCount) % ncRowCount
-	if next == ncProject {
+	for next == ncProject || (next == ncEffort && !f.effortRow()) {
 		next = (next + ncRow(delta) + ncRowCount) % ncRowCount
 	}
 	f.moveFocusTo(next)
+}
+
+// effortRow reports whether the form offers the effort row. An adapter that
+// reports no effort levels, as cursor does (§9.7), has nothing to choose. Before
+// the adapters have loaded there is no adapter to judge, and the row stays.
+func (f *newChatForm) effortRow() bool {
+	_, ok := f.agents.Find(f.agentName())
+	return !ok || f.hasEfforts()
 }
 
 func (f *newChatForm) moveFocusTo(row ncRow) {
@@ -430,17 +439,22 @@ func (f *newChatForm) moveFocusTo(row ncRow) {
 // adapters stay a single keypress; enter opens the list, which is the only
 // workable control for a long one.
 //
-// The model and effort rows are not stepped: they are catalogs of a hundred
-// and more (§9.7), where "next" is not a cheap answer to anything. The text
-// rows ignore it — left and right are cursor movement there.
+// The model and effort rows step only while their catalog is short enough to be
+// drawn as chips (chatChipMax): cursor's hundred and more models (§9.7) are a
+// list, where "next" is not a cheap answer to anything. The text rows ignore
+// it — left and right are cursor movement there.
 //
 // The project row is not stepped either: it is the selection, which only a
 // switch changes (task 132.13).
 func (f *newChatForm) cycle(delta int) {
-	if f.focus != ncAgent || len(f.agents) == 0 {
-		return
+	switch {
+	case f.focus == ncAgent && len(f.agents) > 0:
+		f.setAgentIdx((f.agentIdx + delta + len(f.agents)) % len(f.agents))
+	case f.focus == ncModel && len(f.models()) > 0 && len(f.models()) <= chatChipMax:
+		f.model = stepOption(f.models(), f.model, delta)
+	case f.focus == ncEffort && len(f.efforts()) > 0 && len(f.efforts()) <= chatChipMax:
+		f.effort = stepOption(f.efforts(), f.effort, delta)
 	}
-	f.setAgentIdx((f.agentIdx + delta + len(f.agents)) % len(f.agents))
 }
 
 func (f *newChatForm) agentName() string {
@@ -597,17 +611,20 @@ func (f *newChatForm) projectName() string {
 	return strconv.FormatInt(f.projectID, 10)
 }
 
+// ncFormRow is one drawn row of the plain form.
+type ncFormRow struct {
+	row   ncRow
+	label string
+	value []string
+}
+
 func (f *newChatForm) render(width, height int) string {
 	// ncIndent is the marker plus the padded label every row carries, and so
 	// what the two text fields have left of the pane (issue #299).
 	const ncIndent = 2 + 9
 	f.title.SetWidth(max(width-ncIndent, 10))
 	f.base.SetWidth(max(width-ncIndent, 10))
-	rows := []struct {
-		row   ncRow
-		label string
-		value []string
-	}{
+	rows := []ncFormRow{
 		{ncProject, "project", []string{f.projectName() + "   " + styleDim.Render("the selected project")}},
 		{ncTitle, "title", f.title.rows()},
 		{ncAgent, "agent", []string{f.agentLabel()}},
@@ -615,6 +632,9 @@ func (f *newChatForm) render(width, height int) string {
 		{ncEffort, "effort", []string{f.overrideValue(f.effort, f.defaultEffort())}},
 		{ncBase, "base", f.base.rows()},
 		{ncBranch, "branch", []string{f.branchValue()}},
+	}
+	if !f.effortRow() {
+		rows = slices.DeleteFunc(rows, func(r ncFormRow) bool { return r.row == ncEffort })
 	}
 	lines := []string{" " + styleTitle.Render("new chat"), ""}
 	// from and to bound the focused element: its row and, under it, its open

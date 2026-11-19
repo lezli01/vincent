@@ -135,7 +135,7 @@ func TestTaskChatKeyOpensAndReopensLive(t *testing.T) {
 	// The chats board names the task, and archive declines on the row.
 	_, cmd = h.m.Update(selectViewMsg{id: viewChats})
 	h.p.push(cmd)
-	marker := fmt.Sprintf("task #%d", task.ID)
+	marker := fmt.Sprintf("▶ #%d", task.ID)
 	h.p.until(30*time.Second, "the chats board to name the task", func() bool {
 		return strings.Contains(content(h.m), marker)
 	})

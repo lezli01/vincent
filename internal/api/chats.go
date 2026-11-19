@@ -46,6 +46,11 @@ type chatBody struct {
 	Agent     string `json:"agent"`
 	Model     string `json:"model,omitempty"`
 	Effort    string `json:"effort,omitempty"`
+	// PermissionMode is what the chat's turns run under (§16).
+	PermissionMode string `json:"permission_mode,omitempty"`
+	// TurnCount is how many turns the chat has. Only the two reads carry it:
+	// GET /v1/chats and GET /v1/chats/{id}.
+	TurnCount *int   `json:"turn_count,omitempty"`
 	Branch    string `json:"branch"`
 	// AdoptedBranch says the chat runs on a branch vincent did not cut (§10,
 	// task 125), exactly as a task's field does.
@@ -102,7 +107,7 @@ type chatTurnBody struct {
 func renderChat(c *store.Chat) chatBody {
 	return chatBody{
 		ID: c.ID, ProjectID: c.ProjectID, Title: c.Title, State: string(c.State),
-		Agent: c.Agent, Model: c.Model, Effort: c.Effort, Branch: c.Branch,
+		Agent: c.Agent, Model: c.Model, Effort: c.Effort, PermissionMode: c.PermissionMode, Branch: c.Branch,
 		AdoptedBranch: c.AdoptedBranch, BaseBranch: c.BaseBranch, BaseSHA: c.BaseSHA, BaseRefresh: renderBaseRefresh(c.BaseRefresh),
 		WorktreePath: c.WorktreePath, SessionID: c.SessionID, PendingInput: c.PendingInput,
 		HandoffTaskID: c.HandoffTaskID, LinkedTaskID: c.LinkedTaskID, IssueID: c.IssueID, EndSHA: c.EndSHA,
@@ -386,9 +391,21 @@ func (s *Server) handleChatList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
 	}
+	ids := make([]int64, len(chats))
+	for i := range chats {
+		ids[i] = chats[i].ID
+	}
+	counts, err := s.deps.Store.ChatTurnCounts(r.Context(), ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
+		return
+	}
 	out := make([]chatBody, 0, len(chats))
 	for i := range chats {
-		out = append(out, renderChat(&chats[i]))
+		body := renderChat(&chats[i])
+		n := counts[chats[i].ID]
+		body.TurnCount = &n
+		out = append(out, body)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"chats": out})
 }
@@ -409,7 +426,10 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 	for i := range turns {
 		body = append(body, renderChatTurn(&turns[i]))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"chat": renderChat(chat), "turns": body})
+	rendered := renderChat(chat)
+	n := len(turns)
+	rendered.TurnCount = &n
+	writeJSON(w, http.StatusOK, map[string]any{"chat": rendered, "turns": body})
 }
 
 type sendChatRequest struct {

@@ -164,6 +164,9 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// it runs, its own step included. The read is a tool.
 		{http.MethodPost, "/v1/daemon/pause"},
 		{http.MethodPost, "/v1/daemon/continue"},
+		// Task 152: a preview for PATCH /v1/config's branch_template, with no
+		// use outside a form that edits the configuration.
+		{http.MethodPost, "/v1/config/branch-preview"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

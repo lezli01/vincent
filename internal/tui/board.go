@@ -96,7 +96,10 @@ type (
 		// tabs is `tui.tabs` (task 136.2), read by the root for the same
 		// reason hyperlinks is.
 		tabs []string
-		err  error
+		// icons is `tui.icons` (task 150.8), read by the root for the same
+		// reason hyperlinks is.
+		icons string
+		err   error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg struct {
@@ -234,6 +237,9 @@ type board struct {
 	// is the point of a mode rather than a second model (decision 5).
 	archived bool
 	archivedPager
+	// cardPerRow is how many cards a row of the wide archive last held, for the
+	// arrow keys (archivegrid.go).
+	cardPerRow int
 	// delPrompt is the delete confirmation, and delNote is what the sweep
 	// reported. They are the board's own rather than the action bar's,
 	// because delete is not a §6 action (task 092).
@@ -266,6 +272,23 @@ type board struct {
 	lastBellAt    time.Time
 
 	width, height int
+
+	// cards puts the live board in its columns of cards (taskboard.go).
+	// cardFolds is which groups were folded or opened by hand, cardHeader the
+	// folded group the cursor rests on, cardHits where the last render drew
+	// each card, and cardPage how many cards pgup and pgdown move by.
+	cards      bool
+	cardFolds  map[string]bool
+	cardHeader *taskStop
+	cardHits   []taskCardHit
+	cardPage   int
+	// previewOn is whether the preview pane is on screen. previews holds the
+	// steps read for it; previewArmed is the read waiting for the selection to
+	// rest, and previewReading the one under way.
+	previewOn      bool
+	previews       map[int64]taskPreview
+	previewArmed   taskPreviewKey
+	previewReading taskPreviewKey
 }
 
 func newBoard() *board {
@@ -510,7 +533,7 @@ func (b *board) configCmd() tea.Cmd {
 		return boardConfigMsg{
 			archived: archived, board: cfg.TUI.Board,
 			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, keys: cfg.TUI.Keys,
-			outputLevel: cfg.TUI.Output.Level, defaultProject: cfg.TUI.DefaultProject, tabs: cfg.TUI.Tabs, err: err,
+			outputLevel: cfg.TUI.Output.Level, defaultProject: cfg.TUI.DefaultProject, tabs: cfg.TUI.Tabs, icons: cfg.TUI.Icons, err: err,
 		}
 	}
 }
@@ -542,12 +565,28 @@ func (b *board) scheduleRefresh() tea.Cmd {
 }
 
 func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
+	p, cmd := b.route(msg)
+	if b.archived {
+		return p, tea.Batch(cmd, b.previewCmd())
+	}
+	return p, cmd
+}
+
+func (b *board) route(msg tea.Msg) (panel, tea.Cmd) {
 	if !b.addressed(msg) {
 		return b, nil
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		b.width, b.height = msg.Width, msg.Height
+		if b.archived {
+			b.cards = msg.Width >= mgmtWideMinW
+		}
+		return b, nil
+	case tea.MouseClickMsg:
+		if b.cards && msg.Button == tea.MouseLeft {
+			b.cardClick(msg.X, msg.Y)
+		}
 		return b, nil
 	case viewActivatedMsg:
 		// The archived board re-lists each time it opens, as the archived
@@ -625,6 +664,11 @@ func (b *board) update(msg tea.Msg) (panel, tea.Cmd) {
 		b.marks = b.marks.drop(msg.done...)
 		b.refreshPending = false
 		return b, b.loadCmd()
+	case taskPreviewDueMsg:
+		return b, b.previewDue(msg.key)
+	case taskPreviewMsg:
+		b.applyPreview(msg)
+		return b, nil
 	case tea.KeyPressMsg:
 		return b.updateKey(msg)
 	case tea.MouseWheelMsg:
@@ -886,6 +930,16 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 
 	if b.archived {
 		switch msg.String() {
+		case "tab":
+			return b, func() tea.Msg { return selectViewMsg{id: viewArchivedChats} }
+		case opKey(keymap.OpenRow):
+			if b.cards {
+				if s, ok := b.cardStop(); ok && s.header {
+					b.toggleCardFold()
+					return b, nil
+				}
+			}
+			return b, b.openArchivedTask()
 		case opKey(keymap.Delete):
 			b.askDelete()
 			return b, nil
@@ -910,6 +964,10 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			}
 			return b, nil
 		}
+	}
+
+	if b.cards && b.cardKey(msg.String()) {
+		return b, nil
 	}
 
 	switch msg.String() {
@@ -957,11 +1015,6 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// it is still listed.
 		b.attentionOnly = !b.attentionOnly
 		return b, nil
-	case "L":
-		// Expand or collapse the fan-out under the cursor (boardlanes.go).
-		// Lanes stay out of the list and out of every count; this is the way
-		// to see them, in whatever state the parent is in.
-		return b, b.toggleLanes()
 	case "g":
 		// Cycles the grouping for the session (§15, task 009); the config
 		// file stays the starting point and is never written from here. This
@@ -1009,6 +1062,9 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if cmd, handled := b.actions.handleKey(msg.String(), b.client, b.target()); handled {
 		return b, cmd
 	}
+	if b.cards {
+		return b, nil
+	}
 
 	before := b.tbl.Cursor()
 	var cmd tea.Cmd
@@ -1016,6 +1072,20 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	b.skipHeaders(travelDir(before, b.tbl.Cursor()))
 	b.rememberSelection()
 	return b, cmd
+}
+
+// openArchivedTask opens the selected task's workspace, and esc comes back here.
+func (b *board) openArchivedTask() tea.Cmd {
+	id, ok := b.selected()
+	if !ok {
+		return nil
+	}
+	t, ok := b.taskByID(id)
+	if !ok {
+		return nil
+	}
+	state, pid := t.State, t.ProjectID
+	return func() tea.Msg { return selectTaskMsg{id: id, state: state, projectID: pid, back: viewArchived} }
 }
 
 // travelDir is the direction a cursor move was going in, which is the
@@ -1132,6 +1202,10 @@ func (b *board) paste(text string) tea.Cmd {
 // wheelMove is one wheel notch on the task table: the cursor moves, and the
 // panels below follow it through the usual settle window.
 func (b *board) wheelMove(delta int) {
+	if b.cards {
+		b.moveCard(delta)
+		return
+	}
 	if delta > 0 {
 		b.tbl.MoveDown(delta)
 	} else {
@@ -1280,6 +1354,9 @@ func (b *board) visible() []apiclient.Task {
 // detail panels empty until something moved. A header always has rows beneath
 // it, so the scan always lands.
 func (b *board) selected() (int64, bool) {
+	if b.cards {
+		return b.cardSelected()
+	}
 	rows := b.rows()
 	i := b.tbl.Cursor()
 	if i < 0 {
@@ -1306,6 +1383,9 @@ func (b *board) selected() (int64, bool) {
 // its cursor index but never remaps it, so tracking the index alone would
 // silently select a different task whenever the sort shifted.
 func (b *board) rememberSelection() {
+	if b.cards {
+		return
+	}
 	if r := b.rowAt(b.tbl.Cursor()); r.header && r.collapsed {
 		// The cursor is parked on a fold. selectedID cannot say that — it
 		// names a task — so the path is remembered alongside it, and the last
@@ -1322,6 +1402,10 @@ func (b *board) rememberSelection() {
 // restoreSelection moves the cursor back onto the remembered task — after a
 // refresh that reordered the rows, and after `g` regrouped them.
 func (b *board) restoreSelection(rows []boardRow) {
+	if b.cards {
+		b.cardHeader = nil
+		return
+	}
 	if len(b.selectedPath) > 0 {
 		if i := headerIndex(rows, b.selectedPath); i >= 0 && rows[i].collapsed {
 			moveCursorTo(&b.tbl, i)
@@ -1395,6 +1479,9 @@ func moveCursorTo(t *table.Model, i int) {
 }
 
 func (b *board) render(width, height int) string {
+	if b.archived && b.cards {
+		return b.renderCards(width, height)
+	}
 	if width > 0 {
 		b.width = width
 	}

@@ -163,6 +163,9 @@ the living engineering specification records implementation contracts.
 | [147](147-update-to-master.md) | `vincent update --master`: install the newest master build, which CI builds and publishes on every push to master | ✅ done (1/1) |
 | [148](148-board-group-by-issue.md) | The board grouped by vincent issue: an `issue` level for `tui.board.group_by`, `[issue]` the default | ✅ done (3/3) |
 | [149](149-global-pause.md) | A global pause: `vincent daemon pause` / `continue`, the `Z` key, and the pause shown on every TUI screen | ✅ done (4/4) |
+| [150](150-tui-redesign.md) | A ground-up redesign of the TUI: top tabs, an issues board of cards, and a chats workspace | ✅ done (11/11) |
+| [151](151-nerd-font-install.md) | Installing the Nerd Font behind `tui.icons: nerd`: `vincent fonts` and `U` on the Daemon screen | ✅ done (3/3) |
+| [152](152-settings-screen.md) | A Settings screen for everything in `config.yaml` | ✅ done (3/3) |
 
 ## How to add and update a task document
 

@@ -402,9 +402,12 @@ func (n *newTask) branchOptions(adopt bool, none string) []pickerOption {
 // because the picker's filter matches them as well as the label, so "checkout"
 // narrows the list to the consequential rows without a second control.
 func branchNote(b apiclient.Branch) string {
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 3)
 	if b.Current {
 		parts = append(parts, "current")
+	}
+	if b.Ahead != nil && *b.Ahead > 0 {
+		parts = append(parts, plural(*b.Ahead, "commit", "commits")+" ahead of "+b.AheadOf)
 	}
 	switch {
 	case b.MainCheckout:
@@ -600,7 +603,27 @@ func (n *newTask) workflowOptions() []pickerOption {
 		}
 		out = append(out, opt)
 	}
+	// In the order the wide form groups them, so the list's cursor walks the
+	// cards from top to bottom. Within a group the registry's order stands.
+	slices.SortStableFunc(out, func(a, b pickerOption) int {
+		return n.workflowScopeRank(a.value) - n.workflowScopeRank(b.value)
+	})
 	return out
+}
+
+// workflowScopeRank orders the workflow groups: this project's, then global,
+// then the built-ins.
+func (n *newTask) workflowScopeRank(name string) int {
+	e := n.workflowEntry(name)
+	switch {
+	case e == nil:
+		return 2
+	case e.Scope == scopeProject:
+		return 0
+	case e.Scope == "global":
+		return 1
+	}
+	return 2
 }
 
 // agentOptions lists every registered adapter plus "leave it to the

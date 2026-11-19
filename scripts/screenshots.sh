@@ -356,7 +356,7 @@ github:
 # Off, so closing an issue (paged, the delivered train issue, the
 # handoff-train workflow's deliver --close) leaves its done tasks on the board
 # and off the archived board, as the committed pictures show them. The key
-# sits below the fold of tui-daemon-config, so its value changes no picture.
+# is on no captured screen, so its value changes no picture.
 archive_tasks_on_issue_close: false
 # On, for the one Jira-bound project (task 142.20), answered by cmd/fakejira
 # (see jira_up). A short tick, so a close made in the fake reaches vincent
@@ -1574,7 +1574,7 @@ Require vincent
 
 Set Shell "bash"
 Set FontSize $FONT_PX
-Set Width $COLS_PX
+Set Width ${TAPE_WIDTH:-$COLS_PX}
 Set Height $height
 Set Padding 24
 Set Margin 36
@@ -1665,46 +1665,28 @@ do_capture() {
 
   # The three Workflows tapes open the global fan-out workflow by its row on
   # api's Workflows view, which lists the global registry and api's own
-  # entries together, by name, a project entry ahead of the global one it
-  # shadows (task 132 decision 39). api shadows feature-delivery, so the
-  # global copy — the one with the lanes — is the row after api's. Every
+  # entries grouped by scope, This project, Global and Built-in, each by name
+  # (task 150.7). api shadows feature-delivery, and the global copy is the one
+  # with the lanes. Every
   # workflow the seed or the built-ins add moves it, so the row is computed
   # the way the view sorts rather than counted by hand, which is how those
   # tapes once photographed docs-refresh instead.
   local wf_row p_api
   p_api="$(project_id api)"
   wf_row="$(jq -n --argjson g "$(api GET /workflows)" --argjson p "$(api GET "/workflows?project_id=$p_api")" '
-    [($p.workflows[] | select(.scope == "project") | {name, own: 0}),
-     ($g.workflows[] | {name, own: 1})]
-    | sort_by(.name, .own) | map("\(.name)/\(.own)") | index("feature-delivery/1")')"
+    [($p.workflows[] | select(.scope == "project") | {name, rank: 0}),
+     ($g.workflows[] | {name, rank: (if .scope == "global" then 1 else 2 end)})]
+    | sort_by(.rank, .name) | map("\(.name)/\(.rank)") | index("feature-delivery/1")')"
   [[ "$wf_row" =~ ^[0-9]+$ ]] || fail "feature-delivery is not in api's Workflows view"
 
-  # The board-only home screen, filtered to one running task.
+  # The task board: its columns, cards and preview (task 150.6), wide enough
+  # for all of them.
   owns api task 'harden' tui-board
   running api 'harden' tui-board
-  tape tui-board 1250 api '
-Tab
-Sleep 2s
-Type "/"
-Sleep 500ms
-Type "harden"
-Sleep 1s
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-board 1250 api '
 Tab
 Sleep 6s
 Screenshot "'"$OUT"'/tui-board.png"
-'
-
-  # Grouping: by issue, the shape the board takes out of the box (task 148)
-  # — there is no project level, since the board shows one project (task
-  # 132). platform-infra has the most tasks started from an issue, one group
-  # each, and a `no issue` group holding the handoff's own task and the
-  # claude task waiting for input. api's tasks carry no issue, and giving
-  # them one would change every api shot.
-  tape tui-grouping 1400 platform-infra '
-Tab
-Sleep 2s
-Sleep 3s
-Screenshot "'"$OUT"'/tui-grouping.png"
 '
 
   # Bulk selection — `V` takes every row the filter is showing, and the
@@ -1727,7 +1709,9 @@ Type "/"
 Sleep 500ms
 Type "design tokens"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -1744,12 +1728,12 @@ Screenshot "'"$OUT"'/tui-diff.png"
   # model override's list open. The form opens on the workflow row: the
   # project row above it is the selection, drawn and never focused (task
   # 132.13), so the project is the one the tape launches on.
-  tape tui-new-task 1050 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-new-task 1250 api '
 Tab
 Sleep 2s
 Type "n"
 Sleep 3s
-Down 1
+Tab
 Sleep 500ms
 Enter
 Sleep 500ms
@@ -1789,7 +1773,7 @@ Screenshot "'"$OUT"'/tui-new-task.png"
 '
 
   # Workflows, expanded into the control-flow graph of the fan-out workflow.
-  tape tui-workflow-graph 1400 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-workflow-graph 1400 api '
 Type ":"
 Sleep 1s
 Type "workflows"
@@ -1853,7 +1837,7 @@ Sleep 2s
 
   # Triggers (task 096): the list with the armed command source selected and
   # its ledger of `seeded` deliveries beside it.
-  tape tui-triggers 1250 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-triggers 1250 api '
 Type ":"
 Sleep 1s
 Type "triggers"
@@ -1873,8 +1857,9 @@ Sleep 2s
 
   # Chats (task 067): the second board, on api, with the chat waiting on a
   # human sorted to the top and counted in the header badge, a `running` row
-  # below it, and a finished one.
-  tape tui-chats 900 api '
+  # below it, and a finished one. Wider than the other tapes, so the workspace
+  # shows all three of its panes (task 150.5).
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-chats 1250 api '
 Type ":"
 Sleep 1s
 Type "chats"
@@ -2001,8 +1986,7 @@ Sleep 2s
   # beside the tab they are of, and the pictures above stay the ones they were.
 
   # The task workspace's other tabs (issue #414), each on the task whose
-  # state is what the tab is for. `enter` on a board row opens the workspace
-  # on its Overview (task 129.12); the digits pick a tab.
+  # state is what the tab is for. The digits pick a tab.
 
   # Steps, on the blocked task: a command step and an agent step
   # that succeeded, then both failed attempts of the step it is blocked on,
@@ -2015,7 +1999,7 @@ Type "/"
 Sleep 500ms
 Type "signed checksums"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 4s
@@ -2039,7 +2023,7 @@ Type "/"
 Sleep 500ms
 Type "public API"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2061,7 +2045,7 @@ Type "/"
 Sleep 500ms
 Type "harden"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2081,7 +2065,7 @@ Type "/"
 Sleep 500ms
 Type "public API"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2102,7 +2086,7 @@ Type "/"
 Sleep 500ms
 Type "public API"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2125,7 +2109,9 @@ Type "/"
 Sleep 500ms
 Type "design tokens"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2151,7 +2137,7 @@ Type "/"
 Sleep 500ms
 Type "signed checksums"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2176,7 +2162,9 @@ Type "/"
 Sleep 500ms
 Type "design tokens"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2206,7 +2194,7 @@ Type "/"
 Sleep 500ms
 Type "read replica"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2232,7 +2220,9 @@ Type "/"
 Sleep 500ms
 Type "focus ring"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2253,15 +2243,13 @@ Sleep 2s
   # commits the filter and the choice with two enters. In Fields the ticket
   # gets a value, and the `multiple` enum is left open with two regions
   # ticked: the list is the only way to change one. The form opens on its
-  # workflow row, so the first enter opens the workflow picker; the project
-  # is platform-infra, the one the tape launches on.
-  tape tui-new-task-fields 1250 platform-infra '
+  # workflow list, where `/` starts the filter; the project is platform-infra,
+  # the one the tape launches on.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-new-task-fields 1250 platform-infra '
 Tab
 Sleep 2s
 Type "n"
 Sleep 3s
-Enter
-Sleep 1s
 Type "/"
 Sleep 500ms
 Type "change"
@@ -2270,7 +2258,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 1s
-Down 1
+Tab
 Sleep 500ms
 Enter
 Sleep 500ms
@@ -2314,7 +2302,7 @@ Type "/"
 Sleep 500ms
 Type "tenant_id"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 4s
@@ -2328,8 +2316,8 @@ Screenshot "'"$OUT"'/tui-loop.png"
 Sleep 2s
 '
 
-  # The fan-out (task 084), parked between its two rounds. On the board, `L`
-  # hangs its three lanes under it.
+  # The fan-out (task 084), parked between its two rounds: the Overview lists
+  # its three lanes.
   owns api task 'v2 storage' tui-lanes
   tape tui-lanes 1250 api '
 Tab
@@ -2338,9 +2326,11 @@ Type "/"
 Sleep 500ms
 Type "v2 storage"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
-Type "L"
+Enter
+Sleep 4s
+Type "0"
 Sleep 3s
 Screenshot "'"$OUT"'/tui-lanes.png"
 Sleep 2s
@@ -2355,7 +2345,7 @@ Type "/"
 Sleep 500ms
 Type "v2 storage"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2377,7 +2367,7 @@ Type "/"
 Sleep 500ms
 Type "v2 storage"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2393,7 +2383,7 @@ Sleep 2s
 
   # The pull requests screen (task 052): the open listing of the one GitHub
   # project, with #412 claimed by the task the reconciler linked it to.
-  tape tui-pull-requests 1050 web '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-pull-requests 1050 web '
 Type ":"
 Sleep 1s
 Type "pull requests"
@@ -2405,7 +2395,7 @@ Sleep 2s
 '
 
   # The two archived boards (task 092), each opened from the palette.
-  tape tui-archived 1050 platform-infra '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-archived 1050 platform-infra '
 Type ":"
 Sleep 1s
 Type "archived tasks"
@@ -2416,7 +2406,7 @@ Screenshot "'"$OUT"'/tui-archived.png"
 Sleep 2s
 '
 
-  tape tui-archived-chats 1050 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-archived-chats 1050 api '
 Type ":"
 Sleep 1s
 Type "archived chats"
@@ -2434,21 +2424,53 @@ Screenshot "'"$OUT"'/tui-archived-chats.png"
 Sleep 2s
 '
 
-  # The daemon view with `tab` on the config list (task 060): every key,
-  # its value, and the default where the two differ, with the adapters and
-  # their usage windows below.
-  tape tui-daemon-config 1400 api '
+  # Settings (task 152), opened from the palette on its first category.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-settings 1250 api '
 Type ":"
 Sleep 1s
-Type "daemon"
+Type "settings"
 Sleep 1s
 Enter
 Sleep 4s
-Tab
-Sleep 1s
-Down 3
+Screenshot "'"$OUT"'/tui-settings.png"
 Sleep 2s
-Screenshot "'"$OUT"'/tui-daemon-config.png"
+'
+
+  # The branch template's editor, with the daemon's preview of the name.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-settings-branch 1250 api '
+Type ":"
+Sleep 1s
+Type "settings"
+Sleep 1s
+Enter
+Sleep 4s
+Tab 2
+Sleep 1s
+Enter
+Sleep 2s
+Screenshot "'"$OUT"'/tui-settings-branch.png"
+Sleep 2s
+'
+
+  # The confirmation a key that decides what the daemon runs stops at.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-settings-confirm 1250 api '
+Type ":"
+Sleep 1s
+Type "settings"
+Sleep 1s
+Enter
+Sleep 4s
+Tab 4
+Sleep 1s
+Enter
+Sleep 1s
+Ctrl+U
+Sleep 500ms
+Type "/opt/agents/claude-next"
+Sleep 1s
+Enter
+Sleep 2s
+Screenshot "'"$OUT"'/tui-settings-confirm.png"
 Sleep 2s
 '
 
@@ -2560,8 +2582,11 @@ Sleep 2s
   # each on the task whose state the question is about: the corpus reindex
   # while it runs (what is happening now?), the checksum task blocked on its
   # failed step (where and why did it fail?) and the design-tokens task done
-  # with its pull request linked (what did it deliver?). `enter` alone is the
-  # journey — the workspace opens on Overview, so no digit is pressed. The
+  # with its pull request linked (what did it deliver?). These tapes are wide
+  # enough for the workspace's rail, where a fresh open lands on Output, so
+  # `0` picks the Overview. Finished starts folded, so a finished task takes
+  # one more `enter`: the first commits the filter, the second opens its group
+  # and the third opens the task. The
   # running one is the reindex rather than the soak the Output tape uses, so
   # the two pictures show two different running tasks.
   owns docs-portal task 'reindex' tui-task-overview-running
@@ -2573,10 +2598,12 @@ Type "/"
 Sleep 500ms
 Type "reindex"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 5s
+Type "0"
+Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-running.png"
 Sleep 2s
 '
@@ -2589,10 +2616,12 @@ Type "/"
 Sleep 500ms
 Type "signed checksums"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 4s
+Type "0"
+Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-blocked.png"
 Sleep 2s
 '
@@ -2605,10 +2634,14 @@ Type "/"
 Sleep 500ms
 Type "design tokens"
 Sleep 1s
-Tab
+Enter
+Sleep 1s
+Enter
 Sleep 1s
 Enter
 Sleep 4s
+Type "0"
+Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-done.png"
 Sleep 2s
 '
@@ -2620,20 +2653,12 @@ Sleep 2s
   # every lane (issue #766): two task-less ones in `open`, the blocked loop's
   # and the paused postmortem's issues in `in progress` (the first with a
   # `!`), the archived DNS rollback's in `hand-off`, and one closed as
-  # completed in `done`. `s` shows or hides the `done` lane (task 134
-  # decision 5), hidden by default, so it is pressed once: shown is the one
-  # that draws all four lanes, and a second press would hide it again. `s`
-  # leaves a "showing the done lane…" note under the rows that outlives
-  # the listing; `esc` clears the note first and keeps the lane shown
-  # (§15's one layer per press), so it is pressed once rather than
-  # photographed. The list is the screen the TUI lands on (#789), so the
-  # tape opens no palette and has no ghost to repaint.
+  # completed in `done`. All four columns are on the board from the start
+  # (task 150 decision 10), so the tape presses nothing. The list is the
+  # screen the TUI lands on (#789), so the tape opens no palette and has no
+  # ghost to repaint.
   tape tui-issues 1250 platform-infra '
 Sleep 3s
-Type "s"
-Sleep 3s
-Escape
-Sleep 2s
 Screenshot "'"$OUT"'/tui-issues.png"
 Sleep 2s
 '
@@ -2684,7 +2709,7 @@ Type "/"
 Sleep 500ms
 Type "header flicker"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 3s
@@ -2712,7 +2737,7 @@ Sleep 2s
   # overviewFullWidth()+overviewDetailWidth columns, wider than this tape, so
   # it is not in the shot. Appended last, after tui-projects was retired, for
   # the reason the swap order is one-way.
-  tape tui-project-overview 1250 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-project-overview 1250 api '
 Type ":"
 Sleep 1s
 Type "project overview"
@@ -2785,19 +2810,21 @@ Type "/"
 Sleep 500ms
 Type "ops fixes"
 Sleep 1s
-Tab
+Enter
 Sleep 1s
 Enter
 Sleep 4s
+Type "0"
+Sleep 2s
 Screenshot "'"$OUT"'/tui-handoff-task.png"
 Sleep 2s
 '
 
   # The daemon view with the log holding the keys (task 138.17): the blocks
   # pane pins its end, so the adapters block — all four, copilot's quota
-  # `unknown` by design (§9.9) — is on screen where tui-daemon-config,
+  # `unknown` by design (§9.9) — is on screen where the daemon dashboard,
   # whose config list takes the room, cuts it off.
-  tape tui-daemon-adapters 1400 api '
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-daemon-adapters 1400 api '
 Type ":"
 Sleep 1s
 Type "daemon"
@@ -2870,6 +2897,53 @@ Sleep 2s
   if [[ -z "${VINCENT_SHOTS_ONLY:-}" || "${VINCENT_SHOTS_ONLY}" == "tui-global-pause" ]]; then
     api POST /daemon/continue >/dev/null
   fi
+
+  # The issue preview (task 150.3) needs a terminal wider than every other
+  # tape's, so this one alone sets TAPE_WIDTH. The selection moves to the
+  # blocked in-progress issue, and the sleep outlasts the description's read.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-issues-preview 1250 platform-infra '
+Sleep 3s
+Right
+Sleep 500ms
+Down
+Sleep 3s
+Screenshot "'"$OUT"'/tui-issues-preview.png"
+Sleep 2s
+'
+
+  # The wide task workspace on the blocked task (task 150.6): the steps, the
+  # output, the details, and the failure pinned under the tab.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-task-workspace 1250 release-tooling '
+Tab
+Sleep 2s
+Type "/"
+Sleep 500ms
+Type "signed checksums"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 5s
+Screenshot "'"$OUT"'/tui-task-workspace.png"
+Sleep 2s
+'
+
+  # The wide new-chat form (task 150.11), between the chat list and what the
+  # chat would get. The title row has the keyboard when the form opens.
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-new-chat 1250 api '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 3s
+Type "n"
+Sleep 3s
+Type "why does the eu-west replica lag at midnight?"
+Sleep 2s
+Screenshot "'"$OUT"'/tui-new-chat.png"
+Sleep 2s
+'
 }
 
 case "${1:-all}" in

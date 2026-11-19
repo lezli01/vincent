@@ -505,7 +505,7 @@ func (v *issuesView) pickAll() {
 		return
 	}
 	for _, row := range v.lines() {
-		if row.header || row.none || !handoffPending(row.issue) {
+		if row.header || !handoffPending(row.issue) {
 			continue
 		}
 		if v.picked == nil {
@@ -672,7 +672,7 @@ func (v *issueView) handoffLines(rows []issueDetailRow, width, base int) []strin
 	if len(v.issue.Handoffs) == 0 {
 		return nil
 	}
-	lines := []string{"", " " + styleTitle.Render("Handoff")}
+	lines := []string{"", v.sectionHead("⇄", "Handoff")}
 	for i, row := range rows {
 		h := row.handoff
 		if h == nil {

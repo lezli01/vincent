@@ -519,6 +519,48 @@ func (s *Store) ListChatTurns(ctx context.Context, chatID int64) ([]ChatTurn, er
 	return out, nil
 }
 
+// chatTurnCountBatch keeps one IN list well under SQLite's bound-variable limit.
+const chatTurnCountBatch = 500
+
+// ChatTurnCounts returns how many turns each of the chats has. A chat with no
+// turns has no entry.
+func (s *Store) ChatTurnCounts(ctx context.Context, chatIDs []int64) (map[int64]int, error) {
+	out := make(map[int64]int, len(chatIDs))
+	for ids := range slices.Chunk(chatIDs, chatTurnCountBatch) {
+		if err := s.addChatTurnCounts(ctx, ids, out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// addChatTurnCounts adds one batch's counts to out.
+func (s *Store) addChatTurnCounts(ctx context.Context, ids []int64, out map[int64]int) error {
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	//nolint:gosec // G202: placeholders renders bind markers only, never values.
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT chat_id, COUNT(*) FROM chat_turns WHERE chat_id IN `+placeholders(len(ids))+` GROUP BY chat_id`, args...)
+	if err != nil {
+		return fmt.Errorf("count chat turns: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return fmt.Errorf("scan chat turn count: %w", err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate chat turn counts: %w", err)
+	}
+	return nil
+}
+
 // GetChatTurn returns one turn by id, or ErrNotFound.
 func (s *Store) GetChatTurn(ctx context.Context, id int64) (*ChatTurn, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+chatTurnColumns+` FROM chat_turns WHERE id = ?`, id)

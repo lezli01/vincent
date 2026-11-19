@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -305,10 +304,10 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	case openConfigKeyMsg:
 		// The triggers view's global-off banner (task 096.6) names a switch
-		// it must not flip itself: the daemon view's editor is where a config
-		// key is changed, and it is the one that asks first. Delivered before
-		// the switch for the reason openChatMsg is.
-		return m, tea.Batch(m.deliver(viewDaemon, msg), m.switchTo(viewDaemon))
+		// it must not flip itself: Settings is where a config key is changed,
+		// and it is the one that asks first. Delivered before the switch for
+		// the reason openChatMsg is.
+		return m, tea.Batch(m.deliver(viewSettings, msg), m.switchTo(viewSettings))
 	case githubProbeMsg:
 		// The listing failing leaves the previous answer standing: a probe
 		// that could not be made is not an integration that stopped working,
@@ -327,6 +326,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.broadcast(msg)
 	case boardConfigMsg, daemonConfigMsg, configSavedMsg:
 		m.applyHyperlinks(msg)
+		applyIcons(msg)
 		m.applyOutputLevel(msg)
 		m.applyKeymap(msg)
 		land := m.applyTabs(msg)
@@ -485,6 +485,9 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		// The body is the connection screen, not the view behind it (#793,
 		// review F3).
 		return m, nil
+	}
+	if msg.Y < m.chromeTop() {
+		return m, nil // the rule and the status lines are not the screen's
 	}
 	msg.Y -= m.chromeTop() // the body starts under the header lines
 	return m, m.deliver(m.active, msg)
@@ -1037,6 +1040,8 @@ func (m *root) activeContext() bindingContext {
 			return c.bindingContext()
 		}
 		return ctxDaemon
+	case viewSettings:
+		return m.views[viewSettings].(*settingsView).bindingContext()
 	case viewPullRequests:
 		return ctxPullRequests
 	case viewArchived:
@@ -1732,6 +1737,9 @@ func (m *root) scopeViews() tea.Cmd { return tea.Batch(m.scopeCmds()...) }
 func (m *root) scopeCmds() []tea.Cmd {
 	var cmds []tea.Cmd
 	for i := range m.views {
+		if aware, ok := m.views[i].(currentProjectAware); ok {
+			aware.setCurrentProject(m.sel.id)
+		}
 		if ps, ok := m.views[i].(projectScoped); ok {
 			if cmd := ps.setProject(m.sel); cmd != nil {
 				cmds = append(cmds, cmd)
@@ -1912,6 +1920,26 @@ func (m *root) applyOutputLevel(msg tea.Msg) {
 	}
 }
 
+// applyIcons adopts `tui.icons` from whichever config answer arrived (task
+// 150.8). A failed fetch or a refused save changes nothing, for
+// applyHyperlinks' reason.
+func applyIcons(msg tea.Msg) {
+	switch msg := msg.(type) {
+	case boardConfigMsg:
+		if msg.err == nil {
+			setIconSet(msg.icons)
+		}
+	case daemonConfigMsg:
+		if msg.err == nil {
+			setIconSet(msg.config.TUI.Icons)
+		}
+	case configSavedMsg:
+		if msg.err == nil {
+			setIconSet(msg.cfg.TUI.Icons)
+		}
+	}
+}
+
 // applyHyperlinks adopts `tui.hyperlinks` from whichever config answer
 // arrived (task 111). A failed fetch or a refused save changes nothing, for
 // the reason board.applyConfig gives: a request that failed is not a
@@ -2045,7 +2073,7 @@ type tabAware interface {
 
 // defaultTabs is config.Default()'s `tui.tabs`, for the TUI before a config
 // answer arrives and for a list that names nothing it can route.
-func defaultTabs() []viewID { return []viewID{viewIssues, viewHome} }
+func defaultTabs() []viewID { return []viewID{viewIssues, viewHome, viewChats} }
 
 // tabsFromConfig maps the configured names to views (task 136 decision 6):
 // a name this build does not know is dropped, a repeat kept once, and a list
@@ -2277,6 +2305,10 @@ func (m *root) View() tea.View {
 	var b strings.Builder
 	b.WriteString(m.headerLine())
 	b.WriteString("\n")
+	if m.headerRuleShown() {
+		b.WriteString(m.headerRule())
+		b.WriteString("\n")
+	}
 	if line, ok := m.statusLine(); ok {
 		b.WriteString(line)
 		b.WriteString("\n")
@@ -2321,161 +2353,6 @@ type nowLiner interface {
 	nowLine(width int) (string, bool)
 }
 
-func (m *root) headerLine() string {
-	width := m.width
-	if width <= 0 {
-		width = 1 << 16
-	}
-	// Connected is the normal case and says nothing a working screen does
-	// not (task 129.15): the badge is drawn only while it is news, and being
-	// news it is never shed.
-	badge := ""
-	if m.phase != phaseConnected {
-		badge = m.connBadge() + "  "
-	}
-	// The global pause (task 149) rides beside it, on the same terms: drawn
-	// only while it is news, and never shed — a paused daemon looks like an
-	// idle one unless something says otherwise.
-	if pb := m.globalPause.badge(); pb != "" {
-		badge += pb + "  "
-	}
-	lead := func(name string) string { return " " + styleTitle.Render(name) + "  " + badge }
-	full := "vincent"
-	if m.version != "" {
-		full += " " + m.version
-	}
-	project := "no project"
-	if m.sel.id != 0 {
-		project = m.sel.name
-	}
-	segment := func(name string) string { return styleTitle.Render(headerProjectGlyph + " " + name) }
-	elsewhere := m.elsewhereBadge()
-
-	m.headerTabs = nil
-	// hit records where the segment landed, for the header click. It never
-	// covers the badge: a click there is not a click on the project.
-	hit := func(l, seg string) {
-		x0 := ansi.StringWidth(l)
-		m.headerHit = [2]int{x0, x0 + ansi.StringWidth(seg)}
-	}
-
-	if m.stripShown() {
-		return m.headerWithStrip(width, lead, full, project, segment, elsewhere, hit)
-	}
-
-	// Shedding order (task 132.2, extended by 132.14): the view tag
-	// truncates down to a floor and is then dropped; then the version goes;
-	// then the elsewhere badge; last, the project name truncates behind an
-	// ellipsis.
-	head := lead(full) + segment(project) + elsewhere
-	if room := width - ansi.StringWidth(head) - 2; room >= headerTagFloor || room >= ansi.StringWidth(m.headerTagFull()) {
-		hit(lead(full), segment(project))
-		return head + "  " + styleDim.Render(m.headerTag(room))
-	}
-	if ansi.StringWidth(head) <= width {
-		hit(lead(full), segment(project))
-		return head
-	}
-	if short := lead("vincent") + segment(project) + elsewhere; elsewhere != "" && ansi.StringWidth(short) <= width {
-		hit(lead("vincent"), segment(project))
-		return short
-	}
-	l := lead(full)
-	if ansi.StringWidth(l+segment(project)) > width {
-		l = lead("vincent")
-	}
-	room := width - ansi.StringWidth(l+segment(""))
-	seg := segment(ansi.Truncate(project, max(room, 1), "…"))
-	hit(l, seg)
-	return l + seg
-}
-
-// headerTabHit is one main-tab strip label's clickable span.
-type headerTabHit struct {
-	x0, x1 int
-	id     viewID
-}
-
-// stripShown is where the header draws the main-tab strip instead of the
-// view tag (task 136.3): only where tab switches, so the strip never
-// advertises a key that means something else on the screen. Input capture
-// does not hide it — a filter being typed is transient, and the strip
-// should not flicker — so this is tabSwitches without that clause.
-func (m *root) stripShown() bool {
-	return m.isTabRoot(m.active) && len(m.tabs) > 1 && !m.panelOwnsLocalKey("tab")
-}
-
-// tabStrip renders the configured tabs in order, the active one titled and
-// the rest dim, with each label's span relative to the strip's first cell.
-// Labels are the views' own titles, so the strip, the tag and the frame
-// cannot disagree; initials shortens each to its first letter.
-func (m *root) tabStrip(initials bool) (string, []headerTabHit) {
-	var b strings.Builder
-	hits := make([]headerTabHit, 0, len(m.tabs))
-	sep := styleDim.Render(" │ ")
-	x := 0
-	for i, id := range m.tabs {
-		if i > 0 {
-			b.WriteString(sep)
-			x += ansi.StringWidth(sep)
-		}
-		label := m.views[id].title()
-		if initials {
-			r, _ := utf8.DecodeRuneInString(label)
-			label = string(r)
-		}
-		style := styleDim
-		if id == m.active {
-			style = styleTitle
-		}
-		b.WriteString(style.Render(label))
-		w := ansi.StringWidth(label)
-		hits = append(hits, headerTabHit{x0: x, x1: x + w, id: id})
-		x += w
-	}
-	return b.String(), hits
-}
-
-// headerWithStrip is the header on a main tab (task 136.3). The strip is
-// navigation, so it outlives decoration: the version goes first, then the
-// elsewhere badge, then the labels shorten to initials, and last the
-// project name truncates behind an ellipsis. The strip never vanishes, and
-// the connection badge, inside lead, is never shed.
-func (m *root) headerWithStrip(width int, lead func(string) string, full, project string,
-	segment func(string) string, elsewhere string, hit func(l, seg string),
-) string {
-	place := func(head, strip string, spans []headerTabHit) string {
-		x0 := ansi.StringWidth(head) + 2
-		m.headerTabs = make([]headerTabHit, len(spans))
-		for i, h := range spans {
-			m.headerTabs[i] = headerTabHit{x0: x0 + h.x0, x1: x0 + h.x1, id: h.id}
-		}
-		return head + "  " + strip
-	}
-	long, longHits := m.tabStrip(false)
-	short, shortHits := m.tabStrip(true)
-	for _, c := range []struct {
-		name, badge, strip string
-		hits               []headerTabHit
-	}{
-		{full, elsewhere, long, longHits},
-		{"vincent", elsewhere, long, longHits},
-		{"vincent", "", long, longHits},
-		{"vincent", "", short, shortHits},
-	} {
-		head := lead(c.name) + segment(project) + c.badge
-		if ansi.StringWidth(head)+2+ansi.StringWidth(c.strip) <= width {
-			hit(lead(c.name), segment(project))
-			return place(head, c.strip, c.hits)
-		}
-	}
-	l := lead("vincent")
-	room := width - ansi.StringWidth(l+segment("")) - 2 - ansi.StringWidth(short)
-	seg := segment(ansi.Truncate(project, max(room, 1), "…"))
-	hit(l, seg)
-	return place(l+seg, short, shortHits)
-}
-
 // elsewhereBadge is the app header's `(! N elsewhere)` (task 132.14,
 // decision 2): how many tasks in projects other than the selected one need
 // a human, from the board's global live listing (decision 17), so it costs
@@ -2491,14 +2368,6 @@ func (m *root) elsewhereBadge() string {
 	}
 	return " " + styleAsk.Render(fmt.Sprintf("(%s %d elsewhere)", attentionBadge, n))
 }
-
-// headerProjectGlyph marks the selected-project segment of the app header. A
-// glyph rather than a colour, so the segment reads the same uncoloured.
-const headerProjectGlyph = "◆"
-
-// headerTagFloor is the narrowest the view tag is truncated to before the
-// header drops it altogether: below it a tag is an ellipsis, not a name.
-const headerTagFloor = 8
 
 // headerTagFull is the active view's tag at unbounded width.
 func (m *root) headerTagFull() string { return m.headerTag(1 << 16) }
@@ -2653,6 +2522,9 @@ func (m *root) framedView(id viewID) string {
 	if m.width < 4 || h < 3 {
 		return m.views[id].render(m.width, h)
 	}
+	if f, ok := m.views[id].(frameless); ok && f.frameless() {
+		return fitHeight(m.views[id].render(m.width, h), h)
+	}
 	content := m.views[id].render(m.width-2, h-2)
 	title := m.views[id].title()
 	if _, ok := m.views[id].(headerTagger); ok {
@@ -2660,6 +2532,10 @@ func (m *root) framedView(id viewID) string {
 	}
 	return frame(title, content, m.width, h, true)
 }
+
+// frameless is a view that draws its own boxes while it says so (task 150.2),
+// and would read as a box inside a box in the root's frame.
+type frameless interface{ frameless() bool }
 
 // quitReminder is §15's exit line: the daemon keeps working after the TUI
 // closes, and the running count is what makes that worth saying. It is a
@@ -2770,9 +2646,15 @@ func (m *root) footerLine() string {
 	}
 	rows = mainTabRows(rows, m.nextTabName())
 	retry := m.phase == phaseFailed || m.phase == phaseReconnecting
-	line, hits := buildFooter(m.width, rows, bar, target, attention, retry, m.activeCapturesInput())
+	pill := m.footerPill()
+	pw := ansi.StringWidth(pill)
+	line, hits := buildFooter(m.width-pw, rows, bar, target, attention, retry, m.activeCapturesInput())
+	for i := range hits {
+		hits[i].x0 += pw
+		hits[i].x1 += pw
+	}
 	m.footerHits = hits
-	return line
+	return pill + line
 }
 
 func withoutAction(actions []string, drop string) []string {
@@ -2799,6 +2681,9 @@ func (m *root) bodyHeight() int {
 // one is up, and the now-line while it is shown.
 func (m *root) chromeTop() int {
 	n := 1
+	if m.headerRuleShown() {
+		n++
+	}
 	if _, ok := m.statusLine(); ok {
 		n++
 	}

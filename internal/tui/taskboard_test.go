@@ -1,0 +1,320 @@
+package tui
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/lezli01/vincent/internal/apiclient"
+)
+
+// The task board and the wide task workspace (task 150.6). Pure model tests,
+// one property each (task 129 decision 7).
+
+var taskBoardNow = time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+
+func taskBoardFixture() *board {
+	release := &apiclient.TaskIssue{ID: 14, Title: "Ship signed releases", State: "open"}
+	limiter := &apiclient.TaskIssue{ID: 9, Title: "Harden the rate limiter", State: "open"}
+	reason := "nonzero_exit"
+	b := newBoard()
+	b.cards = true
+	b.now = func() time.Time { return taskBoardNow }
+	b.project = projectSel{id: 1, name: "api"}
+	row := func(id int64, state, title string, issue *apiclient.TaskIssue) apiclient.Task {
+		return apiclient.Task{
+			ID: id, ProjectID: 1, State: state, Title: title, Workflow: "verify-build", Issue: issue,
+			CurrentStep: 1, StepTotal: 3, StepName: "verify", UpdatedAt: taskBoardNow.Add(-4 * time.Minute),
+		}
+	}
+	blocked := row(6, stateBlocked, "verify the signed checksums", release)
+	blocked.BlockReason = &reason
+	blocked.AvailableActions = []string{apiclient.ActionRetry, apiclient.ActionCancel}
+	b.tasks = []apiclient.Task{
+		blocked,
+		row(13, stateAwaitingGate, "sign the darwin archives", release),
+		row(15, stateAwaitingInput, "choose a migration strategy", nil),
+		row(21, stateRunning, "soak the limiter", limiter),
+		row(24, stateQueued, "rotate the signing keys", release),
+		row(25, statePaused, "bump the base image", nil),
+		row(19, stateDone, "pin the toolchain", release),
+		row(17, stateAborted, "publish the nightly", release),
+	}
+	b.loaded = true
+	return b
+}
+
+func TestTaskColumnsMatchWhatATaskNeeds(t *testing.T) {
+	for state, want := range map[string]int{
+		stateBlocked: taskColumnNeedsYou, stateAwaitingInput: taskColumnNeedsYou, stateAwaitingGate: taskColumnNeedsYou,
+		stateRunning: taskColumnRunning, stateAwaitingChildren: taskColumnRunning,
+		stateQueued: taskColumnQueued, statePaused: taskColumnQueued,
+		stateDone: taskColumnFinished, stateAborted: taskColumnFinished,
+	} {
+		if got := taskColumnOf(state); got != want {
+			t.Errorf("%s is in column %d, want %d", state, got, want)
+		}
+	}
+}
+
+// Every column groups by issue, and the tasks with no issue come last.
+func TestTaskBoardGroupsEachColumnByIssue(t *testing.T) {
+	groups := taskBoardFixture().cardGroups()
+	needs := groups[taskColumnNeedsYou]
+	if len(needs) != 2 || needs[0].key != "#14" || len(needs[0].tasks) != 2 || needs[1].key != groupNoIssue {
+		t.Fatalf("Needs you = %+v, want #14's two tasks, then no issue", needs)
+	}
+	out := ansi.Strip(taskBoardFixture().renderCards(200, 50))
+	for _, want := range []string{
+		"! Needs you", "▶ Running", "◷ Queued", "✓ Finished", "▦ #14 Ship signed releases", "○ No issue",
+		"#6", "⟡ verify-build", "◷ 4m", "verify the signed checksums", "2/3 verify",
+		"! needs your approval", "! has a question", "◷ waiting for a slot", "⏸ paused",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the board is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// Finished work starts folded, and says what the fold holds.
+func TestTaskBoardFinishedStartsFolded(t *testing.T) {
+	out := ansi.Strip(taskBoardFixture().renderCards(200, 50))
+	if strings.Contains(out, "pin the toolchain") {
+		t.Errorf("a finished task is on show:\n%s", out)
+	}
+	if !strings.Contains(out, "▸ ▦ #14") || !strings.Contains(out, "1 done") {
+		t.Errorf("the folded group does not say what it holds:\n%s", out)
+	}
+}
+
+func TestTaskBoardFitsTheScreen(t *testing.T) {
+	for _, size := range [][2]int{{220, 50}, {170, 40}, {132, 30}, {100, 24}, {80, 24}, {60, 15}} {
+		b := taskBoardFixture()
+		lines := strings.Split(b.renderCards(size[0], size[1]), "\n")
+		if len(lines) != size[1] {
+			t.Errorf("%dx%d: drew %d lines", size[0], size[1], len(lines))
+		}
+		for i, l := range lines {
+			if got := ansi.StringWidth(l); got != size[0] {
+				t.Errorf("%dx%d: line %d is %d wide", size[0], size[1], i, got)
+			}
+		}
+	}
+}
+
+// ↑ and ↓ stay in the column; ← and → cross it at the same height.
+func TestTaskBoardKeysMoveByCardAndColumn(t *testing.T) {
+	b := taskBoardFixture()
+	selected := func() int64 {
+		id, _ := b.selected()
+		return id
+	}
+	if got := selected(); got != 6 {
+		t.Fatalf("a fresh board selects #%d, want #6", got)
+	}
+	b.updateKey(keyPress("down"))
+	if got := selected(); got != 13 {
+		t.Fatalf("down went to #%d, want #13", got)
+	}
+	b.updateKey(keyPress("right"))
+	if got := selected(); got != 21 {
+		t.Fatalf("right went to #%d, want #21, the column's last card", got)
+	}
+	b.updateKey(keyPress("left"))
+	b.updateKey(keyPress("end"))
+	if got := selected(); got != 15 {
+		t.Fatalf("end went to #%d, want #15", got)
+	}
+	b.updateKey(keyPress("home"))
+	if got := selected(); got != 6 {
+		t.Fatalf("home went to #%d, want #6", got)
+	}
+}
+
+// A folded group is somewhere to rest, but not a task: no action reaches a task
+// nobody can see.
+func TestTaskBoardFoldKey(t *testing.T) {
+	b := taskBoardFixture()
+	b.updateKey(keyPress("f"))
+	if !b.cardFolded(taskColumnNeedsYou, "#14") {
+		t.Fatal("f did not fold the group")
+	}
+	if id, ok := b.selected(); ok {
+		t.Fatalf("a folded group selects task #%d", id)
+	}
+	if out := ansi.Strip(b.renderCards(200, 50)); strings.Contains(out, "verify the signed checksums") && !strings.Contains(out, "#6") {
+		t.Errorf("the fold did not hide the group's cards:\n%s", out)
+	}
+	b.updateKey(keyPress("f"))
+	if b.cardFolded(taskColumnNeedsYou, "#14") {
+		t.Fatal("f did not open the group again")
+	}
+	b.updateKey(keyPress("O"))
+	if b.cardFolded(taskColumnFinished, "#14") {
+		t.Fatal("O left Finished folded")
+	}
+	b.updateKey(keyPress("C"))
+	if !b.cardFolded(taskColumnRunning, "#9") {
+		t.Fatal("C left Running open")
+	}
+}
+
+// Work that starts waiting on a person is never hidden behind a fold.
+func TestTaskBoardFoldOpensForAttention(t *testing.T) {
+	b := taskBoardFixture()
+	b.setCardFold(taskColumnNeedsYou, "#14", true)
+	if !b.expandFor(6) || b.cardFolded(taskColumnNeedsYou, "#14") {
+		t.Fatal("the fold hiding a task that needs someone stayed shut")
+	}
+}
+
+// The selected task's issue is lit in every column it has work in, and a click
+// selects the card under the pointer.
+func TestTaskBoardClickSelectsACard(t *testing.T) {
+	b := taskBoardFixture()
+	b.renderCards(200, 50)
+	var target taskCardHit
+	for _, h := range b.cardHits {
+		if h.stop.id == 21 {
+			target = h
+		}
+	}
+	if target.stop.id == 0 {
+		t.Fatalf("task #21 was not drawn: %+v", b.cardHits)
+	}
+	b.cardClick(target.x0, target.y0)
+	if id, _ := b.selected(); id != 21 {
+		t.Fatalf("the click selected #%d, want #21", id)
+	}
+}
+
+func TestTaskPreviewShowsTheTask(t *testing.T) {
+	b := taskBoardFixture()
+	b.renderCards(200, 50)
+	updated := taskBoardNow.Add(-4 * time.Minute)
+	b.applyPreview(taskPreviewMsg{key: taskPreviewKey{6, updated.UnixNano()}, updated: updated, steps: []apiclient.StepRun{
+		{ID: 1, StepIndex: 0, StepName: "fetch", State: "succeeded"},
+		{ID: 2, StepIndex: 1, StepName: "verify", State: "failed", Attempt: 1},
+		{ID: 3, StepIndex: 1, StepName: "verify", State: "failed", Attempt: 2},
+	}})
+	out := ansi.Strip(strings.Join(b.taskPreviewPane(50, 40), "\n"))
+	for _, want := range []string{
+		"#6", "verify the signed checksums", " blocked ", "▤ Steps", "✓ 1 fetch", "✗ 2 verify  attempt 2",
+		"▦ Issue #14", "! 2 need you", "◷ 1 queued", "✓ 2 finished", "⚡ What you can do", "r retry", "c cancel",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the preview is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// Holding an arrow key reads only the task the selection rests on.
+func TestTaskPreviewReadsOnlyWhereTheSelectionRests(t *testing.T) {
+	b := taskBoardFixture()
+	b.client = offlineClient()
+	b.renderCards(200, 50)
+	first := taskPreviewKey{6, taskBoardNow.Add(-4 * time.Minute).UnixNano()}
+	if b.previewCmd() == nil {
+		t.Fatal("selecting a task armed no read")
+	}
+	if b.previewCmd() != nil {
+		t.Fatal("a read armed twice for one task")
+	}
+	b.moveCard(1)
+	if b.previewDue(first) != nil {
+		t.Fatal("a wait for a task since left read it")
+	}
+}
+
+func TestTaskPreviewNeedsAWideTerminal(t *testing.T) {
+	b := taskBoardFixture()
+	if out := ansi.Strip(b.renderCards(taskPreviewMinW-1, 40)); strings.Contains(out, "▤ Steps") {
+		t.Errorf("a narrower terminal drew the preview:\n%s", out)
+	}
+	if out := ansi.Strip(b.renderCards(taskPreviewMinW, 40)); !strings.Contains(out, "▤ Steps") {
+		t.Errorf("a wide terminal drew no preview:\n%s", out)
+	}
+}
+
+// taskWorkspaceFixture is a blocked task in a terminal of the given width.
+func taskWorkspaceFixture(t *testing.T, width int) *taskView {
+	t.Helper()
+	reason, detail := "nonzero_exit", "The checksum did not match."
+	d := newDetail(testCtx(t), newLevelHolder(), newRawHolder(), newHyperlinkHolder())
+	d.taskID, d.loaded = 6, true
+	d.task = apiclient.TaskDetail{BaseBranch: "main", Task: apiclient.Task{
+		ID: 6, Title: "verify the signed checksums", State: stateBlocked, Workflow: "publish-check",
+		BranchName: "feat/6-verify", CurrentStep: 2, StepTotal: 3, BlockReason: &reason, BlockDetail: &detail,
+		AvailableActions: []string{apiclient.ActionRetry, apiclient.ActionRepair, apiclient.ActionCancel},
+		Issue:            &apiclient.TaskIssue{ID: 14, Title: "Ship signed releases"},
+	}}
+	v := newTaskView(d)
+	v.update(tea.WindowSizeMsg{Width: width, Height: 40})
+	v.tab = taskTabOutput
+	return v
+}
+
+// The steps and the details have panes of their own on a wide terminal, and
+// stay reachable as tabs on a narrow one.
+func TestTaskWorkspaceTabsFollowTheWidth(t *testing.T) {
+	wide := taskWorkspaceFixture(t, taskRailMinW)
+	for _, tab := range wide.tabs() {
+		if tab == taskTabSteps || tab == taskTabDetails || tab == taskTabStepDetails {
+			t.Errorf("the wide strip still has the %s tab", tab)
+		}
+	}
+	if wide.tabs()[0] != taskTabOutput {
+		t.Errorf("the wide strip starts on %s, want Output", wide.tabs()[0])
+	}
+	narrow := taskWorkspaceFixture(t, taskRailMinW-1)
+	if narrow.frameless() || len(narrow.tabs()) != 7 {
+		t.Errorf("a narrow workspace lost its tabs: %v", narrow.tabs())
+	}
+}
+
+func TestTaskWorkspaceWideLayout(t *testing.T) {
+	v := taskWorkspaceFixture(t, 180)
+	lines := strings.Split(v.render(180, 40), "\n")
+	if len(lines) != 40 {
+		t.Fatalf("drew %d lines, want 40", len(lines))
+	}
+	for i, l := range lines {
+		if got := ansi.StringWidth(l); got != 180 {
+			t.Errorf("line %d is %d wide", i, got)
+		}
+	}
+	out := ansi.Strip(strings.Join(lines, "\n"))
+	for _, want := range []string{
+		"#6 verify the signed checksums", " blocked ", "step 3 of 3", "▤ Steps", "Details",
+		"publish-check", "feat/6-verify", "issue #14", "The checksum did not match.", "r retry", "R repair",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the workspace is missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// The details pane gives way before the steps do.
+func TestTaskWorkspaceDetailsNeedMoreRoom(t *testing.T) {
+	v := taskWorkspaceFixture(t, taskDetailsMinW-1)
+	out := ansi.Strip(v.render(taskDetailsMinW-1, 40))
+	if strings.Contains(out, "Details") || !strings.Contains(out, "▤ Steps") {
+		t.Errorf("want the steps without the details:\n%s", out)
+	}
+}
+
+// A failure is pinned where it can be acted on, but the Overview tells it at
+// length itself.
+func TestTaskFailureCardIsNotRepeatedOnTheOverview(t *testing.T) {
+	v := taskWorkspaceFixture(t, 180)
+	if len(v.taskFailureCard(100)) == 0 {
+		t.Fatal("a blocked task has no failure card on Output")
+	}
+	v.tab = taskTabOverview
+	if card := v.taskFailureCard(100); card != nil {
+		t.Errorf("the card is repeated on the Overview: %v", card)
+	}
+}

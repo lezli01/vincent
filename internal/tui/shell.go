@@ -219,6 +219,11 @@ func (s *shell) update(msg tea.Msg) (panel, tea.Cmd) {
 // selectTaskMsg; the root performs the screen transition so task navigation is
 // governed by the same router as every other takeover.
 func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
+	p, cmd := s.routeBoardOnly(msg)
+	return p, tea.Batch(cmd, s.board.previewCmd())
+}
+
+func (s *shell) routeBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		s.termW, s.termH = msg.Width, msg.Height
@@ -245,6 +250,12 @@ func (s *shell) updateBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 		_, cmd := s.board.update(msg)
 		return s, cmd
 	case tea.MouseClickMsg:
+		if s.board.cards {
+			if msg.Button == tea.MouseLeft {
+				s.board.cardClick(msg.X, msg.Y-s.bannerLines)
+			}
+			return s, nil
+		}
 		// One outer frame, then the board's header/table chrome.
 		line := msg.Y - s.bannerLines - 1 - s.board.firstRowLine()
 		if line >= 0 {
@@ -287,6 +298,7 @@ func (s *shell) selectAttention() {
 	if !ok {
 		return
 	}
+	s.board.expandFor(next)
 	s.board.selectedID = next
 	s.board.restoreSelection(s.board.rows())
 }
@@ -693,6 +705,10 @@ func (s *shell) renderBoardOnly() string {
 		areaH--
 		s.bannerLines = 1
 	}
+	if s.board.cards && s.bodyW >= 4 && areaH >= 3 {
+		parts = append(parts, s.board.renderCards(s.bodyW, areaH))
+		return strings.Join(parts, "\n")
+	}
 	if s.bodyW < 4 || areaH < 3 {
 		parts = append(parts, s.board.render(s.bodyW, areaH))
 		return strings.Join(parts, "\n")
@@ -969,9 +985,9 @@ func frame(title, content string, w, h int, focused bool) string {
 	label = ansi.Truncate(label, max(inner-1, 0), "…")
 	fill := inner - 1 - ansi.StringWidth(label)
 	var sb strings.Builder
-	sb.WriteString(border.Render("┌─"))
+	sb.WriteString(border.Render("╭─"))
 	sb.WriteString(label)
-	sb.WriteString(border.Render(strings.Repeat("─", max(fill, 0)) + "┐"))
+	sb.WriteString(border.Render(strings.Repeat("─", max(fill, 0)) + "╮"))
 
 	lines := strings.Split(content, "\n")
 	side := border.Render("│")
@@ -990,7 +1006,7 @@ func frame(title, content string, w, h int, focused bool) string {
 		sb.WriteString(side)
 	}
 	sb.WriteString("\n")
-	sb.WriteString(border.Render("└" + strings.Repeat("─", inner) + "┘"))
+	sb.WriteString(border.Render("╰" + strings.Repeat("─", inner) + "╯"))
 	return sb.String()
 }
 

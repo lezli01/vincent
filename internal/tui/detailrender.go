@@ -124,7 +124,7 @@ func (d *detail) clickOutputTitle(x, y int, focused bool) tea.Cmd {
 	if y != 0 {
 		return nil
 	}
-	start := 3 // after "┌─ "
+	start := 3 // after "╭─ "
 	if focused {
 		start += 2 // the "▸ " glyph
 	}
@@ -1126,19 +1126,19 @@ func wrapTimelineFields(fields []string, width int, continuationIndent string) [
 func attemptStateGlyph(state string) string {
 	switch state {
 	case "succeeded", "approved":
-		return "✓"
+		return ic("✓")
 	case "running":
-		return "●"
+		return ic("●")
 	case "failed", "rejected":
-		return "×"
+		return ic("×")
 	case "interrupted":
 		return "!"
 	case "skipped":
 		return "–"
 	case stepStateStopped:
-		return "■"
+		return ic("■")
 	default:
-		return "○"
+		return ic("○")
 	}
 }
 

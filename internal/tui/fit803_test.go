@@ -39,17 +39,6 @@ func TestDaemonFooterFollowsItsSubModes(t *testing.T) {
 	if ctx := m.activeContext(); ctx != ctxDaemon {
 		t.Fatalf("the daemon view's own context = %q", ctx)
 	}
-	for i, k := range d.keys {
-		if k.path == "log_level" {
-			d.cursor = i
-			d.form = newConfigForm(k, d.config)
-		}
-	}
-	if ctx := m.activeContext(); ctx != ctxConfigEdit {
-		t.Errorf("with the config editor open the context is %q, want %q", ctx, ctxConfigEdit)
-	}
-	d.form = nil
-
 	d.skills = &skillsFlow{}
 	if ctx := m.activeContext(); ctx != ctxSkills {
 		t.Errorf("with the skills offer open the context is %q, want %q", ctx, ctxSkills)
@@ -62,38 +51,15 @@ func TestDaemonFooterFollowsItsSubModes(t *testing.T) {
 	}
 }
 
-// DM-7: with the log focused, enter must not open the editor on a config key
-// the user cannot see (the cursor's key, listen by default — a dangerous one).
-func TestDaemonEnterOnTheLogNeverOpensTheEditor(t *testing.T) {
+// Configuration is changed on the Settings screen, which enter opens.
+func TestDaemonEnterOpensSettings(t *testing.T) {
 	_, d := daemonRoot(t, 80, 24, []string{"level=INFO msg=ready"})
-	d.focusConfig = false
-	d.update(namedKey("enter"))
-	if d.form != nil {
-		t.Errorf("enter with the log focused opened the editor on %q", d.form.key.path)
+	_, cmd := d.update(namedKey("enter"))
+	if cmd == nil {
+		t.Fatal("enter did nothing")
 	}
-}
-
-// DM-1: at 80×24 and 78×20 the daemon view fits its frame, with the adapters
-// and at least three log lines on screen and nothing cut by frame().
-func TestDaemonViewShowsTheLogAt80x24(t *testing.T) {
-	var lines []string
-	for i := range 40 {
-		lines = append(lines, fmt.Sprintf("level=INFO msg=line-%02d", i))
-	}
-	for _, sz := range [][2]int{{80, 24}, {78, 20}} {
-		t.Run(fmt.Sprintf("%dx%d", sz[0], sz[1]), func(t *testing.T) {
-			m, _ := daemonRoot(t, sz[0], sz[1], lines)
-			screen := ansi.Strip(content(m))
-			if !strings.Contains(screen, "claude") {
-				t.Errorf("the adapters block is not on screen:\n%s", screen)
-			}
-			for _, want := range []string{"line-37", "line-38", "line-39"} {
-				if !strings.Contains(screen, want) {
-					t.Errorf("log line %s is not on screen:\n%s", want, screen)
-				}
-			}
-			assertNoFrameClip(t, screen)
-		})
+	if msg, ok := cmd().(selectViewMsg); !ok || msg.id != viewSettings {
+		t.Fatalf("enter sent %#v, want Settings", cmd())
 	}
 }
 
@@ -105,7 +71,6 @@ func TestDaemonPinnedBlocksStartAtAHeading(t *testing.T) {
 	for _, sz := range [][2]int{{80, 24}, {78, 20}, {80, 30}} {
 		t.Run(fmt.Sprintf("%dx%d", sz[0], sz[1]), func(t *testing.T) {
 			_, d := daemonRoot(t, sz[0], sz[1], []string{"level=INFO msg=ready"})
-			d.focusConfig = false
 			lines := strings.Split(ansi.Strip(d.render(sz[0]-2, sz[1]-3)), "\n")
 			// The log path renders OS-native: backslashes on Windows.
 			logPath := filepath.FromSlash("/data/logs/daemon.log")
@@ -115,7 +80,7 @@ func TestDaemonPinnedBlocksStartAtAHeading(t *testing.T) {
 			}
 			next := strings.TrimSpace(lines[at+1])
 			if strings.Contains(next, "↑") {
-				if !strings.Contains(next, "tab") {
+				if !strings.Contains(next, "enter") {
 					t.Errorf("the cue names no key: %q", next)
 				}
 				next = strings.TrimSpace(lines[at+2])
@@ -146,14 +111,14 @@ func TestConfigConfirmationShowsALongValueAndItsKeys(t *testing.T) {
 	if !d.form.confirming {
 		t.Fatal("notify.command did not ask for confirmation")
 	}
-	out := ansi.Strip(strings.Join(d.form.render(80), "\n"))
+	out := ansi.Strip(strings.Join(d.confirmCard(80), "\n"))
 	for _, l := range strings.Split(out, "\n") {
 		if w := ansi.StringWidth(l); w > 80 {
 			t.Errorf("confirmation line is %d columns wide, the frame clips it: %q", w, l)
 		}
 	}
 	flat := strings.Join(strings.Fields(out), " ")
-	if !strings.Contains(flat, "END") || !strings.Contains(flat, "y confirm") {
+	if !strings.Contains(flat, "END") || !strings.Contains(flat, "y apply") {
 		t.Errorf("the confirmation does not show the full value and its keys at 80 columns:\n%s", out)
 	}
 }

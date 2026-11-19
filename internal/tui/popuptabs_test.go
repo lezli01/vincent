@@ -305,9 +305,9 @@ func popupFrameRows(t *testing.T, screen string) int {
 	top, bottom := -1, -1
 	for i, line := range strings.Split(screen, "\n") {
 		switch {
-		case top < 0 && strings.Contains(line, "┌─"):
+		case top < 0 && strings.Contains(line, "╭─"):
 			top = i
-		case top >= 0 && strings.Contains(line, "└─"):
+		case top >= 0 && strings.Contains(line, "╰─"):
 			bottom = i
 		}
 	}

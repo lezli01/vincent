@@ -336,7 +336,7 @@ func TestTakeoversShareThePanelChrome(t *testing.T) {
 		if !strings.Contains(body, focusGlyph+" "+title) {
 			t.Errorf("%s: no framed title in the body", title)
 		}
-		if !strings.Contains(body, "┌─") || !strings.Contains(body, "└") {
+		if !strings.Contains(body, "╭─") || !strings.Contains(body, "╰") {
 			t.Errorf("%s: no frame borders", title)
 		}
 		// The retired duplicate rows must be gone; the registry footer is

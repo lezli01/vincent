@@ -128,6 +128,12 @@ type projectsView struct {
 
 	refreshPending bool
 	width, height  int
+	// termW is the terminal's width; perRow and hits are the wide layout's
+	// grid, for the arrow keys and a click (mgmtscreens.go).
+	termW, perRow int
+	hits          []mgmtHit
+	// currentID is the project the rest of the TUI is on, for its card's badge.
+	currentID int64
 }
 
 func newProjectsView() *projectsView {
@@ -147,6 +153,9 @@ func newProjectsView() *projectsView {
 }
 
 func (p *projectsView) title() string { return "Projects" }
+
+// setCurrentProject records the selection (currentProjectAware).
+func (p *projectsView) setCurrentProject(id int64) { p.currentID = id }
 
 // setClient fetches only while the overview is on screen: its stats are
 // worth a request only while someone is reading them, and activation
@@ -253,7 +262,14 @@ func (p *projectsView) scheduleRefresh() tea.Cmd {
 func (p *projectsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		p.width, p.height = msg.Width, msg.Height
+		p.width, p.height, p.termW = msg.Width, msg.Height, msg.Width
+		return p, nil
+	case tea.MouseClickMsg:
+		if i, ok := mgmtHitAt(p.hits, msg); ok && p.wide() && p.confirm == nil {
+			p.inAttention = false
+			moveCursorTo(&p.tbl, i)
+			p.rememberSelection()
+		}
 		return p, nil
 	case viewActivatedMsg:
 		if msg.id == viewProjects {
@@ -416,6 +432,22 @@ func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			p.attnCursor = min(p.attnCursor+1, max(len(p.attention())-1, 0))
 		}
 		return p, nil
+	}
+	if p.wide() {
+		switch msg.String() {
+		case "up", "k":
+			p.moveProject(-max(p.perRow, 1))
+			return p, nil
+		case "down", "j":
+			p.moveProject(max(p.perRow, 1))
+			return p, nil
+		case "left", "h":
+			p.moveProject(-1)
+			return p, nil
+		case "right", "l":
+			p.moveProject(1)
+			return p, nil
+		}
 	}
 	var cmd tea.Cmd
 	p.tbl, cmd = p.tbl.Update(msg)

@@ -175,7 +175,7 @@ lists only the hard dependencies the parent records as "Blocked by".
   closed there as Won't Do and here as not planned); the new
   `tui-issue-jira.png` (the author's answer to #916: a dedicated
   shot, not a mixed list), and `tui-project-overview.png`, `tui-project-picker.png` and
-  `tui-daemon-config.png` recaptured. ✓ 2026-11-06
+  the daemon config screenshot recaptured. ✓ 2026-11-06
 - [x] **142.21** ([#954](https://github.com/lezli01/vincent/issues/954)) The
   `jira` and `issuesource` tests read 142.3's real captures instead of the
   hand-shaped `cloud-docs-*` stopgap (decision 3). Depends: 142.3. Search

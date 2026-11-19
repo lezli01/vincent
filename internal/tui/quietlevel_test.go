@@ -178,7 +178,7 @@ func TestQuietInAChatHidesTheSameThings(t *testing.T) {
 		}
 	}
 	// The turn frame and the answer are what is left.
-	for _, want := range []string{"── turn 1 ──", "here is the answer"} {
+	for _, want := range []string{"turn 1", "here is the answer"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("quiet in a chat dropped %q:\n%s", want, body)
 		}

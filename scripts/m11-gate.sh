@@ -289,7 +289,7 @@ OUT="$("$VINCENT" config get tui.default_project | tr -d '\r')"
 echo "== 10. tui.tabs: a bad list refused, a good one round-trips"
 # Served as an array even when the file never mentions the key.
 TABS="$(api GET /config | jq -c .tui.tabs | tr -d '\r')" || fail "GET /v1/config (tui.tabs) failed"
-[[ "$TABS" == '["issues","tasks"]' ]] || fail "tui.tabs is served as $TABS by default, want [\"issues\",\"tasks\"]"
+[[ "$TABS" == '["issues","tasks","chats"]' ]] || fail "tui.tabs is served as $TABS by default, want [\"issues\",\"tasks\",\"chats\"]"
 cp "$CONFIG_FILE" "$TMP/before.yaml"
 for body in '{"tui":{"tabs":[]}}' '{"tui":{"tabs":["tasks","tasks"]}}' '{"tui":{"tabs":["tasks","board"]}}'; do
   STATUS="$(api_status PATCH /config -d "$body")" || fail "curl PATCH ($body) failed"

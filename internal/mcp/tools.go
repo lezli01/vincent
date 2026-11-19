@@ -49,6 +49,9 @@ var Excluded = []Route{
 	// (mcp.wire_steps) — a step editing any of those is a step rewriting the
 	// rules it runs under (task 060 decision 4).
 	{Method: http.MethodPatch, Path: "/v1/config"},
+	// A preview for that patch's branch_template, with no use outside a form
+	// that edits the configuration (task 152).
+	{Method: http.MethodPost, Path: "/v1/config/branch-preview"},
 	// The workflow write routes, under the same wording (task 065
 	// decision 5): a workflow file is what the daemon runs, so an agent
 	// editing one is an agent rewriting the rules it runs under. Nothing

@@ -97,6 +97,11 @@ type triggerConfirm struct {
 
 // triggersView is §15's view 11.
 type triggersView struct {
+	// termW is the terminal's width and hits the wide layout's cards
+	// (mgmtscreens.go).
+	termW int
+	hits  []mgmtHit
+
 	// projectScope is the root's selected project (task 132.2). A switch
 	// reloads, and stamps drops a load issued for the previous project or
 	// overtaken by a newer one (task 132.5).
@@ -280,7 +285,12 @@ func (v *triggersView) update(msg tea.Msg) (panel, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		v.width, v.height = msg.Width, msg.Height
+		v.width, v.height, v.termW = msg.Width, msg.Height, msg.Width
+		return v, nil
+	case tea.MouseClickMsg:
+		if i, ok := mgmtHitAt(v.hits, msg); ok && v.wide() && v.confirm == nil {
+			return v, v.move(i - v.cursor)
+		}
 		return v, nil
 	case viewActivatedMsg:
 		if msg.id != viewTriggers {

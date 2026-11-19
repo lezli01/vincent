@@ -21,6 +21,9 @@ func (p *projectsView) render(width, height int) string {
 	if height > 0 {
 		p.height = height
 	}
+	if p.wide() {
+		return p.renderWide(p.width, p.height)
+	}
 	rows := p.visible()
 	if p.form != nil {
 		// The add/edit form takes the focused surface as it always has

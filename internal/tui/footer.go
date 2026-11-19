@@ -105,6 +105,9 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		rest = footerRestSegs(bar, target, attention, retry)
 	}
 
+	if width > 0 {
+		hints = footerMainHints(hints)
+	}
 	if width <= 0 {
 		// No width to budget against and nothing to truncate, so nothing is
 		// hidden by a layout that was never laid out: every hint, no `+N`.
@@ -203,6 +206,29 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 	return line + strings.Repeat(" ", pad) + pinned.String(), hits
 }
 
+// footerMainKeys is how many of a surface's palette-reachable keys the status
+// bar offers (task 150 decision 11, reversing task 094's width-only contest):
+// the main ones, however wide the terminal. The rest are one `+N` away.
+const footerMainKeys = 6
+
+// footerMainHints keeps the first footerMainKeys counted hints. A hint the
+// palette cannot reach — a popup's or a form's own keys — is never held back,
+// because nothing else on screen would name it.
+func footerMainHints(hints []footerSeg) []footerSeg {
+	out := make([]footerSeg, 0, len(hints))
+	n := 0
+	for _, h := range hints {
+		if h.counts {
+			if n == footerMainKeys {
+				continue
+			}
+			n++
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
 // footerLeadFloor is the fewest cells left beside a leading status that are
 // worth giving to hints; under it the status has the left of the line alone.
 const footerLeadFloor = 8
@@ -280,7 +306,7 @@ func buildPromptFooter(width int, keys promptAnswers, textField bool) (string, [
 // footerSep joins two segments. Its width is the per-gap cost every budget
 // here has to pay for.
 func footerSep() (string, int) {
-	sep := styleDim.Render(" · ")
+	const sep = "  "
 	return sep, ansi.StringWidth(sep)
 }
 

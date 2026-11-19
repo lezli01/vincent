@@ -41,6 +41,9 @@ const (
 	// chats have.
 	viewIssues
 	viewIssue
+	// viewSettings is every key of config.yaml on a screen of its own (task
+	// 152). It is reached from the palette and the Daemon screen, never a tab.
+	viewSettings
 	viewCount
 )
 
@@ -142,6 +145,12 @@ type projectListAware interface {
 	setProjects([]apiclient.Project)
 }
 
+// currentProjectAware is a view that shows which project is selected without
+// being scoped to it: the overview lists them all.
+type currentProjectAware interface {
+	setCurrentProject(id int64)
+}
+
 // projectScope is the projectScoped implementation every project-bearing
 // view embeds. It stores the selection and, when the embedding view has
 // supplied one, runs its list load: a switch reloads (task 132 decision 25),
@@ -230,7 +239,11 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 	// them as separate screens. The task view owns detail updates; the home shell
 	// retains the pointer only so both screens share the established action state.
 	home.boardOnly = true
+	home.board.cards = true
 	home.detail.active = false
+	chats := newChatsView()
+	chat := newChatView(level, raw, links)
+	chat.side = chats
 	return [viewCount]panel{
 		viewHome:      home,
 		viewTask:      newTaskView(home.detail),
@@ -245,12 +258,13 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 		// switch to a project without one leaves the screen up with its
 		// reason.
 		viewPullRequests:  newPullRequestsView(),
-		viewChats:         newChatsView(),
-		viewChat:          newChatView(level, raw, links),
+		viewChats:         chats,
+		viewChat:          chat,
 		viewArchived:      newArchivedBoard(),
 		viewArchivedChats: newArchivedChatsView(),
 		viewTriggers:      newTriggersView(),
 		viewIssues:        newIssuesView(),
 		viewIssue:         newIssueView(raw, links),
+		viewSettings:      newSettingsView(),
 	}
 }

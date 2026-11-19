@@ -37,7 +37,7 @@ func TestBuildRefusals(t *testing.T) {
 		{"shifted letter", map[string]string{"refresh": "shift+r"}, []string{"refresh", `"R"`}},
 		{"a live global", map[string]string{"refresh": "q"}, []string{"refresh", `"q"`, "quit"}},
 		{"a §6 action", map[string]string{"filter": "p"}, []string{"filter", `"p"`, "pause"}},
-		{"a fixed panel row", map[string]string{"refresh": "g"}, []string{"refresh", `"g"`, "task table", "group the tasks"}},
+		{"a fixed panel row", map[string]string{"refresh": "f"}, []string{"refresh", `"f"`, "task table", "fold or open"}},
 		{"a reserved vim alias", map[string]string{"archive": "j"}, []string{"archive", `"j"`, "move down (vim)"}},
 		{"second meaning on a disjoint surface", map[string]string{"delete": "i"}, []string{"delete", `"i"`, "workflows", "structured form"}},
 		{"an operation's key on another operation", map[string]string{"browser": "e"}, []string{`"e"`, "editor", "browser"}},

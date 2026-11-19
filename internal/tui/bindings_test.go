@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/nerdfont"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
 )
@@ -482,13 +484,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("/ did not open the task filter")
 			}
 		},
-		"g": func(t *testing.T) {
+		"f": func(t *testing.T) {
 			s, _ := newShellFixture(t, task(1, stateRunning))
 			s.focus = panelTasks
-			s.board.group = defaultGrouping()
-			s.update(registryKey(t, "g"))
-			if s.board.group.equal(defaultGrouping()) {
-				t.Fatalf("g did not change the grouping (still %s)", s.board.group.label())
+			s.board.cards = true
+			s.update(registryKey(t, "f"))
+			if !s.board.cardFolded(taskColumnRunning, groupNoIssue) {
+				t.Fatal("f did not fold the issue group under the cursor")
 			}
 		},
 		"space": func(t *testing.T) {
@@ -513,28 +515,6 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			s.update(registryKey(t, "V"))
 			if s.board.hasMarks() {
 				t.Fatalf("V did not clear the selection (marks %v)", s.board.marks)
-			}
-		},
-		"L": func(t *testing.T) {
-			s, _ := newShellFixture(t, task(4, stateAwaitingChildren))
-			s.focus = panelTasks
-			s.update(registryKey(t, "L"))
-			if !s.board.lanes.expanded.has(4) {
-				t.Fatalf("L did not expand the fan-out (expanded %v)", s.board.lanes.expanded)
-			}
-			s.update(registryKey(t, "L"))
-			if s.board.lanes.expanded.has(4) {
-				t.Fatalf("L did not collapse it again (expanded %v)", s.board.lanes.expanded)
-			}
-			// A task with no lanes answers the press with none: the fetch
-			// comes back empty and the row closes itself, so the marker never
-			// promises rows that are not there.
-			s2, _ := newShellFixture(t, task(5, stateRunning))
-			s2.focus = panelTasks
-			s2.update(registryKey(t, "L"))
-			s2.update(boardLanesMsg{parentID: 5})
-			if s2.board.lanes.expanded.has(5) {
-				t.Fatalf("an empty lane fetch left task 5 expanded (%v)", s2.board.lanes.expanded)
 			}
 		},
 		"left": func(t *testing.T) {
@@ -738,6 +718,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	// models the live boards are, in archived mode — which is the point of
 	// decision 5: one model, so a probe here is a probe of the real screen.
 	ctxArchived: {
+		"tab": func(t *testing.T) {
+			b := testArchivedBoard()
+			if _, cmd := b.updateKey(registryKey(t, "tab")); cmd == nil {
+				t.Fatal("tab did not switch to the archived chats")
+			}
+		},
 		"R": func(t *testing.T) {
 			b := testArchivedBoard()
 			b.client = offlineClient()
@@ -807,6 +793,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxArchivedChats: {
+		"tab": func(t *testing.T) {
+			v := archivedChatsFixture()
+			if _, cmd := v.updateKey(registryKey(t, "tab")); cmd == nil {
+				t.Fatal("tab did not switch to the archived tasks")
+			}
+		},
 		"enter": func(t *testing.T) {
 			v := archivedChatsFixture()
 			_, cmd := v.updateKey(registryKey(t, "enter"))
@@ -1218,32 +1210,17 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"left": func(t *testing.T) {
 			v := issuesFixture()
+			v.selectIssue(4)
 			v.updateKey(registryKey(t, "left"))
-			if !v.folded["open"] {
-				t.Fatal("left did not fold the cursor's section")
+			if row, ok := v.current(); !ok || row.section != 0 {
+				t.Fatalf("left left the cursor on %+v, want the first column", row)
 			}
 		},
 		"right": func(t *testing.T) {
 			v := issuesFixture()
-			v.updateKey(registryKey(t, "left"))
 			v.updateKey(registryKey(t, "right"))
-			if v.folded["open"] {
-				t.Fatal("right did not expand the folded section")
-			}
-		},
-		"C": func(t *testing.T) {
-			v := issuesFixture()
-			v.updateKey(registryKey(t, "C"))
-			if !v.folded["open"] || !v.folded["in_progress"] || !v.folded["hand_off"] {
-				t.Fatalf("C folded %v, want every shown section", v.folded)
-			}
-		},
-		"O": func(t *testing.T) {
-			v := issuesFixture()
-			v.updateKey(registryKey(t, "C"))
-			v.updateKey(registryKey(t, "O"))
-			if len(v.folded) != 0 {
-				t.Fatalf("O left %v folded", v.folded)
+			if row, ok := v.current(); !ok || row.section == 0 {
+				t.Fatalf("right left the cursor on %+v, want a later column", row)
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -1270,10 +1247,10 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"s": func(t *testing.T) {
 			v := issuesFixture()
 			if _, cmd := v.updateKey(registryKey(t, "s")); cmd == nil {
-				t.Fatal("s did not re-list with the done lane shown")
+				t.Fatal("s did not re-list with the done lane hidden")
 			}
-			if !v.showDone {
-				t.Fatal("s did not show the done lane")
+			if v.showDone {
+				t.Fatal("s did not hide the done lane")
 			}
 		},
 		"R": func(t *testing.T) {
@@ -1763,6 +1740,22 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxNewTask: {
+		"left": func(t *testing.T) {
+			n := wideTask(t)
+			n.cursor = ntTitle
+			press(n, "left")
+			if n.cursor != ntWorkflow {
+				t.Fatalf("← left the cursor on %v, want the workflow list", n.cursor)
+			}
+		},
+		"/": func(t *testing.T) {
+			n := wideTask(t)
+			n.cursor = ntWorkflow
+			press(n, "/")
+			if n.pick == nil || !n.pick.filtering {
+				t.Fatal("/ did not start filtering the workflow list")
+			}
+		},
 		"enter": func(t *testing.T) {
 			n := loadedForm(t)
 			moveTo(n, ntWorkflow)
@@ -2555,7 +2548,117 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 
+	ctxFonts: {
+		"enter": func(t *testing.T) {
+			d := openFontFlow(t)
+			if _, cmd := d.updateKey(registryKey(t, "enter")); cmd == nil || d.fonts.stage != fontWorking {
+				t.Fatal("enter did not start the install")
+			}
+		},
+		"y": func(t *testing.T) {
+			d := openFontFlow(t)
+			if _, cmd := d.updateKey(registryKey(t, "y")); cmd == nil {
+				t.Fatal("y did not act on the font flow")
+			}
+		},
+		"n": func(t *testing.T) {
+			d := openFontFlow(t)
+			d.updateKey(registryKey(t, "n"))
+			if d.fonts != nil {
+				t.Fatal("n did not close the font flow")
+			}
+		},
+		"u": func(t *testing.T) {
+			d := openFontFlow(t)
+			d.fonts.stage, d.fonts.state = fontPreview, nerdfont.StateInstalled
+			if _, cmd := d.updateKey(registryKey(t, "u")); cmd == nil {
+				t.Fatal("u did not remove the font")
+			}
+		},
+		"esc": func(t *testing.T) {
+			d := openFontFlow(t)
+			d.updateKey(registryKey(t, "esc"))
+			if d.fonts != nil {
+				t.Fatal("esc did not close the font flow")
+			}
+		},
+	},
+
+	ctxSettings: {
+		"down": func(t *testing.T) {
+			v := settingsFixture(t)
+			before := v.selected
+			v.updateKey(registryKey(t, "down"))
+			if v.selected == before {
+				t.Fatal("down did not move to the next setting")
+			}
+		},
+		"left": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.client = offlineClient()
+			v.updateKey(registryKey(t, "left"))
+			if v.value(mustSetting(t, v, v.selected)) == mustSetting(t, v, v.selected).read(v.config) {
+				t.Fatal("left did not change the setting")
+			}
+		},
+		"enter": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.updateKey(registryKey(t, "enter"))
+			if v.form == nil {
+				t.Fatal("enter did not open the editor")
+			}
+		},
+		"tab": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.updateKey(registryKey(t, "tab"))
+			if v.category != 1 {
+				t.Fatalf("tab left the category at %d", v.category)
+			}
+		},
+		"/": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.updateKey(registryKey(t, "/"))
+			if !v.searching {
+				t.Fatal("/ did not start a search")
+			}
+		},
+		"backspace": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.client = offlineClient()
+			v.config.MaxParallelTasks = 9
+			v.updateKey(registryKey(t, "backspace"))
+			if got := v.shown["max_parallel_tasks"]; got != "3" {
+				t.Fatalf("backspace sent %q, want the default 3", got)
+			}
+		},
+		"e": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.info, v.infoOK = apiclient.Info{ConfigPath: "/tmp/config.yaml"}, true
+			v.exec = func(_ *exec.Cmd, _ tea.ExecCallback) tea.Cmd { return func() tea.Msg { return nil } }
+			if v.updateKey(registryKey(t, "e")) == nil {
+				t.Fatal("e did not open config.yaml")
+			}
+		},
+		"R": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.client = offlineClient()
+			if v.updateKey(registryKey(t, "R")) == nil {
+				t.Fatal("R did not re-read the configuration")
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := settingsFixture(t)
+			if v.updateKey(registryKey(t, "esc")) == nil {
+				t.Fatal("esc did not leave Settings")
+			}
+		},
+	},
 	ctxDaemon: {
+		"U": func(t *testing.T) {
+			if openFontFlow(t).fonts == nil {
+				t.Fatal("U did not open the font flow")
+			}
+		},
 		"R": func(t *testing.T) {
 			d := newTestDaemonView([]string{"a log line"}, nil)
 			if _, cmd := d.updateKey(registryKey(t, "R")); cmd == nil {
@@ -2578,21 +2681,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("down did not reach the log pane's scroll path (follow was never re-synced)")
 			}
 		},
-		"tab": func(t *testing.T) {
-			d := newTestDaemonView([]string{"a log line"}, nil)
-			d.updateKey(registryKey(t, "tab"))
-			if !d.focusConfig {
-				t.Fatal("tab did not move the arrows onto the config list")
-			}
-		},
 		"enter": func(t *testing.T) {
 			d := newTestDaemonView([]string{"a log line"}, nil)
-			d.update(daemonConfigMsg{config: testConfig()})
-			// The row is live only with the config list focused (#803).
-			d.focusConfig = true
-			d.updateKey(registryKey(t, "enter"))
-			if d.form == nil {
-				t.Fatal("enter did not open the config editor")
+			_, cmd := d.updateKey(registryKey(t, "enter"))
+			if cmd == nil {
+				t.Fatal("enter did not open Settings")
+			}
+			if msg, ok := cmd().(selectViewMsg); !ok || msg.id != viewSettings {
+				t.Fatalf("enter sent %#v, want Settings", msg)
 			}
 		},
 		"i": func(t *testing.T) {

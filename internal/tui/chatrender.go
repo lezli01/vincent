@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	"charm.land/lipgloss/v2"
@@ -56,11 +57,24 @@ func (v *chatView) render(width, height int) string {
 	if width < 4 || height < 4 {
 		return ""
 	}
+	if v.sideShown(width) {
+		return v.renderWorkspace(width, height)
+	}
+	return v.renderConversation(width, height)
+}
+
+// renderConversation is the conversation itself, at whatever width it is given.
+func (v *chatView) renderConversation(width, height int) string {
+	return v.conversationUnder([]string{v.headerLine(width), ""}, width, height)
+}
+
+// conversationUnder is the conversation below head, which the workspace leaves
+// empty because its pane's top edge says the same things.
+func (v *chatView) conversationUnder(head []string, width, height int) string {
 	if width > 0 {
 		v.width = width
 	}
 	v.height = height
-	head := []string{v.headerLine(width), ""}
 	// The §7.4 popup takes the composer's place rather than stacking under
 	// it (issue #801 F7): it owns the keyboard, so a composer drawn beside
 	// it is a field nobody can type into, and the two together left the
@@ -88,13 +102,17 @@ func (v *chatView) render(width, height int) string {
 // the whole form around the cursor cut the line that says how to submit or
 // leave it, which is the one line every question needs.
 func (v *chatView) formLines(width, height int) []string {
-	lines, from, to := v.form.lines(width)
+	inner := max(width-4, 1)
+	lines, from, to := v.form.lines(inner)
 	keys := lines[len(lines)-1]
-	rows := windowRange(lines[:len(lines)-1], from, to, max(height/2-1, 1))
-	out := make([]string, 0, len(rows)+2)
-	out = append(out, "")
-	out = append(out, rows...)
-	return append(out, keys)
+	rows := windowRange(lines[:len(lines)-1], from, to, max(height/2-4, 1))
+	body := append(slices.Clone(rows), "", keys)
+	agent := "the agent"
+	if v.chat != nil {
+		agent = v.chat.Agent
+	}
+	card := drawBox(styleWarn.Bold(true).Render(chatAskingTitle(agent)), "", body, width, len(body)+2, edgesThick, styleWarn)
+	return append([]string{""}, card...)
 }
 
 // bodyView lays the conversation into the viewport. The window is bottom-
@@ -105,12 +123,15 @@ func (v *chatView) formLines(width, height int) []string {
 func (v *chatView) bodyView(width, height int) string {
 	v.vp.SetWidth(max(width, 1))
 	v.vp.SetHeight(max(height, 1))
-	if v.bodyDirty || v.builtWidth != width || v.builtLinks != v.links.get() || v.builtLevel != v.level.get() {
+	// The turns' ages are in the body, so it is rebuilt as the minutes pass.
+	minute := v.now().Truncate(time.Minute)
+	if v.bodyDirty || v.builtWidth != width || v.builtLinks != v.links.get() || v.builtLevel != v.level.get() ||
+		!v.builtMinute.Equal(minute) {
 		// The paused anchor, as in the task workspace (#291): a resize, the
 		// maxRecords cap and the level and raw toggles all rebuild the body,
 		// and a reader who scrolled away from the tail keeps their place
 		// across every one of them.
-		keep := anchorAt(v.anchors, v.vp.YOffset())
+		keep, above := anchorBelow(v.anchors, v.vp.YOffset())
 		lines, anchors := v.bodyLinesAt(width)
 		v.vp.SetContent(strings.Join(lines, "\n"))
 		v.anchors = anchors
@@ -118,11 +139,12 @@ func (v *chatView) bodyView(width, height int) string {
 		v.builtWidth = width
 		v.builtLinks = v.links.get()
 		v.builtLevel = v.level.get()
+		v.builtMinute = minute
 		switch y, ok := anchorIndex(anchors, keep); {
 		case v.following:
 			v.vp.GotoBottom()
 		case ok:
-			v.vp.SetYOffset(y)
+			v.vp.SetYOffset(max(y-above, 0))
 		}
 	}
 	return v.vp.View()
@@ -176,27 +198,8 @@ func (v *chatView) headerLine(width int) string {
 	if v.chat.LinkedTaskID != nil {
 		mid = append(mid, chatHeaderSeg{styleDim.Render(fmt.Sprintf("on task #%d", *v.chat.LinkedTaskID)), 5})
 	}
-	pause := styleDim.Render("⏸")
-	var right []chatHeaderSeg
-	if !v.following {
-		right = append(right, chatHeaderSeg{pause, 1})
-	}
-	if v.raw.get() {
-		right = append(right, chatHeaderSeg{styleDim.Render("raw"), 2})
-	}
-	// The level rides in the header for the reason the output pane's title
-	// carries it: ctrl+r on a conversation with no reasoning and no
-	// unrecognized lines changes nothing on screen, and a reader needs to
-	// see that the key did something.
-	if l := v.level.get(); l != levelNormal {
-		right = append(right, chatHeaderSeg{styleDim.Render(l.String()), 2})
-	}
-	// Where the window is, while it is not at the live end (issue #801 F8):
-	// `⏸` says the body stopped following, and this says how far back it is.
-	if pos := v.turnPosition(); pos != "" {
-		right = append(right, chatHeaderSeg{styleDim.Render(pos), 4})
-	}
-	right = append(right, chatHeaderSeg{styleDim.Render(plural(len(v.turns), "turn", "turns")), 3})
+	pause := chatPauseMark()
+	right := append(v.headerMarks(), chatHeaderSeg{styleDim.Render(plural(len(v.turns), "turn", "turns")), 3})
 
 	sep := styleDim.Render("  ·  ")
 	join := func(segs []chatHeaderSeg, sepw string) string {
@@ -227,6 +230,34 @@ func (v *chatView) headerLine(width int) string {
 			return padBetween(" "+styleTitle.Render(t)+sep+midText, rightText+" ", width)
 		}
 	}
+}
+
+// chatPauseMark says the body stopped following the live end.
+func chatPauseMark() string { return styleDim.Render("⏸") }
+
+// headerMarks are the reading modes in force: paused, raw, the verbosity level
+// and how far back the window is.
+func (v *chatView) headerMarks() []chatHeaderSeg {
+	var marks []chatHeaderSeg
+	if !v.following {
+		marks = append(marks, chatHeaderSeg{chatPauseMark(), 1})
+	}
+	if v.raw.get() {
+		marks = append(marks, chatHeaderSeg{styleDim.Render("raw"), 2})
+	}
+	// The level rides in the header for the reason the output pane's title
+	// carries it: ctrl+r on a conversation with no reasoning and no
+	// unrecognized lines changes nothing on screen, and a reader needs to
+	// see that the key did something.
+	if l := v.level.get(); l != levelNormal {
+		marks = append(marks, chatHeaderSeg{styleDim.Render(l.String()), 2})
+	}
+	// Where the window is, while it is not at the live end (issue #801 F8):
+	// `⏸` says the body stopped following, and this says how far back it is.
+	if pos := v.turnPosition(); pos != "" {
+		marks = append(marks, chatHeaderSeg{styleDim.Render(pos), 4})
+	}
+	return marks
 }
 
 // dropHighest removes the highest-ranked cell of either side, and reports
@@ -305,21 +336,31 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 	links := v.links.get()
 	v.mdcache.begin()
 	defer v.mdcache.sweep()
+	agent := "agent"
+	if v.chat != nil {
+		agent = v.chat.Agent
+	}
+	now := v.now()
 	for i := range v.turns {
 		t := &v.turns[i]
+		if i > 0 {
+			lines = append(lines, "")
+			pad(1)
+		}
 		v.turnAt[t.Seq] = len(lines)
-		lines = append(lines, styleDim.Render(fmt.Sprintf(" ── turn %d ──", t.Seq)))
-		// The human's half of the turn is a right-aligned bubble; the agent's
+		// The human's half of the turn is a right-aligned card; the agent's
 		// half below is untouched, flush left at the full width. The pad is
-		// by the bubble's *actual* height, so the prompt keeps carrying the
-		// zero anchor and v.turnAt[t.Seq] still points at the separator.
-		prompt := promptBubbleLines(t.Prompt, width)
+		// by the card's *actual* height, so the prompt keeps carrying the
+		// zero anchor and v.turnAt[t.Seq] still points at the card's top.
+		asked, answered := chatTurnAges(*t, now)
+		prompt := promptCardLines(t.Prompt, asked, width)
 		lines = append(lines, prompt...)
-		pad(1 + len(prompt))
+		lines = append(lines, "", " "+chatTurnHeading(agent, t.Seq, answered), "")
+		pad(len(prompt) + 3)
 		switch recs := v.turnRecords[t.Seq]; {
 		case len(recs) > 0:
 			body, at := outputLinesAt(recs, v.recordSeqs(t.Seq), level, width,
-				lineOpts{expandKey: chatExpandKey, raw: raw, hyperlinks: links, cache: &v.mdcache})
+				lineOpts{expandKey: chatExpandKey, raw: raw, hyperlinks: links, cache: &v.mdcache, toolChecks: true})
 			lines = append(lines, body...)
 			anchors = append(anchors, at...)
 		case t.State == "running":

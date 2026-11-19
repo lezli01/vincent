@@ -28,6 +28,11 @@ func newTestDaemonView(lines []string, tailErr error) *daemonView {
 		return filepath.Join(os.TempDir(), "vincent-tui-no-such-home", ".claude", "settings.json"), nil
 	}
 	d.exePath = func() (string, error) { return testExe, nil }
+	// Never the developer's real fonts, and never their terminal (task 151).
+	d.fontDir = func() (string, error) {
+		return filepath.Join(os.TempDir(), "vincent-tui-no-such-fonts"), nil
+	}
+	d.fontEnv = func(string) string { return "" }
 	return d
 }
 
@@ -102,13 +107,6 @@ func TestDaemonViewRendersTheTreeCostCap(t *testing.T) {
 	d := newTestDaemonView(nil, nil)
 	d.update(daemonInfoMsg{info: testInfo()})
 	d.update(daemonConfigMsg{config: testConfig()})
-	// The full list scrolls under the cursor, so park it on the row.
-	d.focusConfig = true
-	for i, k := range d.keys {
-		if k.path == "max_tree_cost_usd" {
-			d.cursor = i
-		}
-	}
 	treeLine := func(out string) string {
 		t.Helper()
 		for _, line := range strings.Split(out, "\n") {
@@ -478,19 +476,15 @@ func TestDaemonViewSingularOrphanLine(t *testing.T) {
 	}
 }
 
-// openConfigForm is the probe helper: a daemon view with a configuration
+// openConfigForm is the probe helper: the Settings screen with a configuration
 // loaded and the editor open on one named key.
-func openConfigForm(t *testing.T, path string) *daemonView {
+func openConfigForm(t *testing.T, path string) *settingsView {
 	t.Helper()
-	d := newTestDaemonView([]string{"a log line"}, nil)
-	d.update(daemonConfigMsg{config: testConfig()})
-	for i, k := range d.keys {
-		if k.path == path {
-			d.cursor = i
-			d.form = newConfigForm(k, d.config)
-			return d
-		}
+	v := newSettingsView()
+	v.update(daemonConfigMsg{config: testConfig()})
+	v.openKey(path)
+	if v.form == nil {
+		t.Fatalf("no config key %q", path)
 	}
-	t.Fatalf("no config key %q", path)
-	return nil
+	return v
 }

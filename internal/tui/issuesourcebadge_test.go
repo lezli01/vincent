@@ -75,20 +75,13 @@ func TestIssueSourceBadgeAlwaysVisible(t *testing.T) {
 					t.Errorf("%s at %d: line %d is %d cells", c.name, width, i, lw)
 				}
 			}
-			lines := stripLines(out)
+			board := ansi.Strip(out)
 			for i, want := range c.want {
-				id := "#" + strconv.Itoa(100+i)
-				var row string
-				for _, l := range lines {
-					if strings.Contains(l, id+" ") {
-						row = l
-					}
+				if id := "#" + strconv.Itoa(100+i); !strings.Contains(board, id+" ") {
+					t.Fatalf("%s at %d: no card for %s:\n%s", c.name, width, id, board)
 				}
-				if row == "" {
-					t.Fatalf("%s at %d: no row for %s:\n%s", c.name, width, id, ansi.Strip(out))
-				}
-				if !strings.Contains(row, want) {
-					t.Errorf("%s at %d: the card lost its source id %q: %q", c.name, width, want, row)
+				if !strings.Contains(board, want) {
+					t.Errorf("%s at %d: the card lost its source id %q:\n%s", c.name, width, want, board)
 				}
 			}
 		}

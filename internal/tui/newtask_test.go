@@ -79,7 +79,7 @@ func addField(n *newTask, key, value string) {
 func loadedForm(t *testing.T) *newTask {
 	t.Helper()
 	n := newNewTask()
-	n.update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	n.update(tea.WindowSizeMsg{Width: 128, Height: 40})
 	badErr := "steps: at least one step is required"
 	n.update(ntLoadedMsg{
 		projects: []apiclient.Project{
@@ -129,7 +129,7 @@ func TestNewTaskGuidedLayoutShowsOnlyTheActiveStage(t *testing.T) {
 	n.projectID = 1
 	n.titleIn.SetValue("Improve takeover UX")
 	moveTo(n, ntTitle)
-	out := n.render(140, 40)
+	out := n.render(128, 40)
 	for _, want := range []string{"Plan", "3 of 6 · Task details", "title", "description", "fields"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("guided render is missing %q:\n%s", want, out)
@@ -163,7 +163,7 @@ func TestNewTaskReviewSummarizesTheRequest(t *testing.T) {
 	n.branch.SetValue("main")
 	n.agent = "claude"
 	moveTo(n, ntCreate)
-	out := n.render(140, 40)
+	out := n.render(128, 40)
 	for _, want := range []string{
 		"6 of 6 · Review", "vincent", "two-step", "Improve takeover UX",
 		"ticket=UX-20", "base branch", "claude", "create task",
@@ -329,7 +329,7 @@ func TestNewTaskProjectRowIsLocked(t *testing.T) {
 func TestNewTaskGuidedLayoutShowsTheSelectedProject(t *testing.T) {
 	n := loadedForm(t)
 	selectProject(n, 2)
-	out := ansi.Strip(n.render(140, 40))
+	out := ansi.Strip(n.render(128, 40))
 	if !strings.Contains(out, "2 of 6 · Workflow") {
 		t.Fatalf("the form did not open on the Workflow stage:\n%s", out)
 	}
@@ -716,7 +716,7 @@ func TestNewTaskParksTheDaemonsComplaintOnTheRowItNames(t *testing.T) {
 	if n.submitting {
 		t.Error("still submitting after a rejection")
 	}
-	out := n.render(140, 60)
+	out := n.render(128, 60)
 	if !strings.Contains(out, "does not resolve") {
 		t.Errorf("the daemon's message is not on screen:\n%s", out)
 	}
@@ -865,7 +865,7 @@ func TestNewTaskPrerendersWorkflowFields(t *testing.T) {
 
 	moveTo(n, ntFields)
 	press(n, "enter")
-	out := n.render(140, 60)
+	out := n.render(128, 60)
 	for _, want := range []string{
 		"Ticket (ticket)", "string", "required", "Issue tracker key.",
 		"pattern: ^OPS-[0-9]+$", "Dry run", "choose true/false",

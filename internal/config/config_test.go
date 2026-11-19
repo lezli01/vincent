@@ -143,7 +143,8 @@ agents:
 		TUI: TUI{
 			Board:  BoardView{GroupBy: []BoardGroup{BoardGroupIssue}},
 			Output: OutputView{Level: "normal"},
-			Tabs:   []string{"issues", "tasks"},
+			Tabs:   []string{"issues", "tasks", "chats"},
+			Icons:  "unicode",
 		},
 	}
 	if !reflect.DeepEqual(cfg, want) {
@@ -578,19 +579,19 @@ func TestTUIOutputLevel(t *testing.T) {
 	}
 }
 
-// TestTUITabs: tui.tabs defaults to [issues, tasks], loads any ordered list
+// TestTUITabs: tui.tabs defaults to [issues, tasks, chats], loads any ordered list
 // of TabViews as written, and refuses an empty, null, repeated, unknown or
 // non-list value on Load and on Decode alike, with a message naming the key
 // (task 136 decision 4).
 func TestTUITabs(t *testing.T) {
-	if got, want := Default().TUI.Tabs, []string{"issues", "tasks"}; !reflect.DeepEqual(got, want) {
+	if got, want := Default().TUI.Tabs, []string{"issues", "tasks", "chats"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("default tui.tabs = %v, want %v", got, want)
 	}
 	cfg, err := Load(writeConfig(t, "tui:\n  hyperlinks: false\n"))
 	if err != nil {
 		t.Fatalf("Load without tui.tabs: %v", err)
 	}
-	if got, want := cfg.TUI.Tabs, []string{"issues", "tasks"}; !reflect.DeepEqual(got, want) {
+	if got, want := cfg.TUI.Tabs, []string{"issues", "tasks", "chats"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("absent tui.tabs = %v, want the default %v", got, want)
 	}
 	for _, want := range [][]string{
@@ -926,5 +927,34 @@ func TestTUIDefaultProject(t *testing.T) {
 	}
 	if _, err := Load(writeConfig(t, "tui:\n  default_project: "+strings.Repeat("n", MaxProjectNameBytes)+"\n")); err != nil {
 		t.Errorf("a name at the bound was refused: %v", err)
+	}
+}
+
+func TestTUIIcons(t *testing.T) {
+	if got := Default().TUI.Icons; got != "unicode" {
+		t.Errorf("default tui.icons = %q, want unicode", got)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("tui:\n  icons: nerd\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TUI.Icons != "nerd" {
+		t.Errorf("tui.icons = %q, want nerd", cfg.TUI.Icons)
+	}
+	if err := os.WriteFile(path, []byte("tui:\n  icons: emoji\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Load(path)
+	if err == nil {
+		t.Fatal("Load accepted tui.icons: emoji")
+	}
+	for _, want := range []string{"tui.icons", `"emoji"`, "unicode, nerd"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error %q does not say %q", err, want)
+		}
 	}
 }

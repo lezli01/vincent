@@ -206,7 +206,7 @@ func TestShellClickOutputTab(t *testing.T) {
 	s.settle()
 	out := s.lastBoxes[2]
 
-	// "┌─ output │ diff …": the diff span sits after "output" and " │ ".
+	// "╭─ output │ diff …": the diff span sits after "output" and " │ ".
 	diffX := out.x + 3 + 6 + 3 + 1
 	s.update(tea.MouseClickMsg{X: diffX, Y: out.y, Button: tea.MouseLeft})
 	if s.detail.tab != tabDiff {

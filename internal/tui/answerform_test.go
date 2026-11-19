@@ -325,14 +325,14 @@ func popupOf(view string) string {
 	for _, line := range strings.Split(view, "\n") {
 		switch {
 		case left < 0 && strings.Contains(line, "Answer — #"):
-			top := strings.Index(line, "┌")
+			top := strings.Index(line, "╭")
 			left = ansi.StringWidth(line[:top])
-			right = ansi.StringWidth(line[:top+strings.Index(line[top:], "┐")]) + 1
+			right = ansi.StringWidth(line[:top+strings.Index(line[top:], "╮")]) + 1
 			out = append(out, ansi.Cut(line, left, right))
 		case left >= 0:
 			row := ansi.Cut(line, left, right)
 			out = append(out, row)
-			if strings.HasPrefix(row, "└") {
+			if strings.HasPrefix(row, "╰") {
 				return strings.Join(out, "\n")
 			}
 		}

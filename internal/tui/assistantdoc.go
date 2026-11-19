@@ -153,6 +153,19 @@ func anchorAt(anchors []lineAnchor, y int) lineAnchor {
 	return anchors[y]
 }
 
+// anchorBelow is the first anchored line at or below the viewport offset, and
+// how many lines below it is. A chat turn opens with lines that belong to no
+// record — the prompt's card and the agent's heading — and a reader paused on
+// one of them keeps their place relative to the record under it.
+func anchorBelow(anchors []lineAnchor, y int) (lineAnchor, int) {
+	for i := max(y, 0); i < len(anchors); i++ {
+		if anchors[i].rec != 0 {
+			return anchors[i], i - y
+		}
+	}
+	return lineAnchor{}, 0
+}
+
 // anchorIndex finds where a captured anchor landed in a freshly built pane.
 //
 // It resolves in three tiers, which is what makes it survive a rebuild that

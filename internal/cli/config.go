@@ -408,6 +408,10 @@ func configFields() map[string]configField {
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{DefaultProject: v}}
 			}),
+		"tui.icons": str(func(c apiclient.Config) string { return c.TUI.Icons },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Icons: v}}
+			}),
 		"tui.output.level": str(func(c apiclient.Config) string { return c.TUI.Output.Level },
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Output: &apiclient.ConfigOutputPatch{Level: v}}}

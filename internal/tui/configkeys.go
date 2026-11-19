@@ -553,6 +553,15 @@ func configKeys() []configKey {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{DefaultProject: &s}}, nil
 			},
 		},
+		// Task 150.8. Applied as soon as it is saved.
+		{
+			path: "tui.icons", label: "icons", kind: kindEnum, choices: config.IconSets,
+			help: "unicode works in any font; nerd needs a Nerd Font in your terminal",
+			read: func(c apiclient.Config) string { return c.TUI.Icons },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Icons: &s}}, nil
+			},
+		},
 		boolKey("tui.hyperlinks", "hyperlinks",
 			"make sanitized http(s) Markdown links clickable (OSC 8); only if your terminal supports it",
 			func(c apiclient.Config) bool { return c.TUI.Hyperlinks },
@@ -765,6 +774,7 @@ func defaultClientConfig() apiclient.Config {
 			Board:  apiclient.ConfigBoard{GroupBy: boardGroupNames(d)},
 			Output: apiclient.ConfigOutput{Level: d.TUI.Output.Level},
 			Tabs:   d.TUI.Tabs,
+			Icons:  d.TUI.Icons,
 		},
 	}
 }

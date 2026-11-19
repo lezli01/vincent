@@ -54,8 +54,14 @@ type issueTabHit struct {
 // tabs' columns for the mouse.
 func (v *issueView) renderStrip(width int) string {
 	var b strings.Builder
-	b.WriteString("  ")
-	x := 3 // root frame border plus the two-cell indent, as the workspace's strip
+	// The root's frame border plus a two-cell indent, as the workspace's strip;
+	// the wide layout's pane has a border and one cell of padding instead.
+	x := 3
+	if v.wide() {
+		x = 2
+	} else {
+		b.WriteString("  ")
+	}
 	v.tabHits = v.tabHits[:0]
 	for t := range issueTabCount {
 		if t > 0 {
@@ -169,13 +175,13 @@ func (v *issueView) chatEventConcerns(ev apiclient.Event) bool {
 func chatStateGlyph(state string) string {
 	switch state {
 	case "running":
-		return "●"
+		return ic("●")
 	case "awaiting_input":
 		return attentionBadge
 	case "handed_off":
-		return "✓"
+		return ic("✓")
 	case "closed", "archived":
-		return "■"
+		return ic("■")
 	}
 	return "·"
 }
@@ -214,7 +220,7 @@ func (v *issueView) workSummary() string {
 // issueTabLines is the Issue tab's Work section: the one selectable line
 // enter on which switches to the Work tab (decision 1).
 func (v *issueView) issueTabWorkLines(rows []issueDetailRow, width, base int) []string {
-	lines := []string{"", " " + styleTitle.Render("Work")}
+	lines := []string{"", v.sectionHead("▶", "Work")}
 	for i, row := range rows {
 		if !row.workLine {
 			continue
@@ -237,9 +243,13 @@ func (v *issueView) issueTabWorkLines(rows []issueDetailRow, width, base int) []
 // newest first and each saying so when it is empty.
 func (v *issueView) workTabLines(rows []issueDetailRow, width, base int) []string {
 	iss := v.issue
-	lines := []string{"", " " + styleTitle.Render("Tasks") +
+	lines := []string{v.sectionHead("▶", "Tasks") +
 		styleDim.Render("  "+plural(iss.Tasks.Count, "task", "tasks")+", "+
 			strconv.Itoa(len(iss.Tasks.ActiveIDs))+" active")}
+	// The wide layout's page starts here, right under the strip's rule.
+	if base > 0 {
+		lines = append([]string{""}, lines...)
+	}
 	if len(v.tasks) == 0 {
 		lines = append(lines, styleDim.Render("  no task yet · "+opKey(keymap.Add)+" starts one"))
 	}
@@ -255,7 +265,7 @@ func (v *issueView) workTabLines(rows []issueDetailRow, width, base int) []strin
 		lines = append(lines, issueTaskLine(row, marker, width))
 	}
 
-	head := " " + styleTitle.Render("Chats")
+	head := v.sectionHead("◌", "Chats")
 	if v.chatsErr == nil {
 		head += styleDim.Render("  " + plural(len(v.chats), "chat", "chats"))
 	}
