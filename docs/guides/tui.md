@@ -2183,7 +2183,10 @@ own workflows cannot be read, the global rows stay on screen with an error
 line above them.
 
 From 130 columns the registry is grouped into **This project**, **Global** and
-**Built-in**, and the selected workflow's graph is drawn beside it as you move.
+**Built-in**, each workflow drawn as the same card the new-task screen uses:
+its name, how many steps and gates it has, and one line about it. The selected
+card has the thick border. The selected workflow's graph is drawn beside it as
+you move.
 From 150 columns a details pane adds the entry's scope and source, availability
 and findings, declared fields, and steps with the agents they resolve to. `g` or
 `enter` moves the keyboard into the graph, and `esc` returns to the same entry.

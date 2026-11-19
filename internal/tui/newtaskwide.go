@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -206,17 +207,26 @@ func (n *newTask) workflowPane(w, h int) []string {
 
 // workflowCard is one workflow. One that cannot be chosen says why.
 func workflowCard(e apiclient.WorkflowEntry, opt pickerOption, selected bool, w int) []string {
+	second, style := e.Description, styleDim
+	if opt.disabled {
+		second, style = opt.note, styleBad
+	}
+	return workflowCardLines(e, stylePlain, second, style, selected, w)
+}
+
+// workflowCardLines draws one workflow card, the shape the new-task list and
+// the Workflows screen share: the name and its length on top, one line about it
+// below, and a thick border on the selected card so selection does not rely on
+// colour.
+func workflowCardLines(e apiclient.WorkflowEntry, name lipgloss.Style, second string, secondStyle lipgloss.Style, selected bool, w int) []string {
 	inner := max(w-4, 1)
-	name, edges, border := stylePlain, edgesRounded, styleDim
+	edges, border := edgesRounded, styleDim
 	if selected {
 		name, edges, border = styleTitle, edgesThick, styleFocus
 	}
-	second := styleDim.Render(oneLine(e.Description))
-	if opt.disabled {
-		second = styleBad.Render(oneLine(opt.note))
-	}
 	head := padBetweenCells(name.Render(ansi.Truncate(ic("⟡ ")+oneLine(e.Name), max(inner-12, 8), "…")), styleDim.Render(workflowMeta(e)), inner)
-	return drawBox("", "", []string{head, second}, w, 4, edges, border)
+	tail := secondStyle.Render(ansi.Truncate(oneLine(second), inner, "…"))
+	return drawBox("", "", []string{head, tail}, w, wfCardH, edges, border)
 }
 
 // widePane is the form itself.

@@ -89,8 +89,29 @@ func TestWorkflowsWideShortTerminalKeepsTheSelection(t *testing.T) {
 	}
 	out := w.render(180, 10)
 	assertFills(t, out, 180, 10)
-	if !strings.Contains(ansi.Strip(out), "▸ adhoc") {
+	if !strings.Contains(ansi.Strip(out), "⟡ adhoc") {
 		t.Errorf("the selected entry scrolled away:\n%s", ansi.Strip(out))
+	}
+}
+
+// The registry draws the new-task screen's workflow cards: the selected one is
+// the only card with a thick border, so selection does not rely on colour.
+func TestWorkflowsWideDrawsTheNewTaskCards(t *testing.T) {
+	w := wideWorkflows(t, 180)
+	listW, _ := wfPaneWidths(180)
+	pane := w.registryPane(listW, 40, 0)
+	selected := workflowCardLines(w.own[0], stylePlain, "", styleDim, true, listW-4)
+	if got := ansi.Strip(strings.Join(pane, "\n")); !strings.Contains(got, ansi.Strip(selected[0])) {
+		t.Fatalf("the selected entry is not the new-task card:\n%s", got)
+	}
+	thick := 0
+	for _, row := range pane[1 : len(pane)-1] {
+		if strings.Contains(ansi.Strip(row), "┏") {
+			thick++
+		}
+	}
+	if thick != 1 {
+		t.Fatalf("%d cards have a thick border, want 1", thick)
 	}
 }
 

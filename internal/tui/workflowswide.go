@@ -24,8 +24,9 @@ const (
 	wfDetailsMinW = 150
 	// wfPreviewDebounce is how long the selection rests before its graph is read.
 	wfPreviewDebounce = 150 * time.Millisecond
-	// wfRowH is one registry entry's height: its name and one line about it.
-	wfRowH = 2
+	// wfCardH is one workflow card's height: its name and one line about it,
+	// boxed. The new-task list draws the same cards.
+	wfCardH = 4
 )
 
 // workflowPreviewDueMsg says the selection may have rested on key long enough.
@@ -54,18 +55,6 @@ func wfScopeRank(scope string) int {
 		return 1
 	default:
 		return 2
-	}
-}
-
-// wfGroupTitle is the heading over one rank's entries.
-func wfGroupTitle(rank int) string {
-	switch rank {
-	case 0:
-		return toneMagenta.Bold(true).Render(ic(headerProjectGlyph + " This project"))
-	case 1:
-		return toneCyan.Bold(true).Render(ic("⟡ Global"))
-	default:
-		return toneBlue.Bold(true).Render(ic("▣ Built-in"))
 	}
 }
 
@@ -146,8 +135,9 @@ func (w *workflowsView) renderWide(width, height int) string {
 	return strings.Join(append(top, panes...), "\n")
 }
 
-// registryPane is the entries under their scopes, scrolled to keep the selected
-// one on screen.
+// registryPane is the entries as cards under their scopes, scrolled to keep the
+// selected one on screen. It is drawn the way the new-task screen draws its
+// workflow list, so the two read and move alike.
 func (w *workflowsView) registryPane(width, h, top int) []string {
 	inner := max(width-4, 1)
 	lines := w.lines()
@@ -170,12 +160,12 @@ func (w *workflowsView) registryPane(width, h, top int) []string {
 				add(-1, "")
 			}
 			rank = r
-			add(-1, wfGroupTitle(r))
+			add(-1, styleDim.Render(workflowScopeName(line.entry.Scope)))
 		}
 		if i == w.cursor {
 			from = len(rows)
 		}
-		add(i, wfRegistryRow(line, inner, i == w.cursor)...)
+		add(i, wfRegistryCard(line, inner, i == w.cursor)...)
 	}
 	if body, ok := w.emptyBody(lines); ok {
 		rows = styled(wrapText(strings.TrimSpace(ansi.Strip(body)), inner, wrapOpts{}), styleDim)
@@ -185,8 +175,8 @@ func (w *workflowsView) registryPane(width, h, top int) []string {
 	start := 0
 	if len(rows) > room {
 		start = max(min(windowStart(len(rows), from, room), from), 0)
-		if from+wfRowH > start+room {
-			start = from + wfRowH - room
+		if from+wfCardH > start+room {
+			start = from + wfCardH - room
 		}
 		start = max(min(start, len(rows)-room), 0)
 	}
@@ -197,32 +187,27 @@ func (w *workflowsView) registryPane(width, h, top int) []string {
 			w.hits = append(w.hits, mgmtHit{1, width - 1, y, y + 1, owner[r]})
 		}
 	}
-	border := styleDim
+	right, edges, border := toneBlue.Render(strconv.Itoa(len(w.global)+len(w.own))), edgesRounded, styleDim
 	if w.graph == nil {
-		border = styleFocus
+		right = styleDim.Render("↑↓ choose  ") + right
+		edges, border = edgesThick, styleFocus
 	}
-	count := toneBlue.Render(strconv.Itoa(len(w.global) + len(w.own)))
-	return drawBox(toneBlue.Bold(true).Render(ic("⟡ Workflows")), count, rows[start:], width, h, edgesRounded, border)
+	return drawBox(toneBlue.Bold(true).Render(ic("⟡ Workflows")), right, rows[start:], width, h, edges, border)
 }
 
-// wfRegistryRow is one entry: its name, then the most useful thing about it.
-func wfRegistryRow(line wfLine, inner int, selected bool) []string {
+// wfRegistryCard is one entry as a workflow card: its name, then the most
+// useful thing about it.
+func wfRegistryCard(line wfLine, w int, selected bool) []string {
 	e := line.entry
-	marker, name := "  ", e.Name
+	name := stylePlain
 	switch {
-	case selected:
-		marker, name = styleFocus.Render("▸ "), styleTitle.Render(name)
 	case !e.Valid():
-		name = styleBad.Render(name)
+		name = styleBad
 	case line.shadowedBy != "":
-		name = styleDim.Render(name)
+		name = styleDim
 	}
-	lead, _ := workflowRailBadge(*e)
-	steps := styleDim.Render(plural(len(e.Steps), "step", "steps"))
-	room := max(inner-ansi.StringWidth(steps)-1, 1)
-	head := padBetweenCells(ansi.Truncate(marker+lead+name, room, "…"), steps, inner)
 	detail, style := wfRowDetail(line)
-	return []string{head, "  " + style.Render(ansi.Truncate(oneLine(detail), max(inner-2, 1), "…"))}
+	return workflowCardLines(*e, name, detail, style, selected, w)
 }
 
 // wfRowDetail picks the one line an entry gets, what stops it running first.
