@@ -352,9 +352,12 @@ func (p *streamParser) parse(raw []byte) agent.Event {
 // watchContext remembers a top-level assistant line's model and prompt size
 // (task 156 decision 2). Claude writes one assistant line per content block,
 // each repeating its call's usage, so the last line of the last call wins and
-// a repeat changes nothing.
+// a repeat changes nothing. A `<synthetic>` line is one claude wrote itself
+// — a forked skill's stand-in reply carries all-zero usage — and is no model
+// call, so it changes nothing either.
 func (p *streamParser) watchContext(line *streamLine) {
-	if line.Type != "assistant" || line.ParentToolUseID != "" || line.Message == nil {
+	if line.Type != "assistant" || line.ParentToolUseID != "" || line.Message == nil ||
+		line.Message.Model == "<synthetic>" {
 		return
 	}
 	if line.Message.Model != "" {
