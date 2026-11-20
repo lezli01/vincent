@@ -66,11 +66,16 @@ type Task struct {
 	// it. Nil when the newest attempt said nothing.
 	StatusMessage *string `json:"status_message"`
 
-	// ParentTaskID, LaneID and LaneOrder identify a fan-out lane (§7.6, task
-	// 014); all nil for a root task.
-	ParentTaskID *int64  `json:"parent_task_id"`
-	LaneID       *string `json:"lane_id"`
-	LaneOrder    *int    `json:"lane_order"`
+	// ParentTaskID, ParentStepIndex, LaneID and LaneOrder identify a fan-out
+	// lane (§7.6, task 014); all nil for a root task. ParentStepIndex is the
+	// parent's `fan_out` step the lane belongs to.
+	ParentTaskID    *int64 `json:"parent_task_id"`
+	ParentStepIndex *int   `json:"parent_step_index"`
+	// LaneRound is the fan_out round that spawned the lane (the `iteration`
+	// of its step's rows); nil for a root and for a lane older than it.
+	LaneRound *int    `json:"lane_round"`
+	LaneID    *string `json:"lane_id"`
+	LaneOrder *int    `json:"lane_order"`
 	// Children is the subtree rollup, served on the detail endpoint and on
 	// list rows (task 129.18) whenever the task has lanes. An older daemon
 	// serves it on the detail endpoint only, so a list row leaves it nil. Lanes are hidden from the task list by design, and

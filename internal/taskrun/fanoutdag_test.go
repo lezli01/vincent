@@ -68,6 +68,17 @@ func TestFanOutNeedsSpawnsInRounds(t *testing.T) {
 	if wire.LaneOrder != 2 {
 		t.Errorf("wire lane_order = %d, want 2 (the declared index)", wire.LaneOrder)
 	}
+	// Each lane records the round that spawned it, which is the `iteration`
+	// of the merge row a client draws it under (migration 0062).
+	for _, lane := range all {
+		want := 0
+		if lane.LaneID == "wire" {
+			want = 1
+		}
+		if lane.LaneRound == nil || *lane.LaneRound != want {
+			t.Errorf("lane %q lane_round = %v, want %d", lane.LaneID, lane.LaneRound, want)
+		}
+	}
 
 	done := h.waitForStateWithin(t, task.ID, fanOutBudget, store.TaskDone, store.TaskBlocked)
 	if done.State != store.TaskDone {

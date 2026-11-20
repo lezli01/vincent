@@ -281,7 +281,7 @@ func insertMergeBackTx(ctx context.Context, tx *sql.Tx, source, mb *Task) (*Even
 	mb.MergeOnConflict = source.MergeOnConflict
 	mb.State = TaskQueued
 	mb.Priority = source.Priority
-	mb.ParentTaskID, mb.ParentStepIndex = nil, nil
+	mb.ParentTaskID, mb.ParentStepIndex, mb.LaneRound = nil, nil, nil
 	// The side task's base is the main branch it forked from (134.13). It
 	// is the name the merge-back binds to when no unarchived main task holds
 	// one, which revives that branch at admission (134.14-a); while one

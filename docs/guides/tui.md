@@ -350,6 +350,23 @@ are queued and have finished.
 | `f` | Fold the issue group under the cursor, or open the one the cursor rests on |
 | `C` | Fold every group |
 | `O` | Open every group |
+| `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent |
+
+### Fan-out lanes on the board
+
+A fan-out's lanes are tasks, but they are not cards of their own: a column
+counts the work someone asked for. A parent card says it has lanes with
+`▸3` after its number. Press `L` on it and its lanes hang underneath as small
+boxes, in the parent's column whatever state each lane is in — the lane's name
+and number, then its state, the step an unfinished lane is on and, for a
+blocked one, why. `↑`/`↓` walk onto them like cards, `enter` opens a lane's
+workspace and `esc` comes back. A lane that fans out again wears its own
+`▸`; `L` on it unfolds its lanes one level deeper. `L` on a lane with none
+folds its parent's lanes and puts the cursor back on the parent. The boxes
+follow the lanes live, and what is unfolded lasts until you quit.
+
+![The board with a fan-out parent's lanes unfolded under its card as small
+boxes, the first one selected](../assets/tui-board-lanes.png)
 
 Groups in **Finished** start folded, and the other columns start open. A folded
 group keeps a line saying what it holds. The cursor can rest on it, but it is not a
@@ -749,6 +766,28 @@ round is named on the row (`round 0 · ×2 ●3`) only
 when the timeline is not already drawing `round N` headers above it. No other
 step type is annotated.
 
+Under its last attempt, a `fan_out` step lists its **lanes**, indented and in
+merge order: `↳ ✓ api  done  #42`, one row per lane with its state, its task
+number, the step an unfinished lane is on (`step 2/4 test`) and, for a
+blocked lane, its block reason. A workflow that fans out
+twice lists each step's own lanes under that step, and a multi-round
+`fan_out` lists each round's lanes inside that round, so folding a round
+folds its lanes too. A lane that fans out again reads `▸ api  running  #51 ·
+6 below`: `→` or `space` unfolds its own lanes in place, one level deeper
+(`▾`), and `←` folds them away — the same keys that fold a round, meaning
+the lane while the cursor is on one. Nested lanes are cursor stops and open
+with `enter` like any other.
+
+![The Steps tab of a two-round fan-out with both rounds open: round 0's two
+merged lanes indented inside it, and round 1's lane, waiting at its gate,
+under the cursor](../assets/tui-task-steps-lanes.png) The rows follow the lanes
+live. `↑`/`↓` stop on each lane as they stop on an attempt, and `enter` or `l`
+on one opens that lane's workspace; `esc` comes back to the parent — see
+[Walking a fan-out](#walking-a-fan-out). Standing on a lane row also points
+the Output tab's lane selector at it, so `3` shows that lane's output without
+leaving the parent; stepping back onto an attempt returns the selector to the
+task's own output, unless you chose a lane there with `<`/`>`.
+
 The board's and the header's step column say the same thing more briefly: a
 task inside a loop reads `3/7 green · loop 4/10 · repair 2/3` — the pass it is
 on out of the loop's real extent (a 3-item `for_each` reads `loop 2/3`, not the
@@ -791,9 +830,9 @@ output. It is the sentence that decides whether to open the transcript.
 | `ctrl+r` | On Pull Request, re-run the failed jobs of the selected check's GitHub Actions run (asks first) |
 | `↑`/`↓` | On Step Details, select an attempt (`←`/`→` do it too, and move the same cursor everywhere else) |
 | `pgup`/`pgdn` | On Step Details, scroll the facts |
-| `enter` | From Steps, open the selected attempt in Output — or open the folded iteration or round the cursor is on |
-| `space` | On Steps, open or close the iteration or round the cursor is in |
-| `←`/`→` | On Steps, close / open that iteration or round |
+| `enter` | From Steps, open the selected attempt in Output — or open the folded iteration or round the cursor is on, or the fan-out lane the cursor is on |
+| `space` | On Steps, open or close the iteration or round the cursor is in — or, on a lane that fans out again, its own lanes |
+| `←`/`→` | On Steps, close / open that iteration or round — or that lane's own lanes |
 | `O` / `C` | On Steps, open / close every iteration and round of this task |
 | `pgup`/`pgdn` | On Steps, move the selection a page |
 | `g`/`home`, `G`/`end` | On Steps, select the first / last attempt; `↑ N more` / `↓ N more` rows say what the window hides |

@@ -277,7 +277,7 @@ func (b *board) appendLanes(out []boardRow, parent boardRow, level int) []boardR
 // Empty for every other row, which is what keeps a board with no fan-out on it
 // identical to the board before this feature.
 func (b *board) laneGlyph(t apiclient.Task) string {
-	if !b.lanes.known(t) {
+	if !b.hasLanes(t) {
 		return ""
 	}
 	if b.lanes.expanded.has(t.ID) {

@@ -497,6 +497,8 @@ var bindings = []binding{
 	{key: "left", label: "move to the column on the left", scope: scopePanel, context: ctxTasks, hint: "←/→ lane", priority: 4},
 	{key: "right", label: "move to the column on the right", scope: scopePanel, context: ctxTasks, priority: 4, aliased: true},
 	{key: "f", label: "fold or open the issue group under the cursor", scope: scopePanel, context: ctxTasks, hint: "f fold", priority: 8},
+	// Lanes under a fan-out parent's card (boardcardlanes.go, issue #316).
+	{key: "L", label: "show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 8},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
 	{op: keymap.AttentionFilter, key: "H", label: "show only the tasks that need a human — awaiting input, awaiting approval, blocked, or a fan-out whose lane is (H again shows every task)", scope: scopePanel, context: ctxTasks, hint: "H needs you", priority: 6, term: termAttention},
 	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
@@ -527,18 +529,18 @@ var bindings = []binding{
 	// Timeline.
 	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab tabs", priority: 1},
 	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxTimeline, priority: 2},
-	{key: "down", label: "select an attempt (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 3},
-	{key: "enter", label: "open the selected attempt in the Output tab, or open the folded iteration or round the cursor is on", scope: scopePanel, context: ctxTimeline, hint: "enter output", priority: 3},
+	{key: "down", label: "select an attempt or a fan-out lane (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 3},
+	{key: "enter", label: "open the selected attempt in the Output tab, open the folded iteration or round the cursor is on, or open the lane the cursor is on", scope: scopePanel, context: ctxTimeline, hint: "enter output", priority: 3},
 	// Folding a loop's iterations and a `fan_out`'s rounds (issue #317). The
 	// Diff tab's vocabulary verbatim, because it is the same gesture on the
 	// same screen. ↑/↓ stop once on a folded tier — its first row — so every
 	// selection they reach is drawn.
-	{key: "space", label: "open or close the iteration or round the cursor is in (enter and →/← too)", scope: scopePanel, context: ctxTimeline, hint: "space fold", priority: 4, fold: true},
-	{key: "right", label: "open the folded iteration or round the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 5, fold: true},
-	{key: "left", label: "close the iteration or round the cursor is in", scope: scopePanel, context: ctxTimeline, priority: 6, fold: true},
+	{key: "space", label: "open or close the iteration or round the cursor is in, or the own lanes of the lane it is on (enter and →/← too)", scope: scopePanel, context: ctxTimeline, hint: "space fold", priority: 4, fold: true},
+	{key: "right", label: "open the folded iteration or round the cursor is in, or unfold the own lanes of the lane it is on", scope: scopePanel, context: ctxTimeline, priority: 5, fold: true},
+	{key: "left", label: "close the iteration or round the cursor is in, or fold the own lanes of the lane it is on", scope: scopePanel, context: ctxTimeline, priority: 6, fold: true},
 	{key: "O", label: "open every iteration and round of this task", scope: scopePanel, context: ctxTimeline, hint: "O/C fold all", priority: 7, fold: true},
 	{key: "C", label: "close every one — the timeline opens with the latest iteration showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true, aliased: true},
-	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTimeline, priority: 9, term: termLane},
+	{op: keymap.Lane, key: "l", label: "open the fan-out lane the cursor is on, or the first lane of the selected fan_out step", scope: scopePanel, context: ctxTimeline, priority: 9, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTimeline, priority: 9, term: termNextFail},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTimeline, priority: 10},
 	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTimeline, priority: 11},

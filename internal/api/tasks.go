@@ -113,11 +113,18 @@ type taskResponse struct {
 	// Warnings are non-fatal §8.2 catalog findings from creation-time
 	// validation; only the POST /v1/tasks response carries them.
 	Warnings []string `json:"warnings,omitempty"`
-	// ParentTaskID, LaneID and LaneOrder identify a fan-out lane (§7.6, task
-	// 014). All null for a root task, which is every task that is not a lane.
-	ParentTaskID *int64  `json:"parent_task_id"`
-	LaneID       *string `json:"lane_id"`
-	LaneOrder    *int    `json:"lane_order"`
+	// ParentTaskID, ParentStepIndex, LaneID and LaneOrder identify a fan-out
+	// lane (§7.6, task 014). All null for a root task, which is every task
+	// that is not a lane. ParentStepIndex is the parent's `fan_out` step that
+	// spawned the lane, which is how a client places a lane under its own
+	// step when a workflow fans out more than once.
+	ParentTaskID    *int64 `json:"parent_task_id"`
+	ParentStepIndex *int   `json:"parent_step_index"`
+	// LaneRound is the fan_out round that spawned the lane, the `iteration`
+	// its step's rows carry; null for a root and for a lane older than it.
+	LaneRound *int    `json:"lane_round"`
+	LaneID    *string `json:"lane_id"`
+	LaneOrder *int    `json:"lane_order"`
 	// Loop is the §7.8 rollup, present only while a `loop` step is the
 	// current one. Derived per request from the step's rows, never stored: a
 	// counter would be the persisted loop cursor decision 7 declined, and
@@ -263,6 +270,8 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 	return taskResponse{
 		Delivery:          toDeliveryResponse(t.Delivery, false),
 		ParentTaskID:      t.ParentTaskID,
+		ParentStepIndex:   t.ParentStepIndex,
+		LaneRound:         t.LaneRound,
 		LaneID:            laneID,
 		LaneOrder:         laneOrder,
 		ID:                t.ID,

@@ -275,7 +275,7 @@ func TestArchiveWideArrowsWalkTheGrid(t *testing.T) {
 		t.Fatalf("a wide archive fits %d cards a row", b.cardPerRow)
 	}
 	var free []taskStop
-	for _, s := range cardStops(b.cardGroups())[taskColumnFinished] {
+	for _, s := range b.cardStops(b.cardGroups())[taskColumnFinished] {
 		if s.key == groupNoIssue {
 			free = append(free, s)
 		}

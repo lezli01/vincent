@@ -251,6 +251,11 @@ type Task struct {
 	ParentStepIndex *int
 	LaneID          string
 	LaneOrder       int
+	// LaneRound is the fan_out round the lane was spawned in: the
+	// `iteration` of the parent step's row that was open at the spawn
+	// (task 080). Nil for a root task and for a lane spawned before the
+	// column existed.
+	LaneRound *int
 	// SettledChildrenWatermark is how many **direct** children had settled
 	// when the admission that parked this task started (§7.6, task 081
 	// decision 1). It is the wake position of a parent parked under a

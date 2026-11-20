@@ -493,6 +493,18 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("f did not fold the issue group under the cursor")
 			}
 		},
+		"L": func(t *testing.T) {
+			parent := task(3, stateAwaitingChildren, func(t *apiclient.Task) {
+				t.Children = &apiclient.ChildrenRollup{Total: 2}
+			})
+			s, _ := newShellFixture(t, parent)
+			s.focus = panelTasks
+			s.board.cards = true
+			s.update(registryKey(t, "L"))
+			if !s.board.lanes.expanded.has(3) {
+				t.Fatal("L did not unfold the fan-out parent's lanes under its card")
+			}
+		},
 		"space": func(t *testing.T) {
 			s, _ := newShellFixture(t, task(7, stateDone))
 			s.focus = panelTasks

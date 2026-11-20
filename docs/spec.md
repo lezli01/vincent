@@ -11744,8 +11744,15 @@ GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&l
                                         asked for, and a 64-task tree would bury it.
                                         ?parent_id= lists one parent's lanes in merge order;
                                         ?include_children=true is the flat everything. Every
-                                        task shape carries parent_task_id / lane_id /
-                                        lane_order (null for a root), and GET /v1/tasks/{id}
+                                        task shape carries parent_task_id /
+                                        parent_step_index / lane_round / lane_id /
+                                        lane_order (null for a root; parent_step_index and
+                                        lane_round added 2026-11-20 so a client can draw
+                                        each lane under the fan_out step, and the round of
+                                        it, that spawned it — lane_round is the iteration
+                                        of that step's row open at the spawn, recorded by
+                                        the engine because under schedule: eager it is not
+                                        the needs-graph wave), and GET /v1/tasks/{id}
                                         carries a `children` rollup — subtree counts by
                                         state plus the ids of blocked and awaiting-gate
                                         descendants — whenever the task has lanes at all.
@@ -13461,6 +13468,9 @@ CREATE TABLE tasks (
   parent_step_index   INTEGER,                -- the fan_out step's index in the parent
   lane_id             TEXT,                   -- the lane's id in that step
   lane_order          INTEGER,
+  lane_round          INTEGER,                -- the fan_out round that spawned the lane: the iteration of the parent
+                                              -- step's row open at the spawn (migration 0062, 2026-11-20); NULL for a
+                                              -- root and for a lane spawned before the column existed
   settled_children_watermark INTEGER,         -- eager fan_out wake position (§7.6, §11, task 081, migration 0024):
                                               -- settled direct children seen when the parked admission started;
                                               -- NULL = barrier. Cleared by any transition out of awaiting_children

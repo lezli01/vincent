@@ -257,7 +257,7 @@ func (r *Runner) spawnRound(
 			result: fmt.Sprintf("merged %d lanes in %d %s", len(mine), round, unit),
 		}, false
 	}
-	if err := r.spawnLanes(ctx, env, ready); err != nil {
+	if err := r.spawnLanes(ctx, env, ready, round); err != nil {
 		// Nothing to clean up: the lanes are created in one transaction
 		// (store.CreateTasks), so a failure leaves *no* lane behind and a
 		// retry re-spawns from a clean slate. Cancelling half a tree used to
@@ -541,7 +541,7 @@ func (r *Runner) roundOf(lanes []workflow.Lane, selected []int, mine []store.Tas
 // child's base branch, its overrides and priority propagate, and a lane spec
 // may override any of them for its own subtree. Fields merge with the
 // parent's, the lane winning (decision 29).
-func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, ready []int) error {
+func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, ready []int, round int) error {
 	project, err := r.deps.Store.GetProject(ctx, env.task.ProjectID)
 	if err != nil {
 		return fmt.Errorf("load project: %w", err)
@@ -561,6 +561,9 @@ func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, ready []int) erro
 		if err != nil {
 			return err
 		}
+		// The round this spawn belongs to, which is the `iteration` of the
+		// step's row a client draws the lane under (migration 0062).
+		child.LaneRound = &round
 		children = append(children, child)
 	}
 	// The children's branch names are resolved inside the insert's own

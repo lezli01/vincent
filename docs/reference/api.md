@@ -2704,8 +2704,11 @@ Five details worth knowing:
   has (null for a task no pull request matched), which is what the board's
   `⇡#123` marker reads.
 
-Every task shape carries `parent_task_id`, `lane_id` and `lane_order`, all null
-for a root task. `GET /v1/tasks/{id}` and every row of `GET /v1/tasks`
+Every task shape carries `parent_task_id`, `parent_step_index`, `lane_round`,
+`lane_id` and `lane_order`, all null for a root task. `parent_step_index` is the
+index of the parent's `fan_out` step that spawned the lane, and `lane_round` the
+round it was spawned in — the `iteration` of that step's rows in `steps[]`. A
+lane spawned by a daemon older than `lane_round` carries null there. `GET /v1/tasks/{id}` and every row of `GET /v1/tasks`
 additionally carry `children` whenever the task has lanes, and omit it
 otherwise:
 

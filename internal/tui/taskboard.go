@@ -148,8 +148,9 @@ func (b *board) setCardFold(column int, key string, folded bool) {
 	b.cardFolds[cardFoldKey(column, key)] = folded
 }
 
-// cardStops is where the cursor can rest in each column.
-func cardStops(groups [taskColumnCount][]taskCardGroup) [taskColumnCount][]taskStop {
+// cardStops is where the cursor can rest in each column: every card, and
+// under an unfolded fan-out parent every lane box (boardcardlanes.go).
+func (b *board) cardStops(groups [taskColumnCount][]taskCardGroup) [taskColumnCount][]taskStop {
 	var out [taskColumnCount][]taskStop
 	for c := range groups {
 		for _, g := range groups[c] {
@@ -159,6 +160,12 @@ func cardStops(groups [taskColumnCount][]taskCardGroup) [taskColumnCount][]taskS
 			}
 			for _, t := range g.tasks {
 				out[c] = append(out[c], taskStop{id: t.ID, column: c, key: g.key})
+				if b.archived {
+					continue // the archive's grid draws no lanes
+				}
+				for _, e := range b.cardLaneEntries(t) {
+					out[c] = append(out[c], taskStop{id: e.lane.ID, column: c, key: g.key})
+				}
 			}
 		}
 	}
@@ -205,7 +212,7 @@ func (b *board) cardCursor(stops [taskColumnCount][]taskStop, groups [taskColumn
 // cardStop is the stop under the cursor.
 func (b *board) cardStop() (taskStop, bool) {
 	groups := b.cardGroups()
-	stops := cardStops(groups)
+	stops := b.cardStops(groups)
 	c, i, ok := b.cardCursor(stops, groups)
 	if !ok {
 		return taskStop{}, false
@@ -241,7 +248,7 @@ func (b *board) moveCard(delta int) {
 		return
 	}
 	groups := b.cardGroups()
-	stops := cardStops(groups)
+	stops := b.cardStops(groups)
 	c, i, ok := b.cardCursor(stops, groups)
 	if ok {
 		b.restOn(stops[c][min(max(i+delta, 0), len(stops[c])-1)])
@@ -251,7 +258,7 @@ func (b *board) moveCard(delta int) {
 // moveCardEdge moves the cursor to the top or the bottom of its column.
 func (b *board) moveCardEdge(last bool) {
 	groups := b.cardGroups()
-	stops := cardStops(groups)
+	stops := b.cardStops(groups)
 	c, _, ok := b.cardCursor(stops, groups)
 	if !ok {
 		return
@@ -271,7 +278,7 @@ func (b *board) moveColumn(delta int) {
 		return
 	}
 	groups := b.cardGroups()
-	stops := cardStops(groups)
+	stops := b.cardStops(groups)
 	c, i, ok := b.cardCursor(stops, groups)
 	if !ok {
 		return
@@ -488,7 +495,7 @@ func archiveSwitch(tasks bool) string {
 // cardColumns draws the columns that fit, the cursor's always among them.
 func (b *board) cardColumns(width, height, top int) []string {
 	groups := b.cardGroups()
-	stops := cardStops(groups)
+	stops := b.cardStops(groups)
 	cursor, pos, ok := b.cardCursor(stops, groups)
 	var at taskStop
 	if ok {
@@ -591,6 +598,24 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 			for _, line := range row {
 				body = append(body, rail+line)
 			}
+			if perRow > 1 {
+				continue // the archive's grid draws no lanes
+			}
+			for _, e := range b.cardLaneEntries(g.tasks[r]) {
+				chosen := !at.header && e.lane.ID == at.id
+				if chosen {
+					from, to = len(body), len(body)+laneCardH
+				}
+				indent := laneIndent(e.depth)
+				lw := laneCardWidth(cardW, e.depth)
+				spans = append(spans, span{
+					from: len(body), h: laneCardH, stop: taskStop{id: e.lane.ID, column: c, key: g.key},
+					x0: 2 + len(indent), x1: 2 + len(indent) + lw,
+				})
+				for _, line := range b.laneCard(e.lane, chosen, lw) {
+					body = append(body, rail+indent+line)
+				}
+			}
 		}
 	}
 	if len(groups) == 0 {
@@ -672,6 +697,10 @@ func (b *board) taskCard(t apiclient.Task, selected bool, w int) []string {
 		titleStyle, edges, border = styleTitle, edgesThick, styleFocus
 	}
 	head := styleKey.Render("#" + strconv.FormatInt(t.ID, 10))
+	if label := b.laneCountLabel(t); label != "" {
+		// A fan-out parent's disclosure: `L` hangs its lanes under the card.
+		head += " " + toneCyan.Render(label)
+	}
 	if b.marks.has(t.ID) {
 		head = styleFocus.Render(ic("✔ ")) + head
 	}

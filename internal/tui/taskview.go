@@ -198,6 +198,9 @@ type taskView struct {
 	// laneSel indexes lanes for the Output pane's lane selector. -1 is the
 	// task's own output, which is where the pane starts and returns to.
 	laneSel int
+	// laneFromTimeline says laneSel was set by the Steps cursor standing on
+	// a lane row (followTimelineLane), and so is the timeline's to clear.
+	laneFromTimeline bool
 	// laneDetail is the selected lane's own sub-model, and therefore the one
 	// extra live subscription the Output pane is allowed to hold. Exactly one
 	// at a time, torn down when the selection moves and when the workspace
@@ -507,7 +510,8 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		// re-reads the section; the detail sub-model still sees the note.
 		cmd := tea.Batch(t.detail.update(msg), t.laneUpdate(msg))
 		if ev, ok := msg.note.(apiclient.EventNote); ok {
-			cmd = tea.Batch(cmd, t.chatNoteCmd(ev.Event), t.handoffNoteCmd(ev.Event))
+			cmd = tea.Batch(cmd, t.chatNoteCmd(ev.Event), t.handoffNoteCmd(ev.Event),
+				t.laneNoteCmd(ev.Event))
 		}
 		if ev, ok := msg.note.(apiclient.EventNote); ok &&
 			ev.Event.Type == eventTaskGitHubPullChanged {
@@ -605,6 +609,11 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			t.openPopup()
 			return nil
 		}
+		if t.tab == taskTabSteps && t.detail.cursorLane() != 0 {
+			// A lane row: enter opens the lane's own workspace, and esc
+			// comes back here (#316).
+			return t.openLaneCmd()
+		}
 		if t.tab == taskTabSteps && t.detail.timelineFolded() {
 			// `enter` means both things, chosen by the row under the cursor:
 			// on a folded tier it opens the fold, and there is nothing else
@@ -653,6 +662,22 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// the Output tab's attempt selection just below, and O/C are the Diff
 		// tab's fold-all. Each pair means the fold only while Steps &
 		// Attempts has the screen.
+		// On a lane that fanned out itself the same keys fold its own lanes
+		// in place; everywhere else they fold rounds and iterations.
+		switch msg.String() {
+		case " ", "space":
+			if cmd, ok := t.detail.toggleLaneOpen(); ok {
+				return cmd
+			}
+		case "right":
+			if cmd, ok := t.detail.setLaneOpen(true); ok {
+				return cmd
+			}
+		case "left":
+			if cmd, ok := t.detail.setLaneOpen(false); ok {
+				return cmd
+			}
+		}
 		switch msg.String() {
 		case " ", "space":
 			return t.detail.toggleTimelineFold()
@@ -677,13 +702,14 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if t.tab == taskTabSteps {
 		t.detail.focus = focusTimeline
 		t.detail.tab = tabOutput
+		cmd := t.detail.update(msg)
+		return tea.Batch(cmd, t.followTimelineLane())
+	}
+	t.detail.focus = focusOutput
+	if t.tab == taskTabOutput {
+		t.detail.tab = tabOutput
 	} else {
-		t.detail.focus = focusOutput
-		if t.tab == taskTabOutput {
-			t.detail.tab = tabOutput
-		} else {
-			t.detail.tab = tabDiff
-		}
+		t.detail.tab = tabDiff
 	}
 	return t.detail.update(msg)
 }
@@ -858,7 +884,8 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	}
 	switch t.tab {
 	case taskTabSteps:
-		return t.detail.clickTimeline(msg.Y - t.bodyY)
+		cmd := t.detail.clickTimeline(msg.Y - t.bodyY)
+		return tea.Batch(cmd, t.followTimelineLane())
 	case taskTabDetails:
 		t.details.clickSidebar(msg.X, msg.Y-t.bodyY)
 	case taskTabStepDetails:
@@ -888,7 +915,8 @@ func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	case taskTabOverview:
 		t.overview.Update(msg)
 	case taskTabSteps:
-		return t.detail.moveTimelineSelection(delta)
+		cmd := t.detail.moveTimelineSelection(delta)
+		return tea.Batch(cmd, t.followTimelineLane())
 	case taskTabDetails:
 		t.details.scrollAt(msg.X, delta)
 	case taskTabStepDetails:
@@ -2130,8 +2158,12 @@ func (t *taskView) laneJump() (int64, bool) {
 			return id, true
 		}
 	case taskTabSteps:
-		// The timeline's own answer is the row under the cursor, and only a
-		// fan_out row has lanes to open.
+		// The timeline's own answer is the row under the cursor: a lane row
+		// names its lane, and of the attempts only a fan_out row has lanes
+		// to open.
+		if id := t.detail.cursorLane(); id != 0 {
+			return id, true
+		}
 		if !t.selectedFanOutRun() {
 			return 0, false
 		}
@@ -2191,6 +2223,35 @@ func (t *taskView) selectedLane() (apiclient.Task, bool) {
 	return t.lanes[t.laneSel], true
 }
 
+// followTimelineLane points the Output tab's lane selector at the lane the
+// Steps cursor stands on, so `3` from a lane row shows that lane's output.
+// Leaving the lane rows hands the selector back to the task's own output —
+// but only a selection the timeline made: one chosen with `<`/`>` on the
+// Output tab is the reader's, and walking the attempts must not undo it.
+func (t *taskView) followTimelineLane() tea.Cmd {
+	want := -1
+	if id := t.detail.cursorLane(); id != 0 {
+		for i, lane := range t.lanes {
+			if lane.ID == id {
+				want = i
+			}
+		}
+	}
+	switch {
+	case want >= 0:
+		t.laneFromTimeline = true
+	case t.laneFromTimeline:
+		t.laneFromTimeline = false
+	default:
+		return nil
+	}
+	if want == t.laneSel {
+		return nil
+	}
+	t.laneSel = want
+	return t.syncLaneDetail()
+}
+
 // selectLane is `<` and `>`. The cycle includes the task's own output, so a
 // reader who walked into the lanes can walk back out of them the same way.
 func (t *taskView) selectLane(delta int) tea.Cmd {
@@ -2199,6 +2260,7 @@ func (t *taskView) selectLane(delta int) tea.Cmd {
 	}
 	n := len(t.lanes) + 1
 	t.laneSel = ((t.laneSel+1+delta)%n+n)%n - 1
+	t.laneFromTimeline = false
 	return t.syncLaneDetail()
 }
 
@@ -2297,6 +2359,26 @@ func (t *taskView) lanesCmd() tea.Cmd {
 	}
 }
 
+// laneNoteCmd re-reads the lanes when an event touches this task or one of
+// them. The Steps timeline draws every lane's state, and a lane moves on its
+// own events, which the parent's refresh never sees; the parent's own events
+// are where a fan_out spawning lanes shows up.
+func (t *taskView) laneNoteCmd(ev apiclient.Event) tea.Cmd {
+	if ev.TaskID == nil || t.detail.taskID == 0 {
+		return nil
+	}
+	id := *ev.TaskID
+	if id != t.detail.taskID {
+		if _, ok := t.laneByID(id); !ok {
+			return t.detail.nestedLaneNoteCmd(id)
+		}
+	}
+	if id == t.detail.taskID && len(t.lanes) == 0 && !t.detail.hasFanOut() {
+		return nil
+	}
+	return t.lanesCmd()
+}
+
 func (t *taskView) applyLaneList(msg taskLaneListMsg) tea.Cmd {
 	if msg.taskID != t.detail.taskID || msg.err != nil {
 		return nil
@@ -2314,7 +2396,8 @@ func (t *taskView) applyLaneList(msg taskLaneListMsg) tea.Cmd {
 // resetLanes drops everything about the task being left, tearing the lane
 // subscription down with it.
 func (t *taskView) resetLanes() tea.Cmd {
-	t.lanes, t.lanesTaskID, t.laneSel = nil, 0, -1
+	t.lanes, t.lanesTaskID, t.laneSel, t.laneFromTimeline = nil, 0, -1, false
+	t.detail.resetLaneTree()
 	t.lanePulls = nil
 	t.detail.laneRows = nil
 	return t.syncLaneDetail()

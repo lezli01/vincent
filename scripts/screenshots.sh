@@ -2961,6 +2961,52 @@ Sleep 3s
 Screenshot "'"$OUT"'/tui-chat-search.png"
 Sleep 2s
 '
+
+  # The fan-out's lanes on the Steps tab: `O` opens both rounds, so each
+  # round's lanes sit inside it — round 0's two merged, round 1's at its
+  # gate — and `G` lands the cursor on the last stop, which is that gated
+  # lane, since the parent is parked on the fan_out and has no later rows.
+  owns api task 'v2 storage' tui-task-steps-lanes
+  tape tui-task-steps-lanes 1250 api '
+Tab
+Sleep 2s
+Type "/"
+Sleep 500ms
+Type "v2 storage"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 4s
+Type "1"
+Sleep 1s
+Type "O"
+Sleep 1s
+Type "G"
+Sleep 2s
+Screenshot "'"$OUT"'/tui-task-steps-lanes.png"
+Sleep 2s
+'
+
+  # The same fan-out on the board: `L` hangs its lanes under the parent's
+  # card as boxes, and ↓ selects the first of them.
+  owns api task 'v2 storage' tui-board-lanes
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-board-lanes 1250 api '
+Tab
+Sleep 2s
+Type "/"
+Sleep 500ms
+Type "v2 storage"
+Sleep 1s
+Enter
+Sleep 1s
+Type "L"
+Sleep 3s
+Down
+Sleep 2s
+Screenshot "'"$OUT"'/tui-board-lanes.png"
+Sleep 2s
+'
 }
 
 case "${1:-all}" in

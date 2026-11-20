@@ -18,7 +18,7 @@ const taskColumns = `id, project_id, title, description, fields_json, workflow_n
 	restricted, max_task_cost_usd,
 	state, current_step, block_reason, block_detail, pause_requested, global_pause, retry_cursor_at, pending_override_json,
 	pending_repair_json, pending_follow_up_json, pending_input_json, admit_not_before, queued_reason,
-	parent_task_id, parent_step_index, lane_id, lane_order, settled_children_watermark,
+	parent_task_id, parent_step_index, lane_id, lane_order, lane_round, settled_children_watermark,
 	github_issue_json, github_pull_json,
 	workflow_origin_json, created_by_task_id, issue_id, issue_json,
 	created_at, updated_at, started_at, finished_at, archived_at, archived_from,
@@ -224,11 +224,11 @@ func insertTaskTx(
 			base_branch, branch_name, adopted_branch, worktree_path, base_sha, base_refresh, priority, agent_override, model_override, effort_override,
 			restricted, max_task_cost_usd,
 			state, current_step, block_reason, admit_not_before, queued_reason,
-			parent_task_id, parent_step_index, lane_id, lane_order, github_issue_json,
+			parent_task_id, parent_step_index, lane_id, lane_order, lane_round, github_issue_json,
 			github_pull_json, workflow_origin_json, created_by_task_id, issue_id, issue_json,
 			created_at, updated_at, started_at, finished_at, archived_at, archived_from,
 			issue_worktree, end_sha, merge_on_conflict, merge_source_task_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ProjectID, t.Title, t.Description, fields, t.WorkflowName, t.WorkflowSnapshot,
 		t.BaseBranch, t.BranchName, t.AdoptedBranch, nullString(t.WorktreePath), nullString(t.BaseSHA), refreshJSON, t.Priority,
 		nullString(t.AgentOverride), nullString(t.ModelOverride), nullString(t.EffortOverride),
@@ -240,7 +240,7 @@ func insertTaskTx(
 		// middle — long enough for the scheduler's tick to admit the task
 		// between them (task 003).
 		formatTimePtr(t.AdmitNotBefore), nullString(t.QueuedReason),
-		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, issueJSON,
+		t.ParentTaskID, t.ParentStepIndex, nullString(t.LaneID), t.LaneOrder, t.LaneRound, issueJSON,
 		pullJSON, originJSON, t.CreatedByTaskID, t.IssueID, snapJSON,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt),
 		formatTimePtr(t.StartedAt), formatTimePtr(t.FinishedAt), formatTimePtr(t.ArchivedAt),
@@ -1395,7 +1395,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		admitNotBefore, queuedWhy      sql.NullString
 		parentID, parentStep           sql.NullInt64
 		laneID                         sql.NullString
-		laneOrder                      sql.NullInt64
+		laneOrder, laneRound           sql.NullInt64
 		watermark                      sql.NullInt64
 		githubIssue, githubPull        sql.NullString
 		workflowOrigin                 sql.NullString
@@ -1416,7 +1416,7 @@ func scanTask(r rowScanner) (*Task, error) {
 		(*string)(&t.State), &t.CurrentStep, &blockReason, &blockDetail,
 		&t.PauseRequested, &t.GlobalPause, &retryCursor, &pendingOv,
 		&pendingRepair, &pendingFollowUp, &pendingInput, &admitNotBefore, &queuedWhy,
-		&parentID, &parentStep, &laneID, &laneOrder, &watermark,
+		&parentID, &parentStep, &laneID, &laneOrder, &laneRound, &watermark,
 		&githubIssue, &githubPull, &workflowOrigin,
 		&createdBy, &issueID, &issueSnap,
 		&created, &updated, &started, &finished, &archived, &archivedFrom,
@@ -1430,6 +1430,10 @@ func scanTask(r rowScanner) (*Task, error) {
 	if parentStep.Valid {
 		idx := int(parentStep.Int64)
 		t.ParentStepIndex = &idx
+	}
+	if laneRound.Valid {
+		round := int(laneRound.Int64)
+		t.LaneRound = &round
 	}
 	if createdBy.Valid {
 		id := createdBy.Int64

@@ -19,7 +19,7 @@ func archivePerRow(inner int) int {
 // down, across groups, and cards left and right within a row.
 func (b *board) stepArchive(rows, cards int) {
 	groups := b.cardGroups()
-	stops := cardStops(groups)
+	stops := b.cardStops(groups)
 	column, at, ok := b.cardCursor(stops, groups)
 	if !ok {
 		return

@@ -95,10 +95,22 @@ func (d *detail) clickTimeline(line int) tea.Cmd {
 		return nil
 	}
 	id := d.visibleRuns[idx]
-	if id == 0 || id == d.selectedRun {
+	if id < 0 {
+		// A lane row: it is anchored to the attempt drawn above it, which is
+		// the nearest positive id going up.
+		for i := idx - 1; i >= 0; i-- {
+			if anchor := d.visibleRuns[i]; anchor > 0 {
+				d.selectLaneRow(-id, anchor)
+				return d.syncOutput()
+			}
+		}
+		d.selectLaneRow(-id, d.selectedRun)
+		return d.syncOutput()
+	}
+	if id == 0 || (id == d.selectedRun && d.cursorLane() == 0) {
 		return nil
 	}
-	d.selectedRun = id
+	d.selectedRun, d.selectedLane = id, 0
 	return d.syncOutput()
 }
 
@@ -466,7 +478,19 @@ func (d *detail) renderTimeline(height int) string {
 	// value would swallow it.
 	lastIteration := -1
 	lastSub := ""
-	for _, r := range runs {
+	// A fan_out step's lanes close its block, after its last attempt and
+	// before the spacer to the next step (timelinelanes.go).
+	lanes := d.laneSlots(runs)
+	cursorLane := d.cursorLane()
+	emitLanes := func(slot laneSlot, indent string) {
+		laneLines, laneIDs, sel := d.laneTimelineLines(lanes[slot], cursorLane, indent)
+		if sel >= 0 {
+			cursorLine, cursorEnd = len(lines)+sel, len(lines)+sel+1
+		}
+		lines = append(lines, laneLines...)
+		ids = append(ids, laneIDs...)
+	}
+	for i, r := range runs {
 		looped := loops[r.StepIndex]
 		// A follow-up round sits past the workflow's last index and is not a
 		// step of it (task 027). Its steps share the round's index, so they
@@ -475,6 +499,9 @@ func (d *detail) renderTimeline(height int) string {
 		round := d.followUpRound(r.StepIndex)
 		grouped := (groups[r.StepIndex] || round > 0) && !looped
 		if r.StepIndex != lastStep {
+			if lastStep >= 0 {
+				emitLanes(laneSlot{lastStep, endOfStep}, "")
+			}
 			if len(lines) > 0 {
 				lines = append(lines, "")
 				ids = append(ids, 0)
@@ -537,7 +564,8 @@ func (d *detail) renderTimeline(height int) string {
 			ids = append(ids, 0)
 		}
 		attemptLines := d.attemptLines(r, grouped || looped || repair)
-		if r.ID == d.selectedRun {
+		onRun := r.ID == d.selectedRun && cursorLane == 0
+		if onRun {
 			cursorLine = len(lines)
 			for i := range attemptLines {
 				attemptLines[i] = styleSelected.Render(attemptLines[i])
@@ -554,9 +582,18 @@ func (d *detail) renderTimeline(height int) string {
 			lines = append(lines, summary)
 			ids = append(ids, r.ID)
 		}
-		if r.ID == d.selectedRun {
+		if onRun {
 			cursorEnd = len(lines)
 		}
+		// A round's lanes close its tier (task 080): after the tier's last
+		// row, at its depth.
+		if looped && (i+1 == len(runs) || runs[i+1].StepIndex != r.StepIndex ||
+			runs[i+1].Iteration != r.Iteration) {
+			emitLanes(laneSlot{r.StepIndex, r.Iteration}, "  ")
+		}
+	}
+	if lastStep >= 0 {
+		emitLanes(laneSlot{lastStep, endOfStep}, "")
 	}
 	return d.windowTimeline(lines, ids, foldedHeaders, cursorLine, cursorEnd, height)
 }
@@ -892,7 +929,7 @@ const stepTypeFanOut = "fan_out"
 // folded shut, so renderTimeline can move the highlight onto its header.
 func (d *detail) foldedSelection(loops map[int]bool, latest map[int]int) (tierKey, bool) {
 	sel := d.runByID(d.selectedRun)
-	if sel.ID == 0 || !loops[sel.StepIndex] {
+	if sel.ID == 0 || !loops[sel.StepIndex] || d.cursorLane() != 0 {
 		return tierKey{}, false
 	}
 	if d.tierOpen(sel.StepIndex, sel.Iteration, latest[sel.StepIndex]) {
