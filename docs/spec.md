@@ -14101,7 +14101,9 @@ CREATE TABLE chat_queued_messages (
 -- Added 2026-11-20 (task 165, issue #1019): chats gains last_viewed_at TEXT
 -- (store.TimeFormat; NULL = never viewed), written only by
 -- POST /v1/chats/{id}/viewed and never backwards. `unread` is derived on
--- read from the latest terminal chat_turns row, never stored.
+-- read from the latest terminal chat_turns row, never stored. The migration
+-- (0064) seeds it with each existing chat's latest terminal turn's end, so
+-- the history an upgrade finds starts read (review F2).
 
 -- Chat search (task 158, issue #1022, added 2026-11-19; migration 0061).
 -- Two external-content FTS5 tables, trigram-tokenized so matching is by

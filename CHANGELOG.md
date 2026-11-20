@@ -33,7 +33,8 @@ list with the user-facing context a commit subject cannot carry.
   finished since anyone opened it shows `●` on the chats board and rail, the
   same in every TUI: the daemon stores one `last_viewed_at` per chat, set by
   the new `POST /v1/chats/{id}/viewed`, and the chat body gains
-  `last_viewed_at` and `unread`. Chats waiting on you now count towards the
+  `last_viewed_at` and `unread`; chats from before the upgrade start read.
+  Chats waiting on you now count towards the
   attention count and the "waiting on you" summary, and `!` visits them with
   the tasks, oldest first. In a chat or on the chats board, `alt+n`/`alt+shift+n`
   open the project's next or previous chat and `alt+1`…`alt+9` its Nth

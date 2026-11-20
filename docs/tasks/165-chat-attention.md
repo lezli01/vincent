@@ -46,7 +46,9 @@ Confirmed by the author on 2026-11-20, in the brief for #1019.
 3. **One `last_viewed_at` per chat**, stored by the daemon: the installation
    has no per-user identity, so "the same in every client" means one value.
    It never moves backwards. `unread` is derived on read: the latest
-   terminal turn ended after it.
+   terminal turn ended after it. Chats that predate the column start read —
+   the migration seeds it from each one's latest finished turn (review F2) —
+   rather than lighting every chat in the history on the first launch.
 4. **Supersedes task 067 decision 4.** Only `awaiting_input` chats count
    towards attention; an unread finished turn is only the `●` mark. Row 29
    holds: chats join the count and `!`, never the task board's columns.

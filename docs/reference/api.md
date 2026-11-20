@@ -3291,7 +3291,9 @@ steer a running turn yet, so `can_steer` is always `false`.
 has looked at it — and `unread`, which is `true` when its latest finished turn
 (`done`, `failed` or `interrupted`) ended after `last_viewed_at`. There is one
 value per chat, shared by every client, because the installation has no
-per-user identity. `POST /v1/chats/{id}/viewed` takes no body and sets it to
+per-user identity. A chat that existed before the upgrade that added the
+field starts read: its `last_viewed_at` is its latest finished turn's end.
+`POST /v1/chats/{id}/viewed` takes no body and sets it to
 the daemon's clock, never the client's; it never moves backwards, is legal in
 every state, and answers `200` with the chat (`404 not_found` for an unknown
 id). When it moved, it emits a durable `chat.viewed`, so every client clears
