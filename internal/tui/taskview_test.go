@@ -32,7 +32,7 @@ func TestRoutedHomeRendersOnlyTheTaskBoard(t *testing.T) {
 	}
 }
 
-// The strip's drawn order (task 162 decision 3). tab walks it, and wraps back
+// The strip's drawn order (task 164 decision 3). tab walks it, and wraps back
 // to Overview.
 func TestTaskWorkspaceDefaultsToOverviewAndCyclesInDrawnOrder(t *testing.T) {
 	d := taskDetailFixture(t)

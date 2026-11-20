@@ -10,8 +10,8 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// The Overview's cards (task 162.7). The right-hand Details pane is gone
-// (task 162 decision 1); what it said — where the task's work lives and what
+// The Overview's cards (task 164.7). The right-hand Details pane is gone
+// (task 164 decision 1); what it said — where the task's work lives and what
 // it has cost — is two cards side by side under the frame.
 
 // progressBar is one segment per workflow step, coloured by how far the task

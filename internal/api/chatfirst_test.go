@@ -153,7 +153,7 @@ func TestChatRename(t *testing.T) {
 		{"title": "   "},
 		{},
 		{"title": strings.Repeat("x", ChatTitleMaxRunes+1)},
-		{"title": "x", "model": "opus"},
+		{"title": "x", "colour": "red"},
 	} {
 		if resp, body := h.doJSON(t, http.MethodPatch, path, bad); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("rename %v = %d %s, want 400", bad, resp.StatusCode, body)
@@ -162,6 +162,12 @@ func TestChatRename(t *testing.T) {
 
 	if resp, body := h.doJSON(t, http.MethodPost, path+"/archive", nil); resp.StatusCode != http.StatusOK {
 		t.Fatalf("archive = %d %s", resp.StatusCode, body)
+	}
+	// The route is shared with task 162's settings: a terminal chat still
+	// renames, but its settings can no longer change.
+	if resp, body := h.doJSON(t, http.MethodPatch, path,
+		map[string]any{"title": "x", "permission_mode": "full-auto"}); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("settings on archived = %d %s, want 409", resp.StatusCode, body)
 	}
 	resp, body = h.doJSON(t, http.MethodPatch, path, map[string]any{"title": "renamed after archive"})
 	if resp.StatusCode != http.StatusOK {

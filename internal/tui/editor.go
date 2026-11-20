@@ -31,16 +31,76 @@ type execFunc func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 
 // editorCommand resolves the editor to open, preferring the visual editor a
 // user configured, then the line editor, then the platform default.
+//
+// The variable is split the way a shell would split a simple command (task
+// 163 decision 4), so an editor whose path holds a space can be quoted:
+// `"C:\Program Files\Notepad++\notepad++.exe" -multiInst`. The temp file's
+// path is appended as its own argv element by the callers, so it never needs
+// quoting itself.
 func editorCommand() []string {
 	for _, env := range []string{"VISUAL", "EDITOR"} {
 		if v := strings.TrimSpace(os.Getenv(env)); v != "" {
-			return strings.Fields(v)
+			return splitEditorCommand(v, runtime.GOOS == "windows")
 		}
 	}
 	if runtime.GOOS == "windows" {
 		return []string{"notepad"}
 	}
 	return []string{"vi"}
+}
+
+// splitEditorCommand splits an $EDITOR value into argv: whitespace separates
+// words, double and single quotes group them, and — on POSIX only — a
+// backslash outside single quotes escapes the next character. On Windows a
+// backslash is a path separator and is kept as written. It is deliberately
+// not a shell: no expansion, no operators. A value with an unbalanced quote
+// falls back to splitting on whitespace alone, which is what every caller
+// did before quotes were understood.
+func splitEditorCommand(s string, windows bool) []string {
+	var (
+		args    []string
+		cur     strings.Builder
+		inWord  bool
+		quote   rune
+		escaped bool
+	)
+	for _, r := range s {
+		switch {
+		case escaped:
+			cur.WriteRune(r)
+			escaped = false
+		case quote != 0:
+			if r == quote {
+				quote = 0
+				continue
+			}
+			if r == '\\' && quote == '"' && !windows {
+				escaped = true
+				continue
+			}
+			cur.WriteRune(r)
+		case r == '"' || r == '\'':
+			quote, inWord = r, true
+		case r == '\\' && !windows:
+			escaped, inWord = true, true
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			if inWord {
+				args = append(args, cur.String())
+				cur.Reset()
+				inWord = false
+			}
+		default:
+			cur.WriteRune(r)
+			inWord = true
+		}
+	}
+	if quote != 0 || escaped {
+		return strings.Fields(s)
+	}
+	if inWord {
+		args = append(args, cur.String())
+	}
+	return args
 }
 
 // openEditorPath opens an existing file in $EDITOR and reports when the
@@ -158,11 +218,16 @@ func (d *detail) editFollowUpBody(text string) tea.Cmd {
 // takes a plain name rather than a task and step because a new task's
 // description belongs to neither yet.
 func writeEditorFile(name, ext, text string) (string, error) {
-	path := filepath.Join(os.TempDir(), "vincent-"+safeName(name)+ext)
+	path := editorFilePath(name, ext)
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		return "", fmt.Errorf("write %s: %w", path, err)
 	}
 	return path, nil
+}
+
+// editorFilePath is where an editing session's temp file lives.
+func editorFilePath(name, ext string) string {
+	return filepath.Join(os.TempDir(), "vincent-"+safeName(name)+ext)
 }
 
 // safeName keeps a step id usable as a file name on every platform.

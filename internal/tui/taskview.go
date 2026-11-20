@@ -554,7 +554,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.switchTab(-1)
 	case openIssueKey:
 		// The pull request tab keeps `i` for its comment, as it had it first
-		// (task 162 decision 2's one exception).
+		// (task 164 decision 2's one exception).
 		if t.tab != taskTabPull {
 			if cmd := t.openIssueCmd(); cmd != nil {
 				return cmd
@@ -604,14 +604,14 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		if t.tab == taskTabOverview && !t.detail.actions.capturing() {
-			// The frame's one link (task 162.7): the output it is about, or
+			// The frame's one link (task 164.7): the output it is about, or
 			// the diff of a finished task.
 			if links := t.overviewLinks(); len(links) > 0 {
 				return t.jumpTab(links[0].tab)
 			}
 		}
 		if t.tab == taskTabOutput && t.detail.selectedRun != 0 {
-			// What the selected attempt was given (task 162 decision 3): the
+			// What the selected attempt was given (task 164 decision 3): the
 			// Step details tab is reached from the attempt, not the strip.
 			return t.setTab(taskTabStepDetails)
 		}
@@ -1054,7 +1054,7 @@ var taskTabShort = [taskTabCount]string{
 
 // renderTabs draws the strip at the widest label set that fits: names, markers
 // and the hint; names and markers; then short names. The strip carries no
-// digits (task 162 decision 3): tab and ⇧tab are how a reader moves.
+// digits (task 164 decision 3): tab and ⇧tab are how a reader moves.
 func (t *taskView) renderTabs() string {
 	tabs := t.tabs()
 	width := t.width
@@ -1226,7 +1226,7 @@ func (t *taskView) renderOutput(width, height int) string {
 		lane.tab = tabOutput
 		pane = lane
 	}
-	// The feed names the open attempt in its own divider (task 162.4); the
+	// The feed names the open attempt in its own divider (task 164.4); the
 	// line under it says what is happening and how to move.
 	foot := pane.feedStatus(width)
 	room := height - len(head)

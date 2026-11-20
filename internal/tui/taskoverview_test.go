@@ -41,7 +41,7 @@ func TestSelectTaskLandsOnOverview(t *testing.T) {
 	}
 }
 
-// The strip has no digits (task 162 decision 3): a digit moves nowhere, and
+// The strip has no digits (task 164 decision 3): a digit moves nowhere, and
 // `i` opens the linked issue from every tab but Pull request's.
 func TestDigitsNoLongerSwitchTabs(t *testing.T) {
 	v := pullTabFixture(t)

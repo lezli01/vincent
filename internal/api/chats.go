@@ -122,6 +122,12 @@ type chatTurnBody struct {
 	CacheCreationTokens *int64 `json:"cache_creation_tokens,omitempty"`
 	ContextTokens       *int64 `json:"context_tokens,omitempty"`
 	ContextWindow       *int64 `json:"context_window,omitempty"`
+	// Model, Effort and PermissionMode are what the turn ran with (task 162
+	// decision 7). All three are absent on a turn from before they were
+	// recorded — "not recorded", never the chat's current values.
+	Model          string `json:"model,omitempty"`
+	Effort         string `json:"effort,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
 func renderChat(c *store.Chat) chatBody {
@@ -146,6 +152,7 @@ func renderChatTurn(t *store.ChatTurn) chatTurnBody {
 		EndedAt: t.EndedAt, DurationMS: t.DurationMS,
 		CacheReadTokens: t.CacheReadTokens, CacheCreationTokens: t.CacheCreationTokens,
 		ContextTokens: t.ContextTokens, ContextWindow: t.ContextWindow,
+		Model: t.Model, Effort: t.Effort, PermissionMode: t.PermissionMode,
 	}
 }
 
@@ -170,6 +177,10 @@ type createChatRequest struct {
 	// Message, when set, is sent as the chat's first turn in the same
 	// request (task 161 decision 1), and an empty title is derived from it.
 	Message string `json:"message"`
+	// PermissionMode is the chat's mode, `full-auto` when omitted (task 162
+	// decision 1). It is validated by the check PATCH uses, so creating a
+	// chat restricted and restricting it later refuse the same adapters.
+	PermissionMode string `json:"permission_mode"`
 }
 
 // handleChatCreate creates a chat, allocating its worktree and
@@ -229,6 +240,19 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 				"vincent refuses this rather than replaying the log as prompt context", name))
 		return
 	}
+	mode := strings.TrimSpace(req.PermissionMode)
+	if mode == "" {
+		mode = string(agent.FullAuto)
+	}
+	if mode != string(agent.FullAuto) {
+		probe := &store.Chat{Agent: name, PermissionMode: string(agent.FullAuto), State: chatstate.Idle}
+		if _, refusal := s.checkChatSettings(r.Context(), probe,
+			store.TurnSettings{Model: req.Model, Effort: req.Effort, PermissionMode: mode}); refusal != nil {
+			refusal.write(w)
+			return
+		}
+	}
+	req.PermissionMode = mode
 	base := req.BaseBranch
 	if base == "" {
 		base = project.DefaultBranch
@@ -272,7 +296,7 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	chat := &store.Chat{
 		ProjectID: project.ID, Title: req.Title, State: chatstate.Idle, Agent: name,
-		Model: req.Model, Effort: req.Effort, PermissionMode: string(agent.FullAuto),
+		Model: req.Model, Effort: req.Effort, PermissionMode: req.PermissionMode,
 		BaseBranch: base, AdoptedBranch: req.ExistingBranch,
 	}
 	if err := s.deps.Store.CreateChat(r.Context(), chat); err != nil {
@@ -468,6 +492,10 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 
 type sendChatRequest struct {
 	Message string `json:"message"`
+	// The per-turn overrides (task 162 decision 6): this turn — or this
+	// queued message, when it drains — runs with them, and the chat keeps
+	// its own settings.
+	chatSettingsRequest
 }
 
 // handleChatSend starts a turn on an idle chat, or queues the message behind
@@ -493,7 +521,11 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, CodeInternal, "no chat runner is wired")
 		return
 	}
-	turn, queued, err := s.deps.Chats.Submit(r.Context(), chat.ID, req.Message)
+	ov := req.turnSettings()
+	if !s.checkTurnOverrides(w, r, chat, ov) {
+		return
+	}
+	turn, queued, err := s.deps.Chats.SubmitWith(r.Context(), chat.ID, req.Message, ov)
 	switch {
 	case errors.Is(err, chatrun.ErrChatCapReached):
 		writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{

@@ -1,6 +1,6 @@
-# 162 — Task workspace redesign: a steps rail, plain tabs, an Output feed, a retouched Diff and an Overview of cards
+# 164 — Task workspace redesign: a steps rail, plain tabs, an Output feed, a retouched Diff and an Overview of cards
 
-**Status:** ⬜ not started (0/9) · **Opened:** 2026-11-20
+**Status:** 🔄 in progress (0/9) · **Opened:** 2026-11-20
 
 The task workspace has the shape the chat and issue views had before their
 redesigns: a steps pane that spends three rows per attempt and wraps output
@@ -18,7 +18,7 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [ ] **162.1** Steps rail: one row per step (state glyph, name, right-aligned
+- [ ] **164.1** Steps rail: one row per step (state glyph, name, right-aligned
   duration) on a connecting line; a dim second row only when the step has
   something to say (retry count, gate, agent · cost, a block reason); attempts
   listed only under the selected step and only when there is more than one;
@@ -26,17 +26,17 @@ Conventions for this file are in [the tasks README](README.md).
   rounds folded to one line; a loop as one pip per iteration; a condition's
   `if:`. `↑/↓` move between steps, `←/→` between the selected step's attempts.
   Shown on every tab.
-- [ ] **162.2** Tabs: Overview, Output, Diff, Workflow, Pull request (the last
+- [ ] **164.2** Tabs: Overview, Output, Diff, Workflow, Pull request (the last
   only when a pull request is linked), cycled with `tab`/`⇧tab`; the digit
   bindings and the tab strip's digits removed; Step details and Details folded
   away (decision 3). A tab may carry a marker: the diff's size, a red `!` on
   Overview when the task needs a human.
-- [ ] **162.3** Linked issue: the task header names the issue on every tab
+- [ ] **164.3** Linked issue: the task header names the issue on every tab
   (`◇ issue #N title  state  i open`), or a dim "no linked issue"; `i` (a new
   keymap op on the task surface) opens the issue view, and `esc` returns to the
   task on the tab it left. Drop the right-hand Details pane; its facts move to
   the header and Overview (decision 1).
-- [ ] **162.4** Output feed: one continuous feed for the whole task. A divider
+- [ ] **164.4** Output feed: one continuous feed for the whole task. A divider
   per step (name, agent or `command`, attempt, start time); finished steps fold
   to one summary line; assistant prose without a gutter; each tool call one row
   — glyph, verb (read/search blue, edit purple, run yellow), target,
@@ -47,31 +47,31 @@ Conventions for this file are in [the tasks README](README.md).
   cost, and `▲ N new below` while not following. Selecting a step in the rail
   scrolls to its divider. `v` keeps the existing levels, default normal;
   `ctrl+o` raw stays.
-- [ ] **162.5** Per-step commit range (store + engine): a migration adding the
+- [ ] **164.5** Per-step commit range (store + engine): a migration adding the
   HEAD a step run started and finished at; the taskrun actor journals both
   (crash-first: the start before the agent runs, the end before the step run is
   finalized); recovery leaves an interrupted run's end empty. Exposed on the
   step-run response.
-- [ ] **162.6** Diff by step (API + TUI): `GET /v1/tasks/{id}/diff?step_run=`
+- [ ] **164.6** Diff by step (API + TUI): `GET /v1/tasks/{id}/diff?step_run=`
   diffs the run's start..end range (409 with a reason when a range is not
-  recorded — rows from before 162.5, or a run that never finished). The tab
+  recorded — rows from before 164.5, or a run that never finished). The tab
   gains a summary line naming the base and the scope, a file list with
   M/A/D/R letters and change bars beside the hunks (falling back to inline
   folds when narrow), line numbers, tinted added and removed lines that keep
   their `+`/`−`, hunk headers carrying the function context; `d` toggles whole
   task and the step selected in the rail.
-- [ ] **162.7** Overview of cards: a status card on top chosen by the existing
+- [ ] **164.7** Overview of cards: a status card on top chosen by the existing
   three frames (progress bar and step names; a red attention card with the
   reason, the already-fetched evidence lines and each action with what it does;
   an outcome card with diff size, commits and the pull request); then Now beside
   The task; then Linked (issue, pull request, chats, branch and base, each row
   openable with `enter`) beside Usage (elapsed, tokens, cost, workflow and
   origin, worktree).
-- [ ] **162.8** Docs and spec: §15's task workspace, key and tab text; §13.2
+- [ ] **164.8** Docs and spec: §15's task workspace, key and tab text; §13.2
   for the diff's `step_run` and the step-run fields; §5 for the new columns;
   `docs/reference/` key tables (from `internal/tui/bindings.go`), API and the
   task guide; `CHANGELOG.md`; an assertion for the per-step diff in a gate.
-- [ ] **162.9** Re-capture every `docs/assets/tui-task-*.png`, `tui-diff.png`,
+- [ ] **164.9** Re-capture every `docs/assets/tui-task-*.png`, `tui-diff.png`,
   `tui-lane-*.png` and `tui-task-steps-lanes.png` with
   `scripts/screenshots.sh`, and drop any shot whose tab no longer exists.
 
@@ -97,6 +97,6 @@ Confirmed by the author on 2026-11-20, against the mocks.
 5. **The default level is normal**: prose and one-line actions, tool output
    folded, a failure unfolded one level.
 6. **Diff by step is in scope now**, which makes this the one part with daemon
-   work (162.5, 162.6). Step runs do not record a commit today, so a run from
+   work (164.5, 164.6). Step runs do not record a commit today, so a run from
    before the migration has no range and says so rather than guessing one.
-7. **One pull request**, mentioning "closes 162".
+7. **One pull request**, mentioning "closes 164".

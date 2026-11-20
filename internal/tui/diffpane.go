@@ -669,7 +669,7 @@ func (p *diffPane) laneCount() int {
 }
 
 // totals is the change's size across every section, and whether a diff has
-// loaded to have one (task 162.2's tab marker).
+// loaded to have one (task 164.2's tab marker).
 func (p *diffPane) totals() (added, removed int, ok bool) {
 	if p.sections == nil {
 		return 0, 0, false
@@ -921,7 +921,7 @@ func colorDiffLine(line string) string {
 }
 
 // diffStatusLetter is git's letter for what happened to a file, in the colour
-// of what it did (task 162.6): a letter, so it reads without the colour.
+// of what it did (task 164.6): a letter, so it reads without the colour.
 func diffStatusLetter(status byte) string {
 	switch status {
 	case 'A':
@@ -961,7 +961,7 @@ func diffBar(added, removed int) string {
 }
 
 // numberDiffLines colours a file's body and puts the old and new line numbers
-// in a gutter in front of each hunk line (task 162.6). A hunk header reads as
+// in a gutter in front of each hunk line (task 164.6). A hunk header reads as
 // a rule carrying the function it falls in. Lines before the first hunk — a
 // mode change, a rename, `Binary files … differ` — are the file's facts and
 // keep their own colour, unnumbered.

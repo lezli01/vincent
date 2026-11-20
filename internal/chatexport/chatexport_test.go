@@ -48,11 +48,12 @@ func fixture(t *testing.T) *Export {
 				CacheReadTokens: ptr[int64](60_000), CacheCreationTokens: ptr[int64](200),
 				ContextTokens: ptr[int64](61_400), ContextWindow: ptr[int64](200_000),
 				CostUSD: ptr(0.0123), DurationMS: ptr[int64](12345), StartedAt: created,
+				Model: ptr("opus"), Effort: ptr("high"), PermissionMode: ptr("full-auto"),
 			},
 			{
 				Seq: 2, State: "failed", Prompt: "Run it again", Tools: []ToolCall{},
 				InputTokens: 10, OutputTokens: 0, FailReason: "agent_error", ErrorMessage: "rate limited",
-				StartedAt: created,
+				StartedAt: created, PermissionMode: ptr("restricted"),
 			},
 			{
 				Seq: 3, State: "done", Prompt: "Summarize", Tools: []ToolCall{}, ToolsNote: NotePruned,

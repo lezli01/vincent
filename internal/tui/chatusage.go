@@ -206,7 +206,12 @@ func (v *chatView) compactQuestion() string {
 }
 
 // chatAgentsMsg carries each adapter's compact command, by name.
-type chatAgentsMsg struct{ compact map[string]string }
+// It also carries every adapter's row, by name, for the settings picker
+// (task 162).
+type chatAgentsMsg struct {
+	compact map[string]string
+	agents  map[string]apiclient.Agent
+}
 
 // loadAgentsCmd reads GET /v1/agents for the compact commands. A failed read
 // leaves the map as it was: no command offered is the safe answer.
@@ -223,11 +228,13 @@ func (v *chatView) loadAgentsCmd() tea.Cmd {
 			return nil
 		}
 		out := make(map[string]string, len(agents))
+		rows := make(map[string]apiclient.Agent, len(agents))
 		for _, a := range agents {
+			rows[a.Name] = a
 			if a.CompactCommand != nil && *a.CompactCommand != "" {
 				out[a.Name] = *a.CompactCommand
 			}
 		}
-		return chatAgentsMsg{compact: out}
+		return chatAgentsMsg{compact: out, agents: rows}
 	}
 }

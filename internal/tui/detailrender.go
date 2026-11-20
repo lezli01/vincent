@@ -194,7 +194,7 @@ func lastOutputLine(lines []string) (string, bool) {
 			continue
 		}
 		// A command's output carries its margin bar in the pane (task
-		// 162.4); quoted on its own the line is just what it printed.
+		// 164.4); quoted on its own the line is just what it printed.
 		if rest, ok := strings.CutPrefix(plain, gutterOutput); ok {
 			return styleDim.Render(rest), true
 		}
@@ -1476,7 +1476,7 @@ func (d *detail) outputLines() []string {
 // needs, and is where the pane's render pass opens and closes.
 // feedLinesAt is what the pane draws: the displayed attempt's lines — or
 // what it says when it has none — placed among the task's other attempts
-// (task 162.4).
+// (task 164.4).
 func (d *detail) feedLinesAt() ([]string, []lineAnchor) {
 	width := max(d.width, 1)
 	if body, ok := d.outputEmptyState(); ok {

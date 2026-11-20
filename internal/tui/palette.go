@@ -43,7 +43,7 @@ type paletteEntry struct {
 	// (task 128): listed, so the human can see it is gone, but not runnable.
 	unbound bool
 	// tab marks a "go to the <Name> tab" row (task 129.17). It has no key
-	// since the strip lost its digits (task 162); its action switches.
+	// since the strip lost its digits (task 164); its action switches.
 	tab   taskViewTab
 	isTab bool
 	// action is a key-less row's own command (task 130.13): a row with no

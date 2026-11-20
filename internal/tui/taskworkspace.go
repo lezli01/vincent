@@ -11,10 +11,10 @@ import (
 	"github.com/lezli01/vincent/internal/reasons"
 )
 
-// The task workspace's wide layout (task 150.6, reworked by task 162): a
+// The task workspace's wide layout (task 150.6, reworked by task 164): a
 // title band, the steps rail on the left and the tabs beside it. The steps are
 // always on screen there, so they stop being a tab; a narrower terminal keeps
-// them as one. The right-hand Details pane of task 150.6 is gone (task 162
+// them as one. The right-hand Details pane of task 150.6 is gone (task 164
 // decision 1): the band names the linked issue and the Overview's cards carry
 // the rest, so Output and Diff get the width.
 
@@ -91,7 +91,7 @@ func taskBandFacts(task apiclient.Task) string {
 	return strings.Join(parts, sep)
 }
 
-// taskIssueChip names the linked issue and the key that opens it (task 162
+// taskIssueChip names the linked issue and the key that opens it (task 164
 // decision 2), or says dimly that there is none.
 func taskIssueChip(task apiclient.Task) string {
 	iss := task.Issue

@@ -54,7 +54,7 @@ func TestChatWheelScrollsOneLinePerTick(t *testing.T) {
 }
 
 // TestChatWheelUpPausesFollowAndCtrlGReArmsIt holds the wheel to the same pair
-// pgup is held to (§15 view 9): a manual scroll pauses follow, ctrl+g re-arms
+// pgup is held to (§15 view 9): a manual scroll pauses follow, alt+shift+g re-arms
 // it and jumps to the end.
 func TestChatWheelUpPausesFollowAndCtrlGReArmsIt(t *testing.T) {
 	v := scrollableChat(t)
@@ -67,12 +67,12 @@ func TestChatWheelUpPausesFollowAndCtrlGReArmsIt(t *testing.T) {
 		t.Fatal("a wheel-up left the body following; a manual scroll pauses it")
 	}
 
-	v.updateKey(registryKey(t, "ctrl+g"))
+	v.updateKey(registryKey(t, "alt+shift+g"))
 	if !v.following {
-		t.Fatal("ctrl+g did not re-arm follow after a wheel scroll")
+		t.Fatal("alt+shift+g did not re-arm follow after a wheel scroll")
 	}
 	if !v.vp.AtBottom() {
-		t.Fatalf("ctrl+g re-armed follow at offset %d without jumping to the end", v.vp.YOffset())
+		t.Fatalf("alt+shift+g re-armed follow at offset %d without jumping to the end", v.vp.YOffset())
 	}
 }
 

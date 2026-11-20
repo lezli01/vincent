@@ -13,17 +13,23 @@ import (
 // chatQueuedBody is one follow-up message waiting behind a chat's live turn
 // (task 156, §5.5, §13.2).
 type chatQueuedBody struct {
-	ID        int64     `json:"id"`
-	ChatID    int64     `json:"chat_id"`
-	Position  int       `json:"position"`
-	Prompt    string    `json:"prompt"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID       int64  `json:"id"`
+	ChatID   int64  `json:"chat_id"`
+	Position int    `json:"position"`
+	Prompt   string `json:"prompt"`
+	// Model, Effort and PermissionMode are the message's per-turn overrides
+	// (task 162 decision 6); absent is "the chat's setting at drain time".
+	Model          string    `json:"model,omitempty"`
+	Effort         string    `json:"effort,omitempty"`
+	PermissionMode string    `json:"permission_mode,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func renderChatQueued(m *store.ChatQueuedMessage) chatQueuedBody {
 	return chatQueuedBody{
 		ID: m.ID, ChatID: m.ChatID, Position: m.Position, Prompt: m.Prompt,
+		Model: m.Settings.Model, Effort: m.Settings.Effort, PermissionMode: m.Settings.PermissionMode,
 		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 	}
 }
@@ -85,6 +91,9 @@ func writeQueueGone(w http.ResponseWriter, err error, action string) {
 
 type editQueuedRequest struct {
 	Message string `json:"message"`
+	// Any of the three present replaces the message's overrides with the
+	// three given (task 162 decision 6); all absent leaves them alone.
+	chatSettingsRequest
 }
 
 // handleChatQueueEdit is PATCH /v1/chats/{id}/queue/{qid}: replace a queued
@@ -102,11 +111,19 @@ func (s *Server) handleChatQueueEdit(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.Message == "" {
+	if req.Message == "" && req.empty() {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "message is required")
 		return
 	}
-	m, err := s.deps.Store.EditChatQueued(r.Context(), chat.ID, qid, req.Message)
+	var ov *store.TurnSettings
+	if !req.empty() {
+		settings := req.turnSettings()
+		if !s.checkTurnOverrides(w, r, chat, settings) {
+			return
+		}
+		ov = &settings
+	}
+	m, err := s.deps.Store.EditChatQueuedWith(r.Context(), chat.ID, qid, req.Message, ov)
 	switch {
 	case errors.Is(err, store.ErrQueuedMessageGone):
 		writeQueueGone(w, err, "edit")

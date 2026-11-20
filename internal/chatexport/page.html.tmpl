@@ -25,6 +25,7 @@ ul.tools li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fon
 <dl class="meta">{{range .Meta}}<dt>{{.Key}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
 {{range .Turns}}<section class="turn">
 <h2>Turn {{.Seq}} · {{.State}}</h2>
+<p class="usage">Ran on: {{.RanWith}}</p>
 <h3>Prompt</h3>
 <div class="prompt">{{.PromptHTML}}</div>
 <h3>Tool calls</h3>

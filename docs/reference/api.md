@@ -172,7 +172,8 @@ are long-lived by contract and no write deadline is set.
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
-    "supports_resume": true,
+    "supports_resume": true, "supports_resume_settings_change": true,
+    "supports_restricted_resume": true,
     "supports_skill_listing": true, "skill_sigil": "/", "skill_position": "leading",
     "supports_file_mentions": true, "file_mention_sigil": "@",
     "file_mention_position": "anywhere", "file_mention_expands": true,
@@ -235,6 +236,23 @@ like `restricted_verdict` it is answered for a CLI that is missing. It is
 `null` — never `false` — when the daemon has no adapter registry to ask, and a
 daemon that predates the field omits it: both mean "no judgement", and nothing
 may be filtered out on either. It rides this route only.
+
+`supports_resume_settings_change` is whether a chat on the adapter may change
+its model or effort after its first turn — `true` for claude, the one adapter
+a capture shows honouring a changed model on a resumed session, and `false`
+for codex, cursor and copilot. It is the same answer
+[`PATCH /v1/chats/{id}`](#changing-a-chats-settings) and a send's overrides
+gate on, so a picker built on it and the `agent_cannot_change_on_resume`
+refusal cannot disagree. It is `null` when the daemon has no adapter registry
+to ask, as `supports_resume` is, and rides this route only.
+
+`supports_restricted_resume` is whether a resumed chat turn on the adapter can
+be kept `restricted` — `false` for codex, whose `exec resume` has no sandbox
+flag, and `true` for the others. It is the adapter's half of the
+`agent_cannot_restrict_resume` refusal; the host's half (cursor on Windows) is
+`restricted_verdict`. It is `null` with no adapter registry to ask, as
+`supports_resume` is, and the TUI's permission-mode toggle reads it rather
+than knowing which adapter it is.
 
 `supports_skill_listing`, `skill_sigil` and `skill_position` describe the
 adapter's skills. `supports_skill_listing` is whether the adapter can list the
@@ -3202,7 +3220,9 @@ POST   /v1/chats                      create, with a worktree and a branch — o
                                       existing_branch, on a branch that is already there
 POST   /v1/tasks/{id}/chat            open a chat on a stopped task, in its worktree
 GET    /v1/chats/{id}                 { chat, turns[] } — the whole conversation
-PATCH  /v1/chats/{id}                 rename: { title }, in any state; the branch keeps its name
+PATCH  /v1/chats/{id}                 change title, model, effort or permission_mode;
+                                      a rename alone is legal in any state and the
+                                      branch keeps its name — see Changing a chat's settings
 POST   /v1/chats/{id}/send            start a turn on an idle chat, or queue the
                                       message behind a live one (202 either way)
 GET    /v1/chats/{id}/queue           { messages[], paused, pause_reason }
@@ -3267,7 +3287,7 @@ None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
 excluded, the stream, the transcript, the search, the skill list, the file
 list and the export included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
 but starts a chat.
-The rename, `PATCH /v1/chats/{id}`, is excluded with them.
+The rename and settings route, `PATCH /v1/chats/{id}`, is excluded with them.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
 `created_by_task_id`, which a chat is not in.
@@ -3376,7 +3396,8 @@ curl -sS -X PATCH http://127.0.0.1:PORT/v1/chats/12   -H "Authorization: Bearer 
 ```
 
 `title` is trimmed and must be non-empty and at most 72 characters; anything
-else is a `400`, as is any other field. The bound is a rename's and a derived
+else is a `400`, as is a field the route does not know; `model`, `effort`
+and `permission_mode` are [settings](#changing-a-chats-settings). The bound is a rename's and a derived
 title's: a `title` given to `POST /v1/chats`, or a task's title a linked chat
 defaults to, is kept as it is, so a chat may carry a longer title than a rename
 would accept. A rename is legal in **every** state,
@@ -3726,6 +3747,38 @@ git runs, and a chat on a task that has lost its worktree with
 `409 task_has_no_worktree` (`details.task_id`). A workspace that has been
 deleted under the daemon, and a `limit` that is not a positive integer, are
 each `400 validation_failed`; any other git failure is a `500`.
+
+
+### Changing a chat's settings
+
+`PATCH /v1/chats/{id}` takes `title`, `model`, `effort` and
+`permission_mode` (`full-auto` or `restricted`), each optional, and answers the
+chat. A rename alone — just `title`, at most 72 characters — is legal in every
+state, ended chats included, and the branch keeps the name it was cut with.
+A change to `model`, `effort` or `permission_mode` is legal while the chat is
+`idle`, `running` or `awaiting_input`; a change made during a live turn applies
+from the next turn, and an ended chat answers `409`. A body with none of the
+four fields is a `400`. The agent cannot change — open a new chat for that. An
+empty `model` or `effort` returns it to the agent's default.
+
+The same three fields are **per-turn overrides** on
+`POST /v1/chats/{id}/send` and on `PATCH /v1/chats/{id}/queue/{qid}`: that turn,
+or that queued message when it runs, uses them and the chat keeps its own
+settings. `POST /v1/chats` takes `permission_mode` too, defaulting to
+`full-auto`. Each turn in `GET /v1/chats/{id}` carries the `model`, `effort`
+and `permission_mode` it ran with; a turn from before vincent recorded them has
+none.
+
+Refusals, the same on every route:
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `agent_cannot_restrict_resume` | `restricted` on an agent that cannot keep a resumed turn restricted (codex), or cannot restrict on this OS (cursor on Windows) |
+| `400` | `agent_cannot_change_on_resume` | a different model or effort after the chat's first turn, on an agent with no recorded proof that a resumed session honours the change — every agent but claude today. `GET /v1/agents` publishes this as `supports_resume_settings_change` |
+| `400` | `validation_failed` | a model or effort from another agent's catalog, or a `permission_mode` that is not one of the two |
+| `409` | `invalid_state` | the chat has ended; or `full-auto` on a chat opened on a task that runs restricted — `details.linked_task_id` names it |
+
+A change publishes `chat.updated`. The route is not an MCP tool.
 
 ### Exporting
 

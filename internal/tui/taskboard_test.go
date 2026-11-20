@@ -260,7 +260,7 @@ func taskWorkspaceFixture(t *testing.T, width int) *taskView {
 
 // The steps have a rail of their own on a wide terminal and stay a tab on a
 // narrow one; neither strip carries Task Details or Step Details unless that
-// tab is open (task 162 decision 3).
+// tab is open (task 164 decision 3).
 func TestTaskWorkspaceTabsFollowTheWidth(t *testing.T) {
 	wide := taskWorkspaceFixture(t, taskRailMinW)
 	want := []taskViewTab{taskTabOverview, taskTabOutput, taskTabDiff, taskTabWorkflow}

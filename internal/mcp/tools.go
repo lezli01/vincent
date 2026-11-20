@@ -157,8 +157,10 @@ var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/queue/clear"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/cancel"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/archive"},
-	// The rename (task 161) is the chat family's lifecycle too: excluded
-	// with the rest under 063 decision 2, not exposed on its own.
+	// The rename (task 161) and a chat's settings (task 162 decision 5) share
+	// this route, and it stays off with the rest of the family under 063
+	// decision 2: an agent that could raise a chat to full-auto over MCP
+	// would be the confirmation §16 asks for, skipped.
 	{Method: http.MethodPatch, Path: "/v1/chats/{id}"},
 	// Handoff joins the list under the same rule rather than as an exception
 	// to it (task 074 decision 1). It creates a task, which is exactly what

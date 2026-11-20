@@ -90,7 +90,7 @@ func (t *taskView) pullTabAvailable() bool {
 // strip is no longer fixed: `cycleTab` used to be modulo taskTabCount, which
 // lands on a tab that is not there the moment one of them is conditional.
 func (t *taskView) tabs() []taskViewTab {
-	// Five tabs, cycled with tab/⇧tab (task 162 decision 3). The narrow
+	// Five tabs, cycled with tab/⇧tab (task 164 decision 3). The narrow
 	// layout has no rail, so its steps keep a tab; the Task Details document
 	// is the Overview's lower half; Step Details is opened from an attempt
 	// and is on the strip only while it is the tab on screen.

@@ -91,7 +91,7 @@ func stepDetailsFixture(t *testing.T) *taskView {
 	return v
 }
 
-// Step details is opened from an attempt (task 162 decision 3): enter on
+// Step details is opened from an attempt (task 164 decision 3): enter on
 // Output opens it, it is on the strip while open, and esc goes back to the
 // output it came from — with or without a pull request linked.
 func TestStepDetailsIsOpenedFromOutput(t *testing.T) {

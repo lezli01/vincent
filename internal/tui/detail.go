@@ -580,7 +580,7 @@ func (d *detail) applyLoaded(msg detailLoadedMsg) tea.Cmd {
 	d.appliedSeq = msg.seq
 	d.syncForm()
 	// The feed folds every attempt the pane is not showing from these rows
-	// (task 162.4), so a refresh can change it without a record arriving.
+	// (task 164.4), so a refresh can change it without a record arriving.
 	d.outputDirty = true
 
 	runs := d.attempts()

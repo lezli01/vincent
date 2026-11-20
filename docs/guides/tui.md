@@ -935,7 +935,7 @@ The chat workspace's conversation body is this same pane, at the same level.
 holds onto the block at the top of it, so resizing the terminal, changing the
 level with `v` or `ctrl+r`, toggling `ctrl+o`, and output old enough to be
 dropped from the window all leave you looking at the same thing. Press `f`
-(`ctrl+g` in a chat) to go back to following the tail.
+(`alt+shift+g` in a chat) to go back to following the tail.
 
 **The line under the pane says what it is doing.** It shows the level when it
 is not `normal`, `raw` when `ctrl+o` is on, which attempt is open, and — for a
@@ -2809,11 +2809,15 @@ periodic repaint.
 | `pgup` / `pgdown` | Scroll the conversation (the mouse wheel scrolls it a line at a time) |
 | `alt+↑` / `alt+↓` | Scroll the conversation one line |
 | `alt+g` | Jump to the start of the conversation |
-| `ctrl+g` | Jump to the live end and follow it again — clears `↓ N new` |
+| `alt+shift+g` | Jump to the live end and follow it again — clears `↓ N new`. That is `alt+G` as you type it; the terminal reports it as `alt+shift+g` |
 | `ctrl+f` | Search the conversation: the conversation takes the keyboard with a search line open — see [Searching a chat](#searching-a-chat) |
+| `ctrl+g` | Write the message in `$EDITOR`. What you save comes back into the composer, unsent; an emptied or untouched file leaves the draft as it was. While `↑` has a queued message in the composer, this edits that message (rebindable as `compose_editor`) |
+| `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only — the file is deleted when the editor exits (rebindable as `chat_markdown`; also in the palette) |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
 | `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
+| `alt+p` | Pick the model and effort the chat's next turns run on; `•` marks the ones it runs on now. After the first turn, only on an agent that can change them on a resumed session (claude today) |
+| `shift+tab` | Toggle the permission mode: lowers to `restricted` at once, asks `y`/`n` before raising to `full-auto`, and says why when the agent can only run one |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to where the chat was opened from — the issue, the issues list, the archived-chats board or the [chat search](#chat-search) — otherwise the chats board |
@@ -2829,9 +2833,9 @@ confirmation — or the hand-off form's submit row — says how many queued
 messages will be discarded.
 
 Scrolled away from the live end, the header says which turn is at the top of
-the window — `turn 2/5` — until `ctrl+g` follows the end again. While you are
+the window — `turn 2/5` — until `alt+shift+g` follows the end again. While you are
 scrolled away, the conversation pane's bottom edge counts what arrived below
-you — `↓ 12 new`; click it or press `ctrl+g` to follow again. Changing the
+you — `↓ 12 new`; click it or press `alt+shift+g` to follow again. Changing the
 level or the window's width does not add to it.
 
 ### Searching a chat
@@ -2857,7 +2861,7 @@ With the conversation holding the keyboard:
 | `{` / `}` | Jump to the previous or next prompt you sent |
 | `g` / `G` | Jump to the start, or to the live end |
 | `pgup` / `pgdown`, `alt+↑` / `alt+↓` | Scroll |
-| `ctrl+g` | Jump to the live end and follow it again |
+| `alt+shift+g` | Jump to the live end and follow it again |
 | `i` / `esc` | Give the keyboard back to the composer |
 
 `esc` peels one layer at a time — the search line, then the conversation
@@ -3037,7 +3041,7 @@ popups, over the conversation's assistant messages rather than one task's.
 each offering its markdown, its plain text and each fenced block in
 it](../assets/tui-chat-copy.png)
 
-Scrolling away from the end pauses follow; `ctrl+g` jumps back and re-arms it.
+Scrolling away from the end pauses follow; `alt+shift+g` jumps back and re-arms it.
 The **mouse wheel** does this too — a line per tick, from anywhere in the view,
 because the conversation is the only thing here that scrolls. Finished turns are
 drawn from their transcripts, so raising the level shows more of what already
@@ -3703,7 +3707,9 @@ A key is written the way the terminal reports it: one character (`R`, `/`,
 `!`), or one of the names `enter`, `tab`, `esc`, `space`, `backspace`,
 `delete`, `insert`, `home`, `end`, `pgup`, `pgdown`, `up`, `down`, `left`,
 `right` and `f1` to `f20` — optionally after `ctrl+`, `alt+` and `shift+`, in
-that order. A shifted letter is written as itself: `R`, not `shift+r`.
+that order. A shifted letter is written as itself: `R`, not `shift+r` — but
+behind `ctrl+` or `alt+` the terminal reports it as `shift+` and the
+lower-case letter, so `alt+G` is written `alt+shift+g`.
 
 **An override moves the operation everywhere it appears.** With `refresh:
 ctrl+e`, every screen that re-reads does so on `ctrl+e` — the chats board, the
@@ -3724,7 +3730,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twenty-four are the operations screens share, the next eleven are the
+The first twenty-eight are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3753,6 +3759,10 @@ The first twenty-four are the operations screens share, the next eleven are the
 | `compact` | `alt+k` | Compact the chat agent's context — sends its compact command (`/compact` on claude) as the next message; asks first |
 | `chat_search` | `S` | Search every chat, from the chats board |
 | `export_chat` | `alt+e` | Export a chat as Markdown, HTML or JSON — from the chat, the chats board or the archived chats board. See [Exporting a chat](#exporting-a-chat) |
+| `chat_model` | `alt+p` | Pick the chat's model and effort for its next turns |
+| `chat_mode` | `shift+tab` | Toggle the chat's permission mode; asks before raising it to full-auto |
+| `compose_editor` | `ctrl+g` | Write the chat message in `$EDITOR` |
+| `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |
@@ -3794,7 +3804,8 @@ to anything else:
   focus or complete on every other screen — and, in the chat
   workspace only, `tab` also opens the skill list, which is a fixed surface
   key like the rest of that screen's and is not nameable in `tui.keys`
-  either.
+  either. `shift+tab` there is `chat_mode`'s default, which `tui.keys` can
+  move.
 - **A popup's `y` and `n`**, which answer the question the popup is asking.
 - **The aliases**: the vim-style `h j k l f b u G`, the output tab's `d`, and
   `r` for retrying the connection while the daemon is unreachable.
@@ -3810,7 +3821,7 @@ only a map whose names and keys are all valid is checked for the last two
 refusals below, which are again reported all at once:
 
 - **An operation that does not exist**, with the list of those that do.
-- **Something that is not a key**, such as `reload` or `shift+r`.
+- **Something that is not a key**, such as `reload`, `shift+r` or `alt+G`.
 - **A key that already means something else**, anywhere in the TUI: another
   operation, or one of the fixed keys above — even on a screen that is never
   open at the same time. A handful of defaults share a key by a recorded

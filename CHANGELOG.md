@@ -25,6 +25,22 @@ list with the user-facing context a commit subject cannot carry.
   `GET /v1/chats/{id}/search?q=`, and the CLI `vincent chat find` (task 160,
   #1014).
 
+- **A chat's model, effort and permission mode can change between turns.**
+  In the chat, the composer's border shows `model · effort · mode`; `alt+p`
+  picks the model and effort for the next turns, and `shift+tab` toggles
+  between `restricted` and `full-auto`, asking first before raising to
+  full-auto. `vincent chat set` does the same from the command line (`--yes`
+  confirms a raise to full-auto), and `vincent chat send --model/--effort/
+  --permission-mode` runs one turn with its own settings. The API gains
+  `PATCH /v1/chats/{id}`, per-turn overrides on send and on a queued message,
+  `permission_mode` on `POST /v1/chats`, a `chat.updated` event, and
+  `supports_resume_settings_change` on `GET /v1/agents`. Each turn records the
+  model, effort and mode it ran with, its heading names the model, and chat
+  export shows them. After a chat's first turn the model and effort can
+  change only on claude, the one agent shown to honour a change on a resumed
+  session; `restricted` is refused on codex chats, and a chat opened on a
+  restricted task can never be raised to full-auto (#1011).
+
 - **A chat queues the messages you send while its turn runs.** `enter` on a
   running chat, or one waiting on the agent's question, no longer refuses:
   the message is queued and runs as the next turn once the current one ends
@@ -90,7 +106,7 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
-- **The task workspace is redesigned (task 162).** The steps are a rail of
+- **The task workspace is redesigned (task 164).** The steps are a rail of
   one row per step on a connecting line, with attempts, a parallel group's
   members, a loop's passes and a fan-out's lanes opening under the step they
   belong to. The tabs are Overview, Output, Diff, Workflow and, with a linked
@@ -113,7 +129,30 @@ list with the user-facing context a commit subject cannot carry.
   output it returned — matching each chat turn's heading. They had drawn the
   arrows the other way round.
 
+- **Write a chat message in your editor, and read the whole conversation as
+  Markdown.** In a chat, `ctrl+g` opens the draft in `$VISUAL`/`$EDITOR`;
+  what you save comes back into the composer, unsent, and an emptied or
+  untouched file leaves the draft as it was. `alt+v` (also in the palette)
+  opens the whole conversation as a read-only Markdown document in the same
+  editor: a header naming the chat's agent, model and branch, then every
+  prompt and answer, as `vincent chat export` writes it. Both keys are
+  rebindable in `tui.keys`, as `compose_editor` and `chat_markdown` (#1013).
+
+### Changed
+
+- **In a chat, follow the live end with `alt+shift+g`, not `ctrl+g`.** `ctrl+g` now
+  opens the editor; `alt+shift+g` (`alt+G` as typed) sits beside `alt+g`, which jumps to the start
+  (#1013).
+
 ### Fixed
+
+- **An `$EDITOR` whose path holds a space can be quoted.** vincent split
+  `$VISUAL` and `$EDITOR` on whitespace alone, so
+  `"C:\Program Files\Notepad++\notepad++.exe" -multiInst` could not be
+  started from any of the TUI's editor keys. The value is now split the way a
+  shell splits a simple command: double and single quotes group a word, and a
+  backslash escapes the next character outside single quotes on macOS and
+  Linux (#1013).
 
 - **Archiving a held side task by hand now archives the closed issue's main
   tasks.** When a closed issue's side task or merge-back could not be
