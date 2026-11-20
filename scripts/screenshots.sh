@@ -2068,7 +2068,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Tab 3
+Tab 4
 Sleep 4s
 Screenshot "'"$OUT"'/tui-task-workflow.png"
 Sleep 2s
@@ -2089,9 +2089,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Tab
-Sleep 1s
-Enter
+Tab 3
 Sleep 2s
 Up 2
 Sleep 3s
