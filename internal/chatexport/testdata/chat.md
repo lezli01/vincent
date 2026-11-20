@@ -17,6 +17,8 @@
 
 ## Turn 1 · done
 
+_Ran on: opus · high · full-auto_
+
 ### Prompt
 
 Why does `Parse` fail?
@@ -39,6 +41,8 @@ _Usage: 1200 in (+60200 cache) · 340 out · $0.0123 · 12.3s_
 
 ## Turn 2 · failed
 
+_Ran on: default model · default effort · restricted_
+
 ### Prompt
 
 Run it again
@@ -57,6 +61,8 @@ _Usage: 10 in · 0 out_
 
 ## Turn 3 · done
 
+_Ran on: not recorded_
+
 ### Prompt
 
 Summarize
@@ -72,6 +78,8 @@ All good.
 _Usage: 5 in · 6 out · $0.0000_
 
 ## Turn 4 · failed
+
+_Ran on: not recorded_
 
 ### Prompt
 
@@ -91,6 +99,8 @@ _Usage: 0 in · 0 out_
 
 ## Turn 5 · done
 
+_Ran on: not recorded_
+
 ### Prompt
 
 copilot turn
@@ -106,6 +116,8 @@ Read it.
 _Usage: 50 in · 20 out · 900ms_
 
 ## Turn 6 · running
+
+_Ran on: not recorded_
 
 ### Prompt
 

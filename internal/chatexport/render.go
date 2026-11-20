@@ -84,6 +84,23 @@ func title(e *Export) string {
 	return fmt.Sprintf("Chat %d: %s", e.Chat.ID, t)
 }
 
+// RanWith is a turn's model · effort · permission mode (task 160), "not
+// recorded" for a turn older than the record, and the adapter's default named
+// as such.
+func (t *Turn) RanWith() string {
+	if t.PermissionMode == nil {
+		return "not recorded"
+	}
+	model, effort := "default model", "default effort"
+	if t.Model != nil {
+		model = *t.Model
+	}
+	if t.Effort != nil {
+		effort = *t.Effort
+	}
+	return model + " · " + effort + " · " + *t.PermissionMode
+}
+
 // Usage is a turn's usage line: tokens, cost when the adapter reports one,
 // duration. A cost the adapter never reports is absent, not `$0` (§9.9).
 // The cache the turn read and wrote follows its input when the adapter
@@ -173,6 +190,7 @@ func Markdown(e *Export) string {
 	for i := range e.Turns {
 		t := &e.Turns[i]
 		fmt.Fprintf(&b, "\n## Turn %d · %s\n\n", t.Seq, t.State)
+		fmt.Fprintf(&b, "_Ran on: %s_\n\n", t.RanWith())
 		b.WriteString("### Prompt\n\n")
 		b.WriteString(strings.TrimRight(t.Prompt, "\n"))
 		b.WriteString("\n\n### Tool calls\n\n")
