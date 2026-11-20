@@ -55,3 +55,5 @@ exclude:
   - scripts/site/
   - skills/vincent-triggers/references/
   - skills/vincent-workflows/references/
+  # The Remotion promo video's sources (and, locally, its node_modules).
+  - video/
