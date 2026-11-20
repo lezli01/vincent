@@ -753,6 +753,8 @@ var bindings = []binding{
 	// alt rather than a letter for ctrl+r's reason — the composer owns every
 	// printable key — and alt+e because the textarea binds no alt+e.
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChat, priority: 15},
+	{op: keymap.ChatModel, key: "alt+p", label: "pick the model and effort the chat's next turns run on", scope: scopePanel, context: ctxChat, hint: "alt+p model", priority: 15},
+	{op: keymap.ChatMode, key: "shift+tab", label: "toggle the permission mode between restricted and full-auto (asks before full-auto)", scope: scopePanel, context: ctxChat, hint: "shift+tab mode", priority: 15},
 
 	// Task 160: ctrl+f hands the keyboard to the conversation with the
 	// search line open. A combination, because the composer owns every

@@ -523,6 +523,8 @@ func (v *chatView) noteLines(width int) []string {
 		text, style, keys = v.closeQuestion(), styleWarn, chatCloseAnswers
 	case v.compacting && v.chat != nil:
 		text, style, keys = v.compactQuestion(), styleWarn, chatCloseAnswers
+	case v.raising && v.chat != nil:
+		text, style, keys = v.raiseQuestion(), styleWarn, chatCloseAnswers
 	case v.note != "":
 		text = v.note
 		if v.noteBad {
@@ -674,6 +676,9 @@ func (v *chatView) footerLines(width, height int) []string {
 	if v.convFocus && v.search.typing {
 		out = append(out, " "+v.searchLine(max(width-1, 1)))
 	}
+	if v.picker != nil {
+		out = append(out, v.picker.render(width)...)
+	}
 	// One element per rendered line, not one per widget (issue #299): bubbles'
 	// viewport pads the composer's View to its height, and the border around
 	// it adds two more, so a joined string would report a height of 1 and
@@ -694,6 +699,10 @@ func (v *chatView) footerLines(width, height int) []string {
 	// go to the border, which is what shell.go's frame draws in.
 	v.composer.SetWidth(chatComposerWidth(width))
 	title := "message"
+	if chip := chatSettingsChip(v.chat); chip != "" {
+		// The settings the next turn runs on (task 160 decision 9).
+		title += " · " + chip
+	}
 	if hidden := v.sizeComposer(height); hidden > 0 {
 		// The draft is taller than the composer may grow: say how much of
 		// it is out of sight rather than let half a draft read as all of it.

@@ -75,6 +75,15 @@ const (
 	// Rename changes a chat's title (task 161 decision 6). `r` for rename:
 	// the chats boards have no retry, which is the task workspace's `r`.
 	Rename Op = "rename"
+	// ChatModel opens the chat's model-and-effort picker (task 160 decision
+	// 9). alt+p for "pick": the composer owns every printable key and the
+	// textarea binds no alt+p.
+	ChatModel Op = "chat_model"
+	// ChatMode toggles the chat's permission mode between §9.4's two, asking
+	// first before raising it to full-auto (task 160 decisions 2–4).
+	// shift+tab, the conventional mode key, which the composer leaves unbound
+	// (tab is the skills list's, task 124 decision 69).
+	ChatMode Op = "chat_mode"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -218,6 +227,12 @@ var catalog = []Info{
 	{Op: ExportChat, Default: "alt+e", Meaning: "export the chat as Markdown, HTML or JSON", Kind: KindTerm, Surfaces: []Surface{
 		"chats", "archived chats", "chat",
 	}},
+	{Op: ChatModel, Default: "alt+p", Meaning: "pick the chat's model and effort for its next turns", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
+	{Op: ChatMode, Default: "shift+tab", Meaning: "toggle the chat's permission mode (asks before full-auto)", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: Approve, Default: "a", Meaning: "approve the gate", Kind: KindAction, Surfaces: []Surface{Actions}},
@@ -354,6 +369,7 @@ var exceptions = []exception{
 	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
 	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 158: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},
 	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},
+	{key: "shift+tab", ops: []Op{ChatMode}, anyFixed: true, why: "task 160 decision 9: shift+tab switches main tabs and moves between form rows, and the chat surface captures input, so neither reaches it — tab there is the skills list's (task 124 decision 69)"},
 }
 
 // Keymap is an effective keymap: every operation's key, defaults with

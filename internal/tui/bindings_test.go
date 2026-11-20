@@ -1206,6 +1206,24 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("alt+k did not ask to compact the context")
 			}
 		},
+		"alt+p": func(t *testing.T) {
+			v := chatViewFixture()
+			v.agents = map[string]apiclient.Agent{"claude": {
+				Name: "claude", Models: []apiclient.AgentOption{{Value: "sonnet"}},
+			}}
+			v.updateKey(registryKey(t, "alt+p"))
+			if v.picker == nil {
+				t.Fatal("alt+p did not open the model and effort picker")
+			}
+		},
+		"shift+tab": func(t *testing.T) {
+			v := chatViewFixture()
+			v.chat.PermissionMode = "restricted"
+			v.updateKey(registryKey(t, "shift+tab"))
+			if !v.raising {
+				t.Fatal("shift+tab on a restricted chat did not ask before raising it to full-auto")
+			}
+		},
 		"alt+a": func(t *testing.T) {
 			v := awaitingChat(t)
 			v.updateKey(registryKey(t, "esc"))
