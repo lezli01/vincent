@@ -19,6 +19,7 @@ package chatrun
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -437,36 +438,96 @@ func linesBlock(dir string, m Mention) (string, bool) {
 // at most limit bytes of them. It answers the lines, the last line number it
 // returned, whether the limit cut the range short, and false when from is
 // past the end or the range holds a NUL byte (a binary file is not inlined).
+//
+// Memory is bounded by limit, not by the file (review F5): a line is read in
+// bufio-sized slices and only the part that can still be inlined is kept, so
+// a minified bundle's one 200 MB line or a log's nine-millionth line costs a
+// buffer, not the line or the prefix before it.
 func readRange(rd io.Reader, from, to, limit int) (lines []string, last int, truncated, ok bool) {
 	br := bufio.NewReader(rd)
 	size := 0
 	for n := 1; n <= to; n++ {
-		line, err := br.ReadString('\n')
-		if line == "" && err != nil {
+		keep := 0
+		if n >= from {
+			keep = limit - size
+		}
+		ln, err := readLine(br, keep)
+		if !ln.read {
 			break
 		}
 		if n < from {
+			if err != nil {
+				break
+			}
 			continue
 		}
-		line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-		if strings.IndexByte(line, 0) >= 0 {
+		if ln.nul {
 			return nil, 0, false, false
 		}
-		if size+len(line)+1 > limit {
+		if size+ln.length+1 > limit {
 			if room := limit - size; room > 0 {
-				lines = append(lines, clipRunes(line, room))
+				lines = append(lines, clipRunes(ln.kept, room))
 				last = n
 			}
 			return lines, last, true, last >= from
 		}
-		size += len(line) + 1
-		lines = append(lines, line)
+		size += ln.length + 1
+		lines = append(lines, ln.kept)
 		last = n
 		if err != nil {
 			break
 		}
 	}
 	return lines, last, false, last >= from
+}
+
+// rangeLine is one line as readLine consumed it.
+type rangeLine struct {
+	kept   string // at most the first keep bytes of the line, CR/LF excluded
+	length int    // the whole line's length, CR/LF excluded
+	nul    bool   // the line holds a NUL byte anywhere
+	read   bool   // anything was read at all; false at the end of input
+}
+
+// readLine consumes one line from br, keeping at most keep bytes of it and
+// discarding the rest without holding it, while still scanning all of it for
+// a NUL. The error is the reader's: nil when the line ended in a newline.
+func readLine(br *bufio.Reader, keep int) (rangeLine, error) {
+	var (
+		ln     rangeLine
+		kept   []byte
+		lastCR bool
+	)
+	for {
+		chunk, err := br.ReadSlice('\n')
+		if len(chunk) > 0 {
+			ln.read = true
+		}
+		body := chunk
+		if err == nil {
+			body = chunk[:len(chunk)-1]
+		}
+		if bytes.IndexByte(body, 0) >= 0 {
+			ln.nul = true
+		}
+		// One byte past keep, so a trailing CR inside it can be dropped
+		// without losing a byte of the line.
+		if room := keep + 1 - len(kept); room > 0 {
+			kept = append(kept, body[:min(room, len(body))]...)
+		}
+		if len(body) > 0 {
+			lastCR = body[len(body)-1] == '\r'
+		}
+		ln.length += len(body)
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if lastCR {
+			ln.length--
+		}
+		ln.kept = string(kept[:min(len(kept), ln.length, keep)])
+		return ln, err
+	}
 }
 
 // fenceFor answers a backtick fence longer than any run inside body, so a
