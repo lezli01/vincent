@@ -30,24 +30,33 @@ func CheckpointRef(chatID int64, seq int) string {
 // checkpointed like any other.
 //
 // An error fails the turn `checkpoint_failed`; it never runs unprotected.
-func (r *Runner) checkpoint(ctx context.Context, chat *store.Chat, turn *store.ChatTurn, workDir string) error {
+// Files git could not read are not an error (review F1): they are left out
+// of the checkpoint, logged, and returned for the turn's transcript, so one
+// unreadable file never stops a chat from running at all.
+func (r *Runner) checkpoint(
+	ctx context.Context, chat *store.Chat, turn *store.ChatTurn, workDir string,
+) (skipped []string, err error) {
 	git := gitx.New()
 	snapCtx, cancel := context.WithTimeout(ctx, gitx.WorktreeTimeout)
 	defer cancel()
 	snap, err := git.Snapshot(snapCtx, workDir, r.checkpointScratch(),
 		fmt.Sprintf("vincent: chat %d turn %d checkpoint", chat.ID, turn.Seq))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := git.UpdateRef(snapCtx, workDir, CheckpointRef(chat.ID, turn.Seq), snap.Commit); err != nil {
-		return fmt.Errorf("checkpoint: write ref: %w", err)
+		return nil, fmt.Errorf("checkpoint: write ref: %w", err)
 	}
 	turn.CheckpointSHA, turn.HeadBefore = snap.Commit, snap.Head
 	if err := r.deps.Store.UpdateChatTurn(ctx, turn); err != nil {
 		turn.CheckpointSHA, turn.HeadBefore = "", ""
-		return fmt.Errorf("checkpoint: record: %w", err)
+		return nil, fmt.Errorf("checkpoint: record: %w", err)
 	}
-	return nil
+	if len(snap.Skipped) > 0 {
+		r.deps.Logger.Warn("chat turn checkpoint skipped unreadable files",
+			"chat", chat.ID, "turn", turn.Seq, "paths", snap.Skipped)
+	}
+	return snap.Skipped, nil
 }
 
 // recordHeadAfter notes workDir's HEAD once the turn's process is gone, for

@@ -1323,11 +1323,17 @@ commit attribution was considered and not taken (task 159 decision 1).
 
 Every chat turn checkpoints the worktree it runs in **before** its agent
 process starts. The snapshot is taken through a temporary index
-(`GIT_INDEX_FILE` under the data directory): `read-tree HEAD`, `add -A`,
-`write-tree`, then `commit-tree` with HEAD as the only parent. The real
-index, HEAD and every file in the worktree are left as they were. The
-snapshot holds tracked edits, deletions and untracked files; ignored files
-are not captured, as git ignores them everywhere else. The staged/unstaged
+(`GIT_INDEX_FILE` under the data directory): `read-tree HEAD`, `add -A
+--ignore-errors`, `write-tree`, then `commit-tree` with HEAD as the only
+parent. The real index, HEAD and every file in the worktree are left as they
+were. The snapshot holds tracked edits, deletions and untracked files;
+ignored files are not captured, as git ignores them everywhere else. A file
+git cannot read (an untracked file without read permission, such as a
+root-owned one a container step left on Linux) is left out rather than
+failing the checkpoint — one such file would otherwise fail every later turn
+of the chat — and its path is written to the turn's transcript as a
+`vincent.checkpoint_skipped` record and to the daemon log (review F1,
+2026-11-20). The staged/unstaged
 split is not kept: a restore writes the snapshot's differences from its HEAD
 back as unstaged changes.
 

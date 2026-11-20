@@ -106,6 +106,13 @@ overrules them.
    lives beside the other turn reasons there, and is documented with them in
    the API reference. A stop that lands while git runs fails `canceled`, not
    `checkpoint_failed`.
+   *Amended 2026-11-20 (review F1, settled with the author):* a file git
+   cannot read is not a checkpoint failure. `add -A --ignore-errors` leaves
+   it out, `gitx.Snapshot` reports it in `Skipped`, and the turn runs with a
+   `vincent.checkpoint_skipped` transcript record naming it — beating
+   "refuse and name the file", which would stop every later turn of the chat
+   until a human fixed it. 167.3 must therefore not let `Restore`'s
+   `clean -fd` delete a path the checkpoint skipped.
 8. **Rewind and fork refuse while a turn is live** (`running`,
    `awaiting_input`, or a queue draining) with `409`, as a guard, not a §5.5
    transition. Not offered on terminal chats.

@@ -4,6 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -201,5 +204,47 @@ func TestUpdateAndDeleteRefs(t *testing.T) {
 	}
 	if _, err := g.DeleteRefs(ctx, dir, "heads/"); err == nil {
 		t.Error("DeleteRefs accepted a prefix outside refs/")
+	}
+}
+
+// TestSnapshotSkipsUnreadableFiles is review F1: an untracked file git cannot
+// read — a root-owned 0600 file a container step left, say — is left out of
+// the capture and named in Skipped, and the capture still succeeds, instead
+// of every later checkpoint failing on it.
+func TestSnapshotSkipsUnreadableFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a file unreadable on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000 file")
+	}
+	g, dir := snapRepo(t)
+	ctx := context.Background()
+	writeFile(t, dir, "new.txt", "fresh\n")
+	writeFile(t, dir, "secret", "hidden\n")
+	writeFile(t, dir, "deep/locked.txt", "hidden\n")
+	for _, rel := range []string{"secret", "deep/locked.txt"} {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.Chmod(p, 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(p, 0o600) })
+	}
+
+	snap, err := g.Snapshot(ctx, dir, t.TempDir(), "checkpoint")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	slices.Sort(snap.Skipped)
+	if want := []string{"deep/locked.txt", "secret"}; !slices.Equal(snap.Skipped, want) {
+		t.Errorf("Skipped = %q, want %q", snap.Skipped, want)
+	}
+	files, err := g.Run(ctx, dir, "ls-tree", "-r", "--name-only", snap.Commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Fields(files)
+	if !slices.Contains(got, "new.txt") || slices.Contains(got, "secret") || slices.Contains(got, "deep/locked.txt") {
+		t.Errorf("snapshot files = %q, want new.txt and neither unreadable file", got)
 	}
 }

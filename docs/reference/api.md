@@ -4047,7 +4047,9 @@ These failure reasons are worth knowing:
 - **`checkpoint_failed`** — vincent could not snapshot the chat's worktree
   before the turn (the worktree is not a git repository any more, the disk is
   full, git failed). The agent was never started, so nothing ran without a
-  checkpoint behind it. Each turn's snapshot is the git ref
+  checkpoint behind it. A file git cannot read is not a failure: it is left
+  out of the checkpoint and named in the turn's transcript
+  (`vincent.checkpoint_skipped`), and the turn runs. Each turn's snapshot is the git ref
   `refs/vincent/chats/<chat id>/turn-<seq>` in the project's repository.
 
 ## Step status

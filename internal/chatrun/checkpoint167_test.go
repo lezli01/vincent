@@ -3,6 +3,8 @@ package chatrun
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -79,5 +81,42 @@ func TestCheckpointFailureNeverSpawns(t *testing.T) {
 	}
 	if turn.CheckpointSHA != "" {
 		t.Errorf("checkpoint recorded on a failed checkpoint: %s", turn.CheckpointSHA)
+	}
+}
+
+// TestUnreadableFileDoesNotStopTheChat is review F1: an untracked file git
+// cannot read is left out of the checkpoint, and the turn runs anyway — every
+// later turn too — with the skipped path recorded in its transcript.
+func TestUnreadableFileDoesNotStopTheChat(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a file unreadable on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000 file")
+	}
+	h := newHarness(t)
+	c := h.chat(t)
+	secret := filepath.Join(c.WorktreePath, "secret")
+	if err := os.WriteFile(secret, []byte("root's\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(secret, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(secret, 0o600) })
+
+	for seq := 1; seq <= 2; seq++ {
+		turn := h.sendAndWait(t, c.ID, "hello")
+		h.waitIdle(t, c.ID)
+		if turn.State != chatstate.TurnDone {
+			t.Fatalf("turn %d = %s (%s: %s)", seq, turn.State, turn.FailReason, turn.ErrorMessage)
+		}
+		if turn.CheckpointSHA == "" {
+			t.Fatalf("turn %d recorded no checkpoint", seq)
+		}
+		if body := h.transcript(t, c.ID, seq); !strings.Contains(body, `"type":"vincent.checkpoint_skipped"`) ||
+			!strings.Contains(body, `"secret"`) {
+			t.Errorf("turn %d transcript does not name the skipped file:\n%s", seq, body)
+		}
 	}
 }

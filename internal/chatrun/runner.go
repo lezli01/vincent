@@ -592,7 +592,8 @@ func (r *Runner) runTurn(
 		next = r.finish(turn, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
 		return next
 	}
-	if err := r.checkpoint(ctx, chat, turn, workDir); err != nil {
+	skipped, err := r.checkpoint(ctx, chat, turn, workDir)
+	if err != nil {
 		reason := ReasonCheckpointFailed
 		if ctx.Err() != nil {
 			// A stop that landed while git ran is the human's, not git's.
@@ -600,6 +601,11 @@ func (r *Runner) runTurn(
 		}
 		next = r.finish(turn, chatstate.TurnFailed, reason, err.Error(), chat)
 		return next
+	}
+	if len(skipped) > 0 {
+		// Said where the human reads the turn: these files are not in its
+		// checkpoint, so a rewind to it cannot bring them back.
+		tr.Note("checkpoint_skipped", map[string]any{"paths": skipped})
 	}
 	env = withChatMarker(env, chat.ID)
 	// The turn's mentions are expanded here, when it starts — a queued
