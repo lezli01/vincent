@@ -96,6 +96,11 @@ overrules them.
    restore resets the index to the checkpoint's HEAD and leaves the
    snapshot's differences unstaged. Keeping a second tree for the index would
    double the work per turn to preserve a distinction agents rarely make.
+   *Amended 2026-11-20 (review F2):* the temporary index is seeded with a
+   copy of the worktree's real index (its mtime kept, for git's racy-entry
+   check), falling back to `read-tree HEAD` without one. The tree is the same;
+   a read-tree index has no stat data, so `add -A` rehashed every tracked
+   file per turn (0.79 s against 0.02 s on this repository).
 7. **Crash-first.** The ref is written and its SHA stored on the turn row
    before `adapter.Start`; a failure fails the turn `checkpoint_failed` and
    the agent never runs unprotected. Recovery needs nothing new. A drained

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,7 @@ import (
 // read permission, say, which a container step can leave behind on Linux.
 // A capture that skips them still succeeds (task 167, review F1): one
 // unreadable file must not stop every later turn of a chat. A tracked file
-// that could not be read keeps its last staged content instead.
+// that could not be read keeps the content the real index had staged.
 type Snapshot struct {
 	Commit  string
 	Head    string
@@ -39,8 +40,17 @@ var snapshotIdentity = []string{
 // "snapshot mechanism"). It stages into a temporary index — `GIT_INDEX_FILE`
 // pointing at a file under scratch, a directory the caller owns (the data
 // directory, never the worktree) — so the real index, HEAD and every file in
-// dir are left exactly as they were: `read-tree HEAD`, `add -A
+// dir are left exactly as they were: a copy of the real index, `add -A
 // --ignore-errors`, `write-tree`, then `commit-tree` with HEAD as the parent.
+//
+// The copy, not `read-tree HEAD`, is what the temporary index starts from
+// (review F2): `add -A` makes the index match the worktree either way, so the
+// tree is the same, but a read-tree index carries no stat data and `add`
+// must then read and hash every tracked file on every turn — 0.79 s against
+// 0.02 s on a 2,600-file repository. The copy keeps the real index's stat
+// cache, and its skip-worktree bits, so a sparse checkout's absent files are
+// not captured as deletions. `read-tree HEAD` remains the fallback for a
+// worktree with no index file.
 // The files `add` could not read are reported in Snapshot.Skipped rather than
 // failing the capture.
 //
@@ -71,8 +81,14 @@ func (g *Git) Snapshot(ctx context.Context, dir, scratch, message string) (Snaps
 		return Snapshot{}, fmt.Errorf("snapshot: %w", err)
 	}
 	env := append([]string{"GIT_INDEX_FILE=" + index}, snapshotIdentity...)
-	if _, err := g.RunEnv(ctx, dir, env, "read-tree", head); err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: read-tree: %w", err)
+	seeded, err := g.seedIndex(ctx, dir, index)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("snapshot: seed index: %w", err)
+	}
+	if !seeded {
+		if _, err := g.RunEnv(ctx, dir, env, "read-tree", head); err != nil {
+			return Snapshot{}, fmt.Errorf("snapshot: read-tree: %w", err)
+		}
 	}
 	skipped, err := g.addAll(ctx, dir, env)
 	if err != nil {
@@ -87,6 +103,39 @@ func (g *Git) Snapshot(ctx context.Context, dir, scratch, message string) (Snaps
 		return Snapshot{}, fmt.Errorf("snapshot: commit-tree: %w", err)
 	}
 	return Snapshot{Commit: commit, Head: head, Skipped: skipped}, nil
+}
+
+// seedIndex copies dir's own index (per worktree: `rev-parse --git-path
+// index`) to index, reporting false when there is none to copy. The copy
+// keeps the original's modification time: git trusts an entry's stat data
+// only when the file is older than the index ("racy git"), and a fresh mtime
+// would make it trust entries the real index knows it must not.
+func (g *Git) seedIndex(ctx context.Context, dir, index string) (bool, error) {
+	real, err := g.Run(ctx, dir, "rev-parse", "--git-path", "index")
+	if err != nil {
+		return false, err
+	}
+	if !filepath.IsAbs(real) {
+		real = filepath.Join(dir, real)
+	}
+	info, err := os.Stat(real)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	b, err := os.ReadFile(real)
+	if err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(index, b, 0o600); err != nil {
+		return false, err
+	}
+	if err := os.Chtimes(index, info.ModTime(), info.ModTime()); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // unableToIndex is the prefix of the line `git add --ignore-errors` writes

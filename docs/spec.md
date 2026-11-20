@@ -1323,9 +1323,12 @@ commit attribution was considered and not taken (task 159 decision 1).
 
 Every chat turn checkpoints the worktree it runs in **before** its agent
 process starts. The snapshot is taken through a temporary index
-(`GIT_INDEX_FILE` under the data directory): `read-tree HEAD`, `add -A
+(`GIT_INDEX_FILE` under the data directory) seeded with a copy of the
+worktree's own index (`read-tree HEAD` when it has none): `add -A
 --ignore-errors`, `write-tree`, then `commit-tree` with HEAD as the only
-parent. The real index, HEAD and every file in the worktree are left as they
+parent. Seeding from the real index keeps its stat cache, so `add` hashes
+only the files that changed rather than every tracked file on every turn
+(review F2, 2026-11-20). The real index, HEAD and every file in the worktree are left as they
 were. The snapshot holds tracked edits, deletions and untracked files;
 ignored files are not captured, as git ignores them everywhere else. A file
 git cannot read (an untracked file without read permission, such as a

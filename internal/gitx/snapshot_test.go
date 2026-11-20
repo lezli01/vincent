@@ -248,3 +248,55 @@ func TestSnapshotSkipsUnreadableFiles(t *testing.T) {
 		t.Errorf("snapshot files = %q, want new.txt and neither unreadable file", got)
 	}
 }
+
+// TestSnapshotSeedsFromTheRealIndex is review F2: the temporary index starts
+// as a copy of the real one, not `read-tree HEAD`. The observable difference
+// besides speed is the index's own flags: a skip-worktree file (a sparse
+// checkout's) absent from disk is kept, where a read-tree index would have
+// captured it as deleted.
+func TestSnapshotSeedsFromTheRealIndex(t *testing.T) {
+	g, dir := snapRepo(t)
+	ctx := context.Background()
+	if _, err := g.Run(ctx, dir, "update-index", "--skip-worktree", "gone.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "a.txt", "two\n")
+	snap, err := g.Snapshot(ctx, dir, t.TempDir(), "checkpoint")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if blob, err := g.Run(ctx, dir, "show", snap.Commit+":gone.txt"); err != nil || blob != "doomed" {
+		t.Errorf("skip-worktree gone.txt = %q, %v; want it kept", blob, err)
+	}
+	if blob, err := g.Run(ctx, dir, "show", snap.Commit+":a.txt"); err != nil || blob != "two" {
+		t.Errorf("a.txt = %q, %v; want the worktree's edit", blob, err)
+	}
+}
+
+// TestSnapshotWithoutAnIndex: a worktree whose index file is missing falls
+// back to `read-tree HEAD` and still captures the worktree.
+func TestSnapshotWithoutAnIndex(t *testing.T) {
+	g, dir := snapRepo(t)
+	ctx := context.Background()
+	if err := os.Remove(filepath.Join(dir, ".git", "index")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "new.txt", "fresh\n")
+	snap, err := g.Snapshot(ctx, dir, t.TempDir(), "checkpoint")
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	files, err := g.Run(ctx, dir, "ls-tree", "-r", "--name-only", snap.Commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := ".gitignore\na.txt\ngone.txt\nnew.txt"; files != want {
+		t.Errorf("snapshot files = %q, want %q", files, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git", "index")); !os.IsNotExist(err) {
+		t.Errorf("the snapshot created the real index: %v", err)
+	}
+}
