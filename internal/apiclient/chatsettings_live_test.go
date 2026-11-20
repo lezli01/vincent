@@ -47,7 +47,7 @@ func TestChatSettingsOverTheWire(t *testing.T) {
 	t.Setenv("FAKEAGENT_SESSION_DIR", t.TempDir())
 	bin := func() string { return fake }
 	reg := agent.NewRegistry(claude.New(bin), codex.New(bin))
-	cfg := func() config.Config { return config.Default() }
+	cfg := config.Default
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	chats := chatrun.New(chatrun.Deps{Store: st, Config: cfg, Agents: reg, DataDir: dataDir, Logger: log})
 	chats.Start(ctx)

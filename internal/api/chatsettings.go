@@ -79,13 +79,17 @@ func (s *Server) checkChatSettings(
 	ctx context.Context, chat *store.Chat, want store.TurnSettings,
 ) (warnings []string, refusal *settingsRefusal) {
 	if s.deps.Agents == nil {
-		return nil, &settingsRefusal{status: http.StatusInternalServerError, code: CodeInternal,
-			message: "no agent registry is configured"}
+		return nil, &settingsRefusal{
+			status: http.StatusInternalServerError, code: CodeInternal,
+			message: "no agent registry is configured",
+		}
 	}
 	adapter, ok := s.deps.Agents.Get(chat.Agent)
 	if !ok {
-		return nil, &settingsRefusal{status: http.StatusBadRequest, code: CodeValidationFailed,
-			message: fmt.Sprintf("chat %d's agent %q is not registered", chat.ID, chat.Agent)}
+		return nil, &settingsRefusal{
+			status: http.StatusBadRequest, code: CodeValidationFailed,
+			message: fmt.Sprintf("chat %d's agent %q is not registered", chat.ID, chat.Agent),
+		}
 	}
 	if want.PermissionMode == "" {
 		want.PermissionMode = string(agent.FullAuto) // the column's default
@@ -99,42 +103,52 @@ func (s *Server) checkChatSettings(
 		if restricted {
 			// Decision 3: the linked chat's clamp holds, by PATCH, by a
 			// per-turn override and by a queued one alike.
-			return nil, &settingsRefusal{status: http.StatusConflict, message: fmt.Sprintf(
-				"chat %d is linked to task %d, which runs restricted; its chat can never run full-auto",
-				chat.ID, taskID),
+			return nil, &settingsRefusal{
+				status: http.StatusConflict, message: fmt.Sprintf(
+					"chat %d is linked to task %d, which runs restricted; its chat can never run full-auto",
+					chat.ID, taskID),
 				details: map[string]string{
 					"state": string(chat.State), "action": "permission_mode",
 					"linked_task_id": strconv.FormatInt(taskID, 10),
-				}}
+				},
+			}
 		}
 	case agent.Restricted:
 		if !agent.CanResumeRestricted(adapter) || !s.restrictedPossibleHere(chat.Agent) {
-			return nil, &settingsRefusal{status: http.StatusBadRequest, code: CodeAgentCannotRestrictResume,
+			return nil, &settingsRefusal{
+				status: http.StatusBadRequest, code: CodeAgentCannotRestrictResume,
 				message: fmt.Sprintf("agent %q cannot keep a resumed chat turn restricted%s; "+
 					"vincent refuses this rather than let a later turn run full-auto",
-					chat.Agent, restrictHereSuffix(chat.Agent))}
+					chat.Agent, restrictHereSuffix(chat.Agent)),
+			}
 		}
 	default:
-		return nil, &settingsRefusal{status: http.StatusBadRequest, code: CodeValidationFailed,
-			message: fmt.Sprintf("permission_mode must be %q or %q", agent.FullAuto, agent.Restricted)}
+		return nil, &settingsRefusal{
+			status: http.StatusBadRequest, code: CodeValidationFailed,
+			message: fmt.Sprintf("permission_mode must be %q or %q", agent.FullAuto, agent.Restricted),
+		}
 	}
 	// A session exists once a turn has started: before the first, there is
 	// nothing to resume and any model is the first one (decision 8).
 	started := chat.SessionID != "" || chatstate.HoldsProcess(chat.State)
 	modelChanged := want.Model != chat.Model || want.Effort != chat.Effort
 	if modelChanged && started && !agent.CanChangeOnResume(adapter) {
-		return nil, &settingsRefusal{status: http.StatusBadRequest, code: CodeAgentCannotChangeOnResume,
+		return nil, &settingsRefusal{
+			status: http.StatusBadRequest, code: CodeAgentCannotChangeOnResume,
 			message: fmt.Sprintf("agent %q has no capture showing a resumed session honours a changed model "+
 				"or effort, so chat %d keeps the ones its session started with; open a new chat to change them",
-				chat.Agent, chat.ID)}
+				chat.Agent, chat.ID),
+		}
 	}
 	if s.deps.Catalog != nil {
 		errs, warns := s.deps.Catalog.Catalogs().Check(agent.Selection{
 			Agent: chat.Agent, Model: want.Model, Effort: want.Effort,
 		})
 		if len(errs) > 0 {
-			return nil, &settingsRefusal{status: http.StatusBadRequest, code: CodeValidationFailed,
-				message: errs[0].Message}
+			return nil, &settingsRefusal{
+				status: http.StatusBadRequest, code: CodeValidationFailed,
+				message: errs[0].Message,
+			}
 		}
 		for _, f := range warns {
 			warnings = append(warnings, f.Message)

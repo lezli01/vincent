@@ -309,7 +309,13 @@ func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, i
 func runChatTurnWith(
 	ctx context.Context, cmd *cobra.Command, c *apiclient.Client, id int64, message string, ov apiclient.TurnSettings,
 ) error {
-	sent, err := c.SendChatWith(ctx, id, message, ov)
+	send := func() (*apiclient.ChatSend, error) {
+		if ov == (apiclient.TurnSettings{}) {
+			return c.SendChat(ctx, id, message)
+		}
+		return c.SendChatWith(ctx, id, message, ov)
+	}
+	sent, err := send()
 	if err != nil {
 		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 		return exitError{code: 1}
