@@ -1281,6 +1281,7 @@ selected on the board it acts on all of them; see
 | `A` | Archive (asks first — the worktree is removed) | `done`, `aborted` |
 | `F` | Follow up — run more work in this finished task's worktree | `done`, `aborted` |
 | `T` | Chat with an agent in this task's worktree, or reopen the chat already open on it | `blocked`, `awaiting_gate`, `done`, `aborted` |
+| `alt+t` | As `T`, but first asks for the agent, model and effort, and an optional first message | `blocked`, `awaiting_gate`, `done`, `aborted` |
 
 `E` opens the failing step's prompt or command in your editor, and the override
 applies **to this task's snapshot only** — the workflow file is untouched. On a
@@ -1405,6 +1406,12 @@ what would it take to finish — press `T`. It is offered on a `blocked`,
 worktree and branch**. Its first message carries the task and what stopped it:
 the failure and the transcript's tail for a blocked task, the gate for one at a
 gate, the last step's summary for a finished one.
+
+`T` takes the default agent and opens at once. To choose, press `alt+t` (or
+**chat with…** in the palette): a small form asks for the agent, model and
+effort, and optionally a first message, which is sent after the task's context
+as the chat opens. On a task that already has a chat open, `alt+t` reopens that
+chat as `T` does — its agent was fixed when it opened.
 
 While that chat is open **the task is locked**. It stays exactly where it was,
 and every action but `c` cancel is refused — the action bar offers `c` or
@@ -1938,6 +1945,7 @@ completed](../assets/tui-issues.png)
 | `.` | Mark an idle in-progress issue ready, or a pending hand-off issue not ready |
 | `,` | Return a claimed or waiting issue from its handoff — asks `y`/`n` first |
 | `T` | [Chat on the selected issue](#a-chat-on-the-issue--t), in its main worktree — or reopen the chat already holding it |
+| `alt+t` | As `T`, choosing the chat's agent, model and effort — and an optional first message — first |
 
 The mouse wheel moves the selection one row per tick, and a click selects the
 row under it.
@@ -2057,6 +2065,7 @@ and the remote state](../assets/tui-issue-jira.png)
 | `.` | Mark the issue ready when it is idle in progress, or not ready when it is pending hand-off |
 | `,` | Return the issue from its handoff — asks `y`/`n` first |
 | `T` | [Chat on the issue](#a-chat-on-the-issue--t), in its main worktree — or reopen the chat already holding it |
+| `alt+t` | As `T`, choosing the chat's agent, model and effort — and an optional first message — first |
 
 The page scrolls first: selecting a task never jumps it away from the
 description, and `▲ n more` / `▼ n more` say when it continues above or below.
@@ -2085,6 +2094,10 @@ task does, and lands you in the [chat workspace](#chat-workspace), whose
 header reads `on issue #N`. No form opens: the issue decides the project,
 the worktree and the branch, the chat takes the issue's title, and the agent
 is the daemon's default — `vincent chat start --issue` is the full surface.
+`alt+t` (or **chat with…** in the palette) is the same chat with a small form
+first: agent, model and effort, and an optional first message sent as the
+chat opens. With a chat already holding the issue it goes straight there, as
+`T` does — that chat's agent is fixed.
 The chat's first turn carries the issue's title, description and latest
 comments. An issue with no main branch yet gets one cut for the chat;
 otherwise the chat receives the directory from the main task or chat before
@@ -2515,6 +2528,7 @@ task-only.
 | `tab` / `shift+tab` | Next / previous [main tab](#main-tabs), when chats is one |
 | `enter` | Open the chat's workspace |
 | `n` | Start a chat in the selected project |
+| `r` | Rename the chat — a one-line prompt holding its current title; the branch keeps its name |
 | `A` | Archive the chat — asks first, and re-offers with the force when the worktree is dirty; declines on a chat opened on a task |
 | `/` | Filter by title, agent or branch |
 | `s` | Cycle the listing between live, ended (archived, handed-off or closed), and all |
@@ -2557,8 +2571,24 @@ did before.
 
 `n` is the one key whose meaning depends on where you are: on this board it
 starts a chat, everywhere else it opens the new-task form. The create form takes
-project, title, agent, model, effort, base branch and branch; `ctrl+s` creates
-and drops you straight into the workspace. With no project registered, `n` says
+project, message, title, agent, model, effort, base branch and branch, and opens
+with the cursor in the **message** row and every other row at its default. Type
+what you want to ask and press `enter`: the chat is created and the message
+sent in one step, and you land in the workspace with the answer arriving. That
+is the quick chat — `n`, type, `enter`. `ctrl+j` (or `shift+enter`, `alt+enter`
+where the terminal sends them) starts a new line in the message. The title is
+optional: left empty, it is taken from the message's first line. `ctrl+s`
+creates from any row, with or without a message. If the chat was created but the
+message could not be sent — `max_parallel_chats` chats are already running, say
+— the workspace opens with the message back in the composer and the reason on
+the note line, so nothing you typed is lost.
+
+`r` renames the chat under the cursor — here and on the
+[Archived](#archived) chats board — with a one-line prompt holding its current
+title; `enter` saves and `esc` leaves it. Inside a conversation the composer has
+every letter, so rename it from the palette instead: `ctrl+p`, then **rename
+chat**. The title is a label only: the chat's branch keeps the name it was cut
+with. With no project registered, `n` says
 so on the board instead of opening a form you could not submit — add a
 repository in the project overview first.
 
@@ -2613,7 +2643,8 @@ the draft alone; a second press discards the draft and returns you to the board.
 | Key | Does, in the create form |
 |---|---|
 | `tab` / `shift+tab` | Next / previous field |
-| `enter` | Open the focused field's list, or move on from a text field |
+| `enter` | In the message row, create the chat and send the message; elsewhere, open the focused field's list, or move on from a text field |
+| `ctrl+j` | In the message row, a new line (`shift+enter` and `alt+enter` too, where the terminal sends them) |
 | `t` | In an open list, type a value it does not offer |
 | `←` / `→` | Step the agent field in place |
 | `ctrl+s` | Create the chat and open it |
@@ -3036,6 +3067,7 @@ there is nothing to withhold and no flag saying so.
 | Key | Does |
 |---|---|
 | `D` | Delete permanently — asks first |
+| `r` | Rename the chat — archived chats only; the title is a label, so an ended chat can still be renamed |
 | `s` | Cycle the window: last 7 days → last 30 days → all time |
 | `alt+e` | [Export the selected chat](#exporting-a-chat) — an archived chat exports like any other |
 | `<` / `>` | Turn the page (a hundred rows at a time) — offered only where there is a page that way |
@@ -3623,13 +3655,14 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twenty-three are the operations screens share, the next ten are the
+The first twenty-four are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
 |---|---|---|
 | `refresh` | `R` | Refresh, or re-read |
 | `archive` | `A` | Archive a task or a chat |
+| `rename` | `r` | Rename a chat, on the chats boards |
 | `delete` | `D` | Delete a persisted record: an archived task or chat, a project, a trigger, an issue |
 | `draft_remove` | `d` | Remove a row from an open draft |
 | `add` | `a` | Add or create |
@@ -3661,6 +3694,7 @@ The first twenty-three are the operations screens share, the next ten are the
 | `cancel` | `c` | Cancel the task |
 | `follow_up` | `F` | Follow up on a finished task |
 | `chat` | `T` | Chat in the task's worktree, or on the issue's main worktree from the issue screens — or reopen the chat open on it |
+| `chat_with` | `alt+t` | The same chat as `chat`, choosing its agent, model and effort — and an optional first message — first |
 | `palette` | `:` | Open the command palette |
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |
 | `help` | `?` | Toggle help |

@@ -174,6 +174,7 @@ the living engineering specification records implementation contracts.
 | [158](158-chat-search.md) | Search every chat's title, prompts and answers, live and archived, and open a result on its turn | ✅ done (5/5) |
 | [159](159-chat-export.md) | Export a chat as Markdown, HTML or JSON: `GET /v1/chats/{id}/export`, `vincent chat export`, the TUI's export form | ✅ done (4/4) |
 | [160](160-chat-search-and-navigation.md) | Search inside a chat, jump between prompts, expand one tool call | 🔄 in progress (2/3) |
+| [161](161-chat-first-message-and-rename.md) | Start a chat from its first message, rename chats, and choose the agent for a chat on a task or issue | 🔄 in progress (5/6) |
 
 ## How to add and update a task document
 

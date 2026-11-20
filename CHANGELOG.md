@@ -68,6 +68,26 @@ list with the user-facing context a commit subject cannot carry.
   (`1200 in (+60200 cache) · 800 out`), as the chat heading does, and the JSON
   carries the cache counts and context figures (#1023).
 
+- **Start a chat from its first message.** The new-chat form opens on a
+  message row: type and press `enter`, and the chat is created and the message
+  sent in one step. The title is optional — left empty, it is taken from the
+  message's first line. `POST /v1/chats` and `POST /v1/tasks/{id}/chat` accept
+  `message` and answer with `first_turn`; `vincent chat start` takes the title
+  as optional and sends `--message` in the create, and `vincent task chat`
+  gains `--message`/`--message-file`. If the message cannot be sent (the chat
+  cap is full), the chat is still created, a warning says why, and the TUI puts
+  the message back in the composer (#1016).
+
+- **Rename a chat.** `r` on the chats boards, the **rename chat** palette
+  command, `vincent chat rename`, and `PATCH /v1/chats/{id}` change a chat's
+  title in any state; the branch keeps its name. A rename emits the new
+  `chat.updated` event (#1016).
+
+- **Choose the agent for a chat on a task or an issue.** `alt+t` (the new
+  rebindable `chat_with` operation) and the **chat with…** palette command open
+  a small form — agent, model, effort and an optional first message — before
+  opening the chat; `T` still opens one at once with the default agent (#1016).
+
 ### Changed
 
 - **A step's token count uses the chat's arrows.** The task workspace's step

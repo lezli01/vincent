@@ -2507,7 +2507,7 @@ Human actions, all `POST /v1/tasks/{id}/…`:
 | `/answer` | awaiting_input | `{ answers?, allow? }` |
 | `/archive` | done, aborted | `{ force? }` or `?force` |
 | `/follow_up` | done, aborted | `{ prompt? \| run? \| workflow?, agent?, model?, effort?, fields?, paused? }` — exactly one of the three; `fields` apply to this run only, over the task's own; `paused` [holds](#holding-a-retry-or-a-follow-up) the task instead of queuing the run; runs it in the task's existing worktree, then returns the task to the state it came from |
-| `/chat` | blocked, awaiting_gate, done, aborted | `{ title?, agent?, model?, effort? }`, or no body — opens a [chat linked to the task](#a-chat-on-a-stopped-task) in its worktree, and locks the task until the chat is closed. `201` with the chat; the task does not move |
+| `/chat` | blocked, awaiting_gate, done, aborted | `{ title?, agent?, model?, effort?, message? }`, or no body — opens a [chat linked to the task](#a-chat-on-a-stopped-task) in its worktree, and locks the task until the chat is closed. `201` with the chat and `first_turn` (the turn `message` started, else `null`); the task does not move |
 
 Anything else returns `409` with `details.state`. See
 [Task lifecycle](task-lifecycle.md).
@@ -3199,6 +3199,7 @@ POST   /v1/chats                      create, with a worktree and a branch — o
                                       existing_branch, on a branch that is already there
 POST   /v1/tasks/{id}/chat            open a chat on a stopped task, in its worktree
 GET    /v1/chats/{id}                 { chat, turns[] } — the whole conversation
+PATCH  /v1/chats/{id}                 rename: { title }, in any state; the branch keeps its name
 POST   /v1/chats/{id}/send            start a turn on an idle chat, or queue the
                                       message behind a live one (202 either way)
 GET    /v1/chats/{id}/queue           { messages[], paused, pause_reason }
@@ -3259,6 +3260,7 @@ None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
 excluded, the stream, the transcript, the search, the skill list, the file
 list and the export included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
 but starts a chat.
+The rename, `PATCH /v1/chats/{id}`, is excluded with them.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
 `created_by_task_id`, which a chat is not in.
@@ -3332,6 +3334,46 @@ because it is the contract for the next adapter: faking continuity by replaying
 the log into the prompt is exactly what the refusal exists to prevent. Ask
 [`GET /v1/agents`](#get-v1agents) for `supports_resume` rather than assuming a
 list.
+
+### Starting from the first message
+
+A create may carry the first message, and then needs no title:
+
+```bash
+curl -sS -X POST http://127.0.0.1:PORT/v1/chats   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'   -d '{"project_id": 1, "message": "Why does the parser reject trailing commas?\nSee tests/parse_test.go."}'
+```
+
+The chat is created exactly as above, then `message` is sent as its first turn
+in the same request. An empty `title` (after trimming) is taken from the
+message: its first non-empty line, whitespace collapsed, cut at a word boundary
+to 72 characters with `…` when cut — here, "Why does the parser reject trailing
+commas?". The branch is named from that title, as from a typed one. With
+neither a title nor a message the answer is `400` ("a title or a message is
+required").
+
+The `201` carries `first_turn`, the turn exactly as `GET /v1/chats/{id}` lists
+it, and the chat is `running`. Without a message `first_turn` is `null`. If the
+send is refused — the [chat cap](#chats) is full (`chat_cap_reached`), or the
+daemon fails to start the turn — **the chat is kept**: the answer is still
+`201`, `first_turn` is `null`, and `warnings` says the first message was not
+sent and why. Send it again with `POST /v1/chats/{id}/send`; the daemon does not
+keep the message.
+
+The same `message` is accepted with `issue_id` and on
+[`POST /v1/tasks/{id}/chat`](#a-chat-on-a-stopped-task).
+
+### Renaming one
+
+```bash
+curl -sS -X PATCH http://127.0.0.1:PORT/v1/chats/12   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'   -d '{"title": "trailing commas in the parser"}'
+```
+
+`title` is trimmed and must be non-empty and at most 72 characters; anything
+else is a `400`, as is any other field. A rename is legal in **every** state,
+archived, handed-off and closed included — the title is display only — and it
+**never renames the branch**: `vincent/{id}-{slug}` keeps the slug it was cut
+with. The answer is `200` with the chat, and a durable `chat.updated` event
+carries the new title.
 
 ### States
 
@@ -3410,7 +3452,10 @@ curl -sS -X POST http://127.0.0.1:PORT/v1/tasks/7/chat \
 ```
 
 Every field is optional, and the body may be left off. `title` defaults to the
-task's. `agent`, `model` and `effort` resolve the way
+task's. `message`, when given, is sent as the first turn in the same request,
+after the task's context below, exactly as on
+[`POST /v1/chats`](#starting-from-the-first-message): the `201` carries
+`first_turn`, and a refused send keeps the chat with a `warnings` entry. `agent`, `model` and `effort` resolve the way
 [`/repair`](#tasks)'s do — what you send, then the task's overrides, then the
 workflow's `defaults:`, then the adapter's default — and an unset agent falls to
 the first adapter that can resume. The chat is `restricted` when the task's
@@ -4283,7 +4328,7 @@ task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed task.delivery_changed
 chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off         chat.closed
-chat.queue_changed
+chat.queue_changed      chat.updated
 task.deleted            chat.deleted
 task.restored
 issue.created           issue.updated           issue.state_changed
@@ -4414,7 +4459,8 @@ they need.
   Each payload is `{ id, title, state }`; `chat.turn_changed` adds `turn_id`,
   `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`, and
   `chat.handed_off` adds `handoff_task_id`, so a follower can link the chat to
-  its task without a fetch. Every event of a chat
+  its task without a fetch. `chat.updated` is a [rename](#renaming-one): its
+  `title` is the new one, and the state did not change. Every event of a chat
   [opened on a task](#a-chat-on-a-stopped-task) adds `linked_task_id`, and
   `chat.closed` announces that such a chat ended — re-fetch that task too,
   because its lock just lifted. Every event of a chat

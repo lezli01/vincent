@@ -691,6 +691,20 @@ creation rather than a queued row (decision 2).
 | `linked_task_id` | *Added 2026-09-17 (task 119, issue #472):* the task this chat was opened on. Null for a free chat, fixed at open, and the **one authoritative foreign key** for the link, as `handoff_task_id` is for a handoff (task 074 decision 2): the lock (§6) and a task's `open_chat_id` (§13.2) are this column read backwards, never a stored copy. It selects the linked transition table below |
 | `opening_context` | *Added 2026-09-17 (task 119):* the task context the daemon assembled when a linked chat was opened, prepended to the **first** turn's prompt and to no later one. A snapshot is exact because the task cannot move while the chat is open. Empty on a free chat |
 
+*Amended 2026-11-20 (task 161, issue #1016).* **The title is optional when a
+first message is given, and may change.** A create — free, on an issue, or on a
+task (§13.2) — may carry a `message`, sent as turn 1 in the same request. An
+empty title (after trimming) is then derived from that message: its first
+non-empty line, whitespace collapsed, cut at a word boundary to 72 runes with
+`…` when cut. On a task the task's title stays the default ahead of derivation.
+The branch slug comes from the derived title as it would from a typed one, and
+a create with neither a title nor a message is still refused. A chat may be
+**renamed** in every state, terminal ones included, because the title is
+display only: a rename **never renames the branch** — `vincent/{id}-{slug}`
+keeps the slug it was cut with, which nothing else derives from. A refused
+first send never undoes the create (task 161 decision 1): the chat stays
+`idle` with no turn.
+
 A **ChatTurn** is one exchange: the human's message and the agent run it
 produced. Its accounting columns are `step_runs`' — tokens, cost, duration,
 pid, exit code, proc identity — because closing the accounting gap is half of
@@ -11253,6 +11267,28 @@ POST   /v1/chats                        { project_id, title, agent?, model?, eff
                                         and has nowhere to wait, which is where it parts
                                         from a task's queued row (§10). Every chat
                                         representation carries `adopted_branch` (§5.5)
+                                        *Amended 2026-11-20 (task 161, issue #1016):* an
+                                        optional `message` is sent as turn 1 in the same
+                                        request, after the chat is created as above, and
+                                        with it `title` may be empty — it is derived from
+                                        the message (§5.5). Neither is a **400** ("a title
+                                        or a message is required"). The 201 carries
+                                        `first_turn`: the turn as `GET /v1/chats/{id}`
+                                        renders it, null when no message was given or the
+                                        send was refused. A refused send (`chat_cap_reached`,
+                                        an invalid action, an internal error) **keeps the
+                                        chat**: still 201, `first_turn` null, and a
+                                        `warnings` entry saying the first message was not
+                                        sent and why. The same holds with `issue_id`
+PATCH  /v1/chats/{id}                   *Added 2026-11-20 (task 161, issue #1016).* `{ title }`
+                                        renames the chat: trimmed, non-empty, at most 72
+                                        runes, otherwise **400**. Legal in **every** state,
+                                        terminal ones included — the title is display only —
+                                        and it **never renames the branch**. → 200 with the
+                                        chat, and a durable `chat.updated` (§13.3). Any other
+                                        field is a 400 (the one decode path's unknown-field
+                                        rule); #1011 adds model, effort and permission mode
+                                        here. Not an MCP tool (§13.4, 063 decision 2)
 DELETE /v1/chats/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
                                         delete of an **archived** chat: the row, its chat_turns
                                         (through the schema's cascade) and its
@@ -12114,7 +12150,7 @@ POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, mod
                                         fields are substituted and validated against the result
                                         as creation does (§8.1.2), a failure is a 400, and the
                                         task row keeps its own fields
-POST   /v1/tasks/{id}/chat             { title?, agent?, model?, effort? }
+POST   /v1/tasks/{id}/chat             { title?, agent?, model?, effort?, message? }
                                         (blocked/awaiting_gate/done/aborted only; added
                                         2026-09-17, task 119, issue #472). Opens a §5.5 chat
                                         linked to the task, working in its worktree and on its
@@ -12142,6 +12178,12 @@ POST   /v1/tasks/{id}/chat             { title?, agent?, model?, effort? }
                                         `400 agent_cannot_resume`
                                         for an adapter that cannot hold a conversation. It is
                                         **not** an MCP tool (§13.4)
+                                        *Amended 2026-11-20 (task 161):* `message` is sent as
+                                        turn 1 in the same request, with the opening context
+                                        prepended as to any first turn, and the 201 carries
+                                        `first_turn` and, on a refused send, a `warnings`
+                                        entry — exactly as `POST /v1/chats`. `title` still
+                                        defaults to the task's ahead of derivation
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)
@@ -12802,6 +12844,15 @@ way a linked chat's carry `linked_task_id`: the chat's state moves the
 issue's `main_worktree` occupant and its `attention`, which emit no
 `issue.*` event of their own, so a follower showing the issue re-reads it on
 the chat event. `chat.closed` is published for such a chat too.
+
+*Amended 2026-11-20 (task 161, issue #1016).* One more durable kind,
+**`chat.updated`**, for a chat whose display fields changed without a state
+change — today only a rename (`PATCH /v1/chats/{id}`, §13.2). It carries the
+chat's id, its **new** title and its state, and `issue_id` / `linked_task_id`
+as every event of such a chat does, so a list repaints without a fetch. It is
+in the chat family, so the per-chat stream carries it. A create that sent its
+first message emits nothing new: the turn's `chat.turn_changed` and the
+`chat.state_changed` to `running` are the ones any send emits.
 
 *Amended 2026-08-31 (task 067, issue #269).* There is now a **per-chat stream**,
 `GET /v1/chats/{id}/events` (§13.2), the per-task stream's twin. It narrows the
@@ -18502,6 +18553,33 @@ registered for the first time with it: it has been reachable inside this
 form's lists since issue #281, and it is recorded as a list-layer key because
 the blanket "this surface captures text" rule below is a statement about the
 form's own rows, not about a list drawn over them.
+
+*Amended 2026-11-20 (task 161, issue #1016).* The new-chat form gains a
+multi-line **`message`** row, directly under the project row, and **opens
+focused on it** with every other row at its default (agent: the first
+resumable adapter). `enter` **in the message row creates the chat and sends the
+message in one request** (§13.2), with an empty title derived from it (§5.5);
+`ctrl+j`, `shift+enter` and `alt+enter` insert a newline there, as in the chat
+composer. The title row stays and is now optional. `enter` keeps its meaning on
+every other row and `ctrl+s` still creates from anywhere. There is no separate
+quick-chat key: `n`, type, `enter` *is* the quick chat. When the 201 says the
+first message was not sent, the conversation opens with the message put back
+into the composer and the warning shown, so nothing typed is lost.
+
+Two rebindable operations join §15's vocabulary with it. **`rename`** (default
+`r`) on the chats board and the archived chats board opens a one-line prompt
+prefilled with the chat's title, and the palette command **"rename chat"** does
+the same — reachable from the conversation through `ctrl+p`, because the
+composer owns every printable key and the workspace has no fixed key for it.
+**`chat_with`** (default `alt+t`) sits beside `chat` (`T`) on the same surfaces
+— task actions, the issues list and an issue — and is offered exactly when
+`chat` is, with the palette command **"chat with…"**: it opens a small form of
+agent, model and effort (the same `picker`, resumable adapters only) and an
+optional first message, and opens the chat with them. `T` is unchanged —
+instant, default agent. When the task or issue already has an open chat,
+`chat_with` behaves as `T` does and goes to it, ignoring the form, because a
+linked chat's agent is fixed. `shift+T` could not be a second key: `T` already
+is shift+t.
 
 An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the
