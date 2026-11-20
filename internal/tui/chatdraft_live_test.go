@@ -161,18 +161,19 @@ func TestChatDraftSavedOnEveryWayOut(t *testing.T) {
 	if what, dirty := v.switchDraft(); dirty {
 		t.Fatalf("a storable draft guards the switch as %q", what)
 	}
-	if cmd := v.leaveForSwitch(); cmd == nil {
+	cmd := v.saveForSwitch()
+	v.leaveForSwitch()
+	if cmd == nil {
 		t.Fatal("a switch saved nothing")
-	} else {
-		runCmd(t, cmd, 30*time.Second)
 	}
+	runCmd(t, cmd, 30*time.Second)
 	if got := d.stored(t, a).Draft; got != "typed just now" {
 		t.Fatalf("stored draft after a switch = %q", got)
 	}
 
 	openChat(t, v, b)
 	typeDraft(v, "left by the palette")
-	_, cmd := v.updateMsg(viewDeactivatedMsg{id: viewChat})
+	_, cmd = v.updateMsg(viewDeactivatedMsg{id: viewChat})
 	if cmd == nil {
 		t.Fatal("deactivation saved nothing")
 	}

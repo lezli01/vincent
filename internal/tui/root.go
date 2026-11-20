@@ -1801,14 +1801,17 @@ func (m *root) applySwitch(p apiclient.Project, why string) tea.Cmd {
 func (m *root) keepViewAcrossSwitch() tea.Cmd {
 	v := m.views[m.active]
 	if to, ok := switchFallback[m.active]; ok {
-		var leave tea.Cmd
+		var save tea.Cmd
+		if s, ok := v.(switchSaving); ok {
+			save = s.saveForSwitch()
+		}
 		if l, ok := v.(switchLeaving); ok {
-			leave = l.leaveForSwitch()
+			l.leaveForSwitch()
 		}
 		if m.active == viewTask && !m.isTabRoot(to) {
 			to = m.tabTarget()
 		}
-		return tea.Batch(leave, m.switchTo(to))
+		return tea.Batch(save, m.switchTo(to))
 	}
 	if r, ok := v.(switchRetargeting); ok {
 		return r.retarget(m.sel)

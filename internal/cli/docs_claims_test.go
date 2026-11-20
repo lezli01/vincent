@@ -220,6 +220,7 @@ var tuiOnlyClientCalls = map[string]string{
 	// The chat composer's stored draft and prompt history (task 164
 	// decision 11): a composer's state, with no CLI composer to keep it.
 	"PutChatDraft": "the chat composer's stored draft and stash; task 164 decision 11 left `vincent chat draft` out — `curl` reaches GET/PUT /v1/chats/{id}/draft",
+	"ChatDraft":    "the chat composer's re-read of its stored draft on chat.draft_changed (review F5); task 164 decision 11 left `vincent chat draft` out — `curl` reaches GET /v1/chats/{id}/draft",
 	"ChatPrompts":  "the chat composer's prompt history picker; task 164 decision 11 left it out of the CLI — `curl` reaches GET /v1/chats/prompts",
 	// Transport, not capability: the SSE routes stay open to curl.
 	"StreamEvents": "live transport; subcommands poll (`task transcript -f`, `chat transcript -f`, `chat send`)",

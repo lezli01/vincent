@@ -37,10 +37,17 @@ type switchRetargeting interface {
 // back from. leaveForSwitch drops what belonged to the old project's object —
 // the workspace's back stack and forms, a chat's stream, an issue's form —
 // before the root routes to the list, so nothing of it survives to be
-// reached by esc or redrawn under the new header. What it returns runs with
-// the switch: the chat's is the save of its draft (review F3).
+// reached by esc or redrawn under the new header.
 type switchLeaving interface {
-	leaveForSwitch() tea.Cmd
+	leaveForSwitch()
+}
+
+// switchSaving is implemented by a detail screen whose unsent text the daemon
+// keeps: saveForSwitch runs before leaveForSwitch forgets it, and what it
+// returns runs with the switch. The chat's is the save of its draft (task
+// 164, review F3).
+type switchSaving interface {
+	saveForSwitch() tea.Cmd
 }
 
 // switchFallback is where a detail screen lands when the project changes
@@ -301,9 +308,8 @@ func (v *issueView) switchDraft() (string, bool) {
 	return "unsaved issue edit", v.w.form.dirty()
 }
 
-func (v *issueView) leaveForSwitch() tea.Cmd {
+func (v *issueView) leaveForSwitch() {
 	v.w.form, v.w.act = nil, nil
-	return nil
 }
 
 func (t *taskView) switchDraft() (string, bool) {
@@ -325,7 +331,7 @@ func (t *taskView) switchDraft() (string, bool) {
 // leaveForSwitch empties the back stack — nothing of the old project is
 // left to esc to — and drops every form the workspace held. The stream is stopped by the deactivation the root's
 // switchTo delivers next.
-func (t *taskView) leaveForSwitch() tea.Cmd {
+func (t *taskView) leaveForSwitch() {
 	t.stack, t.leftTab, t.crumb = nil, nil, nil
 	t.stackPush, t.stackKeep = 0, false
 	t.back = viewLastTab
@@ -333,7 +339,6 @@ func (t *taskView) leaveForSwitch() tea.Cmd {
 	t.popup = false
 	t.createPR, t.pullComment, t.pullMerge = nil, nil, nil
 	t.detail.followUp, t.detail.repair, t.detail.form = nil, nil, nil
-	return nil
 }
 
 // switchDraft guards the composer only where a switch would lose it. An
@@ -359,11 +364,13 @@ func (v *chatView) switchDraft() (string, bool) {
 	return "unsent message", true
 }
 
-// leaveForSwitch saves the draft, stops the chat's stream and forgets the
-// chat, so a switch loses nothing typed (review F3) and leaves no
-// subscription behind for a screen nobody is on.
-func (v *chatView) leaveForSwitch() tea.Cmd {
-	leave := v.leaveDraft()
+// saveForSwitch saves the draft the switch is about to forget, so a switch
+// loses nothing typed (review F3).
+func (v *chatView) saveForSwitch() tea.Cmd { return v.leaveDraft() }
+
+// leaveForSwitch stops the chat's stream and forgets the chat, so a switch
+// leaves no subscription behind for a screen nobody is on.
+func (v *chatView) leaveForSwitch() {
 	if v.streamStop != nil {
 		v.streamStop()
 		v.streamStop = nil
@@ -374,7 +381,6 @@ func (v *chatView) leaveForSwitch() tea.Cmd {
 	v.resetDraft()
 	v.editingQueued = 0
 	v.composer.SetValue("")
-	return leave
 }
 
 // ---- the forms' dirty flags ----

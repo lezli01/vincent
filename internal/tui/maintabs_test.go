@@ -423,7 +423,7 @@ func TestTaskEscBackTargets(t *testing.T) {
 			t.Errorf("esc with back %v sent %#v, want %#v", back, got, want)
 		}
 	}
-	_ = tv.leaveForSwitch()
+	tv.leaveForSwitch()
 	if got := tv.popCmd()(); got != (backToTabMsg{}) {
 		t.Errorf("esc after a switch sent %#v, want back to the tab", got)
 	}
