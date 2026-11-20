@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
@@ -89,7 +88,7 @@ func (s *Server) createIssueChat(
 	}
 	chat := &store.Chat{
 		ProjectID: project.ID, Title: req.Title, State: chatstate.Idle, Agent: agentName,
-		Model: req.Model, Effort: req.Effort, PermissionMode: string(agent.FullAuto),
+		Model: req.Model, Effort: req.Effort, PermissionMode: req.PermissionMode,
 		BaseBranch: base, Branch: branch, IssueID: &iss.ID, OpeningContext: opening,
 	}
 	err = s.deps.Store.CreateIssueChat(ctx, chat, func(id int64) string { return worktree.BranchName(id, req.Title) })

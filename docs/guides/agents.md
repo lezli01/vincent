@@ -30,6 +30,7 @@ silently drops.
 | `agent:` value | `claude` | `codex` | `cursor` | `copilot` |
 | Mid-run questions (`awaiting_input`) | ✅ | — | — | — |
 | Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | ✅ `exec resume` | ✅ `--resume` | ✅ `--resume=<id>` |
+| Changes model or effort on a resumed chat | ✅ | **—** (its stream never names the model) | **—** (not yet captured) | **—** (not yet captured) |
 | Reports a session it can no longer resume | ✅ `session_lost` | ✅ `session_lost` | **—** (it adopts the id and answers) | ✅ `session_lost` |
 | Lists its skills in a chat | ✅ from 2.1.277 | ✅ `skills/list` | **—** (its `-p` mode has no listing) | **—** (JSON mode reports no skill load) |
 | Invokes a skill from a chat message | ✅ `/name` at the **start** | ✅ `$name` anywhere | ✅ `/name` anywhere | **—** (`/name` reaches the model as prose) |
@@ -158,7 +159,10 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   so turn N sees turns 1..N-1 without anything being replayed into the prompt.
   Workflow steps never set it — every step still gets a fresh session. A session
   the CLI no longer knows fails that turn with `session_lost` rather than
-  quietly starting a new one.
+  quietly starting a new one. A resumed turn honours a changed `--model` and
+  `--effort` — pinned by a capture against 2.1.329 — so claude is the one
+  adapter whose chat can change its model or effort after the first turn
+  (`supports_resume_settings_change` in `vincent agents --json`).
 - **Carries [vincent's own MCP server](mcp.md#your-own-steps-get-this-too)** on
   `--mcp-config` with an inline config, alongside `--strict-mcp-config` so your
   own MCP servers never leak into a step. Per run: nothing global is written.
@@ -273,15 +277,15 @@ a step that reaches the engine anyway fails with `input_unsupported`.
   worked around:
   - A **resumed run is always full-auto.** `codex exec resume` has no
     `--sandbox`, so `restricted` has no spelling on it. Only a chat turn ever
-    resumes, and a chat you start yourself is always full-auto — there is no
-    permission mode to ask for on one. A chat
+    resumes, so asking for `restricted` on a codex chat — at creation, with
+    [`vincent chat set`](../reference/cli.md#vincent-chat-set) or on one turn —
+    is refused with `agent_cannot_restrict_resume`. A chat
     [opened on a task](../reference/task-lifecycle.md#chatting-with-a-stopped-task)
-    is the exception: it takes the task's permission mode, and codex cannot
-    keep a resumed turn restricted. So opening a codex chat on a task that runs
-    `restricted` is refused, and codex itself refuses a resumed restricted run
-    rather than running it full-auto. claude, cursor and copilot pass their
-    restriction on every turn, so use one of those for a chat on a restricted
-    task.
+    takes the task's permission mode, so opening a codex chat on a task that
+    runs `restricted` is refused too, and codex itself refuses a resumed
+    restricted run rather than running it full-auto. claude, cursor and copilot
+    pass their restriction on every turn, so use one of those for a restricted
+    chat.
   - A thread codex no longer knows fails that turn with `session_lost` rather
     than quietly starting a new one.
 - **The plan and command output are surfaced.** Codex reports a running to-do

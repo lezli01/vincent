@@ -102,6 +102,7 @@ func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff
 			ContextTokens: t.ContextTokens, ContextWindow: t.ContextWindow,
 			CostUSD: t.CostUSD, DurationMS: t.DurationMS,
 			FailReason: t.FailReason, ErrorMessage: t.ErrorMessage, StartedAt: t.StartedAt,
+			Model: nilIfEmpty(t.Model), Effort: nilIfEmpty(t.Effort), PermissionMode: nilIfEmpty(t.PermissionMode),
 		}
 		tools, note := s.chatTurnTools(chat, t)
 		et.Tools, et.ToolsNote = tools, note

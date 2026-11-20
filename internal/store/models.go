@@ -895,6 +895,42 @@ type ChatTurn struct {
 	ContextWindow              *int64
 	SessionCacheReadTokens     *int64
 	SessionCacheCreationTokens *int64
+	// Model, Effort and PermissionMode are what the turn ran with (task 162
+	// decision 7): its override, else the chat's setting when the row was
+	// written. "" is "not recorded" — a turn from before migration 0062 —
+	// never back-filled from the chat's current values. Effort is also ""
+	// when neither the turn nor the chat named one.
+	Model          string
+	Effort         string
+	PermissionMode string
+}
+
+// TurnSettings are a turn's per-turn overrides of its chat's model, effort
+// and permission mode (task 162 decision 6). An empty field is "no override".
+type TurnSettings struct {
+	Model          string
+	Effort         string
+	PermissionMode string
+}
+
+// Empty reports whether s overrides nothing.
+func (s TurnSettings) Empty() bool {
+	return s.Model == "" && s.Effort == "" && s.PermissionMode == ""
+}
+
+// Resolve is s over c's own settings: each non-empty field wins.
+func (s TurnSettings) Resolve(c *Chat) TurnSettings {
+	out := TurnSettings{Model: c.Model, Effort: c.Effort, PermissionMode: c.PermissionMode}
+	if s.Model != "" {
+		out.Model = s.Model
+	}
+	if s.Effort != "" {
+		out.Effort = s.Effort
+	}
+	if s.PermissionMode != "" {
+		out.PermissionMode = s.PermissionMode
+	}
+	return out
 }
 
 // ChatWorktreeClaim is one chat's claim on a data-root directory (§10). It

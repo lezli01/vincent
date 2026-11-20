@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/nerdfont"
@@ -98,6 +99,11 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		msg = tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt}
 	case "alt+down":
 		msg = tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModAlt}
+	case "alt+shift+g":
+		// From the bytes a terminal sends for alt+G, not a hand-built
+		// press: the hand-built alt+G one no decoder produces is how the
+		// follow key shipped dead (review F1).
+		msg = decodePress(t, "\x1bG")
 	case "shift+right":
 		msg = tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
 	default:
@@ -123,6 +129,20 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		t.Fatalf("registryKey(%q) presses as %q — the registry key and the press disagree", key, got)
 	}
 	return msg
+}
+
+// decodePress decodes raw terminal input through the decoder Bubble Tea
+// itself reads the terminal with, so a probe presses the key string a real
+// terminal produces rather than one a test author wrote.
+func decodePress(t *testing.T, raw string) tea.KeyPressMsg {
+	t.Helper()
+	var d uv.EventDecoder
+	n, ev := d.Decode([]byte(raw))
+	press, ok := ev.(uv.KeyPressEvent)
+	if !ok || n != len(raw) {
+		t.Fatalf("decoding %q gave %T after %d of %d bytes, want one key press", raw, ev, n, len(raw))
+	}
+	return tea.KeyPressMsg(press)
 }
 
 // offlineClient is a client the probes never call. Views whose whole effect
@@ -1169,12 +1189,40 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("ctrl+l reached the composer: %q", v.composer.Value())
 			}
 		},
+		"alt+shift+g": func(t *testing.T) {
+			v := chatViewFixture()
+			v.following = false
+			v.updateKey(registryKey(t, "alt+shift+g"))
+			if !v.following {
+				t.Fatal("alt+shift+g did not re-arm follow")
+			}
+		},
 		"ctrl+g": func(t *testing.T) {
 			v := chatViewFixture()
 			v.following = false
-			v.updateKey(registryKey(t, "ctrl+g"))
-			if !v.following {
-				t.Fatal("ctrl+g did not re-arm follow")
+			ran := false
+			v.exec = func(_ *exec.Cmd, cb tea.ExecCallback) tea.Cmd {
+				ran = true
+				return func() tea.Msg { return cb(nil) }
+			}
+			if _, cmd := v.updateKey(registryKey(t, "ctrl+g")); cmd != nil {
+				drain(cmd)
+			}
+			if !ran {
+				t.Fatal("ctrl+g did not open the editor")
+			}
+			if v.following {
+				t.Fatal("ctrl+g re-armed follow; that is alt+shift+g's since task 163")
+			}
+		},
+		"alt+v": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			if _, cmd := v.updateKey(registryKey(t, "alt+v")); cmd == nil {
+				t.Fatal("alt+v did not fetch the conversation")
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("alt+v reached the composer: %q", v.composer.Value())
 			}
 		},
 		"alt+up": func(t *testing.T) {
@@ -1204,6 +1252,24 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v.updateKey(registryKey(t, "alt+k"))
 			if !v.compacting {
 				t.Fatal("alt+k did not ask to compact the context")
+			}
+		},
+		"alt+p": func(t *testing.T) {
+			v := chatViewFixture()
+			v.agents = map[string]apiclient.Agent{"claude": {
+				Name: "claude", Models: []apiclient.AgentOption{{Value: "sonnet"}},
+			}}
+			v.updateKey(registryKey(t, "alt+p"))
+			if v.picker == nil {
+				t.Fatal("alt+p did not open the model and effort picker")
+			}
+		},
+		"shift+tab": func(t *testing.T) {
+			v := chatViewFixture()
+			v.chat.PermissionMode = "restricted"
+			v.updateKey(registryKey(t, "shift+tab"))
+			if !v.raising {
+				t.Fatal("shift+tab on a restricted chat did not ask before raising it to full-auto")
 			}
 		},
 		"alt+a": func(t *testing.T) {
@@ -3318,12 +3384,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("pgup did not scroll back")
 			}
 		},
-		"ctrl+g": func(t *testing.T) {
+		"alt+shift+g": func(t *testing.T) {
 			v := convFocused(t)
 			v.following = false
-			v.updateKey(registryKey(t, "ctrl+g"))
+			v.updateKey(registryKey(t, "alt+shift+g"))
 			if !v.following {
-				t.Fatal("ctrl+g did not follow")
+				t.Fatal("alt+shift+g did not follow")
 			}
 		},
 		"i": func(t *testing.T) {

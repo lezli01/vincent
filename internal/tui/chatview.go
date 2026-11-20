@@ -109,6 +109,9 @@ type chatView struct {
 
 	client *apiclient.Client
 	now    func() time.Time
+	// exec hands the terminal to $EDITOR for the composer's ctrl+g and the
+	// conversation's alt+v (task 163), injected so tests need no terminal.
+	exec execFunc
 
 	chatID int64
 	chat   *apiclient.Chat
@@ -169,7 +172,7 @@ type chatView struct {
 	builtLevel outputLevel
 
 	// vp scrolls the conversation; following means it is showing the end,
-	// which a manual scroll drops and ctrl+g re-arms (decision 5).
+	// which a manual scroll drops and alt+shift+g re-arms (decision 5, task 163).
 	vp        viewport.Model
 	following bool
 	bodyDirty bool
@@ -230,6 +233,17 @@ type chatView struct {
 	// command from GET /v1/agents, by name; an adapter without one is absent.
 	compacting  bool
 	compactCmds map[string]string
+	// raising is the full-auto confirmation on screen (task 162 decision
+	// 4), owning the next key as compacting does; picker is the alt+p
+	// model-and-effort list; agents is GET /v1/agents by name, which the
+	// picker is sourced from.
+	raising bool
+	// clampTask is the restricted task a linked chat's raise was refused
+	// for (task 162 decision 3), once the daemon has said so; shift+tab then
+	// says why instead of asking (review F3). Zero is "not known".
+	clampTask int64
+	picker    *chatSettingsPicker
+	agents    map[string]apiclient.Agent
 
 	// skills is the composer's skill list (task 124.13), in either of its
 	// two modes: browse, which owns the keyboard and makes `esc` a real
@@ -275,6 +289,7 @@ func newChatView(level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *ch
 	ta.SetHeight(3)
 	return &chatView{
 		now:         time.Now,
+		exec:        tea.ExecProcess,
 		composer:    ta,
 		level:       level,
 		raw:         raw,
@@ -363,6 +378,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	v.resetRecords()
 	v.note, v.loadErr = "", ""
 	v.closing, v.sending, v.compacting = false, false, false
+	v.raising, v.picker, v.clampTask = false, nil, 0
 	v.skills = chatSkillList{}
 	v.files = chatFileList{}
 	v.composer.SetValue("")
@@ -518,10 +534,22 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		v.applySkills(msg)
 		return v, nil
 	case chatAgentsMsg:
-		v.compactCmds = msg.compact
+		v.compactCmds, v.agents = msg.compact, msg.agents
+		return v, nil
+	case chatPatchedMsg:
+		v.applyPatched(msg)
 		return v, nil
 	case chatFilesMsg:
 		v.applyFiles(msg)
+		return v, nil
+	case chatEditorMsg:
+		return v, v.applyEditorDraft(msg)
+	case chatMarkdownMsg:
+		return v, v.openChatMarkdown(msg)
+	case chatMarkdownClosedMsg:
+		if msg.err != nil {
+			v.note, v.noteBad = "editor: "+errString(msg.err), true
+		}
 		return v, nil
 	case chatTickMsg:
 		// Render-only, and a no-op for a stray tick: clearing the guard is
@@ -983,7 +1011,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// A question that arrived under the close confirmation replaces it:
 		// the popup owns the keyboard, and a `y` meant for the prompt must
 		// not be read as an answer to something else later.
-		v.closing, v.compacting = false, false
+		v.closing, v.compacting, v.raising, v.picker = false, false, false, nil
 		cmd, exit := v.form.updateWith(msg, v.answerCmd)
 		if exit {
 			// Put away, not dropped (issue #801 F7): alt+a brings it back
@@ -1007,6 +1035,18 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		v.note, v.noteBad = "nothing was sent", false
 		return v, nil
+	}
+	if v.raising {
+		v.raising = false
+		if msg.String() == "y" {
+			mode := modeFullAuto
+			return v, v.patchSettingsCmd(apiclient.PatchChatRequest{PermissionMode: &mode})
+		}
+		v.note, v.noteBad = "the chat stays restricted", false
+		return v, nil
+	}
+	if v.picker != nil {
+		return v, v.updatePickerKey(msg)
 	}
 	if v.convFocus && v.search.typing {
 		return v, v.updateSearchLineKey(msg)
@@ -1053,6 +1093,13 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.askCompact()
 		return v, nil
 	}
+	if key := opKey(keymap.ChatModel); key != "" && msg.String() == key {
+		v.openSettingsPicker()
+		return v, nil
+	}
+	if key := opKey(keymap.ChatMode); key != "" && msg.String() == key {
+		return v, v.toggleMode()
+	}
 	switch msg.String() {
 	case chatQueueEditKey:
 		if v.startQueueEdit() {
@@ -1065,6 +1112,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Steer):
 		v.steerNote()
 		return v, nil
+	case opKey(keymap.ComposeEditor):
+		return v, v.composeInEditor()
+	case opKey(keymap.ChatMarkdown):
+		return v, v.fetchChatMarkdown()
 	case "esc":
 		// The opener, not always the chats board (#932). A selectViewMsg
 		// rather than a re-open, so an issue detail keeps its selection and
@@ -1130,7 +1181,11 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.vp.GotoTop()
 		v.syncFollowToViewport()
 		return v, v.fetchVisibleTranscripts()
-	case "ctrl+g":
+	// alt+G as typed, the upper-case twin of alt+g (task 163 decision 1):
+	// ctrl+g, task 071 decision 5's key, is the composer's editor now. The
+	// terminal reports that press as alt+shift+g — ESC G and kitty's
+	// CSI 103;4u both decode so — and never as alt+G (review F1).
+	case "alt+shift+g":
 		v.follow()
 		return v, nil
 	case chatSearchKey:
@@ -1859,6 +1914,9 @@ func (v *chatView) promptKeys() promptAnswers {
 	if v.compacting && v.chat != nil && v.form == nil {
 		return promptHint("y", "compact", "n", "don't")
 	}
+	if v.raising && v.chat != nil && v.form == nil {
+		return promptHint("y", "full-auto", "n", "stay restricted")
+	}
 	return nil
 }
 
@@ -1935,7 +1993,7 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 	closable := v.chat != nil && v.chat.LinkedTaskID != nil || onIssue
 	free := v.chat != nil && v.chat.LinkedTaskID == nil
 	ended := v.chat == nil || chatstate.Terminal(chatstate.State(v.chat.State))
-	owned := v.closing || v.compacting || v.form != nil
+	owned := v.closing || v.compacting || v.raising || v.picker != nil || v.form != nil
 	live := v.chat != nil && (v.chat.State == string(chatstate.Running) || v.chat.State == string(chatstate.AwaitingInput))
 	running := v.chat != nil && v.chat.State == string(chatstate.Running)
 	out := make([]binding, 0, len(rows))

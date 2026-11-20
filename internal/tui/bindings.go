@@ -716,7 +716,13 @@ var bindings = []binding{
 	// 80-column footer still has room for, and a reader who cannot find the
 	// way back through the conversation cannot read it.
 	{key: "pgup", label: "scroll the conversation back (pgdown goes forward)", scope: scopePanel, context: ctxChat, hint: "pgup/pgdown scroll", priority: 3},
-	{key: "ctrl+g", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChat, hint: "ctrl+g live", priority: 5},
+	// alt+shift+g since task 163 decision 1, beside alt+g's jump to the start:
+	// ctrl+g is the composer's editor now.
+	{key: "alt+shift+g", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChat, hint: "alt+shift+g live", priority: 5},
+	// The two $EDITOR operations (task 163). Combinations for the reason
+	// ctrl+r is one: the composer owns every printable key.
+	{op: keymap.ComposeEditor, key: "ctrl+g", label: "write the message in $EDITOR — what you save comes back into the composer, unsent", scope: scopePanel, context: ctxChat, hint: "ctrl+g editor", priority: 12},
+	{op: keymap.ChatMarkdown, key: "alt+v", label: "open the whole conversation as Markdown in $EDITOR, read-only", scope: scopePanel, context: ctxChat, hint: "alt+v markdown", priority: 20},
 	// ctrl+t rather than `h`, for the reason ctrl+r is a combination: the
 	// composer owns every printable key (task 074).
 	{key: "ctrl+t", label: "hand the worktree and branch to a new task (the chat ends)", scope: scopePanel, context: ctxChat, hint: "ctrl+t hand off", priority: 6},
@@ -742,7 +748,7 @@ var bindings = []binding{
 	// ctrl+home/ctrl+end move to its ends, and ctrl+↑ is a desktop shortcut
 	// on macOS — alt+↑/↓ and alt+g are the ones the textarea leaves free.
 	{key: "alt+up", label: "scroll the conversation back one line (alt+down goes forward)", scope: scopePanel, context: ctxChat, hint: "alt+↑/↓ line", priority: 13},
-	{key: "alt+g", label: "jump to the start of the conversation (ctrl+g goes back to the live end)", scope: scopePanel, context: ctxChat, hint: "alt+g top", priority: 14},
+	{key: "alt+g", label: "jump to the start of the conversation (alt+shift+g goes back to the live end)", scope: scopePanel, context: ctxChat, hint: "alt+g top", priority: 14},
 	// The way back to a question esc put away (issue #801 F7). Offered only
 	// while one is put away: chatView.liveBindings drops it otherwise.
 	{key: "alt+a", label: "reopen the agent's question after esc closed it (what you picked is kept)", scope: scopePanel, context: ctxChat, hint: "alt+a answer", priority: 1},
@@ -753,6 +759,8 @@ var bindings = []binding{
 	// alt rather than a letter for ctrl+r's reason — the composer owns every
 	// printable key — and alt+e because the textarea binds no alt+e.
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChat, priority: 15},
+	{op: keymap.ChatModel, key: "alt+p", label: "pick the model and effort the chat's next turns run on", scope: scopePanel, context: ctxChat, hint: "alt+p model", priority: 15},
+	{op: keymap.ChatMode, key: "shift+tab", label: "toggle the permission mode between restricted and full-auto (asks before full-auto)", scope: scopePanel, context: ctxChat, hint: "shift+tab mode", priority: 15},
 
 	// Task 160: ctrl+f hands the keyboard to the conversation with the
 	// search line open. A combination, because the composer owns every
@@ -768,7 +776,8 @@ var bindings = []binding{
 	{key: "}", label: "jump to the next prompt you sent ({ the previous)", scope: scopePanel, context: ctxChatConversation, hint: "{/} prompt", priority: 5},
 	{key: "g", label: "jump to the start of the conversation (G to the live end)", scope: scopePanel, context: ctxChatConversation, priority: 6},
 	{key: "pgup", label: "scroll the conversation back (pgdown goes forward; alt+↑/↓ a line)", scope: scopePanel, context: ctxChatConversation, priority: 7},
-	{key: "ctrl+g", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChatConversation, priority: 8},
+	// alt+shift+g, the composer's own follow key since task 163 decision 1.
+	{key: "alt+shift+g", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChatConversation, priority: 8},
 	{key: "i", label: "give the keyboard back to the composer (esc too)", scope: scopePanel, context: ctxChatConversation, hint: "i/esc compose", priority: 9},
 	{key: "esc", label: "give the keyboard back to the composer — it never leaves the chat from here", scope: scopePanel, context: ctxChatConversation, priority: 10, aliased: true},
 

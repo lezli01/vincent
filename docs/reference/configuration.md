@@ -1925,13 +1925,15 @@ A key is written the way the TUI names it: a single character (`R`, `/`), a
 named key (`enter`, `tab`, `esc`, `space`, `backspace`, `delete`, `insert`,
 `home`, `end`, `pgup`, `pgdown`, `up`, `down`, `left`, `right`, `f1`–`f20`), or
 either one behind `ctrl+`, `alt+` and `shift+`, in that order. A shifted
-character is written as itself: `R`, never `shift+r`.
+character is written as itself: `R`, never `shift+r`. Behind `ctrl+` or `alt+`
+the terminal reports an upper-case letter as `shift+` and the lower-case one,
+so that is how it is written: `alt+shift+g`, never `alt+G`.
 
 The operations are the ones a reader names, and nothing else:
 
 | Kind | Operation ids |
 |---|---|
-| Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane`, `result`, `next_failure`, `attention_filter`, `comment`, `ready`, `handoff`, `return`, `steer`, `compact`, `chat_search` (search every chat, from the chats board), `export_chat` (export a chat as Markdown, HTML or JSON), `rename` (a chat, on the chats boards) |
+| Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane`, `result`, `next_failure`, `attention_filter`, `comment`, `ready`, `handoff`, `return`, `steer`, `compact`, `chat_search` (search every chat, from the chats board), `export_chat` (export a chat as Markdown, HTML or JSON), `rename` (a chat, on the chats boards), `chat_model` (pick a chat's model and effort), `chat_mode` (toggle a chat's permission mode), `compose_editor` (write the chat message in `$EDITOR`), `chat_markdown` (open the conversation as Markdown in `$EDITOR`) |
 | Task actions | `pause` (pause and resume), `approve`, `reject`, `retry`, `edit_retry`, `repair`, `skip`, `cancel`, `follow_up`, `chat`, `chat_with` (`chat` with a form for the agent, model, effort and a first message); `archive` is the term's id |
 | Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board, and a new issue on the issue screens), `project` (`@`, switch project), `pause_all` (`Z`, pause all work or continue it) |
 
@@ -1950,7 +1952,7 @@ means:
   page and move sets, `esc`, `ctrl+c`, `ctrl+v`, `tab`, the confirmations' `y`
   and `n`, the vim aliases — by the name you might try for it (`group`, `fold`,
   `esc`, `resume`, …), with the reason;
-- a string no key press produces, `shift+r` included;
+- a string no key press produces, `shift+r` and `alt+G` included;
 - a key that already means anything else, anywhere in the TUI, even on a screen
   never open beside the operation. The shipped keymap's few shared keys (`R` is
   refresh and repair, `a` is add and approve, `s` is scope and skip) are

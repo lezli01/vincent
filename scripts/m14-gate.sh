@@ -51,12 +51,17 @@
 #      title is the message's first line and the branch follows it, the turn
 #      finishes `done` with the message stored as its prompt, and PATCH
 #      renames the chat while its branch stays as it was cut
+#  16. a chat's model changes between two turns (task 162): PATCH the model
+#      after turn 1, and turn 2 runs on it while each turn records its own
+#      model and permission mode; a restricted codex chat is refused with
+#      `agent_cannot_restrict_resume`
 #
 # Legs 1–10 are one chain rather than separable scenarios — leg 3 reads leg
 # 1's turn, leg 6 answers leg 5's parked chat, leg 10 lists the chats legs 7
 # and 9 ended — so VINCENT_GATE_SCENARIO=N for any N in 1..10 runs that chain.
-# Legs 11, 12, 13, 14 and 15 each stand alone, needing nothing before them, so
-# VINCENT_GATE_SCENARIO=11, =12, =13, =14 and =15 run one of them on its own.
+# Legs 11, 12, 13, 14, 15 and 16 each stand alone, needing nothing before
+# them, so VINCENT_GATE_SCENARIO=11, =12, =13, =14, =15 and =16 run one of
+# them on its own.
 #
 # The `agent_cannot_resume` refusal is deliberately *not* here. Since task 070
 # no shipped adapter is refused, so a real daemon has no subject to reach it
@@ -97,7 +102,7 @@ trap cleanup EXIT
 
 ONLY="${VINCENT_GATE_SCENARIO:-}"
 case "$ONLY" in
-  "" | [1-9] | 10 | 11 | 12 | 13 | 14 | 15) ;;
+  "" | [1-9] | 10 | 11 | 12 | 13 | 14 | 15 | 16) ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $ONLY" ;;
 esac
 
@@ -1036,6 +1041,58 @@ chat_first_message() {
   [[ "$CODE" == "200" ]] || fail "renaming an archived chat is $CODE, want 200"
 }
 
+# Leg 16 is a function for leg 14's reason: its own repo, project and daemon,
+# so VINCENT_GATE_SCENARIO=16 runs it alone. Unselected, it runs last, after
+# leg 15.
+chat_settings() {
+  echo "== 16. a chat's model changes between two turns, and each turn records its own (task 162)"
+  SET_REPO="$TMP/settingsrepo"
+  mkdir -p "$SET_REPO"
+  printf 'settings\n' > "$SET_REPO/README.md"
+  git -C "$SET_REPO" init -q -b main
+  git -C "$SET_REPO" config user.email gate@example.com
+  git -C "$SET_REPO" config user.name "M14 Gate"
+  git -C "$SET_REPO" add .
+  git -C "$SET_REPO" commit -q -m "root"
+
+  "$VINCENT" daemon stop --force >/dev/null 2>&1 || true
+  "$VINCENT" daemon start
+  PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
+  TOKEN="$(cat "$DATA_DIR/token")"
+  BASE="http://127.0.0.1:$PORT/v1"
+
+  SET_PROJECT_ID="$(api POST /projects -d "{\"path\": \"$(hostpath "$SET_REPO")\"}" | jq -r .id)"
+  [[ -n "$SET_PROJECT_ID" && "$SET_PROJECT_ID" != "null" ]] || fail "registering the settings project failed"
+  SET_CHAT_ID="$(api POST /chats -d "{\"project_id\": $SET_PROJECT_ID, \"title\": \"settings\",
+    \"agent\": \"claude\", \"model\": \"haiku\"}" | jq -r .id)"
+  [[ -n "$SET_CHAT_ID" && "$SET_CHAT_ID" != "null" ]] || fail "creating the settings chat failed"
+
+  api POST "/chats/$SET_CHAT_ID/send" -d '{"message": "first"}' >/dev/null || fail "the first send failed"
+  STATE="$(wait_turn "$SET_CHAT_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "settings turn 1 is $STATE, want done"
+  wait_chat "$SET_CHAT_ID" idle
+
+  echo "== 16a. PATCH the model; the next turn runs on it, the first keeps its own"
+  CODE="$(api_status PATCH "/chats/$SET_CHAT_ID" -d '{"model": "sonnet"}')"
+  [[ "$CODE" == "200" ]] || fail "PATCH /v1/chats/$SET_CHAT_ID is $CODE: $(cat "$TMP/body.json")"
+  api POST "/chats/$SET_CHAT_ID/send" -d '{"message": "second"}' >/dev/null || fail "the second send failed"
+  STATE="$(wait_turn "$SET_CHAT_ID" 2)"
+  [[ "$STATE" == "done" ]] || fail "settings turn 2 is $STATE, want done"
+  # One jq over the whole body, so nothing multi-line reaches bash.
+  api GET "/chats/$SET_CHAT_ID" | jq -e '
+    .chat.model == "sonnet"
+      and ([.turns[] | .model] == ["haiku", "sonnet"])
+      and all(.turns[]; .permission_mode == "full-auto")' >/dev/null \
+    || fail "the turns did not record their own models: $(api GET "/chats/$SET_CHAT_ID")"
+
+  echo "== 16b. a restricted codex chat is refused where it is chosen (task 162 decision 1)"
+  CODE="$(api_status POST /chats -d "{\"project_id\": $SET_PROJECT_ID, \"title\": \"cx\",
+    \"agent\": \"codex\", \"permission_mode\": \"restricted\"}")"
+  [[ "$CODE" == "400" ]] || fail "a restricted codex chat is $CODE, want 400"
+  jq -e '.error.code == "agent_cannot_restrict_resume"' "$TMP/body.json" >/dev/null \
+    || fail "the restricted codex refusal is untyped: $(cat "$TMP/body.json")"
+}
+
 if [[ "$ONLY" == "11" ]]; then
   chat_on_a_task
   echo "GATE PASS: m14 (leg 11)"
@@ -1063,6 +1120,12 @@ fi
 if [[ "$ONLY" == "15" ]]; then
   chat_first_message
   echo "GATE PASS: m14 (leg 15)"
+  exit 0
+fi
+
+if [[ "$ONLY" == "16" ]]; then
+  chat_settings
+  echo "GATE PASS: m14 (leg 16)"
   exit 0
 fi
 
@@ -1394,6 +1457,7 @@ if [[ -z "$ONLY" ]]; then
   chat_mention_passthrough
   chat_files
   chat_first_message
+  chat_settings
 fi
 
 echo "GATE PASS: m14"

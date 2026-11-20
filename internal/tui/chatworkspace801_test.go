@@ -180,7 +180,7 @@ func TestChatLineScrollAndTurnCue(t *testing.T) {
 	if !strings.Contains(head, "turn 1/9") || !strings.Contains(head, "⏸") {
 		t.Errorf("the paused header has no position cue: %q", head)
 	}
-	v.updateKey(registryKey(t, "ctrl+g"))
+	v.updateKey(registryKey(t, "alt+shift+g"))
 	if head := stripLines(v.render(80, 20))[0]; strings.Contains(head, "turn 1/9") {
 		t.Errorf("the cue outlived the pause: %q", head)
 	}

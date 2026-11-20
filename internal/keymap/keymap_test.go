@@ -35,6 +35,12 @@ func TestBuildRefusals(t *testing.T) {
 		{"esc is fixed", map[string]string{"esc": "q"}, []string{"esc", "not rebindable", "layer stack"}},
 		{"not a key", map[string]string{"refresh": "reload"}, []string{"refresh", `"reload" is not a key`}},
 		{"shifted letter", map[string]string{"refresh": "shift+r"}, []string{"refresh", `"R"`}},
+		// Under alt or ctrl the terminal reports an upper-case letter as
+		// shift plus the lower-case one (review F1): alt+G is a press no
+		// terminal sends, and the refusal names the spelling that fires.
+		{"upper-case letter under alt", map[string]string{"refresh": "alt+R"}, []string{"refresh", `"alt+shift+r"`}},
+		{"upper-case letter under ctrl and shift", map[string]string{"refresh": "ctrl+shift+R"}, []string{"refresh", `"ctrl+shift+r"`}},
+		{"the fixed follow key, by the terminal's spelling", map[string]string{"refresh": "alt+shift+g"}, []string{"refresh", `"alt+shift+g"`, "live end"}},
 		{"a live global", map[string]string{"refresh": "q"}, []string{"refresh", `"q"`, "quit"}},
 		{"a §6 action", map[string]string{"filter": "p"}, []string{"filter", `"p"`, "pause"}},
 		{"a fixed panel row", map[string]string{"refresh": "f"}, []string{"refresh", `"f"`, "task table", "fold or open"}},
@@ -74,6 +80,7 @@ func TestBuildAccepts(t *testing.T) {
 		{"a swap", map[string]string{"pause": "x", "reject": "p"}, map[Op]string{Pause: "x", Reject: "p"}},
 		// f3 rather than f2: f2 is the chat workspace's fixed alias for the
 		// skill list (task 124.13), and one key means one thing (§15).
+		{"alt and shift on a letter", map[string]string{"refresh": "alt+shift+e"}, map[Op]string{Refresh: "alt+shift+e"}},
 		{"text-field hatch on a function key", map[string]string{"palette_alt": "f3", "help_alt": "alt+h"}, map[Op]string{PaletteAlt: "f3", HelpAlt: "alt+h"}},
 	}
 	for _, c := range cases {

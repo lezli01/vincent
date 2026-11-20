@@ -16,10 +16,14 @@ import (
 // pops it, in the transaction that deletes it, so a message is either a queued
 // row or a turn and never both.
 type ChatQueuedMessage struct {
-	ID        int64
-	ChatID    int64
-	Position  int
-	Prompt    string
+	ID       int64
+	ChatID   int64
+	Position int
+	Prompt   string
+	// Settings are the message's per-turn overrides (task 162 decision 6),
+	// stored until it drains. A field left empty takes the chat's setting at
+	// drain time.
+	Settings  TurnSettings
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -36,7 +40,7 @@ var ErrQueuedMessageGone = errors.New("the message is no longer queued")
 // turn whose reason is chatrun's `canceled`, so it needs no constant here.
 const QueuePauseInterrupted = "interrupted"
 
-const chatQueueColumns = `id, chat_id, position, prompt, created_at, updated_at`
+const chatQueueColumns = `id, chat_id, position, prompt, created_at, updated_at, model, effort, permission_mode`
 
 // EnqueueChatMessage appends prompt to chat's queue. It is legal only while
 // the chat holds a live turn (`running` or `awaiting_input`): a queued
@@ -46,6 +50,14 @@ const chatQueueColumns = `id, chat_id, position, prompt, created_at, updated_at`
 // same instant either sees this row and drains it or ran first and left the
 // chat idle.
 func (s *Store) EnqueueChatMessage(ctx context.Context, chatID int64, prompt string) (*ChatQueuedMessage, error) {
+	return s.EnqueueChatMessageWith(ctx, chatID, prompt, TurnSettings{})
+}
+
+// EnqueueChatMessageWith is EnqueueChatMessage with the message's per-turn
+// overrides, which the turn it becomes runs with (task 162 decision 6).
+func (s *Store) EnqueueChatMessageWith(
+	ctx context.Context, chatID int64, prompt string, ov TurnSettings,
+) (*ChatQueuedMessage, error) {
 	var out *ChatQueuedMessage
 	ev, err := s.chatQueueTx(ctx, chatID, func(tx *sql.Tx, c *Chat) error {
 		if !chatstate.HoldsProcess(c.State) || !chatstate.AllowedFor(c.Kind(), c.State, chatstate.Send) {
@@ -58,10 +70,14 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, chatID int64, prompt str
 			return fmt.Errorf("next queue position: %w", err)
 		}
 		now := time.Now()
-		m := &ChatQueuedMessage{ChatID: chatID, Position: pos, Prompt: prompt, CreatedAt: now, UpdatedAt: now}
+		m := &ChatQueuedMessage{
+			ChatID: chatID, Position: pos, Prompt: prompt, Settings: ov, CreatedAt: now, UpdatedAt: now,
+		}
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO chat_queued_messages (chat_id, position, prompt, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?)`, chatID, pos, prompt, formatTime(now), formatTime(now))
+			INSERT INTO chat_queued_messages (chat_id, position, prompt, created_at, updated_at,
+				model, effort, permission_mode)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, chatID, pos, prompt, formatTime(now), formatTime(now),
+			nullString(ov.Model), nullString(ov.Effort), nullString(ov.PermissionMode))
 		if err != nil {
 			return fmt.Errorf("queue chat message: %w", err)
 		}
@@ -104,12 +120,25 @@ func (s *Store) ListChatQueue(ctx context.Context, chatID int64) ([]ChatQueuedMe
 // EditChatQueued replaces a queued message's text. A message that already
 // started — or was deleted — is ErrQueuedMessageGone.
 func (s *Store) EditChatQueued(ctx context.Context, chatID, id int64, prompt string) (*ChatQueuedMessage, error) {
+	return s.EditChatQueuedWith(ctx, chatID, id, prompt, nil)
+}
+
+// EditChatQueuedWith is EditChatQueued that may also replace the message's
+// overrides (task 162 decision 6): a nil ov leaves them as they were, a
+// non-nil one replaces all three. An empty prompt keeps the text.
+func (s *Store) EditChatQueuedWith(
+	ctx context.Context, chatID, id int64, prompt string, ov *TurnSettings,
+) (*ChatQueuedMessage, error) {
 	var out *ChatQueuedMessage
 	ev, err := s.chatQueueTx(ctx, chatID, func(tx *sql.Tx, _ *Chat) error {
 		now := time.Now()
-		res, err := tx.ExecContext(ctx,
-			`UPDATE chat_queued_messages SET prompt = ?, updated_at = ? WHERE id = ? AND chat_id = ?`,
-			prompt, formatTime(now), id, chatID)
+		q := `UPDATE chat_queued_messages SET prompt = COALESCE(NULLIF(?, ''), prompt), updated_at = ?`
+		args := []any{prompt, formatTime(now)}
+		if ov != nil {
+			q += `, model = ?, effort = ?, permission_mode = ?`
+			args = append(args, nullString(ov.Model), nullString(ov.Effort), nullString(ov.PermissionMode))
+		}
+		res, err := tx.ExecContext(ctx, q+` WHERE id = ? AND chat_id = ?`, append(args, id, chatID)...)
 		if err != nil {
 			return fmt.Errorf("edit queued message %d: %w", id, err)
 		}
@@ -351,7 +380,7 @@ func popChatQueueTx(ctx context.Context, tx *sql.Tx, c *Chat) (*ChatTurn, error)
 		return nil, fmt.Errorf("pop chat queue: %w", err)
 	}
 	c.QueuedCount--
-	return insertChatTurnTx(ctx, tx, c, m.Prompt)
+	return insertChatTurnTx(ctx, tx, c, m.Prompt, m.Settings)
 }
 
 // deleteChatQueueTx deletes every queued message of chatID. Archive, close
@@ -446,9 +475,12 @@ func chatQueueEvent(c *Chat) (*Event, error) {
 func scanChatQueued(r rowScanner) (*ChatQueuedMessage, error) {
 	var m ChatQueuedMessage
 	var createdAt, updatedAt string
-	if err := r.Scan(&m.ID, &m.ChatID, &m.Position, &m.Prompt, &createdAt, &updatedAt); err != nil {
+	var model, effort, mode sql.NullString
+	if err := r.Scan(&m.ID, &m.ChatID, &m.Position, &m.Prompt, &createdAt, &updatedAt,
+		&model, &effort, &mode); err != nil {
 		return nil, err
 	}
+	m.Settings = TurnSettings{Model: model.String, Effort: effort.String, PermissionMode: mode.String}
 	var err error
 	if m.CreatedAt, err = parseTime(createdAt); err != nil {
 		return nil, err

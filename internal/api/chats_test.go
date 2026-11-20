@@ -144,57 +144,58 @@ func TestChatCreateRefusesAdaptersThatCannotResume(t *testing.T) {
 	}
 }
 
-// TestChatsAreAlwaysFullAuto is task 072 decision 1's structural guard, and it
-// is a guard rather than a happy-path assertion.
-//
-// A resumed codex run has no argv spelling for `restricted`: `codex exec
-// resume` carries no --sandbox at all, so the adapter always passes
-// --dangerously-bypass-approvals-and-sandbox (§9.3). That is only safe while
-// nothing can ask a chat for a restricted turn — POST /v1/chats hardcodes
-// full_auto and exposes no request field to override it, and no other caller
-// sets RunSpec.ResumeSessionID.
-//
-// So this asserts the absence: a request that tries to pick a mode does not
-// get one. The day chats gain a permission mode, this fails, and the decision
-// is reopened deliberately rather than discovered as a silent escalation on a
-// user's machine.
+// TestChatsAreAlwaysFullAuto was task 072 decision 1's structural guard: a
+// chat's mode was not requestable, because `codex exec resume` has no
+// --sandbox and so no argv spelling for `restricted` (§9.3). Task 162
+// decision 1 supersedes that decision explicitly, and this is the guard for
+// the rule that replaced it: the mode is requestable, the default is still
+// full-auto, and the hazard is refused where the mode is chosen — a
+// restricted codex chat, PATCH or turn is a typed 400, never a resumed turn
+// that quietly runs full-auto.
 func TestChatsAreAlwaysFullAuto(t *testing.T) {
 	h := newChatHarness(t)
-	// There is no field to ask with. The decoder rejects unknown ones, which
-	// is the guard: adding `permission_mode` to the request type turns this
-	// 400 into a 201 and fails here.
 	resp, body := h.doJSON(t, http.MethodPost, "/v1/chats", map[string]any{
 		"project_id": h.projectID, "title": "a talk",
 		"agent": "codex", "permission_mode": string(agent.Restricted),
 	})
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("create with permission_mode = %d, want 400; a chat's mode is not "+
-			"requestable (task 072 decision 1) (%s)", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), CodeAgentCannotRestrictResume) {
+		t.Fatalf("create a restricted codex chat = %d %s, want 400 %s", resp.StatusCode, body, CodeAgentCannotRestrictResume)
 	}
-	// And what creation does produce is full_auto, on every adapter.
+	// The default, on every adapter, is still full-auto.
+	ids := map[string]int64{}
 	for _, name := range []string{"claude", "codex", "cursor"} {
-		resp, body := h.doJSON(t, http.MethodPost, "/v1/chats", map[string]any{
-			"project_id": h.projectID, "title": "a talk", "agent": name,
-		})
-		if resp.StatusCode != http.StatusCreated {
-			t.Fatalf("create on %s = %d (%s)", name, resp.StatusCode, body)
+		code, out := h.create(t, name)
+		if code != http.StatusCreated {
+			t.Fatalf("create on %s = %d (%v)", name, code, out)
 		}
-		var out struct {
-			ID int64 `json:"id"`
-		}
-		if err := json.Unmarshal(body, &out); err != nil {
-			t.Fatalf("chat body: %v", err)
-		}
-		// Read the row rather than the DTO: the wire shape does not carry a
-		// permission mode either, which is half of why this is safe.
-		c, err := h.store.GetChat(t.Context(), out.ID)
+		id := int64(out["id"].(float64))
+		ids[name] = id
+		c, err := h.store.GetChat(t.Context(), id)
 		if err != nil {
 			t.Fatalf("GetChat: %v", err)
 		}
 		if c.PermissionMode != string(agent.FullAuto) {
-			t.Fatalf("chat on %s = %q, want %q: a resumed codex run has no argv "+
-				"spelling for restricted (§9.3)", name, c.PermissionMode, agent.FullAuto)
+			t.Fatalf("chat on %s = %q, want the default %q", name, c.PermissionMode, agent.FullAuto)
 		}
+	}
+	// PATCH and a per-turn override refuse a restricted codex chat the same way.
+	path := fmt.Sprintf("/v1/chats/%d", ids["codex"])
+	resp, body = h.doJSON(t, http.MethodPatch, path, map[string]any{"permission_mode": "restricted"})
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), CodeAgentCannotRestrictResume) {
+		t.Errorf("PATCH codex restricted = %d %s, want 400 %s", resp.StatusCode, body, CodeAgentCannotRestrictResume)
+	}
+	resp, body = h.doJSON(t, http.MethodPost, path+"/send", map[string]any{"message": "hi", "permission_mode": "restricted"})
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), CodeAgentCannotRestrictResume) {
+		t.Errorf("restricted codex turn = %d %s, want 400 %s", resp.StatusCode, body, CodeAgentCannotRestrictResume)
+	}
+	if c, _ := h.store.GetChat(t.Context(), ids["codex"]); c.PermissionMode != string(agent.FullAuto) {
+		t.Errorf("codex chat mode = %q after refusals, want full-auto", c.PermissionMode)
+	}
+	// claude can keep a resumed turn restricted, so it may be lowered.
+	resp, body = h.doJSON(t, http.MethodPatch, fmt.Sprintf("/v1/chats/%d", ids["claude"]),
+		map[string]any{"permission_mode": "restricted"})
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"permission_mode":"restricted"`) {
+		t.Errorf("PATCH claude restricted = %d %s, want 200", resp.StatusCode, body)
 	}
 }
 

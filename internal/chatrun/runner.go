@@ -257,6 +257,16 @@ func (r *Runner) Send(ctx context.Context, chatID int64, prompt string) (*store.
 func (r *Runner) Submit(
 	ctx context.Context, chatID int64, prompt string,
 ) (*store.ChatTurn, *store.ChatQueuedMessage, error) {
+	return r.SubmitWith(ctx, chatID, prompt, store.TurnSettings{})
+}
+
+// SubmitWith is Submit with per-turn overrides (task 162 decision 6): the
+// turn it starts — or the queued message, when it drains — runs with ov's
+// non-empty fields in place of the chat's own, and the chat keeps its
+// defaults. The caller has validated ov; the runner only carries it.
+func (r *Runner) SubmitWith(
+	ctx context.Context, chatID int64, prompt string, ov store.TurnSettings,
+) (*store.ChatTurn, *store.ChatQueuedMessage, error) {
 	chat, err := r.deps.Store.GetChat(ctx, chatID)
 	if err != nil {
 		return nil, nil, err
@@ -265,7 +275,7 @@ func (r *Runner) Submit(
 		return nil, nil, store.ErrInvalidChatAction
 	}
 	if chatstate.HoldsProcess(chat.State) {
-		m, err := r.deps.Store.EnqueueChatMessage(ctx, chatID, prompt)
+		m, err := r.deps.Store.EnqueueChatMessageWith(ctx, chatID, prompt, ov)
 		if err == nil {
 			return nil, m, nil
 		}
@@ -281,7 +291,7 @@ func (r *Runner) Submit(
 	if err := r.checkCap(ctx); err != nil {
 		return nil, nil, err
 	}
-	turn, err := r.deps.Store.CreateChatTurn(ctx, chatID, prompt)
+	turn, err := r.deps.Store.CreateChatTurnWith(ctx, chatID, prompt, ov)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -580,10 +590,14 @@ func (r *Runner) runTurn(
 		// every chat carried before task 124.17; the task's container
 		// environment for a turn inside one (decision 3), so the CLI reads
 		// the configuration `container.mount_agent_config` mounted for it.
-		Env:             env,
-		Model:           chat.Model,
-		Effort:          chat.Effort,
-		PermissionMode:  agent.PermissionMode(chat.PermissionMode),
+		Env: env,
+		// What the turn row recorded (task 162 decision 7), not the chat's
+		// current settings: a PATCH during a live turn — or while a drained
+		// message waited — applies from the next turn written, and a
+		// per-turn override is this turn's alone.
+		Model:           runSettings(chat, turn).Model,
+		Effort:          runSettings(chat, turn).Effort,
+		PermissionMode:  agent.PermissionMode(runSettings(chat, turn).PermissionMode),
 		OnInput:         agent.InputWait,
 		ResumeSessionID: chat.SessionID,
 		// Every turn, not only one whose message opens with the sigil (task
@@ -1240,4 +1254,16 @@ func withChatMarker(env []string, chatID int64) []string {
 // cancel-and-resend.
 func SteerUnavailable(agentName string) string {
 	return fmt.Sprintf("%s cannot steer a running turn; send queues the message to run after it", agentName)
+}
+
+// runSettings is what turn runs with: the settings recorded on its row when it
+// was written (task 162 decision 7). A row from before migration 0062 records
+// none, and one that recorded no permission mode is the chat's — the only way
+// to reach either is a turn written by an older daemon, and the chat's value
+// was then the only value there was.
+func runSettings(chat *store.Chat, turn *store.ChatTurn) store.TurnSettings {
+	if turn.PermissionMode == "" {
+		return store.TurnSettings{}.Resolve(chat)
+	}
+	return store.TurnSettings{Model: turn.Model, Effort: turn.Effort, PermissionMode: turn.PermissionMode}
 }

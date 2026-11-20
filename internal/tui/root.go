@@ -1160,6 +1160,11 @@ func synthKey(key string) tea.KeyPressMsg {
 	// A `tui.keys` override may bind an operation to any key keymap.ParseKey
 	// accepts (task 118), and the palette replays whatever the registry says:
 	// alt+ and the navigation names have to round-trip too.
+	// shift+<letter> survives only under alt or ctrl (keymap.ParseKey):
+	// that is how the terminal reports alt+G, as alt+shift+g (review F1).
+	if rest, ok := strings.CutPrefix(key, "shift+"); ok && len(rest) == 1 && rest[0] >= 'a' && rest[0] <= 'z' {
+		return tea.KeyPressMsg{Code: rune(rest[0]), Mod: tea.ModShift}
+	}
 	if rest, ok := strings.CutPrefix(key, "alt+"); ok {
 		msg := synthKey(rest)
 		msg.Mod |= tea.ModAlt
@@ -1178,6 +1183,12 @@ func synthKey(key string) tea.KeyPressMsg {
 	// (task 074). A rule the registry cannot outrun is the fix.
 	if mod, ok := strings.CutPrefix(key, "ctrl+"); ok && len([]rune(mod)) == 1 {
 		return tea.KeyPressMsg{Code: []rune(mod)[0], Mod: tea.ModCtrl}
+	}
+	if mod, ok := strings.CutPrefix(key, "ctrl+"); ok && (strings.HasPrefix(mod, "alt+") || strings.HasPrefix(mod, "shift+")) {
+		msg := synthKey(mod)
+		msg.Mod |= tea.ModCtrl
+		msg.Text = ""
+		return msg
 	}
 	// Any function key, by the same reasoning. The default arm would read f1
 	// as the letter f carrying the text "f1" — a press no terminal sends, and
