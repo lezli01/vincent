@@ -15608,7 +15608,9 @@ stream for the live tail.
    group's labels shorten first and then shrink to digits; the first group is
    never shortened. `tab`/`shift+tab` and `[`/`]` walk the strip in that drawn
    order, Pull Request still last and still conditional; the mouse follows the
-   same geometry. The Overview renders from the task snapshot the workspace
+   same geometry. *Amended 2026-11-20 (task 168 decision 4): from the Diff
+   tab `[`/`]` walk the diff's hunks instead; `tab`/`shift+tab` and the
+   digits still leave it (view 9's amendment of the same date).* The Overview renders from the task snapshot the workspace
    already holds (T3.2) and picks one of three frames from the §6 state:
    **running, queued, paused and `awaiting_children`** say what the task is
    doing (a state sentence — the lanes still out, for a parked fan-out parent
@@ -18206,7 +18208,10 @@ collapse the lot. The rules:
   different keys — follow and verbosity against folds and file navigation — so
   `bindings.go` gives the diff its own context, and the footer, `?` and the
   palette follow the live tab. `]` is repeated in it, because the way back must
-  stay on screen.
+  stay on screen. *Amended 2026-11-20 (task 168 decision 4): that holds for
+  the board's preview, where `]`/`[` still switch back to Output. On the task
+  workspace's Diff tab the row now reads "next hunk", `]`/`[` walk the hunks,
+  and the way back is `tab`/`shift+tab`, `d` or a digit.*
 - **Folds are keyed by path and survive a refresh.** Re-entering the tab
   re-fetches (the endpoint runs git per call), and a file folding shut under the
   reader because the agent touched a different one is the failure this avoids.
