@@ -48,6 +48,13 @@ list with the user-facing context a commit subject cannot carry.
   `vincent chat search`; or with `GET /v1/chats/search`. Archived, handed-off
   and closed chats are searched by default, and an answer stays findable
   after its transcript has been removed by retention (#1022).
+- **Export a chat as Markdown, HTML or JSON.** `alt+e` in a chat or on the
+  chats boards, `vincent chat export`, or `GET /v1/chats/{id}/export` writes
+  the whole conversation as one document: its metadata, then each turn's
+  prompt, tool calls, answer and usage, optionally followed by the diff. A
+  turn's usage counts the cache the agent read and wrote beside its input
+  (`1200 in (+60200 cache) · 800 out`), as the chat heading does, and the JSON
+  carries the cache counts and context figures (#1023).
 
 ### Changed
 
