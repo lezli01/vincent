@@ -73,6 +73,9 @@ type chatDraftState struct {
 	// writes are serialized so an older one can never land last.
 	inFlight bool
 	again    bool
+	// stashInFlight says the PUT in flight carries the stash, so a failed
+	// one marks the stash dirty again rather than losing it (review F2).
+	stashInFlight bool
 	// failed is a save the daemon refused, which keeps the composer dirty so
 	// a remote draft cannot replace text that was never stored.
 	failed bool
@@ -260,6 +263,7 @@ func (v *chatView) flushDraft() tea.Cmd {
 	if u.Draft != nil {
 		v.draft.saved = *u.Draft
 	}
+	v.draft.stashInFlight = u.Stash != nil
 	v.draft.stashDirty, v.draft.failed = false, false
 	v.draft.inFlight, v.draft.again = true, false
 	return func() tea.Msg {
@@ -279,8 +283,14 @@ func (v *chatView) applyDraftSaved(msg chatDraftSavedMsg) tea.Cmd {
 		return nil
 	}
 	v.draft.inFlight = false
+	stashSent := v.draft.stashInFlight
+	v.draft.stashInFlight = false
 	if msg.err != nil {
+		// The draft is re-sent because failed is set; the stash the same
+		// way, by being dirty again — the composer no longer holds it, so a
+		// stash that is not retried is gone (review F2).
 		v.draft.failed = true
+		v.draft.stashDirty = v.draft.stashDirty || stashSent
 		v.note, v.noteBad = "the draft was not saved: "+errString(msg.err), true
 		return nil
 	}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -150,5 +151,27 @@ func TestStaleReloadAfterSendKeepsTheComposer(t *testing.T) {
 	w.applyLoadedDraft(&apiclient.Chat{ID: 1, Draft: "from elsewhere", HasDraft: true, DraftUpdatedAt: &t2})
 	if got := w.composer.Value(); got != "from elsewhere" {
 		t.Fatalf("a newer remote draft was not followed: %q", got)
+	}
+}
+
+// TestFailedStashSaveIsRetried is review F2: alt+s against a daemon that
+// cannot be reached empties the composer, and the next save must still carry
+// the stash — nor may a reload replace it with the daemon's older one.
+func TestFailedStashSaveIsRetried(t *testing.T) {
+	v := chatViewFixture()
+	v.client = apiclient.New("http://127.0.0.1:1", "t")
+	v.applyLoadedDraft(&apiclient.Chat{ID: 1, Stash: "old"})
+	v.composer.SetValue("keep me")
+	if cmd := v.toggleStash(); cmd == nil {
+		t.Fatal("the stash was not saved")
+	}
+	v.applyDraftSaved(chatDraftSavedMsg{chatID: 1, err: errors.New("connection refused")})
+	v.applyLoadedDraft(&apiclient.Chat{ID: 1, Stash: "old"})
+	if v.draft.stash != "keep me" {
+		t.Fatalf("a reload replaced the unsaved stash with %q", v.draft.stash)
+	}
+	u := v.draftUpdate()
+	if u == nil || u.Stash == nil || *u.Stash != "keep me" {
+		t.Fatalf("the retry does not carry the stash: %+v", u)
 	}
 }
