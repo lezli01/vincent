@@ -284,6 +284,10 @@ type chatView struct {
 	grew      bool
 	convHit   chatConvHit
 
+	// diff is the chat's diff pane (task 168, chatdiff.go): while it is
+	// open it is drawn where the conversation is and holds the keyboard.
+	diff chatDiffState
+
 	width, height int
 }
 
@@ -312,6 +316,7 @@ func newChatView(level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *ch
 		turnSeqs:    map[int][]int64{},
 		fetched:     map[int]bool{},
 		recall:      chatRecall{idx: -1},
+		diff:        chatDiffState{pane: newDiffPane()},
 	}
 }
 
@@ -340,6 +345,11 @@ func (v *chatView) capturesInput() bool {
 	if v.form != nil {
 		return v.form.capturing()
 	}
+	if v.diff.open {
+		// The diff's keys are single letters typed nowhere (task 168
+		// decision 3), exactly as the conversation focus's are.
+		return false
+	}
 	if v.convFocus {
 		return v.search.typing
 	}
@@ -363,6 +373,8 @@ func (v *chatView) bindingContext() bindingContext {
 	switch {
 	case v.form != nil:
 		return ctxForm
+	case v.diff.open:
+		return ctxChatDiff
 	case v.convFocus && v.search.typing:
 		return ctxChatFind
 	case v.convFocus:
@@ -407,11 +419,13 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	// the search and the marker are this visit's.
 	v.convFocus, v.cursor, v.search = false, 0, chatSearchState{}
 	v.newLines, v.grew = 0, false
+	v.resetDiff()
 	v.landSeq = seq
 	if seq > 0 {
 		v.following = false
 	}
-	return tea.Batch(leave, v.loadCmd(), v.streamCmd(), v.loadAgentsCmd(), v.markViewedCmd())
+	// The `changes` row is read alongside the open (task 168 decision 10).
+	return tea.Batch(leave, v.loadCmd(), v.streamCmd(), v.loadAgentsCmd(), v.markViewedCmd(), v.diffStatCmd())
 }
 
 // landFetch asks for the landing turn's transcript, which the load's own
@@ -532,7 +546,23 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 			// stays unread: the terminal is open, nobody is looking at it.
 			mark = v.markViewedCmd()
 		}
-		return v, tea.Batch(v.fetchTranscripts(), v.landFetch(), mark)
+		var diff tea.Cmd
+		if finished {
+			// A turn ended: what it wrote is read once, here, and never per
+			// event from the stream (task 168 decision 10).
+			diff = v.turnEndedDiff()
+		}
+		return v, tea.Batch(v.fetchTranscripts(), v.landFetch(), mark, diff)
+	case chatDiffMsg:
+		v.applyDiff(msg)
+		return v, nil
+	case chatDiffStatMsg:
+		v.applyDiffStat(msg)
+		return v, nil
+	case chatHunkRejectedMsg:
+		return v, v.applyHunkRejected(msg)
+	case chatHunkMarkedMsg:
+		return v, v.applyHunkMarked(msg)
 	case tea.FocusMsg:
 		v.blurred = false
 		return v, nil
@@ -639,6 +669,15 @@ func (v *chatView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	// that scrolled the page behind it would move the rows out from under
 	// the reader's eye. It scrolls again the moment the list closes.
 	if v.form != nil || v.skills.open || v.files.open {
+		return nil
+	}
+	if v.diff.open {
+		// The diff is the pane on screen, so it is what the wheel scrolls.
+		if msg.Button == tea.MouseWheelUp {
+			v.diff.pane.scroll(-1)
+		} else {
+			v.diff.pane.scroll(1)
+		}
 		return nil
 	}
 	if msg.Button == tea.MouseWheelUp {
@@ -1126,6 +1165,11 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// 164 decision 3), as the skills browse list does.
 		return v, v.updateHistoryKey(msg)
 	}
+	if v.diff.open {
+		// The diff pane holds the keyboard while it is up (task 168
+		// decision 3).
+		return v, v.updateDiffKey(msg)
+	}
 	if v.convFocus && v.search.typing {
 		return v, v.updateSearchLineKey(msg)
 	}
@@ -1177,6 +1221,9 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	if key := opKey(keymap.ChatMode); key != "" && msg.String() == key {
 		return v, v.toggleMode()
+	}
+	if key := opKey(keymap.ChatDiff); key != "" && msg.String() == key {
+		return v, v.openDiff()
 	}
 	switch msg.String() {
 	case chatQueueEditKey:

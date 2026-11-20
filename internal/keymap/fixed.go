@@ -61,6 +61,26 @@ var fixed = []Fixed{
 	{"task details", "P", "push this task's branch to origin and open its pull request"},
 	{"task details", "U", "open this lane's parent task"},
 	{"task details", "d", "open the Diff tab"},
+	// The chat's diff pane holding the keyboard (task 168 decision 3).
+	{"chat diff", "]", "move to the next hunk"},
+	{"chat diff", "x", "reject the selected hunk"},
+	{"chat diff", "a", "accept the selected hunk, or clear its mark"},
+	{"chat diff", "s", "switch between the changes since the base and since the last turn"},
+	{"chat diff", "r", "read the diff again"},
+	{"chat diff", "down", "move between the files"},
+	{"chat diff", "enter", "expand or collapse the file under the cursor"},
+	{"chat diff", "O", "expand every file"},
+	{"chat diff", "C", "collapse every file"},
+	{"chat diff", "pgdown", "page the diff"},
+	{"chat diff", "shift+right", "pan long lines"},
+	{"chat diff", "esc", "go back to the conversation"},
+	// The aliases those rows name in their labels.
+	{"chat diff", "[", "move to the previous hunk"},
+	{"chat diff", "up", "move to the file above"},
+	{"chat diff", "space", "expand or collapse the file under the cursor"},
+	{"chat diff", "right", "expand the file under the cursor"},
+	{"chat diff", "left", "collapse the file under the cursor"},
+	{"chat diff", "shift+left", "pan long lines back"},
 	{"output", "tab", "move between the task's tabs"},
 	{"output", "]", "move to the next tab"},
 	{"output", "f", "follow the live output again"},
@@ -76,7 +96,10 @@ var fixed = []Fixed{
 	{"output", "d", "open the Diff tab"},
 	{"output", "g", "jump to the top of the output"},
 	{"diff", "tab", "move between the task's tabs"},
-	{"diff", "]", "move to the next tab"},
+	// On the task workspace's Diff tab `]` and `[` walk the hunks (task 168
+	// decision 4); tab and shift+tab still switch tabs there. The board's
+	// preview shares this surface and keeps them as its Output/Diff toggle.
+	{"diff", "]", "move to the next hunk"},
 	{"diff", "down", "move between the files"},
 	{"diff", "enter", "expand or collapse the file under the cursor"},
 	{"diff", "O", "expand every file"},

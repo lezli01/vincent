@@ -93,6 +93,10 @@ const (
 	// the daemon, read-only in $EDITOR (task 163 decisions 5, 7). alt+v for
 	// "view": a bare v would be typed into the composer.
 	ChatMarkdown Op = "chat_markdown"
+	// ChatDiff swaps the chat's conversation pane for its diff (task 168
+	// decision 3): a pane swap on a key, not a tab strip. alt+d for "diff":
+	// the composer owns every printable key and nothing answered alt+d.
+	ChatDiff Op = "chat_diff"
 	// Stash sets the composer's draft aside in the chat's one stash slot, or
 	// pops the stash back into an empty composer (task 164 decision 2).
 	// alt+s, not ctrl+s: that is Steer, which task 156 decision 5 keeps.
@@ -292,6 +296,11 @@ var catalog = []Info{
 	{Op: ChatMarkdown, Default: "alt+v", Meaning: "open the whole conversation as Markdown in $EDITOR, read-only", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}, Typing: true},
+	// Typing for the same reason: it is pressed from the composer (task 168
+	// decision 3).
+	{Op: ChatDiff, Default: "alt+d", Meaning: "show the chat's diff in place of the conversation, to review it hunk by hunk", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
 	// The chat switch (task 165). Typing: the open chat's composer has the
 	// keyboard, and these must work from it — including over a pending
 	// question's popup.
@@ -430,8 +439,9 @@ type exception struct {
 
 var exceptions = []exception{
 	{key: "R", ops: []Op{Refresh, Repair}, why: "task 025: repair is on the task workspace, where no screen that re-reads a registry is"},
-	{key: "a", ops: []Op{Add, Approve}, why: "§6 approve, gated on available_actions and never offered where add is"},
-	{key: "s", ops: []Op{Scope, Skip}, why: "§6 skip, gated on available_actions; an archived row offers none"},
+	{key: "a", ops: []Op{Add, Approve}, anyFixed: true, why: "§6 approve, gated on available_actions and never offered where add is; task 168 decision 3: a accepts a hunk in the chat's diff pane, which holds the keyboard and offers neither"},
+	{key: "s", ops: []Op{Scope, Skip}, anyFixed: true, why: "§6 skip, gated on available_actions; an archived row offers none; task 168 decision 3: s switches the chat diff pane's scope, where no listing and no §6 action is"},
+	{key: "x", ops: []Op{Reject}, anyFixed: true, why: "task 168 decision 3: x rejects a hunk in the chat's diff pane, which holds the keyboard on a surface that offers no §6 action"},
 	{key: "l", ops: []Op{Lane}, anyFixed: true, why: "task 052.6 link on the pull-request takeover, and l as vim-right where no lane is selected"},
 	{key: "e", ops: []Op{Editor}, anyFixed: true, why: "e opens the selected row's form on the project overview, and enter or e on the daemon screen"},
 	{key: "d", ops: []Op{DraftRemove}, anyFixed: true, why: "d toggles the output and diff tabs in the task workspace, where no draft is open"},

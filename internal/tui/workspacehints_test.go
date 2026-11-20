@@ -35,7 +35,9 @@ func TestWorkspaceFooterHasNoDuplicateOrSelfHints(t *testing.T) {
 			switch {
 			case b.key == "tab" && b.hint != "":
 				tabHinted = true
-			case b.key == "]" && b.hint != "" && !b.aliased:
+			// On the Diff tab `]` is the hunk walk, a different operation
+			// from tab's (task 168 decision 4), so both may be hinted.
+			case b.key == "]" && b.hint != "" && !b.aliased && w.ctx != ctxDiff:
 				bracketHinted = true
 			case b.key == w.digit && b.hint != "":
 				t.Errorf("%s: the footer advertises the tab already open: %q", w.ctx, b.hint)

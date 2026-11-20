@@ -30,7 +30,7 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 		ctxNewTask, ctxNewTaskFields, ctxProjects, ctxProjectForm, ctxProjectFormField, ctxWorkflows, ctxWorkflowGraph, ctxWorkflowEditor,
 		ctxTaskWorkflow, ctxTaskStepDetails, ctxTaskPull,
 		ctxDaemon, ctxSettings, ctxPullRequests,
-		ctxChats, ctxChat, ctxChatConversation, ctxNewChat, ctxChatSearch,
+		ctxChats, ctxChat, ctxChatConversation, ctxChatDiff, ctxNewChat, ctxChatSearch,
 		ctxArchived, ctxArchivedChats,
 		ctxTriggers, ctxTriggerLedger,
 		ctxIssues, ctxIssue,
