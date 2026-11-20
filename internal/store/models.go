@@ -917,6 +917,11 @@ type ChatTurn struct {
 	Model          string
 	Effort         string
 	PermissionMode string
+	// MentionContext is the block the turn's `#issue-N`, `#task-N`, `#pr-N`
+	// and `@path#Lx-y` mentions expanded into when it started (task 164
+	// decision 2): what rode ahead of Prompt, which stays the text the human
+	// typed. "" is "nothing expanded".
+	MentionContext string
 }
 
 // TurnSettings are a turn's per-turn overrides of its chat's model, effort

@@ -36,6 +36,7 @@ silently drops.
 | Invokes a skill from a chat message | ✅ `/name` at the **start** | ✅ `$name` anywhere | ✅ `/name` anywhere | **—** (`/name` reaches the model as prose) |
 | Transcript shows a skill you invoked | ✅ in chats | **—** | **—** | **—** |
 | Expands an `@path` file mention | ✅ it reads the file for you | **—** (the path stays prose) | **—** (the path stays prose) | **—** (the path stays prose) |
+| Expands `#issue-N`, `#task-N`, `#pr-N` and `@path#L20-45` in a chat | ✅ vincent's | ✅ vincent's | ✅ vincent's | ✅ vincent's |
 | Reports cost | ✅ | — | — | — (premium requests are not dollars) |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) | ✅ (free text; `auto` when unset) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) | ✅ with an explicit `model:` |
@@ -121,6 +122,16 @@ chat turn and in a workflow agent step alike. The TUI chat composer's `@`
 picker is a typing aid over that rule rather than an exception to it — it puts
 the adapter's own mention text, quoting and all, into your draft, where you
 can still edit it away before you send.
+
+Two kinds of mention are **vincent's** rather than the CLI's, and so work the
+same on all four: `#issue-N`, `#task-N` and `#pr-N` (an issue, a task or a
+GitHub pull request of the chat's project), and a file **line range**,
+`@path#L20-45` or `@path#L20`. When the turn starts the daemon puts a short
+block for each in front of your message — the object's title, state, body and
+links, or the lines themselves in a fenced block. A bare `@path` is not one of
+these and stays exactly as described above. Anything that does not resolve is
+left as prose, and your message is stored as you typed it. See
+[Mentions](../reference/api.md#mentions) for the block and its bounds.
 
 A CLI's **built-in** commands pass through the same way, and `/clear` is the
 one worth knowing about. claude clears its own conversation and reports a new

@@ -471,6 +471,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/chats/{id}/search", s.handleChatTurnSearch)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/skills", s.handleChatSkills)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/files", s.handleChatFiles)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/expand", s.handleChatExpand)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/export", s.handleChatExport)
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)

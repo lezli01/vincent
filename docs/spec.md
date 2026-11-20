@@ -1024,6 +1024,13 @@ follows records what the **agent CLI** does with that text once vincent has
 handed it over — a property of the CLI, which vincent neither creates nor can
 suppress.
 
+*Amended 2026-11-20 (task 164, issue #1021).* "Never validated, never
+rewritten" is about a **bare** `@path`, and stays exactly true of one. A path
+followed by a line range, `@path#L20-45`, is a vincent mention as well as the
+typed text: the daemon also inlines those lines ahead of the message on every
+adapter (below, "Mentions of vincent objects and line ranges"). The prompt
+column still holds the text as typed, and nothing in it is rewritten.
+
 Observed on **claude 2.1.278**, **codex-cli 0.154.0** and **cursor-agent
 2026.09.18**. The claude build is one patch newer than the 2.1.277 named by
 §9.1's table and by the skills subsection above; neither of those pins is
@@ -1193,6 +1200,80 @@ is that listing's terminal surface (§12.1), the way `vincent chat skills` is
 the skills route's: one workspace-relative path per line on stdout, `--mention`
 printing the daemon's own mention text rather than text a client assembled, and
 `--limit` passing straight through to `?limit=`. It needed **no wire change**.
+
+#### Mentions of vincent objects and line ranges (added 2026-11-20, task 164, issue #1021)
+
+A chat message may mention vincent's own objects and a range of a file's
+lines. These are **vincent's** mentions, not an agent CLI's, and they behave
+the same on claude, codex, cursor and copilot:
+
+| Token | Resolves to |
+|---|---|
+| `#issue-N` | vincent issue `N` (the id `vincent issue show N` takes — never a GitHub number or Jira key) |
+| `#task-N` | vincent task `N` |
+| `#pr-N` | GitHub pull request `N` of the chat's project, through the `internal/github` client the pull request views use |
+| `@path#L20-45`, `@path#L20` | lines 20–45 (or line 20) of `path` in the chat's workspace; `#L20-L45` is accepted too |
+
+**Grammar.** A token needs a boundary before its sigil — the start of the
+message, whitespace, or one of `( [ { < " ' `` ` `` , ; :` — and one after:
+the end, or anything but a letter, digit, `_`, `-` or `#`. So `foo#issue-1`, a
+Markdown heading, `#issue-`, `#issue-1x` and `me@a.go#L3` are prose, and
+`#issue-1.` is a mention. A line range needs `1 ≤ from ≤ to`. A token typed
+twice expands once, and a message expands at most 20 distinct mentions; later
+ones stay prose.
+
+**Expansion.** When a turn starts, the daemon expands the message's mentions
+into one block (`chatrun.Runner.ExpandMentions`, `internal/chatrun/mentions.go`)
+and that block rides ahead of the message as the turn's preamble — after a
+linked or issue chat's `opening_context` on a first turn, before the message.
+On claude's input mode it is its own text block, so a leading `/skill` stays
+leading; on every other path it is `agent.RunSpec.JoinedPrompt`'s framing.
+A queued message (task 156) is expanded when its turn starts, not when it is
+queued. Each object becomes one element — `<issue id state [close_reason]
+[kind] [url] [branch]>`, `<task id state [workflow] [branch] [base]>`,
+`<pull_request number state head base url>` (state `open`, `draft`, `closed`
+or `merged`) — holding `title:` and then the body, the task's description or
+the PR's description, each cut at **16 KiB** (task 140's issue-chat body cap)
+with `…(truncated)`. A line range becomes `<file path lines>` around a fenced
+block whose fence is longer than any backtick run inside it; it reads at most
+**16 KiB** of lines and says `…(truncated)` past that. CRLF reads as LF. A
+range that ends past the file is clamped and the `lines` attribute says what
+was read.
+
+**Scope and prose-on-failure.** `#issue-N` and `#task-N` resolve only in the
+chat's project; `#pr-N` only on a project whose `origin` is GitHub with the
+integration usable. A line range resolves against `chatrun.Runner.Workspace`
+— the directory `GET /v1/chats/{id}/files` lists — and only inside it: an
+absolute path, any `..` component, or a symlink resolving outside the
+workspace is not read, because vincent does not read outside the workspace for
+an agent. Anything that does not resolve — an unknown id, another project's
+object, no GitHub binding, GitHub unreachable, a missing file, a directory, a
+binary file (a NUL in the range), a range starting past the end — is **left
+as prose**. The send is never refused over a mention: that would be the daemon
+judging the text.
+
+**The snapshot.** `chat_turns.prompt` stays exactly the text the human typed.
+The assembled block is stored once, before the agent starts, in
+`chat_turns.mention_context` (§14), written into the turn's transcript as a
+`mentions` note, and carried by the turn on the wire and in an export
+(`mention_context`). It is the record of what the agent saw: editing the issue
+afterwards does not change it.
+
+**Why this is not emulation.** §9's rule is that a capability an adapter lacks
+is stated and never emulated. Expanding a bare `@path` on codex, cursor or
+copilot because claude expands one would break it, and that is why a bare
+`@path` stays pass-through (task 126 decision 1). A line range is different:
+vincent owns it outright, on every adapter including claude, the way it owns
+`#issue-N`. claude also sees its `@path#L20-45` text as typed, and whatever it
+does with the suffix is the CLI's business, neither probed nor relied on.
+`FileMentioner`, `GET /v1/agents`' `file_mention_expands` and `vincent
+agents`' `no @ file expansion` note are unchanged, because they describe the
+CLI, not vincent.
+
+**Preview.** `POST /v1/chats/{id}/expand` (§13.2) runs the same function on a
+draft and answers what the turn would carry, so a client's note and preview
+cannot disagree with what is sent. Like the files route it is not a turn, holds
+no slot, writes nothing, and is refused only on a terminal chat.
 
 #### Exporting a chat (added 2026-11-19, task 159, issue #1023)
 
@@ -11629,6 +11710,22 @@ GET    /v1/chats/{id}/files             *Added 2026-09-21 (task 126.6, issue #55
                                         for a workspace that is gone or a `limit` that is not a
                                         positive integer; `500` for any other git failure. No
                                         event and no row. It is **not** an MCP tool (§13.4)
+POST   /v1/chats/{id}/expand            *Added 2026-11-20 (task 164, issue #1021).* What a draft's
+                                        `#issue-N`, `#task-N`, `#pr-N` and `@path#Lx-y` mentions
+                                        would expand into if it were sent now (§5.5 "Mentions of
+                                        vincent objects and line ranges"), from the function a
+                                        turn runs. Body `{ message }`. `200` with
+                                        { chat_id, context, prompt, resolved[], unresolved[],
+                                          bytes, tokens_estimate }: `context` is the block (`""`
+                                        when nothing resolved), `prompt` the draft framed as the
+                                        agent would receive it (a first turn's opening context
+                                        aside), each mention { kind, token, id?, path?, from?,
+                                        to? }, `bytes` the context's length and
+                                        `tokens_estimate` bytes ÷ 4 — an estimate, shown with
+                                        `~`. Both arrays are always arrays. Not a turn: no slot,
+                                        no row, no event. `409 invalid_state` for a terminal chat
+                                        (`details.action: "expand"`). It is **not** an MCP tool
+                                        (§13.4)
 GET    /v1/chats/{id}/export            *Added 2026-11-19 (task 159, issue #1023).* The chat as
        ?format=md|html|json&diff=       one document (§5.5 "Exporting a chat"). `format` defaults
                                         to `md`; `diff=true` appends the base-to-tip diff of the
@@ -13436,6 +13533,14 @@ state under the same row:
 It records that a person looked at the chat, clearing the unread mark in every
 client; an agent calling it would be forging that fact.
 
+*Amended 2026-11-20 (task 164 decision 6, issue #1021).* One more:
+
+    POST   /v1/chats/{id}/expand
+
+It previews a human's draft before it is sent; an agent has no draft, and the
+mentions it might type in a chat it cannot reach are expanded by the turn
+itself.
+
 *Amended 2026-10-02 (task 130.3, issue #662).* One more, **thirty-seven** in
 all:
 
@@ -13591,6 +13696,10 @@ snapshot, and this depth is discovered at run time.
 `effort` and `permission_mode` — what the turn ran with, null on older rows —
 and `chat_queued_messages` gains the same three as a queued message's
 overrides, null for none.
+
+*Amended 2026-11-20 (task 164, migration 0063):* `chat_turns` gains
+`mention_context`, the block a turn's mentions expanded into when it started,
+null when nothing did (§5.5 "Mentions of vincent objects and line ranges").
 
 ```sql
 CREATE TABLE projects (
@@ -13962,7 +14071,12 @@ CREATE TABLE chat_turns (
     context_tokens                INTEGER,
     context_window                INTEGER,
     session_cache_read_tokens     INTEGER,
-    session_cache_creation_tokens INTEGER
+    session_cache_creation_tokens INTEGER,
+    -- Added 2026-11-20 (task 164, migration 0063): what the turn's
+    -- #issue-N/#task-N/#pr-N/@path#Lx-y mentions expanded into when it started,
+    -- the snapshot the agent saw (§5.5). prompt stays the typed text. NULL =
+    -- nothing expanded.
+    mention_context               TEXT
 );
 
 -- Added 2026-11-19 (task 156, issue #1010): follow-up messages queued behind a

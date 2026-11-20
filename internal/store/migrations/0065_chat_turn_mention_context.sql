@@ -1,0 +1,14 @@
+-- 0065_chat_turn_mention_context: the context a chat turn's mentions expanded
+-- into (task 164, issue #1021, spec §5.5).
+--
+-- `#issue-N`, `#task-N`, `#pr-N` and `@path#Lx-y` in a chat message are
+-- vincent's own mentions: the daemon expands them into a bounded block when
+-- the turn starts, and that block rides ahead of the message the way a linked
+-- chat's opening_context does on its first turn. chat_turns.prompt stays the
+-- text the human typed, byte for byte; this column is the snapshot of what
+-- the agent was actually given, so a transcript or an export stays honest
+-- after the mentioned issue or task has changed (task 164 decision 2).
+--
+-- NULL is "nothing expanded" — a message with no resolvable mention, a turn
+-- that never started, and every turn written before this migration.
+ALTER TABLE chat_turns ADD COLUMN mention_context TEXT;

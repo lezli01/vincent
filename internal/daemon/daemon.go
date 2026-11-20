@@ -403,6 +403,16 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		},
 		InvalidateSkills:    skills.Invalidate,
 		ReportBundledSkills: skills.ReportBundled,
+		// A `#pr-N` mention (task 164 decision 3) resolves through the API
+		// server's GitHub gate, read at call time: the server is built after
+		// this runner, and no turn starts before it is.
+		PullRequest: func(ctx context.Context, projectID int64, n int) (chatrun.MentionPullRequest, error) {
+			srv := apiHolder.Load()
+			if srv == nil {
+				return chatrun.MentionPullRequest{}, chatrun.ErrNoPull
+			}
+			return srv.MentionPull(ctx, projectID, n)
+		},
 	})
 	runnerDeps.ChatTurns = chats
 	runner = taskrun.New(runnerDeps)

@@ -179,6 +179,7 @@ the living engineering specification records implementation contracts.
 | [163](163-chat-editor-and-markdown.md) | Write a chat message in `$EDITOR`, and open the conversation as Markdown | 🔄 in progress (2/3) |
 | [164](164-chat-drafts-and-prompt-history.md) | Keep chat drafts and a stash in the daemon, recall earlier prompts with `↑`, and pick any prompt of the project with `alt+h` | 🔄 in progress (5/6) |
 | [162](162-chat-attention.md) | Notify on chats (`notify.chat_on`), mark unread chats, count waiting chats as attention, and switch chats with `alt+n`/`alt+p`/`alt+1`…`alt+9` | 🔄 in progress (5/6) |
+| [164](164-chat-object-mentions.md) | Mention issues, tasks and pull requests in a chat, and file line ranges | 🔄 in progress (3/6) |
 
 ## How to add and update a task document
 

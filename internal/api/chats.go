@@ -146,6 +146,10 @@ type chatTurnBody struct {
 	Model          string `json:"model,omitempty"`
 	Effort         string `json:"effort,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// MentionContext is what the turn's `#issue-N`, `#task-N`, `#pr-N` and
+	// `@path#Lx-y` mentions expanded into when it started (task 164
+	// decision 2), absent when nothing did. Prompt stays the typed text.
+	MentionContext string `json:"mention_context,omitempty"`
 }
 
 func renderChat(c *store.Chat) chatBody {
@@ -171,6 +175,7 @@ func renderChatTurn(t *store.ChatTurn) chatTurnBody {
 		CacheReadTokens: t.CacheReadTokens, CacheCreationTokens: t.CacheCreationTokens,
 		ContextTokens: t.ContextTokens, ContextWindow: t.ContextWindow,
 		Model: t.Model, Effort: t.Effort, PermissionMode: t.PermissionMode,
+		MentionContext: t.MentionContext,
 	}
 }
 

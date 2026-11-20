@@ -193,6 +193,10 @@ func Markdown(e *Export) string {
 		fmt.Fprintf(&b, "_Ran on: %s_\n\n", t.RanWith())
 		b.WriteString("### Prompt\n\n")
 		b.WriteString(strings.TrimRight(t.Prompt, "\n"))
+		if mc := strings.TrimRight(t.MentionContext, "\n"); mc != "" {
+			fence := mentionFence(mc)
+			fmt.Fprintf(&b, "\n\n### Mentions\n\n%s\n%s\n%s", fence, mc, fence)
+		}
 		b.WriteString("\n\n### Tool calls\n\n")
 		switch {
 		case t.ToolsNote != "":
@@ -273,6 +277,21 @@ func markdownHTML(src string) template.HTML {
 		return template.HTML("<pre>" + template.HTMLEscapeString(src) + "</pre>") //nolint:gosec // escaped
 	}
 	return template.HTML(buf.String()) //nolint:gosec // goldmark with raw HTML disabled
+}
+
+// mentionFence answers a backtick fence longer than any run inside s, so the
+// mention block's own fenced line ranges cannot close it early.
+func mentionFence(s string) string {
+	longest, run := 0, 0
+	for i := range len(s) {
+		if s[i] == '`' {
+			run++
+			longest = max(longest, run)
+		} else {
+			run = 0
+		}
+	}
+	return strings.Repeat("`", max(3, longest+1))
 }
 
 type pageTurn struct {

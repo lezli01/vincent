@@ -78,7 +78,8 @@ const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_mes
 	session_id, input_tokens, output_tokens, cost_usd, exit_code, pid, proc_identity,
 	started_at, ended_at, duration_ms, session_input_tokens, session_output_tokens,
 	cache_read_tokens, cache_creation_tokens, context_tokens, context_window,
-	session_cache_read_tokens, session_cache_creation_tokens, model, effort, permission_mode`
+	session_cache_read_tokens, session_cache_creation_tokens, model, effort, permission_mode,
+	mention_context`
 
 // CreateChat inserts c, assigning its ID and timestamps, and writes the
 // durable chat.created event in the same transaction (§13.3).
@@ -709,6 +710,20 @@ func updateChatTurnTx(ctx context.Context, tx *sql.Tx, t *ChatTurn) error {
 	return nil
 }
 
+// SetChatTurnMentionContext records the block turn id's mentions expanded
+// into (task 164 decision 2). It is written once, when the turn starts and
+// before the agent is spawned, and never again: it is the snapshot of what the
+// agent was given, which a later edit to the mentioned object must not change.
+// It publishes nothing of its own — the turn's next chat.turn_changed carries
+// it — because no client acts on the moment it is written.
+func (s *Store) SetChatTurnMentionContext(ctx context.Context, id int64, mentionContext string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE chat_turns SET mention_context = ? WHERE id = ?`, nullString(mentionContext), id); err != nil {
+		return fmt.Errorf("set chat turn %d mention context: %w", id, err)
+	}
+	return nil
+}
+
 // ListChatTurns returns a chat's turns in conversation order.
 func (s *Store) ListChatTurns(ctx context.Context, chatID int64) ([]ChatTurn, error) {
 	rows, err := s.db.QueryContext(ctx,
@@ -963,7 +978,7 @@ func scanChat(r rowScanner) (*Chat, error) {
 func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 	var t ChatTurn
 	var failReason, errMsg, resultText, sessionID, procIdentity sql.NullString
-	var model, effort, mode sql.NullString
+	var model, effort, mode, mentionContext sql.NullString
 	var startedAt string
 	var endedAt sql.NullString
 	if err := r.Scan(&t.ID, &t.ChatID, &t.Seq, &t.Prompt, (*string)(&t.State), &failReason, &errMsg,
@@ -971,9 +986,11 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 		&t.PID, &procIdentity, &startedAt, &endedAt, &t.DurationMS,
 		&t.SessionInputTokens, &t.SessionOutputTokens,
 		&t.CacheReadTokens, &t.CacheCreationTokens, &t.ContextTokens, &t.ContextWindow,
-		&t.SessionCacheReadTokens, &t.SessionCacheCreationTokens, &model, &effort, &mode); err != nil {
+		&t.SessionCacheReadTokens, &t.SessionCacheCreationTokens, &model, &effort, &mode,
+		&mentionContext); err != nil {
 		return nil, err
 	}
+	t.MentionContext = mentionContext.String
 	t.Model, t.Effort, t.PermissionMode = model.String, effort.String, mode.String
 	t.FailReason, t.ErrorMessage = failReason.String, errMsg.String
 	t.ResultText, t.SessionID = resultText.String, sessionID.String

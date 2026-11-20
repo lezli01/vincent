@@ -189,6 +189,14 @@ instead, and the row you take is written into the message as the exact text
 that mentions that file — the agent's own quoting included
 ([guide](guides/tui.md#chat-workspace)).
 
+A message can also **mention vincent's own objects** — `#issue-12`,
+`#task-40`, `#pr-7` — and a **range of a file's lines**, `@path#L20-45`. The
+daemon puts a short, bounded block for each in front of your message when the
+turn starts, on every agent alike, and keeps that block on the turn so the
+transcript and an export show what the agent actually saw. A mention that does
+not resolve stays prose; the message is never refused for one
+([API](reference/api.md#mentions)).
+
 Drive one from the TUI's own **chats board and chat workspace**
 ([guide](guides/tui.md#chats)), from
 [`vincent chat`](reference/cli.md#vincent-chat), or over the

@@ -226,6 +226,9 @@ type ChatTurn struct {
 	Model          string `json:"model,omitempty"`
 	Effort         string `json:"effort,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// MentionContext is what the turn's mentions expanded into when it
+	// started (task 164), "" when nothing did. Prompt is the typed text.
+	MentionContext string `json:"mention_context,omitempty"`
 }
 
 // CreateChatRequest is the POST /v1/chats body. An omitted agent resolves
@@ -431,6 +434,42 @@ func (c *Client) ChatFiles(ctx context.Context, id int64, limit int) (*ChatFiles
 	}
 	var out ChatFiles
 	if err := c.get(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ChatMention is one `#issue-N`, `#task-N`, `#pr-N` or `@path#Lx-y` token
+// in a chat message (task 164).
+type ChatMention struct {
+	Kind  string `json:"kind"`
+	Token string `json:"token"`
+	ID    int64  `json:"id,omitempty"`
+	Path  string `json:"path,omitempty"`
+	From  int    `json:"from,omitempty"`
+	To    int    `json:"to,omitempty"`
+}
+
+// ChatExpansion is POST /v1/chats/{id}/expand's answer: what a draft's
+// mentions would expand into if it were sent now (task 164 decision 6).
+type ChatExpansion struct {
+	ChatID         int64         `json:"chat_id"`
+	Context        string        `json:"context"`
+	Prompt         string        `json:"prompt"`
+	Resolved       []ChatMention `json:"resolved"`
+	Unresolved     []ChatMention `json:"unresolved"`
+	Bytes          int           `json:"bytes"`
+	TokensEstimate int           `json:"tokens_estimate"`
+}
+
+// ExpandChat previews a draft's mentions. It is not a turn: it holds no
+// slot and writes nothing, and a terminal chat answers 409.
+func (c *Client) ExpandChat(ctx context.Context, id int64, message string) (*ChatExpansion, error) {
+	body := struct {
+		Message string `json:"message"`
+	}{message}
+	var out ChatExpansion
+	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/expand", id), body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

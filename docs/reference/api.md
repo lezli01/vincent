@@ -3245,6 +3245,8 @@ GET    /v1/chats/{id}/turns/{seq}/transcript
 GET    /v1/chats/{id}/search?q=       which turns mention q, with a count each — see Search
 GET    /v1/chats/{id}/skills?refresh= the skills the chat's agent would load — see Skills
 GET    /v1/chats/{id}/files?limit=    the files of the chat's workspace — see Files
+POST   /v1/chats/{id}/expand          what a draft's #issue-N / #task-N / #pr-N / @path#Lx-y
+                                      mentions would expand into — see Mentions
 GET    /v1/chats/{id}/export?format=&diff=
                                       the chat as Markdown, HTML or JSON — see Exporting
 ```
@@ -3825,6 +3827,60 @@ Refusals, the same on every route:
 | `409` | `invalid_state` | the chat has ended; or `full-auto` on a chat opened on a task that runs restricted — `details.linked_task_id` names it |
 
 A change publishes `chat.updated`. The route is not an MCP tool.
+
+### Mentions
+
+```
+POST /v1/chats/{id}/expand
+```
+
+```json
+{ "message": "why does #issue-12 fail at @internal/api/server.go#L20-45?" }
+```
+
+A chat message may mention vincent's own objects and a range of a file's
+lines, and the daemon expands each one into a short block that rides ahead of
+the message when the turn starts — the same way on all four agents:
+
+| Token | What the agent is given |
+|---|---|
+| `#issue-N` | vincent issue `N` of the chat's project: title, state, kind, body (16 KiB at most), remote URL, branch |
+| `#task-N` | vincent task `N` of the chat's project: title, state, workflow, branch, base, description |
+| `#pr-N` | GitHub pull request `N` of the chat's project: title, state, head, base, URL, description |
+| `@path#L20-45`, `@path#L20` | those lines of the workspace file, fenced (16 KiB at most) |
+
+A token that does not resolve — an unknown id, another project's object, a
+project without GitHub, a path outside the workspace, a missing file — stays
+in the message as prose, and the send is never refused for it. The stored
+`prompt` is always what you typed; the expanded block is kept on the turn as
+`mention_context`, so the transcript and an export show what the agent saw
+even after the issue changes.
+
+This route previews that block for a draft without sending it, from the same
+function a turn runs:
+
+```json
+{
+  "chat_id": 7,
+  "context": "The human's message below mentions …",
+  "prompt": "… <message>\nwhy does #issue-12 fail …\n</message>\n",
+  "resolved": [{ "kind": "issue", "token": "#issue-12", "id": 12 },
+               { "kind": "lines", "token": "@internal/api/server.go#L20-45",
+                 "path": "internal/api/server.go", "from": 20, "to": 45 }],
+  "unresolved": [],
+  "bytes": 1432,
+  "tokens_estimate": 358
+}
+```
+
+`tokens_estimate` is `bytes ÷ 4`, an estimate. It is not a turn: it holds no
+slot and writes nothing.
+
+| Status | Code | When |
+|---|---|---|
+| `409` | `invalid_state` | the chat has ended (`details.action` is `expand`) |
+
+The route is not an MCP tool.
 
 ### Exporting
 
