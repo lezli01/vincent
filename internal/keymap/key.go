@@ -82,7 +82,7 @@ func printableKey(key string) (bool, error) {
 		}
 		return false, fmt.Errorf("%q: write it %q, the way the terminal reports it", key, prefix+strings.ToLower(rest))
 	}
-	if mods["shift"] && !(modified && isASCIILower(r)) {
+	if mods["shift"] && (!modified || !isASCIILower(r)) {
 		return false, fmt.Errorf("%q: write a shifted character as itself (%q), the way the terminal reports it", key, strings.ToUpper(rest))
 	}
 	return !modified, nil
