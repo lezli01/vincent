@@ -2165,7 +2165,7 @@ created and `idle`, as `--message` does.
 ### `vincent chat send`
 
 ```sh
-vincent chat send CHAT_ID [MESSAGE] [--message-file PATH|-] [--model M] [--effort E] [--permission-mode MODE] [--json]
+vincent chat send CHAT_ID [MESSAGE] [--message-file PATH|-] [--model M] [--effort E] [--permission-mode MODE] [--yes] [--json]
 ```
 
 The message is the second argument or the content of `--message-file`, and
@@ -2260,7 +2260,11 @@ what the agent gets is whatever the shell left:
 Per-turn overrides — `--model`, `--effort` and `--permission-mode` — run this
 one turn (or this queued message, when it runs) with those settings; the chat
 keeps its own. To change the chat's settings for every next turn, use
-[`vincent chat set`](#vincent-chat-set).
+[`vincent chat set`](#vincent-chat-set). `--permission-mode full-auto` on a
+chat that is `restricted` raises that one turn, which is enough for the agent
+to run any command as you, so it asks first exactly as `chat set` does: a
+terminal is asked, `--yes` confirms without a prompt, and anything else is
+refused before the message is sent.
 
 ### `vincent chat set`
 

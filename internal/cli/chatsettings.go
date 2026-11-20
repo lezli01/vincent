@@ -58,7 +58,7 @@ func newChatSetCmd() *cobra.Command {
 						_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 						return exitError{code: 1}
 					}
-					if chat.PermissionMode != "full-auto" && !confirmFullAuto(cmd, id) {
+					if chat.PermissionMode != "full-auto" && !confirmFullAuto(cmd, id, false) {
 						return exitError{code: 1}
 					}
 				}
@@ -97,17 +97,25 @@ func chatSettingsLine(c *apiclient.Chat) string {
 	return model + " · " + effort + " · " + c.PermissionMode
 }
 
-// confirmFullAuto asks on a terminal before a chat is raised to full-auto, and
-// refuses anywhere else: a script that wants it passes --yes.
-func confirmFullAuto(cmd *cobra.Command, id int64) bool {
+// confirmFullAuto asks on a terminal before a chat is raised to full-auto —
+// for good, or for one turn — and refuses anywhere else: a script that wants
+// it passes --yes. One turn is enough for an agent to run any command as
+// you, so a per-turn raise asks exactly as a lasting one does (review F5).
+func confirmFullAuto(cmd *cobra.Command, id int64, oneTurn bool) bool {
+	what := fmt.Sprintf("raising chat %d to full-auto", id)
+	question := "Raise it to full-auto?"
+	if oneTurn {
+		what = fmt.Sprintf("running a turn of restricted chat %d full-auto", id)
+		question = "Run this turn full-auto?"
+	}
 	in, ok := cmd.InOrStdin().(*os.File)
 	if !ok || !isTTY(in) {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-			"Error: raising chat %d to full-auto lets its agent run any command as you; pass --yes to confirm\n", id)
+			"Error: %s lets its agent run any command as you; pass --yes to confirm\n", what)
 		return false
 	}
 	_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
-		"Chat %d's agent will run any command as you, without asking (spec §16). Raise it to full-auto? [y/N] ", id)
+		"Chat %d's agent will run any command as you, without asking (spec §16). %s [y/N] ", id, question)
 	return readYes(in)
 }
 

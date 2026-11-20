@@ -231,7 +231,9 @@ refuses a resumed restricted run itself. A chat you start can ask for
 `restricted` as well, and change its mode between turns: on codex, and on cursor
 on Windows, that request is refused with `400 agent_cannot_restrict_resume`
 rather than honoured on one turn and dropped on the next. Raising a chat to
-`full-auto` asks first in the TUI and in `vincent chat set`, and a chat opened
+`full-auto` asks first in the TUI, in `vincent chat set`, and in `vincent chat
+send --permission-mode full-auto` on a restricted chat — one full-auto turn is
+already the whole risk — and a chat opened
 on a restricted task can never be raised.
 
 **Denied actions can become questions.** On an input-capable adapter (claude), a

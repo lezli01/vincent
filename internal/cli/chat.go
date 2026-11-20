@@ -154,6 +154,7 @@ func newChatStartCmd() *cobra.Command {
 func newChatSendCmd() *cobra.Command {
 	var msgFile string
 	var ov apiclient.TurnSettings
+	var yes bool
 	cmd := &cobra.Command{
 		Use:   "send <chat-id> [<message>]",
 		Short: "Send a message and wait for the answer, or queue it behind a live turn",
@@ -178,6 +179,19 @@ func newChatSendCmd() *cobra.Command {
 				return errors.New("a message is required: give it as an argument or with --message-file")
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				// A full-auto turn on a restricted chat asks first, as
+				// `chat set` does (§16, task 162 decision 4, review F5):
+				// one turn is enough to run any command as you.
+				if ov.PermissionMode == "full-auto" && !yes {
+					chat, _, err := c.GetChat(ctx, id)
+					if err != nil {
+						_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+						return exitError{code: 1}
+					}
+					if chat.PermissionMode != "full-auto" && !confirmFullAuto(cmd, id, true) {
+						return exitError{code: 1}
+					}
+				}
 				return runChatTurn(ctx, cmd, c, id, message, ov)
 			})
 		},
@@ -186,10 +200,12 @@ func newChatSendCmd() *cobra.Command {
 		"read the message from this file (- for stdin) and send it byte for byte")
 	// Per-turn overrides (task 162 decision 6): this turn only; the chat
 	// keeps its own settings. A full-auto override is the API's to refuse
-	// on a linked restricted chat; it raises nothing beyond this one turn.
+	// on a linked restricted chat, and on any other restricted chat it asks
+	// first, or takes --yes (review F5).
 	cmd.Flags().StringVar(&ov.Model, "model", "", "run this turn on this model")
 	cmd.Flags().StringVar(&ov.Effort, "effort", "", "run this turn at this effort")
 	cmd.Flags().StringVar(&ov.PermissionMode, "permission-mode", "", "run this turn full-auto or restricted")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm running this turn of a restricted chat full-auto without a prompt")
 	jsonFlag(cmd)
 	return cmd
 }
