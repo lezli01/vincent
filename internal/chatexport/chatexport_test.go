@@ -259,3 +259,32 @@ func TestToolSummary(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// TestMentionContextIsExported is task 164 decision 2: a turn's mention
+// snapshot is in every format, after the prompt it belongs to, and a block
+// holding its own fence does not close the Markdown one early.
+func TestMentionContextIsExported(t *testing.T) {
+	e := fixture(t)
+	e.Turns[0].MentionContext = "<file path=\"a.go\" lines=\"2\">\n```\nx\n```\n</file>\n"
+	md := Markdown(e)
+	if !strings.Contains(md, "### Mentions\n\n````\n<file path=\"a.go\" lines=\"2\">\n```\nx\n```\n</file>\n````") {
+		t.Errorf("Markdown lacks the mention block:\n%s", md)
+	}
+	var html bytes.Buffer
+	if err := Render(&html, e, FormatHTML); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(html.String(), `<pre class="mentions">&lt;file path=&#34;a.go&#34;`) {
+		t.Errorf("HTML lacks the escaped mention block")
+	}
+	var js bytes.Buffer
+	if err := Render(&js, e, FormatJSON); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(js.String(), `"mention_context"`) {
+		t.Errorf("JSON lacks mention_context")
+	}
+	if strings.Count(md, "### Mentions") != 1 {
+		t.Errorf("a turn with no mentions rendered a Mentions heading")
+	}
+}
