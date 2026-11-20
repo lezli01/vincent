@@ -141,6 +141,17 @@ DIFF="$(api GET "/tasks/$TASK_ID/diff")"
 grep -q 'README.md' <<<"$DIFF" || fail "diff does not mention README.md:
 $DIFF"
 
+# Task 164.5/164.6: the attempt journaled the commit range it ran over, and
+# the diff route answers for that one attempt. The range may be empty — the
+# fake agent's edit can be uncommitted — so the body is not asserted on.
+echo "== assert the attempt's commit range and its diff"
+HEAD_START="$(jq -r .head_start <<<"$RUN")"
+HEAD_END="$(jq -r .head_end <<<"$RUN")"
+[[ "$HEAD_START" =~ ^[0-9a-f]{40}$ ]] || fail "step run has no head_start: $RUN"
+[[ "$HEAD_END" =~ ^[0-9a-f]{40}$ ]] || fail "step run has no head_end: $RUN"
+api GET "/tasks/$TASK_ID/diff?step_run=$RUN_ID" >/dev/null \
+  || fail "the diff route refused step_run=$RUN_ID"
+
 # The gc leg rides here because this script already has the two things it
 # needs: a registered project and a task with a real worktree that must come
 # through untouched (task 005, §10).
