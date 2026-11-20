@@ -2707,7 +2707,8 @@ periodic repaint.
 | `pgup` / `pgdown` | Scroll the conversation (the mouse wheel scrolls it a line at a time) |
 | `alt+↑` / `alt+↓` | Scroll the conversation one line |
 | `alt+g` | Jump to the start of the conversation |
-| `ctrl+g` | Jump to the live end and follow it again |
+| `ctrl+g` | Jump to the live end and follow it again — clears `↓ N new` |
+| `ctrl+f` | Search the conversation: the conversation takes the keyboard with a search line open — see [Searching a chat](#searching-a-chat) |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
 | `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
@@ -2726,7 +2727,42 @@ confirmation — or the hand-off form's submit row — says how many queued
 messages will be discarded.
 
 Scrolled away from the live end, the header says which turn is at the top of
-the window — `turn 2/5` — until `ctrl+g` follows the end again.
+the window — `turn 2/5` — until `ctrl+g` follows the end again. While you are
+scrolled away, the conversation pane's bottom edge counts what arrived below
+you — `↓ 12 new`; click it or press `ctrl+g` to follow again. Changing the
+level or the window's width does not add to it.
+
+### Searching a chat
+
+`ctrl+f` hands the keyboard from the composer to the conversation and opens
+a search line above the composer. Type and press `enter`: every turn is
+searched, case-insensitively, including turns not loaded yet (the daemon
+searches those, and a turn is fetched only when you land on a match in it)
+and text the current level hides — tool output, folded calls. Every match is
+highlighted, the current one more strongly, and the count — `3/17` — sits on
+the conversation pane's bottom edge. Landing on a match inside a folded tool
+call expands that one call; the level stays where it was. Your draft is
+untouched by all of this.
+
+With the conversation holding the keyboard:
+
+| Key | Does |
+|---|---|
+| `j` / `k` (`↓` / `↑`) | Move the line cursor |
+| `enter` | Expand or fold the tool call under the cursor — it draws as at verbose, the level stays |
+| `/` | Open the search line again |
+| `n` / `N` | The next or previous match; both wrap |
+| `{` / `}` | Jump to the previous or next prompt you sent |
+| `g` / `G` | Jump to the start, or to the live end |
+| `pgup` / `pgdown`, `alt+↑` / `alt+↓` | Scroll |
+| `ctrl+g` | Jump to the live end and follow it again |
+| `i` / `esc` | Give the keyboard back to the composer |
+
+`esc` peels one layer at a time — the search line, then the conversation
+focus — and never leaves the chat from here. Folded tool calls show `▸` and an
+expanded one `▾`; clicking a tool call's line focuses the conversation and
+toggles it. Which calls you expanded is remembered per chat until you quit the
+TUI, across switching to another chat and back.
 
 **`tab` lists the skills this chat's agent can run.** The list is drawn just
 above the composer — one line per skill: how to invoke it, its argument hint,

@@ -86,6 +86,17 @@ unrecognized lines — so a reconnect changed what was on screen.
    is true whenever the composer is focused. `ctrl+r` was unbound in every
    context.
 
+   *Amended 2026-11-20 (task 160 decision 1, issue #1014).* The composer
+   keeps the keyboard **by default**, no longer always: `ctrl+f` hands it to
+   the conversation with a search line open, and there a line cursor moves
+   with `j`/`k`, `n`/`N` step through matches, `{`/`}` jump between prompts,
+   `enter` expands one tool call, `g`/`G` jump to the ends, and `esc` or `i`
+   gives it back. `capturesInput()` is false only while the conversation has
+   focus and no search line is open; `esc` peels one layer and never leaves
+   the chat from there. The alternative it beat was modifier-only keys
+   (`alt+n`, `alt+[`, …) with no line cursor, rejected because expanding one
+   call needs something to point at. The draft is untouched throughout.
+
    *Amended 2026-09-19 (issue #500).* The multi-line draft above was reachable
    only by pasting: the placeholder promised `shift+enter`, but the textarea's
    newline was bound to `enter`, which the chat takes to send. `ctrl+j`,

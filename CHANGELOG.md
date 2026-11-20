@@ -13,6 +13,17 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Search inside a chat, jump between prompts, expand one tool call.**
+  `ctrl+f` in a chat hands the keyboard to the conversation with a search
+  line: every turn is searched case-insensitively — the ones not loaded yet
+  by the daemon, and tool output a level hides too — with every match
+  highlighted and a `3/17` count on the pane's edge. `n`/`N` step through
+  matches, `{`/`}` jump between your prompts, `j`/`k` move a line cursor,
+  `enter` expands just the tool call under it, and `esc` or `i` gives the
+  keyboard back with the draft untouched. Scrolled away from the live end,
+  `↓ N new` counts what arrived below. The API gains
+  `GET /v1/chats/{id}/search?q=` (task 160, #1014).
+
 - **A chat queues the messages you send while its turn runs.** `enter` on a
   running chat, or one waiting on the agent's question, no longer refuses:
   the message is queued and runs as the next turn once the current one ends

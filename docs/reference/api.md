@@ -3216,11 +3216,31 @@ DELETE /v1/chats/{id}                 permanent delete of an archived or closed 
 GET    /v1/chats/{id}/events          SSE: this chat's events plus its live output
 GET    /v1/chats/{id}/turns/{seq}/transcript
                                       one turn's transcript, with ?offset= / ?tail=
+GET    /v1/chats/{id}/search?q=       which turns mention q, with a count each — see Search
 GET    /v1/chats/{id}/skills?refresh= the skills the chat's agent would load — see Skills
 GET    /v1/chats/{id}/files?limit=    the files of the chat's workspace — see Files
 GET    /v1/chats/{id}/export?format=&diff=
                                       the chat as Markdown, HTML or JSON — see Exporting
 ```
+
+**Search** (task 160). `GET /v1/chats/{id}/search?q=needle` scans every turn
+of the chat — its prompt and every string of its normalized transcript, tool
+output and text a verbosity level hides included — for `q` as a
+case-insensitive plain substring. A turn whose transcript has gone to
+`transcript_retention_days` is searched through its `result_text`. The answer
+carries counts, never text:
+
+```json
+{"query": "needle", "total": 3,
+ "turns": [{"seq": 1, "matches": 2, "source": "transcript"},
+           {"seq": 4, "matches": 1, "source": "result_text"}]}
+```
+
+`turns` is in seq order and lists only turns that match; a turn whose
+transcript is longer than 32 MiB is searched up to there and says
+`"truncated": true`. An empty `q`, or one over 256 bytes, is `400
+validation_failed`; an unknown chat is `404`. A client fetches a matching
+turn's text through `GET /v1/chats/{id}/turns/{seq}/transcript`.
 
 **The queue** (task 156). A `send` to a chat whose turn is `running` or
 `awaiting_input` does not start a turn: it answers `202` with
@@ -3236,8 +3256,8 @@ and hand-off discard the queue. A chat carries `queued_count`, `queue_paused`,
 steer a running turn yet, so `can_steer` is always `false`.
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
-excluded, the stream, the transcript, the skill list, the file list and the
-export included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
+excluded, the stream, the transcript, the search, the skill list, the file
+list and the export included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
 but starts a chat.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over

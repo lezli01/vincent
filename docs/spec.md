@@ -11477,6 +11477,16 @@ GET    /v1/chats/{id}/turns/{seq}       *Added 2026-08-31 (task 067).* One turn'
                                         `X-Next-Offset` naming where the next fetch resumes.
                                         There is no `run_id` analogue — a chat turn **is** its
                                         run, named by its 1-based `seq`
+GET    /v1/chats/{id}/search?q=         *Added 2026-11-20 (task 160 decision 2).* Which turns
+                                        mention `q`, case-insensitive plain substring, over each
+                                        turn's prompt and every string of its normalized
+                                        transcript — `result_text` once the transcript has gone
+                                        to retention (§17). `{query, total, turns[{seq, matches,
+                                        source, truncated?}]}`, no text: a client fetches the
+                                        turns it needs through the transcript route. `q` is at
+                                        most 256 bytes and non-empty (`validation_failed`); a
+                                        turn's scan stops at 32 MiB with `truncated`. Off the
+                                        MCP surface with the rest of the chat family (§13.4)
 GET    /v1/workflows/definition         one workflow's whole recursive structure, selected with
        ?name=&project_id=               the same §5.2 shadowing the list applies (task 017,
                                         added 2026-08-18):
@@ -13053,6 +13063,10 @@ config route: an agent must not reconfigure the daemon supervising it, and a
 workflow file is what that daemon runs. Nothing regresses — the
 `create-workflow` built-in writes its deliverable through the filesystem, not
 through this API. `GET /v1/workflows/schema` is an ordinary tool.
+
+*Amended 2026-11-20 (task 160 decision 2).* `GET /v1/chats/{id}/search`
+joins the excluded chat family under the same rule: it reads the transcripts
+a human drives a chat through.
 
 *Amended 2026-08-31 (task 067, issue #269).* **Seventeen**, with
 `GET /v1/chats/{id}/events` and `GET /v1/chats/{id}/turns/{seq}/transcript` —
@@ -15657,6 +15671,30 @@ stream for the live tail.
    whenever the composer holds the keyboard, which is nearly always, so a
    letter would be typed into the draft. The composer keeps `↑`/`↓` for
    editing a multi-line message.
+
+   *Amended 2026-11-20 (task 160, issue #1014).* **Conversation focus.** The
+   composer holds the keyboard by default, no longer always: `ctrl+f` hands it
+   to the conversation with a search line open, and `capturesInput` is false
+   only while the conversation has focus and no search line is open. There a
+   line cursor moves with `j`/`k`/`↑`/`↓`; `pgup`/`pgdown`, `g`/`G` and the
+   alt keys scroll; `/` reopens the search line; `n`/`N` step to the next or
+   previous match, wrapping; `{`/`}` jump to the previous or next `You` card;
+   `enter` expands or folds the tool call under the cursor; `esc` or `i` gives
+   the keyboard back. `esc` peels one layer — search line, conversation focus,
+   composer — and never leaves the chat from conversation focus. The search is
+   case-insensitive and matches all of a turn's text, not only what the level
+   draws; turns not yet loaded are searched by `GET /v1/chats/{id}/search`
+   (§13.2) and fetched only when a match in one is landed on. Landing on a
+   match the level hides expands that one record; every match is
+   highlighted, the current one distinctly, and the count (`3/17`) sits on
+   the conversation pane's bottom edge. An expanded call — kept per chat in
+   memory for the session — renders as at verbose whatever the level, under
+   a `▾` line; a folded check line carries `▸`, and names `enter` while the
+   conversation has focus. Clicking a check line focuses the conversation and
+   toggles that call. While not following, the bottom edge shows `↓ N new`,
+   the lines appended since; clicking it or `ctrl+g` follows again and clears
+   it, and a rebuild for a level or width change never counts. The draft is
+   untouched by all of it, and `ctrl+r`'s session level is unchanged.
 
    *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
    insert a newline in the draft; `enter` still sends it. This makes the
