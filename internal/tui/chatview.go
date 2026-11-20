@@ -238,8 +238,12 @@ type chatView struct {
 	// model-and-effort list; agents is GET /v1/agents by name, which the
 	// picker is sourced from.
 	raising bool
-	picker  *chatSettingsPicker
-	agents  map[string]apiclient.Agent
+	// clampTask is the restricted task a linked chat's raise was refused
+	// for (task 162 decision 3), once the daemon has said so; shift+tab then
+	// says why instead of asking (review F3). Zero is "not known".
+	clampTask int64
+	picker    *chatSettingsPicker
+	agents    map[string]apiclient.Agent
 
 	// skills is the composer's skill list (task 124.13), in either of its
 	// two modes: browse, which owns the keyboard and makes `esc` a real
@@ -374,7 +378,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	v.resetRecords()
 	v.note, v.loadErr = "", ""
 	v.closing, v.sending, v.compacting = false, false, false
-	v.raising, v.picker = false, nil
+	v.raising, v.picker, v.clampTask = false, nil, 0
 	v.skills = chatSkillList{}
 	v.files = chatFileList{}
 	v.composer.SetValue("")

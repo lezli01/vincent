@@ -2,8 +2,11 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"runtime"
+	"strconv"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -156,6 +159,13 @@ func (v *chatView) toggleMode() tea.Cmd {
 		return nil
 	}
 	if c.PermissionMode == modeRestricted {
+		if v.clampTask != 0 {
+			// Decision 3's clamp, as the daemon reported it on an earlier
+			// raise: only restricted is legal, so the key says why and asks
+			// nothing (decision 2, review F3).
+			v.note, v.noteBad = clampNote(v.clampTask), true
+			return nil
+		}
 		v.raising = true
 		v.note = ""
 		v.hideInline("")
@@ -172,15 +182,25 @@ func (v *chatView) toggleMode() tea.Cmd {
 
 // cannotRestrict says why a chat on name can only run full-auto, or "".
 func (v *chatView) cannotRestrict(name string) string {
-	if name == "codex" {
-		// §9.3: `codex exec resume` has no --sandbox, so a resumed turn
-		// cannot be restricted; the daemon refuses it the same way.
-		return "codex cannot keep a resumed turn restricted, so this chat stays full-auto"
+	a, ok := v.agents[name]
+	if !ok {
+		return ""
 	}
-	if a, ok := v.agents[name]; ok && a.CannotRestrict() {
+	// The daemon's own answer, from GET /v1/agents (review F3): codex today,
+	// whose `exec resume` has no --sandbox (§9.3). The daemon refuses the
+	// same way, so the TUI keeps no copy of which adapters these are.
+	if a.CannotResumeRestricted() {
+		return fmt.Sprintf("%s cannot keep a resumed turn restricted, so this chat stays full-auto", name)
+	}
+	if a.CannotRestrict() {
 		return fmt.Sprintf("%s cannot run restricted on %s, so this chat stays full-auto", name, runtime.GOOS)
 	}
 	return ""
+}
+
+// clampNote is why a chat linked to a restricted task stays restricted.
+func clampNote(taskID int64) string {
+	return fmt.Sprintf("task #%d runs restricted, so a chat on it can never run full-auto", taskID)
 }
 
 // raiseQuestion is the full-auto confirmation's text.
@@ -215,6 +235,16 @@ func (v *chatView) applyPatched(msg chatPatchedMsg) {
 	}
 	if msg.err != nil {
 		v.note, v.noteBad = errString(msg.err), true
+		// A 409 naming a linked task is decision 3's clamp: the chat can
+		// never run full-auto. Say that as the reason, and keep it, so the
+		// next shift+tab says it without asking first (review F3).
+		var apiErr *apiclient.Error
+		if errors.As(msg.err, &apiErr) && apiErr.Status == http.StatusConflict {
+			if id, err := strconv.ParseInt(apiErr.Details["linked_task_id"], 10, 64); err == nil && id > 0 {
+				v.clampTask = id
+				v.note = clampNote(id)
+			}
+		}
 		return
 	}
 	v.chat = msg.chat

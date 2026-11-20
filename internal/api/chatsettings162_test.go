@@ -138,6 +138,9 @@ func TestChatPatchModelNeedsTheCapability(t *testing.T) {
 		Agents []struct {
 			Name   string `json:"name"`
 			Change *bool  `json:"supports_resume_settings_change"`
+			// Restricted is decision 1's adapter half, published so the
+			// TUI keeps no copy of which adapter it is (review F3).
+			Restricted *bool `json:"supports_restricted_resume"`
 		} `json:"agents"`
 	}
 	if err := json.Unmarshal(rb, &agents); err != nil || resp.StatusCode != http.StatusOK {
@@ -147,6 +150,9 @@ func TestChatPatchModelNeedsTheCapability(t *testing.T) {
 		want := a.Name == "claude"
 		if a.Change == nil || *a.Change != want {
 			t.Errorf("%s supports_resume_settings_change = %v, want %v", a.Name, a.Change, want)
+		}
+		if wantR := a.Name != "codex"; a.Restricted == nil || *a.Restricted != wantR {
+			t.Errorf("%s supports_restricted_resume = %v, want %v", a.Name, a.Restricted, wantR)
 		}
 	}
 }

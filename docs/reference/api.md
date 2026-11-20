@@ -173,6 +173,7 @@ are long-lived by contract and no write deadline is set.
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
     "supports_resume": true, "supports_resume_settings_change": true,
+    "supports_restricted_resume": true,
     "supports_skill_listing": true, "skill_sigil": "/", "skill_position": "leading",
     "supports_file_mentions": true, "file_mention_sigil": "@",
     "file_mention_position": "anywhere", "file_mention_expands": true,
@@ -244,6 +245,14 @@ for codex, cursor and copilot. It is the same answer
 gate on, so a picker built on it and the `agent_cannot_change_on_resume`
 refusal cannot disagree. It is `null` when the daemon has no adapter registry
 to ask, as `supports_resume` is, and rides this route only.
+
+`supports_restricted_resume` is whether a resumed chat turn on the adapter can
+be kept `restricted` — `false` for codex, whose `exec resume` has no sandbox
+flag, and `true` for the others. It is the adapter's half of the
+`agent_cannot_restrict_resume` refusal; the host's half (cursor on Windows) is
+`restricted_verdict`. It is `null` with no adapter registry to ask, as
+`supports_resume` is, and the TUI's permission-mode toggle reads it rather
+than knowing which adapter it is.
 
 `supports_skill_listing`, `skill_sigil` and `skill_position` describe the
 adapter's skills. `supports_skill_listing` is whether the adapter can list the

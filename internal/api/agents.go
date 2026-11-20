@@ -32,6 +32,14 @@ type agentResponse struct {
 	// overrides consult, true only where a capture shows a resumed run on a
 	// changed model. Null with no registry to ask, as supports_resume is.
 	SupportsResumeSettingsChange *bool `json:"supports_resume_settings_change"`
+	// SupportsRestrictedResume is whether a resumed chat turn on this
+	// adapter can be kept restricted (§9.4, task 162 decision 1):
+	// `agent.CanResumeRestricted`, the answer a `restricted` PATCH, override
+	// and queued override are refused on. false for codex, whose `exec
+	// resume` has no --sandbox (§9.3). It is the adapter's half only; the
+	// host's half is restricted_verdict. Null with no registry to ask, as
+	// supports_resume is (review F3).
+	SupportsRestrictedResume *bool `json:"supports_restricted_resume"`
 	// SupportsSkillListing is whether this adapter implements skill listing
 	// at all (§9.1, §9.6, task 124): `agent.CanListSkills`. It is a fact
 	// about the adapter, not about the installed build — a build too old to
@@ -145,6 +153,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 			SupportsInput:                e.Availability.SupportsInput,
 			SupportsResume:               caps.resume,
 			SupportsResumeSettingsChange: caps.resumeSettings,
+			SupportsRestrictedResume:     caps.restrictedResume,
 			SupportsSkillListing:         caps.skillListing,
 			SkillSigil:                   caps.skillSigil,
 			SkillPosition:                caps.skillPosition,
@@ -186,16 +195,17 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 // Every field is nil when there is no registry to ask, or the registry does
 // not know the name — "nobody can say", which no client may filter on.
 type adapterCapabilities struct {
-	resume          *bool
-	resumeSettings  *bool
-	skillListing    *bool
-	skillSigil      *string
-	skillPosition   *string
-	fileMentions    *bool
-	mentionSigil    *string
-	mentionPosition *string
-	mentionExpands  *bool
-	compactCommand  *string
+	resume           *bool
+	resumeSettings   *bool
+	restrictedResume *bool
+	skillListing     *bool
+	skillSigil       *string
+	skillPosition    *string
+	fileMentions     *bool
+	mentionSigil     *string
+	mentionPosition  *string
+	mentionExpands   *bool
+	compactCommand   *string
 }
 
 // adapterCapabilities answers `supports_resume`, the three skill fields, the
@@ -212,6 +222,7 @@ func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 	}
 	resume, listing := agent.CanResume(a), agent.CanListSkills(a)
 	resumeSettings := agent.CanChangeOnResume(a)
+	restrictedResume := agent.CanResumeRestricted(a)
 	mentions := agent.CanMentionFiles(a)
 	var syntax agent.SkillSyntax
 	if inv, ok := a.(agent.SkillInvoker); ok {
@@ -225,15 +236,16 @@ func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 	mentionSigil, mentionPosition, expands := mention.Sigil, string(mention.Position), mention.Expands
 	compact := agent.CompactCommand(a)
 	return adapterCapabilities{
-		resume:          &resume,
-		resumeSettings:  &resumeSettings,
-		skillListing:    &listing,
-		skillSigil:      &sigil,
-		skillPosition:   &position,
-		fileMentions:    &mentions,
-		mentionSigil:    &mentionSigil,
-		mentionPosition: &mentionPosition,
-		mentionExpands:  &expands,
-		compactCommand:  &compact,
+		resume:           &resume,
+		resumeSettings:   &resumeSettings,
+		restrictedResume: &restrictedResume,
+		skillListing:     &listing,
+		skillSigil:       &sigil,
+		skillPosition:    &position,
+		fileMentions:     &mentions,
+		mentionSigil:     &mentionSigil,
+		mentionPosition:  &mentionPosition,
+		mentionExpands:   &expands,
+		compactCommand:   &compact,
 	}
 }

@@ -6088,6 +6088,10 @@ rather than reopening it.
 `PATCH /v1/chats/{id}` and a turn's overrides consult — null with no registry
 to ask, as `supports_resume` is. The TUI's model picker is refused on a chat
 whose session has run on an adapter that answers false.
+*Amended 2026-11-20 (review F3):* and `supports_restricted_resume` —
+`agent.CanResumeRestricted`, the adapter half of the
+`agent_cannot_restrict_resume` refusal (§9.3: false for codex) — so the TUI's
+`shift+tab` reads the daemon's answer rather than a copy of it.
 
 `GET /v1/agents` returns, per adapter, the availability data of §9.5 plus the
 selectable options — models and efforts with provenance, and the adapter

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/claude"
+	"github.com/lezli01/vincent/internal/agent/codex"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -132,5 +134,103 @@ func TestChatSettingsLive(t *testing.T) {
 	v.updateMsg(runCmd(t, cmd, 30*time.Second))
 	if got, _ := st.GetChat(ctx, chat.ID); got.PermissionMode != "full-auto" {
 		t.Fatalf("confirming left the chat %q, want full-auto", got.PermissionMode)
+	}
+}
+
+// TestChatModeToggleSaysWhyLive is decision 2 against the real handlers:
+// where only one mode is legal, shift+tab says why and changes nothing.
+// Which adapter cannot keep a resumed turn restricted comes from GET
+// /v1/agents rather than a name the TUI knows (review F3), and a chat linked
+// to a restricted task, once the daemon has refused its raise naming the
+// task, is not asked about again.
+func TestChatModeToggleSaysWhyLive(t *testing.T) {
+	const token = "chat-mode-token"
+	dir := t.TempDir()
+	st, err := storetest.Open(filepath.Join(dir, "mode.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := context.Background()
+	project := &store.Project{Name: "proj", Path: t.TempDir(), DefaultBranch: "main"}
+	if err := st.CreateProject(ctx, project); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	codexChat := &store.Chat{
+		ProjectID: project.ID, Title: "codex", State: chatstate.Idle, Agent: "codex",
+		PermissionMode: string(agent.FullAuto), BaseBranch: "main", WorktreePath: t.TempDir(),
+	}
+	if err := st.CreateChat(ctx, codexChat); err != nil {
+		t.Fatalf("CreateChat: %v", err)
+	}
+	task := &store.Task{
+		ProjectID: project.ID, Title: "clamped", WorkflowName: "t", WorkflowSnapshot: "steps: []",
+		BaseBranch: "main", BranchName: "vincent/1-clamped", State: store.TaskBlocked,
+		WorktreePath: t.TempDir(), Restricted: true,
+	}
+	if err := st.CreateTask(ctx, task, nil); err != nil {
+		t.Fatal(err)
+	}
+	linked := &store.Chat{Title: "why", Agent: "claude", PermissionMode: string(agent.Restricted)}
+	if err := st.OpenLinkedChat(ctx, task.ID, store.TaskBlocked, linked); err != nil {
+		t.Fatal(err)
+	}
+
+	missing := func() string { return filepath.Join(dir, "no-such-cli") }
+	agents := agent.NewRegistry(claude.New(missing), codex.New(missing))
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := api.New(api.Deps{
+		Token: token, Config: config.Default, StartedAt: time.Now(), ListenAddr: "127.0.0.1:0",
+		RequestStop: func() {}, Logger: log, Store: st, Agents: agents,
+		Catalog: agent.NewCatalogCache(agents),
+	})
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	open := func(id int64) *chatView {
+		v := newChatView(newLevelHolder(), newRawHolder(), newHyperlinkHolder())
+		v.client = apiclient.New(ts.URL, token)
+		v.chatID = id
+		v.now = time.Now
+		loaded, ok := runCmd(t, v.loadCmd(), 30*time.Second).(chatLoadedMsg)
+		if !ok || loaded.err != nil {
+			t.Fatalf("loading chat %d produced %#v", id, loaded)
+		}
+		v.applyLoaded(loaded)
+		agentsMsg, ok := runCmd(t, v.loadAgentsCmd(), 30*time.Second).(chatAgentsMsg)
+		if !ok {
+			t.Fatal("the agent list did not load")
+		}
+		v.updateMsg(agentsMsg)
+		return v
+	}
+
+	// codex: the daemon says it cannot keep a resumed turn restricted.
+	v := open(codexChat.ID)
+	if _, cmd := v.updateKey(registryKey(t, "shift+tab")); cmd != nil || v.raising {
+		t.Fatal("shift+tab on a codex chat tried to change its mode")
+	}
+	if !strings.Contains(v.note, "codex cannot keep a resumed turn restricted") {
+		t.Errorf("shift+tab on codex said %q", v.note)
+	}
+
+	// A chat on a restricted task: the first raise asks and the daemon
+	// refuses, naming the task; the next press says so without asking.
+	v = open(linked.ID)
+	v.updateKey(registryKey(t, "shift+tab"))
+	_, cmd := v.updateKey(keyPress("y"))
+	v.updateMsg(runCmd(t, cmd, 30*time.Second))
+	want := fmt.Sprintf("task #%d runs restricted", task.ID)
+	if !strings.Contains(v.note, want) {
+		t.Errorf("the refused raise said %q, want %q", v.note, want)
+	}
+	if _, cmd := v.updateKey(registryKey(t, "shift+tab")); cmd != nil || v.raising {
+		t.Fatal("shift+tab asked again on a chat the daemon said can never run full-auto")
+	}
+	if !strings.Contains(v.note, want) {
+		t.Errorf("the second shift+tab said %q, want %q", v.note, want)
+	}
+	if got, _ := st.GetChat(ctx, linked.ID); got.PermissionMode != "restricted" {
+		t.Fatalf("the linked chat is %q, want restricted", got.PermissionMode)
 	}
 }
