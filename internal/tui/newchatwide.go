@@ -58,7 +58,10 @@ func (f *newChatForm) widePane(w, h int) []string {
 	f.title.SetWidth(text)
 	var s formStack
 
-	s.add(formSection("Title", styleDim.Render("what is this conversation about"), f.title.rows(), inner, f.focus == ncTitle), f.focus == ncTitle)
+	f.message.SetWidth(text)
+	s.add(formSection("Message", styleDim.Render("enter creates and sends · ctrl+j newline"),
+		strings.Split(f.message.View(), "\n"), inner, f.focus == ncMessage), f.focus == ncMessage)
+	s.add(formSection("Title", styleDim.Render("optional — taken from the message"), f.title.rows(), inner, f.focus == ncTitle), f.focus == ncTitle)
 	s.add(f.agentSection(inner))
 	s.add(f.modelSections(inner))
 	s.add(f.branchSection(inner))
@@ -70,8 +73,8 @@ func (f *newChatForm) widePane(w, h int) []string {
 		s.add(styled(wrapText("⚠ "+f.err, inner, wrapOpts{}), styleBad), false)
 	}
 	pill := formPill(true, ic("✓ ready"))
-	if strings.TrimSpace(f.title.Value()) == "" {
-		pill = formPill(false, attentionBadge+" needs a title")
+	if strings.TrimSpace(f.title.Value()) == "" && f.messageValue() == "" {
+		pill = formPill(false, attentionBadge+" needs a message or a title")
 	}
 	return drawBox(styleTitle.Render(ic("✦ New chat")), pill, s.view(max(h-2, 1)), w, h, edgesRounded, styleDim)
 }
@@ -244,8 +247,8 @@ func (f *newChatForm) projectDefaultBranch() string {
 // footerSummary says how the draft stands, for the status bar.
 func (f *newChatForm) footerSummary() string {
 	out := " " + styleDim.Render(firstNonEmpty(f.agentName(), "agent")+"  ·  ")
-	if strings.TrimSpace(f.title.Value()) == "" {
-		return out + styleWarn.Render(attentionBadge+" a chat needs a title") + "  "
+	if strings.TrimSpace(f.title.Value()) == "" && f.messageValue() == "" {
+		return out + styleWarn.Render(attentionBadge+" a chat needs a message or a title") + "  "
 	}
 	return out + styleOK.Render(ic("✓ ")+"ready to create") + "  "
 }

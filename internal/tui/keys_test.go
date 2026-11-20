@@ -37,15 +37,19 @@ var reboundKeys = map[string]string{
 	"browser":      "ctrl+b",
 	// f13 rather than f2: f2 is the chat workspace's fixed alias for the
 	// skill list (task 124.13), and this map must pass keymap.Build.
-	"open_row":   "f13",
-	"scope":      "f3",
-	"filter":     "ctrl+f",
+	"open_row": "f13",
+	"scope":    "f3",
+	// f17 rather than ctrl+f: ctrl+f is the chat's fixed search key
+	// (task 160).
+	"filter":     "f17",
 	"lane":       "f4",
 	"new":        "f8",
 	"repair":     "f9",
 	"follow_up":  "f10",
 	"edit_retry": "f11",
-	"chat":       "alt+t",
+	"chat":       "alt+y",
+	"chat_with":  "alt+w",
+	"rename":     "f18",
 	"help":       "f12",
 	"palette":    "ctrl+a",
 	// f14/f15: ctrl+n is add's here, and N/H must move off every letter.
@@ -334,16 +338,16 @@ func TestReboundKeysRender(t *testing.T) {
 // TestReboundKeyReplacesTheDefault: an override is not an alias (decision 6).
 // The vacated key does nothing for the operation it used to perform.
 func TestReboundKeyReplacesTheDefault(t *testing.T) {
-	withKeymap(t, map[string]string{"filter": "ctrl+f", "archive": "f6"})
+	withKeymap(t, map[string]string{"filter": "f17", "archive": "f6"})
 
 	v := chatsFixture()
 	v.updateKey(registryKey(t, "/"))
 	if v.filtering {
-		t.Fatal("/ still opens the chats filter after filter moved to ctrl+f")
+		t.Fatal("/ still opens the chats filter after filter moved to f17")
 	}
-	v.updateKey(registryKey(t, "ctrl+f"))
+	v.updateKey(registryKey(t, "f17"))
 	if !v.filtering {
-		t.Fatal("ctrl+f does not open the chats filter")
+		t.Fatal("f17 does not open the chats filter")
 	}
 
 	target := taskActions{id: 3, actions: []string{apiclient.ActionArchive}}
@@ -359,7 +363,7 @@ func TestReboundKeyReplacesTheDefault(t *testing.T) {
 // so the board's `T` handler, which sits ahead of the action bar rather than
 // behind resolveAction, moves with it too.
 func TestReboundChatKeyReplacesT(t *testing.T) {
-	withKeymap(t, map[string]string{"chat": "alt+t"})
+	withKeymap(t, map[string]string{"chat": "alt+y"})
 
 	b := testBoard()
 	open := int64(12)
@@ -368,12 +372,12 @@ func TestReboundChatKeyReplacesT(t *testing.T) {
 	})}})
 	if _, cmd := b.updateKey(registryKey(t, "T")); cmd != nil {
 		if _, ok := drain(cmd).(openChatMsg); ok {
-			t.Fatal("T still opens the task's chat after chat moved to alt+t")
+			t.Fatal("T still opens the task's chat after chat moved to alt+y")
 		}
 	}
-	_, cmd := b.updateKey(synthKey("alt+t"))
+	_, cmd := b.updateKey(synthKey("alt+y"))
 	if msg, ok := drain(cmd).(openChatMsg); !ok || msg.id != open {
-		t.Fatalf("alt+t produced %#v, want openChatMsg for chat #%d", drain(cmd), open)
+		t.Fatalf("alt+y produced %#v, want openChatMsg for chat #%d", drain(cmd), open)
 	}
 }
 

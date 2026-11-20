@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/daemon"
 	"github.com/lezli01/vincent/internal/events"
@@ -37,6 +39,16 @@ import (
 // claim under test is about the seam between them: the daemon answers
 // `GET /v1/projects` correctly and the answer is dropped inside the TUI.
 func newChatLiveRoot(t *testing.T) *root {
+	t.Helper()
+	m, _ := newChatLiveRootWith(t, false)
+	return m
+}
+
+// newChatLiveRootWith is newChatLiveRoot with, when runner is set, a real
+// chat runner behind the handlers, so a create's first message runs as a
+// turn (task 161). Without one the daemon keeps the chat and refuses the
+// send, which is the not-sent path. The store comes back for assertions.
+func newChatLiveRootWith(t *testing.T, runner bool) (*root, *store.Store) {
 	t.Helper()
 	const token = "new-chat-token"
 
@@ -79,21 +91,37 @@ func newChatLiveRoot(t *testing.T) *root {
 	dataDir := t.TempDir()
 	git := gitx.New()
 	agents := agent.NewRegistry(claude.New(func() string { return fake }))
+	wt := worktree.NewManager(git, dataDir)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var chats *chatrun.Runner
+	if runner {
+		t.Setenv("FAKEAGENT_SESSION_DIR", t.TempDir())
+		chats = chatrun.New(chatrun.Deps{
+			Store: st, Config: config.Default, Worktrees: wt, Agents: agents,
+			DataDir: dataDir, Logger: log,
+		})
+		chats.Start(t.Context())
+		t.Cleanup(chats.Stop)
+	}
 
-	s := api.New(api.Deps{
+	deps := api.Deps{
 		Token:       token,
 		Config:      config.Default,
 		StartedAt:   time.Now(),
 		ListenAddr:  "127.0.0.1:0",
 		RequestStop: func() {},
-		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:      log,
 		Store:       st,
 		Broker:      broker,
 		Git:         git,
 		Agents:      agents,
 		Catalog:     agent.NewCatalogCache(agents),
-		Worktrees:   worktree.NewManager(git, dataDir),
-	})
+		Worktrees:   wt,
+	}
+	if chats != nil {
+		deps.Chats = chats
+	}
+	s := api.New(deps)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 
@@ -135,7 +163,7 @@ func newChatLiveRoot(t *testing.T) *root {
 	if m.active != viewChats {
 		t.Fatalf("the fixture is on %v, want the chats board", m.active)
 	}
-	return m
+	return m, st
 }
 
 // chatsForm is the open new-chat form, re-read from the root after every
@@ -193,17 +221,20 @@ func TestNewChatFormPickersPopulateThroughRoot(t *testing.T) {
 			"newChatFieldsMsg is produced by newChatForm.init and consumed by nothing", got)
 	}
 
-	// The form opens on the title and the six focusable fields wrap, so six
-	// tabs come back to it: the project row is the selection, shown and never
-	// focused (task 132.13).
-	for range 6 {
+	// The form opens on the message (task 161) and the seven focusable
+	// fields wrap, so seven tabs come back to it: the project row is the
+	// selection, shown and never focused (task 132.13).
+	if f.focus != ncMessage {
+		t.Fatalf("the form opened on field %d, want the message", f.focus)
+	}
+	for range 7 {
 		m.Update(registryKey(t, "tab"))
 		if f = chatsForm(t, m); f.focus == ncProject {
 			t.Fatal("tab landed on the project row")
 		}
 	}
-	if f.focus != ncTitle {
-		t.Fatalf("six tabs left the cursor on field %d, want the title", f.focus)
+	if f.focus != ncMessage {
+		t.Fatalf("seven tabs left the cursor on field %d, want the message", f.focus)
 	}
 	if f.projectID != m.sel.id || f.projectName() != m.sel.name {
 		t.Fatalf("the project row shows %d %q, want the selection %+v", f.projectID, f.projectName(), m.sel)
@@ -249,12 +280,13 @@ func TestNewChatFormPickersRenderTheServedCatalogs(t *testing.T) {
 	}
 
 	// Walk to the model row the way a human does — the form opens on the
-	// title — and open its list.
+	// message — and open its list.
+	m.Update(registryKey(t, "tab"))
 	m.Update(registryKey(t, "tab"))
 	m.Update(registryKey(t, "tab"))
 	f = chatsForm(t, m)
 	if f.focus != ncModel {
-		t.Fatalf("two tabs left the cursor on row %d, want the model row", f.focus)
+		t.Fatalf("three tabs left the cursor on row %d, want the model row", f.focus)
 	}
 	m.Update(registryKey(t, "enter"))
 	f = chatsForm(t, m)
@@ -305,5 +337,67 @@ func TestNewChatFormPickersRenderTheServedCatalogs(t *testing.T) {
 	if msg.chat.BaseBranch != "trunk" {
 		t.Errorf("the created chat is based on %q, want the project's default branch resolved by the daemon",
 			msg.chat.BaseBranch)
+	}
+}
+
+// typeKeys presses each rune of text as its own key, the way a human types.
+func typeKeys(m *root, text string) {
+	for _, r := range text {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+}
+
+// TestNewChatQuickChatCreatesAndSendsInOneStep is task 161 decision 5: `n`,
+// type, enter — one create carrying the message, the title derived from it,
+// and the workspace opened on the chat whose first turn is running.
+func TestNewChatQuickChatCreatesAndSendsInOneStep(t *testing.T) {
+	m, st := newChatLiveRootWith(t, true)
+	_, cmd := m.Update(registryKey(t, "n"))
+	m.Update(runCmd(t, cmd, 10*time.Second))
+	typeKeys(m, "fix the build")
+	_, cmd = m.Update(registryKey(t, "enter"))
+	if cmd == nil {
+		t.Fatal("enter on the message row posted nothing")
+	}
+	msg, ok := runCmd(t, cmd, 10*time.Second).(chatCreatedMsg)
+	if !ok || msg.err != nil {
+		t.Fatalf("enter produced %#v, want a created chat", msg)
+	}
+	if msg.chat.Title != "fix the build" || msg.chat.FirstTurn == nil || msg.chat.FirstTurn.Prompt != "fix the build" {
+		t.Fatalf("created %q with first turn %+v, want the message as title and turn 1", msg.chat.Title, msg.chat.FirstTurn)
+	}
+	turns, err := st.ListChatTurns(t.Context(), msg.chat.ID)
+	if err != nil || len(turns) != 1 {
+		t.Fatalf("turns = %+v, %v; want the one the create started", turns, err)
+	}
+	_, cmd = m.Update(msg)
+	open, found := findMsg[openChatMsg](cmd)
+	if !found || open.id != msg.chat.ID || open.draft != "" {
+		t.Fatalf("opened %+v, want chat %d with an empty composer", open, msg.chat.ID)
+	}
+}
+
+// TestNewChatUnsentFirstMessageComesBackToTheComposer: the daemon kept the
+// chat but did not send the message, so the workspace opens with the message
+// back in the composer and the reason on screen.
+func TestNewChatUnsentFirstMessageComesBackToTheComposer(t *testing.T) {
+	m, _ := newChatLiveRootWith(t, false)
+	_, cmd := m.Update(registryKey(t, "n"))
+	m.Update(runCmd(t, cmd, 10*time.Second))
+	typeKeys(m, "hello there")
+	_, cmd = m.Update(registryKey(t, "enter"))
+	msg, ok := runCmd(t, cmd, 10*time.Second).(chatCreatedMsg)
+	if !ok || msg.err != nil || msg.chat.FirstTurn != nil || len(msg.chat.Warnings) == 0 {
+		t.Fatalf("enter produced %#v, want a created chat with the message not sent", msg)
+	}
+	_, cmd = m.Update(msg)
+	open, found := findMsg[openChatMsg](cmd)
+	if !found || open.draft != "hello there" || !strings.Contains(open.note, "not sent") {
+		t.Fatalf("opened %+v, want the message back as the draft with the reason", open)
+	}
+	v := m.views[viewChat].(*chatView)
+	v.updateMsg(open)
+	if v.composer.Value() != "hello there" || !v.noteBad {
+		t.Fatalf("composer %q (note %q), want the unsent message back", v.composer.Value(), v.note)
 	}
 }

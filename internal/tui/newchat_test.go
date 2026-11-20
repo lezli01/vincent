@@ -137,12 +137,12 @@ func TestNewChatFormProjectRowIsLocked(t *testing.T) {
 	f := chatFormWithCatalogs()
 	f.moveFocusTo(ncBranch)
 	f.update(registryKey(t, "tab"), nil)
-	if f.focus != ncTitle {
-		t.Fatalf("tab from the last row landed on row %d, want the title; the project row is not focusable", f.focus)
+	if f.focus != ncMessage {
+		t.Fatalf("tab from the last row landed on row %d, want the message; the project row is not focusable", f.focus)
 	}
 	f.update(registryKey(t, "shift+tab"), nil)
 	if f.focus != ncBranch {
-		t.Fatalf("shift+tab from the title landed on row %d, want the last row", f.focus)
+		t.Fatalf("shift+tab from the message landed on row %d, want the last row", f.focus)
 	}
 
 	f.focus = ncProject // forced: nothing may open or step from it even so

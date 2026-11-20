@@ -72,6 +72,9 @@ const (
 	// owns every printable key, the textarea binds none of alt+e, and no
 	// surface answers it.
 	ExportChat Op = "export_chat"
+	// Rename changes a chat's title (task 161 decision 6). `r` for rename:
+	// the chats boards have no retry, which is the task workspace's `r`.
+	Rename Op = "rename"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -87,6 +90,9 @@ const (
 	Cancel    Op = "cancel"
 	FollowUp  Op = "follow_up"
 	Chat      Op = "chat"
+	// ChatWith is Chat with a choice of agent, model and effort first (task
+	// 161 decision 7). `T` stays instant; alt+t is its considered twin.
+	ChatWith Op = "chat_with"
 )
 
 // The global chrome.
@@ -142,6 +148,7 @@ var catalog = []Info{
 		"issues", "issue", "issue form",
 	}},
 	{Op: Archive, Default: "A", Meaning: "archive", Kind: KindTerm, Surfaces: []Surface{"chats", Actions}},
+	{Op: Rename, Default: "r", Meaning: "rename a chat", Kind: KindTerm, Surfaces: []Surface{"chats", "archived chats"}},
 	{Op: Delete, Default: "D", Meaning: "delete a persisted record", Kind: KindTerm, Surfaces: []Surface{
 		"archived tasks", "archived chats", "projects", "triggers", "issues", "issue",
 	}},
@@ -173,7 +180,7 @@ var catalog = []Info{
 	}},
 	{Op: Filter, Default: "/", Meaning: "filter", Kind: KindTerm, Surfaces: []Surface{
 		"settings", "new task", "task table", "archived tasks", "archived chats", "chats", "projects", "pull requests", "triggers",
-		"issues",
+		"issues", "chat conversation",
 	}},
 	{Op: Lane, Default: "l", Meaning: "open a fan-out lane", Kind: KindTerm, Surfaces: []Surface{
 		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request",
@@ -226,6 +233,7 @@ var catalog = []Info{
 	// so — so it is this operation and moves with it, the way `new` is one
 	// operation across the chats board and the issue screens.
 	{Op: Chat, Default: "T", Meaning: "chat in the task's worktree or on the issue's main worktree, or reopen its open chat", Kind: KindAction, Surfaces: []Surface{Actions, "issues", "issue"}},
+	{Op: ChatWith, Default: "alt+t", Meaning: "chat as chat does, choosing the agent, model and effort first", Kind: KindAction, Surfaces: []Surface{Actions, "issues", "issue"}},
 
 	{Op: Palette, Default: ":", Meaning: "open the command palette", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: PaletteAlt, Default: "ctrl+p", Meaning: "open the command palette from a text field", Kind: KindGlobal, Surfaces: []Surface{Global, "chat", "new chat"}, Typing: true},
@@ -341,7 +349,7 @@ var exceptions = []exception{
 	{key: "d", ops: []Op{DraftRemove}, anyFixed: true, why: "d toggles the output and diff tabs in the task workspace, where no draft is open"},
 	{key: "n", ops: []Op{New}, anyFixed: true, why: "n is the popups' no, and the popups own the keyboard"},
 	{key: "N", ops: []Op{NextFailure}, anyFixed: true, why: "task 129.18: N is the popups' no too, and the popups own the keyboard"},
-	{key: "r", ops: []Op{Retry}, anyFixed: true, why: "r retries the connection while disconnected, when no task is on screen"},
+	{key: "r", ops: []Op{Retry, Rename}, anyFixed: true, why: "r retries the connection while disconnected, when no task is on screen; task 161: rename is on the chats boards, which offer no §6 action"},
 	{key: "enter", ops: []Op{OpenRow}, anyFixed: true, why: "enter activates the focused thing on every surface"},
 	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
 	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 158: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},

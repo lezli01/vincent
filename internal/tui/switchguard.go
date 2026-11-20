@@ -434,7 +434,7 @@ func (f *pullCommentForm) watch() func() {
 func (f *newChatForm) draftKey() string {
 	return strings.Join([]string{
 		strconv.FormatInt(f.projectID, 10), strconv.Itoa(f.agentIdx),
-		f.model, f.effort, f.title.Value(), f.base.Value(), f.branch.Value(),
+		f.model, f.effort, f.message.Value(), f.title.Value(), f.base.Value(), f.branch.Value(),
 	}, "\x00")
 }
 

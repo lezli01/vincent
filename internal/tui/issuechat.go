@@ -38,6 +38,9 @@ type issueChatOpenedMsg struct {
 	// warnings are the 201's advisory notes: a chat on a closed issue.
 	warnings []string
 	err      error
+	// draft and note are a first message the daemon did not send (task
+	// 161), put back into the composer when the workspace opens.
+	draft, note string
 }
 
 // issueOccupantChat is the live chat holding iss's main worktree, or 0.

@@ -990,6 +990,60 @@ type lineOpts struct {
 	// message were noise a reader cycled the level to escape. The task
 	// output pane keeps the count, its affordance to expand.
 	hideRaw bool
+	// expanded reports whether one record renders as it would at verbose,
+	// whatever the level (task 160 decision 4): call is the tool call the
+	// record belongs to ("" for none) and rec its client-assigned identity.
+	// An expanded tool call is drawn under a ▾ line in place of its check
+	// line, and every folded check line carries ▸. Nil expands nothing and
+	// draws no affordance — the task output pane does not wire it yet.
+	expanded func(call string, rec int64) bool
+	// expandHint is the key text the ▸/▾ affordance names, set only while
+	// that key works where the line is read (071 decision 7).
+	expandHint string
+}
+
+// recordCall is the tool call a record belongs to: a tool_use's or a
+// tool_result's first call id, or an outcome record's own call_id.
+func recordCall(rec apiclient.TranscriptRecord) string {
+	switch {
+	case len(rec.Tools) > 0:
+		return rec.Tools[0].CallID
+	case len(rec.Results) > 0:
+		return rec.Results[0].CallID
+	}
+	return rec.CallID
+}
+
+// isExpanded applies opts.expanded to one record, checking every call a
+// tool_use or tool_result carries.
+func (o lineOpts) isExpanded(rec apiclient.TranscriptRecord, seq int64) bool {
+	if o.expanded == nil {
+		return false
+	}
+	for _, t := range rec.Tools {
+		if t.CallID != "" && o.expanded(t.CallID, seq) {
+			return true
+		}
+	}
+	for _, r := range rec.Results {
+		if r.CallID != "" && o.expanded(r.CallID, seq) {
+			return true
+		}
+	}
+	return o.expanded(rec.CallID, seq)
+}
+
+// expandAffordance is the ▸/▾ segment a check line or an expanded call's
+// head carries.
+func (o lineOpts) expandAffordance(open bool) segment {
+	glyph, verb := " ▸", "expands"
+	if open {
+		glyph, verb = " ▾", "folds"
+	}
+	if o.expandHint != "" {
+		glyph += " (" + o.expandHint + " " + verb + ")"
+	}
+	return segment{text: glyph, style: styleDim}
 }
 
 // outputLines renders the normalized records into wrapped pane lines.
@@ -1037,6 +1091,14 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 		for i, l := range added {
 			lines = append(lines, l)
 			anchors = append(anchors, lineAnchor{rec: seq, off: i})
+		}
+	}
+	// fromCall is fromRecord for a line that belongs to a tool call, which
+	// is what `enter` on it toggles (task 160 decision 4).
+	fromCall := func(seq int64, call string, added []string) {
+		for i, l := range added {
+			lines = append(lines, l)
+			anchors = append(anchors, lineAnchor{rec: seq, off: i, call: call})
 		}
 	}
 	if opts.truncatedNote != "" {
@@ -1113,17 +1175,56 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 	for i := 0; i < len(records); i++ {
 		rec := records[i]
 		parent := rec.ParentCallID
+		open := opts.isExpanded(rec, seqAt(seqs, i))
 		if checks != nil && parent == "" {
-			if rec.Type == "agent.tool_result" && checks.absorbs(rec.Results) {
+			if rec.Type == "agent.tool_result" && checks.absorbs(rec.Results) && !open {
 				continue
 			}
 			if rec.Type == "agent.tool_use" && checks.covers(rec.Tools) {
 				enter("")
-				var added []string
 				for _, t := range rec.Tools {
-					added = append(added, wrapLine(checks.line(t), width)...)
+					pl := checks.line(t)
+					if opts.expanded != nil {
+						pl.segs = append(pl.segs, opts.expandAffordance(open))
+					}
+					fromCall(seqAt(seqs, i), t.CallID, wrapLine(pl, width))
 				}
-				fromRecord(seqAt(seqs, i), added)
+				lastWasOutput = false
+				if !open {
+					continue
+				}
+				// Expanded: the call's own lines follow its ▾ line, at
+				// verbose (task 160 decision 4).
+				if pl, ok := renderRecord(rec, sawOutput, levelVerbose, skills); ok {
+					fromCall(seqAt(seqs, i), recordCall(rec), wrapLine(pl, width))
+				}
+				continue
+			}
+		}
+		if open {
+			// One expanded record renders at verbose, whatever the level;
+			// the session level is unchanged (task 160 decision 3).
+			flushRaw()
+			recLevel, recWidth := levelVerbose, width
+			if parent != "" {
+				recWidth = max(width-cols(gutterRail), 1)
+			}
+			var block []string
+			switch rec.Type {
+			case "agent.thinking":
+				block = thinkingBlock(rec.Text, recLevel, recWidth, opts.expandKey)
+			case "agent.raw":
+				block = wrapLine(paneLine{
+					gutter: gutterNone, gutterStyle: styleDim,
+					segs: []segment{{text: rec.Line, style: styleDim}},
+				}, recWidth)
+			default:
+				if pl, ok := renderRecord(rec, sawOutput, recLevel, skills); ok {
+					block = wrapLine(pl, recWidth)
+				}
+			}
+			if len(block) > 0 {
+				fromCall(seqAt(seqs, i), recordCall(rec), railed(enter(parent), block))
 				lastWasOutput = false
 				continue
 			}

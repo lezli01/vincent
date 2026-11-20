@@ -65,8 +65,12 @@ type Chat struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	// Warnings are non-fatal notes on a create, such as a chat opened on a
-	// closed issue.
+	// closed issue, or a first message that was not sent (task 161).
 	Warnings []string `json:"warnings,omitempty"`
+	// FirstTurn is the turn a create's `message` started (task 161): set
+	// only on a create's answer, and nil when no message was given or the
+	// send was refused — the chat exists either way, and Warnings says why.
+	FirstTurn *ChatTurn `json:"first_turn,omitempty"`
 }
 
 // ChatSkills is GET /v1/chats/{id}/skills: the skills the chat's agent CLI
@@ -208,7 +212,7 @@ type ChatTurn struct {
 // to the project's default.
 type CreateChatRequest struct {
 	ProjectID  int64  `json:"project_id"`
-	Title      string `json:"title"`
+	Title      string `json:"title,omitempty"`
 	Agent      string `json:"agent,omitempty"`
 	Model      string `json:"model,omitempty"`
 	Effort     string `json:"effort,omitempty"`
@@ -220,6 +224,10 @@ type CreateChatRequest struct {
 	ExistingBranch bool   `json:"existing_branch,omitempty"`
 	// IssueID opens the chat on an issue's main worktree (task 140).
 	IssueID *int64 `json:"issue_id,omitempty"`
+	// Message is sent as the chat's first turn in the same request (task
+	// 161). With it, Title may be empty: the daemon derives one from the
+	// message's first line.
+	Message string `json:"message,omitempty"`
 }
 
 // CreateChat starts a chat: a title, a project, an agent, and a worktree and
@@ -228,6 +236,17 @@ type CreateChatRequest struct {
 func (c *Client) CreateChat(ctx context.Context, req CreateChatRequest) (*Chat, error) {
 	var out Chat
 	if err := c.sendVia(ctx, c.worktrees, http.MethodPost, "/v1/chats", nil, req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RenameChat is PATCH /v1/chats/{id} with a title (task 161). It is legal in
+// every state, and the chat's branch keeps the slug it was cut with.
+func (c *Client) RenameChat(ctx context.Context, id int64, title string) (*Chat, error) {
+	var out Chat
+	body := map[string]string{"title": title}
+	if err := c.send(ctx, http.MethodPatch, fmt.Sprintf("/v1/chats/%d", id), body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -617,4 +636,35 @@ func (c *Client) ChatExport(ctx context.Context, chatID int64, opts ChatExportOp
 		out.Filename = params["filename"]
 	}
 	return out, nil
+}
+
+// ChatSearchTurn is one turn GET /v1/chats/{id}/search matched (task 160
+// decision 2): the turn's seq and how often the query occurs in it.
+type ChatSearchTurn struct {
+	Seq     int `json:"seq"`
+	Matches int `json:"matches"`
+	// Source is "transcript", or "result_text" when the transcript file has
+	// gone to retention and only the turn row was searched.
+	Source    string `json:"source"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// ChatSearch is the answer to a chat search: the matching turns in seq
+// order and the sum of their counts. It carries no text — the client
+// fetches a matched turn through ChatTurnTranscript.
+type ChatSearch struct {
+	Query string           `json:"query"`
+	Total int              `json:"total"`
+	Turns []ChatSearchTurn `json:"turns"`
+}
+
+// SearchChat runs a case-insensitive plain-substring search over every turn
+// of one chat on the daemon, loaded by the client or not.
+func (c *Client) SearchChat(ctx context.Context, id int64, query string) (*ChatSearch, error) {
+	var out ChatSearch
+	path := fmt.Sprintf("/v1/chats/%d/search?q=%s", id, url.QueryEscape(query))
+	if err := c.get(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

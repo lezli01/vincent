@@ -222,6 +222,9 @@ type OpenTaskChatRequest struct {
 	Agent  string `json:"agent,omitempty"`
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
+	// Message is sent as the chat's first turn in the same request (task
+	// 161), after the task's opening context.
+	Message string `json:"message,omitempty"`
 }
 
 // OpenTaskChat opens a chat linked to a stopped task (§6, task 119). The chat
