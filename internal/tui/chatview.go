@@ -212,6 +212,12 @@ type chatView struct {
 	// sending it twice meanwhile.
 	sending bool
 
+	// blurred is the terminal having lost focus, from the FocusMsg/BlurMsg
+	// the root broadcasts (task 156). The zero value is focused, which is
+	// also what a terminal that never reports focus is taken to be. A turn
+	// that finishes while blurred leaves the chat unread.
+	blurred bool
+
 	// stream is the per-chat SSE subscription's cancel, held so opening a
 	// second chat does not leave the first one's stream running.
 	streamStop context.CancelFunc
@@ -372,7 +378,8 @@ func (v *chatView) bindingContext() bindingContext {
 }
 
 // open points the workspace at a chat: it loads the conversation and
-// subscribes to that chat's stream, dropping any previous subscription.
+// subscribes to that chat's stream, dropping any previous subscription. It
+// records the view (task 156) — opening a chat is looking at it.
 func (v *chatView) open(id int64) tea.Cmd { return v.openAt(id, 0) }
 
 // openAt opens chat id landed on turn seq (task 158); seq 0 is a plain open.
@@ -404,7 +411,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	if seq > 0 {
 		v.following = false
 	}
-	return tea.Batch(leave, v.loadCmd(), v.streamCmd(), v.loadAgentsCmd())
+	return tea.Batch(leave, v.loadCmd(), v.streamCmd(), v.loadAgentsCmd(), v.markViewedCmd())
 }
 
 // landFetch asks for the landing turn's transcript, which the load's own
@@ -518,8 +525,22 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		return v, nil
 	case chatLoadedMsg:
-		v.applyLoaded(msg)
-		return v, tea.Batch(v.fetchTranscripts(), v.landFetch())
+		finished := v.applyLoaded(msg)
+		var mark tea.Cmd
+		if finished && !v.blurred {
+			// A turn ended in front of the reader (task 156). Blurred, it
+			// stays unread: the terminal is open, nobody is looking at it.
+			mark = v.markViewedCmd()
+		}
+		return v, tea.Batch(v.fetchTranscripts(), v.landFetch(), mark)
+	case tea.FocusMsg:
+		v.blurred = false
+		return v, nil
+	case tea.BlurMsg:
+		v.blurred = true
+		return v, nil
+	case chatSwitchListMsg:
+		return v, v.applySwitchList(msg)
 	case clipboardResultMsg:
 		v.note, v.noteBad = msg.notice()
 		return v, nil
@@ -632,15 +653,19 @@ func (v *chatView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	return v.fetchVisibleTranscripts()
 }
 
-func (v *chatView) applyLoaded(msg chatLoadedMsg) {
+// applyLoaded adopts a load of the open chat. finished reports a turn that
+// ended since the previous load of the same chat — never on the first load
+// after an open, which open's own mark already covers.
+func (v *chatView) applyLoaded(msg chatLoadedMsg) (finished bool) {
 	if msg.id != v.chatID {
-		return
+		return false
 	}
 	if msg.err != nil {
 		v.loadErr = errString(msg.err)
-		return
+		return false
 	}
 	v.loadErr = ""
+	finished = v.chat != nil && turnFinished(v.turns, msg.turns)
 	v.chat, v.turns, v.queue = msg.chat, msg.turns, msg.queue
 	v.applyLoadedDraft(msg.chat)
 	// The message being edited may have started or been deleted elsewhere:
@@ -659,6 +684,7 @@ func (v *chatView) applyLoaded(msg chatLoadedMsg) {
 	// awaiting_input and closes when it stops saying so, which is what makes
 	// an answer given elsewhere — the CLI, curl — close it here too.
 	v.syncForm()
+	return finished
 }
 
 // syncForm opens, keeps or closes the §7.4 popup to match the chat's state.
@@ -1047,6 +1073,13 @@ func (v *chatView) applyCanceled(msg chatCanceledMsg) tea.Cmd {
 }
 
 func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	// The chat switch comes first (task 156): it is a hatch that works from
+	// the composer, and over a pending question's popup too — the question
+	// stays the chat's, and the popup is back when the chat is.
+	if sw, ok := chatSwitchFor(msg.String()); ok {
+		v.closing = false
+		return v, v.switchChat(sw)
+	}
 	if v.form != nil {
 		// A question that arrived under the close confirmation replaces it:
 		// the popup owns the keyboard, and a `y` meant for the prompt must

@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // f1 is the press a terminal delivers for the help key's alternate.
@@ -251,7 +252,9 @@ func TestPaletteGlobalRowsActFromAChat(t *testing.T) {
 		// handed to the field that would type it.
 		m, v := chatWithDraft(t)
 		m.phase = phaseReconnecting
-		runPaletteRow(t, m, "jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's")
+		// The row's own label, read off the registry: it names tasks and
+		// chats since task 156, and this test is about the drop, not the words.
+		runPaletteRow(t, m, opLabel(t, keymap.NextAttention))
 		if got := v.composer.Value(); got != "hello" {
 			t.Fatalf("the ! row typed into the draft: %q", got)
 		}
@@ -372,4 +375,16 @@ func TestHelpListsF1UnderGlobalKeys(t *testing.T) {
 	if !strings.Contains(global, "f1") || !strings.Contains(global, "works while a text field has the keyboard") {
 		t.Fatalf("the global section does not list f1:\n%s", global)
 	}
+}
+
+// opLabel is the registry label of the row performing op.
+func opLabel(t *testing.T, op keymap.Op) string {
+	t.Helper()
+	for _, b := range bindings {
+		if b.op == op {
+			return b.label
+		}
+	}
+	t.Fatalf("no registry row performs %s", op)
+	return ""
 }

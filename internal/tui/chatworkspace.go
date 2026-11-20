@@ -429,7 +429,13 @@ func (v *chatsView) chatCard(c apiclient.Chat, selected bool, w int) []string {
 	if selected {
 		titleStyle, edges, border = styleTitle, edgesThick, styleFocus
 	}
-	head := styleKey.Render("#"+strconv.FormatInt(c.ID, 10)) + "  " + toneMagenta.Render(ic("◈ ")+oneLine(c.Agent))
+	head := styleKey.Render("#" + strconv.FormatInt(c.ID, 10))
+	// The unread mark (task 156) beside the id, where a reader scanning the
+	// rail's left edge finds it; the status line keeps the chat's state.
+	if mark := unreadMark(c); mark != "" {
+		head += " " + mark
+	}
+	head += "  " + toneMagenta.Render(ic("◈ ")+oneLine(c.Agent))
 	body := []string{padBetweenCells(head, styleDim.Render(chatCardAge(c, v.now())), inner)}
 	title := wrapText(oneLine(c.Title), inner, wrapOpts{maxLines: 2})
 	for i := range 2 {

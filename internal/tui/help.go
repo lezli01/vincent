@@ -254,7 +254,7 @@ func orientation(ctx bindingContext, tabs []taskViewTab) []helpRow {
 	case ctx == ctxTasks:
 		rows = []helpRow{
 			{key: opKey(keymap.OpenRow), label: "open the task — its workspace, tab by tab"},
-			{key: opKey(keymap.NextAttention), label: "jump to the next task that needs you"},
+			{key: opKey(keymap.NextAttention), label: "jump to the next task or chat that needs you"},
 			{key: opKey(keymap.Palette), label: "find everything — every command, beside its key"},
 		}
 	}

@@ -23,9 +23,12 @@ import (
 // in this TUI has. Decision row 29 says a chat never appears on the task
 // board; this is where it appears instead.
 //
-// Attention is this board's own: an awaiting_input chat is sorted to the top
-// and badged in this header, and nowhere else. `!` and the home board's
-// needs-attention count stay task-only (task 067 decision 4).
+// An awaiting_input chat is sorted to the top and badged in this header, and
+// since task 156 it counts in `!` and the home board's attention count too,
+// superseding task 067 decision 4's task-only rule: a question is a human's
+// to answer wherever it was asked. A turn that finished unread is not
+// attention — nothing is waiting on anyone — so it is only the ● mark on
+// its card and row (unread.go).
 
 // Chats board messages.
 type (
@@ -702,7 +705,23 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, nil
 		}
 	}
+	// The chat switch (task 156), on the live board only: the archived one
+	// lists ended chats, which the switch never lands on.
+	if sw, ok := chatSwitchFor(msg.String()); ok && !v.archived {
+		return v, v.switchChat(sw)
+	}
 	switch msg.String() {
+	// The board's fixed aliases for next_chat and prev_chat (task 156). No
+	// text field has the keyboard here, so the brackets are free; they are
+	// fixed keys rather than the ops' own because in a chat they are text.
+	case "]":
+		if !v.archived {
+			return v, v.switchChat(chatSwitch{step: 1})
+		}
+	case "[":
+		if !v.archived {
+			return v, v.switchChat(chatSwitch{step: -1})
+		}
 	case "esc":
 		if v.filter.Value() != "" {
 			v.filter.SetValue("")

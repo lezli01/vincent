@@ -15,10 +15,11 @@ import (
 // rollup and no §6 action set, and the four functions that would survive the
 // abstraction are the four trivial ones.
 
-// chatNeedsAttention reports whether a chat is waiting on a human. This is the
-// chats board's own notion and stops here: `!` and the home board's
-// needs-attention header stay task-only, so decision row 29's "a chat never
-// appears on the task board" stays literal (task 067 decision 4).
+// chatNeedsAttention reports whether a chat is waiting on a human: the
+// board's top band and its header badge. Since task 156 the same chats count
+// in `!` and the home board's attention count (superseding task 067 decision
+// 4), though a chat still never appears as a row of the task board (decision
+// row 29). An unread chat is not waiting on anyone and is not attention.
 func chatNeedsAttention(state string) bool { return state == "awaiting_input" }
 
 // chatBand orders states on the board: what needs a human first, then what is
