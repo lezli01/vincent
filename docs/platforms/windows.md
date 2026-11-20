@@ -199,7 +199,9 @@ cannot parse `&&`.
   field. `ctrl+v` is a fallback for terminals that pass the key through instead.
 - `$EDITOR` is honored for edit-and-retry and for description editing. Set it to
   something that runs in the terminal and exits when done — a GUI editor that
-  forks immediately will look like it did nothing.
+  forks immediately will look like it did nothing. A path with a space in it
+  is quoted the way a shell would quote it:
+  `"C:\Program Files\Notepad++\notepad++.exe" -multiInst`.
 
 ## Known gaps
 
