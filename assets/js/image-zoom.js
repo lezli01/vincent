@@ -6,8 +6,9 @@
   Space on it) opens it in an overlay at up to the viewport's size; a click
   anywhere, Escape or the close button dismisses it and returns focus.
 
-  Skipped: images already inside a link (badges), and images in a centred
-  README paragraph (the logo and other decoration), which are not screenshots.
+  Skipped: images already inside a link (badges) and the logo, which are not
+  screenshots. The README centres its screenshots in <p align="center"> just
+  as it centres the logo, so the logo is told apart by its file name.
 */
 (function () {
   'use strict';
@@ -16,7 +17,7 @@
   if (!prose) return;
 
   var images = Array.prototype.filter.call(prose.querySelectorAll('img'), function (img) {
-    return !img.closest('a') && !img.closest('[align="center"]');
+    return !img.closest('a') && !/\/logo[^/]*\.png$/.test(img.getAttribute('src') || '');
   });
   if (!images.length) return;
 
