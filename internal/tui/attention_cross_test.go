@@ -109,7 +109,7 @@ func TestBellRingsForEveryProject(t *testing.T) {
 	m := attentionRoot(t, task(2, stateRunning, inProjectID(otherProjectID, "other")))
 	rings := 0
 	m.bell.ring = func() { rings++ }
-	m.focused = false
+	m.focusKnown, m.focused = true, false
 	if cmd := m.bellCmd(stateEvent(7, stateAwaitingInput)); cmd != nil {
 		cmd()
 	}

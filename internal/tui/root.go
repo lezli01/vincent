@@ -219,8 +219,11 @@ type root struct {
 
 	// focused is the terminal's last focus report (task 165, focus.go).
 	// It starts true, so a terminal that never reports focus behaves as one
-	// that is always looked at.
-	focused bool
+	// that is always looked at — everywhere but the bell, which also reads
+	// focusKnown: false until the first FocusMsg or BlurMsg, and while it is
+	// false the bell rings for a task's question as it always has (bell.go).
+	focused    bool
+	focusKnown bool
 	// bell is the one terminal bell tasks and chats share (bell.go).
 	bell bellState
 }

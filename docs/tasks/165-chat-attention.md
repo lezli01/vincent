@@ -51,8 +51,11 @@ Confirmed by the author on 2026-11-20, in the brief for #1019.
    towards attention; an unread finished turn is only the `●` mark. Row 29
    holds: chats join the count and `!`, never the task board's columns.
 5. **The bell is focus-gated for tasks and chats alike**, with one
-   once-per-event-id rule and rate limit at the root. Focus starts true, so a
-   terminal that never reports focus never rings; the TUI does not guess.
+   once-per-event-id rule and rate limit at the root. Focus starts true, and
+   until the terminal's first focus report the bell rings as it always did —
+   a task's `awaiting_input`, no chats — so a terminal that never reports
+   focus behaves exactly as before, as the brief asked. *(Corrected on the
+   merge train, review F1: the first version never rang on such a terminal.)*
    The TUI never runs `notify.command`.
 6. **Chat switching** follows the chats board's order for the selected
    project (waiting on you, running, idle), wraps, does nothing past the

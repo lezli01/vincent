@@ -180,8 +180,9 @@ switches to it and opens its task, saying so on the status line
 wraps to the selected project's first. The app header's `(! 2 elsewhere)`
 says how many tasks in other projects are waiting, whichever screen you are
 on, and the bell rings for every project — but only while the terminal is in
-the background: it needs a terminal that reports focus, and one that never
-does never rings. Chats asking you a question count and are on `!`'s walk too
+the background. A terminal that never reports focus (tmux with `focus-events`
+off, its default) cannot say so, and rings for a task's question whatever
+you are looking at, as it always has. Chats asking you a question count and are on `!`'s walk too
 ([Chats](#chats)). `enter` on a blocked task
 opens a **failure card**: the step and attempt that stopped, the reason in
 words with its code dim beside it, the last lines of the failing attempt's
@@ -2537,7 +2538,8 @@ everywhere. A turn that ends while the chat is open clears it too, unless the
 terminal is in the background. Unread is only a mark: it does not count as
 attention. The bell rings for a chat's question and for a turn ending done or
 failed, under the same rule as for tasks: only while the terminal is
-unfocused. For a signal with no TUI open, see
+unfocused — and only in a terminal that reports focus, since a chat bell
+in one that cannot would ring on every reply you are reading. For a signal with no TUI open, see
 [`notify.chat_on`](../reference/configuration.md#notify).
 
 | Key | Does |

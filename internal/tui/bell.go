@@ -19,12 +19,19 @@ const bellInterval = time.Second
 // by side would ring twice for one burst and replay each other's ids, so
 // tasks and chats share one once-per-event-id rule and one rate limiter.
 //
-// The bell rings only while the terminal is unfocused (root.focused): a
-// human looking at the TUI sees the row, the badge and the count change, and
-// a BEL on top of that is noise. That makes the task bell focus-gated too,
-// deliberately. A terminal that never reports focus leaves focused at its
-// initial true — so it never rings either, which is the price of not
-// guessing: the TUI cannot tell "never reports" from "focused for good".
+// Once the terminal has reported focus, the bell rings only while it is
+// unfocused (root.focused): a human looking at the TUI sees the row, the
+// badge and the count change, and a BEL on top of that is noise. That makes
+// the task bell focus-gated too, deliberately.
+//
+// Until the first report (root.focusKnown) the TUI cannot tell "never
+// reports" from "focused the whole time", so it rings exactly as it did
+// before focus was known at all: a task entering awaiting_input, and nothing
+// for chats. A terminal that never reports focus — tmux with focus-events
+// off, its default — therefore keeps the task bell it always had (review F1,
+// task 165 decision 5), and the chat bell, which would ring on every reply
+// in the chat being typed in, waits for a terminal that can say it is in the
+// background.
 //
 // The TUI never runs notify.command; that is the daemon's outward signal
 // (§12.3, task 046), and the bell is only the terminal's.
@@ -56,7 +63,7 @@ func ringBell() {
 // happens inside the render loop.
 func (m *root) bellCmd(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
-	if !ok || !m.bell.ringsFor(ev.Event, m.focused) {
+	if !ok || !m.bell.ringsFor(ev.Event, m.focusKnown, m.focused) {
 		return nil
 	}
 	ring := m.bell.ring
@@ -78,9 +85,16 @@ func (m *root) bellCmd(n apiclient.Note) tea.Cmd {
 //
 // While focused nothing rings, and nothing is recorded either: an event
 // seen while the human was looking is not owed a ring later, and its id is
-// below anything that arrives after a blur anyway.
-func (b *bellState) ringsFor(ev apiclient.Event, focused bool) bool {
-	if focused || ev.ID <= b.lastEvent || !asksForHuman(ev) {
+// below anything that arrives after a blur anyway. Before any focus report
+// (focusKnown false) only a task's awaiting_input rings, as it always did.
+func (b *bellState) ringsFor(ev apiclient.Event, focusKnown, focused bool) bool {
+	if ev.ID <= b.lastEvent || !asksForHuman(ev) {
+		return false
+	}
+	if focusKnown && focused {
+		return false
+	}
+	if !focusKnown && ev.Type != "task.state_changed" {
 		return false
 	}
 	// The id advances even when the rate limit swallows the ring, so a

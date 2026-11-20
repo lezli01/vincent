@@ -33,19 +33,58 @@ func chatEventNote(id int64, typ string, body map[string]string) apiclient.Event
 	return apiclient.EventNote{Event: apiclient.Event{ID: id, Type: typ, Payload: payload}}
 }
 
-// TestFocusDefaultsTrue: a terminal that never reports focus is treated as
-// looked at, so the bell stays quiet until a blur says otherwise.
+// TestFocusDefaultsTrue: focus starts true and unknown, and the view asks
+// the terminal for focus reports.
 func TestFocusDefaultsTrue(t *testing.T) {
-	m, rings, _ := bellRoot(t)
+	m, _, _ := bellRoot(t)
 	if !m.focused {
 		t.Fatal("a new root is unfocused; want focused until the terminal says otherwise")
 	}
-	ring(m, stateEvent(1, stateAwaitingInput))
-	if *rings != 0 {
-		t.Fatalf("rings = %d with no focus report, want 0", *rings)
+	if m.focusKnown {
+		t.Fatal("a new root believes the terminal has reported focus")
 	}
 	if !m.View().ReportFocus {
 		t.Error("the root's view does not ask for focus reports")
+	}
+}
+
+// TestBellWithoutFocusReports (review F1): a terminal that never reports
+// focus — tmux with focus-events off, its default — keeps the task bell it
+// always had, once per event id and within the rate limit, and the chat
+// bell stays quiet until the terminal can say it is in the background.
+func TestBellWithoutFocusReports(t *testing.T) {
+	m, rings, now := bellRoot(t)
+
+	ring(m, stateEvent(1, stateAwaitingInput))
+	if *rings != 1 {
+		t.Fatalf("rings = %d for a task's question with no focus report, want 1", *rings)
+	}
+	ring(m, stateEvent(1, stateAwaitingInput))
+	if *rings != 1 {
+		t.Fatalf("rings = %d after a replay, want 1", *rings)
+	}
+
+	*now = now.Add(2 * bellInterval)
+	ring(m, chatEventNote(2, "chat.state_changed", map[string]string{"state": "awaiting_input"}))
+	ring(m, chatEventNote(3, "chat.turn_changed", map[string]string{"state": "running", "turn_state": "done"}))
+	if *rings != 1 {
+		t.Fatalf("rings = %d for chat events with no focus report, want 1", *rings)
+	}
+
+	ring(m, stateEvent(4, stateAwaitingInput))
+	if *rings != 2 {
+		t.Fatalf("rings = %d for a second task question, want 2", *rings)
+	}
+
+	// The first report switches the gate on: focused is quiet.
+	m.Update(tea.FocusMsg{})
+	if !m.focusKnown {
+		t.Fatal("a focus report left focusKnown false")
+	}
+	*now = now.Add(2 * bellInterval)
+	ring(m, stateEvent(5, stateAwaitingInput))
+	if *rings != 2 {
+		t.Fatalf("rings = %d while reported focused, want 2", *rings)
 	}
 }
 
@@ -120,7 +159,7 @@ func TestBellOnlyWhileUnfocused(t *testing.T) {
 // recorded once and nothing downstream can ring it again.
 func TestBellDecidedOncePerNote(t *testing.T) {
 	m, rings, _ := bellRoot(t)
-	m.focused = false
+	m.focusKnown, m.focused = true, false
 	m.notes = make(chan apiclient.Note)
 	m.updateNote(stateEvent(1, stateAwaitingInput))
 	// The note's batch holds the ring among the views' commands; run only

@@ -145,8 +145,9 @@ list with the user-facing context a commit subject cannot carry.
 - **The terminal bell rings only while the TUI's terminal is unfocused.**
   It used to ring whenever a task entered `awaiting_input`; now it rings for
   that, for a chat asking for input and for a chat turn ending, but only
-  when the terminal reports it has lost focus — and a terminal that never
-  reports focus no longer rings at all. Use `notify.chat_on` / `notify.on`
+  when the terminal reports it has lost focus. A terminal that never
+  reports focus (tmux by default) keeps the task bell as before and gets no
+  chat bell. Use `notify.chat_on` / `notify.on`
   for alerts that must reach you regardless (task 165, #1019).
 
 - **A step's token count uses the chat's arrows.** The task workspace's step

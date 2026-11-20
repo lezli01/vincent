@@ -129,7 +129,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 19 | Name | `vincent` |
 | 20 | v1 scope | Everything above, both agent adapters |
 | 21 | Agent/model/effort selection | Adapter-native values; per-step resolution `step > task override > workflow defaults > adapter default` with agent-scoped inheritance; options probed ad hoc from the installed CLIs, merged with a curated catalog, free text always allowed (§8.6, §9.6) |
-| 22 | Agent input requests | Structured requests only (`question`/`permission`); new `awaiting_input` state that keeps its slot; step clock pauses, bounded by `input_timeout` (default 24h); normalized schema + raw passthrough; `POST /v1/tasks/{id}/answer`; per-adapter capability (claude yes, codex no); `on_input: wait\|deny` opt-out; TUI-level alerts only (§6, §7.4, §13.2, §15). *Narrowed 2026-08-28 (task 046, issue #90): "TUI-level alerts only" decided how one agent question is normalized, surfaced and answered **inside a client** — it did not decide that the daemon may never signal outward, and it never spoke to `blocked` or `awaiting_gate` at all. The daemon-side `notify:` hook (§12.3) signals on any §6 state and leaves the TUI bell exactly as it was.* *Amended 2026-11-20 (task 165, issue #1019): the TUI bell now rings only while the terminal reports itself unfocused, for tasks and chats alike (§15).* |
+| 22 | Agent input requests | Structured requests only (`question`/`permission`); new `awaiting_input` state that keeps its slot; step clock pauses, bounded by `input_timeout` (default 24h); normalized schema + raw passthrough; `POST /v1/tasks/{id}/answer`; per-adapter capability (claude yes, codex no); `on_input: wait\|deny` opt-out; TUI-level alerts only (§6, §7.4, §13.2, §15). *Narrowed 2026-08-28 (task 046, issue #90): "TUI-level alerts only" decided how one agent question is normalized, surfaced and answered **inside a client** — it did not decide that the daemon may never signal outward, and it never spoke to `blocked` or `awaiting_gate` at all. The daemon-side `notify:` hook (§12.3) signals on any §6 state and leaves the TUI bell exactly as it was.* *Amended 2026-11-20 (task 165, issue #1019): the TUI bell now rings only while the terminal reports itself unfocused, for tasks and chats alike; a terminal that never reports focus keeps the task bell as before (§15).* |
 
 | 23 | Parallel steps | `type: parallel` runs sub-steps concurrently in the task's one worktree: one step, one index, one slot, no branch and no merge. `manual`, nested groups and `on_input: require` are refused inside one; `max_parallel` (default 4) is a second concurrency dimension the §11 caps do not govern (§7.5, task 014) |
 | 24 | Workflow fan-out | `type: fan_out` makes each lane a real child task with its own worktree and branch, merged back `--no-ff` in declared order at the end of the same step. The parent parks in `awaiting_children` holding no slot, so no depth deadlocks; a conflict blocks by default, a lane that did not finish blocks the join, and the tree's bounds are checked at creation (§7.6, task 014) |
@@ -14717,9 +14717,13 @@ stream for the live tail.
    rings BEL — once per event id, at most once a second, one limiter shared
    by tasks and chats — for a task or chat entering `awaiting_input` and for
    a chat turn ending `done` or `failed`, **only while the terminal reports
-   itself unfocused**. Focus starts as true, so a terminal that never reports
-   focus never rings: the TUI cannot tell "never reports" from "focused for
-   good", and does not guess. The TUI never runs `notify.command`; outward
+   itself unfocused**. Until the terminal's first focus report the TUI cannot
+   tell "never reports" from "focused the whole time", so it rings as it
+   always did — for a task entering `awaiting_input`, and not for chats — and
+   a terminal that never reports focus (tmux with `focus-events` off, its
+   default) keeps that task bell *(corrected 2026-11-20 on the merge train,
+   review F1: the first version never rang on such a terminal, against the
+   brief's "behaves exactly as today")*. The TUI never runs `notify.command`; outward
    signals are the daemon's (§12.3).
    **Grouped by default (task 009, added 2026-08-16):** the rows nest under group
    headers — projects, and the workflows of a project inside it — configured by
