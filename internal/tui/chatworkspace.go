@@ -784,10 +784,10 @@ func (v *chatView) renderWorkspace(width, height int) string {
 	if label := v.edgeLabel(); label != "" && len(box) > 0 {
 		box[len(box)-1] = boxBottom(label, midW-2, edgesRounded, styleFocus)
 	}
-	v.convHit = chatConvHit{
-		x0: listW, x1: listW + midW, y0: len(filter) + 1, rows: v.convHit.rows,
-		edgeY: len(filter) + height - 1,
-	}
+	// The body starts inside the box's top edge, under head (review F2);
+	// the label is on the box's bottom edge, all of whose width follows.
+	v.convHit = v.convHit.shift(listW+2, len(filter)+1)
+	v.convHit.edgeY, v.convHit.edgeX0, v.convHit.edgeX1 = len(filter)+height-1, listW, listW+midW
 	out = joinColumns(out, box)
 	if detailsW > 0 {
 		var c apiclient.Chat
@@ -801,12 +801,17 @@ func (v *chatView) renderWorkspace(width, height int) string {
 }
 
 // updateClick opens the chat card under the pointer from inside a conversation.
+// A click in the conversation itself works in both layouts (task 160
+// decisions 1 and 5, review F2); the cards are the workspace's alone.
 func (v *chatView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
-	if !v.sideShown(v.termW) || v.form != nil {
+	if v.form != nil {
 		return nil
 	}
 	if v.updateConvClick(msg) {
 		return v.fetchVisibleTranscripts()
+	}
+	if !v.sideShown(v.termW) {
+		return nil
 	}
 	id, ok := v.side.cardAt(msg)
 	if !ok || id == v.chatID {

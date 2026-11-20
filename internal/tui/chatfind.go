@@ -697,12 +697,15 @@ func recordSearchText(rec apiclient.TranscriptRecord) string {
 // while `↓ N new` shows it follows again.
 func (v *chatView) updateConvClick(msg tea.MouseClickMsg) bool {
 	h := v.convHit
-	if msg.Button != tea.MouseLeft || msg.X < h.x0 || msg.X >= h.x1 {
+	if msg.Button != tea.MouseLeft {
 		return false
 	}
-	if msg.Y == h.edgeY && v.newLines > 0 && !v.following {
+	if msg.Y == h.edgeY && msg.X >= h.edgeX0 && msg.X < h.edgeX1 && v.newLines > 0 && !v.following {
 		v.follow()
 		return true
+	}
+	if msg.X < h.x0 || msg.X >= h.x1 {
+		return false
 	}
 	if msg.Y < h.y0 || msg.Y >= h.y0+h.rows {
 		return false
@@ -717,7 +720,22 @@ func (v *chatView) updateConvClick(msg tea.MouseClickMsg) bool {
 	return true
 }
 
-// chatConvHit is where the conversation is on screen, recorded at render.
+// chatConvHit is where the conversation is on screen, recorded at render:
+// the body's columns [x0, x1) and its rows from y0, and the row and columns
+// [edgeX0, edgeX1) that `↓ N new` is drawn on, edgeY -1 when it is not drawn.
 type chatConvHit struct {
-	x0, x1, y0, rows, edgeY int
+	x0, x1, y0, rows, edgeY, edgeX0, edgeX1 int
+}
+
+// shift moves a hit recorded against its content's origin to (dx, dy).
+func (h chatConvHit) shift(dx, dy int) chatConvHit {
+	h.x0 += dx
+	h.x1 += dx
+	h.y0 += dy
+	h.edgeX0 += dx
+	h.edgeX1 += dx
+	if h.edgeY >= 0 {
+		h.edgeY += dy
+	}
+	return h
 }

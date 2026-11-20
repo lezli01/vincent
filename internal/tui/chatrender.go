@@ -69,7 +69,11 @@ func (v *chatView) renderConversation(width, height int) string {
 	if totals := v.totalsLine(); totals != "" {
 		head = append(head, " "+totals)
 	}
-	return v.conversationUnder(append(head, ""), width, height)
+	out := v.conversationUnder(append(head, ""), width, height)
+	// Outside the workspace the root frames this view, so its content
+	// starts one column and one row in (framedView).
+	v.convHit = v.convHit.shift(1, 1)
+	return out
 }
 
 // totalsLine is the conversation's totals while the details pane, which
@@ -107,13 +111,16 @@ func (v *chatView) conversationUnder(head []string, width, height int) string {
 	lines := make([]string, 0, len(head)+room+len(foot))
 	lines = append(lines, head...)
 	body := strings.Split(v.bodyView(width, room), "\n")
-	v.convHit.rows = room
+	// Where the body is, relative to this content's origin: its first row
+	// is under head (review F2). The caller shifts it to the screen.
+	v.convHit = chatConvHit{x0: 0, x1: width, y0: len(head), rows: room, edgeY: -1}
 	if label := v.edgeLabel(); label != "" && !v.sideShown(v.termW) && len(body) > 0 {
 		// No pane edge to sit on without the workspace: the label takes the
 		// right end of the body's last row.
 		last := len(body) - 1
 		lw := ansi.StringWidth(label)
 		body[last] = ansi.Truncate(body[last], max(width-lw-1, 0), "") + " " + label
+		v.convHit.edgeY, v.convHit.edgeX0, v.convHit.edgeX1 = len(head)+last, max(width-lw, 0), width
 	}
 	lines = append(lines, body...)
 	lines = append(lines, foot...)

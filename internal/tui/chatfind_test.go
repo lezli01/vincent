@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -263,5 +265,101 @@ func TestChatNewLinesMarker(t *testing.T) {
 	v.render(100, 12)
 	if v.newLines != 0 || v.edgeLabel() != "" {
 		t.Fatalf("ctrl+g left the marker: %d", v.newLines)
+	}
+}
+
+// clickScreen draws the chat view the way the root does at w×h — its own
+// panes in the workspace, the root's frame around it otherwise — and returns
+// the screen's plain lines.
+func clickScreen(t *testing.T, v *chatView, w, h int) []string {
+	t.Helper()
+	v.update(tea.WindowSizeMsg{Width: w, Height: h})
+	var out string
+	if v.frameless() {
+		out = v.render(w, h)
+	} else {
+		out = frame("", v.render(w-2, h-2), w, h, true)
+	}
+	return plainLines(strings.Split(out, "\n"))
+}
+
+// cellOf is the screen cell where text first appears.
+func cellOf(t *testing.T, screen []string, text string) (x, y int) {
+	t.Helper()
+	for y, line := range screen {
+		if i := strings.Index(line, text); i >= 0 {
+			return ansi.StringWidth(line[:i]), y
+		}
+	}
+	t.Fatalf("%q is not on screen:\n%s", text, strings.Join(screen, "\n"))
+	return 0, 0
+}
+
+// TestChatClickTogglesTheCallUnderThePointer is review F2: a click on a tool
+// call's line toggles that call and no other — in the workspace with and
+// without the totals line above the body, and in the narrow layout the root
+// frames.
+func TestChatClickTogglesTheCallUnderThePointer(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		w      int
+		totals bool
+	}{
+		{"workspace", 120, false},
+		{"workspace with totals", 120, true},
+		{"narrow", 90, false},
+		{"narrow with totals", 90, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := chatFindFixture(t)
+			v.side = chatWorkspaceFixture(t)
+			if tc.totals {
+				v.turns[1].InputTokens, v.turns[1].OutputTokens = 1200, 300
+			}
+			screen := clickScreen(t, v, tc.w, 40)
+			if want := tc.w >= chatWorkspaceMinW; v.frameless() != want {
+				t.Fatalf("frameless = %v at %d columns", v.frameless(), tc.w)
+			}
+			if got := strings.Contains(strings.Join(screen, "\n"), "tokens"); got != tc.totals {
+				t.Fatalf("totals line drawn = %v, want %v", got, tc.totals)
+			}
+			x, y := cellOf(t, screen, "main.go")
+			v.update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			b2, b3 := v.expandedFor(2)("call-b2", 0), v.expandedFor(3)("call-b3", 0)
+			a2, a3 := v.expandedFor(2)("call-a2", 0), v.expandedFor(3)("call-a3", 0)
+			if (!b2 && !b3) || a2 || a3 {
+				t.Fatalf("clicking the Read call's line expanded a2 %v a3 %v b2 %v b3 %v, want only a Read call",
+					a2, a3, b2, b3)
+			}
+		})
+	}
+}
+
+// TestChatClickOnNewLinesFollows is review F2: while `↓ N new` shows, a click
+// on it follows the conversation again — on the pane's bottom edge in the
+// workspace, on the body's last row in the narrow layout.
+func TestChatClickOnNewLinesFollows(t *testing.T) {
+	for _, w := range []int{120, 90} {
+		v := chatFindFixture(t)
+		v.side = chatWorkspaceFixture(t)
+		v.turns[2].State = "running"
+		v.turns[1].InputTokens = 1200
+		clickScreen(t, v, w, 16)
+		v.vp.GotoTop()
+		v.syncFollowToViewport()
+		for i := range 3 {
+			v.appendChunk(apiclient.OutputNote{Type: "agent.tool_use", TurnID: 3, Payload: []byte(
+				`{"tools":[{"name":"Bash","summary":"ls","call_id":"live` + string(rune('0'+i)) + `"}]}`)})
+			clickScreen(t, v, w, 16)
+		}
+		screen := clickScreen(t, v, w, 16)
+		if v.newLines == 0 || v.following {
+			t.Fatalf("%d columns: no `new` marker (newLines %d, following %v)", w, v.newLines, v.following)
+		}
+		x, y := cellOf(t, screen, "↓ "+strconv.Itoa(v.newLines)+" new")
+		v.update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		if !v.following || v.newLines != 0 {
+			t.Fatalf("%d columns: clicking `↓ N new` left following %v, newLines %d", w, v.following, v.newLines)
+		}
 	}
 }
