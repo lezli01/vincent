@@ -15835,14 +15835,17 @@ stream for the live tail.
    a `▾` line; a folded check line carries `▸`, and names `enter` while the
    conversation has focus. Clicking a check line focuses the conversation and
    toggles that call. While not following, the bottom edge shows `↓ N new`,
-   the lines appended since; clicking it or `alt+G` follows again and clears
+   the lines appended since; clicking it or `alt+shift+g` follows again and clears
    it, and a rebuild for a level or width change never counts. The draft is
    untouched by all of it, and `ctrl+r`'s session level is unchanged.
 
    *Amended 2026-11-20 (task 163, issue #1013), amending task 071 decision
    5.* **`ctrl+g` writes the message in `$EDITOR`**, and follow moved to
-   **`alt+G`** — beside `alt+g`'s jump to the start: lower case goes to the
-   start, upper case to the end. `ctrl+g` is the editor key most terminal
+   **`alt+shift+g`** — beside `alt+g`'s jump to the start: lower case goes to the
+   start, upper case to the end. It is `alt+G` as typed, spelled the way the
+   terminal reports it: legacy `ESC G` and the kitty protocol's `CSI 103;4u`
+   both decode to `alt+shift+g`, never `alt+G`, so `tui.keys` refuses
+   `alt+G` and names `alt+shift+g` (review F1, 2026-11-20). `ctrl+g` is the editor key most terminal
    tools share, which is worth moving a binding for. It is the rebindable
    operation `compose_editor` (`Typing`): the composer's text goes to a temp
    `.md` file through the same `$EDITOR` round trip edit+retry uses, and what
@@ -15860,7 +15863,7 @@ stream for the live tail.
    is now split quote-aware for every caller: double and single quotes group
    a word, a backslash escapes outside single quotes on POSIX only, and an
    unbalanced quote falls back to splitting on whitespace. Conversation
-   focus (task 160) follows on `alt+G` too, mirroring the composer.
+   focus (task 160) follows on `alt+shift+g` too, mirroring the composer.
 
    *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
    insert a newline in the draft; `enter` still sends it. This makes the
@@ -16057,7 +16060,7 @@ stream for the live tail.
    in a task, and `agent.tool_result`, `agent.run_header` and the result line
    are reachable here at the levels this section already specifies for each.
    The body scrolls and follows the way the output pane does — following means
-   showing the end, a manual scroll pauses it, `alt+G` re-arms it (`ctrl+g`
+   showing the end, a manual scroll pauses it, `alt+shift+g` re-arms it (`ctrl+g`
    until task 163) — because at
    verbose it grows several-fold and a bottom-anchored window with no way to
    scroll would put what was just revealed out of reach.
@@ -16083,7 +16086,7 @@ stream for the live tail.
 
    *Amended 2026-09-01 (issue #300).* The conversation body takes the **mouse
    wheel** as well as `pgup`/`pgdown`: one line per tick, a scroll back pausing
-   follow and `alt+G` (`ctrl+g` until task 163) re-arming it, and the lazy
+   follow and `alt+shift+g` (`ctrl+g` until task 163) re-arming it, and the lazy
    transcript fetch running on a
    wheel scroll exactly as it does on a paging key. It is not scoped to the
    pointer's position — the workspace has one scrollable pane, so this section's
@@ -18973,7 +18976,7 @@ and so no `keymap` operation, moved or not, can shadow it.
 *Amended 2026-11-20 (task 160, issue #1014).* The chat's conversation focus
 adds two **fixed surfaces** — `chat conversation`, carrying the line cursor
 (`j`/`k`/`↑`/`↓`), `enter`, `n`/`N`, `{`/`}`, `g`/`G`, the scroll keys,
-`alt+G` (`ctrl+g` until task 163 moved follow), `i` and `esc`, and `chat find`, the search line, carrying
+`alt+shift+g` (`ctrl+g` until task 163 moved follow), `i` and `esc`, and `chat find`, the search line, carrying
 `enter`, `esc` and `backspace` — and `ctrl+f` as a fixed `chat` row. `/` in
 `chat conversation` is not a fixed row: it is the `filter` operation, whose
 surfaces now include `chat conversation`, so moving `filter` moves it there

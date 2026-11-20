@@ -385,7 +385,7 @@ func TestReboundChatKeyReplacesT(t *testing.T) {
 // row's key through synthKey, so every shape keymap.ParseKey accepts has to
 // come back as the press it names.
 func TestSynthKeyRoundTripsAnyBindableKey(t *testing.T) {
-	for _, key := range []string{"R", "ctrl+e", "alt+r", "f5", "home", "pgdown", "shift+tab", "left", "delete", "alt+f2"} {
+	for _, key := range []string{"R", "ctrl+e", "alt+r", "f5", "home", "pgdown", "shift+tab", "left", "delete", "alt+f2", "alt+shift+g", "ctrl+shift+g", "ctrl+alt+x"} {
 		if _, err := keymap.ParseKey(key); err != nil {
 			t.Fatalf("%q: %v", key, err)
 		}

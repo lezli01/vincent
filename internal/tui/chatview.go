@@ -172,7 +172,7 @@ type chatView struct {
 	builtLevel outputLevel
 
 	// vp scrolls the conversation; following means it is showing the end,
-	// which a manual scroll drops and alt+G re-arms (decision 5, task 163).
+	// which a manual scroll drops and alt+shift+g re-arms (decision 5, task 163).
 	vp        viewport.Model
 	following bool
 	bodyDirty bool
@@ -1177,9 +1177,11 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.vp.GotoTop()
 		v.syncFollowToViewport()
 		return v, v.fetchVisibleTranscripts()
-	// alt+G, the upper-case twin of alt+g (task 163 decision 1): ctrl+g,
-	// task 071 decision 5's key, is the composer's editor now.
-	case "alt+G":
+	// alt+G as typed, the upper-case twin of alt+g (task 163 decision 1):
+	// ctrl+g, task 071 decision 5's key, is the composer's editor now. The
+	// terminal reports that press as alt+shift+g — ESC G and kitty's
+	// CSI 103;4u both decode so — and never as alt+G (review F1).
+	case "alt+shift+g":
 		v.follow()
 		return v, nil
 	case chatSearchKey:

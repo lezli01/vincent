@@ -68,8 +68,26 @@ func printableKey(key string) (bool, error) {
 	if size != len(rest) || r == utf8.RuneError || unicode.IsSpace(r) || unicode.IsControl(r) {
 		return false, fmt.Errorf("%q is not a key; want one character, or a name such as enter, f5 or pgdown, optionally after ctrl+, alt+ or shift+", key)
 	}
-	if mods["shift"] {
+	modified := mods["ctrl"] || mods["alt"]
+	// Under ctrl or alt the terminal reports an upper-case letter as its
+	// lower-case key with shift — ESC G and kitty's CSI 103;4u both decode
+	// to alt+shift+g, never alt+G (review F1) — so that is the one spelling
+	// such a press has. Without ctrl or alt the press carries its text, and
+	// a shifted letter is the character itself (G). Only ASCII letters fold:
+	// the decoder leaves alt+É as it is.
+	if modified && isASCIIUpper(r) {
+		prefix := strings.TrimSuffix(key, rest)
+		if !mods["shift"] {
+			prefix += "shift+"
+		}
+		return false, fmt.Errorf("%q: write it %q, the way the terminal reports it", key, prefix+strings.ToLower(rest))
+	}
+	if mods["shift"] && !(modified && isASCIILower(r)) {
 		return false, fmt.Errorf("%q: write a shifted character as itself (%q), the way the terminal reports it", key, strings.ToUpper(rest))
 	}
-	return !mods["ctrl"] && !mods["alt"], nil
+	return !modified, nil
 }
+
+func isASCIIUpper(r rune) bool { return r >= 'A' && r <= 'Z' }
+
+func isASCIILower(r rune) bool { return r >= 'a' && r <= 'z' }

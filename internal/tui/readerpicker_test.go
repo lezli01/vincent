@@ -586,7 +586,7 @@ func TestReaderHintsNameTheCtrlKeys(t *testing.T) {
 // listed entry replays its direct key, so an entry whose key the replay could
 // not synthesize would be a row that does nothing.
 func TestPaletteRunsTheReaderActions(t *testing.T) {
-	for _, key := range []string{rawToggleKey, copyPickKey, linkPickKey, chatExpandKey, "alt+G"} {
+	for _, key := range []string{rawToggleKey, copyPickKey, linkPickKey, chatExpandKey, "alt+shift+g"} {
 		if got := synthKey(key); got.String() != key {
 			t.Fatalf("synthKey(%q) produces %q", key, got.String())
 		}

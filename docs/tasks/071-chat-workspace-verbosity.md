@@ -116,7 +116,7 @@ unrecognized lines — so a reconnect changed what was on screen.
    `ctrl+g` re-arms it.
 
    *Amended 2026-11-20 (task 163 decision 1, issue #1013).* The re-arm key is
-   now `alt+G`, beside `alt+g`'s jump to the start; `ctrl+g` writes the
+   now `alt+shift+g`, beside `alt+g`'s jump to the start; `ctrl+g` writes the
    chat message in `$EDITOR`. The follow model itself is unchanged.
 
 6. **Finished turns render from their transcripts — newest five eagerly.** §15

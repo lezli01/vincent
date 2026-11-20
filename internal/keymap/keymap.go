@@ -87,7 +87,7 @@ const (
 	// ComposeEditor opens the chat composer's draft in $EDITOR and puts
 	// what the editor leaves back in the composer (task 163 decision 2).
 	// ctrl+g, the key most terminal tools give their editor; follow moved
-	// to alt+G for it (task 163 decision 1, amending task 071 decision 5).
+	// to alt+shift+g for it (task 163 decision 1, amending task 071 decision 5).
 	ComposeEditor Op = "compose_editor"
 	// ChatMarkdown opens the whole conversation, rendered as Markdown by
 	// the daemon, read-only in $EDITOR (task 163 decisions 5, 7). alt+v for

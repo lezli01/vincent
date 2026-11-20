@@ -261,10 +261,10 @@ func TestChatNewLinesMarker(t *testing.T) {
 	if v.newLines != n {
 		t.Fatalf("a level change moved the count from %d to %d", n, v.newLines)
 	}
-	pressAll(t, v, "alt+G")
+	pressAll(t, v, "alt+shift+g")
 	v.render(100, 12)
 	if v.newLines != 0 || v.edgeLabel() != "" {
-		t.Fatalf("alt+G left the marker: %d", v.newLines)
+		t.Fatalf("alt+shift+g left the marker: %d", v.newLines)
 	}
 }
 

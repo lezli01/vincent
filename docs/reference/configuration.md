@@ -1925,7 +1925,9 @@ A key is written the way the TUI names it: a single character (`R`, `/`), a
 named key (`enter`, `tab`, `esc`, `space`, `backspace`, `delete`, `insert`,
 `home`, `end`, `pgup`, `pgdown`, `up`, `down`, `left`, `right`, `f1`–`f20`), or
 either one behind `ctrl+`, `alt+` and `shift+`, in that order. A shifted
-character is written as itself: `R`, never `shift+r`.
+character is written as itself: `R`, never `shift+r`. Behind `ctrl+` or `alt+`
+the terminal reports an upper-case letter as `shift+` and the lower-case one,
+so that is how it is written: `alt+shift+g`, never `alt+G`.
 
 The operations are the ones a reader names, and nothing else:
 
@@ -1950,7 +1952,7 @@ means:
   page and move sets, `esc`, `ctrl+c`, `ctrl+v`, `tab`, the confirmations' `y`
   and `n`, the vim aliases — by the name you might try for it (`group`, `fold`,
   `esc`, `resume`, …), with the reason;
-- a string no key press produces, `shift+r` included;
+- a string no key press produces, `shift+r` and `alt+G` included;
 - a key that already means anything else, anywhere in the TUI, even on a screen
   never open beside the operation. The shipped keymap's few shared keys (`R` is
   refresh and repair, `a` is add and approve, `s` is scope and skip) are

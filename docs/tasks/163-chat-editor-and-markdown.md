@@ -28,7 +28,7 @@ Conventions for this file are in [the tasks README](README.md).
   as a string, for `alt+v`. An unknown `format` is task 159's
   `400 validation_failed`, not `unsupported_format`.
 - [x] **163.2** The TUI half: `compose_editor` (`ctrl+g`) and `chat_markdown`
-  (`alt+v`) as rebindable `Typing` operations, follow moved to `alt+G`,
+  (`alt+v`) as rebindable `Typing` operations, follow moved to `alt+shift+g`,
   `$EDITOR` split quote-aware for every caller, `cmd/fakeeditor` for a real
   round trip on every platform. Spec §15 view 9, task 071 decision 5
   amended; TUI guide and configuration reference. ✓ 2026-11-20
@@ -39,14 +39,16 @@ Conventions for this file are in [the tasks README](README.md).
 
 Settled with the author on 2026-11-19, before work started.
 
-1. **`ctrl+g` opens the editor, and follow moves to `alt+G`.** Most terminal
+1. **`ctrl+g` opens the editor, and follow moves to `alt+shift+g`** (`alt+G`
+   as typed; first shipped matched as `alt+G`, a string the terminal decoder
+   never produces — corrected on review F1, 2026-11-20). Most terminal
    tools use `ctrl+g` for the editor, which is worth the cost of moving a
-   binding. This deliberately amends task 071 decision 5. `alt+G` sits beside
+   binding. This deliberately amends task 071 decision 5. `alt+shift+g` sits beside
    `alt+g`: lower case goes to the start of the conversation and upper case to
    the live end.
 2. **The editor is a rebindable operation**, `compose_editor`, on the `chat`
    surface and `Typing`, because the composer has the keyboard. `ctrl+g` leaves
-   the fixed `chat` rows; `alt+G` joins them. Neither key collides with
+   the fixed `chat` rows; `alt+shift+g` joins them. Neither key collides with
    anything, so the checker needed no new exception.
 3. **The composer round trip.** The draft goes to a temp `.md` file named for
    the chat through `editTextCmd`; what comes back replaces the draft, cursor
@@ -93,7 +95,7 @@ Settled with the author on 2026-11-19, before work started.
   replaced draft, an unchanged file, an emptied file, an editor that exits
   non-zero; the queued-message edit; the splitter's table; `alt+v` against
   the real handler, asserting the opened file's content and mode and that it
-  is gone afterwards; the registry probes for `ctrl+g`, `alt+G` and `alt+v`.
+  is gone afterwards; the registry probes for `ctrl+g`, `alt+shift+g` and `alt+v`.
 - `internal/keymap`: the catalog checker passes with both operations; the
   existing `Typing` clause refuses a printable key for either.
 

@@ -122,8 +122,8 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
-- **In a chat, follow the live end with `alt+G`, not `ctrl+g`.** `ctrl+g` now
-  opens the editor; `alt+G` sits beside `alt+g`, which jumps to the start
+- **In a chat, follow the live end with `alt+shift+g`, not `ctrl+g`.** `ctrl+g` now
+  opens the editor; `alt+shift+g` (`alt+G` as typed) sits beside `alt+g`, which jumps to the start
   (#1013).
 
 ### Fixed

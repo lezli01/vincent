@@ -180,9 +180,9 @@ func TestChatComposerKeepsItsKeys(t *testing.T) {
 	if v.vp.YOffset() <= before {
 		t.Fatal("pgdn did not scroll forward")
 	}
-	v.updateKey(registryKey(t, "alt+G"))
+	v.updateKey(registryKey(t, "alt+shift+g"))
 	if !v.following || !v.vp.AtBottom() {
-		t.Fatal("alt+G did not jump to the live end and re-arm follow")
+		t.Fatal("alt+shift+g did not jump to the live end and re-arm follow")
 	}
 	if v.composer.Value() != "" {
 		t.Fatalf("a scroll key was typed into the draft: %q", v.composer.Value())
@@ -309,5 +309,30 @@ func TestChatRetentionFallbackIsRenderedProse(t *testing.T) {
 	}
 	if strings.Contains(joined, "…") {
 		t.Errorf("the fallback still truncates with an ellipsis:\n%s", joined)
+	}
+}
+
+// TestFollowKeyFromTerminalBytes: alt+G, the follow key since task 163,
+// typed into a real terminal — legacy ESC G and the kitty protocol's
+// CSI 103;4u — re-arms follow in the composer and in conversation focus.
+// It shipped matching "alt+G", a string the decoder never produces, and
+// passed every test that built its press by hand (review F1).
+func TestFollowKeyFromTerminalBytes(t *testing.T) {
+	for _, raw := range []string{"\x1bG", "\x1b[103;4u"} {
+		v := chatViewFixture()
+		v.following = false
+		v.updateKey(decodePress(t, raw))
+		if !v.following {
+			t.Errorf("%q in the composer did not re-arm follow", raw)
+		}
+		v.following = false
+		v.focusConversation()
+		v.updateKey(decodePress(t, raw))
+		if !v.following {
+			t.Errorf("%q in conversation focus did not re-arm follow", raw)
+		}
+	}
+	if got := decodePress(t, "\x1bG").String(); got != "alt+shift+g" {
+		t.Fatalf("ESC G decodes as %q; the fixed rows spell it alt+shift+g", got)
 	}
 }
