@@ -29,6 +29,7 @@ var fixed = []Fixed{
 	{"task overview", "tab", "move between the task's tabs"},
 	{"task overview", "enter", "open what the frame is about"},
 	{"task overview", "i", "open the task's linked issue"},
+	{"task overview", "P", "push this task's branch to origin and open its pull request"},
 	{"timeline", "i", "open the task's linked issue"},
 	{"task details", "i", "open the task's linked issue"},
 	{"output", "i", "open the task's linked issue"},

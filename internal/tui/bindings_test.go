@@ -2555,6 +2555,25 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOverview) },
+		"o": func(t *testing.T) {
+			withFakeOpener(t, nil)
+			v := taskPullFixture(t, apiclient.GitHubTaskPull{
+				Linked: true, Repo: "octo/api", Number: 41,
+				Pull: &apiclient.GitHubPullRequest{URL: "https://github.com/octo/api/pull/41"},
+			})
+			v.tab = taskTabOverview
+			if cmd := v.updateKey(registryKey(t, "o")); cmd == nil {
+				t.Fatal("o on the Overview did not open the task's pull request")
+			}
+		},
+		"P": func(t *testing.T) {
+			v := taskPullFixture(t, apiclient.GitHubTaskPull{CompareURL: compareURLFixture})
+			v.tab = taskTabOverview
+			v.updateKey(registryKey(t, "P"))
+			if v.createPR == nil {
+				t.Fatal("P on the Overview did not open the compare-URL editor")
+			}
+		},
 		"i": issueKeyProbe(onTab(taskTabOverview)),
 		"d": workspaceKeyProbe(onTab(taskTabOverview)),
 		"l": laneOpenProbe(taskTabOverview),

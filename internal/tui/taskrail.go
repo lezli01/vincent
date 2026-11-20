@@ -252,6 +252,9 @@ func (d *detail) railMeta(s railStep) string {
 	} else if tokens := formatTokens(last); tokens != "" && last.Agent != nil {
 		parts = append(parts, ansi.Strip(tokens))
 	}
+	if len(parts) == 0 {
+		return ""
+	}
 	return styleDim.Render(strings.Join(parts, " · "))
 }
 
@@ -350,7 +353,7 @@ func (d *detail) railExpansion(s railStep, sel apiclient.StepRun, cursorLane int
 	case railKindParallel:
 		return d.railMembers(s.runs, sel, cursorLane, width)
 	}
-	if len(s.runs) < 2 || sel.StepIndex != s.index {
+	if len(s.runs) < 2 || sel.ID == 0 || sel.StepIndex != s.index {
 		return nil
 	}
 	out := make([]railLine, 0, len(s.runs))
@@ -409,7 +412,7 @@ func (d *detail) railMembers(runs []apiclient.StepRun, sel apiclient.StepRun, cu
 		if dur, ok := r.Duration(d.now()); ok {
 			right = styleDim.Render(formatElapsed(dur))
 		}
-		selected := sel.StepIndex == r.StepIndex && sel.StepID == r.StepID && sel.Iteration == r.Iteration && cursorLane == 0
+		selected := sel.ID != 0 && sel.StepIndex == r.StepIndex && sel.StepID == r.StepID && sel.Iteration == r.Iteration && cursorLane == 0
 		out = append(out, railLine{text: padBetweenCells(left, right, width), id: r.ID, selected: selected})
 	}
 	return out
@@ -451,7 +454,7 @@ func (d *detail) railLoop(s railStep, sel apiclient.StepRun, cursorLane int64, w
 		count += " / " + strconv.Itoa(total)
 	}
 	out := []railLine{{text: padBetweenCells(strings.Join(pips, " "), styleDim.Render(count), width)}}
-	if sel.StepIndex != s.index || len(iters) == 0 {
+	if sel.ID == 0 || sel.StepIndex != s.index || len(iters) == 0 {
 		return out
 	}
 	pass := sel.Iteration

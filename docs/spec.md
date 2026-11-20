@@ -16603,8 +16603,10 @@ stream for the live tail.
    and every digit binding of the task workspace above).* **The task workspace
    is a title band, a steps rail and five tabs, with no digits.** The band
    names the linked issue — `◇ issue #N title  state  i open`, or a dim `no
-   linked issue` — and `i` (§15's `open_issue`, rebindable) opens it from every
-   tab but Pull request, whose `i` stays its comment; `esc` on the issue
+   linked issue` — and `i`, a fixed key of every workspace tab (a vocabulary
+   term's key must mean one thing on every surface, and `i` already means
+   other things elsewhere), opens it from every tab but Pull request, whose
+   `i` stays its comment; `esc` on the issue
    returns to the tab it left. From 130 columns the rail is one row per step —
    state glyph, name, a right-aligned duration — on a connecting line, a dim
    second row only when the step has something to say (a failure's reason, a
@@ -16617,7 +16619,8 @@ stream for the live tail.
    130 columns Steps keeps a tab after Overview. Step Details is opened with
    `enter` on the Output tab — what the selected attempt was given — and is on
    the strip only while open, `esc` returning to Output; Task Details is the
-   Overview's lower half. A tab may carry a marker: the diff's size on Diff, a
+   Overview's lower half, and its pull-request keys `o` (`browser`) and `P`
+   came with it. A tab may carry a marker: the diff's size on Diff, a
    red `!` on Overview while the task needs a human. The palette's tab rows have
    no key. **The Overview** keeps its three frames and their cards, adds a
    progress bar of one segment per step to the progress frame, puts the frame's

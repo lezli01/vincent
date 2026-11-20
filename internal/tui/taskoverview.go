@@ -204,6 +204,16 @@ func (t *taskView) updateOverviewKey(msg tea.KeyPressMsg) tea.Cmd {
 	if !d.actions.capturing() && msg.String() == opKey(keymap.Result) {
 		return t.jumpToResult()
 	}
+	if !d.actions.capturing() {
+		// The Task Details document's two pull-request keys, which came to
+		// the Overview with the document (task 164 decision 3).
+		switch msg.String() {
+		case opKey(keymap.Browser):
+			return t.openPullCmd()
+		case "P":
+			return t.openCreatePR()
+		}
+	}
 	if !d.actions.capturing() && msg.String() == opKey(keymap.EditRetry) {
 		return d.update(msg)
 	}

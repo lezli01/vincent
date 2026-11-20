@@ -1715,7 +1715,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "4"
+Type "d"
 Sleep 4s
 Down 1
 Sleep 500ms
@@ -2003,7 +2003,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Type "1"
 Sleep 1s
 Screenshot "'"$OUT"'/tui-task-steps.png"
 Sleep 2s
@@ -2027,7 +2026,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "2"
+PageDown
 Sleep 2s
 Down 3
 Sleep 2s
@@ -2049,7 +2048,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "3"
+Tab
 Sleep 5s
 Screenshot "'"$OUT"'/tui-task-output.png"
 Sleep 2s
@@ -2069,7 +2068,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "5"
+Tab 3
 Sleep 4s
 Screenshot "'"$OUT"'/tui-task-workflow.png"
 Sleep 2s
@@ -2090,7 +2089,9 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "6"
+Tab
+Sleep 1s
+Enter
 Sleep 2s
 Up 2
 Sleep 3s
@@ -2115,7 +2116,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "7"
+Shift+Tab
 Sleep 4s
 Down 1
 Sleep 2s
@@ -2226,7 +2227,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "2"
 Sleep 2s
 Type "P"
 Sleep 3s
@@ -2306,7 +2306,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Type "1"
 Sleep 1s
 Up 1
 Sleep 1s
@@ -2330,7 +2329,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Type "0"
 Sleep 3s
 Screenshot "'"$OUT"'/tui-lanes.png"
 Sleep 2s
@@ -2349,7 +2347,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "3"
+Tab
 Sleep 2s
 Type ">"
 Sleep 3s
@@ -2371,7 +2369,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "4"
+Type "d"
 Sleep 4s
 Type "O"
 Sleep 2s
@@ -2602,7 +2600,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 5s
-Type "0"
 Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-running.png"
 Sleep 2s
@@ -2620,7 +2617,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Type "0"
 Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-blocked.png"
 Sleep 2s
@@ -2640,7 +2636,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Type "0"
 Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-done.png"
 Sleep 2s
@@ -2713,7 +2708,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Type "2"
+PageDown
 Sleep 2s
 Down 5
 Sleep 2s
@@ -2814,7 +2809,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Type "0"
 Sleep 2s
 Screenshot "'"$OUT"'/tui-handoff-task.png"
 Sleep 2s
@@ -2978,7 +2972,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
-Type "1"
 Sleep 1s
 Type "O"
 Sleep 1s

@@ -512,6 +512,10 @@ var bindings = []binding{
 	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxTaskOverview, hint: "tab tabs", priority: 2},
 	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxTaskOverview, priority: 3},
 	{key: "enter", label: "open what the frame is about: the output of the running attempt or the one it stopped on, or the diff of a finished task", scope: scopePanel, context: ctxTaskOverview, hint: "enter output", priority: 4},
+	// The Task Details document is the Overview's lower half (task 164
+	// decision 3), so its pull-request keys came with it.
+	{op: keymap.Browser, key: "o", label: "open this task's pull request in a browser", scope: scopePanel, context: ctxTaskOverview, priority: 9, github: true, term: termBrowser},
+	{key: "P", label: "push this task's branch to origin and open its pull request — the title, body and draft flag are editable first", scope: scopePanel, context: ctxTaskOverview, hint: "P open a PR", priority: 9, github: true},
 	{op: keymap.Lane, key: "l", label: "open the fan-out lane the failure card blames, or the first lane that needs you on a parent waiting on its lanes", scope: scopePanel, context: ctxTaskOverview, hint: "l open the lane", priority: 6, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskOverview, hint: "N next failure", priority: 6, term: termNextFail},
 	{op: keymap.Result, key: "w", label: "open the output of the attempt the outcome card's result came from, at its end", scope: scopePanel, context: ctxTaskOverview, hint: "w result output", priority: 6, term: termResult},

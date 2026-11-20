@@ -569,29 +569,26 @@ succeeded, the agent's tokens beside its row, then two failed attempts of the
 verify step, each with its failure reason and the tail of its output beneath
 it](../assets/tui-task-steps.png)
 
-**Task Details** is the complete task inspector: title, description, declared
-fields, state, project, workflow and its recorded origin, branch and worktree,
-priority, tokens and cost, lifecycle timestamps, queue/block information,
-pending input, fan-out/loop metadata, the [chats opened on it](#talking-to-an-agent-about-a-task),
+**Task Details**, the complete task document, is the Overview's lower half,
+below the Linked and Usage cards: title, description, declared fields, state,
+project, workflow and its recorded origin, branch and worktree, priority,
+tokens and cost, lifecycle timestamps, queue/block information, pending input,
+fan-out/loop metadata, the [chats opened on it](#talking-to-an-agent-about-a-task),
 the issue it was started from, available actions, and the task's workflow-step
-snapshot. Its left sidebar selects one section at
-a time, so unrelated metadata does not compete for the screen. Use `↑`/`↓` or
-the mouse to choose a section and `pgup`/`pgdn` to scroll long section content;
-the inspector never edits anything.
+snapshot. `pgup`/`pgdn` scroll the Overview down to it; nothing there edits
+anything.
 
-![Task Details on a task at its gate: the section sidebar on the left with
-Chats selected, and on the right the two chats opened on this task, newest
-first, both closed, with their agent, when they started and their
-titles](../assets/tui-task-details.png)
+![The Overview scrolled down to the task's document on a task at its gate,
+with its description, fields and the chats opened on it](../assets/tui-task-details.png)
 
-![Task Details on a task started from an imported issue, with the Issue
-section selected: the vincent issue and its title, its state, its GitHub
-reference acme/web#142 and its URL](../assets/tui-task-issue.png)
+![The Overview of a task started from an imported issue, scrolled down to the
+document's Issue section: the vincent issue and its title, its state, its
+GitHub reference acme/web#142 and its URL](../assets/tui-task-issue.png)
 
 Its **GitHub pull request** section follows the captured issue and shows one of
 three things: the pull request linked to this task with its live state, the
 reason the integration is unusable, or — when nothing is linked — the offer to
-open one. Two keys work there:
+open one. Two keys work on the Overview for it:
 
 | Key | Does |
 |---|---|
