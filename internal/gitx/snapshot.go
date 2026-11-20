@@ -62,47 +62,59 @@ var snapshotIdentity = []string{
 // deduplicates objects, so a capture of an unchanged worktree costs one
 // commit object and reuses the previous capture's tree.
 func (g *Git) Snapshot(ctx context.Context, dir, scratch, message string) (Snapshot, error) {
-	head, err := g.Run(ctx, dir, "rev-parse", "--verify", "HEAD^{commit}")
+	tree, head, skipped, err := g.worktreeTree(ctx, dir, scratch)
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: resolve HEAD: %w", err)
+		return Snapshot{}, fmt.Errorf("snapshot: %w", err)
+	}
+	commit, err := g.RunEnv(ctx, dir, snapshotIdentity, "commit-tree", tree, "-p", head, "-m", message)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("snapshot: commit-tree: %w", err)
+	}
+	return Snapshot{Commit: commit, Head: head, Skipped: skipped}, nil
+}
+
+// worktreeTree is the temporary-index path Snapshot and SnapshotTree share
+// (task 168.1): it writes dir's worktree as a tree object and returns the
+// tree, the HEAD it was staged over, and the paths `add` could not read. The
+// temporary index lives under scratch and is removed before it returns.
+func (g *Git) worktreeTree(ctx context.Context, dir, scratch string) (tree, head string, skipped []string, err error) {
+	head, err = g.Run(ctx, dir, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return "", "", nil, fmt.Errorf("resolve HEAD: %w", err)
 	}
 	if err := os.MkdirAll(scratch, 0o700); err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: %w", err)
+		return "", "", nil, err
 	}
 	tmp, err := os.MkdirTemp(scratch, "snapshot-")
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: %w", err)
+		return "", "", nil, err
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 	// An absolute path: git resolves a relative GIT_INDEX_FILE against its
 	// own working directory, which is dir, not ours.
 	index, err := filepath.Abs(filepath.Join(tmp, "index"))
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: %w", err)
+		return "", "", nil, err
 	}
-	env := append([]string{"GIT_INDEX_FILE=" + index}, snapshotIdentity...)
+	env := []string{"GIT_INDEX_FILE=" + index}
 	seeded, err := g.seedIndex(ctx, dir, tmp)
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: seed index: %w", err)
+		return "", "", nil, fmt.Errorf("seed index: %w", err)
 	}
 	if !seeded {
 		if _, err := g.RunEnv(ctx, dir, env, "read-tree", head); err != nil {
-			return Snapshot{}, fmt.Errorf("snapshot: read-tree: %w", err)
+			return "", "", nil, fmt.Errorf("read-tree: %w", err)
 		}
 	}
-	skipped, err := g.addAll(ctx, dir, env)
+	skipped, err = g.addAll(ctx, dir, env)
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: add: %w", err)
+		return "", "", nil, fmt.Errorf("add: %w", err)
 	}
-	tree, err := g.RunEnv(ctx, dir, env, "write-tree")
+	tree, err = g.RunEnv(ctx, dir, env, "write-tree")
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: write-tree: %w", err)
+		return "", "", nil, fmt.Errorf("write-tree: %w", err)
 	}
-	commit, err := g.RunEnv(ctx, dir, env, "commit-tree", tree, "-p", head, "-m", message)
-	if err != nil {
-		return Snapshot{}, fmt.Errorf("snapshot: commit-tree: %w", err)
-	}
-	return Snapshot{Commit: commit, Head: head, Skipped: skipped}, nil
+	return tree, head, skipped, nil
 }
 
 // seedIndex copies dir's own index (per worktree: `rev-parse --git-path
