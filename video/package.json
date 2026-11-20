@@ -1,0 +1,22 @@
+{
+  "name": "vincent-promo-video",
+  "private": true,
+  "scripts": {
+    "studio": "npm run music && remotion studio",
+    "render": "npm run music && remotion render VincentVertical out/vincent-vertical.mp4 && remotion render VincentLandscape out/vincent-landscape.mp4",
+    "render:vertical": "npm run music && remotion render VincentVertical out/vincent-vertical.mp4",
+    "render:landscape": "npm run music && remotion render VincentLandscape out/vincent-landscape.mp4",
+    "music": "node scripts/make-music.mjs 56.1 3.0 52.1"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.545",
+    "@remotion/google-fonts": "^4.0.545",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.545"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}
