@@ -422,6 +422,13 @@ In detail:
   so structure that an agent split across records renders whole, and a pane you have
   scrolled away from keeps its place across a resize, a level change, the raw
   toggle and output dropping off the front of the window.
+- A long chat is searched, not only scrolled. `ctrl+f` hands the keyboard to
+  the conversation and searches every turn — the ones not loaded yet, and the
+  tool output a level hides — with a `3/17` count, `n`/`N` between matches,
+  `{`/`}` between the prompts you sent, and `enter` to expand just the tool
+  call under the cursor without changing the level. Scrolled away from the
+  live end, `↓ N new` counts what arrived below. `vincent chat find` asks
+  the daemon the same question.
 - Nothing waits in silence. While a chat turn or a step attempt is running, a
   turning glyph and an elapsed clock — `⠋ working… 14s` — say so above the chat
   composer, beside a running row on the chats board, and on the task
