@@ -121,6 +121,7 @@ var settingsCatalog = []settingsCategory{
 	{"!", "Notifications", []settingsSection{
 		{"! Tell me when", "", []settingsItem{
 			{path: "notify.on", label: "Task states", desc: "The states that run the command below"},
+			{path: "notify.chat_on", label: "Chat moments", desc: "A chat's question, or its turn finishing or failing, runs the command below"},
 			{path: "notify.command", label: "Command", desc: "The program vincent runs, as you, for each of them"},
 		}},
 		{"⚡ Triggers", "", []settingsItem{

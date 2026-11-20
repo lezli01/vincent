@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
@@ -434,6 +435,17 @@ func configKeys() []configKey {
 			},
 		},
 		{
+			// The chat half of the hook's selector (task 156): the three chat
+			// moments, offered as choices for notify.on's reason.
+			path: "notify.chat_on", label: "notify chat on", kind: kindList, choices: chatNotifyNames(),
+			help: "chat moments that fire the notify hook, whitespace-separated",
+			read: func(c apiclient.Config) string { return strings.Join(c.Notify.ChatOn, " ") },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				v := strings.Fields(s)
+				return apiclient.ConfigPatch{Notify: &apiclient.ConfigNotifyPatch{ChatOn: &v}}, nil
+			},
+		},
+		{
 			path: "notify.command", label: "notify command", kind: kindList, dangerous: true,
 			help: "argv the daemon runs as you; one argument per whitespace-separated word",
 			read: func(c apiclient.Config) string { return strings.Join(c.Notify.Command, " ") },
@@ -709,6 +721,15 @@ func stateNames() []string {
 	return out
 }
 
+// chatNotifyNames is chatstate's notify.chat_on vocabulary (task 156).
+func chatNotifyNames() []string {
+	out := make([]string, 0, len(chatstate.NotifyOn))
+	for _, s := range chatstate.NotifyOn {
+		out = append(out, string(s))
+	}
+	return out
+}
+
 // defaultClientConfig renders config.Default() in the wire shape, so a row can
 // print what a key would be if the file said nothing about it.
 //
@@ -767,7 +788,7 @@ func defaultClientConfig() apiclient.Config {
 		},
 		Update: apiclient.ConfigUpdate{Check: d.Update.Check, PollInterval: d.Update.PollInterval.String()},
 		Backup: apiclient.ConfigBackup{Interval: d.Backup.Interval.String(), Keep: d.Backup.Keep, Dir: d.Backup.Dir},
-		Notify: apiclient.ConfigNotify{On: notifyStateNames(d), Command: d.Notify.Command},
+		Notify: apiclient.ConfigNotify{On: notifyStateNames(d), ChatOn: chatNotifyStateNames(d), Command: d.Notify.Command},
 		Container: apiclient.ConfigContainer{
 			Image:            d.Container.Image,
 			Runtime:          d.Container.Runtime,
@@ -798,6 +819,14 @@ func inheritMode(i config.Inherit) string {
 func notifyStateNames(c config.Config) []string {
 	out := make([]string, 0, len(c.Notify.On))
 	for _, s := range c.Notify.On {
+		out = append(out, string(s))
+	}
+	return out
+}
+
+func chatNotifyStateNames(c config.Config) []string {
+	out := make([]string, 0, len(c.Notify.ChatOn))
+	for _, s := range c.Notify.ChatOn {
 		out = append(out, string(s))
 	}
 	return out
