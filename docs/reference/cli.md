@@ -100,6 +100,7 @@ neither a subcommand nor on this list:
 | Listing a project's local branches in the new-task and new-chat branch pickers | No subcommand: `vincent task add --branch <name> --existing-branch` and `vincent chat start --branch <name> --existing-branch` take the name, and a shell standing in the repository already has `git branch` |
 | The `@` file picker in the chat composer, which completes a file of the directory the chat's next turn would start in as you type | `vincent chat files` lists the same files and `--mention` prints the same text a picked row inserts. Nothing completes a draft for you, and the message is sent as typed by `vincent chat send` either way |
 | A chat's stored draft and stash, `↑` recall and the `alt+h` prompt history in the chat composer | No subcommand: there is no composer to keep a draft for. `GET`/`PUT /v1/chats/{id}/draft` and `GET /v1/chats/prompts` are open to `curl` |
+| Clearing a chat's unread `●` mark, which opening the chat does | No subcommand: reading a chat from a shell is not looking at it on a screen. `curl -X POST …/v1/chats/{id}/viewed` records a view |
 | Live updates as they happen | Subcommands poll: `vincent task transcript -f`, `vincent chat transcript -f`, and `vincent chat send` waits for the answer |
 
 ## `vincent version`

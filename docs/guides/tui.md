@@ -3700,7 +3700,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first thirty are the operations screens share, the next eleven are the
+The first forty-one are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3735,6 +3735,17 @@ The first thirty are the operations screens share, the next eleven are the
 | `chat_mode` | `shift+tab` | Toggle the chat's permission mode; asks before raising it to full-auto |
 | `compose_editor` | `ctrl+g` | Write the chat message in `$EDITOR` |
 | `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
+| `next_chat` | `alt+n` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |
+| `prev_chat` | `alt+shift+n` | Open the project's previous chat, wrapping |
+| `chat_1` | `alt+1` | Open the project's chat number 1, in the chats board's order; nothing past the last |
+| `chat_2` | `alt+2` | Open the project's chat number 2, in the chats board's order; nothing past the last |
+| `chat_3` | `alt+3` | Open the project's chat number 3, in the chats board's order; nothing past the last |
+| `chat_4` | `alt+4` | Open the project's chat number 4, in the chats board's order; nothing past the last |
+| `chat_5` | `alt+5` | Open the project's chat number 5, in the chats board's order; nothing past the last |
+| `chat_6` | `alt+6` | Open the project's chat number 6, in the chats board's order; nothing past the last |
+| `chat_7` | `alt+7` | Open the project's chat number 7, in the chats board's order; nothing past the last |
+| `chat_8` | `alt+8` | Open the project's chat number 8, in the chats board's order; nothing past the last |
+| `chat_9` | `alt+9` | Open the project's chat number 9, in the chats board's order; nothing past the last |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |
