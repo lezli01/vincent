@@ -350,16 +350,41 @@ type ChatSettingsPatch struct {
 	Model          *string
 	Effort         *string
 	PermissionMode *string
+	// KeepModelOnceStarted refuses a Model or Effort that differs from the
+	// row's once the chat has a session (task 162 decision 8), for an
+	// adapter with no capture of a resumed session honouring the change.
+	// The API decides it from the adapter; the store judges "started" from
+	// the row it is about to write, so a first turn that begins between the
+	// API's read and this write cannot slip a model change past the check
+	// (review F2).
+	KeepModelOnceStarted bool
 }
+
+// ChatStarted reports whether c has begun a session: a turn has run or is
+// running, so a later one resumes rather than starts (task 162 decision 8).
+func ChatStarted(c *Chat) bool {
+	return c.SessionID != "" || chatstate.HoldsProcess(c.State)
+}
+
+// ErrChatModelFixed is a model or effort change refused because the chat has
+// started a session its adapter cannot resume on a different one (task 162
+// decision 8). The API turns it into agent_cannot_change_on_resume.
+var ErrChatModelFixed = errors.New("the chat's session keeps the model and effort it started with")
 
 // UpdateChatSettings applies p to the chat and publishes chat.updated. A
 // terminal chat is ErrInvalidChatAction: its conversation is over (task 162
 // decision 5). A live turn keeps what it was started with — its settings are
-// on its turn row — so the change applies from the next turn.
+// on its turn row — so the change applies from the next turn. With
+// p.KeepModelOnceStarted, a changed model or effort on a started chat is
+// ErrChatModelFixed, judged inside the write's transaction.
 func (s *Store) UpdateChatSettings(ctx context.Context, id int64, p ChatSettingsPatch) (*Chat, error) {
 	return s.updateChatOrRefuse(ctx, id, EventChatUpdated, func(c *Chat) error {
 		if chatstate.Terminal(c.State) {
 			return fmt.Errorf("chat %d is %s: %w", id, c.State, ErrInvalidChatAction)
+		}
+		if p.KeepModelOnceStarted && ChatStarted(c) &&
+			((p.Model != nil && *p.Model != c.Model) || (p.Effort != nil && *p.Effort != c.Effort)) {
+			return fmt.Errorf("chat %d: %w", id, ErrChatModelFixed)
 		}
 		if p.Title != nil {
 			c.Title = *p.Title

@@ -130,15 +130,11 @@ func (s *Server) checkChatSettings(
 	}
 	// A session exists once a turn has started: before the first, there is
 	// nothing to resume and any model is the first one (decision 8).
-	started := chat.SessionID != "" || chatstate.HoldsProcess(chat.State)
+	// UpdateChatSettings judges this again inside its transaction (review
+	// F2); this read decides it for a per-turn override.
 	modelChanged := want.Model != chat.Model || want.Effort != chat.Effort
-	if modelChanged && started && !agent.CanChangeOnResume(adapter) {
-		return nil, &settingsRefusal{
-			status: http.StatusBadRequest, code: CodeAgentCannotChangeOnResume,
-			message: fmt.Sprintf("agent %q has no capture showing a resumed session honours a changed model "+
-				"or effort, so chat %d keeps the ones its session started with; open a new chat to change them",
-				chat.Agent, chat.ID),
-		}
+	if modelChanged && store.ChatStarted(chat) && !agent.CanChangeOnResume(adapter) {
+		return nil, modelFixedRefusal(chat)
 	}
 	if s.deps.Catalog != nil {
 		errs, warns := s.deps.Catalog.Catalogs().Check(agent.Selection{
@@ -155,6 +151,17 @@ func (s *Server) checkChatSettings(
 		}
 	}
 	return warnings, nil
+}
+
+// modelFixedRefusal is decision 8's refusal of a model or effort change on a
+// chat whose session has started, for an adapter without the capture.
+func modelFixedRefusal(chat *store.Chat) *settingsRefusal {
+	return &settingsRefusal{
+		status: http.StatusBadRequest, code: CodeAgentCannotChangeOnResume,
+		message: fmt.Sprintf("agent %q has no capture showing a resumed session honours a changed model "+
+			"or effort, so chat %d keeps the ones its session started with; open a new chat to change them",
+			chat.Agent, chat.ID),
+	}
 }
 
 // restrictedPossibleHere is §9.4's host question for name: false only for a
@@ -277,8 +284,17 @@ func (s *Server) handleChatPatch(w http.ResponseWriter, r *http.Request) {
 		refusal.write(w)
 		return
 	}
+	// The adapter's answer travels with the write, and the store judges
+	// "started" from the row it writes: a first turn beginning since the
+	// read above cannot carry a model change past decision 8 (review F2).
+	if adapter, ok := s.deps.Agents.Get(chat.Agent); ok {
+		patch.KeepModelOnceStarted = !agent.CanChangeOnResume(adapter)
+	}
 	updated, err := s.deps.Store.UpdateChatSettings(r.Context(), chat.ID, patch)
 	switch {
+	case errors.Is(err, store.ErrChatModelFixed):
+		modelFixedRefusal(chat).write(w)
+		return
 	case errors.Is(err, store.ErrInvalidChatAction):
 		writeConflict(w, err.Error(), map[string]string{"state": string(chat.State), "action": "patch"})
 		return

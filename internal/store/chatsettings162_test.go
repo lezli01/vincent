@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -55,5 +56,49 @@ func TestMigration0062LeavesOldTurnsUnrecorded(t *testing.T) {
 	}
 	if got.Model != "opus" || got.Effort != "low" || got.PermissionMode != "full-auto" {
 		t.Errorf("new turn = %q/%q/%q, want opus/low/full-auto", got.Model, got.Effort, got.PermissionMode)
+	}
+}
+
+// TestUpdateChatSettingsJudgesStartedInsideTheWrite: the API reads a chat
+// with no session and decides a model change is a first-turn choice, then a
+// first turn starts before the write lands. The store, judging the row it
+// writes, refuses the change for an adapter that cannot resume on another
+// model (task 162 decision 8, review F2) — and still lets a title or the
+// same model through.
+func TestUpdateChatSettingsJudgesStartedInsideTheWrite(t *testing.T) {
+	s := openTest(t)
+	p := testProject(t, s, "p1")
+	c := testChat(t, s, p.ID)
+	model, effort := "gpt-5", "high"
+
+	// Before any turn the change is the first model: allowed.
+	if _, err := s.UpdateChatSettings(t.Context(), c.ID, ChatSettingsPatch{Model: &model, KeepModelOnceStarted: true}); err != nil {
+		t.Fatalf("a model change before the first turn: %v", err)
+	}
+	// The first turn starts between the API's read and its write.
+	if _, err := s.CreateChatTurn(t.Context(), c.ID, "first"); err != nil {
+		t.Fatalf("CreateChatTurn: %v", err)
+	}
+	other := "gpt-5-mini"
+	if _, err := s.UpdateChatSettings(t.Context(), c.ID, ChatSettingsPatch{Model: &other, KeepModelOnceStarted: true}); !errors.Is(err, ErrChatModelFixed) {
+		t.Fatalf("a model change once started = %v, want ErrChatModelFixed", err)
+	}
+	if _, err := s.UpdateChatSettings(t.Context(), c.ID, ChatSettingsPatch{Effort: &effort, KeepModelOnceStarted: true}); !errors.Is(err, ErrChatModelFixed) {
+		t.Fatalf("an effort change once started = %v, want ErrChatModelFixed", err)
+	}
+	got, err := s.GetChat(t.Context(), c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != model || got.Effort != "" {
+		t.Fatalf("a refused change was written: %q/%q", got.Model, got.Effort)
+	}
+	title := "renamed"
+	if _, err := s.UpdateChatSettings(t.Context(), c.ID, ChatSettingsPatch{Title: &title, Model: &model, KeepModelOnceStarted: true}); err != nil {
+		t.Fatalf("the same model, once started: %v", err)
+	}
+	// An adapter with the capture may change it whenever.
+	if _, err := s.UpdateChatSettings(t.Context(), c.ID, ChatSettingsPatch{Model: &other}); err != nil {
+		t.Fatalf("a model change for a capable adapter: %v", err)
 	}
 }
