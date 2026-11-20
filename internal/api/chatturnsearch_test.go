@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
@@ -111,5 +112,28 @@ func TestChatTurnSearchRefusals(t *testing.T) {
 	code, _, body := h.search(t, id+1000, "x")
 	if code != http.StatusNotFound || !strings.Contains(string(body), CodeNotFound) {
 		t.Fatalf("unknown chat = %d %s, want 404", code, body)
+	}
+}
+
+// TestChatTurnSearchSkipsRunMetadata is review F1: a claude turn opens with
+// a run header whose work_dir and available_tools are metadata, not what the
+// turn says, and the TUI never counts them in a loaded turn. Counting them
+// here made `edit` or a worktree path match every unloaded turn.
+func TestChatTurnSearchSkipsRunMetadata(t *testing.T) {
+	src := strings.Join([]string{
+		`{"type":"system","subtype":"init","cwd":"/work/edit-tree","tools":["Bash","Edit","Read"],"model":"m"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"I will edit it"}]}}`,
+	}, "\n") + "\n"
+	parse := claude.New(func() string { return "claude" }).NewLineParser()
+	n, truncated, err := searchTranscript(strings.NewReader(src), "edit", parse)
+	if err != nil || truncated {
+		t.Fatalf("search: %v, truncated %v", err, truncated)
+	}
+	if n != 1 {
+		t.Fatalf("matches = %d, want 1: only the assistant's text, not the run header's work_dir or tools", n)
+	}
+	n, _, _ = searchTranscript(strings.NewReader(src), "bash", parse)
+	if n != 0 {
+		t.Fatalf("bash matches = %d, want 0", n)
 	}
 }

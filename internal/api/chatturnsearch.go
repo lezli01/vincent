@@ -51,9 +51,9 @@ type chatSearchDTO struct {
 // handleChatTurnSearch is GET /v1/chats/{id}/search?q= (task 160 decision 2):
 // a case-insensitive plain-substring scan of every turn's prompt and
 // normalized transcript text, the server half of the chat view's search.
-// The text searched is every string a normalized record carries, not only
-// what a verbosity level draws (decision 3), so a match inside a folded tool
-// call is still found. A turn whose transcript is gone falls back to its
+// The text searched is every string a record says — the fields the TUI's
+// recordSearchText joins (searchedFields) — not only what a verbosity level
+// draws (decision 3), so a match inside a folded tool call is still found. A turn whose transcript is gone falls back to its
 // row's result_text. It is not GET /v1/chats/search (task 158,
 // handleChatSearch), which finds chats across the store through its own
 // index; this one counts matches inside one chat's turns.
@@ -149,45 +149,56 @@ func searchTranscript(src io.Reader, needle string, parse agent.LineParser) (int
 	}
 }
 
-// countRecord counts needle in every string value of one normalized record.
-// It walks the record's JSON rather than naming fields, so a field a later
-// record type adds is searched without this function learning about it. The
-// keys that identify rather than say something — the record's type and the
-// call ids — are skipped: searching "agent" must not hit every record.
+// searchedFields are the record keys whose strings a search counts, and
+// searchedNested the keys of the objects inside a record's arrays. They are
+// exactly what the TUI's recordSearchText (internal/tui/chatfind.go) joins
+// for a loaded turn, so the daemon's count for an unloaded turn is the
+// count the client arrives at once it loads it (task 160 decision 3) — the
+// two lists change together. Metadata a reader never reads as the turn's
+// text is deliberately left out: a run header's work_dir and
+// available_tools, model usage, statuses, phases and the like would make
+// `edit` or a worktree path match every turn (review F1).
+var (
+	searchedFields = []string{
+		"text", "message", "summary", "line", "result_text", "output", "patch",
+		"description", "error", "args", "name", "last_tool", "stop_reason",
+	}
+	searchedNested = map[string][]string{
+		"tools":   {"name", "summary"},
+		"results": {"name", "summary", "verb"},
+		"items":   {"text"},
+	}
+)
+
+// countRecord counts needle in the searched strings of one normalized record.
 func countRecord(rec any, needle string) int {
 	b, err := json.Marshal(rec)
 	if err != nil {
 		return 0
 	}
-	var v any
-	if json.Unmarshal(b, &v) != nil {
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
 		return 0
 	}
-	return countValue(v, "", needle)
+	n := 0
+	for _, k := range searchedFields {
+		n += countString(m[k], needle)
+	}
+	for k, keys := range searchedNested {
+		elems, _ := m[k].([]any)
+		for _, e := range elems {
+			obj, _ := e.(map[string]any)
+			for _, kk := range keys {
+				n += countString(obj[kk], needle)
+			}
+		}
+	}
+	return n
 }
 
-func countValue(v any, key, needle string) int {
-	switch t := v.(type) {
-	case string:
-		switch key {
-		case "type", "call_id", "parent_call_id", "plan_call_id":
-			return 0
-		}
-		return countFold(t, needle)
-	case []any:
-		n := 0
-		for _, e := range t {
-			n += countValue(e, key, needle)
-		}
-		return n
-	case map[string]any:
-		n := 0
-		for k, e := range t {
-			n += countValue(e, k, needle)
-		}
-		return n
-	}
-	return 0
+func countString(v any, needle string) int {
+	s, _ := v.(string)
+	return countFold(s, needle)
 }
 
 // countFold counts non-overlapping case-insensitive occurrences of needle

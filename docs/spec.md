@@ -11516,8 +11516,12 @@ GET    /v1/chats/{id}/turns/{seq}       *Added 2026-08-31 (task 067).* One turn'
                                         run, named by its 1-based `seq`
 GET    /v1/chats/{id}/search?q=         *Added 2026-11-20 (task 160 decision 2).* Which turns
                                         mention `q`, case-insensitive plain substring, over each
-                                        turn's prompt and every string of its normalized
-                                        transcript — `result_text` once the transcript has gone
+                                        turn's prompt and what its normalized transcript says —
+                                        text, messages, summaries, tool output, patches, tool
+                                        names and arguments, never metadata such as a run
+                                        header's `work_dir` or tool list (*amended 2026-11-20,
+                                        review F1:* the same fields a client counts in a loaded
+                                        turn) — `result_text` once the transcript has gone
                                         to retention (§17). `{query, total, turns[{seq, matches,
                                         source, truncated?}]}`, no text: a client fetches the
                                         turns it needs through the transcript route. `q` is at

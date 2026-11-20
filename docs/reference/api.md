@@ -3225,9 +3225,13 @@ GET    /v1/chats/{id}/export?format=&diff=
 ```
 
 **Search** (task 160). `GET /v1/chats/{id}/search?q=needle` scans every turn
-of the chat — its prompt and every string of its normalized transcript, tool
+of the chat — its prompt and what its normalized transcript says, tool
 output and text a verbosity level hides included — for `q` as a
-case-insensitive plain substring. A turn whose transcript has gone to
+case-insensitive plain substring. What a record says is its text, message,
+summary, output, patch, error, description, tool names, summaries and
+arguments, and plan items; metadata such as a run header's `work_dir` and
+tool list, model usage, statuses and phases is not searched, so the count a
+turn gets here is the count the TUI arrives at once it loads that turn. A turn whose transcript has gone to
 `transcript_retention_days` is searched through its `result_text`. The answer
 carries counts, never text:
 
