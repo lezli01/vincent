@@ -86,7 +86,13 @@ type chatBody struct {
 	// CanSteer says whether a message can be written into the running turn
 	// (task 156 decision 4), and SteerReason why not, so a client needs no
 	// copy of the capability table. No adapter can yet.
-	CanSteer    bool      `json:"can_steer"`
+	CanSteer bool `json:"can_steer"`
+	// HasDraft says the chat holds an unsent draft (task 162), which is the
+	// board's `✎ draft` mark. Draft and Stash are the text itself, carried
+	// only by GET /v1/chats/{id}; a list never ships them.
+	HasDraft    bool      `json:"has_draft"`
+	Draft       string    `json:"draft,omitempty"`
+	Stash       string    `json:"stash,omitempty"`
 	SteerReason string    `json:"steer_reason,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -138,8 +144,8 @@ func renderChat(c *store.Chat) chatBody {
 		WorktreePath: c.WorktreePath, SessionID: c.SessionID, PendingInput: c.PendingInput,
 		HandoffTaskID: c.HandoffTaskID, LinkedTaskID: c.LinkedTaskID, IssueID: c.IssueID, EndSHA: c.EndSHA,
 		QueuedCount: c.QueuedCount, QueuePaused: c.QueuePaused, QueuePauseReason: c.QueuePauseReason,
-		SteerReason: chatrun.SteerUnavailable(c.Agent),
-		CreatedAt:   c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		SteerReason: chatrun.SteerUnavailable(c.Agent), HasDraft: c.Draft != "",
+		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }
 
@@ -485,6 +491,7 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 		body = append(body, renderChatTurn(&turns[i]))
 	}
 	rendered := renderChat(chat)
+	rendered.Draft, rendered.Stash = chat.Draft, chat.Stash
 	n := len(turns)
 	rendered.TurnCount = &n
 	writeJSON(w, http.StatusOK, map[string]any{"chat": rendered, "turns": body})

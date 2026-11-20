@@ -699,7 +699,15 @@ var bindings = []binding{
 	// Chat workspace.
 	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done (task 156)", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
 	{op: keymap.Steer, key: "ctrl+s", label: "steer the running turn — unavailable on every agent for now; the composer says why", scope: scopePanel, context: ctxChat, hint: "ctrl+s steer", priority: 15},
-	{key: chatQueueEditKey, label: "on an empty composer, edit the newest queued message (enter saves, esc stops editing)", scope: scopePanel, context: ctxChat, priority: 16},
+	// Task 162 decision 4: ↑ edits the queue first, and recalls this
+	// chat's earlier prompts only when nothing is queued.
+	{key: chatQueueEditKey, label: "on an empty composer, edit the newest queued message, or with none queued recall an earlier prompt", scope: scopePanel, context: ctxChat, priority: 16},
+	// aliased: the alt+↑/↓ hint names `↓`, so the footer already counts it.
+	{key: chatRecallDownKey, label: "while recalling, a newer prompt — past the newest the composer empties", scope: scopePanel, context: ctxChat, priority: 16, aliased: true},
+	// Task 162 decisions 2 and 3: alt rather than ctrl, because ctrl+s is
+	// steer and ctrl+r the verbosity cycle.
+	{op: keymap.Stash, key: "alt+s", label: "stash the draft, replacing any stash, or pop the stash into an empty composer", scope: scopePanel, context: ctxChat, hint: "alt+s stash", priority: 16},
+	{op: keymap.PromptHistory, key: "alt+h", label: "pick a prompt from any chat of the project to insert (enter inserts, never sends)", scope: scopePanel, context: ctxChat, hint: "alt+h history", priority: 16},
 	{key: chatQueueDeleteKey, label: "delete the queued message being edited", scope: scopePanel, context: ctxChat, priority: 17},
 	{key: chatQueueResumeKey, label: "resume a paused queue — on an idle chat the next message starts now, paused or not", scope: scopePanel, context: ctxChat, priority: 18},
 	{key: chatQueueClearKey, label: "clear the queue: delete every queued message", scope: scopePanel, context: ctxChat, priority: 19},

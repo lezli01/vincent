@@ -49,8 +49,8 @@ func TestF1OpensHelpFromAChat(t *testing.T) {
 		t.Fatalf("f1 reached the composer: %q", got)
 	}
 	// The overlay's own footer rather than its GLOBAL KEYS section: the chat
-	// surface's keys (tasks 162 and 163 added five) now fill the first page,
-	// and the global ones are below the fold.
+	// surface's keys (tasks 162, 163 and 164 added seven) now fill the first
+	// page, and the global ones are below the fold.
 	if !strings.Contains(content(m), "the keys of the surface you were on") {
 		t.Fatalf("f1 set the flag but no help is drawn:\n%s", content(m))
 	}

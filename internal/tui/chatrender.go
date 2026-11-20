@@ -671,6 +671,8 @@ func (v *chatView) footerLines(width, height int) []string {
 	// each requires its own first rune of the one token under the cursor, and
 	// syncInlineFiles stands this one down for an adapter that claimed `@`.
 	out = append(out, v.files.render(width, height)...)
+	// The prompt history picker (task 162), in the same place.
+	out = append(out, v.renderHistory(width)...)
 	// The conversation's search line (task 160), where the inline lists
 	// draw: over the composer, out of the body's budget.
 	if v.convFocus && v.search.typing {

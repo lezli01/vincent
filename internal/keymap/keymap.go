@@ -93,6 +93,14 @@ const (
 	// the daemon, read-only in $EDITOR (task 163 decisions 5, 7). alt+v for
 	// "view": a bare v would be typed into the composer.
 	ChatMarkdown Op = "chat_markdown"
+	// Stash sets the composer's draft aside in the chat's one stash slot, or
+	// pops the stash back into an empty composer (task 162 decision 2).
+	// alt+s, not ctrl+s: that is Steer, which task 156 decision 5 keeps.
+	Stash Op = "stash"
+	// PromptHistory opens a picker over every prompt the project's chats
+	// have sent (task 162 decision 3). alt+h for "history": ctrl+r is the
+	// chat's fixed verbosity cycle.
+	PromptHistory Op = "prompt_history"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -230,6 +238,12 @@ var catalog = []Info{
 	// Typing: it is answered while the composer has the keyboard, so it may
 	// only ever be bound to a key the composer would not type.
 	{Op: Compact, Default: "alt+k", Meaning: "compact the chat agent's context (asks first)", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
+	{Op: Stash, Default: "alt+s", Meaning: "stash the draft, or pop the stash into an empty composer; a new stash replaces the old one", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
+	{Op: PromptHistory, Default: "alt+h", Meaning: "pick an earlier prompt from any chat of the project to insert", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}, Typing: true},
 	{Op: ChatSearch, Default: "S", Meaning: "search every chat", Kind: KindTerm, Surfaces: []Surface{"chats"}},

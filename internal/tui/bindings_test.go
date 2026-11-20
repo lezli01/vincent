@@ -984,6 +984,34 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChat: {
+		// Task 162: recall's way back, the stash and the history picker.
+		"down": func(t *testing.T) {
+			v := chatViewFixture()
+			v.turns = []apiclient.ChatTurn{{Seq: 1, Prompt: "older"}, {Seq: 2, Prompt: "newer"}}
+			v.updateKey(registryKey(t, "up"))
+			v.updateKey(registryKey(t, "up"))
+			v.updateKey(registryKey(t, "down"))
+			if got := v.composer.Value(); got != "newer" {
+				t.Fatalf("down while recalling left %q, want the newer prompt", got)
+			}
+		},
+		"alt+s": func(t *testing.T) {
+			v := chatViewFixture()
+			v.draft.loaded = true
+			v.composer.SetValue("aside")
+			v.updateKey(registryKey(t, "alt+s"))
+			if v.composer.Value() != "" || v.draft.stash != "aside" {
+				t.Fatalf("alt+s left composer %q stash %q", v.composer.Value(), v.draft.stash)
+			}
+		},
+		"alt+h": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = apiclient.New("http://127.0.0.1:1", "t")
+			v.updateKey(registryKey(t, "alt+h"))
+			if !v.history.open {
+				t.Fatal("alt+h did not open the prompt history")
+			}
+		},
 		"ctrl+f": func(t *testing.T) {
 			v := chatFindFixture(t)
 			v.updateKey(registryKey(t, "ctrl+f"))

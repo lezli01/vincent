@@ -101,7 +101,10 @@ var fixed = []Fixed{
 	{"chats", "left", "collapse the project group"},
 	{"chats", "right", "expand the project group"},
 	{"chat", "enter", "send the message"},
-	{"chat", "up", "edit the newest queued message"},
+	{"chat", "up", "edit the newest queued message, or recall an earlier prompt"},
+	// Recall's other half (task 162 decision 4): matched by the same
+	// handler, walking back toward the newest prompt and an empty composer.
+	{"chat", "down", "recall a newer prompt, ending on an empty composer"},
 	{"chat", "ctrl+d", "delete the queued message being edited"},
 	{"chat", "alt+r", "resume a paused queue"},
 	{"chat", "alt+c", "clear the queue"},

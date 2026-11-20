@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Chat drafts are kept by the daemon, and earlier prompts can be recalled.**
+  A chat's unsent message is saved as you type and restored when you open the
+  chat again — after switching chats, restarting the TUI or from another
+  terminal — and the chats board marks a chat holding one `✎ draft`. `alt+s`
+  stashes the draft in the chat's one stash slot (a new stash replaces the old
+  one) and brings it back on an empty composer. `↑` on an empty composer,
+  with nothing queued, recalls the chat's earlier prompts and `↓` walks back.
+  `alt+h` picks any prompt sent in the project, archived chats included, and
+  inserts it without sending. The API gains `GET`/`PUT /v1/chats/{id}/draft`,
+  `GET /v1/chats/prompts`, `has_draft` on every chat and the
+  `chat.draft_changed` event. Archiving, closing or handing off a chat
+  discards its draft and stash.
 - **Search inside a chat, jump between prompts, expand one tool call.**
   `ctrl+f` in a chat hands the keyboard to the conversation with a search
   line: every turn is searched case-insensitively — the ones not loaded yet

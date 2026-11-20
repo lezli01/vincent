@@ -19,6 +19,10 @@ const (
 	// chatQueueEditKey edits the newest queued message when the composer is
 	// empty (task 156 decision 5).
 	chatQueueEditKey = "up"
+	// chatRecallDownKey walks recall back toward the newest prompt (task
+	// 162 decision 4); `up` is chatQueueEditKey, which recalls when nothing
+	// is queued.
+	chatRecallDownKey = "down"
 	// chatQueueDeleteKey deletes the queued message being edited.
 	chatQueueDeleteKey = "ctrl+d"
 	// chatQueueResumeKey and chatQueueClearKey act on a paused queue.

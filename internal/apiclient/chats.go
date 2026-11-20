@@ -60,10 +60,16 @@ type Chat struct {
 	QueuePauseReason string `json:"queue_pause_reason,omitempty"`
 	// CanSteer says whether a message can be written into the running turn;
 	// SteerReason says why not (task 156 decision 4).
-	CanSteer    bool      `json:"can_steer"`
-	SteerReason string    `json:"steer_reason,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	CanSteer    bool   `json:"can_steer"`
+	SteerReason string `json:"steer_reason,omitempty"`
+	// HasDraft says the chat holds an unsent draft (task 162): the board's
+	// `✎ draft` mark. Draft and Stash are the text, carried only by
+	// GetChat — a list leaves them empty.
+	HasDraft  bool      `json:"has_draft"`
+	Draft     string    `json:"draft,omitempty"`
+	Stash     string    `json:"stash,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 	// Warnings are non-fatal notes on a create, such as a chat opened on a
 	// closed issue, or a first message that was not sent (task 161).
 	Warnings []string `json:"warnings,omitempty"`

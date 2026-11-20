@@ -111,6 +111,13 @@ a match opens the chat at that turn. From a shell,
 [`vincent chat search`](reference/cli.md#vincent-chat-search) prints the same
 results, and `GET /v1/chats/search` serves them.
 
+A half-written message is never lost. The daemon keeps each chat's **draft**,
+so it survives switching chats, restarting the TUI and opening the chat
+elsewhere, and the chats board marks a chat holding one `✎ draft`. `alt+s`
+stashes a draft and brings it back, `↑` on an empty composer recalls the
+chat's earlier prompts, and `alt+h` picks any prompt sent in the project —
+archived chats included — to insert into the composer.
+
 And when an exploration turns out to be the start of real work, **hand the chat
 off to a task**. The task adopts the chat's worktree, branch, base branch and
 base SHA exactly as they are — no copy, no rename, no hidden commit, so

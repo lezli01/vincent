@@ -207,6 +207,12 @@ var Excluded = []Route{
 	// the transcript it scans, and the family stays off the tool surface
 	// whole.
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/search"},
+	// A chat's draft and stash, and the project's prompt history (task
+	// 162), are a human composer's state and stay off the surface with the
+	// rest of the family.
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/draft"},
+	{Method: http.MethodPut, Path: "/v1/chats/{id}/draft"},
+	{Method: http.MethodGet, Path: "/v1/chats/prompts"},
 }
 
 // GrantedRoute is an Excluded forge write that becomes a tool on a granted

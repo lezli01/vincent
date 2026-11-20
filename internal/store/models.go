@@ -824,8 +824,15 @@ type Chat struct {
 	// QueuedCount is how many follow-up messages wait behind the live turn
 	// (task 156). It is read with the row, never written through it.
 	QueuedCount int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Draft is the composer text not yet sent, and Stash the one slot a
+	// draft can be set aside in (task 162, §5.5). The daemon owns both so
+	// they follow the chat across clients and restarts; both are cleared
+	// when the chat ends. DraftUpdatedAt is nil before the first write.
+	Draft          string
+	Stash          string
+	DraftUpdatedAt *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Linked reports whether the chat is linked to a task (task 119), which is

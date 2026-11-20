@@ -1451,6 +1451,25 @@ LIVE_ID="$(printf '%s' "$LIVE" | jq -r .id)"
 CODE="$(api_status GET "/chats?archived=yes")"
 [[ "$CODE" == "400" ]] || fail "GET /v1/chats?archived=yes is $CODE, want 400"
 
+echo "== 10b. a chat's draft and stash live in the daemon and survive a restart (task 162)"
+CODE="$(api_status PUT "/chats/$LIVE_ID/draft" -d '{"draft": "half a thought", "stash": "set aside"}')"
+[[ "$CODE" == "200" ]] || fail "PUT /v1/chats/$LIVE_ID/draft is $CODE, want 200"
+[[ "$(listed "" "$LIVE_ID")" == "true" ]] || fail "the draft dropped chat $LIVE_ID from the listing"
+HAS_DRAFT="$(api GET /chats | jq -r --argjson id "$LIVE_ID" '.chats[] | select(.id == $id) | .has_draft')"
+[[ "$HAS_DRAFT" == "true" ]] || fail "the listing's has_draft is $HAS_DRAFT, want true"
+"$VINCENT" daemon stop --force >/dev/null 2>&1 || true
+"$VINCENT" daemon start
+PORT="$(jq -r .port "$DATA_DIR/daemon.json")"
+TOKEN="$(cat "$DATA_DIR/token")"
+BASE="http://127.0.0.1:$PORT/v1"
+DRAFT="$(api GET "/chats/$LIVE_ID/draft" | jq -r .draft)"
+[[ "$DRAFT" == "half a thought" ]] || fail "after a restart the draft is \"$DRAFT\""
+STASH="$(api GET "/chats/$LIVE_ID/draft" | jq -r .stash)"
+[[ "$STASH" == "set aside" ]] || fail "after a restart the stash is \"$STASH\""
+# A short query is answered by recency, never refused as query_too_short.
+CODE="$(api_status GET "/chats/prompts?project_id=$PROJECT_ID&q=a")"
+[[ "$CODE" == "200" ]] || fail "GET /v1/chats/prompts?q=a is $CODE, want 200"
+
 if [[ -z "$ONLY" ]]; then
   chat_on_a_task
   chat_skills
