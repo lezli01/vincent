@@ -64,7 +64,7 @@ func TestDiffClickFoldsThroughTheShell(t *testing.T) {
 	lines := strings.Split(s.render(120, 37), "\n")
 	y := -1
 	for i, line := range lines {
-		if strings.Contains(ansi.Strip(line), diffFoldClosed+" README.md") {
+		if strings.Contains(ansi.Strip(line), diffFoldClosed+" M README.md") {
 			y = i
 		}
 	}

@@ -189,9 +189,16 @@ func (d *detail) collapsedOutputLine() string {
 // pane and the workspace's now-line (task 129.9).
 func lastOutputLine(lines []string) (string, bool) {
 	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.TrimSpace(ansi.Strip(lines[i])) != "" {
-			return lines[i], true
+		plain := ansi.Strip(lines[i])
+		if strings.TrimSpace(plain) == "" {
+			continue
 		}
+		// A command's output carries its margin bar in the pane (task
+		// 162.4); quoted on its own the line is just what it printed.
+		if rest, ok := strings.CutPrefix(plain, gutterOutput); ok {
+			return styleDim.Render(rest), true
+		}
+		return lines[i], true
 	}
 	return "", false
 }
@@ -1379,9 +1386,6 @@ func (d *detail) followIndicator() string {
 }
 
 func (d *detail) renderOutputPane(height int) string {
-	if body, ok := d.outputEmptyState(); ok {
-		return styleDim.Render("  " + body)
-	}
 	d.vp.SetWidth(max(d.width, 1))
 	d.vp.SetHeight(height)
 	if d.outputDirty || d.builtWidth != d.width || d.builtLinks != d.links.get() || d.builtLevel != d.level.get() {
@@ -1391,7 +1395,7 @@ func (d *detail) renderOutputPane(height int) string {
 		// and raw toggles used to take away. Following is untouched — the
 		// bottom is its anchor.
 		keep := anchorAt(d.anchors, d.vp.YOffset())
-		lines, anchors := d.outputLinesAt()
+		lines, anchors := d.feedLinesAt()
 		d.vp.SetContent(strings.Join(lines, "\n"))
 		d.anchors = anchors
 		d.outputDirty = false
@@ -1431,6 +1435,14 @@ func (d *detail) landAtFailure() {
 			}
 		}
 	}
+	// The end of the attempt, which the feed may follow with later
+	// attempts' folds: its last anchored line sits at the pane's bottom.
+	for y := len(d.anchors) - 1; y >= 0; y-- {
+		if d.anchors[y].rec != 0 {
+			d.vp.SetYOffset(max(y+2-d.vp.Height(), 0))
+			return
+		}
+	}
 	d.vp.GotoBottom()
 }
 
@@ -1462,6 +1474,18 @@ func (d *detail) outputLines() []string {
 
 // outputLinesAt is outputLines with the per-line provenance the paused anchor
 // needs, and is where the pane's render pass opens and closes.
+// feedLinesAt is what the pane draws: the displayed attempt's lines — or
+// what it says when it has none — placed among the task's other attempts
+// (task 162.4).
+func (d *detail) feedLinesAt() ([]string, []lineAnchor) {
+	width := max(d.width, 1)
+	if body, ok := d.outputEmptyState(); ok {
+		return d.feedWrap([]string{styleDim.Render("  " + body)}, []lineAnchor{{}}, width)
+	}
+	lines, anchors := d.outputLinesAt()
+	return d.feedWrap(lines, anchors, width)
+}
+
 func (d *detail) outputLinesAt() ([]string, []lineAnchor) {
 	note := ""
 	if d.truncated {

@@ -507,27 +507,21 @@ var bindings = []binding{
 	{key: "C", label: "fold every issue group", scope: scopePanel, context: ctxTasks, hint: "C/O fold all", priority: 10},
 	{key: "O", label: "open every issue group", scope: scopePanel, context: ctxTasks, priority: 11, aliased: true},
 
-	// Overview (task 129.12). `0` is the tab's own row, the way 5, 6 and 7
-	// are theirs; the four digits after it are the frame's jump links, each
-	// moving the attempt cursor to the attempt the frame is about before it
-	// switches tab (taskView.jumpTab).
-	{key: "0", label: "the task at a glance: what it is doing, what it needs from you, or how it ended", scope: scopePanel, context: ctxTaskOverview, priority: 1},
-	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskOverview, hint: "tab tabs", priority: 2},
+	// Overview (task 129.12, task 162.7). The frame's one link is on enter;
+	// the strip has no digits to key a row of links with any more.
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxTaskOverview, hint: "tab tabs", priority: 2},
 	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxTaskOverview, priority: 3},
-	{key: "3", label: "the output of the attempt the overview is about — the running one, or the one it stopped on", scope: scopePanel, context: ctxTaskOverview, hint: "3 output", priority: 4},
-	{key: "6", label: "what the attempt it stopped on was given", scope: scopePanel, context: ctxTaskOverview, hint: "6 what it was given", priority: 5},
-	{key: "4", label: "the diff of the finished task", scope: scopePanel, context: ctxTaskOverview, hint: "4 diff", priority: 4},
-	{key: "7", label: "the finished task's pull request", scope: scopePanel, context: ctxTaskOverview, hint: "7 PR", priority: 5, github: true},
+	{key: "enter", label: "open what the frame is about: the output of the running attempt or the one it stopped on, or the diff of a finished task", scope: scopePanel, context: ctxTaskOverview, hint: "enter output", priority: 4},
 	{op: keymap.Lane, key: "l", label: "open the fan-out lane the failure card blames, or the first lane that needs you on a parent waiting on its lanes", scope: scopePanel, context: ctxTaskOverview, hint: "l open the lane", priority: 6, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskOverview, hint: "N next failure", priority: 6, term: termNextFail},
 	{op: keymap.Result, key: "w", label: "open the output of the attempt the outcome card's result came from, at its end", scope: scopePanel, context: ctxTaskOverview, hint: "w result output", priority: 6, term: termResult},
-	{key: "1", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskOverview, priority: 7},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskOverview, priority: 8},
+	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTaskOverview, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskOverview, priority: 9},
 	{key: "pgdown", label: "scroll the overview a page (pgup/pgdown, home/end, wheel)", scope: scopePanel, context: ctxTaskOverview, priority: 10},
 
 	// Timeline.
-	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTimeline, hint: "tab tabs", priority: 1},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxTimeline, hint: "tab tabs", priority: 1},
 	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxTimeline, priority: 2},
 	{key: "down", label: "select an attempt or a fan-out lane (↑/↓); scrollback is per attempt", scope: scopePanel, context: ctxTimeline, hint: "↑/↓ attempts", priority: 3},
 	{key: "enter", label: "open the selected attempt in the Output tab, open the folded iteration or round the cursor is on, or open the lane the cursor is on", scope: scopePanel, context: ctxTimeline, hint: "enter output", priority: 3},
@@ -542,14 +536,14 @@ var bindings = []binding{
 	{key: "C", label: "close every one — the timeline opens with the latest iteration showing", scope: scopePanel, context: ctxTimeline, priority: 8, fold: true, aliased: true},
 	{op: keymap.Lane, key: "l", label: "open the fan-out lane the cursor is on, or the first lane of the selected fan_out step", scope: scopePanel, context: ctxTimeline, priority: 9, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTimeline, priority: 9, term: termNextFail},
+	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTimeline, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTimeline, priority: 10},
-	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTimeline, priority: 11},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTimeline, priority: 12},
 	{key: "pgdown", label: "page the attempts (pgup/pgdown)", scope: scopePanel, context: ctxTimeline, priority: 13},
 	{key: "g", label: "jump to the first attempt (g/home; G/end to the last)", scope: scopePanel, context: ctxTimeline, priority: 14},
 
 	// Task details.
-	{key: "tab", label: "move between the task's tabs (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskDetails, hint: "tab tabs", priority: 1},
+	{key: "tab", label: "move between the task's tabs (shift+tab goes back)", scope: scopePanel, context: ctxTaskDetails, hint: "tab tabs", priority: 1},
 	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxTaskDetails, priority: 2},
 	{key: "down", label: "select a task-detail section (↑/↓); pgup/pgdn scrolls that section", scope: scopePanel, context: ctxTaskDetails, hint: "↑/↓ sections", priority: 3},
 	// The pull-request section's two keys (task 052.6, decision 2). Both only
@@ -563,12 +557,12 @@ var bindings = []binding{
 	// lane `l` resolves to (taskView.laneJump).
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskDetails, priority: 6, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskDetails, priority: 6, term: termNextFail},
+	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTaskDetails, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskDetails, priority: 7},
-	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskDetails, priority: 8},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskDetails, priority: 9},
 
 	// Output pane.
-	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxOutput, hint: "tab tabs", priority: 1},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxOutput, hint: "tab tabs", priority: 1},
 	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxOutput, priority: 2},
 	{key: "f", label: "follow the live output again (f/G)", scope: scopePanel, context: ctxOutput, hint: "f follow", priority: 2},
 	{key: "v", label: "show more or less: quiet → compact → normal → verbose (tool lines, then reasoning, then unrecognized lines)", scope: scopePanel, context: ctxOutput, hint: "v detail", priority: 3},
@@ -579,13 +573,14 @@ var bindings = []binding{
 	{key: linkPickKey, label: "list the links in the assistant's messages — open one in a browser or copy it", scope: scopePanel, context: ctxOutput, hint: "ctrl+l links", priority: 8},
 	{op: keymap.Editor, key: "e", label: "open this attempt's whole transcript in $EDITOR (the pane holds only the end of it)", scope: scopePanel, context: ctxOutput, hint: "e transcript", priority: 5, term: termEditor},
 	{key: "down", label: "scroll (↑/↓; scrolling up pauses follow)", scope: scopePanel, context: ctxOutput, hint: "↑/↓ scroll", priority: 4},
-	{key: "right", label: "select which attempt's output to show (←/→ or h/l)", scope: scopePanel, context: ctxOutput},
+	{key: "right", label: "select which attempt's output to show (←/→ or h/l)", scope: scopePanel, context: ctxOutput, hint: "←/→ attempts", priority: 4},
+	{key: "enter", label: "show what the selected attempt was given — its rendered prompt or command and the resolution behind it (esc comes back)", scope: scopePanel, context: ctxOutput, hint: "enter given", priority: 9},
 	{key: "<", label: "previous fan-out lane in the Output pane", scope: scopePanel, context: ctxOutput, priority: 9},
 	{key: ">", label: "next fan-out lane in the Output pane", scope: scopePanel, context: ctxOutput, priority: 10},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxOutput, priority: 11, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxOutput, priority: 11, term: termNextFail},
+	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxOutput, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxOutput, priority: 12},
-	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxOutput, priority: 13},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxOutput, priority: 14},
 	{key: "g", label: "jump to the top of the output (g/home; G/end follows)", scope: scopePanel, context: ctxOutput, priority: 15},
 
@@ -593,7 +588,7 @@ var bindings = []binding{
 	// list of files and the output is a stream of lines, so ↑/↓ mean different
 	// things on the two tabs and a single row could only describe one of them.
 	// `]` is repeated here because the way back must stay on screen.
-	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxDiff, hint: "tab tabs", priority: 1},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxDiff, hint: "tab tabs", priority: 1},
 	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxDiff, priority: 2},
 	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxDiff, hint: "↑/↓ files", priority: 2},
 	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
@@ -601,8 +596,8 @@ var bindings = []binding{
 	{key: "C", label: "collapse every file — which is how the tab opens", scope: scopePanel, context: ctxDiff, priority: 5, aliased: true},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxDiff, priority: 6, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxDiff, priority: 6, term: termNextFail},
+	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxDiff, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxDiff, priority: 7},
-	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxDiff, priority: 8},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxDiff, priority: 9},
 	{key: "pgdown", label: "page the diff (pgup/pgdown, ctrl+d/ctrl+u)", scope: scopePanel, context: ctxDiff, priority: 10},
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxDiff, priority: 11},
@@ -916,26 +911,24 @@ var bindings = []binding{
 	// tabs here, so the source-order node walk is deliberately absent.
 	{key: "down", label: "move the selection (↑/↓/←/→ or hjkl); the view follows it", scope: scopePanel, context: ctxTaskWorkflow, hint: "↑↓←→ select", priority: 1},
 	{key: "shift+down", label: "pan the canvas (shift+↑/↓/←/→); pgup/pgdn page it", scope: scopePanel, context: ctxTaskWorkflow, hint: "⇧ pan", priority: 2},
-	{key: "5", label: "the workflow this task ran, with what each step did on it", scope: scopePanel, context: ctxTaskWorkflow, priority: 3},
 	// Here the lane is the one under the graph cursor, which is the only tab
 	// that can point at a lane the failure does not blame.
+	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTaskWorkflow, hint: "i issue", priority: 8},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskWorkflow, priority: 4, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskWorkflow, priority: 4, term: termNextFail},
-	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskWorkflow, hint: "tab tabs", priority: 5},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxTaskWorkflow, hint: "tab tabs", priority: 5},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskWorkflow, priority: 6},
-	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskWorkflow, priority: 7},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskWorkflow, priority: 8},
 
 	// The task workspace's Step Details tab (issue #323). Unconditional, so
 	// `6` always means it — which is what lets the pull-request tab keep
 	// costing nothing when it is absent even though it no longer owns `6`.
-	{key: "6", label: "what this attempt was handed: its rendered prompt or command, the resolution behind it, and what it produced", scope: scopePanel, context: ctxTaskStepDetails, priority: 1},
 	{key: "down", label: "select an attempt (↑/↓ or ←/→, which move it everywhere else too); pgup/pgdn scrolls the facts", scope: scopePanel, context: ctxTaskStepDetails, hint: "↑/↓ attempts", priority: 2},
-	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskStepDetails, hint: "tab tabs", priority: 3},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxTaskStepDetails, hint: "tab tabs", priority: 3},
+	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxTaskStepDetails, hint: "i issue", priority: 8},
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskStepDetails, priority: 4, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskStepDetails, priority: 4, term: termNextFail},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskStepDetails, priority: 5},
-	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskStepDetails, priority: 6},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskStepDetails, priority: 7},
 
 	// The task workspace's Pull Request tab (task 068). The tab is on the
@@ -943,7 +936,6 @@ var bindings = []binding{
 	// usable, which is why `7` is registered here and nowhere else: on a task
 	// with no pull request the key does nothing, and a row promising
 	// otherwise would be the lie the availability filter exists to prevent.
-	{key: "7", label: "this task's pull request, with a live row per check on its head commit", scope: scopePanel, context: ctxTaskPull, priority: 1, github: true},
 	{key: "down", label: "select a check (↑/↓ or j/k)", scope: scopePanel, context: ctxTaskPull, hint: "↑/↓ checks", priority: 2, github: true},
 	// `enter` rather than `c` (task 093). The cursor is on a check and `enter`
 	// opens what the cursor is on; `c` intercepted here meant cancel was
@@ -960,9 +952,8 @@ var bindings = []binding{
 	// request of its own.
 	{op: keymap.Lane, key: "l", label: "open the selected fan-out lane's workspace", scope: scopePanel, context: ctxTaskPull, priority: 7, term: termLane},
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxTaskPull, priority: 7, term: termNextFail},
-	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back; the digits jump directly)", scope: scopePanel, context: ctxTaskPull, hint: "tab tabs", priority: 12},
+	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxTaskPull, hint: "tab tabs", priority: 12},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxTaskPull, priority: 13},
-	{key: "0", label: "jump to a tab by its digit: 0 Overview, 1 Steps, 2 Task Details, 3 Output, 4 Diff, 5 Workflow, 6 Step Details, 7 Pull Request (only with one linked)", scope: scopePanel, context: ctxTaskPull, priority: 14},
 	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxTaskPull, priority: 15},
 	// The confirmed writes (task 068 decisions 1, 3 and 4; issue #387). All
 	// four are surface-local, so none carries a term, and none moves a §6

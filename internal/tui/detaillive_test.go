@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/events"
@@ -54,7 +53,7 @@ func TestDetailTailJoinsTranscriptWithoutGapOrDuplicate(t *testing.T) {
 	h.p.push(cmd)
 	// Steps & Attempts is the default task tab; output is a separate full-screen
 	// tab, so select it before asserting the transcript seam on screen.
-	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	_, cmd = h.m.Update(gotoTaskTabMsg{tab: taskTabOutput})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the transcript window to render", func() bool {
 		return strings.Contains(content(h.m), "line-two")
@@ -124,7 +123,7 @@ func TestLiveAttemptStateOnTheWorkspaceOutputTab(t *testing.T) {
 
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
-	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	_, cmd = h.m.Update(gotoTaskTabMsg{tab: taskTabOutput})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the transcript window to render", func() bool {
 		return strings.Contains(content(h.m), "still going")
@@ -201,7 +200,7 @@ func TestLiveSplitDocumentMatchesTheColdTranscript(t *testing.T) {
 
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
-	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	_, cmd = h.m.Update(gotoTaskTabMsg{tab: taskTabOutput})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the transcript window to render", func() bool {
 		return strings.Contains(content(h.m), "Here is the table:")
@@ -295,7 +294,7 @@ func TestOutputPaneHoldsOneLaneSubscriptionAtATime(t *testing.T) {
 	h.p.until(20*time.Second, "the parent's lanes to load", func() bool {
 		return len(view.lanes) == 2
 	})
-	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	_, cmd = h.m.Update(gotoTaskTabMsg{tab: taskTabOutput})
 	h.p.push(cmd)
 
 	// `>` walks onto the first lane: exactly one subscription, and it is that

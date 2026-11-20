@@ -150,6 +150,8 @@ func TestPopupOverTheWorkflowTabKeepsTheViewWidth(t *testing.T) {
 		return rows
 	}
 	v := popupTaskView(t, func(d *detail) { d.form = newAnswerForm(manyOptions(3)) })
+	// Output as the baseline: the Overview draws boxed cards of its own.
+	v.setTab(taskTabOutput)
 	over := popupRows(v.render(80, 24))
 	v.setTab(taskTabWorkflow)
 	v.render(80, 24)

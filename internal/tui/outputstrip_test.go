@@ -40,7 +40,7 @@ func TestWorkspaceOutputShowsLiveState(t *testing.T) {
 	d.following = false // as if the reader had scrolled up
 	d.newLines = 3
 	got = ansi.Strip(v.renderOutput(120, 20))
-	if !strings.Contains(got, "⏸ paused · 3 new") {
+	if !strings.Contains(got, "▲ 3 new below") {
 		t.Errorf("scrolling up is not visible on the Output tab:\n%s", got)
 	}
 

@@ -42,8 +42,8 @@ type paletteEntry struct {
 	// unbound is a row whose key a user binding took on a lenient load
 	// (task 128): listed, so the human can see it is gone, but not runnable.
 	unbound bool
-	// tab marks a "go to the <Name> tab" row (task 129.17); key is the tab's
-	// digit, which running the row replays like any panel key.
+	// tab marks a "go to the <Name> tab" row (task 129.17). It has no key
+	// since the strip lost its digits (task 162); its action switches.
 	tab   taskViewTab
 	isTab bool
 	// action is a key-less row's own command (task 130.13): a row with no
@@ -95,7 +95,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 	for _, tab := range tabs {
 		out = append(out, paletteEntry{
 			group: "tabs", label: "go to the " + taskTabNames[tab] + " tab",
-			key: taskTabDigits[tab], tab: tab, isTab: true,
+			tab: tab, isTab: true, action: gotoTaskTab(tab),
 		})
 	}
 	// Screens get their own section: navigating to them is the reason the
@@ -285,4 +285,11 @@ func paletteRow(e paletteEntry, style lipgloss.Style, width int) string {
 	label := ansi.Truncate(e.label, max(width-kw-2, 1), "…")
 	pad := max(width-ansi.StringWidth(label)-kw-1, 1)
 	return style.Render(label) + strings.Repeat(" ", pad) + styleKey.Render(key)
+}
+
+// gotoTaskTabMsg moves the task workspace to a tab: a palette tab row's action.
+type gotoTaskTabMsg struct{ tab taskViewTab }
+
+func gotoTaskTab(tab taskViewTab) tea.Cmd {
+	return func() tea.Msg { return gotoTaskTabMsg{tab: tab} }
 }

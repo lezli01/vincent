@@ -32,6 +32,9 @@ type diffFile struct {
 	// binary marks a file git described rather than diffed. Its counts are
 	// both zero, and `+0 -0` on the header row would read as "unchanged".
 	binary bool
+	// status is what happened to the file, as git's letters say it: M, A,
+	// D or R (task 162.6).
+	status byte
 }
 
 // parseDiffFiles splits a diff into its file sections. Lines ahead of the
@@ -117,6 +120,10 @@ func (s *diffFileParse) consume(line string) {
 		s.renameTo = strings.TrimPrefix(line, "rename to ")
 	case strings.HasPrefix(line, "Binary files "), strings.HasPrefix(line, "GIT binary patch"):
 		s.file.binary = true
+	case strings.HasPrefix(line, "new file mode"):
+		s.file.status = 'A'
+	case strings.HasPrefix(line, "deleted file mode"):
+		s.file.status = 'D'
 	}
 	s.file.body = append(s.file.body, line)
 }
@@ -124,6 +131,13 @@ func (s *diffFileParse) consume(line string) {
 func (s *diffFileParse) done() diffFile {
 	f := s.file
 	f.path = s.displayPath()
+	switch {
+	case f.status != 0:
+	case s.renameFrom != "" || s.renameTo != "":
+		f.status = 'R'
+	default:
+		f.status = 'M'
+	}
 	return f
 }
 

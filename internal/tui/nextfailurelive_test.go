@@ -72,13 +72,14 @@ func TestNextFailureFromRealServer(t *testing.T) {
 	h.press(t, "N")
 	h.landedAtCheck(t, "N on a check_failed task", checked.ID, run.ID)
 
-	h.press(t, "0")
+	_, cmd := h.m.Update(gotoTaskTabMsg{tab: taskTabOverview})
+	h.p.push(cmd)
 	h.p.until(10*time.Second, "back on the Overview", func() bool {
 		return workspaceOf(h.m).tab == taskTabOverview
 	})
 	detailOf(h.m).vp.GotoTop()
-	h.press(t, "3")
-	h.landedAtCheck(t, "the failure card's 3", checked.ID, run.ID)
+	h.press(t, "enter")
+	h.landedAtCheck(t, "the failure card's link", checked.ID, run.ID)
 }
 
 // TestNextFailureOpensABlockedLaneFromRealServer: on a fan-out parent whose

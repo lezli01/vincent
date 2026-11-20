@@ -706,7 +706,7 @@ func TestOnlyAssistantProseIsMarkdown(t *testing.T) {
 		{"error", apiclient.TranscriptRecord{Type: "agent.error", Message: src}, "✗ "},
 		{"raw", apiclient.TranscriptRecord{Type: "agent.raw", Line: src}, "  "},
 		{"result text", apiclient.TranscriptRecord{Type: "agent.result", ResultText: src}, "✓ "},
-		{"vincent output", apiclient.TranscriptRecord{Type: "vincent.output", Text: src}, "  "},
+		{"vincent output", apiclient.TranscriptRecord{Type: "vincent.output", Text: src}, "┃ "},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

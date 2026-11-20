@@ -95,7 +95,7 @@ func TestWorkspaceIdentityDiffRowsKeepCounts(t *testing.T) {
 		if row == "" {
 			t.Fatalf("width %d: no file row keeps the file name:\n%s", width, got)
 		}
-		if !strings.HasSuffix(strings.TrimRight(row, " "), "+1 -1") {
+		if !strings.Contains(row, "+1 -1") {
 			t.Errorf("width %d: file row lost its counts: %q", width, row)
 		}
 		if !strings.Contains(row, "internal/") || !strings.Contains(row, "…") {
@@ -146,7 +146,7 @@ func TestWorkspaceIdentityTabStripKeepsHintAt80Columns(t *testing.T) {
 		v.tab = tab
 		frame := ansi.Strip(v.render(78, 24))
 		strip := strings.Split(frame, "\n")[1]
-		if !strings.Contains(strip, "tab/⇧tab or digits") {
+		if !strings.Contains(strip, taskTabHint) {
 			t.Errorf("tab %v: strip lost the tab hint at 80 columns: %q", tab, strip)
 		}
 		if ansi.StringWidth(strip) > 78 {

@@ -90,16 +90,19 @@ func (t *taskView) pullTabAvailable() bool {
 // strip is no longer fixed: `cycleTab` used to be modulo taskTabCount, which
 // lands on a tab that is not there the moment one of them is conditional.
 func (t *taskView) tabs() []taskViewTab {
-	tabs := []taskViewTab{
-		taskTabOverview, taskTabOutput, taskTabDiff,
-		taskTabSteps, taskTabDetails, taskTabStepDetails, taskTabWorkflow,
-	}
-	if t.wide() {
-		// The steps and the details have panes of their own here.
-		tabs = []taskViewTab{taskTabOutput, taskTabDiff, taskTabOverview, taskTabWorkflow}
+	// Five tabs, cycled with tab/⇧tab (task 162 decision 3). The narrow
+	// layout has no rail, so its steps keep a tab; the Task Details document
+	// is the Overview's lower half; Step Details is opened from an attempt
+	// and is on the strip only while it is the tab on screen.
+	tabs := []taskViewTab{taskTabOverview, taskTabOutput, taskTabDiff, taskTabWorkflow}
+	if !t.wide() {
+		tabs = []taskViewTab{taskTabOverview, taskTabSteps, taskTabOutput, taskTabDiff, taskTabWorkflow}
 	}
 	if t.pullTabAvailable() {
 		tabs = append(tabs, taskTabPull)
+	}
+	if t.tab == taskTabStepDetails || t.tab == taskTabDetails {
+		tabs = append(tabs, t.tab)
 	}
 	return tabs
 }

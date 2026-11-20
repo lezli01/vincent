@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
@@ -50,7 +48,7 @@ func (h *boardLiveHarness) openSkillRun(
 	}
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
-	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	_, cmd = h.m.Update(gotoTaskTabMsg{tab: taskTabOutput})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the fetched transcript to render", func() bool {
 		return strings.Contains(plainContent(h.m), ready)

@@ -32,8 +32,8 @@ func TestRoutedHomeRendersOnlyTheTaskBoard(t *testing.T) {
 	}
 }
 
-// The strip's drawn order (task 129.12 decision 2): the primary group, then
-// the secondary. tab walks it, and wraps back to Overview.
+// The strip's drawn order (task 162 decision 3). tab walks it, and wraps back
+// to Overview.
 func TestTaskWorkspaceDefaultsToOverviewAndCyclesInDrawnOrder(t *testing.T) {
 	d := taskDetailFixture(t)
 	v := newTaskView(d)
@@ -41,10 +41,7 @@ func TestTaskWorkspaceDefaultsToOverviewAndCyclesInDrawnOrder(t *testing.T) {
 	if v.tab != taskTabOverview {
 		t.Fatalf("initial tab = %v, want %v", v.tab, taskTabOverview)
 	}
-	want := []taskViewTab{
-		taskTabOutput, taskTabDiff, taskTabSteps, taskTabDetails, taskTabStepDetails,
-		taskTabWorkflow, taskTabOverview,
-	}
+	want := []taskViewTab{taskTabSteps, taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabOverview}
 	for _, tab := range want {
 		v.updateKey(tea.KeyPressMsg{Code: tea.KeyTab})
 		if v.tab != tab {
@@ -52,10 +49,10 @@ func TestTaskWorkspaceDefaultsToOverviewAndCyclesInDrawnOrder(t *testing.T) {
 		}
 	}
 
-	v.updateKey(tea.KeyPressMsg{Code: '2', Text: "2"})
-	got := v.render(100, 80)
+	v.setTab(taskTabDetails)
+	got := ansi.Strip(v.render(100, 80))
 	for _, value := range []string{
-		taskTabDetails.String(), "A complete description", "Description", "Overview",
+		"Details", "A complete description", "Description", "Overview",
 		"Execution", "Fields", "Lifecycle", "Workflow snapshot",
 	} {
 		if !strings.Contains(got, value) {
@@ -66,7 +63,7 @@ func TestTaskWorkspaceDefaultsToOverviewAndCyclesInDrawnOrder(t *testing.T) {
 		t.Errorf("details tab rendered an unselected section:\n%s", got)
 	}
 
-	v.updateKey(tea.KeyPressMsg{Code: '3', Text: "3"})
+	v.setTab(taskTabOutput)
 	got = v.render(100, 28)
 	if !strings.Contains(got, "no attempt selected") {
 		t.Errorf("output tab did not use the full output surface:\n%s", got)
@@ -124,9 +121,9 @@ func TestOutputTabSelectsWhichAttemptToShow(t *testing.T) {
 		t.Fatalf("right selected/displayed %d/%d, want 102/102", d.selectedRun, d.displayRun)
 	}
 	got := v.render(100, 28)
-	for _, value := range []string{"2/2", "step 1 Implement", "attempt 2", "succeeded", "←/→ select"} {
+	for _, value := range []string{"attempt 2/2", "Implement", "attempt 2", "succeeded", "← →"} {
 		if !strings.Contains(got, value) {
-			t.Errorf("output attempt selector misses %q:\n%s", value, got)
+			t.Errorf("output feed misses %q:\n%s", value, got)
 		}
 	}
 

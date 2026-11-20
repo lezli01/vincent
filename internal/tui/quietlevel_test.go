@@ -69,8 +69,8 @@ var levelGolden = map[outputLevel]string{
 	// pane is byte-identical to compact's.
 	levelQuiet: "  here is the answer\n" +
 		"$ go test ./...\n" +
-		"  PASS\n" +
-		"  a warning\n" +
+		"┃ PASS\n" +
+		"┃ a warning\n" +
 		"✗ the model refused",
 
 	levelCompact: "▸ Edit main.go\n" +
@@ -79,8 +79,8 @@ var levelGolden = map[outputLevel]string{
 		"\n" +
 		"  here is the answer\n" +
 		"$ go test ./...\n" +
-		"  PASS\n" +
-		"  a warning\n" +
+		"┃ PASS\n" +
+		"┃ a warning\n" +
 		"✗ the model refused\n" +
 		"✓ done · $0.01",
 
@@ -96,8 +96,8 @@ var levelGolden = map[outputLevel]string{
 		"\n" +
 		"  here is the answer\n" +
 		"$ go test ./...\n" +
-		"  PASS\n" +
-		"  a warning\n" +
+		"┃ PASS\n" +
+		"┃ a warning\n" +
 		"✗ the model refused\n" +
 		"✓ done · 1.2s · 3 turns · $0.01",
 
@@ -117,8 +117,8 @@ var levelGolden = map[outputLevel]string{
 		"\n" +
 		"  here is the answer\n" +
 		"$ go test ./...\n" +
-		"  PASS\n" +
-		"  a warning\n" +
+		"┃ PASS\n" +
+		"┃ a warning\n" +
 		"✗ the model refused\n" +
 		"✓ done · 1.2s (0.9s api) · 3 turns · $0.01",
 }

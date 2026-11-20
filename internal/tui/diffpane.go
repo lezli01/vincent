@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -283,7 +284,7 @@ func (p *diffPane) setSections(in []apiclient.DiffSection) {
 		sec.styledLead = colorDiffLines(sec.lead)
 		sec.styledBody = make([][]string, len(sec.files))
 		for i, f := range sec.files {
-			sec.styledBody[i] = colorDiffLines(f.body)
+			sec.styledBody[i] = numberDiffLines(f.body)
 			sec.added += f.added
 			sec.removed += f.removed
 		}
@@ -667,6 +668,19 @@ func (p *diffPane) laneCount() int {
 	return n
 }
 
+// totals is the change's size across every section, and whether a diff has
+// loaded to have one (task 162.2's tab marker).
+func (p *diffPane) totals() (added, removed int, ok bool) {
+	if p.sections == nil {
+		return 0, 0, false
+	}
+	for i := range p.sections {
+		added += p.sections[i].added
+		removed += p.sections[i].removed
+	}
+	return added, removed, true
+}
+
 // summary is the pane's first line: how many lanes and files, and the totals
 // across all of them. With everything folded shut, this is the only place the
 // size of the change is stated.
@@ -823,12 +837,12 @@ func (p *diffPane) fileRow(i, width int) string {
 	if p.grouped {
 		indent = "  "
 	}
-	prefix := style.Render(indent + glyph + " ")
+	prefix := style.Render(indent+glyph+" ") + diffStatusLetter(f.status) + " "
 	// A binary file has no ± lines at all, and `+0 -0` would read as
 	// "nothing changed here".
 	suffix := "  " + styleDim.Render("binary")
 	if !f.binary {
-		suffix = "  " + diffCounts(f.added, f.removed)
+		suffix = "  " + diffCounts(f.added, f.removed) + "  " + diffBar(f.added, f.removed)
 	}
 	if width <= 0 {
 		return prefix + style.Render(f.path) + suffix
@@ -904,4 +918,129 @@ func colorDiffLine(line string) string {
 		return line
 	}
 	return line
+}
+
+// diffStatusLetter is git's letter for what happened to a file, in the colour
+// of what it did (task 162.6): a letter, so it reads without the colour.
+func diffStatusLetter(status byte) string {
+	switch status {
+	case 'A':
+		return styleDiffAdd.Render("A")
+	case 'D':
+		return styleDiffDel.Render("D")
+	case 'R':
+		return toneCyan.Render("R")
+	case 0:
+		return " "
+	default:
+		return styleWarn.Render("M")
+	}
+}
+
+// diffBarCells is the widest a file's change bar draws.
+const diffBarCells = 8
+
+// diffBar is a file's change as a short bar of + and −, scaled so a file of
+// any size fits in diffBarCells and the two halves keep their proportion.
+func diffBar(added, removed int) string {
+	total := added + removed
+	if total == 0 {
+		return ""
+	}
+	cells := min(total, diffBarCells)
+	plus := added * cells / total
+	if added > 0 && plus == 0 {
+		plus = 1
+	}
+	minus := cells - plus
+	if removed > 0 && minus == 0 && plus > 1 {
+		plus--
+		minus = 1
+	}
+	return styleDiffAdd.Render(strings.Repeat("+", plus)) + styleDiffDel.Render(strings.Repeat("−", minus))
+}
+
+// numberDiffLines colours a file's body and puts the old and new line numbers
+// in a gutter in front of each hunk line (task 162.6). A hunk header reads as
+// a rule carrying the function it falls in. Lines before the first hunk — a
+// mode change, a rename, `Binary files … differ` — are the file's facts and
+// keep their own colour, unnumbered.
+func numberDiffLines(body []string) []string {
+	if len(body) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(body))
+	oldN, newN := 0, 0
+	inHunk := false
+	num := func(n int) string {
+		if n <= 0 {
+			return "    "
+		}
+		return fmt.Sprintf("%4d", n)
+	}
+	for _, line := range body {
+		if strings.HasPrefix(line, "@@") {
+			inHunk = true
+			oldN, newN = hunkStarts(line)
+			out = append(out, hunkRule(line))
+			continue
+		}
+		if !inHunk {
+			out = append(out, colorDiffLine(line))
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "+"):
+			out = append(out, styleDim.Render(num(0)+" "+num(newN)+" │")+styleDiffAdd.Render(line))
+			newN++
+		case strings.HasPrefix(line, "-"):
+			out = append(out, styleDim.Render(num(oldN)+" "+num(0)+" │")+styleDiffDel.Render(line))
+			oldN++
+		case strings.HasPrefix(line, "\\"):
+			// `\ No newline at end of file` numbers nothing.
+			out = append(out, styleDim.Render(num(0)+" "+num(0)+" │"+line))
+		default:
+			out = append(out, styleDim.Render(num(oldN)+" "+num(newN)+" │")+line)
+			oldN++
+			newN++
+		}
+	}
+	return out
+}
+
+// hunkStarts reads `@@ -a,b +c,d @@`'s two first line numbers.
+func hunkStarts(header string) (oldStart, newStart int) {
+	fields := strings.Fields(header)
+	for _, f := range fields[1:] {
+		if f == "@@" {
+			break
+		}
+		n, _, _ := strings.Cut(f[1:], ",")
+		v, err := strconv.Atoi(n)
+		if err != nil {
+			continue
+		}
+		switch f[0] {
+		case '-':
+			oldStart = v
+		case '+':
+			newStart = v
+		}
+	}
+	return oldStart, newStart
+}
+
+// hunkRule draws a hunk header as a dim rule with its ranges, and the
+// function git found it in, when there is one, at full weight.
+func hunkRule(header string) string {
+	ranges, context := header, ""
+	if i := strings.Index(header[2:], "@@"); i >= 0 {
+		ranges = header[:i+4]
+		context = strings.TrimSpace(header[i+4:])
+	}
+	out := styleDiffHunk.Render("── " + ranges)
+	if context != "" {
+		out += "  " + context
+	}
+	return out + styleDim.Render(" ──")
 }

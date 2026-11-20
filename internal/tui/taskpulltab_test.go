@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -50,33 +51,16 @@ func pullTabFixture(t *testing.T) *taskView {
 	return v
 }
 
-// The tab exists only for a linked pull request, and `6` does nothing without
-// one — the acceptance criterion the conditional tab is built around.
+// The tab exists only for a linked pull request — the acceptance criterion
+// the conditional tab is built around.
 func TestPullTabPresenceFollowsTheLink(t *testing.T) {
 	v := tabbedTaskFixture(t, taskTabDetails)
-	if v.pullTabAvailable() {
+	if v.pullTabAvailable() || slices.Contains(v.tabs(), taskTabPull) {
 		t.Fatal("the tab is on offer for a task with no pull request")
 	}
-	if cmd := v.updateKey(registryKey(t, "7")); cmd != nil || v.tab != taskTabDetails {
-		t.Fatalf("7 moved to %v with nothing linked, want no move", v.tab)
-	}
-	// The unconditional neighbour is what makes that absence free: 6 is Step
-	// Details whether or not there is a pull request (issue #323).
-	if v.updateKey(registryKey(t, "6")); v.tab != taskTabStepDetails {
-		t.Fatalf("6 moved to %v with nothing linked, want %v", v.tab, taskTabStepDetails)
-	}
-	v.tab = taskTabDetails
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
-	if !v.pullTabAvailable() {
+	if !v.pullTabAvailable() || !slices.Contains(v.tabs(), taskTabPull) {
 		t.Fatal("the tab is absent for a task with a linked pull request")
-	}
-	v.updateKey(registryKey(t, "7"))
-	if v.tab != taskTabPull {
-		t.Fatalf("7 moved to %v, want %v", v.tab, taskTabPull)
-	}
-	v.updateKey(registryKey(t, "6"))
-	if v.tab != taskTabStepDetails {
-		t.Fatalf("6 moved to %v with a pull request linked, want %v", v.tab, taskTabStepDetails)
 	}
 }
 
@@ -90,8 +74,8 @@ func TestPullTabHiddenWhenGitHubDisabled(t *testing.T) {
 	if v.pullTabAvailable() {
 		t.Fatal("the tab is on offer while the integration is disabled")
 	}
-	if got := v.tabs(); len(got) != 7 {
-		t.Fatalf("the strip carries %d tabs, want 7", len(got))
+	if got := v.tabs(); slices.Contains(got, taskTabPull) {
+		t.Fatalf("the strip carries the Pull request tab: %v", got)
 	}
 }
 

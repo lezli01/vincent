@@ -1,12 +1,10 @@
 package tui
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -43,29 +41,34 @@ func TestSelectTaskLandsOnOverview(t *testing.T) {
 	}
 }
 
-// `0` reaches the Overview from every tab, and every other digit still means
-// the tab it meant before (decision 2: digits bind to tabs).
-func TestDigitsBindToTabs(t *testing.T) {
+// The strip has no digits (task 162 decision 3): a digit moves nowhere, and
+// `i` opens the linked issue from every tab but Pull request's.
+func TestDigitsNoLongerSwitchTabs(t *testing.T) {
 	v := pullTabFixture(t)
-	want := map[string]taskViewTab{
-		"0": taskTabOverview, "1": taskTabSteps, "2": taskTabDetails, "3": taskTabOutput,
-		"4": taskTabDiff, "5": taskTabWorkflow, "6": taskTabStepDetails, "7": taskTabPull,
-	}
-	for key, tab := range want {
-		v.tab = taskTabDetails
-		if tab == taskTabDetails {
-			v.tab = taskTabSteps
-		}
+	for _, key := range []string{"0", "1", "2", "3", "4", "5", "6", "7"} {
+		v.tab = taskTabWorkflow
 		v.updateKey(synthKey(key))
-		if v.tab != tab {
-			t.Errorf("%s moved to %v, want %v", key, v.tab, tab)
+		if v.tab != taskTabWorkflow {
+			t.Errorf("%s moved to %v", key, v.tab)
 		}
 	}
-	// 7 without a pull request does nothing.
-	v = tabbedTaskFixture(t, taskTabOverview)
-	v.updateKey(synthKey("7"))
-	if v.tab != taskTabOverview {
-		t.Errorf("7 with no pull request moved to %v", v.tab)
+}
+
+func TestIssueKeyOpensTheLinkedIssue(t *testing.T) {
+	v := tabbedTaskFixture(t, taskTabOutput)
+	if cmd := v.updateKey(synthKey("i")); cmd != nil {
+		if _, ok := cmd().(openIssueMsg); ok {
+			t.Fatal("i opened an issue on a task with none")
+		}
+	}
+	v.detail.task.Issue = &apiclient.TaskIssue{ID: 8, Title: "flicker", State: "open"}
+	cmd := v.updateKey(synthKey("i"))
+	if cmd == nil {
+		t.Fatal("i did nothing on a task with an issue")
+	}
+	msg, ok := cmd().(openIssueMsg)
+	if !ok || msg.id != 8 || msg.back != viewTask {
+		t.Fatalf("i sent %#v, want issue 8 with the way back", cmd())
 	}
 }
 
@@ -105,16 +108,9 @@ func TestOverviewLinkMovesTheCursorThenTheTab(t *testing.T) {
 	v := tabbedTaskFixture(t, taskTabOverview)
 	v.detail.task.State = stateBlocked
 	v.detail.selectedRun = 2
-	v.updateKey(synthKey("3"))
+	v.updateKey(synthKey("enter"))
 	if v.tab != taskTabOutput || v.detail.selectedRun != 1 {
-		t.Fatalf("3 left tab %v, cursor %d; want %v, 1", v.tab, v.detail.selectedRun, taskTabOutput)
-	}
-	// The same digit elsewhere only switches.
-	v.tab = taskTabDetails
-	v.detail.selectedRun = 2
-	v.updateKey(synthKey("3"))
-	if v.tab != taskTabOutput || v.detail.selectedRun != 2 {
-		t.Fatalf("3 from %v moved the cursor to %d", taskTabDetails, v.detail.selectedRun)
+		t.Fatalf("enter left tab %v, cursor %d; want %v, 1", v.tab, v.detail.selectedRun, taskTabOutput)
 	}
 }
 
@@ -124,7 +120,7 @@ func TestOverviewStateChangeSwapsFrameNotCursor(t *testing.T) {
 	v := tabbedTaskFixture(t, taskTabOverview)
 	v.detail.task.State = stateRunning
 	v.detail.selectedRun = 1
-	if got := ansi.Strip(v.render(100, 30)); !strings.Contains(got, "3 full output") {
+	if got := ansi.Strip(v.render(100, 30)); !strings.Contains(got, "enter full output") {
 		t.Fatalf("running overview misses its link:\n%s", got)
 	}
 	reason := "check_failed"
@@ -132,7 +128,7 @@ func TestOverviewStateChangeSwapsFrameNotCursor(t *testing.T) {
 	v.detail.task.BlockReason = &reason
 	v.detail.task.AvailableActions = []string{apiclient.ActionRetry, apiclient.ActionCancel}
 	got := ansi.Strip(v.render(100, 30))
-	for _, want := range []string{"Blocked", "check failed  check_failed", "retry", "3 output of attempt 1", "6 what it was given"} {
+	for _, want := range []string{"Blocked", "check failed  check_failed", "retry", "enter output of attempt 1"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("blocked overview misses %q:\n%s", want, got)
 		}
@@ -142,13 +138,10 @@ func TestOverviewStateChangeSwapsFrameNotCursor(t *testing.T) {
 	}
 	v.detail.task.State = stateDone
 	got = ansi.Strip(v.render(100, 30))
-	for _, want := range []string{"Done", "Outcome", "cost", "4 diff"} {
+	for _, want := range []string{"Done", "Outcome", "cost", "enter diff"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("done overview misses %q:\n%s", want, got)
 		}
-	}
-	if strings.Contains(got, "7 PR") {
-		t.Errorf("done overview links a pull request that is not linked:\n%s", got)
 	}
 }
 
@@ -163,17 +156,19 @@ func TestOverviewFooterFollowsTheFrame(t *testing.T) {
 		return strings.Join(out, "|")
 	}
 	v.detail.task.State = stateRunning
-	if got := hints(); !strings.Contains(got, "3 full output") || strings.Contains(got, "4 diff") {
+	if got := hints(); !strings.Contains(got, "enter full output") || strings.Contains(got, "enter diff") {
 		t.Errorf("running hints = %q", got)
 	}
 	v.detail.task.State = stateDone
-	if got := hints(); !strings.Contains(got, "4 diff") || strings.Contains(got, "3 ") || strings.Contains(got, "7 PR") {
+	if got := hints(); !strings.Contains(got, "enter diff") || strings.Contains(got, "full output") {
 		t.Errorf("done hints = %q", got)
 	}
 }
 
-// The strip fits 80 columns with every tab on it, never abbreviates the
-// primary group, and keeps its two groups apart without colour.
+// The strip fits 80 columns with every tab on it, names each tab without a
+// digit, and marks the tab on screen without colour (an underline and bold
+// survive the ASCII profile's loss of colour only as text, so the test reads
+// the names).
 func TestTabStripFitsAndReadsWithoutColour(t *testing.T) {
 	v := pullTabFixture(t)
 	v.tab = taskTabOverview
@@ -183,24 +178,19 @@ func TestTabStripFitsAndReadsWithoutColour(t *testing.T) {
 		t.Fatalf("strip is %d wide at 80 columns:\n%s", w, ansi.Strip(strip))
 	}
 	plain := ansi.Strip(strip)
-	for _, want := range []string{"0 Overview", "3 Output", "4 Diff", "7 "} {
+	for _, want := range []string{"Overview", "Output", "Diff", "Pull request"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("strip misses %q: %s", want, plain)
 		}
 	}
-	var buf bytes.Buffer
-	w := &colorprofile.Writer{Forward: &buf, Profile: colorprofile.ASCII}
-	if _, err := w.Write([]byte(strip)); err != nil {
-		t.Fatal(err)
+	for _, digit := range []string{"0 ", "3 ", "4 ", "7 "} {
+		if strings.Contains(plain, digit+"O") || strings.Contains(plain, digit+"D") {
+			t.Errorf("strip still carries the digit %q: %s", digit, plain)
+		}
 	}
-	ascii := ansi.Strip(buf.String())
-	primary, secondary, ok := strings.Cut(ascii, strings.TrimSpace(tabSepGroups))
-	if !ok || !strings.Contains(primary, "4 Diff") || !strings.Contains(secondary, "1 ") {
-		t.Errorf("the groups are not told apart without colour: %q", ascii)
-	}
-	// The hit map follows the drawn geometry: a click on each box selects it.
+	// The hit map follows the drawn geometry: a click on each tab selects it.
 	for _, hit := range v.tabHits {
-		v.tab = taskTabDetails
+		v.tab = taskTabWorkflow
 		v.updateClick(tea.MouseClickMsg{X: hit.x0, Y: v.tabY})
 		if v.tab != hit.tab {
 			t.Errorf("a click at column %d selected %v, want %v", hit.x0, v.tab, hit.tab)

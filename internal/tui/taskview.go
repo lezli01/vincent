@@ -359,6 +359,8 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		t.width, t.height, t.termW = msg.Width, msg.Height, msg.Width
 		return t, t.detail.update(msg)
+	case gotoTaskTabMsg:
+		return t, t.setTab(msg.tab)
 	case selectTaskMsg:
 		// Which of the three ways this task was opened decides what happens
 		// to the back stack: a jump pushes what it left, a pop keeps what it
@@ -550,33 +552,25 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.switchTab(1)
 	case "shift+tab", "[":
 		return t.switchTab(-1)
-	case "0":
-		return t.jumpTab(taskTabOverview)
-	case "1":
-		return t.jumpTab(taskTabSteps)
-	case "2":
-		return t.jumpTab(taskTabDetails)
-	case "3":
-		return t.jumpTab(taskTabOutput)
-	case "4":
-		return t.jumpTab(taskTabDiff)
-	case "5":
-		return t.jumpTab(taskTabWorkflow)
-	case "6":
-		return t.jumpTab(taskTabStepDetails)
-	case "7":
-		// Absent means absent: with no pull request linked, 7 does nothing
-		// rather than landing on an empty screen (task 068).
-		if !t.pullTabAvailable() {
-			return nil
+	case openIssueKey:
+		// The pull request tab keeps `i` for its comment, as it had it first
+		// (task 162 decision 2's one exception).
+		if t.tab != taskTabPull {
+			if cmd := t.openIssueCmd(); cmd != nil {
+				return cmd
+			}
 		}
-		return t.jumpTab(taskTabPull)
 	case "d":
 		if t.tab == taskTabDiff {
 			return t.setTab(taskTabOutput)
 		}
 		return t.setTab(taskTabDiff)
 	case "esc":
+		if t.tab == taskTabStepDetails {
+			// Step details is opened from an attempt, so esc goes back to
+			// the attempt's output rather than off the task.
+			return t.setTab(taskTabOutput)
+		}
 		// One task at a time. Drilling into a lane and pressing esc used to
 		// land on the board however deep the reader had gone (#316).
 		return t.popCmd()
@@ -608,6 +602,18 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if t.detail.form != nil {
 			t.openPopup()
 			return nil
+		}
+		if t.tab == taskTabOverview && !t.detail.actions.capturing() {
+			// The frame's one link (task 162.7): the output it is about, or
+			// the diff of a finished task.
+			if links := t.overviewLinks(); len(links) > 0 {
+				return t.jumpTab(links[0].tab)
+			}
+		}
+		if t.tab == taskTabOutput && t.detail.selectedRun != 0 {
+			// What the selected attempt was given (task 162 decision 3): the
+			// Step details tab is reached from the attempt, not the strip.
+			return t.setTab(taskTabStepDetails)
 		}
 		if t.tab == taskTabSteps && t.detail.cursorLane() != 0 {
 			// A lane row: enter opens the lane's own workspace, and esc
@@ -1006,8 +1012,8 @@ var taskTabNames = [taskTabCount]string{
 	taskTabOutput:      "Output",
 	taskTabDiff:        "Diff",
 	taskTabWorkflow:    "Workflow",
-	taskTabStepDetails: "Step Details",
-	taskTabPull:        "Pull Request",
+	taskTabStepDetails: "Step details",
+	taskTabPull:        "Pull request",
 }
 
 // taskTabPurpose is what each tab is for, one clause each: the help sheet's
@@ -1033,54 +1039,22 @@ func (tab taskViewTab) String() string {
 	return taskTabNames[tab]
 }
 
-// taskTabDigits are the keys that jump to each tab, drawn beside its label.
-var taskTabDigits = [taskTabCount]string{
-	taskTabOverview:    "0",
-	taskTabSteps:       "1",
-	taskTabDetails:     "2",
-	taskTabOutput:      "3",
-	taskTabDiff:        "4",
-	taskTabWorkflow:    "5",
-	taskTabStepDetails: "6",
-	taskTabPull:        "7",
-}
-
-// taskTabShort are the secondary group's labels when the full strip does not
-// fit. The primary group is never abbreviated. Each is its tab's own name cut
-// short, never a second name: the breadcrumb and the help sheet say "Step
-// Details", and a strip that said "Inputs" read as a different tab (#800
-// W14).
+// taskTabShort are the labels when the full strip does not fit. Each is its
+// tab's own name cut short, never a second name (#800 W14).
 var taskTabShort = [taskTabCount]string{
+	taskTabOverview:    "Overview",
 	taskTabSteps:       "Steps",
 	taskTabDetails:     "Details",
+	taskTabOutput:      "Output",
+	taskTabDiff:        "Diff",
 	taskTabWorkflow:    "Flow",
-	taskTabStepDetails: "Step Det.",
+	taskTabStepDetails: "Step",
 	taskTabPull:        "PR",
 }
 
-// taskTabPrimary reports whether a tab is in the strip's first group: the
-// three a reader moves between most, drawn at full weight.
-func taskTabPrimary(tab taskViewTab) bool {
-	return tab == taskTabOverview || tab == taskTabOutput || tab == taskTabDiff
-}
-
-// Separators. Inside a group the primary one is a bar and the secondary a
-// gap; between the groups a double bar, so the two read as distinct under
-// the no-colour profile too, where the secondary group's dimming is gone
-// (WCAG 1.4.1, as task 129 borrows it).
-const (
-	tabSepPrimary   = " │ "
-	tabSepSecondary = "  "
-	tabSepGroups    = " ‖ "
-)
-
-// renderTabs draws the grouped strip at the widest label set that fits:
-// full labels with the tab hint, full labels alone, then the secondary group
-// abbreviated, then as bare digits with the current tab still named. The
-// hint is the strip's one statement of how to move, and an 80-column
-// workspace keeps it (#800 W14): an abbreviation is given up for it, but the
-// tabs' full names are not, and only a strip too narrow for even the digits
-// and the hint loses it.
+// renderTabs draws the strip at the widest label set that fits: names, markers
+// and the hint; names and markers; then short names. The strip carries no
+// digits (task 162 decision 3): tab and ⇧tab are how a reader moves.
 func (t *taskView) renderTabs() string {
 	tabs := t.tabs()
 	width := t.width
@@ -1088,19 +1062,20 @@ func (t *taskView) renderTabs() string {
 		width = 1 << 16
 	}
 	hint := styleDim.Render("  " + taskTabHint)
-	steps := []struct {
-		level int
-		hint  bool
-	}{{0, true}, {0, false}, {1, true}, {2, true}, {1, false}, {2, false}}
 	var line string
 	var hits []taskTabHit
-	for _, step := range steps {
-		line, hits = t.tabStrip(tabs, step.level)
-		if step.hint && ansi.StringWidth(line+hint) <= width {
-			line += hint
-			break
+	for _, step := range []struct {
+		short, hint bool
+	}{{false, true}, {false, false}, {true, false}} {
+		line, hits = t.tabStrip(tabs, step.short)
+		if step.hint {
+			if ansi.StringWidth(line+hint) <= width {
+				line += hint
+				break
+			}
+			continue
 		}
-		if !step.hint && ansi.StringWidth(line) <= width {
+		if ansi.StringWidth(line) <= width {
 			break
 		}
 	}
@@ -1108,56 +1083,65 @@ func (t *taskView) renderTabs() string {
 	return line
 }
 
-// taskTabHint is the strip's movement hint.
-const taskTabHint = "tab/⇧tab or digits"
+// tabSepPrimary is the bar between two tabs of equal weight, which the issue
+// workspace's two-tab strip still draws.
+const tabSepPrimary = " │ "
 
-// tabStrip draws the strip at one abbreviation level and records where each
-// tab landed, in screen columns, for the mouse.
-func (t *taskView) tabStrip(tabs []taskViewTab, level int) (string, []taskTabHit) {
+// taskTabHint is the strip's movement hint.
+const taskTabHint = "tab ⇧tab"
+
+// tabStrip draws the strip and records where each tab landed, in screen
+// columns, for the mouse. The tab on screen is bold with an underline; the
+// rest are dim. A tab may carry a marker after its name: the diff's size,
+// or a red `!` on an Overview whose task needs a human.
+func (t *taskView) tabStrip(tabs []taskViewTab, short bool) (string, []taskTabHit) {
 	var b strings.Builder
 	var hits []taskTabHit
 	b.WriteString("  ")
 	x := 3 // root frame border plus the two-cell indent above
 	for i, tab := range tabs {
 		if i > 0 {
-			sep := tabSepSecondary
-			switch {
-			case taskTabPrimary(tab):
-				sep = tabSepPrimary
-			case taskTabPrimary(tabs[i-1]):
-				sep = tabSepGroups
-			}
-			b.WriteString(styleDim.Render(sep))
-			x += ansi.StringWidth(sep)
+			b.WriteString("   ")
+			x += 3
 		}
-		name := taskTabDigits[tab]
-		if label := t.tabName(tab, level); label != "" {
-			name += " " + label
+		name := tab.String()
+		if short {
+			name = taskTabShort[tab]
 		}
-		active := t.tab == tab
-		switch {
-		case active:
-			b.WriteString(styleTitle.Render(name))
-		case taskTabPrimary(tab):
-			b.WriteString(name)
-		default:
+		marker := t.tabMarker(tab)
+		w := ansi.StringWidth(name)
+		if marker != "" {
+			w += 1 + ansi.StringWidth(marker)
+		}
+		if t.tab == tab {
+			b.WriteString(styleTitle.Underline(true).Render(name))
+		} else {
 			b.WriteString(styleDim.Render(name))
 		}
-		w := ansi.StringWidth(name)
+		if marker != "" {
+			b.WriteString(" " + marker)
+		}
 		hits = append(hits, taskTabHit{tab: tab, x0: x, x1: x + w})
 		x += w
 	}
 	return b.String(), hits
 }
 
-func (t *taskView) tabName(tab taskViewTab, level int) string {
-	if taskTabPrimary(tab) || level == 0 {
-		return tab.String()
+// tabMarker is what a tab says about itself on the strip, or "".
+func (t *taskView) tabMarker(tab taskViewTab) string {
+	d := t.detail
+	if !d.loaded {
+		return ""
 	}
-	// The bare-digit strip still names the tab on screen, so the strip never
-	// leaves the reader without the name of where they are.
-	if level == 1 || tab == t.tab {
-		return taskTabShort[tab]
+	switch tab {
+	case taskTabOverview:
+		if overviewFrameFor(d.task.State) == frameAttention {
+			return styleBad.Bold(true).Render(attentionBadge)
+		}
+	case taskTabDiff:
+		if add, del, ok := d.diff.totals(); ok && add+del > 0 {
+			return styleWarn.Render(fmt.Sprintf("+%d −%d", add, del))
+		}
 	}
 	return ""
 }
@@ -1242,11 +1226,21 @@ func (t *taskView) renderOutput(width, height int) string {
 		lane.tab = tabOutput
 		pane = lane
 	}
-	head = append(head, renderAttemptSelector(pane, width))
-	if height <= len(head) {
-		return strings.Join(head[:max(height, 1)], "\n")
+	// The feed names the open attempt in its own divider (task 162.4); the
+	// line under it says what is happening and how to move.
+	foot := pane.feedStatus(width)
+	room := height - len(head)
+	if foot != "" {
+		room -= 2
 	}
-	return strings.Join(append(head, pane.renderOutputPane(height-len(head))), "\n")
+	if room < 1 {
+		return strings.Join(append(head, foot)[:max(min(height, len(head)+1), 1)], "\n")
+	}
+	head = append(head, pane.renderOutputPane(room))
+	if foot != "" {
+		head = append(head, styleDim.Render(strings.Repeat("─", max(width, 1))), foot)
+	}
+	return strings.Join(head, "\n")
 }
 
 // renderLaneSelector is the Output pane's lane strip (#316). It names the

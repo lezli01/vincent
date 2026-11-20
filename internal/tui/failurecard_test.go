@@ -243,7 +243,7 @@ func TestFailureCardStatusIsNeverTheReason(t *testing.T) {
 func TestFailureCardCollapsesOnShortTerminals(t *testing.T) {
 	v := cardView(t, cardTask("check_failed", failedRun(5, 2, "check_failed")))
 	got := ansi.Strip(v.render(80, cardCollapseRows-1))
-	for _, want := range []string{"✗ Step 2 verify · attempt 2 · check failed", "r retry · E edit retry · s skip", "3 output of attempt 2"} {
+	for _, want := range []string{"✗ Step 2 verify · attempt 2 · check failed", "r retry · E edit retry · s skip", "enter output of attempt 2"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("collapsed card misses %q:\n%s", want, got)
 		}

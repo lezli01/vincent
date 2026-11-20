@@ -284,13 +284,29 @@ func laneParentProbe(tab taskViewTab) func(*testing.T) {
 // workspaceKeyProbe is the shared assertion for the keys taskView.Update
 // answers on every tab (issue #595): pressed on tab from, the workspace lands
 // on want.
-func workspaceKeyProbe(v func(*testing.T) *taskView, key string, want taskViewTab) func(*testing.T) {
+func workspaceKeyProbe(v func(*testing.T) *taskView, want taskViewTab) func(*testing.T) {
 	return func(t *testing.T) {
 		tv := v(t)
 		from := tv.tab
-		tv.updateKey(registryKey(t, key))
+		tv.updateKey(registryKey(t, "d"))
 		if tv.tab != want {
-			t.Fatalf("%s on tab %v moved to %v, want %v", key, from, tv.tab, want)
+			t.Fatalf("d on tab %v moved to %v, want %v", from, tv.tab, want)
+		}
+	}
+}
+
+// issueKeyProbe is `i` on a workspace tab: it opens the task's linked issue
+// (task 162 decision 2), and esc on the issue comes back here.
+func issueKeyProbe(v func(*testing.T) *taskView) func(*testing.T) {
+	return func(t *testing.T) {
+		tv := v(t)
+		tv.detail.task.Issue = &apiclient.TaskIssue{ID: 8, Title: "flicker", State: "open"}
+		cmd := tv.updateKey(registryKey(t, openIssueKey))
+		if cmd == nil {
+			t.Fatalf("i on tab %v did nothing", tv.tab)
+		}
+		if msg, ok := cmd().(openIssueMsg); !ok || msg.id != 8 || msg.back != viewTask {
+			t.Fatalf("i on tab %v sent %#v, want issue 8 with the way back", tv.tab, cmd())
 		}
 	}
 }
@@ -588,20 +604,20 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabSteps) },
-		"0": workspaceKeyProbe(onTab(taskTabSteps), "0", taskTabOverview),
-		"d": workspaceKeyProbe(onTab(taskTabSteps), "d", taskTabDiff),
+		"i": issueKeyProbe(onTab(taskTabSteps)),
+		"d": workspaceKeyProbe(onTab(taskTabSteps), taskTabDiff),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabSteps)
 			v.updateKey(registryKey(t, "tab"))
-			if v.tab != taskTabDetails {
-				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabDetails)
+			if v.tab != taskTabOutput {
+				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabOutput)
 			}
 		},
 		"]": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabSteps)
 			v.updateKey(registryKey(t, "]"))
-			if v.tab != taskTabDetails {
-				t.Fatalf("] moved to %v, want %v", v.tab, taskTabDetails)
+			if v.tab != taskTabOutput {
+				t.Fatalf("] moved to %v, want %v", v.tab, taskTabOutput)
 			}
 		},
 		"down": func(t *testing.T) {
@@ -678,20 +694,20 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 
 	ctxTaskDetails: {
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabDetails) },
-		"0": workspaceKeyProbe(onTab(taskTabDetails), "0", taskTabOverview),
-		"d": workspaceKeyProbe(onTab(taskTabDetails), "d", taskTabDiff),
+		"i": issueKeyProbe(onTab(taskTabDetails)),
+		"d": workspaceKeyProbe(onTab(taskTabDetails), taskTabDiff),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDetails)
 			v.updateKey(registryKey(t, "tab"))
-			if v.tab != taskTabStepDetails {
-				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabStepDetails)
+			if v.tab != taskTabOverview {
+				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabOverview)
 			}
 		},
 		"]": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDetails)
 			v.updateKey(registryKey(t, "]"))
-			if v.tab != taskTabStepDetails {
-				t.Fatalf("] moved to %v, want %v", v.tab, taskTabStepDetails)
+			if v.tab != taskTabOverview {
+				t.Fatalf("] moved to %v, want %v", v.tab, taskTabOverview)
 			}
 		},
 		"down": func(t *testing.T) {
@@ -1680,6 +1696,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxOutput: {
+		"enter": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabOutput)
+			if v.detail.selectedRun == 0 {
+				v.detail.selectedRun = v.detail.attempts()[0].ID
+			}
+			v.updateKey(registryKey(t, "enter"))
+			if v.tab != taskTabStepDetails {
+				t.Fatalf("enter on Output moved to %v, want %v", v.tab, taskTabStepDetails)
+			}
+		},
 		"g": func(t *testing.T) {
 			d := newTestDetail(t)
 			d.focus = focusOutput
@@ -1694,8 +1720,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOutput) },
-		"0": workspaceKeyProbe(onTab(taskTabOutput), "0", taskTabOverview),
-		"d": workspaceKeyProbe(onTab(taskTabOutput), "d", taskTabDiff),
+		"i": issueKeyProbe(onTab(taskTabOutput)),
+		"d": workspaceKeyProbe(onTab(taskTabOutput), taskTabDiff),
 		"U": laneParentProbe(taskTabOutput),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabOutput)
@@ -1852,14 +1878,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabDiff) },
-		"0": workspaceKeyProbe(onTab(taskTabDiff), "0", taskTabOverview),
-		"d": workspaceKeyProbe(onTab(taskTabDiff), "d", taskTabOutput),
+		"i": issueKeyProbe(onTab(taskTabDiff)),
+		"d": workspaceKeyProbe(onTab(taskTabDiff), taskTabOutput),
 		"U": laneParentProbe(taskTabDiff),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDiff)
 			v.updateKey(registryKey(t, "tab"))
-			if v.tab != taskTabSteps {
-				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabSteps)
+			if v.tab != taskTabWorkflow {
+				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabWorkflow)
 			}
 		},
 		// The way back off the tab has to stay on screen, so `]` is a row here
@@ -2451,8 +2477,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOverview) },
-		"1": workspaceKeyProbe(onTab(taskTabOverview), "1", taskTabSteps),
-		"d": workspaceKeyProbe(onTab(taskTabOverview), "d", taskTabDiff),
+		"i": issueKeyProbe(onTab(taskTabOverview)),
+		"d": workspaceKeyProbe(onTab(taskTabOverview), taskTabDiff),
 		"l": laneOpenProbe(taskTabOverview),
 		"U": laneParentProbe(taskTabOverview),
 		"w": func(t *testing.T) {
@@ -2462,55 +2488,30 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("w left tab %v, cursor %d; want Output on the result's attempt 1", v.tab, v.detail.selectedRun)
 			}
 		},
-		"0": func(t *testing.T) {
-			v := tabbedTaskFixture(t, taskTabDetails)
-			v.updateKey(registryKey(t, "0"))
-			if v.tab != taskTabOverview {
-				t.Fatalf("0 moved to %v, want %v", v.tab, taskTabOverview)
-			}
-		},
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabOverview)
 			v.updateKey(registryKey(t, "tab"))
-			if v.tab != taskTabOutput {
-				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabOutput)
+			if v.tab != taskTabSteps {
+				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabSteps)
 			}
 		},
 		"]": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabOverview)
 			v.updateKey(registryKey(t, "]"))
-			if v.tab != taskTabOutput {
-				t.Fatalf("] moved to %v, want %v", v.tab, taskTabOutput)
+			if v.tab != taskTabSteps {
+				t.Fatalf("] moved to %v, want %v", v.tab, taskTabSteps)
 			}
 		},
-		"3": overviewLinkProbe(stateRunning, "3", taskTabOutput),
-		"6": overviewLinkProbe(stateBlocked, "6", taskTabStepDetails),
-		"4": overviewLinkProbe(stateDone, "4", taskTabDiff),
-		"7": func(t *testing.T) {
-			v := pullTabFixture(t)
-			v.detail.task.State = stateDone
-			v.tab = taskTabOverview
-			v.updateKey(registryKey(t, "7"))
-			if v.tab != taskTabPull {
-				t.Fatalf("7 moved to %v, want %v", v.tab, taskTabPull)
-			}
-		},
+		"enter": overviewLinkProbe(stateRunning, "enter", taskTabOutput),
 	},
 
 	ctxTaskStepDetails: {
 		"N":   func(t *testing.T) { nextFailureProbe(t, taskTabStepDetails) },
 		"tab": workspaceTabProbe(onTab(taskTabStepDetails)),
-		"0":   workspaceKeyProbe(onTab(taskTabStepDetails), "0", taskTabOverview),
-		"d":   workspaceKeyProbe(onTab(taskTabStepDetails), "d", taskTabDiff),
+		"i":   issueKeyProbe(onTab(taskTabStepDetails)),
+		"d":   workspaceKeyProbe(onTab(taskTabStepDetails), taskTabDiff),
 		"l":   laneOpenProbe(taskTabStepDetails),
 		"U":   laneParentProbe(taskTabStepDetails),
-		"6": func(t *testing.T) {
-			v := tabbedTaskFixture(t, taskTabSteps)
-			v.updateKey(registryKey(t, "6"))
-			if v.tab != taskTabStepDetails {
-				t.Fatalf("6 moved to %v, want %v", v.tab, taskTabStepDetails)
-			}
-		},
 		"down": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabStepDetails)
 			runs := v.detail.attempts()
@@ -2525,17 +2526,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxTaskPull: {
 		"N":   func(t *testing.T) { nextFailureProbe(t, taskTabPull) },
 		"tab": workspaceTabProbe(pullTabFixture),
-		"0":   workspaceKeyProbe(pullTabFixture, "0", taskTabOverview),
-		"d":   workspaceKeyProbe(pullTabFixture, "d", taskTabDiff),
+		"d":   workspaceKeyProbe(pullTabFixture, taskTabDiff),
 		"U":   laneParentProbe(taskTabPull),
-		"7": func(t *testing.T) {
-			v := pullTabFixture(t)
-			v.tab = taskTabDetails
-			v.updateKey(registryKey(t, "7"))
-			if v.tab != taskTabPull {
-				t.Fatalf("7 moved to %v, want %v", v.tab, taskTabPull)
-			}
-		},
 		"down": func(t *testing.T) {
 			v := pullTabFixture(t)
 			v.updateKey(registryKey(t, "down"))
@@ -2680,8 +2672,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxTaskWorkflow: {
 		"N":   func(t *testing.T) { nextFailureProbe(t, taskTabWorkflow) },
 		"tab": workspaceTabProbe(workflowTabFixture),
-		"0":   workspaceKeyProbe(workflowTabFixture, "0", taskTabOverview),
-		"d":   workspaceKeyProbe(workflowTabFixture, "d", taskTabDiff),
+		"i":   issueKeyProbe(workflowTabFixture),
+		"d":   workspaceKeyProbe(workflowTabFixture, taskTabDiff),
 		"U":   laneParentProbe(taskTabWorkflow),
 		"down": func(t *testing.T) {
 			v := workflowTabFixture(t)
@@ -2699,13 +2691,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("shift+down moved the selection to %q; panning must not", got)
 			}
 		},
-		"5": func(t *testing.T) {
-			v := tabbedTaskFixture(t, taskTabSteps)
-			v.updateKey(registryKey(t, "5"))
-			if v.tab != taskTabWorkflow {
-				t.Fatalf("5 moved to %v, want Workflow", v.tab)
-			}
-		},
+
 		// The graph's `l` is the one that resolves to the lane under the
 		// cursor rather than to the blamed one, so it gets the graph fixture.
 		"l": func(t *testing.T) {

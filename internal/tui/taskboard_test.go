@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -257,21 +258,23 @@ func taskWorkspaceFixture(t *testing.T, width int) *taskView {
 	return v
 }
 
-// The steps and the details have panes of their own on a wide terminal, and
-// stay reachable as tabs on a narrow one.
+// The steps have a rail of their own on a wide terminal and stay a tab on a
+// narrow one; neither strip carries Task Details or Step Details unless that
+// tab is open (task 162 decision 3).
 func TestTaskWorkspaceTabsFollowTheWidth(t *testing.T) {
 	wide := taskWorkspaceFixture(t, taskRailMinW)
-	for _, tab := range wide.tabs() {
-		if tab == taskTabSteps || tab == taskTabDetails || tab == taskTabStepDetails {
-			t.Errorf("the wide strip still has the %s tab", tab)
-		}
-	}
-	if wide.tabs()[0] != taskTabOutput {
-		t.Errorf("the wide strip starts on %s, want Output", wide.tabs()[0])
+	want := []taskViewTab{taskTabOverview, taskTabOutput, taskTabDiff, taskTabWorkflow}
+	if got := wide.tabs(); !slices.Equal(got, want) {
+		t.Errorf("the wide strip is %v, want %v", got, want)
 	}
 	narrow := taskWorkspaceFixture(t, taskRailMinW-1)
-	if narrow.frameless() || len(narrow.tabs()) != 7 {
-		t.Errorf("a narrow workspace lost its tabs: %v", narrow.tabs())
+	want = []taskViewTab{taskTabOverview, taskTabSteps, taskTabOutput, taskTabDiff, taskTabWorkflow}
+	if got := narrow.tabs(); narrow.frameless() || !slices.Equal(got, want) {
+		t.Errorf("the narrow strip is %v, want %v", got, want)
+	}
+	narrow.tab = taskTabStepDetails
+	if got := narrow.tabs(); got[len(got)-1] != taskTabStepDetails {
+		t.Errorf("an open Step details is not on the strip: %v", got)
 	}
 }
 
@@ -288,21 +291,12 @@ func TestTaskWorkspaceWideLayout(t *testing.T) {
 	}
 	out := ansi.Strip(strings.Join(lines, "\n"))
 	for _, want := range []string{
-		"#6 verify the signed checksums", " blocked ", "step 3 of 3", "▤ Steps", "Details",
-		"publish-check", "feat/6-verify", "issue #14", "The checksum did not match.", "r retry", "R repair",
+		"#6 verify the signed checksums", " blocked ", "step 3 of 3", "Steps",
+		"publish-check", "feat/6-verify", "issue #14 Ship signed releases", "i open", "The checksum did not match.", "r retry", "R repair",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the workspace is missing %q:\n%s", want, out)
 		}
-	}
-}
-
-// The details pane gives way before the steps do.
-func TestTaskWorkspaceDetailsNeedMoreRoom(t *testing.T) {
-	v := taskWorkspaceFixture(t, taskDetailsMinW-1)
-	out := ansi.Strip(v.render(taskDetailsMinW-1, 40))
-	if strings.Contains(out, "Details") || !strings.Contains(out, "▤ Steps") {
-		t.Errorf("want the steps without the details:\n%s", out)
 	}
 }
 

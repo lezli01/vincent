@@ -861,6 +861,13 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if run.nav && (run.key == "" || m.panelOwnsKey(run.key)) {
 		return m, m.switchTo(run.navTarget)
 	}
+	if run.isTab {
+		// A tab row switches in place (task 162): synchronously, as the digit
+		// it used to replay did.
+		if v, ok := m.views[viewTask].(*taskView); ok && m.active == viewTask {
+			return m, tea.Batch(cmd, v.setTab(run.tab))
+		}
+	}
 	if run.action != nil {
 		return m, run.action
 	}

@@ -14,7 +14,7 @@ import (
 
 // blockedCardKeys are the action keys and jump links a blocked check_failed
 // task's failure card offers on the Overview.
-var blockedCardKeys = []string{"retry", "edit retry", "skip", "repair", "chat", "cancel", "3", "6"}
+var blockedCardKeys = []string{"retry", "edit retry", "skip", "repair", "chat", "cancel", "enter"}
 
 // cardKeysIn reports which of blockedCardKeys a stripped Overview frame shows,
 // in either the full card's rows or the collapsed card's one line.
@@ -24,10 +24,8 @@ func cardKeysIn(frame string) map[string]bool {
 		f := strings.Fields(line)
 		for _, k := range blockedCardKeys {
 			switch k {
-			case "3":
-				seen[k] = seen[k] || strings.Contains(line, "3 output of attempt")
-			case "6":
-				seen[k] = seen[k] || strings.Contains(line, "6 what it was given")
+			case "enter":
+				seen[k] = seen[k] || strings.Contains(line, "enter output of attempt")
 			default:
 				seen[k] = seen[k] || (len(f) > 1 && strings.HasPrefix(strings.Join(f[1:], " "), k+" —")) ||
 					strings.Contains(line, " "+k+" ·") || strings.HasSuffix(line, " "+k)
@@ -101,7 +99,7 @@ func TestAbortedOverviewKeepsItsLinks(t *testing.T) {
 	for h := cardCollapseRows + 1; h <= 40; h++ {
 		v := outcomeView(t, outcomeTask(stateAborted))
 		v.width, v.height = 100, h
-		if got := ansi.Strip(v.render(100, h)); !strings.Contains(got, "3 output of attempt") {
+		if got := ansi.Strip(v.render(100, h)); !strings.Contains(got, "enter output of attempt") {
 			t.Errorf("100×%d hides the jump links:\n%s", h, got)
 		}
 	}

@@ -61,7 +61,7 @@ func TestPullWriteRoundTripsAgainstTheRealHandlers(t *testing.T) {
 	h.p.until(10*time.Second, "the workspace to fetch its pull request", func() bool {
 		return h.m.active == viewTask && tv.pull.Pull != nil
 	})
-	h.sendKey(tea.KeyPressMsg{Code: '7', Text: "7"})
+	h.m.Update(gotoTaskTabMsg{tab: taskTabPull})
 	h.p.until(10*time.Second, "the check rollup", func() bool {
 		return tv.tab == taskTabPull && tv.pullTab.loaded && len(tv.pullTab.checks.Runs) > 0
 	})

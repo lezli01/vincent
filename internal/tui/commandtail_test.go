@@ -34,7 +34,7 @@ func TestCommandOutputIsTailedAtQuietAndCompact(t *testing.T) {
 	recs := commandRun("make", 100, "")
 	want := []string{"$ make", "  … 80 earlier line(s) (v)"}
 	for i := 81; i <= 100; i++ {
-		want = append(want, fmt.Sprintf("  make line %d", i))
+		want = append(want, fmt.Sprintf("┃ make line %d", i))
 	}
 	for _, level := range []outputLevel{levelQuiet, levelCompact} {
 		if got := renderTail(recs, level); !slices.Equal(got, want) {
@@ -60,7 +60,7 @@ func TestLoudLevelsShowTheWholeCommandOutput(t *testing.T) {
 	recs := commandRun("make", 100, "")
 	for _, level := range []outputLevel{levelNormal, levelVerbose} {
 		got := renderTail(recs, level)
-		if len(got) != 101 || got[1] != "  make line 1" {
+		if len(got) != 101 || got[1] != "┃ make line 1" {
 			t.Errorf("%s cut a command's output: %d lines, first %q", level, len(got), got[1])
 		}
 	}
@@ -72,7 +72,7 @@ func TestAFailingCommandsLastLineIsVisibleAtQuiet(t *testing.T) {
 		Type: "command.output", Text: "FAIL: TestSomething", Stream: "stderr",
 	})
 	got := renderTail(recs, levelQuiet)
-	if got[len(got)-1] != "  FAIL: TestSomething" {
+	if got[len(got)-1] != "┃ FAIL: TestSomething" {
 		t.Errorf("the failing line is not the last line: %q", got[len(got)-1])
 	}
 	if !slices.Contains(got, "  … 41 earlier line(s) (v)") {
@@ -93,7 +93,7 @@ func TestEachCommandRunHasItsOwnTail(t *testing.T) {
 	if !slices.Equal(counts, want) {
 		t.Errorf("counts %q, want %q", counts, want)
 	}
-	for _, l := range []string{"$ build", "  build line 11", "  build line 30", "$ lint", "check ▏lint line 6", "check ▏lint line 25"} {
+	for _, l := range []string{"$ build", "┃ build line 11", "┃ build line 30", "$ lint", "check ▏lint line 6", "check ▏lint line 25"} {
 		if !slices.Contains(got, l) {
 			t.Errorf("missing %q in %q", l, got)
 		}

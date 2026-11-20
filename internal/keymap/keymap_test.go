@@ -267,37 +267,37 @@ func TestRetiredIDIsDroppedNotAliased(t *testing.T) {
 	}
 }
 
-// TestOverviewZeroYieldsToAUserBinding is the upgrade task 129.12 is: `0`
-// became a fixed key of the task workspace, and a tui.keys that had already
-// bound it still loads (task 128 decision 3). The binding wins, the fixed
-// meaning is shadowed on every surface that records it, and a warning says
-// so; the strict write path refuses the same map.
-func TestOverviewZeroYieldsToAUserBinding(t *testing.T) {
-	overrides := map[string]string{"refresh": "0"}
+// TestOverviewIssueKeyYieldsToAUserBinding is the upgrade task 162 is: `i`
+// became a fixed key of the task workspace's tabs, and a tui.keys that had
+// already bound it still loads (task 128 decision 3). The binding wins, the
+// fixed meaning is shadowed on the surfaces that record it, and a warning
+// says so; the strict write path refuses the same map.
+func TestOverviewIssueKeyYieldsToAUserBinding(t *testing.T) {
+	overrides := map[string]string{"refresh": "i"}
 	if _, err := Build(overrides); err == nil {
-		t.Fatal("strict Build accepted 0, which the Overview holds")
+		t.Fatal("strict Build accepted i, which the workspace holds")
 	}
 	km, warnings, err := BuildLenient(overrides)
 	if err != nil {
-		t.Fatalf("lenient load refused a tui.keys binding 0: %v", err)
+		t.Fatalf("lenient load refused a tui.keys binding i: %v", err)
 	}
-	if km.Key(Refresh) != "0" {
-		t.Errorf("refresh = %q, want the user's 0", km.Key(Refresh))
+	if km.Key(Refresh) != "i" {
+		t.Errorf("refresh = %q, want the user's i", km.Key(Refresh))
 	}
-	for _, s := range []Surface{"task overview", "task workspace"} {
-		if !km.Shadowed(s, "0") {
-			t.Errorf("0 is not shadowed on %s", s)
+	for _, s := range []Surface{"task overview", "output"} {
+		if !km.Shadowed(s, "i") {
+			t.Errorf("i is not shadowed on %s", s)
 		}
 	}
-	if joined := strings.Join(warnings, "\n"); !strings.Contains(joined, "Overview") {
-		t.Errorf("warnings %q do not name the Overview", joined)
+	if len(warnings) == 0 {
+		t.Error("the shadowing said nothing")
 	}
 }
 
 // Every Overview row the registry lists is recorded, so no override can
-// silently take a jump link.
+// silently take its link or the issue key.
 func TestOverviewRowsAreFixed(t *testing.T) {
-	want := map[string]bool{"0": false, "3": false, "4": false, "6": false, "7": false}
+	want := map[string]bool{"enter": false, "i": false, "tab": false}
 	for _, f := range FixedKeys() {
 		if f.Surface == "task overview" {
 			if _, ok := want[f.Key]; ok {

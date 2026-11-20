@@ -16419,6 +16419,51 @@ stream for the live tail.
    app header, boards, cards and side panes: `unicode`, the default, or `nerd`. It
    applies from every config answer, and only to text the TUI itself wrote.
 
+   *Amended 2026-11-20 (task 162; supersedes task 150.6's workspace sentence,
+   and every digit binding of the task workspace above).* **The task workspace
+   is a title band, a steps rail and five tabs, with no digits.** The band
+   names the linked issue — `◇ issue #N title  state  i open`, or a dim `no
+   linked issue` — and `i` (§15's `open_issue`, rebindable) opens it from every
+   tab but Pull request, whose `i` stays its comment; `esc` on the issue
+   returns to the tab it left. From 130 columns the rail is one row per step —
+   state glyph, name, a right-aligned duration — on a connecting line, a dim
+   second row only when the step has something to say (a failure's reason, a
+   retry count, agent and cost), the selected step's attempts when it has more
+   than one, a parallel group's members, a loop's passes as pips, and a
+   fan-out's lanes as a tree with earlier rounds one line each; it replaces the
+   right-hand Details pane, whose facts move to the band and the Overview.
+   **The tabs are Overview, Output, Diff, Workflow and Pull request** (the last
+   only when one is linked), cycled with `tab`/`shift+tab` and `]`/`[`; below
+   130 columns Steps keeps a tab after Overview. Step Details is opened with
+   `enter` on the Output tab — what the selected attempt was given — and is on
+   the strip only while open, `esc` returning to Output; Task Details is the
+   Overview's lower half. A tab may carry a marker: the diff's size on Diff, a
+   red `!` on Overview while the task needs a human. The palette's tab rows have
+   no key. **The Overview** keeps its three frames and their cards, adds a
+   progress bar of one segment per step to the progress frame, puts the frame's
+   one link on `enter` (the output it is about, or a finished task's diff), and
+   follows the frame with a Linked card (issue, pull request, chat, branch and
+   base) beside a Usage card (elapsed, tokens, cost, workflow and origin,
+   worktree), then the Task Details document. **Output is the whole task as one
+   feed**: every attempt the pane is not showing folds to one dashed line said
+   from its step-run row (state, step, agent, duration, cost, reason, the start
+   of its result), and the shown attempt opens between a divider naming its
+   step, agent, attempt and start time and a line saying how it ended (a
+   command's exit code, or the state an agent step finished in). Moving the
+   selection (the rail, `←/→`) moves which attempt is open; only its transcript
+   is fetched, as before. `vincent.step_started`/`step_finished` records no
+   longer draw rows, a step's script draws its first line and a count below
+   verbose, and a command's output sits behind a `┃` margin bar, red for stderr.
+   A line pinned under the pane says, on a live attempt, how long it has run,
+   its cost and the follow state (`▲ N new below · f` while paused), and on a
+   finished one which attempt is open; the attempt strip above the pane is
+   gone. **The Diff** marks each file with git's status letter (`M`, `A`, `D`,
+   `R`) and a change bar of at most eight `+`/`−` cells, numbers each hunk line
+   with its old and new line numbers, and draws a hunk header as a rule
+   carrying the function it falls in. On the Diff tab `d` switches between the
+   whole task's diff and the diff of the attempt selected in the rail
+   (§13.2's `step_run`); elsewhere it still opens the Diff tab.
+
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:
    only such an event can move a row's task count or active marker. A step
