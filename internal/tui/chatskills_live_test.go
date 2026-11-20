@@ -23,6 +23,7 @@ import (
 	"github.com/lezli01/vincent/internal/events"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/store/storetest"
+	"github.com/lezli01/vincent/internal/testrepo"
 )
 
 // The skill list against the real handlers (task 124.13): the chat workspace
@@ -74,7 +75,9 @@ func newChatSkillsLive(t *testing.T) *chatSkillsLive {
 	}
 	chat := &store.Chat{
 		ProjectID: project.ID, Title: "skills", State: chatstate.Idle, Agent: "claude",
-		PermissionMode: string(agent.FullAuto), BaseBranch: "main", WorktreePath: t.TempDir(),
+		// A repository: a turn checkpoints its worktree before the CLI
+		// starts (task 165.2), and a plain directory fails that first.
+		PermissionMode: string(agent.FullAuto), BaseBranch: "main", WorktreePath: testrepo.Init(t, "main"),
 	}
 	if err := st.CreateChat(ctx, chat); err != nil {
 		t.Fatalf("CreateChat: %v", err)
