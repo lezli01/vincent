@@ -177,7 +177,7 @@ the living engineering specification records implementation contracts.
 | [161](161-chat-first-message-and-rename.md) | Start a chat from its first message, rename chats, and choose the agent for a chat on a task or issue | ✅ done (6/6) |
 | [162](162-chat-run-settings-between-turns.md) | Change a chat's model, effort and permission mode between turns: `PATCH /v1/chats/{id}`, per-turn overrides, `vincent chat set`, `alt+p` and `shift+tab` | ✅ done (6/6) |
 | [163](163-chat-editor-and-markdown.md) | Write a chat message in `$EDITOR`, and open the conversation as Markdown | 🔄 in progress (2/3) |
-| [162](162-chat-drafts-and-prompt-history.md) | Keep chat drafts and a stash in the daemon, recall earlier prompts with `↑`, and pick any prompt of the project with `alt+h` | 🔄 in progress (5/6) |
+| [164](164-chat-drafts-and-prompt-history.md) | Keep chat drafts and a stash in the daemon, recall earlier prompts with `↑`, and pick any prompt of the project with `alt+h` | 🔄 in progress (5/6) |
 
 ## How to add and update a task document
 

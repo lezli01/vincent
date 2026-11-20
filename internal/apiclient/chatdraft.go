@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// ChatDraft is a chat's unsent draft and its one stash slot (task 162), as
+// ChatDraft is a chat's unsent draft and its one stash slot (task 164), as
 // GET and PUT /v1/chats/{id}/draft answer them.
 type ChatDraft struct {
 	Draft     string     `json:"draft"`
@@ -52,7 +52,7 @@ type ChatPrompt struct {
 	SentAt    time.Time `json:"sent_at"`
 }
 
-// ChatPrompts is GET /v1/chats/prompts (task 162): every prompt the project's
+// ChatPrompts is GET /v1/chats/prompts (task 164): every prompt the project's
 // chats sent, archived ones included, newest first and de-duplicated. A query
 // under three characters lists by recency; a longer one narrows by substring.
 // A limit of zero is the daemon's default.

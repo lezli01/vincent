@@ -62,7 +62,7 @@ type Chat struct {
 	// SteerReason says why not (task 156 decision 4).
 	CanSteer    bool   `json:"can_steer"`
 	SteerReason string `json:"steer_reason,omitempty"`
-	// HasDraft says the chat holds an unsent draft (task 162): the board's
+	// HasDraft says the chat holds an unsent draft (task 164): the board's
 	// `✎ draft` mark. Draft and Stash are the text, carried only by
 	// GetChat — a list leaves them empty.
 	HasDraft  bool      `json:"has_draft"`

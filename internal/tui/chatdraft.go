@@ -1,7 +1,7 @@
 package tui
 
 // A chat's draft and stash, kept in the daemon, and the recall of earlier
-// prompts (task 162, #1012, spec §5.5, §15).
+// prompts (task 164, #1012, spec §5.5, §15).
 //
 // The daemon owns the draft (decision 1): the composer is a view of
 // `chats.draft`, saved on a debounce while typing and flushed at once when

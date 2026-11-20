@@ -984,7 +984,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChat: {
-		// Task 162: recall's way back, the stash and the history picker.
+		// Task 164: recall's way back, the stash and the history picker.
 		"down": func(t *testing.T) {
 			v := chatViewFixture()
 			v.turns = []apiclient.ChatTurn{{Seq: 1, Prompt: "older"}, {Seq: 2, Prompt: "newer"}}

@@ -447,7 +447,7 @@ func (s *Server) buildHandler() http.Handler {
 	// The literal segment outranks {id} in ServeMux, so "search" is never
 	// read as a chat id (task 158).
 	rt.handle(http.MethodGet, "/v1/chats/search", s.handleChatSearch)
-	// "prompts" is a literal segment for the same reason (task 162).
+	// "prompts" is a literal segment for the same reason (task 164).
 	rt.handle(http.MethodGet, "/v1/chats/prompts", s.handleChatPrompts)
 	rt.handle(http.MethodPost, "/v1/chats", s.handleChatCreate)
 	rt.handle(http.MethodGet, "/v1/chats/{id}", s.handleChatGet)

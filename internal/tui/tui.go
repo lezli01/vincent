@@ -69,7 +69,7 @@ func Run(ctx context.Context, opts ...Option) error {
 	// Printed after the alt screen has torn down, which is what leaves the
 	// line in the scrollback — the point of reminding on the way out.
 	if m, ok := final.(*root); ok {
-		// The open chat's draft outlives the TUI (task 162): no command can
+		// The open chat's draft outlives the TUI (task 164): no command can
 		// run once the program has stopped, so this save is synchronous.
 		if v, ok := m.views[viewChat].(*chatView); ok {
 			v.flushDraftSync()

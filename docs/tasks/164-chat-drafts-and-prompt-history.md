@@ -1,4 +1,4 @@
-# 162 — Keep chat drafts in the daemon and recall earlier prompts
+# 164 — Keep chat drafts in the daemon and recall earlier prompts
 
 **Status:** 🔄 in progress (5/6) · **Opened:** 2026-11-20
 
@@ -13,24 +13,24 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [x] **162.1** Store: migration `0062_chat_drafts.sql` (`chats.draft`,
+- [x] **164.1** Store: migration `0063_chat_drafts.sql` (`chats.draft`,
   `draft_updated_at`, `stash`), `SetChatDraft`/`SetChatStash`/
   `UpdateChatDraft` with the 64 KiB cap, `ListChatPrompts`, the
   `chat.draft_changed` event, and clearing both on archive, close and
   hand-off. ✓ 2026-11-20
-- [x] **162.2** API and client: `GET`/`PUT /v1/chats/{id}/draft`,
+- [x] **164.2** API and client: `GET`/`PUT /v1/chats/{id}/draft`,
   `GET /v1/chats/prompts`, `draft`/`stash` on the chat read and `has_draft` on
   every chat body, the routes on `internal/mcp`'s exclusion list, and
   `apiclient` methods with a live test. ✓ 2026-11-20
-- [x] **162.3** Keymap: the `stash` (`alt+s`) and `prompt_history` (`alt+h`)
+- [x] **164.3** Keymap: the `stash` (`alt+s`) and `prompt_history` (`alt+h`)
   operations, the recall `↓` row, and the amended `↑` meaning. ✓ 2026-11-20
-- [x] **162.4** TUI: restore on open, debounced save and flush on leaving or
+- [x] **164.4** TUI: restore on open, debounced save and flush on leaving or
   quitting, clear on an accepted send, `↑`/`↓` recall, the stash, the
   history picker, and the board's `✎ draft` mark. ✓ 2026-11-20
-- [x] **162.5** Docs and gate: §5.5, §13.2, §13.3, §14 and §15 amendments, the
+- [x] **164.5** Docs and gate: §5.5, §13.2, §13.3, §14 and §15 amendments, the
   API, configuration and TUI references, `features.md`, `CHANGELOG.md`, and a
   draft round trip across a daemon restart in `m14`. ✓ 2026-11-20
-- [ ] **162.6** Re-capture the chats board and chat screenshots with
+- [ ] **164.6** Re-capture the chats board and chat screenshots with
   `scripts/screenshots.sh` (VHS), seeding one chat with a draft so the board
   shows `✎ draft`. Not done in the implementing PR: it needs VHS, which the
   implementing environment did not run.

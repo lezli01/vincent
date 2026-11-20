@@ -16,7 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
-// TestChatDraftAgainstTheRealAPI is task 162's client half: PutChatDraft,
+// TestChatDraftAgainstTheRealAPI is task 164's client half: PutChatDraft,
 // ChatDraft, GetChat's embedded draft, ListChats' has_draft and ChatPrompts
 // decode the real handlers' bodies.
 func TestChatDraftAgainstTheRealAPI(t *testing.T) {

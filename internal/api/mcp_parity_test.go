@@ -183,7 +183,7 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodPost, "/v1/config/branch-preview"},
 		// Task 158: chat search, a chat read under decision row 29.
 		{http.MethodGet, "/v1/chats/search"},
-		// Task 162: a chat's draft and the prompt history, under the same row.
+		// Task 164: a chat's draft and the prompt history, under the same row.
 		{http.MethodGet, "/v1/chats/{id}/draft"},
 		{http.MethodPut, "/v1/chats/{id}/draft"},
 		{http.MethodGet, "/v1/chats/prompts"},

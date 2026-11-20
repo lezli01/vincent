@@ -207,7 +207,7 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	if c.LinkedTaskID != nil {
 		title = styleDim.Render(fmt.Sprintf("task #%d · ", *c.LinkedTaskID)) + title
 	}
-	// An unsent draft (task 162) is marked ahead of the title, where a
+	// An unsent draft (task 164) is marked ahead of the title, where a
 	// narrow pane's truncation cannot cut it off.
 	if c.HasDraft {
 		title = styleDim.Render("✎ draft · ") + title

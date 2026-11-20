@@ -94,11 +94,11 @@ const (
 	// "view": a bare v would be typed into the composer.
 	ChatMarkdown Op = "chat_markdown"
 	// Stash sets the composer's draft aside in the chat's one stash slot, or
-	// pops the stash back into an empty composer (task 162 decision 2).
+	// pops the stash back into an empty composer (task 164 decision 2).
 	// alt+s, not ctrl+s: that is Steer, which task 156 decision 5 keeps.
 	Stash Op = "stash"
 	// PromptHistory opens a picker over every prompt the project's chats
-	// have sent (task 162 decision 3). alt+h for "history": ctrl+r is the
+	// have sent (task 164 decision 3). alt+h for "history": ctrl+r is the
 	// chat's fixed verbosity cycle.
 	PromptHistory Op = "prompt_history"
 )

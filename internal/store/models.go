@@ -825,7 +825,7 @@ type Chat struct {
 	// (task 156). It is read with the row, never written through it.
 	QueuedCount int
 	// Draft is the composer text not yet sent, and Stash the one slot a
-	// draft can be set aside in (task 162, §5.5). The daemon owns both so
+	// draft can be set aside in (task 164, §5.5). The daemon owns both so
 	// they follow the chat across clients and restarts; both are cleared
 	// when the chat ends. DraftUpdatedAt is nil before the first write.
 	Draft          string

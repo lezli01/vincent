@@ -1,4 +1,4 @@
--- 0062_chat_drafts: a chat's unsent draft and its one stash slot (task 162,
+-- 0063_chat_drafts: a chat's unsent draft and its one stash slot (task 164,
 -- #1012, spec §5.5).
 --
 -- Columns on the chat rather than a table of their own: each chat has exactly

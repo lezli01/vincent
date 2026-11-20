@@ -13,10 +13,10 @@ import (
 	"github.com/lezli01/vincent/internal/chatstate"
 )
 
-// A chat's draft and stash, and the project's prompt history (task 162,
+// A chat's draft and stash, and the project's prompt history (task 164,
 // #1012, spec §5.5).
 
-// EventChatDraft is a chat's draft or stash changing (task 162). It carries
+// EventChatDraft is a chat's draft or stash changing (task 164). It carries
 // has_draft, has_stash and draft_updated_at — never the text, which can be as
 // long as a prompt and has no business in the durable events table — so the
 // board repaints its `✎ draft` mark without a fetch and an open chat re-reads
@@ -92,7 +92,7 @@ func (s *Store) UpdateChatDraft(ctx context.Context, chatID int64, draft, stash 
 }
 
 // clearChatDraftTx empties c's draft and stash inside the transaction that
-// ends it (task 162): a terminal chat can never send, so a draft kept on it
+// ends it (task 164): a terminal chat can never send, so a draft kept on it
 // would be text nobody can reach, exactly as a queued message would (task 156
 // decision 6). No event: the terminal transition's own event already tells a
 // board to drop the row's mark.
@@ -152,7 +152,7 @@ type ChatPrompt struct {
 }
 
 // ListChatPrompts lists the prompts sent in every chat of a project — live,
-// archived, closed and handed off alike (task 162 decision 5) — newest first,
+// archived, closed and handed off alike (task 164 decision 5) — newest first,
 // with identical texts collapsed to their newest occurrence (decision 6).
 //
 // A query of MinSearchTermRunes or more runes is matched by substring on

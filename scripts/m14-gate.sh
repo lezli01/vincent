@@ -1451,7 +1451,7 @@ LIVE_ID="$(printf '%s' "$LIVE" | jq -r .id)"
 CODE="$(api_status GET "/chats?archived=yes")"
 [[ "$CODE" == "400" ]] || fail "GET /v1/chats?archived=yes is $CODE, want 400"
 
-echo "== 10b. a chat's draft and stash live in the daemon and survive a restart (task 162)"
+echo "== 10b. a chat's draft and stash live in the daemon and survive a restart (task 164)"
 CODE="$(api_status PUT "/chats/$LIVE_ID/draft" -d '{"draft": "half a thought", "stash": "set aside"}')"
 [[ "$CODE" == "200" ]] || fail "PUT /v1/chats/$LIVE_ID/draft is $CODE, want 200"
 [[ "$(listed "" "$LIVE_ID")" == "true" ]] || fail "the draft dropped chat $LIVE_ID from the listing"

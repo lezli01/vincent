@@ -11,7 +11,7 @@ import (
 func upKey() tea.KeyPressMsg   { return tea.KeyPressMsg{Code: tea.KeyUp} }
 func downKey() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyDown} }
 
-// TestUpEditsTheQueueBeforeRecalling is task 162 decision 4: with a queued
+// TestUpEditsTheQueueBeforeRecalling is task 164 decision 4: with a queued
 // message `↑` edits it, as task 156 decision 5 does; with none it recalls.
 func TestUpEditsTheQueueBeforeRecalling(t *testing.T) {
 	v := chatViewFixture()

@@ -9,7 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// A chat's draft and stash, and the project's prompt history (task 162,
+// A chat's draft and stash, and the project's prompt history (task 164,
 // #1012, spec §5.5, §13.2). None of these routes is an MCP tool: decision row
 // 29 keeps the chat family off that surface whole.
 
@@ -26,7 +26,7 @@ func renderChatDraft(c *store.Chat) chatDraftBody {
 }
 
 // putChatDraftRequest carries either field or both; an absent one is left as
-// it is (task 162).
+// it is (task 164).
 type putChatDraftRequest struct {
 	Draft *string `json:"draft"`
 	Stash *string `json:"stash"`
@@ -89,7 +89,7 @@ type chatPromptBody struct {
 }
 
 // handleChatPrompts serves GET /v1/chats/prompts?project_id=&q=&limit=
-// (task 162 decisions 5 and 6): every prompt the project's chats have sent,
+// (task 164 decisions 5 and 6): every prompt the project's chats have sent,
 // archived ones included, newest first and de-duplicated by text. A q of
 // three characters or more narrows by substring on chat search's trigram
 // index; a shorter or empty one lists by recency rather than answering

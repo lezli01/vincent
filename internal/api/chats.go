@@ -87,7 +87,7 @@ type chatBody struct {
 	// (task 156 decision 4), and SteerReason why not, so a client needs no
 	// copy of the capability table. No adapter can yet.
 	CanSteer bool `json:"can_steer"`
-	// HasDraft says the chat holds an unsent draft (task 162), which is the
+	// HasDraft says the chat holds an unsent draft (task 164), which is the
 	// board's `✎ draft` mark. Draft and Stash are the text itself, carried
 	// only by GET /v1/chats/{id}; a list never ships them.
 	HasDraft    bool      `json:"has_draft"`

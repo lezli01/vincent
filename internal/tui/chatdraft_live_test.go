@@ -20,7 +20,7 @@ import (
 	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
-// draftLive is a store and the real handlers over httptest, for task 162's
+// draftLive is a store and the real handlers over httptest, for task 164's
 // draft, stash and prompt-history tests.
 type draftLive struct {
 	st      *store.Store

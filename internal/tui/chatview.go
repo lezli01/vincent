@@ -123,7 +123,7 @@ type chatView struct {
 	editingQueued int64
 	// draft is the composer's link to the chat's stored draft and stash,
 	// recall the `↑`/`↓` walk through earlier prompts, and history the
-	// alt+h picker (task 162).
+	// alt+h picker (task 164).
 	draft   chatDraftState
 	recall  chatRecall
 	history chatHistoryPicker
@@ -377,7 +377,7 @@ func (v *chatView) open(id int64) tea.Cmd { return v.openAt(id, 0) }
 
 // openAt opens chat id landed on turn seq (task 158); seq 0 is a plain open.
 func (v *chatView) openAt(id int64, seq int) tea.Cmd {
-	// The chat being left keeps what was typed in it (task 162): the flush
+	// The chat being left keeps what was typed in it (task 164): the flush
 	// is its draft's, taken before anything below forgets it.
 	leave := v.leaveDraft()
 	v.resetDraft()
@@ -960,7 +960,7 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 				"finish or cancel one and send again", true
 			return v.flushDraft()
 		}
-		// A refused send keeps the stored draft too (task 162): it is
+		// A refused send keeps the stored draft too (task 164): it is
 		// saved now rather than waiting out a debounce enter cut short.
 		v.note, v.noteBad = errString(msg.err), true
 		return v.flushDraft()
@@ -972,7 +972,7 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	// sent: text added after it stays (review F8).
 	v.composer.SetValue(unsentRest(v.composer.Value(), msg.sent))
 	v.endRecall()
-	// The stored draft goes at the same acceptance point (task 162): what
+	// The stored draft goes at the same acceptance point (task 164): what
 	// is written is what is left, usually nothing.
 	saveCmd := v.flushDraft()
 	// The draft the inline hints were about is gone with it (task 124.14).
@@ -1077,7 +1077,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	if v.history.open {
 		// The prompt history picker owns the keyboard while it is up (task
-		// 162 decision 3), as the skills browse list does.
+		// 164 decision 3), as the skills browse list does.
 		return v, v.updateHistoryKey(msg)
 	}
 	if v.convFocus && v.search.typing {
@@ -1134,7 +1134,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	switch msg.String() {
 	case chatQueueEditKey:
-		// The queue first, then recall (task 162 decision 4): a queued
+		// The queue first, then recall (task 164 decision 4): a queued
 		// message is the newer thing to fix, and recall walks history only
 		// when nothing is queued.
 		if v.recall.active() {

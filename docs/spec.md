@@ -1314,7 +1314,7 @@ necessarily together (review F1, 2026-11-19) — and
 a term shorter than three characters is refused rather than scanned for. The
 search is served by `GET /v1/chats/search` (§13.2) and is, like every chat
 route, not an MCP tool.
-*Amended 2026-11-20 (task 162, issue #1012):* **a chat keeps its draft.** A
+*Amended 2026-11-20 (task 164, issue #1012):* **a chat keeps its draft.** A
 chat carries `draft` — the composer text not yet sent — and `stash`, one slot a
 draft can be set aside in, beside `draft_updated_at`. The daemon owns both, so
 they follow the chat across a chat switch, a TUI restart and another client;
@@ -11330,7 +11330,7 @@ GET    /v1/chats/search                 *Added 2026-11-19 (task 158, issue #1022
                                         matches per chat (default 5, at most 50). The
                                         highlight is data (`segments`), never markup. Not an
                                         MCP tool (§13.4, decision row 29)
-GET    /v1/chats/prompts                *Added 2026-11-20 (task 162, issue #1012).*
+GET    /v1/chats/prompts                *Added 2026-11-20 (task 164, issue #1012).*
                                         ?project_id=&q=&limit= — every prompt the project's chats
                                         sent, archived ones included (§5.5). → { prompts: [{
                                         prompt, chat_id, chat_title, chat_state, seq, sent_at }]
@@ -11342,11 +11342,11 @@ GET    /v1/chats/prompts                *Added 2026-11-20 (task 162, issue #1012
                                         defaults to 50, at most 500. "prompts" is a literal
                                         segment and outranks {id}. Not an MCP tool (§13.4,
                                         decision row 29)
-GET    /v1/chats/{id}/draft             *Added 2026-11-20 (task 162).* → { draft, stash,
+GET    /v1/chats/{id}/draft             *Added 2026-11-20 (task 164).* → { draft, stash,
                                         updated_at } — the chat's unsent draft and its stash
                                         slot (§5.5). GET /v1/chats/{id} embeds `draft` and
                                         `stash` too, and every chat body carries `has_draft`
-PUT    /v1/chats/{id}/draft             *Added 2026-11-20 (task 162).* { draft?, stash? } — at
+PUT    /v1/chats/{id}/draft             *Added 2026-11-20 (task 164).* { draft?, stash? } — at
                                         least one; an absent field is left as it is. Last
                                         writer wins. Each is at most 64 KiB (`400
                                         validation_failed`); a terminal chat is `409
@@ -12959,7 +12959,7 @@ queue paused, resumed or cleared. It carries `queued_count`, `queue_paused`
 and `queue_pause_reason` beside the chat's id, title and state, is published
 post-commit like every other event, and rides the per-chat stream.
 
-*Amended 2026-11-20 (task 162, issue #1012).* **`chat.draft_changed`**: a
+*Amended 2026-11-20 (task 164, issue #1012).* **`chat.draft_changed`**: a
 chat's draft or stash was written. It carries `has_draft`, `has_stash` and
 `draft_updated_at` beside the chat's id, title and state — never the text,
 which is up to 64 KiB and has no place in the durable events table — so a
@@ -13376,7 +13376,7 @@ family's exclusion under row 29, as a chat read:
 The chat family's rule again: an export is something a human keeps or shares,
 an MCP tool for it was not asked for, and one can follow the same route later.
 
-*Amended 2026-11-20 (task 162, issue #1012).* Three more, a human composer's
+*Amended 2026-11-20 (task 164, issue #1012).* Three more, a human composer's
 state under the same row:
 
     GET    /v1/chats/{id}/draft
@@ -13940,7 +13940,7 @@ CREATE VIRTUAL TABLE chat_title_fts USING fts5(
 CREATE VIRTUAL TABLE chat_turn_fts USING fts5(
     prompt, result_text, content = 'chat_turns', content_rowid = 'id', tokenize = 'trigram');
 
--- Chat drafts (task 162, issue #1012, added 2026-11-20; migration 0062).
+-- Chat drafts (task 164, issue #1012, added 2026-11-20; migration 0063).
 -- Columns on chats rather than a table: one draft and one stash per chat,
 -- read with it. Cleared when the chat ends (archive, close, hand-off).
 ALTER TABLE chats ADD COLUMN draft TEXT NOT NULL DEFAULT '';
@@ -18668,7 +18668,7 @@ paused queue renders a card naming why, with `alt+r` to resume and `alt+c` to
 clear. `ctrl+s` is the rebindable `steer` operation (task 118's registry, with
 a recorded exception beside the forms' fixed `ctrl+s`); no adapter can steer
 yet, so it puts the daemon's `steer_reason` in the composer note.
-*Amended 2026-11-20 (task 162, issue #1012).* **The composer is the chat's
+*Amended 2026-11-20 (task 164, issue #1012).* **The composer is the chat's
 stored draft.** Opening a chat restores its draft rather than clearing the
 composer; edits are saved about 500 ms after the last keystroke, and leaving
 the chat — `esc`, opening another chat, quitting — saves at once. A send clears
