@@ -95,6 +95,10 @@ Spec: §5.5 (the entity and its lifecycle), §7.3 (the chat-only amendment), §9
    is looking at it. `internal/config` gains no import of the chat state
    package, so task 046 decision 4's arrangement is untouched. `notify.chat_on`
    is the named trigger if `awaiting_input` on a long-open chat needs one.
+   *Amended 2026-11-20 (task 165, issue #1019): that key now exists. Chats
+   are silent unless `notify.chat_on` lists `awaiting_input`, `turn_done` or
+   `turn_failed`; `notify.on` is not widened, and `internal/config` imports
+   `chatstate` to validate the new key.*
 
 8. **Mid-run input reuses the §7.4 flow.** A chat enters `awaiting_input`
    holding its process, `pending_input` on the chat row, answered through a chat

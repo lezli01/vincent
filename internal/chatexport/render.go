@@ -193,6 +193,12 @@ func Markdown(e *Export) string {
 		fmt.Fprintf(&b, "_Ran on: %s_\n\n", t.RanWith())
 		b.WriteString("### Prompt\n\n")
 		b.WriteString(strings.TrimRight(t.Prompt, "\n"))
+		if mc := strings.TrimRight(t.MentionContext, "\n"); mc != "" {
+			// fence outruns the block's own fenced line ranges, so they
+			// cannot close it early.
+			f := fence(mc)
+			fmt.Fprintf(&b, "\n\n### Mentions\n\n%s\n%s\n%s", f, mc, f)
+		}
 		b.WriteString("\n\n### Tool calls\n\n")
 		switch {
 		case t.ToolsNote != "":

@@ -833,6 +833,13 @@ type Chat struct {
 	DraftUpdatedAt *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	// LastViewedAt is when a person last looked at the chat (task 165): one
+	// value per chat, shared by every client, since the installation has no
+	// per-user identity. Nil = never viewed. Only MarkChatViewed writes it.
+	LastViewedAt *time.Time
+	// Unread is derived, never stored: the chat's latest terminal turn ended
+	// after LastViewedAt (or exists at all when it is nil). See chatUnreadExpr.
+	Unread bool
 }
 
 // Linked reports whether the chat is linked to a task (task 119), which is
@@ -910,6 +917,11 @@ type ChatTurn struct {
 	Model          string
 	Effort         string
 	PermissionMode string
+	// MentionContext is the block the turn's `#issue-N`, `#task-N`, `#pr-N`
+	// and `@path#Lx-y` mentions expanded into when it started (task 166
+	// decision 2): what rode ahead of Prompt, which stays the text the human
+	// typed. "" is "nothing expanded".
+	MentionContext string
 }
 
 // TurnSettings are a turn's per-turn overrides of its chat's model, effort

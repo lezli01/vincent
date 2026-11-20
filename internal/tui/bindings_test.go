@@ -104,6 +104,10 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		// press: the hand-built alt+G one no decoder produces is how the
 		// follow key shipped dead (review F1).
 		msg = decodePress(t, "\x1bG")
+	case "alt+shift+n":
+		// prev_chat, decoded from what a terminal sends for alt+N for the
+		// reason alt+shift+g is.
+		msg = decodePress(t, "\x1bN")
 	case "shift+right":
 		msg = tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
 	default:

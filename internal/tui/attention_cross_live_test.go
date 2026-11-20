@@ -71,7 +71,7 @@ func TestAttentionKeyCrossesProjects(t *testing.T) {
 	if len(order) != 2 {
 		t.Fatalf("the first project's attention targets = %v, want two", order)
 	}
-	first, second := order[0].ID, order[1].ID
+	first, second := order[0].id(), order[1].id()
 	b.selectedID = first
 	b.restoreSelection(b.rows())
 

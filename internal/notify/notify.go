@@ -11,7 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/procx"
 	"github.com/lezli01/vincent/internal/store"
@@ -19,9 +21,24 @@ import (
 )
 
 const (
-	// EnvelopeType is the `type` every envelope carries. It is the durable
-	// event type the selector reads, not a new one (§13.3).
+	// EnvelopeType is the `type` every task envelope carries. It is the
+	// durable event type the selector reads, not a new one (§13.3). A chat
+	// envelope carries the chat event it came from instead (task 165).
 	EnvelopeType = store.EventTaskStateChanged
+
+	// KindTask and KindChat are the envelope's `kind` (task 165): which of
+	// the two selectors, `notify.on` or `notify.chat_on`, fired it. Every
+	// task envelope says "task", so a notifier written before chats could
+	// fire tells the two apart by one field rather than by which ids are
+	// zero.
+	KindTask = "task"
+	// KindChat is the `kind` of an envelope `notify.chat_on` fired.
+	KindChat = "chat"
+
+	// seenCapacity bounds the event ids remembered for the no-replay rule.
+	// It only has to cover ids that could be handed over twice in quick
+	// succession, so it is sized like the queue in front of the workers.
+	seenCapacity = 256
 
 	// perChildTimeout bounds one notifier process. Fixed, not configurable:
 	// this is the pruner's posture (internal/taskrun/prune.go), and a daemon
@@ -53,6 +70,8 @@ const (
 type Store interface {
 	GetTask(ctx context.Context, id int64) (*store.Task, error)
 	GetProject(ctx context.Context, id int64) (*store.Project, error)
+	// GetChat is the chat read behind a `notify.chat_on` envelope (task 165).
+	GetChat(ctx context.Context, id int64) (*store.Chat, error)
 }
 
 // Deps are the notifier's dependencies.
@@ -82,12 +101,22 @@ type Input struct {
 // `{task_id, to}` cannot write a message without calling back into the API
 // with a bearer token, which defeats the point of a one-line shell script
 // (task 046 decision 5).
+//
+// A chat envelope (task 165) is the same object, so one script handles both:
+// `kind` is "chat", `chat_id` names it, `from`/`to` are the chat's state and
+// the moment from `notify.chat_on`, and every task-only field — task_id,
+// block_reason, queued_reason, admit_not_before, the step cursor, workflow —
+// is zero or null.
 type Envelope struct {
 	EventID int64  `json:"event_id"`
 	TS      string `json:"ts"`
 	Type    string `json:"type"`
+	// Kind is KindTask or KindChat (task 165). Additive: a task envelope is
+	// otherwise exactly what it was.
+	Kind string `json:"kind"`
 
 	TaskID       int64  `json:"task_id"`
+	ChatID       int64  `json:"chat_id"`
 	Title        string `json:"title"`
 	From         string `json:"from"`
 	To           string `json:"to"`
@@ -116,7 +145,10 @@ type Envelope struct {
 type job struct {
 	eventID int64
 	ts      time.Time
+	evType  string
+	kind    string
 	taskID  int64
+	chatID  int64
 	from    string
 	to      string
 	input   *Input
@@ -133,6 +165,17 @@ type Notifier struct {
 
 	stopOnce sync.Once
 	stopped  chan struct{}
+
+	// seen is the no-replay rule made literal: the ids of the last
+	// seenCapacity events that matched, so an event handed over a second time
+	// — a resubscription, a duplicate publish — is not a second notification.
+	// A ring rather than a high-water mark because two writers' post-commit
+	// publishes may arrive out of id order, and dropping the lower one would
+	// lose a real notification.
+	seenMu   sync.Mutex
+	seen     map[int64]bool
+	seenRing []int64
+	seenNext int
 
 	// timeout is perChildTimeout. It is a field rather than a constant read
 	// directly so a test can watch the kill happen without spending ten real
@@ -158,6 +201,7 @@ func New(deps Deps) *Notifier {
 		queue:   make(chan job, queueCapacity),
 		stopped: make(chan struct{}),
 		timeout: perChildTimeout,
+		seen:    make(map[int64]bool, seenCapacity),
 	}
 	n.spawn = n.run
 	return n
@@ -186,8 +230,37 @@ func (n *Notifier) Stop() {
 // must not block (internal/events, store.SetEventHook), so it does only
 // in-memory work and a non-blocking enqueue.
 func (n *Notifier) OnEvent(e *store.Event) {
-	if e == nil || e.TaskID == nil || e.Type != store.EventTaskStateChanged {
+	if e == nil {
 		return
+	}
+	cfg := n.deps.Config()
+	var (
+		j  job
+		ok bool
+	)
+	switch e.Type {
+	case store.EventTaskStateChanged:
+		j, ok = taskJob(e, cfg)
+	case store.EventChatState, store.EventChatTurn:
+		j, ok = chatJob(e, cfg)
+	}
+	if !ok {
+		return
+	}
+	j.eventID, j.ts, j.evType = e.ID, e.TS, e.Type
+	j.argv = append([]string(nil), cfg.Notify.Command...)
+	j.env = cfg.Environment.ResolveProcess()
+	if !n.firstSighting(e.ID) {
+		return
+	}
+	n.enqueue(j)
+}
+
+// taskJob is the task selector (task 046): a task.state_changed whose `to` is
+// listed in `notify.on`.
+func taskJob(e *store.Event, cfg config.Config) (job, bool) {
+	if e.TaskID == nil {
+		return job{}, false
 	}
 	var payload struct {
 		From    string `json:"from"`
@@ -196,28 +269,89 @@ func (n *Notifier) OnEvent(e *store.Event) {
 		Summary string `json:"summary"`
 	}
 	if err := json.Unmarshal(e.Payload, &payload); err != nil {
-		return
+		return job{}, false
 	}
 	to := taskstate.State(payload.To)
-	cfg := n.deps.Config()
 	if !cfg.Notify.Fires(to) {
-		return
+		return job{}, false
 	}
-	j := job{
-		eventID: e.ID,
-		ts:      e.TS,
-		taskID:  *e.TaskID,
-		from:    payload.From,
-		to:      payload.To,
-		argv:    append([]string(nil), cfg.Notify.Command...),
-		env:     cfg.Environment.ResolveProcess(),
-	}
+	j := job{kind: KindTask, taskID: *e.TaskID, from: payload.From, to: payload.To}
 	// The §7.4 transition already carries the normalized request's kind and
 	// summary in its event payload; nothing else does, so this is the only
 	// state that gets an `input` object.
 	if to == taskstate.AwaitingInput && (payload.Kind != "" || payload.Summary != "") {
 		j.input = &Input{Kind: payload.Kind, Summary: payload.Summary}
 	}
+	return j, true
+}
+
+// chatJob is the chat selector (task 165): a chat.state_changed into
+// awaiting_input, or a chat.turn_changed whose turn ended done or failed,
+// when that moment is listed in `notify.chat_on`.
+//
+// `to` is the moment's own name from chat_on, so a script switches on one
+// vocabulary; `from` is the chat state the moment interrupted. A chat only
+// enters awaiting_input from running (§5.5), and a turn's ending is written
+// while the chat is still in its live state (internal/chatrun's finish), so
+// the event's own `state` is that state.
+func chatJob(e *store.Event, cfg config.Config) (job, bool) {
+	var payload struct {
+		ID        int64  `json:"id"`
+		State     string `json:"state"`
+		TurnState string `json:"turn_state"`
+	}
+	if err := json.Unmarshal(e.Payload, &payload); err != nil || payload.ID == 0 {
+		return job{}, false
+	}
+	var (
+		moment chatstate.NotifyState
+		from   string
+	)
+	switch e.Type {
+	case store.EventChatState:
+		if chatstate.State(payload.State) != chatstate.AwaitingInput {
+			return job{}, false
+		}
+		moment, from = chatstate.NotifyAwaitingInput, string(chatstate.Running)
+	case store.EventChatTurn:
+		m, ok := chatstate.NotifyForTurn(chatstate.TurnState(payload.TurnState))
+		if !ok {
+			return job{}, false
+		}
+		moment, from = m, payload.State
+	default:
+		return job{}, false
+	}
+	if !cfg.Notify.FiresChat(moment) {
+		return job{}, false
+	}
+	return job{kind: KindChat, chatID: payload.ID, from: from, to: string(moment)}, true
+}
+
+// firstSighting records id and reports whether it is new. An event with no id
+// was never persisted, so there is nothing to have seen.
+func (n *Notifier) firstSighting(id int64) bool {
+	if id == 0 {
+		return true
+	}
+	n.seenMu.Lock()
+	defer n.seenMu.Unlock()
+	if n.seen[id] {
+		return false
+	}
+	if len(n.seenRing) < seenCapacity {
+		n.seenRing = append(n.seenRing, id)
+	} else {
+		delete(n.seen, n.seenRing[n.seenNext])
+		n.seenRing[n.seenNext] = id
+		n.seenNext = (n.seenNext + 1) % seenCapacity
+	}
+	n.seen[id] = true
+	return true
+}
+
+// enqueue hands j to the workers without blocking.
+func (n *Notifier) enqueue(j job) {
 	select {
 	case <-n.stopped:
 		return
@@ -228,7 +362,8 @@ func (n *Notifier) OnEvent(e *store.Event) {
 	default:
 		// Only a full *queue* drops, never a busy worker (decision 3).
 		n.deps.Logger.Warn("notification dropped: notifier queue full",
-			"task", j.taskID, "to", j.to, "event", j.eventID, "capacity", queueCapacity)
+			"kind", j.kind, "task", j.taskID, "chat", j.chatID, "to", j.to,
+			"event", j.eventID, "capacity", queueCapacity)
 	}
 }
 
@@ -248,8 +383,17 @@ func (n *Notifier) worker(ctx context.Context) {
 // handle does the expensive half: the reads, the root-task check, the
 // envelope and the spawn.
 func (n *Notifier) handle(ctx context.Context, j job) {
+	var (
+		env Envelope
+		ok  bool
+	)
 	log := n.deps.Logger.With("task", j.taskID, "to", j.to, "event", j.eventID)
-	env, ok := n.envelope(ctx, j, log)
+	if j.kind == KindChat {
+		log = n.deps.Logger.With("chat", j.chatID, "to", j.to, "event", j.eventID)
+		env, ok = n.chatEnvelope(ctx, j, log)
+	} else {
+		env, ok = n.envelope(ctx, j, log)
+	}
 	if !ok {
 		return
 	}
@@ -290,6 +434,7 @@ func (n *Notifier) envelope(ctx context.Context, j job, log *slog.Logger) (Envel
 		EventID:        j.eventID,
 		TS:             j.ts.UTC().Format(time.RFC3339),
 		Type:           EnvelopeType,
+		Kind:           KindTask,
 		TaskID:         task.ID,
 		Title:          task.Title,
 		From:           j.from,
@@ -318,6 +463,93 @@ func (n *Notifier) envelope(ctx context.Context, j job, log *slog.Logger) (Envel
 		env.Project = p.Name
 	}
 	return env, true
+}
+
+// chatEnvelope assembles a chat's envelope (task 165), or reports that it
+// cannot be sent. There is no root check: a chat has no lanes.
+func (n *Notifier) chatEnvelope(ctx context.Context, j job, log *slog.Logger) (Envelope, bool) {
+	chat, err := n.deps.Store.GetChat(ctx, j.chatID)
+	if err != nil {
+		log.Warn("notification skipped: chat could not be read", "error", err)
+		return Envelope{}, false
+	}
+	if chat == nil {
+		return Envelope{}, false
+	}
+	env := Envelope{
+		EventID:      j.eventID,
+		TS:           j.ts.UTC().Format(time.RFC3339),
+		Type:         j.evType,
+		Kind:         KindChat,
+		ChatID:       chat.ID,
+		Title:        chat.Title,
+		From:         j.from,
+		To:           j.to,
+		WorktreePath: chat.WorktreePath,
+		Branch:       chat.Branch,
+		ProjectID:    chat.ProjectID,
+	}
+	// A chat's state event carries only its id, title and state, so the §7.4
+	// request is read from the row it was stored on before the chat parked.
+	// A question answered before this worker ran has been retired with it,
+	// and then there is honestly no input to report.
+	if j.to == string(chatstate.NotifyAwaitingInput) {
+		env.Input = pendingInput(chat.PendingInput)
+	}
+	if p, perr := n.deps.Store.GetProject(ctx, chat.ProjectID); perr != nil {
+		log.Debug("notification project name unavailable", "error", perr)
+	} else if p != nil {
+		env.Project = p.Name
+	}
+	return env, true
+}
+
+// pendingInput lifts a chat's stored §7.4 request into the envelope's input:
+// the same kind and summary the task path's event payload carries, summarized
+// by the same rule internal/taskrun applies — a permission names its tool, a
+// question is its first question's text (with a count of the rest), anything
+// else is its kind. The row is agent.InputRequest marshalled with Go's field
+// names, which is what the anonymous struct reads; this package does not
+// import internal/agent for one shape.
+func pendingInput(raw json.RawMessage) *Input {
+	if len(raw) == 0 {
+		return nil
+	}
+	var req struct {
+		Kind       string
+		Questions  []struct{ Text string }
+		Permission *struct {
+			Tool    string
+			Summary string
+		}
+	}
+	if err := json.Unmarshal(raw, &req); err != nil || req.Kind == "" {
+		return nil
+	}
+	in := &Input{Kind: req.Kind, Summary: req.Kind}
+	switch {
+	case req.Permission != nil:
+		in.Summary = "permission: " + req.Permission.Tool + " — " + req.Permission.Summary
+	case len(req.Questions) > 0:
+		s := req.Questions[0].Text
+		if len(req.Questions) > 1 {
+			s += " (+" + strconv.Itoa(len(req.Questions)-1) + " more)"
+		}
+		in.Summary = truncate(s, 200)
+	}
+	return in
+}
+
+// truncate cuts s to at most n bytes on a rune boundary.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 // admitNotBefore renders the task's admission hold for the envelope, or nil

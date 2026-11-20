@@ -73,6 +73,12 @@ type Chat struct {
 	DraftUpdatedAt *time.Time `json:"draft_updated_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
+	// LastViewedAt is when a person last looked at the chat (task 165), nil
+	// when nobody ever has. It is the daemon's, shared by every client.
+	LastViewedAt *time.Time `json:"last_viewed_at"`
+	// Unread says a turn finished since LastViewedAt (task 165); the daemon
+	// derives it, so a client never compares timestamps itself.
+	Unread bool `json:"unread"`
 	// Warnings are non-fatal notes on a create, such as a chat opened on a
 	// closed issue, or a first message that was not sent (task 161).
 	Warnings []string `json:"warnings,omitempty"`
@@ -220,6 +226,9 @@ type ChatTurn struct {
 	Model          string `json:"model,omitempty"`
 	Effort         string `json:"effort,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// MentionContext is what the turn's mentions expanded into when it
+	// started (task 166), "" when nothing did. Prompt is the typed text.
+	MentionContext string `json:"mention_context,omitempty"`
 }
 
 // CreateChatRequest is the POST /v1/chats body. An omitted agent resolves
@@ -430,6 +439,42 @@ func (c *Client) ChatFiles(ctx context.Context, id int64, limit int) (*ChatFiles
 	return &out, nil
 }
 
+// ChatMention is one `#issue-N`, `#task-N`, `#pr-N` or `@path#Lx-y` token
+// in a chat message (task 166).
+type ChatMention struct {
+	Kind  string `json:"kind"`
+	Token string `json:"token"`
+	ID    int64  `json:"id,omitempty"`
+	Path  string `json:"path,omitempty"`
+	From  int    `json:"from,omitempty"`
+	To    int    `json:"to,omitempty"`
+}
+
+// ChatExpansion is POST /v1/chats/{id}/expand's answer: what a draft's
+// mentions would expand into if it were sent now (task 166 decision 6).
+type ChatExpansion struct {
+	ChatID         int64         `json:"chat_id"`
+	Context        string        `json:"context"`
+	Prompt         string        `json:"prompt"`
+	Resolved       []ChatMention `json:"resolved"`
+	Unresolved     []ChatMention `json:"unresolved"`
+	Bytes          int           `json:"bytes"`
+	TokensEstimate int           `json:"tokens_estimate"`
+}
+
+// ExpandChat previews a draft's mentions. It is not a turn: it holds no
+// slot and writes nothing, and a terminal chat answers 409.
+func (c *Client) ExpandChat(ctx context.Context, id int64, message string) (*ChatExpansion, error) {
+	body := struct {
+		Message string `json:"message"`
+	}{message}
+	var out ChatExpansion
+	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/expand", id), body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // SendChat starts a turn. A 409 with code `chat_cap_reached` means
 // `max_parallel_chats` chats are already running — the send is refused, not
 // queued (§11).
@@ -554,6 +599,18 @@ func (c *Client) ArchiveChat(ctx context.Context, id int64, force bool) (*Chat, 
 	}
 	var out Chat
 	if err := c.post(ctx, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// MarkChatViewed records that the chat was looked at (task 165) and returns
+// it with its unread mark re-derived. The daemon stamps its own clock and
+// never moves the mark backwards, so calling it on every open is safe; a
+// view that advanced the mark is announced to every client as chat.viewed.
+func (c *Client) MarkChatViewed(ctx context.Context, id int64) (*Chat, error) {
+	var out Chat
+	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/viewed", id), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

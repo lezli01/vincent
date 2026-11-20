@@ -1932,8 +1932,8 @@ defaults:
 
 **`wait`** — the task moves to `awaiting_input` and **keeps its concurrency
 slot**: the agent process is alive, idle on its stdin. The step's timeout clock
-pauses. The board pins the task, rings the terminal bell, and the answer form
-opens on `enter`. Answering resumes the same session where it stopped.
+pauses. The board pins the task, rings the terminal bell if the terminal is in the
+background ([TUI guide](tui.md)), and the answer form opens on `enter`. Answering resumes the same session where it stopped.
 
 **`deny`** — for runs that must stay strictly unattended. Vincent answers
 immediately through the adapter: questions get a canned "no user is available;

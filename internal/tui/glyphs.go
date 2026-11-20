@@ -348,3 +348,20 @@ func boardStepPips(t apiclient.Task) string {
 	}
 	return strings.Repeat(ic("✓"), k-1) + current + strings.Repeat(ic("○"), n-k)
 }
+
+// unreadGlyph marks a chat whose last turn finished after anyone last looked
+// at it (task 165). `●` already means "active" in this vocabulary, and the two
+// do not collide: an unread chat's turn has ended, so nothing on its card is
+// running, and the mark sits beside the chat's id rather than in its status
+// line. It goes through ic like every other glyph — the plain Unicode dot by
+// default, the Nerd Font circle with tui.icons: nerd.
+const unreadGlyph = "●"
+
+// unreadMark is the rendered mark for a chat, "" when it is read. Bold blue
+// reinforces it; the glyph alone carries it under NO_COLOR.
+func unreadMark(c apiclient.Chat) string {
+	if !c.Unread {
+		return ""
+	}
+	return toneBlue.Bold(true).Render(ic(unreadGlyph))
+}

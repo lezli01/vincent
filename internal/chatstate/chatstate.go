@@ -292,3 +292,56 @@ const (
 
 // TurnTerminal reports whether a turn in this state has finished.
 func TurnTerminal(s TurnState) bool { return s != TurnRunning }
+
+// NotifyState is one entry of `notify.chat_on` (spec §12.3, task 165): a
+// moment in a chat's life the daemon's outward hook can fire on. It is its
+// own vocabulary, not State and not TurnState, because the moments a person
+// wants to hear about span both — the chat parking on a question is a state,
+// a turn ending is an outcome — and neither list is the right one to accept
+// wholesale: `idle`, `running` and the terminal states are the human's own
+// doing, and so is one turn outcome (below).
+type NotifyState string
+
+// The hook's chat moments (task 165).
+const (
+	// NotifyAwaitingInput is the chat entering awaiting_input: the agent is
+	// holding its process on a §7.4 question nobody has answered.
+	NotifyAwaitingInput NotifyState = "awaiting_input"
+	// NotifyTurnDone is a turn ending `done`: the agent has replied.
+	NotifyTurnDone NotifyState = "turn_done"
+	// NotifyTurnFailed is a turn ending `failed`.
+	NotifyTurnFailed NotifyState = "turn_failed"
+)
+
+// NotifyOn lists every value `notify.chat_on` accepts, in the order the docs
+// present them.
+//
+// `turn_interrupted` is deliberately absent (task 165): a turn is only ever
+// interrupted by a daemon restart, which the human caused and is watching,
+// and recovery finalizes every such turn at once — a hook firing for each
+// would be a burst of messages about something the reader just did.
+var NotifyOn = []NotifyState{NotifyAwaitingInput, NotifyTurnDone, NotifyTurnFailed}
+
+// ValidNotify reports whether s is a value `notify.chat_on` accepts.
+func ValidNotify(s NotifyState) bool {
+	for _, v := range NotifyOn {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// NotifyForTurn maps a finished turn's outcome to the hook moment it is, and
+// reports false for an outcome that has none — a turn still running, or one
+// interrupted by a restart.
+func NotifyForTurn(s TurnState) (NotifyState, bool) {
+	switch s {
+	case TurnDone:
+		return NotifyTurnDone, true
+	case TurnFailed:
+		return NotifyTurnFailed, true
+	default:
+		return "", false
+	}
+}

@@ -390,6 +390,18 @@ const issueChatLabel = "chat with an agent on the issue's main worktree — it m
 // issueChatWithLabel is `chat_with` on both issue screens (task 161).
 const issueChatWithLabel = "chat with… — choose the agent, model and effort, and type a first message, before the chat opens on the issue's main worktree; with a chat already holding it, reopen that chat"
 
+// The chat switch's labels (task 165), shared by the chats board's rows and
+// the chat's: the order is the board's, so the help says which it is.
+const (
+	chatNextLabel = "open the next chat of the project, in the chats board's order (waiting on you, running, idle), wrapping"
+	chatPrevLabel = "open the previous chat of the project, in the chats board's order, wrapping"
+)
+
+// chatJumpLabel is chat_N's label; a number past the last chat does nothing.
+func chatJumpLabel(nth string) string {
+	return "open the project's " + nth + " chat, in the chats board's order (nothing past the last)"
+}
+
 // bindings is the registry. Order within a scope+context is display order.
 var bindings = []binding{
 	// Global chrome.
@@ -404,7 +416,10 @@ var bindings = []binding{
 	// field takes `?` as a character. noPalette for the reason the ctrl+p row
 	// is — `?`'s own row already runs help from the palette.
 	{op: keymap.HelpAlt, key: helpAltKey, label: "toggle this help (works while a text field has the keyboard)", scope: scopeGlobal, noPalette: true},
-	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's", scope: scopeGlobal},
+	// Tasks and chats since task 165. The sentence about tasks is kept whole
+	// and the chats follow it, so the label reads as before for a reader who
+	// has no chats.
+	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's. A chat asking you a question is on the same walk: the next task or chat, oldest wait first", scope: scopeGlobal},
 	{op: keymap.Mouse, key: "M", label: "toggle the mouse (native text selection needs it off — or shift-drag)", scope: scopeGlobal},
 	// The project switch (task 132 decision 3). A global row, so the palette
 	// lists it and running it from a chat opens the picker rather than typing
@@ -696,6 +711,24 @@ var bindings = []binding{
 	// branch keeps the slug it was cut with.
 	{op: keymap.Rename, key: "r", label: "rename the chat (the branch keeps its name)", scope: scopePanel, context: ctxChats, hint: "r rename", priority: 8, term: termRename},
 
+	// The chat switch (task 165), from the board: it moves from the chat
+	// under the cursor and opens the one it lands on. `]` and `[` are this
+	// board's fixed aliases — no text field has the keyboard here.
+	{op: keymap.NextChat, key: "alt+n", label: chatNextLabel, scope: scopePanel, context: ctxChats, priority: 9},
+	{op: keymap.PrevChat, key: "alt+shift+n", label: chatPrevLabel, scope: scopePanel, context: ctxChats, priority: 10},
+	{key: "]", label: "open the next chat of the project ([ the previous one) — alt+n and alt+shift+n everywhere a chat is", scope: scopePanel, context: ctxChats, priority: 11},
+	// noPalette: nine numbered rows would bury the palette, and each is a
+	// key you press rather than a command you look for. `?` lists them.
+	{op: keymap.Chat1, key: "alt+1", label: chatJumpLabel("1st"), scope: scopePanel, context: ctxChats, priority: 12, noPalette: true},
+	{op: keymap.Chat2, key: "alt+2", label: chatJumpLabel("2nd"), scope: scopePanel, context: ctxChats, priority: 13, noPalette: true},
+	{op: keymap.Chat3, key: "alt+3", label: chatJumpLabel("3rd"), scope: scopePanel, context: ctxChats, priority: 14, noPalette: true},
+	{op: keymap.Chat4, key: "alt+4", label: chatJumpLabel("4th"), scope: scopePanel, context: ctxChats, priority: 15, noPalette: true},
+	{op: keymap.Chat5, key: "alt+5", label: chatJumpLabel("5th"), scope: scopePanel, context: ctxChats, priority: 16, noPalette: true},
+	{op: keymap.Chat6, key: "alt+6", label: chatJumpLabel("6th"), scope: scopePanel, context: ctxChats, priority: 17, noPalette: true},
+	{op: keymap.Chat7, key: "alt+7", label: chatJumpLabel("7th"), scope: scopePanel, context: ctxChats, priority: 18, noPalette: true},
+	{op: keymap.Chat8, key: "alt+8", label: chatJumpLabel("8th"), scope: scopePanel, context: ctxChats, priority: 19, noPalette: true},
+	{op: keymap.Chat9, key: "alt+9", label: chatJumpLabel("9th"), scope: scopePanel, context: ctxChats, priority: 20, noPalette: true},
+
 	// Chat workspace.
 	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done (task 156)", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
 	{op: keymap.Steer, key: "ctrl+s", label: "steer the running turn — unavailable on every agent for now; the composer says why", scope: scopePanel, context: ctxChat, hint: "ctrl+s steer", priority: 15},
@@ -792,6 +825,22 @@ var bindings = []binding{
 	// The search line. It owns every key: a printable one types.
 	{key: "enter", label: "search every turn, the ones not loaded yet too", scope: scopePanel, context: ctxChatFind, hint: "enter search", noPalette: true},
 	{key: "esc", label: "close the search line; the conversation keeps the keyboard", scope: scopePanel, context: ctxChatFind, hint: "esc close", noPalette: true},
+
+	// The chat switch (task 165). alt rather than a letter because the
+	// composer types every letter; they work over a pending question's
+	// popup too. A macOS terminal needs Option set to act as Meta to send
+	// them; tui.keys rebinds them where it cannot.
+	{op: keymap.NextChat, key: "alt+n", label: chatNextLabel, scope: scopePanel, context: ctxChat, hint: "alt+n next chat", priority: 15},
+	{op: keymap.PrevChat, key: "alt+shift+n", label: chatPrevLabel, scope: scopePanel, context: ctxChat, priority: 16},
+	{op: keymap.Chat1, key: "alt+1", label: chatJumpLabel("1st"), scope: scopePanel, context: ctxChat, priority: 17, noPalette: true},
+	{op: keymap.Chat2, key: "alt+2", label: chatJumpLabel("2nd"), scope: scopePanel, context: ctxChat, priority: 18, noPalette: true},
+	{op: keymap.Chat3, key: "alt+3", label: chatJumpLabel("3rd"), scope: scopePanel, context: ctxChat, priority: 19, noPalette: true},
+	{op: keymap.Chat4, key: "alt+4", label: chatJumpLabel("4th"), scope: scopePanel, context: ctxChat, priority: 20, noPalette: true},
+	{op: keymap.Chat5, key: "alt+5", label: chatJumpLabel("5th"), scope: scopePanel, context: ctxChat, priority: 21, noPalette: true},
+	{op: keymap.Chat6, key: "alt+6", label: chatJumpLabel("6th"), scope: scopePanel, context: ctxChat, priority: 22, noPalette: true},
+	{op: keymap.Chat7, key: "alt+7", label: chatJumpLabel("7th"), scope: scopePanel, context: ctxChat, priority: 23, noPalette: true},
+	{op: keymap.Chat8, key: "alt+8", label: chatJumpLabel("8th"), scope: scopePanel, context: ctxChat, priority: 24, noPalette: true},
+	{op: keymap.Chat9, key: "alt+9", label: chatJumpLabel("9th"), scope: scopePanel, context: ctxChat, priority: 25, noPalette: true},
 
 	// The chat workspace's skill list, while it is open. noPalette for the
 	// reason the daemon view's skill offer's rows are: a key that only

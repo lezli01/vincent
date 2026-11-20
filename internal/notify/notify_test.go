@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -29,7 +30,16 @@ import (
 type fakeStore struct {
 	tasks    map[int64]*store.Task
 	projects map[int64]*store.Project
+	chats    map[int64]*store.Chat
 	taskErr  error
+}
+
+func (f *fakeStore) GetChat(_ context.Context, id int64) (*store.Chat, error) {
+	c, ok := f.chats[id]
+	if !ok {
+		return nil, fmt.Errorf("chat %d: %w", id, store.ErrNotFound)
+	}
+	return c, nil
 }
 
 func (f *fakeStore) GetTask(_ context.Context, id int64) (*store.Task, error) {
@@ -219,7 +229,7 @@ func TestFiresAndDeliversEnvelope(t *testing.T) {
 	}
 
 	want := Envelope{
-		EventID: 42, TS: "2026-08-28T09:30:00Z", Type: "task.state_changed",
+		EventID: 42, TS: "2026-08-28T09:30:00Z", Type: "task.state_changed", Kind: "task",
 		TaskID: 1, Title: "Fix the flaky gate", From: "running", To: "blocked",
 		BlockReason: "step_failed", CurrentStep: 2, StepsTotal: 5,
 		WorktreePath: filepath.Join("/tmp", "wt", "1"), Branch: "vincent/1-fix",

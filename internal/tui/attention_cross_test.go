@@ -102,21 +102,16 @@ func TestElsewhereBadgeShedsBeforeTheName(t *testing.T) {
 }
 
 // TestBellRingsForEveryProject: the stream stays global (decision 16), and
-// nothing scoped stands between it and the bell — a task in another project
-// entering awaiting_input rings once while this one is selected.
+// nothing scoped stands between it and the root's bell (task 165) — a task in
+// another project entering awaiting_input rings once while this one is
+// selected and the terminal is unfocused.
 func TestBellRingsForEveryProject(t *testing.T) {
 	m := attentionRoot(t, task(2, stateRunning, inProjectID(otherProjectID, "other")))
-	b := m.views[viewHome].(*shell).board
 	rings := 0
-	b.bell = func() { rings++ }
-	if cmd := b.updateNote(stateEvent(7, stateAwaitingInput)); cmd != nil {
-		if batch, ok := cmd().(tea.BatchMsg); ok {
-			for _, c := range batch {
-				if c != nil {
-					c()
-				}
-			}
-		}
+	m.bell.ring = func() { rings++ }
+	m.focusKnown, m.focused = true, false
+	if cmd := m.bellCmd(stateEvent(7, stateAwaitingInput)); cmd != nil {
+		cmd()
 	}
 	if rings != 1 {
 		t.Fatalf("rings = %d for another project's awaiting_input, want 1", rings)

@@ -189,6 +189,8 @@ func TestGuideOperationsTableMatchesCatalog(t *testing.T) {
 		"eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
 		"twenty-one", "twenty-two", "twenty-three", "twenty-four", "twenty-five",
 		"twenty-six", "twenty-seven", "twenty-eight", "twenty-nine", "thirty",
+		"thirty-one", "thirty-two", "thirty-three", "thirty-four", "thirty-five", "thirty-six", "thirty-seven", "thirty-eight", "thirty-nine",
+		"forty", "forty-one", "forty-two", "forty-three", "forty-four", "forty-five",
 	}
 	text := strings.Join(strings.Fields(prose.String()), " ")
 	for _, c := range []struct {
@@ -690,7 +692,7 @@ func TestConfigReferenceNamesEveryOperation(t *testing.T) {
 		if !strings.HasPrefix(line, "|") {
 			break
 		}
-		for _, m := range regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(line, -1) {
+		for _, m := range regexp.MustCompile("`([a-z0-9_]+)`").FindAllStringSubmatch(line, -1) {
 			named[m[1]] = true
 		}
 	}

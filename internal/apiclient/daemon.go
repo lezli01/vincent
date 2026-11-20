@@ -386,8 +386,12 @@ type ConfigBackup struct {
 }
 
 // ConfigNotify is the §12.3 outward signal (task 046). Command is argv.
+//
+// ChatOn is the chat half of the selector (task 165): the chat moments —
+// awaiting_input, turn_done, turn_failed — that fire Command.
 type ConfigNotify struct {
 	On      []string `json:"on"`
+	ChatOn  []string `json:"chat_on"`
 	Command []string `json:"command"`
 }
 
@@ -551,6 +555,7 @@ type ConfigBackupPatch struct {
 // ConfigNotifyPatch is the optional half of ConfigNotify.
 type ConfigNotifyPatch struct {
 	On      *[]string `json:"on,omitempty"`
+	ChatOn  *[]string `json:"chat_on,omitempty"`
 	Command *[]string `json:"command,omitempty"`
 }
 

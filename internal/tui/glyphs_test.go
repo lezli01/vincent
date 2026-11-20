@@ -323,3 +323,40 @@ func TestGlyphIndicatorsSurviveMonochrome(t *testing.T) {
 		}
 	}
 }
+
+// TestUnreadMark is task 165's ● on a chat: drawn only for an unread chat, on
+// both the card and the row, through ic — the Unicode dot by default and the
+// Nerd Font circle with tui.icons: nerd — and readable without colour.
+func TestUnreadMark(t *testing.T) {
+	read := testChat(1, "idle", "read chat")
+	unread := testChat(2, "idle", "unread chat")
+	unread.Unread = true
+	if got := unreadMark(read); got != "" {
+		t.Errorf("a read chat is marked %q", got)
+	}
+	if got := ansi.Strip(unreadMark(unread)); got != unreadGlyph {
+		t.Errorf("an unread chat is marked %q, want %q", got, unreadGlyph)
+	}
+
+	v := chatsFixture()
+	card := ansi.Strip(strings.Join(v.chatCard(unread, false, 40), "\n"))
+	if !strings.Contains(card, "#2 "+unreadGlyph) {
+		t.Errorf("the unread card does not lead with its mark:\n%s", card)
+	}
+	if card := ansi.Strip(strings.Join(v.chatCard(read, false, 40), "\n")); strings.Contains(card, unreadGlyph) {
+		t.Errorf("the read card carries a mark:\n%s", card)
+	}
+	row := ansi.Strip(v.rowLine(chatRow{chat: &unread}, false, 120))
+	if !strings.Contains(row, unreadGlyph+" unread chat") {
+		t.Errorf("the unread row does not lead its title with the mark: %q", row)
+	}
+	if row := ansi.Strip(v.rowLine(chatRow{chat: &read}, false, 120)); strings.Contains(row, unreadGlyph) {
+		t.Errorf("the read row carries a mark: %q", row)
+	}
+
+	setIconSet(iconSetNerd)
+	t.Cleanup(func() { setIconSet("unicode") })
+	if got := ansi.Strip(unreadMark(unread)); got != "" {
+		t.Errorf("with nerd icons the mark is %q, want the Nerd Font circle", got)
+	}
+}
