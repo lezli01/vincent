@@ -81,5 +81,13 @@ func (r *Runner) recordHeadAfter(turn *store.ChatTurn, workDir string) {
 // data directory, never the worktree, so the agent and `git status` never see
 // it.
 func (r *Runner) checkpointScratch() string {
-	return filepath.Join(r.deps.DataDir, "tmp", "checkpoints")
+	return CheckpointScratch(r.deps.DataDir)
+}
+
+// CheckpointScratch is that directory for a daemon whose data directory is
+// dataDir. It is exported for the chat diff (task 168), whose working-tree
+// snapshot is the tree half of a checkpoint and keeps its temporary index in
+// the same place.
+func CheckpointScratch(dataDir string) string {
+	return filepath.Join(dataDir, "tmp", "checkpoints")
 }

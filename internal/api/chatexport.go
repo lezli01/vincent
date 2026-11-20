@@ -157,40 +157,17 @@ func (s *Server) chatTurnTools(chat *store.Chat, turn *store.ChatTurn) ([]chatex
 }
 
 // chatExportDiff is the base-to-tip diff of the directory the chat works in
-// today (task 159 decision 1), or the reason there is none. A linked chat's
-// directory is its task's worktree and its base is the task's, the chat's
-// own base fields being display copies of the task's (§5.5).
+// today (task 159 decision 1), or the reason there is none. It excludes
+// untracked files, as the task diff does: including them is the chat diff
+// routes' departure alone (task 168 decision 1).
 func (s *Server) chatExportDiff(ctx context.Context, chat *store.Chat) (diff, unavailable string) {
-	if chat.State == chatstate.HandedOff {
-		if chat.HandoffTaskID != nil {
-			return "", fmt.Sprintf("the chat's worktree was handed off to task %d", *chat.HandoffTaskID)
-		}
-		return "", "the chat's worktree was handed off to a task"
+	dir, base, why := s.chatDiffDir(ctx, chat)
+	if why != "" {
+		return "", why
 	}
-	dir, base := chat.WorktreePath, diffBase(chat.BaseSHA, chat.BaseBranch)
-	if chat.Linked() {
-		task, err := s.deps.Store.GetTask(ctx, *chat.LinkedTaskID)
-		if err != nil {
-			return "", fmt.Sprintf("linked task %d could not be read", *chat.LinkedTaskID)
-		}
-		dir, base = task.WorktreePath, diffBase(task.BaseSHA, task.BaseBranch)
-		if dir == "" {
-			return "", fmt.Sprintf("linked task %d has no worktree", task.ID)
-		}
-	}
-	if dir == "" {
-		return "", "the chat has no worktree"
-	}
-	//nolint:gosec // G703: dir is a worktree path the daemon recorded on a row, never request input
-	if _, err := os.Stat(dir); err != nil {
-		return "", "the chat's worktree no longer exists"
-	}
-	if base == "" {
-		return "", "the chat records no base to diff against"
-	}
-	mergeBase, err := s.diffMergeBase(ctx, dir, base, "")
-	if err != nil {
-		return "", fmt.Sprintf("cannot compute merge-base with %q: %v", base, err)
+	mergeBase, why := s.chatDiffMergeBase(ctx, dir, base)
+	if why != "" {
+		return "", why
 	}
 	out, err := s.diffFrom(ctx, dir, mergeBase, "")
 	if err != nil {
@@ -200,4 +177,56 @@ func (s *Server) chatExportDiff(ctx context.Context, chat *store.Chat) (diff, un
 		out += "\n"
 	}
 	return out, ""
+}
+
+// chatDiffDir resolves the directory a chat works in today and the base it
+// records, or says why there is no directory to diff. It is the one
+// resolution the export's `diff=true` and the chat diff routes share (task
+// 168 decision 5), so free, issue and linked chats resolve one way: a linked
+// chat's directory is its task's worktree and its base is the task's, the
+// chat's own base fields being display copies of the task's (§5.5); an issue
+// chat records the issue worktree and its base on its own row.
+//
+// base may come back empty with no reason: only a diff from the base needs
+// one, and chatDiffMergeBase is what says so.
+func (s *Server) chatDiffDir(ctx context.Context, chat *store.Chat) (dir, base, unavailable string) {
+	if chat.State == chatstate.HandedOff {
+		if chat.HandoffTaskID != nil {
+			return "", "", fmt.Sprintf("the chat's worktree was handed off to task %d", *chat.HandoffTaskID)
+		}
+		return "", "", "the chat's worktree was handed off to a task"
+	}
+	dir, base = chat.WorktreePath, diffBase(chat.BaseSHA, chat.BaseBranch)
+	if chat.Linked() {
+		task, err := s.deps.Store.GetTask(ctx, *chat.LinkedTaskID)
+		if err != nil {
+			return "", "", fmt.Sprintf("linked task %d could not be read", *chat.LinkedTaskID)
+		}
+		dir, base = task.WorktreePath, diffBase(task.BaseSHA, task.BaseBranch)
+		if dir == "" {
+			return "", "", fmt.Sprintf("linked task %d has no worktree", task.ID)
+		}
+	}
+	if dir == "" {
+		return "", "", "the chat has no worktree"
+	}
+	//nolint:gosec // G703: dir is a worktree path the daemon recorded on a row, never request input
+	if _, err := os.Stat(dir); err != nil {
+		return "", "", "the chat's worktree no longer exists"
+	}
+	return dir, base, ""
+}
+
+// chatDiffMergeBase is the commit a chat's base diff starts from: the
+// merge-base of dir's HEAD with the recorded base, or the reason there is
+// none.
+func (s *Server) chatDiffMergeBase(ctx context.Context, dir, base string) (mergeBase, unavailable string) {
+	if base == "" {
+		return "", "the chat records no base to diff against"
+	}
+	mergeBase, err := s.diffMergeBase(ctx, dir, base, "")
+	if err != nil {
+		return "", fmt.Sprintf("cannot compute merge-base with %q: %v", base, err)
+	}
+	return mergeBase, ""
 }
