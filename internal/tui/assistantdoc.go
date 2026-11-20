@@ -143,6 +143,14 @@ type lineAnchor struct {
 	block int
 	// off is the line's ordinal within that block.
 	off int
+	// The chat's conversation stamps three more (task 157): call is the
+	// tool call a check line, or an expanded call's line, belongs to, which
+	// is what `enter` toggles; turn is the chat turn's seq the line sits in;
+	// and you marks a line of that turn's `You` card, which `{`/`}` land on.
+	// The task output pane leaves all three zero.
+	call string
+	turn int
+	you  bool
 }
 
 // anchorAt is the anchor of the line at the given viewport offset.

@@ -37,9 +37,11 @@ var reboundKeys = map[string]string{
 	"browser":      "ctrl+b",
 	// f13 rather than f2: f2 is the chat workspace's fixed alias for the
 	// skill list (task 124.13), and this map must pass keymap.Build.
-	"open_row":   "f13",
-	"scope":      "f3",
-	"filter":     "ctrl+f",
+	"open_row": "f13",
+	"scope":    "f3",
+	// f17 rather than ctrl+f: ctrl+f is the chat's fixed search key
+	// (task 157).
+	"filter":     "f17",
 	"lane":       "f4",
 	"new":        "f8",
 	"repair":     "f9",
@@ -334,16 +336,16 @@ func TestReboundKeysRender(t *testing.T) {
 // TestReboundKeyReplacesTheDefault: an override is not an alias (decision 6).
 // The vacated key does nothing for the operation it used to perform.
 func TestReboundKeyReplacesTheDefault(t *testing.T) {
-	withKeymap(t, map[string]string{"filter": "ctrl+f", "archive": "f6"})
+	withKeymap(t, map[string]string{"filter": "f17", "archive": "f6"})
 
 	v := chatsFixture()
 	v.updateKey(registryKey(t, "/"))
 	if v.filtering {
-		t.Fatal("/ still opens the chats filter after filter moved to ctrl+f")
+		t.Fatal("/ still opens the chats filter after filter moved to f17")
 	}
-	v.updateKey(registryKey(t, "ctrl+f"))
+	v.updateKey(registryKey(t, "f17"))
 	if !v.filtering {
-		t.Fatal("ctrl+f does not open the chats filter")
+		t.Fatal("f17 does not open the chats filter")
 	}
 
 	target := taskActions{id: 3, actions: []string{apiclient.ActionArchive}}

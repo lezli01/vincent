@@ -778,7 +778,17 @@ func (v *chatView) renderWorkspace(width, height int) string {
 	}
 	body := strings.Split(v.conversationUnder(head, max(midW-4, 4), max(height-2, 4)), "\n")
 	title, right := v.paneEdge(midW)
-	out = joinColumns(out, drawBox(title, right, body, midW, height, edgesRounded, styleFocus))
+	box := drawBox(title, right, body, midW, height, edgesRounded, styleFocus)
+	// The search count and `↓ N new` sit on the pane's bottom edge (task
+	// 157 decisions 3 and 5).
+	if label := v.edgeLabel(); label != "" && len(box) > 0 {
+		box[len(box)-1] = boxBottom(label, midW-2, edgesRounded, styleFocus)
+	}
+	v.convHit = chatConvHit{
+		x0: listW, x1: listW + midW, y0: len(filter) + 1, rows: v.convHit.rows,
+		edgeY: len(filter) + height - 1,
+	}
+	out = joinColumns(out, box)
 	if detailsW > 0 {
 		var c apiclient.Chat
 		ok := v.chat != nil
@@ -794,6 +804,9 @@ func (v *chatView) renderWorkspace(width, height int) string {
 func (v *chatView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	if !v.sideShown(v.termW) || v.form != nil {
 		return nil
+	}
+	if v.updateConvClick(msg) {
+		return v.fetchVisibleTranscripts()
 	}
 	id, ok := v.side.cardAt(msg)
 	if !ok || id == v.chatID {

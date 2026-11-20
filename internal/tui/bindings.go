@@ -187,6 +187,12 @@ const (
 	// describe one of them, and a `?` pane that described the other would be
 	// a lie.
 	ctxChatFiles bindingContext = "chat files"
+	// ctxChatConversation is the chat's conversation holding the keyboard
+	// (task 157 decision 1), and ctxChatFind its search line. Their own
+	// contexts because every letter means something else in the composer:
+	// `n` would be typed there, and is the next match here.
+	ctxChatConversation bindingContext = "chat conversation"
+	ctxChatFind         bindingContext = "chat find"
 	// ctxProjectPicker is the root's project picker (task 132.4). Its own
 	// context for the reason every popup has one: it owns the keyboard while
 	// it is up, and its enter switches the project rather than opening a row.
@@ -736,6 +742,28 @@ var bindings = []binding{
 	// alt rather than a letter for ctrl+r's reason — the composer owns every
 	// printable key — and alt+e because the textarea binds no alt+e.
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChat, priority: 15},
+
+	// Task 157: ctrl+f hands the keyboard to the conversation with the
+	// search line open. A combination, because the composer owns every
+	// printable key (071 decision 4, amended by 157 decision 1).
+	{key: chatSearchKey, label: "search the conversation — the conversation takes the keyboard, esc gives it back", scope: scopePanel, context: ctxChat, hint: "ctrl+f search", priority: 20},
+
+	// The conversation with the keyboard (task 157 decision 1). Single
+	// letters here, because nothing is typed: the draft waits untouched.
+	{key: "down", label: "move the line cursor (j/k and ↑/↓)", scope: scopePanel, context: ctxChatConversation, hint: "j/k move", priority: 1},
+	{key: "enter", label: "expand or fold the tool call under the cursor — it draws as at verbose, the level stays", scope: scopePanel, context: ctxChatConversation, hint: "enter expand", priority: 2},
+	{op: keymap.Filter, key: "/", label: "search the conversation again", scope: scopePanel, context: ctxChatConversation, hint: "/ search", priority: 3, term: termFilter},
+	{key: "n", label: "the next match (N the previous); both wrap", scope: scopePanel, context: ctxChatConversation, hint: "n/N match", priority: 4},
+	{key: "}", label: "jump to the next prompt you sent ({ the previous)", scope: scopePanel, context: ctxChatConversation, hint: "{/} prompt", priority: 5},
+	{key: "g", label: "jump to the start of the conversation (G to the live end)", scope: scopePanel, context: ctxChatConversation, priority: 6},
+	{key: "pgup", label: "scroll the conversation back (pgdown goes forward; alt+↑/↓ a line)", scope: scopePanel, context: ctxChatConversation, priority: 7},
+	{key: "ctrl+g", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChatConversation, priority: 8},
+	{key: "i", label: "give the keyboard back to the composer (esc too)", scope: scopePanel, context: ctxChatConversation, hint: "i/esc compose", priority: 9},
+	{key: "esc", label: "give the keyboard back to the composer — it never leaves the chat from here", scope: scopePanel, context: ctxChatConversation, priority: 10, aliased: true},
+
+	// The search line. It owns every key: a printable one types.
+	{key: "enter", label: "search every turn, the ones not loaded yet too", scope: scopePanel, context: ctxChatFind, hint: "enter search", noPalette: true},
+	{key: "esc", label: "close the search line; the conversation keeps the keyboard", scope: scopePanel, context: ctxChatFind, hint: "esc close", noPalette: true},
 
 	// The chat workspace's skill list, while it is open. noPalette for the
 	// reason the daemon view's skill offer's rows are: a key that only

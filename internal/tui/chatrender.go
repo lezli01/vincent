@@ -106,7 +106,16 @@ func (v *chatView) conversationUnder(head []string, width, height int) string {
 	room := max(height-len(head)-len(foot), 1)
 	lines := make([]string, 0, len(head)+room+len(foot))
 	lines = append(lines, head...)
-	lines = append(lines, strings.Split(v.bodyView(width, room), "\n")...)
+	body := strings.Split(v.bodyView(width, room), "\n")
+	v.convHit.rows = room
+	if label := v.edgeLabel(); label != "" && !v.sideShown(v.termW) && len(body) > 0 {
+		// No pane edge to sit on without the workspace: the label takes the
+		// right end of the body's last row.
+		last := len(body) - 1
+		lw := ansi.StringWidth(label)
+		body[last] = ansi.Truncate(body[last], max(width-lw-1, 0), "") + " " + label
+	}
+	lines = append(lines, body...)
 	lines = append(lines, foot...)
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, width, "…")
@@ -150,7 +159,15 @@ func (v *chatView) bodyView(width, height int) string {
 		// across every one of them.
 		keep, above := anchorBelow(v.anchors, v.vp.YOffset())
 		lines, anchors := v.bodyLinesAt(width)
-		v.vp.SetContent(strings.Join(lines, "\n"))
+		// `↓ N new` counts lines appended while scrolled away (task 157
+		// decision 5): only a content change counts, never a rebuild for a
+		// level, width or search change.
+		if v.grew && !v.following && width == v.builtWidth && v.level.get() == v.builtLevel {
+			v.newLines += max(len(lines)-len(v.lines), 0)
+		}
+		v.grew = false
+		v.lines = lines
+		v.vp.SetContent(strings.Join(v.decorate(lines), "\n"))
 		v.anchors = anchors
 		v.bodyDirty = false
 		v.builtWidth = width
@@ -160,6 +177,7 @@ func (v *chatView) bodyView(width, height int) string {
 		switch y, ok := anchorIndex(anchors, keep); {
 		case v.following:
 			v.vp.GotoBottom()
+			v.newLines = 0
 		case ok:
 			v.vp.SetYOffset(max(y-above, 0))
 		}
@@ -350,9 +368,12 @@ func (v *chatView) bodyLines(width int) []string {
 func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 	lines := make([]string, 0, len(v.turns)*4)
 	anchors := make([]lineAnchor, 0, len(v.turns)*4)
+	// Every line carries its turn, and a `You` card's lines say so (task
+	// 157): the cursor, `{`/`}` and the search land by them.
+	turn, you := 0, false
 	pad := func(n int) {
 		for range n {
-			anchors = append(anchors, lineAnchor{})
+			anchors = append(anchors, lineAnchor{turn: turn, you: you})
 		}
 	}
 	v.turnAt = make(map[int]int, len(v.turns))
@@ -377,6 +398,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 			lines = append(lines, "")
 			pad(1)
 		}
+		turn = t.Seq
 		v.turnAt[t.Seq] = len(lines)
 		// The human's half of the turn is a right-aligned card; the agent's
 		// half below is untouched, flush left at the full width. The pad is
@@ -385,14 +407,27 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 		asked, answered := chatTurnAges(*t, now)
 		prompt := promptCardLines(t.Prompt, asked, width)
 		lines = append(lines, prompt...)
+		you = true
+		pad(len(prompt))
+		you = false
 		lines = append(lines, "", " "+chatTurnHeading(agent, *t, answered), "")
-		pad(len(prompt) + 3)
+		pad(3)
 		switch recs := v.turnRecords[t.Seq]; {
 		case len(recs) > 0:
+			hint := ""
+			if v.convFocus {
+				hint = "enter" // the key only works with the conversation focused
+			}
 			body, at := outputLinesAt(recs, v.recordSeqs(t.Seq), level, width,
-				lineOpts{expandKey: chatExpandKey, raw: raw, hyperlinks: links, cache: &v.mdcache, toolChecks: true, hideRaw: true})
+				lineOpts{
+					expandKey: chatExpandKey, raw: raw, hyperlinks: links, cache: &v.mdcache, toolChecks: true, hideRaw: true,
+					expanded: v.expandedFor(t.Seq), expandHint: hint,
+				})
 			lines = append(lines, body...)
-			anchors = append(anchors, at...)
+			for _, a := range at {
+				a.turn = t.Seq
+				anchors = append(anchors, a)
+			}
 		case t.State == "running":
 			// Nothing has arrived yet; the tail fills in as it does.
 		case t.ResultText != "":
@@ -435,6 +470,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 			}
 		}
 	}
+	turn = 0
 	if q := v.queueLines(width); len(q) > 0 {
 		lines = append(lines, q...)
 		pad(len(q))
@@ -626,6 +662,11 @@ func (v *chatView) footerLines(width, height int) []string {
 	// each requires its own first rune of the one token under the cursor, and
 	// syncInlineFiles stands this one down for an adapter that claimed `@`.
 	out = append(out, v.files.render(width, height)...)
+	// The conversation's search line (task 157), where the inline lists
+	// draw: over the composer, out of the body's budget.
+	if v.convFocus && v.search.typing {
+		out = append(out, " "+v.searchLine(max(width-1, 1)))
+	}
 	// One element per rendered line, not one per widget (issue #299): bubbles'
 	// viewport pads the composer's View to its height, and the border around
 	// it adds two more, so a joined string would report a height of 1 and

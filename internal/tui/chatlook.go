@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+
+	"charm.land/lipgloss/v2"
 	"strings"
 	"time"
 
@@ -12,6 +14,16 @@ import (
 // heading that names who answered and when, and what the agent did as short
 // check lines. The preview and the open conversation share all three, so
 // opening a chat never changes how the conversation looks.
+
+// The conversation search's looks (task 157 decision 3): every match is
+// marked, the current one more loudly, and the conversation focus's cursor
+// is a bar in the line's first cell.
+var (
+	chatMatchStyle        = lipgloss.NewStyle().Reverse(true)
+	chatMatchCurrentStyle = lipgloss.NewStyle().Reverse(true).Bold(true).Foreground(lipgloss.Color("3"))
+	chatNewMarkStyle      = toneCyan.Bold(true)
+	chatCursorMark        = styleKey.Render("▌")
+)
 
 // chatTurnHeading heads the agent's half of a turn: who answered, which turn,
 // when, and — once it ended — what it spent (task 157, chatTurnUsage).

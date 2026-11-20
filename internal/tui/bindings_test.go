@@ -949,6 +949,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChat: {
+		"ctrl+f": func(t *testing.T) {
+			v := chatFindFixture(t)
+			v.updateKey(registryKey(t, "ctrl+f"))
+			if !v.convFocus || !v.search.typing {
+				t.Fatal("ctrl+f did not open the conversation's search line")
+			}
+		},
 		"ctrl+s": func(t *testing.T) {
 			v := chatViewFixture()
 			v.chat.State, v.chat.SteerReason = "running", "claude cannot steer a running turn"
@@ -3201,6 +3208,112 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			m.Update(registryKey(t, "esc"))
 			if m.projPick != nil || m.sel.id != 1 {
 				t.Fatalf("esc: picker open %v, sel %+v", m.projPick != nil, m.sel)
+			}
+		},
+	},
+	ctxChatConversation: {
+		"down": func(t *testing.T) {
+			v := convFocused(t)
+			v.moveCursor(0)
+			v.updateKey(registryKey(t, "down"))
+			if v.cursor != 1 {
+				t.Fatalf("down left the cursor on %d", v.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			v := convFocused(t)
+			for y, a := range v.anchors {
+				if a.call != "" {
+					v.moveCursor(y)
+					break
+				}
+			}
+			v.updateKey(registryKey(t, "enter"))
+			if len(v.expanded[v.chatID]) != 1 {
+				t.Fatal("enter on a check line expanded nothing")
+			}
+		},
+		"/": func(t *testing.T) {
+			v := convFocused(t)
+			v.updateKey(registryKey(t, "/"))
+			if !v.search.typing {
+				t.Fatal("/ did not open the search line")
+			}
+		},
+		"n": func(t *testing.T) {
+			v := convFocused(t)
+			v.runSearch("question")
+			at := v.search.current
+			v.updateKey(registryKey(t, "n"))
+			if v.search.current == at {
+				t.Fatal("n did not move to the next match")
+			}
+		},
+		"}": func(t *testing.T) {
+			v := convFocused(t)
+			v.moveCursor(0)
+			v.updateKey(registryKey(t, "}"))
+			if a := anchorAt(v.anchors, v.cursor); !a.you || a.turn != 2 {
+				t.Fatalf("} landed on %+v", a)
+			}
+		},
+		"g": func(t *testing.T) {
+			v := convFocused(t)
+			v.moveCursor(len(v.anchors) - 1)
+			v.updateKey(registryKey(t, "g"))
+			if v.cursor != 0 {
+				t.Fatalf("g left the cursor on %d", v.cursor)
+			}
+		},
+		"pgup": func(t *testing.T) {
+			v := convFocused(t)
+			v.setFollowing(true)
+			v.render(100, 40)
+			at := v.vp.YOffset()
+			v.updateKey(registryKey(t, "pgup"))
+			if at > 0 && v.vp.YOffset() >= at {
+				t.Fatal("pgup did not scroll back")
+			}
+		},
+		"ctrl+g": func(t *testing.T) {
+			v := convFocused(t)
+			v.following = false
+			v.updateKey(registryKey(t, "ctrl+g"))
+			if !v.following {
+				t.Fatal("ctrl+g did not follow")
+			}
+		},
+		"i": func(t *testing.T) {
+			v := convFocused(t)
+			v.updateKey(registryKey(t, "i"))
+			if v.convFocus || !v.composer.Focused() {
+				t.Fatal("i did not give the keyboard back")
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := convFocused(t)
+			v.updateKey(registryKey(t, "esc"))
+			if v.convFocus || !v.composer.Focused() {
+				t.Fatal("esc did not give the keyboard back")
+			}
+		},
+	},
+	ctxChatFind: {
+		"enter": func(t *testing.T) {
+			v := chatFindFixture(t)
+			v.openSearchLine()
+			v.search.buf = "question"
+			v.updateKey(registryKey(t, "enter"))
+			if v.search.typing || v.search.query != "question" || len(v.search.matches) == 0 {
+				t.Fatalf("enter: typing %v, query %q, %d matches", v.search.typing, v.search.query, len(v.search.matches))
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := chatFindFixture(t)
+			v.openSearchLine()
+			v.updateKey(registryKey(t, "esc"))
+			if v.search.typing || !v.convFocus {
+				t.Fatal("esc should close the line and keep the conversation focused")
 			}
 		},
 	},
