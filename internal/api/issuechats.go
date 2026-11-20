@@ -124,7 +124,7 @@ func (s *Server) createIssueChat(
 	}
 	body := renderChat(chat)
 	body.Warnings = warnings
-	writeJSON(w, http.StatusCreated, body)
+	s.writeChatCreated(ctx, w, body, req.Message)
 }
 
 // writeIssueChatError maps CreateIssueChat's refusals onto the wire.

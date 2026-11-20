@@ -480,7 +480,9 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case openChatMsg:
 		v.back = msg.back
-		return v, v.open(msg.id)
+		cmd := v.open(msg.id)
+		v.restoreDraft(msg.draft, msg.note)
+		return v, cmd
 	case viewActivatedMsg:
 		if msg.id == viewChat && v.chatID != 0 {
 			return v, v.loadCmd()

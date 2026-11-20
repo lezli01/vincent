@@ -97,7 +97,11 @@ type root struct {
 	// routed exactly like the three above. projPickSeq numbers its fetches
 	// so an answer for a picker since closed or refetched is dropped, and
 	// projPickPending is its event debounce, armed at most once.
-	projPick        *projectPicker
+	projPick *projectPicker
+	// rename and chatWith are task 156's two popups, routed like projPick:
+	// the chat rename prompt and the chat-with form.
+	rename          *chatRenamePrompt
+	chatWith        *chatWithForm
 	projPickSeq     int
 	projPickPending bool
 	// exportForm is the task 159 export form, open when non-nil, and routed
@@ -292,6 +296,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if v, ok := m.views[viewChat].(*chatView); ok {
 				v.back = 0 // the chats board, as before #932
 				cmds = append(cmds, v.open(msg.chatID), m.switchTo(viewChat))
+				v.restoreDraft(msg.draft, msg.note)
 			}
 		}
 		return m, tea.Batch(cmds...)
@@ -302,9 +307,31 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// project first.
 		cmds := []tea.Cmd{m.broadcast(msg)}
 		if msg.err == nil && msg.chatID != 0 {
-			cmds = append(cmds, m.openObject(openChatMsg{id: msg.chatID, projectID: msg.projectID, back: msg.back}))
+			cmds = append(cmds, m.openObject(openChatMsg{
+				id: msg.chatID, projectID: msg.projectID, back: msg.back, draft: msg.draft, note: msg.note,
+			}))
 		}
 		return m, tea.Batch(cmds...)
+	case openChatRenameMsg:
+		if m.popupOpen() {
+			return m, nil
+		}
+		m.rename = newChatRenamePrompt(msg.id, msg.title)
+		return m, nil
+	case chatRenamedMsg:
+		m.applyRenamed(msg)
+		return m, nil
+	case openChatWithMsg:
+		if m.popupOpen() {
+			return m, nil
+		}
+		m.chatWith = newChatWithForm(msg.target)
+		return m, m.chatWith.init(m.client)
+	case chatWithAgentsMsg:
+		if m.chatWith != nil {
+			m.chatWith.applyAgents(msg)
+		}
+		return m, nil
 	case openConfigKeyMsg:
 		// The triggers view's global-off banner (task 096.6) names a switch
 		// it must not flip itself: Settings is where a config key is changed,
@@ -450,6 +477,12 @@ func (m *root) updatePaste(text string) tea.Cmd {
 	if m.exportForm != nil {
 		return m.exportForm.paste(text)
 	}
+	if m.rename != nil {
+		return m.rename.paste(text)
+	}
+	if m.chatWith != nil {
+		return m.chatWith.paste(text)
+	}
 	if m.palette != nil {
 		return m.palette.paste(text)
 	}
@@ -558,6 +591,20 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		done, cmd := m.exportForm.update(msg, m.client)
 		if done {
 			m.exportForm = nil
+		}
+		return m, cmd
+	}
+	if m.rename != nil && msg.String() != "ctrl+c" {
+		done, cmd := m.rename.update(msg, m.client)
+		if done {
+			m.rename = nil
+		}
+		return m, cmd
+	}
+	if m.chatWith != nil && msg.String() != "ctrl+c" {
+		done, cmd := m.chatWith.update(msg, m.client)
+		if done {
+			m.chatWith = nil
 		}
 		return m, cmd
 	}
@@ -865,7 +912,7 @@ func (m *root) updateLinksKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // keyboard while it is, so at most one ever is.
 func (m *root) popupOpen() bool {
 	return m.palette != nil || m.reader != nil || m.linkPick != nil || m.projPick != nil || m.exportForm != nil ||
-		m.pending != nil
+		m.pending != nil || m.rename != nil || m.chatWith != nil
 }
 
 // openProjectPicker raises the project picker over whatever is on screen,
@@ -959,9 +1006,11 @@ func (m *root) surfaceTarget() surface {
 		s.editable = t.detail.stepEditable()
 		s.live = t.liveBindings
 		s.tabs = t.tabs()
-		s.extras = t.paletteExtras()
 	} else if lb, ok := m.views[m.active].(liveBinder); ok {
 		s.live = lb.liveBindings
+	}
+	if pe, ok := m.views[m.active].(paletteExtraser); ok {
+		s.extras = append(s.extras, pe.paletteExtras()...)
 	}
 	if m.phase != phaseConnected {
 		s.target = taskActions{}
@@ -2740,6 +2789,10 @@ func (m *root) popupRender() (func(w, h int) string, bool) {
 		return m.projPick.render, true
 	case m.exportForm != nil:
 		return m.exportForm.render, true
+	case m.rename != nil:
+		return m.rename.render, true
+	case m.chatWith != nil:
+		return m.chatWith.render, true
 	default:
 		return nil, false
 	}

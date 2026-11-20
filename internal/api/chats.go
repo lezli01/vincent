@@ -167,6 +167,9 @@ type createChatRequest struct {
 	// IssueID opens the chat on an issue (task 140): it holds the issue's
 	// main worktree, on the issue's main branch, as a main task does.
 	IssueID *int64 `json:"issue_id"`
+	// Message, when set, is sent as the chat's first turn in the same
+	// request (task 156 decision 1), and an empty title is derived from it.
+	Message string `json:"message"`
 }
 
 // handleChatCreate creates a chat, allocating its worktree and
@@ -187,8 +190,9 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 	// worktree: the creation runs to completion under git's own budgets, and
 	// the chat.created event tells every client it exists.
 	r = r.WithContext(context.WithoutCancel(r.Context()))
+	req.Title = DeriveChatTitle(req.Title, req.Message)
 	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, "title is required")
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, "a title or a message is required")
 		return
 	}
 	project, err := s.deps.Store.GetProject(r.Context(), req.ProjectID)
@@ -320,7 +324,7 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logBaseRefresh(chat.ID, base, created)
 	chat.WorktreePath, chat.BaseSHA, chat.BaseRefresh = created.Path, created.BaseSHA, refresh
-	writeJSON(w, http.StatusCreated, renderChat(chat))
+	s.writeChatCreated(r.Context(), w, renderChat(chat), req.Message)
 }
 
 // logBaseRefresh reports a chat's base refresh that did not do what was asked.

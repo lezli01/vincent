@@ -853,6 +853,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("alt+e produced %T, want openChatExportMsg", drain(cmd))
 			}
 		},
+		"r": func(t *testing.T) {
+			v := archivedChatsFixture()
+			_, cmd := v.updateKey(registryKey(t, "r"))
+			if _, ok := drain(cmd).(openChatRenameMsg); !ok {
+				t.Fatalf("r produced %T, want openChatRenameMsg", drain(cmd))
+			}
+		},
 	},
 	ctxChatSearch: {
 		"enter": func(t *testing.T) {
@@ -873,6 +880,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChats: {
+		"r": func(t *testing.T) {
+			v := chatsFixture()
+			c, _ := v.current()
+			_, cmd := v.updateKey(registryKey(t, "r"))
+			if msg, ok := drain(cmd).(openChatRenameMsg); !ok || msg.id != c.ID || msg.title != c.Title {
+				t.Fatalf("r produced %#v, want openChatRenameMsg for the cursor's chat %d %q", drain(cmd), c.ID, c.Title)
+			}
+		},
 		"S": func(t *testing.T) {
 			v := chatsFixture()
 			_, cmd := v.updateKey(registryKey(t, "S"))
@@ -1212,6 +1227,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxNewChat: {
+		"ctrl+j": func(t *testing.T) {
+			v := chatsFixture()
+			v.create = newNewChatForm(nil, 1)
+			v.updateKey(tea.KeyPressMsg{Code: 'a', Text: "a"})
+			v.updateKey(registryKey(t, "ctrl+j"))
+			v.updateKey(tea.KeyPressMsg{Code: 'b', Text: "b"})
+			if got := v.create.message.Value(); got != "a\nb" {
+				t.Fatalf("ctrl+j left the message %q, want a newline inside it", got)
+			}
+		},
 		"ctrl+s": func(t *testing.T) {
 			v := chatsFixture()
 			v.create = newNewChatForm(nil, 7)
@@ -1312,6 +1337,17 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 			if msg, ok := cmd().(openChatMsg); !ok || msg.id != chat {
 				t.Fatalf("T produced %#v, want chat #12 opened", cmd())
+			}
+		},
+		"alt+t": func(t *testing.T) {
+			v := issuesFixture()
+			row, ok := v.current()
+			if !ok {
+				t.Fatal("no row under the cursor")
+			}
+			_, cmd := v.updateKey(registryKey(t, "alt+t"))
+			if msg, ok := drain(cmd).(openChatWithMsg); !ok || msg.target.issue == nil || msg.target.issue.ID != row.issue.ID {
+				t.Fatalf("alt+t produced %#v, want the chat-with form on issue #%d", drain(cmd), row.issue.ID)
 			}
 		},
 		"pgdown": func(t *testing.T) {
@@ -1418,6 +1454,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 			if msg, ok := cmd().(openChatMsg); !ok || msg.id != chat || msg.projectID != 2 {
 				t.Fatalf("T produced %#v, want chat #12 in project 2 opened", cmd())
+			}
+		},
+		"alt+t": func(t *testing.T) {
+			v := issueFixture()
+			_, cmd := v.updateKey(registryKey(t, "alt+t"))
+			if msg, ok := drain(cmd).(openChatWithMsg); !ok || msg.target.issue == nil || msg.target.back != viewIssue {
+				t.Fatalf("alt+t produced %#v, want the chat-with form on this issue", drain(cmd))
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -3578,6 +3621,7 @@ var vocabulary = []struct {
 	{termReady, ".", true},
 	{termHandoff, "I", true},
 	{termReturn, ",", true},
+	{termRename, "r", false},
 }
 
 // vocabularyExceptions are the rows that hold a vocabulary key for something

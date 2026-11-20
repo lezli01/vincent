@@ -157,6 +157,9 @@ var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/queue/clear"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/cancel"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/archive"},
+	// The rename (task 156) is the chat family's lifecycle too: excluded
+	// with the rest under 063 decision 2, not exposed on its own.
+	{Method: http.MethodPatch, Path: "/v1/chats/{id}"},
 	// Handoff joins the list under the same rule rather than as an exception
 	// to it (task 074 decision 1). It creates a task, which is exactly what
 	// makes it dangerous here: `task_create` is bounded by mcp.max_depth and

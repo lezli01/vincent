@@ -29,6 +29,10 @@ const (
 	// resumed or cleared. It carries queued_count and queue_paused, so a
 	// client re-renders the badge without a fetch.
 	EventChatQueue = "chat.queue_changed"
+	// EventChatUpdated is a chat whose display fields changed without a
+	// state change — today only a rename (task 156). It carries the new
+	// title, so a list repaints without a fetch.
+	EventChatUpdated = "chat.updated"
 )
 
 // ChatEventTypes is the chat.* family, in the order it is declared. It exists
@@ -36,7 +40,7 @@ const (
 // filtering on the payload's id: a chat event carries no task_id column, so
 // without this a replay would scan every task event behind the cursor.
 func ChatEventTypes() []string {
-	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue}
+	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue, EventChatUpdated}
 }
 
 // IsChatEvent reports whether an event type belongs to the chat family.
@@ -318,6 +322,14 @@ func (s *Store) SetChatState(ctx context.Context, id int64, st chatstate.State) 
 			c.PendingInput = nil
 		}
 	})
+}
+
+// SetChatTitle renames a chat and publishes chat.updated (task 156). It is
+// legal in every state, terminal ones included: the title is display only.
+// The branch is never touched — it was named from the title once, at
+// creation, and keeps that slug.
+func (s *Store) SetChatTitle(ctx context.Context, id int64, title string) (*Chat, error) {
+	return s.updateChat(ctx, id, EventChatUpdated, func(c *Chat) { c.Title = title })
 }
 
 // SetChatSession records the agent CLI's own session id for the chat (§7.3,

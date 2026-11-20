@@ -449,6 +449,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/chats/search", s.handleChatSearch)
 	rt.handle(http.MethodPost, "/v1/chats", s.handleChatCreate)
 	rt.handle(http.MethodGet, "/v1/chats/{id}", s.handleChatGet)
+	rt.handle(http.MethodPatch, "/v1/chats/{id}", s.handleChatPatch)
 	rt.handle(http.MethodDelete, "/v1/chats/{id}", s.handleChatDelete)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/send", s.handleChatSend)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/queue", s.handleChatQueueList)

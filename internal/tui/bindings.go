@@ -294,6 +294,7 @@ const (
 	termReady     vocabularyTerm = "mark the issue ready to hand off, or not ready"
 	termHandoff   vocabularyTerm = "hand the selected issues off"
 	termReturn    vocabularyTerm = "return the issue from its handoff"
+	termRename    vocabularyTerm = "rename a chat"
 )
 
 // binding is one registry row.
@@ -386,6 +387,9 @@ const mainTabLabel = "switch to the next main tab, in tui.tabs order (shift+tab 
 // issueChatLabel is `T` on both issue screens (task 140.9).
 const issueChatLabel = "chat with an agent on the issue's main worktree — it moves the issue to in progress, and a main task waits until the chat is closed; with a chat already holding it, reopen that chat"
 
+// issueChatWithLabel is `chat_with` on both issue screens (task 156).
+const issueChatWithLabel = "chat with… — choose the agent, model and effort, and type a first message, before the chat opens on the issue's main worktree; with a chat already holding it, reopen that chat"
+
 // bindings is the registry. Order within a scope+context is display order.
 var bindings = []binding{
 	// Global chrome.
@@ -477,6 +481,9 @@ var bindings = []binding{
 	// that chat instead (taskActions.offersChat), so the row is gated there
 	// rather than on the action alone.
 	{op: keymap.Chat, key: "T", label: "chat with an agent in this task's worktree — the task stays locked until the chat is closed; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 10},
+	// Task 156 decision 7: `T` with a choice first. Offered exactly where
+	// `chat` is, so it carries the same action.
+	{op: keymap.ChatWith, key: "alt+t", label: "chat with… — choose the agent, model and effort, and type a first message, before the chat opens; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 11},
 
 	// Task table.
 	// tab switches the main tab (task 136.2). The hint names the tab it goes
@@ -661,6 +668,7 @@ var bindings = []binding{
 	{op: keymap.Filter, key: "/", label: "filter by title, agent or branch", scope: scopePanel, context: ctxArchivedChats, priority: 5, term: termFilter},
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxArchivedChats, priority: 6, term: termRefresh},
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxArchivedChats, priority: 7},
+	{op: keymap.Rename, key: "r", label: "rename the chat (the branch keeps its name)", scope: scopePanel, context: ctxArchivedChats, priority: 8, term: termRename},
 
 	// Chats board. Its tab row exists only while chats is one of tui.tabs:
 	// mainTabRows drops it otherwise.
@@ -684,6 +692,9 @@ var bindings = []binding{
 	{key: "enter", label: "open the chat — on a turn's match, scrolled to that turn", scope: scopePanel, context: ctxChatSearch, hint: "enter open", priority: 1},
 	{key: "down", label: "move between results (↑/↓, pgup/pgdown)", scope: scopePanel, context: ctxChatSearch, hint: "↑/↓ move", priority: 2},
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChats, priority: 7},
+	// Task 156 decision 6: the prompt is prefilled with the title, and the
+	// branch keeps the slug it was cut with.
+	{op: keymap.Rename, key: "r", label: "rename the chat (the branch keeps its name)", scope: scopePanel, context: ctxChats, hint: "r rename", priority: 8, term: termRename},
 
 	// Chat workspace.
 	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done (task 156)", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
@@ -808,12 +819,16 @@ var bindings = []binding{
 	{key: "pgdown", label: "page the list (pgup/pgdown, home/end)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
 
 	// New chat.
-	{key: "ctrl+s", label: "create the chat and open it", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
-	{key: "enter", label: "open the focused field's list, or move on from a text field", scope: scopePanel, context: ctxNewChat, hint: "enter list", priority: 2},
+	{key: "ctrl+s", label: "create the chat and open it (with the first message, when one is typed)", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
+	// The form opens on the message row, where enter creates the chat and
+	// sends the message in one request (task 156 decision 5); on every
+	// other row it opens the list or moves on, as before.
+	{key: "enter", label: "on the message: create the chat and send it; elsewhere: open the focused field's list, or move on from a text field", scope: scopePanel, context: ctxNewChat, hint: "enter send", priority: 2},
 	{key: "tab", label: "next field (shift+tab goes back)", scope: scopePanel, context: ctxNewChat, hint: "tab next", priority: 3},
 	{key: "left", label: "step the agent, or a short model or effort list, in place (← →); enter opens its list", scope: scopePanel, context: ctxNewChat, hint: "← →  step", priority: 4},
 	{key: "esc", label: "close an open list, else discard the draft", scope: scopePanel, context: ctxNewChat, hint: "esc cancel", priority: 5},
 	{op: keymap.FreeText, key: "t", label: "in an open list: type a value it does not offer", scope: scopePanel, context: ctxNewChat, priority: 6, term: termFreeText},
+	{key: "ctrl+j", label: "insert a newline in the first message (shift+enter and alt+enter too, where the terminal sends them)", scope: scopePanel, context: ctxNewChat, priority: 7},
 
 	// Projects.
 	{op: keymap.Add, key: "a", label: "register a repository", scope: scopePanel, context: ctxProjects, hint: "a add", priority: 1, term: termAdd},
@@ -1088,6 +1103,7 @@ var bindings = []binding{
 	// task, because the gesture is the same — talk it through in its
 	// worktree, or reopen the chat already doing so.
 	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssues, hint: "T chat", priority: 8},
+	{op: keymap.ChatWith, key: "alt+t", label: issueChatWithLabel, scope: scopePanel, context: ctxIssues, priority: 8},
 	// The issue detail (§15 view 13).
 	{op: keymap.OpenRow, key: "enter", label: "open the selected row — a task's workspace or a chat, and esc comes back here; on the Issue tab's tasks-and-chats line, switch to the Work tab", scope: scopePanel, context: ctxIssue, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},
@@ -1118,6 +1134,7 @@ var bindings = []binding{
 	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssue, hint: ". ready", priority: 8, term: termReady},
 	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssue, hint: ", return", priority: 8, term: termReturn},
 	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssue, hint: "T chat", priority: 8},
+	{op: keymap.ChatWith, key: "alt+t", label: issueChatWithLabel, scope: scopePanel, context: ctxIssue, priority: 8},
 
 	// The issue form and prompt own the keyboard and print their own key
 	// lines, so these are here to keep ? complete.

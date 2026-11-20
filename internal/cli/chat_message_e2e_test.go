@@ -103,4 +103,52 @@ func TestChatMessageFileReachesTheStoredPrompt(t *testing.T) {
 			t.Errorf("turn %d prompt = %q, want exactly %q", turn.Seq, turn.Prompt, want)
 		}
 	}
+
+	// Task 156: a chat started from its first message alone. No title, one
+	// create carrying the message, the title derived from its first line,
+	// and the answer waited for as `send` waits.
+	out, code = runVincent(t, dataDir, cfgDir, "chat", "start", "--project", "1", "--agent", "claude",
+		"--message", "Explain the build\nin detail", "--json")
+	if code != 0 {
+		t.Fatalf("chat start --message without a title: code %d, out %q", code, out)
+	}
+	out, code = runVincent(t, dataDir, cfgDir, "chat", "list", "--json")
+	if code != 0 {
+		t.Fatalf("chat list: code %d, out %q", code, out)
+	}
+	var listed []struct {
+		ID     int64  `json:"id"`
+		Title  string `json:"title"`
+		Branch string `json:"branch"`
+	}
+	if err := json.Unmarshal([]byte(out), &listed); err != nil {
+		t.Fatalf("chat list --json: %v (%q)", err, out)
+	}
+	var derivedID int64
+	var derivedBranch string
+	for _, c := range listed {
+		if c.Title == "Explain the build" {
+			derivedID, derivedBranch = c.ID, c.Branch
+		}
+	}
+	if derivedID == 0 {
+		t.Fatalf("no chat titled from its message in %q", out)
+	}
+
+	// And renamed: the title changes, the branch does not.
+	rid := strconv.FormatInt(derivedID, 10)
+	out, code = runVincent(t, dataDir, cfgDir, "chat", "rename", rid, "a better name", "--json")
+	if code != 0 {
+		t.Fatalf("chat rename: code %d, out %q", code, out)
+	}
+	var renamed struct {
+		Title  string `json:"title"`
+		Branch string `json:"branch"`
+	}
+	if err := json.Unmarshal([]byte(out), &renamed); err != nil {
+		t.Fatalf("chat rename --json: %v (%q)", err, out)
+	}
+	if renamed.Title != "a better name" || renamed.Branch != derivedBranch {
+		t.Fatalf("renamed = %+v, want the new title on the unchanged branch %q", renamed, derivedBranch)
+	}
 }

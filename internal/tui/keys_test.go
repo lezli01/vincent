@@ -47,7 +47,9 @@ var reboundKeys = map[string]string{
 	"repair":     "f9",
 	"follow_up":  "f10",
 	"edit_retry": "f11",
-	"chat":       "alt+t",
+	"chat":       "alt+y",
+	"chat_with":  "alt+w",
+	"rename":     "f18",
 	"help":       "f12",
 	"palette":    "ctrl+a",
 	// f14/f15: ctrl+n is add's here, and N/H must move off every letter.
@@ -361,7 +363,7 @@ func TestReboundKeyReplacesTheDefault(t *testing.T) {
 // so the board's `T` handler, which sits ahead of the action bar rather than
 // behind resolveAction, moves with it too.
 func TestReboundChatKeyReplacesT(t *testing.T) {
-	withKeymap(t, map[string]string{"chat": "alt+t"})
+	withKeymap(t, map[string]string{"chat": "alt+y"})
 
 	b := testBoard()
 	open := int64(12)
@@ -370,12 +372,12 @@ func TestReboundChatKeyReplacesT(t *testing.T) {
 	})}})
 	if _, cmd := b.updateKey(registryKey(t, "T")); cmd != nil {
 		if _, ok := drain(cmd).(openChatMsg); ok {
-			t.Fatal("T still opens the task's chat after chat moved to alt+t")
+			t.Fatal("T still opens the task's chat after chat moved to alt+y")
 		}
 	}
-	_, cmd := b.updateKey(synthKey("alt+t"))
+	_, cmd := b.updateKey(synthKey("alt+y"))
 	if msg, ok := drain(cmd).(openChatMsg); !ok || msg.id != open {
-		t.Fatalf("alt+t produced %#v, want openChatMsg for chat #%d", drain(cmd), open)
+		t.Fatalf("alt+y produced %#v, want openChatMsg for chat #%d", drain(cmd), open)
 	}
 }
 

@@ -48,6 +48,13 @@ type chatStubLog struct {
 	requests int
 	created  int
 	sent     []string
+	// sendCalls counts POST /v1/chats/3/send alone: a `chat start` with a
+	// message sends it in the create (task 156) and makes none.
+	sendCalls int
+	// titles is the title of each create body, "" when it carried none.
+	titles []string
+	// refuseFirst makes a create answer with the first message not sent.
+	refuseFirst bool
 }
 
 func (l *chatStubLog) snapshot() (requests, created int, sent []string) {
@@ -71,11 +78,29 @@ func recordingChatStub(t *testing.T, state, result string) (http.HandlerFunc, *c
 		case r.URL.Path == "/v1/health":
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		case r.URL.Path == "/v1/chats" && r.Method == http.MethodPost:
+			var body struct {
+				Title   string  `json:"title"`
+				Message *string `json:"message"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
 			log.mu.Lock()
 			log.created++
+			log.titles = append(log.titles, body.Title)
+			refuse := log.refuseFirst
+			if body.Message != nil && !refuse {
+				log.sent = append(log.sent, *body.Message)
+			}
 			log.mu.Unlock()
+			first := `null`
+			warnings := `[]`
+			switch {
+			case body.Message != nil && refuse:
+				warnings = `["the first message was not sent: chat_cap_reached: 1 chat is running"]`
+			case body.Message != nil:
+				first = `{"id":11,"chat_id":3,"seq":1,"state":"running","started_at":"2026-09-05T10:00:00Z"}`
+			}
 			_, _ = w.Write([]byte(`{"id":3,"title":"talk","agent":"claude","state":"idle",
-				"branch":"vincent/3-talk"}`))
+				"branch":"vincent/3-talk","first_turn":` + first + `,"warnings":` + warnings + `}`))
 		case r.URL.Path == "/v1/chats/3/send" && r.Method == http.MethodPost:
 			var body struct {
 				Message *string `json:"message"`
@@ -87,6 +112,7 @@ func recordingChatStub(t *testing.T, state, result string) (http.HandlerFunc, *c
 			}
 			log.mu.Lock()
 			log.sent = append(log.sent, *body.Message)
+			log.sendCalls++
 			log.mu.Unlock()
 			_, _ = w.Write([]byte(`{"id":11,"chat_id":3,"seq":1,"state":"running",
 				"started_at":"2026-09-05T10:00:00Z"}`))
@@ -373,6 +399,54 @@ func TestChatStartMessageFileSendsTheFirstMessage(t *testing.T) {
 	}
 	if len(sent) != 1 || sent[0] != messageFileProbe {
 		t.Fatalf("the daemon received %q, want exactly %q", sent, messageFileProbe)
+	}
+	if log.sendCalls != 0 {
+		t.Errorf("send calls = %d, want the message carried by the create alone", log.sendCalls)
+	}
+}
+
+// TestChatStartWithoutATitle is task 156 decision 3: the title is optional
+// with a message, sent empty for the daemon to derive, in one create call;
+// with neither, the command refuses before any request.
+func TestChatStartWithoutATitle(t *testing.T) {
+	h, log := recordingChatStub(t, "done", "the answer")
+	stdout, stderr, code := runChatSend(t, h, "chat", "start", "--project", "1", "--message", "fix the build")
+	if code != 0 {
+		t.Fatalf("exit code %d, want 0 (stderr %q)", code, stderr)
+	}
+	if !strings.HasSuffix(stdout, "the answer\n") {
+		t.Errorf("stdout = %q, want the answer", stdout)
+	}
+	_, created, sent := log.snapshot()
+	if created != 1 || log.titles[0] != "" || len(sent) != 1 || sent[0] != "fix the build" || log.sendCalls != 0 {
+		t.Fatalf("created %d (titles %q), sent %q in %d send calls; want one titleless create carrying the message",
+			created, log.titles, sent, log.sendCalls)
+	}
+
+	h, log = recordingChatStub(t, "done", "the answer")
+	_, stderr, code = runChatSend(t, h, "chat", "start", "--project", "1")
+	if code != 1 || !strings.Contains(stderr, "a title or a first message is required") {
+		t.Fatalf("neither: code %d, stderr %q", code, stderr)
+	}
+	if requests, _, _ := log.snapshot(); requests != 0 {
+		t.Errorf("%d requests reached the daemon, want none", requests)
+	}
+}
+
+// TestChatStartFirstMessageNotSent: a create whose first message was refused
+// still made the chat; the command prints it and the warning, and exits 1.
+func TestChatStartFirstMessageNotSent(t *testing.T) {
+	h, log := recordingChatStub(t, "done", "the answer")
+	log.refuseFirst = true
+	stdout, stderr, code := runChatSend(t, h, "chat", "start", "--project", "1", "--message", "hello")
+	if code != 1 {
+		t.Fatalf("exit code %d, want 1 (stderr %q)", code, stderr)
+	}
+	if !strings.Contains(stderr, "the first message was not sent") || !strings.Contains(stdout, "3") {
+		t.Fatalf("stdout %q, stderr %q: want the chat and the warning", stdout, stderr)
+	}
+	if log.sendCalls != 0 {
+		t.Errorf("send calls = %d, want none", log.sendCalls)
 	}
 }
 

@@ -534,7 +534,7 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 	if !v.loaded {
 		switch key {
 		case opKey(keymap.Add), opKey(keymap.Delete), opKey(keymap.Comment),
-			opKey(keymap.Ready), opKey(keymap.Return), opKey(keymap.Chat):
+			opKey(keymap.Ready), opKey(keymap.Return), opKey(keymap.Chat), opKey(keymap.ChatWith):
 			return nil, true
 		}
 		return nil, false
@@ -569,6 +569,9 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 		// A chat on this issue's main worktree, or the one already holding
 		// it (task 140.9).
 		return issueChatCmd(v.client, v.issue, v.setNote, viewIssue), true
+	case opKey(keymap.ChatWith):
+		// The same, with the agent chosen first (task 156).
+		return issueChatWithCmd(v.client, v.issue, v.setNote, viewIssue), true
 	}
 	return nil, false
 }

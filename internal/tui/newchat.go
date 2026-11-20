@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
@@ -33,6 +34,11 @@ type ncRow int
 
 const (
 	ncProject ncRow = iota
+	// ncMessage is the first message (task 156 decision 5): the form opens
+	// on it, and enter there creates the chat and sends it in one request.
+	// Every other row is prefilled with its default, so `n`, typing and
+	// enter is the whole quick chat.
+	ncMessage
 	ncTitle
 	ncAgent
 	ncModel
@@ -51,7 +57,10 @@ const (
 // chatCreatedMsg reports the outcome of POST /v1/chats.
 type chatCreatedMsg struct {
 	chat *apiclient.Chat
-	err  error
+	// message is the first message the create carried, kept so a refused
+	// send can put it back in the composer (task 156 decision 5).
+	message string
+	err     error
 }
 
 // newChatFieldsMsg carries what the form needs to offer choices: the
@@ -85,8 +94,12 @@ type newChatForm struct {
 	model  string
 	effort string
 
-	title textField
-	base  textField
+	// message is the first message, multi-line: ctrl+j (shift+enter and
+	// alt+enter where the terminal sends them) inserts a newline, as in the
+	// chat composer, because enter sends.
+	message textarea.Model
+	title   textField
+	base    textField
 	// branch holds the adopted branch name. It is storage for the picker the
 	// row opens, not a text row: a chat's branch row has exactly one meaning,
 	// and typing one is done in the picker's free-text row.
@@ -123,14 +136,41 @@ type newChatForm struct {
 // and is the only way its project changes (task 132.13, decision 9).
 func newNewChatForm(client *apiclient.Client, projectID int64) *newChatForm {
 	f := &newChatForm{client: client, projectID: projectID}
+	f.message = newFirstMessageEditor()
 	f.title = newTextField()
-	f.title.SetPlaceholder("what is this conversation about")
+	f.title.SetPlaceholder("optional — taken from the message")
 	f.base = newTextField()
 	f.base.SetPlaceholder(f.baseHint())
 	f.branch = newTextField()
-	f.focus = ncTitle
-	f.title.Focus()
+	f.focus = ncMessage
+	f.message.Focus()
 	return f
+}
+
+// newFirstMessageEditor is the form's message row: the composer's newline
+// keys, no prompt, growing with what is typed up to a few lines.
+func newFirstMessageEditor() textarea.Model {
+	ta := textarea.New()
+	ta.Placeholder = "first message… (enter creates and sends, ctrl+j for a newline)"
+	ta.KeyMap.InsertNewline.SetKeys("ctrl+j", "shift+enter", "alt+enter")
+	ta.Prompt = ""
+	ta.ShowLineNumbers = false
+	ta.DynamicHeight = true
+	ta.MinHeight = 1
+	ta.MaxHeight = editorLines
+	ta.SetHeight(1)
+	ta.SetWidth(40)
+	return ta
+}
+
+// messageValue is the first message as it will be sent: byte for byte, or
+// empty when only whitespace was typed.
+func (f *newChatForm) messageValue() string {
+	v := f.message.Value()
+	if strings.TrimSpace(v) == "" {
+		return ""
+	}
+	return v
 }
 
 // init fetches the projects and adapters the pickers offer.
@@ -201,6 +241,8 @@ func (f *newChatForm) paste(text string) tea.Cmd {
 	}
 	var cmd tea.Cmd
 	switch f.focus {
+	case ncMessage:
+		f.message, cmd = f.message.Update(tea.PasteMsg{Content: text})
 	case ncTitle:
 		f.title, cmd = f.title.Update(tea.PasteMsg{Content: text})
 	case ncBase:
@@ -294,7 +336,21 @@ func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd
 		}
 		return res.cmd, false
 	}
-	switch msg.String() {
+	key := msg.String()
+	// The message row is a multi-line editor: within a message of several
+	// lines, up and down move between them, and left and right are cursor
+	// movement there as on every text row.
+	if f.focus == ncMessage {
+		multi := strings.Contains(f.message.Value(), "\n")
+		if key == "left" || key == "right" || (multi && (key == "up" || key == "down")) {
+			f.message, cmd = f.message.Update(msg)
+			return cmd, false
+		}
+		if key == "enter" {
+			return f.submit(), false
+		}
+	}
+	switch key {
 	case "esc":
 		return nil, true
 	case "tab", "down":
@@ -319,6 +375,8 @@ func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd
 		return nil, false
 	}
 	switch f.focus {
+	case ncMessage:
+		f.message, cmd = f.message.Update(msg)
 	case ncTitle:
 		f.title, cmd = f.title.Update(msg)
 	case ncBase:
@@ -348,7 +406,7 @@ func (f *newChatForm) openRow() {
 		f.pick = newPicker(int(ncBranch), "existing branch", f.branchOptions(), true,
 			strings.TrimSpace(f.branch.Value()))
 		f.pick.err = f.branchesErr
-	case ncTitle, ncBase, ncRowCount:
+	case ncMessage, ncTitle, ncBase, ncRowCount:
 		f.moveFocus(1)
 	}
 }
@@ -379,7 +437,7 @@ func (f *newChatForm) setRow(row ncRow, value string) {
 	case ncBranch:
 		f.branch.SetValue(value)
 		f.branchErr = ""
-	case ncProject, ncTitle, ncBase, ncRowCount:
+	case ncProject, ncMessage, ncTitle, ncBase, ncRowCount:
 	}
 }
 
@@ -423,9 +481,12 @@ func (f *newChatForm) effortRow() bool {
 
 func (f *newChatForm) moveFocusTo(row ncRow) {
 	f.focus = row
+	f.message.Blur()
 	f.title.Blur()
 	f.base.Blur()
 	switch f.focus {
+	case ncMessage:
+		f.message.Focus()
 	case ncTitle:
 		f.title.Focus()
 	case ncBase:
@@ -560,6 +621,7 @@ func (f *newChatForm) request() apiclient.CreateChatRequest {
 	req := apiclient.CreateChatRequest{
 		ProjectID:  f.projectID,
 		Title:      strings.TrimSpace(f.title.Value()),
+		Message:    f.messageValue(),
 		Agent:      f.agentName(),
 		Model:      f.model,
 		Effort:     f.effort,
@@ -575,8 +637,8 @@ func (f *newChatForm) request() apiclient.CreateChatRequest {
 }
 
 func (f *newChatForm) submit() tea.Cmd {
-	if strings.TrimSpace(f.title.Value()) == "" {
-		f.err = "a chat needs a title"
+	if strings.TrimSpace(f.title.Value()) == "" && f.messageValue() == "" {
+		f.err = "a chat needs a first message or a title"
 		return nil
 	}
 	if f.projectID == 0 {
@@ -598,7 +660,7 @@ func (f *newChatForm) submit() tea.Cmd {
 		// report a timeout for a chat the daemon goes on to create.
 		ctx := context.Background()
 		chat, err := client.CreateChat(ctx, req)
-		return chatCreatedMsg{chat: chat, err: err}
+		return chatCreatedMsg{chat: chat, message: req.Message, err: err}
 	}
 }
 
@@ -626,9 +688,11 @@ func (f *newChatForm) render(width, height int) string {
 	// what the two text fields have left of the pane (issue #299).
 	const ncIndent = 2 + 9
 	f.title.SetWidth(max(width-ncIndent, 10))
+	f.message.SetWidth(max(width-ncIndent, 10))
 	f.base.SetWidth(max(width-ncIndent, 10))
 	rows := []ncFormRow{
 		{ncProject, "project", []string{f.projectName() + "   " + styleDim.Render("the selected project")}},
+		{ncMessage, "message", strings.Split(f.message.View(), "\n")},
 		{ncTitle, "title", f.title.rows()},
 		{ncAgent, "agent", []string{f.agentLabel()}},
 		{ncModel, "model", []string{f.overrideValue(f.model, f.defaultModel())}},
@@ -679,6 +743,8 @@ func (f *newChatForm) render(width, height int) string {
 		footer = wrapStatus(f.err, width, styleBad)
 	case f.pick != nil:
 		footer = wrapStatus("↑/↓ choose · / filter · enter pick · esc close the list", width, styleDim)
+	case f.focus == ncMessage:
+		footer = wrapStatus("enter create and send · ctrl+j newline · tab more options · esc cancel", width, styleDim)
 	default:
 		footer = wrapStatus("enter choose · ctrl+s create · esc cancel", width, styleDim)
 	}
