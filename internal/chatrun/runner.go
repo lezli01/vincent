@@ -192,6 +192,11 @@ type Runner struct {
 	// that has not yet reached track (task 119).
 	turns map[int64]*turnCtl
 
+	// beforeCheckpoint is a test seam, nil in production: it runs on a
+	// chat's actor goroutine as a turn's checkpoint starts, with the turn's
+	// context, so a test can hold the turn in that window (review F3).
+	beforeCheckpoint func(ctx context.Context, chatID int64)
+
 	// handover is a test seam, nil in production: it runs on a chat's actor
 	// goroutine at each queue handover (task 156), after a `done` ending has
 	// popped the next turn and before that turn is checked against a stop or
@@ -521,14 +526,35 @@ func (r *Runner) Answer(ctx context.Context, chatID int64, resp agent.InputRespo
 }
 
 // Cancel stops a chat's live turn and kills its process tree.
+//
+// A turn that has been accepted but has no process yet — it is being placed,
+// or its checkpoint is running, which on a large worktree is the long part of
+// its start — is cancelled through its turnCtl, the way StopTurn reaches it
+// (review F3): its context ends, and runTurn finishes it `canceled` before
+// anything spawns. Marking the control stopped also covers a queue handover,
+// where the popped turn has not taken its context yet.
 func (r *Runner) Cancel(_ context.Context, chatID int64) error {
 	r.mu.Lock()
 	live := r.live[chatID]
-	r.mu.Unlock()
+	var pending context.CancelCauseFunc
 	if live == nil {
+		if ctl := r.turns[chatID]; ctl != nil {
+			ctl.stopped = true
+			pending = ctl.cancel
+			if pending == nil {
+				pending = func(error) {}
+			}
+		}
+	}
+	r.mu.Unlock()
+	switch {
+	case live != nil:
+		live.cancel()
+	case pending != nil:
+		pending(errCanceled)
+	default:
 		return ErrNoLiveTurn
 	}
-	live.cancel()
 	return nil
 }
 

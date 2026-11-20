@@ -36,6 +36,9 @@ func CheckpointRef(chatID int64, seq int) string {
 func (r *Runner) checkpoint(
 	ctx context.Context, chat *store.Chat, turn *store.ChatTurn, workDir string,
 ) (skipped []string, err error) {
+	if r.beforeCheckpoint != nil {
+		r.beforeCheckpoint(ctx, chat.ID)
+	}
 	git := gitx.New()
 	snapCtx, cancel := context.WithTimeout(ctx, gitx.WorktreeTimeout)
 	defer cancel()

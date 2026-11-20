@@ -1,14 +1,17 @@
 package chatrun
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/gitx"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // TestEveryTurnIsCheckpointed is task 167.2's acceptance on all four
@@ -119,4 +122,41 @@ func TestUnreadableFileDoesNotStopTheChat(t *testing.T) {
 			t.Errorf("turn %d transcript does not name the skipped file:\n%s", seq, body)
 		}
 	}
+}
+
+// TestCancelDuringCheckpoint is review F3: a human cancel that lands while a
+// turn's checkpoint runs — before any process exists to kill — is accepted,
+// not ErrNoLiveTurn (which the API answered 500), and the turn ends
+// `canceled` without its agent ever starting.
+func TestCancelDuringCheckpoint(t *testing.T) {
+	h := newHarness(t)
+	c := h.chat(t)
+	entered := make(chan struct{})
+	h.runner.beforeCheckpoint = func(ctx context.Context, _ int64) {
+		close(entered)
+		<-ctx.Done()
+	}
+	turn, err := h.runner.Send(t.Context(), c.ID, "hello")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(wait.Timeout(10 * time.Second)):
+		t.Fatal("the checkpoint never started")
+	}
+	if h.runner.Running(c.ID) {
+		t.Fatal("a process is live before the checkpoint finished")
+	}
+	if err := h.runner.Cancel(t.Context(), c.ID); err != nil {
+		t.Fatalf("Cancel during the checkpoint: %v", err)
+	}
+	got := h.waitTurn(t, turn.ID)
+	if got.State != chatstate.TurnFailed || got.FailReason != ReasonCanceled {
+		t.Fatalf("turn = %s (%s: %s), want failed canceled", got.State, got.FailReason, got.ErrorMessage)
+	}
+	if got.PID != nil {
+		t.Errorf("an agent ran: pid %v", *got.PID)
+	}
+	h.waitIdle(t, c.ID)
 }
