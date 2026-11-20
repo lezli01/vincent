@@ -117,6 +117,12 @@ func drawBox(title, right string, body []string, w, h int, e boxEdges, border li
 	return append(out, border.Render(e.bl+strings.Repeat(e.h, inner)+e.br))
 }
 
+// boxBottom is a box's bottom edge carrying a label on its right, the way
+// boxTop carries one: dropped whole rather than cut when there is no room.
+func boxBottom(right string, inner int, e boxEdges, border lipgloss.Style) string {
+	return boxTop("", right, inner, boxEdges{tl: e.bl, tr: e.br, h: e.h}, border)
+}
+
 // boxTop is a box's top edge. The left title wins the room: the right one is
 // dropped whole rather than cut, because a count cut in half is a wrong count.
 func boxTop(title, right string, inner int, e boxEdges, border lipgloss.Style) string {

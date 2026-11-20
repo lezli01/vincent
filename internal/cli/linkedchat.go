@@ -20,7 +20,7 @@ import (
 // rather than the task: the task does not move, and the chat's id is what
 // every next command takes.
 func newTaskChatCmd() *cobra.Command {
-	var title, agent, model, effort string
+	var title, agent, model, effort, message, msgFile string
 	cmd := &cobra.Command{
 		Use:   "chat <id>",
 		Short: "Open a chat in a stopped task's worktree",
@@ -36,7 +36,14 @@ func newTaskChatCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			req := apiclient.OpenTaskChatRequest{Title: title, Agent: agent, Model: model, Effort: effort}
+			if cmd.Flags().Changed("message-file") {
+				if message, err = readMessageFile(msgFile, cmd.InOrStdin()); err != nil {
+					return err
+				}
+			}
+			req := apiclient.OpenTaskChatRequest{
+				Title: title, Agent: agent, Model: model, Effort: effort, Message: message,
+			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				chat, err := c.OpenTaskChat(ctx, id, req)
 				if err != nil {
@@ -52,10 +59,30 @@ func newTaskChatCmd() *cobra.Command {
 					printIssueWorktreeMoved(cmd.ErrOrStderr(), err)
 					return exitError{code: 1}
 				}
-				if wantJSON(cmd) {
-					return emitJSON(cmd.OutOrStdout(), chat)
+				for _, w := range chat.Warnings {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
 				}
-				return printLinkedChat(cmd.OutOrStdout(), chat, id)
+				if message != "" && chat.FirstTurn != nil {
+					// The first message went with the open (task 161): wait
+					// for its answer, as `chat start --message` does.
+					if !wantJSON(cmd) {
+						if err := printLinkedChat(cmd.OutOrStdout(), chat, id); err != nil {
+							return err
+						}
+					}
+					return waitChatTurn(ctx, cmd, c, chat.ID, chat.FirstTurn)
+				}
+				if wantJSON(cmd) {
+					if err := emitJSON(cmd.OutOrStdout(), chat); err != nil {
+						return err
+					}
+				} else if err := printLinkedChat(cmd.OutOrStdout(), chat, id); err != nil {
+					return err
+				}
+				if message != "" {
+					return exitError{code: 1}
+				}
+				return nil
 			})
 		},
 	}
@@ -64,6 +91,11 @@ func newTaskChatCmd() *cobra.Command {
 		"Agent for the chat (§8.6, request level); it must be able to resume a session")
 	cmd.Flags().StringVar(&model, "model", "", "Model for the chat (§8.6, request level)")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort for the chat (§8.6, request level)")
+	cmd.Flags().StringVar(&message, "message", "",
+		"send this first message with the open, after the task's context, and wait for the answer")
+	cmd.Flags().StringVar(&msgFile, "message-file", "",
+		"send the first message read from this file (- for stdin), byte for byte")
+	cmd.MarkFlagsMutuallyExclusive("message", "message-file")
 	jsonFlag(cmd)
 	return cmd
 }

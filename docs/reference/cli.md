@@ -1528,7 +1528,8 @@ chain; a value no catalog recognizes is a warning on stderr, not a failure.
 ### `vincent task chat`
 
 ```sh
-vincent task chat <id> [--title TITLE] [--agent NAME] [--model M] [--effort E] [--json]
+vincent task chat <id> [--title TITLE] [--agent NAME] [--model M] [--effort E]
+                  [--message TEXT | --message-file PATH|-] [--json]
 ```
 
 Opens a [chat](#vincent-chat) that works in a stopped task's **own** worktree
@@ -1558,6 +1559,13 @@ Error: task 7 is locked by chat 12, which works in its worktree; close the chat 
 
 The first line is the daemon's, printed as it stands; the second is the
 command's own.
+
+`--message` sends a first message with the open, after the task's context, and
+waits for the answer the way [`chat send`](#vincent-chat-send) does;
+`--message-file` reads it from a file, or stdin with `-`, byte for byte. The two
+are mutually exclusive. If the daemon opened the chat but could not send the
+message — the chat cap was full, say — the chat is printed with a warning
+saying why, and the command exits 1; send it again with `vincent chat send`.
 
 `--title` defaults to the task's. `--agent`, `--model` and `--effort` stand in
 for the step level of §8.6's chain, as a repair's do; the agent must be able to
@@ -2112,7 +2120,7 @@ the log as prompt context.
 ### `vincent chat start`
 
 ```sh
-vincent chat start TITLE --project ID [--agent NAME] [--model M] [--effort E]
+vincent chat start [TITLE] --project ID [--agent NAME] [--model M] [--effort E]
                   [--base BRANCH] [--branch NAME --existing-branch] [--issue ID]
                   [--message TEXT | --message-file PATH|-] [--json]
 ```
@@ -2128,6 +2136,14 @@ turn straight away and waits for it, which is `start` plus `send` in one call.
 when the argument is `-`, exactly as [`chat send`](#vincent-chat-send) reads
 one; the two flags are mutually exclusive. With neither, the chat is created
 and no message is sent.
+
+The message travels in the create request itself, not in a second `send`. With
+a message, `TITLE` may be left out: the daemon takes the title from the
+message's first line, cut to 72 characters at a word boundary, and names the
+branch from it. With neither a title nor a message the command refuses before
+any request. If the chat was created but its first message could not be sent —
+the chat cap was full, say — the chat is printed with a warning saying why, and
+the command exits 1; send it again with `vincent chat send`.
 
 `--issue` opens the chat on an issue (task 140). It works in the issue's main
 worktree, on the issue's main branch, the way a main task does: an issue with
@@ -2517,6 +2533,35 @@ of its tool calls.
 Exit `0` on success. Exit `1` on an unknown chat or a file that cannot be
 written. Exit `2` with no daemon.
 
+### `vincent chat find`
+
+```sh
+vincent chat find CHAT_ID TEXT [--json]
+```
+
+Which turns of a chat mention `TEXT`, searched case-insensitively as a plain
+substring through `GET /v1/chats/{id}/search` — the route the chat
+workspace's `ctrl+f` search uses. Each turn's prompt and its whole transcript
+are searched, tool output and the text a verbosity level hides included; a
+turn whose transcript has gone to `transcript_retention_days` is searched
+through its result text, and its line says so. stdout is one line per
+matching turn, in turn order:
+
+```text
+turn 3  2 matches
+turn 7  1 match  (result text only: the transcript is gone)
+```
+
+`vincent chat transcript CHAT_ID --turn 3` then reads one of them. `--json`
+emits the response object unchanged — `{query, total, turns[{seq, matches,
+source, truncated?}]}`, with `turns` always an array. A turn whose transcript
+is longer than 32 MiB is searched up to there, and a warning on stderr says
+which.
+
+Exit `0` whenever the daemon answered, no matches included. Exit `1` on an
+unknown chat or a query that is empty or over 256 bytes. Exit `2` with no
+daemon.
+
 ### `vincent chat archive`
 
 ```sh
@@ -2636,6 +2681,18 @@ neither can a chat that is already closed; both exit 1. A closed chat is hidden
 from `vincent chat list` unless you pass `--archived`. `vincent chat delete`
 removes a closed chat's row and transcripts like an archived one's, but refuses
 `--branch` on it (`chat_linked_to_task`): the branch is the task's.
+
+### `vincent chat rename`
+
+```sh
+vincent chat rename CHAT_ID TITLE [--json]
+```
+
+Changes a chat's title, in any state — archived, handed-off and closed chats
+included, since the title is display only. The chat's branch keeps the name it
+was cut with. It prints `chat N renamed: TITLE`; `--json` emits the chat. An
+empty title is refused before any request, and one over 72 characters by the
+daemon; both exit 1.
 
 ## `vincent workflow`
 

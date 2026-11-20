@@ -68,6 +68,10 @@ type openTaskChatRequest struct {
 	Agent  *string `json:"agent"`
 	Model  *string `json:"model"`
 	Effort *string `json:"effort"`
+	// Message is sent as the linked chat's first turn in the same request
+	// (task 161 decision 1); the opening context is prepended to it as to
+	// any first turn.
+	Message string `json:"message"`
 }
 
 // handleTaskChat opens a chat linked to a stopped task (task 119). It moves
@@ -175,10 +179,13 @@ func (s *Server) handleTaskChat(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "assemble chat context", err)
 		return
 	}
+	// The task's title stays the default ahead of derivation (task 161
+	// decision 2): a linked chat is about its task first.
 	title := strings.TrimSpace(ptrValue(req.Title))
 	if title == "" {
 		title = task.Title
 	}
+	title = DeriveChatTitle(title, req.Message)
 	chat := &store.Chat{
 		Title: title, Agent: name, Model: sel.Model, Effort: sel.Effort,
 		PermissionMode: string(permission), OpeningContext: opening,
@@ -195,7 +202,7 @@ func (s *Server) handleTaskChat(w http.ResponseWriter, r *http.Request) {
 		s.writeActionError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, renderChat(chat))
+	s.writeChatCreated(ctx, w, renderChat(chat), req.Message)
 }
 
 // handleChatClose ends a linked chat (task 119). A live turn is cancelled

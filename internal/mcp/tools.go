@@ -157,6 +157,9 @@ var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/queue/clear"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/cancel"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/archive"},
+	// The rename (task 161) is the chat family's lifecycle too: excluded
+	// with the rest under 063 decision 2, not exposed on its own.
+	{Method: http.MethodPatch, Path: "/v1/chats/{id}"},
 	// Handoff joins the list under the same rule rather than as an exception
 	// to it (task 074 decision 1). It creates a task, which is exactly what
 	// makes it dangerous here: `task_create` is bounded by mcp.max_depth and
@@ -198,6 +201,10 @@ var Excluded = []Route{
 	// agent wanting an old conversation is not who the search is for.
 	{Method: http.MethodGet, Path: "/v1/chats/search"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/export"},
+	// `GET /v1/chats/{id}/search` (task 160 decision 2) is a chat read like
+	// the transcript it scans, and the family stays off the tool surface
+	// whole.
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/search"},
 }
 
 // GrantedRoute is an Excluded forge write that becomes a tool on a granted

@@ -627,7 +627,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			t.openPopup()
 		}
 		return cmd
-	case opKey(keymap.Chat):
+	case opKey(keymap.Chat), opKey(keymap.ChatWith):
 		// Ahead of the tabs' own handlers, as R and F are: the key acts on
 		// the task, so it means the same thing on every tab.
 		return t.detail.update(msg)

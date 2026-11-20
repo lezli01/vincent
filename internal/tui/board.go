@@ -1058,6 +1058,11 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return b, cmd
 		}
 	}
+	if msg.String() == opKey(keymap.ChatWith) {
+		if cmd := taskChatWithCmd(b.client, b.target(), b.actions); cmd != nil {
+			return b, cmd
+		}
+	}
 
 	// §15's action keys act on the row under the cursor. A key the daemon
 	// does not offer for this task falls through to the table, so j/k keep

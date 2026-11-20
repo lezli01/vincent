@@ -778,7 +778,17 @@ func (v *chatView) renderWorkspace(width, height int) string {
 	}
 	body := strings.Split(v.conversationUnder(head, max(midW-4, 4), max(height-2, 4)), "\n")
 	title, right := v.paneEdge(midW)
-	out = joinColumns(out, drawBox(title, right, body, midW, height, edgesRounded, styleFocus))
+	box := drawBox(title, right, body, midW, height, edgesRounded, styleFocus)
+	// The search count and `↓ N new` sit on the pane's bottom edge (task
+	// 160 decisions 3 and 5).
+	if label := v.edgeLabel(); label != "" && len(box) > 0 {
+		box[len(box)-1] = boxBottom(label, midW-2, edgesRounded, styleFocus)
+	}
+	// The body starts inside the box's top edge, under head (review F2);
+	// the label is on the box's bottom edge, all of whose width follows.
+	v.convHit = v.convHit.shift(listW+2, len(filter)+1)
+	v.convHit.edgeY, v.convHit.edgeX0, v.convHit.edgeX1 = len(filter)+height-1, listW, listW+midW
+	out = joinColumns(out, box)
 	if detailsW > 0 {
 		var c apiclient.Chat
 		ok := v.chat != nil
@@ -791,8 +801,16 @@ func (v *chatView) renderWorkspace(width, height int) string {
 }
 
 // updateClick opens the chat card under the pointer from inside a conversation.
+// A click in the conversation itself works in both layouts (task 160
+// decisions 1 and 5, review F2); the cards are the workspace's alone.
 func (v *chatView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
-	if !v.sideShown(v.termW) || v.form != nil {
+	if v.form != nil {
+		return nil
+	}
+	if v.updateConvClick(msg) {
+		return v.fetchVisibleTranscripts()
+	}
+	if !v.sideShown(v.termW) {
 		return nil
 	}
 	id, ok := v.side.cardAt(msg)

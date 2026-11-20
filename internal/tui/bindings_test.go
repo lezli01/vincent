@@ -853,6 +853,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("alt+e produced %T, want openChatExportMsg", drain(cmd))
 			}
 		},
+		"r": func(t *testing.T) {
+			v := archivedChatsFixture()
+			_, cmd := v.updateKey(registryKey(t, "r"))
+			if _, ok := drain(cmd).(openChatRenameMsg); !ok {
+				t.Fatalf("r produced %T, want openChatRenameMsg", drain(cmd))
+			}
+		},
 	},
 	ctxChatSearch: {
 		"enter": func(t *testing.T) {
@@ -873,6 +880,14 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChats: {
+		"r": func(t *testing.T) {
+			v := chatsFixture()
+			c, _ := v.current()
+			_, cmd := v.updateKey(registryKey(t, "r"))
+			if msg, ok := drain(cmd).(openChatRenameMsg); !ok || msg.id != c.ID || msg.title != c.Title {
+				t.Fatalf("r produced %#v, want openChatRenameMsg for the cursor's chat %d %q", drain(cmd), c.ID, c.Title)
+			}
+		},
 		"S": func(t *testing.T) {
 			v := chatsFixture()
 			_, cmd := v.updateKey(registryKey(t, "S"))
@@ -949,6 +964,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChat: {
+		"ctrl+f": func(t *testing.T) {
+			v := chatFindFixture(t)
+			v.updateKey(registryKey(t, "ctrl+f"))
+			if !v.convFocus || !v.search.typing {
+				t.Fatal("ctrl+f did not open the conversation's search line")
+			}
+		},
 		"ctrl+s": func(t *testing.T) {
 			v := chatViewFixture()
 			v.chat.State, v.chat.SteerReason = "running", "claude cannot steer a running turn"
@@ -1205,6 +1227,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxNewChat: {
+		"ctrl+j": func(t *testing.T) {
+			v := chatsFixture()
+			v.create = newNewChatForm(nil, 1)
+			v.updateKey(tea.KeyPressMsg{Code: 'a', Text: "a"})
+			v.updateKey(registryKey(t, "ctrl+j"))
+			v.updateKey(tea.KeyPressMsg{Code: 'b', Text: "b"})
+			if got := v.create.message.Value(); got != "a\nb" {
+				t.Fatalf("ctrl+j left the message %q, want a newline inside it", got)
+			}
+		},
 		"ctrl+s": func(t *testing.T) {
 			v := chatsFixture()
 			v.create = newNewChatForm(nil, 7)
@@ -1305,6 +1337,17 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 			if msg, ok := cmd().(openChatMsg); !ok || msg.id != chat {
 				t.Fatalf("T produced %#v, want chat #12 opened", cmd())
+			}
+		},
+		"alt+t": func(t *testing.T) {
+			v := issuesFixture()
+			row, ok := v.current()
+			if !ok {
+				t.Fatal("no row under the cursor")
+			}
+			_, cmd := v.updateKey(registryKey(t, "alt+t"))
+			if msg, ok := drain(cmd).(openChatWithMsg); !ok || msg.target.issue == nil || msg.target.issue.ID != row.issue.ID {
+				t.Fatalf("alt+t produced %#v, want the chat-with form on issue #%d", drain(cmd), row.issue.ID)
 			}
 		},
 		"pgdown": func(t *testing.T) {
@@ -1411,6 +1454,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 			if msg, ok := cmd().(openChatMsg); !ok || msg.id != chat || msg.projectID != 2 {
 				t.Fatalf("T produced %#v, want chat #12 in project 2 opened", cmd())
+			}
+		},
+		"alt+t": func(t *testing.T) {
+			v := issueFixture()
+			_, cmd := v.updateKey(registryKey(t, "alt+t"))
+			if msg, ok := drain(cmd).(openChatWithMsg); !ok || msg.target.issue == nil || msg.target.back != viewIssue {
+				t.Fatalf("alt+t produced %#v, want the chat-with form on this issue", drain(cmd))
 			}
 		},
 		"enter": func(t *testing.T) {
@@ -3204,6 +3254,112 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 	},
+	ctxChatConversation: {
+		"down": func(t *testing.T) {
+			v := convFocused(t)
+			v.moveCursor(0)
+			v.updateKey(registryKey(t, "down"))
+			if v.cursor != 1 {
+				t.Fatalf("down left the cursor on %d", v.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			v := convFocused(t)
+			for y, a := range v.anchors {
+				if a.call != "" {
+					v.moveCursor(y)
+					break
+				}
+			}
+			v.updateKey(registryKey(t, "enter"))
+			if len(v.expanded[v.chatID]) != 1 {
+				t.Fatal("enter on a check line expanded nothing")
+			}
+		},
+		"/": func(t *testing.T) {
+			v := convFocused(t)
+			v.updateKey(registryKey(t, "/"))
+			if !v.search.typing {
+				t.Fatal("/ did not open the search line")
+			}
+		},
+		"n": func(t *testing.T) {
+			v := convFocused(t)
+			v.runSearch("question")
+			at := v.search.current
+			v.updateKey(registryKey(t, "n"))
+			if v.search.current == at {
+				t.Fatal("n did not move to the next match")
+			}
+		},
+		"}": func(t *testing.T) {
+			v := convFocused(t)
+			v.moveCursor(0)
+			v.updateKey(registryKey(t, "}"))
+			if a := anchorAt(v.anchors, v.cursor); !a.you || a.turn != 2 {
+				t.Fatalf("} landed on %+v", a)
+			}
+		},
+		"g": func(t *testing.T) {
+			v := convFocused(t)
+			v.moveCursor(len(v.anchors) - 1)
+			v.updateKey(registryKey(t, "g"))
+			if v.cursor != 0 {
+				t.Fatalf("g left the cursor on %d", v.cursor)
+			}
+		},
+		"pgup": func(t *testing.T) {
+			v := convFocused(t)
+			v.setFollowing(true)
+			v.render(100, 40)
+			at := v.vp.YOffset()
+			v.updateKey(registryKey(t, "pgup"))
+			if at > 0 && v.vp.YOffset() >= at {
+				t.Fatal("pgup did not scroll back")
+			}
+		},
+		"ctrl+g": func(t *testing.T) {
+			v := convFocused(t)
+			v.following = false
+			v.updateKey(registryKey(t, "ctrl+g"))
+			if !v.following {
+				t.Fatal("ctrl+g did not follow")
+			}
+		},
+		"i": func(t *testing.T) {
+			v := convFocused(t)
+			v.updateKey(registryKey(t, "i"))
+			if v.convFocus || !v.composer.Focused() {
+				t.Fatal("i did not give the keyboard back")
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := convFocused(t)
+			v.updateKey(registryKey(t, "esc"))
+			if v.convFocus || !v.composer.Focused() {
+				t.Fatal("esc did not give the keyboard back")
+			}
+		},
+	},
+	ctxChatFind: {
+		"enter": func(t *testing.T) {
+			v := chatFindFixture(t)
+			v.openSearchLine()
+			v.search.buf = "question"
+			v.updateKey(registryKey(t, "enter"))
+			if v.search.typing || v.search.query != "question" || len(v.search.matches) == 0 {
+				t.Fatalf("enter: typing %v, query %q, %d matches", v.search.typing, v.search.query, len(v.search.matches))
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := chatFindFixture(t)
+			v.openSearchLine()
+			v.updateKey(registryKey(t, "esc"))
+			if v.search.typing || !v.convFocus {
+				t.Fatal("esc should close the line and keep the conversation focused")
+			}
+		},
+	},
 	ctxChatFiles: {
 		"down": func(t *testing.T) {
 			v := chatFilesFixture(claudeFiles())
@@ -3465,6 +3621,7 @@ var vocabulary = []struct {
 	{termReady, ".", true},
 	{termHandoff, "I", true},
 	{termReturn, ",", true},
+	{termRename, "r", false},
 }
 
 // vocabularyExceptions are the rows that hold a vocabulary key for something

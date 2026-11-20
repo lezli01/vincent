@@ -13,6 +13,18 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Search inside a chat, jump between prompts, expand one tool call.**
+  `ctrl+f` in a chat hands the keyboard to the conversation with a search
+  line: every turn is searched case-insensitively — the ones not loaded yet
+  by the daemon, and tool output a level hides too — with every match
+  highlighted and a `3/17` count on the pane's edge. `n`/`N` step through
+  matches, `{`/`}` jump between your prompts, `j`/`k` move a line cursor,
+  `enter` expands just the tool call under it, and `esc` or `i` gives the
+  keyboard back with the draft untouched. Scrolled away from the live end,
+  `↓ N new` counts what arrived below. The API gains
+  `GET /v1/chats/{id}/search?q=`, and the CLI `vincent chat find` (task 160,
+  #1014).
+
 - **A chat queues the messages you send while its turn runs.** `enter` on a
   running chat, or one waiting on the agent's question, no longer refuses:
   the message is queued and runs as the next turn once the current one ends
@@ -55,6 +67,26 @@ list with the user-facing context a commit subject cannot carry.
   turn's usage counts the cache the agent read and wrote beside its input
   (`1200 in (+60200 cache) · 800 out`), as the chat heading does, and the JSON
   carries the cache counts and context figures (#1023).
+
+- **Start a chat from its first message.** The new-chat form opens on a
+  message row: type and press `enter`, and the chat is created and the message
+  sent in one step. The title is optional — left empty, it is taken from the
+  message's first line. `POST /v1/chats` and `POST /v1/tasks/{id}/chat` accept
+  `message` and answer with `first_turn`; `vincent chat start` takes the title
+  as optional and sends `--message` in the create, and `vincent task chat`
+  gains `--message`/`--message-file`. If the message cannot be sent (the chat
+  cap is full), the chat is still created, a warning says why, and the TUI puts
+  the message back in the composer (#1016).
+
+- **Rename a chat.** `r` on the chats boards, the **rename chat** palette
+  command, `vincent chat rename`, and `PATCH /v1/chats/{id}` change a chat's
+  title in any state; the branch keeps its name. A rename emits the new
+  `chat.updated` event (#1016).
+
+- **Choose the agent for a chat on a task or an issue.** `alt+t` (the new
+  rebindable `chat_with` operation) and the **chat with…** palette command open
+  a small form — agent, model, effort and an optional first message — before
+  opening the chat; `T` still opens one at once with the default agent (#1016).
 
 ### Changed
 

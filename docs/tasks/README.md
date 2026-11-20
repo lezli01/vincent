@@ -173,6 +173,8 @@ the living engineering specification records implementation contracts.
 | [157](157-chat-turn-usage-and-context-gauge.md) | Per-turn usage in a chat's turn headings, a context gauge, and `/compact` on claude | 🔄 in progress (3/4) |
 | [158](158-chat-search.md) | Search every chat's title, prompts and answers, live and archived, and open a result on its turn | ✅ done (5/5) |
 | [159](159-chat-export.md) | Export a chat as Markdown, HTML or JSON: `GET /v1/chats/{id}/export`, `vincent chat export`, the TUI's export form | ✅ done (4/4) |
+| [160](160-chat-search-and-navigation.md) | Search inside a chat, jump between prompts, expand one tool call | 🔄 in progress (2/3) |
+| [161](161-chat-first-message-and-rename.md) | Start a chat from its first message, rename chats, and choose the agent for a chat on a task or issue | ✅ done (6/6) |
 
 ## How to add and update a task document
 

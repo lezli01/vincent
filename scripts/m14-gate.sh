@@ -46,12 +46,17 @@
 #      **task's** worktree while a free chat on the other project does not,
 #      and `vincent chat files` prints the route's own paths and mentions and
 #      exits 1 on a closed chat and on an unknown id
+#  15. a chat started from its first message, and renamed (task 161): a
+#      create with `message` and no title answers 201 with `first_turn`, the
+#      title is the message's first line and the branch follows it, the turn
+#      finishes `done` with the message stored as its prompt, and PATCH
+#      renames the chat while its branch stays as it was cut
 #
 # Legs 1–10 are one chain rather than separable scenarios — leg 3 reads leg
 # 1's turn, leg 6 answers leg 5's parked chat, leg 10 lists the chats legs 7
 # and 9 ended — so VINCENT_GATE_SCENARIO=N for any N in 1..10 runs that chain.
-# Legs 11, 12, 13 and 14 each stand alone, needing nothing before them, so
-# VINCENT_GATE_SCENARIO=11, =12, =13 and =14 run one of them on its own.
+# Legs 11, 12, 13, 14 and 15 each stand alone, needing nothing before them, so
+# VINCENT_GATE_SCENARIO=11, =12, =13, =14 and =15 run one of them on its own.
 #
 # The `agent_cannot_resume` refusal is deliberately *not* here. Since task 070
 # no shipped adapter is refused, so a real daemon has no subject to reach it
@@ -92,7 +97,7 @@ trap cleanup EXIT
 
 ONLY="${VINCENT_GATE_SCENARIO:-}"
 case "$ONLY" in
-  "" | [1-9] | 10 | 11 | 12 | 13 | 14) ;;
+  "" | [1-9] | 10 | 11 | 12 | 13 | 14 | 15) ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $ONLY" ;;
 esac
 
@@ -975,6 +980,62 @@ EOF
     || fail "vincent chat files on an unknown chat exited $CLI_CODE, want 1"
 }
 
+# Leg 15 is a function for legs 11–14's reason: it brings its own repo and
+# project, so VINCENT_GATE_SCENARIO=15 runs it without walking anything before
+# it. Unselected, it runs last, after leg 14.
+chat_first_message() {
+  echo "== 15. a chat started from its first message, and renamed (task 161)"
+  FIRST_REPO="$TMP/firstrepo"
+  mkdir -p "$FIRST_REPO"
+  git -C "$FIRST_REPO" init -q -b main
+  git -C "$FIRST_REPO" config user.email gate@example.com
+  git -C "$FIRST_REPO" config user.name "M14 Gate"
+  git -C "$FIRST_REPO" commit -q --allow-empty -m "root"
+  FIRST_PROJECT_ID="$(api POST /projects -d "{\"path\": \"$(hostpath "$FIRST_REPO")\"}" | jq -r .id)"
+  [[ -n "$FIRST_PROJECT_ID" && "$FIRST_PROJECT_ID" != "null" ]] \
+    || fail "registering the first-message project failed"
+
+  # No title: the daemon derives it from the message's first line. The
+  # message is built with jq so its newline is a real one on every platform.
+  BODY="$(jq -cn --argjson p "$FIRST_PROJECT_ID" \
+    '{project_id: $p, agent: "claude", message: "  Gate   first message\nsecond line"}')"
+  CODE="$(api_status POST /chats -d "$BODY")"
+  [[ "$CODE" == "201" ]] || fail "POST /v1/chats with a message is $CODE, want 201: $(cat "$TMP/body.json")"
+  FIRST="$(cat "$TMP/body.json")"
+  FIRST_ID="$(printf '%s' "$FIRST" | jq -r .id)"
+  TITLE="$(printf '%s' "$FIRST" | jq -r .title)"
+  [[ "$TITLE" == "Gate first message" ]] || fail "the derived title is \"$TITLE\", want the message's first line"
+  FIRST_BRANCH="$(printf '%s' "$FIRST" | jq -r .branch)"
+  case "$FIRST_BRANCH" in
+    *-gate-first-message) ;;
+    *) fail "branch $FIRST_BRANCH does not follow the derived title" ;;
+  esac
+  TURN_SEQ="$(printf '%s' "$FIRST" | jq -r '.first_turn.seq // empty')"
+  [[ "$TURN_SEQ" == "1" ]] || fail "the create carried no first_turn: $FIRST"
+  STATE="$(wait_turn "$FIRST_ID" 1)"
+  [[ "$STATE" == "done" ]] || fail "the first turn is $STATE, want done"
+  PROMPT_OK="$(api GET "/chats/$FIRST_ID" \
+    | jq -r '.turns[0].prompt == "  Gate   first message\nsecond line"')"
+  [[ "$PROMPT_OK" == "true" ]] || fail "the first turn's stored prompt is not the message byte for byte"
+
+  # Neither a title nor a message is still refused.
+  CODE="$(api_status POST /chats -d "{\"project_id\": $FIRST_PROJECT_ID, \"agent\": \"claude\"}")"
+  [[ "$CODE" == "400" ]] || fail "POST /v1/chats with neither a title nor a message is $CODE, want 400"
+
+  # Rename: the title changes, the branch does not.
+  CODE="$(api_status PATCH "/chats/$FIRST_ID" -d '{"title": "renamed by the gate"}')"
+  [[ "$CODE" == "200" ]] || fail "PATCH /v1/chats/$FIRST_ID is $CODE, want 200: $(cat "$TMP/body.json")"
+  RENAMED="$(jq -r '.title + "|" + .branch' "$TMP/body.json")"
+  [[ "$RENAMED" == "renamed by the gate|$FIRST_BRANCH" ]] \
+    || fail "the rename answered $RENAMED, want the new title on branch $FIRST_BRANCH"
+  CODE="$(api_status PATCH "/chats/$FIRST_ID" -d '{"title": "   "}')"
+  [[ "$CODE" == "400" ]] || fail "an empty rename is $CODE, want 400"
+  # Legal in a terminal state too: the title is display only.
+  api POST "/chats/$FIRST_ID/archive" >/dev/null || fail "archiving the first-message chat failed"
+  CODE="$(api_status PATCH "/chats/$FIRST_ID" -d '{"title": "renamed after archive"}')"
+  [[ "$CODE" == "200" ]] || fail "renaming an archived chat is $CODE, want 200"
+}
+
 if [[ "$ONLY" == "11" ]]; then
   chat_on_a_task
   echo "GATE PASS: m14 (leg 11)"
@@ -996,6 +1057,12 @@ fi
 if [[ "$ONLY" == "14" ]]; then
   chat_files
   echo "GATE PASS: m14 (leg 14)"
+  exit 0
+fi
+
+if [[ "$ONLY" == "15" ]]; then
+  chat_first_message
+  echo "GATE PASS: m14 (leg 15)"
   exit 0
 fi
 
@@ -1326,6 +1393,7 @@ if [[ -z "$ONLY" ]]; then
   chat_skills
   chat_mention_passthrough
   chat_files
+  chat_first_message
 fi
 
 echo "GATE PASS: m14"

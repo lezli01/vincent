@@ -881,6 +881,8 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return d.openFollowUp()
 	case opKey(keymap.Chat):
 		return taskChatCmd(d.client, d.target(), d.actions)
+	case opKey(keymap.ChatWith):
+		return taskChatWithCmd(d.client, d.target(), d.actions)
 	case "f":
 		d.setFollowing(true)
 		return nil

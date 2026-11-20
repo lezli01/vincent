@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/store"
@@ -186,4 +188,143 @@ func TestTaskWorkspaceListsLinkedChatsLive(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// TestChatWithSendsTheChosenAgentLive is task 161 decision 7 against the real
+// handlers: `chat_with` opens the form, and what it sends is the agent, model
+// and effort chosen there, with the first message as turn 1's prompt. Once
+// the task holds the chat, the key is a navigation like `T`. Then `r` on the
+// chats board renames the chat and leaves its branch alone.
+func TestChatWithSendsTheChosenAgentLive(t *testing.T) {
+	h := newActionLiveHarness(t)
+	task := h.createParkedTask(t, "talk with a choice")
+	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
+	h.p.push(cmd)
+	h.finishWithWorktree(t, task.ID)
+	h.p.until(30*time.Second, "the daemon to offer chat", func() bool {
+		d := detailOf(h.m)
+		return d.taskID == task.ID && d.loaded && d.target().has(apiclient.ActionChat)
+	})
+	if !paletteOffersKey(h.m, opKey(keymap.ChatWith)) {
+		t.Fatal("a done task does not offer chat_with")
+	}
+
+	_, cmd = h.m.Update(registryKey(t, "alt+t"))
+	h.p.push(cmd)
+	h.p.until(30*time.Second, "the chat-with form to load its agents", func() bool {
+		return h.m.chatWith != nil && h.m.chatWith.loaded
+	})
+	f := h.m.chatWith
+	a, ok := f.agent()
+	if !ok {
+		t.Fatalf("the form offers no agent (err %q)", f.err)
+	}
+	if len(a.Models) > 0 {
+		f.model = a.Models[0].Value
+	}
+	if len(a.Efforts) > 0 {
+		f.effort = a.Efforts[0].Value
+	}
+	f.message.SetValue("why did it stop?")
+	_, cmd = h.m.Update(registryKey(t, "ctrl+s"))
+	if h.m.chatWith != nil {
+		t.Fatal("ctrl+s left the form open")
+	}
+	h.p.push(cmd)
+	chat := h.m.views[viewChat].(*chatView)
+	t.Cleanup(func() {
+		if chat.streamStop != nil {
+			chat.streamStop()
+		}
+	})
+	h.p.until(30*time.Second, "the chat workspace on the task's chat", func() bool {
+		return h.m.active == viewChat && chat.chat != nil &&
+			chat.chat.LinkedTaskID != nil && *chat.chat.LinkedTaskID == task.ID
+	})
+	chats := h.linkedChats(t, task.ID)
+	if len(chats) != 1 {
+		t.Fatalf("the daemon holds %d chats, want one", len(chats))
+	}
+	got := chats[0]
+	if got.Agent != a.Name || got.Model != f.model || got.Effort != f.effort {
+		t.Fatalf("chat runs %s/%s/%s, want the chosen %s/%s/%s", got.Agent, got.Model, got.Effort, a.Name, f.model, f.effort)
+	}
+	// This harness wires no chat runner, so the daemon keeps the chat and
+	// refuses the send: the message must come back to the composer.
+	turns, err := h.st.ListChatTurns(context.Background(), got.ID)
+	if err != nil || len(turns) != 0 {
+		t.Fatalf("turns = %+v, %v; want none without a runner", turns, err)
+	}
+	if chat.composer.Value() != "why did it stop?" || !chat.noteBad {
+		t.Fatalf("composer %q (note %q), want the unsent first message back", chat.composer.Value(), chat.note)
+	}
+
+	// Locked now: chat_with navigates rather than opening the form.
+	h.backToTask(t, got.ID)
+	_, cmd = h.m.Update(registryKey(t, "alt+t"))
+	if h.m.chatWith != nil {
+		t.Fatal("chat_with opened the form on a task that already holds a chat")
+	}
+	if msg, ok := drain(cmd).(openChatMsg); !ok || msg.id != got.ID {
+		t.Fatalf("chat_with produced %#v, want the open chat #%d", drain(cmd), got.ID)
+	}
+
+	// Rename from the chats board.
+	_, cmd = h.m.Update(selectViewMsg{id: viewChats})
+	h.p.push(cmd)
+	board := h.m.views[viewChats].(*chatsView)
+	h.p.until(30*time.Second, "the chats board to list the chat", func() bool {
+		c, ok := board.current()
+		return ok && c.ID == got.ID
+	})
+	h.press(t, "r")
+	h.p.until(10*time.Second, "the rename prompt", func() bool { return h.m.rename != nil })
+	if v := h.m.rename.input.Value(); v != got.Title {
+		t.Fatalf("the prompt holds %q, want the current title %q", v, got.Title)
+	}
+	h.m.rename.input.SetValue("a better name")
+	_, cmd = h.m.Update(registryKey(t, "enter"))
+	h.p.push(cmd)
+	h.p.until(30*time.Second, "the rename to land", func() bool {
+		c, err := h.st.GetChat(context.Background(), got.ID)
+		return err == nil && c.Title == "a better name" && h.m.rename == nil
+	})
+	after, err := h.st.GetChat(context.Background(), got.ID)
+	if err != nil || after.Branch != got.Branch {
+		t.Fatalf("branch %q after rename, want %q untouched (%v)", after.Branch, got.Branch, err)
+	}
+}
+
+// TestChatWorkspacePaletteRenames: the conversation has no key for rename —
+// its composer owns every printable one — so the palette carries the row.
+func TestChatWorkspacePaletteRenames(t *testing.T) {
+	v := &chatView{chat: &apiclient.Chat{ID: 4, Title: "old"}}
+	rows := v.paletteExtras()
+	if len(rows) != 1 || !strings.Contains(rows[0].label, "rename chat") {
+		t.Fatalf("palette extras = %+v, want the rename row", rows)
+	}
+	if msg, ok := rows[0].action().(openChatRenameMsg); !ok || msg.id != 4 || msg.title != "old" {
+		t.Fatalf("the row produced %#v, want the rename prompt for chat 4", rows[0].action())
+	}
+}
+
+// TestChatRenamePromptSaysAnOverlongTitleUpFront is review F3: a typed or
+// task title is not bounded at creation, so the prompt can open holding one
+// longer than a rename keeps. It says so before enter, with the count, and
+// enter refuses it with the same words; shortening clears it.
+func TestChatRenamePromptSaysAnOverlongTitleUpFront(t *testing.T) {
+	long := strings.Repeat("word ", 20) + "end" // 103 characters
+	p := newChatRenamePrompt(4, long)
+	out := ansi.Strip(p.render(80, 5))
+	if !strings.Contains(out, "this title is 103 characters") || !strings.Contains(out, "at most 72") {
+		t.Fatalf("the prompt opened on an overlong title without saying so:\n%s", out)
+	}
+	if done, cmd := p.update(registryKey(t, "enter"), offlineClient()); done || cmd != nil || !strings.Contains(p.err, "103 characters") {
+		t.Fatalf("enter on an overlong title: done %v, cmd %v, err %q", done, cmd != nil, p.err)
+	}
+	p.input.SetValue("short")
+	p.err = ""
+	if out := ansi.Strip(p.render(80, 5)); strings.Contains(out, "characters") || !strings.Contains(out, "enter rename") {
+		t.Fatalf("a short title still warned:\n%s", out)
+	}
 }

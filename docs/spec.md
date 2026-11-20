@@ -691,6 +691,20 @@ creation rather than a queued row (decision 2).
 | `linked_task_id` | *Added 2026-09-17 (task 119, issue #472):* the task this chat was opened on. Null for a free chat, fixed at open, and the **one authoritative foreign key** for the link, as `handoff_task_id` is for a handoff (task 074 decision 2): the lock (§6) and a task's `open_chat_id` (§13.2) are this column read backwards, never a stored copy. It selects the linked transition table below |
 | `opening_context` | *Added 2026-09-17 (task 119):* the task context the daemon assembled when a linked chat was opened, prepended to the **first** turn's prompt and to no later one. A snapshot is exact because the task cannot move while the chat is open. Empty on a free chat |
 
+*Amended 2026-11-20 (task 161, issue #1016).* **The title is optional when a
+first message is given, and may change.** A create — free, on an issue, or on a
+task (§13.2) — may carry a `message`, sent as turn 1 in the same request. An
+empty title (after trimming) is then derived from that message: its first
+non-empty line, whitespace collapsed, cut at a word boundary to 72 runes with
+`…` when cut. On a task the task's title stays the default ahead of derivation.
+The branch slug comes from the derived title as it would from a typed one, and
+a create with neither a title nor a message is still refused. A chat may be
+**renamed** in every state, terminal ones included, because the title is
+display only: a rename **never renames the branch** — `vincent/{id}-{slug}`
+keeps the slug it was cut with, which nothing else derives from. A refused
+first send never undoes the create (task 161 decision 1): the chat stays
+`idle` with no turn.
+
 A **ChatTurn** is one exchange: the human's message and the agent run it
 produced. Its accounting columns are `step_runs`' — tokens, cost, duration,
 pid, exit code, proc identity — because closing the accounting gap is half of
@@ -8159,6 +8173,7 @@ One Go binary, `vincent`:
 | `vincent chat skills <chat-id> [--refresh] [--json]` | *Added 2026-09-20 (task 124.11, issue #507).* Lists the skills the chat's agent CLI would load in the chat's directory through `GET /v1/chats/{id}/skills` (§13.2), and needs **no wire change**: that route, its verdicts and `--refresh`'s `?refresh=true` all shipped with 124.9. The table is `SKILL`, `INVOKE`, `ARGS`, `DESCRIPTION`; `INVOKE` is the row's `invocation` verbatim, which is the only cell that separates two rows sharing a name — codex's `[$name](path)` — and is why it is a column rather than something the client assembles. There is no `SCOPE` column: claude reports none, so it would be blank for every claude chat, and `scope`, `plugin`, `path` and `aliases` stay in `--json`. Every cell is the CLI's own word and is **blank**, never `-`, where the CLI said nothing (decision 8); rows keep the route's order and nothing is keyed by name. Nothing is truncated: nothing in `internal/cli` measures a terminal, and a width-dependent table is non-deterministic under a pipe. **stdout is the table and nothing else** — the `unsupported`/`unknown` verdict with its `unavailable_reason` or `probe_error`, the `problems[]` rows as `warning: <path>: <message>`, and the invocation line all go to stderr at exit 0, as `chat handoff`'s warnings and `chat transcript`'s "no transcript" notice already do; under either non-`supported` verdict no table is printed at all. A `probe_error` beside a **`supported`** list is the §5.5 row where the cache kept an earlier list, and the command says so on stderr above the invocation line — a table that is printed is never silently a stale one. One generic invocation line — `invoke: vincent chat send <id> '<sigil>NAME your message'`, always single-quoted — is built from `invoke_sigil` and `invoke_position`, never from a row, so it prints for an empty list and beside an `unsupported` list whose adapter can still invoke (cursor's shape, task 124 decision 2). Its quoting note keys off the **sigil, not the agent name**: `$` gets the bash/zsh/pwsh expansion warning, `/` the Git Bash `MSYS_NO_PATHCONV=1` / `--message-file` note. Exit **0** whenever the daemon answered, `unsupported` and `unknown` included, as `vincent agents` exits (task 041 decision 4); **1** on a 404 or a 409 (a terminal chat, a linked chat whose task has no worktree); **2** with no daemon, through `withClient`. `vincent skills` is the other command about skills and stays about the ones vincent *publishes*; the two help texts point at each other |
 | `vincent chat files <chat-id> [--limit N] [--mention \| --json]` | *Added 2026-09-22 (task 126.7, issue #551).* Lists the files of the directory the chat's next turn would start in through `GET /v1/chats/{id}/files` (§13.2), and needs **no wire change**: that route, its `?limit=`, its `truncated` flag and `apiclient.(*Client).ChatFiles` all shipped with 126.6. **stdout is the listing and nothing else** — one workspace-relative path per line, in the route's order, unsorted (task 126 decision 21) — so `vincent chat files 12 | wc -l` counts files and the list pipes into `xargs`, which a padded table would not. `--mention` switches stdout to each row's `mention`, printed **verbatim**: the `@"…"`-on-a-space quoting rule has one definition and it lives in the adapter (decision 1), so no client rebuilds it and this command does not either. `--json` emits the response object unchanged with `files` always an array, which makes `--json | jq -r '.files[].mention'` the same answer; the two are mutually exclusive, as `chat transcript`'s `--json` and `--raw` are, because both are spellings of stdout. `--limit N` passes through and may only *lower* the daemon's ceiling (decisions 4 and 36); `0` is the ceiling, the `vincent github issues --limit` spelling. A cut listing earns one stderr line (`warning: the listing was cut at N file(s)`) at exit **0** — `truncated` exists to make a cut visible and a silent one is the failure mode it was added against — and an empty `mention_sigil` under `--mention` earns one `no mention text: …` line at exit 0 rather than a column of empty strings, because `""` is how an adapter says it cannot mention files and is a signal, not a refusal (decision 38). There is **no `--refresh`**: decision 5 removed the server cache such a flag would invalidate, and a flag that invalidates nothing is a lie about the route. Exit **0** whenever the daemon answered, empty and truncated included; **1** on a 404, on either 409 (a terminal chat, a linked chat whose task has no worktree) and on the 400 a vanished workspace produces; **2** with no daemon, through `withClient` |
 | `vincent chat export <chat-id> [--format md\|html\|json] [--with-diff] [-o <file>]` | *Added 2026-11-19 (task 159, issue #1023).* Writes the chat as one document through `GET /v1/chats/{id}/export` (§5.5, §13.2), a thin client over `apiclient.(*Client).ChatExport`: the daemon renders and the command carries its bytes to stdout, or with `-o` to that file, written atomically through a temporary file and `fileswap.Replace` because a half-written export is worse than none. The CLI never invents a filename; the route's `Content-Disposition` name is for the TUI. `--format` defaults to `md`. The CLI-wide `--json` is a synonym for `--format json`, and `--json` beside `--format md\|html` is refused. `--with-diff` sends `diff=true`. Exit **0** on success, **1** on a 404 or a file that cannot be written, **2** with no daemon |
+| `vincent chat find <chat-id> <text> [--json]` | *Added 2026-11-20 (task 160 decision 2, issue #1014; named `find` because task 158's `vincent chat search` searches every chat).* Which turns of a chat mention `<text>`, through `GET /v1/chats/{id}/search` (§13.2) — the route the chat workspace's `ctrl+f` search uses, so the TUI/CLI parity rule holds for it. **stdout is one line per matching turn**, in turn order: `turn N  M match(es)`, with `  (result text only: the transcript is gone)` appended to a turn the route answered from `result_text`; `vincent chat transcript <id> --turn N` then reads one. A `truncated` turn earns one stderr warning at exit 0. `--json` emits the response object unchanged with `turns` always an array. Exit **0** whenever the daemon answered, no matches included; **1** on a 404 or the 400 an empty or over-256-byte query produces; **2** with no daemon, through `withClient` |
 | `vincent task diff <id>` | *Added 2026-09-15 (task 100).* Prints the task's diff through `GET /v1/tasks/{id}/diff` (§13.2), which does not change. `--by lane` reads `?by=lane` and prints every section in the daemon's order under an ASCII header — `# lane <lane_id> (task <child_task_id>, merge <12-char sha>)`, or `# remainder (…)` last — including a section with no change. `--stat` is a per-file `FILE`/`ADDED`/`REMOVED` table the **CLI** computes from the body (counted inside hunks only; `binary` for a binary file), with a leading `LANE` column under `--by lane`. `--json` is `{"diff": …}`, the sections array, or `[{path, added, removed, binary}]` rows that under `--by lane` also carry `lane_id`, `child_task_id` and `remainder`; the stat shapes are the CLI's, not wire types. The ungrouped form is **streamed with no size cap**, unlike the TUI's bounded read, because its piped output is meant for `git apply` and a cut patch is a corrupt one. It is the CLI's **first colour**: only when stdout is a terminal and `NO_COLOR` is unset (colorprofile also honours `TERM=dumb`), and piped output is the daemon's bytes exactly. Any `--by` other than `lane` is refused client-side before a request, exit 1 |
 | `vincent task commits <id>` | *Added 2026-09-29 (issue #601).* Lists the task's commits through `GET /v1/tasks/{id}/commits` (§13.2), one line each: 12-char sha, author time in local time to the minute, subject, and `[lane <lane_id>, task <child_task_id>]` on a lane merge. `--json` is the wire list. A 409 exits 1 with the daemon's message; a daemon that predates the route (its router's `404 no such endpoint`) is reported as needing a restart |
 | `vincent project add <path> / ls / edit <id> / rm <id>` | Thin API clients for scripting. *Amended 2026-08-28 (task 048):* `rm` deletes the registration and its task rows, forwarding `--force` as `?force`. It never prompts — the daemon's two 409s (`N non-archived task(s)`, and one naming a `running` task) are the confirmation story, and an interactive question would be the first in a command tree whose purpose is scripting. *Amended 2026-09-16 (task 105, issue #394):* `edit <id>` is `PATCH /v1/projects/{id}` (§13.2, unchanged), sending only the fields whose flags were given — `--name`, `--path`, `--default-branch`, `--workflow`, `--max-parallel`, `--branch-template` — and refusing, with exit 1 and no daemon contacted, an edit that names none. An empty or whitespace-only value clears an optional field (`--workflow`, `--max-parallel`, `--branch-template` send `null`), the TUI form's rule and `config set`'s; `--name`, `--path` and `--default-branch` have no clear form and an empty value goes to the daemon as typed. It covers all six patchable fields, `branch_template` included, although `add` and the TUI form do not set that one. `--path` is sent as typed, like `add <path>`, so a relative path gets the daemon's must-be-absolute refusal rather than being resolved against the caller's directory |
@@ -11252,6 +11267,28 @@ POST   /v1/chats                        { project_id, title, agent?, model?, eff
                                         and has nowhere to wait, which is where it parts
                                         from a task's queued row (§10). Every chat
                                         representation carries `adopted_branch` (§5.5)
+                                        *Amended 2026-11-20 (task 161, issue #1016):* an
+                                        optional `message` is sent as turn 1 in the same
+                                        request, after the chat is created as above, and
+                                        with it `title` may be empty — it is derived from
+                                        the message (§5.5). Neither is a **400** ("a title
+                                        or a message is required"). The 201 carries
+                                        `first_turn`: the turn as `GET /v1/chats/{id}`
+                                        renders it, null when no message was given or the
+                                        send was refused. A refused send (`chat_cap_reached`,
+                                        an invalid action, an internal error) **keeps the
+                                        chat**: still 201, `first_turn` null, and a
+                                        `warnings` entry saying the first message was not
+                                        sent and why. The same holds with `issue_id`
+PATCH  /v1/chats/{id}                   *Added 2026-11-20 (task 161, issue #1016).* `{ title }`
+                                        renames the chat: trimmed, non-empty, at most 72
+                                        runes, otherwise **400**. Legal in **every** state,
+                                        terminal ones included — the title is display only —
+                                        and it **never renames the branch**. → 200 with the
+                                        chat, and a durable `chat.updated` (§13.3). Any other
+                                        field is a 400 (the one decode path's unknown-field
+                                        rule); #1011 adds model, effort and permission mode
+                                        here. Not an MCP tool (§13.4, 063 decision 2)
 DELETE /v1/chats/{id}                   *Added 2026-09-09 (task 092, issue #350).* Permanent
                                         delete of an **archived** chat: the row, its chat_turns
                                         (through the schema's cascade) and its
@@ -11477,6 +11514,20 @@ GET    /v1/chats/{id}/turns/{seq}       *Added 2026-08-31 (task 067).* One turn'
                                         `X-Next-Offset` naming where the next fetch resumes.
                                         There is no `run_id` analogue — a chat turn **is** its
                                         run, named by its 1-based `seq`
+GET    /v1/chats/{id}/search?q=         *Added 2026-11-20 (task 160 decision 2).* Which turns
+                                        mention `q`, case-insensitive plain substring, over each
+                                        turn's prompt and what its normalized transcript says —
+                                        text, messages, summaries, tool output, patches, tool
+                                        names and arguments, never metadata such as a run
+                                        header's `work_dir` or tool list (*amended 2026-11-20,
+                                        review F1:* the same fields a client counts in a loaded
+                                        turn) — `result_text` once the transcript has gone
+                                        to retention (§17). `{query, total, turns[{seq, matches,
+                                        source, truncated?}]}`, no text: a client fetches the
+                                        turns it needs through the transcript route. `q` is at
+                                        most 256 bytes and non-empty (`validation_failed`); a
+                                        turn's scan stops at 32 MiB with `truncated`. Off the
+                                        MCP surface with the rest of the chat family (§13.4)
 GET    /v1/workflows/definition         one workflow's whole recursive structure, selected with
        ?name=&project_id=               the same §5.2 shadowing the list applies (task 017,
                                         added 2026-08-18):
@@ -12103,7 +12154,7 @@ POST   /v1/tasks/{id}/follow_up        { prompt? | run? | workflow?, agent?, mod
                                         fields are substituted and validated against the result
                                         as creation does (§8.1.2), a failure is a 400, and the
                                         task row keeps its own fields
-POST   /v1/tasks/{id}/chat             { title?, agent?, model?, effort? }
+POST   /v1/tasks/{id}/chat             { title?, agent?, model?, effort?, message? }
                                         (blocked/awaiting_gate/done/aborted only; added
                                         2026-09-17, task 119, issue #472). Opens a §5.5 chat
                                         linked to the task, working in its worktree and on its
@@ -12131,6 +12182,12 @@ POST   /v1/tasks/{id}/chat             { title?, agent?, model?, effort? }
                                         `400 agent_cannot_resume`
                                         for an adapter that cannot hold a conversation. It is
                                         **not** an MCP tool (§13.4)
+                                        *Amended 2026-11-20 (task 161):* `message` is sent as
+                                        turn 1 in the same request, with the opening context
+                                        prepended as to any first turn, and the 201 carries
+                                        `first_turn` and, on a refused send, a `warnings`
+                                        entry — exactly as `POST /v1/chats`. `title` still
+                                        defaults to the task's ahead of derivation
 POST   /v1/tasks/{id}/skip             (blocked/awaiting_gate only)
 POST   /v1/tasks/{id}/approve          (awaiting_gate only)
 POST   /v1/tasks/{id}/reject           (awaiting_gate only)
@@ -12792,6 +12849,15 @@ issue's `main_worktree` occupant and its `attention`, which emit no
 `issue.*` event of their own, so a follower showing the issue re-reads it on
 the chat event. `chat.closed` is published for such a chat too.
 
+*Amended 2026-11-20 (task 161, issue #1016).* One more durable kind,
+**`chat.updated`**, for a chat whose display fields changed without a state
+change — today only a rename (`PATCH /v1/chats/{id}`, §13.2). It carries the
+chat's id, its **new** title and its state, and `issue_id` / `linked_task_id`
+as every event of such a chat does, so a list repaints without a fetch. It is
+in the chat family, so the per-chat stream carries it. A create that sent its
+first message emits nothing new: the turn's `chat.turn_changed` and the
+`chat.state_changed` to `running` are the ones any send emits.
+
 *Amended 2026-08-31 (task 067, issue #269).* There is now a **per-chat stream**,
 `GET /v1/chats/{id}/events` (§13.2), the per-task stream's twin. It narrows the
 durable events on the payload's `id` rather than on a column — a chat event
@@ -13053,6 +13119,10 @@ config route: an agent must not reconfigure the daemon supervising it, and a
 workflow file is what that daemon runs. Nothing regresses — the
 `create-workflow` built-in writes its deliverable through the filesystem, not
 through this API. `GET /v1/workflows/schema` is an ordinary tool.
+
+*Amended 2026-11-20 (task 160 decision 2).* `GET /v1/chats/{id}/search`
+joins the excluded chat family under the same rule: it reads the transcripts
+a human drives a chat through.
 
 *Amended 2026-08-31 (task 067, issue #269).* **Seventeen**, with
 `GET /v1/chats/{id}/events` and `GET /v1/chats/{id}/turns/{seq}/transcript` —
@@ -15657,6 +15727,30 @@ stream for the live tail.
    whenever the composer holds the keyboard, which is nearly always, so a
    letter would be typed into the draft. The composer keeps `↑`/`↓` for
    editing a multi-line message.
+
+   *Amended 2026-11-20 (task 160, issue #1014).* **Conversation focus.** The
+   composer holds the keyboard by default, no longer always: `ctrl+f` hands it
+   to the conversation with a search line open, and `capturesInput` is false
+   only while the conversation has focus and no search line is open. There a
+   line cursor moves with `j`/`k`/`↑`/`↓`; `pgup`/`pgdown`, `g`/`G` and the
+   alt keys scroll; `/` reopens the search line; `n`/`N` step to the next or
+   previous match, wrapping; `{`/`}` jump to the previous or next `You` card;
+   `enter` expands or folds the tool call under the cursor; `esc` or `i` gives
+   the keyboard back. `esc` peels one layer — search line, conversation focus,
+   composer — and never leaves the chat from conversation focus. The search is
+   case-insensitive and matches all of a turn's text, not only what the level
+   draws; turns not yet loaded are searched by `GET /v1/chats/{id}/search`
+   (§13.2) and fetched only when a match in one is landed on. Landing on a
+   match the level hides expands that one record; every match is
+   highlighted, the current one distinctly, and the count (`3/17`) sits on
+   the conversation pane's bottom edge. An expanded call — kept per chat in
+   memory for the session — renders as at verbose whatever the level, under
+   a `▾` line; a folded check line carries `▸`, and names `enter` while the
+   conversation has focus. Clicking a check line focuses the conversation and
+   toggles that call. While not following, the bottom edge shows `↓ N new`,
+   the lines appended since; clicking it or `ctrl+g` follows again and clears
+   it, and a rebuild for a level or width change never counts. The draft is
+   untouched by all of it, and `ctrl+r`'s session level is unchanged.
 
    *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
    insert a newline in the draft; `enter` still sends it. This makes the
@@ -18464,6 +18558,33 @@ form's lists since issue #281, and it is recorded as a list-layer key because
 the blanket "this surface captures text" rule below is a statement about the
 form's own rows, not about a list drawn over them.
 
+*Amended 2026-11-20 (task 161, issue #1016).* The new-chat form gains a
+multi-line **`message`** row, directly under the project row, and **opens
+focused on it** with every other row at its default (agent: the first
+resumable adapter). `enter` **in the message row creates the chat and sends the
+message in one request** (§13.2), with an empty title derived from it (§5.5);
+`ctrl+j`, `shift+enter` and `alt+enter` insert a newline there, as in the chat
+composer. The title row stays and is now optional. `enter` keeps its meaning on
+every other row and `ctrl+s` still creates from anywhere. There is no separate
+quick-chat key: `n`, type, `enter` *is* the quick chat. When the 201 says the
+first message was not sent, the conversation opens with the message put back
+into the composer and the warning shown, so nothing typed is lost.
+
+Two rebindable operations join §15's vocabulary with it. **`rename`** (default
+`r`) on the chats board and the archived chats board opens a one-line prompt
+prefilled with the chat's title, and the palette command **"rename chat"** does
+the same — reachable from the conversation through `ctrl+p`, because the
+composer owns every printable key and the workspace has no fixed key for it.
+**`chat_with`** (default `alt+t`) sits beside `chat` (`T`) on the same surfaces
+— task actions, the issues list and an issue — and is offered exactly when
+`chat` is, with the palette command **"chat with…"**: it opens a small form of
+agent, model and effort (the same `picker`, resumable adapters only) and an
+optional first message, and opens the chat with them. `T` is unchanged —
+instant, default agent. When the task or issue already has an open chat,
+`chat_with` behaves as `T` does and goes to it, ignoring the form, because a
+linked chat's agent is fixed. `shift+T` could not be a second key: `T` already
+is shift+t.
+
 An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the
 shell consults the focused panel for capture and leaves the global single-key
@@ -18722,6 +18843,17 @@ It introduces no new key literal, so `keymap.fixed` gains rows and the catalog
 gains nothing; none of the five is nameable in `tui.keys`. `@` is never
 matched as a key at all — the draft is inspected after each composer update —
 and so no `keymap` operation, moved or not, can shadow it.
+
+*Amended 2026-11-20 (task 160, issue #1014).* The chat's conversation focus
+adds two **fixed surfaces** — `chat conversation`, carrying the line cursor
+(`j`/`k`/`↑`/`↓`), `enter`, `n`/`N`, `{`/`}`, `g`/`G`, the scroll keys,
+`ctrl+g`, `i` and `esc`, and `chat find`, the search line, carrying
+`enter`, `esc` and `backspace` — and `ctrl+f` as a fixed `chat` row. `/` in
+`chat conversation` is not a fixed row: it is the `filter` operation, whose
+surfaces now include `chat conversation`, so moving `filter` moves it there
+too. `chat conversation` captures no text, so a printable `filter` key is
+not refused for it. None of the other keys is nameable in `tui.keys` yet, a
+departure from the task's brief recorded in its document.
 
 *Amended 2026-09-30 (task 129.18, issue #607).* Two more vocabulary terms.
 `N` (`next_failure`) is on every workspace tab and walks the open task's

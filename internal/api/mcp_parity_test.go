@@ -114,6 +114,8 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// Task 159 decision 6: the export is a chat read under the same
 		// rule; an MCP tool was not asked for.
 		{http.MethodGet, "/v1/chats/{id}/export"},
+		// Task 160 decision 2: the chat search scans the transcripts above.
+		{http.MethodGet, "/v1/chats/{id}/search"},
 		// Task 065 decision 5, under the same wording: a workflow file is
 		// what the daemon runs, so an agent editing one is an agent
 		// rewriting the rules it runs under.
@@ -144,6 +146,9 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// created_by_task_id chain, and closing one is its lifecycle.
 		{http.MethodPost, "/v1/tasks/{id}/chat"},
 		{http.MethodPost, "/v1/chats/{id}/close"},
+		// Task 161: the rename is the chat family's lifecycle, excluded
+		// under 063 decision 2 with the rest.
+		{http.MethodPatch, "/v1/chats/{id}"},
 		// Task 082: the reported-quota push. An agent must not be able to
 		// forge a daemon-level fact about the host it runs on — a step
 		// reporting its own adapter at 99% would paint every board and status

@@ -43,7 +43,7 @@ func newChatCmd() *cobra.Command {
 		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatTranscriptCmd(),
 		newChatSkillsCmd(), newChatFilesCmd(), newChatArchiveCmd(), newChatHandoffCmd(),
 		newChatCloseCmd(), newChatDeleteCmd(), newChatQueueCmd(), newChatSearchCmd(),
-		newChatExportCmd())
+		newChatExportCmd(), newChatFindCmd(), newChatRenameCmd())
 	return cmd
 }
 
@@ -61,10 +61,21 @@ func newChatStartCmd() *cobra.Command {
 		issueID    int64
 	)
 	cmd := &cobra.Command{
-		Use:   "start <title>",
+		Use:   "start [<title>]",
 		Short: "Start a chat",
-		Args:  cobra.ExactArgs(1),
+		Long: "Starts a chat. With --message or --message-file the first message is sent in\n" +
+			"the same request, and the title may be left out: it is taken from the\n" +
+			"message's first line. The command then waits for the answer, as `send` does.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			title := ""
+			if len(args) == 1 {
+				title = args[0]
+			}
+			hasMessage := cmd.Flags().Changed("message") || cmd.Flags().Changed("message-file")
+			if strings.TrimSpace(title) == "" && !hasMessage {
+				return errors.New("a title or a first message is required: give a title, --message or --message-file")
+			}
 			// Read before any request (task 124 decision 34): a missing file
 			// or refused input must not leave a chat behind with no message.
 			if cmd.Flags().Changed("message-file") {
@@ -75,9 +86,9 @@ func newChatStartCmd() *cobra.Command {
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				req := apiclient.CreateChatRequest{
-					ProjectID: projectID, Title: args[0], Agent: agentName,
+					ProjectID: projectID, Title: title, Agent: agentName,
 					Model: model, Effort: effort, BaseBranch: baseBranch,
-					BranchName: branch, ExistingBranch: existing,
+					BranchName: branch, ExistingBranch: existing, Message: message,
 				}
 				if cmd.Flags().Changed("issue") {
 					req.IssueID = &issueID
@@ -93,11 +104,19 @@ func newChatStartCmd() *cobra.Command {
 				if message == "" {
 					return printChat(cmd, chat)
 				}
+				if chat.FirstTurn == nil {
+					// The chat exists; the message did not go (task 161
+					// decision 1). The warning above says why.
+					if err := printChat(cmd, chat); err != nil {
+						return err
+					}
+					return exitError{code: 1}
+				}
 				if !wantJSON(cmd) {
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "chat %d  %s  [%s]  %s\n",
 						chat.ID, chat.Title, chat.Agent, chat.Branch)
 				}
-				return runChatTurn(ctx, cmd, c, chat.ID, message)
+				return waitChatTurn(ctx, cmd, c, chat.ID, chat.FirstTurn)
 			})
 		},
 	}
@@ -294,6 +313,12 @@ func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, i
 		return nil
 	}
 	turn := sent.Turn
+	return waitChatTurn(ctx, cmd, c, id, turn)
+}
+
+// waitChatTurn waits for turn to end and prints its answer — the half of
+// runChatTurn a create that already started the turn needs (task 161).
+func waitChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, id int64, turn *apiclient.ChatTurn) error {
 	// Elapsed is measured from here rather than from turn.StartedAt: this is
 	// how long the human at the terminal has been waiting, and it needs no
 	// agreement between two machines' clocks to be true.
@@ -613,6 +638,41 @@ func newChatCancelCmd() *cobra.Command {
 					return exitError{code: 1}
 				}
 				return printChat(cmd, chat)
+			})
+		},
+	}
+	jsonFlag(cmd)
+	return cmd
+}
+
+// newChatRenameCmd is `vincent chat rename` (task 161 decision 4). A rename is
+// legal in every state and never renames the branch.
+func newChatRenameCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "rename <chat-id> <title>",
+		Short: "Change a chat's title",
+		Long: "Changes a chat's title, in any state. The title is display only: the\n" +
+			"chat's branch keeps the name it was cut with.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("chat id: %w", err)
+			}
+			if strings.TrimSpace(args[1]) == "" {
+				return errors.New("the title must not be empty")
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				chat, err := c.RenameChat(ctx, id, args[1])
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), chat)
+				}
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "chat %d renamed: %s\n", chat.ID, chat.Title)
+				return err
 			})
 		},
 	}

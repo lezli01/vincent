@@ -243,6 +243,21 @@ type chatView struct {
 	// one case where they could collide out of reach.
 	files chatFileList
 
+	// Task 160: convFocus is the conversation holding the keyboard, cursor
+	// its line cursor, search the search line and its matches, expanded
+	// the per-chat set of calls drawn at verbose (in memory, for the
+	// session, surviving a chat switch), lines the last built body,
+	// newLines the `↓ N new` count and grew a content change since the last
+	// build, and convHit where the conversation was drawn.
+	convFocus bool
+	cursor    int
+	search    chatSearchState
+	expanded  map[int64]map[chatCallKey]bool
+	lines     []string
+	newLines  int
+	grew      bool
+	convHit   chatConvHit
+
 	width, height int
 }
 
@@ -290,9 +305,15 @@ func (v *chatView) setClient(c *apiclient.Client) tea.Cmd {
 // capturesInput is true whenever the composer has the keyboard, which is
 // almost always: this screen is a text field with a conversation above it, so
 // the single-key global bindings must not fire while someone types "q".
+//
+// The one exception is the conversation focus (task 160 decision 1): with no
+// search line open, its keys are single letters that are not typed anywhere.
 func (v *chatView) capturesInput() bool {
 	if v.form != nil {
 		return v.form.capturing()
+	}
+	if v.convFocus {
+		return v.search.typing
 	}
 	return v.composer.Focused()
 }
@@ -312,6 +333,10 @@ func (v *chatView) bindingContext() bindingContext {
 	switch {
 	case v.form != nil:
 		return ctxForm
+	case v.convFocus && v.search.typing:
+		return ctxChatFind
+	case v.convFocus:
+		return ctxChatConversation
 	case v.skills.open && v.skills.mode == skillModeInline:
 		return ctxChatSkillsInline
 	case v.skills.open:
@@ -342,6 +367,10 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	v.files = chatFileList{}
 	v.composer.SetValue("")
 	v.composer.Focus()
+	// The expanded set is kept per chat (task 160 decision 4); the focus,
+	// the search and the marker are this visit's.
+	v.convFocus, v.cursor, v.search = false, 0, chatSearchState{}
+	v.newLines, v.grew = 0, false
 	v.landSeq = seq
 	if seq > 0 {
 		v.following = false
@@ -451,7 +480,9 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case openChatMsg:
 		v.back = msg.back
-		return v, v.open(msg.id)
+		cmd := v.open(msg.id)
+		v.restoreDraft(msg.draft, msg.note)
+		return v, cmd
 	case viewActivatedMsg:
 		if msg.id == viewChat && v.chatID != 0 {
 			return v, v.loadCmd()
@@ -469,6 +500,8 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	case chatTranscriptMsg:
 		v.applyTranscript(msg)
 		return v, nil
+	case chatSearchMsg:
+		return v, v.applySearch(msg)
 	case chatNoteMsg:
 		return v, v.applyChatNote(msg)
 	case chatQueueDoneMsg:
@@ -561,6 +594,10 @@ func (v *chatView) applyLoaded(msg chatLoadedMsg) {
 	}
 	v.syncPlaceholder()
 	v.bodyDirty = true
+	v.grew = true
+	if v.search.query != "" {
+		v.recomputeMatches()
+	}
 	// The popup follows the chat's own state: it opens when the daemon says
 	// awaiting_input and closes when it stops saying so, which is what makes
 	// an answer given elsewhere — the CLI, curl — close it here too.
@@ -741,6 +778,12 @@ func (v *chatView) applyTranscript(msg chatTranscriptMsg) {
 	v.turnSeqs[msg.seq] = v.stamp.take(len(msg.records))
 	v.capRecords()
 	v.bodyDirty = true
+	if v.search.query != "" {
+		// A turn that arrived replaces the daemon's count for it with the
+		// matches in its own records.
+		v.recomputeMatches()
+		v.landPending(msg.seq)
+	}
 }
 
 // capRecords bounds the conversation's memory the way the output pane's
@@ -832,6 +875,7 @@ func (v *chatView) appendChunk(note apiclient.OutputNote) {
 	}
 	v.capRecords()
 	v.bodyDirty = true
+	v.grew = true
 }
 
 // setFollowing arms or drops the bottom anchor.
@@ -964,6 +1008,12 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.note, v.noteBad = "nothing was sent", false
 		return v, nil
 	}
+	if v.convFocus && v.search.typing {
+		return v, v.updateSearchLineKey(msg)
+	}
+	if v.convFocus {
+		return v, v.updateConversationKey(msg)
+	}
 	if v.skills.open && v.skills.mode == skillModeBrowse {
 		// While the browse list is up it owns the keyboard, which is how
 		// every other vincent popup behaves and what makes `esc` a real
@@ -1081,7 +1131,12 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.syncFollowToViewport()
 		return v, v.fetchVisibleTranscripts()
 	case "ctrl+g":
-		v.setFollowing(true)
+		v.follow()
+		return v, nil
+	case chatSearchKey:
+		// The conversation takes the keyboard, with the search line open
+		// (task 160 decision 1). The draft stays as it is.
+		v.openSearchLine()
 		return v, nil
 	case "alt+a":
 		v.reopenForm()
