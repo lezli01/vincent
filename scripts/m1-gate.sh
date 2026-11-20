@@ -141,7 +141,7 @@ DIFF="$(api GET "/tasks/$TASK_ID/diff")"
 grep -q 'README.md' <<<"$DIFF" || fail "diff does not mention README.md:
 $DIFF"
 
-# Task 164.5/164.6: the attempt journaled the commit range it ran over, and
+# Task 168.5/168.6: the attempt journaled the commit range it ran over, and
 # the diff route answers for that one attempt. The range may be empty — the
 # fake agent's edit can be uncommitted — so the body is not asserted on.
 echo "== assert the attempt's commit range and its diff"

@@ -69,7 +69,7 @@ func stepDiff(t *testing.T, h *taskHarness, taskID, runID int64, extra string) (
 }
 
 // A finished run diffs exactly its own range: the step's commit, and neither
-// the commit before nor the one after nor the uncommitted edit (task 164.6).
+// the commit before nor the one after nor the uncommitted edit (task 168.6).
 // The body is the whole-task diff's text/plain shape, and `by=lane` wraps the
 // same bytes in a single remainder section.
 func TestDiffStepRunFinishedIsItsRange(t *testing.T) {

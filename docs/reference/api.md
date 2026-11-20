@@ -3217,6 +3217,10 @@ GET    /v1/chats?project_id=&task_id=&issue_id=&state=&archived=
                                       newest first; state may repeat
 GET    /v1/chats/search?q=&project_id=&archived=&limit=&turns=
                                       full-text search — see Searching chats
+GET    /v1/chats/prompts?project_id=&q=&limit=
+                                      the project's sent prompts — see Drafts and prompt history
+GET    /v1/chats/{id}/draft           the chat's unsent draft and stash
+PUT    /v1/chats/{id}/draft           { draft?, stash? } — last writer wins
 POST   /v1/chats                      create, with a worktree and a branch — or, with
                                       existing_branch, on a branch that is already there
 POST   /v1/tasks/{id}/chat            open a chat on a stopped task, in its worktree
@@ -3236,6 +3240,7 @@ POST   /v1/chats/{id}/cancel          stop the live turn
 POST   /v1/chats/{id}/archive         remove the worktree; terminal
 POST   /v1/chats/{id}/handoff         give the worktree and branch to a new task; terminal
 POST   /v1/chats/{id}/close           end a chat opened on a task; terminal
+POST   /v1/chats/{id}/viewed          a person looked at it: clears its unread mark
 DELETE /v1/chats/{id}                 permanent delete of an archived or closed chat
                                       — see Permanent delete
 GET    /v1/chats/{id}/events          SSE: this chat's events plus its live output
@@ -3244,6 +3249,8 @@ GET    /v1/chats/{id}/turns/{seq}/transcript
 GET    /v1/chats/{id}/search?q=       which turns mention q, with a count each — see Search
 GET    /v1/chats/{id}/skills?refresh= the skills the chat's agent would load — see Skills
 GET    /v1/chats/{id}/files?limit=    the files of the chat's workspace — see Files
+POST   /v1/chats/{id}/expand          what a draft's #issue-N / #task-N / #pr-N / @path#Lx-y
+                                      mentions would expand into — see Mentions
 GET    /v1/chats/{id}/export?format=&diff=
                                       the chat as Markdown, HTML or JSON — see Exporting
 ```
@@ -3284,11 +3291,26 @@ and hand-off discard the queue. A chat carries `queued_count`, `queue_paused`,
 `queue_pause_reason`, and `can_steer` with `steer_reason`: no adapter can
 steer a running turn yet, so `can_steer` is always `false`.
 
+**Unread** (task 165). A chat carries `last_viewed_at` — `null` when nobody
+has looked at it — and `unread`, which is `true` when its latest finished turn
+(`done`, `failed` or `interrupted`) ended after `last_viewed_at`. There is one
+value per chat, shared by every client, because the installation has no
+per-user identity. A chat that existed before the upgrade that added the
+field starts read: its `last_viewed_at` is its latest finished turn's end.
+`POST /v1/chats/{id}/viewed` takes no body and sets it to
+the daemon's clock, never the client's; it never moves backwards, is legal in
+every state, and answers `200` with the chat (`404 not_found` for an unknown
+id). When it moved, it emits a durable `chat.viewed`, so every client clears
+the mark. The TUI calls it when you open a chat and when a turn ends while the
+chat is open in a focused terminal; no CLI subcommand calls it.
+
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
 excluded, the stream, the transcript, the search, the skill list, the file
 list and the export included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
 but starts a chat.
-The rename and settings route, `PATCH /v1/chats/{id}`, is excluded with them.
+The rename and settings route, `PATCH /v1/chats/{id}`, is excluded with them,
+and so is `POST /v1/chats/{id}/viewed`: it records that a person looked, which
+an agent would only be forging.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
 `created_by_task_id`, which a chat is not in.
@@ -3420,6 +3442,37 @@ has sent to.
 A chat opened on a task follows a second table. From `idle` it offers `send`
 and `close`, and nothing else: `archive` and `hand_off` would reach a worktree
 and a branch that belong to the task.
+
+### Drafts and prompt history
+
+A chat keeps the composer's unsent **draft** and one **stash** slot in the
+daemon, so they survive a TUI restart and follow the chat to another client.
+
+- `GET /v1/chats/{id}/draft` answers `{ "draft": "…", "stash": "…",
+  "updated_at": "…" }`; `updated_at` is `null` before the first write.
+  `GET /v1/chats/{id}` embeds `draft`, `stash` and `draft_updated_at` in the
+  chat too, and every chat body — the list included — carries `has_draft`.
+  A client that writes drafts compares `draft_updated_at` with the
+  `updated_at` its own last `PUT` returned: a read stamped earlier was taken
+  before that write committed, however late it arrives.
+- `PUT /v1/chats/{id}/draft` takes `{ "draft"?, "stash"? }`, at least one of
+  them; a field left out is left as it is. The write is last-writer-wins, each
+  field is at most 64 KiB, and it publishes `chat.draft_changed` — unless it
+  changes nothing, in which case nothing is written or published and
+  `updated_at` stays the last real write's. A chat that
+  has ended (`archived`, `handed_off`, `closed`) is a `409`: its draft and
+  stash were cleared when it ended.
+- `GET /v1/chats/prompts?project_id=&q=&limit=` lists every prompt the
+  project's chats sent, archived ones included, newest first, with identical
+  texts collapsed to their newest occurrence:
+  `{ "prompts": [{ "prompt", "chat_id", "chat_title", "chat_state", "seq",
+  "sent_at" }] }`. `project_id` is required. Every term of `q` must appear, by
+  substring and ignoring case, as [chat search](#searching-chats) matches; a
+  term shorter than three characters narrows only beside one that long, so
+  `fix a` lists less than `fix`. A `q` with no term of three characters, or
+  none at all, lists by recency instead of answering `query_too_short`. `limit` defaults to 50, at most 500.
+
+None of these is an MCP tool.
 
 ### Searching chats
 
@@ -3781,6 +3834,60 @@ Refusals, the same on every route:
 
 A change publishes `chat.updated`. The route is not an MCP tool.
 
+### Mentions
+
+```
+POST /v1/chats/{id}/expand
+```
+
+```json
+{ "message": "why does #issue-12 fail at @internal/api/server.go#L20-45?" }
+```
+
+A chat message may mention vincent's own objects and a range of a file's
+lines, and the daemon expands each one into a short block that rides ahead of
+the message when the turn starts — the same way on all four agents:
+
+| Token | What the agent is given |
+|---|---|
+| `#issue-N` | vincent issue `N` of the chat's project: title, state, kind, body (16 KiB at most), remote URL, branch |
+| `#task-N` | vincent task `N` of the chat's project: title, state, workflow, branch, base, description |
+| `#pr-N` | GitHub pull request `N` of the chat's project: title, state, head, base, URL, description |
+| `@path#L20-45`, `@path#L20` | those lines of the workspace file, fenced (16 KiB at most) |
+
+A token that does not resolve — an unknown id, another project's object, a
+project without GitHub, a path outside the workspace, a missing file — stays
+in the message as prose, and the send is never refused for it. The stored
+`prompt` is always what you typed; the expanded block is kept on the turn as
+`mention_context`, so the transcript and an export show what the agent saw
+even after the issue changes.
+
+This route previews that block for a draft without sending it, from the same
+function a turn runs:
+
+```json
+{
+  "chat_id": 7,
+  "context": "The human's message below mentions …",
+  "prompt": "… <message>\nwhy does #issue-12 fail …\n</message>\n",
+  "resolved": [{ "kind": "issue", "token": "#issue-12", "id": 12 },
+               { "kind": "lines", "token": "@internal/api/server.go#L20-45",
+                 "path": "internal/api/server.go", "from": 20, "to": 45 }],
+  "unresolved": [],
+  "bytes": 1432,
+  "tokens_estimate": 358
+}
+```
+
+`tokens_estimate` is `bytes ÷ 4`, an estimate. It is not a turn: it holds no
+slot and writes nothing.
+
+| Status | Code | When |
+|---|---|---|
+| `409` | `invalid_state` | the chat has ended (`details.action` is `expand`) |
+
+The route is not an MCP tool.
+
 ### Exporting
 
 ```
@@ -3792,7 +3899,7 @@ the same bytes. `format` defaults to `md`; `diff` defaults to `false`.
 
 | `format` | `Content-Type` | What it is |
 |---|---|---|
-| `md` | `text/markdown; charset=utf-8` | a title and metadata list, then per turn: prompt, tool calls, answer, usage |
+| `md` | `text/markdown; charset=utf-8` | a title and metadata list, then per turn: prompt, mentions (when any expanded), tool calls, answer, usage |
 | `html` | `text/html; charset=utf-8` | one self-contained page: inline CSS, no scripts, nothing loaded from elsewhere |
 | `json` | `application/json` | the document model, with a top-level `"version": 1` |
 
@@ -3809,7 +3916,10 @@ it apart from the input (claude, copilot), then the output — cost when
 the agent reports one (copilot never does, and the cost is then absent rather
 than `$0`), duration, and a failed turn's reason. The JSON turn also carries
 `cache_read_tokens`, `cache_creation_tokens`, `context_tokens` and
-`context_window` when the agent reported them, and omits each otherwise. In HTML, prompts and answers
+`context_window` when the agent reported them, and omits each otherwise. A
+turn whose [mentions](#mentions) expanded carries the block it expanded into,
+its `mention_context`, after the prompt — a `Mentions` section in Markdown and
+HTML, the field in JSON — and a turn with none has neither. In HTML, prompts and answers
 are rendered from Markdown with raw HTML disabled, so a `<script>` in an
 agent's answer never reaches the page.
 
@@ -3919,7 +4029,7 @@ own state and in its transcript. Nor is `agent.input_echo`: a turn's echo of
 your message is already on screen as the message, so it publishes no chunk,
 neither as itself nor as `agent.raw`.
 
-Two failure reasons are worth knowing:
+These failure reasons are worth knowing:
 
 - **`session_lost`** — the CLI no longer knows the stored session. The turn
   fails, the chat stays usable and keeps its id, and nothing starts a fresh
@@ -3938,6 +4048,13 @@ Two failure reasons are worth knowing:
   the chat returns to `idle` and its `max_parallel_chats` slot is released. The
   two clocks are the ones a workflow step gets, with no chat-specific key and
   no per-turn override.
+- **`checkpoint_failed`** — vincent could not snapshot the chat's worktree
+  before the turn (the worktree is not a git repository any more, the disk is
+  full, git failed). The agent was never started, so nothing ran without a
+  checkpoint behind it. A file git cannot read is not a failure: it is left
+  out of the checkpoint and named in the turn's transcript
+  (`vincent.checkpoint_skipped`), and the turn runs. Each turn's snapshot is the git ref
+  `refs/vincent/chats/<chat id>/turn-<seq>` in the project's repository.
 
 ## Step status
 
@@ -4409,7 +4526,8 @@ task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed task.delivery_changed
 chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off         chat.closed
-chat.queue_changed      chat.updated
+chat.queue_changed      chat.updated            chat.draft_changed
+chat.viewed
 task.deleted            chat.deleted
 task.restored
 issue.created           issue.updated           issue.state_changed
@@ -4541,7 +4659,9 @@ they need.
   `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`, and
   `chat.handed_off` adds `handoff_task_id`, so a follower can link the chat to
   its task without a fetch. `chat.updated` is a [rename](#renaming-one): its
-  `title` is the new one, and the state did not change. Every event of a chat
+  `title` is the new one, and the state did not change. `chat.viewed` says
+  someone [looked at it](#chats): its `last_viewed_at` advanced and its
+  `unread` may have cleared. Every event of a chat
   [opened on a task](#a-chat-on-a-stopped-task) adds `linked_task_id`, and
   `chat.closed` announces that such a chat ended — re-fetch that task too,
   because its lock just lifted. Every event of a chat

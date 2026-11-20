@@ -194,7 +194,7 @@ func lastOutputLine(lines []string) (string, bool) {
 			continue
 		}
 		// A command's output carries its margin bar in the pane (task
-		// 164.4); quoted on its own the line is just what it printed.
+		// 168.4); quoted on its own the line is just what it printed.
 		if rest, ok := strings.CutPrefix(plain, gutterOutput); ok {
 			return styleDim.Render(rest), true
 		}
@@ -1476,7 +1476,7 @@ func (d *detail) outputLines() []string {
 // needs, and is where the pane's render pass opens and closes.
 // feedLinesAt is what the pane draws: the displayed attempt's lines — or
 // what it says when it has none — placed among the task's other attempts
-// (task 164.4).
+// (task 168.4).
 func (d *detail) feedLinesAt() ([]string, []lineAnchor) {
 	width := max(d.width, 1)
 	if body, ok := d.outputEmptyState(); ok {
@@ -1501,7 +1501,7 @@ func (d *detail) outputLinesAt() ([]string, []lineAnchor) {
 			expandKey: "v", truncatedNote: note, raw: d.raw.get(),
 			hyperlinks: d.links.get(), cache: &d.mdcache,
 			// One line per tool call, its outcome on the same line, folded
-			// until enter opens it (task 164.4) — the chat's form of a call.
+			// until enter opens it (task 168.4) — the chat's form of a call.
 			toolChecks: true, expanded: d.callExpanded, expandHint: "enter",
 			latestPlan: true,
 		})

@@ -13,6 +13,51 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Every chat turn checkpoints its worktree first.** Before a turn's agent
+  starts, vincent snapshots the worktree it runs in, uncommitted and untracked
+  files included (ignored files are not), as
+  `refs/vincent/chats/<chat id>/turn-<seq>` in the project's repository,
+  without touching your index, HEAD or files. A turn whose checkpoint cannot
+  be taken fails `checkpoint_failed` instead of running unprotected. This is
+  the groundwork for rewinding and forking a chat (task 167), which is not
+  available yet.
+- **Chat drafts are kept by the daemon, and earlier prompts can be recalled.**
+  A chat's unsent message is saved as you type and restored when you open the
+  chat again — after switching chats, restarting the TUI or from another
+  terminal — and the chats board marks a chat holding one `✎ draft`. `alt+s`
+  stashes the draft in the chat's one stash slot (a new stash replaces the old
+  one) and brings it back on an empty composer. `↑` on an empty composer,
+  with nothing queued, recalls the chat's earlier prompts and `↓` walks back.
+  `alt+h` picks any prompt sent in the project, archived chats included, and
+  inserts it without sending. The API gains `GET`/`PUT /v1/chats/{id}/draft`,
+  `GET /v1/chats/prompts`, `has_draft` on every chat and the
+  `chat.draft_changed` event. Archiving, closing or handing off a chat
+  discards its draft and stash.
+- **Chats can notify you, show what you have not read, and switch without
+  the list.** A new `notify.chat_on` key (`awaiting_input`, `turn_done`,
+  `turn_failed`; empty by default) makes the daemon's `notify.command` fire
+  for chats too; its JSON envelope gains a top-level `kind` (`"task"` or
+  `"chat"`) and `chat_id`, and Settings edits the key. A chat whose last turn
+  finished since anyone opened it shows `●` on the chats board and rail, the
+  same in every TUI: the daemon stores one `last_viewed_at` per chat, set by
+  the new `POST /v1/chats/{id}/viewed`, and the chat body gains
+  `last_viewed_at` and `unread`; chats from before the upgrade start read.
+  Chats waiting on you now count towards the
+  attention count and the "waiting on you" summary, and `!` visits them with
+  the tasks, oldest first. In a chat or on the chats board, `alt+n`/`alt+shift+n`
+  open the project's next or previous chat and `alt+1`…`alt+9` its Nth
+  (`]`/`[` on the board too), keeping the draft you leave; macOS terminals
+  need Option set to act as Meta (task 165, #1019).
+- **Mention issues, tasks, pull requests and line ranges in a chat.**
+  `#issue-N`, `#task-N` and `#pr-N` in a chat message, and a file range such
+  as `@internal/api/server.go#L20-45`, are expanded by the daemon into a short
+  block in front of your message when the turn starts — title, state, body
+  and links, or the lines themselves — on claude, codex, cursor and copilot
+  alike. A mention that does not resolve stays prose and never blocks the
+  send; your message is stored as typed, and the expanded block is kept on
+  the turn (`mention_context`) and shown in its transcript and export. The
+  API gains `POST /v1/chats/{id}/expand` to preview a draft's expansion
+  (task 166, #1021). A bare `@path` is unchanged.
 - **Search inside a chat, jump between prompts, expand one tool call.**
   `ctrl+f` in a chat hands the keyboard to the conversation with a search
   line: every turn is searched case-insensitively — the ones not loaded yet
@@ -106,7 +151,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
-- **The task workspace is redesigned (task 164).** The steps are a rail of
+- **The terminal bell rings only while the TUI's terminal is unfocused.**
+  It used to ring whenever a task entered `awaiting_input`; now it rings for
+  that, for a chat asking for input and for a chat turn ending, but only
+  when the terminal reports it has lost focus. A terminal that never
+  reports focus (tmux by default) keeps the task bell as before and gets no
+  chat bell. Use `notify.chat_on` / `notify.on`
+  for alerts that must reach you regardless (task 165, #1019).
+
+- **The task workspace is redesigned (task 168).** The steps are a rail of
   one row per step on a connecting line, with attempts, a parallel group's
   members, a loop's passes, a fan-out's lanes and a guard's `if:` under the
   step they belong to. The tabs are Overview, Output, Diff, Step details,

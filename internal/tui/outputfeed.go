@@ -9,7 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// The Output tab's feed (task 164.4, decision 4).
+// The Output tab's feed (task 168.4, decision 4).
 //
 // The pane used to be one attempt's transcript and nothing else: a reader
 // arriving at a running task saw a stream with no step around it, and every

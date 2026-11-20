@@ -116,7 +116,7 @@ func TestLiveSkillLoadMatchesItsRefetch(t *testing.T) {
 	// the reply and the result can only stream.
 	feed(hot[0])
 	h.p.until(20*time.Second, "the connect re-read to land", func() bool {
-		// The outcome is folded into the call's one line (task 164.4):
+		// The outcome is folded into the call's one line (task 168.4):
 		// its ✓ is what says it arrived.
 		return strings.Contains(plainContent(h.m), "✓ skill echo-probe") && !d.fetching
 	})

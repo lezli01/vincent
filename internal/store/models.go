@@ -548,12 +548,12 @@ type StepRun struct {
 	Shell          string // resolved shell name for a command step
 	WorkDir        string
 	// HeadStart and HeadEnd are the worktree's HEAD sha when this attempt
-	// started and when it ended (task 164.5, migration 0064): the commit range
+	// started and when it ended (task 168.5, migration 0068): the commit range
 	// the attempt covered, which is what `diff?step_run=` diffs (§13.2).
 	//
 	// HeadStart is written at insert, before the step's process runs
 	// (crash-first), and HeadEnd by the UpdateStepRun that finalizes the row.
-	// nil means not recorded: a pre-0064 row, a step type that runs nothing in
+	// nil means not recorded: a pre-0068 row, a step type that runs nothing in
 	// the worktree, a task with no worktree, a HEAD that could not be read,
 	// and — for HeadEnd — an attempt still running or one §12.4 recovery
 	// finalized, which did not see it end. A sha names commits only, so what
@@ -842,8 +842,22 @@ type Chat struct {
 	// QueuedCount is how many follow-up messages wait behind the live turn
 	// (task 156). It is read with the row, never written through it.
 	QueuedCount int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Draft is the composer text not yet sent, and Stash the one slot a
+	// draft can be set aside in (task 164, §5.5). The daemon owns both so
+	// they follow the chat across clients and restarts; both are cleared
+	// when the chat ends. DraftUpdatedAt is nil before the first write.
+	Draft          string
+	Stash          string
+	DraftUpdatedAt *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	// LastViewedAt is when a person last looked at the chat (task 165): one
+	// value per chat, shared by every client, since the installation has no
+	// per-user identity. Nil = never viewed. Only MarkChatViewed writes it.
+	LastViewedAt *time.Time
+	// Unread is derived, never stored: the chat's latest terminal turn ended
+	// after LastViewedAt (or exists at all when it is nil). See chatUnreadExpr.
+	Unread bool
 }
 
 // Linked reports whether the chat is linked to a task (task 119), which is
@@ -921,6 +935,19 @@ type ChatTurn struct {
 	Model          string
 	Effort         string
 	PermissionMode string
+	// MentionContext is the block the turn's `#issue-N`, `#task-N`, `#pr-N`
+	// and `@path#Lx-y` mentions expanded into when it started (task 166
+	// decision 2): what rode ahead of Prompt, which stays the text the human
+	// typed. "" is "nothing expanded".
+	MentionContext string
+	// CheckpointSHA is the snapshot commit of the worktree taken before the
+	// turn's agent started, referenced as refs/vincent/chats/<chat>/turn-<seq>,
+	// and HeadBefore the HEAD it is parented on (task 167.2). HeadAfter is
+	// HEAD when the turn ended. "" is "none": a turn from before migration
+	// 0066, or one that ended before its checkpoint was taken.
+	CheckpointSHA string
+	HeadBefore    string
+	HeadAfter     string
 }
 
 // TurnSettings are a turn's per-turn overrides of its chat's model, effort

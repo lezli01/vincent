@@ -116,6 +116,9 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodGet, "/v1/chats/{id}/export"},
 		// Task 160 decision 2: the chat search scans the transcripts above.
 		{http.MethodGet, "/v1/chats/{id}/search"},
+		// Task 166 decision 6: the expand preview is a human's draft, and
+		// the chat family stays off the tool surface whole.
+		{http.MethodPost, "/v1/chats/{id}/expand"},
 		// Task 065 decision 5, under the same wording: a workflow file is
 		// what the daemon runs, so an agent editing one is an agent
 		// rewriting the rules it runs under.
@@ -183,6 +186,14 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodPost, "/v1/config/branch-preview"},
 		// Task 158: chat search, a chat read under decision row 29.
 		{http.MethodGet, "/v1/chats/search"},
+		// Task 164: a chat's draft and the prompt history, under the same row.
+		{http.MethodGet, "/v1/chats/{id}/draft"},
+		{http.MethodPut, "/v1/chats/{id}/draft"},
+		{http.MethodGet, "/v1/chats/prompts"},
+		// Task 165: the last-viewed write, in the chat family (063 decision
+		// 2). It records that a person looked at the chat; an agent calling
+		// it would forge that fact and clear every client's unread mark.
+		{http.MethodPost, "/v1/chats/{id}/viewed"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

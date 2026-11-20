@@ -179,7 +179,11 @@ switches to it and opens its task, saying so on the status line
 (``! — switched to `web` (task #42 needs you)``); with nothing elsewhere it
 wraps to the selected project's first. The app header's `(! 2 elsewhere)`
 says how many tasks in other projects are waiting, whichever screen you are
-on, and the bell rings for every project. `enter` on a blocked task
+on, and the bell rings for every project — but only while the terminal is in
+the background. A terminal that never reports focus (tmux with `focus-events`
+off, its default) cannot say so, and rings for a task's question whatever
+you are looking at, as it always has. Chats asking you a question count and are on `!`'s walk too
+([Chats](#chats)). `enter` on a blocked task
 opens a **failure card**: the step and attempt that stopped, the reason in
 words with its code dim beside it, the last lines of the failing attempt's
 output as evidence, and the actions that answer the reason — `r` retry, `E`
@@ -288,8 +292,8 @@ new-workflow or new-trigger form is reopened for the new project, and a
 workflow or trigger editor, the workflow graph and a trigger dry run close,
 since each is on a file of the old project.
 
-A form you have typed into — or a chat's composer holding an unsent
-message — asks first, in one line under the header:
+A form you have typed into — or a chat's composer holding an edit of a
+queued message — asks first, in one line under the header:
 
 ```text
 discard the task draft and switch to `api`? y/n
@@ -300,6 +304,8 @@ or on the list behind a workspace or issue form. `n` or `esc` keeps the draft
 and the current project; nothing is switched or saved. A form seeded from a
 pull request, an issue or a chat counts as a draft before you type, and so
 does a workflow fork prompt, which is seeded from the old project's list.
+A chat's unsent message does not ask: it is the chat's [draft](#drafts-stash-and-prompt-history),
+which the switch saves.
 
 Opening a task, chat or issue of another project switches to that project
 first, so its screen never draws under the wrong header. This happens from the
@@ -2599,9 +2605,22 @@ Switching project empties the board and the header reads "loading ‹project›�
 until that project's chats arrive; your `/` filter stays. With no project
 registered the board says so instead of listing anything.
 
-A chat waiting on you is sorted to the top and counted in this header's badge —
-**and nowhere else**. `!` and the task board's needs-attention count stay
-task-only.
+A chat waiting on you is sorted to the top and counted in this header's badge.
+It also counts towards the app header's attention count and the "waiting on
+you" summary, and `!` visits it with the tasks that need you, oldest wait
+first, switching project when it has to. It never joins the task board's
+columns.
+
+A chat whose last turn finished since anyone opened it is **unread**: its row
+or card carries a blue `●`. The mark is the same in every TUI — the daemon
+keeps one last-viewed time per chat — and opening the chat clears it
+everywhere. A turn that ends while the chat is open clears it too, unless the
+terminal is in the background. Unread is only a mark: it does not count as
+attention. The bell rings for a chat's question and for a turn ending done or
+failed, under the same rule as for tasks: only while the terminal is
+unfocused — and only in a terminal that reports focus, since a chat bell
+in one that cannot would ring on every reply you are reading. For a signal with no TUI open, see
+[`notify.chat_on`](../reference/configuration.md#notify).
 
 | Key | Does |
 |---|---|
@@ -2615,6 +2634,8 @@ task-only.
 | `R` | Reload the board |
 | `S` | [Search every chat](#chat-search)'s title, prompts and answers, live and archived |
 | `alt+e` | [Export the selected chat](#exporting-a-chat) as Markdown, HTML or JSON |
+| `alt+n` / `alt+shift+n`, `]` / `[` | Open the next / previous chat after the one under the cursor, in this board's order, wrapping |
+| `alt+1` … `alt+9` | Open the project's Nth chat in this board's order; nothing past the last |
 | `home`/`end`, `pgup`/`pgdown` | Jump to the first or last chat, or move a page |
 
 The mouse wheel moves the cursor one chat per tick, as it does on the task
@@ -2804,7 +2825,10 @@ periodic repaint.
 | Key | Does |
 |---|---|
 | `enter` | Send the message. While a turn runs — or the agent waits on its question — the message is queued and runs after that turn ends `done`; it never answers the question. The footer then reads `enter queue` |
-| `↑` | On an empty composer, edit the newest queued message: `enter` saves it, `ctrl+d` deletes it, `esc` stops editing |
+| `↑` | On an empty composer, edit the newest queued message: `enter` saves it, `ctrl+d` deletes it, `esc` stops editing. With nothing queued, recall this chat's earlier prompts instead — see [Drafts, stash and prompt history](#drafts-stash-and-prompt-history) |
+| `↓` | While recalling, a newer prompt; past the newest the composer is empty again |
+| `alt+s` | Stash the draft — a new stash replaces the old one — or, on an empty composer, pop the stash back (rebindable as `stash`) |
+| `alt+h` | Pick an earlier prompt from any chat of this project, archived ones too, and insert it — never sends it (rebindable as `prompt_history`) |
 | `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now, paused or not: an idle chat holding an unpaused queue (left by a daemon crash mid-recovery) says so under the queue, and this starts it |
 | `alt+c` | Clear the queue: delete every queued message |
 | `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
@@ -2829,6 +2853,8 @@ periodic repaint.
 | `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
 | `alt+p` | Pick the model and effort the chat's next turns run on; `•` marks the ones it runs on now. After the first turn, only on an agent that can change them on a resumed session (claude today) |
 | `shift+tab` | Toggle the permission mode: lowers to `restricted` at once, asks `y`/`n` before raising to `full-auto`, and says why when the agent can only run one |
+| `alt+n` / `alt+shift+n` | Open the project's next / previous chat, in the chats board's order (waiting on you, running, idle), wrapping — also over a pending question. The draft you leave is kept for when you come back. On macOS every `alt+` key here needs the terminal's "Option as Meta" setting; [`tui.keys`](#rebinding-keys) rebinds them |
+| `alt+1` … `alt+9` | Open the project's Nth chat in that order; nothing past the last |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to where the chat was opened from — the issue, the issues list, the archived-chats board or the [chat search](#chat-search) — otherwise the chats board |
@@ -2842,6 +2868,38 @@ stays usable while the queue is paused: a new message starts a turn as usual.
 Archiving, closing or handing off the chat discards its queue, and the
 confirmation — or the hand-off form's submit row — says how many queued
 messages will be discarded.
+
+### Drafts, stash and prompt history
+
+What you type is the chat's **draft**, and the daemon keeps it. It is saved
+about half a second after you stop typing, and at once when you leave the chat
+— `esc`, opening another chat, the command palette, a project switch, or
+quitting — so switching between chats,
+restarting the TUI or opening the chat from another terminal finds it where you
+left it. The chats board marks a chat holding a draft `✎ draft` ahead of its
+title. Sending clears the stored draft once the daemon has taken (or queued)
+the message; a refused send keeps it. Archiving, closing or handing off a chat
+discards its draft and stash with it.
+
+`alt+s` sets the draft aside in the chat's **stash** and empties the composer;
+`alt+s` on an empty composer brings it back. There is one stash slot per chat:
+stashing again replaces what was there, and the note under the composer says
+so.
+
+`↑` on an empty composer **recalls** this chat's earlier prompts, newest first,
+once no queued message is waiting to be edited — the queue comes first. `↓`
+walks back toward the newest and ends on an empty composer. A recalled prompt
+is a copy: edit it freely, and the first edit ends recall, so `↑` and `↓` move
+inside the text again.
+
+`alt+h` opens the **prompt history**: every prompt sent in any chat of this
+project, archived chats included, newest first and with repeats collapsed.
+Type to narrow it — every word must appear, by substring, ignoring case.
+Narrowing starts once a word has three characters, before which the list stays
+newest first; after that a shorter word narrows too, so `fix a` finds less
+than `fix`. `enter` inserts the chosen
+prompt at the cursor without sending it; `esc` closes the list and leaves the
+draft as it was.
 
 Scrolled away from the live end, the header says which turn is at the top of
 the window — `turn 2/5` — until `alt+shift+g` follows the end again. While you are
@@ -3685,7 +3743,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `ctrl+p` | Command palette, also while a text field has the keyboard |
 | `?` | Toggle help |
 | `f1` | Toggle help, also while a text field has the keyboard |
-| `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's |
+| `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's. A chat asking you a question is on the same walk, oldest wait first |
 | `n` | New task |
 | `@` | [Switch project](#switching-project) |
 | `M` | Toggle the mouse |
@@ -3741,7 +3799,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twenty-eight are the operations screens share, the next eleven are the
+The first forty-one are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3768,12 +3826,25 @@ The first twenty-eight are the operations screens share, the next eleven are the
 | `return` | `,` | Return an issue from its handoff |
 | `steer` | `ctrl+s` | Steer a chat's running turn, where its agent can — none can yet |
 | `compact` | `alt+k` | Compact the chat agent's context — sends its compact command (`/compact` on claude) as the next message; asks first |
+| `stash` | `alt+s` | Stash the chat's draft, or pop the stash into an empty composer. One slot: a new stash replaces the old one. See [Drafts, stash and prompt history](#drafts-stash-and-prompt-history) |
+| `prompt_history` | `alt+h` | Pick an earlier prompt from any chat of the project to insert into the composer |
 | `chat_search` | `S` | Search every chat, from the chats board |
 | `export_chat` | `alt+e` | Export a chat as Markdown, HTML or JSON — from the chat, the chats board or the archived chats board. See [Exporting a chat](#exporting-a-chat) |
 | `chat_model` | `alt+p` | Pick the chat's model and effort for its next turns |
 | `chat_mode` | `shift+tab` | Toggle the chat's permission mode; asks before raising it to full-auto |
 | `compose_editor` | `ctrl+g` | Write the chat message in `$EDITOR` |
 | `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
+| `next_chat` | `alt+n` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |
+| `prev_chat` | `alt+shift+n` | Open the project's previous chat, wrapping |
+| `chat_1` | `alt+1` | Open the project's chat number 1, in the chats board's order; nothing past the last |
+| `chat_2` | `alt+2` | Open the project's chat number 2, in the chats board's order; nothing past the last |
+| `chat_3` | `alt+3` | Open the project's chat number 3, in the chats board's order; nothing past the last |
+| `chat_4` | `alt+4` | Open the project's chat number 4, in the chats board's order; nothing past the last |
+| `chat_5` | `alt+5` | Open the project's chat number 5, in the chats board's order; nothing past the last |
+| `chat_6` | `alt+6` | Open the project's chat number 6, in the chats board's order; nothing past the last |
+| `chat_7` | `alt+7` | Open the project's chat number 7, in the chats board's order; nothing past the last |
+| `chat_8` | `alt+8` | Open the project's chat number 8, in the chats board's order; nothing past the last |
+| `chat_9` | `alt+9` | Open the project's chat number 9, in the chats board's order; nothing past the last |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

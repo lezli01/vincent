@@ -44,7 +44,7 @@ type paletteEntry struct {
 	// (task 128): listed, so the human can see it is gone, but not runnable.
 	unbound bool
 	// tab marks a "go to the <Name> tab" row (task 129.17). It has no key
-	// since the strip lost its digits (task 164); its action switches.
+	// since the strip lost its digits (task 168); its action switches.
 	tab   taskViewTab
 	isTab bool
 	// action is a key-less row's own command (task 130.13): a row with no
@@ -99,7 +99,7 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 			tab: tab, isTab: true, action: gotoTaskTab(tab),
 		})
 	}
-	// The Task Details inspector has no place on the strip (task 164
+	// The Task Details inspector has no place on the strip (task 168
 	// decision 3): its document is the Overview's lower half, and this is
 	// the way to its section-by-section reading.
 	if len(tabs) > 0 && !slices.Contains(tabs, taskTabDetails) {

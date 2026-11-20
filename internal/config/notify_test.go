@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
 
@@ -137,7 +138,9 @@ func TestNotifyWarnings(t *testing.T) {
 	}{
 		{"command without on", "notify:\n  command: [\"true\"]\n", "notify.command is set"},
 		{"on without command", "notify:\n  on: [blocked]\n", "notify.on lists states"},
+		{"chat_on without command", "notify:\n  chat_on: [turn_done]\n", "notify.chat_on lists states"},
 		{"whole block", "notify:\n  on: [blocked]\n  command: [\"true\"]\n", ""},
+		{"chat-only block", "notify:\n  chat_on: [awaiting_input]\n  command: [\"true\"]\n", ""},
 		{"absent", "log_level: info\n", ""},
 	}
 	for _, tc := range cases {
@@ -199,5 +202,61 @@ func TestDefaultConfigFileDocumentsNotify(t *testing.T) {
 	}
 	if len(cfg.Warnings()) != 0 {
 		t.Errorf("the default config.yaml warns: %q", cfg.Warnings())
+	}
+}
+
+// TestNotifyChatOnLoads: `notify.chat_on` round-trips, selects only chat
+// moments, and leaves the task half exactly as it was (task 165).
+func TestNotifyChatOnLoads(t *testing.T) {
+	cfg, err := Load(writeConfig(t,
+		"notify:\n  chat_on: [awaiting_input, turn_failed]\n  command: [\"notify-me\"]\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Notify.ChatEnabled() {
+		t.Errorf("chat half not enabled: %+v", cfg.Notify)
+	}
+	if cfg.Notify.Enabled() {
+		t.Errorf("task half enabled with no notify.on: %+v", cfg.Notify)
+	}
+	if !cfg.Notify.FiresChat(chatstate.NotifyAwaitingInput) || !cfg.Notify.FiresChat(chatstate.NotifyTurnFailed) {
+		t.Errorf("listed chat moments do not fire: %+v", cfg.Notify.ChatOn)
+	}
+	if cfg.Notify.FiresChat(chatstate.NotifyTurnDone) {
+		t.Error("an unlisted chat moment fires")
+	}
+	if cfg.Notify.Fires(taskstate.AwaitingInput) {
+		t.Error("chat_on's awaiting_input leaked into the task selector")
+	}
+	if Default().Notify.ChatEnabled() {
+		t.Error("the default configuration notifies on chats")
+	}
+	if (Notify{ChatOn: []chatstate.NotifyState{chatstate.NotifyTurnDone}}).FiresChat(chatstate.NotifyTurnDone) {
+		t.Error("chat_on with no command fires")
+	}
+}
+
+// TestNotifyChatOnRejected: an unknown value, `turn_interrupted` (deliberately
+// excluded, task 165) and a duplicate all fail Load naming the key, so the
+// watcher keeps the last good configuration.
+func TestNotifyChatOnRejected(t *testing.T) {
+	cases := []struct{ name, list, want string }{
+		{"unknown", "[turn_done, blocked]", "blocked"},
+		{"turn_interrupted", "[turn_interrupted]", "turn_interrupted"},
+		{"duplicate", "[turn_done, turn_done]", "twice"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, "notify:\n  chat_on: "+tc.list+"\n  command: [\"true\"]\n"))
+			if err == nil {
+				t.Fatalf("chat_on %s accepted", tc.list)
+			}
+			if !strings.Contains(err.Error(), "notify.chat_on") || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %v, want it to name notify.chat_on and %q", err, tc.want)
+			}
+			if tc.name != "duplicate" && !strings.Contains(err.Error(), "awaiting_input, turn_done, turn_failed") {
+				t.Errorf("error does not name the valid set: %v", err)
+			}
+		})
 	}
 }

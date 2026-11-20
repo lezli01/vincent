@@ -207,6 +207,21 @@ var Excluded = []Route{
 	// the transcript it scans, and the family stays off the tool surface
 	// whole.
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/search"},
+	// A chat's draft and stash, and the project's prompt history (task
+	// 164), are a human composer's state and stay off the surface with the
+	// rest of the family.
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/draft"},
+	{Method: http.MethodPut, Path: "/v1/chats/{id}/draft"},
+	{Method: http.MethodGet, Path: "/v1/chats/prompts"},
+	// The last-viewed write (task 165) joins the family under the same rule:
+	// it records that a *person* looked at the chat, so the unread mark every
+	// client shows clears. An agent calling it would be forging that fact,
+	// and it already has a session of its own to read.
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/viewed"},
+	// `POST /v1/chats/{id}/expand` (task 166 decision 6) previews what a
+	// human's draft would carry; an agent has no draft, and the chat family
+	// stays off the tool surface whole.
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/expand"},
 }
 
 // GrantedRoute is an Excluded forge write that becomes a tool on a granted

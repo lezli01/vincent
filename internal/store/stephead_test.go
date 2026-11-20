@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// A step run's commit range round-trips (migration 0064, task 164.5):
+// A step run's commit range round-trips (migration 0068, task 168.5):
 // head_start rides the insert, head_end the finalizing update, and an update
 // from a struct that never read either — the actor's PID journal, a stale
 // copy — erases neither end.

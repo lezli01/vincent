@@ -104,6 +104,10 @@ func registryKey(t *testing.T, key string) tea.KeyPressMsg {
 		// press: the hand-built alt+G one no decoder produces is how the
 		// follow key shipped dead (review F1).
 		msg = decodePress(t, "\x1bG")
+	case "alt+shift+n":
+		// prev_chat, decoded from what a terminal sends for alt+N for the
+		// reason alt+shift+g is.
+		msg = decodePress(t, "\x1bN")
 	case "shift+right":
 		msg = tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift}
 	default:
@@ -316,7 +320,7 @@ func workspaceKeyProbe(v func(*testing.T) *taskView) func(*testing.T) {
 }
 
 // issueKeyProbe is `i` on a workspace tab: it opens the task's linked issue
-// (task 164 decision 2), and esc on the issue comes back here.
+// (task 168 decision 2), and esc on the issue comes back here.
 func issueKeyProbe(v func(*testing.T) *taskView) func(*testing.T) {
 	return func(t *testing.T) {
 		tv := v(t)
@@ -1012,6 +1016,34 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChat: {
+		// Task 164: recall's way back, the stash and the history picker.
+		"down": func(t *testing.T) {
+			v := chatViewFixture()
+			v.turns = []apiclient.ChatTurn{{Seq: 1, Prompt: "older"}, {Seq: 2, Prompt: "newer"}}
+			v.updateKey(registryKey(t, "up"))
+			v.updateKey(registryKey(t, "up"))
+			v.updateKey(registryKey(t, "down"))
+			if got := v.composer.Value(); got != "newer" {
+				t.Fatalf("down while recalling left %q, want the newer prompt", got)
+			}
+		},
+		"alt+s": func(t *testing.T) {
+			v := chatViewFixture()
+			v.draft.loaded = true
+			v.composer.SetValue("aside")
+			v.updateKey(registryKey(t, "alt+s"))
+			if v.composer.Value() != "" || v.draft.stash != "aside" {
+				t.Fatalf("alt+s left composer %q stash %q", v.composer.Value(), v.draft.stash)
+			}
+		},
+		"alt+h": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = apiclient.New("http://127.0.0.1:1", "t")
+			v.updateKey(registryKey(t, "alt+h"))
+			if !v.history.open {
+				t.Fatal("alt+h did not open the prompt history")
+			}
+		},
 		"ctrl+f": func(t *testing.T) {
 			v := chatFindFixture(t)
 			v.updateKey(registryKey(t, "ctrl+f"))

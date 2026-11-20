@@ -15,7 +15,6 @@ import (
 func testArchivedBoard() *board {
 	b := selectTestProject(newArchivedBoard())
 	b.now = func() time.Time { return testNow }
-	b.bell = func() {}
 	b.loaded = true
 	b.group, b.configGroup = nil, nil
 	b.updateLoaded(boardLoadedMsg{tasks: []apiclient.Task{

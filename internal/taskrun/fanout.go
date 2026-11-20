@@ -562,7 +562,7 @@ func (r *Runner) spawnLanes(ctx context.Context, env *stepEnv, ready []int, roun
 			return err
 		}
 		// The round this spawn belongs to, which is the `iteration` of the
-		// step's row a client draws the lane under (migration 0063).
+		// step's row a client draws the lane under (migration 0067).
 		child.LaneRound = &round
 		children = append(children, child)
 	}

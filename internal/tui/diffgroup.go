@@ -33,7 +33,7 @@ type diffFile struct {
 	// both zero, and `+0 -0` on the header row would read as "unchanged".
 	binary bool
 	// status is what happened to the file, as git's letters say it: M, A,
-	// D or R (task 164.6).
+	// D or R (task 168.6).
 	status byte
 }
 

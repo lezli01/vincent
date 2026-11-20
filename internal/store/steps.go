@@ -114,7 +114,7 @@ func (s *Store) OpenStepRun(ctx context.Context, ref StepRef) (*StepRun, error) 
 // when its last lane settled, and the attempt number the park chose is the one
 // §12.2 named that attempt's transcript after. It takes the columns the
 // attempt owns: the transcript path, the agent selection, and the HEAD the
-// attempt starts at (task 164.5) — the merge is what the round's range covers,
+// attempt starts at (task 168.5) — the merge is what the round's range covers,
 // so it starts where the adopting attempt finds the worktree.
 //
 // The pending edit+retry override is drained onto it in the same transaction
@@ -267,7 +267,7 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 // survive onto the finished row for free.
 //
 // `head_end` is written only when r carries one, and `head_start` never: the
-// start of the range is fixed at insert (task 164.5), and an update from a
+// start of the range is fixed at insert (task 168.5), and an update from a
 // struct that never read the column must not erase either end of it.
 func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 	res, err := s.db.ExecContext(ctx, `

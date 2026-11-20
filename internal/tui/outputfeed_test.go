@@ -40,7 +40,7 @@ func feedText(d *detail) string {
 	return ansi.Strip(strings.Join(lines, "\n"))
 }
 
-// The feed is the whole task (task 164.4): every other attempt folds to one
+// The feed is the whole task (task 168.4): every other attempt folds to one
 // dashed line from its row, and the open one sits between a divider naming
 // it and a line saying how it ended.
 func TestFeedFoldsEveryOtherAttemptAroundTheOpenOne(t *testing.T) {

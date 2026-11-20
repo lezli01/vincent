@@ -62,7 +62,7 @@ const diffKeySep = "\x00"
 type diffLoadedMsg struct {
 	taskID int64
 	// stepRun is the attempt the diff was scoped to, 0 for the whole task
-	// (task 164.6): a fetch for the scope the pane has left is dropped.
+	// (task 168.6): a fetch for the scope the pane has left is dropped.
 	stepRun  int64
 	text     string
 	sections []apiclient.DiffSection
@@ -88,7 +88,7 @@ type diffPane struct {
 	pan int
 
 	taskID int64
-	// stepRun scopes the pane to what one attempt changed (task 164.6), and
+	// stepRun scopes the pane to what one attempt changed (task 168.6), and
 	// stepLabel names it on the summary line; 0 is the whole task.
 	stepRun   int64
 	stepLabel string
@@ -705,7 +705,7 @@ func (p *diffPane) setScope(run int64, label string) bool {
 }
 
 // totals is the change's size across every section, and whether a diff has
-// loaded to have one (task 164.2's tab marker).
+// loaded to have one (task 168.2's tab marker).
 func (p *diffPane) totals() (added, removed int, ok bool) {
 	if p.sections == nil {
 		return 0, 0, false
@@ -973,7 +973,7 @@ func colorDiffLine(line string) string {
 }
 
 // diffStatusLetter is git's letter for what happened to a file, in the colour
-// of what it did (task 164.6): a letter, so it reads without the colour.
+// of what it did (task 168.6): a letter, so it reads without the colour.
 func diffStatusLetter(status byte) string {
 	switch status {
 	case 'A':
@@ -1013,7 +1013,7 @@ func diffBar(added, removed int) string {
 }
 
 // numberDiffLines colours a file's body and puts the old and new line numbers
-// in a gutter in front of each hunk line (task 164.6). A hunk header reads as
+// in a gutter in front of each hunk line (task 168.6). A hunk header reads as
 // a rule carrying the function it falls in. Lines before the first hunk — a
 // mode change, a rename, `Binary files … differ` — are the file's facts and
 // keep their own colour, unnumbered.

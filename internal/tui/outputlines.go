@@ -314,7 +314,7 @@ const (
 	gutterCheck     = "check ▏"
 	gutterCheckCont = "      ▏"
 	// gutterOutput is the margin bar in front of what a command printed
-	// (task 164.4).
+	// (task 168.4).
 	gutterOutput = "┃ "
 )
 
@@ -1014,7 +1014,7 @@ type lineOpts struct {
 	// that key works where the line is read (071 decision 7).
 	expandHint string
 	// latestPlan draws the main loop's plan once, where it first appeared,
-	// with the newest version's items (task 164.4): every version of the
+	// with the newest version's items (task 168.4): every version of the
 	// list arrives whole, so the newest is the list as it stands, and the
 	// task's feed shows it as one row that changes in place rather than a
 	// history of the plan.
@@ -1573,7 +1573,7 @@ func renderRecord(
 				segs: []segment{{text: rec.Text, style: style}},
 			}, true
 		}
-		// A command's output sits behind a margin bar (task 164.4), so what
+		// A command's output sits behind a margin bar (task 168.4), so what
 		// the command printed cannot be mistaken for vincent's own lines.
 		bar := styleDim
 		if rec.Stream == "stderr" {
@@ -1585,7 +1585,7 @@ func renderRecord(
 		}, true
 	case "vincent.command_started":
 		// A step's script is often several lines; below verbose it is its
-		// first line and a count of the rest (task 164.4). The whole script
+		// first line and a count of the rest (task 168.4). The whole script
 		// is the Step details tab's, where it can be read as written.
 		cmd := strings.TrimRight(fieldOf(rec.Raw, "command"), "\n")
 		if first, rest, ok := strings.Cut(cmd, "\n"); ok && level != levelVerbose {
@@ -1597,7 +1597,7 @@ func renderRecord(
 		}
 		return paneLine{gutter: "$ ", gutterStyle: styleWarn, segs: []segment{{text: cmd, style: lipgloss.NewStyle()}}}, true
 	case "vincent.step_started", "vincent.step_finished":
-		// The feed's divider and end line say these (task 164.4); a row
+		// The feed's divider and end line say these (task 168.4); a row
 		// each of `· step_started` said nothing a reader could use.
 		return paneLine{}, false
 	case "vincent.input_request":

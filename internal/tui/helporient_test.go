@@ -294,7 +294,7 @@ func TestPaletteGoesToTabs(t *testing.T) {
 		details = details || (e.isTab && e.tab == taskTabDetails)
 	}
 	if !details {
-		t.Error("the palette has no way to the Task Details inspector (task 164 decision 3)")
+		t.Error("the palette has no way to the Task Details inspector (task 168 decision 3)")
 	}
 	tabs := tabEntries(m.palette.entries)
 	if len(tabs) != len(v.tabs()) {

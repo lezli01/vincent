@@ -33,7 +33,6 @@ func groupedBoardBy(g grouping, tasks ...apiclient.Task) *board {
 	b := selectTestProject(newBoard())
 	b.group, b.configGroup = g, g
 	b.now = func() time.Time { return testNow }
-	b.bell = func() {}
 	b.loaded = true
 	b.updateLoaded(boardLoadedMsg{tasks: tasks})
 	return b

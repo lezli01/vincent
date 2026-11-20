@@ -12,7 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// The wide workspace's steps rail (task 164.1).
+// The wide workspace's steps rail (task 168.1).
 //
 // The Steps tab's timeline spends a heading per step and two or three rows
 // per attempt, with wrapped output excerpts under a failure, so four steps

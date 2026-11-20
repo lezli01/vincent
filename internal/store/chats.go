@@ -35,6 +35,10 @@ const (
 	// applies from the next turn when made during a live one. It carries the
 	// chat, so a list repaints without a fetch.
 	EventChatUpdated = "chat.updated"
+	// EventChatViewed is a person having looked at the chat (task 165): its
+	// last_viewed_at advanced, so its unread mark may have cleared in every
+	// client, not just the one that viewed it.
+	EventChatViewed = "chat.viewed"
 )
 
 // ChatEventTypes is the chat.* family, in the order it is declared. It exists
@@ -42,7 +46,7 @@ const (
 // filtering on the payload's id: a chat event carries no task_id column, so
 // without this a replay would scan every task event behind the cursor.
 func ChatEventTypes() []string {
-	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue, EventChatUpdated}
+	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue, EventChatUpdated, EventChatDraft, EventChatViewed}
 }
 
 // IsChatEvent reports whether an event type belongs to the chat family.
@@ -53,14 +57,29 @@ func IsChatEvent(t string) bool {
 const chatColumns = `id, project_id, title, state, agent, model, effort, permission_mode,
 	branch, adopted_branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input, handoff_task_id,
 	linked_task_id, opening_context, issue_id, end_sha, created_at, updated_at,
-	queue_paused, queue_pause_reason,
-	(SELECT COUNT(*) FROM chat_queued_messages q WHERE q.chat_id = chats.id)`
+	queue_paused, queue_pause_reason, draft, stash, draft_updated_at,
+	(SELECT COUNT(*) FROM chat_queued_messages q WHERE q.chat_id = chats.id),
+	last_viewed_at, ` + chatUnreadExpr
+
+// chatUnreadExpr derives Chat.Unread in SQL (task 165) so a list stays one
+// query: the chat's latest terminal turn finished after it was last viewed,
+// or it has one at all when it was never viewed. A running turn never counts
+// — there is nothing to read until it ends. ended_at and last_viewed_at are
+// both store.TimeFormat, so the TEXT comparison is chronological; an
+// interrupted turn recovery left without ended_at falls back to started_at.
+// It names the table unaliased, which every `SELECT chatColumns FROM chats`
+// is.
+const chatUnreadExpr = `COALESCE((
+		SELECT MAX(COALESCE(ct.ended_at, ct.started_at)) FROM chat_turns ct
+		WHERE ct.chat_id = chats.id AND ct.state IN ('done', 'failed', 'interrupted')
+	) > COALESCE(chats.last_viewed_at, ''), 0) AS unread`
 
 const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_message, result_text,
 	session_id, input_tokens, output_tokens, cost_usd, exit_code, pid, proc_identity,
 	started_at, ended_at, duration_ms, session_input_tokens, session_output_tokens,
 	cache_read_tokens, cache_creation_tokens, context_tokens, context_window,
-	session_cache_read_tokens, session_cache_creation_tokens, model, effort, permission_mode`
+	session_cache_read_tokens, session_cache_creation_tokens, model, effort, permission_mode,
+	mention_context, checkpoint_sha, head_before, head_after`
 
 // CreateChat inserts c, assigning its ID and timestamps, and writes the
 // durable chat.created event in the same transaction (§13.3).
@@ -464,6 +483,9 @@ func (s *Store) updateChatOrRefuse(ctx context.Context, id int64, evType string,
 			if err := deleteChatQueueTx(ctx, tx, c.ID); err != nil {
 				return err
 			}
+			if err := clearChatDraftTx(ctx, tx, c); err != nil {
+				return err
+			}
 			if err := setQueuePauseTx(ctx, tx, c, false, ""); err != nil {
 				return err
 			}
@@ -488,6 +510,53 @@ func (s *Store) updateChatOrRefuse(ctx context.Context, id int64, evType string,
 			return nil
 		}
 		ev, err = chatEvent(evType, c, nil)
+		if err != nil {
+			return err
+		}
+		return appendEventTx(ctx, tx, ev)
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.notify(ev)
+	return out, nil
+}
+
+// MarkChatViewed records that a person looked at chat id at `at` (task 165)
+// and returns the chat as it now reads, Unread re-derived. It is monotonic:
+// last_viewed_at becomes max(existing, at), so a client with a slow clock or
+// a late request never resurrects an unread mark another client cleared.
+// The chat.viewed event is written, in the same transaction, only when the
+// value advanced — a repeat view announces nothing. updated_at is left
+// alone on purpose: it orders the archive and drives auto-archive, and
+// looking at a chat is not a change to it.
+func (s *Store) MarkChatViewed(ctx context.Context, id int64, at time.Time) (*Chat, error) {
+	var out *Chat
+	var ev *Event
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE chats SET last_viewed_at = ?
+			WHERE id = ? AND (last_viewed_at IS NULL OR last_viewed_at < ?)`,
+			formatTime(at), id, formatTime(at))
+		if err != nil {
+			return fmt.Errorf("mark chat %d viewed: %w", id, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("mark chat %d viewed: %w", id, err)
+		}
+		c, err := scanChat(tx.QueryRowContext(ctx, `SELECT `+chatColumns+` FROM chats WHERE id = ?`, id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("chat %d: %w", id, ErrNotFound)
+		}
+		if err != nil {
+			return fmt.Errorf("get chat %d: %w", id, err)
+		}
+		out = c
+		if n == 0 {
+			return nil
+		}
+		ev, err = chatEvent(EventChatViewed, c, nil)
 		if err != nil {
 			return err
 		}
@@ -628,15 +697,31 @@ func updateChatTurnTx(ctx context.Context, tx *sql.Tx, t *ChatTurn) error {
 			pid = ?, proc_identity = ?, ended_at = ?, duration_ms = ?,
 			session_input_tokens = ?, session_output_tokens = ?,
 			cache_read_tokens = ?, cache_creation_tokens = ?, context_tokens = ?, context_window = ?,
-			session_cache_read_tokens = ?, session_cache_creation_tokens = ?
+			session_cache_read_tokens = ?, session_cache_creation_tokens = ?,
+			checkpoint_sha = ?, head_before = ?, head_after = ?
 		WHERE id = ?`,
 		string(t.State), nullString(t.FailReason), nullString(t.ErrorMessage), nullString(t.ResultText),
 		nullString(t.SessionID), t.InputTokens, t.OutputTokens, t.CostUSD, t.ExitCode,
 		t.PID, t.ProcIdentity, formatTimePtr(t.EndedAt), t.DurationMS,
 		t.SessionInputTokens, t.SessionOutputTokens,
 		t.CacheReadTokens, t.CacheCreationTokens, t.ContextTokens, t.ContextWindow,
-		t.SessionCacheReadTokens, t.SessionCacheCreationTokens, t.ID); err != nil {
+		t.SessionCacheReadTokens, t.SessionCacheCreationTokens,
+		nullString(t.CheckpointSHA), nullString(t.HeadBefore), nullString(t.HeadAfter), t.ID); err != nil {
 		return fmt.Errorf("update chat turn %d: %w", t.ID, err)
+	}
+	return nil
+}
+
+// SetChatTurnMentionContext records the block turn id's mentions expanded
+// into (task 166 decision 2). It is written once, when the turn starts and
+// before the agent is spawned, and never again: it is the snapshot of what the
+// agent was given, which a later edit to the mentioned object must not change.
+// It publishes nothing of its own — the turn's next chat.turn_changed carries
+// it — because no client acts on the moment it is written.
+func (s *Store) SetChatTurnMentionContext(ctx context.Context, id int64, mentionContext string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE chat_turns SET mention_context = ? WHERE id = ?`, nullString(mentionContext), id); err != nil {
+		return fmt.Errorf("set chat turn %d mention context: %w", id, err)
 	}
 	return nil
 }
@@ -847,11 +932,16 @@ func scanChat(r rowScanner) (*Chat, error) {
 	var openingContext, endSHA sql.NullString
 	var issueID sql.NullInt64
 	var createdAt, updatedAt string
-	var pauseReason sql.NullString
+	var pauseReason, draftUpdatedAt, lastViewedAt sql.NullString
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
 		&c.PermissionMode, &c.Branch, &c.AdoptedBranch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
 		&handoffTaskID, &linkedTaskID, &openingContext, &issueID, &endSHA, &createdAt, &updatedAt,
-		&c.QueuePaused, &pauseReason, &c.QueuedCount); err != nil {
+		&c.QueuePaused, &pauseReason, &c.Draft, &c.Stash, &draftUpdatedAt, &c.QueuedCount,
+		&lastViewedAt, &c.Unread); err != nil {
+		return nil, err
+	}
+	var err error
+	if c.DraftUpdatedAt, err = parseTimePtr(draftUpdatedAt); err != nil {
 		return nil, err
 	}
 	c.QueuePauseReason = pauseReason.String
@@ -875,11 +965,13 @@ func scanChat(r rowScanner) (*Chat, error) {
 	if pending.Valid && pending.String != "" {
 		c.PendingInput = json.RawMessage(pending.String)
 	}
-	var err error
 	if c.CreatedAt, err = parseTime(createdAt); err != nil {
 		return nil, err
 	}
 	if c.UpdatedAt, err = parseTime(updatedAt); err != nil {
+		return nil, err
+	}
+	if c.LastViewedAt, err = parseTimePtr(lastViewedAt); err != nil {
 		return nil, err
 	}
 	return &c, nil
@@ -888,7 +980,8 @@ func scanChat(r rowScanner) (*Chat, error) {
 func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 	var t ChatTurn
 	var failReason, errMsg, resultText, sessionID, procIdentity sql.NullString
-	var model, effort, mode sql.NullString
+	var model, effort, mode, mentionContext sql.NullString
+	var checkpoint, headBefore, headAfter sql.NullString
 	var startedAt string
 	var endedAt sql.NullString
 	if err := r.Scan(&t.ID, &t.ChatID, &t.Seq, &t.Prompt, (*string)(&t.State), &failReason, &errMsg,
@@ -896,10 +989,13 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 		&t.PID, &procIdentity, &startedAt, &endedAt, &t.DurationMS,
 		&t.SessionInputTokens, &t.SessionOutputTokens,
 		&t.CacheReadTokens, &t.CacheCreationTokens, &t.ContextTokens, &t.ContextWindow,
-		&t.SessionCacheReadTokens, &t.SessionCacheCreationTokens, &model, &effort, &mode); err != nil {
+		&t.SessionCacheReadTokens, &t.SessionCacheCreationTokens, &model, &effort, &mode,
+		&mentionContext, &checkpoint, &headBefore, &headAfter); err != nil {
 		return nil, err
 	}
+	t.MentionContext = mentionContext.String
 	t.Model, t.Effort, t.PermissionMode = model.String, effort.String, mode.String
+	t.CheckpointSHA, t.HeadBefore, t.HeadAfter = checkpoint.String, headBefore.String, headAfter.String
 	t.FailReason, t.ErrorMessage = failReason.String, errMsg.String
 	t.ResultText, t.SessionID = resultText.String, sessionID.String
 	if procIdentity.Valid {

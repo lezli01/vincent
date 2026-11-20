@@ -447,11 +447,15 @@ func (s *Server) buildHandler() http.Handler {
 	// The literal segment outranks {id} in ServeMux, so "search" is never
 	// read as a chat id (task 158).
 	rt.handle(http.MethodGet, "/v1/chats/search", s.handleChatSearch)
+	// "prompts" is a literal segment for the same reason (task 164).
+	rt.handle(http.MethodGet, "/v1/chats/prompts", s.handleChatPrompts)
 	rt.handle(http.MethodPost, "/v1/chats", s.handleChatCreate)
 	rt.handle(http.MethodGet, "/v1/chats/{id}", s.handleChatGet)
 	rt.handle(http.MethodPatch, "/v1/chats/{id}", s.handleChatPatch)
 	rt.handle(http.MethodDelete, "/v1/chats/{id}", s.handleChatDelete)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/send", s.handleChatSend)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/draft", s.handleChatDraftGet)
+	rt.handle(http.MethodPut, "/v1/chats/{id}/draft", s.handleChatDraftPut)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/queue", s.handleChatQueueList)
 	rt.handle(http.MethodPatch, "/v1/chats/{id}/queue/{qid}", s.handleChatQueueEdit)
 	rt.handle(http.MethodDelete, "/v1/chats/{id}/queue/{qid}", s.handleChatQueueDelete)
@@ -462,10 +466,12 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/chats/{id}/archive", s.handleChatArchive)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/handoff", s.handleChatHandoff)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/close", s.handleChatClose)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/viewed", s.handleChatViewed)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/turns/{seq}/transcript", s.handleChatTurnTranscript)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/search", s.handleChatTurnSearch)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/skills", s.handleChatSkills)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/files", s.handleChatFiles)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/expand", s.handleChatExpand)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/export", s.handleChatExport)
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)

@@ -182,7 +182,7 @@ func (t *taskView) applyOutcomeDiff(msg outcomeDiffMsg) {
 		t.outcome.files = append(t.outcome.files, files...)
 	}
 	// The same diff the Diff tab would fetch: its size is the tab marker's
-	// before the tab has been opened (task 164.2).
+	// before the tab has been opened (task 168.2).
 	if msg.err == nil && msg.taskID == t.detail.taskID {
 		var added, removed int
 		for _, f := range t.outcome.files {

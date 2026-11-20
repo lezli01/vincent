@@ -81,7 +81,7 @@ type taskView struct {
 	detail *detail
 	tab    taskViewTab
 	// linkedSel is the Overview's Linked-card row under the cursor, 1-based,
-	// and 0 while ↑/↓ have not moved onto the card (task 164.7): then enter
+	// and 0 while ↑/↓ have not moved onto the card (task 168.7): then enter
 	// is the frame's link, and on a row it opens that row.
 	linkedSel int
 	popup     bool
@@ -560,7 +560,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.switchTab(-1)
 	case openIssueKey:
 		// The pull request tab keeps `i` for its comment, as it had it first
-		// (task 164 decision 2's one exception).
+		// (task 168 decision 2's one exception).
 		if t.tab != taskTabPull {
 			if cmd := t.openIssueCmd(); cmd != nil {
 				return cmd
@@ -606,7 +606,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		if t.tab == taskTabOverview && !t.detail.actions.capturing() {
 			// A Linked row under the cursor opens; otherwise the frame's one
-			// link (task 164.7): the output it is about, or the diff of a
+			// link (task 168.7): the output it is about, or the diff of a
 			// finished task.
 			if cmd, ok := t.openLinked(); ok {
 				return cmd
@@ -616,7 +616,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			}
 		}
 		if t.tab == taskTabOutput {
-			// Unfold or fold the newest tool call in view (task 164.4): its
+			// Unfold or fold the newest tool call in view (task 168.4): its
 			// output, at verbose, under its one-line form.
 			pane := t.outputPane()
 			pane.toggleCall(pane.newestCallInView())
@@ -898,7 +898,7 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	}
 	switch t.tab {
 	case taskTabOutput:
-		// A click on a tool call's line unfolds or folds it (task 164.4).
+		// A click on a tool call's line unfolds or folds it (task 168.4).
 		head := 0
 		if len(t.lanes) > 0 {
 			head = 1
@@ -1070,7 +1070,7 @@ var taskTabShort = [taskTabCount]string{
 
 // renderTabs draws the strip at the widest label set that fits: names, markers
 // and the hint; names and markers; then short names. The strip carries no
-// digits (task 164 decision 3): tab and ⇧tab are how a reader moves.
+// digits (task 168 decision 3): tab and ⇧tab are how a reader moves.
 func (t *taskView) renderTabs() string {
 	tabs := t.tabs()
 	width := t.width
@@ -1243,7 +1243,7 @@ func (t *taskView) renderOutput(width, height int) string {
 		lane.tab = tabOutput
 		pane = lane
 	}
-	// The feed names the open attempt in its own divider (task 164.4); the
+	// The feed names the open attempt in its own divider (task 168.4); the
 	// line under it says what is happening and how to move.
 	foot := pane.feedStatus(width)
 	room := height - len(head)
@@ -2508,7 +2508,7 @@ func treeCost(own, children *float64) *float64 {
 func (t *taskView) notesClipboard() {}
 
 // syncDiffScope keeps a Diff scoped to one attempt on the attempt selected
-// (task 164.6): moving the selection — the rail, ←/→ — while the Diff is on
+// (task 168.6): moving the selection — the rail, ←/→ — while the Diff is on
 // one attempt moves it to the new one.
 func (t *taskView) syncDiffScope() tea.Cmd {
 	p := &t.detail.diff
@@ -2531,7 +2531,7 @@ func attemptScopeLabel(r apiclient.StepRun) string {
 	return fmt.Sprintf("%s · attempt %d", feedLabel(r), r.Attempt)
 }
 
-// toggleDiffScope is `d` on the Diff tab (task 164.6): it switches between
+// toggleDiffScope is `d` on the Diff tab (task 168.6): it switches between
 // the whole task's diff and what the attempt selected on the rail changed.
 func (t *taskView) toggleDiffScope() tea.Cmd {
 	p := &t.detail.diff

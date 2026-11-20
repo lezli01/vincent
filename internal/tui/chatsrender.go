@@ -207,6 +207,17 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	if c.LinkedTaskID != nil {
 		title = styleDim.Render(fmt.Sprintf("task #%d · ", *c.LinkedTaskID)) + title
 	}
+	// An unsent draft (task 164) is marked ahead of the title, where a
+	// narrow pane's truncation cannot cut it off.
+	if c.HasDraft {
+		title = styleDim.Render("✎ draft · ") + title
+	}
+	// The unread mark leads the title (task 165): a prefix for the reason the
+	// task and issue are one — most chats are read, and a column of blanks
+	// would tax every row.
+	if mark := unreadMark(*c); mark != "" {
+		title = mark + " " + title
+	}
 	if room := width - chatRowCursorWidth - ansi.StringWidth(fixed); room > 0 {
 		title = ansi.Truncate(title, room, "…")
 	}

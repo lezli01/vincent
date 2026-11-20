@@ -12,8 +12,8 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// The Overview's cards (task 164.7). The right-hand Details pane is gone
-// (task 164 decision 1); what it said — where the task's work lives and what
+// The Overview's cards (task 168.7). The right-hand Details pane is gone
+// (task 168 decision 1); what it said — where the task's work lives and what
 // it has cost — is two cards side by side under the frame.
 
 // progressBar is one segment per workflow step, coloured by how far the task
@@ -182,7 +182,7 @@ func (t *taskView) openLinked() (tea.Cmd, bool) {
 	return rows[t.linkedSel-1].open(), true
 }
 
-// nowAndTaskCards are the progress frame's two cards (task 164.7): what the
+// nowAndTaskCards are the progress frame's two cards (task 168.7): what the
 // task is doing now, and what it is for.
 func (t *taskView) nowAndTaskCards(width int) []string {
 	d := t.detail

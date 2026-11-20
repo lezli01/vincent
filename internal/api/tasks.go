@@ -435,7 +435,7 @@ type stepRunResponse struct {
 	Shell          *string `json:"shell"`
 	WorkDir        *string `json:"work_dir"`
 	// HeadStart and HeadEnd are the worktree's HEAD when the attempt started
-	// and ended (task 164.5): the commit range `diff?step_run=` diffs. Null
+	// and ended (task 168.5): the commit range `diff?step_run=` diffs. Null
 	// is not recorded — an attempt from before the record, a step that runs
 	// nothing in the worktree, an attempt still running (head_end), and one
 	// §12.4 recovery finalized (head_end), which did not see it end.
@@ -1987,7 +1987,7 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 // body is the text/plain diff it has always been, for a fan-out parent as much
 // as for anything else.
 //
-// `?step_run=<id>` narrows it to one step run's commit range (task 164.6):
+// `?step_run=<id>` narrows it to one step run's commit range (task 168.6):
 // diffStepRun.
 func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 	// The request's shape is checked before the task's state, so a typo in the
@@ -2095,7 +2095,7 @@ func (s *Server) diffFrom(ctx context.Context, dir, mergeBase, tip string) (stri
 }
 
 // CodeStepRangeUnrecorded is `diff?step_run=` refused because the run has no
-// commit range to diff (task 164.6, decision 6): an attempt from before the
+// commit range to diff (task 168.6, decision 6): an attempt from before the
 // range was recorded, a step type that records none, a task with no worktree
 // when it ran, or an attempt §12.4 recovery finalized, which never saw its
 // end. It is said rather than guessed: any substitute range would attribute
@@ -2119,7 +2119,7 @@ func diffStepRunParam(w http.ResponseWriter, r *http.Request) (int64, bool) {
 }
 
 // diffStepRun serves `diff?step_run=`: what one step run changed, in the
-// whole-task diff's own shape so a client renders it unchanged (task 164.6).
+// whole-task diff's own shape so a client renders it unchanged (task 168.6).
 //
 //   - A finished run diffs head_start..head_end — the commits the attempt
 //     made, and nothing it left uncommitted, which no sha can name.

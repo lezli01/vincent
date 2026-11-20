@@ -99,6 +99,8 @@ neither a subcommand nor on this list:
 | The daemon summary on the board header and daemon view | `vincent daemon status`, `vincent agents`, `vincent doctor` and `vincent config get` between them. The daemon-wide count of slots in use right now, with its lanes and on-input breakdown, is shown only in the TUI; `vincent project ls --json` carries each project's `slots_used` |
 | Listing a project's local branches in the new-task and new-chat branch pickers | No subcommand: `vincent task add --branch <name> --existing-branch` and `vincent chat start --branch <name> --existing-branch` take the name, and a shell standing in the repository already has `git branch` |
 | The `@` file picker in the chat composer, which completes a file of the directory the chat's next turn would start in as you type | `vincent chat files` lists the same files and `--mention` prints the same text a picked row inserts. Nothing completes a draft for you, and the message is sent as typed by `vincent chat send` either way |
+| A chat's stored draft and stash, `↑` recall and the `alt+h` prompt history in the chat composer | No subcommand: there is no composer to keep a draft for. `GET`/`PUT /v1/chats/{id}/draft` and `GET /v1/chats/prompts` are open to `curl` |
+| Clearing a chat's unread `●` mark, which opening the chat does | No subcommand: reading a chat from a shell is not looking at it on a screen. `curl -X POST …/v1/chats/{id}/viewed` records a view |
 | Live updates as they happen | Subcommands poll: `vincent task transcript -f`, `vincent chat transcript -f`, and `vincent chat send` waits for the answer |
 
 ## `vincent version`
@@ -2532,8 +2534,9 @@ or a workspace that has gone missing under the daemon. Exit `2` with no daemon.
 vincent chat export CHAT_ID [--format md|html|json] [--with-diff] [-o | --output FILE] [--json]
 ```
 
-The whole chat as one document: its metadata, then every turn's prompt, tool
-calls (one line each, never their output), answer and usage. `--format md` is
+The whole chat as one document: its metadata, then every turn's prompt, the
+block its mentions expanded into (when any did), tool calls (one line each,
+never their output), answer and usage. `--format md` is
 the default; `html` is a single self-contained page with no scripts and nothing
 loaded from elsewhere; `json` is the document model with a top-level
 `"version"`. The daemon renders it — this command, the TUI and

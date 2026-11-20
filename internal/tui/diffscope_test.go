@@ -12,7 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// The pane takes only the fetch for the scope it is on (task 164.6): a whole
+// The pane takes only the fetch for the scope it is on (task 168.6): a whole
 // task's diff landing after `d` moved it to one attempt is dropped.
 func TestDiffScopeDropsAFetchForTheScopeItLeft(t *testing.T) {
 	p := newDiffPane()

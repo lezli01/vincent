@@ -86,10 +86,28 @@ type chatBody struct {
 	// CanSteer says whether a message can be written into the running turn
 	// (task 156 decision 4), and SteerReason why not, so a client needs no
 	// copy of the capability table. No adapter can yet.
-	CanSteer    bool      `json:"can_steer"`
-	SteerReason string    `json:"steer_reason,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	CanSteer bool `json:"can_steer"`
+	// HasDraft says the chat holds an unsent draft (task 164), which is the
+	// board's `✎ draft` mark. Draft and Stash are the text itself, carried
+	// only by GET /v1/chats/{id}; a list never ships them.
+	HasDraft bool   `json:"has_draft"`
+	Draft    string `json:"draft,omitempty"`
+	Stash    string `json:"stash,omitempty"`
+	// DraftUpdatedAt is when the draft or stash was last written, carried
+	// beside them by GET /v1/chats/{id} only: it orders a read against a
+	// client's own writes, so a read taken before a save cannot pass for a
+	// newer draft (review F1).
+	DraftUpdatedAt *time.Time `json:"draft_updated_at,omitempty"`
+	SteerReason    string     `json:"steer_reason,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	// LastViewedAt is when a person last looked at the chat (task 165); null,
+	// not omitted, when nobody ever has. One value per chat, shared by every
+	// client: the installation has no per-user identity.
+	LastViewedAt *time.Time `json:"last_viewed_at"`
+	// Unread is the store's derivation (task 165): the latest terminal turn
+	// ended after LastViewedAt. Always present, so false is an answer.
+	Unread bool `json:"unread"`
 	// Warnings are non-fatal notes on a create — an issue chat opened on a
 	// closed issue (task 140 decision 9). Never set on a read.
 	Warnings []string `json:"warnings,omitempty"`
@@ -128,6 +146,10 @@ type chatTurnBody struct {
 	Model          string `json:"model,omitempty"`
 	Effort         string `json:"effort,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// MentionContext is what the turn's `#issue-N`, `#task-N`, `#pr-N` and
+	// `@path#Lx-y` mentions expanded into when it started (task 166
+	// decision 2), absent when nothing did. Prompt stays the typed text.
+	MentionContext string `json:"mention_context,omitempty"`
 }
 
 func renderChat(c *store.Chat) chatBody {
@@ -138,8 +160,8 @@ func renderChat(c *store.Chat) chatBody {
 		WorktreePath: c.WorktreePath, SessionID: c.SessionID, PendingInput: c.PendingInput,
 		HandoffTaskID: c.HandoffTaskID, LinkedTaskID: c.LinkedTaskID, IssueID: c.IssueID, EndSHA: c.EndSHA,
 		QueuedCount: c.QueuedCount, QueuePaused: c.QueuePaused, QueuePauseReason: c.QueuePauseReason,
-		SteerReason: chatrun.SteerUnavailable(c.Agent),
-		CreatedAt:   c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		SteerReason: chatrun.SteerUnavailable(c.Agent), HasDraft: c.Draft != "",
+		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, LastViewedAt: c.LastViewedAt, Unread: c.Unread,
 	}
 }
 
@@ -153,6 +175,7 @@ func renderChatTurn(t *store.ChatTurn) chatTurnBody {
 		CacheReadTokens: t.CacheReadTokens, CacheCreationTokens: t.CacheCreationTokens,
 		ContextTokens: t.ContextTokens, ContextWindow: t.ContextWindow,
 		Model: t.Model, Effort: t.Effort, PermissionMode: t.PermissionMode,
+		MentionContext: t.MentionContext,
 	}
 }
 
@@ -485,6 +508,7 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 		body = append(body, renderChatTurn(&turns[i]))
 	}
 	rendered := renderChat(chat)
+	rendered.Draft, rendered.Stash, rendered.DraftUpdatedAt = chat.Draft, chat.Stash, chat.DraftUpdatedAt
 	n := len(turns)
 	rendered.TurnCount = &n
 	writeJSON(w, http.StatusOK, map[string]any{"chat": rendered, "turns": body})

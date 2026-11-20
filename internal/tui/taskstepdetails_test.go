@@ -91,7 +91,7 @@ func stepDetailsFixture(t *testing.T) *taskView {
 	return v
 }
 
-// Step details keeps a tab after Diff (task 164 decision 14), with or
+// Step details keeps a tab after Diff (task 168 decision 14), with or
 // without a pull request, and enter on Output unfolds a tool call instead.
 func TestStepDetailsIsOnTheStrip(t *testing.T) {
 	for _, linked := range []bool{false, true} {

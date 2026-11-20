@@ -196,7 +196,7 @@ func (m *Manager) readRef(ctx context.Context, repo, ref string) (string, error)
 }
 
 // Head is the commit checked out in dir — `git rev-parse --verify HEAD`. The
-// engine journals it at both ends of a step run (task 164.5) so a reader can
+// engine journals it at both ends of a step run (task 168.5) so a reader can
 // diff exactly what one attempt committed. An unborn branch and a dir that is
 // not a git checkout are errors, not an empty sha.
 func (m *Manager) Head(ctx context.Context, dir string) (string, error) {

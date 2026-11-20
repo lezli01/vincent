@@ -8,7 +8,7 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// TestStepRunRecordsItsCommitRange is task 164.5's engine leg: each attempt
+// TestStepRunRecordsItsCommitRange is task 168.5's engine leg: each attempt
 // that runs in the worktree journals the HEAD it started at and the HEAD it
 // ended at, so a step that commits has a range of its own and a step that
 // does not has an empty one. The two steps chain: the second starts where

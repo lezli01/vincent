@@ -81,7 +81,7 @@ func TestBuildAccepts(t *testing.T) {
 		// f3 rather than f2: f2 is the chat workspace's fixed alias for the
 		// skill list (task 124.13), and one key means one thing (§15).
 		{"alt and shift on a letter", map[string]string{"refresh": "alt+shift+e"}, map[Op]string{Refresh: "alt+shift+e"}},
-		{"text-field hatch on a function key", map[string]string{"palette_alt": "f3", "help_alt": "alt+h"}, map[Op]string{PaletteAlt: "f3", HelpAlt: "alt+h"}},
+		{"text-field hatch on a function key", map[string]string{"palette_alt": "f3", "help_alt": "alt+?"}, map[Op]string{PaletteAlt: "f3", HelpAlt: "alt+?"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -274,7 +274,7 @@ func TestRetiredIDIsDroppedNotAliased(t *testing.T) {
 	}
 }
 
-// TestOverviewIssueKeyYieldsToAUserBinding is the upgrade task 164 is: `i`
+// TestOverviewIssueKeyYieldsToAUserBinding is the upgrade task 168 is: `i`
 // became a fixed key of the task workspace's tabs, and a tui.keys that had
 // already bound it still loads (task 128 decision 3). The binding wins, the
 // fixed meaning is shadowed on the surfaces that record it, and a warning
@@ -384,5 +384,60 @@ func TestUpgradeYieldsProject(t *testing.T) {
 	moved, err := Build(map[string]string{"project": "f17"})
 	if err != nil || moved.Key(Project) != "f17" {
 		t.Errorf("rebinding project: %q, %v", moved.Key(Project), err)
+	}
+}
+
+// TestChatSwitchOps is task 165's chat switch under the clauses: eleven
+// operations on the chats board and the chat, every one a Typing hatch on an
+// alt key, so the composer never types them and ctrl+p stays the palette.
+func TestChatSwitchOps(t *testing.T) {
+	want := map[Op]string{NextChat: "alt+n", PrevChat: "alt+shift+n"}
+	for i, op := range ChatJumps {
+		want[op] = "alt+" + string(rune('1'+i))
+	}
+	if len(ChatJumps) != 9 {
+		t.Fatalf("ChatJumps has %d entries, want 9", len(ChatJumps))
+	}
+	for op, key := range want {
+		info, ok := Lookup(op)
+		if !ok {
+			t.Errorf("%s is not in the catalog", op)
+			continue
+		}
+		if info.Default != key || !info.Typing {
+			t.Errorf("%s: default %q typing %v, want %q and a Typing hatch", op, info.Default, info.Typing, key)
+		}
+		on := map[Surface]bool{}
+		for _, s := range info.Surfaces {
+			on[s] = true
+		}
+		if !on["chat"] || !on["chats"] || len(on) != 2 {
+			t.Errorf("%s: surfaces %v, want the chat and the chats board", op, info.Surfaces)
+		}
+	}
+	if Default().Key(PaletteAlt) != "ctrl+p" {
+		t.Error("ctrl+p is no longer the palette")
+	}
+	// The brackets are the chats board's own aliases, never an op's key.
+	var brackets int
+	for _, f := range FixedKeys() {
+		if f.Surface == "chats" && (f.Key == "]" || f.Key == "[") {
+			brackets++
+		}
+	}
+	if brackets != 2 {
+		t.Errorf("the chats board records %d of ]/[, want both", brackets)
+	}
+	// A printable key would be typed into the composer: refused.
+	if _, err := Build(map[string]string{"next_chat": "]"}); err == nil {
+		t.Error("next_chat accepted ], a key the composer types")
+	}
+	// Rebindable onto another hatch key.
+	km, err := Build(map[string]string{"next_chat": "ctrl+right", "chat_1": "f17"})
+	if err != nil {
+		t.Fatalf("rebinding the chat switch: %v", err)
+	}
+	if km.Key(NextChat) != "ctrl+right" || km.Key(Chat1) != "f17" {
+		t.Errorf("rebound next_chat=%q chat_1=%q", km.Key(NextChat), km.Key(Chat1))
 	}
 }

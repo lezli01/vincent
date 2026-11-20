@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,9 +27,6 @@ const (
 	// nothing — the board's data comes from events (§13.3, T3.2 done-when:
 	// live updates without polling).
 	elapsedTick = time.Second
-	// bellInterval is the minimum gap between two terminal bells. Several
-	// tasks entering awaiting_input at once is one interruption, not five.
-	bellInterval = time.Second
 )
 
 // Board messages.
@@ -261,15 +257,18 @@ type board struct {
 	// issued for a project the board has since left, is dropped.
 	stamps loadStamps
 
-	// bell rings the terminal. Injected so tests can count rings; the
-	// default writes BEL straight to stdout, because tea.Printf is
-	// unmanaged scrollback output and a no-op under altscreen.
-	bell func()
-	// lastBellEvent is the highest event id that has rung. Event ids are
-	// monotonic, so this alone makes a Last-Event-ID replay silent while a
-	// genuinely missed transition still rings.
-	lastBellEvent int64
-	lastBellAt    time.Time
+	// chats is every project's live chat listing (task 165), held beside
+	// the global task listing for the one reason that listing is global:
+	// a chat waiting on a human is part of the attention count, the
+	// here/elsewhere tally and `!` in whichever project it is. It never
+	// becomes a row — chats are not on the task board (spec decision row
+	// 29). Only the live board loads it. chatsSeq stamps each fetch so an
+	// answer older than the one applied is dropped, and chatsPending is the
+	// debounce, the way refreshPending is the task listing's.
+	chats        []apiclient.Chat
+	chatsSeq     int
+	chatsApplied int
+	chatsPending bool
 
 	width, height int
 
@@ -298,7 +297,6 @@ func newBoard() *board {
 	b := &board{
 		now:         time.Now,
 		filter:      fi,
-		bell:        ringBell,
 		actions:     &actionBar{},
 		tbl:         table.New(table.WithFocused(true)),
 		group:       defaultGrouping(),
@@ -346,7 +344,7 @@ func (b *board) reloadIfFailed() tea.Cmd {
 
 // reloadNow repeats the load unconditionally (failedReloader), for the
 // reconnect that found a restored event history.
-func (b *board) reloadNow() tea.Cmd { return b.loadCmd() }
+func (b *board) reloadNow() tea.Cmd { return tea.Batch(b.loadCmd(), b.chatsCmd()) }
 
 // stampProject is the project a load is pinned to (loadstamp.go). The live
 // listing is the same whichever project is selected, so it is pinned to none
@@ -375,12 +373,6 @@ func tableSelectedStyle() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Background(lipgloss.Color("237")).
 		Bold(true)
-}
-
-func ringBell() {
-	// Errors are deliberately ignored: a terminal that will not take a BEL
-	// is not a reason to disturb the render loop.
-	_, _ = os.Stdout.WriteString("\a")
 }
 
 func (b *board) title() string {
@@ -418,7 +410,7 @@ func (b *board) setDataDir(dir string) {
 // load. Called again on reconnect, which is why the tick is guarded.
 func (b *board) setClient(c *apiclient.Client) tea.Cmd {
 	b.client = c
-	cmds := []tea.Cmd{b.loadCmd(), b.infoCmd(), b.configCmd()}
+	cmds := []tea.Cmd{b.loadCmd(), b.infoCmd(), b.configCmd(), b.chatsCmd()}
 	if !b.ticking {
 		b.ticking = true
 		cmds = append(cmds, tickCmd(b.archived))
@@ -604,6 +596,12 @@ func (b *board) route(msg tea.Msg) (panel, tea.Cmd) {
 			b.lanes.apply(msg)
 		}
 		return b, nil
+	case boardChatsMsg:
+		b.applyChats(msg)
+		return b, nil
+	case boardChatsRefreshMsg:
+		b.chatsPending = false
+		return b, b.chatsCmd()
 	case boardInfoMsg:
 		if msg.err == nil {
 			b.info, b.infoOK = msg.info, true
@@ -709,6 +707,9 @@ func (b *board) addressed(msg tea.Msg) bool {
 		return m.archived == b.archived
 	case boardLanesMsg:
 		return m.archived == b.archived
+	case boardChatsMsg, boardChatsRefreshMsg:
+		// The chat listing is the live board's alone (task 165).
+		return !b.archived
 	case deleteResultMsg:
 		// A chat sweep's outcome is the archived chats board's (#790): taken
 		// here it reported on the wrong board and dropped task marks whose
@@ -779,25 +780,23 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 }
 
 // updateNote reacts to the event stream. Every task event schedules a
-// refetch; entering awaiting_input additionally rings the bell.
+// refetch, and every chat event that can move a chat into or out of
+// awaiting_input schedules the chat listing's (task 165). The bell is the
+// root's (bell.go), shared with chats.
 func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
 	if !ok {
 		return nil
 	}
 	var cmds []tea.Cmd
-	if b.ringsFor(ev.Event) {
-		bell := b.bell
-		cmds = append(cmds, func() tea.Msg {
-			bell()
-			return nil
-		})
+	if !b.archived && refetchesChats(ev.Event.Type) {
+		cmds = append(cmds, b.scheduleChatsRefresh())
 	}
 	// A collapsed group opens by itself the moment a task inside it enters
 	// awaiting_input (task 054 decision 3). This is the safeguard that makes
 	// 009 decision 4's named failure — a fold hiding a task waiting on a
 	// human — unreachable rather than merely visible, and it hangs off the
-	// same event the bell reads.
+	// same event the root's bell reads.
 	if id, ok := enteredAwaitingInput(ev.Event); ok && b.expandFor(id) {
 		cmds = append(cmds, b.saveFolds())
 	}
@@ -846,44 +845,14 @@ func redrawsIssueHeader(t string) bool {
 // scope — so the only honest reaction is to refetch the whole registry.
 const eventWorkflowRegistryChanged = "workflow.registry_changed"
 
-// ringsFor decides whether one event should ring the terminal bell.
-//
-// Only a transition *into* awaiting_input rings, and only once per event id:
-// ids are monotonic, so a Last-Event-ID replay after a reconnect is silent,
-// while a transition that genuinely happened while disconnected still rings
-// — being told about work that started waiting while you were away is the
-// point. The rate limit collapses a burst into one interruption.
-func (b *board) ringsFor(ev apiclient.Event) bool {
-	if ev.Type != "task.state_changed" || ev.ID <= b.lastBellEvent {
-		return false
-	}
-	var payload struct {
-		To string `json:"to"`
-	}
-	if err := json.Unmarshal(ev.Payload, &payload); err != nil {
-		return false
-	}
-	if payload.To != stateAwaitingInput {
-		return false
-	}
-	// The id advances even when the rate limit swallows the ring, so a
-	// later replay of this event cannot ring either.
-	b.lastBellEvent = ev.ID
-	now := b.now()
-	if now.Sub(b.lastBellAt) < bellInterval {
-		return false
-	}
-	b.lastBellAt = now
-	return true
-}
-
 // enteredAwaitingInput reads a state-change event for a transition *into*
 // awaiting_input and names the task it happened to.
 //
-// It is a second read of the event ringsFor already looks at, because the two
-// answers differ: the bell rings once per event id and is rate-limited into
-// one interruption, while a fold hiding a task that just started waiting has
-// to open every time.
+// It is a second read of the event the root's bell (bell.go) looks at,
+// because the two answers differ: the bell rings once per event id, only
+// while the terminal is unfocused, and is rate-limited into one
+// interruption, while a fold hiding a task that just started waiting has to
+// open every time.
 func enteredAwaitingInput(ev apiclient.Event) (int64, bool) {
 	if ev.Type != "task.state_changed" || ev.TaskID == nil {
 		return 0, false
@@ -2009,26 +1978,31 @@ func (b *board) selectedProject() (apiclient.Project, bool) {
 	return apiclient.Project{}, false
 }
 
-// attentionTally splits the live listing's attention count at the selected
+// attentionTally splits the live listings' attention count at the selected
 // project (task 132.14): here feeds the board header, elsewhere the app
 // header's badge, and their sum the footer's `!` hint, which counts
 // everything `!` will visit (decision 53).
 //
-// It counts root tasks in a taskstate.NeedsHuman state only — never lanes,
-// which the listing does not carry, nor `awaiting_children` parents or
-// chats (spec decision row 29). That deliberately differs from the daemon's
+// It counts root tasks in a taskstate.NeedsHuman state — never lanes, which
+// the listing does not carry, nor `awaiting_children` parents — and, since
+// task 165, chats in `awaiting_input`, from every project the way tasks are
+// (decision row 37). A chat whose turn merely finished unread asks nothing
+// and is not counted. That deliberately differs from the daemon's
 // `stats.attention`, which counts lanes (decision 21): this is the count of
 // what `!` can land on.
 func (b *board) attentionTally() attentionTally {
-	here := countAttention(b.projectTasks())
-	return attentionTally{here: here, elsewhere: countAttention(b.tasks) - here}
+	waiting := waitingChats(b.chats)
+	here := countAttention(b.projectTasks()) + len(chatsInProject(waiting, b.project.id))
+	return attentionTally{here: here, elsewhere: countAttention(b.tasks) + len(waiting) - here}
 }
 
-// attentionTargets is one project's attention tasks in board order — the
-// order the board would draw them in under the current grouping — for `!`
-// crossing into it (task 132 decision 52). The board's own filters are the
-// selected project's and do not apply here.
-func (b *board) attentionTargets(project int64) []apiclient.Task {
+// attentionTargets is one project's attention tasks and waiting chats for
+// `!` crossing into it (task 132 decision 52), oldest wait first (task 165).
+// The tasks are taken in board order — the order the board would draw them
+// in under the current grouping — before the merge, which is what breaks a
+// tie. The board's own filters are the selected project's and do not apply
+// here.
+func (b *board) attentionTargets(project int64) []attentionTarget {
 	// The whole project is grouped, not its attention tasks alone: the
 	// order of the groups is the order of the tasks that open them.
 	tasks := tasksInProject(b.tasks, project)
@@ -2039,7 +2013,21 @@ func (b *board) attentionTargets(project int64) []apiclient.Task {
 			out = append(out, r.task)
 		}
 	}
-	return out
+	return mergeTargets(out, chatsInProject(waitingChats(b.chats), project))
+}
+
+// selectionTargets is the selected project's targets for `!` (task 132
+// decision 52, task 165): the attention tasks the board shows through
+// visible() — so a committed filter still applies — and the project's
+// waiting chats, oldest wait first.
+func (b *board) selectionTargets() []attentionTarget {
+	var tasks []apiclient.Task
+	for _, t := range b.visible() {
+		if needsAttention(t.State) {
+			tasks = append(tasks, t)
+		}
+	}
+	return mergeTargets(tasks, chatsInProject(waitingChats(b.chats), b.project.id))
 }
 
 // agentsSummary names only the adapters that need a look (task 129.15): the

@@ -241,6 +241,9 @@ func closeChatTx(ctx context.Context, tx *sql.Tx, c *Chat) (*Chat, *Event, error
 	if err := deleteChatQueueTx(ctx, tx, c.ID); err != nil {
 		return nil, nil, err
 	}
+	if err := clearChatDraftTx(ctx, tx, c); err != nil {
+		return nil, nil, err
+	}
 	if err := setQueuePauseTx(ctx, tx, c, false, ""); err != nil {
 		return nil, nil, err
 	}

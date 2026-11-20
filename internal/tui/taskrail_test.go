@@ -33,7 +33,7 @@ func railText(d *detail, width int) []string {
 }
 
 // One row per step on a connecting line, the whole way to done, and nothing
-// after the last step (task 164.1).
+// after the last step (task 168.1).
 func TestRailIsOneRowPerStepToTheEnd(t *testing.T) {
 	d := railFixture(t,
 		[]apiclient.StepRun{
@@ -74,7 +74,7 @@ func TestRailOpensASelectedRetriedStepsAttempts(t *testing.T) {
 }
 
 // A condition step says what it tested, and a step a false guard skipped
-// says so (task 164.1).
+// says so (task 168.1).
 func TestRailSaysWhatAGuardTested(t *testing.T) {
 	skip := "condition"
 	d := railFixture(t,

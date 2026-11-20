@@ -50,7 +50,7 @@ func TestWorkspaceFooterHasNoDuplicateOrSelfHints(t *testing.T) {
 // TestWorkspaceHelpListsEveryWorkspaceKey is issue #595's second acceptance
 // criterion: `?` on every workspace tab lists `tab`, `d`, `l` and `U` —
 // every one of which taskView.Update answers from any tab — and, since task
-// 164 took the digits away, `i` for the linked issue on every tab but Pull
+// 168 took the digits away, `i` for the linked issue on every tab but Pull
 // request, whose `i` is its comment.
 func TestWorkspaceHelpListsEveryWorkspaceKey(t *testing.T) {
 	for _, w := range workspaceTabContexts {

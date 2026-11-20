@@ -124,7 +124,7 @@ var levelGolden = map[outputLevel]string{
 }
 
 // renderAt is levelFixture through the record renderer the task pane shares,
-// without the one-line tool calls the pane draws since task 164.4 — this is
+// without the one-line tool calls the pane draws since task 168.4 — this is
 // the per-record rules' net, and the check lines have their own.
 func renderAt(t *testing.T, level outputLevel) string {
 	t.Helper()

@@ -41,7 +41,7 @@ func TestSelectTaskLandsOnOverview(t *testing.T) {
 	}
 }
 
-// The strip has no digits (task 164 decision 3): a digit moves nowhere, and
+// The strip has no digits (task 168 decision 3): a digit moves nowhere, and
 // `i` opens the linked issue from every tab but Pull request's.
 func TestDigitsNoLongerSwitchTabs(t *testing.T) {
 	v := pullTabFixture(t)
@@ -199,7 +199,7 @@ func TestTabStripFitsAndReadsWithoutColour(t *testing.T) {
 }
 
 // A running task's Overview pairs what it is doing now with what it is for,
-// and its Linked rows open with ↑/↓ and enter (task 164.7).
+// and its Linked rows open with ↑/↓ and enter (task 168.7).
 func TestOverviewNowAndLinkedCards(t *testing.T) {
 	v := tabbedTaskFixture(t, taskTabOverview)
 	v.detail.task.State = stateRunning

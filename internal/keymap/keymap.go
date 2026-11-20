@@ -93,7 +93,43 @@ const (
 	// the daemon, read-only in $EDITOR (task 163 decisions 5, 7). alt+v for
 	// "view": a bare v would be typed into the composer.
 	ChatMarkdown Op = "chat_markdown"
+	// Stash sets the composer's draft aside in the chat's one stash slot, or
+	// pops the stash back into an empty composer (task 164 decision 2).
+	// alt+s, not ctrl+s: that is Steer, which task 156 decision 5 keeps.
+	Stash Op = "stash"
+	// PromptHistory opens a picker over every prompt the project's chats
+	// have sent (task 164 decision 3). alt+h for "history": ctrl+r is the
+	// chat's fixed verbosity cycle.
+	PromptHistory Op = "prompt_history"
+	// NextChat and PrevChat walk the selected project's live chats in the
+	// order the chats board draws them, wrapping (task 165). alt rather than
+	// a letter: they work from the chat composer, which types every letter.
+	// macOS terminals send alt+ only with Option set to act as Meta; the
+	// keys stay rebindable through tui.keys for a terminal that cannot.
+	// PrevChat is alt+shift+n, shift reversing alt+n: alt+p was already the
+	// chat's model picker (task 162 decision 9) when the two met on the
+	// merge train.
+	NextChat Op = "next_chat"
+	PrevChat Op = "prev_chat"
 )
+
+// ChatN are the jumps to the Nth live chat of the selected project, in the
+// chats board's order (task 165): alt+1 … alt+9 by default.
+const (
+	Chat1 Op = "chat_1"
+	Chat2 Op = "chat_2"
+	Chat3 Op = "chat_3"
+	Chat4 Op = "chat_4"
+	Chat5 Op = "chat_5"
+	Chat6 Op = "chat_6"
+	Chat7 Op = "chat_7"
+	Chat8 Op = "chat_8"
+	Chat9 Op = "chat_9"
+)
+
+// ChatJumps is chat_1 … chat_9 in order: ChatJumps[i] opens the chat at
+// position i+1.
+var ChatJumps = []Op{Chat1, Chat2, Chat3, Chat4, Chat5, Chat6, Chat7, Chat8, Chat9}
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
 // id. Pause is one id for pause and resume, which have been one key since §15.
@@ -232,6 +268,12 @@ var catalog = []Info{
 	{Op: Compact, Default: "alt+k", Meaning: "compact the chat agent's context (asks first)", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}, Typing: true},
+	{Op: Stash, Default: "alt+s", Meaning: "stash the draft, or pop the stash into an empty composer; a new stash replaces the old one", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
+	{Op: PromptHistory, Default: "alt+h", Meaning: "pick an earlier prompt from any chat of the project to insert", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
 	{Op: ChatSearch, Default: "S", Meaning: "search every chat", Kind: KindTerm, Surfaces: []Surface{"chats"}},
 	{Op: ExportChat, Default: "alt+e", Meaning: "export the chat as Markdown, HTML or JSON", Kind: KindTerm, Surfaces: []Surface{
 		"chats", "archived chats", "chat",
@@ -250,6 +292,20 @@ var catalog = []Info{
 	{Op: ChatMarkdown, Default: "alt+v", Meaning: "open the whole conversation as Markdown in $EDITOR, read-only", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}, Typing: true},
+	// The chat switch (task 165). Typing: the open chat's composer has the
+	// keyboard, and these must work from it — including over a pending
+	// question's popup.
+	{Op: NextChat, Default: "alt+n", Meaning: "open the next chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: PrevChat, Default: "alt+shift+n", Meaning: "open the previous chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: Chat1, Default: "alt+1", Meaning: "open the project's 1st chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: Chat2, Default: "alt+2", Meaning: "open the project's 2nd chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: Chat3, Default: "alt+3", Meaning: "open the project's 3rd chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: Chat4, Default: "alt+4", Meaning: "open the project's 4th chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: Chat5, Default: "alt+5", Meaning: "open the project's 5th chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: Chat6, Default: "alt+6", Meaning: "open the project's 6th chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: Chat7, Default: "alt+7", Meaning: "open the project's 7th chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: Chat8, Default: "alt+8", Meaning: "open the project's 8th chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: Chat9, Default: "alt+9", Meaning: "open the project's 9th chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: Approve, Default: "a", Meaning: "approve the gate", Kind: KindAction, Surfaces: []Surface{Actions}},
@@ -271,7 +327,7 @@ var catalog = []Info{
 	{Op: PaletteAlt, Default: "ctrl+p", Meaning: "open the command palette from a text field", Kind: KindGlobal, Surfaces: []Surface{Global, "chat", "new chat"}, Typing: true},
 	{Op: Help, Default: "?", Meaning: "toggle the help", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: HelpAlt, Default: "f1", Meaning: "toggle the help from a text field", Kind: KindGlobal, Surfaces: []Surface{Global, "chat", "new chat"}, Typing: true},
-	{Op: NextAttention, Default: "!", Meaning: "jump to the next task needing a human", Kind: KindGlobal, Surfaces: []Surface{Global}},
+	{Op: NextAttention, Default: "!", Meaning: "jump to the next task or chat needing a human", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: Mouse, Default: "M", Meaning: "toggle the mouse", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: Quit, Default: "q", Meaning: "quit the TUI", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	// `new` is §15's one deliberate two-meaning key, and the meanings are one

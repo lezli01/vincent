@@ -36,7 +36,6 @@ func selectTestProject(b *board) *board {
 func testBoard() *board {
 	b := selectTestProject(newBoard())
 	b.now = func() time.Time { return testNow }
-	b.bell = func() {}
 	b.loaded = true
 	b.group, b.configGroup = nil, nil
 	return b
@@ -302,71 +301,6 @@ func stateEvent(id int64, to string) apiclient.EventNote {
 	return apiclient.EventNote{Event: apiclient.Event{
 		ID: id, Type: "task.state_changed", Payload: payload,
 	}}
-}
-
-// TestBellRingsOnAwaitingInput covers the three rules that make the bell
-// bearable: only awaiting_input rings, a replayed event id is silent, and a
-// burst collapses into one interruption.
-func TestBellRingsOnAwaitingInput(t *testing.T) {
-	b := testBoard()
-	rings := 0
-	b.bell = func() { rings++ }
-	now := testNow
-	b.now = func() time.Time { return now }
-
-	run := func(n apiclient.Note) {
-		if cmd := b.updateNote(n); cmd != nil {
-			if msg := cmd(); msg != nil {
-				// Batch: run the contained commands, which is where the bell
-				// call lives.
-				if batch, ok := msg.(tea.BatchMsg); ok {
-					for _, c := range batch {
-						if c != nil {
-							c()
-						}
-					}
-				}
-			}
-		}
-	}
-
-	run(stateEvent(1, stateRunning))
-	if rings != 0 {
-		t.Fatalf("rings = %d after a non-awaiting transition, want 0", rings)
-	}
-
-	run(stateEvent(2, stateAwaitingInput))
-	if rings != 1 {
-		t.Fatalf("rings = %d after awaiting_input, want 1", rings)
-	}
-
-	// A Last-Event-ID replay re-delivers the same event: ids are monotonic,
-	// so it must be silent.
-	run(stateEvent(2, stateAwaitingInput))
-	if rings != 1 {
-		t.Errorf("rings = %d after a replay, want 1 — a reconnect must not ring again", rings)
-	}
-
-	// A second, genuinely new event inside the rate-limit window is one
-	// interruption, not two.
-	run(stateEvent(3, stateAwaitingInput))
-	if rings != 1 {
-		t.Errorf("rings = %d inside the rate-limit window, want 1", rings)
-	}
-
-	// Past the window, a new event rings again.
-	now = testNow.Add(2 * bellInterval)
-	run(stateEvent(4, stateAwaitingInput))
-	if rings != 2 {
-		t.Errorf("rings = %d past the rate-limit window, want 2", rings)
-	}
-
-	// And the event swallowed by the rate limit still cannot ring on replay.
-	now = testNow.Add(4 * bellInterval)
-	run(stateEvent(3, stateAwaitingInput))
-	if rings != 2 {
-		t.Errorf("rings = %d replaying a rate-limited event, want 2", rings)
-	}
 }
 
 // TestRefreshFailureKeepsRows: a failed refresh is not a lost connection.

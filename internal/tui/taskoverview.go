@@ -199,7 +199,7 @@ func (t *taskView) updateOverviewKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		case "down", "j":
 			// ↑/↓ walk the Linked card's rows that open somewhere (task
-			// 164.7); the pane pages with pgup/pgdn.
+			// 168.7); the pane pages with pgup/pgdn.
 			t.moveLinked(1)
 			return nil
 		case "up", "k":
@@ -212,7 +212,7 @@ func (t *taskView) updateOverviewKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if !d.actions.capturing() {
 		// The Task Details document's two pull-request keys, which came to
-		// the Overview with the document (task 164 decision 3).
+		// the Overview with the document (task 168 decision 3).
 		switch msg.String() {
 		case opKey(keymap.Browser):
 			return t.openPullCmd()
@@ -293,7 +293,7 @@ func (t *taskView) overviewLines(width, height int) []string {
 	out := []string{"  " + renderDetailState(task.Task)}
 	// The issue the task was started from, as a fact rather than a section
 	// (task 130 decision 21.4): what it is for, at a glance. The wide
-	// layout's band and Linked card already name it (task 164).
+	// layout's band and Linked card already name it (task 168).
 	if iss := task.Issue; iss != nil && !t.wide() {
 		out = append(out, "  "+styleDim.Render("issue ")+
 			fmt.Sprintf("#%d %s", iss.ID, oneLine(iss.Title))+"  "+styleDim.Render(iss.State))
@@ -315,7 +315,7 @@ func (t *taskView) overviewLines(width, height int) []string {
 		if overviewFrameFor(task.State) == frameAttention {
 			out = append(out, renderTaskDetailFactList(width, t.attentionFacts())...)
 		} else {
-			// What it is doing now beside what it is for (task 164.7).
+			// What it is doing now beside what it is for (task 168.7).
 			out = append(out, t.nowAndTaskCards(width)...)
 		}
 		if t.overviewFrame() == frameAttention {
@@ -327,13 +327,13 @@ func (t *taskView) overviewLines(width, height int) []string {
 	}
 	out = append(out, t.handoffItemLines(width)...)
 	if links := t.overviewLinks(); len(links) > 0 {
-		// One link, on enter (task 164.7): the digits that used to key a
+		// One link, on enter (task 168.7): the digits that used to key a
 		// row of them are gone with the numbered strip.
 		out = append(out, "", "  "+styleKey.Render("enter")+" "+links[0].label)
 	}
 	// Under the frame: where the task's work lives and what it has cost,
 	// then the task's whole document — the Task Details tab's sections,
-	// which the Overview took over with the Details pane (task 164
+	// which the Overview took over with the Details pane (task 168
 	// decisions 1 and 3).
 	out = append(out, "")
 	out = append(out, t.overviewCards(width)...)
@@ -566,13 +566,13 @@ func (t *taskView) overviewActionLines(width int) []string {
 	return out
 }
 
-// openIssueKey opens the task's linked issue from its workspace (task 164
+// openIssueKey opens the task's linked issue from its workspace (task 168
 // decision 2). A fixed key rather than a vocabulary term: `i` already means
 // other things on other screens, and a term's key must mean one thing
 // everywhere (§15). The Pull request tab keeps its own `i`, its comment.
 const openIssueKey = "i"
 
-// openIssueCmd opens the task's linked issue (task 164 decision 2), or nil
+// openIssueCmd opens the task's linked issue (task 168 decision 2), or nil
 // when it has none. esc on the issue comes back to this task, on this tab.
 func (t *taskView) openIssueCmd() tea.Cmd {
 	iss := t.detail.task.Issue

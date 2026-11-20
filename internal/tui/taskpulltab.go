@@ -90,7 +90,7 @@ func (t *taskView) pullTabAvailable() bool {
 // strip is no longer fixed: `cycleTab` used to be modulo taskTabCount, which
 // lands on a tab that is not there the moment one of them is conditional.
 func (t *taskView) tabs() []taskViewTab {
-	// No digits, cycled with tab/⇧tab (task 164 decision 3, as amended by
+	// No digits, cycled with tab/⇧tab (task 168 decision 3, as amended by
 	// decision 14: Step details keeps a tab, since enter on Output unfolds a
 	// tool call). The narrow layout has no rail, so its steps keep a tab;
 	// the Task Details document is the Overview's lower half, and its

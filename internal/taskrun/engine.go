@@ -1354,7 +1354,7 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 	}
 
 	// Where the worktree's history stands as the attempt starts (task
-	// 164.5), carried by the insert itself so it is on the row before the
+	// 168.5), carried by the insert itself so it is on the row before the
 	// agent or command runs (crash-first): the start of the range
 	// `diff?step_run=` diffs (§13.2).
 	run.HeadStart = r.worktreeHead(env)
@@ -1824,7 +1824,7 @@ func (r *Runner) globallyPaused(ctx context.Context, log *slog.Logger) bool {
 }
 
 // worktreeHead reads the HEAD sha of the task's worktree for a step run's
-// commit range (task 164.5), nil when there is none to read.
+// commit range (task 168.5), nil when there is none to read.
 //
 // Only runAttempt asks, which is to say only the steps that run something in
 // the worktree — agent and command steps, the merge-back, and a fan_out's

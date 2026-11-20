@@ -1,4 +1,4 @@
--- 0063_lane_round: the fan_out round a lane was spawned in (§7.6, task 080).
+-- 0067_lane_round: the fan_out round a lane was spawned in (§7.6, task 080).
 --
 -- A multi-round fan_out's step_runs rows ride `iteration`, one per round, and
 -- a client drawing the step's lanes under the round that spawned them needs

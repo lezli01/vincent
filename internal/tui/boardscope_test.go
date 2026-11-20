@@ -282,11 +282,11 @@ func TestAttentionCountIsTheSelectedProjects(t *testing.T) {
 	}
 
 	s, _ := newShellFixture(t, twoProjectTasks()...)
-	_ = s.jumpAttention()
+	_ = s.jumpAttention(0)
 	if id, _ := s.board.selected(); id != 2 {
 		t.Errorf("! landed on %d, want the selected project's 2", id)
 	}
-	_ = s.jumpAttention()
+	_ = s.jumpAttention(0)
 	if id, _ := s.board.selected(); id != 2 {
 		t.Errorf("the shell's walk reached %d in another project; crossing is the root's", id)
 	}

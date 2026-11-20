@@ -42,6 +42,14 @@ type switchLeaving interface {
 	leaveForSwitch()
 }
 
+// switchSaving is implemented by a detail screen whose unsent text the daemon
+// keeps: saveForSwitch runs before leaveForSwitch forgets it, and what it
+// returns runs with the switch. The chat's is the save of its draft (task
+// 164, review F3).
+type switchSaving interface {
+	saveForSwitch() tea.Cmd
+}
+
 // switchFallback is where a detail screen lands when the project changes
 // under it: the list each one is opened from.
 var switchFallback = map[viewID]viewID{
@@ -333,11 +341,32 @@ func (t *taskView) leaveForSwitch() {
 	t.detail.followUp, t.detail.repair, t.detail.form = nil, nil, nil
 }
 
-// switchDraft guards the composer: a typed, unsent message is lost with the
-// chat on a switch, so it asks like every other draft (review F7).
+// switchDraft guards the composer only where a switch would lose it. An
+// unsent message is the chat's draft, which the daemon keeps and the switch
+// saves (task 164, review F3), so it is not asked about; an edit of a queued
+// message is not the draft and is lost, and so is text in a composer whose
+// draft cannot be stored — so those ask, like every other draft (review F7).
 func (v *chatView) switchDraft() (string, bool) {
-	return "unsent message", strings.TrimSpace(v.composer.Value()) != ""
+	text := v.composer.Value()
+	if v.editingQueued != 0 {
+		if v.queue != nil {
+			for _, m := range v.queue.Messages {
+				if m.ID == v.editingQueued {
+					return "edit of a queued message", text != m.Prompt
+				}
+			}
+		}
+		return "edit of a queued message", strings.TrimSpace(text) != ""
+	}
+	if strings.TrimSpace(text) == "" || v.draftStorable() {
+		return "", false
+	}
+	return "unsent message", true
 }
+
+// saveForSwitch saves the draft the switch is about to forget, so a switch
+// loses nothing typed (review F3).
+func (v *chatView) saveForSwitch() tea.Cmd { return v.leaveDraft() }
 
 // leaveForSwitch stops the chat's stream and forgets the chat, so a switch
 // leaves no subscription behind for a screen nobody is on.
@@ -349,6 +378,8 @@ func (v *chatView) leaveForSwitch() {
 	v.chatID = 0
 	v.chat, v.turns = nil, nil
 	v.resetRecords()
+	v.resetDraft()
+	v.editingQueued = 0
 	v.composer.SetValue("")
 }
 

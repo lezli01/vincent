@@ -77,7 +77,7 @@ func TestConfigValuesRoundTripThroughSet(t *testing.T) {
 		Jira:     apiclient.ConfigJira{Enabled: true, PollInterval: "5m0s", UserEnv: "JIRA_USER", TokenEnv: "JIRA_API_TOKEN"},
 		Update:   apiclient.ConfigUpdate{Check: true, PollInterval: "24h0m0s"},
 		Backup:   apiclient.ConfigBackup{Interval: "24h0m0s", Keep: 7, Dir: "/var/backups/vincent"},
-		Notify:   apiclient.ConfigNotify{On: []string{"blocked"}, Command: []string{"/bin/echo", "hi"}},
+		Notify:   apiclient.ConfigNotify{On: []string{"blocked"}, ChatOn: []string{"awaiting_input", "turn_done"}, Command: []string{"/bin/echo", "hi"}},
 		TUI: apiclient.ConfigTUI{
 			Board: apiclient.ConfigBoard{GroupBy: []string{"project", "workflow"}},
 			// "=" as a key is the case the pair spelling has to survive.

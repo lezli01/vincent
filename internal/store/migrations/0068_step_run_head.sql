@@ -1,4 +1,4 @@
--- 0064_step_run_head: the commit range one step run covered (task 164.5,
+-- 0068_step_run_head: the commit range one step run covered (task 168.5,
 -- decision 6, spec §5.4).
 --
 -- head_start is the worktree's HEAD when the attempt started, journaled at the

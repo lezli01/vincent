@@ -206,7 +206,7 @@ type detail struct {
 	// mdcache memoizes rendered assistant documents for this pane.
 	mdcache mdCache
 	// expandedCalls are the tool calls of the displayed attempt a reader
-	// unfolded with enter (task 164.4), by call id; an attempt change
+	// unfolded with enter (task 168.4), by call id; an attempt change
 	// starts them all folded again.
 	expandedCalls map[string]bool
 
@@ -585,7 +585,7 @@ func (d *detail) applyLoaded(msg detailLoadedMsg) tea.Cmd {
 	d.appliedSeq = msg.seq
 	d.syncForm()
 	// The feed folds every attempt the pane is not showing from these rows
-	// (task 164.4), so a refresh can change it without a record arriving.
+	// (task 168.4), so a refresh can change it without a record arriving.
 	d.outputDirty = true
 
 	runs := d.attempts()

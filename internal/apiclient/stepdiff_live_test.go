@@ -12,7 +12,7 @@ import (
 )
 
 // TestDiffStepAgainstRealHandlers is the drift guard for the per-step diff
-// (task 164.6): the step-run fields the range is read from, DiffStep's query,
+// (task 168.6): the step-run fields the range is read from, DiffStep's query,
 // and the typed 409 for a run with no range all round-trip through the real
 // handlers.
 func TestDiffStepAgainstRealHandlers(t *testing.T) {
