@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"io"
 	"context"
 	"errors"
 	"fmt"
@@ -246,7 +247,7 @@ func (p *diffPane) fetch(client *apiclient.Client) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), diffTimeout)
 		defer cancel()
 		if run != 0 {
-			text, err := client.DiffStep(ctx, id, run)
+			text, err := readStepDiff(ctx, client, id, run)
 			return diffLoadedMsg{taskID: id, stepRun: run, text: text, err: err}
 		}
 		sections, err := client.DiffByLane(ctx, id)
@@ -1095,4 +1096,22 @@ func hunkRule(header string) string {
 		out += "  " + context
 	}
 	return out + styleDim.Render(" ──")
+}
+
+// stepDiffBytes bounds one attempt's diff read: the pane cuts what it draws at
+// maxDiffLines anyway, and an agent can rewrite a vendored tree.
+const stepDiffBytes = 8 << 20
+
+// readStepDiff reads one attempt's diff (task 168.6) up to stepDiffBytes.
+func readStepDiff(ctx context.Context, client *apiclient.Client, id, run int64) (string, error) {
+	body, err := client.DiffStepStream(ctx, id, run)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = body.Close() }()
+	text, err := io.ReadAll(io.LimitReader(body, stepDiffBytes))
+	if err != nil {
+		return "", fmt.Errorf("read diff: %w", err)
+	}
+	return string(text), nil
 }

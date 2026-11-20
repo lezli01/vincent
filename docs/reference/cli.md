@@ -1230,7 +1230,7 @@ by `transcript_retention_days`, or deleted) exits `1`.
 ### `vincent task diff`
 
 ```sh
-vincent task diff <id> [--by lane] [--stat] [--json]
+vincent task diff <id> [--by lane | --step-run N] [--stat] [--json]
 ```
 
 Prints the task's diff: its worktree compared with the merge-base of its base
@@ -1261,6 +1261,14 @@ diff --git a/api.go b/api.go
 diff --git a/README.md b/README.md
 …
 ```
+
+`--step-run N` prints only what step run `N` of the task changed — the commit
+range it recorded, from the commit it started at to the one it ended at, or,
+while it still runs, its start against the worktree. It is the TUI Diff tab's
+`d`, and the same no-size-limit bytes the plain form promises. A run that
+recorded no range — one from before vincent recorded them, a gate or a
+structural step, one a daemon restart interrupted — exits `1` with the
+daemon's reason, and so does `--step-run` beside `--by`.
 
 A task that fanned out nothing prints a single remainder section. `git apply`
 ignores the header lines, so the grouped output still applies. `lane` is the

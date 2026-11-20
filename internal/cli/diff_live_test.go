@@ -395,3 +395,53 @@ func TestTaskDiffErrors(t *testing.T) {
 		t.Errorf("non-numeric id: exit %d, want 1", code)
 	}
 }
+
+// --step-run prints only what one step run changed — its recorded commit
+// range, byte for byte the endpoint's — and refuses a run with no range, and
+// --by beside it, with exit 1 (task 168.6).
+func TestTaskDiffStepRun(t *testing.T) {
+	h := newLiveHarness(t)
+	dir := diffRepo(t)
+	testrepo.Run(t, dir, "checkout", "-q", "-b", "feature")
+	testrepo.WriteFile(t, dir, "before.txt", "before the step\n")
+	commitAll(t, dir, "before")
+	start := testrepo.Run(t, dir, "rev-parse", "HEAD")
+	testrepo.WriteFile(t, dir, "step.txt", "the step's own change\n")
+	commitAll(t, dir, "the step")
+	end := testrepo.Run(t, dir, "rev-parse", "HEAD")
+	id := h.addDiffTask(t, dir)
+	taskID, _ := strconv.ParseInt(id, 10, 64)
+
+	ranged := &store.StepRun{
+		TaskID: taskID, StepIndex: 0, StepID: "implement", StepType: "command",
+		Attempt: 1, State: store.StepSucceeded, HeadStart: &start, HeadEnd: &end,
+	}
+	bare := &store.StepRun{
+		TaskID: taskID, StepIndex: 0, StepID: "implement", StepType: "command",
+		Attempt: 2, State: store.StepSucceeded,
+	}
+	for _, r := range []*store.StepRun{ranged, bare} {
+		if err := h.st.CreateStepRun(t.Context(), r); err != nil {
+			t.Fatalf("CreateStepRun: %v", err)
+		}
+	}
+
+	out, errOut, code := runCLI(t, "task", "diff", id, "--step-run", strconv.FormatInt(ranged.ID, 10))
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (%s)", code, errOut)
+	}
+	want, err := h.client(t).DiffStep(t.Context(), taskID, ranged.ID)
+	if err != nil {
+		t.Fatalf("endpoint: %v", err)
+	}
+	if out != want || !strings.Contains(out, "step.txt") || strings.Contains(out, "before.txt") {
+		t.Errorf("output =\n%s\nwant only the step's own change, as the endpoint serves it:\n%s", out, want)
+	}
+
+	if _, errOut, code := runCLI(t, "task", "diff", id, "--step-run", strconv.FormatInt(bare.ID, 10)); code != 1 || errOut == "" {
+		t.Errorf("a run with no range: exit %d (%q), want 1 with a reason", code, errOut)
+	}
+	if _, _, code := runCLI(t, "task", "diff", id, "--step-run", "1", "--by", "lane"); code != 1 {
+		t.Errorf("--step-run with --by: exit %d, want 1", code)
+	}
+}

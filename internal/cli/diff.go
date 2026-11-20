@@ -25,14 +25,19 @@ import (
 // type, so neither the API nor §13.2 changes for them.
 func newTaskDiffCmd() *cobra.Command {
 	var (
-		by   string
-		stat bool
+		by      string
+		stat    bool
+		stepRun int64
 	)
 	cmd := &cobra.Command{
 		Use:   "diff <id>",
+		// --step-run reads one attempt's commit range (task 168.6), the TUI
+		// Diff tab's `d`.
 		Short: "Print a task's diff against its base",
 		Long: "Print the task's worktree compared with merge-base(base, HEAD) — committed, " +
 			"staged and unstaged tracked changes; untracked files are not included (§13.2).\n\n" +
+			"--step-run N prints only what step run N changed: its recorded commit range, or, " +
+			"while it runs, its start against the worktree; a run with no recorded range exits 1.\n\n" +
 			"--by lane splits it by the fan-out lane that produced each change, one `# lane` " +
 			"section per lane merge and a `# remainder` section last. --stat prints a " +
 			"per-file table instead of the patch. --json mirrors the wire format.\n\n" +
@@ -50,12 +55,28 @@ func newTaskDiffCmd() *cobra.Command {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: by must be \"lane\"; got %q\n", by)
 				return exitError{code: 1}
 			}
+			// One attempt's range has no lanes to split by.
+			if stepRun != 0 && by != "" {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error: --step-run and --by cannot be combined")
+				return exitError{code: 1}
+			}
+			if stepRun < 0 {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: step run must be a positive number; got %d\n", stepRun)
+				return exitError{code: 1}
+			}
 			p := &diffPrinter{out: cmd.OutOrStdout(), json: wantJSON(cmd), stat: stat}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				if by == "lane" {
+				switch {
+				case by == "lane":
 					err = p.byLane(ctx, c, id)
-				} else {
-					err = p.flat(ctx, c, id)
+				case stepRun != 0:
+					err = p.flat(ctx, func(ctx context.Context) (io.ReadCloser, error) {
+						return c.DiffStepStream(ctx, id, stepRun)
+					})
+				default:
+					err = p.flat(ctx, func(ctx context.Context) (io.ReadCloser, error) {
+						return c.DiffStream(ctx, id)
+					})
 				}
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
@@ -67,6 +88,7 @@ func newTaskDiffCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&by, "by", "", `Group the diff; "lane" splits it by fan-out lane`)
 	cmd.Flags().BoolVar(&stat, "stat", false, "Print a per-file table of added and removed lines")
+	cmd.Flags().Int64Var(&stepRun, "step-run", 0, "Print only what this step run changed")
 	jsonFlag(cmd)
 	return cmd
 }
@@ -83,8 +105,8 @@ type diffPrinter struct {
 // It streams: the endpoint's body is read to its end with no size cap, because
 // a truncated patch piped into `git apply` is a corrupt patch delivered with
 // exit 0 (task 100 decision 4).
-func (p *diffPrinter) flat(ctx context.Context, c *apiclient.Client, id int64) error {
-	body, err := c.DiffStream(ctx, id)
+func (p *diffPrinter) flat(ctx context.Context, open func(context.Context) (io.ReadCloser, error)) error {
+	body, err := open(ctx)
 	if err != nil {
 		return err
 	}

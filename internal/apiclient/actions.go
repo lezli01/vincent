@@ -538,6 +538,13 @@ func (c *Client) DiffStream(ctx context.Context, id int64) (io.ReadCloser, error
 	return c.diffStream(ctx, diffPath(id))
 }
 
+// DiffStepStream is DiffStep without the cap, for DiffStream's reason: the
+// body itself, which `vincent task diff --step-run` pipes into `git apply` and
+// the TUI reads to its own display limit (task 168.6).
+func (c *Client) DiffStepStream(ctx context.Context, id, stepRunID int64) (io.ReadCloser, error) {
+	return c.diffStream(ctx, diffPath(id)+"?step_run="+strconv.FormatInt(stepRunID, 10))
+}
+
 func (c *Client) diffStream(ctx context.Context, path string) (io.ReadCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
