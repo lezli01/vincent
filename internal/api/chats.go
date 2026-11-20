@@ -76,9 +76,20 @@ type chatBody struct {
 	IssueID *int64 `json:"issue_id,omitempty"`
 	// EndSHA is the commit an issue chat's work ended on, once it let go of
 	// the main worktree (task 140 decision 3).
-	EndSHA    string    `json:"end_sha,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	EndSHA string `json:"end_sha,omitempty"`
+	// QueuedCount, QueuePaused and QueuePauseReason are the chat's queue of
+	// follow-up messages (task 156, §5.5): how many wait behind the live
+	// turn, and whether a non-`done` ending paused them and why.
+	QueuedCount      int    `json:"queued_count"`
+	QueuePaused      bool   `json:"queue_paused"`
+	QueuePauseReason string `json:"queue_pause_reason,omitempty"`
+	// CanSteer says whether a message can be written into the running turn
+	// (task 156 decision 4), and SteerReason why not, so a client needs no
+	// copy of the capability table. No adapter can yet.
+	CanSteer    bool      `json:"can_steer"`
+	SteerReason string    `json:"steer_reason,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 	// Warnings are non-fatal notes on a create — an issue chat opened on a
 	// closed issue (task 140 decision 9). Never set on a read.
 	Warnings []string `json:"warnings,omitempty"`
@@ -102,6 +113,15 @@ type chatTurnBody struct {
 	StartedAt    time.Time  `json:"started_at"`
 	EndedAt      *time.Time `json:"ended_at,omitempty"`
 	DurationMS   *int64     `json:"duration_ms,omitempty"`
+	// CacheReadTokens and CacheCreationTokens are the turn's cache spend,
+	// which input_tokens leaves out; ContextTokens is the prompt size of the
+	// run's last model call and ContextWindow its model's window (task 157,
+	// §5.5, §9.2). Each is absent when the adapter did not report it — never
+	// zero for "unknown".
+	CacheReadTokens     *int64 `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens *int64 `json:"cache_creation_tokens,omitempty"`
+	ContextTokens       *int64 `json:"context_tokens,omitempty"`
+	ContextWindow       *int64 `json:"context_window,omitempty"`
 }
 
 func renderChat(c *store.Chat) chatBody {
@@ -111,7 +131,9 @@ func renderChat(c *store.Chat) chatBody {
 		AdoptedBranch: c.AdoptedBranch, BaseBranch: c.BaseBranch, BaseSHA: c.BaseSHA, BaseRefresh: renderBaseRefresh(c.BaseRefresh),
 		WorktreePath: c.WorktreePath, SessionID: c.SessionID, PendingInput: c.PendingInput,
 		HandoffTaskID: c.HandoffTaskID, LinkedTaskID: c.LinkedTaskID, IssueID: c.IssueID, EndSHA: c.EndSHA,
-		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
+		QueuedCount: c.QueuedCount, QueuePaused: c.QueuePaused, QueuePauseReason: c.QueuePauseReason,
+		SteerReason: chatrun.SteerUnavailable(c.Agent),
+		CreatedAt:   c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
 }
 
@@ -122,6 +144,8 @@ func renderChatTurn(t *store.ChatTurn) chatTurnBody {
 		SessionID: t.SessionID, InputTokens: t.InputTokens, OutputTokens: t.OutputTokens,
 		CostUSD: t.CostUSD, ExitCode: t.ExitCode, StartedAt: t.StartedAt,
 		EndedAt: t.EndedAt, DurationMS: t.DurationMS,
+		CacheReadTokens: t.CacheReadTokens, CacheCreationTokens: t.CacheCreationTokens,
+		ContextTokens: t.ContextTokens, ContextWindow: t.ContextWindow,
 	}
 }
 
@@ -442,9 +466,12 @@ type sendChatRequest struct {
 	Message string `json:"message"`
 }
 
-// handleChatSend starts a turn. Over the cap it is refused with 409 and never
-// queued: a chat turn is a foreground reply and must not wait behind batch
-// work (decision 1).
+// handleChatSend starts a turn on an idle chat, or queues the message behind
+// a live one (task 156). An idle chat over the cap is refused with 409 and
+// never queued: a chat turn is a foreground reply and must not wait behind
+// batch work (task 063 decision 1). A queued message answers 202 with
+// `{"queued": true, "queued_message": …}`; a started turn answers 202 with
+// the turn, as it always has.
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	chat, ok := s.chatFromPath(w, r)
 	if !ok {
@@ -462,7 +489,7 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, CodeInternal, "no chat runner is wired")
 		return
 	}
-	turn, err := s.deps.Chats.Send(r.Context(), chat.ID, req.Message)
+	turn, queued, err := s.deps.Chats.Submit(r.Context(), chat.ID, req.Message)
 	switch {
 	case errors.Is(err, chatrun.ErrChatCapReached):
 		writeJSON(w, http.StatusConflict, errorBody{Error: errorDetail{
@@ -475,6 +502,12 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		return
 	case err != nil:
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
+		return
+	}
+	if queued != nil {
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"queued": true, "queued_message": renderChatQueued(queued),
+		})
 		return
 	}
 	writeJSON(w, http.StatusAccepted, renderChatTurn(turn))

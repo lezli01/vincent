@@ -115,7 +115,7 @@ func TestDetailTimelineRendersAttempts(t *testing.T) {
 		editedBadge,      // the human edit PR C recorded and nothing read
 		"40s",            // 60s wall clock minus 20s waiting (§17)
 		"+20s waiting",   // and the wait is stated, not silently dropped
-		"8.1k↓/120↑",     // tokens
+		"8.1k↑/120↓",     // tokens: in↑ out↓, as the chat heading draws them
 		"$0.21",          // cost
 		"claude",         // the resolved agent
 	} {

@@ -252,7 +252,7 @@ func TestStepDetailsRendersEveryGroupForARecordedAttempt(t *testing.T) {
 		"if: rendered to", "true", "3 of 5", "for_each item", "api",
 		"for_each list", "1. api", "2. web", "fan-out lane",
 		// Outcome.
-		"1.2k↓/340↑", "$0.42", "45s", "check_failed", "/tmp/1-2.jsonl",
+		"1.2k↑/340↓", "$0.42", "45s", "check_failed", "/tmp/1-2.jsonl",
 		"yes — the prompt",
 	} {
 		if !strings.Contains(got, want) {

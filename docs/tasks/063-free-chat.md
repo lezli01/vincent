@@ -41,6 +41,10 @@ Spec: §5.5 (the entity and its lifecycle), §7.3 (the chat-only amendment), §9
    preserved anyway: a chat turn never waits behind batch work, it is refused
    in front of it. The scheduler invariant is untouched because a chat turn is
    never `queued`.
+   *Extended 2026-11-19 by task 156 (issue #1010): a drain inherits the
+   finishing turn's slot.* A chat's own follow-up messages may queue behind its
+   live turn, and the next one starts on that turn's slot without the chat
+   ever being counted out; an idle chat's send over the cap is still refused.
 
 2. **No chat route is an MCP tool.** §13.4's exclusion list grows from five
    routes to five plus the chat family. An agent must not be able to start

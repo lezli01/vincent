@@ -100,6 +100,9 @@ type root struct {
 	projPick        *projectPicker
 	projPickSeq     int
 	projPickPending bool
+	// exportForm is the task 159 export form, open when non-nil, and routed
+	// exactly like the pickers above: a popup that owns the keyboard.
+	exportForm *chatExportForm
 	// headerHit is the header's `◆` segment as last rendered, [x0, x1) on
 	// row 0: a left click there opens the project picker (task 132
 	// decision 23).
@@ -384,6 +387,15 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.projPick.land(msg)
 		}
 		return m, nil
+	case openChatExportMsg:
+		m.palette = nil
+		m.exportForm = newChatExportForm(msg.id, msg.title, m.startup.cwd)
+		return m, nil
+	case chatExportDoneMsg:
+		if m.exportForm != nil {
+			m.exportForm.land(msg)
+		}
+		return m, nil
 	case openProjectPickerMsg:
 		return m, m.openProjectPicker()
 	case projectPickerRefreshMsg:
@@ -434,6 +446,9 @@ func (m *root) updatePaste(text string) tea.Cmd {
 	}
 	if m.projPick != nil {
 		return m.projPick.paste(text)
+	}
+	if m.exportForm != nil {
+		return m.exportForm.paste(text)
 	}
 	if m.palette != nil {
 		return m.palette.paste(text)
@@ -538,6 +553,13 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.projPick != nil && msg.String() != "ctrl+c" {
 		return m.updateProjectPickerKey(msg)
+	}
+	if m.exportForm != nil && msg.String() != "ctrl+c" {
+		done, cmd := m.exportForm.update(msg, m.client)
+		if done {
+			m.exportForm = nil
+		}
+		return m, cmd
 	}
 	if m.palette != nil && msg.String() != "ctrl+c" {
 		return m.updatePaletteKey(msg)
@@ -842,7 +864,8 @@ func (m *root) updateLinksKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // popupOpen reports whether one of the root's own popups is up. Each owns the
 // keyboard while it is, so at most one ever is.
 func (m *root) popupOpen() bool {
-	return m.palette != nil || m.reader != nil || m.linkPick != nil || m.projPick != nil || m.pending != nil
+	return m.palette != nil || m.reader != nil || m.linkPick != nil || m.projPick != nil || m.exportForm != nil ||
+		m.pending != nil
 }
 
 // openProjectPicker raises the project picker over whatever is on screen,
@@ -1052,6 +1075,8 @@ func (m *root) activeContext() bindingContext {
 		return m.views[viewChats].(*chatsView).bindingContext()
 	case viewChat:
 		return m.views[viewChat].(*chatView).bindingContext()
+	case viewChatSearch:
+		return ctxChatSearch
 	case viewTriggers:
 		return m.views[viewTriggers].(*triggersView).bindingContext()
 	case viewIssues:
@@ -1224,7 +1249,7 @@ func (m *root) routeOpen(open tea.Msg) tea.Cmd {
 		// argument uses.
 		if v, ok := m.views[viewChat].(*chatView); ok {
 			v.back = msg.back
-			return tea.Batch(v.open(msg.id), m.switchTo(viewChat))
+			return tea.Batch(v.openAt(msg.id, msg.seq), m.switchTo(viewChat))
 		}
 	case newTaskFromPullMsg, newTaskFromIssueMsg, newTaskFromChatMsg:
 		// A seeded form, once its project is the selection.
@@ -2713,6 +2738,8 @@ func (m *root) popupRender() (func(w, h int) string, bool) {
 		return m.palette.render, true
 	case m.projPick != nil:
 		return m.projPick.render, true
+	case m.exportForm != nil:
+		return m.exportForm.render, true
 	default:
 		return nil, false
 	}

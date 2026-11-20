@@ -237,6 +237,13 @@ func (s *Store) CloseChat(ctx context.Context, id int64) (*Chat, error) {
 // the FSM: CloseChat does, and cancel's close of a locked task closes
 // whatever state recovery left the row in, because the turn is already dead.
 func closeChatTx(ctx context.Context, tx *sql.Tx, c *Chat) (*Chat, *Event, error) {
+	// Closing deletes the queue in the same transaction (task 156 decision 6).
+	if err := deleteChatQueueTx(ctx, tx, c.ID); err != nil {
+		return nil, nil, err
+	}
+	if err := setQueuePauseTx(ctx, tx, c, false, ""); err != nil {
+		return nil, nil, err
+	}
 	c.State = chatstate.Closed
 	c.PendingInput = nil
 	c.UpdatedAt = time.Now()

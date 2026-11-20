@@ -90,6 +90,11 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodGet, "/v1/chats/{id}"},
 		{http.MethodPost, "/v1/chats/{id}/send"},
 		{http.MethodPost, "/v1/chats/{id}/answer"},
+		{http.MethodGet, "/v1/chats/{id}/queue"},
+		{http.MethodPatch, "/v1/chats/{id}/queue/{qid}"},
+		{http.MethodDelete, "/v1/chats/{id}/queue/{qid}"},
+		{http.MethodPost, "/v1/chats/{id}/queue/resume"},
+		{http.MethodPost, "/v1/chats/{id}/queue/clear"},
 		{http.MethodPost, "/v1/chats/{id}/cancel"},
 		{http.MethodPost, "/v1/chats/{id}/archive"},
 		// The two read routes are excluded by the same §13.4 reasoning, not
@@ -106,6 +111,9 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// human's composer offers behind `@`, and an agent in that worktree
 		// can run `ls`.
 		{http.MethodGet, "/v1/chats/{id}/files"},
+		// Task 159 decision 6: the export is a chat read under the same
+		// rule; an MCP tool was not asked for.
+		{http.MethodGet, "/v1/chats/{id}/export"},
 		// Task 065 decision 5, under the same wording: a workflow file is
 		// what the daemon runs, so an agent editing one is an agent
 		// rewriting the rules it runs under.
@@ -167,6 +175,8 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// Task 152: a preview for PATCH /v1/config's branch_template, with no
 		// use outside a form that edits the configuration.
 		{http.MethodPost, "/v1/config/branch-preview"},
+		// Task 158: chat search, a chat read under decision row 29.
+		{http.MethodGet, "/v1/chats/search"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

@@ -160,9 +160,7 @@ func (s *Server) handleChatTurnTranscript(w http.ResponseWriter, r *http.Request
 	// The path is derived, not stored: chat turns have no TranscriptPath
 	// column because their name is a pure function of the two ids, exactly
 	// as internal/chatrun computes it when it opens the writer.
-	path := filepath.Join(
-		s.deps.Dirs.Data, "transcripts", worktree.ChatOwner(chat.ID).Dir(),
-		fmt.Sprintf("%d.jsonl", turn.Seq))
+	path := s.chatTurnTranscriptPath(chat.ID, turn.Seq)
 	f, err := os.Open(path) //nolint:gosec // the path is built from two ids
 	if err != nil {
 		writeError(w, http.StatusNotFound, CodeNotFound, "transcript file is gone (pruned or removed)")
@@ -170,6 +168,15 @@ func (s *Server) handleChatTurnTranscript(w http.ResponseWriter, r *http.Request
 	}
 	defer func() { _ = f.Close() }()
 	s.serveTranscriptFile(w, f, rng, chat.Agent, turn.ID)
+}
+
+// chatTurnTranscriptPath is where turn seq of chat chatID keeps its
+// transcript. The transcript route and the chat export (task 159) both read
+// it from here.
+func (s *Server) chatTurnTranscriptPath(chatID int64, seq int) string {
+	return filepath.Join(
+		s.deps.Dirs.Data, "transcripts", worktree.ChatOwner(chatID).Dir(),
+		fmt.Sprintf("%d.jsonl", seq))
 }
 
 // transcriptRangeSpec is a validated ?offset=/?tail=/?format= triple.

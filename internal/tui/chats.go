@@ -56,6 +56,9 @@ type (
 		id        int64
 		projectID int64
 		back      viewID
+		// seq is the turn to land on (task 158): the chat opens scrolled to
+		// that turn's heading, out of follow mode. 0 opens it as usual.
+		seq int
 	}
 	// chatsTickMsg advances the in-progress indicator's frame (task 089) and,
 	// as a consequence of the repaint, the "last activity" column: that cell
@@ -532,7 +535,8 @@ func (v *chatsView) applyArchived(msg chatArchivedMsg) tea.Cmd {
 		if isChatWorktreeDirty(msg.err) {
 			v.confirm = &archivePrompt{
 				id: msg.id, force: true,
-				text: "worktree has local changes — archive anyway and lose them? (y/n)",
+				text: fmt.Sprintf("worktree has local changes — archive anyway and lose them%s? (y/n)",
+					queueDiscardNote(v.chatByID(msg.id))),
 			}
 			return nil
 		}
@@ -579,6 +583,16 @@ func (v *chatsView) current() (apiclient.Chat, bool) {
 		return apiclient.Chat{}, false
 	}
 	return *rows[v.cursor].chat, true
+}
+
+// chatByID is the loaded chat with this id, nil when the board has none.
+func (v *chatsView) chatByID(id int64) *apiclient.Chat {
+	for i := range v.chats {
+		if v.chats[i].ID == id {
+			return &v.chats[i]
+		}
+	}
+	return nil
 }
 
 func (v *chatsView) restoreSelection() {
@@ -713,6 +727,12 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.filtering = true
 		v.filter.Focus()
 		return v, nil
+	case opKey(keymap.ExportChat):
+		// Every state exports, archived and handed off included (task 159),
+		// so this is the one row key the archived board shares unchanged.
+		if c, ok := v.current(); ok {
+			return v, openChatExportCmd(c.ID, c.Title)
+		}
 	case opKey(keymap.OpenRow):
 		if c, ok := v.current(); ok {
 			// The board says which board it is, so a chat opened from the
@@ -759,13 +779,17 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 				id: c.ID, title: c.Title,
 				// The title is cut: a long one pushed `(y/n)` off the line,
 				// and the answer keys are the part a reader needs (#801 F2).
-				text: fmt.Sprintf("archive %q and remove its worktree? (y/n)",
-					ansi.Truncate(c.Title, archivePromptTitleWidth, "…")),
+				text: fmt.Sprintf("archive %q and remove its worktree%s? (y/n)",
+					ansi.Truncate(c.Title, archivePromptTitleWidth, "…"), queueDiscardNote(&c)),
 			}
 		}
 	case opKey(keymap.Scope):
 		v.cycleScope()
 		return v, v.loadCmd()
+	case opKey(keymap.ChatSearch):
+		if !v.archived {
+			return v, func() tea.Msg { return selectViewMsg{id: viewChatSearch} }
+		}
 	case opKey(keymap.Refresh):
 		v.forgetPreviews()
 		return v, v.loadCmd()

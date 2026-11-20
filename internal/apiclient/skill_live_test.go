@@ -137,7 +137,7 @@ func (h *chatTurnHarness) turnSaying(
 		if err != nil {
 			t.Fatalf("GetChat: %v", err)
 		}
-		if n := len(turns); n > 0 && turns[n-1].Seq == sent.Seq && turns[n-1].State != "running" {
+		if n := len(turns); n > 0 && turns[n-1].Seq == sent.Turn.Seq && turns[n-1].State != "running" {
 			if turns[n-1].State != "done" {
 				t.Fatalf("turn ended %s (%s)", turns[n-1].State, turns[n-1].ErrorMessage)
 			}
@@ -159,7 +159,7 @@ func (h *chatTurnHarness) turnSaying(
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	records, _, err := h.client.ChatTurnTranscript(ctx, chat.ID, sent.Seq, apiclient.TranscriptOptions{})
+	records, _, err := h.client.ChatTurnTranscript(ctx, chat.ID, sent.Turn.Seq, apiclient.TranscriptOptions{})
 	if err != nil {
 		t.Fatalf("ChatTurnTranscript: %v", err)
 	}

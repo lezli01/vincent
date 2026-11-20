@@ -2156,7 +2156,9 @@ The message is the second argument or the content of `--message-file`, and
 exactly one of the two: giving both, or neither, is refused and exits 1.
 
 Sends a message and blocks until the turn ends, then prints the agent's answer
-on stdout. A failed turn prints its reason on stderr and exits 1 — including
+on stdout. On a chat whose turn is still live the message is queued instead —
+see [`vincent chat queue`](#vincent-chat-queue) — and the command returns at
+once. A failed turn prints its reason on stderr and exits 1 — including
 `session_lost`, which means the agent CLI no longer knows the session this chat
 was resuming. The chat stays usable; starting a fresh conversation is a
 decision you make, not one vincent makes silently. `cursor` is the exception,
@@ -2187,7 +2189,7 @@ Interrupting `vincent chat send` stops the polling, not the turn: the turn
 belongs to the daemon. [`vincent chat cancel`](#vincent-chat-cancel) is what
 ends it.
 
-Exits 1 with `chat_cap_reached` when `max_parallel_chats` chats already hold a
+Exits 1 with `chat_cap_reached` when the chat is idle and `max_parallel_chats` chats already hold a
 live agent process. The send is refused, never queued.
 
 #### `--message-file`
@@ -2251,6 +2253,26 @@ under — repeat `--answer` for one index to give a multi-select several values 
 and a permission request takes `--allow` or `--deny`. It is `vincent task
 answer` for a chat, flag for flag, because it is the same request.
 
+### `vincent chat queue`
+
+```sh
+vincent chat queue list CHAT_ID [--json]
+vincent chat queue edit CHAT_ID MESSAGE_ID MESSAGE [--json]
+vincent chat queue rm CHAT_ID MESSAGE_ID
+vincent chat queue resume CHAT_ID [--json]
+vincent chat queue clear CHAT_ID
+```
+
+A message sent to a chat whose turn is still running — or waiting on the
+agent's question — is queued rather than refused: `vincent chat send` prints
+`queued as message N` and exits 0 without waiting, and the message runs as the
+next turn once the live one ends `done`. `list` shows the queue in the order it
+will run. `edit` and `rm` act on a message that has not started; one that has
+is a turn now, and the daemon refuses with a 409. A turn that fails, is
+cancelled or is interrupted pauses the queue: `list` says so and why, `resume`
+lifts the pause — on an idle chat the next message starts at once, subject to
+`max_parallel_chats` like any send — and `clear` deletes every queued message.
+
 ### `vincent chat cancel`
 
 ```sh
@@ -2275,6 +2297,30 @@ Archived, handed-off and closed chats are hidden unless you pass `--archived`,
 the way `vincent task list --archived` works. All three terminal states come
 back under the one flag: a handed-off or closed chat is as done with as an
 archived one.
+
+### `vincent chat search`
+
+```sh
+vincent chat search QUERY... [--project ID] [--archived false|true|all] [--limit N] [--json]
+```
+
+Searches every chat's title, the prompts it was sent and the agent's final
+answers. Tool output in transcripts is not searched. Matching is by substring
+and ignores case, so `429` finds `status429Body`. Every term must appear
+somewhere in the chat — its title or any turn, not necessarily the same
+one — and each term must be at least three characters long; a shorter one exits 1 with `query_too_short`. Quotes, `*`,
+`-` and words like `NEAR` are searched for as plain text.
+
+Results are grouped by chat, best match first. Each group starts with the
+chat's id, state and title, followed by one line per match: where it is
+(`title`, `turn N asked`, `turn N answer`) and a snippet around it. At most
+five matches are listed per chat, and `… N more` counts the rest.
+
+Unlike `vincent chat list`, the search covers archived, handed-off and closed
+chats by default, because finding a chat you are done with is the point.
+`--archived false` searches only live chats, `--archived true` only the
+terminal ones. `--json` emits the `results` array of
+[`GET /v1/chats/search`](api.md#searching-chats).
 
 ### `vincent chat show`
 
@@ -2434,6 +2480,42 @@ Exit `0` whenever the daemon answered, an empty and a truncated listing
 included. Exit `1` on an unknown chat, a terminal one (it has no next turn, so
 no directory to list for), a linked chat whose task no longer has a worktree,
 or a workspace that has gone missing under the daemon. Exit `2` with no daemon.
+
+### `vincent chat export`
+
+```sh
+vincent chat export CHAT_ID [--format md|html|json] [--with-diff] [-o | --output FILE] [--json]
+```
+
+The whole chat as one document: its metadata, then every turn's prompt, tool
+calls (one line each, never their output), answer and usage. `--format md` is
+the default; `html` is a single self-contained page with no scripts and nothing
+loaded from elsewhere; `json` is the document model with a top-level
+`"version"`. The daemon renders it — this command, the TUI and
+`GET /v1/chats/{id}/export` all produce the same bytes.
+
+```sh
+vincent chat export 12 > chat-12.md
+vincent chat export 12 --format html -o chat-12.html
+vincent chat export 12 --json | jq -r '.turns[].tools[].name'
+```
+
+The document goes to stdout, or with `-o` (`--output`) to that file, written through a
+temporary file and renamed into place so a failed write leaves no half
+document behind. The command never picks a file name for you.
+
+`--with-diff` appends the base-to-tip diff of the directory the chat works in
+today — its own worktree, or its linked task's. A chat with no directory left,
+such as a handed-off one, still exports, with a `diff unavailable:` note in
+place of the diff.
+
+`--json` is `--format json`; combining it with `--format md` or `--format html`
+is refused. Every chat state exports, archived and handed off included. A turn
+whose transcript has been pruned renders from its answer with a note in place
+of its tool calls.
+
+Exit `0` on success. Exit `1` on an unknown chat or a file that cannot be
+written. Exit `2` with no daemon.
 
 ### `vincent chat archive`
 

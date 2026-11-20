@@ -1931,9 +1931,9 @@ The operations are the ones a reader names, and nothing else:
 
 | Kind | Operation ids |
 |---|---|
-| Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane`, `result`, `next_failure`, `attention_filter`, `comment` |
+| Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane`, `result`, `next_failure`, `attention_filter`, `comment`, `ready`, `handoff`, `return`, `steer`, `compact`, `chat_search` (search every chat, from the chats board), `export_chat` (export a chat as Markdown, HTML or JSON) |
 | Task actions | `pause` (pause and resume), `approve`, `reject`, `retry`, `edit_retry`, `repair`, `skip`, `cancel`, `follow_up`, `chat`; `archive` is the term's id |
-| Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board, and a new issue on the issue screens), `project` (`@`, switch project) |
+| Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board, and a new issue on the issue screens), `project` (`@`, switch project), `pause_all` (`Z`, pause all work or continue it) |
 
 An override moves its operation on **every** screen that has it, and it
 **replaces** the default rather than adding a second key: the old key stops
@@ -1955,13 +1955,13 @@ means:
   never open beside the operation. The shipped keymap's few shared keys (`R` is
   refresh and repair, `a` is add and approve, `s` is scope and skip) are
   recorded for those keys only: `refresh: r` is refused, because `r` is retry;
-- a plain character or `space` for `palette_alt` or `help_alt`, whose purpose
-  is to work while a text field has the keyboard.
+- a plain character or `space` for `palette_alt`, `help_alt` or `compact`,
+  whose purpose is to work while a text field has the keyboard.
 
 Problems are reported under a `tui.keys:` prefix, in two passes: every unknown
 id, fixed name and malformed key at once, and only when there are none, every
 key that already means something else and every plain character for
-`palette_alt` or `help_alt` at once. As with any
+`palette_alt`, `help_alt` or `compact` at once. As with any
 invalid value, a refused load does not start the daemon, a refused reload keeps
 the last good configuration, and a refused `PATCH /v1/config` or
 `vincent config set tui.keys "refresh=f5 pause=x reject=p"` leaves the file
@@ -1979,7 +1979,7 @@ a release retires is ignored rather than refused, and never mapped onto another
 operation. Each of these is logged as a `keymap warning` at start and on every
 reload, listed by `vincent doctor` as a `keymap` row, and shown once in the TUI.
 Two of your own overrides on one key, a malformed key, a plain character for
-`palette_alt` or `help_alt`, an unknown id, and a clash with `tab`, `esc`,
+`palette_alt`, `help_alt` or `compact`, an unknown id, and a clash with `tab`, `esc`,
 `ctrl+c` or `ctrl+v` still stop the load. Because a `PATCH` checks the whole
 file strictly, a clash left by an upgrade makes every config save fail until
 `tui.keys` is fixed; the error names the key.

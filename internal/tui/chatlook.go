@@ -13,11 +13,15 @@ import (
 // check lines. The preview and the open conversation share all three, so
 // opening a chat never changes how the conversation looks.
 
-// chatTurnHeading heads the agent's half of a turn.
-func chatTurnHeading(agent string, seq int, age string) string {
-	line := toneMagenta.Bold(true).Render(ic("◈ ")+oneLine(agent)) + styleDim.Render(fmt.Sprintf("  ·  turn %d", seq))
+// chatTurnHeading heads the agent's half of a turn: who answered, which turn,
+// when, and — once it ended — what it spent (task 157, chatTurnUsage).
+func chatTurnHeading(agent string, t apiclient.ChatTurn, age string) string {
+	line := toneMagenta.Bold(true).Render(ic("◈ ")+oneLine(agent)) + styleDim.Render(fmt.Sprintf("  ·  turn %d", t.Seq))
 	if age != "" {
 		line += styleDim.Render("  ·  " + age)
+	}
+	for _, part := range chatTurnUsage(t) {
+		line += styleDim.Render("  ·  " + part)
 	}
 	return line
 }

@@ -444,10 +444,18 @@ func (s *Server) buildHandler() http.Handler {
 	// Chats (§5.5, §13.2). They are their own family: nothing here touches
 	// the tasks table, and no chat route is an MCP tool (§13.4, decision 2).
 	rt.handle(http.MethodGet, "/v1/chats", s.handleChatList)
+	// The literal segment outranks {id} in ServeMux, so "search" is never
+	// read as a chat id (task 158).
+	rt.handle(http.MethodGet, "/v1/chats/search", s.handleChatSearch)
 	rt.handle(http.MethodPost, "/v1/chats", s.handleChatCreate)
 	rt.handle(http.MethodGet, "/v1/chats/{id}", s.handleChatGet)
 	rt.handle(http.MethodDelete, "/v1/chats/{id}", s.handleChatDelete)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/send", s.handleChatSend)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/queue", s.handleChatQueueList)
+	rt.handle(http.MethodPatch, "/v1/chats/{id}/queue/{qid}", s.handleChatQueueEdit)
+	rt.handle(http.MethodDelete, "/v1/chats/{id}/queue/{qid}", s.handleChatQueueDelete)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/queue/resume", s.handleChatQueueResume)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/queue/clear", s.handleChatQueueClear)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/answer", s.handleChatAnswer)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/cancel", s.handleChatCancel)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/archive", s.handleChatArchive)
@@ -456,6 +464,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/chats/{id}/turns/{seq}/transcript", s.handleChatTurnTranscript)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/skills", s.handleChatSkills)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/files", s.handleChatFiles)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/export", s.handleChatExport)
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/events", s.handleChatEvents)

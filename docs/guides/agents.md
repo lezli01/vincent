@@ -95,6 +95,15 @@ the invocation before the agent runs. codex, cursor and copilot have no such
 field. The
 [Security model](../security-model.md#restricted-mode) has the whole picture.
 
+**Context and compaction.** A claude chat reports how full its context is:
+the prompt size of the turn's last model call and its model's window, both
+from claude's own report, which the TUI draws as a gauge on the conversation
+(`ctx ▰▰▰▱▱ 61%`). Past 80% the gauge offers to send `/compact`, claude's own
+command, as the next message, after you confirm. Codex, cursor and copilot
+report no per-call prompt size, so their chats show no gauge, and none of them
+has a compact command — `GET /v1/agents` says so as `compact_command`, which
+is `""` for them. Neither is ever estimated or emulated.
+
 An `@path` **file mention** passes through the same way, and all four
 adapters recognize one anywhere in a message — but only claude acts on it.
 claude reads the mentioned file and puts it in front of the model before the

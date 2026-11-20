@@ -93,7 +93,19 @@ const (
 	// refused rather than queued when `max_parallel_chats` is reached
 	// (decision 1) — a refusal the FSM does not model, because the cap is
 	// about how many chats are running, not about what this chat may do.
+	//
+	// From `running` and `awaiting_input` it is legal too and leaves the
+	// state where it is (task 156, §5.5 amended 2026-11-19): there it means
+	// "enqueue", and the message runs as the next turn once the live one
+	// ends `done`. It never answers a pending §7.4 request — Answer does.
 	Send Action = "send"
+	// Steer writes a message into a running turn (task 156 decision 4). It
+	// is legal from `running` only — in `awaiting_input` the agent is
+	// blocked on a request and Answer is the input — and only an adapter
+	// that verifiably folds it into the live turn may honour it. No adapter
+	// does yet, so the runner refuses it with the reason; the FSM still
+	// names it so the API's 409 and the capability refusal stay distinct.
+	Steer Action = "steer"
 	// Answer answers a pending §7.4 input request, through the same adapter
 	// Respond the task path uses (decision 8).
 	Answer Action = "answer"
@@ -118,7 +130,9 @@ const (
 // Runner events. They are transitions the daemon performs while running a
 // turn, and go through the same table so no state change bypasses §5.5.
 const (
-	// TurnStarted is the runner picking up an accepted send.
+	// TurnStarted is the runner picking up an accepted send. `running →
+	// running` is also a queue drain (task 156): the finished turn's chat
+	// hands its slot straight to the next queued message.
 	TurnStarted Action = "turn_started"
 	// InputRequested is the agent asking mid-run (§7.4).
 	InputRequested Action = "input_requested"
@@ -143,6 +157,8 @@ var transitions = map[State]map[Action]State{
 		HandOff: HandedOff,
 	},
 	Running: {
+		Send:            Running,
+		Steer:           Running,
 		InputRequested:  AwaitingInput,
 		TurnFinished:    Idle,
 		TurnInterrupted: Idle,
@@ -150,6 +166,7 @@ var transitions = map[State]map[Action]State{
 		TurnStarted:     Running,
 	},
 	AwaitingInput: {
+		Send:            AwaitingInput,
 		Answer:          Running,
 		InputClosed:     Running,
 		TurnFinished:    Idle,

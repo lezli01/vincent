@@ -148,6 +148,13 @@ var Excluded = []Route{
 	{Method: http.MethodGet, Path: "/v1/chats/{id}"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/send"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/answer"},
+	// The chat queue (task 156) stays off the surface with the rest of the
+	// chat routes (task 063 decision 2).
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/queue"},
+	{Method: http.MethodPatch, Path: "/v1/chats/{id}/queue/{qid}"},
+	{Method: http.MethodDelete, Path: "/v1/chats/{id}/queue/{qid}"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/queue/resume"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/queue/clear"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/cancel"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/archive"},
 	// Handoff joins the list under the same rule rather than as an exception
@@ -179,10 +186,18 @@ var Excluded = []Route{
 	// so (task 126 decision 3's neighbourhood, #550): the list is what a
 	// human's composer offers behind `@`, and an agent already sitting in
 	// that worktree can run `ls`.
+	//
+	// `GET /v1/chats/{id}/export` joins them too (task 159 decision 6): an
+	// MCP tool was not asked for, and it can follow the same route later.
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/events"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/turns/{seq}/transcript"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/skills"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/files"},
+	// `GET /v1/chats/search` (task 158) is a chat read under the same rule:
+	// decision row 29 keeps the whole chat family off the MCP surface, and an
+	// agent wanting an old conversation is not who the search is for.
+	{Method: http.MethodGet, Path: "/v1/chats/search"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/export"},
 }
 
 // GrantedRoute is an Excluded forge write that becomes a tool on a granted

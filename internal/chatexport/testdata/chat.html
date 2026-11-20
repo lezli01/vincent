@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat 7: Fix the parser</title>
+<style>
+body{font:15px/1.5 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;max-width:52rem;margin:2rem auto;padding:0 1rem;color:#1f2328;background:#fff}
+h1{font-size:1.6rem;margin-bottom:.5rem}
+h2{font-size:1.2rem;border-bottom:1px solid #d1d9e0;padding-bottom:.2rem;margin-top:2rem}
+h3{font-size:1rem;color:#59636e;margin:1rem 0 .3rem}
+dl.meta{display:grid;grid-template-columns:max-content 1fr;gap:.1rem 1rem;font-size:.9rem}
+dl.meta dt{color:#59636e}dl.meta dd{margin:0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem}
+pre{background:#f6f8fa;padding:.6rem;overflow:auto;border-radius:6px}
+ul.tools{list-style:none;padding:0;margin:0}
+ul.tools li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem}
+.note,.usage{color:#59636e;font-style:italic;font-size:.9rem}
+.failed{color:#d1242f}
+.prompt{border-left:3px solid #d1d9e0;padding-left:.8rem}
+</style>
+</head>
+<body>
+<h1>Chat 7: Fix the parser</h1>
+<dl class="meta"><dt>id</dt><dd>7</dd><dt>project</dt><dd>demo</dd><dt>agent</dt><dd>claude</dd><dt>model</dt><dd>opus</dd><dt>effort</dt><dd>high</dd><dt>permission mode</dt><dd>full_auto</dd><dt>state</dt><dd>idle</dd><dt>branch</dt><dd>vincent/chat-7-fix-the-parser</dd><dt>base branch</dt><dd>main</dd><dt>base sha</dt><dd>abc123</dd><dt>linked task</dt><dd>#3</dd><dt>issue</dt><dd>#9</dd><dt>created</dt><dd>2026-11-19T09:00:00Z</dd><dt>exported</dt><dd>2026-11-19T10:00:00Z</dd></dl>
+<section class="turn">
+<h2>Turn 1 · done</h2>
+<h3>Prompt</h3>
+<div class="prompt"><p>Why does <code>Parse</code> fail?</p>
+</div>
+<h3>Tool calls</h3>
+<ul class="tools"><li><pre>Read internal/parse/parse.go</pre></li><li><pre>Grep func Parse</pre></li><li><pre>Task explore</pre></li><li><pre>Bash go test ./internal/parse (failed)</pre></li></ul>
+<h3>Answer</h3>
+<div class="answer"><p>Fixed it.</p>
+<ul>
+<li>one</li>
+<li>two</li>
+</ul>
+</div>
+
+<p class="usage">Usage: 1200 in (&#43;60200 cache) · 340 out · $0.0123 · 12.3s</p>
+</section>
+<section class="turn">
+<h2>Turn 2 · failed</h2>
+<h3>Prompt</h3>
+<div class="prompt"><p>Run it again</p>
+</div>
+<h3>Tool calls</h3>
+<p class="note">none</p>
+<h3>Answer</h3>
+<p class="note">no answer</p>
+<p class="failed"><strong>Failed:</strong> agent_error: rate limited</p>
+<p class="usage">Usage: 10 in · 0 out</p>
+</section>
+<section class="turn">
+<h2>Turn 3 · done</h2>
+<h3>Prompt</h3>
+<div class="prompt"><p>Summarize</p>
+</div>
+<h3>Tool calls</h3>
+<p class="note">tool calls unavailable: the transcript was pruned (transcript_retention_days)</p>
+<h3>Answer</h3>
+<div class="answer"><p>All good.</p>
+</div>
+
+<p class="usage">Usage: 5 in · 6 out · $0.0000</p>
+</section>
+<section class="turn">
+<h2>Turn 4 · failed</h2>
+<h3>Prompt</h3>
+<div class="prompt"><p>Hello?</p>
+</div>
+<h3>Tool calls</h3>
+<p class="note">tool calls unavailable: this turn never wrote a transcript</p>
+<h3>Answer</h3>
+<p class="note">no answer</p>
+<p class="failed"><strong>Failed:</strong> agent_unavailable</p>
+<p class="usage">Usage: 0 in · 0 out</p>
+</section>
+<section class="turn">
+<h2>Turn 5 · done</h2>
+<h3>Prompt</h3>
+<div class="prompt"><p>copilot turn</p>
+</div>
+<h3>Tool calls</h3>
+<ul class="tools"><li><pre>view README.md</pre></li></ul>
+<h3>Answer</h3>
+<div class="answer"><p>Read it.</p>
+</div>
+
+<p class="usage">Usage: 50 in · 20 out · 900ms</p>
+</section>
+<section class="turn">
+<h2>Turn 6 · running</h2>
+<h3>Prompt</h3>
+<div class="prompt"><p>Keep going</p>
+</div>
+<h3>Tool calls</h3>
+<ul class="tools"><li><pre>Edit x.go</pre></li></ul>
+<h3>Answer</h3>
+<p class="note">no answer</p>
+
+<p class="usage">Usage: 0 in · 0 out</p>
+</section>
+<section class="diff">
+<h2>Diff</h2>
+<pre>diff --git a/x.go b/x.go
+--- a/x.go
+&#43;&#43;&#43; b/x.go
+@@ -1 &#43;1 @@
+-old
+&#43;new ```
+</pre>
+</section>
+</body>
+</html>

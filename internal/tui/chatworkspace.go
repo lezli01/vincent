@@ -530,7 +530,7 @@ func chatPreviewLines(c apiclient.Chat, p *chatPreview, now time.Time, inner int
 	for _, t := range p.turns[max(len(p.turns)-chatPreviewTurns, 0):] {
 		asked, answered := chatTurnAges(t, now)
 		out = append(out, promptCardLines(t.Prompt, asked, inner)...)
-		out = append(out, "", chatTurnHeading(c.Agent, t.Seq, answered), "")
+		out = append(out, "", chatTurnHeading(c.Agent, t, answered), "")
 		if checks := chatPreviewChecks(p.tools[t.Seq], inner); len(checks) > 0 {
 			out = append(append(out, checks...), "")
 		}
@@ -660,12 +660,17 @@ func chatUsage(turns []apiclient.ChatTurn) (tokens int64, cost float64, priced b
 	return tokens, cost, priced
 }
 
-// chatTokens is a token count in the fewest cells.
+// chatTokens is a token count in the fewest cells: `950`, `18.2k`, `1.1M`.
+// It is the TUI's one compact number formatter (task 157); compactCount is
+// the same thing under the name the step details use.
 func chatTokens(n int64) string {
-	if n < 1000 {
+	switch {
+	case n < 1000:
 		return strconv.FormatInt(n, 10)
+	case n < 999_950:
+		return fmt.Sprintf("%.1fk", float64(n)/1000)
 	}
-	return fmt.Sprintf("%.1fk", float64(n)/1000)
+	return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
 }
 
 // chatLinks names everything a chat is tied to.
@@ -731,6 +736,19 @@ func (v *chatView) paneEdge(w int) (title, right string) {
 		right = mark.text + " " + right
 	}
 	id := "#" + strconv.FormatInt(v.chatID, 10)
+	// The context gauge rides on this edge (task 157): with its bar where the
+	// title keeps its minimum beside it, with the percentage alone where it
+	// does not, and not at all where even that would push the state off — a
+	// box drops a right side that does not fit whole.
+	fits := func(g string) bool {
+		return ansi.StringWidth(g)+1+ansi.StringWidth(right)+ansi.StringWidth(id)+chatPaneEdgeChrome+chatHeaderTitleMin <= w
+	}
+	for _, wide := range []bool{true, false} {
+		if g, _ := chatGauge(v.turns, wide, v.compactCommand(), v.gaugeCompactKey()); g != "" && fits(g) {
+			right = g + " " + right
+			break
+		}
+	}
 	room := max(w-ansi.StringWidth(right)-ansi.StringWidth(id)-chatPaneEdgeChrome, chatHeaderTitleMin)
 	return styleKey.Render(id) + " " + styleTitle.Render(ansi.Truncate(oneLine(v.chat.Title), room, "…")), right
 }
@@ -754,7 +772,11 @@ func (v *chatView) renderWorkspace(width, height int) string {
 	out := v.side.chatListPane(listW, height, len(filter))
 
 	midW := width - listW - detailsW
-	body := strings.Split(v.conversationUnder(nil, max(midW-4, 4), max(height-2, 4)), "\n")
+	var head []string
+	if totals := v.totalsLine(); totals != "" {
+		head = []string{totals}
+	}
+	body := strings.Split(v.conversationUnder(head, max(midW-4, 4), max(height-2, 4)), "\n")
 	title, right := v.paneEdge(midW)
 	out = joinColumns(out, drawBox(title, right, body, midW, height, edgesRounded, styleFocus))
 	if detailsW > 0 {

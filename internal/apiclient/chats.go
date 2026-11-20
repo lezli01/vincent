@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -49,9 +51,19 @@ type Chat struct {
 	IssueID *int64 `json:"issue_id,omitempty"`
 	// EndSHA is the commit an issue chat's work ended on, once it let go of
 	// the main worktree.
-	EndSHA    string    `json:"end_sha,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	EndSHA string `json:"end_sha,omitempty"`
+	// QueuedCount is how many follow-up messages wait behind the live turn
+	// (task 156); QueuePaused and QueuePauseReason say whether a turn that
+	// did not end `done` stopped them from draining, and why.
+	QueuedCount      int    `json:"queued_count"`
+	QueuePaused      bool   `json:"queue_paused"`
+	QueuePauseReason string `json:"queue_pause_reason,omitempty"`
+	// CanSteer says whether a message can be written into the running turn;
+	// SteerReason says why not (task 156 decision 4).
+	CanSteer    bool      `json:"can_steer"`
+	SteerReason string    `json:"steer_reason,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 	// Warnings are non-fatal notes on a create, such as a chat opened on a
 	// closed issue.
 	Warnings []string `json:"warnings,omitempty"`
@@ -180,6 +192,15 @@ type ChatTurn struct {
 	StartedAt    time.Time  `json:"started_at"`
 	EndedAt      *time.Time `json:"ended_at,omitempty"`
 	DurationMS   *int64     `json:"duration_ms,omitempty"`
+	// CacheReadTokens and CacheCreationTokens are the turn's cache spend,
+	// which input_tokens leaves out; ContextTokens is the prompt size of the
+	// run's last model call and ContextWindow its model's window (task 157,
+	// §5.5, §9.2). Each is absent when the adapter did not report it — never
+	// zero for "unknown".
+	CacheReadTokens     *int64 `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens *int64 `json:"cache_creation_tokens,omitempty"`
+	ContextTokens       *int64 `json:"context_tokens,omitempty"`
+	ContextWindow       *int64 `json:"context_window,omitempty"`
 }
 
 // CreateChatRequest is the POST /v1/chats body. An omitted agent resolves
@@ -346,13 +367,94 @@ func (c *Client) ChatFiles(ctx context.Context, id int64, limit int) (*ChatFiles
 // SendChat starts a turn. A 409 with code `chat_cap_reached` means
 // `max_parallel_chats` chats are already running — the send is refused, not
 // queued (§11).
-func (c *Client) SendChat(ctx context.Context, id int64, message string) (*ChatTurn, error) {
-	var out ChatTurn
+func (c *Client) SendChat(ctx context.Context, id int64, message string) (*ChatSend, error) {
+	var raw json.RawMessage
 	body := map[string]string{"message": message}
-	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/send", id), body, &out); err != nil {
+	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/send", id), body, &raw); err != nil {
+		return nil, err
+	}
+	var queued struct {
+		Queued  bool               `json:"queued"`
+		Message *ChatQueuedMessage `json:"queued_message"`
+	}
+	if err := json.Unmarshal(raw, &queued); err != nil {
+		return nil, fmt.Errorf("decode chat send: %w", err)
+	}
+	if queued.Queued {
+		return &ChatSend{Queued: queued.Message}, nil
+	}
+	var turn ChatTurn
+	if err := json.Unmarshal(raw, &turn); err != nil {
+		return nil, fmt.Errorf("decode chat send: %w", err)
+	}
+	return &ChatSend{Turn: &turn}, nil
+}
+
+// ChatSend is what a send did (task 156): started a turn on an idle chat, or
+// queued the message behind a live one. Exactly one field is set.
+type ChatSend struct {
+	Turn   *ChatTurn
+	Queued *ChatQueuedMessage
+}
+
+// ChatQueuedMessage is a follow-up message waiting behind a chat's live turn
+// (task 156).
+type ChatQueuedMessage struct {
+	ID        int64     `json:"id"`
+	ChatID    int64     `json:"chat_id"`
+	Position  int       `json:"position"`
+	Prompt    string    `json:"prompt"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ChatQueue is GET /v1/chats/{id}/queue: the queued messages in the order
+// they will run, and the pause holding them.
+type ChatQueue struct {
+	Messages    []ChatQueuedMessage `json:"messages"`
+	Paused      bool                `json:"paused"`
+	PauseReason string              `json:"pause_reason,omitempty"`
+}
+
+// ChatQueue lists a chat's queued messages.
+func (c *Client) ChatQueue(ctx context.Context, id int64) (*ChatQueue, error) {
+	var out ChatQueue
+	if err := c.get(ctx, fmt.Sprintf("/v1/chats/%d/queue", id), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// EditChatQueued replaces a queued message's text. A message that already
+// started is a 409.
+func (c *Client) EditChatQueued(ctx context.Context, id, qid int64, message string) (*ChatQueuedMessage, error) {
+	var out ChatQueuedMessage
+	body := map[string]string{"message": message}
+	if err := c.send(ctx, http.MethodPatch, fmt.Sprintf("/v1/chats/%d/queue/%d", id, qid), body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DeleteChatQueued removes a queued message. A message that already started
+// is a 409.
+func (c *Client) DeleteChatQueued(ctx context.Context, id, qid int64) error {
+	return c.send(ctx, http.MethodDelete, fmt.Sprintf("/v1/chats/%d/queue/%d", id, qid), nil, nil)
+}
+
+// ResumeChatQueue lifts a paused queue; on an idle chat the oldest message
+// starts at once.
+func (c *Client) ResumeChatQueue(ctx context.Context, id int64) (*ChatQueue, error) {
+	var out ChatQueue
+	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/queue/resume", id), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ClearChatQueue deletes every queued message and lifts the pause.
+func (c *Client) ClearChatQueue(ctx context.Context, id int64) error {
+	return c.post(ctx, fmt.Sprintf("/v1/chats/%d/queue/clear", id), nil, nil)
 }
 
 // AnswerChat answers a chat's pending §7.4 input request.
@@ -449,4 +551,70 @@ func (c *Client) ChatTurnTranscriptRaw(
 ) (data []byte, nextOffset int64, err error) {
 	return c.transcriptRawAt(ctx,
 		fmt.Sprintf("/v1/chats/%d/turns/%d/transcript%s", chatID, seq, opts.query("raw")))
+}
+
+// ChatExportOptions selects an export's rendering (§13.2 GET
+// /v1/chats/{id}/export, task 159). Format is "md", "html" or "json"; empty
+// is the daemon's default, md.
+type ChatExportOptions struct {
+	Format   string
+	WithDiff bool
+}
+
+// ChatExport is one rendered export: its bytes, its Content-Type, and the
+// file name the daemon suggests in Content-Disposition (which only the TUI
+// uses — the CLI never invents a name).
+type ChatExport struct {
+	Body        []byte
+	ContentType string
+	Filename    string
+}
+
+// ChatExport fetches GET /v1/chats/{id}/export. The daemon renders; the
+// client only carries the bytes, so every client writes the same document.
+//
+// It is read on the stream client for DiffStream's reason: an export with
+// its diff is bounded only by the worktree, and requestTimeout bounds the
+// wait for the headers, not the read.
+func (c *Client) ChatExport(ctx context.Context, chatID int64, opts ChatExportOptions) (*ChatExport, error) {
+	q := url.Values{}
+	if opts.Format != "" {
+		q.Set("format", opts.Format)
+	}
+	if opts.WithDiff {
+		q.Set("diff", "true")
+	}
+	path := "/v1/chats/" + strconv.FormatInt(chatID, 10) + "/export"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build export request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	headers := time.AfterFunc(requestTimeout, cancel)
+	resp, err := c.stream.Do(req)
+	if !headers.Stop() && err == nil {
+		_ = resp.Body.Close()
+		err = context.DeadlineExceeded
+	}
+	if err != nil {
+		return nil, fmt.Errorf("GET chat export: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, decodeError(resp)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read chat export: %w", err)
+	}
+	out := &ChatExport{Body: body, ContentType: resp.Header.Get("Content-Type")}
+	if _, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition")); err == nil {
+		out.Filename = params["filename"]
+	}
+	return out, nil
 }
