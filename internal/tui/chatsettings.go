@@ -51,6 +51,9 @@ func chatSettingsChip(c *apiclient.Chat) string {
 type chatPickerRow struct {
 	field string // "model" | "effort"
 	value string
+	// current marks the value the chat runs at now, for each field (review
+	// F4): the cursor is on one row, but both fields have a value.
+	current bool
 }
 
 func (r chatPickerRow) label() string {
@@ -58,7 +61,11 @@ func (r chatPickerRow) label() string {
 	if v == "" {
 		v = "default"
 	}
-	return r.field + ": " + v
+	mark := "  "
+	if r.current {
+		mark = "• "
+	}
+	return mark + r.field + ": " + v
 }
 
 // chatSettingsPicker is the alt+p list. It owns the keyboard while open.
@@ -71,17 +78,36 @@ type chatSettingsPicker struct {
 // new-chat form sources its options (§9.6).
 func newChatSettingsPicker(a apiclient.Agent, c *apiclient.Chat) *chatSettingsPicker {
 	p := &chatSettingsPicker{}
-	add := func(field string, opts []apiclient.AgentOption, current string) {
-		p.rows = append(p.rows, chatPickerRow{field: field})
+	// add lists one field, "" (the adapter's default) first, marks the
+	// chat's current value and returns its row, or -1 when the catalog no
+	// longer lists it.
+	add := func(field string, opts []apiclient.AgentOption, current string) int {
+		at := -1
+		p.rows = append(p.rows, chatPickerRow{field: field, current: current == ""})
+		if current == "" {
+			at = len(p.rows) - 1
+		}
 		for _, o := range opts {
-			p.rows = append(p.rows, chatPickerRow{field: field, value: o.Value})
-			if o.Value == current && current != "" {
-				p.cursor = len(p.rows) - 1
+			if o.Value == "" {
+				continue // the default row above is this one
+			}
+			cur := o.Value == current
+			p.rows = append(p.rows, chatPickerRow{field: field, value: o.Value, current: cur})
+			if cur {
+				at = len(p.rows) - 1
 			}
 		}
+		return at
 	}
-	add("model", a.Models, c.Model)
-	add("effort", a.Efforts, "")
+	model := add("model", a.Models, c.Model)
+	effort := add("effort", a.Efforts, c.Effort)
+	// The cursor starts on the current model, else the current effort.
+	switch {
+	case model >= 0:
+		p.cursor = model
+	case effort >= 0:
+		p.cursor = effort
+	}
 	return p
 }
 
