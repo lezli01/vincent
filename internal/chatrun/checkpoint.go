@@ -10,7 +10,7 @@ import (
 )
 
 // CheckpointRefPrefix is the ref namespace a chat's checkpoints live under
-// (task 165, spec §5.5, §10). The refs are in the project repository's shared
+// (task 167, spec §5.5, §10). The refs are in the project repository's shared
 // namespace, so a worktree's checkpoints are visible from the main checkout
 // and survive the worktree's removal.
 func CheckpointRefPrefix(chatID int64) string {
@@ -22,7 +22,7 @@ func CheckpointRef(chatID int64, seq int) string {
 	return fmt.Sprintf("%sturn-%d", CheckpointRefPrefix(chatID), seq)
 }
 
-// checkpoint snapshots workDir before turn's agent starts (task 165.2):
+// checkpoint snapshots workDir before turn's agent starts (task 167.2):
 // the snapshot commit is written to CheckpointRef and, with the HEAD it is
 // parented on, onto the turn row — both before adapter.Start, so a crash
 // after the spawn finds them committed and recovery (§12.4) needs nothing
@@ -51,7 +51,7 @@ func (r *Runner) checkpoint(ctx context.Context, chat *store.Chat, turn *store.C
 }
 
 // recordHeadAfter notes workDir's HEAD once the turn's process is gone, for
-// the shared-worktree rewind rule (task 165 decision 3). It is best effort:
+// the shared-worktree rewind rule (task 167 decision 3). It is best effort:
 // the turn's own outcome does not depend on it, and an unreadable HEAD is
 // recorded as none, which that rule reads as "cannot prove", never as a match.
 func (r *Runner) recordHeadAfter(turn *store.ChatTurn, workDir string) {

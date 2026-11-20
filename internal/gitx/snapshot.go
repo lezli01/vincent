@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Snapshot is a worktree's state captured without touching it (task 165.1).
+// Snapshot is a worktree's state captured without touching it (task 167.1).
 // Commit is a commit whose tree is the worktree as `git add -A` would stage
 // it — tracked edits, deletions and untracked files, ignored files excluded —
 // and whose single parent is Head, the worktree's HEAD at capture time.
@@ -27,7 +27,7 @@ var snapshotIdentity = []string{
 	"GIT_COMMITTER_NAME=vincent", "GIT_COMMITTER_EMAIL=vincent@localhost",
 }
 
-// Snapshot captures dir's worktree as a commit object (task 165 decision
+// Snapshot captures dir's worktree as a commit object (task 167 decision
 // "snapshot mechanism"). It stages into a temporary index — `GIT_INDEX_FILE`
 // pointing at a file under scratch, a directory the caller owns (the data
 // directory, never the worktree) — so the real index, HEAD and every file in
@@ -35,7 +35,7 @@ var snapshotIdentity = []string{
 // `write-tree`, then `commit-tree` with HEAD as the parent.
 //
 // The pre-capture split between staged and unstaged changes is not kept;
-// a restore writes the tree back as unstaged changes (task 165 decision,
+// a restore writes the tree back as unstaged changes (task 167 decision,
 // beating a second tree for the index).
 //
 // The commit is unreferenced until the caller writes a ref to it. git
@@ -83,10 +83,10 @@ func (g *Git) Snapshot(ctx context.Context, dir, scratch, message string) (Snaps
 // and the worktree holds the snapshot's tree byte for byte, its differences
 // from HEAD left as unstaged changes. Untracked files the snapshot did not
 // have are removed; ignored files are never touched, because the snapshot
-// never captured them (task 165.1).
+// never captured them (task 167.1).
 //
 // It is destructive by design. Saving the state it replaces is the caller's
-// job (task 165 decision 2: a `rewound-<k>` ref written first).
+// job (task 167 decision 2: a `rewound-<k>` ref written first).
 func (g *Git) Restore(ctx context.Context, dir, commit string) error {
 	parent, err := g.Run(ctx, dir, "rev-parse", "--verify", commit+"^1")
 	if err != nil {

@@ -605,7 +605,7 @@ func TestChatSkillsTurnEndingInvalidates(t *testing.T) {
 	h := newSkillsHarness(t)
 	h.stub.Script(testSkills, nil)
 	c := h.freeChat(t, agenttest.SkillsName, chatstate.Idle)
-	// A repository, so the turn's checkpoint (task 165.2) succeeds and the
+	// A repository, so the turn's checkpoint (task 167.2) succeeds and the
 	// turn reaches Start: a turn whose checkpoint fails never placed an
 	// agent in the directory, so there would be nothing to invalidate.
 	repo := testrepo.Init(t, "main")

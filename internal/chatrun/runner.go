@@ -67,7 +67,7 @@ const (
 	// nobody can read afterwards does not get to claim success.
 	ReasonTranscriptLimit = "transcript_limit"
 	// ReasonCheckpointFailed is a turn whose worktree checkpoint could not
-	// be taken or recorded (task 165.2). The agent never starts: a turn runs
+	// be taken or recorded (task 167.2). The agent never starts: a turn runs
 	// protected or not at all, so a later rewind is never missing the state
 	// in front of it.
 	ReasonCheckpointFailed = "checkpoint_failed"

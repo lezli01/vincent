@@ -9,7 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/gitx"
 )
 
-// TestEveryTurnIsCheckpointed is task 165.2's acceptance on all four
+// TestEveryTurnIsCheckpointed is task 167.2's acceptance on all four
 // dialects: each turn writes refs/vincent/chats/<id>/turn-<seq> and records
 // its SHA and the HEAD under it on the turn row, and the snapshot holds the
 // worktree's uncommitted state as it was when the turn began.

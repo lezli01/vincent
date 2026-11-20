@@ -76,7 +76,7 @@ func newChatSkillsLive(t *testing.T) *chatSkillsLive {
 	chat := &store.Chat{
 		ProjectID: project.ID, Title: "skills", State: chatstate.Idle, Agent: "claude",
 		// A repository: a turn checkpoints its worktree before the CLI
-		// starts (task 165.2), and a plain directory fails that first.
+		// starts (task 167.2), and a plain directory fails that first.
 		PermissionMode: string(agent.FullAuto), BaseBranch: "main", WorktreePath: testrepo.Init(t, "main"),
 	}
 	if err := st.CreateChat(ctx, chat); err != nil {
