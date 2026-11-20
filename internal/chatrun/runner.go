@@ -620,12 +620,18 @@ func (r *Runner) runTurn(
 	}
 	skipped, err := r.checkpoint(ctx, chat, turn, workDir)
 	if err != nil {
-		reason := ReasonCheckpointFailed
-		if ctx.Err() != nil {
+		switch {
+		case ctx.Err() != nil && r.base.Err() != nil:
+			// The daemon went away while git ran: interrupted, as the
+			// ending switch below records a shutdown under a live turn
+			// (decision 5), not a stop nobody issued (review F4).
+			next = r.finish(turn, chatstate.TurnInterruptedState, "", "", chat)
+		case ctx.Err() != nil:
 			// A stop that landed while git ran is the human's, not git's.
-			reason = ReasonCanceled
+			next = r.finish(turn, chatstate.TurnFailed, ReasonCanceled, err.Error(), chat)
+		default:
+			next = r.finish(turn, chatstate.TurnFailed, ReasonCheckpointFailed, err.Error(), chat)
 		}
-		next = r.finish(turn, chatstate.TurnFailed, reason, err.Error(), chat)
 		return next
 	}
 	if len(skipped) > 0 {

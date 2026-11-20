@@ -160,3 +160,34 @@ func TestCancelDuringCheckpoint(t *testing.T) {
 	}
 	h.waitIdle(t, c.ID)
 }
+
+// TestShutdownDuringCheckpointInterrupts is review F4: the daemon going away
+// while a turn's checkpoint runs records the turn `interrupted`, as a
+// shutdown under a live turn is (decision 5), not `canceled` — nobody
+// stopped it.
+func TestShutdownDuringCheckpointInterrupts(t *testing.T) {
+	h := newHarness(t)
+	c := h.chat(t)
+	entered := make(chan struct{})
+	h.runner.beforeCheckpoint = func(ctx context.Context, _ int64) {
+		close(entered)
+		<-ctx.Done()
+	}
+	turn, err := h.runner.Send(t.Context(), c.ID, "hello")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(wait.Timeout(10 * time.Second)):
+		t.Fatal("the checkpoint never started")
+	}
+	h.runner.Stop()
+	got, err := h.store.GetChatTurn(t.Context(), turn.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != chatstate.TurnInterruptedState || got.FailReason != "" {
+		t.Fatalf("turn = %s (%s: %s), want interrupted", got.State, got.FailReason, got.ErrorMessage)
+	}
+}

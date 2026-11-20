@@ -110,7 +110,8 @@ overrules them.
    and its doc says chat reasons stay with `internal/chatrun`; the constant
    lives beside the other turn reasons there, and is documented with them in
    the API reference. A stop that lands while git runs fails `canceled`, not
-   `checkpoint_failed`.
+   `checkpoint_failed`; a daemon shutdown there ends it `interrupted`, as it
+   would a live turn (review F4).
    *Amended 2026-11-20 (review F1, settled with the author):* a file git
    cannot read is not a checkpoint failure. `add -A --ignore-errors` leaves
    it out, `gitx.Snapshot` reports it in `Skipped`, and the turn runs with a
