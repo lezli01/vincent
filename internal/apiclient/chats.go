@@ -688,6 +688,17 @@ func (c *Client) ChatExport(ctx context.Context, chatID int64, opts ChatExportOp
 	return out, nil
 }
 
+// ChatExportMarkdown is the whole conversation as the Markdown document the
+// daemon renders (task 157, #1013): ChatExport with format md, returned as a
+// string. The client holds no renderer of its own.
+func (c *Client) ChatExportMarkdown(ctx context.Context, chatID int64) (string, error) {
+	out, err := c.ChatExport(ctx, chatID, ChatExportOptions{Format: "md"})
+	if err != nil {
+		return "", err
+	}
+	return string(out.Body), nil
+}
+
 // ChatSearchTurn is one turn GET /v1/chats/{id}/search matched (task 160
 // decision 2): the turn's seq and how often the query occurs in it.
 type ChatSearchTurn struct {
