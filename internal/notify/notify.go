@@ -23,10 +23,10 @@ import (
 const (
 	// EnvelopeType is the `type` every task envelope carries. It is the
 	// durable event type the selector reads, not a new one (§13.3). A chat
-	// envelope carries the chat event it came from instead (task 162).
+	// envelope carries the chat event it came from instead (task 165).
 	EnvelopeType = store.EventTaskStateChanged
 
-	// KindTask and KindChat are the envelope's `kind` (task 162): which of
+	// KindTask and KindChat are the envelope's `kind` (task 165): which of
 	// the two selectors, `notify.on` or `notify.chat_on`, fired it. Every
 	// task envelope says "task", so a notifier written before chats could
 	// fire tells the two apart by one field rather than by which ids are
@@ -70,7 +70,7 @@ const (
 type Store interface {
 	GetTask(ctx context.Context, id int64) (*store.Task, error)
 	GetProject(ctx context.Context, id int64) (*store.Project, error)
-	// GetChat is the chat read behind a `notify.chat_on` envelope (task 162).
+	// GetChat is the chat read behind a `notify.chat_on` envelope (task 165).
 	GetChat(ctx context.Context, id int64) (*store.Chat, error)
 }
 
@@ -102,7 +102,7 @@ type Input struct {
 // with a bearer token, which defeats the point of a one-line shell script
 // (task 046 decision 5).
 //
-// A chat envelope (task 162) is the same object, so one script handles both:
+// A chat envelope (task 165) is the same object, so one script handles both:
 // `kind` is "chat", `chat_id` names it, `from`/`to` are the chat's state and
 // the moment from `notify.chat_on`, and every task-only field — task_id,
 // block_reason, queued_reason, admit_not_before, the step cursor, workflow —
@@ -111,7 +111,7 @@ type Envelope struct {
 	EventID int64  `json:"event_id"`
 	TS      string `json:"ts"`
 	Type    string `json:"type"`
-	// Kind is KindTask or KindChat (task 162). Additive: a task envelope is
+	// Kind is KindTask or KindChat (task 165). Additive: a task envelope is
 	// otherwise exactly what it was.
 	Kind string `json:"kind"`
 
@@ -285,7 +285,7 @@ func taskJob(e *store.Event, cfg config.Config) (job, bool) {
 	return j, true
 }
 
-// chatJob is the chat selector (task 162): a chat.state_changed into
+// chatJob is the chat selector (task 165): a chat.state_changed into
 // awaiting_input, or a chat.turn_changed whose turn ended done or failed,
 // when that moment is listed in `notify.chat_on`.
 //
@@ -465,7 +465,7 @@ func (n *Notifier) envelope(ctx context.Context, j job, log *slog.Logger) (Envel
 	return env, true
 }
 
-// chatEnvelope assembles a chat's envelope (task 162), or reports that it
+// chatEnvelope assembles a chat's envelope (task 165), or reports that it
 // cannot be sent. There is no root check: a chat has no lanes.
 func (n *Notifier) chatEnvelope(ctx context.Context, j job, log *slog.Logger) (Envelope, bool) {
 	chat, err := n.deps.Store.GetChat(ctx, j.chatID)

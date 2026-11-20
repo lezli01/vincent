@@ -260,7 +260,7 @@ func TestToolSummary(t *testing.T) {
 	}
 }
 
-// TestMentionContextIsExported is task 164 decision 2: a turn's mention
+// TestMentionContextIsExported is task 166 decision 2: a turn's mention
 // snapshot is in every format, after the prompt it belongs to, and a block
 // holding its own fence does not close the Markdown one early.
 func TestMentionContextIsExported(t *testing.T) {

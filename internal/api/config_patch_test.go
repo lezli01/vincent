@@ -152,7 +152,7 @@ func TestConfigPatchKeepsCommentsAndUncommentsInPlace(t *testing.T) {
 	}
 }
 
-// notify.chat_on (task 162) is reachable the way notify.on is: a patch writes
+// notify.chat_on (task 165) is reachable the way notify.on is: a patch writes
 // it into the commented block, applies it, and GET serves it — and an unset
 // chat_on is served as [] rather than null, as on is.
 func TestConfigPatchNotifyChatOn(t *testing.T) {

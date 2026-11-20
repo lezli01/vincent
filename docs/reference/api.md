@@ -3287,7 +3287,7 @@ and hand-off discard the queue. A chat carries `queued_count`, `queue_paused`,
 `queue_pause_reason`, and `can_steer` with `steer_reason`: no adapter can
 steer a running turn yet, so `can_steer` is always `false`.
 
-**Unread** (task 162). A chat carries `last_viewed_at` — `null` when nobody
+**Unread** (task 165). A chat carries `last_viewed_at` — `null` when nobody
 has looked at it — and `unread`, which is `true` when its latest finished turn
 (`done`, `failed` or `interrupted`) ended after `last_viewed_at`. There is one
 value per chat, shared by every client, because the installation has no

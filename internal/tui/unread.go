@@ -8,7 +8,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// Unread marks (task 162). A chat is unread when a turn finished after anyone
+// Unread marks (task 165). A chat is unread when a turn finished after anyone
 // last looked at it; the daemon derives the flag from last_viewed_at, so
 // every client agrees, and a chat.viewed event tells the others when one of
 // them cleared it.

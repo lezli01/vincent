@@ -387,7 +387,7 @@ func TestUpgradeYieldsProject(t *testing.T) {
 	}
 }
 
-// TestChatSwitchOps is task 162's chat switch under the clauses: eleven
+// TestChatSwitchOps is task 165's chat switch under the clauses: eleven
 // operations on the chats board and the chat, every one a Typing hatch on an
 // alt key, so the composer never types them and ctrl+p stays the palette.
 func TestChatSwitchOps(t *testing.T) {

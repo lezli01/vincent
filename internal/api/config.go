@@ -282,7 +282,7 @@ type configTriggers struct {
 
 type configNotify struct {
 	On []string `json:"on"`
-	// ChatOn is the chat half of the selector (task 162), served as `[]`
+	// ChatOn is the chat half of the selector (task 165), served as `[]`
 	// rather than null when empty, as On is.
 	ChatOn []string `json:"chat_on"`
 	// Command is argv, served in full. It can carry a secret, and that is why
@@ -408,7 +408,7 @@ func notifyStates(states []taskstate.State) []string {
 	return out
 }
 
-// chatNotifyStates is notifyStates for `notify.chat_on` (task 162).
+// chatNotifyStates is notifyStates for `notify.chat_on` (task 165).
 func chatNotifyStates(states []chatstate.NotifyState) []string {
 	out := make([]string, 0, len(states))
 	for _, st := range states {

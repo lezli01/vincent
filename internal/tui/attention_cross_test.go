@@ -102,7 +102,7 @@ func TestElsewhereBadgeShedsBeforeTheName(t *testing.T) {
 }
 
 // TestBellRingsForEveryProject: the stream stays global (decision 16), and
-// nothing scoped stands between it and the root's bell (task 162) — a task in
+// nothing scoped stands between it and the root's bell (task 165) — a task in
 // another project entering awaiting_input rings once while this one is
 // selected and the terminal is unfocused.
 func TestBellRingsForEveryProject(t *testing.T) {

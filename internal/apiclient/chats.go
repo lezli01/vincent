@@ -73,10 +73,10 @@ type Chat struct {
 	DraftUpdatedAt *time.Time `json:"draft_updated_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
-	// LastViewedAt is when a person last looked at the chat (task 162), nil
+	// LastViewedAt is when a person last looked at the chat (task 165), nil
 	// when nobody ever has. It is the daemon's, shared by every client.
 	LastViewedAt *time.Time `json:"last_viewed_at"`
-	// Unread says a turn finished since LastViewedAt (task 162); the daemon
+	// Unread says a turn finished since LastViewedAt (task 165); the daemon
 	// derives it, so a client never compares timestamps itself.
 	Unread bool `json:"unread"`
 	// Warnings are non-fatal notes on a create, such as a chat opened on a
@@ -227,7 +227,7 @@ type ChatTurn struct {
 	Effort         string `json:"effort,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
 	// MentionContext is what the turn's mentions expanded into when it
-	// started (task 164), "" when nothing did. Prompt is the typed text.
+	// started (task 166), "" when nothing did. Prompt is the typed text.
 	MentionContext string `json:"mention_context,omitempty"`
 }
 
@@ -440,7 +440,7 @@ func (c *Client) ChatFiles(ctx context.Context, id int64, limit int) (*ChatFiles
 }
 
 // ChatMention is one `#issue-N`, `#task-N`, `#pr-N` or `@path#Lx-y` token
-// in a chat message (task 164).
+// in a chat message (task 166).
 type ChatMention struct {
 	Kind  string `json:"kind"`
 	Token string `json:"token"`
@@ -451,7 +451,7 @@ type ChatMention struct {
 }
 
 // ChatExpansion is POST /v1/chats/{id}/expand's answer: what a draft's
-// mentions would expand into if it were sent now (task 164 decision 6).
+// mentions would expand into if it were sent now (task 166 decision 6).
 type ChatExpansion struct {
 	ChatID         int64         `json:"chat_id"`
 	Context        string        `json:"context"`
@@ -604,7 +604,7 @@ func (c *Client) ArchiveChat(ctx context.Context, id int64, force bool) (*Chat, 
 	return &out, nil
 }
 
-// MarkChatViewed records that the chat was looked at (task 162) and returns
+// MarkChatViewed records that the chat was looked at (task 165) and returns
 // it with its unread mark re-derived. The daemon stamps its own clock and
 // never moves the mark backwards, so calling it on every open is safe; a
 // view that advanced the mark is announced to every client as chat.viewed.

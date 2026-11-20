@@ -38,7 +38,7 @@ list with the user-facing context a commit subject cannot carry.
   the tasks, oldest first. In a chat or on the chats board, `alt+n`/`alt+shift+n`
   open the project's next or previous chat and `alt+1`…`alt+9` its Nth
   (`]`/`[` on the board too), keeping the draft you leave; macOS terminals
-  need Option set to act as Meta (task 162, #1019).
+  need Option set to act as Meta (task 165, #1019).
 - **Mention issues, tasks, pull requests and line ranges in a chat.**
   `#issue-N`, `#task-N` and `#pr-N` in a chat message, and a file range such
   as `@internal/api/server.go#L20-45`, are expanded by the daemon into a short
@@ -48,7 +48,7 @@ list with the user-facing context a commit subject cannot carry.
   send; your message is stored as typed, and the expanded block is kept on
   the turn (`mention_context`) and shown in its transcript and export. The
   API gains `POST /v1/chats/{id}/expand` to preview a draft's expansion
-  (task 164, #1021). A bare `@path` is unchanged.
+  (task 166, #1021). A bare `@path` is unchanged.
 - **Search inside a chat, jump between prompts, expand one tool call.**
   `ctrl+f` in a chat hands the keyboard to the conversation with a search
   line: every turn is searched case-insensitively — the ones not loaded yet
@@ -147,7 +147,7 @@ list with the user-facing context a commit subject cannot carry.
   that, for a chat asking for input and for a chat turn ending, but only
   when the terminal reports it has lost focus — and a terminal that never
   reports focus no longer rings at all. Use `notify.chat_on` / `notify.on`
-  for alerts that must reach you regardless (task 162, #1019).
+  for alerts that must reach you regardless (task 165, #1019).
 
 - **A step's token count uses the chat's arrows.** The task workspace's step
   details now read `8.1k↑/120↓` — `↑` the input sent to the model, `↓` the

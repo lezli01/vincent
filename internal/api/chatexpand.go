@@ -1,6 +1,6 @@
 package api
 
-// POST /v1/chats/{id}/expand (task 164 decision 6, spec §5.5, §13.2): what a
+// POST /v1/chats/{id}/expand (task 166 decision 6, spec §5.5, §13.2): what a
 // draft's `#issue-N`, `#task-N`, `#pr-N` and `@path#Lx-y` mentions would
 // expand into if it were sent now. It runs the very function a turn runs, so
 // the composer's note and preview cannot disagree with what is sent.
@@ -34,7 +34,7 @@ type chatExpandBody struct {
 	Resolved   []chatrun.Mention `json:"resolved"`
 	Unresolved []chatrun.Mention `json:"unresolved"`
 	// Bytes is len(Context); TokensEstimate is Bytes ÷ 4, an estimate a
-	// client always shows with `~` (task 164 decision 5).
+	// client always shows with `~` (task 166 decision 5).
 	Bytes          int `json:"bytes"`
 	TokensEstimate int `json:"tokens_estimate"`
 }
@@ -75,7 +75,7 @@ func nonNilMentions(m []chatrun.Mention) []chatrun.Mention {
 	return m
 }
 
-// MentionPull resolves a chat's `#pr-N` mention (task 164 decision 3): the
+// MentionPull resolves a chat's `#pr-N` mention (task 166 decision 3): the
 // pull request numbered n in project id's GitHub repository, through the
 // same gate and client the pull request views use. Anything short of a
 // pull request — no project, no GitHub binding, the integration unusable,

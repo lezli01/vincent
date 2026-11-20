@@ -11,7 +11,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// Task 162's chat switch. The probes join panelKeyProbes here rather than in
+// Task 165's chat switch. The probes join panelKeyProbes here rather than in
 // its literal so the eleven keys on each surface are written once.
 
 // switchChats is a project's chats in an order the board does not draw them

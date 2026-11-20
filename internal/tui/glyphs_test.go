@@ -324,7 +324,7 @@ func TestGlyphIndicatorsSurviveMonochrome(t *testing.T) {
 	}
 }
 
-// TestUnreadMark is task 162's ● on a chat: drawn only for an unread chat, on
+// TestUnreadMark is task 165's ● on a chat: drawn only for an unread chat, on
 // both the card and the row, through ic — the Unicode dot by default and the
 // Nerd Font circle with tui.icons: nerd — and readable without colour.
 func TestUnreadMark(t *testing.T) {

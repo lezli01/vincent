@@ -16,7 +16,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// Task 164 decision 6: ExpandChat against the real POST
+// Task 166 decision 6: ExpandChat against the real POST
 // /v1/chats/{id}/expand handler and a real chat runner — the function a turn
 // runs — so the note and the preview a client draws are decoded by the type
 // it will actually use.

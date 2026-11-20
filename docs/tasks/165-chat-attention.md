@@ -1,4 +1,4 @@
-# 162 — Notify on chats, mark unread chats, switch chats without the list
+# 165 — Notify on chats, mark unread chats, switch chats without the list
 
 **Status:** 🔄 in progress (5/6) · **Opened:** 2026-11-20
 
@@ -13,20 +13,20 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [x] **162.1** `notify.chat_on`: `chatstate.NotifyOn`, config validation, the
+- [x] **165.1** `notify.chat_on`: `chatstate.NotifyOn`, config validation, the
   notifier's chat events and the envelope's `kind` and `chat_id`; Settings
   edits the key. ✓ 2026-11-20
-- [x] **162.2** Unread marks: migration `0062_chat_last_viewed`,
+- [x] **165.2** Unread marks: migration `0064_chat_last_viewed`,
   `POST /v1/chats/{id}/viewed`, `last_viewed_at` and `unread` on the chat
   body, `chat.viewed`, the `●` mark, and the route off the MCP surface.
   ✓ 2026-11-20
-- [x] **162.3** Attention: `awaiting_input` chats in the count, the tally and
+- [x] **165.3** Attention: `awaiting_input` chats in the count, the tally and
   `!`. ✓ 2026-11-20
-- [x] **162.4** The focus-gated bell, shared by tasks and chats at the root.
+- [x] **165.4** The focus-gated bell, shared by tasks and chats at the root.
   ✓ 2026-11-20
-- [x] **162.5** Chat switching: `next_chat`, `prev_chat`, `chat_1`…`chat_9`,
+- [x] **165.5** Chat switching: `next_chat`, `prev_chat`, `chat_1`…`chat_9`,
   and `]`/`[` on the chats board. ✓ 2026-11-20
-- [~] **162.6** Docs and pictures: the feature, guide and reference pages,
+- [~] **165.6** Docs and pictures: the feature, guide and reference pages,
   and re-captured chats screenshots with a `●` mark and a chat in the
   attention count. The pages are written (2026-11-20); the screenshots wait
   on a re-run of `scripts/screenshots.sh`.
@@ -58,3 +58,21 @@ Confirmed by the author on 2026-11-20, in the brief for #1019.
    project (waiting on you, running, idle), wraps, does nothing past the
    end, and keeps the draft of the chat it leaves. `]`/`[` are fixed aliases
    on the chats board only, where nothing is typed.
+
+### Reconciled on the merge train (2026-11-20)
+
+This work was delivered as task 156, then 162, and met master again on the
+merge train with both numbers taken (156 by the chat message queue, 162 by
+chat run settings): it is task **165**, and its migration is
+`0064_chat_last_viewed` (master holds 0059–0063). Two of its choices met a
+master decision and were reconciled rather than overridden:
+
+- **`prev_chat` is `alt+shift+n`, not `alt+p`.** Task 162 decision 9 had
+  already given `alt+p` to the chat's model picker on the same surface; shift
+  reverses `alt+n`, the way `alt+shift+g` is the follow key. `next_chat` stays
+  `alt+n`.
+- **The switch keeps the draft through task 164.** The in-view map of
+  drafts the switch first carried was dropped: task 164 keeps each chat's
+  draft in the daemon and saves it whenever a chat is left, the switch's open
+  included, so decision 6's "keeps the draft of the chat it leaves" holds
+  across clients and restarts too.

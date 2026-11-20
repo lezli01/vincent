@@ -430,7 +430,7 @@ func (v *chatsView) chatCard(c apiclient.Chat, selected bool, w int) []string {
 		titleStyle, edges, border = styleTitle, edgesThick, styleFocus
 	}
 	head := styleKey.Render("#" + strconv.FormatInt(c.ID, 10))
-	// The unread mark (task 162) beside the id, where a reader scanning the
+	// The unread mark (task 165) beside the id, where a reader scanning the
 	// rail's left edge finds it; the status line keeps the chat's state.
 	if mark := unreadMark(c); mark != "" {
 		head += " " + mark

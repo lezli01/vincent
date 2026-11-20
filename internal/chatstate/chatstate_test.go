@@ -283,7 +283,7 @@ func TestSendQueuesOutsideIdle(t *testing.T) {
 	}
 }
 
-// TestNotifyVocabulary pins `notify.chat_on`'s accepted values (task 162):
+// TestNotifyVocabulary pins `notify.chat_on`'s accepted values (task 165):
 // exactly three, `turn_interrupted` refused, and each turn outcome mapped to
 // its moment.
 func TestNotifyVocabulary(t *testing.T) {

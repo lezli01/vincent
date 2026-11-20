@@ -100,7 +100,7 @@ var fixed = []Fixed{
 	{"chats", "tab", "switch to the next main tab"},
 	{"chats", "left", "collapse the project group"},
 	{"chats", "right", "expand the project group"},
-	// The chats board's aliases for next_chat and prev_chat (task 162): no
+	// The chats board's aliases for next_chat and prev_chat (task 165): no
 	// text field has the keyboard there, so the bracket pair the task
 	// workspace and the issue already walk tabs with is free. In an open
 	// chat they stay text, which is why they are fixed rather than ops.

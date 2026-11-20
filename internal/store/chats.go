@@ -35,7 +35,7 @@ const (
 	// applies from the next turn when made during a live one. It carries the
 	// chat, so a list repaints without a fetch.
 	EventChatUpdated = "chat.updated"
-	// EventChatViewed is a person having looked at the chat (task 162): its
+	// EventChatViewed is a person having looked at the chat (task 165): its
 	// last_viewed_at advanced, so its unread mark may have cleared in every
 	// client, not just the one that viewed it.
 	EventChatViewed = "chat.viewed"
@@ -61,7 +61,7 @@ const chatColumns = `id, project_id, title, state, agent, model, effort, permiss
 	(SELECT COUNT(*) FROM chat_queued_messages q WHERE q.chat_id = chats.id),
 	last_viewed_at, ` + chatUnreadExpr
 
-// chatUnreadExpr derives Chat.Unread in SQL (task 162) so a list stays one
+// chatUnreadExpr derives Chat.Unread in SQL (task 165) so a list stays one
 // query: the chat's latest terminal turn finished after it was last viewed,
 // or it has one at all when it was never viewed. A running turn never counts
 // — there is nothing to read until it ends. ended_at and last_viewed_at are
@@ -522,7 +522,7 @@ func (s *Store) updateChatOrRefuse(ctx context.Context, id int64, evType string,
 	return out, nil
 }
 
-// MarkChatViewed records that a person looked at chat id at `at` (task 162)
+// MarkChatViewed records that a person looked at chat id at `at` (task 165)
 // and returns the chat as it now reads, Unread re-derived. It is monotonic:
 // last_viewed_at becomes max(existing, at), so a client with a slow clock or
 // a late request never resurrects an unread mark another client cleared.
@@ -711,7 +711,7 @@ func updateChatTurnTx(ctx context.Context, tx *sql.Tx, t *ChatTurn) error {
 }
 
 // SetChatTurnMentionContext records the block turn id's mentions expanded
-// into (task 164 decision 2). It is written once, when the turn starts and
+// into (task 166 decision 2). It is written once, when the turn starts and
 // before the agent is spawned, and never again: it is the snapshot of what the
 // agent was given, which a later edit to the mentioned object must not change.
 // It publishes nothing of its own — the turn's next chat.turn_changed carries

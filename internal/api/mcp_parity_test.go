@@ -116,7 +116,7 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodGet, "/v1/chats/{id}/export"},
 		// Task 160 decision 2: the chat search scans the transcripts above.
 		{http.MethodGet, "/v1/chats/{id}/search"},
-		// Task 164 decision 6: the expand preview is a human's draft, and
+		// Task 166 decision 6: the expand preview is a human's draft, and
 		// the chat family stays off the tool surface whole.
 		{http.MethodPost, "/v1/chats/{id}/expand"},
 		// Task 065 decision 5, under the same wording: a workflow file is
@@ -190,7 +190,7 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodGet, "/v1/chats/{id}/draft"},
 		{http.MethodPut, "/v1/chats/{id}/draft"},
 		{http.MethodGet, "/v1/chats/prompts"},
-		// Task 162: the last-viewed write, in the chat family (063 decision
+		// Task 165: the last-viewed write, in the chat family (063 decision
 		// 2). It records that a person looked at the chat; an agent calling
 		// it would forge that fact and clear every client's unread mark.
 		{http.MethodPost, "/v1/chats/{id}/viewed"},

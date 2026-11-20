@@ -217,7 +217,7 @@ type root struct {
 	width  int
 	height int
 
-	// focused is the terminal's last focus report (task 162, focus.go).
+	// focused is the terminal's last focus report (task 165, focus.go).
 	// It starts true, so a terminal that never reports focus behaves as one
 	// that is always looked at.
 	focused bool
@@ -1468,7 +1468,7 @@ func (m *root) updateFollowFetched(msg followFetchedMsg) tea.Cmd {
 	return m.followTo(p, withProjectID(msg.open, msg.projectID), "")
 }
 
-// nextAttention is `!` (task 132 decision 52, task 162): the selection's
+// nextAttention is `!` (task 132 decision 52, task 165): the selection's
 // next target after the one in front of the human — the open chat when `!`
 // is pressed inside one, the board's cursor row otherwise — and, once the
 // selection's targets are exhausted or it has none, the first target of the
@@ -1508,7 +1508,7 @@ func (m *root) attentionCurrent() *attentionTarget {
 }
 
 // attentionBack is where esc from a chat `!` opened lands: the view `!` was
-// pressed from (task 162). Pressed inside a chat, that chat's own way back is
+// pressed from (task 165). Pressed inside a chat, that chat's own way back is
 // kept — going back to the chat that was just left would be no way out.
 func (m *root) attentionBack() viewID {
 	if m.active == viewChat {
@@ -1532,7 +1532,7 @@ func (m *root) openAttention(t attentionTarget) tea.Cmd {
 // crossAttention is `!` leaving the selected project (task 132 decision 52):
 // the press goes to the next project by name that has a target, wrapping,
 // and opens its first target — a task in board order or a waiting chat,
-// oldest wait first (task 162). The open follows the object (decision 38),
+// oldest wait first (task 165). The open follows the object (decision 38),
 // so a dirty draft asks first (decision 36), and raises a notice naming the
 // switch. ok is false when no other project has a target: the press then
 // stays in the selection, which is the wrap back to its first.
@@ -2497,7 +2497,7 @@ func (m *root) View() tea.View {
 		v.MouseMode = tea.MouseModeCellMotion
 	}
 	// Focus reports gate the bell and tell the chat workspace whether an
-	// arriving turn was seen (task 162, focus.go).
+	// arriving turn was seen (task 165, focus.go).
 	v.ReportFocus = true
 	return v
 }

@@ -101,11 +101,11 @@ type chatBody struct {
 	SteerReason    string     `json:"steer_reason,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
-	// LastViewedAt is when a person last looked at the chat (task 162); null,
+	// LastViewedAt is when a person last looked at the chat (task 165); null,
 	// not omitted, when nobody ever has. One value per chat, shared by every
 	// client: the installation has no per-user identity.
 	LastViewedAt *time.Time `json:"last_viewed_at"`
-	// Unread is the store's derivation (task 162): the latest terminal turn
+	// Unread is the store's derivation (task 165): the latest terminal turn
 	// ended after LastViewedAt. Always present, so false is an answer.
 	Unread bool `json:"unread"`
 	// Warnings are non-fatal notes on a create — an issue chat opened on a
@@ -147,7 +147,7 @@ type chatTurnBody struct {
 	Effort         string `json:"effort,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
 	// MentionContext is what the turn's `#issue-N`, `#task-N`, `#pr-N` and
-	// `@path#Lx-y` mentions expanded into when it started (task 164
+	// `@path#Lx-y` mentions expanded into when it started (task 166
 	// decision 2), absent when nothing did. Prompt stays the typed text.
 	MentionContext string `json:"mention_context,omitempty"`
 }

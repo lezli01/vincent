@@ -833,7 +833,7 @@ type Chat struct {
 	DraftUpdatedAt *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
-	// LastViewedAt is when a person last looked at the chat (task 162): one
+	// LastViewedAt is when a person last looked at the chat (task 165): one
 	// value per chat, shared by every client, since the installation has no
 	// per-user identity. Nil = never viewed. Only MarkChatViewed writes it.
 	LastViewedAt *time.Time
@@ -918,7 +918,7 @@ type ChatTurn struct {
 	Effort         string
 	PermissionMode string
 	// MentionContext is the block the turn's `#issue-N`, `#task-N`, `#pr-N`
-	// and `@path#Lx-y` mentions expanded into when it started (task 164
+	// and `@path#Lx-y` mentions expanded into when it started (task 166
 	// decision 2): what rode ahead of Prompt, which stays the text the human
 	// typed. "" is "nothing expanded".
 	MentionContext string

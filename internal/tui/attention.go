@@ -11,14 +11,14 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// attentionTarget is one thing `!` can land on (task 162): a root task in a
+// attentionTarget is one thing `!` can land on (task 165): a root task in a
 // taskstate.NeedsHuman state, or a chat in `awaiting_input`. Exactly one of
 // the two pointers is set. It is a sum type rather than two lists because the
 // jump walks both kinds in one order — whichever started waiting first — and
 // a chat waiting longer than a task is visited before it.
 //
 // Only a chat that is *waiting* is a target. A chat whose turn finished while
-// nobody looked is unread, not waiting (task 162, the narrowest reading of
+// nobody looked is unread, not waiting (task 165, the narrowest reading of
 // superseding task 067 decision 4): it asks nothing, so it never joins the
 // count or the jump.
 type attentionTarget struct {
@@ -95,7 +95,7 @@ func chatsInProject(chats []apiclient.Chat, project int64) []apiclient.Chat {
 }
 
 // mergeTargets is tasks (already in board order) and chats as one list,
-// oldest wait first (task 162). The sort is stable, so targets that started
+// oldest wait first (task 165). The sort is stable, so targets that started
 // waiting at the same instant — or whose times a test left zero — keep board
 // order, tasks ahead of chats.
 func mergeTargets(tasks []apiclient.Task, chats []apiclient.Chat) []attentionTarget {
@@ -137,7 +137,7 @@ func nextTarget(targets []attentionTarget, cur *attentionTarget) (next attention
 }
 
 type (
-	// boardChatsMsg answers the live board's chat listing (task 162).
+	// boardChatsMsg answers the live board's chat listing (task 165).
 	boardChatsMsg struct {
 		seq   int
 		chats []apiclient.Chat
@@ -147,7 +147,7 @@ type (
 	boardChatsRefreshMsg struct{}
 )
 
-// chatsCmd fetches every project's live chats (task 162): no project, and
+// chatsCmd fetches every project's live chats (task 165): no project, and
 // the default archived scope, which hides every terminal chat. Nil on the
 // archived board, which counts nothing, and before a client exists.
 func (b *board) chatsCmd() tea.Cmd {

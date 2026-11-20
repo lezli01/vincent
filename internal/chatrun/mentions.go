@@ -1,12 +1,12 @@
 package chatrun
 
 // Mentions of vincent objects and file line ranges in a chat message (task
-// 164, issue #1021, spec §5.5 "Mentions of vincent objects and line ranges").
+// 166, issue #1021, spec §5.5 "Mentions of vincent objects and line ranges").
 //
 // `#issue-N`, `#task-N`, `#pr-N` and `@path#L20-45` are vincent's own
 // mentions, not an agent CLI's: the daemon expands each one into a bounded
 // block when the turn starts, on every adapter alike, and the block rides
-// ahead of the message the way a linked chat's opening context does (task 164
+// ahead of the message the way a linked chat's opening context does (task 166
 // decisions 1 and 2). A bare `@path` is not one of them — it stays the CLI's,
 // passed through and never rewritten (task 124 decision 9, task 126
 // decision 1).
@@ -42,7 +42,7 @@ const (
 	MentionLines = "lines"
 )
 
-// Bounds on what a mention expands into (task 164 decision 1 and 4). The body
+// Bounds on what a mention expands into (task 166 decision 1 and 4). The body
 // cap is task 140's issue-chat body cap, so an issue reads the same in a
 // mention as in an issue chat's opening context; the line cap is the same
 // number, so a range is never a way to inline a whole large file. MaxMentions
@@ -87,7 +87,7 @@ type Expansion struct {
 	Unresolved []Mention
 }
 
-// MentionPullRequest is what a `#pr-N` block carries (task 164 decision 4).
+// MentionPullRequest is what a `#pr-N` block carries (task 166 decision 4).
 type MentionPullRequest struct {
 	Number     int
 	Title      string
@@ -248,7 +248,7 @@ func leadingDigits(s string) string {
 // ExpandMentions expands text's mentions for chat's next turn: issues and
 // tasks through the store, pull requests through Deps.PullRequest, and line
 // ranges from the chat's workspace (Workspace's directory). It is the one
-// function both a turn and the preview route run (task 164 decision 6), so
+// function both a turn and the preview route run (task 166 decision 6), so
 // the two cannot disagree. It never fails a message: anything it cannot
 // resolve is reported in Unresolved and left as prose.
 func (r *Runner) ExpandMentions(ctx context.Context, chat *store.Chat, text string) Expansion {
@@ -382,7 +382,7 @@ func writeTitleBody(sb *strings.Builder, title, body string) {
 // linesBlock reads m's range from the workspace at dir and renders it as a
 // fenced block. A path that is absolute, climbs out with `..`, or resolves
 // through a symlink to somewhere outside the workspace is not read: vincent
-// does not read outside the workspace for an agent (task 164 decision 1). A
+// does not read outside the workspace for an agent (task 166 decision 1). A
 // missing file, a directory, a binary file and a range that starts past the
 // end are left as prose too; a range that ends past the end is clamped.
 func linesBlock(dir string, m Mention) (string, bool) {
@@ -506,7 +506,7 @@ func clipRunes(s string, n int) string {
 
 // joinPreamble is what rides ahead of a turn's message: a linked or issue
 // chat's opening context on its first turn, then the turn's own mention
-// context (task 164 decision 2).
+// context (task 166 decision 2).
 func joinPreamble(opening, mentions string) string {
 	switch {
 	case opening == "":

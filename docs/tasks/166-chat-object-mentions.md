@@ -1,4 +1,4 @@
-# 164 — Mention issues, tasks and pull requests in a chat, and file line ranges
+# 166 — Mention issues, tasks and pull requests in a chat, and file line ranges
 
 **Status:** 🔄 in progress (3/6) · **Opened:** 2026-11-20 · **Issue:** #1021 (part of #1009)
 
@@ -13,31 +13,31 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [x] **164.1** Wire and expansion: `internal/chatrun/mentions.go` — the
+- [x] **166.1** Wire and expansion: `internal/chatrun/mentions.go` — the
   token parser, issue and task blocks through the store, `#pr-N` through a
   `Deps.PullRequest` closure the daemon wires to the API server's GitHub gate
   (`api.(*Server).MentionPull`), and the block joined after a first turn's
-  opening context as the turn's preamble. Migration 0063 adds
+  opening context as the turn's preamble. Migration 0065 adds
   `chat_turns.mention_context`, written once before the agent starts and
   noted in the turn's transcript; the turn DTO, `apiclient.ChatTurn` and the
   export (`internal/chatexport`, all three formats) carry it. Spec §5.5, §14.
   ✓ 2026-11-20
-- [x] **164.2** Line ranges: `@path#L20`, `@path#L20-45` and `@path#L20-L45`,
+- [x] **166.2** Line ranges: `@path#L20`, `@path#L20-45` and `@path#L20-L45`,
   read workspace-confined (no absolute path, no `..`, no symlink out), CRLF
   as LF, clamped at the end, capped, fenced past any backtick run inside.
   ✓ 2026-11-20
-- [x] **164.3** The preview route `POST /v1/chats/{id}/expand` and
+- [x] **166.3** The preview route `POST /v1/chats/{id}/expand` and
   `apiclient.ExpandChat`, off the MCP surface. Spec §13.2, §13.4; API
   reference, agents guide, features page. ✓ 2026-11-20
-- [ ] **164.4** The TUI `#` picker on the `chatInlineList` core: the chat
+- [ ] **166.4** The TUI `#` picker on the `chatInlineList` core: the chat
   project's issues, tasks and pull requests, open first, fuzzy by title;
   opens on `#` plus a letter, never on a bare `#` (task 126 decision 8); and
   the line-range step after an `@` pick. Spec §15.
-- [ ] **164.5** The composer note (`+2 mentions · ~1.4k tokens · alt+m
+- [ ] **166.5** The composer note (`+2 mentions · ~1.4k tokens · alt+m
   preview`) fed by the expand route, and `alt+m` as a fixed chat key
   (`keymap.fixed` row, `internal/tui/bindings.go`) opening the expanded
   prompt. Spec §15; TUI key reference.
-- [ ] **164.6** A gate (`scripts/164-gate.sh`) sending `#issue-N`,
+- [ ] **166.6** A gate (`scripts/166-gate.sh`) sending `#issue-N`,
   `#task-N`, `#pr-N` (fakegh) and `@file#L2-3` through a chat on the fake
   agent, wired into the lightest `gate-group`, committed executable; and the
   picker and preview screenshots through `scripts/screenshots.sh`.
@@ -75,7 +75,7 @@ brief's, recorded here as binding.
 7. **No adapter capability changes.** `GET /v1/agents`,
    `file_mention_expands` and `vincent agents`' note stay as they are.
 
-### Recorded by the implementer (164.1–164.3)
+### Recorded by the implementer (166.1–166.3)
 
 8. **The bounds.** An issue's body, a task's description and a PR's
    description are each cut at 16 KiB (task 140's issue-chat body cap); a
@@ -93,3 +93,9 @@ brief's, recorded here as binding.
     `agent.RunSpec.JoinedPrompt` with the mention block alone; a linked or
     issue chat's first-turn opening context is not repeated in it, because
     that context is not the draft's and is already on the chat.
+
+### Reconciled on the merge train (2026-11-20)
+
+Delivered as task 164; master had meanwhile given 164 to chat drafts and
+prompt history, so this is task **166**, and its migration is
+`0065_chat_turn_mention_context` (master holds 0063, task 165 0064).

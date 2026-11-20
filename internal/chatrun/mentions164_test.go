@@ -17,7 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// TestParseMentions is task 164's token grammar: each form, the boundaries
+// TestParseMentions is task 166's token grammar: each form, the boundaries
 // on both sides, several mentions in one message, and a duplicate counted
 // once.
 func TestParseMentions(t *testing.T) {

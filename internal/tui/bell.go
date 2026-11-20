@@ -14,7 +14,7 @@ import (
 // or chats starting to wait at once is one interruption, not five.
 const bellInterval = time.Second
 
-// bellState is the root's one terminal bell (task 162). It was the board's,
+// bellState is the root's one terminal bell (task 165). It was the board's,
 // for tasks alone; chats asking for a human ring too now, and two rules side
 // by side would ring twice for one burst and replay each other's ids, so
 // tasks and chats share one once-per-event-id rule and one rate limiter.
@@ -68,7 +68,7 @@ func (m *root) bellCmd(n apiclient.Note) tea.Cmd {
 
 // ringsFor decides whether one event rings, and records it.
 //
-// Three events ask for a human (task 162): a task entering awaiting_input, a
+// Three events ask for a human (task 165): a task entering awaiting_input, a
 // chat entering awaiting_input, and a chat turn ending done or failed — the
 // answer someone is waiting to read. Each rings once per event id: ids are
 // monotonic, so a Last-Event-ID replay after a reconnect is silent, while a

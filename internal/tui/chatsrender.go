@@ -212,7 +212,7 @@ func (v *chatsView) rowLine(r chatRow, selected bool, width int) string {
 	if c.HasDraft {
 		title = styleDim.Render("✎ draft · ") + title
 	}
-	// The unread mark leads the title (task 162): a prefix for the reason the
+	// The unread mark leads the title (task 165): a prefix for the reason the
 	// task and issue are one — most chats are read, and a column of blanks
 	// would tax every row.
 	if mark := unreadMark(*c); mark != "" {

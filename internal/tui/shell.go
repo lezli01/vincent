@@ -29,7 +29,7 @@ type (
 	focusPanelMsg struct{ id panelID }
 	// jumpAttentionMsg asks the shell to jump to a task needing a human —
 	// the root routes `!` here from any screen. id is the task the root's
-	// walk chose (task 162: the walk is over tasks and waiting chats, so
+	// walk chose (task 165: the walk is over tasks and waiting chats, so
 	// only the root, which knows the open chat, can say what comes next);
 	// zero leaves the choice to the shell's own nextAttention.
 	jumpAttentionMsg struct{ id int64 }
@@ -296,7 +296,7 @@ func (s *shell) routeBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 // screen is a navigation surface now; enter is the explicit boundary into the
 // task workspace. id is the root's choice, or zero for the shell's own; a
 // choice that is a waiting chat opens the chat, which is not a row here
-// (task 162).
+// (task 165).
 func (s *shell) selectAttention(id int64) tea.Cmd {
 	if id == 0 {
 		next, _, ok := s.nextAttention(nil)
@@ -560,7 +560,7 @@ func (s *shell) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 // jumpAttention moves to the next task needing a human — id when the root
 // chose it, the shell's own nextAttention otherwise — and opens it
 // immediately: a jump is deliberate, like enter, so it skips the settle
-// window. A waiting chat the shell chose opens the chat (task 162).
+// window. A waiting chat the shell chose opens the chat (task 165).
 func (s *shell) jumpAttention(id int64) tea.Cmd {
 	next := id
 	if next == 0 {
@@ -586,7 +586,7 @@ func (s *shell) jumpAttention(id int64) tea.Cmd {
 // nextAttention is the selected project's next target after cur — its
 // tasks needing a human through visible(), so a committed filter still
 // applies inside the selected project (task 132 decision 52), and its
-// waiting chats, oldest wait first (task 162). cur is the chat `!` was
+// waiting chats, oldest wait first (task 165). cur is the chat `!` was
 // pressed in; nil means the board's cursor row. wrapped reports that the
 // selection's targets are exhausted and next is the first of them again:
 // the point at which the root crosses into the next project instead, when
@@ -602,7 +602,7 @@ func (s *shell) nextAttention(cur *attentionTarget) (next attentionTarget, wrapp
 }
 
 // openAttentionChat opens a waiting chat `!` landed on, with esc going back
-// to the view it was pressed from (task 162).
+// to the view it was pressed from (task 165).
 func openAttentionChat(t attentionTarget, back viewID) tea.Cmd {
 	return func() tea.Msg { return openChatMsg{id: t.id(), projectID: t.projectID(), back: back} }
 }

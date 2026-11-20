@@ -403,7 +403,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		},
 		InvalidateSkills:    skills.Invalidate,
 		ReportBundledSkills: skills.ReportBundled,
-		// A `#pr-N` mention (task 164 decision 3) resolves through the API
+		// A `#pr-N` mention (task 166 decision 3) resolves through the API
 		// server's GitHub gate, read at call time: the server is built after
 		// this runner, and no turn starts before it is.
 		PullRequest: func(ctx context.Context, projectID int64, n int) (chatrun.MentionPullRequest, error) {
@@ -472,7 +472,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// The outward signal (§12.3, task 046): a third internal subscriber that
 	// spawns `notify.command` when a task enters a state listed in
 	// `notify.on`, or a chat reaches a moment listed in `notify.chat_on`
-	// (task 162; the store's GetChat is its chat read). It reads
+	// (task 165; the store's GetChat is its chat read). It reads
 	// currentConfig() per event, so a hot reload
 	// governs the next transition with no extra wiring here, and it does no
 	// database work on this goroutine — the hook only enqueues.

@@ -156,7 +156,7 @@ type Deps struct {
 	// cursor turn — neither CLI reporting any — calls nothing. A closure
 	// rather than the cache itself, so this package never imports it.
 	ReportBundledSkills func(a agent.Adapter, place string, names []string)
-	// PullRequest resolves a `#pr-N` mention in the chat's project (task 164
+	// PullRequest resolves a `#pr-N` mention in the chat's project (task 166
 	// decision 3) through the GitHub client the pull request views use. It
 	// answers ErrNoPull, or any error, when there is nothing to resolve
 	// against, and the mention stays prose. Nil means no pull request
@@ -590,7 +590,7 @@ func (r *Runner) runTurn(
 	env = withChatMarker(env, chat.ID)
 	// The turn's mentions are expanded here, when it starts — a queued
 	// message too, since this is when it reaches the agent — and the block is
-	// recorded before the agent sees it (task 164 decision 2). The prompt
+	// recorded before the agent sees it (task 166 decision 2). The prompt
 	// column keeps the typed text; this snapshot is what the agent was given.
 	if exp := r.ExpandMentions(ctx, chat, turn.Prompt); exp.Context != "" {
 		turn.MentionContext = exp.Context

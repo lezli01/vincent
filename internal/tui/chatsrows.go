@@ -16,7 +16,7 @@ import (
 // abstraction are the four trivial ones.
 
 // chatNeedsAttention reports whether a chat is waiting on a human: the
-// board's top band and its header badge. Since task 162 the same chats count
+// board's top band and its header badge. Since task 165 the same chats count
 // in `!` and the home board's attention count (superseding task 067 decision
 // 4), though a chat still never appears as a row of the task board (decision
 // row 29). An unread chat is not waiting on anyone and is not attention.

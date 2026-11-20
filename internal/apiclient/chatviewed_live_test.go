@@ -19,7 +19,7 @@ import (
 	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
-// TestMarkChatViewedLive is task 162's client half against the real handler:
+// TestMarkChatViewedLive is task 165's client half against the real handler:
 // Unread and LastViewedAt decode on the reads, MarkChatViewed clears the mark,
 // and an unknown chat is a 404 *apiclient.Error.
 func TestMarkChatViewedLive(t *testing.T) {

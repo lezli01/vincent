@@ -12,7 +12,7 @@ import (
 )
 
 // TestChatViewedRoute is POST /v1/chats/{id}/viewed over the real handlers
-// (task 162): it clears the unread mark, both fields are on the wire, a
+// (task 165): it clears the unread mark, both fields are on the wire, a
 // repeat view announces nothing, and an unknown chat is the 404 envelope.
 func TestChatViewedRoute(t *testing.T) {
 	h := newChatHarness(t)

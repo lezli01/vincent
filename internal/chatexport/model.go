@@ -148,7 +148,7 @@ type Turn struct {
 	State  string `json:"state"`
 	Prompt string `json:"prompt"`
 	// MentionContext is what the prompt's `#issue-N`, `#task-N`, `#pr-N` and
-	// `@path#Lx-y` mentions expanded into when the turn started (task 164
+	// `@path#Lx-y` mentions expanded into when the turn started (task 166
 	// decision 2): the snapshot the agent saw, absent when nothing expanded.
 	MentionContext string `json:"mention_context,omitempty"`
 	// Tools is one entry per top-level tool call, in call order. ToolsNote
