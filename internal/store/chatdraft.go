@@ -155,12 +155,14 @@ type ChatPrompt struct {
 // archived, closed and handed off alike (task 164 decision 5) — newest first,
 // with identical texts collapsed to their newest occurrence (decision 6).
 //
-// A query of MinSearchTermRunes or more runes is matched by substring on
-// 0061's trigram index over prompts (task 158); a shorter or empty one cannot
-// use that index, so it is answered by recency alone rather than refused —
-// the picker always has something to show and narrows from the third
-// character on. Each term must appear; terms are quoted, so FTS5 syntax is
-// only ever text to find.
+// Each term of the query must appear, by substring and ignoring case. Terms
+// of MinSearchTermRunes or more runes are matched on 0061's trigram index
+// over prompts (task 158); a shorter term cannot use that index, so it is
+// checked on the rows the index returned (review F4) — `fix a` narrows as
+// much as `fix` does, and more. A query with no term that long — an empty
+// one included — is answered by recency alone rather than refused, so the
+// picker always has something to show and narrows from a term's third character
+// on. Terms are quoted, so FTS5 syntax is only ever text to find.
 func (s *Store) ListChatPrompts(ctx context.Context, projectID int64, query string, limit int) ([]ChatPrompt, error) {
 	if limit <= 0 {
 		limit = DefaultChatPromptLimit
@@ -169,9 +171,10 @@ func (s *Store) ListChatPrompts(ctx context.Context, projectID int64, query stri
 	q := `SELECT t.prompt, t.chat_id, c.title, c.state, t.seq, t.started_at FROM chat_turns t
 		JOIN chats c ON c.id = t.chat_id`
 	args := []any{}
-	if terms := strings.Fields(query); len(terms) > 0 && promptQueryIndexable(terms) {
-		quoted := make([]string, len(terms))
-		for i, t := range terms {
+	long, short := splitPromptTerms(strings.Fields(query))
+	if len(long) > 0 {
+		quoted := make([]string, len(long))
+		for i, t := range long {
 			quoted[i] = `"` + strings.ReplaceAll(t, `"`, `""`) + `"`
 		}
 		// The column filter `prompt :` keeps an answer's text from matching:
@@ -196,7 +199,7 @@ func (s *Store) ListChatPrompts(ctx context.Context, projectID int64, query stri
 		if err := rows.Scan(&p.Prompt, &p.ChatID, &p.ChatTitle, (*string)(&p.ChatState), &p.Seq, &sentAt); err != nil {
 			return nil, fmt.Errorf("scan chat prompt: %w", err)
 		}
-		if seen[p.Prompt] {
+		if seen[p.Prompt] || !containsFolded(p.Prompt, short) {
 			continue
 		}
 		seen[p.Prompt] = true
@@ -214,11 +217,33 @@ func (s *Store) ListChatPrompts(ctx context.Context, projectID int64, query stri
 	return out, nil
 }
 
-// promptQueryIndexable reports whether every term is long enough for the
-// trigram index (task 158 decision 2).
-func promptQueryIndexable(terms []string) bool {
+// splitPromptTerms parts a query's terms into those long enough for the
+// trigram index (task 158 decision 2) and the shorter ones. The short ones
+// are kept only beside a long one, folded to lower case for containsFolded:
+// a query made only of short terms lists by recency (task 164 decision 6).
+func splitPromptTerms(terms []string) (long, short []string) {
 	for _, t := range terms {
-		if utf8.RuneCountInString(t) < MinSearchTermRunes {
+		if utf8.RuneCountInString(t) >= MinSearchTermRunes {
+			long = append(long, t)
+		} else {
+			short = append(short, strings.ToLower(t))
+		}
+	}
+	if len(long) == 0 {
+		return nil, nil
+	}
+	return long, short
+}
+
+// containsFolded reports whether s contains every one of the lower-cased
+// terms, ignoring case as the trigram index does.
+func containsFolded(s string, terms []string) bool {
+	if len(terms) == 0 {
+		return true
+	}
+	s = strings.ToLower(s)
+	for _, t := range terms {
+		if !strings.Contains(s, t) {
 			return false
 		}
 	}

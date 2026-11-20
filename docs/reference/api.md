@@ -3442,10 +3442,11 @@ daemon, so they survive a TUI restart and follow the chat to another client.
   project's chats sent, archived ones included, newest first, with identical
   texts collapsed to their newest occurrence:
   `{ "prompts": [{ "prompt", "chat_id", "chat_title", "chat_state", "seq",
-  "sent_at" }] }`. `project_id` is required. A `q` whose terms all have three
-  or more characters narrows by substring, as [chat search](#searching-chats)
-  matches; a shorter or empty `q` lists by recency instead of answering
-  `query_too_short`. `limit` defaults to 50, at most 500.
+  "sent_at" }] }`. `project_id` is required. Every term of `q` must appear, by
+  substring and ignoring case, as [chat search](#searching-chats) matches; a
+  term shorter than three characters narrows only beside one that long, so
+  `fix a` lists less than `fix`. A `q` with no term of three characters, or
+  none at all, lists by recency instead of answering `query_too_short`. `limit` defaults to 50, at most 500.
 
 None of these is an MCP tool.
 

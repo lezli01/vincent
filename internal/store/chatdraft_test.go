@@ -131,6 +131,23 @@ func TestListChatPrompts(t *testing.T) {
 	if len(got) != 1 || got[0].Prompt != "fix the parser" || got[0].ChatState != chatstate.Archived {
 		t.Fatalf("q=pars: %+v", got)
 	}
+	// A short term beside a long one still narrows (review F4): it is checked
+	// on the rows the index returned, ignoring case, rather than dropping
+	// the whole query to recency.
+	for q, want := range map[string]string{
+		"fix q":  "",
+		"fix th": "fix the parser",
+		"the RU": "run the tests",
+		"the xp": "explain the lexer",
+	} {
+		got, err := s.ListChatPrompts(t.Context(), p.ID, q, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(texts(got), "|") != want {
+			t.Fatalf("q=%q: %q, want %q", q, texts(got), want)
+		}
+	}
 	got, err = s.ListChatPrompts(t.Context(), p.ID, "", 1)
 	if err != nil {
 		t.Fatal(err)

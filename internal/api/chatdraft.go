@@ -90,11 +90,12 @@ type chatPromptBody struct {
 
 // handleChatPrompts serves GET /v1/chats/prompts?project_id=&q=&limit=
 // (task 164 decisions 5 and 6): every prompt the project's chats have sent,
-// archived ones included, newest first and de-duplicated by text. A q of
-// three characters or more narrows by substring on chat search's trigram
-// index; a shorter or empty one lists by recency rather than answering
-// `query_too_short` as GET /v1/chats/search does, so a picker always has
-// something to show.
+// archived ones included, newest first and de-duplicated by text. Every
+// term of q must appear: one of three characters or more narrows on chat
+// search's trigram index, and a shorter one beside it narrows the rows that
+// returns (review F4). A q with no term that long — or none — lists by
+// recency rather than answering `query_too_short` as GET /v1/chats/search
+// does, so a picker always has something to show.
 func (s *Server) handleChatPrompts(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	pid, err := strconv.ParseInt(q.Get("project_id"), 10, 64)

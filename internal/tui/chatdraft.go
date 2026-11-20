@@ -17,6 +17,7 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -489,8 +490,8 @@ func (v *chatView) renderHistory(width int) []string {
 		head += "  " + v.history.err
 	case v.history.loading && len(v.history.items) == 0:
 		head += "  loading…"
-	case len(v.history.query) > 0 && len([]rune(v.history.query)) < 3:
-		head += "  (narrows from the third character)"
+	case strings.TrimSpace(v.history.query) != "" && !historyNarrows(v.history.query):
+		head += "  (narrows from a word's third character)"
 	}
 	out := []string{"", " " + styleDim.Render(truncateRunes(head, w+2))}
 	if len(v.history.items) == 0 && !v.history.loading {
@@ -513,6 +514,17 @@ func (v *chatView) renderHistory(width int) []string {
 	}
 	out = append(out, " "+styleDim.Render("enter inserts · esc closes · type to narrow"))
 	return out
+}
+
+// historyNarrows reports whether the daemon narrows a prompt-history query:
+// once any word has three characters (task 164 decision 6, review F4).
+func historyNarrows(query string) bool {
+	for _, w := range strings.Fields(query) {
+		if utf8.RuneCountInString(w) >= 3 {
+			return true
+		}
+	}
+	return false
 }
 
 // truncateRunes cuts s to at most n runes, marking the cut.

@@ -81,3 +81,9 @@ Implementation choices recorded here:
     not by the send route: a message sent from the CLI must not wipe a draft
     being typed in the TUI.
 11. **No CLI command.** `vincent chat draft` was optional and is left out.
+12. **A short term narrows beside a long one** (review F4). Decision 6's
+    recency fallback applies only when *no* term has three characters. When
+    one does, the trigram index answers for the long terms and each shorter
+    term is checked on the rows it returned, ignoring case. Before this
+    change, `parser go` dropped the whole query and listed the unfiltered
+    history.

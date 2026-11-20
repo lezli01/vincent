@@ -175,3 +175,15 @@ func TestFailedStashSaveIsRetried(t *testing.T) {
 		t.Fatalf("the retry does not carry the stash: %+v", u)
 	}
 }
+
+// TestHistoryNarrowsHint: the picker's "narrows from a word's third
+// character" hint shows exactly when the daemon would list by recency — no
+// word of three characters yet — not merely while the whole query is short
+// (review F4).
+func TestHistoryNarrowsHint(t *testing.T) {
+	for q, want := range map[string]bool{"": false, "fi": false, "a b c d": false, "fix": true, "fix a": true, "a parser": true} {
+		if got := historyNarrows(q); got != want {
+			t.Errorf("historyNarrows(%q) = %v, want %v", q, got, want)
+		}
+	}
+}

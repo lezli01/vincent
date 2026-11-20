@@ -54,7 +54,8 @@ type ChatPrompt struct {
 
 // ChatPrompts is GET /v1/chats/prompts (task 164): every prompt the project's
 // chats sent, archived ones included, newest first and de-duplicated. A query
-// under three characters lists by recency; a longer one narrows by substring.
+// with no term of three characters lists by recency; otherwise every term
+// narrows by substring.
 // A limit of zero is the daemon's default.
 func (c *Client) ChatPrompts(ctx context.Context, projectID int64, query string, limit int) ([]ChatPrompt, error) {
 	v := url.Values{}

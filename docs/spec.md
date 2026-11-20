@@ -1326,7 +1326,8 @@ them; a terminal chat refuses a new draft. Permanent delete removes the row.
 The prompts a project's chats have sent — live and terminal alike — are
 listable newest first with identical texts collapsed to their newest
 occurrence, narrowed by substring on the search index above from a query's
-third character, and by recency below it rather than refused.
+third character — a shorter term beside such a one narrows too (review F4,
+2026-11-20) — and by recency below it rather than refused.
 
 ### 5.6 Issue (added 2026-10-02, task 130.1, issue #660)
 
@@ -11335,9 +11336,11 @@ GET    /v1/chats/prompts                *Added 2026-11-20 (task 164, issue #1012
                                         sent, archived ones included (§5.5). → { prompts: [{
                                         prompt, chat_id, chat_title, chat_state, seq, sent_at }]
                                         }, newest first, identical texts collapsed to their
-                                        newest occurrence. A q whose every term has three or
-                                        more characters narrows by substring on the chat search
-                                        index; a shorter or empty q lists by recency — never
+                                        newest occurrence. Every term of q must appear, by
+                                        substring and ignoring case: terms of three or more
+                                        characters on the chat search index, shorter ones on the
+                                        rows it returns (review F4, 2026-11-20). A q with no term
+                                        that long, or none, lists by recency — never
                                         `query_too_short`. project_id is required. limit
                                         defaults to 50, at most 500. "prompts" is a literal
                                         segment and outranks {id}. Not an MCP tool (§13.4,

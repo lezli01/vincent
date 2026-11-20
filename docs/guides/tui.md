@@ -2793,8 +2793,10 @@ inside the text again.
 
 `alt+h` opens the **prompt history**: every prompt sent in any chat of this
 project, archived chats included, newest first and with repeats collapsed.
-Type to narrow it — matching is by substring and starts from the third
-character, before which the list stays newest first. `enter` inserts the chosen
+Type to narrow it — every word must appear, by substring, ignoring case.
+Narrowing starts once a word has three characters, before which the list stays
+newest first; after that a shorter word narrows too, so `fix a` finds less
+than `fix`. `enter` inserts the chosen
 prompt at the cursor without sending it; `esc` closes the list and leaves the
 draft as it was.
 
