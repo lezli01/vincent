@@ -91,29 +91,23 @@ func stepDetailsFixture(t *testing.T) *taskView {
 	return v
 }
 
-// Step details is opened from an attempt (task 164 decision 3): enter on
-// Output opens it, it is on the strip while open, and esc goes back to the
-// output it came from — with or without a pull request linked.
-func TestStepDetailsIsOpenedFromOutput(t *testing.T) {
+// Step details keeps a tab after Diff (task 164 decision 14), with or
+// without a pull request, and enter on Output unfolds a tool call instead.
+func TestStepDetailsIsOnTheStrip(t *testing.T) {
 	for _, linked := range []bool{false, true} {
 		v := stepDetailsFixture(t)
 		if linked {
 			v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 		}
+		tabs := v.tabs()
+		i := slices.Index(tabs, taskTabStepDetails)
+		if i < 1 || tabs[i-1] != taskTabDiff {
+			t.Fatalf("linked=%v: Step details is not after Diff: %v", linked, tabs)
+		}
 		v.tab = taskTabOutput
 		v.updateKey(registryKey(t, "enter"))
-		if v.tab != taskTabStepDetails {
-			t.Fatalf("linked=%v: enter on Output moved to %v, want %v", linked, v.tab, taskTabStepDetails)
-		}
-		if !slices.Contains(v.tabs(), taskTabStepDetails) {
-			t.Fatalf("linked=%v: an open Step details is not on the strip: %v", linked, v.tabs())
-		}
-		v.updateKey(registryKey(t, "esc"))
 		if v.tab != taskTabOutput {
-			t.Fatalf("linked=%v: esc on Step details moved to %v, want %v", linked, v.tab, taskTabOutput)
-		}
-		if slices.Contains(v.tabs(), taskTabStepDetails) {
-			t.Fatalf("linked=%v: a closed Step details stays on the strip: %v", linked, v.tabs())
+			t.Fatalf("linked=%v: enter on Output moved to %v", linked, v.tab)
 		}
 	}
 }
@@ -134,7 +128,7 @@ func TestPullRequestTabIsOnTheStripOnlyWhenLinked(t *testing.T) {
 // it is drawn. The conditional tab is last, so the cycle changes length but
 // not order when the pull request comes and goes.
 func TestTabCycleWalksTheStripInBothShapes(t *testing.T) {
-	forward := []taskViewTab{taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabOverview, taskTabSteps}
+	forward := []taskViewTab{taskTabOutput, taskTabDiff, taskTabStepDetails, taskTabWorkflow, taskTabOverview, taskTabSteps}
 	walk := func(t *testing.T, v *taskView, key string, want []taskViewTab) {
 		t.Helper()
 		for i, tab := range want {
@@ -150,13 +144,13 @@ func TestTabCycleWalksTheStripInBothShapes(t *testing.T) {
 	v = tabbedTaskFixture(t, taskTabSteps)
 	walk(t, v, "]", forward)
 
-	linked := []taskViewTab{taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabPull, taskTabOverview, taskTabSteps}
+	linked := []taskViewTab{taskTabOutput, taskTabDiff, taskTabStepDetails, taskTabWorkflow, taskTabPull, taskTabOverview, taskTabSteps}
 	v = tabbedTaskFixture(t, taskTabSteps)
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	walk(t, v, "tab", linked)
 
 	v = tabbedTaskFixture(t, taskTabSteps)
-	walk(t, v, "shift+tab", []taskViewTab{taskTabOverview, taskTabWorkflow, taskTabDiff, taskTabOutput})
+	walk(t, v, "shift+tab", []taskViewTab{taskTabOverview, taskTabWorkflow, taskTabStepDetails, taskTabDiff, taskTabOutput})
 	v = tabbedTaskFixture(t, taskTabOverview)
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	walk(t, v, "[", []taskViewTab{taskTabPull, taskTabWorkflow})
@@ -166,7 +160,7 @@ func TestTabCycleWalksTheStripInBothShapes(t *testing.T) {
 // two old ones moves every hit box after it. A click has to land on the label
 // under the pointer, not on the one that used to be at that column.
 func TestStripLabelsAreClickable(t *testing.T) {
-	v := tabbedTaskFixture(t, taskTabStepDetails)
+	v := tabbedTaskFixture(t, taskTabDetails)
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	v.bodyY = 3
 	v.render(160, 40)
@@ -175,7 +169,7 @@ func TestStripLabelsAreClickable(t *testing.T) {
 	for _, hit := range v.tabHits {
 		hits[hit.tab] = hit
 	}
-	for _, tab := range []taskViewTab{taskTabPull, taskTabWorkflow} {
+	for _, tab := range []taskViewTab{taskTabStepDetails, taskTabPull, taskTabWorkflow} {
 		hit, ok := hits[tab]
 		if !ok {
 			t.Fatalf("tab %v has no hit box on the strip", tab)
@@ -205,7 +199,7 @@ func TestStepDetailsSharesTheWorkspaceAttemptCursor(t *testing.T) {
 		v.tab = from
 		v.detail.selectedRun = 502
 
-		v.updateKey(registryKey(t, "enter"))
+		v.setTab(taskTabStepDetails)
 		if v.detail.selectedRun != 502 {
 			t.Fatalf("arriving from %v moved the cursor to %d, want 502", from, v.detail.selectedRun)
 		}

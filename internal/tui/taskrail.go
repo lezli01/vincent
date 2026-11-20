@@ -39,9 +39,10 @@ type railStep struct {
 
 // Step kinds the rail draws a shape for; anything else is a plain step.
 const (
-	railKindParallel = "parallel"
-	railKindLoop     = "loop"
-	railKindManual   = "manual"
+	railKindParallel  = "parallel"
+	railKindLoop      = "loop"
+	railKindManual    = "manual"
+	railKindCondition = "condition"
 )
 
 // railSteps groups the attempts by step index and fills in the workflow's
@@ -72,7 +73,7 @@ func (d *detail) railSteps() []railStep {
 		s := &out[i]
 		s.kind = d.snapshotType(s.index)
 		switch s.kind {
-		case railKindParallel, railKindLoop, railKindManual, stepTypeFanOut:
+		case railKindParallel, railKindLoop, railKindManual, railKindCondition, stepTypeFanOut:
 		default:
 			s.kind = ""
 		}
@@ -183,6 +184,10 @@ func (d *detail) railGlyph(s railStep) (string, lipgloss.Style) {
 		if state == "running" {
 			glyph = "⟳"
 		}
+	case railKindCondition:
+		if state == "succeeded" {
+			glyph = "◇"
+		}
 	}
 	return glyph, style
 }
@@ -239,6 +244,11 @@ func (d *detail) railMeta(s railStep) string {
 		if clauses := childrenBreakdown(d.task.Children); len(clauses) > 0 {
 			return renderBreakdown(clauses)
 		}
+	}
+	// A guard says what it tested (§7.7): a condition step, and any step a
+	// false `if:` skipped. The text is the guard as it rendered.
+	if guard := railGuard(last); guard != "" {
+		return guard
 	}
 	var parts []string
 	if s.kind == "" && len(s.runs) > 1 {
@@ -336,6 +346,8 @@ func railKindTag(kind string) string {
 		return "parallel"
 	case railKindManual:
 		return "gate"
+	case railKindCondition:
+		return "condition"
 	default:
 		return ""
 	}
@@ -559,4 +571,22 @@ func railDone(task apiclient.Task) int {
 		return task.StepTotal
 	}
 	return min(max(task.CurrentStep, 0), task.StepTotal)
+}
+
+// railGuard is the `if:` an attempt rendered, as the rail says it: what a
+// condition step tested and how it came out, or why a guard skipped a step.
+// "" for an attempt with no guard recorded.
+func railGuard(r apiclient.StepRun) string {
+	if r.RenderedIf == nil || strings.TrimSpace(*r.RenderedIf) == "" {
+		return ""
+	}
+	guard := "if: " + oneLine(*r.RenderedIf)
+	switch {
+	case r.SkipReason != nil && *r.SkipReason == "condition":
+		return styleDim.Render("skipped · " + guard + " was false")
+	case r.State == stepStateStopped:
+		return styleDim.Render(guard + " · the workflow ended here")
+	default:
+		return styleDim.Render(guard)
+	}
 }

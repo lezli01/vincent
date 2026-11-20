@@ -1763,13 +1763,17 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 
 	ctxOutput: {
 		"enter": func(t *testing.T) {
-			v := tabbedTaskFixture(t, taskTabOutput)
-			if v.detail.selectedRun == 0 {
-				v.detail.selectedRun = v.detail.attempts()[0].ID
-			}
+			d := outputStripDetail(t, attempt(1, 0, 1, "implement", "running", true))
+			d.records = []apiclient.TranscriptRecord{{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{
+				{Name: "Read", Summary: "internal/limits.go", CallID: "c1"},
+			}}}
+			d.seqs = d.stamp.take(1)
+			v := newTaskView(d)
+			v.tab = taskTabOutput
+			v.renderOutput(100, 20)
 			v.updateKey(registryKey(t, "enter"))
-			if v.tab != taskTabStepDetails {
-				t.Fatalf("enter on Output moved to %v, want %v", v.tab, taskTabStepDetails)
+			if !d.expandedCalls["c1"] {
+				t.Fatal("enter on Output did not unfold the tool call in view")
 			}
 		},
 		"g": func(t *testing.T) {
@@ -1962,8 +1966,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDiff)
 			v.updateKey(registryKey(t, "tab"))
-			if v.tab != taskTabWorkflow {
-				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabWorkflow)
+			if v.tab != taskTabStepDetails {
+				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabStepDetails)
 			}
 		},
 		// The way back off the tab has to stay on screen, so `]` is a row here
@@ -2555,6 +2559,21 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOverview) },
+		"down": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabOverview)
+			v.detail.task.Issue = &apiclient.TaskIssue{ID: 8, Title: "flicker", State: "open"}
+			v.updateKey(registryKey(t, "down"))
+			if v.linkedSel != 1 {
+				t.Fatalf("down left the Linked cursor on %d, want the issue row", v.linkedSel)
+			}
+			cmd := v.updateKey(registryKey(t, "enter"))
+			if cmd == nil {
+				t.Fatal("enter on the issue row did nothing")
+			}
+			if msg, ok := cmd().(openIssueMsg); !ok || msg.id != 8 {
+				t.Fatalf("enter on the issue row sent %#v", cmd())
+			}
+		},
 		"o": func(t *testing.T) {
 			withFakeOpener(t, nil)
 			v := taskPullFixture(t, apiclient.GitHubTaskPull{

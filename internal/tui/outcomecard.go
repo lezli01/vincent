@@ -181,6 +181,22 @@ func (t *taskView) applyOutcomeDiff(msg outcomeDiffMsg) {
 		_, files := parseDiffFiles(splitDiff(sec.Diff))
 		t.outcome.files = append(t.outcome.files, files...)
 	}
+	// The same diff the Diff tab would fetch: its size is the tab marker's
+	// before the tab has been opened (task 164.2).
+	if msg.err == nil && msg.taskID == t.detail.taskID {
+		var added, removed int
+		for _, f := range t.outcome.files {
+			added += f.added
+			removed += f.removed
+		}
+		p := &t.detail.diff
+		if p.taskID != msg.taskID {
+			p.openTask(msg.taskID)
+		}
+		if !p.wholeSeen {
+			p.whole, p.wholeSeen = [2]int{added, removed}, true
+		}
+	}
 }
 
 func (t *taskView) applyOutcomeCommits(msg outcomeCommitsMsg) {

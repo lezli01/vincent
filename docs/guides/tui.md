@@ -55,14 +55,13 @@ turns them on only if you say they look right.
 **Overview**. A band across the top names the task, its state, its step, its
 workflow, its branch and the issue it is linked to — `i` opens that issue from
 any tab, and `esc` there brings you back. From 130 columns the steps are a
-rail on the left. The tabs are **Overview**, **Output**, **Diff**,
-**Workflow** and, on a task with a linked pull request, **Pull request**;
-below 130 columns **Steps** is a tab too, after Overview. `tab` moves through
-them in the order the strip draws them and `shift+tab` goes back; there are no
-digit keys. The Diff tab shows the change's size beside its name, and
-Overview a red `!` while the task needs you. **Step details**, what one
-attempt was given, opens with `enter` on Output and closes with `esc`. `esc`
-anywhere else returns to where you
+rail on the left. The tabs are **Overview**, **Output**, **Diff**, **Step
+details**, **Workflow** and, on a task with a linked pull request, **Pull
+request**; below 130 columns **Steps** is a tab too, after Overview. `tab`
+moves through them in the order the strip draws them and `shift+tab` goes
+back; there are no digit keys. The Diff tab shows the task's change size
+beside its name once a diff has been read, and Overview a red `!` while the
+task needs you. `esc` returns to where you
 opened the task from: the board, or the issue it was started from. A task
 opened any other way — the command palette, pull requests, triggers, `!`, a
 new task — returns to your [main tab](#main-tabs), and so does a project
@@ -479,10 +478,13 @@ workspace has already loaded:
 - **Done or archived** — how it ended: an **outcome card** (below) and
   `enter diff`.
 
-Under every frame, a **Linked** card names the task's issue (with `i`), pull
-request, chat, branch and base, and a **Usage** card its elapsed time, tokens,
-cost, workflow and worktree. Below them is the task's whole document — what
-the Task Details tab used to be.
+A running task pairs a **Now** card — the current step and attempt, the latest
+status, the last line it printed — with **The task**, the description and
+priority. Under every frame, a **Linked** card names the task's issue (with
+`i`), pull request, chat, branch and base, and a **Usage** card its elapsed
+time, tokens, cost, workflow and worktree. `↑`/`↓` move a cursor along the
+Linked rows that open somewhere, and `enter` opens the one under it. Below
+the cards is the task's whole document.
 
 A **blocked** or **aborted** task's Overview is a **failure card**. Its first
 line says what stopped: `✗ Step 3 verify · attempt 2 · check failed
@@ -575,8 +577,9 @@ project, workflow and its recorded origin, branch and worktree, priority,
 tokens and cost, lifecycle timestamps, queue/block information, pending input,
 fan-out/loop metadata, the [chats opened on it](#talking-to-an-agent-about-a-task),
 the issue it was started from, available actions, and the task's workflow-step
-snapshot. `pgup`/`pgdn` scroll the Overview down to it; nothing there edits
-anything.
+snapshot. `pgup`/`pgdn` scroll the Overview down to it, and the command
+palette's *open the task's details, section by section* opens the inspector
+that reads it one section at a time; nothing there edits anything.
 
 ![The Overview scrolled down to the task's document on a task at its gate,
 with its description, fields and the chats opened on it](../assets/tui-task-details.png)
@@ -652,7 +655,12 @@ glyph and an elapsed clock, `⠋ working… 14s` — with its cost and the follo
 state, so an attempt that is thinking rather than printing is told apart from a
 screen that has stopped repainting. It follows the attempt being *live* rather
 than its step being an `agent` step: a long `command` step's pane goes quiet for
-exactly the same reason. `enter` opens **Step details** for the open attempt.
+exactly the same reason.
+
+Each tool call is one line — what the agent ran and how it came out — folded.
+`enter` unfolds the newest call in view to show its output, and folds it again;
+a click unfolds the call under the pointer. The agent's plan is one row that
+changes in place as it ticks items off.
 
 ![The Output tab on a running command step: earlier steps folded above, the
 divider naming the step and the attempt, and a real go test -v run arriving
@@ -834,11 +842,12 @@ output. It is the sentence that decides whether to open the transcript.
 | `d` | Open Diff from any tab; on Diff, switch between the whole task's diff and the selected attempt's |
 | `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
 | `N` | Jump to the task's next failure, from any tab — see [Jumping between failures](#jumping-between-failures) |
-| `enter` | On Overview, the frame's link — the output of the attempt it is about, or a finished task's diff |
+| `enter` | On Overview, the frame's link — the output of the attempt it is about, or a finished task's diff — or, with the cursor on a Linked row, that row |
+| `↑`/`↓` | On Overview, move along the Linked card's issue, pull request and chat rows |
 | `l` | On Overview, open the fan-out lane the failure card blames — or, on a parent waiting on its lanes, the first lane listed under *Lanes that need you* |
 | `pgup`/`pgdn`, `home`/`end` | On Overview, scroll a frame taller than the screen (the wheel does too; the last row says what is above and below) |
 | `w` | On Overview, open the output of the attempt the outcome card's result came from, at its end |
-| `enter` | On Output, Step details — what the selected attempt was handed, and the resolution behind it (`esc` goes back) |
+| `enter` | On Output, unfold or fold the newest tool call in view |
 | | Pull request is on the strip only when this task has a linked pull request and GitHub is on |
 | `m` | On Pull Request, merge it — the method is chosen in the popup, none preselected |
 | `X` | On Pull Request, close it without merging, or reopen a closed one (asks first) |
@@ -1202,6 +1211,8 @@ function it falls in. `d` switches the tab between the whole task's diff and
 the diff of the attempt selected on the rail, which is what that one attempt
 committed — or, while it runs, what it has changed so far; an attempt from
 before vincent recorded where each one started says it has no range to show.
+While the tab shows one attempt, selecting another moves it there. The summary
+line names what the diff is of, and for the whole task what it is against.
 
 | Key | Does |
 |---|---|

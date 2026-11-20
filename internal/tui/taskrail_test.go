@@ -72,3 +72,23 @@ func TestRailOpensASelectedRetriedStepsAttempts(t *testing.T) {
 		t.Errorf("an unselected step opened its attempts:\n%s", got)
 	}
 }
+
+// A condition step says what it tested, and a step a false guard skipped
+// says so (task 164.1).
+func TestRailSaysWhatAGuardTested(t *testing.T) {
+	skip := "condition"
+	d := railFixture(t,
+		[]apiclient.StepRun{
+			{ID: 1, StepIndex: 0, StepID: "check", StepName: "check", Attempt: 1, State: "succeeded", RenderedIf: ptr("true")},
+			{ID: 2, StepIndex: 1, StepID: "docs", StepName: "docs", Attempt: 1, State: "skipped", SkipReason: &skip, RenderedIf: ptr("false")},
+		},
+		apiclient.WorkflowStep{Index: 0, ID: "check", Type: "condition"},
+		apiclient.WorkflowStep{Index: 1, ID: "docs", Type: "agent"},
+	)
+	got := strings.Join(railText(d, 50), "\n")
+	for _, want := range []string{"◇  check  condition", "│  if: true", "skipped · if: false was false"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rail misses %q:\n%s", want, got)
+		}
+	}
+}

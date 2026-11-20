@@ -89,7 +89,8 @@ Confirmed by the author on 2026-11-20, against the mocks.
 2. **`i` opens the linked issue** from any tab of the workspace; `esc` comes
    back to the same tab. With no issue the header and the Linked card say "no
    linked issue", dim, and offer nothing — linking an issue after creation is
-   not part of this work.
+   not part of this work. A two-key `g i` chord and reaching the issue only
+   from the Linked card or the palette were declined.
 3. **Five tabs, no digits.** Overview, Output, Diff, Workflow, Pull request
    (only when linked), cycled with `tab`/`⇧tab`. Step details (what a step was
    given) is reached with `enter` on a rail step; the Details tab's facts are
@@ -99,11 +100,14 @@ Confirmed by the author on 2026-11-20, against the mocks.
    it is what makes a running task followable. The rail selection scrolls the
    feed rather than filtering it. A per-step view and a toggle were declined.
 5. **The default level is normal**: prose and one-line actions, tool output
-   folded, a failure unfolded one level.
+   folded, a failure unfolded one level. Quiet (prose and failures only) was
+   declined as the default.
 6. **Diff by step is in scope now**, which makes this the one part with daemon
    work (164.5, 164.6). Step runs do not record a commit today, so a run from
    before the migration has no range and says so rather than guessing one.
-7. **One pull request**, mentioning "closes 164".
+   Deferring it to a task of its own, and dropping it, were declined.
+7. **One pull request**, mentioning "closes 164". Staged pull requests per
+   sub-task were declined.
 
 ## Where the build departed from the mocks (2026-11-20)
 
@@ -121,20 +125,37 @@ be revisited rather than rediscovered.
    feed follow, as the Output tab's attempt keys always did. A click on a
    rail row selects it. A rail with its own focus (`↑`/`↓` there, as mocked)
    would need a focus model the workspace does not have.
-10. **Step details opens with `enter` on Output**, the attempt being read,
-    rather than on a rail row, for decision 9's reason. Task Details is the
-    Overview's lower half, a linear document rather than the sidebar
-    inspector, and its `o`/`P` pull-request keys moved to the Overview.
+10. **Task Details is the Overview's lower half**, a linear document, and its
+    `o`/`P` pull-request keys moved to the Overview. The sidebar inspector is
+    kept, reached from the palette (*open the task's details, section by
+    section*) and on the strip only while open — dropping it would have lost
+    the one view that reads the document a section at a time.
 11. **Below 130 columns Steps is still a tab**, after Overview: the narrow
     layout has no room for the rail.
 12. **The feed folds every other attempt from its step-run row.** No other
     transcript is fetched, so a fold says what the row says (state, agent,
     time, cost, reason, the start of the result), and its tool calls appear
-    only when it is the open attempt. The per-tool row format is the chat
-    workspace's renderer, unchanged; only `step_started`/`step_finished`, the
-    script line and the command-output bar are new.
+    only when it is the open attempt. Its tool calls use the chat's one-line
+    form (task 150.5's check lines) and its per-call expansion (task 160
+    decision 4) rather than a second renderer: `enter` unfolds the newest
+    call in view, a click the call under the pointer — the feed has no line
+    cursor, so the newest in view is what the keyboard can name.
 13. **The Diff has no side file list and no tinted backgrounds.** The folded
     tree already is the file list, and a background tint is a fixed colour,
     which task 150 decision 9 rules out for a palette that follows the
-    terminal's theme. Status letters, change bars, line numbers and
-    hunk rules carry the retouch.
+    terminal's theme. Status letters, change bars, line numbers, hunk rules
+    and the base on the summary line carry the retouch. The tab's size marker
+    is the whole task's, from the Diff tab's or the outcome card's last
+    fetch; a task neither has read yet shows none rather than fetching a diff
+    per open.
+14. **Step details keeps a tab** (amends decision 3), after Diff. Decision 3
+    reached it with `enter` on a rail step, and the first build with `enter`
+    on Output — which 164.4 also gives to unfolding a tool call. One key
+    cannot do both, and a tab costs nothing a reader has to learn.
+15. **A running attempt's diff is live** (amends 164.6's "409 … a run that
+    never finished"). A run still running diffs `head_start` against the
+    worktree, uncommitted work included, as the whole-task diff does; only a
+    run with no `head_start`, or one that ended without a `head_end` (an
+    interrupted run recovery finalized), answers 409 `step_range_unrecorded`.
+    A 409 for the attempt a reader is watching would hide the one diff they
+    are most likely to want.

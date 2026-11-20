@@ -83,7 +83,7 @@ func TestLiveSubagentReachesThePane(t *testing.T) {
 	h.p.until(20*time.Second, "the live subagent to render", func() bool {
 		got := plainContent(h.m)
 		return strings.Contains(got, "┊ ↳ Verify 088 gate walkthrough") &&
-			strings.Contains(got, "✓ started in background")
+			strings.Contains(got, "started in background")
 	})
 	if got := plainContent(h.m); strings.Count(got, "┊ ▸ Bash") < 2 {
 		t.Errorf("both agents' tool calls should render on the rail:\n%s", got)

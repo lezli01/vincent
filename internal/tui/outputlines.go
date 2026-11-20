@@ -606,6 +606,16 @@ func splitWords(para string, avail int) []string {
 	return out
 }
 
+// scriptMore is the count after a script's first line, naming the key that
+// shows the rest where the pane has one.
+func scriptMore(n int, expandKey string) string {
+	more := "  (+" + plural(n, "line", "lines")
+	if expandKey != "" {
+		more += " · " + expandKey + " shows them"
+	}
+	return more + ")"
+}
+
 // runHeaderLine renders what the CLI announced about the run before it
 // started: where it ran and what it was allowed to reach (task 066). It is
 // the answer to "what could this agent actually do", which the pane could not
@@ -1003,6 +1013,12 @@ type lineOpts struct {
 	// expandHint is the key text the ▸/▾ affordance names, set only while
 	// that key works where the line is read (071 decision 7).
 	expandHint string
+	// latestPlan draws the main loop's plan once, where it first appeared,
+	// with the newest version's items (task 164.4): every version of the
+	// list arrives whole, so the newest is the list as it stands, and the
+	// task's feed shows it as one row that changes in place rather than a
+	// history of the plan.
+	latestPlan bool
 }
 
 // recordCall is the tool call a record belongs to: a tool_use's or a
@@ -1175,9 +1191,28 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 	if opts.toolChecks && (level == levelCompact || level == levelNormal) {
 		checks = newToolCheckIndex(records)
 	}
+	firstPlan, lastPlan := -1, -1
+	if opts.latestPlan {
+		for i, r := range records {
+			if r.Type == "agent.plan" && r.ParentCallID == "" {
+				if firstPlan < 0 {
+					firstPlan = i
+				}
+				lastPlan = i
+			}
+		}
+	}
 	for i := 0; i < len(records); i++ {
 		rec := records[i]
 		parent := rec.ParentCallID
+		if firstPlan >= 0 && rec.Type == "agent.plan" && parent == "" {
+			if i != firstPlan {
+				continue
+			}
+			// The row stays where the plan first appeared and shows the
+			// newest version of it.
+			rec.Items = records[lastPlan].Items
+		}
 		open := opts.isExpanded(rec, seqAt(seqs, i))
 		if checks != nil && parent == "" {
 			if rec.Type == "agent.tool_result" && checks.absorbs(rec.Results) && !open {
@@ -1198,7 +1233,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 				}
 				// Expanded: the call's own lines follow its ▾ line, at
 				// verbose (task 160 decision 4).
-				if pl, ok := renderRecord(rec, sawOutput, levelVerbose, skills); ok {
+				if pl, ok := renderRecord(rec, sawOutput, levelVerbose, skills, opts.expandKey); ok {
 					fromCall(seqAt(seqs, i), recordCall(rec), wrapLine(pl, width))
 				}
 				continue
@@ -1222,7 +1257,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 					segs: []segment{{text: rec.Line, style: styleDim}},
 				}, recWidth)
 			default:
-				if pl, ok := renderRecord(rec, sawOutput, recLevel, skills); ok {
+				if pl, ok := renderRecord(rec, sawOutput, recLevel, skills, opts.expandKey); ok {
 					block = wrapLine(pl, recWidth)
 				}
 			}
@@ -1345,7 +1380,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			}
 			continue
 		}
-		pl, ok := renderRecord(rec, sawOutput, recLevel, skills)
+		pl, ok := renderRecord(rec, sawOutput, recLevel, skills, opts.expandKey)
 		if !ok {
 			continue
 		}
@@ -1438,6 +1473,7 @@ func assistantBlockLines(text string, width int, raw, links bool) ([]string, []i
 // call each is drawn at.
 func renderRecord(
 	rec apiclient.TranscriptRecord, sawOutput bool, level outputLevel, skills map[string]apiclient.TranscriptRecord,
+	expandKey string,
 ) (paneLine, bool) {
 	switch rec.Type {
 	case "agent.tool_use":
@@ -1556,7 +1592,7 @@ func renderRecord(
 			n := strings.Count(rest, "\n") + 1
 			return paneLine{gutter: "$ ", gutterStyle: styleWarn, segs: []segment{
 				{text: first, style: lipgloss.NewStyle()},
-				{text: fmt.Sprintf("  (+%s · v shows them)", plural(n, "line", "lines")), style: styleDim},
+				{text: scriptMore(n, expandKey), style: styleDim},
 			}}, true
 		}
 		return paneLine{gutter: "$ ", gutterStyle: styleWarn, segs: []segment{{text: cmd, style: lipgloss.NewStyle()}}}, true

@@ -1500,7 +1500,50 @@ func (d *detail) outputLinesAt() ([]string, []lineAnchor) {
 		lineOpts{
 			expandKey: "v", truncatedNote: note, raw: d.raw.get(),
 			hyperlinks: d.links.get(), cache: &d.mdcache,
+			// One line per tool call, its outcome on the same line, folded
+			// until enter opens it (task 164.4) — the chat's form of a call.
+			toolChecks: true, expanded: d.callExpanded, expandHint: "enter",
+			latestPlan: true,
 		})
+}
+
+// callExpanded is the lineOpts predicate over expandedCalls.
+func (d *detail) callExpanded(call string, _ int64) bool {
+	return call != "" && d.expandedCalls[call]
+}
+
+// toggleCall unfolds or folds one tool call of the displayed attempt.
+func (d *detail) toggleCall(call string) {
+	if call == "" {
+		return
+	}
+	if d.expandedCalls == nil {
+		d.expandedCalls = map[string]bool{}
+	}
+	if d.expandedCalls[call] {
+		delete(d.expandedCalls, call)
+	} else {
+		d.expandedCalls[call] = true
+	}
+	d.outputDirty = true
+}
+
+// newestCallInView is the tool call nearest the bottom of the pane's window
+// — while following, the call the agent made last — or "" when the window
+// shows none. It is what enter on the Output tab toggles.
+func (d *detail) newestCallInView() string {
+	top := d.vp.YOffset()
+	for y := min(top+d.vp.Height(), len(d.anchors)) - 1; y >= top; y-- {
+		if c := d.anchors[y].call; c != "" {
+			return c
+		}
+	}
+	return ""
+}
+
+// callAt is the tool call drawn on the pane's row y, or "".
+func (d *detail) callAt(y int) string {
+	return anchorAt(d.anchors, d.vp.YOffset()+y).call
 }
 
 // plain is a record with the blank gutter: assistant prose and command

@@ -205,6 +205,10 @@ type detail struct {
 	anchors []lineAnchor
 	// mdcache memoizes rendered assistant documents for this pane.
 	mdcache mdCache
+	// expandedCalls are the tool calls of the displayed attempt a reader
+	// unfolded with enter (task 164.4), by call id; an attempt change
+	// starts them all folded again.
+	expandedCalls map[string]bool
 
 	notes      <-chan apiclient.Note
 	stopStream context.CancelFunc
@@ -524,6 +528,7 @@ func (d *detail) resetOutput() {
 	d.installed = false
 	d.land = false
 	d.outputDirty = true
+	d.expandedCalls = nil
 	d.vp.SetContent("")
 }
 
@@ -1336,7 +1341,7 @@ func (d *detail) toggleTab() tea.Cmd {
 	}
 	d.tab = tabDiff
 	d.diff.openTask(d.taskID)
-	return d.diff.fetch(d.client, true)
+	return d.diff.fetch(d.client)
 }
 
 // recordSeqs is the pane's identity slice, stamped if some path installed

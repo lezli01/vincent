@@ -80,7 +80,11 @@ type taskView struct {
 
 	detail *detail
 	tab    taskViewTab
-	popup  bool
+	// linkedSel is the Overview's Linked-card row under the cursor, 1-based,
+	// and 0 while ↑/↓ have not moved onto the card (task 164.7): then enter
+	// is the frame's link, and on a row it opens that row.
+	linkedSel int
+	popup     bool
 	// evidence is the Overview failure card's one transcript fetch (task
 	// 129.13), keyed by the failing attempt so an event never refetches it.
 	evidence failureEvidence
@@ -351,7 +355,8 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	// After every message: the one that loaded a blocked or finished task,
 	// or moved the reader onto the Overview, is the one that fetches the
 	// failure card's evidence and the outcome card's diff and commits.
-	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome(), t.landPendingFailure(), t.syncHandoff())
+	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome(), t.landPendingFailure(), t.syncHandoff(),
+		t.syncDiffScope())
 }
 
 func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
@@ -362,6 +367,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 	case gotoTaskTabMsg:
 		return t, t.setTab(msg.tab)
 	case selectTaskMsg:
+		t.linkedSel = 0
 		// Which of the three ways this task was opened decides what happens
 		// to the back stack: a jump pushes what it left, a pop keeps what it
 		// already truncated, and every other route — the board, the palette,
@@ -566,11 +572,6 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return t.setTab(taskTabDiff)
 	case "esc":
-		if t.tab == taskTabStepDetails {
-			// Step details is opened from an attempt, so esc goes back to
-			// the attempt's output rather than off the task.
-			return t.setTab(taskTabOutput)
-		}
 		// One task at a time. Drilling into a lane and pressing esc used to
 		// land on the board however deep the reader had gone (#316).
 		return t.popCmd()
@@ -604,16 +605,22 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		if t.tab == taskTabOverview && !t.detail.actions.capturing() {
-			// The frame's one link (task 164.7): the output it is about, or
-			// the diff of a finished task.
+			// A Linked row under the cursor opens; otherwise the frame's one
+			// link (task 164.7): the output it is about, or the diff of a
+			// finished task.
+			if cmd, ok := t.openLinked(); ok {
+				return cmd
+			}
 			if links := t.overviewLinks(); len(links) > 0 {
 				return t.jumpTab(links[0].tab)
 			}
 		}
-		if t.tab == taskTabOutput && t.detail.selectedRun != 0 {
-			// What the selected attempt was given (task 164 decision 3): the
-			// Step details tab is reached from the attempt, not the strip.
-			return t.setTab(taskTabStepDetails)
+		if t.tab == taskTabOutput {
+			// Unfold or fold the newest tool call in view (task 164.4): its
+			// output, at verbose, under its one-line form.
+			pane := t.outputPane()
+			pane.toggleCall(pane.newestCallInView())
+			return nil
 		}
 		if t.tab == taskTabSteps && t.detail.cursorLane() != 0 {
 			// A lane row: enter opens the lane's own workspace, and esc
@@ -839,7 +846,8 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 	if tab == taskTabDiff {
 		t.detail.tab = tabDiff
 		t.detail.diff.openTask(t.detail.taskID)
-		return t.detail.diff.fetch(t.detail.client, true)
+		t.detail.diff.base = t.detail.task.BaseDisplay()
+		return t.detail.diff.fetch(t.detail.client)
 	}
 	if tab == taskTabOutput || tab == taskTabSteps {
 		t.detail.tab = tabOutput
@@ -889,6 +897,14 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 		return nil
 	}
 	switch t.tab {
+	case taskTabOutput:
+		// A click on a tool call's line unfolds or folds it (task 164.4).
+		head := 0
+		if len(t.lanes) > 0 {
+			head = 1
+		}
+		pane := t.outputPane()
+		pane.toggleCall(pane.callAt(msg.Y - t.bodyY - head))
 	case taskTabSteps:
 		cmd := t.detail.clickTimeline(msg.Y - t.bodyY)
 		return tea.Batch(cmd, t.followTimelineLane())
@@ -1139,7 +1155,8 @@ func (t *taskView) tabMarker(tab taskViewTab) string {
 			return styleBad.Bold(true).Render(attentionBadge)
 		}
 	case taskTabDiff:
-		if add, del, ok := d.diff.totals(); ok && add+del > 0 {
+		// The whole task's size, whichever scope the tab is on.
+		if add, del, ok := d.diff.wholeTotals(); ok && add+del > 0 {
 			return styleWarn.Render(fmt.Sprintf("+%d −%d", add, del))
 		}
 	}
@@ -2490,6 +2507,30 @@ func treeCost(own, children *float64) *float64 {
 // its action bar (detail.update), so the root's status line stands down.
 func (t *taskView) notesClipboard() {}
 
+// syncDiffScope keeps a Diff scoped to one attempt on the attempt selected
+// (task 164.6): moving the selection — the rail, ←/→ — while the Diff is on
+// one attempt moves it to the new one.
+func (t *taskView) syncDiffScope() tea.Cmd {
+	p := &t.detail.diff
+	sel := t.detail.selectedRun
+	if p.stepRun == 0 || sel == 0 || sel == p.stepRun {
+		return nil
+	}
+	r := t.detail.runByID(sel)
+	if r.ID == 0 || !p.setScope(r.ID, attemptScopeLabel(r)) {
+		return nil
+	}
+	if t.tab != taskTabDiff {
+		return nil // fetched when the tab opens
+	}
+	return p.fetch(t.detail.client)
+}
+
+// attemptScopeLabel names one attempt on the Diff's summary line.
+func attemptScopeLabel(r apiclient.StepRun) string {
+	return fmt.Sprintf("%s · attempt %d", feedLabel(r), r.Attempt)
+}
+
 // toggleDiffScope is `d` on the Diff tab (task 164.6): it switches between
 // the whole task's diff and what the attempt selected on the rail changed.
 func (t *taskView) toggleDiffScope() tea.Cmd {
@@ -2500,10 +2541,19 @@ func (t *taskView) toggleDiffScope() tea.Cmd {
 		if r.ID == 0 {
 			return nil
 		}
-		run, label = r.ID, fmt.Sprintf("%s · attempt %d", feedLabel(r), r.Attempt)
+		run, label = r.ID, attemptScopeLabel(r)
 	}
 	if !p.setScope(run, label) {
 		return nil
 	}
-	return p.fetch(t.detail.client, true)
+	return p.fetch(t.detail.client)
+}
+
+// outputPane is the sub-model the Output tab draws: the selected lane's, or
+// the task's own.
+func (t *taskView) outputPane() *detail {
+	if t.laneDetail != nil {
+		return t.laneDetail
+	}
+	return t.detail
 }

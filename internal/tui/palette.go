@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -96,6 +97,15 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 		out = append(out, paletteEntry{
 			group: "tabs", label: "go to the " + taskTabNames[tab] + " tab",
 			tab: tab, isTab: true, action: gotoTaskTab(tab),
+		})
+	}
+	// The Task Details inspector has no place on the strip (task 164
+	// decision 3): its document is the Overview's lower half, and this is
+	// the way to its section-by-section reading.
+	if len(tabs) > 0 && !slices.Contains(tabs, taskTabDetails) {
+		out = append(out, paletteEntry{
+			group: "tabs", label: "open the task's details, section by section",
+			tab: taskTabDetails, isTab: true, action: gotoTaskTab(taskTabDetails),
 		})
 	}
 	// Screens get their own section: navigating to them is the reason the

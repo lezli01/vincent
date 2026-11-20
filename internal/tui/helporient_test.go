@@ -277,7 +277,7 @@ func TestHelpScrolls(t *testing.T) {
 func tabEntries(entries []paletteEntry) []paletteEntry {
 	var out []paletteEntry
 	for _, e := range entries {
-		if e.isTab {
+		if e.isTab && e.tab != taskTabDetails {
 			out = append(out, e)
 		}
 	}
@@ -289,6 +289,13 @@ func tabEntries(entries []paletteEntry) []paletteEntry {
 func TestPaletteGoesToTabs(t *testing.T) {
 	m, v := runningWorkspace(t, "")
 	m.openPalette()
+	details := false
+	for _, e := range m.palette.entries {
+		details = details || (e.isTab && e.tab == taskTabDetails)
+	}
+	if !details {
+		t.Error("the palette has no way to the Task Details inspector (task 164 decision 3)")
+	}
 	tabs := tabEntries(m.palette.entries)
 	if len(tabs) != len(v.tabs()) {
 		t.Fatalf("palette lists %d tabs, the strip has %d", len(tabs), len(v.tabs()))

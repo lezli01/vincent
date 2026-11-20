@@ -2,9 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/keymap"
@@ -57,21 +59,7 @@ func (t *taskView) overviewCards(width int) []string {
 	if !d.loaded {
 		return nil
 	}
-	linked, usage := t.linkedCard(), t.usageCard()
-	inner := max(width-2, 10)
-	if inner < 70 {
-		out := drawBox(styleTitle.Render("Linked"), "", linked, inner, len(linked)+2, edgesRounded, styleDim)
-		out = append(out, drawBox(styleTitle.Render("Usage"), "", usage, inner, len(usage)+2, edgesRounded, styleDim)...)
-		return indentLines(out)
-	}
-	h := max(len(linked), len(usage)) + 2
-	left := inner * 55 / 100
-	leftBox := drawBox(styleTitle.Render("Linked"), "", linked, left-1, h, edgesRounded, styleDim)
-	for i := range leftBox {
-		leftBox[i] += " "
-	}
-	out := joinColumns(leftBox, drawBox(styleTitle.Render("Usage"), "", usage, inner-left, h, edgesRounded, styleDim))
-	return indentLines(out)
+	return t.cardPair("Linked", t.linkedCard(), "Usage", t.usageCard(), width)
 }
 
 func indentLines(lines []string) []string {
@@ -87,37 +75,148 @@ func cardFact(label, value string) string {
 	return styleDim.Render(fmt.Sprintf("%-8s ", label)) + value
 }
 
-// linkedCard is what the task is tied to: its issue (and the key that opens
+// linkedRow is one row of the Linked card: its text, and what enter on it
+// opens — nil for a row that is a fact rather than a place.
+type linkedRow struct {
+	text string
+	open func() tea.Cmd
+}
+
+// linkedRows are what the task is tied to: its issue (and the key that opens
 // it), its pull request, its chat, and its branch and base.
-func (t *taskView) linkedCard() []string {
+func (t *taskView) linkedRows() []linkedRow {
 	task := t.detail.task
-	var out []string
+	var out []linkedRow
 	if iss := task.Issue; iss != nil {
-		line := cardFact(ic("◇")+" issue", toneMagenta.Render(fmt.Sprintf("#%d", iss.ID))+" "+oneLine(iss.Title)) +
-			"  " + styleDim.Render(iss.State)
-		line += "  " + styleKey.Render(openIssueKey)
-		out = append(out, line)
+		out = append(out, linkedRow{
+			text: cardFact(ic("◇")+" issue", toneMagenta.Render(fmt.Sprintf("#%d", iss.ID))+" "+oneLine(iss.Title)) +
+				"  " + styleDim.Render(iss.State) + "  " + styleKey.Render(openIssueKey),
+			open: t.openIssueCmd,
+		})
 	} else {
-		out = append(out, styleDim.Render(fmt.Sprintf("%-8s no linked issue", ic("◇")+" issue")))
+		out = append(out, linkedRow{text: styleDim.Render(fmt.Sprintf("%-8s no linked issue", ic("◇")+" issue"))})
 	}
-	if task.GitHubPull != nil {
-		out = append(out, cardFact(ic("⇡")+" PR", "linked · the Pull request tab"))
+	if t.pullTabAvailable() {
+		out = append(out, linkedRow{
+			text: cardFact(ic("⇡")+" PR", "linked · the Pull request tab"),
+			open: func() tea.Cmd { return t.setTab(taskTabPull) },
+		})
 	} else {
-		out = append(out, styleDim.Render(fmt.Sprintf("%-8s none", ic("⇡")+" PR")))
+		out = append(out, linkedRow{text: styleDim.Render(fmt.Sprintf("%-8s none", ic("⇡")+" PR"))})
 	}
 	switch {
 	case task.OpenChatID != nil:
-		out = append(out, cardFact(ic("◌")+" chat", "#"+strconv.FormatInt(*task.OpenChatID, 10)))
+		id, pid := *task.OpenChatID, task.ProjectID
+		out = append(out, linkedRow{
+			text: cardFact(ic("◌")+" chat", "#"+strconv.FormatInt(id, 10)),
+			open: func() tea.Cmd {
+				return func() tea.Msg { return openChatMsg{id: id, projectID: pid, back: viewTask} }
+			},
+		})
 	case t.target().offersChat() && opKey(keymap.Chat) != "":
-		out = append(out, styleDim.Render(fmt.Sprintf("%-8s none · ", ic("◌")+" chat"))+styleKey.Render(opKey(keymap.Chat))+styleDim.Render(" starts one"))
+		out = append(out, linkedRow{text: styleDim.Render(fmt.Sprintf("%-8s none · ", ic("◌")+" chat")) +
+			styleKey.Render(opKey(keymap.Chat)) + styleDim.Render(" starts one")})
 	}
 	if task.BranchName != "" {
-		out = append(out, cardFact(ic("⎇")+" branch", toneCyan.Render(oneLine(task.BranchName))))
+		out = append(out, linkedRow{text: cardFact(ic("⎇")+" branch", toneCyan.Render(oneLine(task.BranchName)))})
 	}
 	if base := task.BaseDisplay(); base != "" {
-		out = append(out, cardFact("  base", base))
+		out = append(out, linkedRow{text: cardFact("  base", base)})
 	}
 	return out
+}
+
+// linkedCard draws the rows, the cursor's marked.
+func (t *taskView) linkedCard() []string {
+	rows := t.linkedRows()
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		if i+1 == t.linkedSel {
+			out[i] = styleSelected.Render("› " + ansi.Strip(r.text))
+			continue
+		}
+		out[i] = "  " + r.text
+	}
+	return out
+}
+
+// openableRows are the 1-based indexes of the Linked rows enter can open.
+func (t *taskView) openableRows() []int {
+	var out []int
+	for i, r := range t.linkedRows() {
+		if r.open != nil {
+			out = append(out, i+1)
+		}
+	}
+	return out
+}
+
+// moveLinked moves the Linked cursor across the rows it can open: down from
+// none lands on the first, up past the first leaves the card.
+func (t *taskView) moveLinked(delta int) {
+	rows := t.openableRows()
+	if len(rows) == 0 {
+		t.linkedSel = 0
+		return
+	}
+	at := slices.Index(rows, t.linkedSel)
+	switch {
+	case at < 0 && delta > 0:
+		t.linkedSel = rows[0]
+	case at < 0:
+		t.linkedSel = 0
+	case at+delta < 0:
+		t.linkedSel = 0
+	default:
+		t.linkedSel = rows[min(at+delta, len(rows)-1)]
+	}
+}
+
+// openLinked is enter on the Linked cursor's row, and false when the cursor
+// is not on one.
+func (t *taskView) openLinked() (tea.Cmd, bool) {
+	rows := t.linkedRows()
+	if t.linkedSel < 1 || t.linkedSel > len(rows) || rows[t.linkedSel-1].open == nil {
+		return nil, false
+	}
+	return rows[t.linkedSel-1].open(), true
+}
+
+// nowAndTaskCards are the progress frame's two cards (task 164.7): what the
+// task is doing now, and what it is for.
+func (t *taskView) nowAndTaskCards(width int) []string {
+	d := t.detail
+	now := renderTaskDetailFactList(max(width/2, 20), t.progressFacts())
+	for i := range now {
+		now[i] = strings.TrimPrefix(now[i], "  ")
+	}
+	if run, ok := t.overviewAnchor(); ok && run.Live() {
+		if line, ok := d.liveOutputLine(run.ID); ok {
+			now = append(now, styleDim.Render("last  ")+ansi.Strip(line))
+		}
+	}
+	about := wrapText(valueOr(strings.TrimSpace(d.task.Description), "no description"),
+		max(width/2-8, 16), wrapOpts{maxLines: 4})
+	about = append(about, styleDim.Render(fmt.Sprintf("priority %d", d.task.Priority)))
+	return t.cardPair("Now", now, "The task", about, width)
+}
+
+// cardPair sets two cards side by side where they fit and stacks them where
+// they do not, two cells in.
+func (t *taskView) cardPair(leftTitle string, left []string, rightTitle string, right []string, width int) []string {
+	inner := max(width-2, 10)
+	if inner < 70 {
+		out := drawBox(styleTitle.Render(leftTitle), "", left, inner, len(left)+2, edgesRounded, styleDim)
+		out = append(out, drawBox(styleTitle.Render(rightTitle), "", right, inner, len(right)+2, edgesRounded, styleDim)...)
+		return indentLines(out)
+	}
+	h := max(len(left), len(right)) + 2
+	split := inner * 55 / 100
+	leftBox := drawBox(styleTitle.Render(leftTitle), "", left, split-1, h, edgesRounded, styleDim)
+	for i := range leftBox {
+		leftBox[i] += " "
+	}
+	return indentLines(joinColumns(leftBox, drawBox(styleTitle.Render(rightTitle), "", right, inner-split, h, edgesRounded, styleDim)))
 }
 
 // usageCard is how long the task has run, what it has spent, and what it runs.

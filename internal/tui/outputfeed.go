@@ -93,7 +93,7 @@ func feedLabel(r apiclient.StepRun) string {
 
 // feedFold is an attempt the pane is not showing, as one line: its state,
 // step, what ran it, how long and what it cost, and the start of what it
-// said. enter or ←/→ opens it.
+// said. ←/→ on Output, or a click on its rail row, opens it.
 func (d *detail) feedFold(r apiclient.StepRun, width int) string {
 	style, ok := stepStateStyle(r.State)
 	if !ok {
@@ -201,6 +201,9 @@ func (d *detail) feedStatus(width int) string {
 		left = toneCyan.Render(ProgressLabel(d.frame, d.now().Sub(run.StartedAt)))
 		// What it last said is the now-line's, under the app header, while
 		// the task runs (task 129.9); this line says how long and how much.
+		if tokens := formatTokens(run); tokens != "" {
+			left += styleDim.Render("  ·  ") + tokens
+		}
 		if run.CostUSD != nil {
 			left += styleDim.Render("  ·  " + formatCost(run.CostUSD))
 		}

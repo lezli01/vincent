@@ -197,3 +197,29 @@ func TestTabStripFitsAndReadsWithoutColour(t *testing.T) {
 		}
 	}
 }
+
+// A running task's Overview pairs what it is doing now with what it is for,
+// and its Linked rows open with ↑/↓ and enter (task 164.7).
+func TestOverviewNowAndLinkedCards(t *testing.T) {
+	v := tabbedTaskFixture(t, taskTabOverview)
+	v.detail.task.State = stateRunning
+	v.detail.task.Description = "Return a JSON body with every 429."
+	v.detail.task.Issue = &apiclient.TaskIssue{ID: 8, Title: "429 has no body", State: "open"}
+	got := ansi.Strip(v.render(140, 60))
+	for _, want := range []string{"Now", "The task", "Return a JSON body", "Linked", "Usage", "#8 429 has no body"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the Overview misses %q:\n%s", want, got)
+		}
+	}
+	v.updateKey(synthKey("down"))
+	if !strings.Contains(ansi.Strip(v.render(140, 60)), "› ◇ issue") {
+		t.Errorf("the Linked cursor is not drawn:\n%s", ansi.Strip(v.render(140, 60)))
+	}
+	v.updateKey(synthKey("up"))
+	if v.linkedSel != 0 {
+		t.Errorf("up from the first row left the cursor on %d, want off the card", v.linkedSel)
+	}
+	if v.updateKey(synthKey("enter")); v.tab == taskTabOverview {
+		t.Errorf("enter off the card did not follow the frame's link (tab %v)", v.tab)
+	}
+}

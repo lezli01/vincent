@@ -123,14 +123,18 @@ var levelGolden = map[outputLevel]string{
 		"✓ done · 1.2s (0.9s api) · 3 turns · $0.01",
 }
 
-// renderAt is levelFixture through the task workspace's own pane.
+// renderAt is levelFixture through the record renderer the task pane shares,
+// without the one-line tool calls the pane draws since task 164.4 — this is
+// the per-record rules' net, and the check lines have their own.
 func renderAt(t *testing.T, level outputLevel) string {
 	t.Helper()
-	d := newTestDetail(t)
-	d.width = 80
-	d.records = levelFixture
-	d.level.set(level)
-	return strings.Join(plainLines(d.outputLines()), "\n")
+	return strings.Join(plainLines(classicLines(levelFixture, level)), "\n")
+}
+
+// classicLines renders records with every call and outcome on lines of their
+// own, as every level's per-record rules describe them.
+func classicLines(records []apiclient.TranscriptRecord, level outputLevel) []string {
+	return outputLines(records, level, 80, lineOpts{expandKey: "v"})
 }
 
 // TestLoudLevelsRenderWhatTheyAlwaysDid is the renumbering's regression net.

@@ -266,7 +266,7 @@ func TestToolResultsIndentUnderTheirCall(t *testing.T) {
 			{CallID: "t1", Summary: "exit 1", IsError: true},
 		}},
 	}
-	got := plainLines(d.outputLines())
+	got := plainLines(classicLines(d.records, levelNormal))
 	if len(got) != 2 {
 		t.Fatalf("lines = %q, want the call and its outcome", got)
 	}
@@ -308,7 +308,7 @@ func TestTurnSeparation(t *testing.T) {
 		{Type: "agent.tool_use", Tools: []apiclient.TranscriptTool{{Name: "Bash", CallID: "t1"}}},
 		{Type: "agent.output", Text: "second turn"},
 	}
-	got := plainLines(d.outputLines())
+	got := plainLines(classicLines(d.records, levelNormal))
 	want := []string{"  first still first", "▸ Bash", "", "  second turn"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("lines = %q, want %q", got, want)

@@ -41,7 +41,7 @@ func TestTaskWorkspaceDefaultsToOverviewAndCyclesInDrawnOrder(t *testing.T) {
 	if v.tab != taskTabOverview {
 		t.Fatalf("initial tab = %v, want %v", v.tab, taskTabOverview)
 	}
-	want := []taskViewTab{taskTabSteps, taskTabOutput, taskTabDiff, taskTabWorkflow, taskTabOverview}
+	want := []taskViewTab{taskTabSteps, taskTabOutput, taskTabDiff, taskTabStepDetails, taskTabWorkflow, taskTabOverview}
 	for _, tab := range want {
 		v.updateKey(tea.KeyPressMsg{Code: tea.KeyTab})
 		if v.tab != tab {

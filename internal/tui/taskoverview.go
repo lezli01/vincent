@@ -195,9 +195,15 @@ func (t *taskView) updateOverviewKey(msg tea.KeyPressMsg) tea.Cmd {
 	if !d.actions.capturing() {
 		switch msg.String() {
 		case "pgup", "pgdown", "home", "end":
-			// The pane's paging keys only: ↑/↓ stay free, as they always
-			// were on this tab.
 			t.overview.Update(msg)
+			return nil
+		case "down", "j":
+			// ↑/↓ walk the Linked card's rows that open somewhere (task
+			// 164.7); the pane pages with pgup/pgdn.
+			t.moveLinked(1)
+			return nil
+		case "up", "k":
+			t.moveLinked(-1)
 			return nil
 		}
 	}
@@ -306,14 +312,12 @@ func (t *taskView) overviewLines(width, height int) []string {
 			out = append(out, bar)
 		}
 		out = append(out, "")
-		var body []taskDetailFact
-		switch overviewFrameFor(task.State) {
-		case frameAttention:
-			body = t.attentionFacts()
-		default:
-			body = t.progressFacts()
+		if overviewFrameFor(task.State) == frameAttention {
+			out = append(out, renderTaskDetailFactList(width, t.attentionFacts())...)
+		} else {
+			// What it is doing now beside what it is for (task 164.7).
+			out = append(out, t.nowAndTaskCards(width)...)
 		}
-		out = append(out, renderTaskDetailFactList(width, body)...)
 		if t.overviewFrame() == frameAttention {
 			out = append(out, t.overviewActionLines(width)...)
 		}

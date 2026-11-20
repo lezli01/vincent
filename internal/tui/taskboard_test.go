@@ -259,22 +259,22 @@ func taskWorkspaceFixture(t *testing.T, width int) *taskView {
 }
 
 // The steps have a rail of their own on a wide terminal and stay a tab on a
-// narrow one; neither strip carries Task Details or Step Details unless that
-// tab is open (task 164 decision 3).
+// narrow one; neither strip carries Task Details unless the palette opened it
+// (task 164 decisions 3 and 14).
 func TestTaskWorkspaceTabsFollowTheWidth(t *testing.T) {
 	wide := taskWorkspaceFixture(t, taskRailMinW)
-	want := []taskViewTab{taskTabOverview, taskTabOutput, taskTabDiff, taskTabWorkflow}
+	want := []taskViewTab{taskTabOverview, taskTabOutput, taskTabDiff, taskTabStepDetails, taskTabWorkflow}
 	if got := wide.tabs(); !slices.Equal(got, want) {
 		t.Errorf("the wide strip is %v, want %v", got, want)
 	}
 	narrow := taskWorkspaceFixture(t, taskRailMinW-1)
-	want = []taskViewTab{taskTabOverview, taskTabSteps, taskTabOutput, taskTabDiff, taskTabWorkflow}
+	want = []taskViewTab{taskTabOverview, taskTabSteps, taskTabOutput, taskTabDiff, taskTabStepDetails, taskTabWorkflow}
 	if got := narrow.tabs(); narrow.frameless() || !slices.Equal(got, want) {
 		t.Errorf("the narrow strip is %v, want %v", got, want)
 	}
-	narrow.tab = taskTabStepDetails
-	if got := narrow.tabs(); got[len(got)-1] != taskTabStepDetails {
-		t.Errorf("an open Step details is not on the strip: %v", got)
+	narrow.tab = taskTabDetails
+	if got := narrow.tabs(); got[len(got)-1] != taskTabDetails {
+		t.Errorf("an open Task Details is not on the strip: %v", got)
 	}
 }
 

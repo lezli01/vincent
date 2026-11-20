@@ -41,12 +41,12 @@ func TestEditDeltaAndPatchByLevel(t *testing.T) {
 	d.records = records
 
 	d.level.set(levelQuiet)
-	if got := strings.Join(plainLines(d.outputLines()), "\n"); strings.Contains(got, "+2 −1") || strings.Contains(got, "@@") {
+	if got := strings.Join(plainLines(classicLines(d.records, levelQuiet)), "\n"); strings.Contains(got, "+2 −1") || strings.Contains(got, "@@") {
 		t.Errorf("quiet rendered an edit's outcome or patch:\n%s", got)
 	}
 	for _, level := range []outputLevel{levelCompact, levelNormal, levelVerbose} {
 		d.level.set(level)
-		got := plainLines(d.outputLines())
+		got := plainLines(classicLines(d.records, level))
 		for _, want := range []string{"    ✓ +2 −1", "    ✓ +12 −6", "    ✓ +2 −2", "    ✓ updated · +1 −1"} {
 			if !slices.Contains(got, want) {
 				t.Errorf("%s is missing the outcome line %q:\n%s", level, want, strings.Join(got, "\n"))

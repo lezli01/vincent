@@ -92,6 +92,12 @@ type diffPane struct {
 	// stepLabel names it on the summary line; 0 is the whole task.
 	stepRun   int64
 	stepLabel string
+	// base is what the whole task's diff is against, for its summary line.
+	base string
+	// whole is the whole task's size from its last fetch, kept across a
+	// switch to one attempt, so the tab's marker keeps saying the task's.
+	whole     [2]int
+	wholeSeen bool
 	lines     []string
 	sections  []diffSection
 	loaded    bool
@@ -195,8 +201,9 @@ func (p *diffPane) openTask(taskID int64) {
 		return
 	}
 	p.taskID = taskID
-	// Another task's attempt is no scope for this one.
+	// Another task's attempt is no scope for this one, nor its size.
 	p.stepRun, p.stepLabel = 0, ""
+	p.whole, p.wholeSeen = [2]int{}, false
 	p.reset()
 }
 
@@ -222,18 +229,15 @@ func (p *diffPane) reset() {
 	p.pan = 0
 }
 
-// fetch reloads the diff. stale=false means "only if we have nothing", which
-// is what opening the tab asks for; a refresh keypress passes true.
+// fetch reloads the diff: opening the tab, a refresh, and a change of scope
+// all read it afresh, since the endpoint follows no events.
 //
 // The grouped form is asked for unconditionally. It costs the daemon nothing
 // extra for a task with no lanes — one `git log` that comes back empty — and
 // it means the pane never has to know in advance whether the task fanned out,
 // which is a fact that changes while the tab is open.
-func (p *diffPane) fetch(client *apiclient.Client, force bool) tea.Cmd {
+func (p *diffPane) fetch(client *apiclient.Client) tea.Cmd {
 	if client == nil || p.taskID == 0 || p.fetching {
-		return nil
-	}
-	if p.loaded && !force {
 		return nil
 	}
 	p.fetching = true
@@ -268,6 +272,10 @@ func (p *diffPane) apply(msg diffLoadedMsg) {
 	}
 	p.setSections(sections)
 	p.keepFolds()
+	if p.stepRun == 0 {
+		a, r, _ := p.totals()
+		p.whole, p.wholeSeen = [2]int{a, r}, true
+	}
 }
 
 // setSections parses each section and colours it, spending one shared line
@@ -709,6 +717,11 @@ func (p *diffPane) totals() (added, removed int, ok bool) {
 	return added, removed, true
 }
 
+// wholeTotals is the whole task's size, once a whole-task fetch has said it.
+func (p *diffPane) wholeTotals() (added, removed int, ok bool) {
+	return p.whole[0], p.whole[1], p.wholeSeen
+}
+
 // summary is the pane's first line: how many lanes and files, and the totals
 // across all of them. With everything folded shut, this is the only place the
 // size of the change is stated.
@@ -734,10 +747,13 @@ func (p *diffPane) summary() string {
 
 // scopeLabel names what the pane is the diff of, for its summary line.
 func (p *diffPane) scopeLabel() string {
-	if p.stepRun == 0 {
-		return "whole task"
+	if p.stepRun != 0 {
+		return p.stepLabel
 	}
-	return p.stepLabel
+	if p.base != "" {
+		return "whole task · against " + p.base
+	}
+	return "whole task"
 }
 
 // headLine is the summary with the freshness cue after it: in full while it
