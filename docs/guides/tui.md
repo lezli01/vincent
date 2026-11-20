@@ -3731,7 +3731,8 @@ to anything else:
   focus or complete on every other screen — and, in the chat
   workspace only, `tab` also opens the skill list, which is a fixed surface
   key like the rest of that screen's and is not nameable in `tui.keys`
-  either.
+  either. `shift+tab` there is `chat_mode`'s default, which `tui.keys` can
+  move.
 - **A popup's `y` and `n`**, which answer the question the popup is asking.
 - **The aliases**: the vim-style `h j k l f b u G`, the output tab's `d`, and
   `r` for retrying the connection while the daemon is unreachable.

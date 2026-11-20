@@ -172,7 +172,7 @@ are long-lived by contract and no write deadline is set.
 { "agents": [ {
     "name": "claude", "available": true, "path": "…", "version": "2.1.224",
     "supports_input": true, "input_verdict": "supported", "logged_in": true,
-    "supports_resume": true,
+    "supports_resume": true, "supports_resume_settings_change": true,
     "supports_skill_listing": true, "skill_sigil": "/", "skill_position": "leading",
     "supports_file_mentions": true, "file_mention_sigil": "@",
     "file_mention_position": "anywhere", "file_mention_expands": true,
@@ -235,6 +235,15 @@ like `restricted_verdict` it is answered for a CLI that is missing. It is
 `null` — never `false` — when the daemon has no adapter registry to ask, and a
 daemon that predates the field omits it: both mean "no judgement", and nothing
 may be filtered out on either. It rides this route only.
+
+`supports_resume_settings_change` is whether a chat on the adapter may change
+its model or effort after its first turn — `true` for claude, the one adapter
+a capture shows honouring a changed model on a resumed session, and `false`
+for codex, cursor and copilot. It is the same answer
+[`PATCH /v1/chats/{id}`](#changing-a-chats-settings) and a send's overrides
+gate on, so a picker built on it and the `agent_cannot_change_on_resume`
+refusal cannot disagree. It is `null` when the daemon has no adapter registry
+to ask, as `supports_resume` is, and rides this route only.
 
 `supports_skill_listing`, `skill_sigil` and `skill_position` describe the
 adapter's skills. `supports_skill_listing` is whether the adapter can list the

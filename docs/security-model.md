@@ -227,7 +227,12 @@ the failure mode nobody would think to check for. The same holds for a
 that runs `restricted`, which takes the task's permission mode: `codex exec
 resume` has no `--sandbox`, so codex could not keep the chat's second turn
 restricted. Opening a codex chat on such a task is refused with `400`, and codex
-refuses a resumed restricted run itself.
+refuses a resumed restricted run itself. A chat you start can ask for
+`restricted` as well, and change its mode between turns: on codex, and on cursor
+on Windows, that request is refused with `400 agent_cannot_restrict_resume`
+rather than honoured on one turn and dropped on the next. Raising a chat to
+`full-auto` asks first in the TUI and in `vincent chat set`, and a chat opened
+on a restricted task can never be raised.
 
 **Denied actions can become questions.** On an input-capable adapter (claude), a
 denied action surfaces as a `permission` request and the task waits for you —
