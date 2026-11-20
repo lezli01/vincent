@@ -17162,7 +17162,7 @@ changes (decision 31), applies it to the active view:
 |---|---|
 | Board, chats, issues, pull requests, both archived boards, workflows, triggers | Stays; re-scoped through `setProject` |
 | Task workspace | Falls back to the board; its back stack is emptied and its streams stop. *Amended 2026-10-21 (task 136.4, #789):* to the human's tab instead while the board is not one of `tui.tabs` |
-| Chat | Falls back to the chats board; its stream stops. A typed, unsent message in the composer is a draft (review F7) |
+| Chat | Falls back to the chats board; its stream stops. A typed, unsent message is the chat's stored draft (§5.5), which the switch saves rather than asking about; an edit of a queued message is a draft (review F7; amended 2026-11-20, task 164 review F3) |
 | Issue | Falls back to the issues list |
 | New-task form; the chats board's new-chat form; the issues list's issue form | Re-targeted when pristine: reopened empty on the new project, catalogs refetched. An edit form on the issues list closes |
 | The workflows view's create prompt; the triggers view's create prompt | Re-targeted when pristine: reopened empty on the new project. A fork prompt is seeded from the old project's list and counts as a draft; after `y` it closes (review F6) |
@@ -18674,7 +18674,9 @@ yet, so it puts the daemon's `steer_reason` in the composer note.
 *Amended 2026-11-20 (task 164, issue #1012).* **The composer is the chat's
 stored draft.** Opening a chat restores its draft rather than clearing the
 composer; edits are saved about 500 ms after the last keystroke, and leaving
-the chat — `esc`, opening another chat, quitting — saves at once. A send clears
+the chat — `esc`, opening another chat, any other view taking over (the
+palette's included), a project switch, quitting — saves at once, so a switch
+does not ask about an unsent message (review F3). A send clears
 the stored draft only once the daemon has accepted (or queued) the turn, the
 point at which the composer already drops it (#790); a refused send keeps
 both. On an empty composer `↑` edits the newest queued message when one

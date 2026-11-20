@@ -288,8 +288,8 @@ new-workflow or new-trigger form is reopened for the new project, and a
 workflow or trigger editor, the workflow graph and a trigger dry run close,
 since each is on a file of the old project.
 
-A form you have typed into — or a chat's composer holding an unsent
-message — asks first, in one line under the header:
+A form you have typed into — or a chat's composer holding an edit of a
+queued message — asks first, in one line under the header:
 
 ```text
 discard the task draft and switch to `api`? y/n
@@ -300,6 +300,8 @@ or on the list behind a workspace or issue form. `n` or `esc` keeps the draft
 and the current project; nothing is switched or saved. A form seeded from a
 pull request, an issue or a chat counts as a draft before you type, and so
 does a workflow fork prompt, which is seeded from the old project's list.
+A chat's unsent message does not ask: it is the chat's [draft](#drafts-stash-and-prompt-history),
+which the switch saves.
 
 Opening a task, chat or issue of another project switches to that project
 first, so its screen never draws under the wrong header. This happens from the
@@ -2770,7 +2772,8 @@ messages will be discarded.
 
 What you type is the chat's **draft**, and the daemon keeps it. It is saved
 about half a second after you stop typing, and at once when you leave the chat
-— `esc`, opening another chat, or quitting — so switching between chats,
+— `esc`, opening another chat, the command palette, a project switch, or
+quitting — so switching between chats,
 restarting the TUI or opening the chat from another terminal finds it where you
 left it. The chats board marks a chat holding a draft `✎ draft` ahead of its
 title. Sending clears the stored draft once the daemon has taken (or queued)

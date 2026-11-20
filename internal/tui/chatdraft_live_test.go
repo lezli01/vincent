@@ -149,6 +149,53 @@ func TestChatDraftSurvivesSwitchAndRelaunch(t *testing.T) {
 	}
 }
 
+// TestChatDraftSavedOnEveryWayOut is review F3: a project switch saves the
+// draft rather than asking to discard it, and so does any other view taking
+// over (the palette included), with no debounce left to run.
+func TestChatDraftSavedOnEveryWayOut(t *testing.T) {
+	d := newDraftLive(t)
+	a, b := d.chat(t, "a"), d.chat(t, "b")
+	v := d.view()
+	openChat(t, v, a)
+	typeDraft(v, "typed just now")
+	if what, dirty := v.switchDraft(); dirty {
+		t.Fatalf("a storable draft guards the switch as %q", what)
+	}
+	if cmd := v.leaveForSwitch(); cmd == nil {
+		t.Fatal("a switch saved nothing")
+	} else {
+		runCmd(t, cmd, 30*time.Second)
+	}
+	if got := d.stored(t, a).Draft; got != "typed just now" {
+		t.Fatalf("stored draft after a switch = %q", got)
+	}
+
+	openChat(t, v, b)
+	typeDraft(v, "left by the palette")
+	_, cmd := v.updateMsg(viewDeactivatedMsg{id: viewChat})
+	if cmd == nil {
+		t.Fatal("deactivation saved nothing")
+	}
+	runCmd(t, cmd, 30*time.Second)
+	if got := d.stored(t, b).Draft; got != "left by the palette" {
+		t.Fatalf("stored draft after deactivation = %q", got)
+	}
+
+	// An edit of a queued message is not the draft: a switch still asks.
+	v.queue = &apiclient.ChatQueue{Messages: []apiclient.ChatQueuedMessage{{ID: 3, Prompt: "queued"}}}
+	v.composer.SetValue("")
+	if !v.startQueueEdit() {
+		t.Fatal("no queue edit started")
+	}
+	if _, dirty := v.switchDraft(); dirty {
+		t.Fatal("an unchanged queue edit guards the switch")
+	}
+	v.composer.SetValue("queued, changed")
+	if what, dirty := v.switchDraft(); !dirty || what != "edit of a queued message" {
+		t.Fatalf("a changed queue edit: %q %v, want it guarded", what, dirty)
+	}
+}
+
 // TestChatDraftSendKeepsOrClears: a refused send keeps the stored draft, an
 // accepted one clears it.
 func TestChatDraftSendKeepsOrClears(t *testing.T) {

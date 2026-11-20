@@ -537,6 +537,11 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyQueueDone(msg)
 	case chatSentMsg:
 		return v, v.applySent(msg)
+	case viewDeactivatedMsg:
+		// Another view took over — the palette, a key that left, a switch
+		// (review F3). The draft is saved now: a debounce tick still pending
+		// would be delivered to that view and dropped.
+		return v, v.leaveDraft()
 	case chatDraftTickMsg:
 		return v, v.applyDraftTick(msg)
 	case chatDraftSavedMsg:

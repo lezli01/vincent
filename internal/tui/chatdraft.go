@@ -229,10 +229,7 @@ func (v *chatView) applyDraftTick(msg chatDraftTickMsg) tea.Cmd {
 // already holds it. A queued message being edited is not the draft, and a
 // terminal chat keeps none.
 func (v *chatView) draftUpdate() *apiclient.ChatDraftUpdate {
-	if v.chatID == 0 || !v.draft.loaded || v.editingQueued != 0 {
-		return nil
-	}
-	if v.chat != nil && chatstate.Terminal(chatstate.State(v.chat.State)) {
+	if !v.draftStorable() {
 		return nil
 	}
 	var u apiclient.ChatDraftUpdate
@@ -247,6 +244,16 @@ func (v *chatView) draftUpdate() *apiclient.ChatDraftUpdate {
 		return nil
 	}
 	return &u
+}
+
+// draftStorable reports whether the composer is the chat's draft, which the
+// daemon can keep: not before the chat's draft has loaded, not while it holds
+// a queued message being edited, and not on a chat that has ended.
+func (v *chatView) draftStorable() bool {
+	if v.chatID == 0 || !v.draft.loaded || v.editingQueued != 0 {
+		return false
+	}
+	return v.chat == nil || !chatstate.Terminal(chatstate.State(v.chat.State))
 }
 
 // flushDraft writes the draft now, one PUT at a time.
@@ -304,7 +311,7 @@ func (v *chatView) applyDraftSaved(msg chatDraftSavedMsg) tea.Cmd {
 }
 
 // leaveDraft is the flush on leaving a chat — esc, another chat opening, a
-// project switch. It is fire-and-forget: the view is moving on, and the
+// project switch, or any other view taking over, the palette's included. It is fire-and-forget: the view is moving on, and the
 // result is for a chat it no longer shows.
 func (v *chatView) leaveDraft() tea.Cmd {
 	u := v.draftUpdate()

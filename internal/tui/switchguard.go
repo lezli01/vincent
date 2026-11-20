@@ -37,9 +37,10 @@ type switchRetargeting interface {
 // back from. leaveForSwitch drops what belonged to the old project's object —
 // the workspace's back stack and forms, a chat's stream, an issue's form —
 // before the root routes to the list, so nothing of it survives to be
-// reached by esc or redrawn under the new header.
+// reached by esc or redrawn under the new header. What it returns runs with
+// the switch: the chat's is the save of its draft (review F3).
 type switchLeaving interface {
-	leaveForSwitch()
+	leaveForSwitch() tea.Cmd
 }
 
 // switchFallback is where a detail screen lands when the project changes
@@ -300,8 +301,9 @@ func (v *issueView) switchDraft() (string, bool) {
 	return "unsaved issue edit", v.w.form.dirty()
 }
 
-func (v *issueView) leaveForSwitch() {
+func (v *issueView) leaveForSwitch() tea.Cmd {
 	v.w.form, v.w.act = nil, nil
+	return nil
 }
 
 func (t *taskView) switchDraft() (string, bool) {
@@ -323,7 +325,7 @@ func (t *taskView) switchDraft() (string, bool) {
 // leaveForSwitch empties the back stack — nothing of the old project is
 // left to esc to — and drops every form the workspace held. The stream is stopped by the deactivation the root's
 // switchTo delivers next.
-func (t *taskView) leaveForSwitch() {
+func (t *taskView) leaveForSwitch() tea.Cmd {
 	t.stack, t.leftTab, t.crumb = nil, nil, nil
 	t.stackPush, t.stackKeep = 0, false
 	t.back = viewLastTab
@@ -331,17 +333,37 @@ func (t *taskView) leaveForSwitch() {
 	t.popup = false
 	t.createPR, t.pullComment, t.pullMerge = nil, nil, nil
 	t.detail.followUp, t.detail.repair, t.detail.form = nil, nil, nil
+	return nil
 }
 
-// switchDraft guards the composer: a typed, unsent message is lost with the
-// chat on a switch, so it asks like every other draft (review F7).
+// switchDraft guards the composer only where a switch would lose it. An
+// unsent message is the chat's draft, which the daemon keeps and the switch
+// saves (task 164, review F3), so it is not asked about; an edit of a queued
+// message is not the draft and is lost, and so is text in a composer whose
+// draft cannot be stored — so those ask, like every other draft (review F7).
 func (v *chatView) switchDraft() (string, bool) {
-	return "unsent message", strings.TrimSpace(v.composer.Value()) != ""
+	text := v.composer.Value()
+	if v.editingQueued != 0 {
+		if v.queue != nil {
+			for _, m := range v.queue.Messages {
+				if m.ID == v.editingQueued {
+					return "edit of a queued message", text != m.Prompt
+				}
+			}
+		}
+		return "edit of a queued message", strings.TrimSpace(text) != ""
+	}
+	if strings.TrimSpace(text) == "" || v.draftStorable() {
+		return "", false
+	}
+	return "unsent message", true
 }
 
-// leaveForSwitch stops the chat's stream and forgets the chat, so a switch
-// leaves no subscription behind for a screen nobody is on.
-func (v *chatView) leaveForSwitch() {
+// leaveForSwitch saves the draft, stops the chat's stream and forgets the
+// chat, so a switch loses nothing typed (review F3) and leaves no
+// subscription behind for a screen nobody is on.
+func (v *chatView) leaveForSwitch() tea.Cmd {
+	leave := v.leaveDraft()
 	if v.streamStop != nil {
 		v.streamStop()
 		v.streamStop = nil
@@ -349,7 +371,10 @@ func (v *chatView) leaveForSwitch() {
 	v.chatID = 0
 	v.chat, v.turns = nil, nil
 	v.resetRecords()
+	v.resetDraft()
+	v.editingQueued = 0
 	v.composer.SetValue("")
+	return leave
 }
 
 // ---- the forms' dirty flags ----
