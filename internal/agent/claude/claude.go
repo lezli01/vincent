@@ -650,3 +650,11 @@ func (r *run) Argv() []string { return r.proc.Argv() }
 // conversations with `--resume <session_id>` (§9.2), which is what makes a
 // chat's second turn see the first (task 063 decision 3).
 func (a *Adapter) SupportsResume() bool { return true }
+
+// SupportsResumeSettingsChange implements agent.ResumeSettingsChanger (task
+// 160 decision 8): `--resume <id> --model <m> --effort <e>` runs the resumed
+// session on the model named, not the one it last ran with.
+// testdata/resume_settings_2.1.329.jsonl is that run — a session begun on
+// claude-haiku-5-5, resumed with `--model sonnet --effort low`, whose init
+// and assistant records both say claude-sonnet-5-5 under the same session id.
+func (a *Adapter) SupportsResumeSettingsChange() bool { return true }

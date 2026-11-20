@@ -26,6 +26,12 @@ type agentResponse struct {
 	// registry to ask, because "nobody can say" and "no" are different
 	// answers and only the second may filter anything out.
 	SupportsResume *bool `json:"supports_resume"`
+	// SupportsResumeSettingsChange is whether a chat on this adapter may
+	// change its model or effort once its session has run (task 160
+	// decision 8): `agent.CanChangeOnResume`, the answer PATCH and a turn's
+	// overrides consult, true only where a capture shows a resumed run on a
+	// changed model. Null with no registry to ask, as supports_resume is.
+	SupportsResumeSettingsChange *bool `json:"supports_resume_settings_change"`
 	// SupportsSkillListing is whether this adapter implements skill listing
 	// at all (§9.1, §9.6, task 124): `agent.CanListSkills`. It is a fact
 	// about the adapter, not about the installed build — a build too old to
@@ -132,32 +138,33 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 		name, e := ce.name, ce.entry
 		caps := s.adapterCapabilities(name)
 		resp := agentResponse{
-			Name:                 name,
-			Available:            e.Availability.Found,
-			Path:                 e.Availability.Path,
-			Version:              e.Availability.Version,
-			SupportsInput:        e.Availability.SupportsInput,
-			SupportsResume:       caps.resume,
-			SupportsSkillListing: caps.skillListing,
-			SkillSigil:           caps.skillSigil,
-			SkillPosition:        caps.skillPosition,
-			SupportsFileMentions: caps.fileMentions,
-			FileMentionSigil:     caps.mentionSigil,
-			FileMentionPosition:  caps.mentionPosition,
-			FileMentionExpands:   caps.mentionExpands,
-			CompactCommand:       caps.compactCommand,
-			InputVerdict:         string(e.InputVerdict()),
-			VersionVerdict:       string(e.Availability.VersionVerdict),
-			TestedVersions:       e.Availability.TestedVersions,
-			RestrictedVerdict:    string(e.RestrictedVerdict()),
-			LoggedIn:             e.Availability.LoggedIn,
-			Error:                e.Availability.Error,
-			Models:               e.Options.Models,
-			Efforts:              e.Options.Efforts,
-			DefaultModel:         e.Options.DefaultModel,
-			DefaultEffort:        e.Options.DefaultEffort,
-			ProbedAt:             e.ProbedAt.UTC().Format(time.RFC3339),
-			Quota:                quotas[name],
+			Name:                         name,
+			Available:                    e.Availability.Found,
+			Path:                         e.Availability.Path,
+			Version:                      e.Availability.Version,
+			SupportsInput:                e.Availability.SupportsInput,
+			SupportsResume:               caps.resume,
+			SupportsResumeSettingsChange: caps.resumeSettings,
+			SupportsSkillListing:         caps.skillListing,
+			SkillSigil:                   caps.skillSigil,
+			SkillPosition:                caps.skillPosition,
+			SupportsFileMentions:         caps.fileMentions,
+			FileMentionSigil:             caps.mentionSigil,
+			FileMentionPosition:          caps.mentionPosition,
+			FileMentionExpands:           caps.mentionExpands,
+			CompactCommand:               caps.compactCommand,
+			InputVerdict:                 string(e.InputVerdict()),
+			VersionVerdict:               string(e.Availability.VersionVerdict),
+			TestedVersions:               e.Availability.TestedVersions,
+			RestrictedVerdict:            string(e.RestrictedVerdict()),
+			LoggedIn:                     e.Availability.LoggedIn,
+			Error:                        e.Availability.Error,
+			Models:                       e.Options.Models,
+			Efforts:                      e.Options.Efforts,
+			DefaultModel:                 e.Options.DefaultModel,
+			DefaultEffort:                e.Options.DefaultEffort,
+			ProbedAt:                     e.ProbedAt.UTC().Format(time.RFC3339),
+			Quota:                        quotas[name],
 		}
 		if resp.Models == nil {
 			resp.Models = []agent.Option{}
@@ -180,6 +187,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 // not know the name — "nobody can say", which no client may filter on.
 type adapterCapabilities struct {
 	resume          *bool
+	resumeSettings  *bool
 	skillListing    *bool
 	skillSigil      *string
 	skillPosition   *string
@@ -203,6 +211,7 @@ func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 		return adapterCapabilities{}
 	}
 	resume, listing := agent.CanResume(a), agent.CanListSkills(a)
+	resumeSettings := agent.CanChangeOnResume(a)
 	mentions := agent.CanMentionFiles(a)
 	var syntax agent.SkillSyntax
 	if inv, ok := a.(agent.SkillInvoker); ok {
@@ -217,6 +226,7 @@ func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 	compact := agent.CompactCommand(a)
 	return adapterCapabilities{
 		resume:          &resume,
+		resumeSettings:  &resumeSettings,
 		skillListing:    &listing,
 		skillSigil:      &sigil,
 		skillPosition:   &position,

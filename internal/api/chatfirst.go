@@ -3,19 +3,18 @@ package api
 // A chat started from its first message, and a chat renamed (task 161, spec
 // §5.5, §13.2): POST /v1/chats and POST /v1/tasks/{id}/chat take an optional
 // `message` sent as turn 1 in the same request, an empty title is derived from
-// that message, and PATCH /v1/chats/{id} renames.
+// that message, and PATCH /v1/chats/{id} renames (its handler, shared with
+// task 160's settings, is in chatsettings.go).
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/lezli01/vincent/internal/chatrun"
-	"github.com/lezli01/vincent/internal/store"
 )
 
 // ChatTitleMaxRunes bounds a chat title derived from a message, and a rename
@@ -104,48 +103,4 @@ func (s *Server) writeChatCreated(ctx context.Context, w http.ResponseWriter, bo
 		}
 	}
 	writeJSON(w, http.StatusCreated, chatCreateBody{chatBody: body, FirstTurn: turn})
-}
-
-// renameChatRequest is the body of PATCH /v1/chats/{id}. Only the title is
-// accepted today; #1011 adds the model, effort and permission mode beside it.
-// An unknown field is a 400, as decodeJSON makes every body.
-type renameChatRequest struct {
-	Title *string `json:"title"`
-}
-
-// handleChatPatch renames a chat (task 161 decision 4). It is legal in every
-// state, terminal ones included, and never renames the branch.
-func (s *Server) handleChatPatch(w http.ResponseWriter, r *http.Request) {
-	chat, ok := s.chatFromPath(w, r)
-	if !ok {
-		return
-	}
-	var req renameChatRequest
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	if req.Title == nil {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, "nothing to change: title is the one field")
-		return
-	}
-	title := strings.TrimSpace(*req.Title)
-	if title == "" {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, "title must not be empty")
-		return
-	}
-	if n := utf8.RuneCountInString(title); n > ChatTitleMaxRunes {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			fmt.Sprintf("title is %d characters; at most %d", n, ChatTitleMaxRunes))
-		return
-	}
-	updated, err := s.deps.Store.SetChatTitle(r.Context(), chat.ID, title)
-	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, CodeNotFound, err.Error())
-		return
-	}
-	if err != nil {
-		s.internalError(w, "rename chat", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, renderChat(updated))
 }

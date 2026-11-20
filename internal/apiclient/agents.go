@@ -35,6 +35,9 @@ type Agent struct {
 	// predates the field, or one with no adapter registry to ask — and
 	// nothing may be refused on the strength of a field that was never sent.
 	SupportsResume *bool `json:"supports_resume"`
+	// SupportsResumeSettingsChange is whether a chat on this adapter may
+	// change model or effort after its first turn (task 160 decision 8).
+	SupportsResumeSettingsChange *bool `json:"supports_resume_settings_change"`
 	// SupportsSkillListing is whether this adapter can list the skills its
 	// CLI would load at all (§9.1, §9.6, task 124). It is a fact about the
 	// adapter, not the installed build: a build that cannot list is found out
@@ -257,6 +260,13 @@ func (a Agent) CannotTakeInput() bool { return a.InputVerdict == InputVerdictUns
 // older daemon, or one that cannot say — answers false, exactly as the
 // input and restricted verdicts do.
 func (a Agent) CannotResume() bool { return a.SupportsResume != nil && !*a.SupportsResume }
+
+// CannotChangeOnResume reports a positive "no" to changing a chat's model or
+// effort once its session has run (task 160 decision 8). nil — nobody can
+// say — is not a no.
+func (a Agent) CannotChangeOnResume() bool {
+	return a.SupportsResumeSettingsChange != nil && !*a.SupportsResumeSettingsChange
+}
 
 // CannotListSkills reports an adapter that can never list its skills (task
 // 124). Only a positive no counts: a nil SupportsSkillListing — an older

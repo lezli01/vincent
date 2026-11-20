@@ -29,9 +29,11 @@ const (
 	// resumed or cleared. It carries queued_count and queue_paused, so a
 	// client re-renders the badge without a fetch.
 	EventChatQueue = "chat.queue_changed"
-	// EventChatUpdated is a chat whose display fields changed without a
-	// state change — today only a rename (task 161). It carries the new
-	// title, so a list repaints without a fetch.
+	// EventChatUpdated is a chat whose display or run settings changed
+	// without a state change: a rename (task 161), or its model, effort or
+	// permission mode changed by PATCH /v1/chats/{id} (task 160) — which
+	// applies from the next turn when made during a live one. It carries the
+	// chat, so a list repaints without a fetch.
 	EventChatUpdated = "chat.updated"
 )
 
@@ -58,7 +60,7 @@ const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_mes
 	session_id, input_tokens, output_tokens, cost_usd, exit_code, pid, proc_identity,
 	started_at, ended_at, duration_ms, session_input_tokens, session_output_tokens,
 	cache_read_tokens, cache_creation_tokens, context_tokens, context_window,
-	session_cache_read_tokens, session_cache_creation_tokens`
+	session_cache_read_tokens, session_cache_creation_tokens, model, effort, permission_mode`
 
 // CreateChat inserts c, assigning its ID and timestamps, and writes the
 // durable chat.created event in the same transaction (§13.3).
@@ -340,6 +342,41 @@ func (s *Store) SetChatSession(ctx context.Context, id int64, sessionID string) 
 	return s.updateChat(ctx, id, "", func(c *Chat) { c.SessionID = sessionID })
 }
 
+// ChatSettingsPatch is a PATCH /v1/chats/{id} (task 160 decision 5): each
+// non-nil field replaces the chat's own. An empty Model or Effort clears it
+// back to the adapter's default.
+type ChatSettingsPatch struct {
+	Title          *string
+	Model          *string
+	Effort         *string
+	PermissionMode *string
+}
+
+// UpdateChatSettings applies p to the chat and publishes chat.updated. A
+// terminal chat is ErrInvalidChatAction: its conversation is over (task 160
+// decision 5). A live turn keeps what it was started with — its settings are
+// on its turn row — so the change applies from the next turn.
+func (s *Store) UpdateChatSettings(ctx context.Context, id int64, p ChatSettingsPatch) (*Chat, error) {
+	return s.updateChatOrRefuse(ctx, id, EventChatUpdated, func(c *Chat) error {
+		if chatstate.Terminal(c.State) {
+			return fmt.Errorf("chat %d is %s: %w", id, c.State, ErrInvalidChatAction)
+		}
+		if p.Title != nil {
+			c.Title = *p.Title
+		}
+		if p.Model != nil {
+			c.Model = *p.Model
+		}
+		if p.Effort != nil {
+			c.Effort = *p.Effort
+		}
+		if p.PermissionMode != nil {
+			c.PermissionMode = *p.PermissionMode
+		}
+		return nil
+	})
+}
+
 // SetChatPendingInput stores or clears the §7.4 request a chat is waiting on.
 func (s *Store) SetChatPendingInput(ctx context.Context, id int64, req json.RawMessage) (*Chat, error) {
 	return s.updateChat(ctx, id, "", func(c *Chat) { c.PendingInput = req })
@@ -372,6 +409,15 @@ func (s *Store) SetChatWorktree(ctx context.Context, id int64, path, baseSHA str
 // when it is non-empty. Read-modify-write under the store's single connection
 // is safe for the same reason the task path's is: one writer, serialized.
 func (s *Store) updateChat(ctx context.Context, id int64, evType string, mutate func(*Chat)) (*Chat, error) {
+	return s.updateChatOrRefuse(ctx, id, evType, func(c *Chat) error {
+		mutate(c)
+		return nil
+	})
+}
+
+// updateChatOrRefuse is updateChat whose mutate may refuse the write: a
+// non-nil error rolls the transaction back and is returned as it is.
+func (s *Store) updateChatOrRefuse(ctx context.Context, id int64, evType string, mutate func(*Chat) error) (*Chat, error) {
 	var out *Chat
 	var ev *Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
@@ -383,7 +429,9 @@ func (s *Store) updateChat(ctx context.Context, id int64, evType string, mutate 
 		if err != nil {
 			return fmt.Errorf("get chat %d: %w", id, err)
 		}
-		mutate(c)
+		if err := mutate(c); err != nil {
+			return err
+		}
 		c.UpdatedAt = time.Now()
 		if chatstate.Terminal(c.State) {
 			// Archive deletes the queue in the transaction that ends the
@@ -402,10 +450,10 @@ func (s *Store) updateChat(ctx context.Context, id int64, evType string, mutate 
 			return fmt.Errorf("update chat %d: %w", id, err)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE chats SET title = ?, state = ?, model = ?, effort = ?, base_sha = ?, base_refresh = ?,
-				worktree_path = ?, session_id = ?, pending_input = ?, updated_at = ?
+			UPDATE chats SET title = ?, state = ?, model = ?, effort = ?, permission_mode = ?, base_sha = ?,
+				base_refresh = ?, worktree_path = ?, session_id = ?, pending_input = ?, updated_at = ?
 			WHERE id = ?`,
-			c.Title, string(c.State), nullString(c.Model), nullString(c.Effort), nullString(c.BaseSHA),
+			c.Title, string(c.State), nullString(c.Model), nullString(c.Effort), c.PermissionMode, nullString(c.BaseSHA),
 			refreshJSON, nullString(c.WorktreePath), nullString(c.SessionID), nullString(string(c.PendingInput)),
 			formatTime(c.UpdatedAt), c.ID); err != nil {
 			return fmt.Errorf("update chat %d: %w", id, err)
@@ -432,6 +480,13 @@ func (s *Store) updateChat(ctx context.Context, id int64, evType string, mutate 
 // chat that is running with no turn row — or the reverse — is the state
 // recovery cannot tell from a crash (§12.4).
 func (s *Store) CreateChatTurn(ctx context.Context, chatID int64, prompt string) (*ChatTurn, error) {
+	return s.CreateChatTurnWith(ctx, chatID, prompt, TurnSettings{})
+}
+
+// CreateChatTurnWith is CreateChatTurn with per-turn overrides (task 160
+// decision 6): each non-empty field of ov replaces the chat's own setting for
+// this turn only, and the resolved values are recorded on the turn row.
+func (s *Store) CreateChatTurnWith(ctx context.Context, chatID int64, prompt string, ov TurnSettings) (*ChatTurn, error) {
 	var turn *ChatTurn
 	var ev *Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
@@ -449,7 +504,7 @@ func (s *Store) CreateChatTurn(ctx context.Context, chatID int64, prompt string)
 		if !ok || c.State != chatstate.Idle {
 			return fmt.Errorf("chat %d: %w", chatID, ErrInvalidChatAction)
 		}
-		t, err := insertChatTurnTx(ctx, tx, c, prompt)
+		t, err := insertChatTurnTx(ctx, tx, c, prompt, ov)
 		if err != nil {
 			return err
 		}
@@ -476,7 +531,12 @@ func (s *Store) CreateChatTurn(ctx context.Context, chatID int64, prompt string)
 
 // insertChatTurnTx inserts a running turn for chat c with the next seq. The
 // caller moves the chat's state; this writes the turn row only.
-func insertChatTurnTx(ctx context.Context, tx *sql.Tx, c *Chat, prompt string) (*ChatTurn, error) {
+//
+// The turn's model, effort and permission mode are resolved here, in the
+// transaction that writes the row (task 160 decision 7): ov's field, else the
+// chat's current setting. The runner runs the turn with exactly what is
+// recorded, so a PATCH that lands while the turn runs cannot change it.
+func insertChatTurnTx(ctx context.Context, tx *sql.Tx, c *Chat, prompt string, ov TurnSettings) (*ChatTurn, error) {
 	chatID := c.ID
 	var seq int
 	if err := tx.QueryRowContext(ctx,
@@ -487,10 +547,13 @@ func insertChatTurnTx(ctx context.Context, tx *sql.Tx, c *Chat, prompt string) (
 		ChatID: chatID, Seq: seq, Prompt: prompt,
 		State: chatstate.TurnRunning, SessionID: c.SessionID, StartedAt: time.Now(),
 	}
+	resolved := ov.Resolve(c)
+	t.Model, t.Effort, t.PermissionMode = resolved.Model, resolved.Effort, resolved.PermissionMode
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO chat_turns (chat_id, seq, prompt, state, session_id, started_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		t.ChatID, t.Seq, t.Prompt, string(t.State), nullString(t.SessionID), formatTime(t.StartedAt))
+		INSERT INTO chat_turns (chat_id, seq, prompt, state, session_id, started_at, model, effort, permission_mode)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ChatID, t.Seq, t.Prompt, string(t.State), nullString(t.SessionID), formatTime(t.StartedAt),
+		nullString(t.Model), nullString(t.Effort), nullString(t.PermissionMode))
 	if err != nil {
 		return nil, fmt.Errorf("insert chat turn: %w", err)
 	}
@@ -800,6 +863,7 @@ func scanChat(r rowScanner) (*Chat, error) {
 func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 	var t ChatTurn
 	var failReason, errMsg, resultText, sessionID, procIdentity sql.NullString
+	var model, effort, mode sql.NullString
 	var startedAt string
 	var endedAt sql.NullString
 	if err := r.Scan(&t.ID, &t.ChatID, &t.Seq, &t.Prompt, (*string)(&t.State), &failReason, &errMsg,
@@ -807,9 +871,10 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 		&t.PID, &procIdentity, &startedAt, &endedAt, &t.DurationMS,
 		&t.SessionInputTokens, &t.SessionOutputTokens,
 		&t.CacheReadTokens, &t.CacheCreationTokens, &t.ContextTokens, &t.ContextWindow,
-		&t.SessionCacheReadTokens, &t.SessionCacheCreationTokens); err != nil {
+		&t.SessionCacheReadTokens, &t.SessionCacheCreationTokens, &model, &effort, &mode); err != nil {
 		return nil, err
 	}
+	t.Model, t.Effort, t.PermissionMode = model.String, effort.String, mode.String
 	t.FailReason, t.ErrorMessage = failReason.String, errMsg.String
 	t.ResultText, t.SessionID = resultText.String, sessionID.String
 	if procIdentity.Valid {

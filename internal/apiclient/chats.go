@@ -205,6 +205,12 @@ type ChatTurn struct {
 	CacheCreationTokens *int64 `json:"cache_creation_tokens,omitempty"`
 	ContextTokens       *int64 `json:"context_tokens,omitempty"`
 	ContextWindow       *int64 `json:"context_window,omitempty"`
+	// Model, Effort and PermissionMode are what the turn ran with (task 160
+	// decision 7); all empty on a turn from before they were recorded,
+	// which a client renders as "not recorded".
+	Model          string `json:"model,omitempty"`
+	Effort         string `json:"effort,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
 // CreateChatRequest is the POST /v1/chats body. An omitted agent resolves
@@ -228,6 +234,38 @@ type CreateChatRequest struct {
 	// 161). With it, Title may be empty: the daemon derives one from the
 	// message's first line.
 	Message string `json:"message,omitempty"`
+	// PermissionMode is the chat's mode; omitted is full-auto (task 160).
+	PermissionMode string `json:"permission_mode,omitempty"`
+}
+
+// PatchChatRequest is PATCH /v1/chats/{id} (task 160 decision 5). A nil
+// field is left as it is; an empty Model or Effort returns it to the
+// adapter's default.
+type PatchChatRequest struct {
+	Title          *string `json:"title,omitempty"`
+	Model          *string `json:"model,omitempty"`
+	Effort         *string `json:"effort,omitempty"`
+	PermissionMode *string `json:"permission_mode,omitempty"`
+}
+
+// PatchChat changes a chat's title, model, effort or permission mode. A change
+// made during a live turn applies from the next one. Refusals: 400
+// `agent_cannot_change_on_resume` and `agent_cannot_restrict_resume`, 409 for
+// a terminal chat or a linked chat whose task runs restricted.
+func (c *Client) PatchChat(ctx context.Context, id int64, req PatchChatRequest) (*Chat, error) {
+	var out Chat
+	if err := c.send(ctx, http.MethodPatch, fmt.Sprintf("/v1/chats/%d", id), req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// TurnSettings are one turn's overrides of its chat's model, effort and
+// permission mode (task 160 decision 6). An empty field is no override.
+type TurnSettings struct {
+	Model          string `json:"model,omitempty"`
+	Effort         string `json:"effort,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
 // CreateChat starts a chat: a title, a project, an agent, and a worktree and
@@ -387,8 +425,18 @@ func (c *Client) ChatFiles(ctx context.Context, id int64, limit int) (*ChatFiles
 // `max_parallel_chats` chats are already running — the send is refused, not
 // queued (§11).
 func (c *Client) SendChat(ctx context.Context, id int64, message string) (*ChatSend, error) {
+	return c.SendChatWith(ctx, id, message, TurnSettings{})
+}
+
+// SendChatWith is SendChat with per-turn overrides (task 160 decision 6):
+// that turn — or the queued message, when it drains — runs with them, and
+// the chat keeps its own settings.
+func (c *Client) SendChatWith(ctx context.Context, id int64, message string, ov TurnSettings) (*ChatSend, error) {
 	var raw json.RawMessage
-	body := map[string]string{"message": message}
+	body := struct {
+		Message string `json:"message"`
+		TurnSettings
+	}{message, ov}
 	if err := c.post(ctx, fmt.Sprintf("/v1/chats/%d/send", id), body, &raw); err != nil {
 		return nil, err
 	}
@@ -419,10 +467,12 @@ type ChatSend struct {
 // ChatQueuedMessage is a follow-up message waiting behind a chat's live turn
 // (task 156).
 type ChatQueuedMessage struct {
-	ID        int64     `json:"id"`
-	ChatID    int64     `json:"chat_id"`
-	Position  int       `json:"position"`
-	Prompt    string    `json:"prompt"`
+	ID       int64  `json:"id"`
+	ChatID   int64  `json:"chat_id"`
+	Position int    `json:"position"`
+	Prompt   string `json:"prompt"`
+	// TurnSettings are the message's own overrides (task 160).
+	TurnSettings
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
