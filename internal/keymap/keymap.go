@@ -72,7 +72,7 @@ const (
 	// owns every printable key, the textarea binds none of alt+e, and no
 	// surface answers it.
 	ExportChat Op = "export_chat"
-	// Rename changes a chat's title (task 156 decision 6). `r` for rename:
+	// Rename changes a chat's title (task 161 decision 6). `r` for rename:
 	// the chats boards have no retry, which is the task workspace's `r`.
 	Rename Op = "rename"
 )
@@ -91,7 +91,7 @@ const (
 	FollowUp  Op = "follow_up"
 	Chat      Op = "chat"
 	// ChatWith is Chat with a choice of agent, model and effort first (task
-	// 156 decision 7). `T` stays instant; alt+t is its considered twin.
+	// 161 decision 7). `T` stays instant; alt+t is its considered twin.
 	ChatWith Op = "chat_with"
 )
 
@@ -349,7 +349,7 @@ var exceptions = []exception{
 	{key: "d", ops: []Op{DraftRemove}, anyFixed: true, why: "d toggles the output and diff tabs in the task workspace, where no draft is open"},
 	{key: "n", ops: []Op{New}, anyFixed: true, why: "n is the popups' no, and the popups own the keyboard"},
 	{key: "N", ops: []Op{NextFailure}, anyFixed: true, why: "task 129.18: N is the popups' no too, and the popups own the keyboard"},
-	{key: "r", ops: []Op{Retry, Rename}, anyFixed: true, why: "r retries the connection while disconnected, when no task is on screen; task 156: rename is on the chats boards, which offer no §6 action"},
+	{key: "r", ops: []Op{Retry, Rename}, anyFixed: true, why: "r retries the connection while disconnected, when no task is on screen; task 161: rename is on the chats boards, which offer no §6 action"},
 	{key: "enter", ops: []Op{OpenRow}, anyFixed: true, why: "enter activates the focused thing on every surface"},
 	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
 	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 158: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},

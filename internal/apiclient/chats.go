@@ -65,9 +65,9 @@ type Chat struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	// Warnings are non-fatal notes on a create, such as a chat opened on a
-	// closed issue, or a first message that was not sent (task 156).
+	// closed issue, or a first message that was not sent (task 161).
 	Warnings []string `json:"warnings,omitempty"`
-	// FirstTurn is the turn a create's `message` started (task 156): set
+	// FirstTurn is the turn a create's `message` started (task 161): set
 	// only on a create's answer, and nil when no message was given or the
 	// send was refused — the chat exists either way, and Warnings says why.
 	FirstTurn *ChatTurn `json:"first_turn,omitempty"`
@@ -225,7 +225,7 @@ type CreateChatRequest struct {
 	// IssueID opens the chat on an issue's main worktree (task 140).
 	IssueID *int64 `json:"issue_id,omitempty"`
 	// Message is sent as the chat's first turn in the same request (task
-	// 156). With it, Title may be empty: the daemon derives one from the
+	// 161). With it, Title may be empty: the daemon derives one from the
 	// message's first line.
 	Message string `json:"message,omitempty"`
 }
@@ -241,7 +241,7 @@ func (c *Client) CreateChat(ctx context.Context, req CreateChatRequest) (*Chat, 
 	return &out, nil
 }
 
-// RenameChat is PATCH /v1/chats/{id} with a title (task 156). It is legal in
+// RenameChat is PATCH /v1/chats/{id} with a title (task 161). It is legal in
 // every state, and the chat's branch keeps the slug it was cut with.
 func (c *Client) RenameChat(ctx context.Context, id int64, title string) (*Chat, error) {
 	var out Chat
@@ -638,7 +638,7 @@ func (c *Client) ChatExport(ctx context.Context, chatID int64, opts ChatExportOp
 	return out, nil
 }
 
-// ChatSearchTurn is one turn GET /v1/chats/{id}/search matched (task 157
+// ChatSearchTurn is one turn GET /v1/chats/{id}/search matched (task 160
 // decision 2): the turn's seq and how often the query occurs in it.
 type ChatSearchTurn struct {
 	Seq     int `json:"seq"`

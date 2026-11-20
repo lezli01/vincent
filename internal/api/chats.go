@@ -168,7 +168,7 @@ type createChatRequest struct {
 	// main worktree, on the issue's main branch, as a main task does.
 	IssueID *int64 `json:"issue_id"`
 	// Message, when set, is sent as the chat's first turn in the same
-	// request (task 156 decision 1), and an empty title is derived from it.
+	// request (task 161 decision 1), and an empty title is derived from it.
 	Message string `json:"message"`
 }
 

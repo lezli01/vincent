@@ -105,7 +105,7 @@ func newChatStartCmd() *cobra.Command {
 					return printChat(cmd, chat)
 				}
 				if chat.FirstTurn == nil {
-					// The chat exists; the message did not go (task 156
+					// The chat exists; the message did not go (task 161
 					// decision 1). The warning above says why.
 					if err := printChat(cmd, chat); err != nil {
 						return err
@@ -317,7 +317,7 @@ func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, i
 }
 
 // waitChatTurn waits for turn to end and prints its answer — the half of
-// runChatTurn a create that already started the turn needs (task 156).
+// runChatTurn a create that already started the turn needs (task 161).
 func waitChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, id int64, turn *apiclient.ChatTurn) error {
 	// Elapsed is measured from here rather than from turn.StartedAt: this is
 	// how long the human at the terminal has been waiting, and it needs no
@@ -645,7 +645,7 @@ func newChatCancelCmd() *cobra.Command {
 	return cmd
 }
 
-// newChatRenameCmd is `vincent chat rename` (task 156 decision 4). A rename is
+// newChatRenameCmd is `vincent chat rename` (task 161 decision 4). A rename is
 // legal in every state and never renames the branch.
 func newChatRenameCmd() *cobra.Command {
 	cmd := &cobra.Command{

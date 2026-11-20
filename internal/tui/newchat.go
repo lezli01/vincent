@@ -34,7 +34,7 @@ type ncRow int
 
 const (
 	ncProject ncRow = iota
-	// ncMessage is the first message (task 156 decision 5): the form opens
+	// ncMessage is the first message (task 161 decision 5): the form opens
 	// on it, and enter there creates the chat and sends it in one request.
 	// Every other row is prefilled with its default, so `n`, typing and
 	// enter is the whole quick chat.
@@ -58,7 +58,7 @@ const (
 type chatCreatedMsg struct {
 	chat *apiclient.Chat
 	// message is the first message the create carried, kept so a refused
-	// send can put it back in the composer (task 156 decision 5).
+	// send can put it back in the composer (task 161 decision 5).
 	message string
 	err     error
 }

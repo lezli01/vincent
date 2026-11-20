@@ -188,7 +188,7 @@ func TestTaskWorkspaceListsLinkedChatsLive(t *testing.T) {
 	})
 }
 
-// TestChatWithSendsTheChosenAgentLive is task 156 decision 7 against the real
+// TestChatWithSendsTheChosenAgentLive is task 161 decision 7 against the real
 // handlers: `chat_with` opens the form, and what it sends is the agent, model
 // and effort chosen there, with the first message as turn 1's prompt. Once
 // the task holds the chat, the key is a navigation like `T`. Then `r` on the

@@ -1,6 +1,6 @@
 package tui
 
-// Choosing the agent for a chat on a task or an issue (task 156 decision 7,
+// Choosing the agent for a chat on a task or an issue (task 161 decision 7,
 // §15). `T` stays instant with the daemon's default; the `chat_with`
 // operation and the palette's "chat with…" open this small form first —
 // agent, model, effort and an optional first message — then make the same

@@ -46,7 +46,7 @@ func newChatLiveRoot(t *testing.T) *root {
 
 // newChatLiveRootWith is newChatLiveRoot with, when runner is set, a real
 // chat runner behind the handlers, so a create's first message runs as a
-// turn (task 156). Without one the daemon keeps the chat and refuses the
+// turn (task 161). Without one the daemon keeps the chat and refuses the
 // send, which is the not-sent path. The store comes back for assertions.
 func newChatLiveRootWith(t *testing.T, runner bool) (*root, *store.Store) {
 	t.Helper()
@@ -221,7 +221,7 @@ func TestNewChatFormPickersPopulateThroughRoot(t *testing.T) {
 			"newChatFieldsMsg is produced by newChatForm.init and consumed by nothing", got)
 	}
 
-	// The form opens on the message (task 156) and the seven focusable
+	// The form opens on the message (task 161) and the seven focusable
 	// fields wrap, so seven tabs come back to it: the project row is the
 	// selection, shown and never focused (task 132.13).
 	if f.focus != ncMessage {
@@ -347,7 +347,7 @@ func typeKeys(m *root, text string) {
 	}
 }
 
-// TestNewChatQuickChatCreatesAndSendsInOneStep is task 156 decision 5: `n`,
+// TestNewChatQuickChatCreatesAndSendsInOneStep is task 161 decision 5: `n`,
 // type, enter — one create carrying the message, the title derived from it,
 // and the workspace opened on the chat whose first turn is running.
 func TestNewChatQuickChatCreatesAndSendsInOneStep(t *testing.T) {

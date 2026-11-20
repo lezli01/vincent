@@ -17,7 +17,7 @@ import (
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
-// Bounds on GET /v1/chats/{id}/search (task 157 decision 2, §13.2).
+// Bounds on GET /v1/chats/{id}/search (task 160 decision 2, §13.2).
 const (
 	// maxChatSearchQuery is the longest query, in bytes. A search line is
 	// typed by a human; anything longer is a pasted blob, not a search.
@@ -32,7 +32,7 @@ const (
 // chatSearchTurnDTO is one matching turn: its seq, how many times the query
 // occurs in it, and where those were counted. No rendered text rides here —
 // the client fetches the turn through the transcript route and finds the
-// matches in its own lines (task 157 decision 2).
+// matches in its own lines (task 160 decision 2).
 type chatSearchTurnDTO struct {
 	Seq     int `json:"seq"`
 	Matches int `json:"matches"`
@@ -48,14 +48,15 @@ type chatSearchDTO struct {
 	Turns []chatSearchTurnDTO `json:"turns"`
 }
 
-// handleChatTurnSearch is GET /v1/chats/{id}/search?q= (task 157 decision 2):
+// handleChatTurnSearch is GET /v1/chats/{id}/search?q= (task 160 decision 2):
 // a case-insensitive plain-substring scan of every turn's prompt and
 // normalized transcript text, the server half of the chat view's search.
 // The text searched is every string a normalized record carries, not only
 // what a verbosity level draws (decision 3), so a match inside a folded tool
 // call is still found. A turn whose transcript is gone falls back to its
-// row's result_text. #1022's cross-chat search is meant to reuse
-// searchChatTurn.
+// row's result_text. It is not GET /v1/chats/search (task 158,
+// handleChatSearch), which finds chats across the store through its own
+// index; this one counts matches inside one chat's turns.
 func (s *Server) handleChatTurnSearch(w http.ResponseWriter, r *http.Request) {
 	chat, ok := s.chatFromPath(w, r)
 	if !ok {

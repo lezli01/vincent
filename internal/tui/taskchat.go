@@ -44,7 +44,7 @@ type taskChatOpenedMsg struct {
 	chatID int64
 	err    error
 	// draft and note are a first message the daemon did not send (task
-	// 156), put back into the composer when the workspace opens.
+	// 161), put back into the composer when the workspace opens.
 	draft, note string
 }
 

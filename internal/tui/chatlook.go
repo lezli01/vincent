@@ -15,7 +15,7 @@ import (
 // check lines. The preview and the open conversation share all three, so
 // opening a chat never changes how the conversation looks.
 
-// The conversation search's looks (task 157 decision 3): every match is
+// The conversation search's looks (task 160 decision 3): every match is
 // marked, the current one more loudly, and the conversation focus's cursor
 // is a bar in the line's first cell.
 var (

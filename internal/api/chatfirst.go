@@ -1,6 +1,6 @@
 package api
 
-// A chat started from its first message, and a chat renamed (task 156, spec
+// A chat started from its first message, and a chat renamed (task 161, spec
 // §5.5, §13.2): POST /v1/chats and POST /v1/tasks/{id}/chat take an optional
 // `message` sent as turn 1 in the same request, an empty title is derived from
 // that message, and PATCH /v1/chats/{id} renames.
@@ -19,7 +19,7 @@ import (
 )
 
 // ChatTitleMaxRunes bounds a chat title derived from a message, and a rename
-// (task 156 decision 2): about one line of a card, and a branch slug that
+// (task 161 decision 2): about one line of a card, and a branch slug that
 // stays readable.
 const ChatTitleMaxRunes = 72
 
@@ -31,7 +31,7 @@ type chatCreateBody struct {
 }
 
 // DeriveChatTitle is the one title rule every chat-creating route uses (task
-// 156 decision 2): a non-empty title, trimmed, wins; otherwise the first
+// 161 decision 2): a non-empty title, trimmed, wins; otherwise the first
 // non-empty line of message, with its whitespace collapsed, cut at a word
 // boundary to ChatTitleMaxRunes with `…` when cut. Both empty is "".
 func DeriveChatTitle(title, message string) string {
@@ -113,7 +113,7 @@ type renameChatRequest struct {
 	Title *string `json:"title"`
 }
 
-// handleChatPatch renames a chat (task 156 decision 4). It is legal in every
+// handleChatPatch renames a chat (task 161 decision 4). It is legal in every
 // state, terminal ones included, and never renames the branch.
 func (s *Server) handleChatPatch(w http.ResponseWriter, r *http.Request) {
 	chat, ok := s.chatFromPath(w, r)

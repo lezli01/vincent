@@ -12,7 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// TestDeriveChatTitle is task 156 decision 2's rule on its own.
+// TestDeriveChatTitle is task 161 decision 2's rule on its own.
 func TestDeriveChatTitle(t *testing.T) {
 	long := strings.Repeat("word ", 30)
 	for _, tc := range []struct{ name, title, message, want string }{
@@ -52,7 +52,7 @@ func (h *chatHarness) createWith(t *testing.T, req map[string]any) (int, created
 	return resp.StatusCode, out, body
 }
 
-// TestChatCreateWithMessage is task 156 decision 1 and 2: one request makes
+// TestChatCreateWithMessage is task 161 decision 1 and 2: one request makes
 // the chat and starts turn 1 with the message byte for byte, and the empty
 // title is derived from it — the branch slug with it.
 func TestChatCreateWithMessage(t *testing.T) {
@@ -125,7 +125,7 @@ func TestChatCreateKeepsTheChatWhenTheFirstSendIsRefused(t *testing.T) {
 	}
 }
 
-// TestChatRename is task 156 decision 4: legal in idle and terminal states,
+// TestChatRename is task 161 decision 4: legal in idle and terminal states,
 // never renames the branch, refuses an empty title and unknown fields, and
 // publishes chat.updated.
 func TestChatRename(t *testing.T) {

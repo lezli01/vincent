@@ -243,7 +243,7 @@ type chatView struct {
 	// one case where they could collide out of reach.
 	files chatFileList
 
-	// Task 157: convFocus is the conversation holding the keyboard, cursor
+	// Task 160: convFocus is the conversation holding the keyboard, cursor
 	// its line cursor, search the search line and its matches, expanded
 	// the per-chat set of calls drawn at verbose (in memory, for the
 	// session, surviving a chat switch), lines the last built body,
@@ -306,7 +306,7 @@ func (v *chatView) setClient(c *apiclient.Client) tea.Cmd {
 // almost always: this screen is a text field with a conversation above it, so
 // the single-key global bindings must not fire while someone types "q".
 //
-// The one exception is the conversation focus (task 157 decision 1): with no
+// The one exception is the conversation focus (task 160 decision 1): with no
 // search line open, its keys are single letters that are not typed anywhere.
 func (v *chatView) capturesInput() bool {
 	if v.form != nil {
@@ -367,7 +367,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	v.files = chatFileList{}
 	v.composer.SetValue("")
 	v.composer.Focus()
-	// The expanded set is kept per chat (task 157 decision 4); the focus,
+	// The expanded set is kept per chat (task 160 decision 4); the focus,
 	// the search and the marker are this visit's.
 	v.convFocus, v.cursor, v.search = false, 0, chatSearchState{}
 	v.newLines, v.grew = 0, false
@@ -1135,7 +1135,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, nil
 	case chatSearchKey:
 		// The conversation takes the keyboard, with the search line open
-		// (task 157 decision 1). The draft stays as it is.
+		// (task 160 decision 1). The draft stays as it is.
 		v.openSearchLine()
 		return v, nil
 	case "alt+a":

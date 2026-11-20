@@ -60,7 +60,7 @@ type (
 		// that turn's heading, out of follow mode. 0 opens it as usual.
 		seq int
 		// draft and note carry a first message the daemon did not send
-		// back into the composer, with the reason (task 156 decision 5):
+		// back into the composer, with the reason (task 161 decision 5):
 		// nothing typed is lost to a refused send.
 		draft string
 		note  string
@@ -573,7 +573,7 @@ func (v *chatsView) applyCreated(msg chatCreatedMsg) tea.Cmd {
 	// Straight into the workspace: the human asked for a conversation, and
 	// landing them on the board to press enter on the row they just made
 	// would be a step for nothing. A first message the daemon refused goes
-	// back into the composer with the reason (task 156 decision 5).
+	// back into the composer with the reason (task 161 decision 5).
 	open := openChatMsg{id: msg.chat.ID, projectID: msg.chat.ProjectID}
 	open.draft, open.note = unsentFirstMessage(msg.chat, msg.message)
 	return tea.Batch(v.loadCmd(), func() tea.Msg { return open })
@@ -765,7 +765,7 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.create = newNewChatForm(v.client, v.project.id)
 		return v, v.create.init()
 	case opKey(keymap.Rename):
-		// A rename is legal in every state (task 156 decision 4), so the
+		// A rename is legal in every state (task 161 decision 4), so the
 		// archived board offers it too. The prompt is the root's.
 		if c, ok := v.current(); ok {
 			id, title := c.ID, c.Title

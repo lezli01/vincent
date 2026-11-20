@@ -9,7 +9,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// Task 157: the conversation focus, search, prompt jumps, per-call expansion
+// Task 160: the conversation focus, search, prompt jumps, per-call expansion
 // and the `↓ N new` marker.
 
 // chatFindFixture is a three-turn chat: turn 1 not loaded (only the daemon

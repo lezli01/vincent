@@ -69,7 +69,7 @@ type openTaskChatRequest struct {
 	Model  *string `json:"model"`
 	Effort *string `json:"effort"`
 	// Message is sent as the linked chat's first turn in the same request
-	// (task 156 decision 1); the opening context is prepended to it as to
+	// (task 161 decision 1); the opening context is prepended to it as to
 	// any first turn.
 	Message string `json:"message"`
 }
@@ -179,7 +179,7 @@ func (s *Server) handleTaskChat(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "assemble chat context", err)
 		return
 	}
-	// The task's title stays the default ahead of derivation (task 156
+	// The task's title stays the default ahead of derivation (task 161
 	// decision 2): a linked chat is about its task first.
 	title := strings.TrimSpace(ptrValue(req.Title))
 	if title == "" {

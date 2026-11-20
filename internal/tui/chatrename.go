@@ -1,6 +1,6 @@
 package tui
 
-// Renaming a chat (task 156 decision 6, §15): the `rename` operation on the
+// Renaming a chat (task 161 decision 6, §15): the `rename` operation on the
 // chats boards and the palette's "rename chat" from the conversation open one
 // prompt, prefilled with the current title. It is a root popup, like the
 // project picker, so every surface that names a chat reaches the same one.
@@ -122,7 +122,7 @@ func (m *root) applyRenamed(msg chatRenamedMsg) {
 }
 
 // paletteExtraser is a surface with key-less palette rows of its own beyond
-// the task workspace's: the chat workspace's "rename chat" (task 156).
+// the task workspace's: the chat workspace's "rename chat" (task 161).
 type paletteExtraser interface {
 	paletteExtras() []paletteEntry
 }

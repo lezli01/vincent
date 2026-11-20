@@ -104,7 +104,7 @@ func TestChatMessageFileReachesTheStoredPrompt(t *testing.T) {
 		}
 	}
 
-	// Task 156: a chat started from its first message alone. No title, one
+	// Task 161: a chat started from its first message alone. No title, one
 	// create carrying the message, the title derived from its first line,
 	// and the answer waited for as `send` waits.
 	out, code = runVincent(t, dataDir, cfgDir, "chat", "start", "--project", "1", "--agent", "claude",

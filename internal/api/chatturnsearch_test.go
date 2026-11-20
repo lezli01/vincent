@@ -44,7 +44,7 @@ func (h *chatHarness) search(t *testing.T, id int64, q string) (int, chatSearchD
 	return resp.StatusCode, out, body
 }
 
-// TestChatSearchCountsTurnsAndFallsBackToResultText is task 157 decision 2:
+// TestChatSearchCountsTurnsAndFallsBackToResultText is task 160 decision 2:
 // the route names the matching turns with a count each, case-insensitively,
 // and a turn whose transcript has gone to retention is still searched
 // through its row's result_text.

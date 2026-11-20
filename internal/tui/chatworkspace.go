@@ -780,7 +780,7 @@ func (v *chatView) renderWorkspace(width, height int) string {
 	title, right := v.paneEdge(midW)
 	box := drawBox(title, right, body, midW, height, edgesRounded, styleFocus)
 	// The search count and `↓ N new` sit on the pane's bottom edge (task
-	// 157 decisions 3 and 5).
+	// 160 decisions 3 and 5).
 	if label := v.edgeLabel(); label != "" && len(box) > 0 {
 		box[len(box)-1] = boxBottom(label, midW-2, edgesRounded, styleFocus)
 	}

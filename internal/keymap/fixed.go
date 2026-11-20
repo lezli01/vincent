@@ -139,7 +139,7 @@ var fixed = []Fixed{
 	{"export chat", "enter", "export, or copy the highlighted choice once written"},
 	{"export chat", "esc", "close the form"},
 	{"chat", "ctrl+f", "search the conversation"},
-	// The conversation with the keyboard and its search line (task 157).
+	// The conversation with the keyboard and its search line (task 160).
 	{"chat conversation", "down", "move the line cursor"},
 	{"chat conversation", "enter", "expand or fold the tool call under the cursor"},
 	{"chat conversation", "n", "the next match"},

@@ -98,7 +98,7 @@ type root struct {
 	// so an answer for a picker since closed or refetched is dropped, and
 	// projPickPending is its event debounce, armed at most once.
 	projPick *projectPicker
-	// rename and chatWith are task 156's two popups, routed like projPick:
+	// rename and chatWith are task 161's two popups, routed like projPick:
 	// the chat rename prompt and the chat-with form.
 	rename          *chatRenamePrompt
 	chatWith        *chatWithForm

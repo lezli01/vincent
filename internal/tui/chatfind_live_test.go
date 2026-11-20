@@ -26,7 +26,7 @@ import (
 )
 
 // TestChatSearchLive drives the conversation search against the real
-// handlers over httptest (task 157 decision 2): the daemon counts a match in
+// handlers over httptest (task 160 decision 2): the daemon counts a match in
 // a turn this view never loaded, landing on it fetches that turn through the
 // transcript route, and the cursor ends on the line that shows it. It is what
 // keeps the search's wire types from drifting between client and server.

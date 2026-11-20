@@ -49,7 +49,7 @@ type chatStubLog struct {
 	created  int
 	sent     []string
 	// sendCalls counts POST /v1/chats/3/send alone: a `chat start` with a
-	// message sends it in the create (task 156) and makes none.
+	// message sends it in the create (task 161) and makes none.
 	sendCalls int
 	// titles is the title of each create body, "" when it carried none.
 	titles []string
@@ -405,7 +405,7 @@ func TestChatStartMessageFileSendsTheFirstMessage(t *testing.T) {
 	}
 }
 
-// TestChatStartWithoutATitle is task 156 decision 3: the title is optional
+// TestChatStartWithoutATitle is task 161 decision 3: the title is optional
 // with a message, sent empty for the daemon to derive, in one create call;
 // with neither, the command refuses before any request.
 func TestChatStartWithoutATitle(t *testing.T) {

@@ -14,11 +14,11 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// Task 157: the chat's conversation focus — search, prompt jumps, per-call
+// Task 160: the chat's conversation focus — search, prompt jumps, per-call
 // expansion — and the `↓ N new` marker.
 //
 // The composer keeps the keyboard by default (task 071 decision 4, as
-// amended by task 157 decision 1). ctrl+f hands it to the conversation and
+// amended by task 160 decision 1). ctrl+f hands it to the conversation and
 // opens the search line; esc peels one layer at a time, search line →
 // conversation focus → composer, and never leaves the chat from either.
 
@@ -30,7 +30,7 @@ const chatSearchKey = "ctrl+f"
 // the daemon's bound (GET /v1/chats/{id}/search).
 const chatConvSearchQuery = 256
 
-// chatCallKey names one expanded record within a chat (task 157 decision 4):
+// chatCallKey names one expanded record within a chat (task 160 decision 4):
 // the turn's seq and the record's tool call id, or, for a record with none,
 // its position in the turn — the client's record identities are reassigned on
 // every refetch, and the set must survive leaving the chat and coming back.
@@ -279,7 +279,7 @@ func (v *chatView) stepMatch(d int) tea.Cmd {
 
 // landOn moves the cursor to match i, fetching its turn first when the match
 // was only counted by the daemon, and expanding the record it is in when the
-// level does not draw it (task 157 decision 3).
+// level does not draw it (task 160 decision 3).
 func (v *chatView) landOn(i int) tea.Cmd {
 	if i < 0 || i >= len(v.search.matches) {
 		return nil
@@ -571,7 +571,7 @@ func (v *chatView) follow() {
 }
 
 // edgeLabel is what the conversation pane's bottom edge carries: the search
-// count and the `↓ N new` marker (task 157 decisions 3 and 5).
+// count and the `↓ N new` marker (task 160 decisions 3 and 5).
 func (v *chatView) edgeLabel() string {
 	var parts []string
 	if v.search.query != "" {
@@ -674,7 +674,7 @@ func countFold(s, q string) int {
 }
 
 // recordSearchText is every string a record says, drawn at the current
-// level or not (task 157 decision 3).
+// level or not (task 160 decision 3).
 func recordSearchText(rec apiclient.TranscriptRecord) string {
 	parts := []string{
 		rec.Text, rec.Message, rec.Summary, rec.Line, rec.ResultText, rec.Output, rec.Patch,

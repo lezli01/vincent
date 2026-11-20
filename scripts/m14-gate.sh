@@ -46,7 +46,7 @@
 #      **task's** worktree while a free chat on the other project does not,
 #      and `vincent chat files` prints the route's own paths and mentions and
 #      exits 1 on a closed chat and on an unknown id
-#  15. a chat started from its first message, and renamed (task 156): a
+#  15. a chat started from its first message, and renamed (task 161): a
 #      create with `message` and no title answers 201 with `first_turn`, the
 #      title is the message's first line and the branch follows it, the turn
 #      finishes `done` with the message stored as its prompt, and PATCH
@@ -984,7 +984,7 @@ EOF
 # project, so VINCENT_GATE_SCENARIO=15 runs it without walking anything before
 # it. Unselected, it runs last, after leg 14.
 chat_first_message() {
-  echo "== 15. a chat started from its first message, and renamed (task 156)"
+  echo "== 15. a chat started from its first message, and renamed (task 161)"
   FIRST_REPO="$TMP/firstrepo"
   mkdir -p "$FIRST_REPO"
   git -C "$FIRST_REPO" init -q -b main

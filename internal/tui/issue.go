@@ -570,7 +570,7 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 		// it (task 140.9).
 		return issueChatCmd(v.client, v.issue, v.setNote, viewIssue), true
 	case opKey(keymap.ChatWith):
-		// The same, with the agent chosen first (task 156).
+		// The same, with the agent chosen first (task 161).
 		return issueChatWithCmd(v.client, v.issue, v.setNote, viewIssue), true
 	}
 	return nil, false

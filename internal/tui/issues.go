@@ -669,7 +669,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, issueChatCmd(v.client, row.issue, v.setNote, viewIssues)
 		}
 	case opKey(keymap.ChatWith):
-		// The same, with the agent chosen first (task 156).
+		// The same, with the agent chosen first (task 161).
 		if row, ok := v.current(); ok {
 			return v, issueChatWithCmd(v.client, row.issue, v.setNote, viewIssues)
 		}

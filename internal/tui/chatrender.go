@@ -159,7 +159,7 @@ func (v *chatView) bodyView(width, height int) string {
 		// across every one of them.
 		keep, above := anchorBelow(v.anchors, v.vp.YOffset())
 		lines, anchors := v.bodyLinesAt(width)
-		// `↓ N new` counts lines appended while scrolled away (task 157
+		// `↓ N new` counts lines appended while scrolled away (task 160
 		// decision 5): only a content change counts, never a rebuild for a
 		// level, width or search change.
 		if v.grew && !v.following && width == v.builtWidth && v.level.get() == v.builtLevel {
@@ -369,7 +369,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 	lines := make([]string, 0, len(v.turns)*4)
 	anchors := make([]lineAnchor, 0, len(v.turns)*4)
 	// Every line carries its turn, and a `You` card's lines say so (task
-	// 157): the cursor, `{`/`}` and the search land by them.
+	// 160): the cursor, `{`/`}` and the search land by them.
 	turn, you := 0, false
 	pad := func(n int) {
 		for range n {
@@ -662,7 +662,7 @@ func (v *chatView) footerLines(width, height int) []string {
 	// each requires its own first rune of the one token under the cursor, and
 	// syncInlineFiles stands this one down for an adapter that claimed `@`.
 	out = append(out, v.files.render(width, height)...)
-	// The conversation's search line (task 157), where the inline lists
+	// The conversation's search line (task 160), where the inline lists
 	// draw: over the composer, out of the body's budget.
 	if v.convFocus && v.search.typing {
 		out = append(out, " "+v.searchLine(max(width-1, 1)))

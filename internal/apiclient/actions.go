@@ -223,7 +223,7 @@ type OpenTaskChatRequest struct {
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	// Message is sent as the chat's first turn in the same request (task
-	// 156), after the task's opening context.
+	// 161), after the task's opening context.
 	Message string `json:"message,omitempty"`
 }
 

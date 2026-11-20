@@ -991,7 +991,7 @@ type lineOpts struct {
 	// output pane keeps the count, its affordance to expand.
 	hideRaw bool
 	// expanded reports whether one record renders as it would at verbose,
-	// whatever the level (task 157 decision 4): call is the tool call the
+	// whatever the level (task 160 decision 4): call is the tool call the
 	// record belongs to ("" for none) and rec its client-assigned identity.
 	// An expanded tool call is drawn under a ▾ line in place of its check
 	// line, and every folded check line carries ▸. Nil expands nothing and
@@ -1094,7 +1094,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 		}
 	}
 	// fromCall is fromRecord for a line that belongs to a tool call, which
-	// is what `enter` on it toggles (task 157 decision 4).
+	// is what `enter` on it toggles (task 160 decision 4).
 	fromCall := func(seq int64, call string, added []string) {
 		for i, l := range added {
 			lines = append(lines, l)
@@ -1194,7 +1194,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 					continue
 				}
 				// Expanded: the call's own lines follow its ▾ line, at
-				// verbose (task 157 decision 4).
+				// verbose (task 160 decision 4).
 				if pl, ok := renderRecord(rec, sawOutput, levelVerbose, skills); ok {
 					fromCall(seqAt(seqs, i), recordCall(rec), wrapLine(pl, width))
 				}
@@ -1203,7 +1203,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 		}
 		if open {
 			// One expanded record renders at verbose, whatever the level;
-			// the session level is unchanged (task 157 decision 3).
+			// the session level is unchanged (task 160 decision 3).
 			flushRaw()
 			recLevel, recWidth := levelVerbose, width
 			if parent != "" {

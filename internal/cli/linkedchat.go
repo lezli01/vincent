@@ -63,7 +63,7 @@ func newTaskChatCmd() *cobra.Command {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning:", w)
 				}
 				if message != "" && chat.FirstTurn != nil {
-					// The first message went with the open (task 156): wait
+					// The first message went with the open (task 161): wait
 					// for its answer, as `chat start --message` does.
 					if !wantJSON(cmd) {
 						if err := printLinkedChat(cmd.OutOrStdout(), chat, id); err != nil {

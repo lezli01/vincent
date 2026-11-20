@@ -188,7 +188,7 @@ const (
 	// a lie.
 	ctxChatFiles bindingContext = "chat files"
 	// ctxChatConversation is the chat's conversation holding the keyboard
-	// (task 157 decision 1), and ctxChatFind its search line. Their own
+	// (task 160 decision 1), and ctxChatFind its search line. Their own
 	// contexts because every letter means something else in the composer:
 	// `n` would be typed there, and is the next match here.
 	ctxChatConversation bindingContext = "chat conversation"
@@ -387,7 +387,7 @@ const mainTabLabel = "switch to the next main tab, in tui.tabs order (shift+tab 
 // issueChatLabel is `T` on both issue screens (task 140.9).
 const issueChatLabel = "chat with an agent on the issue's main worktree — it moves the issue to in progress, and a main task waits until the chat is closed; with a chat already holding it, reopen that chat"
 
-// issueChatWithLabel is `chat_with` on both issue screens (task 156).
+// issueChatWithLabel is `chat_with` on both issue screens (task 161).
 const issueChatWithLabel = "chat with… — choose the agent, model and effort, and type a first message, before the chat opens on the issue's main worktree; with a chat already holding it, reopen that chat"
 
 // bindings is the registry. Order within a scope+context is display order.
@@ -481,7 +481,7 @@ var bindings = []binding{
 	// that chat instead (taskActions.offersChat), so the row is gated there
 	// rather than on the action alone.
 	{op: keymap.Chat, key: "T", label: "chat with an agent in this task's worktree — the task stays locked until the chat is closed; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 10},
-	// Task 156 decision 7: `T` with a choice first. Offered exactly where
+	// Task 161 decision 7: `T` with a choice first. Offered exactly where
 	// `chat` is, so it carries the same action.
 	{op: keymap.ChatWith, key: "alt+t", label: "chat with… — choose the agent, model and effort, and type a first message, before the chat opens; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 11},
 
@@ -692,7 +692,7 @@ var bindings = []binding{
 	{key: "enter", label: "open the chat — on a turn's match, scrolled to that turn", scope: scopePanel, context: ctxChatSearch, hint: "enter open", priority: 1},
 	{key: "down", label: "move between results (↑/↓, pgup/pgdown)", scope: scopePanel, context: ctxChatSearch, hint: "↑/↓ move", priority: 2},
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChats, priority: 7},
-	// Task 156 decision 6: the prompt is prefilled with the title, and the
+	// Task 161 decision 6: the prompt is prefilled with the title, and the
 	// branch keeps the slug it was cut with.
 	{op: keymap.Rename, key: "r", label: "rename the chat (the branch keeps its name)", scope: scopePanel, context: ctxChats, hint: "r rename", priority: 8, term: termRename},
 
@@ -754,12 +754,12 @@ var bindings = []binding{
 	// printable key — and alt+e because the textarea binds no alt+e.
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChat, priority: 15},
 
-	// Task 157: ctrl+f hands the keyboard to the conversation with the
+	// Task 160: ctrl+f hands the keyboard to the conversation with the
 	// search line open. A combination, because the composer owns every
-	// printable key (071 decision 4, amended by 157 decision 1).
+	// printable key (071 decision 4, amended by 160 decision 1).
 	{key: chatSearchKey, label: "search the conversation — the conversation takes the keyboard, esc gives it back", scope: scopePanel, context: ctxChat, hint: "ctrl+f search", priority: 20},
 
-	// The conversation with the keyboard (task 157 decision 1). Single
+	// The conversation with the keyboard (task 160 decision 1). Single
 	// letters here, because nothing is typed: the draft waits untouched.
 	{key: "down", label: "move the line cursor (j/k and ↑/↓)", scope: scopePanel, context: ctxChatConversation, hint: "j/k move", priority: 1},
 	{key: "enter", label: "expand or fold the tool call under the cursor — it draws as at verbose, the level stays", scope: scopePanel, context: ctxChatConversation, hint: "enter expand", priority: 2},
@@ -821,7 +821,7 @@ var bindings = []binding{
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it (with the first message, when one is typed)", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},
 	// The form opens on the message row, where enter creates the chat and
-	// sends the message in one request (task 156 decision 5); on every
+	// sends the message in one request (task 161 decision 5); on every
 	// other row it opens the list or moves on, as before.
 	{key: "enter", label: "on the message: create the chat and send it; elsewhere: open the focused field's list, or move on from a text field", scope: scopePanel, context: ctxNewChat, hint: "enter send", priority: 2},
 	{key: "tab", label: "next field (shift+tab goes back)", scope: scopePanel, context: ctxNewChat, hint: "tab next", priority: 3},

@@ -40,7 +40,7 @@ var reboundKeys = map[string]string{
 	"open_row": "f13",
 	"scope":    "f3",
 	// f17 rather than ctrl+f: ctrl+f is the chat's fixed search key
-	// (task 157).
+	// (task 160).
 	"filter":     "f17",
 	"lane":       "f4",
 	"new":        "f8",

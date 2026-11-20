@@ -30,7 +30,7 @@ const (
 	// client re-renders the badge without a fetch.
 	EventChatQueue = "chat.queue_changed"
 	// EventChatUpdated is a chat whose display fields changed without a
-	// state change — today only a rename (task 156). It carries the new
+	// state change — today only a rename (task 161). It carries the new
 	// title, so a list repaints without a fetch.
 	EventChatUpdated = "chat.updated"
 )
@@ -324,7 +324,7 @@ func (s *Store) SetChatState(ctx context.Context, id int64, st chatstate.State) 
 	})
 }
 
-// SetChatTitle renames a chat and publishes chat.updated (task 156). It is
+// SetChatTitle renames a chat and publishes chat.updated (task 161). It is
 // legal in every state, terminal ones included: the title is display only.
 // The branch is never touched — it was named from the title once, at
 // creation, and keeps that slug.
