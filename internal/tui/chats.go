@@ -56,6 +56,9 @@ type (
 		id        int64
 		projectID int64
 		back      viewID
+		// seq is the turn to land on (task 158): the chat opens scrolled to
+		// that turn's heading, out of follow mode. 0 opens it as usual.
+		seq int
 	}
 	// chatsTickMsg advances the in-progress indicator's frame (task 089) and,
 	// as a consequence of the repaint, the "last activity" column: that cell
@@ -724,6 +727,12 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.filtering = true
 		v.filter.Focus()
 		return v, nil
+	case opKey(keymap.ExportChat):
+		// Every state exports, archived and handed off included (task 159),
+		// so this is the one row key the archived board shares unchanged.
+		if c, ok := v.current(); ok {
+			return v, openChatExportCmd(c.ID, c.Title)
+		}
 	case opKey(keymap.OpenRow):
 		if c, ok := v.current(); ok {
 			// The board says which board it is, so a chat opened from the
@@ -777,6 +786,10 @@ func (v *chatsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Scope):
 		v.cycleScope()
 		return v, v.loadCmd()
+	case opKey(keymap.ChatSearch):
+		if !v.archived {
+			return v, func() tea.Msg { return selectViewMsg{id: viewChatSearch} }
+		}
 	case opKey(keymap.Refresh):
 		v.forgetPreviews()
 		return v, v.loadCmd()

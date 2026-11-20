@@ -26,6 +26,42 @@ list with the user-facing context a commit subject cannot carry.
   routes plus a `chat.queue_changed` event. Archiving, closing or handing off
   a chat discards its queue. Steering a message into the running turn
   (`ctrl+s`) is not available on any agent yet, and the key says so (#1010).
+- **A chat shows what each turn cost and how full its context is.** Each turn
+  heading now reads `◈ agent · turn N · age · 42s · 18.2k↑ 1.1k↓ · $0.04`:
+  the duration, the tokens the turn processed (cache included) and what it
+  produced, and the cost when the agent reports one — never for copilot. A
+  context gauge on the conversation's edge shows how full the session's
+  context is (`ctx ▰▰▰▱▱ 61%`), read from the agent's own report of its last
+  model call and its model's window; it turns yellow past 80%, and on claude
+  offers `alt+k` to send `/compact` after a confirmation. Below 150 columns,
+  where the details pane is hidden, the chat header carries the chat's token
+  and cost totals. Only claude reports the context figures today; the other
+  adapters show no gauge rather than an estimate (#1015).
+- **`GET /v1/agents` reports `compact_command`**, and a chat turn reports
+  `cache_read_tokens`, `cache_creation_tokens`, `context_tokens` and
+  `context_window` (#1015).
+- **Search across every chat, live and archived.** A full-text index covers
+  every chat's title, the prompts it was sent and the agent's final answers,
+  matching by substring so `429` finds `status429Body`. Search it from the TUI
+  ("Search all chats" in the command palette, or `S` on the chats screen),
+  where `enter` on a match opens the chat at that turn; with
+  `vincent chat search`; or with `GET /v1/chats/search`. Archived, handed-off
+  and closed chats are searched by default, and an answer stays findable
+  after its transcript has been removed by retention (#1022).
+- **Export a chat as Markdown, HTML or JSON.** `alt+e` in a chat or on the
+  chats boards, `vincent chat export`, or `GET /v1/chats/{id}/export` writes
+  the whole conversation as one document: its metadata, then each turn's
+  prompt, tool calls, answer and usage, optionally followed by the diff. A
+  turn's usage counts the cache the agent read and wrote beside its input
+  (`1200 in (+60200 cache) · 800 out`), as the chat heading does, and the JSON
+  carries the cache counts and context figures (#1023).
+
+### Changed
+
+- **A step's token count uses the chat's arrows.** The task workspace's step
+  details now read `8.1k↑/120↓` — `↑` the input sent to the model, `↓` the
+  output it returned — matching each chat turn's heading. They had drawn the
+  arrows the other way round.
 
 ### Fixed
 

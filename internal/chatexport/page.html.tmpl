@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<style>
+body{font:15px/1.5 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;max-width:52rem;margin:2rem auto;padding:0 1rem;color:#1f2328;background:#fff}
+h1{font-size:1.6rem;margin-bottom:.5rem}
+h2{font-size:1.2rem;border-bottom:1px solid #d1d9e0;padding-bottom:.2rem;margin-top:2rem}
+h3{font-size:1rem;color:#59636e;margin:1rem 0 .3rem}
+dl.meta{display:grid;grid-template-columns:max-content 1fr;gap:.1rem 1rem;font-size:.9rem}
+dl.meta dt{color:#59636e}dl.meta dd{margin:0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem}
+pre{background:#f6f8fa;padding:.6rem;overflow:auto;border-radius:6px}
+ul.tools{list-style:none;padding:0;margin:0}
+ul.tools li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem}
+.note,.usage{color:#59636e;font-style:italic;font-size:.9rem}
+.failed{color:#d1242f}
+.prompt{border-left:3px solid #d1d9e0;padding-left:.8rem}
+</style>
+</head>
+<body>
+<h1>{{.Title}}</h1>
+<dl class="meta">{{range .Meta}}<dt>{{.Key}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
+{{range .Turns}}<section class="turn">
+<h2>Turn {{.Seq}} · {{.State}}</h2>
+<h3>Prompt</h3>
+<div class="prompt">{{.PromptHTML}}</div>
+<h3>Tool calls</h3>
+{{if .ToolsNote}}<p class="note">{{.ToolsNote}}</p>{{else if .ToolLines}}<ul class="tools">{{range .ToolLines}}<li><pre>{{.}}</pre></li>{{end}}</ul>{{else}}<p class="note">none</p>{{end}}
+<h3>Answer</h3>
+{{if .AnswerHTML}}<div class="answer">{{.AnswerHTML}}</div>{{else}}<p class="note">no answer</p>{{end}}
+{{with .Failure}}<p class="failed"><strong>Failed:</strong> {{.}}</p>{{end}}
+<p class="usage">Usage: {{.Usage}}</p>
+</section>
+{{end}}{{if .Diff}}<section class="diff">
+<h2>Diff</h2>
+<pre>{{.Diff}}</pre>
+</section>
+{{else if .DiffUnavailable}}<section class="diff">
+<h2>Diff</h2>
+<p class="note">diff unavailable: {{.DiffUnavailable}}</p>
+</section>
+{{end}}</body>
+</html>

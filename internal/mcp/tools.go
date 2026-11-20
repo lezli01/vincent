@@ -186,10 +186,18 @@ var Excluded = []Route{
 	// so (task 126 decision 3's neighbourhood, #550): the list is what a
 	// human's composer offers behind `@`, and an agent already sitting in
 	// that worktree can run `ls`.
+	//
+	// `GET /v1/chats/{id}/export` joins them too (task 159 decision 6): an
+	// MCP tool was not asked for, and it can follow the same route later.
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/events"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/turns/{seq}/transcript"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/skills"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/files"},
+	// `GET /v1/chats/search` (task 158) is a chat read under the same rule:
+	// decision row 29 keeps the whole chat family off the MCP surface, and an
+	// agent wanting an old conversation is not who the search is for.
+	{Method: http.MethodGet, Path: "/v1/chats/search"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/export"},
 }
 
 // GrantedRoute is an Excluded forge write that becomes a tool on a granted

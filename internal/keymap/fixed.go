@@ -127,6 +127,17 @@ var fixed = []Fixed{
 	// alt+down is alt+up's other half, matched by the same handler and named
 	// in alt+up's label the way pgdown is in pgup's (issue #801 F8).
 	{"chat", "alt+down", "scroll the conversation forward one line"},
+	// The export form (task 159), a root popup that owns the keyboard while
+	// it is up, as the project picker does.
+	{"export chat", "up", "move between the form's rows"},
+	{"export chat", "down", "move between the form's rows"},
+	{"export chat", "tab", "move between the form's rows"},
+	{"export chat", "shift+tab", "move between the form's rows"},
+	{"export chat", "space", "change the focused choice"},
+	{"export chat", "left", "change the focused choice"},
+	{"export chat", "right", "change the focused choice"},
+	{"export chat", "enter", "export, or copy the highlighted choice once written"},
+	{"export chat", "esc", "close the form"},
 	{"chat skills", "up", "move the highlight"},
 	{"chat skills", "down", "move the highlight"},
 	{"chat skills", "tab", "insert the highlighted skill, or the top match"},
@@ -229,6 +240,8 @@ var fixed = []Fixed{
 	{"pull requests", "P", "open a pull request for a task that has none"},
 	{"pull requests", "u", "unlink it"},
 	{"pull requests", "down", "move the selection"},
+	{"chat search", "enter", "open the chat — on a turn's match, scrolled to that turn"},
+	{"chat search", "down", "move between results (↑/↓, pgup/pgdown)"},
 	{"issues", "tab", "switch to the next main tab"},
 	{"issues", "down", "move the selection"},
 	{"issues", "space", "select this pending hand-off issue for a handoff"},

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -72,7 +73,11 @@ func (s *Store) FileSizes() (FileSizes, error) {
 // The cost is a key set that shifts between versions, which is correct for a
 // figure describing *this* binary's database rather than a fixed contract.
 // SQLite's own `sqlite_%` tables are excluded — they are the engine's
-// bookkeeping, not vincent's data.
+// bookkeeping, not vincent's data. So are virtual tables and their shadow
+// tables (the FTS5 chat search index, task 158): an external-content index
+// holds no rows of its own, and its `_data`/`_idx`/`_config` shadows are
+// FTS5's bookkeeping, counted in pages rather than in anything a reader of
+// the figure would recognise.
 //
 // This is a scan per table, which is why it is a `GET /v1/doctor` figure and
 // not a `/v1/info` one (task 029 decision 1).
@@ -101,23 +106,33 @@ func (s *Store) TableRows(ctx context.Context) (map[string]int64, error) {
 // the open cursor would deadlock the query against itself.
 func (s *Store) tableNames(ctx context.Context) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT name FROM sqlite_master
+		`SELECT name, COALESCE(sql, '') FROM sqlite_master
 		  WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
 		  ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("list tables: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var names []string
+	var all, virtual []string
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var name, ddl string
+		if err := rows.Scan(&name, &ddl); err != nil {
 			return nil, fmt.Errorf("scan table name: %w", err)
 		}
-		names = append(names, name)
+		if strings.HasPrefix(strings.ToUpper(ddl), "CREATE VIRTUAL TABLE") {
+			virtual = append(virtual, name)
+			continue
+		}
+		all = append(all, name)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate tables: %w", err)
+	}
+	names := all[:0]
+	for _, name := range all {
+		if !slices.ContainsFunc(virtual, func(v string) bool { return strings.HasPrefix(name, v+"_") }) {
+			names = append(names, name)
+		}
 	}
 	return names, nil
 }

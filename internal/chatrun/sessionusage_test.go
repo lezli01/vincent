@@ -31,8 +31,15 @@ type totalsAdapter struct {
 	name       string
 	cumulative bool
 
+	// cacheInInput makes the adapter agent.CacheInInput, codex's shape.
+	// It is set before a test's first turn and never after.
+	cacheInInput bool
+
 	mu     sync.Mutex
 	script []totalsRun
+	// results, when set, are answered ahead of script: whole RunResults, for
+	// a test that states cache counts and context figures (task 157).
+	results []agent.RunResult
 }
 
 func (a *totalsAdapter) Name() string { return a.name }
@@ -48,6 +55,13 @@ func (a *totalsAdapter) NewLineParser() agent.LineParser {
 }
 func (a *totalsAdapter) SupportsResume() bool      { return true }
 func (a *totalsAdapter) UsageIsSessionTotal() bool { return a.cumulative }
+func (a *totalsAdapter) InputIncludesCache() bool  { return a.cacheInInput }
+
+func (a *totalsAdapter) setResults(results ...agent.RunResult) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.results = results
+}
 
 func (a *totalsAdapter) set(script ...totalsRun) {
 	a.mu.Lock()
@@ -58,6 +72,13 @@ func (a *totalsAdapter) set(script ...totalsRun) {
 func (a *totalsAdapter) Start(context.Context, agent.RunSpec) (agent.RunHandle, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if len(a.results) > 0 {
+		res := a.results[0]
+		a.results = a.results[1:]
+		ch := make(chan agent.Event)
+		close(ch)
+		return &totalsHandle{events: ch, res: res}, nil
+	}
 	if len(a.script) == 0 {
 		return nil, errors.New("totals stub: no scripted run left")
 	}

@@ -1814,6 +1814,22 @@ chat to follow a running turn live. A chat you opened from an issue or from the
 archive keeps the whole screen, and on a narrow terminal the conversation opens
 over the list.
 
+Each turn's heading reads `◈ agent · turn N · age · 42s · 18.2k↑ 1.1k↓ · $0.04`:
+how long the turn took, the tokens it processed (cache reads and writes
+included) and produced, and its cost. A part the agent did not report is left
+out, so a copilot turn never shows dollars, and a running turn shows none of
+them yet. Below 150 columns, where the details pane is hidden, the chat's header
+carries one totals line with the same tokens and cost.
+
+When the agent reports how full its context is — claude does, the others do
+not — a gauge sits on the conversation's edge: `ctx ▰▰▰▱▱ 61%`, or the bare
+count (`ctx 122.0k`) when no window was reported, and `ctx 61%` on a narrow
+terminal. Past 80% it turns yellow (with `NO_COLOR`, a `!` marks it instead),
+and on claude it names `alt+k`, which asks you to confirm and then sends
+`/compact` as the next message. Like sending, it waits while a turn is running.
+After a `/compact` the gauge disappears until the next turn reports the new,
+smaller size.
+
 ### Issues
 
 The selected project's issues — the ones filed in vincent and the ones imported
@@ -2503,6 +2519,8 @@ task-only.
 | `/` | Filter by title, agent or branch |
 | `s` | Cycle the listing between live, ended (archived, handed-off or closed), and all |
 | `R` | Reload the board |
+| `S` | [Search every chat](#chat-search)'s title, prompts and answers, live and archived |
+| `alt+e` | [Export the selected chat](#exporting-a-chat) as Markdown, HTML or JSON |
 | `home`/`end`, `pgup`/`pgdown` | Jump to the first or last chat, or move a page |
 
 The mouse wheel moves the cursor one chat per tick, as it does on the task
@@ -2601,6 +2619,30 @@ the draft alone; a second press discards the draft and returns you to the board.
 | `ctrl+s` | Create the chat and open it |
 | `esc` | Close an open list, else discard the draft |
 
+### Chat search
+
+**Search all chats** in the palette, or `S` on the chats board, opens a search
+over every chat in every project: live, archived, handed off and closed. It
+searches each chat's title, the messages sent to it and the agent's final
+answers. Tool output is not searched. Matching ignores case and finds text
+inside identifiers, so `429` finds `status429Body`. Every word you type must
+appear, and each word needs at least three characters.
+
+Results update as you type and are grouped by chat. Each group starts with the
+chat's state, title, id and agent, and says whether the chat is live or
+archived. Under it, one row per match shows where the match is (`title`,
+`turn N asked` or `turn N answer`) and a snippet with the matching text
+underlined and reversed, so it still shows under `NO_COLOR`.
+
+| Key | Does |
+|---|---|
+| `↑` / `↓`, `pgup` / `pgdown` | Move between results |
+| `enter` | Open the chat. On a turn's match, the chat opens scrolled to that turn, out of follow mode, and stays there until you scroll or type |
+| `esc` | Close the search. From a chat opened here, `esc` comes back to the search with its query and selection kept |
+
+![Chat search: the query "rollback" finding a closed chat by the words of its
+prompt, with the match highlighted](../assets/tui-chat-search.png)
+
 ### Chat workspace
 
 One conversation: the finished turns above, the running turn's live output below
@@ -2667,9 +2709,11 @@ periodic repaint.
 | `alt+g` | Jump to the start of the conversation |
 | `ctrl+g` | Jump to the live end and follow it again |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
+| `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
+| `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
-| `esc` | Back to where the chat was opened from — the issue, the issues list or the archived-chats board — otherwise the chats board |
+| `esc` | Back to where the chat was opened from — the issue, the issues list, the archived-chats board or the [chat search](#chat-search) — otherwise the chats board |
 
 **Queued messages.** A message sent while a turn runs is drawn as a faded
 `You` card marked `queued` below the live turn, and becomes a real turn when
@@ -2883,6 +2927,31 @@ A turn that runs past `agent_timeout`, or sits unanswered past `input_timeout`,
 fails and returns the chat to `idle` — the slot comes back rather than being
 held by a conversation nobody came back to.
 
+#### Exporting a chat
+
+`alt+e` — in a chat, on the chats board, or on the archived chats board —
+opens a small form that writes the chat to a file: every turn's prompt, its
+tool calls one line each, the answer and its usage. The daemon renders the
+document, the same one `vincent chat export` prints, and the TUI writes it.
+
+| Key | Does, in the export form |
+|---|---|
+| `↑`/`↓`, `tab`/`shift+tab` | Move between format, include diff and path |
+| `space`, `←`/`→` | On format, cycle `md` → `html` → `json`; on include diff, toggle it |
+| `enter` | Export and write the file |
+| `esc` | Close the form |
+
+The path starts as `./chat-<id>-<slug>.<ext>` in the directory you started
+the TUI from, and its extension follows the format. The file is written
+atomically. A failure — the daemon refusing, or a path that cannot be written —
+is shown in the form, which stays open so you can fix the path and press
+`enter` again. Once the file is written, the form offers to copy its path or,
+for Markdown, the document itself; `enter` copies the highlighted choice.
+
+Include diff appends the base-to-tip diff of the directory the chat works in
+today: its own worktree, or its linked task's. A chat with no directory left
+still exports and says why its diff is unavailable.
+
 ### Archived
 
 `tab` switches between archived tasks and archived chats. From 130 columns wide,
@@ -2932,6 +3001,7 @@ there is nothing to withhold and no flag saying so.
 |---|---|
 | `D` | Delete permanently — asks first |
 | `s` | Cycle the window: last 7 days → last 30 days → all time |
+| `alt+e` | [Export the selected chat](#exporting-a-chat) — an archived chat exports like any other |
 | `<` / `>` | Turn the page (a hundred rows at a time) — offered only where there is a page that way |
 | `enter` | Open the row's workspace, read-only |
 | `/` | Filter, exactly as on the live board |
@@ -3517,7 +3587,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twenty are the operations screens share, the next ten are the
+The first twenty-three are the operations screens share, the next ten are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3542,6 +3612,9 @@ The first twenty are the operations screens share, the next ten are the
 | `handoff` | `I` | Hand the selected issues off |
 | `return` | `,` | Return an issue from its handoff |
 | `steer` | `ctrl+s` | Steer a chat's running turn, where its agent can — none can yet |
+| `compact` | `alt+k` | Compact the chat agent's context — sends its compact command (`/compact` on claude) as the next message; asks first |
+| `chat_search` | `S` | Search every chat, from the chats board |
+| `export_chat` | `alt+e` | Export a chat as Markdown, HTML or JSON — from the chat, the chats board or the archived chats board. See [Exporting a chat](#exporting-a-chat) |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

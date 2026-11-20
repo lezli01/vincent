@@ -176,6 +176,7 @@ are long-lived by contract and no write deadline is set.
     "supports_skill_listing": true, "skill_sigil": "/", "skill_position": "leading",
     "supports_file_mentions": true, "file_mention_sigil": "@",
     "file_mention_position": "anywhere", "file_mention_expands": true,
+    "compact_command": "/compact",
     "version_verdict": "tested", "tested_versions": "2.1.224, 2.1.226, 2.1.268, 2.1.277",
     "restricted_verdict": "supported",
     "models":  [ { "value": "sonnet", "source": "cli" } ],
@@ -266,6 +267,12 @@ mention. All four are `null` when the daemon has no adapter registry to ask,
 as `supports_resume` is. They are the answer for a client that has **no chat
 yet** — `vincent agents`, and any agent picker; a client that already has a
 chat reads the same facts from that chat, so it needs only one call.
+
+`compact_command` is the message that compacts the adapter's session context,
+verbatim: `"/compact"` for claude and `""` for codex, cursor and copilot, which
+cannot compact. A client offers compaction only when it is non-empty — the TUI
+chat's context gauge does, past 80% — and it is `null` when the daemon has no
+adapter registry to ask, as `supports_resume` is.
 
 ### Global pause
 
@@ -3186,6 +3193,8 @@ the two reads, `GET /v1/chats` and `GET /v1/chats/{id}`, add its `turn_count`.
 GET    /v1/chats?project_id=&task_id=&issue_id=&state=&archived=
                 &archived_before=&archived_since=&limit=&offset=
                                       newest first; state may repeat
+GET    /v1/chats/search?q=&project_id=&archived=&limit=&turns=
+                                      full-text search — see Searching chats
 POST   /v1/chats                      create, with a worktree and a branch — or, with
                                       existing_branch, on a branch that is already there
 POST   /v1/tasks/{id}/chat            open a chat on a stopped task, in its worktree
@@ -3209,6 +3218,8 @@ GET    /v1/chats/{id}/turns/{seq}/transcript
                                       one turn's transcript, with ?offset= / ?tail=
 GET    /v1/chats/{id}/skills?refresh= the skills the chat's agent would load — see Skills
 GET    /v1/chats/{id}/files?limit=    the files of the chat's workspace — see Files
+GET    /v1/chats/{id}/export?format=&diff=
+                                      the chat as Markdown, HTML or JSON — see Exporting
 ```
 
 **The queue** (task 156). A `send` to a chat whose turn is `running` or
@@ -3225,8 +3236,8 @@ and hand-off discard the queue. A chat carries `queued_count`, `queue_paused`,
 steer a running turn yet, so `can_steer` is always `false`.
 
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
-excluded, the stream, the transcript, the skill list and the file list
-included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
+excluded, the stream, the transcript, the skill list, the file list and the
+export included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
 but starts a chat.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
@@ -3315,6 +3326,54 @@ has sent to.
 A chat opened on a task follows a second table. From `idle` it offers `send`
 and `close`, and nothing else: `archive` and `hand_off` would reach a worktree
 and a branch that belong to the task.
+
+### Searching chats
+
+`GET /v1/chats/search` searches every chat's title, each turn's prompt and each
+turn's final answer (`result_text`). Tool output in transcripts is not indexed.
+A turn's answer stays searchable after transcript retention deletes its files,
+because the answer is kept on the turn row.
+
+- `q` is required. It is split on whitespace. Every term must appear somewhere
+  in the chat — its title or any turn's prompt or answer, not necessarily the
+  same one — matching by substring and ignoring case, so `429` finds
+  `status429Body`. Each term is searched for literally: quotes, `*`, `-`, parentheses and `NEAR`/`AND`/`OR`
+  are text, not query syntax. A missing or blank `q` is a `400`
+  `validation_failed`. A term shorter than three characters is a `400`
+  `query_too_short`, because the trigram index cannot answer it without a full
+  scan.
+- `archived` takes `GET /v1/chats`' values with their meaning: `false` for
+  live chats, `true` for the three terminal states (`archived`, `handed_off`,
+  `closed`), `all` for both. **The default is `all`**, unlike the list route,
+  because finding a chat you are done with is the point of searching. Other
+  values are a `400`.
+- `project_id` narrows to one project. Without it every project is searched.
+- `limit` caps the chats returned (default 20, at most 100). `turns` caps the
+  matches listed per chat (default 5, at most 50).
+
+```json
+{
+  "results": [
+    {
+      "chat": { "id": 12, "title": "rate limits", "state": "archived", "...": "..." },
+      "match_count": 2,
+      "matches": [
+        { "seq": 1, "field": "prompt", "snippet": "why the 429?",
+          "segments": [{ "text": "why the " }, { "text": "429", "match": true }, { "text": "?" }] },
+        { "seq": 1, "field": "result", "snippet": "it returns status429Body", "segments": ["..."] }
+      ]
+    }
+  ]
+}
+```
+
+Chats are ordered best match first (FTS5 `bm25`). Within a chat, matches come
+in conversation order: the title (`seq` 0, `field` `title`), then each turn's
+`prompt` before its `result`. `match_count` counts every match before the cap.
+`snippet` is plain text with whitespace folded to single spaces, and
+`segments` is the same text split into runs, with `match: true` on the runs
+that matched. A client highlights from those runs and never parses markup. The
+route is not an MCP tool, like every chat route.
 
 ### A chat on a stopped task
 
@@ -3593,6 +3652,55 @@ git runs, and a chat on a task that has lost its worktree with
 deleted under the daemon, and a `limit` that is not a positive integer, are
 each `400 validation_failed`; any other git failure is a `500`.
 
+### Exporting
+
+```
+GET /v1/chats/{id}/export?format=md|html|json&diff=true|false
+```
+
+The whole chat as one document, rendered by the daemon so every client writes
+the same bytes. `format` defaults to `md`; `diff` defaults to `false`.
+
+| `format` | `Content-Type` | What it is |
+|---|---|---|
+| `md` | `text/markdown; charset=utf-8` | a title and metadata list, then per turn: prompt, tool calls, answer, usage |
+| `html` | `text/html; charset=utf-8` | one self-contained page: inline CSS, no scripts, nothing loaded from elsewhere |
+| `json` | `application/json` | the document model, with a top-level `"version": 1` |
+
+Every answer carries `Content-Disposition: attachment; filename=chat-<id>-<slug>.<ext>`.
+
+The metadata is the chat's id, title, project, agent, model, effort,
+permission mode, state, branch, base branch and base SHA, the linked task,
+handoff task and issue where set, and the creation and export times. Each turn
+lists one line per tool call — the tool, its key argument (file, command,
+pattern or URL) and `(failed)` when the call errored — and never the tool's
+output. Its answer is the turn's `result_text`; its usage is tokens — the
+input, then `(+N cache)` for the cache read and written when the agent counts
+it apart from the input (claude, copilot), then the output — cost when
+the agent reports one (copilot never does, and the cost is then absent rather
+than `$0`), duration, and a failed turn's reason. The JSON turn also carries
+`cache_read_tokens`, `cache_creation_tokens`, `context_tokens` and
+`context_window` when the agent reported them, and omits each otherwise. In HTML, prompts and answers
+are rendered from Markdown with raw HTML disabled, so a `<script>` in an
+agent's answer never reaches the page.
+
+A turn whose transcript has been pruned (`transcript_retention_days`) still
+exports from its row, with a note in place of its tool calls; a turn that never
+wrote a transcript (`agent_unavailable`, `transcript_io_error`) says so instead.
+
+`diff=true` appends the base-to-tip diff — commits plus uncommitted changes to
+tracked files — of the directory the chat works in today: its own worktree, or,
+for a chat opened on a task, the task's worktree against the task's base. When
+there is no such directory (a handed-off chat, an archived one whose worktree
+is gone) the export still answers `200`: JSON carries `"diff": null` and a
+`"diff_unavailable"` reason, Markdown and HTML a one-line `diff unavailable:`
+note.
+
+Every state exports, archived, handed off and closed included. The route
+touches no row and holds no `max_parallel_chats` slot. A bad `format` or `diff`
+is `400 validation_failed`, checked before the chat is looked up; an unknown
+chat is `404`.
+
 ### Sending a turn
 
 ```bash
@@ -3623,6 +3731,23 @@ same session's previous turn's (spec §9.9). The turn's transcript is not
 split: its `agent.result` record (tokens, cache tokens and `model_usage`)
 carries the session's totals so far, so on a resumed copilot turn it is
 larger than the turn row.
+
+A turn also carries four figures, each **omitted when the agent did not report
+it** — absent is "unknown", never zero:
+
+- `cache_read_tokens` and `cache_creation_tokens` — the turn's cache spend,
+  which `input_tokens` leaves out. The TUI's turn heading adds them to the
+  input. On copilot they are the turn's share of the session totals, as the
+  input and output are. Codex's `input_tokens` already include its cached
+  input, so a codex turn reports neither.
+- `context_tokens` — the prompt size of the run's last model call: its input
+  plus cache-read plus cache-write tokens. This is how full the conversation's
+  context was when the turn ended, not what the turn spent.
+- `context_window` — the size of that model's context window, as the run
+  itself reported it.
+
+Only claude reports `context_tokens` and `context_window` today; codex, cursor
+and copilot report no per-call prompt size, and vincent does not estimate one.
 
 ```bash
 curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \

@@ -59,6 +59,19 @@ const (
 	// composer would not type. No adapter can steer yet, so on every chat it
 	// names why rather than doing anything else under its name.
 	Steer Op = "steer"
+	// Compact sends the chat agent's compact command (`/compact` on claude)
+	// as the next message, after a y/n prompt (task 157 decision 4). alt+k
+	// for "kompact": the composer owns every letter, `c` is §6 cancel, and
+	// the textarea binds ctrl+k and alt+c to editing.
+	Compact Op = "compact"
+	// ChatSearch opens the search over every chat from the chats board
+	// (task 158 decision 4). S for "search": `/` filters the list in view.
+	ChatSearch Op = "chat_search"
+	// ExportChat opens the export form for the chat on screen, or the chats
+	// board's selected row (task 159). alt+e for "export": the chat composer
+	// owns every printable key, the textarea binds none of alt+e, and no
+	// surface answers it.
+	ExportChat Op = "export_chat"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -189,6 +202,15 @@ var catalog = []Info{
 	{Op: Steer, Default: "ctrl+s", Meaning: "steer the chat's running turn, where its agent can", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}},
+	// Typing: it is answered while the composer has the keyboard, so it may
+	// only ever be bound to a key the composer would not type.
+	{Op: Compact, Default: "alt+k", Meaning: "compact the chat agent's context (asks first)", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
+	{Op: ChatSearch, Default: "S", Meaning: "search every chat", Kind: KindTerm, Surfaces: []Surface{"chats"}},
+	{Op: ExportChat, Default: "alt+e", Meaning: "export the chat as Markdown, HTML or JSON", Kind: KindTerm, Surfaces: []Surface{
+		"chats", "archived chats", "chat",
+	}},
 
 	{Op: Pause, Default: "p", Meaning: "pause or resume the task", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: Approve, Default: "a", Meaning: "approve the gate", Kind: KindAction, Surfaces: []Surface{Actions}},
@@ -255,7 +277,7 @@ func ActionsLive(s Surface) bool { return actionsLive[s] }
 
 // capturesText is where a text field owns every printable key whenever the
 // surface is up: the chat's composer and the new-chat form (decision 5).
-var capturesText = map[Surface]bool{"chat": true, "new chat": true}
+var capturesText = map[Surface]bool{"chat": true, "new chat": true, "chat search": true}
 
 // CapturesText reports whether a text field owns the printable keys on s.
 func CapturesText(s Surface) bool { return capturesText[s] }
@@ -322,6 +344,7 @@ var exceptions = []exception{
 	{key: "r", ops: []Op{Retry}, anyFixed: true, why: "r retries the connection while disconnected, when no task is on screen"},
 	{key: "enter", ops: []Op{OpenRow}, anyFixed: true, why: "enter activates the focused thing on every surface"},
 	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
+	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 158: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},
 	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},
 }
 

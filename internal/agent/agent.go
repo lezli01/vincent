@@ -157,6 +157,46 @@ func UsageIsSessionTotal(a Adapter) bool {
 	return ok && c.UsageIsSessionTotal()
 }
 
+// CacheInInput is implemented by an adapter whose InputTokens already count
+// the cached input its CacheReadTokens report (task 157, §9.3). Codex is the
+// one: its `input_tokens` includes `cached_input_tokens`, as OpenAI's usage
+// does. A chat turn's heading adds the cache counts to the input to show
+// what a turn processed (task 157 decision 3), so on such an adapter the
+// turn records no cache counts rather than counting the cache twice.
+//
+// It is optional for the reason CumulativeUsage is: an adapter that says
+// nothing reports its cache apart from its input, which claude and copilot do.
+type CacheInInput interface {
+	// InputIncludesCache reports whether InputTokens counts the cache reads.
+	InputIncludesCache() bool
+}
+
+// InputIncludesCache reports whether a's InputTokens already count its cache
+// reads (see CacheInInput).
+func InputIncludesCache(a Adapter) bool {
+	c, ok := a.(CacheInInput)
+	return ok && c.InputIncludesCache()
+}
+
+// Compactor is implemented by an adapter whose CLI compacts a conversation's
+// context when sent a command as the next message (task 157 decision 4,
+// §9.1). Claude is the one: `/compact`. The chat's context gauge offers the
+// command past its threshold, and only for an adapter that names one —
+// compaction is never emulated.
+type Compactor interface {
+	// CompactCommand is the message that compacts the session, verbatim.
+	CompactCommand() string
+}
+
+// CompactCommand is a's compact command, or "" when it has none (see
+// Compactor).
+func CompactCommand(a Adapter) string {
+	if c, ok := a.(Compactor); ok {
+		return c.CompactCommand()
+	}
+	return ""
+}
+
 // MCPServer is the vincent MCP endpoint a step's agent is wired to (spec
 // §9.1, §13.4). Nil — the zero value of RunSpec.MCP — is a run with no
 // vincent tools, which is every run before task 057 and every run under
@@ -757,9 +797,11 @@ type RunResult struct {
 	// result line reported it (task 066, §9.2). Each is zero or empty for an
 	// adapter that does not report it: codex fills only the cache counts
 	// (task 070), cursor the durations and the cache counts (task 108), and
-	// a missing capability is stated in §9.x and never emulated. None of them is persisted: `step_runs` keeps vincent's own
+	// a missing capability is stated in §9.x and never emulated. None of them is persisted on a step run: `step_runs` keeps vincent's own
 	// timing and token columns, and these reach a reader through the
-	// transcript, which §13.2 re-normalizes on every read.
+	// transcript, which §13.2 re-normalizes on every read. A chat turn is
+	// the one exception: it persists the cache counts and the two context
+	// figures (task 157).
 	//
 	// Duration is the CLI's, not vincent's, and the two legitimately
 	// disagree: claude's excludes the time a §7.4 input wait adds to ours.
@@ -776,6 +818,16 @@ type RunResult struct {
 	// plain counts above do not account for.
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	// ContextTokens is the prompt size of the run's last top-level model
+	// call — its input plus cache-read plus cache-write tokens — which is how
+	// full the conversation's context was when the run ended (task 157
+	// decision 2). It is never derived from the totals above, which add up
+	// every call of the run. ContextWindow is the size of the window that
+	// model has, as the run itself reported it (decision 1). 0 is
+	// unreported for either: claude reports both; codex, cursor and copilot
+	// neither (§9.3, §9.7, §9.9).
+	ContextTokens int64
+	ContextWindow int64
 	// ReasoningOutputTokens is the share of OutputTokens the model spent
 	// thinking rather than answering (codex's `reasoning_output_tokens`,
 	// task 070; copilot's `modelMetrics[*].usage.reasoningTokens`, summed,

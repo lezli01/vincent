@@ -30,7 +30,7 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 		ctxNewTask, ctxNewTaskFields, ctxProjects, ctxProjectForm, ctxProjectFormField, ctxWorkflows, ctxWorkflowGraph, ctxWorkflowEditor,
 		ctxTaskWorkflow, ctxTaskStepDetails, ctxTaskPull,
 		ctxDaemon, ctxSettings, ctxPullRequests,
-		ctxChats, ctxChat, ctxNewChat,
+		ctxChats, ctxChat, ctxNewChat, ctxChatSearch,
 		ctxArchived, ctxArchivedChats,
 		ctxTriggers, ctxTriggerLedger,
 		ctxIssues, ctxIssue,
@@ -105,12 +105,13 @@ func TestPaletteDisconnectedKeepsNavigation(t *testing.T) {
 	}
 	// Twelve: the five takeovers, the chats board (task 067), the two
 	// archived boards (task 092), triggers (task 096.6), issues (task
-	// 130.9), the task board (task 136.2) and Settings (task 152). Navigation
+	// 130.9), the task board (task 136.2), Settings (task 152) and the chat
+	// search (task 158). Navigation
 	// survives a disconnect because reaching a screen is not an action on the
 	// daemon — an archived board shows what it last fetched, the way every
 	// other one does.
-	if nav != 12 {
-		t.Errorf("palette lists %d navigation entries while disconnected, want all 12", nav)
+	if nav != 13 {
+		t.Errorf("palette lists %d navigation entries while disconnected, want all 13", nav)
 	}
 }
 

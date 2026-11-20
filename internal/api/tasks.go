@@ -2003,15 +2003,8 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, CodeInvalidState, "worktree no longer exists")
 		return
 	}
-	base := t.BaseBranch
-	if t.BaseSHA != "" {
-		base = t.BaseSHA
-	}
-	head := "HEAD"
-	if tip != "" {
-		head = tip
-	}
-	mergeBase, err := s.git(ctx, dir, "merge-base", base, head)
+	base := diffBase(t.BaseSHA, t.BaseBranch)
+	mergeBase, err := s.diffMergeBase(ctx, dir, base, tip)
 	if err != nil {
 		writeError(w, http.StatusConflict, CodeInvalidState,
 			fmt.Sprintf("cannot compute merge-base with %q: %v", base, err))
@@ -2027,11 +2020,7 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, diffLanesResponse{Sections: sections})
 		return
 	}
-	diffArgs := []string{"diff", mergeBase}
-	if tip != "" {
-		diffArgs = append(diffArgs, tip)
-	}
-	diff, err := s.git(ctx, dir, diffArgs...)
+	diff, err := s.diffFrom(ctx, dir, mergeBase, tip)
 	if err != nil {
 		writeError(w, http.StatusConflict, CodeInvalidState, fmt.Sprintf("git diff failed: %v", err))
 		return
@@ -2041,6 +2030,39 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 	if diff != "" {
 		_, _ = io.WriteString(w, diff+"\n")
 	}
+}
+
+// diffBase is what a diff is taken against: the commit the work started at
+// when it recorded one (§5.3, task 056), and the branch name only when it did
+// not. handleTaskDiff and the chat export (task 159) both ask it.
+func diffBase(baseSHA, baseBranch string) string {
+	if baseSHA != "" {
+		return baseSHA
+	}
+	return baseBranch
+}
+
+// diffMergeBase is merge-base(base, tip) in dir, tip being HEAD when empty.
+// It and diffFrom are the git half of GET /v1/tasks/{id}/diff, factored out
+// so the chat export's `diff=true` (task 159 decision 1) computes its diff
+// the same way rather than by a copy.
+func (s *Server) diffMergeBase(ctx context.Context, dir, base, tip string) (string, error) {
+	head := "HEAD"
+	if tip != "" {
+		head = tip
+	}
+	return s.git(ctx, dir, "merge-base", base, head)
+}
+
+// diffFrom is `git diff <mergeBase> [tip]` in dir: committed, staged and
+// unstaged tracked changes up to tip, or up to the working tree when tip is
+// empty.
+func (s *Server) diffFrom(ctx context.Context, dir, mergeBase, tip string) (string, error) {
+	diffArgs := []string{"diff", mergeBase}
+	if tip != "" {
+		diffArgs = append(diffArgs, tip)
+	}
+	return s.git(ctx, dir, diffArgs...)
 }
 
 // diffByLane reads the `by` parameter. `lane` is the only grouping there is,

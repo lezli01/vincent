@@ -2298,6 +2298,30 @@ the way `vincent task list --archived` works. All three terminal states come
 back under the one flag: a handed-off or closed chat is as done with as an
 archived one.
 
+### `vincent chat search`
+
+```sh
+vincent chat search QUERY... [--project ID] [--archived false|true|all] [--limit N] [--json]
+```
+
+Searches every chat's title, the prompts it was sent and the agent's final
+answers. Tool output in transcripts is not searched. Matching is by substring
+and ignores case, so `429` finds `status429Body`. Every term must appear
+somewhere in the chat — its title or any turn, not necessarily the same
+one — and each term must be at least three characters long; a shorter one exits 1 with `query_too_short`. Quotes, `*`,
+`-` and words like `NEAR` are searched for as plain text.
+
+Results are grouped by chat, best match first. Each group starts with the
+chat's id, state and title, followed by one line per match: where it is
+(`title`, `turn N asked`, `turn N answer`) and a snippet around it. At most
+five matches are listed per chat, and `… N more` counts the rest.
+
+Unlike `vincent chat list`, the search covers archived, handed-off and closed
+chats by default, because finding a chat you are done with is the point.
+`--archived false` searches only live chats, `--archived true` only the
+terminal ones. `--json` emits the `results` array of
+[`GET /v1/chats/search`](api.md#searching-chats).
+
 ### `vincent chat show`
 
 ```sh
@@ -2456,6 +2480,42 @@ Exit `0` whenever the daemon answered, an empty and a truncated listing
 included. Exit `1` on an unknown chat, a terminal one (it has no next turn, so
 no directory to list for), a linked chat whose task no longer has a worktree,
 or a workspace that has gone missing under the daemon. Exit `2` with no daemon.
+
+### `vincent chat export`
+
+```sh
+vincent chat export CHAT_ID [--format md|html|json] [--with-diff] [-o | --output FILE] [--json]
+```
+
+The whole chat as one document: its metadata, then every turn's prompt, tool
+calls (one line each, never their output), answer and usage. `--format md` is
+the default; `html` is a single self-contained page with no scripts and nothing
+loaded from elsewhere; `json` is the document model with a top-level
+`"version"`. The daemon renders it — this command, the TUI and
+`GET /v1/chats/{id}/export` all produce the same bytes.
+
+```sh
+vincent chat export 12 > chat-12.md
+vincent chat export 12 --format html -o chat-12.html
+vincent chat export 12 --json | jq -r '.turns[].tools[].name'
+```
+
+The document goes to stdout, or with `-o` (`--output`) to that file, written through a
+temporary file and renamed into place so a failed write leaves no half
+document behind. The command never picks a file name for you.
+
+`--with-diff` appends the base-to-tip diff of the directory the chat works in
+today — its own worktree, or its linked task's. A chat with no directory left,
+such as a handed-off one, still exports, with a `diff unavailable:` note in
+place of the diff.
+
+`--json` is `--format json`; combining it with `--format md` or `--format html`
+is refused. Every chat state exports, archived and handed off included. A turn
+whose transcript has been pruned renders from its answer with a note in place
+of its tool calls.
+
+Exit `0` on success. Exit `1` on an unknown chat or a file that cannot be
+written. Exit `2` with no daemon.
 
 ### `vincent chat archive`
 

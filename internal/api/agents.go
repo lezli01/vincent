@@ -64,6 +64,12 @@ type agentResponse struct {
 	FileMentionSigil    *string `json:"file_mention_sigil"`
 	FileMentionPosition *string `json:"file_mention_position"`
 	FileMentionExpands  *bool   `json:"file_mention_expands"`
+	// CompactCommand is the message that compacts this adapter's session
+	// context, verbatim (task 157 decision 4, §9.1): "/compact" for claude
+	// and "" for an adapter that cannot compact, which is every other one.
+	// A client offers compaction only when it is non-empty — it is never
+	// emulated. Null with no registry to ask, as supports_resume is.
+	CompactCommand *string `json:"compact_command"`
 	// InputVerdict is the daemon's answer to whether this adapter may back a
 	// step declaring `on_input: require` (§7.4, task 013): supported,
 	// unsupported, or unknown. It is not derivable from supports_input alone —
@@ -139,6 +145,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 			FileMentionSigil:     caps.mentionSigil,
 			FileMentionPosition:  caps.mentionPosition,
 			FileMentionExpands:   caps.mentionExpands,
+			CompactCommand:       caps.compactCommand,
 			InputVerdict:         string(e.InputVerdict()),
 			VersionVerdict:       string(e.Availability.VersionVerdict),
 			TestedVersions:       e.Availability.TestedVersions,
@@ -180,11 +187,13 @@ type adapterCapabilities struct {
 	mentionSigil    *string
 	mentionPosition *string
 	mentionExpands  *bool
+	compactCommand  *string
 }
 
-// adapterCapabilities answers `supports_resume`, the three skill fields and
-// the four file-mention fields from one registry lookup, so the eight cannot
-// disagree about which adapter they asked (§9.6, task 124, task 126).
+// adapterCapabilities answers `supports_resume`, the three skill fields, the
+// four file-mention fields and `compact_command` from one registry lookup, so
+// the nine cannot disagree about which adapter they asked (§9.6, task 124,
+// task 126, task 157).
 func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 	if s.deps.Agents == nil {
 		return adapterCapabilities{}
@@ -205,6 +214,7 @@ func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 	}
 	sigil, position := syntax.Sigil, string(syntax.Position)
 	mentionSigil, mentionPosition, expands := mention.Sigil, string(mention.Position), mention.Expands
+	compact := agent.CompactCommand(a)
 	return adapterCapabilities{
 		resume:          &resume,
 		skillListing:    &listing,
@@ -214,5 +224,6 @@ func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 		mentionSigil:    &mentionSigil,
 		mentionPosition: &mentionPosition,
 		mentionExpands:  &expands,
+		compactCommand:  &compact,
 	}
 }

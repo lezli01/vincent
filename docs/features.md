@@ -91,8 +91,19 @@ refused at creation rather than having continuity faked for it.
 A chat is real work, not a scratchpad. The agent may commit to the chat's
 branch, every turn records its tokens, cost and duration, and each turn keeps
 its own transcript — the accounting a conversation held in a terminal never
-leaves behind. Archiving a chat cleans up its worktree, and an empty branch
+leaves behind. Each turn's heading shows what it took and what it cost
+(`42s · 18.2k↑ 1.1k↓ · $0.04`), and on claude a gauge on the conversation shows
+how full the session's context is — and offers `/compact` when it nears the
+limit. Archiving a chat cleans up its worktree, and an empty branch
 with it, the way archiving a task does.
+
+Old conversations stay findable. **Search every chat**, live or archived, by
+its title, what you asked or what the agent answered: matching is by
+substring, so `429` finds `status429Body`. In the TUI, "Search all chats" in
+the command palette or `S` on the chats screen opens the search, and `enter` on
+a match opens the chat at that turn. From a shell,
+[`vincent chat search`](reference/cli.md#vincent-chat-search) prints the same
+results, and `GET /v1/chats/search` serves them.
 
 And when an exploration turns out to be the start of real work, **hand the chat
 off to a task**. The task adopts the chat's worktree, branch, base branch and
@@ -102,6 +113,12 @@ first step runs. The chat ends, linked to the task; the task owns the worktree
 and branch from then on. `ctrl+t` in the chat workspace,
 [`vincent chat handoff`](reference/cli.md#vincent-chat-handoff), or
 `POST /v1/chats/{id}/handoff`.
+
+**Export a chat** to keep or share it: Markdown, a self-contained HTML page, or
+JSON, with every turn's prompt, tool calls, answer and usage, and optionally
+the diff of the chat's worktree. From the TUI, with
+[`vincent chat export`](reference/cli.md#vincent-chat-export), or
+`GET /v1/chats/{id}/export`.
 
 It works the other way round too: **chat with a stopped task**. When a task
 stops for you — blocked on a failing step, waiting at a gate, done, or aborted

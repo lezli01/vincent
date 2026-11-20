@@ -185,7 +185,11 @@ type chatView struct {
 	// turnAt is each turn's first body line, rebuilt on every render. It is
 	// what makes "which turns are on screen" answerable, and so what drives
 	// the lazy transcript fetch.
-	turnAt     map[int]int
+	turnAt map[int]int
+	// landSeq is the turn an open from the search lands on (task 158): each
+	// render pins that turn's heading to the top of the window, out of
+	// follow mode, until the reader scrolls or types. 0 is none.
+	landSeq    int
 	builtWidth int
 
 	composer textarea.Model
@@ -221,6 +225,11 @@ type chatView struct {
 	// next key: `y` closes, anything else keeps the chat open and is spent
 	// on declining, so a draft is never typed into by the answer.
 	closing bool
+	// compacting is the compact confirmation on screen (task 157): like
+	// closing, it owns the next key. compactCmds is each adapter's compact
+	// command from GET /v1/agents, by name; an adapter without one is absent.
+	compacting  bool
+	compactCmds map[string]string
 
 	// skills is the composer's skill list (task 124.13), in either of its
 	// two modes: browse, which owns the keyboard and makes `esc` a real
@@ -315,7 +324,10 @@ func (v *chatView) bindingContext() bindingContext {
 
 // open points the workspace at a chat: it loads the conversation and
 // subscribes to that chat's stream, dropping any previous subscription.
-func (v *chatView) open(id int64) tea.Cmd {
+func (v *chatView) open(id int64) tea.Cmd { return v.openAt(id, 0) }
+
+// openAt opens chat id landed on turn seq (task 158); seq 0 is a plain open.
+func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	if v.streamStop != nil {
 		v.streamStop()
 		v.streamStop = nil
@@ -325,12 +337,31 @@ func (v *chatView) open(id int64) tea.Cmd {
 	v.form, v.formAway = nil, nil
 	v.resetRecords()
 	v.note, v.loadErr = "", ""
-	v.closing, v.sending = false, false
+	v.closing, v.sending, v.compacting = false, false, false
 	v.skills = chatSkillList{}
 	v.files = chatFileList{}
 	v.composer.SetValue("")
 	v.composer.Focus()
-	return tea.Batch(v.loadCmd(), v.streamCmd())
+	v.landSeq = seq
+	if seq > 0 {
+		v.following = false
+	}
+	return tea.Batch(v.loadCmd(), v.streamCmd(), v.loadAgentsCmd())
+}
+
+// landFetch asks for the landing turn's transcript, which the load's own
+// fetch of the newest turns may not include: an old turn is the usual
+// target of a search.
+func (v *chatView) landFetch() tea.Cmd {
+	if v.landSeq == 0 {
+		return nil
+	}
+	for _, t := range v.turns {
+		if t.Seq == v.landSeq {
+			return v.fetchTurn(t)
+		}
+	}
+	return nil
 }
 
 func (v *chatView) loadCmd() tea.Cmd {
@@ -428,7 +459,7 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case chatLoadedMsg:
 		v.applyLoaded(msg)
-		return v, v.fetchTranscripts()
+		return v, tea.Batch(v.fetchTranscripts(), v.landFetch())
 	case clipboardResultMsg:
 		v.note, v.noteBad = msg.notice()
 		return v, nil
@@ -453,6 +484,9 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	case chatSkillsMsg:
 		v.applySkills(msg)
 		return v, nil
+	case chatAgentsMsg:
+		v.compactCmds = msg.compact
+		return v, nil
 	case chatFilesMsg:
 		v.applyFiles(msg)
 		return v, nil
@@ -464,8 +498,10 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		v.frame++
 		return v, nil
 	case tea.KeyPressMsg:
+		v.landSeq = 0
 		return v.updateKey(msg)
 	case tea.MouseWheelMsg:
+		v.landSeq = 0
 		return v, v.updateWheel(msg)
 	case tea.MouseClickMsg:
 		return v, v.updateClick(msg)
@@ -903,7 +939,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// A question that arrived under the close confirmation replaces it:
 		// the popup owns the keyboard, and a `y` meant for the prompt must
 		// not be read as an answer to something else later.
-		v.closing = false
+		v.closing, v.compacting = false, false
 		cmd, exit := v.form.updateWith(msg, v.answerCmd)
 		if exit {
 			// Put away, not dropped (issue #801 F7): alt+a brings it back
@@ -918,6 +954,14 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, v.closeCmd()
 		}
 		v.note, v.noteBad = "the chat stays open", false
+		return v, nil
+	}
+	if v.compacting {
+		v.compacting = false
+		if msg.String() == "y" {
+			return v, v.sendMessage(v.compactCommand())
+		}
+		v.note, v.noteBad = "nothing was sent", false
 		return v, nil
 	}
 	if v.skills.open && v.skills.mode == skillModeBrowse {
@@ -954,6 +998,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		case chatQueueDeleteKey:
 			return v, v.deleteQueuedCmd()
 		}
+	}
+	if key := opKey(keymap.Compact); key != "" && msg.String() == key {
+		v.askCompact()
+		return v, nil
 	}
 	switch msg.String() {
 	case chatQueueEditKey:
@@ -1038,6 +1086,13 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "alt+a":
 		v.reopenForm()
 		return v, nil
+	case opKey(keymap.ExportChat):
+		// The draft stays exactly as it is: the form is a root popup, and
+		// esc on it comes back to the composer untouched.
+		if v.chat == nil {
+			return v, nil
+		}
+		return v, openChatExportCmd(v.chat.ID, v.chat.Title)
 	}
 	var cmd tea.Cmd
 	v.composer, cmd = v.composer.Update(msg)
@@ -1271,7 +1326,7 @@ func (v *chatView) syncInlineSkills() tea.Cmd {
 	// and no turn will run in a terminal chat. Ordering in updateKey already
 	// returns before this for the first two; this is the same refusal for
 	// the paths that do not go through a key at all.
-	if !ok || v.form != nil || v.closing || v.chat == nil ||
+	if !ok || v.form != nil || v.closing || v.compacting || v.chat == nil ||
 		chatstate.Terminal(chatstate.State(v.chat.State)) ||
 		tok.text == v.skills.suppressed {
 		v.hideInline("")
@@ -1455,7 +1510,7 @@ func (v *chatView) syncInlineFiles() tea.Cmd {
 	// keyboard, and no turn will run in a terminal chat. Ordering in
 	// updateKey already returns before this for the first two; this is the
 	// same refusal for the paths that do not go through a key at all.
-	if !ok || v.form != nil || v.closing || v.chat == nil ||
+	if !ok || v.form != nil || v.closing || v.compacting || v.chat == nil ||
 		chatstate.Terminal(chatstate.State(v.chat.State)) ||
 		tok.text == v.files.suppressed || v.skillsOwnTheMentionSigil() ||
 		v.files.insideAccepted(tok.text, v.composer.Value()) {
@@ -1746,6 +1801,9 @@ func (v *chatView) promptKeys() promptAnswers {
 	if v.closing && v.chat != nil && v.form == nil {
 		return promptHint("y", "close", "n", "keep it open")
 	}
+	if v.compacting && v.chat != nil && v.form == nil {
+		return promptHint("y", "compact", "n", "don't")
+	}
 	return nil
 }
 
@@ -1822,7 +1880,7 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 	closable := v.chat != nil && v.chat.LinkedTaskID != nil || onIssue
 	free := v.chat != nil && v.chat.LinkedTaskID == nil
 	ended := v.chat == nil || chatstate.Terminal(chatstate.State(v.chat.State))
-	owned := v.closing || v.form != nil
+	owned := v.closing || v.compacting || v.form != nil
 	live := v.chat != nil && (v.chat.State == string(chatstate.Running) || v.chat.State == string(chatstate.AwaitingInput))
 	running := v.chat != nil && v.chat.State == string(chatstate.Running)
 	out := make([]binding, 0, len(rows))
@@ -1842,6 +1900,7 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 			b.key == "alt+a" && v.formAway == nil,
 			b.key == "enter" && ended,
 			b.op == keymap.Steer && (!running || owned),
+			b.op == keymap.Compact && (v.chat == nil || v.compactCommand() == "" || v.chat.State != string(chatstate.Idle)),
 			owned && (b.key == "enter" || b.key == "ctrl+j" || b.key == "tab"):
 			continue
 		}
@@ -1890,7 +1949,13 @@ func sendRefusal(s chatstate.State) string {
 }
 
 func (v *chatView) sendCmd() tea.Cmd {
-	message := strings.TrimSpace(v.composer.Value())
+	return v.sendMessage(strings.TrimSpace(v.composer.Value()))
+}
+
+// sendMessage sends message as the chat's next turn: the composer's draft, or
+// the compact command (task 157), which takes exactly the same route and the
+// same refusals.
+func (v *chatView) sendMessage(message string) tea.Cmd {
 	if message == "" {
 		return nil
 	}
