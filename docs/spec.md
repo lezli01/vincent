@@ -14115,7 +14115,16 @@ CREATE TABLE chat_turns (
     -- #issue-N/#task-N/#pr-N/@path#Lx-y mentions expanded into when it started,
     -- the snapshot the agent saw (§5.5). prompt stays the typed text. NULL =
     -- nothing expanded.
-    mention_context               TEXT
+    mention_context               TEXT,
+    -- Added 2026-11-20 (task 167.2, migration 0066): the worktree checkpoint
+    -- taken before the turn's agent starts (§5.5, Checkpoints) — the snapshot
+    -- commit refs/vincent/chats/<chat id>/turn-<seq> points at, and the HEAD
+    -- it is parented on, both stored before adapter.Start (§12.4) — and the
+    -- worktree's HEAD when the turn ended. NULL = no checkpoint (a turn from
+    -- before 0066, or one that never reached it).
+    checkpoint_sha                TEXT,
+    head_before                   TEXT,
+    head_after                    TEXT
 );
 
 -- Added 2026-11-19 (task 156, issue #1010): follow-up messages queued behind a
