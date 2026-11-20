@@ -430,11 +430,12 @@ func (v *chatView) expandedFor(turn int) func(call string, rec int64) bool {
 	}
 }
 
-// toggleCallAt expands or folds the tool call under body line y.
-func (v *chatView) toggleCallAt(y int) bool {
+// toggleCallAt expands or folds the tool call under body line y; a line
+// that belongs to no call is left alone.
+func (v *chatView) toggleCallAt(y int) {
 	a := anchorAt(v.anchors, y)
 	if a.turn == 0 {
-		return false
+		return
 	}
 	var key chatCallKey
 	switch {
@@ -449,11 +450,11 @@ func (v *chatView) toggleCallAt(y int) bool {
 			}
 		}
 		if idx < 0 || !v.expandedSet()[chatCallKey{turn: a.turn, idx: idx}] {
-			return false // only an expanded record folds by its position
+			return // only an expanded record folds by its position
 		}
 		key = chatCallKey{turn: a.turn, idx: idx}
 	default:
-		return false
+		return
 	}
 	set := v.expandedSet()
 	if set[key] {
@@ -462,7 +463,6 @@ func (v *chatView) toggleCallAt(y int) bool {
 		set[key] = true
 	}
 	v.rebuildBody()
-	return true
 }
 
 // jumpPrompt moves the cursor to the previous (-1) or next (+1) `You` card.
@@ -521,8 +521,7 @@ func (v *chatView) updateConversationKey(msg tea.KeyPressMsg) tea.Cmd {
 		v.moveCursor(0)
 	case "G":
 		v.moveCursor(len(v.anchors) - 1)
-		v.setFollowing(true)
-		v.newLines = 0
+		v.follow()
 	case "pgup":
 		v.vp.PageUp()
 		v.syncFollowToViewport()
@@ -544,9 +543,8 @@ func (v *chatView) updateConversationKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "enter":
 		v.toggleCallAt(v.cursor)
 	case "ctrl+g":
-		v.follow()
 		v.moveCursor(len(v.anchors) - 1)
-		v.setFollowing(true)
+		v.follow()
 	case "alt+up":
 		v.vp.ScrollUp(1)
 		v.syncFollowToViewport()

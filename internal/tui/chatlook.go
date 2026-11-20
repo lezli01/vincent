@@ -2,10 +2,10 @@ package tui
 
 import (
 	"fmt"
-
-	"charm.land/lipgloss/v2"
 	"strings"
 	"time"
+
+	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )

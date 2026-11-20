@@ -1214,8 +1214,10 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			case "agent.thinking":
 				block = thinkingBlock(rec.Text, recLevel, recWidth, opts.expandKey)
 			case "agent.raw":
-				block = wrapLine(paneLine{gutter: gutterNone, gutterStyle: styleDim,
-					segs: []segment{{text: rec.Line, style: styleDim}}}, recWidth)
+				block = wrapLine(paneLine{
+					gutter: gutterNone, gutterStyle: styleDim,
+					segs: []segment{{text: rec.Line, style: styleDim}},
+				}, recWidth)
 			default:
 				if pl, ok := renderRecord(rec, sawOutput, recLevel, skills); ok {
 					block = wrapLine(pl, recWidth)
