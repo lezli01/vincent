@@ -84,7 +84,7 @@ func redactEnvironment(raw json.RawMessage) json.RawMessage {
 // whole rather than from the first argument on: the secret in the case that
 // motivated this is a webhook URL, and it is an argument, not the program.
 // `notify.on` is a list of §6 state names and stays, and so does
-// `notify.chat_on` (task 156): a list of chat moments carries no secret.
+// `notify.chat_on` (task 162): a list of chat moments carries no secret.
 func redactNotify(raw json.RawMessage) json.RawMessage {
 	var n map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &n); err != nil {

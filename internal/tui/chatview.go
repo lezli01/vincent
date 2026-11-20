@@ -213,7 +213,7 @@ type chatView struct {
 	sending bool
 
 	// blurred is the terminal having lost focus, from the FocusMsg/BlurMsg
-	// the root broadcasts (task 156). The zero value is focused, which is
+	// the root broadcasts (task 162). The zero value is focused, which is
 	// also what a terminal that never reports focus is taken to be. A turn
 	// that finishes while blurred leaves the chat unread.
 	blurred bool
@@ -379,7 +379,7 @@ func (v *chatView) bindingContext() bindingContext {
 
 // open points the workspace at a chat: it loads the conversation and
 // subscribes to that chat's stream, dropping any previous subscription. It
-// records the view (task 156) — opening a chat is looking at it.
+// records the view (task 162) — opening a chat is looking at it.
 func (v *chatView) open(id int64) tea.Cmd { return v.openAt(id, 0) }
 
 // openAt opens chat id landed on turn seq (task 158); seq 0 is a plain open.
@@ -528,7 +528,7 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		finished := v.applyLoaded(msg)
 		var mark tea.Cmd
 		if finished && !v.blurred {
-			// A turn ended in front of the reader (task 156). Blurred, it
+			// A turn ended in front of the reader (task 162). Blurred, it
 			// stays unread: the terminal is open, nobody is looking at it.
 			mark = v.markViewedCmd()
 		}
@@ -1073,7 +1073,7 @@ func (v *chatView) applyCanceled(msg chatCanceledMsg) tea.Cmd {
 }
 
 func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
-	// The chat switch comes first (task 156): it is a hatch that works from
+	// The chat switch comes first (task 162): it is a hatch that works from
 	// the composer, and over a pending question's popup too — the question
 	// stays the chat's, and the popup is back when the chat is.
 	if sw, ok := chatSwitchFor(msg.String()); ok {

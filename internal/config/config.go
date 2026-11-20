@@ -663,7 +663,7 @@ type Notify struct {
 	// On lists the states whose arrival fires Command. Empty — the default —
 	// fires nothing.
 	On []taskstate.State `yaml:"on"`
-	// ChatOn lists the chat moments that fire Command (task 156): a chat
+	// ChatOn lists the chat moments that fire Command (task 162): a chat
 	// parking on a question, or a turn ending done or failed. Empty — the
 	// default — fires nothing for chats. It is a second key rather than a
 	// widened `on` because §6's state names and a chat's moments are two
@@ -678,10 +678,10 @@ type Notify struct {
 }
 
 // Enabled reports whether the hook can fire for a task at all. It is the task
-// half only, unchanged by task 156; ChatEnabled is the chat half.
+// half only, unchanged by task 162; ChatEnabled is the chat half.
 func (n Notify) Enabled() bool { return len(n.On) > 0 && len(n.Command) > 0 }
 
-// ChatEnabled reports whether the hook can fire for a chat at all (task 156).
+// ChatEnabled reports whether the hook can fire for a chat at all (task 162).
 func (n Notify) ChatEnabled() bool { return len(n.ChatOn) > 0 && len(n.Command) > 0 }
 
 // FiresChat reports whether the chat moment s should spawn the command.
@@ -724,7 +724,7 @@ func (n Notify) Fires(s taskstate.State) bool {
 // that one exists because the branch-template context lives in
 // internal/worktree, a package with real dependencies.
 //
-// Task 156 adds internal/chatstate, a third leaf, on the same reasoning:
+// Task 162 adds internal/chatstate, a third leaf, on the same reasoning:
 // `notify.chat_on` is validated against chatstate.NotifyOn rather than a
 // second copy of it, so `turn_interrupted` is refused in one place.
 func (n Notify) validate() error {
@@ -1495,7 +1495,7 @@ func (c Config) Warnings() []string {
 	// commenting `command` out for an afternoon should not have the same save
 	// revert an unrelated log_level edit.
 	//
-	// `chat_on` is the other selector (task 156): a command with either list
+	// `chat_on` is the other selector (task 162): a command with either list
 	// set is not half-written, and a chat_on with no command is the same
 	// mistake as an `on` with none, so it gets the same warning.
 	if len(c.Notify.Command) > 0 && len(c.Notify.On) == 0 && len(c.Notify.ChatOn) == 0 {

@@ -187,7 +187,7 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodGet, "/v1/chats/{id}/draft"},
 		{http.MethodPut, "/v1/chats/{id}/draft"},
 		{http.MethodGet, "/v1/chats/prompts"},
-		// Task 156: the last-viewed write, in the chat family (063 decision
+		// Task 162: the last-viewed write, in the chat family (063 decision
 		// 2). It records that a person looked at the chat; an agent calling
 		// it would forge that fact and clear every client's unread mark.
 		{http.MethodPost, "/v1/chats/{id}/viewed"},

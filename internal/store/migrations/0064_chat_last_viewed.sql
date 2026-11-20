@@ -1,4 +1,4 @@
--- 0064_chat_last_viewed: when a person last looked at a chat (task 156).
+-- 0064_chat_last_viewed: when a person last looked at a chat (task 162).
 --
 -- The installation has no per-user identity, so there is one value per chat,
 -- shared by every client: opening a chat in the TUI clears its unread mark

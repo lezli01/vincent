@@ -293,7 +293,7 @@ const (
 // TurnTerminal reports whether a turn in this state has finished.
 func TurnTerminal(s TurnState) bool { return s != TurnRunning }
 
-// NotifyState is one entry of `notify.chat_on` (spec §12.3, task 156): a
+// NotifyState is one entry of `notify.chat_on` (spec §12.3, task 162): a
 // moment in a chat's life the daemon's outward hook can fire on. It is its
 // own vocabulary, not State and not TurnState, because the moments a person
 // wants to hear about span both — the chat parking on a question is a state,
@@ -302,7 +302,7 @@ func TurnTerminal(s TurnState) bool { return s != TurnRunning }
 // doing, and so is one turn outcome (below).
 type NotifyState string
 
-// The hook's chat moments (task 156).
+// The hook's chat moments (task 162).
 const (
 	// NotifyAwaitingInput is the chat entering awaiting_input: the agent is
 	// holding its process on a §7.4 question nobody has answered.
@@ -316,7 +316,7 @@ const (
 // NotifyOn lists every value `notify.chat_on` accepts, in the order the docs
 // present them.
 //
-// `turn_interrupted` is deliberately absent (task 156): a turn is only ever
+// `turn_interrupted` is deliberately absent (task 162): a turn is only ever
 // interrupted by a daemon restart, which the human caused and is watching,
 // and recovery finalizes every such turn at once — a hook firing for each
 // would be a burst of messages about something the reader just did.

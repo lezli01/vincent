@@ -9,11 +9,11 @@
 //   - internal/keymap, to validate `tui.keys` against §15's key vocabulary
 //     with the same checker the TUI's registry tests run over the defaults;
 //   - internal/chatstate, to validate `notify.chat_on` against its chat
-//     moments (task 156), so `turn_interrupted` is refused in one place;
+//     moments (task 162), so `turn_interrupted` is refused in one place;
 //   - internal/fileswap, to replace its files atomically the way
 //     internal/workflow does (#969).
 //
 // Task 046 decision 4 allowed taskstate and only taskstate; task 118
-// decision 3 explicitly amends it to add keymap, and task 156 adds
+// decision 3 explicitly amends it to add keymap, and task 162 adds
 // chatstate, on the same reasoning.
 package config

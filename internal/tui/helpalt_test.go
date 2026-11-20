@@ -253,7 +253,7 @@ func TestPaletteGlobalRowsActFromAChat(t *testing.T) {
 		m, v := chatWithDraft(t)
 		m.phase = phaseReconnecting
 		// The row's own label, read off the registry: it names tasks and
-		// chats since task 156, and this test is about the drop, not the words.
+		// chats since task 162, and this test is about the drop, not the words.
 		runPaletteRow(t, m, opLabel(t, keymap.NextAttention))
 		if got := v.composer.Value(); got != "hello" {
 			t.Fatalf("the ! row typed into the draft: %q", got)

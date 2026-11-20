@@ -102,7 +102,7 @@ const (
 	// chat's fixed verbosity cycle.
 	PromptHistory Op = "prompt_history"
 	// NextChat and PrevChat walk the selected project's live chats in the
-	// order the chats board draws them, wrapping (task 156). alt rather than
+	// order the chats board draws them, wrapping (task 162). alt rather than
 	// a letter: they work from the chat composer, which types every letter.
 	// macOS terminals send alt+ only with Option set to act as Meta; the
 	// keys stay rebindable through tui.keys for a terminal that cannot.
@@ -114,7 +114,7 @@ const (
 )
 
 // ChatN are the jumps to the Nth live chat of the selected project, in the
-// chats board's order (task 156): alt+1 … alt+9 by default.
+// chats board's order (task 162): alt+1 … alt+9 by default.
 const (
 	Chat1 Op = "chat_1"
 	Chat2 Op = "chat_2"
@@ -292,7 +292,7 @@ var catalog = []Info{
 	{Op: ChatMarkdown, Default: "alt+v", Meaning: "open the whole conversation as Markdown in $EDITOR, read-only", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}, Typing: true},
-	// The chat switch (task 156). Typing: the open chat's composer has the
+	// The chat switch (task 162). Typing: the open chat's composer has the
 	// keyboard, and these must work from it — including over a pending
 	// question's popup.
 	{Op: NextChat, Default: "alt+n", Meaning: "open the next chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},

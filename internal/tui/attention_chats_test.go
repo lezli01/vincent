@@ -16,7 +16,7 @@ func waitingChat(id, project int64, state string, since time.Time) apiclient.Cha
 }
 
 // TestAttentionTallyCountsWaitingChats: a chat in awaiting_input counts in
-// whichever project it is (task 156, decision row 37), and only then — an
+// whichever project it is (task 162, decision row 37), and only then — an
 // idle chat, an unread finished turn included, asks nothing.
 func TestAttentionTallyCountsWaitingChats(t *testing.T) {
 	m := attentionRoot(t,
@@ -76,7 +76,7 @@ func TestBoardChatsDropsStaleAnswers(t *testing.T) {
 }
 
 // TestAttentionTargetsOldestWaitFirst: one project's tasks and chats are one
-// list, ordered by when each started waiting (task 156).
+// list, ordered by when each started waiting (task 162).
 func TestAttentionTargetsOldestWaitFirst(t *testing.T) {
 	m := attentionRoot(t,
 		task(1, stateAwaitingInput, withUpdated(testNow.Add(-1*time.Minute))),

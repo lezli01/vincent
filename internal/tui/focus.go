@@ -3,7 +3,7 @@ package tui
 import tea "charm.land/bubbletea/v2"
 
 // updateFocus records the terminal's focus report and passes it on (task
-// 156). The root turns focus reporting on in View (ReportFocus), and keeps
+// 162). The root turns focus reporting on in View (ReportFocus), and keeps
 // focused for the bell, which rings only while the terminal is unfocused.
 //
 // The broadcast is a contract, not a convenience: every view in m.views

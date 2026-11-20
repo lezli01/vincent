@@ -1,7 +1,7 @@
 // Package notify is the daemon's outward signal (spec §12.3, §13.3, §16 —
 // task 046): a subscriber on the post-commit event fan-out that spawns a
 // user-supplied command when a task enters one of the states named in
-// `notify.on`, or — task 156, reversing task 063 decision 7, which kept the
+// `notify.on`, or — task 162, reversing task 063 decision 7, which kept the
 // hook silent on chats — when a chat reaches one of the moments named in
 // `notify.chat_on`: parking on a question, or a turn ending done or failed.
 // The two selectors are separate keys over separate vocabularies, and the

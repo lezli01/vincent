@@ -213,7 +213,7 @@ var Excluded = []Route{
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/draft"},
 	{Method: http.MethodPut, Path: "/v1/chats/{id}/draft"},
 	{Method: http.MethodGet, Path: "/v1/chats/prompts"},
-	// The last-viewed write (task 156) joins the family under the same rule:
+	// The last-viewed write (task 162) joins the family under the same rule:
 	// it records that a *person* looked at the chat, so the unread mark every
 	// client shows clears. An agent calling it would be forging that fact,
 	// and it already has a session of its own to read.

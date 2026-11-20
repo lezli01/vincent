@@ -327,7 +327,7 @@ update:
 # awaiting_input, done. Only root tasks notify — a fan_out lane is a task row,
 # and a twenty-lane tree would otherwise send twenty-one messages.
 #
-# "chat_on" does the same for chats, which "on" never covers (task 156): a
+# "chat_on" does the same for chats, which "on" never covers (task 162): a
 # chat entering awaiting_input, or a turn ending turn_done or turn_failed.
 # The envelope's "kind" says "chat" rather than "task" and carries chat_id.
 # turn_interrupted is not accepted: only a daemon restart causes one. The

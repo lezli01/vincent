@@ -435,7 +435,7 @@ func configKeys() []configKey {
 			},
 		},
 		{
-			// The chat half of the hook's selector (task 156): the three chat
+			// The chat half of the hook's selector (task 162): the three chat
 			// moments, offered as choices for notify.on's reason.
 			path: "notify.chat_on", label: "notify chat on", kind: kindList, choices: chatNotifyNames(),
 			help: "chat moments that fire the notify hook, whitespace-separated",
@@ -721,7 +721,7 @@ func stateNames() []string {
 	return out
 }
 
-// chatNotifyNames is chatstate's notify.chat_on vocabulary (task 156).
+// chatNotifyNames is chatstate's notify.chat_on vocabulary (task 162).
 func chatNotifyNames() []string {
 	out := make([]string, 0, len(chatstate.NotifyOn))
 	for _, s := range chatstate.NotifyOn {

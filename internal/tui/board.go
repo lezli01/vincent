@@ -257,13 +257,13 @@ type board struct {
 	// issued for a project the board has since left, is dropped.
 	stamps loadStamps
 
-	// bell is inert since task 156 moved the terminal bell to the root
+	// bell is inert since task 162 moved the terminal bell to the root
 	// (bell.go), where tasks and chats share one rule. It stays only so the
 	// test helpers that silence it per board still compile; nothing here
 	// calls it, and a later cleanup may drop it with them.
 	bell func()
 
-	// chats is every project's live chat listing (task 156), held beside
+	// chats is every project's live chat listing (task 162), held beside
 	// the global task listing for the one reason that listing is global:
 	// a chat waiting on a human is part of the attention count, the
 	// here/elsewhere tally and `!` in whichever project it is. It never
@@ -714,7 +714,7 @@ func (b *board) addressed(msg tea.Msg) bool {
 	case boardLanesMsg:
 		return m.archived == b.archived
 	case boardChatsMsg, boardChatsRefreshMsg:
-		// The chat listing is the live board's alone (task 156).
+		// The chat listing is the live board's alone (task 162).
 		return !b.archived
 	case deleteResultMsg:
 		// A chat sweep's outcome is the archived chats board's (#790): taken
@@ -787,7 +787,7 @@ func (b *board) updateLoaded(msg boardLoadedMsg) {
 
 // updateNote reacts to the event stream. Every task event schedules a
 // refetch, and every chat event that can move a chat into or out of
-// awaiting_input schedules the chat listing's (task 156). The bell is the
+// awaiting_input schedules the chat listing's (task 162). The bell is the
 // root's (bell.go), shared with chats.
 func (b *board) updateNote(n apiclient.Note) tea.Cmd {
 	ev, ok := n.(apiclient.EventNote)
@@ -1988,7 +1988,7 @@ func (b *board) selectedProject() (apiclient.Project, bool) {
 //
 // It counts root tasks in a taskstate.NeedsHuman state — never lanes, which
 // the listing does not carry, nor `awaiting_children` parents — and, since
-// task 156, chats in `awaiting_input`, from every project the way tasks are
+// task 162, chats in `awaiting_input`, from every project the way tasks are
 // (decision row 37). A chat whose turn merely finished unread asks nothing
 // and is not counted. That deliberately differs from the daemon's
 // `stats.attention`, which counts lanes (decision 21): this is the count of
@@ -2000,7 +2000,7 @@ func (b *board) attentionTally() attentionTally {
 }
 
 // attentionTargets is one project's attention tasks and waiting chats for
-// `!` crossing into it (task 132 decision 52), oldest wait first (task 156).
+// `!` crossing into it (task 132 decision 52), oldest wait first (task 162).
 // The tasks are taken in board order — the order the board would draw them
 // in under the current grouping — before the merge, which is what breaks a
 // tie. The board's own filters are the selected project's and do not apply
@@ -2020,7 +2020,7 @@ func (b *board) attentionTargets(project int64) []attentionTarget {
 }
 
 // selectionTargets is the selected project's targets for `!` (task 132
-// decision 52, task 156): the attention tasks the board shows through
+// decision 52, task 162): the attention tasks the board shows through
 // visible() — so a committed filter still applies — and the project's
 // waiting chats, oldest wait first.
 func (b *board) selectionTargets() []attentionTarget {

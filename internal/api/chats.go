@@ -101,11 +101,11 @@ type chatBody struct {
 	SteerReason    string     `json:"steer_reason,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
-	// LastViewedAt is when a person last looked at the chat (task 156); null,
+	// LastViewedAt is when a person last looked at the chat (task 162); null,
 	// not omitted, when nobody ever has. One value per chat, shared by every
 	// client: the installation has no per-user identity.
 	LastViewedAt *time.Time `json:"last_viewed_at"`
-	// Unread is the store's derivation (task 156): the latest terminal turn
+	// Unread is the store's derivation (task 162): the latest terminal turn
 	// ended after LastViewedAt. Always present, so false is an answer.
 	Unread bool `json:"unread"`
 	// Warnings are non-fatal notes on a create — an issue chat opened on a

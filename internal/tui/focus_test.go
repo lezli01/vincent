@@ -21,7 +21,7 @@ func (p *focusProbe) update(msg tea.Msg) (panel, tea.Cmd) {
 }
 
 // TestFocusReportsReachEveryView: the root broadcasts focus and blur to
-// every view, the inactive ones included (task 156) — the chat workspace
+// every view, the inactive ones included (task 162) — the chat workspace
 // decides from them whether a finished turn was seen, and it is not always
 // the active view when one arrives.
 func TestFocusReportsReachEveryView(t *testing.T) {

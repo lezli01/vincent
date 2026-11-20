@@ -327,7 +327,7 @@ nothing internal — with one deliberate exception: `config` imports `taskstate`
 and `keymap` to validate `notify.on` against §6's state vocabulary and
 `tui.keys` against §15's key vocabulary rather than keeping a second copy of
 either (task 046 decision 4, widened by task 118 decision 3), `chatstate` to
-validate `notify.chat_on` against its chat moments (task 156), and `fileswap`
+validate `notify.chat_on` against its chat moments (task 162), and `fileswap`
 to replace its files the way `workflow` does (#969), and only those four.
 All four are themselves leaves, so the direction stays one-way.
 `internal/jira/jiramap` is a leaf in the same sense: it imports the standard

@@ -390,7 +390,7 @@ const issueChatLabel = "chat with an agent on the issue's main worktree — it m
 // issueChatWithLabel is `chat_with` on both issue screens (task 161).
 const issueChatWithLabel = "chat with… — choose the agent, model and effort, and type a first message, before the chat opens on the issue's main worktree; with a chat already holding it, reopen that chat"
 
-// The chat switch's labels (task 156), shared by the chats board's rows and
+// The chat switch's labels (task 162), shared by the chats board's rows and
 // the chat's: the order is the board's, so the help says which it is.
 const (
 	chatNextLabel = "open the next chat of the project, in the chats board's order (waiting on you, running, idle), wrapping"
@@ -416,7 +416,7 @@ var bindings = []binding{
 	// field takes `?` as a character. noPalette for the reason the ctrl+p row
 	// is — `?`'s own row already runs help from the palette.
 	{op: keymap.HelpAlt, key: helpAltKey, label: "toggle this help (works while a text field has the keyboard)", scope: scopeGlobal, noPalette: true},
-	// Tasks and chats since task 156. The sentence about tasks is kept whole
+	// Tasks and chats since task 162. The sentence about tasks is kept whole
 	// and the chats follow it, so the label reads as before for a reader who
 	// has no chats.
 	{op: keymap.NextAttention, key: "!", label: "jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's. A chat asking you a question is on the same walk: the next task or chat, oldest wait first", scope: scopeGlobal},
@@ -711,7 +711,7 @@ var bindings = []binding{
 	// branch keeps the slug it was cut with.
 	{op: keymap.Rename, key: "r", label: "rename the chat (the branch keeps its name)", scope: scopePanel, context: ctxChats, hint: "r rename", priority: 8, term: termRename},
 
-	// The chat switch (task 156), from the board: it moves from the chat
+	// The chat switch (task 162), from the board: it moves from the chat
 	// under the cursor and opens the one it lands on. `]` and `[` are this
 	// board's fixed aliases — no text field has the keyboard here.
 	{op: keymap.NextChat, key: "alt+n", label: chatNextLabel, scope: scopePanel, context: ctxChats, priority: 9},
@@ -826,7 +826,7 @@ var bindings = []binding{
 	{key: "enter", label: "search every turn, the ones not loaded yet too", scope: scopePanel, context: ctxChatFind, hint: "enter search", noPalette: true},
 	{key: "esc", label: "close the search line; the conversation keeps the keyboard", scope: scopePanel, context: ctxChatFind, hint: "esc close", noPalette: true},
 
-	// The chat switch (task 156). alt rather than a letter because the
+	// The chat switch (task 162). alt rather than a letter because the
 	// composer types every letter; they work over a pending question's
 	// popup too. A macOS terminal needs Option set to act as Meta to send
 	// them; tui.keys rebinds them where it cannot.

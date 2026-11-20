@@ -109,7 +109,7 @@ func chatTurnEvent(id, chatID int64, st chatstate.State, turn chatstate.TurnStat
 }
 
 // TestChatFiresOnlyWhenListed: a chat moment reaches the command only when
-// `notify.chat_on` lists it (task 156). `notify.on` is not widened — a task
+// `notify.chat_on` lists it (task 162). `notify.on` is not widened — a task
 // state named awaiting_input there does not make a chat fire — and a turn
 // that is still running, or was interrupted by a restart, is no moment at all.
 func TestChatFiresOnlyWhenListed(t *testing.T) {
@@ -158,7 +158,7 @@ func TestChatFiresOnlyWhenListed(t *testing.T) {
 }
 
 // TestEnvelopeKind: every task envelope says "task" and every chat envelope
-// says "chat" (task 156), and a chat's carries its own fields with the
+// says "chat" (task 162), and a chat's carries its own fields with the
 // task-only ones zero or null.
 func TestEnvelopeKind(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

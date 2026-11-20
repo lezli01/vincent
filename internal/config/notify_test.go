@@ -206,7 +206,7 @@ func TestDefaultConfigFileDocumentsNotify(t *testing.T) {
 }
 
 // TestNotifyChatOnLoads: `notify.chat_on` round-trips, selects only chat
-// moments, and leaves the task half exactly as it was (task 156).
+// moments, and leaves the task half exactly as it was (task 162).
 func TestNotifyChatOnLoads(t *testing.T) {
 	cfg, err := Load(writeConfig(t,
 		"notify:\n  chat_on: [awaiting_input, turn_failed]\n  command: [\"notify-me\"]\n"))
@@ -237,7 +237,7 @@ func TestNotifyChatOnLoads(t *testing.T) {
 }
 
 // TestNotifyChatOnRejected: an unknown value, `turn_interrupted` (deliberately
-// excluded, task 156) and a duplicate all fail Load naming the key, so the
+// excluded, task 162) and a duplicate all fail Load naming the key, so the
 // watcher keeps the last good configuration.
 func TestNotifyChatOnRejected(t *testing.T) {
 	cases := []struct{ name, list, want string }{

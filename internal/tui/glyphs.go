@@ -350,7 +350,7 @@ func boardStepPips(t apiclient.Task) string {
 }
 
 // unreadGlyph marks a chat whose last turn finished after anyone last looked
-// at it (task 156). `●` already means "active" in this vocabulary, and the two
+// at it (task 162). `●` already means "active" in this vocabulary, and the two
 // do not collide: an unread chat's turn has ended, so nothing on its card is
 // running, and the mark sits beside the chat's id rather than in its status
 // line. It goes through ic like every other glyph — the plain Unicode dot by

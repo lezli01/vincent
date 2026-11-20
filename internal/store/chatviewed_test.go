@@ -50,7 +50,7 @@ func unreadEverywhere(t *testing.T, s *Store, id int64) bool {
 	return c.Unread
 }
 
-// TestChatUnreadDerivation walks task 156's rule: only a terminal turn
+// TestChatUnreadDerivation walks task 162's rule: only a terminal turn
 // finishing after the last view makes a chat unread.
 func TestChatUnreadDerivation(t *testing.T) {
 	s := openTest(t)

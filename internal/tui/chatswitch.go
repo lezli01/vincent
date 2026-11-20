@@ -10,7 +10,7 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// The chat switch (task 156): next_chat, prev_chat and chat_1 … chat_9 move
+// The chat switch (task 162): next_chat, prev_chat and chat_1 … chat_9 move
 // between the selected project's live chats without going back to the board.
 //
 // The order is the board's own — waiting on you, then running, then idle,

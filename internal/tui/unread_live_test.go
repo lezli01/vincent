@@ -137,7 +137,7 @@ func (h *unreadLive) unreadInStore(t *testing.T) bool {
 	return c.Unread
 }
 
-// TestUnreadAcrossTwoClients is task 156's acceptance criterion "unread
+// TestUnreadAcrossTwoClients is task 162's acceptance criterion "unread
 // correct across two TUI clients": a turn ends and both boards draw ●; one
 // client opens the chat, and the other's mark clears on the chat.viewed
 // event, without a key pressed there.

@@ -10,7 +10,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// handleChatViewed is POST /v1/chats/{id}/viewed (task 156): a person looked
+// handleChatViewed is POST /v1/chats/{id}/viewed (task 162): a person looked
 // at the chat, so its unread mark clears — in every client, since there is
 // one last-viewed value per chat. The time is the daemon's clock, never the
 // client's: the mark is compared against turn end times the daemon wrote, and

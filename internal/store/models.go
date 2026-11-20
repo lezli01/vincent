@@ -833,7 +833,7 @@ type Chat struct {
 	DraftUpdatedAt *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
-	// LastViewedAt is when a person last looked at the chat (task 156): one
+	// LastViewedAt is when a person last looked at the chat (task 162): one
 	// value per chat, shared by every client, since the installation has no
 	// per-user identity. Nil = never viewed. Only MarkChatViewed writes it.
 	LastViewedAt *time.Time
