@@ -81,7 +81,7 @@ func (g *Git) Snapshot(ctx context.Context, dir, scratch, message string) (Snaps
 		return Snapshot{}, fmt.Errorf("snapshot: %w", err)
 	}
 	env := append([]string{"GIT_INDEX_FILE=" + index}, snapshotIdentity...)
-	seeded, err := g.seedIndex(ctx, dir, index)
+	seeded, err := g.seedIndex(ctx, dir, tmp)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("snapshot: seed index: %w", err)
 	}
@@ -106,33 +106,40 @@ func (g *Git) Snapshot(ctx context.Context, dir, scratch, message string) (Snaps
 }
 
 // seedIndex copies dir's own index (per worktree: `rev-parse --git-path
-// index`) to index, reporting false when there is none to copy. The copy
+// index`) to the file "index" in scratch, reporting false when there is none
+// to copy. The copy
 // keeps the original's modification time: git trusts an entry's stat data
 // only when the file is older than the index ("racy git"), and a fresh mtime
 // would make it trust entries the real index knows it must not.
-func (g *Git) seedIndex(ctx context.Context, dir, index string) (bool, error) {
-	real, err := g.Run(ctx, dir, "rev-parse", "--git-path", "index")
+func (g *Git) seedIndex(ctx context.Context, dir, scratch string) (bool, error) {
+	src, err := g.Run(ctx, dir, "rev-parse", "--git-path", "index")
 	if err != nil {
 		return false, err
 	}
-	if !filepath.IsAbs(real) {
-		real = filepath.Join(dir, real)
+	if !filepath.IsAbs(src) {
+		src = filepath.Join(dir, src)
 	}
-	info, err := os.Stat(real)
+	src = filepath.Clean(src)
+	info, err := os.Stat(src)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	b, err := os.ReadFile(real)
+	b, err := os.ReadFile(src)
 	if err != nil {
 		return false, err
 	}
-	if err := os.WriteFile(index, b, 0o600); err != nil {
+	root, err := os.OpenRoot(scratch)
+	if err != nil {
 		return false, err
 	}
-	if err := os.Chtimes(index, info.ModTime(), info.ModTime()); err != nil {
+	defer func() { _ = root.Close() }()
+	if err := root.WriteFile("index", b, 0o600); err != nil {
+		return false, err
+	}
+	if err := root.Chtimes("index", info.ModTime(), info.ModTime()); err != nil {
 		return false, err
 	}
 	return true, nil
