@@ -542,7 +542,7 @@ func (v *chatView) updateConversationKey(msg tea.KeyPressMsg) tea.Cmd {
 		v.jumpPrompt(1)
 	case "enter":
 		v.toggleCallAt(v.cursor)
-	case "ctrl+g":
+	case "alt+G": // the composer's follow key, since task 157 decision 1
 		v.moveCursor(len(v.anchors) - 1)
 		v.follow()
 	case "alt+up":

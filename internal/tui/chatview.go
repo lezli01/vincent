@@ -109,6 +109,9 @@ type chatView struct {
 
 	client *apiclient.Client
 	now    func() time.Time
+	// exec hands the terminal to $EDITOR for the composer's ctrl+g and the
+	// conversation's alt+v (task 157), injected so tests need no terminal.
+	exec execFunc
 
 	chatID int64
 	chat   *apiclient.Chat
@@ -169,7 +172,7 @@ type chatView struct {
 	builtLevel outputLevel
 
 	// vp scrolls the conversation; following means it is showing the end,
-	// which a manual scroll drops and ctrl+g re-arms (decision 5).
+	// which a manual scroll drops and alt+G re-arms (decision 5, task 157).
 	vp        viewport.Model
 	following bool
 	bodyDirty bool
@@ -282,6 +285,7 @@ func newChatView(level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *ch
 	ta.SetHeight(3)
 	return &chatView{
 		now:         time.Now,
+		exec:        tea.ExecProcess,
 		composer:    ta,
 		level:       level,
 		raw:         raw,
@@ -533,6 +537,15 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, nil
 	case chatFilesMsg:
 		v.applyFiles(msg)
+		return v, nil
+	case chatEditorMsg:
+		return v, v.applyEditorDraft(msg)
+	case chatMarkdownMsg:
+		return v, v.openChatMarkdown(msg)
+	case chatMarkdownClosedMsg:
+		if msg.err != nil {
+			v.note, v.noteBad = "editor: "+errString(msg.err), true
+		}
 		return v, nil
 	case chatTickMsg:
 		// Render-only, and a no-op for a stray tick: clearing the guard is
@@ -1095,6 +1108,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Steer):
 		v.steerNote()
 		return v, nil
+	case opKey(keymap.ComposeEditor):
+		return v, v.composeInEditor()
+	case opKey(keymap.ChatMarkdown):
+		return v, v.fetchChatMarkdown()
 	case "esc":
 		// The opener, not always the chats board (#932). A selectViewMsg
 		// rather than a re-open, so an issue detail keeps its selection and
@@ -1160,7 +1177,9 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.vp.GotoTop()
 		v.syncFollowToViewport()
 		return v, v.fetchVisibleTranscripts()
-	case "ctrl+g":
+	// alt+G, the upper-case twin of alt+g (task 157 decision 1): ctrl+g,
+	// task 071 decision 5's key, is the composer's editor now.
+	case "alt+G":
 		v.follow()
 		return v, nil
 	case chatSearchKey:

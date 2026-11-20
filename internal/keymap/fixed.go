@@ -109,7 +109,10 @@ var fixed = []Fixed{
 	{"chat", "ctrl+x", "stop the running turn"},
 	{"chat", "ctrl+r", "how much of the conversation to show"},
 	{"chat", "pgup", "scroll the conversation back"},
-	{"chat", "ctrl+g", "jump to the live end and follow it again"},
+	// alt+G since task 157 decision 1 (ctrl+g, task 071 decision 5's key,
+	// became the composer's editor): the upper-case twin of alt+g's jump to
+	// the start.
+	{"chat", "alt+G", "jump to the live end and follow it again"},
 	{"chat", "ctrl+t", "hand the worktree and branch to a new task"},
 	{"chat", "ctrl+q", "close this chat, opened on a task or an issue"},
 	{"chat", "esc", "back to where the chat was opened"},
@@ -146,7 +149,7 @@ var fixed = []Fixed{
 	{"chat conversation", "}", "jump to the next prompt you sent"},
 	{"chat conversation", "g", "jump to the start of the conversation"},
 	{"chat conversation", "pgup", "scroll the conversation back"},
-	{"chat conversation", "ctrl+g", "jump to the live end and follow it again"},
+	{"chat conversation", "alt+G", "jump to the live end and follow it again"},
 	{"chat conversation", "i", "give the keyboard back to the composer"},
 	{"chat conversation", "esc", "give the keyboard back to the composer"},
 	// The aliases those rows name in their labels.

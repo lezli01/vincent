@@ -1169,12 +1169,40 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("ctrl+l reached the composer: %q", v.composer.Value())
 			}
 		},
+		"alt+G": func(t *testing.T) {
+			v := chatViewFixture()
+			v.following = false
+			v.updateKey(registryKey(t, "alt+G"))
+			if !v.following {
+				t.Fatal("alt+G did not re-arm follow")
+			}
+		},
 		"ctrl+g": func(t *testing.T) {
 			v := chatViewFixture()
 			v.following = false
-			v.updateKey(registryKey(t, "ctrl+g"))
-			if !v.following {
-				t.Fatal("ctrl+g did not re-arm follow")
+			ran := false
+			v.exec = func(_ *exec.Cmd, cb tea.ExecCallback) tea.Cmd {
+				ran = true
+				return func() tea.Msg { return cb(nil) }
+			}
+			if _, cmd := v.updateKey(registryKey(t, "ctrl+g")); cmd != nil {
+				drain(cmd)
+			}
+			if !ran {
+				t.Fatal("ctrl+g did not open the editor")
+			}
+			if v.following {
+				t.Fatal("ctrl+g re-armed follow; that is alt+G's since task 157")
+			}
+		},
+		"alt+v": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			if _, cmd := v.updateKey(registryKey(t, "alt+v")); cmd == nil {
+				t.Fatal("alt+v did not fetch the conversation")
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("alt+v reached the composer: %q", v.composer.Value())
 			}
 		},
 		"alt+up": func(t *testing.T) {

@@ -84,6 +84,15 @@ const (
 	// shift+tab, the conventional mode key, which the composer leaves unbound
 	// (tab is the skills list's, task 124 decision 69).
 	ChatMode Op = "chat_mode"
+	// ComposeEditor opens the chat composer's draft in $EDITOR and puts
+	// what the editor leaves back in the composer (task 157 decision 2).
+	// ctrl+g, the key most terminal tools give their editor; follow moved
+	// to alt+G for it (task 157 decision 1, amending task 071 decision 5).
+	ComposeEditor Op = "compose_editor"
+	// ChatMarkdown opens the whole conversation, rendered as Markdown by
+	// the daemon, read-only in $EDITOR (task 157 decisions 5, 7). alt+v for
+	// "view": a bare v would be typed into the composer.
+	ChatMarkdown Op = "chat_markdown"
 )
 
 // The §6 actions. Archive is the term above: clause 1 working, not a second
@@ -231,6 +240,14 @@ var catalog = []Info{
 		"chat",
 	}, Typing: true},
 	{Op: ChatMode, Default: "shift+tab", Meaning: "toggle the chat's permission mode (asks before full-auto)", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
+	// Typing: the composer has the keyboard whenever the chat is up, so
+	// both may only be bound to a key it would not type (task 157).
+	{Op: ComposeEditor, Default: "ctrl+g", Meaning: "write the chat message in $EDITOR", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
+	{Op: ChatMarkdown, Default: "alt+v", Meaning: "open the whole conversation as Markdown in $EDITOR, read-only", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}, Typing: true},
 

@@ -180,9 +180,9 @@ func TestChatComposerKeepsItsKeys(t *testing.T) {
 	if v.vp.YOffset() <= before {
 		t.Fatal("pgdn did not scroll forward")
 	}
-	v.updateKey(registryKey(t, "ctrl+g"))
+	v.updateKey(registryKey(t, "alt+G"))
 	if !v.following || !v.vp.AtBottom() {
-		t.Fatal("ctrl+g did not jump to the live end and re-arm follow")
+		t.Fatal("alt+G did not jump to the live end and re-arm follow")
 	}
 	if v.composer.Value() != "" {
 		t.Fatalf("a scroll key was typed into the draft: %q", v.composer.Value())

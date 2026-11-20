@@ -214,6 +214,8 @@ var tuiOnlyClientCalls = map[string]string{
 	// Previews and summaries.
 	"Resolve": "the new-task and workflows preview; `vincent workflow render` prints the same §8.6 triple from the same resolver",
 	"Info":    "the daemon summary; its fields are `daemon status`, `agents`, `doctor` and `config get`, and live slot usage stays TUI-only",
+	// The chat workspace's alt+v.
+	"ChatExportMarkdown": "the chat workspace's alt+v; task 157 leaves the `vincent chat export` subcommand to issue #1023, and the route is open to curl",
 	// Transport, not capability: the SSE routes stay open to curl.
 	"StreamEvents": "live transport; subcommands poll (`task transcript -f`, `chat transcript -f`, `chat send`)",
 	"StreamTask":   "live transport; subcommands poll (`task transcript -f`, `chat transcript -f`, `chat send`)",
