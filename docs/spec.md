@@ -12966,7 +12966,10 @@ which is up to 64 KiB and has no place in the durable events table — so a
 board repaints its `✎ draft` mark without a fetch and an open chat re-reads
 `GET /v1/chats/{id}/draft`. A client must not let the echo of its own write
 reset text typed since: the TUI takes a remote draft only while its composer
-holds exactly the text it last wrote.
+holds exactly the text it last wrote, and never from a read whose
+`draft_updated_at` — carried by `GET /v1/chats/{id}` and the draft route — is
+older than the `updated_at` its own last acknowledged write returned, since
+such a read was taken before that write committed (review F1, 2026-11-20).
 
 *Amended 2026-10-31 (task 140.9, issue #885).* Every event of a chat **opened
 on an issue** carries `issue_id` beside the chat's id, title and state, the

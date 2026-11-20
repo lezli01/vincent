@@ -90,12 +90,17 @@ type chatBody struct {
 	// HasDraft says the chat holds an unsent draft (task 164), which is the
 	// board's `✎ draft` mark. Draft and Stash are the text itself, carried
 	// only by GET /v1/chats/{id}; a list never ships them.
-	HasDraft    bool      `json:"has_draft"`
-	Draft       string    `json:"draft,omitempty"`
-	Stash       string    `json:"stash,omitempty"`
-	SteerReason string    `json:"steer_reason,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	HasDraft bool   `json:"has_draft"`
+	Draft    string `json:"draft,omitempty"`
+	Stash    string `json:"stash,omitempty"`
+	// DraftUpdatedAt is when the draft or stash was last written, carried
+	// beside them by GET /v1/chats/{id} only: it orders a read against a
+	// client's own writes, so a read taken before a save cannot pass for a
+	// newer draft (review F1).
+	DraftUpdatedAt *time.Time `json:"draft_updated_at,omitempty"`
+	SteerReason    string     `json:"steer_reason,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 	// Warnings are non-fatal notes on a create — an issue chat opened on a
 	// closed issue (task 140 decision 9). Never set on a read.
 	Warnings []string `json:"warnings,omitempty"`
@@ -491,7 +496,7 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 		body = append(body, renderChatTurn(&turns[i]))
 	}
 	rendered := renderChat(chat)
-	rendered.Draft, rendered.Stash = chat.Draft, chat.Stash
+	rendered.Draft, rendered.Stash, rendered.DraftUpdatedAt = chat.Draft, chat.Stash, chat.DraftUpdatedAt
 	n := len(turns)
 	rendered.TurnCount = &n
 	writeJSON(w, http.StatusOK, map[string]any{"chat": rendered, "turns": body})

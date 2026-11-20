@@ -48,6 +48,11 @@ func TestChatDraftRoutes(t *testing.T) {
 	if got.Chat.Draft != "half done" || got.Chat.Stash != "aside" || !got.Chat.HasDraft {
 		t.Fatalf("chat read = %+v", got.Chat)
 	}
+	// The read carries the write's stamp, which is what orders it against a
+	// client's own saves (review F1).
+	if got.Chat.DraftUpdatedAt == nil || !got.Chat.DraftUpdatedAt.Equal(*d.UpdatedAt) {
+		t.Fatalf("chat read draft_updated_at = %v, want %v", got.Chat.DraftUpdatedAt, d.UpdatedAt)
+	}
 	_, body = h.doJSON(t, http.MethodGet, fmt.Sprintf("/v1/chats?project_id=%d", p.ID), nil)
 	var list struct {
 		Chats []chatBody `json:"chats"`
@@ -55,7 +60,7 @@ func TestChatDraftRoutes(t *testing.T) {
 	if err := json.Unmarshal(body, &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Chats) != 1 || !list.Chats[0].HasDraft || list.Chats[0].Draft != "" {
+	if len(list.Chats) != 1 || !list.Chats[0].HasDraft || list.Chats[0].Draft != "" || list.Chats[0].DraftUpdatedAt != nil {
 		t.Fatalf("list = %s", body)
 	}
 

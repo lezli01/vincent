@@ -2,6 +2,7 @@ package tui
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -99,5 +100,55 @@ func TestDraftEchoLosesNoKeystroke(t *testing.T) {
 	w.applyLoadedDraft(&apiclient.Chat{ID: 1, Draft: "from elsewhere"})
 	if got := w.composer.Value(); got != "from elsewhere" {
 		t.Fatalf("a clean composer did not follow: %q", got)
+	}
+}
+
+// TestStaleReloadAfterSendKeepsTheComposer is review F1: a send's reload
+// that read the chat before the send's draft PUT committed, and answers after
+// it, must not put the sent prompt back into the composer — nor reset text
+// typed since to an older save.
+func TestStaleReloadAfterSendKeepsTheComposer(t *testing.T) {
+	t0 := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	v := chatViewFixture()
+	v.client = apiclient.New("http://127.0.0.1:1", "t")
+	v.applyLoadedDraft(&apiclient.Chat{ID: 1, Draft: "fix the parser", HasDraft: true, DraftUpdatedAt: &t0})
+	if got := v.composer.Value(); got != "fix the parser" {
+		t.Fatalf("the stored draft was not restored: %q", got)
+	}
+	// The send is accepted: the composer empties and the PUT clearing the
+	// stored draft goes out beside the reload.
+	v.applySent(chatSentMsg{chatID: 1, sent: "fix the parser", result: &apiclient.ChatSend{}})
+	if v.composer.Value() != "" || !v.draft.inFlight {
+		t.Fatalf("after the send: composer %q, in flight %v", v.composer.Value(), v.draft.inFlight)
+	}
+	// The PUT answers first; the reload, which read the row before it,
+	// answers last.
+	v.applyDraftSaved(chatDraftSavedMsg{chatID: 1, updatedAt: &t1})
+	v.applyLoaded(chatLoadedMsg{id: 1, chat: &apiclient.Chat{ID: 1, State: "running", Draft: "fix the parser", HasDraft: true, DraftUpdatedAt: &t0}})
+	if got := v.composer.Value(); got != "" {
+		t.Fatalf("a stale reload put %q back into the composer", got)
+	}
+
+	// The same reordering while typing: a save of "ab" is acknowledged, more
+	// is typed and saved, and a read stamped before it arrives clean.
+	w := chatViewFixture()
+	w.client = apiclient.New("http://127.0.0.1:1", "t")
+	w.applyLoadedDraft(&apiclient.Chat{ID: 1})
+	w.composer.SetValue("ab")
+	w.flushDraft()
+	w.applyDraftSaved(chatDraftSavedMsg{chatID: 1, updatedAt: &t0})
+	w.composer.SetValue("abc")
+	w.flushDraft()
+	w.applyDraftSaved(chatDraftSavedMsg{chatID: 1, updatedAt: &t1})
+	w.applyLoadedDraft(&apiclient.Chat{ID: 1, Draft: "ab", HasDraft: true, DraftUpdatedAt: &t0})
+	if got := w.composer.Value(); got != "abc" {
+		t.Fatalf("a stale read reset the composer to %q", got)
+	}
+	// A newer write from elsewhere is still followed.
+	t2 := t1.Add(time.Second)
+	w.applyLoadedDraft(&apiclient.Chat{ID: 1, Draft: "from elsewhere", HasDraft: true, DraftUpdatedAt: &t2})
+	if got := w.composer.Value(); got != "from elsewhere" {
+		t.Fatalf("a newer remote draft was not followed: %q", got)
 	}
 }

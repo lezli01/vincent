@@ -3428,8 +3428,11 @@ daemon, so they survive a TUI restart and follow the chat to another client.
 
 - `GET /v1/chats/{id}/draft` answers `{ "draft": "…", "stash": "…",
   "updated_at": "…" }`; `updated_at` is `null` before the first write.
-  `GET /v1/chats/{id}` embeds `draft` and `stash` in the chat too, and every
-  chat body — the list included — carries `has_draft`.
+  `GET /v1/chats/{id}` embeds `draft`, `stash` and `draft_updated_at` in the
+  chat too, and every chat body — the list included — carries `has_draft`.
+  A client that writes drafts compares `draft_updated_at` with the
+  `updated_at` its own last `PUT` returned: a read stamped earlier was taken
+  before that write committed, however late it arrives.
 - `PUT /v1/chats/{id}/draft` takes `{ "draft"?, "stash"? }`, at least one of
   them; a field left out is left as it is. The write is last-writer-wins, each
   field is at most 64 KiB, and it publishes `chat.draft_changed`. A chat that

@@ -5,11 +5,13 @@ package tui
 //
 // The daemon owns the draft (decision 1): the composer is a view of
 // `chats.draft`, saved on a debounce while typing and flushed at once when
-// the chat is left. The one rule that keeps a remote change from eating a
-// keystroke is draftSaved: the composer takes the daemon's draft only while
-// it still holds exactly the text this client last wrote, so an echo of its
-// own save — or of an older one still in flight — can never reset text typed
-// since.
+// the chat is left. Two rules keep a remote change from eating a keystroke.
+// The composer takes the daemon's draft only while it still holds exactly the
+// text this client last wrote, with no save in flight. And a read is ordered
+// against this client's saves by `draft_updated_at`: a read stamped before
+// the last save the daemon acknowledged was taken before that save committed,
+// however late it arrives, so it is never taken for a newer draft (review
+// F1).
 
 import (
 	"context"
@@ -39,7 +41,10 @@ type (
 	// chatDraftSavedMsg reports PUT /v1/chats/{id}/draft.
 	chatDraftSavedMsg struct {
 		chatID int64
-		err    error
+		// updatedAt is the write's draft_updated_at, which orders later
+		// reads against it (review F1).
+		updatedAt *time.Time
+		err       error
 	}
 	// chatPromptsMsg is GET /v1/chats/prompts for the history picker.
 	chatPromptsMsg struct {
@@ -71,6 +76,10 @@ type chatDraftState struct {
 	// failed is a save the daemon refused, which keeps the composer dirty so
 	// a remote draft cannot replace text that was never stored.
 	failed bool
+	// writtenAt is draft_updated_at of the newest save the daemon
+	// acknowledged. A read stamped earlier was taken before that save
+	// committed, and is stale however late it arrives (review F1).
+	writtenAt *time.Time
 }
 
 // chatRecall is `↑`/`↓` walking this chat's earlier prompts (decision 4).
@@ -149,22 +158,34 @@ func (v *chatView) applyLoadedDraft(c *apiclient.Chat) {
 	if c == nil {
 		return
 	}
-	if !v.draft.stashDirty {
-		v.draft.stash = c.Stash
+	v.applyRemoteDraft(c.Draft, c.Stash, c.DraftUpdatedAt)
+}
+
+// applyRemoteDraft is applyLoadedDraft for a draft and stash read at
+// updatedAt. A read older than the last save this client had acknowledged
+// was taken before that save committed — a reload racing a send's PUT, say —
+// so neither its draft nor its stash is newer than what this client holds.
+func (v *chatView) applyRemoteDraft(draft, stash string, updatedAt *time.Time) {
+	if w := v.draft.writtenAt; w != nil && (updatedAt == nil || updatedAt.Before(*w)) {
+		return
+	}
+	// A stash being written is this client's until the write is answered.
+	if !v.draft.stashDirty && !v.draft.inFlight {
+		v.draft.stash = stash
 	}
 	if !v.draft.loaded {
 		v.draft.loaded = true
-		v.draft.saved = c.Draft
+		v.draft.saved = draft
 		if v.composer.Value() == "" && v.editingQueued == 0 {
-			v.composer.SetValue(c.Draft)
+			v.composer.SetValue(draft)
 		}
 		return
 	}
-	if c.Draft == v.draft.saved || !v.draftClean() {
+	if draft == v.draft.saved || !v.draftClean() {
 		return
 	}
-	v.draft.saved = c.Draft
-	v.composer.SetValue(c.Draft)
+	v.draft.saved = draft
+	v.composer.SetValue(draft)
 }
 
 // draftClean reports whether the composer holds exactly what this client last
@@ -244,8 +265,12 @@ func (v *chatView) flushDraft() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 		defer cancel()
-		_, err := client.PutChatDraft(ctx, id, *u)
-		return chatDraftSavedMsg{chatID: id, err: err}
+		d, err := client.PutChatDraft(ctx, id, *u)
+		msg := chatDraftSavedMsg{chatID: id, err: err}
+		if d != nil {
+			msg.updatedAt = d.UpdatedAt
+		}
+		return msg
 	}
 }
 
@@ -258,6 +283,9 @@ func (v *chatView) applyDraftSaved(msg chatDraftSavedMsg) tea.Cmd {
 		v.draft.failed = true
 		v.note, v.noteBad = "the draft was not saved: "+errString(msg.err), true
 		return nil
+	}
+	if at := msg.updatedAt; at != nil && (v.draft.writtenAt == nil || at.After(*v.draft.writtenAt)) {
+		v.draft.writtenAt = at
 	}
 	if v.draft.again {
 		return v.flushDraft()

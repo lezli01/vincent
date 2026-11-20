@@ -69,7 +69,11 @@ Implementation choices recorded here:
    TUI takes a remote draft only while its composer holds exactly the text it
    last wrote and no save is in flight, so an echo of its own write — or of an
    older one — cannot reset what was typed since. Saves are serialized, one
-   PUT at a time, so an older one never lands last.
+   PUT at a time, so an older one never lands last. Reads are ordered too
+   (review F1): the chat read carries `draft_updated_at`, and the TUI ignores
+   a read stamped before the `updated_at` its last acknowledged PUT returned
+   — a reload that read the row before a send's PUT and answers after it
+   would otherwise put the sent prompt back into the composer.
 9. **The size cap is the send route's**, 64 KiB: `POST /v1/chats/{id}/send`
    reads an ordinary request body, so a stored draft is always one the daemon
    would accept as a message.

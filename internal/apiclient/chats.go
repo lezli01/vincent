@@ -65,11 +65,14 @@ type Chat struct {
 	// HasDraft says the chat holds an unsent draft (task 164): the board's
 	// `✎ draft` mark. Draft and Stash are the text, carried only by
 	// GetChat — a list leaves them empty.
-	HasDraft  bool      `json:"has_draft"`
-	Draft     string    `json:"draft,omitempty"`
-	Stash     string    `json:"stash,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	HasDraft bool   `json:"has_draft"`
+	Draft    string `json:"draft,omitempty"`
+	Stash    string `json:"stash,omitempty"`
+	// DraftUpdatedAt is when Draft and Stash were last written; GetChat
+	// only. It is what orders a read against this client's own saves.
+	DraftUpdatedAt *time.Time `json:"draft_updated_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 	// Warnings are non-fatal notes on a create, such as a chat opened on a
 	// closed issue, or a first message that was not sent (task 161).
 	Warnings []string `json:"warnings,omitempty"`
