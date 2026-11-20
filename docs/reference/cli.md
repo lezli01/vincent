@@ -2573,6 +2573,84 @@ of its tool calls.
 Exit `0` on success. Exit `1` on an unknown chat or a file that cannot be
 written. Exit `2` with no daemon.
 
+### `vincent chat diff`
+
+```sh
+vincent chat diff CHAT_ID [--scope base|turn] [--stat] [--json]
+```
+
+What the directory the chat works in holds against where the chat started,
+file by file and hunk by hunk — the listing the chat workspace's `alt+d` pane
+draws, over `GET /v1/chats/{id}/diff`. Unlike `vincent task diff` it
+**includes untracked files**; ignored files stay out.
+
+```sh
+vincent chat diff 12
+vincent chat diff 12 --scope turn
+vincent chat diff 12 --json | jq -r '.files[] | select(.rejectable) | .path'
+```
+
+Each file is one line — status, path (`old -> new` for a rename), `+added`,
+`-removed`, and `binary` or `not rejectable` where that applies — followed by
+one line per hunk: its accepted mark (`*`), the first 12 characters of its
+hash, and its `@@` header. The last line totals the files and lines; a chat
+with nothing changed prints `no changes`.
+
+`--scope base`, the default, diffs from the merge-base with the chat's base
+(for a chat on a task, the task's worktree and base). `--scope turn` diffs from
+the checkpoint taken before the chat's latest turn, so it shows what that turn
+did. `--stat` prints only the base scope's file and line totals, in one cheap
+call, and refuses `--scope turn`. `--json` is the route's body, or with
+`--stat` the stat route's.
+
+Exit `1` on an unknown chat and on a chat with no diff — no directory left, no
+recorded base, or for `--scope turn` no turn or no checkpoint — with the
+daemon's reason on stderr. Exit `2` with no daemon.
+
+### `vincent chat diff reject`
+
+```sh
+vincent chat diff reject CHAT_ID PATH HUNK [--scope base|turn] [--json]
+```
+
+Reverts one hunk in the chat's working tree. Only the working tree changes: the
+index and HEAD are left alone and nothing is committed, so rejecting a hunk the
+agent already committed leaves an uncommitted reversal. Rejecting a new file's
+only hunk removes the file. A note naming the hunk goes to the top of the
+chat's stored draft, so the next message tells the agent not to reapply it —
+the same note a reject in the TUI leaves.
+
+```sh
+vincent chat diff reject 12 internal/api/server.go 3f9a1c0b77de
+```
+
+`HUNK` is the hash `vincent chat diff` lists, or any unique prefix of it,
+resolved against the `--scope`'s current diff. `PATH` is the file as listed,
+`/`-separated; a `\` typed on Windows is read as `/`. It prints
+`rejected PATH HASH`, and a `Warning:` on stderr when the hunk was reverted but
+the note did not fit the draft's 64 KiB limit. `--json` prints the route's
+`{ draft, note_added, warning }`.
+
+Exit `1` when the daemon refuses: the chat has a live turn (running, awaiting
+input, or draining its queue), the chat has ended, the hunk is no longer in
+the diff, git will not reverse it because the lines have since changed, or the
+file is binary, a rename or a mode-only change.
+
+### `vincent chat diff accept`
+
+```sh
+vincent chat diff accept CHAT_ID PATH HUNK [--scope base|turn] [--undo]
+```
+
+Marks a hunk accepted. It is a review mark and nothing else — nothing in git
+changes. The daemon keeps it, so it survives a restart and shows in the TUI,
+and it belongs to the hunk's content: a hunk that changes afterwards is a new
+hunk without the mark. `--undo` removes the mark instead.
+
+`HUNK` and `PATH` are as for `reject`, and `--scope` names the diff the hunk is
+looked up in. Exit `1` while the chat has a live turn and for a hunk that is
+not in that diff.
+
 ### `vincent chat find`
 
 ```sh

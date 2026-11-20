@@ -1336,6 +1336,10 @@ for a turn `chatrun.TurnWritesNoTranscript` says never wrote one
 (`agent_unavailable`, `transcript_io_error`, task 103 decision 4), that it
 never wrote one. A missing transcript is never an error for the export.
 
+*Amended 2026-11-20 (task 168 decision 1).* The export's diff below keeps the
+task diff's phase 1 rule — untracked files are excluded. The chat diff routes
+("Diff and hunk review", below) are the one place a diff includes them.
+
 **The diff** (`diff=true`, `--with-diff`) is the base-to-tip diff of the
 directory the chat works in **today**, computed as `GET /v1/tasks/{id}/diff`
 computes its own (one shared helper): commits plus the working tree against
@@ -1383,6 +1387,90 @@ message queue (task 156).
 Rewinding to a checkpoint and forking a chat from one are planned in task 167
 (167.3–167.6) and do not exist yet; neither does pruning these refs (167.8),
 so a deleted chat's checkpoint refs remain until that lands.
+
+#### Diff and hunk review (added 2026-11-20, task 168, issue #1018)
+
+A chat has a diff of its own, served structured by
+`GET /v1/chats/{id}/diff?scope=base|turn` (§13.2), and a per-hunk review of it.
+The directory and base are resolved the way the export resolves them (one
+shared helper, `chatDiffDir`): a linked chat (task 119) diffs its task's
+worktree against the task's base, an issue chat (task 140) and a free chat
+their own `worktree_path` against the chat's base.
+
+**It includes untracked files.** This is a deliberate, chat-only departure
+from the phase 1 "untracked files excluded" limitation, which
+`GET /v1/tasks/{id}/diff` and the export's `diff=true` keep unchanged. The
+chat diff is tree to tree: the daemon writes the working tree as a tree
+object through the checkpoint machinery above (the temporary index seeded
+from the real one, `add -A --ignore-errors`, `write-tree` — and here no
+`commit-tree` and no ref), then runs `git diff-tree` from the scope's start to
+that tree with rename detection on and every output-affecting option pinned.
+The real index, HEAD and every file are untouched by a read. A new file
+therefore appears as an added file in both scopes; ignored files stay out, as
+in checkpoints (task 167 decision 5).
+
+**Scopes.** `base` starts at the merge-base of the directory's HEAD with the
+recorded base. `turn` starts at the `checkpoint_sha` of the chat's latest
+turn — the state before that turn's agent started. A chat with no turn, a
+latest turn that carries no checkpoint (a chat from before migration 0066), or
+a checkpoint whose commit no longer exists has no `turn` diff:
+`409 chat_diff_unavailable` with the reason, never the base's diff presented
+as a turn's.
+
+**Hunk identity.** Each hunk carries a hash: lowercase hex SHA-256 of the
+file's path, a NUL, and the hunk's lines joined by `\n` — the `@@` line
+numbers deliberately left out, so rejecting one hunk does not change the
+identity of the hunks below it. The second and later occurrences of identical
+content within one file append a NUL and their ordinal, so a hash is unique
+within a file. No client derives hunk identity itself.
+
+**Reject** (`POST /v1/chats/{id}/diff/reject`) regenerates the scope's diff,
+finds the hunk by path and hash, builds a one-hunk patch and runs
+`git apply -R` on it in the working tree — never `--index` or `--cached`, so
+the index, HEAD and history are untouched and rejecting an already-committed
+hunk leaves an uncommitted reversal. Rejecting an added file's only hunk
+deletes the file. A hash that matches nothing is `409 chat_hunk_stale`; a
+patch git will not apply is `409 chat_hunk_conflict` and writes nothing;
+binary files, renames and mode-only changes are listed but
+`409 chat_hunk_not_rejectable`. Line endings are git's to convert, as on a
+checkout, so a CRLF file round-trips.
+
+The reject then prepends a note to the chat's daemon-held draft (task 164), in
+the one transaction that also drops the hunk's accepted mark
+(`store.RecordChatHunkReject`), and `chat.draft_changed` is published after
+the commit. The note is one block at the very top of the draft — the line
+`The user reverted these hunks; do not reapply them:`, then one
+`- <path> <@@ header>` line per hunk, then a blank line and what the draft
+held. A draft that still starts with the block has the new line appended to
+it; otherwise a new block is prepended. From there it is ordinary composer
+text: visible, editable, deletable, and sent as part of the next message.
+There is no separate note field and no send-path rule, and an API or CLI
+reject leaves the same note a TUI one does. A note that would take the draft
+past `MaxChatDraftBytes` is not written — the hunk is reverted all the same
+and the answer carries `note_added: false` and a `warning`.
+
+**Accept** is only a mark: a `chat_hunk_reviews` row (§14, migration 0067)
+keyed by chat, path and hunk hash. It changes nothing in git. All review state
+lives in the daemon, so a mark survives a restart and is the same from every
+client; nothing ever invalidates a row — a hunk whose content changed has
+another hash and the old mark simply stops matching. Marks are deleted with
+the chat row.
+
+**The live-turn guard.** Reject and accept are refused with
+`409 chat_turn_live` while the chat is `running`, `awaiting_input`, or
+draining its queue. It is a guard, not a §5.5 transition — the chat's state
+never changes — and it is unraced: `chatrun.Runner.WhileNoTurn` holds the
+chat's start lock for the length of the one git command, so a send or a queue
+resume arriving meanwhile waits rather than starting an agent in a worktree
+`git apply` is writing. Reading the diff is never refused for a live turn. A
+terminal chat reads while its directory remains and can never reject
+(`409 invalid_state`, `details.action: "reject"`); with no directory the read
+answers the export's reasons as `409 chat_diff_unavailable`.
+
+Rejecting and accepting exist on a chat's diff only. A task's diff
+(`GET /v1/tasks/{id}/diff`) has no hunk review; its TUI tab gains hunk
+navigation and nothing else (§15). A side-by-side view is not built
+(task 168.10).
 
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
@@ -8401,6 +8489,7 @@ One Go binary, `vincent`:
 | `vincent chat skills <chat-id> [--refresh] [--json]` | *Added 2026-09-20 (task 124.11, issue #507).* Lists the skills the chat's agent CLI would load in the chat's directory through `GET /v1/chats/{id}/skills` (§13.2), and needs **no wire change**: that route, its verdicts and `--refresh`'s `?refresh=true` all shipped with 124.9. The table is `SKILL`, `INVOKE`, `ARGS`, `DESCRIPTION`; `INVOKE` is the row's `invocation` verbatim, which is the only cell that separates two rows sharing a name — codex's `[$name](path)` — and is why it is a column rather than something the client assembles. There is no `SCOPE` column: claude reports none, so it would be blank for every claude chat, and `scope`, `plugin`, `path` and `aliases` stay in `--json`. Every cell is the CLI's own word and is **blank**, never `-`, where the CLI said nothing (decision 8); rows keep the route's order and nothing is keyed by name. Nothing is truncated: nothing in `internal/cli` measures a terminal, and a width-dependent table is non-deterministic under a pipe. **stdout is the table and nothing else** — the `unsupported`/`unknown` verdict with its `unavailable_reason` or `probe_error`, the `problems[]` rows as `warning: <path>: <message>`, and the invocation line all go to stderr at exit 0, as `chat handoff`'s warnings and `chat transcript`'s "no transcript" notice already do; under either non-`supported` verdict no table is printed at all. A `probe_error` beside a **`supported`** list is the §5.5 row where the cache kept an earlier list, and the command says so on stderr above the invocation line — a table that is printed is never silently a stale one. One generic invocation line — `invoke: vincent chat send <id> '<sigil>NAME your message'`, always single-quoted — is built from `invoke_sigil` and `invoke_position`, never from a row, so it prints for an empty list and beside an `unsupported` list whose adapter can still invoke (cursor's shape, task 124 decision 2). Its quoting note keys off the **sigil, not the agent name**: `$` gets the bash/zsh/pwsh expansion warning, `/` the Git Bash `MSYS_NO_PATHCONV=1` / `--message-file` note. Exit **0** whenever the daemon answered, `unsupported` and `unknown` included, as `vincent agents` exits (task 041 decision 4); **1** on a 404 or a 409 (a terminal chat, a linked chat whose task has no worktree); **2** with no daemon, through `withClient`. `vincent skills` is the other command about skills and stays about the ones vincent *publishes*; the two help texts point at each other |
 | `vincent chat files <chat-id> [--limit N] [--mention \| --json]` | *Added 2026-09-22 (task 126.7, issue #551).* Lists the files of the directory the chat's next turn would start in through `GET /v1/chats/{id}/files` (§13.2), and needs **no wire change**: that route, its `?limit=`, its `truncated` flag and `apiclient.(*Client).ChatFiles` all shipped with 126.6. **stdout is the listing and nothing else** — one workspace-relative path per line, in the route's order, unsorted (task 126 decision 21) — so `vincent chat files 12 | wc -l` counts files and the list pipes into `xargs`, which a padded table would not. `--mention` switches stdout to each row's `mention`, printed **verbatim**: the `@"…"`-on-a-space quoting rule has one definition and it lives in the adapter (decision 1), so no client rebuilds it and this command does not either. `--json` emits the response object unchanged with `files` always an array, which makes `--json | jq -r '.files[].mention'` the same answer; the two are mutually exclusive, as `chat transcript`'s `--json` and `--raw` are, because both are spellings of stdout. `--limit N` passes through and may only *lower* the daemon's ceiling (decisions 4 and 36); `0` is the ceiling, the `vincent github issues --limit` spelling. A cut listing earns one stderr line (`warning: the listing was cut at N file(s)`) at exit **0** — `truncated` exists to make a cut visible and a silent one is the failure mode it was added against — and an empty `mention_sigil` under `--mention` earns one `no mention text: …` line at exit 0 rather than a column of empty strings, because `""` is how an adapter says it cannot mention files and is a signal, not a refusal (decision 38). There is **no `--refresh`**: decision 5 removed the server cache such a flag would invalidate, and a flag that invalidates nothing is a lie about the route. Exit **0** whenever the daemon answered, empty and truncated included; **1** on a 404, on either 409 (a terminal chat, a linked chat whose task has no worktree) and on the 400 a vanished workspace produces; **2** with no daemon, through `withClient` |
 | `vincent chat export <chat-id> [--format md\|html\|json] [--with-diff] [-o <file>]` | *Added 2026-11-19 (task 159, issue #1023).* Writes the chat as one document through `GET /v1/chats/{id}/export` (§5.5, §13.2), a thin client over `apiclient.(*Client).ChatExport`: the daemon renders and the command carries its bytes to stdout, or with `-o` to that file, written atomically through a temporary file and `fileswap.Replace` because a half-written export is worse than none. The CLI never invents a filename; the route's `Content-Disposition` name is for the TUI. `--format` defaults to `md`. The CLI-wide `--json` is a synonym for `--format json`, and `--json` beside `--format md\|html` is refused. `--with-diff` sends `diff=true`. Exit **0** on success, **1** on a 404 or a file that cannot be written, **2** with no daemon |
+| `vincent chat diff <chat-id> [--scope base\|turn] [--stat] [--json]`, `vincent chat diff reject <chat-id> <path> <hunk> [--scope] [--json]`, `vincent chat diff accept <chat-id> <path> <hunk> [--scope] [--undo]` | *Added 2026-11-20 (task 168, issue #1018).* Thin clients over the chat diff routes (§5.5 "Diff and hunk review", §13.2), so the per-hunk review is not TUI-only. `diff` lists each file (status, path, `+`/`-`, `binary` or `not rejectable`) and under it each hunk's accepted mark (`*`), 12-character hash prefix and `@@` header, then a totals line; `--stat` is the stat route and is always the base scope; `--json` is the wire body. `reject` and `accept` take the full hash or a unique prefix of it, which the **CLI** resolves against the scope's diff it reads first — the daemon takes full hashes only — and a `\` in `<path>` is read as `/`, a patch's paths being `/`-separated on every OS. `accept --undo` calls the unaccept route. A daemon refusal exits 1 with its message; a reject's `warning` goes to stderr |
 | `vincent chat find <chat-id> <text> [--json]` | *Added 2026-11-20 (task 160 decision 2, issue #1014; named `find` because task 158's `vincent chat search` searches every chat).* Which turns of a chat mention `<text>`, through `GET /v1/chats/{id}/search` (§13.2) — the route the chat workspace's `ctrl+f` search uses, so the TUI/CLI parity rule holds for it. **stdout is one line per matching turn**, in turn order: `turn N  M match(es)`, with `  (result text only: the transcript is gone)` appended to a turn the route answered from `result_text`; `vincent chat transcript <id> --turn N` then reads one. A `truncated` turn earns one stderr warning at exit 0. `--json` emits the response object unchanged with `turns` always an array. Exit **0** whenever the daemon answered, no matches included; **1** on a 404 or the 400 an empty or over-256-byte query produces; **2** with no daemon, through `withClient` |
 | `vincent task diff <id>` | *Added 2026-09-15 (task 100).* Prints the task's diff through `GET /v1/tasks/{id}/diff` (§13.2), which does not change. `--by lane` reads `?by=lane` and prints every section in the daemon's order under an ASCII header — `# lane <lane_id> (task <child_task_id>, merge <12-char sha>)`, or `# remainder (…)` last — including a section with no change. `--stat` is a per-file `FILE`/`ADDED`/`REMOVED` table the **CLI** computes from the body (counted inside hunks only; `binary` for a binary file), with a leading `LANE` column under `--by lane`. `--json` is `{"diff": …}`, the sections array, or `[{path, added, removed, binary}]` rows that under `--by lane` also carry `lane_id`, `child_task_id` and `remainder`; the stat shapes are the CLI's, not wire types. The ungrouped form is **streamed with no size cap**, unlike the TUI's bounded read, because its piped output is meant for `git apply` and a cut patch is a corrupt one. It is the CLI's **first colour**: only when stdout is a terminal and `NO_COLOR` is unset (colorprofile also honours `TERM=dumb`), and piped output is the daemon's bytes exactly. Any `--by` other than `lane` is refused client-side before a request, exit 1. *Amended 2026-11-20 (task 168.6):* `--step-run N` reads `?step_run=N` and prints that step run's diff, streamed uncapped like the ungrouped form; it is refused beside `--by`, and a run with no recorded range (409 `step_range_unrecorded`) exits 1 with the daemon's message |
 | `vincent task commits <id>` | *Added 2026-09-29 (issue #601).* Lists the task's commits through `GET /v1/tasks/{id}/commits` (§13.2), one line each: 12-char sha, author time in local time to the minute, subject, and `[lane <lane_id>, task <child_task_id>]` on a lane merge. `--json` is the wire list. A 409 exits 1 with the daemon's message; a daemon that predates the route (its router's `404 no such endpoint`) is reported as needing a restart |
@@ -9984,7 +10073,9 @@ it is answered while the composer has the keyboard, so the printable-key
 refusal below covers it (§15). *Amended 2026-11-19 (tasks 158 and 159, issues
 #1022 and #1023; review F3):* `chat_search`, `S` by default on the chats
 board, and `export_chat`, `alt+e` by default on the chat workspace and both
-chats boards, are two more terms; and `pause_all`, `Z` by default (*added
+chats boards, are two more terms; *and 2026-11-20 (task 168 decision 3):*
+`chat_diff`, `alt+d` by default on the chat surface and `Typing` like the
+others pressed from the composer, is one more; and `pause_all`, `Z` by default (*added
 2026-11-17, task 149*), is one more global. Every other key
 the TUI answers is fixed (§15). An override **replaces** the operation's
 default on every surface that carries it; it is not an alias, so the vacated
@@ -11822,6 +11913,46 @@ GET    /v1/chats/{id}/export            *Added 2026-11-19 (task 159, issue #1023
                                         `404` for an unknown chat. Every state exports. No
                                         event, no row touched, no slot held (§11). It is **not**
                                         an MCP tool (§13.4)
+GET    /v1/chats/{id}/diff              *Added 2026-11-20 (task 168, issue #1018).* The chat's
+       ?scope=base|turn                 diff, structured (§5.5 "Diff and hunk review"): →
+                                        { scope, from, added, removed, files: [{ path, old_path,
+                                        status, binary, rejectable, added, removed, hunks:
+                                        [{ hash, header, body, added, removed, accepted }] }] }.
+                                        `scope` defaults to `base`; anything else but `turn` is
+                                        `400 validation_failed`, checked before the chat is
+                                        loaded. Untracked files are included, ignored ones not.
+                                        `status` is added|deleted|modified|renamed; paths are
+                                        `/`-separated on every OS; `body` is the hunk's lines
+                                        after the header joined by `\n`, no trailing newline,
+                                        any `\r` kept. `409 chat_diff_unavailable` (the message
+                                        is the reason) with no directory, no base, or
+                                        `scope=turn` without a checkpoint. Every state reads
+                                        while the directory remains, a live turn included. No
+                                        event, no row touched, no slot held (§11)
+GET    /v1/chats/{id}/diff/stat         *Added 2026-11-20 (task 168).* → { files, added,
+                                        removed } for the base scope, from `--numstat`, without
+                                        building hunks. Same `409` as the diff
+POST   /v1/chats/{id}/diff/reject       *Added 2026-11-20 (task 168).* { scope?, path, hunk } —
+                                        reverse-applies that hunk to the working tree only and
+                                        prepends the note to the chat's draft (§5.5) → `200`
+                                        { draft, note_added, warning }. `409 chat_turn_live`
+                                        while a turn is live; `409 chat_hunk_stale` for a hash
+                                        not in the scope's current diff; `409
+                                        chat_hunk_conflict` when git will not apply the
+                                        reversal; `409 chat_hunk_not_rejectable` for a binary
+                                        file, a rename or a mode-only change; `409
+                                        invalid_state` (`details.action: "reject"`) for a
+                                        terminal chat. Publishes `chat.draft_changed` when the
+                                        note was written
+POST   /v1/chats/{id}/diff/accept       *Added 2026-11-20 (task 168).* { scope?, path, hunk } —
+                                        records the accepted mark → `204`. The hunk must be in
+                                        the scope's current diff (`409 chat_hunk_stale`);
+                                        `409 chat_turn_live` while a turn is live. Nothing in
+                                        git changes
+POST   /v1/chats/{id}/diff/unaccept     *Added 2026-11-20 (task 168).* { path, hunk } — removes
+                                        the mark → `204`, whether or not it existed. Reads no
+                                        diff and names no scope. None of these five is an MCP
+                                        tool (§13.4)
 GET    /v1/chats/{id}/events            *Added 2026-08-31 (task 067).* SSE: this chat's durable
                                         `chat.*` events interleaved with its live output, the
                                         per-task stream's shape for a chat. The filter is the
@@ -12813,6 +12944,10 @@ GET    /v1/tasks/{id}/steps/{run_id}/transcript?offset=&tail=&format=
                                         lose that raw line too.
 GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base with base branch
                                         (includes uncommitted changes)
+                                        *Noted 2026-11-20 (task 168 decision 1):* tracked
+                                        changes only — untracked files stay excluded here (the
+                                        phase 1 rule). A chat's diff, `GET /v1/chats/{id}/diff`,
+                                        is the one that includes them.
                                         ?by=lane -> JSON {sections:[...]} instead: one section per
                                         fan_out lane, cut from the `Merge lane '{id}' of task {n}`
                                         commits on the parent's own first-parent chain (§7.6), plus
@@ -13640,6 +13775,19 @@ state under the same row:
     PUT    /v1/chats/{id}/draft
     GET    /v1/chats/prompts
 
+*Amended 2026-11-20 (task 168 decision 11, issue #1018).* Five more, a chat's
+diff and its per-hunk review:
+
+    GET    /v1/chats/{id}/diff
+    GET    /v1/chats/{id}/diff/stat
+    POST   /v1/chats/{id}/diff/reject
+    POST   /v1/chats/{id}/diff/accept
+    POST   /v1/chats/{id}/diff/unaccept
+
+They are a human reviewing what the agent wrote: an agent that could accept
+its own hunks, or revert files under a person's review, would make the review
+mean nothing.
+
 *Amended 2026-11-20 (task 165, issue #1019).* One more:
 
     POST   /v1/chats/{id}/viewed
@@ -14218,6 +14366,20 @@ CREATE TABLE chat_queued_messages (
     prompt     TEXT    NOT NULL,
     created_at TEXT    NOT NULL,
     updated_at TEXT    NOT NULL
+);
+
+-- Added 2026-11-20 (task 168, issue #1018; migration 0067): the hunks of a
+-- chat's diff a reader has accepted (§5.5 "Diff and hunk review"). path is
+-- /-separated as a patch spells it; hunk_hash is the hunk's content hash, so
+-- nothing ever invalidates a row — a changed hunk has another hash and the
+-- old mark stops matching. A rejected hunk has no row. accepted_at is
+-- store.TimeFormat.
+CREATE TABLE chat_hunk_reviews (
+    chat_id     INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    path        TEXT NOT NULL,
+    hunk_hash   TEXT NOT NULL,
+    accepted_at TEXT NOT NULL,
+    PRIMARY KEY (chat_id, path, hunk_hash)
 );
 
 -- Added 2026-11-20 (task 165, issue #1019): chats gains last_viewed_at TEXT
@@ -16263,6 +16425,47 @@ stream for the live tail.
    a word, a backslash escapes outside single quotes on POSIX only, and an
    unbalanced quote falls back to splitting on whitespace. Conversation
    focus (task 160) follows on `alt+shift+g` too, mirroring the composer.
+
+   *Amended 2026-11-20 (task 168 decisions 3, 4, 9 and 10, issue #1018).* **The
+   chat's diff is a pane swap on a key, not a tab strip.** `alt+d` — the
+   rebindable operation `chat_diff` (`Typing`), also a palette row — draws
+   the chat's diff (§5.5 "Diff and hunk review") where the conversation is.
+   The diff then holds the keyboard the way conversation focus does (task
+   160); `esc`, or the `chat_diff` key again, returns to the conversation and
+   the composer with the draft untouched. The draft is flushed to the daemon
+   as the pane opens, because a reject prepends its note to the stored draft.
+   Inside the pane the keys are fixed: `]`/`[` move to the next and previous
+   hunk, `x` rejects the selected hunk, `a` accepts it or clears its mark,
+   `s` switches between the `base` and `turn` scopes, `r` reads the diff
+   again, and the shared renderer's fold, file, page and pan keys work as on
+   the task's Diff tab. One reject or accept is in flight at a time. After a
+   reject the composer shows the daemon's draft — when the composer held an
+   unsaved edit, the note alone is prepended to it — and the diff and the
+   `changes` row are re-read. A `chat_hunk_stale` refusal re-reads the diff;
+   `chat_turn_live` and the others go to the note line. A scope with no diff
+   (`chat_diff_unavailable`) is an empty state carrying the daemon's reason,
+   never an error box and never the other scope's diff. Nothing follows the
+   event stream: the diff is read on open, on a scope switch, on `r`, after a
+   reject, and when a turn ends while the pane is open.
+
+   The shared diff renderer gains a **hunk level**: hunks are parsed from each
+   file's `@@` lines, a hunk cursor walks them in drawn order across files and
+   lanes, opening a folded file (and its lane) it lands in and scrolling the
+   header into view. The selected hunk's header carries `▶`, and an accepted
+   hunk is dimmed and carries `✓` — glyphs, not colour alone — and in the
+   chat's pane a file's row shows `✓ reviewed/total`. **On the task workspace's
+   Diff tab `]` and `[` now walk the hunks** instead of being `tab`'s
+   aliases; `tab`/`shift+tab` and the digits still switch tabs from it, and
+   the board's preview keeps `]`/`[` as its Output/Diff toggle. That tab gets
+   navigation only: no reject and no accept. The view is unified; a
+   side-by-side view is not built (task 168.10).
+
+   The chat Details pane's **`changes` row is back** (task 150 decision 17
+   dropped it for lack of data): the file count and `+`/`-` since the base,
+   from `GET /v1/chats/{id}/diff/stat`, with the key that opens the diff
+   under it in the open chat. It is read with the chat (and with the chats
+   board's preview), when a turn ends and after a reject — never per event,
+   the route running git per call.
 
    *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
    insert a newline in the draft; `enter` still sends it. This makes the

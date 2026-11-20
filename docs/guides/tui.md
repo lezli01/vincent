@@ -846,7 +846,7 @@ output. It is the sentence that decides whether to open the transcript.
 | Key | Does |
 |---|---|
 | `tab` / `shift+tab` | Next / previous task tab |
-| `]` / `[` | Next / previous task tab |
+| `]` / `[` | Next / previous task tab — except on the [Diff tab](#the-diff-tab), where they walk the hunks |
 | `i` | Open the task's linked issue, from any tab but Pull request (`esc` comes back) |
 | `d` | Open Diff from any tab; on Diff, switch between the whole task's diff and the selected attempt's |
 | `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
@@ -1232,7 +1232,13 @@ line names what the diff is of, and for the whole task what it is against.
 | `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
 | `shift+←`/`shift+→` | Pan sideways to the end of a line wider than the pane — diff lines are never wrapped |
 | `d` | Switch between the whole task's diff and the selected attempt's |
-| `[` | Back to the Output tab (`]` advances to Workflow) |
+| `]` / `[` | Move to the next / previous hunk, opening the file it is in. On this tab they are not the tab keys: `tab`/`shift+tab` still switch tabs |
+
+`]` and `[` walk the **hunks** in the order they are drawn, across files and
+lanes: a hunk inside a folded file opens it, the pane scrolls its `@@` header
+into view, and the selected hunk's header is marked with `▶`, a glyph rather
+than a colour alone. A task's diff is read-only — rejecting and accepting a
+hunk belong to [a chat's diff](#reviewing-a-chats-diff).
 
 Clicking a file's row folds it; clicking a line of code selects its file and
 leaves it open. The mouse wheel scrolls whichever tab is on screen, unless a
@@ -2848,6 +2854,7 @@ periodic repaint.
 | `ctrl+f` | Search the conversation: the conversation takes the keyboard with a search line open — see [Searching a chat](#searching-a-chat) |
 | `ctrl+g` | Write the message in `$EDITOR`. What you save comes back into the composer, unsent; an emptied or untouched file leaves the draft as it was. While `↑` has a queued message in the composer, this edits that message (rebindable as `compose_editor`) |
 | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only — the file is deleted when the editor exits (rebindable as `chat_markdown`; also in the palette) |
+| `alt+d` | Show the chat's diff where the conversation is, to [review it hunk by hunk](#reviewing-a-chats-diff); `esc` comes back with the draft untouched (rebindable as `chat_diff`; also in the palette) |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
 | `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
@@ -2906,6 +2913,74 @@ the window — `turn 2/5` — until `alt+shift+g` follows the end again. While y
 scrolled away, the conversation pane's bottom edge counts what arrived below
 you — `↓ 12 new`; click it or press `alt+shift+g` to follow again. Changing the
 level or the window's width does not add to it.
+
+### Reviewing a chat's diff
+
+`alt+d` — also in the command palette — swaps the conversation for the chat's
+**diff**: what the directory the chat works in holds against where the chat
+started. It is not a tab — the diff takes the conversation's place and the
+keyboard with it, and `esc` (or `alt+d` again) gives both back, the draft
+exactly as you left it.
+
+Unlike a task's Diff tab, a chat's diff **includes untracked files**: a file
+the agent created and never `git add`ed is in it, as an added file. Ignored
+files are not. It is grouped by file and starts folded, like the task's.
+
+| Key | Does |
+|---|---|
+| `]` / `[` | Move to the next / previous hunk, opening the file it is in |
+| `x` | **Reject** the selected hunk: it is reverted in the chat's directory, and a note for the agent is put at the top of your draft |
+| `a` | **Accept** the selected hunk — a review mark and nothing else; on an accepted hunk it clears the mark |
+| `s` | Switch scope: the changes **since the base**, or **since the last turn** |
+| `r` | Read the diff again |
+| `↑`/`↓` | Move between files |
+| `enter` or `space` | Expand or collapse the file under the cursor (`→`/`←` too) |
+| `O` / `C` | Expand / collapse every file |
+| `pgup`/`pgdn`, `ctrl+u`/`ctrl+d` | Page the diff |
+| `shift+←`/`shift+→` | Pan long lines |
+| `esc` | Back to the conversation and the composer |
+
+**Scopes.** *Since the base* is everything on the chat's branch and in its
+working tree past the merge-base with the chat's base — for a chat on a task,
+the task's worktree and base. *Since the last turn* starts from the
+checkpoint vincent takes just before the latest turn's agent
+started, so it shows what that one turn did. A chat with no turn yet, or whose
+latest turn has no checkpoint (a chat from before checkpoints existed), has no
+such diff, and the pane says so rather than showing the whole chat's changes
+as one turn's.
+
+**Rejecting** reverse-applies that one hunk to the working tree and nothing
+else: the index, HEAD and history are left alone, so rejecting a hunk the
+agent already committed leaves an uncommitted reversal for you or the agent to
+commit. Rejecting a new file's hunk removes the file. The other hunks of the
+file stay as they are and stay rejectable. vincent then writes a note at the
+top of the chat's draft:
+
+```text
+The user reverted these hunks; do not reapply them:
+- internal/api/server.go @@ -12,6 +12,9 @@ func route()
+```
+
+A second reject adds its line to the same block. The note is ordinary draft
+text — edit it, add to it or delete it — and it goes to the agent as part of
+your next message. If the draft is already at its 64 KiB limit the hunk is
+still reverted and the pane warns that no note was added.
+
+**Accepting** changes nothing in git. An accepted hunk is drawn dimmed with a
+`✓`, and its file's row counts `reviewed/total`. The mark is the daemon's, so
+it survives a restart and shows in every client; it belongs to the hunk's
+content, so a hunk the agent changes afterwards is a new, unmarked hunk.
+
+Both are refused while a turn is running, waiting on you, or the queue is
+draining — the agent would be writing the same files — and a chat that has
+ended can be read but no longer rejected. A hunk that changed since the pane
+read it is read again instead of being reverted; binary files, renames and
+mode-only changes are listed but cannot be rejected hunk by hunk, and their
+row says so.
+
+From 150 columns the Details pane carries a **changes** row — the file count
+and `+`/`-` lines since the base — and names the key that opens the diff. It
+is re-read when a turn ends and after a reject.
 
 ### Searching a chat
 
@@ -3799,7 +3874,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first forty-one are the operations screens share, the next eleven are the
+The first forty-two are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3834,6 +3909,7 @@ The first forty-one are the operations screens share, the next eleven are the
 | `chat_mode` | `shift+tab` | Toggle the chat's permission mode; asks before raising it to full-auto |
 | `compose_editor` | `ctrl+g` | Write the chat message in `$EDITOR` |
 | `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
+| `chat_diff` | `alt+d` | Show the chat's diff in place of the conversation, to review it hunk by hunk. See [Reviewing a chat's diff](#reviewing-a-chats-diff) |
 | `next_chat` | `alt+n` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |
 | `prev_chat` | `alt+shift+n` | Open the project's previous chat, wrapping |
 | `chat_1` | `alt+1` | Open the project's chat number 1, in the chats board's order; nothing past the last |

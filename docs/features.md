@@ -143,6 +143,15 @@ the diff of the chat's worktree. From the TUI, with
 [`vincent chat export`](reference/cli.md#vincent-chat-export), or
 `GET /v1/chats/{id}/export`.
 
+**Review a chat's diff hunk by hunk.** `alt+d` in the chat workspace swaps the
+conversation for the diff of the chat's directory — untracked files included —
+since the chat's base or since its last turn. Reject a hunk and it is reverted
+in the working tree, with a note at the top of your draft telling the agent
+not to reapply it; accept one and it is marked reviewed. See
+[Reviewing a chat's diff](guides/tui.md#reviewing-a-chats-diff),
+[`vincent chat diff`](reference/cli.md#vincent-chat-diff), or
+`GET /v1/chats/{id}/diff`.
+
 It works the other way round too: **chat with a stopped task**. When a task
 stops for you — blocked on a failing step, waiting at a gate, done, or aborted
 — open a chat on the task and talk the fix through in the task's own worktree,
