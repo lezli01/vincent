@@ -24,6 +24,7 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/store/storetest"
 	"github.com/lezli01/vincent/internal/taskrun"
+	"github.com/lezli01/vincent/internal/testrepo"
 )
 
 // skillsHarness is GET /v1/chats/{id}/skills over the real handler, the real
@@ -604,6 +605,14 @@ func TestChatSkillsTurnEndingInvalidates(t *testing.T) {
 	h := newSkillsHarness(t)
 	h.stub.Script(testSkills, nil)
 	c := h.freeChat(t, agenttest.SkillsName, chatstate.Idle)
+	// A repository, so the turn's checkpoint (task 165.2) succeeds and the
+	// turn reaches Start: a turn whose checkpoint fails never placed an
+	// agent in the directory, so there would be nothing to invalidate.
+	repo := testrepo.Init(t, "main")
+	if _, err := h.store.SetChatWorktree(t.Context(), c.ID, repo, ""); err != nil {
+		t.Fatalf("SetChatWorktree: %v", err)
+	}
+	c.WorktreePath = repo
 
 	h.list(t, c.ID, "")
 	h.list(t, c.ID, "")

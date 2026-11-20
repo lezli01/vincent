@@ -79,7 +79,7 @@ const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_mes
 	started_at, ended_at, duration_ms, session_input_tokens, session_output_tokens,
 	cache_read_tokens, cache_creation_tokens, context_tokens, context_window,
 	session_cache_read_tokens, session_cache_creation_tokens, model, effort, permission_mode,
-	mention_context`
+	mention_context, checkpoint_sha, head_before, head_after`
 
 // CreateChat inserts c, assigning its ID and timestamps, and writes the
 // durable chat.created event in the same transaction (§13.3).
@@ -697,14 +697,16 @@ func updateChatTurnTx(ctx context.Context, tx *sql.Tx, t *ChatTurn) error {
 			pid = ?, proc_identity = ?, ended_at = ?, duration_ms = ?,
 			session_input_tokens = ?, session_output_tokens = ?,
 			cache_read_tokens = ?, cache_creation_tokens = ?, context_tokens = ?, context_window = ?,
-			session_cache_read_tokens = ?, session_cache_creation_tokens = ?
+			session_cache_read_tokens = ?, session_cache_creation_tokens = ?,
+			checkpoint_sha = ?, head_before = ?, head_after = ?
 		WHERE id = ?`,
 		string(t.State), nullString(t.FailReason), nullString(t.ErrorMessage), nullString(t.ResultText),
 		nullString(t.SessionID), t.InputTokens, t.OutputTokens, t.CostUSD, t.ExitCode,
 		t.PID, t.ProcIdentity, formatTimePtr(t.EndedAt), t.DurationMS,
 		t.SessionInputTokens, t.SessionOutputTokens,
 		t.CacheReadTokens, t.CacheCreationTokens, t.ContextTokens, t.ContextWindow,
-		t.SessionCacheReadTokens, t.SessionCacheCreationTokens, t.ID); err != nil {
+		t.SessionCacheReadTokens, t.SessionCacheCreationTokens,
+		nullString(t.CheckpointSHA), nullString(t.HeadBefore), nullString(t.HeadAfter), t.ID); err != nil {
 		return fmt.Errorf("update chat turn %d: %w", t.ID, err)
 	}
 	return nil
@@ -979,6 +981,7 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 	var t ChatTurn
 	var failReason, errMsg, resultText, sessionID, procIdentity sql.NullString
 	var model, effort, mode, mentionContext sql.NullString
+	var checkpoint, headBefore, headAfter sql.NullString
 	var startedAt string
 	var endedAt sql.NullString
 	if err := r.Scan(&t.ID, &t.ChatID, &t.Seq, &t.Prompt, (*string)(&t.State), &failReason, &errMsg,
@@ -987,11 +990,12 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 		&t.SessionInputTokens, &t.SessionOutputTokens,
 		&t.CacheReadTokens, &t.CacheCreationTokens, &t.ContextTokens, &t.ContextWindow,
 		&t.SessionCacheReadTokens, &t.SessionCacheCreationTokens, &model, &effort, &mode,
-		&mentionContext); err != nil {
+		&mentionContext, &checkpoint, &headBefore, &headAfter); err != nil {
 		return nil, err
 	}
 	t.MentionContext = mentionContext.String
 	t.Model, t.Effort, t.PermissionMode = model.String, effort.String, mode.String
+	t.CheckpointSHA, t.HeadBefore, t.HeadAfter = checkpoint.String, headBefore.String, headAfter.String
 	t.FailReason, t.ErrorMessage = failReason.String, errMsg.String
 	t.ResultText, t.SessionID = resultText.String, sessionID.String
 	if procIdentity.Valid {

@@ -66,6 +66,11 @@ const (
 	// engine gives: past the cap the turn stops being recorded, and a run
 	// nobody can read afterwards does not get to claim success.
 	ReasonTranscriptLimit = "transcript_limit"
+	// ReasonCheckpointFailed is a turn whose worktree checkpoint could not
+	// be taken or recorded (task 165.2). The agent never starts: a turn runs
+	// protected or not at all, so a later rewind is never missing the state
+	// in front of it.
+	ReasonCheckpointFailed = "checkpoint_failed"
 )
 
 // The cancel causes the turn's own clocks raise. They are internal: the
@@ -587,6 +592,15 @@ func (r *Runner) runTurn(
 		next = r.finish(turn, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
 		return next
 	}
+	if err := r.checkpoint(ctx, chat, turn, workDir); err != nil {
+		reason := ReasonCheckpointFailed
+		if ctx.Err() != nil {
+			// A stop that landed while git ran is the human's, not git's.
+			reason = ReasonCanceled
+		}
+		next = r.finish(turn, chatstate.TurnFailed, reason, err.Error(), chat)
+		return next
+	}
 	env = withChatMarker(env, chat.ID)
 	// The turn's mentions are expanded here, when it starts — a queued
 	// message too, since this is when it reaches the agent — and the block is
@@ -663,6 +677,7 @@ func (r *Runner) runTurn(
 		turn.SessionID = res.SessionID
 	}
 	recordContext(turn, adapter, res)
+	r.recordHeadAfter(turn, workDir)
 	if agent.UsageIsSessionTotal(adapter) {
 		r.turnShare(turn, res)
 	}
