@@ -4025,7 +4025,7 @@ own state and in its transcript. Nor is `agent.input_echo`: a turn's echo of
 your message is already on screen as the message, so it publishes no chunk,
 neither as itself nor as `agent.raw`.
 
-Two failure reasons are worth knowing:
+These failure reasons are worth knowing:
 
 - **`session_lost`** — the CLI no longer knows the stored session. The turn
   fails, the chat stays usable and keeps its id, and nothing starts a fresh
@@ -4044,6 +4044,13 @@ Two failure reasons are worth knowing:
   the chat returns to `idle` and its `max_parallel_chats` slot is released. The
   two clocks are the ones a workflow step gets, with no chat-specific key and
   no per-turn override.
+- **`checkpoint_failed`** — vincent could not snapshot the chat's worktree
+  before the turn (the worktree is not a git repository any more, the disk is
+  full, git failed). The agent was never started, so nothing ran without a
+  checkpoint behind it. A file git cannot read is not a failure: it is left
+  out of the checkpoint and named in the turn's transcript
+  (`vincent.checkpoint_skipped`), and the turn runs. Each turn's snapshot is the git ref
+  `refs/vincent/chats/<chat id>/turn-<seq>` in the project's repository.
 
 ## Step status
 

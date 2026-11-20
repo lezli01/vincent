@@ -1319,6 +1319,42 @@ whose worktree was removed, or a path that no longer exists — the export still
 succeeds and says `diff unavailable: <reason>` in place of the diff. Per-turn
 commit attribution was considered and not taken (task 159 decision 1).
 
+#### Checkpoints (added 2026-11-20, task 167.2, issue #1017)
+
+Every chat turn checkpoints the worktree it runs in **before** its agent
+process starts. The snapshot is taken through a temporary index
+(`GIT_INDEX_FILE` under the data directory) seeded with a copy of the
+worktree's own index (`read-tree HEAD` when it has none): `add -A
+--ignore-errors`, `write-tree`, then `commit-tree` with HEAD as the only
+parent. Seeding from the real index keeps its stat cache, so `add` hashes
+only the files that changed rather than every tracked file on every turn
+(review F2, 2026-11-20). The real index, HEAD and every file in the worktree are left as they
+were. The snapshot holds tracked edits, deletions and untracked files;
+ignored files are not captured, as git ignores them everywhere else. A file
+git cannot read (an untracked file without read permission, such as a
+root-owned one a container step left on Linux) is left out rather than
+failing the checkpoint — one such file would otherwise fail every later turn
+of the chat — and its path is written to the turn's transcript as a
+`vincent.checkpoint_skipped` record and to the daemon log (review F1,
+2026-11-20). The staged/unstaged
+split is not kept: a restore writes the snapshot's differences from its HEAD
+back as unstaged changes.
+
+The commit is referenced as `refs/vincent/chats/<chat id>/turn-<seq>`, in the
+project repository's shared ref namespace, so it is visible from the main
+checkout and survives the worktree's removal. Its SHA and the HEAD it is
+parented on are written onto the turn row (`chat_turns.checkpoint_sha`,
+`head_before`, migration 0066) before `adapter.Start`; `head_after` is the
+worktree's HEAD when the turn ends. A turn whose checkpoint cannot be taken
+or recorded fails `checkpoint_failed` and never spawns its agent. Linked
+(task 119) and issue (task 140) chats are checkpointed exactly like free
+ones, in the worktree they run in, and so is a turn drained from the
+message queue (task 156).
+
+Rewinding to a checkpoint and forking a chat from one are planned in task 167
+(167.3–167.6) and do not exist yet; neither does pruning these refs (167.8),
+so a deleted chat's checkpoint refs remain until that lands.
+
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
 `hand_off` creates a task in the chat's project that **adopts** the chat's
@@ -10123,6 +10159,12 @@ archives nothing from history.
 
 - Before starting any step process, the daemon persists the StepRun (`running`) with
   the child PID and start time once spawned.
+- *Added 2026-11-20 (task 167.2).* A chat turn's worktree checkpoint — the
+  `refs/vincent/chats/<id>/turn-<seq>` ref and the turn row's
+  `checkpoint_sha`/`head_before` — is committed before its agent process is
+  started (§5.5, Checkpoints). Recovery needs nothing new for it: a crash
+  after the spawn finds both already durable, and a crash before it leaves at
+  most an unreferenced ref that the turn row never names.
 - On startup: any StepRun still marked `running` is finalized as `interrupted`; if its
   recorded PID still exists *and* the process holding it is provably the one the row
   spawned (the guard against PID reuse — see the 2026-08-26 amendment below), the
@@ -14082,7 +14124,16 @@ CREATE TABLE chat_turns (
     -- #issue-N/#task-N/#pr-N/@path#Lx-y mentions expanded into when it started,
     -- the snapshot the agent saw (§5.5). prompt stays the typed text. NULL =
     -- nothing expanded.
-    mention_context               TEXT
+    mention_context               TEXT,
+    -- Added 2026-11-20 (task 167.2, migration 0066): the worktree checkpoint
+    -- taken before the turn's agent starts (§5.5, Checkpoints) — the snapshot
+    -- commit refs/vincent/chats/<chat id>/turn-<seq> points at, and the HEAD
+    -- it is parented on, both stored before adapter.Start (§12.4) — and the
+    -- worktree's HEAD when the turn ended. NULL = no checkpoint (a turn from
+    -- before 0066, or one that never reached it).
+    checkpoint_sha                TEXT,
+    head_before                   TEXT,
+    head_after                    TEXT
 );
 
 -- Added 2026-11-19 (task 156, issue #1010): follow-up messages queued behind a

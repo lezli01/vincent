@@ -13,6 +13,14 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Every chat turn checkpoints its worktree first.** Before a turn's agent
+  starts, vincent snapshots the worktree it runs in, uncommitted and untracked
+  files included (ignored files are not), as
+  `refs/vincent/chats/<chat id>/turn-<seq>` in the project's repository,
+  without touching your index, HEAD or files. A turn whose checkpoint cannot
+  be taken fails `checkpoint_failed` instead of running unprotected. This is
+  the groundwork for rewinding and forking a chat (task 167), which is not
+  available yet.
 - **Chat drafts are kept by the daemon, and earlier prompts can be recalled.**
   A chat's unsent message is saved as you type and restored when you open the
   chat again — after switching chats, restarting the TUI or from another
