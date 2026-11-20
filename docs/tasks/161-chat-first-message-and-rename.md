@@ -1,6 +1,6 @@
 # 161 — Start a chat from its first message, rename chats, choose the agent for a chat on a task or issue
 
-**Status:** 🔄 in progress (5/6) · **Opened:** 2026-11-20
+**Status:** ✅ done (6/6) · **Opened:** 2026-11-20
 
 Part of the chat UX epic (#1009), tier 1; closes issue #1016. Starting a chat
 used to take a title first and a message second — two requests from the CLI,
@@ -31,7 +31,7 @@ Conventions for this file are in [the tasks README](README.md).
 - [x] **161.5** Docs and gate: §5.5, §13.2, §13.3 and §15 amendments, the API,
   CLI and key references, the chats guide, `CHANGELOG.md`, and a
   create-with-message and a rename step in `m14`. ✓ 2026-11-20
-- [ ] **161.6** Re-capture the new-chat form and chats board screenshots with
+- [x] **161.6** Re-capture the new-chat form and chats board screenshots with
   `scripts/screenshots.sh` (VHS): the form gained a message row.
 
 ## Decisions
