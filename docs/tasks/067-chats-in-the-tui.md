@@ -52,6 +52,11 @@ needs-attention header stay task-only, keeping decision row 29's "never appears
 on the task board" literal in the client as well as in the API. Task 063
 decision 7 is untouched: it governs the daemon's outward `notify:` hook, not a
 client's bell, and nothing here changes `internal/config`'s imports.
+*Superseded 2026-11-20 (task 162 decision 4, issue #1019), with the
+author's agreement: chats waiting on you count too — an `awaiting_input` chat
+joins the attention count and `!`. An unread finished turn does not; it is
+only the `●` mark. Row 29 still holds: a chat never appears in the task
+board's columns.*
 
 **5. The gate is `m14`, not `m13`.** Task 063 planned `scripts/m13-gate.sh`;
 task 065 took that filename for the workflow editor and wired it into

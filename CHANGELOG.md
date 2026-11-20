@@ -25,6 +25,20 @@ list with the user-facing context a commit subject cannot carry.
   `GET /v1/chats/prompts`, `has_draft` on every chat and the
   `chat.draft_changed` event. Archiving, closing or handing off a chat
   discards its draft and stash.
+- **Chats can notify you, show what you have not read, and switch without
+  the list.** A new `notify.chat_on` key (`awaiting_input`, `turn_done`,
+  `turn_failed`; empty by default) makes the daemon's `notify.command` fire
+  for chats too; its JSON envelope gains a top-level `kind` (`"task"` or
+  `"chat"`) and `chat_id`, and Settings edits the key. A chat whose last turn
+  finished since anyone opened it shows `●` on the chats board and rail, the
+  same in every TUI: the daemon stores one `last_viewed_at` per chat, set by
+  the new `POST /v1/chats/{id}/viewed`, and the chat body gains
+  `last_viewed_at` and `unread`. Chats waiting on you now count towards the
+  attention count and the "waiting on you" summary, and `!` visits them with
+  the tasks, oldest first. In a chat or on the chats board, `alt+n`/`alt+shift+n`
+  open the project's next or previous chat and `alt+1`…`alt+9` its Nth
+  (`]`/`[` on the board too), keeping the draft you leave; macOS terminals
+  need Option set to act as Meta (task 162, #1019).
 - **Search inside a chat, jump between prompts, expand one tool call.**
   `ctrl+f` in a chat hands the keyboard to the conversation with a search
   line: every turn is searched case-insensitively — the ones not loaded yet
@@ -117,6 +131,13 @@ list with the user-facing context a commit subject cannot carry.
   opening the chat; `T` still opens one at once with the default agent (#1016).
 
 ### Changed
+
+- **The terminal bell rings only while the TUI's terminal is unfocused.**
+  It used to ring whenever a task entered `awaiting_input`; now it rings for
+  that, for a chat asking for input and for a chat turn ending, but only
+  when the terminal reports it has lost focus — and a terminal that never
+  reports focus no longer rings at all. Use `notify.chat_on` / `notify.on`
+  for alerts that must reach you regardless (task 162, #1019).
 
 - **A step's token count uses the chat's arrows.** The task workspace's step
   details now read `8.1k↑/120↓` — `↑` the input sent to the model, `↓` the
