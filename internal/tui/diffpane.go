@@ -1,10 +1,10 @@
 package tui
 
 import (
-	"io"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"

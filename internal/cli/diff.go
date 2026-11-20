@@ -30,7 +30,7 @@ func newTaskDiffCmd() *cobra.Command {
 		stepRun int64
 	)
 	cmd := &cobra.Command{
-		Use:   "diff <id>",
+		Use: "diff <id>",
 		// --step-run reads one attempt's commit range (task 168.6), the TUI
 		// Diff tab's `d`.
 		Short: "Print a task's diff against its base",
