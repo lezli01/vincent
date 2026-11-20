@@ -179,7 +179,10 @@ switches to it and opens its task, saying so on the status line
 (``! — switched to `web` (task #42 needs you)``); with nothing elsewhere it
 wraps to the selected project's first. The app header's `(! 2 elsewhere)`
 says how many tasks in other projects are waiting, whichever screen you are
-on, and the bell rings for every project. `enter` on a blocked task
+on, and the bell rings for every project — but only while the terminal is in
+the background: it needs a terminal that reports focus, and one that never
+does never rings. Chats asking you a question count and are on `!`'s walk too
+([Chats](#chats)). `enter` on a blocked task
 opens a **failure card**: the step and attempt that stopped, the reason in
 words with its code dim beside it, the last lines of the failing attempt's
 output as evidence, and the actions that answer the reason — `r` retry, `E`
@@ -2521,9 +2524,21 @@ Switching project empties the board and the header reads "loading ‹project›�
 until that project's chats arrive; your `/` filter stays. With no project
 registered the board says so instead of listing anything.
 
-A chat waiting on you is sorted to the top and counted in this header's badge —
-**and nowhere else**. `!` and the task board's needs-attention count stay
-task-only.
+A chat waiting on you is sorted to the top and counted in this header's badge.
+It also counts towards the app header's attention count and the "waiting on
+you" summary, and `!` visits it with the tasks that need you, oldest wait
+first, switching project when it has to. It never joins the task board's
+columns.
+
+A chat whose last turn finished since anyone opened it is **unread**: its row
+or card carries a blue `●`. The mark is the same in every TUI — the daemon
+keeps one last-viewed time per chat — and opening the chat clears it
+everywhere. A turn that ends while the chat is open clears it too, unless the
+terminal is in the background. Unread is only a mark: it does not count as
+attention. The bell rings for a chat's question and for a turn ending done or
+failed, under the same rule as for tasks: only while the terminal is
+unfocused. For a signal with no TUI open, see
+[`notify.chat_on`](../reference/configuration.md#notify).
 
 | Key | Does |
 |---|---|
@@ -2537,6 +2552,8 @@ task-only.
 | `R` | Reload the board |
 | `S` | [Search every chat](#chat-search)'s title, prompts and answers, live and archived |
 | `alt+e` | [Export the selected chat](#exporting-a-chat) as Markdown, HTML or JSON |
+| `alt+n` / `alt+shift+n`, `]` / `[` | Open the next / previous chat after the one under the cursor, in this board's order, wrapping |
+| `alt+1` … `alt+9` | Open the project's Nth chat in this board's order; nothing past the last |
 | `home`/`end`, `pgup`/`pgdown` | Jump to the first or last chat, or move a page |
 
 The mouse wheel moves the cursor one chat per tick, as it does on the task
@@ -2754,6 +2771,8 @@ periodic repaint.
 | `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
 | `alt+p` | Pick the model and effort the chat's next turns run on; `•` marks the ones it runs on now. After the first turn, only on an agent that can change them on a resumed session (claude today) |
 | `shift+tab` | Toggle the permission mode: lowers to `restricted` at once, asks `y`/`n` before raising to `full-auto`, and says why when the agent can only run one |
+| `alt+n` / `alt+shift+n` | Open the project's next / previous chat, in the chats board's order (waiting on you, running, idle), wrapping — also over a pending question. The draft you leave is kept for when you come back. On macOS every `alt+` key here needs the terminal's "Option as Meta" setting; [`tui.keys`](#rebinding-keys) rebinds them |
+| `alt+1` … `alt+9` | Open the project's Nth chat in that order; nothing past the last |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to where the chat was opened from — the issue, the issues list, the archived-chats board or the [chat search](#chat-search) — otherwise the chats board |
@@ -3644,7 +3663,7 @@ Global bindings — active whenever the focused surface is not capturing text:
 | `ctrl+p` | Command palette, also while a text field has the keyboard |
 | `?` | Toggle help |
 | `f1` | Toggle help, also while a text field has the keyboard |
-| `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's |
+| `!` | Jump to the next task that needs you — awaiting input, awaiting approval or blocked; then the next project's. A chat asking you a question is on the same walk, oldest wait first |
 | `n` | New task |
 | `@` | [Switch project](#switching-project) |
 | `M` | Toggle the mouse |

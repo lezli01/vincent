@@ -26,9 +26,10 @@ Conventions for this file are in [the tasks README](README.md).
   ✓ 2026-11-20
 - [x] **162.5** Chat switching: `next_chat`, `prev_chat`, `chat_1`…`chat_9`,
   and `]`/`[` on the chats board. ✓ 2026-11-20
-- [ ] **162.6** Docs and pictures: the feature, guide and reference pages,
+- [~] **162.6** Docs and pictures: the feature, guide and reference pages,
   and re-captured chats screenshots with a `●` mark and a chat in the
-  attention count.
+  attention count. The pages are written (2026-11-20); the screenshots wait
+  on a re-run of `scripts/screenshots.sh`.
 
 ## Decisions
 

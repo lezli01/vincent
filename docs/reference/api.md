@@ -3236,6 +3236,7 @@ POST   /v1/chats/{id}/cancel          stop the live turn
 POST   /v1/chats/{id}/archive         remove the worktree; terminal
 POST   /v1/chats/{id}/handoff         give the worktree and branch to a new task; terminal
 POST   /v1/chats/{id}/close           end a chat opened on a task; terminal
+POST   /v1/chats/{id}/viewed          a person looked at it: clears its unread mark
 DELETE /v1/chats/{id}                 permanent delete of an archived or closed chat
                                       — see Permanent delete
 GET    /v1/chats/{id}/events          SSE: this chat's events plus its live output
@@ -3284,11 +3285,24 @@ and hand-off discard the queue. A chat carries `queued_count`, `queue_paused`,
 `queue_pause_reason`, and `can_steer` with `steer_reason`: no adapter can
 steer a running turn yet, so `can_steer` is always `false`.
 
+**Unread** (task 162). A chat carries `last_viewed_at` — `null` when nobody
+has looked at it — and `unread`, which is `true` when its latest finished turn
+(`done`, `failed` or `interrupted`) ended after `last_viewed_at`. There is one
+value per chat, shared by every client, because the installation has no
+per-user identity. `POST /v1/chats/{id}/viewed` takes no body and sets it to
+the daemon's clock, never the client's; it never moves backwards, is legal in
+every state, and answers `200` with the chat (`404 not_found` for an unknown
+id). When it moved, it emits a durable `chat.viewed`, so every client clears
+the mark. The TUI calls it when you open a chat and when a turn ends while the
+chat is open in a focused terminal; no CLI subcommand calls it.
+
 None of these is an [MCP tool](#the-mcp-endpoint) — the whole family is
 excluded, the stream, the transcript, the search, the skill list, the file
 list and the export included, and so is `POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks`
 but starts a chat.
-The rename and settings route, `PATCH /v1/chats/{id}`, is excluded with them.
+The rename and settings route, `PATCH /v1/chats/{id}`, is excluded with them,
+and so is `POST /v1/chats/{id}/viewed`: it records that a person looked, which
+an agent would only be forging.
 `handoff` is on that list for a reason worth stating: it creates a task, and
 `task_create`'s bounds (`mcp.max_depth`, `mcp.max_tasks`) are walked over
 `created_by_task_id`, which a chat is not in.
@@ -4424,6 +4438,7 @@ task.github_pull_changed task.delivery_changed
 chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off         chat.closed
 chat.queue_changed      chat.updated            chat.draft_changed
+chat.viewed
 task.deleted            chat.deleted
 task.restored
 issue.created           issue.updated           issue.state_changed
@@ -4555,7 +4570,9 @@ they need.
   `turn_seq`, `turn_state` and — when the turn failed — `fail_reason`, and
   `chat.handed_off` adds `handoff_task_id`, so a follower can link the chat to
   its task without a fetch. `chat.updated` is a [rename](#renaming-one): its
-  `title` is the new one, and the state did not change. Every event of a chat
+  `title` is the new one, and the state did not change. `chat.viewed` says
+  someone [looked at it](#chats): its `last_viewed_at` advanced and its
+  `unread` may have cleared. Every event of a chat
   [opened on a task](#a-chat-on-a-stopped-task) adds `linked_task_id`, and
   `chat.closed` announces that such a chat ended — re-fetch that task too,
   because its lock just lifted. Every event of a chat

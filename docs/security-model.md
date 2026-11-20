@@ -590,7 +590,8 @@ call the API, like anything else running as you.
 ## The notify hook runs your code
 
 `notify.command` in `config.yaml` is a program the **daemon** runs, as you,
-whenever a task enters a state you listed. It is the same trust level as
+whenever a task enters a state you listed in `notify.on`, or a chat reaches a
+moment you listed in `notify.chat_on`. It is the same trust level as
 everything else on this page — an agent step already runs arbitrary commands as
 you — but it is worth stating rather than leaving implicit:
 

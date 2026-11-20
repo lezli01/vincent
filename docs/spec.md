@@ -13429,6 +13429,13 @@ state under the same row:
     PUT    /v1/chats/{id}/draft
     GET    /v1/chats/prompts
 
+*Amended 2026-11-20 (task 162, issue #1019).* One more:
+
+    POST   /v1/chats/{id}/viewed
+
+It records that a person looked at the chat, clearing the unread mark in every
+client; an agent calling it would be forging that fact.
+
 *Amended 2026-10-02 (task 130.3, issue #662).* One more, **thirty-seven** in
 all:
 

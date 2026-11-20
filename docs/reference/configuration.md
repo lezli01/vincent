@@ -358,6 +358,13 @@ container:
 # awaiting_input, done. Only root tasks notify — a fan_out lane is a task row,
 # and a twenty-lane tree would otherwise send twenty-one messages.
 #
+# "chat_on" does the same for chats, which "on" never covers (task 162): a
+# chat entering awaiting_input, or a turn ending turn_done or turn_failed.
+# The envelope's "kind" says "chat" rather than "task" and carries chat_id.
+# turn_interrupted is not accepted: only a daemon restart causes one. The
+# daemon cannot tell whether you are already looking at the chat, so it fires
+# whenever the moment happens.
+#
 # It is fire-and-forget: at most 4 notifiers run at once, a child is killed
 # after 10 seconds, failures are logged and never retried, and nothing is
 # replayed for events that happened while the daemon was down.
@@ -368,6 +375,7 @@ container:
 #
 # notify:
 #   on: [blocked, awaiting_gate, awaiting_input]
+#   chat_on: [awaiting_input, turn_done]
 #   command: ["/usr/local/bin/notify-me"]
 
 # What clients render, not what the daemon does. The daemon validates these,
@@ -1675,16 +1683,18 @@ is the question worth asking.
 ```yaml
 notify:
   on: [blocked, awaiting_gate, awaiting_input, done]
+  chat_on: [awaiting_input, turn_done]
   command: ["/usr/local/bin/notify-me"]
 ```
 
-Run a command when a task enters one of these states. **Off by default** — both
-keys are empty, and nothing is spawned.
+Run a command when a task enters one of these states, or when a chat reaches
+one of these moments. **Off by default** — every key is empty, and nothing is
+spawned.
 
 It exists because vincent's premise is that you start work and walk away, and
 the daemon is designed to run with no client attached. Without this, the only
-alert in the whole system is the TUI's terminal bell, which rings on
-`awaiting_input` and only while a board is open: a task could wait a full day
+alert in the whole system is the TUI's terminal bell, which rings only while a
+TUI is open and its terminal is unfocused: a task could wait a full day
 for an answer, fail on the timeout, and the first you knew was the next time you
 looked.
 
@@ -1693,11 +1703,29 @@ accepted; the four above are the ones worth waking up for. A name that is not a
 state **fails the load** and names the value, so the daemon keeps its last good
 configuration rather than silently never firing.
 
+**`chat_on`** is the same for [chats](../guides/tui.md), which `on` never
+covers. It accepts three moments:
+
+| Moment | Fires when |
+|---|---|
+| `awaiting_input` | A chat's agent asks a question or a permission and the chat parks on it |
+| `turn_done` | A turn ends with the agent's reply |
+| `turn_failed` | A turn fails |
+
+`turn_interrupted` is **refused**: a turn is interrupted only by a daemon
+restart, which you caused. A name outside the three fails the load, as for
+`on`. It is a second key rather than more names in `on` because a task's
+states and a chat's moments are two vocabularies, and `awaiting_input` is in
+both: one list could not say "tasks only" or "chats only". The daemon cannot
+tell whether you are already looking at the chat, so it fires whenever the
+moment happens — the TUI's own bell is the one that knows about focus.
+
 **`command`** is **argv, not a shell line**. The first element is the program;
 the rest are passed through unchanged. Nothing is expanded, split, quoted or
 interpreted, and there is no shell on any platform — `command: ["notify.sh
---urgent"]` looks for a program with a space in its name. Both keys are needed:
-either one alone loads, warns in the log, and never fires.
+--urgent"]` looks for a program with a space in its name. `command` and at
+least one of `on`/`chat_on` are needed: either half alone loads, warns in the
+log, and never fires.
 
 #### The envelope
 
@@ -1711,7 +1739,9 @@ a one-line script.
   "event_id": 1841,
   "ts": "2026-08-28T09:30:00Z",
   "type": "task.state_changed",
+  "kind": "task",
   "task_id": 42,
+  "chat_id": 0,
   "title": "Fix the flaky gate",
   "from": "running",
   "to": "blocked",
@@ -1740,6 +1770,15 @@ RFC3339; it is `null` when the task is not waiting on a clock. A transition into
 `steps_total` comes from the task's own workflow snapshot, so it is the count
 for *that run* even if the workflow file has been edited since.
 
+`kind` says which key fired it: `"task"` for `on`, `"chat"` for `chat_on`. A
+chat's envelope is the same object, so one script handles both. Its `type` is
+the chat event it came from (`chat.state_changed` or `chat.turn_changed`),
+`chat_id` names the chat, `to` is the moment from `chat_on`, and `from` is the
+chat state it interrupted. It carries the chat's `title`, `project_id`,
+`project`, `worktree_path` and `branch`, and on `awaiting_input` the same
+`input` object; `task_id`, `block_reason`, `queued_reason`, the step cursor and
+`workflow` are zero, empty or null.
+
 A one-liner that turns it into a desktop notification on macOS:
 
 ```sh
@@ -1751,7 +1790,7 @@ jq -r '"\(.title) → \(.to)"' | xargs -0 terminal-notifier -title vincent -mess
 
 | | |
 |---|---|
-| **Root tasks only** | A `fan_out` lane is a task of its own, so a twenty-lane tree would send twenty-one messages. Lanes are skipped; the parent's own transitions fire. |
+| **Root tasks only** | A `fan_out` lane is a task of its own, so a twenty-lane tree would send twenty-one messages. Lanes are skipped; the parent's own transitions fire. A chat has no lanes. |
 | **At most 4 at once** | Drained from a 64-entry queue. Five tasks blocking together all notify; only a genuinely full queue drops, and a drop is logged. |
 | **10 s per command** | Fixed, not configurable. Past it the command's whole process tree is killed and the failure is logged. |
 | **Never retried** | A failure is logged with the exit code and the tail of its stderr, and dropped. |

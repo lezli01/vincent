@@ -118,6 +118,16 @@ stashes a draft and brings it back, `↑` on an empty composer recalls the
 chat's earlier prompts, and `alt+h` picks any prompt sent in the project —
 archived chats included — to insert into the composer.
 
+Chats **get your attention** the way tasks do. A chat whose last turn finished
+since anyone opened it carries a `●` on the chats board and rail, the same in
+every TUI, because the daemon keeps one last-viewed time per chat. A chat
+waiting on your answer counts in the attention count and `!` visits it with
+the tasks; the terminal bell rings for a chat's question or finished turn while
+the terminal is in the background; and `notify.chat_on` has the daemon run your
+notify command for chats with nothing open. Move between a project's chats
+without the list: `alt+n`/`alt+shift+n` open the next or previous one and
+`alt+1`…`alt+9` the Nth, from the composer, and the draft you leave is kept as above.
+
 And when an exploration turns out to be the start of real work, **hand the chat
 off to a task**. The task adopts the chat's worktree, branch, base branch and
 base SHA exactly as they are — no copy, no rename, no hidden commit, so
@@ -336,7 +346,8 @@ Human oversight is part of the workflow instead of an informal terminal habit:
   a script and the daemon runs it whenever a task enters a state you listed —
   `blocked`, `awaiting_gate`, `awaiting_input`, `done` — writing a JSON envelope
   with the task, the transition, the reason and the agent's question to its
-  standard input. It composes with whatever you already use:
+  standard input. `notify.chat_on` does the same for chats: a chat asking you
+  something, or a turn ending done or failed. It composes with whatever you already use:
   `terminal-notifier`, `notify-send`, `msg`, a Slack `curl`, a file drop. That
   is the point of walking away: the daemon is designed to run with no client
   attached, and this is how it says it needs you. See
@@ -375,7 +386,8 @@ In detail:
   left out.
   Switching project swaps its rows in place. Tasks waiting on you in other
   projects are counted in the app header's `(! N elsewhere)` badge on every
-  screen, the bell rings for every project, and `!` crosses into the next
+  screen — chats waiting on you count too — the bell rings for every project
+  while the terminal is in the background, and `!` crosses into the next
   project that has one once the selected project has none left. The header's
   slot count is the project's own beside the daemon's,
   `2 running · cap 3 · daemon 5/8`. Groups fold away, per project, and a folded one still carries its
