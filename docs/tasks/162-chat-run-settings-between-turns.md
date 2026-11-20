@@ -77,5 +77,5 @@ Agreed with the author before implementation (issue #1011's brief).
 - The TUI turn heading names the model only when the turn recorded one; a turn
   older than migration 0062 shows nothing there rather than "not recorded".
   The export says "not recorded" for it.
-- No `docs/assets/tui-chat*.png` was re-captured in this change; the composer
-  border now carries the chip, so `scripts/screenshots.sh` should be re-run.
+- The six `docs/assets/tui-chat*.png` that show the composer were re-captured
+  with `scripts/screenshots.sh` for the chip.
