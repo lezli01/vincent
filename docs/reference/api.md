@@ -3373,7 +3373,10 @@ curl -sS -X PATCH http://127.0.0.1:PORT/v1/chats/12   -H "Authorization: Bearer 
 ```
 
 `title` is trimmed and must be non-empty and at most 72 characters; anything
-else is a `400`, as is any other field. A rename is legal in **every** state,
+else is a `400`, as is any other field. The bound is a rename's and a derived
+title's: a `title` given to `POST /v1/chats`, or a task's title a linked chat
+defaults to, is kept as it is, so a chat may carry a longer title than a rename
+would accept. A rename is legal in **every** state,
 archived, handed-off and closed included — the title is display only — and it
 **never renames the branch**: `vincent/{id}-{slug}` keeps the slug it was cut
 with. The answer is `200` with the chat, and a durable `chat.updated` event

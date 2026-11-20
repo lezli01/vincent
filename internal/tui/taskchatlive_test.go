@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/store"
@@ -303,5 +305,26 @@ func TestChatWorkspacePaletteRenames(t *testing.T) {
 	}
 	if msg, ok := rows[0].action().(openChatRenameMsg); !ok || msg.id != 4 || msg.title != "old" {
 		t.Fatalf("the row produced %#v, want the rename prompt for chat 4", rows[0].action())
+	}
+}
+
+// TestChatRenamePromptSaysAnOverlongTitleUpFront is review F3: a typed or
+// task title is not bounded at creation, so the prompt can open holding one
+// longer than a rename keeps. It says so before enter, with the count, and
+// enter refuses it with the same words; shortening clears it.
+func TestChatRenamePromptSaysAnOverlongTitleUpFront(t *testing.T) {
+	long := strings.Repeat("word ", 20) + "end" // 103 characters
+	p := newChatRenamePrompt(4, long)
+	out := ansi.Strip(p.render(80, 5))
+	if !strings.Contains(out, "this title is 103 characters") || !strings.Contains(out, "at most 72") {
+		t.Fatalf("the prompt opened on an overlong title without saying so:\n%s", out)
+	}
+	if done, cmd := p.update(registryKey(t, "enter"), offlineClient()); done || cmd != nil || !strings.Contains(p.err, "103 characters") {
+		t.Fatalf("enter on an overlong title: done %v, cmd %v, err %q", done, cmd != nil, p.err)
+	}
+	p.input.SetValue("short")
+	p.err = ""
+	if out := ansi.Strip(p.render(80, 5)); strings.Contains(out, "characters") || !strings.Contains(out, "enter rename") {
+		t.Fatalf("a short title still warned:\n%s", out)
 	}
 }

@@ -65,7 +65,7 @@ func (p *chatRenamePrompt) update(msg tea.KeyPressMsg, client *apiclient.Client)
 			p.err = "a chat needs a title"
 			return false, nil
 		case utf8.RuneCountInString(title) > chatTitleMaxRunes:
-			p.err = "at most " + strconv.Itoa(chatTitleMaxRunes) + " characters"
+			p.err = p.tooLong()
 			return false, nil
 		case client == nil:
 			p.err = "not connected"
@@ -85,6 +85,15 @@ func (p *chatRenamePrompt) update(msg tea.KeyPressMsg, client *apiclient.Client)
 	return false, cmd
 }
 
+// tooLong says how far over the bound the typed title is. A title typed at
+// creation or taken from a task is not bounded, so the prefilled one can be
+// over it; renaming is where the bound applies (task 161 decision 4).
+func (p *chatRenamePrompt) tooLong() string {
+	n := utf8.RuneCountInString(strings.TrimSpace(p.input.Value()))
+	return "this title is " + strconv.Itoa(n) + " characters; a rename keeps at most " +
+		strconv.Itoa(chatTitleMaxRunes) + " — shorten it"
+}
+
 func (p *chatRenamePrompt) paste(text string) tea.Cmd {
 	var cmd tea.Cmd
 	p.input, cmd = p.input.Update(tea.PasteMsg{Content: text})
@@ -101,6 +110,11 @@ func (p *chatRenamePrompt) render(w, _ int) string {
 		lines = append(lines, styleDim.Render("  renaming…"))
 	case p.err != "":
 		lines = append(lines, styleBad.Render("  "+p.err))
+	case utf8.RuneCountInString(strings.TrimSpace(p.input.Value())) > chatTitleMaxRunes:
+		// Said before enter, not after it (review F3): a chat created with
+		// a typed title, or on a task, may already be longer than a rename
+		// keeps, and the prompt opens holding it.
+		lines = append(lines, styleBad.Render("  "+p.tooLong()))
 	default:
 		lines = append(lines, styleDim.Render("  enter rename · esc cancel · the branch keeps its name"))
 	}

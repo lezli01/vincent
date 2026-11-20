@@ -2588,7 +2588,9 @@ the note line, so nothing you typed is lost.
 title; `enter` saves and `esc` leaves it. Inside a conversation the composer has
 every letter, so rename it from the palette instead: `ctrl+p`, then **rename
 chat**. The title is a label only: the chat's branch keeps the name it was cut
-with. With no project registered, `n` says
+with. A rename keeps at most 72 characters; a title typed when the chat was
+created, or taken from its task, is not cut, so the prompt can open holding a
+longer one — it says so under the title, with the count, until you shorten it. With no project registered, `n` says
 so on the board instead of opening a form you could not submit — add a
 repository in the project overview first.
 
