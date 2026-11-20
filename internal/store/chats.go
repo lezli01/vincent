@@ -42,7 +42,7 @@ const (
 // filtering on the payload's id: a chat event carries no task_id column, so
 // without this a replay would scan every task event behind the cursor.
 func ChatEventTypes() []string {
-	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue, EventChatUpdated}
+	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue, EventChatUpdated, EventChatDraft}
 }
 
 // IsChatEvent reports whether an event type belongs to the chat family.
@@ -53,7 +53,7 @@ func IsChatEvent(t string) bool {
 const chatColumns = `id, project_id, title, state, agent, model, effort, permission_mode,
 	branch, adopted_branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input, handoff_task_id,
 	linked_task_id, opening_context, issue_id, end_sha, created_at, updated_at,
-	queue_paused, queue_pause_reason,
+	queue_paused, queue_pause_reason, draft, stash, draft_updated_at,
 	(SELECT COUNT(*) FROM chat_queued_messages q WHERE q.chat_id = chats.id)`
 
 const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_message, result_text,
@@ -464,6 +464,9 @@ func (s *Store) updateChatOrRefuse(ctx context.Context, id int64, evType string,
 			if err := deleteChatQueueTx(ctx, tx, c.ID); err != nil {
 				return err
 			}
+			if err := clearChatDraftTx(ctx, tx, c); err != nil {
+				return err
+			}
 			if err := setQueuePauseTx(ctx, tx, c, false, ""); err != nil {
 				return err
 			}
@@ -847,11 +850,15 @@ func scanChat(r rowScanner) (*Chat, error) {
 	var openingContext, endSHA sql.NullString
 	var issueID sql.NullInt64
 	var createdAt, updatedAt string
-	var pauseReason sql.NullString
+	var pauseReason, draftUpdatedAt sql.NullString
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
 		&c.PermissionMode, &c.Branch, &c.AdoptedBranch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
 		&handoffTaskID, &linkedTaskID, &openingContext, &issueID, &endSHA, &createdAt, &updatedAt,
-		&c.QueuePaused, &pauseReason, &c.QueuedCount); err != nil {
+		&c.QueuePaused, &pauseReason, &c.Draft, &c.Stash, &draftUpdatedAt, &c.QueuedCount); err != nil {
+		return nil, err
+	}
+	var err error
+	if c.DraftUpdatedAt, err = parseTimePtr(draftUpdatedAt); err != nil {
 		return nil, err
 	}
 	c.QueuePauseReason = pauseReason.String
@@ -875,7 +882,6 @@ func scanChat(r rowScanner) (*Chat, error) {
 	if pending.Valid && pending.String != "" {
 		c.PendingInput = json.RawMessage(pending.String)
 	}
-	var err error
 	if c.CreatedAt, err = parseTime(createdAt); err != nil {
 		return nil, err
 	}

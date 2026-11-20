@@ -89,6 +89,9 @@ func (s *Store) HandoffChat(ctx context.Context, chatID int64, t *Task) (*Chat, 
 		if err := deleteChatQueueTx(ctx, tx, chatID); err != nil {
 			return err
 		}
+		if err := clearChatDraftTx(ctx, tx, c); err != nil {
+			return err
+		}
 		if err := setQueuePauseTx(ctx, tx, c, false, ""); err != nil {
 			return err
 		}

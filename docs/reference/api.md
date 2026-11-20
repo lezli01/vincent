@@ -3213,6 +3213,10 @@ GET    /v1/chats?project_id=&task_id=&issue_id=&state=&archived=
                                       newest first; state may repeat
 GET    /v1/chats/search?q=&project_id=&archived=&limit=&turns=
                                       full-text search — see Searching chats
+GET    /v1/chats/prompts?project_id=&q=&limit=
+                                      the project's sent prompts — see Drafts and prompt history
+GET    /v1/chats/{id}/draft           the chat's unsent draft and stash
+PUT    /v1/chats/{id}/draft           { draft?, stash? } — last writer wins
 POST   /v1/chats                      create, with a worktree and a branch — or, with
                                       existing_branch, on a branch that is already there
 POST   /v1/tasks/{id}/chat            open a chat on a stopped task, in its worktree
@@ -3416,6 +3420,37 @@ has sent to.
 A chat opened on a task follows a second table. From `idle` it offers `send`
 and `close`, and nothing else: `archive` and `hand_off` would reach a worktree
 and a branch that belong to the task.
+
+### Drafts and prompt history
+
+A chat keeps the composer's unsent **draft** and one **stash** slot in the
+daemon, so they survive a TUI restart and follow the chat to another client.
+
+- `GET /v1/chats/{id}/draft` answers `{ "draft": "…", "stash": "…",
+  "updated_at": "…" }`; `updated_at` is `null` before the first write.
+  `GET /v1/chats/{id}` embeds `draft`, `stash` and `draft_updated_at` in the
+  chat too, and every chat body — the list included — carries `has_draft`.
+  A client that writes drafts compares `draft_updated_at` with the
+  `updated_at` its own last `PUT` returned: a read stamped earlier was taken
+  before that write committed, however late it arrives.
+- `PUT /v1/chats/{id}/draft` takes `{ "draft"?, "stash"? }`, at least one of
+  them; a field left out is left as it is. The write is last-writer-wins, each
+  field is at most 64 KiB, and it publishes `chat.draft_changed` — unless it
+  changes nothing, in which case nothing is written or published and
+  `updated_at` stays the last real write's. A chat that
+  has ended (`archived`, `handed_off`, `closed`) is a `409`: its draft and
+  stash were cleared when it ended.
+- `GET /v1/chats/prompts?project_id=&q=&limit=` lists every prompt the
+  project's chats sent, archived ones included, newest first, with identical
+  texts collapsed to their newest occurrence:
+  `{ "prompts": [{ "prompt", "chat_id", "chat_title", "chat_state", "seq",
+  "sent_at" }] }`. `project_id` is required. Every term of `q` must appear, by
+  substring and ignoring case, as [chat search](#searching-chats) matches; a
+  term shorter than three characters narrows only beside one that long, so
+  `fix a` lists less than `fix`. A `q` with no term of three characters, or
+  none at all, lists by recency instead of answering `query_too_short`. `limit` defaults to 50, at most 500.
+
+None of these is an MCP tool.
 
 ### Searching chats
 
@@ -4388,7 +4423,7 @@ task.step_advanced      task.status_changed     task.children_changed
 task.github_pull_changed task.delivery_changed
 chat.created            chat.state_changed      chat.turn_changed
 chat.archived           chat.handed_off         chat.closed
-chat.queue_changed      chat.updated
+chat.queue_changed      chat.updated            chat.draft_changed
 task.deleted            chat.deleted
 task.restored
 issue.created           issue.updated           issue.state_changed

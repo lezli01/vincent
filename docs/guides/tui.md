@@ -288,8 +288,8 @@ new-workflow or new-trigger form is reopened for the new project, and a
 workflow or trigger editor, the workflow graph and a trigger dry run close,
 since each is on a file of the old project.
 
-A form you have typed into — or a chat's composer holding an unsent
-message — asks first, in one line under the header:
+A form you have typed into — or a chat's composer holding an edit of a
+queued message — asks first, in one line under the header:
 
 ```text
 discard the task draft and switch to `api`? y/n
@@ -300,6 +300,8 @@ or on the list behind a workspace or issue form. `n` or `esc` keeps the draft
 and the current project; nothing is switched or saved. A form seeded from a
 pull request, an issue or a chat counts as a draft before you type, and so
 does a workflow fork prompt, which is seeded from the old project's list.
+A chat's unsent message does not ask: it is the chat's [draft](#drafts-stash-and-prompt-history),
+which the switch saves.
 
 Opening a task, chat or issue of another project switches to that project
 first, so its screen never draws under the wrong header. This happens from the
@@ -2724,7 +2726,10 @@ periodic repaint.
 | Key | Does |
 |---|---|
 | `enter` | Send the message. While a turn runs — or the agent waits on its question — the message is queued and runs after that turn ends `done`; it never answers the question. The footer then reads `enter queue` |
-| `↑` | On an empty composer, edit the newest queued message: `enter` saves it, `ctrl+d` deletes it, `esc` stops editing |
+| `↑` | On an empty composer, edit the newest queued message: `enter` saves it, `ctrl+d` deletes it, `esc` stops editing. With nothing queued, recall this chat's earlier prompts instead — see [Drafts, stash and prompt history](#drafts-stash-and-prompt-history) |
+| `↓` | While recalling, a newer prompt; past the newest the composer is empty again |
+| `alt+s` | Stash the draft — a new stash replaces the old one — or, on an empty composer, pop the stash back (rebindable as `stash`) |
+| `alt+h` | Pick an earlier prompt from any chat of this project, archived ones too, and insert it — never sends it (rebindable as `prompt_history`) |
 | `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now, paused or not: an idle chat holding an unpaused queue (left by a daemon crash mid-recovery) says so under the queue, and this starts it |
 | `alt+c` | Clear the queue: delete every queued message |
 | `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
@@ -2762,6 +2767,38 @@ stays usable while the queue is paused: a new message starts a turn as usual.
 Archiving, closing or handing off the chat discards its queue, and the
 confirmation — or the hand-off form's submit row — says how many queued
 messages will be discarded.
+
+### Drafts, stash and prompt history
+
+What you type is the chat's **draft**, and the daemon keeps it. It is saved
+about half a second after you stop typing, and at once when you leave the chat
+— `esc`, opening another chat, the command palette, a project switch, or
+quitting — so switching between chats,
+restarting the TUI or opening the chat from another terminal finds it where you
+left it. The chats board marks a chat holding a draft `✎ draft` ahead of its
+title. Sending clears the stored draft once the daemon has taken (or queued)
+the message; a refused send keeps it. Archiving, closing or handing off a chat
+discards its draft and stash with it.
+
+`alt+s` sets the draft aside in the chat's **stash** and empties the composer;
+`alt+s` on an empty composer brings it back. There is one stash slot per chat:
+stashing again replaces what was there, and the note under the composer says
+so.
+
+`↑` on an empty composer **recalls** this chat's earlier prompts, newest first,
+once no queued message is waiting to be edited — the queue comes first. `↓`
+walks back toward the newest and ends on an empty composer. A recalled prompt
+is a copy: edit it freely, and the first edit ends recall, so `↑` and `↓` move
+inside the text again.
+
+`alt+h` opens the **prompt history**: every prompt sent in any chat of this
+project, archived chats included, newest first and with repeats collapsed.
+Type to narrow it — every word must appear, by substring, ignoring case.
+Narrowing starts once a word has three characters, before which the list stays
+newest first; after that a shorter word narrows too, so `fix a` finds less
+than `fix`. `enter` inserts the chosen
+prompt at the cursor without sending it; `esc` closes the list and leaves the
+draft as it was.
 
 Scrolled away from the live end, the header says which turn is at the top of
 the window — `turn 2/5` — until `alt+shift+g` follows the end again. While you are
@@ -3663,7 +3700,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twenty-eight are the operations screens share, the next eleven are the
+The first thirty are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3690,6 +3727,8 @@ The first twenty-eight are the operations screens share, the next eleven are the
 | `return` | `,` | Return an issue from its handoff |
 | `steer` | `ctrl+s` | Steer a chat's running turn, where its agent can — none can yet |
 | `compact` | `alt+k` | Compact the chat agent's context — sends its compact command (`/compact` on claude) as the next message; asks first |
+| `stash` | `alt+s` | Stash the chat's draft, or pop the stash into an empty composer. One slot: a new stash replaces the old one. See [Drafts, stash and prompt history](#drafts-stash-and-prompt-history) |
+| `prompt_history` | `alt+h` | Pick an earlier prompt from any chat of the project to insert into the composer |
 | `chat_search` | `S` | Search every chat, from the chats board |
 | `export_chat` | `alt+e` | Export a chat as Markdown, HTML or JSON — from the chat, the chats board or the archived chats board. See [Exporting a chat](#exporting-a-chat) |
 | `chat_model` | `alt+p` | Pick the chat's model and effort for its next turns |

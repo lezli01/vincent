@@ -121,6 +121,12 @@ type chatView struct {
 	// composer, 0 when the composer holds a new message.
 	queue         *apiclient.ChatQueue
 	editingQueued int64
+	// draft is the composer's link to the chat's stored draft and stash,
+	// recall the `↑`/`↓` walk through earlier prompts, and history the
+	// alt+h picker (task 164).
+	draft   chatDraftState
+	recall  chatRecall
+	history chatHistoryPicker
 	// back is where esc lands: the view that opened the chat
 	// (openChatMsg.back, #932), or the chats board when it is zero. A
 	// project switch never reads it — switchFallback sends the workspace to
@@ -299,6 +305,7 @@ func newChatView(level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *ch
 		turnRecords: map[int][]apiclient.TranscriptRecord{},
 		turnSeqs:    map[int][]int64{},
 		fetched:     map[int]bool{},
+		recall:      chatRecall{idx: -1},
 	}
 }
 
@@ -338,7 +345,9 @@ func (v *chatView) paste(text string) tea.Cmd {
 		return v.form.paste(text)
 	}
 	var cmd tea.Cmd
+	before := v.composer.Value()
 	v.composer, cmd = v.composer.Update(tea.PasteMsg{Content: text})
+	cmd = tea.Batch(cmd, v.draftEdited(before))
 	// A pasted `/co` or `@src` opens the inline list exactly as a typed one
 	// does: the list is derived from the draft, not from the keys that made it.
 	return tea.Batch(cmd, v.syncInlineSkills(), v.syncInlineFiles())
@@ -368,6 +377,10 @@ func (v *chatView) open(id int64) tea.Cmd { return v.openAt(id, 0) }
 
 // openAt opens chat id landed on turn seq (task 158); seq 0 is a plain open.
 func (v *chatView) openAt(id int64, seq int) tea.Cmd {
+	// The chat being left keeps what was typed in it (task 164): the flush
+	// is its draft's, taken before anything below forgets it.
+	leave := v.leaveDraft()
+	v.resetDraft()
 	if v.streamStop != nil {
 		v.streamStop()
 		v.streamStop = nil
@@ -391,7 +404,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	if seq > 0 {
 		v.following = false
 	}
-	return tea.Batch(v.loadCmd(), v.streamCmd(), v.loadAgentsCmd())
+	return tea.Batch(leave, v.loadCmd(), v.streamCmd(), v.loadAgentsCmd())
 }
 
 // landFetch asks for the landing turn's transcript, which the load's own
@@ -524,6 +537,21 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyQueueDone(msg)
 	case chatSentMsg:
 		return v, v.applySent(msg)
+	case viewDeactivatedMsg:
+		// Another view took over — the palette, a key that left, a switch
+		// (review F3). The draft is saved now: a debounce tick still pending
+		// would be delivered to that view and dropped.
+		return v, v.leaveDraft()
+	case chatDraftTickMsg:
+		return v, v.applyDraftTick(msg)
+	case chatDraftSavedMsg:
+		return v, v.applyDraftSaved(msg)
+	case chatDraftFetchedMsg:
+		v.applyDraftFetched(msg)
+		return v, nil
+	case chatPromptsMsg:
+		v.applyPrompts(msg)
+		return v, nil
 	case chatAnsweredMsg:
 		return v, v.applyAnswered(msg)
 	case chatCanceledMsg:
@@ -614,6 +642,7 @@ func (v *chatView) applyLoaded(msg chatLoadedMsg) {
 	}
 	v.loadErr = ""
 	v.chat, v.turns, v.queue = msg.chat, msg.turns, msg.queue
+	v.applyLoadedDraft(msg.chat)
 	// The message being edited may have started or been deleted elsewhere:
 	// the edit ends with it, and what was typed stays in the composer.
 	if v.editingQueued != 0 && !v.queueHas(v.editingQueued) {
@@ -860,6 +889,11 @@ func (v *chatView) applyChatNote(msg chatNoteMsg) tea.Cmd {
 			return tea.Batch(next, v.loadCmd())
 		}
 	case apiclient.EventNote:
+		if note.Event.Type == chatDraftChangedEvent {
+			// Only the draft moved: re-read it, not the whole chat with
+			// every turn and the queue (review F5).
+			return tea.Batch(next, v.draftEventCmd(note.Event.Payload))
+		}
 		if strings.HasPrefix(note.Event.Type, "chat.") {
 			// The daemon invalidates a chat's skill listing when a turn ends
 			// (task 124.9), so the cached answer goes with the reload — but
@@ -937,10 +971,12 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 		if errors.As(msg.err, &apiErr) && apiErr.Code == "chat_cap_reached" {
 			v.note, v.noteBad = "too many chats are running — "+
 				"finish or cancel one and send again", true
-			return nil
+			return v.flushDraft()
 		}
+		// A refused send keeps the stored draft too (task 164): it is
+		// saved now rather than waiting out a debounce enter cut short.
 		v.note, v.noteBad = errString(msg.err), true
-		return nil
+		return v.flushDraft()
 	}
 	// The draft leaves the composer only once the daemon has taken the turn:
 	// a refusal or a send that never arrived keeps what was typed, so "send
@@ -948,6 +984,10 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	// editable while the send is in flight, so what leaves is what was
 	// sent: text added after it stays (review F8).
 	v.composer.SetValue(unsentRest(v.composer.Value(), msg.sent))
+	v.endRecall()
+	// The stored draft goes at the same acceptance point (task 164): what
+	// is written is what is left, usually nothing.
+	saveCmd := v.flushDraft()
 	// The draft the inline hints were about is gone with it (task 124.14).
 	v.skills.inlineNote, v.skills.noteFor = "", ""
 	v.note = ""
@@ -956,7 +996,7 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 		// so the live seam stays where it is.
 		v.note, v.noteBad = "queued — it runs after the current turn", false
 		v.bodyDirty = true
-		return v.loadCmd()
+		return tea.Batch(saveCmd, v.loadCmd())
 	}
 	// Only the live seam is the new turn's to reset: the records of every
 	// finished turn stay (issue #801 F10), and the new turn's tail is fetched
@@ -964,7 +1004,7 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	v.liveFrom, v.liveTurn = 0, 0
 	v.setFollowing(true)
 	v.bodyDirty = true
-	return v.loadCmd()
+	return tea.Batch(saveCmd, v.loadCmd())
 }
 
 // unsentRest is what is left of the composer once sent has gone: nothing
@@ -1048,6 +1088,11 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if v.picker != nil {
 		return v, v.updatePickerKey(msg)
 	}
+	if v.history.open {
+		// The prompt history picker owns the keyboard while it is up (task
+		// 164 decision 3), as the skills browse list does.
+		return v, v.updateHistoryKey(msg)
+	}
 	if v.convFocus && v.search.typing {
 		return v, v.updateSearchLineKey(msg)
 	}
@@ -1102,9 +1147,28 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	switch msg.String() {
 	case chatQueueEditKey:
+		// The queue first, then recall (task 164 decision 4): a queued
+		// message is the newer thing to fix, and recall walks history only
+		// when nothing is queued.
+		if v.recall.active() {
+			v.recallUp()
+			return v, v.armDraftSave()
+		}
 		if v.startQueueEdit() {
 			return v, nil
 		}
+		if v.recallUp() {
+			return v, v.armDraftSave()
+		}
+	case chatRecallDownKey:
+		if v.recall.active() {
+			v.recallDown()
+			return v, v.armDraftSave()
+		}
+	case opKey(keymap.Stash):
+		return v, v.toggleStash()
+	case opKey(keymap.PromptHistory):
+		return v, v.openHistory()
 	case chatQueueResumeKey:
 		return v, v.resumeQueueCmd()
 	case chatQueueClearKey:
@@ -1124,7 +1188,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if back == 0 {
 			back = viewChats
 		}
-		return v, func() tea.Msg { return selectViewMsg{id: back} }
+		return v, tea.Batch(v.leaveDraft(), func() tea.Msg { return selectViewMsg{id: back} })
 	case "ctrl+c":
 		return v, nil
 	// `tab` is the taught key and `f2` the alias for a terminal that
@@ -1205,8 +1269,9 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, openChatExportCmd(v.chat.ID, v.chat.Title)
 	}
 	var cmd tea.Cmd
+	before := v.composer.Value()
 	v.composer, cmd = v.composer.Update(msg)
-	return v, tea.Batch(cmd, v.syncInlineSkills(), v.syncInlineFiles())
+	return v, tea.Batch(cmd, v.draftEdited(before), v.syncInlineSkills(), v.syncInlineFiles())
 }
 
 // updateSkillsKey is the browse list's keyboard (task 124.13). It answers

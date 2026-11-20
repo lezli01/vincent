@@ -1314,6 +1314,20 @@ necessarily together (review F1, 2026-11-19) — and
 a term shorter than three characters is refused rather than scanned for. The
 search is served by `GET /v1/chats/search` (§13.2) and is, like every chat
 route, not an MCP tool.
+*Amended 2026-11-20 (task 164, issue #1012):* **a chat keeps its draft.** A
+chat carries `draft` — the composer text not yet sent — and `stash`, one slot a
+draft can be set aside in, beside `draft_updated_at`. The daemon owns both, so
+they follow the chat across a chat switch, a TUI restart and another client;
+a write is last-writer-wins and may carry either field alone. Both are bounded
+at the send route's 64 KiB, and both are **cleared** in the transaction that
+moves the chat to a terminal state — archive, close or hand-off — exactly as
+the queue is (task 156 decision 6), because a finished chat can never send
+them; a terminal chat refuses a new draft. Permanent delete removes the row.
+The prompts a project's chats have sent — live and terminal alike — are
+listable newest first with identical texts collapsed to their newest
+occurrence, narrowed by substring on the search index above from a query's
+third character — a shorter term beside such a one narrows too (review F4,
+2026-11-20) — and by recency below it rather than refused.
 
 ### 5.6 Issue (added 2026-10-02, task 130.1, issue #660)
 
@@ -11317,6 +11331,32 @@ GET    /v1/chats/search                 *Added 2026-11-19 (task 158, issue #1022
                                         matches per chat (default 5, at most 50). The
                                         highlight is data (`segments`), never markup. Not an
                                         MCP tool (§13.4, decision row 29)
+GET    /v1/chats/prompts                *Added 2026-11-20 (task 164, issue #1012).*
+                                        ?project_id=&q=&limit= — every prompt the project's chats
+                                        sent, archived ones included (§5.5). → { prompts: [{
+                                        prompt, chat_id, chat_title, chat_state, seq, sent_at }]
+                                        }, newest first, identical texts collapsed to their
+                                        newest occurrence. Every term of q must appear, by
+                                        substring and ignoring case: terms of three or more
+                                        characters on the chat search index, shorter ones on the
+                                        rows it returns (review F4, 2026-11-20). A q with no term
+                                        that long, or none, lists by recency — never
+                                        `query_too_short`. project_id is required. limit
+                                        defaults to 50, at most 500. "prompts" is a literal
+                                        segment and outranks {id}. Not an MCP tool (§13.4,
+                                        decision row 29)
+GET    /v1/chats/{id}/draft             *Added 2026-11-20 (task 164).* → { draft, stash,
+                                        updated_at } — the chat's unsent draft and its stash
+                                        slot (§5.5). GET /v1/chats/{id} embeds `draft`,
+                                        `stash` and `draft_updated_at` too, and every chat
+                                        body carries `has_draft`
+PUT    /v1/chats/{id}/draft             *Added 2026-11-20 (task 164).* { draft?, stash? } — at
+                                        least one; an absent field is left as it is. Last
+                                        writer wins. Each is at most 64 KiB (`400
+                                        validation_failed`); a terminal chat is `409
+                                        invalid_state`. Publishes `chat.draft_changed`; a
+                                        write that changes nothing writes and publishes
+                                        nothing. Not an MCP tool
 POST   /v1/chats                        { project_id, title, agent?, model?, effort?,
                                           base_branch?, branch_name?, existing_branch? }
                                         → 201 with the chat, its `vincent/{id}-{slug}` branch
@@ -12924,6 +12964,22 @@ queue paused, resumed or cleared. It carries `queued_count`, `queue_paused`
 and `queue_pause_reason` beside the chat's id, title and state, is published
 post-commit like every other event, and rides the per-chat stream.
 
+*Amended 2026-11-20 (task 164, issue #1012).* **`chat.draft_changed`**: a
+chat's draft or stash was written. It carries `has_draft`, `has_stash` and
+`draft_updated_at` beside the chat's id, title and state — never the text,
+which is up to 64 KiB and has no place in the durable events table — so a
+board repaints its `✎ draft` mark without a fetch and an open chat re-reads
+`GET /v1/chats/{id}/draft`. A client must not let the echo of its own write
+reset text typed since. A write that changes neither field is not recorded
+and publishes nothing (review F5, 2026-11-20), and the TUI answers the event
+by re-reading the draft alone — never the whole chat — and not at all when
+its `draft_updated_at` is that of the TUI's own last acknowledged write. The
+TUI takes a remote draft only while its composer
+holds exactly the text it last wrote, and never from a read whose
+`draft_updated_at` — carried by `GET /v1/chats/{id}` and the draft route — is
+older than the `updated_at` its own last acknowledged write returned, since
+such a read was taken before that write committed (review F1, 2026-11-20).
+
 *Amended 2026-10-31 (task 140.9, issue #885).* Every event of a chat **opened
 on an issue** carries `issue_id` beside the chat's id, title and state, the
 way a linked chat's carry `linked_task_id`: the chat's state moves the
@@ -13331,6 +13387,13 @@ family's exclusion under row 29, as a chat read:
 
 The chat family's rule again: an export is something a human keeps or shares,
 an MCP tool for it was not asked for, and one can follow the same route later.
+
+*Amended 2026-11-20 (task 164, issue #1012).* Three more, a human composer's
+state under the same row:
+
+    GET    /v1/chats/{id}/draft
+    PUT    /v1/chats/{id}/draft
+    GET    /v1/chats/prompts
 
 *Amended 2026-10-02 (task 130.3, issue #662).* One more, **thirty-seven** in
 all:
@@ -13888,6 +13951,13 @@ CREATE VIRTUAL TABLE chat_title_fts USING fts5(
     title, content = 'chats', content_rowid = 'id', tokenize = 'trigram');
 CREATE VIRTUAL TABLE chat_turn_fts USING fts5(
     prompt, result_text, content = 'chat_turns', content_rowid = 'id', tokenize = 'trigram');
+
+-- Chat drafts (task 164, issue #1012, added 2026-11-20; migration 0063).
+-- Columns on chats rather than a table: one draft and one stash per chat,
+-- read with it. Cleared when the chat ends (archive, close, hand-off).
+ALTER TABLE chats ADD COLUMN draft TEXT NOT NULL DEFAULT '';
+ALTER TABLE chats ADD COLUMN draft_updated_at TEXT;        -- NULL before the first write
+ALTER TABLE chats ADD COLUMN stash TEXT NOT NULL DEFAULT '';
 
 -- Event-trigger runtime state (task 096, added 2026-09-11; migrations 0029, 0030).
 -- A trigger's definition is a file under {config_dir}/triggers/, never a row:
@@ -17101,7 +17171,7 @@ changes (decision 31), applies it to the active view:
 |---|---|
 | Board, chats, issues, pull requests, both archived boards, workflows, triggers | Stays; re-scoped through `setProject` |
 | Task workspace | Falls back to the board; its back stack is emptied and its streams stop. *Amended 2026-10-21 (task 136.4, #789):* to the human's tab instead while the board is not one of `tui.tabs` |
-| Chat | Falls back to the chats board; its stream stops. A typed, unsent message in the composer is a draft (review F7) |
+| Chat | Falls back to the chats board; its stream stops. A typed, unsent message is the chat's stored draft (§5.5), which the switch saves rather than asking about; an edit of a queued message is a draft (review F7; amended 2026-11-20, task 164 review F3) |
 | Issue | Falls back to the issues list |
 | New-task form; the chats board's new-chat form; the issues list's issue form | Re-targeted when pristine: reopened empty on the new project, catalogs refetched. An edit form on the issues list closes |
 | The workflows view's create prompt; the triggers view's create prompt | Re-targeted when pristine: reopened empty on the new project. A fork prompt is seeded from the old project's list and counts as a draft; after `y` it closes (review F6) |
@@ -18610,6 +18680,27 @@ paused queue renders a card naming why, with `alt+r` to resume and `alt+c` to
 clear. `ctrl+s` is the rebindable `steer` operation (task 118's registry, with
 a recorded exception beside the forms' fixed `ctrl+s`); no adapter can steer
 yet, so it puts the daemon's `steer_reason` in the composer note.
+*Amended 2026-11-20 (task 164, issue #1012).* **The composer is the chat's
+stored draft.** Opening a chat restores its draft rather than clearing the
+composer; edits are saved about 500 ms after the last keystroke, and leaving
+the chat — `esc`, opening another chat, any other view taking over (the
+palette's included), a project switch, quitting — saves at once, so a switch
+does not ask about an unsent message (review F3). A send clears
+the stored draft only once the daemon has accepted (or queued) the turn, the
+point at which the composer already drops it (#790); a refused send keeps
+both. On an empty composer `↑` edits the newest queued message when one
+exists (task 156, unchanged) and otherwise **recalls** this chat's earlier
+prompts, newest first; `↓` walks back and ends on an empty composer; a recalled
+prompt is a copy, and any edit ends recall so `↑`/`↓` move in the text again.
+`alt+s` is the rebindable `stash` operation: on a non-empty composer it moves
+the draft to the chat's one stash slot — **replacing** whatever was there —
+and empties the composer; on an empty one it pops the stash back. `alt+h` is
+the rebindable `prompt_history` operation: a picker over every prompt the
+project's chats sent, archived ones included, narrowing from the third
+character typed; `enter` inserts the chosen prompt at the cursor and never
+sends it, `esc` leaves the draft as it was. Neither takes `ctrl+s` (steer,
+task 156 decision 5) nor `ctrl+r` (the verbosity cycle). The chats board marks
+a chat holding a draft `✎ draft` ahead of its title.
 *Amended 2026-11-19 (task 159, issue #1023).* **Exporting a chat** is the
 rebindable operation `export_chat`, default `alt+e`, on the chat workspace and
 on the chats board (live and archived) for the selected row, and in the command

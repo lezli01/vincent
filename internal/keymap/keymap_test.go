@@ -81,7 +81,7 @@ func TestBuildAccepts(t *testing.T) {
 		// f3 rather than f2: f2 is the chat workspace's fixed alias for the
 		// skill list (task 124.13), and one key means one thing (§15).
 		{"alt and shift on a letter", map[string]string{"refresh": "alt+shift+e"}, map[Op]string{Refresh: "alt+shift+e"}},
-		{"text-field hatch on a function key", map[string]string{"palette_alt": "f3", "help_alt": "alt+h"}, map[Op]string{PaletteAlt: "f3", HelpAlt: "alt+h"}},
+		{"text-field hatch on a function key", map[string]string{"palette_alt": "f3", "help_alt": "alt+?"}, map[Op]string{PaletteAlt: "f3", HelpAlt: "alt+?"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

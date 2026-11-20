@@ -135,8 +135,11 @@ func TestSwitchKeepsListViews(t *testing.T) {
 	}
 }
 
-// TestSwitchGuardsAnUnsentChatMessage: a typed composer asks before a switch
-// drops it with the chat; an empty one does not (review F7).
+// TestSwitchGuardsAnUnsentChatMessage: a typed composer whose draft the
+// daemon cannot keep — here, a chat whose draft never loaded — asks before a
+// switch drops it with the chat; an empty one does not (review F7). A
+// storable draft is saved instead (task 164 review F3,
+// TestChatDraftSavedOnEveryWayOut).
 func TestSwitchGuardsAnUnsentChatMessage(t *testing.T) {
 	h := newSwitchHarness(t)
 	cv := h.m.views[viewChat].(*chatView)
