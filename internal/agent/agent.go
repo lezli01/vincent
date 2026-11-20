@@ -129,7 +129,7 @@ func CanResumeRestricted(a Adapter) bool {
 
 // ResumeSettingsChanger is implemented by an adapter that can say whether a
 // resumed run honours a model or effort different from the one the session
-// last ran with (task 160 decision 8, §9.1). Every adapter already passes its
+// last ran with (task 162 decision 8, §9.1). Every adapter already passes its
 // model and effort flags beside its resume flag; what is not assumed is that
 // the CLI acts on a *changed* value rather than keeping the session's own.
 //
@@ -144,7 +144,7 @@ type ResumeSettingsChanger interface {
 }
 
 // CanChangeOnResume reports whether a chat on a may change its model or
-// effort between turns (task 160 decision 8). The permission mode is not
+// effort between turns (task 162 decision 8). The permission mode is not
 // gated here: it is §9.4's question, answered by CanResumeRestricted.
 func CanChangeOnResume(a Adapter) bool {
 	r, ok := a.(ResumeSettingsChanger)

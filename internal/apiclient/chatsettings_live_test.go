@@ -26,7 +26,7 @@ import (
 	"github.com/lezli01/vincent/internal/worktree"
 )
 
-// TestChatSettingsOverTheWire is task 160 against the real handlers: PatchChat
+// TestChatSettingsOverTheWire is task 162 against the real handlers: PatchChat
 // changes the model between two turns, SendChatWith overrides one turn, each
 // turn's recorded model comes back on the wire, the typed refusal decodes,
 // and /v1/agents publishes the capability.

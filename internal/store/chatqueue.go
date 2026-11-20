@@ -20,7 +20,7 @@ type ChatQueuedMessage struct {
 	ChatID   int64
 	Position int
 	Prompt   string
-	// Settings are the message's per-turn overrides (task 160 decision 6),
+	// Settings are the message's per-turn overrides (task 162 decision 6),
 	// stored until it drains. A field left empty takes the chat's setting at
 	// drain time.
 	Settings  TurnSettings
@@ -54,7 +54,7 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, chatID int64, prompt str
 }
 
 // EnqueueChatMessageWith is EnqueueChatMessage with the message's per-turn
-// overrides, which the turn it becomes runs with (task 160 decision 6).
+// overrides, which the turn it becomes runs with (task 162 decision 6).
 func (s *Store) EnqueueChatMessageWith(
 	ctx context.Context, chatID int64, prompt string, ov TurnSettings,
 ) (*ChatQueuedMessage, error) {
@@ -124,7 +124,7 @@ func (s *Store) EditChatQueued(ctx context.Context, chatID, id int64, prompt str
 }
 
 // EditChatQueuedWith is EditChatQueued that may also replace the message's
-// overrides (task 160 decision 6): a nil ov leaves them as they were, a
+// overrides (task 162 decision 6): a nil ov leaves them as they were, a
 // non-nil one replaces all three. An empty prompt keeps the text.
 func (s *Store) EditChatQueuedWith(
 	ctx context.Context, chatID, id int64, prompt string, ov *TurnSettings,

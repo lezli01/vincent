@@ -84,7 +84,7 @@ func title(e *Export) string {
 	return fmt.Sprintf("Chat %d: %s", e.Chat.ID, t)
 }
 
-// RanWith is a turn's model · effort · permission mode (task 160), "not
+// RanWith is a turn's model · effort · permission mode (task 162), "not
 // recorded" for a turn older than the record, and the adapter's default named
 // as such.
 func (t *Turn) RanWith() string {

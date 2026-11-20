@@ -30,7 +30,7 @@ func (h *chatHarness) newChatID(t *testing.T, agentName string) int64 {
 	return int64(out["id"].(float64))
 }
 
-// TestChatPatchChangesEachField is task 160 decision 5: each field changes on
+// TestChatPatchChangesEachField is task 162 decision 5: each field changes on
 // its own, and the chat.updated event is written for it.
 func TestChatPatchChangesEachField(t *testing.T) {
 	h := newChatHarness(t)

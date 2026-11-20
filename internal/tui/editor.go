@@ -33,7 +33,7 @@ type execFunc func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 // user configured, then the line editor, then the platform default.
 //
 // The variable is split the way a shell would split a simple command (task
-// 157 decision 4), so an editor whose path holds a space can be quoted:
+// 163 decision 4), so an editor whose path holds a space can be quoted:
 // `"C:\Program Files\Notepad++\notepad++.exe" -multiInst`. The temp file's
 // path is appended as its own argv element by the callers, so it never needs
 // quoting itself.

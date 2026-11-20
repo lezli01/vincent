@@ -117,8 +117,7 @@ list with the user-facing context a commit subject cannot carry.
   untouched file leaves the draft as it was. `alt+v` (also in the palette)
   opens the whole conversation as a read-only Markdown document in the same
   editor: a header naming the chat's agent, model and branch, then every
-  prompt and answer, with each tool call folded to one line. The daemon
-  renders it, at `GET /v1/chats/{id}/export?format=md`. Both keys are
+  prompt and answer, as `vincent chat export` writes it. Both keys are
   rebindable in `tui.keys`, as `compose_editor` and `chat_markdown` (#1013).
 
 ### Changed

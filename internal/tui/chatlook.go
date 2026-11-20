@@ -30,7 +30,7 @@ var (
 func chatTurnHeading(agent string, t apiclient.ChatTurn, age string) string {
 	line := toneMagenta.Bold(true).Render(ic("◈ ")+oneLine(agent)) + styleDim.Render(fmt.Sprintf("  ·  turn %d", t.Seq))
 	if t.Model != "" {
-		// The model the turn ran on (task 160 decision 7). A turn that
+		// The model the turn ran on (task 162 decision 7). A turn that
 		// recorded none — older than the column, or on the adapter's
 		// default — says nothing rather than guess from the chat.
 		line += styleDim.Render("  ·  " + oneLine(t.Model))

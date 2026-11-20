@@ -36,7 +36,7 @@ type Agent struct {
 	// nothing may be refused on the strength of a field that was never sent.
 	SupportsResume *bool `json:"supports_resume"`
 	// SupportsResumeSettingsChange is whether a chat on this adapter may
-	// change model or effort after its first turn (task 160 decision 8).
+	// change model or effort after its first turn (task 162 decision 8).
 	SupportsResumeSettingsChange *bool `json:"supports_resume_settings_change"`
 	// SupportsSkillListing is whether this adapter can list the skills its
 	// CLI would load at all (§9.1, §9.6, task 124). It is a fact about the
@@ -262,7 +262,7 @@ func (a Agent) CannotTakeInput() bool { return a.InputVerdict == InputVerdictUns
 func (a Agent) CannotResume() bool { return a.SupportsResume != nil && !*a.SupportsResume }
 
 // CannotChangeOnResume reports a positive "no" to changing a chat's model or
-// effort once its session has run (task 160 decision 8). nil — nobody can
+// effort once its session has run (task 162 decision 8). nil — nobody can
 // say — is not a no.
 func (a Agent) CannotChangeOnResume() bool {
 	return a.SupportsResumeSettingsChange != nil && !*a.SupportsResumeSettingsChange

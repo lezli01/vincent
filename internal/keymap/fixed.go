@@ -109,7 +109,7 @@ var fixed = []Fixed{
 	{"chat", "ctrl+x", "stop the running turn"},
 	{"chat", "ctrl+r", "how much of the conversation to show"},
 	{"chat", "pgup", "scroll the conversation back"},
-	// alt+G since task 157 decision 1 (ctrl+g, task 071 decision 5's key,
+	// alt+G since task 163 decision 1 (ctrl+g, task 071 decision 5's key,
 	// became the composer's editor): the upper-case twin of alt+g's jump to
 	// the start.
 	{"chat", "alt+G", "jump to the live end and follow it again"},

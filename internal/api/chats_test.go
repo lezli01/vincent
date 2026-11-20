@@ -146,7 +146,7 @@ func TestChatCreateRefusesAdaptersThatCannotResume(t *testing.T) {
 
 // TestChatsAreAlwaysFullAuto was task 072 decision 1's structural guard: a
 // chat's mode was not requestable, because `codex exec resume` has no
-// --sandbox and so no argv spelling for `restricted` (§9.3). Task 160
+// --sandbox and so no argv spelling for `restricted` (§9.3). Task 162
 // decision 1 supersedes that decision explicitly, and this is the guard for
 // the rule that replaced it: the mode is requestable, the default is still
 // full-auto, and the hazard is refused where the mode is chosen — a

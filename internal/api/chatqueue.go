@@ -18,7 +18,7 @@ type chatQueuedBody struct {
 	Position int    `json:"position"`
 	Prompt   string `json:"prompt"`
 	// Model, Effort and PermissionMode are the message's per-turn overrides
-	// (task 160 decision 6); absent is "the chat's setting at drain time".
+	// (task 162 decision 6); absent is "the chat's setting at drain time".
 	Model          string    `json:"model,omitempty"`
 	Effort         string    `json:"effort,omitempty"`
 	PermissionMode string    `json:"permission_mode,omitempty"`
@@ -92,7 +92,7 @@ func writeQueueGone(w http.ResponseWriter, err error, action string) {
 type editQueuedRequest struct {
 	Message string `json:"message"`
 	// Any of the three present replaces the message's overrides with the
-	// three given (task 160 decision 6); all absent leaves them alone.
+	// three given (task 162 decision 6); all absent leaves them alone.
 	chatSettingsRequest
 }
 

@@ -260,7 +260,7 @@ func (r *Runner) Submit(
 	return r.SubmitWith(ctx, chatID, prompt, store.TurnSettings{})
 }
 
-// SubmitWith is Submit with per-turn overrides (task 160 decision 6): the
+// SubmitWith is Submit with per-turn overrides (task 162 decision 6): the
 // turn it starts — or the queued message, when it drains — runs with ov's
 // non-empty fields in place of the chat's own, and the chat keeps its
 // defaults. The caller has validated ov; the runner only carries it.
@@ -591,7 +591,7 @@ func (r *Runner) runTurn(
 		// environment for a turn inside one (decision 3), so the CLI reads
 		// the configuration `container.mount_agent_config` mounted for it.
 		Env: env,
-		// What the turn row recorded (task 160 decision 7), not the chat's
+		// What the turn row recorded (task 162 decision 7), not the chat's
 		// current settings: a PATCH during a live turn — or while a drained
 		// message waited — applies from the next turn written, and a
 		// per-turn override is this turn's alone.
@@ -1257,7 +1257,7 @@ func SteerUnavailable(agentName string) string {
 }
 
 // runSettings is what turn runs with: the settings recorded on its row when it
-// was written (task 160 decision 7). A row from before migration 0062 records
+// was written (task 162 decision 7). A row from before migration 0062 records
 // none, and one that recorded no permission mode is the chat's — the only way
 // to reach either is a turn written by an older daemon, and the chat's value
 // was then the only value there was.

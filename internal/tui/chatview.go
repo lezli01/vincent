@@ -110,7 +110,7 @@ type chatView struct {
 	client *apiclient.Client
 	now    func() time.Time
 	// exec hands the terminal to $EDITOR for the composer's ctrl+g and the
-	// conversation's alt+v (task 157), injected so tests need no terminal.
+	// conversation's alt+v (task 163), injected so tests need no terminal.
 	exec execFunc
 
 	chatID int64
@@ -172,7 +172,7 @@ type chatView struct {
 	builtLevel outputLevel
 
 	// vp scrolls the conversation; following means it is showing the end,
-	// which a manual scroll drops and alt+G re-arms (decision 5, task 157).
+	// which a manual scroll drops and alt+G re-arms (decision 5, task 163).
 	vp        viewport.Model
 	following bool
 	bodyDirty bool
@@ -233,7 +233,7 @@ type chatView struct {
 	// command from GET /v1/agents, by name; an adapter without one is absent.
 	compacting  bool
 	compactCmds map[string]string
-	// raising is the full-auto confirmation on screen (task 160 decision
+	// raising is the full-auto confirmation on screen (task 162 decision
 	// 4), owning the next key as compacting does; picker is the alt+p
 	// model-and-effort list; agents is GET /v1/agents by name, which the
 	// picker is sourced from.
@@ -1177,7 +1177,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.vp.GotoTop()
 		v.syncFollowToViewport()
 		return v, v.fetchVisibleTranscripts()
-	// alt+G, the upper-case twin of alt+g (task 157 decision 1): ctrl+g,
+	// alt+G, the upper-case twin of alt+g (task 163 decision 1): ctrl+g,
 	// task 071 decision 5's key, is the composer's editor now.
 	case "alt+G":
 		v.follow()

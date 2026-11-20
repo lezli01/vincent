@@ -207,7 +207,7 @@ func (v *chatView) compactQuestion() string {
 
 // chatAgentsMsg carries each adapter's compact command, by name.
 // It also carries every adapter's row, by name, for the settings picker
-// (task 160).
+// (task 162).
 type chatAgentsMsg struct {
 	compact map[string]string
 	agents  map[string]apiclient.Agent

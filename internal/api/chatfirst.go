@@ -4,7 +4,7 @@ package api
 // §5.5, §13.2): POST /v1/chats and POST /v1/tasks/{id}/chat take an optional
 // `message` sent as turn 1 in the same request, an empty title is derived from
 // that message, and PATCH /v1/chats/{id} renames (its handler, shared with
-// task 160's settings, is in chatsettings.go).
+// task 162's settings, is in chatsettings.go).
 
 import (
 	"context"

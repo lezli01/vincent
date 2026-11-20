@@ -51,7 +51,7 @@
 #      title is the message's first line and the branch follows it, the turn
 #      finishes `done` with the message stored as its prompt, and PATCH
 #      renames the chat while its branch stays as it was cut
-#  16. a chat's model changes between two turns (task 160): PATCH the model
+#  16. a chat's model changes between two turns (task 162): PATCH the model
 #      after turn 1, and turn 2 runs on it while each turn records its own
 #      model and permission mode; a restricted codex chat is refused with
 #      `agent_cannot_restrict_resume`
@@ -1045,7 +1045,7 @@ chat_first_message() {
 # so VINCENT_GATE_SCENARIO=16 runs it alone. Unselected, it runs last, after
 # leg 15.
 chat_settings() {
-  echo "== 16. a chat's model changes between two turns, and each turn records its own (task 160)"
+  echo "== 16. a chat's model changes between two turns, and each turn records its own (task 162)"
   SET_REPO="$TMP/settingsrepo"
   mkdir -p "$SET_REPO"
   printf 'settings\n' > "$SET_REPO/README.md"
@@ -1085,7 +1085,7 @@ chat_settings() {
       and all(.turns[]; .permission_mode == "full-auto")' >/dev/null \
     || fail "the turns did not record their own models: $(api GET "/chats/$SET_CHAT_ID")"
 
-  echo "== 16b. a restricted codex chat is refused where it is chosen (task 160 decision 1)"
+  echo "== 16b. a restricted codex chat is refused where it is chosen (task 162 decision 1)"
   CODE="$(api_status POST /chats -d "{\"project_id\": $SET_PROJECT_ID, \"title\": \"cx\",
     \"agent\": \"codex\", \"permission_mode\": \"restricted\"}")"
   [[ "$CODE" == "400" ]] || fail "a restricted codex chat is $CODE, want 400"

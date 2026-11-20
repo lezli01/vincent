@@ -22,7 +22,7 @@ import (
 	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
-// TestChatSettingsLive is task 160's TUI against the real handlers: the
+// TestChatSettingsLive is task 162's TUI against the real handlers: the
 // alt+p picker PATCHes the chat's model, shift+tab lowers to restricted at
 // once and asks before raising back to full-auto, the composer border's chip
 // follows, and a turn's heading names the model it ran on.

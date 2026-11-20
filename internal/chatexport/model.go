@@ -173,7 +173,7 @@ type Turn struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 	StartedAt    time.Time `json:"started_at"`
 	// Model, Effort and PermissionMode are what the turn ran with (task
-	// 160 decision 7). All three are null on a turn from before they were
+	// 162 decision 7). All three are null on a turn from before they were
 	// recorded — "not recorded", never the chat's current settings — and
 	// Model or Effort alone is null when the turn ran on the adapter's
 	// default.

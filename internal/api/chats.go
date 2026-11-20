@@ -122,7 +122,7 @@ type chatTurnBody struct {
 	CacheCreationTokens *int64 `json:"cache_creation_tokens,omitempty"`
 	ContextTokens       *int64 `json:"context_tokens,omitempty"`
 	ContextWindow       *int64 `json:"context_window,omitempty"`
-	// Model, Effort and PermissionMode are what the turn ran with (task 160
+	// Model, Effort and PermissionMode are what the turn ran with (task 162
 	// decision 7). All three are absent on a turn from before they were
 	// recorded — "not recorded", never the chat's current values.
 	Model          string `json:"model,omitempty"`
@@ -177,7 +177,7 @@ type createChatRequest struct {
 	// Message, when set, is sent as the chat's first turn in the same
 	// request (task 161 decision 1), and an empty title is derived from it.
 	Message string `json:"message"`
-	// PermissionMode is the chat's mode, `full-auto` when omitted (task 160
+	// PermissionMode is the chat's mode, `full-auto` when omitted (task 162
 	// decision 1). It is validated by the check PATCH uses, so creating a
 	// chat restricted and restricting it later refuse the same adapters.
 	PermissionMode string `json:"permission_mode"`
@@ -492,7 +492,7 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 
 type sendChatRequest struct {
 	Message string `json:"message"`
-	// The per-turn overrides (task 160 decision 6): this turn — or this
+	// The per-turn overrides (task 162 decision 6): this turn — or this
 	// queued message, when it drains — runs with them, and the chat keeps
 	// its own settings.
 	chatSettingsRequest

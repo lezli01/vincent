@@ -12,7 +12,7 @@ import (
 )
 
 // TestResumeSettingsChangeCapture pins agent.ResumeSettingsChanger to the
-// capture that justifies it (task 160 decision 8): a session begun on haiku,
+// capture that justifies it (task 162 decision 8): a session begun on haiku,
 // resumed with `--model sonnet --effort low`, ran on sonnet under the same
 // session id. Were a future build to keep the session's own model, a new
 // capture would show it and this capability would go false with it.

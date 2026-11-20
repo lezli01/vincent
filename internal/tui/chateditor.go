@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// The chat's two $EDITOR operations (task 157): ctrl+g writes the composer's
+// The chat's two $EDITOR operations (task 163): ctrl+g writes the composer's
 // draft in the editor and brings it back, and alt+v opens the whole
 // conversation — rendered as Markdown by the daemon — read-only.
 
@@ -35,7 +35,7 @@ type chatMarkdownMsg struct {
 // exited. The file is gone by the time it arrives.
 type chatMarkdownClosedMsg struct{ err error }
 
-// composeInEditor hands the composer's draft to $EDITOR (task 157 decision
+// composeInEditor hands the composer's draft to $EDITOR (task 163 decision
 // 3). It never sends: what the editor leaves goes back into the composer,
 // and enter is still what sends it — or, while a queued message is being
 // edited, what saves that edit.
@@ -108,7 +108,7 @@ func trimEditorNewline(text, original string) string {
 }
 
 // fetchChatMarkdown asks the daemon for the conversation's Markdown (task
-// 157 decisions 6, 7). The TUI renders none of it: the document is the
+// 163 decisions 6, 7). The TUI renders none of it: the document is the
 // daemon's, the same one `GET /v1/chats/{id}/export?format=md` serves.
 func (v *chatView) fetchChatMarkdown() tea.Cmd {
 	if v.chat == nil {

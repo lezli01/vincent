@@ -1,4 +1,4 @@
-# 157 — Write a chat message in `$EDITOR`, open the conversation as Markdown
+# 163 — Write a chat message in `$EDITOR`, open the conversation as Markdown
 
 **Status:** 🔄 in progress (2/3) · **Opened:** 2026-11-20 · **Issue:** #1013 (part of #1009)
 
@@ -13,17 +13,26 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [x] **157.1** The daemon half: `internal/chatexport` renders a chat from its
+- [x] **163.1** The daemon half: `internal/chatexport` renders a chat from its
   turns' normalized records, `GET /v1/chats/{id}/export?format=md` serves it
   (`400 unsupported_format` for anything else, off the MCP surface), and
   `apiclient.ChatExportMarkdown` returns the body. Spec §13.2, API
   reference. ✓ 2026-11-20
-- [x] **157.2** The TUI half: `compose_editor` (`ctrl+g`) and `chat_markdown`
+
+  *Amended 2026-11-20 (merge train, with task 159).* Superseded in the
+  merge: task 159 (#1023) reached `master` first with the whole export —
+  `internal/chatexport`, `GET /v1/chats/{id}/export` in Markdown, HTML and
+  JSON, `vincent chat export` and the TUI's export form. This task's own
+  renderer and route were dropped in favour of it, and
+  `apiclient.ChatExportMarkdown` is now that route's `format=md`, returned
+  as a string, for `alt+v`. An unknown `format` is task 159's
+  `400 validation_failed`, not `unsupported_format`.
+- [x] **163.2** The TUI half: `compose_editor` (`ctrl+g`) and `chat_markdown`
   (`alt+v`) as rebindable `Typing` operations, follow moved to `alt+G`,
   `$EDITOR` split quote-aware for every caller, `cmd/fakeeditor` for a real
   round trip on every platform. Spec §15 view 9, task 071 decision 5
   amended; TUI guide and configuration reference. ✓ 2026-11-20
-- [ ] **157.3** Re-capture every `docs/assets/tui-*.png` whose chat footer
+- [ ] **163.3** Re-capture every `docs/assets/tui-*.png` whose chat footer
   still reads `ctrl+g live` with `scripts/screenshots.sh`.
 
 ## Decisions

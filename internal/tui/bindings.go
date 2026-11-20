@@ -716,10 +716,10 @@ var bindings = []binding{
 	// 80-column footer still has room for, and a reader who cannot find the
 	// way back through the conversation cannot read it.
 	{key: "pgup", label: "scroll the conversation back (pgdown goes forward)", scope: scopePanel, context: ctxChat, hint: "pgup/pgdown scroll", priority: 3},
-	// alt+G since task 157 decision 1, beside alt+g's jump to the start:
+	// alt+G since task 163 decision 1, beside alt+g's jump to the start:
 	// ctrl+g is the composer's editor now.
 	{key: "alt+G", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChat, hint: "alt+G live", priority: 5},
-	// The two $EDITOR operations (task 157). Combinations for the reason
+	// The two $EDITOR operations (task 163). Combinations for the reason
 	// ctrl+r is one: the composer owns every printable key.
 	{op: keymap.ComposeEditor, key: "ctrl+g", label: "write the message in $EDITOR — what you save comes back into the composer, unsent", scope: scopePanel, context: ctxChat, hint: "ctrl+g editor", priority: 12},
 	{op: keymap.ChatMarkdown, key: "alt+v", label: "open the whole conversation as Markdown in $EDITOR, read-only", scope: scopePanel, context: ctxChat, hint: "alt+v markdown", priority: 20},
@@ -776,7 +776,7 @@ var bindings = []binding{
 	{key: "}", label: "jump to the next prompt you sent ({ the previous)", scope: scopePanel, context: ctxChatConversation, hint: "{/} prompt", priority: 5},
 	{key: "g", label: "jump to the start of the conversation (G to the live end)", scope: scopePanel, context: ctxChatConversation, priority: 6},
 	{key: "pgup", label: "scroll the conversation back (pgdown goes forward; alt+↑/↓ a line)", scope: scopePanel, context: ctxChatConversation, priority: 7},
-	// alt+G, the composer's own follow key since task 157 decision 1.
+	// alt+G, the composer's own follow key since task 163 decision 1.
 	{key: "alt+G", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChatConversation, priority: 8},
 	{key: "i", label: "give the keyboard back to the composer (esc too)", scope: scopePanel, context: ctxChatConversation, hint: "i/esc compose", priority: 9},
 	{key: "esc", label: "give the keyboard back to the composer — it never leaves the chat from here", scope: scopePanel, context: ctxChatConversation, priority: 10, aliased: true},

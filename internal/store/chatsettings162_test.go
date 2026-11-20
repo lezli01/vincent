@@ -8,7 +8,7 @@ import (
 
 // TestMigration0062LeavesOldTurnsUnrecorded: a turn written before the
 // run-settings columns existed reads back with none of them — "not
-// recorded" — and is never back-filled from its chat's settings (task 160
+// recorded" — and is never back-filled from its chat's settings (task 162
 // decision 7).
 func TestMigration0062LeavesOldTurnsUnrecorded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vincent.db")

@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 )
 
-// newChatSetCmd is `vincent chat set` (task 160): a chat's title, model,
+// newChatSetCmd is `vincent chat set` (task 162): a chat's title, model,
 // effort and permission mode between turns, over PATCH /v1/chats/{id}. A
 // change made while a turn runs applies from the next turn.
 //

@@ -17,7 +17,7 @@ func flagValue(args []string, flag string) string {
 	return args[i+1]
 }
 
-// TestTurnSettingsChangeBetweenTurns is task 160 decisions 5–7 through the
+// TestTurnSettingsChangeBetweenTurns is task 162 decisions 5–7 through the
 // runner and a real fakeagent: a turn after a settings change runs with the
 // new argv, a per-turn override runs that turn only and the next reverts,
 // and every turn row records what it ran with.
@@ -72,7 +72,7 @@ func TestTurnSettingsChangeBetweenTurns(t *testing.T) {
 }
 
 // TestQueuedOverridesSurviveToTheDrain: a message queued behind a live turn
-// with its own overrides runs with them when it drains (task 160 decision 6),
+// with its own overrides runs with them when it drains (task 162 decision 6),
 // and the chat's own settings are untouched.
 func TestQueuedOverridesSurviveToTheDrain(t *testing.T) {
 	h := newHarness(t)

@@ -115,7 +115,7 @@ unrecognized lines — so a reconnect changed what was on screen.
    follow model: following means showing the end, a manual scroll pauses it,
    `ctrl+g` re-arms it.
 
-   *Amended 2026-11-20 (task 157 decision 1, issue #1013).* The re-arm key is
+   *Amended 2026-11-20 (task 163 decision 1, issue #1013).* The re-arm key is
    now `alt+G`, beside `alt+g`'s jump to the start; `ctrl+g` writes the
    chat message in `$EDITOR`. The follow model itself is unchanged.
 

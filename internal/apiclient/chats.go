@@ -205,7 +205,7 @@ type ChatTurn struct {
 	CacheCreationTokens *int64 `json:"cache_creation_tokens,omitempty"`
 	ContextTokens       *int64 `json:"context_tokens,omitempty"`
 	ContextWindow       *int64 `json:"context_window,omitempty"`
-	// Model, Effort and PermissionMode are what the turn ran with (task 160
+	// Model, Effort and PermissionMode are what the turn ran with (task 162
 	// decision 7); all empty on a turn from before they were recorded,
 	// which a client renders as "not recorded".
 	Model          string `json:"model,omitempty"`
@@ -234,11 +234,11 @@ type CreateChatRequest struct {
 	// 161). With it, Title may be empty: the daemon derives one from the
 	// message's first line.
 	Message string `json:"message,omitempty"`
-	// PermissionMode is the chat's mode; omitted is full-auto (task 160).
+	// PermissionMode is the chat's mode; omitted is full-auto (task 162).
 	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
-// PatchChatRequest is PATCH /v1/chats/{id} (task 160 decision 5). A nil
+// PatchChatRequest is PATCH /v1/chats/{id} (task 162 decision 5). A nil
 // field is left as it is; an empty Model or Effort returns it to the
 // adapter's default.
 type PatchChatRequest struct {
@@ -261,7 +261,7 @@ func (c *Client) PatchChat(ctx context.Context, id int64, req PatchChatRequest) 
 }
 
 // TurnSettings are one turn's overrides of its chat's model, effort and
-// permission mode (task 160 decision 6). An empty field is no override.
+// permission mode (task 162 decision 6). An empty field is no override.
 type TurnSettings struct {
 	Model          string `json:"model,omitempty"`
 	Effort         string `json:"effort,omitempty"`
@@ -428,7 +428,7 @@ func (c *Client) SendChat(ctx context.Context, id int64, message string) (*ChatS
 	return c.SendChatWith(ctx, id, message, TurnSettings{})
 }
 
-// SendChatWith is SendChat with per-turn overrides (task 160 decision 6):
+// SendChatWith is SendChat with per-turn overrides (task 162 decision 6):
 // that turn — or the queued message, when it drains — runs with them, and
 // the chat keeps its own settings.
 func (c *Client) SendChatWith(ctx context.Context, id int64, message string, ov TurnSettings) (*ChatSend, error) {
@@ -471,7 +471,7 @@ type ChatQueuedMessage struct {
 	ChatID   int64  `json:"chat_id"`
 	Position int    `json:"position"`
 	Prompt   string `json:"prompt"`
-	// TurnSettings are the message's own overrides (task 160).
+	// TurnSettings are the message's own overrides (task 162).
 	TurnSettings
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -689,7 +689,7 @@ func (c *Client) ChatExport(ctx context.Context, chatID int64, opts ChatExportOp
 }
 
 // ChatExportMarkdown is the whole conversation as the Markdown document the
-// daemon renders (task 157, #1013): ChatExport with format md, returned as a
+// daemon renders (task 163, #1013): ChatExport with format md, returned as a
 // string. The client holds no renderer of its own.
 func (c *Client) ChatExportMarkdown(ctx context.Context, chatID int64) (string, error) {
 	out, err := c.ChatExport(ctx, chatID, ChatExportOptions{Format: "md"})

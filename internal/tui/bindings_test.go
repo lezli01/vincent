@@ -1192,7 +1192,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("ctrl+g did not open the editor")
 			}
 			if v.following {
-				t.Fatal("ctrl+g re-armed follow; that is alt+G's since task 157")
+				t.Fatal("ctrl+g re-armed follow; that is alt+G's since task 163")
 			}
 		},
 		"alt+v": func(t *testing.T) {
@@ -3364,12 +3364,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("pgup did not scroll back")
 			}
 		},
-		"ctrl+g": func(t *testing.T) {
+		"alt+G": func(t *testing.T) {
 			v := convFocused(t)
 			v.following = false
-			v.updateKey(registryKey(t, "ctrl+g"))
+			v.updateKey(registryKey(t, "alt+G"))
 			if !v.following {
-				t.Fatal("ctrl+g did not follow")
+				t.Fatal("alt+G did not follow")
 			}
 		},
 		"i": func(t *testing.T) {

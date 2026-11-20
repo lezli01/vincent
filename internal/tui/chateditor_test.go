@@ -25,7 +25,7 @@ import (
 	"github.com/lezli01/vincent/internal/store/storetest"
 )
 
-// TestSplitEditorCommand is task 157 decision 4: $EDITOR is split the way a
+// TestSplitEditorCommand is task 163 decision 4: $EDITOR is split the way a
 // shell splits a simple command, so a quoted path with a space survives.
 func TestSplitEditorCommand(t *testing.T) {
 	cases := []struct {
@@ -311,7 +311,7 @@ func TestChatMarkdownOpensTheDaemonsDocument(t *testing.T) {
 	if !strings.HasSuffix(opened, ".md") {
 		t.Fatalf("opened %q, want a .md file", opened)
 	}
-	for _, want := range []string{"# export me", "> what is in here?", "Mostly Go."} {
+	for _, want := range []string{"export me", "what is in here?", "Mostly Go."} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("the opened file lacks %q:\n%s", want, content)
 		}

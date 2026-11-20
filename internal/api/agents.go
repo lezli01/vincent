@@ -27,7 +27,7 @@ type agentResponse struct {
 	// answers and only the second may filter anything out.
 	SupportsResume *bool `json:"supports_resume"`
 	// SupportsResumeSettingsChange is whether a chat on this adapter may
-	// change its model or effort once its session has run (task 160
+	// change its model or effort once its session has run (task 162
 	// decision 8): `agent.CanChangeOnResume`, the answer PATCH and a turn's
 	// overrides consult, true only where a capture shows a resumed run on a
 	// changed model. Null with no registry to ask, as supports_resume is.

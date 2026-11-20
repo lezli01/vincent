@@ -12,7 +12,7 @@ import (
 	"github.com/lezli01/vincent/internal/chatstate"
 )
 
-// A chat's run settings between turns (task 160 decision 9): the chip on the
+// A chat's run settings between turns (task 162 decision 9): the chip on the
 // composer border, the alt+p model-and-effort picker, and the shift+tab
 // permission-mode toggle that asks before raising to full-auto (§16, decision
 // 4). Every change is a PATCH /v1/chats/{id}; the daemon holds the settings

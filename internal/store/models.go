@@ -895,7 +895,7 @@ type ChatTurn struct {
 	ContextWindow              *int64
 	SessionCacheReadTokens     *int64
 	SessionCacheCreationTokens *int64
-	// Model, Effort and PermissionMode are what the turn ran with (task 160
+	// Model, Effort and PermissionMode are what the turn ran with (task 162
 	// decision 7): its override, else the chat's setting when the row was
 	// written. "" is "not recorded" — a turn from before migration 0062 —
 	// never back-filled from the chat's current values. Effort is also ""
@@ -906,7 +906,7 @@ type ChatTurn struct {
 }
 
 // TurnSettings are a turn's per-turn overrides of its chat's model, effort
-// and permission mode (task 160 decision 6). An empty field is "no override".
+// and permission mode (task 162 decision 6). An empty field is "no override".
 type TurnSettings struct {
 	Model          string
 	Effort         string

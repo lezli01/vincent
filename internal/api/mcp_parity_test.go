@@ -146,7 +146,7 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// created_by_task_id chain, and closing one is its lifecycle.
 		{http.MethodPost, "/v1/tasks/{id}/chat"},
 		{http.MethodPost, "/v1/chats/{id}/close"},
-		// Tasks 161 and 160: the rename and a chat's settings share this
+		// Tasks 161 and 162: the rename and a chat's settings share this
 		// route, the chat family's lifecycle, excluded
 		// under 063 decision 2 with the rest.
 		{http.MethodPatch, "/v1/chats/{id}"},

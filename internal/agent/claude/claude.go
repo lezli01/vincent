@@ -652,7 +652,7 @@ func (r *run) Argv() []string { return r.proc.Argv() }
 func (a *Adapter) SupportsResume() bool { return true }
 
 // SupportsResumeSettingsChange implements agent.ResumeSettingsChanger (task
-// 160 decision 8): `--resume <id> --model <m> --effort <e>` runs the resumed
+// 162 decision 8): `--resume <id> --model <m> --effort <e>` runs the resumed
 // session on the model named, not the one it last ran with.
 // testdata/resume_settings_2.1.329.jsonl is that run — a session begun on
 // claude-haiku-5-5, resumed with `--model sonnet --effort low`, whose init

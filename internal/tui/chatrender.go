@@ -700,7 +700,7 @@ func (v *chatView) footerLines(width, height int) []string {
 	v.composer.SetWidth(chatComposerWidth(width))
 	title := "message"
 	if chip := chatSettingsChip(v.chat); chip != "" {
-		// The settings the next turn runs on (task 160 decision 9).
+		// The settings the next turn runs on (task 162 decision 9).
 		title += " · " + chip
 	}
 	if hidden := v.sizeComposer(height); hidden > 0 {

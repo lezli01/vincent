@@ -31,7 +31,7 @@ const (
 	EventChatQueue = "chat.queue_changed"
 	// EventChatUpdated is a chat whose display or run settings changed
 	// without a state change: a rename (task 161), or its model, effort or
-	// permission mode changed by PATCH /v1/chats/{id} (task 160) — which
+	// permission mode changed by PATCH /v1/chats/{id} (task 162) — which
 	// applies from the next turn when made during a live one. It carries the
 	// chat, so a list repaints without a fetch.
 	EventChatUpdated = "chat.updated"
@@ -342,7 +342,7 @@ func (s *Store) SetChatSession(ctx context.Context, id int64, sessionID string) 
 	return s.updateChat(ctx, id, "", func(c *Chat) { c.SessionID = sessionID })
 }
 
-// ChatSettingsPatch is a PATCH /v1/chats/{id} (task 160 decision 5): each
+// ChatSettingsPatch is a PATCH /v1/chats/{id} (task 162 decision 5): each
 // non-nil field replaces the chat's own. An empty Model or Effort clears it
 // back to the adapter's default.
 type ChatSettingsPatch struct {
@@ -353,7 +353,7 @@ type ChatSettingsPatch struct {
 }
 
 // UpdateChatSettings applies p to the chat and publishes chat.updated. A
-// terminal chat is ErrInvalidChatAction: its conversation is over (task 160
+// terminal chat is ErrInvalidChatAction: its conversation is over (task 162
 // decision 5). A live turn keeps what it was started with — its settings are
 // on its turn row — so the change applies from the next turn.
 func (s *Store) UpdateChatSettings(ctx context.Context, id int64, p ChatSettingsPatch) (*Chat, error) {
@@ -483,7 +483,7 @@ func (s *Store) CreateChatTurn(ctx context.Context, chatID int64, prompt string)
 	return s.CreateChatTurnWith(ctx, chatID, prompt, TurnSettings{})
 }
 
-// CreateChatTurnWith is CreateChatTurn with per-turn overrides (task 160
+// CreateChatTurnWith is CreateChatTurn with per-turn overrides (task 162
 // decision 6): each non-empty field of ov replaces the chat's own setting for
 // this turn only, and the resolved values are recorded on the turn row.
 func (s *Store) CreateChatTurnWith(ctx context.Context, chatID int64, prompt string, ov TurnSettings) (*ChatTurn, error) {
@@ -533,7 +533,7 @@ func (s *Store) CreateChatTurnWith(ctx context.Context, chatID int64, prompt str
 // caller moves the chat's state; this writes the turn row only.
 //
 // The turn's model, effort and permission mode are resolved here, in the
-// transaction that writes the row (task 160 decision 7): ov's field, else the
+// transaction that writes the row (task 162 decision 7): ov's field, else the
 // chat's current setting. The runner runs the turn with exactly what is
 // recorded, so a PATCH that lands while the turn runs cannot change it.
 func insertChatTurnTx(ctx context.Context, tx *sql.Tx, c *Chat, prompt string, ov TurnSettings) (*ChatTurn, error) {

@@ -1,4 +1,4 @@
-# 160 — Change a chat's model, effort and permission mode between turns
+# 162 — Change a chat's model, effort and permission mode between turns
 
 **Status:** ✅ done (6/6) · **Opened:** 2026-11-20 · **Issue:** #1011 (chat UX epic #1009)
 
@@ -14,23 +14,23 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [x] **160.1** Migration 0062: `chat_turns.model`, `effort`,
+- [x] **162.1** Migration 0062: `chat_turns.model`, `effort`,
   `permission_mode` and the same three on `chat_queued_messages`;
   `store.TurnSettings`, `UpdateChatSettings`, the turn and queue writers
   resolving and recording the settings, and `chat.updated`. ✓ 2026-11-20
-- [x] **160.2** `agent.ResumeSettingsChanger` / `CanChangeOnResume`, claude's
+- [x] **162.2** `agent.ResumeSettingsChanger` / `CanChangeOnResume`, claude's
   `true` pinned to `testdata/resume_settings_2.1.329.jsonl`; the runner launches
   each turn from what its row recorded. ✓ 2026-11-20
-- [x] **160.3** `PATCH /v1/chats/{id}`, send and queue-edit overrides,
+- [x] **162.3** `PATCH /v1/chats/{id}`, send and queue-edit overrides,
   `permission_mode` on `POST /v1/chats`, the refusals, the MCP exclusion and
   `supports_resume_settings_change` on `GET /v1/agents`; apiclient
   `PatchChat` / `SendChatWith`. ✓ 2026-11-20
-- [x] **160.4** `vincent chat set` and override flags on `vincent chat send`.
+- [x] **162.4** `vincent chat set` and override flags on `vincent chat send`.
   ✓ 2026-11-20
-- [x] **160.5** The TUI: the composer chip, `alt+p` picker, `shift+tab` toggle
+- [x] **162.5** The TUI: the composer chip, `alt+p` picker, `shift+tab` toggle
   with its full-auto confirmation, the turn heading's model; chat export's
   per-turn model in all three formats. ✓ 2026-11-20
-- [x] **160.6** Spec amendments, docs, and `m14` leg 15. ✓ 2026-11-20
+- [x] **162.6** Spec amendments, docs, and `m14` leg 15. ✓ 2026-11-20
 
 ## Decisions
 

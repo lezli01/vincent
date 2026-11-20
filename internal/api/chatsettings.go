@@ -18,7 +18,7 @@ import (
 
 // CodeAgentCannotChangeOnResume refuses a model or effort change on a chat
 // whose session has already run, on an adapter with no capture showing that
-// a resumed run honours a changed value (task 160 decision 8, §9.1). The
+// a resumed run honours a changed value (task 162 decision 8, §9.1). The
 // remedy is nameable — keep the settings, or open a new chat — so it is its
 // own code rather than a generic validation failure.
 const CodeAgentCannotChangeOnResume = "agent_cannot_change_on_resume"
@@ -27,7 +27,7 @@ const CodeAgentCannotChangeOnResume = "agent_cannot_change_on_resume"
 // cannot keep a resumed turn restricted (codex, §9.3) or cannot restrict on
 // this host at all (cursor on Windows, §9.7). It is task 072 decision 1's
 // guard, moved from the absence of a mode field to the place the mode is
-// chosen (task 160 decision 1).
+// chosen (task 162 decision 1).
 const CodeAgentCannotRestrictResume = "agent_cannot_restrict_resume"
 
 // chatSettingsRequest is the settings half of PATCH /v1/chats/{id}, of a send
@@ -71,7 +71,7 @@ func (f *settingsRefusal) write(w http.ResponseWriter) {
 }
 
 // checkChatSettings validates want — the settings a chat's coming turns, or
-// one turn, would run with — against chat (task 160 decisions 1, 3, 5 and
+// one turn, would run with — against chat (task 162 decisions 1, 3, 5 and
 // 8). The same check serves PATCH, a per-turn override and a queued
 // message's, so none of the three can reach a combination the others refuse.
 // It returns the catalog's advisory warnings, as task creation does (T2.11).
@@ -203,7 +203,7 @@ type patchChatRequest struct {
 }
 
 // handleChatPatch is PATCH /v1/chats/{id}: a chat's title (task 161
-// decision 4), model, effort and permission mode (task 160 decision 5), each
+// decision 4), model, effort and permission mode (task 162 decision 5), each
 // optional. The agent is fixed (§5.5) — changing it is a new chat.
 //
 // The two halves keep their own legality. A rename alone is legal in every

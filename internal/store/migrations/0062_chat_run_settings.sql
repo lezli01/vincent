@@ -1,8 +1,8 @@
 -- 0062_chat_run_settings: what each chat turn ran with, and a queued message's
--- per-turn overrides (task 160, issue #1011, spec §5.5, §14).
+-- per-turn overrides (task 162, issue #1011, spec §5.5, §14).
 --
 -- A chat's model, effort and permission mode may now change between turns
--- (task 160, superseding the creation-only rule of §5.5 and task 072
+-- (task 162, superseding the creation-only rule of §5.5 and task 072
 -- decision 1), so the chat row no longer says what an old turn ran with.
 -- chat_turns records the value resolved for the turn — its override, else the
 -- chat's setting at the moment the turn row was written.

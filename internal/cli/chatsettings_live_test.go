@@ -7,7 +7,7 @@ import (
 )
 
 // TestChatSetChangesSettings is `vincent chat set` against the real handlers
-// (task 160): it changes the model, lowers to restricted without asking, and
+// (task 162): it changes the model, lowers to restricted without asking, and
 // refuses to raise to full-auto off a terminal unless --yes is given.
 func TestChatSetChangesSettings(t *testing.T) {
 	h := newLiveHarness(t)

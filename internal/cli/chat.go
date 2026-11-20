@@ -178,13 +178,13 @@ func newChatSendCmd() *cobra.Command {
 				return errors.New("a message is required: give it as an argument or with --message-file")
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				return runChatTurnWith(ctx, cmd, c, id, message, ov)
+				return runChatTurn(ctx, cmd, c, id, message, ov)
 			})
 		},
 	}
 	cmd.Flags().StringVar(&msgFile, "message-file", "",
 		"read the message from this file (- for stdin) and send it byte for byte")
-	// Per-turn overrides (task 160 decision 6): this turn only; the chat
+	// Per-turn overrides (task 162 decision 6): this turn only; the chat
 	// keeps its own settings. A full-auto override is the API's to refuse
 	// on a linked restricted chat; it raises nothing beyond this one turn.
 	cmd.Flags().StringVar(&ov.Model, "model", "", "run this turn on this model")
@@ -301,12 +301,10 @@ func (s *turnSpinner) erase() {
 // A writer goroutine drawing frames while this one prints the answer would
 // race on stderr for no gain; a select over three channels costs nothing and
 // leaves `-race` nothing to find.
-func runChatTurn(ctx context.Context, cmd *cobra.Command, c *apiclient.Client, id int64, message string) error {
-	return runChatTurnWith(ctx, cmd, c, id, message, apiclient.TurnSettings{})
-}
-
-// runChatTurnWith is runChatTurn with per-turn overrides (task 160).
-func runChatTurnWith(
+//
+// ov is the turn's own model, effort and permission mode (task 162); a zero
+// ov sends none and leaves the turn on the chat's settings.
+func runChatTurn(
 	ctx context.Context, cmd *cobra.Command, c *apiclient.Client, id int64, message string, ov apiclient.TurnSettings,
 ) error {
 	send := func() (*apiclient.ChatSend, error) {

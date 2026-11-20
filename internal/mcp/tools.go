@@ -157,7 +157,7 @@ var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/queue/clear"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/cancel"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/archive"},
-	// The rename (task 161) and a chat's settings (task 160 decision 5) share
+	// The rename (task 161) and a chat's settings (task 162 decision 5) share
 	// this route, and it stays off with the rest of the family under 063
 	// decision 2: an agent that could raise a chat to full-auto over MCP
 	// would be the confirmation §16 asks for, skipped.

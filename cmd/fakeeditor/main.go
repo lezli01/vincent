@@ -1,4 +1,4 @@
-// Command fakeeditor is a stand-in for $EDITOR in tests (task 157): it is
+// Command fakeeditor is a stand-in for $EDITOR in tests (task 163): it is
 // started the way the TUI starts a real editor — the editor's argv, then
 // the file — and does one scripted thing to the file, so the composer's
 // round trip can be proven against a real process on every platform.
