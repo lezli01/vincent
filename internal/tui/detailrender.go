@@ -1252,6 +1252,9 @@ func timelineContinuationLines(
 	return lines
 }
 
+// formatTokens is a step run's tokens, input then output, with the arrows
+// the chat turn heading uses: ↑ what was sent to the model, ↓ what it sent
+// back (review F4) — one convention across the TUI.
 func formatTokens(r apiclient.StepRun) string {
 	if r.InputTokens == nil && r.OutputTokens == nil {
 		return ""
@@ -1263,7 +1266,7 @@ func formatTokens(r apiclient.StepRun) string {
 	if r.OutputTokens != nil {
 		out = *r.OutputTokens
 	}
-	return fmt.Sprintf("%s↓/%s↑", compactCount(in), compactCount(out))
+	return fmt.Sprintf("%s↑/%s↓", compactCount(in), compactCount(out))
 }
 
 func compactCount(n int64) string { return chatTokens(n) }

@@ -49,6 +49,13 @@ list with the user-facing context a commit subject cannot carry.
   and closed chats are searched by default, and an answer stays findable
   after its transcript has been removed by retention (#1022).
 
+### Changed
+
+- **A step's token count uses the chat's arrows.** The task workspace's step
+  details now read `8.1k↑/120↓` — `↑` the input sent to the model, `↓` the
+  output it returned — matching each chat turn's heading. They had drawn the
+  arrows the other way round.
+
 ### Fixed
 
 - **Archiving a held side task by hand now archives the closed issue's main
