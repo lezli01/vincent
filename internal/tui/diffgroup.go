@@ -35,6 +35,13 @@ type diffFile struct {
 	// status is what happened to the file, as git's letters say it: M, A,
 	// D or R (task 168.6).
 	status byte
+	// hunks are the file's `@@` sections, in order, as positions in body (task
+	// 168 decision 4). A binary file, and a structured file carrying a note,
+	// has none: there is nothing in it for the hunk cursor to stand on.
+	hunks []diffFileHunk
+	// note is a dimmed line under the file's row, set only for a structured
+	// file (setFiles) — why this file cannot be rejected, say.
+	note string
 }
 
 // parseDiffFiles splits a diff into its file sections. Lines ahead of the
@@ -85,6 +92,10 @@ type diffFileParse struct {
 func (s *diffFileParse) consume(line string) {
 	if strings.HasPrefix(line, "@@") {
 		s.inHunk = true
+		// Every line of a hunk's content opens with a space, a sign or a
+		// backslash, so an `@@` at column 0 is always the next hunk's header
+		// and never a line of this one.
+		s.file.hunks = append(s.file.hunks, diffFileHunk{start: len(s.file.body)})
 	}
 	if s.inHunk {
 		// The ± here are content: the file markers are behind us, which is

@@ -144,6 +144,18 @@ type diffPane struct {
 	// minutes after the tab opened may no longer be the worktree's, and the
 	// pane says how old it is instead of passing it off as live.
 	asOf time.Time
+
+	// review is on once the content came from setFiles rather than a task
+	// fetch (task 168 decision 9): accepted hunks are dimmed and checked, and
+	// a file's row counts its reviewed hunks.
+	review bool
+	// hunk is the hunk cursor (diffhunk.go), beside the file cursor.
+	hunk diffHunkCursor
+	// hunkRow is the selected hunk's header in rows, -1 when it is not drawn;
+	// revealHunk asks the next rebuild to scroll there rather than to the
+	// file's row, and is spent by it.
+	hunkRow    int
+	revealHunk bool
 }
 
 // diffSection is one lane's share of the change, or the remainder — the
@@ -223,6 +235,9 @@ func (p *diffPane) reset() {
 	// not these files.
 	p.open = map[string]bool{}
 	p.cursor, p.cursorPath = 0, ""
+	p.review = false
+	p.hunk = diffHunkCursor{}
+	p.hunkRow, p.revealHunk = -1, false
 	p.asOf = time.Time{}
 	p.vp.SetContent("")
 	p.vp.SetYOffset(0)
@@ -288,6 +303,7 @@ func (p *diffPane) setSections(in []apiclient.DiffSection) {
 	p.lines = nil
 	p.truncated = false
 	p.grouped = false
+	p.review = false
 	budget := maxDiffLines
 	for _, s := range in {
 		if !s.Remainder {
@@ -385,6 +401,7 @@ func (p *diffPane) keepFolds() {
 		}
 	}
 	p.syncCursorPath()
+	p.keepHunk()
 }
 
 func (p *diffPane) syncCursorPath() {
@@ -628,6 +645,15 @@ func (p *diffPane) render(width, height int) string {
 // folding keeps the columns they panned to.
 func (p *diffPane) revealCursor() {
 	defer p.vp.SetXOffset(p.pan)
+	if p.revealHunk {
+		// A hunk move asked for the hunk, which in a long file is screens
+		// below the file's own row.
+		p.revealHunk = false
+		if p.hunkRow >= 0 {
+			p.vp.EnsureVisible(p.hunkRow, 0, 0)
+			return
+		}
+	}
 	for i, r := range p.rows {
 		if r.header && r.node == p.cursor {
 			p.vp.EnsureVisible(i, 0, 0)
@@ -646,7 +672,12 @@ func (p *diffPane) emptyState() (string, bool) {
 		// The diff loads on entering the tab (taskview.go), and `d` here
 		// would leave for Output (#799 W9) — so name what actually loads it.
 		return "the diff is not loaded — reopen the tab to load it", true
-	case len(p.lines) == 0:
+	case len(p.lines) == 0 && p.fileCount() == 0:
+		// A fetched diff with no line has no file either; structured files
+		// (setFiles) can be all binary, which is files and no lines.
+		if p.review {
+			return "no changes to review", true
+		}
 		return "no changes against the base branch yet", true
 	default:
 		return "", false
@@ -780,6 +811,11 @@ func (p *diffPane) freshness() string {
 	if p.asOf.IsZero() {
 		return ""
 	}
+	if p.review {
+		// Structured files are pushed in by whoever owns the pane, so how to
+		// refresh them is that caller's to say.
+		return "as of " + p.asOf.Format(diffAsOfLayout)
+	}
 	return "as of " + p.asOf.Format(diffAsOfLayout) + " — reopen the tab to refresh"
 }
 
@@ -795,6 +831,8 @@ func countNoun(n int, noun string) string {
 // header with its body under it when open, then the truncation notice.
 func (p *diffPane) buildRows() []diffRow {
 	rows := make([]diffRow, 0, len(p.lines)+len(p.nodes)+1)
+	p.hunkRow = -1
+	selSec, selFile, selHunk, selected := p.hunkPos()
 	if !p.grouped {
 		// Ungrouped there is no header to hang it under, so whatever preceded
 		// the first file opens the pane — including for a diff that has no
@@ -818,10 +856,32 @@ func (p *diffPane) buildRows() []diffRow {
 			continue
 		}
 		rows = append(rows, diffRow{header: true, node: i, text: p.fileRow(i, p.rowsWidth)})
+		f := &p.sections[n.section].files[n.file]
+		if f.note != "" {
+			// Under the row whether or not it is open: the note is about the
+			// file, and a folded list is where it is read.
+			rows = append(rows, diffRow{node: i, text: styleDim.Render(p.fileIndent() + "  " + f.note)})
+		}
 		if !p.open[n.key] {
 			continue
 		}
-		for _, line := range p.sections[n.section].styledBody[n.file] {
+		// The body comes from the cache; only the hunk headers are drawn here,
+		// because they are the lines whose look depends on the cursor and the
+		// icon set — a handful per file, against the thousands between them.
+		styled := p.sections[n.section].styledBody[n.file]
+		pos := 0
+		for h, hk := range f.hunks {
+			for _, line := range styled[pos:hk.start] {
+				rows = append(rows, diffRow{node: i, text: line})
+			}
+			sel := selected && selSec == n.section && selFile == n.file && selHunk == h
+			if sel {
+				p.hunkRow = len(rows)
+			}
+			rows = append(rows, diffRow{node: i, text: hunkHeaderRow(f.body[hk.start], hk.accepted, sel)})
+			pos = hk.start + 1
+		}
+		for _, line := range styled[pos:] {
 			rows = append(rows, diffRow{node: i, text: line})
 		}
 	}
@@ -886,16 +946,15 @@ func (p *diffPane) fileRow(i, width int) string {
 	if i == p.cursor {
 		style = styleSelected
 	}
-	indent := ""
-	if p.grouped {
-		indent = "  "
-	}
-	prefix := style.Render(indent+glyph+" ") + diffStatusLetter(f.status) + " "
+	prefix := style.Render(p.fileIndent()+glyph+" ") + diffStatusLetter(f.status) + " "
 	// A binary file has no ± lines at all, and `+0 -0` would read as
 	// "nothing changed here".
 	suffix := "  " + styleDim.Render("binary")
 	if !f.binary {
 		suffix = "  " + diffCounts(f.added, f.removed) + "  " + diffBar(f.added, f.removed)
+	}
+	if p.review && len(f.hunks) > 0 {
+		suffix += "  " + styleDim.Render(ic("✓ ")+f.reviewed())
 	}
 	if width <= 0 {
 		return prefix + style.Render(f.path) + suffix
