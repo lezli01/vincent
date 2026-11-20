@@ -650,6 +650,26 @@ jobs:
         shell: bash
         run: ./scripts/143-gate.sh
 
+      # 168: a chat's diff and its per-hunk review (task 168.8, issue #1018;
+      # §5.5, §13.2) — one turn leaves two hunks in a tracked file and a new
+      # untracked one, both scopes list them, the stat route and `vincent
+      # chat diff` agree, a reject reverts exactly one hunk in the working
+      # tree with nothing staged and HEAD where it was and leaves its note
+      # at the top of the draft, an accept is only a mark, a rejected hash
+      # is chat_hunk_stale, and a live turn refuses with chat_turn_live. The
+      # matrix earns its place because a reject is `git apply -R` on the
+      # host: on Windows the worktree may be checked out CRLF while the hunk
+      # was cut from LF trees, the path in a patch is `/`-separated whatever
+      # the host's is, and removing a rejected new file is a delete in a
+      # directory git has just read. Group 2 because no timing comment here
+      # measures it heavier than the rest and it carried the fewest gates
+      # when this was wired — group 1, last measured lightest (143), has
+      # taken three since; move it if a measured run says otherwise.
+      - name: 168 gate (chat diff and per-hunk review)
+        if: contains(matrix.groups, 2)
+        shell: bash
+        run: ./scripts/168-gate.sh
+
   gates:
     needs: gate-group
     if: always()
