@@ -2745,6 +2745,8 @@ periodic repaint.
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
 | `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
+| `alt+p` | Pick the model and effort the chat's next turns run on. After the first turn, only on an agent that can change them on a resumed session (claude today) |
+| `shift+tab` | Toggle the permission mode: lowers to `restricted` at once, asks `y`/`n` before raising to `full-auto`, and says why when the agent can only run one |
 | `ctrl+p` | Command palette — `:` is a character here |
 | `f1` | Help — `?` is a character here |
 | `esc` | Back to where the chat was opened from — the issue, the issues list, the archived-chats board or the [chat search](#chat-search) — otherwise the chats board |
@@ -3657,7 +3659,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twenty-four are the operations screens share, the next eleven are the
+The first twenty-six are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3686,6 +3688,8 @@ The first twenty-four are the operations screens share, the next eleven are the
 | `compact` | `alt+k` | Compact the chat agent's context — sends its compact command (`/compact` on claude) as the next message; asks first |
 | `chat_search` | `S` | Search every chat, from the chats board |
 | `export_chat` | `alt+e` | Export a chat as Markdown, HTML or JSON — from the chat, the chats board or the archived chats board. See [Exporting a chat](#exporting-a-chat) |
+| `chat_model` | `alt+p` | Pick the chat's model and effort for its next turns |
+| `chat_mode` | `shift+tab` | Toggle the chat's permission mode; asks before raising it to full-auto |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

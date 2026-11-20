@@ -97,6 +97,12 @@ how full the session's context is — and offers `/compact` when it nears the
 limit. Archiving a chat cleans up its worktree, and an empty branch
 with it, the way archiving a task does.
 
+A chat's model, effort and permission mode can change between turns — from
+the composer (`alt+p` picks the model and effort, `shift+tab` toggles the mode
+and asks before raising it to full-auto), `vincent chat set`, or
+`PATCH /v1/chats/{id}` — and a single turn can run with its own. Each turn
+records what it ran with, and its heading names the model.
+
 Old conversations stay findable. **Search every chat**, live or archived, by
 its title, what you asked or what the agent answered: matching is by
 substring, so `429` finds `status429Body`. In the TUI, "Search all chats" in

@@ -25,6 +25,22 @@ list with the user-facing context a commit subject cannot carry.
   `GET /v1/chats/{id}/search?q=`, and the CLI `vincent chat find` (task 160,
   #1014).
 
+- **A chat's model, effort and permission mode can change between turns.**
+  In the chat, the composer's border shows `model · effort · mode`; `alt+p`
+  picks the model and effort for the next turns, and `shift+tab` toggles
+  between `restricted` and `full-auto`, asking first before raising to
+  full-auto. `vincent chat set` does the same from the command line (`--yes`
+  confirms a raise to full-auto), and `vincent chat send --model/--effort/
+  --permission-mode` runs one turn with its own settings. The API gains
+  `PATCH /v1/chats/{id}`, per-turn overrides on send and on a queued message,
+  `permission_mode` on `POST /v1/chats`, a `chat.updated` event, and
+  `supports_resume_settings_change` on `GET /v1/agents`. Each turn records the
+  model, effort and mode it ran with, its heading names the model, and chat
+  export shows them. After a chat's first turn the model and effort can
+  change only on claude, the one agent shown to honour a change on a resumed
+  session; `restricted` is refused on codex chats, and a chat opened on a
+  restricted task can never be raised to full-auto (#1011).
+
 - **A chat queues the messages you send while its turn runs.** `enter` on a
   running chat, or one waiting on the agent's question, no longer refuses:
   the message is queued and runs as the next turn once the current one ends

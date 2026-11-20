@@ -175,6 +175,7 @@ the living engineering specification records implementation contracts.
 | [159](159-chat-export.md) | Export a chat as Markdown, HTML or JSON: `GET /v1/chats/{id}/export`, `vincent chat export`, the TUI's export form | ✅ done (4/4) |
 | [160](160-chat-search-and-navigation.md) | Search inside a chat, jump between prompts, expand one tool call | 🔄 in progress (2/3) |
 | [161](161-chat-first-message-and-rename.md) | Start a chat from its first message, rename chats, and choose the agent for a chat on a task or issue | ✅ done (6/6) |
+| [162](162-chat-run-settings-between-turns.md) | Change a chat's model, effort and permission mode between turns: `PATCH /v1/chats/{id}`, per-turn overrides, `vincent chat set`, `alt+p` and `shift+tab` | ✅ done (6/6) |
 
 ## How to add and update a task document
 

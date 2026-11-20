@@ -2165,7 +2165,7 @@ created and `idle`, as `--message` does.
 ### `vincent chat send`
 
 ```sh
-vincent chat send CHAT_ID [MESSAGE] [--message-file PATH|-] [--json]
+vincent chat send CHAT_ID [MESSAGE] [--message-file PATH|-] [--model M] [--effort E] [--permission-mode MODE] [--json]
 ```
 
 The message is the second argument or the content of `--message-file`, and
@@ -2256,6 +2256,31 @@ what the agent gets is whatever the shell left:
   `MSYS_NO_PATHCONV=1` for the command, or use `--message-file`, which is
   never an argument. See
   [troubleshooting](../guides/troubleshooting.md#the-agent-received-cprogram-filesgitreview-instead-of-review).
+
+Per-turn overrides — `--model`, `--effort` and `--permission-mode` — run this
+one turn (or this queued message, when it runs) with those settings; the chat
+keeps its own. To change the chat's settings for every next turn, use
+[`vincent chat set`](#vincent-chat-set).
+
+### `vincent chat set`
+
+```sh
+vincent chat set CHAT_ID [--title T] [--model M] [--effort E] [--permission-mode full-auto|restricted] [--yes] [--json]
+```
+
+Changes a chat's title, model, effort or permission mode. The change applies
+from the chat's next turn; a turn already running keeps what it started with.
+An empty `--model ""` or `--effort ""` returns to the agent's default. After a
+chat's first turn, model and effort can change only on an agent that has been
+shown to honour the change on a resumed session (claude today; see
+`supports_resume_settings_change` in `vincent agents --json`) — otherwise open
+a new chat. `restricted` is refused on codex, whose resumed turns cannot be
+restricted, and on cursor on Windows.
+
+Raising a chat to `full-auto` lets its agent run any command as you without
+asking, so it asks first on a terminal and is refused elsewhere unless you pass
+`--yes`. Lowering to `restricted` never asks. A chat opened on a task that runs
+restricted can never be raised.
 
 ### `vincent chat answer`
 
