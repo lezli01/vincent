@@ -598,7 +598,7 @@ var bindings = []binding{
 	{op: keymap.NextFailure, key: "N", label: "jump to the next failure: the newest failed attempt of each step in execution order, on the Output tab at the line it failed on — a blocked lane opens, esc comes back", scope: scopePanel, context: ctxDiff, priority: 6, term: termNextFail},
 	{key: openIssueKey, label: "open the task's linked issue — esc comes back to this tab", scope: scopePanel, context: ctxDiff, hint: "i issue", priority: 8},
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxDiff, priority: 7},
-	{key: "d", label: "switch between the Output and Diff tabs", scope: scopePanel, context: ctxDiff, priority: 9},
+	{key: "d", label: "switch between the whole task's diff and what the attempt selected on the rail changed", scope: scopePanel, context: ctxDiff, hint: "d by attempt", priority: 9},
 	{key: "pgdown", label: "page the diff (pgup/pgdown, ctrl+d/ctrl+u)", scope: scopePanel, context: ctxDiff, priority: 10},
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxDiff, priority: 11},
 

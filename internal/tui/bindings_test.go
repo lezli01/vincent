@@ -301,16 +301,16 @@ func laneParentProbe(tab taskViewTab) func(*testing.T) {
 	}
 }
 
-// workspaceKeyProbe is the shared assertion for the keys taskView.Update
-// answers on every tab (issue #595): pressed on tab from, the workspace lands
-// on want.
-func workspaceKeyProbe(v func(*testing.T) *taskView, want taskViewTab) func(*testing.T) {
+// workspaceKeyProbe is the shared assertion for `d`, which taskView.Update
+// answers on every tab (issue #595): pressed on any tab but Diff, the
+// workspace lands on Diff.
+func workspaceKeyProbe(v func(*testing.T) *taskView) func(*testing.T) {
 	return func(t *testing.T) {
 		tv := v(t)
 		from := tv.tab
 		tv.updateKey(registryKey(t, "d"))
-		if tv.tab != want {
-			t.Fatalf("d on tab %v moved to %v, want %v", from, tv.tab, want)
+		if tv.tab != taskTabDiff {
+			t.Fatalf("d on tab %v moved to %v, want %v", from, tv.tab, taskTabDiff)
 		}
 	}
 }
@@ -625,7 +625,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabSteps) },
 		"i": issueKeyProbe(onTab(taskTabSteps)),
-		"d": workspaceKeyProbe(onTab(taskTabSteps), taskTabDiff),
+		"d": workspaceKeyProbe(onTab(taskTabSteps)),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabSteps)
 			v.updateKey(registryKey(t, "tab"))
@@ -715,7 +715,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxTaskDetails: {
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabDetails) },
 		"i": issueKeyProbe(onTab(taskTabDetails)),
-		"d": workspaceKeyProbe(onTab(taskTabDetails), taskTabDiff),
+		"d": workspaceKeyProbe(onTab(taskTabDetails)),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDetails)
 			v.updateKey(registryKey(t, "tab"))
@@ -1787,7 +1787,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOutput) },
 		"i": issueKeyProbe(onTab(taskTabOutput)),
-		"d": workspaceKeyProbe(onTab(taskTabOutput), taskTabDiff),
+		"d": workspaceKeyProbe(onTab(taskTabOutput)),
 		"U": laneParentProbe(taskTabOutput),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabOutput)
@@ -1945,7 +1945,19 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabDiff) },
 		"i": issueKeyProbe(onTab(taskTabDiff)),
-		"d": workspaceKeyProbe(onTab(taskTabDiff), taskTabOutput),
+		"d": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabDiff)
+			runs := v.detail.attempts()
+			v.detail.selectedRun = runs[len(runs)-1].ID
+			v.updateKey(registryKey(t, "d"))
+			if v.tab != taskTabDiff || v.detail.diff.stepRun != v.detail.selectedRun {
+				t.Fatalf("d on Diff left tab %v scoped to %d, want Diff scoped to %d", v.tab, v.detail.diff.stepRun, v.detail.selectedRun)
+			}
+			v.updateKey(registryKey(t, "d"))
+			if v.detail.diff.stepRun != 0 {
+				t.Fatalf("a second d left the diff scoped to %d, want the whole task", v.detail.diff.stepRun)
+			}
+		},
 		"U": laneParentProbe(taskTabDiff),
 		"tab": func(t *testing.T) {
 			v := tabbedTaskFixture(t, taskTabDiff)
@@ -2544,7 +2556,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 		"N": func(t *testing.T) { nextFailureProbe(t, taskTabOverview) },
 		"i": issueKeyProbe(onTab(taskTabOverview)),
-		"d": workspaceKeyProbe(onTab(taskTabOverview), taskTabDiff),
+		"d": workspaceKeyProbe(onTab(taskTabOverview)),
 		"l": laneOpenProbe(taskTabOverview),
 		"U": laneParentProbe(taskTabOverview),
 		"w": func(t *testing.T) {
@@ -2575,7 +2587,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"N":   func(t *testing.T) { nextFailureProbe(t, taskTabStepDetails) },
 		"tab": workspaceTabProbe(onTab(taskTabStepDetails)),
 		"i":   issueKeyProbe(onTab(taskTabStepDetails)),
-		"d":   workspaceKeyProbe(onTab(taskTabStepDetails), taskTabDiff),
+		"d":   workspaceKeyProbe(onTab(taskTabStepDetails)),
 		"l":   laneOpenProbe(taskTabStepDetails),
 		"U":   laneParentProbe(taskTabStepDetails),
 		"down": func(t *testing.T) {
@@ -2592,7 +2604,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxTaskPull: {
 		"N":   func(t *testing.T) { nextFailureProbe(t, taskTabPull) },
 		"tab": workspaceTabProbe(pullTabFixture),
-		"d":   workspaceKeyProbe(pullTabFixture, taskTabDiff),
+		"d":   workspaceKeyProbe(pullTabFixture),
 		"U":   laneParentProbe(taskTabPull),
 		"down": func(t *testing.T) {
 			v := pullTabFixture(t)
@@ -2739,7 +2751,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"N":   func(t *testing.T) { nextFailureProbe(t, taskTabWorkflow) },
 		"tab": workspaceTabProbe(workflowTabFixture),
 		"i":   issueKeyProbe(workflowTabFixture),
-		"d":   workspaceKeyProbe(workflowTabFixture, taskTabDiff),
+		"d":   workspaceKeyProbe(workflowTabFixture),
 		"U":   laneParentProbe(taskTabWorkflow),
 		"down": func(t *testing.T) {
 			v := workflowTabFixture(t)

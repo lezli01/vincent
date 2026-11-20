@@ -60,7 +60,10 @@ const diffKeySep = "\x00"
 // pane treats it as a single remainder section, which is the same thing the
 // daemon returns for a task that fanned nothing out.
 type diffLoadedMsg struct {
-	taskID   int64
+	taskID int64
+	// stepRun is the attempt the diff was scoped to, 0 for the whole task
+	// (task 164.6): a fetch for the scope the pane has left is dropped.
+	stepRun  int64
 	text     string
 	sections []apiclient.DiffSection
 	err      error
@@ -84,7 +87,11 @@ type diffPane struct {
 	// wide puts it at 0; this is what a rebuild restores (review F19).
 	pan int
 
-	taskID    int64
+	taskID int64
+	// stepRun scopes the pane to what one attempt changed (task 164.6), and
+	// stepLabel names it on the summary line; 0 is the whole task.
+	stepRun   int64
+	stepLabel string
 	lines     []string
 	sections  []diffSection
 	loaded    bool
@@ -188,6 +195,8 @@ func (p *diffPane) openTask(taskID int64) {
 		return
 	}
 	p.taskID = taskID
+	// Another task's attempt is no scope for this one.
+	p.stepRun, p.stepLabel = 0, ""
 	p.reset()
 }
 
@@ -228,17 +237,21 @@ func (p *diffPane) fetch(client *apiclient.Client, force bool) tea.Cmd {
 		return nil
 	}
 	p.fetching = true
-	id := p.taskID
+	id, run := p.taskID, p.stepRun
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), diffTimeout)
 		defer cancel()
+		if run != 0 {
+			text, err := client.DiffStep(ctx, id, run)
+			return diffLoadedMsg{taskID: id, stepRun: run, text: text, err: err}
+		}
 		sections, err := client.DiffByLane(ctx, id)
 		return diffLoadedMsg{taskID: id, sections: sections, err: err}
 	}
 }
 
 func (p *diffPane) apply(msg diffLoadedMsg) {
-	if msg.taskID != p.taskID {
+	if msg.taskID != p.taskID || msg.stepRun != p.stepRun {
 		return
 	}
 	p.fetching = false
@@ -633,6 +646,9 @@ func (p *diffPane) emptyState() (string, bool) {
 
 // errorText explains a refusal in the terms of the task's own life cycle.
 func (p *diffPane) errorText() string {
+	if apiclient.StepRangeUnrecorded(p.err) {
+		return "this attempt has no recorded commit range — it ran before vincent recorded one; d shows the whole task"
+	}
 	var apiErr *apiclient.Error
 	if errors.As(p.err, &apiErr) && apiErr.Status == http.StatusConflict {
 		switch {
@@ -668,6 +684,18 @@ func (p *diffPane) laneCount() int {
 	return n
 }
 
+// setScope points the pane at one attempt's change, or with run 0 at the
+// whole task's, discarding what it showed: the files of one are not the
+// files of the other. It reports whether the scope changed.
+func (p *diffPane) setScope(run int64, label string) bool {
+	if run == p.stepRun {
+		return false
+	}
+	p.stepRun, p.stepLabel = run, label
+	p.reset()
+	return true
+}
+
 // totals is the change's size across every section, and whether a diff has
 // loaded to have one (task 164.2's tab marker).
 func (p *diffPane) totals() (added, removed int, ok bool) {
@@ -691,7 +719,7 @@ func (p *diffPane) summary() string {
 		added += p.sections[i].added
 		removed += p.sections[i].removed
 	}
-	out := "  "
+	out := "  " + styleTitle.Render(p.scopeLabel()) + "  "
 	if p.grouped {
 		out += styleDim.Render(countNoun(p.laneCount(), "lane")) + "  "
 	}
@@ -702,6 +730,14 @@ func (p *diffPane) summary() string {
 		return out
 	}
 	return out + "  " + diffCounts(added, removed)
+}
+
+// scopeLabel names what the pane is the diff of, for its summary line.
+func (p *diffPane) scopeLabel() string {
+	if p.stepRun == 0 {
+		return "whole task"
+	}
+	return p.stepLabel
 }
 
 // headLine is the summary with the freshness cue after it: in full while it

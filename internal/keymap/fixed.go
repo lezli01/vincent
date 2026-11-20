@@ -80,7 +80,7 @@ var fixed = []Fixed{
 	{"diff", "O", "expand every file"},
 	{"diff", "C", "collapse every file"},
 	{"diff", "U", "open this lane's parent task"},
-	{"diff", "d", "switch between the Output and Diff tabs"},
+	{"diff", "d", "switch between the whole task's diff and one attempt's"},
 	{"diff", "pgdown", "page the diff"},
 	{"diff", "shift+right", "pan long lines"},
 	{"new task", "enter", "open the focused field's editor or picker"},

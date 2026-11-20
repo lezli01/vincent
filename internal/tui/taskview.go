@@ -562,7 +562,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	case "d":
 		if t.tab == taskTabDiff {
-			return t.setTab(taskTabOutput)
+			return t.toggleDiffScope()
 		}
 		return t.setTab(taskTabDiff)
 	case "esc":
@@ -2489,3 +2489,21 @@ func treeCost(own, children *float64) *float64 {
 // notesClipboard marks the workspace as saying a copy's outcome itself, on
 // its action bar (detail.update), so the root's status line stands down.
 func (t *taskView) notesClipboard() {}
+
+// toggleDiffScope is `d` on the Diff tab (task 164.6): it switches between
+// the whole task's diff and what the attempt selected on the rail changed.
+func (t *taskView) toggleDiffScope() tea.Cmd {
+	p := &t.detail.diff
+	run, label := int64(0), ""
+	if p.stepRun == 0 {
+		r := t.detail.runByID(t.detail.selectedRun)
+		if r.ID == 0 {
+			return nil
+		}
+		run, label = r.ID, fmt.Sprintf("%s · attempt %d", feedLabel(r), r.Attempt)
+	}
+	if !p.setScope(run, label) {
+		return nil
+	}
+	return p.fetch(t.detail.client, true)
+}
