@@ -362,6 +362,14 @@ type StepRun struct {
 	Shell          *string `json:"shell"`
 	WorkDir        *string `json:"work_dir"`
 
+	// HeadStart and HeadEnd are the worktree's HEAD sha when the attempt
+	// started and when it ended (task 164.5) — the range DiffStep diffs. nil
+	// means not recorded: an attempt from before the record, a step that runs
+	// nothing in the worktree, and, for HeadEnd, an attempt still running or
+	// one crash recovery finalized.
+	HeadStart *string `json:"head_start"`
+	HeadEnd   *string `json:"head_end"`
+
 	StartedAt  time.Time  `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at"`
 }

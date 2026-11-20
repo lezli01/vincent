@@ -22,7 +22,7 @@ const stepRunColumns = `id, task_id, step_index, step_id, step_type, attempt, it
 	input_tokens, output_tokens, cost_usd, input_wait_ms, started_at, finished_at,
 	rendered_prompt, rendered_run, rendered_check, rendered_if, rendered_for_each, input_truncated,
 	agent_source, model_source, effort_source, permission_mode,
-	timeout_ms, check_timeout_ms, shell, work_dir`
+	timeout_ms, check_timeout_ms, shell, work_dir, head_start, head_end`
 
 // TerminalizeOpenStepRuns closes every still-running step run of a task,
 // recording state and reason. It exists for the human actions that end a
@@ -113,7 +113,9 @@ func (s *Store) OpenStepRun(ctx context.Context, ref StepRef) (*StepRun, error) 
 // number and its `started_at` — the step started when the fan-out began, not
 // when its last lane settled, and the attempt number the park chose is the one
 // §12.2 named that attempt's transcript after. It takes the columns the
-// attempt owns: the transcript path and the agent selection.
+// attempt owns: the transcript path, the agent selection, and the HEAD the
+// attempt starts at (task 164.5) — the merge is what the round's range covers,
+// so it starts where the adopting attempt finds the worktree.
 //
 // The pending edit+retry override is drained onto it in the same transaction
 // as the write, for the reason CreateStepRunTakingOverride gives — a join is
@@ -142,10 +144,12 @@ func (s *Store) AdoptOpenStepRun(ctx context.Context, r *StepRun) (bool, error) 
 		r.ID, r.Attempt, r.StartedAt = open.ID, open.Attempt, open.StartedAt
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE step_runs SET step_type = ?, agent = ?, model = ?, effort = ?,
-				prompt_override = ?, run_override = ?, transcript_path = ?
+				prompt_override = ?, run_override = ?, transcript_path = ?,
+				head_start = COALESCE(?, head_start)
 			WHERE id = ?`,
 			r.StepType, nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 			nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
+			r.HeadStart,
 			r.ID); err != nil {
 			return fmt.Errorf("adopt step run %d: %w", r.ID, err)
 		}
@@ -212,9 +216,9 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 			rendered_prompt, rendered_run, rendered_check, rendered_if, rendered_for_each,
 			input_truncated,
 			agent_source, model_source, effort_source, permission_mode,
-			timeout_ms, check_timeout_ms, shell, work_dir)
+			timeout_ms, check_timeout_ms, shell, work_dir, head_start, head_end)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.TaskID, r.StepIndex, r.StepID, r.StepType, r.Attempt, r.Iteration, nullString(r.LoopItem),
 		r.LoopTotal,
 		string(r.State),
@@ -230,7 +234,8 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 		r.InputTruncated,
 		nullString(r.AgentSource), nullString(r.ModelSource), nullString(r.EffortSource),
 		nullString(r.PermissionMode),
-		r.TimeoutMS, r.CheckTimeoutMS, nullString(r.Shell), nullString(r.WorkDir))
+		r.TimeoutMS, r.CheckTimeoutMS, nullString(r.Shell), nullString(r.WorkDir),
+		r.HeadStart, r.HeadEnd)
 	if err != nil {
 		return fmt.Errorf("insert step run: %w", err)
 	}
@@ -260,6 +265,10 @@ func createStepRun(ctx context.Context, db execer, r *StepRun) error {
 // UPDATE carrying the actor's stale copy of the struct would erase whatever
 // the step said. Leaving the column out is what makes the last live value
 // survive onto the finished row for free.
+//
+// `head_end` is written only when r carries one, and `head_start` never: the
+// start of the range is fixed at insert (task 164.5), and an update from a
+// struct that never read the column must not erase either end of it.
 func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE step_runs SET state = ?, agent = ?, model = ?, effort = ?, pid = ?, proc_started_at = ?,
@@ -267,7 +276,8 @@ func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 			exit_code = ?, check_exit_code = ?, failure_reason = ?, skip_reason = ?, result_summary = ?,
 			stdout_tail = ?,
 			prompt_override = ?, run_override = ?, transcript_path = ?,
-			input_tokens = ?, output_tokens = ?, cost_usd = ?, input_wait_ms = ?, finished_at = ?
+			input_tokens = ?, output_tokens = ?, cost_usd = ?, input_wait_ms = ?, finished_at = ?,
+			head_end = COALESCE(?, head_end)
 		WHERE id = ?`,
 		string(r.State), nullString(r.Agent), nullString(r.Model), nullString(r.Effort),
 		r.PID, formatTimePtr(r.ProcStartedAt), r.ProcIdentity, r.ContainerID,
@@ -275,6 +285,7 @@ func (s *Store) UpdateStepRun(ctx context.Context, r *StepRun) error {
 		nullString(r.ResultSummary), r.StdoutTail,
 		nullString(r.PromptOverride), nullString(r.RunOverride), nullString(r.TranscriptPath),
 		r.InputTokens, r.OutputTokens, r.CostUSD, r.InputWaitMS, formatTimePtr(r.FinishedAt),
+		r.HeadEnd,
 		r.ID)
 	if err != nil {
 		return fmt.Errorf("update step run %d: %w", r.ID, err)
@@ -636,6 +647,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		prompt, run, check, guard, forEach      sql.NullString
 		agentSrc, modelSrc, effortSrc, permMode sql.NullString
 		shell, workDir                          sql.NullString
+		headStart, headEnd                      sql.NullString
 	)
 	if err := row.Scan(&r.ID, &r.TaskID, &r.StepIndex, &r.StepID, &r.StepType, &r.Attempt,
 		&r.Iteration, &loopItem, &r.LoopTotal,
@@ -645,7 +657,7 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 		&inTok, &outTok, &cost, &r.InputWaitMS, &started, &finished,
 		&prompt, &run, &check, &guard, &forEach, &r.InputTruncated,
 		&agentSrc, &modelSrc, &effortSrc, &permMode,
-		&r.TimeoutMS, &r.CheckTimeoutMS, &shell, &workDir); err != nil {
+		&r.TimeoutMS, &r.CheckTimeoutMS, &shell, &workDir, &headStart, &headEnd); err != nil {
 		return nil, err
 	}
 	// NULL and empty are different facts for the rendered fields: nil is "no
@@ -662,6 +674,8 @@ func scanStepRun(row rowScanner) (*StepRun, error) {
 	r.PermissionMode = permMode.String
 	r.Shell = shell.String
 	r.WorkDir = workDir.String
+	r.HeadStart = stringPtr(headStart)
+	r.HeadEnd = stringPtr(headEnd)
 	r.Agent = agent.String
 	r.Model = model.String
 	r.Effort = effort.String

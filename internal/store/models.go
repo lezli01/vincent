@@ -547,6 +547,19 @@ type StepRun struct {
 	CheckTimeoutMS int64
 	Shell          string // resolved shell name for a command step
 	WorkDir        string
+	// HeadStart and HeadEnd are the worktree's HEAD sha when this attempt
+	// started and when it ended (task 164.5, migration 0064): the commit range
+	// the attempt covered, which is what `diff?step_run=` diffs (§13.2).
+	//
+	// HeadStart is written at insert, before the step's process runs
+	// (crash-first), and HeadEnd by the UpdateStepRun that finalizes the row.
+	// nil means not recorded: a pre-0064 row, a step type that runs nothing in
+	// the worktree, a task with no worktree, a HEAD that could not be read,
+	// and — for HeadEnd — an attempt still running or one §12.4 recovery
+	// finalized, which did not see it end. A sha names commits only, so what
+	// an attempt left uncommitted is never inside the range.
+	HeadStart      *string
+	HeadEnd        *string
 	TranscriptPath string
 	InputTokens    *int64
 	OutputTokens   *int64

@@ -649,6 +649,35 @@ produced nothing. Empty or 0 on the resolution fields reads the same "not
 recorded", following `loop_total`'s precedent, so a task in flight over the
 upgrade renders as it did.
 
+*Amended 2026-11-20 (task 164.5, decision 6, migration 0064).* A StepRun also
+records its **commit range**: `head_start`, the worktree's `HEAD` sha when the
+attempt started, and `head_end`, its `HEAD` when the attempt ended. They are
+what `GET /v1/tasks/{id}/diff?step_run=` diffs (§13.2), so a reader can see
+what one attempt changed rather than what the whole task has.
+
+- **Crash-first.** `head_start` is carried by the row's insert, before the agent
+  or command runs; `head_end` is written by the same update that finalizes the
+  row, for any terminal outcome of an attempt that ran. §12.4 recovery
+  finalizes an interrupted attempt **without** a `head_end` — it did not see the
+  attempt end, and the worktree's `HEAD` at recovery may hold whatever ran
+  after — so that attempt has no range.
+- **Which attempts.** Those that run something in the task's worktree: agent
+  and command steps, the merge-back, and a `fan_out`'s join, whose lane merges
+  are commits like any other. The structural steps (`parallel`, `condition`,
+  `loop`, `break`), a `manual` gate and a `fan_out`'s park record neither —
+  they never change the worktree — nor does a task with no worktree, nor an
+  attempt whose `HEAD` could not be read, which is logged and never fails the
+  step: the range is evidence about an attempt, not a precondition of it.
+- **Commits only.** A sha names commits, so what an attempt left uncommitted is
+  outside its finished range; a `parallel` group's sub-steps share their task's
+  worktree, so a sub-step's range is what was committed while it ran, its
+  siblings' commits included. The range is a fact about the worktree's history
+  over the attempt, not an attribution.
+
+Null on either is **not recorded** — every row written before the migration,
+never back-filled, because no recorded commit says where an old attempt started
+and guessing one would attribute some other attempt's work to it.
+
 ### 5.5 Chat and ChatTurn (task 063)
 
 A **Chat** is a titled conversation with an agent, scoped to a project. It is a
@@ -12331,6 +12360,14 @@ GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
                                         only (§7.7) and `rendered_for_each` is a JSON array.
                                         `GET /v1/tasks` does **not** carry any of them: they
                                         are per-attempt evidence, not a board column)
+                                        (task 164.5, 2026-11-20: each also carries
+                                        `head_start` and `head_end`, the worktree's HEAD sha
+                                        when the attempt started and ended — the range
+                                        `diff?step_run=` diffs. Null is not recorded: an
+                                        attempt from before the record, a step that runs
+                                        nothing in the worktree, and for `head_end` an
+                                        attempt still running or one §12.4 recovery
+                                        finalized (§5.4))
 POST   /v1/tasks/{id}/steps/{step_id}/status
                                         { message } → { message }, the value as stored
                                         (added 2026-08-26, task 036). Records what the
@@ -12570,6 +12607,9 @@ GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base w
                                         remainder holding the whole diff; the parameter absent is
                                         byte-for-byte the text/plain body above; any other value
                                         is a 400. Added 2026-09-03 (issue #316)
+                                        ?step_run=<id> -> what one step run changed, in the
+                                        same shape (text/plain; with by=lane, one remainder
+                                        section). Amended 2026-11-20 (task 164.6); see below
 GET    /v1/tasks/{id}/commits           the task's own commits, oldest first:
                                         [{sha, subject, author_time, lane_id?, child_task_id?}].
                                         Added 2026-09-29 (issue #601); see below
@@ -12613,6 +12653,25 @@ issue's branch keeps moving under the next main task; such a task answers
 even with no worktree. `/diff` does the same for a task with `end_sha` and no
 worktree: it diffs `merge-base..end_sha` in the project repository, `?by=lane`
 included.
+
+*Amended 2026-11-20 (task 164.6, decision 6).* `GET /v1/tasks/{id}/diff` takes
+an optional `step_run=<id>`, which narrows the diff to one step run's recorded
+commit range (§5.4). A **finished** run diffs `head_start..head_end` — the
+commits it made, never what it left uncommitted — in the task's worktree, or in
+the project repository once the worktree is gone, since both shas are commits
+the repository holds while the branch reaches them. A **running** run diffs
+`head_start` against the live worktree, with the whole-task diff's own
+semantics: committed, staged and unstaged tracked changes, untracked files
+excluded. The body is the whole-task diff's shape, so a client renders it
+unchanged; `by=lane` is accepted and answers one `remainder` section holding
+the same bytes, because lane attribution belongs to the whole task's history
+and a step's range is not cut by lane. A run of another task is a **404**, as
+an unknown id is; a value that is not a positive integer is a **400**
+`validation_failed`; and a run with no range — a row from before the record, a
+step type that records none, an attempt §12.4 recovery finalized — is a
+**409** `step_range_unrecorded`, never an empty diff that would read as "this
+step changed nothing". A finished range whose commits git no longer has is the
+route's ordinary `409 invalid_state` with git's words.
 
 *Added 2026-08-25 (task 030).* `/v1/daemon/*` is no longer only process
 lifecycle: it now holds `backup` beside `stop`. That is accepted knowingly and
@@ -13748,6 +13807,8 @@ CREATE TABLE step_runs (
   check_timeout_ms    INTEGER NOT NULL DEFAULT 0, -- 0 = not recorded
   shell               TEXT,                   -- the shell a command step resolved to (§8.3)
   work_dir            TEXT,                   -- the directory the process ran in
+  head_start          TEXT,                   -- worktree HEAD at the attempt's start; NULL = not recorded (0064)
+  head_end            TEXT,                   -- worktree HEAD at its end; NULL = not recorded, or still running
   transcript_path     TEXT,
   input_tokens        INTEGER,
   output_tokens       INTEGER,

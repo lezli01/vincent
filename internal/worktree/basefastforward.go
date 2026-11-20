@@ -195,6 +195,14 @@ func (m *Manager) readRef(ctx context.Context, repo, ref string) (string, error)
 	return m.git.Run(ctx, repo, "rev-parse", "--verify", ref)
 }
 
+// Head is the commit checked out in dir — `git rev-parse --verify HEAD`. The
+// engine journals it at both ends of a step run (task 164.5) so a reader can
+// diff exactly what one attempt committed. An unborn branch and a dir that is
+// not a git checkout are errors, not an empty sha.
+func (m *Manager) Head(ctx context.Context, dir string) (string, error) {
+	return m.readRef(ctx, dir, "HEAD")
+}
+
 // ancestorOf is isAncestor with git's failures kept apart from its answer.
 // `merge-base --is-ancestor` exits 1 for "no" and something else for "could
 // not tell"; isAncestor folds both into false, which here would turn an
