@@ -43,7 +43,7 @@ func newChatCmd() *cobra.Command {
 		newChatCancelCmd(), newChatListCmd(), newChatShowCmd(), newChatTranscriptCmd(),
 		newChatSkillsCmd(), newChatFilesCmd(), newChatArchiveCmd(), newChatHandoffCmd(),
 		newChatCloseCmd(), newChatDeleteCmd(), newChatQueueCmd(), newChatSearchCmd(),
-		newChatExportCmd())
+		newChatExportCmd(), newChatFindCmd())
 	return cmd
 }
 

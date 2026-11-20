@@ -22,7 +22,8 @@ list with the user-facing context a commit subject cannot carry.
   `enter` expands just the tool call under it, and `esc` or `i` gives the
   keyboard back with the draft untouched. Scrolled away from the live end,
   `↓ N new` counts what arrived below. The API gains
-  `GET /v1/chats/{id}/search?q=` (task 160, #1014).
+  `GET /v1/chats/{id}/search?q=`, and the CLI `vincent chat find` (task 160,
+  #1014).
 
 - **A chat queues the messages you send while its turn runs.** `enter` on a
   running chat, or one waiting on the agent's question, no longer refuses:

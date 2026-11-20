@@ -18,7 +18,8 @@ Conventions for this file are in [the tasks README](README.md).
   transcript text, falling back to `result_text` when the transcript has gone
   to retention; per-turn counts and no text; `q` bounded at 256 bytes and each
   turn's scan at 32 MiB (`truncated`). Off the MCP surface with the rest of
-  the chat family; `apiclient.SearchChat`. ✓ 2026-11-20
+  the chat family; `apiclient.SearchChat`; `vincent chat find` for the
+  TUI/CLI parity rule. ✓ 2026-11-20
 - [x] **160.2** The TUI: conversation focus (`ctrl+f`, `j`/`k`, `/`, `n`/`N`,
   `{`/`}`, `enter`, `g`/`G`, `i`/`esc`), match highlighting with the current
   match distinct, the `3/17` count and `↓ N new` on the pane's bottom edge,
@@ -56,9 +57,15 @@ Settled with the author on 2026-11-20.
    rendered lines. #1022 (search across every chat) is meant to reuse the
    scan. *Rejected:* client-side scanning of every transcript (one read per
    turn per search); a `result_text`-only search (misses tool output and
-   intermediate messages). The CLI and MCP get no `chat search`: the chat
-   family is off the MCP surface whole (§13.4), and the CLI's chat reads are
-   `show` and `transcript`, which a search does not replace.
+   intermediate messages). MCP gets no tool: the chat family is off the MCP
+   surface whole (§13.4). The CLI does get a subcommand, because the TUI/CLI
+   parity rule (`TestDocsClaimsTUIClientCallsHaveSubcommands`) holds every
+   client call the TUI makes to a subcommand. *Amended 2026-11-20 (merge
+   train):* it is `vincent chat find CHAT_ID TEXT`, not `chat search` —
+   task 158 landed first with `vincent chat search QUERY...` across every
+   chat, so the in-chat search took the name its TUI context (`chat find`)
+   has too. Task 158 also brought its own index rather than reusing this
+   scan.
 3. **Search matches all of a turn's text**, not only what the current level
    draws. Landing on a match inside a folded tool call or text the level
    hides expands that one record (decision 4); the session level never
@@ -91,16 +98,19 @@ Settled with the author on 2026-11-20.
 
 ## What the tests prove
 
-- `internal/api/chatsearch_test.go`: seqs and counts, case-insensitive; the
+- `internal/api/chatturnsearch_test.go`: seqs and counts, case-insensitive; the
   `result_text` fallback after the transcript is removed; empty and
   oversized queries are `validation_failed`; an unknown chat is 404.
-- `internal/tui/chatsearch_test.go`: `ctrl+f` moves focus and letters no
+- `internal/tui/chatfind_test.go`: `ctrl+f` moves focus and letters no
   longer reach the draft; `esc` peels and never leaves; `n`/`N` wrap and the
   count follows; a match in an unloaded turn fetches exactly that turn and
   lands on it; a match in a folded call expands only that call at an
   unchanged level; `{`/`}` land on `You` cards; `enter` toggles one call and
   the set survives a chat switch; `↓ N new` grows while scrolled up, is not
   inflated by a level change and resets on `ctrl+g`.
-- `internal/tui/chatsearch_live_test.go`: the search against the real
+- `internal/tui/chatfind_live_test.go`: the search against the real
   handlers over httptest, landing in a turn the view never loaded.
+- `internal/cli/chatfind_live_test.go`: `vincent chat find` against the
+  real handler — counts, the result-text line, `--json`'s empty array, exit 1
+  on an empty query.
 - `panelKeyProbes` covers every new registry row.

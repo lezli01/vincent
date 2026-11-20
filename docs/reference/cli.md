@@ -2517,6 +2517,35 @@ of its tool calls.
 Exit `0` on success. Exit `1` on an unknown chat or a file that cannot be
 written. Exit `2` with no daemon.
 
+### `vincent chat find`
+
+```sh
+vincent chat find CHAT_ID TEXT [--json]
+```
+
+Which turns of a chat mention `TEXT`, searched case-insensitively as a plain
+substring through `GET /v1/chats/{id}/search` — the route the chat
+workspace's `ctrl+f` search uses. Each turn's prompt and its whole transcript
+are searched, tool output and the text a verbosity level hides included; a
+turn whose transcript has gone to `transcript_retention_days` is searched
+through its result text, and its line says so. stdout is one line per
+matching turn, in turn order:
+
+```text
+turn 3  2 matches
+turn 7  1 match  (result text only: the transcript is gone)
+```
+
+`vincent chat transcript CHAT_ID --turn 3` then reads one of them. `--json`
+emits the response object unchanged — `{query, total, turns[{seq, matches,
+source, truncated?}]}`, with `turns` always an array. A turn whose transcript
+is longer than 32 MiB is searched up to there, and a warning on stderr says
+which.
+
+Exit `0` whenever the daemon answered, no matches included. Exit `1` on an
+unknown chat or a query that is empty or over 256 bytes. Exit `2` with no
+daemon.
+
 ### `vincent chat archive`
 
 ```sh
