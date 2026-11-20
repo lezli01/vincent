@@ -52,7 +52,8 @@ it will download, installs the font for your user, then shows you sample icons a
 turns them on only if you say they look right.
 
 `enter` opens the selected task in a separate full-screen workspace, on its
-**Overview**. A band across the top names the task, its state, its step, its
+**Overview** — or, from 130 columns, where the steps are beside the tabs, on
+**Output**. A band across the top names the task, its state, its step, its
 workflow, its branch and the issue it is linked to — `i` opens that issue from
 any tab, and `esc` there brings you back. From 130 columns the steps are a
 rail on the left. The tabs are **Overview**, **Output**, **Diff**, **Step
@@ -581,11 +582,13 @@ snapshot. `pgup`/`pgdn` scroll the Overview down to it, and the command
 palette's *open the task's details, section by section* opens the inspector
 that reads it one section at a time; nothing there edits anything.
 
-![The Overview scrolled down to the task's document on a task at its gate,
-with its description, fields and the chats opened on it](../assets/tui-task-details.png)
+![The Task Details inspector on a task at its gate: the section sidebar on the
+left with Chats selected, and on the right the two chats opened on this task,
+newest first, both closed, with their agent, when they started and their
+titles](../assets/tui-task-details.png)
 
-![The Overview of a task started from an imported issue, scrolled down to the
-document's Issue section: the vincent issue and its title, its state, its
+![The Task Details inspector on a task started from an imported issue, with
+the Issue section selected: the vincent issue and its title, its state, its
 GitHub reference acme/web#142 and its URL](../assets/tui-task-issue.png)
 
 Its **GitHub pull request** section follows the captured issue and shows one of

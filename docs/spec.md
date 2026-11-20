@@ -16619,7 +16619,8 @@ stream for the live tail.
    and the Overview. **The tabs are Overview, Output, Diff, Step details,
    Workflow and Pull request** (the last only when one is linked), cycled with
    `tab`/`shift+tab` and `]`/`[`; below 130 columns Steps keeps a tab after
-   Overview. Task Details is the Overview's lower half, its pull-request keys
+   Overview; a fresh open still lands on Output from 130 columns and on
+   Overview below. Task Details is the Overview's lower half, its pull-request keys
    `o` (`browser`) and `P` came with it, and its section-by-section inspector
    is a palette row, on the strip only while open. A tab may carry a marker:
    the whole task's diff size on Diff, from the Diff tab's or the outcome

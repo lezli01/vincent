@@ -1,6 +1,6 @@
 # 164 — Task workspace redesign: a steps rail, plain tabs, an Output feed, a retouched Diff and an Overview of cards
 
-**Status:** 🔄 in progress (8/9) · **Opened:** 2026-11-20
+**Status:** ✅ done (9/9) · **Opened:** 2026-11-20
 
 The task workspace has the shape the chat and issue views had before their
 redesigns: a steps pane that spends three rows per attempt and wraps output
@@ -71,11 +71,11 @@ Conventions for this file are in [the tasks README](README.md).
   for the diff's `step_run` and the step-run fields; §5 for the new columns;
   `docs/reference/` key tables (from `internal/tui/bindings.go`), API and the
   task guide; `CHANGELOG.md`; an assertion for the per-step diff in a gate.
-- [~] **164.9** Re-capture every `docs/assets/tui-task-*.png`, `tui-diff.png`,
+- [x] **164.9** Re-capture every `docs/assets/tui-task-*.png`, `tui-diff.png`,
   `tui-lane-*.png` and `tui-task-steps-lanes.png` with
   `scripts/screenshots.sh`, and drop any shot whose tab no longer exists.
 
-Tasks 164.1–164.8 done ✓ 2026-11-20; the per-step range landed as migration
+Tasks 164.1–164.9 done ✓ 2026-11-20; the per-step range landed as migration
 0064 (master's 0062 and this branch's lane migration, renumbered 0063, came
 first).
 

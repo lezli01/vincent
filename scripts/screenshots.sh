@@ -2026,7 +2026,11 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-PageDown
+Type ":"
+Sleep 500ms
+Type "section by section"
+Sleep 1s
+Enter
 Sleep 2s
 Down 3
 Sleep 2s
@@ -2048,7 +2052,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Tab
 Sleep 5s
 Screenshot "'"$OUT"'/tui-task-output.png"
 Sleep 2s
@@ -2068,7 +2071,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Tab 4
+Tab 3
 Sleep 4s
 Screenshot "'"$OUT"'/tui-task-workflow.png"
 Sleep 2s
@@ -2089,7 +2092,7 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Tab 3
+Tab 2
 Sleep 2s
 Up 2
 Sleep 3s
@@ -2114,6 +2117,8 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
+Shift+Tab
+Sleep 500ms
 Shift+Tab
 Sleep 4s
 Down 1
@@ -2226,6 +2231,8 @@ Sleep 1s
 Enter
 Sleep 3s
 Sleep 2s
+Shift+Tab
+Sleep 1s
 Type "P"
 Sleep 3s
 Screenshot "'"$OUT"'/tui-create-pr.png"
@@ -2328,6 +2335,8 @@ Sleep 1s
 Enter
 Sleep 4s
 Sleep 3s
+Shift+Tab
+Sleep 2s
 Screenshot "'"$OUT"'/tui-lanes.png"
 Sleep 2s
 '
@@ -2345,7 +2354,6 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-Tab
 Sleep 2s
 Type ">"
 Sleep 3s
@@ -2599,6 +2607,8 @@ Sleep 1s
 Enter
 Sleep 5s
 Sleep 2s
+Shift+Tab
+Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-running.png"
 Sleep 2s
 '
@@ -2615,6 +2625,8 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
+Sleep 2s
+Shift+Tab
 Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-blocked.png"
 Sleep 2s
@@ -2634,6 +2646,8 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
+Sleep 2s
+Shift+Tab
 Sleep 2s
 Screenshot "'"$OUT"'/tui-task-overview-done.png"
 Sleep 2s
@@ -2706,7 +2720,11 @@ Enter
 Sleep 1s
 Enter
 Sleep 3s
-PageDown
+Type ":"
+Sleep 500ms
+Type "section by section"
+Sleep 1s
+Enter
 Sleep 2s
 Down 5
 Sleep 2s
@@ -2807,6 +2825,8 @@ Enter
 Sleep 1s
 Enter
 Sleep 4s
+Sleep 2s
+Shift+Tab
 Sleep 2s
 Screenshot "'"$OUT"'/tui-handoff-task.png"
 Sleep 2s
