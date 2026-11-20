@@ -58,6 +58,18 @@ func TestChatDraftRoundTrip(t *testing.T) {
 	if n != 2 {
 		t.Fatalf("%d chat.draft_changed events, want 2", n)
 	}
+	// A write that changes nothing writes nothing and publishes nothing
+	// (review F5): no new event, and the stamp stays the last real write's.
+	same, err := s.UpdateChatDraft(t.Context(), c.ID, &got.Draft, &got.Stash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if same.DraftUpdatedAt == nil || !same.DraftUpdatedAt.Equal(*got.DraftUpdatedAt) {
+		t.Fatalf("a no-op write moved the stamp from %v to %v", got.DraftUpdatedAt, same.DraftUpdatedAt)
+	}
+	if after, err := s.ListEvents(t.Context(), EventFilter{Types: []string{EventChatDraft}}); err != nil || len(after) != len(evs) {
+		t.Fatalf("a no-op write published: %d events, want %d (%v)", len(after), len(evs), err)
+	}
 	if _, err := s.SetChatDraft(t.Context(), c.ID, strings.Repeat("x", MaxChatDraftBytes+1)); !errors.Is(err, ErrDraftTooLong) {
 		t.Fatalf("oversized draft = %v, want ErrDraftTooLong", err)
 	}

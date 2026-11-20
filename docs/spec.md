@@ -11347,14 +11347,16 @@ GET    /v1/chats/prompts                *Added 2026-11-20 (task 164, issue #1012
                                         decision row 29)
 GET    /v1/chats/{id}/draft             *Added 2026-11-20 (task 164).* → { draft, stash,
                                         updated_at } — the chat's unsent draft and its stash
-                                        slot (§5.5). GET /v1/chats/{id} embeds `draft` and
-                                        `stash` too, and every chat body carries `has_draft`
+                                        slot (§5.5). GET /v1/chats/{id} embeds `draft`,
+                                        `stash` and `draft_updated_at` too, and every chat
+                                        body carries `has_draft`
 PUT    /v1/chats/{id}/draft             *Added 2026-11-20 (task 164).* { draft?, stash? } — at
                                         least one; an absent field is left as it is. Last
                                         writer wins. Each is at most 64 KiB (`400
                                         validation_failed`); a terminal chat is `409
-                                        invalid_state`. Publishes `chat.draft_changed`. Not an
-                                        MCP tool
+                                        invalid_state`. Publishes `chat.draft_changed`; a
+                                        write that changes nothing writes and publishes
+                                        nothing. Not an MCP tool
 POST   /v1/chats                        { project_id, title, agent?, model?, effort?,
                                           base_branch?, branch_name?, existing_branch? }
                                         → 201 with the chat, its `vincent/{id}-{slug}` branch
@@ -12968,7 +12970,11 @@ chat's draft or stash was written. It carries `has_draft`, `has_stash` and
 which is up to 64 KiB and has no place in the durable events table — so a
 board repaints its `✎ draft` mark without a fetch and an open chat re-reads
 `GET /v1/chats/{id}/draft`. A client must not let the echo of its own write
-reset text typed since: the TUI takes a remote draft only while its composer
+reset text typed since. A write that changes neither field is not recorded
+and publishes nothing (review F5, 2026-11-20), and the TUI answers the event
+by re-reading the draft alone — never the whole chat — and not at all when
+its `draft_updated_at` is that of the TUI's own last acknowledged write. The
+TUI takes a remote draft only while its composer
 holds exactly the text it last wrote, and never from a read whose
 `draft_updated_at` — carried by `GET /v1/chats/{id}` and the draft route — is
 older than the `updated_at` its own last acknowledged write returned, since

@@ -546,6 +546,9 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyDraftTick(msg)
 	case chatDraftSavedMsg:
 		return v, v.applyDraftSaved(msg)
+	case chatDraftFetchedMsg:
+		v.applyDraftFetched(msg)
+		return v, nil
 	case chatPromptsMsg:
 		v.applyPrompts(msg)
 		return v, nil
@@ -886,6 +889,11 @@ func (v *chatView) applyChatNote(msg chatNoteMsg) tea.Cmd {
 			return tea.Batch(next, v.loadCmd())
 		}
 	case apiclient.EventNote:
+		if note.Event.Type == chatDraftChangedEvent {
+			// Only the draft moved: re-read it, not the whole chat with
+			// every turn and the queue (review F5).
+			return tea.Batch(next, v.draftEventCmd(note.Event.Payload))
+		}
 		if strings.HasPrefix(note.Event.Type, "chat.") {
 			// The daemon invalidates a chat's skill listing when a turn ends
 			// (task 124.9), so the cached answer goes with the reload — but

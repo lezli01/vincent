@@ -15,6 +15,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -46,6 +47,13 @@ type (
 		// reads against it (review F1).
 		updatedAt *time.Time
 		err       error
+	}
+	// chatDraftFetchedMsg is GET /v1/chats/{id}/draft, the re-read a
+	// chat.draft_changed asks for.
+	chatDraftFetchedMsg struct {
+		chatID int64
+		draft  *apiclient.ChatDraft
+		err    error
 	}
 	// chatPromptsMsg is GET /v1/chats/prompts for the history picker.
 	chatPromptsMsg struct {
@@ -284,6 +292,42 @@ func (v *chatView) flushDraft() tea.Cmd {
 		}
 		return msg
 	}
+}
+
+// chatDraftChangedEvent is a chat's draft or stash being written (spec
+// §13.3, task 164).
+const chatDraftChangedEvent = "chat.draft_changed"
+
+// draftEventCmd answers a chat.draft_changed: the draft alone is re-read
+// (review F5), and not at all when the event is the echo of the write this
+// client last had acknowledged — its draft_updated_at is that write's.
+func (v *chatView) draftEventCmd(payload json.RawMessage) tea.Cmd {
+	client, id := v.client, v.chatID
+	if client == nil || id == 0 {
+		return nil
+	}
+	var ev struct {
+		DraftUpdatedAt *time.Time `json:"draft_updated_at"`
+	}
+	if json.Unmarshal(payload, &ev) == nil && ev.DraftUpdatedAt != nil &&
+		v.draft.writtenAt != nil && ev.DraftUpdatedAt.Equal(*v.draft.writtenAt) {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		d, err := client.ChatDraft(ctx, id)
+		return chatDraftFetchedMsg{chatID: id, draft: d, err: err}
+	}
+}
+
+// applyDraftFetched folds a re-read draft in under applyRemoteDraft's rules.
+// A failed read changes nothing: the next event or load tries again.
+func (v *chatView) applyDraftFetched(msg chatDraftFetchedMsg) {
+	if msg.chatID != v.chatID || msg.err != nil || msg.draft == nil {
+		return
+	}
+	v.applyRemoteDraft(msg.draft.Draft, msg.draft.Stash, msg.draft.UpdatedAt)
 }
 
 func (v *chatView) applyDraftSaved(msg chatDraftSavedMsg) tea.Cmd {

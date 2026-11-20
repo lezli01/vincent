@@ -294,3 +294,47 @@ func TestChatPromptHistoryLive(t *testing.T) {
 		t.Fatalf("the insert sent a turn: %v %v", turns, err)
 	}
 }
+
+// TestChatDraftEventRereadsOnlyTheDraft is review F5: chat.draft_changed
+// re-reads GET /v1/chats/{id}/draft rather than the whole chat, and the echo
+// of this client's own acknowledged write is not re-read at all.
+func TestChatDraftEventRereadsOnlyTheDraft(t *testing.T) {
+	d := newDraftLive(t)
+	id := d.chat(t, "a")
+	v := d.view()
+	openChat(t, v, id)
+	lastEvent := func() apiclient.Event {
+		t.Helper()
+		evs, err := d.st.ListEvents(context.Background(), store.EventFilter{Types: []string{store.EventChatDraft}})
+		if err != nil || len(evs) == 0 {
+			t.Fatalf("no chat.draft_changed event: %v", err)
+		}
+		e := evs[len(evs)-1]
+		return apiclient.Event{ID: e.ID, Type: e.Type, Payload: e.Payload}
+	}
+
+	// Another client writes: the event fetches the draft alone.
+	other := "from another terminal"
+	if _, err := d.client.PutChatDraft(context.Background(), id, apiclient.ChatDraftUpdate{Draft: &other}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := v.draftEventCmd(lastEvent().Payload)
+	if cmd == nil {
+		t.Fatal("another client's write was not re-read")
+	}
+	msg, ok := runCmd(t, cmd, 30*time.Second).(chatDraftFetchedMsg)
+	if !ok || msg.err != nil {
+		t.Fatalf("re-read = %#v, want the draft alone", msg)
+	}
+	v.update(msg)
+	if got := v.composer.Value(); got != other {
+		t.Fatalf("the composer did not follow: %q", got)
+	}
+
+	// This client's own write: its echo is not re-read.
+	typeDraft(v, "!")
+	flushBatch(t, v, v.flushDraft())
+	if cmd := v.draftEventCmd(lastEvent().Payload); cmd != nil {
+		t.Fatal("the echo of this client's own write was re-read")
+	}
+}

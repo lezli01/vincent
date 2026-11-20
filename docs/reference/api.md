@@ -3435,7 +3435,9 @@ daemon, so they survive a TUI restart and follow the chat to another client.
   before that write committed, however late it arrives.
 - `PUT /v1/chats/{id}/draft` takes `{ "draft"?, "stash"? }`, at least one of
   them; a field left out is left as it is. The write is last-writer-wins, each
-  field is at most 64 KiB, and it publishes `chat.draft_changed`. A chat that
+  field is at most 64 KiB, and it publishes `chat.draft_changed` — unless it
+  changes nothing, in which case nothing is written or published and
+  `updated_at` stays the last real write's. A chat that
   has ended (`archived`, `handed_off`, `closed`) is a `409`: its draft and
   stash were cleared when it ended.
 - `GET /v1/chats/prompts?project_id=&q=&limit=` lists every prompt the

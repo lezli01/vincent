@@ -44,8 +44,11 @@ func (s *Store) SetChatStash(ctx context.Context, chatID int64, stash string) (*
 // UpdateChatDraft writes whichever of draft and stash is non-nil, last writer
 // wins, and publishes chat.draft_changed. A terminal chat is
 // ErrInvalidChatAction: its draft was cleared when it ended and nothing could
-// ever send a new one. A write that changes nothing still stamps
-// draft_updated_at and publishes, so every write has an echo.
+// ever send a new one. A write that changes nothing is not a write: the row,
+// its draft_updated_at and the events table are left as they are and no
+// event is published (review F5) — every chat.draft_changed makes each
+// follower re-read, and a debounced composer would otherwise publish one per
+// pause in typing whether or not the text moved.
 func (s *Store) UpdateChatDraft(ctx context.Context, chatID int64, draft, stash *string) (*Chat, error) {
 	for _, v := range []*string{draft, stash} {
 		if v != nil && len(*v) > MaxChatDraftBytes {
@@ -64,6 +67,10 @@ func (s *Store) UpdateChatDraft(ctx context.Context, chatID int64, draft, stash 
 		}
 		if chatstate.Terminal(c.State) {
 			return fmt.Errorf("chat %d: %w", chatID, ErrInvalidChatAction)
+		}
+		if (draft == nil || *draft == c.Draft) && (stash == nil || *stash == c.Stash) {
+			out = c
+			return nil
 		}
 		if draft != nil {
 			c.Draft = *draft
@@ -87,7 +94,9 @@ func (s *Store) UpdateChatDraft(ctx context.Context, chatID int64, draft, stash 
 	if err != nil {
 		return nil, err
 	}
-	s.notify(ev)
+	if ev != nil {
+		s.notify(ev)
+	}
 	return out, nil
 }
 
