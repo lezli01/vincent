@@ -45,6 +45,8 @@ func fixture(t *testing.T) *Export {
 			{
 				Seq: 1, State: "done", Prompt: "Why does `Parse` fail?", Tools: tools,
 				Answer: "Fixed it.\n\n- one\n- two", InputTokens: 1200, OutputTokens: 340,
+				CacheReadTokens: ptr[int64](60_000), CacheCreationTokens: ptr[int64](200),
+				ContextTokens: ptr[int64](61_400), ContextWindow: ptr[int64](200_000),
 				CostUSD: ptr(0.0123), DurationMS: ptr[int64](12345), StartedAt: created,
 			},
 			{

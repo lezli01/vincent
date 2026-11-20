@@ -3674,9 +3674,13 @@ permission mode, state, branch, base branch and base SHA, the linked task,
 handoff task and issue where set, and the creation and export times. Each turn
 lists one line per tool call — the tool, its key argument (file, command,
 pattern or URL) and `(failed)` when the call errored — and never the tool's
-output. Its answer is the turn's `result_text`; its usage is tokens, cost when
+output. Its answer is the turn's `result_text`; its usage is tokens — the
+input, then `(+N cache)` for the cache read and written when the agent counts
+it apart from the input (claude, copilot), then the output — cost when
 the agent reports one (copilot never does, and the cost is then absent rather
-than `$0`), duration, and a failed turn's reason. In HTML, prompts and answers
+than `$0`), duration, and a failed turn's reason. The JSON turn also carries
+`cache_read_tokens`, `cache_creation_tokens`, `context_tokens` and
+`context_window` when the agent reported them, and omits each otherwise. In HTML, prompts and answers
 are rendered from Markdown with raw HTML disabled, so a `<script>` in an
 agent's answer never reaches the page.
 

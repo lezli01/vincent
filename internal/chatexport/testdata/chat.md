@@ -35,7 +35,7 @@ Fixed it.
 - one
 - two
 
-_Usage: 1200 in · 340 out · $0.0123 · 12.3s_
+_Usage: 1200 in (+60200 cache) · 340 out · $0.0123 · 12.3s_
 
 ## Turn 2 · failed
 

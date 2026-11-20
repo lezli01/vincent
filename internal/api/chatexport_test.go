@@ -239,6 +239,32 @@ func TestChatExportCopilotCostIsAbsent(t *testing.T) {
 	}
 }
 
+// TestChatExportCarriesCacheAndContext: a claude turn's cache counts and
+// context figures reach the export, and its usage line counts the cache the
+// way the chat heading does (review F5).
+func TestChatExportCarriesCacheAndContext(t *testing.T) {
+	h := newExportHarness(t)
+	c := h.chat(t, &store.Chat{Agent: "claude"})
+	h.turn(t, c, "hi", func(ct *store.ChatTurn) {
+		ct.ResultText = "hello"
+		ct.InputTokens, ct.OutputTokens = 1200, 800
+		ct.CacheReadTokens, ct.CacheCreationTokens = ptrTo[int64](60_000), ptrTo[int64](200)
+		ct.ContextTokens, ct.ContextWindow = ptrTo[int64](61_400), ptrTo[int64](200_000)
+	}, "")
+	e := h.exportJSON(t, c.ID, "")
+	if len(e.Turns) != 1 {
+		t.Fatalf("export has %d turns", len(e.Turns))
+	}
+	tu := e.Turns[0]
+	if tu.CacheReadTokens == nil || *tu.CacheReadTokens != 60_000 || tu.CacheCreationTokens == nil || *tu.CacheCreationTokens != 200 ||
+		tu.ContextTokens == nil || *tu.ContextTokens != 61_400 || tu.ContextWindow == nil || *tu.ContextWindow != 200_000 {
+		t.Errorf("turn = %+v, want the cache counts and context figures", tu)
+	}
+	if _, md := h.export(t, c.ID, ""); !strings.Contains(md, "1200 in (+60200 cache) · 800 out") {
+		t.Errorf("usage line leaves out the cache:\n%s", md)
+	}
+}
+
 // worktreeWithChanges is a worktree of the harness repo on its own branch
 // with one commit past main and one dirty tracked file.
 func (h *exportHarness) worktreeWithChanges(t *testing.T, name string) string {

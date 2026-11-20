@@ -155,6 +155,16 @@ type Turn struct {
 	Answer       string `json:"answer,omitempty"`
 	InputTokens  int64  `json:"input_tokens"`
 	OutputTokens int64  `json:"output_tokens"`
+	// The cache counts are absent for an adapter whose input already counts
+	// the cache, or that reports none: claude's and copilot's input leaves
+	// out what the turn read from and wrote to the cache (task 157 decision
+	// 3), so without them the line understates what the turn processed.
+	CacheReadTokens     *int64 `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens *int64 `json:"cache_creation_tokens,omitempty"`
+	// ContextTokens and ContextWindow are the context gauge's figures for
+	// this turn (§5.5), absent when the adapter did not report them.
+	ContextTokens *int64 `json:"context_tokens,omitempty"`
+	ContextWindow *int64 `json:"context_window,omitempty"`
 	// CostUSD is absent, never zero, for an adapter that reports none
 	// (copilot, §9.9).
 	CostUSD      *float64  `json:"cost_usd,omitempty"`

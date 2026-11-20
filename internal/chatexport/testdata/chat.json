@@ -45,6 +45,10 @@
       "answer": "Fixed it.\n\n- one\n- two",
       "input_tokens": 1200,
       "output_tokens": 340,
+      "cache_read_tokens": 60000,
+      "cache_creation_tokens": 200,
+      "context_tokens": 61400,
+      "context_window": 200000,
       "cost_usd": 0.0123,
       "duration_ms": 12345,
       "started_at": "2026-11-19T09:00:00Z"

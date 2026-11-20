@@ -86,9 +86,21 @@ func title(e *Export) string {
 
 // Usage is a turn's usage line: tokens, cost when the adapter reports one,
 // duration. A cost the adapter never reports is absent, not `$0` (§9.9).
+// The cache the turn read and wrote follows its input when the adapter
+// counts it apart, so the line agrees with the chat heading's ↑ (review F5).
 func (t *Turn) Usage() string {
+	in := fmt.Sprintf("%d in", t.InputTokens)
+	var cache int64
+	for _, n := range []*int64{t.CacheReadTokens, t.CacheCreationTokens} {
+		if n != nil {
+			cache += *n
+		}
+	}
+	if cache > 0 {
+		in += fmt.Sprintf(" (+%d cache)", cache)
+	}
 	parts := []string{
-		fmt.Sprintf("%d in", t.InputTokens),
+		in,
 		fmt.Sprintf("%d out", t.OutputTokens),
 	}
 	if t.CostUSD != nil {

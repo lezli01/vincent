@@ -98,6 +98,8 @@ func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff
 		et := chatexport.Turn{
 			Seq: t.Seq, State: string(t.State), Prompt: t.Prompt, Answer: t.ResultText,
 			InputTokens: t.InputTokens, OutputTokens: t.OutputTokens,
+			CacheReadTokens: t.CacheReadTokens, CacheCreationTokens: t.CacheCreationTokens,
+			ContextTokens: t.ContextTokens, ContextWindow: t.ContextWindow,
 			CostUSD: t.CostUSD, DurationMS: t.DurationMS,
 			FailReason: t.FailReason, ErrorMessage: t.ErrorMessage, StartedAt: t.StartedAt,
 		}
