@@ -36,6 +36,7 @@ type chatHarness struct {
 	*projectHarness
 	runner    *chatrun.Runner
 	repo      string
+	dataDir   string
 	projectID int64
 	cfg       config.Config
 }
@@ -81,11 +82,13 @@ func newChatHarness(t *testing.T) *chatHarness {
 		Agents:      reg,
 		Catalog:     agent.NewCatalogCache(reg),
 		Chats:       runner,
+		Dirs:        config.Dirs{Data: dataDir},
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	h.projectHarness = &projectHarness{ts: ts, store: st, wt: wt}
 	h.runner = runner
+	h.dataDir = dataDir
 
 	h.repo = testrepo.Init(t, "main")
 	resp, body := h.doJSON(t, http.MethodPost, "/v1/projects", map[string]any{"path": h.repo})

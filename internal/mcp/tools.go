@@ -198,6 +198,10 @@ var Excluded = []Route{
 	// agent wanting an old conversation is not who the search is for.
 	{Method: http.MethodGet, Path: "/v1/chats/search"},
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/export"},
+	// `GET /v1/chats/{id}/search` (task 157 decision 2) is a chat read like
+	// the transcript it scans, and the family stays off the tool surface
+	// whole.
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/search"},
 }
 
 // GrantedRoute is an Excluded forge write that becomes a tool on a granted

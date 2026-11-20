@@ -618,3 +618,34 @@ func (c *Client) ChatExport(ctx context.Context, chatID int64, opts ChatExportOp
 	}
 	return out, nil
 }
+
+// ChatSearchTurn is one turn GET /v1/chats/{id}/search matched (task 157
+// decision 2): the turn's seq and how often the query occurs in it.
+type ChatSearchTurn struct {
+	Seq     int `json:"seq"`
+	Matches int `json:"matches"`
+	// Source is "transcript", or "result_text" when the transcript file has
+	// gone to retention and only the turn row was searched.
+	Source    string `json:"source"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// ChatSearch is the answer to a chat search: the matching turns in seq
+// order and the sum of their counts. It carries no text — the client
+// fetches a matched turn through ChatTurnTranscript.
+type ChatSearch struct {
+	Query string           `json:"query"`
+	Total int              `json:"total"`
+	Turns []ChatSearchTurn `json:"turns"`
+}
+
+// SearchChat runs a case-insensitive plain-substring search over every turn
+// of one chat on the daemon, loaded by the client or not.
+func (c *Client) SearchChat(ctx context.Context, id int64, query string) (*ChatSearch, error) {
+	var out ChatSearch
+	path := fmt.Sprintf("/v1/chats/%d/search?q=%s", id, url.QueryEscape(query))
+	if err := c.get(ctx, path, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
