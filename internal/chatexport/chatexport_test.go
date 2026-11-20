@@ -128,7 +128,7 @@ func TestMarkdownCarriesEveryCase(t *testing.T) {
 		"**Failed:** agent_error: rate limited",
 		"_" + NotePruned + "_",
 		"_" + NoteNeverWritten + "_",
-		"_Usage: 1200 in · 340 out · $0.0123 · 12.3s_",
+		"_Usage: 1200 in (+60200 cache) · 340 out · $0.0123 · 12.3s_", // the cache beside the input (review F5)
 		"_Usage: 50 in · 20 out · 900ms_", // copilot: no cost, not $0
 		"## Turn 6 · running",
 		"````diff\n", // the diff holds ``` so its fence is longer
