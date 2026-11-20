@@ -251,6 +251,11 @@ type Task struct {
 	ParentStepIndex *int
 	LaneID          string
 	LaneOrder       int
+	// LaneRound is the fan_out round the lane was spawned in: the
+	// `iteration` of the parent step's row that was open at the spawn
+	// (task 080). Nil for a root task and for a lane spawned before the
+	// column existed.
+	LaneRound *int
 	// SettledChildrenWatermark is how many **direct** children had settled
 	// when the admission that parked this task started (§7.6, task 081
 	// decision 1). It is the wake position of a parent parked under a
@@ -542,6 +547,19 @@ type StepRun struct {
 	CheckTimeoutMS int64
 	Shell          string // resolved shell name for a command step
 	WorkDir        string
+	// HeadStart and HeadEnd are the worktree's HEAD sha when this attempt
+	// started and when it ended (task 168.5, migration 0068): the commit range
+	// the attempt covered, which is what `diff?step_run=` diffs (§13.2).
+	//
+	// HeadStart is written at insert, before the step's process runs
+	// (crash-first), and HeadEnd by the UpdateStepRun that finalizes the row.
+	// nil means not recorded: a pre-0068 row, a step type that runs nothing in
+	// the worktree, a task with no worktree, a HEAD that could not be read,
+	// and — for HeadEnd — an attempt still running or one §12.4 recovery
+	// finalized, which did not see it end. A sha names commits only, so what
+	// an attempt left uncommitted is never inside the range.
+	HeadStart      *string
+	HeadEnd        *string
 	TranscriptPath string
 	InputTokens    *int64
 	OutputTokens   *int64

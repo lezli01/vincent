@@ -1,0 +1,11 @@
+-- 0067_lane_round: the fan_out round a lane was spawned in (§7.6, task 080).
+--
+-- A multi-round fan_out's step_runs rows ride `iteration`, one per round, and
+-- a client drawing the step's lanes under the round that spawned them needs
+-- the same number on the lane. It cannot be derived: under `schedule: eager`
+-- the iteration is a merge counter rather than the wave the needs graph puts
+-- a lane in, and a derived lane list is not in the snapshot at all. So the
+-- engine records it at spawn, the one moment it is known.
+--
+-- Null for a root task, and for a lane spawned before this column existed.
+ALTER TABLE tasks ADD COLUMN lane_round INTEGER;

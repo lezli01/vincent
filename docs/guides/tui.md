@@ -52,18 +52,17 @@ it will download, installs the font for your user, then shows you sample icons a
 turns them on only if you say they look right.
 
 `enter` opens the selected task in a separate full-screen workspace, on its
-**Overview**. From 130 columns the workspace keeps the steps beside the tabs, adds
-the task's details from 150, and opens on **Output**. Below 130 columns it has seven full-view tabs — **Overview**,
-**Output**, **Diff**, **Steps**, **Task Details**, **Step Details** and
-**Workflow** — and an eighth, **Pull Request**, on a task with a linked pull
-request, so the surface being read gets the whole terminal. The strip draws
-them in two groups: Overview, Output and Diff first, then the rest dimmed
-behind a `‖`. `tab` advances through them in that drawn order, `shift+tab`
-goes back, and each tab's digit, drawn beside its label, jumps directly: `0`
-Overview, `1` Steps, `2` Task Details, `3` Output, `4` Diff, `5` Workflow,
-`6` Step Details and `7` Pull Request (only when that tab is there). On a
-narrow terminal the second group's labels shorten first, then shrink to their
-digits; the first group is never shortened. `esc` returns to where you
+**Overview** — or, from 130 columns, where the steps are beside the tabs, on
+**Output**. A band across the top names the task, its state, its step, its
+workflow, its branch and the issue it is linked to — `i` opens that issue from
+any tab, and `esc` there brings you back. From 130 columns the steps are a
+rail on the left. The tabs are **Overview**, **Output**, **Diff**, **Step
+details**, **Workflow** and, on a task with a linked pull request, **Pull
+request**; below 130 columns **Steps** is a tab too, after Overview. `tab`
+moves through them in the order the strip draws them and `shift+tab` goes
+back; there are no digit keys. The Diff tab shows the task's change size
+beside its name once a diff has been read, and Overview a red `!` while the
+task needs you. `esc` returns to where you
 opened the task from: the board, or the issue it was started from. A task
 opened any other way — the command palette, pull requests, triggers, `!`, a
 new task — returns to your [main tab](#main-tabs), and so does a project
@@ -162,10 +161,11 @@ right now, whichever tab you are on.
 ![A running task's Overview: the current step and attempt, with the breadcrumb
 and the line saying what it is doing now](../assets/tui-task-overview-running.png)
 
-`3` opens **Output**. Its attempt strip shows the verbosity level when it is
-not `normal`, `raw` while `ctrl+o` is on, and — for a live attempt — the
-spinner with the elapsed time and `▼ following`, or `⏸ paused · N new` once
-you have scrolled away from the tail. See
+`enter` opens **Output**, the whole task as one feed. The line pinned under it
+shows the verbosity level when it is not `normal`, `raw` while `ctrl+o` is on,
+and — for a live attempt — the spinner with the elapsed time, its cost and
+`▼ following`, or `▲ N new below · f` once you have scrolled away from the
+tail. See
 [How the pane reads](#how-the-pane-reads).
 
 ![The Output tab following a live test run](../assets/tui-task-output.png)
@@ -187,7 +187,7 @@ you are looking at, as it always has. Chats asking you a question count and are 
 opens a **failure card**: the step and attempt that stopped, the reason in
 words with its code dim beside it, the last lines of the failing attempt's
 output as evidence, and the actions that answer the reason — `r` retry, `E`
-edit and retry, `R` repair, `T` chat. `3` from the card opens Output where
+edit and retry, `R` repair, `T` chat. `enter` from the card opens Output where
 the attempt failed, and `N` walks every failure in the task, a blocked lane's
 included. See [Task detail](#task-detail),
 [Jumping between failures](#jumping-between-failures) and
@@ -201,8 +201,8 @@ actions](../assets/tui-task-overview-blocked.png)
 `enter` on a done task opens an **outcome card**: the result the last
 successful agent attempt reported, the changes and commits on its branch, and
 the linked pull request with its checks. `w` opens the output of the attempt
-the result came from, `4` opens **Diff**, and `7` opens **Pull Request** when
-one is linked. See [Task detail](#task-detail), which covers the outcome card
+the result came from, `enter` opens **Diff**, and `tab` reaches **Pull
+request** when one is linked. See [Task detail](#task-detail), which covers the outcome card
 and the Pull Request tab, and [The Diff tab](#the-diff-tab).
 
 ![A done task's Overview: the outcome card with its result, changes, commits
@@ -356,6 +356,23 @@ are queued and have finished.
 | `f` | Fold the issue group under the cursor, or open the one the cursor rests on |
 | `C` | Fold every group |
 | `O` | Open every group |
+| `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent |
+
+### Fan-out lanes on the board
+
+A fan-out's lanes are tasks, but they are not cards of their own: a column
+counts the work someone asked for. A parent card says it has lanes with
+`▸3` after its number. Press `L` on it and its lanes hang underneath as small
+boxes, in the parent's column whatever state each lane is in — the lane's name
+and number, then its state, the step an unfinished lane is on and, for a
+blocked one, why. `↑`/`↓` walk onto them like cards, `enter` opens a lane's
+workspace and `esc` comes back. A lane that fans out again wears its own
+`▸`; `L` on it unfolds its lanes one level deeper. `L` on a lane with none
+folds its parent's lanes and puts the cursor back on the parent. The boxes
+follow the lanes live, and what is unfolded lasts until you quit.
+
+![The board with a fan-out parent's lanes unfolded under its card as small
+boxes, the first one selected](../assets/tui-board-lanes.png)
 
 Groups in **Finished** start folded, and the other columns start open. A folded
 group keeps a line saying what it holds. The cursor can rest on it, but it is not a
@@ -413,15 +430,23 @@ The rest of the behavior follows from what a selection is:
 
 ## Task detail
 
-From 130 columns wide, a task opens as one workspace: its name, state and reason
-across the top, its steps on the left, and Output, Diff, Overview and Workflow in
-the middle. From 150 columns its workflow, branch, usage and links are on the
-right. When a task is blocked, the reason and the keys that can restart it are
-pinned under the tab. On a narrower terminal the same views are tabs, and the
-digits below reach them at any width.
+From 130 columns wide, a task opens as one workspace: its name, state, reason
+and linked issue across the top, its steps on the left, and the tabs beside
+them. When a task is blocked, the reason and the keys that can restart it are
+pinned under the tab. On a narrower terminal the steps are a tab.
 
-![The task workspace: steps on the left, the output in the middle, details on the
-right, and a failure card with its recovery keys.](../assets/tui-task-workspace.png)
+The **steps rail** gives each step one row — its state glyph (`✓` done, `●`
+running, `✗` failed, `!` waiting on you, `○` not reached), its name and how long
+it took — joined by a line. A dim row under a step says something only when
+there is something to say: why it failed, how many attempts it took, the agent
+and what it cost. The step you have selected lists its attempts when it has
+more than one; a parallel group lists its members, a loop its passes as a row
+of pips (`✓ ✓ ● · ·  3 / 5`), and a fan-out its lanes as a tree, with earlier
+rounds one line each. `←`/`→` on Output move the selection through the
+attempts, and a click selects the row under it.
+
+![The task workspace: the steps rail on the left, the output in the middle, and
+a failure card with its recovery keys.](../assets/tui-task-workspace.png)
 
 `enter` opens the selected task on its **Overview** — from the board, the
 palette, a lane jump or the pull requests takeover alike, and after `!` has
@@ -446,18 +471,27 @@ workspace has already loaded:
   sentence for the state (how many lanes are still out, for a fan-out parent),
   the current step and attempt, and — except while it runs, when the line
   under the header says it — the attempt's latest status message.
-  `3 full output` jumps to that attempt's output; a task with no output yet
-  links `1 steps` instead. A fan-out parent waiting on its lanes lists the
+  A bar under the sentence has one segment per step. `enter full output`
+  jumps to that attempt's output; a task with no output yet links its steps
+  instead. A fan-out parent waiting on its lanes lists the
   ones that are blocked or waiting on you under *Lanes that need you*, `l`
-  opens the first, and its link is `1 steps` — the parent's own transcript is
+  opens the first, and its link is its steps — the parent's own transcript is
   empty.
 - **Blocked, waiting for an answer or at a gate, or aborted** — what it needs:
   the reason, in words and as its code, the question or the gate's
   instructions, and every action the daemon offers with its key and a line on
-  what it does. `3 output of attempt N` and `6 what it was given` jump to the
-  attempt it stopped on.
-- **Done or archived** — how it ended: an **outcome card** (below), `4 diff`,
-  and `7 PR` when a pull request is linked.
+  what it does. `enter output of attempt N` jumps to the attempt it stopped
+  on, and `enter` there again shows what it was given.
+- **Done or archived** — how it ended: an **outcome card** (below) and
+  `enter diff`.
+
+A running task pairs a **Now** card — the current step and attempt, the latest
+status, the last line it printed — with **The task**, the description and
+priority. Under every frame, a **Linked** card names the task's issue (with
+`i`), pull request, chat, branch and base, and a **Usage** card its elapsed
+time, tokens, cost, workflow and worktree. `↑`/`↓` move a cursor along the
+Linked rows that open somewhere, and `enter` opens the one under it. Below
+the cards is the task's whole document.
 
 A **blocked** or **aborted** task's Overview is a **failure card**. Its first
 line says what stopped: `✗ Step 3 verify · attempt 2 · check failed
@@ -521,10 +555,10 @@ Every marker is a glyph with a word beside it, so the card reads without
 colour. The diff and the commits are fetched once each time the task is
 opened, never again while you watch it.
 
-A link is the tab's own digit: pressing it first moves the attempt selection to
-the attempt the Overview is about, then opens the tab, so Output and Step
-Details show that attempt. On an aborted task `3` stays the failure card's
-link; the outcome card's result has its own key, `w`. The footer lists the links the current frame draws.
+The link is on `enter`: it first moves the attempt selection to the attempt
+the Overview is about, then opens the tab, so Output shows that attempt. On an
+aborted task it stays the failure card's link; the outcome card's result has
+its own key, `w`. The footer names the link the current frame draws.
 If the task changes state while the Overview is open, the new frame replaces
 the old one and your attempt selection stays where it was.
 
@@ -533,7 +567,7 @@ adds an **Items** block to its Overview: each issue it claimed, by id and
 title, with its delivery kind and its outcome, or `unresolved`. It is read
 again whenever an item's outcome changes or the handoff settles.
 
-**Steps** (`1`) lists every attempt of every step with its duration, tokens and
+**Steps**, a tab only below 130 columns where there is no rail, lists every attempt of every step with its duration, tokens and
 cost. Selecting
 an attempt chooses what the separate **Output** tab shows; the selection stays
 put while you move between tabs. Press `enter` on an attempt to jump straight
@@ -544,29 +578,29 @@ succeeded, the agent's tokens beside its row, then two failed attempts of the
 verify step, each with its failure reason and the tail of its output beneath
 it](../assets/tui-task-steps.png)
 
-**Task Details** is the complete task inspector: title, description, declared
-fields, state, project, workflow and its recorded origin, branch and worktree,
-priority, tokens and cost, lifecycle timestamps, queue/block information,
-pending input, fan-out/loop metadata, the [chats opened on it](#talking-to-an-agent-about-a-task),
+**Task Details**, the complete task document, is the Overview's lower half,
+below the Linked and Usage cards: title, description, declared fields, state,
+project, workflow and its recorded origin, branch and worktree, priority,
+tokens and cost, lifecycle timestamps, queue/block information, pending input,
+fan-out/loop metadata, the [chats opened on it](#talking-to-an-agent-about-a-task),
 the issue it was started from, available actions, and the task's workflow-step
-snapshot. Its left sidebar selects one section at
-a time, so unrelated metadata does not compete for the screen. Use `↑`/`↓` or
-the mouse to choose a section and `pgup`/`pgdn` to scroll long section content;
-the inspector never edits anything.
+snapshot. `pgup`/`pgdn` scroll the Overview down to it, and the command
+palette's *open the task's details, section by section* opens the inspector
+that reads it one section at a time; nothing there edits anything.
 
-![Task Details on a task at its gate: the section sidebar on the left with
-Chats selected, and on the right the two chats opened on this task, newest
-first, both closed, with their agent, when they started and their
+![The Task Details inspector on a task at its gate: the section sidebar on the
+left with Chats selected, and on the right the two chats opened on this task,
+newest first, both closed, with their agent, when they started and their
 titles](../assets/tui-task-details.png)
 
-![Task Details on a task started from an imported issue, with the Issue
-section selected: the vincent issue and its title, its state, its GitHub
-reference acme/web#142 and its URL](../assets/tui-task-issue.png)
+![The Task Details inspector on a task started from an imported issue, with
+the Issue section selected: the vincent issue and its title, its state, its
+GitHub reference acme/web#142 and its URL](../assets/tui-task-issue.png)
 
 Its **GitHub pull request** section follows the captured issue and shows one of
 three things: the pull request linked to this task with its live state, the
 reason the integration is unusable, or — when nothing is linked — the offer to
-open one. Two keys work there:
+open one. Two keys work on the Overview for it:
 
 | Key | Does |
 |---|---|
@@ -615,20 +649,31 @@ every call is the daemon's.
 integration is usable. Linking lives on the pull-requests screen below;
 unlinking lives there and on the Pull Request tab.
 
-**Output** gives the selected attempt's live tail or historical transcript the
-entire view. Its selector names the attempt and its position in the task; use
-`←`/`→` (or `h`/`l`) to show another attempt without returning to the timeline.
-While the attempt on screen is still running, that selector carries the same
+**Output** is the whole task as one feed, in the order it ran. Every attempt
+except the selected one is a single dashed line — its state, step, agent, how
+long it took, what it cost, why it failed and the start of what it said — and
+the selected attempt opens in full between a divider naming its step, agent,
+attempt and start time and a closing line that says how it ended: a command's
+`✗ exited 1 after 0.4s`, or the state an agent step finished in. `←`/`→` (or
+`h`/`l`) open another attempt, and the rail follows. A step's script shows its
+first line and how many more there are (`v` to verbose shows it whole), and
+what a command printed sits behind a `┃` bar, red for stderr. While the attempt
+on screen is still running, the line pinned under the pane carries the same
 in-progress indicator the [chat workspace](#chat-workspace) draws — a turning
-glyph and an elapsed clock, `⠋ working… 14s` — beside the level and the follow
+glyph and an elapsed clock, `⠋ working… 14s` — with its cost and the follow
 state, so an attempt that is thinking rather than printing is told apart from a
-screen that has stopped repainting. It is on Output only, never on Diff, and it
-follows the attempt being *live* rather than its step being an `agent` step: a
-long `command` step's pane goes quiet for exactly the same reason.
+screen that has stopped repainting. It follows the attempt being *live* rather
+than its step being an `agent` step: a long `command` step's pane goes quiet for
+exactly the same reason.
 
-![The Output tab on a running command step: the attempt selector naming the
-step and the attempt, and a real go test -v run arriving under
-it](../assets/tui-task-output.png)
+Each tool call is one line — what the agent ran and how it came out — folded.
+`enter` unfolds the newest call in view to show its output, and folds it again;
+a click unfolds the call under the pointer. The agent's plan is one row that
+changes in place as it ticks items off.
+
+![The Output tab on a running command step: earlier steps folded above, the
+divider naming the step and the attempt, and a real go test -v run arriving
+under it](../assets/tui-task-output.png)
 
 **Step Details** answers the question the other tabs cannot: what this attempt
 was actually *given*. Task Details shows the workflow's template; this shows the
@@ -755,6 +800,28 @@ round is named on the row (`round 0 · ×2 ●3`) only
 when the timeline is not already drawing `round N` headers above it. No other
 step type is annotated.
 
+Under its last attempt, a `fan_out` step lists its **lanes**, indented and in
+merge order: `↳ ✓ api  done  #42`, one row per lane with its state, its task
+number, the step an unfinished lane is on (`step 2/4 test`) and, for a
+blocked lane, its block reason. A workflow that fans out
+twice lists each step's own lanes under that step, and a multi-round
+`fan_out` lists each round's lanes inside that round, so folding a round
+folds its lanes too. A lane that fans out again reads `▸ api  running  #51 ·
+6 below`: `→` or `space` unfolds its own lanes in place, one level deeper
+(`▾`), and `←` folds them away — the same keys that fold a round, meaning
+the lane while the cursor is on one. Nested lanes are cursor stops and open
+with `enter` like any other.
+
+![The Steps tab of a two-round fan-out with both rounds open: round 0's two
+merged lanes indented inside it, and round 1's lane, waiting at its gate,
+under the cursor](../assets/tui-task-steps-lanes.png) The rows follow the lanes
+live. `↑`/`↓` stop on each lane as they stop on an attempt, and `enter` or `l`
+on one opens that lane's workspace; `esc` comes back to the parent — see
+[Walking a fan-out](#walking-a-fan-out). Standing on a lane row also points
+the Output tab's lane selector at it, so Output shows that lane's output without
+leaving the parent; stepping back onto an attempt returns the selector to the
+task's own output, unless you chose a lane there with `<`/`>`.
+
 The board's and the header's step column say the same thing more briefly: a
 task inside a loop reads `3/7 green · loop 4/10 · repair 2/3` — the pass it is
 on out of the loop's real extent (a 3-item `for_each` reads `loop 2/3`, not the
@@ -780,26 +847,26 @@ output. It is the sentence that decides whether to open the transcript.
 |---|---|
 | `tab` / `shift+tab` | Next / previous task tab |
 | `]` / `[` | Next / previous task tab |
-| `0` | Overview — the landing tab: what the task is doing, what it needs, or how it ended |
-| `1`–`5` | Steps / Task Details / Output / Diff / Workflow — every digit works from every tab |
-| `d` | Switch between Output and Diff, from any tab (from Diff it goes back to Output) |
+| `i` | Open the task's linked issue, from any tab but Pull request (`esc` comes back) |
+| `d` | Open Diff from any tab; on Diff, switch between the whole task's diff and the selected attempt's |
 | `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
 | `N` | Jump to the task's next failure, from any tab — see [Jumping between failures](#jumping-between-failures) |
-| `3` / `6` / `4` / `7` | On Overview, the frame's jump links — the output of, or what was given to, the attempt it is about; the diff; the pull request |
+| `enter` | On Overview, the frame's link — the output of the attempt it is about, or a finished task's diff — or, with the cursor on a Linked row, that row |
+| `↑`/`↓` | On Overview, move along the Linked card's issue, pull request and chat rows |
 | `l` | On Overview, open the fan-out lane the failure card blames — or, on a parent waiting on its lanes, the first lane listed under *Lanes that need you* |
 | `pgup`/`pgdn`, `home`/`end` | On Overview, scroll a frame taller than the screen (the wheel does too; the last row says what is above and below) |
 | `w` | On Overview, open the output of the attempt the outcome card's result came from, at its end |
-| `6` | Step Details — what the selected attempt was handed, and the resolution behind it |
-| `7` | Pull Request — only when this task has a linked pull request and GitHub is on; `tab`/`shift+tab` skip it otherwise |
+| `enter` | On Output, unfold or fold the newest tool call in view |
+| | Pull request is on the strip only when this task has a linked pull request and GitHub is on |
 | `m` | On Pull Request, merge it — the method is chosen in the popup, none preselected |
 | `X` | On Pull Request, close it without merging, or reopen a closed one (asks first) |
 | `i` | On Pull Request, comment on it (`ctrl+s` posts) |
 | `ctrl+r` | On Pull Request, re-run the failed jobs of the selected check's GitHub Actions run (asks first) |
 | `↑`/`↓` | On Step Details, select an attempt (`←`/`→` do it too, and move the same cursor everywhere else) |
 | `pgup`/`pgdn` | On Step Details, scroll the facts |
-| `enter` | From Steps, open the selected attempt in Output — or open the folded iteration or round the cursor is on |
-| `space` | On Steps, open or close the iteration or round the cursor is in |
-| `←`/`→` | On Steps, close / open that iteration or round |
+| `enter` | From Steps, open the selected attempt in Output — or open the folded iteration or round the cursor is on, or the fan-out lane the cursor is on |
+| `space` | On Steps, open or close the iteration or round the cursor is in — or, on a lane that fans out again, its own lanes |
+| `←`/`→` | On Steps, close / open that iteration or round — or that lane's own lanes |
 | `O` / `C` | On Steps, open / close every iteration and round of this task |
 | `pgup`/`pgdn` | On Steps, move the selection a page |
 | `g`/`home`, `G`/`end` | On Steps, select the first / last attempt; `↑ N more` / `↓ N more` rows say what the window hides |
@@ -885,10 +952,10 @@ level with `v` or `ctrl+r`, toggling `ctrl+o`, and output old enough to be
 dropped from the window all leave you looking at the same thing. Press `f`
 (`alt+shift+g` in a chat) to go back to following the tail.
 
-**The attempt strip says what the pane is doing.** Beside the attempt's name it
-shows the level when it is not `normal`, `raw` when `ctrl+o` is on, and — for
-a live attempt only — the spinner with its elapsed time and `▼ following` or
-`⏸ paused · N new`. A finished attempt that failed opens where it failed: at
+**The line under the pane says what it is doing.** It shows the level when it
+is not `normal`, `raw` when `ctrl+o` is on, which attempt is open, and — for a
+live attempt only — the spinner with its elapsed time and `▼ following` or
+`▲ N new below · f`. A finished attempt that failed opens where it failed: at
 the first line its check printed if the check failed, otherwise at the end.
 Check output is marked `check ▏` so it never passes for the step's own.
 
@@ -900,8 +967,8 @@ the escape hatch for a render that surprised you, and it is a display state and
 nothing more: the records, the live tail, the level and the transcript on disk
 are untouched. Like `v`'s level, it is one choice for the whole session and
 shared with the chat workspace — set it in either place and both follow. Unlike
-the level, it has no config key: it is gone when you quit. The pane's title — in a task's workspace, the attempt
-strip — says `raw` while it is on.
+the level, it has no config key: it is gone when you quit. The pane's title — in a task's workspace, the line
+under the pane — says `raw` while it is on.
 
 `ctrl+y` opens a **copy picker**: a searchable list of what can be taken out of
 the assistant prose on screen, newest message first.
@@ -1141,8 +1208,20 @@ It is **grouped by file**, and every file starts **collapsed** — so the first
 thing you see is what the task touched, not the first eighty lines of whichever
 file git wrote first:
 
-![The Diff tab listing three changed files with their line counts, two folded
-and one expanded to its hunk](../assets/tui-diff.png)
+![The Diff tab listing three changed files with their status letters, line
+counts and change bars, two folded and one expanded to its numbered
+hunk](../assets/tui-diff.png)
+
+Each file's row leads with git's letter for what happened to it — `M`
+modified, `A` added, `D` deleted, `R` renamed — and ends with its counts and a
+short bar of `+` and `−` in proportion. An expanded file numbers every line
+with its old and new line numbers, and each hunk opens with a rule naming the
+function it falls in. `d` switches the tab between the whole task's diff and
+the diff of the attempt selected on the rail, which is what that one attempt
+committed — or, while it runs, what it has changed so far; an attempt from
+before vincent recorded where each one started says it has no range to show.
+While the tab shows one attempt, selecting another moves it there. The summary
+line names what the diff is of, and for the whole task what it is against.
 
 | Key | Does |
 |---|---|
@@ -1152,6 +1231,7 @@ and one expanded to its hunk](../assets/tui-diff.png)
 | `C` | Collapse every file — which is how the tab opens |
 | `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
 | `shift+←`/`shift+→` | Pan sideways to the end of a line wider than the pane — diff lines are never wrapped |
+| `d` | Switch between the whole task's diff and the selected attempt's |
 | `[` | Back to the Output tab (`]` advances to Workflow) |
 
 Clicking a file's row folds it; clicking a line of code selects its file and
@@ -1197,7 +1277,7 @@ tab is unfolded, the way `enter` would.
 A blocked fan-out lane is a stop at its fan-out step's place. `N` opens the
 lane as `l` does and lands on the lane's own first failure. Pressing `N`
 again walks the lane's failures, and `esc` or `U` come back to the parent. The
-Overview failure card's `3` link lands the same way `N` does. On a task with
+Overview failure card's link lands the same way `N` does. On a task with
 no failures, `N` does nothing and the status line says so.
 
 ### Walking a fan-out
@@ -2430,7 +2510,7 @@ already under `enter`.
 #### The same picture for a running task — the Workflow tab
 
 The workflows screen shows what a workflow *is*. The task workspace's fifth
-tab — `5`, or `tab` round to it — shows what one task is *doing* with it.
+tab — `tab` round to it — shows what one task is *doing* with it.
 
 A list of steps can name a `fan_out`; it cannot show that two lanes are running
 side by side, which branch of a `condition` was taken, or that a task is on the
@@ -3570,12 +3650,10 @@ left out rather than greyed: the palette runs things, and it never lists
 something that cannot run.
 
 In a task's workspace the palette has a **tabs** group: one row per tab on
-the strip, in the order the strip draws them, such as `go to the Diff tab`
-beside `4`. Typing `diff` finds it. Running a row presses that digit, so it
-does exactly what the digit does. Pull Request is listed only while the tab
-is on the strip. The Overview's jump links, such as `3` for the failed
-attempt's output, stay on the Overview, where the attempt they point at is on
-screen.
+the strip, in the order the strip draws them, such as `go to the Diff tab`.
+Typing `diff` finds it, and running it switches to the tab. Pull request is
+listed only while the tab is on the strip. The Overview's link stays on the
+Overview, where the attempt it points at is on screen.
 
 Its **global** group carries **switch project**, which opens the
 [project picker](#switching-project) — the way to it from a chat, where `@`

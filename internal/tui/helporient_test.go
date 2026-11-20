@@ -13,6 +13,18 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
+// tabNamed is the tab whose name opens line, the longest name winning.
+func tabNamed(line string) (taskViewTab, bool) {
+	best, found := taskViewTab(0), false
+	for tab := range taskTabCount {
+		name := taskTabNames[tab]
+		if (line == name || strings.HasPrefix(line, name+" ")) && (!found || len(name) > len(taskTabNames[best])) {
+			best, found = tab, true
+		}
+	}
+	return best, found
+}
+
 // orientationRows is the help sheet's "this screen" header, as key and text
 // pairs, or nil when the sheet has none.
 func orientationRows(sheet string) [][2]string {
@@ -24,7 +36,19 @@ func orientationRows(sheet string) [][2]string {
 	block, _, _ := strings.Cut(after, "\n\n")
 	row := regexp.MustCompile(`^  (\S+)\s+(.+)$`)
 	var out [][2]string
-	for _, line := range strings.Split(block, "\n") {
+	lines := strings.Split(block, "\n")
+	for i, line := range lines {
+		// A workspace row is keyed by its tab's name, which may be two words
+		// and, wider than the key column, puts its label on the next line.
+		if tab, ok := tabNamed(strings.TrimPrefix(line, "  ")); ok {
+			name := taskTabNames[tab]
+			label := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(line, "  "), name))
+			if label == "" && i+1 < len(lines) {
+				label = strings.TrimSpace(lines[i+1])
+			}
+			out = append(out, [2]string{name, label})
+			continue
+		}
 		if m := row.FindStringSubmatch(line); m != nil {
 			out = append(out, [2]string{m[1], m[2]})
 		}
@@ -55,33 +79,37 @@ func TestEveryTabHasAPurpose(t *testing.T) {
 func TestHelpOrientsTheWorkspace(t *testing.T) {
 	m, v := runningWorkspace(t, "")
 	rows := orientationRows(m.helpSheet())
-	want := []string{"0", "3", "4", "1", "2", "6", "5"}
+	var want []string
+	for _, tab := range v.tabs() {
+		want = append(want, taskTabNames[tab])
+	}
 	if got := orientationKeys(rows); !slices.Equal(got, want) {
-		t.Fatalf("orientation digits = %v, want the drawn order %v", got, want)
+		t.Fatalf("orientation tabs = %v, want the drawn order %v", got, want)
 	}
 	for _, r := range rows {
 		var tab taskViewTab = -1
 		for candidate := range taskTabCount {
-			if taskTabDigits[candidate] == r[0] {
+			if taskTabNames[candidate] == r[0] {
 				tab = candidate
 			}
 		}
-		if want := taskTabNames[tab] + " — " + taskTabPurpose[tab]; r[1] != want {
+		if want := taskTabPurpose[tab]; r[1] != want {
 			t.Errorf("tab %s reads %q, want %q", r[0], r[1], want)
 		}
 	}
 
-	// A fan-out lane has the same strip: no pull request, no 7.
+	// A fan-out lane has the same strip: no pull request.
 	parent := int64(2)
 	v.detail.task.ParentTaskID = &parent
-	if got := orientationKeys(orientationRows(m.helpSheet())); slices.Contains(got, "7") {
-		t.Errorf("a lane task's sheet lists the Pull Request tab: %v", got)
+	pr := taskTabNames[taskTabPull]
+	if got := orientationKeys(orientationRows(m.helpSheet())); slices.Contains(got, pr) {
+		t.Errorf("a lane task's sheet lists the Pull request tab: %v", got)
 	}
 
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	got := orientationKeys(orientationRows(m.helpSheet()))
-	if len(got) == 0 || got[len(got)-1] != "7" {
-		t.Errorf("with a linked pull request the sheet lists %v, want 7 last", got)
+	if len(got) == 0 || got[len(got)-1] != pr {
+		t.Errorf("with a linked pull request the sheet lists %v, want the Pull request tab last", got)
 	}
 }
 
@@ -249,7 +277,7 @@ func TestHelpScrolls(t *testing.T) {
 func tabEntries(entries []paletteEntry) []paletteEntry {
 	var out []paletteEntry
 	for _, e := range entries {
-		if e.isTab {
+		if e.isTab && e.tab != taskTabDetails {
 			out = append(out, e)
 		}
 	}
@@ -261,13 +289,20 @@ func tabEntries(entries []paletteEntry) []paletteEntry {
 func TestPaletteGoesToTabs(t *testing.T) {
 	m, v := runningWorkspace(t, "")
 	m.openPalette()
+	details := false
+	for _, e := range m.palette.entries {
+		details = details || (e.isTab && e.tab == taskTabDetails)
+	}
+	if !details {
+		t.Error("the palette has no way to the Task Details inspector (task 168 decision 3)")
+	}
 	tabs := tabEntries(m.palette.entries)
 	if len(tabs) != len(v.tabs()) {
 		t.Fatalf("palette lists %d tabs, the strip has %d", len(tabs), len(v.tabs()))
 	}
 	for i, e := range tabs {
 		tab := v.tabs()[i]
-		if e.tab != tab || e.key != taskTabDigits[tab] || e.label != "go to the "+taskTabNames[tab]+" tab" || e.group != "tabs" {
+		if e.tab != tab || e.key != "" || e.label != "go to the "+taskTabNames[tab]+" tab" || e.group != "tabs" {
 			t.Errorf("tab row %d = %+v, want %v in drawn order", i, e, tab)
 		}
 		if e.tab == taskTabPull {
@@ -280,7 +315,7 @@ func TestPaletteGoesToTabs(t *testing.T) {
 	}
 	var found bool
 	for _, e := range m.palette.matches() {
-		if e.isTab && e.tab == taskTabDiff && e.key == "4" {
+		if e.isTab && e.tab == taskTabDiff && e.key == "" {
 			found = true
 		}
 	}
@@ -300,8 +335,8 @@ func TestPaletteGoesToTabs(t *testing.T) {
 	v.applyPull(taskPullMsg{taskID: v.detail.taskID, pull: linkedPull()})
 	m.openPalette()
 	tabs = tabEntries(m.palette.entries)
-	if last := tabs[len(tabs)-1]; last.tab != taskTabPull || last.key != "7" {
-		t.Errorf("with a linked pull request the last tab row is %+v, want Pull Request on 7", last)
+	if last := tabs[len(tabs)-1]; last.tab != taskTabPull || last.key != "" {
+		t.Errorf("with a linked pull request the last tab row is %+v, want Pull request", last)
 	}
 	m.palette = nil
 

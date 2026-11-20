@@ -8,21 +8,20 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
-	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/reasons"
 )
 
-// The task workspace's wide layout (task 150.6): a title band, the steps on the
-// left, the tabs in the middle, and the task's details on the right. The steps
-// and the details are always on screen there, so they stop being tabs; a
-// narrower terminal keeps the tabbed layout and reaches them by their digits.
+// The task workspace's wide layout (task 150.6, reworked by task 168): a
+// title band, the steps rail on the left and the tabs beside it. The steps are
+// always on screen there, so they stop being a tab; a narrower terminal keeps
+// them as one. The right-hand Details pane of task 150.6 is gone (task 168
+// decision 1): the band names the linked issue and the Overview's cards carry
+// the rest, so Output and Diff get the width.
 
 const (
 	// taskRailMinW is the narrowest terminal that shows the steps beside the
 	// tabs.
 	taskRailMinW = 130
-	// taskDetailsMinW is the narrowest terminal that also shows the details.
-	taskDetailsMinW = 150
 	// taskBandH is the title band's outer height.
 	taskBandH = 4
 )
@@ -35,14 +34,8 @@ func (t *taskView) wide() bool { return t.termW >= taskRailMinW }
 // frameless reports that the wide layout draws its own panes.
 func (t *taskView) frameless() bool { return t.wide() }
 
-// taskPaneWidths is the rail's and the details' outer widths.
-func taskPaneWidths(width int) (rail, details int) {
-	rail = min(width*20/100, 38)
-	if width >= taskDetailsMinW {
-		details = min(width*18/100, 36)
-	}
-	return rail, details
-}
+// taskRailWidth is the rail's outer width.
+func taskRailWidth(width int) int { return min(width*24/100, 40) }
 
 // renderWide draws the wide layout in exactly width×height.
 func (t *taskView) renderWide(width, height int) string {
@@ -52,13 +45,8 @@ func (t *taskView) renderWide(width, height int) string {
 	}
 	top := len(lines)
 	h := max(height-top, 4)
-	railW, detailsW := taskPaneWidths(width)
-	midW := width - railW - detailsW
-
-	panes := joinColumns(t.taskRail(railW, h), t.taskMiddle(railW, top, midW, h))
-	if detailsW > 0 {
-		panes = joinColumns(panes, t.taskDetailsPane(detailsW, h))
-	}
+	railW := taskRailWidth(width)
+	panes := joinColumns(t.taskRail(railW, h), t.taskMiddle(railW, top, width-railW, h))
 	t.railTop, t.railW = top+1, railW
 	return strings.Join(append(lines, panes...), "\n")
 }
@@ -94,10 +82,26 @@ func taskBandFacts(task apiclient.Task) string {
 	if task.Workflow != "" {
 		parts = append(parts, styleDim.Render(oneLine(task.Workflow)))
 	}
+	// The issue before the branch: a long branch name is what the band's
+	// truncation should eat, not the one link it offers a key for.
+	parts = append(parts, taskIssueChip(task))
 	if task.BranchName != "" {
 		parts = append(parts, styleDim.Render(oneLine(task.BranchName)))
 	}
 	return strings.Join(parts, sep)
+}
+
+// taskIssueChip names the linked issue and the key that opens it (task 168
+// decision 2), or says dimly that there is none.
+func taskIssueChip(task apiclient.Task) string {
+	iss := task.Issue
+	if iss == nil {
+		return styleDim.Render("no linked issue")
+	}
+	chip := toneMagenta.Render(fmt.Sprintf("%s issue #%d", ic("◇"), iss.ID)) + " " + oneLine(iss.Title) +
+		"  " + styleDim.Render(iss.State)
+	chip += "  " + styleKey.Render(openIssueKey) + styleDim.Render(" open")
+	return chip
 }
 
 // taskRail is the steps, drawn by the timeline the Steps tab draws, so a loop, a
@@ -107,13 +111,13 @@ func (t *taskView) taskRail(w, h int) []string {
 	savedW, savedFocus := d.width, d.focus
 	d.width, d.focus = max(w-4, 1), focusTimeline
 	d.timelineTop = 0
-	body := strings.Split(d.renderTimeline(max(h-2, 1)), "\n")
+	body := strings.Split(d.renderRail(max(w-4, 1), max(h-2, 1)), "\n")
 	d.width, d.focus = savedW, savedFocus
 	right := ""
 	if d.loaded && d.task.StepTotal > 0 {
-		right = toneBlue.Render(strconv.Itoa(d.task.StepTotal))
+		right = styleDim.Render(fmt.Sprintf("%d/%d", railDone(d.task.Task), d.task.StepTotal))
 	}
-	return drawBox(toneBlue.Bold(true).Render(ic("▤ Steps")), right, body, w, h, edgesRounded, styleDim)
+	return drawBox(toneCyan.Bold(true).Render("Steps"), right, body, w, h, edgesRounded, styleDim)
 }
 
 // taskMiddle is the tabs and the tab on screen, with a failure pinned under it.
@@ -193,61 +197,4 @@ func taskRecoveryKeys(task apiclient.Task) string {
 		parts = append(parts, styleKey.Render(key)+" "+label)
 	}
 	return strings.Join(parts, "    ")
-}
-
-// taskDetailsPane is what the task is running with and what it has cost.
-func (t *taskView) taskDetailsPane(w, h int) []string {
-	d := t.detail
-	title := styleTitle.Render("Details")
-	if !d.loaded {
-		return drawBox(title, "", nil, w, h, edgesRounded, styleDim)
-	}
-	task := d.task
-	inner := max(w-4, 1)
-	row := func(k, val string) string {
-		room := max(inner-ansi.StringWidth(k)-1, 1)
-		return padBetweenCells(styleDim.Render(k), ansi.Truncate(oneLine(val), room, "…"), inner)
-	}
-	body := []string{styleTitle.Render(ic("⟡ Workflow")), row("name", valueOr(task.Workflow, "—"))}
-	if task.WorkflowOrigin != nil {
-		body = append(body, row("source", task.WorkflowOrigin.Source()))
-	}
-	if task.BranchName != "" {
-		body = append(body, "", styleTitle.Render(ic("⎇ Branch")), toneCyan.Render(ansi.Truncate(oneLine(task.BranchName), inner, "…")))
-		if task.BaseBranch != "" {
-			body = append(body, row("base", task.BaseBranch))
-		}
-	}
-	body = append(body, "", styleTitle.Render(ic("◷ Usage")))
-	if elapsed, ok := task.Elapsed(d.now()); ok {
-		body = append(body, row("elapsed", formatElapsed(elapsed)))
-	}
-	if tokens := task.InputTokens + task.OutputTokens; tokens > 0 {
-		body = append(body, row("tokens", chatTokens(tokens)))
-	}
-	body = append(body, row("cost", formatCost(task.CostUSD)), "", styleTitle.Render(ic("▦ Linked")))
-	links := taskLinks(task.Task)
-	if len(links) == 0 {
-		links = []string{styleDim.Render("no issue or pull request")}
-	}
-	body = append(body, links...)
-	if key := opKey(keymap.Chat); key != "" && t.target().offersChat() {
-		body = append(body, "", styleDim.Render(key+" opens a chat on this task"))
-	}
-	return drawBox(title, "", body, w, h, edgesRounded, styleDim)
-}
-
-// taskLinks names what a task is tied to.
-func taskLinks(task apiclient.Task) []string {
-	var out []string
-	if task.Issue != nil {
-		out = append(out, "issue #"+strconv.FormatInt(task.Issue.ID, 10))
-	}
-	if task.GitHubPull != nil {
-		out = append(out, "pull request linked")
-	}
-	if task.OpenChatID != nil {
-		out = append(out, "chat #"+strconv.FormatInt(*task.OpenChatID, 10))
-	}
-	return out
 }

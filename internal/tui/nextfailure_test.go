@@ -173,7 +173,7 @@ func TestFailureCardLinkIsNextFailuresLanding(t *testing.T) {
 	v.detail.task.CurrentStep = 1
 	v.detail.displayRun = 2
 	v.detail.land = false
-	v.updateKey(registryKey(t, "3"))
+	v.updateKey(registryKey(t, "enter"))
 	if v.tab != taskTabOutput || v.detail.selectedRun != 2 || !v.detail.land || v.detail.following {
 		t.Errorf("3 left tab %v, cursor %d, land %v, following %v; want Output on attempt 2, landing, not following",
 			v.tab, v.detail.selectedRun, v.detail.land, v.detail.following)

@@ -938,6 +938,9 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 	}
 
+	if !b.archived && msg.String() == "L" {
+		return b, b.toggleCardLanes()
+	}
 	if b.cards && b.cardKey(msg.String()) {
 		return b, nil
 	}

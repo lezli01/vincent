@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/claude"
 	"github.com/lezli01/vincent/internal/events"
@@ -57,7 +55,7 @@ func TestLiveSubagentReachesThePane(t *testing.T) {
 
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
-	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	_, cmd = h.m.Update(gotoTaskTabMsg{tab: taskTabOutput})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the fetched subagent to render", func() bool {
 		return strings.Contains(plainContent(h.m), "┊ ↳ Verify 022 gate walkthrough")
@@ -85,7 +83,7 @@ func TestLiveSubagentReachesThePane(t *testing.T) {
 	h.p.until(20*time.Second, "the live subagent to render", func() bool {
 		got := plainContent(h.m)
 		return strings.Contains(got, "┊ ↳ Verify 088 gate walkthrough") &&
-			strings.Contains(got, "✓ started in background")
+			strings.Contains(got, "started in background")
 	})
 	if got := plainContent(h.m); strings.Count(got, "┊ ▸ Bash") < 2 {
 		t.Errorf("both agents' tool calls should render on the rail:\n%s", got)

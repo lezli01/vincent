@@ -48,16 +48,18 @@ func TestWorkspaceFooterHasNoDuplicateOrSelfHints(t *testing.T) {
 }
 
 // TestWorkspaceHelpListsEveryWorkspaceKey is issue #595's second acceptance
-// criterion: `?` on every workspace tab lists `tab`, the digit jumps, `d`,
-// `l` and `U` — every one of which taskView.Update answers from any tab.
+// criterion: `?` on every workspace tab lists `tab`, `d`, `l` and `U` —
+// every one of which taskView.Update answers from any tab — and, since task
+// 168 took the digits away, `i` for the linked issue on every tab but Pull
+// request, whose `i` is its comment.
 func TestWorkspaceHelpListsEveryWorkspaceKey(t *testing.T) {
 	for _, w := range workspaceTabContexts {
 		keys := map[string]bool{}
-		digitJump := false
+		issue := false
 		for _, b := range bindingsFor(w.ctx) {
 			keys[b.key] = true
-			if b.key != w.digit && strings.ContainsAny(b.key, "01234567") && strings.Contains(b.label, "jump") {
-				digitJump = true
+			if b.key == openIssueKey && strings.Contains(b.label, "linked issue") {
+				issue = true
 			}
 		}
 		for _, want := range []string{"tab", "d", "l", "U"} {
@@ -65,8 +67,8 @@ func TestWorkspaceHelpListsEveryWorkspaceKey(t *testing.T) {
 				t.Errorf("%s: help does not list %q, which the workspace handles on this tab", w.ctx, want)
 			}
 		}
-		if !digitJump {
-			t.Errorf("%s: help lists no row for jumping to a tab by its digit", w.ctx)
+		if !issue && w.ctx != ctxTaskPull {
+			t.Errorf("%s: help lists no row for opening the linked issue", w.ctx)
 		}
 	}
 }

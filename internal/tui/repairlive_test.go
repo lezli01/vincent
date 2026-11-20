@@ -146,7 +146,8 @@ func TestTimelineRendersARepairAsItsOwnEntry(t *testing.T) {
 		return false
 	})
 	// The workspace lands on the Overview; the timeline is Steps (129.12).
-	h.press(t, "1")
+	_, cmd = h.m.Update(gotoTaskTabMsg{tab: taskTabSteps})
+	h.p.push(cmd)
 	h.p.until(30*time.Second, "the timeline to label the repair", func() bool {
 		return strings.Contains(content(h.m), "repair (ad-hoc agent)")
 	})

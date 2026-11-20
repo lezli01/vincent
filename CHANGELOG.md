@@ -159,6 +159,25 @@ list with the user-facing context a commit subject cannot carry.
   chat bell. Use `notify.chat_on` / `notify.on`
   for alerts that must reach you regardless (task 165, #1019).
 
+- **The task workspace is redesigned (task 168).** The steps are a rail of
+  one row per step on a connecting line, with attempts, a parallel group's
+  members, a loop's passes, a fan-out's lanes and a guard's `if:` under the
+  step they belong to. The tabs are Overview, Output, Diff, Step details,
+  Workflow and, with a linked pull request, Pull request, cycled with `tab`;
+  **the digit keys are gone**. `i` opens the task's linked issue from any tab
+  but Pull request, whose `i` stays its comment. The right-hand Details pane is
+  gone too: the band names the issue, and the Overview gains a progress bar,
+  Now and The task cards, its link on `enter`, Linked and Usage cards whose
+  rows `↑`/`↓` and `enter` open, and the Task Details document below them.
+  Output is the whole task as one feed — every other attempt folded to a line,
+  the selected one between a divider and the way it ended, each tool call one
+  line that `enter` unfolds, the plan as one row updated in place, a step's
+  script shortened to its first line, command output behind a `┃` bar — with
+  a status line pinned under it. The Diff names its base, marks each file with
+  its git status letter and a change bar, numbers its lines, and `d` on it
+  switches to what the selected attempt changed, which each step run now
+  records (`head_start`/`head_end`, `GET /v1/tasks/{id}/diff?step_run=`).
+
 - **A step's token count uses the chat's arrows.** The task workspace's step
   details now read `8.1k↑/120↓` — `↑` the input sent to the model, `↓` the
   output it returned — matching each chat turn's heading. They had drawn the

@@ -313,6 +313,9 @@ const (
 	// carries down its wrapped lines.
 	gutterCheck     = "check ▏"
 	gutterCheckCont = "      ▏"
+	// gutterOutput is the margin bar in front of what a command printed
+	// (task 168.4).
+	gutterOutput = "┃ "
 )
 
 // The subagent records (task 109). A subagent's own records are ordinary
@@ -601,6 +604,16 @@ func splitWords(para string, avail int) []string {
 		out = append(out, " ")
 	}
 	return out
+}
+
+// scriptMore is the count after a script's first line, naming the key that
+// shows the rest where the pane has one.
+func scriptMore(n int, expandKey string) string {
+	more := "  (+" + plural(n, "line", "lines")
+	if expandKey != "" {
+		more += " · " + expandKey + " shows them"
+	}
+	return more + ")"
 }
 
 // runHeaderLine renders what the CLI announced about the run before it
@@ -1000,6 +1013,12 @@ type lineOpts struct {
 	// expandHint is the key text the ▸/▾ affordance names, set only while
 	// that key works where the line is read (071 decision 7).
 	expandHint string
+	// latestPlan draws the main loop's plan once, where it first appeared,
+	// with the newest version's items (task 168.4): every version of the
+	// list arrives whole, so the newest is the list as it stands, and the
+	// task's feed shows it as one row that changes in place rather than a
+	// history of the plan.
+	latestPlan bool
 }
 
 // recordCall is the tool call a record belongs to: a tool_use's or a
@@ -1172,9 +1191,28 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 	if opts.toolChecks && (level == levelCompact || level == levelNormal) {
 		checks = newToolCheckIndex(records)
 	}
+	firstPlan, lastPlan := -1, -1
+	if opts.latestPlan {
+		for i, r := range records {
+			if r.Type == "agent.plan" && r.ParentCallID == "" {
+				if firstPlan < 0 {
+					firstPlan = i
+				}
+				lastPlan = i
+			}
+		}
+	}
 	for i := 0; i < len(records); i++ {
 		rec := records[i]
 		parent := rec.ParentCallID
+		if firstPlan >= 0 && rec.Type == "agent.plan" && parent == "" {
+			if i != firstPlan {
+				continue
+			}
+			// The row stays where the plan first appeared and shows the
+			// newest version of it.
+			rec.Items = records[lastPlan].Items
+		}
 		open := opts.isExpanded(rec, seqAt(seqs, i))
 		if checks != nil && parent == "" {
 			if rec.Type == "agent.tool_result" && checks.absorbs(rec.Results) && !open {
@@ -1195,7 +1233,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 				}
 				// Expanded: the call's own lines follow its ▾ line, at
 				// verbose (task 160 decision 4).
-				if pl, ok := renderRecord(rec, sawOutput, levelVerbose, skills); ok {
+				if pl, ok := renderRecord(rec, sawOutput, levelVerbose, skills, opts.expandKey); ok {
 					fromCall(seqAt(seqs, i), recordCall(rec), wrapLine(pl, width))
 				}
 				continue
@@ -1219,7 +1257,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 					segs: []segment{{text: rec.Line, style: styleDim}},
 				}, recWidth)
 			default:
-				if pl, ok := renderRecord(rec, sawOutput, recLevel, skills); ok {
+				if pl, ok := renderRecord(rec, sawOutput, recLevel, skills, opts.expandKey); ok {
 					block = wrapLine(pl, recWidth)
 				}
 			}
@@ -1342,7 +1380,7 @@ func outputLinesAt(records []apiclient.TranscriptRecord, seqs []int64, level out
 			}
 			continue
 		}
-		pl, ok := renderRecord(rec, sawOutput, recLevel, skills)
+		pl, ok := renderRecord(rec, sawOutput, recLevel, skills, opts.expandKey)
 		if !ok {
 			continue
 		}
@@ -1435,6 +1473,7 @@ func assistantBlockLines(text string, width int, raw, links bool) ([]string, []i
 // call each is drawn at.
 func renderRecord(
 	rec apiclient.TranscriptRecord, sawOutput bool, level outputLevel, skills map[string]apiclient.TranscriptRecord,
+	expandKey string,
 ) (paneLine, bool) {
 	switch rec.Type {
 	case "agent.tool_use":
@@ -1534,9 +1573,33 @@ func renderRecord(
 				segs: []segment{{text: rec.Text, style: style}},
 			}, true
 		}
-		return plain(rec.Text, style, false), true
+		// A command's output sits behind a margin bar (task 168.4), so what
+		// the command printed cannot be mistaken for vincent's own lines.
+		bar := styleDim
+		if rec.Stream == "stderr" {
+			bar = styleBad
+		}
+		return paneLine{
+			gutter: gutterOutput, gutterStyle: bar, contPrefix: gutterOutput,
+			segs: []segment{{text: rec.Text, style: style}},
+		}, true
 	case "vincent.command_started":
-		return marked("$ ", fieldOf(rec.Raw, "command"), styleDim), true
+		// A step's script is often several lines; below verbose it is its
+		// first line and a count of the rest (task 168.4). The whole script
+		// is the Step details tab's, where it can be read as written.
+		cmd := strings.TrimRight(fieldOf(rec.Raw, "command"), "\n")
+		if first, rest, ok := strings.Cut(cmd, "\n"); ok && level != levelVerbose {
+			n := strings.Count(rest, "\n") + 1
+			return paneLine{gutter: "$ ", gutterStyle: styleWarn, segs: []segment{
+				{text: first, style: lipgloss.NewStyle()},
+				{text: scriptMore(n, expandKey), style: styleDim},
+			}}, true
+		}
+		return paneLine{gutter: "$ ", gutterStyle: styleWarn, segs: []segment{{text: cmd, style: lipgloss.NewStyle()}}}, true
+	case "vincent.step_started", "vincent.step_finished":
+		// The feed's divider and end line say these (task 168.4); a row
+		// each of `· step_started` said nothing a reader could use.
+		return paneLine{}, false
 	case "vincent.input_request":
 		return marked("? ", firstNonEmpty(rec.Summary, rec.Kind, "input requested"), styleAsk), true
 	case "vincent.input_response":

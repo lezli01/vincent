@@ -21,12 +21,12 @@ func TestOutcomeCardFromRealServer(t *testing.T) {
 	done := h.createParkedTask(t, "delivered")
 	h.finishTask(t, done.ID, store.TaskDone)
 	got := h.overviewOf(t, done.ID, "Result  from step 1 implement · attempt 1")
-	for _, want := range []string{"Outcome", "done", "$ cost", "4 diff"} {
+	for _, want := range []string{"Outcome", "done", "$ cost", "enter diff"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("outcome card misses %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "⇡") || strings.Contains(got, "7 PR") {
+	if strings.Contains(got, "⇡ #") {
 		t.Errorf("a task with no pull request shows one:\n%s", got)
 	}
 }
@@ -58,7 +58,7 @@ func TestOutcomeCardPullFromRealServer(t *testing.T) {
 		return strings.Contains(ansi.Strip(content(h.m)), "· checks ")
 	})
 	got := ansi.Strip(content(h.m))
-	for _, want := range []string{"⇡ #412 open", "7 PR", "4 diff"} {
+	for _, want := range []string{"⇡ #412 open", "enter diff"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("outcome card misses %q:\n%s", want, got)
 		}

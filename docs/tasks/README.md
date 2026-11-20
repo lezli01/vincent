@@ -181,6 +181,7 @@ the living engineering specification records implementation contracts.
 | [165](165-chat-attention.md) | Notify on chats (`notify.chat_on`), mark unread chats, count waiting chats as attention, and switch chats with `alt+n`/`alt+shift+n`/`alt+1`…`alt+9` | 🔄 in progress (5/6) |
 | [166](166-chat-object-mentions.md) | Mention issues, tasks and pull requests in a chat, and file line ranges | 🔄 in progress (3/6) |
 | [167](167-chat-checkpoint-rewind-fork.md) | Checkpoint a chat's worktree every turn, with rewind and fork | 🔄 in progress (2/10) |
+| [168](168-task-workspace-redesign.md) | Task workspace redesign: steps rail, plain tabs, Output feed, Diff and Overview | ✅ done (9/9) |
 
 ## How to add and update a task document
 

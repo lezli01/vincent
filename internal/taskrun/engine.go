@@ -1353,6 +1353,12 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 		env.log.Info("step transcript", "attempt", run.Attempt, "path", tr.Path())
 	}
 
+	// Where the worktree's history stands as the attempt starts (task
+	// 168.5), carried by the insert itself so it is on the row before the
+	// agent or command runs (crash-first): the start of the range
+	// `diff?step_run=` diffs (§13.2).
+	run.HeadStart = r.worktreeHead(env)
+
 	// An `edit + retry` left its text on the task, because the handler ran
 	// while the task was blocked and this row did not exist yet (§6). The
 	// insert drains it in the same transaction — it marks the attempt the
@@ -1442,6 +1448,13 @@ func (r *Runner) runAttempt(ctx context.Context, env *stepEnv, attempt int, prev
 			"step", env.step.ID, "attempt", attempt, "path", tr.Path(), "error", err)
 		outcome.state, outcome.reason = store.StepFailed, ReasonTranscriptIOError
 		outcome.result = "transcript incomplete: " + err.Error()
+	}
+	// The end of the range, read once the attempt has stopped touching the
+	// worktree and written by the same statement that finalizes the row, so
+	// a finished row never lacks the end its start was paired with. Only a
+	// recorded start earns an end: half a range diffs nothing.
+	if run.HeadStart != nil {
+		run.HeadEnd = r.worktreeHead(env)
 	}
 	r.finishStepRun(run, outcome, env.log)
 	r.emit(env.task, eventStepFinished, map[string]any{
@@ -1808,6 +1821,41 @@ func (r *Runner) globallyPaused(ctx context.Context, log *slog.Logger) bool {
 		return false
 	}
 	return p != nil
+}
+
+// worktreeHead reads the HEAD sha of the task's worktree for a step run's
+// commit range (task 168.5), nil when there is none to read.
+//
+// Only runAttempt asks, which is to say only the steps that run something in
+// the worktree — agent and command steps, the merge-back, and a fan_out's
+// join, whose lane merges are commits like any other. The structural steps
+// (parallel, condition, loop, break), a manual gate and a fan_out's park write
+// their rows elsewhere and record no range: none of them changes the worktree,
+// so a range would only ever be empty, and a null one says "nothing to diff"
+// more honestly than a pair of equal shas.
+//
+// A `parallel` group's sub-steps share their task's worktree and run at once,
+// so a sub-step's range is what was committed while it ran — its siblings'
+// commits included. The range is a fact about the worktree's history over the
+// attempt, not an attribution, which a sha pair cannot make.
+//
+// A failure to read is logged and leaves the range unrecorded rather than
+// failing the step: the range is evidence about the attempt, never a
+// precondition of it, and `diff?step_run=` answers an unrecorded range with a
+// 409 that says so. The read runs on the persist context because the end is
+// read after a shutdown has already cancelled the run context, and is still
+// worth recording.
+func (r *Runner) worktreeHead(env *stepEnv) *string {
+	dir := env.task.WorktreePath
+	if dir == "" || r.deps.Worktrees == nil {
+		return nil
+	}
+	sha, err := r.deps.Worktrees.Head(r.persistCtx(), dir)
+	if err != nil {
+		env.log.Warn("read the worktree's HEAD for the step's commit range", "error", err)
+		return nil
+	}
+	return &sha
 }
 
 func (r *Runner) finishStepRun(run *store.StepRun, outcome stepOutcome, log *slog.Logger) {

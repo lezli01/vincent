@@ -223,7 +223,7 @@ var catalog = []Info{
 		"issue form",
 	}},
 	{Op: Browser, Default: "o", Meaning: "open in a browser", Kind: KindTerm, Surfaces: []Surface{
-		"task details", "task pull request", "pull requests", "issues", "issue",
+		"task overview", "task details", "task pull request", "pull requests", "issues", "issue",
 	}},
 	{Op: OpenRow, Default: "enter", Meaning: "open or expand the row under the cursor", Kind: KindTerm, Surfaces: []Surface{
 		"task table", "archived tasks", "archived chats", "chats", "task pull request",

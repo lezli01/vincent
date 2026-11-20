@@ -105,7 +105,7 @@ func TestOutcomeCardStacksUnderTheFailureCardOnAborted(t *testing.T) {
 	if failure < 0 || outcome < 0 || failure > outcome {
 		t.Fatalf("aborted: want the failure card, then the outcome card:\n%s", got)
 	}
-	if !strings.Contains(got, "3 output of attempt") {
+	if !strings.Contains(got, "enter output of attempt") {
 		t.Errorf("aborted: 3 is no longer the failure card's link:\n%s", got)
 	}
 	// A short terminal loses the outcome card first; the failure card keeps
@@ -131,11 +131,11 @@ func TestOutcomeResultJumpOpensOutputAtTheEnd(t *testing.T) {
 		t.Fatalf("jump: tab %v, cursor %d, following %v; want Output on attempt 1 at its end",
 			v.tab, v.detail.selectedRun, v.detail.following)
 	}
-	// `3` on aborted is still the failure card's anchor.
+	// enter on aborted is still the failure card's anchor.
 	v.tab = taskTabOverview
-	v.updateKey(synthKey("3"))
+	v.updateKey(synthKey("enter"))
 	if want, _ := cardRun(v.detail.task); v.detail.selectedRun != want.ID {
-		t.Fatalf("3 on aborted landed on %d, want the failure card's %d", v.detail.selectedRun, want.ID)
+		t.Fatalf("enter on aborted landed on %d, want the failure card's %d", v.detail.selectedRun, want.ID)
 	}
 	// No result, no key.
 	running := outcomeView(t, outcomeTask(stateRunning))
@@ -198,7 +198,7 @@ func TestOutcomeFetchesOncePerOpen(t *testing.T) {
 	v.detail.client = srv.start(t)
 	srv.run(v)
 	got := ansi.Strip(v.render(100, 40))
-	for _, want := range []string{"± 1 file · +2 −1 · branch vincent/9-outcome", "● 2 commits", "bbbbbbb second", "4 diff"} {
+	for _, want := range []string{"± 1 file · +2 −1 · branch vincent/9-outcome", "● 2 commits", "bbbbbbb second", "enter diff"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("card misses %q:\n%s", want, got)
 		}
@@ -284,7 +284,7 @@ func TestOutcomePullLineReadsThePullTab(t *testing.T) {
 		Runs: []apiclient.GitHubCheckRun{{Name: "a", State: "success"}, {Name: "b", State: "success"}},
 	}})
 	got := ansi.Strip(v.render(100, 40))
-	for _, want := range []string{"⇡ #123 open · checks 2/2 ✓ passing", "7 PR"} {
+	for _, want := range []string{"⇡ #123 open · checks 2/2 ✓ passing"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("card misses %q:\n%s", want, got)
 		}

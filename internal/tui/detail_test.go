@@ -391,7 +391,7 @@ func TestDetailOutputRendering(t *testing.T) {
 	}
 	got := strings.Join(d.outputLines(), "\n")
 	for _, want := range []string{
-		"reading token.go", "▸ Edit", "internal/auth/token.go",
+		"reading token.go", "edit", "internal/auth/token.go", "(enter expands)",
 		"… 2 unrecognized line(s)", "boom",
 		"? Which colour?",
 	} {

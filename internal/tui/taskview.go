@@ -80,7 +80,11 @@ type taskView struct {
 
 	detail *detail
 	tab    taskViewTab
-	popup  bool
+	// linkedSel is the Overview's Linked-card row under the cursor, 1-based,
+	// and 0 while ↑/↓ have not moved onto the card (task 168.7): then enter
+	// is the frame's link, and on a row it opens that row.
+	linkedSel int
+	popup     bool
 	// evidence is the Overview failure card's one transcript fetch (task
 	// 129.13), keyed by the failing attempt so an event never refetches it.
 	evidence failureEvidence
@@ -198,6 +202,9 @@ type taskView struct {
 	// laneSel indexes lanes for the Output pane's lane selector. -1 is the
 	// task's own output, which is where the pane starts and returns to.
 	laneSel int
+	// laneFromTimeline says laneSel was set by the Steps cursor standing on
+	// a lane row (followTimelineLane), and so is the timeline's to clear.
+	laneFromTimeline bool
 	// laneDetail is the selected lane's own sub-model, and therefore the one
 	// extra live subscription the Output pane is allowed to hold. Exactly one
 	// at a time, torn down when the selection moves and when the workspace
@@ -348,7 +355,8 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	// After every message: the one that loaded a blocked or finished task,
 	// or moved the reader onto the Overview, is the one that fetches the
 	// failure card's evidence and the outcome card's diff and commits.
-	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome(), t.landPendingFailure(), t.syncHandoff())
+	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome(), t.landPendingFailure(), t.syncHandoff(),
+		t.syncDiffScope())
 }
 
 func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
@@ -356,7 +364,10 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		t.width, t.height, t.termW = msg.Width, msg.Height, msg.Width
 		return t, t.detail.update(msg)
+	case gotoTaskTabMsg:
+		return t, t.setTab(msg.tab)
 	case selectTaskMsg:
+		t.linkedSel = 0
 		// Which of the three ways this task was opened decides what happens
 		// to the back stack: a jump pushes what it left, a pop keeps what it
 		// already truncated, and every other route — the board, the palette,
@@ -507,7 +518,8 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		// re-reads the section; the detail sub-model still sees the note.
 		cmd := tea.Batch(t.detail.update(msg), t.laneUpdate(msg))
 		if ev, ok := msg.note.(apiclient.EventNote); ok {
-			cmd = tea.Batch(cmd, t.chatNoteCmd(ev.Event), t.handoffNoteCmd(ev.Event))
+			cmd = tea.Batch(cmd, t.chatNoteCmd(ev.Event), t.handoffNoteCmd(ev.Event),
+				t.laneNoteCmd(ev.Event))
 		}
 		if ev, ok := msg.note.(apiclient.EventNote); ok &&
 			ev.Event.Type == eventTaskGitHubPullChanged {
@@ -546,30 +558,17 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.switchTab(1)
 	case "shift+tab", "[":
 		return t.switchTab(-1)
-	case "0":
-		return t.jumpTab(taskTabOverview)
-	case "1":
-		return t.jumpTab(taskTabSteps)
-	case "2":
-		return t.jumpTab(taskTabDetails)
-	case "3":
-		return t.jumpTab(taskTabOutput)
-	case "4":
-		return t.jumpTab(taskTabDiff)
-	case "5":
-		return t.jumpTab(taskTabWorkflow)
-	case "6":
-		return t.jumpTab(taskTabStepDetails)
-	case "7":
-		// Absent means absent: with no pull request linked, 7 does nothing
-		// rather than landing on an empty screen (task 068).
-		if !t.pullTabAvailable() {
-			return nil
+	case openIssueKey:
+		// The pull request tab keeps `i` for its comment, as it had it first
+		// (task 168 decision 2's one exception).
+		if t.tab != taskTabPull {
+			if cmd := t.openIssueCmd(); cmd != nil {
+				return cmd
+			}
 		}
-		return t.jumpTab(taskTabPull)
 	case "d":
 		if t.tab == taskTabDiff {
-			return t.setTab(taskTabOutput)
+			return t.toggleDiffScope()
 		}
 		return t.setTab(taskTabDiff)
 	case "esc":
@@ -604,6 +603,29 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if t.detail.form != nil {
 			t.openPopup()
 			return nil
+		}
+		if t.tab == taskTabOverview && !t.detail.actions.capturing() {
+			// A Linked row under the cursor opens; otherwise the frame's one
+			// link (task 168.7): the output it is about, or the diff of a
+			// finished task.
+			if cmd, ok := t.openLinked(); ok {
+				return cmd
+			}
+			if links := t.overviewLinks(); len(links) > 0 {
+				return t.jumpTab(links[0].tab)
+			}
+		}
+		if t.tab == taskTabOutput {
+			// Unfold or fold the newest tool call in view (task 168.4): its
+			// output, at verbose, under its one-line form.
+			pane := t.outputPane()
+			pane.toggleCall(pane.newestCallInView())
+			return nil
+		}
+		if t.tab == taskTabSteps && t.detail.cursorLane() != 0 {
+			// A lane row: enter opens the lane's own workspace, and esc
+			// comes back here (#316).
+			return t.openLaneCmd()
 		}
 		if t.tab == taskTabSteps && t.detail.timelineFolded() {
 			// `enter` means both things, chosen by the row under the cursor:
@@ -653,6 +675,22 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// the Output tab's attempt selection just below, and O/C are the Diff
 		// tab's fold-all. Each pair means the fold only while Steps &
 		// Attempts has the screen.
+		// On a lane that fanned out itself the same keys fold its own lanes
+		// in place; everywhere else they fold rounds and iterations.
+		switch msg.String() {
+		case " ", "space":
+			if cmd, ok := t.detail.toggleLaneOpen(); ok {
+				return cmd
+			}
+		case "right":
+			if cmd, ok := t.detail.setLaneOpen(true); ok {
+				return cmd
+			}
+		case "left":
+			if cmd, ok := t.detail.setLaneOpen(false); ok {
+				return cmd
+			}
+		}
 		switch msg.String() {
 		case " ", "space":
 			return t.detail.toggleTimelineFold()
@@ -677,13 +715,14 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if t.tab == taskTabSteps {
 		t.detail.focus = focusTimeline
 		t.detail.tab = tabOutput
+		cmd := t.detail.update(msg)
+		return tea.Batch(cmd, t.followTimelineLane())
+	}
+	t.detail.focus = focusOutput
+	if t.tab == taskTabOutput {
+		t.detail.tab = tabOutput
 	} else {
-		t.detail.focus = focusOutput
-		if t.tab == taskTabOutput {
-			t.detail.tab = tabOutput
-		} else {
-			t.detail.tab = tabDiff
-		}
+		t.detail.tab = tabDiff
 	}
 	return t.detail.update(msg)
 }
@@ -807,7 +846,8 @@ func (t *taskView) setTab(tab taskViewTab) tea.Cmd {
 	if tab == taskTabDiff {
 		t.detail.tab = tabDiff
 		t.detail.diff.openTask(t.detail.taskID)
-		return t.detail.diff.fetch(t.detail.client, true)
+		t.detail.diff.base = t.detail.task.BaseDisplay()
+		return t.detail.diff.fetch(t.detail.client)
 	}
 	if tab == taskTabOutput || tab == taskTabSteps {
 		t.detail.tab = tabOutput
@@ -857,8 +897,17 @@ func (t *taskView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 		return nil
 	}
 	switch t.tab {
+	case taskTabOutput:
+		// A click on a tool call's line unfolds or folds it (task 168.4).
+		head := 0
+		if len(t.lanes) > 0 {
+			head = 1
+		}
+		pane := t.outputPane()
+		pane.toggleCall(pane.callAt(msg.Y - t.bodyY - head))
 	case taskTabSteps:
-		return t.detail.clickTimeline(msg.Y - t.bodyY)
+		cmd := t.detail.clickTimeline(msg.Y - t.bodyY)
+		return tea.Batch(cmd, t.followTimelineLane())
 	case taskTabDetails:
 		t.details.clickSidebar(msg.X, msg.Y-t.bodyY)
 	case taskTabStepDetails:
@@ -888,7 +937,8 @@ func (t *taskView) updateWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	case taskTabOverview:
 		t.overview.Update(msg)
 	case taskTabSteps:
-		return t.detail.moveTimelineSelection(delta)
+		cmd := t.detail.moveTimelineSelection(delta)
+		return tea.Batch(cmd, t.followTimelineLane())
 	case taskTabDetails:
 		t.details.scrollAt(msg.X, delta)
 	case taskTabStepDetails:
@@ -978,8 +1028,8 @@ var taskTabNames = [taskTabCount]string{
 	taskTabOutput:      "Output",
 	taskTabDiff:        "Diff",
 	taskTabWorkflow:    "Workflow",
-	taskTabStepDetails: "Step Details",
-	taskTabPull:        "Pull Request",
+	taskTabStepDetails: "Step details",
+	taskTabPull:        "Pull request",
 }
 
 // taskTabPurpose is what each tab is for, one clause each: the help sheet's
@@ -1005,54 +1055,22 @@ func (tab taskViewTab) String() string {
 	return taskTabNames[tab]
 }
 
-// taskTabDigits are the keys that jump to each tab, drawn beside its label.
-var taskTabDigits = [taskTabCount]string{
-	taskTabOverview:    "0",
-	taskTabSteps:       "1",
-	taskTabDetails:     "2",
-	taskTabOutput:      "3",
-	taskTabDiff:        "4",
-	taskTabWorkflow:    "5",
-	taskTabStepDetails: "6",
-	taskTabPull:        "7",
-}
-
-// taskTabShort are the secondary group's labels when the full strip does not
-// fit. The primary group is never abbreviated. Each is its tab's own name cut
-// short, never a second name: the breadcrumb and the help sheet say "Step
-// Details", and a strip that said "Inputs" read as a different tab (#800
-// W14).
+// taskTabShort are the labels when the full strip does not fit. Each is its
+// tab's own name cut short, never a second name (#800 W14).
 var taskTabShort = [taskTabCount]string{
+	taskTabOverview:    "Overview",
 	taskTabSteps:       "Steps",
 	taskTabDetails:     "Details",
+	taskTabOutput:      "Output",
+	taskTabDiff:        "Diff",
 	taskTabWorkflow:    "Flow",
-	taskTabStepDetails: "Step Det.",
+	taskTabStepDetails: "Step",
 	taskTabPull:        "PR",
 }
 
-// taskTabPrimary reports whether a tab is in the strip's first group: the
-// three a reader moves between most, drawn at full weight.
-func taskTabPrimary(tab taskViewTab) bool {
-	return tab == taskTabOverview || tab == taskTabOutput || tab == taskTabDiff
-}
-
-// Separators. Inside a group the primary one is a bar and the secondary a
-// gap; between the groups a double bar, so the two read as distinct under
-// the no-colour profile too, where the secondary group's dimming is gone
-// (WCAG 1.4.1, as task 129 borrows it).
-const (
-	tabSepPrimary   = " │ "
-	tabSepSecondary = "  "
-	tabSepGroups    = " ‖ "
-)
-
-// renderTabs draws the grouped strip at the widest label set that fits:
-// full labels with the tab hint, full labels alone, then the secondary group
-// abbreviated, then as bare digits with the current tab still named. The
-// hint is the strip's one statement of how to move, and an 80-column
-// workspace keeps it (#800 W14): an abbreviation is given up for it, but the
-// tabs' full names are not, and only a strip too narrow for even the digits
-// and the hint loses it.
+// renderTabs draws the strip at the widest label set that fits: names, markers
+// and the hint; names and markers; then short names. The strip carries no
+// digits (task 168 decision 3): tab and ⇧tab are how a reader moves.
 func (t *taskView) renderTabs() string {
 	tabs := t.tabs()
 	width := t.width
@@ -1060,19 +1078,20 @@ func (t *taskView) renderTabs() string {
 		width = 1 << 16
 	}
 	hint := styleDim.Render("  " + taskTabHint)
-	steps := []struct {
-		level int
-		hint  bool
-	}{{0, true}, {0, false}, {1, true}, {2, true}, {1, false}, {2, false}}
 	var line string
 	var hits []taskTabHit
-	for _, step := range steps {
-		line, hits = t.tabStrip(tabs, step.level)
-		if step.hint && ansi.StringWidth(line+hint) <= width {
-			line += hint
-			break
+	for _, step := range []struct {
+		short, hint bool
+	}{{false, true}, {false, false}, {true, false}} {
+		line, hits = t.tabStrip(tabs, step.short)
+		if step.hint {
+			if ansi.StringWidth(line+hint) <= width {
+				line += hint
+				break
+			}
+			continue
 		}
-		if !step.hint && ansi.StringWidth(line) <= width {
+		if ansi.StringWidth(line) <= width {
 			break
 		}
 	}
@@ -1080,56 +1099,66 @@ func (t *taskView) renderTabs() string {
 	return line
 }
 
-// taskTabHint is the strip's movement hint.
-const taskTabHint = "tab/⇧tab or digits"
+// tabSepPrimary is the bar between two tabs of equal weight, which the issue
+// workspace's two-tab strip still draws.
+const tabSepPrimary = " │ "
 
-// tabStrip draws the strip at one abbreviation level and records where each
-// tab landed, in screen columns, for the mouse.
-func (t *taskView) tabStrip(tabs []taskViewTab, level int) (string, []taskTabHit) {
+// taskTabHint is the strip's movement hint.
+const taskTabHint = "tab ⇧tab"
+
+// tabStrip draws the strip and records where each tab landed, in screen
+// columns, for the mouse. The tab on screen is bold with an underline; the
+// rest are dim. A tab may carry a marker after its name: the diff's size,
+// or a red `!` on an Overview whose task needs a human.
+func (t *taskView) tabStrip(tabs []taskViewTab, short bool) (string, []taskTabHit) {
 	var b strings.Builder
 	var hits []taskTabHit
 	b.WriteString("  ")
 	x := 3 // root frame border plus the two-cell indent above
 	for i, tab := range tabs {
 		if i > 0 {
-			sep := tabSepSecondary
-			switch {
-			case taskTabPrimary(tab):
-				sep = tabSepPrimary
-			case taskTabPrimary(tabs[i-1]):
-				sep = tabSepGroups
-			}
-			b.WriteString(styleDim.Render(sep))
-			x += ansi.StringWidth(sep)
+			b.WriteString("   ")
+			x += 3
 		}
-		name := taskTabDigits[tab]
-		if label := t.tabName(tab, level); label != "" {
-			name += " " + label
+		name := tab.String()
+		if short {
+			name = taskTabShort[tab]
 		}
-		active := t.tab == tab
-		switch {
-		case active:
-			b.WriteString(styleTitle.Render(name))
-		case taskTabPrimary(tab):
-			b.WriteString(name)
-		default:
+		marker := t.tabMarker(tab)
+		w := ansi.StringWidth(name)
+		if marker != "" {
+			w += 1 + ansi.StringWidth(marker)
+		}
+		if t.tab == tab {
+			b.WriteString(styleTitle.Underline(true).Render(name))
+		} else {
 			b.WriteString(styleDim.Render(name))
 		}
-		w := ansi.StringWidth(name)
+		if marker != "" {
+			b.WriteString(" " + marker)
+		}
 		hits = append(hits, taskTabHit{tab: tab, x0: x, x1: x + w})
 		x += w
 	}
 	return b.String(), hits
 }
 
-func (t *taskView) tabName(tab taskViewTab, level int) string {
-	if taskTabPrimary(tab) || level == 0 {
-		return tab.String()
+// tabMarker is what a tab says about itself on the strip, or "".
+func (t *taskView) tabMarker(tab taskViewTab) string {
+	d := t.detail
+	if !d.loaded {
+		return ""
 	}
-	// The bare-digit strip still names the tab on screen, so the strip never
-	// leaves the reader without the name of where they are.
-	if level == 1 || tab == t.tab {
-		return taskTabShort[tab]
+	switch tab {
+	case taskTabOverview:
+		if overviewFrameFor(d.task.State) == frameAttention {
+			return styleBad.Bold(true).Render(attentionBadge)
+		}
+	case taskTabDiff:
+		// The whole task's size, whichever scope the tab is on.
+		if add, del, ok := d.diff.wholeTotals(); ok && add+del > 0 {
+			return styleWarn.Render(fmt.Sprintf("+%d −%d", add, del))
+		}
 	}
 	return ""
 }
@@ -1214,11 +1243,21 @@ func (t *taskView) renderOutput(width, height int) string {
 		lane.tab = tabOutput
 		pane = lane
 	}
-	head = append(head, renderAttemptSelector(pane, width))
-	if height <= len(head) {
-		return strings.Join(head[:max(height, 1)], "\n")
+	// The feed names the open attempt in its own divider (task 168.4); the
+	// line under it says what is happening and how to move.
+	foot := pane.feedStatus(width)
+	room := height - len(head)
+	if foot != "" {
+		room -= 2
 	}
-	return strings.Join(append(head, pane.renderOutputPane(height-len(head))), "\n")
+	if room < 1 {
+		return strings.Join(append(head, foot)[:max(min(height, len(head)+1), 1)], "\n")
+	}
+	head = append(head, pane.renderOutputPane(room))
+	if foot != "" {
+		head = append(head, styleDim.Render(strings.Repeat("─", max(width, 1))), foot)
+	}
+	return strings.Join(head, "\n")
 }
 
 // renderLaneSelector is the Output pane's lane strip (#316). It names the
@@ -2130,8 +2169,12 @@ func (t *taskView) laneJump() (int64, bool) {
 			return id, true
 		}
 	case taskTabSteps:
-		// The timeline's own answer is the row under the cursor, and only a
-		// fan_out row has lanes to open.
+		// The timeline's own answer is the row under the cursor: a lane row
+		// names its lane, and of the attempts only a fan_out row has lanes
+		// to open.
+		if id := t.detail.cursorLane(); id != 0 {
+			return id, true
+		}
 		if !t.selectedFanOutRun() {
 			return 0, false
 		}
@@ -2191,6 +2234,35 @@ func (t *taskView) selectedLane() (apiclient.Task, bool) {
 	return t.lanes[t.laneSel], true
 }
 
+// followTimelineLane points the Output tab's lane selector at the lane the
+// Steps cursor stands on, so `3` from a lane row shows that lane's output.
+// Leaving the lane rows hands the selector back to the task's own output —
+// but only a selection the timeline made: one chosen with `<`/`>` on the
+// Output tab is the reader's, and walking the attempts must not undo it.
+func (t *taskView) followTimelineLane() tea.Cmd {
+	want := -1
+	if id := t.detail.cursorLane(); id != 0 {
+		for i, lane := range t.lanes {
+			if lane.ID == id {
+				want = i
+			}
+		}
+	}
+	switch {
+	case want >= 0:
+		t.laneFromTimeline = true
+	case t.laneFromTimeline:
+		t.laneFromTimeline = false
+	default:
+		return nil
+	}
+	if want == t.laneSel {
+		return nil
+	}
+	t.laneSel = want
+	return t.syncLaneDetail()
+}
+
 // selectLane is `<` and `>`. The cycle includes the task's own output, so a
 // reader who walked into the lanes can walk back out of them the same way.
 func (t *taskView) selectLane(delta int) tea.Cmd {
@@ -2199,6 +2271,7 @@ func (t *taskView) selectLane(delta int) tea.Cmd {
 	}
 	n := len(t.lanes) + 1
 	t.laneSel = ((t.laneSel+1+delta)%n+n)%n - 1
+	t.laneFromTimeline = false
 	return t.syncLaneDetail()
 }
 
@@ -2297,6 +2370,26 @@ func (t *taskView) lanesCmd() tea.Cmd {
 	}
 }
 
+// laneNoteCmd re-reads the lanes when an event touches this task or one of
+// them. The Steps timeline draws every lane's state, and a lane moves on its
+// own events, which the parent's refresh never sees; the parent's own events
+// are where a fan_out spawning lanes shows up.
+func (t *taskView) laneNoteCmd(ev apiclient.Event) tea.Cmd {
+	if ev.TaskID == nil || t.detail.taskID == 0 {
+		return nil
+	}
+	id := *ev.TaskID
+	if id != t.detail.taskID {
+		if _, ok := t.laneByID(id); !ok {
+			return t.detail.nestedLaneNoteCmd(id)
+		}
+	}
+	if id == t.detail.taskID && len(t.lanes) == 0 && !t.detail.hasFanOut() {
+		return nil
+	}
+	return t.lanesCmd()
+}
+
 func (t *taskView) applyLaneList(msg taskLaneListMsg) tea.Cmd {
 	if msg.taskID != t.detail.taskID || msg.err != nil {
 		return nil
@@ -2314,7 +2407,8 @@ func (t *taskView) applyLaneList(msg taskLaneListMsg) tea.Cmd {
 // resetLanes drops everything about the task being left, tearing the lane
 // subscription down with it.
 func (t *taskView) resetLanes() tea.Cmd {
-	t.lanes, t.lanesTaskID, t.laneSel = nil, 0, -1
+	t.lanes, t.lanesTaskID, t.laneSel, t.laneFromTimeline = nil, 0, -1, false
+	t.detail.resetLaneTree()
 	t.lanePulls = nil
 	t.detail.laneRows = nil
 	return t.syncLaneDetail()
@@ -2412,3 +2506,54 @@ func treeCost(own, children *float64) *float64 {
 // notesClipboard marks the workspace as saying a copy's outcome itself, on
 // its action bar (detail.update), so the root's status line stands down.
 func (t *taskView) notesClipboard() {}
+
+// syncDiffScope keeps a Diff scoped to one attempt on the attempt selected
+// (task 168.6): moving the selection — the rail, ←/→ — while the Diff is on
+// one attempt moves it to the new one.
+func (t *taskView) syncDiffScope() tea.Cmd {
+	p := &t.detail.diff
+	sel := t.detail.selectedRun
+	if p.stepRun == 0 || sel == 0 || sel == p.stepRun {
+		return nil
+	}
+	r := t.detail.runByID(sel)
+	if r.ID == 0 || !p.setScope(r.ID, attemptScopeLabel(r)) {
+		return nil
+	}
+	if t.tab != taskTabDiff {
+		return nil // fetched when the tab opens
+	}
+	return p.fetch(t.detail.client)
+}
+
+// attemptScopeLabel names one attempt on the Diff's summary line.
+func attemptScopeLabel(r apiclient.StepRun) string {
+	return fmt.Sprintf("%s · attempt %d", feedLabel(r), r.Attempt)
+}
+
+// toggleDiffScope is `d` on the Diff tab (task 168.6): it switches between
+// the whole task's diff and what the attempt selected on the rail changed.
+func (t *taskView) toggleDiffScope() tea.Cmd {
+	p := &t.detail.diff
+	run, label := int64(0), ""
+	if p.stepRun == 0 {
+		r := t.detail.runByID(t.detail.selectedRun)
+		if r.ID == 0 {
+			return nil
+		}
+		run, label = r.ID, attemptScopeLabel(r)
+	}
+	if !p.setScope(run, label) {
+		return nil
+	}
+	return p.fetch(t.detail.client)
+}
+
+// outputPane is the sub-model the Output tab draws: the selected lane's, or
+// the task's own.
+func (t *taskView) outputPane() *detail {
+	if t.laneDetail != nil {
+		return t.laneDetail
+	}
+	return t.detail
+}

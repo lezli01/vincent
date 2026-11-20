@@ -649,6 +649,35 @@ produced nothing. Empty or 0 on the resolution fields reads the same "not
 recorded", following `loop_total`'s precedent, so a task in flight over the
 upgrade renders as it did.
 
+*Amended 2026-11-20 (task 168.5, decision 6, migration 0068).* A StepRun also
+records its **commit range**: `head_start`, the worktree's `HEAD` sha when the
+attempt started, and `head_end`, its `HEAD` when the attempt ended. They are
+what `GET /v1/tasks/{id}/diff?step_run=` diffs (§13.2), so a reader can see
+what one attempt changed rather than what the whole task has.
+
+- **Crash-first.** `head_start` is carried by the row's insert, before the agent
+  or command runs; `head_end` is written by the same update that finalizes the
+  row, for any terminal outcome of an attempt that ran. §12.4 recovery
+  finalizes an interrupted attempt **without** a `head_end` — it did not see the
+  attempt end, and the worktree's `HEAD` at recovery may hold whatever ran
+  after — so that attempt has no range.
+- **Which attempts.** Those that run something in the task's worktree: agent
+  and command steps, the merge-back, and a `fan_out`'s join, whose lane merges
+  are commits like any other. The structural steps (`parallel`, `condition`,
+  `loop`, `break`), a `manual` gate and a `fan_out`'s park record neither —
+  they never change the worktree — nor does a task with no worktree, nor an
+  attempt whose `HEAD` could not be read, which is logged and never fails the
+  step: the range is evidence about an attempt, not a precondition of it.
+- **Commits only.** A sha names commits, so what an attempt left uncommitted is
+  outside its finished range; a `parallel` group's sub-steps share their task's
+  worktree, so a sub-step's range is what was committed while it ran, its
+  siblings' commits included. The range is a fact about the worktree's history
+  over the attempt, not an attribution.
+
+Null on either is **not recorded** — every row written before the migration,
+never back-filled, because no recorded commit says where an old attempt started
+and guessing one would attribute some other attempt's work to it.
+
 ### 5.5 Chat and ChatTurn (task 063)
 
 A **Chat** is a titled conversation with an agent, scoped to a project. It is a
@@ -8373,7 +8402,7 @@ One Go binary, `vincent`:
 | `vincent chat files <chat-id> [--limit N] [--mention \| --json]` | *Added 2026-09-22 (task 126.7, issue #551).* Lists the files of the directory the chat's next turn would start in through `GET /v1/chats/{id}/files` (§13.2), and needs **no wire change**: that route, its `?limit=`, its `truncated` flag and `apiclient.(*Client).ChatFiles` all shipped with 126.6. **stdout is the listing and nothing else** — one workspace-relative path per line, in the route's order, unsorted (task 126 decision 21) — so `vincent chat files 12 | wc -l` counts files and the list pipes into `xargs`, which a padded table would not. `--mention` switches stdout to each row's `mention`, printed **verbatim**: the `@"…"`-on-a-space quoting rule has one definition and it lives in the adapter (decision 1), so no client rebuilds it and this command does not either. `--json` emits the response object unchanged with `files` always an array, which makes `--json | jq -r '.files[].mention'` the same answer; the two are mutually exclusive, as `chat transcript`'s `--json` and `--raw` are, because both are spellings of stdout. `--limit N` passes through and may only *lower* the daemon's ceiling (decisions 4 and 36); `0` is the ceiling, the `vincent github issues --limit` spelling. A cut listing earns one stderr line (`warning: the listing was cut at N file(s)`) at exit **0** — `truncated` exists to make a cut visible and a silent one is the failure mode it was added against — and an empty `mention_sigil` under `--mention` earns one `no mention text: …` line at exit 0 rather than a column of empty strings, because `""` is how an adapter says it cannot mention files and is a signal, not a refusal (decision 38). There is **no `--refresh`**: decision 5 removed the server cache such a flag would invalidate, and a flag that invalidates nothing is a lie about the route. Exit **0** whenever the daemon answered, empty and truncated included; **1** on a 404, on either 409 (a terminal chat, a linked chat whose task has no worktree) and on the 400 a vanished workspace produces; **2** with no daemon, through `withClient` |
 | `vincent chat export <chat-id> [--format md\|html\|json] [--with-diff] [-o <file>]` | *Added 2026-11-19 (task 159, issue #1023).* Writes the chat as one document through `GET /v1/chats/{id}/export` (§5.5, §13.2), a thin client over `apiclient.(*Client).ChatExport`: the daemon renders and the command carries its bytes to stdout, or with `-o` to that file, written atomically through a temporary file and `fileswap.Replace` because a half-written export is worse than none. The CLI never invents a filename; the route's `Content-Disposition` name is for the TUI. `--format` defaults to `md`. The CLI-wide `--json` is a synonym for `--format json`, and `--json` beside `--format md\|html` is refused. `--with-diff` sends `diff=true`. Exit **0** on success, **1** on a 404 or a file that cannot be written, **2** with no daemon |
 | `vincent chat find <chat-id> <text> [--json]` | *Added 2026-11-20 (task 160 decision 2, issue #1014; named `find` because task 158's `vincent chat search` searches every chat).* Which turns of a chat mention `<text>`, through `GET /v1/chats/{id}/search` (§13.2) — the route the chat workspace's `ctrl+f` search uses, so the TUI/CLI parity rule holds for it. **stdout is one line per matching turn**, in turn order: `turn N  M match(es)`, with `  (result text only: the transcript is gone)` appended to a turn the route answered from `result_text`; `vincent chat transcript <id> --turn N` then reads one. A `truncated` turn earns one stderr warning at exit 0. `--json` emits the response object unchanged with `turns` always an array. Exit **0** whenever the daemon answered, no matches included; **1** on a 404 or the 400 an empty or over-256-byte query produces; **2** with no daemon, through `withClient` |
-| `vincent task diff <id>` | *Added 2026-09-15 (task 100).* Prints the task's diff through `GET /v1/tasks/{id}/diff` (§13.2), which does not change. `--by lane` reads `?by=lane` and prints every section in the daemon's order under an ASCII header — `# lane <lane_id> (task <child_task_id>, merge <12-char sha>)`, or `# remainder (…)` last — including a section with no change. `--stat` is a per-file `FILE`/`ADDED`/`REMOVED` table the **CLI** computes from the body (counted inside hunks only; `binary` for a binary file), with a leading `LANE` column under `--by lane`. `--json` is `{"diff": …}`, the sections array, or `[{path, added, removed, binary}]` rows that under `--by lane` also carry `lane_id`, `child_task_id` and `remainder`; the stat shapes are the CLI's, not wire types. The ungrouped form is **streamed with no size cap**, unlike the TUI's bounded read, because its piped output is meant for `git apply` and a cut patch is a corrupt one. It is the CLI's **first colour**: only when stdout is a terminal and `NO_COLOR` is unset (colorprofile also honours `TERM=dumb`), and piped output is the daemon's bytes exactly. Any `--by` other than `lane` is refused client-side before a request, exit 1 |
+| `vincent task diff <id>` | *Added 2026-09-15 (task 100).* Prints the task's diff through `GET /v1/tasks/{id}/diff` (§13.2), which does not change. `--by lane` reads `?by=lane` and prints every section in the daemon's order under an ASCII header — `# lane <lane_id> (task <child_task_id>, merge <12-char sha>)`, or `# remainder (…)` last — including a section with no change. `--stat` is a per-file `FILE`/`ADDED`/`REMOVED` table the **CLI** computes from the body (counted inside hunks only; `binary` for a binary file), with a leading `LANE` column under `--by lane`. `--json` is `{"diff": …}`, the sections array, or `[{path, added, removed, binary}]` rows that under `--by lane` also carry `lane_id`, `child_task_id` and `remainder`; the stat shapes are the CLI's, not wire types. The ungrouped form is **streamed with no size cap**, unlike the TUI's bounded read, because its piped output is meant for `git apply` and a cut patch is a corrupt one. It is the CLI's **first colour**: only when stdout is a terminal and `NO_COLOR` is unset (colorprofile also honours `TERM=dumb`), and piped output is the daemon's bytes exactly. Any `--by` other than `lane` is refused client-side before a request, exit 1. *Amended 2026-11-20 (task 168.6):* `--step-run N` reads `?step_run=N` and prints that step run's diff, streamed uncapped like the ungrouped form; it is refused beside `--by`, and a run with no recorded range (409 `step_range_unrecorded`) exits 1 with the daemon's message |
 | `vincent task commits <id>` | *Added 2026-09-29 (issue #601).* Lists the task's commits through `GET /v1/tasks/{id}/commits` (§13.2), one line each: 12-char sha, author time in local time to the minute, subject, and `[lane <lane_id>, task <child_task_id>]` on a lane merge. `--json` is the wire list. A 409 exits 1 with the daemon's message; a daemon that predates the route (its router's `404 no such endpoint`) is reported as needing a restart |
 | `vincent project add <path> / ls / edit <id> / rm <id>` | Thin API clients for scripting. *Amended 2026-08-28 (task 048):* `rm` deletes the registration and its task rows, forwarding `--force` as `?force`. It never prompts — the daemon's two 409s (`N non-archived task(s)`, and one naming a `running` task) are the confirmation story, and an interactive question would be the first in a command tree whose purpose is scripting. *Amended 2026-09-16 (task 105, issue #394):* `edit <id>` is `PATCH /v1/projects/{id}` (§13.2, unchanged), sending only the fields whose flags were given — `--name`, `--path`, `--default-branch`, `--workflow`, `--max-parallel`, `--branch-template` — and refusing, with exit 1 and no daemon contacted, an edit that names none. An empty or whitespace-only value clears an optional field (`--workflow`, `--max-parallel`, `--branch-template` send `null`), the TUI form's rule and `config set`'s; `--name`, `--path` and `--default-branch` have no clear form and an empty value goes to the daemon as typed. It covers all six patchable fields, `branch_template` included, although `add` and the TUI form do not set that one. `--path` is sent as typed, like `add <path>`, so a relative path gets the daemon's must-be-absolute refusal rather than being resolved against the caller's directory |
 | `vincent task pause / resume / skip / approve / reject / retry / repair / archive / answer <id>` | *Added 2026-08-28 (task 048).* The rest of §6's human actions, one subcommand each, one id per invocation. All carry `--json` and print the daemon's post-action view of the task; a 409 from the FSM is exit 1 with the daemon's own wording. `retry` takes `--branch` (§18's `branch_exists` recovery) and the edit+retry pair `--prompt`/`--run`; `repair` requires `--prompt` and takes the §8.6 triple; `archive` takes `--force` and surfaces `details.reason: worktree_dirty` with the way out; `answer` takes `--answer <n>=<value>` against the questions `task show` numbers, `--allow`/`--deny` for a permission request, or `--body <file\|->` to post a §13.2 payload verbatim. Each of `--prompt`, `--run` and `--body` has a `-file` twin, and `-` reads stdin. *Amended 2026-09-14 (task 096):* `retry` also takes `--paused`, §13.2's `paused: true`, holding the task (and a blocked parent's lanes) in `paused`; the daemon refuses it on a parent parked in `awaiting_children` |
@@ -12036,8 +12065,15 @@ GET    /v1/tasks?project_id=&state=&archived=&archived_before=&archived_since=&l
                                         asked for, and a 64-task tree would bury it.
                                         ?parent_id= lists one parent's lanes in merge order;
                                         ?include_children=true is the flat everything. Every
-                                        task shape carries parent_task_id / lane_id /
-                                        lane_order (null for a root), and GET /v1/tasks/{id}
+                                        task shape carries parent_task_id /
+                                        parent_step_index / lane_round / lane_id /
+                                        lane_order (null for a root; parent_step_index and
+                                        lane_round added 2026-11-20 so a client can draw
+                                        each lane under the fan_out step, and the round of
+                                        it, that spawned it — lane_round is the iteration
+                                        of that step's row open at the spawn, recorded by
+                                        the engine because under schedule: eager it is not
+                                        the needs-graph wave), and GET /v1/tasks/{id}
                                         carries a `children` rollup — subtree counts by
                                         state plus the ids of blocked and awaiting-gate
                                         descendants — whenever the task has lanes at all.
@@ -12538,6 +12574,14 @@ GET    /v1/tasks/{id}/steps             all StepRuns (every attempt)
                                         only (§7.7) and `rendered_for_each` is a JSON array.
                                         `GET /v1/tasks` does **not** carry any of them: they
                                         are per-attempt evidence, not a board column)
+                                        (task 168.5, 2026-11-20: each also carries
+                                        `head_start` and `head_end`, the worktree's HEAD sha
+                                        when the attempt started and ended — the range
+                                        `diff?step_run=` diffs. Null is not recorded: an
+                                        attempt from before the record, a step that runs
+                                        nothing in the worktree, and for `head_end` an
+                                        attempt still running or one §12.4 recovery
+                                        finalized (§5.4))
 POST   /v1/tasks/{id}/steps/{step_id}/status
                                         { message } → { message }, the value as stored
                                         (added 2026-08-26, task 036). Records what the
@@ -12777,6 +12821,9 @@ GET    /v1/tasks/{id}/diff              unified diff of worktree vs merge-base w
                                         remainder holding the whole diff; the parameter absent is
                                         byte-for-byte the text/plain body above; any other value
                                         is a 400. Added 2026-09-03 (issue #316)
+                                        ?step_run=<id> -> what one step run changed, in the
+                                        same shape (text/plain; with by=lane, one remainder
+                                        section). Amended 2026-11-20 (task 168.6); see below
 GET    /v1/tasks/{id}/commits           the task's own commits, oldest first:
                                         [{sha, subject, author_time, lane_id?, child_task_id?}].
                                         Added 2026-09-29 (issue #601); see below
@@ -12820,6 +12867,25 @@ issue's branch keeps moving under the next main task; such a task answers
 even with no worktree. `/diff` does the same for a task with `end_sha` and no
 worktree: it diffs `merge-base..end_sha` in the project repository, `?by=lane`
 included.
+
+*Amended 2026-11-20 (task 168.6, decision 6).* `GET /v1/tasks/{id}/diff` takes
+an optional `step_run=<id>`, which narrows the diff to one step run's recorded
+commit range (§5.4). A **finished** run diffs `head_start..head_end` — the
+commits it made, never what it left uncommitted — in the task's worktree, or in
+the project repository once the worktree is gone, since both shas are commits
+the repository holds while the branch reaches them. A **running** run diffs
+`head_start` against the live worktree, with the whole-task diff's own
+semantics: committed, staged and unstaged tracked changes, untracked files
+excluded. The body is the whole-task diff's shape, so a client renders it
+unchanged; `by=lane` is accepted and answers one `remainder` section holding
+the same bytes, because lane attribution belongs to the whole task's history
+and a step's range is not cut by lane. A run of another task is a **404**, as
+an unknown id is; a value that is not a positive integer is a **400**
+`validation_failed`; and a run with no range — a row from before the record, a
+step type that records none, an attempt §12.4 recovery finalized — is a
+**409** `step_range_unrecorded`, never an empty diff that would read as "this
+step changed nothing". A finished range whose commits git no longer has is the
+route's ordinary `409 invalid_state` with git's words.
 
 *Added 2026-08-25 (task 030).* `/v1/daemon/*` is no longer only process
 lifecycle: it now holds `backup` beside `stop`. That is accepted knowingly and
@@ -13813,6 +13879,9 @@ CREATE TABLE tasks (
   parent_step_index   INTEGER,                -- the fan_out step's index in the parent
   lane_id             TEXT,                   -- the lane's id in that step
   lane_order          INTEGER,
+  lane_round          INTEGER,                -- the fan_out round that spawned the lane: the iteration of the parent
+                                              -- step's row open at the spawn (migration 0067, 2026-11-20); NULL for a
+                                              -- root and for a lane spawned before the column existed
   settled_children_watermark INTEGER,         -- eager fan_out wake position (§7.6, §11, task 081, migration 0024):
                                               -- settled direct children seen when the parked admission started;
                                               -- NULL = barrier. Cleared by any transition out of awaiting_children
@@ -13999,6 +14068,8 @@ CREATE TABLE step_runs (
   check_timeout_ms    INTEGER NOT NULL DEFAULT 0, -- 0 = not recorded
   shell               TEXT,                   -- the shell a command step resolved to (§8.3)
   work_dir            TEXT,                   -- the directory the process ran in
+  head_start          TEXT,                   -- worktree HEAD at the attempt's start; NULL = not recorded (0068)
+  head_end            TEXT,                   -- worktree HEAD at its end; NULL = not recorded, or still running
   transcript_path     TEXT,
   input_tokens        INTEGER,
   output_tokens       INTEGER,
@@ -16851,6 +16922,69 @@ stream for the live tail.
    *Amended 2026-11-18 (task 150.8).* `tui.icons` (§12.3) picks the glyphs of the
    app header, boards, cards and side panes: `unicode`, the default, or `nerd`. It
    applies from every config answer, and only to text the TUI itself wrote.
+
+   *Amended 2026-11-20 (task 168; supersedes task 150.6's workspace sentence,
+   and every digit binding of the task workspace above).* **The task workspace
+   is a title band, a steps rail and its tabs, with no digits.** The band names
+   the linked issue — `◇ issue #N title  state  i open`, or a dim `no linked
+   issue` — and `i`, a fixed key of every workspace tab (a vocabulary term's key
+   must mean one thing on every surface, and `i` already means other things
+   elsewhere), opens it from every tab but Pull request, whose `i` stays its
+   comment; `esc` on the issue returns to the tab it left. From 130 columns the
+   rail is one row per step — state glyph, name, a right-aligned duration — on
+   a connecting line, with a dim second row only when the step has something to
+   say: a failure's reason, a retry count, agent and cost, a fan-out's lane
+   breakdown, or the `if:` a guard rendered (`if: …` on a `condition` step,
+   `skipped · if: … was false` on a step a guard skipped). Under the selected
+   step it lists the attempts of a step that has more than one; under every
+   step a parallel group's members, a loop's passes as pips and the selected
+   pass's members, and a fan-out's lanes as a tree with earlier rounds one line
+   each. It replaces the right-hand Details pane, whose facts move to the band
+   and the Overview. **The tabs are Overview, Output, Diff, Step details,
+   Workflow and Pull request** (the last only when one is linked), cycled with
+   `tab`/`shift+tab` and `]`/`[`; below 130 columns Steps keeps a tab after
+   Overview; a fresh open still lands on Output from 130 columns and on
+   Overview below. Task Details is the Overview's lower half, its pull-request keys
+   `o` (`browser`) and `P` came with it, and its section-by-section inspector
+   is a palette row, on the strip only while open. A tab may carry a marker:
+   the whole task's diff size on Diff, from the Diff tab's or the outcome
+   card's last fetch, and a red `!` on Overview while the task needs a human.
+   The palette's tab rows have no key. **The Overview** keeps its three frames
+   and their attention and outcome cards. The progress frame adds a bar of one
+   segment per step and pairs a **Now** card (the current step and attempt, its
+   latest status, its last output line while it runs) with a **The task** card
+   (the description, cut to four lines, and the priority). Every frame puts its
+   one link on `enter` (the output it is about, or a finished task's diff) and
+   is followed by a **Linked** card (issue, pull request, chat, branch and base)
+   beside a **Usage** card (elapsed, tokens, cost, workflow and origin,
+   worktree), then the Task Details document. `↑`/`↓` move a cursor along the
+   Linked rows that open somewhere — the issue, the pull request tab, the chat
+   — and `enter` on one opens it; off the card `enter` is the frame's link.
+   **Output is the whole task as one feed**: every attempt the pane is not
+   showing folds to one dashed line said from its step-run row (state, step,
+   agent, duration, cost, reason, the start of its result), and the shown
+   attempt opens between a divider naming its step, agent, attempt and start
+   time and a line saying how it ended (a command's exit code, or the state an
+   agent step finished in). Moving the selection (the rail, `←/→`) moves which
+   attempt is open; only its transcript is fetched, as before. Its tool calls
+   draw the chat's one-line form, the call and its outcome together (task
+   150.5), folded: `enter` unfolds or folds the newest call in view, a click
+   the call under the pointer, showing that call's records as verbose would.
+   The agent's plan is one row where it first appeared, carrying its newest
+   version. `vincent.step_started`/`step_finished` records no longer draw rows,
+   a step's script draws its first line and a count below verbose, and a
+   command's output sits behind a `┃` margin bar, red for stderr. A line pinned
+   under the pane says, on a live attempt, how long it has run, its tokens, its
+   cost and the follow state (`▲ N new below · f` while paused), and on a
+   finished one which attempt is open; the attempt strip above the pane is
+   gone. **The Diff** names its scope and, for the whole task, its base on the
+   summary line, marks each file with git's status letter (`M`, `A`, `D`, `R`)
+   and a change bar of at most eight `+`/`−` cells, numbers each hunk line with
+   its old and new line numbers, and draws a hunk header as a rule carrying the
+   function it falls in. On the Diff tab `d` switches between the whole task's
+   diff and the diff of the attempt selected in the rail (§13.2's `step_run`),
+   and while it shows one attempt a new selection moves it to that attempt;
+   elsewhere `d` opens the Diff tab.
 
    *Amended 2026-10-07 (task 134.6, issue #753).* A task event re-lists only
    when its payload's `issue_id` (§13.3) names an issue the list is showing:

@@ -249,7 +249,7 @@ func orientation(ctx bindingContext, tabs []taskViewTab) []helpRow {
 	switch {
 	case tabs != nil:
 		for _, tab := range tabs {
-			rows = append(rows, helpRow{key: taskTabDigits[tab], label: taskTabNames[tab] + " — " + taskTabPurpose[tab]})
+			rows = append(rows, helpRow{key: taskTabNames[tab], label: taskTabPurpose[tab]})
 		}
 	case ctx == ctxTasks:
 		rows = []helpRow{

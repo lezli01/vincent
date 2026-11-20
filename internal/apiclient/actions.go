@@ -468,7 +468,43 @@ func (c *Client) sendVia(
 // situations a reader must be able to tell apart, so the *Error is returned
 // as-is rather than flattened to "no diff".
 func (c *Client) Diff(ctx context.Context, id int64) (string, error) {
-	body, err := c.DiffStream(ctx, id)
+	return c.readDiff(ctx, diffPath(id))
+}
+
+// DiffStep fetches what one step run of the task changed (§13.2, task 168.6):
+// the run's recorded commit range, head_start..head_end once it finished and
+// head_start against the live worktree while it runs, in Diff's own text/plain
+// shape and under Diff's cap.
+//
+// A run with no recorded range — one from before the record, a step type that
+// records none, one crash recovery finalized — comes back as a 409 *Error
+// whose Code is "step_range_unrecorded"; a run that is not the task's is a
+// 404. Neither is flattened to an empty diff, which would read as "this step
+// changed nothing".
+func (c *Client) DiffStep(ctx context.Context, id, stepRunID int64) (string, error) {
+	return c.readDiff(ctx, diffPath(id)+"?step_run="+strconv.FormatInt(stepRunID, 10))
+}
+
+// CodeStepRangeUnrecorded is DiffStep's 409 for a run with no recorded
+// commit range (task 168.6).
+const CodeStepRangeUnrecorded = "step_range_unrecorded"
+
+// StepRangeUnrecorded reports whether err is DiffStep refused because the run
+// recorded no commit range — the answer a client renders as "no per-step diff
+// for this attempt" rather than as a failure.
+func StepRangeUnrecorded(err error) bool {
+	var e *Error
+	return errors.As(err, &e) && e.Status == http.StatusConflict && e.Code == CodeStepRangeUnrecorded
+}
+
+// diffPath is GET /v1/tasks/{id}/diff.
+func diffPath(id int64) string {
+	return "/v1/tasks/" + strconv.FormatInt(id, 10) + "/diff"
+}
+
+// readDiff is the capped read behind Diff and DiffStep.
+func (c *Client) readDiff(ctx context.Context, path string) (string, error) {
+	body, err := c.diffStream(ctx, path)
 	if err != nil {
 		return "", err
 	}
@@ -499,7 +535,17 @@ const maxDiffBytes = 8 << 20
 // holds the body open far longer than that. A wedged daemon is still caught —
 // requestTimeout bounds the wait for the response headers, and only that.
 func (c *Client) DiffStream(ctx context.Context, id int64) (io.ReadCloser, error) {
-	path := "/v1/tasks/" + strconv.FormatInt(id, 10) + "/diff"
+	return c.diffStream(ctx, diffPath(id))
+}
+
+// DiffStepStream is DiffStep without the cap, for DiffStream's reason: the
+// body itself, which `vincent task diff --step-run` pipes into `git apply` and
+// the TUI reads to its own display limit (task 168.6).
+func (c *Client) DiffStepStream(ctx context.Context, id, stepRunID int64) (io.ReadCloser, error) {
+	return c.diffStream(ctx, diffPath(id)+"?step_run="+strconv.FormatInt(stepRunID, 10))
+}
+
+func (c *Client) diffStream(ctx context.Context, path string) (io.ReadCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {

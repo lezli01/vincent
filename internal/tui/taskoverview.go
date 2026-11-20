@@ -195,14 +195,30 @@ func (t *taskView) updateOverviewKey(msg tea.KeyPressMsg) tea.Cmd {
 	if !d.actions.capturing() {
 		switch msg.String() {
 		case "pgup", "pgdown", "home", "end":
-			// The pane's paging keys only: ↑/↓ stay free, as they always
-			// were on this tab.
 			t.overview.Update(msg)
+			return nil
+		case "down", "j":
+			// ↑/↓ walk the Linked card's rows that open somewhere (task
+			// 168.7); the pane pages with pgup/pgdn.
+			t.moveLinked(1)
+			return nil
+		case "up", "k":
+			t.moveLinked(-1)
 			return nil
 		}
 	}
 	if !d.actions.capturing() && msg.String() == opKey(keymap.Result) {
 		return t.jumpToResult()
+	}
+	if !d.actions.capturing() {
+		// The Task Details document's two pull-request keys, which came to
+		// the Overview with the document (task 168 decision 3).
+		switch msg.String() {
+		case opKey(keymap.Browser):
+			return t.openPullCmd()
+		case "P":
+			return t.openCreatePR()
+		}
 	}
 	if !d.actions.capturing() && msg.String() == opKey(keymap.EditRetry) {
 		return d.update(msg)
@@ -229,31 +245,14 @@ func (t *taskView) overviewLiveBindings(b binding) (binding, bool) {
 		_, _, ok := summaryRun(t.detail.task)
 		return b, ok && t.showsOutcomeCard()
 	}
-	var tab taskViewTab
-	switch b.key {
-	case "1":
-		// `1` is every frame's digit row; it takes the link's wording only
-		// where the frame links the steps.
-		if l, ok := t.overviewLinkFor(taskTabSteps); ok {
-			b.hint = b.key + " " + l.label
+	if b.key == "enter" {
+		// enter is the frame's first link, worded as the body words it.
+		links := t.overviewLinks()
+		if len(links) == 0 {
+			return b, false
 		}
-		return b, true
-	case "3":
-		tab = taskTabOutput
-	case "4":
-		tab = taskTabDiff
-	case "6":
-		tab = taskTabStepDetails
-	case "7":
-		tab = taskTabPull
-	default:
-		return b, true
+		b.hint = b.key + " " + links[0].label
 	}
-	l, ok := t.overviewLinkFor(tab)
-	if !ok {
-		return b, false
-	}
-	b.hint = b.key + " " + l.label
 	return b, true
 }
 
@@ -265,7 +264,10 @@ func (t *taskView) renderOverview(width, height int) string {
 		t.overviewTask = t.detail.taskID
 		t.overview.GotoTop()
 	}
-	lines := t.overviewLines(width, height)
+	// One row short: the cards and the task's document follow the frame, so
+	// the pane always scrolls, and its cue takes the last row. The frame's
+	// row budget has to leave it there or the cue covers the frame's link.
+	lines := t.overviewLines(width, max(height-1, 1))
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(line, max(width, 1), "…")
 	}
@@ -290,8 +292,9 @@ func (t *taskView) overviewLines(width, height int) []string {
 	// (task 129.9).
 	out := []string{"  " + renderDetailState(task.Task)}
 	// The issue the task was started from, as a fact rather than a section
-	// (task 130 decision 21.4): what it is for, at a glance.
-	if iss := task.Issue; iss != nil {
+	// (task 130 decision 21.4): what it is for, at a glance. The wide
+	// layout's band and Linked card already name it (task 168).
+	if iss := task.Issue; iss != nil && !t.wide() {
 		out = append(out, "  "+styleDim.Render("issue ")+
 			fmt.Sprintf("#%d %s", iss.ID, oneLine(iss.Title))+"  "+styleDim.Render(iss.State))
 	}
@@ -305,15 +308,16 @@ func (t *taskView) overviewLines(width, height int) []string {
 		out = append(out, t.outcomeCardLines(width, height-len(out)-overviewLinkRows)...)
 	default:
 		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
-		out = append(out, "")
-		var body []taskDetailFact
-		switch overviewFrameFor(task.State) {
-		case frameAttention:
-			body = t.attentionFacts()
-		default:
-			body = t.progressFacts()
+		if bar := t.progressBar(width); bar != "" {
+			out = append(out, bar)
 		}
-		out = append(out, renderTaskDetailFactList(width, body)...)
+		out = append(out, "")
+		if overviewFrameFor(task.State) == frameAttention {
+			out = append(out, renderTaskDetailFactList(width, t.attentionFacts())...)
+		} else {
+			// What it is doing now beside what it is for (task 168.7).
+			out = append(out, t.nowAndTaskCards(width)...)
+		}
 		if t.overviewFrame() == frameAttention {
 			out = append(out, t.overviewActionLines(width)...)
 		}
@@ -323,11 +327,19 @@ func (t *taskView) overviewLines(width, height int) []string {
 	}
 	out = append(out, t.handoffItemLines(width)...)
 	if links := t.overviewLinks(); len(links) > 0 {
-		parts := make([]string, len(links))
-		for i, l := range links {
-			parts[i] = styleKey.Render(taskTabDigits[l.tab]) + " " + l.label
-		}
-		out = append(out, "", "  "+strings.Join(parts, styleDim.Render("   ·   ")))
+		// One link, on enter (task 168.7): the digits that used to key a
+		// row of them are gone with the numbered strip.
+		out = append(out, "", "  "+styleKey.Render("enter")+" "+links[0].label)
+	}
+	// Under the frame: where the task's work lives and what it has cost,
+	// then the task's whole document — the Task Details tab's sections,
+	// which the Overview took over with the Details pane (task 168
+	// decisions 1 and 3).
+	out = append(out, "")
+	out = append(out, t.overviewCards(width)...)
+	if doc := t.detailLines(width); len(doc) > 1 {
+		out = append(out, "", styleDim.Render("  "+strings.Repeat("─", max(width-4, 1))))
+		out = append(out, doc[1:]...)
 	}
 	return out
 }
@@ -552,6 +564,23 @@ func (t *taskView) overviewActionLines(width int) []string {
 		out = append(out, styleDim.Render("  no action available"))
 	}
 	return out
+}
+
+// openIssueKey opens the task's linked issue from its workspace (task 168
+// decision 2). A fixed key rather than a vocabulary term: `i` already means
+// other things on other screens, and a term's key must mean one thing
+// everywhere (§15). The Pull request tab keeps its own `i`, its comment.
+const openIssueKey = "i"
+
+// openIssueCmd opens the task's linked issue (task 168 decision 2), or nil
+// when it has none. esc on the issue comes back to this task, on this tab.
+func (t *taskView) openIssueCmd() tea.Cmd {
+	iss := t.detail.task.Issue
+	if !t.detail.loaded || iss == nil {
+		return nil
+	}
+	msg := openIssueMsg{id: iss.ID, back: viewTask, projectID: t.detail.task.ProjectID}
+	return func() tea.Msg { return msg }
 }
 
 // paletteExtras are the workspace's key-less palette rows. "Open this task's

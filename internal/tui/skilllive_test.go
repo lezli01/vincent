@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/agent/agenttest"
 	"github.com/lezli01/vincent/internal/agent/claude"
@@ -50,7 +48,7 @@ func (h *boardLiveHarness) openSkillRun(
 	}
 	_, cmd := h.m.Update(selectTaskMsg{id: task.ID, projectID: task.ProjectID})
 	h.p.push(cmd)
-	_, cmd = h.m.Update(tea.KeyPressMsg{Code: '3', Text: "3"})
+	_, cmd = h.m.Update(gotoTaskTabMsg{tab: taskTabOutput})
 	h.p.push(cmd)
 	h.p.until(20*time.Second, "the fetched transcript to render", func() bool {
 		return strings.Contains(plainContent(h.m), ready)
@@ -90,7 +88,7 @@ func TestLiveSkillLoadMatchesItsRefetch(t *testing.T) {
 	// The init line and the call are on disk when the pane opens; the
 	// outcome, the load, the reply and the result arrive live.
 	cold, hot := lines[:2], lines[2:]
-	run, d := h.openSkillRun(t, cold, store.StepRunning, "▸ Skill echo-probe")
+	run, d := h.openSkillRun(t, cold, store.StepRunning, "skill echo-probe")
 	h.p.until(10*time.Second, "the per-task subscription to attach", func() bool {
 		return h.broker.OutputSubscribers(run.TaskID) > 0
 	})
@@ -118,14 +116,16 @@ func TestLiveSkillLoadMatchesItsRefetch(t *testing.T) {
 	// the reply and the result can only stream.
 	feed(hot[0])
 	h.p.until(20*time.Second, "the connect re-read to land", func() bool {
-		return strings.Contains(plainContent(h.m), "Launching skill: echo-probe") && !d.fetching
+		// The outcome is folded into the call's one line (task 168.4):
+		// its ✓ is what says it arrived.
+		return strings.Contains(plainContent(h.m), "✓ skill echo-probe") && !d.fetching
 	})
 	for _, line := range hot[1:] {
 		feed(line)
 	}
 	h.p.until(20*time.Second, "the load to redraw its call", func() bool {
 		got := plainContent(h.m)
-		return strings.Contains(got, "▸ skill echo-probe zebra") && strings.Contains(got, "ECHO-PROBE zebra")
+		return strings.Contains(got, "skill echo-probe zebra") && strings.Contains(got, "ECHO-PROBE zebra")
 	})
 	if got := plainContent(h.m); strings.Contains(got, "▸ Skill") || strings.Contains(got, skillBodyMarker) {
 		t.Errorf("the frame draws the call twice or the skill's body:\n%s", got)

@@ -113,11 +113,18 @@ type taskResponse struct {
 	// Warnings are non-fatal §8.2 catalog findings from creation-time
 	// validation; only the POST /v1/tasks response carries them.
 	Warnings []string `json:"warnings,omitempty"`
-	// ParentTaskID, LaneID and LaneOrder identify a fan-out lane (§7.6, task
-	// 014). All null for a root task, which is every task that is not a lane.
-	ParentTaskID *int64  `json:"parent_task_id"`
-	LaneID       *string `json:"lane_id"`
-	LaneOrder    *int    `json:"lane_order"`
+	// ParentTaskID, ParentStepIndex, LaneID and LaneOrder identify a fan-out
+	// lane (§7.6, task 014). All null for a root task, which is every task
+	// that is not a lane. ParentStepIndex is the parent's `fan_out` step that
+	// spawned the lane, which is how a client places a lane under its own
+	// step when a workflow fans out more than once.
+	ParentTaskID    *int64 `json:"parent_task_id"`
+	ParentStepIndex *int   `json:"parent_step_index"`
+	// LaneRound is the fan_out round that spawned the lane, the `iteration`
+	// its step's rows carry; null for a root and for a lane older than it.
+	LaneRound *int    `json:"lane_round"`
+	LaneID    *string `json:"lane_id"`
+	LaneOrder *int    `json:"lane_order"`
 	// Loop is the §7.8 rollup, present only while a `loop` step is the
 	// current one. Derived per request from the step's rows, never stored: a
 	// counter would be the persisted loop cursor decision 7 declined, and
@@ -263,6 +270,8 @@ func toTaskResponse(t *store.Task, summary snapshotSummary) taskResponse {
 	return taskResponse{
 		Delivery:          toDeliveryResponse(t.Delivery, false),
 		ParentTaskID:      t.ParentTaskID,
+		ParentStepIndex:   t.ParentStepIndex,
+		LaneRound:         t.LaneRound,
 		LaneID:            laneID,
 		LaneOrder:         laneOrder,
 		ID:                t.ID,
@@ -425,8 +434,15 @@ type stepRunResponse struct {
 	CheckTimeoutMS int64   `json:"check_timeout_ms"`
 	Shell          *string `json:"shell"`
 	WorkDir        *string `json:"work_dir"`
-	StartedAt      string  `json:"started_at"`
-	FinishedAt     *string `json:"finished_at"`
+	// HeadStart and HeadEnd are the worktree's HEAD when the attempt started
+	// and ended (task 168.5): the commit range `diff?step_run=` diffs. Null
+	// is not recorded — an attempt from before the record, a step that runs
+	// nothing in the worktree, an attempt still running (head_end), and one
+	// §12.4 recovery finalized (head_end), which did not see it end.
+	HeadStart  *string `json:"head_start"`
+	HeadEnd    *string `json:"head_end"`
+	StartedAt  string  `json:"started_at"`
+	FinishedAt *string `json:"finished_at"`
 }
 
 // listTaskResponse is one row of GET /v1/tasks: the task plus the derived
@@ -497,6 +513,8 @@ func toStepRunResponse(r *store.StepRun, summary snapshotSummary) stepRunRespons
 		CheckTimeoutMS:  r.CheckTimeoutMS,
 		Shell:           nilIfEmpty(r.Shell),
 		WorkDir:         nilIfEmpty(r.WorkDir),
+		HeadStart:       r.HeadStart,
+		HeadEnd:         r.HeadEnd,
 		StartedAt:       r.StartedAt.UTC().Format(time.RFC3339),
 		FinishedAt:      timePtr(r.FinishedAt),
 	}
@@ -1968,6 +1986,9 @@ func (s *Server) handleTranscript(w http.ResponseWriter, r *http.Request) {
 // (difflane.go). It is a strictly additive branch: without the parameter the
 // body is the text/plain diff it has always been, for a fan-out parent as much
 // as for anything else.
+//
+// `?step_run=<id>` narrows it to one step run's commit range (task 168.6):
+// diffStepRun.
 func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 	// The request's shape is checked before the task's state, so a typo in the
 	// parameter reads as a 400 rather than as whatever the task happens to be
@@ -1976,11 +1997,19 @@ func (s *Server) handleTaskDiff(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	stepRunID, ok := diffStepRunParam(w, r)
+	if !ok {
+		return
+	}
 	t, ok := s.taskFromPath(w, r)
 	if !ok {
 		return
 	}
 	ctx := r.Context()
+	if stepRunID != 0 {
+		s.diffStepRun(ctx, w, t, stepRunID, byLane)
+		return
+	}
 	// dir is where git runs and tip what the diff ends at: the worktree and
 	// its working tree for a task that holds one, and — for a main task that
 	// handed the issue's worktree on (task 134.12) — the project repository
@@ -2063,6 +2092,115 @@ func (s *Server) diffFrom(ctx context.Context, dir, mergeBase, tip string) (stri
 		diffArgs = append(diffArgs, tip)
 	}
 	return s.git(ctx, dir, diffArgs...)
+}
+
+// CodeStepRangeUnrecorded is `diff?step_run=` refused because the run has no
+// commit range to diff (task 168.6, decision 6): an attempt from before the
+// range was recorded, a step type that records none, a task with no worktree
+// when it ran, or an attempt §12.4 recovery finalized, which never saw its
+// end. It is said rather than guessed: any substitute range would attribute
+// some other attempt's work to this one.
+const CodeStepRangeUnrecorded = "step_range_unrecorded"
+
+// diffStepRunParam reads the `step_run` parameter: 0 when absent, a positive
+// step-run id otherwise, and a 400 for anything else.
+func diffStepRunParam(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	v := r.URL.Query().Get("step_run")
+	if v == "" {
+		return 0, true
+	}
+	id, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("step_run must be a step run id; got %q", v))
+		return 0, false
+	}
+	return id, true
+}
+
+// diffStepRun serves `diff?step_run=`: what one step run changed, in the
+// whole-task diff's own shape so a client renders it unchanged (task 168.6).
+//
+//   - A finished run diffs head_start..head_end — the commits the attempt
+//     made, and nothing it left uncommitted, which no sha can name.
+//   - A running run diffs head_start against the live worktree, exactly as the
+//     whole-task diff diffs the merge-base against it: committed, staged and
+//     unstaged tracked changes, untracked files excluded.
+//   - A run with no range is `409 step_range_unrecorded`, and a run of another
+//     task is a 404, as an unknown id is.
+//
+// A finished range needs no worktree: both shas are commits, which live in
+// the repository the worktree shares, so a task whose worktree was removed
+// diffs in the project's repository. That holds while the branch still
+// reaches them; a deleted branch whose commits git has collected answers 409
+// with git's own words.
+//
+// `?by=lane` is accepted and answered with one remainder section — the task's
+// own — because lane attribution is a property of the whole task's history:
+// a step's range is not cut by lane, and a client asking for sections
+// unconditionally still gets the shape it asked for.
+func (s *Server) diffStepRun(
+	ctx context.Context, w http.ResponseWriter, t *store.Task, runID int64, byLane bool,
+) {
+	run, err := s.deps.Store.GetStepRun(ctx, runID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && run.TaskID != t.ID) {
+		writeError(w, http.StatusNotFound, CodeNotFound,
+			fmt.Sprintf("step run %d not found on task %d", runID, t.ID))
+		return
+	}
+	if err != nil {
+		s.internalError(w, "get step run", err)
+		return
+	}
+	running := run.State == store.StepRunning
+	if run.HeadStart == nil || (!running && run.HeadEnd == nil) {
+		writeError(w, http.StatusConflict, CodeStepRangeUnrecorded,
+			fmt.Sprintf("step run %d has no recorded commit range", runID))
+		return
+	}
+	dir, tip := t.WorktreePath, ""
+	if dir != "" {
+		//nolint:gosec // G703: dir is a worktree path the daemon recorded on a row, never request input
+		if _, sErr := os.Stat(dir); sErr != nil {
+			dir = ""
+		}
+	}
+	if running {
+		// The live end is the worktree itself, so there has to be one.
+		if dir == "" {
+			writeError(w, http.StatusConflict, CodeInvalidState, "worktree no longer exists")
+			return
+		}
+	} else {
+		tip = *run.HeadEnd
+		if dir == "" {
+			p, pErr := s.deps.Store.GetProject(ctx, t.ProjectID)
+			if pErr != nil {
+				s.internalError(w, "get project", pErr)
+				return
+			}
+			dir = p.Path
+		}
+	}
+	diff, err := s.diffFrom(ctx, dir, *run.HeadStart, tip)
+	if err != nil {
+		writeError(w, http.StatusConflict, CodeInvalidState, fmt.Sprintf("git diff failed: %v", err))
+		return
+	}
+	if byLane {
+		// Spelled as laneDiffSections spells its remainder: the same bytes the
+		// text/plain body carries.
+		writeJSON(w, http.StatusOK, diffLanesResponse{
+			Sections: []diffLaneSection{{Remainder: true, Diff: formatDiffBody(diff)}},
+		})
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if diff != "" {
+		//nolint:gosec // G705: git's diff output served as text/plain, as the whole-task diff serves it
+		_, _ = io.WriteString(w, diff+"\n")
+	}
 }
 
 // diffByLane reads the `by` parameter. `lane` is the only grouping there is,

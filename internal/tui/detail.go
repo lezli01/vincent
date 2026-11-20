@@ -108,9 +108,14 @@ type detail struct {
 	// selectedRun tracks the attempt under the cursor by id, so a refresh
 	// that adds or reorders rows cannot silently select a different one.
 	selectedRun int64
-	focus       detailFocus
-	tab         detailTab
-	active      bool
+	// selectedLane is the fan-out lane row the timeline's cursor is on, and
+	// laneAnchor the attempt it was chosen from; cursorLane says whether the
+	// pair still holds (timelinelanes.go).
+	selectedLane int64
+	laneAnchor   int64
+	focus        detailFocus
+	tab          detailTab
+	active       bool
 
 	// actions is the §6 action bar — the shell's shared instance, rendered
 	// by the footer (T3.12); form is the §7.4 answer form, present exactly
@@ -200,6 +205,10 @@ type detail struct {
 	anchors []lineAnchor
 	// mdcache memoizes rendered assistant documents for this pane.
 	mdcache mdCache
+	// expandedCalls are the tool calls of the displayed attempt a reader
+	// unfolded with enter (task 168.4), by call id; an attempt change
+	// starts them all folded again.
+	expandedCalls map[string]bool
 
 	notes      <-chan apiclient.Note
 	stopStream context.CancelFunc
@@ -220,6 +229,11 @@ type detail struct {
 	// the one fact the engine's message does not carry (#316). Empty for
 	// every task that is not a fan-out parent, which is nearly all of them.
 	laneRows []apiclient.Task
+	// laneKids are the own lanes of a lane that fanned out itself, fetched
+	// when its timeline row unfolds; laneOpen says which rows are unfolded
+	// (timelinelanes.go).
+	laneKids map[int64][]apiclient.Task
+	laneOpen map[int64]bool
 
 	// timelineTop and visibleRuns are the last-rendered timeline geometry,
 	// kept so a click can name the attempt on the line it landed on.
@@ -302,6 +316,9 @@ func (d *detail) updateMsg(msg tea.Msg) tea.Cmd {
 		return nil
 	case detailLoadedMsg:
 		return d.applyLoaded(msg)
+	case laneKidsMsg:
+		d.applyLaneKids(msg)
+		return nil
 	case taskCreatedMsg:
 		// The 201's advisory findings — a catalog-unknown model, say. The
 		// task exists and will run, so this is a status line, not an error.
@@ -511,6 +528,7 @@ func (d *detail) resetOutput() {
 	d.installed = false
 	d.land = false
 	d.outputDirty = true
+	d.expandedCalls = nil
 	d.vp.SetContent("")
 }
 
@@ -566,6 +584,9 @@ func (d *detail) applyLoaded(msg detailLoadedMsg) tea.Cmd {
 	d.task = msg.task
 	d.appliedSeq = msg.seq
 	d.syncForm()
+	// The feed folds every attempt the pane is not showing from these rows
+	// (task 168.4), so a refresh can change it without a record arriving.
+	d.outputDirty = true
 
 	runs := d.attempts()
 	if len(runs) == 0 {
@@ -1044,7 +1065,7 @@ func (d *detail) moveTimelineSelection(delta int) tea.Cmd {
 	if len(runs) == 0 {
 		return nil
 	}
-	stops := d.timelineStops(runs)
+	stops := withLaneStops(runs, d.timelineStops(runs), d.laneSlots(runs), d.laneTree)
 	if len(stops) == 0 {
 		return nil
 	}
@@ -1052,16 +1073,17 @@ func (d *detail) moveTimelineSelection(delta int) tea.Cmd {
 	if i < 0 {
 		i = len(runs) - 1
 	}
+	lane := d.cursorLane()
 	// The cursor can sit on a row that is not itself a stop — `C` folds the
 	// tier under it — so a move from there steps to the neighbouring stop
 	// instead of counting from a position the list no longer has.
 	pos, exact := 0, false
 	for p, s := range stops {
-		if s == i {
+		if s.run == i && s.lane == lane {
 			pos, exact = p, true
 			break
 		}
-		if s < i {
+		if s.run < i {
 			pos = p + 1
 		}
 	}
@@ -1072,7 +1094,11 @@ func (d *detail) moveTimelineSelection(delta int) tea.Cmd {
 		pos--
 	}
 	pos = min(max(pos, 0), len(stops)-1)
-	return d.selectRun(runs, stops[pos])
+	if s := stops[pos]; s.lane != 0 {
+		d.selectLaneRow(s.lane, runs[s.run].ID)
+		return d.syncOutput()
+	}
+	return d.selectRun(runs, stops[pos].run)
 }
 
 // timelineStops are the positions in `runs` that ↑/↓ may land on: every drawn
@@ -1098,6 +1124,9 @@ func (d *detail) timelineStops(runs []apiclient.StepRun) []int {
 
 func (d *detail) selectRun(runs []apiclient.StepRun, i int) tea.Cmd {
 	d.selectedRun = runs[min(max(i, 0), len(runs)-1)].ID
+	// Choosing an attempt leaves any lane row, including one anchored to
+	// this very attempt.
+	d.selectedLane = 0
 	return d.syncOutput()
 }
 
@@ -1133,6 +1162,11 @@ func (d *detail) timelineTier() (tierKey, int, bool) {
 // shut — the state in which `enter` opens the tier instead of carrying the
 // reader to the Output tab.
 func (d *detail) timelineFolded() bool {
+	if d.cursorLane() != 0 {
+		// A lane row is drawn whatever the fold above it: enter there opens
+		// the lane, not the tier.
+		return false
+	}
 	k, latest, ok := d.timelineTier()
 	return ok && !d.tierOpen(k.index, k.iteration, latest)
 }
@@ -1307,7 +1341,7 @@ func (d *detail) toggleTab() tea.Cmd {
 	}
 	d.tab = tabDiff
 	d.diff.openTask(d.taskID)
-	return d.diff.fetch(d.client, true)
+	return d.diff.fetch(d.client)
 }
 
 // recordSeqs is the pane's identity slice, stamped if some path installed

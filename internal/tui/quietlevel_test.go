@@ -69,8 +69,8 @@ var levelGolden = map[outputLevel]string{
 	// pane is byte-identical to compact's.
 	levelQuiet: "  here is the answer\n" +
 		"$ go test ./...\n" +
-		"  PASS\n" +
-		"  a warning\n" +
+		"┃ PASS\n" +
+		"┃ a warning\n" +
 		"✗ the model refused",
 
 	levelCompact: "▸ Edit main.go\n" +
@@ -79,8 +79,8 @@ var levelGolden = map[outputLevel]string{
 		"\n" +
 		"  here is the answer\n" +
 		"$ go test ./...\n" +
-		"  PASS\n" +
-		"  a warning\n" +
+		"┃ PASS\n" +
+		"┃ a warning\n" +
 		"✗ the model refused\n" +
 		"✓ done · $0.01",
 
@@ -96,8 +96,8 @@ var levelGolden = map[outputLevel]string{
 		"\n" +
 		"  here is the answer\n" +
 		"$ go test ./...\n" +
-		"  PASS\n" +
-		"  a warning\n" +
+		"┃ PASS\n" +
+		"┃ a warning\n" +
 		"✗ the model refused\n" +
 		"✓ done · 1.2s · 3 turns · $0.01",
 
@@ -117,20 +117,24 @@ var levelGolden = map[outputLevel]string{
 		"\n" +
 		"  here is the answer\n" +
 		"$ go test ./...\n" +
-		"  PASS\n" +
-		"  a warning\n" +
+		"┃ PASS\n" +
+		"┃ a warning\n" +
 		"✗ the model refused\n" +
 		"✓ done · 1.2s (0.9s api) · 3 turns · $0.01",
 }
 
-// renderAt is levelFixture through the task workspace's own pane.
+// renderAt is levelFixture through the record renderer the task pane shares,
+// without the one-line tool calls the pane draws since task 168.4 — this is
+// the per-record rules' net, and the check lines have their own.
 func renderAt(t *testing.T, level outputLevel) string {
 	t.Helper()
-	d := newTestDetail(t)
-	d.width = 80
-	d.records = levelFixture
-	d.level.set(level)
-	return strings.Join(plainLines(d.outputLines()), "\n")
+	return strings.Join(plainLines(classicLines(levelFixture, level)), "\n")
+}
+
+// classicLines renders records with every call and outcome on lines of their
+// own, as every level's per-record rules describe them.
+func classicLines(records []apiclient.TranscriptRecord, level outputLevel) []string {
+	return outputLines(records, level, 80, lineOpts{expandKey: "v"})
 }
 
 // TestLoudLevelsRenderWhatTheyAlwaysDid is the renumbering's regression net.

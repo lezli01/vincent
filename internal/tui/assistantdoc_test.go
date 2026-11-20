@@ -241,7 +241,7 @@ func TestPausedAnchorSurvivesRebuilds(t *testing.T) {
 
 	// Scroll away from the tail and note what is at the top.
 	d.following = false
-	d.vp.SetYOffset(12)
+	d.vp.SetYOffset(13) // the feed's divider opens the pane (task 168.4)
 	topOf := func() lineAnchor { return anchorAt(d.anchors, d.vp.YOffset()) }
 	want := topOf()
 	if want.rec == 0 {

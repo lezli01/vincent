@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -59,7 +61,10 @@ const diffKeySep = "\x00"
 // pane treats it as a single remainder section, which is the same thing the
 // daemon returns for a task that fanned nothing out.
 type diffLoadedMsg struct {
-	taskID   int64
+	taskID int64
+	// stepRun is the attempt the diff was scoped to, 0 for the whole task
+	// (task 168.6): a fetch for the scope the pane has left is dropped.
+	stepRun  int64
 	text     string
 	sections []apiclient.DiffSection
 	err      error
@@ -83,7 +88,17 @@ type diffPane struct {
 	// wide puts it at 0; this is what a rebuild restores (review F19).
 	pan int
 
-	taskID    int64
+	taskID int64
+	// stepRun scopes the pane to what one attempt changed (task 168.6), and
+	// stepLabel names it on the summary line; 0 is the whole task.
+	stepRun   int64
+	stepLabel string
+	// base is what the whole task's diff is against, for its summary line.
+	base string
+	// whole is the whole task's size from its last fetch, kept across a
+	// switch to one attempt, so the tab's marker keeps saying the task's.
+	whole     [2]int
+	wholeSeen bool
 	lines     []string
 	sections  []diffSection
 	loaded    bool
@@ -187,6 +202,9 @@ func (p *diffPane) openTask(taskID int64) {
 		return
 	}
 	p.taskID = taskID
+	// Another task's attempt is no scope for this one, nor its size.
+	p.stepRun, p.stepLabel = 0, ""
+	p.whole, p.wholeSeen = [2]int{}, false
 	p.reset()
 }
 
@@ -212,32 +230,33 @@ func (p *diffPane) reset() {
 	p.pan = 0
 }
 
-// fetch reloads the diff. stale=false means "only if we have nothing", which
-// is what opening the tab asks for; a refresh keypress passes true.
+// fetch reloads the diff: opening the tab, a refresh, and a change of scope
+// all read it afresh, since the endpoint follows no events.
 //
 // The grouped form is asked for unconditionally. It costs the daemon nothing
 // extra for a task with no lanes — one `git log` that comes back empty — and
 // it means the pane never has to know in advance whether the task fanned out,
 // which is a fact that changes while the tab is open.
-func (p *diffPane) fetch(client *apiclient.Client, force bool) tea.Cmd {
+func (p *diffPane) fetch(client *apiclient.Client) tea.Cmd {
 	if client == nil || p.taskID == 0 || p.fetching {
 		return nil
 	}
-	if p.loaded && !force {
-		return nil
-	}
 	p.fetching = true
-	id := p.taskID
+	id, run := p.taskID, p.stepRun
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), diffTimeout)
 		defer cancel()
+		if run != 0 {
+			text, err := readStepDiff(ctx, client, id, run)
+			return diffLoadedMsg{taskID: id, stepRun: run, text: text, err: err}
+		}
 		sections, err := client.DiffByLane(ctx, id)
 		return diffLoadedMsg{taskID: id, sections: sections, err: err}
 	}
 }
 
 func (p *diffPane) apply(msg diffLoadedMsg) {
-	if msg.taskID != p.taskID {
+	if msg.taskID != p.taskID || msg.stepRun != p.stepRun {
 		return
 	}
 	p.fetching = false
@@ -254,6 +273,10 @@ func (p *diffPane) apply(msg diffLoadedMsg) {
 	}
 	p.setSections(sections)
 	p.keepFolds()
+	if p.stepRun == 0 {
+		a, r, _ := p.totals()
+		p.whole, p.wholeSeen = [2]int{a, r}, true
+	}
 }
 
 // setSections parses each section and colours it, spending one shared line
@@ -283,7 +306,7 @@ func (p *diffPane) setSections(in []apiclient.DiffSection) {
 		sec.styledLead = colorDiffLines(sec.lead)
 		sec.styledBody = make([][]string, len(sec.files))
 		for i, f := range sec.files {
-			sec.styledBody[i] = colorDiffLines(f.body)
+			sec.styledBody[i] = numberDiffLines(f.body)
 			sec.added += f.added
 			sec.removed += f.removed
 		}
@@ -632,6 +655,9 @@ func (p *diffPane) emptyState() (string, bool) {
 
 // errorText explains a refusal in the terms of the task's own life cycle.
 func (p *diffPane) errorText() string {
+	if apiclient.StepRangeUnrecorded(p.err) {
+		return "this attempt has no recorded commit range — it ran before vincent recorded one; d shows the whole task"
+	}
 	var apiErr *apiclient.Error
 	if errors.As(p.err, &apiErr) && apiErr.Status == http.StatusConflict {
 		switch {
@@ -667,6 +693,36 @@ func (p *diffPane) laneCount() int {
 	return n
 }
 
+// setScope points the pane at one attempt's change, or with run 0 at the
+// whole task's, discarding what it showed: the files of one are not the
+// files of the other. It reports whether the scope changed.
+func (p *diffPane) setScope(run int64, label string) bool {
+	if run == p.stepRun {
+		return false
+	}
+	p.stepRun, p.stepLabel = run, label
+	p.reset()
+	return true
+}
+
+// totals is the change's size across every section, and whether a diff has
+// loaded to have one (task 168.2's tab marker).
+func (p *diffPane) totals() (added, removed int, ok bool) {
+	if p.sections == nil {
+		return 0, 0, false
+	}
+	for i := range p.sections {
+		added += p.sections[i].added
+		removed += p.sections[i].removed
+	}
+	return added, removed, true
+}
+
+// wholeTotals is the whole task's size, once a whole-task fetch has said it.
+func (p *diffPane) wholeTotals() (added, removed int, ok bool) {
+	return p.whole[0], p.whole[1], p.wholeSeen
+}
+
 // summary is the pane's first line: how many lanes and files, and the totals
 // across all of them. With everything folded shut, this is the only place the
 // size of the change is stated.
@@ -677,7 +733,7 @@ func (p *diffPane) summary() string {
 		added += p.sections[i].added
 		removed += p.sections[i].removed
 	}
-	out := "  "
+	out := "  " + styleTitle.Render(p.scopeLabel()) + "  "
 	if p.grouped {
 		out += styleDim.Render(countNoun(p.laneCount(), "lane")) + "  "
 	}
@@ -688,6 +744,17 @@ func (p *diffPane) summary() string {
 		return out
 	}
 	return out + "  " + diffCounts(added, removed)
+}
+
+// scopeLabel names what the pane is the diff of, for its summary line.
+func (p *diffPane) scopeLabel() string {
+	if p.stepRun != 0 {
+		return p.stepLabel
+	}
+	if p.base != "" {
+		return "whole task · against " + p.base
+	}
+	return "whole task"
 }
 
 // headLine is the summary with the freshness cue after it: in full while it
@@ -823,12 +890,12 @@ func (p *diffPane) fileRow(i, width int) string {
 	if p.grouped {
 		indent = "  "
 	}
-	prefix := style.Render(indent + glyph + " ")
+	prefix := style.Render(indent+glyph+" ") + diffStatusLetter(f.status) + " "
 	// A binary file has no ± lines at all, and `+0 -0` would read as
 	// "nothing changed here".
 	suffix := "  " + styleDim.Render("binary")
 	if !f.binary {
-		suffix = "  " + diffCounts(f.added, f.removed)
+		suffix = "  " + diffCounts(f.added, f.removed) + "  " + diffBar(f.added, f.removed)
 	}
 	if width <= 0 {
 		return prefix + style.Render(f.path) + suffix
@@ -904,4 +971,147 @@ func colorDiffLine(line string) string {
 		return line
 	}
 	return line
+}
+
+// diffStatusLetter is git's letter for what happened to a file, in the colour
+// of what it did (task 168.6): a letter, so it reads without the colour.
+func diffStatusLetter(status byte) string {
+	switch status {
+	case 'A':
+		return styleDiffAdd.Render("A")
+	case 'D':
+		return styleDiffDel.Render("D")
+	case 'R':
+		return toneCyan.Render("R")
+	case 0:
+		return " "
+	default:
+		return styleWarn.Render("M")
+	}
+}
+
+// diffBarCells is the widest a file's change bar draws.
+const diffBarCells = 8
+
+// diffBar is a file's change as a short bar of + and −, scaled so a file of
+// any size fits in diffBarCells and the two halves keep their proportion.
+func diffBar(added, removed int) string {
+	total := added + removed
+	if total == 0 {
+		return ""
+	}
+	cells := min(total, diffBarCells)
+	plus := added * cells / total
+	if added > 0 && plus == 0 {
+		plus = 1
+	}
+	minus := cells - plus
+	if removed > 0 && minus == 0 && plus > 1 {
+		plus--
+		minus = 1
+	}
+	return styleDiffAdd.Render(strings.Repeat("+", plus)) + styleDiffDel.Render(strings.Repeat("−", minus))
+}
+
+// numberDiffLines colours a file's body and puts the old and new line numbers
+// in a gutter in front of each hunk line (task 168.6). A hunk header reads as
+// a rule carrying the function it falls in. Lines before the first hunk — a
+// mode change, a rename, `Binary files … differ` — are the file's facts and
+// keep their own colour, unnumbered.
+func numberDiffLines(body []string) []string {
+	if len(body) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(body))
+	oldN, newN := 0, 0
+	inHunk := false
+	num := func(n int) string {
+		if n <= 0 {
+			return "    "
+		}
+		return fmt.Sprintf("%4d", n)
+	}
+	for _, line := range body {
+		if strings.HasPrefix(line, "@@") {
+			inHunk = true
+			oldN, newN = hunkStarts(line)
+			out = append(out, hunkRule(line))
+			continue
+		}
+		if !inHunk {
+			out = append(out, colorDiffLine(line))
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "+"):
+			out = append(out, styleDim.Render(num(0)+" "+num(newN)+" │")+styleDiffAdd.Render(line))
+			newN++
+		case strings.HasPrefix(line, "-"):
+			out = append(out, styleDim.Render(num(oldN)+" "+num(0)+" │")+styleDiffDel.Render(line))
+			oldN++
+		case strings.HasPrefix(line, "\\"):
+			// `\ No newline at end of file` numbers nothing.
+			out = append(out, styleDim.Render(num(0)+" "+num(0)+" │"+line))
+		default:
+			out = append(out, styleDim.Render(num(oldN)+" "+num(newN)+" │")+line)
+			oldN++
+			newN++
+		}
+	}
+	return out
+}
+
+// hunkStarts reads `@@ -a,b +c,d @@`'s two first line numbers.
+func hunkStarts(header string) (oldStart, newStart int) {
+	fields := strings.Fields(header)
+	for _, f := range fields[1:] {
+		if f == "@@" {
+			break
+		}
+		n, _, _ := strings.Cut(f[1:], ",")
+		v, err := strconv.Atoi(n)
+		if err != nil {
+			continue
+		}
+		switch f[0] {
+		case '-':
+			oldStart = v
+		case '+':
+			newStart = v
+		}
+	}
+	return oldStart, newStart
+}
+
+// hunkRule draws a hunk header as a dim rule with its ranges, and the
+// function git found it in, when there is one, at full weight.
+func hunkRule(header string) string {
+	ranges, context := header, ""
+	if i := strings.Index(header[2:], "@@"); i >= 0 {
+		ranges = header[:i+4]
+		context = strings.TrimSpace(header[i+4:])
+	}
+	out := styleDiffHunk.Render("── " + ranges)
+	if context != "" {
+		out += "  " + context
+	}
+	return out + styleDim.Render(" ──")
+}
+
+// stepDiffBytes bounds one attempt's diff read: the pane cuts what it draws at
+// maxDiffLines anyway, and an agent can rewrite a vendored tree.
+const stepDiffBytes = 8 << 20
+
+// readStepDiff reads one attempt's diff (task 168.6) up to stepDiffBytes.
+func readStepDiff(ctx context.Context, client *apiclient.Client, id, run int64) (string, error) {
+	body, err := client.DiffStepStream(ctx, id, run)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = body.Close() }()
+	text, err := io.ReadAll(io.LimitReader(body, stepDiffBytes))
+	if err != nil {
+		return "", fmt.Errorf("read diff: %w", err)
+	}
+	return string(text), nil
 }

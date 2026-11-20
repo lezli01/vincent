@@ -95,10 +95,22 @@ func (d *detail) clickTimeline(line int) tea.Cmd {
 		return nil
 	}
 	id := d.visibleRuns[idx]
-	if id == 0 || id == d.selectedRun {
+	if id < 0 {
+		// A lane row: it is anchored to the attempt drawn above it, which is
+		// the nearest positive id going up.
+		for i := idx - 1; i >= 0; i-- {
+			if anchor := d.visibleRuns[i]; anchor > 0 {
+				d.selectLaneRow(-id, anchor)
+				return d.syncOutput()
+			}
+		}
+		d.selectLaneRow(-id, d.selectedRun)
+		return d.syncOutput()
+	}
+	if id == 0 || (id == d.selectedRun && d.cursorLane() == 0) {
 		return nil
 	}
-	d.selectedRun = id
+	d.selectedRun, d.selectedLane = id, 0
 	return d.syncOutput()
 }
 
@@ -177,9 +189,16 @@ func (d *detail) collapsedOutputLine() string {
 // pane and the workspace's now-line (task 129.9).
 func lastOutputLine(lines []string) (string, bool) {
 	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.TrimSpace(ansi.Strip(lines[i])) != "" {
-			return lines[i], true
+		plain := ansi.Strip(lines[i])
+		if strings.TrimSpace(plain) == "" {
+			continue
 		}
+		// A command's output carries its margin bar in the pane (task
+		// 168.4); quoted on its own the line is just what it printed.
+		if rest, ok := strings.CutPrefix(plain, gutterOutput); ok {
+			return styleDim.Render(rest), true
+		}
+		return lines[i], true
 	}
 	return "", false
 }
@@ -466,7 +485,19 @@ func (d *detail) renderTimeline(height int) string {
 	// value would swallow it.
 	lastIteration := -1
 	lastSub := ""
-	for _, r := range runs {
+	// A fan_out step's lanes close its block, after its last attempt and
+	// before the spacer to the next step (timelinelanes.go).
+	lanes := d.laneSlots(runs)
+	cursorLane := d.cursorLane()
+	emitLanes := func(slot laneSlot, indent string) {
+		laneLines, laneIDs, sel := d.laneTimelineLines(lanes[slot], cursorLane, indent)
+		if sel >= 0 {
+			cursorLine, cursorEnd = len(lines)+sel, len(lines)+sel+1
+		}
+		lines = append(lines, laneLines...)
+		ids = append(ids, laneIDs...)
+	}
+	for i, r := range runs {
 		looped := loops[r.StepIndex]
 		// A follow-up round sits past the workflow's last index and is not a
 		// step of it (task 027). Its steps share the round's index, so they
@@ -475,6 +506,9 @@ func (d *detail) renderTimeline(height int) string {
 		round := d.followUpRound(r.StepIndex)
 		grouped := (groups[r.StepIndex] || round > 0) && !looped
 		if r.StepIndex != lastStep {
+			if lastStep >= 0 {
+				emitLanes(laneSlot{lastStep, endOfStep}, "")
+			}
 			if len(lines) > 0 {
 				lines = append(lines, "")
 				ids = append(ids, 0)
@@ -537,7 +571,8 @@ func (d *detail) renderTimeline(height int) string {
 			ids = append(ids, 0)
 		}
 		attemptLines := d.attemptLines(r, grouped || looped || repair)
-		if r.ID == d.selectedRun {
+		onRun := r.ID == d.selectedRun && cursorLane == 0
+		if onRun {
 			cursorLine = len(lines)
 			for i := range attemptLines {
 				attemptLines[i] = styleSelected.Render(attemptLines[i])
@@ -554,9 +589,18 @@ func (d *detail) renderTimeline(height int) string {
 			lines = append(lines, summary)
 			ids = append(ids, r.ID)
 		}
-		if r.ID == d.selectedRun {
+		if onRun {
 			cursorEnd = len(lines)
 		}
+		// A round's lanes close its tier (task 080): after the tier's last
+		// row, at its depth.
+		if looped && (i+1 == len(runs) || runs[i+1].StepIndex != r.StepIndex ||
+			runs[i+1].Iteration != r.Iteration) {
+			emitLanes(laneSlot{r.StepIndex, r.Iteration}, "  ")
+		}
+	}
+	if lastStep >= 0 {
+		emitLanes(laneSlot{lastStep, endOfStep}, "")
 	}
 	return d.windowTimeline(lines, ids, foldedHeaders, cursorLine, cursorEnd, height)
 }
@@ -892,7 +936,7 @@ const stepTypeFanOut = "fan_out"
 // folded shut, so renderTimeline can move the highlight onto its header.
 func (d *detail) foldedSelection(loops map[int]bool, latest map[int]int) (tierKey, bool) {
 	sel := d.runByID(d.selectedRun)
-	if sel.ID == 0 || !loops[sel.StepIndex] {
+	if sel.ID == 0 || !loops[sel.StepIndex] || d.cursorLane() != 0 {
 		return tierKey{}, false
 	}
 	if d.tierOpen(sel.StepIndex, sel.Iteration, latest[sel.StepIndex]) {
@@ -1342,9 +1386,6 @@ func (d *detail) followIndicator() string {
 }
 
 func (d *detail) renderOutputPane(height int) string {
-	if body, ok := d.outputEmptyState(); ok {
-		return styleDim.Render("  " + body)
-	}
 	d.vp.SetWidth(max(d.width, 1))
 	d.vp.SetHeight(height)
 	if d.outputDirty || d.builtWidth != d.width || d.builtLinks != d.links.get() || d.builtLevel != d.level.get() {
@@ -1354,7 +1395,7 @@ func (d *detail) renderOutputPane(height int) string {
 		// and raw toggles used to take away. Following is untouched — the
 		// bottom is its anchor.
 		keep := anchorAt(d.anchors, d.vp.YOffset())
-		lines, anchors := d.outputLinesAt()
+		lines, anchors := d.feedLinesAt()
 		d.vp.SetContent(strings.Join(lines, "\n"))
 		d.anchors = anchors
 		d.outputDirty = false
@@ -1394,6 +1435,14 @@ func (d *detail) landAtFailure() {
 			}
 		}
 	}
+	// The end of the attempt, which the feed may follow with later
+	// attempts' folds: its last anchored line sits at the pane's bottom.
+	for y := len(d.anchors) - 1; y >= 0; y-- {
+		if d.anchors[y].rec != 0 {
+			d.vp.SetYOffset(max(y+2-d.vp.Height(), 0))
+			return
+		}
+	}
 	d.vp.GotoBottom()
 }
 
@@ -1425,6 +1474,18 @@ func (d *detail) outputLines() []string {
 
 // outputLinesAt is outputLines with the per-line provenance the paused anchor
 // needs, and is where the pane's render pass opens and closes.
+// feedLinesAt is what the pane draws: the displayed attempt's lines — or
+// what it says when it has none — placed among the task's other attempts
+// (task 168.4).
+func (d *detail) feedLinesAt() ([]string, []lineAnchor) {
+	width := max(d.width, 1)
+	if body, ok := d.outputEmptyState(); ok {
+		return d.feedWrap([]string{styleDim.Render("  " + body)}, []lineAnchor{{}}, width)
+	}
+	lines, anchors := d.outputLinesAt()
+	return d.feedWrap(lines, anchors, width)
+}
+
 func (d *detail) outputLinesAt() ([]string, []lineAnchor) {
 	note := ""
 	if d.truncated {
@@ -1439,7 +1500,50 @@ func (d *detail) outputLinesAt() ([]string, []lineAnchor) {
 		lineOpts{
 			expandKey: "v", truncatedNote: note, raw: d.raw.get(),
 			hyperlinks: d.links.get(), cache: &d.mdcache,
+			// One line per tool call, its outcome on the same line, folded
+			// until enter opens it (task 168.4) — the chat's form of a call.
+			toolChecks: true, expanded: d.callExpanded, expandHint: "enter",
+			latestPlan: true,
 		})
+}
+
+// callExpanded is the lineOpts predicate over expandedCalls.
+func (d *detail) callExpanded(call string, _ int64) bool {
+	return call != "" && d.expandedCalls[call]
+}
+
+// toggleCall unfolds or folds one tool call of the displayed attempt.
+func (d *detail) toggleCall(call string) {
+	if call == "" {
+		return
+	}
+	if d.expandedCalls == nil {
+		d.expandedCalls = map[string]bool{}
+	}
+	if d.expandedCalls[call] {
+		delete(d.expandedCalls, call)
+	} else {
+		d.expandedCalls[call] = true
+	}
+	d.outputDirty = true
+}
+
+// newestCallInView is the tool call nearest the bottom of the pane's window
+// — while following, the call the agent made last — or "" when the window
+// shows none. It is what enter on the Output tab toggles.
+func (d *detail) newestCallInView() string {
+	top := d.vp.YOffset()
+	for y := min(top+d.vp.Height(), len(d.anchors)) - 1; y >= top; y-- {
+		if c := d.anchors[y].call; c != "" {
+			return c
+		}
+	}
+	return ""
+}
+
+// callAt is the tool call drawn on the pane's row y, or "".
+func (d *detail) callAt(y int) string {
+	return anchorAt(d.anchors, d.vp.YOffset()+y).call
 }
 
 // plain is a record with the blank gutter: assistant prose and command
