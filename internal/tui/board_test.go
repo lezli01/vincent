@@ -36,7 +36,6 @@ func selectTestProject(b *board) *board {
 func testBoard() *board {
 	b := selectTestProject(newBoard())
 	b.now = func() time.Time { return testNow }
-	b.bell = func() {}
 	b.loaded = true
 	b.group, b.configGroup = nil, nil
 	return b

@@ -257,12 +257,6 @@ type board struct {
 	// issued for a project the board has since left, is dropped.
 	stamps loadStamps
 
-	// bell is inert since task 165 moved the terminal bell to the root
-	// (bell.go), where tasks and chats share one rule. It stays only so the
-	// test helpers that silence it per board still compile; nothing here
-	// calls it, and a later cleanup may drop it with them.
-	bell func()
-
 	// chats is every project's live chat listing (task 165), held beside
 	// the global task listing for the one reason that listing is global:
 	// a chat waiting on a human is part of the attention count, the

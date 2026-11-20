@@ -182,7 +182,6 @@ func TestFailedFirstLoadDoesNotSayNoTasksYet(t *testing.T) {
 func TestEmptyArchivedBoardDoesNotOfferNew(t *testing.T) {
 	b := selectTestProject(newArchivedBoard())
 	b.now = func() time.Time { return testNow }
-	b.bell = func() {}
 	b.updateLoaded(boardLoadedMsg{tasks: nil})
 	if got := ansi.Strip(b.render(120, 20)); strings.Contains(got, "to create one") {
 		t.Errorf("the empty archived board offers to create a task:\n%s", got)
