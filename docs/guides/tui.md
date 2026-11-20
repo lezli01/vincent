@@ -877,7 +877,7 @@ The chat workspace's conversation body is this same pane, at the same level.
 holds onto the block at the top of it, so resizing the terminal, changing the
 level with `v` or `ctrl+r`, toggling `ctrl+o`, and output old enough to be
 dropped from the window all leave you looking at the same thing. Press `f`
-(`ctrl+g` in a chat) to go back to following the tail.
+(`alt+G` in a chat) to go back to following the tail.
 
 **The attempt strip says what the pane is doing.** Beside the attempt's name it
 shows the level when it is not `normal`, `raw` when `ctrl+o` is on, and — for
@@ -2740,8 +2740,10 @@ periodic repaint.
 | `pgup` / `pgdown` | Scroll the conversation (the mouse wheel scrolls it a line at a time) |
 | `alt+↑` / `alt+↓` | Scroll the conversation one line |
 | `alt+g` | Jump to the start of the conversation |
-| `ctrl+g` | Jump to the live end and follow it again — clears `↓ N new` |
+| `alt+G` | Jump to the live end and follow it again — clears `↓ N new` |
 | `ctrl+f` | Search the conversation: the conversation takes the keyboard with a search line open — see [Searching a chat](#searching-a-chat) |
+| `ctrl+g` | Write the message in `$EDITOR`. What you save comes back into the composer, unsent; an emptied or untouched file leaves the draft as it was. While `↑` has a queued message in the composer, this edits that message (rebindable as `compose_editor`) |
+| `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only — the file is deleted when the editor exits (rebindable as `chat_markdown`; also in the palette) |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
 | `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
@@ -2762,9 +2764,9 @@ confirmation — or the hand-off form's submit row — says how many queued
 messages will be discarded.
 
 Scrolled away from the live end, the header says which turn is at the top of
-the window — `turn 2/5` — until `ctrl+g` follows the end again. While you are
+the window — `turn 2/5` — until `alt+G` follows the end again. While you are
 scrolled away, the conversation pane's bottom edge counts what arrived below
-you — `↓ 12 new`; click it or press `ctrl+g` to follow again. Changing the
+you — `↓ 12 new`; click it or press `alt+G` to follow again. Changing the
 level or the window's width does not add to it.
 
 ### Searching a chat
@@ -2790,7 +2792,7 @@ With the conversation holding the keyboard:
 | `{` / `}` | Jump to the previous or next prompt you sent |
 | `g` / `G` | Jump to the start, or to the live end |
 | `pgup` / `pgdown`, `alt+↑` / `alt+↓` | Scroll |
-| `ctrl+g` | Jump to the live end and follow it again |
+| `alt+G` | Jump to the live end and follow it again |
 | `i` / `esc` | Give the keyboard back to the composer |
 
 `esc` peels one layer at a time — the search line, then the conversation
@@ -2970,7 +2972,7 @@ popups, over the conversation's assistant messages rather than one task's.
 each offering its markdown, its plain text and each fenced block in
 it](../assets/tui-chat-copy.png)
 
-Scrolling away from the end pauses follow; `ctrl+g` jumps back and re-arms it.
+Scrolling away from the end pauses follow; `alt+G` jumps back and re-arms it.
 The **mouse wheel** does this too — a line per tick, from anywhere in the view,
 because the conversation is the only thing here that scrolls. Finished turns are
 drawn from their transcripts, so raising the level shows more of what already
@@ -3659,7 +3661,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first twenty-six are the operations screens share, the next eleven are the
+The first twenty-eight are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3690,6 +3692,8 @@ The first twenty-six are the operations screens share, the next eleven are the
 | `export_chat` | `alt+e` | Export a chat as Markdown, HTML or JSON — from the chat, the chats board or the archived chats board. See [Exporting a chat](#exporting-a-chat) |
 | `chat_model` | `alt+p` | Pick the chat's model and effort for its next turns |
 | `chat_mode` | `shift+tab` | Toggle the chat's permission mode; asks before raising it to full-auto |
+| `compose_editor` | `ctrl+g` | Write the chat message in `$EDITOR` |
+| `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
 | `pause` | `p` | Pause or resume the task |
 | `approve` | `a` | Approve the gate |
 | `reject` | `x` | Reject the gate |

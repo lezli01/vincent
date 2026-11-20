@@ -99,6 +99,7 @@ neither a subcommand nor on this list:
 | The daemon summary on the board header and daemon view | `vincent daemon status`, `vincent agents`, `vincent doctor` and `vincent config get` between them. The daemon-wide count of slots in use right now, with its lanes and on-input breakdown, is shown only in the TUI; `vincent project ls --json` carries each project's `slots_used` |
 | Listing a project's local branches in the new-task and new-chat branch pickers | No subcommand: `vincent task add --branch <name> --existing-branch` and `vincent chat start --branch <name> --existing-branch` take the name, and a shell standing in the repository already has `git branch` |
 | The `@` file picker in the chat composer, which completes a file of the directory the chat's next turn would start in as you type | `vincent chat files` lists the same files and `--mention` prints the same text a picked row inserts. Nothing completes a draft for you, and the message is sent as typed by `vincent chat send` either way |
+| Opening the whole conversation as Markdown in a chat (`alt+v`) | No subcommand yet: `curl` the daemon's `GET /v1/chats/{id}/export?format=md` with its bearer token. A `vincent chat export` subcommand is planned (#1023) |
 | Live updates as they happen | Subcommands poll: `vincent task transcript -f`, `vincent chat transcript -f`, and `vincent chat send` waits for the answer |
 
 ## `vincent version`

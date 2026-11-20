@@ -15835,9 +15835,32 @@ stream for the live tail.
    a `▾` line; a folded check line carries `▸`, and names `enter` while the
    conversation has focus. Clicking a check line focuses the conversation and
    toggles that call. While not following, the bottom edge shows `↓ N new`,
-   the lines appended since; clicking it or `ctrl+g` follows again and clears
+   the lines appended since; clicking it or `alt+G` follows again and clears
    it, and a rebuild for a level or width change never counts. The draft is
    untouched by all of it, and `ctrl+r`'s session level is unchanged.
+
+   *Amended 2026-11-20 (task 157, issue #1013), amending task 071 decision
+   5.* **`ctrl+g` writes the message in `$EDITOR`**, and follow moved to
+   **`alt+G`** — beside `alt+g`'s jump to the start: lower case goes to the
+   start, upper case to the end. `ctrl+g` is the editor key most terminal
+   tools share, which is worth moving a binding for. It is the rebindable
+   operation `compose_editor` (`Typing`): the composer's text goes to a temp
+   `.md` file through the same `$EDITOR` round trip edit+retry uses, and what
+   the editor leaves replaces the draft, cursor at its end, the inline skill
+   and file pickers re-synced from it. It **never sends**. An emptied file or
+   one left byte-identical leaves the draft as it was; a single trailing
+   newline the editor added is dropped; an exec or read failure goes to the
+   note line and keeps the draft. While `↑` has a queued message in the
+   composer, it edits that text, and `enter` still saves it. **`alt+v`**
+   (`chat_markdown`, `Typing`, and a palette row) opens the whole
+   conversation as Markdown — task 159's `GET /v1/chats/{id}/export?format=md`
+   (§13.2), rendered by the daemon — in the same editor, from a `0400` temp file that
+   is removed when the editor exits; edits are discarded and `$PAGER` is not
+   used. A fetch failure goes to the note line and opens nothing. `$EDITOR`
+   is now split quote-aware for every caller: double and single quotes group
+   a word, a backslash escapes outside single quotes on POSIX only, and an
+   unbalanced quote falls back to splitting on whitespace. Conversation
+   focus (task 160) follows on `alt+G` too, mirroring the composer.
 
    *Amended 2026-09-19 (issue #500).* `ctrl+j`, `shift+enter` and `alt+enter`
    insert a newline in the draft; `enter` still sends it. This makes the
@@ -16034,7 +16057,8 @@ stream for the live tail.
    in a task, and `agent.tool_result`, `agent.run_header` and the result line
    are reachable here at the levels this section already specifies for each.
    The body scrolls and follows the way the output pane does — following means
-   showing the end, a manual scroll pauses it, `ctrl+g` re-arms it — because at
+   showing the end, a manual scroll pauses it, `alt+G` re-arms it (`ctrl+g`
+   until task 157) — because at
    verbose it grows several-fold and a bottom-anchored window with no way to
    scroll would put what was just revealed out of reach.
 
@@ -16059,7 +16083,8 @@ stream for the live tail.
 
    *Amended 2026-09-01 (issue #300).* The conversation body takes the **mouse
    wheel** as well as `pgup`/`pgdown`: one line per tick, a scroll back pausing
-   follow and `ctrl+g` re-arming it, and the lazy transcript fetch running on a
+   follow and `alt+G` (`ctrl+g` until task 157) re-arming it, and the lazy
+   transcript fetch running on a
    wheel scroll exactly as it does on a paging key. It is not scoped to the
    pointer's position — the workspace has one scrollable pane, so this section's
    Mouse rule ("the focused panel", not the hovered one) already names it — and
@@ -18948,7 +18973,7 @@ and so no `keymap` operation, moved or not, can shadow it.
 *Amended 2026-11-20 (task 160, issue #1014).* The chat's conversation focus
 adds two **fixed surfaces** — `chat conversation`, carrying the line cursor
 (`j`/`k`/`↑`/`↓`), `enter`, `n`/`N`, `{`/`}`, `g`/`G`, the scroll keys,
-`ctrl+g`, `i` and `esc`, and `chat find`, the search line, carrying
+`alt+G` (`ctrl+g` until task 163 moved follow), `i` and `esc`, and `chat find`, the search line, carrying
 `enter`, `esc` and `backspace` — and `ctrl+f` as a fixed `chat` row. `/` in
 `chat conversation` is not a fixed row: it is the `filter` operation, whose
 surfaces now include `chat conversation`, so moving `filter` moves it there

@@ -111,7 +111,31 @@ list with the user-facing context a commit subject cannot carry.
   output it returned — matching each chat turn's heading. They had drawn the
   arrows the other way round.
 
+- **Write a chat message in your editor, and read the whole conversation as
+  Markdown.** In a chat, `ctrl+g` opens the draft in `$VISUAL`/`$EDITOR`;
+  what you save comes back into the composer, unsent, and an emptied or
+  untouched file leaves the draft as it was. `alt+v` (also in the palette)
+  opens the whole conversation as a read-only Markdown document in the same
+  editor: a header naming the chat's agent, model and branch, then every
+  prompt and answer, with each tool call folded to one line. The daemon
+  renders it, at `GET /v1/chats/{id}/export?format=md`. Both keys are
+  rebindable in `tui.keys`, as `compose_editor` and `chat_markdown` (#1013).
+
+### Changed
+
+- **In a chat, follow the live end with `alt+G`, not `ctrl+g`.** `ctrl+g` now
+  opens the editor; `alt+G` sits beside `alt+g`, which jumps to the start
+  (#1013).
+
 ### Fixed
+
+- **An `$EDITOR` whose path holds a space can be quoted.** vincent split
+  `$VISUAL` and `$EDITOR` on whitespace alone, so
+  `"C:\Program Files\Notepad++\notepad++.exe" -multiInst` could not be
+  started from any of the TUI's editor keys. The value is now split the way a
+  shell splits a simple command: double and single quotes group a word, and a
+  backslash escapes the next character outside single quotes on macOS and
+  Linux (#1013).
 
 - **Archiving a held side task by hand now archives the closed issue's main
   tasks.** When a closed issue's side task or merge-back could not be
