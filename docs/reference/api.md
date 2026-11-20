@@ -3893,7 +3893,7 @@ the same bytes. `format` defaults to `md`; `diff` defaults to `false`.
 
 | `format` | `Content-Type` | What it is |
 |---|---|---|
-| `md` | `text/markdown; charset=utf-8` | a title and metadata list, then per turn: prompt, tool calls, answer, usage |
+| `md` | `text/markdown; charset=utf-8` | a title and metadata list, then per turn: prompt, mentions (when any expanded), tool calls, answer, usage |
 | `html` | `text/html; charset=utf-8` | one self-contained page: inline CSS, no scripts, nothing loaded from elsewhere |
 | `json` | `application/json` | the document model, with a top-level `"version": 1` |
 
@@ -3910,7 +3910,10 @@ it apart from the input (claude, copilot), then the output — cost when
 the agent reports one (copilot never does, and the cost is then absent rather
 than `$0`), duration, and a failed turn's reason. The JSON turn also carries
 `cache_read_tokens`, `cache_creation_tokens`, `context_tokens` and
-`context_window` when the agent reported them, and omits each otherwise. In HTML, prompts and answers
+`context_window` when the agent reported them, and omits each otherwise. A
+turn whose [mentions](#mentions) expanded carries the block it expanded into,
+its `mention_context`, after the prompt — a `Mentions` section in Markdown and
+HTML, the field in JSON — and a turn with none has neither. In HTML, prompts and answers
 are rendered from Markdown with raw HTML disabled, so a `<script>` in an
 agent's answer never reaches the page.
 

@@ -2534,8 +2534,9 @@ or a workspace that has gone missing under the daemon. Exit `2` with no daemon.
 vincent chat export CHAT_ID [--format md|html|json] [--with-diff] [-o | --output FILE] [--json]
 ```
 
-The whole chat as one document: its metadata, then every turn's prompt, tool
-calls (one line each, never their output), answer and usage. `--format md` is
+The whole chat as one document: its metadata, then every turn's prompt, the
+block its mentions expanded into (when any did), tool calls (one line each,
+never their output), answer and usage. `--format md` is
 the default; `html` is a single self-contained page with no scripts and nothing
 loaded from elsewhere; `json` is the document model with a top-level
 `"version"`. The daemon renders it — this command, the TUI and

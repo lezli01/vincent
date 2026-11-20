@@ -1294,6 +1294,12 @@ the turn's transcript through the normalizer `?format=normalized` serves. Every
 state exports, `archived`, `handed_off` and `closed` included; a running turn
 renders with what it has so far.
 
+*Amended 2026-11-20 (task 164, issue #1021):* a turn whose mentions expanded
+also carries its `mention_context` snapshot (§5.5 "Mentions of vincent objects
+and line ranges") between the prompt and the tool lines — a `Mentions` block
+in Markdown and HTML, the `mention_context` field in JSON — and a turn with
+none has no such block.
+
 **Retention fallback.** A turn whose transcript is gone still renders from its
 row — prompt, `result_text`, usage — with a one-line note in place of its tool
 list: that the transcript was pruned (`transcript_retention_days`, §12.2), or,
