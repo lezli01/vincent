@@ -32,7 +32,7 @@ Conventions for this file are in [the tasks README](README.md).
   CLI and key references, the chats guide, `CHANGELOG.md`, and a
   create-with-message and a rename step in `m14`. ✓ 2026-11-20
 - [x] **161.6** Re-capture the new-chat form and chats board screenshots with
-  `scripts/screenshots.sh` (VHS): the form gained a message row.
+  `scripts/screenshots.sh` (VHS): the form gained a message row. ✓ 2026-11-20
 
 ## Decisions
 
