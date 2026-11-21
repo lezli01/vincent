@@ -47,6 +47,8 @@ func TestValidateChatStatusLine(t *testing.T) {
 		"{{.Model}} {{.Effort}} {{.Agent}} {{.PermissionMode}} {{.Branch}} {{.State}} {{.Cost}} {{.ContextPercent}} {{.Turns}}",
 		`{{if .Cost}}{{.Cost}}{{else}}free{{end}} · {{printf "%d%%" .ContextPercent}}`,
 		"{{if gt .ContextPercent 80}}!{{end}}{{.Turns}} turns",
+		"{{with .Cost}}{{.}}{{else}}{{.Model}}{{end}} {{$.Turns}}",
+		"{{$m := .Model}}{{$m}} {{(.Model)}}",
 	}
 	for _, tmpl := range accepted {
 		if err := ValidateChatStatusLine(tmpl); err != nil {
@@ -55,6 +57,13 @@ func TestValidateChatStatusLine(t *testing.T) {
 	}
 	refused := map[string]struct{ tmpl, want string }{
 		"unknown field":   {"{{.Tokens}}", "Tokens"},
+		// Review F5: fields a zero value never reaches still fail the load.
+		"field in an if":       {"{{if .Cost}}{{.Bogus}}{{end}}", "Bogus"},
+		"field in an else":     {"{{if .Cost}}x{{else if .Turns}}{{.Bogus}}{{end}}", "Bogus"},
+		"field in a with else": {"{{with .Cost}}{{.}}{{else}}{{.Bogus}}{{end}}", "Bogus"},
+		"field in a with body": {"{{with .Cost}}{{.Len}}{{end}}", "Len"},
+		"field in a range":     {"{{range .Branch}}{{$.Bogus}}{{end}}", "Bogus"},
+		"field of a field":     {"{{if .Cost}}{{.Cost.Amount}}{{end}}", "Amount"},
 		"parse error":     {"{{.Model", "tui.chat.status_line"},
 		"unknown func":    {"{{upper .Model}}", "upper"},
 		"newline":         {"{{.Model}}\n{{.Cost}}", "single line"},

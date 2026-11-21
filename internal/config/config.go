@@ -867,9 +867,10 @@ type ChatStatusFields struct {
 
 // ValidateChatStatusLine holds `tui.chat.status_line` to what a client can
 // draw: one line, a template that parses, and one that executes against a
-// chat's fields. Executing it against the zero value is what catches a
-// misspelled field — text/template resolves fields at execution, never at
-// parse. Empty is valid: it is the key's default, and means no status line.
+// chat's fields. A misspelled field is caught by walking the parse tree —
+// text/template resolves a field only when it evaluates it, so executing
+// against the zero value alone misses one inside a branch it skips. Empty is
+// valid: it is the key's default, and means no status line.
 func ValidateChatStatusLine(tmpl string) error {
 	if tmpl == "" {
 		return nil
@@ -881,9 +882,18 @@ func ValidateChatStatusLine(tmpl string) error {
 	if err != nil {
 		return fmt.Errorf("tui.chat.status_line: %s", templateDetail(err))
 	}
-	if err := t.Execute(discard{}, ChatStatusFields{}); err != nil {
-		return fmt.Errorf("tui.chat.status_line: %s; the fields are %s",
-			templateDetail(err), strings.Join(chatStatusFieldNames, ", "))
+	// Every field the template names, in every branch, then one execution
+	// for what a walk cannot see — a function given the wrong argument.
+	err = checkStatusLineFields(t.Root)
+	if err == nil {
+		err = t.Execute(discard{}, ChatStatusFields{})
+		if err != nil {
+			err = errors.New(templateDetail(err))
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("tui.chat.status_line: %v; the fields are %s",
+			err, strings.Join(chatStatusFieldNames, ", "))
 	}
 	return nil
 }
