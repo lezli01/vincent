@@ -203,13 +203,25 @@ func TestSnapshotTreeAndDiffTrees(t *testing.T) {
 // TestDiffTreesIgnoresUserDiffConfig proves the output is the same whatever
 // the repository's diff settings say.
 func TestDiffTreesIgnoresUserDiffConfig(t *testing.T) {
-	g, dir, base := diffRepo(t)
+	g, dir, _ := diffRepo(t)
+	// A hunk with blank context lines: diff.suppressBlankEmpty would write
+	// each as an empty line rather than a lone space, which reads as a hunk
+	// cut short (review F3).
+	writeFile(t, dir, "blank.txt", "a\n\nb\n\nc\n")
+	testrepo.Run(t, dir, "add", "-A")
+	testrepo.Run(t, dir, "commit", "-q", "-m", "blank lines")
+	base := testrepo.Run(t, dir, "rev-parse", "HEAD")
+	writeFile(t, dir, "blank.txt", "a\n\nB\n\nc\n")
 	writeFile(t, dir, "a.txt", "one\nTWO\nthree\n")
 	writeFile(t, dir, "ünï cödé.txt", "x\n")
 	plain := snapDiff(t, g, dir, base)
+	if f := fileNamed(t, plain, "blank.txt"); len(f.Hunks) != 1 || !slices.Contains(f.Hunks[0].Lines, " ") {
+		t.Fatalf("blank.txt has no blank context line: %+v", f)
+	}
 	for k, v := range map[string]string{
 		"diff.noprefix": "true", "diff.mnemonicPrefix": "true", "color.ui": "always", "color.diff": "always",
 		"diff.renames": "false", "diff.context": "0", "diff.external": "false", "core.quotepath": "true",
+		"diff.suppressBlankEmpty": "true",
 	} {
 		testrepo.Run(t, dir, "config", k, v)
 	}

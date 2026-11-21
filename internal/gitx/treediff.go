@@ -89,6 +89,11 @@ func (f FileDiff) Rejectable() bool {
 func diffTreeArgs(format ...string) []string {
 	args := []string{
 		"-c", "core.quotepath=false",
+		// Read by plumbing too: set, it writes a blank context line as an
+		// empty line instead of a lone space, which parsePatch takes for a
+		// hunk cut short — and would change the hash and the patch `apply`
+		// is handed (review F3).
+		"-c", "diff.suppressBlankEmpty=false",
 		"diff-tree", "-r", "-M",
 		"--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
 		"--src-prefix=a/", "--dst-prefix=b/",
