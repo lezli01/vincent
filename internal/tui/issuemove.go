@@ -113,6 +113,10 @@ func planLaneMove(iss apiclient.Issue, to string) laneMove {
 		return laneMove{kind: moveRefused, note: "its handoff has delivered; start a follow-up task with a"}
 	case "hand_off":
 		switch {
+		case from == "open" && issueMarker(iss) == markerDelivered:
+			// A handoff delivered part of it and left it open (#1042):
+			// that delivery is spent, and the rest needs new work.
+			return laneMove{kind: moveRefused, note: "a handoff delivered part of it; start a task for the rest first"}
 		case from == "open":
 			return laneMove{kind: moveRefused, note: "nothing is finished to hand off — start a task first"}
 		case readyApplies(iss):

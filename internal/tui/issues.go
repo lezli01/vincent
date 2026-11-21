@@ -1021,9 +1021,14 @@ func issueTaskCell(iss apiclient.Issue) string {
 	tasks := plural(iss.TaskCount, "task", "tasks")
 	switch iss.Lane {
 	case "open":
-		// Any task an open-lane issue has is aborted (task 134 decision 2).
+		// An open-lane issue's tasks are aborted (task 134 decision 2) —
+		// unless a handoff delivered its done task and left it open
+		// (#1042), which the delivered marker says.
 		if iss.TaskCount == 0 {
 			return "no tasks"
+		}
+		if issueMarker(iss) == markerDelivered {
+			return tasks + " · delivered in part"
 		}
 		return tasks + " · cancelled"
 	case "in_progress":

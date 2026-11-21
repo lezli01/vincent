@@ -72,6 +72,9 @@ func TestPlanLaneMove(t *testing.T) {
 		{"pending to in progress marks not ready", laneIssue("hand_off", markerPending), "in_progress", moveUnready},
 		{"claimed to in progress returns", claimed, "in_progress", moveReturn},
 		{"delivered to in progress is refused", laneIssue("hand_off", markerDelivered), "in_progress", moveRefused},
+		// A handoff delivered it and left it open (#1042, review F5).
+		{"delivered in part to in progress starts a task", laneIssue("open", markerDelivered), "in_progress", moveStartTask},
+		{"delivered in part to hand-off needs new work", laneIssue("open", markerDelivered), "hand_off", moveRefused},
 		{"hand-off to open has finished work", laneIssue("hand_off", markerPending), "open", moveRefused},
 		{"hand-off to done closes", laneIssue("hand_off", markerPending), "done", moveClose},
 		{"done to open reopens", laneIssue("done", ""), "open", moveReopen},
