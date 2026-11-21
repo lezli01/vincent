@@ -182,6 +182,7 @@ the living engineering specification records implementation contracts.
 | [166](166-chat-object-mentions.md) | Mention issues, tasks and pull requests in a chat, and file line ranges | 🔄 in progress (3/6) |
 | [167](167-chat-checkpoint-rewind-fork.md) | Checkpoint a chat's worktree every turn, with rewind and fork | 🔄 in progress (2/10) |
 | [168](168-task-workspace-redesign.md) | Task workspace redesign: steps rail, plain tabs, Output feed, Diff and Overview | ✅ done (9/9) |
+| [169](169-chat-diff-and-hunk-review.md) | A diff pane in the chat with per-hunk accept and reject | 🔄 in progress (9/11) |
 
 ## How to add and update a task document
 

@@ -77,7 +77,10 @@ func TestBuildAccepts(t *testing.T) {
 		{"the default is a no-op", map[string]string{"archive": "A"}, map[Op]string{Archive: "A"}},
 		// Replace, not alias (decision 6): the vacated key is free for the
 		// other operation in the same edit.
-		{"a swap", map[string]string{"pause": "x", "reject": "p"}, map[Op]string{Pause: "x", Reject: "p"}},
+		// pause and cancel rather than pause and reject: x is also the chat
+		// diff pane's fixed reject (task 169 decision 3), which only reject
+		// itself is excepted to share.
+		{"a swap", map[string]string{"pause": "c", "cancel": "p"}, map[Op]string{Pause: "c", Cancel: "p"}},
 		// f3 rather than f2: f2 is the chat workspace's fixed alias for the
 		// skill list (task 124.13), and one key means one thing (§15).
 		{"alt and shift on a letter", map[string]string{"refresh": "alt+shift+e"}, map[Op]string{Refresh: "alt+shift+e"}},
@@ -234,7 +237,7 @@ func TestLenientTakesATodayClash(t *testing.T) {
 		t.Errorf("retry=%q browser=%q warnings=%q", km.Key(Retry), km.Key(Browser), warnings)
 	}
 	// A swap is not a clash: nothing yields and nothing warns.
-	if _, warnings, err := BuildLenient(map[string]string{"pause": "x", "reject": "p"}); err != nil || len(warnings) != 0 {
+	if _, warnings, err := BuildLenient(map[string]string{"pause": "c", "cancel": "p"}); err != nil || len(warnings) != 0 {
 		t.Errorf("a swap: warnings %q, err %v", warnings, err)
 	}
 }

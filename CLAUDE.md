@@ -200,13 +200,14 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/140-gate.sh                           # a chat on an issue (task 140)
 ./scripts/142-gate.sh                           # Jira issue sync (task 142)
 ./scripts/143-gate.sh                           # auto-archive on issue close (task 143)
+./scripts/169-gate.sh                           # a chat's diff and its per-hunk review (task 169)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 VINCENT_GATE_BIN=/some/dir ./scripts/m1-gate.sh # copy prebuilt vincent/fakeagent/fakegh/fakejira from there instead of building
 ```
 
-All twenty-six of those run in `ci.yml`'s `gate-group` job on all three platforms:
+All twenty-seven of those run in `ci.yml`'s `gate-group` job on all three platforms:
 four groups, balanced by measured Windows time, each gate one named step that
 runs in exactly one group (`if: contains(matrix.groups, N)`). Linux and
 Windows run the four as four jobs; macOS runs them as two, `1+2` and `3+4`
@@ -226,7 +227,7 @@ through `gate_build` / `gate_build_as` (which copy from `VINCENT_GATE_BIN`,
 built once per CI job, when it is set), and its wait loops sleep `$GATE_POLL`
 for `$(gate_ticks SECS)` iterations so the budget stays written in seconds.
 Deliberate delays and workflow `run:` bodies keep their plain `sleep N`. `m12`
-is the twenty-seventh and the exception: it needs a real container runtime, so it runs
+is the twenty-eighth and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
 why) on the other two — but for two different reasons, and only one of them is
 "no docker". The macOS runner has no daemon. The **Windows runner does**, in
@@ -383,6 +384,7 @@ is a correctness bug, not a style issue:
 | `internal/nerdfont` | Installs the Nerd Font behind `tui.icons: nerd` (task 151), per user on macOS and Linux: the release and every face pinned by SHA-256, those hashes deciding what uninstall may remove, and advice read from the terminal's environment. Runs in the client, never the daemon. A leaf: stdlib only |
 | `internal/pathx` | The one directory comparison (task 132.3): `SameDir` and by-component `Contains`, lexical after `Clean`, case-folded on Windows and macOS, then symlink-resolved. `worktree` and `api` delegate to it, and the TUI matches its working directory with it without importing a git-running package. A leaf |
 | `internal/fileswap` | The one atomic replacement (#969, §12.3): `Replace` does the chmod and rename that complete a temp-file write as one step, and on Windows retries a contended error (sharing or lock violation, access denied) with backoff for at most 2 s, because the daemon's own reloads hold the target open. `workflow.WriteFile` and `config.WriteFile` (hence the trigger writer) both use it, and its own `WriteFile` (a temp file beside the target, then `Replace`) is how `vincent chat export -o` and the TUI's export form write. A leaf: stdlib and `golang.org/x/sys/windows` only |
+| `internal/chatnote` | The note a rejected hunk leaves at the top of a chat's draft (task 169 decision 8, §5.5): the heading, a hunk's line, and `Add`, the one insert the daemon runs on its stored draft and a client runs on a composer text the daemon has not seen. A leaf: stdlib only |
 | `internal/chatexport` | A chat as one document (task 159, §5.5): the `Export` model and its Markdown, self-contained HTML (goldmark, raw HTML disabled) and JSON renderings, the normalized-transcript tool reader, and `ToolSummary`, the one definition of a tool call's one-line form. The API fills the model and serves it at `GET /v1/chats/{id}/export`; clients only write the bytes. Imports no internal package |
 | `internal/reasons` | The plain-language catalogue of task and step reasons (task 127, §18): a title, a meaning, the §6 actions and a docs anchor for each `block_reason`/`failure_reason`/`skip_reason`/`queued_reason`. A leaf that spells the strings out; tests hold it to every `Reason*` constant and to `docs/reference/task-lifecycle.md`'s tables |
 | `internal/issuestate` | The issue lifecycle of §5.6 (task 130): `open`/`closed`, close reasons, and which actor (`human`, `agent`, `sync`) may take which action. Pure and stdlib-only, a third vocabulary beside `taskstate` and `chatstate`; the store consults it inside the transaction that changes an issue's state |

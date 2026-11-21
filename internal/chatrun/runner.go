@@ -192,6 +192,14 @@ type Runner struct {
 	// that has not yet reached track (task 119).
 	turns map[int64]*turnCtl
 
+	// starts serializes, per chat, the two places a turn is accepted
+	// (SubmitWith and a queue resume) with WhileNoTurn (task 169 decision 7).
+	// One lock per chat, made on first use and dropped with its last holder
+	// or waiter, under mu: WhileNoTurn holds its chat's for a whole reject —
+	// a snapshot of the worktree, a diff and an apply — and that must never
+	// delay another chat's send, as a shared stripe did (review F7).
+	starts map[int64]*startGate
+
 	// beforeCheckpoint is a test seam, nil in production: it runs on a
 	// chat's actor goroutine as a turn's checkpoint starts, with the turn's
 	// context, so a test can hold the turn in that window (review F3).
@@ -284,6 +292,9 @@ func (r *Runner) Submit(
 func (r *Runner) SubmitWith(
 	ctx context.Context, chatID int64, prompt string, ov store.TurnSettings,
 ) (*store.ChatTurn, *store.ChatQueuedMessage, error) {
+	// Held from the read that finds the chat idle to launch, so WhileNoTurn
+	// never runs between the two (task 169 decision 7).
+	defer r.lockStart(chatID)()
 	chat, err := r.deps.Store.GetChat(ctx, chatID)
 	if err != nil {
 		return nil, nil, err
@@ -368,6 +379,7 @@ func (r *Runner) ResumeQueue(ctx context.Context, chatID int64) (*store.ChatTurn
 // means to start a turn, and has the store lift the pause. started reports
 // whether it asked the store to start one.
 func (r *Runner) resumeQueueOnce(ctx context.Context, chatID int64) (turn *store.ChatTurn, started bool, err error) {
+	defer r.lockStart(chatID)()
 	chat, err := r.deps.Store.GetChat(ctx, chatID)
 	if err != nil {
 		return nil, false, err

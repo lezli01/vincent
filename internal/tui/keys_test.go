@@ -60,6 +60,7 @@ var reboundKeys = map[string]string{
 	// stay off every key the composer types.
 	"compact":     "alt+j",
 	"export_chat": "alt+x",
+	"chat_diff":   "alt+z",
 }
 
 // withKeymap installs overrides for one test and restores the defaults after.

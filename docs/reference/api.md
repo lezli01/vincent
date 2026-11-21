@@ -3253,6 +3253,12 @@ POST   /v1/chats/{id}/expand          what a draft's #issue-N / #task-N / #pr-N 
                                       mentions would expand into — see Mentions
 GET    /v1/chats/{id}/export?format=&diff=
                                       the chat as Markdown, HTML or JSON — see Exporting
+GET    /v1/chats/{id}/diff?scope=     the chat's diff, file by file and hunk by hunk — see
+                                      Diff and hunk review
+GET    /v1/chats/{id}/diff/stat       the base scope's file and line totals
+POST   /v1/chats/{id}/diff/reject     { scope?, path, hunk } — revert one hunk in the working tree
+POST   /v1/chats/{id}/diff/accept     { scope?, path, hunk } — mark one hunk accepted
+POST   /v1/chats/{id}/diff/unaccept   { path, hunk } — remove the mark
 ```
 
 **Search** (task 160). `GET /v1/chats/{id}/search?q=needle` scans every turn
@@ -3939,6 +3945,95 @@ Every state exports, archived, handed off and closed included. The route
 touches no row and holds no `max_parallel_chats` slot. A bad `format` or `diff`
 is `400 validation_failed`, checked before the chat is looked up; an unknown
 chat is `404`.
+
+### Diff and hunk review
+
+```
+GET  /v1/chats/{id}/diff?scope=base|turn
+GET  /v1/chats/{id}/diff/stat
+POST /v1/chats/{id}/diff/reject     { "scope": "base", "path": "a/b.go", "hunk": "<hash>" }
+POST /v1/chats/{id}/diff/accept     { "scope": "base", "path": "a/b.go", "hunk": "<hash>" }
+POST /v1/chats/{id}/diff/unaccept   { "path": "a/b.go", "hunk": "<hash>" }
+```
+
+A chat's diff is what the directory it works in holds — its own worktree, the
+linked task's, or the issue's — against where a scope starts. It is computed
+tree to tree from a snapshot of the working tree, so, unlike
+`GET /v1/tasks/{id}/diff` and the export's `diff=true`, it **includes
+untracked files**; ignored files stay out. The snapshot touches neither the
+index nor HEAD and keeps no commit.
+
+| `scope` | Diffs from |
+|---|---|
+| `base` (the default) | the merge-base of the directory's HEAD with the chat's recorded base — a linked chat uses its task's |
+| `turn` | the checkpoint taken before the chat's latest turn's agent started |
+
+```json
+{ "scope": "base", "from": "<sha diffed from>", "added": 7, "removed": 2,
+  "files": [
+    { "path": "internal/api/server.go", "old_path": "", "status": "modified",
+      "binary": false, "rejectable": true, "not_rejectable": "",
+      "added": 5, "removed": 2,
+      "hunks": [
+        { "hash": "<64 hex>", "header": "@@ -12,6 +12,9 @@ func route()",
+          "body": " ctx\n-old\n+new", "added": 5, "removed": 2, "accepted": false } ] } ] }
+```
+
+`status` is `added`, `deleted`, `modified` or `renamed`; `old_path` is set only
+for a rename, and paths are `/`-separated on every OS. A hunk's `body` is its
+lines after the header, each with its ` `, `+`, `-` or `\` prefix, joined by
+`\n` with no trailing newline and any `\r` kept. Its `hash` identifies it by
+**content** — the path and the lines, not the line numbers — so it is stable
+across a restart and across a reject of another hunk above it, and changes
+when the hunk's content does. `rejectable` is `false` for a binary file, a
+rename, a mode-only change, a nested git repository (a directory with its
+own `.git`, which git records as one commit) and an empty file (zero bytes,
+added or deleted, so it has no hunk), which are listed with no per-hunk
+reject; `not_rejectable` then says which — `binary`, `renamed`, `mode_only`,
+`gitlink` or `empty` — and is `""` for a rejectable file.
+`accepted` is the review mark below.
+
+`GET …/diff/stat` answers `{ "files": N, "added": N, "removed": N }` for the
+base scope without building the hunks.
+
+**Reject** generates the scope's diff again, finds the hunk by `path` and
+`hunk` (the full hash), and reverse-applies it with `git apply -R` to the
+working tree only — never the index, HEAD or history. It then prepends a note
+to the chat's stored [draft](#drafts-and-prompt-history), in the same
+transaction that drops the hunk's accepted mark, and publishes
+`chat.draft_changed`:
+
+```text
+The user reverted these hunks; do not reapply them:
+- internal/api/server.go @@ -12,6 +12,9 @@ func route()
+```
+
+A draft that still starts with that block gets the new line appended to it;
+any other draft gets a new block prepended. The answer is
+`200 { "draft": "…", "note_added": true, "note": "- path @@ … @@", "warning": "" }`. A note that would
+push the draft past its 64 KiB cap is not written: the hunk is still reverted,
+`note_added` is `false`, `note` is `""` and `warning` says so. `note` is the
+line that was added: a client holding draft text the daemon has not stored
+adds the same line to its own text rather than overwrite the daemon's draft
+without it.
+
+**Accept** records a mark keyed by chat, path and hunk hash and answers `204`;
+nothing in git changes. The hunk must be in the named scope's current diff.
+**Unaccept** removes the mark, reads no diff, and answers `204` whether or not
+the mark existed. Marks are deleted with the chat.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `validation_failed` | An unknown `scope`, or a missing `path` or `hunk` |
+| `404` | `not_found` | No such chat |
+| `409` | `chat_diff_unavailable` | No diff to give: the chat has no directory left (handed off, worktree removed), records no base, or `scope=turn` with no turn, no checkpoint on the latest turn, or a checkpoint that no longer exists. The message is the reason |
+| `409` | `chat_turn_live` | Reject or accept while the chat is `running`, `awaiting_input`, or draining its queue. Reads are never refused for this |
+| `409` | `chat_hunk_stale` | The hash is not in the scope's current diff — read the diff again |
+| `409` | `chat_hunk_conflict` | git would not reverse-apply the hunk; the working tree is unchanged |
+| `409` | `chat_hunk_not_rejectable` | Reject on a file whose `not_rejectable` is set: a binary file, a rename, a mode-only change, a nested git repository or an empty file |
+| `409` | `invalid_state` | Reject on a chat that has ended (`details.action: "reject"`) |
+
+None of the five routes is an MCP tool.
 
 ### Sending a turn
 

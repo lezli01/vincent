@@ -215,6 +215,13 @@
 //	                      append a line
 //	                      to this worktree-relative tracked file, so gate
 //	                      runs produce a non-empty diff
+//	FAKEAGENT_EDIT_LINES  with FAKEAGENT_EDIT_FILE: instead of appending,
+//	                      replace these comma-separated 1-based lines of
+//	                      the file with that same line, each keeping its
+//	                      own line ending — "3,25" on a thirty-line file is
+//	                      one edit git cuts into two hunks, which is what a
+//	                      per-hunk review needs to be judged on (task 169).
+//	                      A number past the file's end is ignored
 //	FAKEAGENT_WRITE_FILE  wherever FAKEAGENT_EDIT_FILE is honoured: overwrite
 //	                      this worktree-relative file with
 //	                      FAKEAGENT_WRITE_CONTENT, e.g. to resolve a merge
@@ -1238,9 +1245,14 @@ func writeFile(name, content string) {
 }
 
 // editFile appends to a tracked file in the cwd (the worktree), giving gate
-// runs a diff to assert on. Refuses path escapes.
+// runs a diff to assert on — or, with FAKEAGENT_EDIT_LINES, rewrites the
+// lines it names instead. Refuses path escapes.
 func editFile(name string) {
 	if strings.Contains(name, "..") {
+		return
+	}
+	if lines := os.Getenv("FAKEAGENT_EDIT_LINES"); lines != "" {
+		editLines(name, lines)
 		return
 	}
 	f, err := os.OpenFile(name, os.O_APPEND|os.O_WRONLY, 0o644)
@@ -1248,7 +1260,34 @@ func editFile(name string) {
 		return
 	}
 	defer func() { _ = f.Close() }()
-	_, _ = f.WriteString("fakeagent was here\n")
+	_, _ = f.WriteString(editLine + "\n")
+}
+
+// editLine is the line both shapes of FAKEAGENT_EDIT_FILE leave behind.
+const editLine = "fakeagent was here"
+
+// editLines replaces the 1-based lines spec names ("3,25") with editLine.
+// Edits far enough apart are separate hunks of one file's diff, which an
+// append can never produce (task 169: a hunk is rejected on its own, so a
+// gate needs a file with two). Each line keeps its own ending: on Windows git
+// may have checked the file out CRLF, and a line rewritten bare-LF there
+// would make the edit a line-ending change as well. An unparseable or
+// out-of-range number is skipped, under delayDuration's fail-open rule.
+func editLines(name, spec string) {
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	for field := range strings.SplitSeq(spec, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(field))
+		if err != nil || n < 1 || n > len(lines) || lines[n-1] == "" {
+			continue
+		}
+		body := strings.TrimRight(lines[n-1], "\r\n")
+		lines[n-1] = editLine + lines[n-1][len(body):]
+	}
+	_ = os.WriteFile(name, []byte(strings.Join(lines, "")), 0o644)
 }
 
 // spawnChild starts a silently-sleeping copy of this binary and reports its

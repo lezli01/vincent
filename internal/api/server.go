@@ -180,6 +180,12 @@ type AgentStatus struct {
 
 // Server is the vincent HTTP API server.
 type Server struct {
+	// beforeChatHunkApply is a test seam, nil in production: it runs in a
+	// reject, with the request's context, once the hunk is found and before
+	// it is reverse-applied, so a test can have the client leave exactly
+	// there (review F6 of #1037).
+	beforeChatHunkApply func(ctx context.Context)
+
 	deps    Deps
 	handler http.Handler
 	// inner is the route mux below recover → log → auth: what an in-process
@@ -473,6 +479,11 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodGet, "/v1/chats/{id}/files", s.handleChatFiles)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/expand", s.handleChatExpand)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/export", s.handleChatExport)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/diff", s.handleChatDiff)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/diff/stat", s.handleChatDiffStat)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/diff/reject", s.handleChatDiffReject)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/diff/accept", s.handleChatDiffAccept)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/diff/unaccept", s.handleChatDiffUnaccept)
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/events", s.handleChatEvents)

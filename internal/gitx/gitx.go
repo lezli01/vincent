@@ -104,6 +104,13 @@ func (g *Git) run(ctx context.Context, dir string, env []string, args ...string)
 }
 
 func (g *Git) runRaw(ctx context.Context, dir string, env []string, args ...string) ([]byte, error) {
+	return g.runInput(ctx, dir, env, nil, args...)
+}
+
+// runInput is runRaw with stdin: a non-nil input is what git reads, which is
+// how ReverseHunk hands `git apply` a patch without a file of its own
+// (task 169.1). nil leaves stdin closed, as before.
+func (g *Git) runInput(ctx context.Context, dir string, env []string, input []byte, args ...string) ([]byte, error) {
 	// G204: g.path is "git" (or a test's stand-in) and args is an argument
 	// slice assembled by callers in this repository — no shell, so no quoting
 	// or metacharacter question arises for the branch and path values in it.
@@ -112,6 +119,9 @@ func (g *Git) runRaw(ctx context.Context, dir string, env []string, args ...stri
 	cmd.Dir = dir
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
+	}
+	if input != nil {
+		cmd.Stdin = bytes.NewReader(input)
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

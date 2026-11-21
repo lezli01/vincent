@@ -141,8 +141,11 @@ func TestTabCycleWalksTheStripInBothShapes(t *testing.T) {
 
 	v := tabbedTaskFixture(t, taskTabSteps)
 	walk(t, v, "tab", forward)
+	// `]` is tab's alias up to the Diff tab, where it walks the hunks
+	// instead (task 169 decision 4) and so goes no further.
 	v = tabbedTaskFixture(t, taskTabSteps)
-	walk(t, v, "]", forward)
+	walk(t, v, "]", forward[:2])
+	walk(t, v, "]", []taskViewTab{taskTabDiff})
 
 	linked := []taskViewTab{taskTabOutput, taskTabDiff, taskTabStepDetails, taskTabWorkflow, taskTabPull, taskTabOverview, taskTabSteps}
 	v = tabbedTaskFixture(t, taskTabSteps)

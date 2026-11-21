@@ -193,6 +193,10 @@ const (
 	// `n` would be typed there, and is the next match here.
 	ctxChatConversation bindingContext = "chat conversation"
 	ctxChatFind         bindingContext = "chat find"
+	// ctxChatDiff is the chat's diff pane holding the keyboard (task 169
+	// decision 3). Its own context for the conversation focus's reason: `x`
+	// would be typed in the composer, and rejects a hunk here.
+	ctxChatDiff bindingContext = "chat diff"
 	// ctxProjectPicker is the root's project picker (task 132.4). Its own
 	// context for the reason every popup has one: it owns the keyboard while
 	// it is up, and its enter switches the project rather than opening a row.
@@ -609,7 +613,10 @@ var bindings = []binding{
 	// things on the two tabs and a single row could only describe one of them.
 	// `]` is repeated here because the way back must stay on screen.
 	{key: "tab", label: "move between the task's tabs in the order the strip draws them (shift+tab goes back)", scope: scopePanel, context: ctxDiff, hint: "tab tabs", priority: 1},
-	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxDiff, priority: 2},
+	// Task 169 decision 4: on the workspace's Diff tab `]`/`[` walk the hunks
+	// rather than the tabs. The board's preview shares this context and keeps
+	// them as its Output/Diff toggle (detail.go), which the label says.
+	{key: "]", label: "move to the next hunk ([ the previous), opening the file it is in — tab and shift+tab still switch tabs; in the board's preview ] and [ switch back to Output", scope: scopePanel, context: ctxDiff, hint: "]/[ hunk", priority: 2},
 	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxDiff, hint: "↑/↓ files", priority: 2},
 	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxDiff, hint: "enter fold", priority: 3},
 	{key: "O", label: "expand every file", scope: scopePanel, context: ctxDiff, hint: "O/C fold all", priority: 4},
@@ -812,6 +819,22 @@ var bindings = []binding{
 
 	// The conversation with the keyboard (task 160 decision 1). Single
 	// letters here, because nothing is typed: the draft waits untouched.
+	// The chat's diff pane (task 169 decision 3). chat_diff is offered on the
+	// composer's surface, which is where it is pressed from; the rest are the
+	// pane's own fixed keys.
+	{op: keymap.ChatDiff, key: "alt+d", label: "show the chat's diff in place of the conversation, to review it hunk by hunk (esc comes back, the draft untouched)", scope: scopePanel, context: ctxChat, hint: "alt+d diff", priority: 21},
+	{key: "]", label: "move to the next hunk ([ the previous), opening the file it is in", scope: scopePanel, context: ctxChatDiff, hint: "]/[ hunk", priority: 1},
+	{key: "x", label: "reject the selected hunk: it is reverted in the chat's directory and a note for the agent opens your draft", scope: scopePanel, context: ctxChatDiff, hint: "x reject", priority: 2},
+	{key: "a", label: "accept the selected hunk — a review mark only; on an accepted hunk it clears the mark", scope: scopePanel, context: ctxChatDiff, hint: "a accept", priority: 3},
+	{key: "s", label: "switch between the changes since the base and since the last turn", scope: scopePanel, context: ctxChatDiff, hint: "s scope", priority: 4},
+	{key: "r", label: "read the diff again", scope: scopePanel, context: ctxChatDiff, hint: "r reload", priority: 5},
+	{key: "down", label: "move between the files (↑/↓); the pane scrolls to keep the file in view", scope: scopePanel, context: ctxChatDiff, hint: "↑/↓ files", priority: 6},
+	{key: "enter", label: "expand or collapse the file under the cursor (space and →/← too)", scope: scopePanel, context: ctxChatDiff, hint: "enter fold", priority: 7},
+	{key: "O", label: "expand every file", scope: scopePanel, context: ctxChatDiff, hint: "O/C fold all", priority: 8},
+	{key: "C", label: "collapse every file", scope: scopePanel, context: ctxChatDiff, priority: 9, aliased: true},
+	{key: "pgdown", label: "page the diff (pgup/pgdown, ctrl+d/ctrl+u)", scope: scopePanel, context: ctxChatDiff, priority: 10},
+	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxChatDiff, priority: 11},
+	{key: "esc", label: "go back to the conversation and the composer, the draft untouched", scope: scopePanel, context: ctxChatDiff, hint: "esc back", priority: 12},
 	{key: "down", label: "move the line cursor (j/k and ↑/↓)", scope: scopePanel, context: ctxChatConversation, hint: "j/k move", priority: 1},
 	{key: "enter", label: "expand or fold the tool call under the cursor — it draws as at verbose, the level stays", scope: scopePanel, context: ctxChatConversation, hint: "enter expand", priority: 2},
 	{op: keymap.Filter, key: "/", label: "search the conversation again", scope: scopePanel, context: ctxChatConversation, hint: "/ search", priority: 3, term: termFilter},

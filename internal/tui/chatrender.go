@@ -110,7 +110,14 @@ func (v *chatView) conversationUnder(head []string, width, height int) string {
 	room := max(height-len(head)-len(foot), 1)
 	lines := make([]string, 0, len(head)+room+len(foot))
 	lines = append(lines, head...)
-	body := strings.Split(v.bodyView(width, room), "\n")
+	var body []string
+	if v.diff.open {
+		// The pane swap (task 169 decision 3): the diff is drawn where the
+		// conversation is, under the same head and over the same composer.
+		body = v.diffBody(width, room)
+	} else {
+		body = strings.Split(v.bodyView(width, room), "\n")
+	}
 	// Where the body is, relative to this content's origin: its first row
 	// is under head (review F2). The caller shifts it to the screen.
 	v.convHit = chatConvHit{x0: 0, x1: width, y0: len(head), rows: room, edgeY: -1}

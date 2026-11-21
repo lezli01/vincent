@@ -13,6 +13,20 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **A chat has a diff, and you can review it hunk by hunk.** `alt+d` in the
+  chat workspace (rebindable as `chat_diff`, also in the palette) swaps the
+  conversation for the diff of the chat's directory, since the chat's base or
+  — `s` — since its last turn; `esc` comes back with the draft untouched.
+  Unlike a task's diff it includes untracked files, so a file the agent
+  created shows up. `]`/`[` walk the hunks, `x` rejects one — it is reverted
+  in the working tree only, never the index or history, and a note telling
+  the agent not to reapply it is put at the top of your draft — and `a` marks
+  one accepted, a review mark the daemon keeps. Both are refused while a turn
+  is live. The Details pane gains a `changes` row with the file and line
+  counts. The same review is scriptable: `vincent chat diff`,
+  `vincent chat diff reject` and `vincent chat diff accept`, over
+  `GET /v1/chats/{id}/diff` and its `stat`, `reject`, `accept` and `unaccept`
+  routes (task 169, #1018).
 - **Every chat turn checkpoints its worktree first.** Before a turn's agent
   starts, vincent snapshots the worktree it runs in, uncommitted and untracked
   files included (ignored files are not), as
@@ -151,6 +165,11 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **On a task's Diff tab, `]` and `[` now move between hunks.** They used to
+  switch tabs there, as they still do on every other tab; `tab`/`shift+tab`
+  switch tabs from the Diff tab as before. A hunk in a folded
+  file opens it, and the selected hunk's header is marked `▶`
+  (task 169, #1018).
 - **The terminal bell rings only while the TUI's terminal is unfocused.**
   It used to ring whenever a task entered `awaiting_input`; now it rings for
   that, for a chat asking for input and for a chat turn ending, but only

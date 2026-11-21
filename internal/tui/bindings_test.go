@@ -1275,6 +1275,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("ctrl+g re-armed follow; that is alt+shift+g's since task 163")
 			}
 		},
+		"alt+d": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			if _, cmd := v.updateKey(registryKey(t, "alt+d")); cmd == nil || !v.diff.open {
+				t.Fatal("alt+d did not open the diff pane and read the diff")
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("alt+d reached the composer: %q", v.composer.Value())
+			}
+		},
 		"alt+v": func(t *testing.T) {
 			v := chatViewFixture()
 			v.client = offlineClient()
@@ -2002,13 +2012,21 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabStepDetails)
 			}
 		},
-		// The way back off the tab has to stay on screen, so `]` is a row here
-		// too — and a row is only a promise until something presses it.
+		// Task 169 decision 4: on the workspace's Diff tab `]` walks the
+		// hunks, and in the board's preview — the same context — it is
+		// still the way back to Output. The row's label promises both.
 		"]": func(t *testing.T) {
+			v := tabbedTaskFixture(t, taskTabDiff)
+			v.detail.diff.openTask(v.detail.taskID)
+			v.detail.diff.apply(diffLoadedMsg{taskID: v.detail.taskID, text: twoFileDiff})
+			v.updateKey(registryKey(t, "]"))
+			if _, ok := v.detail.diff.selectedHunk(); !ok || v.tab != taskTabDiff {
+				t.Fatalf("] on the Diff tab selected no hunk (tab %v)", v.tab)
+			}
 			d := diffTabDetail(t)
 			d.updateKey(registryKey(t, "]"))
 			if d.tab != tabOutput {
-				t.Fatal("] did not switch the diff tab back to the output")
+				t.Fatal("] did not switch the preview's diff back to the output")
 			}
 		},
 		"down": func(t *testing.T) {
@@ -3400,6 +3418,111 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 	},
+	ctxChatDiff: {
+		"]": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "]"))
+			if ref, ok := v.diff.pane.selectedHunk(); !ok || ref.id != "h1" {
+				t.Fatalf("] selected %+v", ref)
+			}
+		},
+		"x": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "]"))
+			if _, cmd := v.updateKey(registryKey(t, "x")); cmd == nil || !v.diff.busy {
+				t.Fatal("x did not send a reject")
+			}
+		},
+		"a": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "]"))
+			if _, cmd := v.updateKey(registryKey(t, "a")); cmd == nil || !v.diff.busy {
+				t.Fatal("a did not send an accept")
+			}
+		},
+		"s": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			if _, cmd := v.updateKey(registryKey(t, "s")); cmd == nil || v.diffScope() != apiclient.ChatDiffScopeTurn {
+				t.Fatalf("s left the scope at %q", v.diffScope())
+			}
+		},
+		"r": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			if _, cmd := v.updateKey(registryKey(t, "r")); cmd == nil || !v.diff.fetching {
+				t.Fatal("r did not read the diff again")
+			}
+		},
+		"down": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			before := v.diff.pane.cursorPath
+			v.updateKey(registryKey(t, "down"))
+			if v.diff.pane.cursorPath == before {
+				t.Fatalf("down did not move the file cursor (still %q)", before)
+			}
+		},
+		"enter": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "enter"))
+			if len(v.diff.pane.open) != 1 {
+				t.Fatalf("enter did not open the file under the cursor (folds %v)", v.diff.pane.open)
+			}
+		},
+		"O": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "O"))
+			if want := len(chatDiffFiles().Files); len(v.diff.pane.open) != want {
+				t.Fatalf("O expanded %d files, want all %d", len(v.diff.pane.open), want)
+			}
+		},
+		"C": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "O"))
+			v.updateKey(registryKey(t, "C"))
+			for key, open := range v.diff.pane.open {
+				if open {
+					t.Fatalf("C left %q open", key)
+				}
+			}
+		},
+		"pgdown": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			v.updateKey(registryKey(t, "alt+d"))
+			long := &apiclient.ChatDiff{Files: []apiclient.ChatDiffFile{{Path: "long.go", Rejectable: true, Added: 80, Hunks: []apiclient.ChatDiffHunk{
+				{Hash: "h", Header: "@@ -0,0 +1,80 @@", Body: strings.Repeat("+line\n", 80)},
+			}}}}
+			v.applyDiff(chatDiffMsg{chatID: v.chatID, scope: apiclient.ChatDiffScopeBase, diff: long})
+			v.updateKey(registryKey(t, "O"))
+			v.render(100, 24)
+			v.updateKey(registryKey(t, "pgdown"))
+			if v.diff.pane.vp.YOffset() == 0 {
+				t.Fatal("pgdown did not page the diff")
+			}
+		},
+		"shift+right": func(t *testing.T) {
+			v := chatViewFixture()
+			v.client = offlineClient()
+			v.updateKey(registryKey(t, "alt+d"))
+			wide := &apiclient.ChatDiff{Files: []apiclient.ChatDiffFile{{Path: "wide.go", Rejectable: true, Added: 1, Hunks: []apiclient.ChatDiffHunk{
+				{Hash: "h", Header: "@@ -0,0 +1 @@", Body: "+" + strings.Repeat("wide ", 80) + "\n"},
+			}}}}
+			v.applyDiff(chatDiffMsg{chatID: v.chatID, scope: apiclient.ChatDiffScopeBase, diff: wide})
+			v.updateKey(registryKey(t, "O"))
+			v.render(60, 24)
+			v.updateKey(registryKey(t, "shift+right"))
+			if v.diff.pane.vp.XOffset() == 0 {
+				t.Fatal("shift+right did not pan the diff")
+			}
+		},
+		"esc": func(t *testing.T) {
+			v := chatDiffFixture(t)
+			v.updateKey(registryKey(t, "esc"))
+			if v.diff.open || !v.composer.Focused() {
+				t.Fatal("esc did not give the keyboard back to the composer")
+			}
+		},
+	},
+
 	ctxChatConversation: {
 		"down": func(t *testing.T) {
 			v := convFocused(t)
@@ -3784,6 +3907,10 @@ var vocabularyExceptions = map[string]string{
 	// only ever fire where available_actions says so.
 	"action/approve/a": "§6 approve — gated on available_actions",
 	"action/skip/s":    "§6 skip — gated on available_actions",
+	// Task 169 decision 3: the chat's diff pane holds the keyboard on a
+	// surface with nothing to add and no listing to scope.
+	"panel/chat diff/a": "task 169 decision 3 — accept a hunk, where nothing is added or approved",
+	"panel/chat diff/s": "task 169 decision 3 — the diff's own scope, base or last turn, where no listing is",
 	// Task 052 decision 6: link and unlink are the two writes to vincent's own
 	// column, and they live on the one screen that can see a pull request no
 	// task claims. `l` there is not a lane, and the takeover has none.

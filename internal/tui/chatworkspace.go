@@ -77,7 +77,10 @@ type chatPreview struct {
 	// tools is the latest turns' tool activity by seq. A transcript that cannot
 	// be read, or has gone to retention, leaves its turn without check lines.
 	tools map[int][]apiclient.TranscriptRecord
-	err   string
+	// stat is the Details pane's `changes` row (task 169 decision 10), read
+	// with the preview and so once per change of the chat, never per event.
+	stat *apiclient.ChatDiffStat
+	err  string
 }
 
 // chatPreviewKey names what a read is for: a chat as of a change.
@@ -97,6 +100,9 @@ type (
 		turns   []apiclient.ChatTurn
 		err     error
 		tools   map[int][]apiclient.TranscriptRecord
+		// stat is the chat's changes since its base (task 169 decision 10),
+		// nil when the daemon has none to give.
+		stat *apiclient.ChatDiffStat
 	}
 )
 
@@ -143,6 +149,11 @@ func (v *chatsView) previewDue(key chatPreviewKey) tea.Cmd {
 		msg := chatPreviewMsg{key: key, updated: updated, chat: chat, turns: turns, err: err}
 		if err == nil {
 			msg.tools = readPreviewTools(ctx, client, key.id, turns)
+			// A chat with no directory to diff answers 409; that is a chat
+			// with no `changes` row, not a preview that failed.
+			if stat, serr := client.ChatDiffStat(ctx, key.id); serr == nil {
+				msg.stat = stat
+			}
 		}
 		return msg
 	}
@@ -179,7 +190,7 @@ func (v *chatsView) applyPreview(msg chatPreviewMsg) {
 	if v.previews == nil {
 		v.previews = map[int64]chatPreview{}
 	}
-	p := chatPreview{updated: msg.updated, tools: msg.tools}
+	p := chatPreview{updated: msg.updated, tools: msg.tools, stat: msg.stat}
 	if msg.err != nil {
 		p.err = errString(msg.err)
 		v.previews[msg.key.id] = p
@@ -247,10 +258,12 @@ func (v *chatsView) workspacePanes(width, height, top int) []string {
 	out = joinColumns(out, chatPreviewPane(c, ok, p, v.now(), width-listW-detailsW, height))
 	if detailsW > 0 {
 		var turns []apiclient.ChatTurn
+		// No key on the board: the diff opens from the conversation.
+		var changes chatChanges
 		if p != nil {
-			turns = p.turns
+			turns, changes.stat = p.turns, p.stat
 		}
-		out = joinColumns(out, chatDetailsPane(c, ok, turns, v.now(), detailsW, height))
+		out = joinColumns(out, chatDetailsPane(c, ok, turns, changes, v.now(), detailsW, height))
 	}
 	return out
 }
@@ -606,7 +619,11 @@ func chatAskingTitle(agent string) string {
 }
 
 // chatDetailsPane is what a chat is running with and what it has cost.
-func chatDetailsPane(c apiclient.Chat, ok bool, turns []apiclient.ChatTurn, now time.Time, w, h int) []string {
+//
+// The `changes` row is back (task 169 decision 10): task 150 decision 17
+// dropped it because nothing could say what a chat had changed, and the chat
+// diff routes now can.
+func chatDetailsPane(c apiclient.Chat, ok bool, turns []apiclient.ChatTurn, changes chatChanges, now time.Time, w, h int) []string {
 	title := styleTitle.Render("Details")
 	if !ok {
 		return drawBox(title, "", nil, w, h, edgesRounded, styleDim)
@@ -630,6 +647,7 @@ func chatDetailsPane(c apiclient.Chat, ok bool, turns []apiclient.ChatTurn, now 
 			body = append(body, row("base", c.BaseBranch))
 		}
 	}
+	body = append(body, changes.rows(row)...)
 	body = append(body, "", styleTitle.Render(ic("◷ Activity")), row("turns", strconv.Itoa(len(turns))))
 	tokens, cost, priced := chatUsage(turns)
 	if tokens > 0 {
@@ -801,7 +819,7 @@ func (v *chatView) renderWorkspace(width, height int) string {
 		if ok {
 			c = *v.chat
 		}
-		out = joinColumns(out, chatDetailsPane(c, ok, v.turns, v.now(), detailsW, height))
+		out = joinColumns(out, chatDetailsPane(c, ok, v.turns, v.changes(), v.now(), detailsW, height))
 	}
 	return strings.Join(append(filter, out...), "\n")
 }
@@ -813,7 +831,8 @@ func (v *chatView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
 	if v.form != nil {
 		return nil
 	}
-	if v.updateConvClick(msg) {
+	// The conversation's click targets are not on screen under the diff.
+	if !v.diff.open && v.updateConvClick(msg) {
 		return v.fetchVisibleTranscripts()
 	}
 	if !v.sideShown(v.termW) {
