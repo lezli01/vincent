@@ -3470,8 +3470,8 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"O": func(t *testing.T) {
 			v := chatDiffFixture(t)
 			v.updateKey(registryKey(t, "O"))
-			if len(v.diff.pane.open) != 3 {
-				t.Fatalf("O expanded %d files, want all three", len(v.diff.pane.open))
+			if want := len(chatDiffFiles().Files); len(v.diff.pane.open) != want {
+				t.Fatalf("O expanded %d files, want all %d", len(v.diff.pane.open), want)
 			}
 		},
 		"C": func(t *testing.T) {
