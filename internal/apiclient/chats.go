@@ -86,6 +86,16 @@ type Chat struct {
 	// only on a create's answer, and nil when no message was given or the
 	// send was refused — the chat exists either way, and Warnings says why.
 	FirstTurn *ChatTurn `json:"first_turn,omitempty"`
+	// RewoundStates are the states earlier code rewinds saved, oldest first
+	// (task 167); GetChat only.
+	RewoundStates []ChatRewoundState `json:"rewound_states,omitempty"`
+	// ForkedFrom is set on a chat a fork created.
+	ForkedFrom *ChatForkedFrom `json:"forked_from,omitempty"`
+	// ResumePending says how the chat's next turn will pick up after a
+	// conversation rewind: "resumed" (from a point in the agent's session) or
+	// "seeded" (a fresh session given the earlier turns). "" when no rewind
+	// is pending.
+	ResumePending string `json:"resume_pending,omitempty"`
 }
 
 // ChatSkills is GET /v1/chats/{id}/skills: the skills the chat's agent CLI
@@ -229,6 +239,61 @@ type ChatTurn struct {
 	// MentionContext is what the turn's mentions expanded into when it
 	// started (task 166), "" when nothing did. Prompt is the typed text.
 	MentionContext string `json:"mention_context,omitempty"`
+	// CheckpointSHA is the snapshot of the worktree taken before the turn
+	// ran (task 167), HeadBefore and HeadAfter the branch tip on either side
+	// of it. All empty on a turn from before checkpoints, or one whose
+	// checkpoint failed — such a turn is never a rewind or fork target.
+	CheckpointSHA string `json:"checkpoint_sha,omitempty"`
+	HeadBefore    string `json:"head_before,omitempty"`
+	HeadAfter     string `json:"head_after,omitempty"`
+	// RewoundAt is set on a turn a conversation rewind left behind (task 167
+	// decision 9), and RewindID groups the turns one rewind marked. The
+	// daemon serves every turn; a client hides these by default.
+	RewoundAt *time.Time `json:"rewound_at,omitempty"`
+	RewindID  string     `json:"rewind_id,omitempty"`
+	// Seeded says the turn started a fresh session seeded with the earlier
+	// turns rather than resuming one (task 167 decision 1): every surface
+	// says "seeded, not resumed", because it never is.
+	Seeded bool `json:"seeded"`
+	// ResumeAnchor is the point in the agent's session a later turn can
+	// resume from, "" when the adapter records none.
+	ResumeAnchor string `json:"resume_anchor,omitempty"`
+	// Rewind says what may be done from this turn, nil when the daemon did
+	// not say.
+	Rewind *ChatTurnRewind `json:"rewind,omitempty"`
+}
+
+// ChatTurnRewind is what a rewind or fork to one turn would be allowed to do
+// (task 167): each of Code, Conversation and Fork is "" when allowed and
+// otherwise the refusal's reason — chat_checkpoint_unavailable,
+// chat_rewind_foreign_commits, chat_turn_live, chat_turn_rewound or
+// chat_terminal — the same code the endpoint's 409 would carry, so a client
+// can grey an option out with the reason it would have been refused.
+// ConversationSeeded says a conversation rewind here would be seeded, not
+// resumed.
+type ChatTurnRewind struct {
+	Code               string `json:"code"`
+	Conversation       string `json:"conversation"`
+	Fork               string `json:"fork"`
+	ConversationSeeded bool   `json:"conversation_seeded"`
+}
+
+// ChatRewoundState is one pre-rewind state a code rewind saved (task 167
+// decision 2): the k-th `rewound-<k>` ref and its commit, which a forward
+// rewind (`RewindRequest.Rewound`) restores. Blocked is "" when that forward
+// rewind is allowed, else its refusal reason.
+type ChatRewoundState struct {
+	K       int    `json:"k"`
+	Ref     string `json:"ref"`
+	SHA     string `json:"sha"`
+	Blocked string `json:"blocked"`
+}
+
+// ChatForkedFrom names the chat and turn a fork was cut from (task 167
+// decision 11).
+type ChatForkedFrom struct {
+	ChatID int64 `json:"chat_id"`
+	Seq    int   `json:"seq"`
 }
 
 // CreateChatRequest is the POST /v1/chats body. An omitted agent resolves
@@ -694,6 +759,9 @@ func (c *Client) ChatTurnTranscriptRaw(
 type ChatExportOptions struct {
 	Format   string
 	WithDiff bool
+	// IncludeRewound keeps the turns a rewind left behind (task 167
+	// decision 9); the daemon leaves them out by default.
+	IncludeRewound bool
 }
 
 // ChatExport is one rendered export: its bytes, its Content-Type, and the
@@ -718,6 +786,9 @@ func (c *Client) ChatExport(ctx context.Context, chatID int64, opts ChatExportOp
 	}
 	if opts.WithDiff {
 		q.Set("diff", "true")
+	}
+	if opts.IncludeRewound {
+		q.Set("include_rewound", "true")
 	}
 	path := "/v1/chats/" + strconv.FormatInt(chatID, 10) + "/export"
 	if len(q) > 0 {

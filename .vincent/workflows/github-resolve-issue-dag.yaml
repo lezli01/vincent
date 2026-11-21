@@ -1614,6 +1614,18 @@ steps:
         carries a committed failing regression test until the unit that fixes
         it lands, so `go run mage.go test` is red by construction{{ end }}. The suite is run
         after the join, by a later step.
+        {{- if ne (index .Steps "classify").ExitCode 2 }}
+        **A check must not depend on a page the unit cannot edit.** The
+        docs-claims tests (`func TestDocsClaims*`, in `internal/cli`,
+        `internal/config`, `internal/workflow`, `internal/tui` and others) fail
+        the moment a command, flag, config key, key binding or reason is added
+        and its reference page under `docs/` does not name it yet — and no unit
+        here may edit `docs/`. When a unit adds any such surface, its check
+        skips them: `go test ./internal/cli/... -skip 'TestDocsClaims'`. The
+        page is updated by the integration step after the join, whose check
+        runs the whole suite, docs-claims tests included; skipping them here
+        defers that proof, it does not drop it.
+        {{- end }}
       - `brief` — everything the agent delivering this unit needs, as prose.
         It will not see `brief.md`, it will not see the other units, and it
         will not see you. Restate the part of the agreed scope this unit

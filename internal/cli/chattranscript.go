@@ -21,9 +21,10 @@ import (
 // renderer would be a second way for the two to read differently.
 func newChatTranscriptCmd() *cobra.Command {
 	var (
-		turn   int
-		follow bool
-		raw    bool
+		turn        int
+		follow      bool
+		raw         bool
+		withRewound bool
 	)
 	cmd := &cobra.Command{
 		Use:   "transcript <chat-id>",
@@ -36,7 +37,9 @@ func newChatTranscriptCmd() *cobra.Command {
 			"including its `vincent.*` annotations; --raw streams the agent's untouched " +
 			"dialect, byte for byte. Everything a human reads goes to stdout. --follow " +
 			"keeps printing until the turn ends — a turn waiting on an answer is still " +
-			"running — and does not wait for a later send.",
+			"running — and does not wait for a later send.\n\n" +
+			"Turns a rewind left behind are skipped by the default selection and refused by " +
+			"--turn; --rewound allows them, marked. A seeded turn is marked \"" + seededNote + "\".",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
@@ -49,10 +52,19 @@ func newChatTranscriptCmd() *cobra.Command {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
 				}
+				turns, _ = visibleTurns(turns, withRewound)
 				t, err := selectChatTurn(turns, id, turn)
 				if err != nil {
+					if turn > 0 && !withRewound {
+						err = fmt.Errorf("%w (a rewound turn needs --rewound)", err)
+					}
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", err)
 					return exitError{code: 1}
+				}
+				// The marks go to stderr, beside the "no transcript" note:
+				// stdout is the transcript alone, so --json stays parseable.
+				if t.RewoundAt != nil || t.Seeded {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "turn %d (%s)\n", t.Seq, turnMarks(t))
 				}
 				// Decided from the turn row rather than from the endpoint's
 				// 404, which says the same thing for a turn that never opened
@@ -91,6 +103,8 @@ func newChatTranscriptCmd() *cobra.Command {
 		"turn number to print, as `chat show` numbers it (default: the running turn, else the newest)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false,
 		"Keep printing as the turn writes, until it is no longer running")
+	cmd.Flags().BoolVar(&withRewound, "rewound", false,
+		"Allow a turn a rewind left behind")
 	cmd.Flags().BoolVar(&raw, "raw", false,
 		"Emit the agent's own JSONL, byte for byte, instead of rendering it")
 	jsonFlag(cmd)

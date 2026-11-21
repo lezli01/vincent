@@ -32,6 +32,7 @@ silently drops.
 | Resumes its own session ([chats](../reference/cli.md#vincent-chat)) | ✅ `--resume` | ✅ `exec resume` | ✅ `--resume` | ✅ `--resume=<id>` |
 | Changes model or effort on a resumed chat | ✅ | **—** (its stream never names the model) | **—** (not yet captured) | **—** (not yet captured) |
 | Reports a session it can no longer resume | ✅ `session_lost` | ✅ `session_lost` | **—** (it adopts the id and answers) | ✅ `session_lost` |
+| Resumes a [rewound](../reference/cli.md#vincent-chat-rewind) chat at the turn it kept | ✅ `--resume-session-at`, when the installed binary has it | **—** (seeded, not resumed) | **—** (seeded, not resumed) | **—** (seeded, not resumed) |
 | Lists its skills in a chat | ✅ from 2.1.277 | ✅ `skills/list` | **—** (its `-p` mode has no listing) | **—** (JSON mode reports no skill load) |
 | Invokes a skill from a chat message | ✅ `/name` at the **start** | ✅ `$name` anywhere | ✅ `/name` anywhere | **—** (`/name` reaches the model as prose) |
 | Transcript shows a skill you invoked | ✅ in chats | **—** | **—** | **—** |
@@ -175,6 +176,14 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   `--effort` — pinned by a capture against 2.1.329 — so claude is the one
   adapter whose chat can change its model or effort after the first turn
   (`supports_resume_settings_change` in `vincent agents --json`).
+- **Resumes a session at an earlier message**, for a chat that was
+  [rewound or forked](../reference/cli.md#vincent-chat-rewind): the next turn
+  runs `--resume <session_id> --resume-session-at <message> --fork-session`, so
+  it sees exactly the turns the rewind kept, under a new session id. The flag
+  is undocumented, so vincent detects it by probing the installed binary rather
+  than reading a version table; a claude without it falls back as codex, cursor
+  and copilot always do — the turn starts a fresh session seeded with a summary
+  of the kept turns, and is marked `seeded, not resumed`.
 - **Carries [vincent's own MCP server](mcp.md#your-own-steps-get-this-too)** on
   `--mcp-config` with an inline config, alongside `--strict-mcp-config` so your
   own MCP servers never leak into a step. Per run: nothing global is written.

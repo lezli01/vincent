@@ -831,6 +831,7 @@ var bindings = []binding{
 	// before it falls back to text.
 	{op: keymap.ShellCommand, key: "alt+x", label: "run a shell command in the chat's directory — its output shows as a card you can attach to the next prompt", scope: scopePanel, context: ctxChat, hint: "alt+x shell", priority: 21},
 	{key: "ctrl+v", label: "paste: a clipboard image goes up to the chat and an [image N] chip into the message; anything else pastes as text", scope: scopePanel, context: ctxChat, priority: 22, noPalette: true},
+	{op: keymap.Rewind, key: "alt+z", label: "rewind… — the chat's code, conversation or both to before a turn, picked from a list (tab picks which)", scope: scopePanel, context: ctxChat, hint: "alt+z rewind", priority: 21},
 	{op: keymap.ChatDiff, key: "alt+d", label: "show the chat's diff in place of the conversation, to review it hunk by hunk (esc comes back, the draft untouched)", scope: scopePanel, context: ctxChat, hint: "alt+d diff", priority: 21},
 	{key: "]", label: "move to the next hunk ([ the previous), opening the file it is in", scope: scopePanel, context: ctxChatDiff, hint: "]/[ hunk", priority: 1},
 	{key: "x", label: "reject the selected hunk: it is reverted in the chat's directory and a note for the agent opens your draft", scope: scopePanel, context: ctxChatDiff, hint: "x reject", priority: 2},

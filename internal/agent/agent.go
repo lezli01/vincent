@@ -93,6 +93,15 @@ var ErrMCPUnsupported = errors.New("this agent CLI cannot be given an MCP server
 // belt-and-braces half, for a caller that built a RunSpec by hand.
 var ErrResumeUnsupported = errors.New("this agent CLI cannot resume a previous session")
 
+// ErrResumeAtUnsupported is returned by Start when RunSpec.ResumeAt is set
+// and the adapter cannot resume its session at a point inside it (task 167
+// decision A). It is the ErrResumeUnsupported shape for the same reason: a
+// rewound chat whose next turn quietly resumed the *whole* session would
+// answer from turns the human just rewound away, and nothing on the screen
+// would say so. The caller's answer is the seeded fallback — Preamble with
+// no ResumeSessionID — never a plain resume.
+var ErrResumeAtUnsupported = errors.New("this agent CLI cannot resume a session at an earlier message")
+
 // Resumer is the optional capability an adapter implements when its CLI can
 // resume its own prior session (spec §9.1, task 063 / §7.3 amended).
 //
@@ -149,6 +158,25 @@ type ResumeSettingsChanger interface {
 func CanChangeOnResume(a Adapter) bool {
 	r, ok := a.(ResumeSettingsChanger)
 	return ok && r.SupportsResumeSettingsChange()
+}
+
+// ResumeAtPointer is implemented by an adapter that can say whether its CLI
+// resumes a session at a given message and forks it there (task 167
+// decision A, §9.1) — the half of a rewind that puts the conversation back
+// where the code went. Only claude implements it, and claude's answer is
+// detected from the installed binary, not declared: the flag it rests on is
+// absent from `--help`.
+type ResumeAtPointer interface {
+	// SupportsResumeAtPoint reports whether Start honours RunSpec.ResumeAt.
+	SupportsResumeAtPoint() bool
+}
+
+// CanResumeAtPoint reports whether a rewound chat on a can resume at its
+// anchor (task 167). false is the seeded fallback: the next turn starts a
+// fresh session with the kept turns as RunSpec.Preamble.
+func CanResumeAtPoint(a Adapter) bool {
+	r, ok := a.(ResumeAtPointer)
+	return ok && r.SupportsResumeAtPoint()
 }
 
 // CanResume reports whether a can resume a prior session. It is what the API
@@ -350,6 +378,17 @@ type RunSpec struct {
 	// ErrResumeUnsupported from Start rather than starting a fresh session
 	// under a spec that promised continuity.
 	ResumeSessionID string
+	// ResumeAt resumes ResumeSessionID at one of its messages rather than at
+	// its end, and forks it there (task 167 decision A): a claude assistant
+	// message uuid, the RunResult.ResumeAnchor of the last turn a rewind
+	// kept. It means nothing without ResumeSessionID. The run's
+	// RunResult.SessionID is the forked session's, never the resumed one's,
+	// so the abandoned branch of the conversation stays intact under its
+	// own id.
+	//
+	// An adapter that cannot honour it returns ErrResumeAtUnsupported from
+	// Start rather than resuming the whole session.
+	ResumeAt string
 	// Env is the child's environment, resolved from §12.3 `environment:`
 	// (T4.23). nil still means "inherit the daemon's", which is what tests
 	// and any other caller get; the engine always populates it, so a running
@@ -819,7 +858,12 @@ type RunResult struct {
 	//
 	// A chat stores it and hands it back as RunSpec.ResumeSessionID on the
 	// next turn. Nothing in the task path reads it.
-	SessionID    string
+	SessionID string
+	// ResumeAnchor is the uuid of the last top-level assistant message the
+	// run produced (task 167): the point a later rewind resumes the session
+	// at through RunSpec.ResumeAt. claude only; "" for every other adapter
+	// and for a run that produced no assistant message.
+	ResumeAnchor string
 	InputTokens  int64 // 0 if unreported
 	OutputTokens int64
 	CostUSD      *float64 // nil if unreported (e.g. codex)

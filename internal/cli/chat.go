@@ -20,7 +20,8 @@ import (
 // free chat, so the feature is not TUI-only.
 //
 // The verbs are the §5.5 actions plus the reads: start, send, answer, cancel,
-// list, show, transcript, skills, files, archive, handoff, close. `send`
+// list, show, transcript, skills, files, archive, handoff, close, rewind,
+// fork. `send`
 // blocks until the turn ends and prints the answer, which is what a
 // conversation in a terminal has to do — a fire-and-forget send would leave
 // the human polling `show`.
@@ -44,7 +45,7 @@ func newChatCmd() *cobra.Command {
 		newChatSkillsCmd(), newChatFilesCmd(), newChatArchiveCmd(), newChatHandoffCmd(),
 		newChatCloseCmd(), newChatDeleteCmd(), newChatQueueCmd(), newChatSearchCmd(), newChatDiffCmd(),
 		newChatExportCmd(), newChatFindCmd(), newChatRenameCmd(), newChatSetCmd(),
-		newChatShellCmd(), newChatImageCmd())
+		newChatShellCmd(), newChatImageCmd(), newChatRewindCmd(), newChatForkCmd())
 	return cmd
 }
 
@@ -465,10 +466,14 @@ func newChatListCmd() *cobra.Command {
 }
 
 func newChatShowCmd() *cobra.Command {
+	var withRewound bool
 	cmd := &cobra.Command{
 		Use:   "show <chat-id>",
 		Short: "Show a chat and its turns",
-		Args:  cobra.ExactArgs(1),
+		Long: "Shows a chat and its turns. Turns a rewind left behind are hidden, under " +
+			"--json too; --rewound shows them, marked. A turn that started a fresh session " +
+			"given the earlier turns is marked \"" + seededNote + "\".",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
 			if err != nil {
@@ -481,6 +486,7 @@ func newChatShowCmd() *cobra.Command {
 					return exitError{code: 1}
 				}
 				out := cmd.OutOrStdout()
+				turns, hidden := visibleTurns(turns, withRewound)
 				if wantJSON(cmd) {
 					if turns == nil {
 						turns = []apiclient.ChatTurn{}
@@ -492,6 +498,7 @@ func newChatShowCmd() *cobra.Command {
 				}
 				_, _ = fmt.Fprintf(out, "chat %d  %s\nstate: %s  agent: %s  branch: %s\n",
 					chat.ID, chat.Title, chat.State, chat.Agent, chat.Branch)
+				printChatRewindState(out, chat)
 				// The pending request is printed before the turns because it
 				// is the thing that needs doing: `chat answer` numbers its
 				// questions off exactly this list.
@@ -505,7 +512,7 @@ func newChatShowCmd() *cobra.Command {
 				}
 				for i := range turns {
 					t := &turns[i]
-					_, _ = fmt.Fprintf(out, "\n--- turn %d (%s) ---\n> %s\n", t.Seq, t.State, t.Prompt)
+					_, _ = fmt.Fprintf(out, "\n--- turn %d (%s) ---\n> %s\n", t.Seq, turnMarks(t), t.Prompt)
 					if t.ResultText != "" {
 						_, _ = fmt.Fprintln(out, strings.TrimRight(t.ResultText, "\n"))
 					}
@@ -513,10 +520,15 @@ func newChatShowCmd() *cobra.Command {
 						_, _ = fmt.Fprintf(out, "failed: %s %s\n", t.FailReason, t.ErrorMessage)
 					}
 				}
+				if hidden > 0 {
+					_, _ = fmt.Fprintf(out, "\n(%d rewound %s hidden; --rewound shows them)\n",
+						hidden, pluralWord(hidden, "turn", "turns"))
+				}
 				return nil
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&withRewound, "rewound", false, "Also show the turns a rewind left behind, marked")
 	jsonFlag(cmd)
 	return cmd
 }

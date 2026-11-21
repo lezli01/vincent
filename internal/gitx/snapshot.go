@@ -198,9 +198,16 @@ func (g *Git) addAll(ctx context.Context, dir string, env []string) ([]string, e
 // have are removed; ignored files are never touched, because the snapshot
 // never captured them (task 167.1).
 //
+// keep lists worktree paths (slash-separated, relative to dir) the clean
+// must leave alone: the files a pre-restore Snapshot could not read and so
+// did not save (task 167 decision D). Deleting one would destroy the only
+// copy, so each is excluded from `clean -fd` with `-e`. A kept path the
+// snapshot's tree also holds is still overwritten by read-tree; keep spares
+// it the clean, not the checkout.
+//
 // It is destructive by design. Saving the state it replaces is the caller's
 // job (task 167 decision 2: a `rewound-<k>` ref written first).
-func (g *Git) Restore(ctx context.Context, dir, commit string) error {
+func (g *Git) Restore(ctx context.Context, dir, commit string, keep []string) error {
 	parent, err := g.Run(ctx, dir, "rev-parse", "--verify", commit+"^1")
 	if err != nil {
 		return fmt.Errorf("restore: resolve parent of %s: %w", commit, err)
@@ -209,7 +216,14 @@ func (g *Git) Restore(ctx context.Context, dir, commit string) error {
 		return fmt.Errorf("restore: reset: %w", err)
 	}
 	// -d for nested untracked directories; no -x, so ignored files stay.
-	if _, err := g.Run(ctx, dir, "clean", "-f", "-d", "-q"); err != nil {
+	// Each kept path is an exclude pattern anchored at the root, with
+	// pattern characters escaped, so it names that one file and nothing
+	// else.
+	args := []string{"clean", "-f", "-d", "-q"}
+	for _, p := range keep {
+		args = append(args, "-e", "/"+escapePattern(p))
+	}
+	if _, err := g.Run(ctx, dir, args...); err != nil {
 		return fmt.Errorf("restore: clean: %w", err)
 	}
 	// read-tree -u --reset moves index and worktree to the snapshot's tree,
@@ -249,4 +263,18 @@ func (g *Git) DeleteRefs(ctx context.Context, dir, prefix string) (int, error) {
 		n++
 	}
 	return n, nil
+}
+
+// escapePattern escapes the gitignore pattern characters in a literal path,
+// so `clean -e` matches exactly that path.
+func escapePattern(p string) string {
+	var b strings.Builder
+	for _, r := range p {
+		switch r {
+		case '\\', '*', '?', '[', ']', '!', '#', ' ':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

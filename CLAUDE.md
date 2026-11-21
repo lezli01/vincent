@@ -213,6 +213,7 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/140-gate.sh                           # a chat on an issue (task 140)
 ./scripts/142-gate.sh                           # Jira issue sync (task 142)
 ./scripts/143-gate.sh                           # auto-archive on issue close (task 143)
+./scripts/167-gate.sh                           # rewind and fork a chat from a turn (task 167)
 ./scripts/169-gate.sh                           # a chat's diff and its per-hunk review (task 169)
 ./scripts/170-gate.sh                           # a chat's shell passthrough (task 170)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
@@ -221,7 +222,7 @@ VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 VINCENT_GATE_BIN=/some/dir ./scripts/m1-gate.sh # copy prebuilt vincent/fakeagent/fakegh/fakejira from there instead of building
 ```
 
-All twenty-eight of those run in `ci.yml`'s `gate-group` job on all three platforms:
+All twenty-nine of those run in `ci.yml`'s `gate-group` job on all three platforms:
 four groups, balanced by measured Windows time, each gate one named step that
 runs in exactly one group (`if: contains(matrix.groups, N)`). Linux and
 Windows run the four as four jobs; macOS runs them as two, `1+2` and `3+4`
@@ -241,7 +242,7 @@ through `gate_build` / `gate_build_as` (which copy from `VINCENT_GATE_BIN`,
 built once per CI job, when it is set), and its wait loops sleep `$GATE_POLL`
 for `$(gate_ticks SECS)` iterations so the budget stays written in seconds.
 Deliberate delays and workflow `run:` bodies keep their plain `sleep N`. `m12`
-is the twenty-ninth and the exception: it needs a real container runtime, so it runs
+is the thirtieth and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
 why) on the other two — but for two different reasons, and only one of them is
 "no docker". The macOS runner has no daemon. The **Windows runner does**, in

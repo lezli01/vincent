@@ -325,6 +325,12 @@ func mcpConfig(srv *agent.MCPServer) (string, error) {
 // argv limit); the process tree is killed when ctx is canceled. The caller
 // must consume Events() until closed; Wait blocks on stream end.
 func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandle, error) {
+	// Resuming at a point is claude's alone (task 167 decision A): `--resume` takes a session id and nothing that names a point inside it,
+	// so a rewound chat's next turn here is the seeded fallback, and a spec
+	// asking for more is refused rather than resumed whole.
+	if spec.ResumeAt != "" {
+		return nil, agent.ErrResumeAtUnsupported
+	}
 	// A resumed run's session is the one it resumes; a fresh run's is minted
 	// here so it is known before the process writes a line.
 	sessionID := spec.ResumeSessionID

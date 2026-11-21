@@ -121,6 +121,13 @@ const (
 	// printable key, so a `!` typed there stays the message it is (task 124
 	// decision 9), and the textarea binds no alt+x.
 	ShellCommand Op = "shell_command"
+	// Rewind opens the chat's turn picker, to rewind its code, its
+	// conversation or both to the state before a turn ran (task 167
+	// decision 4). Never `esc esc`: esc is the chat's fixed back key, so a
+	// double esc would leave on the first press. alt+z for "undo": the
+	// composer owns every printable key, alt+r is the queue's resume, and
+	// the textarea binds no alt+z.
+	Rewind Op = "rewind"
 )
 
 // ChatN are the jumps to the Nth live chat of the selected project, in the
@@ -310,6 +317,11 @@ var catalog = []Info{
 	// Typing for the same reason: the shell prompt is opened from the
 	// composer (task 170).
 	{Op: ShellCommand, Default: "alt+x", Meaning: "run a shell command in the chat's directory, shown as a card in the conversation", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
+	// Typing for the same reason: the turn picker is opened from the
+	// composer (task 167).
+	{Op: Rewind, Default: "alt+z", Meaning: "rewind the chat's code, conversation or both to before a turn", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}, Typing: true},
 	// The chat switch (task 165). Typing: the open chat's composer has the

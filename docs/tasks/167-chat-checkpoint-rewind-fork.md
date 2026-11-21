@@ -1,6 +1,6 @@
 # 167 — Checkpoint a chat's worktree every turn, with rewind and fork
 
-**Status:** 🔄 in progress (2/10) · **Opened:** 2026-11-20
+**Status:** 🔄 in progress (9/10) · **Opened:** 2026-11-20
 
 Part of the chat UX epic (#1009); issue #1017. Nothing in vincent
 checkpointed, rewound or forked a chat: an agent turn that went wrong left the
@@ -28,35 +28,35 @@ Conventions for this file are in [the tasks README](README.md).
   `adapter.Start`, `head_after` captured when the process ends, and the
   `checkpoint_failed` reason. Tested on all four dialects, and a failed
   checkpoint never spawns. ✓ 2026-11-20
-- [ ] **167.3** Code rewind: `POST /v1/chats/{id}/rewind` (`mode: code`),
+- [x] **167.3** Code rewind: `POST /v1/chats/{id}/rewind` (`mode: code`),
   `vincent chat rewind`, the MCP tool, the `rewound-<k>` ref of the
   pre-rewind state, the shared-worktree rule (decision 3) as
   `409 chat_rewind_foreign_commits`, and the live-turn `409`. The turn DTO
-  gains the checkpoint fields here.
-- [ ] **167.4** The claude resume-at-point capability
+  gains the checkpoint fields here. ✓ 2026-11-21
+- [x] **167.4** The claude resume-at-point capability
   (`--resume-session-at --fork-session`, detected, with a captured fixture),
   the per-turn `resume_anchor` the claude parser records, and the seeded
   fallback (`RunSpec.Preamble`) for codex, cursor and copilot.
-  Depends: 167.3.
-- [ ] **167.5** Conversation and both rewinds; `rewound_at`/`rewind_id`/
+  Depends: 167.3. ✓ 2026-11-21
+- [x] **167.5** Conversation and both rewinds; `rewound_at`/`rewind_id`/
   `seeded` on `chat_turns`; rewound turns hidden by default in the TUI, CLI
   transcript and export, still in cost totals; the rewound prompt back in the
-  task 164 draft. Depends: 167.4.
-- [ ] **167.6** Fork: a new free chat on its own branch from the
+  task 164 draft. Depends: 167.4. ✓ 2026-11-21
+- [x] **167.6** Fork: a new free chat on its own branch from the
   checkpoint's HEAD, the snapshot's dirty state applied, the source's agent
-  and settings copied. Depends: 167.4.
-- [ ] **167.7** TUI: the `rewind` keymap operation, the "rewind…" and "fork
+  and settings copied. Depends: 167.4. ✓ 2026-11-21
+- [x] **167.7** TUI: the `rewind` keymap operation, the "rewind…" and "fork
   from turn…" palette entries, the turn picker with disabled options and
-  their reasons, and the rewound-turn toggle.
-- [ ] **167.8** Pruning: delete `refs/vincent/chats/<id>/` with the chat
+  their reasons, and the rewound-turn toggle. ✓ 2026-11-21
+- [x] **167.8** Pruning: delete `refs/vincent/chats/<id>/` with the chat
   (permanent delete, archive that removes the branch, `delete_branch=true`;
   not on hand-off), and a daemon sweep for refs whose chat row is gone.
-  Measure disk cost (see below).
-- [ ] **167.9** `scripts/167-gate.sh`, executable, wired into `gate-group`
-  in the lightest group.
-- [ ] **167.10** Remaining spec amendments (§9.x capability, §10 refs and
+  Measure disk cost (see below). ✓ 2026-11-21
+- [x] **167.9** `scripts/167-gate.sh`, executable, wired into `gate-group`
+  in the lightest group. ✓ 2026-11-21
+- [~] **167.10** Remaining spec amendments (§9.x capability, §10 refs and
   pruning, §13.2 endpoints, §15 key), the API/CLI/TUI references,
-  `features.md` and screenshots.
+  `features.md` and screenshots. Everything but the screenshots ✓ 2026-11-21; see Delivery notes.
 
 ## Decisions
 
@@ -128,6 +128,14 @@ overrules them.
    composer through task 164's daemon-held draft.
 10. **`session_id` after a conversation rewind** is the forked or seeded
     session's, written by the rewind (claude) or the next turn (seeded).
+    *Amended 2026-11-21 (#1041, brief decision A, settled with the author):*
+    read as "decided by the rewind, made real by the next turn". The rewind
+    runs no process: it records `chats.resume_at` (claude with the
+    capability) or `pending_preamble` (seeded), and the next turn runs
+    `--resume <session> --resume-session-at <uuid> --fork-session` or starts
+    seeded, recording the session id it reports. claude can fork a session
+    only by running a process, so this is how rewind stays an MCP tool for
+    both modes, not code alone.
 11. **Fork is always a new free chat** on its own branch, cut from the
     checkpoint's HEAD with the snapshot's dirty state applied. It does not
     inherit a link, an issue or a hold on a worktree; it copies agent, model,
@@ -140,3 +148,16 @@ overrules them.
     changed paths, and the blobs of changed files not already stored.
     `TestSnapshotUnchangedReusesTree` proves an unchanged worktree reuses
     the previous checkpoint's tree. The measured number is 167.8's to record.
+    *Measured 2026-11-21 (167.8), on this repository:* a checkpoint of an
+    unchanged worktree adds one commit object, ~150 bytes loose; one modified
+    file (a 590-line Go file) and one new file added six objects, ~12 KB
+    loose, almost all of it the modified file's blob. Recorded in spec §10.
+
+## Delivery notes (2026-11-21, #1041)
+
+- 167.3–167.10 landed together in one pull request (brief decision B).
+  Task 063 decision 2 is amended there: `chat_rewind` and `chat_fork` are the
+  only chat routes that are MCP tools (brief decision A).
+- Not done in that pull request: re-capturing `docs/assets/tui-*.png` with
+  `scripts/screenshots.sh`, and seeding a rewound turn for the picker and
+  toggle shots. The TUI and docs change without new pictures until then.

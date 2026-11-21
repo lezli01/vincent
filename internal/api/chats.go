@@ -108,6 +108,16 @@ type chatBody struct {
 	// Unread is the store's derivation (task 165): the latest terminal turn
 	// ended after LastViewedAt. Always present, so false is an answer.
 	Unread bool `json:"unread"`
+	// RewoundStates are the chat's forward-rewind targets (task 167),
+	// carried by GET /v1/chats/{id} only: reading them costs git.
+	RewoundStates []chatRewoundStateBody `json:"rewound_states,omitempty"`
+	// ForkedFrom names the chat and turn this one was forked from (task
+	// 167.6); the source may since have been deleted.
+	ForkedFrom *chatForkedFromBody `json:"forked_from,omitempty"`
+	// ResumePending says how the next turn starts after a rewind or fork:
+	// "resumed" at an anchor in the agent's session, or "seeded" from a
+	// summary in a fresh one (decisions A and G).
+	ResumePending string `json:"resume_pending,omitempty"`
 	// Warnings are non-fatal notes on a create — an issue chat opened on a
 	// closed issue (task 140 decision 9). Never set on a read.
 	Warnings []string `json:"warnings,omitempty"`
@@ -150,6 +160,24 @@ type chatTurnBody struct {
 	// `@path#Lx-y` mentions expanded into when it started (task 166
 	// decision 2), absent when nothing did. Prompt stays the typed text.
 	MentionContext string `json:"mention_context,omitempty"`
+	// The turn's checkpoint (task 167.2): the snapshot taken before it ran,
+	// and the branch head before and after it.
+	CheckpointSHA string `json:"checkpoint_sha,omitempty"`
+	HeadBefore    string `json:"head_before,omitempty"`
+	HeadAfter     string `json:"head_after,omitempty"`
+	// RewoundAt marks a turn a rewind took out of the conversation, and
+	// RewindID groups the turns one rewind took (decision 9). Clients hide
+	// such turns by default; they are still counted in costs.
+	RewoundAt *time.Time `json:"rewound_at,omitempty"`
+	RewindID  string     `json:"rewind_id,omitempty"`
+	// Seeded says the turn started a fresh session from a summary of the
+	// turns before it: seeded, not resumed (decision G).
+	Seeded bool `json:"seeded"`
+	// ResumeAnchor is the agent message the turn resumed its session at.
+	ResumeAnchor string `json:"resume_anchor,omitempty"`
+	// Rewind is what a turn picker may offer for this turn, carried by
+	// GET /v1/chats/{id} only.
+	Rewind *chatTurnRewindBody `json:"rewind,omitempty"`
 }
 
 func renderChat(c *store.Chat) chatBody {
@@ -162,6 +190,7 @@ func renderChat(c *store.Chat) chatBody {
 		QueuedCount: c.QueuedCount, QueuePaused: c.QueuePaused, QueuePauseReason: c.QueuePauseReason,
 		SteerReason: chatrun.SteerUnavailable(c.Agent), HasDraft: c.Draft != "",
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, LastViewedAt: c.LastViewedAt, Unread: c.Unread,
+		ForkedFrom: renderForkedFrom(c), ResumePending: resumePending(c),
 	}
 }
 
@@ -176,6 +205,8 @@ func renderChatTurn(t *store.ChatTurn) chatTurnBody {
 		ContextTokens: t.ContextTokens, ContextWindow: t.ContextWindow,
 		Model: t.Model, Effort: t.Effort, PermissionMode: t.PermissionMode,
 		MentionContext: t.MentionContext,
+		CheckpointSHA:  t.CheckpointSHA, HeadBefore: t.HeadBefore, HeadAfter: t.HeadAfter,
+		RewoundAt: t.RewoundAt, RewindID: t.RewindID, Seeded: t.Seeded, ResumeAnchor: t.ResumeAnchor,
 	}
 }
 
@@ -322,56 +353,89 @@ func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
 		Model: req.Model, Effort: req.Effort, PermissionMode: req.PermissionMode,
 		BaseBranch: base, AdoptedBranch: req.ExistingBranch,
 	}
-	if err := s.deps.Store.CreateChat(r.Context(), chat); err != nil {
+	cut := freeChatCut{fetch: s.deps.Config().FetchBaseBranch}
+	if req.ExistingBranch {
+		cut.adopt = branch
+	}
+	created, err := s.createFreeChat(r.Context(), project, chat, cut)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
+	}
+	s.logBaseRefresh(chat.ID, base, created)
+	s.writeChatCreated(r.Context(), w, renderChat(chat), req.Message)
+}
+
+// freeChatCut is how createFreeChat makes a free chat's branch: adopt names
+// an existing branch to run on (task 125); startSHA cuts a new one at that
+// commit with no refresh (a fork, task 167 decision 11); otherwise the new
+// branch is cut from the chat's base, refreshed first when fetch is set.
+type freeChatCut struct {
+	adopt    string
+	startSHA string
+	fetch    bool
+}
+
+// createFreeChat writes a free chat's row, names its branch, and creates and
+// claims its worktree: the one path POST /v1/chats and a fork both take, so a
+// forked chat is named, cut and claimed exactly as any free chat is. chat is
+// updated in place with its id, branch, worktree, base SHA and refresh. An
+// adopted chat and a fork record no base refresh (decision 7 of task 125;
+// a fork's base is inherited, not refreshed). A fork's BaseSHA is the one
+// the caller set, kept rather than overwritten by the cut's empty one.
+func (s *Server) createFreeChat(ctx context.Context, project *store.Project, chat *store.Chat, cut freeChatCut) (worktree.Created, error) {
+	if err := s.deps.Store.CreateChat(ctx, chat); err != nil {
+		return worktree.Created{}, err
 	}
 	// The branch name needs the id, and the id needs the row: the chat is
 	// written first and named second, exactly as a task is. An adopted branch
 	// is the one name that does not need the id — the user typed it.
 	chat.Branch = worktree.BranchName(chat.ID, chat.Title)
-	if req.ExistingBranch {
-		chat.Branch = branch
+	if cut.adopt != "" {
+		chat.Branch = cut.adopt
 	}
-	if err := s.deps.Store.SetChatBranch(r.Context(), chat.ID, chat.Branch); err != nil {
-		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
-		return
+	if err := s.deps.Store.SetChatBranch(ctx, chat.ID, chat.Branch); err != nil {
+		return worktree.Created{}, err
 	}
 	// A chat's base is refreshed exactly as a task's is (§10, task 099): the
 	// `fetch_base_branch` key is read per request, so a hot-reloaded `false`
 	// holds for the next chat, and the outcome is recorded on the row in the
 	// same write that claims the worktree. With the key off no fetch runs, no
 	// base_sha is recorded, and the record says disabled / not_attempted.
-	fetch := s.deps.Config().FetchBaseBranch
 	var refresh *store.BaseRefresh
+	baseSHA := chat.BaseSHA
 	claim := func(c worktree.Created) error {
-		if !req.ExistingBranch {
-			// An adopted chat records none, for the reason an adopted task
-			// does (decision 7): the fetch it ran was the adopted branch's,
-			// not the base's, and no base fast-forward was attempted.
+		if cut.adopt == "" && cut.startSHA == "" {
 			refresh = &store.BaseRefresh{
 				Fetch:       store.BaseFetch(c.Fetch),
 				FastForward: store.BaseFastForward(c.FastForward),
 			}
 		}
-		_, err := s.deps.Store.ClaimChatWorktree(r.Context(), chat.ID, c.Path, c.BaseSHA, refresh)
+		if cut.startSHA == "" {
+			baseSHA = c.BaseSHA
+		}
+		_, err := s.deps.Store.ClaimChatWorktree(ctx, chat.ID, c.Path, baseSHA, refresh)
 		return err
 	}
-	var created worktree.Created
-	if req.ExistingBranch {
-		created, err = s.deps.Worktrees.CreateAdoptAndClaim(
-			r.Context(), project.Path, worktree.ChatOwner(chat.ID), chat.Branch, claim)
-	} else {
+	var (
+		created worktree.Created
+		err     error
+	)
+	owner := worktree.ChatOwner(chat.ID)
+	switch {
+	case cut.adopt != "":
+		created, err = s.deps.Worktrees.CreateAdoptAndClaim(ctx, project.Path, owner, chat.Branch, claim)
+	case cut.startSHA != "":
+		created, err = s.deps.Worktrees.CreateAtAndClaim(ctx, project.Path, owner, chat.Branch, cut.startSHA, claim)
+	default:
 		created, err = s.deps.Worktrees.CreateAndClaim(
-			r.Context(), project.Path, worktree.ChatOwner(chat.ID), chat.Branch, base, fetch, claim)
+			ctx, project.Path, owner, chat.Branch, chat.BaseBranch, cut.fetch, claim)
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
-		return
+		return created, err
 	}
-	s.logBaseRefresh(chat.ID, base, created)
-	chat.WorktreePath, chat.BaseSHA, chat.BaseRefresh = created.Path, created.BaseSHA, refresh
-	s.writeChatCreated(r.Context(), w, renderChat(chat), req.Message)
+	chat.WorktreePath, chat.BaseSHA, chat.BaseRefresh = created.Path, baseSHA, refresh
+	return created, nil
 }
 
 // logBaseRefresh reports a chat's base refresh that did not do what was asked.
@@ -511,6 +575,7 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 	rendered.Draft, rendered.Stash, rendered.DraftUpdatedAt = chat.Draft, chat.Stash, chat.DraftUpdatedAt
 	n := len(turns)
 	rendered.TurnCount = &n
+	s.addRewindOptions(r.Context(), chat, turns, &rendered, body)
 	writeJSON(w, http.StatusOK, map[string]any{"chat": rendered, "turns": body})
 }
 
@@ -713,6 +778,9 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 	if chat.OnIssue() {
 		s.stampChatEndSHA(r.Context(), project, chat)
 	}
+	// The checkpoint refs stay (task 167 decision 12 prunes them on an
+	// archive that removes the branch): a chat's archive never deletes its
+	// branch, so the refs go with the row, at permanent delete.
 	updated, err := s.deps.Store.SetChatState(r.Context(), chat.ID, chatstate.Archived)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
