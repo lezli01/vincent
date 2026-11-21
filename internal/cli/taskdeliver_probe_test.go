@@ -56,3 +56,24 @@ func TestResolveWorkflowsProbeTaskDeliverHelp(t *testing.T) {
 		}
 	}
 }
+
+// TestHandoffDeliverHelpSaysASuggestedNoneLeavesItOpen is review F10 on
+// #1043: docs/reference/cli.md tracks the cobra tree, and since #1042 a
+// delivery's suggested `none` leaves its issue open and moves it to the
+// open lane. The command's own help must say so too.
+func TestHandoffDeliverHelpSaysASuggestedNoneLeavesItOpen(t *testing.T) {
+	var buf bytes.Buffer
+	root := newRootCmd()
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"handoff", "deliver", "--help"})
+	if err := root.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("handoff deliver --help: %v", err)
+	}
+	help := strings.Join(strings.Fields(buf.String()), " ")
+	for _, want := range []string{"a delivery that suggested none", "open lane"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("handoff deliver --help does not say %q:\n%s", want, buf.String())
+		}
+	}
+}
