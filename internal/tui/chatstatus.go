@@ -19,17 +19,17 @@ import (
 // reload land at the root — and a preference read through a field would be
 // one more thing each of those has to push.
 
-// chatStatusTmpl is tui.chat.status_line; chatVim is tui.chat.vim.
+// chatStatusTmpl is tui.chat.status_line; chatVimOn is tui.chat.vim.
 var (
 	chatStatusTmpl atomic.Pointer[string]
-	chatVim        atomic.Bool
+	chatVimOn      atomic.Bool
 )
 
 // setChatPrefs installs tui.chat. An older daemon's zero answer is no status
 // line and no vim layer, which is the shipped chat.
 func setChatPrefs(statusLine string, vim bool) {
 	chatStatusTmpl.Store(&statusLine)
-	chatVim.Store(vim)
+	chatVimOn.Store(vim)
 }
 
 // chatStatusTemplate is the status line template in force, "" for none.
@@ -41,7 +41,7 @@ func chatStatusTemplate() string {
 }
 
 // chatVimEnabled reports whether the composer's modal layer is on.
-func chatVimEnabled() bool { return chatVim.Load() }
+func chatVimEnabled() bool { return chatVimOn.Load() }
 
 // chatStatusLine executes a status line template over a chat and its turns
 // and returns one line of plain text for the header: no style, no escape
