@@ -1403,7 +1403,13 @@ pruned (§10).
   unstaged. Ignored files are left alone. A path the pre-rewind snapshot could
   not read is excluded from the clean (`-e`), so **a rewind never deletes a
   file it could not save**; those paths come back as `skipped` and go to the
-  daemon log (brief decision D). A rewind may also go **forward**: `{rewound:
+  daemon log (brief decision D). *Amended 2026-11-21 (review F2):* the clean
+  is the only step an exclude can spare. A path the branch tracks — at HEAD,
+  at the target's `head_before`, or in the checkpoint's tree — is rewritten by
+  the reset or the checkout whatever the clean does, so when the snapshot
+  could not read such a path the rewind is refused before anything moves or
+  any ref is written: `409 chat_rewind_unsaved_files`, naming the paths.
+  Making them readable lets the save take them. A rewind may also go **forward**: `{rewound:
   k}` restores a `rewound-<k>` state (code only), itself saving the state it
   replaces first.
 - `conversation` takes turns N..last out of the conversation. They are never
@@ -12064,7 +12070,9 @@ POST   /v1/chats/{id}/rewind            *Added 2026-11-21 (task 167.3, 167.5, is
                                         and a `chat.updated` event. `409 chat_turn_live`,
                                         `chat_terminal`, `chat_turn_rewound`,
                                         `chat_checkpoint_unavailable`,
-                                        `chat_rewind_foreign_commits` (no force). An MCP tool,
+                                        `chat_rewind_foreign_commits` (no force),
+                                        `chat_rewind_unsaved_files` (a tracked file the save could
+                                        not read, review F2). An MCP tool,
                                         `chat_rewind` (§13.4)
 POST   /v1/chats/{id}/fork              *Added 2026-11-21 (task 167.6, issue #1041).* Creates a
                                         new idle free chat from the state before a turn ran: its

@@ -2897,7 +2897,9 @@ chat's cost.
 A code rewind first saves the state it replaces as
 `refs/vincent/chats/<id>/rewound-<k>`, and `--rewound K` goes forward to that
 saved state again — code only, so it takes no `--mode`. Files the pre-rewind
-snapshot could not read are left where they are, never deleted, and listed.
+snapshot could not read are never deleted: untracked ones are left where they
+are and listed, and a tracked one, which the rewind would overwrite, refuses
+it (`chat_rewind_unsaved_files`) until the file is readable.
 
 Nothing runs. A conversation rewind takes effect on the chat's next turn,
 which either resumes the agent's session from that point or, where the agent
@@ -2909,7 +2911,8 @@ skipped files; `--json` emits the daemon's response. Refused while a turn is
 live (`chat_turn_live`), for a turn without a checkpoint
 (`chat_checkpoint_unavailable`) or already rewound (`chat_turn_rewound`), on a
 chat that has ended (`chat_terminal`), and — code only — when someone else has
-committed on the branch since turn N (`chat_rewind_foreign_commits`). Exit `1`
+committed on the branch since turn N (`chat_rewind_foreign_commits`) or a
+tracked file it would overwrite cannot be read (`chat_rewind_unsaved_files`). Exit `1`
 on a refusal; `2` with no daemon.
 
 ### `vincent chat fork`

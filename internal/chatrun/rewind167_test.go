@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -226,6 +227,49 @@ func TestCodeRewindAfterConversationRewind(t *testing.T) {
 	}
 	if head := gitIn(t, c.WorktreePath, "rev-parse", "HEAD"); head != two.HeadBefore {
 		t.Errorf("HEAD = %s, want turn 2's head_before %s", head, two.HeadBefore)
+	}
+}
+
+// TestCodeRewindRefusesUnsavedTrackedFile is review F2: an edit to a tracked
+// file vincent cannot read is not in the pre-rewind save (which holds HEAD's
+// blob for it), and the restore's reset would destroy it. The rewind is
+// refused before anything moves or any rewound ref is written.
+func TestCodeRewindRefusesUnsavedTrackedFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a file unreadable on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000 file")
+	}
+	h := newHarness(t)
+	c := h.chat(t)
+	dir := c.WorktreePath
+	h.turnDone(t, c.ID, "one")
+	h.turnDone(t, c.ID, "two")
+	wt(t, dir, "README.md", "SECRET-EDIT\n")
+	p := filepath.Join(dir, "README.md")
+	if err := os.Chmod(p, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(p, 0o600) })
+
+	_, err := h.runner.Rewind(t.Context(), c.ID, RewindRequest{Turn: 1, Mode: RewindCode})
+	wantRefusal(t, err, ReasonRewindUnsavedFiles)
+	if !strings.Contains(err.Error(), "README.md") {
+		t.Errorf("refusal %q does not name the file", err)
+	}
+	if err := os.Chmod(p, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := rd(t, dir, "README.md"); got != "SECRET-EDIT\n" {
+		t.Errorf("README.md = %q, want the unsaved edit kept", got)
+	}
+	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", RewoundRef(c.ID, 1)); out != "" {
+		t.Errorf("a refused rewind wrote %s", out)
+	}
+	// Readable again, the save takes it and the rewind goes ahead.
+	if _, err := h.runner.Rewind(t.Context(), c.ID, RewindRequest{Turn: 1, Mode: RewindCode}); err != nil {
+		t.Fatalf("Rewind once readable: %v", err)
 	}
 }
 

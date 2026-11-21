@@ -45,14 +45,16 @@ func newChatRewindCmd() *cobra.Command {
 			"turn N's prompt back in the chat's draft; --mode both (the default) does both.\n\n" +
 			"A code rewind first saves the state it replaces as refs/vincent/chats/<id>/rewound-<k>, " +
 			"and --rewound K goes forward to that saved state again (code only). Files the " +
-			"pre-rewind snapshot could not read are left where they are, never deleted, and " +
-			"are listed.\n\n" +
+			"pre-rewind snapshot could not read are never deleted: untracked ones are left " +
+			"where they are and listed, and a tracked one, which the rewind would overwrite, " +
+			"refuses it until the file is readable.\n\n" +
 			"Nothing runs: a conversation rewind takes effect on the chat's next turn, which " +
 			"either resumes the agent's session from that point or, when the agent cannot, " +
 			"starts a fresh session seeded with the earlier turns — said as \"" + seededNote + "\".\n\n" +
 			"Refused while a turn is live, for a turn without a checkpoint or already rewound, " +
 			"on an ended chat, and — code only — when someone else has committed on the branch " +
-			"since turn N. Exit 1 on a refusal; 2 with no daemon.",
+			"since turn N or a tracked file it would overwrite cannot be read. Exit 1 on a " +
+			"refusal; 2 with no daemon.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)

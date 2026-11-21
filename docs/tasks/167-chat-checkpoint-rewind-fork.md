@@ -119,6 +119,15 @@ overrules them.
    "refuse and name the file", which would stop every later turn of the chat
    until a human fixed it. 167.3 must therefore not let `Restore`'s
    `clean -fd` delete a path the checkpoint skipped.
+   *Amended 2026-11-21 (PR #1044 review F2):* the clean's `-e` spares only an
+   untracked path. A skipped path that HEAD, the target's `head_before` or the
+   checkpoint's tree tracks is rewritten by `reset --hard` or `read-tree -u`
+   — and the pre-rewind save holds the index's blob for it, not the edit —
+   so `gitx.Restore` refuses such a restore (`UnsavedPathsError`) and a code
+   rewind checks first, refusing with `409 chat_rewind_unsaved_files` naming
+   the paths before any ref is written or file moved. Refusing beats moving
+   the files aside: it keeps the rule "a rewind never destroys what it could
+   not save" without a second, unsaved copy to lose on a crash.
 8. **Rewind and fork refuse while a turn is live** (`running`,
    `awaiting_input`, or a queue draining) with `409`, as a guard, not a §5.5
    transition. Not offered on terminal chats.

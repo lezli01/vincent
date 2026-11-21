@@ -198,12 +198,15 @@ func (g *Git) addAll(ctx context.Context, dir string, env []string) ([]string, e
 // have are removed; ignored files are never touched, because the snapshot
 // never captured them (task 167.1).
 //
-// keep lists worktree paths (slash-separated, relative to dir) the clean
+// keep lists worktree paths (slash-separated, relative to dir) the restore
 // must leave alone: the files a pre-restore Snapshot could not read and so
-// did not save (task 167 decision D). Deleting one would destroy the only
-// copy, so each is excluded from `clean -fd` with `-e`. A kept path the
-// snapshot's tree also holds is still overwritten by read-tree; keep spares
-// it the clean, not the checkout.
+// did not save (task 167 decision D). Destroying one would destroy the only
+// copy. An untracked kept path is excluded from `clean -fd` with `-e`. A kept
+// path that HEAD, the snapshot's parent or the snapshot's tree tracks would
+// be rewritten by the reset or the read-tree whatever the clean does (review
+// F2), so Restore refuses before it touches anything, with an
+// *UnsavedPathsError naming those paths; RestoreOverwrites asks the same
+// question without the restore.
 //
 // It is destructive by design. Saving the state it replaces is the caller's
 // job (task 167 decision 2: a `rewound-<k>` ref written first).
@@ -211,6 +214,13 @@ func (g *Git) Restore(ctx context.Context, dir, commit string, keep []string) er
 	parent, err := g.Run(ctx, dir, "rev-parse", "--verify", commit+"^1")
 	if err != nil {
 		return fmt.Errorf("restore: resolve parent of %s: %w", commit, err)
+	}
+	over, err := g.RestoreOverwrites(ctx, dir, commit, keep)
+	if err != nil {
+		return err
+	}
+	if len(over) > 0 {
+		return &UnsavedPathsError{Paths: over}
 	}
 	if _, err := g.Run(ctx, dir, "reset", "--hard", "-q", parent); err != nil {
 		return fmt.Errorf("restore: reset: %w", err)
@@ -236,6 +246,50 @@ func (g *Git) Restore(ctx context.Context, dir, commit string, keep []string) er
 		return fmt.Errorf("restore: reset index: %w", err)
 	}
 	return nil
+}
+
+// UnsavedPathsError is a Restore refused because it would rewrite files the
+// caller could not save (review F2): each of Paths is one Restore was asked to
+// keep and a tree it writes tracks.
+type UnsavedPathsError struct {
+	Paths []string
+}
+
+func (e *UnsavedPathsError) Error() string {
+	return "restore: would overwrite files that could not be saved: " + strings.Join(e.Paths, ", ")
+}
+
+// RestoreOverwrites reports which of keep a Restore of commit would rewrite:
+// those tracked by dir's HEAD (the reset --hard), by commit's parent (the
+// reset's target) or by commit's own tree (the read-tree). Only an untracked
+// path in none of the three can be spared by the clean's exclude. Paths come
+// back in keep's order.
+func (g *Git) RestoreOverwrites(ctx context.Context, dir, commit string, keep []string) ([]string, error) {
+	if len(keep) == 0 {
+		return nil, nil
+	}
+	tracked := map[string]bool{}
+	for _, rev := range []string{"HEAD", commit + "^1", commit} {
+		// Literal pathspecs, so a kept name with pattern characters in it
+		// matches only itself; RunRaw, so a name with edge spaces survives.
+		args := append([]string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--name-only", rev + "^{tree}", "--"}, keep...)
+		out, err := g.RunRaw(ctx, dir, args...)
+		if err != nil {
+			return nil, fmt.Errorf("restore: list %s: %w", rev, err)
+		}
+		for _, p := range strings.Split(string(out), "\x00") {
+			if p != "" {
+				tracked[p] = true
+			}
+		}
+	}
+	var over []string
+	for _, p := range keep {
+		if tracked[p] {
+			over = append(over, p)
+		}
+	}
+	return over, nil
 }
 
 // UpdateRef points ref at sha, creating it if absent.

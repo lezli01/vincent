@@ -3990,8 +3990,10 @@ curl -sS -X POST http://127.0.0.1:PORT/v1/chats/3/rewind \
 
 A code rewind first saves the state it replaces as
 `refs/vincent/chats/<chat id>/rewound-<k>`, and `{"rewound": k}` (code only)
-goes forward to it again. A file the save could not read is never deleted; it
-is listed in `skipped`.
+goes forward to it again. A file the save could not read is never deleted: an
+untracked one is left in place and listed in `skipped`, and one the branch
+tracks — which the rewind would otherwise overwrite — refuses the rewind with
+`chat_rewind_unsaved_files` before anything moves.
 
 The answer is `200` with `{chat, rewind_id, ref, skipped, seeded,
 rewound_turns}` and publishes `chat.updated`.
@@ -4014,6 +4016,7 @@ Resuming at a point is claude's alone, and only when the installed claude has
 | `409` | `chat_turn_rewound` | An earlier rewind already took that turn out |
 | `409` | `chat_checkpoint_unavailable` | The turn has no usable checkpoint: from before checkpoints existed, its checkpoint failed, or its ref is gone |
 | `409` | `chat_rewind_foreign_commits` | A code rewind over a branch something other than this chat's turns moved. There is no force. A fork never gets this |
+| `409` | `chat_rewind_unsaved_files` | A code rewind would overwrite a file the branch tracks that vincent cannot read, so could not save first. The message names the paths; make them readable and rewind again |
 
 Both routes are MCP tools, `chat_rewind` and `chat_fork` — the only chat routes
 that are. A chat's checkpoint refs are deleted with the chat.

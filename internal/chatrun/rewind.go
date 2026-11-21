@@ -49,6 +49,12 @@ const (
 	ReasonTurnRewound = "chat_turn_rewound"
 	// ReasonChatTerminal is a chat that has ended (decision 8).
 	ReasonChatTerminal = "chat_terminal"
+	// ReasonRewindUnsavedFiles is a code rewind that would overwrite a file
+	// the pre-rewind save could not read (decision D, review F2): one the
+	// branch tracks, now or at the target, which the restore's reset or
+	// checkout rewrites whatever its clean spares. Making the file readable
+	// lets the save take it, and the rewind go ahead.
+	ReasonRewindUnsavedFiles = "chat_rewind_unsaved_files"
 )
 
 // reasonTurnLive is ErrTurnLive as RewindOptions spells it: the API's code
@@ -240,6 +246,12 @@ func (r *Runner) rewindHeld(ctx context.Context, chatID int64, req RewindRequest
 	return res, nil
 }
 
+func unsavedRefusal(paths []string) *RewindRefusal {
+	return refuse(ReasonRewindUnsavedFiles,
+		"a code rewind would overwrite files vincent cannot read and so could not save: %s; "+
+			"make them readable and rewind again", strings.Join(paths, ", "))
+}
+
 func foreignRefusal() *RewindRefusal {
 	return refuse(ReasonRewindForeignCommits,
 		"the branch has commits this chat's turns did not make; a code rewind would discard them")
@@ -284,6 +296,15 @@ func (r *Runner) rewindCode(
 		rewindMessage(chat.ID, k, refs.head, to))
 	if err != nil {
 		return "", nil, fmt.Errorf("rewind: save current state: %w", err)
+	}
+	// Refused before the ref is written, so a refused rewind leaves no
+	// rewound-<k> state behind (review F2).
+	over, err := git.RestoreOverwrites(gctx, workDir, target, snap.Skipped)
+	if err != nil {
+		return "", nil, fmt.Errorf("rewind: %w", err)
+	}
+	if len(over) > 0 {
+		return "", nil, unsavedRefusal(over)
 	}
 	ref = RewoundRef(chat.ID, k)
 	if err := git.UpdateRef(gctx, workDir, ref, snap.Commit); err != nil {
