@@ -154,6 +154,12 @@ func TestIssueRowTaskSummary(t *testing.T) {
 		{"open, no tasks", apiclient.Issue{Lane: "open"}, "no tasks"},
 		{"open, aborted only", apiclient.Issue{Lane: "open", TaskCount: 2}, "2 tasks · cancelled"},
 		{
+			// A handoff delivered it and left it open (#1042, review F5).
+			"open, delivered in part",
+			apiclient.Issue{Lane: "open", TaskCount: 1, Handoff: &apiclient.IssueHandoff{State: markerDelivered}},
+			"1 task · delivered in part",
+		},
+		{
 			"in progress, occupant",
 			apiclient.Issue{Lane: "in_progress", TaskCount: 1, Active: true, MainWorktree: busy},
 			"● #12 running",

@@ -108,9 +108,9 @@ type HandoffVerb struct {
 	// completed.
 	Close       bool
 	CloseReason issuestate.Reason
-	// Check, when set, is asked about every item's issue before anything is
-	// written; an error refuses the whole verb.
-	Check func(iss *Issue) error
+	// Check, when set, is asked about every item and its issue before
+	// anything is written; an error refuses the whole verb.
+	Check func(it *HandoffItem, iss *Issue) error
 	// FollowUps and SideTasks are a return's, by issue id.
 	FollowUps map[int64]*HandoffFollowUp
 	SideTasks map[int64]*HandoffSideTask
@@ -235,7 +235,7 @@ func (s *Store) ResolveHandoffItems(ctx context.Context, v HandoffVerb) (*Handof
 				return err
 			}
 			if v.Check != nil {
-				if err := v.Check(iss); err != nil {
+				if err := v.Check(it, iss); err != nil {
 					return err
 				}
 			}
@@ -263,14 +263,17 @@ func (s *Store) ResolveHandoffItems(ctx context.Context, v HandoffVerb) (*Handof
 					return err
 				}
 			}
-			if v.Close && issuestate.Normalize(iss.State) != issuestate.Closed {
-				reason := v.CloseReason
-				if reason == "" && it.Delivery != nil {
-					reason = issuestate.Reason(it.Delivery.CloseReason)
+			reason, closing := itemCloseReason(v, it, iss)
+			// A delivered item that leaves its issue open moves it out of
+			// `hand_off` (#1042, amending §5.6), so the lane is watched
+			// here; a close reports its own move.
+			var watch laneWatch
+			if !closing && v.Outcome == HandoffDelivered {
+				if watch, err = watchIssueLaneTx(ctx, tx, iss.ID, iss.ProjectID); err != nil {
+					return err
 				}
-				if reason == "" {
-					reason = issuestate.Completed
-				}
+			}
+			if closing {
 				closed, enq, err := transitionIssueTx(ctx, tx, iss.ID, issuestate.Close, reason, nil, writeAs, false)
 				if err != nil {
 					return err
@@ -285,6 +288,13 @@ func (s *Store) ResolveHandoffItems(ctx context.Context, v HandoffVerb) (*Handof
 				return err
 			}
 			if err := emit(ev); err != nil {
+				return err
+			}
+			laneEv, err := watch.changedTx(ctx, tx, nil, writeAs)
+			if err != nil {
+				return err
+			}
+			if err := emit(laneEv); err != nil {
 				return err
 			}
 			if v.Outcome == HandoffReturned {
@@ -436,4 +446,36 @@ func (s *Store) LatestIssueMainTask(ctx context.Context, issueID int64) (*Task, 
 		return nil, fmt.Errorf("latest main task of issue %d: %w", issueID, err)
 	}
 	return t, nil
+}
+
+// ItemCloses reports whether resolving it under v closes iss — the one
+// per-item decision ResolveHandoffItems makes, exported so the API's
+// forge-write guard asks for issue.close only where a close will happen
+// (review F3 on #1042): with no reason on the verb, an item whose delivery
+// suggested `none` closes nothing.
+func ItemCloses(v HandoffVerb, it *HandoffItem, iss *Issue) bool {
+	_, closing := itemCloseReason(v, it, iss)
+	return closing
+}
+
+// itemCloseReason is whether resolving it under v closes its open issue,
+// and with what reason (§5.7): the verb's reason, else the delivery's
+// suggestion, else completed. A suggestion of DeliveryLeaveOpen — the run
+// delivered only part of the issue (#1042) — leaves it open, the way the
+// verb's own `close: none` does.
+func itemCloseReason(v HandoffVerb, it *HandoffItem, iss *Issue) (issuestate.Reason, bool) {
+	if !v.Close || issuestate.Normalize(iss.State) == issuestate.Closed {
+		return "", false
+	}
+	reason := v.CloseReason
+	if reason == "" && it.Delivery != nil {
+		if it.Delivery.CloseReason == DeliveryLeaveOpen {
+			return "", false
+		}
+		reason = issuestate.Reason(it.Delivery.CloseReason)
+	}
+	if reason == "" {
+		reason = issuestate.Completed
+	}
+	return reason, true
 }

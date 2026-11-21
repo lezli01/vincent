@@ -162,7 +162,7 @@ func TestHandoffAllSkipsWaitingAndIsAllOrNothing(t *testing.T) {
 	_, err := s.ResolveHandoffItems(ctx, HandoffVerb{
 		HandoffID: h.ID, All: true, Outcome: HandoffDelivered, Close: true,
 		By: HandoffByAgentActor, IssueActor: issuestate.Agent,
-		Check: func(iss *Issue) error {
+		Check: func(_ *HandoffItem, iss *Issue) error {
 			if iss.ID == c.ID {
 				return refuse
 			}

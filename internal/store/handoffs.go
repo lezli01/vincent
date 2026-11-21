@@ -189,7 +189,9 @@ func claimedHandoffExpr() sqlFrag {
 // open issue — no live item claims it, and no `delivered` item names its
 // current delivery, which is the task latestDeliveryExpr picks at the
 // head_sha that delivery carries. A follow-up that moves the head makes the
-// issue eligible again; one that adds no commits does not. The lane is
+// issue eligible again; one that adds no commits does not. Since #1042 such
+// an issue reads lane `open` anyway, so the NOT EXISTS restates what the
+// lane already says; it is kept so eligibility does not hang on that. The lane is
 // laneExpr's, so when 137.15 makes `hand_off` mean readiness, eligibility
 // follows without an edit here.
 func handoffEligibleExpr() sqlFrag {
@@ -238,8 +240,9 @@ const (
 	HandoffMarkerClaimed HandoffMarker = "claimed"
 	// HandoffMarkerWaiting is an issue a `waiting` item claims.
 	HandoffMarkerWaiting HandoffMarker = "waiting"
-	// HandoffMarkerDelivered is an open `hand_off` issue whose current
-	// delivery a handoff delivered without closing it.
+	// HandoffMarkerDelivered is an open issue whose current delivery a
+	// handoff delivered without closing it. Its lane is `open` (#1042,
+	// amending §5.6): the rest of the issue is open work again.
 	HandoffMarkerDelivered HandoffMarker = "delivered"
 	// HandoffMarkerIdle is an open `in_progress` issue with nothing
 	// running: finished work that is not ready.
@@ -285,7 +288,7 @@ func HandoffMarkerOf(
 		return HandoffMarkerClaimed
 	case lane == issuestate.LaneHandOff && !deliveredCurrent:
 		return HandoffMarkerPending
-	case lane == issuestate.LaneHandOff:
+	case lane == issuestate.LaneOpen && deliveredCurrent:
 		return HandoffMarkerDelivered
 	case lane == issuestate.LaneInProgress && !active:
 		return HandoffMarkerIdle
@@ -298,12 +301,14 @@ func HandoffMarkerOf(
 // and activeExpr rather than restating them, so the marker, a `select:` and
 // the board cannot disagree about an issue.
 func handoffMarkerExpr() sqlFrag {
-	eligible, lane, active := handoffEligibleExpr(), laneExpr(), activeExpr()
+	eligible, lane, active, delivered := handoffEligibleExpr(), laneExpr(), activeExpr(), deliveredCurrentFrom()
 	args := []any{string(issuestate.Closed), string(HandoffMarkerClaimed), string(HandoffMarkerWaiting)}
 	args = append(args, eligible.args...)
 	args = append(args, string(HandoffMarkerPending))
 	args = append(args, lane.args...)
-	args = append(args, string(issuestate.LaneHandOff), string(HandoffMarkerDelivered))
+	args = append(args, string(issuestate.LaneOpen))
+	args = append(args, delivered.args...)
+	args = append(args, string(HandoffMarkerDelivered))
 	args = append(args, lane.args...)
 	args = append(args, string(issuestate.LaneInProgress))
 	args = append(args, active.args...)
@@ -314,7 +319,7 @@ func handoffMarkerExpr() sqlFrag {
 				THEN (SELECT CASE WHEN hi.outcome IS NULL THEN ? ELSE ? END
 					FROM handoff_items hi WHERE hi.issue_id = i.id AND ` + claimCond + `)
 			WHEN ` + eligible.sql + ` = 1 THEN ?
-			WHEN ` + lane.sql + ` = ? THEN ?
+			WHEN ` + lane.sql + ` = ? AND EXISTS (SELECT 1 ` + delivered.sql + `) THEN ?
 			WHEN ` + lane.sql + ` = ? AND NOT ` + active.sql + ` THEN ?
 			END)`,
 		args: args,

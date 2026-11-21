@@ -1976,7 +1976,9 @@ line says what most needs saying:
   tasks are running and `· n merging` while merge-backs are waiting; with nothing
   in the main worktree, `▶ N tasks`;
 - `✓ N done` — in the Hand-off column;
-- `○ no tasks`, or `○ N tasks · cancelled` — nothing is working on it.
+- `○ no tasks`, or `○ N tasks · cancelled` — nothing is working on it;
+- `○ N tasks · delivered in part` — a handoff delivered its work and left it
+  open for the rest, which needs a new task.
 
 The imported id never goes: labels give way to a count such as `+2` first, the
 reference shortens to `gh#N` when every imported issue comes from one repository,
@@ -2046,8 +2048,9 @@ row under it.
 
 A hand-off card shows what its delivery is — `change`, `reply` or `none` — and
 where it stands toward a handoff: nothing more while it is `pending`, then
-`claimed (H7)`, `waiting` or `delivered`, with `· paused` while the claiming
-handoff's task is paused. An in-progress card whose work has finished but is
+`claimed (H7)` or `waiting`, with `· paused` while the claiming
+handoff's task is paused. An open card a handoff delivered but left open says
+`delivered`. An in-progress card whose work has finished but is
 not ready says `idle`; `.` marks it ready, which moves it to hand-off, and `.`
 on a pending hand-off card takes that back.
 

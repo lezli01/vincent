@@ -102,26 +102,30 @@ func orFrag(a, b sqlFrag) sqlFrag {
 // finished work that is not — a delivery marked not ready, or only a side
 // task's — is `in_progress` too, idle until someone marks it ready; and
 // anything else — no task, or only aborted ones (decision 19) — `open`.
+// A ready latest delivery that a handoff item `delivered` while the issue
+// stayed open reads `open` too (#1042, amending §5.6): the issue was handed
+// off in part, and what is left is open work again.
 //
 // A chat on the issue that is the latest main-line work (task 140 decision 5,
 // issueLatestChatCond) is `in_progress` too, ahead of a ready delivery.
 func laneExpr() sqlFrag {
 	unsettled, ready, finished := activeExpr(), latestReadyExpr(), rootTaskExists(handedOffCond())
-	chat := issueLatestChatCond()
+	chat, delivered := issueLatestChatCond(), deliveredCurrentFrom()
 	args := []any{string(issuestate.Closed), string(issuestate.LaneDone)}
 	args = append(args, unsettled.args...)
 	args = append(args, string(issuestate.LaneInProgress))
 	args = append(args, chat.args...)
 	args = append(args, string(issuestate.LaneInProgress))
 	args = append(args, ready.args...)
-	args = append(args, string(issuestate.LaneHandOff))
+	args = append(args, delivered.args...)
+	args = append(args, string(issuestate.LaneOpen), string(issuestate.LaneHandOff))
 	args = append(args, finished.args...)
 	args = append(args, string(issuestate.LaneInProgress), string(issuestate.LaneOpen))
 	return sqlFrag{
 		sql: `(CASE WHEN i.state = ? THEN ?
 			WHEN ` + unsettled.sql + ` THEN ?
 			WHEN ` + chat.sql + ` THEN ?
-			WHEN ` + ready.sql + ` = 1 THEN ?
+			WHEN ` + ready.sql + ` = 1 THEN (CASE WHEN EXISTS (SELECT 1 ` + delivered.sql + `) THEN ? ELSE ? END)
 			WHEN ` + finished.sql + ` THEN ?
 			ELSE ? END)`,
 		args: args,
@@ -228,6 +232,72 @@ func watchIssueLaneTx(ctx context.Context, tx *sql.Tx, issueID, projectID int64)
 		return laneWatch{}, err
 	}
 	return laneWatch{issueID: issueID, projectID: projectID, from: from}, nil
+}
+
+// watchHandoffLanesTx starts watching the lane of every issue a handoff
+// owned by taskID has an item for. Deleting the handoff's task cascades
+// to its handoff and items (migration 0046), and a `delivered` item is a
+// lane fact since #1042 — the issue it left open reads `open` — so the
+// delete can move issues that are not the task's own (review F2).
+func watchHandoffLanesTx(ctx context.Context, tx *sql.Tx, taskID int64) ([]laneWatch, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT hi.issue_id, i.project_id
+		FROM handoffs h JOIN handoff_items hi ON hi.handoff_id = h.id JOIN issues i ON i.id = hi.issue_id
+		WHERE h.task_id = ? ORDER BY hi.issue_id`, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	type item struct{ issueID, projectID int64 }
+	var items []item
+	for rows.Next() {
+		var it item
+		if err := rows.Scan(&it.issueID, &it.projectID); err != nil {
+			return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
+		}
+		items = append(items, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
+	}
+	// The lane reads below run on the same transaction's one connection,
+	// so the cursor is closed before them.
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
+	}
+	watches := make([]laneWatch, 0, len(items))
+	for _, it := range items {
+		w, err := watchIssueLaneTx(ctx, tx, it.issueID, it.projectID)
+		if err != nil {
+			return nil, err
+		}
+		watches = append(watches, w)
+	}
+	return watches, nil
+}
+
+// followAllTx is followTx over several watches: every lane event the task
+// write caused is appended after cause, in order, and chained behind it
+// and behind any event already following it.
+func followAllTx(ctx context.Context, tx *sql.Tx, cause *Event, taskID int64, watches ...laneWatch) error {
+	tail := cause
+	for tail.follow != nil {
+		tail = tail.follow
+	}
+	for _, w := range watches {
+		ev, err := w.changedTx(ctx, tx, &taskID, "")
+		if err != nil {
+			return err
+		}
+		if ev == nil {
+			continue
+		}
+		if err := appendEventTx(ctx, tx, ev); err != nil {
+			return err
+		}
+		tail.follow = ev
+		tail = ev
+	}
+	return nil
 }
 
 // changedTx is the after half: the `issue.lane_changed` event the write

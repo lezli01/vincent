@@ -1329,7 +1329,7 @@ before the upgrade that added the command says so, and to restart it.
 ```sh
 vincent task deliver [--task ID] [--kind change|reply|none] [--title TEXT]
                      [--body TEXT | --body-file PATH] [--summary TEXT | --summary-file PATH]
-                     [--head SHA] [--close-reason completed|not_planned|duplicate]
+                     [--head SHA] [--close-reason completed|not_planned|duplicate|none]
                      [--proof TEXT | --proof-file PATH] [--ready] [--json]
 ```
 
@@ -4042,7 +4042,9 @@ does. `--all` takes every unresolved item and leaves waiting ones alone.
 each issue first.
 
 - `deliver` closes the issue with `--close`, by default the delivery's
-  suggested reason, else `completed`; `--close none` leaves it open.
+  suggested reason, else `completed`; `--close none` leaves it open, and so
+  does a delivery that suggested `none`. An issue left open this way moves to
+  the `open` lane, marked `delivered`, so its remaining work can be picked up.
 - `return` releases the claim and withdraws the issue's readiness, so it
   waits in `in_progress`. `--follow-up` queues the prompt as a follow-up on
   the issue's latest main task (`--paused` holds it); with `--side` it runs as

@@ -429,6 +429,11 @@ A `waiting` or `claimed` issue whose work restarts — the handoff itself filed
 a fix task for it — is `in_progress`, as task 134 decision 2 already says; the
 marker stays on the card until the handoff resolves the item.
 
+*Amended 2026-11-21 (issue #1042):* an issue a handoff `delivered` and left
+open now reads lane `open`, not `hand_off` (spec §5.6), so `delivered` is the
+marker of an `open` issue. The marker vocabulary is unchanged; this extends
+the decision, it does not reverse it.
+
 *Alternative beaten:* a fifth stored or derived lane (`handing_off`,
 `in_review`). The lane is "where the work is"; the marker is "what the handoff
 is doing with it". A fifth lane would split one column of finished work into

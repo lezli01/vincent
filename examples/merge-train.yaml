@@ -1,5 +1,5 @@
 # merge-train — stack every handed-off change into one branch, verify it,
-# open one pull request for it, merge it, and close the issues.
+# open one pull request for it, merge it, and deliver the issues.
 #
 # A handoff workflow (`role: handoff`): it never runs as an ordinary task.
 # A handoff claims the issues whose main task delivered a `change` and runs
@@ -28,12 +28,17 @@
 #            push in between makes GitHub refuse it. A merge refused because
 #            a check is still running is not a failure: the loop asks again.
 #   deliver  only once the pull request reads as merged: every item still
-#            claimed is delivered and its issue closed as completed, through
-#            vincent. An item that is not a `change` was released at `stack`.
+#            claimed is delivered through vincent, and its issue closed with
+#            the reason its own delivery suggested (else completed). A
+#            delivery that suggested `none` covered only part of its issue,
+#            which stays open and moves back to the open lane for the rest
+#            of the work. No `--close` here: one would override every
+#            item's suggestion. An item that is not a `change` was released
+#            at `stack`.
 #
 # Requires `vincent`, `git` and `jq`, and a project with a GitHub origin.
 name: merge-train
-description: Stack every handed-off change onto one branch, verify it, open one pull request, merge it at the verified commit, and close the issues.
+description: Stack every handed-off change onto one branch, verify it, open one pull request, merge it at the verified commit, and deliver the issues.
 role: handoff
 platforms: [posix]
 
@@ -99,7 +104,7 @@ steps:
         run: sleep 360
 
   - id: deliver
-    name: Close the issues
+    name: Deliver the issues
     type: command
     # The postcondition: the merge call returning is not the merge having
     # happened, so read the pull request back before closing anything.
@@ -110,4 +115,4 @@ steps:
         echo "the pull request is not merged at $(git rev-parse HEAD)" >&2
         exit 1
       fi
-      vincent handoff deliver {{.Handoff.ID}} --all --close completed
+      vincent handoff deliver {{.Handoff.ID}} --all

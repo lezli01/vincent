@@ -115,7 +115,7 @@ the handoff's own steps, or by you:
 
 | Verb | Outcome | What happens to the issue |
 |---|---|---|
-| `vincent handoff deliver` | `delivered` | Closed with `--close` — the delivery's suggested reason, else `completed`. `--close none` leaves it open, kept out of later handoffs until new work replaces the delivery |
+| `vincent handoff deliver` | `delivered` | Closed with `--close` — the delivery's suggested reason, else `completed`. `--close none`, or a delivery that suggested `none` (`vincent task deliver --close-reason none`, for work that covers only part of the issue), leaves it open: it moves back to the `open` lane, kept out of later handoffs until new work replaces the delivery |
 | `vincent handoff return` | `returned` | The claim is dropped and its readiness withdrawn, so it waits in `in_progress`. `--follow-up` queues a prompt on the issue's main task; with `--side`, as a new side task merged back into the main branch |
 | `vincent handoff wait` | `waiting` | Parked on something outside the handoff. It keeps its claim after the task settles, and closing the issue — by anyone, a GitHub import included — records it delivered |
 | `vincent handoff release` | `released` | The claim is dropped with no verdict; the issue stays eligible for a later handoff |
@@ -147,8 +147,8 @@ stands toward a handoff:
 - **`claimed`** — a handoff holds it and has not decided it. It shows in any
   lane, because the handoff's task may restart work on it.
 - **`waiting`** — a handoff holds it, parked with `handoff wait`.
-- **`delivered`** — delivered and left open, until new work makes it
-  `pending` again.
+- **`delivered`** — delivered and left open, back in the `open` lane, until
+  new work makes it `pending` in `hand_off` again.
 - **`idle`** — in progress, with finished work that is not ready.
 
 While the claiming handoff's task is paused, a `claimed` or `waiting` marker
@@ -242,7 +242,9 @@ workflow files' headers walk through each decision.
 change into the handoff task's own branch — each item's verified `head_sha`
 replayed in order with `git rebase --onto` — verifies them together, opens one
 pull request, merges it pinned to the verified commit, and only then runs
-`vincent handoff deliver --all`. Its
+`vincent handoff deliver --all` — with no `--close`, so each issue closes with
+the reason its own delivery suggested, and one whose delivery suggested `none`
+stays open. Its
 [trigger](../examples/triggers/merge-train.yaml) runs at 02:00 on weekdays and grants
 `pull.create`, `pull.merge` and `issue.close`. A conflict fails the step and
 leaves it to a person; the items release when the task settles, so nothing is
@@ -277,7 +279,7 @@ each issue reaching `hand_off` and grants `pull.create`.
 
 [`notify-handoff`](../../examples/notify-handoff.yaml) posts the handoff file
 to a webhook and delivers every item with `--close none`, so each issue stays
-open for whoever picks it up. It writes nothing to GitHub, so its
+open for whoever picks it up, back in the `open` lane. It writes nothing to GitHub, so its
 [trigger](../examples/triggers/notify-handoff.yaml) grants nothing. A deploy is
 the same shape — run the script, and deliver only if it succeeded:
 

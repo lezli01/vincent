@@ -90,7 +90,7 @@ func newTaskDeliverCmd() *cobra.Command {
 	cmd.Flags().StringVar(&summary, "summary", "", "What the change is for")
 	cmd.Flags().StringVar(&summaryFile, "summary-file", "", "Read the summary from a file (- for stdin)")
 	cmd.Flags().StringVar(&head, "head", "", "The commit the run verified; the branch tip by default")
-	cmd.Flags().StringVar(&closeReason, "close-reason", "", "Suggested close reason: completed, not_planned or duplicate")
+	cmd.Flags().StringVar(&closeReason, "close-reason", "", "Suggested close reason: completed, not_planned, duplicate, or none when the issue should stay open")
 	cmd.Flags().StringVar(&proof, "proof", "", "What proved the change")
 	cmd.Flags().StringVar(&proofFile, "proof-file", "", "Read the proof from a file (- for stdin)")
 	cmd.Flags().BoolVar(&ready, "ready", false, "Mark the delivery ready to hand off")

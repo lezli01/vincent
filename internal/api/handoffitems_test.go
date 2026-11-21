@@ -266,3 +266,45 @@ func testHandoffDeliverImportedUnderAGrant(t *testing.T, provider string) {
 		t.Errorf("outbox = %+v, want set_state and add_comment by handoff", ops)
 	}
 }
+
+// TestHandoffDeliverImportedLeftOpenByAgent is review F3 on #1042: whether
+// an item closes is decided per item, so a step's deliver with no `close`
+// over an imported issue whose delivery suggested `none` closes nothing and
+// needs no issue.close grant. It is accepted, the issue stays open and no
+// write is queued for the forge.
+func TestHandoffDeliverImportedLeftOpenByAgent(t *testing.T) {
+	h := newActionHarness(t)
+	ctx := t.Context()
+	iss, _, err := h.store.UpsertRemoteIssue(ctx, store.RemoteIssue{
+		ProjectID: h.projectID, Provider: "github", RemoteKey: "gh-1", Repo: "o/r", Number: 1,
+		Title: "imported", State: issuestate.Open,
+	}, issuestate.Sync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := h.createTask(t, map[string]any{"project_id": h.projectID, "issue_id": iss.ID})
+	setState(t, h, task.ID, store.TaskRunning)
+	dl := &store.Delivery{
+		Kind: store.DeliveryChange, Title: "x", HeadSHA: "abc", RecordedAt: time.Now().UTC(),
+		CloseReason: store.DeliveryLeaveOpen,
+	}
+	if _, _, err := h.store.TransitionTask(ctx, task.ID, store.TaskRunning, store.TaskDone, store.TaskChange{Delivery: dl}); err != nil {
+		t.Fatal(err)
+	}
+	ho := startHandoff(t, h, iss.ID)
+	path := itemVerbPath(ho.ID, "all", "deliver")
+	got := wantStatus(t, http.StatusOK)(h.postMarked(t, path, nil, headerTaskMarker, "4242"))
+	if it := outcomeOf(t, got, iss.ID); it.Outcome != "delivered" || it.OutcomeBy != "agent" {
+		t.Errorf("item = %+v", it)
+	}
+	after, err := h.store.GetIssue(ctx, iss.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issuestate.Normalize(after.State) != issuestate.Open {
+		t.Errorf("issue state = %s, want open", after.State)
+	}
+	if writes, err := h.store.IssueWrites(ctx, iss.ID); err != nil || len(writes) != 0 {
+		t.Errorf("outbox = %+v, %v; want nothing queued", writes, err)
+	}
+}

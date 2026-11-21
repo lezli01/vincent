@@ -415,14 +415,17 @@ steps:
 
       # `deliver` records the run's result with `vincent task deliver`
       # (task 137.2), which v0.11.0 and older lack: there `task deliver`
-      # only prints `task`'s help. Find that out now rather than at the end
-      # of the verify loop (review F3 of #850). The daemon is normally this
-      # same binary, auto-started by it.
+      # only prints `task`'s help. On a `closes: no` run it passes
+      # `--close-reason none` (#1042, after v0.13.0), which an older daemon
+      # answers with a 400. Find both out now rather than at the end of the
+      # verify loop (review F3 of #850, review F8 of #1043): the flag's help
+      # names `none` exactly when the delivery accepts it. The daemon is
+      # normally this same binary, auto-started by it.
       case "$(vincent task deliver --help 2>&1)" in
-        *"vincent task deliver ["*) ;;
+        *"vincent task deliver ["*"none when the issue should stay open"*) ;;
         *)
           say "vincent is too old for this workflow"
-          echo "this workflow needs vincent with 'vincent task deliver' (task 137.2, after v0.11.0); reinstall vincent and restart its daemon" >&2
+          echo "this workflow needs vincent whose 'vincent task deliver --close-reason' takes none (#1042, after v0.13.0); reinstall vincent and restart its daemon" >&2
           exit 1 ;;
       esac
 
@@ -2083,7 +2086,7 @@ steps:
         table in `internal/api/server.go`, the TUI key tables
         `internal/tui/bindings.go`, the block reasons the `Reason*` constants.
 
-      Write two files:
+      Write three files:
 
       - `.vincent-issue/pr-title.txt` — one line, plain language, no trailing
         prose, and never a Conventional Commits prefix: `Add workflow fields`,
@@ -2092,10 +2095,26 @@ steps:
         body, so a prefixed title makes Release Please record the change twice,
         and `.github/workflows/pr-title.yml` is a required check that fails the
         pull request for it.
+      - `.vincent-issue/closes.txt` — exactly one line, `closes: yes` or
+        `closes: no`, decided **now**, from what this change actually
+        delivers rather than from what was planned (#1042).
+        {{- if or (eq (index .Steps "classify").ExitCode 2) (eq (index .Steps "classify").ExitCode 3) }}
+        The second line of `.vincent-issue/brief.md` is where you start from,
+        not the final word: scoping down while implementing turns it into
+        `closes: no`.
+        {{- end }}
+        `closes: yes` only when this change delivers **everything** the issue
+        asks for that still stands. Anything scoped down, deferred, or left
+        for a person makes it `closes: no`. The delivery carries it to the
+        merge train, which closes the issue on `yes` and leaves it open on
+        `no`, so a wrong `yes` closes an issue that still has work in it.
       - `.vincent-issue/pr.md` — the pull request body, following
         `.github/PULL_REQUEST_TEMPLATE.md`. Under **Related**, write
-        `Closes #<the issue number from issue.json>` so merging the PR closes
-        the issue.
+        `Closes #<the issue number from issue.json>` when `closes.txt` says
+        `closes: yes`. On `closes: no` write `Part of #<the issue number>`
+        instead of `Closes`, and list under it every item this change leaves
+        open and why, so merging does not close an issue that still has work
+        in it.
 
         Describe **one change**, not a list of units. The reviewer is reading a
         pull request, not a project plan; that the work was split across
@@ -2104,16 +2123,8 @@ steps:
         {{- if eq (index .Steps "classify").ExitCode 0 }}
         Say plainly what the root cause was and how the regression test would
         catch it coming back.
-        {{- else if eq (index .Steps "classify").ExitCode 2 }}
-        **Except** when the second line of `.vincent-issue/brief.md` is
-        `closes: no`: then write `Part of #<the issue number>` instead of
-        `Closes`, and list under it every item this change leaves open and why,
-        so merging does not close an issue that still has work in it.
         {{- else if eq (index .Steps "classify").ExitCode 3 }}
-        **Except** when the second line of `.vincent-issue/brief.md` is
-        `closes: no`: then write `Part of #<the issue number>` instead of
-        `Closes`, and list under it every item this change leaves open and why.
-        Either way, say which commands in `.vincent-issue/proof.sh` passed on
+        Say which commands in `.vincent-issue/proof.sh` passed on
         this host, and that this pull request's own CI is the first run on the
         platforms this machine is not.
         {{- end }}
@@ -2148,6 +2159,7 @@ steps:
       test -s .vincent-issue/pr-title.txt &&
       { ! grep -Eq '^[a-z][a-z0-9_-]*(\([^)]+\))?!?:[[:space:]]+' .vincent-issue/pr-title.txt || { echo 'pr-title.txt carries a Conventional Commit prefix, which .github/workflows/pr-title.yml rejects; write a plain-language title:' >&2; cat .vincent-issue/pr-title.txt >&2; false; }; } &&
       test -s .vincent-issue/pr.md &&
+      { c=$(cat .vincent-issue/closes.txt 2>/dev/null); test "$c" = "closes: yes" || test "$c" = "closes: no" || { echo '.vincent-issue/closes.txt must be exactly one line, closes: yes or closes: no; it holds:' >&2; printf '%s\n' "$c" >&2; false; }; } &&
       { noexec=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" { print $4 }'); test -z "$noexec" || { echo 'scripts not committed executable (git update-index --chmod=+x):' >&2; echo "$noexec" >&2; false; }; } &&
       {{if eq (index .Steps "classify").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
       {{if eq (index .Steps "classify").ExitCode 3}}sh .vincent-issue/proof.sh &&{{end}}
@@ -2642,11 +2654,13 @@ steps:
     #     summary        .vincent-issue/brief.md — a conflict resolver's best input
     #     head_sha       the commit the verification above judged
     #     proof          present only when the change shipped without automated proof
-    #     close_reason   `completed` when brief.md's second line is `closes: yes`
+    #     close_reason   `completed` when `implement`'s closes.txt is `closes: yes`,
+    #                    `none` (leave the issue open) when it is `closes: no` (#1042)
     #
     # The daemon fills `branch` and `base` from the task, and `recorded_at`.
-    # It needs a vincent built from task 137.2 or later (after v0.11.0) for
-    # both CLI and daemon; `fetch` refuses an older one up front.
+    # It needs a vincent whose delivery takes `close_reason: none` (#1042,
+    # after v0.13.0) for both CLI and daemon; `fetch` refuses an older one
+    # up front.
     #
     # `head_sha` pins the delivery to what was verified. A hand edit that
     # moves the branch afterwards is not silently swept into a merge train;
@@ -2678,7 +2692,7 @@ steps:
         echo "{{.Task.BranchName}} has no commits past origin/{{.Task.BaseBranch}}." >&2
         exit 1
       fi
-      for f in pr-title.txt pr.md brief.md; do
+      for f in pr-title.txt pr.md brief.md closes.txt; do
         test -s ".vincent-issue/$f" || {
           say ".vincent-issue/$f is missing: nothing was delivered"
           echo ".vincent-issue/$f is missing or empty; the delivery needs it." >&2
@@ -2707,8 +2721,16 @@ steps:
       # Optional flags as positional parameters, so each stays one word.
       set --
       if [ -s "$proof" ]; then set -- "$@" --proof-file "$proof"; fi
-      case "$(sed -n 2p .vincent-issue/brief.md)" in
+      # closes.txt is `implement`'s decision, made from what it delivered:
+      # `no` records the leave-open suggestion, so the merge train's
+      # `handoff deliver` leaves this issue open (#1042).
+      case "$(cat .vincent-issue/closes.txt)" in
         "closes: yes") set -- "$@" --close-reason completed ;;
+        "closes: no") set -- "$@" --close-reason none ;;
+        *)
+          say ".vincent-issue/closes.txt is malformed: nothing was delivered"
+          echo ".vincent-issue/closes.txt must say closes: yes or closes: no." >&2
+          exit 1 ;;
       esac
 
       title=$(cat .vincent-issue/pr-title.txt)

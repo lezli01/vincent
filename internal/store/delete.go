@@ -160,6 +160,12 @@ func (s *Store) DeleteTaskCascade(ctx context.Context, id int64) (err error) {
 	if err != nil {
 		return err
 	}
+	// A handoff's task takes its handoff and items with it, and an issue
+	// a `delivered` item left open moves back to hand_off (#1042).
+	handoffWatches, err := watchHandoffLanesTx(ctx, tx, id)
+	if err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM step_runs WHERE task_id = ?`, id); err != nil {
 		return fmt.Errorf("delete task %d cascade: %w", id, err)
 	}
@@ -178,6 +184,9 @@ func (s *Store) DeleteTaskCascade(ctx context.Context, id int64) (err error) {
 		return err
 	}
 	if err = watch.followTx(ctx, tx, ev, id); err != nil {
+		return err
+	}
+	if err = followAllTx(ctx, tx, ev, id, handoffWatches...); err != nil {
 		return err
 	}
 	if err = s.commitTx(tx); err != nil {

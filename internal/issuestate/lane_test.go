@@ -29,9 +29,19 @@ func TestLaneOf(t *testing.T) {
 		{"waiting", false, true, true, LaneHandOff},
 		{"waiting", false, true, false, LaneInProgress},
 	} {
-		if got := LaneOf(tc.s, tc.unsettled, tc.finished, tc.ready, false); got != tc.want {
+		if got := LaneOf(tc.s, tc.unsettled, tc.finished, tc.ready, false, false); got != tc.want {
 			t.Errorf("LaneOf(%s, unsettled=%v, finished=%v, ready=%v) = %s, want %s",
 				tc.s, tc.unsettled, tc.finished, tc.ready, got, tc.want)
+		}
+		// A ready delivery a handoff delivered while the issue stayed open
+		// is open work again (#1042); nothing else moves.
+		wantDelivered := tc.want
+		if wantDelivered == LaneHandOff {
+			wantDelivered = LaneOpen
+		}
+		if got := LaneOf(tc.s, tc.unsettled, tc.finished, tc.ready, true, false); got != wantDelivered {
+			t.Errorf("LaneOf(%s, unsettled=%v, finished=%v, ready=%v, delivered) = %s, want %s",
+				tc.s, tc.unsettled, tc.finished, tc.ready, got, wantDelivered)
 		}
 		// A chat that is the latest work (task 140 decision 5) is in
 		// progress, ahead of a ready delivery; closing still wins.
@@ -39,7 +49,7 @@ func TestLaneOf(t *testing.T) {
 		if Normalize(tc.s) == Closed {
 			want = LaneDone
 		}
-		if got := LaneOf(tc.s, tc.unsettled, tc.finished, tc.ready, true); got != want {
+		if got := LaneOf(tc.s, tc.unsettled, tc.finished, tc.ready, false, true); got != want {
 			t.Errorf("LaneOf(%s, unsettled=%v, finished=%v, ready=%v, chatLatest) = %s, want %s",
 				tc.s, tc.unsettled, tc.finished, tc.ready, got, want)
 		}

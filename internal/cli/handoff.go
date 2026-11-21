@@ -280,8 +280,10 @@ var handoffVerbHelp = map[string][2]string{
 		"Records each item delivered: its issue's delivery is integrated. The issue is\n" +
 			"closed with --close — completed, not_planned or duplicate — or, by default,\n" +
 			"with the delivery's suggested close reason, else completed. --close none\n" +
-			"leaves it open; it is still kept out of later handoffs until new work\n" +
-			"replaces the delivery.",
+			"leaves it open, and so does a delivery that suggested none (it covered\n" +
+			"only part of the issue). An issue left open moves back to the open lane,\n" +
+			"marked delivered, so its remaining work can be picked up; it is still kept\n" +
+			"out of later handoffs until new work replaces the delivery.",
 	},
 	apiclient.HandoffReturn: {
 		"Return handoff items to their workshop",

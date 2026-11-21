@@ -136,9 +136,9 @@ func (s *Server) handleTaskDeliver(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("kind must be one of %v (got %q)", store.DeliveryKinds, req.Kind))
 		return
 	}
-	if req.CloseReason != "" && !issuestate.ValidReason(issuestate.Reason(req.CloseReason)) {
+	if !store.ValidDeliveryCloseReason(req.CloseReason) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			fmt.Sprintf("close_reason must be one of %v (got %q)", issuestate.Reasons, req.CloseReason))
+			fmt.Sprintf("close_reason must be one of %v or %s (got %q)", issuestate.Reasons, store.DeliveryLeaveOpen, req.CloseReason))
 		return
 	}
 	ctx := r.Context()
