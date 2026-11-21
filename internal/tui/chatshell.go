@@ -369,7 +369,7 @@ func (v *chatView) shellCardLines(r apiclient.ChatShellRun, width int) []string 
 		shown = rows[:chatShellFold]
 	}
 	for _, l := range shown {
-		l = strings.ReplaceAll(ansi.Strip(l), "\t", "    ")
+		l = strings.ReplaceAll(shellOutputLine(l), "\t", "    ")
 		lines = append(lines, "   "+styleDim.Render("│ ")+ansi.Truncate(l, w-2, "…"))
 	}
 	if folded {
@@ -383,6 +383,18 @@ func (v *chatView) shellCardLines(r apiclient.ChatShellRun, width int) []string 
 		lines = append(lines, "   "+styleWarn.Render("output truncated — the daemon kept only the first part"))
 	}
 	return lines
+}
+
+// shellOutputLine is one line of a run's output as a terminal would have
+// left it: only the text after its last bare carriage return (progress
+// meters redraw that way), with every escape sequence and control
+// character removed, as everything else from an agent or a command is.
+func shellOutputLine(l string) string {
+	l = strings.TrimRight(l, "\r")
+	if i := strings.LastIndexByte(l, '\r'); i >= 0 {
+		l = l[i+1:]
+	}
+	return sanitizeText(l)
 }
 
 // chatShellStatus is the run's state, or its exit code once it exited.

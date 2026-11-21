@@ -325,3 +325,28 @@ func TestChatImagePathPaste(t *testing.T) {
 		t.Fatalf("an unreadable path pasted %q", v.composer.Value())
 	}
 }
+
+// TestChatShellCardStripsControls (review F1): a progress meter's bare
+// carriage returns, a shift-out and a bell never reach the terminal; the
+// line shows what a terminal would have left, and tabs still expand.
+func TestChatShellCardStripsControls(t *testing.T) {
+	v := shellFixture(t)
+	v.shell.out[11] = "progress 10%\rprogress 100%\n\x0eshifted\x07bell\x1b[31mred\x1b[0m\tab\r\n"
+	v.bodyDirty = true
+	v.render(100, 40)
+	var card []string
+	for _, l := range v.shellCardLines(v.shell.runs[1], 100) {
+		card = append(card, ansi.Strip(l))
+	}
+	joined := strings.Join(card, "\n")
+	for _, bad := range []string{"\r", "\x0e", "\x07", "\x1b", "progress 10%"} {
+		if strings.Contains(joined, bad) {
+			t.Errorf("the card kept %q:\n%q", bad, joined)
+		}
+	}
+	for _, want := range []string{"│ progress 100%", "│ shiftedbellred    ab"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the card lacks %q:\n%q", want, joined)
+		}
+	}
+}
