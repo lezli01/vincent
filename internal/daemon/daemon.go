@@ -784,6 +784,11 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		logger.Error("startup failed: chat recovery", "error", err)
 		return err
 	}
+	// Checkpoint refs of chats whose rows are gone (task 167.8, decision
+	// 12): once here, before the API serves, beside the other startup
+	// sweeps, then on retention's own 24 h tick.
+	sweepCheckpointRefs(ctx, chats, logger)
+	go runCheckpointRefSweep(ctx, chats, logger)
 	sched.Start(ctx)
 	issueArchiver.Start(ctx)
 	finishedArchiver.Start(ctx)
@@ -842,6 +847,34 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	}
 	logger.Info("daemon stopped")
 	return nil
+}
+
+// sweepCheckpointRefs runs one chat checkpoint-ref sweep. A failure is
+// logged and dropped: the refs only cost disk, and a daemon that refused to
+// serve over them would have its priorities backwards.
+func sweepCheckpointRefs(ctx context.Context, chats *chatrun.Runner, logger *slog.Logger) {
+	n, err := chats.SweepCheckpointRefs(ctx)
+	switch {
+	case err != nil && ctx.Err() == nil:
+		logger.Warn("chat checkpoint ref sweep failed", "removed", n, "error", err)
+	case n > 0:
+		logger.Info("removed checkpoint refs of deleted chats", "chats", n)
+	}
+}
+
+// runCheckpointRefSweep repeats the sweep on the transcript pruner's
+// interval (§17), the daemon's maintenance cadence, until ctx is done.
+func runCheckpointRefSweep(ctx context.Context, chats *chatrun.Runner, logger *slog.Logger) {
+	t := time.NewTicker(taskrun.PruneInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			sweepCheckpointRefs(ctx, chats, logger)
+		}
+	}
 }
 
 // startAgentCatalogPrime starts the asynchronous startup probe and returns a
