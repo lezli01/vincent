@@ -1127,6 +1127,11 @@ EOF
   wait_chat "$C_RATE" idle 120
   chat_send "$C_RATE" 'What should the 429 body say, and which header carries the wait?'
   wait_chat "$C_RATE" idle 120
+  # A shell run after the second turn (task 170), so the workspace shots
+  # have a shell card in the history beside the turns. Through the CLI, the
+  # way a reader runs one, and a git command so its output is the seed
+  # repository's own history rather than anything of the host's.
+  "$VINCENT" chat shell "$C_RATE" 'git log --oneline -3' >/dev/null
 
   # A finished chat on another adapter and another project, the one
   # tui-chat-handoff's neighbours are not.
