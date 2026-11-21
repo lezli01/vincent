@@ -59,7 +59,7 @@ const chatColumns = `id, project_id, title, state, agent, model, effort, permiss
 	linked_task_id, opening_context, issue_id, end_sha, created_at, updated_at,
 	queue_paused, queue_pause_reason, draft, stash, draft_updated_at,
 	(SELECT COUNT(*) FROM chat_queued_messages q WHERE q.chat_id = chats.id),
-	last_viewed_at, resume_at, pending_preamble, forked_from_chat_id, forked_from_seq, ` + chatUnreadExpr
+	last_viewed_at, resume_at, pending_preamble, forked_from_chat_id, forked_from_seq, forked_from_agent, ` + chatUnreadExpr
 
 // chatUnreadExpr derives Chat.Unread in SQL (task 165) so a list stays one
 // query: the chat's latest terminal turn finished after it was last viewed,
@@ -106,14 +106,14 @@ func (s *Store) CreateChat(ctx context.Context, c *Chat) error {
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO chats (project_id, title, state, agent, model, effort, permission_mode,
 				branch, adopted_branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input,
-				resume_at, pending_preamble, forked_from_chat_id, forked_from_seq,
+				resume_at, pending_preamble, forked_from_chat_id, forked_from_seq, forked_from_agent,
 				created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			c.ProjectID, c.Title, string(c.State), c.Agent, nullString(c.Model), nullString(c.Effort),
 			c.PermissionMode, c.Branch, c.AdoptedBranch, c.BaseBranch, nullString(c.BaseSHA), refreshJSON, nullString(c.WorktreePath),
 			nullString(c.SessionID), nullString(string(c.PendingInput)),
 			nullString(c.ResumeAt), nullString(c.PendingPreamble), c.ForkedFromChatID, c.ForkedFromSeq,
-			formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
+			nullString(c.ForkedFromAgent), formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
 		if err != nil {
 			return fmt.Errorf("insert chat: %w", err)
 		}
@@ -941,16 +941,17 @@ func scanChat(r rowScanner) (*Chat, error) {
 	var issueID sql.NullInt64
 	var createdAt, updatedAt string
 	var pauseReason, draftUpdatedAt, lastViewedAt sql.NullString
-	var resumeAt, pendingPreamble sql.NullString
+	var resumeAt, pendingPreamble, forkedFromAgent sql.NullString
 	var forkedFromChatID, forkedFromSeq sql.NullInt64
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
 		&c.PermissionMode, &c.Branch, &c.AdoptedBranch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
 		&handoffTaskID, &linkedTaskID, &openingContext, &issueID, &endSHA, &createdAt, &updatedAt,
 		&c.QueuePaused, &pauseReason, &c.Draft, &c.Stash, &draftUpdatedAt, &c.QueuedCount,
-		&lastViewedAt, &resumeAt, &pendingPreamble, &forkedFromChatID, &forkedFromSeq, &c.Unread); err != nil {
+		&lastViewedAt, &resumeAt, &pendingPreamble, &forkedFromChatID, &forkedFromSeq, &forkedFromAgent, &c.Unread); err != nil {
 		return nil, err
 	}
 	c.ResumeAt, c.PendingPreamble = resumeAt.String, pendingPreamble.String
+	c.ForkedFromAgent = forkedFromAgent.String
 	if forkedFromChatID.Valid {
 		id := forkedFromChatID.Int64
 		c.ForkedFromChatID = &id

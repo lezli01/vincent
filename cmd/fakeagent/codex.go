@@ -102,6 +102,12 @@ func codexMain(scenario string) {
 	case "mcp-callback":
 		mcpCallback(dialectCodex, nil)
 		codexSuccess(prompt)
+	case "echo-prompt":
+		// The codex leg of issue #323's echo (task 171): codex takes its
+		// prompt — preamble and message joined — on stdin, and a test of a
+		// cross-agent fork reads back exactly what it was handed.
+		echoPrompt([]string{string(prompt)})
+		codexSuccess(prompt)
 	default: // success
 		codexSuccess(prompt)
 	}

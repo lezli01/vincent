@@ -39,7 +39,8 @@
 //	                      its argv or workspace wired it, then succeeds — task
 //	                      057.9, mcp.go; every dialect) |
 //	                      echo-prompt (appends the prompt it was handed,
-//	                      verbatim, to FAKEAGENT_PROMPT_FILE — issue #323) |
+//	                      verbatim, to FAKEAGENT_PROMPT_FILE — issue #323;
+//	                      claude- and codex-shaped) |
 //	                      stage-workflows (stages a global update-workflows
 //	                      proposal through the real `vincent workflow ls
 //	                      --global --json` — task 123, workflowproposal.go;

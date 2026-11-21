@@ -1,0 +1,11 @@
+-- 0073_chat_fork_agent: the agent a fork's source chat ran on (task 171,
+-- issue #1020, spec §5.5).
+--
+-- A fork may now run on a different agent than its source (task 171
+-- decision 2), and every surface labels it "forked from #N (claude)". The
+-- source's agent is recorded on the fork rather than read from the source
+-- at render time: forked_from_chat_id has no foreign key, the source may
+-- since have been permanently deleted (task 092), and the label must
+-- outlive it. NULL on every chat that is not a fork, and on a fork made
+-- before this migration.
+ALTER TABLE chats ADD COLUMN forked_from_agent TEXT;
