@@ -54,4 +54,21 @@ func TestForkedFromAgentAndPreambleEdit(t *testing.T) {
 	if _, err := st.EditChatPendingPreamble(ctx, c.ID, "again"); !errors.Is(err, store.ErrPreambleNotPending) {
 		t.Errorf("edit after clearing = %v", err)
 	}
+	// An ended chat has no next turn to seed, though its row still holds
+	// the plan (review F4). Terminal is final, so one chat per state.
+	for _, ended := range []chatstate.State{chatstate.Archived, chatstate.Closed, chatstate.HandedOff} {
+		e := &store.Chat{ProjectID: p.ID, Title: "ended", Agent: "codex", PermissionMode: "full-auto", PendingPreamble: "summary"}
+		if err := st.CreateChat(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.SetChatState(ctx, e.ID, ended); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.EditChatPendingPreamble(ctx, e.ID, "x"); !errors.Is(err, store.ErrPreambleNotPending) {
+			t.Errorf("edit while %s = %v", ended, err)
+		}
+		if got, err := st.GetChat(ctx, e.ID); err != nil || got.PendingPreamble != "summary" {
+			t.Errorf("edit while %s wrote %q, %v", ended, got.PendingPreamble, err)
+		}
+	}
 }

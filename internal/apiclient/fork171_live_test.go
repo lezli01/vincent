@@ -199,6 +199,16 @@ func TestCrossAgentForkAgainstTheRealAPI(t *testing.T) {
 	}
 	full, err := client.ForkChat(ctx, src.ID, apiclient.ForkRequest{Turn: 2, Agent: "codex", PermissionMode: "full-auto"})
 	if err != nil || full.Chat.PermissionMode != "full-auto" {
-		t.Errorf("fork with permission_mode full-auto = %+v, %v", full, err)
+		t.Fatalf("fork with permission_mode full-auto = %+v, %v", full, err)
+	}
+	// An archived seeded fork keeps its plan on the row, but has no next
+	// turn to seed: the edit is refused as rewind and fork are (review F4).
+	if _, err := client.ArchiveChat(ctx, full.Chat.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.PatchChat(ctx, full.Chat.ID, apiclient.PatchChatRequest{PendingPreamble: &edited})
+	if apiErr := (*apiclient.Error)(nil); !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict ||
+		apiErr.Code != "chat_terminal" {
+		t.Errorf("PATCH on an archived fork = %v, want 409 chat_terminal", err)
 	}
 }

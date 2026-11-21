@@ -4033,8 +4033,8 @@ While `resume_pending` is `seeded`, the chat carries that context as
 it (at most 1 MiB). An empty string clears it, so the next turn starts a fresh
 session with no earlier context. The edit is `409 chat_preamble_not_pending`
 when nothing seeded is pending — a natively resumed fork, a chat never rewound
-or forked, or one whose next turn already started — and `409 chat_turn_live`
-while a turn is accepted.
+or forked, or one whose next turn already started — `409 chat_terminal` on a
+chat that has ended, and `409 chat_turn_live` while a turn is accepted.
 
 | Status | `error` | When |
 |---|---|---|
