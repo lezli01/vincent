@@ -109,7 +109,7 @@ func (g *Git) runRaw(ctx context.Context, dir string, env []string, args ...stri
 
 // runInput is runRaw with stdin: a non-nil input is what git reads, which is
 // how ReverseHunk hands `git apply` a patch without a file of its own
-// (task 168.1). nil leaves stdin closed, as before.
+// (task 169.1). nil leaves stdin closed, as before.
 func (g *Git) runInput(ctx context.Context, dir string, env []string, input []byte, args ...string) ([]byte, error) {
 	// G204: g.path is "git" (or a test's stand-in) and args is an argument
 	// slice assembled by callers in this repository — no shell, so no quoting

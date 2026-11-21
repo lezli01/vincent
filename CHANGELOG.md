@@ -26,7 +26,7 @@ list with the user-facing context a commit subject cannot carry.
   counts. The same review is scriptable: `vincent chat diff`,
   `vincent chat diff reject` and `vincent chat diff accept`, over
   `GET /v1/chats/{id}/diff` and its `stat`, `reject`, `accept` and `unaccept`
-  routes (task 168, #1018).
+  routes (task 169, #1018).
 - **Every chat turn checkpoints its worktree first.** Before a turn's agent
   starts, vincent snapshots the worktree it runs in, uncommitted and untracked
   files included (ignored files are not), as
@@ -169,7 +169,7 @@ list with the user-facing context a commit subject cannot carry.
   switch tabs there, as they still do on every other tab; `tab`/`shift+tab`
   switch tabs from the Diff tab as before. A hunk in a folded
   file opens it, and the selected hunk's header is marked `▶`
-  (task 168, #1018).
+  (task 169, #1018).
 - **The terminal bell rings only while the TUI's terminal is unfocused.**
   It used to ring whenever a task entered `awaiting_input`; now it rings for
   that, for a chat asking for input and for a chat turn ending, but only

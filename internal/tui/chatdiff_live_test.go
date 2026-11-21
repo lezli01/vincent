@@ -27,7 +27,7 @@ import (
 	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
-// The chat's diff pane (task 168) against the real handlers, a real store and
+// The chat's diff pane (task 169) against the real handlers, a real store and
 // a real git worktree: what the pane draws is the daemon's diff, a reject
 // changes the file on disk, and the note it writes reaches the composer.
 

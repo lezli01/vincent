@@ -2012,7 +2012,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatalf("tab moved to %v, want %v", v.tab, taskTabStepDetails)
 			}
 		},
-		// Task 168 decision 4: on the workspace's Diff tab `]` walks the
+		// Task 169 decision 4: on the workspace's Diff tab `]` walks the
 		// hunks, and in the board's preview — the same context — it is
 		// still the way back to Output. The row's label promises both.
 		"]": func(t *testing.T) {
@@ -3907,10 +3907,10 @@ var vocabularyExceptions = map[string]string{
 	// only ever fire where available_actions says so.
 	"action/approve/a": "§6 approve — gated on available_actions",
 	"action/skip/s":    "§6 skip — gated on available_actions",
-	// Task 168 decision 3: the chat's diff pane holds the keyboard on a
+	// Task 169 decision 3: the chat's diff pane holds the keyboard on a
 	// surface with nothing to add and no listing to scope.
-	"panel/chat diff/a": "task 168 decision 3 — accept a hunk, where nothing is added or approved",
-	"panel/chat diff/s": "task 168 decision 3 — the diff's own scope, base or last turn, where no listing is",
+	"panel/chat diff/a": "task 169 decision 3 — accept a hunk, where nothing is added or approved",
+	"panel/chat diff/s": "task 169 decision 3 — the diff's own scope, base or last turn, where no listing is",
 	// Task 052 decision 6: link and unlink are the two writes to vincent's own
 	// column, and they live on the one screen that can see a pull request no
 	// task claims. `l` there is not a lane, and the takeover has none.

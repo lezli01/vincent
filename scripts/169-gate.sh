@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Task 168 gate (issue #1018; spec §5.5, §13.2): a chat's diff and its
+# Task 169 gate (issue #1018; spec §5.5, §13.2): a chat's diff and its
 # per-hunk review, driven over the wire and through the real binary against
 # the committed fakeagent, so CI never calls a real agent CLI.
 #
@@ -99,7 +99,7 @@ REPO="$TMP/repo"
 mkdir -p "$REPO"
 git -C "$REPO" init -q -b main
 git -C "$REPO" config user.email gate@example.com
-git -C "$REPO" config user.name "168 Gate"
+git -C "$REPO" config user.name "169 Gate"
 notes_with > "$REPO/notes.txt"
 git -C "$REPO" add notes.txt
 git -C "$REPO" commit -q -m "root"
@@ -452,4 +452,4 @@ if [[ -z "$ONLY" || "$ONLY" == "2" ]]; then the_diff_reads; fi
 if [[ -z "$ONLY" || "$ONLY" == "3" ]]; then the_hunks_are_reviewed; fi
 if [[ -z "$ONLY" || "$ONLY" == "4" ]]; then a_live_turn_refuses; fi
 
-echo "GATE PASS: 168 (a chat's diff and its per-hunk review)"
+echo "GATE PASS: 169 (a chat's diff and its per-hunk review)"

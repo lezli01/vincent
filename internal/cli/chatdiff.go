@@ -2,7 +2,7 @@ package cli
 
 // `vincent chat diff` — a chat's diff and its per-hunk review, over
 // GET /v1/chats/{id}/diff and its reject, accept and unaccept routes (§5.5,
-// §12.1, §13.2, task 168).
+// §12.1, §13.2, task 169).
 
 import (
 	"context"

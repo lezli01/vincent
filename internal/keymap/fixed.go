@@ -61,7 +61,7 @@ var fixed = []Fixed{
 	{"task details", "P", "push this task's branch to origin and open its pull request"},
 	{"task details", "U", "open this lane's parent task"},
 	{"task details", "d", "open the Diff tab"},
-	// The chat's diff pane holding the keyboard (task 168 decision 3).
+	// The chat's diff pane holding the keyboard (task 169 decision 3).
 	{"chat diff", "]", "move to the next hunk"},
 	{"chat diff", "x", "reject the selected hunk"},
 	{"chat diff", "a", "accept the selected hunk, or clear its mark"},
@@ -96,7 +96,7 @@ var fixed = []Fixed{
 	{"output", "d", "open the Diff tab"},
 	{"output", "g", "jump to the top of the output"},
 	{"diff", "tab", "move between the task's tabs"},
-	// On the task workspace's Diff tab `]` and `[` walk the hunks (task 168
+	// On the task workspace's Diff tab `]` and `[` walk the hunks (task 169
 	// decision 4); tab and shift+tab still switch tabs there. The board's
 	// preview shares this surface and keeps them as its Output/Diff toggle.
 	{"diff", "]", "move to the next hunk"},

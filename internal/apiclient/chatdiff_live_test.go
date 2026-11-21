@@ -22,7 +22,7 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// TestChatDiffAgainstTheRealAPI is task 168's client half: ChatDiff,
+// TestChatDiffAgainstTheRealAPI is task 169's client half: ChatDiff,
 // ChatDiffStat, RejectChatHunk, AcceptChatHunk and UnacceptChatHunk against
 // the real handlers, so the client's wire types and the server's cannot
 // drift, and each 409 arrives as the code a client branches on.

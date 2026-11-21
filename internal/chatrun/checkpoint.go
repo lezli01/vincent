@@ -85,7 +85,7 @@ func (r *Runner) checkpointScratch() string {
 }
 
 // CheckpointScratch is that directory for a daemon whose data directory is
-// dataDir. It is exported for the chat diff (task 168), whose working-tree
+// dataDir. It is exported for the chat diff (task 169), whose working-tree
 // snapshot is the tree half of a checkpoint and keeps its temporary index in
 // the same place.
 func CheckpointScratch(dataDir string) string {

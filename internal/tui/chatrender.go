@@ -112,7 +112,7 @@ func (v *chatView) conversationUnder(head []string, width, height int) string {
 	lines = append(lines, head...)
 	var body []string
 	if v.diff.open {
-		// The pane swap (task 168 decision 3): the diff is drawn where the
+		// The pane swap (task 169 decision 3): the diff is drawn where the
 		// conversation is, under the same head and over the same composer.
 		body = v.diffBody(width, room)
 	} else {

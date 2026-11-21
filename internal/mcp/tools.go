@@ -222,7 +222,7 @@ var Excluded = []Route{
 	// human's draft would carry; an agent has no draft, and the chat family
 	// stays off the tool surface whole.
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/expand"},
-	// A chat's diff and its per-hunk reject, accept and unaccept (task 168
+	// A chat's diff and its per-hunk reject, accept and unaccept (task 169
 	// decision 11) are a human reviewing what the agent wrote, and task 063
 	// decision 2 keeps chat writes off this surface: an agent that could
 	// accept its own hunks, or revert files under a person's review, would

@@ -220,7 +220,7 @@
 //	                      the file with that same line, each keeping its
 //	                      own line ending — "3,25" on a thirty-line file is
 //	                      one edit git cuts into two hunks, which is what a
-//	                      per-hunk review needs to be judged on (task 168).
+//	                      per-hunk review needs to be judged on (task 169).
 //	                      A number past the file's end is ignored
 //	FAKEAGENT_WRITE_FILE  wherever FAKEAGENT_EDIT_FILE is honoured: overwrite
 //	                      this worktree-relative file with
@@ -1268,7 +1268,7 @@ const editLine = "fakeagent was here"
 
 // editLines replaces the 1-based lines spec names ("3,25") with editLine.
 // Edits far enough apart are separate hunks of one file's diff, which an
-// append can never produce (task 168: a hunk is rejected on its own, so a
+// append can never produce (task 169: a hunk is rejected on its own, so a
 // gate needs a file with two). Each line keeps its own ending: on Windows git
 // may have checked the file out CRLF, and a line rewritten bare-LF there
 // would make the edit a line-ending change as well. An unparseable or

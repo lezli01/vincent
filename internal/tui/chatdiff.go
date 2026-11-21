@@ -15,7 +15,7 @@ import (
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
-// The chat's diff pane (task 168). It is a pane swap on a key, not a tab
+// The chat's diff pane (task 169). It is a pane swap on a key, not a tab
 // strip (decision 3): the chat_diff key puts the diff where the conversation
 // is, the diff then holds the keyboard the way the conversation focus does
 // (task 160, chatView.convFocus), and esc gives the keyboard back to the
@@ -483,7 +483,7 @@ func (v *chatView) diffBody(width, height int) []string {
 	return lines
 }
 
-// chatChanges is the Details pane's `changes` row (task 168 decision 10):
+// chatChanges is the Details pane's `changes` row (task 169 decision 10):
 // the base scope's totals, and the key that opens the diff — read through
 // the keymap, so a rebind shows. key is empty where no key opens it: the
 // chats board's preview, or an unbound operation.

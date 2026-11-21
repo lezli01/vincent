@@ -553,7 +553,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return t.updatePullConfirmKey(msg)
 	}
 
-	// On the Diff tab, and only there, `]` and `[` walk the hunks (task 168
+	// On the Diff tab, and only there, `]` and `[` walk the hunks (task 169
 	// decision 4) instead of being tab's aliases: tab and shift+tab still
 	// switch tabs from it. Navigation and nothing else — no
 	// reject and no accept on a task's diff.

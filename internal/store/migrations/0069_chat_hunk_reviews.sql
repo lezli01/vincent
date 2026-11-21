@@ -1,7 +1,7 @@
 -- 0069_chat_hunk_reviews: the hunks of a chat's diff a reader has accepted
--- (task 168.2, issue #1018, spec §5.5).
+-- (task 169.2, issue #1018, spec §5.5).
 --
--- All review state lives in the daemon (task 168 decision 2), so a mark
+-- All review state lives in the daemon (task 169 decision 2), so a mark
 -- survives a restart and is the same from every client. A mark is keyed by
 -- the chat, the file's path (always /-separated, as a patch spells it) and a
 -- hash of the hunk's content: nothing ever invalidates a row — once the hunk's

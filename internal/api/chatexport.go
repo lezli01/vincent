@@ -159,7 +159,7 @@ func (s *Server) chatTurnTools(chat *store.Chat, turn *store.ChatTurn) ([]chatex
 // chatExportDiff is the base-to-tip diff of the directory the chat works in
 // today (task 159 decision 1), or the reason there is none. It excludes
 // untracked files, as the task diff does: including them is the chat diff
-// routes' departure alone (task 168 decision 1).
+// routes' departure alone (task 169 decision 1).
 func (s *Server) chatExportDiff(ctx context.Context, chat *store.Chat) (diff, unavailable string) {
 	dir, base, why := s.chatDiffDir(ctx, chat)
 	if why != "" {
@@ -182,7 +182,7 @@ func (s *Server) chatExportDiff(ctx context.Context, chat *store.Chat) (diff, un
 // chatDiffDir resolves the directory a chat works in today and the base it
 // records, or says why there is no directory to diff. It is the one
 // resolution the export's `diff=true` and the chat diff routes share (task
-// 168 decision 5), so free, issue and linked chats resolve one way: a linked
+// 169 decision 5), so free, issue and linked chats resolve one way: a linked
 // chat's directory is its task's worktree and its base is the task's, the
 // chat's own base fields being display copies of the task's (§5.5); an issue
 // chat records the issue worktree and its base on its own row.

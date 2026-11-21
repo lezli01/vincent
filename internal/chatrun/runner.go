@@ -193,7 +193,7 @@ type Runner struct {
 	turns map[int64]*turnCtl
 
 	// starts serializes, per chat, the two places a turn is accepted
-	// (SubmitWith and a queue resume) with WhileNoTurn (task 168 decision 7).
+	// (SubmitWith and a queue resume) with WhileNoTurn (task 169 decision 7).
 	// Striped by chat id rather than one lock per chat: nothing has to be
 	// created or reclaimed, and two chats sharing a stripe only ever wait for
 	// each other's send, which is a few store statements.
@@ -292,7 +292,7 @@ func (r *Runner) SubmitWith(
 	ctx context.Context, chatID int64, prompt string, ov store.TurnSettings,
 ) (*store.ChatTurn, *store.ChatQueuedMessage, error) {
 	// Held from the read that finds the chat idle to launch, so WhileNoTurn
-	// never runs between the two (task 168 decision 7).
+	// never runs between the two (task 169 decision 7).
 	start := r.startLock(chatID)
 	start.Lock()
 	defer start.Unlock()

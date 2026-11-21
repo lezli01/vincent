@@ -650,7 +650,7 @@ jobs:
         shell: bash
         run: ./scripts/143-gate.sh
 
-      # 168: a chat's diff and its per-hunk review (task 168.8, issue #1018;
+      # 169: a chat's diff and its per-hunk review (task 169.8, issue #1018;
       # §5.5, §13.2) — one turn leaves two hunks in a tracked file and a new
       # untracked one, both scopes list them, the stat route and `vincent
       # chat diff` agree, a reject reverts exactly one hunk in the working
@@ -665,10 +665,10 @@ jobs:
       # measures it heavier than the rest and it carried the fewest gates
       # when this was wired — group 1, last measured lightest (143), has
       # taken three since; move it if a measured run says otherwise.
-      - name: 168 gate (chat diff and per-hunk review)
+      - name: 169 gate (chat diff and per-hunk review)
         if: contains(matrix.groups, 2)
         shell: bash
-        run: ./scripts/168-gate.sh
+        run: ./scripts/169-gate.sh
 
   gates:
     needs: gate-group

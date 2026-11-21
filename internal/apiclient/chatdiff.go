@@ -6,7 +6,7 @@ import (
 	"net/url"
 )
 
-// A chat's diff and its per-hunk review (task 168, #1018, §5.5, §13.2).
+// A chat's diff and its per-hunk review (task 169, #1018, §5.5, §13.2).
 
 // The scopes of a chat diff: what the chat's directory holds against the
 // chat's base, or against the checkpoint its latest turn started from.

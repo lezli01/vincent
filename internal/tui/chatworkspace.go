@@ -77,7 +77,7 @@ type chatPreview struct {
 	// tools is the latest turns' tool activity by seq. A transcript that cannot
 	// be read, or has gone to retention, leaves its turn without check lines.
 	tools map[int][]apiclient.TranscriptRecord
-	// stat is the Details pane's `changes` row (task 168 decision 10), read
+	// stat is the Details pane's `changes` row (task 169 decision 10), read
 	// with the preview and so once per change of the chat, never per event.
 	stat *apiclient.ChatDiffStat
 	err  string
@@ -100,7 +100,7 @@ type (
 		turns   []apiclient.ChatTurn
 		err     error
 		tools   map[int][]apiclient.TranscriptRecord
-		// stat is the chat's changes since its base (task 168 decision 10),
+		// stat is the chat's changes since its base (task 169 decision 10),
 		// nil when the daemon has none to give.
 		stat *apiclient.ChatDiffStat
 	}
@@ -620,7 +620,7 @@ func chatAskingTitle(agent string) string {
 
 // chatDetailsPane is what a chat is running with and what it has cost.
 //
-// The `changes` row is back (task 168 decision 10): task 150 decision 17
+// The `changes` row is back (task 169 decision 10): task 150 decision 17
 // dropped it because nothing could say what a chat had changed, and the chat
 // diff routes now can.
 func chatDetailsPane(c apiclient.Chat, ok bool, turns []apiclient.ChatTurn, changes chatChanges, now time.Time, w, h int) []string {

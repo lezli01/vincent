@@ -48,7 +48,7 @@ func chatDiffFixture(t *testing.T) *chatView {
 func chatDiffScreen(v *chatView) string { return ansi.Strip(v.render(100, 30)) }
 
 // TestChatDiffKeySwapsThePane: the key swaps the conversation for the diff,
-// the pane then holds the keyboard (task 168 decision 3), and esc gives it
+// the pane then holds the keyboard (task 169 decision 3), and esc gives it
 // back with the draft byte-identical.
 func TestChatDiffKeySwapsThePane(t *testing.T) {
 	v := chatViewFixture()
@@ -306,7 +306,7 @@ func TestChatDiffNarrow(t *testing.T) {
 	}
 }
 
-// TestTaskDiffTabMovesByHunk is task 168 decision 4: on the task workspace's
+// TestTaskDiffTabMovesByHunk is task 169 decision 4: on the task workspace's
 // Diff tab `]` and `[` walk the hunks, tab and shift+tab still switch tabs,
 // and every other tab keeps the brackets as tab's aliases.
 func TestTaskDiffTabMovesByHunk(t *testing.T) {

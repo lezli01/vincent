@@ -284,7 +284,7 @@ type chatView struct {
 	grew      bool
 	convHit   chatConvHit
 
-	// diff is the chat's diff pane (task 168, chatdiff.go): while it is
+	// diff is the chat's diff pane (task 169, chatdiff.go): while it is
 	// open it is drawn where the conversation is and holds the keyboard.
 	diff chatDiffState
 
@@ -346,7 +346,7 @@ func (v *chatView) capturesInput() bool {
 		return v.form.capturing()
 	}
 	if v.diff.open {
-		// The diff's keys are single letters typed nowhere (task 168
+		// The diff's keys are single letters typed nowhere (task 169
 		// decision 3), exactly as the conversation focus's are.
 		return false
 	}
@@ -424,7 +424,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	if seq > 0 {
 		v.following = false
 	}
-	// The `changes` row is read alongside the open (task 168 decision 10).
+	// The `changes` row is read alongside the open (task 169 decision 10).
 	return tea.Batch(leave, v.loadCmd(), v.streamCmd(), v.loadAgentsCmd(), v.markViewedCmd(), v.diffStatCmd())
 }
 
@@ -549,7 +549,7 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		var diff tea.Cmd
 		if finished {
 			// A turn ended: what it wrote is read once, here, and never per
-			// event from the stream (task 168 decision 10).
+			// event from the stream (task 169 decision 10).
 			diff = v.turnEndedDiff()
 		}
 		return v, tea.Batch(v.fetchTranscripts(), v.landFetch(), mark, diff)
@@ -1166,7 +1166,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, v.updateHistoryKey(msg)
 	}
 	if v.diff.open {
-		// The diff pane holds the keyboard while it is up (task 168
+		// The diff pane holds the keyboard while it is up (task 169
 		// decision 3).
 		return v, v.updateDiffKey(msg)
 	}

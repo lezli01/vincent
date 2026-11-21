@@ -13,11 +13,11 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// A chat's diff and its per-hunk review (task 168, #1018, spec §5.5, §13.2):
+// A chat's diff and its per-hunk review (task 169, #1018, spec §5.5, §13.2):
 // what the chat's directory holds against where the chat — or its latest
 // turn — started, a reject that reverse-applies one hunk in the working tree,
 // and an accepted mark that is only a mark. None of these routes is an MCP
-// tool (task 168 decision 11, under task 063 decision 2).
+// tool (task 169 decision 11, under task 063 decision 2).
 
 // The chat diff's 409 codes. Each is its own code rather than invalid_state
 // with details, because a client branches on them: a stale hunk means "reload
@@ -38,14 +38,14 @@ const (
 	CodeChatDiffUnavailable = "chat_diff_unavailable"
 )
 
-// The two scopes of a chat diff (task 168 decision 5).
+// The two scopes of a chat diff (task 169 decision 5).
 const (
 	chatDiffScopeBase = "base"
 	chatDiffScopeTurn = "turn"
 )
 
 // chatHunkRejectHeading opens the block a reject leaves at the top of the
-// chat's draft (task 168 decision 8).
+// chat's draft (task 169 decision 8).
 const chatHunkRejectHeading = "The user reverted these hunks; do not reapply them:"
 
 type chatDiffHunkBody struct {
@@ -138,7 +138,7 @@ func parseChatDiffScope(v string) (string, error) {
 }
 
 // chatDiffStart resolves the directory the chat works in and the commit the
-// named scope's diff starts from (task 168 decision 5), or a
+// named scope's diff starts from (task 169 decision 5), or a
 // chat_diff_unavailable carrying the reason.
 //
 // The turn scope is the latest turn's checkpoint — the snapshot taken before
@@ -179,7 +179,7 @@ func (s *Server) chatDiffStart(ctx context.Context, chat *store.Chat, scope stri
 }
 
 // chatWorkingTree snapshots dir's working tree as a tree object — untracked
-// files included, ignored ones not (task 168 decision 1) — touching neither
+// files included, ignored ones not (task 169 decision 1) — touching neither
 // the index nor HEAD. Its temporary index lives where a checkpoint's does.
 func (s *Server) chatWorkingTree(ctx context.Context, dir string) (string, error) {
 	return s.deps.Git.SnapshotTree(ctx, dir, chatrun.CheckpointScratch(s.deps.Dirs.Data))
@@ -229,7 +229,7 @@ func chatHunkStale(path string) *chatDiffError {
 // handleChatDiff serves GET /v1/chats/{id}/diff?scope=base|turn.
 //
 // Reading is information, like the export: every state reads while the
-// directory remains, a live turn included (task 168 decision 7).
+// directory remains, a live turn included (task 169 decision 7).
 func (s *Server) handleChatDiff(w http.ResponseWriter, r *http.Request) {
 	// Checked before the chat is loaded, as handleChatExport checks its own
 	// parameters: a typo is a 400 whatever the chat happens to be.
@@ -253,7 +253,7 @@ func (s *Server) handleChatDiff(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "list chat hunk reviews", err)
 		return
 	}
-	// A mark is keyed by content (task 168 decision 9): a hunk whose lines
+	// A mark is keyed by content (task 169 decision 9): a hunk whose lines
 	// changed has another hash, and its old mark simply matches nothing.
 	type key struct{ path, hash string }
 	accepted := make(map[key]bool, len(reviews))
@@ -281,7 +281,7 @@ func (s *Server) handleChatDiff(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleChatDiffStat serves GET /v1/chats/{id}/diff/stat: the base scope's
-// totals in one cheap call (task 168 decision 10), for a client that shows a
+// totals in one cheap call (task 169 decision 10), for a client that shows a
 // count without holding the diff.
 func (s *Server) handleChatDiffStat(w http.ResponseWriter, r *http.Request) {
 	chat, ok := s.chatFromPath(w, r)
@@ -330,7 +330,7 @@ func decodeChatHunk(w http.ResponseWriter, r *http.Request, withScope bool) (req
 }
 
 // whileNoChatTurn runs fn under the runner's guarantee that the chat has no
-// turn and none starts (task 168 decision 7). A server with no runner can
+// turn and none starts (task 169 decision 7). A server with no runner can
 // start no turn, so there the chat's own state is the whole question.
 func (s *Server) whileNoChatTurn(ctx context.Context, chat *store.Chat, fn func() error) error {
 	if s.deps.Chats != nil {
@@ -342,7 +342,7 @@ func (s *Server) whileNoChatTurn(ctx context.Context, chat *store.Chat, fn func(
 	return fn()
 }
 
-// handleChatDiffReject serves POST /v1/chats/{id}/diff/reject (task 168
+// handleChatDiffReject serves POST /v1/chats/{id}/diff/reject (task 169
 // decision 6): the scope's diff is generated again, the hunk found in it by
 // path and hash, and reverse-applied to the working tree — never the index,
 // never HEAD. The note for the agent then goes to the top of the chat's
@@ -357,7 +357,7 @@ func (s *Server) handleChatDiffReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if chatstate.Terminal(chat.State) {
-		// A chat that has ended is read, never edited (task 168 decision 7):
+		// A chat that has ended is read, never edited (task 169 decision 7):
 		// nobody is left to be told the hunk went, and its worktree may be
 		// another owner's by now.
 		writeConflict(w, "this chat has ended; its hunks can be read but no longer rejected",
@@ -401,7 +401,7 @@ func (s *Server) handleChatDiffReject(w http.ResponseWriter, r *http.Request) {
 		}
 		out = chatHunkRejectBody{Draft: c.Draft, NoteAdded: added}
 		if !added {
-			// The reject stands (task 168 decision 8): the hunk is reverted
+			// The reject stands (task 169 decision 8): the hunk is reverted
 			// either way, and refusing it for the draft's sake would leave
 			// the user with a worktree they cannot fix from here.
 			out.Warning = fmt.Sprintf(
@@ -418,7 +418,7 @@ func (s *Server) handleChatDiffReject(w http.ResponseWriter, r *http.Request) {
 }
 
 // addChatHunkRejectNote puts one rejected hunk's line into the block at the
-// very top of draft (task 168 decision 8): the heading, one "- <path> <@@
+// very top of draft (task 169 decision 8): the heading, one "- <path> <@@
 // header>" line per hunk, a blank line, then what the draft held. A draft
 // that already starts with the heading gets the line appended to the end of
 // that block; one the user edited so it no longer does gets a new block.
@@ -450,7 +450,7 @@ func addChatHunkRejectNote(draft, path, header string) string {
 	return draft[:end] + "\n" + line + draft[end:]
 }
 
-// handleChatDiffAccept serves POST /v1/chats/{id}/diff/accept (task 168
+// handleChatDiffAccept serves POST /v1/chats/{id}/diff/accept (task 169
 // decision 9): only a mark. The hunk must be in the named scope's current
 // diff; nothing in git changes.
 func (s *Server) handleChatDiffAccept(w http.ResponseWriter, r *http.Request) {

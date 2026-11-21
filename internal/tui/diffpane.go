@@ -146,7 +146,7 @@ type diffPane struct {
 	asOf time.Time
 
 	// review is on once the content came from setFiles rather than a task
-	// fetch (task 168 decision 9): accepted hunks are dimmed and checked, and
+	// fetch (task 169 decision 9): accepted hunks are dimmed and checked, and
 	// a file's row counts its reviewed hunks.
 	review bool
 	// hunk is the hunk cursor (diffhunk.go), beside the file cursor.

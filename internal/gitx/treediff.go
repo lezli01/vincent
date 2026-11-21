@@ -11,13 +11,13 @@ import (
 )
 
 // SnapshotTree writes dir's working tree — tracked and untracked, ignored
-// excluded — as a tree object and returns its id (task 168.1). No commit, no
+// excluded — as a tree object and returns its id (task 169.1). No commit, no
 // ref; the real index, HEAD and every file are untouched. scratch as in
 // Snapshot: a directory the caller owns, never the worktree.
 //
 // It is the tree half of Snapshot and shares its temporary index, so a chat's
 // diff sees exactly what a checkpoint would capture — untracked files included
-// (task 168 decision 1, a chat-only departure from the task diff's "untracked
+// (task 169 decision 1, a chat-only departure from the task diff's "untracked
 // files excluded"), ignored files not (task 167 decision 5). A file git could
 // not read is left out of the tree, as Snapshot leaves it out of its commit.
 func (g *Git) SnapshotTree(ctx context.Context, dir, scratch string) (tree string, err error) {
@@ -36,7 +36,7 @@ const (
 	StatusRenamed  = "renamed"
 )
 
-// FileDiff is one file of a tree-to-tree diff (task 168.1).
+// FileDiff is one file of a tree-to-tree diff (task 169.1).
 type FileDiff struct {
 	// Path and OldPath are slash-separated on every OS, exactly as git stores
 	// them; OldPath is set only for a rename.
@@ -55,7 +55,7 @@ type FileDiff struct {
 
 // Hunk is one hunk of a FileDiff.
 type Hunk struct {
-	// Hash identifies the hunk by content (task 168 decision 2): lowercase hex
+	// Hash identifies the hunk by content (task 169 decision 2): lowercase hex
 	// SHA-256 of Path + "\x00" + strings.Join(Lines, "\n"). The @@ line numbers
 	// are deliberately left out, so rejecting one hunk does not invalidate the
 	// hunks below it, and a mark survives a restart but dies when the content
@@ -78,7 +78,7 @@ func (f FileDiff) Rejectable() bool {
 }
 
 // diffTreeArgs pins everything about `diff-tree`'s output a user's config or
-// environment could otherwise change (task 168.1). diff-tree is plumbing and
+// environment could otherwise change (task 169.1). diff-tree is plumbing and
 // already ignores most of `diff.*`; each flag is spelled out anyway so the
 // parse below — and Hunk.Hash, which is content — never depends on which
 // settings a given git version happens to read. core.quotepath=false keeps
@@ -366,7 +366,7 @@ var (
 
 // ReverseHunk builds a one-hunk patch from f.Header and the hunk whose Hash
 // is hash and runs `git apply -R` on it in dir's working tree. Nothing else
-// in the file changes; the index and HEAD are untouched (task 168 decision 6:
+// in the file changes; the index and HEAD are untouched (task 169 decision 6:
 // a rejection is an uncommitted edit, never history). Rejecting the only hunk
 // of an added file deletes the file; of a deleted file, restores it.
 //

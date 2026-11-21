@@ -194,7 +194,7 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// 2). It records that a person looked at the chat; an agent calling
 		// it would forge that fact and clear every client's unread mark.
 		{http.MethodPost, "/v1/chats/{id}/viewed"},
-		// Task 168 decision 11: a chat's diff and its per-hunk reject,
+		// Task 169 decision 11: a chat's diff and its per-hunk reject,
 		// accept and unaccept are a human's review of what the agent wrote
 		// (063 decision 2). An agent that could accept its own hunks, or
 		// revert files under review, would make the review mean nothing.

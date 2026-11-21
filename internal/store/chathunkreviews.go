@@ -11,11 +11,11 @@ import (
 )
 
 // The accepted-hunk marks of a chat's diff, and the reject that leaves a note
-// in the chat's draft (task 168, #1018, spec §5.5).
+// in the chat's draft (task 169, #1018, spec §5.5).
 
 // ChatHunkReview is one accepted hunk of a chat's diff: the file's path as
 // the patch spells it (always /-separated) and a hash of the hunk's content.
-// Nothing invalidates a mark (task 168 decision 2): a hunk whose content
+// Nothing invalidates a mark (task 169 decision 2): a hunk whose content
 // changed has another hash, and the old mark just stops matching.
 type ChatHunkReview struct {
 	ChatID     int64
@@ -97,7 +97,7 @@ func (s *Store) ListChatHunkReviews(ctx context.Context, chatID int64) ([]ChatHu
 // the caller's; the store supplies the transaction, so no client ever sees
 // the mark gone without the note or the note without the mark gone.
 //
-// A reject is never refused for the note's sake (task 168 decision 8). When
+// A reject is never refused for the note's sake (task 169 decision 8). When
 // edit returns !ok, when its result is over MaxChatDraftBytes, when the chat
 // is terminal (UpdateChatDraft refuses a draft there: nothing could ever send
 // it) or when the result is the draft as it already reads, the draft is left

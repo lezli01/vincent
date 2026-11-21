@@ -36,7 +36,7 @@ type diffFile struct {
 	// D or R (task 168.6).
 	status byte
 	// hunks are the file's `@@` sections, in order, as positions in body (task
-	// 168 decision 4). A binary file, and a structured file carrying a note,
+	// 169 decision 4). A binary file, and a structured file carrying a note,
 	// has none: there is nothing in it for the hunk cursor to stand on.
 	hunks []diffFileHunk
 	// note is a dimmed line under the file's row, set only for a structured

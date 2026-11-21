@@ -8,7 +8,7 @@ import (
 	"github.com/lezli01/vincent/internal/chatstate"
 )
 
-// TestChatHunkGuardWhileNoTurn is task 168 decision 7 at the runner: fn runs
+// TestChatHunkGuardWhileNoTurn is task 169 decision 7 at the runner: fn runs
 // on a chat at rest and holds off a send until it returns, and is refused
 // while a turn is accepted.
 func TestChatHunkGuardWhileNoTurn(t *testing.T) {

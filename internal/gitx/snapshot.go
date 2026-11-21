@@ -74,7 +74,7 @@ func (g *Git) Snapshot(ctx context.Context, dir, scratch, message string) (Snaps
 }
 
 // worktreeTree is the temporary-index path Snapshot and SnapshotTree share
-// (task 168.1): it writes dir's worktree as a tree object and returns the
+// (task 169.1): it writes dir's worktree as a tree object and returns the
 // tree, the HEAD it was staged over, and the paths `add` could not read. The
 // temporary index lives under scratch and is removed before it returns.
 func (g *Git) worktreeTree(ctx context.Context, dir, scratch string) (tree, head string, skipped []string, err error) {

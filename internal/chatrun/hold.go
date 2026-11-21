@@ -20,7 +20,7 @@ func (r *Runner) startLock(chatID int64) *sync.Mutex {
 }
 
 // WhileNoTurn runs fn while the chat provably has no turn and none can start
-// (task 168 decision 7): rejecting a hunk edits the worktree with `git apply`,
+// (task 169 decision 7): rejecting a hunk edits the worktree with `git apply`,
 // and an agent writing the same files in the same instant would make either
 // one's result undefined.
 //

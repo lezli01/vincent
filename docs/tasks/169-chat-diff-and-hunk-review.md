@@ -1,4 +1,4 @@
-# 168 — A diff pane in the chat with per-hunk accept and reject
+# 169 — A diff pane in the chat with per-hunk accept and reject
 
 **Status:** 🔄 in progress (9/11) · **Opened:** 2026-11-20
 
@@ -18,42 +18,42 @@ Conventions for this file are in [the tasks README](README.md).
 
 ## Tasks
 
-- [x] **168.1** `internal/gitx`: `SnapshotTree` (the tree half of `Snapshot`,
+- [x] **169.1** `internal/gitx`: `SnapshotTree` (the tree half of `Snapshot`,
   sharing its temporary index; no commit, no ref), `DiffTrees` (structured,
   `--raw -z` for paths and `-p` for text, every output option pinned),
   `DiffTreesStat`, and `ReverseHunk` (a one-hunk `git apply -R`, working tree
   only), with tests for modified, deleted, new untracked, nested untracked,
   ignored and CRLF files, a hunk in a committed change, a stale hunk and a
   conflicting one, and an untouched index and HEAD. ✓ 2026-11-20
-- [x] **168.2** Migration `0069_chat_hunk_reviews.sql`, the accepted-mark
+- [x] **169.2** Migration `0069_chat_hunk_reviews.sql`, the accepted-mark
   CRUD, and `RecordChatHunkReject` — the mark's deletion and the draft note in
   one transaction, through the one draft write `UpdateChatDraft` uses.
   ✓ 2026-11-20
-- [x] **168.3** `GET /v1/chats/{id}/diff?scope=base|turn` and
+- [x] **169.3** `GET /v1/chats/{id}/diff?scope=base|turn` and
   `GET /v1/chats/{id}/diff/stat`, the directory and base resolution factored
   out of `chatExportDiff`, the `apiclient` types and methods, and
   `vincent chat diff [--scope] [--stat]`. ✓ 2026-11-20
-- [x] **168.4** `POST …/diff/reject`, `…/accept` and `…/unaccept`, the draft
+- [x] **169.4** `POST …/diff/reject`, `…/accept` and `…/unaccept`, the draft
   note, the `chat_hunk_stale`, `chat_hunk_conflict`,
   `chat_hunk_not_rejectable`, `chat_turn_live` and `chat_diff_unavailable`
   codes, `chatrun.Runner.WhileNoTurn`, the MCP exclusions, and
   `vincent chat diff reject` / `accept [--undo]`. ✓ 2026-11-20
-- [x] **168.5** The hunk level in the shared renderer (`diffhunk.go`): hunks
+- [x] **169.5** The hunk level in the shared renderer (`diffhunk.go`): hunks
   parsed from `@@` lines, a hunk cursor, marks, and `]`/`[` on the task
   workspace's Diff tab. ✓ 2026-11-20
-- [x] **168.6** The chat diff pane: the `chat_diff` operation (`alt+d`), the
+- [x] **169.6** The chat diff pane: the `chat_diff` operation (`alt+d`), the
   palette row, the fixed pane keys, the scope switch, reject and accept, and
   the composer adopting a reject's draft. ✓ 2026-11-20
-- [x] **168.7** The Details pane's `changes` row, in the open chat and the
+- [x] **169.7** The Details pane's `changes` row, in the open chat and the
   chats board's preview. ✓ 2026-11-20
-- [x] **168.8** `scripts/168-gate.sh`, executable, wired into `gate-group`
+- [x] **169.8** `scripts/169-gate.sh`, executable, wired into `gate-group`
   (group 2) on all three platforms, with the fake agent's
   `FAKEAGENT_EDIT_LINES` so one turn leaves two hunks. ✓ 2026-11-20
-- [x] **168.9** Spec amendments (§5.5, §12.1, §12.3, §13.2, §13.4, §14, §15),
+- [x] **169.9** Spec amendments (§5.5, §12.1, §12.3, §13.2, §13.4, §14, §15),
   the API, CLI, configuration and TUI references, `features.md` and the
   changelog. ✓ 2026-11-20
-- [ ] **168.10** Side-by-side view. Recorded, not built (decision 4).
-- [ ] **168.11** Screenshots: seed a chat with uncommitted changes in
+- [ ] **169.10** Side-by-side view. Recorded, not built (decision 4).
+- [ ] **169.11** Screenshots: seed a chat with uncommitted changes in
   `scripts/screenshots.sh` and add a `tui-chat-diff` tape; re-capture
   `tui-diff` for the hunk marker. Needs VHS, as 164.6 did.
 
@@ -91,7 +91,7 @@ them.
 4. **Hunks now, split view later.** The hunk level is added to the shared
    renderer, so the task workspace's Diff tab gains hunk navigation and
    nothing else: no reject, no accept there. The view is unified only;
-   side-by-side is 168.10. Both scopes ship in this task.
+   side-by-side is 169.10. Both scopes ship in this task.
    *Implementation note (2026-11-20):* on the task's Diff tab `]`/`[` had been
    `tab`'s aliases; they walk the hunks there now, and `tab`/`shift+tab`
    still switch tabs. The board's preview keeps them as its

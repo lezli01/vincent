@@ -114,7 +114,7 @@ func paths(files []FileDiff) []string {
 	return out
 }
 
-// TestSnapshotTreeAndDiffTrees proves the chat diff's content (task 168
+// TestSnapshotTreeAndDiffTrees proves the chat diff's content (task 169
 // decision 1): a modified, a deleted, a new untracked and a nested untracked
 // file are all there, an ignored one is not, and neither call touches the
 // index or HEAD.
@@ -326,7 +326,7 @@ func TestReverseHunkAddedAndDeletedFiles(t *testing.T) {
 }
 
 // TestReverseHunkInCommittedChange: a hunk the agent already committed is
-// reverted in the working tree only, the reversal left uncommitted (task 168
+// reverted in the working tree only, the reversal left uncommitted (task 169
 // decision 6).
 func TestReverseHunkInCommittedChange(t *testing.T) {
 	g, dir, base := diffRepo(t)
@@ -383,7 +383,7 @@ func TestReverseHunkStaleAndConflict(t *testing.T) {
 		t.Errorf("index or HEAD changed:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 	// The edit changed the content, so the fresh diff no longer has the hash
-	// (task 168 decision 2) — while the untouched hunk keeps its own.
+	// (task 169 decision 2) — while the untouched hunk keeps its own.
 	fresh := fileNamed(t, snapDiff(t, g, dir, base), "many.txt")
 	if fresh.Hunks[0].Hash == f.Hunks[0].Hash || fresh.Hunks[1].Hash != f.Hunks[1].Hash {
 		t.Errorf("hashes after an edit: %s %s", fresh.Hunks[0].Hash, fresh.Hunks[1].Hash)

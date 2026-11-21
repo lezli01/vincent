@@ -13,7 +13,7 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// `vincent chat diff` and its `reject` and `accept` (task 168) against the
+// `vincent chat diff` and its `reject` and `accept` (task 169) against the
 // real handlers and real git.
 
 // chatDiffDir is a repository whose working tree is two hunks and an

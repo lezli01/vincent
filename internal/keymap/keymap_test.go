@@ -78,7 +78,7 @@ func TestBuildAccepts(t *testing.T) {
 		// Replace, not alias (decision 6): the vacated key is free for the
 		// other operation in the same edit.
 		// pause and cancel rather than pause and reject: x is also the chat
-		// diff pane's fixed reject (task 168 decision 3), which only reject
+		// diff pane's fixed reject (task 169 decision 3), which only reject
 		// itself is excepted to share.
 		{"a swap", map[string]string{"pause": "c", "cancel": "p"}, map[Op]string{Pause: "c", Cancel: "p"}},
 		// f3 rather than f2: f2 is the chat workspace's fixed alias for the

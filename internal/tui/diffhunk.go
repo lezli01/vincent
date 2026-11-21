@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// The hunk level of the diff pane (task 168 decisions 4 and 9). The pane folds
+// The hunk level of the diff pane (task 169 decisions 4 and 9). The pane folds
 // by lane and file (diffgroup.go); under a file sit its hunks, and a second
 // cursor walks those — across files, in row order — so a reader steps through
 // a change one `@@` at a time instead of paging through it.
@@ -105,7 +105,7 @@ func (p *diffPane) fileIndent() string {
 
 // setFiles replaces the content with one ungrouped section built from
 // structured files — no task, no fetch — and switches review drawing on (task
-// 168 decision 9). Folds, the file cursor and the hunk cursor are kept by
+// 169 decision 9). Folds, the file cursor and the hunk cursor are kept by
 // identity, exactly as a task's refresh keeps them.
 //
 // A binary file and a file with a note keep whatever lines they were given but

@@ -96,7 +96,7 @@ func (s *Store) UpdateChatDraft(ctx context.Context, chatID int64, draft, stash 
 // writeChatDraftTx stores c's draft and stash as they now read, stamps
 // draft_updated_at and appends chat.draft_changed, which it returns for the
 // caller to publish after the commit. It is the one draft write: a reject's
-// note (RecordChatHunkReject, task 168) goes through it so the columns and
+// note (RecordChatHunkReject, task 169) goes through it so the columns and
 // the event cannot drift from UpdateChatDraft's.
 func writeChatDraftTx(ctx context.Context, tx *sql.Tx, c *Chat) (*Event, error) {
 	now := time.Now()

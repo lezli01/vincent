@@ -110,7 +110,7 @@ func TestChatHunkReviewUnknownChat(t *testing.T) {
 }
 
 // TestChatHunkReviewsSurviveReopen: the marks are the daemon's, not a
-// client's (task 168 decision 2), so a restart keeps them.
+// client's (task 169 decision 2), so a restart keeps them.
 func TestChatHunkReviewsSurviveReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "with space", "vincent.db")
 	seedTemplate(t, path)
@@ -135,7 +135,7 @@ func TestChatHunkReviewsSurviveReopen(t *testing.T) {
 }
 
 // TestChatHunkReviewsArePerChatAndGoWithIt: two chats never see each other's
-// marks, and deleting a chat's row removes its marks and only its (task 168
+// marks, and deleting a chat's row removes its marks and only its (task 169
 // decision 9).
 func TestChatHunkReviewsArePerChatAndGoWithIt(t *testing.T) {
 	s := openTest(t)
@@ -245,7 +245,7 @@ func TestRecordChatHunkReject(t *testing.T) {
 }
 
 // TestRecordChatHunkRejectLeavesTheDraftAlone: a reject is never refused for
-// the note's sake (task 168 decision 8). Whenever the note cannot be written
+// the note's sake (task 169 decision 8). Whenever the note cannot be written
 // the mark still goes, the draft and its stamp are byte-identical, nothing is
 // published, and the call succeeds with noteAdded false.
 func TestRecordChatHunkRejectLeavesTheDraftAlone(t *testing.T) {

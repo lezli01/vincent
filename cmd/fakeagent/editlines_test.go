@@ -11,7 +11,7 @@ import (
 )
 
 // TestEditLinesRewritesNamedLines covers FAKEAGENT_EDIT_LINES, the shape of
-// FAKEAGENT_EDIT_FILE scripts/168-gate.sh needs (task 168): two edits far
+// FAKEAGENT_EDIT_FILE scripts/169-gate.sh needs (task 169): two edits far
 // enough apart for git to cut two hunks, each line keeping its own ending so
 // a CRLF checkout on Windows gains no line-ending change, and the
 // FAKEAGENT_WRITE_FILE beside it still adding its own file.

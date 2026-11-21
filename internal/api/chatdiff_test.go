@@ -23,7 +23,7 @@ import (
 	"github.com/lezli01/vincent/internal/testrepo"
 )
 
-// The chat diff routes (task 168) over the real handlers, a real store and
+// The chat diff routes (task 169) over the real handlers, a real store and
 // real git. Most cases write their chat and turn rows straight into the
 // store, as the export's do, so no agent runs; the live-turn case runs the
 // fake agent through the real runner.
@@ -415,7 +415,7 @@ func TestChatHunkRejectConflictAndNotRejectable(t *testing.T) {
 	}
 }
 
-// TestChatHunkRejectOverTheDraftCap is task 168 decision 8's last clause: a
+// TestChatHunkRejectOverTheDraftCap is task 169 decision 8's last clause: a
 // note that does not fit never refuses the reject.
 func TestChatHunkRejectOverTheDraftCap(t *testing.T) {
 	h := newExportHarness(t)
@@ -570,7 +570,7 @@ func TestChatHunkAcceptMarks(t *testing.T) {
 }
 
 // TestChatDiffOfALinkedChatIsTheTasksDirectory: a linked chat diffs its
-// task's worktree against its task's base (task 168 decision 5), and the
+// task's worktree against its task's base (task 169 decision 5), and the
 // task diff and the export's diff keep leaving untracked files out
 // (decision 1).
 func TestChatDiffOfALinkedChatIsTheTasksDirectory(t *testing.T) {
@@ -690,7 +690,7 @@ func TestChatHunkRefusedByStateWithoutARunner(t *testing.T) {
 	}
 }
 
-// TestChatHunkRefusedDuringALiveTurn is task 168 decision 7 through the real
+// TestChatHunkRefusedDuringALiveTurn is task 169 decision 7 through the real
 // runner: while the fake agent holds a turn open, the diff still reads, and
 // reject and accept are 409 chat_turn_live with the worktree untouched. The
 // chat is an issue chat, so this is also decision 5's third kind: it diffs

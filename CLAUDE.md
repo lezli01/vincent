@@ -200,7 +200,7 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/140-gate.sh                           # a chat on an issue (task 140)
 ./scripts/142-gate.sh                           # Jira issue sync (task 142)
 ./scripts/143-gate.sh                           # auto-archive on issue close (task 143)
-./scripts/168-gate.sh                           # a chat's diff and its per-hunk review (task 168)
+./scripts/169-gate.sh                           # a chat's diff and its per-hunk review (task 169)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
