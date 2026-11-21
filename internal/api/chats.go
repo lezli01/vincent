@@ -121,6 +121,8 @@ type chatBody struct {
 	// PendingPreamble is the seeded context the next turn will receive —
 	// turn 0 (task 171 decision 4) — present only while resume_pending is
 	// "seeded". PATCH edits it until a turn starts.
+	// Like draft, it is left out of list and search rows (listRow), which
+	// carry resume_pending only.
 	PendingPreamble string `json:"pending_preamble,omitempty"`
 	// Warnings are non-fatal notes on a create — an issue chat opened on a
 	// closed issue (task 140 decision 9). Never set on a read.
@@ -555,10 +557,19 @@ func (s *Server) handleChatList(w http.ResponseWriter, r *http.Request) {
 		body := renderChat(&chats[i])
 		n := counts[chats[i].ID]
 		body.TurnCount = &n
+		listRow(&body)
 		out = append(out, body)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"chats": out})
 }
+
+// listRow trims a chat body to what a list or search row carries (review
+// F3). The seeded context can be up to store.MaxPendingPreambleBytes and
+// lives on until the next turn — after an archive too — so only the
+// single-chat reads and the responses of the actions that change it carry
+// pending_preamble; a row says resume_pending "seeded", as it says
+// has_draft rather than the draft.
+func listRow(b *chatBody) { b.PendingPreamble = "" }
 
 // handleChatGet returns one chat with its turns — the whole conversation, in
 // order, which is what a pane renders.

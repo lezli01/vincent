@@ -4253,7 +4253,9 @@ states a code rewind can go forward to), `forked_from` (`{chat_id, seq,
 agent}`, `agent` absent on a fork made before it was recorded),
 `resume_pending` (`resumed` or `seeded` while a rewind's or fork's plan waits
 for the next turn) and `pending_preamble` (the seeded context, while
-`resume_pending` is `seeded`).
+`resume_pending` is `seeded`). `pending_preamble` is on `GET /v1/chats/{id}`
+and on the rewind, fork and `PATCH` responses only: it can run to 1 MiB, so
+`GET /v1/chats` and chat search rows carry `resume_pending` and leave it out.
 
 ```bash
 curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \

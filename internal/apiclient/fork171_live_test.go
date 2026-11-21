@@ -119,6 +119,24 @@ func TestCrossAgentForkAgainstTheRealAPI(t *testing.T) {
 	if err != nil || got.PendingPreamble != fc.PendingPreamble || got.ForkedFrom == nil || got.ForkedFrom.Agent != "claude" {
 		t.Errorf("GET does not render turn 0 / forked_from.agent: %+v, %v", got, err)
 	}
+	// A list row says it is seeded but leaves the context to GET (review F3).
+	rows, err := client.ListChats(ctx, apiclient.ListChatsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := false
+	for _, row := range rows {
+		if row.ID == fc.ID {
+			listed = true
+			if row.ResumePending != "seeded" || row.PendingPreamble != "" {
+				t.Errorf("list row: resume_pending %q, pending_preamble %d bytes; want seeded and none",
+					row.ResumePending, len(row.PendingPreamble))
+			}
+		}
+	}
+	if !listed {
+		t.Errorf("the fork is not listed")
+	}
 
 	edited := "EDITED-CONTEXT: the human asked a first question, and you answered it.\n"
 	patched, err := client.PatchChat(ctx, fc.ID, apiclient.PatchChatRequest{PendingPreamble: &edited})

@@ -12146,7 +12146,10 @@ POST   /v1/chats/{id}/fork              *Added 2026-11-21 (task 167.6, issue #10
                                         `400` for an unknown or non-resuming one, and a
                                         `model`/`effort` without another agent is `400`. The
                                         chat DTO gains `forked_from.agent` and
-                                        `pending_preamble`, and `PATCH /v1/chats/{id}` takes
+                                        `pending_preamble` — on single-chat reads and action
+                                        responses only; list and search rows carry
+                                        `resume_pending` alone, as they carry `has_draft`
+                                        rather than the draft — and `PATCH /v1/chats/{id}` takes
                                         `pending_preamble` alone (large body tier; `409
                                         chat_preamble_not_pending`)
 GET    /v1/chats/{id}/skills            *Added 2026-09-19 (task 124.9, issue #505).* The skills

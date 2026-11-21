@@ -105,6 +105,7 @@ func (s *Server) handleChatSearch(w http.ResponseWriter, r *http.Request) {
 		body := renderChat(&h.Chat)
 		n := counts[h.Chat.ID]
 		body.TurnCount = &n
+		listRow(&body)
 		hit := chatSearchHitBody{Chat: body, MatchCount: h.MatchCount, Matches: make([]chatSearchMatchBody, 0, len(h.Matches))}
 		for _, m := range h.Matches {
 			mb := chatSearchMatchBody{Seq: m.Seq, Field: m.Field, Segments: make([]chatSearchSegmentBody, 0, len(m.Snippet))}
