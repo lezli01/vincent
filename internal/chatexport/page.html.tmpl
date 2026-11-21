@@ -34,7 +34,8 @@ section.shell h2{font-size:1rem}
 {{end}}{{with .Turn}}<section class="turn">
 <h2>Turn {{.Seq}} · {{.State}}</h2>
 <p class="usage">Ran on: {{.RanWith}}</p>
-<h3>Prompt</h3>
+{{range .Notes}}<p class="note">{{.}}</p>
+{{end}}<h3>Prompt</h3>
 <div class="prompt">{{.PromptHTML}}</div>
 {{if .MentionContext}}<h3>Mentions</h3>
 <pre class="mentions">{{.MentionContext}}</pre>
