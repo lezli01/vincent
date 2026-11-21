@@ -1488,6 +1488,62 @@ Rejecting and accepting exist on a chat's diff only. A task's diff
 navigation and nothing else (§15). A side-by-side view is not built
 (task 169.10).
 
+#### Shell runs and images (added 2026-11-21, task 170, issue #1024)
+
+**Shell passthrough.** A human runs one command in a chat's workspace through
+the daemon (`POST /v1/chats/{id}/shell`, §13.2). The TUI never runs it, by
+the ownership invariant. The command runs where the chat's turns run
+(`chatrun.Runner.Workspace` / `turnPlace`). A linked chat uses its task's
+worktree and, for a containerized task, the task's container. It runs under
+the §8.3 shell through `taskrun`'s chat shell (`/bin/sh -c` on POSIX, `pwsh`
+on Windows, the container's `/bin/sh` inside one), with the §8.5 environment.
+A run is **not a turn**. It holds no `max_parallel_chats` slot and changes no
+§5.5 state. It is legal while the chat is `idle`, `running` or
+`awaiting_input`, and refused `409 invalid_state` on `archived`, `closed` and
+`handed_off`. A chat runs at most one command at a time, and a second is also
+`409 invalid_state`. The human owns the risk of racing a live turn.
+
+The bounds are fixed, not configured. After **2 minutes** the process tree is
+killed through `procx` and the run ends `timed_out`. Combined stdout and
+stderr are capped at **256 KiB**; past that, output is dropped, `truncated` is
+set and a marker line ends the stored file. Chat stop and daemon shutdown
+kill a running command too. Runs are durable in `chat_shell_runs`
+(migration 0070), which holds the command, state (`running`, `exited`,
+`timed_out`, `interrupted`, `canceled` or `failed`), exit code, times,
+output path, `after_turn`, `attach` and `attached_turn`. The PID and
+`proc_identity` are journaled the way a turn's are. The output file sits
+beside the chat's transcripts. Chat recovery finalizes a run left `running`
+by a crash as `interrupted`, killing it only when the identity guard proves
+the process is still the one recorded. Every change publishes
+`chat.shell_changed` post-commit (§13.3).
+
+**Attaching is opt-in.** Unattached output never reaches the agent. The human
+marks a *finished* run (`.../shell/{run_id}/attach`). The next turn to start
+takes every marked run: their commands and outputs go into that turn's
+`RunSpec.Preamble`, never fused into the human's message, the turn's seq is
+recorded in `attached_turn`, and the mark is cleared. Exactly one turn gets
+a given run. The export (task 159) includes the runs. The composer's text is
+never interpreted: a message starting with `!` is sent verbatim, and task 124
+decision 9 stands.
+
+**Images.** A client uploads image bytes (`POST /v1/chats/{id}/images`). The
+daemon sniffs the content (PNG, JPEG, GIF or WebP only), refuses more than
+**10 MiB**, and stores the file under the chat's transcript directory,
+numbered per chat from 1 (`chat_images`, migration 0070). The composer names
+it with the chip `[image N]`. At send, each chip in the message resolves to
+the stored file's absolute path in `RunSpec.Images`, beside the mention
+expansion, and the turn row keeps the message as typed. This is the
+`ImageAttacher` capability (§9.1), and it is never emulated. An upload, or a
+send naming a chip, on a chat whose adapter lacks it is
+`422 validation_failed` with a reason that names the agent. So is either on a
+linked chat whose task runs in a container, where the stored file is not
+reachable. A chip with no image behind it is refused the same way. Shell
+runs and images go with the chat on permanent delete: the rows by cascade,
+the files with the transcript directory.
+
+The side question that issue #1024 also asked for is not built. It waits on
+task 167.4's session fork.
+
 #### Handoff (added 2026-09-01, task 074, issue #288)
 
 `hand_off` creates a task in the chat's project that **adopts** the chat's
@@ -4154,6 +4210,13 @@ Constraints (validated on load and via `POST /v1/workflows/validate`):
 
 ### 8.3 Command steps and shells
 
+*Amended 2026-11-21 (task 170):* a chat's shell run (§5.5, "Shell runs and
+images") uses this same shell: `/bin/sh -c` on POSIX, `pwsh` on Windows, and
+the container's `/bin/sh` for a linked chat on a containerized task. It has a
+fixed 2-minute timeout and a 256 KiB output cap rather than a step's
+`timeout`.
+
+
 `run` and `check` strings are template-rendered, then executed via a platform shell:
 
 - POSIX: `/bin/sh -c "<rendered>"`
@@ -4421,6 +4484,17 @@ answer, and would make every step's stdout a control channel, so that any
 program which happened to print the marker changed daemon state.
 
 ### 9.1 Interface
+
+*Amended 2026-11-21 (task 170):* `RunSpec.Images` carries a chat turn's
+image files as absolute paths, and the optional `ImageAttacher` interface
+(`SupportsImages`) says whether an adapter honors it. `GET /v1/agents` reports
+it as `supports_images`. Each claim is pinned to captured help: codex 0.169.0's
+`-i, --image <FILE>` on `exec` and `exec resume`, and copilot 1.0.105's
+`--attachment <path>`. claude 2.1.330 has no local-image flag (`--file` takes a
+file id) and cursor-agent 2026.09.18 has none, so neither implements the
+interface, and a chat on them is refused images rather than having one
+emulated (§5.5).
+
 
 *Amended 2026-11-20 (task 162, issue #1011):* a new optional capability,
 `ResumeSettingsChanger` (`SupportsResumeSettingsChange() bool`, read through
@@ -9021,6 +9095,16 @@ position the file has reached.
 
 ### 12.3 Configuration (`config.yaml`)
 
+*Amended 2026-11-21 (task 170):* `tui.chat` is a new client-only block.
+`status_line` is a single-line `text/template` over the chat's `.Model`,
+`.Effort`, `.Agent`, `.PermissionMode`, `.Branch`, `.State`, `.Cost`,
+`.ContextPercent` and `.Turns`. It is validated at load by parsing it and
+executing it against the zero value with `missingkey=error`, so an unknown
+field is a load error naming the key. It replaces the context gauge and turn
+count on the right of the chat header, and empty keeps the shipped header.
+`vim` (default `false`) is the composer's vim layer (§15). Both hot-reload.
+
+
 ```yaml
 listen: 127.0.0.1:0          # 0 = ephemeral port, published via daemon.json; may be pinned
 max_parallel_tasks: 3        # global cap
@@ -10722,6 +10806,14 @@ human: its absence does, and an MCP call is an agent's whatever it sends. It
 is best-effort attribution, not authentication (§16).
 
 ### 13.2 Endpoints
+
+*Amended 2026-11-21 (task 170):* new chat routes, none of them an MCP tool
+(§13.4): `POST/GET /v1/chats/{id}/shell`, `GET /v1/chats/{id}/shell/{run_id}`
+and its `/output` (text/plain), `POST /v1/chats/{id}/shell/{run_id}/attach`
+(`{attach: bool}`), and `POST/GET /v1/chats/{id}/images` (raw bytes,
+`?name=`). A shell run is `202` and an image `201`. Semantics are in §5.5,
+"Shell runs and images".
+
 
 *Amended 2026-11-20 (task 162, issue #1011):* `PATCH /v1/chats/{id}` takes
 `title`, `model`, `effort` and `permission_mode`, each optional, on an `idle`,
@@ -13074,6 +13166,12 @@ branch.
 
 ### 13.3 Events (SSE)
 
+*Amended 2026-11-21 (task 170):* `chat.shell_changed` is published post-commit
+whenever a chat's shell run starts, ends or is marked or unmarked. Its payload
+is the chat event's plus the run's id and state. It is a durable event, and
+`/v1/chats/{id}/events` carries it.
+
+
 *Amended 2026-11-20 (task 162):* `chat.updated` is a chat's title, model,
 effort or permission mode changed by `PATCH /v1/chats/{id}`. It is in the
 chat family, so a per-chat stream replays it.
@@ -14914,6 +15012,21 @@ together or not at all; a concurrent duplicate loses on the primary key, rolls
 its task insert back, and replays the winner's.
 
 ## 15. TUI
+
+*Amended 2026-11-21 (task 170):* in the chat workspace, `shell_command`
+(`alt+x`, a rebindable keymap operation, never a composer prefix) opens a
+one-line shell prompt. Runs are drawn as cards after the turn they followed,
+fold and unfold with `enter`, and `a` marks the card under the conversation
+cursor for the next prompt. `ctrl+v` reads a clipboard image client-side
+(osascript, `wl-paste`/`xclip`, PowerShell, in `internal/clipimage`) and
+falls back to a text paste. A pasted path to an image file is uploaded too.
+The chat's answer card numbers its options, and `1`–`9` pick option N of the
+question under the cursor, submitting at once only for a single single-select
+question. The task workspace's popup is unchanged. With `tui.chat.vim` the
+composer gains insert and normal modes over the same textarea, and `esc`
+peels insert → normal → leave. Normal mode keeps `capturesInput` true. Digits
+and vim keys are fixed surface-local keys in `keymap.fixed`.
+
 
 Built with Bubble Tea. The TUI is a pure API client — it holds no *task* state
 the daemon doesn't have, and killing it never affects work. What it does own is
@@ -19799,6 +19912,12 @@ body, so the main-tab strip stays on screen and live in every connection
 phase: a click on a label switches tabs there exactly as `tab` does.
 
 ## 16. Security considerations
+
+*Amended 2026-11-21 (task 170):* a chat's shell run gives no new privilege:
+the command runs as the daemon's user, as an agent's commands already do. A
+chat's `restricted` mode restricts the agent, not the human's shell. Its
+output reaches the agent only when the human attaches it.
+
 
 *Amended 2026-11-20 (task 162):* a chat's permission mode is changeable
 between turns. Raising it to `full-auto` asks first in the TUI (`shift+tab`,
