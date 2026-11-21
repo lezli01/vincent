@@ -167,7 +167,7 @@ list with the user-facing context a commit subject cannot carry.
 
 - **On a task's Diff tab, `]` and `[` now move between hunks.** They used to
   switch tabs there, as they still do on every other tab; `tab`/`shift+tab`
-  and the digits switch tabs from the Diff tab as before. A hunk in a folded
+  switch tabs from the Diff tab as before. A hunk in a folded
   file opens it, and the selected hunk's header is marked `▶`
   (task 168, #1018).
 - **The terminal bell rings only while the TUI's terminal is unfocused.**

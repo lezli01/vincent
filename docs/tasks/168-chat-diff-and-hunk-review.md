@@ -25,7 +25,7 @@ Conventions for this file are in [the tasks README](README.md).
   only), with tests for modified, deleted, new untracked, nested untracked,
   ignored and CRLF files, a hunk in a committed change, a stale hunk and a
   conflicting one, and an untouched index and HEAD. ✓ 2026-11-20
-- [x] **168.2** Migration `0067_chat_hunk_reviews.sql`, the accepted-mark
+- [x] **168.2** Migration `0069_chat_hunk_reviews.sql`, the accepted-mark
   CRUD, and `RecordChatHunkReject` — the mark's deletion and the draft note in
   one transaction, through the one draft write `UpdateChatDraft` uses.
   ✓ 2026-11-20
@@ -93,8 +93,8 @@ them.
    nothing else: no reject, no accept there. The view is unified only;
    side-by-side is 168.10. Both scopes ship in this task.
    *Implementation note (2026-11-20):* on the task's Diff tab `]`/`[` had been
-   `tab`'s aliases; they walk the hunks there now, and `tab`/`shift+tab` and
-   the digits still switch tabs. The board's preview keeps them as its
+   `tab`'s aliases; they walk the hunks there now, and `tab`/`shift+tab`
+   still switch tabs. The board's preview keeps them as its
    Output/Diff toggle.
 5. **Scopes.** `base` is the merge-base with the chat's recorded base (a
    linked chat uses its task's base and worktree, as the export does). `turn`

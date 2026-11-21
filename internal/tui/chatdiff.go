@@ -201,7 +201,7 @@ func (v *chatView) applyDiff(msg chatDiffMsg) {
 	for _, f := range msg.diff.Files {
 		d.files[f.Path] = f
 		file := diffFileInput{
-			path: sanitizeText(f.Path), added: f.Added, removed: f.Removed, binary: f.Binary,
+			path: sanitizeText(f.Path), status: chatDiffStatusLetter(f.Status), added: f.Added, removed: f.Removed, binary: f.Binary,
 			note: chatDiffFileNote(f),
 		}
 		for _, h := range f.Hunks {
@@ -427,6 +427,20 @@ func (v *chatView) updateDiffKey(msg tea.KeyPressMsg) tea.Cmd {
 		return tea.Batch(v.diffFetchCmd(), v.diffStatCmd())
 	}
 	return v.diff.pane.updateKey(msg)
+}
+
+// chatDiffStatusLetter is a file's wire status as the letter the shared
+// renderer draws on its row.
+func chatDiffStatusLetter(status string) byte {
+	switch status {
+	case "added":
+		return 'A'
+	case "deleted":
+		return 'D'
+	case "renamed":
+		return 'R'
+	}
+	return 'M'
 }
 
 // chatDiffScopeLabel names a scope the way the pane's head line does.

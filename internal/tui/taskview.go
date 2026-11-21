@@ -554,8 +554,8 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 
 	// On the Diff tab, and only there, `]` and `[` walk the hunks (task 168
-	// decision 4) instead of being tab's aliases: tab, shift+tab and the
-	// digits still switch tabs from it. Navigation and nothing else — no
+	// decision 4) instead of being tab's aliases: tab and shift+tab still
+	// switch tabs from it. Navigation and nothing else — no
 	// reject and no accept on a task's diff.
 	if t.tab == taskTabDiff {
 		switch msg.String() {

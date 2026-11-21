@@ -1449,7 +1449,7 @@ reject leaves the same note a TUI one does. A note that would take the draft
 past `MaxChatDraftBytes` is not written — the hunk is reverted all the same
 and the answer carries `note_added: false` and a `warning`.
 
-**Accept** is only a mark: a `chat_hunk_reviews` row (§14, migration 0067)
+**Accept** is only a mark: a `chat_hunk_reviews` row (§14, migration 0069)
 keyed by chat, path and hunk hash. It changes nothing in git. All review state
 lives in the daemon, so a mark survives a restart and is the same from every
 client; nothing ever invalidates a row — a hunk whose content changed has
@@ -14368,7 +14368,7 @@ CREATE TABLE chat_queued_messages (
     updated_at TEXT    NOT NULL
 );
 
--- Added 2026-11-20 (task 168, issue #1018; migration 0067): the hunks of a
+-- Added 2026-11-20 (task 168, issue #1018; migration 0069): the hunks of a
 -- chat's diff a reader has accepted (§5.5 "Diff and hunk review"). path is
 -- /-separated as a patch spells it; hunk_hash is the hunk's content hash, so
 -- nothing ever invalidates a row — a changed hunk has another hash and the
@@ -15609,8 +15609,8 @@ stream for the live tail.
    never shortened. `tab`/`shift+tab` and `[`/`]` walk the strip in that drawn
    order, Pull Request still last and still conditional; the mouse follows the
    same geometry. *Amended 2026-11-20 (task 168 decision 4): from the Diff
-   tab `[`/`]` walk the diff's hunks instead; `tab`/`shift+tab` and the
-   digits still leave it (view 9's amendment of the same date).* The Overview renders from the task snapshot the workspace
+   tab `[`/`]` walk the diff's hunks instead; `tab`/`shift+tab` still
+   leave it (view 9's amendment of the same date).* The Overview renders from the task snapshot the workspace
    already holds (T3.2) and picks one of three frames from the §6 state:
    **running, queued, paused and `awaiting_children`** say what the task is
    doing (a state sentence — the lanes still out, for a parked fan-out parent
@@ -16457,7 +16457,7 @@ stream for the live tail.
    hunk is dimmed and carries `✓` — glyphs, not colour alone — and in the
    chat's pane a file's row shows `✓ reviewed/total`. **On the task workspace's
    Diff tab `]` and `[` now walk the hunks** instead of being `tab`'s
-   aliases; `tab`/`shift+tab` and the digits still switch tabs from it, and
+   aliases; `tab`/`shift+tab` still switch tabs from it, and
    the board's preview keeps `]`/`[` as its Output/Diff toggle. That tab gets
    navigation only: no reject and no accept. The view is unified; a
    side-by-side view is not built (task 168.10).
@@ -18211,7 +18211,7 @@ collapse the lot. The rules:
   stay on screen. *Amended 2026-11-20 (task 168 decision 4): that holds for
   the board's preview, where `]`/`[` still switch back to Output. On the task
   workspace's Diff tab the row now reads "next hunk", `]`/`[` walk the hunks,
-  and the way back is `tab`/`shift+tab`, `d` or a digit.*
+  and the way back is `tab`/`shift+tab`.*
 - **Folds are keyed by path and survive a refresh.** Re-entering the tab
   re-fetches (the endpoint runs git per call), and a file folding shut under the
   reader because the agent touched a different one is the failure this avoids.

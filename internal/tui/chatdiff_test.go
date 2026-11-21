@@ -334,8 +334,8 @@ func TestTaskDiffTabMovesByHunk(t *testing.T) {
 	}
 
 	v.updateKey(registryKey(t, "tab"))
-	if v.tab != taskTabSteps {
-		t.Fatalf("tab on the Diff tab moved to %v, want Steps", v.tab)
+	if v.tab != taskTabStepDetails {
+		t.Fatalf("tab on the Diff tab moved to %v, want Step details", v.tab)
 	}
 	v.updateKey(registryKey(t, "shift+tab"))
 	if v.tab != taskTabDiff {

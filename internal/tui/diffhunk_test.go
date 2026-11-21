@@ -290,15 +290,15 @@ func TestHunkCursorSurvivesARefresh(t *testing.T) {
 // ids, a binary file and a file that carries a note.
 func reviewFiles() []diffFileInput {
 	return []diffFileInput{
-		{path: "main.go", added: 2, removed: 1, hunks: []diffHunkInput{
+		{path: "main.go", status: 'M', added: 2, removed: 1, hunks: []diffHunkInput{
 			{id: "h-a", header: "@@ -1,2 +1,2 @@", body: []string{" package main", "-old", "+new"}},
 			{id: "h-b", header: "@@ -9,1 +9,2 @@", body: []string{" tail", "+more"}},
 		}},
-		{path: "logo.png", binary: true},
+		{path: "logo.png", status: 'M', binary: true},
 		{path: "big.sql", added: 1, note: "too large to reject", hunks: []diffHunkInput{
 			{id: "h-n", header: "@@ -1 +1,2 @@", body: []string{" x", "+y"}},
 		}},
-		{path: "z.txt", added: 1, hunks: []diffHunkInput{
+		{path: "z.txt", status: 'A', added: 1, hunks: []diffHunkInput{
 			{id: "h-z", header: "@@ -0,0 +1 @@", body: []string{"+z"}},
 		}},
 	}
@@ -319,12 +319,16 @@ func TestSetFilesLoadsStructuredFiles(t *testing.T) {
 	}
 	view := diffView(p, 20)
 	for _, want := range []string{
-		"4 files", "as of 09:30:00", "▸ main.go  +2 -1  ✓ 0/2", "▸ logo.png  binary",
-		"too large to reject", "▸ z.txt  +1 -0  ✓ 0/1",
+		"4 files", "as of 09:30:00", "▸ M main.go  +2 -1  ++−  ✓ 0/2", "▸ M logo.png  binary",
+		"too large to reject", "▸ A z.txt  +1 -0  +  ✓ 0/1",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view lacks %q:\n%s", want, view)
 		}
+	}
+	// The caller names its own scope; the task tab's label is not it.
+	if strings.Contains(view, "whole task") {
+		t.Errorf("a structured load is titled as a task's diff:\n%s", view)
 	}
 	if strings.Contains(view, "reopen the tab") {
 		t.Errorf("a structured load names the task tab's refresh:\n%s", view)
@@ -369,7 +373,7 @@ func TestSetHunkAcceptedRedrawsTheMarks(t *testing.T) {
 		t.Fatal("no such hunk")
 	}
 	view := diffView(p, 30)
-	if !strings.Contains(view, "\n✓ @@ -1,2 +1,2 @@") || !strings.Contains(view, "main.go  +2 -1  ✓ 1/2") {
+	if !strings.Contains(view, "\n✓ @@ -1,2 +1,2 @@") || !strings.Contains(view, "main.go  +2 -1  ++−  ✓ 1/2") {
 		t.Fatalf("accepted hunk not drawn:\n%s", view)
 	}
 	// Its lines are still there to read, and the styled cache says dimmed.

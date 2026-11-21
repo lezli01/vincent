@@ -764,7 +764,12 @@ func (p *diffPane) summary() string {
 		added += p.sections[i].added
 		removed += p.sections[i].removed
 	}
-	out := "  " + styleTitle.Render(p.scopeLabel()) + "  "
+	out := "  "
+	// Structured files are one caller's own scope — a chat's "since the last
+	// turn", say — and that caller names it; "whole task" would be wrong.
+	if !p.review {
+		out += styleTitle.Render(p.scopeLabel()) + "  "
+	}
 	if p.grouped {
 		out += styleDim.Render(countNoun(p.laneCount(), "lane")) + "  "
 	}

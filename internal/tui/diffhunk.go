@@ -45,7 +45,10 @@ type diffHunkInput struct {
 // diffFileInput is one file handed to setFiles. note, when set, is a dimmed
 // line under the file's row — why the file cannot be rejected, say.
 type diffFileInput struct {
-	path           string
+	path string
+	// status is git's letter for what happened to the file (M, A, D or R),
+	// drawn on its row as a fetched diff's is; 0 draws none.
+	status         byte
 	added, removed int
 	binary         bool
 	note           string
@@ -120,7 +123,7 @@ func (p *diffPane) setFiles(files []diffFileInput, asOf time.Time) {
 	// to the truncation notice.
 	budget := maxDiffLines
 	for _, in := range files {
-		f := diffFile{path: in.path, added: in.added, removed: in.removed, binary: in.binary, note: in.note}
+		f := diffFile{path: in.path, status: in.status, added: in.added, removed: in.removed, binary: in.binary, note: in.note}
 		walkable := !in.binary && in.note == ""
 		for _, h := range in.hunks {
 			if budget <= 0 {
