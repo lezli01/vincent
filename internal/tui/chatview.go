@@ -376,9 +376,11 @@ func (v *chatView) paste(text string) tea.Cmd {
 		v.pasteShell(text)
 		return nil
 	}
-	if path, ok := clipimage.ImagePath(text); ok && v.takesImagePaste() {
+	if path, ok := clipimage.ImagePath(text); ok && v.takesImagePaste() && v.imagesRefused() == "" {
 		// A dropped image file pastes as its path: the image goes up and
-		// its chip goes in instead (task 170).
+		// its chip goes in instead (task 170). For an agent that takes no
+		// images the path stays text — claude, say, can read the file by
+		// path itself, which is what a dropped file always gave it.
 		return v.pasteImagePathCmd(path, text)
 	}
 	return v.pasteText(text)

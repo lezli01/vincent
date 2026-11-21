@@ -3012,8 +3012,9 @@ pastes text as it always has. A pasted path to an image file, which is what
 most terminals paste for a dropped file, is uploaded the same way. When you
 send the message, the agent gets the image files. PNG, JPEG, GIF and WebP up
 to 10 MiB are accepted, only for an agent that can take image files (codex and
-copilot today). Anywhere else the paste is refused with a note that names the
-agent.
+copilot today). Anywhere else a clipboard image is refused with a note that
+names the agent, and a pasted image path is pasted as text, so an agent that
+reads files, such as claude, can still open it by its path.
 
 **Picking an answer by number.** While the agent's question card is up, its
 options are numbered and `1`–`9` picks option N of the question the cursor is

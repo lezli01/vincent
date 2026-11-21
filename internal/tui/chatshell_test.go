@@ -350,3 +350,37 @@ func TestChatShellCardStripsControls(t *testing.T) {
 		}
 	}
 }
+
+// TestChatImagePathPastesAsTextWithoutTheCapability (review F2): in a chat
+// whose agent takes no images, a dropped image file's path is pasted as the
+// text it is — the agent can still read the file by path — and no note is
+// left.
+func TestChatImagePathPastesAsTextWithoutTheCapability(t *testing.T) {
+	prev := readImageFile
+	t.Cleanup(func() { readImageFile = prev })
+	readImageFile = func(string) ([]byte, error) {
+		t.Error("the image file was read for an agent that takes no images")
+		return fakePNG, nil
+	}
+	path := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(path, fakePNG, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := clipimage.ImagePath(path); !ok {
+		t.Fatalf("clipimage does not take %q as an image path", path)
+	}
+	no := false
+	v := chatViewFixture()
+	v.agents = map[string]apiclient.Agent{"claude": {Name: "claude", SupportsImages: &no}}
+	if v.chat.Agent != "claude" {
+		v.agents[v.chat.Agent] = apiclient.Agent{Name: v.chat.Agent, SupportsImages: &no}
+	}
+	if cmd := v.paste(path); cmd != nil {
+		if msg, ok := runCmd(t, cmd, 10*time.Second).(chatImageClipMsg); ok {
+			t.Fatalf("the path went to the upload: %#v", msg)
+		}
+	}
+	if v.composer.Value() != path || v.noteBad {
+		t.Fatalf("draft %q, note %q (bad %v)", v.composer.Value(), v.note, v.noteBad)
+	}
+}

@@ -15060,7 +15060,10 @@ one-line shell prompt. Runs are drawn as cards after the turn they followed,
 fold and unfold with `enter`, and `a` marks the card under the conversation
 cursor for the next prompt. `ctrl+v` reads a clipboard image client-side
 (osascript, `wl-paste`/`xclip`, PowerShell, in `internal/clipimage`) and
-falls back to a text paste. A pasted path to an image file is uploaded too.
+falls back to a text paste. A pasted path to an image file is uploaded too —
+unless the chat's agent reports no image capability, when the path is pasted
+as text (the agent may still read the file by path) and only a clipboard image
+is refused with a note.
 The chat's answer card numbers its options, and `1`–`9` pick option N of the
 question under the cursor, submitting at once only for a single single-select
 question. The task workspace's popup is unchanged. With `tui.chat.vim` the

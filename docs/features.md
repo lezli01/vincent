@@ -167,8 +167,8 @@ and a 256 KiB output cap, and draws it as a card. Its output reaches the agent
 only if you attach it (`a` on the card), and then on the next turn alone.
 **Paste an image** with `ctrl+v`, or paste a path to one, and the composer
 gets an `[image N]` chip the agent receives as a file — on codex and copilot,
-whose CLIs take image paths; claude and cursor are refused rather than
-pretended at. See [Shell commands, images and vim in a chat](guides/tui.md#shell-commands-images-and-vim-in-a-chat),
+whose CLIs take image paths; on claude and cursor a clipboard image is
+refused rather than pretended at, and a pasted path stays plain text. See [Shell commands, images and vim in a chat](guides/tui.md#shell-commands-images-and-vim-in-a-chat),
 [`vincent chat shell`](reference/cli.md#vincent-chat-shell) and
 [`vincent chat image add`](reference/cli.md#vincent-chat-image-add).
 
