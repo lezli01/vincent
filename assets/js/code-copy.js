@@ -28,14 +28,25 @@
   live.setAttribute('aria-live', 'polite');
   document.body.appendChild(live);
 
-  // The text a reader means to paste: the commands of a "$ " transcript, or
-  // the whole block.
+  // The text a reader means to paste: the commands of a "$ " transcript —
+  // with any lines a trailing backslash continues them onto — or the whole
+  // block.
   function copyText(pre) {
     var text = (pre.textContent || '').replace(/\n+$/, '');
-    var lines = text.split('\n');
-    var commands = lines.filter(function (line) { return /^\$ /.test(line); });
-    if (!commands.length) return text;
-    return commands.map(function (line) { return line.slice(2); }).join('\n');
+    if (!/^\$ /m.test(text)) return text;
+    var commands = [];
+    var continued = false;
+    text.split('\n').forEach(function (line) {
+      if (/^\$ /.test(line)) {
+        commands.push(line.slice(2));
+      } else if (continued) {
+        commands.push(line);
+      } else {
+        return;
+      }
+      continued = /\\$/.test(line);
+    });
+    return commands.join('\n');
   }
 
   Array.prototype.forEach.call(blocks, function (pre) {
