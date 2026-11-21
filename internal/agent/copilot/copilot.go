@@ -195,7 +195,10 @@ func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 	// One `--attachment <path>` per image (task 170): "Attach a file (image
 	// or native document) to the initial prompt; only valid in
 	// non-interactive mode (can be used multiple times)"
-	// (help_1.0.105.txt). Every vincent run is non-interactive.
+	// (help_1.0.105.txt). Every vincent run is non-interactive. The help
+	// describes that mode through -p, which this adapter never passes (the
+	// prompt is on stdin), and no capture yet shows --attachment with a
+	// stdin prompt: spec §9.9 records the pair as unverified.
 	for _, img := range spec.Images {
 		args = append(args, "--attachment", img)
 	}

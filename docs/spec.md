@@ -7374,6 +7374,19 @@ different `--model`, so a copilot chat's model is fixed once its first turn
 has run. Its restricted resume (task 138.10) means a copilot chat may be
 lowered to `restricted`.
 
+*Amended 2026-11-21 (task 170, review F12):* copilot implements
+`ImageAttacher` by passing one `--attachment <path>` per image (§9.1). Help
+1.0.105 calls the flag "only valid in non-interactive mode" and describes that
+mode through `-p/--prompt`, while this adapter passes no `-p` and writes the
+prompt on stdin. **That combination is unverified:** no capture under
+`internal/agent/copilot/testdata/` shows a real run given `--attachment` with
+a stdin prompt, and `fakeagent` accepts any flag, so a refusal by the real CLI
+would surface only as a failed turn. What is pinned is the argv
+(`TestBuildArgs`, fresh and `--resume=`). A capture of such a run
+(`attachment_<version>.jsonl`) is what turns the claim into a pinned one, and
+should it show the CLI refusing the pair, copilot drops the capability rather
+than emulating it.
+
 The fourth adapter, `copilot`, for the standalone GitHub Copilot CLI (npm
 `@github/copilot`), registered fourth (task 138.9). Every bullet below is
 pinned to build 1.0.105, the one the captures under
