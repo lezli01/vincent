@@ -2684,7 +2684,11 @@ the final run object instead of the output.
 
 Exit: the command's own exit code when it exited. `1` with a one-line reason
 when it timed out, was interrupted or canceled, or failed to start, and on a
-refusal. `2` with no daemon.
+refusal. `2` with no daemon. The command's code is passed through as it is,
+so a command that exits `1` or `2` cannot be told from vincent's own failure
+by the exit status alone. A script that needs to tell them apart passes
+`--json`: the run object, with its `state` and `exit_code`, is printed only
+when the command ran, and a refusal or a missing daemon prints none.
 
 ### `vincent chat shell ls`
 

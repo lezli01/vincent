@@ -184,3 +184,15 @@ func TestChatImageCommand(t *testing.T) {
 		t.Error("a missing file succeeded")
 	}
 }
+
+// TestChatShellHelpNamesTheExitAmbiguity (review F11): the command's own
+// exit code shares 1 and 2 with vincent's failures, and the help says so and
+// points a script at --json.
+func TestChatShellHelpNamesTheExitAmbiguity(t *testing.T) {
+	long := newChatShellCmd().Long
+	for _, want := range []string{"passed through", "--json", "exit_code"} {
+		if !strings.Contains(long, want) {
+			t.Errorf("vincent chat shell's help does not mention %q:\n%s", want, long)
+		}
+	}
+}

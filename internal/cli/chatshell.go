@@ -47,7 +47,10 @@ func newChatShellCmd() *cobra.Command {
 			"final run object instead of the output.\n\n" +
 			"Exit: the command's own exit code when it exited; 1 with a one-line reason when " +
 			"it timed out, was interrupted or canceled, or failed to start, and on a refusal; " +
-			"2 with no daemon.",
+			"2 with no daemon. The command's code is passed through as it is, so a command " +
+			"that exits 1 or 2 looks like vincent's own failure; a script that must tell them " +
+			"apart passes --json, which prints the run object (its state and exit_code) only " +
+			"when the command ran.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := parseChatID(args[0])
