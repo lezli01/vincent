@@ -39,7 +39,7 @@ func TestChatStatusLineRendersEveryField(t *testing.T) {
 		"{{.Cost}}":           "$0.42",
 		"{{.ContextPercent}}": "61",
 		"{{.Turns}}":          "3",
-		"{{.Model}} · {{.ContextPercent}}% · {{.Cost}}":       "opus · 61% · $0.42",
+		"{{.Model}} · {{.ContextPercent}}% · {{.Cost}}":         "opus · 61% · $0.42",
 		"{{if gt .ContextPercent 50}}!{{end}} {{.Turns}} turns": "! 3 turns",
 	} {
 		if got := chatStatusLine(tmpl, chat, turns); got != want {
