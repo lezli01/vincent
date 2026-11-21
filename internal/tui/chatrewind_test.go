@@ -40,8 +40,8 @@ func rewindFixtureTurns() []apiclient.ChatTurn {
 func rewindFixture() *chatView {
 	v := chatViewFixture()
 	v.chat.RewoundStates = []apiclient.ChatRewoundState{
-		{K: 1, Ref: "refs/vincent/chats/1/rewound-1", SHA: "abc"},
-		{K: 2, Ref: "refs/vincent/chats/1/rewound-2", SHA: "def", Blocked: reasonForeignCommits},
+		{K: 1, Ref: "refs/vincent/0123456789abcdef/chats/1/rewound-1", SHA: "abc"},
+		{K: 2, Ref: "refs/vincent/0123456789abcdef/chats/1/rewound-2", SHA: "def", Blocked: reasonForeignCommits},
 	}
 	v.applyLoaded(chatLoadedMsg{id: 1, chat: v.chat, turns: rewindFixtureTurns()})
 	return v
@@ -165,7 +165,7 @@ func newRewindStub(t *testing.T) (*rewindStub, *apiclient.Client) {
 	mux.HandleFunc("POST /v1/chats/1/rewind", func(w http.ResponseWriter, r *http.Request) {
 		record(r)
 		_ = json.NewEncoder(w).Encode(apiclient.RewindResult{
-			Chat: apiclient.Chat{ID: 1}, RewindID: "r2", Ref: "refs/vincent/chats/1/rewound-3",
+			Chat: apiclient.Chat{ID: 1}, RewindID: "r2", Ref: "refs/vincent/0123456789abcdef/chats/1/rewound-3",
 			Skipped: []string{"locked.db"}, Seeded: true, RewoundTurns: []int{2, 3},
 		})
 	})

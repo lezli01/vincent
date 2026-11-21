@@ -54,8 +54,8 @@ func (s *rewindStub) sentJSON(t *testing.T) map[string]any {
 func TestRewindChatSendsBodyAndDecodesResult(t *testing.T) {
 	var s rewindStub
 	c := s.serve(t, http.StatusOK, `{"chat":{"id":7,"state":"idle","resume_pending":"seeded",
-		"rewound_states":[{"k":1,"ref":"refs/vincent/chats/7/rewound-1","sha":"abc","blocked":""}]},
-		"rewind_id":"r1","ref":"refs/vincent/chats/7/rewound-1","skipped":["locked.bin"],
+		"rewound_states":[{"k":1,"ref":"refs/vincent/0123456789abcdef/chats/7/rewound-1","sha":"abc","blocked":""}]},
+		"rewind_id":"r1","ref":"refs/vincent/0123456789abcdef/chats/7/rewound-1","skipped":["locked.bin"],
 		"seeded":true,"rewound_turns":[2,3]}`)
 	got, err := c.RewindChat(context.Background(), 7, apiclient.RewindRequest{Turn: 2, Mode: "both"})
 	if err != nil {
@@ -68,7 +68,7 @@ func TestRewindChatSendsBodyAndDecodesResult(t *testing.T) {
 		t.Errorf("body = %v", body)
 	}
 	want := apiclient.RewindResult{
-		RewindID: "r1", Ref: "refs/vincent/chats/7/rewound-1", Skipped: []string{"locked.bin"},
+		RewindID: "r1", Ref: "refs/vincent/0123456789abcdef/chats/7/rewound-1", Skipped: []string{"locked.bin"},
 		Seeded: true, RewoundTurns: []int{2, 3},
 	}
 	if got.RewindID != want.RewindID || got.Ref != want.Ref || !got.Seeded ||
@@ -78,7 +78,7 @@ func TestRewindChatSendsBodyAndDecodesResult(t *testing.T) {
 	if got.Chat.ID != 7 || got.Chat.ResumePending != "seeded" {
 		t.Errorf("chat = %+v", got.Chat)
 	}
-	wantStates := []apiclient.ChatRewoundState{{K: 1, Ref: "refs/vincent/chats/7/rewound-1", SHA: "abc"}}
+	wantStates := []apiclient.ChatRewoundState{{K: 1, Ref: "refs/vincent/0123456789abcdef/chats/7/rewound-1", SHA: "abc"}}
 	if !reflect.DeepEqual(got.Chat.RewoundStates, wantStates) {
 		t.Errorf("rewound_states = %+v", got.Chat.RewoundStates)
 	}
@@ -88,7 +88,7 @@ func TestRewindChatSendsBodyAndDecodesResult(t *testing.T) {
 // the daemon never sees a turn 0 or a mode it must reject.
 func TestRewindChatForwardOmitsTurnAndMode(t *testing.T) {
 	var s rewindStub
-	c := s.serve(t, http.StatusOK, `{"chat":{"id":7},"rewind_id":"r2","ref":"refs/vincent/chats/7/rewound-2"}`)
+	c := s.serve(t, http.StatusOK, `{"chat":{"id":7},"rewind_id":"r2","ref":"refs/vincent/0123456789abcdef/chats/7/rewound-2"}`)
 	if _, err := c.RewindChat(context.Background(), 7, apiclient.RewindRequest{Rewound: 1}); err != nil {
 		t.Fatal(err)
 	}

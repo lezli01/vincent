@@ -200,8 +200,10 @@ type Runner struct {
 	// reaches the database after the run context is canceled.
 	persist context.Context //nolint:containedctx // deliberately outlives the run
 
-	mu   sync.Mutex
-	live map[int64]*liveTurn
+	mu sync.Mutex
+	// chatRefs caches Refs; the zero value is "not read yet".
+	chatRefs ChatRefs
+	live     map[int64]*liveTurn
 	// turns is every accepted turn from Send until its goroutine returns,
 	// including the window before the process starts that live does not
 	// cover. StopTurn is what needs it: closing a chat must wait for a turn

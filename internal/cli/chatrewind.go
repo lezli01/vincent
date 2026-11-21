@@ -43,7 +43,7 @@ func newChatRewindCmd() *cobra.Command {
 			"prints). --mode code restores the branch, index and worktree to turn N's " +
 			"checkpoint; --mode conversation keeps turns 1..N-1 of the conversation and puts " +
 			"turn N's prompt back in the chat's draft; --mode both (the default) does both.\n\n" +
-			"A code rewind first saves the state it replaces as refs/vincent/chats/<id>/rewound-<k>, " +
+			"A code rewind first saves the state it replaces as refs/vincent/<install id>/chats/<id>/rewound-<k>, " +
 			"and --rewound K goes forward to that saved state again (code only). Files the " +
 			"pre-rewind snapshot could not read are never deleted: untracked ones are left " +
 			"where they are and listed, and a tracked one, which the rewind would overwrite, " +
@@ -82,7 +82,7 @@ func newChatRewindCmd() *cobra.Command {
 	}
 	cmd.Flags().IntVar(&turn, "turn", 0, "rewind to the state before this turn ran, as `chat show` numbers it")
 	cmd.Flags().IntVar(&rewound, "rewound", 0,
-		"go forward to the state the k-th code rewind saved (refs/vincent/chats/<id>/rewound-<k>)")
+		"go forward to the state the k-th code rewind saved (refs/vincent/<install id>/chats/<id>/rewound-<k>)")
 	cmd.Flags().StringVar(&mode, "mode", "both", "what to rewind: "+strings.Join(rewindModes, ", "))
 	cmd.MarkFlagsMutuallyExclusive("turn", "rewound")
 	cmd.MarkFlagsOneRequired("turn", "rewound")

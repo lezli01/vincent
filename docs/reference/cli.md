@@ -2895,7 +2895,7 @@ N and later are marked rewound under one rewind id and hidden from `show`,
 chat's cost.
 
 A code rewind first saves the state it replaces as
-`refs/vincent/chats/<id>/rewound-<k>`, and `--rewound K` goes forward to that
+`refs/vincent/<install id>/chats/<id>/rewound-<k>`, and `--rewound K` goes forward to that
 saved state again — code only, so it takes no `--mode`. Files the pre-rewind
 snapshot could not read are never deleted: untracked ones are left where they
 are and listed, and a tracked one, which the rewind would overwrite, refuses

@@ -3970,7 +3970,7 @@ chat is `404`.
 ### Rewind and fork
 
 Every turn checkpoints the chat's worktree before its agent starts, as
-`refs/vincent/chats/<chat id>/turn-<seq>` in the project repository. A rewind
+`refs/vincent/<install id>/chats/<chat id>/turn-<seq>` in the project repository. A rewind
 or a fork goes back to the state **before** a turn ran. Neither starts an agent
 process.
 
@@ -3989,7 +3989,7 @@ curl -sS -X POST http://127.0.0.1:PORT/v1/chats/3/rewind \
 | `both` | The default: both of the above |
 
 A code rewind first saves the state it replaces as
-`refs/vincent/chats/<chat id>/rewound-<k>`, and `{"rewound": k}` (code only)
+`refs/vincent/<install id>/chats/<chat id>/rewound-<k>`, and `{"rewound": k}` (code only)
 goes forward to it again. A file the save could not read is never deleted: an
 untracked one is left in place and listed in `skipped`, and one the branch
 tracks — which the rewind would otherwise overwrite — refuses the rewind with
@@ -4292,7 +4292,7 @@ These failure reasons are worth knowing:
   checkpoint behind it. A file git cannot read is not a failure: it is left
   out of the checkpoint and named in the turn's transcript
   (`vincent.checkpoint_skipped`), and the turn runs. Each turn's snapshot is the git ref
-  `refs/vincent/chats/<chat id>/turn-<seq>` in the project's repository.
+  `refs/vincent/<install id>/chats/<chat id>/turn-<seq>` in the project's repository.
 
 ## Step status
 

@@ -4,7 +4,8 @@
 # fakeagent, so CI never calls a real agent CLI.
 #
 #   1. every turn leaves a checkpoint: checkpoint_sha on the turn and
-#      refs/vincent/chats/<id>/turn-<seq> pointing at it; a code rewind to
+#      refs/vincent/<install id>/chats/<id>/turn-<seq> pointing at it (the
+#      namespace scoped to this installation, review F4); a code rewind to
 #      turn 1 restores the modified, deleted and untracked files it started
 #      with exactly, removes what came later, and saves the replaced state as
 #      rewound-1, which a forward rewind (`rewound: 1`) puts back
@@ -188,6 +189,28 @@ expect_content() {
 
 rewind() { api_status POST "/chats/$CHAT_ID/rewind" -d "$1"; }
 
+# chat_refs ID — chat ID's checkpoint refs in REPO, one per line. They live
+# under refs/vincent/<install id>/chats/ID/, and the gate does not know its
+# installation's id, so it lists refs/vincent/ and keeps the chat's: a
+# pattern match on the listing rather than a for-each-ref glob, whose
+# matching of `*` across a slash is not something to lean on.
+chat_refs() {
+  local all line out=""
+  all="$(git -C "$REPO" for-each-ref --format='%(refname)' refs/vincent/ | tr -d '\r')"
+  while IFS= read -r line; do
+    if [[ "$line" == refs/vincent/*/chats/"$1"/* ]]; then out+="$line"$'\n'; fi
+  done <<<"$all"
+  printf '%s' "$out"
+}
+
+# chat_ref ID NAME — the one ref of chat ID ending /NAME, or nothing.
+chat_ref() {
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" == */chats/"$1"/"$2" ]]; then printf '%s\n' "$line"; fi
+  done <<<"$(chat_refs "$1")"
+}
+
 # pre_turn_one_state dirties WT the way scenarios 1 and 5 start turn 1:
 # tracked.txt modified, gone.txt deleted, untracked.txt new.
 pre_turn_one_state() {
@@ -204,8 +227,11 @@ checkpoints_and_code_rewind() {
   local sha ref
   sha="$(turn_field 1 checkpoint_sha)"
   [[ -n "$sha" ]] || fail "turn 1 carries no checkpoint_sha"
-  ref="$(git -C "$REPO" rev-parse --verify --quiet "refs/vincent/chats/$CHAT_ID/turn-1" || true)"
-  [[ "$ref" == "$sha" ]] || fail "refs/vincent/chats/$CHAT_ID/turn-1 is [$ref], want turn 1's checkpoint $sha"
+  local name
+  name="$(chat_ref "$CHAT_ID" turn-1)"
+  [[ "$name" == refs/vincent/*/chats/"$CHAT_ID"/turn-1 ]] || fail "chat $CHAT_ID has no turn-1 ref (refs: [$(chat_refs "$CHAT_ID")])"
+  ref="$(git -C "$REPO" rev-parse --verify --quiet "$name" || true)"
+  [[ "$ref" == "$sha" ]] || fail "$name is [$ref], want turn 1's checkpoint $sha"
 
   # What turn 2 starts from: every one of turn 1's changes undone or moved.
   printf 'again\n' > "$WT/tracked.txt"
@@ -219,7 +245,8 @@ checkpoints_and_code_rewind() {
   code="$(rewind '{"turn": 1, "mode": "code"}')"
   [[ "$code" == "200" ]] || fail "code rewind to turn 1 answered $code: $(body)"
   got="$(jq -r .ref < "$TMP/body.json")"
-  [[ "$got" == "refs/vincent/chats/$CHAT_ID/rewound-1" ]] || fail "the rewind wrote ref [$got]"
+  [[ "$got" == "$(chat_ref "$CHAT_ID" rewound-1)" && "$got" == refs/vincent/*/chats/"$CHAT_ID"/rewound-1 ]] \
+    || fail "the rewind wrote ref [$got]"
   git -C "$REPO" rev-parse --verify --quiet "$got" >/dev/null || fail "$got does not resolve"
   expect_content tracked.txt edited "after the code rewind"
   expect_content gone.txt "<absent>" "after the code rewind"
@@ -315,11 +342,11 @@ pruning() {
   local code refs
   code="$(api_status POST "/chats/$CHAT_ID/archive?force=true")"
   [[ "$code" == "200" ]] || fail "archive answered $code: $(body)"
-  refs="$(git -C "$REPO" for-each-ref --format='%(refname)' "refs/vincent/chats/$CHAT_ID/" | tr -d '\r')"
+  refs="$(chat_refs "$CHAT_ID")"
   [[ -n "$refs" ]] || fail "the archive pruned chat $CHAT_ID's refs"
   code="$(api_status DELETE "/chats/$CHAT_ID")"
   [[ "$code" == "200" ]] || fail "delete answered $code: $(body)"
-  refs="$(git -C "$REPO" for-each-ref --format='%(refname)' "refs/vincent/chats/$CHAT_ID/" | tr -d '\r')"
+  refs="$(chat_refs "$CHAT_ID")"
   [[ -z "$refs" ]] || fail "the delete left [$refs]"
 }
 

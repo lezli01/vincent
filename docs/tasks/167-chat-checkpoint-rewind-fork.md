@@ -24,7 +24,7 @@ Conventions for this file are in [the tasks README](README.md).
   tree reuse on an unchanged worktree. ✓ 2026-11-20
 - [x] **167.2** Migration `0066_chat_checkpoints.sql` (`checkpoint_sha`,
   `head_before`, `head_after` on `chat_turns`), a checkpoint written as
-  `refs/vincent/chats/<id>/turn-<seq>` and recorded on the row before
+  `refs/vincent/<install id>/chats/<id>/turn-<seq>` and recorded on the row before
   `adapter.Start`, `head_after` captured when the process ends, and the
   `checkpoint_failed` reason. Tested on all four dialects, and a failed
   checkpoint never spawns. ✓ 2026-11-20
@@ -48,7 +48,7 @@ Conventions for this file are in [the tasks README](README.md).
 - [x] **167.7** TUI: the `rewind` keymap operation, the "rewind…" and "fork
   from turn…" palette entries, the turn picker with disabled options and
   their reasons, and the rewound-turn toggle. ✓ 2026-11-21
-- [x] **167.8** Pruning: delete `refs/vincent/chats/<id>/` with the chat
+- [x] **167.8** Pruning: delete `refs/vincent/<install id>/chats/<id>/` with the chat
   (permanent delete, archive that removes the branch, `delete_branch=true`;
   not on hand-off), and a daemon sweep for refs whose chat row is gone.
   Measure disk cost (see below). ✓ 2026-11-21
@@ -78,7 +78,7 @@ overrules them.
 2. **Code rewind resets the branch and keeps a ref.** The branch moves to
    the checkpoint's HEAD and the index and worktree are restored exactly,
    untracked files included. The pre-rewind tip and a snapshot of its dirty
-   state are saved first as `refs/vincent/chats/<id>/rewound-<k>`, so a later
+   state are saved first as `refs/vincent/<install id>/chats/<id>/rewound-<k>`, so a later
    rewind can go forward to it.
 3. **Shared worktrees refuse unless only this chat has committed.** A code
    rewind to turn N needs `head_before(k+1) == head_after(k)` for every
@@ -152,6 +152,15 @@ overrules them.
 12. **Pruning.** The refs go with the chat (permanent delete, an archive that
     removes the branch, `delete_branch=true`), survive a hand-off, and a
     daemon sweep deletes refs whose chat row no longer exists.
+    *Amended 2026-11-21 (PR #1044 review F4, settled with the author):* the
+    refs live under `refs/vincent/<install id>/chats/<id>/`, scoped by a
+    per-database installation id (migration 0072). Unscoped, the sweep
+    deleted the refs of every other installation registered on the same
+    repository — their chat ids have no row here — and two installations'
+    equal chat ids shared refs. Chosen over dropping the sweep (a crashed
+    delete would leak refs) and over documenting the limit. Refs a master
+    build wrote under the unscoped namespace before this are neither read
+    nor swept; the feature was unreleased, so there is no migration of them.
 13. **Disk cost is measured, not assumed.** git deduplicates objects, so a
     checkpoint's only new storage is its commit object, the trees on the
     changed paths, and the blobs of changed files not already stored.

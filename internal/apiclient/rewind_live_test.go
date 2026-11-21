@@ -98,7 +98,11 @@ func TestRewindAndForkAgainstTheRealAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Ref != chatrun.RewoundRef(chat.ID, 1) || res.Chat.ID != chat.ID {
+	names, err := runner.Refs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Ref != names.Rewound(chat.ID, 1) || res.Chat.ID != chat.ID {
 		t.Errorf("code rewind: ref %q id %q chat %d", res.Ref, res.RewindID, res.Chat.ID)
 	}
 	if b, _ := os.ReadFile(filepath.Join(chat.WorktreePath, "a.txt")); string(b) != "two\n" {

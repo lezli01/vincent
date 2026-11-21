@@ -102,11 +102,6 @@ type RewindResult struct {
 // engine's own refusal of the same thing.
 var ErrBadRewindRequest = errors.New("invalid rewind request")
 
-// RewoundRef is the ref holding the k-th state a code rewind replaced.
-func RewoundRef(chatID int64, k int) string {
-	return fmt.Sprintf("%srewound-%d", CheckpointRefPrefix(chatID), k)
-}
-
 // Rewind rewinds chat chatID (task 167.3, 167.5). Every check runs before
 // anything moves, so a refused rewind changes nothing and a "both" rewind
 // never half-happens. It runs under the chat's hold (WhileNoTurn), so no
@@ -164,7 +159,7 @@ func (r *Runner) rewindHeld(ctx context.Context, chatID int64, req RewindRequest
 		if workDir, err = r.Workspace(ctx, chat); err != nil {
 			return RewindResult{}, err
 		}
-		if refs, err = readRefs(ctx, git, workDir, chatID); err != nil {
+		if refs, err = r.readRefs(ctx, git, workDir, chatID); err != nil {
 			return RewindResult{}, err
 		}
 	}
@@ -306,7 +301,7 @@ func (r *Runner) rewindCode(
 	if len(over) > 0 {
 		return "", nil, unsavedRefusal(over)
 	}
-	ref = RewoundRef(chat.ID, k)
+	ref = refs.names.Rewound(chat.ID, k)
 	if err := git.UpdateRef(gctx, workDir, ref, snap.Commit); err != nil {
 		return "", nil, fmt.Errorf("rewind: write %s: %w", ref, err)
 	}
@@ -346,6 +341,7 @@ func parseRewindSubject(subject string) (from, to string, ok bool) {
 // refState is one read of a chat's refs and its worktree's HEAD: what every
 // check below works from, gathered with one rev-parse and one for-each-ref.
 type refState struct {
+	names   ChatRefs
 	head    string
 	turns   map[int]string // seq -> turn-<seq> ref's commit
 	rewound map[int]string // k -> rewound-<k> ref's commit
@@ -353,16 +349,20 @@ type refState struct {
 	moves map[string][]string
 }
 
-func readRefs(ctx context.Context, git *gitx.Git, workDir string, chatID int64) (refState, error) {
+func (r *Runner) readRefs(ctx context.Context, git *gitx.Git, workDir string, chatID int64) (refState, error) {
+	names, err := r.Refs(ctx)
+	if err != nil {
+		return refState{}, fmt.Errorf("rewind: %w", err)
+	}
 	qctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
 	defer cancel()
-	st := refState{turns: map[int]string{}, rewound: map[int]string{}, moves: map[string][]string{}}
+	st := refState{names: names, turns: map[int]string{}, rewound: map[int]string{}, moves: map[string][]string{}}
 	head, err := git.Run(qctx, workDir, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
 		return refState{}, fmt.Errorf("rewind: read HEAD: %w", err)
 	}
 	st.head = head
-	prefix := CheckpointRefPrefix(chatID)
+	prefix := names.Prefix(chatID)
 	out, err := git.Run(qctx, workDir, "for-each-ref",
 		"--format=%(refname)%09%(objectname)%09%(contents:subject)", prefix)
 	if err != nil {
@@ -494,9 +494,13 @@ func (r *Runner) checkpointExists(ctx context.Context, chat *store.Chat, t *stor
 	if err != nil {
 		return false, err
 	}
+	names, err := r.Refs(ctx)
+	if err != nil {
+		return false, err
+	}
 	qctx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
 	defer cancel()
-	sha, err := gitx.New().Run(qctx, project.Path, "rev-parse", "--verify", "-q", CheckpointRef(chat.ID, t.Seq))
+	sha, err := gitx.New().Run(qctx, project.Path, "rev-parse", "--verify", "-q", names.Turn(chat.ID, t.Seq))
 	return err == nil && sha == t.CheckpointSHA, nil
 }
 

@@ -73,6 +73,16 @@ func (h *harness) turnDone(t *testing.T, chatID int64, prompt string) *store.Cha
 	return turn
 }
 
+// refs is the harness's installation-scoped ref names.
+func (h *harness) refs(t *testing.T) ChatRefs {
+	t.Helper()
+	refs, err := h.runner.Refs(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return refs
+}
+
 func wantRefusal(t *testing.T, err error, reason string) {
 	t.Helper()
 	var rr *RewindRefusal
@@ -114,7 +124,7 @@ func TestCodeRewindRestoresExactly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Rewind: %v", err)
 	}
-	if res.Ref != RewoundRef(c.ID, 1) {
+	if res.Ref != h.refs(t).Rewound(c.ID, 1) {
 		t.Errorf("ref = %q", res.Ref)
 	}
 	if head := gitIn(t, dir, "rev-parse", "HEAD"); head != two.HeadBefore {
@@ -156,7 +166,7 @@ func TestCodeRewindRestoresExactly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward Rewind: %v", err)
 	}
-	if fwd.Ref != RewoundRef(c.ID, 2) {
+	if fwd.Ref != h.refs(t).Rewound(c.ID, 2) {
 		t.Errorf("forward ref = %q", fwd.Ref)
 	}
 	if head := gitIn(t, dir, "rev-parse", "HEAD"); head != tip {
@@ -265,7 +275,7 @@ func TestCodeRewindRefusesUnsavedTrackedFile(t *testing.T) {
 	if got, _ := rd(t, dir, "README.md"); got != "SECRET-EDIT\n" {
 		t.Errorf("README.md = %q, want the unsaved edit kept", got)
 	}
-	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", RewoundRef(c.ID, 1)); out != "" {
+	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", h.refs(t).Rewound(c.ID, 1)); out != "" {
 		t.Errorf("a refused rewind wrote %s", out)
 	}
 	// Readable again, the save takes it and the rewind goes ahead.
@@ -528,10 +538,15 @@ func TestPruneAndSweepCheckpointRefs(t *testing.T) {
 	h := newHarness(t)
 	c := h.chat(t)
 	h.turnDone(t, c.ID, "one")
-	sha := gitIn(t, h.repo, "rev-parse", CheckpointRef(c.ID, 1))
+	sha := gitIn(t, h.repo, "rev-parse", h.refs(t).Turn(c.ID, 1))
 	orphan := int64(987654)
-	gitIn(t, h.repo, "update-ref", CheckpointRef(orphan, 1), sha)
-	gitIn(t, h.repo, "update-ref", RewoundRef(orphan, 1), sha)
+	gitIn(t, h.repo, "update-ref", h.refs(t).Turn(orphan, 1), sha)
+	gitIn(t, h.repo, "update-ref", h.refs(t).Rewound(orphan, 1), sha)
+	// Another installation sharing the repository (review F4): its chat ids
+	// mean nothing in this database — neither the orphan's nor c's own.
+	other := NewChatRefs("0123456789abcdef")
+	gitIn(t, h.repo, "update-ref", other.Turn(orphan, 1), sha)
+	gitIn(t, h.repo, "update-ref", other.Turn(c.ID, 1), sha)
 	if _, err := h.store.SetChatState(t.Context(), c.ID, chatstate.Archived); err != nil {
 		t.Fatal(err)
 	}
@@ -540,16 +555,22 @@ func TestPruneAndSweepCheckpointRefs(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("Sweep = %d, %v; want 1", n, err)
 	}
-	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", CheckpointRefPrefix(orphan)); out != "" {
+	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", h.refs(t).Prefix(orphan)); out != "" {
 		t.Errorf("orphan refs left: %q", out)
 	}
-	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", CheckpointRefPrefix(c.ID)); out == "" {
+	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", h.refs(t).Prefix(c.ID)); out == "" {
 		t.Error("the archived chat's refs were swept")
+	}
+	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", other.Root()); strings.Count(out, "\n") != 1 {
+		t.Errorf("another installation's refs = %q, want both kept", out)
 	}
 	if err := h.runner.PruneCheckpointRefs(t.Context(), h.repo, c.ID); err != nil {
 		t.Fatal(err)
 	}
-	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", CheckpointRefPrefix(c.ID)); out != "" {
+	if out := gitIn(t, h.repo, "rev-parse", "--verify", other.Turn(c.ID, 1)); out != sha {
+		t.Errorf("pruning chat %d took another installation's chat %d ref", c.ID, c.ID)
+	}
+	if out := gitIn(t, h.repo, "for-each-ref", "--format=%(refname)", h.refs(t).Prefix(c.ID)); out != "" {
 		t.Errorf("refs left after prune: %q", out)
 	}
 }

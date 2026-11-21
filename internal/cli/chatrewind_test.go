@@ -67,7 +67,7 @@ func (s *rewindCLIStub) handler(t *testing.T) http.HandlerFunc {
 			_, _ = io.WriteString(w, errBody)
 		case r.URL.Path == "/v1/chats/7/rewind":
 			_, _ = io.WriteString(w, `{"chat":{"id":7,"state":"idle"},"rewind_id":"r2",
-				"ref":"refs/vincent/chats/7/rewound-1","skipped":["locked.bin"],"seeded":true,
+				"ref":"refs/vincent/0123456789abcdef/chats/7/rewound-1","skipped":["locked.bin"],"seeded":true,
 				"rewound_turns":[1,4]}`)
 		case r.URL.Path == "/v1/chats/7/fork":
 			w.WriteHeader(http.StatusCreated)
@@ -78,7 +78,7 @@ func (s *rewindCLIStub) handler(t *testing.T) http.HandlerFunc {
 			_, _ = io.WriteString(w, `{"chat":{"id":7,"title":"talk","state":"idle","agent":"codex",
 				"branch":"vincent/7-talk","resume_pending":"seeded",
 				"forked_from":{"chat_id":3,"seq":2},
-				"rewound_states":[{"k":1,"ref":"refs/vincent/chats/7/rewound-1","sha":"abc","blocked":""}]},
+				"rewound_states":[{"k":1,"ref":"refs/vincent/0123456789abcdef/chats/7/rewound-1","sha":"abc","blocked":""}]},
 				"turns":`+rewindTurns+`}`)
 		case strings.HasPrefix(r.URL.Path, "/v1/chats/7/turns/"):
 			_, _ = io.WriteString(w, `{"records":[],"next_offset":0}`)
@@ -118,7 +118,7 @@ func TestChatRewindSendsTurnAndPrintsResult(t *testing.T) {
 	for _, want := range []string{
 		"chat 7 rewound to before turn 1 (conversation)",
 		"rewind id: r2",
-		"refs/vincent/chats/7/rewound-1",
+		"refs/vincent/0123456789abcdef/chats/7/rewound-1",
 		"rewound turns: 1, 4",
 		"  locked.bin\n",
 		"next turn: seeded, not resumed",
@@ -158,7 +158,7 @@ func TestChatRewindForward(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("--json output %q: %v", stdout, err)
 	}
-	if got.RewindID != "r2" || got.Ref != "refs/vincent/chats/7/rewound-1" || !got.Seeded ||
+	if got.RewindID != "r2" || got.Ref != "refs/vincent/0123456789abcdef/chats/7/rewound-1" || !got.Seeded ||
 		len(got.Skipped) != 1 || got.Skipped[0] != "locked.bin" {
 		t.Errorf("json = %+v", got)
 	}
@@ -272,7 +272,7 @@ func TestChatShowHidesRewoundTurns(t *testing.T) {
 		"--- turn 1 (done) ---", "--- turn 4 (done, seeded, not resumed) ---",
 		"(2 rewound turns hidden; --rewound shows them)",
 		"forked from chat 3, before turn 2", "next turn: seeded, not resumed",
-		"rewound state 1: refs/vincent/chats/7/rewound-1",
+		"rewound state 1: refs/vincent/0123456789abcdef/chats/7/rewound-1",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)

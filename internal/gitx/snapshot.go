@@ -299,7 +299,7 @@ func (g *Git) UpdateRef(ctx context.Context, dir, ref, sha string) error {
 }
 
 // DeleteRefs deletes every ref under prefix (for example
-// `refs/vincent/chats/7/`), returning how many it removed. A prefix with no
+// `refs/vincent/<install id>/chats/7/`), returning how many it removed. A prefix with no
 // refs is not an error.
 func (g *Git) DeleteRefs(ctx context.Context, dir, prefix string) (int, error) {
 	if !strings.HasPrefix(prefix, "refs/") {

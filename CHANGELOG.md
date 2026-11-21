@@ -18,7 +18,7 @@ list with the user-facing context a commit subject cannot carry.
   `rewind`) and the palette's "rewind…" and "fork from turn…" open a turn
   picker. A rewind puts the code, the conversation or both back to the state
   before that turn. The state it replaces is saved under
-  `refs/vincent/chats/<id>/rewound-<k>` so you can go forward to it again. A
+  `refs/vincent/<install id>/chats/<id>/rewound-<k>` so you can go forward to it again. A
   file it could not save is never deleted, and the turn's prompt returns to
   your draft. Rewound turns are kept, hidden until you show them, and still
   counted in costs. On a claude that supports it, the conversation resumes
@@ -73,7 +73,7 @@ list with the user-facing context a commit subject cannot carry.
 - **Every chat turn checkpoints its worktree first.** Before a turn's agent
   starts, vincent snapshots the worktree it runs in, uncommitted and untracked
   files included (ignored files are not), as
-  `refs/vincent/chats/<chat id>/turn-<seq>` in the project's repository,
+  `refs/vincent/<install id>/chats/<chat id>/turn-<seq>` in the project's repository,
   without touching your index, HEAD or files. A turn whose checkpoint cannot
   be taken fails `checkpoint_failed` instead of running unprotected. This is
   the groundwork for rewinding and forking a chat (task 167), which is not

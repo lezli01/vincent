@@ -9,17 +9,60 @@ import (
 	"github.com/lezli01/vincent/internal/store"
 )
 
-// CheckpointRefPrefix is the ref namespace a chat's checkpoints live under
-// (task 167, spec §5.5, §10). The refs are in the project repository's shared
-// namespace, so a worktree's checkpoints are visible from the main checkout
-// and survive the worktree's removal.
-func CheckpointRefPrefix(chatID int64) string {
-	return fmt.Sprintf("refs/vincent/chats/%d/", chatID)
+// ChatRefs names one installation's chat checkpoint refs (task 167, spec
+// §5.5, §10). The refs are in the project repository's shared namespace, so a
+// worktree's checkpoints are visible from the main checkout and survive the
+// worktree's removal — and so are seen by every installation that registered
+// the same repository. Chat ids are unique only within one database, so the
+// namespace is scoped by the database's installation id (PR #1044 review
+// F4): refs/vincent/<install id>/chats/<chat id>/. One installation's sweep
+// never lists another's refs, and two installations' chat 7 never collide.
+type ChatRefs struct {
+	root string
 }
 
-// CheckpointRef is the ref holding turn seq's checkpoint.
-func CheckpointRef(chatID int64, seq int) string {
-	return fmt.Sprintf("%sturn-%d", CheckpointRefPrefix(chatID), seq)
+// NewChatRefs is the namespace of the installation installID.
+func NewChatRefs(installID string) ChatRefs {
+	return ChatRefs{root: "refs/vincent/" + installID + "/chats/"}
+}
+
+// Root is the namespace every chat's refs live under, with its trailing
+// slash.
+func (c ChatRefs) Root() string { return c.root }
+
+// Prefix is the namespace chat chatID's refs live under.
+func (c ChatRefs) Prefix(chatID int64) string {
+	return fmt.Sprintf("%s%d/", c.root, chatID)
+}
+
+// Turn is the ref holding turn seq's checkpoint.
+func (c ChatRefs) Turn(chatID int64, seq int) string {
+	return fmt.Sprintf("%sturn-%d", c.Prefix(chatID), seq)
+}
+
+// Rewound is the ref holding the k-th state a code rewind replaced.
+func (c ChatRefs) Rewound(chatID int64, k int) string {
+	return fmt.Sprintf("%srewound-%d", c.Prefix(chatID), k)
+}
+
+// Refs is this runner's ChatRefs, read from the store's installation id on
+// first use and cached: the id never changes.
+func (r *Runner) Refs(ctx context.Context) (ChatRefs, error) {
+	r.mu.Lock()
+	cached := r.chatRefs
+	r.mu.Unlock()
+	if cached.root != "" {
+		return cached, nil
+	}
+	id, err := r.deps.Store.InstallationID(ctx)
+	if err != nil {
+		return ChatRefs{}, err
+	}
+	refs := NewChatRefs(id)
+	r.mu.Lock()
+	r.chatRefs = refs
+	r.mu.Unlock()
+	return refs, nil
 }
 
 // checkpoint snapshots workDir before turn's agent starts (task 167.2):
@@ -39,6 +82,10 @@ func (r *Runner) checkpoint(
 	if r.beforeCheckpoint != nil {
 		r.beforeCheckpoint(ctx, chat.ID)
 	}
+	refs, err := r.Refs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint: %w", err)
+	}
 	git := gitx.New()
 	snapCtx, cancel := context.WithTimeout(ctx, gitx.WorktreeTimeout)
 	defer cancel()
@@ -47,7 +94,7 @@ func (r *Runner) checkpoint(
 	if err != nil {
 		return nil, err
 	}
-	if err := git.UpdateRef(snapCtx, workDir, CheckpointRef(chat.ID, turn.Seq), snap.Commit); err != nil {
+	if err := git.UpdateRef(snapCtx, workDir, refs.Turn(chat.ID, turn.Seq), snap.Commit); err != nil {
 		return nil, fmt.Errorf("checkpoint: write ref: %w", err)
 	}
 	turn.CheckpointSHA, turn.HeadBefore = snap.Commit, snap.Head

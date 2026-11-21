@@ -15,7 +15,7 @@ import (
 )
 
 // TestEveryTurnIsCheckpointed is task 167.2's acceptance on all four
-// dialects: each turn writes refs/vincent/chats/<id>/turn-<seq> and records
+// dialects: each turn writes refs/vincent/<install id>/chats/<id>/turn-<seq> and records
 // its SHA and the HEAD under it on the turn row, and the snapshot holds the
 // worktree's uncommitted state as it was when the turn began.
 func TestEveryTurnIsCheckpointed(t *testing.T) {
@@ -46,7 +46,7 @@ func TestEveryTurnIsCheckpointed(t *testing.T) {
 				if turn.HeadBefore != head || turn.HeadAfter != head {
 					t.Errorf("turn %d heads = %q/%q, want %q", seq, turn.HeadBefore, turn.HeadAfter, head)
 				}
-				ref, err := git.Run(ctx, h.repo, "rev-parse", CheckpointRef(c.ID, seq))
+				ref, err := git.Run(ctx, h.repo, "rev-parse", h.refs(t).Turn(c.ID, seq))
 				if err != nil {
 					t.Fatalf("checkpoint ref from the main checkout: %v", err)
 				}

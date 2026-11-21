@@ -137,7 +137,7 @@ func (r *Runner) RewindOptions(ctx context.Context, chat *store.Chat, turns []st
 	var refs refState
 	refsOK := false
 	if workDir, err := r.Workspace(ctx, chat); err == nil {
-		if refs, err = readRefs(ctx, gitx.New(), workDir, chat.ID); err == nil {
+		if refs, err = r.readRefs(ctx, gitx.New(), workDir, chat.ID); err == nil {
 			refsOK = true
 		}
 	}
@@ -189,7 +189,7 @@ func (r *Runner) RewoundStates(ctx context.Context, chat *store.Chat) ([]Rewound
 	if workDir == "" {
 		return nil, nil
 	}
-	refs, err := readRefs(ctx, gitx.New(), workDir, chat.ID)
+	refs, err := r.readRefs(ctx, gitx.New(), workDir, chat.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (r *Runner) RewoundStates(ctx context.Context, chat *store.Chat) ([]Rewound
 	slices.Sort(ks)
 	out := make([]RewoundState, 0, len(ks))
 	for _, k := range ks {
-		out = append(out, RewoundState{K: k, Ref: RewoundRef(chat.ID, k), SHA: refs.rewound[k], Blocked: blocked})
+		out = append(out, RewoundState{K: k, Ref: refs.names.Rewound(chat.ID, k), SHA: refs.rewound[k], Blocked: blocked})
 	}
 	return out, nil
 }

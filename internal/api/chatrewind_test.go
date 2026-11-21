@@ -126,7 +126,11 @@ func TestChatRewindCodeConversationAndForward(t *testing.T) {
 		t.Errorf("a.txt = %q, want the state before turn 2", got)
 	}
 	ref, _ := body["ref"].(string)
-	if ref != chatrun.RewoundRef(id, 1) {
+	names, err := h.runner.Refs(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref != names.Rewound(id, 1) {
 		t.Errorf("ref = %q", ref)
 	}
 	if turns, _ := body["rewound_turns"].([]any); len(turns) != 0 {
@@ -328,9 +332,13 @@ func TestForkBaseIsTheSources(t *testing.T) {
 	}
 }
 
-func chatRefs(t *testing.T, repo string, id int64) string {
+func (h *chatHarness) chatRefs(t *testing.T, id int64) string {
 	t.Helper()
-	return strings.TrimSpace(testrepo.Run(t, repo, "for-each-ref", "--format=%(refname)", fmt.Sprintf("refs/vincent/chats/%d/", id)))
+	names, err := h.runner.Refs(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(testrepo.Run(t, h.repo, "for-each-ref", "--format=%(refname)", names.Prefix(id)))
 }
 
 // TestChatCheckpointRefsPrunedOnDelete is 167.8: a permanent delete, with
@@ -341,7 +349,7 @@ func TestChatCheckpointRefsPrunedOnDelete(t *testing.T) {
 	oneTurn := func() int64 {
 		id, _ := handoffFixture(t, h)
 		h.turnDone(t, id, "hello")
-		if chatRefs(t, h.repo, id) == "" {
+		if h.chatRefs(t, id) == "" {
 			t.Fatalf("chat %d has no checkpoint ref", id)
 		}
 		return id
@@ -351,13 +359,13 @@ func TestChatCheckpointRefsPrunedOnDelete(t *testing.T) {
 		if code, body := h.post(t, fmt.Sprintf("/v1/chats/%d/archive?force=true", id), nil); code != http.StatusOK {
 			t.Fatalf("archive = %d %v", code, body)
 		}
-		if chatRefs(t, h.repo, id) == "" {
+		if h.chatRefs(t, id) == "" {
 			t.Errorf("archive pruned chat %d's refs", id)
 		}
 		if resp, body := h.doJSON(t, http.MethodDelete, fmt.Sprintf("/v1/chats/%d%s", id, q), nil); resp.StatusCode != http.StatusOK {
 			t.Fatalf("delete%s = %d %s", q, resp.StatusCode, body)
 		}
-		if got := chatRefs(t, h.repo, id); got != "" {
+		if got := h.chatRefs(t, id); got != "" {
 			t.Errorf("delete%s left %s", q, got)
 		}
 	}
@@ -365,14 +373,14 @@ func TestChatCheckpointRefsPrunedOnDelete(t *testing.T) {
 	if resp, body := h.doJSON(t, http.MethodDelete, fmt.Sprintf("/v1/chats/%d?force=true", forced), nil); resp.StatusCode != http.StatusOK {
 		t.Fatalf("force delete = %d %s", resp.StatusCode, body)
 	}
-	if got := chatRefs(t, h.repo, forced); got != "" {
+	if got := h.chatRefs(t, forced); got != "" {
 		t.Errorf("force delete left %s", got)
 	}
 	handed := oneTurn()
 	if code, body := h.handoff(t, handed, map[string]any{"title": "take it"}); code != http.StatusCreated {
 		t.Fatalf("handoff = %d %v", code, body)
 	}
-	if chatRefs(t, h.repo, handed) == "" {
+	if h.chatRefs(t, handed) == "" {
 		t.Error("a hand-off pruned the chat's refs")
 	}
 }

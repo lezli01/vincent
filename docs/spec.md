@@ -1373,9 +1373,16 @@ of the chat — and its path is written to the turn's transcript as a
 split is not kept: a restore writes the snapshot's differences from its HEAD
 back as unstaged changes.
 
-The commit is referenced as `refs/vincent/chats/<chat id>/turn-<seq>`, in the
-project repository's shared ref namespace, so it is visible from the main
-checkout and survives the worktree's removal. Its SHA and the HEAD it is
+The commit is referenced as `refs/vincent/<install id>/chats/<chat id>/turn-<seq>`,
+in the project repository's shared ref namespace, so it is visible from the
+main checkout and survives the worktree's removal. *Amended 2026-11-21 (PR
+#1044 review F4):* `<install id>` is the database's installation id
+(`installation.install_id`, migration 0072, 16 hex characters minted once).
+Chat ids are unique only within one database, and every installation that
+registered the repository sees its refs, so the namespace is scoped: one
+installation never lists, prunes or collides with another's. Refs written
+before this amendment, under the unscoped `refs/vincent/chats/`, are not read
+— their turns show no checkpoint — and are not swept. Its SHA and the HEAD it is
 parented on are written onto the turn row (`chat_turns.checkpoint_sha`,
 `head_before`, migration 0066) before `adapter.Start`; `head_after` is the
 worktree's HEAD when the turn ends. A turn whose checkpoint cannot be taken
@@ -1397,7 +1404,7 @@ pruned (§10).
 
 - `code` restores the worktree to turn N's checkpoint. The current state is
   first saved as a snapshot (`--ignore-errors`, like a checkpoint) under
-  `refs/vincent/chats/<chat id>/rewound-<k>`, `k` counting up per chat, so
+  `refs/vincent/<install id>/chats/<chat id>/rewound-<k>`, `k` counting up per chat, so
   nothing a rewind replaces is lost; then the branch is reset to
   `head_before`, `clean -fd` runs, and the checkpoint's tree is laid back
   unstaged. Ignored files are left alone. A path the pre-rewind snapshot could
@@ -7899,7 +7906,7 @@ turn's heading never shows a cost (§15). It has no `Compactor`.
 ## 10. Worktree management
 
 *Amended 2026-11-21 (task 167.8, issue #1041):* a chat's checkpoint refs
-(`refs/vincent/chats/<chat id>/turn-<seq>` and `rewound-<k>`, §5.5) live in
+(`refs/vincent/<install id>/chats/<chat id>/turn-<seq>` and `rewound-<k>`, §5.5) live in
 the project repository's shared ref namespace and are pruned with the chat's
 row: on permanent delete (`DELETE /v1/chats/{id}`, with or without
 `delete_branch`, and the force delete), and for a linked chat when its task is
@@ -7907,7 +7914,10 @@ deleted. A chat's archive never deletes its branch, so it keeps them, and so
 does a hand-off, whose chat row stays. A daemon sweep, once at startup and
 then on the transcript pruner's 24 h interval, deletes the refs of chat ids
 that no longer have a row in any project repository; a repository it cannot
-read is logged and skipped. Only refs are deleted — the objects go with git's
+read is logged and skipped. The sweep lists only its own installation's
+namespace (amended 2026-11-21, PR #1044 review F4), so a second installation
+registered on the same repository — a dev build, a screenshots seed, another
+user — keeps its refs. Only refs are deleted — the objects go with git's
 own gc. **Disk cost, measured** on this repository (decision 13): a
 checkpoint of an unchanged worktree adds one commit object (~150 bytes
 loose), reusing the previous tree; one modified file and one new file added
@@ -10524,7 +10534,7 @@ archives nothing from history.
 - Before starting any step process, the daemon persists the StepRun (`running`) with
   the child PID and start time once spawned.
 - *Added 2026-11-20 (task 167.2).* A chat turn's worktree checkpoint — the
-  `refs/vincent/chats/<id>/turn-<seq>` ref and the turn row's
+  `refs/vincent/<install id>/chats/<id>/turn-<seq>` ref and the turn row's
   `checkpoint_sha`/`head_before` — is committed before its agent process is
   started (§5.5, Checkpoints). Recovery needs nothing new for it: a crash
   after the spawn finds both already durable, and a crash before it leaves at
@@ -14567,6 +14577,14 @@ CREATE TABLE global_pause (
   reason     TEXT NOT NULL DEFAULT ''   -- one line; '' is none
 );
 
+-- The installation id (§5.5, §10; PR #1044 review F4, added 2026-11-21,
+-- migration 0072): a singleton minted once with the database, scoping its
+-- chats' checkpoint refs in shared repositories.
+CREATE TABLE installation (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  install_id  TEXT NOT NULL            -- 16 lowercase hex characters, never changed
+);
+
 CREATE TABLE idempotency_keys (       -- §13.1 replay protection (task 040)
   method       TEXT NOT NULL,
   path         TEXT NOT NULL,
@@ -14651,7 +14669,8 @@ CREATE TABLE chat_turns (
     mention_context               TEXT,
     -- Added 2026-11-20 (task 167.2, migration 0066): the worktree checkpoint
     -- taken before the turn's agent starts (§5.5, Checkpoints) — the snapshot
-    -- commit refs/vincent/chats/<chat id>/turn-<seq> points at, and the HEAD
+    -- commit refs/vincent/<install id>/chats/<chat id>/turn-<seq> points at
+    -- (the install id since 2026-11-21, migration 0072), and the HEAD
     -- it is parented on, both stored before adapter.Start (§12.4) — and the
     -- worktree's HEAD when the turn ended. NULL = no checkpoint (a turn from
     -- before 0066, or one that never reached it).

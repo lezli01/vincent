@@ -955,7 +955,7 @@ type ChatTurn struct {
 	// typed. "" is "nothing expanded".
 	MentionContext string
 	// CheckpointSHA is the snapshot commit of the worktree taken before the
-	// turn's agent started, referenced as refs/vincent/chats/<chat>/turn-<seq>,
+	// turn's agent started, referenced as refs/vincent/<install>/chats/<chat>/turn-<seq>,
 	// and HeadBefore the HEAD it is parented on (task 167.2). HeadAfter is
 	// HEAD when the turn ended. "" is "none": a turn from before migration
 	// 0066, or one that ended before its checkpoint was taken.
