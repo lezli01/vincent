@@ -142,6 +142,22 @@ img { max-width: 100%; height: auto; }
   border-color: var(--accent);
   background: var(--accent-soft);
 }
+/* The GitHub link's star and fork counts, filled by github-stats.js; hidden
+   until it has them. */
+.github-stats[hidden] { display: none; }
+.github-stats {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--divider);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  letter-spacing: 0;
+}
+.github-stat { white-space: nowrap; }
+.top-nav a.github-link:hover .github-stats { color: var(--accent); }
 
 .site-grid {
   display: grid;
@@ -663,6 +679,51 @@ html.search-open { overflow: hidden; }
   .search-overlay { padding: 0; }
   .search-panel { width: 100%; max-height: 100%; height: 100%; box-shadow: none; }
   .search-result__snippet { font-size: 11.5px; }
+}
+
+/* Copy buttons on code blocks (assets/js/code-copy.js). The wrapper takes
+   the block's outer margins so the button sits on the block's own corner,
+   and the button stays out of the <pre>, which scrolls sideways. */
+.prose .code-block {
+  position: relative;
+  margin: 1.45em 5px 1.6em 0;
+}
+.prose .code-block pre,
+.prose .code-block .highlighter-rouge,
+.prose .code-block .highlight { margin: 0; }
+.prose .code-block pre { padding-right: 64px; }
+.prose .code-copy {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 1;
+  padding: 3px 7px;
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--divider);
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease-in-out, color 120ms ease-in-out, border-color 120ms ease-in-out;
+}
+.prose .code-block:hover .code-copy,
+.prose .code-copy:focus-visible { opacity: 1; }
+.prose .code-copy:hover,
+.prose .code-copy:focus-visible { color: var(--accent); border-color: var(--accent); }
+.prose .code-copy:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.prose .code-copy.is-copied {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+@media (hover: none) {
+  .prose .code-copy { opacity: 0.85; }
 }
 
 /* Click-to-enlarge screenshots (assets/js/image-zoom.js). */

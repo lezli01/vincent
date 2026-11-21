@@ -4,6 +4,14 @@ Vincent turns locally installed coding agents into managed, repeatable
 workloads. Your repositories, credentials, worktrees, transcripts, and task
 state stay on your machine; vincent provides the control plane around them.
 
+<p align="center">
+  <iframe src="https://www.youtube-nocookie.com/embed/kr9bKo6Y-Oo" title="vincent showcase video" style="width: 100%; max-width: 720px; aspect-ratio: 16 / 9; border: 0;" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</p>
+
+<p align="center">
+  <em>▶ <a href="https://www.youtube.com/watch?v=kr9bKo6Y-Oo">Watch the showcase on YouTube</a></em>
+</p>
+
 ## At a glance
 
 | Area | Highlights |
