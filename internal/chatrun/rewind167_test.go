@@ -346,6 +346,38 @@ func TestRecoverRecordsHeadAfter(t *testing.T) {
 	}
 }
 
+// TestRewindOptionsProbesResumeAtOnce is review F7: the resume-at capability
+// is a CLI probe that can take its whole timeout, so RewindOptions asks it at
+// most once per call however many turns it plans, and not at all when no
+// kept turn has an anchor to resume at.
+func TestRewindOptionsProbesResumeAtOnce(t *testing.T) {
+	h := newHarness(t)
+	c := h.chatOn(t, perRunAgentName)
+	h.perRun.setResults(
+		agent.RunResult{SessionID: "s1", ResultText: "ok"},
+		agent.RunResult{SessionID: "s1", ResultText: "ok"},
+		agent.RunResult{SessionID: "s1", ResultText: "ok"},
+	)
+	for _, p := range []string{"one", "two", "three"} {
+		h.turnDone(t, c.ID, p)
+	}
+	turns, _ := h.store.ListChatTurns(t.Context(), c.ID)
+	h.runner.RewindOptions(t.Context(), c, turns)
+	if n := h.perRun.probes(); n != 0 {
+		t.Errorf("no anchors: %d probes, want 0", n)
+	}
+	for i := range turns {
+		turns[i].ResumeAnchor = "anchor"
+	}
+	opts := h.runner.RewindOptions(t.Context(), c, turns)
+	if n := h.perRun.probes(); n != 1 {
+		t.Errorf("anchored turns: %d probes for one RewindOptions, want 1", n)
+	}
+	if !opts[3].ConversationSeeded {
+		t.Error("without the capability turn 3's conversation rewind should be seeded")
+	}
+}
+
 // TestRewindGuards: a live chat, an ended chat, a turn without a checkpoint
 // and an already-rewound turn are each refused.
 func TestRewindGuards(t *testing.T) {

@@ -157,6 +157,7 @@ func (r *Runner) RewindOptions(ctx context.Context, chat *store.Chat, turns []st
 			refsOK = true
 		}
 	}
+	canResumeAt := r.resumeAtProbe(chat)
 	for i := range turns {
 		t := &turns[i]
 		var o TurnOptions
@@ -170,7 +171,7 @@ func (r *Runner) RewindOptions(ctx context.Context, chat *store.Chat, turns []st
 			}
 		default:
 			o.Code = refs.chainFrom(turns, t.Seq)
-			o.ConversationSeeded = r.planConversation(chat, turns, t.Seq).seeded
+			o.ConversationSeeded = r.planConversationWith(chat, turns, t.Seq, canResumeAt).seeded
 		}
 		out[t.Seq] = o
 	}

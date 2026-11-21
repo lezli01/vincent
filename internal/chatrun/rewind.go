@@ -547,6 +547,33 @@ type convPlan struct {
 // session at that turn's anchor, natively; a conversation that keeps no
 // turn starts fresh; everything else is seeded with the kept turns.
 func (r *Runner) planConversation(chat *store.Chat, turns []store.ChatTurn, seq int) convPlan {
+	return r.planConversationWith(chat, turns, seq, r.resumeAtProbe(chat))
+}
+
+// resumeAtProbe is chat's agent's resume-at-point capability, asked at most
+// once and only when called (review F7). claude answers it with a probe that
+// may take up to its help timeout when the CLI hangs, and does not cache a
+// probe that timed out; a caller planning many turns — RewindOptions, once
+// per turn — shares one answer instead of paying that per turn.
+func (r *Runner) resumeAtProbe(chat *store.Chat) func() bool {
+	var done, ok bool
+	return func() bool {
+		if !done {
+			done = true
+			a, found := r.deps.Agents.Get(chat.Agent)
+			ok = found && agent.CanResumeAtPoint(a)
+		}
+		return ok
+	}
+}
+
+// planConversationWith is planConversation with the capability supplied, so
+// a caller can share one probe across turns. The capability is asked only
+// for a kept turn that has an anchor to resume at: without one the answer
+// cannot change the plan.
+func (r *Runner) planConversationWith(
+	chat *store.Chat, turns []store.ChatTurn, seq int, canResumeAt func() bool,
+) convPlan {
 	var kept []store.ChatTurn
 	for _, t := range turns {
 		if t.Seq < seq && t.RewoundAt == nil {
@@ -557,8 +584,7 @@ func (r *Runner) planConversation(chat *store.Chat, turns []store.ChatTurn, seq 
 		return convPlan{}
 	}
 	prev := kept[len(kept)-1]
-	if a, ok := r.deps.Agents.Get(chat.Agent); ok && agent.CanResumeAtPoint(a) &&
-		prev.ResumeAnchor != "" && prev.SessionID != "" {
+	if prev.ResumeAnchor != "" && prev.SessionID != "" && canResumeAt() {
 		return convPlan{sessionID: prev.SessionID, resumeAt: prev.ResumeAnchor}
 	}
 	return convPlan{preamble: seededPreamble(chat, kept), seeded: true}
