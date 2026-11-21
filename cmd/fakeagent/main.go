@@ -152,6 +152,15 @@
 //	                      claude only the JSON field decides
 //	FAKEAGENT_CLAUDE_AUTH_HANG
 //	                      "1" makes `auth status` never answer (T4.22)
+//	FAKEAGENT_CLAUDE_NO_RESUME_AT
+//	                      "1" makes this claude a build without
+//	                      `--resume-session-at`: commander's unknown-option
+//	                      error, on the adapter's capability probe and on a
+//	                      run. Unset, the flag is honoured — with `--resume`
+//	                      and `--fork-session` the session is cut at the
+//	                      turn the `fake-msg-<turn>-<n>` uuid names and
+//	                      continued under a new id; without `--resume` it is
+//	                      refused as 2.1.330 refuses it (task 167, resumeat.go)
 //	FAKEAGENT_CLAUDE_COMMANDS
 //	                      claude input mode: the `commands` a first-line
 //	                      `initialize` control_request is answered with, a
@@ -442,6 +451,7 @@ func main() {
 		return
 	}
 
+	claudeResumeAtGate()
 	prompt, blocks, stdin := readPrompt(hasFlag("--input-format"))
 
 	// The conversation is resolved before a single stream line is emitted
@@ -449,6 +459,7 @@ func main() {
 	// with the refusal on stderr and no stream at all, which is the shape
 	// internal/agent/claude classifies as `session_lost`.
 	prior := openSession(dialectClaude)
+	assistantTurn = len(prior) + 1
 	rememberPrompt(prompt)
 
 	emit(claudeInitLine())
@@ -1142,6 +1153,13 @@ func emit(v map[string]any) {
 	if stampSessionID && sessionID != "" {
 		if _, ok := v["session_id"]; !ok {
 			v["session_id"] = sessionID
+		}
+	}
+	// A claude assistant line carries its message's uuid, which is what a
+	// later --resume-session-at names (task 167, resumeat.go).
+	if assistantTurn > 0 && v["type"] == "assistant" {
+		if _, ok := v["uuid"]; !ok {
+			v["uuid"] = messageUUID()
 		}
 	}
 	b, err := json.Marshal(v)
