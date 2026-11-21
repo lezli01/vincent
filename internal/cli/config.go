@@ -419,6 +419,18 @@ func configFields() map[string]configField {
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Icons: v}}
 			}),
+		// tui.chat (task 170): the chat header's status-line template, which
+		// the daemon validates as it will execute it, and the composer's
+		// modal layer.
+		"tui.chat.status_line": str(func(c apiclient.Config) string { return c.TUI.Chat.StatusLine },
+			func(v *string) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Chat: &apiclient.ConfigChatPatch{StatusLine: v}}}
+			}),
+		"tui.chat.vim": boolField(
+			func(c apiclient.Config) bool { return c.TUI.Chat.Vim },
+			func(b *bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Chat: &apiclient.ConfigChatPatch{Vim: b}}}
+			}),
 		"tui.output.level": str(func(c apiclient.Config) string { return c.TUI.Output.Level },
 			func(v *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Output: &apiclient.ConfigOutputPatch{Level: v}}}
