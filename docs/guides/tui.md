@@ -3931,7 +3931,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first forty-three are the operations screens share, the next eleven are the
+The first forty-four are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3968,6 +3968,7 @@ The first forty-three are the operations screens share, the next eleven are the
 | `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
 | `chat_diff` | `alt+d` | Show the chat's diff in place of the conversation, to review it hunk by hunk. See [Reviewing a chat's diff](#reviewing-a-chats-diff) |
 | `shell_command` | `alt+x` | Run a shell command in the chat's directory, drawn as a card in the conversation. See [Shell commands, images and vim in a chat](#shell-commands-images-and-vim-in-a-chat) |
+| `rewind` | `alt+z` | Open the chat's turn picker, to rewind its code, its conversation or both to before a turn, or to fork a new chat from one |
 | `next_chat` | `alt+n` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |
 | `prev_chat` | `alt+shift+n` | Open the project's previous chat, wrapping |
 | `chat_1` | `alt+1` | Open the project's chat number 1, in the chats board's order; nothing past the last |
