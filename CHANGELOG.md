@@ -25,13 +25,6 @@ list with the user-facing context a commit subject cannot carry.
   workspace, served as `pending_preamble`, and replaceable or clearable with
   `vincent chat preamble` or `PATCH /v1/chats/{id}` until a turn starts.
 
-### Changed
-
-- **Seeded chat contexts now summarize tool calls.** A seeded rewind or fork
-  used to replay only each earlier turn's prompt and final reply; each turn
-  now also lists its tool calls, one line each (never their output), and
-  those lines are the first thing dropped when the history is too long.
-
 - **Rewind a chat, or fork it, from any turn.** Every chat turn already
   checkpoints its worktree; now `alt+z` in the chat workspace (rebindable as
   `rewind`) and the palette's "rewind…" and "fork from turn…" open a turn
@@ -227,6 +220,10 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Changed
 
+- **Seeded chat contexts now summarize tool calls.** A seeded rewind or fork
+  used to replay only each earlier turn's prompt and final reply; each turn
+  now also lists its tool calls, one line each (never their output), and
+  those lines are the first thing dropped when the history is too long.
 - **On a task's Diff tab, `]` and `[` now move between hunks.** They used to
   switch tabs there, as they still do on every other tab; `tab`/`shift+tab`
   switch tabs from the Diff tab as before. A hunk in a folded
