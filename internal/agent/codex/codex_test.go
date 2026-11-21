@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -71,6 +72,15 @@ func TestBuildArgs(t *testing.T) {
 			want: []string{
 				"exec", "--json", "--dangerously-bypass-approvals-and-sandbox",
 				"-m", "gpt-5.6-sol", "-c", "model_reasoning_effort=xhigh",
+			},
+		},
+		{
+			// Task 170: one `--image=<path>` per image, last, in order.
+			name: "images ride as one --image= each",
+			spec: agent.RunSpec{Model: "gpt-5.6-sol", Images: []string{"/data/2.gif", "/data/1.png"}},
+			want: []string{
+				"exec", "--json", "--dangerously-bypass-approvals-and-sandbox",
+				"-m", "gpt-5.6-sol", "--image=/data/2.gif", "--image=/data/1.png",
 			},
 		},
 	}
@@ -381,5 +391,24 @@ func TestStartMCPCallback(t *testing.T) {
 	want := mcptest.StatusCall{TaskID: "42", StepID: mcptest.StepID, Message: "codex called back"}
 	if got := srv.StatusCalls(); len(got) != 1 || got[0] != want {
 		t.Errorf("status calls = %+v, want exactly %+v", got, want)
+	}
+}
+
+// TestHelpDocumentsImageOnBothPaths pins buildArgs' --image to the captured
+// 0.169.0 help (review F6 of task 170): `exec` and `exec resume` both take
+// `-i, --image <FILE>`, so a first turn and a resumed one can each be given
+// an image, which is what SupportsImages claims.
+func TestHelpDocumentsImageOnBothPaths(t *testing.T) {
+	for _, tc := range []struct{ file, want string }{
+		{"help_exec_0.169.0.txt", "-i, --image <FILE>..."},
+		{"help_exec_resume_0.169.0.txt", "-i, --image <FILE>"},
+	} {
+		raw, err := os.ReadFile(filepath.Join("testdata", tc.file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(strings.ReplaceAll(string(raw), "\r", ""), tc.want) {
+			t.Errorf("%s does not document %q", tc.file, tc.want)
+		}
 	}
 }

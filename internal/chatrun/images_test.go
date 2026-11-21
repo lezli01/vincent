@@ -121,6 +121,23 @@ func TestImageChipsReachTheAdapter(t *testing.T) {
 				t.Errorf("a turn with no chip passed an image (%v)", err)
 			}
 
+			// A resumed turn is given its image too (review F6): turn 3
+			// resumes the session turn 1 opened.
+			third := h.sendAndWait(t, c.ID, "and once more [image 1]")
+			if third.State != chatstate.TurnDone {
+				t.Fatalf("turn 3 = %s (%s)", third.State, third.ErrorMessage)
+			}
+			if got, _ := h.store.GetChat(t.Context(), c.ID); got == nil || got.SessionID == "" {
+				t.Fatalf("the chat holds no session to resume: %+v", got)
+			}
+			data, err = os.ReadFile(record)
+			if err != nil {
+				t.Fatalf("the resumed %s turn recorded no image: %v", agentName, err)
+			}
+			if got := strings.Fields(strings.ReplaceAll(string(data), "\r", "")); !slices.Equal(got, []string{one.Path}) {
+				t.Errorf("the resumed %s turn was passed %q, want [%s]", agentName, got, one.Path)
+			}
+
 			// A number the chat never had is the human's text, not a
 			// chip (review F4): it resolves to nothing, beside a real one.
 			paths, err := h.runner.ResolveImages(t.Context(), c, "see [image 9] and [image 1]")
