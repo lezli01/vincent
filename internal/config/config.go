@@ -892,7 +892,7 @@ func ValidateChatStatusLine(tmpl string) error {
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("tui.chat.status_line: %v; the fields are %s",
+		return fmt.Errorf("tui.chat.status_line: %w; the fields are %s",
 			err, strings.Join(chatStatusFieldNames, ", "))
 	}
 	return nil

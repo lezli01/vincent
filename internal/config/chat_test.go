@@ -56,7 +56,7 @@ func TestValidateChatStatusLine(t *testing.T) {
 		}
 	}
 	refused := map[string]struct{ tmpl, want string }{
-		"unknown field":   {"{{.Tokens}}", "Tokens"},
+		"unknown field": {"{{.Tokens}}", "Tokens"},
 		// Review F5: fields a zero value never reaches still fail the load.
 		"field in an if":       {"{{if .Cost}}{{.Bogus}}{{end}}", "Bogus"},
 		"field in an else":     {"{{if .Cost}}x{{else if .Turns}}{{.Bogus}}{{end}}", "Bogus"},
@@ -64,10 +64,10 @@ func TestValidateChatStatusLine(t *testing.T) {
 		"field in a with body": {"{{with .Cost}}{{.Len}}{{end}}", "Len"},
 		"field in a range":     {"{{range .Branch}}{{$.Bogus}}{{end}}", "Bogus"},
 		"field of a field":     {"{{if .Cost}}{{.Cost.Amount}}{{end}}", "Amount"},
-		"parse error":     {"{{.Model", "tui.chat.status_line"},
-		"unknown func":    {"{{upper .Model}}", "upper"},
-		"newline":         {"{{.Model}}\n{{.Cost}}", "single line"},
-		"carriage return": {"{{.Model}}\r", "single line"},
+		"parse error":          {"{{.Model", "tui.chat.status_line"},
+		"unknown func":         {"{{upper .Model}}", "upper"},
+		"newline":              {"{{.Model}}\n{{.Cost}}", "single line"},
+		"carriage return":      {"{{.Model}}\r", "single line"},
 	}
 	for name, tc := range refused {
 		t.Run(name, func(t *testing.T) {
