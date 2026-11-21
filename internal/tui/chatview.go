@@ -116,7 +116,14 @@ type chatView struct {
 
 	chatID int64
 	chat   *apiclient.Chat
-	turns  []apiclient.ChatTurn
+	// turns is the conversation as drawn and allTurns every turn the
+	// daemon served (task 167 decision 9): a rewound turn is in allTurns
+	// always — its cost still counts — and in turns only while showRewound
+	// is on. rewind is the turn picker, nil when closed.
+	turns       []apiclient.ChatTurn
+	allTurns    []apiclient.ChatTurn
+	showRewound bool
+	rewind      *chatRewindPicker
 	// queue is the chat's queued messages and pause (task 156), nil when it
 	// has none; editingQueued is the queued message `↑` put in the
 	// composer, 0 when the composer holds a new message.
@@ -479,7 +486,8 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 		v.streamStop = nil
 	}
 	v.chatID = id
-	v.chat, v.turns = nil, nil
+	v.chat, v.turns, v.allTurns = nil, nil, nil
+	v.showRewound, v.rewind = false, nil
 	v.form, v.formAway = nil, nil
 	v.resetRecords()
 	v.note, v.loadErr = "", ""
@@ -713,6 +721,18 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	case chatPatchedMsg:
 		v.applyPatched(msg)
 		return v, nil
+	case chatRewoundMsg:
+		return v, v.applyRewound(msg)
+	case openRewindPickerMsg:
+		if msg.chatID == v.chatID {
+			v.openRewindPicker(msg.fork)
+		}
+		return v, nil
+	case toggleRewoundMsg:
+		if msg.chatID == v.chatID {
+			v.toggleRewound()
+		}
+		return v, nil
 	case chatFilesMsg:
 		v.applyFiles(msg)
 		return v, nil
@@ -799,8 +819,9 @@ func (v *chatView) applyLoaded(msg chatLoadedMsg) (finished bool) {
 		return false
 	}
 	v.loadErr = ""
-	finished = v.chat != nil && turnFinished(v.turns, msg.turns)
-	v.chat, v.turns, v.queue = msg.chat, msg.turns, msg.queue
+	finished = v.chat != nil && turnFinished(v.everyTurn(), msg.turns)
+	v.chat, v.allTurns, v.queue = msg.chat, msg.turns, msg.queue
+	v.turns = visibleTurns(msg.turns, v.showRewound)
 	v.applyLoadedDraft(msg.chat)
 	// The message being edited may have started or been deleted elsewhere:
 	// the edit ends with it, and what was typed stays in the composer.
@@ -1225,7 +1246,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// A question that arrived under the close confirmation replaces it:
 		// the popup owns the keyboard, and a `y` meant for the prompt must
 		// not be read as an answer to something else later.
-		v.closing, v.compacting, v.raising, v.picker = false, false, false, nil
+		v.closing, v.compacting, v.raising, v.picker, v.rewind = false, false, false, nil, nil
 		cmd, exit := v.form.updateWith(msg, v.answerCmd)
 		if exit {
 			// Put away, not dropped (issue #801 F7): alt+a brings it back
@@ -1261,6 +1282,9 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	if v.picker != nil {
 		return v, v.updatePickerKey(msg)
+	}
+	if v.rewind != nil {
+		return v, v.updateRewindKey(msg)
 	}
 	if v.history.open {
 		// The prompt history picker owns the keyboard while it is up (task
@@ -1338,6 +1362,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	if key := opKey(keymap.ChatDiff); key != "" && msg.String() == key {
 		return v, v.openDiff()
+	}
+	if key := opKey(keymap.Rewind); key != "" && msg.String() == key {
+		v.openRewindPicker(false)
+		return v, nil
 	}
 	if key := opKey(keymap.ShellCommand); key != "" && msg.String() == key {
 		v.openShellPrompt()
@@ -2260,7 +2288,7 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 	closable := v.chat != nil && v.chat.LinkedTaskID != nil || onIssue
 	free := v.chat != nil && v.chat.LinkedTaskID == nil
 	ended := v.chat == nil || chatstate.Terminal(chatstate.State(v.chat.State))
-	owned := v.closing || v.compacting || v.raising || v.picker != nil || v.form != nil
+	owned := v.closing || v.compacting || v.raising || v.picker != nil || v.rewind != nil || v.form != nil
 	live := v.chat != nil && (v.chat.State == string(chatstate.Running) || v.chat.State == string(chatstate.AwaitingInput))
 	running := v.chat != nil && v.chat.State == string(chatstate.Running)
 	out := make([]binding, 0, len(rows))
@@ -2281,6 +2309,9 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 			b.key == "enter" && ended,
 			b.op == keymap.Steer && (!running || owned),
 			b.op == keymap.ShellCommand && (!v.shellAvailable() || owned),
+			// Not offered on a closed chat (task 167 decision 8); forking
+			// one stays on the palette, where the daemon gates each turn.
+			b.op == keymap.Rewind && (ended || owned),
 			b.op == keymap.Compact && (v.chat == nil || v.compactCommand() == "" || v.chat.State != string(chatstate.Idle)),
 			owned && (b.key == "enter" || b.key == "ctrl+j" || b.key == "tab"):
 			continue

@@ -300,7 +300,7 @@ func TestChatWithSendsTheChosenAgentLive(t *testing.T) {
 func TestChatWorkspacePaletteRenames(t *testing.T) {
 	v := &chatView{chat: &apiclient.Chat{ID: 4, Title: "old"}}
 	rows := v.paletteExtras()
-	if len(rows) != 1 || !strings.Contains(rows[0].label, "rename chat") {
+	if len(rows) == 0 || !strings.Contains(rows[0].label, "rename chat") {
 		t.Fatalf("palette extras = %+v, want the rename row", rows)
 	}
 	if msg, ok := rows[0].action().(openChatRenameMsg); !ok || msg.id != 4 || msg.title != "old" {

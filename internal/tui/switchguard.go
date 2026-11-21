@@ -376,7 +376,8 @@ func (v *chatView) leaveForSwitch() {
 		v.streamStop = nil
 	}
 	v.chatID = 0
-	v.chat, v.turns = nil, nil
+	v.chat, v.turns, v.allTurns = nil, nil, nil
+	v.rewind = nil
 	v.resetRecords()
 	v.resetDraft()
 	v.editingQueued = 0

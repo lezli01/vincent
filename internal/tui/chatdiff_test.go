@@ -99,25 +99,25 @@ func TestChatDiffKeySwapsThePane(t *testing.T) {
 // TestChatDiffKeyRebinds: a rebound chat_diff opens the pane on its new key,
 // and the default no longer does — it is typed nowhere, and opens nothing.
 func TestChatDiffKeyRebinds(t *testing.T) {
-	withKeymap(t, map[string]string{"chat_diff": "alt+z"})
+	withKeymap(t, map[string]string{"chat_diff": "alt+i"})
 	v := chatViewFixture()
 	v.client = offlineClient()
 	v.updateKey(synthKey("alt+d"))
 	if v.diff.open {
 		t.Fatal("the default key still opens the pane after a rebind")
 	}
-	v.updateKey(synthKey("alt+z"))
+	v.updateKey(synthKey("alt+i"))
 	if !v.diff.open {
 		t.Fatal("the rebound key did not open the pane")
 	}
 	v.diff.stat = &apiclient.ChatDiffStat{Files: 2, Added: 3, Removed: 1}
 	v.chat.Branch = "vincent/chat-1"
 	pane := ansi.Strip(strings.Join(chatDetailsPane(*v.chat, true, nil, v.changes(), v.now(), 34, 30), "\n"))
-	if !strings.Contains(pane, "alt+z opens the diff") || strings.Contains(pane, "alt+d") {
+	if !strings.Contains(pane, "alt+i opens the diff") || strings.Contains(pane, "alt+d") {
 		t.Fatalf("the changes row does not name the rebound key:\n%s", pane)
 	}
 	// And it closes it again, as the key that opened it.
-	v.updateKey(synthKey("alt+z"))
+	v.updateKey(synthKey("alt+i"))
 	if v.diff.open {
 		t.Fatal("the rebound key did not close the pane")
 	}
