@@ -202,7 +202,10 @@ func (v *chatView) applyDiff(msg chatDiffMsg) {
 	for _, f := range msg.diff.Files {
 		d.files[f.Path] = f
 		file := diffFileInput{
-			path: sanitizeText(f.Path), status: chatDiffStatusLetter(f.Status), added: f.Added, removed: f.Removed, binary: f.Binary,
+			// Drawn sanitized, known by the path the daemon knows it by: git
+			// allows control characters in a name, and a reject or an accept
+			// that sent the display form back named no file (review F10).
+			path: sanitizeText(f.Path), id: f.Path, status: chatDiffStatusLetter(f.Status), added: f.Added, removed: f.Removed, binary: f.Binary,
 			note: chatDiffFileNote(f),
 		}
 		for _, h := range f.Hunks {
@@ -251,7 +254,8 @@ func (v *chatView) diffTarget() (diffHunkRef, bool) {
 		return diffHunkRef{}, false
 	}
 	ref, ok := d.pane.selectedHunk()
-	// Ungrouped, the file cursor's key is the file's path.
+	// Ungrouped, the file cursor's key is the file's identity: the raw path
+	// d.files is keyed by.
 	at := d.pane.cursorPath
 	if ok && ref.path == at {
 		return ref, true

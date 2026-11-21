@@ -346,7 +346,7 @@ func (p *diffPane) sectionKey(i int) string {
 // path, which is what keeps the fold state of a task that never fanned out
 // exactly what it was.
 func (p *diffPane) fileKey(i, f int) string {
-	path := p.sections[i].files[f].path
+	path := p.sections[i].files[f].ident()
 	if !p.grouped {
 		return path
 	}

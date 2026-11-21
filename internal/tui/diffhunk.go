@@ -45,7 +45,11 @@ type diffHunkInput struct {
 // diffFileInput is one file handed to setFiles. note, when set, is a dimmed
 // line under the file's row — why the file cannot be rejected, say.
 type diffFileInput struct {
-	path string
+	// path is what is drawn. id, when set, is what the file is known by
+	// instead — its fold and cursor key, and the path a diffHunkRef and
+	// setHunkAccepted name it by — for a caller whose real path is not safe
+	// to draw as it is.
+	path, id string
 	// status is git's letter for what happened to the file (M, A, D or R),
 	// drawn on its row as a fetched diff's is; 0 draws none.
 	status         byte
@@ -55,8 +59,9 @@ type diffFileInput struct {
 	hunks          []diffHunkInput
 }
 
-// diffHunkRef names the hunk under the cursor to a caller. index is the hunk's
-// position in its file.
+// diffHunkRef names the hunk under the cursor to a caller. path is its file's
+// identity (diffFile.ident), which is what a caller sends on; index is the
+// hunk's position in its file.
 type diffHunkRef struct {
 	path, id, header string
 	index            int
@@ -123,7 +128,7 @@ func (p *diffPane) setFiles(files []diffFileInput, asOf time.Time) {
 	// to the truncation notice.
 	budget := maxDiffLines
 	for _, in := range files {
-		f := diffFile{path: in.path, status: in.status, added: in.added, removed: in.removed, binary: in.binary, note: in.note}
+		f := diffFile{path: in.path, id: in.id, status: in.status, added: in.added, removed: in.removed, binary: in.binary, note: in.note}
 		walkable := !in.binary && in.note == ""
 		for _, h := range in.hunks {
 			if budget <= 0 {
@@ -262,7 +267,7 @@ func (p *diffPane) selectedHunk() (diffHunkRef, bool) {
 	}
 	f := &p.sections[sec].files[file]
 	hk := f.hunks[h]
-	return diffHunkRef{path: f.path, id: hk.id, header: f.body[hk.start], index: h, accepted: hk.accepted}, true
+	return diffHunkRef{path: f.ident(), id: hk.id, header: f.body[hk.start], index: h, accepted: hk.accepted}, true
 }
 
 // moveHunk steps the hunk cursor: +1 to the next hunk, -1 to the previous,
@@ -352,7 +357,7 @@ func (p *diffPane) setHunkAccepted(path, id string, accepted bool) bool {
 	for s := range p.sections {
 		for f := range p.sections[s].files {
 			file := &p.sections[s].files[f]
-			if file.path != path {
+			if file.ident() != path {
 				continue
 			}
 			for h := range file.hunks {

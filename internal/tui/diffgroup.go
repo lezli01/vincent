@@ -39,9 +39,23 @@ type diffFile struct {
 	// 169 decision 4). A binary file, and a structured file carrying a note,
 	// has none: there is nothing in it for the hunk cursor to stand on.
 	hunks []diffFileHunk
+	// id is the file's identity where it is not its display path: a
+	// structured file's path exactly as its owner knows it, while path has
+	// been made safe to draw (review F10). Empty for a parsed diff, whose
+	// path is both. See ident.
+	id string
 	// note is a dimmed line under the file's row, set only for a structured
 	// file (setFiles) — why this file cannot be rejected, say.
 	note string
+}
+
+// ident is what the file is known by — to the fold state, the cursors, and a
+// caller acting on one of its hunks: id when it has one, its path otherwise.
+func (f *diffFile) ident() string {
+	if f.id != "" {
+		return f.id
+	}
+	return f.path
 }
 
 // parseDiffFiles splits a diff into its file sections. Lines ahead of the

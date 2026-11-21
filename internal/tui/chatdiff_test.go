@@ -401,3 +401,43 @@ func TestTaskDiffTabMovesByHunk(t *testing.T) {
 		t.Fatalf("] on the Output tab moved to %v, want Diff — it is still tab's alias there", v.tab)
 	}
 }
+
+// TestChatDiffSendsTheRawPath is review F10: git allows a control character
+// in a file's name. The pane draws the name without it and still names the
+// file to the daemon — and to its own lookups — by the path the daemon sent.
+func TestChatDiffSendsTheRawPath(t *testing.T) {
+	const raw, bin = "odd\x01name.go", "odd\x02logo.png"
+	v := chatDiffFixture(t)
+	v.applyDiff(chatDiffMsg{chatID: v.chatID, scope: apiclient.ChatDiffScopeBase, diff: &apiclient.ChatDiff{
+		Scope: apiclient.ChatDiffScopeBase, Added: 1,
+		Files: []apiclient.ChatDiffFile{
+			{Path: raw, Status: "added", Rejectable: true, Added: 1, Hunks: []apiclient.ChatDiffHunk{
+				{Hash: "h1", Header: "@@ -0,0 +1 @@", Body: "+fresh\n", Added: 1},
+			}},
+			{Path: bin, Status: "modified", Binary: true, NotRejectable: apiclient.ChatDiffNotRejectableBinary},
+		},
+	}})
+	if screen := chatDiffScreen(v); !strings.Contains(screen, "oddname.go") || strings.ContainsAny(screen, "\x01\x02") {
+		t.Fatalf("the name is not drawn sanitized:\n%q", screen)
+	}
+	v.updateKey(registryKey(t, "]"))
+	ref, ok := v.diffTarget()
+	if !ok || ref.path != raw || ref.id != "h1" {
+		t.Fatalf("the hunk to act on = %+v (%v), want the raw path %q", ref, ok, raw)
+	}
+	// The mark comes back under the same name and lands on the hunk.
+	if cmd := v.applyHunkMarked(chatHunkMarkedMsg{chatID: v.chatID, path: ref.path, id: ref.id, accepted: true}); cmd != nil {
+		t.Fatal("the mark did not find its hunk and asked for a re-read")
+	}
+	if got, _ := v.diff.pane.selectedHunk(); !got.accepted {
+		t.Fatalf("the hunk is not marked: %+v", got)
+	}
+	// And a file that cannot be rejected is still found, to say why.
+	v.updateKey(registryKey(t, "down"))
+	if v.diff.pane.cursorPath != bin {
+		t.Fatalf("the file cursor is on %q, want %q", v.diff.pane.cursorPath, bin)
+	}
+	if _, ok := v.diffTarget(); ok || !strings.Contains(v.note, "binary file") {
+		t.Fatalf("x on the binary file: target %v, note %q", ok, v.note)
+	}
+}
