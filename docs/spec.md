@@ -1506,7 +1506,9 @@ turn consumes it — `409 chat_preamble_not_pending` on a chat that is not
 seeded-pending, `chat_turn_live` while a turn is accepted. Empty text clears
 it, and the next turn starts a fresh session with no earlier context. The
 CLI's `vincent chat show` and the TUI's chat workspace show it under
-"turn 0 · seeded context (summary)"; `vincent chat preamble` edits it. A
+"turn 0 · seeded context (summary)" — at the head of a fork with no turns
+yet, after the last kept turn of a seeded rewind; `vincent chat preamble`
+edits it. A
 natively resumed fork has none, and the TUI says "resumed from turn N".
 Comparing two agents' answers (`POST /v1/chats/{id}/compare`, the brief's
 decisions 6-9) is not yet built; task 171 tracks it.
