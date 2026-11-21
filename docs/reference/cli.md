@@ -2629,7 +2629,7 @@ resolved against the `--scope`'s current diff. `PATH` is the file as listed,
 `/`-separated; a `\` typed on Windows is read as `/`. It prints
 `rejected PATH HASH`, and a `Warning:` on stderr when the hunk was reverted but
 the note did not fit the draft's 64 KiB limit. `--json` prints the route's
-`{ draft, note_added, warning }`.
+`{ draft, note_added, note, warning }`.
 
 Exit `1` when the daemon refuses: the chat has a live turn (running, awaiting
 input, or draining its queue), the chat has ended, the hunk is no longer in

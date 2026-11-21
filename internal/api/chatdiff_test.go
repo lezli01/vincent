@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/chatnote"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
@@ -276,7 +277,7 @@ func TestChatHunkRejectRevertsOneHunkAndNotesIt(t *testing.T) {
 		t.Fatalf("accept = %d %s", status, raw)
 	}
 	out := h.reject(t, c.ID, "base", "long.txt", dirty.Hash)
-	wantNote := chatHunkRejectHeading + "\n- long.txt " + dirty.Header + "\n\n"
+	wantNote := chatnote.Heading + "\n- long.txt " + dirty.Header + "\n\n"
 	if !out.NoteAdded || out.Warning != "" || out.Draft != wantNote {
 		t.Fatalf("reject = %+v, want draft %q", out, wantNote)
 	}
@@ -315,7 +316,7 @@ func TestChatHunkRejectRevertsOneHunkAndNotesIt(t *testing.T) {
 		t.Fatalf("put draft = %d %s", resp.StatusCode, raw)
 	}
 	out = h.reject(t, c.ID, "base", "long.txt", committed.Hash)
-	want := chatHunkRejectHeading + "\n- long.txt " + dirty.Header + "\n- long.txt " + committed.Header +
+	want := chatnote.Heading + "\n- long.txt " + dirty.Header + "\n- long.txt " + committed.Header +
 		"\n\nand please add a test"
 	if out.Draft != want {
 		t.Errorf("second reject draft = %q, want %q", out.Draft, want)
@@ -337,7 +338,7 @@ func TestChatHunkRejectRevertsOneHunkAndNotesIt(t *testing.T) {
 	}
 	added := hunkWith(t, h.chatDiff(t, c.ID, "base"), "new.txt", "+brand new")
 	out = h.reject(t, c.ID, "base", "new.txt", added.Hash)
-	if want := chatHunkRejectHeading + "\n- new.txt " + added.Header + "\n\n" + edited; out.Draft != want {
+	if want := chatnote.Heading + "\n- new.txt " + added.Header + "\n\n" + edited; out.Draft != want {
 		t.Errorf("third reject draft = %q, want %q", out.Draft, want)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "new.txt")); !os.IsNotExist(err) {
@@ -460,29 +461,6 @@ func TestChatHunkRejectOverTheDraftCap(t *testing.T) {
 	}
 	if got := readFile(t, dir, "long.txt"); got != diffLines(map[int]string{2: "line 2 committed"}) {
 		t.Errorf("the hunk was not reverted:\n%s", got)
-	}
-}
-
-func TestChatHunkRejectNoteFormat(t *testing.T) {
-	const hd = chatHunkRejectHeading
-	for name, tc := range map[string]struct{ draft, want string }{
-		"empty draft":         {"", hd + "\n- a/b.go @@ -1 +1 @@\n\n"},
-		"plain draft":         {"fix it", hd + "\n- a/b.go @@ -1 +1 @@\n\nfix it"},
-		"existing block":      {hd + "\n- x.go @@ -9 +9 @@\n\nfix it", hd + "\n- x.go @@ -9 +9 @@\n- a/b.go @@ -1 +1 @@\n\nfix it"},
-		"two lines already":   {hd + "\n- x @@ 1\n- y @@ 2\n\nrest\n- not ours", hd + "\n- x @@ 1\n- y @@ 2\n- a/b.go @@ -1 +1 @@\n\nrest\n- not ours"},
-		"block at the end":    {hd + "\n- x @@ 1", hd + "\n- x @@ 1\n- a/b.go @@ -1 +1 @@"},
-		"heading alone":       {hd, hd + "\n- a/b.go @@ -1 +1 @@"},
-		"heading, no entries": {hd + "\n\nrest", hd + "\n- a/b.go @@ -1 +1 @@\n\nrest"},
-		"edited above":        {"hey\n" + hd + "\n- x @@ 1\n", hd + "\n- a/b.go @@ -1 +1 @@\n\nhey\n" + hd + "\n- x @@ 1\n"},
-		"heading as a prefix": {hd + " and more", hd + "\n- a/b.go @@ -1 +1 @@\n\n" + hd + " and more"},
-	} {
-		if got := addChatHunkRejectNote(tc.draft, "a/b.go", "@@ -1 +1 @@"); got != tc.want {
-			t.Errorf("%s:\n got %q\nwant %q", name, got, tc.want)
-		}
-	}
-	// A CRLF file's header can carry the line's CR; the note does not.
-	if got := addChatHunkRejectNote("", "a", "@@ -1 +1 @@ x\r"); got != hd+"\n- a @@ -1 +1 @@ x\n\n" {
-		t.Errorf("CR header: %q", got)
 	}
 }
 

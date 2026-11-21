@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/lezli01/vincent/internal/chatnote"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/gitx"
@@ -44,10 +45,6 @@ const (
 	chatDiffScopeBase = "base"
 	chatDiffScopeTurn = "turn"
 )
-
-// chatHunkRejectHeading opens the block a reject leaves at the top of the
-// chat's draft (task 169 decision 8).
-const chatHunkRejectHeading = "The user reverted these hunks; do not reapply them:"
 
 type chatDiffHunkBody struct {
 	Hash   string `json:"hash"`
@@ -99,7 +96,11 @@ type chatHunkRequest struct {
 type chatHunkRejectBody struct {
 	Draft     string `json:"draft"`
 	NoteAdded bool   `json:"note_added"`
-	Warning   string `json:"warning"`
+	// Note is the line the reject put into the draft's block, and "" when
+	// none was added. A client holding an edit the daemon has not seen adds
+	// the same line to its own text with chatnote.Add (review F5).
+	Note    string `json:"note"`
+	Warning string `json:"warning"`
 }
 
 // chatDiffError is a refusal one of the chat diff routes answers with.
@@ -397,14 +398,15 @@ func (s *Server) handleChatDiffReject(w http.ResponseWriter, r *http.Request) {
 		// The worktree has changed, so the note is written even if the
 		// client has gone: a revert the agent is never told of is the one
 		// outcome the note exists to prevent.
-		header := hunk.Header
+		line := chatnote.Line(req.Path, hunk.Header)
 		c, added, err := s.deps.Store.RecordChatHunkReject(context.WithoutCancel(ctx), chat.ID, req.Path, req.Hunk,
-			func(draft string) (string, bool) { return addChatHunkRejectNote(draft, req.Path, header), true })
+			func(draft string) (string, bool) { return chatnote.Add(draft, line), true })
 		if err != nil {
 			return err
 		}
-		out = chatHunkRejectBody{Draft: c.Draft, NoteAdded: added}
+		out = chatHunkRejectBody{Draft: c.Draft, NoteAdded: added, Note: line}
 		if !added {
+			out.Note = ""
 			// The reject stands (task 169 decision 8): the hunk is reverted
 			// either way, and refusing it for the draft's sake would leave
 			// the user with a worktree they cannot fix from here.
@@ -437,39 +439,6 @@ func chatHunkNotRejectableWhy(reason string) string {
 		return "a nested git repository, which git records as one commit rather than as files"
 	}
 	return "not a file whose hunks git can reverse"
-}
-
-// addChatHunkRejectNote puts one rejected hunk's line into the block at the
-// very top of draft (task 169 decision 8): the heading, one "- <path> <@@
-// header>" line per hunk, a blank line, then what the draft held. A draft
-// that already starts with the heading gets the line appended to the end of
-// that block; one the user edited so it no longer does gets a new block.
-//
-// It is pure, and the same for every client: an API or CLI reject leaves the
-// note a TUI one does.
-func addChatHunkRejectNote(draft, path, header string) string {
-	// A hunk of a CRLF file can carry the line's CR on its header.
-	line := "- " + path + " " + strings.TrimRight(header, "\r")
-	rest, ok := strings.CutPrefix(draft, chatHunkRejectHeading)
-	if !ok || (rest != "" && rest[0] != '\n') {
-		return chatHunkRejectHeading + "\n" + line + "\n\n" + draft
-	}
-	// end is where the block stops: the index of the "\n" ending its last
-	// line, or the draft's end.
-	end := len(chatHunkRejectHeading)
-	for end < len(draft) {
-		next := draft[end+1:]
-		if !strings.HasPrefix(next, "- ") {
-			break
-		}
-		nl := strings.IndexByte(next, '\n')
-		if nl < 0 {
-			end = len(draft)
-			break
-		}
-		end += 1 + nl
-	}
-	return draft[:end] + "\n" + line + draft[end:]
 }
 
 // handleChatDiffAccept serves POST /v1/chats/{id}/diff/accept (task 169

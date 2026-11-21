@@ -304,3 +304,58 @@ func TestChatDiffPaneLive(t *testing.T) {
 		t.Fatalf("esc did not bring the conversation back:\n%s", got)
 	}
 }
+
+// TestChatDiffRejectUnsavedEditRejectLive is review F5 against the real
+// handlers: reject a hunk, then reject another while the composer holds text
+// the daemon has not stored — a draft save still in flight, or one that
+// failed. The daemon extends its note's block in place, so the composer's
+// text has to gain the same line, and both lines and the unsaved text must
+// reach the stored draft.
+func TestChatDiffRejectUnsavedEditRejectLive(t *testing.T) {
+	l := newChatDiffLive(t)
+	v := l.v
+	v.composer.SetValue("")
+	l.press("alt+d")
+	l.until("the diff", func() bool { return v.diff.loaded && !v.diff.fetching })
+
+	l.press("]")
+	first := l.selected()
+	l.press("x")
+	l.until("the first reject", func() bool {
+		return !v.diff.busy && !v.diff.fetching && strings.Contains(v.composer.Value(), first.header)
+	})
+
+	// The pane blurs the composer, so nothing is typed into it meanwhile;
+	// what leaves it ahead of the daemon is a save that has not landed. Set
+	// directly, that is the same state: text the daemon does not hold.
+	v.composer.SetValue(v.composer.Value() + "typed since")
+	if v.draftClean() {
+		t.Fatal("the composer is not ahead of the stored draft")
+	}
+	l.press("]")
+	second := l.selected()
+	if second.id == "" || second.id == first.id {
+		t.Fatalf("no second hunk to reject: %+v after %+v", second, first)
+	}
+	l.press("x")
+	l.until("the second reject", func() bool {
+		return !v.diff.busy && !v.diff.fetching && strings.Contains(v.composer.Value(), second.header)
+	})
+	if v.noteBad {
+		t.Fatalf("the second reject said %q", v.note)
+	}
+
+	want := []string{first.path + " " + first.header, second.path + " " + second.header, "typed since"}
+	l.until("both notes and the unsaved text in the stored draft", func() bool {
+		d, err := v.client.ChatDraft(context.Background(), v.chatID)
+		if err != nil || d.Draft != v.composer.Value() {
+			return false
+		}
+		for _, w := range want {
+			if !strings.Contains(d.Draft, w) {
+				return false
+			}
+		}
+		return true
+	})
+}

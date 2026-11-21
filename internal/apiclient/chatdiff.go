@@ -90,7 +90,10 @@ type ChatDiffStat struct {
 type ChatHunkReject struct {
 	Draft     string `json:"draft"`
 	NoteAdded bool   `json:"note_added"`
-	Warning   string `json:"warning"`
+	// Note is the line the reject added to the draft's block, "" when none
+	// was: what chatnote.Add puts into a text the daemon has not seen.
+	Note    string `json:"note"`
+	Warning string `json:"warning"`
 }
 
 type chatHunkRequest struct {

@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatnote"
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
@@ -335,7 +336,7 @@ func (v *chatView) applyHunkRejected(msg chatHunkRejectedMsg) tea.Cmd {
 	v.note, v.noteBad = "hunk rejected — a note for the agent opens your draft", false
 	var save tea.Cmd
 	if msg.res != nil {
-		save = v.adoptRejectDraft(msg.res.Draft)
+		save = v.adoptRejectDraft(msg.res.Draft, msg.res.Note)
 		if !msg.res.NoteAdded {
 			v.note, v.noteBad = "hunk rejected — "+cmp.Or(sanitizeText(msg.res.Warning), "no note was added to the draft"), true
 		}
@@ -345,17 +346,21 @@ func (v *chatView) applyHunkRejected(msg chatHunkRejectedMsg) tea.Cmd {
 }
 
 // adoptRejectDraft puts a reject's resulting draft in the composer (decision
-// 8) without taking back anything typed here (task 164).
+// 8) without taking back anything typed here (task 164). note is the line
+// the daemon added to its draft, "" when it added none.
 //
-// The daemon prepended its note to the draft it holds. When the composer is
-// clean — exactly that stored draft — the answer replaces it. When it holds
-// an edit the daemon has not seen, the note alone is prepended to the edit
+// When the composer is clean — exactly the stored draft — the answer replaces
+// it. When it holds an edit the daemon has not seen, the same line is added
+// to the edit the way the daemon added it to its own draft (chatnote.Add),
 // and the result is saved, so neither the note nor the edit is lost; the
 // chat.draft_changed that follows finds the composer dirty and leaves it be.
-// A queued message being edited is not the draft, so it is left alone and the
-// stored draft arrives when the edit ends.
-func (v *chatView) adoptRejectDraft(draft string) tea.Cmd {
-	if !v.draft.loaded || v.editingQueued != 0 || draft == v.draft.saved {
+// The line is added rather than recovered by comparing the two drafts: a
+// second reject extends the block in place, so the daemon's draft does not
+// end with the one before it (review F5). A queued message being edited is
+// not the draft, so it is left alone and the stored draft arrives when the
+// edit ends.
+func (v *chatView) adoptRejectDraft(draft, note string) tea.Cmd {
+	if !v.draft.loaded || v.editingQueued != 0 {
 		return nil
 	}
 	if v.draftClean() {
@@ -363,14 +368,12 @@ func (v *chatView) adoptRejectDraft(draft string) tea.Cmd {
 		v.composer.SetValue(draft)
 		return nil
 	}
-	note, found := strings.CutSuffix(draft, v.draft.saved)
 	v.draft.saved = draft
-	if !found || note == "" {
-		// The stored draft moved some other way too: the edit here wins, as
-		// it would against any remote draft, and the next save says so.
-		return v.armDraftSave()
+	if note != "" {
+		v.composer.SetValue(chatnote.Add(v.composer.Value(), note))
 	}
-	v.composer.SetValue(note + v.composer.Value())
+	// The edit here wins over the stored draft, as it would against any
+	// remote one, and now carries the note; the next save says so.
 	return v.armDraftSave()
 }
 

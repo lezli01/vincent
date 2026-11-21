@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatnote"
 )
 
 // chatDiffFiles is a two-file diff with one file that cannot be rejected per
@@ -242,7 +243,7 @@ func TestChatDiffRejectDraft(t *testing.T) {
 		v := chatDiffFixture(t)
 		v.draft.loaded, v.draft.saved = true, "stored"
 		v.composer.SetValue("stored")
-		v.applyHunkRejected(chatHunkRejectedMsg{chatID: v.chatID, res: &apiclient.ChatHunkReject{Draft: "NOTE\n\nstored", NoteAdded: true}})
+		v.applyHunkRejected(chatHunkRejectedMsg{chatID: v.chatID, res: &apiclient.ChatHunkReject{Draft: "NOTE\n\nstored", NoteAdded: true, Note: "- a @@"}})
 		if v.composer.Value() != "NOTE\n\nstored" || v.draft.saved != "NOTE\n\nstored" || v.noteBad {
 			t.Fatalf("composer %q, saved %q, note %q", v.composer.Value(), v.draft.saved, v.note)
 		}
@@ -251,9 +252,28 @@ func TestChatDiffRejectDraft(t *testing.T) {
 		v := chatDiffFixture(t)
 		v.draft.loaded, v.draft.saved = true, "stored"
 		v.composer.SetValue("stored and typed since")
-		v.applyHunkRejected(chatHunkRejectedMsg{chatID: v.chatID, res: &apiclient.ChatHunkReject{Draft: "NOTE\n\nstored", NoteAdded: true}})
-		if got := v.composer.Value(); got != "NOTE\n\nstored and typed since" {
+		daemon := chatnote.Add("stored", "- a @@")
+		v.applyHunkRejected(chatHunkRejectedMsg{chatID: v.chatID, res: &apiclient.ChatHunkReject{Draft: daemon, NoteAdded: true, Note: "- a @@"}})
+		if got := v.composer.Value(); got != chatnote.Add("stored and typed since", "- a @@") {
 			t.Fatalf("the unsent edit was not kept under the note: %q", got)
+		}
+		if v.draftClean() {
+			t.Fatal("the merged draft is not marked for saving")
+		}
+	})
+	// Review F5: a second reject extends the block in place, so the daemon's
+	// draft does not end with the one before it. The line still has to reach
+	// an edit the daemon has not seen, or the next save drops it.
+	t.Run("unsent edit, second reject", func(t *testing.T) {
+		v := chatDiffFixture(t)
+		stored := chatnote.Add("rest", "- a @@")
+		v.draft.loaded, v.draft.saved = true, stored
+		v.composer.SetValue(stored + " and pasted since")
+		daemon := chatnote.Add(stored, "- b @@")
+		v.applyHunkRejected(chatHunkRejectedMsg{chatID: v.chatID, res: &apiclient.ChatHunkReject{Draft: daemon, NoteAdded: true, Note: "- b @@"}})
+		want := chatnote.Heading + "\n- a @@\n- b @@\n\nrest and pasted since"
+		if got := v.composer.Value(); got != want {
+			t.Fatalf("composer after the second reject:\n got %q\nwant %q", got, want)
 		}
 		if v.draftClean() {
 			t.Fatal("the merged draft is not marked for saving")

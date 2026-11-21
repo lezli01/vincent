@@ -4009,9 +4009,12 @@ The user reverted these hunks; do not reapply them:
 
 A draft that still starts with that block gets the new line appended to it;
 any other draft gets a new block prepended. The answer is
-`200 { "draft": "…", "note_added": true, "warning": "" }`. A note that would
+`200 { "draft": "…", "note_added": true, "note": "- path @@ … @@", "warning": "" }`. A note that would
 push the draft past its 64 KiB cap is not written: the hunk is still reverted,
-`note_added` is `false` and `warning` says so.
+`note_added` is `false`, `note` is `""` and `warning` says so. `note` is the
+line that was added: a client holding draft text the daemon has not stored
+adds the same line to its own text rather than overwrite the daemon's draft
+without it.
 
 **Accept** records a mark keyed by chat, path and hunk hash and answers `204`;
 nothing in git changes. The hunk must be in the named scope's current diff.

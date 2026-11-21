@@ -1451,7 +1451,12 @@ text: visible, editable, deletable, and sent as part of the next message.
 There is no separate note field and no send-path rule, and an API or CLI
 reject leaves the same note a TUI one does. A note that would take the draft
 past `MaxChatDraftBytes` is not written — the hunk is reverted all the same
-and the answer carries `note_added: false` and a `warning`.
+and the answer carries `note_added: false` and a `warning`. *Amended
+2026-11-21 (review of #1037): the answer also carries `note`, the line that
+was added, and the format lives in `internal/chatnote`. A client whose
+composer is ahead of the stored draft adds that line to its own text with the
+same insert; a second reject extends the block in place, so the line cannot
+be recovered by comparing the daemon's draft with the one before it.*
 
 **Accept** is only a mark: a `chat_hunk_reviews` row (§14, migration 0069)
 keyed by chat, path and hunk hash. It changes nothing in git. All review state
@@ -11940,7 +11945,7 @@ GET    /v1/chats/{id}/diff/stat         *Added 2026-11-20 (task 169).* → { fil
 POST   /v1/chats/{id}/diff/reject       *Added 2026-11-20 (task 169).* { scope?, path, hunk } —
                                         reverse-applies that hunk to the working tree only and
                                         prepends the note to the chat's draft (§5.5) → `200`
-                                        { draft, note_added, warning }. `409 chat_turn_live`
+                                        { draft, note_added, note, warning }. `409 chat_turn_live`
                                         while a turn is live; `409 chat_hunk_stale` for a hash
                                         not in the scope's current diff; `409
                                         chat_hunk_conflict` when git will not apply the
