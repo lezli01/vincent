@@ -246,20 +246,22 @@ func watchHandoffLanesTx(ctx context.Context, tx *sql.Tx, taskID int64) ([]laneW
 	if err != nil {
 		return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
 	}
+	defer func() { _ = rows.Close() }()
 	type item struct{ issueID, projectID int64 }
 	var items []item
 	for rows.Next() {
 		var it item
 		if err := rows.Scan(&it.issueID, &it.projectID); err != nil {
-			_ = rows.Close()
 			return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
 		}
 		items = append(items, it)
 	}
-	if err := rows.Close(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
 	}
-	if err := rows.Err(); err != nil {
+	// The lane reads below run on the same transaction's one connection,
+	// so the cursor is closed before them.
+	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
 	}
 	watches := make([]laneWatch, 0, len(items))
