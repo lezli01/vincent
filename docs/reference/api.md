@@ -4031,9 +4031,12 @@ While `resume_pending` is `seeded`, the chat carries that context as
 `pending_preamble` — turn 0, what the next turn will receive — and
 `PATCH /v1/chats/{id}` with `{"pending_preamble": "…"}`, sent alone, replaces
 it (at most 1 MiB). An empty string clears it, so the next turn starts a fresh
-session with no earlier context. The edit is `409 chat_preamble_not_pending`
-when nothing seeded is pending — a natively resumed fork, a chat never rewound
-or forked, or one whose next turn already started — `409 chat_terminal` on a
+session with no earlier context. Clearing is final: the chat stops being
+seeded (`resume_pending` becomes absent), so to replace the context with
+something short, send that text rather than clearing first. The edit is
+`409 chat_preamble_not_pending` when nothing seeded is pending — a natively
+resumed fork, a chat never rewound or forked, one whose context was cleared,
+or one whose next turn already started — `409 chat_terminal` on a
 chat that has ended, and `409 chat_turn_live` while a turn is accepted.
 
 | Status | `error` | When |

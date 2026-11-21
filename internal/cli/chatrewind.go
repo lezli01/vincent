@@ -247,6 +247,8 @@ func newChatPreambleCmd() *cobra.Command {
 			"session with a summary of the earlier turns — turn 0, which `vincent chat show` " +
 			"prints. This replaces that summary with the contents of --file (`-` reads stdin), " +
 			"or with --clear drops it, so the next turn starts with no earlier context at all.\n\n" +
+			"Clearing is final: the chat is then no longer seeded, so it cannot be edited again. " +
+			"To replace the summary with a short note, edit it with --file instead of clearing it.\n\n" +
 			"Only while the next turn is seeded and no turn has started: a chat that resumes " +
 			"its agent's session natively has no summary to edit. Exit 1 on a refusal; 2 with " +
 			"no daemon.",
@@ -280,7 +282,7 @@ func newChatPreambleCmd() *cobra.Command {
 				}
 				if text == "" {
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-						"chat %d: seeded context cleared; its next turn starts a fresh session with no earlier context\n", id)
+						"chat %d: seeded context cleared, for good; its next turn starts a fresh session with no earlier context\n", id)
 					return nil
 				}
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "chat %d: seeded context replaced (%d bytes)\n", id, len(text))
@@ -298,7 +300,8 @@ func preambleErrorMessage(err error, chatID int64) string {
 	var apiErr *apiclient.Error
 	if errors.As(err, &apiErr) && apiErr.Code == "chat_preamble_not_pending" {
 		return fmt.Sprintf("chat %d's next turn is not seeded — it resumes natively, was never "+
-			"rewound or forked, or a turn has already started — so there is no seeded context to edit", chatID)
+			"rewound or forked, its seeded context was cleared, or a turn has already started — "+
+			"so there is no seeded context to edit", chatID)
 	}
 	return rewindErrorMessage(err, chatID)
 }

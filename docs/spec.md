@@ -1505,7 +1505,9 @@ it as `pending_preamble` while `resume_pending` is `seeded`, and
 turn consumes it — `409 chat_preamble_not_pending` on a chat that is not
 seeded-pending, `chat_terminal` on an ended chat, `chat_turn_live` while a
 turn is accepted. Empty text clears
-it, and the next turn starts a fresh session with no earlier context. The
+it, and the next turn starts a fresh session with no earlier context; the
+clear is final, since the chat is then no longer seeded-pending and a later
+edit is refused like any other. The
 CLI's `vincent chat show` and the TUI's chat workspace show it under
 "turn 0 · seeded context (summary)" — at the head of a fork with no turns
 yet, after the last kept turn of a seeded rewind; `vincent chat preamble`

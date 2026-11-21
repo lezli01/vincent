@@ -2952,9 +2952,12 @@ vincent chat preamble CHAT_ID (--file F | --clear) [--json]
 Replaces the seeded context a chat's next turn starts with — turn 0, which
 `vincent chat show` prints after a seeded rewind or fork — with the contents of
 `--file` (`-` reads stdin), or with `--clear` drops it, so the next turn starts
-a fresh session with no earlier context. Refused once a turn has started, on a
-chat whose next turn resumes its agent's session natively, and on one never
-rewound or forked (`chat_preamble_not_pending`). Exit `1` on a refusal; `2` with
+a fresh session with no earlier context. Clearing is final: the chat is no
+longer seeded afterwards, so a later `preamble` is refused — to replace the
+summary with a short note, edit it with `--file` rather than clearing it.
+Refused once a turn has started, on a chat whose next turn resumes its agent's
+session natively, on one whose context was cleared, and on one never rewound
+or forked (`chat_preamble_not_pending`); on an ended chat (`chat_terminal`). Exit `1` on a refusal; `2` with
 no daemon.
 
 ### `vincent chat close`
