@@ -59,7 +59,10 @@
 #      re-running this safe. The one exception is an issue handed off in
 #      part (#1042): every task on it is `done` and a handoff delivered its
 #      latest delivery but left it open (handoff marker `delivered`, lane
-#      `open`), so what is left of it is surveyed again;
+#      `open`), so what is left of it is surveyed again. `spawn` archives
+#      those done tasks before creating the new one, so it cuts a fresh
+#      branch from the base rather than inheriting the delivered branch,
+#      whose commits the merge train rebased onto the base as new ones;
 #   2. it does not carry `vincent-ready` — a person's explicit opt-in that
 #      the issue is ready for an agent; nothing without it is considered;
 #   3. it carries none of `bug`, `enhancement`, `documentation`, `ci` — the
@@ -620,7 +623,10 @@ steps:
 
       Just before creating each task the step re-reads the board and the
       issue: one that gained a task or closed while this gate waited is left
-      out and named.
+      out and named. An issue a handoff delivered in part still sits on its
+      done tasks; those are archived first (their branches are kept), so the
+      new task starts from {{ .Project.DefaultBranch }} rather than the
+      delivered branch.
 
       Rejecting blocks this task and creates nothing. Running the workflow
       again later is a fresh survey.
@@ -656,7 +662,7 @@ steps:
                | ([($t.issue.id // empty) | "id:\(.)"]
                   + [($t.issue.source.number // empty), ($t.github_issue.number // empty),
                      (($t.fields.github_issue // "") | tonumber?) | "gh:\(.)"])
-               | unique | .[] | "\(.)\t\($t.id)"' "$scratch/task.json" >> "$scratch/claims-now.tsv"
+               | unique | .[] | "\(.)\t\($t.id)\t\($t.state)"' "$scratch/task.json" >> "$scratch/claims-now.tsv"
       done
 
       : > "$scratch/created"
@@ -675,11 +681,6 @@ steps:
           printf '%s\t%s\n' "$issue" "is not an imported issue the survey listed" >> "$scratch/failed"
           continue
         fi
-        claim=$(awk -F'\t' -v a="id:$vid" -v b="gh:$issue" '$1 == a || $1 == b { print $2; exit }' "$scratch/claims-now.tsv")
-        if [ -n "$claim" ]; then
-          printf '%s\t%s\n' "$issue" "now on task $claim" >> "$scratch/dropped"
-          continue
-        fi
         # The imported issue's state, which the daemon's sync keeps current —
         # no `gh issue view` per issue.
         if ! vincent issue show "$vid" --json </dev/null > "$scratch/issue-now.json" 2>"$scratch/state.err"; then
@@ -690,6 +691,33 @@ steps:
         if [ "$state" != "open" ]; then
           printf '%s\t%s\n' "$issue" "is $state now" >> "$scratch/dropped"
           continue
+        fi
+        # Every task still on the issue, with its state.
+        awk -F'\t' -v a="id:$vid" -v b="gh:$issue" '$1 == a || $1 == b { print $2 "\t" $3 }' \
+          "$scratch/claims-now.tsv" | sort -u > "$scratch/claim-now.tsv"
+        if [ -s "$scratch/claim-now.tsv" ]; then
+          # An issue handed off in part (#1042, survey exclusion 1) is on
+          # done tasks only, and still reads `delivered`. Those tasks are
+          # archived first: an unarchived done main task would hand the new
+          # one its branch (§5.3, 134.12), whose delivered commits the merge
+          # train rebased onto the base as different commits — so the
+          # resolve workflows' `origin/<base>..HEAD` checks would fail on
+          # every attempt. Archived, it leaves the issue's lane and marker
+          # as they are, and the new task cuts a fresh branch from the base.
+          partial=$(jq -r '.handoff.state // ""' "$scratch/issue-now.json")
+          if [ "$partial" != delivered ] || awk -F'\t' '$2 != "done" { bad = 1 } END { exit !bad }' "$scratch/claim-now.tsv"; then
+            printf '%s\t%s\n' "$issue" "now on task $(cut -f1 "$scratch/claim-now.tsv" | tr '\n' ' ')" >> "$scratch/dropped"
+            continue
+          fi
+          archived=yes
+          for t in $(cut -f1 "$scratch/claim-now.tsv"); do
+            if ! vincent task archive "$t" </dev/null >/dev/null 2>"$scratch/archive.err"; then
+              printf '%s\t%s\n' "$issue" "could not archive its delivered task $t: $(tr '\n' ' ' < "$scratch/archive.err")" >> "$scratch/failed"
+              archived=no
+              break
+            fi
+          done
+          [ "$archived" = yes ] || continue
         fi
 
         say "creating task $n/$planned for #$issue"

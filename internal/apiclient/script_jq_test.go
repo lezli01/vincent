@@ -177,3 +177,50 @@ func TestHandoffTrainFollowsEachDeliverysClose(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveSweepArchivesAPartlyDeliveredIssuesTasks is review F7 on
+// #1042: the survey re-admits an issue handed off in part, which still sits
+// on done tasks. `spawn`'s re-read of the board must not drop it as "now on
+// task N", and must archive those done tasks before `vincent task add`:
+// an unarchived done main task hands the new one its branch, whose
+// delivered commits the train rebased onto the base as new ones.
+func TestResolveSweepArchivesAPartlyDeliveredIssuesTasks(t *testing.T) {
+	jq := lookJQ(t)
+	awk, err := exec.LookPath("awk")
+	if err != nil {
+		t.Skip("awk is not on PATH")
+	}
+	const file = ".vincent/workflows/github-resolve-issue-multiple.yaml"
+
+	// The re-read carries each claiming task's state.
+	claims := scriptJQ(t, file, `jq -r '(\. as \$t[^']*)' "\$scratch/task\.json" >> "\$scratch/claims-now\.tsv"`)
+	task := map[string]any{"id": 5, "state": "done", "issue": map[string]any{"id": 9, "source": map[string]any{"number": 7}}}
+	if got := runJQ(t, jq, task, claims); got != "gh:7\t5\tdone\nid:9\t5\tdone" {
+		t.Errorf("claims-now rows = %q, want both keys with the task's state", got)
+	}
+
+	// The drop test: true (drop) when any claiming task is not done.
+	notAllDone := scriptJQ(t, file, `awk -F'\\t' '(\$2 != "done"[^']*)' "\$scratch/claim-now\.tsv"`)
+	for _, c := range []struct {
+		rows string
+		drop bool
+	}{
+		{"5\tdone\n", false},
+		{"5\tdone\n6\tdone\n", false},
+		{"5\tdone\n6\trunning\n", true},
+		{"6\taborted\n", true},
+	} {
+		cmd := exec.Command(awk, "-F\t", notAllDone)
+		cmd.Stdin = strings.NewReader(c.rows)
+		if drop := cmd.Run() == nil; drop != c.drop {
+			t.Errorf("claims %q: drop = %v, want %v", c.rows, drop, c.drop)
+		}
+	}
+
+	// The archive comes before the new task, inside spawn.
+	body := scriptJQ(t, file, `(?s)\n  - id: spawn\n(.*)$`)
+	archive, add := strings.Index(body, "vincent task archive"), strings.Index(body, "vincent task add")
+	if archive < 0 || add < 0 || archive > add {
+		t.Errorf("spawn archives at %d and adds at %d; want the archive first", archive, add)
+	}
+}
