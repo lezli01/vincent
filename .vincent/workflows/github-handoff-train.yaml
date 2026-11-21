@@ -155,6 +155,12 @@
 # like on anything else. A `fixed` comment names the commit as it was
 # committed; a rebase onto a base that moved meanwhile rewrites that sha.
 #
+# The resolver itself does not rebase, with one exception its prompt spells
+# out: a finding that can only be fixed on the current base. It then rebases
+# the whole train first and commits its fixes on top, and its check accepts a
+# train that sits on the fetched base in place of one that still contains the
+# reviewed sha.
+#
 # ## The merge tail
 #
 # Everything from `checks-required` on is the merge tail the resolve workflows
@@ -1344,23 +1350,44 @@ steps:
         `//nolint` to make a finding go away.
       - If a fix changes a documented claim, update the page under `docs/`
         in the same commit.
-      - Never push, rebase or merge, and never comment on or edit the pull
-        request yourself: `sync.sh` owns its review comments, and the merge
-        attempt that follows pushes your commits.
+      - Never push or merge, and never comment on or edit the pull request
+        yourself: `sync.sh` owns its review comments, and the merge attempt
+        that follows pushes your commits.
+      - Do not rebase either — the merge attempt rebases onto
+        {{.Task.BaseBranch}} itself — with one exception: a finding that can
+        only be fixed on the current base (the train no longer merges into
+        it, or collides with something that landed there). Then
+        `git fetch origin {{.Task.BaseBranch}}` and rebase the whole train
+        onto `origin/{{.Task.BaseBranch}}`, keeping every reviewed commit,
+        before you commit any fix: a fix is recorded by its sha, and a later
+        rebase would rewrite it.
 
       When every finding is recorded, run `go run mage.go test` and
       `go run mage.go lint` and fix anything red with another commit. End
       with what you did to each finding.
     # Every finding has a resolution, everything is committed on the train,
-    # the train still contains the commit that was reviewed, and the local
-    # legs are green — the merge attempt only pushes what passes here.
+    # the train still carries what was reviewed, and the local legs are green
+    # — the merge attempt only pushes what passes here.
+    #
+    # "Still carries" is the reviewed commit being an ancestor of HEAD, or —
+    # when a finding could only be fixed by rebasing onto a base that had
+    # moved, which rewrites that commit — HEAD sitting on the fetched base
+    # with at least as many commits over it as the review read. The second
+    # form was missing until task 938, whose resolver rebased for exactly
+    # such a P0 and could then never pass: a retry failed in under a second,
+    # every time, on work that was complete.
     check: >
       r="$(git rev-parse --git-path vincent-train)/review" &&
       test "$(jq --slurpfile res "$r/resolutions.json"
       '[.[] | select($res[0][.id] == null)] | length' "$r/findings.json")" = 0 &&
       test -z "$(git status --porcelain)" &&
       test "$(git symbolic-ref --short HEAD)" = "{{.Task.BranchName}}" &&
-      git merge-base --is-ancestor "$(cat "$r/reviewed.sha")" HEAD &&
+      rs="$(cat "$r/reviewed.sha")" &&
+      b=origin/{{.Task.BaseBranch}} &&
+      ( git merge-base --is-ancestor "$rs" HEAD ||
+      ( git merge-base --is-ancestor "$b" HEAD &&
+      test "$(git rev-list --count "$b..HEAD")" -ge
+      "$(git rev-list --count "$(git merge-base "$b" "$rs")..$rs")" ) ) &&
       go run mage.go test &&
       go run mage.go lint
     check_timeout: 25m
