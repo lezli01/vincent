@@ -433,6 +433,10 @@ func (v *chatView) expandedFor(turn int) func(call string, rec int64) bool {
 // toggleCallAt expands or folds the tool call under body line y; a line
 // that belongs to no call is left alone.
 func (v *chatView) toggleCallAt(y int) {
+	// A shell run's card folds the way a tool call does (task 170).
+	if v.toggleShellAt(y) {
+		return
+	}
 	a := anchorAt(v.anchors, y)
 	if a.turn == 0 {
 		return
@@ -542,6 +546,9 @@ func (v *chatView) updateConversationKey(msg tea.KeyPressMsg) tea.Cmd {
 		v.jumpPrompt(1)
 	case "enter":
 		v.toggleCallAt(v.cursor)
+	case "a":
+		// A shell run's card (task 170): attach it to the next prompt.
+		return v.toggleShellAttachAt(v.cursor)
 	case "alt+shift+g": // the composer's follow key, since task 163 decision 1
 		v.moveCursor(len(v.anchors) - 1)
 		v.follow()
@@ -711,7 +718,7 @@ func (v *chatView) updateConvClick(msg tea.MouseClickMsg) bool {
 		return false
 	}
 	y := v.vp.YOffset() + msg.Y - h.y0
-	if anchorAt(v.anchors, y).call == "" {
+	if a := anchorAt(v.anchors, y); a.call == "" && a.shell == 0 {
 		return false
 	}
 	v.focusConversation()

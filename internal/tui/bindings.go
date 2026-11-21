@@ -193,6 +193,9 @@ const (
 	// `n` would be typed there, and is the next match here.
 	ctxChatConversation bindingContext = "chat conversation"
 	ctxChatFind         bindingContext = "chat find"
+	// ctxChatShell is the chat's shell prompt (task 170): one line that owns
+	// the keyboard while it is up, the search line's twin.
+	ctxChatShell bindingContext = "chat shell"
 	// ctxChatDiff is the chat's diff pane holding the keyboard (task 169
 	// decision 3). Its own context for the conversation focus's reason: `x`
 	// would be typed in the composer, and rejects a hunk here.
@@ -822,6 +825,12 @@ var bindings = []binding{
 	// The chat's diff pane (task 169 decision 3). chat_diff is offered on the
 	// composer's surface, which is where it is pressed from; the rest are the
 	// pane's own fixed keys.
+	// The shell passthrough and the image paste (task 170). alt+x for the
+	// prompt, because the composer types `!` as text (task 124 decision 9);
+	// ctrl+v is the root's paste key, which in the composer reads an image
+	// before it falls back to text.
+	{op: keymap.ShellCommand, key: "alt+x", label: "run a shell command in the chat's directory — its output shows as a card you can attach to the next prompt", scope: scopePanel, context: ctxChat, hint: "alt+x shell", priority: 21},
+	{key: "ctrl+v", label: "paste: a clipboard image goes up to the chat and an [image N] chip into the message; anything else pastes as text", scope: scopePanel, context: ctxChat, priority: 22, noPalette: true},
 	{op: keymap.ChatDiff, key: "alt+d", label: "show the chat's diff in place of the conversation, to review it hunk by hunk (esc comes back, the draft untouched)", scope: scopePanel, context: ctxChat, hint: "alt+d diff", priority: 21},
 	{key: "]", label: "move to the next hunk ([ the previous), opening the file it is in", scope: scopePanel, context: ctxChatDiff, hint: "]/[ hunk", priority: 1},
 	{key: "x", label: "reject the selected hunk: it is reverted in the chat's directory and a note for the agent opens your draft", scope: scopePanel, context: ctxChatDiff, hint: "x reject", priority: 2},
@@ -836,7 +845,7 @@ var bindings = []binding{
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxChatDiff, priority: 11},
 	{key: "esc", label: "go back to the conversation and the composer, the draft untouched", scope: scopePanel, context: ctxChatDiff, hint: "esc back", priority: 12},
 	{key: "down", label: "move the line cursor (j/k and ↑/↓)", scope: scopePanel, context: ctxChatConversation, hint: "j/k move", priority: 1},
-	{key: "enter", label: "expand or fold the tool call under the cursor — it draws as at verbose, the level stays", scope: scopePanel, context: ctxChatConversation, hint: "enter expand", priority: 2},
+	{key: "enter", label: "expand or fold the tool call or shell output under the cursor — it draws as at verbose, the level stays", scope: scopePanel, context: ctxChatConversation, hint: "enter expand", priority: 2},
 	{op: keymap.Filter, key: "/", label: "search the conversation again", scope: scopePanel, context: ctxChatConversation, hint: "/ search", priority: 3, term: termFilter},
 	{key: "n", label: "the next match (N the previous); both wrap", scope: scopePanel, context: ctxChatConversation, hint: "n/N match", priority: 4},
 	{key: "}", label: "jump to the next prompt you sent ({ the previous)", scope: scopePanel, context: ctxChatConversation, hint: "{/} prompt", priority: 5},
@@ -846,6 +855,14 @@ var bindings = []binding{
 	{key: "alt+shift+g", label: "jump to the live end and follow it again", scope: scopePanel, context: ctxChatConversation, priority: 8},
 	{key: "i", label: "give the keyboard back to the composer (esc too)", scope: scopePanel, context: ctxChatConversation, hint: "i/esc compose", priority: 9},
 	{key: "esc", label: "give the keyboard back to the composer — it never leaves the chat from here", scope: scopePanel, context: ctxChatConversation, priority: 10, aliased: true},
+
+	// A shell run's card under the cursor (task 170): enter folds it as it
+	// does a tool call, `a` attaches it.
+	{key: "a", label: "attach the finished shell command under the cursor to your next prompt, or take the mark off (a command already sent stays sent)", scope: scopePanel, context: ctxChatConversation, hint: "a attach", priority: 11},
+
+	// The shell prompt (task 170). It owns every key: a printable one types.
+	{key: "enter", label: "run the command in the chat's directory; it shows as a card in the conversation", scope: scopePanel, context: ctxChatShell, hint: "enter run", noPalette: true},
+	{key: "esc", label: "close the prompt; nothing runs", scope: scopePanel, context: ctxChatShell, hint: "esc cancel", noPalette: true},
 
 	// The search line. It owns every key: a printable one types.
 	{key: "enter", label: "search every turn, the ones not loaded yet too", scope: scopePanel, context: ctxChatFind, hint: "enter search", noPalette: true},

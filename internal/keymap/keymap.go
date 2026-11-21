@@ -115,6 +115,12 @@ const (
 	// merge train.
 	NextChat Op = "next_chat"
 	PrevChat Op = "prev_chat"
+	// ShellCommand opens the chat's one-line shell prompt, which runs a
+	// command in the chat's directory and draws it as a card in the
+	// conversation (task 170). alt+x for "execute": the composer owns every
+	// printable key, so a `!` typed there stays the message it is (task 124
+	// decision 9), and the textarea binds no alt+x.
+	ShellCommand Op = "shell_command"
 )
 
 // ChatN are the jumps to the Nth live chat of the selected project, in the
@@ -301,6 +307,11 @@ var catalog = []Info{
 	{Op: ChatDiff, Default: "alt+d", Meaning: "show the chat's diff in place of the conversation, to review it hunk by hunk", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
 	}, Typing: true},
+	// Typing for the same reason: the shell prompt is opened from the
+	// composer (task 170).
+	{Op: ShellCommand, Default: "alt+x", Meaning: "run a shell command in the chat's directory, shown as a card in the conversation", Kind: KindTerm, Surfaces: []Surface{
+		"chat",
+	}, Typing: true},
 	// The chat switch (task 165). Typing: the open chat's composer has the
 	// keyboard, and these must work from it — including over a pending
 	// question's popup.
@@ -407,6 +418,27 @@ var listLayer = map[string]bool{
 }
 
 func listLayerKey(op Op, s Surface) string { return string(op) + "\x00" + string(s) }
+
+// modalText is the surfaces that exist only inside a text field that has the
+// keyboard: a mode of the field rather than a place of their own (task 170).
+// The chat composer's vim normal mode is the one — it is reached from the
+// composer, which captures text, and nothing but its own keys is answered
+// there. So a printable fixed key of one can never meet an operation: an
+// operation answered from the composer is Typing and may not be printable,
+// and one that is not is never answered while the composer has the keyboard.
+// Check and yield leave such a key out of every clash rather than recording
+// an exception per letter — vim's set spans most of the alphabet, and a user
+// binding `retry` to `o` must not warn that vim's `o` stopped working.
+var modalText = map[Surface]bool{"chat composer, vim normal": true}
+
+// outOfReach reports a fixed key no operation can ever share a press with.
+func outOfReach(f Fixed) bool {
+	if !modalText[f.Surface] {
+		return false
+	}
+	printable, err := printableKey(f.Key)
+	return err == nil && printable
+}
 
 // Fixed is a key the TUI answers that no operation owns: a surface-local row,
 // a member of a multi-key set, a popup's own key, or an unregistered alias.
@@ -627,7 +659,7 @@ func (k *Keymap) yield() []string {
 			// The root's own fixed keys — tab, esc, ctrl+c, ctrl+v — never
 			// yield: the layer stack and the way out of the TUI must work on
 			// every surface, so a clash with one stays a hard error.
-			if f.Key != key || f.Surface == Global || excepted(key, info.Op, use{surface: f.Surface}) {
+			if f.Key != key || f.Surface == Global || outOfReach(f) || excepted(key, info.Op, use{surface: f.Surface}) {
 				continue
 			}
 			if k.shadowed == nil {
@@ -669,7 +701,7 @@ func Check(k Keymap) error {
 		byKey[key] = append(byKey[key], use{op: info.Op, meaning: info.Meaning})
 	}
 	for _, f := range fixed {
-		if k.Shadowed(f.Surface, f.Key) {
+		if k.Shadowed(f.Surface, f.Key) || outOfReach(f) {
 			continue
 		}
 		byKey[f.Key] = append(byKey[f.Key], use{surface: f.Surface, meaning: f.Meaning})

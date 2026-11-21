@@ -588,6 +588,11 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// capturing text means nothing to paste into — don't shell out to read a
 	// clipboard whose contents would be dropped.
 	if msg.String() == "ctrl+v" && (m.popupOpen() || (m.activeCapturesInput() && !m.connScreen())) {
+		// The chat composer reads the clipboard for an image first (task
+		// 170) and falls back to this same text paste when there is none.
+		if v, ok := m.views[m.active].(*chatView); ok && !m.popupOpen() && v.takesImagePaste() {
+			return m, v.pasteImageCmd()
+		}
 		return m, readClipboardCmd()
 	}
 	// An open popup owns every key but ctrl+c — it is the top of the §15 esc
@@ -2089,21 +2094,26 @@ func (m *root) applyOutputLevel(msg tea.Msg) {
 }
 
 // applyIcons adopts `tui.icons` from whichever config answer arrived (task
-// 150.8). A failed fetch or a refused save changes nothing, for
+// 150.8), and `tui.chat` with it (task 170): both are package-level
+// preferences, so both ride the same three answers — startup, a save and a
+// reconnect's re-read. A failed fetch or a refused save changes nothing, for
 // applyHyperlinks' reason.
 func applyIcons(msg tea.Msg) {
 	switch msg := msg.(type) {
 	case boardConfigMsg:
 		if msg.err == nil {
 			setIconSet(msg.icons)
+			setChatPrefs(msg.chat.StatusLine, msg.chat.Vim)
 		}
 	case daemonConfigMsg:
 		if msg.err == nil {
 			setIconSet(msg.config.TUI.Icons)
+			setChatPrefs(msg.config.TUI.Chat.StatusLine, msg.config.TUI.Chat.Vim)
 		}
 	case configSavedMsg:
 		if msg.err == nil {
 			setIconSet(msg.cfg.TUI.Icons)
+			setChatPrefs(msg.cfg.TUI.Chat.StatusLine, msg.cfg.TUI.Chat.Vim)
 		}
 	}
 }

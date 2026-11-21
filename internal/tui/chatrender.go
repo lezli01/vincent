@@ -257,10 +257,20 @@ func (v *chatView) headerLine(width int) string {
 	}
 	pause := chatPauseMark()
 	right := v.headerMarks()
-	if gauge, _ := chatGauge(v.turns, width >= chatGaugeWideMin, v.compactCommand(), v.gaugeCompactKey()); gauge != "" {
-		right = append(right, chatHeaderSeg{gauge, 1})
+	if status := chatStatusLine(chatStatusTemplate(), v.chat, v.turns); status != "" {
+		// `tui.chat.status_line` (task 170) replaces the gauge and the turn
+		// count, and only those: the reading marks before it are about this
+		// window, not the chat, so no template can say them. One cell in the
+		// rank scheme, cut to half the header before ranking so a long line
+		// gives way to the title by truncating rather than by vanishing
+		// whole; the header is one line, so it is never wrapped.
+		right = append(right, chatHeaderSeg{styleDim.Render(ansi.Truncate(status, max(width/2, chatStatusMinW), "…")), 3})
+	} else {
+		if gauge, _ := chatGauge(v.turns, width >= chatGaugeWideMin, v.compactCommand(), v.gaugeCompactKey()); gauge != "" {
+			right = append(right, chatHeaderSeg{gauge, 1})
+		}
+		right = append(right, chatHeaderSeg{styleDim.Render(plural(len(v.turns), "turn", "turns")), 3})
 	}
-	right = append(right, chatHeaderSeg{styleDim.Render(plural(len(v.turns), "turn", "turns")), 3})
 
 	sep := styleDim.Render("  ·  ")
 	join := func(segs []chatHeaderSeg, sepw string) string {
@@ -292,6 +302,10 @@ func (v *chatView) headerLine(width int) string {
 		}
 	}
 }
+
+// chatStatusMinW is the narrowest the status line is cut to before the
+// header ranks it: below it the cell says too little to keep.
+const chatStatusMinW = 12
 
 // chatPauseMark says the body stopped following the live end.
 func chatPauseMark() string { return styleDim.Render("⏸") }
@@ -406,6 +420,23 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 		agent = v.chat.Agent
 	}
 	now := v.now()
+	// Shell runs (task 170) are cards between the turns, each after the
+	// turn that was the newest when it started.
+	shells := v.shellPlacement()
+	shellCards := func(place int) {
+		for _, r := range shells[place] {
+			if len(lines) > 0 {
+				lines = append(lines, "")
+				anchors = append(anchors, lineAnchor{turn: place})
+			}
+			card := v.shellCardLines(r, width)
+			lines = append(lines, card...)
+			for range card {
+				anchors = append(anchors, lineAnchor{turn: place, shell: r.ID})
+			}
+		}
+	}
+	shellCards(0)
 	for i := range v.turns {
 		t := &v.turns[i]
 		if i > 0 {
@@ -483,6 +514,7 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 				pad(1)
 			}
 		}
+		shellCards(t.Seq)
 	}
 	turn = 0
 	if q := v.queueLines(width); len(q) > 0 {
@@ -685,6 +717,10 @@ func (v *chatView) footerLines(width, height int) []string {
 	if v.convFocus && v.search.typing {
 		out = append(out, " "+v.searchLine(max(width-1, 1)))
 	}
+	// The shell prompt (task 170), in the search line's place.
+	if v.shell.prompt {
+		out = append(out, " "+v.shellPromptLine(max(width-1, 1)))
+	}
 	if v.picker != nil {
 		out = append(out, v.picker.render(width)...)
 	}
@@ -711,6 +747,11 @@ func (v *chatView) footerLines(width, height int) []string {
 	if chip := chatSettingsChip(v.chat); chip != "" {
 		// The settings the next turn runs on (task 162 decision 9).
 		title += " · " + chip
+	}
+	if chatVimEnabled() && v.vim != nil {
+		// The mode, on the composer's edge (task 170): the cursor is the
+		// textarea's bar in both, so the label is what tells them apart.
+		title += " · " + v.vim.label()
 	}
 	if hidden := v.sizeComposer(height); hidden > 0 {
 		// The draft is taller than the composer may grow: say how much of

@@ -151,6 +151,9 @@ type lineAnchor struct {
 	call string
 	turn int
 	you  bool
+	// shell is the chat shell run a line of its card belongs to (task
+	// 170), which enter folds and `a` attaches; 0 elsewhere.
+	shell int64
 }
 
 // anchorAt is the anchor of the line at the given viewport offset.

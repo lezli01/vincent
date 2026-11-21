@@ -14,6 +14,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/clipimage"
 	"github.com/lezli01/vincent/internal/keymap"
 )
 
@@ -288,6 +289,13 @@ type chatView struct {
 	// open it is drawn where the conversation is and holds the keyboard.
 	diff chatDiffState
 
+	// shell is the shell passthrough (task 170, chatshell.go): the prompt,
+	// the chat's runs and their output, drawn as cards in the conversation.
+	shell chatShellState
+	// vim is the composer's modal layer (task 170, chatvim.go), consulted
+	// only while `tui.chat.vim` is on.
+	vim *chatVim
+
 	width, height int
 }
 
@@ -317,6 +325,7 @@ func newChatView(level *levelHolder, raw *rawHolder, links *hyperlinkHolder) *ch
 		fetched:     map[int]bool{},
 		recall:      chatRecall{idx: -1},
 		diff:        chatDiffState{pane: newDiffPane()},
+		vim:         newChatVim(),
 	}
 }
 
@@ -345,6 +354,9 @@ func (v *chatView) capturesInput() bool {
 	if v.form != nil {
 		return v.form.capturing()
 	}
+	if v.shell.prompt {
+		return true
+	}
 	if v.diff.open {
 		// The diff's keys are single letters typed nowhere (task 169
 		// decision 3), exactly as the conversation focus's are.
@@ -360,19 +372,79 @@ func (v *chatView) paste(text string) tea.Cmd {
 	if v.form != nil {
 		return v.form.paste(text)
 	}
+	if v.shell.prompt {
+		v.pasteShell(text)
+		return nil
+	}
+	if path, ok := clipimage.ImagePath(text); ok && v.takesImagePaste() {
+		// A dropped image file pastes as its path: the image goes up and
+		// its chip goes in instead (task 170).
+		return v.pasteImagePathCmd(path, text)
+	}
+	return v.pasteText(text)
+}
+
+// pasteText is a paste into the composer as text.
+func (v *chatView) pasteText(text string) tea.Cmd {
 	var cmd tea.Cmd
 	before := v.composer.Value()
 	v.composer, cmd = v.composer.Update(tea.PasteMsg{Content: text})
 	cmd = tea.Batch(cmd, v.draftEdited(before))
 	// A pasted `/co` or `@src` opens the inline list exactly as a typed one
 	// does: the list is derived from the draft, not from the keys that made it.
-	return tea.Batch(cmd, v.syncInlineSkills(), v.syncInlineFiles())
+	return tea.Batch(cmd, v.syncInline())
+}
+
+// syncInline re-derives both inline lists from the draft — except in vim's
+// normal mode, where nothing is being typed and the lists open in insert
+// mode only (task 170).
+func (v *chatView) syncInline() tea.Cmd {
+	if v.vimNormal() {
+		v.hideInline("")
+		v.hideFiles()
+		return nil
+	}
+	return tea.Batch(v.syncInlineSkills(), v.syncInlineFiles())
+}
+
+// vimNormal reports the composer's vim layer on and in normal mode.
+func (v *chatView) vimNormal() bool {
+	return chatVimEnabled() && v.vim != nil && v.vim.mode() == vimNormal
+}
+
+// resetVim returns the layer to insert mode with nothing pending: the
+// composer was emptied or refilled from outside it.
+func (v *chatView) resetVim() {
+	if v.vim != nil {
+		v.vim.reset()
+	}
+}
+
+// updateVimKey offers a composer key to the vim layer (task 170) and
+// reports whether it took it. A normal-mode edit is a draft edit like any
+// other, so the draft (task 164) is saved from it the same way.
+func (v *chatView) updateVimKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	if !chatVimEnabled() || v.vim == nil {
+		return nil, false
+	}
+	before := v.composer.Value()
+	handled, cmd := v.vim.update(&v.composer, msg)
+	if !handled {
+		return nil, false
+	}
+	if v.vim.mode() == vimNormal {
+		v.hideInline("")
+		v.hideFiles()
+	}
+	return tea.Batch(cmd, v.draftEdited(before), v.syncInline()), true
 }
 
 func (v *chatView) bindingContext() bindingContext {
 	switch {
 	case v.form != nil:
 		return ctxForm
+	case v.shell.prompt:
+		return ctxChatShell
 	case v.diff.open:
 		return ctxChatDiff
 	case v.convFocus && v.search.typing:
@@ -415,6 +487,8 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 	v.files = chatFileList{}
 	v.composer.SetValue("")
 	v.composer.Focus()
+	v.resetVim()
+	v.resetShell()
 	// The expanded set is kept per chat (task 160 decision 4); the focus,
 	// the search and the marker are this visit's.
 	v.convFocus, v.cursor, v.search = false, 0, chatSearchState{}
@@ -425,7 +499,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 		v.following = false
 	}
 	// The `changes` row is read alongside the open (task 169 decision 10).
-	return tea.Batch(leave, v.loadCmd(), v.streamCmd(), v.loadAgentsCmd(), v.markViewedCmd(), v.diffStatCmd())
+	return tea.Batch(leave, v.loadCmd(), v.streamCmd(), v.loadAgentsCmd(), v.markViewedCmd(), v.diffStatCmd(), v.shellRunsCmd())
 }
 
 // landFetch asks for the landing turn's transcript, which the load's own
@@ -535,7 +609,7 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, cmd
 	case viewActivatedMsg:
 		if msg.id == viewChat && v.chatID != 0 {
-			return v, v.loadCmd()
+			return v, tea.Batch(v.loadCmd(), v.shellRunsCmd())
 		}
 		return v, nil
 	case chatLoadedMsg:
@@ -580,6 +654,25 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 	case chatTranscriptMsg:
 		v.applyTranscript(msg)
 		return v, nil
+	case chatShellRunsMsg:
+		return v, v.applyShellRuns(msg)
+	case chatShellStartedMsg:
+		return v, v.applyShellStarted(msg)
+	case chatShellOutputMsg:
+		v.applyShellOutput(msg)
+		return v, nil
+	case chatShellAttachedMsg:
+		v.applyShellAttached(msg)
+		return v, nil
+	case chatImageClipMsg:
+		return v, v.applyImageClip(msg)
+	case chatImageAddedMsg:
+		return v, v.applyImageAdded(msg)
+	case chatImagePathFailedMsg:
+		if msg.chatID != v.chatID {
+			return v, nil
+		}
+		return v, v.pasteText(msg.text)
 	case chatSearchMsg:
 		return v, v.applySearch(msg)
 	case chatNoteMsg:
@@ -950,14 +1043,20 @@ func (v *chatView) applyChatNote(msg chatNoteMsg) tea.Cmd {
 	case apiclient.ConnectedNote:
 		if note.Reset {
 			// A restored event history (issue #1001): no chat event will
-			// say what changed, so re-read the chat.
-			return tea.Batch(next, v.loadCmd())
+			// say what changed, so re-read the chat, and its shell runs
+			// with it.
+			return tea.Batch(next, v.loadCmd(), v.shellRunsCmd())
 		}
 	case apiclient.EventNote:
 		if note.Event.Type == chatDraftChangedEvent {
 			// Only the draft moved: re-read it, not the whole chat with
 			// every turn and the queue (review F5).
 			return tea.Batch(next, v.draftEventCmd(note.Event.Payload))
+		}
+		if note.Event.Type == chatShellChangedEvent {
+			// Only a shell run moved (task 170): re-read the runs, not the
+			// whole chat.
+			return tea.Batch(next, v.shellRunsCmd())
 		}
 		if strings.HasPrefix(note.Event.Type, "chat.") {
 			// The daemon invalidates a chat's skill listing when a turn ends
@@ -1049,6 +1148,7 @@ func (v *chatView) applySent(msg chatSentMsg) tea.Cmd {
 	// editable while the send is in flight, so what leaves is what was
 	// sent: text added after it stays (review F8).
 	v.composer.SetValue(unsentRest(v.composer.Value(), msg.sent))
+	v.resetVim()
 	v.endRecall()
 	// The stored draft goes at the same acceptance point (task 164): what
 	// is written is what is left, usually nothing.
@@ -1165,6 +1265,11 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// 164 decision 3), as the skills browse list does.
 		return v, v.updateHistoryKey(msg)
 	}
+	if v.shell.prompt {
+		// The shell prompt owns every key while it is up (task 170), as
+		// the search line does.
+		return v, v.updateShellPromptKey(msg)
+	}
 	if v.diff.open {
 		// The diff pane holds the keyboard while it is up (task 169
 		// decision 3).
@@ -1181,6 +1286,13 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// every other vincent popup behaves and what makes `esc` a real
 		// layer here (task 124 decision 70).
 		return v, v.updateSkillsKey(msg)
+	}
+	// The vim layer sees a composer key first (task 170): insert mode takes
+	// esc alone, to normal; normal mode takes its own keys and leaves enter,
+	// ctrl and alt keys, the arrows and an esc with nothing pending to
+	// everything below — so esc from normal mode peels on as it always did.
+	if cmd, taken := v.updateVimKey(msg); taken {
+		return v, cmd
 	}
 	if v.skills.open {
 		// The inline list takes only the keys it means something for
@@ -1224,6 +1336,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	}
 	if key := opKey(keymap.ChatDiff); key != "" && msg.String() == key {
 		return v, v.openDiff()
+	}
+	if key := opKey(keymap.ShellCommand); key != "" && msg.String() == key {
+		v.openShellPrompt()
+		return v, nil
 	}
 	switch msg.String() {
 	case chatQueueEditKey:
@@ -1271,6 +1387,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		return v, tea.Batch(v.leaveDraft(), func() tea.Msg { return selectViewMsg{id: back} })
 	case "ctrl+c":
 		return v, nil
+	case "ctrl+v":
+		// The root catches ctrl+v first and asks takesImagePaste; this arm
+		// is the same press reaching a view driven directly.
+		return v, v.pasteImageCmd()
 	// `tab` is the taught key and `f2` the alias for a terminal that
 	// swallows it (task 124 decision 69). Both are literals rather than
 	// constants so TestEveryMatchedKeyIsRegistered sees them.
@@ -1351,7 +1471,7 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	var cmd tea.Cmd
 	before := v.composer.Value()
 	v.composer, cmd = v.composer.Update(msg)
-	return v, tea.Batch(cmd, v.draftEdited(before), v.syncInlineSkills(), v.syncInlineFiles())
+	return v, tea.Batch(cmd, v.draftEdited(before), v.syncInline())
 }
 
 // updateSkillsKey is the browse list's keyboard (task 124.13). It answers
@@ -2158,6 +2278,7 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 			b.key == "alt+a" && v.formAway == nil,
 			b.key == "enter" && ended,
 			b.op == keymap.Steer && (!running || owned),
+			b.op == keymap.ShellCommand && (!v.shellAvailable() || owned),
 			b.op == keymap.Compact && (v.chat == nil || v.compactCommand() == "" || v.chat.State != string(chatstate.Idle)),
 			owned && (b.key == "enter" || b.key == "ctrl+j" || b.key == "tab"):
 			continue
