@@ -1384,9 +1384,84 @@ or recorded fails `checkpoint_failed` and never spawns its agent. Linked
 ones, in the worktree they run in, and so is a turn drained from the
 message queue (task 156).
 
-Rewinding to a checkpoint and forking a chat from one are planned in task 167
+~~Rewinding to a checkpoint and forking a chat from one are planned in task 167
 (167.3–167.6) and do not exist yet; neither does pruning these refs (167.8),
-so a deleted chat's checkpoint refs remain until that lands.
+so a deleted chat's checkpoint refs remain until that lands.~~ *Amended
+2026-11-21 (task 167.3–167.10, issue #1041):* both exist, and the refs are
+pruned (§10).
+
+#### Rewind and fork (added 2026-11-21, task 167.3–167.8, issue #1041)
+
+**Rewind to turn N means the state before turn N ran** (brief decision F).
+`POST /v1/chats/{id}/rewind` (§13.2) takes `turn` and a `mode`:
+
+- `code` restores the worktree to turn N's checkpoint. The current state is
+  first saved as a snapshot (`--ignore-errors`, like a checkpoint) under
+  `refs/vincent/chats/<chat id>/rewound-<k>`, `k` counting up per chat, so
+  nothing a rewind replaces is lost; then the branch is reset to
+  `head_before`, `clean -fd` runs, and the checkpoint's tree is laid back
+  unstaged. Ignored files are left alone. A path the pre-rewind snapshot could
+  not read is excluded from the clean (`-e`), so **a rewind never deletes a
+  file it could not save**; those paths come back as `skipped` and go to the
+  daemon log (brief decision D). A rewind may also go **forward**: `{rewound:
+  k}` restores a `rewound-<k>` state (code only), itself saving the state it
+  replaces first.
+- `conversation` takes turns N..last out of the conversation. They are never
+  deleted: each is marked `rewound_at` under one `rewind_id`, still counted in
+  every §17 cost and token total, still readable, and hidden by default in the
+  TUI, `vincent chat transcript` and the export (each has a toggle or flag to
+  show them). New turns continue `seq`. Turn N's prompt returns to the chat's
+  daemon-held draft (task 164).
+- `both`, the default, does the two together.
+
+**A code rewind refuses foreign commits, with no force** (decision 3): it
+needs `head_before(k+1) == head_after(k)` for every turn k ≥ N and the
+worktree's HEAD equal to the last turn's `head_after`, else `409
+chat_rewind_foreign_commits`. Free, linked and issue chats run the same check.
+Rewind and fork both refuse a live turn (`running`, `awaiting_input`, a
+draining queue) with `409 chat_turn_live` and an ended chat with `409
+chat_terminal` — guards, not §5.5 transitions — a turn an earlier rewind took
+out with `409 chat_turn_rewound`, and a turn with no usable checkpoint (from
+before migration 0066, one that failed `checkpoint_failed`, or one whose ref
+no longer resolves) with `409 chat_checkpoint_unavailable` (brief decision E).
+`GET /v1/chats/{id}` serves, per turn, which of code, conversation and fork
+are available and why not, so a client's picker holds no copy of the rules.
+
+**The conversation is rewound by the next turn, not by the rewind** (brief
+decision A, reading decision 10's "written by the rewind" as "decided by the
+rewind, made real by the next turn"). The rewind runs no agent process. It
+records a plan on the chat (`chats.resume_at` or `pending_preamble`, migration
+0071) that the chat's next turn consumes and clears:
+
+- **Resumed.** When the chat's adapter can resume at a point (§9.1 — today a
+  claude that has `--resume-session-at`), the next turn runs `--resume
+  <session> --resume-session-at <anchor> --fork-session`, where the anchor is
+  the `resume_anchor` (the last top-level assistant message uuid) recorded on
+  turn N-1. The turn's `session_id` is the forked session's, recorded when the
+  turn reports it; the abandoned branch stays intact under its old id.
+- **Fresh.** A rewind that keeps no turn (to turn 1) starts the next turn in a
+  new session with nothing to seed.
+- **Seeded.** Otherwise — codex, cursor, copilot, a claude without the flag,
+  or a kept turn with no recorded anchor — the next turn starts a fresh
+  session whose `RunSpec.Preamble` carries turns 1..N-1, each prompt and its
+  final reply, bounded the way a linked chat's opening context is (task 119;
+  brief decision G). The turn is marked `seeded`, and the API, CLI, TUI and
+  export say "seeded, not resumed". It is never faked.
+
+**Fork** (`POST /v1/chats/{id}/fork`, decision 11) creates a new **idle free
+chat** and starts no turn. Its branch is named the way a free chat's is and
+cut from turn N's `head_before`, with the checkpoint's dirty state applied
+unstaged; it copies the agent, model, effort and permission mode (with task
+162's `restricted` checks), and records `forked_from` (chat and turn, with no
+foreign key, so the fork outlives a deleted source). It never inherits a task
+link, an issue or a worktree hold. Its **recorded base is the source chat's
+base** — for a linked chat the task's, for an issue chat the base its
+directory diffs against — so its base diff and delivery include the work it
+inherited up to the checkpoint (brief decision C). Its first turn resumes the
+source's session at the anchor or starts seeded, exactly as above. A fork
+does not run the foreign-commit check: it leaves the source's branch alone.
+
+Neither route spawns an agent, which is why both are MCP tools (§13.4).
 
 #### Diff and hunk review (added 2026-11-20, task 169, issue #1018)
 
@@ -4522,6 +4597,24 @@ model — never from `--help`. An adapter without one has a chat whose model and
 effort are fixed once its first turn has run (`400
 agent_cannot_change_on_resume`, §13.2). Today: claude yes (§9.2); codex,
 cursor and copilot no (§9.3, §9.7, §9.9).
+
+*Amended 2026-11-21 (task 167.4, issue #1041):* a second optional resume
+capability, `ResumeAtPointer` (`SupportsResumeAtPoint() bool`, read through
+`agent.CanResumeAtPoint`), says whether `Start` honours `RunSpec.ResumeAt`:
+resume `ResumeSessionID` at one of its messages and fork it there, the
+conversation half of a chat rewind (§5.5, Rewind and fork). Only claude
+implements it, and its answer is **detected** from the installed binary, never
+declared or read from a version table: `--resume-session-at` is absent from
+2.1.x's `--help`, so the probe asks the CLI to parse the flag without
+`--resume` and reads the refusal sentence (fixtures
+`probe_resume_at_present_2.1.330.txt`, `probe_resume_at_absent_2.1.330.txt`;
+the run itself is `stream_resume_at_2.1.330.jsonl`). claude's parser records
+`RunResult.ResumeAnchor`, the last top-level assistant message uuid. codex
+(`exec resume` takes a thread id only), cursor and copilot (`--resume` takes
+an id only) return `agent.ErrResumeAtUnsupported` from `Start` when asked,
+rather than resuming the whole session; their rewound and forked chats take
+the seeded fallback through `RunSpec.Preamble`, placed wherever each adapter
+already places it and never fused into the message.
 
 ```go
 type AgentAdapter interface {
@@ -7798,6 +7891,23 @@ from raw totals kept in `chat_turns.session_cache_read_tokens` /
 turn's heading never shows a cost (§15). It has no `Compactor`.
 
 ## 10. Worktree management
+
+*Amended 2026-11-21 (task 167.8, issue #1041):* a chat's checkpoint refs
+(`refs/vincent/chats/<chat id>/turn-<seq>` and `rewound-<k>`, §5.5) live in
+the project repository's shared ref namespace and are pruned with the chat's
+row: on permanent delete (`DELETE /v1/chats/{id}`, with or without
+`delete_branch`, and the force delete), and for a linked chat when its task is
+deleted. A chat's archive never deletes its branch, so it keeps them, and so
+does a hand-off, whose chat row stays. A daemon sweep, once at startup and
+then on the transcript pruner's 24 h interval, deletes the refs of chat ids
+that no longer have a row in any project repository; a repository it cannot
+read is logged and skipped. Only refs are deleted — the objects go with git's
+own gc. **Disk cost, measured** on this repository (decision 13): a
+checkpoint of an unchanged worktree adds one commit object (~150 bytes
+loose), reusing the previous tree; one modified file and one new file added
+six objects, ~12 KB loose, almost all of it the modified file's blob.
+A fork's worktree is created at a given commit (`CreateAtAndClaim`) rather
+than at the base branch's tip.
 
 - **Location:** `{data_dir}/worktrees/{task_id}` — outside every repo, so IDE file
   watchers and repo tooling in the main checkout are never disturbed.
@@ -11943,6 +12053,35 @@ POST   /v1/chats/{id}/close             *Added 2026-09-17 (task 119, issue #472)
                                         free chat (archive it instead) and on a chat already
                                         terminal, with `details.state`. It is **not** an MCP
                                         tool (§13.4)
+POST   /v1/chats/{id}/rewind            *Added 2026-11-21 (task 167.3, 167.5, issue #1041).*
+                                        Rewinds a chat to the state before a turn ran (§5.5,
+                                        Rewind and fork). Body: `{turn, mode?}`, `mode` `code`,
+                                        `conversation` or `both` (the default), or `{rewound:
+                                        k}` to go forward to a saved `rewound-<k>` state (code
+                                        only). Runs no agent process: the conversation half is a
+                                        plan the chat's next turn carries out. `200` with
+                                        `{chat, rewind_id, ref, skipped, seeded, rewound_turns}`
+                                        and a `chat.updated` event. `409 chat_turn_live`,
+                                        `chat_terminal`, `chat_turn_rewound`,
+                                        `chat_checkpoint_unavailable`,
+                                        `chat_rewind_foreign_commits` (no force). An MCP tool,
+                                        `chat_rewind` (§13.4)
+POST   /v1/chats/{id}/fork              *Added 2026-11-21 (task 167.6, issue #1041).* Creates a
+                                        new idle free chat from the state before a turn ran: its
+                                        own branch cut from the turn's `head_before` with the
+                                        checkpoint's dirty state unstaged, the source's agent,
+                                        model, effort, permission mode and base, and never a
+                                        link, an issue or a hold. Body: `{turn, title?}`. Starts
+                                        no turn. `201` with `{chat, skipped, seeded}`. Refuses
+                                        as rewind does, except `chat_rewind_foreign_commits`. An
+                                        MCP tool, `chat_fork` (§13.4). `GET /v1/chats/{id}`
+                                        gains each turn's checkpoint fields, `rewound_at`,
+                                        `rewind_id`, `seeded`, `resume_anchor` and `rewind`
+                                        (`{code, conversation, fork, conversation_seeded}`, each
+                                        reason empty when allowed), and the chat's
+                                        `rewound_states`, `forked_from` and `resume_pending`;
+                                        `GET /v1/chats/{id}/export` leaves rewound turns out
+                                        unless `include_rewound=true`
 GET    /v1/chats/{id}/skills            *Added 2026-09-19 (task 124.9, issue #505).* The skills
        ?refresh=                        the chat's agent CLI would load for its next turn, and how
                                         a message invokes one, from §9.6's skill cache;
@@ -13672,6 +13811,18 @@ with `lane` and `from_lane` taken from the payload's `to` and `from`, and
 list with the rest of the chat family (decision row 29): an agent that could
 raise a chat to `full-auto` over MCP would skip §16's confirmation.
 
+*Amended 2026-11-21 (task 167, issue #1041, settled with the author):* the
+chat family gains its **first two tools**, `chat_rewind` and `chat_fork`
+(`POST /v1/chats/{id}/rewind` and `/fork`, §13.2), and only those two; this
+amends task 063 decision 2 explicitly rather than extending it. The carve-out
+rests on 063's own first reason: an agent must not start agent processes no
+§11 cap admitted, and neither route starts one — a rewind moves refs, the
+worktree and turn rows and leaves a plan for the next turn, which only a
+human's send starts; a fork creates an idle chat. Every other chat route stays
+excluded. The tool-surface test still asserts the surface equals `Routes()`
+minus the exclusions; the exclusion set shrank by exactly these two. An agent
+rewinding its own chat mid-turn is refused by the live-turn `409`.
+
 *Added 2026-08-29 (task 057, issue #243).*
 
 The daemon serves **MCP over streamable HTTP** on the same listener as `/v1`, so
@@ -14498,7 +14649,18 @@ CREATE TABLE chat_turns (
     -- before 0066, or one that never reached it).
     checkpoint_sha                TEXT,
     head_before                   TEXT,
-    head_after                    TEXT
+    head_after                    TEXT,
+    -- Added 2026-11-21 (task 167.5, migration 0071): the turns a rewind took
+    -- out of the conversation (rewound_at, one rewind_id per rewind; never
+    -- deleted, still in §17 totals), a turn that started a seeded rather than
+    -- resumed session, and the claude assistant-message uuid a later rewind
+    -- resumes at. chats gains resume_at and pending_preamble (the next turn's
+    -- plan, cleared by the turn that consumes it) and forked_from_chat_id,
+    -- forked_from_seq (no foreign key: a fork outlives its source).
+    rewound_at                    TEXT,
+    rewind_id                     TEXT,
+    seeded                        INTEGER NOT NULL DEFAULT 0,
+    resume_anchor                 TEXT
 );
 
 -- Added 2026-11-19 (task 156, issue #1010): follow-up messages queued behind a
@@ -15083,6 +15245,17 @@ together or not at all; a concurrent duplicate loses on the primary key, rolls
 its task insert back, and replays the winner's.
 
 ## 15. TUI
+
+*Amended 2026-11-21 (task 167.7, issue #1041):* in the chat workspace,
+`rewind` (`alt+z`, a rebindable keymap operation — not `esc esc`, because
+`esc` is the workspace's fixed back key, decision 4) and the palette's
+"rewind…" and "fork from turn…" entries open a turn picker. It lists every
+turn not already rewound, with code, conversation, both and fork each
+disabled with its reason as `GET /v1/chats/{id}` reports it (no checkpoint,
+foreign commits, live turn, already rewound), and, for a rewind, the saved
+`rewound-<k>` states to go forward to. Rewound turns are hidden; the palette's
+"show rewound turns" toggle draws them dimmed, and a seeded turn says "seeded,
+not resumed".
 
 *Amended 2026-11-21 (task 170):* in the chat workspace, `shell_command`
 (`alt+x`, a rebindable keymap operation, never a composer prefix) opens a
