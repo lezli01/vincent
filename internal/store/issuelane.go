@@ -234,6 +234,70 @@ func watchIssueLaneTx(ctx context.Context, tx *sql.Tx, issueID, projectID int64)
 	return laneWatch{issueID: issueID, projectID: projectID, from: from}, nil
 }
 
+// watchHandoffLanesTx starts watching the lane of every issue a handoff
+// owned by taskID has an item for. Deleting the handoff's task cascades
+// to its handoff and items (migration 0046), and a `delivered` item is a
+// lane fact since #1042 — the issue it left open reads `open` — so the
+// delete can move issues that are not the task's own (review F2).
+func watchHandoffLanesTx(ctx context.Context, tx *sql.Tx, taskID int64) ([]laneWatch, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT hi.issue_id, i.project_id
+		FROM handoffs h JOIN handoff_items hi ON hi.handoff_id = h.id JOIN issues i ON i.id = hi.issue_id
+		WHERE h.task_id = ? ORDER BY hi.issue_id`, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
+	}
+	type item struct{ issueID, projectID int64 }
+	var items []item
+	for rows.Next() {
+		var it item
+		if err := rows.Scan(&it.issueID, &it.projectID); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
+		}
+		items = append(items, it)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read task %d handoff items: %w", taskID, err)
+	}
+	watches := make([]laneWatch, 0, len(items))
+	for _, it := range items {
+		w, err := watchIssueLaneTx(ctx, tx, it.issueID, it.projectID)
+		if err != nil {
+			return nil, err
+		}
+		watches = append(watches, w)
+	}
+	return watches, nil
+}
+
+// followAllTx is followTx over several watches: every lane event the task
+// write caused is appended after cause, in order, and chained behind it
+// and behind any event already following it.
+func followAllTx(ctx context.Context, tx *sql.Tx, cause *Event, taskID int64, watches ...laneWatch) error {
+	tail := cause
+	for tail.follow != nil {
+		tail = tail.follow
+	}
+	for _, w := range watches {
+		ev, err := w.changedTx(ctx, tx, &taskID, "")
+		if err != nil {
+			return err
+		}
+		if ev == nil {
+			continue
+		}
+		if err := appendEventTx(ctx, tx, ev); err != nil {
+			return err
+		}
+		tail.follow = ev
+		tail = ev
+	}
+	return nil
+}
+
 // changedTx is the after half: the `issue.lane_changed` event the write
 // caused, or nil when the lane did not move. Exactly one of taskID and by
 // is set — the task whose write moved the lane, or the actor who closed or

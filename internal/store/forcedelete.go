@@ -373,6 +373,10 @@ func forceDeleteTaskRowTx(ctx context.Context, tx *sql.Tx, t *Task) ([]*Event, [
 	if err != nil {
 		return nil, nil, err
 	}
+	handoffWatches, err := watchHandoffLanesTx(ctx, tx, t.ID)
+	if err != nil {
+		return nil, nil, err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM step_runs WHERE task_id = ?`, t.ID); err != nil {
 		return nil, nil, fmt.Errorf("force delete task %d cascade: %w", t.ID, err)
 	}
@@ -391,6 +395,9 @@ func forceDeleteTaskRowTx(ctx context.Context, tx *sql.Tx, t *Task) ([]*Event, [
 		return nil, nil, err
 	}
 	if err := watch.followTx(ctx, tx, ev, t.ID); err != nil {
+		return nil, nil, err
+	}
+	if err := followAllTx(ctx, tx, ev, t.ID, handoffWatches...); err != nil {
 		return nil, nil, err
 	}
 	return append(evs, ev), chatIDs, nil

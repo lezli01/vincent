@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/issuestate"
 )
 
 // archiveTask puts a task into `archived` through the real transition path, so
@@ -398,5 +399,48 @@ func assertRefused(t *testing.T, err error, reason string) {
 	}
 	if refused.Message == "" {
 		t.Fatal("the refusal names nothing")
+	}
+}
+
+// TestDeleteHandoffTaskAnnouncesDeliveredLaneMoves is review F2 on #1042:
+// a handoff's items cascade from its task, and an issue a `delivered` item
+// left open reads `open` only while that item exists. Deleting the
+// archived handoff task — by hand, or by age-based pruning — moves the
+// issue back to hand_off, and must announce it after task.deleted.
+func TestDeleteHandoffTaskAnnouncesDeliveredLaneMoves(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	a, _ := handedOffIssue(t, s, p.ID, "a", "a1")
+	b, _ := handedOffIssue(t, s, p.ID, "b", "b1")
+	h, ht := mustHandoff(t, s, p.ID, "train", a.ID, b.ID)
+	// deliver --close none: both stay open, on the open lane.
+	resolveItems(t, s, HandoffVerb{HandoffID: h.ID, All: true, Outcome: HandoffDelivered})
+	wantLane(t, s, a.ID, issuestate.LaneOpen)
+	wantLane(t, s, b.ID, issuestate.LaneOpen)
+	transition(t, s, ht.ID, TaskQueued, TaskAborted)
+	archiveTask(t, s, ht.ID, TaskAborted)
+
+	w := watchEvents(s)
+	if err := s.DeleteTaskCascade(ctx, ht.ID); err != nil {
+		t.Fatalf("DeleteTaskCascade: %v", err)
+	}
+	wantLane(t, s, a.ID, issuestate.LaneHandOff)
+	wantLane(t, s, b.ID, issuestate.LaneHandOff)
+	evs := w.take()
+	if got := eventTypes(evs); len(got) != 3 || got[0] != EventTaskDeleted ||
+		got[1] != EventIssueLaneChanged || got[2] != EventIssueLaneChanged {
+		t.Fatalf("published %v, want task.deleted then two issue.lane_changed", got)
+	}
+	for i, iss := range []*Issue{a, b} {
+		ev := evs[i+1]
+		if ev.ID != evs[i].ID+1 {
+			t.Errorf("lane event %d id %d does not follow %d", i, ev.ID, evs[i].ID)
+		}
+		pl := payloadOf(t, *ev)
+		if pl["id"] != float64(iss.ID) || pl["from"] != string(issuestate.LaneOpen) ||
+			pl["to"] != string(issuestate.LaneHandOff) || pl["task_id"] != float64(ht.ID) {
+			t.Errorf("lane payload = %v, want issue %d open → hand_off by task %d", pl, iss.ID, ht.ID)
+		}
 	}
 }
