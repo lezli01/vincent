@@ -41,6 +41,14 @@
   agent's output streaming live. All of it read from the daemon over its localhost API.</em>
 </p>
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=kr9bKo6Y-Oo"><img src="https://raw.githubusercontent.com/lezli01/vincent/master/docs/assets/showcase-video.jpg" alt="Watch the vincent showcase video on YouTube" width="720"></a>
+</p>
+
+<p align="center">
+  <em>▶ <a href="https://www.youtube.com/watch?v=kr9bKo6Y-Oo">Watch the showcase on YouTube</a></em>
+</p>
+
 ## Why vincent?
 
 Coding agents are easy to start and hard to supervise: kick off a handful of

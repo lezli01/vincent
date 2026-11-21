@@ -154,6 +154,19 @@ check script proves the mode on tests of its own. The shard count lives only
 in the job's matrix; four is what fits the free plan's 20 concurrent jobs at
 peak, beside the twelve gate groups.
 
+A pull request that changes only documentation or the Pages site skips the
+product legs: `ci.yml`'s `changes` job classifies the diff, and when every
+path is docs-only (its `case` lists them — `docs/`, root `*.md`, `_data/`,
+`_layouts/`, `_includes/`, `assets/`, `video/`, `scripts/site/`, …) the macOS
+and Windows unit legs and every gate group are skipped, while
+`ci (ubuntu-latest)` still runs the whole suite (the docs are under test) and
+`site` still builds. The required checks keep reporting: `ci (macos-latest)`
+runs as a no-op on Ubuntu, and `ci (windows-latest)` and `gates (*)` accept a
+skip only when `changes` said `code=false`. Pushes to `master` always run
+everything. `skills/` and `examples/` are code — `go:embed` compiles them in —
+and a path the `case` does not list is code; add to it only paths no gate and
+no OS-specific test reads.
+
 Every push to `master` is also built and published by
 `.github/workflows/master-build.yml` (task 147) as the rolling `master-latest`
 prerelease that `vincent update --master` installs: the release's own

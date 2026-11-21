@@ -14,6 +14,14 @@ isolated branches, deterministic checks, human gates, crash recovery, and one
 place to see the work. Start with the [feature tour](features.md), or run a real
 task with the [Quickstart](getting-started/quickstart.md).
 
+<p align="center">
+  <iframe src="https://www.youtube-nocookie.com/embed/kr9bKo6Y-Oo" title="vincent showcase video" style="width: 100%; max-width: 720px; aspect-ratio: 16 / 9; border: 0;" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</p>
+
+<p align="center">
+  <em>▶ <a href="https://www.youtube.com/watch?v=kr9bKo6Y-Oo">Watch the showcase on YouTube</a></em>
+</p>
+
 The [published documentation site](https://lezli01.is-a.dev/vincent/) opens on
 the latest release's documentation; the version selector on every page switches
 to an older release or to `dev`, the unreleased documentation. Press `/` or

@@ -14,6 +14,61 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Whether this run has to prove the product, or only the documentation.
+  #
+  # A pull request whose every changed file is documentation or the Pages
+  # site — the paths in the `case` below — sets `code=false`, and then the
+  # macOS and Windows unit legs and every gate group are skipped: none of
+  # them reads those files. `ci (ubuntu-latest)` still runs the whole suite,
+  # because the docs are under test (the `docs_claims_test.go` files, the
+  # CI-snippet e2e, the key tables, the reasons catalogue, the gate corpus),
+  # and `site` still builds the site. The required checks keep their names
+  # and report success: `ci (macos-latest)` runs as a no-op on an Ubuntu
+  # runner rather than spending a scarce macOS one, and `ci (windows-latest)`
+  # and `gates (*)` accept a skip only when this job said `code=false`.
+  #
+  # It fails safe. A push to master and a manual dispatch always run
+  # everything, so whatever a docs-only PR skipped is still proven after the
+  # merge; an empty or unreadable diff counts as code; and `skills/` and
+  # `examples/` are code, because `go:embed` compiles them into the binary.
+  # A path not listed here is code.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'pull_request'
+        with:
+          persist-credentials: false
+          # The pull request's merge commit and its first parent, the base.
+          fetch-depth: 2
+
+      - name: Classify the changed paths
+        id: classify
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          code=true
+          if [ "$EVENT" = pull_request ] && files="$(git diff --name-only HEAD^1 HEAD)" && [ -n "$files" ]; then
+            code=false
+            while IFS= read -r f; do
+              case "$f" in
+                docs/* | _data/* | _layouts/* | _includes/* | assets/* | video/* | scripts/site/*) ;;
+                scripts/social-cards.py | scripts/screenshots.sh) ;;
+                _config.yml | robots.txt | search.json) ;;
+                */*) code=true ;;
+                *.md) ;;
+                *) code=true ;;
+              esac
+            done <<<"$files"
+            printf 'changed:\n%s\n' "$files"
+          fi
+          echo "code=$code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   packaging-config:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -61,7 +116,14 @@ jobs:
           go run ./cmd/sitever assemble -in "$RUNNER_TEMP/built" -out "$RUNNER_TEMP/site"
 
   ci:
-    runs-on: ${{ matrix.os }}
+    needs: changes
+    # A docs-only pull request (see `changes`) runs the macOS leg as a no-op
+    # on Ubuntu: the job keeps its required name, `ci (macos-latest)`, which
+    # a job-level `if:` would not — a skipped matrix job is never expanded,
+    # so its per-OS check would never report.
+    runs-on: ${{ (matrix.os == 'ubuntu-latest' || needs.changes.outputs.code != 'false') && matrix.os || 'ubuntu-latest' }}
+    env:
+      RUN: ${{ matrix.os == 'ubuntu-latest' || needs.changes.outputs.code != 'false' }}
     # Wide enough that `go test -timeout` (see magefile.go) is always the
     # tighter of the two limits: a package that really hangs should be reported
     # by the test binary's goroutine dump, not killed here with nothing to read.
@@ -75,11 +137,17 @@ jobs:
         # `ci (windows-latest)` check is the `ci-windows` aggregator (#730).
         os: [ubuntu-latest, macos-latest]
     steps:
+      - name: Skipped (documentation only)
+        if: env.RUN != 'true'
+        run: echo "Only documentation changed; ci (ubuntu-latest) runs the suite, and master runs this leg after the merge."
+
       - uses: actions/checkout@v7
+        if: env.RUN == 'true'
         with:
           persist-credentials: false
 
       - uses: actions/setup-go@v7
+        if: env.RUN == 'true'
         with:
           go-version-file: go.mod
 
@@ -112,11 +180,12 @@ jobs:
         run: go run mage.go lintall
 
       - name: Test
+        if: env.RUN == 'true'
         run: go run mage.go testci
 
       # always(): a red suite is the run whose reports matter most.
       - name: Upload test report
-        if: always()
+        if: always() && env.RUN == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: test-report-${{ matrix.os }}
@@ -124,9 +193,11 @@ jobs:
           if-no-files-found: warn
 
       - name: Build
+        if: env.RUN == 'true'
         run: go run mage.go build
 
       - name: Smoke-test vincent version
+        if: env.RUN == 'true'
         shell: bash
         run: ./bin/vincent version
 
@@ -159,6 +230,8 @@ jobs:
   # `needs` of `ci`, so Linux and macOS never wait on Windows.
   test-shard:
     name: test shard (windows-latest, ${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.code != 'false'
     runs-on: windows-latest
     # As on `ci`: wide enough that `go test -timeout` is always the tighter
     # limit, so a hang is reported by the test binary's goroutine dump rather
@@ -219,18 +292,26 @@ jobs:
 
   ci-windows:
     name: ci (windows-latest)
-    needs: test-shard
+    needs: [changes, test-shard]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       # always() above, so a failed, cancelled or skipped shard reaches this
-      # step and turns the check red rather than skipping it.
+      # step and turns the check red rather than skipping it. The one skip
+      # that passes is the one `changes` asked for: a documentation-only
+      # pull request.
       - name: Every test shard passed
         env:
           RESULT: ${{ needs.test-shard.result }}
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
         run: |
-          echo "test-shard: $RESULT"
+          echo "changes: $CHANGES (code=$CODE), test-shard: $RESULT"
+          if [ "$CHANGES" = success ] && [ "$CODE" = false ] && [ "$RESULT" = skipped ]; then
+            echo "Only documentation changed; master runs the Windows leg after the merge."
+            exit 0
+          fi
           [ "$RESULT" = success ]
 
   # Acceptance gates (spec §19), in two jobs.
@@ -264,6 +345,8 @@ jobs:
   # three. `groups` is what the steps test; `group` only names the job.
   gate-group:
     name: gate group (${{ matrix.os }}, ${{ matrix.group }})
+    needs: changes
+    if: needs.changes.outputs.code != 'false'
     runs-on: ${{ matrix.os }}
     # 20, not 12 (2026-11-17): two Windows groups were killed mid-gate at 12 min,
     # one of them after a cache restore failed and it built cold. A macOS
@@ -671,7 +754,7 @@ jobs:
         run: ./scripts/169-gate.sh
 
   gates:
-    needs: gate-group
+    needs: [changes, gate-group]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -699,8 +782,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           OS: ${{ matrix.os }}
           ALL: ${{ needs.gate-group.result }}
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
         run: |
-          echo "gate-group (all OSes): $ALL"
+          echo "changes: $CHANGES (code=$CODE), gate-group (all OSes): $ALL"
+          # The one skip that passes is the one `changes` asked for: a
+          # documentation-only pull request, whose gates master runs after
+          # the merge. A skipped matrix job is never expanded, so there is no
+          # per-OS job to read.
+          if [ "$CHANGES" = success ] && [ "$CODE" = false ] && [ "$ALL" = skipped ]; then
+            echo "Only documentation changed; no gate ran."
+            exit 0
+          fi
+          [ "$CHANGES" = success ] || { echo "changes did not succeed"; exit 1; }
           jobs="$(gh api --paginate \
             "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
             --jq ".jobs[] | select(.name | startswith(\"gate group ($OS, \")) | \"\(.name)\t\(.conclusion)\"")"
