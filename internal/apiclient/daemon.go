@@ -203,6 +203,20 @@ type ConfigContainer struct {
 	ExtraMounts      []string `json:"extra_mounts"`
 }
 
+// ConfigChat is the `tui.chat` block (task 170): StatusLine is a text/template
+// over the chat's fields the daemon has already validated, drawn in the chat
+// header; Vim turns on the composer's modal layer.
+type ConfigChat struct {
+	StatusLine string `json:"status_line"`
+	Vim        bool   `json:"vim"`
+}
+
+// ConfigChatPatch is the optional half of ConfigChat.
+type ConfigChatPatch struct {
+	StatusLine *string `json:"status_line,omitempty"`
+	Vim        *bool   `json:"vim,omitempty"`
+}
+
 // ConfigTUI is the `tui` section of config.yaml as served.
 type ConfigTUI struct {
 	Board ConfigBoard `json:"board"`
@@ -218,6 +232,9 @@ type ConfigTUI struct {
 	Keys map[string]string `json:"keys"`
 	// Output configures the output pane (task 129.11).
 	Output ConfigOutput `json:"output"`
+	// Chat is `tui.chat` (task 170). Zero from a daemon that predates the
+	// block, which reads as no status line and a composer without modes.
+	Chat ConfigChat `json:"chat"`
 	// DefaultProject is `tui.default_project` (task 132.3): the project name
 	// the TUI opens on when neither --project nor the working directory picks
 	// one. Empty when unset, or from a daemon that predates the key.
@@ -588,6 +605,8 @@ type ConfigTUIPatch struct {
 	// Tabs replaces the whole `tui.tabs` list (task 136); the daemon refuses
 	// an empty, repeated or unknown one.
 	Tabs *[]string `json:"tabs,omitempty"`
+	// Chat sets keys of `tui.chat` (task 170).
+	Chat *ConfigChatPatch `json:"chat,omitempty"`
 }
 
 // ConfigOutputPatch is the optional half of ConfigOutput.

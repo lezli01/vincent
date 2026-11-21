@@ -159,6 +159,10 @@ var settingsCatalog = []settingsCategory{
 			{path: "tui.icons", label: "Icons", desc: "nerd needs a Nerd Font in your terminal"},
 			{path: "tui.hyperlinks", label: "Clickable links", desc: "Only if your terminal supports them"},
 		}},
+		{"◌ Chats", "", []settingsItem{
+			{path: "tui.chat.status_line", label: "Status line", desc: "A template for the chat header, such as {{.Model}} · {{.ContextPercent}}%"},
+			{path: "tui.chat.vim", label: "Vim keys", desc: "Insert and normal modes in the composer; enter still sends"},
+		}},
 		{"⌨ Keys", "", []settingsItem{
 			{path: "tui.keys", label: "Key bindings", desc: "operation=key pairs, such as refresh=f5"},
 		}},

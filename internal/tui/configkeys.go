@@ -584,6 +584,22 @@ func configKeys() []configKey {
 			func(b bool) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Hyperlinks: &b}}
 			}),
+		// Task 170. The daemon parses and executes the template before it
+		// writes it, so a misspelled field comes back as the field error.
+		{
+			path: "tui.chat.status_line", label: "chat status line", kind: kindText,
+			help: "a template drawn in a chat's header: {{.Model}} {{.Effort}} {{.Agent}} {{.PermissionMode}} {{.Branch}} {{.State}} {{.Cost}} {{.ContextPercent}} {{.Turns}}; empty for none",
+			read: func(c apiclient.Config) string { return c.TUI.Chat.StatusLine },
+			write: func(s string) (apiclient.ConfigPatch, error) {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Chat: &apiclient.ConfigChatPatch{StatusLine: &s}}}, nil
+			},
+		},
+		boolKey("tui.chat.vim", "chat vim mode",
+			"vim's insert and normal modes in the chat composer; enter still sends",
+			func(c apiclient.Config) bool { return c.TUI.Chat.Vim },
+			func(b bool) apiclient.ConfigPatch {
+				return apiclient.ConfigPatch{TUI: &apiclient.ConfigTUIPatch{Chat: &apiclient.ConfigChatPatch{Vim: &b}}}
+			}),
 	}
 	return keys
 }
@@ -801,6 +817,7 @@ func defaultClientConfig() apiclient.Config {
 			Output: apiclient.ConfigOutput{Level: d.TUI.Output.Level},
 			Tabs:   d.TUI.Tabs,
 			Icons:  d.TUI.Icons,
+			Chat:   apiclient.ConfigChat{StatusLine: d.TUI.Chat.StatusLine, Vim: d.TUI.Chat.Vim},
 		},
 	}
 }

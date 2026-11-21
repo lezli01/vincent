@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -825,7 +826,89 @@ type TUI struct {
 	// it from every config it reads. The daemon never reads it; it validates
 	// it.
 	Icons string `yaml:"icons"`
+	// Chat holds what a client applies to its chat view (task 170). The
+	// daemon never reads it; it validates it.
+	Chat ChatView `yaml:"chat"`
 }
+
+// ChatView is the `tui.chat` block (task 170).
+type ChatView struct {
+	// StatusLine is a Go text/template over ChatStatusFields, drawn as one
+	// line in the chat's header in place of the context gauge and the turn
+	// count. Empty, the default, keeps the header as it ships. Validated the
+	// way it will be executed, so a template naming a field no chat has is
+	// refused here instead of drawing nothing in a client.
+	StatusLine string `yaml:"status_line"`
+	// Vim puts a modal layer over the chat composer: esc leaves insert mode
+	// and the core normal-mode keys move and edit. Off by default, because
+	// a composer that swallows a typed letter is a surprise to everyone who
+	// did not ask for it.
+	Vim bool `yaml:"vim"`
+}
+
+// ChatStatusFields is what a `tui.chat.status_line` template may name. Every
+// field is one a client already holds for an open chat — its record and the
+// usage its turns reported — so the line costs the daemon nothing. A string
+// the chat does not carry is empty, and a figure no turn reported is zero.
+type ChatStatusFields struct {
+	// Model, Effort, Agent and PermissionMode are the chat's settings.
+	Model, Effort, Agent, PermissionMode string
+	// Branch is the chat's branch; State its chatstate, as the API spells it.
+	Branch, State string
+	// Cost is the conversation's reported cost, formatted (`$0.42`); empty
+	// when no turn reported one, which is not the same as free.
+	Cost string
+	// ContextPercent is how full the agent's context window is, 0-100 and
+	// beyond; 0 when no turn reported a size and a window.
+	ContextPercent int
+	// Turns is how many turns the conversation has.
+	Turns int
+}
+
+// ValidateChatStatusLine holds `tui.chat.status_line` to what a client can
+// draw: one line, a template that parses, and one that executes against a
+// chat's fields. Executing it against the zero value is what catches a
+// misspelled field — text/template resolves fields at execution, never at
+// parse. Empty is valid: it is the key's default, and means no status line.
+func ValidateChatStatusLine(tmpl string) error {
+	if tmpl == "" {
+		return nil
+	}
+	if strings.ContainsAny(tmpl, "\n\r") {
+		return errors.New("tui.chat.status_line: must be a single line; the header gives it one")
+	}
+	t, err := template.New("status_line").Option("missingkey=error").Parse(tmpl)
+	if err != nil {
+		return fmt.Errorf("tui.chat.status_line: %s", templateDetail(err))
+	}
+	if err := t.Execute(discard{}, ChatStatusFields{}); err != nil {
+		return fmt.Errorf("tui.chat.status_line: %s; the fields are %s",
+			templateDetail(err), strings.Join(chatStatusFieldNames, ", "))
+	}
+	return nil
+}
+
+// chatStatusFieldNames lists ChatStatusFields for the error a wrong field
+// earns. A test holds it equal to the struct.
+var chatStatusFieldNames = []string{
+	".Model", ".Effort", ".Agent", ".PermissionMode", ".Branch", ".State",
+	".Cost", ".ContextPercent", ".Turns",
+}
+
+// templateDetail trims text/template's own prefix — "template: status_line:1:9:
+// executing ..." — down to what went wrong, since the key is already named.
+func templateDetail(err error) string {
+	msg := strings.TrimPrefix(err.Error(), "template: ")
+	if i := strings.Index(msg, ": "); i >= 0 && strings.HasPrefix(msg, "status_line") {
+		msg = msg[i+2:]
+	}
+	return msg
+}
+
+// discard is io.Discard without the import: validation only wants the error.
+type discard struct{}
+
+func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
 // IconSets is tui.icons' vocabulary.
 var IconSets = []string{"unicode", "nerd"}
@@ -959,6 +1042,9 @@ func (t TUI) validate(lenient bool) error {
 		return err
 	}
 	if err := validateIcons(t.Icons); err != nil {
+		return err
+	}
+	if err := ValidateChatStatusLine(t.Chat.StatusLine); err != nil {
 		return err
 	}
 	var err error
