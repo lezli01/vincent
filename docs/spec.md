@@ -14498,6 +14498,47 @@ CREATE TABLE chat_hunk_reviews (
     PRIMARY KEY (chat_id, path, hunk_hash)
 );
 
+-- Added 2026-11-21 (task 170, issue #1024; migration 0070): a chat's shell
+-- runs and its image attachments (§5.5 "Shell runs and images").
+-- chat_shell_runs is one command a human ran through the daemon; it is not a
+-- turn. state is running, exited, timed_out, interrupted, canceled or failed.
+-- pid and proc_identity are journaled as a turn's are, for the §12.4 guard.
+-- output_path is the capped combined output beside the chat's transcripts;
+-- truncated says the 256 KiB cap was reached. after_turn is the seq of the
+-- last turn that existed when the run started (0 for none). attach is the
+-- human's mark; the first turn to start takes every marked run, records its
+-- seq in attached_turn and clears the mark. chat_images is one uploaded
+-- image, numbered per chat from 1 — the `[image N]` chip. Times are
+-- store.TimeFormat; both cascade with the chat, and their files go with the
+-- chat's transcript directory.
+CREATE TABLE chat_shell_runs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id       INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    command       TEXT NOT NULL,
+    state         TEXT NOT NULL,
+    exit_code     INTEGER,
+    started_at    TEXT NOT NULL,
+    ended_at      TEXT,
+    output_path   TEXT NOT NULL DEFAULT '',
+    output_bytes  INTEGER NOT NULL DEFAULT 0,
+    truncated     INTEGER NOT NULL DEFAULT 0,
+    pid           INTEGER,
+    proc_identity TEXT,
+    attach        INTEGER NOT NULL DEFAULT 0,
+    attached_turn INTEGER,
+    after_turn    INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE chat_images (
+    chat_id    INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+    number     INTEGER NOT NULL,
+    media_type TEXT NOT NULL,
+    bytes      INTEGER NOT NULL,
+    name       TEXT NOT NULL DEFAULT '',
+    path       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (chat_id, number)
+);
+
 -- Added 2026-11-20 (task 165, issue #1019): chats gains last_viewed_at TEXT
 -- (store.TimeFormat; NULL = never viewed), written only by
 -- POST /v1/chats/{id}/viewed and never backwards. `unread` is derived on

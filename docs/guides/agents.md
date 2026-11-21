@@ -37,6 +37,7 @@ silently drops.
 | Transcript shows a skill you invoked | ✅ in chats | **—** | **—** | **—** |
 | Expands an `@path` file mention | ✅ it reads the file for you | **—** (the path stays prose) | **—** (the path stays prose) | **—** (the path stays prose) |
 | Expands `#issue-N`, `#task-N`, `#pr-N` and `@path#L20-45` in a chat | ✅ vincent's | ✅ vincent's | ✅ vincent's | ✅ vincent's |
+| Takes a pasted image in a chat (`supports_images`) | **—** (no local-image flag; `--file` takes a file id) | ✅ `--image` (captured from `0.169.0`) | **—** (no image flag) | ✅ `--attachment` |
 | Reports cost | ✅ | — | — | — (premium requests are not dollars) |
 | `model:` | ✅ | ✅ (free text) | ✅ (~180 enumerated) | ✅ (free text; `auto` when unset) |
 | `effort:` | ✅ | ✅ | **—** (it lives in the model id) | ✅ with an explicit `model:` |

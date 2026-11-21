@@ -160,6 +160,18 @@ not to reapply it; accept one and it is marked reviewed. See
 [`vincent chat diff`](reference/cli.md#vincent-chat-diff), or
 `GET /v1/chats/{id}/diff`.
 
+**Run a command without leaving the chat.** `alt+x` opens a one-line shell
+prompt; the daemon runs the command in the chat's directory — the task's
+worktree or container for a chat on a task — under a fixed 2-minute timeout
+and a 256 KiB output cap, and draws it as a card. Its output reaches the agent
+only if you attach it (`a` on the card), and then on the next turn alone.
+**Paste an image** with `ctrl+v`, or paste a path to one, and the composer
+gets an `[image N]` chip the agent receives as a file — on codex and copilot,
+whose CLIs take image paths; claude and cursor are refused rather than
+pretended at. See [Shell commands, images and vim in a chat](guides/tui.md#shell-commands-images-and-vim-in-a-chat),
+[`vincent chat shell`](reference/cli.md#vincent-chat-shell) and
+[`vincent chat image add`](reference/cli.md#vincent-chat-image-add).
+
 It works the other way round too: **chat with a stopped task**. When a task
 stops for you — blocked on a failing step, waiting at a gate, done, or aborted
 — open a chat on the task and talk the fix through in the task's own worktree,

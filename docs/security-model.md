@@ -236,6 +236,13 @@ send --permission-mode full-auto` on a restricted chat — one full-auto turn is
 already the whole risk — and a chat opened
 on a restricted task can never be raised.
 
+**A chat's shell command is yours, not the agent's.** `alt+x` in a chat (or
+`POST /v1/chats/{id}/shell`) has the daemon run a command in the chat's
+directory as the daemon's user, exactly as an agent's commands already run —
+no new privilege. A chat's `restricted` mode restricts the agent, not this
+shell, and the command's output reaches the agent only when you attach it to
+the next prompt.
+
 **Denied actions can become questions.** On an input-capable adapter (claude), a
 denied action surfaces as a `permission` request and the task waits for you —
 subject to `on_input`. Set `on_input: deny` and vincent denies them
