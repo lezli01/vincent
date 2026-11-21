@@ -25,9 +25,10 @@ const exportFilePerm = 0o644
 
 func newChatExportCmd() *cobra.Command {
 	var (
-		format   string
-		withDiff bool
-		outPath  string
+		format      string
+		withDiff    bool
+		withRewound bool
+		outPath     string
 	)
 	cmd := &cobra.Command{
 		Use:   "export <chat-id>",
@@ -39,6 +40,7 @@ func newChatExportCmd() *cobra.Command {
 			"--with-diff appends the base-to-tip diff of the directory the chat works in " +
 			"today: its own worktree, or its linked task's. A chat with no directory left " +
 			"still exports, saying why its diff is unavailable.\n\n" +
+			"Turns a rewind left behind are left out; --rewound includes them.\n\n" +
 			"Every chat state exports, archived and handed off included. A turn whose " +
 			"transcript is gone renders from its answer, with a note in place of its tool " +
 			"calls. Tool output is never included.\n\n" +
@@ -57,7 +59,7 @@ func newChatExportCmd() *cobra.Command {
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
 				exp, err := c.ChatExport(ctx, id, apiclient.ChatExportOptions{
-					Format: string(f), WithDiff: withDiff,
+					Format: string(f), WithDiff: withDiff, IncludeRewound: withRewound,
 				})
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
@@ -78,6 +80,7 @@ func newChatExportCmd() *cobra.Command {
 	cmd.Flags().StringVar(&format, "format", "md", "Document format: md, html or json")
 	cmd.Flags().BoolVar(&withDiff, "with-diff", false,
 		"Append the base-to-tip diff of the directory the chat works in")
+	cmd.Flags().BoolVar(&withRewound, "rewound", false, "Include the turns a rewind left behind")
 	cmd.Flags().StringVarP(&outPath, "output", "o", "", "Write the export to this file instead of stdout")
 	jsonFlag(cmd)
 	return cmd
