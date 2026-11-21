@@ -491,7 +491,8 @@ func TestRewindToTurnOneStartsFresh(t *testing.T) {
 
 // TestForkPlanAndCheckpoint: a fork plan copies the source's settings and
 // resumes at the previous turn's anchor; ApplyForkCheckpoint lays the
-// checkpoint's dirty state onto a fresh worktree, unstaged.
+// checkpoint's dirty state onto a fresh worktree, unstaged, and only while
+// no turn holds the fork.
 func TestForkPlanAndCheckpoint(t *testing.T) {
 	h := newHarness(t)
 	c := h.chat(t)
@@ -513,9 +514,28 @@ func TestForkPlanAndCheckpoint(t *testing.T) {
 		t.Errorf("seq 1 plan = %+v, %v", p1, err)
 	}
 
-	fresh := filepath.Join(t.TempDir(), "fork")
-	gitIn(t, h.repo, "worktree", "add", "-q", "-b", "fork", fresh, plan.HeadBefore)
-	if _, err := h.runner.ApplyForkCheckpoint(t.Context(), fresh, plan); err != nil {
+	// The fork is a chat of its own, on a fresh worktree at the checkpoint's
+	// head_before (no turn committed, so main's tip).
+	fork := h.chat(t)
+	fresh := fork.WorktreePath
+	if head := gitIn(t, fresh, "rev-parse", "HEAD"); head != plan.HeadBefore {
+		t.Fatalf("fork worktree at %s, want %s", head, plan.HeadBefore)
+	}
+	// Review F6: a turn on the new chat holds it, and the restore is refused
+	// rather than run under the agent.
+	if _, err := h.store.SetChatState(t.Context(), fork.ID, chatstate.Running); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.runner.ApplyForkCheckpoint(t.Context(), fork.ID, fresh, plan); !errors.Is(err, ErrTurnLive) {
+		t.Fatalf("ApplyForkCheckpoint under a live turn = %v, want ErrTurnLive", err)
+	}
+	if _, ok := rd(t, fresh, "extra.txt"); ok {
+		t.Error("the refused restore still wrote extra.txt")
+	}
+	if _, err := h.store.SetChatState(t.Context(), fork.ID, chatstate.Idle); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.runner.ApplyForkCheckpoint(t.Context(), fork.ID, fresh, plan); err != nil {
 		t.Fatalf("ApplyForkCheckpoint: %v", err)
 	}
 	if got, _ := rd(t, fresh, "README.md"); got != "dirty\n" {

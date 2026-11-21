@@ -267,7 +267,7 @@ func (s *Server) handleChatFork(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, "fork: create chat", err)
 		return
 	}
-	skipped, err := s.deps.Chats.ApplyForkCheckpoint(ctx, chat.WorktreePath, plan)
+	skipped, err := s.deps.Chats.ApplyForkCheckpoint(ctx, chat.ID, chat.WorktreePath, plan)
 	if err != nil {
 		// The chat exists, on the right commit, without the checkpoint's
 		// uncommitted state. Saying so beats deleting a row a client may

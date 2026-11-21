@@ -83,7 +83,23 @@ func (r *Runner) PlanFork(ctx context.Context, chatID int64, seq int) (ForkPlan,
 // worktree is new, so the state it replaces is nothing worth a rewound ref;
 // skipped names the paths a pre-restore capture could not read, which the
 // restore leaves alone all the same (decision D).
-func (r *Runner) ApplyForkCheckpoint(ctx context.Context, workDir string, plan ForkPlan) (skipped []string, err error) {
+//
+// chatID is the fork's own chat, and the restore runs under its hold
+// (WhileNoTurn), as a rewind does (review F6): the chat is created and
+// announced before its checkpoint is laid down, and a send in that window —
+// another client, or an MCP agent that saw chat.created — would otherwise
+// checkpoint and start an agent in a worktree being reset under it. A turn
+// that got in first refuses the restore with ErrTurnLive.
+func (r *Runner) ApplyForkCheckpoint(ctx context.Context, chatID int64, workDir string, plan ForkPlan) (skipped []string, err error) {
+	err = r.WhileNoTurn(ctx, chatID, func() error {
+		var err error
+		skipped, err = r.applyForkCheckpoint(ctx, workDir, plan)
+		return err
+	})
+	return skipped, err
+}
+
+func (r *Runner) applyForkCheckpoint(ctx context.Context, workDir string, plan ForkPlan) (skipped []string, err error) {
 	git := gitx.New()
 	gctx, cancel := context.WithTimeout(ctx, gitx.WorktreeTimeout)
 	defer cancel()
