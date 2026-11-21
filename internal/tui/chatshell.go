@@ -200,8 +200,14 @@ func (v *chatView) updateShellPromptKey(msg tea.KeyPressMsg) tea.Cmd {
 // pasteShell is a paste while the prompt is up: one line of it, because the
 // prompt is one line and a newline would otherwise be a second command the
 // human never saw.
+//
+// The prompt is one line drawn raw, so line breaks and tabs become spaces
+// and every other control character and escape sequence is dropped (review
+// F9): a pasted ESC would otherwise reach the terminal and throw off the
+// width the prompt is truncated to.
 func (v *chatView) pasteShell(text string) {
-	v.shell.buf += strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(text)
+	text = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(text)
+	v.shell.buf += strings.ReplaceAll(sanitizeText(text), "\t", " ")
 }
 
 func (v *chatView) runShellCmd(command string) tea.Cmd {

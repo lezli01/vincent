@@ -413,3 +413,14 @@ func TestChatImagePasteSkipsTheHelperWhenRefused(t *testing.T) {
 		t.Fatalf("the image was not refused with the note: %q", v.note)
 	}
 }
+
+// TestChatShellPasteIsSanitized (review F9): a paste into the shell prompt
+// keeps no tab, escape sequence or other control character.
+func TestChatShellPasteIsSanitized(t *testing.T) {
+	v := chatViewFixture()
+	v.openShellPrompt()
+	v.paste("git\tlog\x1b[2J --one\x07line\r\n\x0e-n 3")
+	if v.shell.buf != "git log --oneline -n 3" {
+		t.Fatalf("buf %q", v.shell.buf)
+	}
+}
