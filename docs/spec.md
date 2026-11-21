@@ -1507,7 +1507,10 @@ The bounds are fixed, not configured. After **2 minutes** the process tree is
 killed through `procx` and the run ends `timed_out`. Combined stdout and
 stderr are capped at **256 KiB**; past that, output is dropped, `truncated` is
 set and a marker line ends the stored file. Chat stop and daemon shutdown
-kill a running command too. Runs are durable in `chat_shell_runs`
+kill a running command too, and so do a chat's archive, handoff and delete
+and a delete (ordinary or force) of the task a chat is linked to — before the
+rows and the directory the command runs in go (amended 2026-11-21, review of
+task 170). Runs are durable in `chat_shell_runs`
 (migration 0070), which holds the command, state (`running`, `exited`,
 `timed_out`, `interrupted`, `canceled` or `failed`), exit code, times,
 output path, `after_turn`, `attach` and `attached_turn`. The PID and

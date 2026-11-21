@@ -229,6 +229,31 @@ func liveIssueRefusal(issueID int64, e *DeleteRefusedError) *DeleteRefusedError 
 	return &DeleteRefusedError{Kind: "issue", ID: issueID, Reason: e.Reason, Message: e.Message}
 }
 
+// TaskTreeChatIDs lists the chats a delete of task id would take with it:
+// those linked to, or handed off to, the task or any lane below it. A caller
+// stops what those chats still run — a shell command (task 170) — before the
+// rows and the directory it runs in go. A missing task is an empty list.
+func (s *Store) TaskTreeChatIDs(ctx context.Context, id int64) ([]int64, error) {
+	var out []int64
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		ids, err := taskSubtreeIDsTx(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		for _, tid := range ids {
+			chats, err := tiedChatsTx(ctx, tx, tid)
+			if err != nil {
+				return err
+			}
+			for _, c := range chats {
+				out = append(out, c.id)
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
 // taskSubtreeTx reads task id and every lane below it, deepest first, the
 // requested task last. An empty result is a missing row.
 func taskSubtreeTx(ctx context.Context, tx *sql.Tx, id int64) ([]*Task, error) {
