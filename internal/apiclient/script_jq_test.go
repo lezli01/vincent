@@ -162,10 +162,18 @@ func TestResolveSweepReadmitsAPartlyDeliveredIssue(t *testing.T) {
 // TestHandoffTrainFollowsEachDeliverysClose is #1042's train half: one
 // explicit --close would override every item's suggested close_reason, so a
 // delivery that asked to leave its issue open would be closed anyway.
+//
+// The shipped example (examples/merge-train.yaml, `vincent workflow init
+// --from merge-train`) is held to the same rule as this repository's own
+// train (review F4).
 func TestHandoffTrainFollowsEachDeliverysClose(t *testing.T) {
-	const file = ".vincent/workflows/github-handoff-train.yaml"
-	deliver := scriptJQ(t, file, `\n\s*(vincent handoff deliver [^\n]*)`)
-	if strings.Contains(deliver, "--close") {
-		t.Errorf("the train's deliver passes --close, overriding each delivery's suggestion: %s", deliver)
+	for _, file := range []string{
+		".vincent/workflows/github-handoff-train.yaml",
+		"examples/merge-train.yaml",
+	} {
+		deliver := scriptJQ(t, file, `\n\s*(vincent handoff deliver [^\n]*)`)
+		if strings.Contains(deliver, "--close") {
+			t.Errorf("%s: the train's deliver passes --close, overriding each delivery's suggestion: %s", file, deliver)
+		}
 	}
 }
