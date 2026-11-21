@@ -2859,6 +2859,7 @@ periodic repaint.
 | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only — the file is deleted when the editor exits (rebindable as `chat_markdown`; also in the palette) |
 | `alt+d` | Show the chat's diff where the conversation is, to [review it hunk by hunk](#reviewing-a-chats-diff); `esc` comes back with the draft untouched (rebindable as `chat_diff`; also in the palette) |
 | `alt+x` | Open a one-line shell prompt: `enter` runs the command in the chat's directory through the daemon, and the run is drawn as a card in the conversation — see [Shell commands, images and vim in a chat](#shell-commands-images-and-vim-in-a-chat) (rebindable as `shell_command`) |
+| `alt+z` | Rewind: pick a turn to put the chat's code, conversation or both back to the state before it ran — `tab` picks which, a greyed-out turn says why it cannot be chosen — or a state an earlier code rewind saved, to go forward to it again. The palette's "fork from turn…" opens the same list to start a new chat from a turn, and "show rewound turns" draws the turns a rewind left behind, dimmed (rebindable as `rewind`) |
 | `ctrl+v` | Paste: an image on the clipboard is uploaded to the chat and an `[image N]` chip goes into the draft; otherwise the clipboard's text is pasted as before |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
 | `1` … `9` | While the agent's question card is up, pick option N of the question the cursor is in. A single single-choice question is answered at once; otherwise `enter` submits |
