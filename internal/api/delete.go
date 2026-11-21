@@ -210,6 +210,11 @@ func (s *Server) forceDeleteChat(r *http.Request, id int64) ([]string, error) {
 			Message: fmt.Sprintf("chat %d still has a live turn; cancel it first", id),
 		}
 	}
+	// A shell command still running in the chat is stopped first (task
+	// 170), so its output file is closed before the directory goes.
+	if s.deps.Chats != nil {
+		s.deps.Chats.StopShell(ctx, id)
+	}
 	chat, err := s.deps.Store.ForceDeleteChat(ctx, id)
 	if err != nil {
 		return nil, err

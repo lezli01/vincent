@@ -65,6 +65,11 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 			map[string]string{"state": string(chat.State), "action": string(chatstate.HandOff)})
 		return
 	}
+	// A shell command the human left running is stopped first (task 170):
+	// the directory is about to become a task's.
+	if s.deps.Chats != nil {
+		s.deps.Chats.StopShell(r.Context(), chat.ID)
+	}
 	// A chat with no claim has nothing to hand over: creation failed partway,
 	// or the row was archived. Refusing here is what stops the alternative —
 	// a task with an empty worktree_path, which admission would quietly
