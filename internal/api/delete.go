@@ -212,8 +212,9 @@ func (s *Server) forceDeleteChat(r *http.Request, id int64) ([]string, error) {
 	}
 	// A shell command still running in the chat is stopped first (task
 	// 170), so its output file is closed before the directory goes.
+	// It stays held until the row is gone, so none starts meanwhile.
 	if s.deps.Chats != nil {
-		s.deps.Chats.StopShell(ctx, id)
+		defer s.deps.Chats.HoldShell(ctx, id)()
 	}
 	chat, err := s.deps.Store.ForceDeleteChat(ctx, id)
 	if err != nil {

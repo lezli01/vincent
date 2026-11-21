@@ -665,8 +665,9 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 	}
 	// A shell command the human left running is stopped first (task 170):
 	// its directory is about to change hands or go.
+	// It stays held until the archive is done, so none starts meanwhile.
 	if s.deps.Chats != nil {
-		s.deps.Chats.StopShell(r.Context(), chat.ID)
+		defer s.deps.Chats.HoldShell(r.Context(), chat.ID)()
 	}
 	force := r.URL.Query().Get("force") == "true"
 	project, err := s.deps.Store.GetProject(r.Context(), chat.ProjectID)

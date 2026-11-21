@@ -312,3 +312,58 @@ func TestAttachedShellOutputReachesExactlyOneTurn(t *testing.T) {
 		t.Errorf("after_turn = %d, want 2", late.AfterTurn)
 	}
 }
+
+// TestShellStopInTheStartWindow (review F7): a stop that lands after the run
+// is registered but before its goroutine starts still cancels it — nothing
+// is spawned, and the run ends canceled at once rather than at the timeout.
+func TestShellStopInTheStartWindow(t *testing.T) {
+	h := newHarness(t)
+	placed := h.withShell(t)
+	c := h.chat(t)
+	now := h.runner.deps.Now
+	stopped := false
+	h.runner.deps.Now = func() time.Time {
+		// RunShell reads the clock for the row, after registering the run:
+		// the stop lands exactly there, once.
+		if !stopped && h.runner.ShellRunning(c.ID) {
+			stopped = true
+			h.runner.cancelShell(c.ID)
+		}
+		return now()
+	}
+	run, err := h.runner.RunShell(t.Context(), c.ID, "sleep 60")
+	if err != nil {
+		t.Fatalf("RunShell: %v", err)
+	}
+	got := h.awaitShell(t, c.ID, run.ID)
+	if !stopped || got.State != store.ChatShellCanceled {
+		t.Fatalf("stop landed %v; the run ended %q, want canceled", stopped, got.State)
+	}
+	if len(*placed) != 0 {
+		t.Errorf("a command stopped before it started was spawned: %v", *placed)
+	}
+}
+
+// TestHoldShellStopsAndRefuses (review F7): an archive, handoff or delete
+// holds the chat's shell across its state change — the running command is
+// stopped, a new one is refused while held, and released it runs again.
+func TestHoldShellStopsAndRefuses(t *testing.T) {
+	h := newHarness(t)
+	h.withShell(t)
+	c := h.chat(t)
+	run, err := h.runner.RunShell(t.Context(), c.ID, "sleep 60")
+	if err != nil {
+		t.Fatalf("RunShell: %v", err)
+	}
+	release := h.runner.HoldShell(t.Context(), c.ID)
+	got, err := h.store.GetChatShellRun(t.Context(), c.ID, run.ID)
+	if err != nil || got.State != store.ChatShellCanceled || h.runner.ShellRunning(c.ID) {
+		t.Fatalf("after HoldShell the run is %+v (%v), want canceled and gone", got, err)
+	}
+	if _, err := h.runner.RunShell(t.Context(), c.ID, "git --version"); !errors.Is(err, store.ErrInvalidChatAction) {
+		t.Errorf("RunShell while held = %v, want ErrInvalidChatAction", err)
+	}
+	release()
+	release() // idempotent: a second call must not release another holder
+	h.shellDone(t, c.ID, "git --version")
+}

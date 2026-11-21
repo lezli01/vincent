@@ -210,6 +210,10 @@ type Runner struct {
 	// shells is each chat's running shell command (task 170), at most one,
 	// from RunShell's acceptance until its goroutine has written the ending.
 	shells map[int64]*shellCtl
+	// shellHolds counts, per chat, the callers between HoldShell and its
+	// release: an archive, handoff or delete about to end the chat. RunShell
+	// refuses while one is held.
+	shellHolds map[int64]int
 	// shellTimeout is a test seam, zero in production: it replaces
 	// ShellTimeout so a test of the kill does not wait two minutes.
 	shellTimeout time.Duration
@@ -268,7 +272,8 @@ func New(deps Deps) *Runner {
 	}
 	return &Runner{
 		deps: deps, live: map[int64]*liveTurn{}, turns: map[int64]*turnCtl{},
-		shells: map[int64]*shellCtl{},
+		shells:     map[int64]*shellCtl{},
+		shellHolds: map[int64]int{},
 	}
 }
 

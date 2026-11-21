@@ -67,8 +67,9 @@ func (s *Server) handleChatHandoff(w http.ResponseWriter, r *http.Request) {
 	}
 	// A shell command the human left running is stopped first (task 170):
 	// the directory is about to become a task's.
+	// It stays held until the handoff is done, so none starts meanwhile.
 	if s.deps.Chats != nil {
-		s.deps.Chats.StopShell(r.Context(), chat.ID)
+		defer s.deps.Chats.HoldShell(r.Context(), chat.ID)()
 	}
 	// A chat with no claim has nothing to hand over: creation failed partway,
 	// or the row was archived. Refusing here is what stops the alternative —

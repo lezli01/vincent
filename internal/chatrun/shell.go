@@ -69,7 +69,8 @@ type ShellExec struct {
 }
 
 // shellCtl cancels a chat's running shell command and reports when its
-// goroutine has written the run's ending. cancel is guarded by Runner.mu.
+// goroutine has written the run's ending. cancel is set before the control
+// is registered and never changes.
 type shellCtl struct {
 	cancel context.CancelCauseFunc
 	done   chan struct{}
@@ -83,17 +84,20 @@ type shellCtl struct {
 // the command runs on a goroutine of its own, never the chat's actor: a
 // shell run and a turn are independent.
 func (r *Runner) RunShell(ctx context.Context, chatID int64, command string) (*store.ChatShellRun, error) {
-	chat, err := r.deps.Store.GetChat(ctx, chatID)
-	if err != nil {
-		return nil, err
-	}
-	if chatstate.Terminal(chat.State) {
-		return nil, fmt.Errorf("chat %d: %w", chatID, store.ErrInvalidChatAction)
-	}
-	ctl := &shellCtl{done: make(chan struct{})}
+	// The cancel exists before the run is registered, so a stop that finds
+	// the run can always cancel it (review F7): one landing before the
+	// goroutine starts leaves it a canceled context, and it ends at once.
+	runCtx, cancel := context.WithCancelCause(r.base)
+	ctl := &shellCtl{cancel: cancel, done: make(chan struct{})}
 	r.mu.Lock()
+	if r.shellHolds[chatID] > 0 {
+		r.mu.Unlock()
+		cancel(errCanceled)
+		return nil, fmt.Errorf("chat %d is being archived, handed off or deleted: %w", chatID, store.ErrInvalidChatAction)
+	}
 	if r.shells[chatID] != nil {
 		r.mu.Unlock()
+		cancel(errCanceled)
 		return nil, fmt.Errorf("chat %d: %w", chatID, store.ErrChatShellBusy)
 	}
 	r.shells[chatID] = ctl
@@ -104,27 +108,58 @@ func (r *Runner) RunShell(ctx context.Context, chatID int64, command string) (*s
 			delete(r.shells, chatID)
 		}
 		r.mu.Unlock()
+		cancel(errCanceled)
 		close(ctl.done)
+	}
+	// The state is read only once the run is registered: a caller that ends
+	// the chat holds it (HoldShell) and then changes its state, so a run
+	// registered after that change sees the terminal state here, and one
+	// registered before it is found and stopped by the holder.
+	chat, err := r.deps.Store.GetChat(ctx, chatID)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	if chatstate.Terminal(chat.State) {
+		release()
+		return nil, fmt.Errorf("chat %d: %w", chatID, store.ErrInvalidChatAction)
 	}
 	run, err := r.deps.Store.CreateChatShellRun(ctx, chatID, command, r.deps.Now())
 	if err != nil {
 		release()
 		return nil, err
 	}
-	runCtx, cancel := context.WithCancelCause(r.base)
-	r.mu.Lock()
-	ctl.cancel = cancel
-	r.mu.Unlock()
 	// The goroutine owns the row from here; the caller gets a copy.
 	started := *run
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
 		defer release()
-		defer cancel(errCanceled)
 		r.runShell(runCtx, chat, run)
 	}()
 	return &started, nil
+}
+
+// HoldShell stops the chat's running shell command, if any, and refuses new
+// ones until the returned release is called. An archive, handoff or delete
+// holds it across the state change that ends the chat (review F7), so no
+// command starts in a directory that is about to go or change hands. The
+// release is safe to call more than once.
+func (r *Runner) HoldShell(ctx context.Context, chatID int64) func() {
+	r.mu.Lock()
+	r.shellHolds[chatID]++
+	r.mu.Unlock()
+	r.StopShell(ctx, chatID)
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			r.mu.Lock()
+			if r.shellHolds[chatID]--; r.shellHolds[chatID] <= 0 {
+				delete(r.shellHolds, chatID)
+			}
+			r.mu.Unlock()
+		})
+	}
 }
 
 // ShellRunning reports whether this runner has a shell command running for
@@ -153,13 +188,9 @@ func (r *Runner) StopShell(ctx context.Context, chatID int64) {
 func (r *Runner) cancelShell(chatID int64) *shellCtl {
 	r.mu.Lock()
 	ctl := r.shells[chatID]
-	var cancel context.CancelCauseFunc
-	if ctl != nil {
-		cancel = ctl.cancel
-	}
 	r.mu.Unlock()
-	if cancel != nil {
-		cancel(errCanceled)
+	if ctl != nil {
+		ctl.cancel(errCanceled)
 	}
 	return ctl
 }
@@ -178,6 +209,15 @@ func (r *Runner) runShell(ctx context.Context, chat *store.Chat, run *store.Chat
 			_, _ = fmt.Fprintf(out, "vincent: %v\n", err)
 		}
 		r.finishShell(run, out, store.ChatShellFailed, nil)
+	}
+	if ctx.Err() != nil {
+		// Stopped before it started (review F7): nothing is spawned.
+		state := store.ChatShellCanceled
+		if r.base.Err() != nil {
+			state = store.ChatShellInterrupted
+		}
+		r.finishShell(run, nil, state, nil)
+		return
 	}
 	if err := os.MkdirAll(r.shellDir(chat.ID), 0o700); err != nil {
 		fail(nil, err)
