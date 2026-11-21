@@ -202,6 +202,40 @@ func withChatHunk(
 	})
 }
 
+// fullChatHunkHash reports whether s is a whole hunk hash — 64 hex digits —
+// and returns it in the daemon's lowercase.
+func fullChatHunkHash(s string) (string, bool) {
+	s = strings.ToLower(s)
+	if len(s) != 64 || strings.Trim(s, "0123456789abcdef") != "" {
+		return "", false
+	}
+	return s, true
+}
+
+// unacceptChatHunk removes a mark named by its full hash without reading the
+// diff (review F9). The route names no scope and reads no diff on purpose: a
+// mark for a hunk that has since changed, or that only the other scope
+// lists, is exactly the one a reader may want gone, and resolving the hash
+// against the current diff first refused it. A prefix still has to be
+// resolved, and goes through withChatHunk.
+func unacceptChatHunk(cmd *cobra.Command, args []string, scope, hash string) error {
+	id, err := parseChatID(args[0])
+	if err != nil {
+		return err
+	}
+	if err := checkChatDiffScope(scope); err != nil {
+		return err
+	}
+	path := strings.ReplaceAll(args[1], `\`, "/")
+	return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+		if err := c.UnacceptChatHunk(ctx, id, path, hash); err != nil {
+			return chatDiffFailure(cmd, err)
+		}
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "unaccepted %s %s\n", path, shortChatHunk(hash))
+		return nil
+	})
+}
+
 func newChatDiffRejectCmd() *cobra.Command {
 	var scope string
 	cmd := &cobra.Command{
@@ -250,12 +284,16 @@ func newChatDiffAcceptCmd() *cobra.Command {
 		Short: "Mark one hunk of the chat's diff accepted, or take the mark back",
 		Long: "Mark a hunk accepted. It is only a mark for whoever reads the diff next: " +
 			"nothing in git changes, and a hunk whose content changes afterwards is a new " +
-			"hunk without the mark. --undo removes the mark.\n\n" +
+			"hunk without the mark. --undo removes the mark; given the full hash it " +
+			"removes the mark of a hunk that is no longer in the diff too.\n\n" +
 			"<hunk> is the hash `vincent chat diff` lists, or a unique prefix of it. " +
 			"Refused while the chat has a live turn, and for a hunk that is not in the " +
 			"scope's current diff.",
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if hash, ok := fullChatHunkHash(args[2]); undo && ok {
+				return unacceptChatHunk(cmd, args, scope, hash)
+			}
 			return withChatHunk(cmd, args, scope,
 				func(ctx context.Context, c *apiclient.Client, id int64, path, hash string) error {
 					verb := "accepted"

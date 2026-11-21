@@ -2646,7 +2646,9 @@ vincent chat diff accept CHAT_ID PATH HUNK [--scope base|turn] [--undo]
 Marks a hunk accepted. It is a review mark and nothing else — nothing in git
 changes. The daemon keeps it, so it survives a restart and shows in the TUI,
 and it belongs to the hunk's content: a hunk that changes afterwards is a new
-hunk without the mark. `--undo` removes the mark instead.
+hunk without the mark. `--undo` removes the mark instead; given the full
+64-character hash it reads no diff, so it also removes the mark of a hunk that
+has since changed or that only the other scope lists.
 
 `HUNK` and `PATH` are as for `reject`, and `--scope` names the diff the hunk is
 looked up in. Exit `1` while the chat has a live turn and for a hunk that is

@@ -110,6 +110,28 @@ func TestChatDiffCommand(t *testing.T) {
 		t.Errorf("listing still marks a hunk after --undo:\n%s", out)
 	}
 
+	// --undo with the full hash reads no diff (review F9): the mark of a hunk
+	// whose content has since changed can still be taken back. A prefix has
+	// nothing left to resolve against and is refused.
+	fresh := d.Files[1].Hunks[0]
+	if _, errOut, code := runCLI(t, "chat", "diff", "accept", id, "new.txt", fresh.Hash); code != 0 {
+		t.Fatalf("accept new.txt exit %d (%s)", code, errOut)
+	}
+	testrepo.WriteFile(t, dir, "new.txt", "untracked, and edited since\n")
+	if _, errOut, code := runCLI(t, "chat", "diff", "accept", id, "new.txt", fresh.Hash[:10], "--undo"); code != 1 ||
+		!strings.Contains(errOut, "no hunk") {
+		t.Errorf("--undo by prefix of a changed hunk: exit %d (%s)", code, errOut)
+	}
+	if out, errOut, code := runCLI(t, "chat", "diff", "accept", id, "new.txt", strings.ToUpper(fresh.Hash), "--undo", "--scope", "turn"); code != 0 ||
+		out != "unaccepted new.txt "+fresh.Hash[:12]+"\n" {
+		t.Fatalf("--undo by full hash of a changed hunk = %q exit %d (%s)", out, code, errOut)
+	}
+	// With the content back, the hunk is the same hunk — and carries no mark.
+	testrepo.WriteFile(t, dir, "new.txt", "untracked\n")
+	if out, _, _ := runCLI(t, "chat", "diff", id); strings.Contains(out, "  * ") {
+		t.Errorf("the mark outlived --undo:\n%s", out)
+	}
+
 	// A prefix that is no hunk's, and an ambiguous one, are refused here.
 	if _, errOut, code := runCLI(t, "chat", "diff", "reject", id, "long.txt", "zz"); code != 1 || !strings.Contains(errOut, "no hunk") {
 		t.Errorf("unknown prefix exit = %d (%s)", code, errOut)
