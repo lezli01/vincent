@@ -148,7 +148,7 @@ func TestRestoreRoundTrip(t *testing.T) {
 	writeFile(t, dir, "stray/dir/f.txt", "stray\n")
 	writeFile(t, dir, "keep.log", "ignored\n")
 
-	if err := g.Restore(ctx, dir, snap.Commit); err != nil {
+	if err := g.Restore(ctx, dir, snap.Commit, nil); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 	if head, _ := g.Run(ctx, dir, "rev-parse", "HEAD"); head != snap.Head {
@@ -298,5 +298,72 @@ func TestSnapshotWithoutAnIndex(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".git", "index")); !os.IsNotExist(err) {
 		t.Errorf("the snapshot created the real index: %v", err)
+	}
+}
+
+// TestRestoreKeepsListedPaths is task 167 decision D: a path in keep — one a
+// pre-restore snapshot could not read, so the only copy there is — survives
+// the restore's clean, while every other untracked file is removed. The
+// names carry pattern characters, which must match literally.
+func TestRestoreKeepsListedPaths(t *testing.T) {
+	g, dir := snapRepo(t)
+	ctx := context.Background()
+	snap, err := g.Snapshot(ctx, dir, t.TempDir(), "checkpoint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "odd [1].txt", "kept\n")
+	writeFile(t, dir, "odd 1.txt", "stray\n")
+	writeFile(t, dir, "deep/locked.txt", "kept\n")
+	writeFile(t, dir, "deep/other.txt", "stray\n")
+	if err := g.Restore(ctx, dir, snap.Commit, []string{"odd [1].txt", "deep/locked.txt"}); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	for _, rel := range []string{"odd [1].txt", "deep/locked.txt"} {
+		if got, ok := readFile(t, dir, rel); !ok || got != "kept\n" {
+			t.Errorf("%s = %q (present %v), want it kept", rel, got, ok)
+		}
+	}
+	for _, rel := range []string{"odd 1.txt", "deep/other.txt"} {
+		if _, ok := readFile(t, dir, rel); ok {
+			t.Errorf("%s survived the restore", rel)
+		}
+	}
+}
+
+// TestRestoreKeepsWhatTheSnapshotSkipped is the same rule end to end: a file
+// the snapshot could not read is named in Skipped, and passing Skipped to
+// Restore leaves it on disk.
+func TestRestoreKeepsWhatTheSnapshotSkipped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a file unreadable on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000 file")
+	}
+	g, dir := snapRepo(t)
+	ctx := context.Background()
+	target, err := g.Snapshot(ctx, dir, t.TempDir(), "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "secret", "hidden\n")
+	p := filepath.Join(dir, "secret")
+	if err := os.Chmod(p, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(p, 0o600) })
+	pre, err := g.Snapshot(ctx, dir, t.TempDir(), "pre-restore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(pre.Skipped, []string{"secret"}) {
+		t.Fatalf("Skipped = %q", pre.Skipped)
+	}
+	if err := g.Restore(ctx, dir, target.Commit, pre.Skipped); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if _, err := os.Lstat(p); err != nil {
+		t.Errorf("the skipped file was deleted: %v", err)
 	}
 }
