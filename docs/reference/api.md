@@ -270,6 +270,12 @@ model. All three are `null` when the daemon has no adapter registry to ask, as
 not here: this answer is cached by binary identity, and a skill list also
 depends on the directory the agent runs in.
 
+`supports_images` is whether a chat turn on the adapter can be given an image
+file by path (task 170): `true` for codex (`-i`) and copilot (`--attachment`),
+`false` for claude and cursor, whose CLIs take no local image path. `null`
+with no registry. A chat on a containerized task is refused images whatever it
+says. See [Shell commands and images](#shell-commands-and-images).
+
 `supports_file_mentions`, `file_mention_sigil`, `file_mention_position` and
 `file_mention_expands` describe how a message names a workspace file.
 `supports_file_mentions` is whether the adapter can do it at all — `true` for
@@ -3259,6 +3265,13 @@ GET    /v1/chats/{id}/diff/stat       the base scope's file and line totals
 POST   /v1/chats/{id}/diff/reject     { scope?, path, hunk } — revert one hunk in the working tree
 POST   /v1/chats/{id}/diff/accept     { scope?, path, hunk } — mark one hunk accepted
 POST   /v1/chats/{id}/diff/unaccept   { path, hunk } — remove the mark
+POST   /v1/chats/{id}/shell           { command } — run a shell command in the chat's directory — see
+                                      Shell commands and images
+GET    /v1/chats/{id}/shell           the chat's shell runs; /{run_id} one, /{run_id}/output its output
+POST   /v1/chats/{id}/shell/{run_id}/attach
+                                      { attach } — mark a finished run for the next prompt
+POST   /v1/chats/{id}/images          upload an image; [image N] in a message names it
+GET    /v1/chats/{id}/images          the chat's images
 ```
 
 **Search** (task 160). `GET /v1/chats/{id}/search?q=needle` scans every turn
@@ -4034,6 +4047,51 @@ the mark existed. Marks are deleted with the chat.
 | `409` | `invalid_state` | Reject on a chat that has ended (`details.action: "reject"`) |
 
 None of the five routes is an MCP tool.
+
+### Shell commands and images
+
+A human can run a command in a chat's directory and attach images to its
+messages (task 170). Both are a person's tools, so none of these routes is an
+MCP tool.
+
+```
+POST /v1/chats/{id}/shell                     { "command": "git status --short" } → 202, the run
+GET  /v1/chats/{id}/shell                     { "runs": [...] }, oldest first
+GET  /v1/chats/{id}/shell/{run_id}            one run
+GET  /v1/chats/{id}/shell/{run_id}/output     text/plain: the stored output
+POST /v1/chats/{id}/shell/{run_id}/attach     { "attach": true | false } — mark it for the next prompt
+POST /v1/chats/{id}/images?name=              the image's bytes as the body → 201, the image
+GET  /v1/chats/{id}/images                    { "images": [...] }, in number order
+```
+
+**Shell runs.** The daemon runs the command in the directory the chat's turns
+run in. For a chat on a containerized task that is inside the task's
+container. It uses the daemon's shell (§8.3): `/bin/sh -c` on POSIX, `pwsh`
+on Windows. A run is not a turn and holds no `max_parallel_chats` slot. It
+is allowed while the chat is `idle`, `running` or `awaiting_input`, and
+refused `409 invalid_state` on a terminal chat or while another of the chat's
+commands is still running. It is stopped after 2 minutes (`timed_out`), and
+its combined stdout and stderr are capped at 256 KiB, with `truncated` set
+and a closing marker line. A run object has `id`, `chat_id`, `command`,
+`state` (`running`, `exited`, `timed_out`, `interrupted`, `canceled` or
+`failed`), `exit_code`, `started_at`, `ended_at`, `output_bytes`,
+`truncated`, `attach`, `attached_turn` and `after_turn`, which is the seq of
+the newest turn when the run started. Every change publishes
+`chat.shell_changed` on the event stream. `attach` marks a finished run so
+the next turn to start gets its command and output in the run's preamble,
+never in the message. That turn's seq is recorded in `attached_turn` and the
+mark is cleared. A run that is still running or was already taken is `409`.
+
+**Images.** The body is the raw image, PNG, JPEG, GIF or WebP judged by
+content, at most 10 MiB. It is stored under the chat's data directory with
+the next number for that chat, and `[image N]` in a message names it. When a
+turn is sent, each chip resolves to the stored file's path for the adapter,
+and the turn keeps the message as typed. An image is accepted only for an
+adapter whose `supports_images` (`GET /v1/agents`) is true, and never for a
+chat on a containerized task. Anything else, including a send that names a
+chip on such a chat or a chip with no image, is `422 validation_failed` with
+the reason. A terminal chat is `409 invalid_state`. A permanent delete
+removes a chat's shell runs and images with it.
 
 ### Sending a turn
 

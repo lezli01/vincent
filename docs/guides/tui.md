@@ -2855,7 +2855,10 @@ periodic repaint.
 | `ctrl+g` | Write the message in `$EDITOR`. What you save comes back into the composer, unsent; an emptied or untouched file leaves the draft as it was. While `↑` has a queued message in the composer, this edits that message (rebindable as `compose_editor`) |
 | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only — the file is deleted when the editor exits (rebindable as `chat_markdown`; also in the palette) |
 | `alt+d` | Show the chat's diff where the conversation is, to [review it hunk by hunk](#reviewing-a-chats-diff); `esc` comes back with the draft untouched (rebindable as `chat_diff`; also in the palette) |
+| `alt+x` | Open a one-line shell prompt: `enter` runs the command in the chat's directory through the daemon, and the run is drawn as a card in the conversation — see [Shell commands, images and vim in a chat](#shell-commands-images-and-vim-in-a-chat) (rebindable as `shell_command`) |
+| `ctrl+v` | Paste: an image on the clipboard is uploaded to the chat and an `[image N]` chip goes into the draft; otherwise the clipboard's text is pasted as before |
 | `alt+a` | Reopen the agent's question after `esc` put it away — what you picked is kept |
+| `1` … `9` | While the agent's question card is up, pick option N of the question the cursor is in. A single single-choice question is answered at once; otherwise `enter` submits |
 | `alt+k` | Compact the agent's context: sends its compact command — `/compact` on claude — as the next message, after a `y`/`n` prompt. Only for an agent that has one, and only while the chat is idle |
 | `alt+e` | [Export this chat](#exporting-a-chat) as Markdown, HTML or JSON — the draft stays as it is |
 | `alt+p` | Pick the model and effort the chat's next turns run on; `•` marks the ones it runs on now. After the first turn, only on an agent that can change them on a resumed session (claude today) |
@@ -2982,6 +2985,54 @@ by hunk, and their row says so.
 From 150 columns the Details pane carries a **changes** row — the file count
 and `+`/`-` lines since the base — and names the key that opens the diff. It
 is re-read when a turn ends and after a reject.
+
+### Shell commands, images and vim in a chat
+
+**Shell commands.** `alt+x` (`shell_command`) opens a one-line prompt over the
+composer. `enter` runs the command in the chat's directory and `esc` closes the
+prompt. The daemon runs the command, never the TUI, under the daemon's shell
+(`/bin/sh`, or `pwsh` on Windows). For a chat on a containerized task it runs
+inside the task's container. The command is stopped after two minutes, its
+output is capped at 256 KiB, and only one command runs per chat at a time.
+Each run is a card in the conversation, after the turn that was newest when
+it started. The card shows the command, the exit code and the first few lines
+of output, and `enter` on it unfolds the rest, as it does for a tool call. The
+agent never sees a run on its own. Put the conversation's cursor on a finished
+card and press `a` to mark it for the next prompt: that one turn gets the
+command and its output ahead of your message, and the card then says which
+turn took it. A message that starts with `!` is still sent as typed. The shell
+runs as you, so a chat's `restricted` mode does not restrict it.
+`vincent chat shell` does the same from a script.
+
+**Images.** `ctrl+v` in the composer checks the clipboard for an image first,
+using `osascript` on macOS, `wl-paste` or `xclip` on Linux, and PowerShell on
+Windows. If there is one, it is uploaded to the chat and an `[image N]` chip
+goes into the draft. If there is no image, or no helper to read one, `ctrl+v`
+pastes text as it always has. A pasted path to an image file, which is what
+most terminals paste for a dropped file, is uploaded the same way. When you
+send the message, the agent gets the image files. PNG, JPEG, GIF and WebP up
+to 10 MiB are accepted, only for an agent that can take image files (codex and
+copilot today). Anywhere else the paste is refused with a note that names the
+agent.
+
+**Picking an answer by number.** While the agent's question card is up, its
+options are numbered and `1`–`9` picks option N of the question the cursor is
+in. If the card holds a single single-choice question, the digit also sends
+the answer. Otherwise `enter` sends it, as before.
+
+**Vim mode.** [`tui.chat.vim: true`](../reference/configuration.md#tuichat)
+adds a modal layer to the composer. It opens in insert mode, so typing works
+as usual, and the composer's edge shows `INSERT` or `NORMAL`. `esc` peels one
+layer at a time: insert → normal → leave the chat. Normal mode has vim's core
+set: `h j k l w b e 0 $ gg G`, `i a I A o O`, `x`, `d`/`c`/`y` over those
+motions and doubled (`dd cc yy`), `p` and `u`. There are no counts, no visual
+mode, no registers beyond one yank, and no ex commands. `enter` sends in
+either mode.
+
+**Status line.** [`tui.chat.status_line`](../reference/configuration.md#tuichat)
+replaces the right-hand side of the chat's header, normally the context gauge
+and the turn count, with a template of your own. The title, state and other
+cells stay.
 
 ### Searching a chat
 
@@ -3875,7 +3926,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first forty-two are the operations screens share, the next eleven are the
+The first forty-three are the operations screens share, the next eleven are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -3911,6 +3962,7 @@ The first forty-two are the operations screens share, the next eleven are the
 | `compose_editor` | `ctrl+g` | Write the chat message in `$EDITOR` |
 | `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
 | `chat_diff` | `alt+d` | Show the chat's diff in place of the conversation, to review it hunk by hunk. See [Reviewing a chat's diff](#reviewing-a-chats-diff) |
+| `shell_command` | `alt+x` | Run a shell command in the chat's directory, drawn as a card in the conversation. See [Shell commands, images and vim in a chat](#shell-commands-images-and-vim-in-a-chat) |
 | `next_chat` | `alt+n` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |
 | `prev_chat` | `alt+shift+n` | Open the project's previous chat, wrapping |
 | `chat_1` | `alt+1` | Open the project's chat number 1, in the chats board's order; nothing past the last |

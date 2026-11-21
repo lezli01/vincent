@@ -1972,7 +1972,7 @@ The operations are the ones a reader names, and nothing else:
 
 | Kind | Operation ids |
 |---|---|
-| Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane`, `result`, `next_failure`, `attention_filter`, `comment`, `ready`, `handoff`, `return`, `next_chat` and `prev_chat` (`alt+n`/`alt+shift+n`, the project's next or previous chat), `chat_1`, `chat_2`, `chat_3`, `chat_4`, `chat_5`, `chat_6`, `chat_7`, `chat_8`, `chat_9` (`alt+1`…`alt+9`, its Nth chat), `steer`, `compact`, `stash` (stash a chat's draft or pop the stash, one slot), `prompt_history` (pick an earlier prompt to insert), `chat_search` (search every chat, from the chats board), `export_chat` (export a chat as Markdown, HTML or JSON), `rename` (a chat, on the chats boards), `chat_model` (pick a chat's model and effort), `chat_mode` (toggle a chat's permission mode), `compose_editor` (write the chat message in `$EDITOR`), `chat_markdown` (open the conversation as Markdown in `$EDITOR`), `chat_diff` (`alt+d`, show a chat's diff in place of the conversation) |
+| Vocabulary terms | `refresh`, `archive`, `delete`, `draft_remove`, `add`, `editor`, `free_text`, `browser`, `open_row`, `scope`, `filter`, `lane`, `result`, `next_failure`, `attention_filter`, `comment`, `ready`, `handoff`, `return`, `next_chat` and `prev_chat` (`alt+n`/`alt+shift+n`, the project's next or previous chat), `chat_1`, `chat_2`, `chat_3`, `chat_4`, `chat_5`, `chat_6`, `chat_7`, `chat_8`, `chat_9` (`alt+1`…`alt+9`, its Nth chat), `steer`, `compact`, `stash` (stash a chat's draft or pop the stash, one slot), `prompt_history` (pick an earlier prompt to insert), `chat_search` (search every chat, from the chats board), `export_chat` (export a chat as Markdown, HTML or JSON), `rename` (a chat, on the chats boards), `chat_model` (pick a chat's model and effort), `chat_mode` (toggle a chat's permission mode), `compose_editor` (write the chat message in `$EDITOR`), `chat_markdown` (open the conversation as Markdown in `$EDITOR`), `chat_diff` (`alt+d`, show a chat's diff in place of the conversation), `shell_command` (`alt+x`, run a shell command in a chat's directory, shown as a card in the conversation) |
 | Task actions | `pause` (pause and resume), `approve`, `reject`, `retry`, `edit_retry`, `repair`, `skip`, `cancel`, `follow_up`, `chat`, `chat_with` (`chat` with a form for the agent, model, effort and a first message); `archive` is the term's id |
 | Global | `palette`, `palette_alt`, `help`, `help_alt`, `next_attention`, `mouse`, `quit`, `new` (also a new chat on the chats board, and a new issue on the issue screens), `project` (`@`, switch project), `pause_all` (`Z`, pause all work or continue it) |
 
@@ -2079,6 +2079,38 @@ the cards and the side panes. Text you or an agent wrote is never changed.
 The key is new in this version. A daemon older than it refuses a `config.yaml` that
 sets it — unknown keys are an error — so leave it out if you run an older daemon
 against the same config directory.
+
+#### `tui.chat`
+
+How the TUI draws a chat. The daemon validates these keys and never acts on
+them.
+
+```yaml
+tui:
+  chat:
+    status_line: "{{.Model}} {{.Effort}} · {{.ContextPercent}}% · {{.Cost}}"
+    vim: true
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `status_line` | `""` | A Go [`text/template`](https://pkg.go.dev/text/template) drawn as one line on the right of the chat's header, in place of the context gauge and the turn count. Empty draws the header as it ships |
+| `vim` | `false` | A vim layer over the chat composer: `esc` leaves insert mode and normal mode has vim's core keys. See [the TUI guide](../guides/tui.md#shell-commands-images-and-vim-in-a-chat) |
+
+The fields a `status_line` can name are `.Model`, `.Effort`, `.Agent`,
+`.PermissionMode`, `.Branch`, `.State`, `.Cost` (formatted, for example
+`$0.42`, and empty when no turn reported a cost), `.ContextPercent` (how full
+the agent's context window is, `0` when unknown) and `.Turns`. The template
+must be one line. It must parse, and it must run against an empty chat, so a
+misspelled field fails the load with the key and the list of fields. A
+narrow terminal truncates the line rather than wrapping it.
+
+Saving either key in the TUI's config editor applies it at once. A change made
+anywhere else reaches a running TUI the next time it reads the config, like
+`tui.hyperlinks`.
+
+The keys are new in this version. A daemon older than them refuses a
+`config.yaml` that sets them.
 
 #### `tui.default_project`
 
