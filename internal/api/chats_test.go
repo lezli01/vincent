@@ -91,6 +91,11 @@ func newChatHarness(t *testing.T) *chatHarness {
 	h.dataDir = dataDir
 
 	h.repo = testrepo.Init(t, "main")
+	// core.autocrlf off before any chat worktree is checked out, so a
+	// checkpoint restore writes back the bytes a test wrote (task 167):
+	// Git for Windows turns it on globally, and a restore's read-tree then
+	// checks LF blobs out as CRLF — git's own conversion, honored on purpose.
+	testrepo.Run(t, h.repo, "config", "core.autocrlf", "false")
 	resp, body := h.doJSON(t, http.MethodPost, "/v1/projects", map[string]any{"path": h.repo})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("register project: %d %s", resp.StatusCode, body)

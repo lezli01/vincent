@@ -67,7 +67,12 @@ func newRewindLive(t *testing.T) (*chatDiffLive, *apiclient.Client, *apiclient.C
 	t.Cleanup(ts.Close)
 
 	client := apiclient.New(ts.URL, rewindLiveToken)
-	p, err := client.CreateProject(t.Context(), apiclient.CreateProjectRequest{Path: testrepo.Init(t, "main")})
+	// core.autocrlf off before the chat's worktree is checked out, so a
+	// rewind writes back the bytes the test wrote: Git for Windows turns it
+	// on globally, and a restore's read-tree then checks LF blobs out as CRLF.
+	repo := testrepo.Init(t, "main")
+	testrepo.Run(t, repo, "config", "core.autocrlf", "false")
+	p, err := client.CreateProject(t.Context(), apiclient.CreateProjectRequest{Path: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
