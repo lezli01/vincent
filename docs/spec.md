@@ -17409,6 +17409,11 @@ stream for the live tail.
    are pending, falling back to `● N tasks` with no occupant; `hand-off`
    reads `✓ N done`; `done` reads `N tasks`, with `· ● live` while one is
    unsettled. The close reason stays in the state badge only.
+   *Amended 2026-11-21 (#1042, review F5):* an open-lane issue whose
+   handoff delivered its done task and left it open carries the `delivered`
+   marker, and its cell reads `N tasks · delivered in part` instead of
+   `cancelled`; moving it to `hand-off` is refused with a note that the rest
+   needs a new task.
    *Amended 2026-10-08 (task 134.16, review F2 on #773):* the right-hand
    parts share what the title's 12-column floor leaves; a row too narrow for
    them drops the occupant's state word, then shortens the tags, then the
