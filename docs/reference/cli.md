@@ -2380,13 +2380,21 @@ terminal ones. `--json` emits the `results` array of
 ### `vincent chat show`
 
 ```sh
-vincent chat show CHAT_ID [--json]
+vincent chat show CHAT_ID [--rewound] [--json]
 ```
 
 The chat's header and every turn in order, with each turn's prompt, answer and
 — where it failed — its reason. A chat parked in `awaiting_input` prints the
 request first, with its questions numbered: those are the numbers
 `vincent chat answer --answer N=VALUE` reads.
+
+Turns a [rewind](#vincent-chat-rewind) left behind are hidden, under `--json`
+too; `--rewound` shows them, each marked `rewound` with its rewind id. A turn
+that started a fresh session given the earlier turns, rather than resuming the
+agent's, is marked `seeded, not resumed`. The header also says where a
+[fork](#vincent-chat-fork) came from, how the next turn will pick up after a
+conversation rewind, and each saved `rewound-<k>` state a forward rewind can
+restore.
 
 `show` prints what each turn was asked and what it answered, not what the agent
 did along the way; [`vincent chat transcript`](#vincent-chat-transcript) prints
@@ -2395,7 +2403,7 @@ that.
 ### `vincent chat transcript`
 
 ```sh
-vincent chat transcript CHAT_ID [--turn N] [-f | --follow] [--json | --raw]
+vincent chat transcript CHAT_ID [--turn N] [--rewound] [-f | --follow] [--json | --raw]
 ```
 
 Prints one turn's transcript — the complete record of what the agent did while
@@ -2407,6 +2415,10 @@ it selects the running turn if there is one, and otherwise the newest turn. A
 turn number the chat does not have exits `1` with
 `Error: turn N not found on chat M`, and a chat with no turns yet exits `1` with
 `Error: chat M has no turns yet`.
+
+Turns a [rewind](#vincent-chat-rewind) left behind are skipped by the default
+selection and refused by `--turn`; `--rewound` allows them, marked. A seeded
+turn is marked `seeded, not resumed`.
 
 | Output | What it is |
 |---|---|
@@ -2539,7 +2551,7 @@ or a workspace that has gone missing under the daemon. Exit `2` with no daemon.
 ### `vincent chat export`
 
 ```sh
-vincent chat export CHAT_ID [--format md|html|json] [--with-diff] [-o | --output FILE] [--json]
+vincent chat export CHAT_ID [--format md|html|json] [--with-diff] [--rewound] [-o | --output FILE] [--json]
 ```
 
 The whole chat as one document: its metadata, then every turn's prompt, the
@@ -2564,6 +2576,9 @@ document behind. The command never picks a file name for you.
 today — its own worktree, or its linked task's. A chat with no directory left,
 such as a handed-off one, still exports, with a `diff unavailable:` note in
 place of the diff.
+
+Turns a [rewind](#vincent-chat-rewind) left behind are left out; `--rewound`
+includes them (`include_rewound=true` on the endpoint).
 
 `--json` is `--format json`; combining it with `--format md` or `--format html`
 is refused. Every chat state exports, archived and handed off included. A turn
@@ -2862,6 +2877,59 @@ on a handed-off chat, so chat cleanup can never remove task-owned state.
 
 A chat opened on a task is refused with `chat_linked_to_task`: its worktree and
 branch already belong to that task.
+
+### `vincent chat rewind`
+
+```sh
+vincent chat rewind CHAT_ID --turn N [--mode both|code|conversation] [--json]
+vincent chat rewind CHAT_ID --rewound K [--json]
+```
+
+Rewinds a chat to the state before turn N ran, N being the number
+[`vincent chat show`](#vincent-chat-show) prints. `--mode code` restores the
+branch, index and worktree to turn N's checkpoint, untracked files included;
+`--mode conversation` keeps turns 1..N-1 of the conversation and puts turn N's
+prompt back in the chat's draft; `--mode both`, the default, does both. Turns
+N and later are marked rewound under one rewind id and hidden from `show`,
+`transcript` and `export` unless you pass `--rewound`; they still count in the
+chat's cost.
+
+A code rewind first saves the state it replaces as
+`refs/vincent/chats/<id>/rewound-<k>`, and `--rewound K` goes forward to that
+saved state again — code only, so it takes no `--mode`. Files the pre-rewind
+snapshot could not read are left where they are, never deleted, and listed.
+
+Nothing runs. A conversation rewind takes effect on the chat's next turn,
+which either resumes the agent's session from that point or, where the agent
+cannot, starts a fresh session seeded with the earlier turns — said as
+`seeded, not resumed`.
+
+It prints the rewind, its id, the `rewound-<k>` ref, the rewound turns and any
+skipped files; `--json` emits the daemon's response. Refused while a turn is
+live (`chat_turn_live`), for a turn without a checkpoint
+(`chat_checkpoint_unavailable`) or already rewound (`chat_turn_rewound`), on a
+chat that has ended (`chat_terminal`), and — code only — when someone else has
+committed on the branch since turn N (`chat_rewind_foreign_commits`). Exit `1`
+on a refusal; `2` with no daemon.
+
+### `vincent chat fork`
+
+```sh
+vincent chat fork CHAT_ID --turn N [--title T] [--json]
+```
+
+Creates a new free chat from the state before turn N of a chat ran: its own
+branch, cut from that turn's checkpoint with the uncommitted changes of the
+time left unstaged, and the source's agent, model, effort and permission mode.
+The new chat is idle — no turn starts — and the source chat is untouched.
+
+Its first turn resumes the agent's session from that point, or, where the agent
+cannot, starts a fresh session seeded with the earlier turns — said as
+`seeded, not resumed`. It prints the new chat's id, title, agent and branch,
+and any files the checkpoint could not read; `--json` emits the daemon's
+response. Refused while a turn is live, for a turn without a checkpoint or
+already rewound, and by the restricted-mode checks a new chat is held to. Exit
+`1` on a refusal; `2` with no daemon.
 
 ### `vincent chat close`
 
