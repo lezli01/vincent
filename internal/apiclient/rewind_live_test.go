@@ -42,6 +42,10 @@ func TestRewindAndForkAgainstTheRealAPI(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	ctx := t.Context()
 	repo := testrepo.Init(t, "main")
+	// core.autocrlf off before the chat's worktree is checked out, so a
+	// rewind writes back the bytes the test wrote: Git for Windows turns it
+	// on globally, and a restore's read-tree then checks LF blobs out as CRLF.
+	testrepo.Run(t, repo, "config", "core.autocrlf", "false")
 	p := &store.Project{Name: "proj", Path: repo, DefaultBranch: "main"}
 	if err := st.CreateProject(ctx, p); err != nil {
 		t.Fatal(err)
