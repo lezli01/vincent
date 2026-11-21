@@ -7909,8 +7909,11 @@ turn's heading never shows a cost (§15). It has no `Compactor`.
 (`refs/vincent/<install id>/chats/<chat id>/turn-<seq>` and `rewound-<k>`, §5.5) live in
 the project repository's shared ref namespace and are pruned with the chat's
 row: on permanent delete (`DELETE /v1/chats/{id}`, with or without
-`delete_branch`, and the force delete), and for a linked chat when its task is
-deleted. A chat's archive never deletes its branch, so it keeps them, and so
+`delete_branch`, and the force delete), for a linked chat when its task is
+deleted, and for every chat of a project when the project is deleted (`DELETE
+/v1/projects/{id}`, whose cascade drops the chat rows; amended 2026-11-21, PR
+#1044 review F5 — the sweep walks only projects that still exist, so it could
+never reach them). A chat's archive never deletes its branch, so it keeps them, and so
 does a hand-off, whose chat row stays. A daemon sweep, once at startup and
 then on the transcript pruner's 24 h interval, deletes the refs of chat ids
 that no longer have a row in any project repository; a repository it cannot

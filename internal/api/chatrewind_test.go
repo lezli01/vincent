@@ -384,3 +384,31 @@ func TestChatCheckpointRefsPrunedOnDelete(t *testing.T) {
 		t.Error("a hand-off pruned the chat's refs")
 	}
 }
+
+// TestProjectDeletePrunesChatRefs is review F5: deleting a project cascades
+// its chat rows away, and the sweep walks only projects that still exist, so
+// the delete itself must prune its chats' checkpoint refs — an archived
+// chat's included — or nothing ever will.
+func TestProjectDeletePrunesChatRefs(t *testing.T) {
+	h := newChatHarness(t)
+	live, _ := handoffFixture(t, h)
+	h.turnDone(t, live, "hello")
+	archived, _ := handoffFixture(t, h)
+	h.turnDone(t, archived, "hello")
+	if code, body := h.post(t, fmt.Sprintf("/v1/chats/%d/archive?force=true", archived), nil); code != http.StatusOK {
+		t.Fatalf("archive = %d %v", code, body)
+	}
+	for _, id := range []int64{live, archived} {
+		if h.chatRefs(t, id) == "" {
+			t.Fatalf("chat %d has no checkpoint ref", id)
+		}
+	}
+	if resp, body := h.doJSON(t, http.MethodDelete, fmt.Sprintf("/v1/projects/%d?force=true", h.projectID), nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("project delete = %d %s", resp.StatusCode, body)
+	}
+	for _, id := range []int64{live, archived} {
+		if got := h.chatRefs(t, id); got != "" {
+			t.Errorf("project delete left chat %d's refs: %s", id, got)
+		}
+	}
+}

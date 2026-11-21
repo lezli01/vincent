@@ -436,10 +436,20 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.deleteEmptyBranches(ctx, p, tasks)
+	// The cascade drops the project's chat rows (0022), and the sweep walks
+	// only projects that still exist, so after it nothing would ever reach
+	// these chats' checkpoint refs (task 167.8, review F5). Their ids are
+	// read now, while the rows exist, and pruned once the cascade commits.
+	chats, err := s.deps.Store.ListChats(ctx, store.ChatFilter{ProjectID: &p.ID, Archived: store.ArchivedAll})
+	if err != nil {
+		s.internalError(w, "list chats", err)
+		return
+	}
 	if err := s.deps.Store.DeleteProjectCascade(ctx, p.ID); err != nil {
 		s.internalError(w, "delete project", err)
 		return
 	}
+	s.pruneProjectChatRefs(ctx, p, chats)
 	// The cascade is the only path that deletes task rows, so it is the only
 	// place the snapshot cache can be left holding entries for tasks that no
 	// longer exist.
@@ -448,6 +458,20 @@ func (s *Server) handleProjectDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.projectsChanged()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// pruneProjectChatRefs deletes the checkpoint refs of a deleted project's
+// chats from its repository. Best-effort, like pruneChatRefs: a failure is
+// logged and the delete stands.
+func (s *Server) pruneProjectChatRefs(ctx context.Context, p *store.Project, chats []store.Chat) {
+	if s.deps.Chats == nil {
+		return
+	}
+	for i := range chats {
+		if err := s.deps.Chats.PruneCheckpointRefs(ctx, p.Path, chats[i].ID); err != nil {
+			s.deps.Logger.Warn("project delete: prune chat refs", "chat", chats[i].ID, "error", err)
+		}
+	}
 }
 
 // deleteEmptyBranches applies the §10 empty-branch rule to every task row the
