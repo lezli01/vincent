@@ -68,3 +68,21 @@ func TestHandoffDeliverAllKeepsAPartialDeliveryOpen(t *testing.T) {
 		t.Errorf("partial issue comments = %+v, want the one merge comment", comments)
 	}
 }
+
+// TestHandoffDeliverLeftOpenAnnouncesLaneMove is the event spec §13.3's
+// issue.lane_changed row and §5.7 promise (review F9 on #1043): a deliver
+// that leaves its issue open moves it hand_off → open, announced right
+// after the item's handoff.item_changed, by the verb's actor.
+func TestHandoffDeliverLeftOpenAnnouncesLaneMove(t *testing.T) {
+	s := openTest(t)
+	p := testProject(t, s, "p1")
+	iss, _ := handedOffIssue(t, s, p.ID, "part", "p1")
+	other, _ := handedOffIssue(t, s, p.ID, "other", "o1")
+	h, _ := mustHandoff(t, s, p.ID, "train", iss.ID, other.ID)
+	w := watchEvents(s)
+	resolveItems(t, s, HandoffVerb{
+		HandoffID: h.ID, IssueIDs: []int64{iss.ID}, Outcome: HandoffDelivered,
+		By: HandoffByHumanActor, IssueActor: issuestate.Human,
+	})
+	wantLaneMove(t, s, w.take(), EventHandoffItemChanged, iss.ID, issuestate.LaneHandOff, issuestate.LaneOpen, 0, issuestate.Human)
+}
