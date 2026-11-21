@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,6 +24,7 @@ import (
 	"github.com/lezli01/vincent/internal/issuestate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/testrepo"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // The chat diff routes (task 169) over the real handlers, a real store and
@@ -768,4 +771,54 @@ func TestChatHunkRefusedDuringALiveTurn(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "issue.txt")); !os.IsNotExist(err) {
 		t.Errorf("issue.txt survived the reject: %v", err)
 	}
+}
+
+// TestChatHunkRejectOutlivesTheClient is review F6: once the hunk has been
+// found, a reject finishes although the client has gone — the reversal is
+// applied and the note recorded, never one without the other.
+func TestChatHunkRejectOutlivesTheClient(t *testing.T) {
+	h := newExportHarness(t)
+	dir := h.diffWorktree(t, "gone-client")
+	c := h.chat(t, &store.Chat{WorktreePath: dir})
+	hk := hunkWith(t, h.chatDiff(t, c.ID, "base"), "long.txt", "+line 25 dirty")
+
+	reg := agent.NewRegistry()
+	s := New(Deps{
+		Token: testToken, Config: config.Default, StartedAt: time.Now(), ListenAddr: "127.0.0.1:0",
+		RequestStop: func() {}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Store: h.store,
+		Agents: reg, Git: gitx.New(), Catalog: agent.NewCatalogCache(reg), Dirs: config.Dirs{Data: h.dataDir},
+	})
+	ctx, leave := context.WithCancel(t.Context())
+	defer leave()
+	// The client hangs up exactly between the hunk being found and its
+	// reversal, and the handler goes on only once it has seen that.
+	s.beforeChatHunkApply = func(reqCtx context.Context) {
+		leave()
+		<-reqCtx.Done()
+	}
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	body, err := json.Marshal(map[string]any{"scope": "base", "path": "long.txt", "hunk": hk.Hash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := fmt.Sprintf("%s/v1/chats/%d/diff/reject", ts.URL, c.ID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := ts.Client().Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatalf("the request was answered (%d); the client was meant to leave first", resp.StatusCode)
+	}
+
+	want := diffLines(map[int]string{2: "line 2 committed"})
+	wait.Until(t, "the abandoned reject to revert the hunk and record its note", func() bool {
+		stored, err := h.store.GetChat(t.Context(), c.ID)
+		return err == nil && strings.Contains(stored.Draft, "- long.txt "+hk.Header) && readFile(t, dir, "long.txt") == want
+	})
 }

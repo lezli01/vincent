@@ -380,7 +380,16 @@ func (s *Server) handleChatDiffReject(w http.ResponseWriter, r *http.Request) {
 		if file == nil {
 			return chatHunkStale(req.Path)
 		}
-		applyCtx, cancel := context.WithTimeout(ctx, gitx.QueryTimeout)
+		// From here the reject finishes whether or not the client is still
+		// there (review F6). A client gives up long before WorktreeTimeout,
+		// and a context cancelled as `git apply` wrote the file would kill
+		// git, answer 500 and leave a revert on disk the agent is never told
+		// of. So the apply, like the note below, runs under its own budget
+		// and not the request's.
+		if s.beforeChatHunkApply != nil {
+			s.beforeChatHunkApply(ctx)
+		}
+		applyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gitx.QueryTimeout)
 		defer cancel()
 		err = s.deps.Git.ReverseHunk(applyCtx, dir, *file, req.Hunk)
 		switch {
@@ -399,7 +408,7 @@ func (s *Server) handleChatDiffReject(w http.ResponseWriter, r *http.Request) {
 		// client has gone: a revert the agent is never told of is the one
 		// outcome the note exists to prevent.
 		line := chatnote.Line(req.Path, hunk.Header)
-		c, added, err := s.deps.Store.RecordChatHunkReject(context.WithoutCancel(ctx), chat.ID, req.Path, req.Hunk,
+		c, added, err := s.deps.Store.RecordChatHunkReject(applyCtx, chat.ID, req.Path, req.Hunk,
 			func(draft string) (string, bool) { return chatnote.Add(draft, line), true })
 		if err != nil {
 			return err

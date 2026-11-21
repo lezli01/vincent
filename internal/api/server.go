@@ -180,6 +180,12 @@ type AgentStatus struct {
 
 // Server is the vincent HTTP API server.
 type Server struct {
+	// beforeChatHunkApply is a test seam, nil in production: it runs in a
+	// reject, with the request's context, once the hunk is found and before
+	// it is reverse-applied, so a test can have the client leave exactly
+	// there (review F6 of #1037).
+	beforeChatHunkApply func(ctx context.Context)
+
 	deps    Deps
 	handler http.Handler
 	// inner is the route mux below recover → log → auth: what an in-process
