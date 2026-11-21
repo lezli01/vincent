@@ -3052,7 +3052,8 @@ With the conversation holding the keyboard:
 | Key | Does |
 |---|---|
 | `j` / `k` (`↓` / `↑`) | Move the line cursor |
-| `enter` | Expand or fold the tool call under the cursor — it draws as at verbose, the level stays |
+| `enter` | Expand or fold the tool call or shell card under the cursor — a call draws as at verbose, a card shows its whole output; the level stays |
+| `a` | Attach the finished shell command under the cursor to your next prompt, or take the mark off (a command already sent stays sent) |
 | `/` | Open the search line again |
 | `n` / `N` | The next or previous match; both wrap |
 | `{` / `}` | Jump to the previous or next prompt you sent |
