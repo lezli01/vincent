@@ -232,3 +232,45 @@ func TestHandoffMarkerOf(t *testing.T) {
 		}
 	}
 }
+
+// TestDeliveryCorrectionAnnouncesLaneMove is review F1 on #1042: a
+// delivered-open issue reads `open` only while its delivered item names
+// the current delivery's head_sha, so a correction to a done task's
+// delivery that changes head_sha moves the lane back to hand_off — and,
+// like every lane move (§13.3), must say so with issue.lane_changed after
+// its own task.delivery_changed. Restoring the delivered head moves it
+// back to open the same way.
+func TestDeliveryCorrectionAnnouncesLaneMove(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	p := testProject(t, s, "p1")
+	iss, task := handedOffIssue(t, s, p.ID, "partial", "d1")
+	h, _ := mustHandoff(t, s, p.ID, "h", iss.ID)
+	resolveItems(t, s, HandoffVerb{HandoffID: h.ID, IssueIDs: []int64{iss.ID}, Outcome: HandoffDelivered})
+	wantLane(t, s, iss.ID, issuestate.LaneOpen)
+
+	w := watchEvents(s)
+	d := recordedDelivery("partial")
+	d.HeadSHA = "d2" // `vincent task deliver --task N --head d2`
+	if _, err := s.SetTaskDelivery(ctx, task.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	wantLane(t, s, iss.ID, issuestate.LaneHandOff)
+	wantLaneMove(t, s, w.take(), EventTaskDeliveryChanged, iss.ID, issuestate.LaneOpen, issuestate.LaneHandOff, task.ID, "")
+
+	d.HeadSHA = "d1"
+	if _, err := s.SetTaskDelivery(ctx, task.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	wantLane(t, s, iss.ID, issuestate.LaneOpen)
+	wantLaneMove(t, s, w.take(), EventTaskDeliveryChanged, iss.ID, issuestate.LaneHandOff, issuestate.LaneOpen, task.ID, "")
+
+	// A correction that leaves the head alone moves nothing.
+	d.Title = "partial, retitled"
+	if _, err := s.SetTaskDelivery(ctx, task.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	if lc := laneChanges(w.take()); len(lc) != 0 {
+		t.Errorf("a text-only correction announced %d lane moves", len(lc))
+	}
+}

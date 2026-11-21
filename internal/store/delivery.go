@@ -213,8 +213,12 @@ func DeliverableState(s TaskState) bool { return s == TaskRunning || s == TaskDo
 // the stored readiness, and d.Ready true stores it with the caller's
 // ReadyBy — on this task only, without vincent issue ready's refusals, so
 // it moves the issue's lane only when this task holds the issue's latest
-// finished main-line delivery (laneExpr reads no other). When it does, it
-// records issue.lane_changed in the same commit, by the actor ReadyBy names.
+// finished main-line delivery (laneExpr reads no other). A correction that
+// changes head_sha can move it too, since a delivered handoff item keeps the
+// issue in `open` only while it names the current head (#1042). Any move a
+// write on a done task causes records issue.lane_changed in the same commit:
+// by the actor ReadyBy names when it marked the delivery ready, else with
+// this task's id.
 func (s *Store) SetTaskDelivery(ctx context.Context, id int64, d *Delivery) (*Task, error) {
 	if d == nil {
 		return nil, fmt.Errorf("set task %d delivery: no delivery", id)
@@ -244,18 +248,24 @@ func (s *Store) SetTaskDelivery(ctx context.Context, id int64, d *Delivery) (*Ta
 		case t.State == TaskRunning:
 			d.Ready, d.ReadyBy = nil, ""
 		case markReady:
-			// A done task's lane is already settled, so marking it ready is
-			// the one delivery write that can move it.
 			if d.ReadyBy == "" {
 				d.ReadyBy = ReadyByHuman
-			}
-			if watch, err = watchTaskLaneTx(ctx, tx, t.IssueID, t.ParentTaskID, t.ProjectID); err != nil {
-				return err
 			}
 		case t.Delivery != nil:
 			d.Ready, d.ReadyBy = t.Delivery.Ready, t.Delivery.ReadyBy
 		default:
 			d.Ready, d.ReadyBy = nil, ""
+		}
+		// A done task's delivery can move its issue's lane two ways:
+		// marking it ready (hand_off), and a correction that changes
+		// head_sha, which decides whether a delivered handoff item still
+		// names the current delivery (#1042, §5.6) — so every write on a
+		// done task watches it. A running task's lane is in_progress
+		// whatever its delivery says.
+		if t.State == TaskDone {
+			if watch, err = watchTaskLaneTx(ctx, tx, t.IssueID, t.ParentTaskID, t.ProjectID); err != nil {
+				return err
+			}
 		}
 		raw, err := marshalDelivery(d)
 		if err != nil {
@@ -272,7 +282,14 @@ func (s *Store) SetTaskDelivery(ctx context.Context, id int64, d *Delivery) (*Ta
 		if err := appendEventTx(ctx, tx, ev); err != nil {
 			return err
 		}
-		lane, err := watch.changedTx(ctx, tx, nil, readyActor(d.ReadyBy))
+		// Marking it ready is the actor's move; a correction that only
+		// replaces the text is the task's write.
+		var lane *Event
+		if markReady {
+			lane, err = watch.changedTx(ctx, tx, nil, readyActor(d.ReadyBy))
+		} else {
+			lane, err = watch.changedTx(ctx, tx, &id, "")
+		}
 		if err != nil || lane == nil {
 			return err
 		}
