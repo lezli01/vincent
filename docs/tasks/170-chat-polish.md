@@ -67,23 +67,48 @@ Settled with the author on 2026-11-21, in the brief for #1024. Those marked
    the task's worktree or container for a linked chat, under the §8.3 shell
    and §8.5 environment. A run is not a turn and holds no
    `max_parallel_chats` slot. It is allowed in any live state, refused on
-   terminal chats, and limited to one per chat. *(brief)*
+   terminal chats, and limited to one per chat. *(brief)* It beat the TUI
+   running the command itself, which would break the ownership invariant and
+   run on the client's machine rather than in the chat's workspace, and
+   allowing it only while the chat is idle, which would take it away exactly
+   when the human wants to look at the workspace during a long turn.
 3. **Fixed bounds:** a 2-minute timeout and 256 KiB of combined output, with
-   truncation marked. *(brief)*
+   truncation marked. *(brief)* It beat configurable bounds (a new
+   `config.yaml` key for a quick look at the workspace, when anything longer
+   belongs in the human's own terminal) and unbounded output, which a
+   runaway command would turn into an unbounded file and an unbounded
+   preamble.
 4. **Attaching is opt-in.** A finished run's command and output reach the
    agent only when the human marks it. They are delivered as the next turn's
    `RunSpec.Preamble`, never fused into the message, and exactly one turn
-   takes a run. *(brief)*
+   takes a run. *(brief)* It beat sending every run's output to the agent
+   automatically, which would put whatever the human glanced at into the
+   agent's context unasked, and appending the output to the human's
+   message, which would make the stored turn differ from what was typed.
 5. **The clipboard is read by the client** (like `internal/nerdfont`), because
    the clipboard belongs to the client machine. With no image, `ctrl+v` falls
-   back to a text paste silently.
+   back to a text paste silently. It beat having the daemon read the
+   clipboard, which on a remote or service-run daemon is a different
+   machine's clipboard, or none.
 6. **Images:** PNG, JPEG, GIF or WebP by sniffed content, up to 10 MiB each,
    numbered per chat. *(brief)* An adapter takes them only where captured help
    proves a flag for it. Otherwise the upload or send is
    `422 validation_failed` naming the agent, and the same applies to a linked
-   chat in a container.
+   chat in a container. It beat trusting the file name's extension, which a
+   renamed file defeats, and emulating the capability on claude and cursor
+   (for example by writing the path into the prompt), which the adapter rule
+   forbids. *Amended 2026-11-21 (review F2, F4):* only `[image N]` naming an
+   image the chat holds is a chip, and any other is sent as typed, beating
+   refusing every match, which on claude and cursor could only ever refuse
+   the human's own prose; and on an adapter without the capability a pasted
+   image path stays text, which the agent can still open, beating refusing
+   it, which took away what a dropped file always gave claude.
 7. **Vim is a layer, not an editor.** An operation the textarea cannot
    express cleanly is dropped or recorded as a departure, rather than forking
-   the component. *(brief)*
+   the component. *(brief)* It beat a new editor component or a fork of
+   `bubbles/textarea`, either of which would have to re-earn every
+   composer behavior (drafts, pickers, paste) the textarea already has.
 8. **The side question waits on 167.4.** It reuses that task's fork and
-   seeding (167 decision 1) and does not grow its own.
+   seeding (167 decision 1) and does not grow its own. It beat building a
+   seeding of its own now, which would be a second way to start a session
+   from a conversation, to be replaced the day 167.4 lands.
