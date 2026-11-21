@@ -15285,7 +15285,9 @@ disabled with its reason as `GET /v1/chats/{id}` reports it (no checkpoint,
 foreign commits, live turn, already rewound), and, for a rewind, the saved
 `rewound-<k>` states to go forward to. Rewound turns are hidden; the palette's
 "show rewound turns" toggle draws them dimmed, and a seeded turn says "seeded,
-not resumed".
+not resumed". Neither `rewind` nor "fork from turn…" is offered on an ended
+chat, which the daemon refuses with `chat_terminal` (decision 8; PR #1044
+review F8).
 
 *Amended 2026-11-21 (task 170):* in the chat workspace, `shell_command`
 (`alt+x`, a rebindable keymap operation, never a composer prefix) opens a

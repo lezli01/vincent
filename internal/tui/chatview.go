@@ -2325,8 +2325,8 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 			b.key == "enter" && ended,
 			b.op == keymap.Steer && (!running || owned),
 			b.op == keymap.ShellCommand && (!v.shellAvailable() || owned),
-			// Not offered on a closed chat (task 167 decision 8); forking
-			// one stays on the palette, where the daemon gates each turn.
+			// Not offered on a closed chat (task 167 decision 8), and nor
+			// is forking one (rewindPaletteExtras).
 			b.op == keymap.Rewind && (ended || owned),
 			b.op == keymap.Compact && (v.chat == nil || v.compactCommand() == "" || v.chat.State != string(chatstate.Idle)),
 			owned && (b.key == "enter" || b.key == "ctrl+j" || b.key == "tab"):

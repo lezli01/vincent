@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/chatstate"
 )
 
 // The rewind modes of POST /v1/chats/{id}/rewind, in the order tab cycles
@@ -450,19 +451,24 @@ func resumePendingLine(c *apiclient.Chat) string {
 }
 
 // rewindPaletteExtras are the conversation's key-less rewind rows: forking
-// (whose picker the daemon gates per turn, so a closed chat may still fork)
 // and the rewound-turn toggle. "rewind…" is the rewind operation's own
-// registry row.
+// registry row. Forking is left out on an ended chat, as rewind is: the
+// daemon refuses both there with chat_terminal (task 167 decision 8), so the
+// picker would open with every row disabled (review F8). The toggle stays —
+// reading an ended chat's rewound turns changes nothing.
 func (v *chatView) rewindPaletteExtras() []paletteEntry {
 	if v.chat == nil {
 		return nil
 	}
 	id := v.chat.ID
-	out := []paletteEntry{{
-		group:  "chat",
-		label:  "fork from turn… — a new chat from the state before a turn",
-		action: func() tea.Msg { return openRewindPickerMsg{chatID: id, fork: true} },
-	}}
+	var out []paletteEntry
+	if !chatstate.Terminal(chatstate.State(v.chat.State)) {
+		out = append(out, paletteEntry{
+			group:  "chat",
+			label:  "fork from turn… — a new chat from the state before a turn",
+			action: func() tea.Msg { return openRewindPickerMsg{chatID: id, fork: true} },
+		})
+	}
 	if rewoundCount(v.everyTurn()) > 0 {
 		label := "show rewound turns, dimmed"
 		if v.showRewound {

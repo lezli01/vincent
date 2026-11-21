@@ -359,6 +359,21 @@ func TestRewindPaletteRows(t *testing.T) {
 	}
 }
 
+// TestNoForkRowOnAnEndedChat is review F8: the daemon refuses to fork a
+// terminal chat (chat_terminal, decision 8), so the palette does not offer
+// it — every row of the picker would be disabled.
+func TestNoForkRowOnAnEndedChat(t *testing.T) {
+	for _, state := range []string{"archived", "closed", "handed_off"} {
+		v := rewindFixture()
+		v.chat.State = state
+		for _, r := range v.paletteExtras() {
+			if strings.HasPrefix(r.label, "fork from turn…") {
+				t.Errorf("%s chat: the palette offers %q", state, r.label)
+			}
+		}
+	}
+}
+
 func TestRewindKeyNotOfferedOnAClosedChat(t *testing.T) {
 	v := rewindFixture()
 	v.chat.State = "closed"
