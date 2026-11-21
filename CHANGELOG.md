@@ -13,6 +13,27 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Run a shell command from a chat, and paste images into one.** `alt+x` in
+  the chat workspace (rebindable as `shell_command`) opens a one-line prompt.
+  The daemon runs the command in the chat's directory (inside the task's
+  container for a chat on a containerized task) and draws it as a card with
+  its exit code and output. Commands stop after two minutes, output is capped
+  at 256 KiB, and one command runs per chat at a time. The agent sees a run
+  only when you press `a` on its card, and then only on your next message,
+  as context ahead of it. `ctrl+v` pastes a clipboard image, or a pasted path
+  to an image file, as an `[image N]` chip that the agent receives with the
+  message. This works for codex and copilot, whose CLIs take image files.
+  claude and cursor refuse it with a note. The same is scriptable with
+  `vincent chat shell` (with `ls` and `attach`) and `vincent chat image add`
+  / `ls`, over `POST /v1/chats/{id}/shell` and `POST /v1/chats/{id}/images`,
+  and `GET /v1/agents` reports `supports_images`. Shell runs appear in chat
+  exports (task 170, #1024).
+- **Chat composer polish.** In the agent's question card, `1`–`9` pick an
+  option, and a single single-choice question is answered at once. The new
+  `tui.chat` config block adds `status_line`, a template of your own on the
+  right of the chat header (model, effort, context percent, cost, turns and
+  more), and `vim: true`, a vim layer over the composer with vim's core
+  normal-mode keys (task 170, #1024).
 - **A chat has a diff, and you can review it hunk by hunk.** `alt+d` in the
   chat workspace (rebindable as `chat_diff`, also in the palette) swaps the
   conversation for the diff of the chat's directory, since the chat's base or

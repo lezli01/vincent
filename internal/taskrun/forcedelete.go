@@ -33,6 +33,10 @@ func (r *Runner) ForceDelete(ctx context.Context, id int64) ([]string, error) {
 			Message: fmt.Sprintf("task %d still has a live run in the engine; cancel it first", id),
 		}
 	}
+	// A linked chat's shell command runs in the worktree about to be
+	// discarded and writes beside the transcripts about to be removed: it is
+	// stopped first, as a chat's own force delete stops it (task 170).
+	r.stopTreeShells(ctx, id)
 	gone, err := r.deps.Store.ForceDeleteTaskTree(ctx, id)
 	if err != nil {
 		return nil, err

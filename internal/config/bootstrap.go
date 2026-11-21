@@ -400,6 +400,18 @@ update:
 # startup only; a project that is not registered falls through to the one you
 # used last, and the TUI says so. Unset, the TUI opens on the project you used
 # last.
+#
+# chat.status_line draws one line of your own in a chat's header, in place of
+# the context gauge and the turn count. It is a Go text/template over the
+# chat: .Model .Effort .Agent .PermissionMode .Branch .State .Cost
+# .ContextPercent .Turns — for example "{{.Model}} · {{.ContextPercent}}% ·
+# {{.Cost}}". One line only; a field that does not exist is refused. Empty
+# keeps the header as it ships.
+#
+# chat.vim puts vim's modes on the chat composer: esc leaves insert mode, and
+# h j k l w b e 0 $ gg G, i a I A o O, x, d c y (with a motion, or doubled),
+# p and u work in normal mode. enter still sends in both modes. Off by
+# default.
 tui:
   board:
     group_by: [issue]
@@ -410,6 +422,9 @@ tui:
     level: normal
   # default_project: web
   # tabs: [issues, tasks]
+  # chat:
+  #   status_line: "{{.Model}} · {{.ContextPercent}}%"
+  #   vim: true
 `
 
 // EnsureDefaultFile writes the commented default config.yaml into dir when

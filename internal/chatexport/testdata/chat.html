@@ -18,11 +18,18 @@ ul.tools li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fon
 .note,.usage{color:#59636e;font-style:italic;font-size:.9rem}
 .failed{color:#d1242f}
 .prompt{border-left:3px solid #d1d9e0;padding-left:.8rem}
+section.shell h2{font-size:1rem}
 </style>
 </head>
 <body>
 <h1>Chat 7: Fix the parser</h1>
 <dl class="meta"><dt>id</dt><dd>7</dd><dt>project</dt><dd>demo</dd><dt>agent</dt><dd>claude</dd><dt>model</dt><dd>opus</dd><dt>effort</dt><dd>high</dd><dt>permission mode</dt><dd>full_auto</dd><dt>state</dt><dd>idle</dd><dt>branch</dt><dd>vincent/chat-7-fix-the-parser</dd><dt>base branch</dt><dd>main</dd><dt>base sha</dt><dd>abc123</dd><dt>linked task</dt><dd>#3</dd><dt>issue</dt><dd>#9</dd><dt>created</dt><dd>2026-11-19T09:00:00Z</dd><dt>exported</dt><dd>2026-11-19T10:00:00Z</dd></dl>
+<section class="shell">
+<h2>Shell · <code>git status --short</code> · exited 0</h2>
+<p class="usage">not sent to the agent</p>
+<pre class="output"> M x.go
+</pre>
+</section>
 <section class="turn">
 <h2>Turn 1 · done</h2>
 <p class="usage">Ran on: opus · high · full-auto</p>
@@ -40,6 +47,14 @@ ul.tools li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fon
 </div>
 
 <p class="usage">Usage: 1200 in (&#43;60200 cache) · 340 out · $0.0123 · 12.3s</p>
+</section>
+<section class="shell">
+<h2>Shell · <code>go test ./...</code> · exited 1</h2>
+<p class="usage">sent to the agent with turn 2</p>
+<pre class="output">--- FAIL: TestParse ```
+&lt;script&gt;alert(1)&lt;/script&gt;
+</pre>
+<p class="note">The output reached the daemon's cap and was cut.</p>
 </section>
 <section class="turn">
 <h2>Turn 2 · failed</h2>
@@ -67,6 +82,11 @@ ul.tools li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fon
 </div>
 
 <p class="usage">Usage: 5 in · 6 out · $0.0000</p>
+</section>
+<section class="shell">
+<h2>Shell · <code>sleep 600</code> · timed_out</h2>
+<p class="usage">not sent to the agent</p>
+<p class="note">output unavailable: the stored output could not be read</p>
 </section>
 <section class="turn">
 <h2>Turn 4 · failed</h2>
@@ -107,6 +127,13 @@ ul.tools li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fon
 <p class="note">no answer</p>
 
 <p class="usage">Usage: 0 in · 0 out</p>
+</section>
+<section class="shell">
+<h2>Shell · <code>git log -1 …</code> · exited 0</h2>
+<p class="usage">attached to the next prompt</p>
+<pre class="command">git log -1
+git status</pre>
+<p class="note">no output</p>
 </section>
 <section class="diff">
 <h2>Diff</h2>

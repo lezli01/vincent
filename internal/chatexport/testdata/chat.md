@@ -15,6 +15,14 @@
 - **created:** 2026-11-19T09:00:00Z
 - **exported:** 2026-11-19T10:00:00Z
 
+## Shell · `git status --short` · exited 0
+
+_not sent to the agent_
+
+```
+ M x.go
+```
+
 ## Turn 1 · done
 
 _Ran on: opus · high · full-auto_
@@ -38,6 +46,17 @@ Fixed it.
 - two
 
 _Usage: 1200 in (+60200 cache) · 340 out · $0.0123 · 12.3s_
+
+## Shell · `go test ./...` · exited 1
+
+_sent to the agent with turn 2_
+
+````
+--- FAIL: TestParse ```
+<script>alert(1)</script>
+````
+
+_The output reached the daemon's cap and was cut._
 
 ## Turn 2 · failed
 
@@ -76,6 +95,12 @@ _tool calls unavailable: the transcript was pruned (transcript_retention_days)_
 All good.
 
 _Usage: 5 in · 6 out · $0.0000_
+
+## Shell · `sleep 600` · timed_out
+
+_not sent to the agent_
+
+_output unavailable: the stored output could not be read_
 
 ## Turn 4 · failed
 
@@ -132,6 +157,17 @@ Keep going
 _no answer_
 
 _Usage: 0 in · 0 out_
+
+## Shell · `git log -1 …` · exited 0
+
+_attached to the next prompt_
+
+```
+git log -1
+git status
+```
+
+_no output_
 
 ## Diff
 

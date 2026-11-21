@@ -192,6 +192,16 @@ func buildArgs(spec agent.RunSpec, sessionID string) ([]string, error) {
 		// restricted_mcp_1.0.105.jsonl).
 		args = append(args, "--additional-mcp-config", cfg, "--allow-tool="+spec.MCP.Name)
 	}
+	// One `--attachment <path>` per image (task 170): "Attach a file (image
+	// or native document) to the initial prompt; only valid in
+	// non-interactive mode (can be used multiple times)"
+	// (help_1.0.105.txt). Every vincent run is non-interactive. The help
+	// describes that mode through -p, which this adapter never passes (the
+	// prompt is on stdin), and no capture yet shows --attachment with a
+	// stdin prompt: spec §9.9 records the pair as unverified.
+	for _, img := range spec.Images {
+		args = append(args, "--attachment", img)
+	}
 	return args, nil
 }
 
@@ -517,6 +527,11 @@ func (r *run) Argv() []string { return r.proc.Argv() }
 // failure.go). Nothing is emulated: vincent never replays a conversation as
 // prompt context.
 func (a *Adapter) SupportsResume() bool { return true }
+
+// SupportsImages implements agent.ImageAttacher (task 170): `--attachment
+// <path>` is in the 1.0.105 help (testdata/help_1.0.105.txt), repeatable and
+// valid in the non-interactive mode every run uses.
+func (a *Adapter) SupportsImages() bool { return true }
 
 // SupportsRestrictedResume implements agent.RestrictedResumer. A --resume run
 // re-passes the same restricted flags, and they hold there:

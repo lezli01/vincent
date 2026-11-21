@@ -753,6 +753,24 @@ jobs:
         shell: bash
         run: ./scripts/169-gate.sh
 
+      # 170: a chat's shell passthrough (task 170, issue #1024; §5.5, §13.2)
+      # — a command runs in the chat's worktree and its exit code and output
+      # read back over the API and through `vincent chat shell`, a failing
+      # command's code is the CLI's own exit, a second command while one runs
+      # is refused and the chat's cancel stops the first, an attached run is
+      # in the fake agent's prompt for the next turn and not the one after,
+      # and an archived chat runs nothing. The matrix earns its place because
+      # the command runs under the daemon's shell — pwsh on Windows, /bin/sh
+      # elsewhere — as a child of the detached daemon, the output is read back
+      # through the platform's own line endings, and cancel has to stop a
+      # running `sleep` on each OS. Group 2: it ties group 1 on gates, and
+      # group 1 carries the two Jira gates; move it if a measured run says
+      # otherwise.
+      - name: 170 gate (chat shell passthrough)
+        if: contains(matrix.groups, 2)
+        shell: bash
+        run: ./scripts/170-gate.sh
+
   gates:
     needs: [changes, gate-group]
     if: always()

@@ -64,6 +64,18 @@ func TestBuildArgsResume(t *testing.T) {
 				"-m", "gpt-5.6-sol", "-c", "model_reasoning_effort=xhigh",
 			},
 		},
+		{
+			// Task 170: a resumed turn is given its images too, after the
+			// positional — `exec resume` takes `-i, --image <FILE>`
+			// (help_exec_resume_0.169.0.txt).
+			name: "images ride behind the positional on resume",
+			spec: agent.RunSpec{ResumeSessionID: "t-1", Images: []string{"/data/2.gif", "/data/1.png"}},
+			want: []string{
+				"exec", "--json", "resume", "t-1",
+				"--dangerously-bypass-approvals-and-sandbox",
+				"--image=/data/2.gif", "--image=/data/1.png",
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := buildArgs(tt.spec)

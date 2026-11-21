@@ -72,6 +72,25 @@ func fixture(t *testing.T) *Export {
 				StartedAt: created,
 			},
 		},
+		ShellRuns: []ShellRun{
+			{
+				ID: 1, Command: "git status --short", State: "exited", ExitCode: ptr(0), StartedAt: created,
+				EndedAt: ptr(created.Add(time.Second)), AfterTurn: 0, Output: " M x.go\n",
+			},
+			{
+				ID: 2, Command: "go test ./...", State: "exited", ExitCode: ptr(1), StartedAt: created,
+				AfterTurn: 1, Output: "--- FAIL: TestParse ```\n<script>alert(1)</script>\n",
+				Truncated: true, AttachedTurn: ptr(2),
+			},
+			{
+				ID: 3, Command: "sleep 600", State: "timed_out", StartedAt: created, AfterTurn: 3,
+				OutputNote: NoteShellOutputMissing,
+			},
+			{
+				ID: 4, Command: "git log -1\ngit status", State: "exited", ExitCode: ptr(0), StartedAt: created,
+				AfterTurn: 6, Attach: true,
+			},
+		},
 		Diff: &diff,
 	}
 }
@@ -286,5 +305,71 @@ func TestMentionContextIsExported(t *testing.T) {
 	}
 	if strings.Count(md, "### Mentions") != 1 {
 		t.Errorf("a turn with no mentions rendered a Mentions heading")
+	}
+}
+
+// TestShellRunsAreInConversationOrder is task 170: each shell card sits after
+// the turn it followed, in Markdown and HTML, and JSON carries the rows.
+func TestShellRunsAreInConversationOrder(t *testing.T) {
+	e := fixture(t)
+	md := Markdown(e)
+	order := []string{
+		"## Shell · `git status --short` · exited 0",
+		"## Turn 1 ",
+		"## Shell · `go test ./...` · exited 1",
+		"## Turn 2 ",
+		"## Turn 3 ",
+		"## Shell · `sleep 600` · timed_out",
+		"## Turn 4 ",
+		"## Turn 6 ",
+		"## Shell · `git log -1 …` · exited 0",
+		"## Diff",
+	}
+	last := -1
+	for _, h := range order {
+		i := strings.Index(md, h)
+		if i <= last {
+			t.Fatalf("%q out of order (at %d, previous at %d):\n%s", h, i, last, md)
+		}
+		last = i
+	}
+	for _, want := range []string{
+		"_sent to the agent with turn 2_",
+		"_attached to the next prompt_",
+		"_not sent to the agent_",
+		"````\n--- FAIL: TestParse ```\n", // the output's own fence cannot close the card's
+		"_The output reached the daemon's cap and was cut._",
+		"_" + NoteShellOutputMissing + "_",
+		"```\ngit log -1\ngit status\n```", // a multi-line command is shown whole
+		"_no output_",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown lacks %q", want)
+		}
+	}
+
+	var html bytes.Buffer
+	if err := Render(&html, e, FormatHTML); err != nil {
+		t.Fatal(err)
+	}
+	page := html.String()
+	if strings.Contains(page, "<script>") || !strings.Contains(page, "&lt;script&gt;alert(1)") {
+		t.Error("shell output was not escaped")
+	}
+	if i, j := strings.Index(page, "<code>go test ./...</code>"), strings.Index(page, "Turn 2 ·"); i < 0 || j < i {
+		t.Errorf("HTML draws the run at %d and turn 2 at %d", i, j)
+	}
+
+	var js bytes.Buffer
+	if err := Render(&js, e, FormatJSON); err != nil {
+		t.Fatal(err)
+	}
+	var raw struct {
+		ShellRuns []map[string]any `json:"shell_runs"`
+	}
+	if err := json.Unmarshal(js.Bytes(), &raw); err != nil || len(raw.ShellRuns) != 4 ||
+		raw.ShellRuns[1]["attached_turn"] != float64(2) || raw.ShellRuns[1]["after_turn"] != float64(1) ||
+		raw.ShellRuns[2]["exit_code"] != nil {
+		t.Errorf("JSON shell_runs = %+v (%v)", raw.ShellRuns, err)
 	}
 }

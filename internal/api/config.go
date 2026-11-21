@@ -100,6 +100,11 @@ type configResponse struct {
 // configContainer is §16's block. ExtraMounts is always a list, empty
 // included, for the same reason group_by is: `null` would be indistinguishable
 // from a client's own default.
+type configChat struct {
+	StatusLine string `json:"status_line"`
+	Vim        bool   `json:"vim"`
+}
+
 type configContainer struct {
 	Image            string   `json:"image"`
 	Runtime          string   `json:"runtime"`
@@ -113,6 +118,9 @@ type configTUI struct {
 	Hyperlinks bool        `json:"hyperlinks"`
 	// Icons is `tui.icons` (task 150.8).
 	Icons string `json:"icons"`
+	// Chat is `tui.chat` (task 170): the chat view's status line template
+	// and whether its composer is modal.
+	Chat configChat `json:"chat"`
 	// Keys is `tui.keys` as written, operation id → key (task 118). Always an
 	// object, empty included, on group_by's rule: `{}` is the shipped keymap
 	// the file chose, and `null` would read as a daemon that predates the key.
@@ -372,6 +380,7 @@ func configBody(cfg config.Config) configResponse {
 			Board:      configBoard{GroupBy: boardGroupBy(cfg.TUI.Board.GroupBy)},
 			Hyperlinks: cfg.TUI.Hyperlinks,
 			Icons:      cfg.TUI.Icons,
+			Chat:       configChat{StatusLine: cfg.TUI.Chat.StatusLine, Vim: cfg.TUI.Chat.Vim},
 			Keys:       stringMap(cfg.TUI.Keys),
 			Output:     configOutput{Level: cfg.TUI.Output.Level},
 			DefaultProject: func() string {
@@ -580,6 +589,9 @@ type tuiPatch struct {
 	Hyperlinks *bool       `json:"hyperlinks"`
 	// Icons is `tui.icons` (task 150.8).
 	Icons *string `json:"icons"`
+	// Chat is `tui.chat` (task 170). An empty status_line is written, and
+	// is the default: no status line.
+	Chat *chatPatch `json:"chat"`
 	// Keys replaces the whole map rather than merging into it, the way
 	// environment.set does: `{}` goes back to the shipped keymap, and an
 	// operation left out of the map goes back to its default.
@@ -592,6 +604,11 @@ type tuiPatch struct {
 	// Tabs replaces the whole `tui.tabs` list (task 136). `[]` is written
 	// to the candidate and refused by validation, like any invalid value.
 	Tabs *[]string `json:"tabs"`
+}
+
+type chatPatch struct {
+	StatusLine *string `json:"status_line"`
+	Vim        *bool   `json:"vim"`
 }
 
 type outputPatch struct {
@@ -744,6 +761,10 @@ func (p configPatch) sets() []config.Set {
 		addIfString(add, "tui.default_project", v.DefaultProject)
 		if v.Tabs != nil {
 			add("tui.tabs", config.RenderList(*v.Tabs))
+		}
+		if v.Chat != nil {
+			addIfString(add, "tui.chat.status_line", v.Chat.StatusLine)
+			addIfBool(add, "tui.chat.vim", v.Chat.Vim)
 		}
 	}
 	// Order is the struct's, which is config.yaml's, so two clients sending

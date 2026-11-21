@@ -203,6 +203,17 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodPost, "/v1/chats/{id}/diff/reject"},
 		{http.MethodPost, "/v1/chats/{id}/diff/accept"},
 		{http.MethodPost, "/v1/chats/{id}/diff/unaccept"},
+		// Task 170: a chat's shell passthrough is a human's command in the
+		// workspace, and its images are a human's attachments; an agent
+		// that could run them would bypass the chat's own permission mode
+		// and choose what reaches its next turn.
+		{http.MethodPost, "/v1/chats/{id}/shell"},
+		{http.MethodGet, "/v1/chats/{id}/shell"},
+		{http.MethodGet, "/v1/chats/{id}/shell/{run_id}"},
+		{http.MethodGet, "/v1/chats/{id}/shell/{run_id}/output"},
+		{http.MethodPost, "/v1/chats/{id}/shell/{run_id}/attach"},
+		{http.MethodPost, "/v1/chats/{id}/images"},
+		{http.MethodGet, "/v1/chats/{id}/images"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

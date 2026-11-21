@@ -50,11 +50,16 @@ func TestRetryCascadeSkipsALockedLane(t *testing.T) {
 	}
 }
 
-// recordingStopper is a ChatTurnStopper that records what it was asked to stop.
-type recordingStopper struct{ stopped []int64 }
+// recordingStopper is a ChatTurnStopper that records what it was asked to
+// stop: turns in stopped, shell commands in shells.
+type recordingStopper struct{ stopped, shells []int64 }
 
 func (r *recordingStopper) StopTurn(_ context.Context, chatID int64) {
 	r.stopped = append(r.stopped, chatID)
+}
+
+func (r *recordingStopper) StopShell(_ context.Context, chatID int64) {
+	r.shells = append(r.shells, chatID)
 }
 
 // TestCancelCascadeClosesEveryLockedLane: the parent's cancel cascade is
@@ -83,5 +88,43 @@ func TestCancelCascadeClosesEveryLockedLane(t *testing.T) {
 	}
 	if len(stopper.stopped) != 1 || stopper.stopped[0] != chat.ID {
 		t.Errorf("stopped turns = %v, want [%d]", stopper.stopped, chat.ID)
+	}
+}
+
+// rowCheckingStopper records, for each shell it is asked to stop, whether
+// the chat's row still existed then: the stop must come before the delete.
+type rowCheckingStopper struct {
+	recordingStopper
+	t       *testing.T
+	st      *store.Store
+	present map[int64]bool
+}
+
+func (r *rowCheckingStopper) StopShell(ctx context.Context, chatID int64) {
+	r.recordingStopper.StopShell(ctx, chatID)
+	_, err := r.st.GetChat(ctx, chatID)
+	r.present[chatID] = err == nil
+}
+
+// TestForceDeleteStopsLinkedChatsShells (review F3): a force delete of a
+// task stops the shell command of every chat it takes — a lane's linked
+// chat included — while their rows still exist, and stops no turn.
+func TestForceDeleteStopsLinkedChatsShells(t *testing.T) {
+	h := newActionHarness(t)
+	stopper := &rowCheckingStopper{t: t, st: h.store, present: map[int64]bool{}}
+	h.runner.deps.ChatTurns = stopper
+	parent := h.task(t, store.TaskAwaitingChildren)
+	locked := h.lane(t, parent, store.TaskBlocked)
+	chat := h.lockLane(t, locked)
+
+	if _, err := h.runner.ForceDelete(t.Context(), parent.ID); err != nil {
+		t.Fatalf("ForceDelete: %v", err)
+	}
+	if len(stopper.shells) != 1 || stopper.shells[0] != chat.ID || !stopper.present[chat.ID] {
+		t.Fatalf("shells stopped %v (row present %v), want chat %d before its row went",
+			stopper.shells, stopper.present, chat.ID)
+	}
+	if len(stopper.stopped) != 0 {
+		t.Fatalf("a delete stopped turns %v", stopper.stopped)
 	}
 }

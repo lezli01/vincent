@@ -183,6 +183,7 @@ the living engineering specification records implementation contracts.
 | [167](167-chat-checkpoint-rewind-fork.md) | Checkpoint a chat's worktree every turn, with rewind and fork | 🔄 in progress (2/10) |
 | [168](168-task-workspace-redesign.md) | Task workspace redesign: steps rail, plain tabs, Output feed, Diff and Overview | ✅ done (9/9) |
 | [169](169-chat-diff-and-hunk-review.md) | A diff pane in the chat with per-hunk accept and reject | 🔄 in progress (9/11) |
+| [170](170-chat-polish.md) | Chat polish: question-card digits, `tui.chat.status_line`, shell passthrough (`alt+x`), image paste and a vim composer | 🔄 in progress (6/8) |
 
 ## How to add and update a task document
 

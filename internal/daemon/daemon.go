@@ -401,6 +401,19 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		StopSkillProbe: func(ctx context.Context, taskID, chatID int64) bool {
 			return runner.StopChatSkillProbe(ctx, taskID, chatID)
 		},
+		// A chat's shell passthrough (task 170) runs where its turns do, and
+		// the §8.3 shell, the §8.5 environment and the task's container are
+		// the task runner's — through the same closure seam.
+		Shell: func(ctx context.Context, taskID, runID int64, workDir, command string) (chatrun.ShellExec, error) {
+			ex, err := runner.ChatShell(ctx, taskID, runID, workDir, command)
+			return chatrun.ShellExec{Argv: ex.Argv, Dir: ex.Dir, Env: ex.Env, Stop: ex.Stop}, err
+		},
+		StopShellOrphan: func(ctx context.Context, taskID, runID int64) bool {
+			return runner.StopChatShellOrphan(ctx, taskID, runID)
+		},
+		InContainer: func(ctx context.Context, taskID int64) (bool, error) {
+			return runner.ChatRunsInContainer(ctx, taskID)
+		},
 		InvalidateSkills:    skills.Invalidate,
 		ReportBundledSkills: skills.ReportBundled,
 		// A `#pr-N` mention (task 166 decision 3) resolves through the API

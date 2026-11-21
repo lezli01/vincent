@@ -116,6 +116,7 @@ func copilotMain(scenario string) {
 		os.Exit(2)
 	}
 	prompt, _ := io.ReadAll(os.Stdin)
+	recordImages(os.Args[1:], "--attachment")
 
 	// Copilot stamps no session id on its event lines: it is reported once,
 	// on the terminal result line, as sessionId. The conversation is resolved

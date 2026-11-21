@@ -184,6 +184,11 @@
 //	                      the listing ran in (task 124 decision 44, m14 leg
 //	                      12). A directory that is absent or unreadable adds
 //	                      nothing
+//	FAKEAGENT_IMAGES_FILE
+//	                      a codex- or copilot-dialect run appends the image
+//	                      paths it was passed (`-i`/`--image`, `--attachment`),
+//	                      one per line in argv order, so a test can assert
+//	                      what the adapter passed for `[image N]` (task 170)
 //	FAKEAGENT_ARGV_FILE  each invocation appends its argv, one space-joined
 //	                      line, so a test can assert a probe was never spawned
 //	FAKEAGENT_CODEX_APP_SERVER

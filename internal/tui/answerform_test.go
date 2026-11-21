@@ -381,3 +381,211 @@ func TestAnswerFormWrapsInCells(t *testing.T) {
 		}
 	}
 }
+
+// The chat's pinned question takes 1-9 (task 170). cardForm is that form over
+// a submitter that records what it was handed.
+func cardForm(req apiclient.InputRequest) (f *answerForm, key func(string) tea.Cmd, sent *[]apiclient.InputResponse) {
+	f = newAnswerForm(req)
+	f.card = true
+	sent = &[]apiclient.InputResponse{}
+	key = func(k string) tea.Cmd {
+		cmd, _ := f.updateWith(keyPress(k), func(resp apiclient.InputResponse) tea.Cmd {
+			*sent = append(*sent, resp)
+			return func() tea.Msg { return nil }
+		})
+		return cmd
+	}
+	return f, key, sent
+}
+
+func oneQuestion(multi bool) apiclient.InputRequest {
+	return apiclient.InputRequest{
+		Kind: apiclient.InputKindQuestion,
+		Questions: []apiclient.InputQuestion{
+			{Text: "Which color?", Options: []string{"Blue", "Red", "Green"}, MultiSelect: multi},
+		},
+	}
+}
+
+// TestAnswerFormDigitPicksWithinTheCursorsQuestion: a digit names an option
+// of the question the cursor is in, moves there, and — with a second question
+// still open — submits nothing.
+func TestAnswerFormDigitPicksWithinTheCursorsQuestion(t *testing.T) {
+	f, key, sent := cardForm(questionRequest())
+	if cmd := key("2"); cmd != nil {
+		t.Error("a digit submitted a request with two questions")
+	}
+	if got := f.answers["Which color?"]; len(got) != 1 || got[0] != "Red" {
+		t.Errorf("answers = %v, want Red", got)
+	}
+	if row, _ := f.currentRow(); row.kind != rowOption || row.question != 0 || row.option != 1 {
+		t.Errorf("the cursor is on %+v, want the picked option", row)
+	}
+	// Into the second question: the same digit now names its option.
+	key("j") // free text of question 0
+	key("j") // a.go
+	key("2")
+	if got := f.answers["Which files?"]; len(got) != 1 || got[0] != "b.go" {
+		t.Errorf("second question's answers = %v, want b.go", got)
+	}
+	if got := f.answers["Which color?"]; len(got) != 1 || got[0] != "Red" {
+		t.Errorf("a digit in the second question changed the first: %v", got)
+	}
+	if len(*sent) != 0 {
+		t.Errorf("digits submitted %d times; enter submits a form with two questions", len(*sent))
+	}
+	if key("enter") == nil || len(*sent) != 1 {
+		t.Error("enter did not submit the answered form")
+	}
+}
+
+// TestAnswerFormDigitSubmitsOneSingleSelectQuestion: there the pick is the
+// whole answer, and it goes through the path enter uses.
+func TestAnswerFormDigitSubmitsOneSingleSelectQuestion(t *testing.T) {
+	f, key, sent := cardForm(oneQuestion(false))
+	if key("3") == nil {
+		t.Fatal("a digit on one single-select question did not submit")
+	}
+	if len(*sent) != 1 || len((*sent)[0].Answers["Which color?"]) != 1 || (*sent)[0].Answers["Which color?"][0] != "Green" {
+		t.Fatalf("submitted %+v, want Green once", *sent)
+	}
+	if !f.submitting {
+		t.Error("the form is not marked submitting, as enter leaves it")
+	}
+	// The same guard enter has: one answer in flight.
+	if key("1") != nil || len(*sent) != 1 {
+		t.Error("a second digit submitted while the first answer was in flight")
+	}
+}
+
+// TestAnswerFormDigitTogglesMultiSelect: a multi-select has no last choice,
+// so a digit only toggles and enter still submits.
+func TestAnswerFormDigitTogglesMultiSelect(t *testing.T) {
+	f, key, sent := cardForm(oneQuestion(true))
+	key("1")
+	key("3")
+	if got := f.answers["Which color?"]; len(got) != 2 || got[0] != "Blue" || got[1] != "Green" {
+		t.Fatalf("answers = %v, want Blue and Green", got)
+	}
+	key("1")
+	if got := f.answers["Which color?"]; len(got) != 1 || got[0] != "Green" {
+		t.Errorf("answers = %v, want the first toggled back off", got)
+	}
+	if len(*sent) != 0 {
+		t.Error("a digit submitted a multi-select question")
+	}
+	if key("enter") == nil || len(*sent) != 1 {
+		t.Error("enter did not submit")
+	}
+}
+
+// TestAnswerFormDigitOutOfRangeIsIgnored: a number past the options changes
+// nothing — not the answer, not the cursor.
+func TestAnswerFormDigitOutOfRangeIsIgnored(t *testing.T) {
+	f, key, sent := cardForm(oneQuestion(false))
+	before := f.cursor
+	for _, k := range []string{"4", "9", "0"} {
+		if key(k) != nil {
+			t.Errorf("%s submitted", k)
+		}
+	}
+	if len(f.answers) != 0 || f.cursor != before || len(*sent) != 0 || f.dirty {
+		t.Errorf("an out-of-range digit changed the form: answers %v, cursor %d", f.answers, f.cursor)
+	}
+}
+
+// TestAnswerFormDigitsAreTextWhileEditing: the open field owns the keyboard.
+func TestAnswerFormDigitsAreTextWhileEditing(t *testing.T) {
+	f, key, sent := cardForm(oneQuestion(false))
+	key("t")
+	if !f.editing {
+		t.Fatal("t did not open the free-text field")
+	}
+	key("2")
+	key("1")
+	if got := f.editor.Value(); got != "21" {
+		t.Errorf("the field holds %q, want the digits typed", got)
+	}
+	if len(f.answers) != 0 || len(*sent) != 0 {
+		t.Error("a digit typed into the field picked an option")
+	}
+}
+
+// TestAnswerFormDigitDecidesAPermissionWithoutSubmitting: 1 and 2 are allow
+// and deny, and a decision about what runs still takes its own enter.
+func TestAnswerFormDigitDecidesAPermissionWithoutSubmitting(t *testing.T) {
+	f, key, sent := cardForm(apiclient.InputRequest{
+		Kind:       apiclient.InputKindPermission,
+		Permission: &apiclient.InputPermission{Tool: "Bash", Summary: "rm -rf build"},
+	})
+	if key("2") != nil || f.allow == nil || *f.allow {
+		t.Errorf("2 left allow = %v, want deny picked and nothing sent", f.allow)
+	}
+	if key("1") != nil || f.allow == nil || !*f.allow {
+		t.Errorf("1 left allow = %v, want allow picked and nothing sent", f.allow)
+	}
+	key("3")
+	if len(*sent) != 0 {
+		t.Error("a digit submitted a permission decision")
+	}
+	if key("enter") == nil || len(*sent) != 1 {
+		t.Error("enter did not submit the decision")
+	}
+}
+
+// TestAnswerFormCardNumbersItsOptions: the digits are drawn, 1 to 9, and an
+// option past the ninth has none.
+func TestAnswerFormCardNumbersItsOptions(t *testing.T) {
+	opts := []string{"o-a", "o-b", "o-c", "o-d", "o-e", "o-f", "o-g", "o-h", "o-i", "o-j"}
+	f, _, _ := cardForm(apiclient.InputRequest{
+		Kind:      apiclient.InputKindQuestion,
+		Questions: []apiclient.InputQuestion{{Text: "Which?", Options: opts}},
+	})
+	out := ansi.Strip(f.render(60, 0))
+	for i, o := range opts[:9] {
+		if want := string(rune('1'+i)) + ". " + o; !strings.Contains(out, want) {
+			t.Errorf("the card is missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "10.") || strings.Contains(out, ". o-j") {
+		t.Errorf("the tenth option is numbered:\n%s", out)
+	}
+	if !strings.Contains(out, "    o-j") {
+		t.Errorf("the tenth option is not in the labels' column:\n%s", out)
+	}
+	if strings.Contains(out, ". "+answerCardFreeText) {
+		t.Errorf("the free-text row is numbered:\n%s", out)
+	}
+}
+
+// TestAnswerFormPopupIgnoresDigits: the task workspace's popup shares the
+// form, and neither its keys nor its rows changed.
+func TestAnswerFormPopupIgnoresDigits(t *testing.T) {
+	f := newAnswerForm(oneQuestion(false))
+	before, cursor := f.render(60, 0), f.cursor
+	for _, k := range []string{"1", "2", "3"} {
+		if cmd, exit := f.press(k); cmd != nil || exit {
+			t.Errorf("%s did something in the popup", k)
+		}
+	}
+	if len(f.answers) != 0 || f.cursor != cursor || f.submitting || f.dirty {
+		t.Errorf("a digit changed the popup's form: answers %v, cursor %d", f.answers, f.cursor)
+	}
+	after := f.render(60, 0)
+	if after != before {
+		t.Errorf("the popup redrew after a digit:\n%s", after)
+	}
+	want := []string{
+		"  ? Which color?",
+		"›   ( ) Blue",
+		"    ( ) Red",
+		"    ( ) Green",
+		"     ✎  type your own answer",
+	}
+	lines := strings.Split(ansi.Strip(after), "\n")
+	for i, w := range want {
+		if i >= len(lines) || strings.TrimRight(lines[i], " ") != w {
+			t.Fatalf("the popup's rows changed; line %d is %q, want %q\n%s", i, lines[i], w, ansi.Strip(after))
+		}
+	}
+}

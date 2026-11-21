@@ -18,12 +18,20 @@ ul.tools li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fon
 .note,.usage{color:#59636e;font-style:italic;font-size:.9rem}
 .failed{color:#d1242f}
 .prompt{border-left:3px solid #d1d9e0;padding-left:.8rem}
+section.shell h2{font-size:1rem}
 </style>
 </head>
 <body>
 <h1>{{.Title}}</h1>
 <dl class="meta">{{range .Meta}}<dt>{{.Key}}</dt><dd>{{.Value}}</dd>{{end}}</dl>
-{{range .Turns}}<section class="turn">
+{{range .Entries}}{{with .Shell}}<section class="shell">
+<h2>Shell · <code>{{.Title}}</code> · {{.Status}}</h2>
+<p class="usage">{{.Sent}}</p>
+{{if .Multiline}}<pre class="command">{{.Command}}</pre>
+{{end}}{{if .OutputNote}}<p class="note">{{.OutputNote}}</p>{{else if .Output}}<pre class="output">{{.Output}}</pre>{{else}}<p class="note">no output</p>{{end}}
+{{if .Truncated}}<p class="note">The output reached the daemon's cap and was cut.</p>
+{{end}}</section>
+{{end}}{{with .Turn}}<section class="turn">
 <h2>Turn {{.Seq}} · {{.State}}</h2>
 <p class="usage">Ran on: {{.RanWith}}</p>
 <h3>Prompt</h3>
@@ -37,7 +45,7 @@ ul.tools li{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fon
 {{with .Failure}}<p class="failed"><strong>Failed:</strong> {{.}}</p>{{end}}
 <p class="usage">Usage: {{.Usage}}</p>
 </section>
-{{end}}{{if .Diff}}<section class="diff">
+{{end}}{{end}}{{if .Diff}}<section class="diff">
 <h2>Diff</h2>
 <pre>{{.Diff}}</pre>
 </section>

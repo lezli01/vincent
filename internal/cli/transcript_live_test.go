@@ -96,6 +96,16 @@ type liveOptions struct {
 	worktrees bool
 	workflows *workflow.Registry
 	wrap      func(http.Handler) http.Handler
+	chatShell bool
+}
+
+// withChatShell serves the harness from reg and wires the chat runner the
+// way daemon.Run does for task 170: its shell resolved through the task
+// runner, and the runner started, so a shell command and a turn really run
+// (chatshell_live_test.go). Every other test keeps the unstarted runner with
+// no shell it has always had.
+func withChatShell(reg *agent.Registry) liveOption {
+	return func(o *liveOptions) { o.agents, o.worktrees, o.chatShell = reg, true, true }
 }
 
 // withHandlerWrap puts wrap around the real API handler, for a test that
@@ -189,11 +199,23 @@ func newLiveHarness(t *testing.T, opts ...liveOption) *liveHarness {
 	})
 	// Nor is the chat runner: `chat close` (linkedchat_live_test.go) reaches
 	// it only to stop a live turn, and no test here starts one.
-	chats := chatrun.New(chatrun.Deps{
+	chatDeps := chatrun.Deps{
 		Store: st, Config: config.Default,
 		Worktrees: worktree.NewManager(git, dataDir),
 		Agents:    agents, DataDir: dataDir, Logger: logger,
-	})
+	}
+	if o.chatShell {
+		chatDeps.Events = broker
+		chatDeps.Shell = func(ctx context.Context, taskID, runID int64, workDir, command string) (chatrun.ShellExec, error) {
+			ex, err := runner.ChatShell(ctx, taskID, runID, workDir, command)
+			return chatrun.ShellExec{Argv: ex.Argv, Dir: ex.Dir, Env: ex.Env, Stop: ex.Stop}, err
+		}
+	}
+	chats := chatrun.New(chatDeps)
+	if o.chatShell {
+		chats.Start(ctx)
+		t.Cleanup(chats.Stop)
+	}
 	s := api.New(api.Deps{
 		Token: token, Config: config.Default, StartedAt: time.Now(),
 		ListenAddr: "127.0.0.1:0", RequestStop: func() {}, Logger: logger,

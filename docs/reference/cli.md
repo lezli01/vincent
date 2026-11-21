@@ -2654,6 +2654,92 @@ has since changed or that only the other scope lists.
 looked up in. Exit `1` while the chat has a live turn and for a hunk that is
 not in that diff.
 
+### `vincent chat shell`
+
+```sh
+vincent chat shell CHAT_ID COMMAND [--attach] [--json]
+```
+
+Runs `COMMAND` in the chat's directory through the daemon, waits for it to
+end, prints its output and exits with its exit code, over
+`POST /v1/chats/{id}/shell`. `COMMAND` is one argument, so quote it. It runs
+under the daemon's shell: `/bin/sh` on Linux and macOS, `pwsh` on Windows,
+and the container's `/bin/sh` for a chat on a containerized task. It is
+**not a turn**. The agent sees nothing of it unless the finished run is
+attached, and then only on the chat's next turn.
+
+```sh
+vincent chat shell 12 'git status --short'
+vincent chat shell 12 'go test ./internal/store' --attach
+```
+
+A command is stopped after two minutes, and its stored output (stdout and
+stderr combined) is capped at 256 KiB, with a closing line saying so when cut.
+One command runs at a time per chat. A second one is refused, and so is any
+command on an archived, closed or handed-off chat. A chat's `restricted`
+permission mode restricts its agent, not this command.
+
+`--attach` marks the finished run for the chat's next prompt. `--json` prints
+the final run object instead of the output.
+
+Exit: the command's own exit code when it exited. `1` with a one-line reason
+when it timed out, was interrupted or canceled, or failed to start, and on a
+refusal. `2` with no daemon. The command's code is passed through as it is,
+so a command that exits `1` or `2` cannot be told from vincent's own failure
+by the exit status alone. A script that needs to tell them apart passes
+`--json`: the run object, with its `state` and `exit_code`, is printed only
+when the command ran, and a refusal or a missing daemon prints none.
+
+### `vincent chat shell ls`
+
+```sh
+vincent chat shell ls CHAT_ID [--json]
+```
+
+Lists the chat's shell runs, oldest first, over `GET /v1/chats/{id}/shell`.
+Each line has the run's id, the turn it came after, its state or exit code,
+whether the agent got it, and the command. The agent column reads `turn N`
+for the turn that took the run, or `next prompt` for a run that is marked but
+not yet sent.
+
+### `vincent chat shell attach`
+
+```sh
+vincent chat shell attach CHAT_ID RUN_ID [--undo] [--json]
+```
+
+Marks a finished run so the chat's next turn gets its command and output
+ahead of the message, as a preamble and never inside the message itself.
+Only that one turn gets it, and the run records which turn did. `--undo`
+removes the mark. A run that is still running, or that a turn has already
+taken, is refused with exit `1`.
+
+### `vincent chat image add`
+
+```sh
+vincent chat image add CHAT_ID FILE [--json]
+```
+
+Uploads `FILE` to the chat over `POST /v1/chats/{id}/images` and prints the
+chip that names it, `[image N]`. Images are numbered per chat. Put the chip
+in a message (`vincent chat send`) and the agent gets the image file with
+that turn. The message is stored as typed.
+
+The daemon accepts PNG, JPEG, GIF and WebP, judged by content rather than by
+name, up to 10 MiB each. It accepts them only on a chat whose agent can take
+image files: codex and copilot can, claude and cursor cannot, and neither can
+a chat on a containerized task. `GET /v1/agents` reports this as
+`supports_images`. Anything else is refused with exit `1`. Exit `2` with no
+daemon.
+
+### `vincent chat image ls`
+
+```sh
+vincent chat image ls CHAT_ID [--json]
+```
+
+Lists the chat's images in number order, over `GET /v1/chats/{id}/images`.
+
 ### `vincent chat find`
 
 ```sh

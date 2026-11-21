@@ -364,3 +364,78 @@ func TestChatExportDiffUnavailableStillExports(t *testing.T) {
 		}
 	}
 }
+
+// TestChatExportCarriesShellRuns is task 170: the chat's shell runs, with
+// their stored output and whether a turn took them, in every format, each
+// after the turn it followed.
+func TestChatExportCarriesShellRuns(t *testing.T) {
+	h := newExportHarness(t)
+	ctx := t.Context()
+	c := h.chat(t, &store.Chat{})
+	h.turn(t, c, "first", func(ct *store.ChatTurn) { ct.ResultText = "ok" }, "")
+
+	finish := func(command string, exit int, output string) *store.ChatShellRun {
+		t.Helper()
+		run, err := h.store.CreateChatShellRun(ctx, c.ID, command, time.Now())
+		if err != nil {
+			t.Fatalf("CreateChatShellRun: %v", err)
+		}
+		run.State, run.ExitCode, run.EndedAt = store.ChatShellExited, &exit, ptrTo(time.Now())
+		if output != "" {
+			run.OutputPath = filepath.Join(t.TempDir(), "out")
+			if err := os.WriteFile(run.OutputPath, []byte(output), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			run.OutputBytes = int64(len(output))
+		}
+		if err := h.store.UpdateChatShellRun(ctx, run); err != nil {
+			t.Fatalf("UpdateChatShellRun: %v", err)
+		}
+		return run
+	}
+	taken := finish("git status", 1, "fatal: oops\n")
+	if _, err := h.store.SetChatShellAttach(ctx, c.ID, taken.ID, true); err != nil {
+		t.Fatalf("SetChatShellAttach: %v", err)
+	}
+	h.turn(t, c, "second", func(ct *store.ChatTurn) { ct.ResultText = "seen" }, "")
+	if _, err := h.store.TakeChatShellRuns(ctx, c.ID, 2); err != nil {
+		t.Fatalf("TakeChatShellRuns: %v", err)
+	}
+	gone := finish("git log", 0, "commit abc\n")
+	if err := os.Remove(gone.OutputPath); err != nil {
+		t.Fatal(err)
+	}
+
+	e := h.exportJSON(t, c.ID, "")
+	if len(e.ShellRuns) != 2 {
+		t.Fatalf("shell_runs = %+v", e.ShellRuns)
+	}
+	first, second := e.ShellRuns[0], e.ShellRuns[1]
+	if first.Command != "git status" || first.State != store.ChatShellExited || first.ExitCode == nil ||
+		*first.ExitCode != 1 || first.Output != "fatal: oops\n" || first.AfterTurn != 1 ||
+		first.AttachedTurn == nil || *first.AttachedTurn != 2 || first.Attach {
+		t.Errorf("taken run = %+v", first)
+	}
+	if second.AfterTurn != 2 || second.Output != "" || second.OutputNote != chatexport.NoteShellOutputMissing {
+		t.Errorf("run whose output is gone = %+v", second)
+	}
+
+	resp, md := h.export(t, c.ID, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("markdown export = %d", resp.StatusCode)
+	}
+	t1, run1, t2, run2 := strings.Index(md, "## Turn 1"), strings.Index(md, "## Shell · `git status` · exited 1"),
+		strings.Index(md, "## Turn 2"), strings.Index(md, "## Shell · `git log` · exited 0")
+	if t1 < 0 || run1 < t1 || t2 < run1 || run2 < t2 || !strings.Contains(md, "_sent to the agent with turn 2_") {
+		t.Errorf("markdown places the runs wrongly:\n%s", md)
+	}
+	if _, page := h.export(t, c.ID, "?format=html"); !strings.Contains(page, `<pre class="output">fatal: oops`) {
+		t.Errorf("HTML lacks the run's output:\n%s", page)
+	}
+
+	// A chat with no runs carries an empty list, never null.
+	empty := h.chat(t, &store.Chat{Title: "quiet"})
+	if _, body := h.export(t, empty.ID, "?format=json"); !strings.Contains(body, `"shell_runs": []`) {
+		t.Errorf("a chat with no runs exports:\n%s", body)
+	}
+}

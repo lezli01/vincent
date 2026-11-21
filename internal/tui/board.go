@@ -95,7 +95,10 @@ type (
 		// icons is `tui.icons` (task 150.8), read by the root for the same
 		// reason hyperlinks is.
 		icons string
-		err   error
+		// chat is `tui.chat` (task 170), read by the root for the same
+		// reason hyperlinks is.
+		chat apiclient.ConfigChat
+		err  error
 	}
 	// boardTickMsg drives the elapsed column.
 	boardTickMsg struct {
@@ -525,7 +528,8 @@ func (b *board) configCmd() tea.Cmd {
 		return boardConfigMsg{
 			archived: archived, board: cfg.TUI.Board,
 			laneDepth: cfg.FanOut.MaxDepth, hyperlinks: cfg.TUI.Hyperlinks, keys: cfg.TUI.Keys,
-			outputLevel: cfg.TUI.Output.Level, defaultProject: cfg.TUI.DefaultProject, tabs: cfg.TUI.Tabs, icons: cfg.TUI.Icons, err: err,
+			outputLevel: cfg.TUI.Output.Level, defaultProject: cfg.TUI.DefaultProject, tabs: cfg.TUI.Tabs, icons: cfg.TUI.Icons,
+			chat: cfg.TUI.Chat, err: err,
 		}
 	}
 }

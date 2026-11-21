@@ -81,6 +81,9 @@ func (r *Runner) Delete(
 			projectPath = project.Path
 		}
 	}
+	// The linked chats go by the cascade; a shell command one still runs
+	// is stopped before its row and its output directory do (task 170).
+	r.stopTreeShells(ctx, id)
 	if err := r.deps.Store.DeleteTaskCascade(ctx, id); err != nil {
 		return worktree.BranchOutcome{}, err
 	}

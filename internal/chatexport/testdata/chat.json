@@ -136,5 +136,51 @@
       "permission_mode": null
     }
   ],
+  "shell_runs": [
+    {
+      "id": 1,
+      "command": "git status --short",
+      "state": "exited",
+      "exit_code": 0,
+      "started_at": "2026-11-19T09:00:00Z",
+      "ended_at": "2026-11-19T09:00:01Z",
+      "after_turn": 0,
+      "output": " M x.go\n",
+      "attached_turn": null
+    },
+    {
+      "id": 2,
+      "command": "go test ./...",
+      "state": "exited",
+      "exit_code": 1,
+      "started_at": "2026-11-19T09:00:00Z",
+      "after_turn": 1,
+      "output": "--- FAIL: TestParse ```\n\u003cscript\u003ealert(1)\u003c/script\u003e\n",
+      "truncated": true,
+      "attached_turn": 2
+    },
+    {
+      "id": 3,
+      "command": "sleep 600",
+      "state": "timed_out",
+      "exit_code": null,
+      "started_at": "2026-11-19T09:00:00Z",
+      "after_turn": 3,
+      "output": "",
+      "output_note": "output unavailable: the stored output could not be read",
+      "attached_turn": null
+    },
+    {
+      "id": 4,
+      "command": "git log -1\ngit status",
+      "state": "exited",
+      "exit_code": 0,
+      "started_at": "2026-11-19T09:00:00Z",
+      "after_turn": 6,
+      "output": "",
+      "attach": true,
+      "attached_turn": null
+    }
+  ],
   "diff": "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1 +1 @@\n-old\n+new ```\n"
 }

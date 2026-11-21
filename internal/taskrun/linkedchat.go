@@ -27,8 +27,31 @@ import (
 // ChatTurnStopper stops a linked chat's live turn and waits for it to end. It
 // is what `cancel` on a locked task calls before its one transaction closes
 // the chat and aborts the task (task 119); internal/chatrun implements it.
+//
+// StopShell stops a chat's running shell command (task 170) without touching
+// its turn, and waits for the run's ending to be written. A task delete calls
+// it for every chat the delete takes, so no command outlives its rows or
+// keeps the worktree being discarded open.
 type ChatTurnStopper interface {
 	StopTurn(ctx context.Context, chatID int64)
+	StopShell(ctx context.Context, chatID int64)
+}
+
+// stopTreeShells stops the shell command of every chat a delete of task id
+// is about to take (review F3 of task 170). It is best-effort: a failed read
+// is logged and the delete goes on, as it did before shells existed.
+func (r *Runner) stopTreeShells(ctx context.Context, id int64) {
+	if r.deps.ChatTurns == nil {
+		return
+	}
+	chatIDs, err := r.deps.Store.TaskTreeChatIDs(ctx, id)
+	if err != nil {
+		r.deps.Logger.Warn("delete: chats' shell commands not stopped", "task", id, "error", err)
+		return
+	}
+	for _, chatID := range chatIDs {
+		r.deps.ChatTurns.StopShell(ctx, chatID)
+	}
 }
 
 // chatIntro opens a linked chat's context. It says what the agent is looking

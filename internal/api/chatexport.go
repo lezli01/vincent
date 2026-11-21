@@ -82,7 +82,8 @@ func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff
 			LinkedTaskID: chat.LinkedTaskID, HandoffTaskID: chat.HandoffTaskID,
 			IssueID: chat.IssueID, CreatedAt: chat.CreatedAt,
 		},
-		Turns: []chatexport.Turn{},
+		Turns:     []chatexport.Turn{},
+		ShellRuns: []chatexport.ShellRun{},
 	}
 	if p, err := s.deps.Store.GetProject(ctx, chat.ProjectID); err == nil {
 		e.Chat.Project = p.Name
@@ -111,6 +112,13 @@ func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff
 		}
 		e.Turns = append(e.Turns, et)
 	}
+	runs, err := s.deps.Store.ListChatShellRuns(ctx, chat.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, run := range runs {
+		e.ShellRuns = append(e.ShellRuns, chatExportShellRun(run))
+	}
 	if withDiff {
 		diff, why := s.chatExportDiff(ctx, chat)
 		if why != "" {
@@ -120,6 +128,29 @@ func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff
 		}
 	}
 	return e, nil
+}
+
+// chatExportShellRun is one shell run as the export carries it (task 170),
+// its output read from the file the row names exactly as the output route
+// reads it: a run that never opened a file has none, and a file that is gone
+// is a note in the document, never a failure of the export. A running run's
+// output is what has been written so far.
+func chatExportShellRun(run *store.ChatShellRun) chatexport.ShellRun {
+	out := chatexport.ShellRun{
+		ID: run.ID, Command: run.Command, State: run.State, ExitCode: run.ExitCode,
+		StartedAt: run.StartedAt, EndedAt: run.EndedAt, AfterTurn: run.AfterTurn,
+		Truncated: run.Truncated, Attach: run.Attach, AttachedTurn: run.AttachedTurn,
+	}
+	if run.OutputPath != "" {
+		//nolint:gosec // G304: the path is one the daemon recorded on the row, never request input
+		data, err := os.ReadFile(run.OutputPath)
+		if err != nil {
+			out.OutputNote = chatexport.NoteShellOutputMissing
+		} else {
+			out.Output = string(data)
+		}
+	}
+	return out
 }
 
 // chatTurnTools reads one turn's tool calls from its transcript, normalized

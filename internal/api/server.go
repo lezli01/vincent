@@ -484,6 +484,15 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/chats/{id}/diff/reject", s.handleChatDiffReject)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/diff/accept", s.handleChatDiffAccept)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/diff/unaccept", s.handleChatDiffUnaccept)
+	// A chat's shell passthrough and image attachments (task 170). Both stay
+	// off the MCP surface with the rest of the family.
+	rt.handle(http.MethodPost, "/v1/chats/{id}/shell", s.handleChatShellRun)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/shell", s.handleChatShellList)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/shell/{run_id}", s.handleChatShellGet)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/shell/{run_id}/output", s.handleChatShellOutput)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/shell/{run_id}/attach", s.handleChatShellAttach)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/images", s.handleChatImageAdd)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/images", s.handleChatImageList)
 	rt.handle(http.MethodGet, "/v1/events", s.handleEvents)
 	rt.handle(http.MethodGet, "/v1/tasks/{id}/events", s.handleTaskEvents)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/events", s.handleChatEvents)

@@ -150,6 +150,21 @@ func TestBuildArgs(t *testing.T) {
 			want: append(append([]string{"--output-format", "json", "--no-auto-update", "--resume=" + id},
 				restrictedBase...), "--model", "gpt-6-luna"),
 		},
+		{
+			// Task 170: one --attachment per image, last, in order.
+			name: "images ride as one --attachment each",
+			spec: agent.RunSpec{Images: []string{"/data/2.gif", "/data/1.png"}},
+			want: append(slices.Clone(base), "--attachment", "/data/2.gif", "--attachment", "/data/1.png"),
+		},
+		{
+			name: "a resumed run is given its images too",
+			spec: agent.RunSpec{ResumeSessionID: id, Images: []string{"/data/2.gif", "/data/1.png"}},
+			want: []string{
+				"--output-format", "json", "--no-auto-update", "--resume=" + id,
+				"--allow-all-tools", "--allow-all-paths", "--allow-all-urls",
+				"--attachment", "/data/2.gif", "--attachment", "/data/1.png",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
