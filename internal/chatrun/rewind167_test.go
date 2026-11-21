@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
@@ -270,6 +271,68 @@ func TestCodeRewindRefusesUnsavedTrackedFile(t *testing.T) {
 	// Readable again, the save takes it and the rewind goes ahead.
 	if _, err := h.runner.Rewind(t.Context(), c.ID, RewindRequest{Turn: 1, Mode: RewindCode}); err != nil {
 		t.Fatalf("Rewind once readable: %v", err)
+	}
+}
+
+// TestFailedStartTurnKeepsTheChainWhole is review F3: a turn that failed
+// after its checkpoint but before any process ran (here, the adapter's Start
+// failing) still records head_after, so it does not read as a foreign-commit
+// break and code rewinds at and before it stay allowed.
+func TestFailedStartTurnKeepsTheChainWhole(t *testing.T) {
+	h := newHarness(t)
+	c := h.chatOn(t, perRunAgentName)
+	h.perRun.setResults(agent.RunResult{SessionID: "s1", ResultText: "ok"})
+	h.turnDone(t, c.ID, "one")
+	// No scripted run left: Start fails, after turn 2's checkpoint.
+	two := h.sendAndWait(t, c.ID, "two")
+	h.waitIdle(t, c.ID)
+	if two.State != chatstate.TurnFailed || two.CheckpointSHA == "" {
+		t.Fatalf("turn 2 = %s, checkpoint %q; want a failed turn with a checkpoint", two.State, two.CheckpointSHA)
+	}
+	if two.HeadAfter != two.HeadBefore {
+		t.Errorf("turn 2 head_after = %q, want its head_before %q", two.HeadAfter, two.HeadBefore)
+	}
+	h.perRun.setResults(agent.RunResult{SessionID: "s1", ResultText: "ok"})
+	h.turnDone(t, c.ID, "three")
+
+	turns, _ := h.store.ListChatTurns(t.Context(), c.ID)
+	opts := h.runner.RewindOptions(t.Context(), c, turns)
+	for seq := 1; seq <= 3; seq++ {
+		if o := opts[seq]; o.Code != "" {
+			t.Errorf("turn %d code option blocked: %q", seq, o.Code)
+		}
+	}
+	if _, err := h.runner.Rewind(t.Context(), c.ID, RewindRequest{Turn: 1, Mode: RewindCode}); err != nil {
+		t.Fatalf("code rewind across a failed-start turn: %v", err)
+	}
+}
+
+// TestRecoverRecordsHeadAfter is review F3's recovery half: a turn a dead
+// daemon left running is finalized interrupted with head_after read from the
+// worktree, where the turn's process left it.
+func TestRecoverRecordsHeadAfter(t *testing.T) {
+	h := newHarness(t)
+	c := h.chat(t)
+	one := h.turnDone(t, c.ID, "one")
+	turn, err := h.store.CreateChatTurn(t.Context(), c.ID, "cut off")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn.CheckpointSHA, turn.HeadBefore = one.CheckpointSHA, one.HeadAfter
+	if err := h.store.UpdateChatTurn(t.Context(), turn); err != nil {
+		t.Fatal(err)
+	}
+	// What the cut-off turn's agent committed before the daemon died.
+	gitIn(t, c.WorktreePath, "-c", "user.name=a", "-c", "user.email=a@b", "commit", "-q", "--allow-empty", "-m", "turn two")
+	if err := h.runner.Recover(t.Context()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+	got, err := h.store.GetChatTurn(t.Context(), turn.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := gitIn(t, c.WorktreePath, "rev-parse", "HEAD"); got.State != chatstate.TurnInterruptedState || got.HeadAfter != want {
+		t.Errorf("recovered turn = %s, head_after %q; want interrupted at %s", got.State, got.HeadAfter, want)
 	}
 }
 

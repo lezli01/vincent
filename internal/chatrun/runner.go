@@ -708,6 +708,11 @@ func (r *Runner) runTurn(
 	// rather than running without the image it names.
 	chips, images, err := r.resolveImages(ctx, chat, turn.Prompt)
 	if err != nil {
+		// Every ending past the checkpoint records head_after, a turn that
+		// ran nothing included: the rewind chain check reads a missing one
+		// as "cannot prove" and would refuse every code rewind at or before
+		// this turn for good (review F3).
+		r.recordHeadAfter(turn, workDir)
 		next = r.finish(turn, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
 		return next
 	}
@@ -775,6 +780,7 @@ func (r *Runner) runTurn(
 		// like every other one past placement, and ahead of finish for the
 		// reason given below.
 		r.invalidateSkills(workDir)
+		r.recordHeadAfter(turn, workDir) // review F3, as above
 		next = r.finish(turn, chatstate.TurnFailed, reason, err.Error(), chat)
 		return next
 	}

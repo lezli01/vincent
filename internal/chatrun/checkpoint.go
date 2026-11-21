@@ -67,7 +67,13 @@ func (r *Runner) checkpoint(
 // the turn's own outcome does not depend on it, and an unreadable HEAD is
 // recorded as none, which that rule reads as "cannot prove", never as a match.
 func (r *Runner) recordHeadAfter(turn *store.ChatTurn, workDir string) {
-	ctx, cancel := context.WithTimeout(r.persist, gitx.QueryTimeout)
+	r.recordHeadAfterCtx(r.persist, turn, workDir)
+}
+
+// recordHeadAfterCtx is recordHeadAfter under ctx, for recovery, which runs
+// on the daemon's start-up context rather than a turn's.
+func (r *Runner) recordHeadAfterCtx(parent context.Context, turn *store.ChatTurn, workDir string) {
+	ctx, cancel := context.WithTimeout(parent, gitx.QueryTimeout)
 	defer cancel()
 	head, err := gitx.New().Run(ctx, workDir, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
