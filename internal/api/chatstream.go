@@ -174,9 +174,13 @@ func (s *Server) handleChatTurnTranscript(w http.ResponseWriter, r *http.Request
 // transcript. The transcript route and the chat export (task 159) both read
 // it from here.
 func (s *Server) chatTurnTranscriptPath(chatID int64, seq int) string {
-	return filepath.Join(
-		s.deps.Dirs.Data, "transcripts", worktree.ChatOwner(chatID).Dir(),
-		fmt.Sprintf("%d.jsonl", seq))
+	return chatTurnTranscriptFile(s.deps.Dirs.Data, chatID, seq)
+}
+
+// chatTurnTranscriptFile is chatTurnTranscriptPath under an explicit data
+// directory, for TurnToolCalls, which runs without a Server.
+func chatTurnTranscriptFile(dataDir string, chatID int64, seq int) string {
+	return filepath.Join(dataDir, "transcripts", worktree.ChatOwner(chatID).Dir(), fmt.Sprintf("%d.jsonl", seq))
 }
 
 // transcriptRangeSpec is a validated ?offset=/?tail=/?format= triple.

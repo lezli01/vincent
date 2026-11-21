@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/chatexport"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/events"
@@ -95,6 +96,13 @@ var ErrNoLiveTurn = errors.New("this chat has no live turn")
 // workflow has — no Shells, no Catalog, no MCP: a chat runs one agent, and
 // §13.4 keeps chat routes off the tool surface anyway (decision 2).
 type Deps struct {
+	// TurnTools reads one turn's top-level tool calls from its normalized
+	// transcript, for the seeded context's one-line summaries (task 171
+	// decision 3). Normalizing a transcript is the API's code (§13.2
+	// format=normalized), so the daemon injects it rather than chatrun
+	// importing it. Nil, or a turn whose transcript is gone, summarizes no
+	// tool calls.
+	TurnTools func(chat *store.Chat, turn *store.ChatTurn) []chatexport.ToolCall
 	Store     *store.Store
 	Config    func() config.Config
 	Worktrees *worktree.Manager

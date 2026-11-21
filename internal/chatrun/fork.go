@@ -31,11 +31,32 @@ type ForkPlan struct {
 	Seeded         bool
 }
 
-// PlanFork plans a fork of chat chatID from turn seq. It refuses what Rewind
-// refuses — a live turn, an ended chat, a rewound turn, a turn without a
-// checkpoint — except the chain check: a fork leaves the source's branch
-// alone, so foreign commits on it are no reason to refuse. It reads only.
+// ForkTarget is what a fork runs on when it is not its source's agent (task
+// 171 decision 2): Agent "" or the source's own agent is a same-agent fork,
+// and Model and Effort are ignored for it. For another agent, Model and
+// Effort are the caller's or "" — the adapter's defaults — and never the
+// source's, which are another catalog's ids.
+type ForkTarget struct {
+	Agent  string
+	Model  string
+	Effort string
+}
+
+// PlanFork plans a fork of chat chatID from turn seq on the source's own
+// agent. It refuses what Rewind refuses — a live turn, an ended chat, a
+// rewound turn, a turn without a checkpoint — except the chain check: a fork
+// leaves the source's branch alone, so foreign commits on it are no reason
+// to refuse. It reads only.
 func (r *Runner) PlanFork(ctx context.Context, chatID int64, seq int) (ForkPlan, error) {
+	return r.PlanForkTo(ctx, chatID, seq, ForkTarget{})
+}
+
+// PlanForkTo is PlanFork onto target. A fork to a different agent is always
+// seeded (task 171 decision 2): a session cannot cross adapters, so there is
+// no session or anchor to resume even where the source's agent could, and
+// the seeded context names the source's agent. The caller has already
+// checked that target.Agent exists and can resume.
+func (r *Runner) PlanForkTo(ctx context.Context, chatID int64, seq int, target ForkTarget) (ForkPlan, error) {
 	var plan ForkPlan
 	err := r.WhileNoTurn(ctx, chatID, func() error {
 		chat, err := r.deps.Store.GetChat(ctx, chatID)
@@ -49,29 +70,37 @@ func (r *Runner) PlanFork(ctx context.Context, chatID int64, seq int) (ForkPlan,
 		if err != nil {
 			return err
 		}
-		target := findTurn(turns, seq)
-		if target == nil {
+		turn := findTurn(turns, seq)
+		if turn == nil {
 			return fmt.Errorf("turn %d of chat %d: %w", seq, chatID, store.ErrNotFound)
 		}
-		if target.RewoundAt != nil {
+		if turn.RewoundAt != nil {
 			return refuse(ReasonTurnRewound, "turn %d was rewound", seq)
 		}
-		if !hasCheckpoint(target) {
+		if !hasCheckpoint(turn) {
 			return refuse(ReasonCheckpointUnavailable, "turn %d has no checkpoint to fork from", seq)
 		}
-		ok, err := r.checkpointExists(ctx, chat, target)
+		ok, err := r.checkpointExists(ctx, chat, turn)
 		if err != nil {
 			return err
 		}
 		if !ok {
 			return refuse(ReasonCheckpointUnavailable, "turn %d's checkpoint commit no longer exists", seq)
 		}
-		conv := r.planConversation(chat, turns, seq)
 		plan = ForkPlan{
-			Source: chat, Seq: seq, HeadBefore: target.HeadBefore, CheckpointSHA: target.CheckpointSHA,
+			Source: chat, Seq: seq, HeadBefore: turn.HeadBefore, CheckpointSHA: turn.CheckpointSHA,
 			Agent: chat.Agent, Model: chat.Model, Effort: chat.Effort, PermissionMode: chat.PermissionMode,
-			SessionID: conv.sessionID, ResumeAt: conv.resumeAt, Preamble: conv.preamble, Seeded: conv.seeded,
 		}
+		var conv convPlan
+		if cross := target.Agent != "" && target.Agent != chat.Agent; cross {
+			plan.Agent, plan.Model, plan.Effort = target.Agent, target.Model, target.Effort
+			if kept := keptBefore(turns, seq); len(kept) > 0 {
+				conv = convPlan{preamble: r.seededPreamble(chat, kept, target.Agent), seeded: true}
+			}
+		} else {
+			conv = r.planConversation(chat, turns, seq)
+		}
+		plan.SessionID, plan.ResumeAt, plan.Preamble, plan.Seeded = conv.sessionID, conv.resumeAt, conv.preamble, conv.seeded
 		return nil
 	})
 	return plan, err
@@ -171,7 +200,8 @@ func (r *Runner) RewindOptions(ctx context.Context, chat *store.Chat, turns []st
 			}
 		default:
 			o.Code = refs.chainFrom(turns, t.Seq)
-			o.ConversationSeeded = r.planConversationWith(chat, turns, t.Seq, canResumeAt).seeded
+			plan, _ := planConversationWith(turns, t.Seq, canResumeAt)
+			o.ConversationSeeded = plan.seeded
 		}
 		out[t.Seq] = o
 	}

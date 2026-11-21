@@ -51,7 +51,7 @@ func (r *Runner) seedInstead(ctx context.Context, chat *store.Chat, turn *store.
 	if len(kept) == 0 {
 		return convPlan{seeded: true}
 	}
-	return convPlan{preamble: seededPreamble(chat, kept), seeded: true}
+	return convPlan{preamble: r.seededPreamble(chat, kept, ""), seeded: true}
 }
 
 // markSeeded records on the row and in the transcript that turn starts a

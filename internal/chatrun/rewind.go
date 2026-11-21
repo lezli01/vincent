@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/chatexport"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
@@ -547,7 +548,11 @@ type convPlan struct {
 // session at that turn's anchor, natively; a conversation that keeps no
 // turn starts fresh; everything else is seeded with the kept turns.
 func (r *Runner) planConversation(chat *store.Chat, turns []store.ChatTurn, seq int) convPlan {
-	return r.planConversationWith(chat, turns, seq, r.resumeAtProbe(chat))
+	plan, kept := planConversationWith(turns, seq, r.resumeAtProbe(chat))
+	if plan.seeded {
+		plan.preamble = r.seededPreamble(chat, kept, "")
+	}
+	return plan
 }
 
 // resumeAtProbe is chat's agent's resume-at-point capability, asked at most
@@ -570,24 +575,34 @@ func (r *Runner) resumeAtProbe(chat *store.Chat) func() bool {
 // planConversationWith is planConversation with the capability supplied, so
 // a caller can share one probe across turns. The capability is asked only
 // for a kept turn that has an anchor to resume at: without one the answer
-// cannot change the plan.
-func (r *Runner) planConversationWith(
-	chat *store.Chat, turns []store.ChatTurn, seq int, canResumeAt func() bool,
-) convPlan {
+// cannot change the plan. A seeded plan comes back without its preamble,
+// and with the turns it keeps: building the preamble reads every kept
+// turn's transcript for its tool calls (task 171 decision 3), which a turn
+// picker asking only "seeded or not?" must not pay once per turn.
+func planConversationWith(
+	turns []store.ChatTurn, seq int, canResumeAt func() bool,
+) (convPlan, []store.ChatTurn) {
+	kept := keptBefore(turns, seq)
+	if len(kept) == 0 {
+		return convPlan{}, nil
+	}
+	prev := kept[len(kept)-1]
+	if prev.ResumeAnchor != "" && prev.SessionID != "" && canResumeAt() {
+		return convPlan{sessionID: prev.SessionID, resumeAt: prev.ResumeAnchor}, kept
+	}
+	return convPlan{seeded: true}, kept
+}
+
+// keptBefore is the turns a conversation going back to seq keeps: every
+// earlier one no rewind took out.
+func keptBefore(turns []store.ChatTurn, seq int) []store.ChatTurn {
 	var kept []store.ChatTurn
 	for _, t := range turns {
 		if t.Seq < seq && t.RewoundAt == nil {
 			kept = append(kept, t)
 		}
 	}
-	if len(kept) == 0 {
-		return convPlan{}
-	}
-	prev := kept[len(kept)-1]
-	if prev.ResumeAnchor != "" && prev.SessionID != "" && canResumeAt() {
-		return convPlan{sessionID: prev.SessionID, resumeAt: prev.ResumeAnchor}
-	}
-	return convPlan{preamble: seededPreamble(chat, kept), seeded: true}
+	return kept
 }
 
 // The seeded context's bound (decision G): a linked chat's opening context
@@ -602,27 +617,98 @@ const (
 )
 
 // seededIntro opens a seeded session's context and says what it is: a
-// replay of earlier turns, not a resumed session (decision 1).
-const seededIntro = "This conversation was rewound and continues in a new session. " +
-	"It was seeded, not resumed: below are the earlier turns it keeps, each the human's " +
-	"message and your final reply. Tool calls and intermediate output from those turns " +
-	"are not included.\n\n"
+// replay of earlier turns, not a resumed session (task 167 decision 1, as
+// task 171 decision 3 amended it: tool calls are summarized, one line each,
+// and their output is still left out).
+const seededIntro = "This conversation continues in a new session. " +
+	"It was seeded, not resumed: below is a summary of the earlier turns it keeps. " +
+	"Each turn is the human's message, then the tool calls made while answering it, " +
+	"one line each (name and key argument), then the final reply. " +
+	"Tool output and intermediate messages from those turns are not included.\n"
+
+// seededTurn is one kept turn rendered twice: with its tool block, and
+// without it, for a history that must drop tool blocks to fit.
+type seededTurn struct {
+	full, bare string
+}
 
 // seededPreamble is the seeded context for a fresh session that keeps
 // turns: the chat's own opening context first, if it has one (a fresh
-// session has never seen it), then the turns, each prompt and result. The
-// history keeps its most recent seededLines lines within seededBytes.
-func seededPreamble(chat *store.Chat, kept []store.ChatTurn) string {
-	var hist strings.Builder
-	for _, t := range kept {
-		fmt.Fprintf(&hist, "<turn seq=%q>\n<human>\n%s\n</human>\n<reply>\n%s\n</reply>\n</turn>\n",
-			strconv.Itoa(t.Seq), strings.TrimRight(t.Prompt, "\n"), strings.TrimRight(t.ResultText, "\n"))
+// session has never seen it), then the turns, each its prompt, a <tools>
+// block of one chatexport.ToolSummary line per tool call it made (task 171
+// decision 3), and its result. target is the agent the session will run on
+// when that differs from chat's own — a cross-agent fork — and the context
+// then says whose conversation it was.
+//
+// The history keeps its most recent seededLines lines within seededBytes.
+// When it does not fit, whole tool blocks go first, oldest turn first, and
+// only once none is left is the oldest prompt or reply cut: a reply is what
+// the conversation concluded, a tool line only how it got there.
+func (r *Runner) seededPreamble(chat *store.Chat, kept []store.ChatTurn, target string) string {
+	turns := make([]seededTurn, len(kept))
+	for i := range kept {
+		turns[i] = r.renderSeededTurn(chat, &kept[i])
 	}
-	body := hist.String()
-	if tail, cut := tailLinesOf(body, seededLines, seededBytes); cut {
-		body = fmt.Sprintf("(earlier turns omitted; the last %d lines follow)\n", seededLines) + tail
+	dropped := 0
+	body := joinSeeded(turns, 0)
+	for dropped < len(turns) && !fitsSeeded(body) {
+		dropped++
+		body = joinSeeded(turns, dropped)
 	}
-	return joinPreamble(chat.OpeningContext, "<earlier-turns>\n"+seededIntro+body+"</earlier-turns>\n")
+	switch {
+	case !fitsSeeded(body):
+		tail, _ := tailLinesOf(body, seededLines, seededBytes)
+		body = fmt.Sprintf("(earlier turns and all tool calls omitted; the last %d lines follow)\n", seededLines) + tail
+	case dropped > 0:
+		body = fmt.Sprintf("(tool calls of the earliest %d turns omitted to fit)\n", dropped) + body
+	}
+	intro := seededIntro
+	if target != "" && target != chat.Agent {
+		intro += fmt.Sprintf("This conversation was held with %s, not with you (%s): "+
+			"the turns below are a summary of it, and the replies are %s's.\n", chat.Agent, target, chat.Agent)
+	}
+	return joinPreamble(chat.OpeningContext, "<earlier-turns>\n"+intro+"\n"+body+"</earlier-turns>\n")
+}
+
+func (r *Runner) renderSeededTurn(chat *store.Chat, t *store.ChatTurn) seededTurn {
+	head := fmt.Sprintf("<turn seq=%q>\n<human>\n%s\n</human>\n", strconv.Itoa(t.Seq), strings.TrimRight(t.Prompt, "\n"))
+	tail := fmt.Sprintf("<reply>\n%s\n</reply>\n</turn>\n", strings.TrimRight(t.ResultText, "\n"))
+	var tools strings.Builder
+	if r.deps.TurnTools != nil {
+		if calls := r.deps.TurnTools(chat, t); len(calls) > 0 {
+			tools.WriteString("<tools>\n")
+			for _, c := range calls {
+				line := chatexport.ToolSummary(c.Name, c.Arg)
+				line = strings.ReplaceAll(line, "\n", " ")
+				if c.Failed {
+					line += " (failed)"
+				}
+				tools.WriteString(line + "\n")
+			}
+			tools.WriteString("</tools>\n")
+		}
+	}
+	return seededTurn{full: head + tools.String() + tail, bare: head + tail}
+}
+
+// joinSeeded is the history with the first dropped turns' tool blocks left
+// out.
+func joinSeeded(turns []seededTurn, dropped int) string {
+	var b strings.Builder
+	for i, t := range turns {
+		if i < dropped {
+			b.WriteString(t.bare)
+		} else {
+			b.WriteString(t.full)
+		}
+	}
+	return b.String()
+}
+
+// fitsSeeded reports whether a history is within the seeded bound, leaving a
+// line for the note that says what was omitted.
+func fitsSeeded(body string) bool {
+	return len(body) <= seededBytes && strings.Count(body, "\n") < seededLines
 }
 
 // tailLinesOf is s's last n lines within at most maxBytes, cut on a line

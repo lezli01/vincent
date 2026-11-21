@@ -118,6 +118,10 @@ type chatBody struct {
 	// "resumed" at an anchor in the agent's session, or "seeded" from a
 	// summary in a fresh one (decisions A and G).
 	ResumePending string `json:"resume_pending,omitempty"`
+	// PendingPreamble is the seeded context the next turn will receive —
+	// turn 0 (task 171 decision 4) — present only while resume_pending is
+	// "seeded". PATCH edits it until a turn starts.
+	PendingPreamble string `json:"pending_preamble,omitempty"`
 	// Warnings are non-fatal notes on a create — an issue chat opened on a
 	// closed issue (task 140 decision 9). Never set on a read.
 	Warnings []string `json:"warnings,omitempty"`
@@ -191,6 +195,7 @@ func renderChat(c *store.Chat) chatBody {
 		SteerReason: chatrun.SteerUnavailable(c.Agent), HasDraft: c.Draft != "",
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, LastViewedAt: c.LastViewedAt, Unread: c.Unread,
 		ForkedFrom: renderForkedFrom(c), ResumePending: resumePending(c),
+		PendingPreamble: pendingPreamble(c),
 	}
 }
 
