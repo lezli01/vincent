@@ -771,6 +771,25 @@ jobs:
         shell: bash
         run: ./scripts/170-gate.sh
 
+      # 167: rewind and fork a chat from a turn (task 167.9, issue #1041;
+      # §5.5, §13.2) — every turn leaves a checkpoint ref, a code rewind
+      # restores modified, deleted and untracked files exactly and saves the
+      # state it replaced as rewound-1, which a forward rewind puts back; a
+      # foreign commit refuses a code rewind; a conversation rewind is
+      # resumed on claude (the next turn runs in a forked session) and seeded
+      # on codex; a fork copies the settings and the checkpoint's unstaged
+      # dirty state; a permanent delete prunes the refs; and a live turn
+      # refuses both. The matrix earns its place because a rewind is
+      # `git reset --hard`, `clean` and `read-tree -u` on the host's disk —
+      # deleting and recreating files git has just read, which Windows
+      # refuses while a handle is open — and the worktree may be checked out
+      # CRLF. Group 3 because it runs the fewest gates on Windows, where m12
+      # skips itself; move it if a measured run says otherwise.
+      - name: 167 gate (rewind and fork a chat)
+        if: contains(matrix.groups, 3)
+        shell: bash
+        run: ./scripts/167-gate.sh
+
   gates:
     needs: [changes, gate-group]
     if: always()
