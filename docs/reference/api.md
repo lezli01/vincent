@@ -3836,7 +3836,9 @@ A change to `model`, `effort` or `permission_mode` is legal while the chat is
 `idle`, `running` or `awaiting_input`; a change made during a live turn applies
 from the next turn, and an ended chat answers `409`. A body with none of the
 four fields is a `400`. The agent cannot change — open a new chat for that. An
-empty `model` or `effort` returns it to the agent's default.
+empty `model` or `effort` returns it to the agent's default. The same route
+also takes `pending_preamble`, sent on its own, to edit a seeded chat's turn-0
+context — see [Rewind and fork](#rewind-and-fork).
 
 The same three fields are **per-turn overrides** on
 `POST /v1/chats/{id}/send` and on `PATCH /v1/chats/{id}/queue/{qid}`: that turn,
@@ -4247,9 +4249,11 @@ and rewind state, each omitted when empty except `seeded`:
   would be seeded rather than resumed.
 
 The chat itself gains `rewound_states` (`[{k, ref, sha, blocked}]`, the saved
-states a code rewind can go forward to), `forked_from` (`{chat_id, seq}`) and
+states a code rewind can go forward to), `forked_from` (`{chat_id, seq,
+agent}`, `agent` absent on a fork made before it was recorded),
 `resume_pending` (`resumed` or `seeded` while a rewind's or fork's plan waits
-for the next turn).
+for the next turn) and `pending_preamble` (the seeded context, while
+`resume_pending` is `seeded`).
 
 ```bash
 curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \

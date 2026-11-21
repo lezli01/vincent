@@ -180,7 +180,11 @@ state a rewind replaces is saved, so you can go forward to it again, and
 rewound turns are kept — hidden until you show them, and still in the costs.
 On claude the conversation resumes at that point in the agent's own session;
 codex, cursor and copilot cannot resume part of a session, so their next
-turn starts seeded with a summary of the kept turns and says so. A code
+turn starts seeded with a summary of the kept turns — each prompt, its tool
+calls one line each, and its reply — and says so. A fork can also go to
+another agent: ask codex to carry on a conversation held with claude. A seeded
+summary is shown as turn 0 and can be edited or cleared before the next turn
+runs. A code
 rewind refuses when something other than the chat's own turns moved the
 branch. See [`vincent chat rewind`](reference/cli.md#vincent-chat-rewind),
 [`vincent chat fork`](reference/cli.md#vincent-chat-fork), or
