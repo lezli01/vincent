@@ -197,6 +197,38 @@ func TestCodeRewindRefusesForeignCommits(t *testing.T) {
 	}
 }
 
+// TestCodeRewindAfterConversationRewind is review F1: a conversation-only
+// rewind leaves the commits of the turns it took out on the branch, and only
+// those turns explain them. A later code rewind to a turn before them must
+// still find the chain whole, not read the chat's own commits as foreign.
+func TestCodeRewindAfterConversationRewind(t *testing.T) {
+	h := newHarness(t)
+	c := h.chat(t)
+	h.turnDone(t, c.ID, "one")
+	two := h.turnDone(t, c.ID, "two")
+	h.agentCommits(t, c, 2, "turn two")
+	h.turnDone(t, c.ID, "three")
+	h.agentCommits(t, c, 3, "turn three")
+	if _, err := h.runner.Rewind(t.Context(), c.ID, RewindRequest{Turn: 3, Mode: RewindConversation}); err != nil {
+		t.Fatalf("conversation Rewind: %v", err)
+	}
+	h.turnDone(t, c.ID, "four")
+
+	turns, _ := h.store.ListChatTurns(t.Context(), c.ID)
+	opts := h.runner.RewindOptions(t.Context(), c, turns)
+	for seq := 1; seq <= 2; seq++ {
+		if o := opts[seq]; o.Code != "" {
+			t.Errorf("turn %d code option blocked: %q", seq, o.Code)
+		}
+	}
+	if _, err := h.runner.Rewind(t.Context(), c.ID, RewindRequest{Turn: 2, Mode: RewindBoth}); err != nil {
+		t.Fatalf("code rewind to turn 2 after a conversation rewind: %v", err)
+	}
+	if head := gitIn(t, c.WorktreePath, "rev-parse", "HEAD"); head != two.HeadBefore {
+		t.Errorf("HEAD = %s, want turn 2's head_before %s", head, two.HeadBefore)
+	}
+}
+
 // TestRewindGuards: a live chat, an ended chat, a turn without a checkpoint
 // and an already-rewound turn are each refused.
 func TestRewindGuards(t *testing.T) {

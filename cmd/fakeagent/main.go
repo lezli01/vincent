@@ -229,6 +229,10 @@
 //	                      append a line
 //	                      to this worktree-relative tracked file, so gate
 //	                      runs produce a non-empty diff
+//	FAKEAGENT_COMMIT      wherever FAKEAGENT_EDIT_FILE is honoured, last: commit
+//	                      the worktree's changes (`git add -A`, then an
+//	                      allow-empty commit), so a turn moves the branch the
+//	                      way an agent that commits does (task 167 review F1)
 //	FAKEAGENT_EDIT_LINES  with FAKEAGENT_EDIT_FILE: instead of appending,
 //	                      replace these comma-separated 1-based lines of
 //	                      the file with that same line, each keeping its
@@ -1254,6 +1258,18 @@ func doFileWork() {
 	if f := os.Getenv("FAKEAGENT_EDIT_FILE"); f != "" {
 		editFile(f)
 	}
+	if os.Getenv("FAKEAGENT_COMMIT") == "1" {
+		commitWork()
+	}
+}
+
+// commitWork commits whatever the turn left in the cwd (the worktree), as an
+// agent that commits its own work does. The identity is passed on the
+// command line so the commit never depends on the host's git config.
+func commitWork() {
+	_ = exec.Command("git", "add", "-A").Run()
+	_ = exec.Command("git", "-c", "user.name=fakeagent", "-c", "user.email=fakeagent@example.com",
+		"commit", "-q", "--allow-empty", "-m", "fakeagent turn").Run()
 }
 
 // writeFile replaces a file in the cwd (the worktree) wholesale — what an

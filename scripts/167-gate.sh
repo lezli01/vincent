@@ -19,10 +19,13 @@
 #      and its worktree holds the checkpoint's dirty state, unstaged
 #   6. a permanent delete prunes the chat's refs; an archive keeps them
 #   7. while a turn is live, rewind and fork are 409 chat_turn_live
+#   8. with turns that commit: after a conversation-only rewind and a further
+#      turn, a code rewind to a turn before the rewound ones is allowed — the
+#      rewound turns' commits are this chat's, not foreign (review F1)
 #
 # Every scenario starts a chat of its own, so VINCENT_GATE_SCENARIO=N runs any
-# one of them without the others. Scenario 7 goes last: it restarts the
-# daemon with a hanging agent.
+# one of them without the others. Scenarios 8 and 7 go last, in that
+# order: each restarts the daemon with an agent knob of its own.
 #
 # The gate is workflow-free: a chat has none, so there is no `run:` body here
 # to spell in the sh∩pwsh intersection. Its own bash keeps the standing
@@ -51,7 +54,7 @@ trap cleanup EXIT
 
 ONLY="${VINCENT_GATE_SCENARIO:-}"
 case "$ONLY" in
-  "" | [1-7]) ;;
+  "" | [1-8]) ;;
   *) fail "unknown VINCENT_GATE_SCENARIO: $ONLY" ;;
 esac
 want() { [[ -z "$ONLY" || "$ONLY" == "$1" ]]; }
@@ -320,6 +323,31 @@ pruning() {
   [[ -z "$refs" ]] || fail "the delete left [$refs]"
 }
 
+rewound_turns_commits() {
+  echo "== 8. a conversation rewind's turns keep their commits in the chain"
+  export FAKEAGENT_COMMIT=1
+  start_daemon
+  new_chat claude "committing"
+  turn "one"
+  turn "two"
+  turn "three"
+  local code head2 got
+  head2="$(turn_field 2 head_before)"
+  [[ "$(turn_field 3 head_after)" != "$(turn_field 3 head_before)" ]] \
+    || fail "turn 3 did not move the branch; the scenario needs a committing turn"
+  code="$(rewind '{"turn": 3, "mode": "conversation"}')"
+  [[ "$code" == "200" ]] || fail "conversation rewind answered $code: $(body)"
+  turn "four"
+  got="$(api GET "/chats/$CHAT_ID" | jq -r '[.turns[] | select(.seq <= 2) | .rewind.code // ""] | join(",")')"
+  [[ "$got" == "," ]] || fail "turns 1 and 2 offer code rewind as [$got], want both allowed"
+  code="$(rewind '{"turn": 2, "mode": "both"}')"
+  [[ "$code" == "200" ]] || fail "code rewind to turn 2 after a conversation rewind answered $code: $(body)"
+  got="$(git -C "$WT" rev-parse HEAD)"
+  [[ "$got" == "$head2" ]] || fail "after the rewind HEAD is $got, want turn 2's head_before $head2"
+  unset FAKEAGENT_COMMIT
+  start_daemon
+}
+
 live_turn() {
   echo "== 7. a live turn refuses rewind and fork"
   new_chat claude "live"
@@ -348,6 +376,7 @@ if want 3; then conversation_resumed; fi
 if want 4; then conversation_seeded; fi
 if want 5; then fork_copies; fi
 if want 6; then pruning; fi
+if want 8; then rewound_turns_commits; fi
 if want 7; then live_turn; fi
 
 echo "GATE PASS: 167 (rewind and fork a chat from a turn)"

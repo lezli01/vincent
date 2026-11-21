@@ -410,16 +410,23 @@ func (st refState) explained(a, b string) bool {
 }
 
 // chainFrom is decision 3's check for a code rewind to turn seq, or, with
-// seq 0, for a forward rewind: over the non-rewound turns from seq on that
-// ran on a checkpoint, each turn's head_before must follow the previous
-// one's head_after, and the worktree's HEAD the last one's — a link
-// vincent's own rewind broke counting as followed. A forward rewind checks
-// only the last link, against what vincent last left. It returns "" when the
-// chain holds, else ReasonRewindForeignCommits.
+// seq 0, for a forward rewind: over the turns from seq on that ran on a
+// checkpoint, each turn's head_before must follow the previous one's
+// head_after, and the worktree's HEAD the last one's — a link vincent's own
+// rewind broke counting as followed. A forward rewind checks only the last
+// link, against what vincent last left. It returns "" when the chain holds,
+// else ReasonRewindForeignCommits.
+//
+// Rewound turns are in the chain (review F1): a rewind takes a turn out of
+// the conversation, not out of the branch's history. A conversation-only
+// rewind leaves the commits those turns made where they are, and only the
+// rewound turns' own head_before/head_after explain them; skipping the turns
+// would read this chat's own commits as foreign. Only the *target* must not
+// be rewound, which Rewind checks before it gets here.
 func (st refState) chainFrom(turns []store.ChatTurn, seq int) string {
 	var chain []store.ChatTurn
 	for _, t := range turns {
-		if t.RewoundAt == nil && t.HeadBefore != "" {
+		if t.HeadBefore != "" {
 			chain = append(chain, t)
 		}
 	}
