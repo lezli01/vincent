@@ -59,7 +59,7 @@ const chatColumns = `id, project_id, title, state, agent, model, effort, permiss
 	linked_task_id, opening_context, issue_id, end_sha, created_at, updated_at,
 	queue_paused, queue_pause_reason, draft, stash, draft_updated_at,
 	(SELECT COUNT(*) FROM chat_queued_messages q WHERE q.chat_id = chats.id),
-	last_viewed_at, ` + chatUnreadExpr
+	last_viewed_at, resume_at, pending_preamble, forked_from_chat_id, forked_from_seq, ` + chatUnreadExpr
 
 // chatUnreadExpr derives Chat.Unread in SQL (task 165) so a list stays one
 // query: the chat's latest terminal turn finished after it was last viewed,
@@ -79,7 +79,8 @@ const chatTurnColumns = `id, chat_id, seq, prompt, state, fail_reason, error_mes
 	started_at, ended_at, duration_ms, session_input_tokens, session_output_tokens,
 	cache_read_tokens, cache_creation_tokens, context_tokens, context_window,
 	session_cache_read_tokens, session_cache_creation_tokens, model, effort, permission_mode,
-	mention_context, checkpoint_sha, head_before, head_after`
+	mention_context, checkpoint_sha, head_before, head_after,
+	rewound_at, rewind_id, seeded, resume_anchor`
 
 // CreateChat inserts c, assigning its ID and timestamps, and writes the
 // durable chat.created event in the same transaction (§13.3).
@@ -105,11 +106,13 @@ func (s *Store) CreateChat(ctx context.Context, c *Chat) error {
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO chats (project_id, title, state, agent, model, effort, permission_mode,
 				branch, adopted_branch, base_branch, base_sha, base_refresh, worktree_path, session_id, pending_input,
+				resume_at, pending_preamble, forked_from_chat_id, forked_from_seq,
 				created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			c.ProjectID, c.Title, string(c.State), c.Agent, nullString(c.Model), nullString(c.Effort),
 			c.PermissionMode, c.Branch, c.AdoptedBranch, c.BaseBranch, nullString(c.BaseSHA), refreshJSON, nullString(c.WorktreePath),
 			nullString(c.SessionID), nullString(string(c.PendingInput)),
+			nullString(c.ResumeAt), nullString(c.PendingPreamble), c.ForkedFromChatID, c.ForkedFromSeq,
 			formatTime(c.CreatedAt), formatTime(c.UpdatedAt))
 		if err != nil {
 			return fmt.Errorf("insert chat: %w", err)
@@ -498,11 +501,12 @@ func (s *Store) updateChatOrRefuse(ctx context.Context, id int64, evType string,
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE chats SET title = ?, state = ?, model = ?, effort = ?, permission_mode = ?, base_sha = ?,
-				base_refresh = ?, worktree_path = ?, session_id = ?, pending_input = ?, updated_at = ?
+				base_refresh = ?, worktree_path = ?, session_id = ?, pending_input = ?,
+				resume_at = ?, pending_preamble = ?, updated_at = ?
 			WHERE id = ?`,
 			c.Title, string(c.State), nullString(c.Model), nullString(c.Effort), c.PermissionMode, nullString(c.BaseSHA),
 			refreshJSON, nullString(c.WorktreePath), nullString(c.SessionID), nullString(string(c.PendingInput)),
-			formatTime(c.UpdatedAt), c.ID); err != nil {
+			nullString(c.ResumeAt), nullString(c.PendingPreamble), formatTime(c.UpdatedAt), c.ID); err != nil {
 			return fmt.Errorf("update chat %d: %w", id, err)
 		}
 		out = c
@@ -644,10 +648,12 @@ func insertChatTurnTx(ctx context.Context, tx *sql.Tx, c *Chat, prompt string, o
 	resolved := ov.Resolve(c)
 	t.Model, t.Effort, t.PermissionMode = resolved.Model, resolved.Effort, resolved.PermissionMode
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO chat_turns (chat_id, seq, prompt, state, session_id, started_at, model, effort, permission_mode)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO chat_turns (chat_id, seq, prompt, state, session_id, started_at, model, effort, permission_mode,
+			seeded, resume_anchor)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.ChatID, t.Seq, t.Prompt, string(t.State), nullString(t.SessionID), formatTime(t.StartedAt),
-		nullString(t.Model), nullString(t.Effort), nullString(t.PermissionMode))
+		nullString(t.Model), nullString(t.Effort), nullString(t.PermissionMode),
+		t.Seeded, nullString(t.ResumeAnchor))
 	if err != nil {
 		return nil, fmt.Errorf("insert chat turn: %w", err)
 	}
@@ -698,7 +704,8 @@ func updateChatTurnTx(ctx context.Context, tx *sql.Tx, t *ChatTurn) error {
 			session_input_tokens = ?, session_output_tokens = ?,
 			cache_read_tokens = ?, cache_creation_tokens = ?, context_tokens = ?, context_window = ?,
 			session_cache_read_tokens = ?, session_cache_creation_tokens = ?,
-			checkpoint_sha = ?, head_before = ?, head_after = ?
+			checkpoint_sha = ?, head_before = ?, head_after = ?,
+			seeded = ?, resume_anchor = ?
 		WHERE id = ?`,
 		string(t.State), nullString(t.FailReason), nullString(t.ErrorMessage), nullString(t.ResultText),
 		nullString(t.SessionID), t.InputTokens, t.OutputTokens, t.CostUSD, t.ExitCode,
@@ -706,7 +713,8 @@ func updateChatTurnTx(ctx context.Context, tx *sql.Tx, t *ChatTurn) error {
 		t.SessionInputTokens, t.SessionOutputTokens,
 		t.CacheReadTokens, t.CacheCreationTokens, t.ContextTokens, t.ContextWindow,
 		t.SessionCacheReadTokens, t.SessionCacheCreationTokens,
-		nullString(t.CheckpointSHA), nullString(t.HeadBefore), nullString(t.HeadAfter), t.ID); err != nil {
+		nullString(t.CheckpointSHA), nullString(t.HeadBefore), nullString(t.HeadAfter),
+		t.Seeded, nullString(t.ResumeAnchor), t.ID); err != nil {
 		return fmt.Errorf("update chat turn %d: %w", t.ID, err)
 	}
 	return nil
@@ -933,12 +941,23 @@ func scanChat(r rowScanner) (*Chat, error) {
 	var issueID sql.NullInt64
 	var createdAt, updatedAt string
 	var pauseReason, draftUpdatedAt, lastViewedAt sql.NullString
+	var resumeAt, pendingPreamble sql.NullString
+	var forkedFromChatID, forkedFromSeq sql.NullInt64
 	if err := r.Scan(&c.ID, &c.ProjectID, &c.Title, (*string)(&c.State), &c.Agent, &model, &effort,
 		&c.PermissionMode, &c.Branch, &c.AdoptedBranch, &c.BaseBranch, &baseSHA, &baseRefresh, &worktreePath, &sessionID, &pending,
 		&handoffTaskID, &linkedTaskID, &openingContext, &issueID, &endSHA, &createdAt, &updatedAt,
 		&c.QueuePaused, &pauseReason, &c.Draft, &c.Stash, &draftUpdatedAt, &c.QueuedCount,
-		&lastViewedAt, &c.Unread); err != nil {
+		&lastViewedAt, &resumeAt, &pendingPreamble, &forkedFromChatID, &forkedFromSeq, &c.Unread); err != nil {
 		return nil, err
+	}
+	c.ResumeAt, c.PendingPreamble = resumeAt.String, pendingPreamble.String
+	if forkedFromChatID.Valid {
+		id := forkedFromChatID.Int64
+		c.ForkedFromChatID = &id
+	}
+	if forkedFromSeq.Valid {
+		seq := int(forkedFromSeq.Int64)
+		c.ForkedFromSeq = &seq
 	}
 	var err error
 	if c.DraftUpdatedAt, err = parseTimePtr(draftUpdatedAt); err != nil {
@@ -982,6 +1001,7 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 	var failReason, errMsg, resultText, sessionID, procIdentity sql.NullString
 	var model, effort, mode, mentionContext sql.NullString
 	var checkpoint, headBefore, headAfter sql.NullString
+	var rewoundAt, rewindID, resumeAnchor sql.NullString
 	var startedAt string
 	var endedAt sql.NullString
 	if err := r.Scan(&t.ID, &t.ChatID, &t.Seq, &t.Prompt, (*string)(&t.State), &failReason, &errMsg,
@@ -990,9 +1010,11 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 		&t.SessionInputTokens, &t.SessionOutputTokens,
 		&t.CacheReadTokens, &t.CacheCreationTokens, &t.ContextTokens, &t.ContextWindow,
 		&t.SessionCacheReadTokens, &t.SessionCacheCreationTokens, &model, &effort, &mode,
-		&mentionContext, &checkpoint, &headBefore, &headAfter); err != nil {
+		&mentionContext, &checkpoint, &headBefore, &headAfter,
+		&rewoundAt, &rewindID, &t.Seeded, &resumeAnchor); err != nil {
 		return nil, err
 	}
+	t.RewindID, t.ResumeAnchor = rewindID.String, resumeAnchor.String
 	t.MentionContext = mentionContext.String
 	t.Model, t.Effort, t.PermissionMode = model.String, effort.String, mode.String
 	t.CheckpointSHA, t.HeadBefore, t.HeadAfter = checkpoint.String, headBefore.String, headAfter.String
@@ -1007,6 +1029,9 @@ func scanChatTurn(r rowScanner) (*ChatTurn, error) {
 		return nil, err
 	}
 	if t.EndedAt, err = parseTimePtr(endedAt); err != nil {
+		return nil, err
+	}
+	if t.RewoundAt, err = parseTimePtr(rewoundAt); err != nil {
 		return nil, err
 	}
 	return &t, nil
