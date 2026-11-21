@@ -2046,8 +2046,9 @@ row under it.
 
 A hand-off card shows what its delivery is — `change`, `reply` or `none` — and
 where it stands toward a handoff: nothing more while it is `pending`, then
-`claimed (H7)`, `waiting` or `delivered`, with `· paused` while the claiming
-handoff's task is paused. An in-progress card whose work has finished but is
+`claimed (H7)` or `waiting`, with `· paused` while the claiming
+handoff's task is paused. An open card a handoff delivered but left open says
+`delivered`. An in-progress card whose work has finished but is
 not ready says `idle`; `.` marks it ready, which moves it to hand-off, and `.`
 on a pending hand-off card takes that back.
 

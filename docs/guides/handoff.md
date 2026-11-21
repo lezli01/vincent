@@ -147,8 +147,8 @@ stands toward a handoff:
 - **`claimed`** — a handoff holds it and has not decided it. It shows in any
   lane, because the handoff's task may restart work on it.
 - **`waiting`** — a handoff holds it, parked with `handoff wait`.
-- **`delivered`** — delivered and left open, until new work makes it
-  `pending` again.
+- **`delivered`** — delivered and left open, back in the `open` lane, until
+  new work makes it `pending` in `hand_off` again.
 - **`idle`** — in progress, with finished work that is not ready.
 
 While the claiming handoff's task is paused, a `claimed` or `waiting` marker
