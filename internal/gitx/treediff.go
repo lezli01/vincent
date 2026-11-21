@@ -46,7 +46,12 @@ type FileDiff struct {
 	// Binary is a file git would not diff as text; ModeOnly is a change of
 	// mode with the content identical. Neither has hunks.
 	Binary, ModeOnly bool
-	Added, Removed   int
+	// Gitlink is an entry that is, or was, a commit rather than a blob (mode
+	// 160000): a submodule, or a directory holding its own .git that `add -A`
+	// recorded as one. Its one "Subproject commit" hunk is git's description
+	// of it, not lines of a file.
+	Gitlink        bool
+	Added, Removed int
 	// Header is the file's lines ahead of its first hunk (diff --git, index,
 	// new file mode, ---, +++ ...), byte for byte.
 	Header []string
@@ -71,11 +76,37 @@ type Hunk struct {
 	Added, Removed int
 }
 
-// Rejectable reports whether the file's hunks can be reverse-applied one at a
-// time: false for binary files, renames and mode-only changes.
-func (f FileDiff) Rejectable() bool {
-	return !f.Binary && !f.ModeOnly && f.Status != StatusRenamed
+// Why a file's hunks cannot be reverse-applied one at a time, as
+// FileDiff.NotRejectable reports it.
+const (
+	NotRejectableBinary   = "binary"
+	NotRejectableRenamed  = "renamed"
+	NotRejectableModeOnly = "mode_only"
+	// NotRejectableGitlink: `git apply -R` on a gitlink's patch only tries to
+	// rmdir the directory, warns when it is not empty and exits 0 — a reject
+	// that reports success and reverts nothing (review F4).
+	NotRejectableGitlink = "gitlink"
+)
+
+// NotRejectable is why the file's hunks cannot be reverse-applied one at a
+// time — one of the NotRejectable* constants — or "" when they can.
+func (f FileDiff) NotRejectable() string {
+	switch {
+	case f.Binary:
+		return NotRejectableBinary
+	case f.Status == StatusRenamed:
+		return NotRejectableRenamed
+	case f.ModeOnly:
+		return NotRejectableModeOnly
+	case f.Gitlink:
+		return NotRejectableGitlink
+	}
+	return ""
 }
+
+// Rejectable reports whether the file's hunks can be reverse-applied one at a
+// time: false for binary files, renames, mode-only changes and gitlinks.
+func (f FileDiff) Rejectable() bool { return f.NotRejectable() == "" }
 
 // diffTreeArgs pins everything about `diff-tree`'s output a user's config or
 // environment could otherwise change (task 169.1). diff-tree is plumbing and
@@ -148,6 +179,16 @@ func (g *Git) DiffTrees(ctx context.Context, dir, from, to string) ([]FileDiff, 
 			f.OldPath = e.oldPath
 		}
 		f.ModeOnly = status == StatusModified && e.oldMode != e.newMode && e.oldSHA == e.newSHA
+		// A type change is taken as a deletion then an addition, and only the
+		// half that is the commit is the gitlink.
+		switch {
+		case e.status == 'T' && status == StatusDeleted:
+			f.Gitlink = e.oldMode == gitlinkMode
+		case e.status == 'T':
+			f.Gitlink = e.newMode == gitlinkMode
+		default:
+			f.Gitlink = e.oldMode == gitlinkMode || e.newMode == gitlinkMode
+		}
 		hashHunks(&f)
 		files = append(files, f)
 		return nil
@@ -210,6 +251,9 @@ func (g *Git) DiffTreesStat(ctx context.Context, dir, from, to string) (files, a
 	}
 	return files, added, removed, nil
 }
+
+// gitlinkMode is the tree mode of a commit entry.
+const gitlinkMode = "160000"
 
 // rawEntry is one record of `diff-tree --raw -z`.
 type rawEntry struct {
@@ -365,7 +409,7 @@ var (
 	// ErrHunkConflict: git would not apply the reversal. git's message is
 	// wrapped; the working tree is as it was.
 	ErrHunkConflict = errors.New("hunk does not apply")
-	// ErrHunkNotRejectable: the file is binary, a rename or a mode-only change.
+	// ErrHunkNotRejectable: FileDiff.NotRejectable says why.
 	ErrHunkNotRejectable = errors.New("hunk cannot be rejected")
 )
 

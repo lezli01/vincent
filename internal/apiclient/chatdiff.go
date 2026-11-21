@@ -22,7 +22,7 @@ const (
 	CodeChatHunkStale = "chat_hunk_stale"
 	// CodeChatHunkConflict: git would not reverse-apply the hunk.
 	CodeChatHunkConflict = "chat_hunk_conflict"
-	// CodeChatHunkNotRejectable: the file is binary, a rename or mode-only.
+	// CodeChatHunkNotRejectable: the file's NotRejectable says why.
 	CodeChatHunkNotRejectable = "chat_hunk_not_rejectable"
 	// CodeChatTurnLive: a reject or an accept while the chat is running,
 	// awaiting input or draining its queue.
@@ -52,12 +52,15 @@ type ChatDiffFile struct {
 	// Status is added, deleted, modified or renamed.
 	Status string `json:"status"`
 	Binary bool   `json:"binary"`
-	// Rejectable is false for a binary file, a rename and a mode-only change:
-	// their hunks cannot be reverted one at a time.
-	Rejectable bool           `json:"rejectable"`
-	Added      int            `json:"added"`
-	Removed    int            `json:"removed"`
-	Hunks      []ChatDiffHunk `json:"hunks"`
+	// Rejectable is false for a binary file, a rename, a mode-only change and
+	// a nested git repository: their hunks cannot be reverted one at a time.
+	Rejectable bool `json:"rejectable"`
+	// NotRejectable is why — one of the ChatDiffNotRejectable* values — and
+	// "" for a rejectable file.
+	NotRejectable string         `json:"not_rejectable"`
+	Added         int            `json:"added"`
+	Removed       int            `json:"removed"`
+	Hunks         []ChatDiffHunk `json:"hunks"`
 }
 
 // ChatDiffHunk is one hunk. Hash identifies it by content, independent of its
@@ -119,6 +122,16 @@ func (c *Client) ChatDiffStat(ctx context.Context, chatID int64) (*ChatDiffStat,
 	}
 	return &out, nil
 }
+
+// Why a ChatDiffFile is not rejectable.
+const (
+	ChatDiffNotRejectableBinary   = "binary"
+	ChatDiffNotRejectableRenamed  = "renamed"
+	ChatDiffNotRejectableModeOnly = "mode_only"
+	// ChatDiffNotRejectableGitlink: a directory with its own .git, which git
+	// records as one commit rather than as files.
+	ChatDiffNotRejectableGitlink = "gitlink"
+)
 
 // RejectChatHunk reverse-applies one hunk of the scope's current diff in the
 // chat's working tree — never the index or HEAD — and leaves a note for the

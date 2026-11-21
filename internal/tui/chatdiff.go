@@ -224,13 +224,17 @@ func chatDiffFileNote(f apiclient.ChatDiffFile) string {
 	if f.Rejectable {
 		return ""
 	}
-	switch {
-	case f.Binary:
+	switch f.NotRejectable {
+	case apiclient.ChatDiffNotRejectableBinary:
 		return "binary file — not rejectable per hunk"
-	case f.OldPath != "":
+	case apiclient.ChatDiffNotRejectableRenamed:
 		return "renamed from " + sanitizeText(f.OldPath) + " — not rejectable per hunk"
-	default:
+	case apiclient.ChatDiffNotRejectableModeOnly:
 		return "mode change only — not rejectable per hunk"
+	case apiclient.ChatDiffNotRejectableGitlink:
+		return "nested git repository — not rejectable here; remove the directory yourself"
+	default:
+		return "not rejectable per hunk"
 	}
 }
 

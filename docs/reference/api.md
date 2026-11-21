@@ -3972,7 +3972,8 @@ index nor HEAD and keeps no commit.
 { "scope": "base", "from": "<sha diffed from>", "added": 7, "removed": 2,
   "files": [
     { "path": "internal/api/server.go", "old_path": "", "status": "modified",
-      "binary": false, "rejectable": true, "added": 5, "removed": 2,
+      "binary": false, "rejectable": true, "not_rejectable": "",
+      "added": 5, "removed": 2,
       "hunks": [
         { "hash": "<64 hex>", "header": "@@ -12,6 +12,9 @@ func route()",
           "body": " ctx\n-old\n+new", "added": 5, "removed": 2, "accepted": false } ] } ] }
@@ -3985,7 +3986,10 @@ lines after the header, each with its ` `, `+`, `-` or `\` prefix, joined by
 **content** — the path and the lines, not the line numbers — so it is stable
 across a restart and across a reject of another hunk above it, and changes
 when the hunk's content does. `rejectable` is `false` for a binary file, a
-rename and a mode-only change, which are listed with no per-hunk reject.
+rename, a mode-only change and a nested git repository (a directory with its
+own `.git`, which git records as one commit), which are listed with no
+per-hunk reject; `not_rejectable` then says which — `binary`, `renamed`,
+`mode_only` or `gitlink` — and is `""` for a rejectable file.
 `accepted` is the review mark below.
 
 `GET …/diff/stat` answers `{ "files": N, "added": N, "removed": N }` for the
@@ -4022,7 +4026,7 @@ the mark existed. Marks are deleted with the chat.
 | `409` | `chat_turn_live` | Reject or accept while the chat is `running`, `awaiting_input`, or draining its queue. Reads are never refused for this |
 | `409` | `chat_hunk_stale` | The hash is not in the scope's current diff — read the diff again |
 | `409` | `chat_hunk_conflict` | git would not reverse-apply the hunk; the working tree is unchanged |
-| `409` | `chat_hunk_not_rejectable` | Reject on a binary file, a rename or a mode-only change |
+| `409` | `chat_hunk_not_rejectable` | Reject on a file whose `not_rejectable` is set: a binary file, a rename, a mode-only change or a nested git repository |
 | `409` | `invalid_state` | Reject on a chat that has ended (`details.action: "reject"`) |
 
 None of the five routes is an MCP tool.

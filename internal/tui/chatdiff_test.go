@@ -24,7 +24,10 @@ func chatDiffFiles() *apiclient.ChatDiff {
 			{Path: "b.go", Status: "added", Rejectable: true, Added: 1, Hunks: []apiclient.ChatDiffHunk{
 				{Hash: "h3", Header: "@@ -0,0 +1 @@", Body: "+fresh\n", Added: 1},
 			}},
-			{Path: "logo.png", Status: "modified", Binary: true},
+			{Path: "logo.png", Status: "modified", Binary: true, NotRejectable: apiclient.ChatDiffNotRejectableBinary},
+			{Path: "vendor/lib", Status: "added", NotRejectable: apiclient.ChatDiffNotRejectableGitlink, Added: 1, Hunks: []apiclient.ChatDiffHunk{
+				{Hash: "h4", Header: "@@ -0,0 +1 @@", Body: "+Subproject commit 0123456\n", Added: 1},
+			}},
 		},
 	}
 }
@@ -168,6 +171,18 @@ func TestChatDiffNotRejectableSaysWhy(t *testing.T) {
 	}
 	if screen := chatDiffScreen(v); !strings.Contains(screen, "binary file — not rejectable per hunk") {
 		t.Fatalf("the pane does not name the binary file as not rejectable:\n%s", screen)
+	}
+	// A nested git repository is listed with one hunk and refused the same
+	// way (review F4): git would report its reversal done and remove nothing.
+	v.updateKey(registryKey(t, "down"))
+	if v.diff.pane.cursorPath != "vendor/lib" {
+		t.Fatalf("the file cursor is on %q, want the nested repository", v.diff.pane.cursorPath)
+	}
+	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.busy {
+		t.Fatal("x on a nested repository sent a reject")
+	}
+	if !strings.Contains(v.note, "nested git repository") {
+		t.Fatalf("x on a nested repository said %q", v.note)
 	}
 }
 

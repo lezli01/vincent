@@ -215,7 +215,7 @@ func newChatDiffRejectCmd() *cobra.Command {
 			"is the file's path as listed, /-separated.\n\n" +
 			"Refused while the chat has a live turn, on a chat that has ended, for a hunk " +
 			"that is no longer in the diff or that git cannot reverse, and for a binary, " +
-			"renamed or mode-only file. Exit 1 on any of those.",
+			"renamed or mode-only file or a nested git repository. Exit 1 on any of those.",
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withChatHunk(cmd, args, scope,

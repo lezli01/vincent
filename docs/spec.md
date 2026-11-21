@@ -1432,7 +1432,11 @@ hunk leaves an uncommitted reversal. Rejecting an added file's only hunk
 deletes the file. A hash that matches nothing is `409 chat_hunk_stale`; a
 patch git will not apply is `409 chat_hunk_conflict` and writes nothing;
 binary files, renames and mode-only changes are listed but
-`409 chat_hunk_not_rejectable`. Line endings are git's to convert, as on a
+`409 chat_hunk_not_rejectable`. *Amended 2026-11-21 (review of #1037): so is
+a gitlink — a directory holding its own `.git`, which `add -A` records as one
+commit. `git apply -R` on its patch removes nothing and exits 0, so a reject
+would have reported a revert that did not happen. Each file carries
+`not_rejectable` (`binary`, `renamed`, `mode_only`, `gitlink`, or `""`).* Line endings are git's to convert, as on a
 checkout, so a CRLF file round-trips.
 
 The reject then prepends a note to the chat's daemon-held draft (task 164), in
@@ -11916,7 +11920,8 @@ GET    /v1/chats/{id}/export            *Added 2026-11-19 (task 159, issue #1023
 GET    /v1/chats/{id}/diff              *Added 2026-11-20 (task 169, issue #1018).* The chat's
        ?scope=base|turn                 diff, structured (§5.5 "Diff and hunk review"): →
                                         { scope, from, added, removed, files: [{ path, old_path,
-                                        status, binary, rejectable, added, removed, hunks:
+                                        status, binary, rejectable, not_rejectable, added,
+                                        removed, hunks:
                                         [{ hash, header, body, added, removed, accepted }] }] }.
                                         `scope` defaults to `base`; anything else but `turn` is
                                         `400 validation_failed`, checked before the chat is
@@ -11940,7 +11945,7 @@ POST   /v1/chats/{id}/diff/reject       *Added 2026-11-20 (task 169).* { scope?,
                                         not in the scope's current diff; `409
                                         chat_hunk_conflict` when git will not apply the
                                         reversal; `409 chat_hunk_not_rejectable` for a binary
-                                        file, a rename or a mode-only change; `409
+                                        file, a rename, a mode-only change or a gitlink; `409
                                         invalid_state` (`details.action: "reject"`) for a
                                         terminal chat. Publishes `chat.draft_changed` when the
                                         note was written

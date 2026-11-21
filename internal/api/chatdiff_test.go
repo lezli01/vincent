@@ -386,6 +386,19 @@ func TestChatHunkRejectConflictAndNotRejectable(t *testing.T) {
 	testrepo.Run(t, dir, "commit", "-q", "-m", "delete, rename, ignore")
 	testrepo.WriteFile(t, dir, "gone.txt", "something else entirely\n")
 	testrepo.WriteFile(t, dir, "bin.dat", "a\x00b\x00")
+	// A directory with its own .git, as an agent's `git clone` leaves one:
+	// the snapshot records it as a gitlink (review F4).
+	nested := filepath.Join(dir, "vendor", "lib")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	testrepo.Run(t, nested, "init", "-q")
+	testrepo.Run(t, nested, "config", "user.name", "t")
+	testrepo.Run(t, nested, "config", "user.email", "t@example.invalid")
+	testrepo.Run(t, nested, "config", "commit.gpgsign", "false")
+	testrepo.WriteFile(t, nested, "lib.go", "package lib\n")
+	testrepo.Run(t, nested, "add", "-A")
+	testrepo.Run(t, nested, "commit", "-q", "-m", "nested")
 	c := h.chat(t, &store.Chat{WorktreePath: dir})
 
 	d := h.chatDiff(t, c.ID, "base")
@@ -397,17 +410,32 @@ func TestChatHunkRejectConflictAndNotRejectable(t *testing.T) {
 	if got := readFile(t, dir, "gone.txt"); got != "something else entirely\n" {
 		t.Errorf("a refused reject wrote the file: %q", got)
 	}
+	why := map[string]string{"bin.dat": "binary", "renamed.txt": "renamed", "vendor/lib": "gitlink"}
 	for _, f := range d.Files {
-		if f.Path != "bin.dat" && f.Path != "renamed.txt" {
+		want, ok := why[f.Path]
+		if !ok {
 			continue
 		}
-		if f.Rejectable {
-			t.Errorf("%s is listed rejectable: %+v", f.Path, f)
+		delete(why, f.Path)
+		if f.Rejectable || f.NotRejectable != want {
+			t.Errorf("%s: rejectable %v, not_rejectable %q, want %q", f.Path, f.Rejectable, f.NotRejectable, want)
 		}
-		status, code, raw := h.hunkCall(t, c.ID, "reject", map[string]any{"scope": "base", "path": f.Path, "hunk": gone.Hash})
+		// The file's own hunk where it has one: the gitlink's "Subproject
+		// commit" hunk is exactly what git would pretend to reverse.
+		hash := gone.Hash
+		if len(f.Hunks) > 0 {
+			hash = f.Hunks[0].Hash
+		}
+		status, code, raw := h.hunkCall(t, c.ID, "reject", map[string]any{"scope": "base", "path": f.Path, "hunk": hash})
 		if status != http.StatusConflict || code != CodeChatHunkNotRejectable {
 			t.Errorf("reject of %s = %d %s", f.Path, status, raw)
 		}
+	}
+	if len(why) != 0 {
+		t.Errorf("not in the diff: %v", why)
+	}
+	if got := readFile(t, dir, "vendor/lib/lib.go"); got != "package lib\n" {
+		t.Errorf("the nested repository's file changed: %q", got)
 	}
 	// None of the refusals left a note.
 	if stored, _ := h.store.GetChat(t.Context(), c.ID); stored.Draft != "" {

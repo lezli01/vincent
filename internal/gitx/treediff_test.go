@@ -665,3 +665,38 @@ func TestDiffTreesTypeChangeAndEmptyFile(t *testing.T) {
 		t.Errorf("empty file = %+v", e)
 	}
 }
+
+// TestDiffTreesGitlinkNotRejectable is review F4: a directory holding its own
+// .git — an agent ran `git clone` or `git init` in the worktree — is recorded
+// by `add -A` as a gitlink and listed as an added file with one "Subproject
+// commit" hunk. `git apply -R` on that patch removes nothing and exits 0, so
+// the file must refuse a reject rather than report one that did not happen.
+func TestDiffTreesGitlinkNotRejectable(t *testing.T) {
+	g, dir, base := diffRepo(t)
+	ctx := context.Background()
+	nested := filepath.Join(dir, "vendor", "lib")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	testrepo.Run(t, nested, "init", "-q")
+	testrepo.Run(t, nested, "config", "user.name", "t")
+	testrepo.Run(t, nested, "config", "user.email", "t@example.invalid")
+	testrepo.Run(t, nested, "config", "commit.gpgsign", "false")
+	writeFile(t, dir, "vendor/lib/lib.go", "package lib\n")
+	testrepo.Run(t, nested, "add", "-A")
+	testrepo.Run(t, nested, "commit", "-q", "-m", "nested")
+
+	f := fileNamed(t, snapDiff(t, g, dir, base), "vendor/lib")
+	if f.Status != StatusAdded || !f.Gitlink || len(f.Hunks) != 1 {
+		t.Fatalf("nested repository = %+v", f)
+	}
+	if f.Rejectable() || f.NotRejectable() != NotRejectableGitlink {
+		t.Errorf("rejectable = %v, reason %q; want a gitlink refused", f.Rejectable(), f.NotRejectable())
+	}
+	if err := g.ReverseHunk(ctx, dir, f, f.Hunks[0].Hash); !errors.Is(err, ErrHunkNotRejectable) {
+		t.Errorf("ReverseHunk = %v, want ErrHunkNotRejectable", err)
+	}
+	if got, ok := readFile(t, dir, "vendor/lib/lib.go"); !ok || got != "package lib\n" {
+		t.Errorf("the nested repository's file changed: %q, %v", got, ok)
+	}
+}

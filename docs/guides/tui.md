@@ -2974,9 +2974,9 @@ content, so a hunk the agent changes afterwards is a new, unmarked hunk.
 Both are refused while a turn is running, waiting on you, or the queue is
 draining — the agent would be writing the same files — and a chat that has
 ended can be read but no longer rejected. A hunk that changed since the pane
-read it is read again instead of being reverted; binary files, renames and
-mode-only changes are listed but cannot be rejected hunk by hunk, and their
-row says so.
+read it is read again instead of being reverted; binary files, renames,
+mode-only changes and a nested git repository (a directory with its own
+`.git`) are listed but cannot be rejected hunk by hunk, and their row says so.
 
 From 150 columns the Details pane carries a **changes** row — the file count
 and `+`/`-` lines since the base — and names the key that opens the diff. It

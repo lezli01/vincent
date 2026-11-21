@@ -28,7 +28,8 @@ const (
 	CodeChatHunkStale = "chat_hunk_stale"
 	// CodeChatHunkConflict: git would not reverse-apply the hunk.
 	CodeChatHunkConflict = "chat_hunk_conflict"
-	// CodeChatHunkNotRejectable: the file is binary, a rename or mode-only.
+	// CodeChatHunkNotRejectable: the file is binary, a rename, mode-only or a
+	// nested git repository; the file's not_rejectable says which.
 	CodeChatHunkNotRejectable = "chat_hunk_not_rejectable"
 	// CodeChatTurnLive: a reject or an accept while the chat is running,
 	// awaiting input, or draining its queue.
@@ -60,14 +61,17 @@ type chatDiffHunkBody struct {
 }
 
 type chatDiffFileBody struct {
-	Path       string             `json:"path"`
-	OldPath    string             `json:"old_path"`
-	Status     string             `json:"status"`
-	Binary     bool               `json:"binary"`
-	Rejectable bool               `json:"rejectable"`
-	Added      int                `json:"added"`
-	Removed    int                `json:"removed"`
-	Hunks      []chatDiffHunkBody `json:"hunks"`
+	Path       string `json:"path"`
+	OldPath    string `json:"old_path"`
+	Status     string `json:"status"`
+	Binary     bool   `json:"binary"`
+	Rejectable bool   `json:"rejectable"`
+	// NotRejectable is why Rejectable is false — binary, renamed, mode_only
+	// or gitlink — and "" when it is true.
+	NotRejectable string             `json:"not_rejectable"`
+	Added         int                `json:"added"`
+	Removed       int                `json:"removed"`
+	Hunks         []chatDiffHunkBody `json:"hunks"`
 }
 
 type chatDiffBody struct {
@@ -264,7 +268,7 @@ func (s *Server) handleChatDiff(w http.ResponseWriter, r *http.Request) {
 	for _, f := range files {
 		fb := chatDiffFileBody{
 			Path: f.Path, OldPath: f.OldPath, Status: f.Status, Binary: f.Binary,
-			Rejectable: f.Rejectable(), Added: f.Added, Removed: f.Removed,
+			Rejectable: f.Rejectable(), NotRejectable: f.NotRejectable(), Added: f.Added, Removed: f.Removed,
 			Hunks: make([]chatDiffHunkBody, 0, len(f.Hunks)),
 		}
 		for _, h := range f.Hunks {
@@ -381,7 +385,7 @@ func (s *Server) handleChatDiffReject(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, gitx.ErrHunkNotRejectable):
 			return chatDiffConflict(CodeChatHunkNotRejectable,
-				fmt.Sprintf("%s is binary, a rename or a mode-only change; its hunks cannot be rejected one at a time", req.Path))
+				fmt.Sprintf("%s is %s; it cannot be rejected hunk by hunk", req.Path, chatHunkNotRejectableWhy(file.NotRejectable())))
 		case errors.Is(err, gitx.ErrHunkNotFound) || (err == nil && hunk == nil):
 			return chatHunkStale(req.Path)
 		case errors.Is(err, gitx.ErrHunkConflict):
@@ -415,6 +419,24 @@ func (s *Server) handleChatDiffReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// chatHunkNotRejectableWhy words a gitx.NotRejectable* reason for the
+// chat_hunk_not_rejectable message.
+func chatHunkNotRejectableWhy(reason string) string {
+	switch reason {
+	case gitx.NotRejectableBinary:
+		return "a binary file"
+	case gitx.NotRejectableRenamed:
+		return "a rename"
+	case gitx.NotRejectableModeOnly:
+		return "a mode-only change"
+	case gitx.NotRejectableGitlink:
+		// Reverse-applying its patch would report success and remove
+		// nothing (review F4).
+		return "a nested git repository, which git records as one commit rather than as files"
+	}
+	return "not a file whose hunks git can reverse"
 }
 
 // addChatHunkRejectNote puts one rejected hunk's line into the block at the
