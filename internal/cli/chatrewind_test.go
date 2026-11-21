@@ -218,8 +218,10 @@ func TestChatRewindConflictsArePlain(t *testing.T) {
 		})
 	}
 	// Anything else keeps the daemon's own message.
-	s := &rewindCLIStub{status: http.StatusBadRequest,
-		errBody: `{"error":{"code":"validation","message":"turn 99 does not exist"}}`}
+	s := &rewindCLIStub{
+		status:  http.StatusBadRequest,
+		errBody: `{"error":{"code":"validation","message":"turn 99 does not exist"}}`,
+	}
 	if _, stderr, exit := runChatSend(t, s.handler(t), "chat", "rewind", "7", "--turn", "99"); exit != 1 ||
 		!strings.Contains(stderr, "turn 99 does not exist") {
 		t.Errorf("exit %d stderr %q", exit, stderr)
