@@ -714,13 +714,17 @@ func (r *Runner) runTurn(
 	if len(images) > 0 {
 		tr.Note("images", map[string]any{"numbers": chips, "paths": images})
 	}
+	plan := r.turnPlan(ctx, chat, turn, adapter, tr)
+	opening, shellRuns := r.openingPreamble(ctx, chat, turn), r.takeShellRuns(ctx, chat, turn, tr)
+	// A rewind's seeded context, the opening context, the mention context,
+	// then the shell runs the human marked for this prompt (task 170) — all
+	// of it ahead of the message and none of it in it.
+	preamble := func(seeded string) string {
+		return joinPreamble(joinPreamble(joinPreamble(seeded, opening), turn.MentionContext), shellRuns)
+	}
 	spec := agent.RunSpec{
-		Prompt: turn.Prompt,
-		// The opening context, the mention context, then the shell runs the
-		// human marked for this prompt (task 170) — all of it ahead of the
-		// message and none of it in it.
-		Preamble: joinPreamble(joinPreamble(turnPreamble(chat, turn), turn.MentionContext),
-			r.takeShellRuns(ctx, chat, turn, tr)),
+		Prompt:   turn.Prompt,
+		Preamble: preamble(plan.preamble),
 		Images:   images,
 		WorkDir:  workDir,
 		Launcher: launcher,
@@ -737,7 +741,8 @@ func (r *Runner) runTurn(
 		Effort:          runSettings(chat, turn).Effort,
 		PermissionMode:  agent.PermissionMode(runSettings(chat, turn).PermissionMode),
 		OnInput:         agent.InputWait,
-		ResumeSessionID: chat.SessionID,
+		ResumeSessionID: plan.sessionID,
+		ResumeAt:        plan.resumeAt,
 		// Every turn, not only one whose message opens with the sigil (task
 		// 124.10 decision 66): one rule, and vincent never reads the human's
 		// message to decide an argv flag. The cost is that the turn's own
@@ -750,6 +755,16 @@ func (r *Runner) runTurn(
 		BackgroundWait: r.cfg().Defaults.BackgroundWait.Std(),
 	}
 	handle, err := adapter.Start(ctx, spec)
+	if errors.Is(err, agent.ErrResumeAtUnsupported) {
+		// The capability said yes and the CLI said no — an upgrade or a
+		// downgrade between the probe and this run. The turn is seeded
+		// instead, and says so; resuming the whole session would be the
+		// faked rewind decision 1 forbids.
+		plan = r.seedInstead(ctx, chat, turn, tr)
+		spec.ResumeSessionID, spec.ResumeAt = "", ""
+		spec.Preamble = preamble(plan.preamble)
+		handle, err = adapter.Start(ctx, spec)
+	}
 	if err != nil {
 		reason := ReasonAgentError
 		if errors.Is(err, agent.ErrResumeUnsupported) {
@@ -779,7 +794,9 @@ func (r *Runner) runTurn(
 	turn.ResultText = res.ResultText
 	if res.SessionID != "" {
 		turn.SessionID = res.SessionID
+		r.consumePlan(chat, res.SessionID)
 	}
+	turn.ResumeAnchor = res.ResumeAnchor
 	recordContext(turn, adapter, res)
 	r.recordHeadAfter(turn, workDir)
 	if agent.UsageIsSessionTotal(adapter) {
