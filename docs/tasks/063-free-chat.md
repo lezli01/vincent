@@ -53,6 +53,12 @@ Spec: §5.5 (the entity and its lifecycle), §7.3 (the chat-only amendment), §9
    would mean inventing depth semantics for a non-task. An agent that needs a
    conversation already has its own session. Task 057's assertion that the tool
    surface equals `Routes()` minus the exclusions is **extended**, not weakened.
+   *Amended 2026-11-21 (task 167, issue #1041, settled with the author):*
+   two chat routes are now tools — `POST /v1/chats/{id}/rewind`
+   (`chat_rewind`) and `POST /v1/chats/{id}/fork` (`chat_fork`) — and only
+   those two. Neither starts an agent process: a rewind moves refs, the
+   worktree and turn rows, and a fork creates an idle chat. The reason above
+   still holds for every other chat route. See spec §13.4 and task 167.
 
 3. **claude only in the first cut; codex and cursor are refused, not emulated.**
    `agent.Resumer` is an optional capability so a new adapter is still one

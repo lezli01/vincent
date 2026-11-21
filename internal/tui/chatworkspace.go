@@ -819,7 +819,7 @@ func (v *chatView) renderWorkspace(width, height int) string {
 		if ok {
 			c = *v.chat
 		}
-		out = joinColumns(out, chatDetailsPane(c, ok, v.turns, v.changes(), v.now(), detailsW, height))
+		out = joinColumns(out, chatDetailsPane(c, ok, v.everyTurn(), v.changes(), v.now(), detailsW, height))
 	}
 	return strings.Join(append(filter, out...), "\n")
 }

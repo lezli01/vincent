@@ -2,6 +2,7 @@ package gitx
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -148,7 +149,7 @@ func TestRestoreRoundTrip(t *testing.T) {
 	writeFile(t, dir, "stray/dir/f.txt", "stray\n")
 	writeFile(t, dir, "keep.log", "ignored\n")
 
-	if err := g.Restore(ctx, dir, snap.Commit); err != nil {
+	if err := g.Restore(ctx, dir, snap.Commit, nil); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 	if head, _ := g.Run(ctx, dir, "rev-parse", "HEAD"); head != snap.Head {
@@ -298,5 +299,156 @@ func TestSnapshotWithoutAnIndex(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".git", "index")); !os.IsNotExist(err) {
 		t.Errorf("the snapshot created the real index: %v", err)
+	}
+}
+
+// TestRestoreKeepsListedPaths is task 167 decision D: a path in keep — one a
+// pre-restore snapshot could not read, so the only copy there is — survives
+// the restore's clean, while every other untracked file is removed. The
+// names carry pattern characters, which must match literally.
+func TestRestoreKeepsListedPaths(t *testing.T) {
+	g, dir := snapRepo(t)
+	ctx := context.Background()
+	snap, err := g.Snapshot(ctx, dir, t.TempDir(), "checkpoint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "odd [1].txt", "kept\n")
+	writeFile(t, dir, "odd 1.txt", "stray\n")
+	writeFile(t, dir, "deep/locked.txt", "kept\n")
+	writeFile(t, dir, "deep/other.txt", "stray\n")
+	if err := g.Restore(ctx, dir, snap.Commit, []string{"odd [1].txt", "deep/locked.txt"}); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	for _, rel := range []string{"odd [1].txt", "deep/locked.txt"} {
+		if got, ok := readFile(t, dir, rel); !ok || got != "kept\n" {
+			t.Errorf("%s = %q (present %v), want it kept", rel, got, ok)
+		}
+	}
+	for _, rel := range []string{"odd 1.txt", "deep/other.txt"} {
+		if _, ok := readFile(t, dir, rel); ok {
+			t.Errorf("%s survived the restore", rel)
+		}
+	}
+}
+
+// TestRestoreKeepsWhatTheSnapshotSkipped is the same rule end to end: a file
+// the snapshot could not read is named in Skipped, and passing Skipped to
+// Restore leaves it on disk.
+func TestRestoreKeepsWhatTheSnapshotSkipped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a file unreadable on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000 file")
+	}
+	g, dir := snapRepo(t)
+	ctx := context.Background()
+	target, err := g.Snapshot(ctx, dir, t.TempDir(), "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "secret", "hidden\n")
+	p := filepath.Join(dir, "secret")
+	if err := os.Chmod(p, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(p, 0o600) })
+	pre, err := g.Snapshot(ctx, dir, t.TempDir(), "pre-restore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(pre.Skipped, []string{"secret"}) {
+		t.Fatalf("Skipped = %q", pre.Skipped)
+	}
+	if err := g.Restore(ctx, dir, target.Commit, pre.Skipped); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if _, err := os.Lstat(p); err != nil {
+		t.Errorf("the skipped file was deleted: %v", err)
+	}
+}
+
+// TestRestoreRefusesToOverwriteUnsavedFiles is review F2: a kept path that
+// HEAD, the target's parent or the target's tree tracks would be rewritten
+// by the reset or the read-tree, so Restore refuses before touching anything
+// and names it. An untracked kept path none of them has is still spared.
+func TestRestoreRefusesToOverwriteUnsavedFiles(t *testing.T) {
+	g, dir := snapRepo(t)
+	ctx := context.Background()
+	writeFile(t, dir, "made.txt", "in the target\n")
+	target, err := g.Snapshot(ctx, dir, t.TempDir(), "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "made.txt")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "a.txt", "edit nobody saved\n")
+	writeFile(t, dir, "made.txt", "untracked, unsaved\n")
+	writeFile(t, dir, "free.txt", "untracked, unsaved\n")
+
+	err = g.Restore(ctx, dir, target.Commit, []string{"a.txt", "free.txt", "made.txt"})
+	var unsaved *UnsavedPathsError
+	if !errors.As(err, &unsaved) {
+		t.Fatalf("Restore = %v, want an UnsavedPathsError", err)
+	}
+	if want := []string{"a.txt", "made.txt"}; !slices.Equal(unsaved.Paths, want) {
+		t.Errorf("Paths = %q, want %q", unsaved.Paths, want)
+	}
+	for rel, want := range map[string]string{
+		"a.txt": "edit nobody saved\n", "made.txt": "untracked, unsaved\n", "free.txt": "untracked, unsaved\n",
+	} {
+		if got, _ := readFile(t, dir, rel); got != want {
+			t.Errorf("%s = %q after a refused restore, want %q", rel, got, want)
+		}
+	}
+	if err := g.Restore(ctx, dir, target.Commit, []string{"free.txt"}); err != nil {
+		t.Fatalf("Restore keeping an untracked path: %v", err)
+	}
+	if got, _ := readFile(t, dir, "free.txt"); got != "untracked, unsaved\n" {
+		t.Errorf("free.txt = %q", got)
+	}
+}
+
+// TestRestoreRefusesAnUnreadableTrackedEdit is review F2 end to end: an edit
+// to a tracked file git cannot read is skipped by the pre-restore snapshot,
+// which saves HEAD's blob for it instead — so a restore must refuse rather
+// than reset the edit away.
+func TestRestoreRefusesAnUnreadableTrackedEdit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot make a file unreadable on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000 file")
+	}
+	g, dir := snapRepo(t)
+	ctx := context.Background()
+	target, err := g.Snapshot(ctx, dir, t.TempDir(), "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "a.txt", "SECRET-EDIT\n")
+	p := filepath.Join(dir, "a.txt")
+	if err := os.Chmod(p, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(p, 0o600) })
+	pre, err := g.Snapshot(ctx, dir, t.TempDir(), "pre-restore")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(pre.Skipped, []string{"a.txt"}) {
+		t.Fatalf("Skipped = %q, want a.txt", pre.Skipped)
+	}
+	var unsaved *UnsavedPathsError
+	if err := g.Restore(ctx, dir, target.Commit, pre.Skipped); !errors.As(err, &unsaved) {
+		t.Fatalf("Restore = %v, want an UnsavedPathsError", err)
+	}
+	if err := os.Chmod(p, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := readFile(t, dir, "a.txt"); got != "SECRET-EDIT\n" {
+		t.Errorf("a.txt = %q, want the unsaved edit kept", got)
 	}
 }

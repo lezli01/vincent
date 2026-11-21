@@ -60,6 +60,11 @@ func newHarness(t *testing.T) *harness {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	repo := testrepo.Init(t, "main")
+	// core.autocrlf off, so a checkpoint restore writes back the bytes a
+	// test wrote (task 167): Git for Windows, CI's runner included, turns
+	// it on globally, and a restore's read-tree then checks LF blobs out as
+	// CRLF — git's own conversion, honored on purpose, as in gitx's tests.
+	testrepo.Run(t, repo, "config", "core.autocrlf", "false")
 	project := &store.Project{Name: "proj", Path: repo, DefaultBranch: "main"}
 	if err := st.CreateProject(t.Context(), project); err != nil {
 		t.Fatalf("CreateProject: %v", err)

@@ -234,6 +234,12 @@ const MCPTokenEnv = "VINCENT_MCP_TOKEN"
 // argv limit); the process tree is killed when ctx is canceled. The caller
 // must consume Events() until closed; Wait blocks on stream end.
 func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandle, error) {
+	// Resuming at a point is claude's alone (task 167 decision A): `exec resume` takes a thread id and nothing that names a point inside it,
+	// so a rewound chat's next turn here is the seeded fallback, and a spec
+	// asking for more is refused rather than resumed whole.
+	if spec.ResumeAt != "" {
+		return nil, agent.ErrResumeAtUnsupported
+	}
 	if spec.ResumeSessionID != "" && spec.PermissionMode == agent.Restricted {
 		// Fail closed (task 119): `exec resume` has no sandbox flag, and a
 		// restricted run that silently went full-auto is the one outcome

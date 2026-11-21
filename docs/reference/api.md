@@ -3246,6 +3246,10 @@ POST   /v1/chats/{id}/cancel          stop the live turn
 POST   /v1/chats/{id}/archive         remove the worktree; terminal
 POST   /v1/chats/{id}/handoff         give the worktree and branch to a new task; terminal
 POST   /v1/chats/{id}/close           end a chat opened on a task; terminal
+POST   /v1/chats/{id}/rewind          { turn, mode? } or { rewound } — put the code, the
+                                      conversation or both back to before a turn — see
+                                      Rewind and fork
+POST   /v1/chats/{id}/fork            { turn, title? } — a new idle chat from before a turn
 POST   /v1/chats/{id}/viewed          a person looked at it: clears its unread mark
 DELETE /v1/chats/{id}                 permanent delete of an archived or closed chat
                                       — see Permanent delete
@@ -3539,7 +3543,7 @@ in conversation order: the title (`seq` 0, `field` `title`), then each turn's
 `snippet` is plain text with whitespace folded to single spaces, and
 `segments` is the same text split into runs, with `match: true` on the runs
 that matched. A client highlights from those runs and never parses markup. The
-route is not an MCP tool, like every chat route.
+route is not an MCP tool, like every chat route but rewind and fork.
 
 ### A chat on a stopped task
 
@@ -3910,7 +3914,7 @@ The route is not an MCP tool.
 ### Exporting
 
 ```
-GET /v1/chats/{id}/export?format=md|html|json&diff=true|false
+GET /v1/chats/{id}/export?format=md|html|json&diff=true|false&include_rewound=true|false
 ```
 
 The whole chat as one document, rendered by the daemon so every client writes
@@ -3954,10 +3958,68 @@ is gone) the export still answers `200`: JSON carries `"diff": null` and a
 `"diff_unavailable"` reason, Markdown and HTML a one-line `diff unavailable:`
 note.
 
+Turns a [rewind](#rewind-and-fork) took out of the conversation are left out
+unless `include_rewound=true`, which includes them marked as rewound. A seeded
+turn is marked "seeded, not resumed" either way.
+
 Every state exports, archived, handed off and closed included. The route
-touches no row and holds no `max_parallel_chats` slot. A bad `format` or `diff`
-is `400 validation_failed`, checked before the chat is looked up; an unknown
+touches no row and holds no `max_parallel_chats` slot. A bad `format`, `diff` or
+`include_rewound` is `400 validation_failed`, checked before the chat is looked up; an unknown
 chat is `404`.
+
+### Rewind and fork
+
+Every turn checkpoints the chat's worktree before its agent starts, as
+`refs/vincent/<install id>/chats/<chat id>/turn-<seq>` in the project repository. A rewind
+or a fork goes back to the state **before** a turn ran. Neither starts an agent
+process.
+
+```bash
+curl -sS -X POST http://127.0.0.1:PORT/v1/chats/3/rewind \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"turn": 4, "mode": "both"}'
+```
+
+`mode` is one of:
+
+| `mode` | What moves |
+|---|---|
+| `code` | The worktree goes back to the turn's checkpoint: the branch is reset to the commit the turn started from and the checkpoint's uncommitted changes, untracked files included, are laid back unstaged. Ignored files are left alone |
+| `conversation` | The turn and every later one are taken out of the conversation — kept, marked `rewound_at`, and still counted in costs — and the turn's prompt goes back into the chat's draft. The chat's next turn resumes the agent's session from before them, or, when the agent cannot, starts seeded with a bounded summary of the kept turns |
+| `both` | The default: both of the above |
+
+A code rewind first saves the state it replaces as
+`refs/vincent/<install id>/chats/<chat id>/rewound-<k>`, and `{"rewound": k}` (code only)
+goes forward to it again. A file the save could not read is never deleted: an
+untracked one is left in place and listed in `skipped`, and one the branch
+tracks — which the rewind would otherwise overwrite — refuses the rewind with
+`chat_rewind_unsaved_files` before anything moves.
+
+The answer is `200` with `{chat, rewind_id, ref, skipped, seeded,
+rewound_turns}` and publishes `chat.updated`.
+
+`POST /v1/chats/{id}/fork` with `{turn, title?}` creates a new idle chat — a
+free chat on its own branch, cut from the commit the turn started from with the
+checkpoint's uncommitted changes applied unstaged. It copies the agent, model,
+effort, permission mode and base, and never a task link, an issue or a
+worktree hold. Its first turn resumes the source's session at that point when
+the agent can, and is otherwise seeded. The answer is `201` with `{chat,
+skipped, seeded}`.
+
+Resuming at a point is claude's alone, and only when the installed claude has
+`--resume-session-at`; codex, cursor and copilot are always seeded.
+
+| Status | `error` | When |
+|---|---|---|
+| `409` | `chat_turn_live` | A turn is `running`, `awaiting_input`, or the queue is draining |
+| `409` | `chat_terminal` | The chat has ended |
+| `409` | `chat_turn_rewound` | An earlier rewind already took that turn out |
+| `409` | `chat_checkpoint_unavailable` | The turn has no usable checkpoint: from before checkpoints existed, its checkpoint failed, or its ref is gone |
+| `409` | `chat_rewind_foreign_commits` | A code rewind over a branch something other than this chat's turns moved. There is no force. A fork never gets this |
+| `409` | `chat_rewind_unsaved_files` | A code rewind would overwrite a file the branch tracks that vincent cannot read, so could not save first. The message names the paths; make them readable and rewind again |
+
+Both routes are MCP tools, `chat_rewind` and `chat_fork` — the only chat routes
+that are. A chat's checkpoint refs are deleted with the chat.
 
 ### Diff and hunk review
 
@@ -4142,6 +4204,28 @@ it** — absent is "unknown", never zero:
 Only claude reports `context_tokens` and `context_window` today; codex, cursor
 and copilot report no per-call prompt size, and vincent does not estimate one.
 
+On `GET /v1/chats/{id}` a turn also carries its [checkpoint](#rewind-and-fork)
+and rewind state, each omitted when empty except `seeded`:
+
+- `checkpoint_sha`, `head_before`, `head_after` — the snapshot taken before
+  the turn's agent started, the HEAD it is parented on, and the HEAD when the
+  turn ended.
+- `rewound_at`, `rewind_id` — set on the turns a rewind took out of the
+  conversation; one `rewind_id` per rewind.
+- `seeded` — the turn started a fresh session seeded with the earlier
+  conversation rather than resuming the agent's own ("seeded, not resumed").
+- `resume_anchor` — claude's last assistant-message uuid, the point a later
+  rewind resumes at.
+- `rewind` — `{code, conversation, fork, conversation_seeded}`: each of the
+  first three is `""` when that action is allowed for this turn and otherwise
+  the `409` reason it would get; `conversation_seeded` says the conversation
+  would be seeded rather than resumed.
+
+The chat itself gains `rewound_states` (`[{k, ref, sha, blocked}]`, the saved
+states a code rewind can go forward to), `forked_from` (`{chat_id, seq}`) and
+`resume_pending` (`resumed` or `seeded` while a rewind's or fork's plan waits
+for the next turn).
+
 ```bash
 curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \
   -H "Authorization: Bearer $TOKEN" -D -
@@ -4208,7 +4292,7 @@ These failure reasons are worth knowing:
   checkpoint behind it. A file git cannot read is not a failure: it is left
   out of the checkpoint and named in the turn's transcript
   (`vincent.checkpoint_skipped`), and the turn runs. Each turn's snapshot is the git ref
-  `refs/vincent/chats/<chat id>/turn-<seq>` in the project's repository.
+  `refs/vincent/<install id>/chats/<chat id>/turn-<seq>` in the project's repository.
 
 ## Step status
 
@@ -4941,7 +5025,7 @@ Every route on this page is a tool, with these exceptions:
 | `POST /v1/agents/{name}/quota` | An agent must not forge a daemon-level fact about the host it runs on: a step reporting its own adapter at 99% would paint every board with a wall that does not exist, and a reading carries a source, not a caller |
 | `GET /v1/events` | A tool call is request/response; use `task_wait` |
 | `GET /v1/tasks/{id}/events` | Same |
-| every `/v1/chats` route | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session |
+| every `/v1/chats` route except `rewind` and `fork` | Two reasons, either sufficient: a chat turn starts an agent CLI *without* going through admission, so a tool that could send one would let an agent start unqueued agent processes — the exact thing `mcp.max_tasks` bounds; and the recursion bounds walk `created_by_task_id`, a chain a chat is not in, so exposing chats would mean inventing depth semantics for a non-task. An agent that needs a conversation already has its own session. `POST /v1/chats/{id}/rewind` and `/fork` are tools (`chat_rewind`, `chat_fork`) because neither starts an agent process |
 | `POST /v1/tasks/{id}/chat` | It opens a chat, so the `/v1/chats` reasons apply although the path is under `/v1/tasks`. The lock it places does reach the tools: a `task_*` action on a locked task gets `409 task_locked_by_chat` like any other client |
 
 `task_create`, `issue_create` and `handoff_start` additionally take an optional

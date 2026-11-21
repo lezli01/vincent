@@ -13,6 +13,28 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Rewind a chat, or fork it, from any turn.** Every chat turn already
+  checkpoints its worktree; now `alt+z` in the chat workspace (rebindable as
+  `rewind`) and the palette's "rewind…" and "fork from turn…" open a turn
+  picker. A rewind puts the code, the conversation or both back to the state
+  before that turn. The state it replaces is saved under
+  `refs/vincent/<install id>/chats/<id>/rewound-<k>` so you can go forward to it again. A
+  file it could not save is never deleted, and the turn's prompt returns to
+  your draft. Rewound turns are kept, hidden until you show them, and still
+  counted in costs. On a claude that supports it, the conversation resumes
+  at that point in the agent's own session. codex, cursor and copilot cannot
+  resume part of a session, so their next turn starts seeded with a bounded
+  summary of the kept turns, marked "seeded, not resumed". A fork is a new
+  idle chat on its own branch, cut from that turn's checkpoint with its
+  uncommitted changes, copying the agent and its settings. A code rewind
+  refuses (`409 chat_rewind_foreign_commits`) when anything but the chat's
+  own turns moved the branch. Scriptable as `vincent chat rewind` and
+  `vincent chat fork` over `POST /v1/chats/{id}/rewind` and `/fork`, which
+  are also the first chat routes that are MCP tools (`chat_rewind`,
+  `chat_fork`), because neither starts an agent. `vincent chat transcript`
+  and `vincent chat export` take `--rewound`. A chat's checkpoint refs are now
+  deleted with the chat, and a daemon sweep removes those of chats already
+  gone (task 167, #1041).
 - **Run a shell command from a chat, and paste images into one.** `alt+x` in
   the chat workspace (rebindable as `shell_command`) opens a one-line prompt.
   The daemon runs the command in the chat's directory (inside the task's
@@ -51,7 +73,7 @@ list with the user-facing context a commit subject cannot carry.
 - **Every chat turn checkpoints its worktree first.** Before a turn's agent
   starts, vincent snapshots the worktree it runs in, uncommitted and untracked
   files included (ignored files are not), as
-  `refs/vincent/chats/<chat id>/turn-<seq>` in the project's repository,
+  `refs/vincent/<install id>/chats/<chat id>/turn-<seq>` in the project's repository,
   without touching your index, HEAD or files. A turn whose checkpoint cannot
   be taken fails `checkpoint_failed` instead of running unprotected. This is
   the groundwork for rewinding and forking a chat (task 167), which is not

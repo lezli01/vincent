@@ -82,7 +82,9 @@ func (v *chatView) totalsLine() string {
 	if v.termW >= chatDetailsMinW {
 		return ""
 	}
-	return chatTotalsLine(v.turns)
+	// Every turn, rewound ones included: they ran, and cost what they cost
+	// (task 167 decision 9).
+	return chatTotalsLine(v.everyTurn())
 }
 
 // chatGaugeWideMin is the narrowest header that draws the gauge's bar; a
@@ -445,6 +447,13 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 		}
 		turn = t.Seq
 		v.turnAt[t.Seq] = len(lines)
+		// A rewound turn the toggle shows (task 167 decision 9) is marked
+		// above its card and drawn dimmed, down to its failure line.
+		start := len(lines)
+		if t.RewoundAt != nil {
+			lines = append(lines, " "+rewoundHeading(*t))
+			pad(1)
+		}
 		// The human's half of the turn is a right-aligned card; the agent's
 		// half below is untouched, flush left at the full width. The pad is
 		// by the card's *actual* height, so the prompt keeps carrying the
@@ -455,7 +464,12 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 		you = true
 		pad(len(prompt))
 		you = false
-		lines = append(lines, "", " "+chatTurnHeading(agent, *t, answered), "")
+		heading := chatTurnHeading(agent, *t, answered)
+		if t.Seeded {
+			// Never passed off as a resume (task 167 decision 1).
+			heading += styleDim.Render("  ·  seeded, not resumed")
+		}
+		lines = append(lines, "", " "+heading, "")
 		pad(3)
 		switch recs := v.turnRecords[t.Seq]; {
 		case len(recs) > 0:
@@ -514,9 +528,16 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 				pad(1)
 			}
 		}
+		if t.RewoundAt != nil {
+			dimLines(lines[start:])
+		}
 		shellCards(t.Seq)
 	}
 	turn = 0
+	if pending := resumePendingLine(v.chat); pending != "" && len(v.turns) > 0 {
+		lines = append(lines, "", " "+styleDim.Render(pending))
+		pad(2)
+	}
 	if q := v.queueLines(width); len(q) > 0 {
 		lines = append(lines, q...)
 		pad(len(q))
@@ -723,6 +744,9 @@ func (v *chatView) footerLines(width, height int) []string {
 	}
 	if v.picker != nil {
 		out = append(out, v.picker.render(width)...)
+	}
+	if v.rewind != nil {
+		out = append(out, v.rewind.render(width)...)
 	}
 	// One element per rendered line, not one per widget (issue #299): bubbles'
 	// viewport pads the composer's View to its height, and the border around

@@ -188,6 +188,34 @@ type Turn struct {
 	Model          *string `json:"model"`
 	Effort         *string `json:"effort"`
 	PermissionMode *string `json:"permission_mode"`
+	// RewoundAt marks a turn a rewind took out of the conversation (task
+	// 167 decision 9). An export leaves such turns out unless it was asked
+	// for them, so one present here was asked for, and says so.
+	RewoundAt *time.Time `json:"rewound_at,omitempty"`
+	RewindID  string     `json:"rewind_id,omitempty"`
+	// Seeded marks a turn that started a fresh session from a bounded
+	// summary of the earlier turns rather than resuming the agent's own
+	// (task 167 decision G): what it knew is not what the turns above say.
+	Seeded bool `json:"seeded,omitempty"`
+}
+
+// The notes a turn's marks render as, one wording for every format.
+const (
+	NoteRewound = "Rewound: a rewind took this turn out of the conversation; the agent no longer remembers it."
+	NoteSeeded  = "Seeded, not resumed: this turn started a new agent session from a summary of the turns before it."
+)
+
+// Notes are the turn's marks as sentences, in a fixed order; none for an
+// ordinary turn.
+func (t *Turn) Notes() []string {
+	var out []string
+	if t.RewoundAt != nil {
+		out = append(out, NoteRewound)
+	}
+	if t.Seeded {
+		out = append(out, NoteSeeded)
+	}
+	return out
 }
 
 // ShellRun is one shell command a human ran in the chat (task 170): its

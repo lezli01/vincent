@@ -254,6 +254,9 @@ func Markdown(e *Export) string {
 		t := en.Turn
 		fmt.Fprintf(&b, "\n## Turn %d · %s\n\n", t.Seq, t.State)
 		fmt.Fprintf(&b, "_Ran on: %s_\n\n", t.RanWith())
+		for _, n := range t.Notes() {
+			fmt.Fprintf(&b, "_%s_\n\n", n)
+		}
 		b.WriteString("### Prompt\n\n")
 		b.WriteString(strings.TrimRight(t.Prompt, "\n"))
 		if mc := strings.TrimRight(t.MentionContext, "\n"); mc != "" {

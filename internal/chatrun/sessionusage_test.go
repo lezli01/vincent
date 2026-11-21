@@ -40,6 +40,9 @@ type totalsAdapter struct {
 	// results, when set, are answered ahead of script: whole RunResults, for
 	// a test that states cache counts and context figures (task 157).
 	results []agent.RunResult
+	// resumeAtProbes counts SupportsResumeAtPoint calls: each is a claude
+	// probe that may take its full help timeout (review F7).
+	resumeAtProbes int
 }
 
 func (a *totalsAdapter) Name() string { return a.name }
@@ -56,6 +59,21 @@ func (a *totalsAdapter) NewLineParser() agent.LineParser {
 func (a *totalsAdapter) SupportsResume() bool      { return true }
 func (a *totalsAdapter) UsageIsSessionTotal() bool { return a.cumulative }
 func (a *totalsAdapter) InputIncludesCache() bool  { return a.cacheInInput }
+
+// SupportsResumeAtPoint implements agent.ResumeAtPointer, answering no and
+// counting the ask.
+func (a *totalsAdapter) SupportsResumeAtPoint() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.resumeAtProbes++
+	return false
+}
+
+func (a *totalsAdapter) probes() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.resumeAtProbes
+}
 
 func (a *totalsAdapter) setResults(results ...agent.RunResult) {
 	a.mu.Lock()

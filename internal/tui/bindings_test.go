@@ -1324,6 +1324,16 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 				t.Fatal("alt+k did not ask to compact the context")
 			}
 		},
+		"alt+z": func(t *testing.T) {
+			v := chatViewFixture()
+			v.updateKey(registryKey(t, "alt+z"))
+			if v.rewind == nil || v.rewind.fork || v.rewind.mode != rewindBoth {
+				t.Fatalf("alt+z did not open the rewind picker in mode both: %+v", v.rewind)
+			}
+			if v.composer.Value() != "" {
+				t.Fatalf("alt+z reached the composer: %q", v.composer.Value())
+			}
+		},
 		"alt+p": func(t *testing.T) {
 			v := chatViewFixture()
 			v.agents = map[string]apiclient.Agent{"claude": {

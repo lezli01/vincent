@@ -180,7 +180,7 @@ the living engineering specification records implementation contracts.
 | [164](164-chat-drafts-and-prompt-history.md) | Keep chat drafts and a stash in the daemon, recall earlier prompts with `↑`, and pick any prompt of the project with `alt+h` | 🔄 in progress (5/6) |
 | [165](165-chat-attention.md) | Notify on chats (`notify.chat_on`), mark unread chats, count waiting chats as attention, and switch chats with `alt+n`/`alt+shift+n`/`alt+1`…`alt+9` | 🔄 in progress (5/6) |
 | [166](166-chat-object-mentions.md) | Mention issues, tasks and pull requests in a chat, and file line ranges | 🔄 in progress (3/6) |
-| [167](167-chat-checkpoint-rewind-fork.md) | Checkpoint a chat's worktree every turn, with rewind and fork | 🔄 in progress (2/10) |
+| [167](167-chat-checkpoint-rewind-fork.md) | Checkpoint a chat's worktree every turn, with rewind and fork | 🔄 in progress (9/10) |
 | [168](168-task-workspace-redesign.md) | Task workspace redesign: steps rail, plain tabs, Output feed, Diff and Overview | ✅ done (9/9) |
 | [169](169-chat-diff-and-hunk-review.md) | A diff pane in the chat with per-hunk accept and reject | 🔄 in progress (9/11) |
 | [170](170-chat-polish.md) | Chat polish: question-card digits, `tui.chat.status_line`, shell passthrough (`alt+x`), image paste and a vim composer | 🔄 in progress (6/8) |

@@ -31,6 +31,9 @@ type streamLine struct {
 	// `Agent` in every captured run, and nothing here reads the name: the id
 	// is the attribution (task 109).
 	ParentToolUseID string `json:"parent_tool_use_id"`
+	// UUID is the line's own id. An assistant line's is the message's place
+	// in the session, which is what --resume-session-at takes (task 167).
+	UUID string `json:"uuid"`
 	// The rest of the block is the `system` task lines claude writes about
 	// the subagents and background shells it runs (task 109). Only
 	// `task_started` names its `task_type`; `task_progress` and
@@ -311,6 +314,13 @@ type streamParser struct {
 	// is not the conversation's. The result line reads both.
 	mainModel   string
 	mainContext int64
+	// anchor is the last top-level assistant line's `uuid` — the message a
+	// later rewind resumes the session at with --resume-session-at (task
+	// 167). A subagent's lines live in its own sidechain, not in the
+	// session a resume reloads, so they never move it. The result line
+	// carries a uuid of its own and is no message: only assistant lines
+	// count.
+	anchor string
 }
 
 // parse normalizes one verbatim stream-json line into an agent.Event. The raw
@@ -322,6 +332,9 @@ func (p *streamParser) parse(raw []byte) agent.Event {
 	}
 	p.remember(line.ParentToolUseID)
 	p.watchContext(&line)
+	if line.Type == "assistant" && line.ParentToolUseID == "" && line.UUID != "" {
+		p.anchor = line.UUID
+	}
 	var ev agent.Event
 	switch load, ok := p.claim(&line); {
 	case ok:

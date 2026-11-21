@@ -858,6 +858,20 @@ type Chat struct {
 	// Unread is derived, never stored: the chat's latest terminal turn ended
 	// after LastViewedAt (or exists at all when it is nil). See chatUnreadExpr.
 	Unread bool
+	// ResumeAt and PendingPreamble are the plan for the chat's next turn
+	// that a rewind or a fork leaves (task 167 decisions A and G). ResumeAt
+	// is the claude assistant-message uuid the next turn resumes SessionID
+	// at, forking the session there; PendingPreamble is the bounded seeded
+	// context the next turn starts a fresh session with instead, for an
+	// adapter that cannot resume at a message. "" is "none" for both.
+	ResumeAt        string
+	PendingPreamble string
+	// ForkedFromChatID and ForkedFromSeq name the chat and turn this chat
+	// was forked from (task 167.6). Nil for a chat that is not a fork. The
+	// column has no foreign key: the source may since have been permanently
+	// deleted, which ExistingChatIDs tells a reader.
+	ForkedFromChatID *int64
+	ForkedFromSeq    *int
 }
 
 // Linked reports whether the chat is linked to a task (task 119), which is
@@ -941,13 +955,27 @@ type ChatTurn struct {
 	// typed. "" is "nothing expanded".
 	MentionContext string
 	// CheckpointSHA is the snapshot commit of the worktree taken before the
-	// turn's agent started, referenced as refs/vincent/chats/<chat>/turn-<seq>,
+	// turn's agent started, referenced as refs/vincent/<install>/chats/<chat>/turn-<seq>,
 	// and HeadBefore the HEAD it is parented on (task 167.2). HeadAfter is
 	// HEAD when the turn ended. "" is "none": a turn from before migration
 	// 0066, or one that ended before its checkpoint was taken.
 	CheckpointSHA string
 	HeadBefore    string
 	HeadAfter     string
+	// RewoundAt and RewindID mark a turn a rewind took out of the
+	// conversation (task 167 decision F): it and every later turn, all under
+	// the one RewindID. Nil and "" for a turn in the conversation. Only
+	// RewindChatConversation writes them; the row is otherwise kept as it
+	// was, and its tokens and cost still count (§17).
+	RewoundAt *time.Time
+	RewindID  string
+	// Seeded is a turn that started a fresh agent session with a replay of
+	// the earlier conversation instead of resuming the agent's own (task 167
+	// decision G): every surface says "seeded, not resumed".
+	Seeded bool
+	// ResumeAnchor is the claude assistant-message uuid the turn resumed its
+	// session at (task 167 decision A). "" is "none".
+	ResumeAnchor string
 }
 
 // TurnSettings are a turn's per-turn overrides of its chat's model, effort

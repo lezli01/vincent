@@ -153,15 +153,19 @@ values and `notify.command`'s argv, keeping the names, because a tool result
 lands in the model's context and in the step's transcript. Nothing else is
 changed — see the [security model](../security-model.md).
 
-**Nor is any `/v1/chats` route** — the whole
+**Nor, but for two, is any `/v1/chats` route** — the whole
 [chat](../reference/api.md#chats) family, reads included, a chat's skill list
 among them. A chat turn starts an agent CLI without going through admission,
 so a tool that could send one would let an agent start unqueued agent
 processes, which is the exact thing
 `max_tasks` below bounds. The recursion bounds cannot help either: they walk
 `created_by_task_id`, and a chat is not in that chain. Nothing is lost — an
-agent calling these tools already has a session of its own. The same goes for
-`POST /v1/tasks/{id}/chat`, which lives under `/v1/tasks` but opens a
+agent calling these tools already has a session of its own. The two exceptions
+are `chat_rewind` and `chat_fork` (`POST /v1/chats/{id}/rewind` and `/fork`,
+see [Rewind and fork](../reference/api.md#rewind-and-fork)), because neither
+starts an agent process: a rewind moves the chat's code and conversation back
+and leaves the next turn to a human's send, and a fork creates an idle chat.
+`POST /v1/tasks/{id}/chat` is not a tool either: it lives under `/v1/tasks` but opens a
 [chat on a stopped task](../reference/api.md#a-chat-on-a-stopped-task). What
 such a chat does reach is the tools' results: while it is open its task is
 locked, so `task_retry`, `task_skip` and every other action tool but

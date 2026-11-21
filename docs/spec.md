@@ -137,7 +137,7 @@ Decisions fixed during the design interview; the rest of this document elaborate
 | 26 | GitHub issue linking | **Read-only, daemon-side.** A task may be created *from* a GitHub issue when the project's `origin` parses as a github.com repository and `github.enabled` is on. The daemon prefers the `gh` CLI and falls back to `GITHUB_TOKEN`/`GH_TOKEN` from its inherited environment; **vincent stores no credential**, keeping §2's secret-management non-goal intact. The issue is fetched **once at creation**, snapshotted onto the task and never re-fetched, so `.Issue` (§8.4) renders offline and a run stays reproducible. The daemon makes every call — at pick time and create time only, never in the step path — and nothing here writes to GitHub, so row 11 is untouched (§5.3, §8.4, §12.3, §13.2, §14, §15; task 035, added 2026-08-26). *Narrowed 2026-08-29 (task 052):* this row is about **issues**; pull requests are row 27, which stores a pointer rather than a snapshot and reverses nothing here *Amended 2026-10-02 (task 130, issue #659), ahead of its code — true once task 130.8, 130.10 and 130.11 land:* "read-only … nothing here writes to GitHub" and "fetched once at creation … never re-fetched" are **superseded for issue state** by row 36 — a human's state change on an imported issue is written back, and sync re-reads imported issues on the poll tick. The **task snapshot** is still taken once at creation and never re-fetched, so `.Issue` still renders offline. A task is no longer created from a GitHub issue through `github_issue`, which is removed; a GitHub issue is imported into the project's issue set and the task is created from it with `issue_id` *Amended 2026-10-03 (task 130.11, issue #670):* now true — `github_issue` is gone from `POST /v1/tasks`, `vincent task add` and trigger actions, and the legacy snapshots were backfilled into the issue set (§5.3, §14) |
 | 27 | GitHub pull requests | **Daemon-side, and read-only until task 069**, like row 26 and through the same gate and credential. *Amended 2026-08-31 (task 068): the read side grows a live **check rollup** for a linked pull request's head commit — `GET /v1/tasks/{id}/github/pull/checks`, one normalized row per check run and per legacy commit status from either leg, never stored — and unlink gains a second home on the task workspace's Pull Request tab (§15 view 2). Task 068 decision 1 settled that merge, close, re-run and comment are written from the TUI only, human-triggered, and 068.4 is the sub-task that lands them and rewrites row 11.* A project's **open** pull requests are listed on demand, and a task is linked to the pull request whose head branch equals its own `branch_name` — by a daemon-side reconciler on a `github.poll_interval` tick, never as a side effect of a GET. Only the *link* is stored (`github_pull_json`: repo, number, source, suppressed) and it is a **pointer, not a snapshot** — the deliberate opposite of row 26, because draft, state and merged status are live by nature and a stored copy of them would read exactly like a current one while being wrong. A human may link or unlink; a human unlink is *sticky* and the reconciler never re-applies it, never overwrites a human link and never un-suppresses one. **Row 11 stands unamended**: vincent pushes nothing, opens nothing and merges nothing, and the “create a PR” affordance is a *constructed* compare URL — no request is made to GitHub when it is built — that a human clicks. `internal/github` gains no write method, no `POST` and no mutating `gh` subcommand. Task 035 decision 5's “repo identity is not stored” was revisited exactly as it predicted: the identity landed on the **task**, beside the number, and no `github_repo` column was added to projects (§5.3, §12.3, §13.2, §13.3, §14, §20; task 052, added 2026-08-29). *Narrowed 2026-08-30 (task 064):* the read-only posture holds in full — no write method, no `POST`, no mutating `gh` subcommand — and a task may now be created **from** a pull request and run on its head branch. That adds a flag to the same envelope (`branch`, `fork`) rather than a snapshot: nothing renderable is stored, so "a pointer, never a snapshot" is unchanged, and there is still no `.Pull` template variable. The consequences live in §10 (a second worktree creation mode, and archive never touching a branch vincent did not cut) and in §5.3's branch-name chain, which gains `pull` above the per-task literal. The listing above is narrowed the same way: it still **defaults** to open, but `?state=` (§13.2) makes a closed or merged pull request reachable, because acting on a merged one and redoing a reverted one are exactly what creating a task from one is for *Amended 2026-08-31 (task 069, issue #273):* the read-only posture gains **exactly one write path** — pull-request creation, from a human. `internal/github.CreatePull` is the only method here that writes, on both legs (`gh pr create`, `POST /repos/{owner}/{name}/pulls`); nothing updates, comments on, closes or merges anything, and `github.enabled` is the only gate on it (§12.3, decision 2: the consent is the keypress and the editable popup in front of it, not a second config key nobody would turn on). Every *other* half of this row is unchanged and load-bearing: the link is still a pointer and never a snapshot, the listing is still pure, the reconciler still never overwrites a human link, and the compare URL is still built by string construction with no request made — it is now the **fallback**, opened when there is no write credential or the create call fails, and the branch behind it has been pushed, so it is no longer a dead page. A create writes the link immediately as `source: human`, which is why the reconciler's poll interval does not make a just-created pull request read as unlinked. *Amended 2026-09-15 (task 068.4, issue #386):* the "exactly one write path" above, its "nothing updates, comments on, closes or merges anything", and the task 052 "Row 11 stands unamended: vincent pushes nothing, opens nothing and merges nothing" are no longer true — row 11 is rewritten. `internal/github` gains five more human-triggered writes on both legs: `MergePull` (`gh pr merge --match-head-commit`, `PUT /pulls/{n}/merge` with `sha`), `ClosePull` and `ReopenPull` (`gh pr close`/`reopen`, `PATCH /pulls/{n}`), `CommentPull` (`gh pr comment --body-file -`, `POST /issues/{n}/comments`) and `RerunFailedJobs` (`gh run rerun --failed`, `POST /actions/runs/{id}/rerun-failed-jobs`). Each acts only on a task's **live** link, `github.enabled` is still the only gate, and each route is excluded from MCP (§13.4). A merge reads first: GitHub's merge state and, when the merge is blocked, the live check rollup map onto named refusals before anything is sent — and the merge state is **not** a `PullRequest` field, because the REST listing cannot fill it. A re-run is validated against the live rollup: only the run behind a failed, Actions-backed row of the current head. The reason vocabulary grows by `no_write_scope`, `not_mergeable`, `checks_running`, `branch_behind` and `head_changed` (§18). A 403 on **any** write, `CreatePull` included, is now `no_write_scope`, so the 069 fallback carries it where it carried `forbidden`; `forbidden` is the read side's alone. Everything else here stands: the link is a pointer, the listing is pure, and nothing about a pull request is stored |
 | 28 | MCP from the daemon | **A second protocol on the existing listener, not a second server.** `/mcp` is registered in §13.2's route table inside the same `recover → log → auth` chain, so row 4 is *added to*, not reversed: same loopback listener, same `Authorization: Bearer {token}` from `{data_dir}/token`, same `daemon.json` discovery. The tool surface **is** the route table — a call replays its arguments as an in-process request against the same handler, so the §13.1 bounds, the validation, the `409` + `details.state` envelopes and `Idempotency-Key` hold by construction — **minus five destructive-admin routes** (`daemon/stop`, `daemon/backup`, `DELETE projects/{id}`, `maintenance/gc`, `doctor/fix`), which is a design line: an agent must not be able to stop, garbage-collect or reconfigure the daemon supervising it. §13.3's SSE routes are replaced by a bounded blocking `task_wait` with a hard ceiling, whose result is complete for a client that drops every progress notification. A step parked in that wait **keeps its §11 slot** and a self-blocking wait is *refused*, not released — releasing it would create a §6 state owning a live agent process and holding no slot, which no state does today. The daemon wires its own agent steps to a **per-step endpoint** (`/mcp/step/{run_id}`, per-run secret), which is identity for the refusal and the provenance column and is explicitly **not** a security boundary (§16). Recursion is bounded by `created_by_task_id` + `mcp.max_depth`/`mcp.max_tasks`, deliberately **not** by `parent_task_id`, which the `awaiting_children` join counts (§9.1, §9.2, §9.3, §9.4, §9.7, §11, §12.3, §12.4, §13.4, §14, §16, §20; task 057, issue #243, added 2026-08-29). *Amended 2026-09-14 (issue #377):* the five were task 057's list; §13.4 carries the current exclusions — sixteen admin, workflow, trigger, forge-write, quota and permanent-delete routes, plus the whole ten-route chat family |
-| 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). *Amended 2026-08-31 (issue #279):* `GET /v1/agents` publishes that answer as `supports_resume` (§9.6) so a client's picker offers only adapters that can hold a chat; the creation-time refusal is unchanged and stays the authority, and an absent field — an older daemon — filters nothing. A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30). *Amended 2026-08-31 (task 067, issue #269, closing 063.2 and 063.3):* chats reach the TUI, as **two views of their own** — a chats board and a chat workspace — never as rows on the task board, so "it never appears on the task board" is unchanged and now literal in the client too. Attention is the chats board's own: an `awaiting_input` chat is pinned and badged there and nowhere else, and `!` and the home board's needs-attention count stay task-only *(superseded 2026-11-20, task 165, issue #1019: `awaiting_input` chats count too and `!` reaches them, §15 — a chat still never appears in the task board's columns)*. A chat turn is bounded by §7.2's `agent_timeout` and §7.4's `input_timeout` verbatim, so the slot this row says it holds is no longer held forever (§11, §12.3, §13.2, §13.3, §13.4, §15). *Amended 2026-08-31 (task 070, issue #268):* **codex resumes now**, so "codex and cursor are refused at creation with a typed reason" reads **cursor alone** — codex met the precondition task 063 decision 3 attached to it, a capture against a named build (codex-cli 0.150.1) pinning `codex exec --json resume <thread_id>`, and its `thread.started` id is read into `RunResult.SessionID` (§9.3). Nothing else in this row moves: continuity still comes from the CLI resuming its own session, vincent still replays no log as prompt context, and the refusal is still the authority for the adapters that cannot (§9.7). *Amended 2026-08-31 (task 071, issue #282):* a chat's live output is **normalized in the daemon exactly as a task's is** — §13.3's typed chunks, with the verbatim line kept as `raw` — and the chat workspace renders it with the output pane's own renderer at the session's shared verbosity level. The chat is still its own entity; what it is not is its own rendering vocabulary *Amended 2026-08-31 (task 072, issue #283):* **cursor resumes too**, pinned to a capture against cursor-agent 2026.08.11-e8db854, so "codex and cursor are refused at creation" is retired entirely and **no shipped adapter is refused**. The refusal path is unchanged and unretired — it is the contract for the next adapter — and is now proven against a stub adapter rather than a shipped one, which is what stops it asserting the opposite of the truth the day a capability lands. Two consequences are stated positively rather than worked around: a resumed codex run is always full-auto, because `codex exec resume` has no `--sandbox`, guarded structurally by chats having no requestable permission mode; and cursor cannot report a lost session at all, because it adopts an unknown `--resume` id and answers rather than refusing (§9.3, §9.7). *Amended 2026-09-01 (task 074, issue #288):* a chat has **two** terminal states, not one — an idle chat may `hand_off` its worktree and branch to a task that adopts them verbatim, and `handed_off` is terminal because reusing `archived` would run the archive path, which removes the worktree this transfers. The chat remains a separate entity and this row's "never a task with a `kind` column" is untouched: what is added is a lifecycle transition *between* the two entities, with one authoritative foreign key (`chats.handoff_task_id`) and the reverse direction served by a lookup. It is one transaction — task row, branch claim, link, transition, claim release, both events — with the scheduler notified after the commit, so the scheduler cannot admit a task before it owns a complete workspace and gc never sees the directory claimed twice or not at all. The task becomes the sole owner of that worktree and branch (§10). The new route joins this row's own MCP exclusion list rather than excepting it, which is why it is a chats-family route and not a field on `POST /v1/tasks` (§13.4). §7.3 is untouched: the chat's session is not transferred, and workflow steps still start fresh (§5.5, §10, §12.3, §13.2, §13.3, §13.4, §14, §15). *Amended 2026-09-17 (task 119, issue #472):* "running in its own git worktree" now describes a **free** chat. A chat may instead be **linked** to a stopped task — opened by the §6 action `chat` from `blocked`, `awaiting_gate`, `done` or `aborted` — and work in that task's worktree and on its branch, which the task goes on owning alone; the chat claims nothing (§10). While it is open the task is **locked**: every §6 action but `cancel` is refused, checked inside the store's compare-and-swap. A linked chat ends in a **third** terminal state, `closed`, under a transition table of its own that has no `archive` and no `hand_off`. It is still a chat — still no `kind` column, still off the task board, still excluded from MCP by this row's own list, and its turns' cost stays on the chat rather than the task. A linked chat takes its task's permission mode, so task 072's "guarded structurally by chats having no requestable permission mode" no longer guards a resumed codex run: that combination is now refused at open and by the adapter, failing closed (§5.5, §6, §9.3, §10, §12.4, §13.2, §13.3, §13.4, §14, §15, §16, §17, §18) *Amended 2026-10-29 (task 138.11, issue #863):* **copilot resumes too**, the fourth shipped adapter, pinned to `resume_1.0.105.jsonl` (`--resume=<id>`), so "no shipped adapter is refused" stays true with four. Its lost session is classified `session_lost` from `resume_unknown_1.0.105.txt`. Copilot cannot yet keep a resumed turn restricted, so a linked chat on a restricted task is refused at open on it until task 138.10, as codex's is (§9.9). *Amended 2026-10-30 (task 138.10, issue #862):* it can now — `restricted_resume_1.0.105.jsonl` resumed a restricted session with its restriction intact — so a linked chat on a restricted task opens on copilot, and codex is again the only adapter refused there (§9.9). A resumed copilot turn records its own token spend as a delta of the session totals copilot reports (§9.9, §14) *Amended 2026-11-20 (task 162, issue #1011):* a chat's permission mode is **requestable** — `POST /v1/chats`, `PATCH /v1/chats/{id}`, a send's override — superseding task 072 decision 1, whose guard was the absence of a mode field. The guard is now a refusal where the mode is chosen: `restricted` on an adapter that cannot keep a resumed turn restricted (codex) or cannot restrict here (cursor on Windows) is `400 agent_cannot_restrict_resume`, and `Start`'s fail-closed refusal stays as the backstop. A linked chat keeps its task's clamp: on a restricted task it is never raised to `full-auto` (`409`). The new `PATCH /v1/chats/{id}` is a chats-family route and joins this row's MCP exclusion list (§5.5, §9.3, §13.2, §13.4, §16) |
+| 29 | Free chat | **A first-class entity beside Task, never a task with a `kind` column.** A `chat` is a titled conversation with an agent, scoped to a project, running in its own git worktree and `vincent/{id}-{slug}` branch, with its own four-state lifecycle (§5.5), its own `chats`/`chat_turns` tables (§14) and its own route family (§13.2). It never appears on the task board, in `GET /v1/tasks` or in any §17 aggregate over `step_runs`, whose `task_id` stays `NOT NULL`. Continuity comes from the **agent CLI resuming its own session** — §7.3's fresh-session rule is amended *for chats only* — so turn N sees turns 1..N-1 without vincent replaying any log as prompt context. A turn is bounded by its own cap `max_parallel_chats` (default 3) and is **refused with 409, never queued**: `internal/scheduler` stays the only place `queued → running` happens because a chat turn is never `queued`, and row 28's "no live-but-uncounted agent CLI" reasoning is extended rather than excepted (§11). **No chat route is an MCP tool** — row 28's exclusion list grows by the whole chat family, because an agent must not start unqueued agent processes and `mcp.max_depth`/`mcp.max_tasks` bound tasks by walking `created_by_task_id`, a chain a chat is not in (§13.4). Only adapters that can resume may hold a chat: claude yes (§9.2), **codex and cursor are refused at creation with a typed reason, not emulated** (§9.3, §9.7). *Amended 2026-08-31 (issue #279):* `GET /v1/agents` publishes that answer as `supports_resume` (§9.6) so a client's picker offers only adapters that can hold a chat; the creation-time refusal is unchanged and stays the authority, and an absent field — an older daemon — filters nothing. A stored session the CLI no longer knows fails the turn with `session_lost` and leaves the chat usable; a turn interrupted by a daemon restart is finalized `interrupted` and is **never re-run**, because re-running would re-send the human's message into a session that died with the process (§12.4). Chat worktrees join gc's claim namespace and worktree directories are named by owner, so chat 7 and task 7 cannot collide (§10). §16 is untouched: chats are full-auto by default exactly as tasks are (§5.5, §6, §7.3, §9.1, §9.2, §9.3, §9.7, §10, §11, §12.3, §12.4, §13.2, §13.3, §13.4, §14, §15, §20; task 063, issue #255, added 2026-08-30). *Amended 2026-08-31 (task 067, issue #269, closing 063.2 and 063.3):* chats reach the TUI, as **two views of their own** — a chats board and a chat workspace — never as rows on the task board, so "it never appears on the task board" is unchanged and now literal in the client too. Attention is the chats board's own: an `awaiting_input` chat is pinned and badged there and nowhere else, and `!` and the home board's needs-attention count stay task-only *(superseded 2026-11-20, task 165, issue #1019: `awaiting_input` chats count too and `!` reaches them, §15 — a chat still never appears in the task board's columns)*. A chat turn is bounded by §7.2's `agent_timeout` and §7.4's `input_timeout` verbatim, so the slot this row says it holds is no longer held forever (§11, §12.3, §13.2, §13.3, §13.4, §15). *Amended 2026-08-31 (task 070, issue #268):* **codex resumes now**, so "codex and cursor are refused at creation with a typed reason" reads **cursor alone** — codex met the precondition task 063 decision 3 attached to it, a capture against a named build (codex-cli 0.150.1) pinning `codex exec --json resume <thread_id>`, and its `thread.started` id is read into `RunResult.SessionID` (§9.3). Nothing else in this row moves: continuity still comes from the CLI resuming its own session, vincent still replays no log as prompt context, and the refusal is still the authority for the adapters that cannot (§9.7). *Amended 2026-08-31 (task 071, issue #282):* a chat's live output is **normalized in the daemon exactly as a task's is** — §13.3's typed chunks, with the verbatim line kept as `raw` — and the chat workspace renders it with the output pane's own renderer at the session's shared verbosity level. The chat is still its own entity; what it is not is its own rendering vocabulary *Amended 2026-08-31 (task 072, issue #283):* **cursor resumes too**, pinned to a capture against cursor-agent 2026.08.11-e8db854, so "codex and cursor are refused at creation" is retired entirely and **no shipped adapter is refused**. The refusal path is unchanged and unretired — it is the contract for the next adapter — and is now proven against a stub adapter rather than a shipped one, which is what stops it asserting the opposite of the truth the day a capability lands. Two consequences are stated positively rather than worked around: a resumed codex run is always full-auto, because `codex exec resume` has no `--sandbox`, guarded structurally by chats having no requestable permission mode; and cursor cannot report a lost session at all, because it adopts an unknown `--resume` id and answers rather than refusing (§9.3, §9.7). *Amended 2026-09-01 (task 074, issue #288):* a chat has **two** terminal states, not one — an idle chat may `hand_off` its worktree and branch to a task that adopts them verbatim, and `handed_off` is terminal because reusing `archived` would run the archive path, which removes the worktree this transfers. The chat remains a separate entity and this row's "never a task with a `kind` column" is untouched: what is added is a lifecycle transition *between* the two entities, with one authoritative foreign key (`chats.handoff_task_id`) and the reverse direction served by a lookup. It is one transaction — task row, branch claim, link, transition, claim release, both events — with the scheduler notified after the commit, so the scheduler cannot admit a task before it owns a complete workspace and gc never sees the directory claimed twice or not at all. The task becomes the sole owner of that worktree and branch (§10). The new route joins this row's own MCP exclusion list rather than excepting it, which is why it is a chats-family route and not a field on `POST /v1/tasks` (§13.4). §7.3 is untouched: the chat's session is not transferred, and workflow steps still start fresh (§5.5, §10, §12.3, §13.2, §13.3, §13.4, §14, §15). *Amended 2026-09-17 (task 119, issue #472):* "running in its own git worktree" now describes a **free** chat. A chat may instead be **linked** to a stopped task — opened by the §6 action `chat` from `blocked`, `awaiting_gate`, `done` or `aborted` — and work in that task's worktree and on its branch, which the task goes on owning alone; the chat claims nothing (§10). While it is open the task is **locked**: every §6 action but `cancel` is refused, checked inside the store's compare-and-swap. A linked chat ends in a **third** terminal state, `closed`, under a transition table of its own that has no `archive` and no `hand_off`. It is still a chat — still no `kind` column, still off the task board, still excluded from MCP by this row's own list, and its turns' cost stays on the chat rather than the task. A linked chat takes its task's permission mode, so task 072's "guarded structurally by chats having no requestable permission mode" no longer guards a resumed codex run: that combination is now refused at open and by the adapter, failing closed (§5.5, §6, §9.3, §10, §12.4, §13.2, §13.3, §13.4, §14, §15, §16, §17, §18) *Amended 2026-10-29 (task 138.11, issue #863):* **copilot resumes too**, the fourth shipped adapter, pinned to `resume_1.0.105.jsonl` (`--resume=<id>`), so "no shipped adapter is refused" stays true with four. Its lost session is classified `session_lost` from `resume_unknown_1.0.105.txt`. Copilot cannot yet keep a resumed turn restricted, so a linked chat on a restricted task is refused at open on it until task 138.10, as codex's is (§9.9). *Amended 2026-10-30 (task 138.10, issue #862):* it can now — `restricted_resume_1.0.105.jsonl` resumed a restricted session with its restriction intact — so a linked chat on a restricted task opens on copilot, and codex is again the only adapter refused there (§9.9). A resumed copilot turn records its own token spend as a delta of the session totals copilot reports (§9.9, §14) *Amended 2026-11-20 (task 162, issue #1011):* a chat's permission mode is **requestable** — `POST /v1/chats`, `PATCH /v1/chats/{id}`, a send's override — superseding task 072 decision 1, whose guard was the absence of a mode field. The guard is now a refusal where the mode is chosen: `restricted` on an adapter that cannot keep a resumed turn restricted (codex) or cannot restrict here (cursor on Windows) is `400 agent_cannot_restrict_resume`, and `Start`'s fail-closed refusal stays as the backstop. A linked chat keeps its task's clamp: on a restricted task it is never raised to `full-auto` (`409`). The new `PATCH /v1/chats/{id}` is a chats-family route and joins this row's MCP exclusion list (§5.5, §9.3, §13.2, §13.4, §16) *Amended 2026-11-21 (task 167, issue #1041, amending task 063 decision 2):* "no chat route is an MCP tool" now has **two exceptions**, `POST /v1/chats/{id}/rewind` and `/fork` (`chat_rewind`, `chat_fork`). The reason this row gives still holds for both: neither starts an agent process — a rewind moves refs, the worktree and turn rows and leaves the resume to the chat's next human-sent turn, and a fork creates an idle chat. Every other chat route stays excluded (§5.5, §13.4) |
 | 30 | Archived boards and permanent delete | *Added 2026-09-09 (task 092, issue #350).* **Archived history is a screen, and a permanent delete is a route.** Two TUI views — archived tasks, archived chats — are the live boards *in a second mode* rather than two new models (§15): the archive needs grouping, folding, `/` and the bulk selection, and a copy would drift on the first change to any of the four. They get palette rows and no keys, because task 049 retired `1..6` to stop adding memorized ones and task 067 gave chats the same treatment. `DELETE /v1/tasks/{id}` and `DELETE /v1/chats/{id}` (§13.2) are the only things in vincent that delete a task or chat row — the §17 pruner removes transcript *files* and never a row, and that sentence in the retention table is amended to say so. Delete is **not a §6 action**: `taskstate` has no opinion on it and it never appears in `available_actions`, which is what makes the workspace an archived row opens read-only for free; its precedent is `DELETE /v1/projects/{id}`, likewise no action, and both routes join that route's §13.4 destructive-admin exclusion. It **refuses rather than cascading**, naming the row that is holding on: a live row (`not_archived`), an archived fan-out parent whose lanes still exist (`has_lanes` — `parent_task_id` has no `ON DELETE` clause, so without the guard it is a driver error), a `handed_off` chat (`handed_off` — the task owns the worktree, §5.5), and an archived task such a chat points at (`handoff_target`). §10's standing rule is untouched and its task 008 exception merely widens to "at archive time **and at permanent delete**": a branch carrying any commit past its base is reported `has_commits` and kept whatever was answered, and the remote leg is not offered at all. Two durable events are added, `task.deleted` and `chat.deleted` (§13.3) — PR D's "there is no separate `task.archived` type" does not reach them, because that type was redundant with `task.state_changed` and a delete has no state to change to — while the historical `events` rows are deliberately kept, their id being the `Last-Event-ID` cursor. No migration: `archived_at` has been a column since `0001_init.sql`, chats measure the same window over `updated_at` by task 074 decision 6, and every cascade this needs already exists. There is no bulk endpoint and there is not going to be one (task 011): every sweep, in the TUI and in `vincent task delete --before`, is one `DELETE` per row (§5.5, §6, §10, §13.2, §13.3, §13.4, §15, §17, §20) |
 | 31 | TUI key vocabulary | *Added 2026-09-10 (task 093, issue #353).* **One operation, one key, and the registry is what says so.** The binding registry made the help *accurate* from T3.11 — `?`, the footer and the palette all render from it — which is exactly what let the *vocabulary* drift unseen: it faithfully advertised four different keys for "refresh". §15 now carries the table (refresh `R`, archive `A`, delete-a-persisted-record `D`, remove-a-draft-row `d`, add `a`, `$EDITOR` `e`, free text `t`, browser `o`, open-the-row `enter`, cycle-a-listing `s`, filter `/`, fold, lane `l`, page) and **three clauses, not the one the issue asked for**: a key may be shared only for the same operation; it may mean two things only where the registry can prove the surfaces never co-exist; and a key already carrying a term takes no second meaning. The second clause is task 025's deliberate partition of `R` promoted from an accident to the rule, which is why "exactly one key registry-wide" was not adopted literally. The §6 action letters `p a x r E R s c A F` **do not move**, so they decide the contested cases: `R` won refresh, `A` won archive, and `D`/`d` split on persisted-versus-draft, which is what makes pressing `d` on an archived board safe. Enforcement is three tests in `internal/tui/bindings_test.go` beside `TestEveryPanelKeyIsHandled`, with an allow-list that must carry a reason and must stay non-empty; the disjointness the archived boards rely on is **derived from `taskstate.HumanActionsFrom`**, not listed, so an FSM change that starts offering an action on an archived row fails the test rather than shipping a shadowed key. It closes a live bug rather than only a style one: the task workspace's Pull Request tab intercepted `r` and `c`, so **retry and cancel were unreachable there** while the footer advertised both. Scope is `internal/tui` and the docs — no CLI, API, MCP, store or workflow change, and no user-configurable keymap, which is a larger question this does not answer (§15). *Amended 2026-09-17 (task 118, issue #412):* "no user-configurable keymap" is narrowed to no keymap **outside these rules**. Row 35 adds `tui.keys`, which makes this table the **default** keymap and holds an override to the same three clauses with the same checker, so the question is answered rather than set aside; the §6 letters still do not move as defaults |
 | 32 | The footer fills its width, and says what it hides | *Added 2026-09-10 (task 094, issue #352).* **A cap is not a layout.** The footer's five-key limit was a constant, and a constant is wrong at both 80 and 200 columns: eleven of the twenty-one binding contexts declare more hinted keys than five, so on more than half the surfaces keys were dropped silently while `pad := max(width-lw-pw, 2)` spent the remaining columns on blank space. Width now decides, as a strict prefix of registry priority order, measured exactly rather than iterated: every candidate admission count is costed against the `+N` that count itself implies, so there is no "admitted because +9 shrank to +8" state to detect afterwards. The segments to the right of the hints are measured **first** and come out of the budget — the line truncates from the left, so hints are what a full line loses first, and admitting them against the whole width would let the actions push them straight back off. This **supersedes** the phase 3 refactor decision and the PR R / T3.12 decision in `docs/history/v0-tasks.md` ("max 5, priority-ordered"), and only those: what they were protecting — one line that never wraps, and a pinned `: commands  ? help  q quit` that never truncates — is untouched, and §15 is amended in place to say so. The `+N` counts this surface's palette-reachable rows that the line is not advertising, **not** everything the palette lists: the five global rows and the eight navigation entries are what the pinned segment stands for, and counting them would pin `N` near fourteen and never at zero. Alias rows are **declared** (`binding.aliased`) rather than parsed out of hint text — splitting on `/` and mapping `↑↓←→` back to key names is text parsing over a human-written field that breaks silently the first time a hint is reworded — and a test asserts the declaration against what the hints actually say. `paletteEntries` still lists the board's fold rows where the footer, gated by `shell.liveBindings`, does not; that mismatch is left where it is rather than widened into here. *Amended 2026-09-14 (task 096):* the triggers view is a ninth navigation entry, so the pinned segment stands for nine; the reasoning is unchanged (§15). *Amended 2026-09-14 (issue #372):* the mismatch is gone — `root.openPalette` hands `paletteEntries` the shell's `liveBindings`, so a flat board's palette drops the fold rows the footer drops, and a grouped board's still lists them |
@@ -1373,9 +1373,16 @@ of the chat — and its path is written to the turn's transcript as a
 split is not kept: a restore writes the snapshot's differences from its HEAD
 back as unstaged changes.
 
-The commit is referenced as `refs/vincent/chats/<chat id>/turn-<seq>`, in the
-project repository's shared ref namespace, so it is visible from the main
-checkout and survives the worktree's removal. Its SHA and the HEAD it is
+The commit is referenced as `refs/vincent/<install id>/chats/<chat id>/turn-<seq>`,
+in the project repository's shared ref namespace, so it is visible from the
+main checkout and survives the worktree's removal. *Amended 2026-11-21 (PR
+#1044 review F4):* `<install id>` is the database's installation id
+(`installation.install_id`, migration 0072, 16 hex characters minted once).
+Chat ids are unique only within one database, and every installation that
+registered the repository sees its refs, so the namespace is scoped: one
+installation never lists, prunes or collides with another's. Refs written
+before this amendment, under the unscoped `refs/vincent/chats/`, are not read
+— their turns show no checkpoint — and are not swept. Its SHA and the HEAD it is
 parented on are written onto the turn row (`chat_turns.checkpoint_sha`,
 `head_before`, migration 0066) before `adapter.Start`; `head_after` is the
 worktree's HEAD when the turn ends. A turn whose checkpoint cannot be taken
@@ -1384,9 +1391,90 @@ or recorded fails `checkpoint_failed` and never spawns its agent. Linked
 ones, in the worktree they run in, and so is a turn drained from the
 message queue (task 156).
 
-Rewinding to a checkpoint and forking a chat from one are planned in task 167
+~~Rewinding to a checkpoint and forking a chat from one are planned in task 167
 (167.3–167.6) and do not exist yet; neither does pruning these refs (167.8),
-so a deleted chat's checkpoint refs remain until that lands.
+so a deleted chat's checkpoint refs remain until that lands.~~ *Amended
+2026-11-21 (task 167.3–167.10, issue #1041):* both exist, and the refs are
+pruned (§10).
+
+#### Rewind and fork (added 2026-11-21, task 167.3–167.8, issue #1041)
+
+**Rewind to turn N means the state before turn N ran** (brief decision F).
+`POST /v1/chats/{id}/rewind` (§13.2) takes `turn` and a `mode`:
+
+- `code` restores the worktree to turn N's checkpoint. The current state is
+  first saved as a snapshot (`--ignore-errors`, like a checkpoint) under
+  `refs/vincent/<install id>/chats/<chat id>/rewound-<k>`, `k` counting up per chat, so
+  nothing a rewind replaces is lost; then the branch is reset to
+  `head_before`, `clean -fd` runs, and the checkpoint's tree is laid back
+  unstaged. Ignored files are left alone. A path the pre-rewind snapshot could
+  not read is excluded from the clean (`-e`), so **a rewind never deletes a
+  file it could not save**; those paths come back as `skipped` and go to the
+  daemon log (brief decision D). *Amended 2026-11-21 (review F2):* the clean
+  is the only step an exclude can spare. A path the branch tracks — at HEAD,
+  at the target's `head_before`, or in the checkpoint's tree — is rewritten by
+  the reset or the checkout whatever the clean does, so when the snapshot
+  could not read such a path the rewind is refused before anything moves or
+  any ref is written: `409 chat_rewind_unsaved_files`, naming the paths.
+  Making them readable lets the save take them. A rewind may also go **forward**: `{rewound:
+  k}` restores a `rewound-<k>` state (code only), itself saving the state it
+  replaces first.
+- `conversation` takes turns N..last out of the conversation. They are never
+  deleted: each is marked `rewound_at` under one `rewind_id`, still counted in
+  every §17 cost and token total, still readable, and hidden by default in the
+  TUI, `vincent chat transcript` and the export (each has a toggle or flag to
+  show them). New turns continue `seq`. Turn N's prompt returns to the chat's
+  daemon-held draft (task 164).
+- `both`, the default, does the two together.
+
+**A code rewind refuses foreign commits, with no force** (decision 3): it
+needs `head_before(k+1) == head_after(k)` for every turn k ≥ N and the
+worktree's HEAD equal to the last turn's `head_after`, else `409
+chat_rewind_foreign_commits`. Free, linked and issue chats run the same check.
+Rewind and fork both refuse a live turn (`running`, `awaiting_input`, a
+draining queue) with `409 chat_turn_live` and an ended chat with `409
+chat_terminal` — guards, not §5.5 transitions — a turn an earlier rewind took
+out with `409 chat_turn_rewound`, and a turn with no usable checkpoint (from
+before migration 0066, one that failed `checkpoint_failed`, or one whose ref
+no longer resolves) with `409 chat_checkpoint_unavailable` (brief decision E).
+`GET /v1/chats/{id}` serves, per turn, which of code, conversation and fork
+are available and why not, so a client's picker holds no copy of the rules.
+
+**The conversation is rewound by the next turn, not by the rewind** (brief
+decision A, reading decision 10's "written by the rewind" as "decided by the
+rewind, made real by the next turn"). The rewind runs no agent process. It
+records a plan on the chat (`chats.resume_at` or `pending_preamble`, migration
+0071) that the chat's next turn consumes and clears:
+
+- **Resumed.** When the chat's adapter can resume at a point (§9.1 — today a
+  claude that has `--resume-session-at`), the next turn runs `--resume
+  <session> --resume-session-at <anchor> --fork-session`, where the anchor is
+  the `resume_anchor` (the last top-level assistant message uuid) recorded on
+  turn N-1. The turn's `session_id` is the forked session's, recorded when the
+  turn reports it; the abandoned branch stays intact under its old id.
+- **Fresh.** A rewind that keeps no turn (to turn 1) starts the next turn in a
+  new session with nothing to seed.
+- **Seeded.** Otherwise — codex, cursor, copilot, a claude without the flag,
+  or a kept turn with no recorded anchor — the next turn starts a fresh
+  session whose `RunSpec.Preamble` carries turns 1..N-1, each prompt and its
+  final reply, bounded the way a linked chat's opening context is (task 119;
+  brief decision G). The turn is marked `seeded`, and the API, CLI, TUI and
+  export say "seeded, not resumed". It is never faked.
+
+**Fork** (`POST /v1/chats/{id}/fork`, decision 11) creates a new **idle free
+chat** and starts no turn. Its branch is named the way a free chat's is and
+cut from turn N's `head_before`, with the checkpoint's dirty state applied
+unstaged; it copies the agent, model, effort and permission mode (with task
+162's `restricted` checks), and records `forked_from` (chat and turn, with no
+foreign key, so the fork outlives a deleted source). It never inherits a task
+link, an issue or a worktree hold. Its **recorded base is the source chat's
+base** — for a linked chat the task's, for an issue chat the base its
+directory diffs against — so its base diff and delivery include the work it
+inherited up to the checkpoint (brief decision C). Its first turn resumes the
+source's session at the anchor or starts seeded, exactly as above. A fork
+does not run the foreign-commit check: it leaves the source's branch alone.
+
+Neither route spawns an agent, which is why both are MCP tools (§13.4).
 
 #### Diff and hunk review (added 2026-11-20, task 169, issue #1018)
 
@@ -4522,6 +4610,24 @@ model — never from `--help`. An adapter without one has a chat whose model and
 effort are fixed once its first turn has run (`400
 agent_cannot_change_on_resume`, §13.2). Today: claude yes (§9.2); codex,
 cursor and copilot no (§9.3, §9.7, §9.9).
+
+*Amended 2026-11-21 (task 167.4, issue #1041):* a second optional resume
+capability, `ResumeAtPointer` (`SupportsResumeAtPoint() bool`, read through
+`agent.CanResumeAtPoint`), says whether `Start` honours `RunSpec.ResumeAt`:
+resume `ResumeSessionID` at one of its messages and fork it there, the
+conversation half of a chat rewind (§5.5, Rewind and fork). Only claude
+implements it, and its answer is **detected** from the installed binary, never
+declared or read from a version table: `--resume-session-at` is absent from
+2.1.x's `--help`, so the probe asks the CLI to parse the flag without
+`--resume` and reads the refusal sentence (fixtures
+`probe_resume_at_present_2.1.330.txt`, `probe_resume_at_absent_2.1.330.txt`;
+the run itself is `stream_resume_at_2.1.330.jsonl`). claude's parser records
+`RunResult.ResumeAnchor`, the last top-level assistant message uuid. codex
+(`exec resume` takes a thread id only), cursor and copilot (`--resume` takes
+an id only) return `agent.ErrResumeAtUnsupported` from `Start` when asked,
+rather than resuming the whole session; their rewound and forked chats take
+the seeded fallback through `RunSpec.Preamble`, placed wherever each adapter
+already places it and never fused into the message.
 
 ```go
 type AgentAdapter interface {
@@ -7799,6 +7905,29 @@ turn's heading never shows a cost (§15). It has no `Compactor`.
 
 ## 10. Worktree management
 
+*Amended 2026-11-21 (task 167.8, issue #1041):* a chat's checkpoint refs
+(`refs/vincent/<install id>/chats/<chat id>/turn-<seq>` and `rewound-<k>`, §5.5) live in
+the project repository's shared ref namespace and are pruned with the chat's
+row: on permanent delete (`DELETE /v1/chats/{id}`, with or without
+`delete_branch`, and the force delete), for a linked chat when its task is
+deleted, and for every chat of a project when the project is deleted (`DELETE
+/v1/projects/{id}`, whose cascade drops the chat rows; amended 2026-11-21, PR
+#1044 review F5 — the sweep walks only projects that still exist, so it could
+never reach them). A chat's archive never deletes its branch, so it keeps them, and so
+does a hand-off, whose chat row stays. A daemon sweep, once at startup and
+then on the transcript pruner's 24 h interval, deletes the refs of chat ids
+that no longer have a row in any project repository; a repository it cannot
+read is logged and skipped. The sweep lists only its own installation's
+namespace (amended 2026-11-21, PR #1044 review F4), so a second installation
+registered on the same repository — a dev build, a screenshots seed, another
+user — keeps its refs. Only refs are deleted — the objects go with git's
+own gc. **Disk cost, measured** on this repository (decision 13): a
+checkpoint of an unchanged worktree adds one commit object (~150 bytes
+loose), reusing the previous tree; one modified file and one new file added
+six objects, ~12 KB loose, almost all of it the modified file's blob.
+A fork's worktree is created at a given commit (`CreateAtAndClaim`) rather
+than at the base branch's tip.
+
 - **Location:** `{data_dir}/worktrees/{task_id}` — outside every repo, so IDE file
   watchers and repo tooling in the main checkout are never disturbed.
   *Amended 2026-09-14 (task 099):* still true of the worktrees themselves, but
@@ -10408,7 +10537,7 @@ archives nothing from history.
 - Before starting any step process, the daemon persists the StepRun (`running`) with
   the child PID and start time once spawned.
 - *Added 2026-11-20 (task 167.2).* A chat turn's worktree checkpoint — the
-  `refs/vincent/chats/<id>/turn-<seq>` ref and the turn row's
+  `refs/vincent/<install id>/chats/<id>/turn-<seq>` ref and the turn row's
   `checkpoint_sha`/`head_before` — is committed before its agent process is
   started (§5.5, Checkpoints). Recovery needs nothing new for it: a crash
   after the spawn finds both already durable, and a crash before it leaves at
@@ -11943,6 +12072,37 @@ POST   /v1/chats/{id}/close             *Added 2026-09-17 (task 119, issue #472)
                                         free chat (archive it instead) and on a chat already
                                         terminal, with `details.state`. It is **not** an MCP
                                         tool (§13.4)
+POST   /v1/chats/{id}/rewind            *Added 2026-11-21 (task 167.3, 167.5, issue #1041).*
+                                        Rewinds a chat to the state before a turn ran (§5.5,
+                                        Rewind and fork). Body: `{turn, mode?}`, `mode` `code`,
+                                        `conversation` or `both` (the default), or `{rewound:
+                                        k}` to go forward to a saved `rewound-<k>` state (code
+                                        only). Runs no agent process: the conversation half is a
+                                        plan the chat's next turn carries out. `200` with
+                                        `{chat, rewind_id, ref, skipped, seeded, rewound_turns}`
+                                        and a `chat.updated` event. `409 chat_turn_live`,
+                                        `chat_terminal`, `chat_turn_rewound`,
+                                        `chat_checkpoint_unavailable`,
+                                        `chat_rewind_foreign_commits` (no force),
+                                        `chat_rewind_unsaved_files` (a tracked file the save could
+                                        not read, review F2). An MCP tool,
+                                        `chat_rewind` (§13.4)
+POST   /v1/chats/{id}/fork              *Added 2026-11-21 (task 167.6, issue #1041).* Creates a
+                                        new idle free chat from the state before a turn ran: its
+                                        own branch cut from the turn's `head_before` with the
+                                        checkpoint's dirty state unstaged, the source's agent,
+                                        model, effort, permission mode and base, and never a
+                                        link, an issue or a hold. Body: `{turn, title?}`. Starts
+                                        no turn. `201` with `{chat, skipped, seeded}`. Refuses
+                                        as rewind does, except `chat_rewind_foreign_commits`. An
+                                        MCP tool, `chat_fork` (§13.4). `GET /v1/chats/{id}`
+                                        gains each turn's checkpoint fields, `rewound_at`,
+                                        `rewind_id`, `seeded`, `resume_anchor` and `rewind`
+                                        (`{code, conversation, fork, conversation_seeded}`, each
+                                        reason empty when allowed), and the chat's
+                                        `rewound_states`, `forked_from` and `resume_pending`;
+                                        `GET /v1/chats/{id}/export` leaves rewound turns out
+                                        unless `include_rewound=true`
 GET    /v1/chats/{id}/skills            *Added 2026-09-19 (task 124.9, issue #505).* The skills
        ?refresh=                        the chat's agent CLI would load for its next turn, and how
                                         a message invokes one, from §9.6's skill cache;
@@ -13672,6 +13832,18 @@ with `lane` and `from_lane` taken from the payload's `to` and `from`, and
 list with the rest of the chat family (decision row 29): an agent that could
 raise a chat to `full-auto` over MCP would skip §16's confirmation.
 
+*Amended 2026-11-21 (task 167, issue #1041, settled with the author):* the
+chat family gains its **first two tools**, `chat_rewind` and `chat_fork`
+(`POST /v1/chats/{id}/rewind` and `/fork`, §13.2), and only those two; this
+amends task 063 decision 2 explicitly rather than extending it. The carve-out
+rests on 063's own first reason: an agent must not start agent processes no
+§11 cap admitted, and neither route starts one — a rewind moves refs, the
+worktree and turn rows and leaves a plan for the next turn, which only a
+human's send starts; a fork creates an idle chat. Every other chat route stays
+excluded. The tool-surface test still asserts the surface equals `Routes()`
+minus the exclusions; the exclusion set shrank by exactly these two. An agent
+rewinding its own chat mid-turn is refused by the live-turn `409`.
+
 *Added 2026-08-29 (task 057, issue #243).*
 
 The daemon serves **MCP over streamable HTTP** on the same listener as `/v1`, so
@@ -14408,6 +14580,14 @@ CREATE TABLE global_pause (
   reason     TEXT NOT NULL DEFAULT ''   -- one line; '' is none
 );
 
+-- The installation id (§5.5, §10; PR #1044 review F4, added 2026-11-21,
+-- migration 0072): a singleton minted once with the database, scoping its
+-- chats' checkpoint refs in shared repositories.
+CREATE TABLE installation (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  install_id  TEXT NOT NULL            -- 16 lowercase hex characters, never changed
+);
+
 CREATE TABLE idempotency_keys (       -- §13.1 replay protection (task 040)
   method       TEXT NOT NULL,
   path         TEXT NOT NULL,
@@ -14492,13 +14672,25 @@ CREATE TABLE chat_turns (
     mention_context               TEXT,
     -- Added 2026-11-20 (task 167.2, migration 0066): the worktree checkpoint
     -- taken before the turn's agent starts (§5.5, Checkpoints) — the snapshot
-    -- commit refs/vincent/chats/<chat id>/turn-<seq> points at, and the HEAD
+    -- commit refs/vincent/<install id>/chats/<chat id>/turn-<seq> points at
+    -- (the install id since 2026-11-21, migration 0072), and the HEAD
     -- it is parented on, both stored before adapter.Start (§12.4) — and the
     -- worktree's HEAD when the turn ended. NULL = no checkpoint (a turn from
     -- before 0066, or one that never reached it).
     checkpoint_sha                TEXT,
     head_before                   TEXT,
-    head_after                    TEXT
+    head_after                    TEXT,
+    -- Added 2026-11-21 (task 167.5, migration 0071): the turns a rewind took
+    -- out of the conversation (rewound_at, one rewind_id per rewind; never
+    -- deleted, still in §17 totals), a turn that started a seeded rather than
+    -- resumed session, and the claude assistant-message uuid a later rewind
+    -- resumes at. chats gains resume_at and pending_preamble (the next turn's
+    -- plan, cleared by the turn that consumes it) and forked_from_chat_id,
+    -- forked_from_seq (no foreign key: a fork outlives its source).
+    rewound_at                    TEXT,
+    rewind_id                     TEXT,
+    seeded                        INTEGER NOT NULL DEFAULT 0,
+    resume_anchor                 TEXT
 );
 
 -- Added 2026-11-19 (task 156, issue #1010): follow-up messages queued behind a
@@ -15083,6 +15275,19 @@ together or not at all; a concurrent duplicate loses on the primary key, rolls
 its task insert back, and replays the winner's.
 
 ## 15. TUI
+
+*Amended 2026-11-21 (task 167.7, issue #1041):* in the chat workspace,
+`rewind` (`alt+z`, a rebindable keymap operation — not `esc esc`, because
+`esc` is the workspace's fixed back key, decision 4) and the palette's
+"rewind…" and "fork from turn…" entries open a turn picker. It lists every
+turn not already rewound, with code, conversation, both and fork each
+disabled with its reason as `GET /v1/chats/{id}` reports it (no checkpoint,
+foreign commits, live turn, already rewound), and, for a rewind, the saved
+`rewound-<k>` states to go forward to. Rewound turns are hidden; the palette's
+"show rewound turns" toggle draws them dimmed, and a seeded turn says "seeded,
+not resumed". Neither `rewind` nor "fork from turn…" is offered on an ended
+chat, which the daemon refuses with `chat_terminal` (decision 8; PR #1044
+review F8).
 
 *Amended 2026-11-21 (task 170):* in the chat workspace, `shell_command`
 (`alt+x`, a rebindable keymap operation, never a composer prefix) opens a

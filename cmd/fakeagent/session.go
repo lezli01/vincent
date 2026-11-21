@@ -157,6 +157,11 @@ func openSession(d dialect) []string {
 		if sessionID == "" {
 			sessionID = "fake-session-1"
 		}
+		if d == dialectClaude && resuming && hasFlag("--fork-session") {
+			// No memory to cut, but the fork's id is still a new one: the
+			// adapter must store what the run reported, not what it asked for.
+			sessionID = id + "-fork"
+		}
 		return nil
 	}
 	if !resuming {
@@ -184,6 +189,9 @@ func openSession(d dialect) []string {
 			fmt.Fprintln(os.Stderr, sessionLostMessage+id)
 			os.Exit(1)
 		}
+	}
+	if d == dialectClaude && hasFlag("--fork-session") {
+		return forkSession(s.Prompts)
 	}
 	sessionID = id
 	return s.Prompts

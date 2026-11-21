@@ -148,9 +148,9 @@ func (v *chatView) paletteExtras() []paletteEntry {
 		return nil
 	}
 	msg := openChatRenameMsg{id: v.chat.ID, title: v.chat.Title}
-	return []paletteEntry{{
+	return append([]paletteEntry{{
 		group:  "chat",
 		label:  "rename chat — the branch keeps its name",
 		action: func() tea.Msg { return msg },
-	}}
+	}}, v.rewindPaletteExtras()...)
 }

@@ -231,6 +231,12 @@ func buildArgs(spec agent.RunSpec) ([]string, error) {
 // argv limit); the process tree is killed when ctx is canceled. The caller
 // must consume Events() until closed; Wait blocks on stream end.
 func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandle, error) {
+	// Resuming at a point is claude's alone (task 167 decision A): `--resume` takes a chat id and nothing that names a point inside it,
+	// so a rewound chat's next turn here is the seeded fallback, and a spec
+	// asking for more is refused rather than resumed whole.
+	if spec.ResumeAt != "" {
+		return nil, agent.ErrResumeAtUnsupported
+	}
 	path, err := a.resolvePathWith(spec.Launcher)
 	if err != nil {
 		return nil, err

@@ -61,7 +61,7 @@ var reboundKeys = map[string]string{
 	"compact":       "alt+j",
 	"export_chat":   "alt+q",
 	"shell_command": "alt+o",
-	"chat_diff":     "alt+z",
+	"chat_diff":     "alt+i",
 }
 
 // withKeymap installs overrides for one test and restores the defaults after.

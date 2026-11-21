@@ -50,6 +50,15 @@ func (r *Runner) Recover(ctx context.Context) error {
 			r.deps.StopOrphan(ctx, *chat.LinkedTaskID, t.ID)
 		}
 		killOrphan(t, r.deps.Logger)
+		// The process is gone, so HEAD is where the turn left it: recorded
+		// as its head_after, as a turn that ended under a live daemon has,
+		// or the rewind chain check would refuse every code rewind at or
+		// before this turn as foreign commits (task 167, review F3).
+		if t.HeadBefore != "" && t.HeadAfter == "" {
+			if dir, err := r.Workspace(ctx, chat); err == nil && dir != "" {
+				r.recordHeadAfterCtx(ctx, t, dir)
+			}
+		}
 		now := r.deps.Now()
 		ms := now.Sub(t.StartedAt).Milliseconds()
 		t.State, t.EndedAt, t.DurationMS, t.PID = chatstate.TurnInterruptedState, &now, &ms, nil
