@@ -13,6 +13,25 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Added
 
+- **Fork a chat onto another agent.** `vincent chat fork --agent codex` (and
+  `agent` on `POST /v1/chats/{id}/fork` and the `chat_fork` MCP tool) asks a
+  different agent to carry on from any turn. Such a fork always starts seeded
+  with a summary of the earlier turns; its model and effort are the new
+  agent's, and a `restricted` source needs `--permission-mode` to go to an
+  agent that cannot stay restricted. The fork shows `forked from #N (claude)`.
+- **See and edit a seeded chat's context before its first turn.** After a
+  seeded rewind or fork, the summary the next turn will receive is shown as
+  "turn 0 · seeded context (summary)" in `vincent chat show` and the chat
+  workspace, served as `pending_preamble`, and replaceable or clearable with
+  `vincent chat preamble` or `PATCH /v1/chats/{id}` until a turn starts.
+
+### Changed
+
+- **Seeded chat contexts now summarize tool calls.** A seeded rewind or fork
+  used to replay only each earlier turn's prompt and final reply; each turn
+  now also lists its tool calls, one line each (never their output), and
+  those lines are the first thing dropped when the history is too long.
+
 - **Rewind a chat, or fork it, from any turn.** Every chat turn already
   checkpoints its worktree; now `alt+z` in the chat workspace (rebindable as
   `rewind`) and the palette's "rewind…" and "fork from turn…" open a turn

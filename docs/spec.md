@@ -1476,6 +1476,41 @@ does not run the foreign-commit check: it leaves the source's branch alone.
 
 Neither route spawns an agent, which is why both are MCP tools (§13.4).
 
+*Amended 2026-11-21 (task 171, issue #1020):* **a fork may change agent.**
+`POST /v1/chats/{id}/fork` takes an optional `agent` (with `model`, `effort`
+and `permission_mode`). An absent `agent`, or the source's own, changes
+nothing above. Another agent must exist and resume (`400` otherwise, as a
+create refuses it); the fork is then **always seeded**, because a session
+cannot cross adapters, even where the source's claude could resume at the
+anchor; its model and effort are the request's or the adapter's defaults,
+never the source's; and the source's permission mode is checked against it by
+task 162's check, so a `restricted` source forked to codex is `400
+agent_cannot_restrict_resume` unless the request chooses `permission_mode`.
+The fork records the source's agent (`chats.forked_from_agent`, migration
+0073), served as `forked_from.agent`. It still starts no process, so it stays
+an MCP tool.
+
+**Every seeded context summarizes tool calls** (task 171 decision 3, amending
+the "each prompt and its final reply" above): under each kept turn's prompt
+and before its reply, a `<tools>` block holds one `chatexport.ToolSummary`
+line per top-level tool call, read from the turn's normalized transcript;
+tool output is still left out, and the intro says so. The bound is the same;
+over it, whole tool blocks are dropped, oldest turn first, before any prompt
+or reply is cut. A cross-agent seed also names the agent the conversation was
+held with.
+
+**The seeded context is turn 0** (task 171 decision 4): the chat DTO carries
+it as `pending_preamble` while `resume_pending` is `seeded`, and
+`PATCH /v1/chats/{id}` with `pending_preamble` (alone) replaces it until a
+turn consumes it — `409 chat_preamble_not_pending` on a chat that is not
+seeded-pending, `chat_turn_live` while a turn is accepted. Empty text clears
+it, and the next turn starts a fresh session with no earlier context. The
+CLI's `vincent chat show` and the TUI's chat workspace show it under
+"turn 0 · seeded context (summary)"; `vincent chat preamble` edits it. A
+natively resumed fork has none, and the TUI says "resumed from turn N".
+Comparing two agents' answers (`POST /v1/chats/{id}/compare`, the brief's
+decisions 6-9) is not yet built; task 171 tracks it.
+
 #### Diff and hunk review (added 2026-11-20, task 169, issue #1018)
 
 A chat has a diff of its own, served structured by
@@ -12103,6 +12138,15 @@ POST   /v1/chats/{id}/fork              *Added 2026-11-21 (task 167.6, issue #10
                                         `rewound_states`, `forked_from` and `resume_pending`;
                                         `GET /v1/chats/{id}/export` leaves rewound turns out
                                         unless `include_rewound=true`
+                                        *Amended 2026-11-21 (task 171, issue #1020):* the body
+                                        also takes `agent?, model?, effort?,
+                                        permission_mode?`; another agent forks seeded (§5.5),
+                                        `400` for an unknown or non-resuming one, and a
+                                        `model`/`effort` without another agent is `400`. The
+                                        chat DTO gains `forked_from.agent` and
+                                        `pending_preamble`, and `PATCH /v1/chats/{id}` takes
+                                        `pending_preamble` alone (large body tier; `409
+                                        chat_preamble_not_pending`)
 GET    /v1/chats/{id}/skills            *Added 2026-09-19 (task 124.9, issue #505).* The skills
        ?refresh=                        the chat's agent CLI would load for its next turn, and how
                                         a message invokes one, from §9.6's skill cache;
@@ -13844,6 +13888,12 @@ excluded. The tool-surface test still asserts the surface equals `Routes()`
 minus the exclusions; the exclusion set shrank by exactly these two. An agent
 rewinding its own chat mid-turn is refused by the live-turn `409`.
 
+*Amended 2026-11-21 (task 171, issue #1020):* `chat_fork` takes `agent`,
+`model`, `effort` and `permission_mode` too, and stays a tool on the same
+ground — a fork onto another agent still starts no process. Its seeded
+context is editable only through `PATCH /v1/chats/{id}`, which stays
+excluded.
+
 *Added 2026-08-29 (task 057, issue #243).*
 
 The daemon serves **MCP over streamable HTTP** on the same listener as `/v1`, so
@@ -14687,6 +14737,10 @@ CREATE TABLE chat_turns (
     -- resumes at. chats gains resume_at and pending_preamble (the next turn's
     -- plan, cleared by the turn that consumes it) and forked_from_chat_id,
     -- forked_from_seq (no foreign key: a fork outlives its source).
+    -- Added 2026-11-21 (task 171, migration 0073): chats gains
+    -- forked_from_agent, the source's agent recorded at the fork, so the
+    -- "forked from #N (claude)" label outlives a deleted source. NULL = not
+    -- a fork, or a fork from before 0073.
     rewound_at                    TEXT,
     rewind_id                     TEXT,
     seeded                        INTEGER NOT NULL DEFAULT 0,

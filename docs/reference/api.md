@@ -4009,6 +4009,31 @@ skipped, seeded}`.
 Resuming at a point is claude's alone, and only when the installed claude has
 `--resume-session-at`; codex, cursor and copilot are always seeded.
 
+The fork body also takes `agent`, `model`, `effort` and `permission_mode`.
+With an `agent` other than the source's, the fork runs on that agent: it is
+always seeded, because no session crosses agents; its model and effort are the
+request's or that agent's defaults, never the source's; and the source's
+permission mode is checked against it, so a `restricted` claude chat forked to
+codex is `400 agent_cannot_restrict_resume` unless the body passes
+`permission_mode`. An unknown agent is `400 validation_failed`, one that cannot
+resume `400 agent_cannot_resume`, and a `model` or `effort` without another
+agent `400 validation_failed`. The fork's `forked_from` carries the source's
+`agent`.
+
+A seeded context gives each kept turn's prompt, a `<tools>` block with one line
+per tool call (name and key argument — never its output), and its final reply.
+It keeps the most recent 200 lines within 512 KiB; to fit, whole tool blocks
+are dropped, oldest first, before any prompt or reply is cut.
+
+While `resume_pending` is `seeded`, the chat carries that context as
+`pending_preamble` — turn 0, what the next turn will receive — and
+`PATCH /v1/chats/{id}` with `{"pending_preamble": "…"}`, sent alone, replaces
+it (at most 1 MiB). An empty string clears it, so the next turn starts a fresh
+session with no earlier context. The edit is `409 chat_preamble_not_pending`
+when nothing seeded is pending — a natively resumed fork, a chat never rewound
+or forked, or one whose next turn already started — and `409 chat_turn_live`
+while a turn is accepted.
+
 | Status | `error` | When |
 |---|---|---|
 | `409` | `chat_turn_live` | A turn is `running`, `awaiting_input`, or the queue is draining |
