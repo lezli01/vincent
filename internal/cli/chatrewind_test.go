@@ -238,8 +238,11 @@ func TestChatForkSendsTurnAndPrintsNewChat(t *testing.T) {
 	if req != "POST /v1/chats/7/fork" || len(body) != 2 || body["turn"] != 2.0 || body["title"] != "spike" {
 		t.Errorf("sent %s %v", req, body)
 	}
-	for _, want := range []string{"chat 9  spike  [codex]  vincent/9-spike", "forked from chat 7, before turn 2",
-		"first turn: seeded, not resumed"} {
+	for _, want := range []string{
+		"chat 9  spike  [codex]  vincent/9-spike",
+		"forked from chat 7, before turn 2",
+		"first turn: seeded, not resumed",
+	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
 		}
