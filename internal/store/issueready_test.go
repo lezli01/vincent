@@ -108,20 +108,18 @@ func finishedState(st seedTask) bool {
 // a chat not handed off is the latest work when it was created after that
 // task finished, or there is no such task (task 140 decision 5). It also
 // returns Issue.Active and Issue.Attention over the same rows.
-func seedLaneOf(closed bool, tasks []seedTask, chats []seedChat) (lane issuestate.Lane, active, attention bool) {
+func seedLaneOf(closed bool, tasks []seedTask, chats []seedChat, item seedItem) (lane issuestate.Lane, active, attention bool) {
 	var unsettled, finished bool
-	latest := -1
-	for n, st := range tasks {
+	for _, st := range tasks {
 		unsettled = unsettled || !taskstate.Settled(st.state)
-		if !finishedState(st) {
-			continue
-		}
-		finished = true
-		if !st.side && (latest < 0 || st.finished >= tasks[latest].finished) {
-			latest = n
-		}
+		finished = finished || finishedState(st)
 	}
+	latest := seedLatest(tasks)
 	ready := latest >= 0 && tasks[latest].raw != rawNotReady
+	// A delivered item names the current delivery when it names the latest
+	// task at its head (#1042); seedItems writes one only when there is a
+	// latest task to name.
+	delivered := latest >= 0 && item == itemCurrent
 	chatLatest := false
 	for _, c := range chats {
 		unsettled = unsettled || !chatstate.Terminal(c.state)
@@ -133,13 +131,64 @@ func seedLaneOf(closed bool, tasks []seedTask, chats []seedChat) (lane issuestat
 	if closed {
 		state = issuestate.Closed
 	}
-	return issuestate.LaneOf(state, unsettled, finished, ready, false, chatLatest), unsettled, attention
+	return issuestate.LaneOf(state, unsettled, finished, ready, delivered, chatLatest), unsettled, attention
+}
+
+// seedLatest is the index of the latest finished main-line task among
+// tasks, or -1: the greatest finished_at, ties to the later in tasks.
+func seedLatest(tasks []seedTask) int {
+	latest := -1
+	for n, st := range tasks {
+		if finishedState(st) && !st.side && (latest < 0 || st.finished >= tasks[latest].finished) {
+			latest = n
+		}
+	}
+	return latest
+}
+
+// seedItem is the handoff item a seeded issue carries (#1042, review F6):
+// none, or a `delivered` one naming the latest delivery at its current
+// head_sha or at a stale one.
+type seedItem string
+
+const (
+	itemNone    seedItem = "no item"
+	itemCurrent seedItem = "delivered current"
+	itemStale   seedItem = "delivered stale"
+)
+
+// seedHandoffItem writes item onto issue iss under handoff handoffID,
+// naming the latest of tasks — which seedIssue created as seed-<id>-<n>.
+// The seeded deliveries carry no head_sha, so the current item carries
+// none either (NULL IS NULL), and the stale one carries another.
+func seedHandoffItem(t *testing.T, s *Store, handoffID int64, iss *Issue, tasks []seedTask, item seedItem) {
+	t.Helper()
+	latest := seedLatest(tasks)
+	if item == itemNone || latest < 0 {
+		return
+	}
+	var taskID int64
+	if err := s.db.QueryRow(`SELECT id FROM tasks WHERE title = ?`,
+		fmt.Sprintf("seed-%d-%d", iss.ID, latest)).Scan(&taskID); err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"kind":"change","title":"t","recorded_at":"2026-01-01T00:00:00Z"}`
+	if item == itemStale {
+		raw = `{"kind":"change","title":"t","head_sha":"stale","recorded_at":"2026-01-01T00:00:00Z"}`
+	}
+	if _, err := s.db.Exec(`INSERT INTO handoff_items (handoff_id, issue_id, delivery_task_id, delivery_json,
+		outcome, outcome_at, outcome_by) VALUES (?, ?, ?, ?, 'delivered', ?, 'human')`,
+		handoffID, iss.ID, taskID, raw, formatTime(seedEpoch)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestLaneOfMatchesLaneExpr seeds an issue for every combination of the
 // facts the lane reads — closed, an unsettled root, a finished side task,
 // the latest main-line delivery's shape, and a chat opened on the issue in
-// each state before or after that delivery finished (task 140, review F4) —
+// each state before or after that delivery finished (task 140, review F4),
+// and a `delivered` handoff item naming that delivery at its current head
+// or a stale one, or none (#1042, review F6) —
 // and holds laneExpr, activeExpr, attentionExpr and the handoff marker to
 // issuestate.LaneOf and HandoffMarkerOf on each, so the two spellings of
 // the rule cannot drift.
@@ -180,41 +229,55 @@ func TestLaneOfMatchesLaneExpr(t *testing.T) {
 		chatNames = append(chatNames, name)
 	}
 	slices.Sort(chatNames)
+	// One handoff holds every seeded item; its task is no issue's.
+	ht := newTask(p.ID, "handoff", TaskArchived)
+	ht.ArchivedFrom = TaskDone
+	mustCreate(t, s, ht)
+	res, err := s.db.Exec(`INSERT INTO handoffs (project_id, task_id, created_by, created_at) VALUES (?, ?, 'human', ?)`,
+		p.ID, ht.ID, formatTime(seedEpoch))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handoffID, err := res.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
 	seen := map[issuestate.Lane]bool{}
 	for _, name := range names {
 		for _, chatName := range chatNames {
 			for _, closed := range []bool{false, true} {
 				for _, running := range []bool{false, true} {
 					for _, side := range []bool{false, true} {
-						tasks := slices.Clone(mains[name])
-						if running {
-							tasks = append(tasks, seedTask{state: TaskRunning})
-						}
-						if side {
-							// Newest of all, and not ready: a side task is never
-							// the latest delivery, whatever it says.
-							tasks = append(tasks, seedTask{state: TaskDone, side: true, raw: rawNotReady, finished: 9})
-						}
-						label := fmt.Sprintf("%s, %s closed=%v running=%v side=%v", name, chatName, closed, running, side)
-						chats := chatCases[chatName]
-						iss := seedIssue(t, s, p.ID, label, closed, tasks...)
-						if len(chats) > 0 {
+						for _, item := range []seedItem{itemNone, itemCurrent, itemStale} {
+							tasks := slices.Clone(mains[name])
+							if running {
+								tasks = append(tasks, seedTask{state: TaskRunning})
+							}
+							if side {
+								// Newest of all, and not ready: a side task is never
+								// the latest delivery, whatever it says.
+								tasks = append(tasks, seedTask{state: TaskDone, side: true, raw: rawNotReady, finished: 9})
+							}
+							label := fmt.Sprintf("%s, %s, %s closed=%v running=%v side=%v", name, chatName, item, closed, running, side)
+							chats := chatCases[chatName]
+							iss := seedIssue(t, s, p.ID, label, closed, tasks...)
 							seedChats(t, s, p.ID, iss.ID, chats)
+							seedHandoffItem(t, s, handoffID, iss, tasks, item)
 							iss = mustGetIssue(t, s, iss.ID)
+							want, active, attention := seedLaneOf(closed, tasks, chats, item)
+							if iss.Lane != want || iss.Active != active || iss.Attention != attention {
+								t.Errorf("%s: SQL lane %s active %v attention %v, Go %s %v %v",
+									label, iss.Lane, iss.Active, iss.Attention, want, active, attention)
+							}
+							var marker HandoffMarker
+							if iss.Handoff != nil {
+								marker = iss.Handoff.State
+							}
+							if wantMarker := HandoffMarkerOf(iss.State, want, active, nil, seedLatest(tasks) >= 0 && item == itemCurrent); marker != wantMarker {
+								t.Errorf("%s: SQL marker %q, HandoffMarkerOf %q", label, marker, wantMarker)
+							}
+							seen[iss.Lane] = true
 						}
-						want, active, attention := seedLaneOf(closed, tasks, chats)
-						if iss.Lane != want || iss.Active != active || iss.Attention != attention {
-							t.Errorf("%s: SQL lane %s active %v attention %v, Go %s %v %v",
-								label, iss.Lane, iss.Active, iss.Attention, want, active, attention)
-						}
-						var marker HandoffMarker
-						if iss.Handoff != nil {
-							marker = iss.Handoff.State
-						}
-						if wantMarker := HandoffMarkerOf(iss.State, want, active, nil, false); marker != wantMarker {
-							t.Errorf("%s: SQL marker %q, HandoffMarkerOf %q", label, marker, wantMarker)
-						}
-						seen[iss.Lane] = true
 					}
 				}
 			}
