@@ -5,7 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/chatstate"
+	"github.com/lezli01/vincent/internal/store"
+	"github.com/lezli01/vincent/internal/testutil/wait"
 )
 
 // TestChatHunkGuardWhileNoTurn is task 169 decision 7 at the runner: fn runs
@@ -66,5 +69,59 @@ func TestChatHunkGuardWhileNoTurn(t *testing.T) {
 	h.runner.StopTurn(ctx, chat.ID)
 	if err := h.runner.WhileNoTurn(ctx, chat.ID, func() error { return boom }); !errors.Is(err, boom) {
 		t.Errorf("WhileNoTurn = %v, want fn's error", err)
+	}
+}
+
+// TestChatHunkGuardIsPerChat is review F7: one chat's guard — held for a
+// whole reject, which is a snapshot of the worktree, a diff and an apply —
+// never holds off another chat. The second chat's id is 64 past the first's
+// on purpose: the lock used to be one of 64 stripes, and those two shared it.
+func TestChatHunkGuardIsPerChat(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	held := h.chat(t)
+	var other *store.Chat
+	for other == nil || other.ID < held.ID+64 {
+		other = &store.Chat{
+			ProjectID: h.project.ID, Title: "another talk", State: chatstate.Idle,
+			Agent: "claude", PermissionMode: string(agent.FullAuto), BaseBranch: "main",
+		}
+		if err := h.store.CreateChat(ctx, other); err != nil {
+			t.Fatalf("CreateChat: %v", err)
+		}
+	}
+	if other.ID != held.ID+64 {
+		t.Fatalf("chat ids %d and %d are not 64 apart", held.ID, other.ID)
+	}
+
+	inside, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		done <- h.runner.WhileNoTurn(ctx, held.ID, func() error {
+			close(inside)
+			<-release
+			return nil
+		})
+	}()
+	<-inside
+	ran := make(chan error, 1)
+	go func() { ran <- h.runner.WhileNoTurn(ctx, other.ID, func() error { return nil }) }()
+	select {
+	case err := <-ran:
+		if err != nil {
+			t.Fatalf("the other chat's guard: %v", err)
+		}
+	case <-time.After(wait.Timeout(10 * time.Second)):
+		t.Fatal("another chat's guard waited for this one's")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("WhileNoTurn: %v", err)
+	}
+	// A lock lives only as long as someone holds or awaits it.
+	h.runner.mu.Lock()
+	left := len(h.runner.starts)
+	h.runner.mu.Unlock()
+	if left != 0 {
+		t.Errorf("%d start locks left behind", left)
 	}
 }

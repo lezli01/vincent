@@ -1469,9 +1469,13 @@ the chat row.
 `409 chat_turn_live` while the chat is `running`, `awaiting_input`, or
 draining its queue. It is a guard, not a §5.5 transition — the chat's state
 never changes — and it is unraced: `chatrun.Runner.WhileNoTurn` holds the
-chat's start lock for the length of the one git command, so a send or a queue
+chat's start lock, so a send or a queue
 resume arriving meanwhile waits rather than starting an agent in a worktree
-`git apply` is writing. Reading the diff is never refused for a live turn. A
+`git apply` is writing. *Amended 2026-11-21 (review of #1037): the lock is
+per chat, so no other chat's send ever waits on it, and what it is held for
+is stated as it is — a reject holds it for its snapshot, diff and apply
+(bounded by the worktree timeout), while an accept reads its diff outside
+the lock and holds it only to check the turn state and write the mark.* Reading the diff is never refused for a live turn. A
 terminal chat reads while its directory remains and can never reject
 (`409 invalid_state`, `details.action: "reject"`); with no directory the read
 answers the export's reasons as `409 chat_diff_unavailable`.

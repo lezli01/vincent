@@ -335,7 +335,8 @@ func decodeChatHunk(w http.ResponseWriter, r *http.Request, withScope bool) (req
 }
 
 // whileNoChatTurn runs fn under the runner's guarantee that the chat has no
-// turn and none starts (task 169 decision 7). A server with no runner can
+// turn and none starts (task 169 decision 7). A send for this chat waits for
+// as long as fn runs, so fn holds only what must not race an agent. A server with no runner can
 // start no turn, so there the chat's own state is the whole question.
 func (s *Server) whileNoChatTurn(ctx context.Context, chat *store.Chat, fn func() error) error {
 	if s.deps.Chats != nil {
@@ -465,17 +466,27 @@ func (s *Server) handleChatDiffAccept(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	// The guard is decision 7's, shared with reject: a mark made while the
 	// agent is still writing would be on a hunk the reader has not seen the
-	// end of.
-	err := s.whileNoChatTurn(ctx, chat, func() error {
-		_, _, files, err := s.chatDiffFiles(ctx, chat, req.Scope)
-		if err != nil {
-			return err
+	// end of. It is asked first, so a live turn is refused before any git
+	// runs, and again around the write. The diff itself is read between the
+	// two and outside the chat's start lock (review F7): accept changes
+	// nothing in git, so it has no reason to hold a send off for a snapshot.
+	// A turn that starts and ends in that gap can at worst leave a mark for
+	// content that is no longer there, which matches no hunk (decision 9).
+	idle := func() error { return nil }
+	err := s.whileNoChatTurn(ctx, chat, idle)
+	if err == nil {
+		var files []gitx.FileDiff
+		if _, _, files, err = s.chatDiffFiles(ctx, chat, req.Scope); err == nil {
+			if _, hunk := findChatHunk(files, req.Path, req.Hunk); hunk == nil {
+				err = chatHunkStale(req.Path)
+			}
 		}
-		if _, hunk := findChatHunk(files, req.Path, req.Hunk); hunk == nil {
-			return chatHunkStale(req.Path)
-		}
-		return s.deps.Store.AcceptChatHunk(ctx, chat.ID, req.Path, req.Hunk)
-	})
+	}
+	if err == nil {
+		err = s.whileNoChatTurn(ctx, chat, func() error {
+			return s.deps.Store.AcceptChatHunk(ctx, chat.ID, req.Path, req.Hunk)
+		})
+	}
 	if err != nil {
 		s.writeChatDiffError(w, "accept chat hunk", err)
 		return
