@@ -290,14 +290,10 @@ func TestLiveChatImages(t *testing.T) {
 	_ = wantAPIError(t, "a non-image", err, http.StatusUnprocessableEntity, "validation_failed")
 	_, err = h.client.AddChatImage(ctx, c.ID, "big.png", append(slices.Clone(livePNG), make([]byte, 10<<20)...))
 	_ = wantAPIError(t, "an image over 10 MiB", err, http.StatusUnprocessableEntity, "validation_failed")
-	_, err = h.client.SendChat(ctx, c.ID, "look at [image 7]")
-	if e := wantAPIError(t, "a chip with no image", err, http.StatusUnprocessableEntity, "validation_failed"); !strings.Contains(e.Message, "codex") {
-		t.Errorf("the refusal %q does not name the agent", e.Message)
-	}
-
 	// The chip resolves to the stored file for the adapter; the turn keeps
-	// the message as typed.
-	if _, err := h.client.SendChat(ctx, c.ID, "describe [image 2]"); err != nil {
+	// the message as typed. `[image 7]` names no image of the chat, so it is
+	// the human's text and passes nothing (review F4).
+	if _, err := h.client.SendChat(ctx, c.ID, "describe [image 2], not [image 7]"); err != nil {
 		t.Fatalf("SendChat: %v", err)
 	}
 	wait.Until(t, "the turn to end", func() bool {
@@ -316,8 +312,16 @@ func TestLiveChatImages(t *testing.T) {
 	if e := wantAPIError(t, "an upload to claude", err, http.StatusUnprocessableEntity, "validation_failed"); !strings.Contains(e.Message, "claude") {
 		t.Errorf("the refusal %q does not name the agent", e.Message)
 	}
-	_, err = h.client.SendChat(ctx, plain.ID, "see [image 1]")
-	_ = wantAPIError(t, "a chip sent to claude", err, http.StatusUnprocessableEntity, "validation_failed")
+	// Such a chat can hold no image, so `[image 1]` in its message is text
+	// and the send is accepted as typed (review F4).
+	if _, err := h.client.SendChat(ctx, plain.ID, "see [image 1] in the docs"); err != nil {
+		t.Errorf("a send naming [image 1] to claude: %v", err)
+	}
+	wait.Until(t, "the claude turn to end", func() bool {
+		got, turns, err := h.client.GetChat(ctx, plain.ID)
+		return err == nil && got.State == "idle" && len(turns) == 1 && turns[0].State == "done" &&
+			turns[0].Prompt == "see [image 1] in the docs"
+	})
 
 	// Shell output and images go with the chat on a permanent delete.
 	h.shell(t, c.ID, "git --version")

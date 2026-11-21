@@ -121,9 +121,12 @@ func TestImageChipsReachTheAdapter(t *testing.T) {
 				t.Errorf("a turn with no chip passed an image (%v)", err)
 			}
 
-			_, err = h.runner.ResolveImages(t.Context(), c, "see [image 9]")
-			refused(t, err, "[image 9]")
-			refused(t, err, agentName)
+			// A number the chat never had is the human's text, not a
+			// chip (review F4): it resolves to nothing, beside a real one.
+			paths, err := h.runner.ResolveImages(t.Context(), c, "see [image 9] and [image 1]")
+			if err != nil || !slices.Equal(paths, []string{one.Path}) {
+				t.Errorf("ResolveImages beside an unknown number = %v, %v; want [%s]", paths, err, one.Path)
+			}
 		})
 	}
 }
@@ -134,11 +137,18 @@ func TestImagesRefusedWithoutTheCapability(t *testing.T) {
 		c := h.chatOn(t, agentName)
 		_, err := h.runner.AddImage(t.Context(), c, "a.png", pngBytes)
 		refused(t, err, "the "+agentName+" agent cannot be given images")
-		_, err = h.runner.ResolveImages(t.Context(), c, "look at [image 1]")
-		refused(t, err, "the "+agentName+" agent cannot be given images")
-		// A message with no chip asks nothing of the adapter.
-		if paths, err := h.runner.ResolveImages(t.Context(), c, "no image here"); err != nil || paths != nil {
-			t.Errorf("ResolveImages with no chip = %v, %v", paths, err)
+		// Such a chat can hold no image, so `[image 1]` in its message is
+		// the human's own text and is sent as typed (review F4); so is a
+		// message with no chip at all.
+		for _, msg := range []string{"look at [image 1]", "no image here"} {
+			if paths, err := h.runner.ResolveImages(t.Context(), c, msg); err != nil || paths != nil {
+				t.Errorf("%s: ResolveImages(%q) = %v, %v", agentName, msg, paths, err)
+			}
+		}
+		// The send is accepted and the agent gets the text verbatim.
+		msg := "the docs say `[image 1]` names a pasted image"
+		if turn := h.sendAndWait(t, c.ID, msg); turn.State != chatstate.TurnDone || turn.Prompt != msg {
+			t.Errorf("%s: a send naming [image 1] in prose = %s %q (%s)", agentName, turn.State, turn.Prompt, turn.ErrorMessage)
 		}
 	}
 }
@@ -162,14 +172,17 @@ func TestImagesRefusedInATaskContainer(t *testing.T) {
 	_, err := h.runner.AddImage(t.Context(), c, "a.png", pngBytes)
 	refused(t, err, "container")
 	refused(t, err, "codex")
-	_, err = h.runner.ResolveImages(t.Context(), c, "[image 1]")
-	refused(t, err, "container")
 
 	// The same chat on a host task takes the image.
 	contained = false
 	if _, err := h.runner.AddImage(t.Context(), c, "a.png", pngBytes); err != nil {
 		t.Errorf("AddImage on a host task: %v", err)
 	}
+	// An image the chat holds, once its task runs in a container, cannot be
+	// given: the chip naming it is refused rather than sent without it.
+	contained = true
+	_, err = h.runner.ResolveImages(t.Context(), c, "[image 1]")
+	refused(t, err, "container")
 }
 
 func TestParseImageChips(t *testing.T) {

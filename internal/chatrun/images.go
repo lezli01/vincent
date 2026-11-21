@@ -173,44 +173,60 @@ func cleanImageName(name string) string {
 }
 
 // ResolveImages resolves the `[image N]` chips in text to the chat's stored
-// files, as absolute paths in chip order. A message naming none resolves to
-// nothing and asks nothing of the adapter. Otherwise a chat that cannot be
-// given images, and a chip naming an image the chat does not have, are each
-// an *ImageRefusal naming the agent.
+// files, as absolute paths in chip order.
+//
+// Only a match naming an image this chat has is a chip (review F4 of task
+// 170): anything else — `[image 1]` in pasted Markdown, a log line, prose
+// about the feature, or a number the chat never had — is the human's text
+// and goes to the agent as typed, because the composer's text is never
+// interpreted (§5.5). A message naming no image of the chat resolves to
+// nothing and asks nothing of the adapter. A chat that has images it can no
+// longer give — its task now runs in a container, say — is refused with an
+// *ImageRefusal naming the agent rather than sent without them.
 //
 // It is the one function a send's validation and a turn's start both run,
 // so the two cannot disagree — and a queued message is resolved when its
 // turn starts, which is when it reaches the agent.
 func (r *Runner) ResolveImages(ctx context.Context, chat *store.Chat, text string) ([]string, error) {
-	chips := ParseImageChips(text)
-	if len(chips) == 0 {
-		return nil, nil
-	}
-	why, err := r.ImagesUnavailable(ctx, chat)
-	if err != nil {
-		return nil, err
-	}
-	if why != "" {
-		return nil, refuseImage("%s, and the message names %s", why, ImageChip(chips[0]))
+	_, paths, err := r.resolveImages(ctx, chat, text)
+	return paths, err
+}
+
+// resolveImages is ResolveImages with the numbers of the chips it resolved.
+func (r *Runner) resolveImages(ctx context.Context, chat *store.Chat, text string) ([]int, []string, error) {
+	named := ParseImageChips(text)
+	if len(named) == 0 {
+		return nil, nil, nil
 	}
 	images, err := r.deps.Store.ListChatImages(ctx, chat.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	byNumber := make(map[int]string, len(images))
 	for _, img := range images {
 		byNumber[img.Number] = img.Path
 	}
-	paths := make([]string, 0, len(chips))
-	for _, n := range chips {
-		path, ok := byNumber[n]
-		if !ok {
-			return nil, refuseImage("the message names %s, and this chat has no such image to give the %s agent",
-				ImageChip(n), chat.Agent)
+	var (
+		chips []int
+		paths []string
+	)
+	for _, n := range named {
+		if path, ok := byNumber[n]; ok {
+			chips = append(chips, n)
+			paths = append(paths, path)
 		}
-		paths = append(paths, path)
 	}
-	return paths, nil
+	if len(chips) == 0 {
+		return nil, nil, nil
+	}
+	why, err := r.ImagesUnavailable(ctx, chat)
+	if err != nil {
+		return nil, nil, err
+	}
+	if why != "" {
+		return nil, nil, refuseImage("%s, and the message names %s", why, ImageChip(chips[0]))
+	}
+	return chips, paths, nil
 }
 
 // IsImageRefusal reports whether err is an *ImageRefusal, and its message.

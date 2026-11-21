@@ -1536,11 +1536,17 @@ numbered per chat from 1 (`chat_images`, migration 0070). The composer names
 it with the chip `[image N]`. At send, each chip in the message resolves to
 the stored file's absolute path in `RunSpec.Images`, beside the mention
 expansion, and the turn row keeps the message as typed. This is the
-`ImageAttacher` capability (§9.1), and it is never emulated. An upload, or a
-send naming a chip, on a chat whose adapter lacks it is
-`422 validation_failed` with a reason that names the agent. So is either on a
-linked chat whose task runs in a container, where the stored file is not
-reachable. A chip with no image behind it is refused the same way. Shell
+`ImageAttacher` capability (§9.1), and it is never emulated. An upload on a
+chat whose adapter lacks it is `422 validation_failed` with a reason that
+names the agent. So is an upload on a linked chat whose task runs in a
+container, where the stored file is not reachable, and so is a send naming
+an image the chat already holds once its task runs in one. *Amended
+2026-11-21 (review of task 170):* only `[image N]` naming an image the chat
+holds is a chip. Any other match — `[image 1]` in pasted Markdown, a log
+line, prose, or a number the chat never had — is the human's text and is sent
+as typed, never refused, because the composer's text is never interpreted. A
+chat whose adapter lacks the capability holds no image, so nothing in its
+messages is ever a chip. Shell
 runs and images go with the chat on permanent delete: the rows by cascade,
 the files with the transcript directory.
 

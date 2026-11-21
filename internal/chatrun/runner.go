@@ -701,13 +701,13 @@ func (r *Runner) runTurn(
 	// reason (task 170). A send was refused when it could not resolve; a
 	// queued message is only checked here, so its turn fails saying why
 	// rather than running without the image it names.
-	images, err := r.ResolveImages(ctx, chat, turn.Prompt)
+	chips, images, err := r.resolveImages(ctx, chat, turn.Prompt)
 	if err != nil {
 		next = r.finish(turn, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
 		return next
 	}
 	if len(images) > 0 {
-		tr.Note("images", map[string]any{"numbers": ParseImageChips(turn.Prompt), "paths": images})
+		tr.Note("images", map[string]any{"numbers": chips, "paths": images})
 	}
 	spec := agent.RunSpec{
 		Prompt: turn.Prompt,

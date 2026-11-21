@@ -4088,9 +4088,10 @@ the next number for that chat, and `[image N]` in a message names it. When a
 turn is sent, each chip resolves to the stored file's path for the adapter,
 and the turn keeps the message as typed. An image is accepted only for an
 adapter whose `supports_images` (`GET /v1/agents`) is true, and never for a
-chat on a containerized task. Anything else, including a send that names a
-chip on such a chat or a chip with no image, is `422 validation_failed` with
-the reason. A terminal chat is `409 invalid_state`. A permanent delete
+chat on a containerized task. Anything else is `422 validation_failed` with
+the reason, and so is a send naming an image the chat holds once its task
+runs in a container. Only `[image N]` naming an image the chat holds is a
+chip: any other `[image N]` in a message is text, sent as typed. A terminal chat is `409 invalid_state`. A permanent delete
 removes a chat's shell runs and images with it.
 
 ### Sending a turn
