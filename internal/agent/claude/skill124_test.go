@@ -404,6 +404,9 @@ func TestFixtureEventTypesArePinned(t *testing.T) {
 		skillPermissionFixture: "run_header tool_use unknown unknown tool_result skill tool_use tool_result output unknown result",
 		contextBlocksFixture:   "run_header unknown unknown unknown output unknown result",
 		resetFixture:           "conversation_reset run_header result",
+		// Task 167: a resume at a point, forked — nothing new to normalize;
+		// what it adds is the uuid and the session id, read off the raw line.
+		resumeAtFixture: "run_header output unknown result",
 		// Task 133: two background shells across two results. The shells'
 		// task lines stay unknown, as task 109 left them; background.go
 		// reads them for itself.

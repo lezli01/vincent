@@ -50,6 +50,8 @@ type Adapter struct {
 	// pathFn returns the configured binary path; "" resolves from PATH.
 	// A func rather than a value so config hot-reload reaches future runs.
 	pathFn func() string
+	// resumeAt caches the --resume-session-at probe (resumeat.go).
+	resumeAt resumeAtCache
 }
 
 // New returns the Claude adapter. pathFn returns the configured binary path
@@ -173,6 +175,15 @@ func buildArgs(spec agent.RunSpec, inputMode bool) ([]string, error) {
 	// replaying anything as prompt context.
 	if spec.ResumeSessionID != "" {
 		args = append(args, "--resume", spec.ResumeSessionID)
+		// A rewound chat resumes at the last kept turn's assistant message
+		// and forks there (task 167 decision A, resumeat.go): the rewound
+		// turns stay in the old session, and this run's session_id is the
+		// new one the chat stores from now on.
+		if spec.ResumeAt != "" {
+			args = append(args, "--resume-session-at", spec.ResumeAt, "--fork-session")
+		}
+	} else if spec.ResumeAt != "" {
+		return nil, errors.New("claude: ResumeAt without ResumeSessionID names a point in no session")
 	}
 	if spec.Model != "" {
 		args = append(args, "--model", spec.Model)
@@ -232,6 +243,11 @@ func (a *Adapter) Start(ctx context.Context, spec agent.RunSpec) (agent.RunHandl
 	path, err := a.resolvePathWith(spec.Launcher)
 	if err != nil {
 		return nil, err
+	}
+	// Checked before anything else is spent: a resume-at the binary cannot
+	// honour is refused, never run as a resume of the whole session.
+	if spec.ResumeAt != "" && !a.resumeAtPoint(ctx, spec.Launcher, path) {
+		return nil, agent.ErrResumeAtUnsupported
 	}
 	inputMode := false
 	if version, verr := probeVersion(ctx, spec.Launcher, path); verr == nil {
@@ -348,6 +364,9 @@ type run struct {
 	// actually ran in — which is what a resumed run must store, since
 	// claude may hand a resumed conversation a new id.
 	sessionID string
+	// resumeAnchor is the parser's last top-level assistant uuid, copied
+	// under mu for Wait (task 167).
+	resumeAnchor string
 	// streamErr is readLoop's own reader failing, latched for Wait. It is
 	// vincent losing the stream, not the CLI failing, and Wait says so with
 	// agent.FailureStreamError rather than letting the exit code speak for a
@@ -413,6 +432,11 @@ func (r *run) readLoop(rd io.Reader) {
 		}
 		r.background.observe(line)
 		ev := r.parseStreamLine(line)
+		if anchor := r.lines.anchor; anchor != "" {
+			r.mu.Lock()
+			r.resumeAnchor = anchor
+			r.mu.Unlock()
+		}
 		switch {
 		case ev.Type == agent.EventResult && ev.Result != nil:
 			r.mu.Lock()
@@ -593,6 +617,7 @@ func (r *run) Wait() (agent.RunResult, error) {
 		r.mu.Lock()
 		terminal, streamErr, sessionID := r.terminal, r.streamErr, r.sessionID
 		inputTokens, outputTokens := r.inputTokens, r.outputTokens
+		res.ResumeAnchor = r.resumeAnchor
 		r.mu.Unlock()
 		res.SessionID = sessionID
 		if terminal != nil {
