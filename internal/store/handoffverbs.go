@@ -108,9 +108,9 @@ type HandoffVerb struct {
 	// completed.
 	Close       bool
 	CloseReason issuestate.Reason
-	// Check, when set, is asked about every item's issue before anything is
-	// written; an error refuses the whole verb.
-	Check func(iss *Issue) error
+	// Check, when set, is asked about every item and its issue before
+	// anything is written; an error refuses the whole verb.
+	Check func(it *HandoffItem, iss *Issue) error
 	// FollowUps and SideTasks are a return's, by issue id.
 	FollowUps map[int64]*HandoffFollowUp
 	SideTasks map[int64]*HandoffSideTask
@@ -235,7 +235,7 @@ func (s *Store) ResolveHandoffItems(ctx context.Context, v HandoffVerb) (*Handof
 				return err
 			}
 			if v.Check != nil {
-				if err := v.Check(iss); err != nil {
+				if err := v.Check(it, iss); err != nil {
 					return err
 				}
 			}
@@ -446,6 +446,16 @@ func (s *Store) LatestIssueMainTask(ctx context.Context, issueID int64) (*Task, 
 		return nil, fmt.Errorf("latest main task of issue %d: %w", issueID, err)
 	}
 	return t, nil
+}
+
+// ItemCloses reports whether resolving it under v closes iss — the one
+// per-item decision ResolveHandoffItems makes, exported so the API's
+// forge-write guard asks for issue.close only where a close will happen
+// (review F3 on #1042): with no reason on the verb, an item whose delivery
+// suggested `none` closes nothing.
+func ItemCloses(v HandoffVerb, it *HandoffItem, iss *Issue) bool {
+	_, closing := itemCloseReason(v, it, iss)
+	return closing
 }
 
 // itemCloseReason is whether resolving it under v closes its open issue,

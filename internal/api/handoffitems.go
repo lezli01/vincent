@@ -163,8 +163,10 @@ func (s *Server) handoffItemVerb(w http.ResponseWriter, r *http.Request, outcome
 // agent's comment and close on each item the verb will move, as `vincent
 // issue comment` and `issue close` ask it: a write that reaches the forge —
 // a comment on a live-remote thread, a close of an open issue that writes
-// back — needs a grant naming store.CapIssueComment or store.CapIssueClose,
-// and a granted one is made as issuestate.Handoff. It reads before the
+// back (decided per item by store.ItemCloses, so a delivery that suggested
+// `none` asks for no close) — needs a grant naming store.CapIssueComment or
+// store.CapIssueClose, and a granted one is made as issuestate.Handoff. It
+// reads before the
 // transaction, which cannot call the guard; handoffItemCheck asks again
 // inside it, so an import landing between the two is refused, never let
 // through. A refusal is written to w and reported as false.
@@ -191,7 +193,7 @@ func (s *Server) grantHandoffItemWrites(ctx context.Context, w http.ResponseWrit
 		if v.Comment != "" && issues.ThreadMirrored(iss) {
 			caps = append(caps, store.CapIssueComment)
 		}
-		if v.Close && issues.WritesBack(iss) && issuestate.Normalize(iss.State) != issuestate.Closed {
+		if store.ItemCloses(*v, it, iss) && issues.WritesBack(iss) {
 			caps = append(caps, store.CapIssueClose)
 		}
 		for _, c := range caps {
@@ -215,8 +217,8 @@ func (s *Server) grantHandoffItemWrites(ctx context.Context, w http.ResponseWrit
 // verb (task 137 decision 1). An agent's write that reaches the forge passes
 // only where grantHandoffItemWrites found a grant; a human's comment on a
 // live-remote thread stays refused, as on the issue route.
-func handoffItemCheck(v store.HandoffVerb) func(*store.Issue) error {
-	return func(iss *store.Issue) error {
+func handoffItemCheck(v store.HandoffVerb) func(*store.HandoffItem, *store.Issue) error {
+	return func(it *store.HandoffItem, iss *store.Issue) error {
 		by := v.IssueActor
 		if a, ok := v.CommentCloseActors[iss.ID]; ok {
 			by = a
@@ -228,8 +230,7 @@ func handoffItemCheck(v store.HandoffVerb) func(*store.Issue) error {
 			}
 			return fmt.Errorf("issue %d: %w", iss.ID, issues.ErrMirrored)
 		}
-		if v.Close && by == issuestate.Agent && issues.WritesBack(iss) &&
-			issuestate.Normalize(iss.State) != issuestate.Closed {
+		if by == issuestate.Agent && issues.WritesBack(iss) && store.ItemCloses(v, it, iss) {
 			return issues.ForgeWriteError(iss)
 		}
 		return nil
