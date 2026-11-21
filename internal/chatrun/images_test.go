@@ -39,8 +39,10 @@ func TestAddImageSniffsNumbersAndBounds(t *testing.T) {
 		media string
 		ext   string
 	}{
-		{pngBytes, "image/png", ".png"}, {jpegBytes, "image/jpeg", ".jpg"},
-		{gifBytes, "image/gif", ".gif"}, {webpBytes, "image/webp", ".webp"},
+		{pngBytes, "image/png", ".png"},
+		{jpegBytes, "image/jpeg", ".jpg"},
+		{gifBytes, "image/gif", ".gif"},
+		{webpBytes, "image/webp", ".webp"},
 	} {
 		// The name lies about the type on purpose: only the content counts.
 		img, err := h.runner.AddImage(t.Context(), c, "dir/shot.txt", tc.data)

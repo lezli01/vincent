@@ -311,7 +311,7 @@ type cappedFile struct {
 }
 
 func newCappedFile(path string, limit int64) (*cappedFile, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec // the path is this daemon's own, under the chat's data dir
 	if err != nil {
 		return nil, err
 	}

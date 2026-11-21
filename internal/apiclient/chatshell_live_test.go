@@ -183,17 +183,17 @@ func TestLiveChatShell(t *testing.T) {
 
 	// Refusals.
 	_, err = h.client.RunChatShell(ctx, c.ID, "  ")
-	wantAPIError(t, "an empty command", err, http.StatusUnprocessableEntity, "validation_failed")
+	_ = wantAPIError(t, "an empty command", err, http.StatusUnprocessableEntity, "validation_failed")
 	_, err = h.client.ChatShellRun(ctx, c.ID, 9999)
-	wantAPIError(t, "an unknown run", err, http.StatusNotFound, "not_found")
+	_ = wantAPIError(t, "an unknown run", err, http.StatusNotFound, "not_found")
 	long, err := h.client.RunChatShell(ctx, c.ID, "sleep 60")
 	if err != nil {
 		t.Fatalf("RunChatShell: %v", err)
 	}
 	_, err = h.client.RunChatShell(ctx, c.ID, "git --version")
-	wantAPIError(t, "a second command while one runs", err, http.StatusConflict, "invalid_state")
+	_ = wantAPIError(t, "a second command while one runs", err, http.StatusConflict, "invalid_state")
 	_, err = h.client.AttachChatShell(ctx, c.ID, long.ID, true)
-	wantAPIError(t, "attach on a running run", err, http.StatusConflict, "invalid_state")
+	_ = wantAPIError(t, "attach on a running run", err, http.StatusConflict, "invalid_state")
 	// The chat's cancel stops it, though the chat is idle.
 	if err := h.client.CancelChat(ctx, c.ID); err != nil {
 		t.Fatalf("CancelChat: %v", err)
@@ -236,14 +236,14 @@ func TestLiveChatShell(t *testing.T) {
 		t.Errorf("the turn row = %+v (%v), want the message as typed", turns, err)
 	}
 	_, err = h.client.AttachChatShell(ctx, c.ID, failed.ID, true)
-	wantAPIError(t, "attach on a taken run", err, http.StatusConflict, "invalid_state")
+	_ = wantAPIError(t, "attach on a taken run", err, http.StatusConflict, "invalid_state")
 
 	// A terminal chat runs nothing, and its runs stay readable.
 	if _, err := h.client.ArchiveChat(ctx, c.ID, true); err != nil {
 		t.Fatalf("ArchiveChat: %v", err)
 	}
 	_, err = h.client.RunChatShell(ctx, c.ID, "git --version")
-	wantAPIError(t, "a command on an archived chat", err, http.StatusConflict, "invalid_state")
+	_ = wantAPIError(t, "a command on an archived chat", err, http.StatusConflict, "invalid_state")
 	if runs, err := h.client.ChatShellRuns(ctx, c.ID); err != nil || len(runs) != 3 {
 		t.Errorf("an archived chat lists %d runs (%v), want 3", len(runs), err)
 	}
@@ -287,9 +287,9 @@ func TestLiveChatImages(t *testing.T) {
 	}
 
 	_, err = h.client.AddChatImage(ctx, c.ID, "notes.png", []byte("plain text"))
-	wantAPIError(t, "a non-image", err, http.StatusUnprocessableEntity, "validation_failed")
+	_ = wantAPIError(t, "a non-image", err, http.StatusUnprocessableEntity, "validation_failed")
 	_, err = h.client.AddChatImage(ctx, c.ID, "big.png", append(slices.Clone(livePNG), make([]byte, 10<<20)...))
-	wantAPIError(t, "an image over 10 MiB", err, http.StatusUnprocessableEntity, "validation_failed")
+	_ = wantAPIError(t, "an image over 10 MiB", err, http.StatusUnprocessableEntity, "validation_failed")
 	_, err = h.client.SendChat(ctx, c.ID, "look at [image 7]")
 	if e := wantAPIError(t, "a chip with no image", err, http.StatusUnprocessableEntity, "validation_failed"); !strings.Contains(e.Message, "codex") {
 		t.Errorf("the refusal %q does not name the agent", e.Message)
@@ -317,7 +317,7 @@ func TestLiveChatImages(t *testing.T) {
 		t.Errorf("the refusal %q does not name the agent", e.Message)
 	}
 	_, err = h.client.SendChat(ctx, plain.ID, "see [image 1]")
-	wantAPIError(t, "a chip sent to claude", err, http.StatusUnprocessableEntity, "validation_failed")
+	_ = wantAPIError(t, "a chip sent to claude", err, http.StatusUnprocessableEntity, "validation_failed")
 
 	// Shell output and images go with the chat on a permanent delete.
 	h.shell(t, c.ID, "git --version")
@@ -345,5 +345,5 @@ func TestLiveChatImages(t *testing.T) {
 		t.Fatalf("ArchiveChat: %v", err)
 	}
 	_, err = h.client.AddChatImage(ctx, plain.ID, "a.png", livePNG)
-	wantAPIError(t, "an upload to an archived chat", err, http.StatusConflict, "invalid_state")
+	_ = wantAPIError(t, "an upload to an archived chat", err, http.StatusConflict, "invalid_state")
 }

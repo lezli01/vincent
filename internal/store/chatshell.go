@@ -312,26 +312,11 @@ func (s *Store) TakeChatShellRuns(ctx context.Context, chatID int64, turnSeq int
 	var out []*ChatShellRun
 	err := s.chatShellTx(ctx, chatID, func(tx *sql.Tx, _ *Chat) ([]*ChatShellRun, error) {
 		out = nil
-		rows, err := tx.QueryContext(ctx, `SELECT `+chatShellColumns+` FROM chat_shell_runs
-			WHERE chat_id = ? AND attach = 1 AND attached_turn IS NULL AND state <> ? ORDER BY id`,
-			chatID, ChatShellRunning)
+		marked, err := markedChatShellRuns(ctx, tx, chatID)
 		if err != nil {
-			return nil, fmt.Errorf("chat %d marked shell runs: %w", chatID, err)
-		}
-		for rows.Next() {
-			run, err := scanChatShellRun(rows)
-			if err != nil {
-				_ = rows.Close()
-				return nil, fmt.Errorf("scan chat shell run: %w", err)
-			}
-			out = append(out, run)
-		}
-		if err := rows.Close(); err != nil {
 			return nil, err
 		}
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+		out = marked
 		for _, run := range out {
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE chat_shell_runs SET attach = 0, attached_turn = ? WHERE id = ?`, turnSeq, run.ID); err != nil {
@@ -343,4 +328,25 @@ func (s *Store) TakeChatShellRuns(ctx context.Context, chatID int64, turnSeq int
 		return out, nil
 	})
 	return out, err
+}
+
+// markedChatShellRuns reads the chat's finished runs marked for the next
+// turn and not yet taken, oldest first, inside tx.
+func markedChatShellRuns(ctx context.Context, tx *sql.Tx, chatID int64) ([]*ChatShellRun, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT `+chatShellColumns+` FROM chat_shell_runs
+		WHERE chat_id = ? AND attach = 1 AND attached_turn IS NULL AND state <> ? ORDER BY id`,
+		chatID, ChatShellRunning)
+	if err != nil {
+		return nil, fmt.Errorf("chat %d marked shell runs: %w", chatID, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []*ChatShellRun
+	for rows.Next() {
+		run, err := scanChatShellRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan chat shell run: %w", err)
+		}
+		out = append(out, run)
+	}
+	return out, rows.Err()
 }
