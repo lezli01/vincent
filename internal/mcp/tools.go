@@ -232,6 +232,18 @@ var Excluded = []Route{
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/diff/reject"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/diff/accept"},
 	{Method: http.MethodPost, Path: "/v1/chats/{id}/diff/unaccept"},
+	// A chat's shell passthrough and image attachments (task 170) are a
+	// human's: the shell is theirs to run beside the agent, and an agent
+	// that could mark a run's output for the next prompt, or upload an
+	// image into the conversation, would be writing its own context. The
+	// agent has a shell and a filesystem of its own.
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/shell"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/shell"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/shell/{run_id}"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/shell/{run_id}/output"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/shell/{run_id}/attach"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/images"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/images"},
 }
 
 // GrantedRoute is an Excluded forge write that becomes a tool on a granted

@@ -212,6 +212,14 @@ func buildArgs(spec agent.RunSpec) []string {
 			"-c", prefix+"url="+strconv.Quote(spec.MCP.URL),
 			"-c", prefix+"bearer_token_env_var="+strconv.Quote(MCPTokenEnv))
 	}
+	// One `--image=<path>` per image (task 170). `exec` documents the flag
+	// as `-i, --image <FILE>...` and `exec resume` as `-i, --image <FILE>`
+	// (help_exec_0.169.0.txt, help_exec_resume_0.169.0.txt); the `=` form
+	// with one value each is valid under both, and keeps `exec`'s greedy
+	// spelling from reading a later argument as another file.
+	for _, img := range spec.Images {
+		args = append(args, "--image="+img)
+	}
 	return args
 }
 
@@ -443,6 +451,13 @@ func (r *run) Argv() []string { return r.proc.Argv() }
 // halves has a captured fixture under testdata/: the argv in buildArgs, the
 // `thread_id` in stream.go, and the refusal of a dead id in failure.go.
 func (a *Adapter) SupportsResume() bool { return true }
+
+// SupportsImages implements agent.ImageAttacher (task 170): codex-cli
+// 0.169.0's `exec --help` and `exec resume --help` both document
+// `-i, --image <FILE>` (testdata/help_exec_0.169.0.txt,
+// help_exec_resume_0.169.0.txt), so a first turn and a resumed one can both
+// be given an image by path.
+func (a *Adapter) SupportsImages() bool { return true }
 
 // SupportsRestrictedResume implements agent.RestrictedResumer: `codex exec
 // resume` takes no `-s/--sandbox`, so a resumed run cannot be restricted.

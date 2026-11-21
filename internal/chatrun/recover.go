@@ -72,6 +72,9 @@ func (r *Runner) Recover(ctx context.Context) error {
 	if err := r.releaseStuckChats(ctx); err != nil {
 		return err
 	}
+	if err := r.recoverShells(ctx); err != nil {
+		return err
+	}
 	return r.sweepSkillProbes(ctx)
 }
 
@@ -155,19 +158,23 @@ func (r *Runner) sweepSkillProbes(ctx context.Context) error {
 
 // killOrphan kills the process a recovered turn journaled, but only once the
 // pid is proved to still hold it.
-func killOrphan(t *store.ChatTurn, log *slog.Logger) {
-	if t.PID == nil {
+func killOrphan(t *store.ChatTurn, log *slog.Logger) { killOrphanPID(t.PID, t.ProcIdentity, log) }
+
+// killOrphanPID is the guard itself, shared by a recovered turn and a
+// recovered shell run (task 170).
+func killOrphanPID(pidp *int, ident *string, log *slog.Logger) {
+	if pidp == nil {
 		return
 	}
-	pid := *t.PID
-	if t.ProcIdentity == nil {
-		// Nothing to compare: the turn crashed before the journal write, or
+	pid := *pidp
+	if ident == nil {
+		// Nothing to compare: the row crashed before the journal write, or
 		// the identity read failed at spawn. "Cannot prove, do not kill" —
 		// the cost of a wrong yes is killing a stranger's process.
 		return
 	}
 	id, err := identityOf(pid)
-	if err != nil || id != *t.ProcIdentity {
+	if err != nil || id != *ident {
 		return
 	}
 	if err := procx.KillPID(pid); err != nil {

@@ -76,3 +76,40 @@ func recordArgv(args []string) {
 	defer func() { _ = f.Close() }()
 	_, _ = fmt.Fprintln(f, strings.Join(args, " "))
 }
+
+// recordImages appends the image paths this run was given to
+// FAKEAGENT_IMAGES_FILE, one per line in argv order (task 170), so a test
+// can assert what an adapter passed for a turn's `[image N]` chips. It reads
+// each dialect's own spelling and no other: codex's `-i`/`--image` and
+// copilot's `--attachment`, with the value in the same argument after `=` or
+// in the next one. The claude and cursor dialects never call it — neither
+// CLI has an image flag.
+func recordImages(args []string, flags ...string) {
+	path := os.Getenv("FAKEAGENT_IMAGES_FILE")
+	if path == "" {
+		return
+	}
+	var imgs []string
+	for i := 0; i < len(args); i++ {
+		for _, fl := range flags {
+			switch {
+			case args[i] == fl && i+1 < len(args):
+				imgs = append(imgs, args[i+1])
+				i++
+			case strings.HasPrefix(args[i], fl+"="):
+				imgs = append(imgs, strings.TrimPrefix(args[i], fl+"="))
+			}
+		}
+	}
+	if len(imgs) == 0 {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	for _, img := range imgs {
+		_, _ = fmt.Fprintln(f, img)
+	}
+}

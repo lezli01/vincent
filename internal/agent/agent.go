@@ -312,6 +312,12 @@ type RunSpec struct {
 	Effort         string // resolved per §8.6; adapter-native; "" = CLI default
 	PermissionMode PermissionMode
 	OnInput        InputPolicy // ignored when the adapter lacks input support
+	// Images are image files the run is given beside its prompt, as absolute
+	// paths in the order the human's message names them (task 170, §5.5).
+	// Only an adapter that implements ImageAttacher reads it; a caller checks
+	// CanAttachImages first, and an adapter without the capability ignores
+	// the field rather than emulating it.
+	Images []string
 	// ReportInvocations asks the CLI to report the commands it expanded from
 	// the prompt, so a skill the human named with a leading `/name` reaches
 	// the stream as an EventSkill instead of leaving no trace at all (task

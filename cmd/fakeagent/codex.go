@@ -41,6 +41,7 @@ func codexLoginStatus() {
 // codex-cli 0.142.5 (internal/agent/codex/testdata).
 func codexMain(scenario string) {
 	prompt, _ := io.ReadAll(os.Stdin)
+	recordImages(os.Args[1:], "-i", "--image")
 
 	// The conversation is resolved before a single stream line is emitted,
 	// as in the claude dialect: `codex exec --json resume <id>` of an id the

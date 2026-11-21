@@ -549,6 +549,9 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if !s.checkTurnOverrides(w, r, chat, ov) {
 		return
 	}
+	if !s.checkChatImages(w, r, chat, req.Message) {
+		return
+	}
 	turn, queued, err := s.deps.Chats.SubmitWith(r.Context(), chat.ID, req.Message, ov)
 	switch {
 	case errors.Is(err, chatrun.ErrChatCapReached):
@@ -605,7 +608,10 @@ func (s *Server) handleChatCancel(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !chatstate.Allowed(chat.State, chatstate.Cancel) {
+	// A chat with no live turn but a shell command running still has
+	// something to stop (task 170): the chat's cancel reaches it.
+	shell := s.deps.Chats != nil && s.deps.Chats.ShellRunning(chat.ID)
+	if !chatstate.Allowed(chat.State, chatstate.Cancel) && (!shell || chatstate.Terminal(chat.State)) {
 		writeConflict(w, "this chat has no live turn", map[string]string{"state": string(chat.State), "action": "cancel"})
 		return
 	}
@@ -656,6 +662,11 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 	if !chatstate.AllowedFor(chat.Kind(), chat.State, chatstate.Archive) {
 		writeConflict(w, archiveRefusal(chat.State), map[string]string{"state": string(chat.State), "action": "archive"})
 		return
+	}
+	// A shell command the human left running is stopped first (task 170):
+	// its directory is about to change hands or go.
+	if s.deps.Chats != nil {
+		s.deps.Chats.StopShell(r.Context(), chat.ID)
 	}
 	force := r.URL.Query().Get("force") == "true"
 	project, err := s.deps.Store.GetProject(r.Context(), chat.ProjectID)

@@ -46,7 +46,7 @@ const (
 // filtering on the payload's id: a chat event carries no task_id column, so
 // without this a replay would scan every task event behind the cursor.
 func ChatEventTypes() []string {
-	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue, EventChatUpdated, EventChatDraft, EventChatViewed}
+	return []string{EventChatCreated, EventChatState, EventChatTurn, EventChatArchived, EventChatHandedOff, EventChatClosed, EventChatQueue, EventChatUpdated, EventChatDraft, EventChatViewed, EventChatShell}
 }
 
 // IsChatEvent reports whether an event type belongs to the chat family.

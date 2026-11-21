@@ -60,6 +60,13 @@ type agentResponse struct {
 	// carries a fact every adapter agrees on today. Null for the reason
 	// supports_resume is: no registry.
 	SupportsFileMentions *bool `json:"supports_file_mentions"`
+	// SupportsImages is whether a chat turn on this adapter can be given an
+	// image by path (§9.1, task 170): `agent.CanAttachImages`, the answer
+	// the image upload and a send naming an `[image N]` chip are refused on.
+	// It is the adapter's own capability; a linked chat whose task runs in a
+	// container is refused images whatever this says, because the stored
+	// file is not reachable in there. Null with no registry to ask.
+	SupportsImages *bool `json:"supports_images"`
 	// FileMentionSigil, FileMentionPosition and FileMentionExpands are how a
 	// message names a workspace file (§9.1, task 126 decision 22): "@",
 	// "leading" or "anywhere", and whether the CLI itself puts the file in
@@ -158,6 +165,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 			SkillSigil:                   caps.skillSigil,
 			SkillPosition:                caps.skillPosition,
 			SupportsFileMentions:         caps.fileMentions,
+			SupportsImages:               caps.images,
 			FileMentionSigil:             caps.mentionSigil,
 			FileMentionPosition:          caps.mentionPosition,
 			FileMentionExpands:           caps.mentionExpands,
@@ -206,6 +214,7 @@ type adapterCapabilities struct {
 	mentionPosition  *string
 	mentionExpands   *bool
 	compactCommand   *string
+	images           *bool
 }
 
 // adapterCapabilities answers `supports_resume`, the three skill fields, the
@@ -235,6 +244,7 @@ func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 	sigil, position := syntax.Sigil, string(syntax.Position)
 	mentionSigil, mentionPosition, expands := mention.Sigil, string(mention.Position), mention.Expands
 	compact := agent.CompactCommand(a)
+	images := agent.CanAttachImages(a)
 	return adapterCapabilities{
 		resume:           &resume,
 		resumeSettings:   &resumeSettings,
@@ -247,5 +257,6 @@ func (s *Server) adapterCapabilities(name string) adapterCapabilities {
 		mentionPosition:  &mentionPosition,
 		mentionExpands:   &expands,
 		compactCommand:   &compact,
+		images:           &images,
 	}
 }

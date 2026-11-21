@@ -168,6 +168,22 @@ type Deps struct {
 	// mention ever resolves. A closure, so this package never imports
 	// internal/github or internal/api.
 	PullRequest func(ctx context.Context, projectID int64, number int) (MentionPullRequest, error)
+	// Shell resolves a chat shell command (task 170) to the process that
+	// runs it where the chat's turns run: under the §8.3 shell with the
+	// §8.5 base environment on the host, inside the task's container for a
+	// linked chat on a containerized task. taskID is 0 for a chat that is
+	// not linked. internal/taskrun implements it and the daemon wires it,
+	// so this package never imports taskrun. Nil fails every run.
+	Shell func(ctx context.Context, taskID, runID int64, workDir, command string) (ShellExec, error)
+	// StopShellOrphan is §12.4's container-aware kill for a shell command a
+	// dead daemon left running in a task's container. Nil means no
+	// container kill.
+	StopShellOrphan func(ctx context.Context, taskID, runID int64) bool
+	// InContainer reports whether a linked chat's turns on taskID run in a
+	// container, from the task's settings (task 170): a stored image is not
+	// reachable in there, so such a chat is refused images. Nil — and every
+	// chat that is not linked — means the host.
+	InContainer func(ctx context.Context, taskID int64) (bool, error)
 }
 
 // ErrLinkedTaskNoWorktree is a linked-chat turn whose task no longer names a
@@ -191,6 +207,12 @@ type Runner struct {
 	// cover. StopTurn is what needs it: closing a chat must wait for a turn
 	// that has not yet reached track (task 119).
 	turns map[int64]*turnCtl
+	// shells is each chat's running shell command (task 170), at most one,
+	// from RunShell's acceptance until its goroutine has written the ending.
+	shells map[int64]*shellCtl
+	// shellTimeout is a test seam, zero in production: it replaces
+	// ShellTimeout so a test of the kill does not wait two minutes.
+	shellTimeout time.Duration
 
 	// starts serializes, per chat, the two places a turn is accepted
 	// (SubmitWith and a queue resume) with WhileNoTurn (task 169 decision 7).
@@ -244,7 +266,10 @@ func New(deps Deps) *Runner {
 	if deps.Now == nil {
 		deps.Now = time.Now
 	}
-	return &Runner{deps: deps, live: map[int64]*liveTurn{}, turns: map[int64]*turnCtl{}}
+	return &Runner{
+		deps: deps, live: map[int64]*liveTurn{}, turns: map[int64]*turnCtl{},
+		shells: map[int64]*shellCtl{},
+	}
 }
 
 // Start makes the runner able to accept sends. It starts no goroutine of its
@@ -468,6 +493,9 @@ func (r *Runner) launch(chat *store.Chat, turn *store.ChatTurn) {
 // its goroutine has written the turn's ending (task 119). It is what closing a
 // linked chat, and cancelling the task it locks, do first.
 func (r *Runner) StopTurn(ctx context.Context, chatID int64) {
+	// A shell command the human left running goes with the turn (task 170):
+	// every caller is about to end the chat or its task.
+	r.StopShell(ctx, chatID)
 	r.mu.Lock()
 	ctl := r.turns[chatID]
 	var cancel context.CancelCauseFunc
@@ -559,11 +587,15 @@ func (r *Runner) Cancel(_ context.Context, chatID int64) error {
 		}
 	}
 	r.mu.Unlock()
+	// The chat's stop reaches a running shell command too (task 170), and a
+	// chat with only that to stop has still been stopped.
+	shell := r.cancelShell(chatID)
 	switch {
 	case live != nil:
 		live.cancel()
 	case pending != nil:
 		pending(errCanceled)
+	case shell != nil:
 	default:
 		return ErrNoLiveTurn
 	}
@@ -665,9 +697,26 @@ func (r *Runner) runTurn(
 			"resolved": len(exp.Resolved), "bytes": len(exp.Context), "context": exp.Context,
 		})
 	}
+	// The `[image N]` chips are resolved at the same moment and for the same
+	// reason (task 170). A send was refused when it could not resolve; a
+	// queued message is only checked here, so its turn fails saying why
+	// rather than running without the image it names.
+	images, err := r.ResolveImages(ctx, chat, turn.Prompt)
+	if err != nil {
+		next = r.finish(turn, chatstate.TurnFailed, ReasonAgentError, err.Error(), chat)
+		return next
+	}
+	if len(images) > 0 {
+		tr.Note("images", map[string]any{"numbers": ParseImageChips(turn.Prompt), "paths": images})
+	}
 	spec := agent.RunSpec{
-		Prompt:   turn.Prompt,
-		Preamble: joinPreamble(turnPreamble(chat, turn), turn.MentionContext),
+		Prompt: turn.Prompt,
+		// The opening context, the mention context, then the shell runs the
+		// human marked for this prompt (task 170) — all of it ahead of the
+		// message and none of it in it.
+		Preamble: joinPreamble(joinPreamble(turnPreamble(chat, turn), turn.MentionContext),
+			r.takeShellRuns(ctx, chat, turn, tr)),
+		Images:   images,
 		WorkDir:  workDir,
 		Launcher: launcher,
 		// nil for a host turn, which is the daemon's own environment and what

@@ -60,6 +60,10 @@ type Agent struct {
 	// what differs. It exists so a client can tell "cannot mention" from
 	// "nobody can say"; nil is no judgement, as for SupportsResume.
 	SupportsFileMentions *bool `json:"supports_file_mentions"`
+	// SupportsImages is whether a chat turn on this adapter can be given an
+	// image by path (§9.1, task 170). nil is no judgement. A linked chat on a
+	// containerized task is refused images whatever this says.
+	SupportsImages *bool `json:"supports_images"`
 	// FileMentionSigil, FileMentionPosition and FileMentionExpands are how a
 	// message names a workspace file (task 126): "@", "leading" (only at the
 	// start of the message) or "anywhere", and whether the CLI itself puts
