@@ -113,6 +113,10 @@ type Export struct {
 	ExportedAt time.Time `json:"exported_at"`
 	Chat       Chat      `json:"chat"`
 	Turns      []Turn    `json:"turns"`
+	// ShellRuns are the chat's shell passthrough runs (task 170), oldest
+	// first. Each sits in the conversation after the turn its AfterTurn
+	// names, which is where the Markdown and HTML renderings draw it.
+	ShellRuns []ShellRun `json:"shell_runs"`
 	// Diff is the base-to-tip diff of the directory the chat works in today
 	// (task 159 decision 1), present only when it was asked for and could be
 	// produced; an empty string is a diff with no changes. DiffUnavailable
@@ -184,6 +188,56 @@ type Turn struct {
 	Model          *string `json:"model"`
 	Effort         *string `json:"effort"`
 	PermissionMode *string `json:"permission_mode"`
+}
+
+// ShellRun is one shell command a human ran in the chat (task 170): its
+// command, how it ended, its stored output, and whether the agent was given
+// it. Unlike a tool call's, its output is in the document: it is what the
+// human saw, and what an attached run handed the agent.
+type ShellRun struct {
+	ID      int64  `json:"id"`
+	Command string `json:"command"`
+	// State is running, exited, timed_out, interrupted, canceled or failed;
+	// ExitCode is set for an exited run only.
+	State     string     `json:"state"`
+	ExitCode  *int       `json:"exit_code"`
+	StartedAt time.Time  `json:"started_at"`
+	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	// AfterTurn is the seq of the last turn that existed when the run
+	// started, 0 for none.
+	AfterTurn int `json:"after_turn"`
+	// Output is the stored, capped output; Truncated says the daemon's cap
+	// cut it. OutputNote replaces it when the file is not there to read.
+	Output     string `json:"output"`
+	Truncated  bool   `json:"truncated,omitempty"`
+	OutputNote string `json:"output_note,omitempty"`
+	// Attach is a finished run marked for the next prompt and not yet sent;
+	// AttachedTurn is the seq of the turn that was sent it.
+	Attach       bool `json:"attach,omitempty"`
+	AttachedTurn *int `json:"attached_turn"`
+}
+
+// NoteShellOutputMissing is a shell run whose output file is gone.
+const NoteShellOutputMissing = "output unavailable: the stored output could not be read"
+
+// Status is the run's ending: `exited 3`, or its state.
+func (r *ShellRun) Status() string {
+	if r.State == "exited" && r.ExitCode != nil {
+		return fmt.Sprintf("exited %d", *r.ExitCode)
+	}
+	return r.State
+}
+
+// Sent says whether the agent was given the run.
+func (r *ShellRun) Sent() string {
+	switch {
+	case r.AttachedTurn != nil:
+		return fmt.Sprintf("sent to the agent with turn %d", *r.AttachedTurn)
+	case r.Attach:
+		return "attached to the next prompt"
+	default:
+		return "not sent to the agent"
+	}
 }
 
 // ToolCall is one tool call: what was called, on what, and whether it

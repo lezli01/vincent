@@ -19,6 +19,12 @@
 // is gone still renders from its row, with a one-line note in place of its
 // tool list (ToolsNote), and a missing transcript is never an error.
 //
+// The chat's shell runs (task 170) are in the document too, each drawn after
+// the turn it followed (ShellRun.AfterTurn): command, ending, whether a turn
+// was sent it, and its stored output. Unlike a tool call's, a shell run's
+// output is included — it is what the human ran and saw, and what an
+// attached run handed the agent. In HTML it is escaped text, never markup.
+//
 // HTML goes through goldmark with raw HTML left disabled — goldmark's
 // default, kept on purpose (task 159 decision 2) — so agent output cannot
 // inject markup, and an image in an answer becomes a link so the page loads

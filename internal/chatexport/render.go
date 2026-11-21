@@ -178,17 +178,80 @@ func longestRun(s string) int {
 	return longest
 }
 
+// entry is one section of the conversation: a turn or a shell run, exactly
+// one of them set.
+type entry struct {
+	Turn  *Turn
+	Shell *ShellRun
+}
+
+// conversation is e's turns and shell runs in the order they happened: each
+// run after the turn its AfterTurn names, ahead of the next one. A run whose
+// AfterTurn is no turn's goes before the first turn with a greater seq, so
+// every run is drawn exactly once whatever the rows say.
+func conversation(e *Export) []entry {
+	out := make([]entry, 0, len(e.Turns)+len(e.ShellRuns))
+	next := 0
+	for i := range e.Turns {
+		t := &e.Turns[i]
+		for next < len(e.ShellRuns) && e.ShellRuns[next].AfterTurn < t.Seq {
+			out = append(out, entry{Shell: &e.ShellRuns[next]})
+			next++
+		}
+		out = append(out, entry{Turn: t})
+	}
+	for ; next < len(e.ShellRuns); next++ {
+		out = append(out, entry{Shell: &e.ShellRuns[next]})
+	}
+	return out
+}
+
+// markdownShell writes one shell run's card.
+func markdownShell(b *strings.Builder, r *ShellRun) {
+	fmt.Fprintf(b, "\n## Shell · %s · %s\n\n", inlineCode(oneLine(r.Command)), r.Status())
+	fmt.Fprintf(b, "_%s_\n\n", r.Sent())
+	if strings.Contains(r.Command, "\n") {
+		f := fence(r.Command)
+		fmt.Fprintf(b, "%s\n%s\n%s\n\n", f, strings.TrimRight(r.Command, "\n"), f)
+	}
+	switch out := strings.TrimRight(r.Output, "\n"); {
+	case r.OutputNote != "":
+		fmt.Fprintf(b, "_%s_\n", r.OutputNote)
+	case out == "":
+		b.WriteString("_no output_\n")
+	default:
+		f := fence(out)
+		fmt.Fprintf(b, "%s\n%s\n%s\n", f, out, f)
+	}
+	if r.Truncated {
+		b.WriteString("\n_The output reached the daemon's cap and was cut._\n")
+	}
+}
+
+// oneLine is a command's first line, marked when there is more.
+func oneLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		return s[:i] + " …"
+	}
+	return s
+}
+
 // Markdown is e rendered as Markdown: a title and metadata, one section per
-// turn — prompt, tool calls, answer, usage, in that order — and the diff
-// last, when there is one.
+// turn — prompt, tool calls, answer, usage, in that order — and per shell
+// run, in conversation order, and the diff last, when there is one.
 func Markdown(e *Export) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", title(e))
 	for _, r := range metaRows(e) {
 		fmt.Fprintf(&b, "- **%s:** %s\n", r.Key, r.Value)
 	}
-	for i := range e.Turns {
-		t := &e.Turns[i]
+	for _, en := range conversation(e) {
+		if en.Shell != nil {
+			markdownShell(&b, en.Shell)
+			continue
+		}
+		t := en.Turn
 		fmt.Fprintf(&b, "\n## Turn %d · %s\n\n", t.Seq, t.State)
 		fmt.Fprintf(&b, "_Ran on: %s_\n\n", t.RanWith())
 		b.WriteString("### Prompt\n\n")
@@ -288,10 +351,23 @@ type pageTurn struct {
 	ToolLines  []string
 }
 
+// pageShell is a shell run as the page draws it.
+type pageShell struct {
+	*ShellRun
+	Title     string
+	Multiline bool
+}
+
+// pageEntry is one section of the page: a turn or a shell run.
+type pageEntry struct {
+	Turn  *pageTurn
+	Shell *pageShell
+}
+
 type pageData struct {
 	Title           string
 	Meta            []metaRow
-	Turns           []pageTurn
+	Entries         []pageEntry
 	Diff            *string
 	DiffUnavailable string
 }
@@ -303,16 +379,22 @@ func renderHTML(w io.Writer, e *Export) error {
 		Diff:            e.Diff,
 		DiffUnavailable: e.DiffUnavailable,
 	}
-	for i := range e.Turns {
-		t := &e.Turns[i]
-		pt := pageTurn{Turn: t, PromptHTML: markdownHTML(t.Prompt)}
+	for _, en := range conversation(e) {
+		if r := en.Shell; r != nil {
+			d.Entries = append(d.Entries, pageEntry{Shell: &pageShell{
+				ShellRun: r, Title: oneLine(r.Command), Multiline: strings.Contains(r.Command, "\n"),
+			}})
+			continue
+		}
+		t := en.Turn
+		pt := &pageTurn{Turn: t, PromptHTML: markdownHTML(t.Prompt)}
 		if t.Answer != "" {
 			pt.AnswerHTML = markdownHTML(t.Answer)
 		}
 		for _, c := range t.Tools {
 			pt.ToolLines = append(pt.ToolLines, c.line())
 		}
-		d.Turns = append(d.Turns, pt)
+		d.Entries = append(d.Entries, pageEntry{Turn: pt})
 	}
 	return page.Execute(w, d)
 }
