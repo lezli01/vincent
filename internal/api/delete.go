@@ -120,6 +120,9 @@ func (s *Server) handleTaskDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range linked {
 		taskrun.RemoveTranscriptDir(s.deps.Dirs.Data, worktree.ChatOwner(linked[i].ID).Dir(), s.deps.Logger)
+		// A linked chat's checkpoints live in the task's repository and go
+		// with its row (task 167 decision 12).
+		s.pruneChatRefs(r.Context(), linked[i].ProjectID, linked[i].ID)
 	}
 	writeJSON(w, http.StatusOK, deleteResponse{Deleted: true, Branch: toBranchResponse(out)})
 }
@@ -179,6 +182,9 @@ func (s *Server) handleChatDelete(w http.ResponseWriter, r *http.Request) {
 	// resurrect a row already reported gone, and `vincent gc` treats a
 	// transcript directory with no row as its own.
 	taskrun.RemoveTranscriptDir(s.deps.Dirs.Data, worktree.ChatOwner(chat.ID).Dir(), s.deps.Logger)
+	// The checkpoint refs go with the row (task 167 decision 12), with or
+	// without delete_branch: nothing can rewind to them once it is gone.
+	s.pruneChatRefs(r.Context(), chat.ProjectID, chat.ID)
 	var out worktree.BranchOutcome
 	if projectPath != "" {
 		// A chat has no pull-request head to protect (task 064), but since
@@ -222,6 +228,9 @@ func (s *Server) forceDeleteChat(r *http.Request, id int64) ([]string, error) {
 	}
 	s.deps.Logger.Warn("force delete: chat removed", "chat", id, "state", chat.State)
 	taskrun.RemoveTranscriptDir(s.deps.Dirs.Data, worktree.ChatOwner(id).Dir(), s.deps.Logger)
+	// Even a handed-off chat's: a hand-off keeps the refs only while the
+	// chat's row exists (task 167 decision 12).
+	s.pruneChatRefs(ctx, chat.ProjectID, id)
 	warnings := []string{}
 	if chat.WorktreePath == "" || chat.Linked() || chat.State == chatstate.HandedOff {
 		return warnings, nil

@@ -471,6 +471,10 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/chats/{id}/cancel", s.handleChatCancel)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/archive", s.handleChatArchive)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/handoff", s.handleChatHandoff)
+	// Task 167: a rewind to a turn's checkpoint and a fork from one. Neither
+	// runs an agent process.
+	rt.handle(http.MethodPost, "/v1/chats/{id}/rewind", s.handleChatRewind)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/fork", s.handleChatFork)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/close", s.handleChatClose)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/viewed", s.handleChatViewed)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/turns/{seq}/transcript", s.handleChatTurnTranscript)

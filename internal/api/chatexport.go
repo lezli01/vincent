@@ -46,12 +46,24 @@ func (s *Server) handleChatExport(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("diff must be true or false; got %q", v))
 		return
 	}
+	// Rewound turns are out of the conversation (task 167 decision 9), so
+	// an export leaves them out unless asked for them.
+	withRewound := false
+	switch v := q.Get("include_rewound"); v {
+	case "", "false":
+	case "true":
+		withRewound = true
+	default:
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			fmt.Sprintf("include_rewound must be true or false; got %q", v))
+		return
+	}
 	chat, ok := s.chatFromPath(w, r)
 	if !ok {
 		return
 	}
 	ctx := r.Context()
-	e, err := s.buildChatExport(ctx, chat, withDiff)
+	e, err := s.buildChatExport(ctx, chat, withDiff, withRewound)
 	if err != nil {
 		s.internalError(w, "build chat export", err)
 		return
@@ -70,7 +82,7 @@ func (s *Server) handleChatExport(w http.ResponseWriter, r *http.Request) {
 
 // buildChatExport fills the document model from the chat row, its turns in
 // seq order, each turn's normalized transcript, and — when asked — the diff.
-func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff bool) (*chatexport.Export, error) {
+func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff, withRewound bool) (*chatexport.Export, error) {
 	e := &chatexport.Export{
 		Version:    chatexport.Version,
 		ExportedAt: time.Now().UTC(),
@@ -96,6 +108,9 @@ func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff
 	}
 	for i := range turns {
 		t := &turns[i]
+		if t.RewoundAt != nil && !withRewound {
+			continue
+		}
 		et := chatexport.Turn{
 			Seq: t.Seq, State: string(t.State), Prompt: t.Prompt, MentionContext: t.MentionContext, Answer: t.ResultText,
 			InputTokens: t.InputTokens, OutputTokens: t.OutputTokens,
@@ -104,6 +119,7 @@ func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff
 			CostUSD: t.CostUSD, DurationMS: t.DurationMS,
 			FailReason: t.FailReason, ErrorMessage: t.ErrorMessage, StartedAt: t.StartedAt,
 			Model: nilIfEmpty(t.Model), Effort: nilIfEmpty(t.Effort), PermissionMode: nilIfEmpty(t.PermissionMode),
+			RewoundAt: t.RewoundAt, RewindID: t.RewindID, Seeded: t.Seeded,
 		}
 		tools, note := s.chatTurnTools(chat, t)
 		et.Tools, et.ToolsNote = tools, note
