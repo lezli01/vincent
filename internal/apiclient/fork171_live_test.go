@@ -59,7 +59,7 @@ func TestCrossAgentForkAgainstTheRealAPI(t *testing.T) {
 	runner := chatrun.New(chatrun.Deps{
 		Store: st, Config: config.Default, Worktrees: wt, Agents: reg, DataDir: dataDir, Logger: log,
 		TurnTools: func(c *store.Chat, turn *store.ChatTurn) []chatexport.ToolCall {
-			return api.TurnToolCalls(dataDir, reg, c, turn)
+			return api.TurnToolCalls(dataDir, reg, log, c, turn)
 		},
 	})
 	runner.Start(ctx)
@@ -114,6 +114,12 @@ func TestCrossAgentForkAgainstTheRealAPI(t *testing.T) {
 	}
 	if !strings.Contains(fc.PendingPreamble, "first question") || !strings.Contains(fc.PendingPreamble, "held with claude") {
 		t.Errorf("pending_preamble:\n%s", fc.PendingPreamble)
+	}
+	// The kept turn 1 ran claude-shaped fakeagent, which calls Edit: its
+	// summary is read from the real transcript through the real normalizer
+	// (review F6), not a stub.
+	if want := "<tools>\n" + chatexport.ToolSummary("Edit", "") + "\n</tools>"; strings.Count(fc.PendingPreamble, want) != 1 {
+		t.Errorf("pending_preamble does not summarize turn 1's Edit call as %q:\n%s", want, fc.PendingPreamble)
 	}
 	got, _, err := client.GetChat(ctx, fc.ID)
 	if err != nil || got.PendingPreamble != fc.PendingPreamble || got.ForkedFrom == nil || got.ForkedFrom.Agent != "claude" {
