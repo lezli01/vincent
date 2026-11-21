@@ -60,7 +60,7 @@ jobs:
 
       # Pinned to the commit release.yml pins: this job holds id-token: write,
       # so a moved tag could sign arbitrary bytes with vincent's identity.
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         if: env.PUBLISH == 'true'
 
       # The next patch release, the commits since the last one, and the
