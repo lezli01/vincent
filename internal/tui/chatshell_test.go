@@ -384,3 +384,32 @@ func TestChatImagePathPastesAsTextWithoutTheCapability(t *testing.T) {
 		t.Fatalf("draft %q, note %q (bad %v)", v.composer.Value(), v.note, v.noteBad)
 	}
 }
+
+// TestChatImagePasteSkipsTheHelperWhenRefused (review F8): in a chat whose
+// agent takes no images, ctrl+v pastes the clipboard's text without asking
+// the image helper; only an empty text asks it, so a clipboard image still
+// earns the note naming the agent.
+func TestChatImagePasteSkipsTheHelperWhenRefused(t *testing.T) {
+	asked := 0
+	prevImage, prevText := clipImageRead, clipboardRead
+	t.Cleanup(func() { clipImageRead, clipboardRead = prevImage, prevText })
+	clipImageRead = func(context.Context) ([]byte, error) { asked++; return fakePNG, nil }
+	text := "plain words"
+	clipboardRead = func() (string, error) { return text, nil }
+
+	no := false
+	v := chatViewFixture()
+	v.agents = map[string]apiclient.Agent{v.chat.Agent: {Name: v.chat.Agent, SupportsImages: &no}}
+	if msg, ok := runCmd(t, v.pasteImageCmd(), 10*time.Second).(tea.PasteMsg); !ok || msg.Content != text || asked != 0 {
+		t.Fatalf("a text paste answered %#v and asked the image helper %d times", msg, asked)
+	}
+
+	text = ""
+	msg, ok := runCmd(t, v.pasteImageCmd(), 10*time.Second).(chatImageClipMsg)
+	if !ok || asked != 1 {
+		t.Fatalf("an image-only clipboard answered %#v (helper asked %d times)", msg, asked)
+	}
+	if cmd := v.applyImageClip(msg); cmd != nil || !v.noteBad || !strings.Contains(v.note, "cannot take images") {
+		t.Fatalf("the image was not refused with the note: %q", v.note)
+	}
+}

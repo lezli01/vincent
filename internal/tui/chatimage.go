@@ -64,7 +64,16 @@ func (v *chatView) pasteImageCmd() tea.Cmd {
 		return readClipboardCmd()
 	}
 	id := v.chatID
+	refused := v.imagesRefused() != ""
 	return func() tea.Msg {
+		if refused {
+			// An agent that takes no images (review F8): the clipboard's
+			// text is pasted without waiting on the image helper, which is
+			// asked only when there is no text, to say why nothing pasted.
+			if text, err := clipboardRead(); err == nil && text != "" {
+				return tea.PasteMsg{Content: text}
+			}
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
 		data, err := clipImageRead(ctx)

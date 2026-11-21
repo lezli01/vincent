@@ -23,13 +23,17 @@ import (
 // root that routes by message type cannot deliver it. Reading the clipboard
 // here keeps one path into the field.
 
+// clipboardRead is the system-clipboard text read, indirected so a test can
+// stand in for the platform helper.
+var clipboardRead = clipboard.ReadAll
+
 // readClipboardCmd reads the system clipboard as a paste. A failure is
 // silent: the platforms where reading needs a helper binary (Linux wants
 // xclip/xsel/wl-paste) are also the ones whose terminals send bracketed
 // paste, so the fallback failing means the working path was not needed.
 func readClipboardCmd() tea.Cmd {
 	return func() tea.Msg {
-		text, err := clipboard.ReadAll()
+		text, err := clipboardRead()
 		if err != nil || text == "" {
 			return nil
 		}
