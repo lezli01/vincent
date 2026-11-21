@@ -198,8 +198,89 @@ func (f *answerForm) updateWith(msg tea.KeyPressMsg, submit func(apiclient.Input
 		return f.submitTo(submit), false
 	case "esc":
 		return nil, true
+	default:
+		// After the named keys, so an operation somebody bound to a digit
+		// keeps it.
+		if n, ok := f.optionDigit(msg); ok {
+			return f.pickNumber(n, submit), false
+		}
 	}
 	return nil, false
+}
+
+// maxNumberedOptions is how many of a question's options a digit reaches:
+// 1-9, one key each. A tenth option is still there for the cursor.
+const maxNumberedOptions = 9
+
+// optionDigit reads a press as an option's number on the chat's pinned
+// question (task 170). Only there: the task workspace's popup shares this
+// form and its keys stay as they were. Read off the key's text rather than
+// matched as nine literals, so a modified digit is never mistaken for one.
+func (f *answerForm) optionDigit(msg tea.KeyPressMsg) (int, bool) {
+	if !f.card {
+		return 0, false
+	}
+	s := msg.String()
+	if len(s) != 1 || s[0] < '1' || s[0] > '0'+maxNumberedOptions {
+		return 0, false
+	}
+	return int(s[0] - '0'), true
+}
+
+// numberedRow is the row a digit names within the question the cursor is in:
+// that question's nth option, or the nth of a permission's two decisions.
+func (f *answerForm) numberedRow(n int) (int, bool) {
+	cur, ok := f.currentRow()
+	if !ok {
+		return 0, false
+	}
+	for i, r := range f.rows {
+		switch r.kind {
+		case rowOption:
+			if r.question == cur.question && r.option == n-1 {
+				return i, true
+			}
+		case rowAllow:
+			if n == 1 {
+				return i, true
+			}
+		case rowDeny:
+			if n == 2 {
+				return i, true
+			}
+		case rowHeader, rowFree:
+		}
+	}
+	return 0, false
+}
+
+// pickNumber moves to option n of the cursor's question and picks it, exactly
+// as walking there and pressing space would. A number past the question's
+// options does nothing.
+//
+// One single-select question is the shape where the pick is the whole answer,
+// so there the digit also submits, through enter's own path. Everywhere else
+// — several questions, a multi-select, a permission — a digit only picks: a
+// second question is still unanswered, a multi-select has no last choice, and
+// a permission is a decision about what runs as you (§16), which keeps its
+// deliberate enter.
+func (f *answerForm) pickNumber(n int, submit func(apiclient.InputResponse) tea.Cmd) tea.Cmd {
+	i, ok := f.numberedRow(n)
+	if !ok {
+		return nil
+	}
+	f.cursor = i
+	f.pick()
+	if f.submitsOnPick() {
+		return f.submitTo(submit)
+	}
+	return nil
+}
+
+// submitsOnPick reports the one shape a digit answers outright.
+func (f *answerForm) submitsOnPick() bool {
+	return f.req.Kind != apiclient.InputKindPermission &&
+		len(f.req.Questions) == 1 && !f.req.Questions[0].MultiSelect
 }
 
 // submitTo validates locally, then hands the response to the caller's poster.
@@ -621,7 +702,7 @@ func (f *answerForm) renderCardRow(i int, row formRow, width int) []string {
 			text, style = answerCardFreeText, styleDim
 		}
 	}
-	prefix := cursor + f.cardMarker(row) + " "
+	prefix := cursor + f.cardMarker(row) + " " + f.cardNumber(row)
 	indent := ansi.StringWidth(prefix)
 	out := wrapText(text, max(width-indent, 1), wrapOpts{})
 	for j := range out {
@@ -632,6 +713,27 @@ func (f *answerForm) renderCardRow(i int, row formRow, width int) []string {
 		out[j] = lead + style.Render(out[j])
 	}
 	return out
+}
+
+// cardNumber is the digit that picks a row, drawn beside it so the key is
+// discoverable without a hint line. Rows past the ninth get blanks of the
+// same width instead, which keeps a long question's labels in one column.
+func (f *answerForm) cardNumber(row formRow) string {
+	n := 0
+	switch row.kind {
+	case rowOption:
+		n = row.option + 1
+	case rowAllow:
+		n = 1
+	case rowDeny:
+		n = 2
+	case rowHeader, rowFree:
+		return ""
+	}
+	if n > maxNumberedOptions {
+		return "   "
+	}
+	return styleDim.Render(fmt.Sprintf("%d.", n)) + " "
 }
 
 // cardMarker is a row's mark on the pinned question.
