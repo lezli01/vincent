@@ -2970,7 +2970,7 @@ curl -sS -X POST "http://127.0.0.1:$PORT/v1/issues" \
   | `claimed` | A handoff claims it and has not decided it — in any lane: the handoff's own task may restart work on it, which makes it `in_progress` | The claiming handoff and its task |
   | `waiting` | A handoff claims it and parked it as `waiting` — in any lane | The claiming handoff and its task |
   | `pending` | `hand_off`, unclaimed, and its current delivery not yet delivered: a handoff may claim it now | `null` |
-  | `delivered` | `hand_off`, but a handoff delivered its current delivery without closing it. A follow-up that moves the delivery's head makes it `pending` again | The delivering handoff and its task |
+  | `delivered` | `open`: a handoff delivered its current delivery without closing it. A follow-up that moves the delivery's head makes it `hand_off` and `pending` again | The delivering handoff and its task |
   | `idle` | `in_progress` with nothing running: finished work that is not ready, a returned issue included | `null` |
   | — (`null`) | Anything else — `open`, or `in_progress` with work running | — |
 
@@ -4280,7 +4280,7 @@ POST /v1/tasks/{id}/delivery
 | `summary` | What the change is for. ≤ 64 KiB |
 | `head_sha` | The commit the run verified. It must be a commit on the task's branch; absent, it is the branch tip. The answer always carries the full SHA |
 | `branch`, `base` | Filled by the daemon from the task; not request fields |
-| `close_reason` | An optional suggestion for the issue's close: `completed`, `not_planned` or `duplicate` |
+| `close_reason` | An optional suggestion for the issue's close: `completed`, `not_planned` or `duplicate` — or `none` when the run delivered only part of the issue, which a handoff's `deliver` then leaves open |
 | `proof` | What proved the change. ≤ 16 KiB |
 | `implicit` | `true` on a delivery the daemon wrote because the run recorded none |
 | `ready`, `ready_by` | Whether the delivery is ready to hand off, and who said so: `workflow`, `task`, `human` or `agent`. A request sends `ready: true`; absent on a delivery recorded before readiness existed, which reads ready. See [Ready to hand off](#ready-to-hand-off) |
@@ -4416,7 +4416,9 @@ kept on the item.
 - **deliver** — `outcome: delivered`. The issue is closed with `close`
   (`completed`, `not_planned` or `duplicate`); left out, the delivery's
   suggested `close_reason`, else `completed`. `close: none` leaves it open,
-  and it stays out of later handoffs until new work replaces the delivery.
+  and so does a suggested `close_reason` of `none`; the issue moves to the
+  `open` lane and stays out of later handoffs until new work replaces the
+  delivery.
 - **return** — `outcome: returned`. The claim is released and the delivery's
   readiness withdrawn, so the issue waits in `in_progress`. `follow_up`
   queues that prompt as a [follow-up](#task-actions) on the issue's latest

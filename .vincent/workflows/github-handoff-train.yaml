@@ -54,7 +54,8 @@
 #   review-final  refuse to merge while a finding is open
 #   merge-attempt rebase → resolve? → repush → wait-checks → merge → probe → repair?
 #   merged        MERGED at the commit this task pushed, or block
-#   deliver       record every item delivered and close its issue; clean up
+#   deliver       record every item delivered and close its issue, unless its
+#                 delivery said to leave it open; clean up
 #
 # ## What it is allowed to do
 #
@@ -92,7 +93,8 @@
 # is public, the whole set is built and tested together, and one pull
 # request carries every issue's own title and body, `Closes #N` and `Part of
 # #N` lines included, so GitHub links it to every issue; `deliver` closes
-# them once the merge is confirmed.
+# them once the merge is confirmed — every one whose delivery did not ask to
+# stay open (#1042).
 #
 # **Stacking is a rebase, not a merge.** Each delivered branch's commits are
 # replayed onto the train's tip with `git rebase --onto <tip> <fork> <head>`,
@@ -796,9 +798,10 @@ steps:
     #
     # The body is every task's own drafted body, in train order, under a
     # heading naming the task. Each carries its own `Closes #N` (or `Part of
-    # #N` where a documentation or ci change left items open), so GitHub
+    # #N` where the run delivered only part of its issue), so GitHub
     # links the train to exactly the issues the deliveries said it should;
-    # `deliver` closes them once the merge is confirmed.
+    # `deliver` closes them once the merge is confirmed, as each delivery
+    # asked.
     #
     # `--force-with-lease`: the branch is this task's own and is new on the
     # first run, and a retry after `stack` re-cut the train must replace what
@@ -2409,9 +2412,15 @@ steps:
     shell: sh
     timeout: 5m
     # Only after `merged` confirmed the merge at the pushed commit. Every
-    # unresolved item is recorded delivered and its issue closed as
-    # completed, through vincent's outbox and attributed to the handoff —
-    # the trigger's grant must name `issue.comment` and `issue.close`. The
+    # unresolved item is recorded delivered and its issue closed with its
+    # own delivery's suggested close_reason, through vincent's outbox and
+    # attributed to the handoff — the trigger's grant must name
+    # `issue.comment` and `issue.close`. No `--close` is passed (#1042): one
+    # explicit reason would override every item's suggestion, and a run
+    # that delivered only part of its issue suggests `none`, which leaves
+    # that issue open with the merge comment and reads it `open` again for
+    # the next resolve sweep. An item with no suggestion closes as
+    # completed. The
     # pull request's `Closes #N` lines link it on GitHub; if sync imports
     # GitHub's own close first, `deliver` skips an issue that is already
     # closed, so the race is harmless. Repeating it changes nothing, which
@@ -2433,10 +2442,10 @@ steps:
         printf ' (`github-handoff-train`, handoff {{.Handoff.ID}}).\n'
       } > "$s/merged.md"
       say "closing handoff {{.Handoff.ID}}'s issues"
-      vincent handoff deliver {{.Handoff.ID}} --all --close completed --comment-file "$s/merged.md" </dev/null
+      vincent handoff deliver {{.Handoff.ID}} --all --comment-file "$s/merged.md" </dev/null
 
       n=$(cat "$s/delivered")
       commit=$(cat "$s/merge-commit")
       rm -rf "$s"
       # The last word of the whole run, and the one the board keeps.
-      say "merged $n issue branch(es) as $commit and closed their issues"
+      say "merged $n issue branch(es) as $commit and delivered their issues"

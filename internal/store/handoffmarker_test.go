@@ -76,9 +76,10 @@ func TestHandoffMarker(t *testing.T) {
 	resolveItems(t, s, HandoffVerb{HandoffID: h.ID, IssueIDs: []int64{waiting.ID}, Outcome: HandoffWaiting})
 	wantMarker(t, s, waiting.ID, HandoffMarkerWaiting, h)
 
-	// deliver --close none: still hand_off, not selectable, delivered.
+	// deliver --close none: open again (#1042, amending §5.6), not
+	// selectable, delivered.
 	resolveItems(t, s, HandoffVerb{HandoffID: h.ID, IssueIDs: []int64{delivered.ID}, Outcome: HandoffDelivered})
-	wantLane(t, s, delivered.ID, issuestate.LaneHandOff)
+	wantLane(t, s, delivered.ID, issuestate.LaneOpen)
 	wantMarker(t, s, delivered.ID, HandoffMarkerDelivered, h)
 	// A follow-up that adds no commits keeps it; one that moves head_sha
 	// makes it pending again.
@@ -192,7 +193,10 @@ func TestHandoffMarkerOf(t *testing.T) {
 						if o.Claims() {
 							claim = &o
 						}
-						want := HandoffMarkerOf(got.State, got.Lane, got.Active, claim, o == HandoffDelivered && head == "s1")
+						// Only a done task carries a current delivery for
+						// the item to name.
+						current := o == HandoffDelivered && head == "s1" && ts == TaskDone
+						want := HandoffMarkerOf(got.State, got.Lane, got.Active, claim, current)
 						var sqlMarker HandoffMarker
 						if got.Handoff != nil {
 							sqlMarker = got.Handoff.State
@@ -218,7 +222,7 @@ func TestHandoffMarkerOf(t *testing.T) {
 		{issuestate.Closed, issuestate.LaneDone, false, &h7, false, ""},
 		{issuestate.Open, issuestate.LaneInProgress, true, &h7, false, HandoffMarkerWaiting},
 		{issuestate.Open, issuestate.LaneHandOff, false, nil, false, HandoffMarkerPending},
-		{issuestate.Open, issuestate.LaneHandOff, false, nil, true, HandoffMarkerDelivered},
+		{issuestate.Open, issuestate.LaneOpen, false, nil, true, HandoffMarkerDelivered},
 		{issuestate.Open, issuestate.LaneInProgress, false, nil, false, HandoffMarkerIdle},
 		{issuestate.Open, issuestate.LaneInProgress, true, nil, false, ""},
 		{issuestate.Open, issuestate.LaneOpen, false, nil, false, ""},

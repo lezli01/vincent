@@ -240,6 +240,15 @@ list with the user-facing context a commit subject cannot carry.
 
 ### Fixed
 
+- **A merge train no longer closes an issue it only partly delivered.** A
+  delivery may now suggest `close_reason: none`
+  (`vincent task deliver --close-reason none`), and `vincent handoff deliver`
+  without `--close` leaves that issue open, with the comment still posted.
+  An issue a handoff delivered but left open moves back to the `open` lane,
+  marked `delivered`, so the rest of its work can be picked up instead of
+  sitting in `hand_off` forever. The shipped resolve workflows decide
+  `closes: yes|no` after implementing, on every path, and the handoff train
+  follows each delivery's suggestion (#1042).
 - **An `$EDITOR` whose path holds a space can be quoted.** vincent split
   `$VISUAL` and `$EDITOR` on whitespace alone, so
   `"C:\Program Files\Notepad++\notepad++.exe" -multiInst` could not be

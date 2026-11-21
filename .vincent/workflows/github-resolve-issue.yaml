@@ -117,9 +117,11 @@
 #   author to scope such items out rather than letting `implement` write them
 #   up.
 # - **An issue with items left open is not closed by the PR.** `survey`'s
-#   second line is `closes: yes` or `closes: no`; on `no` the PR body says
-#   `Part of #N` and lists what is left, so merging does not close an issue
-#   that still holds a person's work.
+#   second line is `closes: yes` or `closes: no`, the default `implement`
+#   starts from; `implement` writes the final word to `closes.txt` from what
+#   it delivered (#1042). On `no` the PR body says `Part of #N` and lists what
+#   is left, and the delivery suggests `none`, so neither merging nor the
+#   merge train closes an issue that still holds a person's work.
 #
 # There is no `confirm-red` here: a sentence has no failing test to observe.
 # The proof is the docs-claims tests that `implement`'s check runs as part of
@@ -170,7 +172,8 @@
 # - Gate records follow the documentation path's rule: nothing is recorded that
 #   did not happen, so a run line names this host and no other. An item only a
 #   person can do — a repository setting, a secret, a real-GitHub leg — is
-#   scoped out, and `closes: no` makes the pull request say `Part of #N`.
+#   scoped out, and `closes: no` (the brief's default, `implement`'s final
+#   word) makes the pull request say `Part of #N` and leaves the issue open.
 #
 # `classify`'s comment says why `ci` outranks `enhancement` and `documentation`
 # and yields to `bug`.
@@ -984,9 +987,11 @@ steps:
       Do not commit. Do not push. Do not run `gh` for anything that writes. Do
       not modify any file outside `.vincent-issue/`.
     # `digest`'s check plus the second line. `closes:` is a machine-readable
-    # line rather than a sentence in the body because `implement` turns it into
-    # `Closes #N` or `Part of #N`, and that choice decides whether merging the
-    # pull request closes an issue that still has a person's work in it.
+    # line rather than a sentence in the body because it is the default
+    # `implement` starts from when it writes `closes.txt`, which becomes
+    # `Closes #N` or `Part of #N` and the delivery's close_reason — the
+    # choice that decides whether merging closes an issue that still has a
+    # person's work in it.
     check: >
       test -s .vincent-issue/brief.md &&
       head -n 1 .vincent-issue/brief.md | grep -Eq '^verdict: (proceed|reject|needs-info)$' &&
@@ -1372,8 +1377,10 @@ steps:
     max_retries: 2
     # One step for all four paths. The `{{if}}` covers exactly what differs —
     # the framing, the path-specific rules, the frozen command on the bug and
-    # ci paths and the `Closes`/`Part of` choice on the documentation and ci
-    # paths — and everything below it is the same work whichever path ran.
+    # ci paths and the brief's `closes:` default on the documentation and ci
+    # paths — and everything below it is the same work whichever path ran,
+    # `closes.txt` included: every path decides it here, after the work
+    # (#1042).
     prompt: |
       {{- if eq (index .Steps "classify").ExitCode 0 }}
       Fix the bug diagnosed in `.vincent-issue/brief.md`. That diagnosis is the
@@ -1547,7 +1554,7 @@ steps:
       in this same branch with a dated note. That is a hard rule of this
       repository, not a nicety.
 
-      Then write two more files:
+      Then write three more files:
 
       - `.vincent-issue/pr-title.txt` — one line, plain language, no trailing
         prose, and never a Conventional Commits prefix: `Add workflow fields`,
@@ -1556,23 +1563,31 @@ steps:
         body, so a prefixed title makes Release Please record the change twice,
         and `.github/workflows/pr-title.yml` is a required check that fails the
         pull request for it.
+      - `.vincent-issue/closes.txt` — exactly one line, `closes: yes` or
+        `closes: no`, decided **now**, from what this change actually
+        delivers rather than from what was planned (#1042).
+        {{- if or (eq (index .Steps "classify").ExitCode 2) (eq (index .Steps "classify").ExitCode 3) }}
+        The second line of `.vincent-issue/brief.md` is where you start from,
+        not the final word: scoping down while implementing turns it into
+        `closes: no`.
+        {{- end }}
+        `closes: yes` only when this change delivers **everything** the issue
+        asks for that still stands. Anything scoped down, deferred, or left
+        for a person makes it `closes: no`. The delivery carries it to the
+        merge train, which closes the issue on `yes` and leaves it open on
+        `no`, so a wrong `yes` closes an issue that still has work in it.
       - `.vincent-issue/pr.md` — the pull request body, following
         `.github/PULL_REQUEST_TEMPLATE.md`. Under **Related**, write
-        `Closes #<the issue number from issue.json>` so merging the PR closes
-        the issue.
+        `Closes #<the issue number from issue.json>` when `closes.txt` says
+        `closes: yes`. On `closes: no` write `Part of #<the issue number>`
+        instead of `Closes`, and list under it every item this change leaves
+        open and why, so merging does not close an issue that still has work
+        in it.
         {{- if eq (index .Steps "classify").ExitCode 0 }}
         Say plainly what the root cause was and how the regression test would
         catch it coming back.
-        {{- else if eq (index .Steps "classify").ExitCode 2 }}
-        **Except** when the second line of `.vincent-issue/brief.md` is
-        `closes: no`: then write `Part of #<the issue number>` instead, and
-        list under it every item this change leaves open and why, so merging
-        does not close an issue that still has work in it.
         {{- else if eq (index .Steps "classify").ExitCode 3 }}
-        **Except** when the second line of `.vincent-issue/brief.md` is
-        `closes: no`: then write `Part of #<the issue number>` instead, and
-        list under it every item this change leaves open and why. Either way,
-        say which commands in `.vincent-issue/proof.sh` passed on this host,
+        Say which commands in `.vincent-issue/proof.sh` passed on this host,
         and that this pull request's own CI is the first run on the platforms
         this machine is not.
         {{- end }}
@@ -1622,6 +1637,7 @@ steps:
       test -s .vincent-issue/pr-title.txt &&
       { ! grep -Eq '^[a-z][a-z0-9_-]*(\([^)]+\))?!?:[[:space:]]+' .vincent-issue/pr-title.txt || { echo 'pr-title.txt carries a Conventional Commit prefix, which .github/workflows/pr-title.yml rejects; write a plain-language title:' >&2; cat .vincent-issue/pr-title.txt >&2; false; }; } &&
       test -s .vincent-issue/pr.md &&
+      { c=$(cat .vincent-issue/closes.txt 2>/dev/null); test "$c" = "closes: yes" || test "$c" = "closes: no" || { echo '.vincent-issue/closes.txt must be exactly one line, closes: yes or closes: no; it holds:' >&2; printf '%s\n' "$c" >&2; false; }; } &&
       { noexec=$(git ls-files -s -- 'scripts/*.sh' | awk '$1 != "100755" { print $4 }'); test -z "$noexec" || { echo 'scripts not committed executable (git update-index --chmod=+x):' >&2; echo "$noexec" >&2; false; }; } &&
       {{if eq (index .Steps "classify").ExitCode 0}}sh .vincent-issue/green.sh &&{{end}}
       {{if eq (index .Steps "classify").ExitCode 3}}sh .vincent-issue/proof.sh &&{{end}}
@@ -2115,7 +2131,8 @@ steps:
     #     summary        .vincent-issue/brief.md — a conflict resolver's best input
     #     head_sha       the commit the verification above judged
     #     proof          present only when the change shipped without automated proof
-    #     close_reason   `completed` when brief.md's second line is `closes: yes`
+    #     close_reason   `completed` when `implement`'s closes.txt is `closes: yes`,
+    #                    `none` (leave the issue open) when it is `closes: no` (#1042)
     #
     # The daemon fills `branch` and `base` from the task, and `recorded_at`.
     # It needs a vincent built from task 137.2 or later (after v0.11.0) for
@@ -2151,7 +2168,7 @@ steps:
         echo "{{.Task.BranchName}} has no commits past origin/{{.Task.BaseBranch}}." >&2
         exit 1
       fi
-      for f in pr-title.txt pr.md brief.md; do
+      for f in pr-title.txt pr.md brief.md closes.txt; do
         test -s ".vincent-issue/$f" || {
           say ".vincent-issue/$f is missing: nothing was delivered"
           echo ".vincent-issue/$f is missing or empty; the delivery needs it." >&2
@@ -2180,8 +2197,16 @@ steps:
       # Optional flags as positional parameters, so each stays one word.
       set --
       if [ -s "$proof" ]; then set -- "$@" --proof-file "$proof"; fi
-      case "$(sed -n 2p .vincent-issue/brief.md)" in
+      # closes.txt is `implement`'s decision, made from what it delivered:
+      # `no` records the leave-open suggestion, so the merge train's
+      # `handoff deliver` leaves this issue open (#1042).
+      case "$(cat .vincent-issue/closes.txt)" in
         "closes: yes") set -- "$@" --close-reason completed ;;
+        "closes: no") set -- "$@" --close-reason none ;;
+        *)
+          say ".vincent-issue/closes.txt is malformed: nothing was delivered"
+          echo ".vincent-issue/closes.txt must say closes: yes or closes: no." >&2
+          exit 1 ;;
       esac
 
       title=$(cat .vincent-issue/pr-title.txt)

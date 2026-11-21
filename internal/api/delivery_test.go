@@ -163,6 +163,16 @@ func TestTaskDeliveryRefusals(t *testing.T) {
 	if got := decodeDelivery(t, resp).Delivery; got.HeadSHA != onBranch || got.Kind != "reply" {
 		t.Fatalf("delivery = %+v, want the full sha %s", got, onBranch)
 	}
+	// A partial delivery suggests leaving the issue open (#1042).
+	resp = doJSON(t, http.MethodPost, d.url("/v1/tasks/%d/delivery", done.ID), map[string]string{
+		"head_sha": onBranch, "close_reason": "none",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST close_reason none = %d, want 200", resp.StatusCode)
+	}
+	if got := decodeDelivery(t, resp).Delivery; got.CloseReason != store.DeliveryLeaveOpen {
+		t.Fatalf("close_reason = %q, want %q", got.CloseReason, store.DeliveryLeaveOpen)
+	}
 }
 
 // TestTaskDeliveryOnTaskResponses: the list carries a delivery's summary and

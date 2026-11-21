@@ -27,7 +27,7 @@ by running that action for the lane you pick.
 
 | Lane | When |
 |---|---|
-| `open` | The issue is open and no root task is unfinished or done: no task yet, or only cancelled ones |
+| `open` | The issue is open and no root task is unfinished or done: no task yet, or only cancelled ones. Also an issue a [handoff](handoff.md) delivered but left open: it was finished in part, and the rest is open work again |
 | `in_progress` | The issue is open and some root task is not `done`, `aborted` or archived — `paused` included — or every root task has finished but the latest finished main task's work is not ready to hand off, or a [chat on the issue](#a-chat-on-the-issue) is its latest main-line work |
 | `hand_off` | The issue is open, every root task has finished, and the latest finished main task's work is ready. The work is back with you: review it and close the issue. Nothing closes it for you |
 | `done` | The issue is closed — completed, not planned or a duplicate, whatever its tasks are doing. Reopening it returns it to the lane its tasks give it |

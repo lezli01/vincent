@@ -95,7 +95,9 @@ type Delivery struct {
 	Branch  string `json:"branch,omitempty"`
 	Base    string `json:"base,omitempty"`
 	// CloseReason is an optional suggestion for the issue's close, in
-	// issuestate's vocabulary; Proof says what proved the change.
+	// issuestate's vocabulary, or DeliveryLeaveOpen — the run delivered
+	// only part of the issue and it must stay open (#1042). Proof says
+	// what proved the change.
 	CloseReason string `json:"close_reason,omitempty"`
 	Proof       string `json:"proof,omitempty"`
 	// Implicit marks a delivery the daemon wrote because the run recorded
@@ -109,6 +111,19 @@ type Delivery struct {
 	Ready      *bool     `json:"ready,omitempty"`
 	ReadyBy    ReadyBy   `json:"ready_by,omitempty"`
 	RecordedAt time.Time `json:"recorded_at"`
+}
+
+// DeliveryLeaveOpen is the close_reason a delivery suggests when it covers
+// only part of its issue (#1042, amending §5.3): a handoff that delivers
+// the item and follows the suggestion leaves the issue open. It is the
+// handoff verb's `close: none` spelled on the delivery, and deliberately
+// not one of issuestate.Reasons, which is the issue's own close vocabulary.
+const DeliveryLeaveOpen = "none"
+
+// ValidDeliveryCloseReason reports whether r may be a delivery's
+// close_reason: empty, one of issuestate.Reasons, or DeliveryLeaveOpen.
+func ValidDeliveryCloseReason(r string) bool {
+	return r == "" || r == DeliveryLeaveOpen || issuestate.ValidReason(issuestate.Reason(r))
 }
 
 // IsReady reports whether d reads ready: a nil delivery or one without a

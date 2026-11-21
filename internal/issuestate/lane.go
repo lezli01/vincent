@@ -11,7 +11,9 @@ type Lane string
 // decision 13).
 const (
 	// LaneOpen: no root task is unsettled and none finished — no task at
-	// all, or only aborted ones (decision 19).
+	// all, or only aborted ones (decision 19) — or the latest delivery was
+	// handed off and the issue left open (#1042): the work left over is
+	// open again.
 	LaneOpen Lane = "open"
 	// LaneInProgress: some root task is not settled, or work finished but
 	// is not ready to hand off — its latest delivery was marked not ready,
@@ -45,19 +47,25 @@ func ValidLane(s string) bool {
 // settled, or a chat on the issue is live; hasFinished whether any root
 // task, main-line or side, is `done` or archived from `done`; latestReady
 // whether the latest finished main-line root task exists and its delivery is
-// ready; chatLatest whether a chat opened on the issue, and not handed off,
+// ready; latestDelivered whether a handoff item `delivered` that delivery
+// and the issue stayed open — a partial delivery (#1042, amending §5.6),
+// which reads `open` so the rest of the issue is picked up again rather
+// than stranded in `hand_off`, where every later handoff skips it;
+// chatLatest whether a chat opened on the issue, and not handed off,
 // is the latest main-line work — created after that task finished, or with
 // no such task at all. A chat is work in progress whatever its own state, so
 // chatLatest wins over a ready delivery: the person went back to the issue.
 // Closing wins over everything; a reopened issue goes back to the lane its
 // work gives it. s is normalized first, so an unknown stored state reads as
 // open, as everywhere else.
-func LaneOf(s State, hasUnsettled, hasFinished, latestReady, chatLatest bool) Lane {
+func LaneOf(s State, hasUnsettled, hasFinished, latestReady, latestDelivered, chatLatest bool) Lane {
 	switch {
 	case Normalize(s) == Closed:
 		return LaneDone
 	case hasUnsettled, chatLatest:
 		return LaneInProgress
+	case latestReady && latestDelivered:
+		return LaneOpen
 	case latestReady:
 		return LaneHandOff
 	case hasFinished:

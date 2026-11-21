@@ -56,7 +56,10 @@
 #      a GitHub number: its linked issue's, or — for a task created before
 #      the task 035 snapshots were backfilled into the issue set — its
 #      `github_issue` snapshot or field) — which is also what makes
-#      re-running this safe;
+#      re-running this safe. The one exception is an issue handed off in
+#      part (#1042): every task on it is `done` and a handoff delivered its
+#      latest delivery but left it open (handoff marker `delivered`, lane
+#      `open`), so what is left of it is surveyed again;
 #   2. it does not carry `vincent-ready` — a person's explicit opt-in that
 #      the issue is ready for an agent; nothing without it is considered;
 #   3. it carries none of `bug`, `enhancement`, `documentation`, `ci` — the
@@ -249,7 +252,8 @@ steps:
       # missing carries no number and cannot be resolved, so it is dropped.
       jq '[.[] | select(.source.number != null)
            | {id, number: .source.number, repo: .source.repo, url: .source.url,
-              title, labels, author, created_at}]' \
+              title, labels, author, created_at,
+              partly_delivered: (.handoff.state == "delivered")}]' \
         "$scratch/vincent-issues.json" > "$scratch/issues.json"
       total=$(jq 'length' "$scratch/issues.json")
       jq -r '.[0].repo // empty' "$scratch/issues.json" > "$scratch/repo"
@@ -331,7 +335,8 @@ steps:
                blocking_open: [$x.blocking.nodes[]? | select(.state == "OPEN") | .number],
                on_tasks: $on,
                excluded:
-                 (if ($on | length) > 0 then
+                 (if ($on | length) > 0
+                     and ((.partly_delivered and ($on | all(.state == "done"))) | not) then
                     "already on task " + ($on | map("\(.task) (\(.state))") | join(", "))
                   elif (opted_in | not) then
                     "not labeled vincent-ready"

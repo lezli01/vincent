@@ -146,13 +146,13 @@ func TestIssueChatHoldsTheLineOfMainWork(t *testing.T) {
 // decision 5): a chat that is the latest work keeps the lane in_progress
 // over a ready delivery; closed still wins.
 func TestLaneOfChatFact(t *testing.T) {
-	if got := issuestate.LaneOf(issuestate.Open, false, true, true, true); got != issuestate.LaneInProgress {
+	if got := issuestate.LaneOf(issuestate.Open, false, true, true, false, true); got != issuestate.LaneInProgress {
 		t.Errorf("chat after a ready delivery = %s, want in_progress", got)
 	}
-	if got := issuestate.LaneOf(issuestate.Open, false, false, false, true); got != issuestate.LaneInProgress {
+	if got := issuestate.LaneOf(issuestate.Open, false, false, false, false, true); got != issuestate.LaneInProgress {
 		t.Errorf("chat on a fresh issue = %s, want in_progress", got)
 	}
-	if got := issuestate.LaneOf(issuestate.Closed, false, false, false, true); got != issuestate.LaneDone {
+	if got := issuestate.LaneOf(issuestate.Closed, false, false, false, false, true); got != issuestate.LaneDone {
 		t.Errorf("chat on a closed issue = %s, want done", got)
 	}
 }

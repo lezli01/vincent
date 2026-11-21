@@ -138,3 +138,34 @@ func TestMergeTrainExampleStacksOnlyChanges(t *testing.T) {
 		t.Errorf("stacked = %q, want the two changes in order", got)
 	}
 }
+
+// TestResolveSweepReadmitsAPartlyDeliveredIssue is #1042's survey half: the
+// sweep's reshape reads the handoff marker off `vincent issue ls --json`, so
+// an issue a train delivered and left open is surveyed again rather than
+// excluded for the done task it still sits on.
+func TestResolveSweepReadmitsAPartlyDeliveredIssue(t *testing.T) {
+	jq := lookJQ(t)
+	const file = ".vincent/workflows/github-resolve-issue-multiple.yaml"
+	reshape := scriptJQ(t, file, `jq '(\[\.\[\] \| select\(\.source\.number != null\)[^']*)' \\\n\s*"\$scratch/vincent-issues\.json"`)
+	src := &IssueSource{Provider: "github", Repo: "o/r", Number: 7}
+	issues := []Issue{
+		{ID: 1, Title: "part", Lane: "open", Source: src, Handoff: &IssueHandoff{State: "delivered"}},
+		{ID: 2, Title: "pending", Lane: "hand_off", Source: src, Handoff: &IssueHandoff{State: "pending"}},
+		{ID: 3, Title: "none", Lane: "open", Source: src},
+	}
+	got := runJQ(t, jq, issues, "-c", reshape+" | map(.partly_delivered)")
+	if got != "[true,false,false]" {
+		t.Errorf("partly_delivered over delivered, pending and no marker = %s, want [true,false,false]", got)
+	}
+}
+
+// TestHandoffTrainFollowsEachDeliverysClose is #1042's train half: one
+// explicit --close would override every item's suggested close_reason, so a
+// delivery that asked to leave its issue open would be closed anyway.
+func TestHandoffTrainFollowsEachDeliverysClose(t *testing.T) {
+	const file = ".vincent/workflows/github-handoff-train.yaml"
+	deliver := scriptJQ(t, file, `\n\s*(vincent handoff deliver [^\n]*)`)
+	if strings.Contains(deliver, "--close") {
+		t.Errorf("the train's deliver passes --close, overriding each delivery's suggestion: %s", deliver)
+	}
+}

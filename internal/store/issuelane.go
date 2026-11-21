@@ -102,26 +102,30 @@ func orFrag(a, b sqlFrag) sqlFrag {
 // finished work that is not — a delivery marked not ready, or only a side
 // task's — is `in_progress` too, idle until someone marks it ready; and
 // anything else — no task, or only aborted ones (decision 19) — `open`.
+// A ready latest delivery that a handoff item `delivered` while the issue
+// stayed open reads `open` too (#1042, amending §5.6): the issue was handed
+// off in part, and what is left is open work again.
 //
 // A chat on the issue that is the latest main-line work (task 140 decision 5,
 // issueLatestChatCond) is `in_progress` too, ahead of a ready delivery.
 func laneExpr() sqlFrag {
 	unsettled, ready, finished := activeExpr(), latestReadyExpr(), rootTaskExists(handedOffCond())
-	chat := issueLatestChatCond()
+	chat, delivered := issueLatestChatCond(), deliveredCurrentFrom()
 	args := []any{string(issuestate.Closed), string(issuestate.LaneDone)}
 	args = append(args, unsettled.args...)
 	args = append(args, string(issuestate.LaneInProgress))
 	args = append(args, chat.args...)
 	args = append(args, string(issuestate.LaneInProgress))
 	args = append(args, ready.args...)
-	args = append(args, string(issuestate.LaneHandOff))
+	args = append(args, delivered.args...)
+	args = append(args, string(issuestate.LaneOpen), string(issuestate.LaneHandOff))
 	args = append(args, finished.args...)
 	args = append(args, string(issuestate.LaneInProgress), string(issuestate.LaneOpen))
 	return sqlFrag{
 		sql: `(CASE WHEN i.state = ? THEN ?
 			WHEN ` + unsettled.sql + ` THEN ?
 			WHEN ` + chat.sql + ` THEN ?
-			WHEN ` + ready.sql + ` = 1 THEN ?
+			WHEN ` + ready.sql + ` = 1 THEN (CASE WHEN EXISTS (SELECT 1 ` + delivered.sql + `) THEN ? ELSE ? END)
 			WHEN ` + finished.sql + ` THEN ?
 			ELSE ? END)`,
 		args: args,

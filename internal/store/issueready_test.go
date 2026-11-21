@@ -133,7 +133,7 @@ func seedLaneOf(closed bool, tasks []seedTask, chats []seedChat) (lane issuestat
 	if closed {
 		state = issuestate.Closed
 	}
-	return issuestate.LaneOf(state, unsettled, finished, ready, chatLatest), unsettled, attention
+	return issuestate.LaneOf(state, unsettled, finished, ready, false, chatLatest), unsettled, attention
 }
 
 // TestLaneOfMatchesLaneExpr seeds an issue for every combination of the
