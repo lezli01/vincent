@@ -52,8 +52,9 @@ type ChatDiffFile struct {
 	// Status is added, deleted, modified or renamed.
 	Status string `json:"status"`
 	Binary bool   `json:"binary"`
-	// Rejectable is false for a binary file, a rename, a mode-only change and
-	// a nested git repository: their hunks cannot be reverted one at a time.
+	// Rejectable is false for a binary file, a rename, a mode-only change, a
+	// nested git repository and a file with no hunk: nothing in them can be
+	// reverted one hunk at a time.
 	Rejectable bool `json:"rejectable"`
 	// NotRejectable is why — one of the ChatDiffNotRejectable* values — and
 	// "" for a rejectable file.
@@ -134,6 +135,9 @@ const (
 	// ChatDiffNotRejectableGitlink: a directory with its own .git, which git
 	// records as one commit rather than as files.
 	ChatDiffNotRejectableGitlink = "gitlink"
+	// ChatDiffNotRejectableEmpty: a zero-byte file added or deleted, which
+	// has no hunk for a reject to name.
+	ChatDiffNotRejectableEmpty = "empty"
 )
 
 // RejectChatHunk reverse-applies one hunk of the scope's current diff in the

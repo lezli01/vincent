@@ -1435,8 +1435,11 @@ binary files, renames and mode-only changes are listed but
 `409 chat_hunk_not_rejectable`. *Amended 2026-11-21 (review of #1037): so is
 a gitlink — a directory holding its own `.git`, which `add -A` records as one
 commit. `git apply -R` on its patch removes nothing and exits 0, so a reject
-would have reported a revert that did not happen. Each file carries
-`not_rejectable` (`binary`, `renamed`, `mode_only`, `gitlink`, or `""`).* Line endings are git's to convert, as on a
+would have reported a revert that did not happen. And so is a file with no
+hunk at all, a zero-byte file added or deleted: a reject names a hunk, so
+"rejecting a new file's hunk removes the file" has this one exception, and
+an empty new file is removed by hand. Each file carries `not_rejectable`
+(`binary`, `renamed`, `mode_only`, `gitlink`, `empty`, or `""`).* Line endings are git's to convert, as on a
 checkout, so a CRLF file round-trips.
 
 The reject then prepends a note to the chat's daemon-held draft (task 164), in
@@ -11954,7 +11957,8 @@ POST   /v1/chats/{id}/diff/reject       *Added 2026-11-20 (task 169).* { scope?,
                                         not in the scope's current diff; `409
                                         chat_hunk_conflict` when git will not apply the
                                         reversal; `409 chat_hunk_not_rejectable` for a binary
-                                        file, a rename, a mode-only change or a gitlink; `409
+                                        file, a rename, a mode-only change, a gitlink or an
+                                        empty file; `409
                                         invalid_state` (`details.action: "reject"`) for a
                                         terminal chat. Publishes `chat.draft_changed` when the
                                         note was written

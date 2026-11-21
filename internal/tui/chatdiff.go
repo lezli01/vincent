@@ -234,6 +234,8 @@ func chatDiffFileNote(f apiclient.ChatDiffFile) string {
 		return "mode change only — not rejectable per hunk"
 	case apiclient.ChatDiffNotRejectableGitlink:
 		return "nested git repository — not rejectable here; remove the directory yourself"
+	case apiclient.ChatDiffNotRejectableEmpty:
+		return "empty file — nothing to reject per hunk"
 	default:
 		return "not rejectable per hunk"
 	}

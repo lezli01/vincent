@@ -2634,7 +2634,8 @@ the note did not fit the draft's 64 KiB limit. `--json` prints the route's
 Exit `1` when the daemon refuses: the chat has a live turn (running, awaiting
 input, or draining its queue), the chat has ended, the hunk is no longer in
 the diff, git will not reverse it because the lines have since changed, or the
-file is binary, a rename, a mode-only change or a nested git repository.
+file is binary, a rename, a mode-only change, a nested git repository or an
+empty file.
 
 ### `vincent chat diff accept`
 

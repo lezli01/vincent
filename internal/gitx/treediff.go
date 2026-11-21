@@ -86,6 +86,10 @@ const (
 	// rmdir the directory, warns when it is not empty and exits 0 — a reject
 	// that reports success and reverts nothing (review F4).
 	NotRejectableGitlink = "gitlink"
+	// NotRejectableEmpty: the file has no hunk at all — a zero-byte file
+	// added or deleted. A reject names a hunk, so there is nothing to name
+	// (review F8).
+	NotRejectableEmpty = "empty"
 )
 
 // NotRejectable is why the file's hunks cannot be reverse-applied one at a
@@ -100,12 +104,15 @@ func (f FileDiff) NotRejectable() string {
 		return NotRejectableModeOnly
 	case f.Gitlink:
 		return NotRejectableGitlink
+	case len(f.Hunks) == 0:
+		return NotRejectableEmpty
 	}
 	return ""
 }
 
 // Rejectable reports whether the file's hunks can be reverse-applied one at a
-// time: false for binary files, renames, mode-only changes and gitlinks.
+// time: false for binary files, renames, mode-only changes, gitlinks and files
+// with no hunk.
 func (f FileDiff) Rejectable() bool { return f.NotRejectable() == "" }
 
 // diffTreeArgs pins everything about `diff-tree`'s output a user's config or

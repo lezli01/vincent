@@ -29,6 +29,7 @@ func chatDiffFiles() *apiclient.ChatDiff {
 			{Path: "vendor/lib", Status: "added", NotRejectable: apiclient.ChatDiffNotRejectableGitlink, Added: 1, Hunks: []apiclient.ChatDiffHunk{
 				{Hash: "h4", Header: "@@ -0,0 +1 @@", Body: "+Subproject commit 0123456\n", Added: 1},
 			}},
+			{Path: "zero.txt", Status: "added", NotRejectable: apiclient.ChatDiffNotRejectableEmpty},
 		},
 	}
 }
@@ -184,6 +185,21 @@ func TestChatDiffNotRejectableSaysWhy(t *testing.T) {
 	}
 	if !strings.Contains(v.note, "nested git repository") {
 		t.Fatalf("x on a nested repository said %q", v.note)
+	}
+	// An empty new file has no hunk at all (review F8): x says so rather
+	// than sending the reader to look for one with ] and [.
+	v.updateKey(registryKey(t, "down"))
+	if v.diff.pane.cursorPath != "zero.txt" {
+		t.Fatalf("the file cursor is on %q, want the empty file", v.diff.pane.cursorPath)
+	}
+	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.busy {
+		t.Fatal("x on an empty file sent a reject")
+	}
+	if !strings.Contains(v.note, "empty file — nothing to reject per hunk") || strings.Contains(v.note, "move between the hunks") {
+		t.Fatalf("x on an empty file said %q", v.note)
+	}
+	if screen := chatDiffScreen(v); !strings.Contains(screen, "empty file — nothing to reject per hunk") {
+		t.Fatalf("the pane does not say the empty file cannot be rejected:\n%s", screen)
 	}
 }
 

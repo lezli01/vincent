@@ -700,3 +700,37 @@ func TestDiffTreesGitlinkNotRejectable(t *testing.T) {
 		t.Errorf("the nested repository's file changed: %q, %v", got, ok)
 	}
 }
+
+// TestDiffTreesEmptyFileNotRejectable is review F8: a zero-byte file, added
+// or deleted, is in the diff with no hunk. A reject names a hunk, so the file
+// says it cannot be rejected instead of promising one that cannot be asked for.
+func TestDiffTreesEmptyFileNotRejectable(t *testing.T) {
+	g, dir, base := diffRepo(t)
+	ctx := context.Background()
+	check := func(base, path, status string) {
+		t.Helper()
+		f := fileNamed(t, snapDiff(t, g, dir, base), path)
+		if f.Status != status || len(f.Hunks) != 0 || f.Binary || f.ModeOnly {
+			t.Fatalf("%s = %+v", path, f)
+		}
+		if f.Rejectable() || f.NotRejectable() != NotRejectableEmpty {
+			t.Errorf("%s: rejectable = %v, reason %q", path, f.Rejectable(), f.NotRejectable())
+		}
+		if err := g.ReverseHunk(ctx, dir, f, "anything"); !errors.Is(err, ErrHunkNotRejectable) {
+			t.Errorf("%s: ReverseHunk = %v, want ErrHunkNotRejectable", path, err)
+		}
+	}
+	writeFile(t, dir, "empty.txt", "")
+	check(base, "empty.txt", StatusAdded)
+	if _, ok := readFile(t, dir, "empty.txt"); !ok {
+		t.Error("the refused reject removed the empty file")
+	}
+
+	// Committed and then removed, it is a deletion with no hunk either.
+	testrepo.Run(t, dir, "add", "-A")
+	testrepo.Run(t, dir, "commit", "-q", "-m", "an empty file")
+	if err := os.Remove(filepath.Join(dir, "empty.txt")); err != nil {
+		t.Fatal(err)
+	}
+	check(testrepo.Run(t, dir, "rev-parse", "HEAD"), "empty.txt", StatusDeleted)
+}

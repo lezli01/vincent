@@ -64,7 +64,7 @@ type chatDiffFileBody struct {
 	Binary     bool   `json:"binary"`
 	Rejectable bool   `json:"rejectable"`
 	// NotRejectable is why Rejectable is false — binary, renamed, mode_only
-	// or gitlink — and "" when it is true.
+	// gitlink or empty — and "" when it is true.
 	NotRejectable string             `json:"not_rejectable"`
 	Added         int                `json:"added"`
 	Removed       int                `json:"removed"`
@@ -447,6 +447,8 @@ func chatHunkNotRejectableWhy(reason string) string {
 		// Reverse-applying its patch would report success and remove
 		// nothing (review F4).
 		return "a nested git repository, which git records as one commit rather than as files"
+	case gitx.NotRejectableEmpty:
+		return "an empty file, with no hunk to reject"
 	}
 	return "not a file whose hunks git can reverse"
 }
