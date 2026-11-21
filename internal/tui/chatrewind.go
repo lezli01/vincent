@@ -433,6 +433,71 @@ func dimLines(lines []string) {
 	}
 }
 
+// forkedFromLabel is a fork's provenance as the card and header read it
+// (task 171 decision 5): "forked from #N (claude)", the agent left out on a
+// fork from before it was recorded. "" for a chat that is not a fork.
+func forkedFromLabel(c *apiclient.Chat) string {
+	if c == nil || c.ForkedFrom == nil {
+		return ""
+	}
+	label := fmt.Sprintf("forked from #%d", c.ForkedFrom.ChatID)
+	if c.ForkedFrom.Agent != "" {
+		label += " (" + c.ForkedFrom.Agent + ")"
+	}
+	return label
+}
+
+// turnZeroMaxLines bounds the seeded context the conversation shows before
+// the first turn; the rest is counted, and `vincent chat show` prints it all.
+const turnZeroMaxLines = 40
+
+// turnZeroLines is a fork's head before its first turn (task 171 decision
+// 4): its provenance, then either the seeded context the first turn will
+// receive, under the "turn 0" heading, or the native resume it will make
+// instead. Nil for a chat that is neither a fork nor seeded.
+func turnZeroLines(c *apiclient.Chat, width int) []string {
+	if c == nil {
+		return nil
+	}
+	var out []string
+	if label := forkedFromLabel(c); label != "" {
+		out = append(out, " "+styleDim.Render(fmt.Sprintf("⑂ %s, before turn %d", label, c.ForkedFrom.Seq)))
+	}
+	switch {
+	case c.ResumePending == "seeded" && c.PendingPreamble != "":
+		out = append(out, seededContextLines(c, width)...)
+	case c.ResumePending == "resumed" && c.ForkedFrom != nil:
+		out = append(out, " "+styleDim.Render(fmt.Sprintf("↶ resumed from turn %d: the agent's own session continues", c.ForkedFrom.Seq-1)))
+	}
+	return out
+}
+
+// seededContextLines is the "turn 0" block: the seeded context the chat's
+// next turn will receive, bounded, and how to edit it. It is the same block
+// whether the chat is a fork before its first turn or a seeded rewind with
+// turns kept (review F2) — task 171 decision 4 says never hidden, and the
+// PATCH accepts edits on both. Nil when no seeded context is pending.
+func seededContextLines(c *apiclient.Chat, width int) []string {
+	if c == nil || c.ResumePending != "seeded" || c.PendingPreamble == "" {
+		return nil
+	}
+	out := []string{"", " " + styleStepHeader.Render("turn 0 · seeded context (summary)")}
+	body := strings.Split(strings.TrimRight(c.PendingPreamble, "\n"), "\n")
+	shown := body
+	if len(shown) > turnZeroMaxLines {
+		shown = shown[:turnZeroMaxLines]
+	}
+	for _, l := range shown {
+		for _, w := range wrapText(l, max(width-3, 1), wrapOpts{indent: 0}) {
+			out = append(out, "   "+styleDim.Render(w))
+		}
+	}
+	if more := len(body) - len(shown); more > 0 {
+		out = append(out, "   "+styleDim.Render(fmt.Sprintf("… %d more lines (vincent chat show %d)", more, c.ID)))
+	}
+	return append(out, "   "+styleDim.Render(fmt.Sprintf("edit before the next turn: vincent chat preamble %d --file F", c.ID)))
+}
+
 // resumePendingLine says how the chat's next turn picks up after a
 // conversation rewind, "" when none is pending.
 func resumePendingLine(c *apiclient.Chat) string {

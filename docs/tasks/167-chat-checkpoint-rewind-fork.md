@@ -75,6 +75,12 @@ overrules them.
    bounded like a linked chat's opening context — through `RunSpec.Preamble`,
    never fused into the message. The turn, the API and the TUI say "seeded,
    not resumed"; it is never faked.
+   *Amended 2026-11-21 (task 171 decision 3, issue #1020, with the author):*
+   every seeded context — a seeded rewind, a same-agent seeded fork and a
+   cross-agent fork — now also carries, under each turn's prompt, a `<tools>`
+   block of one `chatexport.ToolSummary` line per tool call, read from the
+   turn's normalized transcript. Tool output is still excluded, the bound is
+   unchanged, and over it whole tool blocks go before any prompt or reply.
 2. **Code rewind resets the branch and keeps a ref.** The branch moves to
    the checkpoint's HEAD and the index and worktree are restored exactly,
    untracked files included. The pre-rewind tip and a snapshot of its dirty
@@ -149,6 +155,13 @@ overrules them.
     checkpoint's HEAD with the snapshot's dirty state applied. It does not
     inherit a link, an issue or a hold on a worktree; it copies agent, model,
     effort and permission mode, with task 162's `restricted` checks.
+    *Amended 2026-11-21 (task 171 decision 2, issue #1020, with the author):*
+    a fork may take an `agent` other than its source's. Such a fork is always
+    seeded (no session crosses adapters), its model and effort are the
+    request's or that adapter's defaults, never the source's, and the
+    source's permission mode is checked against the new adapter unless the
+    request passes `permission_mode`. "Copies agent" now holds only when no
+    other agent is asked for.
 12. **Pruning.** The refs go with the chat (permanent delete, an archive that
     removes the branch, `delete_branch=true`), survive a hand-off, and a
     daemon sweep deletes refs whose chat row no longer exists.

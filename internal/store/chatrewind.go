@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"github.com/lezli01/vincent/internal/chatstate"
 )
 
 // ConversationRewind is the conversation half of a chat rewind (task 167
@@ -145,4 +147,37 @@ func (s *Store) markExistingChats(ctx context.Context, args []any, out map[int64
 		return fmt.Errorf("iterate existing chat ids: %w", err)
 	}
 	return nil
+}
+
+// ErrPreambleNotPending refuses an edit of a chat's seeded context when there
+// is none pending (task 171 decision 4): the chat was not left seeded by a
+// rewind or fork, its next turn resumes natively, or a turn has already
+// consumed the plan. The API answers it 409.
+var ErrPreambleNotPending = errors.New("chat has no pending seeded context to edit")
+
+// MaxPendingPreambleBytes bounds an edited seeded context (task 171
+// decision 4). The builder's own output is held to 512 KiB of history plus
+// the chat's opening context; an edit may grow it, but not without limit.
+const MaxPendingPreambleBytes = 1 << 20
+
+// EditChatPendingPreamble replaces the seeded context the chat's next turn
+// will start its fresh session with (task 171 decision 4) and publishes
+// chat.updated. It is legal only while the chat is seeded-pending — a
+// preamble is pending and no resume anchor is — and its state neither holds
+// a process nor is terminal; otherwise it returns ErrPreambleNotPending and writes nothing.
+// Empty text clears the preamble: the next turn then starts a fresh session
+// with no earlier context, which is the caller's explicit choice.
+func (s *Store) EditChatPendingPreamble(ctx context.Context, chatID int64, text string) (*Chat, error) {
+	if len(text) > MaxPendingPreambleBytes {
+		return nil, fmt.Errorf("seeded context is %d bytes, over the %d-byte bound", len(text), MaxPendingPreambleBytes)
+	}
+	return s.updateChatOrRefuse(ctx, chatID, EventChatUpdated, func(c *Chat) error {
+		// An ended chat runs no next turn, so it has nothing pending to
+		// edit, whatever plan its row still holds (review F4).
+		if c.PendingPreamble == "" || c.ResumeAt != "" || chatstate.HoldsProcess(c.State) || chatstate.Terminal(c.State) {
+			return ErrPreambleNotPending
+		}
+		c.PendingPreamble = text
+		return nil
+	})
 }

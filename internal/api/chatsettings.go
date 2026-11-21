@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -206,8 +207,16 @@ func (s *Server) linkedTaskRestricted(ctx context.Context, chat *store.Chat) (bo
 
 type patchChatRequest struct {
 	Title *string `json:"title"`
+	// PendingPreamble edits the seeded context the next turn will start
+	// with (task 171 decision 4); it is edited alone.
+	PendingPreamble *string `json:"pending_preamble"`
 	chatSettingsRequest
 }
+
+// CodeChatPreambleNotPending is a pending_preamble edit on a chat whose next
+// turn is not seeded: it was never rewound or forked into a seeded session,
+// it resumes natively, or a turn has already consumed the plan.
+const CodeChatPreambleNotPending = "chat_preamble_not_pending"
 
 // handleChatPatch is PATCH /v1/chats/{id}: a chat's title (task 161
 // decision 4), model, effort and permission mode (task 162 decision 5), each
@@ -224,12 +233,30 @@ func (s *Server) handleChatPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req patchChatRequest
-	if !decodeJSON(w, r, &req) {
+	// The large tier: pending_preamble carries a seeded context of up to
+	// store.MaxPendingPreambleBytes (task 171), as JSON.
+	if !decodeJSONLimit(w, r, &req, maxLargeRequestBytes) {
+		return
+	}
+	if req.PendingPreamble != nil {
+		if req.Title != nil || !req.empty() {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed,
+				"pending_preamble is edited alone; send the title or settings in another PATCH")
+			return
+		}
+		// An ended chat refuses it as rewind and fork do (review F4); the
+		// store refuses it too, for a chat that ends under the hold.
+		if chatstate.Terminal(chat.State) {
+			writeError(w, http.StatusConflict, chatrun.ReasonChatTerminal,
+				"this chat is "+string(chat.State)+"; it has no next turn to seed")
+			return
+		}
+		s.patchChatPreamble(w, r, chat, *req.PendingPreamble)
 		return
 	}
 	if req.Title == nil && req.empty() {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			"nothing to change: give a title, model, effort or permission_mode")
+			"nothing to change: give a title, model, effort, permission_mode or pending_preamble")
 		return
 	}
 	if !req.empty() && chatstate.Terminal(chat.State) {
@@ -305,6 +332,39 @@ func (s *Server) handleChatPatch(w http.ResponseWriter, r *http.Request) {
 	body := renderChat(updated)
 	body.Warnings = warnings
 	writeJSON(w, http.StatusOK, body)
+}
+
+// patchChatPreamble replaces a seeded-pending chat's turn-0 context (task
+// 171 decision 4). It runs under the chat's hold, so no turn can start — and
+// consume the plan — between the check and the write; the store checks the
+// row it writes. Empty text clears the context, and the next turn starts a
+// fresh session with none.
+func (s *Server) patchChatPreamble(w http.ResponseWriter, r *http.Request, chat *store.Chat, text string) {
+	if len(text) > store.MaxPendingPreambleBytes {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf(
+			"pending_preamble is %d bytes; at most %d", len(text), store.MaxPendingPreambleBytes))
+		return
+	}
+	if s.deps.Chats == nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, "no chat runner is wired")
+		return
+	}
+	var updated *store.Chat
+	err := s.deps.Chats.WhileNoTurn(r.Context(), chat.ID, func() error {
+		var err error
+		updated, err = s.deps.Store.EditChatPendingPreamble(r.Context(), chat.ID, text)
+		return err
+	})
+	if errors.Is(err, store.ErrPreambleNotPending) {
+		writeError(w, http.StatusConflict, CodeChatPreambleNotPending,
+			"this chat's next turn is not seeded, so it has no seeded context to edit")
+		return
+	}
+	if err != nil {
+		s.writeRewindError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, renderChat(updated))
 }
 
 // checkTurnOverrides validates a send's or a queued message's overrides,

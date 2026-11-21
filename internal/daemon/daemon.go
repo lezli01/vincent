@@ -24,6 +24,7 @@ import (
 	"github.com/lezli01/vincent/internal/api"
 	"github.com/lezli01/vincent/internal/backup"
 	"github.com/lezli01/vincent/internal/backupsched"
+	"github.com/lezli01/vincent/internal/chatexport"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/container"
@@ -379,6 +380,11 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 	// turn. The closures read `runner` at call time, after it is built.
 	var runner *taskrun.Runner
 	chats := chatrun.New(chatrun.Deps{
+		// A seeded context's tool-call summaries (task 171 decision 3) are
+		// read through the API's transcript normalizer.
+		TurnTools: func(chat *store.Chat, turn *store.ChatTurn) []chatexport.ToolCall {
+			return api.TurnToolCalls(dirs.Data, agents, logger, chat, turn)
+		},
 		Store:     st,
 		Config:    currentConfig,
 		Worktrees: worktrees,

@@ -167,11 +167,12 @@ func printSkipped(w io.Writer, skipped []string) {
 
 func newChatForkCmd() *cobra.Command {
 	var (
-		turn  int
-		title string
+		turn                         int
+		title, agentName, model, eff string
+		mode                         string
 	)
 	cmd := &cobra.Command{
-		Use:   "fork <chat-id> --turn N [--title T]",
+		Use:   "fork <chat-id> --turn N [--title T] [--agent A [--model M] [--effort E]]",
 		Short: "Start a new chat from the state before a chat turn ran",
 		Long: "Creates a new free chat from the state before turn N of a chat ran: its own " +
 			"branch, cut from that turn's checkpoint with the uncommitted changes of the " +
@@ -196,7 +197,9 @@ func newChatForkCmd() *cobra.Command {
 				return errors.New("the title must not be empty")
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				res, err := c.ForkChat(ctx, id, apiclient.ForkRequest{Turn: turn, Title: title})
+				res, err := c.ForkChat(ctx, id, apiclient.ForkRequest{
+					Turn: turn, Title: title, Agent: agentName, Model: model, Effort: eff, PermissionMode: mode,
+				})
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", rewindErrorMessage(err, id))
 					return exitError{code: 1}
@@ -218,9 +221,89 @@ func newChatForkCmd() *cobra.Command {
 	}
 	cmd.Flags().IntVar(&turn, "turn", 0, "fork from the state before this turn ran, as `chat show` numbers it")
 	cmd.Flags().StringVar(&title, "title", "", "the new chat's title (default: the daemon's)")
+	cmd.Flags().StringVar(&agentName, "agent", "", "fork onto this agent instead of the source's (always seeded)")
+	cmd.Flags().StringVar(&model, "model", "", "the new agent's model (with --agent; default: its own)")
+	cmd.Flags().StringVar(&eff, "effort", "", "the new agent's effort (with --agent; default: its own)")
+	cmd.Flags().StringVar(&mode, "permission-mode", "", "full-auto or restricted (default: the source's)")
 	_ = cmd.MarkFlagRequired("turn")
 	jsonFlag(cmd)
 	return cmd
+}
+
+// turnZeroHeading heads a seeded chat's pending context wherever a client
+// shows it (task 171 decision 4): it is what the next turn receives ahead of
+// the message, and it is a summary, never the earlier session itself.
+const turnZeroHeading = "── turn 0 · seeded context (summary) ──"
+
+func newChatPreambleCmd() *cobra.Command {
+	var (
+		file string
+		drop bool
+	)
+	cmd := &cobra.Command{
+		Use:   "preamble <chat-id> (--file F | --clear)",
+		Short: "Replace or clear the seeded context a chat's next turn starts with",
+		Long: "A chat left seeded by a rewind or a fork starts its next turn in a fresh " +
+			"session with a summary of the earlier turns — turn 0, which `vincent chat show` " +
+			"prints. This replaces that summary with the contents of --file (`-` reads stdin), " +
+			"or with --clear drops it, so the next turn starts with no earlier context at all.\n\n" +
+			"Clearing is final: the chat is then no longer seeded, so it cannot be edited again. " +
+			"To replace the summary with a short note, edit it with --file instead of clearing it.\n\n" +
+			"Only while the next turn is seeded and no turn has started: a chat that resumes " +
+			"its agent's session natively has no summary to edit. Exit 1 on a refusal; 2 with " +
+			"no daemon.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("chat id: %w", err)
+			}
+			if (file == "") == !drop {
+				return errors.New("give exactly one of --file or --clear")
+			}
+			text := ""
+			if file != "" {
+				data, err := readInputFile("--file", file, cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+				if text = string(data); strings.TrimSpace(text) == "" {
+					return errors.New("the file is empty; use --clear to drop the seeded context")
+				}
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				chat, err := c.PatchChat(ctx, id, apiclient.PatchChatRequest{PendingPreamble: &text})
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", preambleErrorMessage(err, id))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), chat)
+				}
+				if text == "" {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+						"chat %d: seeded context cleared, for good; its next turn starts a fresh session with no earlier context\n", id)
+					return nil
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "chat %d: seeded context replaced (%d bytes)\n", id, len(text))
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&file, "file", "", "read the new seeded context from this file (`-` for stdin)")
+	cmd.Flags().BoolVar(&drop, "clear", false, "drop the seeded context")
+	jsonFlag(cmd)
+	return cmd
+}
+
+func preambleErrorMessage(err error, chatID int64) string {
+	var apiErr *apiclient.Error
+	if errors.As(err, &apiErr) && apiErr.Code == "chat_preamble_not_pending" {
+		return fmt.Sprintf("chat %d's next turn is not seeded — it resumes natively, was never "+
+			"rewound or forked, its seeded context was cleared, or a turn has already started — "+
+			"so there is no seeded context to edit", chatID)
+	}
+	return rewindErrorMessage(err, chatID)
 }
 
 // rewindErrorMessage turns a rewind or fork refusal into a sentence that says
@@ -293,11 +376,18 @@ func turnMarks(t *apiclient.ChatTurn) string {
 // after a conversation rewind, and the states a forward rewind can restore.
 func printChatRewindState(w io.Writer, chat *apiclient.Chat) {
 	if f := chat.ForkedFrom; f != nil {
-		_, _ = fmt.Fprintf(w, "forked from chat %d, before turn %d\n", f.ChatID, f.Seq)
+		line := fmt.Sprintf("forked from chat %d", f.ChatID)
+		if f.Agent != "" {
+			line += " (" + f.Agent + ")"
+		}
+		_, _ = fmt.Fprintf(w, "%s, before turn %d\n", line, f.Seq)
 	}
 	switch chat.ResumePending {
 	case "seeded":
 		_, _ = fmt.Fprintf(w, "next turn: %s\n", seededNote)
+		if chat.PendingPreamble != "" {
+			_, _ = fmt.Fprintf(w, "\n%s\n%s\n", turnZeroHeading, strings.TrimRight(chat.PendingPreamble, "\n"))
+		}
 	case "resumed":
 		_, _ = fmt.Fprintln(w, "next turn: resumes the agent's session from the rewind point")
 	}

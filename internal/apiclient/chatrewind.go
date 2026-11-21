@@ -58,6 +58,14 @@ func (c *Client) RewindChat(ctx context.Context, id int64, req RewindRequest) (*
 type ForkRequest struct {
 	Turn  int    `json:"turn"`
 	Title string `json:"title,omitempty"`
+	// Agent forks onto another agent (task 171); the fork is then always
+	// seeded, and Model and Effort are the new agent's ("" for its
+	// defaults). Empty is the source's agent.
+	Agent  string `json:"agent,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+	// PermissionMode overrides the mode copied from the source.
+	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
 // ForkResult is a fork's answer: the new, idle chat, the files its

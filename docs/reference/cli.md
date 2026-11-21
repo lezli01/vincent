@@ -2918,7 +2918,8 @@ on a refusal; `2` with no daemon.
 ### `vincent chat fork`
 
 ```sh
-vincent chat fork CHAT_ID --turn N [--title T] [--json]
+vincent chat fork CHAT_ID --turn N [--title T] [--agent A [--model M] [--effort E]]
+                  [--permission-mode MODE] [--json]
 ```
 
 Creates a new free chat from the state before turn N of a chat ran: its own
@@ -2933,6 +2934,31 @@ and any files the checkpoint could not read; `--json` emits the daemon's
 response. Refused while a turn is live, for a turn without a checkpoint or
 already rewound, and by the restricted-mode checks a new chat is held to. Exit
 `1` on a refusal; `2` with no daemon.
+
+`--agent` forks onto another agent that can hold a chat — ask codex to carry
+on a conversation held with claude. Such a fork is always seeded, since no
+session crosses agents; `--model` and `--effort` pick the new agent's settings
+(default: its own, never the source's), and `--permission-mode` overrides the
+mode copied from the source — which you need to fork a `restricted` chat onto
+codex. `vincent chat show` prints a seeded fork's context as `turn 0 · seeded
+context (summary)`, and the source as `forked from chat N (claude)`.
+
+### `vincent chat preamble`
+
+```sh
+vincent chat preamble CHAT_ID (--file F | --clear) [--json]
+```
+
+Replaces the seeded context a chat's next turn starts with — turn 0, which
+`vincent chat show` prints after a seeded rewind or fork — with the contents of
+`--file` (`-` reads stdin), or with `--clear` drops it, so the next turn starts
+a fresh session with no earlier context. Clearing is final: the chat is no
+longer seeded afterwards, so a later `preamble` is refused — to replace the
+summary with a short note, edit it with `--file` rather than clearing it.
+Refused once a turn has started, on a chat whose next turn resumes its agent's
+session natively, on one whose context was cleared, and on one never rewound
+or forked (`chat_preamble_not_pending`); on an ended chat (`chat_terminal`). Exit `1` on a refusal; `2` with
+no daemon.
 
 ### `vincent chat close`
 

@@ -3836,7 +3836,9 @@ A change to `model`, `effort` or `permission_mode` is legal while the chat is
 `idle`, `running` or `awaiting_input`; a change made during a live turn applies
 from the next turn, and an ended chat answers `409`. A body with none of the
 four fields is a `400`. The agent cannot change — open a new chat for that. An
-empty `model` or `effort` returns it to the agent's default.
+empty `model` or `effort` returns it to the agent's default. The same route
+also takes `pending_preamble`, sent on its own, to edit a seeded chat's turn-0
+context — see [Rewind and fork](#rewind-and-fork).
 
 The same three fields are **per-turn overrides** on
 `POST /v1/chats/{id}/send` and on `PATCH /v1/chats/{id}/queue/{qid}`: that turn,
@@ -4008,6 +4010,34 @@ skipped, seeded}`.
 
 Resuming at a point is claude's alone, and only when the installed claude has
 `--resume-session-at`; codex, cursor and copilot are always seeded.
+
+The fork body also takes `agent`, `model`, `effort` and `permission_mode`.
+With an `agent` other than the source's, the fork runs on that agent: it is
+always seeded, because no session crosses agents; its model and effort are the
+request's or that agent's defaults, never the source's; and the source's
+permission mode is checked against it, so a `restricted` claude chat forked to
+codex is `400 agent_cannot_restrict_resume` unless the body passes
+`permission_mode`. An unknown agent is `400 validation_failed`, one that cannot
+resume `400 agent_cannot_resume`, and a `model` or `effort` without another
+agent `400 validation_failed`. The fork's `forked_from` carries the source's
+`agent`.
+
+A seeded context gives each kept turn's prompt, a `<tools>` block with one line
+per tool call (name and key argument — never its output), and its final reply.
+It keeps the most recent 200 lines within 512 KiB; to fit, whole tool blocks
+are dropped, oldest first, before any prompt or reply is cut.
+
+While `resume_pending` is `seeded`, the chat carries that context as
+`pending_preamble` — turn 0, what the next turn will receive — and
+`PATCH /v1/chats/{id}` with `{"pending_preamble": "…"}`, sent alone, replaces
+it (at most 1 MiB). An empty string clears it, so the next turn starts a fresh
+session with no earlier context. Clearing is final: the chat stops being
+seeded (`resume_pending` becomes absent), so to replace the context with
+something short, send that text rather than clearing first. The edit is
+`409 chat_preamble_not_pending` when nothing seeded is pending — a natively
+resumed fork, a chat never rewound or forked, one whose context was cleared,
+or one whose next turn already started — `409 chat_terminal` on a
+chat that has ended, and `409 chat_turn_live` while a turn is accepted.
 
 | Status | `error` | When |
 |---|---|---|
@@ -4222,9 +4252,13 @@ and rewind state, each omitted when empty except `seeded`:
   would be seeded rather than resumed.
 
 The chat itself gains `rewound_states` (`[{k, ref, sha, blocked}]`, the saved
-states a code rewind can go forward to), `forked_from` (`{chat_id, seq}`) and
+states a code rewind can go forward to), `forked_from` (`{chat_id, seq,
+agent}`, `agent` absent on a fork made before it was recorded),
 `resume_pending` (`resumed` or `seeded` while a rewind's or fork's plan waits
-for the next turn).
+for the next turn) and `pending_preamble` (the seeded context, while
+`resume_pending` is `seeded`). `pending_preamble` is on `GET /v1/chats/{id}`
+and on the rewind, fork and `PATCH` responses only: it can run to 1 MiB, so
+`GET /v1/chats` and chat search rows carry `resume_pending` and leave it out.
 
 ```bash
 curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \

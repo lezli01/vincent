@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 // rewindCLIStub stands in for the daemon behind `chat rewind`, `chat fork`,
@@ -362,5 +364,19 @@ func TestChatExportRewoundFlag(t *testing.T) {
 		if export == "" || strings.Contains(export, "include_rewound=true") != want {
 			t.Errorf("%v: requests %v, want include_rewound=true %v", cmd, reqs, want)
 		}
+	}
+}
+
+// TestChatPreambleSaysClearingIsFinal pins that the command says a clear
+// cannot be undone (review F5): the chat stops being seeded, and a later
+// edit is refused with a message that names the clear among its causes.
+func TestChatPreambleSaysClearingIsFinal(t *testing.T) {
+	if long := newChatPreambleCmd().Long; !strings.Contains(long, "Clearing is final") ||
+		!strings.Contains(long, "instead of clearing") {
+		t.Errorf("help does not say clearing is final:\n%s", long)
+	}
+	msg := preambleErrorMessage(&apiclient.Error{Status: http.StatusConflict, Code: "chat_preamble_not_pending"}, 7)
+	if !strings.Contains(msg, "was cleared") {
+		t.Errorf("refusal does not name a clear: %s", msg)
 	}
 }

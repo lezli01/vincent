@@ -42,6 +42,9 @@ type chatRewoundStateBody struct {
 type chatForkedFromBody struct {
 	ChatID int64 `json:"chat_id"`
 	Seq    int   `json:"seq"`
+	// Agent is the source's agent (task 171 decision 5), absent on a fork
+	// made before migration 0073 recorded it.
+	Agent string `json:"agent,omitempty"`
 }
 
 // resumePending is how the chat's next turn will start after a rewind or a
@@ -56,11 +59,21 @@ func resumePending(c *store.Chat) string {
 	return ""
 }
 
+// pendingPreamble is the chat's turn-0 context while it is pending: only on a
+// seeded plan, never beside a resume anchor (which the runner would follow
+// instead).
+func pendingPreamble(c *store.Chat) string {
+	if resumePending(c) != "seeded" {
+		return ""
+	}
+	return c.PendingPreamble
+}
+
 func renderForkedFrom(c *store.Chat) *chatForkedFromBody {
 	if c.ForkedFromChatID == nil {
 		return nil
 	}
-	f := &chatForkedFromBody{ChatID: *c.ForkedFromChatID}
+	f := &chatForkedFromBody{ChatID: *c.ForkedFromChatID, Agent: c.ForkedFromAgent}
 	if c.ForkedFromSeq != nil {
 		f.Seq = *c.ForkedFromSeq
 	}
@@ -191,6 +204,13 @@ func (s *Server) handleChatRewind(w http.ResponseWriter, r *http.Request) {
 type forkChatRequest struct {
 	Turn  int    `json:"turn"`
 	Title string `json:"title"`
+	// Agent forks onto another agent (task 171 decision 2); "" or the
+	// source's agent is a same-agent fork, which ignores Model and Effort.
+	Agent  string `json:"agent"`
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
+	// PermissionMode overrides the mode the fork would copy from its source.
+	PermissionMode string `json:"permission_mode"`
 }
 
 // handleChatFork forks a new free chat from a turn of this one (task 167.6,
@@ -200,6 +220,11 @@ type forkChatRequest struct {
 // agent and settings — under task 162's restricted checks, as a create's are
 // — and its base (decision C), and nothing else: no link, no issue, no hold
 // on a worktree. It starts no turn.
+//
+// agent forks onto another adapter instead (task 171 decision 2, amending
+// decision 11): it is refused as a create would refuse it, its model and
+// effort are the request's or the adapter's defaults, and the fork is always
+// seeded. permission_mode, when given, replaces the source's.
 func (s *Server) handleChatFork(w http.ResponseWriter, r *http.Request) {
 	src, ok := s.chatFromPath(w, r)
 	if !ok {
@@ -217,8 +242,28 @@ func (s *Server) handleChatFork(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, CodeInternal, "no chat runner is wired")
 		return
 	}
+	target := chatrun.ForkTarget{Agent: strings.TrimSpace(req.Agent), Model: req.Model, Effort: req.Effort}
+	if target.Agent == src.Agent {
+		target = chatrun.ForkTarget{}
+	}
+	if target.Agent != "" {
+		adapter, ok := s.deps.Agents.Get(target.Agent)
+		if !ok {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf("unknown agent %q", target.Agent))
+			return
+		}
+		if !agent.CanResume(adapter) {
+			writeError(w, http.StatusBadRequest, CodeAgentCannotResume, fmt.Sprintf(
+				"agent %q cannot resume its own session, so it cannot hold a conversation", target.Agent))
+			return
+		}
+	} else if req.Model != "" || req.Effort != "" {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"model and effort apply only to a fork onto another agent; a same-agent fork copies its source's")
+		return
+	}
 	ctx := context.WithoutCancel(r.Context())
-	plan, err := s.deps.Chats.PlanFork(ctx, src.ID, req.Turn)
+	plan, err := s.deps.Chats.PlanForkTo(ctx, src.ID, req.Turn, target)
 	if err != nil {
 		s.writeRewindError(w, err)
 		return
@@ -232,13 +277,18 @@ func (s *Server) handleChatFork(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf("unknown agent %q", plan.Agent))
 		return
 	}
-	mode := plan.PermissionMode
+	mode := strings.TrimSpace(req.PermissionMode)
+	if mode == "" {
+		mode = plan.PermissionMode
+	}
 	if mode == "" {
 		mode = string(agent.FullAuto)
 	}
-	if mode != string(agent.FullAuto) {
+	if mode != string(agent.FullAuto) || target.Agent != "" {
 		// The probe is a free chat, as the fork will be: a linked source's
-		// clamp is the task's, and the fork has no task.
+		// clamp is the task's, and the fork has no task. A cross-agent fork
+		// is checked even at full-auto, so a model or effort its adapter
+		// does not offer is refused before anything is created.
 		probe := &store.Chat{Agent: plan.Agent, PermissionMode: string(agent.FullAuto), State: chatstate.Idle}
 		if _, refusal := s.checkChatSettings(ctx, probe,
 			store.TurnSettings{Model: plan.Model, Effort: plan.Effort, PermissionMode: mode}); refusal != nil {
@@ -261,7 +311,7 @@ func (s *Server) handleChatFork(w http.ResponseWriter, r *http.Request) {
 		Model: plan.Model, Effort: plan.Effort, PermissionMode: mode,
 		BaseBranch: baseBranch, BaseSHA: baseSHA,
 		SessionID: plan.SessionID, ResumeAt: plan.ResumeAt, PendingPreamble: plan.Preamble,
-		ForkedFromChatID: &srcID, ForkedFromSeq: &seq,
+		ForkedFromChatID: &srcID, ForkedFromSeq: &seq, ForkedFromAgent: src.Agent,
 	}
 	if _, err := s.createFreeChat(ctx, project, chat, freeChatCut{startSHA: plan.HeadBefore}); err != nil {
 		s.internalError(w, "fork: create chat", err)

@@ -534,9 +534,21 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 		shellCards(t.Seq)
 	}
 	turn = 0
+	if len(v.turns) == 0 {
+		// A fork's turn 0 (task 171 decision 4): where it came from, and the
+		// seeded context its first turn will receive — never hidden.
+		t0 := turnZeroLines(v.chat, width)
+		lines = append(lines, t0...)
+		pad(len(t0))
+	}
 	if pending := resumePendingLine(v.chat); pending != "" && len(v.turns) > 0 {
 		lines = append(lines, "", " "+styleDim.Render(pending))
 		pad(2)
+		// A seeded rewind keeps its turns, so its context goes here, under
+		// the pending line, rather than at the head (review F2).
+		ctx := seededContextLines(v.chat, width)
+		lines = append(lines, ctx...)
+		pad(len(ctx))
 	}
 	if q := v.queueLines(width); len(q) > 0 {
 		lines = append(lines, q...)

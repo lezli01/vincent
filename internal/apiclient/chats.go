@@ -96,6 +96,9 @@ type Chat struct {
 	// "seeded" (a fresh session given the earlier turns). "" when no rewind
 	// is pending.
 	ResumePending string `json:"resume_pending,omitempty"`
+	// PendingPreamble is the seeded context the next turn will receive —
+	// turn 0 (task 171) — present only while ResumePending is "seeded".
+	PendingPreamble string `json:"pending_preamble,omitempty"`
 }
 
 // ChatSkills is GET /v1/chats/{id}/skills: the skills the chat's agent CLI
@@ -294,6 +297,9 @@ type ChatRewoundState struct {
 type ChatForkedFrom struct {
 	ChatID int64 `json:"chat_id"`
 	Seq    int   `json:"seq"`
+	// Agent is the source's agent (task 171), "" on a fork from before it
+	// was recorded.
+	Agent string `json:"agent,omitempty"`
 }
 
 // CreateChatRequest is the POST /v1/chats body. An omitted agent resolves
@@ -329,12 +335,17 @@ type PatchChatRequest struct {
 	Model          *string `json:"model,omitempty"`
 	Effort         *string `json:"effort,omitempty"`
 	PermissionMode *string `json:"permission_mode,omitempty"`
+	// PendingPreamble replaces the seeded context of a chat whose next turn
+	// is seeded (task 171); it is sent alone, and "" clears it.
+	PendingPreamble *string `json:"pending_preamble,omitempty"`
 }
 
 // PatchChat changes a chat's title, model, effort or permission mode. A change
 // made during a live turn applies from the next one. Refusals: 400
 // `agent_cannot_change_on_resume` and `agent_cannot_restrict_resume`, 409 for
-// a terminal chat or a linked chat whose task runs restricted.
+// a terminal chat or a linked chat whose task runs restricted, and 409
+// `chat_preamble_not_pending` for a preamble edit on a chat that is not
+// seeded-pending.
 func (c *Client) PatchChat(ctx context.Context, id int64, req PatchChatRequest) (*Chat, error) {
 	var out Chat
 	if err := c.send(ctx, http.MethodPatch, fmt.Sprintf("/v1/chats/%d", id), req, &out); err != nil {

@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/chatexport"
 	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -174,33 +176,69 @@ func chatExportShellRun(run *store.ChatShellRun) chatexport.ShellRun {
 // none to read. A turn that never wrote a transcript is told apart from one
 // whose transcript was pruned by task 103 decision 4's predicate.
 func (s *Server) chatTurnTools(chat *store.Chat, turn *store.ChatTurn) ([]chatexport.ToolCall, string) {
-	f, err := os.Open(s.chatTurnTranscriptPath(chat.ID, turn.Seq))
-	if err != nil {
+	tools, err := readTurnTools(s.chatTurnTranscriptPath(chat.ID, turn.Seq), s.transcriptParser(chat.Agent))
+	if errors.Is(err, errNoTranscript) {
 		if chatrun.TurnWritesNoTranscript(turn.FailReason) {
 			return nil, chatexport.NoteNeverWritten
 		}
 		return nil, chatexport.NotePruned
 	}
+	if err != nil {
+		s.deps.Logger.Error("read chat transcript for export", "chat_id", chat.ID, "seq", turn.Seq, "error", err)
+	}
+	return tools, ""
+}
+
+// errNoTranscript is a turn transcript that cannot be opened or sized.
+var errNoTranscript = errors.New("no transcript")
+
+// readTurnTools reads the tool calls of the transcript at path, normalized
+// by the code that serves `?format=normalized` (§13.2). A transcript that
+// cannot be read at all is errNoTranscript; any other error comes with the
+// calls read before it.
+func readTurnTools(path string, parse agent.LineParser) ([]chatexport.ToolCall, error) {
+	//nolint:gosec // G304: the path is derived from ids the daemon owns, never request input
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, errNoTranscript
+	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil {
-		return nil, chatexport.NotePruned
+		return nil, errNoTranscript
 	}
 	// A running turn's file is appended to while it is read; stop at the
 	// last whole record, exactly as the transcript route does.
 	end, err := lineBoundary(f, fi.Size())
 	if err != nil {
-		return nil, chatexport.NotePruned
+		return nil, errNoTranscript
 	}
 	var normalized bytes.Buffer
-	if err := normalizeTranscript(&normalized, io.NewSectionReader(f, 0, end), s.transcriptParser(chat.Agent)); err != nil {
-		s.deps.Logger.Error("normalize chat transcript for export", "chat_id", chat.ID, "seq", turn.Seq, "error", err)
-	}
+	normErr := normalizeTranscript(&normalized, io.NewSectionReader(f, 0, end), parse)
 	tools, err := chatexport.ToolsFromNormalized(&normalized)
-	if err != nil {
-		s.deps.Logger.Error("read chat transcript for export", "chat_id", chat.ID, "seq", turn.Seq, "error", err)
+	return tools, errors.Join(normErr, err)
+}
+
+// TurnToolCalls is a chat turn's top-level tool calls, read from its
+// transcript under dataDir and normalized by agents' parser for the chat's
+// agent: the seam the daemon hands chatrun for a seeded context's tool
+// summaries (task 171 decision 3), since normalizing is this package's code.
+// A turn with no readable transcript has none, quietly — a pruned or
+// never-written transcript is ordinary. Any other failure keeps the calls
+// read before it and is logged to log (nil: discarded), as the export logs
+// it, so a seeded context that lost its summaries leaves a trace (review F6).
+func TurnToolCalls(dataDir string, agents *agent.Registry, log *slog.Logger, chat *store.Chat, turn *store.ChatTurn) []chatexport.ToolCall {
+	var parse agent.LineParser
+	if agents != nil {
+		if a, ok := agents.Get(chat.Agent); ok {
+			parse = a.NewLineParser()
+		}
 	}
-	return tools, ""
+	tools, err := readTurnTools(chatTurnTranscriptFile(dataDir, chat.ID, turn.Seq), parse)
+	if err != nil && !errors.Is(err, errNoTranscript) && log != nil {
+		log.Error("read chat transcript for a seeded context", "chat_id", chat.ID, "seq", turn.Seq, "error", err)
+	}
+	return tools
 }
 
 // chatExportDiff is the base-to-tip diff of the directory the chat works in

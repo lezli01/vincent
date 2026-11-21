@@ -872,6 +872,10 @@ type Chat struct {
 	// deleted, which ExistingChatIDs tells a reader.
 	ForkedFromChatID *int64
 	ForkedFromSeq    *int
+	// ForkedFromAgent is the agent the source chat ran on, recorded at the
+	// fork (task 171 decision 5) so the label outlives the source. "" for a
+	// chat that is not a fork, and for a fork made before migration 0073.
+	ForkedFromAgent string
 }
 
 // Linked reports whether the chat is linked to a task (task 119), which is
