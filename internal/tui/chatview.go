@@ -41,6 +41,8 @@ type (
 		// when the chat says it has some or a pause.
 		queue *apiclient.ChatQueue
 		err   error
+		// seq orders loads of one view; 0 is always applied.
+		seq uint64
 	}
 	// chatTranscriptMsg is one finished turn's rendered record, or the live
 	// turn's records plus the offset the live tail resumes at.
@@ -116,6 +118,12 @@ type chatView struct {
 
 	chatID int64
 	chat   *apiclient.Chat
+	// loadSeq stamps outgoing loads and appliedSeq is the newest one
+	// installed, as the task detail's are: every chat event starts a load,
+	// and a slower, older one landing after a newer one would put back a
+	// turn as still running after it finished.
+	loadSeq    uint64
+	appliedSeq uint64
 	// turns is the conversation as drawn and allTurns every turn the
 	// daemon served (task 167 decision 9): a rewound turn is in allTurns
 	// always — its cost still counts — and in turns only while showRewound
@@ -532,6 +540,8 @@ func (v *chatView) loadCmd() tea.Cmd {
 	if client == nil || id == 0 {
 		return nil
 	}
+	v.loadSeq++
+	seq := v.loadSeq
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()
@@ -540,7 +550,7 @@ func (v *chatView) loadCmd() tea.Cmd {
 		if err == nil && queueWanted(chat) {
 			queue, err = client.ChatQueue(ctx, id)
 		}
-		return chatLoadedMsg{id: id, chat: chat, turns: turns, queue: queue, err: err}
+		return chatLoadedMsg{id: id, chat: chat, turns: turns, queue: queue, err: err, seq: seq}
 	}
 }
 
@@ -814,11 +824,17 @@ func (v *chatView) applyLoaded(msg chatLoadedMsg) (finished bool) {
 	if msg.id != v.chatID {
 		return false
 	}
+	if msg.seq != 0 && msg.seq <= v.appliedSeq {
+		return false // a slower, older load landing after a newer one
+	}
 	if msg.err != nil {
 		v.loadErr = errString(msg.err)
 		return false
 	}
 	v.loadErr = ""
+	if msg.seq != 0 {
+		v.appliedSeq = msg.seq
+	}
 	finished = v.chat != nil && turnFinished(v.everyTurn(), msg.turns)
 	v.chat, v.allTurns, v.queue = msg.chat, msg.turns, msg.queue
 	v.turns = visibleTurns(msg.turns, v.showRewound)
