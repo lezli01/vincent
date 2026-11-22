@@ -214,6 +214,10 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		{http.MethodPost, "/v1/chats/{id}/shell/{run_id}/attach"},
 		{http.MethodPost, "/v1/chats/{id}/images"},
 		{http.MethodGet, "/v1/chats/{id}/images"},
+		// Task 171 decision 6: a compare starts two agent processes outside
+		// the created_by_task_id chain, as send and handoff would.
+		{http.MethodPost, "/v1/chats/{id}/compare"},
+		{http.MethodGet, "/v1/chats/{id}/compare"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

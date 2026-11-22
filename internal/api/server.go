@@ -475,6 +475,8 @@ func (s *Server) buildHandler() http.Handler {
 	// runs an agent process.
 	rt.handle(http.MethodPost, "/v1/chats/{id}/rewind", s.handleChatRewind)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/fork", s.handleChatFork)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/compare", s.handleChatCompare)
+	rt.handle(http.MethodGet, "/v1/chats/{id}/compare", s.handleChatCompareGet)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/close", s.handleChatClose)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/viewed", s.handleChatViewed)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/turns/{seq}/transcript", s.handleChatTurnTranscript)
