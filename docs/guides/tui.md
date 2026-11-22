@@ -1940,6 +1940,10 @@ that turn will receive. The palette's "edit turn 0…" opens it in `$EDITOR`:
 what you save replaces it, an emptied file clears it so the next turn starts
 with no earlier context, and an untouched one changes nothing.
 
+![A chat forked onto claude from a cursor chat, before its first turn: its
+card and its first line say where it came from, and turn 0 shows the seeded
+summary its first turn will receive](../assets/tui-chat-fork.png)
+
 ### Issues
 
 The selected project's issues — the ones filed in vincent and the ones imported
@@ -2819,6 +2823,10 @@ When both have answered, keep one: the other side is archived, its worktree
 removed even with uncommitted changes, and its branch and checkpoint refs
 deleted. Its conversation stays readable in the archive. A compare side's
 workspace offers **compare side by side** in the palette to come back here.
+
+![The compare screen: cursor's finished answer on the left, running
+restricted, beside codex still working on the right, running full-auto with
+the reason it cannot be restricted](../assets/tui-chat-compare.png)
 
 | Key | Does |
 |---|---|

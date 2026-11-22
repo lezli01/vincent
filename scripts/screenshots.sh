@@ -333,6 +333,9 @@ write_config() {
 # Seeded by scripts/screenshots.sh. Each adapter points at a wrapper around
 # cmd/fakeagent so no real agent CLI — and no real spend — is involved.
 max_parallel_tasks: 4
+# Four, not the default three: the seed holds two chats live for the whole
+# capture (C_INFRA running, C_ASK asking), and the compare needs two more.
+max_parallel_chats: 4
 branch_template: "feat/{{.ID}}{{with .Slug}}-{{.}}{{end}}"
 agents:
   claude:
@@ -1211,6 +1214,29 @@ EOF
   linked_chat "$T_GATE" 'which header carries the retry hint?' \
     'Which response header carries the wait on a 429, and does this branch set it?'
 
+  # Asking another agent (task 171, issue #1020), on web — whose chats board
+  # no tape photographs, so its rows can grow — and last in this phase, so
+  # every chat id above stays what it is. Both cut from before C_WEB's turn
+  # 2, which it is given here: cut from before turn 1 there is no earlier
+  # turn to summarize, and turn 0 — what tui-chat-fork is of — would be empty.
+  #
+  #   - A fork onto claude, never sent: it stays idle with its turn-0 seeded
+  #     context pending, which tui-chat-fork is a picture of, beside the
+  #     `forked from #N (cursor)` provenance. Its title is its own, so the
+  #     tape's filter finds it and not the compare's sides.
+  #   - A compare of cursor and codex on turn 2's own prompt: cursor is the
+  #     fast wrapper and answers, codex the slow one and is still working
+  #     when the camera arrives, so tui-chat-compare shows a finished answer
+  #     beside a live one — and the two modes, cursor restricted and codex
+  #     full-auto with its reason. It needs two free chat slots, which is
+  #     why write_config sets max_parallel_chats above the default: C_INFRA
+  #     and C_ASK already hold two.
+  chat_send "$C_WEB" 'Would a CSS-only fix do, or does the double render have to go?'
+  wait_chat "$C_WEB" idle 120
+  api POST "/chats/$C_WEB/fork" \
+    '{"turn":2,"agent":"claude","title":"header flicker, asked again on claude"}' >/dev/null
+  api POST "/chats/$C_WEB/compare" '{"turn":2,"agents":["cursor","codex"]}' >/dev/null
+
   # The usage window, last of the claude work for the reason write_config
   # gives: the observation outlives the swap, so nothing that needs an answer
   # from claude may come after this. The task parks on the §11 hold task 003
@@ -1950,6 +1976,75 @@ Sleep 4s
 Down 3
 Sleep 2s
 Screenshot "'"$OUT"'/tui-chat-handoff.png"
+Sleep 2s
+'
+
+  # A fork onto another agent before its first turn (task 171): the
+  # `forked from #N (cursor)` provenance and turn 0 — the seeded summary its
+  # first turn will receive, editable until then — under the header that
+  # carries the provenance too. On web, where the fork and the compare live.
+  owns web chat 'asked again' tui-chat-fork
+  tape tui-chat-fork 1250 web '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 4s
+Type "?"
+Sleep 2s
+# the palette ghost (#743), repainted away: see tape()
+Down 6
+Sleep 2s
+Escape
+Sleep 2s
+Type "/"
+Sleep 500ms
+Type "asked again"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 5s
+# The conversation opens at its live end; turn 0 starts above it, with
+# the provenance and the heading, so page up to the start. Not alt+g: VHS
+# delivers its Alt+g as a plain `g`, typed into the composer.
+PageUp 4
+Sleep 2s
+Screenshot "'"$OUT"'/tui-chat-fork.png"
+Sleep 2s
+'
+
+  # The compare screen (task 171): cursor and codex asked turn 2's prompt
+  # again, side by side — cursor answered and runs restricted, codex is still
+  # working and runs full-auto, with the reason pinned under it. Reached the
+  # way a reader comes back to one: from a side's workspace, through the
+  # palette's "compare side by side" (ctrl+p, since the composer has the
+  # keyboard and `:` would be typed into it). Wider, so each side has room
+  # for its prose.
+  owns web chat 'codex' tui-chat-compare
+  TAPE_WIDTH=$((COLS_PX * 3 / 2)) tape tui-chat-compare 1250 web '
+Type ":"
+Sleep 1s
+Type "chats"
+Sleep 1s
+Enter
+Sleep 4s
+Type "/"
+Sleep 500ms
+Type "codex"
+Sleep 1s
+Enter
+Sleep 1s
+Enter
+Sleep 5s
+Ctrl+P
+Sleep 1s
+Type "compare side by side"
+Sleep 1s
+Enter
+Sleep 5s
+Screenshot "'"$OUT"'/tui-chat-compare.png"
 Sleep 2s
 '
 

@@ -1,6 +1,6 @@
 # 171 — Ask another agent: fork a chat onto a different agent, and compare two answers
 
-**Status:** 🔄 in progress (6/7) · **Opened:** 2026-11-21
+**Status:** ✅ done (7/7) · **Opened:** 2026-11-21
 
 Issue #1020, built on task 167's checkpoint, rewind and fork (#1041). It
 amends two task 167 decisions deliberately, with the author's agreement:
@@ -86,8 +86,25 @@ Conventions for this file are in [the tasks README](README.md).
   "compare two agents from turn…", the fork picker in a compare mode whose
   `tab` picks the second agent and whose prompt is the composer's draft or
   the turn's own.
-- [ ] **171.7** `scripts/171-gate.sh`, wired into the lightest `gate-group`,
+- [x] **171.7** `scripts/171-gate.sh`, wired into the lightest `gate-group`,
   and the screenshot seed gaining a cross-agent fork and a compare pair.
+  ✓ 2026-11-22
+
+  *How (2026-11-22):* the gate's five scenarios — a cross-agent fork and its
+  turn 0 through `chat fork --agent` and `chat show`; the turn-0 edit, the
+  codex CLI handed exactly the edited text, the edit refused afterwards and
+  the context kept in the transcript and the export, `--clear` on another
+  fork; a compare through `chat compare`, refused with room for one
+  (`vincent config set max_parallel_chats 1`) and then started; `chat keep`
+  with the branch and refs gone and a second keep refused; a keep refused
+  while the sides hang — run against the fake agent's `echo-prompt`
+  scenario, so the prompt file proves what the agent was handed. Group 1,
+  which ran the fewest gates when it was wired. The screenshot seed forks
+  web's cursor chat onto claude and compares cursor with codex from its
+  turn 2 (given a second turn first: before turn 1 there is nothing to
+  summarize), last in the chat phase so no other chat id moves and on web,
+  whose chats board no tape photographs; `max_parallel_chats: 4` makes
+  room. Two new shots, `tui-chat-fork` and `tui-chat-compare`.
 
 ## Decisions
 

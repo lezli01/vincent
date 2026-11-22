@@ -216,13 +216,14 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/167-gate.sh                           # rewind and fork a chat from a turn (task 167)
 ./scripts/169-gate.sh                           # a chat's diff and its per-hunk review (task 169)
 ./scripts/170-gate.sh                           # a chat's shell passthrough (task 170)
+./scripts/171-gate.sh                           # ask another agent and compare two answers (task 171)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 VINCENT_GATE_BIN=/some/dir ./scripts/m1-gate.sh # copy prebuilt vincent/fakeagent/fakegh/fakejira from there instead of building
 ```
 
-All twenty-nine of those run in `ci.yml`'s `gate-group` job on all three platforms:
+All thirty of those run in `ci.yml`'s `gate-group` job on all three platforms:
 four groups, balanced by measured Windows time, each gate one named step that
 runs in exactly one group (`if: contains(matrix.groups, N)`). Linux and
 Windows run the four as four jobs; macOS runs them as two, `1+2` and `3+4`
@@ -242,7 +243,7 @@ through `gate_build` / `gate_build_as` (which copy from `VINCENT_GATE_BIN`,
 built once per CI job, when it is set), and its wait loops sleep `$GATE_POLL`
 for `$(gate_ticks SECS)` iterations so the budget stays written in seconds.
 Deliberate delays and workflow `run:` bodies keep their plain `sleep N`. `m12`
-is the thirtieth and the exception: it needs a real container runtime, so it runs
+is the thirty-first and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
 why) on the other two — but for two different reasons, and only one of them is
 "no docker". The macOS runner has no daemon. The **Windows runner does**, in
@@ -275,8 +276,9 @@ rows are the seed's, not yours), eight git repos (one a GitHub project, answered
 by `cmd/fakegh`, and one a Jira-bound project, answered by `cmd/fakejira`),
 a daemon, twenty-six tasks (a two-round fan-out with three
 lanes, a loop and a handoff's task among them, three archived, eight started from an
-issue), eleven chats (four live, three archived — one of them on an issue —
-one closed on an issue and three closed on a task) and twenty issues
+issue), fourteen chats (seven live — a fork onto another agent and a compare
+pair among them — three archived, one of them on an issue, one closed on
+an issue and three closed on a task) and twenty issues
 (thirteen local, three of them closed; three imported from the fake GitHub
 with a mirrored thread; four imported from the fake Jira, one with a mirrored
 thread and one closed there as Won't Do; platform-infra's filling every lane) covering every
