@@ -135,7 +135,8 @@ export const Term: React.FC<{
   crumb: React.ReactNode;
   footer: React.ReactNode;
   children: React.ReactNode;
-}> = ({ w, h, crumb, footer, children }) => (
+  version?: string;
+}> = ({ w, h, crumb, footer, children, version = "0.13.0" }) => (
   <div
     style={{
       width: w,
@@ -170,7 +171,7 @@ export const Term: React.FC<{
         <span style={{ color: T.magenta, fontWeight: 700 }}>◆ api</span>{" "}
         <span style={{ color: T.yellow, fontWeight: 700 }}>(! 5 elsewhere)</span> {crumb}
       </span>
-      {w > 1200 && <span style={{ color: T.dim, flexShrink: 0, marginLeft: CH }}>vincent 0.13.0</span>}
+      {w > 1200 && <span style={{ color: T.dim, flexShrink: 0, marginLeft: CH }}>vincent {version}</span>}
     </div>
     <div style={{ flex: 1, position: "relative", padding: `${ROW * 0.8}px ${CH * 1.5}px ${ROW * 0.4}px`, minHeight: 0 }}>
       {children}
