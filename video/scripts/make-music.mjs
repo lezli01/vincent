@@ -1,7 +1,10 @@
 // Synthesizes the promo's soundtrack into public/music.wav — an original
 // synthwave loop, so there is no licence to clear. No dependencies.
 //
-//   node scripts/make-music.mjs [seconds] [dropAt] [outroAt]
+//   node scripts/make-music.mjs [seconds] [dropAt] [outroAt] [outFile]
+//
+// outFile is a name under public/ (default music.wav), so each cut can carry
+// its own length.
 //
 // 120 BPM: one beat is 0.5 s, i.e. 15 frames at 30 fps, so cuts land on beats.
 import { writeFileSync } from "node:fs";
@@ -10,6 +13,7 @@ const SR = 44100;
 const DUR = Number(process.argv[2] ?? 56.1);
 const DROP = Number(process.argv[3] ?? 3.0); // hook → logo reveal
 const OUTRO = Number(process.argv[4] ?? 52.1); // repo-link card
+const OUT = process.argv[5] ?? "music.wav";
 const BPM = 120;
 const BEAT = 60 / BPM;
 const N = Math.ceil(SR * DUR);
@@ -177,5 +181,5 @@ for (let i = 0; i < N; i++) {
   buf.writeInt16LE(Math.round(L[i] * norm * 32767), 44 + i * 4);
   buf.writeInt16LE(Math.round(R[i] * norm * 32767), 46 + i * 4);
 }
-writeFileSync(new URL("../public/music.wav", import.meta.url), buf);
-console.log(`music.wav: ${DUR}s, drop at ${DROP}s, outro at ${OUTRO}s`);
+writeFileSync(new URL(`../public/${OUT}`, import.meta.url), buf);
+console.log(`${OUT}: ${DUR}s, drop at ${DROP}s, outro at ${OUTRO}s`);
