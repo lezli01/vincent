@@ -9,140 +9,184 @@ Release Please creates release entries from Conventional Commit history. Its
 release pull request is the review point for replacing the mechanical commit
 list with the user-facing context a commit subject cannot carry.
 
-## [Unreleased]
+## [0.14.0](https://github.com/lezli01/vincent/compare/v0.13.0...v0.14.0) (2026-11-22)
 
 ### Added
 
+- **Rewind a chat, or fork it, from any turn.** Before a turn's agent
+  starts, vincent now snapshots the worktree it runs in, uncommitted and
+  untracked files included (ignored files are not), as
+  `refs/vincent/<install id>/chats/<chat id>/turn-<seq>` in the project's
+  repository, without touching your index, HEAD or files; a turn whose
+  checkpoint cannot be taken fails `checkpoint_failed` instead of running
+  unprotected. `alt+z` in the chat workspace (rebindable as `rewind`) and
+  the palette's "rewind…" and "fork from turn…" open a turn picker. A rewind
+  puts the code, the conversation or both back to the state before that
+  turn. The state it replaces is saved under
+  `refs/vincent/<install id>/chats/<id>/rewound-<k>` so you can go forward to
+  it again. A file it could not save is never deleted, and the turn's prompt
+  returns to your draft. Rewound turns are kept, hidden until you show them,
+  and still counted in costs. On a claude that supports it, the conversation
+  resumes at that point in the agent's own session. codex, cursor and
+  copilot cannot resume part of a session, so their next turn starts seeded
+  with a bounded summary of the kept turns, marked "seeded, not resumed". A
+  fork is a new idle chat on its own branch, cut from that turn's checkpoint
+  with its uncommitted changes, copying the agent and its settings. A code
+  rewind refuses (`409 chat_rewind_foreign_commits`) when anything but the
+  chat's own turns moved the branch. Scriptable as `vincent chat rewind` and
+  `vincent chat fork` over `POST /v1/chats/{id}/rewind` and `/fork`, which
+  are also the first chat routes that are MCP tools (`chat_rewind`,
+  `chat_fork`), because neither starts an agent. `vincent chat transcript`
+  and `vincent chat export` take `--rewound`. A chat's checkpoint refs are
+  deleted with the chat, and a daemon sweep removes those of chats already
+  gone (task 167).
+  ([#1035](https://github.com/lezli01/vincent/pull/1035), [#1044](https://github.com/lezli01/vincent/pull/1044))
 - **Fork a chat onto another agent.** `vincent chat fork --agent codex` (and
   `agent` on `POST /v1/chats/{id}/fork` and the `chat_fork` MCP tool) asks a
-  different agent to carry on from any turn. Such a fork always starts seeded
-  with a summary of the earlier turns; its model and effort are the new
-  agent's, and a `restricted` source needs `--permission-mode` to go to an
-  agent that cannot stay restricted. The fork shows `forked from #N (claude)`.
+  different agent to carry on from any turn. Such a fork always starts
+  seeded with a summary of the earlier turns; its model and effort are the
+  new agent's, and a `restricted` source needs `--permission-mode` to go to
+  an agent that cannot stay restricted. In the TUI, the fork picker's `tab`
+  picks the agent, and a fork's card and header read
+  `forked from #N (claude)`.
+  ([#1045](https://github.com/lezli01/vincent/pull/1045), [#1046](https://github.com/lezli01/vincent/pull/1046))
 - **See and edit a seeded chat's context before its first turn.** After a
   seeded rewind or fork, the summary the next turn will receive is shown as
   "turn 0 · seeded context (summary)" in `vincent chat show` and the chat
   workspace, served as `pending_preamble`, and replaceable or clearable with
-  `vincent chat preamble` or `PATCH /v1/chats/{id}` until a turn starts. In
-  the TUI, the fork picker's `tab` picks the agent, the palette's "edit turn
-  0…" opens the summary in `$EDITOR`, and a fork's card and header read
-  `forked from #N (claude)`. Once a turn has run, its transcript and the
-  chat export still show the summary it was given, and
+  `vincent chat preamble` or `PATCH /v1/chats/{id}` until a turn starts. The
+  palette's "edit turn 0…" opens it in `$EDITOR`. Once a turn has run, its
+  transcript and the chat export still show the summary it was given, and
   `vincent chat transcript --turn 0` prints a pending one.
-
+  ([#1045](https://github.com/lezli01/vincent/pull/1045), [#1046](https://github.com/lezli01/vincent/pull/1046))
 - **Compare two agents' answers.** `vincent chat compare 7 --turn 2 --agents
-  claude,codex` (and `POST /v1/chats/{id}/compare`) forks a chat from before a
-  turn onto two agents and sends both the same prompt — by default that
+  claude,codex` (and `POST /v1/chats/{id}/compare`) forks a chat from before
+  a turn onto two agents and sends both the same prompt — by default that
   turn's own. Each side runs restricted where its agent can keep a chat
   restricted, and the output says which side could not and why. Both sides
   start or neither does, and `GET /v1/chats/{id}/compare` finds a side's
   partner. In the TUI, the palette's "compare two agents from turn…" starts
   one and a compare screen shows both answers side by side; keep one with
   `[` or `]` (or `vincent chat keep`), and the other is archived with its
-  branch.
-
-- **Rewind a chat, or fork it, from any turn.** Every chat turn already
-  checkpoints its worktree; now `alt+z` in the chat workspace (rebindable as
-  `rewind`) and the palette's "rewind…" and "fork from turn…" open a turn
-  picker. A rewind puts the code, the conversation or both back to the state
-  before that turn. The state it replaces is saved under
-  `refs/vincent/<install id>/chats/<id>/rewound-<k>` so you can go forward to it again. A
-  file it could not save is never deleted, and the turn's prompt returns to
-  your draft. Rewound turns are kept, hidden until you show them, and still
-  counted in costs. On a claude that supports it, the conversation resumes
-  at that point in the agent's own session. codex, cursor and copilot cannot
-  resume part of a session, so their next turn starts seeded with a bounded
-  summary of the kept turns, marked "seeded, not resumed". A fork is a new
-  idle chat on its own branch, cut from that turn's checkpoint with its
-  uncommitted changes, copying the agent and its settings. A code rewind
-  refuses (`409 chat_rewind_foreign_commits`) when anything but the chat's
-  own turns moved the branch. Scriptable as `vincent chat rewind` and
-  `vincent chat fork` over `POST /v1/chats/{id}/rewind` and `/fork`, which
-  are also the first chat routes that are MCP tools (`chat_rewind`,
-  `chat_fork`), because neither starts an agent. `vincent chat transcript`
-  and `vincent chat export` take `--rewound`. A chat's checkpoint refs are now
-  deleted with the chat, and a daemon sweep removes those of chats already
-  gone (task 167, #1041).
+  branch (task 171).
+  ([#1046](https://github.com/lezli01/vincent/pull/1046))
+- **A chat has a diff, and you can review it hunk by hunk.** `alt+d` in the
+  chat workspace (rebindable as `chat_diff`, also in the palette) swaps the
+  conversation for the diff of the chat's directory, since the chat's base
+  or — `s` — since its last turn; `esc` comes back with the draft untouched.
+  Unlike a task's diff it includes untracked files, so a file the agent
+  created shows up. `]`/`[` walk the hunks, `x` rejects one — it is reverted
+  in the working tree only, never the index or history, and a note telling
+  the agent not to reapply it is put at the top of your draft — and `a`
+  marks one accepted, a review mark the daemon keeps. Both are refused while
+  a turn is live. The Details pane gains a `changes` row with the file and
+  line counts. The same review is scriptable: `vincent chat diff`,
+  `vincent chat diff reject` and `vincent chat diff accept`, over
+  `GET /v1/chats/{id}/diff` and its `stat`, `reject`, `accept` and
+  `unaccept` routes.
+  ([#1037](https://github.com/lezli01/vincent/pull/1037))
 - **Run a shell command from a chat, and paste images into one.** `alt+x` in
   the chat workspace (rebindable as `shell_command`) opens a one-line prompt.
   The daemon runs the command in the chat's directory (inside the task's
   container for a chat on a containerized task) and draws it as a card with
-  its exit code and output. Commands stop after two minutes, output is capped
-  at 256 KiB, and one command runs per chat at a time. The agent sees a run
-  only when you press `a` on its card, and then only on your next message,
-  as context ahead of it. `ctrl+v` pastes a clipboard image, or a pasted path
-  to an image file, as an `[image N]` chip that the agent receives with the
-  message. This works for codex and copilot, whose CLIs take image files.
-  claude and cursor refuse it with a note. The same is scriptable with
-  `vincent chat shell` (with `ls` and `attach`) and `vincent chat image add`
-  / `ls`, over `POST /v1/chats/{id}/shell` and `POST /v1/chats/{id}/images`,
-  and `GET /v1/agents` reports `supports_images`. Shell runs appear in chat
-  exports (task 170, #1024).
+  its exit code and output. Commands stop after two minutes, output is
+  capped at 256 KiB, and one command runs per chat at a time. The agent sees
+  a run only when you press `a` on its card, and then only on your next
+  message, as context ahead of it. `ctrl+v` pastes a clipboard image, or a
+  pasted path to an image file, as an `[image N]` chip that the agent
+  receives with the message. This works for codex and copilot, whose CLIs
+  take image files; claude and cursor refuse it with a note. The same is
+  scriptable with `vincent chat shell` (with `ls` and `attach`) and
+  `vincent chat image add` / `ls`, over `POST /v1/chats/{id}/shell` and
+  `POST /v1/chats/{id}/images`, and `GET /v1/agents` reports
+  `supports_images`. Shell runs appear in chat exports (task 170).
+  ([#1040](https://github.com/lezli01/vincent/pull/1040))
 - **Chat composer polish.** In the agent's question card, `1`–`9` pick an
   option, and a single single-choice question is answered at once. The new
   `tui.chat` config block adds `status_line`, a template of your own on the
   right of the chat header (model, effort, context percent, cost, turns and
   more), and `vim: true`, a vim layer over the composer with vim's core
-  normal-mode keys (task 170, #1024).
-- **A chat has a diff, and you can review it hunk by hunk.** `alt+d` in the
-  chat workspace (rebindable as `chat_diff`, also in the palette) swaps the
-  conversation for the diff of the chat's directory, since the chat's base or
-  — `s` — since its last turn; `esc` comes back with the draft untouched.
-  Unlike a task's diff it includes untracked files, so a file the agent
-  created shows up. `]`/`[` walk the hunks, `x` rejects one — it is reverted
-  in the working tree only, never the index or history, and a note telling
-  the agent not to reapply it is put at the top of your draft — and `a` marks
-  one accepted, a review mark the daemon keeps. Both are refused while a turn
-  is live. The Details pane gains a `changes` row with the file and line
-  counts. The same review is scriptable: `vincent chat diff`,
-  `vincent chat diff reject` and `vincent chat diff accept`, over
-  `GET /v1/chats/{id}/diff` and its `stat`, `reject`, `accept` and `unaccept`
-  routes (task 169, #1018).
-- **Every chat turn checkpoints its worktree first.** Before a turn's agent
-  starts, vincent snapshots the worktree it runs in, uncommitted and untracked
-  files included (ignored files are not), as
-  `refs/vincent/<install id>/chats/<chat id>/turn-<seq>` in the project's repository,
-  without touching your index, HEAD or files. A turn whose checkpoint cannot
-  be taken fails `checkpoint_failed` instead of running unprotected. This is
-  the groundwork for rewinding and forking a chat (task 167), which is not
-  available yet.
-- **Chat drafts are kept by the daemon, and earlier prompts can be recalled.**
-  A chat's unsent message is saved as you type and restored when you open the
-  chat again — after switching chats, restarting the TUI or from another
-  terminal — and the chats board marks a chat holding one `✎ draft`. `alt+s`
-  stashes the draft in the chat's one stash slot (a new stash replaces the old
-  one) and brings it back on an empty composer. `↑` on an empty composer,
-  with nothing queued, recalls the chat's earlier prompts and `↓` walks back.
-  `alt+h` picks any prompt sent in the project, archived chats included, and
-  inserts it without sending. The API gains `GET`/`PUT /v1/chats/{id}/draft`,
-  `GET /v1/chats/prompts`, `has_draft` on every chat and the
-  `chat.draft_changed` event. Archiving, closing or handing off a chat
-  discards its draft and stash.
+  normal-mode keys (task 170).
+  ([#1040](https://github.com/lezli01/vincent/pull/1040))
+- **A chat queues the messages you send while its turn runs.** `enter` on a
+  running chat, or one waiting on the agent's question, no longer refuses:
+  the message is queued and runs as the next turn once the current one ends
+  `done`, without giving up the chat's `max_parallel_chats` slot. Queued
+  messages show as faded `You` cards; `↑` on an empty composer edits the
+  newest, and `ctrl+d` deletes it. A turn that fails, is cancelled or is
+  interrupted pauses the queue instead of draining it — `alt+r` resumes it,
+  `alt+c` clears it. `vincent chat send` on a live chat queues and says so,
+  `vincent chat queue` lists, edits, removes, resumes and clears, and the
+  API gains `GET /v1/chats/{id}/queue` and its edit, delete, resume and
+  clear routes plus a `chat.queue_changed` event. Archiving, closing or
+  handing off a chat discards its queue. Steering a message into the running
+  turn (`ctrl+s`) is not available on any agent yet, and the key says so.
+  ([#1027](https://github.com/lezli01/vincent/pull/1027))
+- **A chat's model, effort and permission mode can change between turns.**
+  In the chat, the composer's border shows `model · effort · mode`; `alt+p`
+  picks the model and effort for the next turns, and `shift+tab` toggles
+  between `restricted` and `full-auto`, asking first before raising to
+  full-auto. `vincent chat set` does the same from the command line
+  (`--yes` confirms a raise to full-auto), and `vincent chat send --model/
+  --effort/--permission-mode` runs one turn with its own settings. The API
+  gains `PATCH /v1/chats/{id}`, per-turn overrides on send and on a queued
+  message, `permission_mode` on `POST /v1/chats`, a `chat.updated` event,
+  and `supports_resume_settings_change` on `GET /v1/agents`. Each turn
+  records the model, effort and mode it ran with, its heading names the
+  model, and chat export shows them. After a chat's first turn the model and
+  effort can change only on claude, the one agent shown to honour a change
+  on a resumed session; `restricted` is refused on codex chats, and a chat
+  opened on a restricted task can never be raised to full-auto.
+  ([#1032](https://github.com/lezli01/vincent/pull/1032))
+- **Write a chat message in your editor, and read the whole conversation as
+  Markdown.** In a chat, `ctrl+g` opens the draft in `$VISUAL`/`$EDITOR`;
+  what you save comes back into the composer, unsent, and an emptied or
+  untouched file leaves the draft as it was. `alt+v` (also in the palette)
+  opens the whole conversation as a read-only Markdown document in the same
+  editor: a header naming the chat's agent, model and branch, then every
+  prompt and answer, as `vincent chat export` writes it. Both keys are
+  rebindable in `tui.keys`, as `compose_editor` and `chat_markdown`.
+  ([#1032](https://github.com/lezli01/vincent/pull/1032))
+- **Chat drafts are kept by the daemon, and earlier prompts can be
+  recalled.** A chat's unsent message is saved as you type and restored when
+  you open the chat again — after switching chats, restarting the TUI or
+  from another terminal — and the chats board marks a chat holding one
+  `✎ draft`. `alt+s` stashes the draft in the chat's one stash slot (a new
+  stash replaces the old one) and brings it back on an empty composer. `↑`
+  on an empty composer, with nothing queued, recalls the chat's earlier
+  prompts and `↓` walks back. `alt+h` picks any prompt sent in the project,
+  archived chats included, and inserts it without sending. The API gains
+  `GET`/`PUT /v1/chats/{id}/draft`, `GET /v1/chats/prompts`, `has_draft` on
+  every chat and the `chat.draft_changed` event. Archiving, closing or
+  handing off a chat discards its draft and stash.
+  ([#1033](https://github.com/lezli01/vincent/pull/1033))
 - **Chats can notify you, show what you have not read, and switch without
   the list.** A new `notify.chat_on` key (`awaiting_input`, `turn_done`,
   `turn_failed`; empty by default) makes the daemon's `notify.command` fire
   for chats too; its JSON envelope gains a top-level `kind` (`"task"` or
-  `"chat"`) and `chat_id`, and Settings edits the key. A chat whose last turn
-  finished since anyone opened it shows `●` on the chats board and rail, the
-  same in every TUI: the daemon stores one `last_viewed_at` per chat, set by
-  the new `POST /v1/chats/{id}/viewed`, and the chat body gains
+  `"chat"`) and `chat_id`, and Settings edits the key. A chat whose last
+  turn finished since anyone opened it shows `●` on the chats board and
+  rail, the same in every TUI: the daemon stores one `last_viewed_at` per
+  chat, set by the new `POST /v1/chats/{id}/viewed`, and the chat body gains
   `last_viewed_at` and `unread`; chats from before the upgrade start read.
-  Chats waiting on you now count towards the
-  attention count and the "waiting on you" summary, and `!` visits them with
-  the tasks, oldest first. In a chat or on the chats board, `alt+n`/`alt+shift+n`
-  open the project's next or previous chat and `alt+1`…`alt+9` its Nth
-  (`]`/`[` on the board too), keeping the draft you leave; macOS terminals
-  need Option set to act as Meta (task 165, #1019).
+  Chats waiting on you now count towards the attention count and the
+  "waiting on you" summary, and `!` visits them with the tasks, oldest
+  first. In a chat or on the chats board, `alt+n`/`alt+shift+n` open the
+  project's next or previous chat and `alt+1`…`alt+9` its Nth (`]`/`[` on
+  the board too), keeping the draft you leave; macOS terminals need Option
+  set to act as Meta.
+  ([#1034](https://github.com/lezli01/vincent/pull/1034))
 - **Mention issues, tasks, pull requests and line ranges in a chat.**
   `#issue-N`, `#task-N` and `#pr-N` in a chat message, and a file range such
-  as `@internal/api/server.go#L20-45`, are expanded by the daemon into a short
-  block in front of your message when the turn starts — title, state, body
-  and links, or the lines themselves — on claude, codex, cursor and copilot
-  alike. A mention that does not resolve stays prose and never blocks the
-  send; your message is stored as typed, and the expanded block is kept on
-  the turn (`mention_context`) and shown in its transcript and export. The
-  API gains `POST /v1/chats/{id}/expand` to preview a draft's expansion
-  (task 166, #1021). A bare `@path` is unchanged.
+  as `@internal/api/server.go#L20-45`, are expanded by the daemon into a
+  short block in front of your message when the turn starts — title, state,
+  body and links, or the lines themselves — on claude, codex, cursor and
+  copilot alike. A mention that does not resolve stays prose and never
+  blocks the send; your message is stored as typed, and the expanded block
+  is kept on the turn (`mention_context`) and shown in its transcript and
+  export. The API gains `POST /v1/chats/{id}/expand` to preview a draft's
+  expansion. A bare `@path` is unchanged.
+  ([#1034](https://github.com/lezli01/vincent/pull/1034))
 - **Search inside a chat, jump between prompts, expand one tool call.**
   `ctrl+f` in a chat hands the keyboard to the conversation with a search
   line: every turn is searched case-insensitively — the ones not loaded yet
@@ -152,264 +196,383 @@ list with the user-facing context a commit subject cannot carry.
   `enter` expands just the tool call under it, and `esc` or `i` gives the
   keyboard back with the draft untouched. Scrolled away from the live end,
   `↓ N new` counts what arrived below. The API gains
-  `GET /v1/chats/{id}/search?q=`, and the CLI `vincent chat find` (task 160,
-  #1014).
-
-- **A chat's model, effort and permission mode can change between turns.**
-  In the chat, the composer's border shows `model · effort · mode`; `alt+p`
-  picks the model and effort for the next turns, and `shift+tab` toggles
-  between `restricted` and `full-auto`, asking first before raising to
-  full-auto. `vincent chat set` does the same from the command line (`--yes`
-  confirms a raise to full-auto), and `vincent chat send --model/--effort/
-  --permission-mode` runs one turn with its own settings. The API gains
-  `PATCH /v1/chats/{id}`, per-turn overrides on send and on a queued message,
-  `permission_mode` on `POST /v1/chats`, a `chat.updated` event, and
-  `supports_resume_settings_change` on `GET /v1/agents`. Each turn records the
-  model, effort and mode it ran with, its heading names the model, and chat
-  export shows them. After a chat's first turn the model and effort can
-  change only on claude, the one agent shown to honour a change on a resumed
-  session; `restricted` is refused on codex chats, and a chat opened on a
-  restricted task can never be raised to full-auto (#1011).
-
-- **A chat queues the messages you send while its turn runs.** `enter` on a
-  running chat, or one waiting on the agent's question, no longer refuses:
-  the message is queued and runs as the next turn once the current one ends
-  `done`, without giving up the chat's `max_parallel_chats` slot. Queued
-  messages show as faded `You` cards; `↑` on an empty composer edits the
-  newest, and `ctrl+d` deletes it. A turn that fails, is cancelled or is
-  interrupted pauses the queue instead of draining it — `alt+r` resumes it,
-  `alt+c` clears it. `vincent chat send` on a live chat queues and says so,
-  `vincent chat queue` lists, edits, removes, resumes and clears, and the API
-  gains `GET /v1/chats/{id}/queue` and its edit, delete, resume and clear
-  routes plus a `chat.queue_changed` event. Archiving, closing or handing off
-  a chat discards its queue. Steering a message into the running turn
-  (`ctrl+s`) is not available on any agent yet, and the key says so (#1010).
-- **A chat shows what each turn cost and how full its context is.** Each turn
-  heading now reads `◈ agent · turn N · age · 42s · 18.2k↑ 1.1k↓ · $0.04`:
-  the duration, the tokens the turn processed (cache included) and what it
-  produced, and the cost when the agent reports one — never for copilot. A
-  context gauge on the conversation's edge shows how full the session's
-  context is (`ctx ▰▰▰▱▱ 61%`), read from the agent's own report of its last
-  model call and its model's window; it turns yellow past 80%, and on claude
-  offers `alt+k` to send `/compact` after a confirmation. Below 150 columns,
-  where the details pane is hidden, the chat header carries the chat's token
-  and cost totals. Only claude reports the context figures today; the other
-  adapters show no gauge rather than an estimate (#1015).
-- **`GET /v1/agents` reports `compact_command`**, and a chat turn reports
-  `cache_read_tokens`, `cache_creation_tokens`, `context_tokens` and
-  `context_window` (#1015).
+  `GET /v1/chats/{id}/search?q=`, and the CLI `vincent chat find`.
+  ([#1029](https://github.com/lezli01/vincent/pull/1029))
 - **Search across every chat, live and archived.** A full-text index covers
   every chat's title, the prompts it was sent and the agent's final answers,
-  matching by substring so `429` finds `status429Body`. Search it from the TUI
-  ("Search all chats" in the command palette, or `S` on the chats screen),
-  where `enter` on a match opens the chat at that turn; with
-  `vincent chat search`; or with `GET /v1/chats/search`. Archived, handed-off
-  and closed chats are searched by default, and an answer stays findable
-  after its transcript has been removed by retention (#1022).
+  matching by substring so `429` finds `status429Body`. Search it from the
+  TUI ("Search all chats" in the command palette, or `S` on the chats
+  screen), where `enter` on a match opens the chat at that turn; with
+  `vincent chat search`; or with `GET /v1/chats/search`. Archived,
+  handed-off and closed chats are searched by default, and an answer stays
+  findable after its transcript has been removed by retention.
+  ([#1028](https://github.com/lezli01/vincent/pull/1028))
+- **A chat shows what each turn cost and how full its context is.** Each
+  turn heading now reads `◈ agent · turn N · age · 42s · 18.2k↑ 1.1k↓ ·
+  $0.04`: the duration, the tokens the turn processed (cache included) and
+  what it produced, and the cost when the agent reports one — never for
+  copilot. A context gauge on the conversation's edge shows how full the
+  session's context is (`ctx ▰▰▰▱▱ 61%`), read from the agent's own report of
+  its last model call and its model's window; it turns yellow past 80%, and
+  on claude offers `alt+k` to send `/compact` after a confirmation. Below 150
+  columns, where the details pane is hidden, the chat header carries the
+  chat's token and cost totals. Only claude reports the context figures
+  today; the other adapters show no gauge rather than an estimate.
+  `GET /v1/agents` reports `compact_command`, and a chat turn reports
+  `cache_read_tokens`, `cache_creation_tokens`, `context_tokens` and
+  `context_window`.
+  ([#1028](https://github.com/lezli01/vincent/pull/1028))
 - **Export a chat as Markdown, HTML or JSON.** `alt+e` in a chat or on the
   chats boards, `vincent chat export`, or `GET /v1/chats/{id}/export` writes
   the whole conversation as one document: its metadata, then each turn's
   prompt, tool calls, answer and usage, optionally followed by the diff. A
   turn's usage counts the cache the agent read and wrote beside its input
-  (`1200 in (+60200 cache) · 800 out`), as the chat heading does, and the JSON
-  carries the cache counts and context figures (#1023).
-
-- **Start a chat from its first message.** The new-chat form opens on a
-  message row: type and press `enter`, and the chat is created and the message
-  sent in one step. The title is optional — left empty, it is taken from the
-  message's first line. `POST /v1/chats` and `POST /v1/tasks/{id}/chat` accept
-  `message` and answer with `first_turn`; `vincent chat start` takes the title
-  as optional and sends `--message` in the create, and `vincent task chat`
-  gains `--message`/`--message-file`. If the message cannot be sent (the chat
-  cap is full), the chat is still created, a warning says why, and the TUI puts
-  the message back in the composer (#1016).
-
-- **Rename a chat.** `r` on the chats boards, the **rename chat** palette
-  command, `vincent chat rename`, and `PATCH /v1/chats/{id}` change a chat's
-  title in any state; the branch keeps its name. A rename emits the new
-  `chat.updated` event (#1016).
-
-- **Choose the agent for a chat on a task or an issue.** `alt+t` (the new
-  rebindable `chat_with` operation) and the **chat with…** palette command open
-  a small form — agent, model, effort and an optional first message — before
-  opening the chat; `T` still opens one at once with the default agent (#1016).
+  (`1200 in (+60200 cache) · 800 out`), as the chat heading does, and the
+  JSON carries the cache counts and context figures.
+  ([#1028](https://github.com/lezli01/vincent/pull/1028))
+- **Start a chat from its first message, rename it, and choose its agent.**
+  The new-chat form opens on a message row: type and press `enter`, and the
+  chat is created and the message sent in one step. The title is optional —
+  left empty, it is taken from the message's first line. `POST /v1/chats`
+  and `POST /v1/tasks/{id}/chat` accept `message` and answer with
+  `first_turn`; `vincent chat start` takes the title as optional and sends
+  `--message` in the create, and `vincent task chat` gains
+  `--message`/`--message-file`. If the message cannot be sent (the chat cap
+  is full), the chat is still created, a warning says why, and the TUI puts
+  the message back in the composer. `r` on the chats boards, the **rename
+  chat** palette command, `vincent chat rename` and `PATCH /v1/chats/{id}`
+  change a chat's title in any state; the branch keeps its name, and a
+  rename emits `chat.updated`. `alt+t` (the new rebindable `chat_with`
+  operation) and the **chat with…** palette command open a small form —
+  agent, model, effort and an optional first message — before opening a
+  chat on a task or an issue; `T` still opens one at once with the default
+  agent.
+  ([#1029](https://github.com/lezli01/vincent/pull/1029))
+- **A global pause for maintenance.** `vincent daemon pause [--reason]
+  [--wait]`, `POST /v1/daemon/pause` and `Z` in the TUI stop the scheduler
+  admitting anything and park every running task at its next step boundary,
+  using the existing soft pause — nothing is killed. The pause survives a
+  daemon restart, and its state (`active`, `pausing` while tasks are still
+  running, `paused`) shows on every TUI screen, in `vincent daemon status`
+  and through the MCP `daemon_pause_status` tool. `vincent daemon continue`
+  (`POST /v1/daemon/continue`, `Z` again) lifts it and resumes exactly the
+  tasks the pause parked; a task you paused yourself stays paused (task
+  149).
+  ([#1004](https://github.com/lezli01/vincent/pull/1004))
+- **Force delete a stuck task, chat or issue.** `?force=true` on
+  `DELETE /v1/tasks/{id}`, `/v1/chats/{id}` and `/v1/issues/{id}` —
+  `vincent task delete --force`, `vincent chat delete --force` and
+  `vincent issue delete --force --cascade` — removes the row from any state
+  except one with a live process (`409 live_process`). A task takes its
+  lanes and linked and handed-off chats with it; an issue force-deletes its
+  unsettled tasks and open chats first, and refuses as a whole if any is
+  live. The rows go first; the container, worktree and transcripts are
+  cleaned afterwards and only warn. A branch is never deleted, and `force`
+  with `delete_branch` is a 400. In the TUI, a stuck archive asks
+  `force delete #N? (y/n)`, and a refused delete on the archived boards
+  offers a force confirmation. A failed `task archive` or `chat archive`
+  names this way out (task 153).
+  ([#1006](https://github.com/lezli01/vincent/pull/1006))
+- **Finished tasks archive themselves.** The new
+  `archive_finished_tasks_after` key (default `12h`, `0` turns it off) has
+  the daemon archive any root task that has been `done` or `aborted` that
+  long, whether it has no issue, an open one or a closed one; lanes go with
+  their root and chats are never archived. A follow-up restarts the clock.
+  An issue's main task waits while its issue still needs its branch and
+  worktree. Like the issue-close archive, it never forces a dirty worktree
+  and never deletes a remote branch; a refusal is warned once and retried
+  hourly. The archive event carries `archived_by: "finished_after"`. The key
+  is in config, `GET`/`PATCH /v1/config`, `vincent config` and Settings
+  (task 155).
+  ([#1025](https://github.com/lezli01/vincent/pull/1025))
+- **A Jira binding can cover several Jira projects.** A project's Jira
+  binding now names any number of projects on its site, each with its own
+  optional JQL; the site, the credential and the mapping override stay
+  shared. One query syncs them all. Changing the site or the set of keys
+  marks only the dropped projects' issues `missing`; reordering projects or
+  editing one's JQL is not a rebind, and an issue moved between bound
+  projects stays live. `--jira-project KEY[:JQL]` is repeatable (and
+  `--jira-jql` still works on a single-project binding), the TUI project
+  form has a key and a JQL row per project plus an add row, and the Jira
+  probe names the key that failed. **Breaking for API readers:**
+  `issue_source.jira.projects` replaces `project_key` and `jql` in
+  responses, and the Jira probe returns `projects: [{key, project_id}]`
+  instead of `project_key`/`project_id`; the old request body is still
+  accepted as a one-project list (task 146).
+  ([#992](https://github.com/lezli01/vincent/pull/992))
+- **Install the newest master build.** `vincent update --master` installs
+  the rolling `master-latest` prerelease, built from every push to `master`
+  and cosign-signed the way a release is, versioned like
+  `0.13.1-master.36.gc6011f3`, through the same verification chain as a
+  release. It works with `--check`, `--dry-run` and `--json` (which gains a
+  `track` field). Without `--master`, a master build is offered the first
+  release above it. A package-managed install is never moved to master
+  (task 147).
+  ([#993](https://github.com/lezli01/vincent/pull/993))
+- **Move an issue between lanes from the TUI.** `m` on the issues list and
+  the issue detail opens a lane picker and runs the action that lane is
+  derived from: start a task, cancel the issue's running tasks, mark it
+  ready or unready, return it from a handoff, close it with a reason, or
+  reopen it. Moves with nothing behind them are listed disabled with the
+  reason; the lane itself is still derived (task 145).
+  ([#979](https://github.com/lezli01/vincent/pull/979))
+- **The TUI daemon view shows what the issue-close auto-archive is
+  holding:** each held task with its issue, role, state and every reason,
+  and each issue-chat directory left on disk — the facts `vincent doctor`
+  prints. It is shown only when something is held.
+  ([#998](https://github.com/lezli01/vincent/pull/998))
+- **An optional Nerd Font icon set.** `tui.icons: nerd` (default `unicode`)
+  draws the TUI with Nerd Font icons. On macOS and Linux,
+  `vincent fonts status | install | uninstall` and `U` on the Daemon screen
+  install a pinned JetBrainsMono Nerd Font Mono for your user, verified by
+  SHA-256, show a preview, and set `tui.icons: nerd` only once you confirm
+  (task 151).
+  ([#1005](https://github.com/lezli01/vincent/pull/1005))
 
 ### Changed
 
-- **Seeded chat contexts now summarize tool calls.** A seeded rewind or fork
-  used to replay only each earlier turn's prompt and final reply; each turn
-  now also lists its tool calls, one line each (never their output), and
-  those lines are the first thing dropped when the history is too long.
+- **The TUI is redesigned (task 150).** It replaces the old screens
+  outright, with no opt-in. Counted top tabs, a rounded filter box and a
+  one-line status bar frame every screen. Issues and tasks are boards of
+  cards, the task board grouped by issue, each with a preview of the
+  selection on a wide terminal (from 150 columns for issues, 170 for
+  tasks); the opened issue gains a title band, boxed comments and a details
+  pane. Chats keep cards, conversation and details in one workspace. New
+  task and new chat are one screen from 130 columns instead of the
+  six-stage wizard. Settings is a screen of its own, opened from the
+  palette or the Daemon screen, with a live branch-name preview
+  (`POST /v1/config/branch-preview`; `GET /v1/info` now also returns
+  `config_path`). From 130 columns the management screens get wide
+  layouts: projects as a card grid beside everything that needs you, the
+  workflows registry as cards by scope beside its graph and details, the
+  daemon as a dashboard with adapter cards, pull requests in Linked and
+  Unclaimed columns with checks, triggers beside their details and
+  deliveries, and archived tasks and chats on one screen with a time
+  window. `tui.tabs` now defaults to `[issues, tasks, chats]`.
+  ([#1005](https://github.com/lezli01/vincent/pull/1005))
+- **The task workspace is redesigned.** The steps are a rail of
+  one row per step on a connecting line, with attempts, a parallel group's
+  members, a loop's passes, a fan-out's lanes and a guard's `if:` under the
+  step they belong to. The tabs are Overview, Output, Diff, Step details,
+  Workflow and, with a linked pull request, Pull request, cycled with
+  `tab`; **the digit keys are gone**. `i` opens the task's linked issue from
+  any tab but Pull request, whose `i` stays its comment. The right-hand
+  Details pane is gone too: the band names the issue, and the Overview gains
+  a progress bar, Now and The task cards, its link on `enter`, Linked and
+  Usage cards whose rows `↑`/`↓` and `enter` open, and the Task Details
+  document below them. Output is the whole task as one feed — every other
+  attempt folded to a line, the selected one between a divider and the way
+  it ended, each tool call one line that `enter` unfolds, the plan as one
+  row updated in place, a step's script shortened to its first line,
+  command output behind a `┃` bar — with a status line pinned under it. The
+  Diff names its base, marks each file with its git status letter and a
+  change bar, numbers its lines, and `d` on it switches to what the
+  selected attempt changed, which each step run now records
+  (`head_start`/`head_end`, `GET /v1/tasks/{id}/diff?step_run=`,
+  `vincent task diff --step-run`).
+  ([#1036](https://github.com/lezli01/vincent/pull/1036))
 - **On a task's Diff tab, `]` and `[` now move between hunks.** They used to
   switch tabs there, as they still do on every other tab; `tab`/`shift+tab`
-  switch tabs from the Diff tab as before. A hunk in a folded
-  file opens it, and the selected hunk's header is marked `▶`
-  (task 169, #1018).
+  switch tabs from the Diff tab as before. A hunk in a folded file opens it,
+  and the selected hunk's header is marked `▶`.
+  ([#1037](https://github.com/lezli01/vincent/pull/1037))
+- **The task board groups by issue in the TUI.** The daemon's default
+  `tui.board.group_by: [issue]` now reaches the board: one group per issue,
+  headed `issue #<id> · <title> · <short ref> · closed`, and a `no issue`
+  group for the rest. `g` cycles issue → workflow → flat, the `/` filter
+  also matches a task's issue, and the config editor offers `issue`. An
+  existing `group_by: [workflow]` is kept.
+  ([#1000](https://github.com/lezli01/vincent/pull/1000), [#1003](https://github.com/lezli01/vincent/pull/1003))
+- **A chat no longer shows unrecognized lines below verbose.** A claude chat
+  drew a `… N unrecognized line(s)` row between nearly every pair of
+  messages; at quiet, compact and normal those lines now leave no trace, and
+  verbose still shows them whole. The task output pane keeps its count.
+  ([#1007](https://github.com/lezli01/vincent/pull/1007))
 - **The terminal bell rings only while the TUI's terminal is unfocused.**
   It used to ring whenever a task entered `awaiting_input`; now it rings for
   that, for a chat asking for input and for a chat turn ending, but only
   when the terminal reports it has lost focus. A terminal that never
   reports focus (tmux by default) keeps the task bell as before and gets no
-  chat bell. Use `notify.chat_on` / `notify.on`
-  for alerts that must reach you regardless (task 165, #1019).
-
-- **The task workspace is redesigned (task 168).** The steps are a rail of
-  one row per step on a connecting line, with attempts, a parallel group's
-  members, a loop's passes, a fan-out's lanes and a guard's `if:` under the
-  step they belong to. The tabs are Overview, Output, Diff, Step details,
-  Workflow and, with a linked pull request, Pull request, cycled with `tab`;
-  **the digit keys are gone**. `i` opens the task's linked issue from any tab
-  but Pull request, whose `i` stays its comment. The right-hand Details pane is
-  gone too: the band names the issue, and the Overview gains a progress bar,
-  Now and The task cards, its link on `enter`, Linked and Usage cards whose
-  rows `↑`/`↓` and `enter` open, and the Task Details document below them.
-  Output is the whole task as one feed — every other attempt folded to a line,
-  the selected one between a divider and the way it ended, each tool call one
-  line that `enter` unfolds, the plan as one row updated in place, a step's
-  script shortened to its first line, command output behind a `┃` bar — with
-  a status line pinned under it. The Diff names its base, marks each file with
-  its git status letter and a change bar, numbers its lines, and `d` on it
-  switches to what the selected attempt changed, which each step run now
-  records (`head_start`/`head_end`, `GET /v1/tasks/{id}/diff?step_run=`).
-
+  chat bell. Use `notify.chat_on` / `notify.on` for alerts that must reach
+  you regardless.
+  ([#1034](https://github.com/lezli01/vincent/pull/1034))
+- **In a chat, follow the live end with `alt+shift+g`, not `ctrl+g`.**
+  `ctrl+g` now opens the editor; `alt+shift+g` (`alt+G` as typed) sits
+  beside `alt+g`, which jumps to the start.
+  ([#1032](https://github.com/lezli01/vincent/pull/1032))
+- **Seeded chat contexts now summarize tool calls.** A seeded rewind or fork
+  used to replay only each earlier turn's prompt and final reply; each turn
+  now also lists its tool calls, one line each (never their output), and
+  those lines are the first thing dropped when the history is too long.
+  ([#1045](https://github.com/lezli01/vincent/pull/1045))
 - **A step's token count uses the chat's arrows.** The task workspace's step
   details now read `8.1k↑/120↓` — `↑` the input sent to the model, `↓` the
   output it returned — matching each chat turn's heading. They had drawn the
   arrows the other way round.
-
-- **Write a chat message in your editor, and read the whole conversation as
-  Markdown.** In a chat, `ctrl+g` opens the draft in `$VISUAL`/`$EDITOR`;
-  what you save comes back into the composer, unsent, and an emptied or
-  untouched file leaves the draft as it was. `alt+v` (also in the palette)
-  opens the whole conversation as a read-only Markdown document in the same
-  editor: a header naming the chat's agent, model and branch, then every
-  prompt and answer, as `vincent chat export` writes it. Both keys are
-  rebindable in `tui.keys`, as `compose_editor` and `chat_markdown` (#1013).
-
-### Changed
-
-- **In a chat, follow the live end with `alt+shift+g`, not `ctrl+g`.** `ctrl+g` now
-  opens the editor; `alt+shift+g` (`alt+G` as typed) sits beside `alt+g`, which jumps to the start
-  (#1013).
+  ([#1028](https://github.com/lezli01/vincent/pull/1028))
+- **Issue and task titles are drawn as one line of plain text.** Terminal
+  escapes and control characters are stripped and line breaks and tabs
+  become spaces wherever the TUI draws them, so a title can no longer clear
+  the screen or retitle the terminal; the daemon's copy is untouched. An
+  imported issue's source id (`owner/repo#N`, `gh#N`, a Jira key) no longer
+  drops off a crowded card — a badge too wide is cut from its start, never
+  losing its number.
+  ([#979](https://github.com/lezli01/vincent/pull/979))
+- **This repository's issue sweep only picks up issues labelled
+  `vincent-ready`.**
+  ([#959](https://github.com/lezli01/vincent/pull/959))
+- **Go module dependencies updated.**
+  ([#1047](https://github.com/lezli01/vincent/pull/1047))
+- **Release binaries are built with Go 1.26.11**, which fixes
+  GO-2026-6859.
 
 ### Fixed
 
 - **A merge train no longer closes an issue it only partly delivered.** A
   delivery may now suggest `close_reason: none`
-  (`vincent task deliver --close-reason none`), and `vincent handoff deliver`
-  without `--close` leaves that issue open, with the comment still posted.
-  An issue a handoff delivered but left open moves back to the `open` lane,
-  marked `delivered`, so the rest of its work can be picked up instead of
-  sitting in `hand_off` forever. The shipped resolve workflows decide
-  `closes: yes|no` after implementing, on every path, and the handoff train
-  follows each delivery's suggestion (#1042).
+  (`vincent task deliver --close-reason none`), and
+  `vincent handoff deliver` without `--close` leaves that issue open, with
+  the comment still posted. An issue a handoff delivered but left open moves
+  back to the `open` lane, marked `delivered`, so the rest of its work can
+  be picked up instead of sitting in `hand_off` forever. The shipped resolve
+  workflows decide `closes: yes|no` after implementing, on every path, and
+  the handoff train follows each delivery's suggestion.
+  ([#1043](https://github.com/lezli01/vincent/pull/1043))
+- **Creating a chat no longer times out on a slow checkout.** On Windows
+  especially, `POST /v1/chats` could outlast the client's 10-second
+  deadline while the daemon fetched the base branch and added the worktree:
+  the TUI reported a timeout although the chat existed, and a cancelled
+  request could leave a chat with no worktree behind a 500. The client now
+  waits as long as the daemon's own git limits, and the daemon finishes the
+  create even when the caller leaves.
+  ([#1008](https://github.com/lezli01/vincent/pull/1008))
+- **`vincent update` no longer offers a source build the release it is
+  already past.** A `mage build` stamps `git describe`, such as
+  `v0.13.0-46-ge7b38595`, which sorted below v0.13.0, so `vincent update`,
+  the daemon's update check, `vincent doctor` and `GET /v1/update` offered
+  v0.13.0 to a build 46 commits past it. Such a build now sorts above its
+  tag and below every later release.
+  ([#994](https://github.com/lezli01/vincent/pull/994))
+- **A daemon left running on an earlier source or master build is
+  reported.** `vincent daemon status` ("the running daemon is older;
+  restart it") and `vincent doctor`'s `daemon_outdated` could never fire
+  between two source or master builds; they now order such builds by
+  commit count.
+  ([#996](https://github.com/lezli01/vincent/pull/996))
 - **An `$EDITOR` whose path holds a space can be quoted.** vincent split
   `$VISUAL` and `$EDITOR` on whitespace alone, so
   `"C:\Program Files\Notepad++\notepad++.exe" -multiInst` could not be
-  started from any of the TUI's editor keys. The value is now split the way a
-  shell splits a simple command: double and single quotes group a word, and a
-  backslash escapes the next character outside single quotes on macOS and
-  Linux (#1013).
-
+  started from any of the TUI's editor keys. The value is now split the way
+  a shell splits a simple command: double and single quotes group a word,
+  and a backslash escapes the next character outside single quotes on macOS
+  and Linux.
+  ([#1032](https://github.com/lezli01/vincent/pull/1032))
 - **Archiving a held side task by hand now archives the closed issue's main
   tasks.** When a closed issue's side task or merge-back could not be
-  auto-archived (uncommitted changes, a missing project path, a linked chat),
-  its main tasks were held with it; archiving that side task yourself, as the
-  issues guide advises, left the main tasks `done` on the board until some
-  unrelated event touched the issue. A human archive of an issue's task now
-  asks the issue again, so the held main tasks are archived at once (#985).
-
+  auto-archived (uncommitted changes, a missing project path, a linked
+  chat), its main tasks were held with it; archiving that side task
+  yourself, as the issues guide advises, left the main tasks `done` on the
+  board until some unrelated event touched the issue. A human archive of an
+  issue's task now asks the issue again, so the held main tasks are archived
+  at once. The issues guide now also lists which tasks the auto-archive
+  never touches, and why.
+  ([#997](https://github.com/lezli01/vincent/pull/997), [#999](https://github.com/lezli01/vincent/pull/999))
 - **An event stream left open across a restore no longer goes silent.** A
   client that stayed connected through `vincent daemon restore` reconnected
-  with an event cursor taken from the replaced database, ahead of every event
-  in the restored one, and the daemon then sent it nothing until new events
-  climbed past that id — possibly thousands of them. A cursor ahead of every
-  stored event is now treated as no cursor, so the stream delivers each new
-  event at once (#967).
-
-- **A client kept open across a restore no longer silently skips the restored
-  daemon's events.** When the restored daemon had already written past a
-  connected client's old event cursor before it reconnected — the usual case,
-  since clients back off for up to five seconds — the stream resumed after
-  that cursor and every restored event below it was lost, while the TUI kept
-  showing the replaced database. The daemon now starts a new event history on
-  its first start after `vincent daemon restore`; a client reconnecting from
-  the old one is told so and starts afresh, and the TUI reloads every view
-  (#1001).
-
+  with an event cursor taken from the replaced database, ahead of every
+  event in the restored one, and the daemon then sent it nothing until new
+  events climbed past that id — possibly thousands of them. A cursor ahead
+  of every stored event is now treated as no cursor, so the stream delivers
+  each new event at once.
+  ([#995](https://github.com/lezli01/vincent/pull/995))
+- **A client kept open across a restore no longer silently skips the
+  restored daemon's events.** When the restored daemon had already written
+  past a connected client's old event cursor before it reconnected — the
+  usual case, since clients back off for up to five seconds — the stream
+  resumed after that cursor and every restored event below it was lost,
+  while the TUI kept showing the replaced database. The daemon now starts a
+  new event history on its first start after `vincent daemon restore`; a
+  client reconnecting from the old one is told so and starts afresh, and the
+  TUI reloads every view.
+  ([#1002](https://github.com/lezli01/vincent/pull/1002))
+- **Live event streams no longer skip events.** `GET /v1/events`, a task's
+  event stream and a chat's stream could silently drop durable events —
+  every fan-out round lost its lanes' `task.created` — and a
+  `Last-Event-ID` reconnect never brought them back, because the cursor had
+  already moved past them. The daemon now publishes events in id order, so
+  a stream that resumes by id misses nothing.
+  ([#991](https://github.com/lezli01/vincent/pull/991))
 - **A chat whose turn failed before its agent started returns to idle.** A
   turn that failed before the agent process was up — no adapter for the
   chat's agent, a transcript that could not be opened, or an agent that
   refused to start — left its chat `running` for good: every later send was
   refused, the chat could be neither archived nor closed, and it held one of
   the `max_parallel_chats` slots. The chat now returns to `idle` as soon as
-  the turn fails, and a daemon restart repairs chats already stuck that way
-  (#960).
-
-- **Workflow includes can no longer exhaust the daemon at load.** The include
-  check run on every registry load built each workflow's full expansion, so a
-  few files each including the next one twice cost exponential time and
-  memory before any task existed. It now walks the include graph by name,
-  each workflow once. Its platform warning is also judged against the host:
-  a callee restricted to this host no longer warns, and one that excludes it
-  now does.
-
-- **Deleting an issue's main task no longer deletes the issue's branch
-  with a predecessor's commits on it.** Permanently deleting a later main
-  task of an issue with `delete_branch=true`, or deleting the whole project,
-  judged the shared issue branch empty against the tip that task received
-  and force-deleted it, losing an earlier main task's unmerged commits.
-  Both now judge it against the issue's base branch, as archive does, and
-  keep it.
-
+  the turn fails, and a daemon restart repairs chats already stuck that way.
+  ([#990](https://github.com/lezli01/vincent/pull/990))
+- **Workflow includes can no longer exhaust the daemon at load.** The
+  include check run on every registry load built each workflow's full
+  expansion, so a few files each including the next one twice cost
+  exponential time and memory before any task existed. It now walks the
+  include graph by name, each workflow once. Its platform warning is also
+  judged against the host: a callee restricted to this host no longer
+  warns, and one that excludes it now does.
+  ([#989](https://github.com/lezli01/vincent/pull/989))
+- **Deleting an issue's main task no longer deletes the issue's branch with
+  a predecessor's commits on it.** Permanently deleting a later main task of
+  an issue with `delete_branch=true`, or deleting the whole project, judged
+  the shared issue branch empty against the tip that task received and
+  force-deleted it, losing an earlier main task's unmerged commits. Both now
+  judge it against the issue's base branch, as archive does, and keep it.
+  ([#990](https://github.com/lezli01/vincent/pull/990))
 - **A resumed loop picks up in the iteration it stopped in.** A task
   re-admitted inside a `loop` step — by `retry`, a daemon restart, a
   usage-limit hold or a paced-retry backoff — used to walk the loop from
   iteration 1 again. Every earlier iteration that held a failed
   `allow_failure` step (every non-final pass of a converge loop) then ran in
   full a second time, re-spending its agent runs and, in a merge-pass loop,
-  re-pushing earlier passes. Finished iterations are now left alone (#962).
-
-- **A task from a fork pull request no longer moves your own branch.** A fork's
-  task used to run on a local branch named after the fork's head branch, so a
-  pull request opened from a fork's `master` fast-forwarded your local `master`
-  onto the contributor's unreviewed commits, and the agent then committed on
-  top. A fork's task now runs on `vincent/pr-{n}`, still fetched from
-  `refs/pull/{n}/head`; a same-repository pull request still runs on its head
-  branch (#964).
-
+  re-pushing earlier passes. Finished iterations are now left alone.
+  ([#990](https://github.com/lezli01/vincent/pull/990))
+- **A task from a fork pull request no longer moves your own branch.** A
+  fork's task used to run on a local branch named after the fork's head
+  branch, so a pull request opened from a fork's `master` fast-forwarded
+  your local `master` onto the contributor's unreviewed commits, and the
+  agent then committed on top. A fork's task now runs on `vincent/pr-{n}`,
+  still fetched from `refs/pull/{n}/head`; a same-repository pull request
+  still runs on its head branch.
+  ([#990](https://github.com/lezli01/vincent/pull/990))
 - **Agent sub-steps of a `parallel` group no longer park the task on a
   question.** A sub-step resolving to `on_input: wait` — including the
   default, when nothing sets `on_input` — used to move the whole task to
-  `awaiting_input`, so a second sibling's question was dropped and that agent
-  idled until `agent_timeout`, blocking the task. Inside a group `wait` now
-  runs as `deny`: questions get the canned auto-answer and permission requests
-  are denied, and the task stays `running` (#965). `on_input: wait` is still
-  accepted there; `require` is still rejected.
-
+  `awaiting_input`, so a second sibling's question was dropped and that
+  agent idled until `agent_timeout`, blocking the task. Inside a group
+  `wait` now runs as `deny`: questions get the canned auto-answer and
+  permission requests are denied, and the task stays `running`.
+  `on_input: wait` is still accepted there; `require` is still rejected.
+  ([#990](https://github.com/lezli01/vincent/pull/990))
 - **The Linux service survives paths with spaces.** The systemd user unit
   written by `vincent service install` now quotes `ExecStart=` and the
   `VINCENT_CONFIG_DIR`/`VINCENT_DATA_DIR` environment lines. Before, an
-  executable under a directory with a space failed to start, and a config or
-  data directory with a space was truncated, so the service ran against a
-  different database than the CLI; a `$` in the executable path was also
+  executable under a directory with a space failed to start, and a config
+  or data directory with a space was truncated, so the service ran against
+  a different database than the CLI; a `$` in the executable path was also
   expanded by systemd. Re-run `vincent service install` to rewrite an
   existing unit.
-
+  ([#990](https://github.com/lezli01/vincent/pull/990))
 - **Config and trigger saves no longer fail on Windows while the daemon is
   reading the file.** Two quick `PATCH /v1/config` calls, a trigger edit, or
   `vincent trigger apply` writing several files could answer 500 with a
   sharing violation, because the daemon's own reload still had the file
   open. The write now waits that reader out for up to two seconds, the way
   workflow saves already did.
-  ([#969](https://github.com/lezli01/vincent/issues/969))
-
-- **Live event streams no longer skip events.** `GET /v1/events`, a task's
-  event stream and a chat's stream could silently drop durable events — every
-  fan-out round lost its lanes' `task.created` — and a `Last-Event-ID`
-  reconnect never brought them back, because the cursor had already moved
-  past them. The daemon now publishes events in id order, so a stream that
-  resumes by id misses nothing (#963).
+  ([#990](https://github.com/lezli01/vincent/pull/990))
+- **A release build takes its version from the release tag.** Every push to
+  `master` moves the `master-latest` tag, so a release commit could carry
+  both it and its `v*` tag, and a dispatched dry run saw only
+  `master-latest` and failed. The Release workflow now names GoReleaser's
+  current tag explicitly: the pushed `v*` tag for a release, the newest
+  release tag for a dispatch.
+  ([#1048](https://github.com/lezli01/vincent/pull/1048))
 
 ## [0.13.0](https://github.com/lezli01/vincent/compare/v0.12.0...v0.13.0) (2026-11-09)
 

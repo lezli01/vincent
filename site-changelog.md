@@ -8,6 +8,55 @@ permalink: /changelog.html
 
 This is the human-readable vincent release history. The generated [canonical CHANGELOG](https://github.com/lezli01/vincent/blob/master/CHANGELOG.md) remains the source used by release automation, while this page removes duplicate commit subjects and keeps the product impact clear.
 
+## 0.14.0 — Chats you can rewind, fork, compare and review, in a redesigned TUI
+
+Released 2026-11-22.
+
+### Added
+
+- **Rewind or fork a chat from any turn.** Every chat turn now checkpoints its worktree first, so you can put the code, the conversation or both back to before any turn — and go forward again — or fork a new chat from that point on its own branch. ([#1035](https://github.com/lezli01/vincent/pull/1035), [#1044](https://github.com/lezli01/vincent/pull/1044))
+- **Hand a chat to another agent, or ask two at once.** Fork a chat onto a different agent, which starts from an editable summary of the conversation, or compare two agents' answers to the same prompt side by side and keep the better one. ([#1045](https://github.com/lezli01/vincent/pull/1045), [#1046](https://github.com/lezli01/vincent/pull/1046))
+- **Review a chat's changes hunk by hunk.** `alt+d` shows what the chat changed, untracked files included; reject a hunk to revert it and tell the agent not to reapply it, or mark it accepted. ([#1037](https://github.com/lezli01/vincent/pull/1037))
+- **Queue messages while the agent works.** Messages sent during a running turn wait their turn instead of being refused, and can be edited or removed before they run. ([#1027](https://github.com/lezli01/vincent/pull/1027))
+- **Change a chat's model, effort and permission mode between turns**, or run a single turn with its own. ([#1032](https://github.com/lezli01/vincent/pull/1032))
+- **Run shell commands and paste images in a chat.** `alt+x` runs a command in the chat's directory and shows its output, which you can choose to hand to the agent; `ctrl+v` pastes an image for agents that accept them. Question cards answer with a digit, and the composer gains a custom status line and an optional vim mode. ([#1040](https://github.com/lezli01/vincent/pull/1040))
+- **Never lose a draft, and reuse earlier prompts.** Unsent messages are kept by the daemon across chats, restarts and terminals; stash a draft, recall earlier prompts with `↑`, or pick any prompt sent in the project. ([#1033](https://github.com/lezli01/vincent/pull/1033))
+- **Chats that get your attention.** Chats can trigger your notify command, unread answers are marked, waiting chats count towards the attention badge, and `alt+n` or `alt+1`…`alt+9` switch chats without going back to the list. ([#1034](https://github.com/lezli01/vincent/pull/1034))
+- **Mention issues, tasks, pull requests and line ranges** — `#issue-N`, `#task-N`, `#pr-N`, `@file#L20-45` — and the agent receives their content with your message, on every agent. ([#1034](https://github.com/lezli01/vincent/pull/1034))
+- **Find anything in your chats.** Search inside a chat with `ctrl+f`, or across every chat, archived ones included. ([#1028](https://github.com/lezli01/vincent/pull/1028), [#1029](https://github.com/lezli01/vincent/pull/1029))
+- **See what each turn cost and how full the context is**, with a context gauge and, on claude, a one-key `/compact`. ([#1028](https://github.com/lezli01/vincent/pull/1028))
+- **Export a chat as Markdown, HTML or JSON**, write a message in your `$EDITOR`, and read the whole conversation there as Markdown. ([#1028](https://github.com/lezli01/vincent/pull/1028), [#1032](https://github.com/lezli01/vincent/pull/1032))
+- **Start a chat by typing its first message**, rename chats, and pick the agent for a chat on a task or issue. ([#1029](https://github.com/lezli01/vincent/pull/1029))
+- **Pause everything for maintenance.** `vincent daemon pause` (or `Z` in the TUI) stops new work and parks running tasks at their next step, across restarts; `vincent daemon continue` resumes exactly what it paused. ([#1004](https://github.com/lezli01/vincent/pull/1004))
+- **Force delete what is stuck.** A task, chat or issue whose archive keeps failing can now be force deleted from any state, as long as nothing is running. ([#1006](https://github.com/lezli01/vincent/pull/1006))
+- **Finished tasks tidy themselves away.** Tasks that have sat finished for 12 hours are archived automatically; change or turn this off with `archive_finished_tasks_after`. ([#1025](https://github.com/lezli01/vincent/pull/1025))
+- **Several Jira projects per binding**, each with its own optional JQL. API readers: the binding now reports a `projects` list. ([#992](https://github.com/lezli01/vincent/pull/992))
+- **Try the newest master build** with `vincent update --master`, signed like a release. ([#993](https://github.com/lezli01/vincent/pull/993))
+- **Move an issue between lanes** with `m` on the issues board. ([#979](https://github.com/lezli01/vincent/pull/979))
+- **Optional Nerd Font icons**, with `vincent fonts install` to set the font up for you on macOS and Linux. ([#1005](https://github.com/lezli01/vincent/pull/1005))
+
+### Changed
+
+- **A redesigned TUI.** Counted tabs, boards of cards with previews for issues and tasks, a chats tab by default, a one-screen new task and new chat form, a Settings screen of its own, and wide layouts for projects, workflows, the daemon, pull requests, triggers and the archive. ([#1005](https://github.com/lezli01/vincent/pull/1005))
+- **A redesigned task workspace.** A steps rail, tabs without digit keys, the whole task's output as one feed, a cleaner diff that can show a single attempt, and an Overview made of cards. ([#1036](https://github.com/lezli01/vincent/pull/1036), [#1037](https://github.com/lezli01/vincent/pull/1037))
+- **The task board groups by issue**, with `g` switching to workflow or flat. ([#1000](https://github.com/lezli01/vincent/pull/1000), [#1003](https://github.com/lezli01/vincent/pull/1003))
+- **Quieter chats.** Unrecognized agent output is hidden below verbose, and the terminal bell rings only when the terminal is not focused. ([#1007](https://github.com/lezli01/vincent/pull/1007), [#1034](https://github.com/lezli01/vincent/pull/1034))
+- **Titles can no longer mess up your terminal**, and an imported issue's id always stays visible on its card. ([#979](https://github.com/lezli01/vincent/pull/979))
+- **Go module dependencies updated.** ([#1047](https://github.com/lezli01/vincent/pull/1047))
+
+### Fixed
+
+- **A merge train no longer closes an issue it only partly delivered**; the issue goes back to the open lane so the rest of its work can be picked up. ([#1043](https://github.com/lezli01/vincent/pull/1043))
+- **Event streams stay correct across a `vincent daemon restore`**, and live streams no longer skip events. ([#991](https://github.com/lezli01/vincent/pull/991), [#995](https://github.com/lezli01/vincent/pull/995), [#1002](https://github.com/lezli01/vincent/pull/1002))
+- **Creating a chat no longer times out** on slow checkouts, notably on Windows. ([#1008](https://github.com/lezli01/vincent/pull/1008))
+- **`vincent update` stops offering a source build the release it is already past**, and an outdated daemon on a source or master build is reported. ([#994](https://github.com/lezli01/vincent/pull/994), [#996](https://github.com/lezli01/vincent/pull/996))
+- **A chat stuck in `running` after a failed start returns to idle**, and a resumed loop continues from the iteration it stopped in. ([#990](https://github.com/lezli01/vincent/pull/990))
+- **A task from a fork's pull request no longer moves your own branch**, and deleting an issue's task no longer loses an earlier task's commits. ([#990](https://github.com/lezli01/vincent/pull/990))
+- **Parallel agent steps no longer stall the task on a question**, the Linux service works from paths with spaces, and config saves no longer fail on Windows. ([#990](https://github.com/lezli01/vincent/pull/990))
+- **Workflow includes can no longer exhaust the daemon** when it loads them. ([#989](https://github.com/lezli01/vincent/pull/989))
+- **Archiving a held side task by hand archives the closed issue's main tasks too.** ([#997](https://github.com/lezli01/vincent/pull/997))
+- **An `$EDITOR` path with spaces can be quoted.** ([#1032](https://github.com/lezli01/vincent/pull/1032))
+
 ## 0.13.0 — Jira Cloud issues, and closed issues that tidy up after themselves
 
 Released 2026-11-09.
