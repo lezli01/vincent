@@ -218,6 +218,9 @@ func TestMCPExcludesDestructiveAdminByName(t *testing.T) {
 		// the created_by_task_id chain, as send and handoff would.
 		{http.MethodPost, "/v1/chats/{id}/compare"},
 		{http.MethodGet, "/v1/chats/{id}/compare"},
+		// Keeping a side archives the other and deletes its branch: a human's
+		// choice between two answers, as a hunk review is (task 171 decision 8).
+		{http.MethodPost, "/v1/chats/{id}/compare/keep"},
 	}
 	if len(mcp.Excluded) != len(want) {
 		t.Fatalf("mcp.Excluded has %d entries, want %d", len(mcp.Excluded), len(want))

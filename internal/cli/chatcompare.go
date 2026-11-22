@@ -125,3 +125,65 @@ func compareErrorMessage(err error, chatID int64) string {
 	}
 	return rewindErrorMessage(err, chatID)
 }
+
+func newChatKeepCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "keep <chat-id>",
+		Short: "Keep one side of a compare, archiving the other with its branch",
+		Long: "The chat is one side of a `vincent chat compare`. It is kept, and the other side is " +
+			"archived: its worktree removed even with uncommitted changes, and its branch and " +
+			"checkpoint refs deleted — that answer is discarded, though its conversation stays " +
+			"readable in the archive. Refused while either side still has a live turn, and once " +
+			"a side was kept.\n\nExit 1 on a refusal; 2 with no daemon.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("chat id: %w", err)
+			}
+			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
+				res, err := c.KeepCompareSide(ctx, id)
+				if err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
+					return exitError{code: 1}
+				}
+				if wantJSON(cmd) {
+					return emitJSON(cmd.OutOrStdout(), res)
+				}
+				out := cmd.OutOrStdout()
+				_, _ = fmt.Fprintf(out, "kept chat %d (%s) from compare %d\n", res.Kept.ID, res.Kept.Agent, res.Compare.ID)
+				if a := res.Archived; a != nil {
+					line := fmt.Sprintf("archived chat %d (%s)", a.ID, a.Agent)
+					if res.BranchDeleted {
+						line += "; branch " + a.Branch + " deleted"
+					}
+					_, _ = fmt.Fprintln(out, line)
+				}
+				return nil
+			})
+		},
+	}
+	jsonFlag(cmd)
+	return cmd
+}
+
+// printCompareSides is `chat show`'s line for a compare side: the pair, which
+// side this is, the mode each runs under, and which was kept.
+func printCompareSides(w io.Writer, cmp *apiclient.ChatCompare, self int64) {
+	side := func(name string, s apiclient.CompareSide) string {
+		id := "deleted"
+		if s.ChatID != nil {
+			id = "chat " + strconv.FormatInt(*s.ChatID, 10)
+			if *s.ChatID == self {
+				id += " (this one)"
+			}
+		}
+		return fmt.Sprintf("%s %s, %s, %s", name, id, s.Agent, s.PermissionMode)
+	}
+	line := fmt.Sprintf("compare %d of chat %d, before turn %d: %s; %s", cmp.ID, cmp.SourceChatID, cmp.Seq,
+		side("left", cmp.Left), side("right", cmp.Right))
+	if cmp.KeptChatID != nil {
+		line += fmt.Sprintf("; kept chat %d", *cmp.KeptChatID)
+	}
+	_, _ = fmt.Fprintln(w, line)
+}

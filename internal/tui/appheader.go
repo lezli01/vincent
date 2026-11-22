@@ -50,7 +50,7 @@ func tabGlyph(id viewID) string {
 		return ic("▦")
 	case viewHome, viewTask:
 		return ic("▶")
-	case viewChats, viewChat:
+	case viewChats, viewChat, viewCompare:
 		return ic("◌")
 	case viewProjects:
 		return ic(headerProjectGlyph)

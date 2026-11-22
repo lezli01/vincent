@@ -477,6 +477,7 @@ func (s *Server) buildHandler() http.Handler {
 	rt.handle(http.MethodPost, "/v1/chats/{id}/fork", s.handleChatFork)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/compare", s.handleChatCompare)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/compare", s.handleChatCompareGet)
+	rt.handle(http.MethodPost, "/v1/chats/{id}/compare/keep", s.handleChatCompareKeep)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/close", s.handleChatClose)
 	rt.handle(http.MethodPost, "/v1/chats/{id}/viewed", s.handleChatViewed)
 	rt.handle(http.MethodGet, "/v1/chats/{id}/turns/{seq}/transcript", s.handleChatTurnTranscript)

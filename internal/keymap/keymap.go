@@ -216,7 +216,7 @@ var catalog = []Info{
 	{Op: Refresh, Default: "R", Meaning: "refresh / re-read", Kind: KindTerm, Surfaces: []Surface{
 		"settings", "new task", "archived tasks", "archived chats", "chats", "workflows", "workflow editor", "workflow graph",
 		"step detail", "pull requests", "daemon", "triggers", "trigger ledger", "trigger form",
-		"issues", "issue", "issue form",
+		"issues", "issue", "issue form", "compare",
 	}},
 	{Op: Archive, Default: "A", Meaning: "archive", Kind: KindTerm, Surfaces: []Surface{"chats", Actions}},
 	{Op: Rename, Default: "r", Meaning: "rename a chat", Kind: KindTerm, Surfaces: []Surface{"chats", "archived chats"}},

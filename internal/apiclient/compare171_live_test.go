@@ -19,6 +19,7 @@ import (
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatexport"
 	"github.com/lezli01/vincent/internal/chatrun"
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/config"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
@@ -167,6 +168,28 @@ func TestCompareAgainstTheRealAPI(t *testing.T) {
 	_, err = client.GetChatCompare(ctx, src.ID)
 	refused("GET compare on the source", err, http.StatusNotFound, "")
 
+	// Keep the left side: the right is archived, its branch deleted, and a
+	// second keep is refused. The kept side carries on.
+	rightBranch := res.Right.Chat.Branch
+	kept, err := client.KeepCompareSide(ctx, left)
+	if err != nil {
+		t.Fatalf("keep left: %v", err)
+	}
+	if kept.Compare.KeptChatID == nil || *kept.Compare.KeptChatID != left || kept.Archived == nil ||
+		kept.Archived.ID != right || kept.Archived.State != "archived" || !kept.BranchDeleted {
+		t.Errorf("keep = %+v", kept)
+	}
+	if out, err := git.Run(ctx, repo, "branch", "--list", rightBranch); err != nil || out != "" {
+		t.Errorf("the discarded side's branch %s is still there: %q %v", rightBranch, out, err)
+	}
+	_, err = client.KeepCompareSide(ctx, right)
+	refused("a second keep", err, http.StatusConflict, "compare_kept")
+	_, err = client.KeepCompareSide(ctx, src.ID)
+	refused("keep on the source", err, http.StatusNotFound, "")
+	if c, _, err := client.GetChat(ctx, left); err != nil || c.State != "idle" {
+		t.Errorf("the kept side = %+v, %v", c, err)
+	}
+
 	// An explicit prompt is sent as given.
 	res, err = client.CompareChat(ctx, src.ID, apiclient.CompareRequest{
 		Turn: 1, Prompt: "a new question", Agents: []string{"codex", "claude"}, PermissionMode: "full-auto",
@@ -177,4 +200,13 @@ func TestCompareAgainstTheRealAPI(t *testing.T) {
 	}
 	idleWith(res.Left.Chat.ID, 1)
 	idleWith(res.Right.Chat.ID, 1)
+	// While either side holds a process, neither can be kept.
+	if _, err := st.SetChatState(ctx, res.Right.Chat.ID, chatstate.Running); err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.KeepCompareSide(ctx, res.Left.Chat.ID)
+	refused("keep while the other side runs", err, http.StatusConflict, "chat_turn_live")
+	if c, _, _ := client.GetChat(ctx, res.Right.Chat.ID); c == nil || c.State != "running" {
+		t.Errorf("a refused keep touched the other side: %+v", c)
+	}
 }

@@ -81,3 +81,27 @@ func (c *Client) GetChatCompare(ctx context.Context, id int64) (*ChatCompare, er
 	}
 	return &out.Compare, nil
 }
+
+// KeepResult is keeping one side of a compare: the compare with KeptChatID
+// set, the kept chat, the other side as archived (nil when it was already
+// gone), and whether its branch was deleted.
+type KeepResult struct {
+	Compare       ChatCompare `json:"compare"`
+	Kept          Chat        `json:"kept"`
+	Archived      *Chat       `json:"archived"`
+	BranchDeleted bool        `json:"branch_deleted"`
+}
+
+// KeepCompareSide keeps chat id, one side of a compare, and archives the
+// other with its branch and checkpoint refs (task 171 decision 8). Refused
+// 409 `chat_turn_live` while either side has a live turn, 409
+// `compare_kept` once a side was kept, 404 for a chat that is no side.
+// Removing a worktree is held to worktreeTimeout.
+func (c *Client) KeepCompareSide(ctx context.Context, id int64) (*KeepResult, error) {
+	var out KeepResult
+	path := fmt.Sprintf("/v1/chats/%d/compare/keep", id)
+	if err := c.sendVia(ctx, c.worktrees, http.MethodPost, path, nil, struct{}{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

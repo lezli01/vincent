@@ -913,6 +913,44 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 	},
+	ctxCompare: {
+		"tab": func(t *testing.T) {
+			v := compareFixture()
+			v.updateKey(registryKey(t, "tab"))
+			if v.focus != 1 {
+				t.Fatalf("tab left the focus on side %d", v.focus)
+			}
+		},
+		"enter": func(t *testing.T) {
+			v := compareFixture()
+			_, cmd := v.updateKey(registryKey(t, "enter"))
+			msg, ok := drain(cmd).(openChatMsg)
+			if !ok || msg.id != 12 || msg.back != viewCompare {
+				t.Fatalf("enter produced %#v, want the left side's chat 12 with esc back here", drain(cmd))
+			}
+		},
+		"[": func(t *testing.T) {
+			v := compareFixture()
+			v.updateKey(registryKey(t, "["))
+			if v.confirm != 0 {
+				t.Fatalf("[ did not ask to keep the left side (confirm %d, note %q)", v.confirm, v.note)
+			}
+		},
+		"]": func(t *testing.T) {
+			v := compareFixture()
+			v.updateKey(registryKey(t, "]"))
+			if v.confirm != 1 {
+				t.Fatalf("] did not ask to keep the right side (confirm %d, note %q)", v.confirm, v.note)
+			}
+		},
+		"R": func(t *testing.T) {
+			v := compareFixture()
+			v.client = apiclient.New("http://127.0.0.1:1", "t")
+			if _, cmd := v.updateKey(registryKey(t, "R")); cmd == nil {
+				t.Fatal("R read nothing")
+			}
+		},
+	},
 	ctxChatSearch: {
 		"enter": func(t *testing.T) {
 			v := chatSearchFixture()

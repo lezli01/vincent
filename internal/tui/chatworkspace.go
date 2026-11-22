@@ -190,21 +190,30 @@ func (v *chatsView) applyPreview(msg chatPreviewMsg) {
 	if v.previews == nil {
 		v.previews = map[int64]chatPreview{}
 	}
-	p := chatPreview{updated: msg.updated, tools: msg.tools, stat: msg.stat}
-	if msg.err != nil {
-		p.err = errString(msg.err)
-		v.previews[msg.key.id] = p
-		return
+	p := previewFrom(msg.chat, msg.turns, msg.tools, msg.err)
+	p.updated, p.stat = msg.updated, msg.stat
+	v.previews[msg.key.id] = p
+}
+
+// previewFrom is one chat read as a preview pane holds it, sanitized: a
+// prompt and an answer are text an agent or a paste wrote, and an escape in
+// one must not reach the terminal. The board's preview and the compare
+// split view (task 171) both draw from it.
+func previewFrom(chat *apiclient.Chat, turns []apiclient.ChatTurn, tools map[int][]apiclient.TranscriptRecord, err error) chatPreview {
+	p := chatPreview{tools: tools}
+	if err != nil {
+		p.err = errString(err)
+		return p
 	}
-	if msg.chat != nil {
-		p.chat = *msg.chat
+	if chat != nil {
+		p.chat = *chat
 	}
-	p.turns = make([]apiclient.ChatTurn, len(msg.turns))
-	for i, t := range msg.turns {
+	p.turns = make([]apiclient.ChatTurn, len(turns))
+	for i, t := range turns {
 		t.Prompt, t.ResultText, t.ErrorMessage = sanitizeText(t.Prompt), sanitizeText(t.ResultText), sanitizeText(t.ErrorMessage)
 		p.turns[i] = t
 	}
-	v.previews[msg.key.id] = p
+	return p
 }
 
 // forgetPreviews drops every kept read, and any read under way.

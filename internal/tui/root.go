@@ -1150,6 +1150,8 @@ func (m *root) activeContext() bindingContext {
 		return m.views[viewChat].(*chatView).bindingContext()
 	case viewChatSearch:
 		return ctxChatSearch
+	case viewCompare:
+		return ctxCompare
 	case viewTriggers:
 		return m.views[viewTriggers].(*triggersView).bindingContext()
 	case viewIssues:
@@ -1325,6 +1327,12 @@ func (m *root) routeOpen(open tea.Msg) tea.Cmd {
 		if v, ok := m.views[viewIssue].(*issueView); ok {
 			v.back = msg.back
 			return tea.Batch(v.open(msg.id), m.switchTo(viewIssue))
+		}
+	case openCompareMsg:
+		// Pointed first and switched second, for openChatMsg's reason.
+		if v, ok := m.views[viewCompare].(*compareView); ok {
+			v.back = msg.back
+			return tea.Batch(v.open(msg.chatID), m.switchTo(viewCompare))
 		}
 	case openChatMsg:
 		// The chat workspace is not the active view yet, and an inactive

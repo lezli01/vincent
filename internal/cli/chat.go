@@ -45,7 +45,7 @@ func newChatCmd() *cobra.Command {
 		newChatSkillsCmd(), newChatFilesCmd(), newChatArchiveCmd(), newChatHandoffCmd(),
 		newChatCloseCmd(), newChatDeleteCmd(), newChatQueueCmd(), newChatSearchCmd(), newChatDiffCmd(),
 		newChatExportCmd(), newChatFindCmd(), newChatRenameCmd(), newChatSetCmd(),
-		newChatShellCmd(), newChatImageCmd(), newChatRewindCmd(), newChatForkCmd(), newChatPreambleCmd(), newChatCompareCmd())
+		newChatShellCmd(), newChatImageCmd(), newChatRewindCmd(), newChatForkCmd(), newChatPreambleCmd(), newChatCompareCmd(), newChatKeepCmd())
 	return cmd
 }
 
@@ -499,6 +499,13 @@ func newChatShowCmd() *cobra.Command {
 				_, _ = fmt.Fprintf(out, "chat %d  %s\nstate: %s  agent: %s  branch: %s\n",
 					chat.ID, chat.Title, chat.State, chat.Agent, chat.Branch)
 				printChatRewindState(out, chat)
+				// Only a fork can be a compare side (task 171), so no other
+				// chat pays for the read; a failed read prints nothing.
+				if chat.ForkedFrom != nil {
+					if cmp, err := c.GetChatCompare(ctx, chat.ID); err == nil {
+						printCompareSides(out, cmp, chat.ID)
+					}
+				}
 				// The pending request is printed before the turns because it
 				// is the thing that needs doing: `chat answer` numbers its
 				// questions off exactly this list.

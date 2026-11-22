@@ -15,6 +15,7 @@ import (
 
 	"github.com/lezli01/vincent/internal/agent"
 	"github.com/lezli01/vincent/internal/chatrun"
+	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/gitx"
 	"github.com/lezli01/vincent/internal/store"
 )
@@ -268,4 +269,100 @@ func (s *Server) handleChatCompareGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"compare": renderCompare(cmp)})
+}
+
+// CodeCompareKept refuses keeping a side of a compare that already has a
+// kept side (task 171 decision 8): the other one is archived, its branch gone.
+const CodeCompareKept = "compare_kept"
+
+// handleChatCompareKeep serves POST /v1/chats/{id}/compare/keep: {id} is the
+// side kept, and the other side is archived — its worktree removed even when
+// dirty, since discarding that answer is the point — with its branch and
+// checkpoint refs deleted (decision 8). Refused while either side has a live
+// turn: an answer still being written is not one to choose between.
+func (s *Server) handleChatCompareKeep(w http.ResponseWriter, r *http.Request) {
+	kept, ok := s.chatFromPath(w, r)
+	if !ok {
+		return
+	}
+	ctx := context.WithoutCancel(r.Context())
+	cmp, err := s.deps.Store.GetChatCompareForChat(ctx, kept.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, CodeNotFound, fmt.Sprintf("chat %d is not a side of a compare", kept.ID))
+		return
+	}
+	if err != nil {
+		s.internalError(w, "compare keep: read", err)
+		return
+	}
+	if cmp.KeptChatID != nil {
+		writeError(w, http.StatusConflict, CodeCompareKept,
+			fmt.Sprintf("compare %d already kept chat %d", cmp.ID, *cmp.KeptChatID))
+		return
+	}
+	otherID := cmp.Right.ChatID
+	if cmp.Side(kept.ID) == "right" {
+		otherID = cmp.Left.ChatID
+	}
+	var other *store.Chat
+	if otherID != nil {
+		if other, err = s.deps.Store.GetChat(ctx, *otherID); err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.internalError(w, "compare keep: read the other side", err)
+			return
+		}
+	}
+	for _, c := range []*store.Chat{kept, other} {
+		if c == nil {
+			continue
+		}
+		if chatstate.HoldsProcess(c.State) || (s.deps.Chats != nil && s.deps.Chats.Running(c.ID)) {
+			writeError(w, http.StatusConflict, CodeChatTurnLive, fmt.Sprintf(
+				"chat %d still has a live turn; wait for both answers, or cancel it, before keeping one", c.ID))
+			return
+		}
+	}
+	out := map[string]any{"archived": nil, "branch_deleted": false}
+	if other != nil {
+		archived := other
+		if !chatstate.Terminal(other.State) {
+			var fail apiFailure
+			if archived, fail = s.archiveChat(ctx, other, true); fail != nil {
+				fail(w)
+				return
+			}
+		}
+		out["archived"] = renderChat(archived)
+		out["branch_deleted"] = s.deleteCompareBranch(ctx, archived)
+		s.pruneChatRefs(ctx, archived.ProjectID, archived.ID)
+	}
+	if err := s.deps.Store.SetChatCompareKept(ctx, cmp.ID, kept.ID); err != nil {
+		s.internalError(w, "compare keep: record", err)
+		return
+	}
+	if cmp, err = s.deps.Store.GetChatCompare(ctx, cmp.ID); err != nil {
+		s.internalError(w, "compare keep: reread", err)
+		return
+	}
+	out["compare"], out["kept"] = renderCompare(cmp), renderChat(kept)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// deleteCompareBranch deletes the discarded side's branch, and reports
+// whether it did. Only a branch vincent cut for the fork goes — never one a
+// human named (adopted), a task's or an issue's, which a fork never has but
+// which this does not assume. Its commits are the discarded answer; the
+// kept side and the source are on other branches.
+func (s *Server) deleteCompareBranch(ctx context.Context, chat *store.Chat) bool {
+	if chat.Branch == "" || chat.AdoptedBranch || chat.Linked() || chat.OnIssue() {
+		return false
+	}
+	project, err := s.deps.Store.GetProject(ctx, chat.ProjectID)
+	if err != nil {
+		return false
+	}
+	if _, err := gitx.New().Run(ctx, project.Path, "branch", "-D", chat.Branch); err != nil {
+		s.deps.Logger.Warn("compare keep: branch kept", "chat", chat.ID, "branch", chat.Branch, "error", err)
+		return false
+	}
+	return true
 }

@@ -53,9 +53,10 @@ type switchSaving interface {
 // switchFallback is where a detail screen lands when the project changes
 // under it: the list each one is opened from.
 var switchFallback = map[viewID]viewID{
-	viewTask:  viewHome,
-	viewChat:  viewChats,
-	viewIssue: viewIssues,
+	viewTask:    viewHome,
+	viewChat:    viewChats,
+	viewCompare: viewChats,
+	viewIssue:   viewIssues,
 }
 
 // pendingSwitch is a switch waiting on the human's answer because the

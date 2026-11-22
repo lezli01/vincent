@@ -166,7 +166,9 @@ const (
 	ctxChats      bindingContext = "chats"
 	// ctxChatSearch is the chat search screen (task 158).
 	ctxChatSearch bindingContext = "chat search"
-	ctxChat       bindingContext = "chat"
+	// ctxCompare is the compare split view (task 171).
+	ctxCompare bindingContext = "compare"
+	ctxChat    bindingContext = "chat"
 	// ctxChatSkills is the chat workspace's skill list (task 124.13). Its
 	// own context because while it is open it owns the keyboard, and `tab`,
 	// `enter` and `esc` all mean something else the moment it closes. Not
@@ -718,6 +720,14 @@ var bindings = []binding{
 	// Chat search (task 158).
 	{key: "enter", label: "open the chat — on a turn's match, scrolled to that turn", scope: scopePanel, context: ctxChatSearch, hint: "enter open", priority: 1},
 	{key: "down", label: "move between results (↑/↓, pgup/pgdown)", scope: scopePanel, context: ctxChatSearch, hint: "↑/↓ move", priority: 2},
+
+	// The compare split view (task 171 decisions 8 and 9). Fixed keys: no
+	// text field has the keyboard, and `[`/`]` read as left and right.
+	{key: "tab", label: "move between the two sides (←/→ too)", scope: scopePanel, context: ctxCompare, hint: "tab side", priority: 1},
+	{key: "enter", label: "open the focused side's chat", scope: scopePanel, context: ctxCompare, hint: "enter open", priority: 2},
+	{key: "[", label: "keep the left side: the right one is archived and its branch deleted (asks first)", scope: scopePanel, context: ctxCompare, hint: "[ keep left", priority: 3},
+	{key: "]", label: "keep the right side: the left one is archived and its branch deleted (asks first)", scope: scopePanel, context: ctxCompare, hint: "] keep right", priority: 4},
+	{op: keymap.Refresh, key: "R", label: "read both sides again", scope: scopePanel, context: ctxCompare, hint: "R reload", priority: 5, term: termRefresh},
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChats, priority: 7},
 	// Task 161 decision 6: the prompt is prefilled with the title, and the
 	// branch keeps the slug it was cut with.

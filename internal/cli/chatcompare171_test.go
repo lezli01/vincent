@@ -97,3 +97,44 @@ func TestChatCompare(t *testing.T) {
 		t.Errorf("cap: exit %d stderr %q", code, stderr)
 	}
 }
+
+// keepStub is chat 12, the left side of compare 3: GET, its compare, and a
+// keep that archives chat 13 and deletes its branch.
+func keepStub(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	const cmp = `{"id":3,"source_chat_id":7,"seq":2,"prompt":"which?",
+		"left":{"chat_id":12,"agent":"claude","permission_mode":"restricted"},
+		"right":{"chat_id":13,"agent":"codex","permission_mode":"full-auto","mode_note":"codex cannot"},
+		"kept_chat_id":null,"created_at":"2026-11-22T10:00:00Z"}`
+	switch {
+	case r.URL.Path == "/v1/health":
+		_, _ = io.WriteString(w, `{"status":"ok"}`)
+	case r.URL.Path == "/v1/chats/12" && r.Method == http.MethodGet:
+		_, _ = io.WriteString(w, `{"chat":{"id":12,"title":"t","state":"idle","agent":"claude",
+			"forked_from":{"chat_id":7,"seq":2,"agent":"claude"}},"turns":[]}`)
+	case r.URL.Path == "/v1/chats/12/compare" && r.Method == http.MethodGet:
+		_, _ = io.WriteString(w, `{"compare":`+cmp+`}`)
+	case r.URL.Path == "/v1/chats/12/compare/keep" && r.Method == http.MethodPost:
+		_, _ = io.WriteString(w, `{"compare":`+strings.Replace(cmp, `"kept_chat_id":null`, `"kept_chat_id":12`, 1)+`,
+			"kept":{"id":12,"agent":"claude"},
+			"archived":{"id":13,"agent":"codex","state":"archived","branch":"vincent/13-t"},"branch_deleted":true}`)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"error":{"code":"not_found","message":"no such route"}}`)
+	}
+}
+
+// TestChatKeepAndShow (task 171.6): `chat keep` says what was kept and what
+// was archived with its branch; `chat show` on a side names the pair.
+func TestChatKeepAndShow(t *testing.T) {
+	stdout, stderr, code := runChatSend(t, keepStub, "chat", "keep", "12")
+	if code != 0 || !strings.Contains(stdout, "kept chat 12 (claude) from compare 3") ||
+		!strings.Contains(stdout, "archived chat 13 (codex); branch vincent/13-t deleted") {
+		t.Fatalf("keep: exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+	stdout, stderr, code = runChatSend(t, keepStub, "chat", "show", "12")
+	want := "compare 3 of chat 7, before turn 2: left chat 12 (this one), claude, restricted; right chat 13, codex, full-auto"
+	if code != 0 || !strings.Contains(stdout, want) {
+		t.Fatalf("show: exit %d stdout %q stderr %q", code, stdout, stderr)
+	}
+}

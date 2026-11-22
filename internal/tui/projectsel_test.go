@@ -18,7 +18,7 @@ func TestProjectScopedRegistry(t *testing.T) {
 	scoped := []viewID{
 		viewHome, viewTask, viewNewTask, viewWorkflows, viewPullRequests,
 		viewChats, viewChat, viewArchived, viewArchivedChats, viewTriggers,
-		viewIssues, viewIssue,
+		viewIssues, viewIssue, viewCompare,
 	}
 	// The chat search spans every project (task 158 decision 3).
 	unscoped := []viewID{viewProjects, viewDaemon, viewSettings, viewChatSearch}
