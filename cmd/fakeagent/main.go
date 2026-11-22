@@ -599,6 +599,10 @@ func main() {
 		// spent (task 003). With a marker file it walls once and succeeds
 		// thereafter, which is the unattended-recovery path.
 		if usageLimitSpent() {
+			if os.Getenv("FAKEAGENT_USAGE_LIMIT_SHAPE") == "api-error" {
+				emitUsageLimitAPIError()
+				os.Exit(1)
+			}
 			emitText("stopping: the usage limit for this window is spent")
 			emit(map[string]any{
 				"type": "result", "subtype": "error_during_execution", "is_error": true,
@@ -913,6 +917,37 @@ func usageLimitSpent() bool {
 	}
 	_ = f.Close()
 	return true
+}
+
+// emitUsageLimitAPIError writes a quota stop the way claude 2.1.329 does
+// (internal/agent/claude/testdata/stream_usage_limit_2.1.329.jsonl): the
+// sentence is "You've hit your 5-hour limit", which carries no epoch, and the
+// result line says which error it was in `api_error` and when the window
+// reopens in `api_error_params.rate_limit_info.resetsAt`. Its subtype is
+// `success` beside `is_error: true`, exactly as captured.
+// FAKEAGENT_USAGE_LIMIT_RESET is seconds from now, as for the older shape;
+// unset or non-positive sends no rate-limit block at all.
+func emitUsageLimitAPIError() {
+	const text = "You've hit your 5-hour limit · resets 1:30pm (Europe/Budapest)"
+	emitText(text)
+	result := map[string]any{
+		"type": "result", "subtype": "success", "is_error": true,
+		"result":           text,
+		"terminal_reason":  "api_error",
+		"api_error":        "usage_limit_reached",
+		"api_error_status": 429,
+		"api_error_type":   "rate_limit_error",
+		"total_cost_usd":   0,
+		"usage":            map[string]int64{"input_tokens": 0, "output_tokens": 0},
+	}
+	if secs, err := strconv.Atoi(os.Getenv("FAKEAGENT_USAGE_LIMIT_RESET")); err == nil && secs > 0 {
+		result["api_error_params"] = map[string]any{"rate_limit_info": map[string]any{
+			"status":        "rejected",
+			"resetsAt":      time.Now().Add(time.Duration(secs) * time.Second).Unix(),
+			"rateLimitType": "five_hour",
+		}}
+	}
+	emit(result)
 }
 
 // usageLimitMessage renders the quota wording, with the reset time the real

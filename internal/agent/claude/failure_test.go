@@ -41,6 +41,24 @@ func TestClassify(t *testing.T) {
 			want: agent.FailureUsageLimit,
 		},
 		{
+			// The wording 2.1.329 actually prints, verbatim from
+			// testdata/stream_usage_limit_2.1.329.jsonl.
+			name: "hit your 5-hour limit",
+			res:  agent.RunResult{IsError: true, ExitCode: 1, ResultText: "You've hit your 5-hour limit · resets 1:30pm (Europe/Budapest)"},
+			want: agent.FailureUsageLimit,
+		},
+		{
+			name: "hit your weekly limit, typographic apostrophe",
+			res:  agent.RunResult{IsError: true, ErrorMessage: "You’ve hit your weekly limit"},
+			want: agent.FailureUsageLimit,
+		},
+		{
+			// A clean run quoting the new wording is still not a quota stop.
+			name: "hit-your-limit wording in a successful run",
+			res:  agent.RunResult{ResultText: "the CLI says \"You've hit your 5-hour limit\" when the window is spent"},
+			want: "",
+		},
+		{
 			name: "invalid api key",
 			res:  agent.RunResult{IsError: true, ResultText: "Invalid API key · Please run /login"},
 			want: agent.FailureUnauthenticated,
@@ -177,6 +195,67 @@ func TestWaitClassifiesUsageLimit(t *testing.T) {
 	}
 	if !res.Failure.RetryAfter.After(time.Now()) {
 		t.Errorf("RetryAfter = %s, want a future instant", res.Failure.RetryAfter)
+	}
+}
+
+// TestCapturedUsageLimitStopIsClassified parses a genuine quota stop, captured
+// from claude 2.1.329 when an account ran out mid-run. It is the fixture the
+// markers above never had: the sentence matches none of the three original
+// wordings, and what identifies the stop is the result line's `api_error`.
+func TestCapturedUsageLimitStopIsClassified(t *testing.T) {
+	res := finalResult(t, "stream_usage_limit_2.1.329.jsonl")
+	if !res.IsError {
+		t.Fatal("IsError = false, want the captured result's is_error")
+	}
+	if res.Failure == nil || res.Failure.Kind != agent.FailureUsageLimit {
+		t.Fatalf("Failure = %+v, want usage_limit from api_error", res.Failure)
+	}
+	// The captured reset is in the past by now, and a past reset is never
+	// acted on: the interval fallback decides instead.
+	if res.Failure.RetryAfter != nil {
+		t.Errorf("RetryAfter = %s, want nil for a reset already past", res.Failure.RetryAfter)
+	}
+	// The wording alone is enough too, for a stop that reaches classify
+	// without the structured code.
+	if f := classify(agent.RunResult{IsError: true, ExitCode: 1, ResultText: res.ResultText}, ""); f == nil || f.Kind != agent.FailureUsageLimit {
+		t.Errorf("classify(%q) = %+v, want usage_limit", res.ResultText, f)
+	}
+}
+
+// TestResultLineAPIErrorNeedsAnErrorResult holds the structured code to the
+// rule the wording is held to: only a result that is an error is a stop.
+func TestResultLineAPIErrorNeedsAnErrorResult(t *testing.T) {
+	evs := parseAll([]byte(`{"type":"result","subtype":"success","is_error":false,"result":"done","api_error":"usage_limit_reached"}`))
+	if got := evs[0].Result; got == nil || got.Failure != nil {
+		t.Fatalf("Result = %+v, want a result with no Failure", got)
+	}
+}
+
+// TestWaitClassifiesUsageLimitFromAPIError is the wiring check for the
+// 2.1.329 shape: no epoch in the sentence, the reset in the result line.
+func TestWaitClassifiesUsageLimitFromAPIError(t *testing.T) {
+	for name, env := range map[string][]string{
+		"with a reset":    {"FAKEAGENT_USAGE_LIMIT_SHAPE=api-error", "FAKEAGENT_USAGE_LIMIT_RESET=600"},
+		"without a reset": {"FAKEAGENT_USAGE_LIMIT_SHAPE=api-error"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := startRun(t, "usage-limit", env...)
+			drain(t, h)
+			res, err := h.Wait()
+			if err != nil {
+				t.Fatalf("Wait: %v", err)
+			}
+			if res.Failure == nil || res.Failure.Kind != agent.FailureUsageLimit {
+				t.Fatalf("Failure = %+v, want usage_limit", res.Failure)
+			}
+			wantReset := len(env) == 2
+			if got := res.Failure.RetryAfter != nil; got != wantReset {
+				t.Fatalf("RetryAfter = %v, want set = %v", res.Failure.RetryAfter, wantReset)
+			}
+			if wantReset && !res.Failure.RetryAfter.After(time.Now()) {
+				t.Errorf("RetryAfter = %s, want a future instant", res.Failure.RetryAfter)
+			}
+		})
 	}
 }
 

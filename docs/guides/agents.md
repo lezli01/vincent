@@ -223,7 +223,10 @@ The most capable adapter, and the only one that can be interrupted mid-step.
   default the task waits and re-runs itself, though
   [`usage_limit_auto_continue`](../reference/configuration.md#usage_limit_auto_continue)
   can make it block for you instead — and a logged-out CLI becomes
-  `agent_unauthenticated`, which blocks with the fix named. Codex and cursor do
+  `agent_unauthenticated`, which blocks with the fix named. The quota stop is
+  read from the error code claude puts on its result (`usage_limit_reached`,
+  captured from a real stop on 2.1.329), with the sentence it prints — "You've
+  hit your 5-hour limit" — as the fallback. Codex and cursor do
   neither: their wordings have not been captured from a real run (doing so means
   burning a real quota window), and vincent will not guess at one, because a
   wrong guess parks a genuinely failed task in a wait it never leaves. On those

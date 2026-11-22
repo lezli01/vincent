@@ -413,6 +413,10 @@ func TestFixtureEventTypesArePinned(t *testing.T) {
 		"stream_background_2.1.289.jsonl": "run_header unknown unknown unknown tool_use unknown unknown tool_result " +
 			"tool_use unknown unknown unknown tool_result unknown unknown unknown output result unknown unknown unknown " +
 			"run_header unknown output result unknown unknown unknown",
+		// A genuine quota stop: the rate-limit event stays unknown, the
+		// synthetic assistant line is the sentence, and the result carries
+		// the `api_error` code failure.go's tests read.
+		"stream_usage_limit_2.1.329.jsonl": "unknown output result",
 	}
 	names, err := filepath.Glob(filepath.Join("testdata", "stream_*.jsonl"))
 	if err != nil {
