@@ -3948,6 +3948,14 @@ HTML, the field in JSON — and a turn with none has neither. In HTML, prompts a
 are rendered from Markdown with raw HTML disabled, so a `<script>` in an
 agent's answer never reaches the page.
 
+A fork's metadata adds `forked from` (`#4 (claude), before turn 3`; in JSON,
+`chat.forked_from`). A seeded turn shows the context its fresh session was
+given — its **turn 0**, read from the turn's transcript — ahead of its prompt,
+under `Turn 0 · seeded context (summary)` (JSON: the turn's `seeded_context`).
+A turn 0 still pending — the context the next turn will receive, editable until
+it runs — closes the conversation under the same heading (JSON:
+`chat.pending_preamble`).
+
 A turn whose transcript has been pruned (`transcript_retention_days`) still
 exports from its row, with a note in place of its tool calls; a turn that never
 wrote a transcript (`agent_unavailable`, `transcript_io_error`) says so instead.
@@ -4028,7 +4036,9 @@ It keeps the most recent 200 lines within 512 KiB; to fit, whole tool blocks
 are dropped, oldest first, before any prompt or reply is cut.
 
 While `resume_pending` is `seeded`, the chat carries that context as
-`pending_preamble` — turn 0, what the next turn will receive — and
+`pending_preamble` — turn 0, what the next turn will receive; once a turn has
+consumed it, that turn's transcript keeps it as the `context` of its
+`vincent.seeded` record — and
 `PATCH /v1/chats/{id}` with `{"pending_preamble": "…"}`, sent alone, replaces
 it (at most 1 MiB). An empty string clears it, so the next turn starts a fresh
 session with no earlier context. The edit is `409 chat_preamble_not_pending`

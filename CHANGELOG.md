@@ -23,7 +23,12 @@ list with the user-facing context a commit subject cannot carry.
   seeded rewind or fork, the summary the next turn will receive is shown as
   "turn 0 · seeded context (summary)" in `vincent chat show` and the chat
   workspace, served as `pending_preamble`, and replaceable or clearable with
-  `vincent chat preamble` or `PATCH /v1/chats/{id}` until a turn starts.
+  `vincent chat preamble` or `PATCH /v1/chats/{id}` until a turn starts. In
+  the TUI, the fork picker's `tab` picks the agent, the palette's "edit turn
+  0…" opens the summary in `$EDITOR`, and a fork's card and header read
+  `forked from #N (claude)`. Once a turn has run, its transcript and the
+  chat export still show the summary it was given, and
+  `vincent chat transcript --turn 0` prints a pending one.
 
 ### Changed
 

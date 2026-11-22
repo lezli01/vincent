@@ -2403,7 +2403,7 @@ that.
 ### `vincent chat transcript`
 
 ```sh
-vincent chat transcript CHAT_ID [--turn N] [--rewound] [-f | --follow] [--json | --raw]
+vincent chat transcript CHAT_ID [--turn N | --turn 0] [--rewound] [-f | --follow] [--json | --raw]
 ```
 
 Prints one turn's transcript — the complete record of what the agent did while
@@ -2418,7 +2418,17 @@ turn number the chat does not have exits `1` with
 
 Turns a [rewind](#vincent-chat-rewind) left behind are skipped by the default
 selection and refused by `--turn`; `--rewound` allows them, marked. A seeded
-turn is marked `seeded, not resumed`.
+turn is marked `seeded, not resumed`, and its transcript opens with the context
+its fresh session was given, whole, between `── turn 0 · seeded context
+(summary) ──` and `── end of turn 0 ──` (in `--json`, the `context` field of
+its `vincent.seeded` record).
+
+`--turn 0` prints the seeded context a chat's *next* turn will start with,
+while one is pending after a seeded [rewind](#vincent-chat-rewind) or
+[fork](#vincent-chat-fork) — the same turn 0 `chat show` prints. `--json`
+prints it as `{"chat_id", "turn": 0, "pending": true, "context"}`; `--raw` and
+`--follow` do not apply. With none pending it exits `1`, naming the latest
+seeded turn whose transcript holds the one it was given.
 
 | Output | What it is |
 |---|---|

@@ -1508,6 +1508,15 @@ it, and the next turn starts a fresh session with no earlier context. The
 CLI's `vincent chat show` and the TUI's chat workspace show it under
 "turn 0 · seeded context (summary)"; `vincent chat preamble` edits it. A
 natively resumed fork has none, and the TUI says "resumed from turn N".
+Once a turn consumes it, the context stays readable: the runner writes it on
+that turn's transcript as the `context` of its `vincent.seeded` note, so
+`vincent chat transcript` opens a seeded turn with it and the export
+(`GET /v1/chats/{id}/export`) shows it ahead of the turn's prompt as
+`seeded_context`; a pending one is the export's `chat.pending_preamble` and
+`vincent chat transcript --turn 0`. The TUI edits turn 0 through the palette's
+"edit turn 0…" in `$EDITOR` (an emptied file clears it), its fork picker
+cycles the agent with `tab` over the available adapters that resume, and the
+chats board card and the chat header read `forked from #N (claude)`.
 Comparing two agents' answers (`POST /v1/chats/{id}/compare`, the brief's
 decisions 6-9) is not yet built; task 171 tracks it.
 

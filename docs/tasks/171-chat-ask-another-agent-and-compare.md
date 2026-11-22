@@ -1,6 +1,6 @@
 # 171 — Ask another agent: fork a chat onto a different agent, and compare two answers
 
-**Status:** 🔄 in progress (3/7) · **Opened:** 2026-11-21
+**Status:** 🔄 in progress (4/7) · **Opened:** 2026-11-21
 
 Issue #1020, built on task 167's checkpoint, rewind and fork (#1041). It
 amends two task 167 decisions deliberately, with the author's agreement:
@@ -25,10 +25,26 @@ Conventions for this file are in [the tasks README](README.md).
   chat_preamble_not_pending`), `vincent chat preamble`, `vincent chat show`'s
   turn-0 block, and the chat workspace's turn-0 block and fork provenance.
   ✓ 2026-11-21
-- [ ] **171.4** The rest of turn 0's surfaces: a TUI edit action through the
+- [x] **171.4** The rest of turn 0's surfaces: a TUI edit action through the
   task 163 editor, an agent choice in the TUI's fork picker (filtered by
   `supports_resume`), `forked from #N (claude)` on the chats board card and
   the chat header, turn 0 in `vincent chat transcript` and in the export.
+  ✓ 2026-11-22
+
+  *How (2026-11-22):* the edit is a key-less palette row, "edit turn 0…",
+  offered while the chat is seeded-pending and holds no process, through
+  `editTextCmd`; unlike the composer (task 163 decision 3) an emptied file
+  is sent, because empty means "clear" here (decision 4). The fork picker's
+  `tab` cycles the agent, since a fork has no rewind mode; the list is the
+  source's own agent, then every other adapter that is available and says
+  `supports_resume: true`. A fork's card gives its title's second line to the
+  provenance. A consumed turn 0 needed a home, since the runner clears the
+  chat's copy once the turn reports its session: it is written on that
+  turn's transcript as the `context` of the `vincent.seeded` note — no
+  migration, and the transcript is already the turn's complete record (§17).
+  `vincent chat transcript` prints it at the head of the turn, `--turn 0`
+  prints a pending one, and the export carries `seeded_context` on the turn,
+  `pending_preamble` and `forked_from` on the chat.
 - [ ] **171.5** Compare: `POST /v1/chats/{id}/compare` (`{turn, prompt,
   agents: [a, b]}`), the pairing in a migration, all-or-nothing capacity,
   restricted where a side can be and labelled `full-auto` where it cannot
