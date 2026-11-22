@@ -11,8 +11,8 @@
 #   preflight → update-deps → audit (loop: sweep → break → repair) → vuln-clear
 #            → site-pins → site-audit → site-fix → site-clear
 #            → changes → prep-pr → prep-green → prep-gate → prep-merge
-#            → refresh → stage → changelogs → push
-#            → dry-run → green → verify → report
+#            → refresh → dry-run → stage → changelogs → push
+#            → green → verify → report
 #
 # Three effects reach the outside world:
 #
@@ -36,7 +36,10 @@
 # commit reaches the base. So a changelog commit written before the preparation
 # pull request lands would simply be discarded. That ordering is the spine of
 # this file: everything master-bound lands first, `refresh` re-reads the world,
-# and only then is anything written to the bot's branch.
+# and only then is anything written to the bot's branch. The dry run sits on
+# the master-bound side of that line for the same reason — its failures are
+# repaired on the base branch — so from `stage` on, nothing this workflow does
+# can be the cause of a commit landing there.
 #
 # The single manual gate is `prep-gate`, immediately before `prep-merge` — the
 # one write to a protected branch. When nothing needed changing the gate is
@@ -230,9 +233,22 @@ steps:
       }
       printf '%s\n' "$version" > .vincent-prepare/version.txt
 
-      if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+      # Three answers, not two. `--exit-code` makes "no such tag" exit 2;
+      # anything else non-zero is the question failing — no network, no
+      # credentials — and reading that as "not tagged" would let this
+      # workflow prepare a release that is already cut.
+      set +e
+      git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>.vincent-prepare/ls-remote.err
+      rc=$?
+      set -e
+      if [ "$rc" -eq 0 ]; then
         say "v$version is already tagged on origin: that release is already cut"
         echo "tag v$version already exists on origin — that release is already cut, and a published tag is never re-pointed (RELEASING.md)" >&2
+        exit 1
+      elif [ "$rc" -ne 2 ]; then
+        say "could not ask origin whether v$version is tagged"
+        echo "git ls-remote failed (exit $rc), so whether v$version is already tagged is unknown:" >&2
+        cat .vincent-prepare/ls-remote.err >&2
         exit 1
       fi
 
@@ -729,7 +745,15 @@ steps:
       # without it `--tags` refuses to move a stale local copy ("would
       # clobber existing tag") and fails the step. Release tags are never
       # re-pointed (RELEASING.md), so only that one tag is ever affected.
-      git fetch --quiet --force --tags origin "$VINCENT_BASE_BRANCH"
+      git fetch --quiet --force --tags origin "$VINCENT_BASE_BRANCH" || {
+        # `--quiet` hides the per-ref rejection table too, so without this a
+        # refused fetch ends the step with no output at all — which is how a
+        # stale `master-latest` blocked this workflow three times in one run
+        # before anyone could see why.
+        say "git fetch --tags from origin failed"
+        echo "git fetch --force --tags origin $VINCENT_BASE_BRANCH failed; re-run it without --quiet in this worktree to see which ref was refused" >&2
+        exit 1
+      }
       say "preparing v$version from release PR $(printf '%s' "$pr" | jq -r .number)"
 
       echo "repository:    $repo"
@@ -1440,7 +1464,15 @@ steps:
         done
       fi
 
-      git fetch --quiet --force --tags origin "$VINCENT_BASE_BRANCH"
+      git fetch --quiet --force --tags origin "$VINCENT_BASE_BRANCH" || {
+        # `--quiet` hides the per-ref rejection table too, so without this a
+        # refused fetch ends the step with no output at all — which is how a
+        # stale `master-latest` blocked this workflow three times in one run
+        # before anyone could see why.
+        say "git fetch --tags from origin failed"
+        echo "git fetch --force --tags origin $VINCENT_BASE_BRANCH failed; re-run it without --quiet in this worktree to see which ref was refused" >&2
+        exit 1
+      }
 
       pr=$(gh pr list \
         --base "$VINCENT_BASE_BRANCH" \
@@ -1474,15 +1506,113 @@ steps:
       fi
       printf '%s\n' "$version" > .vincent-prepare/version.txt
 
-      if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+      # Same three answers as `preflight`'s copy of this question.
+      set +e
+      git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>.vincent-prepare/ls-remote.err
+      rc=$?
+      set -e
+      if [ "$rc" -eq 0 ]; then
         say "v$version appeared on origin mid-run: find out who pushed it"
         echo "tag v$version appeared on origin while this task was running — stop and work out who pushed it" >&2
+        exit 1
+      elif [ "$rc" -ne 2 ]; then
+        say "could not ask origin whether v$version is tagged"
+        echo "git ls-remote failed (exit $rc), so whether v$version is already tagged is unknown:" >&2
+        cat .vincent-prepare/ls-remote.err >&2
         exit 1
       fi
 
       echo "release PR:  $title — $(printf '%s' "$pr" | jq -r .url)"
       echo "branch:      $(printf '%s' "$pr" | jq -r .headRefName)"
       echo "head:        $(printf '%s' "$pr" | jq -r .headRefOid)"
+
+  - id: dry-run
+    name: Dry-run the Release workflow
+    type: command
+    shell: sh
+    # RELEASING.md step 4, run **before** step 3's changelogs rather than
+    # after them. It builds the base branch and reads nothing the changelog
+    # steps write, so the order is free — and a red dry run is fixed by a
+    # commit on the base branch, which makes Release Please force-push its
+    # branch and discard whatever was curated on it. That happened: the dry
+    # run failed after `push`, the fix merged, and both changelogs had to be
+    # written a second time by hand. Here a failure costs nothing but the fix.
+    #
+    # Skipped when the task says packaging did not change;
+    # the step still shows up as `skipped` with reason `condition`, so the
+    # report can say which legs actually ran.
+    if: '{{ eq (index .Task.Fields "dry-run") "true" }}'
+    # Cross-compiles six archives and smoke-tests them on three OSes; the poll
+    # for the run to appear is inside the same budget.
+    timeout: 75m
+    # Dispatching is an outward action and a retry would start a second run
+    # while the first is still going. Re-run by hand — it just dispatches a
+    # fresh run.
+    max_retries: 0
+    run: |
+      set -e
+      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
+      started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      say "dispatching a Release dry run"
+      gh workflow run release.yml --ref "$VINCENT_BASE_BRANCH" -f dry_run=true
+      echo "dispatched a dry run of Release on $VINCENT_BASE_BRANCH"
+
+      # The run takes a few seconds to appear. Match on creation time as well
+      # as branch, so a dry run someone else started an hour ago is not
+      # mistaken for this one. `gh run list` is guarded: an unguarded
+      # assignment under `set -e` turns one 502 into the false and expensive
+      # statement "the dispatched run never appeared".
+      id=""
+      nap=3
+      waited=0
+      while :; do
+        set +e
+        id=$(gh run list --workflow=release.yml --event=workflow_dispatch --limit 30 \
+          --json databaseId,createdAt,headBranch \
+          --jq "[.[] | select(.headBranch == \"$VINCENT_BASE_BRANCH\" and .createdAt >= \"$started\")] | sort_by(.createdAt) | .[0].databaseId // empty" 2>/dev/null)
+        if [ $? -ne 0 ]; then id=""; fi
+        set -e
+        if [ -n "$id" ]; then break; fi
+        if [ "$waited" -ge 300 ]; then break; fi
+        sleep "$nap"
+        waited=$((waited + nap))
+        if [ "$nap" -lt 15 ]; then
+          nap=$((nap * 2))
+          if [ "$nap" -gt 15 ]; then nap=15; fi
+        fi
+      done
+      [ -n "$id" ] || {
+        say "the dispatched Release run never appeared: check Actions"
+        echo "the dispatched Release run never appeared — check Actions" >&2
+        exit 1
+      }
+
+      url=$(gh run view "$id" --json url --jq .url)
+      printf '%s\n' "$url" > .vincent-prepare/dry-run-url.txt
+      echo "$url"
+      # The longest single wait in this step, and `gh run watch` writes nothing
+      # vincent can see: this one message is what the board shows for most of
+      # the 20-40 minutes.
+      say "watching the dry run: 6 archives, smoke on 3 OSes"
+      if ! gh run watch "$id" --exit-status; then
+        # Name the fault here. `gh run watch` ends on a job table — "X
+        # Release" — and the reason is a click away in Actions, which is
+        # where the one failed dry run this workflow has seen sent its reader
+        # for "current tag is not semver … master-latest".
+        failed=$(gh run view "$id" --json jobs \
+          --jq '[.jobs[] | select(.conclusion == "failure") | .name + (([.steps[]? | select(.conclusion == "failure") | .name] | if length > 0 then " / " + join(", ") else "" end))] | join("; ")' 2>/dev/null || true)
+        say "dry run failed: ${failed:-see the run}"
+        echo "the dry run failed: ${failed:-see the run} — $url" >&2
+        echo "--- the end of the failed job's log ---" >&2
+        gh run view "$id" --log-failed 2>/dev/null | cut -f3- | sed -e 's/^[0-9T:.-]*Z //' -e "s/$(printf '\033')\[[0-9;]*m//g" -e 's/\^\[\[[0-9;]*m//g' | grep -v '^[[:space:]]*$' | tail -n 40 >&2 || true
+        echo "nothing has been written to the release branch yet: fix this on $VINCENT_BASE_BRANCH and retry this step." >&2
+        exit 1
+      fi
+      say "dry run green"
+
+      echo
+      echo "dry run green: $url"
+      echo "not exercised by a dry run: cosign signing, build provenance, the GitHub release, and the Homebrew/Scoop/WinGet pushes"
 
   - id: stage
     name: Check out the release branch and gather its history
@@ -1757,73 +1887,6 @@ steps:
       echo "pushed $(git -C "$rp" rev-parse HEAD) to $head"
       say "pushed the v$version changelogs to $head"
 
-  - id: dry-run
-    name: Dry-run the Release workflow
-    type: command
-    shell: sh
-    # RELEASING.md step 4. Skipped when the task says packaging did not change;
-    # the step still shows up as `skipped` with reason `condition`, so the
-    # report can say which legs actually ran.
-    if: '{{ eq (index .Task.Fields "dry-run") "true" }}'
-    # Cross-compiles six archives and smoke-tests them on three OSes; the poll
-    # for the run to appear is inside the same budget.
-    timeout: 75m
-    # Dispatching is an outward action and a retry would start a second run
-    # while the first is still going. Re-run by hand — it just dispatches a
-    # fresh run.
-    max_retries: 0
-    run: |
-      set -e
-      say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
-      started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-      say "dispatching a Release dry run"
-      gh workflow run release.yml --ref "$VINCENT_BASE_BRANCH" -f dry_run=true
-      echo "dispatched a dry run of Release on $VINCENT_BASE_BRANCH"
-
-      # The run takes a few seconds to appear. Match on creation time as well
-      # as branch, so a dry run someone else started an hour ago is not
-      # mistaken for this one. `gh run list` is guarded: an unguarded
-      # assignment under `set -e` turns one 502 into the false and expensive
-      # statement "the dispatched run never appeared".
-      id=""
-      nap=3
-      waited=0
-      while :; do
-        set +e
-        id=$(gh run list --workflow=release.yml --event=workflow_dispatch --limit 30 \
-          --json databaseId,createdAt,headBranch \
-          --jq "[.[] | select(.headBranch == \"$VINCENT_BASE_BRANCH\" and .createdAt >= \"$started\")] | sort_by(.createdAt) | .[0].databaseId // empty" 2>/dev/null)
-        if [ $? -ne 0 ]; then id=""; fi
-        set -e
-        if [ -n "$id" ]; then break; fi
-        if [ "$waited" -ge 300 ]; then break; fi
-        sleep "$nap"
-        waited=$((waited + nap))
-        if [ "$nap" -lt 15 ]; then
-          nap=$((nap * 2))
-          if [ "$nap" -gt 15 ]; then nap=15; fi
-        fi
-      done
-      [ -n "$id" ] || {
-        say "the dispatched Release run never appeared: check Actions"
-        echo "the dispatched Release run never appeared — check Actions" >&2
-        exit 1
-      }
-
-      url=$(gh run view "$id" --json url --jq .url)
-      printf '%s\n' "$url" > .vincent-prepare/dry-run-url.txt
-      echo "$url"
-      # The longest single wait in this step, and `gh run watch` writes nothing
-      # vincent can see: this one message is what the board shows for most of
-      # the 20-40 minutes.
-      say "watching the dry run: 6 archives, smoke on 3 OSes"
-      gh run watch "$id" --exit-status
-      say "dry run green"
-
-      echo
-      echo "dry run green: $url"
-      echo "not exercised by a dry run: cosign signing, build provenance, the GitHub release, and the Homebrew/Scoop/WinGet pushes"
-
   - id: green
     name: Wait for the release PR and the base branch to go green
     type: command
@@ -1853,7 +1916,15 @@ steps:
       # And the branch it merges into: a tag on a red base produces signed,
       # attested, broken binaries (RELEASING.md step 1). This covers *every*
       # check on the commit, not only `ci` and `gates`.
-      git fetch --quiet --force --tags origin "$VINCENT_BASE_BRANCH"
+      git fetch --quiet --force --tags origin "$VINCENT_BASE_BRANCH" || {
+        # `--quiet` hides the per-ref rejection table too, so without this a
+        # refused fetch ends the step with no output at all — which is how a
+        # stale `master-latest` blocked this workflow three times in one run
+        # before anyone could see why.
+        say "git fetch --tags from origin failed"
+        echo "git fetch --force --tags origin $VINCENT_BASE_BRANCH failed; re-run it without --quiet in this worktree to see which ref was refused" >&2
+        exit 1
+      }
       sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH")
       # require-green.sh reports its own progress from here — it inherits this
       # step's VINCENT_TASK_ID and VINCENT_STEP_ID, so its "waiting on …" lines
@@ -1869,13 +1940,15 @@ steps:
     name: Verify the release PR is ready to merge
     type: command
     shell: sh
-    timeout: 15m
+    # Seconds in the ordinary run. The hour is for the one branch that waits:
+    # a head whose checks are still running when this step is retried.
+    timeout: 75m
     max_retries: 0
     # The read-only postcondition, run against what GitHub actually serves
     # rather than against the scratch clone. Release Please force-pushes its
     # branch whenever a commit reaches the base, so between `push` and here the
-    # curated changelogs may simply be gone — and the sweep, the dry run and
-    # the CI wait all happened in that window.
+    # curated changelogs may simply be gone — and the CI wait happened in that
+    # window. (The dry run used to as well; it now runs before `stage`.)
     run: |
       set -e
       say() { vincent status -- "$*" >/dev/null 2>&1 || true; }
@@ -1920,7 +1993,24 @@ steps:
       done
       # Sets its own status from inside, so a failure here leaves the finding
       # on the row rather than `nonzero_exit`.
-      sh .vincent-prepare/audit-changelog.sh "$remote" "$version"
+      if ! sh .vincent-prepare/audit-changelog.sh "$remote" "$version"; then
+        # The usual reason: a commit reached the base branch after `push`,
+        # and Release Please rebuilt its branch without the curated commit.
+        # That commit is not lost — GitHub keeps it — and restoring it costs
+        # minutes where re-running this task costs the sweep and a second
+        # curation. Say so, with the sha, instead of only "re-run".
+        if [ -f .vincent-prepare/changelog-sha.txt ]; then
+          pushed=$(cat .vincent-prepare/changelog-sha.txt)
+          if [ "$pushed" != "$oid" ] && ! gh api "repos/$repo/compare/$pushed...$oid" --jq .status 2>/dev/null | grep -Eq '^(ahead|identical)$'; then
+            echo >&2
+            echo "the curated changelog commit $pushed is no longer in $head: Release Please rebuilt the branch after something landed on $VINCENT_BASE_BRANCH." >&2
+            echo "to restore instead of re-running: take CHANGELOG.md and site-changelog.md from $pushed, add an entry for each commit that landed since" >&2
+            echo "(git log $pushed..origin/$VINCENT_BASE_BRANCH shows them), push one commit onto $head, wait for its checks, and retry this step." >&2
+            echo "merge nothing else into $VINCENT_BASE_BRANCH until the release PR is merged, or this repeats." >&2
+          fi
+        fi
+        exit 1
+      fi
 
       if [ -f .vincent-prepare/changelog-sha.txt ]; then
         pushed=$(cat .vincent-prepare/changelog-sha.txt)
@@ -1941,6 +2031,42 @@ steps:
           echo "release PR #$number is BEHIND $VINCENT_BASE_BRANCH — something landed on the base after the changelogs were pushed" >&2
           echo "$VINCENT_BASE_BRANCH requires a branch to be up to date to merge, and updating the release branch discards the changelogs; re-run this task instead" >&2
           exit 1
+          ;;
+        BLOCKED|UNKNOWN)
+          # Not yet a verdict. `BLOCKED` is one word for a red required check,
+          # a required check that has not reported, and an unmet review rule;
+          # `UNKNOWN` is GitHub still computing. Both are what a head that was
+          # pushed minutes ago reads as — the case a retry of this step after
+          # someone re-curated the changelogs lands in, where `green` has
+          # already run and will not run again. So ask the checks, which do
+          # distinguish pending from failed, wait for them, and re-read.
+          say "release PR #$number is $mergeable: waiting for its checks"
+          echo "release PR #$number is $mergeable at $oid; waiting for its checks before judging it"
+          if ! gh pr checks "$number" --watch --fail-fast --interval 30; then
+            say "release PR #$number has a check that is not green"
+            echo "release PR #$number is $mergeable and a check on it did not pass (table above)" >&2
+            exit 1
+          fi
+          waited=0
+          while :; do
+            again=$(gh pr view "$number" --json headRefOid,mergeStateStatus 2>/dev/null || echo '{}')
+            mergeable=$(printf '%s' "$again" | jq -r '.mergeStateStatus // "UNKNOWN"')
+            noid=$(printf '%s' "$again" | jq -r '.headRefOid // ""')
+            if [ -n "$noid" ] && [ "$noid" != "$oid" ]; then
+              say "release PR #$number moved while its checks ran: retry this step"
+              echo "release PR #$number moved from $oid to $noid while its checks ran; the audit above is of the old head — retry this step" >&2
+              exit 1
+            fi
+            case "$mergeable" in CLEAN|HAS_HOOKS|UNSTABLE) break ;; esac
+            if [ "$waited" -ge 300 ]; then
+              say "release PR #$number is still $mergeable with every check green"
+              echo "release PR #$number is still $mergeable five minutes after its checks went green (mergeStateStatus=$mergeable)" >&2
+              echo "that is a branch-protection rule no check answers — a required review, or a BEHIND head; read the PR" >&2
+              exit 1
+            fi
+            sleep 15
+            waited=$((waited + 15))
+          done
           ;;
         *)
           say "release PR #$number is not mergeable: $mergeable"

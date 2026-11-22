@@ -1372,7 +1372,13 @@ steps:
   - id: implement
     name: Implement the change
     type: agent
-    timeout: 45m
+    # 75 minutes, up from 45. Over three weeks of runs the successful attempts
+    # clustered against the old ceiling (42, 43, 43 and 44 minutes) and two were
+    # killed at it while a screenshot capture and a full-suite comparison were
+    # still running — each a whole session thrown away and re-bought by the
+    # retry. A timeout is for a hang, and a ceiling that honest work reaches is
+    # not measuring one.
+    timeout: 75m
     # Two attempts, not the default one: this step's check is self-healing — a
     # still-red regression test, a failing suite or a lint finding comes back in
     # the §8.4 failure block and the second attempt fixes it. The expensive,
@@ -1519,7 +1525,7 @@ steps:
       You are on branch {{.Task.BranchName}}, based on {{.Task.BaseBranch}}, in
       a dedicated worktree at {{.Worktree.Path}}.
 
-      This step is budgeted 45 minutes and its check runs the whole suite and
+      This step is budgeted 75 minutes and its check runs the whole suite and
       the linter afterwards, so say what you are doing as you go:
 
           vincent status "<one short line about what you are doing now>"

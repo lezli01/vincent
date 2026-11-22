@@ -70,6 +70,14 @@ type streamLine struct {
 	TerminalReason    string                      `json:"terminal_reason"`
 	ModelUsage        map[string]streamModelUsage `json:"modelUsage"`
 	PermissionDenials []streamPermissionDenial    `json:"permission_denials"`
+	// APIError and APIErrorParams are the `result` line's structured account
+	// of an API refusal (2.1.329, testdata/stream_usage_limit_2.1.329.jsonl).
+	// `usage_limit_reached` is the one value read: it is the CLI's own code
+	// for a spent quota window, where the sentence beside it has already been
+	// reworded once ("usage limit reached" became "You've hit your 5-hour
+	// limit") and took the classifier's substring match with it.
+	APIError       string                `json:"api_error"`
+	APIErrorParams *streamAPIErrorParams `json:"api_error_params"`
 	// ToolUseResult and ToolResultMeta ride on a `user` line beside the
 	// message, not inside it (task 066). ToolUseResult is raw because claude
 	// sends either the structured object or a bare error string — the deny
@@ -949,6 +957,22 @@ func resultSummary(content json.RawMessage) string {
 	return agent.OneLine(strings.Join(texts, " "), resultSummaryMax)
 }
 
+// streamAPIErrorParams is the detail a `result` line attaches to an API
+// refusal. Only the rate-limit block is decoded.
+type streamAPIErrorParams struct {
+	RateLimitInfo *streamRateLimitInfo `json:"rate_limit_info"`
+}
+
+// streamRateLimitInfo is the window a quota refusal names. ResetsAt is unix
+// seconds — the reset the CLI also prints in local wall-clock form, which
+// nothing here tries to parse.
+type streamRateLimitInfo struct {
+	ResetsAt int64 `json:"resetsAt"`
+}
+
+// apiErrorUsageLimit is the `api_error` code of a spent quota window.
+const apiErrorUsageLimit = "usage_limit_reached"
+
 func parseResult(line *streamLine, raw []byte) agent.Event {
 	res := agent.RunResult{
 		IsError:    line.IsError || (line.Subtype != "" && line.Subtype != "success"),
@@ -966,6 +990,17 @@ func parseResult(line *streamLine, raw []byte) agent.Event {
 		res.OutputTokens = line.Usage.OutputTokens
 		res.CacheReadTokens = line.Usage.CacheReadInputTokens
 		res.CacheCreationTokens = line.Usage.CacheCreationInputTokens
+	}
+	// The structured verdict, read here because this is the only place that
+	// sees the result line's fields; Wait prefers it over the text match in
+	// classify. It is bound to an *error* result for the reason classify is
+	// (2026-09-08): a run that finished cleanly is never a quota stop.
+	if res.IsError && line.APIError == apiErrorUsageLimit {
+		f := &agent.Failure{Kind: agent.FailureUsageLimit}
+		if p := line.APIErrorParams; p != nil && p.RateLimitInfo != nil {
+			f.RetryAfter = plausibleReset(p.RateLimitInfo.ResetsAt, time.Now())
+		}
+		res.Failure = f
 	}
 	res.Duration = time.Duration(line.DurationMS) * time.Millisecond
 	res.APIDuration = time.Duration(line.DurationAPIMS) * time.Millisecond

@@ -646,6 +646,12 @@ func (r *run) Wait() (agent.RunResult, error) {
 		// It happens here because this is the one place that holds both the
 		// terminal result and the stderr tail; the engine sees neither.
 		res.Failure = classify(res, r.stderr.String())
+		// The result line's own code outranks the wording match: it is the
+		// CLI saying which error this was, and it carries the reset as a
+		// number (testdata/stream_usage_limit_2.1.329.jsonl).
+		if terminal != nil && terminal.Failure != nil {
+			res.Failure = terminal.Failure
+		}
 		// A resume claude refused outranks the generic verdict: the id is
 		// gone, and no amount of retrying this run will bring it back
 		// (task 063 decision 4).

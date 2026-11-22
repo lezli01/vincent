@@ -2309,12 +2309,48 @@ steps:
             tasks' changes together is the train's to fix, and a fix here is
             the right place for it. If the check is red for a reason that
             predates this branch, say so plainly and fix only what this branch
-            broke.
+            broke — and if this branch broke nothing, the section below is
+            the way out.
           - If this repair changed what a task's change does, say so in the
             commit message — it lands in the pull request's history — and
             update the affected page under `docs/` if it changed a documented
             claim. A documentation audit already ran on each
             task's code, so anything you make stale here is stale for good.
+
+          ## When the red check is not this branch's
+
+          Some red checks have no fix on this branch: a job GitHub never gave a
+          runner ("The job was not acquired by Runner of type hosted"), a job
+          cancelled by its time limit after a setup step stalled, a known flake
+          that passed the same commit elsewhere. Committing something to have
+          committed something is the wrong answer to those, and so is stopping:
+          this step blocked five trains in one week on exactly that finding,
+          each waiting for a person to press retry.
+
+          Only when the logs show that **no commit on this branch can change
+          the outcome** — you read the failing job and can name the
+          infrastructure fault or the flake, not merely failed to reproduce it
+          — do this instead of committing:
+
+          1. Re-run the jobs that failed, on the same commit, so the next pass
+             has a fresh verdict to wait for. Nothing is pushed on a pass with
+             no new commit, so nothing else will start them:
+
+                 gh run rerun <run-id> --failed
+
+             for each run that `gh run list --commit "$(cat "$s/head.sha")"`
+             shows failed or cancelled. A run still in progress cannot be
+             re-run; wait for it to finish (`gh run watch <run-id>`) first.
+          2. Write the finding where the check reads it — the commit on line
+             1, then the failing job and the fault, in a sentence or two:
+
+                 { cat "$s/head.sha"; echo "<job>: <fault, and why no commit changes it>"; } > "$s/not-this-branch.txt"
+
+          3. Commit nothing and leave the worktree clean.
+
+          A failure you cannot explain is not this case. Neither is a test
+          that fails on one platform only, nor a race: those are this branch's
+          until the log proves otherwise, and the rules above apply.
 
           **Commit your fix, and do not push.** The next pass force-pushes what
           you committed under a lease it takes itself; pushing from here breaks
@@ -2325,10 +2361,34 @@ steps:
         # green. The local legs are not the checks that failed and cannot be;
         # what they are is the cheapest way to stop a pass from spending an hour
         # of CI on a branch that does not build.
-        check: >
-          git diff --quiet &&
-          git diff --cached --quiet &&
-          test "$(git rev-list --count origin/{{.Task.BranchName}}..HEAD)" -gt 0 &&
+        #
+        # The other way through is the "not this branch" finding: no commit,
+        # and `not-this-branch.txt` naming the commit whose checks were read.
+        # It is tied to `head.sha` so a note left by an earlier pass cannot
+        # excuse a later one, and it is consumed here for the same reason.
+        # Before this clause the check demanded a commit from a session whose
+        # correct conclusion was that there was nothing to commit — a runner
+        # GitHub never assigned, a job cancelled by its own time limit — and
+        # blocked the train on `check_failed` each time (five in one week).
+        # The local legs are skipped on that path: nothing changed since the
+        # last step that ran them.
+        check: |
+          git diff --quiet || exit 1
+          git diff --cached --quiet || exit 1
+          s=$(git rev-parse --git-path vincent-train)
+          ahead=$(git rev-list --count origin/{{.Task.BranchName}}..HEAD)
+          if [ "$ahead" -eq 0 ]; then
+            if [ -s "$s/not-this-branch.txt" ] && [ "$(head -n 1 "$s/not-this-branch.txt")" = "$(cat "$s/head.sha")" ]; then
+              echo "no repair committed: the red check was judged not this branch's:"
+              sed -n '2,$p' "$s/not-this-branch.txt"
+              rm -f "$s/not-this-branch.txt"
+              exit 0
+            fi
+            echo "nothing was committed, and $s/not-this-branch.txt does not name $(cat "$s/head.sha"):" >&2
+            echo "either commit a repair, or re-run the failed jobs and record why no commit can fix them." >&2
+            exit 1
+          fi
+          rm -f "$s/not-this-branch.txt"
           go run mage.go test &&
           go run mage.go lint
         check_timeout: 25m

@@ -5379,6 +5379,23 @@ asymmetry rather than an oversight — an adapter that guessed would send a
 genuinely failed task into a wait it never recovers from. *Amended 2026-10-30 (task
 138.15):* copilot recognizes nothing either (§9.9 "Failure classification").
 
+*Amended 2026-11-22:* **claude's quota stop is now fixture-verified, and its
+primary signal is structured.** A genuine stop was captured from claude 2.1.329
+(`internal/agent/claude/testdata/stream_usage_limit_2.1.329.jsonl`) and it says
+none of the shipped wordings: the sentence is "You've hit your 5-hour limit ·
+resets 1:30pm (Europe/Budapest)", with no epoch. Thirteen attempts across seven
+tasks were recorded `nonzero_exit` and spent their retries before it was
+noticed — the regression the conservative parse accepts by design, and the
+reason a capture matters. The `result` line carries `api_error:
+"usage_limit_reached"` and `api_error_params.rate_limit_info.resetsAt` (unix
+seconds), so the adapter reads those first: the code is the verdict and
+`resetsAt` is `RetryAfter`, held to the same plausibility bounds as the
+`|<epoch>` suffix. The wording — "you've hit your … limit" — is matched as the
+fallback for a stop that arrives without the code, and the three original
+wordings stay for a build that still says them. Both remain bound to a failed
+run, as the next paragraph requires; the reset printed as local wall-clock time
+is never parsed. codex, cursor and copilot are unchanged.
+
 *Amended 2026-09-08:* **a run that finished cleanly is never classified.** The
 matching is substring matching over the error message, the terminal result text
 and the stderr tail — and the result text is the agent's own prose, so a step

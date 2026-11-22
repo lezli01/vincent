@@ -21,18 +21,33 @@ const resetHorizon = 7 * 24 * time.Hour
 // spent". Matched case-insensitively against the terminal result text, the
 // error message and the stderr tail.
 //
-// **Not fixture-verified.** Capturing a genuine quota exhaustion means burning
-// a real five-hour window, the same impracticality cursor's logged-out probe
-// records (cursor.go's loggedIn). So the parse follows the precedent that set:
-// recognize the shapes that are documented, and fall through to nil for
-// everything else rather than guess. An unrecognized quota stop keeps today's
-// behaviour exactly — it fails as nonzero_exit or agent_error — which is the
-// regression that matters most here.
+// The first three are **not fixture-verified**: they are the documented
+// shapes this parse shipped with, when capturing a genuine quota exhaustion
+// meant burning a real five-hour window. They stay because a build that still
+// says them must still be recognized.
+//
+// The wording they describe is not what 2.1.329 says. A real stop, captured
+// when an account ran out mid-train (testdata/stream_usage_limit_2.1.329.jsonl),
+// reads "You've hit your 5-hour limit · resets 1:30pm (Europe/Budapest)" —
+// none of the three — and thirteen attempts across seven tasks failed
+// `nonzero_exit` and burned their retries in seconds before anyone noticed.
+// usageLimitHitRe is that wording. The structured `api_error` code on the
+// result line (parseResult) is the primary signal and this is the fallback
+// for a stop that reaches us without one: a stream that ended before its
+// result line, or a build that drops the field.
+//
+// The rule is unchanged: recognize the shapes that are known, and fall
+// through to nil for everything else rather than guess.
 var usageLimitMarkers = []string{
 	"usage limit reached",
 	"5-hour limit reached",
 	"weekly limit reached",
 }
+
+// usageLimitHitRe matches "you've hit your <window> limit" in lowercased
+// text, with either apostrophe. The window is free-form because the capture
+// proves one value of it ("5-hour") and the weekly one is its sibling.
+var usageLimitHitRe = regexp.MustCompile(`you(?:'|’)ve hit your [a-z0-9 -]{1,30}limit`)
 
 // unauthenticatedMarkers are the phrasings that mean "this CLI is not logged
 // in". Same caveat as above: layered and conservative, never a guess.
@@ -89,7 +104,7 @@ func classify(res agent.RunResult, stderr string) *agent.Failure {
 	}
 	text := strings.ToLower(strings.Join([]string{res.ErrorMessage, res.ResultText, stderr}, "\n"))
 	switch {
-	case containsAny(text, usageLimitMarkers):
+	case containsAny(text, usageLimitMarkers), usageLimitHitRe.MatchString(text):
 		return &agent.Failure{Kind: agent.FailureUsageLimit, RetryAfter: parseReset(text, time.Now())}
 	case containsAny(text, unauthenticatedMarkers):
 		return &agent.Failure{Kind: agent.FailureUnauthenticated}
@@ -140,6 +155,14 @@ func parseReset(text string, now time.Time) *time.Time {
 	if err != nil {
 		return nil
 	}
+	return plausibleReset(secs, now)
+}
+
+// plausibleReset turns a reset the CLI stated as unix seconds into an instant,
+// or nil when it lands outside resetHorizon in either direction. Both sources
+// of a reset — the `|<epoch>` suffix above and the result line's
+// `rate_limit_info.resetsAt` — are held to it.
+func plausibleReset(secs int64, now time.Time) *time.Time {
 	at := time.Unix(secs, 0).UTC()
 	if !at.After(now) || at.After(now.Add(resetHorizon)) {
 		return nil
