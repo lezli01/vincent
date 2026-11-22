@@ -36,7 +36,10 @@ list with the user-facing context a commit subject cannot carry.
   turn's own. Each side runs restricted where its agent can keep a chat
   restricted, and the output says which side could not and why. Both sides
   start or neither does, and `GET /v1/chats/{id}/compare` finds a side's
-  partner.
+  partner. In the TUI, the palette's "compare two agents from turn…" starts
+  one and a compare screen shows both answers side by side; keep one with
+  `[` or `]` (or `vincent chat keep`), and the other is archived with its
+  branch.
 
 ### Changed
 

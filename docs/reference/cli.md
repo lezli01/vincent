@@ -2981,7 +2981,23 @@ follow: vincent chat show 12; vincent chat show 13
 ```
 
 `--permission-mode full-auto` runs both full-auto. `--json` emits the
-response. Exit `1` on a refusal; `2` with no daemon.
+response. Exit `1` on a refusal; `2` with no daemon. `vincent chat show` on
+either side prints the pair — `compare 3 of chat 7, before turn 2: left chat 12
+(this one), claude, restricted; right chat 13, codex, full-auto` — and the kept
+side once one is.
+
+### `vincent chat keep`
+
+```sh
+vincent chat keep CHAT_ID [--json]
+```
+
+Keeps one side of a [`vincent chat compare`](#vincent-chat-compare) and
+archives the other: its worktree is removed even with uncommitted changes, and
+its branch and checkpoint refs are deleted — that answer is discarded, though
+its conversation stays readable in the archive. Refused while either side
+still has a live turn, and once a side was kept. Exit `1` on a refusal; `2`
+with no daemon.
 
 ### `vincent chat preamble`
 

@@ -1,6 +1,6 @@
 # 171 — Ask another agent: fork a chat onto a different agent, and compare two answers
 
-**Status:** 🔄 in progress (5/7) · **Opened:** 2026-11-21
+**Status:** 🔄 in progress (6/7) · **Opened:** 2026-11-21
 
 Issue #1020, built on task 167's checkpoint, rewind and fork (#1041). It
 amends two task 167 decisions deliberately, with the author's agreement:
@@ -67,8 +67,25 @@ Conventions for this file are in [the tasks README](README.md).
   0074): per side its chat (`ON DELETE SET NULL`), agent, mode and note, and
   `kept_chat_id` for 171.6. `GET /v1/chats/{id}/compare` reads it from
   either side. Both routes join the MCP exclusion list.
-- [ ] **171.6** Keep one: archive the other fork with `delete_branch=true`,
+- [x] **171.6** Keep one: archive the other fork with `delete_branch=true`,
   refused while either side is live; the TUI split view with keep left/right.
+  ✓ 2026-11-22
+
+  *How (2026-11-22):* a chat archive never deletes a branch, so keeping is
+  its own route, `POST /v1/chats/{id}/compare/keep`: the other side goes
+  through `archiveChat` (extracted from the archive handler) forced past a
+  dirty worktree, then `git branch -D` on a branch vincent cut, then its
+  checkpoint refs; `409 compare_kept` once kept; `vincent chat keep`. The
+  TUI's compare screen (`viewCompare`) draws each side with the chats
+  board's preview pane (`previewFrom` shared with it) and the side's agent
+  and actual mode, re-reading every second while a side holds a process —
+  polling rather than two SSE subscriptions, since a compare is two turns
+  watched, not typed into. Keys are fixed (`tab`, `enter`, `[`, `]`) plus
+  `refresh`. Entry points: "compare side by side" in a compare side's
+  palette (the chat view asks `GET …/compare` once, for forks only), and
+  "compare two agents from turn…", the fork picker in a compare mode whose
+  `tab` picks the second agent and whose prompt is the composer's draft or
+  the turn's own.
 - [ ] **171.7** `scripts/171-gate.sh`, wired into the lightest `gate-group`,
   and the screenshot seed gaining a cross-agent fork and a compare pair.
 

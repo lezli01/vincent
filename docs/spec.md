@@ -1533,8 +1533,20 @@ states what a side ran under rather than what was asked; `permission_mode:
 full-auto` runs both full-auto. The pairing is a `chat_compares` row (§14,
 migration 0074), read from either side with `GET /v1/chats/{id}/compare`.
 Compare starts two agent processes outside the `created_by_task_id` chain,
-so neither route is an MCP tool (§13.4). Keeping one side and the TUI's split
-view (decisions 8 and 9) are not yet built; task 171 tracks them.
+so neither route is an MCP tool (§13.4).
+
+**Keep one** (decision 8): `POST /v1/chats/{id}/compare/keep` keeps side
+`{id}` and archives the other through the archive path, forced past a dirty
+worktree — discarding that answer is the point — then deletes its branch
+(never an adopted one) and its checkpoint refs, and records `kept_chat_id`.
+Refused `409 chat_turn_live` while either side holds a process, `409
+compare_kept` once a side was kept. Not an MCP tool. The TUI's **compare
+screen** (decision 9, §15) shows both sides' latest turns side by side, each
+with its agent and actual mode, re-read every second while a side works,
+with `[`/`]` to keep left or right; it is reached from either side's
+workspace, and a compare is started there from the palette's "compare two
+agents from turn…", which sends the composer's draft or the turn's own
+prompt.
 
 #### Diff and hunk review (added 2026-11-20, task 169, issue #1018)
 
@@ -12179,6 +12191,11 @@ POST   /v1/chats/{id}/compare           *Added 2026-11-22 (task 171.5, issue #10
                                         left, right}`, each side `{chat, turn, seeded, skipped}`.
                                         All or nothing: `409 chat_cap_reached` without room for
                                         two; the fork's refusals otherwise. Not an MCP tool
+POST   /v1/chats/{id}/compare/keep      *Added 2026-11-22 (task 171.6).* Keeps side `{id}`
+                                        and archives the other — worktree forced, branch and
+                                        refs deleted (§5.5 "Compare"). `200` with `{compare,
+                                        kept, archived, branch_deleted}`; `409 chat_turn_live`,
+                                        `409 compare_kept`, `404`. Not an MCP tool
 GET    /v1/chats/{id}/compare           *Added 2026-11-22 (task 171.5).* The compare the chat is
                                         a side of: `{compare: {id, source_chat_id, seq, prompt,
                                         left, right, kept_chat_id, created_at}}`, each side
@@ -18056,6 +18073,20 @@ stream for the live tail.
     or title row opens the chat where it normally opens. A terminal chat
     opens read-only, as from the archived board. `esc` from the chat returns
     to the search with its query and selection kept.
+15. **Compare.** *Added 2026-11-22 (task 171.6, issue #1020).* The two sides
+    of a chat compare (§5.5 "Compare"), left and right — stacked under 80
+    columns — each drawn as the chats board's preview draws a chat, with
+    its agent and the permission mode it actually runs under pinned below:
+    `full-auto` in warning colour with the side's `mode_note`. Re-read every
+    second while either side holds a process. `tab` (and `←`/`→`) moves the
+    focus, `enter` opens the focused side's chat (whose `esc` returns here),
+    `[` and `]` keep the left or right side after a `y`, refused in place
+    while a side works or once one was kept, and `refresh` re-reads. Reached
+    from a compare side's palette ("compare side by side"), and opened by
+    the chat workspace's "compare two agents from turn…" — the fork picker
+    in a compare mode, `tab` choosing the second agent, sending the
+    composer's draft or the turn's own prompt. Project-scoped: a project
+    switch lands on the chats board.
 
 ### Layout
 

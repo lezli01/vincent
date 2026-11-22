@@ -2797,6 +2797,38 @@ underlined and reversed, so it still shows under `NO_COLOR`.
 ![Chat search: the query "rollback" finding a closed chat by the words of its
 prompt, with the match highlighted](../assets/tui-chat-search.png)
 
+### Compare
+
+Two agents can answer the same thing side by side. In a chat, the palette's
+**compare two agents from turn…** opens the turn list: pick the turn to start
+from and, with `tab`, the agent to compare the chat's own agent with. `enter`
+forks the chat twice from the state before that turn — once onto each agent,
+each on its own branch — and sends both the composer's draft, or, with an
+empty composer, that turn's own prompt. Both start or neither does: with no
+room for two more running chats (`max_parallel_chats`), nothing is created.
+
+The compare screen then shows the two sides, left and right (stacked on a
+terminal narrower than 80 columns): each fork's turns as the chats board's
+preview draws them, re-read every second while either side is working. Under
+each, the agent and the permission mode the side actually runs under. A side
+runs `restricted` where its agent can keep a chat restricted, and `full-auto`
+where it cannot — codex, and cursor on Windows — shown in warning colour with
+the reason.
+
+When both have answered, keep one: the other side is archived, its worktree
+removed even with uncommitted changes, and its branch and checkpoint refs
+deleted. Its conversation stays readable in the archive. A compare side's
+workspace offers **compare side by side** in the palette to come back here.
+
+| Key | Does |
+|---|---|
+| `tab`, `←` / `→` | Move between the two sides |
+| `enter` | Open the focused side's chat; `esc` there comes back here |
+| `[` | Keep the left side, after `y` to confirm |
+| `]` | Keep the right side, after `y` to confirm |
+| `R` | Read both sides again (rebindable as `refresh`) |
+| `esc` | Back to the chat the screen was opened from |
+
 ### Chat workspace
 
 One conversation: the finished turns above, the running turn's live output below

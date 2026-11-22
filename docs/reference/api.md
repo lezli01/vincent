@@ -3253,6 +3253,7 @@ POST   /v1/chats/{id}/fork            { turn, title? } — a new idle chat from 
 POST   /v1/chats/{id}/compare         { turn, prompt?, agents: [a, b] } — one prompt to two
                                       agents, each in its own fork — see Compare
 GET    /v1/chats/{id}/compare         the compare this chat is a side of
+POST   /v1/chats/{id}/compare/keep    keep this side; archive the other with its branch
 POST   /v1/chats/{id}/viewed          a person looked at it: clears its unread mark
 DELETE /v1/chats/{id}                 permanent delete of an archived or closed chat
                                       — see Permanent delete
@@ -4096,7 +4097,16 @@ side's chat returns `{compare}`, and `404` on a chat that is no side of one.
 | `409` | `chat_cap_reached` | `max_parallel_chats` has no room for both sides; nothing was created |
 | `409` | as [fork](#rewind-and-fork) | The turn cannot be forked from |
 
-Neither route is an MCP tool: a compare starts two agent processes.
+`POST /v1/chats/{id}/compare/keep` keeps side `{id}` and archives the other:
+its worktree is removed even when dirty, and its branch and checkpoint refs are
+deleted — that answer is discarded, though its conversation stays in the
+archive. It answers `{compare, kept, archived, branch_deleted}`, `archived`
+`null` when the other side's chat was already deleted. Refused `409
+chat_turn_live` while either side has a live turn, `409 compare_kept` once a
+side was kept, and `404` on a chat that is no side of a compare.
+
+None of the three routes is an MCP tool: a compare starts two agent
+processes, and keeping a side is a human's choice between two answers.
 
 ### Diff and hunk review
 
