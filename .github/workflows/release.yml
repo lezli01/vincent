@@ -82,10 +82,24 @@ jobs:
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
+      # goreleaser takes its current tag from the tags at HEAD, and master's
+      # HEAD also carries `master-latest`, which master-build.yml moves on
+      # every push (task 147). A dry run on master saw only that tag and
+      # failed at the snapshot name — `incpatch` of a non-semver version — and
+      # a release commit carries both tags. So the tag is named here: the
+      # pushed `v*` tag for a release, the newest release tag for a dispatch,
+      # whose snapshot is then `<next patch>-next` as .goreleaser.yaml means.
       - id: meta
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*')"
+          fi
+          echo "GORELEASER_CURRENT_TAG=$tag" >> "$GITHUB_ENV"
+          echo "goreleaser current tag: $tag"
           echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           echo "macos_signed=$MACOS_SIGN_REQUIRED" >> "$GITHUB_OUTPUT"
 
