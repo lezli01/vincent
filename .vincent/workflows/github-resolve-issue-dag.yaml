@@ -1615,16 +1615,40 @@ steps:
         it lands, so `go run mage.go test` is red by construction{{ end }}. The suite is run
         after the join, by a later step.
         {{- if ne (index .Steps "classify").ExitCode 2 }}
-        **A check must not depend on a page the unit cannot edit.** The
-        docs-claims tests (`func TestDocsClaims*`, in `internal/cli`,
-        `internal/config`, `internal/workflow`, `internal/tui` and others) fail
-        the moment a command, flag, config key, key binding or reason is added
-        and its reference page under `docs/` does not name it yet — and no unit
-        here may edit `docs/`. When a unit adds any such surface, its check
-        skips them: `go test ./internal/cli/... -skip 'TestDocsClaims'`. The
-        page is updated by the integration step after the join, whose check
-        runs the whole suite, docs-claims tests included; skipping them here
-        defers that proof, it does not drop it.
+        **A check must not depend on a file the unit cannot edit.** Two kinds
+        of repository-wide drift test fail the moment a unit adds a surface,
+        and neither can be made green from inside most units' `files`. A lane
+        that meets one can only stop — it burned six attempts on one unit that
+        way — so decide it here:
+
+        - **Docs-drift tests.** Every test in a `docs_claims_test.go`
+          (`internal/cli`, `internal/config`, `internal/workflow`,
+          `internal/tui`, `internal/issuearchive`, `internal/issuesource`)
+          fails when a command, flag, config key, key binding, rebindable
+          operation or reason is added and its page under `docs/` does not
+          name it yet — and no unit here may edit `docs/`. Most are named
+          `TestDocsClaims*`; **`internal/tui`'s are not** (`TestGuide*`,
+          `TestConfigReferenceNamesEveryOperation`, …), so a
+          `-skip 'TestDocsClaims'` misses them. When a unit adds any such
+          surface, list the names with
+          `grep -h '^func Test' <pkg>/docs_claims_test.go` and skip exactly
+          those: `go test ./internal/cli/... -skip 'TestDocsClaims'`,
+          `go test ./internal/tui/... -skip 'TestGuide|TestConfigReferenceNamesEveryOperation'`.
+        - **The MCP parity tests** (`func TestMCP*` in
+          `internal/api/mcp_parity_test.go`). A new route in
+          `internal/api/server.go` must be either a tool or an entry in
+          `mcp.Excluded` (`internal/mcp/tools.go`), **and** in the `want` list
+          of `TestMCPExcludesDestructiveAdminByName`. A unit that adds a route
+          therefore owns both files in its `files` expression —
+          `internal/mcp/tools\.go` and `internal/api/mcp_parity_test\.go` —
+          and its brief says which the route is. When two units add routes,
+          those two files would collide at the join: give them to neither,
+          have each such unit's check carry `-skip 'TestMCP'`; the
+          integration step registers the routes.
+
+        The integration step after the join runs the whole suite with nothing
+        skipped, and it is the step that writes the page or the entries;
+        skipping here defers that proof, it does not drop it.
         {{- end }}
       - `brief` — everything the agent delivering this unit needs, as prose.
         It will not see `brief.md`, it will not see the other units, and it
@@ -2061,6 +2085,15 @@ steps:
       2. Repair what only breaks in combination: a signature two units disagreed
          on, a duplicated helper, a test that passes alone and fails in the
          package, an import cycle nobody could see from one lane.
+         Two repository-wide drift tests are red here **by plan**, because
+         a unit's check was told to skip them: a route some unit added that
+         is in neither the MCP tool surface nor `mcp.Excluded`
+         (`internal/mcp/tools.go`) and the `want` list in
+         `internal/api/mcp_parity_test.go` — add both entries, following the
+         recorded decisions on which routes stay off the tool surface — and
+         a docs-drift test (`docs_claims_test.go`) naming a page that does
+         not mention a new command, flag, key or operation yet. Those are
+         yours to make green; they are not a unit's failure.
       3. **Stay out of the units' work.** A unit that delivered its scope and
          passed its own check is done. If one of them is genuinely wrong rather
          than merely inconsistent with another, fix the smallest thing that
