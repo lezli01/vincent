@@ -383,7 +383,7 @@ func runWithAgents(ctx context.Context, opts Options, agents *agent.Registry) er
 		// A seeded context's tool-call summaries (task 171 decision 3) are
 		// read through the API's transcript normalizer.
 		TurnTools: func(chat *store.Chat, turn *store.ChatTurn) []chatexport.ToolCall {
-			return api.TurnToolCalls(dirs.Data, agents, chat, turn)
+			return api.TurnToolCalls(dirs.Data, agents, logger, chat, turn)
 		},
 		Store:     st,
 		Config:    currentConfig,

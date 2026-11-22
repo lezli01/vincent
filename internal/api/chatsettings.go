@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/lezli01/vincent/internal/agent"
+	"github.com/lezli01/vincent/internal/chatrun"
 	"github.com/lezli01/vincent/internal/chatstate"
 	"github.com/lezli01/vincent/internal/store"
 	"github.com/lezli01/vincent/internal/workflow"
@@ -241,6 +242,13 @@ func (s *Server) handleChatPatch(w http.ResponseWriter, r *http.Request) {
 		if req.Title != nil || !req.empty() {
 			writeError(w, http.StatusBadRequest, CodeValidationFailed,
 				"pending_preamble is edited alone; send the title or settings in another PATCH")
+			return
+		}
+		// An ended chat refuses it as rewind and fork do (review F4); the
+		// store refuses it too, for a chat that ends under the hold.
+		if chatstate.Terminal(chat.State) {
+			writeError(w, http.StatusConflict, chatrun.ReasonChatTerminal,
+				"this chat is "+string(chat.State)+"; it has no next turn to seed")
 			return
 		}
 		s.patchChatPreamble(w, r, chat, *req.PendingPreamble)

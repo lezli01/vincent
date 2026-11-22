@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -226,15 +227,21 @@ func readTurnTools(path string, parse agent.LineParser) (chatexport.FromNormaliz
 // transcript under dataDir and normalized by agents' parser for the chat's
 // agent: the seam the daemon hands chatrun for a seeded context's tool
 // summaries (task 171 decision 3), since normalizing is this package's code.
-// A turn with no readable transcript has none.
-func TurnToolCalls(dataDir string, agents *agent.Registry, chat *store.Chat, turn *store.ChatTurn) []chatexport.ToolCall {
+// A turn with no readable transcript has none, quietly — a pruned or
+// never-written transcript is ordinary. Any other failure keeps the calls
+// read before it and is logged to log (nil: discarded), as the export logs
+// it, so a seeded context that lost its summaries leaves a trace (review F6).
+func TurnToolCalls(dataDir string, agents *agent.Registry, log *slog.Logger, chat *store.Chat, turn *store.ChatTurn) []chatexport.ToolCall {
 	var parse agent.LineParser
 	if agents != nil {
 		if a, ok := agents.Get(chat.Agent); ok {
 			parse = a.NewLineParser()
 		}
 	}
-	read, _ := readTurnTools(chatTurnTranscriptFile(dataDir, chat.ID, turn.Seq), parse)
+	read, err := readTurnTools(chatTurnTranscriptFile(dataDir, chat.ID, turn.Seq), parse)
+	if err != nil && !errors.Is(err, errNoTranscript) && log != nil {
+		log.Error("read chat transcript for a seeded context", "chat_id", chat.ID, "seq", turn.Seq, "error", err)
+	}
 	return read.Tools
 }
 

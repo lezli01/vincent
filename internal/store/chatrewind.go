@@ -163,8 +163,8 @@ const MaxPendingPreambleBytes = 1 << 20
 // EditChatPendingPreamble replaces the seeded context the chat's next turn
 // will start its fresh session with (task 171 decision 4) and publishes
 // chat.updated. It is legal only while the chat is seeded-pending — a
-// preamble is pending and no resume anchor is — and its state holds no
-// process; otherwise it returns ErrPreambleNotPending and writes nothing.
+// preamble is pending and no resume anchor is — and its state neither holds
+// a process nor is terminal; otherwise it returns ErrPreambleNotPending and writes nothing.
 // Empty text clears the preamble: the next turn then starts a fresh session
 // with no earlier context, which is the caller's explicit choice.
 func (s *Store) EditChatPendingPreamble(ctx context.Context, chatID int64, text string) (*Chat, error) {
@@ -172,7 +172,9 @@ func (s *Store) EditChatPendingPreamble(ctx context.Context, chatID int64, text 
 		return nil, fmt.Errorf("seeded context is %d bytes, over the %d-byte bound", len(text), MaxPendingPreambleBytes)
 	}
 	return s.updateChatOrRefuse(ctx, chatID, EventChatUpdated, func(c *Chat) error {
-		if c.PendingPreamble == "" || c.ResumeAt != "" || chatstate.HoldsProcess(c.State) {
+		// An ended chat runs no next turn, so it has nothing pending to
+		// edit, whatever plan its row still holds (review F4).
+		if c.PendingPreamble == "" || c.ResumeAt != "" || chatstate.HoldsProcess(c.State) || chatstate.Terminal(c.State) {
 			return ErrPreambleNotPending
 		}
 		c.PendingPreamble = text

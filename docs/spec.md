@@ -1503,10 +1503,15 @@ held with.
 it as `pending_preamble` while `resume_pending` is `seeded`, and
 `PATCH /v1/chats/{id}` with `pending_preamble` (alone) replaces it until a
 turn consumes it — `409 chat_preamble_not_pending` on a chat that is not
-seeded-pending, `chat_turn_live` while a turn is accepted. Empty text clears
-it, and the next turn starts a fresh session with no earlier context. The
+seeded-pending, `chat_terminal` on an ended chat, `chat_turn_live` while a
+turn is accepted. Empty text clears
+it, and the next turn starts a fresh session with no earlier context; the
+clear is final, since the chat is then no longer seeded-pending and a later
+edit is refused like any other. The
 CLI's `vincent chat show` and the TUI's chat workspace show it under
-"turn 0 · seeded context (summary)"; `vincent chat preamble` edits it. A
+"turn 0 · seeded context (summary)" — at the head of a fork with no turns
+yet, after the last kept turn of a seeded rewind; `vincent chat preamble`
+edits it. A
 natively resumed fork has none, and the TUI says "resumed from turn N".
 Once a turn consumes it, the context stays readable: the runner writes it on
 that turn's transcript as the `context` of its `vincent.seeded` note, so
@@ -12181,7 +12186,10 @@ POST   /v1/chats/{id}/fork              *Added 2026-11-21 (task 167.6, issue #10
                                         `400` for an unknown or non-resuming one, and a
                                         `model`/`effort` without another agent is `400`. The
                                         chat DTO gains `forked_from.agent` and
-                                        `pending_preamble`, and `PATCH /v1/chats/{id}` takes
+                                        `pending_preamble` — on single-chat reads and action
+                                        responses only; list and search rows carry
+                                        `resume_pending` alone, as they carry `has_draft`
+                                        rather than the draft — and `PATCH /v1/chats/{id}` takes
                                         `pending_preamble` alone (large body tier; `409
                                         chat_preamble_not_pending`)
 POST   /v1/chats/{id}/compare           *Added 2026-11-22 (task 171.5, issue #1020).* Forks the

@@ -4045,10 +4045,13 @@ consumed it, that turn's transcript keeps it as the `context` of its
 `vincent.seeded` record — and
 `PATCH /v1/chats/{id}` with `{"pending_preamble": "…"}`, sent alone, replaces
 it (at most 1 MiB). An empty string clears it, so the next turn starts a fresh
-session with no earlier context. The edit is `409 chat_preamble_not_pending`
-when nothing seeded is pending — a natively resumed fork, a chat never rewound
-or forked, or one whose next turn already started — and `409 chat_turn_live`
-while a turn is accepted.
+session with no earlier context. Clearing is final: the chat stops being
+seeded (`resume_pending` becomes absent), so to replace the context with
+something short, send that text rather than clearing first. The edit is
+`409 chat_preamble_not_pending` when nothing seeded is pending — a natively
+resumed fork, a chat never rewound or forked, one whose context was cleared,
+or one whose next turn already started — `409 chat_terminal` on a
+chat that has ended, and `409 chat_turn_live` while a turn is accepted.
 
 | Status | `error` | When |
 |---|---|---|
@@ -4313,7 +4316,9 @@ states a code rewind can go forward to), `forked_from` (`{chat_id, seq,
 agent}`, `agent` absent on a fork made before it was recorded),
 `resume_pending` (`resumed` or `seeded` while a rewind's or fork's plan waits
 for the next turn) and `pending_preamble` (the seeded context, while
-`resume_pending` is `seeded`).
+`resume_pending` is `seeded`). `pending_preamble` is on `GET /v1/chats/{id}`
+and on the rewind, fork and `PATCH` responses only: it can run to 1 MiB, so
+`GET /v1/chats` and chat search rows carry `resume_pending` and leave it out.
 
 ```bash
 curl -sS "http://127.0.0.1:PORT/v1/chats/3/turns/2/transcript?offset=0" \

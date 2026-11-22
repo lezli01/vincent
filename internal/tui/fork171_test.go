@@ -42,6 +42,20 @@ func TestTurnZeroBlock(t *testing.T) {
 	if lines := turnZeroLines(&apiclient.Chat{ID: 1}, 80); len(lines) != 0 {
 		t.Errorf("plain chat: %q", lines)
 	}
+	// A seeded rewind keeps its turns: its context is still shown, under
+	// the pending line after the last turn, with the edit hint (review F2).
+	rewound := chatViewFixture()
+	rewound.chat.ResumePending = "seeded"
+	rewound.chat.PendingPreamble = "<earlier-turns>\nthe rewound summary\n</earlier-turns>\n"
+	rewound.applyLoaded(chatLoadedMsg{id: 1, chat: rewound.chat, turns: []apiclient.ChatTurn{
+		{Seq: 1, Prompt: "kept turn", State: "succeeded"},
+	}})
+	got = ansi.Strip(strings.Join(rewound.bodyLines(100), "\n"))
+	kept, pending, ctx := strings.Index(got, "kept turn"), strings.Index(got, "seeded, not resumed"), strings.Index(got, "turn 0 · seeded context (summary)")
+	if kept < 0 || pending < kept || ctx < pending ||
+		!strings.Contains(got, "the rewound summary") || !strings.Contains(got, "vincent chat preamble 1") {
+		t.Errorf("seeded rewind with turns: want the turn, the pending line, then turn 0:\n%s", got)
+	}
 	long := &apiclient.Chat{ID: 11, ResumePending: "seeded", PendingPreamble: strings.Repeat("line\n", 100)}
 	got = ansi.Strip(strings.Join(turnZeroLines(long, 80), "\n"))
 	if !strings.Contains(got, "… 60 more lines") {

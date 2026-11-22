@@ -60,7 +60,7 @@ func TestCrossAgentForkAgainstTheRealAPI(t *testing.T) {
 	runner := chatrun.New(chatrun.Deps{
 		Store: st, Config: config.Default, Worktrees: wt, Agents: reg, DataDir: dataDir, Logger: log,
 		TurnTools: func(c *store.Chat, turn *store.ChatTurn) []chatexport.ToolCall {
-			return api.TurnToolCalls(dataDir, reg, c, turn)
+			return api.TurnToolCalls(dataDir, reg, log, c, turn)
 		},
 	})
 	runner.Start(ctx)
@@ -116,9 +116,33 @@ func TestCrossAgentForkAgainstTheRealAPI(t *testing.T) {
 	if !strings.Contains(fc.PendingPreamble, "first question") || !strings.Contains(fc.PendingPreamble, "held with claude") {
 		t.Errorf("pending_preamble:\n%s", fc.PendingPreamble)
 	}
+	// The kept turn 1 ran claude-shaped fakeagent, which calls Edit: its
+	// summary is read from the real transcript through the real normalizer
+	// (review F6), not a stub.
+	if want := "<tools>\n" + chatexport.ToolSummary("Edit", "") + "\n</tools>"; strings.Count(fc.PendingPreamble, want) != 1 {
+		t.Errorf("pending_preamble does not summarize turn 1's Edit call as %q:\n%s", want, fc.PendingPreamble)
+	}
 	got, _, err := client.GetChat(ctx, fc.ID)
 	if err != nil || got.PendingPreamble != fc.PendingPreamble || got.ForkedFrom == nil || got.ForkedFrom.Agent != "claude" {
 		t.Errorf("GET does not render turn 0 / forked_from.agent: %+v, %v", got, err)
+	}
+	// A list row says it is seeded but leaves the context to GET (review F3).
+	rows, err := client.ListChats(ctx, apiclient.ListChatsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := false
+	for _, row := range rows {
+		if row.ID == fc.ID {
+			listed = true
+			if row.ResumePending != "seeded" || row.PendingPreamble != "" {
+				t.Errorf("list row: resume_pending %q, pending_preamble %d bytes; want seeded and none",
+					row.ResumePending, len(row.PendingPreamble))
+			}
+		}
+	}
+	if !listed {
+		t.Errorf("the fork is not listed")
 	}
 
 	edited := "EDITED-CONTEXT: the human asked a first question, and you answered it.\n"
@@ -201,6 +225,16 @@ func TestCrossAgentForkAgainstTheRealAPI(t *testing.T) {
 	}
 	full, err := client.ForkChat(ctx, src.ID, apiclient.ForkRequest{Turn: 2, Agent: "codex", PermissionMode: "full-auto"})
 	if err != nil || full.Chat.PermissionMode != "full-auto" {
-		t.Errorf("fork with permission_mode full-auto = %+v, %v", full, err)
+		t.Fatalf("fork with permission_mode full-auto = %+v, %v", full, err)
+	}
+	// An archived seeded fork keeps its plan on the row, but has no next
+	// turn to seed: the edit is refused as rewind and fork are (review F4).
+	if _, err := client.ArchiveChat(ctx, full.Chat.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.PatchChat(ctx, full.Chat.ID, apiclient.PatchChatRequest{PendingPreamble: &edited})
+	if apiErr := (*apiclient.Error)(nil); !errors.As(err, &apiErr) || apiErr.Status != http.StatusConflict ||
+		apiErr.Code != "chat_terminal" {
+		t.Errorf("PATCH on an archived fork = %v, want 409 chat_terminal", err)
 	}
 }

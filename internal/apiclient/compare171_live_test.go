@@ -66,7 +66,7 @@ func TestCompareAgainstTheRealAPI(t *testing.T) {
 	runner := chatrun.New(chatrun.Deps{
 		Store: st, Config: cfg, Worktrees: wt, Agents: reg, DataDir: dataDir, Logger: log,
 		TurnTools: func(c *store.Chat, turn *store.ChatTurn) []chatexport.ToolCall {
-			return api.TurnToolCalls(dataDir, reg, c, turn)
+			return api.TurnToolCalls(dataDir, reg, log, c, turn)
 		},
 	})
 	runner.Start(ctx)
