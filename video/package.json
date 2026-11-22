@@ -2,11 +2,14 @@
   "name": "vincent-promo-video",
   "private": true,
   "scripts": {
-    "studio": "npm run music && remotion studio",
+    "studio": "npm run music && npm run music:014 && remotion studio",
     "render": "npm run music && remotion render VincentVertical out/vincent-vertical.mp4 && remotion render VincentLandscape out/vincent-landscape.mp4",
     "render:vertical": "npm run music && remotion render VincentVertical out/vincent-vertical.mp4",
     "render:landscape": "npm run music && remotion render VincentLandscape out/vincent-landscape.mp4",
-    "music": "node scripts/make-music.mjs 56.1 3.0 52.1"
+    "music": "node scripts/make-music.mjs 56.1 3.0 52.1",
+    "music:014": "node scripts/make-music.mjs 38.8 2.0 35.1 music-014.wav && node scripts/copy-shots.mjs",
+    "render:014": "npm run music:014 && remotion render Release014Vertical out/vincent-0.14.0-vertical.mp4 && remotion render Release014Landscape out/vincent-0.14.0-landscape.mp4",
+    "thumb:014": "node scripts/copy-shots.mjs && remotion still Release014Thumbnail out/vincent-0.14.0-thumbnail.png"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.545",
