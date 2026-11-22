@@ -237,3 +237,41 @@ func TestCompareSideOffersTheSplitView(t *testing.T) {
 		t.Fatal("not offered on a compare side")
 	}
 }
+
+// TestRootRoutesOpenCompare: the palette's "compare side by side" reaches
+// the compare screen through the root. The views' own tests call them
+// directly; this is the hop between them, which a tape found missing.
+func TestRootRoutesOpenCompare(t *testing.T) {
+	m := phaseRoot(t, phaseConnected, 120, 40)
+	m.active = viewChat
+	m.Update(openCompareMsg{chatID: 12, back: viewChat})
+	if m.active != viewCompare {
+		t.Fatalf("openCompareMsg left the root on view %d, want the compare screen", m.active)
+	}
+	v := m.views[viewCompare].(*compareView)
+	if v.chatID != 12 || v.back != viewChat {
+		t.Fatalf("compare view opened on chat %d back %d", v.chatID, v.back)
+	}
+}
+
+// TestCompareRearmsAfterComingBack: a refresh tick armed before the screen
+// was left goes to another view and is lost; coming back must poll again
+// rather than wait on it forever.
+func TestCompareRearmsAfterComingBack(t *testing.T) {
+	v := compareFixture()
+	v.client = apiclient.New("http://127.0.0.1:1", "t")
+	v.sides[1].chat.State = "running"
+	if cmd := v.armTick(); cmd == nil || !v.ticking {
+		t.Fatal("a working side armed no tick")
+	}
+	// The tick is lost while another view is active; then the screen is
+	// shown again and its read lands.
+	_, load := v.update(viewActivatedMsg{})
+	if load == nil || v.ticking {
+		t.Fatalf("coming back did not read again (ticking %v)", v.ticking)
+	}
+	cmp, sides := v.cmp, v.sides
+	if cmd := v.applyLoaded(compareLoadedMsg{gen: v.gen, cmp: cmp, sides: sides}); cmd == nil {
+		t.Fatal("the read after coming back armed no tick while a side works")
+	}
+}

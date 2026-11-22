@@ -290,6 +290,10 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Every open follows its object into its project first (task 132.6):
 		// openObject switches when it must, then routes.
 		return m, m.openObject(msg)
+	case openCompareMsg:
+		// A compare is opened from one of its own sides, in the project on
+		// screen: there is no project to follow, only the screen to route.
+		return m, m.routeOpen(msg)
 	case followFetchedMsg:
 		return m, m.updateFollowFetched(msg)
 	case globalPauseMsg:

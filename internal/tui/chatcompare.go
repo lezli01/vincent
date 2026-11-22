@@ -81,6 +81,11 @@ func newCompareView() *compareView {
 
 func (v *compareView) title() string { return "compare" }
 
+// frameless: the screen draws its own header and its two panes are boxes of
+// their own, as the chat workspace's are; a frame around them would title
+// the screen twice.
+func (v *compareView) frameless() bool { return true }
+
 func (v *compareView) setClient(c *apiclient.Client) tea.Cmd {
 	v.client = c
 	if v.chatID == 0 {
@@ -177,6 +182,12 @@ func (v *compareView) armTick() tea.Cmd {
 func (v *compareView) update(msg tea.Msg) (panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case viewActivatedMsg:
+		// A tick armed before the screen was left was delivered to another
+		// view and dropped: forget it, so this read can arm the next one.
+		// The new generation makes the lost tick's twin harmless if it is
+		// still in flight.
+		v.gen++
+		v.ticking = false
 		return v, v.loadCmd()
 	case compareLoadedMsg:
 		return v, v.applyLoaded(msg)
