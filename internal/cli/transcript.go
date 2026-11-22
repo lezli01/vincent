@@ -602,6 +602,15 @@ func renderTranscriptRecord(
 		return "? " + firstNonEmpty(rec.Summary, rec.Kind, "input requested"), true
 	case "vincent.input_response":
 		return "? answered", true
+	case "vincent.seeded":
+		// A seeded chat turn (task 167) opens with the context its fresh
+		// session was given — turn 0 (task 171 decision 4) — printed whole
+		// under the heading `chat show` uses, since the chat's own copy is
+		// gone once the turn has run. A seed with nothing to give says so.
+		if ctx := strings.TrimRight(rawField(rec.Raw, "context"), "\n"); ctx != "" {
+			return turnZeroHeading + "\n" + ctx + "\n" + turnZeroEnd, true
+		}
+		return "* seeded: a fresh session, given no earlier turns", true
 	case "vincent.input_timeout", "vincent.input_protocol_error", "vincent.error":
 		return "! " + firstNonEmpty(rec.Message, rawField(rec.Raw, "error"), rec.Type), true
 	default:

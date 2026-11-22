@@ -257,6 +257,11 @@ func (v *chatView) headerLine(width int) string {
 	if v.chat.LinkedTaskID != nil {
 		mid = append(mid, chatHeaderSeg{styleDim.Render(fmt.Sprintf("on task #%d", *v.chat.LinkedTaskID)), 5})
 	}
+	// A fork's provenance is as permanent as a link (task 171 decision 5),
+	// and gives way before it: the branch already says the fork is its own.
+	if label := forkedFromLabel(v.chat); label != "" {
+		mid = append(mid, chatHeaderSeg{styleDim.Render(label), 6})
+	}
 	pause := chatPauseMark()
 	right := v.headerMarks()
 	if status := chatStatusLine(chatStatusTemplate(), v.chat, v.turns); status != "" {

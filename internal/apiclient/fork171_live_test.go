@@ -2,6 +2,7 @@ package apiclient_test
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -132,7 +133,26 @@ func TestCrossAgentForkAgainstTheRealAPI(t *testing.T) {
 		t.Errorf("preamble with a title = %v, want 400", err)
 	}
 
+	// The export shows the pending turn 0 and where the fork came from.
+	exportMD := func() string {
+		t.Helper()
+		out, err := client.ChatExportMarkdown(ctx, fc.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if md := exportMD(); !strings.Contains(md, "## "+chatexport.TurnZeroHeading) || !strings.Contains(md, "EDITED-CONTEXT") ||
+		!strings.Contains(md, fmt.Sprintf("**forked from:** #%d (claude), before turn 2", src.ID)) {
+		t.Errorf("export before the first turn lacks turn 0:\n%s", md)
+	}
+
 	turnOn(fc.ID, "third question", 1)
+	// Once consumed, turn 0 lives on the turn that ran it (decision 4).
+	if md := exportMD(); !strings.Contains(md, "### "+chatexport.TurnZeroHeading) || !strings.Contains(md, "EDITED-CONTEXT") ||
+		strings.Contains(md, chatexport.NotePendingPreamble) {
+		t.Errorf("export after the first turn lacks the consumed turn 0:\n%s", md)
+	}
 	data, err := os.ReadFile(promptFile)
 	if err != nil {
 		t.Fatal(err)

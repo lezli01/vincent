@@ -738,6 +738,16 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 			v.openRewindPicker(msg.fork)
 		}
 		return v, nil
+	case editPreambleMsg:
+		if msg.chatID == v.chatID {
+			return v, v.editPreamble()
+		}
+		return v, nil
+	case chatPreambleEditedMsg:
+		return v, v.applyPreambleEdit(msg)
+	case chatPreambleSavedMsg:
+		v.applyPreambleSaved(msg)
+		return v, nil
 	case toggleRewoundMsg:
 		if msg.chatID == v.chatID {
 			v.toggleRewound()

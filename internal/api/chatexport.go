@@ -94,9 +94,13 @@ func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff
 			Branch: chat.Branch, BaseBranch: chat.BaseBranch, BaseSHA: chat.BaseSHA,
 			LinkedTaskID: chat.LinkedTaskID, HandoffTaskID: chat.HandoffTaskID,
 			IssueID: chat.IssueID, CreatedAt: chat.CreatedAt,
+			PendingPreamble: pendingPreamble(chat),
 		},
 		Turns:     []chatexport.Turn{},
 		ShellRuns: []chatexport.ShellRun{},
+	}
+	if f := renderForkedFrom(chat); f != nil {
+		e.Chat.ForkedFrom = &chatexport.ForkedFrom{ChatID: f.ChatID, Seq: f.Seq, Agent: f.Agent}
 	}
 	if p, err := s.deps.Store.GetProject(ctx, chat.ProjectID); err == nil {
 		e.Chat.Project = p.Name
@@ -122,8 +126,8 @@ func (s *Server) buildChatExport(ctx context.Context, chat *store.Chat, withDiff
 			Model: nilIfEmpty(t.Model), Effort: nilIfEmpty(t.Effort), PermissionMode: nilIfEmpty(t.PermissionMode),
 			RewoundAt: t.RewoundAt, RewindID: t.RewindID, Seeded: t.Seeded,
 		}
-		tools, note := s.chatTurnTools(chat, t)
-		et.Tools, et.ToolsNote = tools, note
+		read, note := s.chatTurnTools(chat, t)
+		et.Tools, et.ToolsNote, et.SeededContext = read.Tools, note, read.SeededContext
 		if et.Tools == nil {
 			et.Tools = []chatexport.ToolCall{}
 		}
@@ -170,52 +174,52 @@ func chatExportShellRun(run *store.ChatShellRun) chatexport.ShellRun {
 	return out
 }
 
-// chatTurnTools reads one turn's tool calls from its transcript, normalized
-// by the code that serves `?format=normalized` (§13.2), or says why there are
-// none to read. A turn that never wrote a transcript is told apart from one
+// chatTurnTools reads one turn's tool calls — and a seeded turn's context
+// (task 171 decision 4) — from its transcript, normalized by the code that
+// serves `?format=normalized` (§13.2), or says why there are none to read. A turn that never wrote a transcript is told apart from one
 // whose transcript was pruned by task 103 decision 4's predicate.
-func (s *Server) chatTurnTools(chat *store.Chat, turn *store.ChatTurn) ([]chatexport.ToolCall, string) {
-	tools, err := readTurnTools(s.chatTurnTranscriptPath(chat.ID, turn.Seq), s.transcriptParser(chat.Agent))
+func (s *Server) chatTurnTools(chat *store.Chat, turn *store.ChatTurn) (chatexport.FromNormalized, string) {
+	read, err := readTurnTools(s.chatTurnTranscriptPath(chat.ID, turn.Seq), s.transcriptParser(chat.Agent))
 	if errors.Is(err, errNoTranscript) {
 		if chatrun.TurnWritesNoTranscript(turn.FailReason) {
-			return nil, chatexport.NoteNeverWritten
+			return read, chatexport.NoteNeverWritten
 		}
-		return nil, chatexport.NotePruned
+		return read, chatexport.NotePruned
 	}
 	if err != nil {
 		s.deps.Logger.Error("read chat transcript for export", "chat_id", chat.ID, "seq", turn.Seq, "error", err)
 	}
-	return tools, ""
+	return read, ""
 }
 
 // errNoTranscript is a turn transcript that cannot be opened or sized.
 var errNoTranscript = errors.New("no transcript")
 
-// readTurnTools reads the tool calls of the transcript at path, normalized
+// readTurnTools reads the tool calls (and a seeded context) of the transcript at path, normalized
 // by the code that serves `?format=normalized` (§13.2). A transcript that
 // cannot be read at all is errNoTranscript; any other error comes with the
 // calls read before it.
-func readTurnTools(path string, parse agent.LineParser) ([]chatexport.ToolCall, error) {
+func readTurnTools(path string, parse agent.LineParser) (chatexport.FromNormalized, error) {
 	//nolint:gosec // G304: the path is derived from ids the daemon owns, never request input
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, errNoTranscript
+		return chatexport.FromNormalized{}, errNoTranscript
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
 	if err != nil {
-		return nil, errNoTranscript
+		return chatexport.FromNormalized{}, errNoTranscript
 	}
 	// A running turn's file is appended to while it is read; stop at the
 	// last whole record, exactly as the transcript route does.
 	end, err := lineBoundary(f, fi.Size())
 	if err != nil {
-		return nil, errNoTranscript
+		return chatexport.FromNormalized{}, errNoTranscript
 	}
 	var normalized bytes.Buffer
 	normErr := normalizeTranscript(&normalized, io.NewSectionReader(f, 0, end), parse)
-	tools, err := chatexport.ToolsFromNormalized(&normalized)
-	return tools, errors.Join(normErr, err)
+	read, err := chatexport.ReadNormalized(&normalized)
+	return read, errors.Join(normErr, err)
 }
 
 // TurnToolCalls is a chat turn's top-level tool calls, read from its
@@ -230,8 +234,8 @@ func TurnToolCalls(dataDir string, agents *agent.Registry, chat *store.Chat, tur
 			parse = a.NewLineParser()
 		}
 	}
-	tools, _ := readTurnTools(chatTurnTranscriptFile(dataDir, chat.ID, turn.Seq), parse)
-	return tools
+	read, _ := readTurnTools(chatTurnTranscriptFile(dataDir, chat.ID, turn.Seq), parse)
+	return read.Tools
 }
 
 // chatExportDiff is the base-to-tip diff of the directory the chat works in

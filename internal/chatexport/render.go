@@ -63,6 +63,9 @@ func metaRows(e *Export) []metaRow {
 	addID("linked task", c.LinkedTaskID)
 	addID("handoff task", c.HandoffTaskID)
 	addID("issue", c.IssueID)
+	if c.ForkedFrom != nil {
+		add("forked from", c.ForkedFrom.Label())
+	}
 	add("created", stamp(c.CreatedAt))
 	add("exported", stamp(e.ExportedAt))
 	return rows
@@ -257,6 +260,10 @@ func Markdown(e *Export) string {
 		for _, n := range t.Notes() {
 			fmt.Fprintf(&b, "_%s_\n\n", n)
 		}
+		if sc := strings.TrimRight(t.SeededContext, "\n"); sc != "" {
+			f := fence(sc)
+			fmt.Fprintf(&b, "### %s\n\n%s\n%s\n%s\n\n", TurnZeroHeading, f, sc, f)
+		}
 		b.WriteString("### Prompt\n\n")
 		b.WriteString(strings.TrimRight(t.Prompt, "\n"))
 		if mc := strings.TrimRight(t.MentionContext, "\n"); mc != "" {
@@ -287,6 +294,10 @@ func Markdown(e *Export) string {
 			fmt.Fprintf(&b, "\n**Failed:** %s\n", f)
 		}
 		fmt.Fprintf(&b, "\n_Usage: %s_\n", t.Usage())
+	}
+	if p := strings.TrimRight(e.Chat.PendingPreamble, "\n"); p != "" {
+		f := fence(p)
+		fmt.Fprintf(&b, "\n## %s\n\n_%s_\n\n%s\n%s\n%s\n", TurnZeroHeading, NotePendingPreamble, f, p, f)
 	}
 	switch {
 	case e.Diff != nil:
@@ -349,9 +360,10 @@ func markdownHTML(src string) template.HTML {
 
 type pageTurn struct {
 	*Turn
-	PromptHTML template.HTML
-	AnswerHTML template.HTML
-	ToolLines  []string
+	TurnZeroHeading string
+	PromptHTML      template.HTML
+	AnswerHTML      template.HTML
+	ToolLines       []string
 }
 
 // pageShell is a shell run as the page draws it.
@@ -371,6 +383,9 @@ type pageData struct {
 	Title           string
 	Meta            []metaRow
 	Entries         []pageEntry
+	TurnZeroHeading string
+	PendingPreamble string
+	PendingNote     string
 	Diff            *string
 	DiffUnavailable string
 }
@@ -379,6 +394,9 @@ func renderHTML(w io.Writer, e *Export) error {
 	d := pageData{
 		Title:           title(e),
 		Meta:            metaRows(e),
+		TurnZeroHeading: TurnZeroHeading,
+		PendingPreamble: e.Chat.PendingPreamble,
+		PendingNote:     NotePendingPreamble,
 		Diff:            e.Diff,
 		DiffUnavailable: e.DiffUnavailable,
 	}
@@ -390,7 +408,7 @@ func renderHTML(w io.Writer, e *Export) error {
 			continue
 		}
 		t := en.Turn
-		pt := &pageTurn{Turn: t, PromptHTML: markdownHTML(t.Prompt)}
+		pt := &pageTurn{Turn: t, TurnZeroHeading: TurnZeroHeading, PromptHTML: markdownHTML(t.Prompt)}
 		if t.Answer != "" {
 			pt.AnswerHTML = markdownHTML(t.Answer)
 		}

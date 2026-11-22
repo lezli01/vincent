@@ -235,6 +235,9 @@ func newChatForkCmd() *cobra.Command {
 // the message, and it is a summary, never the earlier session itself.
 const turnZeroHeading = "── turn 0 · seeded context (summary) ──"
 
+// turnZeroEnd closes turn 0 where the turn's own records follow it.
+const turnZeroEnd = "── end of turn 0 ──"
+
 func newChatPreambleCmd() *cobra.Command {
 	var (
 		file string

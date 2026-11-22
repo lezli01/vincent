@@ -450,13 +450,24 @@ func (v *chatsView) chatCard(c apiclient.Chat, selected bool, w int) []string {
 	}
 	head += "  " + toneMagenta.Render(ic("◈ ")+oneLine(c.Agent))
 	body := []string{padBetweenCells(head, styleDim.Render(chatCardAge(c, v.now())), inner)}
-	title := wrapText(oneLine(c.Title), inner, wrapOpts{maxLines: 2})
-	for i := range 2 {
+	// A fork gives its title's second line to where it came from (task 171
+	// decision 5): `forked from #N (claude)` is what tells two forks of one
+	// conversation apart, and the status line has no room left for it.
+	fork := forkedFromLabel(&c)
+	titleLines := 2
+	if fork != "" {
+		titleLines = 1
+	}
+	title := wrapText(oneLine(c.Title), inner, wrapOpts{maxLines: titleLines})
+	for i := range titleLines {
 		line := ""
 		if i < len(title) {
 			line = titleStyle.Render(title[i])
 		}
 		body = append(body, line)
+	}
+	if fork != "" {
+		body = append(body, styleDim.Render(ansi.Truncate(ic("⑂ ")+fork, inner, "…")))
 	}
 	status, style := chatCardStatus(c, v.frame)
 	if c.TurnCount > 0 {
