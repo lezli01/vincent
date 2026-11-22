@@ -30,6 +30,14 @@ list with the user-facing context a commit subject cannot carry.
   chat export still show the summary it was given, and
   `vincent chat transcript --turn 0` prints a pending one.
 
+- **Compare two agents' answers.** `vincent chat compare 7 --turn 2 --agents
+  claude,codex` (and `POST /v1/chats/{id}/compare`) forks a chat from before a
+  turn onto two agents and sends both the same prompt — by default that
+  turn's own. Each side runs restricted where its agent can keep a chat
+  restricted, and the output says which side could not and why. Both sides
+  start or neither does, and `GET /v1/chats/{id}/compare` finds a side's
+  partner.
+
 ### Changed
 
 - **Seeded chat contexts now summarize tool calls.** A seeded rewind or fork

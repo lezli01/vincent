@@ -190,6 +190,12 @@ branch. See [`vincent chat rewind`](reference/cli.md#vincent-chat-rewind),
 [`vincent chat fork`](reference/cli.md#vincent-chat-fork), or
 `POST /v1/chats/{id}/rewind` and `/fork`.
 
+Or **ask two agents at once**: `vincent chat compare` forks a chat from a turn
+onto two agents — claude and codex, say — and sends both the same prompt, so
+their answers can be read side by side. Each side runs restricted where its
+agent allows it, and says so where it cannot; both start or neither does. See
+[`vincent chat compare`](reference/cli.md#vincent-chat-compare).
+
 It works the other way round too: **chat with a stopped task**. When a task
 stops for you — blocked on a failing step, waiting at a gate, done, or aborted
 — open a chat on the task and talk the fix through in the task's own worktree,

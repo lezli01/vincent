@@ -3250,6 +3250,9 @@ POST   /v1/chats/{id}/rewind          { turn, mode? } or { rewound } — put the
                                       conversation or both back to before a turn — see
                                       Rewind and fork
 POST   /v1/chats/{id}/fork            { turn, title? } — a new idle chat from before a turn
+POST   /v1/chats/{id}/compare         { turn, prompt?, agents: [a, b] } — one prompt to two
+                                      agents, each in its own fork — see Compare
+GET    /v1/chats/{id}/compare         the compare this chat is a side of
 POST   /v1/chats/{id}/viewed          a person looked at it: clears its unread mark
 DELETE /v1/chats/{id}                 permanent delete of an archived or closed chat
                                       — see Permanent delete
@@ -4057,6 +4060,43 @@ while a turn is accepted.
 
 Both routes are MCP tools, `chat_rewind` and `chat_fork` — the only chat routes
 that are. A chat's checkpoint refs are deleted with the chat.
+
+### Compare
+
+```text
+POST /v1/chats/{id}/compare
+GET  /v1/chats/{id}/compare
+```
+
+`POST` with `{turn, prompt?, agents: [a, b], permission_mode?}` asks two
+agents the same thing: it forks the chat twice from the state before `turn`
+— once onto each agent, exactly as [a fork](#rewind-and-fork) does, each on
+its own branch — and starts one turn on each with `prompt`. An empty `prompt`
+sends turn `turn`'s own prompt, which compares how each agent would have
+answered it. The agents must be two different ones that can hold a chat.
+
+It starts both sides or neither: the agents, each side's mode and the turn are
+checked, and `max_parallel_chats` must have room for two more running chats,
+before anything is created. A side runs `restricted` where its agent can keep a
+chat restricted, and `full-auto` where it cannot — codex always, cursor on
+Windows — and its `mode_note` says why. `permission_mode: "full-auto"` runs
+both sides full-auto.
+
+`201` answers `{compare, left, right}`: `left` and `right` are each `{chat,
+turn, seeded, skipped}`, the fork and its running first turn; `compare` is
+`{id, source_chat_id, seq, prompt, left, right, kept_chat_id, created_at}`,
+each side `{chat_id, agent, permission_mode, mode_note?}`. `GET` on either
+side's chat returns `{compare}`, and `404` on a chat that is no side of one.
+
+| Status | `error` | When |
+|---|---|---|
+| `400` | `validation_failed` | No `turn`, not exactly two agents, the same agent twice, an unknown agent, or a bad `permission_mode` |
+| `400` | `agent_cannot_resume` | An agent that cannot hold a chat |
+| `404` | `not_found` | No such turn |
+| `409` | `chat_cap_reached` | `max_parallel_chats` has no room for both sides; nothing was created |
+| `409` | as [fork](#rewind-and-fork) | The turn cannot be forked from |
+
+Neither route is an MCP tool: a compare starts two agent processes.
 
 ### Diff and hunk review
 

@@ -1517,8 +1517,24 @@ that turn's transcript as the `context` of its `vincent.seeded` note, so
 "edit turn 0…" in `$EDITOR` (an emptied file clears it), its fork picker
 cycles the agent with `tab` over the available adapters that resume, and the
 chats board card and the chat header read `forked from #N (claude)`.
-Comparing two agents' answers (`POST /v1/chats/{id}/compare`, the brief's
-decisions 6-9) is not yet built; task 171 tracks it.
+**Compare** (task 171 decisions 6 and 7, added 2026-11-22):
+`POST /v1/chats/{id}/compare` with `{turn, prompt?, agents: [a, b],
+permission_mode?}` forks the chat twice from the state before `turn` — once
+onto each agent, through the fork path above, each on its own branch — and
+starts one turn on each with the same prompt (empty: turn `turn`'s own
+prompt). It is **all or nothing**: the agents, each side's mode and the turn
+are checked, and `max_parallel_chats` must have room for **two** more chats,
+before anything is created (`409 chat_cap_reached` otherwise); a failure
+after the first fork removes what was made, and both turns are written and
+launched under both chats' start locks. Each side runs **restricted where its
+agent can keep a chat restricted and full-auto where it cannot** — codex
+anywhere, cursor on Windows — with `mode_note` saying why, so every surface
+states what a side ran under rather than what was asked; `permission_mode:
+full-auto` runs both full-auto. The pairing is a `chat_compares` row (§14,
+migration 0074), read from either side with `GET /v1/chats/{id}/compare`.
+Compare starts two agent processes outside the `created_by_task_id` chain,
+so neither route is an MCP tool (§13.4). Keeping one side and the TUI's split
+view (decisions 8 and 9) are not yet built; task 171 tracks them.
 
 #### Diff and hunk review (added 2026-11-20, task 169, issue #1018)
 
@@ -12156,6 +12172,18 @@ POST   /v1/chats/{id}/fork              *Added 2026-11-21 (task 167.6, issue #10
                                         `pending_preamble`, and `PATCH /v1/chats/{id}` takes
                                         `pending_preamble` alone (large body tier; `409
                                         chat_preamble_not_pending`)
+POST   /v1/chats/{id}/compare           *Added 2026-11-22 (task 171.5, issue #1020).* Forks the
+                                        chat once per agent from before `turn` and starts both on
+                                        one prompt (§5.5 "Compare"). Body: `{turn, prompt?,
+                                        agents: [a, b], permission_mode?}`. `201` with `{compare,
+                                        left, right}`, each side `{chat, turn, seeded, skipped}`.
+                                        All or nothing: `409 chat_cap_reached` without room for
+                                        two; the fork's refusals otherwise. Not an MCP tool
+GET    /v1/chats/{id}/compare           *Added 2026-11-22 (task 171.5).* The compare the chat is
+                                        a side of: `{compare: {id, source_chat_id, seq, prompt,
+                                        left, right, kept_chat_id, created_at}}`, each side
+                                        `{chat_id, agent, permission_mode, mode_note?}`; `404`
+                                        when it is none. Not an MCP tool
 GET    /v1/chats/{id}/skills            *Added 2026-09-19 (task 124.9, issue #505).* The skills
        ?refresh=                        the chat's agent CLI would load for its next turn, and how
                                         a message invokes one, from §9.6's skill cache;
@@ -14781,6 +14809,29 @@ CREATE TABLE chat_hunk_reviews (
     hunk_hash   TEXT NOT NULL,
     accepted_at TEXT NOT NULL,
     PRIMARY KEY (chat_id, path, hunk_hash)
+);
+
+-- Added 2026-11-22 (task 171.5, issue #1020; migration 0074): a compare's
+-- two forks (§5.5 "Compare"). Each side records its chat, agent and the mode
+-- it actually runs under, with mode_note saying why when it is not
+-- restricted. source_chat_id has no foreign key (a fork outlives its
+-- source); the sides are ON DELETE SET NULL; kept_chat_id is the side kept.
+CREATE TABLE chat_compares (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id       INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    source_chat_id   INTEGER NOT NULL,
+    seq              INTEGER NOT NULL,
+    prompt           TEXT NOT NULL,
+    left_chat_id     INTEGER REFERENCES chats(id) ON DELETE SET NULL,
+    left_agent       TEXT NOT NULL,
+    left_mode        TEXT NOT NULL,
+    left_mode_note   TEXT NOT NULL DEFAULT '',
+    right_chat_id    INTEGER REFERENCES chats(id) ON DELETE SET NULL,
+    right_agent      TEXT NOT NULL,
+    right_mode       TEXT NOT NULL,
+    right_mode_note  TEXT NOT NULL DEFAULT '',
+    kept_chat_id     INTEGER,
+    created_at       TEXT NOT NULL
 );
 
 -- Added 2026-11-21 (task 170, issue #1024; migration 0070): a chat's shell

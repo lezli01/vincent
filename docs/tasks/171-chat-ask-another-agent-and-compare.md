@@ -1,6 +1,6 @@
 # 171 — Ask another agent: fork a chat onto a different agent, and compare two answers
 
-**Status:** 🔄 in progress (4/7) · **Opened:** 2026-11-21
+**Status:** 🔄 in progress (5/7) · **Opened:** 2026-11-21
 
 Issue #1020, built on task 167's checkpoint, rewind and fork (#1041). It
 amends two task 167 decisions deliberately, with the author's agreement:
@@ -45,10 +45,28 @@ Conventions for this file are in [the tasks README](README.md).
   `vincent chat transcript` prints it at the head of the turn, `--turn 0`
   prints a pending one, and the export carries `seeded_context` on the turn,
   `pending_preamble` and `forked_from` on the chat.
-- [ ] **171.5** Compare: `POST /v1/chats/{id}/compare` (`{turn, prompt,
+- [x] **171.5** Compare: `POST /v1/chats/{id}/compare` (`{turn, prompt,
   agents: [a, b]}`), the pairing in a migration, all-or-nothing capacity,
   restricted where a side can be and labelled `full-auto` where it cannot
-  (decision 7), `vincent chat compare`; not an MCP tool.
+  (decision 7), `vincent chat compare`; not an MCP tool. ✓ 2026-11-22
+
+  *How (2026-11-22, design agreed with the author before work started):*
+  `prompt` is optional and defaults to turn `turn`'s own prompt — a fork
+  exists only before a turn, so "how would each agent have answered turn
+  N" is the natural compare; `agents` are two different agents, left then
+  right. Each side is made by the fork path (`forkChat`, extracted from the
+  fork handler). A side's mode is probed with task 162's check before
+  anything is created: `agent_cannot_restrict_resume` makes that side
+  `full-auto` with the refusal's message as its `mode_note`, and any other
+  refusal refuses the compare; `permission_mode: full-auto` skips the probe.
+  All or nothing: `Runner.CheckCapacity(2)` before the forks, then
+  `Runner.SubmitPair`, which takes both chats' start locks in id order,
+  re-checks the cap for two and writes and launches both turns; a failure
+  after the first fork force-deletes what was made and its branch (still at
+  the commit it was cut from). The pairing is `chat_compares` (migration
+  0074): per side its chat (`ON DELETE SET NULL`), agent, mode and note, and
+  `kept_chat_id` for 171.6. `GET /v1/chats/{id}/compare` reads it from
+  either side. Both routes join the MCP exclusion list.
 - [ ] **171.6** Keep one: archive the other fork with `delete_branch=true`,
   refused while either side is live; the TUI split view with keep left/right.
 - [ ] **171.7** `scripts/171-gate.sh`, wired into the lightest `gate-group`,

@@ -2953,6 +2953,36 @@ mode copied from the source — which you need to fork a `restricted` chat onto
 codex. `vincent chat show` prints a seeded fork's context as `turn 0 · seeded
 context (summary)`, and the source as `forked from chat N (claude)`.
 
+### `vincent chat compare`
+
+```sh
+vincent chat compare CHAT_ID --turn N --agents A,B [--prompt P | --prompt-file F]
+                     [--permission-mode MODE] [--json]
+```
+
+Asks two agents the same thing, each in its own fork of the chat: forks it
+from the state before turn N once onto each agent — each on its own branch —
+and sends both the same prompt: `--prompt`, `--prompt-file` (`-` reads stdin),
+or by default turn N's own prompt, which shows how each agent would have
+answered it. Both start, or neither: the daemon refuses when
+`max_parallel_chats` has no room for two more, and creates nothing.
+
+Each side runs `restricted` where its agent can keep a chat restricted and
+`full-auto` where it cannot (codex; cursor on Windows), and the output says
+which, and why:
+
+```text
+compare 3: chat 7, from before turn 2
+prompt: which approach is safer?
+left   chat 12  claude  restricted
+right  chat 13  codex  full-auto  (seeded, not resumed)
+       full-auto because: agent "codex" cannot keep a resumed chat turn restricted; …
+follow: vincent chat show 12; vincent chat show 13
+```
+
+`--permission-mode full-auto` runs both full-auto. `--json` emits the
+response. Exit `1` on a refusal; `2` with no daemon.
+
 ### `vincent chat preamble`
 
 ```sh
