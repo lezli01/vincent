@@ -397,6 +397,14 @@ func TestNewChatUnsentFirstMessageComesBackToTheComposer(t *testing.T) {
 	}
 	v := m.views[viewChat].(*chatView)
 	v.updateMsg(open)
+	// Opening the chat subscribes to its event stream, which this test never
+	// reads: stop it before the server's Close, or Close waits forever on the
+	// connection (registered after ts.Close, so it runs first).
+	t.Cleanup(func() {
+		if v.streamStop != nil {
+			v.streamStop()
+		}
+	})
 	if v.composer.Value() != "hello there" || !v.noteBad {
 		t.Fatalf("composer %q (note %q), want the unsent message back", v.composer.Value(), v.note)
 	}

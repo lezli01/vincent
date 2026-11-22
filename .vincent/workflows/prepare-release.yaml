@@ -724,7 +724,12 @@ steps:
       exit 1
       READY
 
-      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+      # --force on every tag fetch in this workflow: `master-latest` is the
+      # rolling prerelease tag master-build.yml re-points on every push, and
+      # without it `--tags` refuses to move a stale local copy ("would
+      # clobber existing tag") and fails the step. Release tags are never
+      # re-pointed (RELEASING.md), so only that one tag is ever affected.
+      git fetch --quiet --force --tags origin "$VINCENT_BASE_BRANCH"
       say "preparing v$version from release PR $(printf '%s' "$pr" | jq -r .number)"
 
       echo "repository:    $repo"
@@ -1435,7 +1440,7 @@ steps:
         done
       fi
 
-      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+      git fetch --quiet --force --tags origin "$VINCENT_BASE_BRANCH"
 
       pr=$(gh pr list \
         --base "$VINCENT_BASE_BRANCH" \
@@ -1504,7 +1509,7 @@ steps:
       rm -rf "$rp"
       git clone --quiet --no-checkout "$VINCENT_PROJECT_PATH" "$rp"
       git -C "$rp" remote set-url origin "$remote"
-      git -C "$rp" fetch --quiet --tags origin \
+      git -C "$rp" fetch --quiet --force --tags origin \
         "+refs/heads/$head:refs/remotes/origin/$head" \
         "+refs/heads/$VINCENT_BASE_BRANCH:refs/remotes/origin/$VINCENT_BASE_BRANCH"
       git -C "$rp" checkout -q -B "$head" "refs/remotes/origin/$head"
@@ -1848,7 +1853,7 @@ steps:
       # And the branch it merges into: a tag on a red base produces signed,
       # attested, broken binaries (RELEASING.md step 1). This covers *every*
       # check on the commit, not only `ci` and `gates`.
-      git fetch --quiet --tags origin "$VINCENT_BASE_BRANCH"
+      git fetch --quiet --force --tags origin "$VINCENT_BASE_BRANCH"
       sha=$(git rev-parse "origin/$VINCENT_BASE_BRANCH")
       # require-green.sh reports its own progress from here — it inherits this
       # step's VINCENT_TASK_ID and VINCENT_STEP_ID, so its "waiting on …" lines
