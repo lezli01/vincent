@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -39,7 +40,10 @@ func newChatTranscriptCmd() *cobra.Command {
 			"keeps printing until the turn ends — a turn waiting on an answer is still " +
 			"running — and does not wait for a later send.\n\n" +
 			"Turns a rewind left behind are skipped by the default selection and refused by " +
-			"--turn; --rewound allows them, marked. A seeded turn is marked \"" + seededNote + "\".",
+			"--turn; --rewound allows them, marked. A seeded turn is marked \"" + seededNote + "\", " +
+			"and its transcript opens with the context its fresh session was given, under " +
+			"\"turn 0\". --turn 0 prints the seeded context a chat's next turn will start with, " +
+			"while one is pending (after a rewind or a fork, before the turn runs).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := strconv.ParseInt(args[0], 10, 64)
@@ -47,10 +51,13 @@ func newChatTranscriptCmd() *cobra.Command {
 				return fmt.Errorf("chat id: %w", err)
 			}
 			return withClient(cmd, func(ctx context.Context, c *apiclient.Client) error {
-				_, turns, err := c.GetChat(ctx, id)
+				chat, turns, err := c.GetChat(ctx, id)
 				if err != nil {
 					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", apiMessage(err))
 					return exitError{code: 1}
+				}
+				if turn == 0 && cmd.Flags().Changed("turn") {
+					return printPendingTurnZero(cmd, chat, turns)
 				}
 				turns, _ = visibleTurns(turns, withRewound)
 				t, err := selectChatTurn(turns, id, turn)
@@ -100,7 +107,7 @@ func newChatTranscriptCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&turn, "turn", 0,
-		"turn number to print, as `chat show` numbers it (default: the running turn, else the newest)")
+		"turn number to print, as `chat show` numbers it, 0 for the pending seeded context (default: the running turn, else the newest)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false,
 		"Keep printing as the turn writes, until it is no longer running")
 	cmd.Flags().BoolVar(&withRewound, "rewound", false,
@@ -180,4 +187,40 @@ func (s chatTurnSource) state(ctx context.Context) (bool, string, error) {
 		}
 	}
 	return false, "", fmt.Errorf("turn %d is no longer on chat %d", s.seq, s.chatID)
+}
+
+// printPendingTurnZero is `--turn 0` (task 171 decision 4): the seeded
+// context the chat's next turn will start its fresh session with, while one
+// is pending. Once a turn has consumed it, it lives on in that turn's
+// transcript, which this names instead. --json emits it as one object; --raw
+// has no agent bytes to stream, and --follow nothing to follow.
+func printPendingTurnZero(cmd *cobra.Command, chat *apiclient.Chat, turns []apiclient.ChatTurn) error {
+	raw, _ := cmd.Flags().GetBool("raw")
+	follow, _ := cmd.Flags().GetBool("follow")
+	if raw || follow {
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error: turn 0 is a seeded context, not an agent's run: --raw and --follow do not apply")
+		return exitError{code: 1}
+	}
+	if chat.PendingPreamble == "" {
+		msg := fmt.Sprintf("chat %d has no pending turn 0: its next turn is not seeded", chat.ID)
+		var seeded []string
+		for _, t := range turns {
+			if t.Seeded {
+				seeded = append(seeded, strconv.Itoa(t.Seq))
+			}
+		}
+		if len(seeded) > 0 {
+			msg += fmt.Sprintf("; the context a seeded turn was given opens its transcript (vincent chat transcript %d --turn %s)",
+				chat.ID, seeded[len(seeded)-1])
+		}
+		_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Error:", msg)
+		return exitError{code: 1}
+	}
+	if wantJSON(cmd) {
+		return emitJSON(cmd.OutOrStdout(), map[string]any{
+			"chat_id": chat.ID, "turn": 0, "pending": true, "context": chat.PendingPreamble,
+		})
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\n%s\n", turnZeroHeading, strings.TrimRight(chat.PendingPreamble, "\n"))
+	return err
 }

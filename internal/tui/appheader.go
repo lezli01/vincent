@@ -50,7 +50,7 @@ func tabGlyph(id viewID) string {
 		return ic("▦")
 	case viewHome, viewTask:
 		return ic("▶")
-	case viewChats, viewChat:
+	case viewChats, viewChat, viewCompare:
 		return ic("◌")
 	case viewProjects:
 		return ic(headerProjectGlyph)
@@ -200,7 +200,8 @@ func (m *root) chatInWorkspace() bool {
 }
 
 // workspaceTab is the main tab a full-width screen off the tab strip belongs to:
-// an open chat or a new chat under Chats, and a new task under Tasks. tab moves
+// an open chat, a new chat or a chat compare under Chats, and a new task
+// under Tasks. tab moves
 // between the form's own fields there, and the strip stays for where you are.
 func (m *root) workspaceTab() (viewID, bool) {
 	if m.chatInWorkspace() {
@@ -211,6 +212,9 @@ func (m *root) workspaceTab() (viewID, bool) {
 		return viewHome, v.frameless()
 	case *chatsView:
 		return viewChats, m.active == viewChats && v.createWide()
+	case *compareView:
+		// Two chats side by side are still the Chats tab (task 171).
+		return viewChats, m.active == viewCompare
 	}
 	return 0, false
 }

@@ -216,13 +216,14 @@ against the fake agent; CI runs every one of them on Linux, macOS and Windows:
 ./scripts/167-gate.sh                           # rewind and fork a chat from a turn (task 167)
 ./scripts/169-gate.sh                           # a chat's diff and its per-hunk review (task 169)
 ./scripts/170-gate.sh                           # a chat's shell passthrough (task 170)
+./scripts/171-gate.sh                           # ask another agent and compare two answers (task 171)
 VINCENT_GATE_SCENARIO=2 ./scripts/m2-gate.sh    # single scenario, for debugging
 VINCENT_GATE_AGENT=claude ./scripts/m2-gate.sh  # manual run against the real CLI
 VINCENT_GATE_AGENT=cursor ./scripts/m5-gate.sh  # ditto, for cursor-agent
 VINCENT_GATE_BIN=/some/dir ./scripts/m1-gate.sh # copy prebuilt vincent/fakeagent/fakegh/fakejira from there instead of building
 ```
 
-All twenty-nine of those run in `ci.yml`'s `gate-group` job on all three platforms:
+All thirty of those run in `ci.yml`'s `gate-group` job on all three platforms:
 four groups, balanced by measured Windows time, each gate one named step that
 runs in exactly one group (`if: contains(matrix.groups, N)`). Linux and
 Windows run the four as four jobs; macOS runs them as two, `1+2` and `3+4`
@@ -242,7 +243,7 @@ through `gate_build` / `gate_build_as` (which copy from `VINCENT_GATE_BIN`,
 built once per CI job, when it is set), and its wait loops sleep `$GATE_POLL`
 for `$(gate_ticks SECS)` iterations so the budget stays written in seconds.
 Deliberate delays and workflow `run:` bodies keep their plain `sleep N`. `m12`
-is the thirtieth and the exception: it needs a real container runtime, so it runs
+is the thirty-first and the exception: it needs a real container runtime, so it runs
 its assertions on the Linux leg only and skips itself (exit 0, one line saying
 why) on the other two — but for two different reasons, and only one of them is
 "no docker". The macOS runner has no daemon. The **Windows runner does**, in
@@ -275,8 +276,9 @@ rows are the seed's, not yours), eight git repos (one a GitHub project, answered
 by `cmd/fakegh`, and one a Jira-bound project, answered by `cmd/fakejira`),
 a daemon, twenty-six tasks (a two-round fan-out with three
 lanes, a loop and a handoff's task among them, three archived, eight started from an
-issue), eleven chats (four live, three archived — one of them on an issue —
-one closed on an issue and three closed on a task) and twenty issues
+issue), fourteen chats (seven live — a fork onto another agent and a compare
+pair among them — three archived, one of them on an issue, one closed on
+an issue and three closed on a task) and twenty issues
 (thirteen local, three of them closed; three imported from the fake GitHub
 with a mirrored thread; four imported from the fake Jira, one with a mirrored
 thread and one closed there as Won't Do; platform-infra's filling every lane) covering every
@@ -408,7 +410,7 @@ is a correctness bug, not a style issue:
 | `internal/jira` | The native Jira Cloud REST v3 client, reads (issue #908, task 142.12) and writes (issue #909, task 142.13): Basic auth from credentials read per request and never cached, `search/jql` only (never the retired `search`) paged by `nextPageToken` within one call, single and bulk (`bulkfetch`, 100 ids) issue reads with an explicit field list and rendered HTML, comment threads with their visibility, `project`, `myself` and `serverInfo`; the initial and incremental JQL builders; the write half — `Transitions` (with screen fields), `DoTransition` and `AddComment` (ADF), a write's 403 being `no_write_scope`; and a typed `*Error` whose reason equals the seam's strings and whose text never carries the token. Imports `jira/jiramap` only |
 | `internal/issuesource` | The issue-provider seam (task 142 decision 2, 142.4; supersedes task 130 decision 15.1): the `Source` interface the importer and the write-back drain call instead of `*github.Client`, its neutral types and reason vocabulary (equal to GitHub's strings), the GitHub source, and the Jira source (#908, writing back since #909). Optional capabilities — GitHub's repository-wide comment listing and placeholder adoption, Jira's bulk read, binding resolution, `ProjectLocator` (the drain binds a row through its project) and `LaggingLister` (a listing that may trail its own writes is confirmed by id) — are small interfaces found by type assertion. Imports `store`, `github`, `gitx`, `issuestate`, `issueprovider`, `jira`, `jira/jiramap` and `jira/render`; neither `store`, `github` nor `jira` imports it back |
 | `internal/issues` | The one validated write path for issues (§5.6, task 130): title/label/kind/priority rules and actor attribution, shared by the API, sync and triggers. Imports `store`, `issuestate` and `issueprovider` only; store errors pass through for `errors.Is` |
-| `internal/tui` | Bubble Tea client: fourteen views routed by `viewID` — the board, the task workspace, new task, projects, workflows, daemon, settings, pull requests, the chats board and a chat, the two archived boards, triggers, and the issues list and an issue (§15) |
+| `internal/tui` | Bubble Tea client: sixteen views routed by `viewID` — the board, the task workspace, new task, projects, workflows, daemon, settings, pull requests, the chats board and a chat, the chat search, a chat compare, the two archived boards, triggers, and the issues list and an issue (§15) |
 
 Adapters differ in what they *can* do, and the differences are documented, never
 faked: codex ships no model catalog and no mid-run input; cursor has no effort

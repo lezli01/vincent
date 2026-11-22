@@ -47,6 +47,9 @@ const (
 	// viewChatSearch searches every chat (task 158). Reached from the palette
 	// and the chats board's S, never a tab.
 	viewChatSearch
+	// viewCompare is the two sides of a chat compare side by side (task
+	// 171 decision 9), opened from either side's workspace.
+	viewCompare
 	viewCount
 )
 
@@ -270,5 +273,6 @@ func newViews(ctx context.Context, links *hyperlinkHolder, level *levelHolder) [
 		viewIssue:         newIssueView(raw, links),
 		viewSettings:      newSettingsView(),
 		viewChatSearch:    newChatSearchView(),
+		viewCompare:       newCompareView(),
 	}
 }

@@ -213,18 +213,8 @@ type forkChatRequest struct {
 	PermissionMode string `json:"permission_mode"`
 }
 
-// handleChatFork forks a new free chat from a turn of this one (task 167.6,
-// decision 11). The new chat is created through createFreeChat, the path
-// POST /v1/chats takes, with its branch cut at the turn's head_before and the
-// checkpoint's dirty state laid on top unstaged. It inherits the source's
-// agent and settings — under task 162's restricted checks, as a create's are
-// — and its base (decision C), and nothing else: no link, no issue, no hold
-// on a worktree. It starts no turn.
-//
-// agent forks onto another adapter instead (task 171 decision 2, amending
-// decision 11): it is refused as a create would refuse it, its model and
-// effort are the request's or the adapter's defaults, and the fork is always
-// seeded. permission_mode, when given, replaces the source's.
+// handleChatFork serves POST /v1/chats/{id}/fork (task 167.6, task 171
+// decision 2) through forkChat, which says what a fork is.
 func (s *Server) handleChatFork(w http.ResponseWriter, r *http.Request) {
 	src, ok := s.chatFromPath(w, r)
 	if !ok {
@@ -242,40 +232,99 @@ func (s *Server) handleChatFork(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, CodeInternal, "no chat runner is wired")
 		return
 	}
-	target := chatrun.ForkTarget{Agent: strings.TrimSpace(req.Agent), Model: req.Model, Effort: req.Effort}
-	if target.Agent == src.Agent {
-		target = chatrun.ForkTarget{}
+	out, fail := s.forkChat(context.WithoutCancel(r.Context()), src, req)
+	if fail != nil {
+		fail(w)
+		return
 	}
-	if target.Agent != "" {
-		adapter, ok := s.deps.Agents.Get(target.Agent)
-		if !ok {
-			writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf("unknown agent %q", target.Agent))
-			return
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"chat": renderChat(out.chat), "skipped": nonNilStrings(out.skipped), "seeded": out.seeded,
+	})
+}
+
+// forkOutcome is a fork made: the new chat as stored, the paths its
+// checkpoint could not restore, and whether its first turn is seeded.
+type forkOutcome struct {
+	chat    *store.Chat
+	skipped []string
+	seeded  bool
+}
+
+// apiFailure writes a refusal or an error a helper decided on, so the
+// handler that called it answers with it unchanged.
+type apiFailure func(http.ResponseWriter)
+
+// checkForkTarget refuses a fork target as a create would refuse its agent
+// (task 171 decision 2): it must exist and resume. Model and effort belong
+// to a fork onto another agent only.
+func (s *Server) checkForkTarget(target chatrun.ForkTarget) apiFailure {
+	if target.Agent == "" {
+		if target.Model != "" || target.Effort != "" {
+			return func(w http.ResponseWriter) {
+				writeError(w, http.StatusBadRequest, CodeValidationFailed,
+					"model and effort apply only to a fork onto another agent; a same-agent fork copies its source's")
+			}
 		}
-		if !agent.CanResume(adapter) {
+		return nil
+	}
+	adapter, ok := s.deps.Agents.Get(target.Agent)
+	if !ok {
+		return func(w http.ResponseWriter) {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf("unknown agent %q", target.Agent))
+		}
+	}
+	if !agent.CanResume(adapter) {
+		return func(w http.ResponseWriter) {
 			writeError(w, http.StatusBadRequest, CodeAgentCannotResume, fmt.Sprintf(
 				"agent %q cannot resume its own session, so it cannot hold a conversation", target.Agent))
-			return
 		}
-	} else if req.Model != "" || req.Effort != "" {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed,
-			"model and effort apply only to a fork onto another agent; a same-agent fork copies its source's")
-		return
 	}
-	ctx := context.WithoutCancel(r.Context())
+	return nil
+}
+
+// forkTargetOf is req's target, with a fork onto the source's own agent
+// spelled as the same-agent fork it is.
+func forkTargetOf(src *store.Chat, req forkChatRequest) chatrun.ForkTarget {
+	target := chatrun.ForkTarget{Agent: strings.TrimSpace(req.Agent), Model: req.Model, Effort: req.Effort}
+	if target.Agent == src.Agent {
+		target.Agent = ""
+	}
+	return target
+}
+
+// forkChat forks a new free chat from a turn of src (task 167.6, decision
+// 11). The new chat is created through createFreeChat, the path
+// POST /v1/chats takes, with its branch cut at the turn's head_before and the
+// checkpoint's dirty state laid on top unstaged. It inherits the source's
+// agent and settings — under task 162's restricted checks, as a create's are
+// — and its base (decision C), and nothing else: no link, no issue, no hold
+// on a worktree. It starts no turn.
+//
+// agent forks onto another adapter instead (task 171 decision 2, amending
+// decision 11): it is refused as a create would refuse it, its model and
+// effort are the request's or the adapter's defaults, and the fork is always
+// seeded. permission_mode, when given, replaces the source's. A compare
+// (task 171 decision 6) makes its two sides here too.
+func (s *Server) forkChat(ctx context.Context, src *store.Chat, req forkChatRequest) (*forkOutcome, apiFailure) {
+	target := forkTargetOf(src, req)
+	if fail := s.checkForkTarget(target); fail != nil {
+		return nil, fail
+	}
 	plan, err := s.deps.Chats.PlanForkTo(ctx, src.ID, req.Turn, target)
 	if err != nil {
-		s.writeRewindError(w, err)
-		return
+		return nil, func(w http.ResponseWriter) { s.writeRewindError(w, err) }
+	}
+	internal := func(what string, err error) apiFailure {
+		return func(w http.ResponseWriter) { s.internalError(w, what, err) }
 	}
 	project, err := s.deps.Store.GetProject(ctx, src.ProjectID)
 	if err != nil {
-		s.internalError(w, "fork: read project", err)
-		return
+		return nil, internal("fork: read project", err)
 	}
 	if _, ok := s.deps.Agents.Get(plan.Agent); !ok {
-		writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf("unknown agent %q", plan.Agent))
-		return
+		return nil, func(w http.ResponseWriter) {
+			writeError(w, http.StatusBadRequest, CodeValidationFailed, fmt.Sprintf("unknown agent %q", plan.Agent))
+		}
 	}
 	mode := strings.TrimSpace(req.PermissionMode)
 	if mode == "" {
@@ -289,17 +338,13 @@ func (s *Server) handleChatFork(w http.ResponseWriter, r *http.Request) {
 		// clamp is the task's, and the fork has no task. A cross-agent fork
 		// is checked even at full-auto, so a model or effort its adapter
 		// does not offer is refused before anything is created.
-		probe := &store.Chat{Agent: plan.Agent, PermissionMode: string(agent.FullAuto), State: chatstate.Idle}
-		if _, refusal := s.checkChatSettings(ctx, probe,
-			store.TurnSettings{Model: plan.Model, Effort: plan.Effort, PermissionMode: mode}); refusal != nil {
-			refusal.write(w)
-			return
+		if refusal := s.checkForkSettings(ctx, plan.Agent, plan.Model, plan.Effort, mode); refusal != nil {
+			return nil, refusal.write
 		}
 	}
 	baseBranch, baseSHA, err := s.forkBase(ctx, src)
 	if err != nil {
-		s.internalError(w, "fork: read source base", err)
-		return
+		return nil, internal("fork: read source base", err)
 	}
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
@@ -314,28 +359,31 @@ func (s *Server) handleChatFork(w http.ResponseWriter, r *http.Request) {
 		ForkedFromChatID: &srcID, ForkedFromSeq: &seq, ForkedFromAgent: src.Agent,
 	}
 	if _, err := s.createFreeChat(ctx, project, chat, freeChatCut{startSHA: plan.HeadBefore}); err != nil {
-		s.internalError(w, "fork: create chat", err)
-		return
+		return nil, internal("fork: create chat", err)
 	}
 	skipped, err := s.deps.Chats.ApplyForkCheckpoint(ctx, chat.ID, chat.WorktreePath, plan)
 	if err != nil {
 		// The chat exists, on the right commit, without the checkpoint's
 		// uncommitted state. Saying so beats deleting a row a client may
 		// already have seen announced; it can be archived like any chat.
-		s.internalError(w, fmt.Sprintf("fork: chat %d was created but its checkpoint was not applied", chat.ID), err)
-		return
+		return nil, internal(fmt.Sprintf("fork: chat %d was created but its checkpoint was not applied", chat.ID), err)
 	}
 	if len(skipped) > 0 {
 		s.deps.Logger.Warn("chat fork kept unreadable paths", "chat", chat.ID, "paths", skipped)
 	}
 	fresh, err := s.deps.Store.GetChat(ctx, chat.ID)
 	if err != nil {
-		s.internalError(w, "fork: reread chat", err)
-		return
+		return nil, internal("fork: reread chat", err)
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"chat": renderChat(fresh), "skipped": nonNilStrings(skipped), "seeded": plan.Seeded,
-	})
+	return &forkOutcome{chat: fresh, skipped: skipped, seeded: plan.Seeded}, nil
+}
+
+// checkForkSettings is task 162's check for the free chat a fork will be,
+// run on a probe before anything is created.
+func (s *Server) checkForkSettings(ctx context.Context, agentName, model, effort, mode string) *settingsRefusal {
+	probe := &store.Chat{Agent: agentName, PermissionMode: string(agent.FullAuto), State: chatstate.Idle}
+	_, refusal := s.checkChatSettings(ctx, probe, store.TurnSettings{Model: model, Effort: effort, PermissionMode: mode})
+	return refusal
 }
 
 // forkBase is the base a fork records (decision C): the source's own, which

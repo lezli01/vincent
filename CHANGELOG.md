@@ -23,7 +23,23 @@ list with the user-facing context a commit subject cannot carry.
   seeded rewind or fork, the summary the next turn will receive is shown as
   "turn 0 · seeded context (summary)" in `vincent chat show` and the chat
   workspace, served as `pending_preamble`, and replaceable or clearable with
-  `vincent chat preamble` or `PATCH /v1/chats/{id}` until a turn starts.
+  `vincent chat preamble` or `PATCH /v1/chats/{id}` until a turn starts. In
+  the TUI, the fork picker's `tab` picks the agent, the palette's "edit turn
+  0…" opens the summary in `$EDITOR`, and a fork's card and header read
+  `forked from #N (claude)`. Once a turn has run, its transcript and the
+  chat export still show the summary it was given, and
+  `vincent chat transcript --turn 0` prints a pending one.
+
+- **Compare two agents' answers.** `vincent chat compare 7 --turn 2 --agents
+  claude,codex` (and `POST /v1/chats/{id}/compare`) forks a chat from before a
+  turn onto two agents and sends both the same prompt — by default that
+  turn's own. Each side runs restricted where its agent can keep a chat
+  restricted, and the output says which side could not and why. Both sides
+  start or neither does, and `GET /v1/chats/{id}/compare` finds a side's
+  partner. In the TUI, the palette's "compare two agents from turn…" starts
+  one and a compare screen shows both answers side by side; keep one with
+  `[` or `]` (or `vincent chat keep`), and the other is archived with its
+  branch.
 
 - **Rewind a chat, or fork it, from any turn.** Every chat turn already
   checkpoints its worktree; now `alt+z` in the chat workspace (rebindable as

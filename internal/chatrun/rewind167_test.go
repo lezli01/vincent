@@ -494,8 +494,11 @@ func TestConversationRewindSeeds(t *testing.T) {
 			if !three.Seeded {
 				t.Error("turn 3 not marked seeded")
 			}
-			if body := h.transcript(t, c.ID, 3); !strings.Contains(body, "vincent.seeded") {
-				t.Errorf("no seeded note in transcript:\n%s", body)
+			// The note carries the context the session was given (task 171
+			// decision 4), so turn 0 outlives the consumed plan.
+			if body := h.transcript(t, c.ID, 3); !strings.Contains(body, "vincent.seeded") ||
+				!strings.Contains(body, `"context":`) || !strings.Contains(body, "alpha") {
+				t.Errorf("no seeded note with its context in transcript:\n%s", body)
 			}
 			if after := h.waitIdle(t, c.ID); after.PendingPreamble != "" || after.SessionID != three.SessionID {
 				t.Errorf("plan not consumed: %q %q", after.PendingPreamble, after.SessionID)

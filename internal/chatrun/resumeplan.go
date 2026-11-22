@@ -20,7 +20,7 @@ func (r *Runner) turnPlan(
 ) convPlan {
 	switch {
 	case chat.PendingPreamble != "":
-		r.markSeeded(ctx, turn, tr)
+		r.markSeeded(ctx, turn, tr, chat.PendingPreamble)
 		return convPlan{preamble: chat.PendingPreamble, seeded: true}
 	case chat.ResumeAt != "" && chat.SessionID != "":
 		if !agent.CanResumeAtPoint(adapter) {
@@ -47,18 +47,29 @@ func (r *Runner) seedInstead(ctx context.Context, chat *store.Chat, turn *store.
 			kept = append(kept, t)
 		}
 	}
-	r.markSeeded(ctx, turn, tr)
 	if len(kept) == 0 {
+		r.markSeeded(ctx, turn, tr, "")
 		return convPlan{seeded: true}
 	}
-	return convPlan{preamble: r.seededPreamble(chat, kept, ""), seeded: true}
+	preamble := r.seededPreamble(chat, kept, "")
+	r.markSeeded(ctx, turn, tr, preamble)
+	return convPlan{preamble: preamble, seeded: true}
 }
 
 // markSeeded records on the row and in the transcript that turn starts a
-// seeded session, so every surface can say "seeded, not resumed".
-func (r *Runner) markSeeded(ctx context.Context, turn *store.ChatTurn, tr *transcript.Writer) {
+// seeded session, so every surface can say "seeded, not resumed". The
+// transcript's `vincent.seeded` note also carries the context the session
+// was given, as `context` (task 171 decision 4): the chat's pending copy is
+// cleared once the turn reports its session, and turn 0 must stay readable
+// — in `vincent chat transcript` and the export — after it has run. A seed
+// with no earlier turn to give carries none.
+func (r *Runner) markSeeded(ctx context.Context, turn *store.ChatTurn, tr *transcript.Writer, preamble string) {
 	turn.Seeded = true
-	tr.Note("seeded", map[string]any{"resumed": false})
+	fields := map[string]any{"resumed": false}
+	if preamble != "" {
+		fields["context"] = preamble
+	}
+	tr.Note("seeded", fields)
 	if err := r.deps.Store.UpdateChatTurn(ctx, turn); err != nil {
 		r.deps.Logger.Warn("chat turn seeded flag not recorded", "chat", turn.ChatID, "turn", turn.ID, "error", err)
 	}

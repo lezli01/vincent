@@ -184,7 +184,7 @@ the living engineering specification records implementation contracts.
 | [168](168-task-workspace-redesign.md) | Task workspace redesign: steps rail, plain tabs, Output feed, Diff and Overview | ✅ done (9/9) |
 | [169](169-chat-diff-and-hunk-review.md) | A diff pane in the chat with per-hunk accept and reject | 🔄 in progress (9/11) |
 | [170](170-chat-polish.md) | Chat polish: question-card digits, `tui.chat.status_line`, shell passthrough (`alt+x`), image paste and a vim composer | 🔄 in progress (6/8) |
-| [171](171-chat-ask-another-agent-and-compare.md) | Ask another agent: fork a chat onto a different agent with an editable turn-0 context, and compare two answers | 🔄 in progress (3/7) |
+| [171](171-chat-ask-another-agent-and-compare.md) | Ask another agent: fork a chat onto a different agent with an editable turn-0 context, and compare two answers | ✅ done (7/7) |
 
 ## How to add and update a task document
 

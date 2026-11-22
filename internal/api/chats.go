@@ -734,27 +734,41 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	updated, fail := s.archiveChat(r.Context(), chat, r.URL.Query().Get("force") == "true")
+	if fail != nil {
+		fail(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, renderChat(updated))
+}
+
+// archiveChat is the archive the route performs: the refusals, the
+// worktree's removal (forced past a dirty tree when force is set), and the
+// transition. Keeping one side of a compare (task 171 decision 8) archives
+// the other through it.
+func (s *Server) archiveChat(ctx context.Context, chat *store.Chat, force bool) (*store.Chat, apiFailure) {
+	internal := func(err error) apiFailure {
+		return func(w http.ResponseWriter) { writeError(w, http.StatusInternalServerError, CodeInternal, err.Error()) }
+	}
 	if chat.Linked() && !chatstate.Terminal(chat.State) {
 		// Not in the linked table at all (task 119 decision 2): the worktree
 		// archive would remove is the task's.
-		writeChatLinked(w, chat, string(chatstate.Archive))
-		return
+		return nil, func(w http.ResponseWriter) { writeChatLinked(w, chat, string(chatstate.Archive)) }
 	}
 	if !chatstate.AllowedFor(chat.Kind(), chat.State, chatstate.Archive) {
-		writeConflict(w, archiveRefusal(chat.State), map[string]string{"state": string(chat.State), "action": "archive"})
-		return
+		return nil, func(w http.ResponseWriter) {
+			writeConflict(w, archiveRefusal(chat.State), map[string]string{"state": string(chat.State), "action": "archive"})
+		}
 	}
 	// A shell command the human left running is stopped first (task 170):
 	// its directory is about to change hands or go.
 	// It stays held until the archive is done, so none starts meanwhile.
 	if s.deps.Chats != nil {
-		defer s.deps.Chats.HoldShell(r.Context(), chat.ID)()
+		defer s.deps.Chats.HoldShell(ctx, chat.ID)()
 	}
-	force := r.URL.Query().Get("force") == "true"
-	project, err := s.deps.Store.GetProject(r.Context(), chat.ProjectID)
+	project, err := s.deps.Store.GetProject(ctx, chat.ProjectID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
-		return
+		return nil, internal(err)
 	}
 	keepDir := false
 	if chat.OnIssue() {
@@ -764,15 +778,14 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 		// receives it by transfer, uncommitted work included; otherwise it
 		// goes, and the next holder revives it from the branch. end_sha is
 		// stamped below, once the chat has actually let go (review F8).
-		if keepDir, err = s.deps.Store.IssueHasWaitingMainTask(r.Context(), *chat.IssueID); err != nil {
-			writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
-			return
+		if keepDir, err = s.deps.Store.IssueHasWaitingMainTask(ctx, *chat.IssueID); err != nil {
+			return nil, internal(err)
 		}
 	}
 	if chat.WorktreePath != "" && !keepDir {
-		err = s.deps.Worktrees.RemoveAndRelease(r.Context(), project.Path, chat.WorktreePath, force,
+		err = s.deps.Worktrees.RemoveAndRelease(ctx, project.Path, chat.WorktreePath, force,
 			func() error {
-				_, err := s.deps.Store.SetChatWorktree(r.Context(), chat.ID, "", "")
+				_, err := s.deps.Store.SetChatWorktree(ctx, chat.ID, "", "")
 				return err
 			})
 		var wtErr *worktree.Error
@@ -781,32 +794,31 @@ func (s *Server) handleChatArchive(w http.ResponseWriter, r *http.Request) {
 			// task's archive refusal carries too: `worktree_dirty` is the
 			// one a client re-sends with force, any other one a force
 			// delete is the way out of (task 153).
-			writeConflict(w, wtErr.Error(), map[string]string{
-				"state": string(chat.State), "action": "archive", "reason": wtErr.Reason,
-			})
-			return
+			return nil, func(w http.ResponseWriter) {
+				writeConflict(w, wtErr.Error(), map[string]string{
+					"state": string(chat.State), "action": "archive", "reason": wtErr.Reason,
+				})
+			}
 		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
-			return
+			return nil, internal(err)
 		}
 	}
 	if chat.OnIssue() {
-		s.stampChatEndSHA(r.Context(), project, chat)
+		s.stampChatEndSHA(ctx, project, chat)
 	}
 	// The checkpoint refs stay (task 167 decision 12 prunes them on an
 	// archive that removes the branch): a chat's archive never deletes its
 	// branch, so the refs go with the row, at permanent delete.
-	updated, err := s.deps.Store.SetChatState(r.Context(), chat.ID, chatstate.Archived)
+	updated, err := s.deps.Store.SetChatState(ctx, chat.ID, chatstate.Archived)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
-		return
+		return nil, internal(err)
 	}
 	if updated.OnIssue() && s.deps.WakeRunner != nil {
 		// A main task queued behind the chat may be admitted now.
 		s.deps.WakeRunner()
 	}
-	writeJSON(w, http.StatusOK, renderChat(updated))
+	return updated, nil
 }
 
 // stampChatEndSHA records an issue chat's branch tip as its end_sha at

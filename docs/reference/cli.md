@@ -2403,7 +2403,7 @@ that.
 ### `vincent chat transcript`
 
 ```sh
-vincent chat transcript CHAT_ID [--turn N] [--rewound] [-f | --follow] [--json | --raw]
+vincent chat transcript CHAT_ID [--turn N | --turn 0] [--rewound] [-f | --follow] [--json | --raw]
 ```
 
 Prints one turn's transcript — the complete record of what the agent did while
@@ -2418,7 +2418,17 @@ turn number the chat does not have exits `1` with
 
 Turns a [rewind](#vincent-chat-rewind) left behind are skipped by the default
 selection and refused by `--turn`; `--rewound` allows them, marked. A seeded
-turn is marked `seeded, not resumed`.
+turn is marked `seeded, not resumed`, and its transcript opens with the context
+its fresh session was given, whole, between `── turn 0 · seeded context
+(summary) ──` and `── end of turn 0 ──` (in `--json`, the `context` field of
+its `vincent.seeded` record).
+
+`--turn 0` prints the seeded context a chat's *next* turn will start with,
+while one is pending after a seeded [rewind](#vincent-chat-rewind) or
+[fork](#vincent-chat-fork) — the same turn 0 `chat show` prints. `--json`
+prints it as `{"chat_id", "turn": 0, "pending": true, "context"}`; `--raw` and
+`--follow` do not apply. With none pending it exits `1`, naming the latest
+seeded turn whose transcript holds the one it was given.
 
 | Output | What it is |
 |---|---|
@@ -2942,6 +2952,52 @@ session crosses agents; `--model` and `--effort` pick the new agent's settings
 mode copied from the source — which you need to fork a `restricted` chat onto
 codex. `vincent chat show` prints a seeded fork's context as `turn 0 · seeded
 context (summary)`, and the source as `forked from chat N (claude)`.
+
+### `vincent chat compare`
+
+```sh
+vincent chat compare CHAT_ID --turn N --agents A,B [--prompt P | --prompt-file F]
+                     [--permission-mode MODE] [--json]
+```
+
+Asks two agents the same thing, each in its own fork of the chat: forks it
+from the state before turn N once onto each agent — each on its own branch —
+and sends both the same prompt: `--prompt`, `--prompt-file` (`-` reads stdin),
+or by default turn N's own prompt, which shows how each agent would have
+answered it. Both start, or neither: the daemon refuses when
+`max_parallel_chats` has no room for two more, and creates nothing.
+
+Each side runs `restricted` where its agent can keep a chat restricted and
+`full-auto` where it cannot (codex; cursor on Windows), and the output says
+which, and why:
+
+```text
+compare 3: chat 7, from before turn 2
+prompt: which approach is safer?
+left   chat 12  claude  restricted
+right  chat 13  codex  full-auto  (seeded, not resumed)
+       full-auto because: agent "codex" cannot keep a resumed chat turn restricted; …
+follow: vincent chat show 12; vincent chat show 13
+```
+
+`--permission-mode full-auto` runs both full-auto. `--json` emits the
+response. Exit `1` on a refusal; `2` with no daemon. `vincent chat show` on
+either side prints the pair — `compare 3 of chat 7, before turn 2: left chat 12
+(this one), claude, restricted; right chat 13, codex, full-auto` — and the kept
+side once one is.
+
+### `vincent chat keep`
+
+```sh
+vincent chat keep CHAT_ID [--json]
+```
+
+Keeps one side of a [`vincent chat compare`](#vincent-chat-compare) and
+archives the other: its worktree is removed even with uncommitted changes, and
+its branch and checkpoint refs are deleted — that answer is discarded, though
+its conversation stays readable in the archive. Refused while either side
+still has a live turn, and once a side was kept. Exit `1` on a refusal; `2`
+with no daemon.
 
 ### `vincent chat preamble`
 

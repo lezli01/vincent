@@ -35,6 +35,8 @@ section.shell h2{font-size:1rem}
 <h2>Turn {{.Seq}} · {{.State}}</h2>
 <p class="usage">Ran on: {{.RanWith}}</p>
 {{range .Notes}}<p class="note">{{.}}</p>
+{{end}}{{if .SeededContext}}<h3>{{.TurnZeroHeading}}</h3>
+<pre class="seeded">{{.SeededContext}}</pre>
 {{end}}<h3>Prompt</h3>
 <div class="prompt">{{.PromptHTML}}</div>
 {{if .MentionContext}}<h3>Mentions</h3>
@@ -46,7 +48,12 @@ section.shell h2{font-size:1rem}
 {{with .Failure}}<p class="failed"><strong>Failed:</strong> {{.}}</p>{{end}}
 <p class="usage">Usage: {{.Usage}}</p>
 </section>
-{{end}}{{end}}{{if .Diff}}<section class="diff">
+{{end}}{{end}}{{if .PendingPreamble}}<section class="turn-zero">
+<h2>{{.TurnZeroHeading}}</h2>
+<p class="note">{{.PendingNote}}</p>
+<pre class="seeded">{{.PendingPreamble}}</pre>
+</section>
+{{end}}{{if .Diff}}<section class="diff">
 <h2>Diff</h2>
 <pre>{{.Diff}}</pre>
 </section>

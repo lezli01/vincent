@@ -290,6 +290,10 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Every open follows its object into its project first (task 132.6):
 		// openObject switches when it must, then routes.
 		return m, m.openObject(msg)
+	case openCompareMsg:
+		// A compare is opened from one of its own sides, in the project on
+		// screen: there is no project to follow, only the screen to route.
+		return m, m.routeOpen(msg)
 	case followFetchedMsg:
 		return m, m.updateFollowFetched(msg)
 	case globalPauseMsg:
@@ -1150,6 +1154,8 @@ func (m *root) activeContext() bindingContext {
 		return m.views[viewChat].(*chatView).bindingContext()
 	case viewChatSearch:
 		return ctxChatSearch
+	case viewCompare:
+		return ctxCompare
 	case viewTriggers:
 		return m.views[viewTriggers].(*triggersView).bindingContext()
 	case viewIssues:
@@ -1325,6 +1331,12 @@ func (m *root) routeOpen(open tea.Msg) tea.Cmd {
 		if v, ok := m.views[viewIssue].(*issueView); ok {
 			v.back = msg.back
 			return tea.Batch(v.open(msg.id), m.switchTo(viewIssue))
+		}
+	case openCompareMsg:
+		// Pointed first and switched second, for openChatMsg's reason.
+		if v, ok := m.views[viewCompare].(*compareView); ok {
+			v.back = msg.back
+			return tea.Batch(v.open(msg.chatID), m.switchTo(viewCompare))
 		}
 	case openChatMsg:
 		// The chat workspace is not the active view yet, and an inactive

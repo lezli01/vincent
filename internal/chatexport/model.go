@@ -144,6 +144,31 @@ type Chat struct {
 	HandoffTaskID  *int64    `json:"handoff_task_id,omitempty"`
 	IssueID        *int64    `json:"issue_id,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
+	// ForkedFrom is where a fork was cut from (task 167, task 171 decision
+	// 5), absent for a chat that is not one.
+	ForkedFrom *ForkedFrom `json:"forked_from,omitempty"`
+	// PendingPreamble is turn 0 not yet run (task 171 decision 4): the
+	// seeded context the chat's next turn will start a fresh session with,
+	// still editable. Absent when no seeded turn is pending.
+	PendingPreamble string `json:"pending_preamble,omitempty"`
+}
+
+// ForkedFrom is a fork's source: the chat, the turn it was cut before, and
+// the source's agent ("" on a fork from before it was recorded).
+type ForkedFrom struct {
+	ChatID int64  `json:"chat_id"`
+	Seq    int    `json:"seq"`
+	Agent  string `json:"agent,omitempty"`
+}
+
+// Label is the provenance as every rendering words it: `#4 (claude),
+// before turn 3`.
+func (f *ForkedFrom) Label() string {
+	s := fmt.Sprintf("#%d", f.ChatID)
+	if f.Agent != "" {
+		s += " (" + f.Agent + ")"
+	}
+	return fmt.Sprintf("%s, before turn %d", s, f.Seq)
 }
 
 // Turn is one exchange.
@@ -197,7 +222,19 @@ type Turn struct {
 	// summary of the earlier turns rather than resuming the agent's own
 	// (task 167 decision G): what it knew is not what the turns above say.
 	Seeded bool `json:"seeded,omitempty"`
+	// SeededContext is what a seeded turn's fresh session was given — its
+	// turn 0 (task 171 decision 4) — read from the transcript's
+	// `vincent.seeded` note. Absent on a turn that was not seeded, that was
+	// seeded with nothing, or whose transcript is gone.
+	SeededContext string `json:"seeded_context,omitempty"`
 }
+
+// TurnZeroHeading names a seeded context wherever an export shows one: it
+// is a summary of earlier turns, never the earlier session itself.
+const TurnZeroHeading = "Turn 0 · seeded context (summary)"
+
+// NotePendingPreamble introduces a chat's pending turn 0.
+const NotePendingPreamble = "The next turn starts a fresh agent session with this summary ahead of its message. It can still be edited."
 
 // The notes a turn's marks render as, one wording for every format.
 const (
@@ -301,7 +338,9 @@ const (
 type normalizedRecord struct {
 	Type         string `json:"type"`
 	ParentCallID string `json:"parent_call_id"`
-	Tools        []struct {
+	// Context is a vincent.seeded note's seeded context.
+	Context string `json:"context"`
+	Tools   []struct {
 		Name    string `json:"name"`
 		Summary string `json:"summary"`
 		CallID  string `json:"call_id"`
@@ -312,14 +351,18 @@ type normalizedRecord struct {
 	} `json:"results"`
 }
 
-// ToolsFromNormalized reads a normalized transcript (JSONL, one §13.2 record
-// a line) and returns its top-level tool calls in call order, each marked
-// failed when its agent.tool_result said so. A call made inside a subagent is
-// the subagent's work and is left out, as the chat's compact level leaves it
-// out of the turn's own line. Lines that do not decode are skipped: the
-// export is a summary, and one odd record must not cost the reader the rest.
-func ToolsFromNormalized(r io.Reader) ([]ToolCall, error) {
-	calls := []ToolCall{}
+// FromNormalized is what an export reads off one turn's normalized
+// transcript: its top-level tool calls, and the context a seeded turn was
+// given.
+type FromNormalized struct {
+	Tools         []ToolCall
+	SeededContext string
+}
+
+// ReadNormalized is ToolsFromNormalized that also keeps the `context` of the
+// turn's `vincent.seeded` note (task 171 decision 4).
+func ReadNormalized(r io.Reader) (FromNormalized, error) {
+	out := FromNormalized{Tools: []ToolCall{}}
 	byID := map[string]int{}
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 64*1024*1024)
@@ -329,20 +372,35 @@ func ToolsFromNormalized(r io.Reader) ([]ToolCall, error) {
 			continue
 		}
 		switch rec.Type {
+		case "vincent.seeded":
+			if rec.Context != "" {
+				out.SeededContext = rec.Context
+			}
 		case "agent.tool_use":
 			for _, t := range rec.Tools {
 				if t.CallID != "" {
-					byID[t.CallID] = len(calls)
+					byID[t.CallID] = len(out.Tools)
 				}
-				calls = append(calls, ToolCall{Name: t.Name, Arg: t.Summary})
+				out.Tools = append(out.Tools, ToolCall{Name: t.Name, Arg: t.Summary})
 			}
 		case "agent.tool_result":
 			for _, res := range rec.Results {
 				if i, ok := byID[res.CallID]; ok && res.IsError {
-					calls[i].Failed = true
+					out.Tools[i].Failed = true
 				}
 			}
 		}
 	}
-	return calls, sc.Err()
+	return out, sc.Err()
+}
+
+// ToolsFromNormalized reads a normalized transcript (JSONL, one §13.2 record
+// a line) and returns its top-level tool calls in call order, each marked
+// failed when its agent.tool_result said so. A call made inside a subagent is
+// the subagent's work and is left out, as the chat's compact level leaves it
+// out of the turn's own line. Lines that do not decode are skipped: the
+// export is a summary, and one odd record must not cost the reader the rest.
+func ToolsFromNormalized(r io.Reader) ([]ToolCall, error) {
+	n, err := ReadNormalized(r)
+	return n.Tools, err
 }

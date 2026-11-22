@@ -790,6 +790,25 @@ jobs:
         shell: bash
         run: ./scripts/167-gate.sh
 
+      # 171: ask another agent and compare two answers (task 171.7, issue
+      # #1020; §5.5, §13.2) — a claude chat forked onto codex is seeded and
+      # shows its turn-0 context, which `vincent chat preamble` edits before
+      # the first turn and the codex CLI is then handed verbatim, and which
+      # outlives that turn in `chat transcript` and the export; a compare
+      # forks twice and starts both sides on one prompt — claude restricted,
+      # codex full-auto with its reason — or, with room for one, creates
+      # nothing; keeping a side archives the other and deletes its branch and
+      # refs; a live side refuses the keep. The matrix earns its place because
+      # a compare makes two worktrees and starts two agent processes from the
+      # detached daemon at once, and keeping one is a forced worktree removal
+      # and `git branch -D` on the host's disk. Group 1 because it ran the
+      # fewest gates when this was wired; move it if a measured run says
+      # otherwise.
+      - name: 171 gate (ask another agent and compare)
+        if: contains(matrix.groups, 1)
+        shell: bash
+        run: ./scripts/171-gate.sh
+
   gates:
     needs: [changes, gate-group]
     if: always()

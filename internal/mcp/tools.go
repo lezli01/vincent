@@ -207,6 +207,12 @@ var Excluded = []Route{
 	// the transcript it scans, and the family stays off the tool surface
 	// whole.
 	{Method: http.MethodGet, Path: "/v1/chats/{id}/search"},
+	// Compare (task 171 decision 6) starts two agent processes outside the
+	// `created_by_task_id` chain — the reason send and handoff are off the
+	// surface — and reading a pair is a chat read like the rest.
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/compare"},
+	{Method: http.MethodGet, Path: "/v1/chats/{id}/compare"},
+	{Method: http.MethodPost, Path: "/v1/chats/{id}/compare/keep"},
 	// A chat's draft and stash, and the project's prompt history (task
 	// 164), are a human composer's state and stay off the surface with the
 	// rest of the family.

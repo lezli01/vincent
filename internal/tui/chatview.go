@@ -272,6 +272,11 @@ type chatView struct {
 	clampTask int64
 	picker    *chatSettingsPicker
 	agents    map[string]apiclient.Agent
+	// compare is the compare this chat is a side of (task 171), read once
+	// per chat after its first load; compareAsked is the chat it was asked
+	// for, so a reload does not ask again.
+	compare      *apiclient.ChatCompare
+	compareAsked int64
 
 	// skills is the composer's skill list (task 124.13), in either of its
 	// two modes: browse, which owns the keyboard and makes `esc` a real
@@ -646,7 +651,7 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 			// event from the stream (task 169 decision 10).
 			diff = v.turnEndedDiff()
 		}
-		return v, tea.Batch(v.fetchTranscripts(), v.landFetch(), mark, diff)
+		return v, tea.Batch(v.fetchTranscripts(), v.landFetch(), mark, diff, v.compareOfCmd())
 	case chatDiffMsg:
 		v.applyDiff(msg)
 		return v, nil
@@ -735,8 +740,29 @@ func (v *chatView) updateMsg(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.applyRewound(msg)
 	case openRewindPickerMsg:
 		if msg.chatID == v.chatID {
-			v.openRewindPicker(msg.fork)
+			if msg.compare {
+				v.openComparePicker()
+			} else {
+				v.openRewindPicker(msg.fork)
+			}
 		}
+		return v, nil
+	case chatComparedMsg:
+		return v, v.applyCompared(msg)
+	case chatCompareOfMsg:
+		if msg.chatID == v.chatID {
+			v.compare = msg.cmp
+		}
+		return v, nil
+	case editPreambleMsg:
+		if msg.chatID == v.chatID {
+			return v, v.editPreamble()
+		}
+		return v, nil
+	case chatPreambleEditedMsg:
+		return v, v.applyPreambleEdit(msg)
+	case chatPreambleSavedMsg:
+		v.applyPreambleSaved(msg)
 		return v, nil
 	case toggleRewoundMsg:
 		if msg.chatID == v.chatID {

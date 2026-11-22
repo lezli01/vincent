@@ -80,8 +80,18 @@ type chatRewindRow struct {
 // chatRewindPicker is the turn picker. It owns the keyboard while open.
 type chatRewindPicker struct {
 	// fork is the "fork from turn…" picker; otherwise it rewinds in mode.
-	fork   bool
-	mode   string
+	fork bool
+	// compare is the "compare two agents from turn…" picker (task 171): a
+	// fork picker whose agent choice is the second side — the first is the
+	// chat's own agent — and whose enter starts both.
+	compare bool
+	mode    string
+	// agents is the fork's agent choice (task 171 decision 2): "" — the
+	// source's own agent — then every other available adapter that can
+	// hold a chat, by name; agent indexes it. Tab cycles it as it cycles
+	// the rewind mode, which a fork does not have.
+	agents []string
+	agent  int
 	rows   []chatRewindRow
 	cursor int
 	busy   bool
@@ -91,8 +101,11 @@ type chatRewindPicker struct {
 // newChatRewindPicker lists every turn not already rewound, oldest first,
 // then (rewinding only) the saved states a forward rewind restores. The
 // cursor starts on the newest turn: undoing the last turn is the usual ask.
-func newChatRewindPicker(c *apiclient.Chat, turns []apiclient.ChatTurn, fork bool) *chatRewindPicker {
+func newChatRewindPicker(c *apiclient.Chat, turns []apiclient.ChatTurn, fork bool, agents map[string]apiclient.Agent) *chatRewindPicker {
 	p := &chatRewindPicker{fork: fork, mode: rewindBoth}
+	if fork {
+		p.agents = forkAgents(c, agents)
+	}
 	for i := range turns {
 		t := &turns[i]
 		if t.RewoundAt != nil {
@@ -107,6 +120,44 @@ func newChatRewindPicker(c *apiclient.Chat, turns []apiclient.ChatTurn, fork boo
 		}
 	}
 	return p
+}
+
+// forkAgents is the fork picker's agent choice: the source's agent first,
+// as "", then every other adapter GET /v1/agents says is available and can
+// resume a session — the daemon's 400 for any other — sorted by name. An
+// adapter that has not said whether it resumes is left out, as the new-chat
+// form leaves it out.
+func forkAgents(c *apiclient.Chat, agents map[string]apiclient.Agent) []string {
+	out := []string{""}
+	var names []string
+	for name, a := range agents {
+		if c != nil && name == c.Agent {
+			continue
+		}
+		if a.Available && a.SupportsResume != nil && *a.SupportsResume {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return append(out, names...)
+}
+
+// compareMode turns a fork picker into the compare picker. Its agent choice
+// is every other agent forkAgents offers, without the "same agent" entry:
+// a compare's sides are two different agents.
+func (p *chatRewindPicker) compareMode() {
+	p.compare = true
+	if len(p.agents) > 0 && p.agents[0] == "" {
+		p.agents = p.agents[1:]
+	}
+}
+
+// forkAgent is the agent the fork goes to, "" for the source's own.
+func (p *chatRewindPicker) forkAgent() string {
+	if p.agent < 0 || p.agent >= len(p.agents) {
+		return ""
+	}
+	return p.agents[p.agent]
 }
 
 // why is the row's refusal under the picker's action, "" when it may be
@@ -157,8 +208,32 @@ func (p *chatRewindPicker) label(r chatRewindRow) string {
 
 // title is the picker's first line: what enter does, and the keys.
 func (p *chatRewindPicker) title() string {
+	if p.compare {
+		names := make([]string, len(p.agents))
+		for i, a := range p.agents {
+			if i == p.agent {
+				a = "[" + a + "]"
+			}
+			names[i] = a
+		}
+		return "compare this agent with " + strings.Join(names, " ") +
+			" from before a turn — tab agent, enter starts both, esc close"
+	}
 	if p.fork {
-		return "fork a new chat from the state before a turn — enter fork, esc close"
+		if len(p.agents) < 2 {
+			return "fork a new chat from the state before a turn — enter fork, esc close"
+		}
+		names := make([]string, len(p.agents))
+		for i, a := range p.agents {
+			if a == "" {
+				a = "same agent"
+			}
+			if i == p.agent {
+				a = "[" + a + "]"
+			}
+			names[i] = a
+		}
+		return "fork onto " + strings.Join(names, " ") + " from before a turn — tab agent, enter fork, esc close"
 	}
 	modes := make([]string, len(rewindModes))
 	for i, m := range rewindModes {
@@ -195,6 +270,8 @@ func (p *chatRewindPicker) render(width int) []string {
 		out = append(out, ansi.Truncate(line, width, "…"))
 	}
 	switch {
+	case p.busy && p.compare:
+		out = append(out, "   "+styleDim.Render("forking twice and starting both…"))
 	case p.busy && p.fork:
 		out = append(out, "   "+styleDim.Render("forking…"))
 	case p.busy:
@@ -213,11 +290,20 @@ type chatRewoundMsg struct {
 	err    error
 }
 
-// openRewindPickerMsg is the palette's "rewind…" and "fork from turn…": the
-// rows are key-less, so they reach the view as a message.
+// openRewindPickerMsg is the palette's "rewind…", "fork from turn…" and
+// "compare two agents from turn…": the rows are key-less, so they reach the
+// view as a message.
 type openRewindPickerMsg struct {
+	chatID  int64
+	fork    bool
+	compare bool
+}
+
+// chatComparedMsg is a compare's answer (task 171).
+type chatComparedMsg struct {
 	chatID int64
-	fork   bool
+	res    *apiclient.CompareResult
+	err    error
 }
 
 // toggleRewoundMsg is the palette's "show rewound turns" row.
@@ -228,7 +314,7 @@ func (v *chatView) openRewindPicker(fork bool) {
 	if v.chat == nil {
 		return
 	}
-	v.rewind = newChatRewindPicker(v.chat, v.everyTurn(), fork)
+	v.rewind = newChatRewindPicker(v.chat, v.everyTurn(), fork, v.agents)
 	v.note = ""
 	v.hideInline("")
 	v.hideFiles()
@@ -253,11 +339,15 @@ func (v *chatView) updateRewindKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "down":
 		p.cursor = min(p.cursor+1, max(len(p.rows)-1, 0))
 	case "tab", "right":
-		if !p.fork {
+		if p.fork {
+			p.agent = (p.agent + 1) % max(len(p.agents), 1)
+		} else {
 			p.mode = rewindModes[(slices.Index(rewindModes, p.mode)+1)%len(rewindModes)]
 		}
 	case "shift+tab", "left":
-		if !p.fork {
+		if p.fork {
+			p.agent = (p.agent + max(len(p.agents), 1) - 1) % max(len(p.agents), 1)
+		} else {
 			p.mode = rewindModes[(slices.Index(rewindModes, p.mode)+len(rewindModes)-1)%len(rewindModes)]
 		}
 	case "enter":
@@ -277,6 +367,9 @@ func (v *chatView) updateRewindKey(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (p *chatRewindPicker) verb() string {
+	if p.compare {
+		return "compare"
+	}
 	if p.fork {
 		return "fork"
 	}
@@ -291,8 +384,25 @@ func (v *chatView) rewindCmd(p *chatRewindPicker, r chatRewindRow) tea.Cmd {
 		return nil
 	}
 	p.busy, p.err = true, ""
+	if p.compare {
+		// The prompt is the composer's draft when there is one, else the
+		// turn's own (the daemon's default): "ask both this", or "how would
+		// each have answered turn N".
+		req := apiclient.CompareRequest{
+			Turn: r.seq, Prompt: strings.TrimSpace(v.composer.Value()),
+			Agents: []string{v.chat.Agent, p.forkAgent()},
+		}
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+			defer cancel()
+			res, err := client.CompareChat(ctx, id, req)
+			return chatComparedMsg{chatID: id, res: res, err: err}
+		}
+	}
 	if p.fork {
-		req := apiclient.ForkRequest{Turn: r.seq}
+		// Another agent's fork takes that agent's own model and effort
+		// defaults (decision 2): the source's would mean nothing to it.
+		req := apiclient.ForkRequest{Turn: r.seq, Agent: p.forkAgent()}
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
 			defer cancel()
@@ -339,6 +449,9 @@ func (v *chatView) applyRewound(msg chatRewoundMsg) tea.Cmd {
 	if msg.fork != nil {
 		c := msg.fork.Chat
 		note := "forked from chat #" + strconv.FormatInt(v.chatID, 10)
+		if v.chat != nil && c.Agent != v.chat.Agent {
+			note += " onto " + c.Agent
+		}
 		if msg.fork.Seeded {
 			note += " — its first turn is seeded, not resumed"
 		}
@@ -495,7 +608,7 @@ func seededContextLines(c *apiclient.Chat, width int) []string {
 	if more := len(body) - len(shown); more > 0 {
 		out = append(out, "   "+styleDim.Render(fmt.Sprintf("… %d more lines (vincent chat show %d)", more, c.ID)))
 	}
-	return append(out, "   "+styleDim.Render(fmt.Sprintf("edit before the next turn: vincent chat preamble %d --file F", c.ID)))
+	return append(out, "   "+styleDim.Render(fmt.Sprintf("edit before the next turn: \"edit turn 0…\" in the palette, or vincent chat preamble %d", c.ID)))
 }
 
 // resumePendingLine says how the chat's next turn picks up after a
@@ -534,6 +647,28 @@ func (v *chatView) rewindPaletteExtras() []paletteEntry {
 			action: func() tea.Msg { return openRewindPickerMsg{chatID: id, fork: true} },
 		})
 	}
+	if !chatstate.Terminal(chatstate.State(v.chat.State)) && len(forkAgents(v.chat, v.agents)) > 1 {
+		out = append(out, paletteEntry{
+			group:  "chat",
+			label:  "compare two agents from turn… — this agent and another answer the same prompt, side by side",
+			action: func() tea.Msg { return openRewindPickerMsg{chatID: id, compare: true} },
+		})
+	}
+	if v.compare != nil {
+		back := v.back
+		out = append(out, paletteEntry{
+			group:  "chat",
+			label:  "compare side by side — this chat and the other side of its compare",
+			action: func() tea.Msg { return openCompareMsg{chatID: id, back: back} },
+		})
+	}
+	if preambleEditable(v.chat) {
+		out = append(out, paletteEntry{
+			group:  "chat",
+			label:  "edit turn 0… — the seeded context the next turn starts with, in $EDITOR",
+			action: func() tea.Msg { return editPreambleMsg{chatID: id} },
+		})
+	}
 	if rewoundCount(v.everyTurn()) > 0 {
 		label := "show rewound turns, dimmed"
 		if v.showRewound {
@@ -556,4 +691,170 @@ func (v *chatView) everyTurn() []apiclient.ChatTurn {
 		return v.turns
 	}
 	return v.allTurns
+}
+
+// editPreambleMsg is the palette's "edit turn 0…" row.
+type editPreambleMsg struct{ chatID int64 }
+
+// chatPreambleEditedMsg carries a turn-0 editing session's outcome: the
+// context it started from and what the editor left.
+type chatPreambleEditedMsg struct {
+	chatID   int64
+	original string
+	text     string
+	err      error
+}
+
+// preambleEditable is whether the chat's turn 0 may be edited now: the
+// store's own rule (task 171 decision 4) — a seeded context pending and no
+// process holding the chat — read off the DTO so the palette does not offer
+// an edit the daemon would refuse. The daemon still decides.
+func preambleEditable(c *apiclient.Chat) bool {
+	return c != nil && c.ResumePending == "seeded" && c.PendingPreamble != "" &&
+		!chatstate.HoldsProcess(chatstate.State(c.State)) && !chatstate.Terminal(chatstate.State(c.State))
+}
+
+// editPreamble hands turn 0 to $EDITOR through the same round trip the
+// composer's ctrl+g uses (task 163 decision 3). What comes back is sent as
+// `PATCH /v1/chats/{id}` with pending_preamble.
+func (v *chatView) editPreamble() tea.Cmd {
+	if !preambleEditable(v.chat) {
+		v.note, v.noteBad = "no seeded context to edit — this chat's next turn is not seeded", false
+		return nil
+	}
+	chatID, original := v.chatID, v.chat.PendingPreamble
+	cmd, err := editTextCmd(v.exec, fmt.Sprintf("chat%d-turn0", chatID), ".md", original,
+		func(text string, err error) tea.Msg {
+			return chatPreambleEditedMsg{chatID: chatID, original: original, text: text, err: err}
+		})
+	if err != nil {
+		v.note, v.noteBad = "editor: "+errString(err), true
+		return nil
+	}
+	return cmd
+}
+
+// applyPreambleEdit sends an edited turn 0. Unlike the composer's draft, an
+// emptied file means something here: it clears the seeded context, so the
+// next turn starts with no earlier context at all (decision 4) — the same
+// explicit choice `vincent chat preamble --clear` makes. An untouched file
+// sends nothing.
+func (v *chatView) applyPreambleEdit(msg chatPreambleEditedMsg) tea.Cmd {
+	if msg.chatID != v.chatID {
+		return nil
+	}
+	if msg.err != nil {
+		v.note, v.noteBad = "editor: "+errString(msg.err)+" — turn 0 is unchanged", true
+		return nil
+	}
+	text := msg.text
+	if strings.TrimSpace(text) == "" {
+		text = ""
+	}
+	if text == msg.original {
+		v.note, v.noteBad = "turn 0 is unchanged", false
+		return nil
+	}
+	client, id := v.client, v.chatID
+	if client == nil {
+		v.note, v.noteBad = "not connected", true
+		return nil
+	}
+	v.note, v.noteBad = "saving turn 0…", false
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), actionTimeout)
+		defer cancel()
+		chat, err := client.PatchChat(ctx, id, apiclient.PatchChatRequest{PendingPreamble: &text})
+		return chatPreambleSavedMsg{chatID: id, chat: chat, cleared: text == "", err: err}
+	}
+}
+
+// chatPreambleSavedMsg is the PATCH's answer.
+type chatPreambleSavedMsg struct {
+	chatID  int64
+	chat    *apiclient.Chat
+	cleared bool
+	err     error
+}
+
+func (v *chatView) applyPreambleSaved(msg chatPreambleSavedMsg) {
+	if msg.chatID != v.chatID {
+		return
+	}
+	if msg.err != nil {
+		text := errString(msg.err)
+		var apiErr *apiclient.Error
+		if errors.As(msg.err, &apiErr) && apiErr.Code == "chat_preamble_not_pending" {
+			text = "turn 0 can no longer be edited — a turn has started, or the chat no longer resumes seeded"
+		}
+		v.note, v.noteBad = text, true
+		return
+	}
+	v.chat = msg.chat
+	v.bodyDirty = true
+	if msg.cleared {
+		v.note, v.noteBad = "turn 0 cleared — the next turn starts a fresh session with no earlier context", false
+		return
+	}
+	v.note, v.noteBad = "turn 0 saved — the next turn starts with the edited context", false
+}
+
+// applyCompared settles the compare picker: a refusal stays on it, in plain
+// words; a compare opens the split view on its two sides.
+func (v *chatView) applyCompared(msg chatComparedMsg) tea.Cmd {
+	if msg.chatID != v.chatID {
+		return nil
+	}
+	if msg.err != nil {
+		text := errString(msg.err)
+		var apiErr *apiclient.Error
+		if errors.As(msg.err, &apiErr) {
+			text = apiErr.Message
+			if plain := rewindReasonText(apiErr.Code); plain != apiErr.Code {
+				text = plain
+			}
+		}
+		if v.rewind != nil {
+			v.rewind.busy, v.rewind.err = false, text
+		} else {
+			v.note, v.noteBad = text, true
+		}
+		return nil
+	}
+	v.rewind = nil
+	left := msg.res.Left.Chat.ID
+	return func() tea.Msg { return openCompareMsg{chatID: left, back: viewChat} }
+}
+
+// chatCompareOfMsg is the compare this chat is a side of, nil for none.
+type chatCompareOfMsg struct {
+	chatID int64
+	cmp    *apiclient.ChatCompare
+}
+
+// compareOfCmd asks, once per chat, whether a fork is a side of a compare:
+// only a fork can be, so no other chat pays for the read.
+func (v *chatView) compareOfCmd() tea.Cmd {
+	if v.chat == nil || v.chat.ForkedFrom == nil || v.compareAsked == v.chatID || v.client == nil {
+		return nil
+	}
+	v.compareAsked = v.chatID
+	client, id := v.client, v.chatID
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
+		defer cancel()
+		cmp, err := client.GetChatCompare(ctx, id)
+		if err != nil {
+			return chatCompareOfMsg{chatID: id}
+		}
+		return chatCompareOfMsg{chatID: id, cmp: cmp}
+	}
+}
+
+// openComparePicker opens the turn picker as the compare picker (task 171).
+func (v *chatView) openComparePicker() {
+	v.openRewindPicker(true)
+	if v.rewind != nil {
+		v.rewind.compareMode()
+	}
 }

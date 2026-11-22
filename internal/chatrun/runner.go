@@ -377,12 +377,23 @@ func (r *Runner) SubmitWith(
 // A queue drain never comes here: it inherits the finishing turn's slot
 // (task 156 decision 1).
 func (r *Runner) checkCap(ctx context.Context) error {
+	return r.CheckCapacity(ctx, 1)
+}
+
+// CheckCapacity refuses with ErrChatCapReached unless need more chats may
+// start a turn under `max_parallel_chats` now. A compare (task 171 decision
+// 6) asks for two before it creates anything, so it starts both sides or
+// neither.
+func (r *Runner) CheckCapacity(ctx context.Context, need int) error {
 	n, err := r.deps.Store.CountChatsHoldingProcess(ctx)
 	if err != nil {
 		return err
 	}
-	if limit := r.maxParallelChats(); n >= limit {
-		return fmt.Errorf("%w: %d of %d chats are already running", ErrChatCapReached, n, limit)
+	if limit := r.maxParallelChats(); n+need > limit {
+		if need == 1 {
+			return fmt.Errorf("%w: %d of %d chats are already running", ErrChatCapReached, n, limit)
+		}
+		return fmt.Errorf("%w: %d of %d chats are already running, and this needs %d more", ErrChatCapReached, n, limit, need)
 	}
 	return nil
 }
