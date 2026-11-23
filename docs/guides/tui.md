@@ -1927,7 +1927,8 @@ the screen with no keypress.
 
 | Key | Does |
 |---|---|
-| `enter` | Open the workspace of the task that claims this pull request |
+| `enter` | Open the workspace of the task that claims this pull request; on one no task claims, it names `a` and `l` instead |
+| wheel, click | Move the selection, and select the row under the pointer — in the narrow table as in the wide cards |
 | `o` | Open the selected pull request in a browser |
 | `a` | Create a task from this pull request — it runs on the pull request's head branch, and the form is editable first |
 | `l` | Link it to a task in the same project |
