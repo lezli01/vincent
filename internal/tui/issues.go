@@ -126,6 +126,9 @@ type issuesView struct {
 
 	client *apiclient.Client
 	now    func() time.Time
+	// syncAsked is when `S` asked for a sync, zero when nothing is awaited:
+	// the listings after it say how the pass ended (#1069).
+	syncAsked time.Time
 
 	issues []apiclient.Issue
 	// sync is the selected project's sync status as the last listing read
@@ -359,6 +362,10 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 			if msg.err == nil {
 				st := msg.status
 				v.sync, v.syncFor = &st, msg.projectID
+				if st.Enabled && !noSyncPass(st) {
+					// Watch the next listings for how the pass ended (#1069).
+					v.syncAsked = v.now()
+				}
 			}
 		}
 		return v, nil
@@ -474,6 +481,10 @@ func (v *issuesView) applyLoaded(msg issuesLoadedMsg) {
 	v.issues = msg.issues
 	if msg.sync != nil {
 		v.sync, v.syncFor = msg.sync, v.project.id
+		if note, bad, done := syncOutcome(*msg.sync, v.syncAsked); done {
+			v.syncAsked = time.Time{}
+			v.setNote(note, bad)
+		}
 	}
 	v.prunePicked()
 	v.reselect()
@@ -733,9 +744,9 @@ func syncedNote(msg issuesSyncedMsg) string {
 	case msg.err != nil:
 		return "could not ask for a sync: " + errString(msg.err)
 	case noSyncPass(s):
-		return "nothing to sync (" + s.Reason + ")"
+		return "nothing to sync: " + syncReason(s.Reason)
 	case !s.Enabled:
-		return "sync requested, but import is off (" + s.Reason + ")"
+		return "sync requested, but import is off: " + syncReason(s.Reason)
 	case s.Source != "":
 		return "sync requested from " + s.Source + " — the list updates as it lands"
 	case s.Repo != "":

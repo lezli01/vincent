@@ -339,6 +339,17 @@ func (v *issuesView) boardSummary() string {
 		parts = append(parts, "updated "+v.lastLoad.Format("15:04:05"))
 	}
 	out := styleDim.Render(strings.Join(parts, " · "))
+	// The issue source's health leads (#1069): a failing import looked like
+	// a healthy one.
+	if s := v.sync; s != nil && v.syncFor == v.project.id && v.project.id != 0 {
+		if text, bad := syncSummary(*s, v.now()); text != "" {
+			style := toneBlue
+			if bad {
+				style = styleBad
+			}
+			out = style.Render(ic("⇅ ")+text) + styleDim.Render(" · ") + out
+		}
+	}
 	if n := len(v.picked); n > 0 {
 		out = styleFocus.Render(strconv.Itoa(n)+" selected") + styleDim.Render(" · ") + out
 	}
