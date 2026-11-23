@@ -1089,6 +1089,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChat: {
+		"alt+l": func(t *testing.T) {
+			v := chatViewFixture()
+			v.updateKey(registryKey(t, "alt+l"))
+			if v.note != "the last turn did not fail — nothing to retry" {
+				t.Fatalf("alt+l with no failed turn said %q", v.note)
+			}
+		},
 		// Task 164: recall's way back, the stash and the history picker.
 		"down": func(t *testing.T) {
 			v := chatViewFixture()

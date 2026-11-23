@@ -532,6 +532,19 @@ func (v *chatView) bodyLinesAt(width int) ([]string, []lineAnchor) {
 				lines = append(lines, " "+styleBad.Render(l))
 				pad(1)
 			}
+			// What it means and what to do (#1070), on the newest turn
+			// only: an older failure has been moved past.
+			if last := v.failedTurn(); last != nil && last.Seq == t.Seq {
+				more := reasons.Explain(t.FailReason).Meaning
+				if more != "" {
+					more += " "
+				}
+				more += failedTurnNext(t.FailReason)
+				for _, l := range wrapText(more, max(width-1, 1), wrapOpts{indent: 2}) {
+					lines = append(lines, " "+styleDim.Render(l))
+					pad(1)
+				}
+			}
 		}
 		if t.RewoundAt != nil {
 			dimLines(lines[start:])

@@ -592,7 +592,10 @@ func (v *chatView) edgeLabel() string {
 		}
 	}
 	if v.newLines > 0 && !v.following {
-		parts = append(parts, chatNewMarkStyle.Render(fmt.Sprintf("↓ %d new", v.newLines)))
+		// The key that follows again sits beside the count (#1072): the
+		// footer cuts it at 100 columns, and a bare ⏸ says nothing of it.
+		parts = append(parts, chatNewMarkStyle.Render(fmt.Sprintf("↓ %d new", v.newLines))+
+			styleDim.Render(" · alt+shift+g follows"))
 	}
 	return strings.Join(parts, "  ")
 }

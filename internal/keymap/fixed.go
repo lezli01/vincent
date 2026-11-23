@@ -139,6 +139,7 @@ var fixed = []Fixed{
 	{"chat", "down", "recall a newer prompt, ending on an empty composer"},
 	{"chat", "ctrl+d", "delete the queued message being edited"},
 	{"chat", "alt+r", "resume a paused queue"},
+	{"chat", "alt+l", "retry the failed turn: send its prompt again"},
 	{"chat", "alt+c", "clear the queue"},
 	{"chat", "ctrl+j", "insert a newline in the message"},
 	{"chat", "ctrl+x", "stop the running turn"},

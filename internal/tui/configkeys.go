@@ -169,7 +169,7 @@ func configKeys() []configKey {
 			func(s string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Defaults: &apiclient.ConfigDefaultsPatch{CommandTimeout: &s}}
 			}),
-		durationKey("defaults.input_timeout", "input timeout", "how long a step waits for an answer (§7.4)",
+		durationKey("defaults.input_timeout", "input timeout", "how long a step waits for an answer",
 			func(c apiclient.Config) string { return c.Defaults.InputTimeout },
 			func(s string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Defaults: &apiclient.ConfigDefaultsPatch{InputTimeout: &s}}
@@ -181,7 +181,7 @@ func configKeys() []configKey {
 				return apiclient.ConfigPatch{Defaults: &apiclient.ConfigDefaultsPatch{BackgroundWait: &s}}
 			}),
 		boolKey("delete_empty_branch_on_archive", "delete empty branch",
-			"delete an archived task's branch when it carries no commits (§10)",
+			"delete an archived task's branch when it carries no commits",
 			func(c apiclient.Config) bool { return c.DeleteEmptyBranchOnArchive },
 			func(b bool) apiclient.ConfigPatch { return apiclient.ConfigPatch{DeleteEmptyBranchOnArchive: &b} }),
 		boolKey("delete_remote_branch_on_archive", "delete remote branch",
@@ -189,11 +189,11 @@ func configKeys() []configKey {
 			func(c apiclient.Config) bool { return c.DeleteRemoteBranchOnArchive },
 			func(b bool) apiclient.ConfigPatch { return apiclient.ConfigPatch{DeleteRemoteBranchOnArchive: &b} }),
 		boolKey("archive_tasks_on_issue_close", "archive on issue close",
-			"archive a closed issue's settled tasks unattended; never forces (task 143)",
+			"archive a closed issue's settled tasks unattended; never forces",
 			func(c apiclient.Config) bool { return c.ArchiveTasksOnIssueClose },
 			func(b bool) apiclient.ConfigPatch { return apiclient.ConfigPatch{ArchiveTasksOnIssueClose: &b} }),
 		durationKey("archive_finished_tasks_after", "archive finished after",
-			"archive a task done or aborted this long, unattended; never forces; 0 is off (task 155)",
+			"archive a task done or aborted this long, unattended; never forces; 0 is off",
 			func(c apiclient.Config) string { return c.ArchiveFinishedTasksAfter },
 			func(s string) apiclient.ConfigPatch { return apiclient.ConfigPatch{ArchiveFinishedTasksAfter: &s} }),
 		boolKey("fetch_base_branch", "fetch base branch",
@@ -319,32 +319,32 @@ func configKeys() []configKey {
 			func(p *string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Agents: &apiclient.ConfigAgentsPatch{Copilot: &apiclient.AgentPathPatch{Path: p}}}
 			}),
-		intKey("parallel.max_parallel", "parallel lanes", "concurrent verifications inside one parallel step (§7.5)",
+		intKey("parallel.max_parallel", "parallel lanes", "concurrent verifications inside one parallel step",
 			func(c apiclient.Config) int { return c.Parallel.MaxParallel },
 			func(n int) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Parallel: &apiclient.ConfigParallel{MaxParallel: n}}
 			}),
-		intKey("fan_out.max_depth", "fan-out depth", "generations a fan_out tree may go deep (§7.6)",
+		intKey("fan_out.max_depth", "fan-out depth", "generations a fan_out tree may go deep",
 			func(c apiclient.Config) int { return c.FanOut.MaxDepth },
 			func(n int) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{FanOut: &apiclient.ConfigFanOut{MaxDepth: n}}
 			}),
-		intKey("fan_out.max_tasks", "fan-out tasks", "descendants one root may create (§7.6)",
+		intKey("fan_out.max_tasks", "fan-out tasks", "descendants one root may create",
 			func(c apiclient.Config) int { return c.FanOut.MaxTasks },
 			func(n int) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{FanOut: &apiclient.ConfigFanOut{MaxTasks: n}}
 			}),
-		intKey("loop.max_iterations", "loop iterations", "ceiling on one loop step's iterations (§7.8)",
+		intKey("loop.max_iterations", "loop iterations", "ceiling on one loop step's iterations",
 			func(c apiclient.Config) int { return c.Loop.MaxIterations },
 			func(n int) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Loop: &apiclient.ConfigLoop{MaxIterations: n}}
 			}),
-		intKey("include.max_depth", "include depth", "levels of include a workflow may nest (§7.9)",
+		intKey("include.max_depth", "include depth", "levels of include a workflow may nest",
 			func(c apiclient.Config) int { return c.Include.MaxDepth },
 			func(n int) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Include: &apiclient.ConfigInclude{MaxDepth: n}}
 			}),
-		boolKey("mcp.wire_steps", "mcp wire steps", "hand agent steps their own /mcp endpoint (§13.4)",
+		boolKey("mcp.wire_steps", "mcp wire steps", "hand agent steps their own /mcp endpoint",
 			func(c apiclient.Config) bool { return c.MCP.WireSteps },
 			func(b bool) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{MCP: &apiclient.ConfigMCPPatch{WireSteps: &b}}
@@ -359,7 +359,7 @@ func configKeys() []configKey {
 			func(n int) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{MCP: &apiclient.ConfigMCPPatch{MaxTasks: &n}}
 			}),
-		boolKey("github.enabled", "github enabled", "let the daemon talk to GitHub at all (task 035)",
+		boolKey("github.enabled", "github enabled", "let the daemon talk to GitHub at all",
 			func(c apiclient.Config) bool { return c.GitHub.Enabled },
 			func(b bool) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{GitHub: &apiclient.ConfigGitHubPatch{Enabled: &b}}
@@ -369,7 +369,7 @@ func configKeys() []configKey {
 			func(s string) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{GitHub: &apiclient.ConfigGitHubPatch{PollInterval: &s}}
 			}),
-		boolKey("jira.enabled", "jira enabled", "let the daemon sync projects bound to Jira (task 142)",
+		boolKey("jira.enabled", "jira enabled", "let the daemon sync projects bound to Jira",
 			func(c apiclient.Config) bool { return c.Jira.Enabled },
 			func(b bool) apiclient.ConfigPatch {
 				return apiclient.ConfigPatch{Jira: &apiclient.ConfigJiraPatch{Enabled: &b}}

@@ -651,6 +651,11 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 			if perRow > 1 {
 				continue // the archive's grid draws no lanes
 			}
+			// Lanes asked for and not here yet say so (#1072): L showed
+			// nothing while they loaded.
+			if p := g.tasks[r]; b.lanes.expanded.has(p.ID) && b.hasLanes(p) && len(b.lanes.lanesOf(p.ID)) == 0 {
+				body = append(body, rail+styleDim.Render("  loading lanes…"))
+			}
 			for _, e := range b.cardLaneEntries(g.tasks[r]) {
 				chosen := !at.header && e.lane.ID == at.id
 				if chosen {
@@ -679,6 +684,24 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 	if len(body) > room {
 		start = min(max(to-room, 0), len(body)-room)
 		start = min(start, from)
+	}
+	// A column with more cards than fit says how many are above and below
+	// on its top edge (#1072): it was cut silently.
+	above, below := 0, 0
+	for _, s := range spans {
+		switch {
+		case s.stop.header:
+		case s.from+s.h <= start:
+			above++
+		case s.from >= start+room:
+			below++
+		}
+	}
+	if above > 0 {
+		right += styleDim.Render(fmt.Sprintf(" ▲%d", above))
+	}
+	if below > 0 {
+		right += styleDim.Render(fmt.Sprintf(" ▼%d", below))
 	}
 	for _, s := range spans {
 		// What of the card is on screen takes the click, a card the column

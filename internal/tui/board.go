@@ -2103,7 +2103,12 @@ func (b *board) agentsSummary() string {
 // shell's liveBindings is the one consulted there.
 func (b *board) liveBindings(rows []binding) []binding {
 	if !b.archived {
-		return rows
+		// L is hinted only where it does something (#1072): a fan-out, or
+		// a lane hanging under its open parent.
+		if b.laneKeyApplies() {
+			return rows
+		}
+		return slices.DeleteFunc(slices.Clone(rows), func(r binding) bool { return r.key == "L" })
 	}
 	return b.pageBindings(rows, ctxArchived, len(b.tasks))
 }

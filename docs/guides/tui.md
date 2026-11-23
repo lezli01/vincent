@@ -227,7 +227,8 @@ workflow step with the step it has reached, a linked pull request as `⇡#123`, 
 one status line that says what is happening, such as `! needs your approval` or
 `⑂ 2 of 3 lanes done`. A parent whose lane needs you leads with what the lanes
 need, in the attention colour, and names the key that hangs them under the card:
-`! 1 lane blocked (L) · 2 of 4 done`. The selected card has a thick border.
+`! 1 lane blocked (L) · 2 of 4 done`. The selected card has a thick border. A
+column with more cards than fit counts the rest on its top edge — `▲2 ▼5`.
 
 | Key | Does |
 |---|---|
@@ -366,7 +367,7 @@ are queued and have finished.
 | `C` | Fold every group |
 | `O` | Open every group |
 | `z` | Cycle the order: by state (the board's own), newest, oldest, title |
-| `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent |
+| `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent. Hinted only on a fan-out; `loading lanes…` shows while they arrive, and on any other card it says so |
 
 ### Fan-out lanes on the board
 
@@ -2991,7 +2992,8 @@ periodic repaint.
 | `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
 | `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting, as every `alt+` key here does |
 | `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
-| `ctrl+x` | Stop the running turn — its process tree is killed |
+| `ctrl+x` | Stop the running turn — its process tree is killed. With nothing running it says so |
+| `alt+l` | Retry the failed turn: send its prompt again. Offered only after a turn failed, whose red line says what the reason means and what to do first — wait out a usage limit, log the agent in |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends; not on a chat opened on a task. A chat opened on an issue hands off into the issue's next main task |
 | `ctrl+q` | Close a chat opened on a task — asks first; the task unlocks, its worktree and branch stay — or on an issue, whose main worktree is freed for its next main task |
@@ -3066,7 +3068,7 @@ draft as it was.
 Scrolled away from the live end, the header says which turn is at the top of
 the window — `turn 2/5` — until `alt+shift+g` follows the end again. While you are
 scrolled away, the conversation pane's bottom edge counts what arrived below
-you — `↓ 12 new`; click it or press `alt+shift+g` to follow again. Changing the
+you — `↓ 12 new · alt+shift+g follows`; click it or press `alt+shift+g` to follow again. Changing the
 level or the window's width does not add to it.
 
 ### Reviewing a chat's diff

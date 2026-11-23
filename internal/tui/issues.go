@@ -947,7 +947,7 @@ func (v *issuesView) bodyNotice(width int) []string {
 	case !v.loaded:
 		return prose("listing "+v.project.name+"'s issues…", styleDim)
 	case len(v.issues) == 0:
-		return prose("`vincent issue add` files one; a GitHub project's issues arrive on the reconciler tick.", styleDim)
+		return prose("`vincent issue add` files one; an imported project's issues arrive with its next sync.", styleDim)
 	}
 	return nil
 }

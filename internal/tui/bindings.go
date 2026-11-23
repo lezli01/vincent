@@ -772,7 +772,7 @@ var bindings = []binding{
 	{op: keymap.Chat9, key: "alt+9", label: chatJumpLabel("9th"), scope: scopePanel, context: ctxChats, priority: 20, noPalette: true},
 
 	// Chat workspace.
-	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done (task 156)", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
+	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
 	{op: keymap.Steer, key: "ctrl+s", label: "steer the running turn — unavailable on every agent for now; the composer says why", scope: scopePanel, context: ctxChat, hint: "ctrl+s steer", priority: 15},
 	// Task 164 decision 4: ↑ edits the queue first, and recalls this
 	// chat's earlier prompts only when nothing is queued.
@@ -792,6 +792,8 @@ var bindings = []binding{
 	// set in newChatView; keymap.fixed records the other two as aliases.
 	{key: "ctrl+j", label: "insert a newline in the message (shift+enter and alt+enter too, where the terminal sends them)", scope: scopePanel, context: ctxChat, hint: "ctrl+j newline", priority: 11},
 	{key: "ctrl+x", label: "stop the running turn (its process tree is killed)", scope: scopePanel, context: ctxChat, hint: "ctrl+x stop", priority: 2},
+	// #1070: a failed turn's prompt, sent again — offered only after one.
+	{key: chatRetryKey, label: "retry the failed turn: send its prompt again", scope: scopePanel, context: ctxChat, hint: "alt+l retry", priority: 2},
 	// ctrl+r rather than `v` (task 071 decision 4): the composer owns every
 	// printable key, so a letter would be typed into the message.
 	{key: "ctrl+r", label: "how much of the conversation to show (quiet → compact → normal → verbose)", scope: scopePanel, context: ctxChat, hint: "ctrl+r detail", priority: 4},
