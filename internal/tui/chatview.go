@@ -107,6 +107,9 @@ type (
 
 // chatView is the workspace.
 type chatView struct {
+	// streamUp is the chat's event stream having connected since the open;
+	// its first connect re-reads the chat (see applyChatNote).
+	streamUp bool
 	// projectScope is the root's selected project (task 132.2), stored for
 	// the item that scopes this view to it.
 	projectScope
@@ -504,6 +507,7 @@ func (v *chatView) openAt(id int64, seq int) tea.Cmd {
 		v.streamStop = nil
 	}
 	v.chatID = id
+	v.streamUp = false
 	v.chat, v.turns, v.allTurns = nil, nil, nil
 	v.showRewound, v.rewind = false, nil
 	v.form, v.formAway = nil, nil
@@ -1111,10 +1115,15 @@ func (v *chatView) applyChatNote(msg chatNoteMsg) tea.Cmd {
 	next := readNextChatNote(msg.chatID, msg.next)
 	switch note := msg.note.(type) {
 	case apiclient.ConnectedNote:
-		if note.Reset {
+		first := !v.streamUp
+		v.streamUp = true
+		if note.Reset || first {
 			// A restored event history (issue #1001): no chat event will
 			// say what changed, so re-read the chat, and its shell runs
-			// with it.
+			// with it. The first connect after an open re-reads too: the
+			// open's load and this subscription start together, and a turn
+			// that ended between that load's answer and this connect sent
+			// its event to nobody — the stream only carries what comes after.
 			return tea.Batch(next, v.loadCmd(), v.shellRunsCmd())
 		}
 	case apiclient.EventNote:
