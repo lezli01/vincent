@@ -365,3 +365,22 @@ func TestCardCursorStaysNearAVanishedCard(t *testing.T) {
 		t.Fatalf("an explicit selection of #21 landed on #%d", got)
 	}
 }
+
+// #1066: a folded group says how many of its tasks are selected, and a
+// marked lane box carries its tick.
+func TestMarksShowBehindFoldsAndOnLanes(t *testing.T) {
+	b := taskBoardFixture()
+	b.marks = b.marks.add(19)
+	got := ansi.Strip(strings.Join(b.cardColumns(200, 40, 0), "\n"))
+	if !strings.Contains(got, "✔ 1 selected") {
+		t.Errorf("the folded Finished group hides its selected task:\n%s", got)
+	}
+	lane := apiclient.Task{ID: 42, State: stateRunning, LaneID: ptr("api")}
+	if box := ansi.Strip(strings.Join(b.laneCard(lane, false, 40), "\n")); strings.Contains(box, "✔") {
+		t.Fatal("an unmarked lane has a tick")
+	}
+	b.marks = b.marks.add(42)
+	if box := ansi.Strip(strings.Join(b.laneCard(lane, false, 40), "\n")); !strings.Contains(box, "✔") {
+		t.Errorf("a marked lane has no tick:\n%s", box)
+	}
+}
