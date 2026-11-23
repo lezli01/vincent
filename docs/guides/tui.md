@@ -3735,6 +3735,7 @@ value it would become](../assets/tui-settings-confirm.png)
 | `tab` / `shift+tab` | Next or previous category |
 | `/` | Search every setting by name, key or description |
 | `backspace` | Reset the selected setting to its default |
+| `u` | Undo the last change: put back the value it replaced. Every change applies at once, so after one the pane's corner says `saved · was 4 · u puts it back`; a held arrow is one change, and the undo is not itself undoable |
 | `e` | Open `config.yaml` in `$EDITOR` |
 | `R` | Re-read the configuration |
 | `esc` | Clear the search, else leave Settings |
