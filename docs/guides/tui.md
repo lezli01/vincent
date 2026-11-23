@@ -1835,8 +1835,10 @@ says not to wait, it starts the agent and blocks on the stop instead.
 The override pickers are fed by live adapter data, tagged with where each option
 came from, and always accept free text: `t` inside an open list types a value
 the catalog does not offer, which is how you name a model that shipped this
-morning. They are windowed and filterable — `/` narrows the list, which is what
-makes cursor's ~180-model catalog usable. Each
+morning. They are windowed and filterable — typing narrows the list as you
+type (`/` does too), which is what makes cursor's ~180-model catalog usable;
+`j`, `k`, `t` and `space` keep their meaning, and `esc` clears the narrowing
+before it closes the list. Each
 resolved field shows **which level won** (step, task, workflow, adapter), so the
 form tells you what will actually run rather than what you typed.
 

@@ -2286,7 +2286,14 @@ func (b *board) emptyBody(rows []boardRow) (string, bool) {
 		}
 		return styleDim.Render("\n  " + line + "\n"), true
 	default:
-		return styleDim.Render("\n  no tasks yet — press " + opKey(keymap.New) + " to create one\n"), true
+		line := "no tasks yet — press " + opKey(keymap.New) + " to create one"
+		// #1082: an empty board in front of work waiting elsewhere says
+		// where it is, rather than one dim line under a header that counts it.
+		if n := b.attentionTally().elsewhere; n > 0 {
+			line += fmt.Sprintf("\n  %s %d waiting on you in other projects — %s goes to the first",
+				attentionBadge, n, opKey(keymap.NextAttention))
+		}
+		return styleDim.Render("\n  " + line + "\n"), true
 	}
 }
 
