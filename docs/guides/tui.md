@@ -153,8 +153,9 @@ reasons used below are defined in the [Glossary](#glossary).
 The board answers it at a glance. Each row's state cell and `STATUS` column
 say what the task is doing; a fan-out parent names its lanes by state, as in
 `waiting on lanes (×1 !1 ●1 ✓2)` — see [The board](#the-board) for every
-glyph. `enter` opens the task on its **Overview**, which for a running task
-names the current step and attempt. The breadcrumb in the header says where
+glyph. `enter` opens the task — on **Output** in a wide terminal, where the
+rail beside it carries the task's facts, and on its **Overview** in a narrow
+one, which for a running task names the current step and attempt. The breadcrumb in the header says where
 you are, and the dim line under it follows what the running attempt is doing
 right now, whichever tab you are on.
 
@@ -232,7 +233,9 @@ column with more cards than fit counts the rest on its top edge — `▲2 ▼5`.
 
 | Key | Does |
 |---|---|
-| `↑` `↓` | Move through a column |
+| `↑` `↓` or `k` `j` | Move through a column |
+| `pgup` / `pgdown` | Move a column's screenful |
+| `home`/`g`, `end`/`G` | The column's first or last card |
 | `←` `→` | Cross to the next column that has a card |
 | `pgup` `pgdown` `home` `end` | Move further within the column |
 | `enter` | Open the task |
@@ -401,13 +404,13 @@ times with a confirmation between each. Select the tasks instead:
 | `V` | Select every task the filter is showing — or clear that selection |
 | `esc` | Clear the selection |
 
-While anything is selected, a `✓` appears beside those rows, the panel title
-counts them (`Tasks · no issue — 5 selected` on api's board, where the
-title already names its one group), and the **action keys act on the whole
-selection**:
+While anything is selected, a `✔` marks each selected card, the board's
+header line counts them (`5 selected`), and the **action keys act on the
+whole selection**:
 
-![Every row of api's board selected, the panel title reading "Tasks · no
-issue — 5 selected", and the action bar offering each action with the number of selected tasks it can move](../assets/tui-multi-select.png)
+![Every card of api's board selected, each marked with a ✔, the header
+reading "5 selected", and the action bar offering each action with the number
+of selected tasks it can move](../assets/tui-multi-select.png)
 
 The count beside each key is how many of the selected tasks that action can
 actually move — an action shows up when *some* selected task accepts it, and the
@@ -417,7 +420,7 @@ one still running offers `A archive (4)`, and the running one stays where it is.
 The rest of the behavior follows from what a selection is:
 
 - **It is a set of tasks, not of rows.** Filtering, regrouping and refreshing do
-  not change it — that is why the count is in the title, so a selected task the
+  not change it — that is why the count is in the header, so a selected task the
   filter is hiding still says it is coming along.
 - **One confirmation for the batch.** `A` asks once, about all of them. Behind
   the scenes vincent sends one ordinary action per task, so the daemon sees
@@ -963,7 +966,7 @@ read and copy, and it opens only when you pick it in the
 [link picker](#seeing-the-source-and-taking-it-away). If your terminal supports
 OSC 8, set
 [`tui.hyperlinks: true`](../reference/configuration.md#tuihyperlinks) (or flip
-it in the daemon view's config editor) and the label, its `[1]` and the
+it on the [Settings](#settings) screen) and the label, its `[1]` and the
 printed destination become clickable — but only for an `http` or `https` link
 that passes vincent's sanitizer. The reference list stays either way.
 
@@ -2087,10 +2090,11 @@ line break or tab in one reads as a space, and terminal escape sequences are
 dropped rather than sent to your terminal. vincent's stored title is not
 changed.
 
-A list taller than the screen shows `▲ n more` above and `▼ n more` below,
-counting the lines out of sight that are not blank — the totals line, lane
-headers and `none` placeholders as well as issues, the way the issue detail
-counts its page.
+A column taller than the screen says `▲ n more` or `▼ n more` at its foot,
+counting the cards scrolled out of sight above and below; a column with no
+cards says `no issues`, or `none match` under a filter. When the columns are
+too many for the width, `‹` and `›` beside the edge titles say more lie that
+way.
 
 Any change to an issue, or to a task or a chat
 of an issue on the screen, re-lists it with no keypress, and the selection
@@ -2110,11 +2114,10 @@ completed](../assets/tui-issues.png)
 | `s` | Show or hide the done lane |
 | `R` | Re-read the issues |
 | `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com. The note says how the pass ended once a later listing shows it — `synced from octo/web`, or why it did not finish |
-| `↑`/`↓` | Move the selection |
-| `pgup`/`pgdown` | Move the selection a screenful |
-| `home`/`g`, `end`/`G` | Select the first or the last row |
-| `←`/`→` | Fold or unfold the lane section you are in |
-| `C`/`O` | Fold or unfold every lane section |
+| `↑`/`↓` or `k`/`j` | Move through a column |
+| `pgup`/`pgdown` | Move a column's screenful |
+| `home`/`g`, `end`/`G` | The column's first or last card |
+| `←`/`→` | Cross to the next column that has a card |
 | `/` | Filter by id, title, label or kind |
 | `n` | File a new issue in this project |
 | `a` | Create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
@@ -3561,8 +3564,8 @@ project's triggers, a poll change, or a project change arrives.
 **While `triggers.enabled` is off**, a banner above the list says so. Every
 trigger is then inert whatever its own `enabled:` says, so every row reads
 disarmed for a reason no row can fix. The view does not flip that switch itself.
-`B` opens `triggers.enabled` in the [daemon view's](#daemon) config editor,
-which asks before it applies a value. The form repeats the warning at its top.
+`B` opens `triggers.enabled` on the [Settings](#settings) screen, which asks
+before it applies a value. The form repeats the warning at its top.
 
 | Key | Does |
 |---|---|
@@ -3575,7 +3578,7 @@ which asks before it applies a value. The form repeats the warning at its top.
 | `T` | Dry-run a sample event through the trigger's filter; fires nothing |
 | `X` | Poll the source once and judge what it returns; fires nothing. Refused on `http` and `schedule`, which have no source to run |
 | `tab` | Move between the trigger list and its delivery ledger |
-| `B` | Open `triggers.enabled`, the global switch, in the daemon view's editor |
+| `B` | Open `triggers.enabled`, the global switch, on the Settings screen |
 | `R` | Re-read the triggers and the ledger |
 | `/` | Filter by id, source or action |
 
@@ -4055,7 +4058,7 @@ tui:
 ```
 
 The same map can be set with `vincent config set tui.keys "refresh=ctrl+e
-quit=f10"`, or from the [daemon view's](#daemon) config editor. An empty map,
+quit=f10"`, or from the [Settings](#settings) screen. An empty map,
 the default, is the keymap this guide describes.
 
 A key is written the way the terminal reports it: one character (`R`, `/`,
@@ -4168,7 +4171,7 @@ to anything else:
 - **Keys that belong to one screen** and mean nothing shared — `g` groups the
   archived board, `m` merges a pull request, and `X`, `i`,
   `u`, `P`, `U`, `S` and the like.
-- **Keys that work as a set** — folding (`←`/`→`, `C`/`O`, `space`), paging
+- **Keys that work as a set** — folding (`f`, `C`/`O`, `space`), paging
   (`<`/`>`), moving (`↑`/`↓`, `K`/`J`) and the task tabs (`[`/`]`).
 - **`esc`**, because it closes one layer at a time on every screen; **`ctrl+c`**,
   because it must always be able to quit; **`ctrl+v`**, the paste fallback; and
@@ -4226,13 +4229,13 @@ ignored. `?` and the palette list what lost its key as `unbound`, the footer
 drops it, and the TUI shows one line under the header saying what happened.
 `vincent doctor` lists the same warnings, and the daemon log carries them as
 `keymap warning`. Give the unbound operation a free key, or move your binding,
-to clear them. Saving through `vincent config set` or the config editor stays
+to clear them. Saving through `vincent config set` or the Settings screen stays
 strict, so while such a clash is in the file every save is refused with its
 name.
 
 ### When a change takes effect
 
-Saved in the daemon view's config editor, a keymap applies at once. Set any
+Saved on the Settings screen, a keymap applies at once. Set any
 other way — `vincent config set`, or an edit to the file — it reaches a running
 TUI the next time the TUI reads the configuration: when you open the daemon view
 or refresh it, or when the TUI reconnects.
