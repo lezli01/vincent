@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"regexp"
+
 	"charm.land/lipgloss/v2"
 
 	"github.com/lezli01/vincent/internal/reasons"
@@ -64,3 +66,14 @@ func renderReason(code string, style lipgloss.Style) string {
 // styleNone renders its text unchanged, for a reason whose title takes no
 // colour of its own.
 var styleNone = lipgloss.NewStyle()
+
+// specRef is a reference into the spec or a task record — "(§7.4)", "(task
+// 137.8)" — which help text written for maintainers carries and a reader of
+// the screen has no use for (#1071).
+var specRef = regexp.MustCompile(` \((?:task [0-9][0-9.]*(?: decision [0-9]+)?|§[0-9][0-9.]*(?:, ?§[0-9][0-9.]*)*)\)`)
+
+// plainHelp is help text with its spec and task references taken out: the
+// daemon's schema help is shared with maintainers' tools and keeps them.
+func plainHelp(s string) string {
+	return specRef.ReplaceAllString(s, "")
+}

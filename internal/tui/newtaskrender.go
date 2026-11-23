@@ -620,7 +620,7 @@ func (n *newTask) renderPicker() []string {
 	switch ntRow(p.row) {
 	case ntAgent, ntModel, ntEffort:
 		out = append(out, styleDim.Render(
-			"    replaces the workflow's defaults; steps that pin their own keep them (§8.6)"))
+			"    replaces the workflow's defaults; steps that pin their own keep them"))
 	case ntBranchName:
 		out = append(out, styleDim.Render(
 			"    a listed branch is run on as it stands; the free-text row cuts a new one under that name"))

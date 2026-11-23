@@ -121,7 +121,7 @@ func TestOutputTabSelectsWhichAttemptToShow(t *testing.T) {
 		t.Fatalf("right selected/displayed %d/%d, want 102/102", d.selectedRun, d.displayRun)
 	}
 	got := v.render(100, 28)
-	for _, value := range []string{"attempt 2/2", "Implement", "attempt 2", "succeeded", "← →"} {
+	for _, value := range []string{"run 2 of 2", "Implement", "attempt 2", "succeeded", "← →"} {
 		if !strings.Contains(got, value) {
 			t.Errorf("output feed misses %q:\n%s", value, got)
 		}

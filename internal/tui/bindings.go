@@ -770,7 +770,7 @@ var bindings = []binding{
 	{op: keymap.Chat9, key: "alt+9", label: chatJumpLabel("9th"), scope: scopePanel, context: ctxChats, priority: 20, noPalette: true},
 
 	// Chat workspace.
-	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done (task 156)", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
+	{key: "enter", label: "send the message — while a turn runs it is queued, and runs after that turn ends done", scope: scopePanel, context: ctxChat, hint: "enter send", priority: 1},
 	{op: keymap.Steer, key: "ctrl+s", label: "steer the running turn — unavailable on every agent for now; the composer says why", scope: scopePanel, context: ctxChat, hint: "ctrl+s steer", priority: 15},
 	// Task 164 decision 4: ↑ edits the queue first, and recalls this
 	// chat's earlier prompts only when nothing is queued.
