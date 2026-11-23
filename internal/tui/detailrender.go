@@ -1345,12 +1345,20 @@ func windowRange(lines []string, from, to, height int) []string {
 	if height <= 0 || len(lines) <= height {
 		return lines
 	}
-	start := windowStart(len(lines), from, height)
+	start := windowRangeStart(len(lines), from, to, height)
+	return lines[start : start+height]
+}
+
+// windowRangeStart is the first of n lines windowRange shows.
+func windowRangeStart(n, from, to, height int) int {
+	if height <= 0 || n <= height {
+		return 0
+	}
+	start := windowStart(n, from, height)
 	if to > start+height {
 		start = min(to-height, from)
 	}
-	start = max(min(start, len(lines)-height), 0)
-	return lines[start : start+height]
+	return max(min(start, n-height), 0)
 }
 
 // windowStart is where a height-line window over n lines begins so the

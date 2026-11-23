@@ -38,7 +38,45 @@ func (n *newTask) renderWide(width, height int) string {
 	out := n.workflowPane(listW, height)
 	out = joinColumns(out, n.widePane(width-listW-runW, height))
 	out = joinColumns(out, n.runPane(runW, height))
+	// The screen as text, and where its panes start, for a click (#1065).
+	n.wideText = n.wideText[:0]
+	for _, l := range out {
+		n.wideText = append(n.wideText, ansi.Strip(l))
+	}
+	n.wideListW, n.wideFormEnd = listW, width-runW
 	return strings.Join(out, "\n")
+}
+
+// updateClick is a click on the wide form (#1065): a workflow card chooses
+// that workflow, and the create button submits, as enter on it does.
+func (n *newTask) updateClick(msg tea.MouseClickMsg) tea.Cmd {
+	if msg.Button != tea.MouseLeft || !n.frameless() || n.mode != ntNavigating || n.submitting {
+		return nil
+	}
+	if msg.X < n.wideListW {
+		for _, h := range n.wfHits {
+			if h.y == msg.Y {
+				n.cursor = ntWorkflow
+				return n.applyPick(ntWorkflow, h.value, false)
+			}
+		}
+		return nil
+	}
+	if msg.X >= n.wideFormEnd || msg.Y < 0 || msg.Y >= len(n.wideText) {
+		return nil
+	}
+	line := []rune(n.wideText[msg.Y])
+	for _, label := range []string{"[ create task ]", "[ hand off to task ]"} {
+		at := strings.Index(string(line), label)
+		if at < 0 {
+			continue
+		}
+		x0 := len([]rune(string(line)[:at]))
+		if msg.X >= x0 && msg.X < x0+len([]rune(label)) {
+			return n.submit()
+		}
+	}
+	return nil
 }
 
 // updateWideKey is the wide form's spatial keys: ← goes to the workflow list on
@@ -176,6 +214,7 @@ func (n *newTask) workflowPane(w, h int) []string {
 		}
 	}
 	from, to := 0, 0
+	var tags []string
 	for _, scope := range []string{scopeProject, "global", "builtin"} {
 		heading := false
 		for _, opt := range options {
@@ -194,7 +233,18 @@ func (n *newTask) workflowPane(w, h int) []string {
 			if selected {
 				from, to = len(body), len(body)+4
 			}
-			body = append(body, workflowCard(*e, opt, selected, inner)...)
+			card := workflowCard(*e, opt, selected, inner)
+			for len(tags) < len(body) {
+				tags = append(tags, "")
+			}
+			for range card {
+				if opt.disabled {
+					tags = append(tags, "")
+				} else {
+					tags = append(tags, opt.value)
+				}
+			}
+			body = append(body, card...)
 		}
 	}
 	right, edges, border := toneBlue.Render(strconv.Itoa(len(options))), edgesRounded, styleDim
@@ -202,7 +252,20 @@ func (n *newTask) workflowPane(w, h int) []string {
 		right = styleDim.Render("↑↓ choose  ") + right
 		edges, border = edgesThick, styleFocus
 	}
+	start := windowRangeStart(len(body), from, to, max(h-2, 1))
+	n.wfHits = n.wfHits[:0]
+	for k := 0; k < max(h-2, 1) && start+k < len(tags); k++ {
+		if v := tags[start+k]; v != "" {
+			n.wfHits = append(n.wfHits, ntWorkflowHit{y: 1 + k, value: v})
+		}
+	}
 	return drawBox(toneBlue.Bold(true).Render(ic("⟡ Workflow")), right, windowRange(body, from, to, max(h-2, 1)), w, h, edges, border)
+}
+
+// ntWorkflowHit is one line of a workflow card in the wide list.
+type ntWorkflowHit struct {
+	y     int
+	value string
 }
 
 // workflowCard is one workflow. One that cannot be chosen says why.

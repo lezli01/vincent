@@ -254,8 +254,8 @@ func (s *shell) routeBoardOnly(msg tea.Msg) (panel, tea.Cmd) {
 		return s, cmd
 	case tea.MouseClickMsg:
 		if s.board.cards {
-			if msg.Button == tea.MouseLeft {
-				s.board.cardClick(msg.X, msg.Y-s.bannerLines)
+			if msg.Button == tea.MouseLeft && s.board.cardClick(msg.X, msg.Y-s.bannerLines) {
+				return s, s.openSelected()
 			}
 			return s, nil
 		}

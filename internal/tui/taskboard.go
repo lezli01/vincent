@@ -616,6 +616,9 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 		}
 		if g.folded {
 			spans = append(spans, span{from: len(body), h: 2, stop: stop})
+		} else {
+			// An open header folds on a click too (#1065).
+			spans = append(spans, span{from: len(body), h: 1, stop: stop})
 		}
 		body = append(body, cardGroupHeader(g, selected, g.key == lit && lit != groupNoIssue, inner))
 		if g.folded {
@@ -672,14 +675,18 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 		start = min(start, from)
 	}
 	for _, s := range spans {
-		if s.from >= start && s.from+s.h <= start+room {
-			y := top + 1 + s.from - start
-			x0, x1 := x+2, x+2+inner
-			if s.x1 > 0 {
-				x0, x1 = x+2+s.x0, x+2+s.x1
-			}
-			b.cardHits = append(b.cardHits, taskCardHit{x0, x1, y, y + s.h, s.stop})
+		// What of the card is on screen takes the click, a card the column
+		// edge cuts included (#1065).
+		vis0, vis1 := max(s.from, start), min(s.from+s.h, start+room)
+		if vis0 >= vis1 {
+			continue
 		}
+		y0, y1 := top+1+vis0-start, top+1+vis1-start
+		x0, x1 := x+2, x+2+inner
+		if s.x1 > 0 {
+			x0, x1 = x+2+s.x0, x+2+s.x1
+		}
+		b.cardHits = append(b.cardHits, taskCardHit{x0, x1, y0, y1, s.stop})
 	}
 	return drawBox(title, right, body[start:], w, h, edgesRounded, styleDim)
 }
@@ -1116,16 +1123,28 @@ func taskPreviewActions(t apiclient.Task, inner int) []string {
 	return out
 }
 
-// cardClick is a left click on the board: a card selects, a group's header folds.
-func (b *board) cardClick(x, y int) {
+// cardClick is a left click on the board: a card selects, a group's header
+// folds. open reports a click on the card that was already selected, which
+// opens it as enter does (#1065): the first click picks, the second goes in.
+func (b *board) cardClick(x, y int) (open bool) {
 	for _, h := range b.cardHits {
 		if x < h.x0 || x >= h.x1 || y < h.y0 || y >= h.y1 {
 			continue
+		}
+		cur, selected := b.cardSelected()
+		again := !h.stop.header && selected && cur == h.stop.id
+		if h.stop.header && !b.cardFolded(h.stop.column, h.stop.key) {
+			// An open group's header is not a stop: it folds, and the
+			// cursor rests on the folded header (#1065).
+			b.setCardFold(h.stop.column, h.stop.key, true)
+			b.restOn(h.stop)
+			return false
 		}
 		b.restOn(h.stop)
 		if h.stop.header {
 			b.toggleCardFold()
 		}
-		return
+		return again
 	}
+	return false
 }

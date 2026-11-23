@@ -374,10 +374,16 @@ func (v *issuesView) route(msg tea.Msg) (panel, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return v.updateKey(msg)
 	case tea.MouseWheelMsg:
-		v.updateWheel(msg)
+		// The handoff form owns the pointer as it owns the keyboard (#1065):
+		// the board behind it does not move under a form about its selection.
+		if v.handoff == nil {
+			v.updateWheel(msg)
+		}
 		return v, nil
 	case tea.MouseClickMsg:
-		v.updateClick(msg)
+		if v.handoff == nil {
+			v.updateClick(msg)
+		}
 		return v, nil
 	}
 	return v, nil

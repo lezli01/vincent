@@ -4232,6 +4232,13 @@ off** — press `M`, or hold shift while dragging, which most terminals treat as
 `mouse off — native selection works; M turns it back on` — until your next
 key.
 
+What looks clickable is: a row of the command palette or the project picker
+runs it; a task card's first click selects it and a second opens it, and a
+group's header folds or opens; on Settings a category, a setting and its
+`−`/`+` stepper; on the wide new-task form a workflow card and the
+`[ create task ]` button. The other popups stay keyboard-only, and a click
+behind a form never reaches the screen under it.
+
 Paste normally arrives as a bracketed paste from your terminal's own binding
 (`Cmd+V`, `Ctrl+Shift+V`, middle click) and lands in the focused field with no
 key involved. `ctrl+v` is the fallback for terminals that pass the key through

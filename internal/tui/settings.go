@@ -100,6 +100,12 @@ type settingsView struct {
 	saving *settingsChange
 	queued *settingsChange
 
+	// searchRows, navHits and paneHits are the last wide render's layout,
+	// which a click is read against (#1065).
+	searchRows int
+	navHits    []settingsNavHit
+	paneHits   []settingsHit
+
 	note    string
 	noteBad bool
 	// undo is the last saved change and the value it replaced, which `u`
@@ -289,6 +295,8 @@ func (v *settingsView) update(msg tea.Msg) (panel, tea.Cmd) {
 		return v, v.paste(msg.Content)
 	case tea.KeyPressMsg:
 		return v, v.updateKey(msg)
+	case tea.MouseClickMsg:
+		return v, v.updateClick(msg)
 	}
 	return v, nil
 }
@@ -699,4 +707,61 @@ func (v *settingsView) changedIn(category int) int {
 		}
 	}
 	return n
+}
+
+// settingsNavHit is one category's rows in the list on the left.
+type settingsNavHit struct {
+	y0, y1, category int
+}
+
+// settingsHit is one drawn line of a setting: where it is, which setting, and
+// its text, so a click on its stepper's − or + can be told from one on its
+// label.
+type settingsHit struct {
+	y, x0 int
+	path  string
+	text  string
+}
+
+// updateClick is a click on the wide layout (#1065): a category selects it,
+// a setting selects it, and a click on the selected setting's − or +
+// changes it as ←/→ do.
+func (v *settingsView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
+	if msg.Button != tea.MouseLeft || v.form != nil || !v.frameless() {
+		return nil
+	}
+	if msg.X < settingsNavW {
+		for _, h := range v.navHits {
+			if msg.Y >= h.y0 && msg.Y < h.y1 {
+				v.clearSearch()
+				v.category = h.category
+				v.selectFirst()
+				v.note = ""
+				return nil
+			}
+		}
+		return nil
+	}
+	for _, h := range v.paneHits {
+		if msg.Y != h.y {
+			continue
+		}
+		if h.path == v.selected {
+			if at := msg.X - h.x0; at >= 0 {
+				r := []rune(h.text)
+				if at < len(r) {
+					switch r[at] {
+					case '−':
+						return v.change(-1)
+					case '+':
+						return v.change(1)
+					}
+				}
+			}
+			return nil
+		}
+		v.selected = h.path
+		return nil
+	}
+	return nil
 }
