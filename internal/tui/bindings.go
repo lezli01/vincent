@@ -241,6 +241,8 @@ const (
 	// context because while it is open it owns the keyboard, and its keys are
 	// nothing like the log pane's underneath it.
 	ctxConfigEdit bindingContext = "config editor"
+	// ctxKeyBindings is Settings' key-bindings screen (#1079).
+	ctxKeyBindings bindingContext = "key bindings"
 	// ctxSettings is the Settings screen (task 152).
 	ctxSettings bindingContext = "settings"
 	// ctxStatusLine is the daemon view's status-line flow (task 082), its
@@ -1223,6 +1225,13 @@ var bindings = []binding{
 
 	// The config editor: it owns the keyboard while it is open and prints its
 	// own key line, so these are here to keep ? complete.
+	// The key-bindings screen (#1079) prints its own key line; these keep ?
+	// and the footer honest.
+	{key: "down", label: "move through the operations (↑/↓, pgup/pgdown, home/end)", scope: scopePanel, context: ctxKeyBindings, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "enter", label: "set the operation's key by pressing it — a clash is named before anything is saved", scope: scopePanel, context: ctxKeyBindings, hint: "enter set", priority: 2, noPalette: true},
+	{key: "backspace", label: "put the operation back on its default key", scope: scopePanel, context: ctxKeyBindings, hint: "backspace default", priority: 3, noPalette: true},
+	{op: keymap.FreeText, key: "t", label: "type every binding as one line of operation=key pairs, to paste a whole keymap", scope: scopePanel, context: ctxKeyBindings, priority: 5, noPalette: true, term: termFreeText},
+	{key: "esc", label: "back to Settings", scope: scopePanel, context: ctxKeyBindings, hint: "esc back", priority: 4, noPalette: true},
 	{key: "left", label: "choose a value, for a key with a fixed vocabulary (←/→)", scope: scopePanel, context: ctxConfigEdit, noPalette: true},
 	{key: "enter", label: "apply the change; the daemon validates and writes config.yaml", scope: scopePanel, context: ctxConfigEdit, hint: "enter apply", priority: 1, noPalette: true},
 	{key: "y", label: "confirm a key that decides what the daemon executes or exposes", scope: scopePanel, context: ctxConfigEdit, noPalette: true},

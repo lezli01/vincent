@@ -81,7 +81,7 @@ func (h *configLiveHarness) press(t *testing.T, key string) {
 func (h *configLiveHarness) open(t *testing.T, path string) {
 	t.Helper()
 	h.view.openKey(path)
-	if h.view.form == nil {
+	if h.view.form == nil && h.view.bindings == nil {
 		t.Fatalf("no config key %q", path)
 	}
 }
@@ -191,8 +191,13 @@ func TestConfigEditorTogglesHyperlinks(t *testing.T) {
 func saveKeysThroughRoot(t *testing.T, h *configLiveHarness, m *root, value string) configSavedMsg {
 	t.Helper()
 	h.open(t, "tui.keys")
+	if h.view.bindings == nil {
+		t.Fatal("enter did not open the key-bindings screen")
+	}
+	// The pairs as text, the screen's t (#1079): what the daemon checks.
+	h.view.update(namedKey("t"))
 	if h.view.form == nil {
-		t.Fatal("enter did not open the editor")
+		t.Fatal("t did not open the text editor")
 	}
 	h.view.form.input.SetValue(value)
 	_, cmd := h.view.update(namedKey("enter"))
@@ -649,5 +654,38 @@ func TestConfigEditorShowsAndEditsTheJiraKeys(t *testing.T) {
 	}
 	if strings.Contains(h.file(t), "me@example.com") {
 		t.Error("a refused value reached config.yaml")
+	}
+}
+
+// TestKeyBindingsScreenRebindsThroughTheDaemon is #1079 through the real
+// handlers: a key pressed on the key-bindings screen is written by the daemon
+// and is the key the next press meets.
+func TestKeyBindingsScreenRebindsThroughTheDaemon(t *testing.T) {
+	h := newConfigLive(t)
+	m := newKeysRoot(t, h)
+	h.open(t, "tui.keys")
+	for i, info := range h.view.bindings.ops {
+		if info.Op == keymap.Refresh {
+			h.view.bindings.cursor = i
+		}
+	}
+	h.view.update(namedKey("enter"))
+	_, cmd := h.view.update(synthKey("f5"))
+	if cmd == nil {
+		t.Fatalf("pressing f5 saved nothing: %q", h.view.bindings.note)
+	}
+	saved, ok := cmd().(configSavedMsg)
+	if !ok || saved.err != nil {
+		t.Fatalf("the save answered %#v", saved)
+	}
+	m.Update(saved)
+	if !strings.Contains(h.file(t), "refresh: f5") {
+		t.Errorf("config.yaml was not written:\n%s", h.file(t))
+	}
+	if got := opKey(keymap.Refresh); got != "f5" {
+		t.Errorf("opKey(refresh) = %q after the save, want f5", got)
+	}
+	if h.view.bindings == nil || h.view.bindings.overrides["refresh"] != "f5" {
+		t.Error("the screen did not adopt the saved keymap")
 	}
 }
