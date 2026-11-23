@@ -26,6 +26,7 @@ type trigCreatedMsg struct {
 const (
 	trigCreateRowID = iota
 	trigCreateRowProject
+	trigCreateRowSource
 	trigCreateRowCommand
 	trigCreateRowInterval
 	trigCreateRows
@@ -40,9 +41,27 @@ type trigCreateForm struct {
 	// another project's trigger is made from that project (task 132.12).
 	projectID   int64
 	projectName string
-	saving      bool
-	err         string
+	// source indexes trigCreateSources (#1123): the starter's source.
+	source int
+	saving bool
+	err    string
 }
+
+// trigCreateSource is one source a create can start from, with what its
+// starter does as written. The values are the API's source_type, which
+// refuses anything else.
+type trigCreateSource struct{ value, does string }
+
+var trigCreateSources = []trigCreateSource{
+	{"command", "runs a command on an interval and creates a task per new event it prints"},
+	{"issues", "creates a task when an issue of this project changes here — sync's changes need allowed_actors"},
+	{"schedule", "creates a task on a clock — every hour to start, or a cron expression"},
+	{"github_prs", "creates a task when a pull request merges on the project's GitHub repository"},
+	{"http", "creates a task per event pushed to the daemon, signed with $VINCENT_TRIGGER_SECRET"},
+}
+
+// isCommand reports a command source, the one with a command and interval.
+func (f *trigCreateForm) isCommand() bool { return trigCreateSources[f.source].value == "command" }
 
 func (v *triggersView) openCreate() {
 	f := &trigCreateForm{
@@ -71,7 +90,16 @@ func (f *trigCreateForm) field() *textField {
 }
 
 func (f *trigCreateForm) focusRow(row int) {
-	f.row = wrapIndex(row, trigCreateRows)
+	step := 1
+	if row < f.row {
+		step = -1
+	}
+	row = wrapIndex(row, trigCreateRows)
+	// The command and interval rows are a command source's alone.
+	for !f.isCommand() && (row == trigCreateRowCommand || row == trigCreateRowInterval) {
+		row = wrapIndex(row+step, trigCreateRows)
+	}
+	f.row = row
 	f.id.Blur()
 	f.command.Blur()
 	f.interval.Blur()
@@ -98,6 +126,15 @@ func (v *triggersView) updateCreateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if f.row == trigCreateRowProject {
 		return nil // locked to the selection
 	}
+	if f.row == trigCreateRowSource {
+		switch msg.String() {
+		case "right", "l", " ", "space":
+			f.source = wrapIndex(f.source+1, len(trigCreateSources))
+		case "left", "h":
+			f.source = wrapIndex(f.source-1, len(trigCreateSources))
+		}
+		return nil
+	}
 	fl := f.field()
 	var cmd tea.Cmd
 	*fl, cmd = fl.Update(msg)
@@ -122,12 +159,7 @@ func (v *triggersView) createCmd() tea.Cmd {
 		f.err = "not connected"
 		return nil
 	}
-	req := apiclient.CreateTriggerRequest{
-		ID:           id,
-		ProjectID:    f.projectID,
-		PollInterval: strings.TrimSpace(f.interval.Value()),
-		Command:      strings.Fields(f.command.Value()),
-	}
+	req := f.request(id)
 	f.err, f.saving = "", true
 	client := v.client
 	return func() tea.Msg {
@@ -155,4 +187,15 @@ func (v *triggersView) applyCreated(msg trigCreatedMsg) tea.Cmd {
 	cmd := v.openFormOn(msg.id, msg.result.File, msg.result.Version)
 	v.note = "created " + msg.id + " — disabled until you enable it"
 	return tea.Batch(v.loadCmd(), cmd)
+}
+
+// request is what the form sends for id: the poll fields only for a command
+// source, which is the one that has them.
+func (f *trigCreateForm) request(id string) apiclient.CreateTriggerRequest {
+	req := apiclient.CreateTriggerRequest{ID: id, ProjectID: f.projectID, SourceType: trigCreateSources[f.source].value}
+	if f.isCommand() {
+		req.PollInterval = strings.TrimSpace(f.interval.Value())
+		req.Command = strings.Fields(f.command.Value())
+	}
+	return req
 }

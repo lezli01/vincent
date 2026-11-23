@@ -872,3 +872,38 @@ func TestTriggerListPeeksAnInvalidFilesProject(t *testing.T) {
 		}
 	}
 }
+
+// #1123: a create picks its source, and each starter it writes loads; a
+// source the create does not offer, and the poll fields on another source,
+// are refused before anything is written.
+func TestTriggerCreateTakesASourceType(t *testing.T) {
+	h := newTriggerHarness(t)
+	for _, typ := range trigger.StarterSourceTypes() {
+		id := "from-" + strings.ReplaceAll(typ, "_", "-")
+		resp, body := h.doJSON(t, http.MethodPost, "/v1/triggers", map[string]any{
+			"id": id, "project_id": h.projectID, "source_type": typ,
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create %s: status %d: %s", typ, resp.StatusCode, body)
+		}
+		src, err := os.ReadFile(filepath.Join(h.dir, id+".yaml"))
+		if err != nil {
+			t.Fatalf("read %s: %v", id, err)
+		}
+		d, errs := trigger.Parse(src, id)
+		if len(errs) > 0 || d.Source.Type != typ {
+			t.Errorf("the %s starter: errors %v, type %v\n%s", typ, errs, d, src)
+		}
+	}
+	resp, body := h.doJSON(t, http.MethodPost, "/v1/triggers", map[string]any{
+		"id": "old", "project_id": h.projectID, "source_type": trigger.SourceGitHubIssues,
+	})
+	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
+	resp, body = h.doJSON(t, http.MethodPost, "/v1/triggers", map[string]any{
+		"id": "mixed", "project_id": h.projectID, "source_type": trigger.SourceSchedule, "command": []string{"x"},
+	})
+	wantError(t, resp, body, http.StatusBadRequest, CodeValidationFailed)
+	if _, err := os.Stat(filepath.Join(h.dir, "old.yaml")); err == nil {
+		t.Error("a refused create wrote a file")
+	}
+}

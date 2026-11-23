@@ -1758,7 +1758,7 @@ are **not** here — those come from [`GET /v1/agents`](#daemon).
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/v1/triggers` | Every file under `{config_dir}/triggers/`, broken ones included → `{ enabled, dir, triggers[] }` |
-| `POST` | `/v1/triggers` | `{ id, project_id, poll_interval?, command[]?, workflow?, title? }` → `201` with the written file and its version. Writes a disabled starter |
+| `POST` | `/v1/triggers` | `{ id, project_id, source_type?, poll_interval?, command[]?, workflow?, title? }` → `201` with the written file and its version. Writes a disabled starter of `source_type` — `command` (the default), `issues`, `schedule`, `github_prs` or `http` — each one that loads as written; `poll_interval` and `command` are a command source's only |
 | `GET` | `/v1/triggers/schema` | The trigger schema as data: top-level fields, the source and action variants, and which values are dangerous |
 | `POST` | `/v1/triggers/validate` | `{ source, id? }` → `{ valid, errors[] }`. Writes nothing |
 | `GET` | `/v1/triggers/{id}` | The list row plus `source` and `definition` |

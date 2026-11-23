@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lezli01/vincent/internal/store"
@@ -214,8 +216,10 @@ func (s *Server) handleTriggerValidate(w http.ResponseWriter, r *http.Request) {
 // collects. The daemon renders the starter — disabled, with no on_fire line —
 // and the form edits it from there.
 type triggerCreateRequest struct {
-	ID           string   `json:"id"`
-	ProjectID    int64    `json:"project_id"`
+	ID        string `json:"id"`
+	ProjectID int64  `json:"project_id"`
+	// SourceType picks the starter's source (#1123); empty is command.
+	SourceType   string   `json:"source_type,omitempty"`
 	PollInterval string   `json:"poll_interval,omitempty"`
 	Command      []string `json:"command,omitempty"`
 	Workflow     string   `json:"workflow,omitempty"`
@@ -247,11 +251,23 @@ func (s *Server) handleTriggerCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, CodeValidationFailed, "project_id is required")
 		return
 	}
+	if req.SourceType != "" && !slices.Contains(trigger.StarterSourceTypes(), req.SourceType) {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"source_type must be one of "+strings.Join(trigger.StarterSourceTypes(), ", "))
+		return
+	}
+	// The poll fields are a command source's; on another they would be keys
+	// the starter cannot write and the trigger would refuse.
+	if req.SourceType != "" && req.SourceType != trigger.SourceCommand && (req.PollInterval != "" || len(req.Command) > 0) {
+		writeError(w, http.StatusBadRequest, CodeValidationFailed,
+			"poll_interval and command are only for a command source")
+		return
+	}
 	if !s.projectExists(w, r, req.ProjectID) {
 		return
 	}
 	version, err := s.deps.TriggerWriter.Create(req.ID, trigger.Starter(trigger.StarterSpec{
-		ID: req.ID, Project: req.ProjectID, PollInterval: req.PollInterval,
+		ID: req.ID, Project: req.ProjectID, SourceType: req.SourceType, PollInterval: req.PollInterval,
 		Command: req.Command, Workflow: req.Workflow, Title: req.Title,
 	}))
 	if err != nil {
