@@ -560,6 +560,11 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 		return nil, true
 	case opKey(keymap.Comment):
 		return v.openComment(), true
+	case opKey(keymap.NextItem):
+		// The neighbouring issue in the board's order (#1077).
+		return stepItemCmd(v.issue.ID, 1, true), true
+	case opKey(keymap.PrevItem):
+		return stepItemCmd(v.issue.ID, -1, true), true
 	case opKey(keymap.Chat):
 		// A chat on this issue's main worktree, or the one already holding
 		// it (task 140.9).
