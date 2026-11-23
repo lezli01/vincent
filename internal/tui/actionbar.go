@@ -117,6 +117,9 @@ func (t taskActions) offers(action string) bool {
 	if action == apiclient.ActionChat {
 		return t.offersChat()
 	}
+	if action == actionDiagnose {
+		return t.offersDiagnose()
+	}
 	return t.has(action)
 }
 

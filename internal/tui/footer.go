@@ -586,6 +586,13 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 		// hands back the task, and it is on the line anyway: a locked task
 		// offers `c cancel` or nothing, and the chat holding the lock is the
 		// one thing that explains why (task 119).
+		// `Q` beside it on a stopped task (#1087), and only while no chat
+		// holds the task: then the key reopens that chat, which `T` says.
+		if target.offersDiagnose() && target.openChatID == 0 && opKey(keymap.Diagnose) != "" {
+			segs = append(segs, footerSeg{
+				text: styleKey.Render(opKey(keymap.Diagnose)) + " ask why", key: opKey(keymap.Diagnose), counts: true, droppable: true,
+			})
+		}
 		if target.offersChat() && opKey(keymap.Chat) != "" {
 			label := "chat"
 			if target.openChatID != 0 {

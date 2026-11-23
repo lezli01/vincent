@@ -505,6 +505,10 @@ var bindings = []binding{
 	// that chat instead (taskActions.offersChat), so the row is gated there
 	// rather than on the action alone.
 	{op: keymap.Chat, key: "T", label: "chat with an agent in this task's worktree — the task stays locked until the chat is closed; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 10},
+	// #1087: `T` on a stopped task with the question already asked. Gated on
+	// actionDiagnose, which taskActions.offers answers: a blocked or aborted
+	// task that offers `chat`, or holds one open, which the key reopens.
+	{op: keymap.Diagnose, key: "Q", label: "ask why it stopped — starts an agent in this task's worktree with the failure as its first message; the task stays locked until the chat is closed", scope: scopeTaskAction, action: actionDiagnose, priority: 10},
 	// Task 161 decision 7: `T` with a choice first. Offered exactly where
 	// `chat` is, so it carries the same action.
 	{op: keymap.ChatWith, key: "alt+t", label: "chat with… — choose the agent, model and effort, and type a first message, before the chat opens; with a chat already open, reopen it", scope: scopeTaskAction, action: apiclient.ActionChat, priority: 11},
