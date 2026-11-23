@@ -522,9 +522,13 @@ func (m *root) updatePaste(text string) tea.Cmd {
 // updateMouseClick is §15's click scope: a footer hint fires its key, the
 // header's `◆` segment opens the project picker (task 132.4), a main-tab
 // strip label switches to its tab (task 136.3), the rest of the header is
-// inert, and everything else lands in the active screen's body. Popups stay keyboard; right-clicks
-// and the rest are out of scope.
+// inert, and everything else lands in the active screen's body. The palette
+// and the project picker take a click on a row (#1065); the other popups stay
+// keyboard; right-clicks and the rest are out of scope.
 func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	if msg.Button == tea.MouseLeft && !m.notice.active && !m.help && (m.palette != nil || m.projPick != nil) {
+		return m.updatePopupClick(msg)
+	}
 	if msg.Button != tea.MouseLeft || m.notice.active || m.popupOpen() || m.help {
 		return m, nil
 	}
@@ -2979,4 +2983,29 @@ func (m *root) updateClipboardResult(msg clipboardResultMsg) tea.Cmd {
 		cmds = append(cmds, tea.SetClipboard(msg.osc))
 	}
 	return tea.Batch(cmds...)
+}
+
+// updatePopupClick is a click while the palette or the project picker is up
+// (#1065): a click on a row runs it as enter does; anywhere else is
+// nothing, so a stray click cannot reach the screen under the popup.
+func (m *root) updatePopupClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	top := m.chromeTop()
+	pw, ph := popupBox(m.width, m.height, top)
+	x0 := max((m.width-pw)/2, 0)
+	if msg.X < x0 || msg.X >= x0+pw || msg.Y < top || msg.Y >= top+ph {
+		return m, nil
+	}
+	y := msg.Y - top
+	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+	if m.palette != nil {
+		if i, ok := m.palette.clickLine(y); ok {
+			m.palette.cursor = i
+			return m.updatePaletteKey(enter)
+		}
+		return m, nil
+	}
+	if m.projPick.clickLine(y) {
+		return m.updateProjectPickerKey(enter)
+	}
+	return m, nil
 }

@@ -279,7 +279,12 @@ type newTask struct {
 	// err is a failure that belongs to no single row.
 	err        string
 	submitting bool
-	touched    bool
+	// wideText, wideListW, wideFormEnd and wfHits are the last wide
+	// render's layout, which a click is read against (#1065).
+	wideText               []string
+	wideListW, wideFormEnd int
+	wfHits                 []ntWorkflowHit
+	touched                bool
 
 	width, height int
 	// detailWidth is the width the last render laid the form out in: the
@@ -601,6 +606,8 @@ func (n *newTask) update(msg tea.Msg) (panel, tea.Cmd) {
 		n.width, n.height = msg.Width, msg.Height
 		n.desc.SetWidth(max(20, msg.Width-8))
 		return n, nil
+	case tea.MouseClickMsg:
+		return n, n.updateClick(msg)
 	case newTaskMsg:
 		return n, n.open(msg.projectID)
 	case newTaskFromPullMsg:

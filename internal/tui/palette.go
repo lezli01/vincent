@@ -27,6 +27,9 @@ type palette struct {
 	// page is the last render's layout, which pgup and pgdown move
 	// through (task 135.10 decision 5).
 	page popupPage
+	// listTop is the popup line the list's window starts on, under the
+	// frame and the input, so a click finds its row (#1065).
+	listTop int
 }
 
 // paletteEntry is one runnable line. key is empty for the palette-only
@@ -263,6 +266,7 @@ func (p *palette) render(w, h int) string {
 	}
 	shown, page := popupWindow(rows, entryRow, cursorRow, list)
 	p.page = page
+	p.listTop = 1 + len(lines) // the frame's top edge, then the input
 	lines = append(lines, shown...)
 	if reserve {
 		full := wrapText(m[cursor].label, inner-1, wrapOpts{prefix: " ", indent: 1, maxLines: paletteReserve})
@@ -302,4 +306,10 @@ type gotoTaskTabMsg struct{ tab taskViewTab }
 
 func gotoTaskTab(tab taskViewTab) tea.Cmd {
 	return func() tea.Msg { return gotoTaskTabMsg{tab: tab} }
+}
+
+// clickLine is a click on the popup's line y (0 is the frame's top edge):
+// the entry on it, which a click selects and runs as enter does.
+func (p *palette) clickLine(y int) (int, bool) {
+	return p.page.entryOnLine(y - p.listTop)
 }

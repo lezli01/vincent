@@ -587,8 +587,9 @@ func (b *board) route(msg tea.Msg) (panel, tea.Cmd) {
 		}
 		return b, nil
 	case tea.MouseClickMsg:
-		if b.cards && msg.Button == tea.MouseLeft {
-			b.cardClick(msg.X, msg.Y)
+		if b.cards && msg.Button == tea.MouseLeft && b.cardClick(msg.X, msg.Y) {
+			// A second click on the selected card opens it, as enter does.
+			return b.update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		}
 		return b, nil
 	case viewActivatedMsg:
