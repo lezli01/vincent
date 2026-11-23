@@ -1592,7 +1592,9 @@ elsewhere. Renaming the chat takes it out of this.
 
 When a claude step asks something mid-run, the task enters `awaiting_input` and
 gets a badge on its row plus a footer hint. Press `enter` on the row to open the
-answer form.
+answer form. In the task's workspace `enter` opens it from every tab while the
+question is pending, so the tabs' own `enter` hints give way to `enter answer`
+until it is answered.
 
 ![The answer form over a task waiting on input: a single-choice question with
 one option picked, and a multi-select question below it with one box ticked,

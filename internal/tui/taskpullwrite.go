@@ -194,6 +194,12 @@ func (t *taskView) pullWriteAvailable(key string) (hint string, available, ok bo
 func (t *taskView) liveBindings(rows []binding) []binding {
 	out := make([]binding, 0, len(rows))
 	for _, b := range rows {
+		// While a question is pending, enter opens the answer on every tab
+		// (#1062): the tab's own enter — unfold, the output link — cannot be
+		// reached, and the footer's `enter answer` says what it does.
+		if b.key == "enter" && t.detail.form != nil {
+			continue
+		}
 		if b.context == ctxTaskOverview {
 			var ok bool
 			if b, ok = t.overviewLiveBindings(b); !ok {
