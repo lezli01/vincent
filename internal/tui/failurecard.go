@@ -60,6 +60,9 @@ type failureCard struct {
 	// status is what the attempt last said about itself: neutral, quoted,
 	// and never the reason (§5.4, task 036 decision 6).
 	status string
+	// repeat says the failure is one the step has had before, attempt
+	// after attempt (#1067): "same failure as attempts 2–5".
+	repeat string
 	blame  laneBlame
 	blamed bool
 }
@@ -109,6 +112,9 @@ func deriveFailureCard(task apiclient.TaskDetail, blame laneBlame, blamed bool) 
 	}
 	if c.hasRun {
 		c.status = statusOf(c.run)
+		if !c.stepless {
+			c.repeat = repeatedFailure(task.Steps, c.run)
+		}
 	}
 	if c.status == "" && task.StatusMessage != nil {
 		c.status = strings.TrimSpace(*task.StatusMessage)
@@ -731,6 +737,9 @@ func (t *taskView) cardParts(c failureCard, actions []cardAction, width, n int) 
 		if m := reasons.Explain(c.reason).Meaning; m != "" {
 			p.meaning = wrapText(m, width, hanging("    "))
 		}
+	}
+	if c.repeat != "" {
+		p.meaning = append(p.meaning, ansi.Truncate("    "+styleWarn.Render(ic("↻ ")+c.repeat), max(width, 1), "…"))
 	}
 	// A fan-out's evidence is the lane it blames, drawn below.
 	if !c.aborted && !c.blamed {

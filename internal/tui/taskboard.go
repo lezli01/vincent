@@ -74,6 +74,17 @@ func taskColumnOf(state string) int {
 	return taskColumnFinished
 }
 
+// taskColumnOfTask is the column a task's card is drawn in: its state's,
+// except that a fan-out parent one of whose lanes waits on a human is in
+// Needs you (#1067). Folded, its lanes are not on the board, and the parent
+// is the only card that can say so.
+func taskColumnOfTask(t apiclient.Task) int {
+	if keepsAttention(t) {
+		return taskColumnNeedsYou
+	}
+	return taskColumnOf(t.State)
+}
+
 // taskCardGroup is one issue's tasks inside one column.
 type taskCardGroup struct {
 	key    string
@@ -104,7 +115,7 @@ func (b *board) cardGroups() [taskColumnCount][]taskCardGroup {
 	sortTasks(tasks)
 	var byColumn [taskColumnCount][]apiclient.Task
 	for _, t := range tasks {
-		c := taskColumnOf(t.State)
+		c := taskColumnOfTask(t)
 		byColumn[c] = append(byColumn[c], t)
 	}
 	var out [taskColumnCount][]taskCardGroup
@@ -776,6 +787,20 @@ func taskCardStatus(t apiclient.Task, now time.Time) (string, lipgloss.Style) {
 	case stateAwaitingGate:
 		return attentionBadge + " needs your approval", styleWarn
 	case stateAwaitingChildren:
+		if needs := lanesNeedYou(t); needs.any() {
+			// What the lanes need leads, in the attention colour, with the
+			// key that hangs the lanes under the card beside it, then the
+			// done count, which is what a narrow card cuts first (#1067).
+			line := needs.text() + " (L)"
+			if c := t.Children; c != nil {
+				line += fmt.Sprintf(" · %d of %d done", c.Settled, c.Total)
+			}
+			style := styleWarn
+			if needs.blocked > 0 {
+				style = styleBad
+			}
+			return line, style
+		}
 		if c := t.Children; c != nil {
 			return fmt.Sprintf(ic("⑂ %d of %d lanes done"), c.Settled, c.Total), toneMagenta
 		}
@@ -1010,7 +1035,7 @@ func (b *board) issueTally(issue int64, inner int) string {
 	var counts [taskColumnCount]int
 	for _, t := range b.projectTasks() {
 		if t.Issue != nil && t.Issue.ID == issue {
-			counts[taskColumnOf(t.State)]++
+			counts[taskColumnOfTask(t)]++
 		}
 	}
 	words := [taskColumnCount]string{"need you", "running", "queued", "finished"}

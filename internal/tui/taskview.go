@@ -202,6 +202,11 @@ type taskView struct {
 	// selector, the Pull Request tab's rows, the `l` jump — walks merge order.
 	lanes       []apiclient.Task
 	lanesTaskID int64
+	// laneAts is where each unsettled lane of a parent waiting on its lanes
+	// is — step, attempt, a repeated failure (#1067) — keyed by lane and
+	// read once per change of its row; laneAtsParent is the parent it is for.
+	laneAts       map[int64]laneAt
+	laneAtsParent int64
 	// laneSel indexes lanes for the Output pane's lane selector. -1 is the
 	// task's own output, which is where the pane starts and returns to.
 	laneSel int
@@ -471,7 +476,10 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		t.applyLanes(msg)
 		return t, nil
 	case taskLaneListMsg:
-		return t, t.applyLaneList(msg)
+		return t, tea.Batch(t.applyLaneList(msg), t.syncLaneAts())
+	case laneAtMsg:
+		t.applyLaneAt(msg)
+		return t, nil
 	case taskLanePullsMsg:
 		t.applyLanePulls(msg)
 		return t, nil

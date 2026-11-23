@@ -214,7 +214,8 @@ and pull request](../assets/tui-task-overview-done.png)
 
 The Tasks tab is a board of four columns, so what needs you is always first:
 
-- **Needs you** — blocked, waiting for an answer, or waiting for approval;
+- **Needs you** — blocked, waiting for an answer, or waiting for approval, and a
+  fan-out parent one of whose lanes is;
 - **Running** — working now, or waiting on its fan-out lanes;
 - **Queued** — waiting for a slot, held until a limit resets, or paused;
 - **Finished** — done or cancelled.
@@ -224,7 +225,9 @@ The Tasks tab is a board of four columns, so what needs you is always first:
 Each card shows the task's id, workflow and age, two lines of title, one dot per
 workflow step with the step it has reached, a linked pull request as `⇡#123`, and
 one status line that says what is happening, such as `! needs your approval` or
-`⑂ 2 of 3 lanes done`. The selected card has a thick border.
+`⑂ 2 of 3 lanes done`. A parent whose lane needs you leads with what the lanes
+need, in the attention colour, and names the key that hangs them under the card:
+`! 1 lane blocked (L) · 2 of 4 done`. The selected card has a thick border.
 
 | Key | Does |
 |---|---|
@@ -478,7 +481,10 @@ workspace has already loaded:
   instead. A fan-out parent waiting on its lanes lists the
   ones that are blocked or waiting on you under *Lanes that need you*, `l`
   opens the first, and its link is its steps — the parent's own transcript is
-  empty.
+  empty. Under *Waiting on* it names the first few lanes still at work. Every
+  lane row says the step and attempt the lane is on, and marks a step failing
+  attempt after attempt for the same reason: `attempt 6 · attempts 2–5 each
+  failed: check failed`.
 - **Blocked, waiting for an answer or at a gate, or aborted** — what it needs:
   the reason, in words and as its code, the question or the gate's
   instructions, and every action the daemon offers with its key and a line on
@@ -500,7 +506,8 @@ line says what stopped: `✗ Step 3 verify · attempt 2 · check failed
 check_failed` — the step, the loop iteration and item or the lane when there
 is one, the attempt, and the reason in words with its code beside it. `✗` is a
 failure, `⚠` a fan-out one of its lanes stopped, `■` an aborted task, so the
-card reads without colour. Below it:
+card reads without colour. Under the reason's meaning, a step that has failed
+the same way before says so: `↻ same failure as attempts 2–5`. Below it:
 
 - **Evidence** — what the failing attempt's transcript says, fetched once
   when the card first shows that attempt. It opens with the command that
@@ -1307,7 +1314,9 @@ parent, so the parent's job is to be the way in.
 Lanes are kept off the board on purpose, because a sixty-four-lane tree would
 bury the work you actually asked for. The parent's card counts them instead, as
 in `⑂ 2 of 3 lanes done`, and its Overview names the lanes that need you. Lanes
-stay out of the board's counts and out of the `!` attention badge.
+stay out of the board's counts. A parent with a lane that needs you is counted
+once in the `!` attention badge, sits in **Needs you**, and is where `!` lands;
+its Overview opens the lane with `l`.
 
 ![A fan-out parent's Overview: waiting on one of its three lanes, with the
 handlers lane named as the one awaiting approval and `l` to open

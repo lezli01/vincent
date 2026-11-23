@@ -47,19 +47,51 @@ func needsAttention(state string) bool {
 // needs a human, or a fan-out parent one of whose lanes does. The parent is
 // kept on its served rollup alone, so a daemon that serves no `children` on
 // list rows keeps it out rather than guessing.
+//
+// Since #1067 it is also what puts a task in the board's Needs you column,
+// what `!` counts and lands on, and what leads a parent's card with the
+// lanes' needs: one predicate, so a parent is never kept under `H` with
+// nothing on it saying why.
 func keepsAttention(t apiclient.Task) bool {
-	if needsAttention(t.State) {
-		return true
+	return needsAttention(t.State) || lanesNeedYou(t).any()
+}
+
+// laneNeeds is how many of a fan-out parent's lanes wait on a human, by what
+// they wait for.
+type laneNeeds struct{ blocked, question, gate int }
+
+func (n laneNeeds) any() bool { return n.blocked+n.question+n.gate > 0 }
+
+// lanesNeedYou reads a parked parent's served rollup. by_state and the id
+// lists come from the same walk; the larger is kept, as childrenBreakdown
+// does, so a daemon serving only one still reports what a human must act
+// on. Zero for every other task, and for a parent served without a rollup.
+func lanesNeedYou(t apiclient.Task) laneNeeds {
+	r := t.Children
+	if t.State != stateAwaitingChildren || r == nil {
+		return laneNeeds{}
 	}
-	if t.State != stateAwaitingChildren || t.Children == nil {
-		return false
+	return laneNeeds{
+		blocked:  max(r.ByState[stateBlocked], len(r.Blocked)),
+		question: r.ByState[stateAwaitingInput],
+		gate:     max(r.ByState[stateAwaitingGate], len(r.AwaitingGate)),
 	}
-	for _, st := range []string{stateBlocked, stateAwaitingInput, stateAwaitingGate} {
-		if t.Children.ByState[st] > 0 {
-			return true
-		}
+}
+
+// text is what the lanes need, worst first and short enough for a card:
+// `! 1 lane blocked · 2 lanes to approve`.
+func (n laneNeeds) text() string {
+	var parts []string
+	if n.blocked > 0 {
+		parts = append(parts, plural(n.blocked, "lane", "lanes")+" blocked")
 	}
-	return false
+	if n.question > 0 {
+		parts = append(parts, plural(n.question, "lane asks you", "lanes ask you"))
+	}
+	if n.gate > 0 {
+		parts = append(parts, plural(n.gate, "lane", "lanes")+" to approve")
+	}
+	return attentionBadge + " " + strings.Join(parts, " · ")
 }
 
 // attentionTasks keeps the tasks keepsAttention does, in order.
@@ -200,7 +232,7 @@ func countRunning(tasks []apiclient.Task) int {
 func countAttention(tasks []apiclient.Task) int {
 	n := 0
 	for _, t := range tasks {
-		if needsAttention(t.State) {
+		if keepsAttention(t) {
 			n++
 		}
 	}
