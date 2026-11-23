@@ -333,6 +333,8 @@ var fixed = []Fixed{
 	{"issue", "tab", "move between the Issue and Work tabs"},
 	{"issue", "]", "move to the next tab"},
 	{"daemon", "f", "follow the end of the log again"},
+	{"daemon", "h", "show or hide the successful request lines"},
+	{"daemon", "r", "restart the daemon"},
 	{"daemon", "down", "scroll the log"},
 	{"daemon", "tab", "move between the config list and the log pane"},
 	{"daemon", "enter", "edit the selected configuration key"},

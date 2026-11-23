@@ -1139,6 +1139,11 @@ var bindings = []binding{
 	// Daemon.
 	{op: keymap.Refresh, key: "R", label: "re-read the daemon info, the config and the log", scope: scopePanel, context: ctxDaemon, hint: "R refresh", priority: 1, term: termRefresh},
 	{key: "f", label: "follow the end of the log again (f/G)", scope: scopePanel, context: ctxDaemon, hint: "f follow", priority: 2},
+	// #1081: the log without this TUI's own polling, a search, and a
+	// restart that asks first.
+	{key: daemonRequestsKey, label: "show or hide the successful request lines — most of them this TUI's own polling", scope: scopePanel, context: ctxDaemon, hint: "h requests", priority: 5},
+	{op: keymap.Filter, key: "/", label: "search the log", scope: scopePanel, context: ctxDaemon, hint: "/ search", priority: 5, term: termFilter},
+	{key: daemonRestartKey, label: "restart the daemon (asks first; running steps are interrupted and re-run)", scope: scopePanel, context: ctxDaemon, hint: "r restart", priority: 9},
 	{key: "down", label: "scroll the log (↑/↓)", scope: scopePanel, context: ctxDaemon, hint: "↑/↓ scroll", priority: 3},
 	// The config block became editable in task 060. tab is what says whether
 	// ↑/↓ mean the config list or the log pane — the view has two scrollable

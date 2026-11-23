@@ -395,6 +395,15 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateConnected(msg)
 	case projectListMsg:
 		return m, m.updateProjectList(msg)
+	case restartDaemonMsg:
+		// #1081: stop the daemon, then the connect flow starts a new one.
+		return m, stopDaemonCmd(m.dataDir)
+	case daemonStoppedMsg:
+		cmd := m.deliver(viewDaemon, msg)
+		if msg.err != nil {
+			return m, cmd
+		}
+		return m, tea.Batch(cmd, m.restartConnect())
 	case probeFailedMsg:
 		m.phase = phaseStarting
 		m.setDataDir(msg.dataDir)

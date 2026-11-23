@@ -3781,8 +3781,16 @@ on you, or fan-out lanes. On a terminal under 30 rows the adapters stay one line
 each, so the log keeps its room.
 
 Version, uptime, a digest of the config in effect, the adapters detected, and a
-live tail of the daemon log. The view reports, it does not act — `vincent daemon stop` owns
-stopping the daemon, and a TUI that auto-started one has no business killing it.
+live tail of the daemon log. The one thing it does to the daemon is `r`, a
+restart: it asks first, stops the daemon gracefully the way `vincent daemon
+stop` does — running steps are interrupted, and re-run when the new daemon
+recovers them — and then starts a new one as the TUI does at launch.
+Stopping it for good stays with `vincent daemon stop`.
+
+The log hides the successful `http request` lines, which are mostly this
+TUI's own polling; the pane's first line counts them, and `h` shows them. A
+request that failed stays in sight. `/` narrows the log to lines containing
+what you type.
 
 ![The daemon dashboard with the log holding the keys: the daemon and its work,
 the config and the database on top, then a card for each adapter — claude behind
@@ -3799,6 +3807,9 @@ is changed.
 | `↑` / `↓` | Scroll the log |
 | `R` | Re-read the daemon info, the config and the log |
 | `f` / `G` | Follow the end of the log again |
+| `h` | Show or hide the successful request lines |
+| `/` | Search the log — `enter` keeps the search, `esc` clears it |
+| `r` | Restart the daemon — asks first |
 | `i` | Make vincent claude's status line, or remove it — the exact JSON is shown first |
 | `S` | Install the agent skills vincent publishes — the exact command is shown first |
 | `U` | Set up Nerd Font icons — what gets downloaded is shown first |

@@ -254,7 +254,7 @@ var catalog = []Info{
 	}},
 	{Op: Filter, Default: "/", Meaning: "filter", Kind: KindTerm, Surfaces: []Surface{
 		"settings", "new task", "task table", "archived tasks", "archived chats", "chats", "projects", "pull requests", "triggers",
-		"issues", "chat conversation",
+		"issues", "chat conversation", "daemon",
 	}},
 	{Op: Lane, Default: "l", Meaning: "open a fan-out lane", Kind: KindTerm, Surfaces: []Surface{
 		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request",
