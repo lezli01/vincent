@@ -157,6 +157,12 @@ func newIssueForm(client *apiclient.Client, exec execFunc, original *apiclient.I
 	} else {
 		f.idemKey = newIdempotencyKey()
 		f.cursor = ifTitle
+		// A new issue starts with its title taking text (#1063): typing
+		// was ignored until enter, apart from the few letters the rows
+		// answer. The focus command is the cursor's blink, not needed for
+		// the field to take keys.
+		f.editing = true
+		_ = f.title.Focus()
 	}
 	return f
 }

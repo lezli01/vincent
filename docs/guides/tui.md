@@ -2320,7 +2320,8 @@ this task's issue" row opens the issue; `esc` there comes back to the task.
 `n` and `i` open the **issue form** over the screen you are on: the project
 (only when filing a new one, and read-only — it is the selected project, and
 switching project re-aims the form), title, description, labels, kind and
-priority, then save. `enter` edits a field or opens its list; `e` on the description
+priority, then save. A new issue opens typing into its title; `enter` or `esc`
+leaves the field. `enter` edits a field or opens its list; `e` on the description
 hands it to `$EDITOR`. The labels list offers the project's labels and ticks
 the ones set; `t` in it types a new one, and `t` in the kind list types a kind
 it does not suggest. Priority is `none`, `urgent`, `high`, `medium` or `low`.
