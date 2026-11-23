@@ -126,6 +126,8 @@ type issuesView struct {
 
 	client *apiclient.Client
 	now    func() time.Time
+	// sortOrder is the order `z` chose (#1075), "" for the daemon's.
+	sortOrder string
 	// syncAsked is when `S` asked for a sync, zero when nothing is awaited:
 	// the listings after it say how the pass ended (#1069).
 	syncAsked time.Time
@@ -189,7 +191,7 @@ type issuesView struct {
 
 func newIssuesView() *issuesView {
 	fi := newTextField()
-	fi.SetPlaceholder("filter by id, title, label or kind")
+	fi.SetPlaceholder("filter by id, title, label, kind, priority, author or source")
 	fi.SetPrompt("/")
 	v := &issuesView{now: time.Now, filter: fi, showDone: true, page: 1, w: newIssueWrites()}
 	v.reload = v.loadCmd
@@ -616,6 +618,13 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Scope):
 		v.toggleDone()
 		return v, v.loadCmd()
+	case boardSortKey:
+		// Cycles the order within the lanes (#1075); the selection is kept
+		// by id.
+		v.sortOrder = nextSort(issueSorts, v.sortOrder)
+		v.reselect()
+		v.setNote("sorted by "+valueOr(v.sortOrder, "the daemon's order"), false)
+		return v, nil
 	case "left":
 		v.moveLane(-1)
 		return v, nil
@@ -817,13 +826,24 @@ func issueURL(iss apiclient.Issue) string {
 
 func (v *issuesView) setNote(text string, bad bool) { v.note, v.noteBad = text, bad }
 
-// issueMatches is `/`'s client-side match: id, title, labels and kind. The
-// project's name is no longer a term (task 132.11): every row is in it.
+// issueMatches is `/`'s client-side match: id, title, labels, kind, and —
+// since #1075 — the source reference (`MOB-7`, `octo/web#142`), the author
+// and the priority's word. The project's name is not a term (task 132.11):
+// every row is in it.
 func issueMatches(iss apiclient.Issue, q string) bool {
 	id := strconv.FormatInt(iss.ID, 10)
-	hay := strings.ToLower(strings.Join(append([]string{
-		"#" + id, id, iss.Title, iss.Kind,
-	}, iss.Labels...), " "))
+	fields := []string{"#" + id, id, iss.Title, iss.Kind, iss.Author}
+	if iss.Priority != 0 {
+		fields = append(fields, issuePriorityLabel(iss.Priority))
+	}
+	if s := iss.Source; s != nil {
+		fields = append(fields, s.Ref, s.ShortRef, s.Key)
+	}
+	hay := strings.ToLower(strings.Join(append(fields, iss.Labels...), " "))
+	if strings.HasPrefix(q, "#") {
+		// `#4` is an id: a whole token, so it does not also find `web#41`.
+		return strings.Contains(" "+hay+" ", " "+q+" ")
+	}
 	return strings.Contains(hay, q)
 }
 

@@ -112,7 +112,7 @@ type taskCardHit struct {
 // order, with the tasks that belong to no issue last in every column.
 func (b *board) cardGroups() [taskColumnCount][]taskCardGroup {
 	tasks := slices.Clone(b.shownTasks())
-	sortTasks(tasks)
+	sortBoardTasks(tasks, b.sortOrder)
 	var byColumn [taskColumnCount][]apiclient.Task
 	for _, t := range tasks {
 		c := taskColumnOfTask(t)

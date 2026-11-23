@@ -183,6 +183,10 @@ func (v *issuesView) issueCard(iss apiclient.Issue, w int) []string {
 	if kind := issueKindMark(iss.Kind); kind != "" {
 		head += "  " + kind
 	}
+	if iss.Priority != 0 {
+		// The priority the filter matches, on the card (#1075).
+		head += "  " + issuePriorityStyle(iss.Priority).Render(issuePriorityLabel(iss.Priority))
+	}
 	body := []string{padBetweenCells(head, styleDim.Render(issueAge(v.now(), iss.UpdatedAt)), inner)}
 
 	title := wrapText(iss.Title, inner, wrapOpts{maxLines: 2})
@@ -419,4 +423,15 @@ func (v *issuesView) moveLane(delta int) {
 			return
 		}
 	}
+}
+
+// issuePriorityStyle colours a priority by how pressing it is.
+func issuePriorityStyle(p int) lipgloss.Style {
+	switch p {
+	case 1:
+		return styleBad
+	case 2:
+		return styleWarn
+	}
+	return styleDim
 }

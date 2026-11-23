@@ -492,6 +492,13 @@ func declaredFieldRow(t *testing.T, n *newTask, name string) int {
 // the scrolling itself to the follow and mouse-wheel tests.
 var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxTasks: {
+		"z": func(t *testing.T) {
+			b := taskBoardFixture()
+			b.update(keyPress("z"))
+			if b.sortOrder != "newest" {
+				t.Fatalf("z left the order at %q", b.sortOrder)
+			}
+		},
 		// An echo row (#1073): the board shows `n new`, and the root's own
 		// binding answers it — the board must not claim the key.
 		"n": func(t *testing.T) {
@@ -1529,6 +1536,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxIssues: {
+		"z": func(t *testing.T) {
+			v := issuesFixture()
+			v.update(keyPress("z"))
+			if v.sortOrder != "newest" {
+				t.Fatalf("z left the order at %q", v.sortOrder)
+			}
+		},
 		// T on an issue a chat already holds is a navigation (task 140.9):
 		// the probe needs no daemon to prove the key is handled.
 		"T": func(t *testing.T) {

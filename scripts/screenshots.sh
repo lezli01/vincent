@@ -1652,7 +1652,7 @@ project_id() {
 # PNG like any other, so the check is made here, before vhs runs. TAPE names
 # the tape the check is for, so VINCENT_SHOTS_ONLY skips the others' checks.
 owns() {
-  local project="$1" kind="$2" needle="$3" pid rows n
+  local project="$1" kind="$2" needle="$3" pid rows n tok=0
   [[ -n "${VINCENT_SHOTS_ONLY:-}" && "${VINCENT_SHOTS_ONLY}" != "$4" ]] && return 0
   pid="$(project_id "$project")"
   case "$kind" in
@@ -1660,7 +1660,9 @@ owns() {
       rows="$(api GET "/tasks?project_id=$pid")"
       hay='[(.id | tostring), .title, .state,
             ({awaiting_input: "awaiting input", awaiting_gate: "awaiting approval",
-              awaiting_children: "waiting on lanes"}[.state] // .state)]'
+              awaiting_children: "waiting on lanes"}[.state] // .state),
+            .workflow, .step_name, .branch_name]
+           + (if .github_pull then ["#\(.github_pull.number)", "pr \(.github_pull.number)"] else [] end)'
       ;;
     chat)
       rows="$(api GET "/chats?project_id=$pid" | jq '.chats')"
@@ -1668,11 +1670,18 @@ owns() {
       ;;
     issue)
       rows="$(api GET "/issues?project_id=$pid")"
-      hay='["#\(.id)", (.id | tostring), .title, .kind] + (.labels // [])'
+      hay='["#\(.id)", (.id | tostring), .title, .kind, .author,
+            ({"1": "urgent", "2": "high", "3": "medium", "4": "low"}[(.priority // 0) | tostring])]
+           + (if .source then [.source.ref, .source.short_ref, .source.key] else [] end)
+           + (.labels // [])'
+      tok=1 # a `#N` needle is an id: a whole token, as the issues filter takes it
       ;;
     *) fail "owns: unknown kind $kind" ;;
   esac
-  n="$(jq --arg n "$needle" "[.[] | select($hay | map(. // \"\") | join(\" \") | ascii_downcase | contains(\$n | ascii_downcase))] | length" <<<"$rows")"
+  n="$(jq --arg n "$needle" --argjson tok "$tok" "[.[] | select(($hay | map(. // \"\") | join(\" \") | ascii_downcase) as \$h
+    | (\$n | ascii_downcase) as \$q
+    | if \$tok == 1 and (\$q | startswith(\"#\")) then (\" \" + \$h + \" \") | contains(\" \" + \$q + \" \")
+      else \$h | contains(\$q) end)] | length" <<<"$rows")"
   [[ "$n" == "1" ]] || fail "$4 filters to '$needle', but $project has $n ${kind}s matching it, not 1"
 }
 

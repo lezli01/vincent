@@ -235,7 +235,7 @@ need, in the attention colour, and names the key that hangs them under the card:
 | `←` `→` | Cross to the next column that has a card |
 | `pgup` `pgdown` `home` `end` | Move further within the column |
 | `enter` | Open the task |
-| `/` | Filter by id, title, state or issue |
+| `/` | Filter by id, title, state, issue, workflow, step, branch or pull request number |
 | `H` | Show only what needs you |
 
 The filter box's top edge counts the tasks, says how many are running against the
@@ -365,6 +365,7 @@ are queued and have finished.
 | `f` | Fold the issue group under the cursor, or open the one the cursor rests on |
 | `C` | Fold every group |
 | `O` | Open every group |
+| `z` | Cycle the order: by state (the board's own), newest, oldest, title |
 | `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent |
 
 ### Fan-out lanes on the board
@@ -2107,6 +2108,7 @@ completed](../assets/tui-issues.png)
 | `enter` | Open the selected issue |
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so; the footer offers `o` only on an imported issue |
 | `s` | Show or hide the done lane |
+| `z` | Cycle the order within the lanes: the daemon's, newest, priority, title |
 | `R` | Re-read the issues |
 | `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com. The note says how the pass ended once a later listing shows it — `synced from octo/web`, or why it did not finish |
 | `↑`/`↓` | Move the selection |
@@ -2114,7 +2116,7 @@ completed](../assets/tui-issues.png)
 | `home`/`g`, `end`/`G` | Select the first or the last row |
 | `←`/`→` | Fold or unfold the lane section you are in |
 | `C`/`O` | Fold or unfold every lane section |
-| `/` | Filter by id, title, label or kind |
+| `/` | Filter by id, title, label, kind, priority, author or the source's reference (`MOB-7`, `octo/web#142`) |
 | `n` | File a new issue in this project |
 | `a` | Create a task from the selected issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch |
 | `i` | Edit the selected issue in the issue form |

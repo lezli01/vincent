@@ -531,10 +531,12 @@ var bindings = []binding{
 	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxTasks, hint: "↑↓←→ move", priority: 5},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
 	{op: keymap.New, key: "n", label: "new task — for the project you are looking at", scope: scopePanel, context: ctxTasks, hint: "n new", priority: 2, echo: true, noPalette: true},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, state or issue", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 3, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, state, issue, workflow, step, branch or pull request number", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 3, term: termFilter},
 	{key: "left", label: "move to the column on the left", scope: scopePanel, context: ctxTasks, priority: 5, aliased: true},
 	{key: "right", label: "move to the column on the right", scope: scopePanel, context: ctxTasks, priority: 5, aliased: true},
 	{key: "f", label: "fold or open the issue group under the cursor", scope: scopePanel, context: ctxTasks, hint: "f fold", priority: 8},
+	// #1075: the order, cycled — state, newest, oldest, title.
+	{key: boardSortKey, label: "cycle the order: by state, newest, oldest, title", scope: scopePanel, context: ctxTasks, hint: "z sort", priority: 9},
 	// Lanes under a fan-out parent's card (boardcardlanes.go, issue #316).
 	{key: "L", label: "show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 8},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 4},
@@ -692,7 +694,7 @@ var bindings = []binding{
 	// transition table, so an archived row offers no action at all.
 	{op: keymap.Scope, key: "s", label: "cycle the window: last 7 days → last 30 days → all time", scope: scopePanel, context: ctxArchived, hint: "s window", priority: 3, term: termScope},
 	{key: ">", label: "next page of the archive (< goes back)", scope: scopePanel, context: ctxArchived, hint: "</> page", priority: 4},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, state or issue", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, state, issue, workflow, step, branch or pull request number", scope: scopePanel, context: ctxArchived, priority: 5, term: termFilter},
 	{key: "space", label: "select this task for the bulk delete (V selects every row the filter is showing)", scope: scopePanel, context: ctxArchived, priority: 6},
 	{op: keymap.Refresh, key: "R", label: "reload the board", scope: scopePanel, context: ctxArchived, priority: 7, term: termRefresh},
 
@@ -1206,7 +1208,7 @@ var bindings = []binding{
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxIssues, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected issue", scope: scopePanel, context: ctxIssues, hint: "enter open", priority: 1, term: termOpenRow},
 	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxIssues, hint: "↑↓ card", priority: 2},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, label or kind", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 3, term: termFilter},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, label, kind, priority, author or source reference", scope: scopePanel, context: ctxIssues, hint: "/ filter", priority: 3, term: termFilter},
 	// The writes (task 130.12). `n` is §15's "make a new one here", the
 	// chats board's precedent; `i` is the trigger list's "edit in a form";
 	// `X` offers what the daemon's available_actions allow and nothing else.
@@ -1225,6 +1227,8 @@ var bindings = []binding{
 	// request to the project's issue source, `vincent issue sync` from the
 	// list, offered only where there is a sync pass to wake (task 142.14).
 	{key: issueSyncKey, label: "sync this project's issues from its issue source now — sweeping out the ones deleted there", scope: scopePanel, context: ctxIssues, hint: "S sync", priority: 11, syncable: true},
+	// #1075: the order within the lanes, cycled.
+	{key: boardSortKey, label: "cycle the order within the lanes: the daemon's, newest, priority, title", scope: scopePanel, context: ctxIssues, hint: "z sort", priority: 12},
 	// Crossing the columns (task 150.2), a main key of the board.
 	{key: "left", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, hint: "←/→ lane", priority: 3},
 	{key: "right", label: "move to the next column with a card (←/→)", scope: scopePanel, context: ctxIssues, priority: 13, aliased: true},

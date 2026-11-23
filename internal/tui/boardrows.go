@@ -197,7 +197,12 @@ func filterTasks(tasks []apiclient.Task, query string) []apiclient.Task {
 	}
 	out := make([]apiclient.Task, 0, len(tasks))
 	for _, t := range tasks {
-		fields := []string{strconv.FormatInt(t.ID, 10), t.Title, t.State, stateWords(t.State)}
+		// What the card prints is what can be typed (#1075): its workflow,
+		// the step it is on, its branch and its pull request's number.
+		fields := []string{strconv.FormatInt(t.ID, 10), t.Title, t.State, stateWords(t.State), t.Workflow, t.StepName, t.BranchName}
+		if p := t.GitHubPull; p != nil {
+			fields = append(fields, "#"+strconv.Itoa(p.Number), "pr "+strconv.Itoa(p.Number))
+		}
 		if t.Issue != nil {
 			fields = append(fields, "#"+strconv.FormatInt(t.Issue.ID, 10), t.Issue.Title, issueRef(t.Issue))
 		}
@@ -537,3 +542,38 @@ func withStepPips(s string, t apiclient.Task, width int) string {
 	}
 	return s
 }
+
+// boardSorts are the orders `z` cycles the task board through (#1075): the
+// band order the board was built on, then newest, oldest and by title.
+var boardSorts = []string{"", "newest", "oldest", "title"}
+
+// sortBoardTasks orders tasks for display: the band sort, then the board's
+// chosen order on top of it. The band sort stays the tie-breaker, so equal
+// keys keep the order the board has always read in.
+func sortBoardTasks(tasks []apiclient.Task, order string) {
+	sortTasks(tasks)
+	switch order {
+	case "newest":
+		sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].CreatedAt.After(tasks[j].CreatedAt) })
+	case "oldest":
+		sort.SliceStable(tasks, func(i, j int) bool { return tasks[i].CreatedAt.Before(tasks[j].CreatedAt) })
+	case "title":
+		sort.SliceStable(tasks, func(i, j int) bool {
+			return strings.ToLower(tasks[i].Title) < strings.ToLower(tasks[j].Title)
+		})
+	}
+}
+
+// nextSort is the order after cur in orders, wrapping.
+func nextSort(orders []string, cur string) string {
+	for i, o := range orders {
+		if o == cur {
+			return orders[(i+1)%len(orders)]
+		}
+	}
+	return orders[0]
+}
+
+// boardSortKey cycles a board's order (#1075). `z` because the letters that
+// say "sort" are taken on the surfaces that share a board's keys.
+const boardSortKey = "z"
