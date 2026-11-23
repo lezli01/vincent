@@ -49,7 +49,7 @@ func rewindFixture() *chatView {
 
 // pickerRows is the picker's rendered rows, stripped, without its title.
 func pickerRows(p *chatRewindPicker) []string {
-	out := p.render(200)[1:]
+	out := p.render(200)[2:] // the title, then the other modes (#1080)
 	for i := range out {
 		out[i] = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ansi.Strip(out[i])), "▸"))
 	}

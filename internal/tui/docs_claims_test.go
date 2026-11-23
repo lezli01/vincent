@@ -167,7 +167,10 @@ func TestGuideOperationsTableMatchesCatalog(t *testing.T) {
 		if strings.Trim(first, "-: ") == "" {
 			continue
 		}
-		rows = append(rows, row{op: strings.Trim(first, "`"), key: strings.Trim(strings.TrimSpace(cells[2]), "`")})
+		// A key that is itself a backtick is spelled as a double-backtick
+		// span (`` ` ``), whose inner spaces Markdown drops.
+		key := strings.TrimSpace(strings.Trim(strings.TrimSpace(cells[2]), "`"))
+		rows = append(rows, row{op: strings.Trim(first, "`"), key: key})
 	}
 
 	catalog := keymap.Catalog()

@@ -421,6 +421,7 @@ func chatJumpLabel(nth string) string {
 var bindings = []binding{
 	// Global chrome.
 	{op: keymap.Palette, key: ":", label: "open the command palette", scope: scopeGlobal, noPalette: true},
+	{op: keymap.GoTo, key: "`", label: "open the screens menu — every screen on a letter: t tasks, i issues, c chats, p projects, w workflows, d daemon, s settings, T triggers…", scope: scopeGlobal, noPalette: true},
 	// The same palette, reachable where `:` is not: a chat's composer owns
 	// every printable key, so the palette had been unreachable there since
 	// task 067 (task 076 decision 7). noPalette for the reason `:` is —
