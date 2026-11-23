@@ -164,6 +164,10 @@ func (d *detail) railGlyph(s railStep) (string, lipgloss.Style) {
 	if state == "" {
 		return ic("○"), styleDim
 	}
+	if s.followUp == 0 && allowedFailure(d.task.Task, s.index, state) {
+		// Its failure was the workflow's to take, and it took it (#1068).
+		return "↷", styleDim
+	}
 	style, ok := stepStateStyle(state)
 	if !ok {
 		style = lipgloss.Style{}
@@ -233,6 +237,13 @@ func (d *detail) railMeta(s railStep) string {
 		return ""
 	}
 	last := s.runs[len(s.runs)-1]
+	if s.followUp == 0 && allowedFailure(d.task.Task, s.index, d.railState(s)) {
+		what := "failed"
+		if last.ExitCode != nil {
+			what = fmt.Sprintf("exited %d", *last.ExitCode)
+		}
+		return styleDim.Render(what + " · allowed, the task went on")
+	}
 	if last.FailureReason != nil && *last.FailureReason != "" && last.State != "succeeded" {
 		text := reasonTitle(*last.FailureReason)
 		if n := len(s.runs); n > 1 && s.kind == "" {

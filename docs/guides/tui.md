@@ -443,12 +443,15 @@ From 130 columns wide, a task opens as one workspace: its name, state, reason
 and linked issue across the top, its steps on the left, and the tabs beside
 them. When a task is blocked, the reason, a short form of the failure card's
 evidence — how the attempt exited and up to three lines of what it printed —
-and the keys that can restart it are pinned under the tab. On a narrower
-terminal the steps are a tab.
+and the keys that can restart it are pinned under the tab. A task waiting at a
+gate pins the gate's instructions and `a approve`, `x reject` and `s skip`; one
+asking a question pins the question and `enter answer`. On a narrower terminal
+the steps are a tab.
 
 The **steps rail** gives each step one row — its state glyph (`✓` done, `●`
-running, `✗` failed, `!` waiting on you, `○` not reached), its name and how long
-it took — joined by a line. A dim row under a step says something only when
+running, `✗` failed, `!` waiting on you, `○` not reached, `↷` failed but
+allowed to, so the task went on), its name and how long it took — joined by a
+line. A dim row under a step says something only when
 there is something to say: why it failed, how many attempts it took, the agent
 and what it cost. The step you have selected lists its attempts when it has
 more than one; a parallel group lists its members, a loop its passes as a row
@@ -496,8 +499,9 @@ workspace has already loaded:
   instructions, and every action the daemon offers with its key and a line on
   what it does. `enter output of attempt N` jumps to the attempt it stopped
   on, and `enter` there again shows what it was given.
-- **Done or archived** — how it ended: an **outcome card** (below) and
-  `enter diff`.
+- **Done or archived** — how it ended: an **outcome card** (below), what you
+  can do next — `F` follow up, `P` open a pull request when one can be opened,
+  `A` archive, `T` chat — and `enter diff`.
 
 A running task pairs a **Now** card — the current step and attempt, the latest
 status, the last line it printed — with **The task**, the description and
@@ -555,6 +559,10 @@ headed *incomplete — what was delivered*. On a short terminal the outcome card
 shrinks first, and on an aborted task it goes before the failure card does.
 The card shows:
 
+- **Ended early**, when a `condition` step ended the task: which step and its
+  guard, the command whose exit the condition read (named as not a failure),
+  and the last status the work reported before it — `■ ended early at step 3
+  any-candidates — its condition was false`.
 - **Result** — the summary the task's last successful agent attempt reported
   (a follow-up round counts), rendered as Markdown and given every row the
   Overview has free.
@@ -1409,9 +1417,11 @@ that a chat holds the task.
 `E` opens the failing step's prompt or command in your editor, and the override
 applies **to this task's snapshot only** — the workflow file is untouched. On a
 `blocked` task the footer lists `E edit+retry` and `R repair` right after
-`r retry`, ahead of skip, cancel and archive. `E` is listed only in the task
-workspace and only on a step with a prompt or command to edit — not on a gate
-or a fan-out parent — and pressed anywhere else it says why it did nothing.
+`r retry`, ahead of skip, cancel and archive. `E` is listed only where the
+task's steps are loaded — the task workspace, or the board's detail panes when
+they show the selected task — and only on a step with a prompt or command to
+edit, not on a gate or a fan-out parent. Pressed anywhere else it says why it
+did nothing.
 
 `R` and `F` open a form instead of acting straight away; they are the two task
 actions that need something written, which is also why neither is offered for a

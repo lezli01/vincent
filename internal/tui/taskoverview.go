@@ -308,7 +308,16 @@ func (t *taskView) overviewLines(width, height int) []string {
 	case overviewFrameFor(task.State) == frameOutcome:
 		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		out = append(out, "")
-		out = append(out, t.outcomeCardLines(width, height-len(out)-overviewLinkRows)...)
+		// What can be done next keeps its rows ahead of the outcome card's
+		// result, which shrinks to make room (#1068): a finished task named
+		// none of follow-up, a pull request or archive.
+		next := t.overviewActionLines(width)
+		if t.pullOffered() {
+			next = append(next, ansi.Truncate("  "+styleKey.Render(fmt.Sprintf("%-6s", "P"))+" pull request"+
+				styleDim.Render(" — open one from this task's branch"), max(width, 1), "…"))
+		}
+		out = append(out, t.outcomeCardLines(width, height-len(out)-overviewLinkRows-len(next))...)
+		out = append(out, next...)
 	default:
 		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		if bar := t.progressBar(width); bar != "" {
@@ -568,6 +577,12 @@ func (t *taskView) overviewActionLines(width int) []string {
 		out = append(out, styleDim.Render("  no action available"))
 	}
 	return out
+}
+
+// pullOffered is whether `P` would open the pull-request form: nothing is
+// linked and the daemon could build a compare URL.
+func (t *taskView) pullOffered() bool {
+	return t.pullTabAvailable() && !t.pull.Linked && t.pull.CompareURL != ""
 }
 
 // openIssueKey opens the task's linked issue from its workspace (task 168

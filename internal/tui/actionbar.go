@@ -102,9 +102,10 @@ type taskActions struct {
 	// projectID is the task's project, which its chat shares: `T` opening
 	// that chat follows it there (task 132.6).
 	projectID int64
-	// editRetry is whether `E` works here (#1059): the task workspace, on a
-	// step with a prompt or command to edit. The board has no editor, so its
-	// targets leave it false and the footer does not hint the key there.
+	// editRetry is whether `E` works here (#1059): a step with a prompt or
+	// command to edit, as the detail sub-model holding the task sees it — the
+	// workspace's, or the board's detail panes when they show the selected
+	// task. A target with no such detail leaves it false.
 	editRetry bool
 }
 
