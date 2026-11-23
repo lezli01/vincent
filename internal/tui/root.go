@@ -1109,7 +1109,9 @@ func (m *root) openPalette() {
 	s := m.surfaceTarget()
 	entries := paletteEntries(
 		m.activeContext(), s.target, s.editable, m.phase == phaseConnected, m.githubAvailable(), s.live, s.tabs)
-	m.palette = newPalette(append(entries, s.extras...))
+	entries = append(entries, s.extras...)
+	m.palette = newPalette(append(entries, m.paletteItems()...))
+	m.palette.input.SetPlaceholder("type to search commands, screens, tasks, chats and issues")
 }
 
 // liveBinder is a surface whose registry rows depend on its state: it drops

@@ -3974,6 +3974,15 @@ key a lenient load took reads `unbound`. Actions the task does not offer are
 left out rather than greyed: the palette runs things, and it never lists
 something that cannot run.
 
+Typing finds rows the way you remember them, not only as they are spelled.
+Where some row contains what you typed, those rows are the answer; otherwise
+the words may come in any order, each may be the start of a word or its
+letters in order, and a word of four letters or more may be one typo off —
+`tasks archived` finds archived tasks and `dameon` the daemon — with the best
+matches first. Once you type, the project's **tasks**, **chats** and
+**issues** are listed too, by number and title (`#13`, `issue #4 MOB-7`), and
+running one opens it.
+
 In a task's workspace the palette has a **tabs** group: one row per tab on
 the strip, in the order the strip draws them, such as `go to the Diff tab`.
 Typing `diff` finds it, and running it switches to the tab. Pull request is

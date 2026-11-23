@@ -59,6 +59,9 @@ type paletteEntry struct {
 	// letter is the row's key in the screens menu (#1080), shown in place of
 	// key there.
 	letter string
+	// item is a task, chat or issue row (#1080): listed only once something
+	// is typed, and run by its action.
+	item bool
 }
 
 func newPalette(entries []paletteEntry) *palette {
@@ -159,14 +162,42 @@ func paletteEntries(ctx bindingContext, target taskActions, editable, connected,
 func (p *palette) matches() []paletteEntry {
 	q := strings.ToLower(strings.TrimSpace(p.input.Value()))
 	if q == "" {
-		return p.entries
-	}
-	out := make([]paletteEntry, 0, len(p.entries))
-	for _, e := range p.entries {
-		hay := strings.ToLower(e.label + " " + e.group + " " + e.key)
-		if strings.Contains(hay, q) {
-			out = append(out, e)
+		out := make([]paletteEntry, 0, len(p.entries))
+		for _, e := range p.entries {
+			if !e.item {
+				out = append(out, e)
+			}
 		}
+		return out
+	}
+	// The whole query as typed wins: where some row contains it, those rows
+	// are the answer, as they always were. Otherwise fuzzy, best first
+	// (#1080) — word order, a typo, letters in order — with ties in the
+	// list's own order, so the sections stay together where scores agree.
+	var exact []paletteEntry
+	for _, e := range p.entries {
+		if strings.Contains(strings.ToLower(e.label+" "+e.group+" "+e.key), q) {
+			exact = append(exact, e)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+	words := strings.Fields(q)
+	type scored struct {
+		e paletteEntry
+		s int
+	}
+	var hits []scored
+	for _, e := range p.entries {
+		if s := fuzzyScore(e.label+" "+e.group+" "+e.key, words); s > 0 {
+			hits = append(hits, scored{e, s})
+		}
+	}
+	slices.SortStableFunc(hits, func(a, b scored) int { return b.s - a.s })
+	out := make([]paletteEntry, len(hits))
+	for i, h := range hits {
+		out[i] = h.e
 	}
 	return out
 }
