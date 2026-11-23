@@ -2451,10 +2451,11 @@ Inside the form:
 | Key | Does |
 |---|---|
 | `↑` / `↓` | Move between rows |
-| `enter` | Edit the row, cycle its values, or descend into a nested body |
+| `enter` | Edit the row, open its values, or descend into a nested body |
 | `t` | In an open list, type a value it does not offer |
 | `a` | Add a step, lane or declared field after the one under the cursor |
-| `d` | Remove the step, lane or declared field under the cursor — asks first |
+| `d` | Remove the step, lane or declared field under the cursor — asks first, and only `y` removes |
+| `u` | Undo the last write: put back the value it replaced |
 | `K` / `J` | Move it up or down. Capitals: `k` and `j` still move the cursor |
 | `ctrl+s` | Save, in the multi-line pane and the key/value sub-form below — the two places `enter` does something else |
 | `R` | Re-read the file — the reload a refused save offers |
@@ -2464,7 +2465,8 @@ There is no save key for a row, because there is nothing to save: committing a
 row with `enter` **is** the write, and so is answering `a`, `d` or `K`/`J`. Each
 one becomes a single edit operation carrying the version the last read handed
 back, and a value the daemon refuses stays on screen beside its error rather
-than being reverted under you.
+than being reverted under you. After a write the form says what the row was and
+that `u` puts it back; the undo is itself a write, and is not undoable.
 
 `a` on a list of steps asks which type first, offering only the types that are
 legal where the cursor is, and writes a skeleton with that type's required
@@ -2478,7 +2480,8 @@ Some rows open something bigger than a text field:
 | `prompt:`, `run:`, `instructions:` | A full-pane multi-line editor. `enter` inserts a newline, `ctrl+s` saves it back as a `\|` block scalar, `esc` abandons it. Opening one and closing it again writes nothing |
 | `agent:`, `model:`, `effort:` | The same filterable picker the new-task form uses, listing the agents the daemon detected and the selected agent's own catalog |
 | `env:`, a lane's `fields:` | A key/value sub-form: `enter` edits or adds a key, `d` drops one, `ctrl+s` writes the mapping |
-| An enum, a boolean | Nothing — `enter` cycles it in place |
+| An enum | Its members as a list, `(unset)` too when the field is optional — the pick is the one write |
+| A boolean | Nothing — `enter` flips it in place |
 
 A whole-number row and a duration row are checked before the write, so
 `timeout: 2 minutes` is refused on the row that typed it rather than after a

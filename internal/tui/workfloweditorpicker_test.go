@@ -176,17 +176,21 @@ func TestEditorHandOffRowCyclesTheClosedSet(t *testing.T) {
 			t.Errorf("%s: wrote %q", tc.value, op.Value)
 		}
 	}
-	// enter on the row commits the next member rather than opening a field.
+	// enter on the row opens its members and writes nothing (#1056); the
+	// pick is the one write.
 	w.editor.cursor = editorRowIndex(t, w, "hand_off")
-	_, cmd := w.updateKey(registryKey(t, "enter"))
-	if cmd == nil {
-		t.Error("enter on hand_off did not commit")
+	if _, cmd := w.updateKey(registryKey(t, "enter")); cmd != nil || w.editor.overlay == nil {
+		t.Fatal("enter on hand_off wrote, or opened no list")
 	}
-	if got := w.editor.rows[w.editor.cursor].value; got != "auto" {
-		t.Errorf("hand_off row after enter = %q, want auto", got)
+	w.updateKey(registryKey(t, "down"))
+	if _, cmd := w.updateKey(registryKey(t, "enter")); cmd == nil {
+		t.Error("the pick did not commit")
 	}
-	if w.editor.input != nil || w.editor.overlay != nil {
-		t.Error("an enum row opened a field or an overlay")
+	if got := w.editor.rows[w.editor.cursor].value; got != "explicit" {
+		t.Errorf("hand_off row after the pick = %q, want explicit", got)
+	}
+	if w.editor.overlay != nil {
+		t.Error("the list stayed open after the pick")
 	}
 }
 
@@ -205,10 +209,10 @@ func TestEditorHandOffRowReadsTheFile(t *testing.T) {
 	if next := cycleEnum(row.field, row.value); next != unsetMarker {
 		t.Errorf("next after explicit = %q, want unset", next)
 	}
-	if _, cmd := w.updateKey(registryKey(t, "enter")); cmd == nil {
-		t.Error("enter on hand_off did not commit")
+	if _, cmd := w.updateKey(registryKey(t, "enter")); cmd != nil {
+		t.Error("enter on hand_off wrote before a pick")
 	}
-	if got := w.editor.rows[w.editor.cursor].value; got == "auto" {
-		t.Errorf("enter on explicit wrote auto")
+	if got := w.editor.rows[w.editor.cursor].value; got != "explicit" {
+		t.Errorf("enter on explicit changed the row to %q", got)
 	}
 }

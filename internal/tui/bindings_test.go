@@ -2450,6 +2450,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxWorkflowEditor: {
+		"u": func(t *testing.T) {
+			w := editorFixture(t)
+			if _, cmd := w.updateKey(registryKey(t, "u")); cmd != nil || w.editor.err != "nothing to undo" {
+				t.Fatalf("u with nothing written: err %q", w.editor.err)
+			}
+		},
 		"up/down": func(t *testing.T) {
 			w := editorFixture(t)
 			w.updateKey(registryKey(t, "down"))

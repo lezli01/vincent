@@ -55,6 +55,8 @@ func (w *workflowsView) updateEditorKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// so nothing is sent from here.
 		w.editorRemove()
 		return w, nil
+	case "u":
+		return w, w.editorUndo()
 	case "K":
 		return w, w.editorMove(-1)
 	case "J":
@@ -110,10 +112,14 @@ func (w *workflowsView) editorActivate() tea.Cmd {
 	}
 	switch row.field.Control {
 	case apiclient.WorkflowControlEnum:
-		// An enum row cycles rather than opening a text field (task 058's
-		// enum rows): the members are known, so there is nothing to type and
-		// nothing to get wrong.
-		return w.commitRow(row, cycleEnum(row.field, row.value))
+		// An enum row opens its members as a list and writes once, on the
+		// pick (#1056): cycling wrote every value on the way to the one
+		// wanted, possibly into a global workflow. There is nothing to type,
+		// so the list takes no free text.
+		e.editing = e.cursor
+		e.overlay = newWFEditorPicker(row.field.Name, row.field.Control, row.value,
+			enumOptions(row.field), false, func(v string) tea.Cmd { return w.commitRow(row, v) })
+		return nil
 	case apiclient.WorkflowControlBool:
 		next := "true"
 		if row.value == "true" {
@@ -150,6 +156,19 @@ func (w *workflowsView) editorActivate() tea.Cmd {
 
 // cycleEnum steps through the members and then past the end to (unset),
 // which an optional row needs and a required one does not get.
+// enumOptions are an enum field's members as picker options, with `(unset)`
+// when the field is optional.
+func enumOptions(f apiclient.WorkflowSchemaField) []pickerOption {
+	out := make([]pickerOption, 0, len(f.Values)+1)
+	for _, v := range f.Values {
+		out = append(out, pickerOption{value: v, label: v})
+	}
+	if !f.Required {
+		out = append(out, pickerOption{value: unsetMarker, label: unsetMarker})
+	}
+	return out
+}
+
 func cycleEnum(f apiclient.WorkflowSchemaField, value string) string {
 	values := f.Values
 	if !f.Required {
@@ -203,7 +222,36 @@ func (w *workflowsView) commitRow(row wfEditRow, value string) tea.Cmd {
 		return nil
 	}
 	e.saving = true
+	e.pending = &wfUndo{row: row}
 	return w.editorPatchCmd([]apiclient.WorkflowOp{op})
+}
+
+// editorUndo is `u`: the last accepted write's row back to the value it
+// replaced (#1056), written the way any edit is. Nothing to undo, or a write
+// still in flight, says so.
+func (w *workflowsView) editorUndo() tea.Cmd {
+	e := w.editor
+	switch {
+	case e.saving:
+		e.err = "a write is still in flight"
+		return nil
+	case e.undo == nil:
+		e.err = "nothing to undo"
+		return nil
+	}
+	u := e.undo
+	for i, r := range e.rows {
+		if r.path == u.row.path {
+			e.cursor = i
+			cmd := w.commitRow(r, u.row.value)
+			if e.pending != nil {
+				e.pending.undoing = true
+			}
+			return cmd
+		}
+	}
+	e.err = "the row the last write changed is not on screen — esc up to it, or reload"
+	return nil
 }
 
 // rowOp is the one translation from a committed row to the edit operation
@@ -350,6 +398,7 @@ func (w *workflowsView) updateEditorMsg(msg tea.Msg) (panel, tea.Cmd, bool) {
 	case wfEditorSavedMsg:
 		e.saving = false
 		if msg.err != nil {
+			e.pending = nil
 			var apiErr *apiclient.Error
 			if errors.As(msg.err, &apiErr) && apiErr.Status == 409 {
 				e.stale = true
@@ -362,6 +411,13 @@ func (w *workflowsView) updateEditorMsg(msg tea.Msg) (panel, tea.Cmd, bool) {
 		}
 		e.err, e.stale = "", false
 		e.version = msg.result.Version
+		// The accepted write is what `u` takes back; an undo clears it.
+		if p := e.pending; p != nil && !p.undoing {
+			e.undo = p
+		} else {
+			e.undo = nil
+		}
+		e.pending = nil
 		// The registry reload the write triggered brings the new definition
 		// back through the same path an external edit takes.
 		return w, w.editorLoadCmd(e.key), true
