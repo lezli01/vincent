@@ -68,7 +68,7 @@ func TestFailureCardFromRealServer(t *testing.T) {
 		StatusMessage: "tests look fine", StartedAt: now, FinishedAt: &now,
 	}, "check_failed", "")
 	got := h.overviewOf(t, checked.ID, "FAIL TestThing")
-	for _, want := range []string{"✗ Step 1 implement · attempt 1 · check failed  check_failed", "status  “tests look fine”", "E      edit retry"} {
+	for _, want := range []string{"✗ Step 1 implement · attempt 1 · check failed  check_failed", "last status before the failure  “tests look fine”", "E      edit retry"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("check_failed card misses %q:\n%s", want, got)
 		}

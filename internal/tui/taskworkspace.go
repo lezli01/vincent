@@ -165,7 +165,16 @@ func (t *taskView) taskFailureCard(w int) []string {
 	}
 	inner := max(w-4, 1)
 	var body []string
-	if detail := d.task.BlockDetail; detail != nil && strings.TrimSpace(*detail) != "" {
+	// The Overview card's evidence, shortened (#1086): how it exited and the
+	// lines that say why, so the tab a stopped task opens on answers it too.
+	// The daemon's block_detail stands in when there is none, as it does on
+	// the Overview's card.
+	if ev := t.cardEvidence(t.failureCard(), pinnedEvidenceLines); ev.ok {
+		if ev.exit != "" {
+			body = append(body, ansi.Truncate(styleBad.Render(ev.exit), inner, "…"))
+		}
+		body = append(body, quoteEvidence(ev.lines, "", inner)...)
+	} else if detail := d.task.BlockDetail; detail != nil && strings.TrimSpace(*detail) != "" {
 		body = styled(wrapText(oneLine(*detail), inner, wrapOpts{maxLines: 2}), styleTitle)
 	}
 	if keys := taskRecoveryKeys(d.task.Task); keys != "" {
