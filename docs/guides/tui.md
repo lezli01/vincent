@@ -1393,11 +1393,11 @@ that a chat holds the task.
 | Key | Action | Valid from |
 |---|---|---|
 | `a` | Approve the gate | `awaiting_gate` |
-| `x` | Reject the gate | `awaiting_gate` |
+| `x` | Reject the gate (asks first — the task is blocked there) | `awaiting_gate` |
 | `r` | Retry the blocked step, or cascade the retry to every blocked lane under a parked fan-out parent | `blocked`, `awaiting_children` |
 | `R` | Repair with an agent — a one-off run in this task's worktree | `blocked` |
 | `E` | Edit the step's prompt or command in `$EDITOR`, then retry | `blocked` |
-| `s` | Skip the current step | `blocked`, `awaiting_gate` |
+| `s` | Skip the current step (asks first — the task goes on without it) | `blocked`, `awaiting_gate` |
 | `p` | Pause / resume | `queued`, `running` / `paused` |
 | `c` | Cancel the task (asks first — a running step is killed) | most states |
 | `A` | Archive (asks first — the worktree is removed) | `done`, `aborted` |
@@ -3041,7 +3041,7 @@ files are not. It is grouped by file and starts folded, like the task's.
 | Key | Does |
 |---|---|
 | `]` / `[` | Move to the next / previous hunk, opening the file it is in |
-| `x` | **Reject** the selected hunk: it is reverted in the chat's directory, and a note for the agent is put at the top of your draft |
+| `x` | **Reject** the selected hunk: it asks first, then it is reverted in the chat's directory, and a note for the agent is put at the top of your draft |
 | `a` | **Accept** the selected hunk — a review mark and nothing else; on an accepted hunk it clears the mark |
 | `s` | Switch scope: the changes **since the base**, or **since the last turn** |
 | `r` | Read the diff again |

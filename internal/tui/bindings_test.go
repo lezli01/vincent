@@ -3477,8 +3477,12 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"x": func(t *testing.T) {
 			v := chatDiffFixture(t)
 			v.updateKey(registryKey(t, "]"))
-			if _, cmd := v.updateKey(registryKey(t, "x")); cmd == nil || !v.diff.busy {
-				t.Fatal("x did not send a reject")
+			// x asks first (#1055); y sends the reject.
+			if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.rejectAsk == nil {
+				t.Fatal("x did not ask before rejecting")
+			}
+			if _, cmd := v.updateKey(registryKey(t, "y")); cmd == nil || !v.diff.busy {
+				t.Fatal("x then y did not send a reject")
 			}
 		},
 		"a": func(t *testing.T) {

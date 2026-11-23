@@ -257,6 +257,7 @@ func TestChatDiffPaneLive(t *testing.T) {
 		t.Fatalf("the selected hunk has no header: %+v", first)
 	}
 	l.press("x")
+	l.press("y") // the reject asks first (#1055)
 	l.until("the reject", func() bool {
 		return !v.diff.busy && !v.diff.fetching && v.diff.stat != nil && v.diff.stat.Removed == 1
 	})
@@ -321,6 +322,7 @@ func TestChatDiffRejectUnsavedEditRejectLive(t *testing.T) {
 	l.press("]")
 	first := l.selected()
 	l.press("x")
+	l.press("y") // the reject asks first (#1055)
 	l.until("the first reject", func() bool {
 		return !v.diff.busy && !v.diff.fetching && strings.Contains(v.composer.Value(), first.header)
 	})
@@ -338,6 +340,7 @@ func TestChatDiffRejectUnsavedEditRejectLive(t *testing.T) {
 		t.Fatalf("no second hunk to reject: %+v after %+v", second, first)
 	}
 	l.press("x")
+	l.press("y") // the reject asks first (#1055)
 	l.until("the second reject", func() bool {
 		return !v.diff.busy && !v.diff.fetching && strings.Contains(v.composer.Value(), second.header)
 	})

@@ -52,6 +52,9 @@ type chatDiffState struct {
 	files map[string]apiclient.ChatDiffFile
 	// stat is the Details pane's `changes` row (decision 10), nil until read.
 	stat *apiclient.ChatDiffStat
+	// rejectAsk is the hunk `x` asked about (#1055): a reject rewrites the
+	// file on disk, so it waits for y. Nil when nothing is asked.
+	rejectAsk *diffHunkRef
 }
 
 type (
@@ -268,13 +271,38 @@ func (v *chatView) diffTarget() (diffHunkRef, bool) {
 	return diffHunkRef{}, false
 }
 
-// rejectHunkCmd reverts the selected hunk in the chat's directory.
-func (v *chatView) rejectHunkCmd() tea.Cmd {
+// askRejectHunk is `x`: it names the hunk and what a reject does, and waits
+// for y (#1055). Nothing is asked about a hunk that cannot be rejected.
+func (v *chatView) askRejectHunk() {
 	ref, ok := v.diffTarget()
-	client, id, scope := v.client, v.chatID, v.diffScope()
-	if !ok || client == nil || v.diff.busy {
+	if !ok || v.client == nil || v.diff.busy {
+		return
+	}
+	v.diff.rejectAsk = &ref
+}
+
+// answerRejectHunk answers the question: y rejects the hunk asked about,
+// anything else keeps it.
+func (v *chatView) answerRejectHunk(key string) tea.Cmd {
+	ref := *v.diff.rejectAsk
+	v.diff.rejectAsk = nil
+	if key != "y" && key != "Y" {
+		v.note, v.noteBad = "kept the hunk", false
 		return nil
 	}
+	if v.client == nil || v.diff.busy {
+		return nil
+	}
+	return v.rejectHunk(v.client, v.chatID, v.diffScope(), ref)
+}
+
+// rejectHunkQuestion is the line the pane draws while `x` waits.
+func rejectHunkQuestion(ref diffHunkRef) string {
+	return "revert this hunk of " + ref.path + " on disk? its lines go back to the base, " +
+		"and a note goes into your draft (y/n)"
+}
+
+func (v *chatView) rejectHunk(client *apiclient.Client, id int64, scope string, ref diffHunkRef) tea.Cmd {
 	v.diff.busy = true
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), diffTimeout)
@@ -409,6 +437,10 @@ func (v *chatView) updateDiffKey(msg tea.KeyPressMsg) tea.Cmd {
 		v.closeDiff()
 		return nil
 	}
+	// A pending reject owns the keyboard until it is answered (#1055).
+	if v.diff.rejectAsk != nil {
+		return v.answerRejectHunk(msg.String())
+	}
 	switch msg.String() {
 	case "esc":
 		v.closeDiff()
@@ -422,7 +454,8 @@ func (v *chatView) updateDiffKey(msg tea.KeyPressMsg) tea.Cmd {
 		v.diff.pane.moveHunk(-1)
 		return nil
 	case "x":
-		return v.rejectHunkCmd()
+		v.askRejectHunk()
+		return nil
 	case "a":
 		return v.acceptHunkCmd()
 	case "s":
@@ -473,7 +506,10 @@ func (v *chatView) diffBody(width, height int) []string {
 		head += " " + styleDim.Render("· reading…")
 	}
 	lines := []string{ansi.Truncate(head, max(width, 1), "…")}
-	room := max(height-1, 1)
+	if d.rejectAsk != nil {
+		lines = append(lines, styleWarn.Render(ansi.Truncate(" "+rejectHunkQuestion(*d.rejectAsk), max(width, 1), "…")))
+	}
+	room := max(height-len(lines), 1)
 	var body string
 	switch {
 	case d.unavailable != "":

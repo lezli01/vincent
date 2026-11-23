@@ -194,3 +194,26 @@ func TestSuccessReportsTheNewState(t *testing.T) {
 		t.Errorf("status = %q (bad = %v), want the new state", bar.status, bar.statusBad)
 	}
 }
+
+// TestSkipAndRejectAskFirst is #1055: skip and reject wait for y and name
+// what they do; n sends nothing.
+func TestSkipAndRejectAskFirst(t *testing.T) {
+	for _, tc := range []struct {
+		key, state, want string
+	}{
+		{"s", stateBlocked, "skip #7's current step? it is marked skipped and the task goes on without it (y/n)"},
+		{"x", stateAwaitingGate, "reject #7's gate? the task is blocked there until you retry, skip or cancel (y/n)"},
+	} {
+		var bar actionBar
+		target := taskActions{id: 7, state: tc.state, actions: []string{apiclient.ActionSkip, apiclient.ActionReject}}
+		if cmd, handled := bar.handleKey(tc.key, nil, target); !handled || cmd != nil || !bar.capturing() {
+			t.Fatalf("%s acted without asking", tc.key)
+		}
+		if got := bar.confirmPrompt(target); got != tc.want {
+			t.Errorf("%s asks %q, want %q", tc.key, got, tc.want)
+		}
+		if cmd, _ := bar.handleKey("n", nil, target); cmd != nil || bar.capturing() {
+			t.Errorf("%s: n did not cancel", tc.key)
+		}
+	}
+}
