@@ -885,6 +885,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `d` | Open Diff from any tab; on Diff, switch between the whole task's diff and the selected attempt's |
 | `l` / `U` | Open a fan-out lane's workspace / this lane's parent task, from any tab — see [Walking a fan-out](#walking-a-fan-out) |
 | `N` | Jump to the task's next failure, from any tab — see [Jumping between failures](#jumping-between-failures) |
+| `alt+n` / `alt+shift+n` | Open the next or previous task in the board's order — the cards column by column, filters and sort included — wrapping, from any tab |
 | `enter` | On Overview, the frame's link — the output of the attempt it is about, or a finished task's diff — or, with the cursor on a Linked row, that row |
 | `↑`/`↓` | On Overview, move along the Linked card's issue, pull request and chat rows |
 | `l` | On Overview, open the fan-out lane the failure card blames — or, on a parent waiting on its lanes, the first lane listed under *Lanes that need you* |
@@ -2249,6 +2250,7 @@ and the remote state](../assets/tui-issue-jira.png)
 | `.` | Mark the issue ready when it is idle in progress, or not ready when it is pending hand-off |
 | `,` | Return the issue from its handoff — asks `y`/`n` first |
 | `T` | [Chat on the issue](#a-chat-on-the-issue--t), in its main worktree — or reopen the chat already holding it |
+| `alt+n` / `alt+shift+n` | Open the next or previous issue in the issues board's order, wrapping |
 | `alt+t` | As `T`, choosing the chat's agent, model and effort — and an optional first message — first |
 
 The page scrolls first: selecting a task never jumps it away from the
@@ -4085,7 +4087,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first forty-four are the operations screens share, the next twelve are the
+The first forty-six are the operations screens share, the next twelve are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -4125,6 +4127,8 @@ The first forty-four are the operations screens share, the next twelve are the
 | `rewind` | `alt+z` | Open the chat's turn picker, to rewind its code, its conversation or both to before a turn, or to fork a new chat from one |
 | `next_chat` | `alt+n` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |
 | `prev_chat` | `alt+shift+n` | Open the project's previous chat, wrapping |
+| `next_item` | `alt+n` | From inside a task, open the next task in the board's order; from inside an issue, the next issue |
+| `prev_item` | `alt+shift+n` | The previous task or issue, as `next_item` |
 | `chat_1` | `alt+1` | Open the project's chat number 1, in the chats board's order; nothing past the last |
 | `chat_2` | `alt+2` | Open the project's chat number 2, in the chats board's order; nothing past the last |
 | `chat_3` | `alt+3` | Open the project's chat number 3, in the chats board's order; nothing past the last |
