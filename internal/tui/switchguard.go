@@ -479,3 +479,67 @@ func (f *newChatForm) watch() func() {
 		}
 	}
 }
+
+// leaveGuard is implemented by a view whose draft a quit or a screen switch
+// would drop (#1051): the new-task form, which a later `n` reopens pristine.
+// It is apart from switchGuard because a project switch keeps the active
+// view and re-aims a form, where leaving it loses the form outright; and a
+// view whose draft the daemon keeps, or that keeps its own across a switch,
+// has nothing to ask. The projects screen's form is such a view: it
+// captures every key while open, `q` included, and survives a switch, so
+// only its own esc asks. A draft being submitted is not asked about: the
+// create's own landing is the switch it causes.
+type leaveGuard interface {
+	leaveDraft(quitting bool) (draft string, dirty bool)
+}
+
+func (n *newTask) leaveDraft(bool) (string, bool) {
+	return "task draft", n.opened && n.touched && !n.submitting
+}
+
+// pendingLeave is a quit or a switch to another screen, held until the
+// draft it would drop is confirmed discarded.
+type pendingLeave struct {
+	draft string
+	quit  bool
+	to    viewID
+}
+
+func (p *pendingLeave) prompt() string {
+	if p.quit {
+		return "discard the " + p.draft + " and quit? y/n"
+	}
+	return "discard the " + p.draft + " and leave? y/n"
+}
+
+// askLeave holds a quit (quit) or a switch to `to` when the active view
+// holds a draft it would drop, and reports whether it did.
+func (m *root) askLeave(quit bool, to viewID) bool {
+	g, ok := m.views[m.active].(leaveGuard)
+	if !ok {
+		return false
+	}
+	draft, dirty := g.leaveDraft(quit)
+	if !dirty {
+		return false
+	}
+	m.leave = &pendingLeave{draft: draft, quit: quit, to: to}
+	return true
+}
+
+// updatePendingLeaveKey answers the question: y quits or switches, n or esc
+// keeps the draft where it is, and every other key is swallowed.
+func (m *root) updatePendingLeaveKey(msg tea.KeyPressMsg) tea.Cmd {
+	p := m.leave
+	switch msg.String() {
+	case "y", "Y":
+		m.leave = nil
+		if p.quit {
+			return tea.Quit
+		}
+		return m.switchNow(p.to)
+	case "n", "N", "esc":
+		m.leave = nil
+	}
+	return nil
+}

@@ -307,6 +307,12 @@ or on the list behind a workspace or issue form. `n` or `esc` keeps the draft
 and the current project; nothing is switched or saved. A form seeded from a
 pull request, an issue or a chat counts as a draft before you type, and so
 does a workflow fork prompt, which is seeded from the old project's list.
+
+Leaving the new-task form any other way asks too, once you have typed into
+it: `q` asks `discard the task draft and quit? y/n`, and going to another
+screen — a tab, the palette, `!` — asks `discard the task draft and leave?
+y/n`. `ctrl+c` never asks. A form whose create is on its way asks nothing:
+the task it lands on is where it was going.
 A chat's unsent message does not ask: it is the chat's [draft](#drafts-stash-and-prompt-history),
 which the switch saves.
 
@@ -1860,7 +1866,7 @@ And inside the add or edit form, whose keys the footer shows while it is open:
 | `↑` / `↓` | Move between the fields (`tab` too) |
 | `enter` | Edit the field, or open its list |
 | `ctrl+s` | Save the project |
-| `esc` | Close the form without saving |
+| `esc` | Close the form without saving — once you have changed something, it asks `discard these changes? y/n` first |
 
 While a field is being typed into, or the workflow list is open, the keys go
 to it and the footer says so: `enter` finishes the field (or picks the

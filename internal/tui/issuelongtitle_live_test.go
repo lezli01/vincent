@@ -185,7 +185,9 @@ func TestLongIssueTitlesFitEveryIssueScreen(t *testing.T) {
 		return ok
 	})
 	check("new-task form")
+	// The seeded form is a draft: esc asks, and y discards it (#1051).
 	h.sendKey(keyPress("esc"))
+	h.sendKey(keyPress("y"))
 
 	h.send(selectViewMsg{id: viewHome})
 	h.p.until(10*time.Second, "the task board", func() bool { return h.m.active == viewHome })
