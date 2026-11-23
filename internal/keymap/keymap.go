@@ -97,6 +97,10 @@ const (
 	// decision 3): a pane swap on a key, not a tab strip. alt+d for "diff":
 	// the composer owns every printable key and nothing answered alt+d.
 	ChatDiff Op = "chat_diff"
+	// Conversation moves the keyboard from a chat's composer into its
+	// conversation, and back (#1078): expanding a tool call, jumping between
+	// prompts or attaching a shell card had needed ctrl+f, esc, then j/k.
+	Conversation Op = "conversation"
 	// Stash sets the composer's draft aside in the chat's one stash slot, or
 	// pops the stash back into an empty composer (task 164 decision 2).
 	// alt+s, not ctrl+s: that is Steer, which task 156 decision 5 keeps.
@@ -322,6 +326,11 @@ var catalog = []Info{
 	// decision 3).
 	{Op: ChatDiff, Default: "alt+d", Meaning: "show the chat's diff in place of the conversation, to review it hunk by hunk", Kind: KindTerm, Surfaces: []Surface{
 		"chat",
+	}, Typing: true},
+	// Typing too: it is pressed from the composer, and pressed again from the
+	// conversation it goes back.
+	{Op: Conversation, Default: "alt+i", Meaning: "move the keyboard into the chat's conversation, or back to the composer", Kind: KindTerm, Surfaces: []Surface{
+		"chat", "chat conversation",
 	}, Typing: true},
 	// Typing for the same reason: the shell prompt is opened from the
 	// composer (task 170).
