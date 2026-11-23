@@ -4040,6 +4040,10 @@ var vocabularyExceptions = map[string]string{
 	"panel/task workflow/d":     "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
 	"panel/task step details/d": "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
 	"panel/task pull request/d": "issue #595 — the workspace's Output⇄Diff toggle, where no draft is ever open",
+	// #1074: a search on Output or Diff is a layer of its own, as the chat's
+	// conversation search is; N is its previous match only while it runs,
+	// and next failure again the moment esc ends it.
+	"panel/find in pane/N": "issue #1074 — the previous match, only while a search on Output or Diff runs",
 }
 
 // TestVocabularyIsOneKeyPerOperation: the table itself, before any row is

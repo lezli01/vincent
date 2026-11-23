@@ -1395,6 +1395,10 @@ func (d *detail) followIndicator() string {
 
 func (d *detail) renderOutputPane(height int) string {
 	d.vp.SetWidth(max(d.width, 1))
+	if d.find.active() && height > 2 {
+		// The search's line sits under the pane (#1074).
+		height--
+	}
 	d.vp.SetHeight(height)
 	if d.outputDirty || d.builtWidth != d.width || d.builtLinks != d.links.get() || d.builtLevel != d.level.get() {
 		// A paused reader keeps their place across the rebuild (#291): the
@@ -1404,6 +1408,8 @@ func (d *detail) renderOutputPane(height int) string {
 		// bottom is its anchor.
 		keep := anchorAt(d.anchors, d.vp.YOffset())
 		lines, anchors := d.feedLinesAt()
+		d.feedLines, d.findShown = lines, ""
+		d.find.scan(lines)
 		d.vp.SetContent(strings.Join(lines, "\n"))
 		d.anchors = anchors
 		d.outputDirty = false
@@ -1420,7 +1426,26 @@ func (d *detail) renderOutputPane(height int) string {
 		}
 		d.land = false
 	}
-	return d.vp.View()
+	if !d.find.active() {
+		if d.findShown != "" {
+			d.findShown = ""
+			d.vp.SetContent(strings.Join(d.feedLines, "\n"))
+		}
+		return d.vp.View()
+	}
+	if at, ok := d.find.line(); ok {
+		if key := fmt.Sprintf("%s\x00%d\x00%d", d.find.query, at, len(d.feedLines)); key != d.findShown {
+			d.findShown = key
+			y := d.vp.YOffset()
+			d.vp.SetContent(strings.Join(d.find.highlight(d.feedLines), "\n"))
+			d.vp.SetYOffset(y)
+		}
+		if d.findJump {
+			d.findJump = false
+			d.vp.SetYOffset(max(at-d.vp.Height()/3, 0))
+		}
+	}
+	return d.vp.View() + "\n" + d.find.bar(d.width, "")
 }
 
 // landAtFailure opens a finished, failed attempt where it failed (#597)

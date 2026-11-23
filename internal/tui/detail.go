@@ -92,9 +92,17 @@ type (
 // the selected attempt below. PR K adds the diff tab and the action bar to
 // the same shell.
 type detail struct {
-	ctx    context.Context
-	client *apiclient.Client
-	now    func() time.Time
+	// find is the Output pane's search (#1074); feedLines is the content it
+	// last built, which the search scans, and findShown what the viewport
+	// holds with the current match drawn, so a render only re-sets it when
+	// the match moved.
+	find      paneFind
+	feedLines []string
+	findShown string
+	findJump  bool
+	ctx       context.Context
+	client    *apiclient.Client
+	now       func() time.Time
 
 	taskID  int64
 	task    apiclient.TaskDetail
@@ -746,6 +754,12 @@ func (d *detail) updateGlobalNote(n apiclient.Note) tea.Cmd {
 	if ev.Event.TaskID == nil || *ev.Event.TaskID != d.taskID {
 		return nil
 	}
+	// A step that moved on changed the worktree, so a diff that was read is
+	// read again (#1074); the fetch guard keeps a burst to one at a time.
+	if d.diff.loaded && !d.diff.review && d.diff.taskID == d.taskID &&
+		(ev.Event.Type == "task.step_advanced" || ev.Event.Type == "task.state_changed") {
+		return tea.Batch(d.scheduleRefresh(), d.diff.fetch(d.client))
+	}
 	return d.scheduleRefresh()
 }
 
@@ -1294,7 +1308,7 @@ func (d *detail) runByID(id int64) apiclient.StepRun {
 // a y/n confirmation. (The answer form's text entry is captured by
 // taskView's popup routing, updatePopupKey, before keys reach here.)
 func (d *detail) capturesInput() bool {
-	return d.actions.capturing()
+	return d.actions.capturing() || d.find.typing || d.diff.find.typing
 }
 
 // openRepair opens the repair form for a blocked task, fetching the adapter

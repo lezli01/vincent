@@ -241,6 +241,8 @@ const (
 	// context because while it is open it owns the keyboard, and its keys are
 	// nothing like the log pane's underneath it.
 	ctxConfigEdit bindingContext = "config editor"
+	// ctxPaneFind is a search running on a task's Output or Diff (#1074).
+	ctxPaneFind bindingContext = "find in pane"
 	// ctxKeyBindings is Settings' key-bindings screen (#1079).
 	ctxKeyBindings bindingContext = "key bindings"
 	// ctxSettings is the Settings screen (task 152).
@@ -643,6 +645,8 @@ var bindings = []binding{
 	{key: "U", label: "open this lane's parent task", scope: scopePanel, context: ctxOutput, priority: 12},
 	{key: "d", label: "open the Diff tab", scope: scopePanel, context: ctxOutput, priority: 14},
 	{key: "g", label: "jump to the top of the output (g/home; G/end follows)", scope: scopePanel, context: ctxOutput, priority: 15},
+	// #1074: search the feed.
+	{op: keymap.Filter, key: "/", label: "search the output — n and N then walk the matches, esc ends the search", scope: scopePanel, context: ctxOutput, hint: "/ search", priority: 16, term: termFilter},
 
 	// Diff tab. Its own context rather than more ctxOutput rows: the diff is a
 	// list of files and the output is a stream of lines, so ↑/↓ mean different
@@ -666,6 +670,15 @@ var bindings = []binding{
 	{key: "d", label: "switch between the whole task's diff and what the attempt selected on the rail changed", scope: scopePanel, context: ctxDiff, hint: "d by attempt", priority: 9},
 	{key: "pgdown", label: "page the diff (pgup/pgdown, ctrl+d/ctrl+u)", scope: scopePanel, context: ctxDiff, priority: 10},
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxDiff, priority: 11},
+	// #1074: search the diff, scroll it by line, read it again.
+	{op: keymap.Filter, key: "/", label: "search the diff, every file opened — n and N then walk the matches, esc ends the search", scope: scopePanel, context: ctxDiff, hint: "/ search", priority: 12, term: termFilter},
+	{key: "alt+down", label: "scroll the diff one line (alt+↑/alt+↓); ↑/↓ move between files", scope: scopePanel, context: ctxDiff, priority: 13},
+	{key: diffReloadKey, label: "read the diff again — a step ending reads it again too", scope: scopePanel, context: ctxDiff, hint: "ctrl+r reload", priority: 14},
+	// The search layer's own keys (#1074), over Output or Diff.
+	{key: "n", label: "the next match, wrapping", scope: scopePanel, context: ctxPaneFind, hint: "n next", priority: 1, noPalette: true},
+	{key: "N", label: "the previous match, wrapping", scope: scopePanel, context: ctxPaneFind, hint: "N previous", priority: 2, noPalette: true},
+	{op: keymap.Filter, key: "/", label: "search again", scope: scopePanel, context: ctxPaneFind, hint: "/ again", priority: 3, noPalette: true, term: termFilter},
+	{key: "esc", label: "end the search", scope: scopePanel, context: ctxPaneFind, hint: "esc end", priority: 4, noPalette: true},
 
 	// New task.
 	{key: "enter", label: "open the focused field's editor or picker", scope: scopePanel, context: ctxNewTask, hint: "enter edit field", priority: 2},
