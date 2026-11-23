@@ -30,7 +30,12 @@ func bigCatalog(n int) []pickerOption {
 func pick(p *picker, keys ...string) pickerResult {
 	var res pickerResult
 	for _, k := range keys {
-		res = p.update(tea.KeyPressMsg{Code: keyCodeFor(k), Text: k})
+		msg := tea.KeyPressMsg{Code: keyCodeFor(k)}
+		if len([]rune(k)) == 1 {
+			// A named key carries no text, as from a real terminal.
+			msg.Text = k
+		}
+		res = p.update(msg)
 	}
 	return res
 }

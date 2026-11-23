@@ -438,8 +438,11 @@ func (v *triggersView) renderCreate(width, height int) string {
 	out = append(out, indentRows(mark(trigCreateRowCommand)+label("command"), f.command.rows())...)
 	f.interval.SetWidth(fieldW)
 	out = append(out, indentRows(mark(trigCreateRowInterval)+label("poll every"), f.interval.rows())...)
+	// #1082: the prompt only writes a command starter, so it says where the
+	// other sources are chosen rather than reading as all there is.
 	out = append(out, "", styleDim.Render(
-		"  writes a type: command trigger, disabled and with no on_fire line (so propose); the form opens on it next"))
+		"  writes a type: command trigger, disabled and with no on_fire line (so propose); the form opens on it next"),
+		styleDim.Render("  for another source — issues, a schedule, http, GitHub pull requests — leave command empty and pick it under source › type in that form"))
 	if f.saving {
 		out = append(out, "", styleDim.Render("  writing…"))
 	}
