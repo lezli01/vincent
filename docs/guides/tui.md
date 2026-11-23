@@ -1370,7 +1370,10 @@ tab has them.
 Below the panes, the action bar shows **exactly the actions valid in the
 current state** — the daemon computes that list, the TUI renders it. With tasks
 selected on the board it acts on all of them; see
-[Acting on several tasks at once](#acting-on-several-tasks-at-once).
+[Acting on several tasks at once](#acting-on-several-tasks-at-once). An action
+key the task does not offer does nothing and says why on the same line:
+`retry: not available while running`, or that the cursor is on a group, or
+that a chat holds the task.
 
 | Key | Action | Valid from |
 |---|---|---|
@@ -1391,7 +1394,9 @@ selected on the board it acts on all of them; see
 `E` opens the failing step's prompt or command in your editor, and the override
 applies **to this task's snapshot only** — the workflow file is untouched. On a
 `blocked` task the footer lists `E edit+retry` and `R repair` right after
-`r retry`, ahead of skip, cancel and archive.
+`r retry`, ahead of skip, cancel and archive. `E` is listed only in the task
+workspace and only on a step with a prompt or command to edit — not on a gate
+or a fan-out parent — and pressed anywhere else it says why it did nothing.
 
 `R` and `F` open a form instead of acting straight away; they are the two task
 actions that need something written, which is also why neither is offered for a
