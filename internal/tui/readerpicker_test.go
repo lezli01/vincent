@@ -661,7 +661,7 @@ func TestCopyPayloadsCarryTask075Blocks(t *testing.T) {
 func outputItems(items []copyItem) []copyItem {
 	var out []copyItem
 	for _, it := range items {
-		if !strings.HasPrefix(it.group, "task #") {
+		if !strings.HasPrefix(it.group, "task #") && it.group != "output" {
 			out = append(out, it)
 		}
 	}

@@ -5,9 +5,56 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 )
+
+// diffCopyItems are the Diff tab's copy rows (#1076): the hunk under the hunk
+// cursor, and the whole diff of the file the cursor is on, as plain text.
+func (p *diffPane) diffCopyItems() []copyItem {
+	var out []copyItem
+	if sec, file, h, ok := p.hunkPos(); ok {
+		f := &p.sections[sec].files[file]
+		end := len(f.body)
+		if h+1 < len(f.hunks) {
+			end = f.hunks[h+1].start
+		}
+		text := plainJoin(f.body[f.hunks[h].start:end])
+		out = append(out, copyItem{group: "diff", label: "this hunk", snippet: f.path + " " + firstLine(text), text: text})
+	}
+	if len(p.nodes) > 0 {
+		n := p.nodes[min(max(p.cursor, 0), len(p.nodes)-1)]
+		if n.file >= 0 && n.section < len(p.sections) && n.file < len(p.sections[n.section].files) {
+			if f := &p.sections[n.section].files[n.file]; len(f.body) > 0 {
+				out = append(out, copyItem{group: "diff", label: "this file's diff", snippet: f.path, text: plainJoin(f.body)})
+			}
+		}
+	}
+	return out
+}
+
+// outputCopyItem is the displayed attempt's output as plain text (#1076), as
+// the pane draws it at its current level, without colour.
+func (d *detail) outputCopyItem() (copyItem, bool) {
+	if len(d.records) == 0 {
+		return copyItem{}, false
+	}
+	text := strings.TrimSpace(plainJoin(d.outputLines()))
+	if text == "" {
+		return copyItem{}, false
+	}
+	return copyItem{group: "output", label: "this attempt's output", snippet: firstLine(text), text: text}, true
+}
+
+// plainJoin is lines without their colour, one per line.
+func plainJoin(lines []string) string {
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = strings.TrimRight(ansi.Strip(l), " ")
+	}
+	return strings.Join(out, "\n")
+}
 
 // The references a person copies to paste elsewhere (#1076): a task's id,
 // branch, worktree path and pull request, an issue's id, reference and page.
