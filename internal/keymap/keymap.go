@@ -181,7 +181,10 @@ const (
 
 // The global chrome.
 const (
-	Palette       Op = "palette"
+	Palette Op = "palette"
+	// GoTo opens the screens menu (#1080): every screen with a letter, so the
+	// management screens are named on screen and two keys away.
+	GoTo          Op = "go_to"
 	PaletteAlt    Op = "palette_alt"
 	Help          Op = "help"
 	HelpAlt       Op = "help_alt"
@@ -381,6 +384,7 @@ var catalog = []Info{
 	{Op: ChatWith, Default: "alt+t", Meaning: "chat as chat does, choosing the agent, model and effort first", Kind: KindAction, Surfaces: []Surface{Actions, "issues", "issue"}},
 
 	{Op: Palette, Default: ":", Meaning: "open the command palette", Kind: KindGlobal, Surfaces: []Surface{Global}},
+	{Op: GoTo, Default: "`", Meaning: "open the screens menu: every screen, each on a letter", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: PaletteAlt, Default: "ctrl+p", Meaning: "open the command palette from a text field", Kind: KindGlobal, Surfaces: []Surface{Global, "chat", "new chat"}, Typing: true},
 	{Op: Help, Default: "?", Meaning: "toggle the help", Kind: KindGlobal, Surfaces: []Surface{Global}},
 	{Op: HelpAlt, Default: "f1", Meaning: "toggle the help from a text field", Kind: KindGlobal, Surfaces: []Surface{Global, "chat", "new chat"}, Typing: true},

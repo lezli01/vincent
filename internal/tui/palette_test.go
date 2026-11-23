@@ -216,7 +216,7 @@ func TestHelpRendersFromRegistry(t *testing.T) {
 		"open the command palette",
 		"open the selected task",
 		"filter by id",
-		"GO TO (FROM THE : PALETTE)",
+		"GO TO (FROM THE ` SCREENS MENU, BY LETTER, OR THE : PALETTE)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("help overlay missing %q", want)

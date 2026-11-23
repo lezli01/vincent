@@ -247,6 +247,17 @@ func (p *chatRewindPicker) title() string {
 
 func (p *chatRewindPicker) render(width int) []string {
 	out := []string{" " + styleDim.Render(p.title())}
+	// The other modes, by their keys (#1080).
+	var other []string
+	switch {
+	case p.compare:
+		other = []string{rewindForkKey + " fork", rewindCompareKey + " back to rewind"}
+	case p.fork:
+		other = []string{rewindForkKey + " back to rewind", rewindCompareKey + " compare two agents"}
+	default:
+		other = []string{rewindForkKey + " fork a new chat instead", rewindCompareKey + " compare two agents"}
+	}
+	out = append(out, ansi.Truncate(" "+styleDim.Render(strings.Join(other, " · ")), width, "…"))
 	if len(p.rows) == 0 {
 		return append(out, "   "+styleDim.Render("no turn to go back to"))
 	}
@@ -334,6 +345,11 @@ func (v *chatView) updateRewindKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		v.rewind = nil
+	case rewindForkKey, rewindCompareKey:
+		// #1080: the picker's other two modes, named on its first line —
+		// forking and comparing were palette-only rows nobody would find.
+		v.switchRewindPicker(msg.String())
+		return nil
 	case "up":
 		p.cursor = max(p.cursor-1, 0)
 	case "down":
@@ -852,6 +868,52 @@ func (v *chatView) compareOfCmd() tea.Cmd {
 }
 
 // openComparePicker opens the turn picker as the compare picker (task 171).
+// The rewind picker's mode keys (#1080).
+const (
+	rewindForkKey    = "f"
+	rewindCompareKey = "c"
+)
+
+// canFork and canCompare say whether the picker may switch to that mode:
+// never on an ended chat, and compare only with a second agent to ask.
+func (v *chatView) canFork() bool {
+	return v.chat != nil && !chatstate.Terminal(chatstate.State(v.chat.State))
+}
+
+func (v *chatView) canCompare() bool {
+	return v.canFork() && len(forkAgents(v.chat, v.agents)) > 1
+}
+
+// switchRewindPicker moves the open picker to fork or compare, or back to
+// rewind when it is already there, with the cursor kept on its turn.
+func (v *chatView) switchRewindPicker(key string) {
+	old := v.rewind
+	var seq int
+	if old.cursor < len(old.rows) {
+		seq = old.rows[old.cursor].seq
+	}
+	switch {
+	case key == rewindForkKey && old.fork && !old.compare,
+		key == rewindCompareKey && old.compare:
+		v.openRewindPicker(false)
+	case key == rewindForkKey && v.canFork():
+		v.openRewindPicker(true)
+	case key == rewindCompareKey && v.canCompare():
+		v.openComparePicker()
+	case !v.canFork():
+		old.err = "this chat has ended — nothing forks or compares from it"
+		return
+	default:
+		old.err = "no second agent that can hold a chat is available to compare with"
+		return
+	}
+	for i, r := range v.rewind.rows {
+		if seq != 0 && r.seq == seq {
+			v.rewind.cursor = i
+		}
+	}
+}
+
 func (v *chatView) openComparePicker() {
 	v.openRewindPicker(true)
 	if v.rewind != nil {

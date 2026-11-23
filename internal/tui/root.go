@@ -816,6 +816,12 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case opKey(keymap.Palette), opKey(keymap.PaletteAlt):
 		m.openPalette()
 		return nil, true
+	case opKey(keymap.GoTo):
+		// #1080: the screens, named and on a letter each.
+		if m.phase == phaseConnected || m.phase == phaseReconnecting {
+			m.palette = newGoToMenu(m.githubAvailable())
+			return nil, true
+		}
 	case opKey(keymap.Help), opKey(keymap.HelpAlt):
 		m.help = !m.help
 		m.helpPane = newScrollPane(1, 1, true)
