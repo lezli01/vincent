@@ -70,7 +70,7 @@ func TestFeedFoldsEveryOtherAttemptAroundTheOpenOne(t *testing.T) {
 // cost and whether the pane follows; on a finished one, which attempt is open.
 func TestFeedStatusLine(t *testing.T) {
 	d := feedDetail(t)
-	if got := ansi.Strip(d.feedStatus(100)); !strings.Contains(got, "verify · failed") || !strings.Contains(got, "attempt 2/3") {
+	if got := ansi.Strip(d.feedStatus(100)); !strings.Contains(got, "verify · failed") || !strings.Contains(got, "run 2 of 3") {
 		t.Errorf("finished status = %q", got)
 	}
 	live := attempt(4, 3, 1, "implement", "running", true)
@@ -78,7 +78,7 @@ func TestFeedStatusLine(t *testing.T) {
 	d.task.Steps = append(d.task.Steps, live)
 	d.displayRun, d.following = 4, true
 	got := ansi.Strip(d.feedStatus(120))
-	for _, want := range []string{"working…", "41.0k↑/6.0k↓", "$0.31", "▼ following", "attempt 4/4"} {
+	for _, want := range []string{"working…", "41.0k↑/6.0k↓", "$0.31", "▼ following", "run 4 of 4"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("live status misses %q: %q", want, got)
 		}

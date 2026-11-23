@@ -781,7 +781,7 @@ func (r *Runner) runSteps(ctx context.Context, project *store.Project, w *stepWa
 				w.persist(ctx, pos+1, env.log)
 				continue
 			}
-			r.fail(task, outcome.reason, fmt.Sprintf("step %q failed; its step run carries the output", env.step.ID),
+			r.fail(task, outcome.reason, fmt.Sprintf("step %q failed — its output says why", env.step.ID),
 				env.log, "step failed", nil)
 			return
 		}

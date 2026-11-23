@@ -189,9 +189,10 @@ func layoutFormRows(formRows []wfEditRow, cursor, editing int, input *textField,
 			}
 		}
 		if i == cursor && row.field.Help != "" {
-			help := []string{row.field.Help}
+			text := plainHelp(row.field.Help)
+			help := []string{text}
 			if width > 0 {
-				help = wrapText(row.field.Help, valueW, wrapOpts{})
+				help = wrapText(text, valueW, wrapOpts{})
 			}
 			for _, h := range help {
 				lines = append(lines, pad+styleDim.Render(h))

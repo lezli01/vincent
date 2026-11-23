@@ -393,7 +393,7 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 		return
 	}
 	if msg.err == nil {
-		status := msg.action + " · now " + msg.task.State
+		status := msg.action + " · now " + stateWords(msg.task.State)
 		// A cascade leaves the parent exactly where it was, so "now
 		// awaiting_children" is all the task row can say about it; the lanes
 		// it re-admitted are the part a human acted for (task 090).
@@ -427,7 +427,7 @@ func (a *actionBar) applyResult(msg actionResultMsg) {
 	if errors.As(msg.err, &apiErr) {
 		if apiErr.Status == http.StatusConflict {
 			if state := apiErr.Details["state"]; state != "" {
-				a.setStatus(fmt.Sprintf("%s: the task is %s", msg.action, state), true)
+				a.setStatus(fmt.Sprintf("%s: the task is %s", msg.action, stateWords(state)), true)
 				return
 			}
 		}

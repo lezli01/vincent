@@ -135,7 +135,7 @@ func (b *board) laneCard(lane apiclient.Task, selected bool, w int) []string {
 		parts = append(parts, step)
 	}
 	if lane.BlockReason != nil && *lane.BlockReason != "" {
-		parts = append(parts, *lane.BlockReason)
+		parts = append(parts, reasonTitle(*lane.BlockReason))
 	}
 	left := laneRowStyle(lane).Render(glyph+" ") + name
 	right := styleKey.Render("#" + strconv.FormatInt(lane.ID, 10))
