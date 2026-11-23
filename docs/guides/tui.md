@@ -656,10 +656,10 @@ instead](../assets/tui-create-pr.png)
 | `e` | Write that row in `$EDITOR` instead |
 | `ctrl+s` | Push the branch and open the pull request |
 | `ctrl+o` | Open GitHub's own new-pull-request page with this prefill instead |
-| `esc` | Close without sending anything — the draft is discarded |
+| `esc` | Close without sending anything — once you have typed into it, it asks `discard this draft? y/n` first |
 
 Inside a field `enter` is a newline (a pull-request body usually wants more than
-one line), `ctrl+s` keeps the text, and `esc` discards it. A title is required:
+one line), `ctrl+s` or `esc` keeps the text. A title is required:
 `ctrl+s` without one says so rather than sending something GitHub cannot use.
 
 The popup's footer — the compare URL, an error, the status and the key line —
@@ -1449,7 +1449,7 @@ defaults](../assets/tui-repair.png)
 | `t` | In an open agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the repair |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
-| `esc` | Close without repairing — the draft is discarded |
+| `esc` | Close without repairing — once you have typed into it, it asks `discard this draft? y/n` first |
 
 The prompt is the only required row, and it is prose: write what you want done,
 not a template. The daemon puts the context around it — the task, the blocked
@@ -1458,7 +1458,7 @@ step's rendered prompt or command, the failure reason and exit codes, the last
 the agent can read further itself.
 
 Inside the prompt field `enter` is a newline (a repair prompt usually wants
-more than one line), `ctrl+s` keeps the text, and `esc` discards it. Agent,
+more than one line), `ctrl+s` or `esc` keeps the text. Agent,
 model and effort are optional; set they apply to this run only and win over the
 task's overrides and the workflow's defaults.
 
@@ -1493,7 +1493,7 @@ start row reading when a slot is free](../assets/tui-follow-up.png)
 | `t` | In an open workflow / agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the follow-up |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
-| `esc` | Close without running anything — the draft is discarded |
+| `esc` | Close without running anything — once you have typed into it, it asks `discard this draft? y/n` first |
 
 The top row picks what kind of run this is, and it decides what the row under it
 means:
@@ -2829,7 +2829,8 @@ something you are expected to walk into.
 
 The draft owns the keyboard while it is open: every row, and every open list, so
 no keystroke leaks out to the global keys. `esc` closes an open list and leaves
-the draft alone; a second press discards the draft and returns you to the board.
+the draft alone; a second press asks `discard this draft? y/n` once you have
+typed into it, and `y` returns you to the board.
 
 | Key | Does, in the create form |
 |---|---|
@@ -2839,7 +2840,7 @@ the draft alone; a second press discards the draft and returns you to the board.
 | `t` | In an open list, type a value it does not offer |
 | `←` / `→` | Step the agent field in place |
 | `ctrl+s` | Create the chat and open it |
-| `esc` | Close an open list, else discard the draft |
+| `esc` | Close an open list, else close the form — asking first when it holds a draft |
 
 ### Chat search
 
