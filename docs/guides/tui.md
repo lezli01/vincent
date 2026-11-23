@@ -432,8 +432,10 @@ The rest of the behavior follows from what a selection is:
 
 From 130 columns wide, a task opens as one workspace: its name, state, reason
 and linked issue across the top, its steps on the left, and the tabs beside
-them. When a task is blocked, the reason and the keys that can restart it are
-pinned under the tab. On a narrower terminal the steps are a tab.
+them. When a task is blocked, the reason, a short form of the failure card's
+evidence — how the attempt exited and up to three lines of what it printed —
+and the keys that can restart it are pinned under the tab. On a narrower
+terminal the steps are a tab.
 
 The **steps rail** gives each step one row — its state glyph (`✓` done, `●`
 running, `✗` failed, `!` waiting on you, `○` not reached), its name and how long
@@ -500,14 +502,24 @@ is one, the attempt, and the reason in words with its code beside it. `✗` is a
 failure, `⚠` a fan-out one of its lanes stopped, `■` an aborted task, so the
 card reads without colour. Below it:
 
-- **Evidence** — the last few lines of the failing attempt's transcript,
-  fetched once when the card first shows that attempt. For a failed check they
-  are the check's own output, not the agent's last message. A block that no
+- **Evidence** — what the failing attempt's transcript says, fetched once
+  when the card first shows that attempt. It opens with the command that
+  failed (`$ go test ./...`, its first line and a count of the rest) and
+  which part failed and how: *the check exited 1*, or *the command printed
+  nothing and exited 1* when there is nothing to quote. Then up to twelve
+  lines of what it printed, fewer on a shorter screen, chosen rather than
+  taken from the end: lines that name a failure (`--- FAIL`, `error:`,
+  `fatal:`, `panic:`) and what is indented under them come first, then
+  stderr (marked with a red bar), then the last lines; a `⋯` row marks lines
+  left out between two quoted ones. For a failed check they are the check's
+  own output, not the agent's last message. `enter` opens that attempt's
+  output at the line it failed on, under the same `$` line. A block that no
   step ran into — a dirty worktree, a missing container runtime — shows the
   daemon's explanation instead; when there is none, the card says the details
   are in the daemon log (`:` then *daemon*).
-- The step's own **status** message, quoted — what it last said, which is not
-  the reason it stopped.
+- The step's **last status before the failure**, quoted — what it last said,
+  which is not the reason it stopped and may name a stage it had already
+  passed.
 - For a fan-out, **which lane** stopped it, the lane's task and what the lane
   is stuck on; `l` opens that lane.
 - **What you can do** — the actions that answer the reason first (retry, with

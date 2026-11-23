@@ -2,6 +2,8 @@ package tui
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -75,7 +77,7 @@ func TestFailureCardNonzeroExit(t *testing.T) {
 		{Type: "agent.tool_use"},
 		{Type: "agent.error", Message: "exit status 2"},
 	}
-	if got := selectEvidence(c.reason, recs, 2); !slices.Equal(got, []string{"main.go:3: undefined: x", "exit status 2"}) {
+	if got := evidenceTexts(selectEvidence(failingPhase(c.reason, recs), recs, 2)); !slices.Equal(got, []string{"main.go:3: undefined: x", "exit status 2"}) {
 		t.Fatalf("evidence = %q", got)
 	}
 }
@@ -89,7 +91,7 @@ func TestFailureCardCheckFailedEvidenceIsTheCheck(t *testing.T) {
 		{Type: "vincent.output", Phase: "check", Stream: "stdout", Text: "exit status 1"},
 		{Type: "agent.output", Text: "I am confident."},
 	}
-	got := selectEvidence(reasonCheckFailed, recs, evidenceLines)
+	got := evidenceTexts(selectEvidence(failingPhase(reasonCheckFailed, recs), recs, evidenceLines))
 	if !slices.Equal(got, []string{"FAIL TestThing", "exit status 1"}) {
 		t.Fatalf("evidence = %q, want the check's lines only", got)
 	}
@@ -231,7 +233,7 @@ func TestFailureCardStatusIsNeverTheReason(t *testing.T) {
 		t.Fatalf("the status reached the headline: %q", line)
 	}
 	got := ansi.Strip(cardView(t, task).render(100, 40))
-	if !strings.Contains(got, "status  “all green here”") {
+	if !strings.Contains(got, "last status before the failure  “all green here”") {
 		t.Errorf("card misses the quoted status:\n%s", got)
 	}
 	// It does not stand in for missing evidence either.
@@ -303,12 +305,16 @@ func TestFailureEvidenceFetchedOncePerRun(t *testing.T) {
 	if cmd := v.syncFailureEvidence(); cmd == nil || v.evidence.runID != 6 {
 		t.Fatalf("the new failing attempt was not fetched: %+v", v.evidence)
 	}
-	// Off the Overview, nothing is fetched.
+	// Off the Overview the pinned card carries the evidence too (#1086), so
+	// a new failing attempt is fetched there as well, once.
 	task.Steps = append(task.Steps, failedRun(7, 3, "check_failed"))
 	v.detail.applyLoaded(detailLoadedMsg{id: 4, task: task})
 	v.tab = taskTabSteps
+	if cmd := v.syncFailureEvidence(); cmd == nil || v.evidence.runID != 7 {
+		t.Fatalf("the pinned card's attempt was not fetched: %+v", v.evidence)
+	}
 	if cmd := v.syncFailureEvidence(); cmd != nil {
-		t.Fatal("the card fetched while another tab was open")
+		t.Fatal("the pinned card refetched the same attempt")
 	}
 }
 
@@ -351,5 +357,165 @@ func TestHeadlinesKeepTheirIdentityAt80(t *testing.T) {
 	strip := ansi.Strip(lanes.renderLaneSelector(80))
 	if ansi.StringWidth(strip) > 80 || !strings.Contains(strip, "(task 42) · ") || !strings.Contains(strip, "1/1 · ") {
 		t.Errorf("the lane strip loses the lane's identity at 80 columns: %q", strip)
+	}
+}
+
+// evidenceTexts is selected evidence as text, a gap as "⋯".
+func evidenceTexts(lines []evidenceLine) []string {
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = l.text
+		if l.gap {
+			out[i] = "⋯"
+		}
+	}
+	return out
+}
+
+// withEvidence is cardView with the failing attempt's transcript already
+// fetched.
+func withEvidence(t *testing.T, task apiclient.TaskDetail, recs []apiclient.TranscriptRecord) *taskView {
+	t.Helper()
+	v := cardView(t, task)
+	run, _ := cardRun(task)
+	v.evidence = failureEvidence{taskID: task.ID, runID: run.ID}
+	v.update(failureEvidenceMsg{taskID: task.ID, runID: run.ID, records: recs})
+	return v
+}
+
+func commandStarted(phase, command string) apiclient.TranscriptRecord {
+	raw, _ := json.Marshal(map[string]string{
+		"type": "vincent.command_started", "phase": phase, "command": command,
+	})
+	return apiclient.TranscriptRecord{Type: "vincent.command_started", Phase: phase, Raw: raw}
+}
+
+// #1086: a command that fails without printing says so, with its exit code
+// and the command it ran, and does not send the reader to the daemon log.
+func TestFailureCardSilentCommandSaysItPrintedNothing(t *testing.T) {
+	run := failedRun(5, 1, "nonzero_exit")
+	run.ExitCode = ptr(1)
+	run.StatusMessage = ptr("looking for the Release Please PR")
+	got := ansi.Strip(withEvidence(t, cardTask("nonzero_exit", run), []apiclient.TranscriptRecord{
+		commandStarted("run", "set -e\ngit fetch --quiet --tags\ngh pr list"),
+	}).render(100, 40))
+	for _, want := range []string{
+		"$ set -e  (+2 lines)",
+		"the command printed nothing and exited 1",
+		"last status before the failure  “looking for the Release Please PR”",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("card misses %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "daemon log") {
+		t.Errorf("a silent command still points at the daemon log:\n%s", got)
+	}
+}
+
+// #1086: a failed check names itself and its exit code, not the body's.
+func TestFailureCardSaysTheCheckFailed(t *testing.T) {
+	run := failedRun(5, 1, "check_failed")
+	run.StepType, run.ExitCode, run.CheckExitCode = "agent", ptr(0), ptr(3)
+	got := ansi.Strip(withEvidence(t, cardTask("check_failed", run), []apiclient.TranscriptRecord{
+		{Type: "agent.output", Text: "All done."},
+		commandStarted("check", "go test ./..."),
+		{Type: "vincent.output", Phase: "check", Stream: "stdout", Text: "FAIL"},
+	}).render(100, 40))
+	for _, want := range []string{"$ go test ./...", "the check exited 3", "FAIL"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("card misses %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "All done.") {
+		t.Errorf("a failed check quotes the agent:\n%s", got)
+	}
+}
+
+// #1086: the line that names the failing test, and what is indented under
+// it, beat the summary rows at the tail.
+func TestEvidencePrefersFailureLinesOverTheTail(t *testing.T) {
+	var recs []apiclient.TranscriptRecord
+	out := func(stream, text string) {
+		recs = append(recs, apiclient.TranscriptRecord{Type: "vincent.output", Phase: "check", Stream: stream, Text: text})
+	}
+	recs = append(recs, commandStarted("check", "go test ./..."))
+	out("stdout", "=== RUN   TestMCPExcludesDestructiveAdminByName")
+	out("stdout", "--- FAIL: TestMCPExcludesDestructiveAdminByName (0.01s)")
+	out("stdout", "    mcp_test.go:88: admin tool exposed: delete_project")
+	for _, pkg := range []string{"api", "cli", "daemon", "store", "tui", "workflow"} {
+		out("stdout", "ok  \tgithub.com/lezli01/vincent/internal/"+pkg+"\t1.2s")
+	}
+	out("stdout", "FAIL\tgithub.com/lezli01/vincent/internal/mcp\t0.4s")
+	out("stdout", "FAIL")
+	got := evidenceTexts(selectEvidence("check", recs, 5))
+	want := []string{
+		"--- FAIL: TestMCPExcludesDestructiveAdminByName (0.01s)",
+		"    mcp_test.go:88: admin tool exposed: delete_project",
+		"⋯",
+		"FAIL\tgithub.com/lezli01/vincent/internal/mcp\t0.4s",
+		"FAIL",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("evidence = %q, want %q", got, want)
+	}
+}
+
+// #1086: stderr is preferred over stdout rows that merely came later.
+func TestEvidencePrefersStderr(t *testing.T) {
+	recs := []apiclient.TranscriptRecord{
+		{Type: "vincent.output", Phase: "run", Stream: "stderr", Text: "not green on master: govulncheck failure"},
+	}
+	for i := range 6 {
+		recs = append(recs, apiclient.TranscriptRecord{
+			Type: "vincent.output", Phase: "run", Stream: "stdout", Text: fmt.Sprintf("check %d ok", i),
+		})
+	}
+	got := selectEvidence("run", recs, 3)
+	if len(got) != 3 || got[0].text != "not green on master: govulncheck failure" || !got[0].stderr ||
+		!got[1].gap || got[2].text != "check 5 ok" {
+		t.Fatalf("evidence = %+v, want the stderr line, a gap and the last row", got)
+	}
+}
+
+// #1086: the card uses more than five lines when the pane has room.
+func TestFailureCardEvidenceGrowsWithTheScreen(t *testing.T) {
+	var recs []apiclient.TranscriptRecord
+	for i := range 20 {
+		recs = append(recs, apiclient.TranscriptRecord{Type: "vincent.output", Phase: "run", Text: fmt.Sprintf("row %02d", i)})
+	}
+	got := ansi.Strip(withEvidence(t, cardTask("nonzero_exit", failedRun(5, 1, "nonzero_exit")), recs).render(100, 60))
+	for i := 20 - evidenceLines; i < 20; i++ {
+		if !strings.Contains(got, fmt.Sprintf("row %02d", i)) {
+			t.Errorf("a tall card misses row %02d:\n%s", i, got)
+		}
+	}
+	if !strings.Contains(got, "the command exited 2") {
+		t.Errorf("card misses its exit sentence:\n%s", got)
+	}
+}
+
+// #1086: the card pinned under the other tabs carries the evidence,
+// shortened.
+func TestPinnedFailureCardCarriesEvidence(t *testing.T) {
+	task := cardTask("nonzero_exit", failedRun(5, 1, "nonzero_exit"))
+	task.BlockDetail = ptr("command exited 2")
+	recs := []apiclient.TranscriptRecord{
+		{Type: "vincent.output", Phase: "run", Text: "compiling"},
+		{Type: "vincent.output", Phase: "run", Stream: "stderr", Text: "main.go:3: error: undefined: x"},
+		{Type: "vincent.output", Phase: "run", Text: "done 1"},
+		{Type: "vincent.output", Phase: "run", Text: "done 2"},
+		{Type: "vincent.output", Phase: "run", Text: "done 3"},
+	}
+	v := withEvidence(t, task, recs)
+	v.tab = taskTabSteps
+	got := ansi.Strip(strings.Join(v.taskFailureCard(80), "\n"))
+	for _, want := range []string{"the command exited 2", "main.go:3: error: undefined: x", "done 3"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("pinned card misses %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "compiling") {
+		t.Errorf("pinned card is not shortened:\n%s", got)
 	}
 }
