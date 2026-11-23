@@ -1224,3 +1224,29 @@ func TestNewTaskAgentPickerUnconstrainedWithoutRequire(t *testing.T) {
 		}
 	}
 }
+
+// #1052: a second ctrl+s while the create is in flight sends nothing, and
+// the form says what it is waiting for.
+func TestNewTaskSubmitsOnceWhileInFlight(t *testing.T) {
+	n := loadedForm(t)
+	selectProject(n, 1)
+	moveTo(n, ntTitle)
+	press(n, "enter")
+	typeText(n, "once")
+	press(n, "enter")
+	n.client = apiclient.New("http://127.0.0.1:1", "token") // never dialled: the command is not run
+	if cmd := n.submit(); cmd == nil || !n.submitting {
+		t.Fatalf("the first submit sent nothing (err %q, rowErr %v)", n.err, n.rowErr)
+	}
+	if cmd := n.submit(); cmd != nil {
+		t.Fatal("a second submit while the first is in flight sent another create")
+	}
+	if out := n.render(128, 60); !strings.Contains(out, "creating…") {
+		t.Errorf("the form does not say the create is in flight:\n%s", out)
+	}
+	// A rejection frees the form to try again.
+	n.update(ntFailedMsg{err: errors.New("down")})
+	if cmd := n.submit(); cmd == nil {
+		t.Fatal("the form cannot resubmit after a failure")
+	}
+}
