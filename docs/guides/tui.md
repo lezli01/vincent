@@ -2919,6 +2919,12 @@ tall and grows with the draft, up to a third of the screen and at most ten rows;
 a draft taller still scrolls inside it, and the box's title says how many lines
 are out of view (`+N lines`). The conversation shrinks to pay for the rows.
 
+An ended chat — closed, archived or handed off — takes no more turns, so it has
+no composer: in its place a line says so and names what still works with it,
+`alt+e` export, `ctrl+y` copy, `ctrl+f` search and `alt+v` Markdown. A key
+typed there goes nowhere and says why, rather than filling a draft that could
+never be sent.
+
 ![The chat workspace at `quiet`: the second turn's prompt as a right-aligned
 card, the answer rendered below it with its fenced block, and the titled
 `message` composer under them](../assets/tui-chat.png)

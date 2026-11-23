@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
@@ -408,6 +409,10 @@ func (v *chatView) paste(text string) tea.Cmd {
 
 // pasteText is a paste into the composer as text.
 func (v *chatView) pasteText(text string) tea.Cmd {
+	if v.ended() {
+		v.note, v.noteBad = endedChatNote(v.chat), false
+		return nil
+	}
 	var cmd tea.Cmd
 	before := v.composer.Value()
 	v.composer, cmd = v.composer.Update(tea.PasteMsg{Content: text})
@@ -1540,6 +1545,14 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return v, openChatExportCmd(v.chat.ID, v.chat.Title)
 	}
+	if v.ended() {
+		// No text where nothing can be sent (#1054): an ended chat stores
+		// no draft, so what was typed would be lost on leaving.
+		if msg.Text != "" {
+			v.note, v.noteBad = endedChatNote(v.chat), false
+		}
+		return v, nil
+	}
 	var cmd tea.Cmd
 	before := v.composer.Value()
 	v.composer, cmd = v.composer.Update(msg)
@@ -2494,3 +2507,34 @@ func (v *chatView) resolveDoc(seq int64) (string, bool) {
 // notesClipboard marks the chat as saying a copy's outcome itself, on its
 // note line, so the root's status line stands down.
 func (v *chatView) notesClipboard() {}
+
+// ended is whether the chat is terminal: closed, archived or handed off. It
+// takes no more turns, so it has no composer (#1054).
+func (v *chatView) ended() bool {
+	return v.chat != nil && chatstate.Terminal(chatstate.State(v.chat.State))
+}
+
+// endedChatNote says an ended chat takes no text.
+func endedChatNote(chat *apiclient.Chat) string {
+	return sendRefusal(chatstate.State(chat.State)) + " — nothing typed here can be sent"
+}
+
+// endedChatLine is what an ended chat draws where the composer was: that it
+// takes no more turns, and the keys that still do something with it.
+func endedChatLine(chat *apiclient.Chat, width int) []string {
+	var keys []string
+	add := func(key, label string) {
+		if key != "" {
+			keys = append(keys, styleKey.Render(key)+" "+label)
+		}
+	}
+	add(opKey(keymap.ExportChat), "export")
+	add(copyPickKey, "copy")
+	add(chatSearchKey, "search")
+	add(opKey(keymap.ChatMarkdown), "Markdown")
+	out := []string{" " + styleDim.Render(ansi.Truncate("this chat is "+chatStateLabel(chat.State)+" and takes no more turns", max(width-1, 1), "…"))}
+	if len(keys) > 0 {
+		out = append(out, " "+ansi.Truncate(strings.Join(keys, styleDim.Render(" · ")), max(width-1, 1), "…"))
+	}
+	return out
+}
