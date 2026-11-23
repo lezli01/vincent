@@ -347,9 +347,17 @@ opens on it under its new name.
 
 With no project registered, every project screen — the board, the archived
 boards, chats, issues, pull requests, workflows, triggers and the new-task
-form — says so and points at `@`, whose last row opens the overview where
-you add one. Workflows and triggers say it above what they still list: the
-global and built-in workflows, and the triggers of removed projects. The first project you add is selected.
+form — says so and points at `@`, which then opens the project overview with
+its add form up rather than an empty picker. Workflows and triggers say it
+above what they still list: the global and built-in workflows, and the
+triggers of removed projects. The first project you add is selected, and the
+overview says so and names the next key: `enter` goes to its board, where `n`
+starts its first task.
+
+Every other empty list says why it is empty and which key changes that: a
+filter that matches nothing names `esc`, the chats board's ended scope names
+`s`, the issues board names `n` and — on a project with an issue source —
+`S`, and the pull request list names `P`.
 
 While the daemon is unreachable `@` still opens, on the last list it had,
 marked `offline — list may be stale`. A switch made then takes effect when

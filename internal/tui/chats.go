@@ -988,3 +988,30 @@ func (v *chatsView) archiveCmd(id int64, force bool) tea.Cmd {
 }
 
 func (v *chatsView) setTabRoot(on bool) { v.tabRoot = on }
+
+// emptyChatsText says why the list is empty and which key changes that
+// (#1082): a filter that matches nothing, a scope with nothing in it, and an
+// archive — where n starts nothing — are not "no chats yet".
+func (v *chatsView) emptyChatsText() string {
+	switch {
+	case strings.TrimSpace(v.filter.Value()) != "" && len(v.chats) > 0:
+		return fmt.Sprintf("No chat matches %q — esc clears the filter.", strings.TrimSpace(v.filter.Value()))
+	case v.archived:
+		w := v.activeWindow()
+		if w.days == 0 {
+			return "No archived, handed-off or closed chats."
+		}
+		line := "No chats ended in the " + w.label + "."
+		if key := opKey(keymap.Scope); key != "" {
+			line += " " + key + " widens the window."
+		}
+		return line
+	case v.scope == apiclient.ArchivedOnly:
+		line := "No archived, handed-off or closed chats."
+		if key := opKey(keymap.Scope); key != "" {
+			line += " " + key + " lists the others."
+		}
+		return line
+	}
+	return "No chats yet. Press " + opKey(keymap.New) + " to start one."
+}

@@ -14,7 +14,6 @@ import (
 
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/chatstate"
-	"github.com/lezli01/vincent/internal/keymap"
 )
 
 // The chats workspace (task 150.5, decision 7): the live chats board and the
@@ -388,7 +387,7 @@ func (v *chatsView) chatListPane(w, h, top int) []string {
 	if len(rows) == 0 {
 		text := "…"
 		if v.loaded {
-			text = "No chats. Press " + opKey(keymap.New) + " to start one."
+			text = v.emptyChatsText()
 		}
 		return drawBox(title, right, styled(wrapText(text, inner, wrapOpts{}), styleDim), w, h, edgesRounded, styleDim)
 	}

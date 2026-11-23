@@ -83,8 +83,8 @@ func TestIssuesWithNoProjectLoadNothing(t *testing.T) {
 	}
 	v.setProjects(nil)
 	out := ansi.Strip(v.render(120, 20))
-	if !strings.Contains(out, "No projects registered") || !strings.Contains(out, "overview") {
-		t.Errorf("the empty selection does not point at the overview:\n%s", out)
+	if !strings.Contains(out, "No projects registered") || !strings.Contains(out, "to add one") {
+		t.Errorf("the empty selection does not say how to add one:\n%s", out)
 	}
 }
 
