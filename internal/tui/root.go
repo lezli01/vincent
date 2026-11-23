@@ -1107,7 +1107,7 @@ type footerBinder interface {
 // the collision rather than a list of view special cases in updateKey.
 func (m *root) panelOwnsKey(key string) bool {
 	for _, b := range bindingsFor(m.activeContext()) {
-		if b.key == key {
+		if b.key == key && !b.echo {
 			return true
 		}
 	}
@@ -1119,7 +1119,7 @@ func (m *root) panelOwnsKey(key string) bool {
 // rows that only describe the root's switch do not count as the surface's.
 func (m *root) panelOwnsLocalKey(key string) bool {
 	for _, b := range bindingsFor(m.activeContext()) {
-		if b.key == key && !b.mainTab {
+		if b.key == key && !b.mainTab && !b.echo {
 			return true
 		}
 	}

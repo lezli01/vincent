@@ -433,7 +433,7 @@ func footerMoreSeg(n int) footerSeg {
 func footerCountable(rows []binding) int {
 	n := 0
 	for _, b := range rows {
-		if !b.noPalette && !b.aliased {
+		if (!b.noPalette || b.echo) && !b.aliased {
 			n++
 		}
 	}
@@ -561,6 +561,13 @@ func footerAdmitActions(rest []footerSeg, countable, avail int) []footerSeg {
 // status.
 func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry bool) []footerSeg {
 	segs := make([]footerSeg, 0, 8)
+	if target.bulk() {
+		// The way out of a selection leads it (#1073): esc clears it, and
+		// nothing else on the line says the selection is there to clear.
+		segs = append(segs, footerSeg{
+			text: styleKey.Render("esc") + " " + fmt.Sprintf("clear (%d)", len(target.marked)), key: "esc",
+		})
+	}
 	if bar != nil && (target.id != 0 || target.bulk()) {
 		for _, o := range footerActionOps {
 			if !target.has(o.action) || (o.label != "" && target.bulk()) {
@@ -648,7 +655,9 @@ func footerHintSegs(rows []binding) []footerSeg {
 		// A hinted row the palette does not list — the popup surfaces — is
 		// shown but never counted: `+N` points at a palette that would list
 		// none of these keys.
-		seg := footerSeg{key: r.key, counts: !r.noPalette}
+		// An echo row is a global key the palette lists under its own global
+		// row, so it counts as one of the surface's main keys (#1073).
+		seg := footerSeg{key: r.key, counts: !r.noPalette || r.echo}
 		key, rest, ok := strings.Cut(r.hint, " ")
 		if !ok {
 			seg.text = styleKey.Render(r.hint)

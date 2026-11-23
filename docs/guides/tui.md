@@ -3953,7 +3953,11 @@ can run.
 
 The status bar names the screen you are on, from 100 columns up, and offers that
 screen's main keys: at most six, in priority order, fewer on a narrow terminal.
-It then tells you what is left: a dim **`+N`** after the action keys counts the
+The keys that move work on — open, new, act, leave — rank ahead of the ones that
+only read or move the cursor: on the task board that is `enter open`, `n new`,
+`/ filter`, `space select` and one `↑↓←→ move`; on an issue, `a new task`,
+`T chat`, `W comment` and `X close/reopen` come before the raw, links and copy
+keys. With tasks selected, `esc clear (N)` leads the action keys. It then tells you what is left: a dim **`+N`** after the action keys counts the
 keys this surface has that the line is not showing — the ones past the main six,
 the ones that did not fit, the ones with no short form, and, on a narrow terminal,
 the task actions that did not fit. When a task offers more

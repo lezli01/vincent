@@ -328,6 +328,12 @@ type binding struct {
 	// the operation's *default*, and registry() swaps in the effective key
 	// and rewrites the hint to match; a row with no op is fixed.
 	op keymap.Op
+	// echo marks a panel row that only puts a global key on this surface's
+	// footer (#1073): `n new` on the task board. It does not claim the key —
+	// panelOwnsKey skips it, so the global binding still answers — and it is
+	// kept out of the palette and the help sheet's panel list, where the
+	// global row already stands.
+	echo bool
 	// unbound marks a row the effective keymap left without a key (task
 	// 128): an operation whose default a user binding took on a lenient
 	// load, or a fixed key shadowed on its surface. key and hint are empty;
@@ -519,15 +525,19 @@ var bindings = []binding{
 	// because replaying tab from the palette would switch from a screen the
 	// palette already covered, and the screen rows are the palette's way.
 	{key: "tab", label: mainTabLabel, scope: scopePanel, context: ctxTasks, hint: "tab next tab", priority: 0, mainTab: true, noPalette: true},
-	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxTasks, hint: "↑↓ card", priority: 3},
+	// One hint for the four arrows (#1073): moving is what every board
+	// reader already knows, so it takes one of the six slots, not two, and
+	// `n new` gets the other. The board's columns are called columns.
+	{key: "down", label: "move up and down the column (↑/↓)", scope: scopePanel, context: ctxTasks, hint: "↑↓←→ move", priority: 5},
 	{op: keymap.OpenRow, key: "enter", label: "open the selected task in its full-screen workspace", scope: scopePanel, context: ctxTasks, hint: "enter open", priority: 1, term: termOpenRow},
-	{op: keymap.Filter, key: "/", label: "filter by id, title, state or issue", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 2, term: termFilter},
-	{key: "left", label: "move to the column on the left", scope: scopePanel, context: ctxTasks, hint: "←/→ lane", priority: 4},
-	{key: "right", label: "move to the column on the right", scope: scopePanel, context: ctxTasks, priority: 4, aliased: true},
+	{op: keymap.New, key: "n", label: "new task — for the project you are looking at", scope: scopePanel, context: ctxTasks, hint: "n new", priority: 2, echo: true, noPalette: true},
+	{op: keymap.Filter, key: "/", label: "filter by id, title, state or issue", scope: scopePanel, context: ctxTasks, hint: "/ filter", priority: 3, term: termFilter},
+	{key: "left", label: "move to the column on the left", scope: scopePanel, context: ctxTasks, priority: 5, aliased: true},
+	{key: "right", label: "move to the column on the right", scope: scopePanel, context: ctxTasks, priority: 5, aliased: true},
 	{key: "f", label: "fold or open the issue group under the cursor", scope: scopePanel, context: ctxTasks, hint: "f fold", priority: 8},
 	// Lanes under a fan-out parent's card (boardcardlanes.go, issue #316).
 	{key: "L", label: "show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 8},
-	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 5},
+	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 4},
 	{op: keymap.AttentionFilter, key: "H", label: "show only the tasks that need a human — awaiting input, awaiting approval, blocked, or a fan-out whose lane is (H again shows every task)", scope: scopePanel, context: ctxTasks, hint: "H needs you", priority: 6, term: termAttention},
 	{key: "V", label: "select every task the filter is showing, or clear that selection", scope: scopePanel, context: ctxTasks, priority: 6},
 	// Folding the issue groups (task 150.6). C/O are the diff pane's two
@@ -724,6 +734,9 @@ var bindings = []binding{
 	// Chat search (task 158).
 	{key: "enter", label: "open the chat — on a turn's match, scrolled to that turn", scope: scopePanel, context: ctxChatSearch, hint: "enter open", priority: 1},
 	{key: "down", label: "move between results (↑/↓, pgup/pgdown)", scope: scopePanel, context: ctxChatSearch, hint: "↑/↓ move", priority: 2},
+	// The way back has a row of its own (#1073): nothing else on the line
+	// says how to leave.
+	{key: "esc", label: "close the search and go back to the tab you came from", scope: scopePanel, context: ctxChatSearch, hint: "esc back", priority: 3, noPalette: true},
 
 	// The compare split view (task 171 decisions 8 and 9). Fixed keys: no
 	// text field has the keyboard, and `[`/`]` read as left and right.
@@ -732,6 +745,7 @@ var bindings = []binding{
 	{key: "[", label: "keep the left side: the right one is archived and its branch deleted (asks first)", scope: scopePanel, context: ctxCompare, hint: "[ keep left", priority: 3},
 	{key: "]", label: "keep the right side: the left one is archived and its branch deleted (asks first)", scope: scopePanel, context: ctxCompare, hint: "] keep right", priority: 4},
 	{op: keymap.Refresh, key: "R", label: "read both sides again", scope: scopePanel, context: ctxCompare, hint: "R reload", priority: 5, term: termRefresh},
+	{key: "esc", label: "go back to where the comparison was opened from", scope: scopePanel, context: ctxCompare, hint: "esc back", priority: 6, noPalette: true},
 	{op: keymap.ExportChat, key: "alt+e", label: chatExportLabel, scope: scopePanel, context: ctxChats, priority: 7},
 	// Task 161 decision 6: the prompt is prefilled with the title, and the
 	// branch keeps the slug it was cut with.
@@ -800,7 +814,9 @@ var bindings = []binding{
 	// is a combination — the composer owns every printable key — and because
 	// the textarea binds ctrl+w, ctrl+d and ctrl+k to editing.
 	{key: chatCloseKey, label: "close this chat — a chat opened on a task, whose worktree and branch stay and which unlocks, or on an issue, whose main worktree is freed for the next main task (asks first)", scope: scopePanel, context: ctxChat, hint: "ctrl+q close", priority: 6},
-	{key: "esc", label: "back to where the chat was opened", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 7},
+	// Ahead of hand-off and close (#1073): leaving is the one move every
+	// visit ends with.
+	{key: "esc", label: "back to where the chat was opened", scope: scopePanel, context: ctxChat, hint: "esc back", priority: 3},
 	{key: rawToggleKey, label: "show the assistant's original Markdown instead of the rendered view", scope: scopePanel, context: ctxChat, hint: "ctrl+o raw", priority: 8},
 	{key: copyPickKey, label: "copy an assistant message, its plain text, or one of its code blocks", scope: scopePanel, context: ctxChat, hint: "ctrl+y copy", priority: 9},
 	{key: linkPickKey, label: "list the links in the assistant's messages — open one in a browser or copy it", scope: scopePanel, context: ctxChat, hint: "ctrl+l links", priority: 10},
@@ -1225,14 +1241,14 @@ var bindings = []binding{
 	{op: keymap.ChatWith, key: "alt+t", label: issueChatWithLabel, scope: scopePanel, context: ctxIssues, priority: 8},
 	// The issue detail (§15 view 13).
 	{op: keymap.OpenRow, key: "enter", label: "open the selected row — a task's workspace or a chat, and esc comes back here; on the Issue tab's tasks-and-chats line, switch to the Work tab", scope: scopePanel, context: ctxIssue, hint: "enter open", priority: 1, term: termOpenRow},
-	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 2, term: termBrowser},
-	{key: rawToggleKey, label: "show the description's and comments' original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 3},
-	{key: linkPickKey, label: "list the links in the description and comments, and the source page — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 4},
-	{key: copyPickKey, label: "copy the title, the description, a comment or the source URL", scope: scopePanel, context: ctxIssue, hint: "ctrl+y copy", priority: 4},
-	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a sync with a remote tracker", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 5, term: termRefresh},
+	{op: keymap.Browser, key: "o", label: "open an imported issue's page in a browser", scope: scopePanel, context: ctxIssue, hint: "o browser", priority: 10, term: termBrowser},
+	{key: rawToggleKey, label: "show the description's and comments' original Markdown instead of the rendered view", scope: scopePanel, context: ctxIssue, hint: "ctrl+o raw", priority: 11},
+	{key: linkPickKey, label: "list the links in the description and comments, and the source page — open one in a browser or copy it", scope: scopePanel, context: ctxIssue, hint: "ctrl+l links", priority: 11},
+	{key: copyPickKey, label: "copy the title, the description, a comment or the source URL", scope: scopePanel, context: ctxIssue, hint: "ctrl+y copy", priority: 11},
+	{op: keymap.Refresh, key: "R", label: "re-read the issue — never a sync with a remote tracker", scope: scopePanel, context: ctxIssue, hint: "R refresh", priority: 9, term: termRefresh},
 	// The page is scroll-first (#792): the arrows scroll it, moving the
 	// selection only among the Main worktree and task rows on screen.
-	{key: "down", label: "scroll a line; on screen, move the selection between the Main worktree section and the linked tasks first (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ scroll", priority: 6},
+	{key: "down", label: "scroll a line; on screen, move the selection between the Main worktree section and the linked tasks first (↑/↓)", scope: scopePanel, context: ctxIssue, hint: "↑↓ scroll", priority: 9},
 	{key: "pgdown", label: "scroll a page (pgup/pgdown, space)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{key: "ctrl+d", label: "scroll half a page (ctrl+u/ctrl+d)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{key: "end", label: "jump to the end of the page (home/end, g/G)", scope: scopePanel, context: ctxIssue, priority: 7},
@@ -1241,18 +1257,18 @@ var bindings = []binding{
 	{key: "tab", label: "move between the Issue and Work tabs (shift+tab goes back)", scope: scopePanel, context: ctxIssue, hint: "tab work", priority: 6},
 	{key: "]", label: "move to the next tab ([ goes back)", scope: scopePanel, context: ctxIssue, priority: 7},
 	{op: keymap.New, key: "n", label: "file a new issue in this issue's project", scope: scopePanel, context: ctxIssue, hint: "n new", priority: 8},
-	{op: keymap.Add, key: "a", label: "create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssue, hint: "a new task", priority: 8, term: termAdd},
-	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 9},
-	{key: issueStateKey, label: "close or reopen the issue — only what the daemon offers", scope: scopePanel, context: ctxIssue, hint: "X close/reopen", priority: 10},
-	{key: issueMoveKey, label: issueMoveLabel, scope: scopePanel, context: ctxIssue, hint: "m move", priority: 10},
+	{op: keymap.Add, key: "a", label: "create a task from this issue — the form is prefilled from it and editable first, and offers a separate worktree once the issue has a main branch", scope: scopePanel, context: ctxIssue, hint: "a new task", priority: 2, term: termAdd},
+	{key: issueEditKey, label: "edit the issue in a form", scope: scopePanel, context: ctxIssue, hint: "i edit", priority: 7},
+	{key: issueStateKey, label: "close or reopen the issue — only what the daemon offers", scope: scopePanel, context: ctxIssue, hint: "X close/reopen", priority: 5},
+	{key: issueMoveKey, label: issueMoveLabel, scope: scopePanel, context: ctxIssue, hint: "m move", priority: 7},
 	// The thread (task 130 decision 24, 130.16): a local comment, written in
 	// $EDITOR. Withheld on an issue whose remote is live, which takes
 	// no comment here — nothing is ever posted to its remote.
-	{op: keymap.Comment, key: "W", label: "write a comment in $EDITOR — saved empty, nothing is posted; never on an issue mirrored from a remote tracker", scope: scopePanel, context: ctxIssue, hint: "W comment", priority: 10, term: termComment},
+	{op: keymap.Comment, key: "W", label: "write a comment in $EDITOR — saved empty, nothing is posted; never on an issue mirrored from a remote tracker", scope: scopePanel, context: ctxIssue, hint: "W comment", priority: 4, term: termComment},
 	{op: keymap.Delete, key: "D", label: "delete the issue permanently (asks first; never deletes at the issue's source)", scope: scopePanel, context: ctxIssue, priority: 11, term: termDelete},
-	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssue, hint: ". ready", priority: 8, term: termReady},
-	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssue, hint: ", return", priority: 8, term: termReturn},
-	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssue, hint: "T chat", priority: 8},
+	{op: keymap.Ready, key: ".", label: "mark an idle in-progress issue ready, or a pending hand-off issue not ready", scope: scopePanel, context: ctxIssue, hint: ". ready", priority: 7, term: termReady},
+	{op: keymap.Return, key: ",", label: "return a claimed or waiting issue from its handoff (asks first)", scope: scopePanel, context: ctxIssue, hint: ", return", priority: 7, term: termReturn},
+	{op: keymap.Chat, key: "T", label: issueChatLabel, scope: scopePanel, context: ctxIssue, hint: "T chat", priority: 3},
 	{op: keymap.ChatWith, key: "alt+t", label: issueChatWithLabel, scope: scopePanel, context: ctxIssue, priority: 8},
 
 	// The issue form and prompt own the keyboard and print their own key
