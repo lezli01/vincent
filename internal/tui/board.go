@@ -282,8 +282,15 @@ type board struct {
 	cards      bool
 	cardFolds  map[string]bool
 	cardHeader *taskStop
-	cardHits   []taskCardHit
-	cardPage   int
+	// cardCol and cardPos are where the card cursor last rested (#1058):
+	// a card that vanishes, or that an action moves to another column,
+	// leaves the cursor on the nearest card of the column it was in.
+	// cardFollow is an explicit selection — an open, a `!` jump — which
+	// the cursor follows wherever the task is.
+	cardCol, cardPos       int
+	cardPlaced, cardFollow bool
+	cardHits               []taskCardHit
+	cardPage               int
 	// previewOn is whether the preview pane is on screen. previews holds the
 	// steps read for it; previewArmed is the read waiting for the selection to
 	// rest, and previewReading the one under way.

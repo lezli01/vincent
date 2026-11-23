@@ -387,3 +387,23 @@ func TestOlderGitHubProbeLandingLateIsDropped(t *testing.T) {
 		t.Error("the pull-requests view applied the older probe")
 	}
 }
+
+// #1058: a re-list keeps the cursor on the pull request it was on, by
+// identity, so a, l or u act on the one that was selected.
+func TestPullRequestsKeepTheSelectionAcrossARelist(t *testing.T) {
+	a := apiclient.GitHubPullRequest{Repo: "octo/api", Number: 1, Title: "one", State: "open"}
+	b := apiclient.GitHubPullRequest{Repo: "octo/api", Number: 2, Title: "two", State: "open"}
+	c := apiclient.GitHubPullRequest{Repo: "octo/api", Number: 3, Title: "three", State: "open"}
+	v := pullRequestsFixture(a, b, c)
+	v.updateKey(tea.KeyPressMsg{Code: tea.KeyDown})
+	if got := v.currentKey(); got != prKey(b) {
+		t.Fatalf("cursor on %s, want #2", got)
+	}
+	// What applyLoaded does: a new pull request lands above the selection.
+	sel := v.selectedKey()
+	v.pulls = []apiclient.GitHubPullRequest{{Repo: "octo/api", Number: 9, Title: "new", State: "open"}, a, b, c}
+	v.reselect(sel)
+	if got := v.currentKey(); got != prKey(b) {
+		t.Fatalf("after a re-list the cursor is on %s, want #2", got)
+	}
+}

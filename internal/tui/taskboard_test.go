@@ -312,3 +312,56 @@ func TestTaskFailureCardIsNotRepeatedOnTheOverview(t *testing.T) {
 		t.Errorf("the card is repeated on the Overview: %v", card)
 	}
 }
+
+// #1058: approving one of three gates leaves the cursor in Needs you, on the
+// card that took its place, not following the task into Running.
+func TestCardCursorStaysInItsColumnWhenACardMoves(t *testing.T) {
+	b := taskBoardFixture()
+	b.moveColumn(-4) // to Needs you
+	for {
+		id, _ := b.cardSelected()
+		if id == 13 {
+			break
+		}
+		before := id
+		b.moveCard(1)
+		if after, _ := b.cardSelected(); after == before {
+			t.Fatal("no card 13 in Needs you")
+		}
+	}
+	for i, tk := range b.tasks {
+		if tk.ID == 13 {
+			b.tasks[i].State = stateRunning
+		}
+	}
+	id, ok := b.cardSelected()
+	if !ok || id == 13 {
+		t.Fatalf("the cursor followed the approved task (on %d)", id)
+	}
+	if tk, _ := b.taskByID(id); taskColumnOfTask(tk) != taskColumnNeedsYou {
+		t.Fatalf("the cursor left Needs you for #%d (%s)", id, tk.State)
+	}
+}
+
+// #1058: a card that vanishes leaves the cursor on the nearest card of the
+// same column, not on the board's first card.
+func TestCardCursorStaysNearAVanishedCard(t *testing.T) {
+	b := taskBoardFixture()
+	b.moveColumn(1) // into Running
+	b.moveColumn(1) // into Queued
+	id, _ := b.cardSelected()
+	col := b.cardCol
+	b.tasks = slices.DeleteFunc(b.tasks, func(tk apiclient.Task) bool { return tk.ID == id })
+	next, ok := b.cardSelected()
+	if !ok || next == id {
+		t.Fatalf("the cursor is on %d after #%d vanished", next, id)
+	}
+	if tk, _ := b.taskByID(next); taskColumnOfTask(tk) != col {
+		t.Fatalf("the cursor jumped to #%d in another column", next)
+	}
+	// An explicit open still goes where the task is.
+	b.selectedID, b.cardFollow, b.cardHeader = 21, true, nil // what openNow does
+	if got, _ := b.cardSelected(); got != 21 {
+		t.Fatalf("an explicit selection of #21 landed on #%d", got)
+	}
+}

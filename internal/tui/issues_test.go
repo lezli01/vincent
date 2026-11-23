@@ -394,3 +394,18 @@ func TestSyncedNoteSaysNothingToSync(t *testing.T) {
 		}
 	}
 }
+
+// #1058: clearing a filter keeps the issue that was selected, not the index.
+func TestIssuesKeepTheSelectionAcrossAFilter(t *testing.T) {
+	v := issuesFixture()
+	v.selectIssue(4)
+	v.updateKey(keyPress("/"))
+	for _, r := range "crash" {
+		v.updateKey(keyPress(string(r)))
+	}
+	v.updateKey(keyPress("esc"))
+	row, ok := v.current()
+	if !ok || row.issue.ID != 4 {
+		t.Fatalf("after clearing the filter the cursor is on %+v, want #4", row.issue)
+	}
+}

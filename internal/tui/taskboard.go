@@ -196,6 +196,13 @@ func (b *board) cardCursor(stops [taskColumnCount][]taskStop, groups [taskColumn
 	for c := range stops {
 		for i, s := range stops[c] {
 			if !s.header && s.id == b.selectedID && b.selectedID != 0 {
+				// A card that moved to another column on its own — an
+				// approve that sent it to Running — leaves the cursor in
+				// the column it was in (#1058).
+				if b.cardPlaced && !b.cardFollow && c != b.cardCol && len(stops[b.cardCol]) > 0 {
+					return b.restNear(stops)
+				}
+				b.cardCol, b.cardPos, b.cardPlaced, b.cardFollow = c, i, true, false
 				return c, i, true
 			}
 		}
@@ -212,12 +219,34 @@ func (b *board) cardCursor(stops [taskColumnCount][]taskStop, groups [taskColumn
 			}
 		}
 	}
+	// The card is gone — archived, or filtered out: the nearest card of the
+	// column it was in, not the board's first (#1058).
+	if b.cardPlaced && len(stops[b.cardCol]) > 0 {
+		return b.restNear(stops)
+	}
 	for c := range stops {
 		if len(stops[c]) > 0 {
 			return c, 0, true
 		}
 	}
 	return 0, 0, false
+}
+
+// restNear rests the cursor on the stop nearest where it last was, in the
+// column it was in, and makes that the selection.
+func (b *board) restNear(stops [taskColumnCount][]taskStop) (column, pos int, ok bool) {
+	c := b.cardCol
+	i := min(b.cardPos, len(stops[c])-1)
+	s := stops[c][i]
+	if s.header {
+		stop := s
+		b.cardHeader = &stop
+	} else {
+		b.cardHeader = nil
+		b.selectedID = s.id
+	}
+	b.cardPos, b.cardFollow = i, false
+	return c, i, true
 }
 
 // cardStop is the stop under the cursor.
@@ -250,6 +279,7 @@ func (b *board) restOn(s taskStop) {
 	}
 	b.cardHeader = nil
 	b.selectedID = s.id
+	b.cardCol, b.cardPlaced, b.cardFollow = s.column, true, false
 }
 
 // moveCard moves the cursor delta stops within its column.

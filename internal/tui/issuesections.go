@@ -210,6 +210,17 @@ func (v *issuesView) reselect() {
 	v.clampCursor()
 }
 
+// reselectKeep is reselect for a filter keystroke: when the filter hides the
+// selected issue, the cursor rests elsewhere but the selection is kept, so
+// clearing the filter brings it back (#1058).
+func (v *issuesView) reselectKeep() {
+	sel := v.selected
+	v.reselect()
+	if sel != 0 {
+		v.selected = sel
+	}
+}
+
 // selectIssue moves the cursor onto an issue by id, if it is on screen.
 func (v *issuesView) selectIssue(id int64) {
 	v.selected = id
