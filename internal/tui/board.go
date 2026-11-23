@@ -282,6 +282,8 @@ type board struct {
 	cards      bool
 	cardFolds  map[string]bool
 	cardHeader *taskStop
+	// sortOrder is the order `z` chose (#1075), "" for the band order.
+	sortOrder string
 	// cardCol and cardPos are where the card cursor last rested (#1058):
 	// a card that vanishes, or that an action moves to another column,
 	// leaves the cursor on the nearest card of the column it was in.
@@ -302,7 +304,7 @@ type board struct {
 
 func newBoard() *board {
 	fi := newTextField()
-	fi.SetPlaceholder("filter by id, title, state or issue")
+	fi.SetPlaceholder("filter by id, title, state, issue, workflow, branch or PR")
 	fi.SetPrompt("/")
 	b := &board{
 		now:         time.Now,
@@ -996,6 +998,12 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "V":
 		b.markVisible()
 		return b, nil
+	case boardSortKey:
+		// Cycles the order (#1075); the cursor stays on its task, as `g`'s
+		// regrouping leaves it.
+		b.sortOrder = nextSort(boardSorts, b.sortOrder)
+		b.actions.setStatus("sorted by "+valueOr(b.sortOrder, "state"), false)
+		return b, nil
 	case copyPickKey:
 		// The selected task's id, branch, worktree path and pull request
 		// (#1076).
@@ -1244,7 +1252,7 @@ func (b *board) allRows() []boardRow {
 	tasks := b.shownTasks()
 	sorted := make([]apiclient.Task, len(tasks))
 	copy(sorted, tasks)
-	sortTasks(sorted)
+	sortBoardTasks(sorted, b.sortOrder)
 	return b.spliceLanes(groupRows(sorted, b.group))
 }
 
