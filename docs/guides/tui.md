@@ -927,7 +927,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `/` | On Output or Diff, search: type, `enter` lands on the first match and draws it reversed; `n` / `N` then walk the matches, wrapping, `/` searches again and `esc` ends the search — while it runs `n` and `N` are the search's, and they mean new task and next failure again after |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
-| `ctrl+y` | Copy the task's id, branch, worktree path or pull request URL — from any tab — and, on Output, an assistant message, its plain text, or one of its code blocks |
+| `ctrl+y` | Copy the task's id, branch, worktree path or pull request URL — from any tab — and, on Output, the attempt's whole output as plain text, an assistant message, its plain text, or one of its code blocks; on Diff, the selected hunk (the one `]`/`[` stand on) or the file's whole diff |
 | `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
 | `↑`/`↓` | Select an attempt or Task Details section, scroll Output, or move between diff files — according to the active tab |

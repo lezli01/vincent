@@ -941,6 +941,10 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case copyPickKey:
 		// The task's own references first (#1076), then what the output says.
 		items := copyDocs(copyDocsFromRecords(d.records, d.recordSeqs()))
+		if out, ok := d.outputCopyItem(); ok {
+			// The whole attempt, command output included (#1076).
+			items = append([]copyItem{out}, items...)
+		}
 		if d.loaded {
 			items = append(taskCopyItems(d.task.Task), items...)
 		}

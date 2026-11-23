@@ -645,7 +645,13 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// The Output tab adds its messages to these (detail.go); every other
 		// tab copies the task's references (#1076).
 		if t.tab != taskTabOutput && t.detail.loaded {
-			return openCopyItems(taskCopyItems(t.detail.task.Task))
+			items := taskCopyItems(t.detail.task.Task)
+			if t.tab == taskTabDiff {
+				// The hunk and the file's diff first (#1076): on the Diff tab
+				// they are what is being read.
+				items = append(t.detail.diff.diffCopyItems(), items...)
+			}
+			return openCopyItems(items)
 		}
 	case opKey(keymap.NextItem):
 		// The neighbouring task in the board's order (#1077).
