@@ -237,7 +237,7 @@ const (
 	// the reason the other popups have theirs: while it is open it owns the
 	// keyboard, and its two rows are nothing like the form underneath.
 	ctxCreatePR bindingContext = "open a pull request"
-	// ctxConfigEdit is the daemon view's config editor (task 060). Its own
+	// ctxConfigEdit is the config editor (task 060), on the Settings screen. Its own
 	// context because while it is open it owns the keyboard, and its keys are
 	// nothing like the log pane's underneath it.
 	ctxConfigEdit bindingContext = "config editor"
@@ -535,6 +535,8 @@ var bindings = []binding{
 	{key: "left", label: "move to the column on the left", scope: scopePanel, context: ctxTasks, priority: 5, aliased: true},
 	{key: "right", label: "move to the column on the right", scope: scopePanel, context: ctxTasks, priority: 5, aliased: true},
 	{key: "f", label: "fold or open the issue group under the cursor", scope: scopePanel, context: ctxTasks, hint: "f fold", priority: 8},
+	// Paging (#1083), the issues board's keys.
+	{key: "pgdown", label: "page the column (pgup/pgdown, home/g, end/G)", scope: scopePanel, context: ctxTasks, priority: 16},
 	// Lanes under a fan-out parent's card (boardcardlanes.go, issue #316).
 	{key: "L", label: "show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent", scope: scopePanel, context: ctxTasks, hint: "L lanes", priority: 8},
 	{key: "space", label: "select this task for a bulk action — the action keys then act on every selected task (space again deselects, esc clears)", scope: scopePanel, context: ctxTasks, hint: "space select", priority: 4},
@@ -1324,7 +1326,7 @@ var bindings = []binding{
 	{key: "T", label: "dry-run a sample event through the trigger's filter; fires nothing", scope: scopePanel, context: ctxTriggers, hint: "T test", priority: 7},
 	{key: "X", label: "poll the source once and judge what it returns; fires nothing", scope: scopePanel, context: ctxTriggers, hint: "X poll", priority: 8},
 	{key: "tab", label: "move between the trigger list and its delivery ledger", scope: scopePanel, context: ctxTriggers, hint: "tab ledger", priority: 9},
-	{key: "B", label: "open triggers.enabled, the global switch, in the daemon view's editor", scope: scopePanel, context: ctxTriggers, priority: 10},
+	{key: "B", label: "open triggers.enabled, the global switch, on the Settings screen", scope: scopePanel, context: ctxTriggers, priority: 10},
 	{op: keymap.Refresh, key: "R", label: "re-read the triggers and the ledger", scope: scopePanel, context: ctxTriggers, hint: "R refresh", priority: 11, term: termRefresh},
 	{op: keymap.Filter, key: "/", label: "filter by id, source or action", scope: scopePanel, context: ctxTriggers, priority: 12, term: termFilter},
 

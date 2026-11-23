@@ -397,9 +397,12 @@ func (b *board) cardKey(key string) bool {
 		b.moveCard(-max(b.cardPage, 1))
 	case "pgdown":
 		b.moveCard(max(b.cardPage, 1))
-	case "home":
+	case "home", "g":
+		// g/G are the issues board's and the timeline's aliases (#1083). The
+		// cards always group by issue, so the table's `g` grouping cycle had
+		// nothing to show here.
 		b.moveCardEdge(false)
-	case "end":
+	case "end", "G":
 		b.moveCardEdge(true)
 	case "left":
 		b.moveColumn(-1)
