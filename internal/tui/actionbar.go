@@ -97,6 +97,10 @@ type taskActions struct {
 	// projectID is the task's project, which its chat shares: `T` opening
 	// that chat follows it there (task 132.6).
 	projectID int64
+	// editRetry is whether `E` works here (#1059): the task workspace, on a
+	// step with a prompt or command to edit. The board has no editor, so its
+	// targets leave it false and the footer does not hint the key there.
+	editRetry bool
 }
 
 // offersChat reports whether `T` does anything for this target: the daemon
@@ -222,6 +226,14 @@ func (a *actionBar) handleKey(key string, client *apiclient.Client, t taskAction
 	}
 	action, ok := resolveAction(key, t)
 	if !ok {
+		// An action key the target does not offer says so rather than
+		// doing nothing (#1059). No other meaning shares these keys on the
+		// surfaces that call here, so nothing falls through that would have
+		// done something.
+		if name, isAction := keyAction(key, t); isAction {
+			a.setStatus(unavailableText(name, t), false)
+			return nil, true
+		}
 		return nil, false
 	}
 	// A selection retargets the key at every marked task offering the action;
@@ -247,6 +259,42 @@ func resolveAction(key string, t taskActions) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// keyAction is the §6 action an action key names, whether or not the target
+// offers it: `p` is resume on a paused task and pause otherwise.
+func keyAction(key string, t taskActions) (string, bool) {
+	if key == "" {
+		return "", false
+	}
+	for _, o := range actionOps {
+		if opKey(o.op) != key {
+			continue
+		}
+		if o.op == keymap.Pause && t.state == statePaused {
+			return apiclient.ActionResume, true
+		}
+		return o.action, true
+	}
+	return "", false
+}
+
+// unavailableText is why an action key did nothing: no task under the
+// cursor, a selection none of which offers it, a chat holding the task, or
+// the state the task is in — "retry: not available while running".
+func unavailableText(action string, t taskActions) string {
+	name := strings.ReplaceAll(action, "_", " ")
+	switch {
+	case t.bulk():
+		return name + ": none of the selected tasks offers it"
+	case t.id == 0:
+		return name + ": select a task — it acts on one task, not a group"
+	case t.openChatID != 0:
+		return fmt.Sprintf("%s: not available while chat #%d holds the task — close the chat first", name, t.openChatID)
+	case t.state == "":
+		return name + ": not available"
+	}
+	return name + ": not available while " + stateWords(t.state)
 }
 
 // dispatch calls the daemon. Nothing is predicted locally: the response

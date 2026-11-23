@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/reasons"
 )
 
@@ -177,7 +178,7 @@ func (t *taskView) taskFailureCard(w int) []string {
 	} else if detail := d.task.BlockDetail; detail != nil && strings.TrimSpace(*detail) != "" {
 		body = styled(wrapText(oneLine(*detail), inner, wrapOpts{maxLines: 2}), styleTitle)
 	}
-	if keys := taskRecoveryKeys(d.task.Task); keys != "" {
+	if keys := taskRecoveryKeys(d.target()); keys != "" {
 		if len(body) > 0 {
 			body = append(body, "")
 		}
@@ -191,12 +192,14 @@ func (t *taskView) taskFailureCard(w int) []string {
 }
 
 // taskRecoveryKeys names the keys that act on a stopped task right now.
-func taskRecoveryKeys(task apiclient.Task) string {
-	target := taskActions{id: task.ID, state: task.State, actions: task.AvailableActions}
+func taskRecoveryKeys(target taskActions) string {
 	var parts []string
 	for _, o := range footerActionOps {
 		key := opKey(o.op)
 		if key == "" || !target.has(o.action) || o.action == apiclient.ActionCancel || o.action == apiclient.ActionArchive {
+			continue
+		}
+		if o.op == keymap.EditRetry && !target.editRetry {
 			continue
 		}
 		label := o.label

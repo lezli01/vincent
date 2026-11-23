@@ -890,6 +890,13 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if d.target().has(apiclient.ActionRetry) && d.stepEditable() {
 			return d.editRetry()
 		}
+		// Hinted wherever retry is, so it says why it did nothing (#1059).
+		if d.target().has(apiclient.ActionRetry) {
+			d.actions.setStatus("edit+retry: this step has no prompt or command to edit — "+
+				opKey(keymap.Retry)+" retries it as it is", false)
+		} else {
+			d.actions.setStatus(unavailableText("edit+retry", d.target()), false)
+		}
 		return nil
 	case opKey(keymap.Repair):
 		// The repair form (§6, task 025). `r` is retry and `E` is edit+retry;
@@ -1329,6 +1336,7 @@ func (d *detail) target() taskActions {
 		id: d.taskID, state: d.task.State, actions: d.task.AvailableActions,
 		openChatID: derefID(d.task.OpenChatID),
 		projectID:  d.task.ProjectID,
+		editRetry:  d.loaded && d.stepEditable(),
 	}
 }
 

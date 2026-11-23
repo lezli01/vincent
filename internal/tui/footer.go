@@ -566,6 +566,9 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 			if !target.has(o.action) || (o.label != "" && target.bulk()) {
 				continue
 			}
+			if o.op == keymap.EditRetry && !target.editRetry {
+				continue // nothing to edit here, or no editor (#1059)
+			}
 			key := opKey(o.op)
 			if key == "" {
 				// Unbound on a lenient load (task 128): no key to show.

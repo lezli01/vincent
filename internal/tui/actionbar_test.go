@@ -48,17 +48,39 @@ func TestActionBarOffersExactlyTheValidActions(t *testing.T) {
 	}
 }
 
-// TestActionKeyIsIgnoredWhenTheActionIsNotOffered: an unavailable key falls
-// through to the view, so j/k keep navigating on a row that cannot be skipped.
-func TestActionKeyIsIgnoredWhenTheActionIsNotOffered(t *testing.T) {
+// TestActionKeyNotOfferedSaysWhy is #1059: an action key the task does not
+// offer sends nothing and says why, rather than doing nothing; a key that is
+// no action still falls through, so j/k keep navigating.
+func TestActionKeyNotOfferedSaysWhy(t *testing.T) {
 	var bar actionBar
 	running := targetFor(taskstate.Running)
 
-	if cmd, handled := bar.handleKey("s", nil, running); handled || cmd != nil {
-		t.Errorf("skip on a running task: handled = %v, want the key to fall through", handled)
+	if cmd, handled := bar.handleKey("s", nil, running); !handled || cmd != nil {
+		t.Errorf("skip on a running task: handled = %v, cmd = %v", handled, cmd != nil)
+	}
+	if bar.status != "skip: not available while running" {
+		t.Errorf("status = %q", bar.status)
 	}
 	if _, handled := bar.handleKey("p", nil, running); !handled {
 		t.Error("pause on a running task was not handled")
+	}
+	if _, handled := bar.handleKey("j", nil, running); handled {
+		t.Error("j was taken as an action key")
+	}
+	done := targetFor(taskstate.Done)
+	bar.handleKey("a", nil, done)
+	if bar.status != "approve: not available while done" {
+		t.Errorf("approve on a done task: status = %q", bar.status)
+	}
+	bar.handleKey("r", nil, taskActions{})
+	if !strings.Contains(bar.status, "select a task") {
+		t.Errorf("retry on a group row: status = %q", bar.status)
+	}
+	locked := targetFor(taskstate.Blocked)
+	locked.actions, locked.openChatID = nil, 9
+	bar.handleKey("r", nil, locked)
+	if !strings.Contains(bar.status, "chat #9 holds the task") {
+		t.Errorf("retry on a locked task: status = %q", bar.status)
 	}
 }
 
