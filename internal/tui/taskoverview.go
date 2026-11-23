@@ -336,7 +336,11 @@ func (t *taskView) overviewLines(width, height int) []string {
 		}
 	}
 	out = append(out, t.handoffItemLines(width)...)
-	if links := t.overviewLinks(); len(links) > 0 {
+	if t.detail.form != nil {
+		// A pending question takes enter on every tab (#1062), so the line
+		// says what enter does now rather than the link it cannot reach.
+		out = append(out, "", "  "+styleKey.Render("enter")+" "+styleAsk.Render("answer the question"))
+	} else if links := t.overviewLinks(); len(links) > 0 {
 		// One link, on enter (task 168.7): the digits that used to key a
 		// row of them are gone with the numbered strip.
 		out = append(out, "", "  "+styleKey.Render("enter")+" "+links[0].label)
