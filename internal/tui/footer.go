@@ -510,6 +510,9 @@ var footerActionOps = []struct {
 	{apiclient.ActionRepair, keymap.Repair, "repair"},
 	{apiclient.ActionSkip, keymap.Skip, ""},
 	{apiclient.ActionCancel, keymap.Cancel, ""},
+	// A finished task's next step (#1068): F opens the follow-up form, so it
+	// is a labelled row, withheld under a selection like E and R.
+	{apiclient.ActionFollowUp, keymap.FollowUp, "follow up"},
 	{apiclient.ActionArchive, keymap.Archive, ""},
 }
 

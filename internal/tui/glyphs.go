@@ -326,6 +326,10 @@ func renderStepPips(t apiclient.Task, runs []apiclient.StepRun) string {
 			b.WriteString(attemptStateGlyph("pending"))
 			continue
 		}
+		if allowedFailure(t, i, outcome) {
+			b.WriteString(styleDim.Render("↷")) // #1068: an allowed failure
+			continue
+		}
 		b.WriteString(renderStepGlyph(outcome))
 	}
 	return b.String()

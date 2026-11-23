@@ -100,11 +100,21 @@ func (t *taskView) pullWebURL() string {
 func (t *taskView) openPullCmd() tea.Cmd {
 	url := t.pullWebURL()
 	if url == "" {
-		t.pullNote, t.pullNoteBad = "no pull request is linked to this task", true
+		t.refusePull("no pull request is linked to this task")
 		return nil
 	}
 	t.pullNote, t.pullNoteBad = "", false
 	return openURLCmd(url)
+}
+
+// refusePull says why `P` or `o` did nothing: in the Pull Request tab's own
+// note, and on the status line when another tab is open (#1068), where the
+// note is a section far below the fold and the key looked dead.
+func (t *taskView) refusePull(why string) {
+	t.pullNote, t.pullNoteBad = why, true
+	if t.tab != taskTabPull {
+		t.detail.actions.setStatus(why, true)
+	}
 }
 
 // openCreatePR is `P`: the pull-request form. The offer exists only while
@@ -113,11 +123,11 @@ func (t *taskView) openPullCmd() tea.Cmd {
 // the create need, so one condition covers both actions (task 069).
 func (t *taskView) openCreatePR() tea.Cmd {
 	if t.pull.Linked {
-		t.pullNote, t.pullNoteBad = "this task already has a pull request — press "+opKey(keymap.Browser)+" to open it", true
+		t.refusePull("this task already has a pull request — press " + opKey(keymap.Browser) + " to open it")
 		return nil
 	}
 	if t.pull.CompareURL == "" {
-		t.pullNote, t.pullNoteBad = pullNoOfferReason(t.pull, t.detail.task.BranchName), true
+		t.refusePull(pullNoOfferReason(t.pull, t.detail.task.BranchName))
 		return nil
 	}
 	form, err := newCreatePRForm(t.detail.taskID, t.pull.CompareURL, t.detail.task.BranchName)

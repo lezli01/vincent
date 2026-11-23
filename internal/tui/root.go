@@ -2851,6 +2851,10 @@ func (m *root) footerLine() string {
 		bar = s.bar
 		if m.phase == phaseConnected {
 			target = s.board.target()
+			// E reaches the board's detail panes (shell.go), so it is hinted
+			// when they hold this task at a step with text to edit (#1059).
+			d := s.detail
+			target.editRetry = d.loaded && d.taskID == target.id && d.stepEditable()
 			// Answer is opened from the task workspace. On the board, enter
 			// crosses that screen boundary; advertising it as an immediate
 			// answer would describe the second press rather than this one.
