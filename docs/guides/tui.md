@@ -2989,7 +2989,8 @@ periodic repaint.
 | `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
 | `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting, as every `alt+` key here does |
 | `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
-| `ctrl+x` | Stop the running turn — its process tree is killed |
+| `ctrl+x` | Stop the running turn — its process tree is killed. With nothing running it says so |
+| `alt+l` | Retry the failed turn: send its prompt again. Offered only after a turn failed, whose red line says what the reason means and what to do first — wait out a usage limit, log the agent in |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
 | `ctrl+t` | Hand the worktree and branch to a new task — the chat ends; not on a chat opened on a task. A chat opened on an issue hands off into the issue's next main task |
 | `ctrl+q` | Close a chat opened on a task — asks first; the task unlocks, its worktree and branch stay — or on an issue, whose main worktree is freed for its next main task |

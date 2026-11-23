@@ -1479,7 +1479,14 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case "enter":
 		return v, v.sendCmd()
 	case "ctrl+x":
+		if v.runningTurn() == nil {
+			// Said, not silent (#1070).
+			v.note, v.noteBad = "no turn is running — nothing to stop", false
+			return v, nil
+		}
 		return v, v.cancelCmd()
+	case chatRetryKey:
+		return v, v.retryFailedTurn()
 	case chatHandoffKey:
 		return v, v.handoffCmd()
 	case chatExpandKey:
@@ -2363,6 +2370,7 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 		case b.key == chatCloseKey && !closable,
 			b.key == chatHandoffKey && !free,
 			b.key == "ctrl+x" && v.runningTurn() == nil,
+			b.key == chatRetryKey && (ended || owned || v.failedTurn() == nil),
 			b.key == "tab" && ended,
 			b.key == "alt+a" && v.formAway == nil,
 			b.key == "enter" && ended,
@@ -2451,6 +2459,8 @@ func (v *chatView) sendMessage(message string) tea.Cmd {
 		return nil
 	}
 	if v.sending {
+		// Said, not silent (#1070): the draft stays for when it has gone.
+		v.note, v.noteBad = "the last message is still being sent — this one waits in the composer", false
 		return nil
 	}
 	v.sending = true
@@ -2541,4 +2551,48 @@ func endedChatLine(chat *apiclient.Chat, width int) []string {
 		out = append(out, " "+ansi.Truncate(strings.Join(keys, styleDim.Render(" · ")), max(width-1, 1), "…"))
 	}
 	return out
+}
+
+// chatRetryKey sends the failed turn's prompt again (#1070): before it, the
+// route was ↑ on an empty composer, then enter.
+const chatRetryKey = "alt+l"
+
+// failedTurn is the newest turn when it failed, nil otherwise: the one a
+// retry is about.
+func (v *chatView) failedTurn() *apiclient.ChatTurn {
+	if n := len(v.turns); n > 0 && v.turns[n-1].FailReason != "" && v.turns[n-1].State != "running" {
+		return &v.turns[n-1]
+	}
+	return nil
+}
+
+// retryFailedTurn sends the failed turn's prompt as the next turn, by the
+// route any send takes and with its refusals.
+func (v *chatView) retryFailedTurn() tea.Cmd {
+	t := v.failedTurn()
+	if t == nil {
+		v.note, v.noteBad = "the last turn did not fail — nothing to retry", false
+		return nil
+	}
+	if strings.TrimSpace(t.Prompt) == "" {
+		v.note, v.noteBad = "the failed turn has no prompt to send again", false
+		return nil
+	}
+	return v.sendMessage(t.Prompt)
+}
+
+// failedTurnNext is the next step a failed turn's reason calls for.
+func failedTurnNext(reason string) string {
+	retry := chatRetryKey + " sends the same prompt again"
+	switch reason {
+	case "usage_limit":
+		return "the quota comes back on its own; once it has, " + retry
+	case "agent_unauthenticated":
+		return "log the agent CLI in, then " + retry
+	case "agent_not_found":
+		return "install the agent CLI or pick another agent, then " + retry
+	case "session_lost":
+		return "the agent no longer has this conversation; " + retry + " in a fresh session"
+	}
+	return retry
 }
