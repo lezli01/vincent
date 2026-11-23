@@ -19990,6 +19990,22 @@ instant, default agent. When the task or issue already has an open chat,
 linked chat's agent is fixed. `shift+T` could not be a second key: `T` already
 is shift+t.
 
+*Amended 2026-11-23 (#1087).* A third rebindable operation sits beside them:
+**`diagnose`** (default `Q`), on the task-action surface only, offered on a
+`blocked` or `aborted` task exactly when `chat` is — or when a chat already
+holds the task, which it then reopens as `T` does. It opens the same linked
+chat with the default agent and sends, as the first message, the question why
+the task stopped (diagnosis only, no changes) with what the failure card shows:
+step, attempt, reason, exit code, the failing command, the selected evidence
+lines and the last status. The chat is titled `why step N <name> stopped ·
+<reason>`, and the title is the only link back: nothing is stored on the task.
+A closed chat so titled, for the card's step and reason, is shown on the
+failure card as the opening of its first answer — under *Diagnosis* when it was
+opened after the failing attempt finished, under *Stopped here before* when it
+was about an earlier stop — and a later `diagnose` passes that answer to the
+new chat to check first. `Q` because every mnemonic letter was taken on a
+surface the task actions share: `W` is the issue screen's comment.
+
 An **open new-chat draft captures input on every row**, not only on the two
 text ones. This is a deliberate, scoped exception to the rule above that the
 shell consults the focused panel for capture and leaves the global single-key

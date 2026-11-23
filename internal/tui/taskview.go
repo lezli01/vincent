@@ -88,6 +88,9 @@ type taskView struct {
 	// evidence is the Overview failure card's one transcript fetch (task
 	// 129.13), keyed by the failing attempt so an event never refetches it.
 	evidence failureEvidence
+	// diagnosis is the failure card's read of the chat that last diagnosed
+	// this stop (#1087), keyed by that chat.
+	diagnosis taskDiagnosis
 	// outcome is the Overview outcome card's diff and commits fetches (task
 	// 129.14), one each per open of the task, never refetched on an event.
 	outcome outcomeFetch
@@ -341,6 +344,9 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case failureEvidenceMsg:
 		t.applyFailureEvidence(m)
 		return t, nil
+	case taskDiagnosisMsg:
+		t.applyDiagnosis(m)
+		return t, nil
 	case outcomeDiffMsg:
 		t.applyOutcomeDiff(m)
 		return t, nil
@@ -355,7 +361,7 @@ func (t *taskView) update(msg tea.Msg) (panel, tea.Cmd) {
 	// After every message: the one that loaded a blocked or finished task,
 	// or moved the reader onto the Overview, is the one that fetches the
 	// failure card's evidence and the outcome card's diff and commits.
-	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncOutcome(), t.landPendingFailure(), t.syncHandoff(),
+	return p, tea.Batch(cmd, t.syncFailureEvidence(), t.syncDiagnosis(), t.syncOutcome(), t.landPendingFailure(), t.syncHandoff(),
 		t.syncDiffScope())
 }
 
@@ -664,7 +670,7 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 			t.openPopup()
 		}
 		return cmd
-	case opKey(keymap.Chat), opKey(keymap.ChatWith):
+	case opKey(keymap.Chat), opKey(keymap.ChatWith), opKey(keymap.Diagnose):
 		// Ahead of the tabs' own handlers, as R and F are: the key acts on
 		// the task, so it means the same thing on every tab.
 		return t.detail.update(msg)

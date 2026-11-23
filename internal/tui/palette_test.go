@@ -41,10 +41,15 @@ func TestPaletteReachesEveryRegistryEntry(t *testing.T) {
 			continue
 		}
 		found := false
+		// A stopped task as well: `Q` is offered on nothing else (#1087).
+		stopped := everyAction
+		stopped.state = stateBlocked
 		for _, ctx := range contexts {
-			for _, e := range paletteEntries(ctx, everyAction, true, true, true, nil, nil) {
-				if e.label == b.label {
-					found = true
+			for _, target := range []taskActions{everyAction, stopped} {
+				for _, e := range paletteEntries(ctx, target, true, true, true, nil, nil) {
+					if e.label == b.label {
+						found = true
+					}
 				}
 			}
 		}

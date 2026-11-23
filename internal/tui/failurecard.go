@@ -418,9 +418,24 @@ type cardEvidence struct {
 	// loading is a fetch still in flight; ok is evidence to show at all —
 	// false sends the card to the daemon's block_detail or the daemon log.
 	loading, ok bool
-	command     string
-	exit        string
-	lines       []evidenceLine
+	// command is the failing script's first line as the card draws it, and
+	// script the whole of it, which `Q` hands the agent (#1087).
+	command, script string
+	exit            string
+	lines           []evidenceLine
+}
+
+// readEvidence reads a failing attempt's records for card c, at most n
+// lines of them.
+func readEvidence(c failureCard, records []apiclient.TranscriptRecord, n int) cardEvidence {
+	phase := failingPhase(c.reason, records)
+	out := cardEvidence{lines: selectEvidence(phase, records, n)}
+	if script := failingCommand(phase, records); script != "" {
+		out.command, out.script = commandLine(script), script
+	}
+	out.exit = exitSentence(c.run, phase, len(out.lines) > 0)
+	out.ok = len(out.lines) > 0 || out.exit != ""
+	return out
 }
 
 // cardEvidence reads the fetched transcript for card c, at most n lines.
@@ -435,14 +450,7 @@ func (t *taskView) cardEvidence(c failureCard, n int) cardEvidence {
 	if ev.err != nil {
 		return cardEvidence{}
 	}
-	phase := failingPhase(c.reason, ev.records)
-	out := cardEvidence{lines: selectEvidence(phase, ev.records, n)}
-	if script := failingCommand(phase, ev.records); script != "" {
-		out.command = commandLine(script)
-	}
-	out.exit = exitSentence(c.run, phase, len(out.lines) > 0)
-	out.ok = len(out.lines) > 0 || out.exit != ""
-	return out
+	return readEvidence(c, ev.records, n)
 }
 
 // cardAction is one action on the card: the wire action, its key and what
@@ -472,6 +480,11 @@ func cardActions(reason string, offered []string) []cardAction {
 	if i := slices.Index(order, apiclient.ActionRetry); i >= 0 {
 		order = slices.Insert(order, i+1, actionEditRetry)
 	}
+	// `Q` sits directly before chat (#1087): the same chat, with the
+	// question already asked.
+	if i := slices.Index(order, apiclient.ActionChat); i >= 0 {
+		order = slices.Insert(order, i, actionDiagnose)
+	}
 	out := make([]cardAction, 0, len(order))
 	for _, name := range order {
 		a, ok := overviewAction(name)
@@ -493,6 +506,10 @@ func cardActions(reason string, offered []string) []cardAction {
 func overviewAction(name string) (overviewActionDef, bool) {
 	if name == actionEditRetry {
 		return overviewActionDef{actionEditRetry, keymap.EditRetry, "edit the step's prompt or command, then run it again"}, true
+	}
+	if name == actionDiagnose {
+		const does = "ask an agent why it stopped, with this card as its first message"
+		return overviewActionDef{actionDiagnose, keymap.Diagnose, does}, true
 	}
 	for _, a := range overviewActions {
 		if a.action == name {
@@ -584,9 +601,12 @@ type cardParts struct {
 	headline string
 	meaning  []string
 	evidence []string
-	status   []string
-	blame    []string
-	actions  []string
+	// diagnosis is what a chat concluded about this stop, or an earlier one
+	// at the same step for the same reason (#1087).
+	diagnosis []string
+	status    []string
+	blame     []string
+	actions   []string
 }
 
 // essential is the card that must fit whole before anything else is added:
@@ -595,13 +615,16 @@ func (p cardParts) essential() int { return 1 + len(p.blame) + len(p.actions) }
 
 // lines assembles the card in reading order from the sections the budget
 // kept.
-func (p cardParts) lines(meaning, evidence, status bool) []string {
+func (p cardParts) lines(meaning, evidence, diagnosis, status bool) []string {
 	out := []string{p.headline}
 	if meaning {
 		out = append(out, p.meaning...)
 	}
 	if evidence {
 		out = append(out, p.evidence...)
+	}
+	if diagnosis {
+		out = append(out, p.diagnosis...)
 	}
 	if status {
 		out = append(out, p.status...)
@@ -629,7 +652,7 @@ func (t *taskView) failureCardLines(width, budget int) []string {
 	c := t.failureCard()
 	actions := cardActions(c.reason, t.detail.task.AvailableActions)
 	if budget < 0 {
-		return t.cardParts(c, actions, width, math.MaxInt).lines(true, true, true)
+		return t.cardParts(c, actions, width, math.MaxInt).lines(true, true, true, true)
 	}
 	p := t.cardParts(c, actions, width, 1)
 	left := budget - p.essential()
@@ -642,9 +665,9 @@ func (t *taskView) failureCardLines(width, budget int) []string {
 	evidence := false
 	if len(p.evidence) > 0 {
 		n := left - 3
-		// The status keeps its rows when the evidence can spare them and
-		// still show a few lines.
-		if s := len(p.status); n-s >= 3 {
+		// The diagnosis and the status keep their rows when the evidence
+		// can spare them and still show a few lines.
+		if s := len(p.diagnosis) + len(p.status); n-s >= 3 {
 			n -= s
 		}
 		if n >= 1 {
@@ -655,8 +678,12 @@ func (t *taskView) failureCardLines(width, budget int) []string {
 	if evidence {
 		left -= len(p.evidence)
 	}
+	diagnosis := len(p.diagnosis) > 0 && len(p.diagnosis) <= left
+	if diagnosis {
+		left -= len(p.diagnosis)
+	}
 	status := len(p.status) <= left
-	return p.lines(meaning, evidence, status)
+	return p.lines(meaning, evidence, diagnosis, status)
 }
 
 // minCardRows is how many rows the full card needs at its floor.
@@ -708,6 +735,9 @@ func (t *taskView) cardParts(c failureCard, actions []cardAction, width, n int) 
 	// A fan-out's evidence is the lane it blames, drawn below.
 	if !c.aborted && !c.blamed {
 		p.evidence = append([]string{"", section("Evidence"), ""}, t.evidenceBody(c, width, n)...)
+	}
+	if !c.blamed {
+		p.diagnosis = t.diagnosisLines(c, width)
 	}
 	if c.status != "" {
 		p.status = []string{"", styleDim.Render(ansi.Truncate("  "+c.statusLabel()+"  “"+c.status+"”", max(width, 1), "…"))}

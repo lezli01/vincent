@@ -164,6 +164,9 @@ const (
 	// ChatWith is Chat with a choice of agent, model and effort first (task
 	// 161 decision 7). `T` stays instant; alt+t is its considered twin.
 	ChatWith Op = "chat_with"
+	// Diagnose is Chat on a stopped task with the question why already sent,
+	// carrying what the failure card shows (#1087).
+	Diagnose Op = "diagnose"
 )
 
 // The global chrome.
@@ -353,6 +356,7 @@ var catalog = []Info{
 	// so — so it is this operation and moves with it, the way `new` is one
 	// operation across the chats board and the issue screens.
 	{Op: Chat, Default: "T", Meaning: "chat in the task's worktree or on the issue's main worktree, or reopen its open chat", Kind: KindAction, Surfaces: []Surface{Actions, "issues", "issue"}},
+	{Op: Diagnose, Default: "Q", Meaning: "ask an agent why the stopped task stopped, in a chat on its worktree", Kind: KindAction, Surfaces: []Surface{Actions}},
 	{Op: ChatWith, Default: "alt+t", Meaning: "chat as chat does, choosing the agent, model and effort first", Kind: KindAction, Surfaces: []Surface{Actions, "issues", "issue"}},
 
 	{Op: Palette, Default: ":", Meaning: "open the command palette", Kind: KindGlobal, Surfaces: []Surface{Global}},

@@ -1385,6 +1385,7 @@ selected on the board it acts on all of them; see
 | `A` | Archive (asks first — the worktree is removed) | `done`, `aborted` |
 | `F` | Follow up — run more work in this finished task's worktree | `done`, `aborted` |
 | `T` | Chat with an agent in this task's worktree, or reopen the chat already open on it | `blocked`, `awaiting_gate`, `done`, `aborted` |
+| `Q` | [Ask why it stopped](#asking-why-a-task-stopped--q): the same chat, opened with the failure card as its first message | `blocked`, `aborted` |
 | `alt+t` | As `T`, but first asks for the agent, model and effort, and an optional first message | `blocked`, `awaiting_gate`, `done`, `aborted` |
 
 `E` opens the failing step's prompt or command in your editor, and the override
@@ -1535,6 +1536,27 @@ later opens a new chat.
 
 A task that never got a worktree — blocked on `branch_exists`, say — has nothing
 to talk about in, and `T` says so on the action bar rather than making one.
+
+### Asking why a task stopped — `Q`
+
+Most chats opened on a stopped task ask one thing: what went wrong. On a
+`blocked` or `aborted` task `Q` asks it for you. It opens the same chat `T`
+does, with the default agent, and sends a first message that asks why the task
+stopped and what would fix it — diagnosis only, no changes yet — and hands the
+agent what the failure card shows: the step, attempt and reason, how it
+exited, the command that failed, the evidence lines and the last status. The
+failure card lists `Q` beside `T`, and the footer offers `Q ask why`. Like `T`,
+it starts an agent in the task's worktree, full-auto unless the project says
+otherwise, and the task is locked until the chat is closed.
+
+The chat is titled after what it asked about — `why step 3 verify stopped ·
+check_failed` — and that title is how the task finds it again. Once it is
+closed, the failure card shows the opening lines of its first answer under
+**Diagnosis**, with the chat's number. When the task stops again at the same
+step for the same reason, the card shows that answer under **Stopped here
+before**, so it can be read before asking again; and a new `Q` hands it to the
+new chat, which is told to check whether it still holds before looking
+elsewhere. Renaming the chat takes it out of this.
 
 ## Answering a question
 
@@ -3995,7 +4017,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first forty-four are the operations screens share, the next eleven are the
+The first forty-four are the operations screens share, the next twelve are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -4054,6 +4076,7 @@ The first forty-four are the operations screens share, the next eleven are the
 | `cancel` | `c` | Cancel the task |
 | `follow_up` | `F` | Follow up on a finished task |
 | `chat` | `T` | Chat in the task's worktree, or on the issue's main worktree from the issue screens — or reopen the chat open on it |
+| `diagnose` | `Q` | Ask why a stopped task stopped: `chat` with the failure card already sent as the question |
 | `chat_with` | `alt+t` | The same chat as `chat`, choosing its agent, model and effort — and an optional first message — first |
 | `palette` | `:` | Open the command palette |
 | `palette_alt` | `ctrl+p` | Open the command palette, also while a text field has the keyboard |

@@ -192,7 +192,7 @@ func TestFailureCardActionOrder(t *testing.T) {
 			t.Errorf("%s has no explanation", a.action)
 		}
 	}
-	want := []string{"r retry", "E edit_retry", "s skip", "R repair", "T chat", "c cancel", "A archive"}
+	want := []string{"r retry", "E edit_retry", "s skip", "R repair", "Q diagnose", "T chat", "c cancel", "A archive"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("actions = %q, want %q", got, want)
 	}
