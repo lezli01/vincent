@@ -312,8 +312,24 @@ func (v *pullRequestsView) route(msg tea.Msg) (panel, tea.Cmd) {
 		v.applyChecks(msg)
 		return v, nil
 	case tea.MouseClickMsg:
-		if i, ok := mgmtHitAt(v.hits, msg); ok && v.wide() && v.confirm == nil {
+		// Both layouts record where their rows are (#1064): the narrow table
+		// as well as the wide cards.
+		if i, ok := mgmtHitAt(v.hits, msg); ok && v.confirm == nil && v.picker == nil {
 			v.cursor = i
+			v.sticky = v.currentKey()
+		}
+		return v, nil
+	case tea.MouseWheelMsg:
+		// The wheel moves the selection, as on the other lists (#1064); a
+		// question or a picker owns it while it is up.
+		if v.confirm == nil && v.picker == nil {
+			switch msg.Button {
+			case tea.MouseWheelUp:
+				v.cursor = max(v.cursor-1, 0)
+			case tea.MouseWheelDown:
+				v.cursor = min(v.cursor+1, max(len(v.rows())-1, 0))
+			}
+			v.sticky = v.currentKey()
 		}
 		return v, nil
 	case githubProbeMsg:
@@ -652,7 +668,12 @@ func (v *pullRequestsView) applyOpened(msg openedURLMsg) {
 // does nothing.
 func (v *pullRequestsView) openTask() tea.Cmd {
 	row, ok := v.current()
-	if !ok || row.pull.TaskID == nil {
+	if !ok {
+		return nil
+	}
+	if row.pull.TaskID == nil {
+		// Nothing to open: say which keys give it a task (#1064).
+		v.setNote("no task claims this pull request — "+opKey(keymap.Add)+" creates one from it, l links an existing one", false)
 		return nil
 	}
 	id := *row.pull.TaskID

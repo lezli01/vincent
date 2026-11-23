@@ -299,7 +299,9 @@ const (
 )
 
 func (v *pullRequestsView) wide() bool {
-	return v.termW >= mgmtWideMinW && v.picker == nil && v.usable() && v.loaded && v.loadErr == "" && len(v.pulls) > 0
+	// A picker no longer flips the screen to the narrow table (#1064): it is
+	// drawn above the columns, which stay where they were.
+	return v.termW >= mgmtWideMinW && v.usable() && v.loaded && v.loadErr == "" && len(v.pulls) > 0
 }
 
 func (v *pullRequestsView) frameless() bool { return v.wide() }
@@ -353,9 +355,14 @@ func (v *pullRequestsView) renderWide(width, height int) string {
 	rows := v.rows()
 	summary := strconv.Itoa(len(rows)) + " " + v.state + " · updated " + v.lastLoad.Format("15:04:05")
 	lines := mgmtFilterBox(&v.filter, v.filtering, summary, width)
-	if v.confirm != nil {
+	switch {
+	case v.picker != nil:
+		for _, l := range v.footerLines(width) {
+			lines = append(lines, ansi.Truncate(l, width, "…"))
+		}
+	case v.confirm != nil:
 		lines = append(lines, styleWarn.Render(ansi.Truncate(" "+v.confirm.text+" (y/n)", width, "…")))
-	} else if v.note != "" {
+	case v.note != "":
 		style := styleDim
 		if v.noteBad {
 			style = styleBad
