@@ -4115,6 +4115,16 @@ The same map can be set with `vincent config set tui.keys "refresh=ctrl+e
 quit=f10"`, or from the [Settings](#settings) screen. An empty map,
 the default, is the keymap this guide describes.
 
+In Settings, `enter` on **Key bindings** opens a list of every operation,
+grouped as the table below groups them, with the key in force and — for one you
+changed — its default. `enter` on a row waits for the next key you press and
+binds it: a key that would clash is refused there and then, naming what it
+clashes with, and nothing is saved; a free key is saved at once and works
+straight away. `backspace` puts the row back on its default, `t` opens every
+binding as one line of `operation=key` pairs (for pasting a whole keymap), and
+`esc` goes back. `ctrl+c`, `ctrl+p` and `f1` stay with the TUI while it waits
+for a key, so they cannot be bound from there.
+
 A key is written the way the terminal reports it: one character (`R`, `/`,
 `!`), or one of the names `enter`, `tab`, `esc`, `space`, `backspace`,
 `delete`, `insert`, `home`, `end`, `pgup`, `pgdown`, `up`, `down`, `left`,

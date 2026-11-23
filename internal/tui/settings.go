@@ -86,6 +86,8 @@ type settingsView struct {
 	// form is the open editor, nil when none is. While it is open it owns the
 	// keyboard, and it is what asks before a dangerous key applies.
 	form *configForm
+	// bindings is the key-bindings screen (#1079), nil when it is not open.
+	bindings *keyBindings
 	// fieldAt is the template field tab inserts next.
 	fieldAt int
 	// preview is the daemon's rendering of the template being edited.
@@ -161,12 +163,19 @@ func (v *settingsView) frameless() bool {
 }
 
 // capturesInput is true while a text field owns the keyboard.
-func (v *settingsView) capturesInput() bool { return v.form != nil || v.searching }
+func (v *settingsView) capturesInput() bool {
+	// Taking a key press as a binding owns the keyboard: the key meant for
+	// the binding must not run whatever it already means.
+	return v.form != nil || v.searching || v.bindings != nil && v.bindings.capturing
+}
 
 // bindingContext names the layer that owns the keyboard.
 func (v *settingsView) bindingContext() bindingContext {
 	if v.form != nil {
 		return ctxConfigEdit
+	}
+	if v.bindings != nil {
+		return ctxKeyBindings
 	}
 	return ctxSettings
 }
@@ -351,6 +360,11 @@ func (v *settingsView) openKey(path string) {
 }
 
 func (v *settingsView) openForm(path string) {
+	if path == tuiKeysPath {
+		// #1079: a list to press keys into, not a line of pairs to type.
+		v.bindings = newKeyBindings(v.config)
+		return
+	}
 	if k, ok := v.key(path); ok {
 		v.form = newConfigForm(k, v.config)
 		v.fieldAt, v.preview, v.previewFor, v.previewErr = 0, apiclient.BranchPreview{}, "", ""
@@ -361,6 +375,10 @@ func (v *settingsView) openForm(path string) {
 // the message against the field; a success adopts what the daemon reports,
 // which is what is in force rather than what was asked for.
 func (v *settingsView) applySaved(msg configSavedMsg) tea.Cmd {
+	if v.bindings != nil && msg.path == tuiKeysPath && v.bindings.saving {
+		v.applyKeysSaved(msg)
+		return nil
+	}
 	if v.form != nil && msg.path == v.form.key.path {
 		v.form.saving = false
 		if msg.err != nil {
@@ -423,6 +441,9 @@ func (v *settingsView) adopt(msg configSavedMsg) {
 }
 
 func (v *settingsView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
+	if v.bindings != nil {
+		return v.updateBindings(msg)
+	}
 	if v.form != nil {
 		return v.updateForm(msg)
 	}

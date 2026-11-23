@@ -25,6 +25,9 @@ func (v *settingsView) render(width, height int) string {
 	if width < 4 || height < 3 {
 		return ""
 	}
+	if v.bindings != nil {
+		return v.renderBindings(width, height)
+	}
 	if !v.frameless() || width < mgmtWideMinW {
 		return v.renderNarrow(width, height)
 	}
