@@ -74,7 +74,7 @@ func TestDoneTaskNamesItsNextSteps(t *testing.T) {
 		Steps: []apiclient.StepRun{{ID: 1, StepIndex: 0, StepName: "build", Attempt: 1, State: stepSucceeded, ResultSummary: "all green"}},
 	}
 	got := ansi.Strip(cardView(t, task).render(100, 50))
-	for _, want := range []string{"What you can do", "F      follow_up", "A      archive"} {
+	for _, want := range []string{"next  F follow up · T chat · A archive", "all green"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("done Overview misses %q:\n%s", want, got)
 		}

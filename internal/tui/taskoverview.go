@@ -308,14 +308,11 @@ func (t *taskView) overviewLines(width, height int) []string {
 	case overviewFrameFor(task.State) == frameOutcome:
 		out = append(out, wrappedOrNone(overviewSentence(task, len(t.lanes)), width)...)
 		out = append(out, "")
-		// What can be done next keeps its rows ahead of the outcome card's
-		// result, which shrinks to make room (#1068): a finished task named
-		// none of follow-up, a pull request or archive.
-		next := t.overviewActionLines(width)
-		if t.pullOffered() {
-			next = append(next, ansi.Truncate("  "+styleKey.Render(fmt.Sprintf("%-6s", "P"))+" pull request"+
-				styleDim.Render(" — open one from this task's branch"), max(width, 1), "…"))
-		}
+		// What can be done next, on one line kept ahead of the outcome
+		// card's result, which shrinks by those two rows rather than giving
+		// them up (#1068): a finished task named none of follow-up, a pull
+		// request or archive.
+		next := t.outcomeNextLine(width)
 		out = append(out, t.outcomeCardLines(width, height-len(out)-overviewLinkRows-len(next))...)
 		out = append(out, next...)
 	default:
@@ -577,6 +574,36 @@ func (t *taskView) overviewActionLines(width int) []string {
 		out = append(out, styleDim.Render("  no action available"))
 	}
 	return out
+}
+
+// outcomeNextLine is a finished task's next steps as one line of keys —
+// follow up, a pull request when one can be opened, chat, archive — under a
+// blank row; nil when none is offered.
+func (t *taskView) outcomeNextLine(width int) []string {
+	offered := t.detail.task.AvailableActions
+	var parts []string
+	add := func(key, label string) {
+		if key != "" {
+			parts = append(parts, styleKey.Render(key)+" "+label)
+		}
+	}
+	if slices.Contains(offered, apiclient.ActionFollowUp) {
+		add(opKey(keymap.FollowUp), "follow up")
+	}
+	if t.pullOffered() {
+		add("P", "open a pull request")
+	}
+	if slices.Contains(offered, apiclient.ActionChat) {
+		add(opKey(keymap.Chat), "chat")
+	}
+	if slices.Contains(offered, apiclient.ActionArchive) {
+		add(opKey(keymap.Archive), "archive")
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	line := "  " + styleDim.Render("next  ") + strings.Join(parts, styleDim.Render(" · "))
+	return []string{"", ansi.Truncate(line, max(width, 1), "…")}
 }
 
 // pullOffered is whether `P` would open the pull-request form: nothing is
