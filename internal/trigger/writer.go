@@ -194,8 +194,10 @@ func (w *Writer) read(path string) ([]byte, string, error) {
 
 // StarterSpec is what the view's create prompt collects.
 type StarterSpec struct {
-	ID           string
-	Project      int64
+	ID      string
+	Project int64
+	// SourceType picks the starter's source (#1123); empty is command.
+	SourceType   string
 	PollInterval string
 	Command      []string
 	Workflow     string
@@ -207,28 +209,47 @@ type StarterSpec struct {
 // otherwise and confirms it. Every absent value gets a placeholder that
 // validates, so the starter is a working file the form then edits by ops.
 func Starter(s StarterSpec) []byte {
-	iv := s.PollInterval
-	if iv == "" {
-		iv = "5m"
-	}
-	argv := s.Command
-	if len(argv) == 0 {
-		argv = []string{"/path/to/poll-command"}
-	}
 	title := s.Title
 	if title == "" {
 		title = "{{ .Event.id }}"
 	}
 	var b strings.Builder
-	b.WriteString("# vincent trigger: runs source.command on an interval and creates a task per new event.\n")
+	b.WriteString(starterLead[starterType(s.SourceType)])
 	b.WriteString("# It is inert until enabled here and triggers.enabled is on in config.yaml.\n")
 	b.WriteString("id: " + workflow.RenderScalar(s.ID) + "\n")
 	b.WriteString("enabled: false\n")
 	b.WriteString("source:\n")
-	b.WriteString("  type: " + SourceCommand + "\n")
+	b.WriteString("  type: " + starterType(s.SourceType) + "\n")
 	b.WriteString("  project: " + strconv.FormatInt(s.Project, 10) + "\n")
-	b.WriteString("  poll_interval: " + workflow.RenderScalar(iv) + "\n")
-	b.WriteString("  command: " + workflow.RenderList(argv) + "\n")
+	switch starterType(s.SourceType) {
+	case SourceCommand:
+		iv := s.PollInterval
+		if iv == "" {
+			iv = "5m"
+		}
+		argv := s.Command
+		if len(argv) == 0 {
+			argv = []string{"/path/to/poll-command"}
+		}
+		b.WriteString("  poll_interval: " + workflow.RenderScalar(iv) + "\n")
+		b.WriteString("  command: " + workflow.RenderList(argv) + "\n")
+	case SourceSchedule:
+		b.WriteString("  every: 1h\n")
+	case SourceHTTP:
+		b.WriteString("  signature:\n")
+		b.WriteString("    scheme: " + SignatureGitHubHMACSHA256 + "\n")
+		b.WriteString("    secret_env: VINCENT_TRIGGER_SECRET\n")
+	case SourceIssues:
+		// Local changes only, so the starter needs no author allowlist: a
+		// change arriving by sync is an outsider's until allowed_actors says
+		// whose to accept.
+		b.WriteString("match:\n")
+		b.WriteString("  by: [human, agent]\n")
+	case SourceGitHubPRs:
+		// The one event no outsider can cause; any other needs allowed_actors.
+		b.WriteString("match:\n")
+		b.WriteString("  action: merged\n")
+	}
 	b.WriteString("action:\n")
 	b.WriteString("  type: " + ActionCreateTask + "\n")
 	if s.Workflow != "" {
@@ -236,4 +257,26 @@ func Starter(s StarterSpec) []byte {
 	}
 	b.WriteString("  title: " + workflow.RenderScalar(title) + "\n")
 	return []byte(b.String())
+}
+
+// StarterSourceTypes are the sources a create can start from (#1123): every
+// source but the deprecated github_issues, which `issues` replaced.
+func StarterSourceTypes() []string {
+	return []string{SourceCommand, SourceIssues, SourceSchedule, SourceGitHubPRs, SourceHTTP}
+}
+
+func starterType(t string) string {
+	if t == "" {
+		return SourceCommand
+	}
+	return t
+}
+
+// starterLead is each starter's first comment: what it does as written.
+var starterLead = map[string]string{
+	SourceCommand:   "# vincent trigger: runs source.command on an interval and creates a task per new event.\n",
+	SourceIssues:    "# vincent trigger: creates a task when an issue of the project changes here (not by sync).\n",
+	SourceSchedule:  "# vincent trigger: creates a task every hour; set source.cron or source.every.\n",
+	SourceGitHubPRs: "# vincent trigger: creates a task when a pull request of the project merges.\n",
+	SourceHTTP:      "# vincent trigger: creates a task per event pushed to POST /v1/triggers/{id}/events, signed with $VINCENT_TRIGGER_SECRET.\n",
 }

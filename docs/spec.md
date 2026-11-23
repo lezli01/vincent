@@ -12469,12 +12469,23 @@ GET    /v1/triggers                     *Added 2026-09-13 (task 096).* { enabled
                                         finds one, and absent only when none can be read. `armed` is
                                         valid + enabled + triggers.enabled, and `disarmed_reason`
                                         names the first of those that is missing
-POST   /v1/triggers                     { id, project_id, poll_interval?, command[]?, workflow?,
-                                          title? } → 201 { id, file, version, errors[] }.
+POST   /v1/triggers                     { id, project_id, source_type?, poll_interval?, command[]?,
+                                          workflow?, title? } → 201 { id, file, version, errors[] }.
                                         Writes {config_dir}/triggers/{id}.yaml, 0600, from a
                                         daemon-rendered starter: `type: command`, `create_task`,
                                         `enabled: false` and **no `on_fire` line**, so no YAML
-                                        travels on the wire. 409 when the file exists
+                                        travels on the wire. 409 when the file exists.
+                                        *Amended 2026-11-23 (issue #1123):* `source_type` picks
+                                        the starter's source — `command` (absent), `issues`,
+                                        `schedule`, `github_prs` or `http`; the deprecated
+                                        `github_issues` is not offered. Each starter loads as
+                                        written and is still disabled with no `on_fire` line:
+                                        `issues` matches `by: [human, agent]` and `github_prs`
+                                        `action: merged`, so neither needs `allowed_actors`;
+                                        `schedule` is `every: 1h`; `http` is signed
+                                        `github_hmac_sha256` with `$VINCENT_TRIGGER_SECRET`.
+                                        `poll_interval` and `command` on another source, and an
+                                        unknown `source_type`, are 400 before anything is written
 GET    /v1/triggers/schema              the trigger schema as data, the way /v1/workflows/schema
                                         serves §8.2: top-level fields, the source and action
                                         variants, and the values marked dangerous
@@ -17468,7 +17479,8 @@ stream for the live tail.
 
    **Create and edit** use task 065's form, rendered from
    `GET /v1/triggers/schema` rather than from a client copy of the rules.
-   - `a` creates: the daemon renders a disabled starter.
+   - `a` creates: the daemon renders a disabled starter, of the source the
+     prompt picks (amended 2026-11-23, issue #1123).
    - `i` or `enter` opens the form on a file.
    - `e` hands the file to `$EDITOR`.
    - `space` toggles `enabled`.

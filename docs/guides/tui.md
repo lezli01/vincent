@@ -3611,7 +3611,7 @@ before it applies a value. The form repeats the warning at its top.
 | `↑` / `↓` | Move the selection |
 | `enter` or `i` | Open the selected trigger in the form |
 | `space` | Enable or disable the selected trigger — enabling asks first |
-| `a` | Create a trigger from a starter |
+| `a` | Create a trigger from a starter: an id, then its source — `←`/`→` pick command, issues, schedule, GitHub pull requests or http, each with what its starter does; the command and interval rows are a command source's alone |
 | `e` | Open the trigger's file in `$EDITOR` |
 | `D` | Delete the trigger's file — its ledger is kept (asks first) |
 | `T` | Dry-run a sample event through the trigger's filter; fires nothing |
