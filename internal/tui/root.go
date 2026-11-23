@@ -289,6 +289,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateKey(msg)
 	case tea.FocusMsg, tea.BlurMsg:
 		return m, m.updateFocus(msg)
+	case stepItemMsg:
+		return m, m.stepItem(msg)
 	case selectTaskMsg, openTaskMsg, openIssueMsg, openChatMsg, taskCreatedMsg:
 		// Every open follows its object into its project first (task 132.6):
 		// openObject switches when it must, then routes.

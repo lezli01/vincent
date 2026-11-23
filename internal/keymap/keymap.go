@@ -115,6 +115,12 @@ const (
 	// merge train.
 	NextChat Op = "next_chat"
 	PrevChat Op = "prev_chat"
+	// NextItem and PrevItem step to the neighbouring task from inside a
+	// task, and to the neighbouring issue from inside an issue, in the
+	// board's order (#1077) — the chat switch's keys, on the surfaces the
+	// chat switch is not on.
+	NextItem Op = "next_item"
+	PrevItem Op = "prev_item"
 	// ShellCommand opens the chat's one-line shell prompt, which runs a
 	// command in the chat's directory and draws it as a card in the
 	// conversation (task 170). alt+x for "execute": the composer owns every
@@ -332,6 +338,12 @@ var catalog = []Info{
 	// question's popup.
 	{Op: NextChat, Default: "alt+n", Meaning: "open the next chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
 	{Op: PrevChat, Default: "alt+shift+n", Meaning: "open the previous chat of the project", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
+	{Op: NextItem, Default: "alt+n", Meaning: "open the next task, or the next issue, in the board's order", Kind: KindTerm, Surfaces: []Surface{
+		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request", "issue",
+	}},
+	{Op: PrevItem, Default: "alt+shift+n", Meaning: "open the previous task, or the previous issue, in the board's order", Kind: KindTerm, Surfaces: []Surface{
+		"task overview", "timeline", "task details", "output", "diff", "task workflow", "task step details", "task pull request", "issue",
+	}},
 	{Op: Chat1, Default: "alt+1", Meaning: "open the project's 1st chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
 	{Op: Chat2, Default: "alt+2", Meaning: "open the project's 2nd chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
 	{Op: Chat3, Default: "alt+3", Meaning: "open the project's 3rd chat", Kind: KindTerm, Surfaces: []Surface{"chats", "chat"}, Typing: true},
@@ -500,6 +512,8 @@ var exceptions = []exception{
 	{key: "ctrl+s", ops: []Op{Steer}, anyFixed: true, why: "task 156 decision 5: ctrl+s is the forms' save or start, and steer is on the chat surface, which is no form and answers no other ctrl+s"},
 	{key: "S", ops: []Op{ChatSearch}, anyFixed: true, why: "task 158: S installs skills on the daemon screen and syncs on the issues list, and neither is the chats board"},
 	{key: "T", ops: []Op{Chat}, anyFixed: true, why: "task 119: T dry-runs a trigger on the triggers takeover, which offers no available_actions"},
+	{key: "alt+n", ops: []Op{NextChat, NextItem}, why: "#1077: next chat and next task or issue are one move, the next one, on surfaces that never meet: the chats and a chat, and the task workspace and an issue"},
+	{key: "alt+shift+n", ops: []Op{PrevChat, PrevItem}, why: "#1077: the previous one, as alt+n is the next"},
 	{key: "shift+tab", ops: []Op{ChatMode}, anyFixed: true, why: "task 162 decision 9: shift+tab switches main tabs and moves between form rows, and the chat surface captures input, so neither reaches it — tab there is the skills list's (task 124 decision 69)"},
 }
 
