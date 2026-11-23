@@ -924,6 +924,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `←`/`→` or `h`/`l` | On Output, select which attempt's output to show |
 | `f` or `G` | Follow the live output again |
 | `g` or `home` | On Output, jump to the top (follow stops) |
+| `/` | On Output or Diff, search: type, `enter` lands on the first match and draws it reversed; `n` / `N` then walk the matches, wrapping, `/` searches again and `esc` ends the search — while it runs `n` and `N` are the search's, and they mean new task and next failure again after |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
 | `ctrl+y` | Copy the task's id, branch, worktree path or pull request URL — from any tab — and, on Output, an assistant message, its plain text, or one of its code blocks |
@@ -1281,7 +1282,10 @@ line names what the diff is of, and for the whole task what it is against.
 | `O` | Expand every file |
 | `C` | Collapse every file — which is how the tab opens |
 | `pgup`/`pgdn`, `f`/`b`, `u` | Scroll by lines inside what is expanded |
+| `alt+↑`/`alt+↓` | Scroll one line, whatever file the cursor is on |
 | `shift+←`/`shift+→` | Pan sideways to the end of a line wider than the pane — diff lines are never wrapped |
+| `/` | Search the diff: every file opens, `n`/`N` walk the matches, `esc` ends the search |
+| `ctrl+r` | Read the diff again |
 | `d` | Switch between the whole task's diff and the selected attempt's |
 | `]` / `[` | Move to the next / previous hunk, opening the file it is in. On this tab they are not the tab keys: `tab`/`shift+tab` still switch tabs |
 
@@ -1298,7 +1302,8 @@ behind it moves nothing.
 
 The counts beside each path are the added and removed lines inside that file's
 hunks, and the line above the list totals them and says when the diff was
-read — `as of 14:02:31`; reopening the tab reads it again. A **binary** file says so
+read — `as of 14:02:31`; `ctrl+r`, reopening the tab, and every step the task
+finishes read it again. A **binary** file says so
 instead of showing `+0 -0`, and a rename reads `old → new`.
 
 Folds are remembered **per file path**, so leaving and re-entering the tab — a

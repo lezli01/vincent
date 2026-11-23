@@ -322,6 +322,9 @@ func (t *taskView) bindingContext() bindingContext {
 			return ctxForm
 		}
 	}
+	if t.tab == taskTabOutput && t.detail.find.active() || t.tab == taskTabDiff && t.detail.diff.find.active() {
+		return ctxPaneFind
+	}
 	switch t.tab {
 	case taskTabOverview:
 		return ctxTaskOverview
@@ -565,6 +568,30 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		// The inline y/n owns the keyboard: tab, the digits, esc and the §6
 		// letters are all spent on declining it.
 		return t.updatePullConfirmKey(msg)
+	}
+
+	// A search on Output or Diff takes its own keys first (#1074): n and N
+	// walk its matches while it runs, and mean what they always mean after.
+	switch t.tab {
+	case taskTabOutput:
+		if t.detail.findKey(msg) {
+			return nil
+		}
+		if msg.String() == opKey(keymap.Filter) {
+			t.detail.find.open()
+			return nil
+		}
+	case taskTabDiff:
+		if t.detail.diff.findKey(msg) {
+			return nil
+		}
+		switch msg.String() {
+		case opKey(keymap.Filter):
+			t.detail.diff.find.open()
+			return nil
+		case diffReloadKey:
+			return t.detail.diff.fetch(t.detail.client)
+		}
 	}
 
 	// On the Diff tab, and only there, `]` and `[` walk the hunks (task 169

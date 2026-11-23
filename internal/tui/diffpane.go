@@ -156,6 +156,13 @@ type diffPane struct {
 	// file's row, and is spent by it.
 	hunkRow    int
 	revealHunk bool
+
+	// find is the pane's search (#1074); findLines what it last built, and
+	// findShown and findJump as the Output pane's.
+	find      paneFind
+	findLines []string
+	findShown string
+	findJump  bool
 }
 
 // diffSection is one lane's share of the change, or the remainder — the
@@ -430,6 +437,14 @@ func splitDiff(text string) []string {
 // line wider than the pane (newDiffPane).
 func (p *diffPane) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
+	case "alt+down":
+		// A line at a time (#1074): ↑/↓ move by file, and a long open file
+		// was read a page at a time only.
+		p.vp.ScrollDown(1)
+		return nil
+	case "alt+up":
+		p.vp.ScrollUp(1)
+		return nil
 	case "down", "j":
 		p.moveCursor(1)
 		return nil
@@ -615,6 +630,9 @@ func (p *diffPane) render(width, height int) string {
 		head = p.headLine(width) + "\n"
 		rest--
 	}
+	if p.find.active() && rest > 2 {
+		rest--
+	}
 	p.headLines = len(strings.Split(head, "\n")) - 1
 	p.vp.SetWidth(max(width, 1))
 	p.vp.SetHeight(rest)
@@ -629,9 +647,30 @@ func (p *diffPane) render(width, height int) string {
 		}
 		p.vp.SetContent(strings.Join(lines, "\n"))
 		p.built = true
+		p.findLines, p.findShown = lines, ""
+		p.find.scan(lines)
 		p.revealCursor()
 	}
-	return head + p.vp.View()
+	if !p.find.active() {
+		if p.findShown != "" {
+			p.findShown = ""
+			p.vp.SetContent(strings.Join(p.findLines, "\n"))
+		}
+		return head + p.vp.View()
+	}
+	if at, ok := p.find.line(); ok {
+		if key := fmt.Sprintf("%s\x00%d\x00%d", p.find.query, at, len(p.findLines)); key != p.findShown {
+			p.findShown = key
+			y := p.vp.YOffset()
+			p.vp.SetContent(strings.Join(p.find.highlight(p.findLines), "\n"))
+			p.vp.SetYOffset(y)
+		}
+		if p.findJump {
+			p.findJump = false
+			p.vp.SetYOffset(max(at-p.vp.Height()/3, 0))
+		}
+	}
+	return head + p.vp.View() + "\n" + p.find.bar(width, "every file opened to search it")
 }
 
 // revealCursor scrolls the selected row's header into view. It runs on every
@@ -821,7 +860,7 @@ func (p *diffPane) freshness() string {
 		// refresh them is that caller's to say.
 		return "as of " + p.asOf.Format(diffAsOfLayout)
 	}
-	return "as of " + p.asOf.Format(diffAsOfLayout) + " — reopen the tab to refresh"
+	return "as of " + p.asOf.Format(diffAsOfLayout) + " — " + diffReloadKey + " reloads"
 }
 
 func countNoun(n int, noun string) string {
