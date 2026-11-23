@@ -1180,6 +1180,8 @@ var bindings = []binding{
 	{key: "tab", label: "next category (shift+tab goes back)", scope: scopePanel, context: ctxSettings, hint: "tab category", priority: 4},
 	{op: keymap.Filter, key: "/", label: "search every setting", scope: scopePanel, context: ctxSettings, hint: "/ search", priority: 5, term: termFilter},
 	{key: "backspace", label: "reset the selected setting to its default", scope: scopePanel, context: ctxSettings, hint: "⌫ reset", priority: 6},
+	// #1057: every change applies at once, so the last one can be taken back.
+	{key: "u", label: "undo the last change: put back the value it replaced", scope: scopePanel, context: ctxSettings, hint: "u undo", priority: 6},
 	{op: keymap.Editor, key: "e", label: "open config.yaml in $EDITOR", scope: scopePanel, context: ctxSettings, priority: 7, term: termEditor},
 	{op: keymap.Refresh, key: "R", label: "re-read the configuration", scope: scopePanel, context: ctxSettings, priority: 8, term: termRefresh},
 	{key: "esc", label: "clear the search, else leave Settings", scope: scopePanel, context: ctxSettings, priority: 9},

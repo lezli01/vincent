@@ -353,6 +353,7 @@ var fixed = []Fixed{
 	{"settings", "enter", "edit the selected setting"},
 	{"settings", "tab", "next category"},
 	{"settings", "backspace", "reset the selected setting to its default"},
+	{"settings", "u", "undo the last change: put back the value it replaced"},
 	{"settings", "esc", "clear the search, else leave Settings"},
 	{"config editor", "left", "choose a value, for a key with a fixed vocabulary"},
 	{"config editor", "enter", "apply the change"},

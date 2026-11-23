@@ -2982,6 +2982,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	},
 
 	ctxSettings: {
+		"u": func(t *testing.T) {
+			v := settingsFixture(t)
+			v.updateKey(registryKey(t, "u"))
+			if v.note != "nothing to undo" {
+				t.Fatalf("u with nothing changed said %q", v.note)
+			}
+		},
 		"down": func(t *testing.T) {
 			v := settingsFixture(t)
 			before := v.selected

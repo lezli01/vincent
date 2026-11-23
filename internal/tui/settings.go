@@ -102,6 +102,13 @@ type settingsView struct {
 
 	note    string
 	noteBad bool
+	// undo is the last saved change and the value it replaced, which `u`
+	// writes back (#1057); undoing marks that write, which is not itself
+	// undoable. burstPath and burstWas are the value a run of arrow presses
+	// started from, so a held arrow is undone in one step, not one value.
+	undo                *settingsUndo
+	undoing             bool
+	burstPath, burstWas string
 	// pendingKey is a key another screen asked to open before the config landed.
 	pendingKey string
 
@@ -379,10 +386,31 @@ func (v *settingsView) applySaved(msg configSavedMsg) tea.Cmd {
 
 func (v *settingsView) adopt(msg configSavedMsg) {
 	delete(v.shown, msg.path)
+	k, known := v.key(msg.path)
+	was := ""
+	if known {
+		was = k.read(v.config)
+		if v.burstPath == msg.path {
+			was = v.burstWas
+		}
+	}
 	v.config, v.configOK, v.configErr = msg.cfg, true, nil
 	v.note, v.noteBad = "saved", false
-	if k, ok := v.key(msg.path); ok && k.restart {
+	if known && k.restart {
 		v.note = "saved, applies after the daemon restarts"
+	}
+	if v.queued != nil && v.queued.key.path == msg.path {
+		return // a held arrow is still on its way: the burst is one change
+	}
+	v.burstPath = ""
+	switch {
+	case v.undoing:
+		v.undoing, v.undo = false, nil
+		v.note += " · put back"
+	case known && was != k.read(v.config):
+		// What it was, and the key that puts it back (#1057).
+		v.undo = &settingsUndo{key: k, was: was}
+		v.note += " · was " + valueOr(oneLine(was), "(unset)") + " · u puts it back"
 	}
 }
 
@@ -422,6 +450,8 @@ func (v *settingsView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return v.search.Focus()
 	case "backspace":
 		return v.reset()
+	case "u":
+		return v.undoLast()
 	case opKey(keymap.Editor):
 		return v.openFile()
 	case opKey(keymap.Refresh):
@@ -588,8 +618,29 @@ func (v *settingsView) reset() tea.Cmd {
 	return v.apply(row.key, row.key.def())
 }
 
+// settingsUndo is one change `u` can take back.
+type settingsUndo struct {
+	key configKey
+	was string
+}
+
+// undoLast is `u`: the last saved change's setting back to what it was.
+func (v *settingsView) undoLast() tea.Cmd {
+	u := v.undo
+	if u == nil || !v.configOK {
+		v.note, v.noteBad = "nothing to undo", false
+		return nil
+	}
+	v.undoing = true
+	v.selected = u.key.path
+	return v.apply(u.key, u.was)
+}
+
 // apply sends a value, or stops at the confirmation for a dangerous key.
 func (v *settingsView) apply(k configKey, value string) tea.Cmd {
+	if v.saving == nil && (v.burstPath != k.path || v.queued == nil) {
+		v.burstPath, v.burstWas = k.path, v.value(k)
+	}
 	if k.dangerous {
 		v.openForm(k.path)
 		v.form.setValue(value)

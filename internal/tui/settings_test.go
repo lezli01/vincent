@@ -301,3 +301,37 @@ func TestSettingsOpensAKeyOnceTheConfigLands(t *testing.T) {
 		t.Fatalf("the editor is on %+v", v.form)
 	}
 }
+
+// #1057: after a change the screen says what the value was, and u puts it
+// back with one write of its own, which is not itself undoable.
+func TestSettingsSaysWhatItWasAndUndoes(t *testing.T) {
+	v := settingsFixture(t)
+	v.client = offlineClient()
+	v.selected = "max_parallel_tasks"
+	k := mustSetting(t, v, v.selected)
+	before := k.read(v.config)
+	v.updateKey(tea.KeyPressMsg{Code: tea.KeyRight})
+	changed := v.config
+	changed.MaxParallelTasks++
+	v.update(configSavedMsg{path: k.path, cfg: changed})
+	if v.undo == nil || v.undo.was != before {
+		t.Fatalf("undo = %+v, want the value it replaced (%q)", v.undo, before)
+	}
+	if !strings.Contains(v.note, "was "+before) || !strings.Contains(v.note, "u puts it back") {
+		t.Fatalf("note = %q", v.note)
+	}
+	v.updateKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	if got := v.value(k); got != before {
+		t.Fatalf("u sent %q, want %q", got, before)
+	}
+	restored := changed
+	restored.MaxParallelTasks--
+	v.update(configSavedMsg{path: k.path, cfg: restored})
+	if v.undo != nil || !strings.Contains(v.note, "put back") {
+		t.Fatalf("after the undo: undo %+v, note %q", v.undo, v.note)
+	}
+	v.updateKey(tea.KeyPressMsg{Code: 'u', Text: "u"})
+	if v.note != "nothing to undo" {
+		t.Fatalf("a second u said %q", v.note)
+	}
+}
