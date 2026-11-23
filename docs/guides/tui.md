@@ -2906,6 +2906,17 @@ the reason it cannot be restricted](../assets/tui-chat-compare.png)
 One conversation: the finished turns above, the running turn's live output below
 them, and a composer at the bottom.
 
+**On macOS, the chat's `alt+` keys need the terminal to send Option as Meta.**
+The composer owns every printable key, so the chat's own commands — the diff,
+rewind, the shell, the model, the chat switch, stash and history — are `alt+`
+chords, and a stock Terminal.app or iTerm2 turns Option into a character
+instead: Option+d types `∂`. Set Terminal's **Use Option as Meta key**
+(Settings › Profiles › Keyboard) or iTerm2's Option key to **Esc+** (Profiles ›
+Keys). The first time the composer receives such a character for a chord the
+chat binds, it says so once on its note line. Until then `ctrl+p` opens the
+palette, which reaches every command, and [`tui.keys`](#rebinding-keys)
+rebinds any of them.
+
 Your own messages are easy to find in it. A prompt is drawn as a right-aligned
 card titled `You` — as wide as it needs to be, up to about two thirds of the
 pane, wrapping inside itself, with how long ago you sent it on its top edge. The
@@ -2956,7 +2967,7 @@ periodic repaint.
 | `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now, paused or not: an idle chat holding an unpaused queue (left by a daemon crash mid-recovery) says so under the queue, and this starts it |
 | `alt+c` | Clear the queue: delete every queued message |
 | `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
-| `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting |
+| `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting, as every `alt+` key here does |
 | `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |
