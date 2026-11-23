@@ -770,10 +770,32 @@ func (d *daemonView) renderLog(height int) string {
 	if body, ok := d.logEmptyState(); ok {
 		return header + "\n" + styleDim.Render("   "+body)
 	}
+	// The restart question and what the pane leaves out sit on the pane's
+	// first line, which the wide layout keeps (it drops only the header).
+	var info string
+	switch {
+	case d.restartAsk:
+		info = styleWarn.Render("  restart the daemon? running steps are interrupted and re-run when it is back · y restart · any other key keeps it")
+	case d.restarting:
+		info = styleDim.Render("  restarting the daemon…")
+	case d.restartErr != nil:
+		info = styleWarn.Render("  could not restart: " + errString(d.restartErr))
+	default:
+		info = styleDim.Render(d.logHeader())
+	}
+	vpH := height - 1
+	if info != "" {
+		header += "\n" + info
+		vpH--
+	}
 	d.vp.SetWidth(max(d.width, 1))
-	d.vp.SetHeight(max(height-1, 1))
+	d.vp.SetHeight(max(vpH, 1))
 	if d.logDirty {
-		d.vp.SetContent(strings.Join(d.logLines, "\n"))
+		shown, _ := d.shownLogLines()
+		if len(shown) == 0 {
+			shown = []string{styleDim.Render("   no line matches")}
+		}
+		d.vp.SetContent(strings.Join(shown, "\n"))
 		d.logDirty = false
 	}
 	// Re-anchored on every render, not only on new content: tab changes the

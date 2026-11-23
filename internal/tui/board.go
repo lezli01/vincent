@@ -1004,6 +1004,13 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		b.sortOrder = nextSort(boardSorts, b.sortOrder)
 		b.actions.setStatus("sorted by "+valueOr(b.sortOrder, "state"), false)
 		return b, nil
+	case copyPickKey:
+		// The selected task's id, branch, worktree path and pull request
+		// (#1076).
+		if t, ok := b.taskByID(b.selectedIDOrCursor()); ok {
+			return b, openCopyItems(taskCopyItems(t))
+		}
+		return b, nil
 	case opKey(keymap.AttentionFilter):
 		// The cursor is not touched, for `g`'s reason: selectedID names the
 		// task under it, and the next render puts the cursor back on it when
@@ -2297,4 +2304,14 @@ func (b *board) promptKeys() promptAnswers {
 // never the root's New task (#790).
 func (b *board) capturesInput() bool {
 	return b.filtering || b.actions.capturing() || b.delPrompt != nil
+}
+
+// selectedIDOrCursor is the task under the cursor, in either layout.
+func (b *board) selectedIDOrCursor() int64 {
+	if b.cards {
+		id, _ := b.cardSelected()
+		return id
+	}
+	id, _ := b.selected()
+	return id
 }

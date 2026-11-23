@@ -289,6 +289,8 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateKey(msg)
 	case tea.FocusMsg, tea.BlurMsg:
 		return m, m.updateFocus(msg)
+	case stepItemMsg:
+		return m, m.stepItem(msg)
 	case selectTaskMsg, openTaskMsg, openIssueMsg, openChatMsg, taskCreatedMsg:
 		// Every open follows its object into its project first (task 132.6):
 		// openObject switches when it must, then routes.
@@ -395,6 +397,15 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateConnected(msg)
 	case projectListMsg:
 		return m, m.updateProjectList(msg)
+	case restartDaemonMsg:
+		// #1081: stop the daemon, then the connect flow starts a new one.
+		return m, stopDaemonCmd(m.dataDir)
+	case daemonStoppedMsg:
+		cmd := m.deliver(viewDaemon, msg)
+		if msg.err != nil {
+			return m, cmd
+		}
+		return m, tea.Batch(cmd, m.restartConnect())
 	case probeFailedMsg:
 		m.phase = phaseStarting
 		m.setDataDir(msg.dataDir)
@@ -827,6 +838,11 @@ func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return m.pressPauseAll(), true
 		}
 	case opKey(keymap.Project):
+		// #1082: with nothing registered, the picker would list nothing, so
+		// @ opens the add form instead — the empty state's key adds one.
+		if m.phase == phaseConnected && m.startup.done && len(m.projects) == 0 && !m.popupOpen() {
+			return tea.Batch(m.deliver(viewProjects, openProjectAddMsg{}), m.switchTo(viewProjects)), true
+		}
 		// While reconnecting too: the picker opens on the cached list.
 		if m.phase == phaseConnected || m.phase == phaseReconnecting {
 			return m.openProjectPicker(), true

@@ -3728,7 +3728,7 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		"enter": func(t *testing.T) {
 			v := chatFindFixture(t)
 			v.openSearchLine()
-			v.search.buf = "question"
+			v.search.buf.Set("question")
 			v.updateKey(registryKey(t, "enter"))
 			if v.search.typing || v.search.query != "question" || len(v.search.matches) == 0 {
 				t.Fatalf("enter: typing %v, query %q, %d matches", v.search.typing, v.search.query, len(v.search.matches))

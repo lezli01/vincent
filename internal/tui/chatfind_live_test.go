@@ -117,7 +117,7 @@ func TestChatFindLive(t *testing.T) {
 	v.render(100, 30)
 
 	v.openSearchLine()
-	v.search.buf = "needle"
+	v.search.buf.Set("needle")
 	_, cmd := v.updateKey(registryKey(t, "enter"))
 	res := runCmd(t, cmd, 30*time.Second).(chatSearchMsg)
 	if res.err != nil {

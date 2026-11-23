@@ -625,6 +625,12 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		v.reselect()
 		v.setNote("sorted by "+valueOr(v.sortOrder, "the daemon's order"), false)
 		return v, nil
+	case copyPickKey:
+		// The selected issue's id, reference and page (#1076).
+		if row, ok := v.current(); ok {
+			return v, openCopyItems(issueCopyItems(row.issue))
+		}
+		return v, nil
 	case "left":
 		v.moveLane(-1)
 		return v, nil
@@ -947,7 +953,12 @@ func (v *issuesView) bodyNotice(width int) []string {
 	case !v.loaded:
 		return prose("listing "+v.project.name+"'s issues…", styleDim)
 	case len(v.issues) == 0:
-		return prose("`vincent issue add` files one; an imported project's issues arrive with its next sync.", styleDim)
+		// The keys first (#1082): the CLI is not the way out from here.
+		line := "No issues yet — " + opKey(keymap.New) + " files one"
+		if v.syncable() {
+			line += ", " + issueSyncKey + " syncs from the project's issue source"
+		}
+		return prose(line+".", styleDim)
 	}
 	return nil
 }

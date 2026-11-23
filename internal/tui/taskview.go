@@ -614,6 +614,17 @@ func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		if cmd := t.openParentCmd(); cmd != nil {
 			return cmd
 		}
+	case copyPickKey:
+		// The Output tab adds its messages to these (detail.go); every other
+		// tab copies the task's references (#1076).
+		if t.tab != taskTabOutput && t.detail.loaded {
+			return openCopyItems(taskCopyItems(t.detail.task.Task))
+		}
+	case opKey(keymap.NextItem):
+		// The neighbouring task in the board's order (#1077).
+		return stepItemCmd(t.detail.taskID, 1, false)
+	case opKey(keymap.PrevItem):
+		return stepItemCmd(t.detail.taskID, -1, false)
 	case opKey(keymap.NextFailure):
 		// A pending y/n owns N — it is the popups' no — so the key falls
 		// through to the tab, which hands it to the confirmation.

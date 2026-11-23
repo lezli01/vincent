@@ -41,7 +41,11 @@ const chatShellChangedEvent = "chat.shell_changed"
 type chatShellState struct {
 	// prompt is the one-line prompt on screen, and buf what is typed in it.
 	prompt bool
-	buf    string
+	buf    lineEdit
+	// recall is how far back ↑ has walked the commands already run (#1078),
+	// 0 for none; draft is what was typed before the walk began.
+	recall int
+	draft  string
 	// busy is a start in flight, so a second enter does not run it twice.
 	busy bool
 	// runs is GET /v1/chats/{id}/shell, oldest first.
@@ -166,7 +170,9 @@ func (v *chatView) openShellPrompt() {
 	}
 	v.hideInline("")
 	v.hideFiles()
-	v.shell.prompt, v.shell.buf = true, ""
+	v.shell.prompt = true
+	v.shell.buf.Set("")
+	v.shell.recall, v.shell.draft = 0, ""
 }
 
 // updateShellPromptKey is the prompt's keyboard. It owns every key, as the
@@ -174,27 +180,54 @@ func (v *chatView) openShellPrompt() {
 func (v *chatView) updateShellPromptKey(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
-		v.shell.prompt, v.shell.buf = false, ""
+		v.shell.prompt = false
+		v.shell.buf.Set("")
 		return nil
 	case "enter":
-		command := strings.TrimSpace(v.shell.buf)
+		command := strings.TrimSpace(v.shell.buf.String())
 		if command == "" || v.shell.busy {
 			return nil
 		}
-		v.shell.prompt, v.shell.buf = false, ""
+		v.shell.prompt = false
+		v.shell.buf.Set("")
 		return v.runShellCmd(command)
-	case "backspace":
-		if r := []rune(v.shell.buf); len(r) > 0 {
-			v.shell.buf = string(r[:len(r)-1])
-		}
+	case "up":
+		v.recallShell(1)
+		return nil
+	case "down":
+		v.recallShell(-1)
 		return nil
 	case "ctrl+c":
 		return nil
 	}
-	if msg.Text != "" && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0 {
-		v.shell.buf += msg.Text
-	}
+	v.shell.buf.Key(msg)
 	return nil
+}
+
+// recallShell walks the commands this chat already ran, newest first (↑),
+// and back towards what was being typed (↓) (#1078). Repeats of the same
+// command in a row are one step.
+func (v *chatView) recallShell(delta int) {
+	var past []string
+	for i := len(v.shell.runs) - 1; i >= 0; i-- {
+		c := v.shell.runs[i].Command
+		if c != "" && (len(past) == 0 || past[len(past)-1] != c) {
+			past = append(past, c)
+		}
+	}
+	at := min(max(v.shell.recall+delta, 0), len(past))
+	if at == v.shell.recall {
+		return
+	}
+	if v.shell.recall == 0 {
+		v.shell.draft = v.shell.buf.String()
+	}
+	v.shell.recall = at
+	if at == 0 {
+		v.shell.buf.Set(v.shell.draft)
+		return
+	}
+	v.shell.buf.Set(past[at-1])
 }
 
 // pasteShell is a paste while the prompt is up: one line of it, because the
@@ -207,7 +240,7 @@ func (v *chatView) updateShellPromptKey(msg tea.KeyPressMsg) tea.Cmd {
 // width the prompt is truncated to.
 func (v *chatView) pasteShell(text string) {
 	text = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(text)
-	v.shell.buf += strings.ReplaceAll(sanitizeText(text), "\t", " ")
+	v.shell.buf.Insert(strings.ReplaceAll(sanitizeText(text), "\t", " "))
 }
 
 func (v *chatView) runShellCmd(command string) tea.Cmd {
@@ -437,6 +470,6 @@ func chatShellMark(r apiclient.ChatShellRun) string {
 
 // shellPromptLine is the prompt as drawn over the composer.
 func (v *chatView) shellPromptLine(width int) string {
-	return ansi.Truncate(styleKey.Render("$ ")+v.shell.buf+"█"+
+	return ansi.Truncate(styleKey.Render("$ ")+v.shell.buf.View()+
 		styleDim.Render("  enter run · esc cancel"), width, "…")
 }

@@ -96,7 +96,7 @@ func init() {
 			v := chatViewFixture()
 			v.client = offlineClient()
 			v.openShellPrompt()
-			v.shell.buf = "ls"
+			v.shell.buf.Set("ls")
 			_, cmd := v.updateKey(registryKey(t, "enter"))
 			if cmd == nil || v.shell.prompt || !v.shell.busy {
 				t.Fatalf("enter: cmd %v, prompt %v, busy %v", cmd != nil, v.shell.prompt, v.shell.busy)
@@ -105,10 +105,10 @@ func init() {
 		"esc": func(t *testing.T) {
 			v := chatViewFixture()
 			v.openShellPrompt()
-			v.shell.buf = "ls"
+			v.shell.buf.Set("ls")
 			_, cmd := v.updateKey(registryKey(t, "esc"))
-			if cmd != nil || v.shell.prompt || v.shell.buf != "" {
-				t.Fatalf("esc: cmd %v, prompt %v, buf %q", cmd != nil, v.shell.prompt, v.shell.buf)
+			if cmd != nil || v.shell.prompt || v.shell.buf.String() != "" {
+				t.Fatalf("esc: cmd %v, prompt %v, buf %q", cmd != nil, v.shell.prompt, v.shell.buf.String())
 			}
 		},
 	}
@@ -121,8 +121,8 @@ func TestChatShellPromptTypes(t *testing.T) {
 	v.openShellPrompt()
 	pressAll(t, v, "l", "s")
 	v.paste(" -la\nrm -rf /")
-	if v.shell.buf != "ls -la rm -rf /" || v.composer.Value() != "" {
-		t.Fatalf("buf %q, draft %q", v.shell.buf, v.composer.Value())
+	if v.shell.buf.String() != "ls -la rm -rf /" || v.composer.Value() != "" {
+		t.Fatalf("buf %q, draft %q", v.shell.buf.String(), v.composer.Value())
 	}
 	if !strings.Contains(ansi.Strip(v.render(100, 30)), "$ ls -la rm -rf /") {
 		t.Fatalf("the prompt is not drawn:\n%s", ansi.Strip(v.render(100, 30)))
@@ -420,7 +420,7 @@ func TestChatShellPasteIsSanitized(t *testing.T) {
 	v := chatViewFixture()
 	v.openShellPrompt()
 	v.paste("git\tlog\x1b[2J --one\x07line\r\n\x0e-n 3")
-	if v.shell.buf != "git log --oneline -n 3" {
-		t.Fatalf("buf %q", v.shell.buf)
+	if v.shell.buf.String() != "git log --oneline -n 3" {
+		t.Fatalf("buf %q", v.shell.buf.String())
 	}
 }

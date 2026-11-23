@@ -479,15 +479,10 @@ func (v *issueView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return v, func() tea.Msg { return openLinkPickerMsg{items: items} }
 	case copyPickKey:
-		var items []copyItem
-		if t := strings.TrimSpace(v.issue.Title); t != "" {
-			items = append(items, copyItem{group: "title", label: "title", snippet: t, text: t})
-		}
+		// The issue's id and reference too (#1076), then its thread.
+		items := issueCopyItems(v.issue)
 		for _, d := range v.threadDocs() {
 			items = append(items, copyItemsFrom(d.group, copyDoc{text: d.text})...)
-		}
-		if url := issueURL(v.issue); url != "" {
-			items = append(items, copyItem{group: "source", label: "url", snippet: url, text: url})
 		}
 		return v, func() tea.Msg { return openCopyPickerMsg{items: items} }
 	case "home", "g":
@@ -565,6 +560,11 @@ func (v *issueView) issueOp(key string) (tea.Cmd, bool) {
 		return nil, true
 	case opKey(keymap.Comment):
 		return v.openComment(), true
+	case opKey(keymap.NextItem):
+		// The neighbouring issue in the board's order (#1077).
+		return stepItemCmd(v.issue.ID, 1, true), true
+	case opKey(keymap.PrevItem):
+		return stepItemCmd(v.issue.ID, -1, true), true
 	case opKey(keymap.Chat):
 		// A chat on this issue's main worktree, or the one already holding
 		// it (task 140.9).

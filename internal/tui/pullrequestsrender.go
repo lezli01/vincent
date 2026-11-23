@@ -182,9 +182,10 @@ func (v *pullRequestsView) bodyLines(width int) (lines []string, from, to int) {
 
 func emptyPullsNote(state string, total int, query string) string {
 	if total == 0 {
-		return "no " + pullsNoun(state)
+		// The way to one is named (#1082): P opens one for a task.
+		return "no " + pullsNoun(state) + " — P starts one for a task"
 	}
-	return fmt.Sprintf("none of %s match %q",
+	return fmt.Sprintf("none of %s match %q — esc clears the filter",
 		plural(total, "pull request", "pull requests"), query)
 }
 
