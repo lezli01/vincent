@@ -102,7 +102,7 @@ func buildFooter(width int, panelRows []binding, bar *actionBar, target taskActi
 		rest = []footerSeg{{text: strings.TrimPrefix(bar.render(target), " ")}}
 	} else {
 		hints = footerHintSegs(panelRows)
-		rest = footerRestSegs(bar, target, attention, retry)
+		rest = footerRestSegs(bar, target, attention, retry, textField)
 	}
 
 	if width > 0 {
@@ -562,7 +562,7 @@ func footerAdmitActions(rest []footerSeg, countable, avail int) []footerSeg {
 // footerRestSegs is everything to the right of the hints: the task's valid
 // actions, the answer/attention/retry extras, and the action bar's last
 // status.
-func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry bool) []footerSeg {
+func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally, retry, textField bool) []footerSeg {
 	segs := make([]footerSeg, 0, 8)
 	if target.bulk() {
 		// The way out of a selection leads it (#1073): esc clears it, and
@@ -616,7 +616,9 @@ func footerRestSegs(bar *actionBar, target taskActions, attention attentionTally
 			})
 		}
 	}
-	if n := attention.total(); n > 0 && opKey(keymap.NextAttention) != "" {
+	// Not while a text field has the keyboard (#1060): `!` is typed there,
+	// as footerPinnedSegs already says of the other single-key globals.
+	if n := attention.total(); n > 0 && opKey(keymap.NextAttention) != "" && !textField {
 		// `!` is a global row, and the pinned segment stands for those: shown
 		// here, never counted. The count is every project's and carries no
 		// label (task 132 decision 53): `!` crosses projects, and the app
