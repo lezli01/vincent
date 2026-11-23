@@ -28,8 +28,11 @@ vincent          # opens the TUI
 ## The first run
 
 The very first launch shows a one-time notice: **agents run full-auto by
-default and can execute arbitrary commands as you**. Acknowledge it once and it
-does not return. The acknowledgment is stored in `{data_dir}/tui.json`.
+default and can execute arbitrary commands as you**. Acknowledge it once with
+`enter` and it does not come back on its own — `esc` does not dismiss it. The
+acknowledgment is stored in `{data_dir}/tui.json`. To read it again, run
+**show the full-auto notice again** from the [command
+palette](#the-command-palette); a reopened notice closes on `enter` or `esc`.
 
 It is worth reading rather than dismissing — [Security model](../security-model.md)
 is the longer version.

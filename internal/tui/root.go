@@ -291,6 +291,9 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.updateFocus(msg)
 	case stepItemMsg:
 		return m, m.stepItem(msg)
+	case showNoticeMsg:
+		m.notice.active, m.notice.again = true, true
+		return m, nil
 	case selectTaskMsg, openTaskMsg, openIssueMsg, openChatMsg, taskCreatedMsg:
 		// Every open follows its object into its project first (task 132.6):
 		// openObject switches when it must, then routes.
@@ -1110,6 +1113,10 @@ func (m *root) openPalette() {
 	entries := paletteEntries(
 		m.activeContext(), s.target, s.editable, m.phase == phaseConnected, m.githubAvailable(), s.live, s.tabs)
 	entries = append(entries, s.extras...)
+	entries = append(entries, paletteEntry{
+		group: "global", label: "show the full-auto notice again — what an agent can do on this machine",
+		action: func() tea.Msg { return showNoticeMsg{} },
+	})
 	m.palette = newPalette(append(entries, m.paletteItems()...))
 	m.palette.input.SetPlaceholder("type to search commands, screens, tasks, chats and issues")
 }
@@ -1292,6 +1299,11 @@ func (m *root) updateNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "enter":
 		m.notice.acknowledge(m.dataDir)
+	case "esc":
+		// Only a reopened notice: the first one is read to its end (§16).
+		if m.notice.again {
+			m.notice.acknowledge(m.dataDir)
+		}
 	}
 	return m, nil
 }
