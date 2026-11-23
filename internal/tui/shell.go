@@ -310,6 +310,7 @@ func (s *shell) selectAttention(id int64) tea.Cmd {
 	}
 	s.board.expandFor(id)
 	s.board.selectedID = id
+	s.board.cardFollow = true // an explicit open goes where the task is (#1058)
 	s.board.restoreSelection(s.board.rows())
 	return nil
 }

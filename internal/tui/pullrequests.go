@@ -174,6 +174,9 @@ type pullRequestsView struct {
 	lastLoad time.Time
 
 	cursor int
+	// sticky is the selected pull request's identity, which a re-list and a
+	// filter change keep the cursor on (#1058).
+	sticky string
 
 	filter    textField
 	filtering bool
@@ -428,11 +431,15 @@ func (v *pullRequestsView) applyLoaded(msg prLoadedMsg) {
 	v.loading = false
 	v.loaded = true
 	v.lastLoad = v.now()
+	// Every task event re-lists: the pull request under the cursor is kept by
+	// identity, not by index, so a, l or u act on the one that was selected
+	// (#1058).
+	sel := v.selectedKey()
 	v.pulls, v.loadErr = msg.pulls, msg.err
 	if msg.tasks != nil {
 		v.tasks = msg.tasks
 	}
-	v.clampCursor()
+	v.reselect(sel)
 }
 
 func (v *pullRequestsView) scheduleRefresh() tea.Cmd {
@@ -458,6 +465,13 @@ func (v *pullRequestsView) updateNote(n apiclient.Note) tea.Cmd {
 }
 
 func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	// A key that is not typing into the filter may have moved the cursor:
+	// what it rests on is now the selection (#1058). A filter keystroke
+	// leaves the selection where it was, so a pull request the filter hid
+	// comes back under the cursor when it is cleared.
+	if !v.filtering {
+		defer func() { v.sticky = v.currentKey() }()
+	}
 	if v.picker != nil {
 		return v.updatePickerKey(msg)
 	}
@@ -467,10 +481,11 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if v.filtering {
 		switch msg.String() {
 		case "esc":
+			sel := v.selectedKey()
 			v.filtering = false
 			v.filter.SetValue("")
 			v.filter.Blur()
-			v.clampCursor()
+			v.reselect(sel)
 			return v, nil
 		case "enter":
 			v.filtering = false
@@ -478,8 +493,9 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, nil
 		}
 		var cmd tea.Cmd
+		sel := v.selectedKey()
 		v.filter, cmd = v.filter.Update(msg)
-		v.clampCursor()
+		v.reselect(sel)
 		return v, cmd
 	}
 
@@ -530,9 +546,10 @@ func (v *pullRequestsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		// One layer per press (§15): a committed filter or a note clears
 		// first; with nothing left, the takeover closes.
 		if v.filter.Value() != "" || v.note != "" {
+			sel := v.selectedKey()
 			v.filter.SetValue("")
 			v.note = ""
-			v.clampCursor()
+			v.reselect(sel)
 			return v, nil
 		}
 		return v, backToTab
@@ -886,6 +903,42 @@ func (v *pullRequestsView) current() (prRow, bool) {
 // under the header and above a footer, never less than one.
 func (v *pullRequestsView) pageRows() int {
 	return max(v.height-4, 1)
+}
+
+// prKey is a pull request's identity across re-lists.
+func prKey(p apiclient.GitHubPullRequest) string {
+	return p.Repo + "#" + strconv.Itoa(p.Number)
+}
+
+// selectedKey is the selection's identity: the sticky one, else the row
+// under the cursor, "" for none.
+func (v *pullRequestsView) selectedKey() string {
+	if v.sticky != "" {
+		return v.sticky
+	}
+	return v.currentKey()
+}
+
+// currentKey is the identity of the row under the cursor, "" for none.
+func (v *pullRequestsView) currentKey() string {
+	if r, ok := v.current(); ok {
+		return prKey(r.pull)
+	}
+	return ""
+}
+
+// reselect puts the cursor back on key's row when it is still listed, and
+// otherwise clamps it where it was (#1058).
+func (v *pullRequestsView) reselect(key string) {
+	if key != "" {
+		for i, r := range v.rows() {
+			if prKey(r.pull) == key {
+				v.cursor, v.sticky = i, key
+				return
+			}
+		}
+	}
+	v.clampCursor()
 }
 
 func (v *pullRequestsView) clampCursor() {

@@ -543,7 +543,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			v.filtering = false
 			v.filter.SetValue("")
 			v.filter.Blur()
-			v.clampCursor()
+			v.reselect() // by id, not by index (#1058)
 			return v, nil
 		case "enter":
 			v.filtering = false
@@ -552,7 +552,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		var cmd tea.Cmd
 		v.filter, cmd = v.filter.Update(msg)
-		v.clampCursor()
+		v.reselectKeep()
 		return v, cmd
 	}
 
@@ -578,7 +578,7 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		if v.filter.Value() != "" || v.note != "" {
 			v.filter.SetValue("")
 			v.note = ""
-			v.clampCursor()
+			v.reselect() // the issue that was selected, wherever it now is (#1058)
 			return v, nil
 		}
 		if v.tabRoot {
