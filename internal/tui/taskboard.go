@@ -619,7 +619,13 @@ func (b *board) cardColumn(c int, groups []taskCardGroup, at taskStop, lit strin
 		}
 		body = append(body, cardGroupHeader(g, selected, g.key == lit && lit != groupNoIssue, inner))
 		if g.folded {
-			body = append(body, rail+styleDim.Render(cardFoldSummary(g.tasks)))
+			summary := styleDim.Render(cardFoldSummary(g.tasks))
+			// What a selection holds behind the fold (#1066): `V` marks the
+			// tasks a filter shows, folded or not, and A then acts on them.
+			if n := b.markedIn(g.tasks); n > 0 {
+				summary += styleDim.Render(" · ") + styleFocus.Render(ic("✔ ")+strconv.Itoa(n)+" selected")
+			}
+			body = append(body, rail+ansi.Truncate(summary, max(inner-ansi.StringWidth(rail), 1), "…"))
 			continue
 		}
 		for r := 0; r < len(g.tasks); r += perRow {
@@ -1128,4 +1134,15 @@ func (b *board) cardClick(x, y int) {
 		}
 		return
 	}
+}
+
+// markedIn is how many of tasks the board's selection holds.
+func (b *board) markedIn(tasks []apiclient.Task) int {
+	n := 0
+	for _, t := range tasks {
+		if b.marks.has(t.ID) {
+			n++
+		}
+	}
+	return n
 }

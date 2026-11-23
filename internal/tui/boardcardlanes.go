@@ -138,6 +138,11 @@ func (b *board) laneCard(lane apiclient.Task, selected bool, w int) []string {
 		parts = append(parts, *lane.BlockReason)
 	}
 	left := laneRowStyle(lane).Render(glyph+" ") + name
+	if b.marks.has(lane.ID) {
+		// The tick a marked task card carries (#1066): space on a lane
+		// marks it, and the count rose with nothing on the box to show it.
+		left = styleFocus.Render(ic("✔ ")) + left
+	}
 	right := styleKey.Render("#" + strconv.FormatInt(lane.ID, 10))
 	if room := inner - ansi.StringWidth(right) - 1; ansi.StringWidth(left) > room {
 		left = ansi.Truncate(left, max(room, 1), "…")
