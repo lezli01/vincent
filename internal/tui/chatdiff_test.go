@@ -144,8 +144,20 @@ func TestChatDiffHunkKeys(t *testing.T) {
 	if ref, _ := v.diff.pane.selectedHunk(); ref.id != "h2" || ref.path != "a.go" {
 		t.Fatalf("[ landed on %+v, want a.go's h2", ref)
 	}
-	if _, cmd := v.updateKey(registryKey(t, "x")); cmd == nil || !v.diff.busy {
-		t.Fatal("x on a selected hunk asked the daemon for nothing")
+	// x asks first (#1055): the question names the file, and n keeps the
+	// hunk.
+	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil || v.diff.busy || v.diff.rejectAsk == nil {
+		t.Fatal("x rejected the hunk without asking")
+	}
+	if screen := chatDiffScreen(v); !strings.Contains(screen, "revert this hunk of a.go on disk?") {
+		t.Fatalf("the question is not on screen:\n%s", screen)
+	}
+	if _, cmd := v.updateKey(registryKey(t, "n")); cmd != nil || v.diff.rejectAsk != nil {
+		t.Fatal("n did not keep the hunk")
+	}
+	v.updateKey(registryKey(t, "x"))
+	if _, cmd := v.updateKey(registryKey(t, "y")); cmd == nil || !v.diff.busy {
+		t.Fatal("y on the question asked the daemon for nothing")
 	}
 	// One at a time: a second press while the first is in flight is spent.
 	if _, cmd := v.updateKey(registryKey(t, "x")); cmd != nil {

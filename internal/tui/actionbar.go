@@ -72,10 +72,15 @@ var actionOps = []struct {
 	{apiclient.ActionArchive, keymap.Archive},
 }
 
-// confirmed actions are the ones that destroy something a human cannot get
-// back by pressing the key again: a live process tree, and a worktree.
+// confirmed actions are the ones a human cannot take back by pressing a key
+// again: a live process tree, a worktree, and — since #1055 — a step skipped
+// past or a gate rejected, each a decision the task carries on from.
 func needsConfirm(action string) bool {
-	return action == apiclient.ActionCancel || action == apiclient.ActionArchive
+	switch action {
+	case apiclient.ActionCancel, apiclient.ActionArchive, apiclient.ActionSkip, apiclient.ActionReject:
+		return true
+	}
+	return false
 }
 
 // taskActions is the slice of a task an action bar needs: what it is, and
@@ -467,6 +472,10 @@ func (a *actionBar) confirmPrompt(t taskActions) string {
 		return fmt.Sprintf("archive #%d? its worktree is removed (y/n)", t.id)
 	case a.pending == apiclient.ActionCancel:
 		return fmt.Sprintf("cancel #%d? a running step is killed (y/n)", t.id)
+	case a.pending == apiclient.ActionSkip:
+		return fmt.Sprintf("skip #%d's current step? it is marked skipped and the task goes on without it (y/n)", t.id)
+	case a.pending == apiclient.ActionReject:
+		return fmt.Sprintf("reject #%d's gate? the task is blocked there until you retry, skip or cancel (y/n)", t.id)
 	default:
 		return fmt.Sprintf("%s #%d? (y/n)", a.pending, t.id)
 	}
@@ -494,6 +503,10 @@ func (a *actionBar) bulkPrompt(n int) string {
 		return fmt.Sprintf("archive %s? their worktrees are removed (y/n)", selectedNoun(n))
 	case a.pending == apiclient.ActionCancel:
 		return fmt.Sprintf("cancel %s? their running steps are killed (y/n)", selectedNoun(n))
+	case a.pending == apiclient.ActionSkip:
+		return fmt.Sprintf("skip the current step of %s? each goes on without it (y/n)", selectedNoun(n))
+	case a.pending == apiclient.ActionReject:
+		return fmt.Sprintf("reject the gates of %s? each is blocked there (y/n)", selectedNoun(n))
 	default:
 		return fmt.Sprintf("%s %s? (y/n)", a.pending, selectedNoun(n))
 	}
