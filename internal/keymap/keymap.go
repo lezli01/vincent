@@ -253,7 +253,7 @@ var catalog = []Info{
 	}},
 	{Op: FreeText, Default: "t", Meaning: "type free text instead of picking", Kind: KindTerm, Surfaces: []Surface{
 		"new task", "new chat", "workflow editor", "answer form", "repair form", "follow-up form",
-		"issue form",
+		"issue form", "key bindings",
 	}},
 	{Op: Browser, Default: "o", Meaning: "open in a browser", Kind: KindTerm, Surfaces: []Surface{
 		"task overview", "task details", "task pull request", "pull requests", "issues", "issue",
