@@ -13,6 +13,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 
 	"github.com/lezli01/vincent/internal/apiclient"
+	"github.com/lezli01/vincent/internal/keymap"
 	"github.com/lezli01/vincent/internal/nerdfont"
 	"github.com/lezli01/vincent/internal/taskstate"
 	"github.com/lezli01/vincent/internal/tui/workflowgraph"
@@ -491,6 +492,19 @@ func declaredFieldRow(t *testing.T, n *newTask, name string) int {
 // the scrolling itself to the follow and mouse-wheel tests.
 var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 	ctxTasks: {
+		// An echo row (#1073): the board shows `n new`, and the root's own
+		// binding answers it — the board must not claim the key.
+		"n": func(t *testing.T) {
+			m := connectedRoot(t)
+			m.Update(selectViewMsg{id: viewHome})
+			if m.panelOwnsKey("n") {
+				t.Fatal("the board claims n, so the root would yield it")
+			}
+			m.Update(keyPress(opKey(keymap.New)))
+			if m.active != viewNewTask {
+				t.Fatalf("n on the board opened %v, want the new-task form", m.active)
+			}
+		},
 		"H": func(t *testing.T) {
 			s, _ := newShellFixture(t, task(1, stateRunning), task(2, stateBlocked))
 			s.focus = panelTasks
@@ -914,6 +928,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxCompare: {
+		"esc": func(t *testing.T) {
+			v := compareFixture()
+			_, cmd := v.updateKey(registryKey(t, "esc"))
+			if msg, ok := drain(cmd).(selectViewMsg); !ok || msg.id == viewCompare {
+				t.Fatalf("esc produced %#v, want a way back", drain(cmd))
+			}
+		},
 		"tab": func(t *testing.T) {
 			v := compareFixture()
 			v.updateKey(registryKey(t, "tab"))
@@ -952,6 +973,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 		},
 	},
 	ctxChatSearch: {
+		"esc": func(t *testing.T) {
+			v := chatSearchFixture()
+			_, cmd := v.updateKey(registryKey(t, "esc"))
+			if _, ok := drain(cmd).(backToTabMsg); !ok {
+				t.Fatalf("esc produced %#v, want back to the tab", drain(cmd))
+			}
+		},
 		"enter": func(t *testing.T) {
 			v := chatSearchFixture()
 			_, cmd := v.updateKey(registryKey(t, "enter"))

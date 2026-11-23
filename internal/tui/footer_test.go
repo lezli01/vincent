@@ -83,7 +83,7 @@ func footerMore(line string) int {
 func footerHiddenRows(line string, rows []binding) int {
 	n := 0
 	for _, b := range rows {
-		if b.noPalette || b.aliased {
+		if (b.noPalette && !b.echo) || b.aliased {
 			continue
 		}
 		if b.hint != "" && strings.Contains(line, b.hint) {
