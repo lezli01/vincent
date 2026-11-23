@@ -74,6 +74,10 @@ type projectsView struct {
 	client *apiclient.Client
 	now    func() time.Time
 
+	// firstRun is a note over the overview after the first project is
+	// registered, naming the key that comes next (#1082); any key clears it.
+	firstRun string
+
 	// projects carry their `stats` (GET /v1/projects?stats=true, task
 	// 132.1). Every figure on a row is the daemon's; nothing is counted
 	// here, so a row never disagrees with the picker or `vincent project
@@ -310,6 +314,10 @@ func (p *projectsView) update(msg tea.Msg) (panel, tea.Cmd) {
 	case projectFormClosedMsg:
 		p.form = nil
 		return p, nil
+	case openProjectAddMsg:
+		// #1082: with no project registered, @ lands here with the form open.
+		p.form = newProjectForm(p.client, nil)
+		return p, nil
 	case pfWorkflowsMsg:
 		if p.form != nil && msg.err == nil {
 			p.form.workflows = msg.entries
@@ -361,6 +369,7 @@ func (p *projectsView) updateNote(n apiclient.Note) tea.Cmd {
 }
 
 func (p *projectsView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
+	p.firstRun = ""
 	if p.form != nil {
 		return p, p.form.updateKey(msg)
 	}
@@ -581,6 +590,10 @@ func (p *projectsView) applySaved(msg projectSavedMsg) tea.Cmd {
 			p.form.applyFailure(msg.err)
 		}
 		return nil
+	}
+	if p.loaded && len(p.projects) == 0 {
+		p.firstRun = msg.project.Name + " is registered — enter goes to its board, where " +
+			opKey(keymap.New) + " starts its first task"
 	}
 	p.form = nil
 	p.selectedID = msg.project.ID
