@@ -42,7 +42,9 @@ func newWFEditorConfirm(prompt string, act func() tea.Cmd) *wfEditorConfirm {
 
 func (o *wfEditorConfirm) Update(msg tea.KeyPressMsg) (wfEditorOverlay, tea.Cmd) {
 	switch msg.String() {
-	case "y", "enter":
+	case "y", "Y":
+		// y only (#1056): enter is the editor's edit key, so `d` then a
+		// reflexive enter would have removed the item.
 		return nil, o.act()
 	default:
 		// Anything else is "no". A confirmation whose only refusal was one
