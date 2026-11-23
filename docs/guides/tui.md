@@ -227,7 +227,8 @@ workflow step with the step it has reached, a linked pull request as `⇡#123`, 
 one status line that says what is happening, such as `! needs your approval` or
 `⑂ 2 of 3 lanes done`. A parent whose lane needs you leads with what the lanes
 need, in the attention colour, and names the key that hangs them under the card:
-`! 1 lane blocked (L) · 2 of 4 done`. The selected card has a thick border.
+`! 1 lane blocked (L) · 2 of 4 done`. The selected card has a thick border. A
+column with more cards than fit counts the rest on its top edge — `▲2 ▼5`.
 
 | Key | Does |
 |---|---|
@@ -365,7 +366,7 @@ are queued and have finished.
 | `f` | Fold the issue group under the cursor, or open the one the cursor rests on |
 | `C` | Fold every group |
 | `O` | Open every group |
-| `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent |
+| `L` | Show or hide a fan-out's lanes under its card — on a lane, its own lanes, or back to its parent. Hinted only on a fan-out; `loading lanes…` shows while they arrive, and on any other card it says so |
 
 ### Fan-out lanes on the board
 
@@ -3064,7 +3065,7 @@ draft as it was.
 Scrolled away from the live end, the header says which turn is at the top of
 the window — `turn 2/5` — until `alt+shift+g` follows the end again. While you are
 scrolled away, the conversation pane's bottom edge counts what arrived below
-you — `↓ 12 new`; click it or press `alt+shift+g` to follow again. Changing the
+you — `↓ 12 new · alt+shift+g follows`; click it or press `alt+shift+g` to follow again. Changing the
 level or the window's width does not add to it.
 
 ### Reviewing a chat's diff

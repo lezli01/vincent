@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -98,6 +99,8 @@ func (b *board) toggleCardLanes() tea.Cmd {
 	}
 	if !b.hasLanes(t) {
 		if t.ParentTaskID == nil || !b.lanes.expanded.has(*t.ParentTaskID) {
+			// Said, not silent (#1072).
+			b.actions.setStatus(fmt.Sprintf("#%d is not a fan-out — L hangs a fan-out's lanes under its card", t.ID), false)
 			return nil
 		}
 		parent := *t.ParentTaskID
@@ -161,4 +164,18 @@ func laneIndent(depth int) string {
 // something that can still say which lane it is.
 func laneCardWidth(cardW, depth int) int {
 	return max(cardW-len(laneIndent(depth)), 12)
+}
+
+// laneKeyApplies is whether L does something for the task under the
+// cursor: it has lanes, or it is a lane under an open parent.
+func (b *board) laneKeyApplies() bool {
+	id, ok := b.selected()
+	if !ok {
+		return false
+	}
+	t, ok := b.taskByID(id)
+	if !ok {
+		return false
+	}
+	return b.hasLanes(t) || (t.ParentTaskID != nil && b.lanes.expanded.has(*t.ParentTaskID))
 }
