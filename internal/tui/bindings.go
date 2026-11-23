@@ -878,6 +878,8 @@ var bindings = []binding{
 	{op: keymap.ShellCommand, key: "alt+x", label: "run a shell command in the chat's directory — its output shows as a card you can attach to the next prompt", scope: scopePanel, context: ctxChat, hint: "alt+x shell", priority: 21},
 	{key: "ctrl+v", label: "paste: a clipboard image goes up to the chat and an [image N] chip into the message; anything else pastes as text", scope: scopePanel, context: ctxChat, priority: 22, noPalette: true},
 	{op: keymap.Rewind, key: "alt+z", label: "rewind… — the chat's code, conversation or both to before a turn, picked from a list (tab picks which)", scope: scopePanel, context: ctxChat, hint: "alt+z rewind", priority: 21},
+	// #1078: a direct key into the conversation, named in the footer.
+	{op: keymap.Conversation, key: "alt+i", label: "move the keyboard into the conversation — expand tool calls, jump between prompts, attach a shell card (alt+i or esc comes back)", scope: scopePanel, context: ctxChat, hint: "alt+i conversation", priority: 4},
 	{op: keymap.ChatDiff, key: "alt+d", label: "show the chat's diff in place of the conversation, to review it hunk by hunk (esc comes back, the draft untouched)", scope: scopePanel, context: ctxChat, hint: "alt+d diff", priority: 21},
 	{key: "]", label: "move to the next hunk ([ the previous), opening the file it is in", scope: scopePanel, context: ctxChatDiff, hint: "]/[ hunk", priority: 1},
 	{key: "x", label: "reject the selected hunk (asks first): it is reverted in the chat's directory and a note for the agent opens your draft", scope: scopePanel, context: ctxChatDiff, hint: "x reject", priority: 2},
@@ -892,6 +894,7 @@ var bindings = []binding{
 	{key: "shift+right", label: "pan long lines (shift+←/→)", scope: scopePanel, context: ctxChatDiff, priority: 11},
 	{key: "esc", label: "go back to the conversation and the composer, the draft untouched", scope: scopePanel, context: ctxChatDiff, hint: "esc back", priority: 12},
 	{key: "down", label: "move the line cursor (j/k and ↑/↓)", scope: scopePanel, context: ctxChatConversation, hint: "j/k move", priority: 1},
+	{op: keymap.Conversation, key: "alt+i", label: "give the keyboard back to the composer (esc and i too)", scope: scopePanel, context: ctxChatConversation, priority: 12},
 	{key: "enter", label: "expand or fold the tool call or shell output under the cursor — it draws as at verbose, the level stays", scope: scopePanel, context: ctxChatConversation, hint: "enter expand", priority: 2},
 	{op: keymap.Filter, key: "/", label: "search the conversation again", scope: scopePanel, context: ctxChatConversation, hint: "/ search", priority: 3, term: termFilter},
 	{key: "n", label: "the next match (N the previous); both wrap", scope: scopePanel, context: ctxChatConversation, hint: "n/N match", priority: 4},

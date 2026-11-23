@@ -61,7 +61,7 @@ var reboundKeys = map[string]string{
 	"compact":       "alt+j",
 	"export_chat":   "alt+q",
 	"shell_command": "alt+o",
-	"chat_diff":     "alt+i",
+	"chat_diff":     "alt+u",
 }
 
 // withKeymap installs overrides for one test and restores the defaults after.
@@ -249,6 +249,12 @@ func TestEveryMatchedKeyIsRegistered(t *testing.T) {
 			if fd, ok := n.(*ast.FuncDecl); ok && (fd.Name.Name == "synthKey" || fd.Name.Name == "descend") {
 				return false
 			}
+			// lineEdit's Key is a text field's own editing keys (#1078), as the
+			// composer's textarea's are; a field takes them while it is open
+			// and no operation could move them.
+			if fd, ok := n.(*ast.FuncDecl); ok && fd.Name.Name == "Key" && fd.Recv != nil && recvName(fd) == "lineEdit" {
+				return false
+			}
 			sw, ok := n.(*ast.SwitchStmt)
 			if !ok || !isKeySwitch(sw) {
 				return true
@@ -395,4 +401,16 @@ func TestSynthKeyRoundTripsAnyBindableKey(t *testing.T) {
 			t.Errorf("synthKey(%q) presses as %q", key, got)
 		}
 	}
+}
+
+// recvName is a method's receiver type, pointer or not.
+func recvName(fd *ast.FuncDecl) string {
+	t := fd.Recv.List[0].Type
+	if st, ok := t.(*ast.StarExpr); ok {
+		t = st.X
+	}
+	if id, ok := t.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
 }

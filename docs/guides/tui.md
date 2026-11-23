@@ -3010,6 +3010,7 @@ periodic repaint.
 | `alt+g` | Jump to the start of the conversation |
 | `alt+shift+g` | Jump to the live end and follow it again — clears `↓ N new`. That is `alt+G` as you type it; the terminal reports it as `alt+shift+g` |
 | `ctrl+f` | Search the conversation: the conversation takes the keyboard with a search line open — see [Searching a chat](#searching-a-chat) |
+| `alt+i` | Move the keyboard into the conversation, with no search — see [Searching a chat](#searching-a-chat) |
 | `ctrl+g` | Write the message in `$EDITOR`. What you save comes back into the composer, unsent; an emptied or untouched file leaves the draft as it was. While `↑` has a queued message in the composer, this edits that message (rebindable as `compose_editor`) |
 | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only — the file is deleted when the editor exits (rebindable as `chat_markdown`; also in the palette) |
 | `alt+d` | Show the chat's diff where the conversation is, to [review it hunk by hunk](#reviewing-a-chats-diff); `esc` comes back with the draft untouched (rebindable as `chat_diff`; also in the palette) |
@@ -3206,6 +3207,14 @@ the conversation pane's bottom edge. Landing on a match inside a folded tool
 call expands that one call; the level stays where it was. Your draft is
 untouched by all of this.
 
+`alt+i` hands the keyboard to the conversation without a search — the way
+to expand a tool call, jump between your prompts or attach a shell card —
+and the footer names it while the composer has the keyboard. The search
+line and the [shell prompt](#shell-commands-images-and-vim-in-a-chat) edit
+like any other field: `←`/`→`, `home`/`end` (`ctrl+a`/`ctrl+e`), a word at a
+time with `alt+←`/`alt+→`, and `ctrl+w`, `ctrl+u` and `ctrl+k` delete. On the
+shell prompt `↑` and `↓` walk the commands this chat already ran.
+
 With the conversation holding the keyboard:
 
 | Key | Does |
@@ -3219,7 +3228,7 @@ With the conversation holding the keyboard:
 | `g` / `G` | Jump to the start, or to the live end |
 | `pgup` / `pgdown`, `alt+↑` / `alt+↓` | Scroll |
 | `alt+shift+g` | Jump to the live end and follow it again |
-| `i` / `esc` | Give the keyboard back to the composer |
+| `i` / `esc` / `alt+i` | Give the keyboard back to the composer |
 
 `esc` peels one layer at a time — the search line, then the conversation
 focus — and never leaves the chat from here. Folded tool calls show `▸` and an
@@ -4103,7 +4112,7 @@ Setting an operation to its own default changes nothing.
 
 ### The operations
 
-The first forty-six are the operations screens share, the next twelve are the
+The first forty-seven are the operations screens share, the next twelve are the
 [task actions](#the-action-bar), and the last ten are the global keys.
 
 | Operation | Default | Does |
@@ -4139,6 +4148,7 @@ The first forty-six are the operations screens share, the next twelve are the
 | `compose_editor` | `ctrl+g` | Write the chat message in `$EDITOR` |
 | `chat_markdown` | `alt+v` | Open the whole conversation as Markdown in `$EDITOR`, read-only |
 | `chat_diff` | `alt+d` | Show the chat's diff in place of the conversation, to review it hunk by hunk. See [Reviewing a chat's diff](#reviewing-a-chats-diff) |
+| `conversation` | `alt+i` | Move the keyboard from a chat's composer into its conversation, and back. See [Searching a chat](#searching-a-chat) |
 | `shell_command` | `alt+x` | Run a shell command in the chat's directory, drawn as a card in the conversation. See [Shell commands, images and vim in a chat](#shell-commands-images-and-vim-in-a-chat) |
 | `rewind` | `alt+z` | Open the chat's turn picker, to rewind its code, its conversation or both to before a turn, or to fork a new chat from one |
 | `next_chat` | `alt+n` | Open the project's next chat, in the chats board's order, wrapping — from the chats board or from a chat's composer |

@@ -1410,6 +1410,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	if key := opKey(keymap.ChatDiff); key != "" && msg.String() == key {
 		return v, v.openDiff()
 	}
+	if key := opKey(keymap.Conversation); key != "" && msg.String() == key {
+		v.focusConversation()
+		return v, nil
+	}
 	if key := opKey(keymap.Rewind); key != "" && msg.String() == key {
 		v.openRewindPicker(false)
 		return v, nil
