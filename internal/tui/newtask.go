@@ -1178,6 +1178,12 @@ func (n *newTask) applyDescription(msg ntDescriptionMsg) {
 // and catalog membership are deliberately not checked here: the daemon
 // validates both, and a second implementation would only drift from it.
 func (n *newTask) submit() tea.Cmd {
+	// One request at a time (#1052): a second ctrl+s while the first create
+	// is in flight would create a second task. The form already says
+	// "creating…"; the triggers form guards the same way.
+	if n.submitting {
+		return nil
+	}
 	n.rowErr = map[ntRow]string{}
 	n.err = ""
 	if n.titleText() == "" {

@@ -822,3 +822,23 @@ func TestProjectFormJiraProjects(t *testing.T) {
 		t.Errorf("a list refusal parked on row %v pair %d, want the first key", f.cursor, f.jiraAt)
 	}
 }
+
+// #1052: a second save while the write is in flight sends nothing, and the
+// form says it is saving.
+func TestProjectFormSubmitsOnceWhileInFlight(t *testing.T) {
+	f := newProjectForm(apiclient.New("http://127.0.0.1:1", "token"), nil) // never dialled
+	f.path.SetValue("/src/repo")
+	if cmd := f.submit(); cmd == nil || !f.saving {
+		t.Fatalf("the first save sent nothing (err %q, rowErr %v)", f.err, f.rowErr)
+	}
+	if cmd := f.submit(); cmd != nil {
+		t.Fatal("a second save while the first is in flight sent another write")
+	}
+	if out := f.render(100); !strings.Contains(out, "saving…") {
+		t.Errorf("the form does not say the write is in flight:\n%s", out)
+	}
+	f.applyFailure(errors.New("down"))
+	if cmd := f.submit(); cmd == nil {
+		t.Fatal("the form cannot save again after a failure")
+	}
+}

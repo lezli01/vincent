@@ -537,6 +537,11 @@ func (f *projectForm) workflowOptions() []pickerOption {
 // branch resolves, whether the name collides and whether the cap is in range
 // are all the daemon's checks; a second implementation here would only drift.
 func (f *projectForm) submit() tea.Cmd {
+	// One write at a time (#1052): the form says "saving…" until the
+	// daemon answers, and a second press would send the write again.
+	if f.saving {
+		return nil
+	}
 	f.rowErr = map[pfRow]string{}
 	f.err = ""
 	if strings.TrimSpace(f.path.Value()) == "" {
