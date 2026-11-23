@@ -783,6 +783,11 @@ func (v *chatView) footerLines(width, height int) []string {
 	// many columns the composer actually has, and a composer sized from the
 	// whole terminal has its rows cut by the Truncate pass above. Two of them
 	// go to the border, which is what shell.go's frame draws in.
+	if v.ended() {
+		// No composer where nothing can be sent (#1054): what still works,
+		// in its place.
+		return capChatFooter(out, endedChatLine(v.chat, width), height-chatHeadLines-1)
+	}
 	v.composer.SetWidth(chatComposerWidth(width))
 	title := "message"
 	if chip := chatSettingsChip(v.chat); chip != "" {
