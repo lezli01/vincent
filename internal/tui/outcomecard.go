@@ -265,6 +265,9 @@ func (t *taskView) outcomeHeading() string {
 // outcomeBody is the whole card with the result cut to n rendered lines.
 func (t *taskView) outcomeBody(width, n int) []string {
 	out := []string{t.outcomeHeading(), ""}
+	if e, ok := conditionEnded(t.detail.task); ok {
+		out = append(append(out, endedEarlyLines(e)...), "")
+	}
 	out = append(out, t.resultLines(width, n)...)
 	out = append(out, "", t.changesLine())
 	out = append(out, t.commitLines(width)...)

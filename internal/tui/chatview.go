@@ -1553,6 +1553,10 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 		return v, nil
 	}
+	if note, ok := optionKeyNote(msg.Text); ok {
+		// Typed all the same: it may be meant (#1061).
+		v.note, v.noteBad = note, false
+	}
 	var cmd tea.Cmd
 	before := v.composer.Value()
 	v.composer, cmd = v.composer.Update(msg)

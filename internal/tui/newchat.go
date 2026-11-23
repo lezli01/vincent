@@ -129,6 +129,8 @@ type newChatForm struct {
 	// dirty is any edit since the form opened (task 132.6): the root asks
 	// before a project switch discards it.
 	dirty bool
+	// confirming is esc's "discard this draft?" on a touched form (#1053).
+	confirming bool
 }
 
 // newNewChatForm opens the form on projectID, the root's selected project.
@@ -323,6 +325,13 @@ func (f *newChatForm) applyFailure(err error) {
 func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd tea.Cmd, done bool) {
 	defer f.watch()()
 	f.client = client
+	if f.confirming {
+		f.confirming = false
+		if k := msg.String(); k == "y" || k == "Y" {
+			return nil, true
+		}
+		return nil, false
+	}
 	// An open list is a layer above the form in §15's esc stack: every key
 	// goes to it, `ctrl+s` included, so `esc` closes the list and leaves the
 	// draft — one esc, one layer.
@@ -352,6 +361,11 @@ func (f *newChatForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd
 	}
 	switch key {
 	case "esc":
+		// A touched draft asks before it is dropped (#1053).
+		if f.dirty && !f.submitting {
+			f.confirming = true
+			return nil, false
+		}
 		return nil, true
 	case "tab", "down":
 		f.moveFocus(1)
@@ -737,6 +751,8 @@ func (f *newChatForm) render(width, height int) string {
 	// daemon made it (#801 F13).
 	var footer []string
 	switch {
+	case f.confirming:
+		footer = wrapStatus("discard this draft? y/n", width, styleWarn)
 	case f.submitting:
 		footer = wrapStatus("creating…", width, styleDim)
 	case f.err != "":

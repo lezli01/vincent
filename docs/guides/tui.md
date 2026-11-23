@@ -443,12 +443,15 @@ From 130 columns wide, a task opens as one workspace: its name, state, reason
 and linked issue across the top, its steps on the left, and the tabs beside
 them. When a task is blocked, the reason, a short form of the failure card's
 evidence — how the attempt exited and up to three lines of what it printed —
-and the keys that can restart it are pinned under the tab. On a narrower
-terminal the steps are a tab.
+and the keys that can restart it are pinned under the tab. A task waiting at a
+gate pins the gate's instructions and `a approve`, `x reject` and `s skip`; one
+asking a question pins the question and `enter answer`. On a narrower terminal
+the steps are a tab.
 
 The **steps rail** gives each step one row — its state glyph (`✓` done, `●`
-running, `✗` failed, `!` waiting on you, `○` not reached), its name and how long
-it took — joined by a line. A dim row under a step says something only when
+running, `✗` failed, `!` waiting on you, `○` not reached, `↷` failed but
+allowed to, so the task went on), its name and how long it took — joined by a
+line. A dim row under a step says something only when
 there is something to say: why it failed, how many attempts it took, the agent
 and what it cost. The step you have selected lists its attempts when it has
 more than one; a parallel group lists its members, a loop its passes as a row
@@ -496,8 +499,9 @@ workspace has already loaded:
   instructions, and every action the daemon offers with its key and a line on
   what it does. `enter output of attempt N` jumps to the attempt it stopped
   on, and `enter` there again shows what it was given.
-- **Done or archived** — how it ended: an **outcome card** (below) and
-  `enter diff`.
+- **Done or archived** — how it ended: an **outcome card** (below), what you
+  can do next — `F` follow up, `P` open a pull request when one can be opened,
+  `A` archive, `T` chat — and `enter diff`.
 
 A running task pairs a **Now** card — the current step and attempt, the latest
 status, the last line it printed — with **The task**, the description and
@@ -555,6 +559,10 @@ headed *incomplete — what was delivered*. On a short terminal the outcome card
 shrinks first, and on an aborted task it goes before the failure card does.
 The card shows:
 
+- **Ended early**, when a `condition` step ended the task: which step and its
+  guard, the command whose exit the condition read (named as not a failure),
+  and the last status the work reported before it — `■ ended early at step 3
+  any-candidates — its condition was false`.
 - **Result** — the summary the task's last successful agent attempt reported
   (a follow-up round counts), rendered as Markdown and given every row the
   Overview has free.
@@ -648,10 +656,10 @@ instead](../assets/tui-create-pr.png)
 | `e` | Write that row in `$EDITOR` instead |
 | `ctrl+s` | Push the branch and open the pull request |
 | `ctrl+o` | Open GitHub's own new-pull-request page with this prefill instead |
-| `esc` | Close without sending anything — the draft is discarded |
+| `esc` | Close without sending anything — once you have typed into it, it asks `discard this draft? y/n` first |
 
 Inside a field `enter` is a newline (a pull-request body usually wants more than
-one line), `ctrl+s` keeps the text, and `esc` discards it. A title is required:
+one line), `ctrl+s` or `esc` keeps the text. A title is required:
 `ctrl+s` without one says so rather than sending something GitHub cannot use.
 
 The popup's footer — the compare URL, an error, the status and the key line —
@@ -1409,9 +1417,11 @@ that a chat holds the task.
 `E` opens the failing step's prompt or command in your editor, and the override
 applies **to this task's snapshot only** — the workflow file is untouched. On a
 `blocked` task the footer lists `E edit+retry` and `R repair` right after
-`r retry`, ahead of skip, cancel and archive. `E` is listed only in the task
-workspace and only on a step with a prompt or command to edit — not on a gate
-or a fan-out parent — and pressed anywhere else it says why it did nothing.
+`r retry`, ahead of skip, cancel and archive. `E` is listed only where the
+task's steps are loaded — the task workspace, or the board's detail panes when
+they show the selected task — and only on a step with a prompt or command to
+edit, not on a gate or a fan-out parent. Pressed anywhere else it says why it
+did nothing.
 
 `R` and `F` open a form instead of acting straight away; they are the two task
 actions that need something written, which is also why neither is offered for a
@@ -1439,7 +1449,7 @@ defaults](../assets/tui-repair.png)
 | `t` | In an open agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the repair |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
-| `esc` | Close without repairing — the draft is discarded |
+| `esc` | Close without repairing — once you have typed into it, it asks `discard this draft? y/n` first |
 
 The prompt is the only required row, and it is prose: write what you want done,
 not a template. The daemon puts the context around it — the task, the blocked
@@ -1448,7 +1458,7 @@ step's rendered prompt or command, the failure reason and exit codes, the last
 the agent can read further itself.
 
 Inside the prompt field `enter` is a newline (a repair prompt usually wants
-more than one line), `ctrl+s` keeps the text, and `esc` discards it. Agent,
+more than one line), `ctrl+s` or `esc` keeps the text. Agent,
 model and effort are optional; set they apply to this run only and win over the
 task's overrides and the workflow's defaults.
 
@@ -1483,7 +1493,7 @@ start row reading when a slot is free](../assets/tui-follow-up.png)
 | `t` | In an open workflow / agent / model / effort list, type a value it does not offer |
 | `ctrl+s` | Start the follow-up |
 | `ctrl+t` | Switch between the form and this task's details, without leaving the popup |
-| `esc` | Close without running anything — the draft is discarded |
+| `esc` | Close without running anything — once you have typed into it, it asks `discard this draft? y/n` first |
 
 The top row picks what kind of run this is, and it decides what the row under it
 means:
@@ -2819,7 +2829,8 @@ something you are expected to walk into.
 
 The draft owns the keyboard while it is open: every row, and every open list, so
 no keystroke leaks out to the global keys. `esc` closes an open list and leaves
-the draft alone; a second press discards the draft and returns you to the board.
+the draft alone; a second press asks `discard this draft? y/n` once you have
+typed into it, and `y` returns you to the board.
 
 | Key | Does, in the create form |
 |---|---|
@@ -2829,7 +2840,7 @@ the draft alone; a second press discards the draft and returns you to the board.
 | `t` | In an open list, type a value it does not offer |
 | `←` / `→` | Step the agent field in place |
 | `ctrl+s` | Create the chat and open it |
-| `esc` | Close an open list, else discard the draft |
+| `esc` | Close an open list, else close the form — asking first when it holds a draft |
 
 ### Chat search
 
@@ -2896,6 +2907,17 @@ the reason it cannot be restricted](../assets/tui-chat-compare.png)
 One conversation: the finished turns above, the running turn's live output below
 them, and a composer at the bottom.
 
+**On macOS, the chat's `alt+` keys need the terminal to send Option as Meta.**
+The composer owns every printable key, so the chat's own commands — the diff,
+rewind, the shell, the model, the chat switch, stash and history — are `alt+`
+chords, and a stock Terminal.app or iTerm2 turns Option into a character
+instead: Option+d types `∂`. Set Terminal's **Use Option as Meta key**
+(Settings › Profiles › Keyboard) or iTerm2's Option key to **Esc+** (Profiles ›
+Keys). The first time the composer receives such a character for a chord the
+chat binds, it says so once on its note line. Until then `ctrl+p` opens the
+palette, which reaches every command, and [`tui.keys`](#rebinding-keys)
+rebinds any of them.
+
 Your own messages are easy to find in it. A prompt is drawn as a right-aligned
 card titled `You` — as wide as it needs to be, up to about two thirds of the
 pane, wrapping inside itself, with how long ago you sent it on its top edge. The
@@ -2952,7 +2974,7 @@ periodic repaint.
 | `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now, paused or not: an idle chat holding an unpaused queue (left by a daemon crash mid-recovery) says so under the queue, and this starts it |
 | `alt+c` | Clear the queue: delete every queued message |
 | `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
-| `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting |
+| `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting, as every `alt+` key here does |
 | `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
 | `ctrl+x` | Stop the running turn — its process tree is killed |
 | `ctrl+r` | How much of the conversation to show: quiet → compact → normal → verbose |

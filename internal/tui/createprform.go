@@ -67,6 +67,9 @@ type createPRForm struct {
 	// decision 7); the daemon refuses it too — a second call sees a live link
 	// and is 409'd — and GitHub refuses a third for the same head and base.
 	sending bool
+	// confirming is esc's "discard this draft?" on a form holding typed
+	// text (#1053): y closes it, any other key keeps it.
+	confirming bool
 	// submit posts the edited values to the daemon. Injected by the task
 	// view, which owns the API client, for the reason openEditor is.
 	submit func(title, body string, draft bool) tea.Cmd
@@ -157,14 +160,20 @@ func (f *createPRForm) applyEdit(msg createPREditMsg) {
 // browser hand-off when ctrl+s was pressed.
 func (f *createPRForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 	defer f.watch()()
+	if f.confirming {
+		f.confirming = false
+		if k := msg.String(); k == "y" || k == "Y" {
+			return nil, true
+		}
+		return nil, false
+	}
 	if f.editing {
 		switch msg.String() {
 		case "esc":
-			// esc discards, enter is a newline: a pull-request body is prose
-			// and wants more than one line, so the field cannot spend enter
-			// on committing. ctrl+s is what leaves it.
-			f.editing = false
-			f.editor.Blur()
+			// esc keeps what was typed and leaves the field (#1053), as the
+			// issue form's body does; enter is a newline, because the text is
+			// prose and may want more than one line.
+			f.commit()
 			return nil, false
 		case "ctrl+s":
 			f.commit()
@@ -209,6 +218,11 @@ func (f *createPRForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 	case "ctrl+o":
 		return f.open(), true
 	case "esc":
+		// A form holding typed text asks before it is dropped (#1053).
+		if f.dirty && !f.sending {
+			f.confirming = true
+			return nil, false
+		}
 		return nil, true
 	}
 	return nil, false
@@ -349,12 +363,14 @@ func (f *createPRForm) footer(width int) []string {
 	var status string
 	style := styleDim
 	switch {
+	case f.confirming:
+		status, style = "discard this draft? y/n", styleWarn
 	case f.err != "":
 		status, style = "⚠ "+f.err, styleBad
 	case f.sending:
 		status = "pushing the branch and opening the pull request…"
 	case f.editing:
-		status = "ctrl+s keeps this text · esc discards it"
+		status = "ctrl+s or esc keeps this text and leaves the field"
 	default:
 		status = "enter edit · " + opKey(keymap.Editor) + " $EDITOR · space toggle draft · ctrl+s push and create · ctrl+o browser · esc leave"
 	}

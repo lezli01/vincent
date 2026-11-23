@@ -161,7 +161,14 @@ func (t *taskView) taskMiddle(railW, top, w, h int) []string {
 // Overview's own card says this at length, so it is not repeated there.
 func (t *taskView) taskFailureCard(w int) []string {
 	d := t.detail
-	if !d.loaded || d.task.State != stateBlocked || t.tab == taskTabOverview {
+	if !d.loaded || t.tab == taskTabOverview {
+		return nil
+	}
+	switch d.task.State {
+	case stateAwaitingGate, stateAwaitingInput:
+		return t.taskWaitingCard(w)
+	case stateBlocked:
+	default:
 		return nil
 	}
 	inner := max(w-4, 1)
@@ -189,6 +196,46 @@ func (t *taskView) taskFailureCard(w int) []string {
 		title = ic("✗ ") + reasons.Explain(*r).Title
 	}
 	return drawBox(styleBad.Bold(true).Render(title), "", body, w, len(body)+2, edgesThick, styleBad)
+}
+
+// taskWaitingCard is the pinned card of a task waiting on a human (#1068):
+// the gate's instructions or the question, and the keys that answer it, so
+// a wide workspace opening on Output does not show a quiet feed.
+func (t *taskView) taskWaitingCard(w int) []string {
+	d := t.detail
+	inner := max(w-4, 1)
+	var text, title string
+	if d.task.State == stateAwaitingGate {
+		title = attentionBadge + " Waiting at a gate for your approval"
+		if step, ok := d.task.Step(d.task.CurrentStep); ok {
+			text = strings.TrimSpace(step.Instructions)
+		}
+	} else {
+		title = attentionBadge + " A question is waiting for you"
+		if req, pending, err := d.task.PendingRequest(); err == nil && pending {
+			text = pendingText(req)
+		}
+	}
+	var body []string
+	if text != "" {
+		body = styled(wrapText(oneLine(text), inner, wrapOpts{maxLines: 2}), styleTitle)
+	}
+	keys := taskRecoveryKeys(d.target())
+	if d.task.State == stateAwaitingInput {
+		answer := styleKey.Render("enter") + " answer"
+		if keys != "" {
+			keys = answer + "    " + keys
+		} else {
+			keys = answer
+		}
+	}
+	if keys != "" {
+		if len(body) > 0 {
+			body = append(body, "")
+		}
+		body = append(body, ansi.Truncate(keys, inner, "…"))
+	}
+	return drawBox(styleWarn.Bold(true).Render(title), "", body, w, len(body)+2, edgesThick, styleWarn)
 }
 
 // taskRecoveryKeys names the keys that act on a stopped task right now.

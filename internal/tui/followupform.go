@@ -91,6 +91,9 @@ type followUpForm struct {
 
 	err        string
 	submitting bool
+	// confirming is esc's "discard this draft?" on a form holding typed
+	// text (#1053): y closes it, any other key keeps it.
+	confirming bool
 	// dirty is any edit to a row since the form opened (task 132.6): the
 	// root asks before a project switch discards it.
 	dirty bool
@@ -173,6 +176,13 @@ func (f *followUpForm) paste(text string) tea.Cmd {
 // update handles one key. exit=true asks the caller to close the form.
 func (f *followUpForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd tea.Cmd, exit bool) {
 	defer f.watch()()
+	if f.confirming {
+		f.confirming = false
+		if k := msg.String(); k == "y" || k == "Y" {
+			return nil, true
+		}
+		return nil, false
+	}
 	if f.picker != nil {
 		res := f.picker.update(msg)
 		if res.chosen {
@@ -186,11 +196,10 @@ func (f *followUpForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cm
 	if f.editing {
 		switch msg.String() {
 		case "esc":
-			// esc discards, enter is a newline: a prompt is prose and may
-			// well want more than one line, so the field cannot spend enter
-			// on committing. ctrl+s is what leaves it.
-			f.editing = false
-			f.editor.Blur()
+			// esc keeps what was typed and leaves the field (#1053), as the
+			// issue form's body does; enter is a newline, because the text is
+			// prose and may want more than one line.
+			f.commitBody()
 			return nil, false
 		case "ctrl+s":
 			f.commitBody()
@@ -216,6 +225,11 @@ func (f *followUpForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cm
 	case "ctrl+s":
 		return f.submit(client), false
 	case "esc":
+		// A form holding typed text asks before it is dropped (#1053).
+		if f.dirty && !f.submitting {
+			f.confirming = true
+			return nil, false
+		}
 		return nil, true
 	}
 	return nil, false
@@ -486,10 +500,12 @@ func (f *followUpForm) lines(width int) []string {
 		out = append(out, f.picker.renderBody()...)
 	}
 	switch {
+	case f.confirming:
+		out = append(out, proseLines(styleWarn, "discard this draft? y/n", width)...)
 	case f.err != "":
 		out = append(out, proseLines(styleBad, "⚠ "+f.err, width)...)
 	case f.editing:
-		out = append(out, proseLines(styleDim, "ctrl+s keeps this text · esc discards it", width)...)
+		out = append(out, proseLines(styleDim, "ctrl+s or esc keeps this text and leaves the field", width)...)
 	case f.picker != nil:
 		out = append(out, proseLines(styleDim, "↑/↓ choose · / filter · enter pick · esc close the list", width)...)
 	case f.submitting:
