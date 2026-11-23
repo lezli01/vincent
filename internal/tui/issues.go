@@ -616,6 +616,12 @@ func (v *issuesView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	case opKey(keymap.Scope):
 		v.toggleDone()
 		return v, v.loadCmd()
+	case copyPickKey:
+		// The selected issue's id, reference and page (#1076).
+		if row, ok := v.current(); ok {
+			return v, openCopyItems(issueCopyItems(row.issue))
+		}
+		return v, nil
 	case "left":
 		v.moveLane(-1)
 		return v, nil

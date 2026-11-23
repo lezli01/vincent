@@ -398,6 +398,7 @@ times with a confirmation between each. Select the tasks instead:
 |---|---|
 | `space` | Select the task under the cursor (again deselects) |
 | `V` | Select every task the filter is showing — or clear that selection |
+| `ctrl+y` | Copy the selected task's id, branch, worktree path or pull request URL |
 | `esc` | Clear the selection |
 
 While anything is selected, a `✓` appears beside those rows, the panel title
@@ -908,7 +909,7 @@ output. It is the sentence that decides whether to open the transcript.
 | `g` or `home` | On Output, jump to the top (follow stops) |
 | `v` | More or less detail: quiet → compact → normal → verbose (tool lines, then reasoning, the run's own metadata, then unrecognized lines) |
 | `ctrl+o` | Show the assistant's original Markdown instead of the rendered view |
-| `ctrl+y` | Copy an assistant message, its plain text, or one of its code blocks |
+| `ctrl+y` | Copy the task's id, branch, worktree path or pull request URL — from any tab — and, on Output, an assistant message, its plain text, or one of its code blocks |
 | `ctrl+l` | List the links in the assistant's messages — open one in a browser or copy it |
 | `e` | Open this attempt's **whole** transcript in `$EDITOR` |
 | `↑`/`↓` | Select an attempt or Task Details section, scroll Output, or move between diff files — according to the active tab |
@@ -2107,6 +2108,7 @@ completed](../assets/tui-issues.png)
 | `enter` | Open the selected issue |
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so; the footer offers `o` only on an imported issue |
 | `s` | Show or hide the done lane |
+| `ctrl+y` | Copy the selected issue's id, title, source reference or URL |
 | `R` | Re-read the issues |
 | `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com. The note says how the pass ended once a later listing shows it — `synced from octo/web`, or why it did not finish |
 | `↑`/`↓` | Move the selection |
@@ -2232,7 +2234,7 @@ and the remote state](../assets/tui-issue-jira.png)
 | `o` | Open an imported issue's page in a browser |
 | `ctrl+o` | Show the description's and comments' original Markdown instead of the rendered view |
 | `ctrl+l` | List the links in the description and comments, and the source page — open one in a browser or copy it |
-| `ctrl+y` | Copy the title, the description, a comment or the source URL |
+| `ctrl+y` | Copy the id, the title, the source reference, the description, a comment or the URL |
 | `R` | Re-read the issue |
 | `↑`/`↓` | Scroll a line — while a selectable row is on screen, move the selection among the rows on screen first |
 | `pgup`/`pgdown`, `space` | Scroll a page |

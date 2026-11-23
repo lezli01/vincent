@@ -925,10 +925,16 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case rawToggleKey:
 		return d.toggleRaw()
 	case copyPickKey:
-		return openCopyPicker(copyDocsFromRecords(d.records, d.recordSeqs()),
-			func(seq int64) (string, bool) {
+		// The task's own references first (#1076), then what the output says.
+		items := copyDocs(copyDocsFromRecords(d.records, d.recordSeqs()))
+		if d.loaded {
+			items = append(taskCopyItems(d.task.Task), items...)
+		}
+		return func() tea.Msg {
+			return openCopyPickerMsg{items: items, resolve: func(seq int64) (string, bool) {
 				return resolveDocs(d.records, d.recordSeqs(), seq)
-			})
+			}}
+		}
 	case linkPickKey:
 		return openLinkPicker(copyDocsFromRecords(d.records, d.recordSeqs()),
 			func(seq int64) (string, bool) {
