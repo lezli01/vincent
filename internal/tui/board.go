@@ -1992,8 +1992,11 @@ func (b *board) selectedProject() (apiclient.Project, bool) {
 // header's badge, and their sum the footer's `!` hint, which counts
 // everything `!` will visit (decision 53).
 //
-// It counts root tasks in a taskstate.NeedsHuman state — never lanes, which
-// the listing does not carry, nor `awaiting_children` parents — and, since
+// It counts root tasks in a taskstate.NeedsHuman state, and since #1067 an
+// `awaiting_children` parent one of whose lanes needs a human
+// (keepsAttention) — once, however many lanes: `!` lands on the parent,
+// whose Overview names the lanes and opens the first. Never lanes, which the
+// listing does not carry. And since
 // task 165, chats in `awaiting_input`, from every project the way tasks are
 // (decision row 37). A chat whose turn merely finished unread asks nothing
 // and is not counted. That deliberately differs from the daemon's
@@ -2018,7 +2021,7 @@ func (b *board) attentionTargets(project int64) []attentionTarget {
 	sortTasks(tasks)
 	var out []apiclient.Task
 	for _, r := range groupRows(tasks, b.group) {
-		if !r.header && needsAttention(r.task.State) {
+		if !r.header && keepsAttention(r.task) {
 			out = append(out, r.task)
 		}
 	}
@@ -2032,7 +2035,7 @@ func (b *board) attentionTargets(project int64) []attentionTarget {
 func (b *board) selectionTargets() []attentionTarget {
 	var tasks []apiclient.Task
 	for _, t := range b.visible() {
-		if needsAttention(t.State) {
+		if keepsAttention(t) {
 			tasks = append(tasks, t)
 		}
 	}

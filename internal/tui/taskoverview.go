@@ -109,6 +109,9 @@ func (t *taskView) lanesNeedingYouLines(width int) []string {
 			}
 		}
 		line := "  " + style.Render(glyph+" "+laneName(lane)) + "  " + styleDim.Render(fmt.Sprintf("#%d · %s", lane.ID, what))
+		if at := t.laneAtText(lane); at != "" {
+			line += styleDim.Render(" · ") + at
+		}
 		out = append(out, ansi.Truncate(line, max(width, 1), "…"))
 	}
 	if key := opKey(keymap.Lane); key != "" {
@@ -323,6 +326,7 @@ func (t *taskView) overviewLines(width, height int) []string {
 		}
 		if task.State == stateAwaitingChildren {
 			out = append(out, t.lanesNeedingYouLines(width)...)
+			out = append(out, t.waitingOnLines(width)...)
 		}
 	}
 	out = append(out, t.handoffItemLines(width)...)
