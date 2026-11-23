@@ -383,10 +383,10 @@ func TestSyncedNoteSaysNothingToSync(t *testing.T) {
 		status apiclient.IssueSyncStatus
 		want   string
 	}{
-		{apiclient.IssueSyncStatus{Provider: "none", Reason: "not_github"}, "nothing to sync (not_github)"},
-		{apiclient.IssueSyncStatus{Provider: "none", Reason: "source_not_github"}, "nothing to sync (source_not_github)"},
-		{apiclient.IssueSyncStatus{Provider: "github", Enabled: true, Reason: "not_github"}, "nothing to sync (not_github)"},
-		{apiclient.IssueSyncStatus{Provider: "jira", Reason: "disabled"}, "sync requested, but import is off (disabled)"},
+		{apiclient.IssueSyncStatus{Provider: "none", Reason: "not_github"}, "nothing to sync: the project's origin is not a github.com repository"},
+		{apiclient.IssueSyncStatus{Provider: "none", Reason: "source_not_github"}, "nothing to sync: the project has no issue source"},
+		{apiclient.IssueSyncStatus{Provider: "github", Enabled: true, Reason: "not_github"}, "nothing to sync: the project's origin is not a github.com repository"},
+		{apiclient.IssueSyncStatus{Provider: "jira", Reason: "disabled"}, "sync requested, but import is off: the issue source is switched off in config.yaml"},
 		{apiclient.IssueSyncStatus{Provider: "github", Enabled: true, Repo: "o/r", Reason: "pending"}, "sync requested from o/r — the list updates as it lands"},
 	} {
 		if got := syncedNote(issuesSyncedMsg{status: tc.status}); got != tc.want {

@@ -2019,6 +2019,12 @@ the project has a GitHub integration or a Jira binding: issues are vincent's own
 project swaps the list, and the header reads "loading ‹project›…" until the
 new one arrives.
 
+For a project with an issue source, the search box's edge leads with its
+health: where issues come from and when they last arrived — `⇅ octo/web ·
+synced 5m ago` — or, in red, why the import is not working (`the credential
+was rejected`, `rate limited until 14:20`), and any write-back that failed,
+conflicted or is still pending.
+
 The lanes are columns, left to right:
 
 - **Open** — no task is working on the issue and none has finished: it has no
@@ -2102,7 +2108,7 @@ completed](../assets/tui-issues.png)
 | `o` | Open an imported issue's page in a browser — a local issue has none, and says so; the footer offers `o` only on an imported issue |
 | `s` | Show or hide the done lane |
 | `R` | Re-read the issues |
-| `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com |
+| `S` | Sync this project's issues from its issue source now — what `vincent issue sync` does, for GitHub and Jira alike; offered once the project's sync status has loaded and names a sync to wake, never on a project with no issue source or pinned to `github` off github.com. The note says how the pass ended once a later listing shows it — `synced from octo/web`, or why it did not finish |
 | `↑`/`↓` | Move the selection |
 | `pgup`/`pgdown` | Move the selection a screenful |
 | `home`/`g`, `end`/`G` | Select the first or the last row |
