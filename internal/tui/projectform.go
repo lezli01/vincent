@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"regexp"
 	"slices"
@@ -106,6 +107,12 @@ type projectForm struct {
 	rowErr map[pfRow]string
 	err    string
 	saving bool
+
+	// pristine is the request the form would send as opened; a form whose
+	// request differs holds a draft (#1051). confirming is esc's "discard
+	// these changes?", asked only then.
+	pristine   string
+	confirming bool
 }
 
 // jiraPair is one Jira project's rows: its key and its optional JQL, and
@@ -178,8 +185,28 @@ func newProjectForm(client *apiclient.Client, p *apiclient.Project) *projectForm
 		// away when it is not.
 		f.path.SetValue(workingDir())
 	}
+	f.pristine = f.body()
 	return f
 }
+
+// body is what a save would send, as JSON: the create for a new project,
+// the patch of what changed for an existing one.
+func (f *projectForm) body() string {
+	var v any
+	if f.adding() {
+		v = f.createRequest()
+	} else {
+		v = f.patchRequest()
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// dirty reports whether closing the form would drop something typed.
+func (f *projectForm) dirty() bool { return f.body() != f.pristine }
 
 // workingDir is the process cwd, or empty when it cannot be determined —
 // an unprefilled field is a smaller problem than a wrong one.
@@ -278,6 +305,14 @@ func (f *projectForm) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	if f.editing {
 		return f.updateEditing(msg)
 	}
+	if f.confirming {
+		// "discard these changes?" owns the keyboard until answered.
+		f.confirming = false
+		if s := msg.String(); s == "y" || s == "Y" {
+			return func() tea.Msg { return projectFormClosedMsg{} }
+		}
+		return nil
+	}
 	switch msg.String() {
 	case "up", "k", "shift+tab":
 		f.move(-1)
@@ -288,6 +323,11 @@ func (f *projectForm) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+s":
 		return f.submit()
 	case "esc":
+		// A touched form asks first, as the new-task form does (#1051).
+		if f.dirty() && !f.saving {
+			f.confirming = true
+			return nil
+		}
 		return func() tea.Msg { return projectFormClosedMsg{} }
 	}
 	return nil

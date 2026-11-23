@@ -200,6 +200,9 @@ type root struct {
 	// decision 36): drawn as the status line's y/n question, and applied or
 	// dropped — with any open waiting on it — by the answer.
 	pending *pendingSwitch
+	// leave is a quit or a screen switch waiting on the human's answer
+	// because the active view holds a draft it would drop (#1051).
+	leave *pendingLeave
 	// globalPause is the daemon-wide pause (task 149): the header badge, the
 	// status line under it and `Z`'s question are drawn from it.
 	globalPause globalPauseState
@@ -480,7 +483,7 @@ func (m *root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // field to receive it is dropped rather than treated as keystrokes: replaying
 // a pasted path as single keys on the board would fire its action letters.
 func (m *root) updatePaste(text string) tea.Cmd {
-	if text == "" || m.notice.active || m.help || m.pending != nil {
+	if text == "" || m.notice.active || m.help || m.pending != nil || m.leave != nil {
 		return nil
 	}
 	if m.reader != nil {
@@ -571,6 +574,10 @@ func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// (task 132 decision 36): it is the question on screen.
 	if m.pending != nil && msg.String() != "ctrl+c" {
 		return m, m.updatePendingSwitchKey(msg)
+	}
+	// So does a quit or a screen switch asking about a draft (#1051).
+	if m.leave != nil && msg.String() != "ctrl+c" {
+		return m, m.updatePendingLeaveKey(msg)
 	}
 	// `Z`'s question (task 149) owns the keyboard the same way: it is the
 	// question on screen, and y must not reach the view under it.
@@ -782,7 +789,14 @@ func (m *root) issuesSyncable() bool {
 // `!` while disconnected, `n` on the new-task form — is the caller's to route.
 func (m *root) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch key := msg.String(); key {
-	case opKey(keymap.Quit), "ctrl+c":
+	case "ctrl+c":
+		return tea.Quit, true
+	case opKey(keymap.Quit):
+		// A touched form asks before its draft goes with the TUI (#1051);
+		// ctrl+c above never asks, so the TUI is always killable.
+		if m.askLeave(true, 0) {
+			return nil, true
+		}
 		return tea.Quit, true
 	case opKey(keymap.Palette), opKey(keymap.PaletteAlt):
 		m.openPalette()
@@ -940,7 +954,7 @@ func (m *root) updateLinksKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // keyboard while it is, so at most one ever is.
 func (m *root) popupOpen() bool {
 	return m.palette != nil || m.reader != nil || m.linkPick != nil || m.projPick != nil || m.exportForm != nil ||
-		m.pending != nil || m.rename != nil || m.chatWith != nil
+		m.pending != nil || m.leave != nil || m.rename != nil || m.chatWith != nil
 }
 
 // openProjectPicker raises the project picker over whatever is on screen,
@@ -2031,6 +2045,20 @@ func (m *root) switchTo(id viewID) tea.Cmd {
 	if id == m.active {
 		return nil
 	}
+	// Leaving a form whose draft would be dropped asks first (#1051). The
+	// switch happens on y, through switchNow.
+	if m.askLeave(false, id) {
+		return nil
+	}
+	return m.switchNow(id)
+}
+
+// switchNow is switchTo past its draft guard.
+func (m *root) switchNow(id viewID) tea.Cmd {
+	m.help = false
+	if id == m.active {
+		return nil
+	}
 	prev := m.active
 	m.active = id
 	m.landing = false
@@ -2386,6 +2414,9 @@ func (m *root) statusLine() (string, bool) {
 	}
 	if m.pending != nil {
 		return styleWarn.Render(" " + m.pending.promptFit(m.width-1)), true
+	}
+	if m.leave != nil {
+		return styleWarn.Render(fitStatus(" "+m.leave.prompt(), m.width)), true
 	}
 	if m.globalPause.asking {
 		return styleWarn.Render(fitStatus(" "+m.globalPause.question(), m.width)), true

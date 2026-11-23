@@ -655,6 +655,9 @@ func (f *projectForm) renderLines(width int, includeHeading bool) ([]string, int
 	if f.saving {
 		lines = append(lines, "", styleDim.Render("  saving…"))
 	}
+	if f.confirming {
+		lines = append(lines, "", styleWarn.Render("  discard these changes? y/n"))
+	}
 	lines = append(lines, "", styleDim.Render(
 		"  enter edit the row · ctrl+s save · esc close"))
 	if f.adding() {
