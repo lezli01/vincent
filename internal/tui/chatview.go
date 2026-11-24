@@ -2291,6 +2291,11 @@ func (v *chatView) promptKeys() promptAnswers {
 	if v.raising && v.chat != nil && v.form == nil {
 		return promptHint("y", "full-auto", "n", "stay restricted")
 	}
+	// While a hunk reject waits, x and a answer "no": the footer offers the
+	// answers instead of the pane's keys (review finding 4).
+	if v.diff.open && v.diff.rejectAsk != nil {
+		return promptHint("y", "revert the hunk", "n", "keep it")
+	}
 	return nil
 }
 

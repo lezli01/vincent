@@ -121,6 +121,9 @@ func (v *chatView) openDiff() tea.Cmd {
 // the composer.
 func (v *chatView) closeDiff() {
 	v.diff.open = false
+	// A question about a hunk the pane no longer shows is not left armed
+	// for the next time it opens.
+	v.diff.rejectAsk = nil
 	v.composer.Focus()
 	v.bodyDirty = true
 }
@@ -296,10 +299,12 @@ func (v *chatView) answerRejectHunk(key string) tea.Cmd {
 	return v.rejectHunk(v.client, v.chatID, v.diffScope(), ref)
 }
 
-// rejectHunkQuestion is the line the pane draws while `x` waits.
+// rejectHunkQuestion is the line the pane draws while `x` waits. The path
+// comes after the answer keys: a long one cut the "(y/n)" off even at 120
+// columns (review finding 4).
 func rejectHunkQuestion(ref diffHunkRef) string {
-	return "revert this hunk of " + ref.path + " on disk? its lines go back to the base, " +
-		"and a note goes into your draft (y/n)"
+	return "revert this hunk on disk? (y/n) · " + ref.path + " goes back to the base there, " +
+		"and a note goes into your draft"
 }
 
 func (v *chatView) rejectHunk(client *apiclient.Client, id int64, scope string, ref diffHunkRef) tea.Cmd {

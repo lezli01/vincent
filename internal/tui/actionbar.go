@@ -472,6 +472,9 @@ func (a *actionBar) resetPending() {
 
 // confirmPrompt is the question a pending confirmation asks. It names the
 // consequence, not the action: "archive?" is not what a human needs to know.
+// The answer keys come straight after the question and the consequence after
+// them: the footer is one line cut from the right, and at 80 columns a
+// trailing "(y/n)" was the first thing cut (review finding 4).
 func (a *actionBar) confirmPrompt() string {
 	if n := len(a.pendingIDs); n > 0 {
 		return a.bulkPrompt(n)
@@ -483,13 +486,13 @@ func (a *actionBar) confirmPrompt() string {
 	case a.pending == apiclient.ActionArchive && a.force:
 		return fmt.Sprintf("#%d has uncommitted changes — archive anyway and lose them? (y/n)", a.pendingID)
 	case a.pending == apiclient.ActionArchive:
-		return fmt.Sprintf("archive #%d? its worktree is removed (y/n)", a.pendingID)
+		return fmt.Sprintf("archive #%d? (y/n) · its worktree is removed", a.pendingID)
 	case a.pending == apiclient.ActionCancel:
-		return fmt.Sprintf("cancel #%d? a running step is killed (y/n)", a.pendingID)
+		return fmt.Sprintf("cancel #%d? (y/n) · a running step is killed", a.pendingID)
 	case a.pending == apiclient.ActionSkip:
-		return fmt.Sprintf("skip #%d's current step? it is marked skipped and the task goes on without it (y/n)", a.pendingID)
+		return fmt.Sprintf("skip #%d's current step? (y/n) · it is marked skipped and the task goes on without it", a.pendingID)
 	case a.pending == apiclient.ActionReject:
-		return fmt.Sprintf("reject #%d's gate? the task is blocked there until you retry, skip or cancel (y/n)", a.pendingID)
+		return fmt.Sprintf("reject #%d's gate? (y/n) · the task is blocked there until you retry, skip or cancel", a.pendingID)
 	default:
 		return fmt.Sprintf("%s #%d? (y/n)", a.pending, a.pendingID)
 	}
@@ -514,13 +517,13 @@ func (a *actionBar) bulkPrompt(n int) string {
 		}
 		return fmt.Sprintf("%s have uncommitted changes — archive anyway and lose them? (y/n)", subject)
 	case a.pending == apiclient.ActionArchive:
-		return fmt.Sprintf("archive %s? their worktrees are removed (y/n)", selectedNoun(n))
+		return fmt.Sprintf("archive %s? (y/n) · their worktrees are removed", selectedNoun(n))
 	case a.pending == apiclient.ActionCancel:
-		return fmt.Sprintf("cancel %s? their running steps are killed (y/n)", selectedNoun(n))
+		return fmt.Sprintf("cancel %s? (y/n) · their running steps are killed", selectedNoun(n))
 	case a.pending == apiclient.ActionSkip:
-		return fmt.Sprintf("skip the current step of %s? each goes on without it (y/n)", selectedNoun(n))
+		return fmt.Sprintf("skip the current step of %s? (y/n) · each goes on without it", selectedNoun(n))
 	case a.pending == apiclient.ActionReject:
-		return fmt.Sprintf("reject the gates of %s? each is blocked there (y/n)", selectedNoun(n))
+		return fmt.Sprintf("reject the gates of %s? (y/n) · each is blocked there", selectedNoun(n))
 	default:
 		return fmt.Sprintf("%s %s? (y/n)", a.pending, selectedNoun(n))
 	}

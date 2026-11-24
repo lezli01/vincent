@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/taskstate"
 )
@@ -202,8 +203,8 @@ func TestSkipAndRejectAskFirst(t *testing.T) {
 	for _, tc := range []struct {
 		key, state, want string
 	}{
-		{"s", stateBlocked, "skip #7's current step? it is marked skipped and the task goes on without it (y/n)"},
-		{"x", stateAwaitingGate, "reject #7's gate? the task is blocked there until you retry, skip or cancel (y/n)"},
+		{"s", stateBlocked, "skip #7's current step? (y/n) · it is marked skipped and the task goes on without it"},
+		{"x", stateAwaitingGate, "reject #7's gate? (y/n) · the task is blocked there until you retry, skip or cancel"},
 	} {
 		var bar actionBar
 		target := taskActions{id: 7, state: tc.state, actions: []string{apiclient.ActionSkip, apiclient.ActionReject}}
@@ -241,5 +242,27 @@ func TestConfirmationActsOnTheTaskItAskedAbout(t *testing.T) {
 	runCmd(t, cmd, 30*time.Second)
 	if got := srv.seen(); len(got) != 1 || got[0] != "cancel 21" {
 		t.Errorf("calls = %v, want [cancel 21]", got)
+	}
+}
+
+// TestQuestionsKeepTheirAnswerKeysAt80Columns is review finding 4: the
+// footer is cut from the right, so every question the bar asks has to carry
+// its "(y/n)" before the cut at 80 columns.
+func TestQuestionsKeepTheirAnswerKeysAt80Columns(t *testing.T) {
+	all := []string{
+		apiclient.ActionCancel, apiclient.ActionArchive, apiclient.ActionSkip, apiclient.ActionReject,
+	}
+	for _, action := range all {
+		for _, marked := range []bool{false, true} {
+			bar := &actionBar{pending: action, pendingID: 6}
+			target := taskActions{id: 6, state: stateBlocked, actions: all}
+			if marked {
+				bar.pendingIDs = []int64{6, 7, 8}
+			}
+			line, _ := buildFooter(80, bindingsFor(ctxTasks), bar, target, attentionTally{}, false, false)
+			if got := ansi.Strip(line); !strings.Contains(got, "(y/n)") {
+				t.Errorf("%s (bulk %v) lost its answer keys at 80 columns: %q", action, marked, got)
+			}
+		}
 	}
 }
