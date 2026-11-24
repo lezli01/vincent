@@ -183,8 +183,11 @@ func (f *repairForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd 
 			f.commitPrompt()
 			return nil, false
 		case "ctrl+s":
-			f.commitPrompt()
-			return nil, false
+			// ctrl+s means one thing in this form (#1172): start the repair.
+			// From the editor it keeps the text first — submit commits it —
+			// as the pull request (#1133), new-task, project and issue
+			// forms' fields do; esc alone leaves the field.
+			return f.submit(client), false
 		}
 		var c tea.Cmd
 		f.editor, c = f.editor.Update(msg)
@@ -383,7 +386,7 @@ func (f *repairForm) lines(width int) []string {
 	case f.err != "":
 		out = append(out, proseLines(styleBad, "⚠ "+f.err, width)...)
 	case f.editing:
-		out = append(out, proseLines(styleDim, "ctrl+s or esc keeps this text and leaves the field", width)...)
+		out = append(out, proseLines(styleDim, "esc keeps this text and leaves the field · ctrl+s keeps it and starts the repair", width)...)
 	case f.picker != nil:
 		out = append(out, proseLines(styleDim, "↑/↓ choose · / filter · enter pick · esc close the list", width)...)
 	case f.submitting:

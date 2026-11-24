@@ -16075,6 +16075,11 @@ stream for the live tail.
    **start** row after the pickers, toggled with `enter`, sends §13.2's
    `paused: true`; with it set, `ctrl+s` records the follow-up and holds the
    task in `paused` rather than starting the run.
+   *Amended 2026-11-24 (issue #1172): `ctrl+s` means one thing in the
+   repair and follow-up popups — start the run. From inside the prompt or
+   command field it keeps the text first and then starts it, as the
+   pull-request form (#1133) and the new-task, project and issue forms'
+   fields do; `esc` alone leaves a field without starting anything.*
 
    The detail timeline must render a follow-up round as **its own tier**, headed
    as a round rather than numbered as a step: its rows sit at

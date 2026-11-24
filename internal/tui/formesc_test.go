@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/lezli01/vincent/internal/apiclient"
 )
 
 func yesKey() tea.KeyPressMsg { return tea.KeyPressMsg{Code: 'y', Text: "y"} }
@@ -101,3 +104,45 @@ func TestNewChatFormEscAsks(t *testing.T) {
 		t.Fatal("esc on an untouched new chat did not close it")
 	}
 }
+
+// #1172: ctrl+s means one thing in the repair and follow-up forms, as in the
+// pull request form (#1133): from inside the editor it keeps the text and
+// starts the run; esc alone leaves the field.
+func TestRepairAndFollowUpCtrlSInEditorSubmits(t *testing.T) {
+	ctrlS := tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
+	client := apiclient.New("http://127.0.0.1:1", "token") // never dialled: the command is not run
+	t.Run("repair", func(t *testing.T) {
+		f := newRepairForm(7, "check_failed", "build")
+		f.startPrompt()
+		typeInForm(func(m tea.KeyPressMsg) { f.update(m, client) }, "fix the test")
+		if !strings.Contains(flat(f.render(80, 40)), "ctrl+s keeps it and starts the repair") {
+			t.Errorf("the in-field line does not say ctrl+s starts the repair:\n%s", f.render(80, 40))
+		}
+		cmd, exit := f.update(ctrlS, client)
+		if exit || cmd == nil || !f.submitting {
+			t.Fatalf("ctrl+s in the prompt did not start the repair (err %q)", f.err)
+		}
+		if f.editing || f.prompt != "fix the test" {
+			t.Fatalf("ctrl+s did not keep the prompt: editing %v, prompt %q", f.editing, f.prompt)
+		}
+	})
+	t.Run("follow-up", func(t *testing.T) {
+		f := newFollowUpForm(7, 1, "done")
+		f.startBody()
+		typeInForm(func(m tea.KeyPressMsg) { f.update(m, client) }, "rerun it")
+		if !strings.Contains(flat(f.render(80, 40)), "ctrl+s keeps it and starts the follow-up") {
+			t.Errorf("the in-field line does not say ctrl+s starts the follow-up:\n%s", f.render(80, 40))
+		}
+		cmd, exit := f.update(ctrlS, client)
+		if exit || cmd == nil || !f.submitting {
+			t.Fatalf("ctrl+s in the body did not start the follow-up (err %q)", f.err)
+		}
+		if f.editing || f.body() != "rerun it" {
+			t.Fatalf("ctrl+s did not keep the body: editing %v, body %q", f.editing, f.body())
+		}
+	})
+}
+
+// flat is a render without styling or line wrapping, for a phrase the width
+// may break.
+func flat(s string) string { return strings.Join(strings.Fields(ansi.Strip(s)), " ") }
