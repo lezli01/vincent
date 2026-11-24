@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -559,5 +560,38 @@ func TestDiffLaneFoldsSurviveARefresh(t *testing.T) {
 	}
 	if p.cursorPath != before {
 		t.Errorf("the cursor moved to %q across the refresh, want %q", p.cursorPath, before)
+	}
+}
+
+// Review finding 8: a re-read of the diff on screen — which fires on every
+// step advance of a running task — keeps the reader's scroll rather than
+// throwing it back to the file's header.
+func TestDiffReloadKeepsTheScroll(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("diff --git a/long.go b/long.go\nindex 1111111..2222222 100644\n--- a/long.go\n+++ b/long.go\n@@ -0,0 +1,200 @@\n")
+	for i := range 200 {
+		fmt.Fprintf(&b, "+line %d\n", i)
+	}
+	text := b.String()
+	p := loadedDiff(t, text)
+	diffPress(p, "enter") // expand long.go
+	diffView(p, 20)
+	p.vp.SetYOffset(120)
+	diffView(p, 20)
+	before := p.vp.YOffset()
+	if before < 100 {
+		t.Fatalf("the fixture did not scroll (offset %d)", before)
+	}
+	p.apply(diffLoadedMsg{taskID: 1, text: text})
+	view := diffView(p, 20)
+	if got := p.vp.YOffset(); got != before {
+		t.Fatalf("the reload moved the scroll from %d to %d:\n%s", before, got, view)
+	}
+	// A fresh open still starts at the top.
+	p.openTask(2)
+	p.apply(diffLoadedMsg{taskID: 2, text: text})
+	diffView(p, 20)
+	if got := p.vp.YOffset(); got != 0 {
+		t.Fatalf("a fresh open kept another task's scroll (%d)", got)
 	}
 }
