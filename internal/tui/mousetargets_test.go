@@ -114,12 +114,12 @@ func TestNewTaskIsClickable(t *testing.T) {
 	}
 	n.render(200, 50)
 	at := func(text string) (int, int) {
-		for y, line := range n.wideText {
+		for y, line := range n.shownText {
 			if i := strings.Index(line, text); i >= 0 {
 				return len([]rune(line[:i])), y
 			}
 		}
-		t.Fatalf("%q is not on the form:\n%s", text, strings.Join(n.wideText, "\n"))
+		t.Fatalf("%q is not on the form:\n%s", text, strings.Join(n.shownText, "\n"))
 		return 0, 0
 	}
 	x, y := at("two-step")

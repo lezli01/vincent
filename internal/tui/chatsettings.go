@@ -72,6 +72,19 @@ func (r chatPickerRow) label() string {
 type chatSettingsPicker struct {
 	rows   []chatPickerRow
 	cursor int
+	// drawn is the rows render last drew, for a click (#1144).
+	drawn []clickRow
+}
+
+func (p *chatSettingsPicker) clickRows() []clickRow { return p.drawn }
+
+// pointAt is a click on a row (#1144).
+func (p *chatSettingsPicker) pointAt(i int) bool {
+	if i < 0 || i >= len(p.rows) {
+		return false
+	}
+	p.cursor = i
+	return true
 }
 
 // newChatSettingsPicker lists a, the chat agent's catalog, the way the
@@ -113,12 +126,15 @@ func newChatSettingsPicker(a apiclient.Agent, c *apiclient.Chat) *chatSettingsPi
 
 func (p *chatSettingsPicker) render(width int) []string {
 	out := []string{" " + styleDim.Render("model and effort for the next turns — enter choose, esc close")}
+	p.drawn = p.drawn[:0]
 	for i, r := range p.rows {
 		line := "   " + r.label()
 		if i == p.cursor {
 			line = " " + styleSelected.Render("▸ "+r.label())
 		}
-		out = append(out, ansi.Truncate(line, width, "…"))
+		line = ansi.Truncate(line, width, "…")
+		p.drawn = append(p.drawn, drawnRow(line, i))
+		out = append(out, line)
 	}
 	return out
 }

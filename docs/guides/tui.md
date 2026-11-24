@@ -4382,12 +4382,17 @@ off** — press `M`, or hold shift while dragging, which most terminals treat as
 `mouse off — native selection works; M turns it back on` — until your next
 key.
 
-What looks clickable is: a row of the command palette or the project picker
-runs it; a task card's first click selects it and a second opens it, and a
-group's header folds or opens; on Settings a category, a setting and its
-`−`/`+` stepper; on the wide new-task form a workflow card and the
-`[ create task ]` button. The other popups stay keyboard-only, and a click
-behind a form never reaches the screen under it.
+What looks clickable is: a row of any picker runs it, as `enter` does — the
+command palette, the project, copy and link pickers, the lists a form opens
+for a workflow, an agent, a model or a branch, and a chat's model and history
+lists; a click on a chat's rewind, fork or compare list only selects the turn,
+and `enter` then does it, so a stray click never drops turns; a task card's first click selects it and a second opens it,
+and a group's header folds or opens; on Settings a category, a setting and
+its `−`/`+` stepper; on the new-task form the `[ create task ]` button at any
+width, even while a field is being typed in, and on the wide form a workflow
+card. A click chooses nothing while a question is waiting for `y` or `n`, the
+other popups stay keyboard-only, and a click behind a form never reaches the
+screen under it.
 
 Paste normally arrives as a bracketed paste from your terminal's own binding
 (`Cmd+V`, `Ctrl+Shift+V`, middle click) and lands in the focused field with no

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/lezli01/vincent/internal/apiclient"
 	"github.com/lezli01/vincent/internal/keymap"
 )
@@ -109,6 +111,17 @@ func ntRowsForStage(stage ntStage) []ntRow {
 // render draws a six-stage guided surface when two panes fit, and preserves
 // the original all-fields form as the responsive fallback.
 func (n *newTask) render(width, height int) string {
+	out := n.renderForm(width, height)
+	if !n.frameless() || width < mgmtWideMinW {
+		// The narrow form as text too, so its create button takes a click
+		// (#1144); the wide one records its own panes.
+		n.shownText = strings.Split(ansi.Strip(out), "\n")
+		n.wideListW, n.wideFormEnd = 0, width
+	}
+	return out
+}
+
+func (n *newTask) renderForm(width, height int) string {
 	if n.loadErr != nil {
 		return fmt.Sprintf("\n  %s\n\n  press "+opKey(keymap.Refresh)+" to retry\n",
 			styleBad.Render("could not load the form: "+errString(n.loadErr)))

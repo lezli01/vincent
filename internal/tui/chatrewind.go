@@ -96,6 +96,24 @@ type chatRewindPicker struct {
 	cursor int
 	busy   bool
 	err    string
+	// drawn is the rows render last drew, for a click (#1144).
+	drawn []clickRow
+}
+
+func (p *chatRewindPicker) clickRows() []clickRow { return p.drawn }
+
+// selectsOnClick: a click on a row only points at it. Rewinding drops the
+// later turns, and a fork or compare starts chats; enter does those, and
+// one stray click must not (#1144).
+func (p *chatRewindPicker) selectsOnClick() {}
+
+// pointAt is a click on a row (#1144).
+func (p *chatRewindPicker) pointAt(i int) bool {
+	if p.busy || i < 0 || i >= len(p.rows) {
+		return false
+	}
+	p.cursor = i
+	return true
 }
 
 // newChatRewindPicker lists every turn not already rewound, oldest first,
@@ -247,6 +265,7 @@ func (p *chatRewindPicker) title() string {
 
 func (p *chatRewindPicker) render(width int) []string {
 	out := []string{" " + styleDim.Render(p.title())}
+	p.drawn = p.drawn[:0]
 	// The other modes, by their keys (#1080).
 	var other []string
 	switch {
@@ -278,7 +297,9 @@ func (p *chatRewindPicker) render(width int) []string {
 		default:
 			line = "   " + text
 		}
-		out = append(out, ansi.Truncate(line, width, "…"))
+		line = ansi.Truncate(line, width, "…")
+		p.drawn = append(p.drawn, drawnRow(line, i))
+		out = append(out, line)
 	}
 	switch {
 	case p.busy && p.compare:

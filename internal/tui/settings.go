@@ -775,14 +775,15 @@ type settingsHit struct {
 	text  string
 }
 
-// updateClick is a click on the wide layout (#1065): a category selects it,
-// a setting selects it, and a click on the selected setting's − or +
-// changes it as ←/→ do.
+// updateClick is a click on the layout (#1065): a category selects it, a
+// setting selects it, and a click on the selected setting's − or + changes
+// it as ←/→ do. The narrow layout's settings take the same clicks (#1144).
+// The key bindings list is not this layout, so it takes none.
 func (v *settingsView) updateClick(msg tea.MouseClickMsg) tea.Cmd {
-	if msg.Button != tea.MouseLeft || v.form != nil || !v.frameless() {
+	if msg.Button != tea.MouseLeft || v.form != nil || v.bindings != nil {
 		return nil
 	}
-	if msg.X < settingsNavW {
+	if v.frameless() && msg.X < settingsNavW {
 		for _, h := range v.navHits {
 			if msg.Y >= h.y0 && msg.Y < h.y1 {
 				v.clearSearch()

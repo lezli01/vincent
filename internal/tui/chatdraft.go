@@ -435,6 +435,19 @@ type chatHistoryPicker struct {
 	items   []apiclient.ChatPrompt
 	cursor  int
 	err     string
+	// drawn is the rows the last render drew, for a click (#1144).
+	drawn []clickRow
+}
+
+func (p *chatHistoryPicker) clickRows() []clickRow { return p.drawn }
+
+// pointAt is a click on a row (#1144).
+func (p *chatHistoryPicker) pointAt(i int) bool {
+	if i < 0 || i >= len(p.items) {
+		return false
+	}
+	p.cursor = i
+	return true
 }
 
 // chatHistoryRows is how many prompts the picker shows at once.
@@ -541,6 +554,7 @@ func (v *chatView) renderHistory(width int) []string {
 	if len(v.history.items) == 0 && !v.history.loading {
 		out = append(out, "   "+styleDim.Render("no earlier prompts"))
 	}
+	v.history.drawn = v.history.drawn[:0]
 	start := 0
 	if v.history.cursor >= chatHistoryRows {
 		start = v.history.cursor - chatHistoryRows + 1
@@ -554,6 +568,7 @@ func (v *chatView) renderHistory(width int) []string {
 		if i == v.history.cursor {
 			cursor = " ▸ "
 		}
+		v.history.drawn = append(v.history.drawn, drawnRow(row, i))
 		out = append(out, cursor+row)
 	}
 	out = append(out, " "+styleDim.Render("enter inserts · esc closes · type to narrow"))
