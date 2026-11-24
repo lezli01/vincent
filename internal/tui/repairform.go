@@ -322,6 +322,12 @@ func (f *repairForm) request() apiclient.RepairInput {
 // submit posts the repair. The empty prompt is refused here as well as by the
 // daemon: a round trip to be told to type something is a round trip wasted.
 func (f *repairForm) submit(client *apiclient.Client) tea.Cmd {
+	// One request at a time (#1134, as #1052 did for the new-task form): a
+	// second ctrl+s while the repair is in flight would post it again. The
+	// form already says "starting the repair agent…".
+	if f.submitting {
+		return nil
+	}
 	if f.editing {
 		f.commitPrompt()
 	}
