@@ -102,6 +102,11 @@ type taskView struct {
 
 	// pull is this task's pull-request row (task 052.6), refetched rather
 	// than snapshotted: draft, state and merged status are live by nature.
+	// thenOp is a task operation the board asked for with the open
+	// (selectTaskMsg.then), run once the task has loaded; thenID is the
+	// task it is for.
+	thenOp keymap.Op
+	thenID int64
 	// pullFormPending is a create-a-pull-request intent that arrived before
 	// the section it needs (task 069). The Pull Requests takeover picks a
 	// task and navigates here, and the form needs the daemon's prefill, so
@@ -431,6 +436,7 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		t.pullNote, t.pullNoteBad = "", false
 		t.pullTab = taskPullTab{}
 		t.pullFormPending = msg.openPR
+		t.thenOp, t.thenID = msg.then, msg.id
 		t.chats, t.chatsErr = nil, ""
 		t.outcome = outcomeFetch{}
 		t.detail.active = true
@@ -447,7 +453,9 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 		} else {
 			tabCmd = t.setTab(landing)
 		}
-		return t, tea.Batch(openCmd, tabCmd, t.pullCmd(), laneCmd, t.lanesCmd(), t.chatsCmd())
+		// A task already loaded (reopened) runs the board's operation now;
+		// otherwise the fetch that loads it does.
+		return t, tea.Batch(openCmd, tabCmd, t.pullCmd(), laneCmd, t.lanesCmd(), t.chatsCmd(), t.runThen())
 	case viewActivatedMsg:
 		if msg.id != viewTask {
 			return t, nil
@@ -557,7 +565,42 @@ func (t *taskView) route(msg tea.Msg) (panel, tea.Cmd) {
 	// detail rather than a second, thinner copy of one.
 	cmd := tea.Batch(t.detail.update(msg), t.laneUpdate(msg))
 	t.dropEmptyPopup()
-	return t, cmd
+	return t, tea.Batch(cmd, t.runThen())
+}
+
+// runThen runs the operation the board's open asked for, once the task it
+// is for has loaded — exactly once, and never for a task opened since.
+func (t *taskView) runThen() tea.Cmd {
+	if t.thenOp == "" || !t.detail.loaded || t.detail.taskID != t.thenID {
+		return nil
+	}
+	op := t.thenOp
+	t.thenOp, t.thenID = "", 0
+	// The task may have moved on between the key and the load: say so
+	// rather than open nothing.
+	for _, w := range workspaceOps {
+		if w.op == op && !t.detail.target().has(w.action) {
+			t.detail.actions.setStatus(unavailableText(w.name, t.detail.target()), false)
+			return nil
+		}
+	}
+	switch op {
+	case keymap.Repair:
+		cmd := t.detail.openRepair()
+		if t.detail.repair != nil {
+			t.openPopup()
+		}
+		return cmd
+	case keymap.FollowUp:
+		cmd := t.detail.openFollowUp()
+		if t.detail.followUp != nil {
+			t.openPopup()
+		}
+		return cmd
+	case keymap.EditRetry:
+		return t.detail.editRetryKey()
+	}
+	return nil
 }
 
 func (t *taskView) updateKey(msg tea.KeyPressMsg) tea.Cmd {

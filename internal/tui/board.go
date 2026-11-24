@@ -136,6 +136,11 @@ type (
 		// sender holds: an open of another project's task moves the selection
 		// first (task 132.6). Zero makes the root fetch the task to learn it.
 		projectID int64
+		// then is a task operation the workspace runs once the task has
+		// loaded: repair, follow-up or edit+retry pressed on the board,
+		// whose forms need the task's steps and belong to the workspace
+		// (review finding 6). Empty for a plain open.
+		then keymap.Op
 	}
 )
 
@@ -1050,6 +1055,13 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 		}
 	}
 
+	// Repair, follow-up and edit+retry are hinted on the board, and their
+	// forms live in the task workspace: the key opens the task there with
+	// the form up, or says why it cannot (review finding 6, #1059).
+	if cmd, handled := b.workspaceOpKey(msg.String()); handled {
+		return b, cmd
+	}
+
 	// `T` is the one task-action key that is not a §6 call returning the
 	// task (task 119); it opens a workspace, so it has no bulk form.
 	if msg.String() == opKey(keymap.Chat) {
@@ -1084,6 +1096,48 @@ func (b *board) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	b.skipHeaders(travelDir(before, b.tbl.Cursor()))
 	b.rememberSelection()
 	return b, cmd
+}
+
+// workspaceOps are the task keys whose forms the workspace owns, with the
+// §6 action that has to be on offer and the name the refusal uses.
+var workspaceOps = []struct {
+	op     keymap.Op
+	action string
+	name   string
+}{
+	{keymap.Repair, apiclient.ActionRepair, "repair"},
+	{keymap.FollowUp, apiclient.ActionFollowUp, "follow-up"},
+	{keymap.EditRetry, apiclient.ActionRetry, "edit+retry"},
+}
+
+// workspaceOpKey opens the task under the cursor in its workspace with the
+// operation key names, once it has loaded. A task that does not offer the
+// action says so on the board rather than opening for nothing. Edit+retry's
+// further condition — a step with text to edit — is the workspace's to
+// judge, since only it has the steps.
+func (b *board) workspaceOpKey(key string) (tea.Cmd, bool) {
+	if key == "" || b.archived {
+		return nil, false
+	}
+	for _, w := range workspaceOps {
+		if opKey(w.op) != key {
+			continue
+		}
+		t := b.target()
+		if t.id == 0 || !t.has(w.action) {
+			// One task, never the selection: these forms are written for
+			// one task, so the cursor's is what the refusal is about.
+			t.marked = nil
+			b.actions.setStatus(unavailableText(w.name, t), false)
+			return nil, true
+		}
+		tk, _ := b.taskByID(t.id)
+		id, state, pid, op := t.id, tk.State, tk.ProjectID, w.op
+		return func() tea.Msg {
+			return selectTaskMsg{id: id, state: state, projectID: pid, fromBoard: true, then: op}
+		}, true
+	}
+	return nil, false
 }
 
 // openArchivedTask opens the selected task's workspace, and esc comes back here.
