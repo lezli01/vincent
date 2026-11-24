@@ -923,7 +923,7 @@ func (m *root) updatePaletteKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// panel's command instead of the navigation the entry names. On the chats
 	// board that is "new task", whose key n now makes a chat.
 	if run.nav && (run.key == "" || m.panelOwnsKey(run.key)) {
-		return m, m.switchTo(run.navTarget)
+		return m, m.goTo(run.navTarget)
 	}
 	if run.isTab {
 		// A tab row switches in place (task 168): synchronously, as the digit
@@ -1316,6 +1316,19 @@ func (m *root) updateNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *root) openNewTask() tea.Cmd {
 	cmd := m.deliver(viewNewTask, newTaskMsg{projectID: m.sel.id})
 	return tea.Batch(cmd, m.switchTo(viewNewTask))
+}
+
+// goTo is a navigation row's switch: the screens menu's and the palette's
+// keyless ones. The new-task form is the one screen that has to be told to
+// open before it is shown, so it goes through openNewTask the way its key
+// does — a bare switch left it on "loading projects, workflows and
+// adapters…" for good (review finding 3). Already on the form, it is left as
+// it is, as `n` leaves it: re-opening would throw the draft away.
+func (m *root) goTo(target viewID) tea.Cmd {
+	if target == viewNewTask && m.active != viewNewTask {
+		return m.openNewTask()
+	}
+	return m.switchTo(target)
 }
 
 // updateNewTaskFromPull opens the new-task form seeded with a pull request
