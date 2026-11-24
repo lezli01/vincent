@@ -186,6 +186,9 @@ type root struct {
 	startup       startupState
 	selNotice     string
 	selNoticeWarn bool
+
+	// option is the macOS Option watch's state between key presses (#1140).
+	option optionWatch
 	// defaultProject is `tui.default_project` as of the latest config answer.
 	// Startup reads only the first one; a deleted selection is replaced by
 	// this one when it names a registered project (task 132 decision 46).
@@ -581,6 +584,13 @@ func (m *root) updateMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *root) updateKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// Every key passes the macOS Option watch on its way (#1140): a chord the
+	// terminal turned into a character is noted on whatever surface it lands.
+	return m.watchOption(msg, func() (tea.Model, tea.Cmd) { return m.routeKey(msg) })
+}
+
+// routeKey is updateKey's routing, past the Option watch.
+func (m *root) routeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.notice.active {
 		return m.updateNoticeKey(msg)
 	}

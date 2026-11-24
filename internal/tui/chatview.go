@@ -474,6 +474,11 @@ func (v *chatView) updateVimKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	return tea.Batch(cmd, v.draftEdited(before), v.syncInline()), true
 }
 
+// noteOption says the macOS Option note on the chat's note line, where #1061
+// first said it; the root decides when (#1140). The character was typed all
+// the same: it may be meant.
+func (v *chatView) noteOption(note string) { v.note, v.noteBad = note, false }
+
 func (v *chatView) bindingContext() bindingContext {
 	switch {
 	case v.form != nil:
@@ -1614,10 +1619,6 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			v.note, v.noteBad = endedChatNote(v.chat), false
 		}
 		return v, nil
-	}
-	if note, ok := optionKeyNote(msg.Text); ok {
-		// Typed all the same: it may be meant (#1061).
-		v.note, v.noteBad = note, false
 	}
 	var cmd tea.Cmd
 	before := v.composer.Value()

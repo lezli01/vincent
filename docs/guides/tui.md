@@ -2990,10 +2990,21 @@ rewind, the shell, the model, the chat switch, stash and history — are `alt+`
 chords, and a stock Terminal.app or iTerm2 turns Option into a character
 instead: Option+d types `∂`. Set Terminal's **Use Option as Meta key**
 (Settings › Profiles › Keyboard) or iTerm2's Option key to **Esc+** (Profiles ›
-Keys). The first time the composer receives such a character for a chord the
-chat binds, it says so once on its note line. Until then `ctrl+p` opens the
-palette, which reaches every command, and [`tui.keys`](#rebinding-keys)
-rebinds any of them.
+Keys). Until then `ctrl+p` opens the palette, which reaches every command, and
+[`tui.keys`](#rebinding-keys) rebinds any of them.
+
+The TUI notices once per run and says so — on a chat's note line, elsewhere on
+the status line — on any screen with an `alt+` key: the board's and an issue's
+`alt+t`, the task and issue screens' `alt+n`, the chats board's `alt+e` and
+`alt+1` … `alt+9`, and the chat's own. It knows what the US layout's Option
+types for a letter (`∂`), a digit (`¡` for `alt+1`) and a shifted letter (`˜`,
+`˝`), and only a character whose chord the screen in front of you binds counts.
+In a text field — the composer, a filter — such a character may be meant (`ß`,
+`å`, `ç` and `π` are ordinary text), so it is said only when your next key takes
+the character back with `backspace` or is another such character; typing on
+says nothing. The dead keys — Option+e, i, n and u — send nothing when pressed,
+so the first press cannot be noticed; what the next key releases (`´`, `ˆ`,
+`˜`, or an accented vowel such as `é`) can.
 
 Your own messages are easy to find in it. A prompt is drawn as a right-aligned
 card titled `You` — as wide as it needs to be, up to about two thirds of the
