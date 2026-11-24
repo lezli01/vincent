@@ -651,6 +651,12 @@ func (f *newChatForm) request() apiclient.CreateChatRequest {
 }
 
 func (f *newChatForm) submit() tea.Cmd {
+	// One request at a time (#1134, as #1052 did for the new-task form): a
+	// second ctrl+s while the create is in flight would create a second chat.
+	// The form already says "creating…".
+	if f.submitting {
+		return nil
+	}
 	if strings.TrimSpace(f.title.Value()) == "" && f.messageValue() == "" {
 		f.err = "a chat needs a first message or a title"
 		return nil

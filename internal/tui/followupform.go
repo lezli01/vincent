@@ -441,6 +441,12 @@ func (f *followUpForm) request() apiclient.FollowUpInput {
 // submit posts the follow-up. An empty body is refused here as well as by the
 // daemon: a round trip to be told to type something is a round trip wasted.
 func (f *followUpForm) submit(client *apiclient.Client) tea.Cmd {
+	// One request at a time (#1134, as #1052 did for the new-task form): a
+	// second ctrl+s while the follow-up is in flight would queue it twice.
+	// The form already says "queueing the follow-up…".
+	if f.submitting {
+		return nil
+	}
 	if f.editing {
 		f.commitBody()
 	}
