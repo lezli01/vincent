@@ -239,8 +239,9 @@ func (p *linkPicker) paste(text string) tea.Cmd {
 	return cmd
 }
 
-// linkPickerHint is the popup's last line: the two actions have no registry
-// row of their own, so the popup says what its keys do.
+// linkPickerHint is the popup's last line, saying what its keys do beside
+// the rows they act on. The footer under the popup names the same keys from
+// the registry's link picker rows (#1180).
 const linkPickerHint = " enter open · " + copyPickKey + " copy · esc close"
 
 // linkCopyOnly marks a row enter will not open.

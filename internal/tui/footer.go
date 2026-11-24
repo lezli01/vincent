@@ -303,6 +303,38 @@ func buildPromptFooter(width int, keys promptAnswers, textField bool) (string, [
 	return line + strings.Repeat(" ", pad) + pinned.String(), hits
 }
 
+// buildPopupFooter is the footer under a root popup (#1180): the popup's
+// hinted registry rows on the left and ctrl+c quit on the right, the one
+// root key a popup lets through. The palette, help and `q` are not pinned —
+// each would be typed into the popup's query or swallowed. No `+N`: the
+// palette lists none of a popup's keys. The line carries no click targets,
+// since a click on the footer reaches nothing while a popup is open.
+func buildPopupFooter(width int, rows []binding) string {
+	var quit []footerSeg
+	for _, s := range footerPinnedSegs(true) {
+		if s.key == "ctrl+c" {
+			quit = append(quit, s)
+		}
+	}
+	pinned := ""
+	for _, s := range quit {
+		pinned += s.text
+	}
+	segs := footerHintSegs(rows)
+	if width <= 0 {
+		line, _ := composeFooter(segs)
+		return line + "  " + pinned
+	}
+	pw := ansi.StringWidth(pinned)
+	avail := width - pw - 2
+	if avail <= 0 {
+		return " " + pinned
+	}
+	line, _, _ := footerFit(segs, 0, avail)
+	pad := max(width-ansi.StringWidth(line)-pw, 2)
+	return line + strings.Repeat(" ", pad) + pinned
+}
+
 // footerSep joins two segments. Its width is the per-gap cost every budget
 // here has to pay for.
 func footerSep() (string, int) {

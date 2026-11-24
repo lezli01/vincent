@@ -986,6 +986,51 @@ func (m *root) popupOpen() bool {
 		m.pending != nil || m.leave != nil || m.rename != nil || m.chatWith != nil
 }
 
+// popupContext is the registry context of the open root popup (#1180), in
+// the order Update routes keys to them — the first popup listed there is
+// the one that answers. ok is false with none open.
+func (m *root) popupContext() (bindingContext, bool) {
+	switch {
+	case m.pending != nil, m.leave != nil:
+		return ctxDraftQuestion, true
+	case m.reader != nil:
+		return ctxCopyPicker, true
+	case m.linkPick != nil:
+		return ctxLinkPicker, true
+	case m.projPick != nil:
+		return ctxProjectPicker, true
+	case m.exportForm != nil:
+		if m.exportForm.written != "" {
+			return ctxChatExportWritten, true
+		}
+		return ctxChatExport, true
+	case m.rename != nil:
+		return ctxChatRename, true
+	case m.chatWith != nil:
+		if m.chatWith.pick != nil {
+			return ctxChatWithList, true
+		}
+		return ctxChatWith, true
+	case m.palette != nil:
+		if m.palette.jump {
+			return ctxScreensMenu, true
+		}
+		return ctxPalette, true
+	}
+	return "", false
+}
+
+// popupRows is ctx's registry rows as the open popup answers them: a
+// project switch off a deleted selection cannot be declined (task 132.7),
+// so its question offers no `n`.
+func (m *root) popupRows(ctx bindingContext) []binding {
+	rows := bindingsFor(ctx)
+	if ctx == ctxDraftQuestion && m.pending != nil && m.pending.deleted != "" {
+		rows = slices.DeleteFunc(rows, func(b binding) bool { return b.key == "n" })
+	}
+	return rows
+}
+
 // openProjectPicker raises the project picker over whatever is on screen,
 // seeded with the root's own name list so it is never empty while its first
 // answer is in flight, and makes its one list call. Not before the first
@@ -2876,6 +2921,13 @@ func (m *root) footerLine() string {
 		// The overlay owns the keyboard, so it owns the key row: the keys
 		// underneath do nothing until it closes.
 		return helpFooter(m.width)
+	}
+	if ctx, ok := m.popupContext(); ok {
+		// A root popup owns every key but ctrl+c, as the overlay does, so it
+		// owns the key row too (#1180): its own keys from the registry, and
+		// ctrl+c — the pinned `: ? q` would type into its query.
+		m.footerHits = nil
+		return buildPopupFooter(m.width, m.popupRows(ctx))
 	}
 	if m.connScreen() {
 		// The connection screen's own keys: retry where there is something

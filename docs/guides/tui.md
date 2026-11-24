@@ -4119,6 +4119,13 @@ quit` instead. Clicking either version, or running a global row from the
 palette, does what the row says even in a text field; nothing is typed into
 it.
 
+While the palette or another popup is open — the screens menu, the project,
+copy and link pickers, the export, rename and chat-with forms, or a
+discard-the-draft question — it has the keyboard, and the footer names only
+the keys it answers, ending in `ctrl+c quit`: under the palette that is
+`↑↓ move  enter run  esc close  ctrl+c quit`, under the screens menu
+`letter go  ↑↓ move  enter go  esc close`, under a draft question `y yes  n no`.
+
 Global bindings — active whenever the focused surface is not capturing text:
 
 | Key | Does |
