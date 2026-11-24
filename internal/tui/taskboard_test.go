@@ -456,3 +456,17 @@ func TestACardMovingIntoAFoldLeavesTheCursor(t *testing.T) {
 		t.Fatalf("the cursor followed #21 onto a fold header (%+v)", s)
 	}
 }
+
+// #1145: on a narrow column the folded group's selected count stays whole;
+// the summary in front of it gives way first.
+func TestFoldSelectedCountSurvivesNarrowColumn(t *testing.T) {
+	b := taskBoardFixture()
+	b.marks = b.marks.add(19)
+	finished := b.cardGroups()[taskColumnFinished]
+	for _, w := range []int{20, 24, 30} {
+		got := ansi.Strip(strings.Join(b.cardColumn(taskColumnFinished, finished, taskStop{}, "", 0, 0, w, 10, issueLaneMore{}), "\n"))
+		if !strings.Contains(got, "✔ 1 selected") {
+			t.Errorf("at width %d the selected count is cut:\n%s", w, got)
+		}
+	}
+}
