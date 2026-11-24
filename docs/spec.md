@@ -17003,6 +17003,16 @@ stream for the live tail.
    and rail draw `●` on an `unread` chat. macOS terminals send `alt+` only
    with Option set to act as Meta.
 
+   *Amended 2026-11-24 (issue #1140).* **The Option note.** When a key
+   arrives as the character the macOS US layout's Option types for a chord
+   the surface in front of the user binds — letters, digits, shifted
+   letters, and what a dead key releases on the next key — the TUI says once
+   per run which terminal setting to change, on any surface (a chat's note
+   line, else the status line), not only in the composer (#1061). In a text
+   field the character may be meant, so it is said only when the next key is
+   `backspace` or another such character. A dead key's own press sends
+   nothing and is not detectable.
+
    *Amended 2026-11-20 (task 160, issue #1014).* **Conversation focus.** The
    composer holds the keyboard by default, no longer always: `ctrl+f` hands it
    to the conversation with a search line open, and `capturesInput` is false
