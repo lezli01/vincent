@@ -212,12 +212,34 @@ func (b *board) cardCursor(stops [taskColumnCount][]taskStop, groups [taskColumn
 			if !g.folded || !slices.ContainsFunc(g.tasks, func(t apiclient.Task) bool { return t.ID == b.selectedID }) {
 				continue
 			}
+			// A card that moved on its own into a fold in another column
+			// leaves the cursor where it was, as it does onto a card: the
+			// fold header is not the task, and a question pending on the
+			// task must not find itself asked of a group (review finding 2).
+			if b.cardPlaced && !b.cardFollow && c != b.cardCol && len(stops[b.cardCol]) > 0 {
+				return b.restNear(stops)
+			}
 			for i, s := range stops[c] {
 				if s.header && s.key == g.key {
 					return c, i, true
 				}
 			}
 		}
+	}
+	// An explicit selection of a task the board does not list yet — one
+	// just created, or opened before the next refresh — rests the cursor
+	// for this frame without giving the selection up, so the refresh that
+	// lists the task puts the cursor on it (review finding 2).
+	if b.cardFollow && b.selectedID != 0 {
+		if b.cardPlaced && len(stops[b.cardCol]) > 0 {
+			return b.cardCol, min(b.cardPos, len(stops[b.cardCol])-1), true
+		}
+		for c := range stops {
+			if len(stops[c]) > 0 {
+				return c, 0, true
+			}
+		}
+		return 0, 0, false
 	}
 	// The card is gone — archived, or filtered out: the nearest card of the
 	// column it was in, not the board's first (#1058).
@@ -230,6 +252,16 @@ func (b *board) cardCursor(stops [taskColumnCount][]taskStop, groups [taskColumn
 		}
 	}
 	return 0, 0, false
+}
+
+// follow makes id the selection the cursor goes to wherever the task is —
+// the explicit path: an open from the palette, the overview or another
+// screen, a created task, a `!` jump. Without it the board treats the
+// change like a card that moved on its own and leaves the cursor in its
+// column (#1058).
+func (b *board) follow(id int64) {
+	b.selectedID, b.cardFollow, b.cardHeader = id, true, nil
+	b.restoreSelection(b.rows())
 }
 
 // restNear rests the cursor on the stop nearest where it last was, in the

@@ -360,7 +360,7 @@ func TestCardCursorStaysNearAVanishedCard(t *testing.T) {
 		t.Fatalf("the cursor jumped to #%d in another column", next)
 	}
 	// An explicit open still goes where the task is.
-	b.selectedID, b.cardFollow, b.cardHeader = 21, true, nil // what openNow does
+	b.follow(21) // what openNow, selectTaskMsg and a `!` jump do
 	if got, _ := b.cardSelected(); got != 21 {
 		t.Fatalf("an explicit selection of #21 landed on #%d", got)
 	}
@@ -382,5 +382,77 @@ func TestMarksShowBehindFoldsAndOnLanes(t *testing.T) {
 	b.marks = b.marks.add(42)
 	if box := ansi.Strip(strings.Join(b.laneCard(lane, false, 40), "\n")); !strings.Contains(box, "✔") {
 		t.Errorf("a marked lane has no tick:\n%s", box)
+	}
+}
+
+// placeCursorOn puts the card cursor on want and
+// rests it there, so the test starts from a placed cursor the way a user's
+// board does.
+func placeCursorOn(t *testing.T, b *board, want int64) {
+	t.Helper()
+	b.follow(want)
+	if got, _ := b.cardSelected(); got != want {
+		t.Fatalf("could not place the cursor on #%d (on #%d)", want, got)
+	}
+	b.moveCard(0) // settle: the cursor is now placed, not following
+}
+
+// TestExplicitOpensLandOnTheirTask is review finding 2: openNow (a created
+// task, the overview) and the root's selectTaskMsg (the palette, a `!` that
+// crossed projects) are explicit selections, and the board cursor goes to the
+// task even when it sits in another column than the cursor did.
+func TestExplicitOpensLandOnTheirTask(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		open func(s *shell, id int64)
+	}{
+		{"openNow", func(s *shell, id int64) { s.openNow(id) }},
+		{"selectTaskMsg", func(s *shell, id int64) { s.routeBoardOnly(selectTaskMsg{id: id}) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newShell(testCtx(t), newLevelHolder(), newRawHolder(), newHyperlinkHolder())
+			s.board = taskBoardFixture()
+			s.board.actions = s.bar
+			placeCursorOn(t, s.board, 24) // Queued
+			tc.open(s, 6)                 // Needs you
+			if got, _ := s.board.cardSelected(); got != 6 {
+				t.Fatalf("the cursor is on #%d, want #6", got)
+			}
+		})
+	}
+}
+
+// TestACreatedTaskIsFollowedOnceListed: the open arrives before the board
+// lists the task, and the refresh that lists it puts the cursor on it.
+func TestACreatedTaskIsFollowedOnceListed(t *testing.T) {
+	s := newShell(testCtx(t), newLevelHolder(), newRawHolder(), newHyperlinkHolder())
+	s.board = taskBoardFixture()
+	s.board.actions = s.bar
+	placeCursorOn(t, s.board, 6)
+	s.openNow(99)
+	if _, ok := s.board.cardSelected(); !ok {
+		t.Fatal("no cursor while the new task is not listed yet")
+	}
+	s.board.tasks = append(s.board.tasks, apiclient.Task{ID: 99, ProjectID: 1, State: stateQueued, Title: "new"})
+	if got, _ := s.board.cardSelected(); got != 99 {
+		t.Fatalf("the cursor is on #%d once #99 is listed", got)
+	}
+}
+
+// TestACardMovingIntoAFoldLeavesTheCursor: a card that moves on its own into
+// a folded group of another column leaves the cursor in its column, as a
+// move onto a card does, rather than on the fold header.
+func TestACardMovingIntoAFoldLeavesTheCursor(t *testing.T) {
+	b := taskBoardFixture()
+	b.tasks = append(b.tasks, apiclient.Task{ID: 22, ProjectID: 1, State: stateRunning, Title: "second"})
+	placeCursorOn(t, b, 21) // Running
+	for i, tk := range b.tasks {
+		if tk.ID == 21 {
+			b.tasks[i].State = stateDone // into Finished, folded by default
+		}
+	}
+	s, ok := b.cardStop()
+	if !ok || s.header {
+		t.Fatalf("the cursor followed #21 onto a fold header (%+v)", s)
 	}
 }
