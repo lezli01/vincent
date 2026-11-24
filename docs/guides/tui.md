@@ -3799,7 +3799,7 @@ value it would become](../assets/tui-settings-confirm.png)
 | `tab` / `shift+tab` | Next or previous category |
 | `/` | Search every setting by name, key or description |
 | `backspace` | Reset the selected setting to its default |
-| `u` | Undo the last change: put back the value it replaced. Every change applies at once, so after one the pane's corner says `saved · was 4 · u puts it back`; a held arrow is one change, and the undo is not itself undoable |
+| `u` | Undo the last change: put back the value it replaced. Every change applies at once, so after one the pane's corner says `saved · was 4 · u puts it back`; a held arrow is one change, and the undo is not itself undoable. Pressed from another category or a search, `u` goes to the setting first, and its note names it (`saved · Tasks at once put back`); an `esc` at a dangerous key's confirmation, or a write the daemon refuses, leaves no undo pending |
 | `e` | Open `config.yaml` in `$EDITOR` |
 | `R` | Re-read the configuration |
 | `esc` | Clear the search, else leave Settings |

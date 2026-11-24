@@ -339,24 +339,41 @@ func (v *settingsView) applyConfig(msg daemonConfigMsg) {
 // somebody to a switch it can name but must not flip. A config that has not
 // loaded yet opens the key when it lands.
 func (v *settingsView) openKey(path string) {
+	if !v.goTo(path) {
+		return
+	}
+	if !v.configOK {
+		v.pendingKey = path
+		return
+	}
+	v.pendingKey = ""
+	v.openForm(path)
+}
+
+// goTo puts the cursor on one setting, in its own category, so a change
+// made from elsewhere happens on screen.
+func (v *settingsView) goTo(path string) bool {
+	c, _, ok := settingsLocate(path)
+	if !ok {
+		return false
+	}
+	v.clearSearch()
+	v.category, v.selected = c, path
+	return true
+}
+
+// settingsLocate finds a setting's category and catalog entry.
+func settingsLocate(path string) (int, settingsItem, bool) {
 	for c, category := range settingsCatalog {
 		for _, section := range category.sections {
 			for _, item := range section.items {
-				if item.path != path {
-					continue
+				if item.path == path {
+					return c, item, true
 				}
-				v.clearSearch()
-				v.category, v.selected = c, path
-				if !v.configOK {
-					v.pendingKey = path
-					return
-				}
-				v.pendingKey = ""
-				v.openForm(path)
-				return
 			}
 		}
 	}
+	return 0, settingsItem{}, false
 }
 
 func (v *settingsView) openForm(path string) {
@@ -383,6 +400,7 @@ func (v *settingsView) applySaved(msg configSavedMsg) tea.Cmd {
 		v.form.saving = false
 		if msg.err != nil {
 			v.form.err = errString(msg.err)
+			v.undoing = false // #1137: an undo that failed is not pending
 			return nil
 		}
 		v.form = nil
@@ -398,7 +416,7 @@ func (v *settingsView) applySaved(msg configSavedMsg) tea.Cmd {
 	v.saving = nil
 	if msg.err != nil {
 		delete(v.shown, msg.path)
-		v.queued = nil
+		v.queued, v.undoing = nil, false
 		v.note, v.noteBad = errString(msg.err), true
 		return nil
 	}
@@ -432,7 +450,9 @@ func (v *settingsView) adopt(msg configSavedMsg) {
 	switch {
 	case v.undoing:
 		v.undoing, v.undo = false, nil
-		v.note += " · put back"
+		// Named, since the undo may have been asked for elsewhere (#1137).
+		_, item, _ := settingsLocate(msg.path)
+		v.note += " · " + valueOr(item.label, msg.path) + " put back"
 	case known && was != k.read(v.config):
 		// What it was, and the key that puts it back (#1057).
 		v.undo = &settingsUndo{key: k, was: was}
@@ -529,6 +549,12 @@ func (v *settingsView) clearSearch() {
 // and every change to the text asks the daemon what the template now makes.
 func (v *settingsView) updateForm(msg tea.KeyPressMsg) tea.Cmd {
 	f := v.form
+	if msg.String() == "esc" {
+		// #1137: esc steps back from an undo waiting at a dangerous key's
+		// confirmation; whatever is saved from the form afterwards is a
+		// change of its own, not the undo.
+		v.undoing = false
+	}
 	if msg.String() == "tab" && f.key.path == "branch_template" && !f.confirming {
 		f.input.SetValue(f.input.Value() + "{{." + branchTemplateFields[v.fieldAt] + "}}")
 		f.input.CursorEnd()
@@ -661,7 +687,11 @@ func (v *settingsView) undoLast() tea.Cmd {
 		return nil
 	}
 	v.undoing = true
-	v.selected = u.key.path
+	// #1137: u may be pressed in another category, or under a search that
+	// hides the setting; go to it, so the write is not made off screen.
+	if !v.goTo(u.key.path) {
+		v.selected = u.key.path
+	}
 	return v.apply(u.key, u.was)
 }
 
@@ -694,6 +724,7 @@ func (v *settingsView) send(change settingsChange) tea.Cmd {
 	}
 	if err != nil {
 		delete(v.shown, change.key.path)
+		v.undoing = false
 		v.note, v.noteBad = errString(err), true
 		return nil
 	}
