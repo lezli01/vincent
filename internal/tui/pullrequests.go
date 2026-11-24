@@ -207,8 +207,12 @@ type pullRequestsView struct {
 	// termW is the terminal's width, hits the wide layout's cards, checks the
 	// checks read for its preview, and checksArmed the read waiting for the
 	// selection to rest (mgmtscreens.go).
-	termW       int
-	hits        []mgmtHit
+	termW int
+	hits  []mgmtHit
+	// laneEdges is where the last wide render put its columns: column c
+	// spans [laneEdges[c], laneEdges[c+1]), so the wheel can find the one
+	// under the pointer even when it is empty of cards (#1143).
+	laneEdges   [pullColumnCount + 1]int
 	checks      map[int64]pullChecks
 	checksArmed int64
 }
@@ -323,11 +327,14 @@ func (v *pullRequestsView) route(msg tea.Msg) (panel, tea.Cmd) {
 		// The wheel moves the selection, as on the other lists (#1064); a
 		// question or a picker owns it while it is up.
 		if v.confirm == nil && v.picker == nil {
-			switch msg.Button {
-			case tea.MouseWheelUp:
-				v.cursor = max(v.cursor-1, 0)
-			case tea.MouseWheelDown:
-				v.cursor = min(v.cursor+1, max(len(v.rows())-1, 0))
+			delta := 1
+			if msg.Button == tea.MouseWheelUp {
+				delta = -1
+			}
+			if v.wide() {
+				v.wheelPullLane(msg.X, delta)
+			} else {
+				v.cursor = min(max(v.cursor+delta, 0), max(len(v.rows())-1, 0))
 			}
 			v.sticky = v.currentKey()
 		}

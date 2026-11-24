@@ -349,6 +349,30 @@ func (v *pullRequestsView) movePullColumn(delta int) {
 	}
 }
 
+// wheelPullLane is one wheel notch on the wide layout (#1143): it walks the
+// column under the pointer, not rows(), whose order interleaves the two
+// columns and so made a notch hop between them. A notch over the other
+// column crosses to it at the same height first, as movePullColumn does; one
+// outside both (the preview, the filter box) walks the selection's own.
+func (v *pullRequestsView) wheelPullLane(x, delta int) {
+	cols := v.pullLaneRows()
+	c, p := pullPosition(cols, v.cursor)
+	for n := range pullColumnCount {
+		if x >= v.laneEdges[n] && x < v.laneEdges[n+1] {
+			if n != c {
+				if len(cols[n]) == 0 {
+					return
+				}
+				c, p = n, min(p, len(cols[n])-1)
+			}
+			break
+		}
+	}
+	if len(cols[c]) > 0 {
+		v.cursor = cols[c][min(max(p+delta, 0), len(cols[c])-1)]
+	}
+}
+
 // renderWide is the pull requests by whether a task claims them, with the
 // selected one previewed.
 func (v *pullRequestsView) renderWide(width, height int) string {
@@ -374,6 +398,7 @@ func (v *pullRequestsView) renderWide(width, height int) string {
 	laneW := (width - paneW) / pullColumnCount
 	cols := v.pullLaneRows()
 	v.hits = nil
+	v.laneEdges = [pullColumnCount + 1]int{0, laneW, width - paneW}
 	left := v.pullLane(toneCyan.Bold(true).Render(ic("▶ Linked to a task")), rows, cols[pullColumnLinked], 0, len(lines), laneW, h)
 	right := v.pullLane(styleDim.Render(ic("○ Unclaimed")), rows, cols[pullColumnUnclaimed], laneW, len(lines), width-paneW-laneW, h)
 	return strings.Join(append(lines, joinColumns(joinColumns(left, right), v.pullPreview(paneW, h))...), "\n")

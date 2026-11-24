@@ -1955,7 +1955,8 @@ With no project registered, the overview says how to add one: `a`, or
 From 130 columns wide, pull requests are cards in two columns, **Linked to a task**
 and **Unclaimed**, with a preview of the selected one. The preview lists the checks
 of a pull request a task claims, read once the selection rests on it. `←` and `→`
-cross the columns.
+cross the columns. The mouse wheel walks the column under the pointer, crossing
+to it at the same height when the selection is in the other one.
 
 The selected project's pull requests, when its `origin` is a github.com
 repository vincent can authenticate to. The
