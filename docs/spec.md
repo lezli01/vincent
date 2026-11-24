@@ -19674,6 +19674,23 @@ whose `n` is remembered and whose `esc` is not, are choices rather than y/n
 questions and keep their own keys. Where the key that opened a pane closes it
 (the chat diff pane's), it still closes it with the question up.
 
+*Amended 2026-11-24 (issue #1180).* **A root popup owns the key row.** The
+palette, the screens menu, the project, copy and link pickers, the export
+form, the chat rename prompt, the chat-with form and the draft question
+(a project switch, quit or screen switch held on a draft) each send every
+key but `ctrl+c` to themselves, so the pinned `: commands  ? help  q quit`
+under one advertised keys that type into its query or are swallowed. While
+one is open the footer is that popup's own, as the help overlay's is: its
+registry rows' hints on the left — each popup is a registry context of its
+own, its rows kept out of the palette — and `ctrl+c quit` pinned right, with
+no `+N` and nothing clickable. The palette reads `↑↓ move  enter run  esc
+close`; the screens menu `letter go  ↑↓ move  enter go  esc close` (its
+letters are its rows', named on them, not registry keys); the link picker
+adds `ctrl+y copy`; a list open in the chat-with form, or the export form
+once written, has rows of its own because enter does something else there;
+and a switch off a deleted project, which cannot be declined, offers `y`
+alone.
+
 *Amended 2026-09-10 (task 094, issue #352).* **The width decides how many keys
 reach the line, and the line says how many it is not showing.** "At most five"
 is superseded: the hinted rows are admitted as a strict prefix of priority

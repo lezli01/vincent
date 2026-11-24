@@ -209,6 +209,28 @@ const (
 	// ctxChatExport is the root's export form (task 159), a popup with its
 	// own context for the project picker's reason: it owns the keyboard.
 	ctxChatExport bindingContext = "export chat"
+	// ctxChatExportWritten is that form once the file is written, when its
+	// rows are the copy choices and enter copies rather than exports.
+	ctxChatExportWritten bindingContext = "export chat written"
+	// The rest of the root's popups (#1180), each its own context for the
+	// project picker's reason. They exist so the footer under a popup can
+	// name the keys that popup answers from the registry, the way the help
+	// overlay's footer names its own: every one owns every key but ctrl+c.
+	// Their rows are noPalette — a popup's key cannot be replayed into a
+	// popup the palette has just closed — and `?` never shows them, since
+	// `?` is typed into the popup rather than opening the sheet.
+	ctxPalette     bindingContext = "command palette"
+	ctxScreensMenu bindingContext = "screens menu"
+	ctxCopyPicker  bindingContext = "copy picker"
+	ctxLinkPicker  bindingContext = "link picker"
+	ctxChatRename  bindingContext = "rename chat"
+	ctxChatWith    bindingContext = "chat with"
+	// ctxChatWithList is the chat-with form with one of its lists open, which
+	// takes the keys the form's rows would.
+	ctxChatWithList bindingContext = "chat with list"
+	// ctxDraftQuestion is the root's draft question: a project switch, a
+	// quit or a screen switch held on a draft (task 132 decision 36, #1051).
+	ctxDraftQuestion bindingContext = "draft question"
 
 	ctxNewChat bindingContext = "new chat"
 	ctxDaemon  bindingContext = "daemon"
@@ -982,18 +1004,58 @@ var bindings = []binding{
 
 	// The project picker (task 132.4): every printable key types into its
 	// filter, so its own keys are the ones a filter does not type.
-	{key: "down", label: "move the highlight (↑/↓)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
+	// Hinted since #1180: the footer under the popup is read from these.
+	{key: "down", label: "move the highlight (↑/↓)", scope: scopePanel, context: ctxProjectPicker, hint: "↑↓ move", priority: 1, noPalette: true},
 
 	// The export form (task 159). noPalette for the project picker's reason:
 	// a key that only exists inside a popup cannot be replayed into one that
 	// is shut.
-	{key: "down", label: "move between format, diff and path (↑/↓, tab/shift+tab); once written, between the copy choices", scope: scopePanel, context: ctxChatExport, noPalette: true},
-	{key: "space", label: "on format, cycle md → html → json; on include diff, toggle it (←/→ too)", scope: scopePanel, context: ctxChatExport, noPalette: true},
-	{key: "enter", label: "export and write the file; once written, copy the highlighted choice — the path, or the Markdown", scope: scopePanel, context: ctxChatExport, noPalette: true},
-	{key: "esc", label: "close the form", scope: scopePanel, context: ctxChatExport, noPalette: true},
-	{key: "enter", label: "switch to the highlighted project — or, on the last row, open the project overview", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
-	{key: "esc", label: "close the picker without switching", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
+	{key: "down", label: "move between format, diff and path (↑/↓, tab/shift+tab)", scope: scopePanel, context: ctxChatExport, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "space", label: "on format, cycle md → html → json; on include diff, toggle it (←/→ too)", scope: scopePanel, context: ctxChatExport, hint: "space change", priority: 2, noPalette: true},
+	{key: "enter", label: "export and write the file", scope: scopePanel, context: ctxChatExport, hint: "enter export", priority: 3, noPalette: true},
+	{key: "esc", label: "close the form", scope: scopePanel, context: ctxChatExport, hint: "esc close", priority: 4, noPalette: true},
+	// The same form once written: its rows are the copy choices (#1180
+	// split them out so the footer's enter says what it does in each).
+	{key: "down", label: "move between the copy choices (↑/↓, tab/shift+tab)", scope: scopePanel, context: ctxChatExportWritten, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "enter", label: "copy the highlighted choice — the path, or the Markdown", scope: scopePanel, context: ctxChatExportWritten, hint: "enter copy", priority: 2, noPalette: true},
+	{key: "esc", label: "close the form", scope: scopePanel, context: ctxChatExportWritten, hint: "esc close", priority: 3, noPalette: true},
+	{key: "enter", label: "switch to the highlighted project — or, on the last row, open the project overview", scope: scopePanel, context: ctxProjectPicker, hint: "enter switch", priority: 2, noPalette: true},
+	{key: "esc", label: "close the picker without switching", scope: scopePanel, context: ctxProjectPicker, hint: "esc close", priority: 3, noPalette: true},
 	{key: "pgdown", label: "page the list (pgup/pgdown, home/end)", scope: scopePanel, context: ctxProjectPicker, noPalette: true},
+
+	// The palette and the other root popups (#1180): rows so the footer
+	// under each names the keys it answers. Every printable key types into
+	// the palette's and the pickers' queries, so these are the keys a query
+	// does not type.
+	{key: "down", label: "move the highlight (↑/↓, pgup/pgdown, home/end)", scope: scopePanel, context: ctxPalette, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "enter", label: "run the highlighted command", scope: scopePanel, context: ctxPalette, hint: "enter run", priority: 2, noPalette: true},
+	{key: "esc", label: "close the palette", scope: scopePanel, context: ctxPalette, hint: "esc close", priority: 3, noPalette: true},
+	// The screens menu (#1080) types nothing: a screen's letter, shown on
+	// its row, opens it. Those letters are the menu's own and no row's key
+	// — one row per letter would claim thirteen letters from the keymap for
+	// a menu that lists them itself — so the row carries a hint and no key.
+	{label: "open the screen whose letter is pressed — each row shows its letter", scope: scopePanel, context: ctxScreensMenu, hint: "letter go", priority: 1, noPalette: true},
+	{key: "down", label: "move the highlight (↑/↓, pgup/pgdown, home/end)", scope: scopePanel, context: ctxScreensMenu, hint: "↑↓ move", priority: 2, noPalette: true},
+	{key: "enter", label: "open the highlighted screen", scope: scopePanel, context: ctxScreensMenu, hint: "enter go", priority: 3, noPalette: true},
+	{key: "esc", label: "close the menu", scope: scopePanel, context: ctxScreensMenu, hint: "esc close", priority: 4, noPalette: true},
+	{key: "down", label: "move the highlight (↑/↓, pgup/pgdown, home/end)", scope: scopePanel, context: ctxCopyPicker, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "enter", label: "copy the highlighted row", scope: scopePanel, context: ctxCopyPicker, hint: "enter copy", priority: 2, noPalette: true},
+	{key: "esc", label: "close the picker", scope: scopePanel, context: ctxCopyPicker, hint: "esc close", priority: 3, noPalette: true},
+	{key: "down", label: "move the highlight (↑/↓, pgup/pgdown, home/end)", scope: scopePanel, context: ctxLinkPicker, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "enter", label: "open the highlighted link", scope: scopePanel, context: ctxLinkPicker, hint: "enter open", priority: 2, noPalette: true},
+	{key: copyPickKey, label: "copy the highlighted link's destination", scope: scopePanel, context: ctxLinkPicker, hint: copyPickKey + " copy", priority: 3, noPalette: true},
+	{key: "esc", label: "close the picker", scope: scopePanel, context: ctxLinkPicker, hint: "esc close", priority: 4, noPalette: true},
+	{key: "enter", label: "rename the chat to the typed title", scope: scopePanel, context: ctxChatRename, hint: "enter rename", priority: 1, noPalette: true},
+	{key: "esc", label: "close the prompt; the title stays", scope: scopePanel, context: ctxChatRename, hint: "esc cancel", priority: 2, noPalette: true},
+	{key: "down", label: "move between agent, model, effort and message (↑/↓, tab/shift+tab)", scope: scopePanel, context: ctxChatWith, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "enter", label: "open the focused field's list; on the message, create the chat", scope: scopePanel, context: ctxChatWith, hint: "enter choose", priority: 2, noPalette: true},
+	{key: "ctrl+s", label: "create the chat with the first message", scope: scopePanel, context: ctxChatWith, hint: "ctrl+s create", priority: 3, noPalette: true},
+	{key: "esc", label: "close the form", scope: scopePanel, context: ctxChatWith, hint: "esc close", priority: 4, noPalette: true},
+	{key: "down", label: "move the highlight (↑/↓)", scope: scopePanel, context: ctxChatWithList, hint: "↑↓ move", priority: 1, noPalette: true},
+	{key: "enter", label: "pick the highlighted value", scope: scopePanel, context: ctxChatWithList, hint: "enter pick", priority: 2, noPalette: true},
+	{key: "esc", label: "close the list, keeping the field's value", scope: scopePanel, context: ctxChatWithList, hint: "esc close list", priority: 3, noPalette: true},
+	{key: "y", label: "yes — discard the draft and switch, or quit", scope: scopePanel, context: ctxDraftQuestion, hint: "y yes", priority: 1, noPalette: true},
+	{key: "n", label: "no — keep the draft where it is (esc too); a switch off a deleted project waits for y", scope: scopePanel, context: ctxDraftQuestion, hint: "n no", priority: 2, noPalette: true},
 
 	// New chat.
 	{key: "ctrl+s", label: "create the chat and open it (with the first message, when one is typed)", scope: scopePanel, context: ctxNewChat, hint: "ctrl+s create", priority: 1},

@@ -3533,6 +3533,219 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			}
 		},
 	},
+	// The root's other popups (#1180). Probes that would reach the clipboard
+	// or a browser stop at the cmd: running it is the chokepoints' business.
+	ctxChatExportWritten: {
+		"down": func(t *testing.T) {
+			m := exportWrittenProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.exportForm.choice != 1 {
+				t.Fatalf("down left the choice at %d", m.exportForm.choice)
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := exportWrittenProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "enter"))
+			if m.exportForm != nil || cmd == nil {
+				t.Fatalf("enter: form open %v, cmd %v — want it closed on a copy", m.exportForm != nil, cmd != nil)
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := exportWrittenProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "esc"))
+			if m.exportForm != nil || cmd != nil {
+				t.Fatal("esc did not just close the form")
+			}
+		},
+	},
+	ctxPalette: {
+		"down": func(t *testing.T) {
+			m := paletteProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.palette.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", m.palette.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := paletteProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "enter"))
+			if m.palette != nil || cmd == nil {
+				t.Fatal("enter did not run the highlighted command")
+			}
+			if _, ok := cmd().(probeRanMsg); !ok {
+				t.Fatal("enter ran something other than the highlighted command")
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := paletteProbeRoot(t)
+			m.Update(registryKey(t, "esc"))
+			if m.palette != nil {
+				t.Fatal("esc left the palette open")
+			}
+		},
+	},
+	ctxScreensMenu: {
+		"down": func(t *testing.T) {
+			m := screensProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.palette.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", m.palette.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := screensProbeRoot(t)
+			want := m.palette.matches()[1].navTarget
+			m.Update(registryKey(t, "down"))
+			m.Update(registryKey(t, "enter"))
+			if m.palette != nil || m.active != want {
+				t.Fatalf("enter: menu open %v, active %v, want %v", m.palette != nil, m.active, want)
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := screensProbeRoot(t)
+			m.Update(registryKey(t, "esc"))
+			if m.palette != nil {
+				t.Fatal("esc left the menu open")
+			}
+		},
+	},
+	ctxCopyPicker: {
+		"down": func(t *testing.T) {
+			m := copyProbeRoot(t)
+			m.Update(registryKey(t, "down"))
+			if m.reader.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", m.reader.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			m := copyProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "enter"))
+			if m.reader != nil || cmd == nil {
+				t.Fatal("enter did not copy the highlighted row")
+			}
+		},
+		"esc": func(t *testing.T) {
+			m := copyProbeRoot(t)
+			_, cmd := m.Update(registryKey(t, "esc"))
+			if m.reader != nil || cmd != nil {
+				t.Fatal("esc did not just close the picker")
+			}
+		},
+	},
+	ctxLinkPicker: {
+		"down": func(t *testing.T) {
+			p := linkProbePicker()
+			p.update(registryKey(t, "down"))
+			if p.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", p.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			if _, act, done, _ := linkProbePicker().update(registryKey(t, "enter")); !done || act != linkOpen {
+				t.Fatalf("enter: done %v, act %v, want an open", done, act)
+			}
+		},
+		copyPickKey: func(t *testing.T) {
+			if _, act, done, _ := linkProbePicker().update(registryKey(t, copyPickKey)); !done || act != linkCopy {
+				t.Fatalf("%s: done %v, act %v, want a copy", copyPickKey, done, act)
+			}
+		},
+		"esc": func(t *testing.T) {
+			if run, _, done, _ := linkProbePicker().update(registryKey(t, "esc")); !done || run != nil {
+				t.Fatal("esc did not just close the picker")
+			}
+		},
+	},
+	ctxChatRename: {
+		"enter": func(t *testing.T) {
+			p := newChatRenamePrompt(7, "Fix the build")
+			p.input.SetValue("")
+			p.update(registryKey(t, "enter"), nil)
+			if p.err == "" {
+				t.Fatal("enter did not try to rename (an empty title should say so)")
+			}
+		},
+		"esc": func(t *testing.T) {
+			if done, _ := newChatRenamePrompt(7, "Fix the build").update(registryKey(t, "esc"), nil); !done {
+				t.Fatal("esc left the prompt open")
+			}
+		},
+	},
+	ctxChatWith: {
+		"down": func(t *testing.T) {
+			f := newChatWithForm(chatWithTarget{})
+			f.update(registryKey(t, "down"), nil)
+			if f.focus == cwAgent {
+				t.Fatal("down left the focus on the agent row")
+			}
+		},
+		"enter": func(t *testing.T) {
+			f := newChatWithForm(chatWithTarget{})
+			f.update(registryKey(t, "enter"), nil)
+			if f.pick == nil {
+				t.Fatal("enter did not open the agent row's list")
+			}
+		},
+		"ctrl+s": func(t *testing.T) {
+			f := newChatWithForm(chatWithTarget{})
+			f.update(registryKey(t, "ctrl+s"), nil)
+			if f.err != "not connected" {
+				t.Fatalf("ctrl+s did not try to create the chat: err %q", f.err)
+			}
+		},
+		"esc": func(t *testing.T) {
+			if done, _ := newChatWithForm(chatWithTarget{}).update(registryKey(t, "esc"), nil); !done {
+				t.Fatal("esc left the form open")
+			}
+		},
+	},
+	ctxChatWithList: {
+		"down": func(t *testing.T) {
+			f := chatWithListProbe()
+			f.update(registryKey(t, "down"), nil)
+			if f.pick.cursor != 1 {
+				t.Fatalf("down left the highlight on %d", f.pick.cursor)
+			}
+		},
+		"enter": func(t *testing.T) {
+			f := chatWithListProbe()
+			f.update(registryKey(t, "down"), nil)
+			f.update(registryKey(t, "enter"), nil)
+			if f.pick != nil || f.model != "opus" {
+				t.Fatalf("enter: list open %v, model %q, want opus", f.pick != nil, f.model)
+			}
+		},
+		"esc": func(t *testing.T) {
+			f := chatWithListProbe()
+			f.update(registryKey(t, "esc"), nil)
+			if f.pick != nil || f.model != "" {
+				t.Fatalf("esc: list open %v, model %q", f.pick != nil, f.model)
+			}
+		},
+	},
+	ctxDraftQuestion: {
+		"y": func(t *testing.T) {
+			m := pickerProbeRoot(t)
+			m.projPick = nil
+			m.leave = &pendingLeave{draft: "draft", quit: true}
+			_, cmd := m.Update(registryKey(t, "y"))
+			if m.leave != nil || cmd == nil {
+				t.Fatal("y did not answer the question")
+			}
+			if _, ok := cmd().(tea.QuitMsg); !ok {
+				t.Fatal("y did not quit")
+			}
+		},
+		"n": func(t *testing.T) {
+			m := pickerProbeRoot(t)
+			m.projPick = nil
+			m.leave = &pendingLeave{draft: "draft", quit: true}
+			_, cmd := m.Update(registryKey(t, "n"))
+			if m.leave != nil || cmd != nil {
+				t.Fatal("n did not keep the draft")
+			}
+		},
+	},
 	ctxChatDiff: {
 		"]": func(t *testing.T) {
 			v := chatDiffFixture(t)
@@ -4262,6 +4475,64 @@ func exportProbeRoot(t *testing.T) *root {
 	m.phase = phaseConnected
 	m.exportForm = newChatExportForm(7, "Fix the build", t.TempDir())
 	return m
+}
+
+// exportWrittenProbeRoot is the export form once its file is written.
+func exportWrittenProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := exportProbeRoot(t)
+	m.exportForm.written, m.exportForm.body = "/tmp/chat.md", []byte("# chat")
+	return m
+}
+
+// probeRanMsg is what a probe's palette entry runs.
+type probeRanMsg struct{}
+
+func paletteProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := pickerProbeRoot(t)
+	m.projPick = nil
+	run := func() tea.Msg { return probeRanMsg{} }
+	m.palette = newPalette([]paletteEntry{
+		{group: "probe", label: "first", action: run},
+		{group: "probe", label: "second", action: run},
+	})
+	return m
+}
+
+func screensProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := pickerProbeRoot(t)
+	m.projPick = nil
+	m.palette = newGoToMenu(false)
+	return m
+}
+
+func copyProbeRoot(t *testing.T) *root {
+	t.Helper()
+	m := pickerProbeRoot(t)
+	m.projPick = nil
+	m.reader = newReaderPicker([]copyItem{
+		{group: "message 1", label: "markdown", snippet: "the whole answer"},
+		{group: "message 1", label: "plain text", snippet: "the whole answer"},
+	})
+	return m
+}
+
+func linkProbePicker() *linkPicker {
+	return newLinkPicker([]linkItem{
+		{group: "message 1", link: mdLink{n: 1, label: "docs", dest: "https://example.com/docs"}},
+		{group: "message 1", link: mdLink{n: 2, label: "api", dest: "https://example.com/api"}},
+	})
+}
+
+// chatWithListProbe is the chat-with form with its model list open.
+func chatWithListProbe() *chatWithForm {
+	f := newChatWithForm(chatWithTarget{})
+	f.pick = newPicker(int(cwModel), "model", []pickerOption{
+		{value: "sonnet", label: "sonnet"}, {value: "opus", label: "opus"},
+	}, false, "")
+	return f
 }
 
 func pickerProbeRoot(t *testing.T) *root {
