@@ -846,7 +846,7 @@ func (b *board) taskCard(t apiclient.Task, selected bool, w int) []string {
 	}
 	body = append(body, padBetweenCells(taskCardProgress(t), toneCyan.Render(ic(formatPR(t.GitHubPull))), inner))
 	status, style := taskCardStatus(t, b.now())
-	body = append(body, style.Render(status))
+	body = append(body, style.Render(fitCardStatus(status, inner)))
 	return drawBox("", "", body, w, taskCardH, edges, border)
 }
 
@@ -886,6 +886,27 @@ func taskStepDots(t apiclient.Task) string {
 	return b.String()
 }
 
+// laneHint names the key that hangs a parent's lanes under its card.
+const laneHint = " (L)"
+
+// fitCardStatus cuts a card's status line to w. A line naming laneHint
+// keeps it whole: the done count after it goes first, then what the lanes
+// need gives way with "…", so a narrow card still says which key shows
+// the lanes (#1147). Any other line — a running task's status message may
+// say anything — is truncated at its end, as is one whose hint fits with
+// room left for the "…".
+func fitCardStatus(status string, w int) string {
+	if ansi.StringWidth(status) <= w {
+		return status
+	}
+	i := strings.Index(status, laneHint)
+	room := w - ansi.StringWidth(laneHint)
+	if i < 0 || !strings.HasPrefix(status, attentionBadge) || room < 2 || ansi.StringWidth(status[:i+len(laneHint)]) < w {
+		return ansi.Truncate(status, w, "…")
+	}
+	return ansi.Truncate(status[:i], room, "…") + laneHint
+}
+
 // taskCardStatus is a card's last line, led by a glyph.
 func taskCardStatus(t apiclient.Task, now time.Time) (string, lipgloss.Style) {
 	switch t.State {
@@ -904,7 +925,7 @@ func taskCardStatus(t apiclient.Task, now time.Time) (string, lipgloss.Style) {
 			// What the lanes need leads, in the attention colour, with the
 			// key that hangs the lanes under the card beside it, then the
 			// done count, which is what a narrow card cuts first (#1067).
-			line := needs.text() + " (L)"
+			line := needs.text() + laneHint
 			if c := t.Children; c != nil {
 				line += fmt.Sprintf(" · %d of %d done", c.Settled, c.Total)
 			}
@@ -1042,7 +1063,7 @@ func (b *board) taskPreviewPane(w, h int) []string {
 	inner := max(w-4, 1)
 	body := styled(wrapText(valueOr(t.Title, "untitled task"), inner, wrapOpts{maxLines: 3}), styleTitle)
 	status, style := taskCardStatus(t, b.now())
-	body = append(body, "", taskStatePill(t.State), style.Render(ansi.Truncate(status, inner, "…")), "")
+	body = append(body, "", taskStatePill(t.State), style.Render(fitCardStatus(status, inner)), "")
 	if meta := taskPreviewMeta(t, b.now()); meta != "" {
 		body = append(body, styleDim.Render(ansi.Truncate(meta, inner, "…")), "")
 	}

@@ -187,7 +187,7 @@ func (p *projectsView) attentionPane(w, h int) []string {
 		body = append(body, mgmtCard([]string{
 			toneBlue.Bold(true).Render(oneLine(t.ProjectName) + " #" + strconv.FormatInt(t.ID, 10)),
 			ansi.Truncate(oneLine(t.Title), max(inner-4, 1), "…"),
-			style.Render(status),
+			style.Render(fitCardStatus(status, max(inner-4, 1))),
 		}, inner, attentionCardH, p.inAttention && i == p.attnCursor)...)
 	}
 	title := styleWarn.Bold(true).Render(attentionBadge + " Needs you, across projects")

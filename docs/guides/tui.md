@@ -240,7 +240,9 @@ workflow step with the step it has reached, a linked pull request as `⇡#123`, 
 one status line that says what is happening, such as `! needs your approval` or
 `⑂ 2 of 3 lanes done`. A parent whose lane needs you leads with what the lanes
 need, in the attention colour, and names the key that hangs them under the card:
-`! 1 lane blocked (L) · 2 of 4 done`. The selected card has a thick border. A
+`! 1 lane blocked (L) · 2 of 4 done`. On a narrow card the `(L)` stays: the done
+count goes first, then what the lanes need is cut with `…`. The selected card
+has a thick border. A
 column with more cards than fit counts the rest on its top edge — `▲2 ▼5`.
 
 | Key | Does |
