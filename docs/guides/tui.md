@@ -3014,7 +3014,11 @@ An ended chat — closed, archived or handed off — takes no more turns, so it 
 no composer: in its place a line says so and names what still works with it,
 `alt+e` export, `ctrl+y` copy, `ctrl+f` search and `alt+v` Markdown. A key
 typed there goes nowhere and says why, rather than filling a draft that could
-never be sent.
+never be sent. The footer leaves out the composer's keys — stash, history,
+newline, editor, model and mode — and close and hand-off, and a composer key
+pressed anyway says it is not available because the chat has ended: `ctrl+g`
+opens no editor, and text from an editor still open when the chat ended is not
+kept.
 
 ![The chat workspace at `quiet`: the second turn's prompt as a right-aligned
 card, the answer rendered below it with its fenced block, and the titled

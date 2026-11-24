@@ -63,6 +63,12 @@ func (v *chatView) applyEditorDraft(msg chatEditorMsg) tea.Cmd {
 	if msg.chatID != v.chatID {
 		return nil
 	}
+	if v.ended() {
+		// The chat ended while the editor was open (#1135): it has no
+		// composer to take the text, and keeps no draft.
+		v.note, v.noteBad = "editor: the chat has ended — what you wrote was not kept", true
+		return nil
+	}
 	if msg.err != nil {
 		v.note, v.noteBad = "editor: "+errString(msg.err)+" — the draft is unchanged", true
 		return nil

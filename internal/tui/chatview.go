@@ -1439,6 +1439,13 @@ func (v *chatView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 			return v, v.deleteQueuedCmd()
 		}
 	}
+	if op := endedComposerOp(msg.String()); op != "" && v.ended() {
+		// The composer's own keys on a chat with no composer (#1135): each
+		// would put text where it is never drawn nor sent — ctrl+g's
+		// $EDITOR text, a picked or recalled prompt — so each says why.
+		v.note, v.noteBad = op+": not available — the chat has ended", false
+		return v, nil
+	}
 	if key := opKey(keymap.Compact); key != "" && msg.String() == key {
 		v.askCompact()
 		return v, nil
@@ -2436,6 +2443,10 @@ func (v *chatView) liveBindings(rows []binding) []binding {
 			// is forking one (rewindPaletteExtras).
 			b.op == keymap.Rewind && (ended || owned),
 			b.op == keymap.Compact && (v.chat == nil || v.compactCommand() == "" || v.chat.State != string(chatstate.Idle)),
+			// An ended chat has no composer (#1054), so none of the keys
+			// that edit, fill or configure one is offered (#1135); close and
+			// hand-off are already done or no longer possible.
+			ended && endedHidesRow(b),
 			owned && (b.key == "enter" || b.key == "ctrl+j" || b.key == "tab"):
 			continue
 		}
@@ -2651,4 +2662,38 @@ func failedTurnNext(reason string) string {
 		return "the agent no longer has this conversation; " + retry + " in a fresh session"
 	}
 	return retry
+}
+
+// endedComposerOp names the composer operation key performs, for the keys an
+// ended chat refuses with a word rather than passing on to a composer it
+// does not draw (#1135); "" for every other key. Stash, model and mode say
+// why themselves (toggleStash, openSettingsPicker, toggleMode).
+func endedComposerOp(key string) string {
+	switch key {
+	case opKey(keymap.ComposeEditor):
+		return "editor"
+	case opKey(keymap.PromptHistory):
+		return "history"
+	case "ctrl+j", "shift+enter", "alt+enter":
+		return "newline"
+	case chatQueueEditKey, chatRecallDownKey:
+		return "recall"
+	}
+	return ""
+}
+
+// endedHidesRow is whether an ended chat's footer, help and palette leave
+// row out (#1135): the composer's keys, and close and hand-off, which an
+// ended chat has already been through or can no longer take.
+func endedHidesRow(b binding) bool {
+	switch b.op {
+	case keymap.Stash, keymap.PromptHistory, keymap.ComposeEditor, keymap.ChatModel, keymap.ChatMode:
+		return true
+	}
+	switch b.key {
+	case "ctrl+j", "ctrl+v", chatCloseKey, chatHandoffKey,
+		chatQueueEditKey, chatRecallDownKey, chatQueueDeleteKey, chatQueueResumeKey, chatQueueClearKey:
+		return true
+	}
+	return false
 }
