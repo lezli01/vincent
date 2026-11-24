@@ -176,8 +176,11 @@ func (f *createPRForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 			f.commit()
 			return nil, false
 		case "ctrl+s":
+			// ctrl+s means one thing in this form (#1133): push and create.
+			// From the editor it keeps the text first, as the new-task
+			// (#797), project and issue forms' fields do.
 			f.commit()
-			return nil, false
+			return f.send(), false
 		}
 		var c tea.Cmd
 		f.editor, c = f.editor.Update(msg)
@@ -370,7 +373,7 @@ func (f *createPRForm) footer(width int) []string {
 	case f.sending:
 		status = "pushing the branch and opening the pull request…"
 	case f.editing:
-		status = "ctrl+s or esc keeps this text and leaves the field"
+		status = "esc keeps this text and leaves the field · ctrl+s keeps it, pushes and creates"
 	default:
 		status = "enter edit · " + opKey(keymap.Editor) + " $EDITOR · space toggle draft · ctrl+s push and create · ctrl+o browser · esc leave"
 	}
