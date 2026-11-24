@@ -896,22 +896,7 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case opKey(keymap.Editor):
 		return d.openTranscript()
 	case opKey(keymap.EditRetry):
-		// The same gate the hint line and the palette use: retry on offer
-		// *and* a step carrying text to edit. A fan_out parent parked in
-		// `awaiting_children` offers retry — as the cascade (task 090) — and
-		// its cursor step has no editable text, which the daemon answers with
-		// a 400 rather than an edited snapshot.
-		if d.target().has(apiclient.ActionRetry) && d.stepEditable() {
-			return d.editRetry()
-		}
-		// Hinted wherever retry is, so it says why it did nothing (#1059).
-		if d.target().has(apiclient.ActionRetry) {
-			d.actions.setStatus("edit+retry: this step has no prompt or command to edit — "+
-				opKey(keymap.Retry)+" retries it as it is", false)
-		} else {
-			d.actions.setStatus(unavailableText("edit+retry", d.target()), false)
-		}
-		return nil
+		return d.editRetryKey()
 	case opKey(keymap.Repair):
 		// The repair form (§6, task 025). `r` is retry and `E` is edit+retry;
 		// `R` is free in the task workspace, where the takeover screens that use
@@ -1342,6 +1327,25 @@ func (d *detail) openFollowUp() tea.Cmd {
 	d.followUp = newFollowUpForm(d.taskID, d.task.ProjectID, d.task.State)
 	d.followUp.openEditor = d.editFollowUpBody
 	return d.followUp.load(d.client)
+}
+
+// editRetryKey is `E`. The same gate the hint line and the palette use:
+// retry on offer *and* a step carrying text to edit. A fan_out parent parked
+// in `awaiting_children` offers retry — as the cascade (task 090) — and its
+// cursor step has no editable text, which the daemon answers with a 400
+// rather than an edited snapshot.
+func (d *detail) editRetryKey() tea.Cmd {
+	if d.target().has(apiclient.ActionRetry) && d.stepEditable() {
+		return d.editRetry()
+	}
+	// Hinted wherever retry is, so it says why it did nothing (#1059).
+	if d.target().has(apiclient.ActionRetry) {
+		d.actions.setStatus("edit+retry: this step has no prompt or command to edit — "+
+			opKey(keymap.Retry)+" retries it as it is", false)
+	} else {
+		d.actions.setStatus(unavailableText("edit+retry", d.target()), false)
+	}
+	return nil
 }
 
 // currentStepName names the step the task is blocked at, for the form's

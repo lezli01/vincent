@@ -83,6 +83,10 @@ type diffLoadedMsg struct {
 // both, because two lanes really did change it and a single row would have to
 // pick one of them to lie about.
 type diffPane struct {
+	// keepScroll marks the next rebuild as a re-read of the diff already
+	// on screen, which keeps the scroll offset rather than revealing the
+	// cursor's file header (review finding 8).
+	keepScroll bool
 	// pan is the column the reader panned to with shift+←/→. The viewport
 	// clamps its own offset to the content, so a fold that leaves nothing
 	// wide puts it at 0; this is what a rebuild restores (review F19).
@@ -287,6 +291,11 @@ func (p *diffPane) apply(msg diffLoadedMsg) {
 		return
 	}
 	p.err = nil
+	// A re-read of the diff already on screen keeps the reader where they
+	// were: it now fires on every step advance and state change of a
+	// running task (#1074), and throwing the scroll back to the file's
+	// header each time made a long diff unreadable (review finding 8).
+	p.keepScroll = p.loaded
 	p.loaded = true
 	p.asOf = time.Now()
 	sections := msg.sections
@@ -645,11 +654,18 @@ func (p *diffPane) render(width, height int) string {
 		for i, r := range p.rows {
 			lines[i] = r.text
 		}
+		y := p.vp.YOffset()
 		p.vp.SetContent(strings.Join(lines, "\n"))
 		p.built = true
 		p.findLines, p.findShown = lines, ""
 		p.find.scan(lines)
-		p.revealCursor()
+		if p.keepScroll {
+			p.vp.SetYOffset(y)
+			p.vp.SetXOffset(p.pan)
+		} else {
+			p.revealCursor()
+		}
+		p.keepScroll = false
 	}
 	if !p.find.active() {
 		if p.findShown != "" {
