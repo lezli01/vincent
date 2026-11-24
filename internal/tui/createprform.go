@@ -68,7 +68,7 @@ type createPRForm struct {
 	// and is 409'd — and GitHub refuses a third for the same head and base.
 	sending bool
 	// confirming is esc's "discard this draft?" on a form holding typed
-	// text (#1053): y closes it, any other key keeps it.
+	// text (#1053): y closes it, n or esc keeps it, any other key waits (#1162).
 	confirming bool
 	// submit posts the edited values to the daemon. Injected by the task
 	// view, which owns the API client, for the reason openEditor is.
@@ -161,11 +161,13 @@ func (f *createPRForm) applyEdit(msg createPREditMsg) {
 func (f *createPRForm) update(msg tea.KeyPressMsg) (cmd tea.Cmd, exit bool) {
 	defer f.watch()()
 	if f.confirming {
-		f.confirming = false
-		if k := msg.String(); k == "y" || k == "Y" {
-			return nil, true
+		// "discard this draft?" answers by the shared rule (#1162): any key
+		// but yes or no leaves it up.
+		yes, no := confirmAnswer(msg.String())
+		if yes || no {
+			f.confirming = false
 		}
-		return nil, false
+		return nil, yes
 	}
 	if f.editing {
 		switch msg.String() {

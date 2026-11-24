@@ -1437,7 +1437,7 @@ var bindings = []binding{
 	{key: "ctrl+s", label: "post the comment — the popup is the confirmation; a blank one is not sent", scope: scopePanel, context: ctxPullComment, noPalette: true},
 	{key: "esc", label: "stop typing; pressed again, close without posting (the comment is discarded)", scope: scopePanel, context: ctxPullComment, noPalette: true},
 	{key: "y", label: "yes — send the close, reopen or re-run the prompt names", scope: scopePanel, context: ctxPullConfirm, hint: "y yes", priority: 1, noPalette: true},
-	{key: "n", label: "no — nothing is sent (any other key declines too)", scope: scopePanel, context: ctxPullConfirm, hint: "n no", priority: 2, noPalette: true},
+	{key: "n", label: "no — nothing is sent (esc too)", scope: scopePanel, context: ctxPullConfirm, hint: "n no", priority: 2, noPalette: true},
 }
 
 // isHomeContext reports whether a context belongs to the board/task daily loop

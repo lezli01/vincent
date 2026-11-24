@@ -78,7 +78,7 @@ type repairForm struct {
 	err        string
 	submitting bool
 	// confirming is esc's "discard this draft?" on a form holding typed
-	// text (#1053): y closes it, any other key keeps it.
+	// text (#1053): y closes it, n or esc keeps it, any other key waits (#1162).
 	confirming bool
 	// dirty is any edit to a row since the form opened (task 132.6).
 	dirty bool
@@ -156,11 +156,13 @@ func (f *repairForm) paste(text string) tea.Cmd {
 func (f *repairForm) update(msg tea.KeyPressMsg, client *apiclient.Client) (cmd tea.Cmd, exit bool) {
 	defer f.watch()()
 	if f.confirming {
-		f.confirming = false
-		if k := msg.String(); k == "y" || k == "Y" {
-			return nil, true
+		// "discard this draft?" answers by the shared rule (#1162): any key
+		// but yes or no leaves it up.
+		yes, no := confirmAnswer(msg.String())
+		if yes || no {
+			f.confirming = false
 		}
-		return nil, false
+		return nil, yes
 	}
 	if f.picker != nil {
 		res := f.picker.update(msg)

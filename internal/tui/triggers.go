@@ -547,12 +547,13 @@ func (v *triggersView) updateFilter(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (v *triggersView) updateConfirm(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
-	case "y", "Y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		c := v.confirm
 		v.confirm = nil
 		return c.run()
-	case "n", "N", "esc":
+	case no:
 		v.confirm = nil
 	}
 	// Any other key leaves the question standing: a write that starts agents

@@ -553,14 +553,15 @@ func (m *root) askLeave(quit bool, to viewID) bool {
 // keeps the draft where it is, and every other key is swallowed.
 func (m *root) updatePendingLeaveKey(msg tea.KeyPressMsg) tea.Cmd {
 	p := m.leave
-	switch msg.String() {
-	case "y", "Y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		m.leave = nil
 		if p.quit {
 			return tea.Quit
 		}
 		return m.switchNow(p.to)
-	case "n", "N", "esc":
+	case no:
 		m.leave = nil
 	}
 	return nil

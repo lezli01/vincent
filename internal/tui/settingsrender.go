@@ -412,7 +412,7 @@ func (v *settingsView) confirmCard(inner int) []string {
 	body = append(body, "")
 	body = append(body, styled(wrapText("from  "+settingsValue(f.key.read(v.config)), text, wrapOpts{indent: 6}), styleDim)...)
 	body = append(body, styled(wrapText("to    "+f.displayValue(), text, wrapOpts{indent: 6}), styleWarn)...)
-	body = append(body, "", styleKey.Render("y")+styleDim.Render(" apply this change    ")+styleKey.Render("esc")+styleDim.Render(" go back"))
+	body = append(body, "", styleKey.Render("y")+styleDim.Render(" apply this change    ")+styleKey.Render("n")+styleDim.Render(" go back"))
 	return drawBox(styleWarn.Bold(true).Render(attentionBadge+" Change what vincent runs or exposes?"), "", body, inner, len(body)+2, edgesThick, styleWarn)
 }
 

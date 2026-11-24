@@ -196,25 +196,36 @@ func diagnoseMessage(task apiclient.TaskDetail, c failureCard, ev cardEvidence,
 	return b.String()
 }
 
-// diagnoseCmd is `Q`: it reads what the failure card would show — the task,
-// the failing attempt's transcript and any earlier diagnosis of the same
-// stop — and opens a chat on the task with the question already sent. It
-// fetches for itself, so the board's key and the workspace's are one path.
-// A chat already open on the task is reopened instead, as `T` does.
-func diagnoseCmd(client *apiclient.Client, t taskActions, bar *actionBar) tea.Cmd {
+// diagnoseCmd is `Q`. A chat already open on the task is reopened, as `T`
+// does: nothing new starts. Otherwise it asks first, on the action bar
+// (#1162): a yes starts an agent turn, which spends money and runs with the
+// task's permissions, and a stray `Q` must not do that unasked. handled is
+// whether the key meant diagnose here at all.
+func diagnoseCmd(t taskActions, bar *actionBar) (cmd tea.Cmd, handled bool) {
 	if !t.offersDiagnose() {
-		return nil
+		return nil, false
 	}
 	if t.openChatID != 0 {
 		id, pid := t.openChatID, t.projectID
-		return func() tea.Msg { return openChatMsg{id: id, projectID: pid} }
+		return func() tea.Msg { return openChatMsg{id: id, projectID: pid} }, true
 	}
+	bar.resetPending()
+	bar.pending, bar.pendingID = actionDiagnose, t.id
+	bar.status, bar.statusBad = "", false
+	return nil, true
+}
+
+// diagnoseRun is the yes to `Q`'s question: it reads what the failure card
+// would show — the task, the failing attempt's transcript and any earlier
+// diagnosis of the same stop — and opens a chat on the task with the
+// question already sent. It fetches for itself, so the board's key and the
+// workspace's are one path.
+func diagnoseRun(client *apiclient.Client, id int64, bar *actionBar) tea.Cmd {
 	if client == nil {
 		bar.setStatus("not connected", true)
 		return nil
 	}
 	bar.setStatus("asking an agent why it stopped…", false)
-	id := t.id
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), loadTimeout)
 		defer cancel()

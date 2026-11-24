@@ -852,19 +852,22 @@ func (v *chatsView) askDelete() {
 // not be cancelled *or* confirmed by a stray key.
 func (v *chatsView) answerDelete(key string) tea.Cmd {
 	p := v.delPrompt
-	switch key {
-	case "b":
+	// `b` is this question's third answer; yes and no are the shared rule's
+	// (#1162).
+	yes, no := confirmAnswer(key)
+	switch {
+	case key == "b":
 		if p.force {
 			return nil // a force delete never deletes a branch (task 153)
 		}
 		v.delPrompt = nil
 		v.note, v.noteBad = "deleting…", false
 		return dispatchDelete(v.client, p.ids, deleteAsk{chats: true, archived: v.archived, branch: true})
-	case "y":
+	case yes:
 		v.delPrompt = nil
 		v.note, v.noteBad = "deleting…", false
 		return dispatchDelete(v.client, p.ids, deleteAsk{chats: true, archived: v.archived, force: p.force})
-	case "n", "esc":
+	case no:
 		v.delPrompt = nil
 		v.note, v.noteBad = "", false
 	}
@@ -941,16 +944,19 @@ func (v *chatsView) liveBindings(rows []binding) []binding {
 	return out
 }
 
+// updateConfirm answers the archive question by the shared rule (#1162): a
+// key that is neither yes nor no leaves it up.
 func (v *chatsView) updateConfirm(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
-	case "y", "Y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		p := *v.confirm
 		v.confirm = nil
 		return v.archiveCmd(p.id, p.force)
-	default:
+	case no:
 		v.confirm = nil
-		return nil
 	}
+	return nil
 }
 
 func (v *chatsView) updateFilter(msg tea.KeyPressMsg) tea.Cmd {

@@ -391,12 +391,13 @@ func (v *triggersView) updateFormKey(msg tea.KeyPressMsg) tea.Cmd {
 	f := v.form
 	switch {
 	case f.confirm != nil:
-		switch msg.String() {
-		case "y", "Y":
+		yes, no := confirmAnswer(msg.String())
+		switch {
+		case yes:
 			c := f.confirm
 			f.confirm = nil
 			return v.formSend(c.row, c.value, c.op)
-		case "n", "N", "esc":
+		case no:
 			f.confirm = nil
 		}
 		return nil

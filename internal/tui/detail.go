@@ -911,7 +911,8 @@ func (d *detail) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 	case opKey(keymap.ChatWith):
 		return taskChatWithCmd(d.client, d.target(), d.actions)
 	case opKey(keymap.Diagnose):
-		return diagnoseCmd(d.client, d.target(), d.actions)
+		cmd, _ := diagnoseCmd(d.target(), d.actions)
+		return cmd
 	case "f":
 		d.setFollowing(true)
 		return nil

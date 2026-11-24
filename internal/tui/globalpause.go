@@ -145,8 +145,9 @@ func (m *root) pressPauseAll() tea.Cmd {
 // every other key is ignored while it is on screen.
 func (m *root) updatePauseAskKey(msg tea.KeyPressMsg) tea.Cmd {
 	g := &m.globalPause
-	switch msg.String() {
-	case "y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		g.asking = false
 		g.busy = true
 		acted := pauseActedPause
@@ -154,7 +155,7 @@ func (m *root) updatePauseAskKey(msg tea.KeyPressMsg) tea.Cmd {
 			acted = pauseActedContinue
 		}
 		return actGlobalPause(m.client, acted)
-	case "n", "esc":
+	case no:
 		g.asking = false
 	}
 	return nil

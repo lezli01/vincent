@@ -1171,8 +1171,13 @@ var panelKeyProbes = map[bindingContext]map[string]func(*testing.T){
 			v := chatViewFixture()
 			v.client = offlineClient()
 			v.chat.QueuedCount = 2
-			if _, cmd := v.updateKey(registryKey(t, "alt+c")); cmd == nil {
-				t.Fatal("alt+c did not clear the queue")
+			// alt+c asks first (#1162); y clears.
+			v.updateKey(registryKey(t, "alt+c"))
+			if !v.clearingQueue {
+				t.Fatal("alt+c did not ask before clearing the queue")
+			}
+			if _, cmd := v.updateKey(tea.KeyPressMsg{Code: 'y', Text: "y"}); cmd == nil {
+				t.Fatal("alt+c then y did not clear the queue")
 			}
 		},
 		"alt+e": func(t *testing.T) {

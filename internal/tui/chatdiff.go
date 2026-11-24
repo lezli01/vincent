@@ -284,12 +284,18 @@ func (v *chatView) askRejectHunk() {
 	v.diff.rejectAsk = &ref
 }
 
-// answerRejectHunk answers the question: y rejects the hunk asked about,
-// anything else keeps it.
+// answerRejectHunk answers the question by the shared rule (#1162): y
+// rejects the hunk asked about, n or esc keeps it, and any other key leaves
+// the question up. The key that opened the pane still closes it, question
+// and all (updateDiffKey checks it first).
 func (v *chatView) answerRejectHunk(key string) tea.Cmd {
+	yes, no := confirmAnswer(key)
+	if !yes && !no {
+		return nil
+	}
 	ref := *v.diff.rejectAsk
 	v.diff.rejectAsk = nil
-	if key != "y" && key != "Y" {
+	if no {
 		v.note, v.noteBad = "kept the hunk", false
 		return nil
 	}

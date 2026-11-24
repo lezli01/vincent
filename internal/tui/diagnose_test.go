@@ -187,6 +187,11 @@ func TestDiagnoseKeyOpensATitledChatLive(t *testing.T) {
 		t.Fatal("a blocked task does not offer Q in the palette")
 	}
 	h.press(t, opKey(keymap.Diagnose))
+	// Q asks first (#1162): nothing is opened until y.
+	if chats := h.linkedChats(t, task.ID); len(chats) != 0 {
+		t.Fatalf("Q opened a chat before it was answered: %+v", chats)
+	}
+	h.press(t, "y")
 	chat := h.m.views[viewChat].(*chatView)
 	t.Cleanup(func() {
 		if chat.streamStop != nil {

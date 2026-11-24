@@ -79,6 +79,15 @@ closes one layer at a time (popup → task/screen → selection → filter) and
 from — or to the first one, if that tab has since been removed from
 `tui.tabs`.
 
+**Every y/n question answers the same way.** `y` or `Y` confirms; `n`, `N` or
+`esc` declines; any other key is ignored and the question stays until you
+answer it, so a stray keypress can neither confirm nor cancel. A question
+leads with its answer keys and then says what a yes does — `cancel #42? (y/n) ·
+a running step is killed` — and while one is up the footer offers only its
+answers. The delete confirmation's `b` is the one extra answer; the offers on
+the daemon screen (status line, skills, font) are choices rather than y/n
+questions and keep their own keys.
+
 ### Main tabs
 
 The board, the issues list and the chats board can be **main tabs**: the
@@ -788,7 +797,8 @@ otherwise, and pressing it does nothing:
 The merge popup shows the head commit it merges: the one whose checks are on the
 tab. If GitHub reports a different head for the pull request, the popup says the
 head moved and `y` does nothing until the tab has re-read both. `enter` never
-merges. In the y/n prompts, any key but `y` answers no. A write that has not
+merges. The y/n prompts answer as every question does: `y` sends, `n` or
+`esc` sends nothing, and any other key leaves the prompt up. A write that has not
 answered yet cannot be sent a second time, and none of the four exists while
 GitHub could not be read. When the daemon refuses — the branch is behind, a
 check is still running, the credential cannot write — its reason is on the
@@ -1438,7 +1448,7 @@ that a chat holds the task.
 | `A` | Archive (asks first — the worktree is removed) | `done`, `aborted` |
 | `F` | Follow up — run more work in this finished task's worktree | `done`, `aborted` |
 | `T` | Chat with an agent in this task's worktree, or reopen the chat already open on it | `blocked`, `awaiting_gate`, `done`, `aborted` |
-| `Q` | [Ask why it stopped](#asking-why-a-task-stopped--q): the same chat, opened with the failure card as its first message | `blocked`, `aborted` |
+| `Q` | [Ask why it stopped](#asking-why-a-task-stopped--q): the same chat, opened with the failure card as its first message (asks first — an agent turn starts) | `blocked`, `aborted` |
 | `alt+t` | As `T`, but first asks for the agent, model and effort, and an optional first message | `blocked`, `awaiting_gate`, `done`, `aborted` |
 
 `E` opens the failing step's prompt or command in your editor, and the override
@@ -1603,8 +1613,11 @@ stopped and what would fix it — diagnosis only, no changes yet — and hands t
 agent what the failure card shows: the step, attempt and reason, how it
 exited, the command that failed, the evidence lines and the last status. The
 failure card lists `Q` beside `T`, and the footer offers `Q ask why`. Like `T`,
-it starts an agent in the task's worktree, full-auto unless the project says
-otherwise, and the task is locked until the chat is closed.
+it starts an agent in the task's worktree, full-auto unless the task runs
+restricted, and the task is locked until the chat is closed. Because a yes
+starts an agent turn, `Q` asks first — `diagnose #7? (y/n) · starts an agent
+turn in a new chat on its worktree…` — and `y` sends it. When a chat is
+already open on the task, `Q` reopens it without asking: nothing new starts.
 
 The chat is titled after what it asked about — `why step 3 verify stopped ·
 check_failed` — and that title is how the task finds it again. Once it is
@@ -3023,7 +3036,7 @@ periodic repaint.
 | `alt+s` | Stash the draft — a new stash replaces the old one — or, on an empty composer, pop the stash back (rebindable as `stash`) |
 | `alt+h` | Pick an earlier prompt from any chat of this project, archived ones too, and insert it — never sends it (rebindable as `prompt_history`) |
 | `alt+r` | Resume a paused queue — on an idle chat the next queued message starts now, paused or not: an idle chat holding an unpaused queue (left by a daemon crash mid-recovery) says so under the queue, and this starts it |
-| `alt+c` | Clear the queue: delete every queued message |
+| `alt+c` | Clear the queue: delete every queued message — asks first, `clear the queue? (y/n) · 2 queued messages are deleted unsent` |
 | `ctrl+s` | Steer the running turn. No agent can yet, so the composer says why, the footer marks it `(unavailable)` beside a running turn, and the message can only be queued (rebindable as `steer`) |
 | `ctrl+j` | Insert a newline in the draft. `shift+enter` and `alt+enter` do too where the terminal sends them; `ctrl+j` works in every terminal, and `alt+enter` on macOS needs the terminal's "Option as Meta" setting, as every `alt+` key here does |
 | `tab` | The skills this chat's agent can run — type to filter, `enter` or `tab` inserts one. `f2` does the same, where the terminal swallows `tab`. The same list opens by itself when you type the agent's invocation sigil |
@@ -3630,8 +3643,7 @@ the warning the daemon serves for `enabled: true`, then what it means for this
 trigger. With `on_fire: propose`, each task is created paused for you to resume.
 With `on_fire: create`, each task starts running as soon as a slot is free. If
 `triggers.enabled` is off, the question also says nothing polls until it is
-turned on. Only `y` (or `Y`) answers yes, and `n` or `esc` leaves the trigger as it is.
-Any other key leaves the question open, so a stray keypress cannot answer it.
+turned on. Like every question, `y` (or `Y`) answers yes, and `n` or `esc` leaves the trigger as it is.
 A file that does not validate cannot be switched at all; fix it with `e` first.
 
 **`D` deletes the file and keeps the ledger.** The question says so. The poll
@@ -3799,7 +3811,7 @@ value it would become](../assets/tui-settings-confirm.png)
 | `tab` / `shift+tab` | Next or previous category |
 | `/` | Search every setting by name, key or description |
 | `backspace` | Reset the selected setting to its default |
-| `u` | Undo the last change: put back the value it replaced. Every change applies at once, so after one the pane's corner says `saved · was 4 · u puts it back`; a held arrow is one change, and the undo is not itself undoable. Pressed from another category or a search, `u` goes to the setting first, and its note names it (`saved · Tasks at once put back`); an `esc` at a dangerous key's confirmation, or a write the daemon refuses, leaves no undo pending |
+| `u` | Undo the last change: put back the value it replaced. Every change applies at once, so after one the pane's corner says `saved · was 4 · u puts it back`; a held arrow is one change, and the undo is not itself undoable. Pressed from another category or a search, `u` goes to the setting first, and its note names it (`saved · Tasks at once put back`); an `n` or `esc` at a dangerous key's confirmation, or a write the daemon refuses, leaves no undo pending |
 | `e` | Open `config.yaml` in `$EDITOR` |
 | `R` | Re-read the configuration |
 | `esc` | Clear the search, else leave Settings |
@@ -3812,6 +3824,7 @@ And inside the editor:
 | `tab` | In the branch template, insert the highlighted field |
 | `enter` | Apply the change — the daemon validates and writes `config.yaml` |
 | `y` | Confirm a setting that decides what the daemon executes or exposes |
+| `n` | On the confirmation, return to the field without saving (`esc` too) |
 | `esc` | Close without saving; on the confirmation it returns to the field |
 
 Everything here is also

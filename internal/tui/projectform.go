@@ -306,9 +306,13 @@ func (f *projectForm) updateKey(msg tea.KeyPressMsg) tea.Cmd {
 		return f.updateEditing(msg)
 	}
 	if f.confirming {
-		// "discard these changes?" owns the keyboard until answered.
-		f.confirming = false
-		if s := msg.String(); s == "y" || s == "Y" {
+		// "discard these changes?" owns the keyboard until answered, by
+		// the shared rule (#1162).
+		yes, no := confirmAnswer(msg.String())
+		if yes || no {
+			f.confirming = false
+		}
+		if yes {
 			return func() tea.Msg { return projectFormClosedMsg{} }
 		}
 		return nil

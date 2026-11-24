@@ -1708,11 +1708,13 @@ func (m *root) applyFollow(p apiclient.Project, open tea.Msg, notice string) tea
 
 // updatePendingSwitchKey answers the draft confirmation: y discards the draft
 // and applies the switch (and the open waiting on it), n or esc keeps both
-// the draft and the selection, and every other key is swallowed.
+// the draft and the selection, and every other key is swallowed — the shared
+// rule (#1162).
 func (m *root) updatePendingSwitchKey(msg tea.KeyPressMsg) tea.Cmd {
 	p := m.pending
-	switch msg.String() {
-	case "y":
+	yes, no := confirmAnswer(msg.String())
+	switch {
+	case yes:
 		m.pending = nil
 		if p.deleted != "" {
 			return m.applyDeletedSwitch(p.project, p.why, p.notice)
@@ -1721,7 +1723,7 @@ func (m *root) updatePendingSwitchKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.applyFollow(p.project, p.open, p.notice)
 		}
 		return m.applySwitch(p.project, p.why)
-	case "n", "esc":
+	case no:
 		// A deleted selection has nowhere to stay (decision 47): the
 		// question waits for y.
 		if p.deleted == "" {

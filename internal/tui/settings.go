@@ -152,7 +152,7 @@ func (v *settingsView) setClient(c *apiclient.Client) tea.Cmd {
 // apply there, and the status bar must not say it does.
 func (v *settingsView) promptKeys() promptAnswers {
 	if v.form != nil && v.form.confirming {
-		return promptHint("y", "apply", "esc", "go back")
+		return promptHint("y", "apply", "n", "go back")
 	}
 	return nil
 }
@@ -549,10 +549,10 @@ func (v *settingsView) clearSearch() {
 // and every change to the text asks the daemon what the template now makes.
 func (v *settingsView) updateForm(msg tea.KeyPressMsg) tea.Cmd {
 	f := v.form
-	if msg.String() == "esc" {
-		// #1137: esc steps back from an undo waiting at a dangerous key's
-		// confirmation; whatever is saved from the form afterwards is a
-		// change of its own, not the undo.
+	if _, no := confirmAnswer(msg.String()); msg.String() == "esc" || f.confirming && no {
+		// #1137: esc (or n, #1162) steps back from an undo waiting at a
+		// dangerous key's confirmation; whatever is saved from the form
+		// afterwards is a change of its own, not the undo.
 		v.undoing = false
 	}
 	if msg.String() == "tab" && f.key.path == "branch_template" && !f.confirming {

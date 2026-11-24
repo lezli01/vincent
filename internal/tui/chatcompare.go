@@ -208,12 +208,18 @@ func (v *compareView) update(msg tea.Msg) (panel, tea.Cmd) {
 func (v *compareView) updateKey(msg tea.KeyPressMsg) (panel, tea.Cmd) {
 	key := msg.String()
 	if v.confirm >= 0 {
-		side := v.confirm
-		v.confirm = -1
-		if key == "y" {
+		// A stray key no longer cancels the keep: it waits for y or n like
+		// every other confirmation (#1162).
+		yes, no := confirmAnswer(key)
+		switch {
+		case yes:
+			side := v.confirm
+			v.confirm = -1
 			return v, v.keepCmd(side)
+		case no:
+			v.confirm = -1
+			v.note, v.noteBad = "nothing kept", false
 		}
-		v.note, v.noteBad = "nothing kept", false
 		return v, nil
 	}
 	switch key {
@@ -281,9 +287,21 @@ func (v *compareView) askKeep(i int) {
 		return
 	}
 	v.confirm = i
-	v.note, v.noteBad = fmt.Sprintf("keep %s (%s)? the %s side (%s) is archived and its branch deleted — y keeps, any other key cancels",
+	v.note, v.noteBad = fmt.Sprintf("keep %s (%s)? (y/n) · the %s side (%s) is archived and its branch deleted",
 		sideName(i), keep.Agent, sideName(1-i), drop.Agent), false
 }
+
+// promptKeys names the keep question's answers while it is up.
+func (v *compareView) promptKeys() promptAnswers {
+	if v.confirm >= 0 {
+		return promptHint("y", "keep "+sideName(v.confirm), "n", "don't")
+	}
+	return nil
+}
+
+// capturesInput holds the global single keys back while the keep question
+// is up: it owns the keyboard until it is answered (#1162).
+func (v *compareView) capturesInput() bool { return v.confirm >= 0 }
 
 func sideName(i int) string {
 	if i == 0 {
